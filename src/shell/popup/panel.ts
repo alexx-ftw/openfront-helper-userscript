@@ -1,0 +1,1093 @@
+// The settings popup — a vanilla, in-page panel in the floating-panel aesthetic.
+// Replaces the extension's React popup. Reads/writes the same `settings` object
+// via chrome.storage; the content engine reacts through storage.onChanged.
+
+import { ringChime } from "../audio";
+import { availableLanguages, mapThumbnailUrl } from "../assets";
+import { requestJoinNotificationPermission } from "../notification";
+
+// ---- auto-bot bridge (exposed by the page-bridge engine in-game) ------------
+type AutoBot = {
+  FEATURE_KEYS: string[];
+  DIFFICULTIES: string[];
+  get: () => {
+    enabled: boolean;
+    difficulty: string;
+    winFixes: boolean;
+    tickMs: number;
+    hidden: boolean;
+    features: Record<string, boolean>;
+  };
+  set: (patch: Record<string, unknown>) => void;
+};
+const autobot = () => (window as unknown as { __OFH_autobot?: AutoBot }).__OFH_autobot;
+
+// ---- atom batch-fire bridge (exposed by the in-game engine) -----------------
+// The macro persists its pacing to one localStorage blob; the engine re-reads it
+// on each fire. The bridge is a thin accessor over that blob (always available,
+// even in the lobby). localStorage is the single source of truth, so if the
+// in-game layer ever faulted before exposing the bridge we read/write it directly.
+type AtomCfg = { batchSize: number; delayMs: number; lastHydrogen: boolean };
+type AtomBridge = {
+  SAFE_GAP_MS?: number;
+  get: () => AtomCfg;
+  set: (patch: Partial<AtomCfg>) => void;
+  effectiveGapMs?: (batchSize: number, delayMs: number) => number;
+};
+const ATOM_KEY = "openfront-helper-atom-batch-v1";
+const ATOM_SAFE_GAP_MS = 140; // server-safe floor (~7 shots/sec); mirror of the engine
+const ATOM_DEFAULTS: AtomCfg = { batchSize: 10, delayMs: 150, lastHydrogen: false };
+const atomBridge = () => (window as unknown as { __OFH_atomBatch?: AtomBridge }).__OFH_atomBatch;
+
+function atomGetCfg(): AtomCfg {
+  const b = atomBridge();
+  if (b?.get) {
+    try {
+      return { ...ATOM_DEFAULTS, ...b.get() };
+    } catch {
+      /* fall through to localStorage */
+    }
+  }
+  try {
+    const raw = window.localStorage.getItem(ATOM_KEY);
+    if (raw) return { ...ATOM_DEFAULTS, ...JSON.parse(raw) };
+  } catch {
+    /* defaults */
+  }
+  return { ...ATOM_DEFAULTS };
+}
+
+function atomSetCfg(patch: Partial<AtomCfg>): void {
+  const b = atomBridge();
+  if (b?.set) {
+    try {
+      b.set(patch);
+      return;
+    } catch {
+      /* fall through to localStorage */
+    }
+  }
+  // read-merge-write so a partial patch never wipes sibling fields
+  const next = { ...atomGetCfg(), ...patch };
+  try {
+    window.localStorage.setItem(ATOM_KEY, JSON.stringify(next));
+  } catch {
+    /* best-effort */
+  }
+}
+
+// Effective ms-between-shots; never below the server-safe floor — matches the
+// engine's atomFireGapMs so the readout shows the real delivery cadence.
+function atomGapMs(batchSize: number, delayMs: number): number {
+  const b = atomBridge();
+  if (b?.effectiveGapMs) {
+    try {
+      return b.effectiveGapMs(batchSize, delayMs);
+    } catch {
+      /* fall through to local formula */
+    }
+  }
+  const perShot = batchSize >= 1 ? (delayMs || 0) / batchSize : delayMs || 0;
+  return Math.max(ATOM_SAFE_GAP_MS, Math.floor(perShot) || 0);
+}
+
+const REPO_URL = "https://github.com/nguyenvancaokyfpt/openfront-helper-userscript";
+
+const FEATURE_LABELS: Record<string, [string, string]> = {
+  spawn: ["Auto-spawn", "Automatically pick a spawn tile."],
+  expand: ["Auto-expand / attack", "Expand into land and attack targets."],
+  build: ["Auto-build", "Build and upgrade structures."],
+  boat: ["Auto-landing (boats)", "Send probe and landing boats overseas."],
+  nuke: ["Auto-launch nukes", "Fire nukes at high-value targets."],
+  warship: ["Auto-deploy warships", "Build and dispatch warships."],
+  alliance: ["Auto-alliances", "Send and accept alliance requests."],
+  donate: ["Auto-donate troops", "Donate troops to needy allies."],
+  betray: ["Allow betrayal", "Off = stay loyal (defensive retaliation only)."],
+};
+
+// ---- engine globals (set by the content IIFE at runtime) --------------------
+type Shared = {
+  STORAGE_KEY: string;
+  MAPS: Array<{ id: string; name: string }>;
+  normalizeSettings: (
+    raw: unknown,
+    options?: { ensureActiveSearchTimestamp?: boolean },
+  ) => Record<string, any>;
+};
+type I18n = {
+  getMessage: (bundle: Record<string, string>, key: string) => string;
+  loadBundle: (lang: string) => Promise<Record<string, string>>;
+};
+const shared = () =>
+  (window as unknown as { OpenFrontHelperSettings?: Shared }).OpenFrontHelperSettings;
+const i18n = () => (window as unknown as { OpenFrontHelperI18n?: I18n }).OpenFrontHelperI18n;
+const chromeApi = () => (window as unknown as { chrome: any }).chrome;
+
+// ---- filter / helper config (English labels) --------------------------------
+const START_GOLD = [
+  ["startingGold0M", "0M starting gold"],
+  ["startingGold1M", "1M starting gold"],
+  ["startingGold5M", "5M starting gold"],
+  ["startingGold25M", "25M starting gold"],
+] as const;
+
+const MODIFIERS = [
+  ["randomSpawn", "Random spawn"],
+  ["alliancesDisabled", "Alliances disabled"],
+  ["portsDisabled", "Ports disabled"],
+  ["nukesDisabled", "Nukes disabled"],
+  ["samsDisabled", "SAMs disabled"],
+  ["waterNukes", "Water nukes"],
+  ["peaceTime4m", "4min peace time"],
+  ["goldMultiplier2x", "2x gold"],
+] as const;
+
+const TEAM_PRESETS: Array<[string, number, number | null]> = [
+  ["FFA", 1, 1],
+  ["Duos", 2, 2],
+  ["Trios", 3, 3],
+  ["Quads", 4, 4],
+  ["5+", 5, null],
+];
+
+type Toggle = { name: string; title: string; desc: string };
+const ECONOMIC_HELPERS: Toggle[] = [
+  {
+    name: "showGoldPerMinute",
+    title: "Gold per minute",
+    desc: "Adds GPM to the player hover panel.",
+  },
+  {
+    name: "showTeamGoldPerMinute",
+    title: "Team gold per minute",
+    desc: "Lists each team's total GPM in team games.",
+  },
+  {
+    name: "showTopGoldPerMinute",
+    title: "Top 10 gold per minute",
+    desc: "Lists the highest tracked player GPM.",
+  },
+  {
+    name: "showTeamBuildStats",
+    title: "Team build stats",
+    desc: "Counts each team's structures; warns on a first Missile Silo.",
+  },
+  {
+    name: "showTradeBalances",
+    title: "Trade balances",
+    desc: "Shows observed ship and train trade imports/exports.",
+  },
+];
+const GAME_HELPERS: Toggle[] = [
+  {
+    name: "markBotNationsRed",
+    title: "Mark bot nations red",
+    desc: "Adds a red marker to nation AI names.",
+  },
+  {
+    name: "markHoveredAlliesGreen",
+    title: "Alliances",
+    desc: "Highlights allies with remaining alliance time.",
+  },
+  {
+    name: "showAllianceRequestsPanel",
+    title: "Alliance requests panel",
+    desc: "Moves alliance requests into a side window.",
+  },
+  {
+    name: "showNukePrediction",
+    title: "Nuke prediction",
+    desc: "Shows predicted enemy nuke landing points & radius.",
+  },
+  {
+    name: "showBoatPrediction",
+    title: "Boat prediction",
+    desc: "Shows enemy boat landings (red = you, yellow = others).",
+  },
+];
+const ADVANCED_HELPERS: Toggle[] = [
+  {
+    name: "showNukeSuggestions",
+    title: "Nuke suggestions",
+    desc: "Suggests high-value nuke targets.",
+  },
+  { name: "autoNuke", title: "Auto nuke", desc: "Automatically fires nukes at suggested targets." },
+  {
+    name: "autoNukeIncludeAllies",
+    title: "Auto nuke — include allies",
+    desc: "Allow auto nuke to target allies.",
+  },
+  {
+    name: "send1PercentBoat",
+    title: "Send 1% boat",
+    desc: "Adds a 1%-troop boat send to the context menu.",
+  },
+  {
+    name: "showEconomyHeatmap",
+    title: "Economy heatmap",
+    desc: "Overlays an economic-activity heatmap.",
+  },
+  {
+    name: "showExportPartnerHeatmap",
+    title: "Export partner heatmap",
+    desc: "Highlights your trade export partners.",
+  },
+];
+
+// ---- state ------------------------------------------------------------------
+let overlay: HTMLDivElement | null = null;
+let opening = false;
+let settings: Record<string, any> = {};
+let translations: Record<string, string> = {};
+let activeTab = "autojoin";
+let activeAutoTab = "main"; // sub-tab within Auto-Join (main / filters / maps)
+let mapMode: "include" | "exclude" = "include";
+
+const t = (key: string): string => {
+  const m = i18n();
+  return (m && m.getMessage(translations, key)) || key;
+};
+
+// ---- tiny DOM helper --------------------------------------------------------
+function el<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  attrs: Record<string, any> = {},
+  ...children: Array<Node | string>
+): HTMLElementTagNameMap[K] {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") node.className = v;
+    else if (k === "html") node.innerHTML = v;
+    else if (k.startsWith("on") && typeof v === "function") {
+      node.addEventListener(k.slice(2).toLowerCase(), v);
+    } else if (v != null) node.setAttribute(k, String(v));
+  }
+  for (const c of children) node.append(c);
+  return node;
+}
+
+async function persist(): Promise<void> {
+  const s = shared();
+  if (!s) return;
+  // ensureActiveSearchTimestamp mirrors the original popup (App.tsx): enabling
+  // auto-join stamps searchStartedAt so the "searching for …" timer/forecast run.
+  settings = s.normalizeSettings(settings, { ensureActiveSearchTimestamp: true });
+  await chromeApi().storage.local.set({ [s.STORAGE_KEY]: settings });
+}
+
+// ---- reusable controls ------------------------------------------------------
+function switchRow(
+  title: string,
+  desc: string,
+  value: boolean,
+  onToggle: (v: boolean) => void,
+): HTMLElement {
+  const sw = el("div", { class: `ofh-switch${value ? " on" : ""}` });
+  const row = el(
+    "div",
+    { class: "ofh-row" },
+    el(
+      "div",
+      { class: "ofh-txt" },
+      el("div", { class: "ofh-name" }, t(title)),
+      desc ? el("div", { class: "ofh-desc" }, t(desc)) : "",
+    ),
+    sw,
+  );
+  const flip = () => {
+    const next = !sw.classList.contains("on");
+    sw.classList.toggle("on", next);
+    onToggle(next);
+  };
+  sw.addEventListener("click", flip);
+  return row;
+}
+
+function helperRows(list: Toggle[]): HTMLElement {
+  const grid = el("div", { class: "ofh-grid" });
+  for (const h of list) {
+    grid.append(
+      switchRow(h.title, h.desc, Boolean(settings[h.name]), (v) => {
+        settings[h.name] = v;
+        void persist();
+      }),
+    );
+  }
+  return grid;
+}
+
+// ---- tabs -------------------------------------------------------------------
+function renderAutoJoinMain(body: HTMLElement): void {
+  body.append(el("div", { class: "ofh-section-title" }, t("Auto-join")));
+
+  body.append(
+    switchRow(
+      "Auto-join",
+      "Automatically join lobbies that match your filters.",
+      Boolean(settings.enabled),
+      (v) => {
+        settings.enabled = v;
+        void persist();
+      },
+    ),
+  );
+  body.append(
+    switchRow(
+      "Found-game notification",
+      "Show a toast and play a chime when a match is found.",
+      Boolean(settings.joinNotification),
+      (v) => {
+        settings.joinNotification = v;
+        // turning it on is a user gesture — the moment to ask for OS-notification permission
+        if (v) requestJoinNotificationPermission();
+        void persist();
+      },
+    ),
+  );
+
+  // team-size presets
+  body.append(el("div", { class: "ofh-section-title", style: "margin-top:16px" }, t("Team size")));
+  const chips = el("div", { class: "ofh-chips" });
+  const activePreset = () =>
+    TEAM_PRESETS.find(
+      ([, mn, mx]) => settings.minTeamSize === mn && settings.maxTeamSize === mx,
+    )?.[0] ?? null;
+  for (const [label, mn, mx] of TEAM_PRESETS) {
+    const chip = el("div", { class: `ofh-chip${activePreset() === label ? " on" : ""}` }, label);
+    chip.addEventListener("click", () => {
+      settings.minTeamSize = mn;
+      settings.maxTeamSize = mx;
+      chips.querySelectorAll(".ofh-chip").forEach((c) => c.classList.remove("on"));
+      chip.classList.add("on");
+      void persist();
+    });
+    chips.append(chip);
+  }
+  body.append(chips);
+
+  // min lobby size
+  const num = el("input", {
+    class: "ofh-num",
+    type: "number",
+    min: "0",
+    max: "100",
+    value: settings.minLobbySize ?? "",
+  }) as HTMLInputElement;
+  num.addEventListener("change", () => {
+    settings.minLobbySize = num.value === "" ? null : Number(num.value);
+    void persist();
+  });
+  body.append(
+    el(
+      "div",
+      { class: "ofh-row", style: "margin-top:10px" },
+      el(
+        "div",
+        { class: "ofh-txt" },
+        el("div", { class: "ofh-name" }, t("Minimum lobby size")),
+        el(
+          "div",
+          { class: "ofh-desc" },
+          t("Only join lobbies with at least this many players (blank = any)."),
+        ),
+      ),
+      el("div", { class: "ofh-field" }, num),
+    ),
+  );
+
+  // teams-in-match count range
+  const countNum = (k: string): HTMLInputElement => {
+    const input = el("input", {
+      class: "ofh-num",
+      type: "number",
+      min: "1",
+      max: "100",
+      value: settings[k] ?? "",
+    }) as HTMLInputElement;
+    input.addEventListener("change", () => {
+      settings[k] = input.value === "" ? null : Number(input.value);
+      void persist();
+    });
+    return input;
+  };
+  body.append(
+    el(
+      "div",
+      { class: "ofh-row", style: "margin-top:10px" },
+      el(
+        "div",
+        { class: "ofh-txt" },
+        el("div", { class: "ofh-name" }, t("Teams in match")),
+        el("div", { class: "ofh-desc" }, t("Number of teams in the lobby (blank = any).")),
+      ),
+      el(
+        "div",
+        { class: "ofh-field" },
+        el("label", {}, t("Min")),
+        countNum("minTeamCount"),
+        el("label", {}, t("Max")),
+        countNum("maxTeamCount"),
+      ),
+    ),
+  );
+
+  // in-game floating panel
+  body.append(
+    el("div", { class: "ofh-section-title", style: "margin-top:16px" }, t("In-game panel")),
+  );
+  body.append(
+    switchRow(
+      "Floating auto-join panel",
+      "Show the in-game auto-join quick panel.",
+      Boolean(settings.showFloatingAutoJoinPanel),
+      (v) => {
+        settings.showFloatingAutoJoinPanel = v;
+        void persist();
+      },
+    ),
+  );
+
+  // test chime
+  const testBtn = el("button", { class: "ofh-btn" }, "▶ " + t("Test chime"));
+  testBtn.addEventListener("click", () => ringChime());
+  body.append(el("div", { style: "margin-top:14px" }, testBtn));
+}
+
+function renderFilters(body: HTMLElement): void {
+  const groups: Array<[string, ReadonlyArray<readonly [string, string]>]> = [
+    ["Start gold", START_GOLD],
+    ["Modifiers", MODIFIERS],
+  ];
+  body.append(
+    el(
+      "div",
+      { class: "ofh-note", style: "margin:0 2px 12px" },
+      t("Tap a filter to cycle: off → include (green, must match) → exclude (red, skip these)."),
+    ),
+  );
+  for (const [title, list] of groups) {
+    body.append(el("div", { class: "ofh-section-title" }, t(title)));
+    const chips = el("div", { class: "ofh-chips", style: "margin-bottom:16px" });
+    for (const [key, label] of list) {
+      const chip = el("div", { class: "ofh-chip" }, t(label));
+      const apply = () => {
+        const inc = Boolean(settings.includeFilters?.[key]);
+        const exc = Boolean(settings.excludeFilters?.[key]);
+        chip.classList.toggle("on", inc || exc);
+        chip.classList.toggle("exclude", exc);
+      };
+      apply();
+      chip.addEventListener("click", () => {
+        settings.includeFilters = settings.includeFilters || {};
+        settings.excludeFilters = settings.excludeFilters || {};
+        const inc = Boolean(settings.includeFilters[key]);
+        const exc = Boolean(settings.excludeFilters[key]);
+        if (!inc && !exc) {
+          settings.includeFilters[key] = true;
+        } else if (inc) {
+          settings.includeFilters[key] = false;
+          settings.excludeFilters[key] = true;
+        } else {
+          settings.excludeFilters[key] = false;
+        }
+        apply();
+        void persist();
+      });
+      chips.append(chip);
+    }
+    body.append(chips);
+  }
+}
+
+function renderMaps(body: HTMLElement): void {
+  const s = shared();
+  const maps = s?.MAPS ?? [];
+
+  const modeChips = el("div", { class: "ofh-chips", style: "margin-bottom:12px" });
+  (["include", "exclude"] as const).forEach((mode) => {
+    const chip = el(
+      "div",
+      { class: `ofh-chip${mapMode === mode ? " on" : ""}${mode === "exclude" ? " exclude" : ""}` },
+      mode === "include" ? t("Include maps") : t("Exclude maps"),
+    );
+    chip.addEventListener("click", () => {
+      mapMode = mode;
+      renderActiveTab();
+    });
+    modeChips.append(chip);
+  });
+  body.append(modeChips);
+
+  const key = mapMode === "include" ? "mapFilters" : "mapExcludeFilters";
+  const tools = el("div", { class: "ofh-chips", style: "margin-bottom:12px" });
+  const allBtn = el("button", { class: "ofh-btn" }, t("Select all"));
+  const noneBtn = el("button", { class: "ofh-btn" }, t("Clear"));
+  allBtn.addEventListener("click", () => {
+    settings[key] = Object.fromEntries(maps.map((m) => [m.id, true]));
+    renderActiveTab();
+    void persist();
+  });
+  noneBtn.addEventListener("click", () => {
+    settings[key] = {};
+    renderActiveTab();
+    void persist();
+  });
+  tools.append(allBtn, noneBtn);
+  body.append(tools);
+
+  const grid = el("div", { class: "ofh-maps" });
+  for (const map of maps) {
+    const on = Boolean(settings[key]?.[map.id]);
+    const card = el("div", { class: `ofh-map${on ? " on" : ""}` });
+    const url = mapThumbnailUrl(map.id);
+    if (url) {
+      const img = el("img", {
+        class: "ofh-thumb",
+        src: url,
+        alt: map.name,
+        draggable: "false",
+        loading: "lazy",
+      }) as HTMLImageElement;
+      img.addEventListener("error", () => {
+        img.replaceWith(el("div", { class: "ofh-noimg" }, "🗺"));
+      });
+      card.append(img);
+    } else {
+      card.append(el("div", { class: "ofh-noimg" }, "🗺"));
+    }
+    card.append(
+      el("div", { class: "ofh-mapname" }, map.name),
+      el("div", { class: "ofh-check" }, "✓"),
+    );
+    card.addEventListener("click", () => {
+      settings[key] = settings[key] || {};
+      const next = !settings[key][map.id];
+      settings[key][map.id] = next;
+      card.classList.toggle("on", next);
+      void persist();
+    });
+    grid.append(card);
+  }
+  body.append(grid);
+}
+
+function renderHelpers(body: HTMLElement): void {
+  body.append(el("div", { class: "ofh-section-title" }, t("Economic")));
+  body.append(helperRows(ECONOMIC_HELPERS));
+  body.append(el("div", { class: "ofh-section-title", style: "margin-top:16px" }, t("Game")));
+  body.append(helperRows(GAME_HELPERS));
+  body.append(el("div", { class: "ofh-section-title", style: "margin-top:16px" }, t("Advanced")));
+  body.append(helperRows(ADVANCED_HELPERS));
+}
+
+function renderAutoBot(body: HTMLElement): void {
+  const ab = autobot();
+  if (!ab) {
+    body.append(
+      el(
+        "div",
+        { class: "ofh-note" },
+        t("The auto-bot loads inside a game. Open this tab while in a match to configure it."),
+      ),
+    );
+    return;
+  }
+  const cfg = ab.get();
+
+  body.append(
+    switchRow(
+      "Auto-bot enabled",
+      "Run the auto-bot (private-lobby training tool).",
+      cfg.enabled,
+      (v) => ab.set({ enabled: v }),
+    ),
+  );
+  body.append(
+    switchRow(
+      "Show auto-bot panel",
+      "Show the in-game auto-bot panel (X on the panel hides it).",
+      !cfg.hidden,
+      (v) => ab.set({ hidden: !v }),
+    ),
+  );
+
+  body.append(el("div", { class: "ofh-section-title", style: "margin-top:16px" }, t("Difficulty")));
+  const diffChips = el("div", { class: "ofh-chips" });
+  for (const d of ab.DIFFICULTIES) {
+    const chip = el("div", { class: `ofh-chip${cfg.difficulty === d ? " on" : ""}` }, t(d));
+    chip.addEventListener("click", () => {
+      ab.set({ difficulty: d });
+      diffChips.querySelectorAll(".ofh-chip").forEach((c) => c.classList.remove("on"));
+      chip.classList.add("on");
+    });
+    diffChips.append(chip);
+  }
+  body.append(diffChips);
+
+  body.append(el("div", { class: "ofh-section-title", style: "margin-top:16px" }, t("Behaviors")));
+  const grid = el("div", { class: "ofh-grid" });
+  for (const k of ab.FEATURE_KEYS) {
+    const [title, desc] = FEATURE_LABELS[k] || [k, ""];
+    grid.append(
+      switchRow(title, desc, Boolean(cfg.features[k]), (v) => ab.set({ features: { [k]: v } })),
+    );
+  }
+  body.append(grid);
+
+  body.append(el("div", { class: "ofh-section-title", style: "margin-top:16px" }, t("Advanced")));
+  body.append(
+    switchRow(
+      "Win-condition fixes",
+      "Adjust the bot's internal win thresholds.",
+      cfg.winFixes,
+      (v) => ab.set({ winFixes: v }),
+    ),
+  );
+  const tickNum = el("input", {
+    class: "ofh-num",
+    type: "number",
+    min: "50",
+    max: "2000",
+    step: "50",
+    value: cfg.tickMs,
+  }) as HTMLInputElement;
+  tickNum.addEventListener("change", () => {
+    const v = Number(tickNum.value);
+    if (v > 0) ab.set({ tickMs: v });
+  });
+  body.append(
+    el(
+      "div",
+      { class: "ofh-row", style: "margin-top:6px" },
+      el(
+        "div",
+        { class: "ofh-txt" },
+        el("div", { class: "ofh-name" }, t("Tick interval (ms)")),
+        el("div", { class: "ofh-desc" }, t("Engine poll interval; lower = snappier but heavier.")),
+      ),
+      el("div", { class: "ofh-field" }, tickNum),
+    ),
+  );
+}
+
+function renderAtom(body: HTMLElement): void {
+  body.append(el("div", { class: "ofh-section-title" }, t("Atom batch-fire")));
+
+  // how-it-works hero (red is a danger accent only — the tab stays on the teal system)
+  body.append(
+    el(
+      "div",
+      { class: "ofh-atom-hero" },
+      el("div", { class: "ofh-atom-hero-ico" }, "☢️"),
+      el(
+        "div",
+        { class: "ofh-atom-hero-body" },
+        el(
+          "div",
+          { class: "ofh-atom-hero-desc" },
+          t(
+            "Aim at a target and press the hotkey to open the batch-fire dialog. It paces shots just under the server's rate limit so none are dropped, works out how many atoms pierce the SAMs along the flight path (+1 to land), and can finish with a Hydrogen once the atoms bait the interceptors. Press Esc to abort a salvo.",
+          ),
+        ),
+        el(
+          "div",
+          { class: "ofh-atom-keyrow" },
+          el("span", { class: "ofh-atom-keylbl" }, t("Hotkey")),
+          el("span", { class: "ofh-kbd" }, "\\"),
+        ),
+      ),
+    ),
+  );
+
+  // ---- throttle controls --------------------------------------------------
+  body.append(
+    el("div", { class: "ofh-section-title", style: "margin-top:16px" }, t("Firing throttle")),
+  );
+
+  const cadValue = el("span", { class: "ofh-cad" });
+  const refreshCad = (): void => {
+    const c = atomGetCfg();
+    const gap = atomGapMs(c.batchSize, c.delayMs);
+    const rate = (1000 / gap).toFixed(1);
+    cadValue.textContent = `≈ ${rate} ${t("shots/sec")}`;
+    cadValue.classList.toggle("max", gap <= ATOM_SAFE_GAP_MS);
+  };
+
+  const numRow = (
+    name: string,
+    desc: string,
+    key: "batchSize" | "delayMs",
+    min: number,
+    step: number,
+  ): HTMLElement => {
+    const input = el("input", {
+      class: "ofh-num",
+      type: "number",
+      min: String(min),
+      step: String(step),
+      value: String(atomGetCfg()[key]),
+    }) as HTMLInputElement;
+    const commit = (): void => {
+      let v = Math.floor(Number(input.value));
+      if (!Number.isFinite(v) || v < min) v = min;
+      input.value = String(v);
+      atomSetCfg({ [key]: v });
+      refreshCad();
+    };
+    input.addEventListener("change", commit);
+    return el(
+      "div",
+      { class: "ofh-row" },
+      el(
+        "div",
+        { class: "ofh-txt" },
+        el("div", { class: "ofh-name" }, t(name)),
+        el("div", { class: "ofh-desc" }, t(desc)),
+      ),
+      el("div", { class: "ofh-field" }, input),
+    );
+  };
+
+  const grid = el("div", { class: "ofh-grid" });
+  grid.append(
+    numRow(
+      "Atoms per burst",
+      "Pacing hint. The macro never fires faster than the server-safe rate, so this only matters when you slow it down.",
+      "batchSize",
+      1,
+      1,
+    ),
+    numRow(
+      "Delay (ms)",
+      "Spacing between bursts. Raising it throttles the fire rate below the safe maximum — it can never speed past it.",
+      "delayMs",
+      0,
+      10,
+    ),
+  );
+  body.append(grid);
+
+  // live cadence readout
+  body.append(
+    el(
+      "div",
+      { class: "ofh-row", style: "margin-top:8px" },
+      el(
+        "div",
+        { class: "ofh-txt" },
+        el("div", { class: "ofh-name" }, t("Effective fire rate")),
+        el(
+          "div",
+          { class: "ofh-desc" },
+          t("Live delivery cadence at the current throttle (green = server-safe max)."),
+        ),
+      ),
+      el("div", { class: "ofh-field" }, cadValue),
+    ),
+  );
+  refreshCad();
+
+  // reset to safe defaults
+  const reset = el(
+    "button",
+    { class: "ofh-btn", style: "margin-top:12px" },
+    t("Reset to safe defaults"),
+  );
+  reset.addEventListener("click", () => {
+    atomSetCfg({ batchSize: ATOM_DEFAULTS.batchSize, delayMs: ATOM_DEFAULTS.delayMs });
+    renderActiveTab();
+  });
+  body.append(reset);
+
+  body.append(
+    el(
+      "div",
+      { class: "ofh-note" },
+      t(
+        "These knobs only throttle the macro below its server-safe maximum (~7 shots/sec) — they never make it fire faster. Quantity and the “last bomb = Hydrogen” choice are picked per target in the in-game dialog.",
+      ),
+    ),
+  );
+}
+
+function selectLanguage(code: string): void {
+  settings.language = code;
+  void (async () => {
+    await persist();
+    const m = i18n();
+    if (m) {
+      try {
+        translations = await m.loadBundle(code);
+      } catch {
+        /* keep current translations */
+      }
+    }
+    renderActiveTab();
+  })();
+}
+
+// Searchable language dropdown, auto-populated from the build-discovered locales.
+function languageDropdown(): HTMLElement {
+  const langs = availableLanguages(settings.language || "en");
+  const current = langs.find((l) => l.code === settings.language) || langs[0];
+
+  const menu = el("div", { class: "ofh-dd-menu", hidden: "" });
+  const search = el("input", {
+    class: "ofh-dd-search",
+    type: "text",
+    placeholder: t("Search languages"),
+  }) as HTMLInputElement;
+  const list = el("div", { class: "ofh-dd-list" });
+
+  const renderList = (q: string) => {
+    const needle = q.trim().toLowerCase();
+    const filtered = langs.filter(
+      (l) =>
+        !needle ||
+        l.nativeName.toLowerCase().includes(needle) ||
+        l.name.toLowerCase().includes(needle) ||
+        l.code.toLowerCase().includes(needle),
+    );
+    list.replaceChildren();
+    if (!filtered.length) {
+      list.append(el("div", { class: "ofh-dd-empty" }, t("No languages found")));
+      return;
+    }
+    for (const l of filtered) {
+      const item = el(
+        "div",
+        { class: `ofh-dd-item${l.code === settings.language ? " on" : ""}` },
+        el("span", {}, l.nativeName),
+        el("span", { class: "ofh-dd-code" }, l.code.toUpperCase()),
+      );
+      item.addEventListener("click", () => selectLanguage(l.code));
+      list.append(item);
+    }
+  };
+
+  const btn = el(
+    "button",
+    { class: "ofh-dd-btn", type: "button" },
+    el("span", {}, current ? current.nativeName : settings.language || "en"),
+    el("span", { class: "ofh-dd-caret" }, "▾"),
+  );
+  const dd = el("div", { class: "ofh-dd" }, btn, menu);
+  menu.append(search, list);
+
+  const close = () => {
+    menu.setAttribute("hidden", "");
+    document.removeEventListener("pointerdown", onOutside, true);
+  };
+  const onOutside = (e: Event) => {
+    if (!dd.contains(e.target as Node)) close();
+  };
+  btn.addEventListener("click", () => {
+    if (menu.hasAttribute("hidden")) {
+      menu.removeAttribute("hidden");
+      search.value = "";
+      renderList("");
+      search.focus();
+      document.addEventListener("pointerdown", onOutside, true);
+    } else {
+      close();
+    }
+  });
+  search.addEventListener("input", () => renderList(search.value));
+
+  return dd;
+}
+
+function renderSettings(body: HTMLElement): void {
+  body.append(el("div", { class: "ofh-section-title" }, t("Language")));
+  body.append(languageDropdown());
+  body.append(
+    el(
+      "div",
+      { class: "ofh-note" },
+      t("Language of the helper UI. Missing text falls back to English. Applies in-game too."),
+    ),
+  );
+
+  const version =
+    (window as unknown as { __OFH_ASSETS?: { version?: string } }).__OFH_ASSETS?.version || "";
+  body.append(el("div", { class: "ofh-section-title", style: "margin-top:16px" }, t("About")));
+  body.append(
+    el(
+      "div",
+      { class: "ofh-note" },
+      `OpenFront Helper v${version} — ${t("standalone userscript")}.`,
+    ),
+  );
+  body.append(
+    el(
+      "a",
+      { class: "ofh-link", href: REPO_URL, target: "_blank", rel: "noopener noreferrer" },
+      el("span", { class: "ofh-link-ico" }, "★"),
+      el(
+        "div",
+        { class: "ofh-link-body" },
+        el("div", { class: "ofh-link-title" }, "GitHub — openfront-helper-userscript"),
+        el("div", { class: "ofh-link-sub" }, t("Source, issues & updates")),
+      ),
+      el("span", { class: "ofh-link-arrow" }, "↗"),
+    ),
+  );
+}
+
+// Filters and Maps are sub-tabs of Auto-Join.
+const AUTO_SUBTABS: Array<[string, string, (body: HTMLElement) => void]> = [
+  ["main", "Auto-join", renderAutoJoinMain],
+  ["filters", "Filters", renderFilters],
+  ["maps", "Maps", renderMaps],
+];
+
+function renderAutoJoin(body: HTMLElement): void {
+  const bar = el("div", { class: "ofh-subtabs" });
+  for (const [id, label] of AUTO_SUBTABS) {
+    const chip = el("div", { class: `ofh-subtab${activeAutoTab === id ? " on" : ""}` }, t(label));
+    chip.addEventListener("click", () => {
+      activeAutoTab = id;
+      renderActiveTab();
+    });
+    bar.append(chip);
+  }
+  body.append(bar);
+  const sub = el("div", { class: "ofh-subbody" });
+  body.append(sub);
+  AUTO_SUBTABS.find(([id]) => id === activeAutoTab)?.[2](sub);
+}
+
+const TABS: Array<[string, string, (body: HTMLElement) => void]> = [
+  ["autojoin", "Auto-Join", renderAutoJoin],
+  ["helpers", "Helpers", renderHelpers],
+  ["atom", "Atom", renderAtom],
+  ["autobot", "Auto Bot", renderAutoBot],
+  ["settings", "Settings", renderSettings],
+];
+
+function renderActiveTab(): void {
+  if (!overlay) return;
+  const body = overlay.querySelector(".ofh-body") as HTMLElement;
+  if (!body) return;
+  body.replaceChildren();
+  TABS.find(([id]) => id === activeTab)?.[2](body);
+  overlay.querySelectorAll(".ofh-tab").forEach((tab) => {
+    const tabEl = tab as HTMLElement;
+    const id = tabEl.dataset.tab;
+    // re-translate the tab label too — built once in build(), so a language change
+    // would otherwise leave the tab strip in the old language.
+    const entry = TABS.find(([tid]) => tid === id);
+    if (entry) tabEl.textContent = t(entry[1]);
+    tabEl.classList.toggle("active", id === activeTab);
+  });
+}
+
+function build(version: string): HTMLDivElement {
+  const panel = el("div", { id: "openfront-helper-popup" });
+
+  const head = el(
+    "div",
+    { class: "ofh-head" },
+    el("h1", {}, "⊕ OpenFront Helper", el("span", { class: "ofh-ver" }, "v" + version)),
+    el("div", { class: "ofh-spacer" }),
+  );
+  const close = el("div", { class: "ofh-x", title: t("Close") }, "✕");
+  close.addEventListener("click", closePanel);
+  head.append(close);
+  panel.append(head);
+
+  const tabs = el("div", { class: "ofh-tabs" });
+  for (const [id, label] of TABS) {
+    const tab = el("div", { class: "ofh-tab", "data-tab": id }, t(label));
+    tab.addEventListener("click", () => {
+      activeTab = id;
+      renderActiveTab();
+    });
+    tabs.append(tab);
+  }
+  panel.append(tabs);
+  panel.append(el("div", { class: "ofh-body" }));
+
+  const ov = el("div", { id: "openfront-helper-popup-overlay" }, panel);
+  ov.addEventListener("pointerdown", (e) => {
+    if (e.target === ov) closePanel();
+  });
+  return ov;
+}
+
+function onKey(e: KeyboardEvent): void {
+  if (e.key === "Escape") closePanel();
+}
+
+export async function openPanel(): Promise<void> {
+  if (overlay || opening) return; // guard the await window against double-mount
+  opening = true;
+  try {
+    await openPanelInner();
+  } catch (error) {
+    console.error("[ofh] popup failed to open:", error);
+    closePanel();
+  } finally {
+    opening = false;
+  }
+}
+
+async function openPanelInner(): Promise<void> {
+  const s = shared();
+  const m = i18n();
+  if (!s || !m) {
+    // Content engine not initialized yet — show a minimal placeholder.
+    overlay = el(
+      "div",
+      { id: "openfront-helper-popup-overlay" },
+      el(
+        "div",
+        { id: "openfront-helper-popup" },
+        el(
+          "div",
+          { class: "ofh-body" },
+          el("div", { class: "ofh-note" }, "Initializing… reopen in a moment."),
+        ),
+      ),
+    );
+    overlay.addEventListener("pointerdown", (e) => {
+      if (e.target === overlay) closePanel();
+    });
+    document.body.append(overlay);
+    return;
+  }
+
+  const stored = await chromeApi().storage.local.get(s.STORAGE_KEY);
+  settings = s.normalizeSettings(stored[s.STORAGE_KEY]);
+  // Opening the popup is a user gesture — if notifications are already enabled, this is a
+  // good moment to (re)request OS-notification permission for users who turned it on before.
+  if (settings.joinNotification) requestJoinNotificationPermission();
+  try {
+    // Open in the SAVED language, not a hardcoded "en" — otherwise the popup always
+    // boots in English even when the user already picked Vietnamese.
+    translations = await m.loadBundle(settings.language || "en");
+  } catch {
+    translations = {};
+  }
+
+  const version =
+    (window as unknown as { __OFH_ASSETS?: { version?: string } }).__OFH_ASSETS?.version || "";
+  overlay = build(version);
+  document.body.append(overlay);
+  document.addEventListener("keydown", onKey);
+  renderActiveTab();
+}
+
+export function closePanel(): void {
+  overlay?.remove();
+  overlay = null;
+  document.removeEventListener("keydown", onKey);
+}
+
+/** Open the popup focused on a specific tab / Auto-Join sub-tab. */
+export function openPanelTo(tab?: string, autoSub?: string): void {
+  if (tab) activeTab = tab;
+  if (autoSub) activeAutoTab = autoSub;
+  if (overlay) renderActiveTab();
+  else void openPanel();
+}

@@ -1,0 +1,3 @@
+node_modules/
+*.log
+# the built userscript (openfront-helper.user.js) IS committed

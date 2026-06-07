@@ -1,0 +1,897 @@
+// Auto-Bot — WarshipBehavior: a faithful 1:1 port of the in-game Nation warship
+// AI (src/core/execution/nation/NationWarshipBehavior.ts). Spawns the nation's
+// first warship, retaliates with warships when our transport/trade ships are
+// captured or when a hostile transport is inbound, repositions idle warships,
+// and counters "warship infestations" (an enemy blanketing the ocean to choke
+// all trade/transport). Every branch, constant, probability, strategy order and
+// call order is preserved exactly. The ONLY changes are the mechanical API
+// substitutions mandated by PORT-CONTRACT.md:
+//   - DIFFICULTY: src reads the lobby Nation difficulty; the bot REPLICATES a
+//     user-chosen difficulty, so each `this.game.config().gameConfig().difficulty`
+//     read becomes `currentDifficulty()`.
+//   - UnitType.X → UNIT.X.
+//   - PLAYER/OWNER IDENTITY: src compares players with `===`; the client wraps
+//     players fresh each tick, so identity compares become `.smallID()` (or, where
+//     src already used `.id()`, that string-id compare is kept verbatim).
+//   - ASYNC + ACTUATION: the client has no synchronous canBuild/addExecution. A
+//     warship is built through the build menu: `await player.buildables(waterTile,
+//     [UNIT.Warship])` → find the Warship BuildableUnit (`bu.canBuild !== false`)
+//     → `getBuildMenu().sendBuildOrUpgrade(bu, waterTile)` (pass the WATER tile, not
+//     bu.canBuild — for a warship bu.canBuild is just the in-range port tile). So
+//     maybeSpawnWarship() / counterWarshipInfestation() and the build helpers
+//     BECOME async (nationExecution awaits maybeSpawnWarship/counterWarshipInfestation).
+//     Worker reads are wrapped in withTimeout(p, WORKER_TIMEOUT_MS, fallback).
+//   - MOVE WARSHIP: src `warship.updateWarshipState({patrolTile})` is unsupported on
+//     the client UnitView. REPLACE with the MoveWarshipIntentEvent:
+//     `emitIntent(ctors.moveWarship, [unit.id()], tile)`.
+//   - relation: `this.player.updateRelation(enemy, -7.5/-15)` writes the AI-subjective
+//     overlay (no intent), exactly as src.
+//
+// TRACKING-SET IDENTITY: src keeps Set<Unit>/Map<Unit> keyed by engine Unit object
+// identity. The client wraps units fresh on every units() call (gameApi wrapUnit has
+// NO cache), so a wrapper object never matches across ticks. Per PORT-CONTRACT
+// (identity is by id) we key the tracking collections by `unit.id()` (the stable
+// engine id) and re-resolve the unit's current state each tick from a per-tick
+// id→unit index built off the GLOBAL units list (which still includes a ship after
+// it is captured / owned by an enemy). This is the same id-keyed adaptation the
+// sibling behaviors use (emojiBehavior.lastEmojiSent, mirvBehavior.recentMirvTargets)
+// — not a strategy change.
+//
+// Loaded with the other behavior modules (after portutil/gameApi and the emoji
+// phase, which provides AllPlayers + EMOJI_WARSHIP_RETALIATION), before nationExecution.
+
+"use strict";
+
+  class WarshipBehavior {
+    constructor(random, game, player, emojiBehavior) {
+      this.random = random;
+      this.game = game;
+      this.player = player;
+      this.emojiBehavior = emojiBehavior;
+
+      // Track our transport ships we currently own (src: Set<Unit>; we key by id).
+      this.trackedTransportShips = new Set(); // unitId
+      // Track our trade ships we currently own (src: Set<Unit>; we key by id).
+      this.trackedTradeShips = new Set(); // unitId
+      // Track incoming transport ships (src: Set<Unit>; we key by id).
+      this.trackedIncomingTransportShips = new Set(); // unitId
+      // Track incoming transport ships we have dealt with (src: Set<Unit>; we key by id).
+      this.dealtWithTransportShip = new Set(); // unitId
+    }
+
+    // ── per-tick id→unit index over a GLOBAL units list. A captured/handed-off
+    //    ship is no longer in me.units() but IS in game.units(type), so resolving
+    //    current owner()/isActive()/targetTile() must go through the global list.
+    indexById(units) {
+      const m = new Map();
+      for (const u of units) m.set(u.id(), u);
+      return m;
+    }
+
+    // maybeSpawnWarship — NationWarshipBehavior.maybeSpawnWarship (now async).
+    async maybeSpawnWarship() {
+      if (this.player === null) throw new Error("not initialized");
+      if (this.game.config().isUnitDisabled(UNIT.Warship)) {
+        return false;
+      }
+      if (!this.random.chance(50)) {
+        return false;
+      }
+      const ports = this.player.units(UNIT.Port);
+      const ships = this.player.units(UNIT.Warship);
+      if (
+        ports.length > 0 &&
+        ships.length === 0 &&
+        this.player.gold() > this.cost(UNIT.Warship)
+      ) {
+        const port = this.random.randElement(ports);
+        const targetTile = this.warshipSpawnTile(port.tile(), 250);
+        if (targetTile === null) {
+          return false;
+        }
+        // src: canBuild = player.canBuild(Warship, targetTile); if false → return.
+        // Client: probe buildables on the WATER targetTile, find the Warship
+        // BuildableUnit; canBuild !== false stands in for the sync canBuild check.
+        const bu = await this.buildableWarship(targetTile);
+        if (bu === null || bu === undefined || bu.canBuild === false) {
+          return false;
+        }
+        // src: game.addExecution(new ConstructionExecution(player, Warship, targetTile)).
+        // Client: fire through the build menu, aimed at the WATER targetTile.
+        const buildMenu = getBuildMenu();
+        if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
+          return false;
+        }
+        buildMenu.sendBuildOrUpgrade(bu, targetTile);
+        state.stats.builds++;
+        setLastAction(tr("🚢 Deploy warship"), "naval");
+        return true;
+      }
+      return false;
+    }
+
+    // warshipSpawnTile — NationWarshipBehavior.warshipSpawnTile (private).
+    warshipSpawnTile(portTile, radius) {
+      for (let attempts = 0; attempts < 50; attempts++) {
+        const randX = this.random.nextInt(
+          this.game.x(portTile) - radius,
+          this.game.x(portTile) + radius,
+        );
+        const randY = this.random.nextInt(
+          this.game.y(portTile) - radius,
+          this.game.y(portTile) + radius,
+        );
+        if (!this.game.isValidCoord(randX, randY)) {
+          continue;
+        }
+        const tile = this.game.ref(randX, randY);
+        // Sanity check
+        if (!this.game.isWater(tile)) {
+          continue;
+        }
+        return tile;
+      }
+      return null;
+    }
+
+    trackShipsAndRetaliate() {
+      this.trackTransportShipsAndRetaliate();
+      this.trackTradeShipsAndRetaliate();
+      this.trackIncomingTransportsAndRetaliate();
+    }
+
+    // Send out a warship if our transport ship got captured
+    // trackTransportShipsAndRetaliate — NationWarshipBehavior (private).
+    //
+    // DIVERGENCE: src distinguishes arrival/retreat from enemy destruction via
+    // `ship.wasDestroyedByEnemy()` + `ship.destroyer()`. NEITHER accessor exists on
+    // the client UnitView (UnitView.ts:97-280 has no wasDestroyedByEnemy/destroyer,
+    // and gameApi wrapUnit does not wrap them — gameApi.js:75-99). UnitState carries
+    // `lastOwnerID`, but that is OUR id (the prior owner), not the destroyer, so it
+    // cannot identify the `enemy` that maybeRetaliateWithWarship requires. We
+    // therefore CANNOT detect a transport-destroyed-by-enemy event client-side: the
+    // retaliation branch is ported but guarded so it never fires. (We still maintain
+    // the tracking set so the rest of the structure stays a 1:1 diff.)
+    trackTransportShipsAndRetaliate() {
+      if (this.game.config().isUnitDisabled(UNIT.TransportShip)) {
+        return;
+      }
+      // Add any currently owned transport ships to our tracking set (by id).
+      this.player
+        .units(UNIT.TransportShip)
+        .forEach((u) => this.trackedTransportShips.add(u.id()));
+
+      // Resolve current state from the global transport index (a destroyed ship
+      // simply drops out of the index → !isActive()).
+      const index = this.indexById(this.game.units(UNIT.TransportShip));
+
+      // Iterate tracked transport ships; if it got destroyed by an enemy: retaliate.
+      for (const shipId of Array.from(this.trackedTransportShips)) {
+        const ship = index.get(shipId);
+        const isActive = ship !== undefined && ship.isActive();
+        if (!isActive) {
+          // Distinguish between arrival/retreat and enemy destruction.
+          // DIVERGENCE: wasDestroyedByEnemy()/destroyer() are unavailable on the
+          // client UnitView, so this guard is always false and the retaliation
+          // cannot fire (see method header). src body, for reference:
+          //   if (ship.wasDestroyedByEnemy() && ship.destroyer() !== undefined) {
+          //     this.maybeRetaliateWithWarship(ship.tile(), ship.destroyer(), "transport");
+          //   }
+          if (
+            ship !== undefined &&
+            typeof ship.wasDestroyedByEnemy === "function" &&
+            typeof ship.destroyer === "function" &&
+            ship.wasDestroyedByEnemy() &&
+            ship.destroyer() !== undefined
+          ) {
+            this.maybeRetaliateWithWarship(
+              ship.tile(),
+              ship.destroyer(),
+              "transport",
+            );
+          }
+          this.trackedTransportShips.delete(shipId);
+        }
+      }
+    }
+
+    // Send out a warship if our trade ship got captured
+    // trackTradeShipsAndRetaliate — NationWarshipBehavior (private).
+    // Trade-capture-by-owner-change IS detectable client-side: a captured trade
+    // ship leaves me.units() but remains in the GLOBAL trade index owned by its new
+    // owner, so `ship.owner().id() !== this.player.id()` is faithfully observable.
+    trackTradeShipsAndRetaliate() {
+      // Add any currently owned trade ships to our tracking map (by id).
+      this.player
+        .units(UNIT.TradeShip)
+        .forEach((u) => this.trackedTradeShips.add(u.id()));
+
+      // Resolve current state from the global trade index (includes ships now owned
+      // by someone else after capture).
+      const index = this.indexById(this.game.units(UNIT.TradeShip));
+
+      // Iterate tracked trade ships; if we no longer own it, it was captured: retaliate.
+      for (const shipId of Array.from(this.trackedTradeShips)) {
+        const ship = index.get(shipId);
+        if (ship === undefined || !ship.isActive()) {
+          this.trackedTradeShips.delete(shipId);
+          continue;
+        }
+        if (ship.owner().id() !== this.player.id()) {
+          // Ship was ours and is now owned by someone else -> captured
+          this.maybeRetaliateWithWarship(ship.tile(), ship.owner(), "trade");
+          this.trackedTradeShips.delete(shipId);
+        }
+      }
+    }
+
+    // trackIncomingTransportsAndRetaliate — NationWarshipBehavior (private).
+    trackIncomingTransportsAndRetaliate() {
+      // Add any transports which are targeting us to our tracking map (by id).
+      this.game
+        .units(UNIT.TransportShip)
+        .filter((p) => {
+          const target = p.targetTile();
+          return (
+            target &&
+            p.isActive() &&
+            !p.transportShipState()?.isRetreating &&
+            this.game.ownerID(target) === this.player?.smallID() &&
+            p.owner().smallID() !== this.player?.smallID()
+          );
+        })
+        .forEach((p) => this.trackedIncomingTransportShips.add(p.id()));
+
+      // Per-tick global index so we can re-resolve each tracked transport by id.
+      const index = this.indexById(this.game.units(UNIT.TransportShip));
+
+      for (const transportId of Array.from(this.trackedIncomingTransportShips)) {
+        const transport = index.get(transportId);
+        const target =
+          transport !== undefined ? transport.targetTile() : undefined;
+        if (
+          transport === undefined ||
+          !transport.isActive() ||
+          target === undefined ||
+          transport.transportShipState()?.isRetreating
+        ) {
+          this.trackedIncomingTransportShips.delete(transportId);
+          this.dealtWithTransportShip.delete(transportId);
+          continue;
+        }
+        // Transport has already been dealt with
+        if (this.dealtWithTransportShip.has(transportId)) {
+          continue;
+        }
+
+        const distanceToTarget = this.game.manhattanDist(
+          transport.tile(),
+          target,
+        );
+        // Too close to deal with
+        if (distanceToTarget < 20) {
+          this.dealtWithTransportShip.add(transportId);
+          continue;
+        }
+
+        // Possible dock snipe counter? Too niche?
+        if (!transport.owner().isAlliedWith(this.player)) {
+          if (
+            this.game.hasUnitNearby(
+              target,
+              90,
+              UNIT.Warship,
+              this.player.id(),
+              true,
+            ) ||
+            this.player.units(UNIT.Warship).filter((p) => {
+              const patrolTile = p.warshipState().patrolTile;
+              return (
+                patrolTile !== undefined &&
+                this.game.manhattanDist(target, patrolTile) < 90
+              );
+            }).length > 0
+          ) {
+            this.dealtWithTransportShip.add(transportId);
+            continue;
+          }
+          const oceanTiles = this.warshipSpawnTile(target, 30);
+          if (oceanTiles === null) continue;
+          this.maybeRetaliateWithWarship(
+            oceanTiles,
+            transport.owner(),
+            "transport",
+          );
+          this.dealtWithTransportShip.add(transportId);
+          break;
+        }
+      }
+    }
+
+    // maybeRetaliateWithWarship — NationWarshipBehavior (private).
+    // This is invoked from the SYNC tracker chain (trackShipsAndRetaliate, which
+    // nationExecution calls UN-awaited), so every src gate and the RNG roll stay
+    // synchronous — per-branch probability is exact (one nextInt(0,100) per call).
+    // Only the warship BUILD is async on the client (buildables probe + build menu),
+    // so it is fire-and-forget (`void this._retaliateBuildAsync(...)`). Cross-behavior
+    // RNG *ordering* is explicitly not a faithfulness requirement (portutil
+    // PseudoRandom note), so deferring the actuation off the RNG draw is fine.
+    maybeRetaliateWithWarship(tile, enemy, reason) {
+      // Don't retaliate against ourselves (e.g. own nuke destroyed own ship)
+      // src: `enemy === this.player` (identity) → smallID compare.
+      if (enemy.smallID() === this.player.smallID()) {
+        return;
+      }
+
+      // Don't send too many warships
+      if (this.player.units(UNIT.Warship).length >= 10) {
+        this.maybeMoveWarship(tile);
+        return;
+      }
+
+      const difficulty = currentDifficulty();
+      // In Easy never retaliate. In Medium retaliate with 15% chance. Hard with 50%, Impossible with 80%.
+      if (
+        (difficulty === Difficulty.Medium && this.random.nextInt(0, 100) < 15) ||
+        (difficulty === Difficulty.Hard && this.random.nextInt(0, 100) < 50) ||
+        (difficulty === Difficulty.Impossible && this.random.nextInt(0, 100) < 80)
+      ) {
+        // src: canBuild(Warship, tile) → addExecution / else maybeMoveWarship; then
+        // emoji + relation. The buildables probe is async, so defer it; the canBuild
+        // gate, build-vs-move fallback, and emoji+relation-on-success are preserved
+        // inside _retaliateBuildAsync exactly as src ordered them.
+        void this._retaliateBuildAsync(tile, enemy, reason);
+      }
+    }
+
+    // The async tail of maybeRetaliateWithWarship: probe Warship buildability on the
+    // WATER `tile`, build it through the menu (passing the WATER tile, not bu.canBuild)
+    // and then emote + apply the relation malus — mirroring src order:
+    //   canBuild === false → maybeMoveWarship(tile); return;
+    //   else addExecution(ConstructionExecution); maybeSendEmoji; updateRelation.
+    // The internal try/catch is REQUIRED: this runs un-awaited off the sync tracker
+    // chain, so a rejection must not escape into nationExecution's sync catch.
+    async _retaliateBuildAsync(tile, enemy, reason) {
+      try {
+        const bu = await this.buildableWarship(tile);
+        if (bu === null || bu === undefined || bu.canBuild === false) {
+          this.maybeMoveWarship(tile);
+          return;
+        }
+        const buildMenu = getBuildMenu();
+        if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
+          this.maybeMoveWarship(tile);
+          return;
+        }
+        buildMenu.sendBuildOrUpgrade(bu, tile);
+        state.stats.builds++;
+        setLastAction(tr("🚢 Retaliate warship"), "naval");
+        this.emojiBehavior.maybeSendEmoji(enemy, EMOJI_WARSHIP_RETALIATION);
+        this.player.updateRelation(enemy, reason === "trade" ? -7.5 : -15);
+      } catch (_e) {
+        /* swallow — un-awaited tracker tail must not reject into nationExecution */
+      }
+    }
+
+    // maybeMoveWarship — NationWarshipBehavior (private).
+    maybeMoveWarship(tile) {
+      // Make sure we are targeting water
+      if (this.game.isWater(tile)) {
+        const warship = this.player
+          .units(UNIT.Warship)
+          .filter((p) => {
+            const patrolTile = p.warshipState().patrolTile;
+            return (
+              patrolTile !== undefined &&
+              // Dont send ships which are already traveling
+              this.game.manhattanDist(p.tile(), patrolTile) < 130
+            );
+          })
+          .sort((a, b) => {
+            // Sort by distance (closest first)
+            const distA = this.game.manhattanDist(a.tile(), tile);
+            const distB = this.game.manhattanDist(b.tile(), tile);
+            return distA - distB;
+          })[0];
+
+        if (warship) {
+          // src: warship.updateWarshipState({ patrolTile: tile });
+          // Client: MoveWarshipIntentEvent([unitId], tile).
+          const ctors = discoverCtors(getEventBus());
+          if (ctors.moveWarship) {
+            emitIntent(ctors.moveWarship, [warship.id()], tile);
+          }
+        }
+      }
+    }
+
+    // Prevent warship infestations: if current player is one of the 3 richest and an enemy has too many warships, send a counter-warship.
+    // What is a warship infestation? A player tries to dominate the entire ocean to block all trade and transport boats.
+    // counterWarshipInfestation — NationWarshipBehavior (now async: builds a warship).
+    async counterWarshipInfestation() {
+      if (!this.shouldCounterWarshipInfestation()) {
+        return;
+      }
+
+      const isTeamGame = this.player.team() !== null;
+
+      if (!this.isRichPlayer(isTeamGame)) {
+        return;
+      }
+
+      const target = this.findWarshipInfestationCounterTarget(isTeamGame);
+      if (target !== null) {
+        await this.buildCounterWarship(target);
+      }
+    }
+
+    // shouldCounterWarshipInfestation — NationWarshipBehavior (private).
+    shouldCounterWarshipInfestation() {
+      if (this.game.config().isUnitDisabled(UNIT.Warship)) {
+        return false;
+      }
+
+      // Only the smart nations can do this
+      const difficulty = currentDifficulty();
+      if (
+        difficulty !== Difficulty.Hard &&
+        difficulty !== Difficulty.Impossible
+      ) {
+        return false;
+      }
+
+      // Quit early if there aren't many warships in the game
+      if (this.game.unitCount(UNIT.Warship) <= 10) {
+        return false;
+      }
+
+      // Quit early if we can't afford a warship
+      if (this.cost(UNIT.Warship) > this.player.gold()) {
+        return false;
+      }
+
+      // Quit early if we don't have a port to send warships from
+      if (this.player.units(UNIT.Port).length === 0) {
+        return false;
+      }
+
+      // Don't send too many warships
+      if (this.player.units(UNIT.Warship).length >= 10) {
+        return false;
+      }
+
+      return true;
+    }
+
+    // Check if current player is one of the 3 richest (We don't want poor nations to use their precious gold on this)
+    // isRichPlayer — NationWarshipBehavior (private).
+    // DIVERGENCE: src filters out Human players (`p.type() === PlayerType.Human`)
+    // because the src Nation is type Nation and stays in the candidate pool. The bot,
+    // however, IS myPlayer() with type() === Human, so it filters ITSELF out and can
+    // never appear in topThree → isRichPlayer always returns false → the whole
+    // counterWarshipInfestation feature is effectively inert for the bot. This is the
+    // same "bot is Human, not Nation" class of divergence seen elsewhere; the port is
+    // faithful (filter kept verbatim) — only the bot's player-type makes it inert.
+    isRichPlayer(isTeamGame) {
+      const players = this.game.players().filter((p) => {
+        if (p.type() === PlayerType.Human) return false;
+        // src: `p.team() === this.player.team()` — team is a team id, keep `===`.
+        return isTeamGame ? p.team() === this.player.team() : true;
+      });
+      const topThree = players
+        .sort((a, b) => Number(b.gold() - a.gold()))
+        .slice(0, 3);
+      // src: `p.id() === this.player.id()` — string id, kept verbatim.
+      return topThree.some((p) => p.id() === this.player.id());
+    }
+
+    // findWarshipInfestationCounterTarget — NationWarshipBehavior (private).
+    findWarshipInfestationCounterTarget(isTeamGame) {
+      return isTeamGame
+        ? this.findTeamGameWarshipTarget()
+        : this.findFreeForAllWarshipTarget();
+    }
+
+    // findTeamGameWarshipTarget — NationWarshipBehavior (private).
+    findTeamGameWarshipTarget() {
+      const enemyTeamWarships = new Map();
+
+      for (const p of this.game.players()) {
+        // Skip friendly players (our team and allies)
+        // src: `p.id() === this.player.id()` — string id, kept verbatim.
+        if (this.player.isFriendly(p) || p.id() === this.player.id()) {
+          continue;
+        }
+
+        const team = p.team();
+        if (team === null) continue;
+
+        const teamKey = team.toString();
+        const warshipCount = p.units(UNIT.Warship).length;
+
+        if (!enemyTeamWarships.has(teamKey)) {
+          enemyTeamWarships.set(teamKey, {
+            count: 0,
+            team: teamKey,
+            players: [],
+          });
+        }
+        const teamData = enemyTeamWarships.get(teamKey);
+        teamData.count += warshipCount;
+        teamData.players.push(p);
+      }
+
+      // Find team with more than 15 warships
+      for (const [, teamData] of enemyTeamWarships.entries()) {
+        if (teamData.count > 15) {
+          // Find player in that team with most warships
+          const playerWithMostWarships = teamData.players.reduce((max, p) => {
+            const count = p.units(UNIT.Warship).length;
+            const maxCount = max ? max.units(UNIT.Warship).length : 0;
+            return count > maxCount ? p : max;
+          }, null);
+
+          if (playerWithMostWarships) {
+            const warships = playerWithMostWarships.units(UNIT.Warship);
+            if (warships.length > 3) {
+              return {
+                player: playerWithMostWarships,
+                warship: this.random.randElement(warships),
+              };
+            }
+          }
+        }
+      }
+
+      return null;
+    }
+
+    // findFreeForAllWarshipTarget — NationWarshipBehavior (private).
+    findFreeForAllWarshipTarget() {
+      const enemies = this.game
+        .players()
+        // src: `p.id() === this.player.id()` — string id, kept verbatim.
+        .filter((p) => !this.player.isFriendly(p) && p.id() !== this.player.id());
+
+      for (const enemy of enemies) {
+        const enemyWarships = enemy.units(UNIT.Warship);
+        if (enemyWarships.length > 10) {
+          return {
+            player: enemy,
+            warship: this.random.randElement(enemyWarships),
+          };
+        }
+      }
+
+      return null;
+    }
+
+    // buildCounterWarship — NationWarshipBehavior (private, now async).
+    async buildCounterWarship(target) {
+      const tile = target.warship.tile();
+      // src: canBuild = player.canBuild(Warship, target.warship.tile()); if false →
+      // move + return. Client: probe buildables on the enemy warship's WATER tile.
+      const bu = await this.buildableWarship(tile);
+      if (bu === null || bu === undefined || bu.canBuild === false) {
+        this.maybeMoveWarship(tile);
+        return;
+      }
+
+      // src: game.addExecution(new ConstructionExecution(player, Warship, tile)).
+      const buildMenu = getBuildMenu();
+      if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
+        this.maybeMoveWarship(tile);
+        return;
+      }
+      buildMenu.sendBuildOrUpgrade(bu, tile);
+      state.stats.builds++;
+      setLastAction(tr("🚢 Counter warship"), "naval");
+      this.emojiBehavior.sendEmoji(AllPlayers, EMOJI_WARSHIP_RETALIATION);
+    }
+
+    // ── build/probe helpers (the client async/build-menu actuation) ────────────
+
+    // Probe buildables for a Warship on a WATER tile. Returns the Warship
+    // BuildableUnit ({type, canBuild, canUpgrade, cost}) or null. canBuild !== false
+    // is the client stand-in for the src sync canBuild(Warship, tile) check.
+    async buildableWarship(waterTile) {
+      let buildables;
+      try {
+        buildables = await withTimeout(
+          this.player.buildables(waterTile, [UNIT.Warship]),
+          WORKER_TIMEOUT_MS,
+          null,
+        );
+      } catch (_e) {
+        return null;
+      }
+      return Array.isArray(buildables)
+        ? buildables.find((b) => b.type === UNIT.Warship) ?? null
+        : null;
+    }
+
+    // cost — src reads unitInfo(type).cost(game, player). The Warship cost fn
+    // (Config.ts:289-296) is a SELF-CONTAINED pure formula with no client-missing
+    // dependency: `min(1_000_000, (numWarships + 1) * 250_000)` where numWarships is
+    // the player's BUILT warship count (costWrapper, Config.ts:470-489 →
+    // min(unitsOwned, unitsConstructed); for the engine these are count+count, for a
+    // Nation with N built warships that is just N). We reproduce the formula directly
+    // and synchronously (no engine-cost-fn call: it would run on the raw __src view,
+    // whose unitsOwned/unitsConstructed may be absent or boolean-typed, breaking the
+    // Math.min). gold is BigInt so we return a BigInt. This behavior only ever
+    // queries the Warship cost.
+    cost(type) {
+      if (type === UNIT.Warship) {
+        const numUnits = this.player.unitsOwned(UNIT.Warship); // built warship count
+        return BigInt(Math.min(1_000_000, (numUnits + 1) * 250_000));
+      }
+      return 0n;
+    }
+
+    // ── SMART WARSHIP PATROL (WIN-FIX — NOT in src) ────────────────────────────
+    // The faithful behavior above mostly BUILDS a warship in response to a threat (and
+    // only MOVES an existing one when capped at 10 / it can't build). This winFix layer
+    // does the opposite — it REPOSITIONS our EXISTING idle warships to the single
+    // highest-priority naval threat each pass, so a 1-2 ship pool actually defends:
+    //   P1  an enemy TRANSPORT actively invading OUR land → intercept it mid-sea
+    //   P2  a fresh TRADE-RAID lane (our trade ship just captured) → kill the lingering
+    //       raider so that lane's FUTURE trade ships survive
+    //   P3  a persistent open-water BOAT-LOSS zone (a sea lane where our boats keep
+    //       dying, FAR from any coast → a lurking raider). Our boats are cheap 1%
+    //       probes, so this clears a recurring loss LANE, never chases one lost probe.
+    // Tiny-pool-safe: serves ONLY the top threat per pass, throttled, per-warship
+    // debounced, and distance-capped (won't drag a ship across the map to a lost cause).
+    // Pure movement (no gold spend); the faithful path still grows the pool by building.
+    smartWarshipPatrol() {
+      if (this.player === null) return;
+      if (this.game.config().isUnitDisabled(UNIT.Warship)) return;
+
+      const s = (this.smartState = this.smartState || {
+        transportPos: new Map(), // ourTransportId -> {x,y,tx,ty}
+        tradePos: new Map(), // ourTradeId -> {x,y}
+        losses: [], // [{x,y,at}] open-water boat losses
+        raids: [], // [{x,y,at}] trade-raid tiles
+        cooldown: new Map(), // warshipId -> tick last tasked
+        serviced: new Map(), // zoneCellKey -> tick a ship was last sent to that zone
+        lastPassMs: 0,
+      });
+
+      const now = performance.now();
+      const throttle = state.settings.warshipPatrolThrottleMs || 1500;
+      if (now - s.lastPassMs < throttle) return;
+      s.lastPassMs = now;
+
+      const tick = this.game.ticks();
+      const mySid = this.player.smallID();
+      const myId = this.player.id();
+
+      // 1) refresh our ship positions + harvest loss / raid events ──────────────
+      const transportIndex = this.indexById(this.game.units(UNIT.TransportShip));
+      for (const u of this.player.units(UNIT.TransportShip)) {
+        try {
+          const t = u.targetTile ? u.targetTile() : null;
+          s.transportPos.set(u.id(), {
+            x: this.game.x(u.tile()),
+            y: this.game.y(u.tile()),
+            tx: t != null ? this.game.x(t) : null,
+            ty: t != null ? this.game.y(t) : null,
+          });
+        } catch (_e) {
+          /* skip */
+        }
+      }
+      // A transport that left our ownership/board whose LAST position was open water FAR
+      // from its target didn't land (a landing happens AT the enemy coast) → it was
+      // destroyed in transit → a loss-lane data point. Coastal disappearances = landings
+      // = noise, so the distance-from-target gate screens them out.
+      const farFromTarget = state.settings.warshipLossMinDist || 25;
+      for (const [id, pos] of Array.from(s.transportPos)) {
+        const cur = transportIndex.get(id);
+        const stillOurs =
+          cur !== undefined &&
+          cur.isActive() &&
+          cur.owner().smallID() === mySid;
+        if (stillOurs) continue;
+        if (pos.tx != null && pos.ty != null) {
+          const d = Math.abs(pos.x - pos.tx) + Math.abs(pos.y - pos.ty);
+          if (d > farFromTarget) s.losses.push({ x: pos.x, y: pos.y, at: tick });
+        }
+        s.transportPos.delete(id);
+      }
+
+      const tradeIndex = this.indexById(this.game.units(UNIT.TradeShip));
+      for (const u of this.player.units(UNIT.TradeShip)) {
+        try {
+          s.tradePos.set(u.id(), {
+            x: this.game.x(u.tile()),
+            y: this.game.y(u.tile()),
+          });
+        } catch (_e) {
+          /* skip */
+        }
+      }
+      for (const [id] of Array.from(s.tradePos)) {
+        const cur = tradeIndex.get(id);
+        if (cur === undefined || !cur.isActive()) {
+          s.tradePos.delete(id);
+          continue;
+        }
+        if (cur.owner().id() !== myId) {
+          // captured → the raider is AT the ship's current tile
+          try {
+            s.raids.push({
+              x: this.game.x(cur.tile()),
+              y: this.game.y(cur.tile()),
+              at: tick,
+            });
+          } catch (_e) {
+            /* skip */
+          }
+          s.tradePos.delete(id);
+        }
+      }
+
+      // prune stale events
+      const lossWindow = state.settings.warshipLossWindowTicks || 900;
+      const raidWindow = state.settings.warshipRaidWindowTicks || 400;
+      s.losses = s.losses.filter((e) => tick - e.at <= lossWindow);
+      s.raids = s.raids.filter((e) => tick - e.at <= raidWindow);
+
+      // 2) build the prioritized threat list ─────────────────────────────────────
+      const threats = [];
+      const invasion = this.findInvasionThreat(); // P1
+      if (invasion !== null) threats.push(invasion);
+      if (s.raids.length > 0) {
+        const r = s.raids[s.raids.length - 1]; // freshest raid lane
+        if (this.game.isValidCoord(r.x, r.y)) {
+          const tref = this.game.ref(r.x, r.y);
+          if (this.game.isWater(tref)) {
+            threats.push({ tile: tref, kind: "trade-lane" }); // P2
+          }
+        }
+      }
+      const zone = this.findLossZone(s.losses); // P3
+      if (zone !== null) threats.push({ tile: zone, kind: "loss-zone" });
+      if (threats.length === 0) return;
+
+      // 3) serve the HIGHEST-priority threat whose ZONE we haven't just serviced and that
+      //    an idle warship can actually reach. The per-ZONE debounce (NOT just the
+      //    per-warship one) is what stops a 1-2 ship pool from re-tasking ship B to the
+      //    same lane ship A is already racing to. One task per pass.
+      const cell = state.settings.warshipServiceCellSize || 40;
+      const serviceTicks = state.settings.warshipZoneServiceTicks || 90;
+      for (const [k, t] of Array.from(s.serviced)) {
+        if (tick - t > serviceTicks) s.serviced.delete(k); // prune
+      }
+      for (const threat of threats) {
+        const key =
+          Math.floor(this.game.x(threat.tile) / cell) +
+          "," +
+          Math.floor(this.game.y(threat.tile) / cell);
+        const last = s.serviced.get(key);
+        if (last !== undefined && tick - last < serviceTicks) continue; // zone already in hand
+        if (this.moveBestWarshipTo(threat.tile, threat.kind, s, tick)) {
+          s.serviced.set(key, tick);
+          break; // tasked one ship → done this pass
+        }
+        // no idle ship in range for this threat → fall through to the next priority
+      }
+    }
+
+    // findInvasionThreat — an enemy TRANSPORT heading INTO our land, far enough to
+    // intercept and not already covered by one of our warships. Reuses the faithful
+    // trackIncoming gates (incl. the exact hasUnitNearby "already covered" check).
+    findInvasionThreat() {
+      const mySid = this.player.smallID();
+      let best = null;
+      let bestDist = Infinity;
+      for (const p of this.game.units(UNIT.TransportShip)) {
+        try {
+          if (!p.isActive()) continue;
+          const target = p.targetTile();
+          if (target == null) continue;
+          if (p.transportShipState && p.transportShipState()?.isRetreating) continue;
+          if (this.game.ownerID(target) !== mySid) continue; // must target OUR land
+          if (p.owner().smallID() === mySid) continue; // not ours
+          if (p.owner().isAlliedWith(this.player)) continue; // not an ally's
+          const d = this.game.manhattanDist(p.tile(), target);
+          if (d < 20) continue; // too close to intercept in time
+          if (
+            this.game.hasUnitNearby(
+              target,
+              90,
+              UNIT.Warship,
+              this.player.id(),
+              true,
+            )
+          ) {
+            continue; // already covered by one of our warships
+          }
+          if (d < bestDist) {
+            bestDist = d;
+            best = p.tile();
+          }
+        } catch (_e) {
+          /* skip */
+        }
+      }
+      return best === null ? null : { tile: best, kind: "invasion" };
+    }
+
+    // findLossZone — centroid of a CLUSTER of recent open-water losses (≥ min within a
+    // radius of each other). One loss is noise; a cluster is a raid lane worth clearing.
+    findLossZone(losses) {
+      const minCount = state.settings.warshipLossZoneMin || 2;
+      const radius = state.settings.warshipLossZoneRadius || 35;
+      if (losses.length < minCount) return null;
+      let best = null;
+      let bestCount = 0;
+      for (const a of losses) {
+        let sumX = 0;
+        let sumY = 0;
+        let count = 0;
+        for (const b of losses) {
+          if (Math.abs(a.x - b.x) + Math.abs(a.y - b.y) <= radius) {
+            sumX += b.x;
+            sumY += b.y;
+            count++;
+          }
+        }
+        if (count >= minCount && count > bestCount) {
+          const cx = Math.round(sumX / count);
+          const cy = Math.round(sumY / count);
+          if (this.game.isValidCoord(cx, cy)) {
+            const tref = this.game.ref(cx, cy);
+            if (this.game.isWater(tref)) {
+              bestCount = count;
+              best = tref;
+            }
+          }
+        }
+      }
+      return best;
+    }
+
+    // moveBestWarshipTo — move the nearest IDLE, off-cooldown warship to `tile`, but only
+    // if it's within the interception distance cap (else leave it; the faithful build
+    // path covers threats no existing ship can reach). Sets a per-warship cooldown so a
+    // tiny pool doesn't oscillate between threats. Returns true if a ship was tasked.
+    moveBestWarshipTo(tile, kind, s, tick) {
+      if (!this.game.isWater(tile)) return false;
+      const maxDist = state.settings.warshipMoveMaxDist || 160;
+      const cooldownTicks = state.settings.warshipMoveCooldownTicks || 60;
+      const idle = this.player.units(UNIT.Warship).filter((w) => {
+        try {
+          const ps = w.warshipState().patrolTile;
+          if (ps === undefined) return false;
+          if (this.game.manhattanDist(w.tile(), ps) >= 130) return false; // mid-voyage
+          const last = s.cooldown.get(w.id());
+          if (last !== undefined && tick - last < cooldownTicks) return false; // just tasked
+          return true;
+        } catch (_e) {
+          return false;
+        }
+      });
+      if (idle.length === 0) return false;
+      idle.sort(
+        (a, b) =>
+          this.game.manhattanDist(a.tile(), tile) -
+          this.game.manhattanDist(b.tile(), tile),
+      );
+      const w = idle[0];
+      if (this.game.manhattanDist(w.tile(), tile) > maxDist) return false; // too far
+      const ctors = discoverCtors(getEventBus());
+      if (!ctors.moveWarship) return false;
+      emitIntent(ctors.moveWarship, [w.id()], tile);
+      s.cooldown.set(w.id(), tick);
+      setLastAction(tr("🚢 Patrol → {k}", { k: kind }), "naval");
+      console.log(
+        "[Warship] patrol →",
+        kind,
+        "@",
+        this.game.x(tile),
+        this.game.y(tile),
+      );
+      return true;
+    }
+  }
