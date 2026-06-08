@@ -150,7 +150,7 @@ const TEAM_PRESETS: Array<[string, number, number | null]> = [
   ["5+", 5, null],
 ];
 
-type Toggle = { name: string; title: string; desc: string };
+type Toggle = { name: string; title: string; desc: string; parent?: string };
 const ECONOMIC_HELPERS: Toggle[] = [
   {
     name: "showGoldPerMinute",
@@ -202,7 +202,41 @@ const GAME_HELPERS: Toggle[] = [
   {
     name: "showBoatPrediction",
     title: "Boat prediction",
-    desc: "Shows enemy boat landings (red = you, yellow = others).",
+    desc: "Shows boat landings (blue = you, teal = team, green = allies, yellow/red = enemies).",
+  },
+  {
+    name: "alwaysShowOwnBoatRoutes",
+    title: "Always show your boat routes",
+    desc: "Draws your own boat routes without hovering.",
+    parent: "showBoatPrediction",
+  },
+  {
+    name: "alwaysShowTeamBoatRoutes",
+    title: "Always show team boat routes",
+    desc: "Draws teammates' boat routes without hovering.",
+    parent: "showBoatPrediction",
+  },
+  {
+    name: "alwaysShowAllyBoatRoutes",
+    title: "Always show ally boat routes",
+    desc: "Draws allies' (alliance) boat routes without hovering.",
+    parent: "showBoatPrediction",
+  },
+  {
+    name: "alwaysShowEnemyBoatRoutes",
+    title: "Always show enemy boat routes",
+    desc: "Draws enemy boat routes without hovering.",
+    parent: "showBoatPrediction",
+  },
+  {
+    name: "showBoatPanel",
+    title: "Boat panel",
+    desc: "Lists boats you sent and boats incoming to your territory, with arrival times.",
+  },
+  {
+    name: "warnIncomingBoats",
+    title: "Incoming boat warning",
+    desc: "Center-screen alert when a new boat targets your territory (like the Missile Silo warning).",
   },
 ];
 const ADVANCED_HELPERS: Toggle[] = [
@@ -305,14 +339,47 @@ function switchRow(
 
 function helperRows(list: Toggle[]): HTMLElement {
   const grid = el("div", { class: "ofh-grid" });
+  // Sub-toggles (those with a `parent`) follow their parent in `list`. They are
+  // indented and their switch is disabled while the parent is off; toggling the
+  // parent refreshes that disabled state live (no re-render).
+  const subSwitchesByParent: Record<string, HTMLElement[]> = {};
+
+  const refreshSubs = (parent: string): void => {
+    const on = Boolean(settings[parent]);
+    for (const sw of subSwitchesByParent[parent] || []) {
+      sw.classList.toggle("disabled", !on);
+    }
+  };
+
   for (const h of list) {
-    grid.append(
-      switchRow(h.title, h.desc, Boolean(settings[h.name]), (v) => {
-        settings[h.name] = v;
-        void persist();
-      }),
+    const sw = el("div", { class: `ofh-switch${settings[h.name] ? " on" : ""}` });
+    const row = el(
+      "div",
+      { class: `ofh-row${h.parent ? " ofh-sub" : ""}` },
+      el(
+        "div",
+        { class: "ofh-txt" },
+        el("div", { class: "ofh-name" }, t(h.title)),
+        h.desc ? el("div", { class: "ofh-desc" }, t(h.desc)) : "",
+      ),
+      sw,
     );
+    sw.addEventListener("click", () => {
+      if (sw.classList.contains("disabled")) return;
+      const next = !sw.classList.contains("on");
+      sw.classList.toggle("on", next);
+      settings[h.name] = next;
+      void persist();
+      if (subSwitchesByParent[h.name]) refreshSubs(h.name);
+    });
+    if (h.parent) {
+      (subSwitchesByParent[h.parent] ||= []).push(sw);
+    }
+    grid.append(row);
   }
+
+  for (const parent of Object.keys(subSwitchesByParent)) refreshSubs(parent);
+
   return grid;
 }
 

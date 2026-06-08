@@ -177,6 +177,36 @@ function syncBoatPredictionHelper() {
       type: "SHOW_BOAT_PREDICTION",
       payload: {
         enabled: Boolean(settings.showBoatPrediction),
+        alwaysOwnRoutes: Boolean(settings.alwaysShowOwnBoatRoutes),
+        alwaysTeamRoutes: Boolean(settings.alwaysShowTeamBoatRoutes),
+        alwaysAllyRoutes: Boolean(settings.alwaysShowAllyBoatRoutes),
+        alwaysEnemyRoutes: Boolean(settings.alwaysShowEnemyBoatRoutes),
+      },
+    },
+    "*",
+  );
+}
+
+function syncBoatPanelHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SHOW_BOAT_PANEL",
+      payload: {
+        enabled: Boolean(settings.showBoatPanel),
+      },
+    },
+    "*",
+  );
+}
+
+function syncBoatIncomingWarningHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SET_BOAT_INCOMING_WARNING",
+      payload: {
+        enabled: Boolean(settings.warnIncomingBoats),
       },
     },
     "*",
@@ -344,6 +374,8 @@ function syncHelpers() {
   syncAutoBotI18n();
   syncNukePredictionHelper();
   syncBoatPredictionHelper();
+  syncBoatPanelHelper();
+  syncBoatIncomingWarningHelper();
   syncNukeSuggestionsHelper();
   syncAutoNukeHelper();
   syncSend1PercentBoatHelper();

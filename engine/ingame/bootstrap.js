@@ -74,7 +74,20 @@
     }
 
     if (data.type === "SHOW_BOAT_PREDICTION") {
-      setBoatPredictionEnabled(data.payload?.enabled);
+      setBoatPredictionEnabled(data.payload?.enabled, {
+        alwaysOwnRoutes: data.payload?.alwaysOwnRoutes,
+        alwaysTeamRoutes: data.payload?.alwaysTeamRoutes,
+        alwaysAllyRoutes: data.payload?.alwaysAllyRoutes,
+        alwaysEnemyRoutes: data.payload?.alwaysEnemyRoutes,
+      });
+    }
+
+    if (data.type === "SHOW_BOAT_PANEL") {
+      setBoatPanelEnabled(data.payload?.enabled);
+    }
+
+    if (data.type === "SET_BOAT_INCOMING_WARNING") {
+      setBoatIncomingWarningEnabled(data.payload?.enabled);
     }
 
     if (data.type === "SHOW_NUKE_SUGGESTIONS") {

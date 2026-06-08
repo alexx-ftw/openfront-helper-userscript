@@ -139,6 +139,7 @@ export const POPUP_CSS = `
 #openfront-helper-popup .ofh-row .ofh-txt { flex: 1; min-width: 0; }
 #openfront-helper-popup .ofh-row .ofh-name { font-size: 13px; font-weight: 600; color: #eef2f0; }
 #openfront-helper-popup .ofh-row .ofh-desc { font-size: 11px; color: rgba(187,247,208,.55); margin-top: 2px; line-height: 1.4; }
+#openfront-helper-popup .ofh-row.ofh-sub { margin-left: 16px; border-left: 2px solid rgba(134,239,172,.22); border-top-left-radius: 4px; border-bottom-left-radius: 4px; }
 
 /* pill switch */
 #openfront-helper-popup .ofh-switch {

@@ -41,6 +41,10 @@ const NUKE_LANDING_CONTAINER_ID = "openfront-helper-nuke-landing-layer";
 const NUKE_LANDING_STYLE_ID = "openfront-helper-nuke-landing-styles";
 const BOAT_LANDING_CONTAINER_ID = "openfront-helper-boat-landing-layer";
 const BOAT_LANDING_STYLE_ID = "openfront-helper-boat-landing-styles";
+const BOAT_PANEL_ID = "openfront-helper-boat-panel";
+const BOAT_PANEL_STYLE_ID = "openfront-helper-boat-panel-styles";
+const BOAT_ALERT_CONTAINER_ID = "openfront-helper-boat-alert-layer";
+const BOAT_ALERT_STYLE_ID = "openfront-helper-boat-alert-styles";
 const NUKE_SUGGESTION_CONTAINER_ID = "openfront-helper-nuke-suggestion-layer";
 const NUKE_SUGGESTION_STYLE_ID = "openfront-helper-nuke-suggestion-styles";
 const NUKE_SUGGESTION_REFRESH_MS = 1800;
@@ -100,7 +104,20 @@ let tradeBalanceRenderSignature = "";
 let nukePredictionEnabled = false;
 let nukeLandingAnimationFrame = null;
 let boatPredictionEnabled = false;
+let boatPredictionAlwaysOwnRoutes = false;
+let boatPredictionAlwaysTeamRoutes = false;
+let boatPredictionAlwaysAllyRoutes = false;
+let boatPredictionAlwaysEnemyRoutes = false;
 let boatLandingAnimationFrame = null;
+// Boat list panel: open state + the boat id the user is hovering in the list.
+// The map overlay reads these so a focused boat draws its route/highlight even
+// when the prediction overlay itself is off.
+let boatPanelOpen = false;
+let boatPanelFocusedId = null;
+// Incoming-boat warning: when on, a new transport that targets my territory
+// raises a center-screen alert (like the Missile Silo warning). Keeps the scan
+// loop alive on its own so it works without the overlay or panel.
+let boatWarnIncoming = false;
 let nukeSuggestionsEnabled = false;
 let nukeSuggestionAnimationFrame = null;
 let autoNukeEnabled = false;
