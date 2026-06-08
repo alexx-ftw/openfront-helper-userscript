@@ -32,10 +32,6 @@
       setGoldPerMinuteEnabled(data.payload?.enabled);
     }
 
-    if (data.type === "SHOW_TEAM_GOLD_PER_MINUTE") {
-      setTeamGoldPerMinuteEnabled(data.payload?.enabled);
-    }
-
     if (data.type === "SHOW_TOP_GOLD_PER_MINUTE") {
       setTopGoldPerMinuteEnabled(data.payload?.enabled);
     }

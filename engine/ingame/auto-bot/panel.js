@@ -13,35 +13,32 @@
       #${PANEL_ID} {
         --ab-accent: #34d399;
         --ab-accent-2: #22d3ee;
-        --ab-border: rgba(52, 211, 153, 0.26);
+        --ab-border: rgba(148, 163, 184, 0.34);
         --ab-surface: rgba(255, 255, 255, 0.05);
         --ab-surface-2: rgba(255, 255, 255, 0.09);
-        --ab-muted: #8ba0a0;
+        --ab-muted: #94a3b8;
         position: fixed;
         z-index: 2147483646;
         width: 244px;
         bottom: 16px;
         right: 16px;
-        background:
-          radial-gradient(130% 90% at 100% 0%, rgba(34, 211, 238, 0.09), transparent 55%),
-          linear-gradient(180deg, rgba(13, 26, 24, 0.97), rgba(8, 14, 17, 0.98));
+        background: rgba(12, 18, 20, 0.95);
         border: 1px solid var(--ab-border);
-        border-radius: 14px;
-        box-shadow: 0 22px 50px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(187, 247, 208, 0.1);
-        color: #e8eef0;
-        font: 500 12px/1.45 "Aptos", system-ui, -apple-system, "Segoe UI", sans-serif;
+        border-radius: 8px;
+        box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4), 0 0 16px rgba(148, 163, 184, 0.1);
+        color: #e2e8f0;
+        font: 700 11px/1.45 "Aptos", "Trebuchet MS", "Segoe UI", sans-serif;
         user-select: none;
         overflow: hidden;
-        backdrop-filter: blur(10px) saturate(125%);
       }
       #${PANEL_ID} .ab-head {
         display: flex; align-items: center; gap: 8px;
-        padding: 8px 10px; cursor: grab;
-        background: rgba(52,211,153,0.07);
-        border-bottom: 1px solid rgba(52,211,153,0.12);
+        padding: 6px 8px; cursor: grab;
+        background: transparent;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.18);
       }
       #${PANEL_ID} .ab-head:active { cursor: grabbing; }
-      #${PANEL_ID} .ab-title { font-weight: 700; font-size: 12px; letter-spacing: 0.2px; flex: 1; }
+      #${PANEL_ID} .ab-title { font-weight: 900; font-size: 10px; letter-spacing: 0.4px; text-transform: uppercase; color: rgba(226, 232, 240, 0.85); flex: 1; }
       #${PANEL_ID} .ab-head-btns { display: flex; align-items: center; gap: 1px; }
       #${PANEL_ID} .ab-mini, #${PANEL_ID} .ab-close {
         background: transparent; border: none; color: var(--ab-muted);

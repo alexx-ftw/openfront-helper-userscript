@@ -26,16 +26,16 @@ function ensureFloatingAutoJoinStyles() {
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      border: 1px solid rgba(56, 189, 248, 0.36);
-      border-radius: 10px;
-      background:
-        linear-gradient(135deg, rgba(14, 165, 233, 0.18), transparent 46%),
-        rgba(6, 17, 28, 0.95);
-      color: #f3f4f6;
+      border: 1px solid rgba(148, 163, 184, 0.34);
+      border-radius: 8px;
+      background: rgba(12, 18, 20, 0.95);
+      color: #e2e8f0;
       font-family: "Aptos", "Trebuchet MS", "Segoe UI", sans-serif;
+      font-size: 11px;
+      font-weight: 700;
       box-shadow:
-        0 18px 46px rgba(0, 0, 0, 0.46),
-        inset 0 1px 0 rgba(186, 230, 253, 0.1);
+        0 10px 26px rgba(0, 0, 0, 0.4),
+        0 0 16px rgba(148, 163, 184, 0.1);
       user-select: none;
     }
 
@@ -54,8 +54,8 @@ function ensureFloatingAutoJoinStyles() {
       align-items: center;
       justify-content: space-between;
       gap: 10px;
-      padding: 10px 12px;
-      border-bottom: 1px solid rgba(56, 189, 248, 0.18);
+      padding: 8px 10px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.18);
       cursor: move;
     }
 
@@ -68,10 +68,10 @@ function ensureFloatingAutoJoinStyles() {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      color: #bae6fd;
-      font-size: 12px;
+      color: rgba(226, 232, 240, 0.85);
+      font-size: 10px;
       font-weight: 900;
-      letter-spacing: 0.02em;
+      letter-spacing: 0.04em;
       text-transform: uppercase;
     }
 

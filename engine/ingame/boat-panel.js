@@ -34,14 +34,14 @@
         width: min(260px, calc(100vw - 28px));
         max-height: min(52vh, 460px);
         overflow: hidden;
-        border: 1px solid rgba(134, 239, 172, 0.32);
-        border-radius: 9px;
-        background:
-          linear-gradient(135deg, rgba(45, 212, 191, 0.16), transparent 44%),
-          rgba(7, 22, 24, 0.95);
-        color: #f3f4f6;
+        border: 1px solid rgba(148, 163, 184, 0.34);
+        border-radius: 8px;
+        background: rgba(12, 18, 20, 0.95);
+        color: #e2e8f0;
         font-family: "Aptos", "Trebuchet MS", "Segoe UI", sans-serif;
-        box-shadow: 0 18px 42px rgba(0, 0, 0, 0.46), inset 0 1px 0 rgba(187, 247, 208, 0.1);
+        font-size: 11px;
+        font-weight: 700;
+        box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4), 0 0 16px rgba(148, 163, 184, 0.1);
         pointer-events: auto;
       }
       #${BOAT_PANEL_ID}[data-visible="true"] { display: flex; }
@@ -50,8 +50,8 @@
         display: flex;
         align-items: center;
         gap: 7px;
-        padding: 7px 9px;
-        border-bottom: 1px solid rgba(134, 239, 172, 0.16);
+        padding: 6px 8px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.18);
         cursor: grab;
         touch-action: none;
       }
@@ -59,25 +59,25 @@
       #${BOAT_PANEL_ID} .ofh-boatp-title {
         margin: 0;
         flex: 1;
-        color: #99f6e4;
-        font-size: 11px;
+        color: rgba(226, 232, 240, 0.85);
+        font-size: 10px;
         font-weight: 900;
         text-transform: uppercase;
-        letter-spacing: 0.3px;
+        letter-spacing: 0.4px;
       }
 
       #${BOAT_PANEL_ID} .ofh-boatp-tabs {
         display: flex;
         gap: 4px;
-        padding: 7px 9px 4px;
+        padding: 7px 8px 4px;
       }
       #${BOAT_PANEL_ID} .ofh-boatp-tab {
         flex: 1;
         padding: 5px 6px;
-        border: 1px solid rgba(151, 181, 214, 0.16);
+        border: 1px solid rgba(148, 163, 184, 0.18);
         border-radius: 7px;
-        background: rgba(8, 31, 30, 0.6);
-        color: rgba(187, 247, 208, 0.7);
+        background: rgba(8, 22, 24, 0.6);
+        color: rgba(226, 232, 240, 0.7);
         font-size: 11px;
         font-weight: 700;
         text-align: center;
@@ -87,11 +87,11 @@
         overflow: hidden;
         text-overflow: ellipsis;
       }
-      #${BOAT_PANEL_ID} .ofh-boatp-tab:hover { border-color: rgba(134, 239, 172, 0.3); }
+      #${BOAT_PANEL_ID} .ofh-boatp-tab:hover { border-color: rgba(148, 163, 184, 0.34); }
       #${BOAT_PANEL_ID} .ofh-boatp-tab.on {
-        background: linear-gradient(135deg, rgba(20, 184, 166, 0.4), rgba(16, 185, 129, 0.28));
-        border-color: rgba(153, 246, 228, 0.5);
-        color: #ecfdf5;
+        background: rgba(148, 163, 184, 0.26);
+        border-color: rgba(148, 163, 184, 0.5);
+        color: #f8fafc;
       }
 
       #${BOAT_PANEL_ID} .ofh-boatp-body {
@@ -106,9 +106,9 @@
         gap: 8px;
         padding: 6px 7px;
         border-radius: 7px;
-        cursor: default;
+        cursor: pointer;
       }
-      #${BOAT_PANEL_ID} .ofh-boat-row:hover { background: rgba(45, 212, 191, 0.16); }
+      #${BOAT_PANEL_ID} .ofh-boat-row:hover { background: rgba(148, 163, 184, 0.18); }
       #${BOAT_PANEL_ID} .ofh-boat-dot {
         flex: none;
         width: 10px;
@@ -131,13 +131,13 @@
         font-size: 11px;
         font-weight: 700;
         font-variant-numeric: tabular-nums;
-        color: #bbf7d0;
+        color: #cbd5e1;
       }
       #${BOAT_PANEL_ID} .ofh-boatp-empty {
         padding: 14px 10px;
         text-align: center;
         font-size: 11px;
-        color: rgba(187, 247, 208, 0.5);
+        color: rgba(226, 232, 240, 0.5);
       }
     `;
     (document.head || document.documentElement).appendChild(style);
@@ -259,7 +259,14 @@
         }
       });
 
-      entry = { row, dot, name, eta };
+      entry = { row, dot, name, eta, unit: transport.unit };
+      // Click a row → pan the camera to that boat's current position. entry.unit
+      // is refreshed each render so a stale scan ref isn't used.
+      row.addEventListener("click", () => {
+        if (entry.unit) {
+          focusIncomingBoat(entry.unit);
+        }
+      });
       boatPanelRowCache.set(transport.domUnitId, entry);
     }
     return entry;
@@ -271,6 +278,7 @@
     for (const transport of transports) {
       seen.add(transport.domUnitId);
       const entry = getBoatPanelRow(transport);
+      entry.unit = transport.unit; // refresh ref for click-to-focus
       // currentColor drives the dot's glow (box-shadow); set both.
       entry.dot.style.color = transport.color;
       entry.dot.style.background = transport.color;
@@ -321,8 +329,29 @@
     const context = getOpenFrontGameContext();
     const game = context?.game || null;
 
-    // Only show once actually in a match — hide at the menu / lobby / loading.
-    const shouldShow = boatPanelOpen && Boolean(game);
+    // Partition the scanned transports first — visibility depends on the counts.
+    const sent = [];
+    const incoming = [];
+    if (game) {
+      for (const transport of boatPredictionTransports) {
+        try {
+          if (!transport.unit?.isActive?.()) {
+            continue; // unit ref can go stale between 1s scans
+          }
+        } catch (_error) {
+          continue;
+        }
+        if (transport.relation === "self") {
+          sent.push(transport);
+        } else if (transport.targetsMyTerritory) {
+          incoming.push(transport);
+        }
+      }
+    }
+
+    // Show only in a match AND only when there is at least one boat to list.
+    const shouldShow =
+      boatPanelOpen && Boolean(game) && (sent.length > 0 || incoming.length > 0);
     panel.dataset.visible = shouldShow ? "true" : "false";
     if (!shouldShow) {
       boatPanelFocusedId = null;
@@ -333,23 +362,6 @@
     const bodyEl = panel.querySelector(".ofh-boatp-body");
     if (!bodyEl) {
       return;
-    }
-
-    const sent = [];
-    const incoming = [];
-    for (const transport of boatPredictionTransports) {
-      try {
-        if (!transport.unit?.isActive?.()) {
-          continue; // unit ref can go stale between 1s scans
-        }
-      } catch (_error) {
-        continue;
-      }
-      if (transport.relation === "self") {
-        sent.push(transport);
-      } else if (transport.targetsMyTerritory) {
-        incoming.push(transport);
-      }
     }
 
     if (boatPanelTabButtons) {

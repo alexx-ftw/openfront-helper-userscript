@@ -50,7 +50,6 @@
     maxTeamCount: 5,
     markBotNationsRed: false,
     showGoldPerMinute: true,
-    showTeamGoldPerMinute: true,
     showTopGoldPerMinute: true,
     showTeamBuildStats: true,
     markHoveredAlliesGreen: true,

@@ -78,19 +78,6 @@ function syncGoldPerMinuteHelper() {
   );
 }
 
-function syncTeamGoldPerMinuteHelper() {
-  window.postMessage(
-    {
-      source: BRIDGE_SOURCE_EXTENSION,
-      type: "SHOW_TEAM_GOLD_PER_MINUTE",
-      payload: {
-        enabled: Boolean(settings.showTeamGoldPerMinute),
-      },
-    },
-    "*",
-  );
-}
-
 function syncTopGoldPerMinuteHelper() {
   window.postMessage(
     {
@@ -364,7 +351,6 @@ function updateCheatsAvailability(available) {
 function syncHelpers() {
   syncBotNationMarkers();
   syncGoldPerMinuteHelper();
-  syncTeamGoldPerMinuteHelper();
   syncTopGoldPerMinuteHelper();
   syncTeamBuildStatsHelper();
   syncHoveredAlliesHelper();

@@ -153,24 +153,19 @@ const TEAM_PRESETS: Array<[string, number, number | null]> = [
 type Toggle = { name: string; title: string; desc: string; parent?: string };
 const ECONOMIC_HELPERS: Toggle[] = [
   {
-    name: "showGoldPerMinute",
-    title: "Gold per minute",
-    desc: "Adds GPM to the player hover panel.",
-  },
-  {
-    name: "showTeamGoldPerMinute",
-    title: "Team gold per minute",
-    desc: "Lists each team's total GPM in team games.",
-  },
-  {
     name: "showTopGoldPerMinute",
-    title: "Top 10 gold per minute",
-    desc: "Lists the highest tracked player GPM.",
+    title: "Player stats panel",
+    desc: "All-players table (owned, gold, gold/min, max troops; expandable); hides the game's leaderboard.",
+  },
+  {
+    name: "showGoldPerMinute",
+    title: "Highlight hovered player",
+    desc: "Highlights the hovered player's row in the stats panel.",
   },
   {
     name: "showTeamBuildStats",
     title: "Team build stats",
-    desc: "Counts each team's structures; warns on a first Missile Silo.",
+    desc: "Per-team structures, gold/min, owned tiles & max troops; warns on a first Missile Silo.",
   },
   {
     name: "showTradeBalances",

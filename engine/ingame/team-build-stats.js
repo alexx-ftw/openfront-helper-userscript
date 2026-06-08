@@ -40,6 +40,57 @@
     { type: "Missile Silo", emoji: "🚀", label: "Missile Silo" },
   ];
 
+  // Economy columns appended after the structure columns (merged-in team
+  // gold-per-minute, plus owned territory and max troop capacity).
+  const TEAM_BUILD_STAT_COLUMNS = [
+    { key: "gpm", glyph: "💰", label: "Gold per minute" },
+    { key: "owned", glyph: "🗺️", label: "Owned (% of map)" },
+    { key: "maxTroops", glyph: "⚔️", label: "Max troops" },
+  ];
+
+  function formatTeamBuildCount(value) {
+    const v = Number(value) || 0;
+    if (v >= 1_000_000) {
+      return `${(v / 1_000_000).toFixed(1)}M`;
+    }
+    if (v >= 1_000) {
+      return `${(v / 1_000).toFixed(1)}K`;
+    }
+    return String(Math.round(v));
+  }
+
+  // Compact GPM for the narrow column — no "/min" suffix (the 💰 header implies
+  // it); keeps the sign for net-negative income.
+  function formatTeamBuildGpm(value) {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return "—";
+    }
+    const sign = value < 0 ? "-" : "";
+    const v = Math.abs(value);
+    if (v >= 1_000_000) {
+      return `${sign}${(v / 1_000_000).toFixed(1)}M`;
+    }
+    if (v >= 1_000) {
+      return `${sign}${(v / 1_000).toFixed(1)}K`;
+    }
+    return `${sign}${Math.round(v)}`;
+  }
+
+  // Owned territory as a percentage of the whole map (total land tiles).
+  function formatTeamBuildOwned(ownedTiles, game) {
+    let total = 0;
+    try {
+      total = Number(game?.numLandTiles?.()) || 0;
+    } catch (_error) {
+      total = 0;
+    }
+    if (total <= 0) {
+      return "—";
+    }
+    const pct = ((Number(ownedTiles) || 0) / total) * 100;
+    return pct >= 10 ? `${Math.round(pct)}%` : `${pct.toFixed(1)}%`;
+  }
+
   function teamBuildIconUrl(structure) {
     // Resolve the unit icon from the game's live asset manifest (set by the
     // shell via window.__OFH_gameIconUrl). Empty string → emoji fallback.
@@ -77,6 +128,11 @@
   }
 
   let teamBuildStatsEnabled = false;
+  // Click-to-sort state. null key = default (silo desc, then total desc). dir: 1
+  // = descending, -1 = ascending. Clicking a header sets its key; clicking the
+  // active header again flips the direction.
+  let teamBuildSortKey = null;
+  let teamBuildSortDir = 1;
   // team name -> last seen visible silo count (for 0 -> >=1 edge detection).
   const teamBuildPrevSiloCounts = new Map();
   // team name -> warning expiry timestamp (ms).
@@ -104,7 +160,7 @@
         z-index: 2147483647;
         display: none;
         width: max-content;
-        max-width: min(320px, calc(100vw - 16px));
+        max-width: min(440px, calc(100vw - 16px));
         padding: 6px 7px 7px;
         border: 1px solid rgba(148, 163, 184, 0.34);
         border-radius: 8px;
@@ -184,7 +240,7 @@
 
       #${TEAM_BUILD_PANEL_ID} .openfront-helper-tbs-grid {
         display: grid;
-        grid-template-columns: minmax(46px, 1fr) 26px repeat(${TEAM_BUILD_STRUCTURES.length}, 22px);
+        grid-template-columns: minmax(46px, 1fr) 26px repeat(${TEAM_BUILD_STRUCTURES.length}, 22px) repeat(${TEAM_BUILD_STAT_COLUMNS.length}, 46px);
         gap: 2px 4px;
         align-items: center;
       }
@@ -192,6 +248,37 @@
       #${TEAM_BUILD_PANEL_ID} .openfront-helper-tbs-cell {
         text-align: center;
         font-variant-numeric: tabular-nums;
+      }
+
+      /* Economy columns: a touch wider, right-aligned, with a divider before
+         them so they read apart from the structure counts. */
+      #${TEAM_BUILD_PANEL_ID} .openfront-helper-tbs-stat {
+        text-align: right;
+        padding-left: 3px;
+        font-size: 10px;
+        white-space: nowrap;
+      }
+      #${TEAM_BUILD_PANEL_ID} .openfront-helper-tbs-stat-first {
+        border-left: 1px solid rgba(148, 163, 184, 0.22);
+        padding-left: 5px;
+      }
+
+      /* Click-to-sort headers. */
+      #${TEAM_BUILD_PANEL_ID} .openfront-helper-tbs-sortable {
+        cursor: pointer;
+      }
+      #${TEAM_BUILD_PANEL_ID} .openfront-helper-tbs-sortable:hover {
+        color: #ffffff;
+        filter: brightness(1.25);
+      }
+      #${TEAM_BUILD_PANEL_ID} .openfront-helper-tbs-sorted {
+        color: #ffffff;
+      }
+      #${TEAM_BUILD_PANEL_ID} .openfront-helper-tbs-sort-arrow {
+        margin-left: 1px;
+        font-size: 8px;
+        opacity: 0.95;
+        vertical-align: middle;
       }
 
       #${TEAM_BUILD_PANEL_ID} .openfront-helper-tbs-head {
@@ -657,7 +744,16 @@
     // than waiting for the first structure to be built.
     const teamBySmallId = new Map();
     const aliveTeams = new Set();
+    // Per-team economy aggregates, accumulated in this same player loop so the
+    // GPM tracker key (fallbackIndex) matches gold-per-minute.js exactly.
+    const teamStatAcc = new Map(); // team -> {owned, maxTroops, gpmTotal, gpmTracked}
     const players = getCachedPlayerViews(game);
+    let config = null;
+    try {
+      config = game.config?.();
+    } catch (_error) {
+      config = null;
+    }
     let index = 0;
     for (const player of players) {
       const team = getPlayerTeamName(player);
@@ -672,6 +768,30 @@
         }
         if (alive) {
           aliveTeams.add(team);
+          let acc = teamStatAcc.get(team);
+          if (!acc) {
+            acc = { owned: 0, maxTroops: 0, gpmTotal: 0, gpmTracked: 0 };
+            teamStatAcc.set(team, acc);
+          }
+          try {
+            acc.owned += Number(player.numTilesOwned?.()) || 0;
+          } catch (_error) {
+            // ignore
+          }
+          try {
+            if (config?.maxTroops) {
+              acc.maxTroops += Number(config.maxTroops(player)) || 0;
+            }
+          } catch (_error) {
+            // ignore
+          }
+          // getGoldPerMinuteForPlayer is provided by gold-per-minute.js (shared
+          // scope); needs the sampler running — updateTeamBuildStatsPanel pumps it.
+          const gpm = getGoldPerMinuteForPlayer(player, index);
+          if (Number.isFinite(gpm)) {
+            acc.gpmTotal += gpm;
+            acc.gpmTracked += 1;
+          }
         }
       }
       index += 1;
@@ -688,6 +808,9 @@
           siloUnit: null,
           siloOwnerSmallId: NaN,
           counts: {},
+          owned: 0,
+          maxTroops: 0,
+          gpm: null,
         };
         for (const s of TEAM_BUILD_STRUCTURES) {
           entry.counts[s.type] = 0;
@@ -745,12 +868,76 @@
       }
     }
 
-    return Array.from(teams.values()).sort((a, b) => {
-      if (b.silo !== a.silo) {
-        return b.silo - a.silo;
+    // Fold the economy aggregates into each team entry (gpm = null when no
+    // player has 2+ samples yet → renders as "tracking").
+    for (const entry of teams.values()) {
+      const acc = teamStatAcc.get(entry.team);
+      if (acc) {
+        entry.owned = acc.owned;
+        entry.maxTroops = acc.maxTroops;
+        entry.gpm = acc.gpmTracked > 0 ? acc.gpmTotal : null;
       }
-      return b.total - a.total;
+    }
+
+    return sortTeamBuildRows(Array.from(teams.values()));
+  }
+
+  function teamBuildRowSortValue(row, key) {
+    switch (key) {
+      case "total":
+        return row.total;
+      case "gpm":
+        return Number.isFinite(row.gpm) ? row.gpm : -Infinity;
+      case "owned":
+        return row.owned;
+      case "maxTroops":
+        return row.maxTroops;
+      default:
+        return (row.counts && row.counts[key]) || 0; // a structure type
+    }
+  }
+
+  function sortTeamBuildRows(rows) {
+    if (!teamBuildSortKey) {
+      // Default: most silos first, then most structures.
+      return rows.sort((a, b) => b.silo - a.silo || b.total - a.total);
+    }
+    const key = teamBuildSortKey;
+    const dir = teamBuildSortDir;
+    return rows.sort((a, b) => {
+      const av = teamBuildRowSortValue(a, key);
+      const bv = teamBuildRowSortValue(b, key);
+      if (av !== bv) {
+        return dir === 1 ? bv - av : av - bv;
+      }
+      // Stable tie-break: more structures first, then team name.
+      if (b.total !== a.total) {
+        return b.total - a.total;
+      }
+      return String(a.team).localeCompare(String(b.team));
     });
+  }
+
+  function setTeamBuildSort(key) {
+    if (teamBuildSortKey === key) {
+      teamBuildSortDir = teamBuildSortDir === 1 ? -1 : 1;
+    } else {
+      teamBuildSortKey = key;
+      teamBuildSortDir = 1;
+    }
+    updateTeamBuildStatsPanel();
+  }
+
+  function attachTeamBuildSort(headEl, key) {
+    headEl.classList.add("openfront-helper-tbs-sortable");
+    headEl.addEventListener("click", () => setTeamBuildSort(key));
+    if (teamBuildSortKey === key) {
+      headEl.classList.add("openfront-helper-tbs-sorted");
+      const arrow = document.createElement("span");
+      arrow.className = "openfront-helper-tbs-sort-arrow";
+      arrow.textContent = teamBuildSortDir === 1 ? "▾" : "▴";
+      headEl.appendChild(arrow);
+    }
   }
 
   function getMyTeamName(game) {
@@ -809,6 +996,7 @@
       "openfront-helper-tbs-cell openfront-helper-tbs-head openfront-helper-tbs-total";
     totalHead.textContent = "Σ";
     totalHead.title = tr("Total structures");
+    attachTeamBuildSort(totalHead, "total");
     children.push(totalHead);
     for (const s of TEAM_BUILD_STRUCTURES) {
       const head = document.createElement("span");
@@ -818,8 +1006,22 @@
       }
       head.append(makeTeamBuildHeadGlyph(s));
       head.title = s.label;
+      attachTeamBuildSort(head, s.type);
       children.push(head);
     }
+    // Economy columns (merged-in team gold-per-minute + territory + max troops).
+    TEAM_BUILD_STAT_COLUMNS.forEach((stat, statIndex) => {
+      const head = document.createElement("span");
+      head.className =
+        "openfront-helper-tbs-cell openfront-helper-tbs-head openfront-helper-tbs-stat";
+      if (statIndex === 0) {
+        head.classList.add("openfront-helper-tbs-stat-first");
+      }
+      head.textContent = stat.glyph;
+      head.title = tr(stat.label);
+      attachTeamBuildSort(head, stat.key);
+      children.push(head);
+    });
 
     for (const row of rows) {
       const color = getTeamColor(row.team, game);
@@ -848,6 +1050,24 @@
         cell.textContent = String(count);
         children.push(cell);
       }
+
+      const gpmCell = document.createElement("span");
+      gpmCell.className =
+        "openfront-helper-tbs-cell openfront-helper-tbs-value openfront-helper-tbs-stat openfront-helper-tbs-stat-first";
+      gpmCell.textContent = formatTeamBuildGpm(row.gpm);
+      children.push(gpmCell);
+
+      const ownedCell = document.createElement("span");
+      ownedCell.className =
+        "openfront-helper-tbs-cell openfront-helper-tbs-value openfront-helper-tbs-stat";
+      ownedCell.textContent = formatTeamBuildOwned(row.owned, game);
+      children.push(ownedCell);
+
+      const troopsCell = document.createElement("span");
+      troopsCell.className =
+        "openfront-helper-tbs-cell openfront-helper-tbs-value openfront-helper-tbs-stat";
+      troopsCell.textContent = formatTeamBuildCount(row.maxTroops);
+      children.push(troopsCell);
     }
 
     grid.replaceChildren(...children);
@@ -876,6 +1096,13 @@
     if (!game) {
       hideTeamBuildStatsPanel(panel);
       return;
+    }
+
+    // Keep the gold-per-minute sampler warm so the merged GPM column has data
+    // even when the standalone GPM helpers are off. (gold-per-minute.js, shared
+    // scope; getTeamBuildRows below reads the resulting trackers.)
+    if (typeof sampleGoldPerMinuteIfDue === "function") {
+      sampleGoldPerMinuteIfDue();
     }
 
     // A fresh game invalidates all warning/seed state.
@@ -911,12 +1138,14 @@
       .map((row) => row.team);
 
     const signature =
+      `sort:${teamBuildSortKey || ""}:${teamBuildSortDir};` +
       rows
         .map((row) => {
           const counts = TEAM_BUILD_STRUCTURES.map(
             (s) => row.counts[s.type] || 0,
           ).join(",");
-          return `${row.team}|${getTeamColor(row.team, game)}|${counts}`;
+          const gpm = row.gpm == null ? "" : Math.round(row.gpm);
+          return `${row.team}|${getTeamColor(row.team, game)}|${counts}|${gpm}|${row.owned}|${row.maxTroops}`;
         })
         .join(";") + `#warn:${warnTeams.join(",")}`;
 

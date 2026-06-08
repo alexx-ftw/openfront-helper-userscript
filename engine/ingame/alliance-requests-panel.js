@@ -29,16 +29,16 @@
         width: min(258px, calc(100vw - 28px));
         max-height: min(46vh, 420px);
         overflow: hidden;
-        border: 1px solid rgba(134, 239, 172, 0.36);
-        border-radius: 9px;
-        background:
-          linear-gradient(135deg, rgba(34, 197, 94, 0.18), transparent 42%),
-          rgba(7, 24, 22, 0.94);
-        color: #f3f4f6;
+        border: 1px solid rgba(148, 163, 184, 0.34);
+        border-radius: 8px;
+        background: rgba(12, 18, 20, 0.95);
+        color: #e2e8f0;
         font-family: "Aptos", "Trebuchet MS", "Segoe UI", sans-serif;
+        font-size: 11px;
+        font-weight: 700;
         box-shadow:
-          0 18px 42px rgba(0, 0, 0, 0.46),
-          inset 0 1px 0 rgba(187, 247, 208, 0.1);
+          0 10px 26px rgba(0, 0, 0, 0.4),
+          0 0 16px rgba(148, 163, 184, 0.1);
         pointer-events: auto;
         transform: translateY(-50%);
       }
@@ -52,8 +52,8 @@
         display: flex;
         align-items: center;
         gap: 7px;
-        padding: 7px 9px;
-        border-bottom: 1px solid rgba(134, 239, 172, 0.16);
+        padding: 6px 8px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.18);
         cursor: grab;
         touch-action: none;
       }
@@ -65,11 +65,11 @@
       #${ALLIANCE_REQUEST_PANEL_ID} .openfront-helper-alliance-request-title {
         margin: 0;
         flex: 1;
-        color: #bbf7d0;
-        font-size: 11px;
+        color: rgba(226, 232, 240, 0.85);
+        font-size: 10px;
         font-weight: 900;
         text-transform: uppercase;
-        letter-spacing: 0.2px;
+        letter-spacing: 0.4px;
       }
 
       #${ALLIANCE_REQUEST_PANEL_ID} .openfront-helper-alliance-request-count {
@@ -79,8 +79,8 @@
         height: 20px;
         padding: 0 6px;
         border-radius: 999px;
-        background: rgba(34, 197, 94, 0.22);
-        color: #dcfce7;
+        background: rgba(148, 163, 184, 0.26);
+        color: #f1f5f9;
         font-size: 10px;
         font-weight: 900;
       }
