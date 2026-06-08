@@ -315,7 +315,7 @@ function resetPendingJoinIfExpired() {
     return;
   }
 
-  if (isInActiveGame() || Date.now() - pendingJoin.startedAt > JOIN_ATTEMPT_TIMEOUT_MS) {
+  if (isOccupied() || Date.now() - pendingJoin.startedAt > JOIN_ATTEMPT_TIMEOUT_MS) {
     pendingJoin = null;
   }
 }
@@ -326,6 +326,25 @@ function isInActiveGame() {
   }
 
   return /\/game\/[^/]+/.test(window.location.pathname) && window.location.search.includes("live");
+}
+
+// In the public-lobby WAITING ROOM? Public joins open <join-lobby-modal> (a
+// BaseModal with isModalOpen) without changing the URL, so this is the only
+// reliable signal that we've joined a lobby but the game hasn't started.
+function isInLobbyWaiting() {
+  try {
+    const modal = document.querySelector("join-lobby-modal");
+    return Boolean(modal && modal.isModalOpen === true);
+  } catch (_error) {
+    return false;
+  }
+}
+
+// "Occupied" = can't/shouldn't search: in the waiting room or in a live game.
+// Becoming un-occupied again means we're back at the menu (game ended OR the
+// user backed out of the lobby) → safe to resume searching.
+function isOccupied() {
+  return isInActiveGame() || isInLobbyWaiting();
 }
 
 function objectContainsFreeForAll(value, depth = 0) {
@@ -1573,8 +1592,8 @@ async function requestJoin(lobby) {
   }
 
   // Normally auto-join turns itself off once it joins a match. With "keep
-  // searching" on, leave it enabled — tryAutoJoin's isInActiveGame guard stops
-  // it re-joining while in the game, and it resumes after the match ends.
+  // searching" on, leave the toggle ENABLED — isOccupied() (waiting modal / live
+  // game) pauses searching meanwhile, and it resumes when we return to the menu.
   if (!settings.keepAutoJoinAfterMatch) {
     await disableAutoJoin();
   }
@@ -1602,7 +1621,12 @@ async function requestJoin(lobby) {
 function tryAutoJoin() {
   resetPendingJoinIfExpired();
 
-  if (!settings.enabled || !latestLobbySnapshot || pendingJoin || isInActiveGame()) {
+  if (
+    !settings.enabled ||
+    !latestLobbySnapshot ||
+    pendingJoin ||
+    isOccupied()
+  ) {
     return;
   }
 
@@ -1615,6 +1639,20 @@ function tryAutoJoin() {
     pendingJoin = null;
     console.error("Failed to auto-join matching lobby:", error);
   });
+}
+
+// Detect the return to the menu (occupied → free): the game ended OR the user
+// backed out of the lobby. With "keep searching" on, restart the search with a
+// fresh timer. Runs on a timer so it works without a full page reload.
+function pollAutoJoinResume() {
+  const occupied = isOccupied();
+  if (wasOccupied && !occupied && settings.enabled && settings.keepAutoJoinAfterMatch) {
+    settings = { ...settings, searchStartedAt: Date.now() };
+    chrome.storage.local.set({ [STORAGE_KEY]: settings }).catch(() => {});
+    resetLobbyForecastTracking();
+    tryAutoJoin();
+  }
+  wasOccupied = occupied;
 }
 
 function handleBridgeMessage(event) {
@@ -1707,6 +1745,12 @@ async function init() {
     }
   });
   await loadSettings();
+  // Full reload back to the menu while "keep searching" is on → start a fresh
+  // search timer instead of carrying the stale one from before the last game.
+  if (settings.enabled && settings.keepAutoJoinAfterMatch) {
+    settings = { ...settings, searchStartedAt: Date.now() };
+    await chrome.storage.local.set({ [STORAGE_KEY]: settings });
+  }
   lobbyForecastFilterSignature = createForecastFilterSignature();
   resetLobbyForecastTracking();
   persistLobbyForecast(true);
@@ -1730,6 +1774,7 @@ async function init() {
   ensureCustomJoinAlertAudio();
   tryAutoJoin();
   window.setInterval(resetPendingJoinIfExpired, 1000);
+  window.setInterval(pollAutoJoinResume, 1000);
 }
 
 init().catch((error) => {

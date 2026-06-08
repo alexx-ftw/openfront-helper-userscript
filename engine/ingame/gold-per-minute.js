@@ -927,9 +927,12 @@
   }
 
   function apsFormatOwned(owned, game) {
+    // Match the game's own stats: denominator = land tiles minus fallout tiles.
     let total = 0;
     try {
-      total = Number(game?.numLandTiles?.()) || 0;
+      total =
+        (Number(game?.numLandTiles?.()) || 0) -
+        (Number(game?.numTilesWithFallout?.()) || 0);
     } catch (_error) {
       total = 0;
     }
@@ -962,12 +965,29 @@
       } catch (_error) {
         continue;
       }
+      // Structures are upgradable; the game reports counts as the sum of levels
+      // excluding under-construction units (PlayerView.totalUnitLevels), so an
+      // upgraded silo/city counts by its level. Mirror that here.
+      let underConstruction = false;
+      try {
+        underConstruction = Boolean(unit.isUnderConstruction?.());
+      } catch (_error) {
+        underConstruction = false;
+      }
+      if (underConstruction) continue;
+      let level = 1;
+      try {
+        const lv = Number(unit.level?.());
+        if (Number.isFinite(lv) && lv > 0) level = lv;
+      } catch (_error) {
+        level = 1;
+      }
       let entry = counts.get(smallId);
       if (!entry) {
         entry = {};
         counts.set(smallId, entry);
       }
-      entry[type] = (entry[type] || 0) + 1;
+      entry[type] = (entry[type] || 0) + level;
     }
     return counts;
   }
@@ -1027,7 +1047,8 @@
       }
       let maxTroops = 0;
       try {
-        if (config?.maxTroops) maxTroops = Number(config.maxTroops(player)) || 0;
+        // The game stores troops at 10x and displays /10 (renderTroops); match it.
+        if (config?.maxTroops) maxTroops = (Number(config.maxTroops(player)) || 0) / 10;
       } catch (_error) {
         maxTroops = 0;
       }
@@ -1084,10 +1105,11 @@
   }
 
   function getApsGridTemplate() {
-    // Rank column wide enough for 3-digit ranks (hundreds of players).
+    // Rank column wide enough for 3-digit ranks (hundreds of players); building
+    // columns wide enough for 4-digit counts.
     let tpl = "36px minmax(72px, 1fr) repeat(4, 52px)";
     if (apsExpanded) {
-      tpl += ` repeat(${APS_STRUCTURES.length}, 26px)`;
+      tpl += ` repeat(${APS_STRUCTURES.length}, 38px)`;
     }
     return tpl;
   }

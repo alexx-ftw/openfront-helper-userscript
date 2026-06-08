@@ -76,11 +76,14 @@
     return `${sign}${Math.round(v)}`;
   }
 
-  // Owned territory as a percentage of the whole map (total land tiles).
+  // Owned territory as a % of the conquerable map — matching the game's own
+  // team-stats: denominator = land tiles MINUS fallout (nuked) tiles.
   function formatTeamBuildOwned(ownedTiles, game) {
     let total = 0;
     try {
-      total = Number(game?.numLandTiles?.()) || 0;
+      total =
+        (Number(game?.numLandTiles?.()) || 0) -
+        (Number(game?.numTilesWithFallout?.()) || 0);
     } catch (_error) {
       total = 0;
     }
@@ -240,7 +243,7 @@
 
       #${TEAM_BUILD_PANEL_ID} .openfront-helper-tbs-grid {
         display: grid;
-        grid-template-columns: minmax(46px, 1fr) 26px repeat(${TEAM_BUILD_STRUCTURES.length}, 22px) repeat(${TEAM_BUILD_STAT_COLUMNS.length}, 46px);
+        grid-template-columns: minmax(46px, 1fr) 34px repeat(${TEAM_BUILD_STRUCTURES.length}, 26px) repeat(${TEAM_BUILD_STAT_COLUMNS.length}, 46px);
         gap: 2px 4px;
         align-items: center;
       }
@@ -725,9 +728,10 @@
 
   // Build one row per real team: {team, color, counts:{<type>:n}, total, silo}.
   // Mirrors team-gold-per-minute's filtering: skip players with no team and the
-  // literal "Bot" faction. Counts cover every team (no fog hides units) and
-  // include under-construction structures, so a silo registers the moment a
-  // team starts building it.
+  // literal "Bot" faction. Counts cover every team (no fog hides units). The
+  // displayed counts are the SUM OF LEVELS excluding under-construction units
+  // (matching the game's stats), while `silo` is a building count that DOES
+  // include under-construction silos so the alert can fire as early as possible.
   function getTeamBuildRows(game) {
     const structureTypes = TEAM_BUILD_STRUCTURES.map((s) => s.type);
     let units = [];
@@ -779,8 +783,9 @@
             // ignore
           }
           try {
+            // Troops are stored at 10x and shown /10 in-game (renderTroops).
             if (config?.maxTroops) {
-              acc.maxTroops += Number(config.maxTroops(player)) || 0;
+              acc.maxTroops += (Number(config.maxTroops(player)) || 0) / 10;
             }
           } catch (_error) {
             // ignore
@@ -847,19 +852,38 @@
       if (type == null || !(type in entry.counts)) {
         continue;
       }
-      entry.counts[type] += 1;
-      entry.total += 1;
+      // Structures are upgradable, so the game reports counts as the SUM OF
+      // LEVELS excluding units still under construction (PlayerView.totalUnitLevels).
+      // A team with 3 silos upgraded to total level 7 shows "7" — matching the
+      // game's own UnitDisplay / team-stats panels, not the raw building count.
+      let underConstruction = false;
+      try {
+        underConstruction = Boolean(unit.isUnderConstruction?.());
+      } catch (_error) {
+        underConstruction = false;
+      }
+      if (!underConstruction) {
+        let level = 1;
+        try {
+          const lv = Number(unit.level?.());
+          if (Number.isFinite(lv) && lv > 0) {
+            level = lv;
+          }
+        } catch (_error) {
+          level = 1;
+        }
+        entry.counts[type] += level;
+        entry.total += level;
+      }
       if (type === TEAM_BUILD_SILO_TYPE) {
+        // The silo ALERT deliberately stays building-based and includes ones
+        // still under construction, so a team is flagged the moment it STARTS a
+        // silo — earliest possible warning, independent of the level-based
+        // display count above.
         entry.silo += 1;
         // Remember one silo unit (+ owner) so the alert's Focus button can pan
         // the camera straight to it. Prefer a finished silo over one still under
         // construction, but keep any silo as a fallback.
-        let underConstruction = false;
-        try {
-          underConstruction = Boolean(unit.isUnderConstruction?.());
-        } catch (_error) {
-          underConstruction = false;
-        }
         if (!entry.siloUnit || (!underConstruction && entry.siloUnderConstruction)) {
           entry.siloUnit = unit;
           entry.siloOwnerSmallId = smallId;

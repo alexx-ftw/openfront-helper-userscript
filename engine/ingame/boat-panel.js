@@ -9,13 +9,11 @@
 // motionPlans, the same data the game uses to advance the ship.
 
   const BOAT_PANEL_UPDATE_MS = 400;
+  const BOAT_PANEL_POS_KEY = "openfrontHelperBoatPanelPos";
   let boatPanelActiveTab = "sent"; // "sent" | "incoming"
   let boatPanelUpdateTimer = null;
   const boatPanelRowCache = new Map(); // domUnitId -> { row, dot, name, eta }
   let boatPanelTabButtons = null; // { sent, incoming }
-  let boatPanelDragState = null;
-  // In-memory position only (not persisted across reloads).
-  let boatPanelPos = { left: null, top: null };
 
   function ensureBoatPanelStyles() {
     if (document.getElementById(BOAT_PANEL_STYLE_ID)) {
@@ -143,46 +141,6 @@
     (document.head || document.documentElement).appendChild(style);
   }
 
-  function clampBoatPanelToViewport(panel) {
-    const rect = panel.getBoundingClientRect();
-    const maxLeft = Math.max(0, window.innerWidth - rect.width);
-    const maxTop = Math.max(0, window.innerHeight - rect.height);
-    if (boatPanelPos.left != null) {
-      panel.style.left = `${Math.min(Math.max(0, boatPanelPos.left), maxLeft)}px`;
-    }
-    if (boatPanelPos.top != null) {
-      panel.style.top = `${Math.min(Math.max(0, boatPanelPos.top), maxTop)}px`;
-    }
-  }
-
-  function startBoatPanelDrag(panel, header, event) {
-    const rect = panel.getBoundingClientRect();
-    boatPanelDragState = {
-      offsetX: event.clientX - rect.left,
-      offsetY: event.clientY - rect.top,
-    };
-    const onMove = (e) => {
-      if (!boatPanelDragState) {
-        return;
-      }
-      boatPanelPos = {
-        left: e.clientX - boatPanelDragState.offsetX,
-        top: e.clientY - boatPanelDragState.offsetY,
-      };
-      panel.style.left = `${boatPanelPos.left}px`;
-      panel.style.top = `${boatPanelPos.top}px`;
-    };
-    const onUp = () => {
-      boatPanelDragState = null;
-      document.removeEventListener("pointermove", onMove);
-      document.removeEventListener("pointerup", onUp);
-      clampBoatPanelToViewport(panel);
-    };
-    document.addEventListener("pointermove", onMove);
-    document.addEventListener("pointerup", onUp);
-    event.preventDefault();
-  }
-
   function setBoatPanelActiveTab(tab) {
     if (!boatPanelTabButtons) {
       return;
@@ -210,7 +168,6 @@
     title.className = "ofh-boatp-title";
     title.textContent = tr("Boats");
     header.appendChild(title);
-    header.addEventListener("pointerdown", (e) => startBoatPanelDrag(panel, header, e));
 
     const tabs = document.createElement("div");
     tabs.className = "ofh-boatp-tabs";
@@ -228,6 +185,10 @@
 
     panel.append(header, tabs, body);
     (document.body || document.documentElement).appendChild(panel);
+    // Draggable by the header, with the position persisted to localStorage
+    // (shared helper from gold-per-minute.js).
+    makeGoldStatPanelDraggable(panel, header, BOAT_PANEL_POS_KEY);
+    applyStoredGoldStatPanelPosition(panel, BOAT_PANEL_POS_KEY);
 
     setBoatPanelActiveTab(boatPanelActiveTab);
     return panel;

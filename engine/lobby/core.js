@@ -28,6 +28,11 @@ const lobbyCooldowns = new Map();
 let settings = normalizeSettings();
 let latestLobbySnapshot = null;
 let pendingJoin = null;
+// "Keep searching after joining": searching is paused whenever we're "occupied"
+// (in the public-lobby waiting modal OR in an active game) and resumes when we
+// return to the menu — whether the game ended or the user backed out of the
+// lobby. wasOccupied tracks the previous tick to detect that return edge.
+let wasOccupied = false;
 let joinAlertAudio = null;
 let customJoinAlertAudio = null;
 let hasCustomNotificationSound = false;

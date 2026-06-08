@@ -800,6 +800,10 @@
 
     // emitBoat — fire a TransportShipExecution at dst carrying `troops`.
     emitBoat(dst, troops, label) {
+      // Final chokepoint for the "boat" feature toggle: never fire when off.
+      if (!(state.settings.features && state.settings.features.boat)) {
+        return false;
+      }
       const ctors = discoverCtors(getEventBus());
       if (ctors.boat && emitIntent(ctors.boat, dst, troops)) {
         state.stats.attacks++;
@@ -1641,6 +1645,8 @@
     // bestTransportShipSpawn` down that list and send to the FIRST reachable — same
     // target src would have picked, with bounded worker calls.
     async sendBoatAttackToNearbyTerraNullius() {
+      // Honour the panel's "boat" feature toggle.
+      if (!(state.settings.features && state.settings.features.boat)) return false;
       if (this.game.config().isUnitDisabled(UNIT.TransportShip)) return false;
       if (
         this.player.unitCount(UNIT.TransportShip) >=
@@ -1807,6 +1813,11 @@
     // async bestTransportShipSpawn probe. We `await game.ensureBorderTiles(target)`
     // first (cached per tick), then probe; the dst sent is still `closest.y`.
     async sendBoatAttack(target) {
+      // Honour the panel's "boat" feature toggle (faithful boat attacks must obey
+      // it too, not just the win-fix landings).
+      if (!(state.settings.features && state.settings.features.boat)) {
+        return false;
+      }
       if (this.game.config().isUnitDisabled(UNIT.TransportShip)) {
         return false;
       }
