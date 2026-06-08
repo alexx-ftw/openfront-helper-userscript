@@ -164,6 +164,13 @@
     UNIT.Factory,
   ];
 
+  // USER GATE (not in src): the popup lets the user disallow auto-building
+  // specific structure types. A type is allowed unless explicitly set false.
+  function autoBotBuildAllowed(type) {
+    const allow = state.settings && state.settings.buildStructures;
+    return !allow || allow[type] !== false;
+  }
+
   // ===========================================================================
   // §SHIMS — the two genuinely-missing datasets, reconstructed client-side.
   // These are the ONLY approximations; they affect placement SCORING only.
@@ -331,6 +338,7 @@
 
     // tryBuildDefensePost — NationStructureBehavior.ts:181 (now async).
     async tryBuildDefensePost() {
+      if (!autoBotBuildAllowed(UNIT.DefensePost)) return false; // user disallowed
       // src reads gameConfig().difficulty → REPLICATED difficulty.
       const difficulty = currentDifficulty();
       if (difficulty === Difficulty.Easy) return false;
@@ -906,6 +914,7 @@
 
     // maybeSpawnStructure — NationStructureBehavior.ts:585 (now async).
     async maybeSpawnStructure(type) {
+      if (!autoBotBuildAllowed(type)) return false; // user disallowed this type
       const perceivedCost = this.getPerceivedCost(type);
       let availableGold = this.player.gold();
       // WIN-FIX (NOT in src): when mirvBehavior has set a real MIRV war-chest

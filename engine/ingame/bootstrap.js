@@ -86,6 +86,14 @@
       setBoatIncomingWarningEnabled(data.payload?.enabled);
     }
 
+    if (data.type === "SHOW_ESTATE_PANEL") {
+      setEstatePanelEnabled(data.payload?.enabled);
+    }
+
+    if (data.type === "SET_AUTO_LEAVE_ON_TEAM_WIN") {
+      setAutoLeaveOnTeamWinEnabled(data.payload?.enabled);
+    }
+
     if (data.type === "SHOW_NUKE_SUGGESTIONS") {
       setNukeSuggestionsEnabled(data.payload?.enabled);
     }

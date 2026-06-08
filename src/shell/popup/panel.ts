@@ -17,9 +17,43 @@ type AutoBot = {
     tickMs: number;
     hidden: boolean;
     features: Record<string, boolean>;
+    buildStructures: Record<string, boolean>;
   };
   set: (patch: Record<string, unknown>) => void;
 };
+
+// Structure types the auto-bot can build (type string + emoji fallback). Same
+// types/icons as the team-build panel; the game SVG icon resolves via the global
+// __OFH_gameIconUrl, falling back to the emoji.
+const AB_STRUCTURES: Array<[string, string]> = [
+  ["City", "🏙️"],
+  ["Port", "⚓"],
+  ["Factory", "🏭"],
+  ["Defense Post", "🛡️"],
+  ["SAM Launcher", "🛰️"],
+  ["Missile Silo", "🚀"],
+];
+
+function gameStructureIcon(type: string, emoji: string): HTMLElement {
+  const url =
+    (window as unknown as { __OFH_gameIconUrl?: (t: string) => string })
+      .__OFH_gameIconUrl?.(type) || "";
+  if (!url) {
+    return el("span", {}, emoji);
+  }
+  const img = el("img", {
+    src: url,
+    alt: type,
+    width: "16",
+    height: "16",
+    draggable: "false",
+    style: "object-fit:contain;",
+  }) as HTMLImageElement;
+  img.addEventListener("error", () => img.replaceWith(el("span", {}, emoji)), {
+    once: true,
+  });
+  return img;
+}
 const autobot = () => (window as unknown as { __OFH_autobot?: AutoBot }).__OFH_autobot;
 
 // ---- atom batch-fire bridge (exposed by the in-game engine) -----------------
@@ -233,6 +267,11 @@ const GAME_HELPERS: Toggle[] = [
     title: "Incoming boat warning",
     desc: "Center-screen alert when a new boat targets your territory (like the Missile Silo warning).",
   },
+  {
+    name: "showEstatePanel",
+    title: "Estates panel",
+    desc: "Lists your separate land parcels (tile counts); click a row to jump there.",
+  },
 ];
 const ADVANCED_HELPERS: Toggle[] = [
   {
@@ -402,6 +441,28 @@ function renderAutoJoinMain(body: HTMLElement): void {
         settings.joinNotification = v;
         // turning it on is a user gesture — the moment to ask for OS-notification permission
         if (v) requestJoinNotificationPermission();
+        void persist();
+      },
+    ),
+  );
+  body.append(
+    switchRow(
+      "Keep searching after joining",
+      "Don't turn auto-join off when a match is found, so it resumes after the game ends.",
+      Boolean(settings.keepAutoJoinAfterMatch),
+      (v) => {
+        settings.keepAutoJoinAfterMatch = v;
+        void persist();
+      },
+    ),
+  );
+  body.append(
+    switchRow(
+      "Auto-leave on team win",
+      "Leave the match automatically once you / your team win.",
+      Boolean(settings.autoLeaveOnTeamWin),
+      (v) => {
+        settings.autoLeaveOnTeamWin = v;
         void persist();
       },
     ),
@@ -695,6 +756,37 @@ function renderAutoBot(body: HTMLElement): void {
     );
   }
   body.append(grid);
+
+  // Which structure types the bot is allowed to auto-build (icons match the
+  // team-build panel). Disabled = the bot never builds/upgrades that type.
+  body.append(
+    el("div", { class: "ofh-section-title", style: "margin-top:16px" }, t("Auto-build structures")),
+  );
+  const structGrid = el("div", { class: "ofh-grid" });
+  const allowedStructs = cfg.buildStructures || {};
+  for (const [type, emoji] of AB_STRUCTURES) {
+    const sw = el("div", {
+      class: `ofh-switch${allowedStructs[type] !== false ? " on" : ""}`,
+    });
+    const row = el(
+      "div",
+      { class: "ofh-row" },
+      el(
+        "div",
+        { class: "ofh-txt", style: "display:flex;align-items:center;gap:8px;min-width:0;" },
+        gameStructureIcon(type, emoji),
+        el("div", { class: "ofh-name" }, t(type)),
+      ),
+      sw,
+    );
+    sw.addEventListener("click", () => {
+      const next = !sw.classList.contains("on");
+      sw.classList.toggle("on", next);
+      ab.set({ buildStructures: { [type]: next } });
+    });
+    structGrid.append(row);
+  }
+  body.append(structGrid);
 
   body.append(el("div", { class: "ofh-section-title", style: "margin-top:16px" }, t("Advanced")));
   body.append(

@@ -1470,6 +1470,7 @@ window.__OFH_autobot = {
       tickMs: s.tickMs,
       hidden: Boolean(s.hidden),
       features: { ...s.features },
+      buildStructures: { ...s.buildStructures },
     };
   },
   set(patch) {
@@ -1484,6 +1485,10 @@ window.__OFH_autobot = {
     }
     if (patch.features && typeof patch.features === "object") {
       Object.assign(s.features, patch.features);
+    }
+    if (patch.buildStructures && typeof patch.buildStructures === "object") {
+      if (!s.buildStructures) s.buildStructures = {};
+      Object.assign(s.buildStructures, patch.buildStructures);
     }
     if ("enabled" in patch) setEnabled(Boolean(patch.enabled));
     saveSettings();

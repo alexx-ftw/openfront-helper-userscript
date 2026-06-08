@@ -200,6 +200,32 @@ function syncBoatIncomingWarningHelper() {
   );
 }
 
+function syncEstatePanelHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SHOW_ESTATE_PANEL",
+      payload: {
+        enabled: Boolean(settings.showEstatePanel),
+      },
+    },
+    "*",
+  );
+}
+
+function syncAutoLeaveOnTeamWinHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SET_AUTO_LEAVE_ON_TEAM_WIN",
+      payload: {
+        enabled: Boolean(settings.autoLeaveOnTeamWin),
+      },
+    },
+    "*",
+  );
+}
+
 function syncNukeSuggestionsHelper() {
   window.postMessage(
     {
@@ -362,6 +388,8 @@ function syncHelpers() {
   syncBoatPredictionHelper();
   syncBoatPanelHelper();
   syncBoatIncomingWarningHelper();
+  syncEstatePanelHelper();
+  syncAutoLeaveOnTeamWinHelper();
   syncNukeSuggestionsHelper();
   syncAutoNukeHelper();
   syncSend1PercentBoatHelper();

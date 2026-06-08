@@ -51,6 +51,8 @@ const INGAME_FILES = [
   "nuke-suggestions.js",
   "boat-prediction.js",
   "boat-panel.js",
+  "estate-panel.js",
+  "auto-leave.js",
   "boat-macro.js",
   "heatmaps.js",
   "auto-bot/core.js",

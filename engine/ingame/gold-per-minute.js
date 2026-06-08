@@ -534,6 +534,8 @@
 
     let badge = document.getElementById(TOP_GOLD_PER_MINUTE_BADGE_ID);
     if (!badge) {
+      // Restore the saved expand state before building (drives the column set).
+      apsExpanded = loadApsExpanded();
       badge = document.createElement("div");
       badge.id = TOP_GOLD_PER_MINUTE_BADGE_ID;
 
@@ -550,6 +552,7 @@
       expandBtn.addEventListener("click", (e) => {
         e.stopPropagation(); // don't start a drag
         apsExpanded = !apsExpanded;
+        saveApsExpanded();
         expandBtn.textContent = apsExpanded ? "−" : "+";
         topGoldPerMinuteRenderSignature = ""; // force a structural rebuild
         updateTopGoldPerMinuteBadge();
@@ -567,6 +570,12 @@
       // Drag by the header only — the body scrolls and the corner resizes.
       makeGoldStatPanelDraggable(badge, header || badge, TOP_GOLD_PER_MINUTE_POS_KEY);
       applyStoredGoldStatPanelPosition(badge, TOP_GOLD_PER_MINUTE_POS_KEY);
+      // Restore the user's last resized size, and persist future resizes.
+      applyStoredApsSize(badge);
+      if (window.ResizeObserver) {
+        const ro = new ResizeObserver(() => saveApsSize(badge));
+        ro.observe(badge);
+      }
     }
     return badge;
   }
@@ -832,18 +841,58 @@
     { key: "maxTroops", label: "Max troops", glyph: "⚔️", cls: "aps-num", sortable: true },
   ];
 
+  const APS_SIZE_KEY = "openfrontHelperPlayerPanelSize";
+  const APS_EXPAND_KEY = "openfrontHelperPlayerPanelExpanded";
   let apsSortKey = "owned";
   let apsSortDir = 1; // 1 = descending, -1 = ascending
   let apsExpanded = false;
+
+  function loadApsExpanded() {
+    try {
+      return window.localStorage.getItem(APS_EXPAND_KEY) === "1";
+    } catch (_error) {
+      return false;
+    }
+  }
+  function saveApsExpanded() {
+    try {
+      window.localStorage.setItem(APS_EXPAND_KEY, apsExpanded ? "1" : "0");
+    } catch (_error) {
+      // ignore
+    }
+  }
+  function applyStoredApsSize(panel) {
+    try {
+      const s = JSON.parse(window.localStorage.getItem(APS_SIZE_KEY) || "null");
+      if (s && Number.isFinite(s.w) && Number.isFinite(s.h)) {
+        panel.style.width = `${s.w}px`;
+        panel.style.height = `${s.h}px`;
+      }
+    } catch (_error) {
+      // ignore
+    }
+  }
+  function saveApsSize(panel) {
+    const w = parseInt(panel.style.width, 10);
+    const h = parseInt(panel.style.height, 10);
+    if (!Number.isFinite(w) || !Number.isFinite(h)) {
+      return; // not resized yet (still CSS default, no inline size)
+    }
+    try {
+      window.localStorage.setItem(APS_SIZE_KEY, JSON.stringify({ w, h }));
+    } catch (_error) {
+      // ignore
+    }
+  }
   let apsRenderedExpanded = null; // last grid/header structure rendered
   let apsRenderedSortSig = ""; // last sort state baked into the header arrows
   let apsHeaderCells = null;
   let apsFooterEntry = null; // pinned bottom row mirroring the hovered nation
   const apsRowCache = new Map(); // smallId -> { row, cells:{key:el} }
 
-  // Hide/show the game's own <leader-board> via an injected stylesheet so it
-  // survives the game re-rendering it. NOTE: this also hides the 📊/👥 toggle
-  // icons that live inside that element.
+  // Hide/show the game's whole left sidebar (<game-left-sidebar>: leaderboard +
+  // team-stats + the 📊/👥 toggle bar + game-id) via an injected stylesheet so
+  // it survives the game re-rendering. Tied to the player-stats panel toggle.
   function setGameLeaderboardHidden(hidden) {
     const id = "openfront-helper-hide-game-leaderboard";
     let style = document.getElementById(id);
@@ -851,7 +900,9 @@
       if (!style) {
         style = document.createElement("style");
         style.id = id;
-        style.textContent = "leader-board{display:none !important;}";
+        // Hide the whole left sidebar (leaderboard list + the 📊/👥 toggle bar +
+        // game-id), not just <leader-board>, so nothing of it is left over.
+        style.textContent = "game-left-sidebar{display:none !important;}";
         (document.head || document.documentElement).appendChild(style);
       }
     } else if (style) {

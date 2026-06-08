@@ -1572,7 +1572,12 @@ async function requestJoin(lobby) {
     }
   }
 
-  await disableAutoJoin();
+  // Normally auto-join turns itself off once it joins a match. With "keep
+  // searching" on, leave it enabled — tryAutoJoin's isInActiveGame guard stops
+  // it re-joining while in the game, and it resumes after the match ends.
+  if (!settings.keepAutoJoinAfterMatch) {
+    await disableAutoJoin();
+  }
   // The userscript's notification (in-page toast + OS notification) is SILENT — the old
   // extension build had a separate notification window that made its own sound — so we ring
   // the alert here whenever notifications are on. With them off, stay silent: the

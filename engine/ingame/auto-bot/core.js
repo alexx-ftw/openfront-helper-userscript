@@ -47,6 +47,16 @@
       // one or break a stalemate). Turn OFF to keep the bot LOYAL — it never initiates a
       // betrayal (defensive retaliation against someone already attacking us still works).
     },
+    // Which structure types auto-build is allowed to place (user-configurable in
+    // the popup). A type set false is never built/upgraded by the bot.
+    buildStructures: {
+      [UNIT.City]: true,
+      [UNIT.Port]: true,
+      [UNIT.Factory]: true,
+      [UNIT.DefensePost]: true,
+      [UNIT.SAMLauncher]: true,
+      [UNIT.MissileSilo]: true,
+    },
     // ── WIN-FIXES (user-authorised DEVIATIONS from the pure 1:1 src port, to let
     //    the bot snowball to an 80% victory AND play more ACTIVELY than a pure
     //    faithful Nation, which is conservative/turtle by design). Toggle winFixes
@@ -291,6 +301,10 @@
           if (parsed[k] !== undefined) s[k] = parsed[k];
         }
         s.features = { ...DEFAULTS.features, ...(parsed.features || {}) };
+        s.buildStructures = {
+          ...DEFAULTS.buildStructures,
+          ...(parsed.buildStructures || {}),
+        };
       }
     } catch (error) {
       console.warn("[AutoBot] failed to load settings:", error);
