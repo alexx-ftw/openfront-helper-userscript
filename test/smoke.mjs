@@ -115,6 +115,29 @@ assert.equal(
   "game icon resolves via manifest",
 );
 
+// The live game moved the manifest/CDN base out of the top-level globals into
+// window.BOOTSTRAP_CONFIG. Drop the legacy globals and assert resolution still
+// works via BOOTSTRAP_CONFIG (resolveAsset reads them live on each call).
+delete win.ASSET_MANIFEST;
+delete win.CDN_BASE;
+win.BOOTSTRAP_CONFIG = {
+  assetManifest: {
+    "maps/world/thumbnail.webp": "/_assets/maps/world/thumbnail.bootstrap.webp",
+    "images/CityIconWhite.svg": "/_assets/images/CityIconWhite.bootstrap.svg",
+  },
+  cdnBase: "https://cdn.ofedge.io/game_assets",
+};
+assert.equal(
+  chrome.runtime.getURL("maps/world/thumbnail.webp"),
+  "https://cdn.ofedge.io/game_assets/_assets/maps/world/thumbnail.bootstrap.webp",
+  "manifest asset resolves via BOOTSTRAP_CONFIG",
+);
+assert.equal(
+  globalThis.__OFH_gameIconUrl("City"),
+  "https://cdn.ofedge.io/game_assets/_assets/images/CityIconWhite.bootstrap.svg",
+  "game icon resolves via BOOTSTRAP_CONFIG",
+);
+
 __OFH.installI18nOverride();
 const viBundle = await win.OpenFrontHelperI18n.loadBundle("vi");
 assert.equal(viBundle.a, "2", "i18n returns the Vietnamese bundle when requested");

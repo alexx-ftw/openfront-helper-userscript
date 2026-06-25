@@ -119,6 +119,7 @@ function metadataHeader(version) {
 // @version      ${version}
 // @description  Auto-join lobbies + in-game helper overlays and a private-lobby auto-bot for OpenFront.io. Standalone userscript build with a multi-language UI.
 // @author       nguyenvancaokyfpt (https://github.com/nguyenvancaokyfpt)
+// @license      AGPL-3.0-or-later
 // @homepageURL  ${repo}
 // @supportURL   ${repo}/issues
 // @updateURL    ${raw}
