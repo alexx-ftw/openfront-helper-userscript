@@ -126,10 +126,34 @@ const FORECAST_MAP_FREQUENCY = Object.freeze({
   sanfrancisco: 3,
   aegean: 6,
   milkyway: 8,
-  mediterranean: 6,
   dyslexdria: 8,
   greatlakes: 6,
   straitofmalacca: 4,
+  // v0.32 maps. These weights are ESTIMATES of public-lobby rotation frequency
+  // (used only by the advisory lobby forecast, not by actual matching) — tune as
+  // real rotation data accrues. Larger/requested maps weighted higher than the
+  // meme maps (onion / labyrinth / choppingblock / warshipwarship).
+  balkans: 5,
+  caribbean: 5,
+  choppingblock: 2,
+  danishstraits: 4,
+  giantworldmap: 2,
+  hongkong: 4,
+  indiansubcontinent: 5,
+  juandefucastrait: 3,
+  korea: 4,
+  labyrinth: 2,
+  middleeast: 5,
+  mississippiriver: 3,
+  northwestpassage: 3,
+  onion: 2,
+  southeastasia: 5,
+  taiwanstrait: 3,
+  titan: 3,
+  venice: 4,
+  warshipwarship: 2,
+  worldinverted: 3,
+  yellowsea: 4,
 });
 
 const FORECAST_ARCADE_MAP_IDS = new Set(["thebox", "didier", "didierfrance", "sierpinski"]);

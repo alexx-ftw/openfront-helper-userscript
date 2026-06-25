@@ -1062,6 +1062,9 @@
         smallId,
         name: getPlayerDisplayName(player),
         team: getPlayerTeamName(player),
+        // Each player's exact in-game color (per-player, not just per-team), so
+        // rows match what the player sees on the map. null → no accent.
+        color: getPlayerColor(player, game),
         owned,
         gold,
         gpm: getGoldPerMinuteForPlayer(player, index),
@@ -1206,7 +1209,7 @@
     if (c.rank) c.rank.textContent = String(rank + 1);
     if (c.name) {
       c.name.textContent = row.disconnected ? `${row.name} 💤` : row.name;
-      const color = row.team ? getTeamColor(row.team, game) : "";
+      const color = row.color || (row.team ? getTeamColor(row.team, game) : "");
       if (color) c.name.style.setProperty("--team-accent-color", color);
       else c.name.style.removeProperty("--team-accent-color");
     }

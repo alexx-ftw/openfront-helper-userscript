@@ -62,16 +62,23 @@ const TRADE_BALANCE_RENDER_MS = 250;
 const ECONOMY_HEATMAP_VIEWPORT_PADDING = 120;
 const ECONOMY_HEATMAP_REVENUE_WINDOW_MS = 180000;
 const HEATMAP_REFERENCE_ZOOM = 1.8;
+// Team base colors, kept in sync with the game's default theme palette
+// (src/client/render/gl/default-theme.json `teamColors` as of v0.32.3). Used as
+// a fallback when the live per-player color is unreachable (see getTeamColor /
+// getPlayerColor in shared-utils.js). For 8+ teams the game names teams
+// "Team 1".."Team N" — not in this map — so getTeamColor derives those from a
+// living member's color, or generates a distinct deterministic one.
 const TEAM_COLORS = {
-  Red: "#ef4444",
-  Blue: "#3b82f6",
-  Teal: "#14b8a6",
-  Purple: "#a855f7",
-  Yellow: "#facc15",
-  Orange: "#f97316",
-  Green: "#22c55e",
-  Humans: "#60a5fa",
-  Nations: "#ef4444",
+  Red: "#eb3333",
+  Blue: "#2962ff",
+  Teal: "#2bd4bd",
+  Purple: "#9234ea",
+  Yellow: "#e7b008",
+  Orange: "#f97415",
+  Green: "#41be52",
+  Bot: "#d1cdc7",
+  Humans: "#2962ff",
+  Nations: "#eb3333",
 };
 
 let botMarkersEnabled = false;
