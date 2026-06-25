@@ -50,6 +50,7 @@ const INGAME_FILES = [
   "nuke-prediction.js",
   "nuke-suggestions.js",
   "boat-prediction.js",
+  "warship-routes.js",
   "boat-panel.js",
   "estate-panel.js",
   "auto-leave.js",
