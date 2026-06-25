@@ -8,6 +8,11 @@
   const WARSHIP_ROUTES_CONTAINER_ID = "openfront-helper-warship-routes-layer";
   const WARSHIP_ROUTES_STYLE_ID = "openfront-helper-warship-routes-style";
   const WARSHIP_ROUTES_SCAN_MS = 600;
+  // A warship parked AT its patrolTile has start≈end → a degenerate near-zero route
+  // + a diamond sitting on the ship. Only draw when it is actually travelling toward
+  // an order (manhattan ship→dest above this), so the overlay reads as "where is it
+  // headed" rather than a marker on every idle ship.
+  const WARSHIP_ROUTE_MIN_DIST = 6;
   let warshipRoutesEnabled = false;
   let warshipRoutesAnimationFrame = null;
   let lastWarshipRouteScanAt = 0;
@@ -130,6 +135,19 @@
         destWorldY = game.y(destTile);
       } catch (_e) {
         continue;
+      }
+
+      // Skip warships effectively parked at their destination (idle-noise filter).
+      try {
+        const shipTile = unit.tile?.();
+        if (shipTile !== undefined && shipTile !== null) {
+          const d =
+            Math.abs(game.x(shipTile) - destWorldX) +
+            Math.abs(game.y(shipTile) - destWorldY);
+          if (d < WARSHIP_ROUTE_MIN_DIST) continue;
+        }
+      } catch (_e) {
+        /* ignore — draw it anyway if we can't measure */
       }
 
       out.push({
