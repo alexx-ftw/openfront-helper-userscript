@@ -642,11 +642,11 @@
     // Tiny-pool-safe: serves ONLY the top threat per pass, throttled, per-warship
     // debounced, and distance-capped (won't drag a ship across the map to a lost cause).
     // Pure movement (no gold spend); the faithful path still grows the pool by building.
-    smartWarshipPatrol() {
-      if (this.player === null) return;
-      if (this.game.config().isUnitDisabled(UNIT.Warship)) return;
-
-      const s = (this.smartState = this.smartState || {
+    // Shared winFix scratch state for smartWarshipPatrol + dodgeNukes. Created once
+    // with the FULL shape so whichever method runs first this tick can't leave a
+    // partial object that starves the other (both read smartState.cooldown).
+    ensureSmartState() {
+      return (this.smartState = this.smartState || {
         transportPos: new Map(), // ourTransportId -> {x,y,tx,ty}
         tradePos: new Map(), // ourTradeId -> {x,y}
         losses: [], // [{x,y,at}] open-water boat losses
@@ -655,6 +655,13 @@
         serviced: new Map(), // zoneCellKey -> tick a ship was last sent to that zone
         lastPassMs: 0,
       });
+    }
+
+    smartWarshipPatrol() {
+      if (this.player === null) return;
+      if (this.game.config().isUnitDisabled(UNIT.Warship)) return;
+
+      const s = this.ensureSmartState();
 
       const now = performance.now();
       const throttle = state.settings.warshipPatrolThrottleMs || 1500;
@@ -893,5 +900,176 @@
         this.game.y(tile),
       );
       return true;
+    }
+
+    // ── WARSHIP NUKE AUTO-DODGE (WIN-FIX — NOT in src) ─────────────────────────
+    // Detect any in-flight nuke whose blast zone covers one of our warships and
+    // move that warship clear of EVERY active blast zone. Owner-agnostic: a nuke
+    // kills a warship regardless of who fired it (maybeRetaliateWithWarship even
+    // notes "own nuke destroyed own ship"), and the user chose "dodge any nuke that
+    // covers the ship" — so we filter by blast coverage, not relation. Pure movement
+    // (no gold), runs every tick BEFORE smartWarshipPatrol, gated by winFixes. Locks
+    // each dodged ship into the shared smartState.cooldown so patrol skips it.
+
+    // Outer blast radius (tile units) of a nuke, with the same fallback the overlay
+    // (nuke-prediction.js) uses when nukeMagnitudes is unavailable.
+    nukeOuterRadius(nuke) {
+      try {
+        const mag = this.game.config().nukeMagnitudes(nuke.type());
+        const outer = Number(mag?.outer ?? mag?.inner);
+        if (Number.isFinite(outer) && outer > 0) return outer;
+      } catch (_e) {
+        /* fall through */
+      }
+      return nuke.type && nuke.type() === UNIT.HydrogenBomb ? 160 : 70;
+    }
+
+    // Find a water tile clear of EVERY zone for a ship at (sx,sy). Radial push away
+    // from the nearest zone center, sampling several angles (it may hit land); falls
+    // back to the water tile that maximizes distance to the nearest center. null if
+    // no water tile is found around the ship.
+    findNukeEscapeTile(sx, sy, zones, inAnyZone) {
+      let center = null;
+      let bestD2 = Infinity;
+      for (const z of zones) {
+        const dx = sx - z.tx;
+        const dy = sy - z.ty;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < bestD2) {
+          bestD2 = d2;
+          center = z;
+        }
+      }
+      if (center === null) return null;
+
+      const buffer = state.settings.warshipNukeDodgeBuffer || 20;
+      const samples = Math.max(1, state.settings.warshipNukeDodgeSamples || 8);
+      const pushDist = center.radius + buffer;
+
+      // Base angle points from the center out toward the ship (away from impact).
+      let baseAngle = Math.atan2(sy - center.ty, sx - center.tx);
+      if (!Number.isFinite(baseAngle)) baseAngle = 0; // ship exactly on the center
+
+      let fallbackTile = null;
+      let fallbackMinCenterD2 = -Infinity;
+      for (let k = 0; k < samples; k++) {
+        // 0, -45, +45, -90, +90, … spread symmetrically around the base angle.
+        const stepN = Math.ceil(k / 2);
+        const sign = k % 2 === 0 ? 1 : -1;
+        const angle = baseAngle + sign * stepN * (Math.PI / 4);
+        const cx = Math.round(center.tx + Math.cos(angle) * pushDist);
+        const cy = Math.round(center.ty + Math.sin(angle) * pushDist);
+        if (!this.game.isValidCoord(cx, cy)) continue;
+        const tile = this.game.ref(cx, cy);
+        if (!this.game.isWater(tile)) continue;
+        if (!inAnyZone(cx, cy)) {
+          return tile; // first water tile clear of EVERY zone
+        }
+        // Not clear — remember the safest-so-far for the fallback.
+        let minCenterD2 = Infinity;
+        for (const z of zones) {
+          const dx = cx - z.tx;
+          const dy = cy - z.ty;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < minCenterD2) minCenterD2 = d2;
+        }
+        if (minCenterD2 > fallbackMinCenterD2) {
+          fallbackMinCenterD2 = minCenterD2;
+          fallbackTile = tile;
+        }
+      }
+      return fallbackTile;
+    }
+
+    dodgeNukes() {
+      if (this.player === null) return;
+      if (this.game.config().isUnitDisabled(UNIT.Warship)) return;
+
+      const myWarships = this.player.units(UNIT.Warship);
+      if (myWarships.length === 0) return;
+
+      // 1) collect active blast zones from ALL in-flight nukes (owner-agnostic).
+      const margin = state.settings.warshipNukeDodgeMargin || 8;
+      const zones = [];
+      for (const nuke of this.game.units(
+        UNIT.AtomBomb,
+        UNIT.HydrogenBomb,
+        UNIT.MIRVWarhead,
+      )) {
+        try {
+          if (!nuke.isActive()) continue;
+          const target = nuke.targetTile();
+          if (target === undefined || target === null) continue;
+          const radius = this.nukeOuterRadius(nuke) + margin;
+          zones.push({
+            tx: this.game.x(target),
+            ty: this.game.y(target),
+            radius,
+            r2: radius * radius,
+            owner: nuke.owner()?.smallID?.(),
+          });
+        } catch (_e) {
+          /* skip */
+        }
+      }
+      if (zones.length === 0) return; // no-op
+
+      const inAnyZone = (x, y) => {
+        for (const z of zones) {
+          const dx = x - z.tx;
+          const dy = y - z.ty;
+          if (dx * dx + dy * dy <= z.r2) return true;
+        }
+        return false;
+      };
+
+      // DE-RISK (throttled ~1s): confirm the wrapper actually sees ENEMY nukes via
+      // this GameView (not just our own/allies'). If only mine===true rows appear,
+      // the bot can't see incoming enemy strikes and dodge is effectively limited —
+      // surface that early. We still dodge by coverage regardless.
+      const nowMs = performance.now();
+      if (nowMs - (this._dodgeLogAtMs || 0) > 1000) {
+        this._dodgeLogAtMs = nowMs;
+        const mySid = this.player.smallID();
+        console.log(
+          "[Warship] nuke-dodge scan:",
+          zones.length,
+          "zone(s)",
+          zones.map((z) => ({ owner: z.owner, mine: z.owner === mySid })),
+        );
+      }
+
+      // 2) move any covered warship clear; debounce by destination; lock patrol.
+      const s = this.ensureSmartState();
+      const tick = this.game.ticks();
+      for (const ship of myWarships) {
+        try {
+          const st = ship.tile();
+          const sx = this.game.x(st);
+          const sy = this.game.y(st);
+          if (!inAnyZone(sx, sy)) continue; // safe where it is
+
+          // Already heading somewhere clear of every zone → leave it (re-fires if a
+          // NEW nuke later covers that destination, since then inAnyZone(pt) is true).
+          const pt = ship.warshipState().patrolTile;
+          if (
+            pt !== undefined &&
+            !inAnyZone(this.game.x(pt), this.game.y(pt))
+          ) {
+            continue;
+          }
+
+          const escape = this.findNukeEscapeTile(sx, sy, zones, inAnyZone);
+          if (escape === null) continue;
+
+          const ctors = discoverCtors(getEventBus());
+          if (!ctors.moveWarship) continue;
+          emitIntent(ctors.moveWarship, [ship.id()], escape);
+          s.cooldown.set(ship.id(), tick); // lock patrol from re-tasking it this pass
+          setLastAction(tr("🚢 Dodge nuke"), "naval");
+        } catch (_e) {
+          /* skip */
+        }
+      }
     }
   }
