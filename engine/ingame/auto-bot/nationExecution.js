@@ -78,9 +78,12 @@
       ) {
         try {
           this.warshipBehavior.trackShipsAndRetaliate();
-          // WIN-FIX: reposition EXISTING idle warships to the top naval threat (invasion
-          // > trade-raid lane > open-water loss zone). Throttled/debounced internally.
           if (state.settings.winFixes) {
+            // WIN-FIX: né nuke trước (ưu tiên sống sót), rồi reposition idle warship
+            // tới naval threat. dodgeNukes khoá ship vừa né khỏi patrol pass này.
+            this.warshipBehavior.dodgeNukes();
+            // WIN-FIX: reposition EXISTING idle warships to the top naval threat (invasion
+            // > trade-raid lane > open-water loss zone). Throttled/debounced internally.
             this.warshipBehavior.smartWarshipPatrol();
           }
         } catch (e) {
