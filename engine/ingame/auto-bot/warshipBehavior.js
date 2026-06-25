@@ -911,6 +911,78 @@
     // (no gold), runs every tick BEFORE smartWarshipPatrol, gated by winFixes. Locks
     // each dodged ship into the shared smartState.cooldown so patrol skips it.
 
+    // Remaining flight ticks for an atom/hydrogen nuke from its CURRENT tile to its
+    // target, via the same parabola the game uses (mirrors nuke-prediction.js).
+    // UniversalPathFinding lives in nukeBehavior.js (shared scope) — guarded.
+    computeNukeRemainingTicks(fromTile, toTile) {
+      try {
+        if (
+          typeof UniversalPathFinding === "undefined" ||
+          !UniversalPathFinding.Parabola ||
+          fromTile === undefined ||
+          fromTile === null ||
+          toTile === undefined ||
+          toTile === null
+        ) {
+          return null;
+        }
+        const speed = this.game.config?.().defaultNukeSpeed?.() ?? 8;
+        const pf = UniversalPathFinding.Parabola(this.game, {
+          increment: speed,
+          distanceBasedHeight: true,
+          directionUp: true,
+        });
+        const path = pf.findPath(fromTile, toTile);
+        if (!Array.isArray(path) || path.length === 0) return null;
+        if (path.length === 1) return 1;
+        let arc = 0;
+        for (let i = 1; i < path.length; i++) {
+          const ax = this.game.x(path[i]);
+          const ay = this.game.y(path[i]);
+          const bx = this.game.x(path[i - 1]);
+          const by = this.game.y(path[i - 1]);
+          arc += Math.hypot(ax - bx, ay - by);
+        }
+        return Math.floor(arc / (speed > 0 ? speed : 8)) + 1;
+      } catch (_e) {
+        return null;
+      }
+    }
+
+    // ETA (ticks) until this nuke detonates. MIRV → 0 (treated as imminent: its
+    // mid-air flat arc isn't this parabola). Atom/hydrogen: anchored once at first
+    // sight then counted down (nuke advances one trajectory point per tick).
+    // Parabola-unavailable fallback: straight-line distance / speed.
+    nukeEtaTicks(nuke, nowTick) {
+      const type = nuke.type?.();
+      if (type === UNIT.MIRVWarhead) return 0;
+      const id = nuke.id?.();
+      if (id === undefined) return 0;
+      if (!this.nukeEtaById) this.nukeEtaById = new Map();
+      let anchor = this.nukeEtaById.get(id);
+      if (anchor === undefined) {
+        let remainTicks = this.computeNukeRemainingTicks(
+          nuke.tile?.(),
+          nuke.targetTile?.(),
+        );
+        if (remainTicks === null) {
+          try {
+            const speed = this.game.config?.().defaultNukeSpeed?.() ?? 8;
+            const d2 = this.game.euclideanDistSquared(
+              nuke.tile(),
+              nuke.targetTile(),
+            );
+            remainTicks = Math.floor(Math.sqrt(d2) / (speed > 0 ? speed : 8)) + 1;
+          } catch (_e) {
+            remainTicks = 1;
+          }
+        }
+        anchor = { firstTick: nowTick, remainTicks };
+        this.nukeEtaById.set(id, anchor);
+      }
+      return Math.max(0, anchor.remainTicks - (nowTick - anchor.firstTick));
+    }
+
     // Outer blast radius (tile units) of a nuke, with the same fallback the overlay
     // (nuke-prediction.js) uses when nukeMagnitudes is unavailable.
     nukeOuterRadius(nuke) {
@@ -924,11 +996,12 @@
       return nuke.type && nuke.type() === UNIT.HydrogenBomb ? 160 : 70;
     }
 
-    // Find a water tile clear of EVERY zone for a ship at (sx,sy). Radial push away
-    // from the nearest zone center, sampling several angles (it may hit land); falls
-    // back to the water tile that maximizes distance to the nearest center. null if
-    // no water tile is found around the ship.
-    findNukeEscapeTile(sx, sy, zones, inAnyZone) {
+    // Find a water tile MAXIMIZING coverEta for a ship at (sx,sy): coverEta = the
+    // soonest impact (ticks) among zones covering a tile, +Infinity if clear of all.
+    // Radial push away from the nearest center, sampling several angles × rings (to
+    // clear wide overlapping coverage). Tie-break: closest to the ship. Returns
+    // { tile, eta } (eta may be Infinity = fully safe) or null if no water tile found.
+    findNukeEscapeTile(sx, sy, zones, coverEta) {
       let center = null;
       let bestD2 = Infinity;
       for (const z of zones) {
@@ -944,41 +1017,38 @@
 
       const buffer = state.settings.warshipNukeDodgeBuffer || 20;
       const samples = Math.max(1, state.settings.warshipNukeDodgeSamples || 8);
-      const pushDist = center.radius + buffer;
+      const rings = Math.max(1, state.settings.warshipNukeDodgeRings || 3);
 
       // Base angle points from the center out toward the ship (away from impact).
       let baseAngle = Math.atan2(sy - center.ty, sx - center.tx);
       if (!Number.isFinite(baseAngle)) baseAngle = 0; // ship exactly on the center
 
-      let fallbackTile = null;
-      let fallbackMinCenterD2 = -Infinity;
-      for (let k = 0; k < samples; k++) {
-        // 0, -45, +45, -90, +90, … spread symmetrically around the base angle.
-        const stepN = Math.ceil(k / 2);
-        const sign = k % 2 === 0 ? 1 : -1;
-        const angle = baseAngle + sign * stepN * (Math.PI / 4);
-        const cx = Math.round(center.tx + Math.cos(angle) * pushDist);
-        const cy = Math.round(center.ty + Math.sin(angle) * pushDist);
-        if (!this.game.isValidCoord(cx, cy)) continue;
-        const tile = this.game.ref(cx, cy);
-        if (!this.game.isWater(tile)) continue;
-        if (!inAnyZone(cx, cy)) {
-          return tile; // first water tile clear of EVERY zone
-        }
-        // Not clear — remember the safest-so-far for the fallback.
-        let minCenterD2 = Infinity;
-        for (const z of zones) {
-          const dx = cx - z.tx;
-          const dy = cy - z.ty;
-          const d2 = dx * dx + dy * dy;
-          if (d2 < minCenterD2) minCenterD2 = d2;
-        }
-        if (minCenterD2 > fallbackMinCenterD2) {
-          fallbackMinCenterD2 = minCenterD2;
-          fallbackTile = tile;
+      let bestTile = null;
+      let bestEta = -Infinity;
+      let bestDist = Infinity;
+      for (let ring = 1; ring <= rings; ring++) {
+        const pushDist = center.radius + buffer * ring;
+        for (let k = 0; k < samples; k++) {
+          // 0, -45, +45, -90, +90, … spread symmetrically around the base angle.
+          const stepN = Math.ceil(k / 2);
+          const sign = k % 2 === 0 ? 1 : -1;
+          const angle = baseAngle + sign * stepN * (Math.PI / 4);
+          const cx = Math.round(center.tx + Math.cos(angle) * pushDist);
+          const cy = Math.round(center.ty + Math.sin(angle) * pushDist);
+          if (!this.game.isValidCoord(cx, cy)) continue;
+          const tile = this.game.ref(cx, cy);
+          if (!this.game.isWater(tile)) continue;
+          const eta = coverEta(cx, cy);
+          const dist = Math.abs(cx - sx) + Math.abs(cy - sy);
+          if (eta > bestEta || (eta === bestEta && dist < bestDist)) {
+            bestEta = eta;
+            bestDist = dist;
+            bestTile = tile;
+          }
         }
       }
-      return fallbackTile;
+      if (bestTile === null) return null;
+      return { tile: bestTile, eta: bestEta };
     }
 
     dodgeNukes() {
@@ -988,9 +1058,13 @@
       const myWarships = this.player.units(UNIT.Warship);
       if (myWarships.length === 0) return;
 
-      // 1) collect active blast zones from ALL in-flight nukes (owner-agnostic).
+      const tick = this.game.ticks();
+
+      // 1) collect active blast zones from ALL in-flight nukes (owner-agnostic),
+      //    each carrying its ETA (ticks until detonation; MIRV = 0 = imminent).
       const margin = state.settings.warshipNukeDodgeMargin || 8;
       const zones = [];
+      const seen = new Set();
       for (const nuke of this.game.units(
         UNIT.AtomBomb,
         UNIT.HydrogenBomb,
@@ -1000,6 +1074,8 @@
           if (!nuke.isActive()) continue;
           const target = nuke.targetTile();
           if (target === undefined || target === null) continue;
+          const id = nuke.id?.();
+          if (id !== undefined) seen.add(id);
           const radius = this.nukeOuterRadius(nuke) + margin;
           zones.push({
             tx: this.game.x(target),
@@ -1007,26 +1083,34 @@
             radius,
             r2: radius * radius,
             owner: nuke.owner()?.smallID?.(),
+            eta: this.nukeEtaTicks(nuke, tick),
           });
         } catch (_e) {
           /* skip */
         }
       }
+      // prune ETA anchors for nukes no longer in flight (landed/intercepted).
+      if (this.nukeEtaById && this.nukeEtaById.size > 0) {
+        for (const id of Array.from(this.nukeEtaById.keys())) {
+          if (!seen.has(id)) this.nukeEtaById.delete(id);
+        }
+      }
       if (zones.length === 0) return; // no-op
 
-      const inAnyZone = (x, y) => {
+      // coverEta(x,y) = soonest impact (ticks) among zones covering (x,y); Infinity
+      // if the tile is clear of every zone (fully safe).
+      const coverEta = (x, y) => {
+        let best = Infinity;
         for (const z of zones) {
           const dx = x - z.tx;
           const dy = y - z.ty;
-          if (dx * dx + dy * dy <= z.r2) return true;
+          if (dx * dx + dy * dy <= z.r2 && z.eta < best) best = z.eta;
         }
-        return false;
+        return best;
       };
 
-      // DE-RISK (throttled ~1s): confirm the wrapper actually sees ENEMY nukes via
-      // this GameView (not just our own/allies'). If only mine===true rows appear,
-      // the bot can't see incoming enemy strikes and dodge is effectively limited —
-      // surface that early. We still dodge by coverage regardless.
+      // DE-RISK (throttled ~1s): confirm the wrapper sees ENEMY nukes via this
+      // GameView (not just our own/allies'). Logs owner + mine flag + eta per zone.
       const nowMs = performance.now();
       if (nowMs - (this._dodgeLogAtMs || 0) > 1000) {
         this._dodgeLogAtMs = nowMs;
@@ -1035,36 +1119,41 @@
           "[Warship] nuke-dodge scan:",
           zones.length,
           "zone(s)",
-          zones.map((z) => ({ owner: z.owner, mine: z.owner === mySid })),
+          zones.map((z) => ({ owner: z.owner, mine: z.owner === mySid, eta: z.eta })),
         );
       }
 
-      // 2) move any covered warship clear; debounce by destination; lock patrol.
+      // 2) for each covered warship, move toward the highest-coverEta reachable tile.
+      //    A fully-clear tile (Infinity) wins; if coverage is too wide to escape,
+      //    the ship shelters in the LATEST-detonating zone, then re-evaluates each
+      //    tick (the early nuke's zone vanishes on detonation → it runs onward).
       const s = this.ensureSmartState();
-      const tick = this.game.ticks();
       for (const ship of myWarships) {
         try {
           const st = ship.tile();
           const sx = this.game.x(st);
           const sy = this.game.y(st);
-          if (!inAnyZone(sx, sy)) continue; // safe where it is
+          const shipEta = coverEta(sx, sy);
+          if (shipEta === Infinity) continue; // safe where it is
 
-          // Already heading somewhere clear of every zone → leave it (re-fires if a
-          // NEW nuke later covers that destination, since then inAnyZone(pt) is true).
+          const best = this.findNukeEscapeTile(sx, sy, zones, coverEta);
+          if (best === null) continue;
+          if (best.eta <= shipEta) continue; // no safer spot reachable → don't jitter
+
+          // Debounce: already heading somewhere at least as safe → leave it. Self-
+          // heals — when the early nuke detonates, coverEta(pt) drops below the new
+          // best.eta and this re-fires.
           const pt = ship.warshipState().patrolTile;
           if (
             pt !== undefined &&
-            !inAnyZone(this.game.x(pt), this.game.y(pt))
+            coverEta(this.game.x(pt), this.game.y(pt)) >= best.eta
           ) {
             continue;
           }
 
-          const escape = this.findNukeEscapeTile(sx, sy, zones, inAnyZone);
-          if (escape === null) continue;
-
           const ctors = discoverCtors(getEventBus());
           if (!ctors.moveWarship) continue;
-          emitIntent(ctors.moveWarship, [ship.id()], escape);
+          emitIntent(ctors.moveWarship, [ship.id()], best.tile);
           s.cooldown.set(ship.id(), tick); // lock patrol from re-tasking it this pass
           setLastAction(tr("🚢 Dodge nuke"), "naval");
         } catch (_e) {
