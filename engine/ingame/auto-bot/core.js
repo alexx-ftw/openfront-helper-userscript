@@ -144,6 +144,13 @@
     // per-ZONE debounce (so a tiny pool doesn't re-task another ship to a lane already
     // being raced to — distinct from the per-warship cooldown)
     warshipZoneServiceTicks: 90, // don't send a 2nd ship to the same zone cell within this
+    // ── WARSHIP NUKE AUTO-DODGE (winFix, NOT in src) ───────────────────────────────
+    // Điều warship ra khỏi vùng nổ của nuke đang bay (bất kể chủ nhân — một quả nuke
+    // giết warship dù ai bắn). Pure movement, chạy mỗi tick TRƯỚC smartWarshipPatrol,
+    // gated bởi winFixes. Composes với patrol qua smartState.cooldown dùng chung.
+    warshipNukeDodgeMargin: 8, // cộng vào nukeMagnitudes(type).outer để có bán kính "nguy hiểm"
+    warshipNukeDodgeBuffer: 20, // đẩy ship ra ngoài bán kính thêm chừng này khi tìm ô né
+    warshipNukeDodgeSamples: 8, // số góc lấy mẫu khi tìm ô né (radial + xoay quanh)
     donateMinExcessFrac: 0.05, // only donate when the excess above the keep line is ≥
     // this × maxTroops (avoids spammy micro-donations of a few troops)
     boatWeakTroopFrac: 0.6, // the nearest-target sweep also grabs OWNED coastal land if
