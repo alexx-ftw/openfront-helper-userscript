@@ -50,6 +50,8 @@
   "Shows predicted enemy nuke landing points and blast radius.": "Cho thấy kẻ thù đang hạ cánh và bán kính nổ.",
   "Boat prediction": "Tiên đoán về thuyền",
   "Shows enemy boat landing points. Red = targeting you, yellow = targeting others.": "Cho thấy tàu địch đang hạ cánh. Red = nhắm vào bạn, màu vàng = mục tiêu khác.",
+  "Warship routes": "Đường đi tàu chiến",
+  "Draws warship destinations & routes (blue = you, teal = team, green = allies, red = enemies).": "Vẽ đích & đường đi của tàu chiến (xanh = bạn, teal = đội, lục = đồng minh, đỏ = địch).",
   "Nuke suggestion": "Đề nghị đầu tư",
   "Beta": "Beta",
   "May lag": "chiều",

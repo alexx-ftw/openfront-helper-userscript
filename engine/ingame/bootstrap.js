@@ -78,6 +78,10 @@
       });
     }
 
+    if (data.type === "SHOW_WARSHIP_ROUTES") {
+      setWarshipRoutesEnabled(data.payload?.enabled);
+    }
+
     if (data.type === "SHOW_BOAT_PANEL") {
       setBoatPanelEnabled(data.payload?.enabled);
     }

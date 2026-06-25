@@ -63,6 +63,7 @@
     showNukePrediction: true,
     showNukeSuggestions: false,
     showBoatPrediction: true,
+    showWarshipRoutes: true,
     alwaysShowOwnBoatRoutes: true,
     alwaysShowTeamBoatRoutes: true,
     alwaysShowAllyBoatRoutes: true,

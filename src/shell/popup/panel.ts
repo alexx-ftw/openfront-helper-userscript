@@ -258,6 +258,11 @@ const GAME_HELPERS: Toggle[] = [
     parent: "showBoatPrediction",
   },
   {
+    name: "showWarshipRoutes",
+    title: "Warship routes",
+    desc: "Draws warship destinations & routes (blue = you, teal = team, green = allies, red = enemies).",
+  },
+  {
     name: "showBoatPanel",
     title: "Boat panel",
     desc: "Lists boats you sent and boats incoming to your territory, with arrival times.",

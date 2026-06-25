@@ -179,6 +179,19 @@ function syncBoatPredictionHelper() {
   );
 }
 
+function syncWarshipRoutesHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SHOW_WARSHIP_ROUTES",
+      payload: {
+        enabled: Boolean(settings.showWarshipRoutes),
+      },
+    },
+    "*",
+  );
+}
+
 function syncBoatPanelHelper() {
   window.postMessage(
     {
@@ -391,6 +404,7 @@ function syncHelpers() {
   syncAutoBotI18n();
   syncNukePredictionHelper();
   syncBoatPredictionHelper();
+  syncWarshipRoutesHelper();
   syncBoatPanelHelper();
   syncBoatIncomingWarningHelper();
   syncEstatePanelHelper();
