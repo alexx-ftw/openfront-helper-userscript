@@ -151,6 +151,7 @@
     warshipNukeDodgeMargin: 8, // cộng vào nukeMagnitudes(type).outer để có bán kính "nguy hiểm"
     warshipNukeDodgeBuffer: 20, // đẩy ship ra ngoài bán kính thêm chừng này khi tìm ô né
     warshipNukeDodgeSamples: 8, // số góc lấy mẫu khi tìm ô né (radial + xoay quanh)
+    warshipNukeDodgeRings: 3, // số vòng bán kính lấy mẫu khi tìm ô né (xử lý vùng nuke phủ rộng)
     donateMinExcessFrac: 0.05, // only donate when the excess above the keep line is ≥
     // this × maxTroops (avoids spammy micro-donations of a few troops)
     boatWeakTroopFrac: 0.6, // the nearest-target sweep also grabs OWNED coastal land if
