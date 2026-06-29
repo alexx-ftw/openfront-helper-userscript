@@ -703,19 +703,58 @@
     if (c) c.hidden = true;
   }
 
+  // ── native game overlay (SAM ranges + nuke trajectory) ─────────────────────
+  // Set the game's shared uiState.ghostStructure = "Atom Bomb" while aiming and
+  // the game's own BuildPreviewController renders the SAM-range circles + the
+  // trajectory arc (white→red on intercept) that pressing 8/9 shows — pixel-
+  // perfect, zero render code here. The macro's capture-phase pointerup swallow
+  // already stops the game's native build-on-click, so setting the ghost only
+  // draws the preview. Falls back to the macro's own blast rings when uiState
+  // isn't reachable. Cleared (→ null) the instant we commit / cancel / close.
+  let atomUsingNativeOverlay = false;
+  function atomNativeOverlayAvailable(ctx) {
+    try {
+      const ui = ctx && ctx.buildMenu && ctx.buildMenu.uiState;
+      return !!ui && "ghostStructure" in ui;
+    } catch (_e) {
+      return false;
+    }
+  }
+  function atomSetGhost(ctx, type) {
+    try {
+      const ui = ctx && ctx.buildMenu && ctx.buildMenu.uiState;
+      if (ui) ui.ghostStructure = type;
+    } catch (_e) {
+      /* best-effort */
+    }
+  }
+  function atomClearGhost(ctx) {
+    atomSetGhost(ctx || atomGameContext(), null);
+  }
+
   function startAtomAiming(ctx) {
     hideAtomDialog(); // pressing the hotkey re-aims: drop any open dialog so we retarget
     atomAiming = true;
     atomAimCtx = ctx;
-    atomAimRadii = {
-      a: atomWorldRadius(ctx.game, ATOM_UNIT, ATOM_FALLBACK_RADIUS),
-      h: atomWorldRadius(ctx.game, HYDROGEN_UNIT, HYDROGEN_FALLBACK_RADIUS),
-    };
-    showAtomRings();
-    updateAtomRings(atomLastMouseX, atomLastMouseY);
+    atomUsingNativeOverlay = atomNativeOverlayAvailable(ctx);
+    if (atomUsingNativeOverlay) {
+      // Game vẽ overlay SAM + đường đạn (giống bấm 8/9). Không vẽ vòng blast riêng.
+      atomAimRadii = null;
+      atomSetGhost(ctx, ATOM_UNIT);
+    } else {
+      // Fallback: vòng blast tự vẽ của macro.
+      atomAimRadii = {
+        a: atomWorldRadius(ctx.game, ATOM_UNIT, ATOM_FALLBACK_RADIUS),
+        h: atomWorldRadius(ctx.game, HYDROGEN_UNIT, HYDROGEN_FALLBACK_RADIUS),
+      };
+      showAtomRings();
+      updateAtomRings(atomLastMouseX, atomLastMouseY);
+    }
     atomBanner("☢️ " + atomT("Left-click a target to set up the strike · Esc to cancel"), "arm");
   }
   function stopAtomAiming() {
+    if (atomUsingNativeOverlay) atomClearGhost(atomAimCtx);
+    atomUsingNativeOverlay = false;
     atomAiming = false;
     atomAimCtx = null;
     atomAimRadii = null;
@@ -996,6 +1035,7 @@
     const close = () => {
       hideAtomDialog();
       hideAtomRings();
+      atomClearGhost(ctx); // safety: clear native overlay (already cleared on commit)
       if (liveTimer) {
         clearInterval(liveTimer);
         liveTimer = null;
@@ -1330,6 +1370,7 @@
       if (document.getElementById(ATOM_MACRO_DIALOG_ID)) {
         hideAtomDialog();
         hideAtomRings(); // clear the frozen blast rings the dialog left on the map
+        atomClearGhost(); // safety: clear any leftover native overlay
         handled = true;
       }
       if (atomAiming) {
@@ -1441,10 +1482,15 @@
     const cx = event.clientX;
     const cy = event.clientY;
     console.log("[AtomMacro] aim click → tile", tile);
-    // Freeze the rings in place (stop following the cursor) but KEEP them visible so the
-    // blast radius stays on-screen while the dialog is open — they're hidden when it closes.
     atomAiming = false;
-    updateAtomRings(cx, cy); // snap to the committed point + hide the "click to aim" tag
+    if (atomUsingNativeOverlay) {
+      // Đường đạn native bám con trỏ → khi mở dialog sẽ chạy lệch mục tiêu, nên tắt.
+      atomClearGhost(ctx);
+      atomUsingNativeOverlay = false;
+    } else {
+      // Fallback: đóng băng vòng blast tự vẽ dưới dialog (ẩn khi đóng).
+      updateAtomRings(cx, cy); // snap to the committed point + hide the "click to aim" tag
+    }
     hideAtomBanner();
     atomAimCtx = null;
     atomAimRadii = null;
