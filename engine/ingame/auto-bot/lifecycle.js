@@ -666,7 +666,6 @@
   function updateAtomRings(cx, cy) {
     const c = document.getElementById(ATOM_RANGE_CONTAINER_ID);
     if (!c || !atomAimCtx || !atomAimRadii) return;
-    const aPx = atomRingScreenRadius(atomAimCtx, atomAimRadii.a, cx, cy);
     const hPx = atomRingScreenRadius(atomAimCtx, atomAimRadii.h, cx, cy);
     const setRing = (sel, px) => {
       const el = c.querySelector(sel);
@@ -678,17 +677,34 @@
       el.style.top = `${cy}px`;
     };
     setRing('[data-role="rng-h"]', hPx);
-    setRing('[data-role="rng-a"]', aPx);
+    // Atom ring + dot + "click to aim" tag are ours only in FALLBACK mode. In
+    // native mode (atomAimRadii.a == null) the game already draws the Atom blast
+    // circle and a crosshair, so we render ONLY the larger Hydrogen ring on top
+    // (both bomb ranges visible at once) and hide the rest to avoid doubling.
+    const native = atomAimRadii.a == null;
+    const aEl = c.querySelector('[data-role="rng-a"]');
+    if (aEl) {
+      aEl.style.display = native ? "none" : "";
+      if (!native) {
+        const aPx = atomRingScreenRadius(atomAimCtx, atomAimRadii.a, cx, cy);
+        const d = Math.max(2, aPx * 2);
+        aEl.style.width = `${d}px`;
+        aEl.style.height = `${d}px`;
+        aEl.style.left = `${cx}px`;
+        aEl.style.top = `${cy}px`;
+      }
+    }
     const dot = c.querySelector('[data-role="rng-dot"]');
     if (dot) {
+      dot.style.display = native ? "none" : "";
       dot.style.left = `${cx}px`;
       dot.style.top = `${cy}px`;
     }
     const tag = c.querySelector('[data-role="rng-tag"]');
     if (tag) {
-      // the "click to aim" hint only makes sense while actively aiming; once the rings are
-      // frozen under an open dialog, hide it but keep the circles.
-      tag.style.display = atomAiming ? "" : "none";
+      // the "click to aim" hint only makes sense while actively aiming in fallback
+      // mode; hide it in native mode and once the rings are frozen under a dialog.
+      tag.style.display = atomAiming && !native ? "" : "none";
       tag.style.left = `${cx}px`;
       tag.style.top = `${cy}px`;
     }
@@ -738,9 +754,16 @@
     atomAimCtx = ctx;
     atomUsingNativeOverlay = atomNativeOverlayAvailable(ctx);
     if (atomUsingNativeOverlay) {
-      // Game vẽ overlay SAM + đường đạn (giống bấm 8/9). Không vẽ vòng blast riêng.
-      atomAimRadii = null;
+      // Game vẽ SAM + đường đạn + vòng nổ Atom (giống bấm 8/9). Macro chỉ THÊM vòng
+      // Hydrogen lớn để thấy phạm vi cả hai loại bom cùng lúc; KHÔNG vẽ lại vòng Atom
+      // (a = null) để tránh trùng với vòng Atom của game.
+      atomAimRadii = {
+        a: null,
+        h: atomWorldRadius(ctx.game, HYDROGEN_UNIT, HYDROGEN_FALLBACK_RADIUS),
+      };
       atomSetGhost(ctx, ATOM_UNIT);
+      showAtomRings();
+      updateAtomRings(atomLastMouseX, atomLastMouseY);
     } else {
       // Fallback: vòng blast tự vẽ của macro.
       atomAimRadii = {
@@ -1487,6 +1510,7 @@
       // Đường đạn native bám con trỏ → khi mở dialog sẽ chạy lệch mục tiêu, nên tắt.
       atomClearGhost(ctx);
       atomUsingNativeOverlay = false;
+      hideAtomRings(); // also drop our Hydrogen ring — the overlay is aim-only
     } else {
       // Fallback: đóng băng vòng blast tự vẽ dưới dialog (ẩn khi đóng).
       updateAtomRings(cx, cy); // snap to the committed point + hide the "click to aim" tag
