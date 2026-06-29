@@ -452,6 +452,8 @@
   "🚢 Dodge nuke": "🚢 Né bom hạt nhân",
   "Atom": "Atom",
   "Atom batch-fire": "Bắn bom Atom hàng loạt",
+  "Force fire": "Bắn cưỡng chế",
+  "Not enough to fire": "Không đủ để bắn",
   "Aim at a target and press the hotkey to open the batch-fire dialog. It paces shots just under the server's rate limit so none are dropped, works out how many atoms pierce the SAMs along the flight path (+1 to land), and can finish with a Hydrogen once the atoms bait the interceptors. Press Esc to abort a salvo.": "Nhắm vào mục tiêu rồi nhấn phím tắt để mở hộp thoại bắn hàng loạt. Macro giãn nhịp bắn ngay dưới giới hạn tốc độ của máy chủ để không phát nào bị mất, tự tính số bom Atom cần để xuyên qua các SAM trên đường bay (+1 để rơi trúng), và có thể kết thúc bằng một quả Hydro sau khi đám Atom đã nhử cạn đạn đánh chặn. Nhấn Esc để hủy loạt bắn.",
   "Firing throttle": "Giới hạn tốc độ bắn",
   "shots/sec": "phát/giây",

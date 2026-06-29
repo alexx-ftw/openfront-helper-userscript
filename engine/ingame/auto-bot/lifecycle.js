@@ -516,6 +516,10 @@
       #${ATOM_MACRO_DIALOG_ID} .atom-fire:hover { background: linear-gradient(135deg,#f87171,#ef4444); }
       #${ATOM_MACRO_DIALOG_ID} .atom-fire:disabled { background: rgba(100,116,139,0.35); color: rgba(226,232,240,0.45); box-shadow: none; cursor: not-allowed; }
       #${ATOM_MACRO_DIALOG_ID} .atom-fire:disabled:hover { background: rgba(100,116,139,0.35); }
+      #${ATOM_MACRO_DIALOG_ID} .atom-force { flex: 1; color: #fff; background: linear-gradient(135deg,#f59e0b,#d97706); box-shadow: 0 4px 14px rgba(217,119,6,0.35); }
+      #${ATOM_MACRO_DIALOG_ID} .atom-force:hover { background: linear-gradient(135deg,#fbbf24,#f59e0b); }
+      #${ATOM_MACRO_DIALOG_ID} .atom-force:disabled { background: rgba(100,116,139,0.35); color: rgba(226,232,240,0.45); box-shadow: none; cursor: not-allowed; }
+      #${ATOM_MACRO_DIALOG_ID} .atom-force[hidden] { display: none; }
       #${ATOM_MACRO_DIALOG_ID} .atom-cancel { flex: none; color: #e5e7eb; background: rgba(255,255,255,0.08); }
       #${ATOM_MACRO_DIALOG_ID} .atom-cancel:hover { background: rgba(255,255,255,0.16); }
     `;
@@ -859,6 +863,7 @@
         <div class="atom-note">${atomT("Paced under the server's rate limit so no shots drop, then tops up any the server missed. Pacing is set in the Atom settings tab. Esc aborts.")}</div>
         <div class="atom-btns">
           <button class="atom-fire" data-role="atom-fire">🚀 ${atomT("Fire")}</button>
+          <button class="atom-force" data-role="atom-force" hidden>🚀 ${atomT("Force fire")}</button>
           <button class="atom-cancel" data-role="atom-cancel">${atomT("Cancel")}</button>
         </div>
       </div>`;
@@ -873,6 +878,7 @@
     const qtyInput = dlg.querySelector('[data-role="atom-qty"]');
     const validateBox = dlg.querySelector('[data-role="atom-validate"]');
     const fireBtn = dlg.querySelector('[data-role="atom-fire"]');
+    const forceBtn = dlg.querySelector('[data-role="atom-force"]');
 
     const cadChip = dlg.querySelector('[data-role="atom-cad"]');
     let liveTimer = null;
@@ -919,6 +925,23 @@
       // Can't fire the requested salvo right now (not enough gold for it, or not enough silo
       // shots ready) → block the button. The red Gold / Silos deltas below say which one.
       if (fireBtn) fireBtn.disabled = qty < 1 || goldShort > 0n || siloShort > 0;
+      // Force fire: chỉ hiện khi Fire thường bị chặn (thiếu tiền hoặc silo). Bắn
+      // tối đa NGAY = min(silo sẵn sàng, floor(tiền / giá)). cost === 0n là chế độ
+      // infinite-gold → tiền không phải giới hạn, để silo quyết định.
+      if (forceBtn) {
+        const blocked = goldShort > 0n || siloShort > 0;
+        forceBtn.hidden = !blocked;
+        if (blocked) {
+          const affordAtoms =
+            cost > 0n ? Number(gold / cost) : Number.MAX_SAFE_INTEGER;
+          const maxNow = Math.max(0, Math.min(readyShots, affordAtoms));
+          forceBtn.disabled = maxNow < 1;
+          forceBtn.textContent =
+            maxNow < 1
+              ? `🚀 ${atomT("Force fire")} · ${atomT("Not enough to fire")}`
+              : `🚀 ${atomT("Force fire")} (${maxNow})`;
+        }
+      }
       const warn = rec.achievable
         ? ""
         : rec.achievableAtMaxRate
@@ -1008,6 +1031,39 @@
       atomBanner(
         `☢️ ${atomT("Fired")} ${launched}/${qty} ${atomT("atom bomb(s)")}`,
         launched >= qty ? "ok" : "arm",
+      );
+      setTimeout(hideAtomBanner, 2600);
+    });
+    forceBtn.addEventListener("click", async () => {
+      if (forceBtn.disabled || forceBtn.hidden) return;
+      // Snapshot-now: bắn tối đa những gì mua/bắn được NGAY rồi dừng.
+      const goldNow = atomToBig(myPlayer.gold?.() ?? 0);
+      const readyNow = atomReadyShots(myPlayer);
+      const affordAtoms =
+        cost > 0n ? Number(goldNow / cost) : Number.MAX_SAFE_INTEGER;
+      const maxNow = Math.max(0, Math.min(readyNow, affordAtoms));
+      if (maxNow < 1) return;
+      // Hydro-cuối: chỉ khi đã tick VÀ còn đủ cho (maxNow-1) atom + 1 hydro.
+      const wantHydro =
+        hydroAvailable &&
+        dlg.querySelector('[data-role="atom-last-hydro"]')?.checked === true &&
+        goldNow >= cost * BigInt(Math.max(0, maxNow - 1)) + hydroCost;
+      const cfgNow = atomLoadCfg();
+      atomSaveCfg(cfgNow.batchSize, cfgNow.delayMs, wantHydro);
+      close();
+      atomFireCancel = false;
+      atomBanner("☢️ " + atomT("Firing… (Esc to stop)"), "arm");
+      const launched = await fireAtoms(
+        ctx,
+        tile,
+        maxNow,
+        cfgNow.batchSize,
+        cfgNow.delayMs,
+        wantHydro,
+      );
+      atomBanner(
+        `☢️ ${atomT("Fired")} ${launched}/${maxNow} ${atomT("atom bomb(s)")}`,
+        launched >= maxNow ? "ok" : "arm",
       );
       setTimeout(hideAtomBanner, 2600);
     });
