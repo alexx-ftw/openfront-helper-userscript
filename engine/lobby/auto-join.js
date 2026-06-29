@@ -364,11 +364,83 @@ function isInLobbyWaiting() {
   }
 }
 
-// "Occupied" = can't/shouldn't search: in the waiting room or in a live game.
-// Becoming un-occupied again means we're back at the menu (game ended OR the
-// user backed out of the lobby) → safe to resume searching.
+// Are we in the game-start LOADING window? When the lobby countdown ends the
+// game closes <join-lobby-modal> (isModalOpen→false) and shows the
+// <game-starting-modal> splash, but only adds the body.in-game class / live URL
+// later once the game finishes loading. That leaves a gap where neither
+// isInLobbyWaiting() nor isInActiveGame() is true even though a game is starting
+// — and during it the search would wrongly fire a fresh join. The splash's
+// isVisible flag spans exactly that gap. NOTE: the game's createClientGame error
+// path hides the splash with classList.add("hidden") WITHOUT clearing isVisible,
+// so it can stay true at the menu — guard on the `hidden` class too, otherwise a
+// failed start would wedge the search "occupied" forever (never resumes).
+function isGameStarting() {
+  try {
+    const modal = document.querySelector("game-starting-modal");
+    return Boolean(
+      modal && modal.isVisible === true && !modal.classList.contains("hidden"),
+    );
+  } catch (_error) {
+    return false;
+  }
+}
+
+// "Occupied" = can't/shouldn't search: waiting room, game-start loading, or a
+// live game. Becoming un-occupied again means we're back at the menu (game ended
+// OR the user backed out of the lobby) → safe to resume searching.
 function isOccupied() {
-  return isInActiveGame() || isInLobbyWaiting();
+  return isInActiveGame() || isInLobbyWaiting() || isGameStarting();
+}
+
+// Sample occupancy AND remember the moment we last saw it. Everything that gates
+// searching reads occupancy through here so `lastOccupiedAt` stays fresh enough
+// for the RESUME_GRACE_MS debounce to measure "how long have we been free".
+function noteOccupancy() {
+  const occupied = isOccupied();
+  if (occupied) {
+    lastOccupiedAt = Date.now();
+  }
+  return occupied;
+}
+
+// Were we occupied recently enough that a now-free reading is more likely a
+// transient game-start loading blip than a real return to the menu? This is the
+// debounce that makes the fix independent of which exact DOM signal momentarily
+// misreads during startup.
+function recentlyOccupied() {
+  return lastOccupiedAt > 0 && Date.now() - lastOccupiedAt < RESUME_GRACE_MS;
+}
+
+// One concise line at each auto-join DECISION (the only spot that can produce a
+// wrong join), capturing every raw input. Lets a single reproduction settle why
+// a spurious join happened — stale build, an un-cleared pendingJoin, or which
+// occupancy signal read false — instead of guessing. console.info survives
+// minification (string literals are kept), so it works in the shipped build.
+function logAutoJoinDecision(context, lobby) {
+  try {
+    const joinModal = document.querySelector("join-lobby-modal");
+    const startingModal = document.querySelector("game-starting-modal");
+    console.info("[openfront-helper][autojoin-diag]", context, {
+      build: AUTOJOIN_DIAG_BUILD,
+      gameID: lobby?.gameID ?? null,
+      sinceLastJoinMs: lastJoinRequestedAt ? Date.now() - lastJoinRequestedAt : null,
+      sinceOccupiedMs: lastOccupiedAt ? Date.now() - lastOccupiedAt : null,
+      recentlyOccupied: recentlyOccupied(),
+      pendingJoin,
+      isInActiveGame: isInActiveGame(),
+      isInLobbyWaiting: isInLobbyWaiting(),
+      isGameStarting: isGameStarting(),
+      joinModalExists: Boolean(joinModal),
+      joinModalIsModalOpen: joinModal ? joinModal.isModalOpen ?? null : null,
+      startingModalExists: Boolean(startingModal),
+      startingModalIsVisible: startingModal ? startingModal.isVisible ?? null : null,
+      startingModalClass: startingModal ? startingModal.className : null,
+      bodyInGame: document.body ? document.body.classList.contains("in-game") : null,
+      location: location.pathname + location.search,
+    });
+  } catch (_error) {
+    /* diagnostics are best-effort */
+  }
 }
 
 function objectContainsFreeForAll(value, depth = 0) {
@@ -1596,6 +1668,7 @@ async function disableAutoJoin() {
 }
 
 async function requestJoin(lobby) {
+  lastJoinRequestedAt = Date.now();
   pendingJoin = {
     gameID: lobby.gameID,
     startedAt: Date.now(),
@@ -1645,11 +1718,15 @@ async function requestJoin(lobby) {
 function tryAutoJoin() {
   resetPendingJoinIfExpired();
 
+  // noteOccupancy() refreshes lastOccupiedAt as a side effect; recentlyOccupied()
+  // is the grace-window backstop that blocks a join during the game-start gap
+  // even if every DOM "occupied" signal momentarily reads false.
   if (
     !settings.enabled ||
     !latestLobbySnapshot ||
     pendingJoin ||
-    isOccupied()
+    noteOccupancy() ||
+    recentlyOccupied()
   ) {
     return;
   }
@@ -1659,6 +1736,7 @@ function tryAutoJoin() {
     return;
   }
 
+  logAutoJoinDecision("join", matchingLobby);
   requestJoin(matchingLobby).catch((error) => {
     pendingJoin = null;
     console.error("Failed to auto-join matching lobby:", error);
@@ -1668,15 +1746,29 @@ function tryAutoJoin() {
 // Detect the return to the menu (occupied → free): the game ended OR the user
 // backed out of the lobby. With "keep searching" on, restart the search with a
 // fresh timer. Runs on a timer so it works without a full page reload.
+//
+// The transition is debounced: we only treat "free" as a genuine return to the
+// menu once it has been stable for RESUME_GRACE_MS. During the game-start
+// loading gap the occupied signals can briefly drop to false; without the
+// debounce that edge looked like "returned to menu" and immediately searched +
+// joined a DIFFERENT lobby while the chosen game was still starting.
 function pollAutoJoinResume() {
-  const occupied = isOccupied();
-  if (wasOccupied && !occupied && settings.enabled && settings.keepAutoJoinAfterMatch) {
-    settings = { ...settings, searchStartedAt: Date.now() };
-    chrome.storage.local.set({ [STORAGE_KEY]: settings }).catch(() => {});
-    resetLobbyForecastTracking();
+  if (noteOccupancy()) {
+    wasOccupied = true;
+    return;
+  }
+
+  // Un-occupied now — but wait out the grace so a transient startup blip doesn't
+  // masquerade as a return to the menu.
+  if (wasOccupied && !recentlyOccupied()) {
+    wasOccupied = false;
+    if (settings.enabled && settings.keepAutoJoinAfterMatch) {
+      settings = { ...settings, searchStartedAt: Date.now() };
+      chrome.storage.local.set({ [STORAGE_KEY]: settings }).catch(() => {});
+      resetLobbyForecastTracking();
+    }
     tryAutoJoin();
   }
-  wasOccupied = occupied;
 }
 
 function handleBridgeMessage(event) {

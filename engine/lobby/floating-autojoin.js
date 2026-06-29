@@ -319,6 +319,34 @@ function ensureFloatingAutoJoinStyles() {
       font-variant-numeric: tabular-nums;
     }
 
+    /* Paused: auto-join is ON but a game/lobby (or the post-game grace) is
+       occupying us, so we're not actively searching. Amber + steady (no pulse)
+       to read clearly as "waiting", distinct from the green live "Searching". */
+    #${FLOATING_AUTOJOIN_PANEL_ID} .ofh-aj-timer[data-state="paused"] {
+      border-color: rgba(251, 191, 36, 0.38);
+      background:
+        linear-gradient(135deg, rgba(251, 191, 36, 0.16), transparent 60%),
+        rgba(40, 30, 8, 0.62);
+    }
+
+    #${FLOATING_AUTOJOIN_PANEL_ID} .ofh-aj-timer[data-state="paused"] .ofh-aj-timer-label {
+      color: #fde68a;
+    }
+
+    #${FLOATING_AUTOJOIN_PANEL_ID} .ofh-aj-timer[data-state="paused"] .ofh-aj-timer-dot {
+      background: #fbbf24;
+      box-shadow: 0 0 8px rgba(251, 191, 36, 0.7);
+      animation: none;
+    }
+
+    #${FLOATING_AUTOJOIN_PANEL_ID} .ofh-aj-timer[data-state="paused"] strong {
+      color: #fef3c7;
+      font-size: 12px;
+      font-weight: 800;
+      font-variant-numeric: normal;
+      text-transform: lowercase;
+    }
+
     #${FLOATING_AUTOJOIN_PANEL_ID} .ofh-aj-summary {
       display: grid;
       gap: 6px;
@@ -461,16 +489,51 @@ function floatingAutoJoinMinLobbySummary() {
   return settings.minLobbySize == null ? t("Any") : `> ${settings.minLobbySize}`;
 }
 
+// Why is the search paused right now? (Same occupancy predicates the auto-join
+// loop uses — shared lexical scope.) Mostly the panel is hidden while we're in a
+// lobby/game, so the reasons that actually surface are "game starting" (the
+// brief startup gap) and "resuming…" (the post-game grace window).
+function floatingAutoJoinPauseReason() {
+  if (typeof isInActiveGame === "function" && isInActiveGame()) {
+    return t("in a game");
+  }
+  if (typeof isInLobbyWaiting === "function" && isInLobbyWaiting()) {
+    return t("in lobby");
+  }
+  if (typeof isGameStarting === "function" && isGameStarting()) {
+    return t("game starting");
+  }
+  return t("resuming…");
+}
+
 function updateFloatingAutoJoinSearchTime(panel) {
   const wrap = panel.querySelector('[data-role="timer-wrap"]');
   const timer = panel.querySelector('[data-role="timer"]');
-  const searching =
-    Boolean(settings.enabled) && Number.isFinite(settings.searchStartedAt);
+  const labelText = panel.querySelector('[data-role="timer-label"]');
+  const enabled = Boolean(settings.enabled);
+  // Paused = auto-join is on but currently occupied (waiting room / game-start
+  // loading / live game) or within the post-game resume grace, so it deliberately
+  // isn't joining anything. recentlyOccupied() also covers the loading gap where
+  // every DOM "occupied" signal momentarily reads false.
+  const paused =
+    enabled &&
+    ((typeof isOccupied === "function" && isOccupied()) ||
+      (typeof recentlyOccupied === "function" && recentlyOccupied()));
+  const searching = enabled && Number.isFinite(settings.searchStartedAt);
+
   if (wrap instanceof HTMLElement) {
-    wrap.hidden = !searching;
+    wrap.hidden = !(searching || paused);
+    wrap.dataset.state = paused ? "paused" : "searching";
   }
-  if (searching && timer) {
-    timer.textContent = formatFloatingAutoJoinElapsed(settings.searchStartedAt);
+  if (labelText) {
+    labelText.textContent = paused ? t("Paused") : t("Searching");
+  }
+  if (timer) {
+    if (paused) {
+      timer.textContent = floatingAutoJoinPauseReason();
+    } else if (searching) {
+      timer.textContent = formatFloatingAutoJoinElapsed(settings.searchStartedAt);
+    }
   }
 }
 
@@ -516,8 +579,8 @@ function createFloatingAutoJoinPanel() {
         <span class="ofh-aj-power-label">${t("autoJoinOff")}</span>
         <span class="ofh-aj-power-dot" aria-hidden="true"></span>
       </button>
-      <div class="ofh-aj-timer" data-role="timer-wrap" hidden>
-        <span class="ofh-aj-timer-label"><span class="ofh-aj-timer-dot" aria-hidden="true"></span>${t("Searching")}</span>
+      <div class="ofh-aj-timer" data-role="timer-wrap" data-state="searching" hidden>
+        <span class="ofh-aj-timer-label"><span class="ofh-aj-timer-dot" aria-hidden="true"></span><span data-role="timer-label">${t("Searching")}</span></span>
         <strong data-role="timer">00:00</strong>
       </div>
       <label class="ofh-aj-notif">

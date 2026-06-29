@@ -21,6 +21,20 @@ const FLOATING_AUTOJOIN_PANEL_ID = "openfront-helper-floating-autojoin-panel";
 const FLOATING_AUTOJOIN_STYLE_ID = "openfront-helper-floating-autojoin-styles";
 const JOIN_ATTEMPT_TIMEOUT_MS = 12000;
 const LOBBY_RETRY_COOLDOWN_MS = 30000;
+// After we stop being "occupied" (public-lobby waiting modal / game-start
+// loading / live game), the search stays paused until it has been continuously
+// un-occupied for this long. This is a SIGNAL-INDEPENDENT backstop for the brief
+// game-start window where none of the DOM "occupied" signals are true yet (the
+// waiting modal already closed, in-game class / live URL not set yet): a
+// transient false reading can't outlast the grace, so we never fire a spurious
+// join into a different lobby while the chosen game is starting. Tune from the
+// `[autojoin-diag]` console log's `sinceOccupiedMs` if a real loading screen ever
+// exceeds it.
+const RESUME_GRACE_MS = 6000;
+// Bump on any auto-join logic change. Printed in the `[autojoin-diag]` log so a
+// single reproduction proves the running userscript is the freshly-built one —
+// rules out "fix still fails" actually being a stale Tampermonkey install.
+const AUTOJOIN_DIAG_BUILD = "aj-debounce-v1";
 const PREFERRED_GROUP_ORDER = ["special", "ffa", "team"];
 
 const lobbyCooldowns = new Map();
@@ -33,6 +47,12 @@ let pendingJoin = null;
 // return to the menu — whether the game ended or the user backed out of the
 // lobby. wasOccupied tracks the previous tick to detect that return edge.
 let wasOccupied = false;
+// Timestamp (ms) we last OBSERVED an "occupied" state, and when we last fired a
+// join request. Drive the resume/join debounce (RESUME_GRACE_MS) and the
+// `[autojoin-diag]` log; 0 means "never yet" so cold-start searching isn't
+// delayed.
+let lastOccupiedAt = 0;
+let lastJoinRequestedAt = 0;
 let joinAlertAudio = null;
 let customJoinAlertAudio = null;
 let hasCustomNotificationSound = false;
