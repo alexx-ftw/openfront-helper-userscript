@@ -815,8 +815,6 @@
     // atoms' spend / income), and the cost line + Fire button now surface affordability —
     // so greying the checkbox out (the old behaviour) just hid a usable option.
     const hydroAvailable = !!hu && hydroCost > 0n;
-    const gold = atomToBig(myPlayer.gold?.() ?? 0);
-    const readyShots = atomReadyShots(myPlayer);
     const disabledOrNoSilo = !bu || cost <= 0n;
     // Smart default = enough to overwhelm the SAMs along the flight path + 1 to
     // land. The path bows by the live "Flip rocket trajectory" toggle on the shared
@@ -877,7 +875,16 @@
     const fireBtn = dlg.querySelector('[data-role="atom-fire"]');
 
     const cadChip = dlg.querySelector('[data-role="atom-cad"]');
+    let liveTimer = null;
     const renderValidation = () => {
+      // Dialog đã bị gỡ (đóng/ESC/Fire) nhưng interval còn treo → tự dọn & thoát.
+      if (!dlg.isConnected) {
+        if (liveTimer) {
+          clearInterval(liveTimer);
+          liveTimer = null;
+        }
+        return;
+      }
       // Re-read the live flip toggle AND the current pacing each render: flipping the arc
       // changes which SAMs are hit, and a slower cadence stretches delivery past the SAM
       // cooldown so SAMs reload — both must be reflected in the recommendation. Per-spam/
@@ -886,6 +893,9 @@
       const cfgNow = atomLoadCfg();
       const curGapMs = atomFireGapMs(cfgNow.batchSize, cfgNow.delayMs);
       if (cadChip) cadChip.textContent = `≈ ${(1000 / curGapMs).toFixed(1)}/s`;
+      // Đọc TƯƠI mỗi render: tiền tăng theo income, silo hồi cooldown → live.
+      const gold = atomToBig(myPlayer.gold?.() ?? 0);
+      const readyShots = atomReadyShots(myPlayer);
       rec = atomRecommendedQty(
         ctx.game,
         myPlayer,
@@ -948,6 +958,8 @@
       // toggling last-hydrogen changes the cost (atom → pricier hydrogen)
       const hydroBox = dlg.querySelector('[data-role="atom-last-hydro"]');
       if (hydroBox) hydroBox.addEventListener("change", renderValidation);
+      // Làm tươi Gold / Silos ready / Will fire / Cost / Recommended khi dialog mở.
+      liveTimer = setInterval(renderValidation, 350);
     }
     // Place + reveal now that the full content (incl. validation rows) has rendered, so
     // the height is final and the flip-up/flip-left logic keeps the whole dialog on-screen.
@@ -961,6 +973,10 @@
     const close = () => {
       hideAtomDialog();
       hideAtomRings();
+      if (liveTimer) {
+        clearInterval(liveTimer);
+        liveTimer = null;
+      }
     };
     dlg.querySelector('[data-role="atom-cancel"]').addEventListener("click", close);
     dlg.querySelector('[data-role="atom-x"]').addEventListener("click", close);
