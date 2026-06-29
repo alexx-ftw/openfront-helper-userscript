@@ -516,6 +516,7 @@
       #${ATOM_MACRO_DIALOG_ID} .atom-fire:hover { background: linear-gradient(135deg,#f87171,#ef4444); }
       #${ATOM_MACRO_DIALOG_ID} .atom-fire:disabled { background: rgba(100,116,139,0.35); color: rgba(226,232,240,0.45); box-shadow: none; cursor: not-allowed; }
       #${ATOM_MACRO_DIALOG_ID} .atom-fire:disabled:hover { background: rgba(100,116,139,0.35); }
+      #${ATOM_MACRO_DIALOG_ID} .atom-fire[hidden] { display: none; }
       #${ATOM_MACRO_DIALOG_ID} .atom-force { flex: 1; color: #fff; background: linear-gradient(135deg,#f59e0b,#d97706); box-shadow: 0 4px 14px rgba(217,119,6,0.35); }
       #${ATOM_MACRO_DIALOG_ID} .atom-force:hover { background: linear-gradient(135deg,#fbbf24,#f59e0b); }
       #${ATOM_MACRO_DIALOG_ID} .atom-force:disabled { background: rgba(100,116,139,0.35); color: rgba(226,232,240,0.45); box-shadow: none; cursor: not-allowed; }
@@ -986,22 +987,25 @@
       const recMatch = qty >= rec.recommended;
       // Can't fire the requested salvo right now (not enough gold for it, or not enough silo
       // shots ready) → block the button. The red Gold / Silos deltas below say which one.
-      if (fireBtn) fireBtn.disabled = qty < 1 || goldShort > 0n || siloShort > 0;
-      // Force fire: chỉ hiện khi Fire thường bị chặn (thiếu tiền hoặc silo). Bắn
-      // tối đa NGAY = min(silo sẵn sàng, floor(tiền / giá)). cost === 0n là chế độ
-      // infinite-gold → tiền không phải giới hạn, để silo quyết định.
+      // Fire ⇄ Force are mutually exclusive so the row stays compact — always just
+      // [primary][Cancel]. Normal Fire when the requested salvo is affordable; when
+      // blocked (not enough gold/silo) Fire steps aside for Force fire, which fires the
+      // max possible NOW = min(silo ready, floor(gold / cost)). cost === 0n is infinite-
+      // gold → gold isn't the limit, silos decide. When blocked AND not even one shot is
+      // possible (maxNow < 1) we keep a disabled Fire (the red Gold/Silos deltas explain).
+      const blocked = goldShort > 0n || siloShort > 0;
+      const affordAtoms = cost > 0n ? Number(gold / cost) : Number.MAX_SAFE_INTEGER;
+      const maxNow = Math.max(0, Math.min(readyShots, affordAtoms));
+      const canForce = blocked && maxNow >= 1;
+      if (fireBtn) {
+        fireBtn.disabled = qty < 1 || blocked;
+        fireBtn.hidden = canForce;
+      }
       if (forceBtn) {
-        const blocked = goldShort > 0n || siloShort > 0;
-        forceBtn.hidden = !blocked;
-        if (blocked) {
-          const affordAtoms =
-            cost > 0n ? Number(gold / cost) : Number.MAX_SAFE_INTEGER;
-          const maxNow = Math.max(0, Math.min(readyShots, affordAtoms));
-          forceBtn.disabled = maxNow < 1;
-          forceBtn.textContent =
-            maxNow < 1
-              ? `🚀 ${atomT("Force fire")} · ${atomT("Not enough to fire")}`
-              : `🚀 ${atomT("Force fire")} (${maxNow})`;
+        forceBtn.hidden = !canForce;
+        if (canForce) {
+          forceBtn.disabled = false;
+          forceBtn.textContent = `🚀 ${atomT("Force fire")} (${maxNow})`;
         }
       }
       const warn = rec.achievable
