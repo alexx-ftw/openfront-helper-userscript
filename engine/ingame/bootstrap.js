@@ -52,6 +52,14 @@
       setTradeBalancesEnabled(data.payload?.enabled);
     }
 
+    if (data.type === "SHOW_HELPER_USERS") {
+      setHelperUsersEnabled(data.payload?.enabled);
+    }
+
+    if (data.type === "SET_SOS_DEFENSE") {
+      setSosDefenseEnabled(data.payload?.enabled);
+    }
+
     if (data.type === "SHOW_MY_GPM_HISTORY") {
       if (typeof setSelfGpmHistoryPanelPosition === "function") {
         setSelfGpmHistoryPanelPosition(data.payload?.panelPosition);

@@ -277,8 +277,18 @@ const GAME_HELPERS: Toggle[] = [
     title: "Estates panel",
     desc: "Lists your separate land parcels (tile counts); click a row to jump there.",
   },
+  {
+    name: "showHelperUsers",
+    title: "Script users panel",
+    desc: "Lists other players running this helper (detected via a 3-emoji signature broadcast once per match).",
+  },
 ];
 const ADVANCED_HELPERS: Toggle[] = [
+  {
+    name: "sosDefense",
+    title: "SOS when attacked",
+    desc: "When under attack, sends an SOS emoji to allies/teammates and marks the attacker for your team. Works with or without the auto-bot.",
+  },
   {
     name: "showNukeSuggestions",
     title: "Nuke suggestions",

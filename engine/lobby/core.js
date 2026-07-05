@@ -169,6 +169,32 @@ function syncTradeBalancesHelper() {
 }
 
 
+function syncHelperUsersHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SHOW_HELPER_USERS",
+      payload: {
+        enabled: Boolean(settings.showHelperUsers),
+      },
+    },
+    "*",
+  );
+}
+
+function syncSosDefenseHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SET_SOS_DEFENSE",
+      payload: {
+        enabled: Boolean(settings.sosDefense),
+      },
+    },
+    "*",
+  );
+}
+
 function syncNukePredictionHelper() {
   window.postMessage(
     {
@@ -420,6 +446,8 @@ function syncHelpers() {
   syncHoveredAlliesHelper();
   syncAllianceRequestsPanelHelper();
   syncTradeBalancesHelper();
+  syncHelperUsersHelper();
+  syncSosDefenseHelper();
   syncSelectiveTradePolicyToggle();
   syncAutoBotI18n();
   syncNukePredictionHelper();

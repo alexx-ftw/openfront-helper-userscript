@@ -57,6 +57,8 @@
     markHoveredAlliesGreen: true,
     showAllianceRequestsPanel: true,
     showTradeBalances: false,
+    showHelperUsers: true,
+    sosDefense: false,
     selectiveTradePolicyEnabled: false,
     autoCancelDeniedTradesAvailable: false,
     cheatsAvailable: false,

@@ -84,6 +84,7 @@
     embargo: null,
     donateTroops: null,
     emoji: null, // SendEmojiIntentEvent(recipient|AllPlayers, emoji:number)
+    target: null, // SendTargetPlayerIntentEvent(targetID:PlayerID string)
     allianceRequest: null, // learned lazily by sniffing an accept (see doAlliance)
   };
 
@@ -176,6 +177,28 @@
             em.action === undefined
           ) {
             _ctors.emoji = C;
+            continue;
+          }
+        } catch (_e) {
+          /* skip */
+        }
+      }
+      if (!_ctors.target) {
+        try {
+          // SendTargetPlayerIntentEvent(targetID:PlayerID) — a single string
+          // targetID and NO troops. Distinguished from SendAttackIntentEvent
+          // (which also has targetID but carries troops): pass a 2nd arg and
+          // require it is IGNORED (troops stays undefined).
+          const tp = new C("§tp", 456);
+          if (
+            tp &&
+            tp.targetID === "§tp" &&
+            tp.troops === undefined &&
+            tp.recipient === undefined &&
+            tp.dst === undefined &&
+            tp.emoji === undefined
+          ) {
+            _ctors.target = C;
             continue;
           }
         } catch (_e) {

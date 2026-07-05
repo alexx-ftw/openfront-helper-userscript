@@ -74,6 +74,9 @@ const INGAME_FILES = [
   "auto-bot/engine.js",
   "auto-bot/panel.js",
   "auto-bot/lifecycle.js",
+  "signal-scheduler.js",
+  "helper-users-panel.js",
+  "sos-defense.js",
   "bootstrap.js",
 ].map((f) => `engine/ingame/${f}`);
 

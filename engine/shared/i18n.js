@@ -304,6 +304,22 @@
     // ---- Auto-Bot (page-bridge/auto-bot) ----
     "🏁 Spawn": "🏁 Spawn",
 
+    // ---- Helper-users panel (TN1) ----
+    "Script users": "Script users",
+    "Script users panel": "Script users panel",
+    "Lists other players running this helper (detected via a 3-emoji signature broadcast once per match).":
+      "Lists other players running this helper (detected via a 3-emoji signature broadcast once per match).",
+    "No script users detected yet.": "No script users detected yet.",
+    you: "you",
+    ally: "ally",
+    enemy: "enemy",
+    neutral: "neutral",
+
+    // ---- SOS defense (TN2) ----
+    "SOS when attacked": "SOS when attacked",
+    "When under attack, sends an SOS emoji to allies/teammates and marks the attacker for your team. Works with or without the auto-bot.":
+      "When under attack, sends an SOS emoji to allies/teammates and marks the attacker for your team. Works with or without the auto-bot.",
+
   };
 
   const LANGUAGE_NAME_OVERRIDES = {
