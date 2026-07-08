@@ -25,6 +25,7 @@
       this.behaviorsInitialized = false;
       this.spawnExecAdded = false;
       this.lastSpawnTile = null; // last emitted spawn tile (to re-emit on change)
+      this.lastSpawnTopKey = null; // "x,y" of the #1 spot we last committed to
       this.lastSpawnPickTick = null; // throttle re-evaluation during spawn phase
       this.status = "";
       this.lastSeenTick = -1;
@@ -97,22 +98,28 @@
 
       // ── spawn phase — NationExecution.ts:107-162 ─────────────────────────────
       if (this.mg.inSpawnPhase()) {
-        if (me.hasSpawned()) {
-          this.status = tr("Spawn phase…");
-          return;
-        }
+        // NOTE: we deliberately do NOT bail on me.hasSpawned() here. During the
+        // spawn phase the game's SpawnExecution relinquishes the old spawn and
+        // re-conquers when we emit a new spawn intent (non-random-spawn maps),
+        // so the bot can keep MOVING its spawn to follow the #1 spot even after
+        // it has already spawned once.
         if (this.feat("spawn")) {
-          // Spawn immediately, then keep following the #1 spot as it shifts —
-          // re-evaluate at most every ~6 ticks (~600ms) so the bot tracks the
-          // best tile without spamming intents. doSpawn re-emits only on change.
+          // Re-evaluate at most every ~6 ticks (~600ms). Re-emit only when the
+          // ranked #1 GRID point actually moves — comparing the grid key (not
+          // the snapped tile, which changes once we own territory) keeps a
+          // stable #1 from drifting while still following a moving #1.
           if (
-            !this.spawnExecAdded ||
             this.lastSpawnPickTick == null ||
             ticks - this.lastSpawnPickTick >= 6
           ) {
             this.lastSpawnPickTick = ticks;
-            this.doSpawn();
+            const topKey = this.currentSpawnTopKey();
+            if (!this.spawnExecAdded || (topKey != null && topKey !== this.lastSpawnTopKey)) {
+              this.lastSpawnTopKey = topKey;
+              this.doSpawn();
+            }
           }
+          this.status = tr("Spawn phase…");
         } else {
           this.status = tr("Spawn phase…");
         }
@@ -243,6 +250,22 @@
     //        (which excludes coast/edge tiles) is the faithful client stand-in for
     //        "interior tile with a full land neighbourhood".
     //    Emits the UI spawn intent (the worker re-validates the chosen tile).
+    // "x,y" grid key of the current #1 spawn spot, or null. Prefers the live
+    // heatmap topSpots (what the player sees) and falls back to computing them.
+    currentSpawnTopKey() {
+      if (!state.settings.smartSpawn) return null;
+      let ts = null;
+      try {
+        if (typeof getSpawnHeatmapTopSpots === "function") ts = getSpawnHeatmapTopSpots();
+        if ((!ts || ts.length === 0) && typeof computeSpawnTopSpotsForBot === "function") {
+          ts = computeSpawnTopSpotsForBot(this.mg, this.player);
+        }
+      } catch (_e) {
+        ts = null;
+      }
+      return ts && ts.length > 0 ? `${ts[0].x},${ts[0].y}` : null;
+    }
+
     doSpawn() {
       const center = this.pickSpawnCenter();
       if (center == null) {
