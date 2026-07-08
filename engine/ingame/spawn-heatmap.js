@@ -77,14 +77,32 @@
     } catch (_error) { /* fall through to bulk read */ }
 
     // Fallback: reconstruct the buffer once via the proxy (O(W*H), one-time).
+    // Prefer terrainByte() — a single public proxy call per tile that returns the
+    // exact game byte (IS_LAND_BIT=7 + MAGNITUDE_MASK=0x1f match our constants),
+    // half the calls of isLand()+magnitude() and guaranteed to exist on every
+    // build. Only fall back to the two-call form if terrainByte is unavailable.
     try {
       const buf = new Uint8Array(W * H);
       const n = W * H;
-      for (let ref = 0; ref < n; ref += 1) {
-        if (game.isLand(ref)) {
-          let b = 1 << SPAWN_IS_LAND_BIT;
-          if (game.magnitude) b |= game.magnitude(ref) & SPAWN_MAGNITUDE_MASK;
-          buf[ref] = b;
+      const byteFn =
+        typeof game.terrainByte === "function"
+          ? (ref) => game.terrainByte(ref)
+          : null;
+      if (byteFn) {
+        for (let ref = 0; ref < n; ref += 1) {
+          const b = byteFn(ref);
+          // Keep only the bits our scorer reads (land + magnitude); drop the rest.
+          if (b & (1 << SPAWN_IS_LAND_BIT)) {
+            buf[ref] = (1 << SPAWN_IS_LAND_BIT) | (b & SPAWN_MAGNITUDE_MASK);
+          }
+        }
+      } else {
+        for (let ref = 0; ref < n; ref += 1) {
+          if (game.isLand(ref)) {
+            let b = 1 << SPAWN_IS_LAND_BIT;
+            if (game.magnitude) b |= game.magnitude(ref) & SPAWN_MAGNITUDE_MASK;
+            buf[ref] = b;
+          }
         }
       }
       _spawnTerrainCache = { terrain: buf, W, H, raw: false };
@@ -278,6 +296,15 @@
     // via nameLocation). The old WebSocket-intent source is gone; this is the
     // same signal the auto-bot's pickSpawnCenter uses, so the heatmap and the bot
     // agree on where players are.
+    //
+    // CRITICAL PERF: only count HUMAN players here — this mirrors Tactical, which
+    // sourced positions from WS spawn intents (only human clients emit those).
+    // A public game has up to ~400 NATION bots that all report hasSpawned()=true
+    // from tick 0; including them made enemySpawns huge and turned the per-cell
+    // scoring into an O(candidates × hundreds) loop that froze the spawn phase.
+    // Nations are already fully accounted for in the STATIC phase (nationScore),
+    // so counting them here also double-counted them. Bots ("BOT") are likewise
+    // excluded — they're not the human opponents the repel term is about.
     const enemySpawns = [];
     const teamSpawns = [];
     const mySid = me && me.smallID ? me.smallID() : null;
@@ -286,6 +313,8 @@
       const p = players[i];
       if (!p || !p.isAlive || !p.isAlive()) continue;
       try {
+        // Humans only (skip NATION + BOT). PlayerType.Human = "HUMAN".
+        if (!p.type || p.type() !== "HUMAN") continue;
         if (mySid != null && p.smallID && p.smallID() === mySid) continue;
         if (!p.hasSpawned || !p.hasSpawned()) continue;
       } catch (_error) { continue; }
@@ -439,14 +468,38 @@
   // Shared scorer entry point for the auto-bot. Computes the SAME topSpots the
   // heatmap draws, so the bot spawns exactly where the #1 circle appears. Reuses
   // the shared static-candidate cache (works even if the heatmap is disabled).
+  //
+  // Per-tick memo: the bot calls this twice in the same tick (currentSpawnTopKey
+  // then pickSpawnCenter) with identical inputs, and if the overlay is on it also
+  // ran computeDynamicScores this tick. Cache the result per game-tick so the
+  // dynamic scoring pass runs at most once per tick regardless of how many
+  // callers ask for it.
+  let _botTopSpotsTick = -1;
+  let _botTopSpotsGameRef = null;
+  let _botTopSpotsResult = null;
   function computeSpawnTopSpotsForBot(game, me) {
     try {
+      const src = (game && game.__src) || game;
+      let tick = -1;
+      try { tick = Number(game.ticks ? game.ticks() : -1); } catch (_e) { tick = -1; }
+      if (
+        _botTopSpotsGameRef === src &&
+        Number.isFinite(tick) &&
+        tick === _botTopSpotsTick
+      ) {
+        return _botTopSpotsResult;
+      }
       const _botSpawnStaticCandidates = ensureSpawnStaticCandidates(game);
       if (!_botSpawnStaticCandidates || _botSpawnStaticCandidates.length === 0) {
         return null;
       }
       const data = computeDynamicScores(game, _botSpawnStaticCandidates, me);
-      return data && data.topSpots && data.topSpots.length > 0 ? data.topSpots : null;
+      const result =
+        data && data.topSpots && data.topSpots.length > 0 ? data.topSpots : null;
+      _botTopSpotsGameRef = src;
+      _botTopSpotsTick = Number.isFinite(tick) ? tick : -1;
+      _botTopSpotsResult = result;
+      return result;
     } catch (_error) {
       return null;
     }

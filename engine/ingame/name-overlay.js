@@ -51,6 +51,16 @@
   let _playerOverlayScan = [];
 
   function scanPlayerOverlay(game) {
+    // Skip overlay during spawn phase — many players crowd the screen and
+    // overlays add cost with little value. Uses the game's own spawn-phase
+    // detection (game.inSpawnPhase()) instead of heuristics.
+    try {
+      if (game?.inSpawnPhase?.()) {
+        _playerOverlayScan = [];
+        return;
+      }
+    } catch (_error) { /* ignore */ }
+
     const players = getCachedPlayerViews(game);
     const me = game.myPlayer ? game.myPlayer() : null;
     const nukeBuilders = threatIndicatorsEnabled ? advNukeBuilderIds(game) : null;
@@ -228,7 +238,7 @@
         }
       }
 
-      if (threatIndicatorsEnabled && entry.isEnemy) {
+      if (threatIndicatorsEnabled && entry.isEnemy && !entry.skipOverlay) {
         drawThreatMarks(ctx, p.x, p.y + 14, entry, myTroops);
       }
     }
