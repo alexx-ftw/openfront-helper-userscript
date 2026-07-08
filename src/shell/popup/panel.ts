@@ -185,180 +185,300 @@ const TEAM_PRESETS: Array<[string, number, number | null]> = [
   ["5+", 5, null],
 ];
 
-type Toggle = { name: string; title: string; desc: string; parent?: string };
-const ECONOMIC_HELPERS: Toggle[] = [
+// A Toggle is one switch row. `parent` makes it an indented sub-toggle (disabled
+// while the parent is off). `input` renders a value control instead of a switch.
+type Toggle = {
+  name: string;
+  title: string;
+  desc: string;
+  parent?: string;
+  input?: "gameTimeMinutes";
+};
+// Helper toggles are grouped into collapsible, labeled sections.
+type HelperSection = { key: string; title: string; toggles: Toggle[] };
+
+const HELPER_SECTIONS: HelperSection[] = [
   {
-    name: "showTopGoldPerMinute",
-    title: "Player stats panel",
-    desc: "All-players table (owned, gold, gold/min, max troops; expandable); hides the game's leaderboard.",
+    key: "panels",
+    title: "Panels",
+    toggles: [
+      {
+        name: "showTopGoldPerMinute",
+        title: "Player stats panel",
+        desc: "All-players table (owned, gold, gold/min, max troops; expandable); hides the game's leaderboard.",
+      },
+      {
+        name: "showGoldPerMinute",
+        title: "Highlight hovered player",
+        desc: "Highlights the hovered player's row in the stats panel.",
+        parent: "showTopGoldPerMinute",
+      },
+      {
+        name: "showTeamBuildStats",
+        title: "Team build stats",
+        desc: "Per-team structures, gold/min, owned tiles & max troops; warns on a first Missile Silo.",
+      },
+      {
+        name: "showTradeBalances",
+        title: "Trade balances",
+        desc: "Shows observed ship and train trade imports/exports.",
+      },
+      {
+        name: "showAdvisorPanel",
+        title: "Advisor panel",
+        desc: "Compact HUD: troop-economy state, growth, spendable troops, expansion advice, and top threats.",
+      },
+      {
+        name: "showBoatPanel",
+        title: "Boat panel",
+        desc: "Lists boats you sent and boats incoming to your territory, with arrival times.",
+      },
+      {
+        name: "showEstatePanel",
+        title: "Estates panel",
+        desc: "Lists your separate land parcels (tile counts); click a row to jump there.",
+      },
+      {
+        name: "showAllianceRequestsPanel",
+        title: "Alliance requests panel",
+        desc: "Moves alliance requests into a side window.",
+      },
+      {
+        name: "showHelperUsers",
+        title: "Script users panel",
+        desc: "Lists other players running this helper (detected via a 3-emoji signature broadcast once per match).",
+      },
+    ],
   },
   {
-    name: "showGoldPerMinute",
-    title: "Highlight hovered player",
-    desc: "Highlights the hovered player's row in the stats panel.",
+    key: "map",
+    title: "Map overlays",
+    toggles: [
+      {
+        name: "showPlayerMapOverlays",
+        title: "Player overlays",
+        desc: "Master switch for the per-player info drawn over each player on the map.",
+      },
+      {
+        name: "showMapTroopCounts",
+        title: "Troop bar",
+        desc: "Ratio bar over each player: home troops (green) + attacking (orange) vs max, with the /max count.",
+        parent: "showPlayerMapOverlays",
+      },
+      {
+        name: "showMapMoney",
+        title: "Money",
+        desc: "Shows each player's gold above their name.",
+        parent: "showPlayerMapOverlays",
+      },
+      {
+        name: "showThreatIndicators",
+        title: "Threat indicators",
+        desc: "Marks enemies: ☢ nuke-capable, red dot = stronger than you, amber dot = weak.",
+        parent: "showPlayerMapOverlays",
+      },
+      {
+        name: "showAttackHighlight",
+        title: "Attack highlight",
+        desc: "Flags who is attacking you: pulsing rings, lines to your territory, total incoming troops.",
+      },
+      {
+        name: "showNukePrediction",
+        title: "Nuke prediction",
+        desc: "Shows predicted enemy nuke landing points & radius.",
+      },
+      {
+        name: "showNukeTrajectory",
+        title: "Trajectory line",
+        desc: "Draws the dashed flight-path line from each nuke to its landing point.",
+        parent: "showNukePrediction",
+      },
+      {
+        name: "showBoatPrediction",
+        title: "Boat prediction",
+        desc: "Shows boat landings (blue = you, teal = team, green = allies, yellow/red = enemies).",
+      },
+      {
+        name: "alwaysShowOwnBoatRoutes",
+        title: "Always show your boat routes",
+        desc: "Draws your own boat routes without hovering.",
+        parent: "showBoatPrediction",
+      },
+      {
+        name: "alwaysShowTeamBoatRoutes",
+        title: "Always show team boat routes",
+        desc: "Draws teammates' boat routes without hovering.",
+        parent: "showBoatPrediction",
+      },
+      {
+        name: "alwaysShowAllyBoatRoutes",
+        title: "Always show ally boat routes",
+        desc: "Draws allies' (alliance) boat routes without hovering.",
+        parent: "showBoatPrediction",
+      },
+      {
+        name: "alwaysShowEnemyBoatRoutes",
+        title: "Always show enemy boat routes",
+        desc: "Draws enemy boat routes without hovering.",
+        parent: "showBoatPrediction",
+      },
+      {
+        name: "showWarshipRoutes",
+        title: "Warship routes",
+        desc: "Draws warship destinations & routes (blue = you, teal = team, green = allies, red = enemies).",
+      },
+      {
+        name: "showWarshipRoutesOwn",
+        title: "Your warships",
+        desc: "Show routes for your own warships.",
+        parent: "showWarshipRoutes",
+      },
+      {
+        name: "showWarshipRoutesTeam",
+        title: "Team warships",
+        desc: "Show routes for teammates' warships.",
+        parent: "showWarshipRoutes",
+      },
+      {
+        name: "showWarshipRoutesAlly",
+        title: "Ally warships",
+        desc: "Show routes for allies' (alliance) warships.",
+        parent: "showWarshipRoutes",
+      },
+      {
+        name: "showWarshipRoutesEnemy",
+        title: "Enemy warships",
+        desc: "Show routes for enemy warships.",
+        parent: "showWarshipRoutes",
+      },
+      {
+        name: "showSpawnHeatmap",
+        title: "Spawn heatmap",
+        desc: "Colored grid showing spawn quality: land density, nation proximity, player distance.",
+      },
+      {
+        name: "showSpawnMarkers",
+        title: "Spawn top-spot markers",
+        desc: "Numbered circles on the best spawn tiles — works with or without the heatmap grid.",
+      },
+      {
+        name: "showBuildTimers",
+        title: "Build timers",
+        desc: "Shows construction countdown and missile cooldown above Missile Silos and SAM Launchers.",
+      },
+      {
+        name: "showEconomyHeatmap",
+        title: "Economy heatmap",
+        desc: "Overlays an economic-activity heatmap.",
+      },
+      {
+        name: "showExportPartnerHeatmap",
+        title: "Export partner heatmap",
+        desc: "Highlights your trade export partners.",
+      },
+      {
+        name: "markBotNationsRed",
+        title: "Mark bot nations red",
+        desc: "Adds a red marker to nation AI names.",
+      },
+      {
+        name: "markHoveredAlliesGreen",
+        title: "Alliances",
+        desc: "Highlights allies with remaining alliance time.",
+      },
+    ],
   },
   {
-    name: "showTeamBuildStats",
-    title: "Team build stats",
-    desc: "Per-team structures, gold/min, owned tiles & max troops; warns on a first Missile Silo.",
+    key: "combat",
+    title: "Combat & automation",
+    toggles: [
+      {
+        name: "autoNuke",
+        title: "Auto nuke",
+        desc: "Automatically fires nukes at suggested targets.",
+      },
+      {
+        name: "autoNukeIncludeAllies",
+        title: "Include allies",
+        desc: "Allow auto nuke to target allies.",
+        parent: "autoNuke",
+      },
+      {
+        name: "showNukeSuggestions",
+        title: "Nuke suggestions",
+        desc: "Suggests high-value nuke targets.",
+      },
+      {
+        name: "showRetaliationHud",
+        title: "Retaliation HUD",
+        desc: "When hit by a nuke, shows a confirmation card to fire back (semi-auto).",
+      },
+      {
+        name: "sosDefense",
+        title: "SOS when attacked",
+        desc: "When under attack, sends an SOS emoji to allies/teammates and marks the attacker for your team. Works with or without the auto-bot.",
+      },
+      {
+        name: "send1PercentBoat",
+        title: "Send 1% boat",
+        desc: "Adds a 1%-troop boat send to the context menu.",
+      },
+      {
+        name: "rightClickConquest",
+        title: "Right-click conquest",
+        desc: "Right-click an enemy: one-click attack, favourite/blacklist alliance policy.",
+      },
+      {
+        name: "attackRatioHotkey",
+        title: "Attack-ratio hotkeys",
+        desc: "Shift+1..0 sets attack ratio to 10%..100%.",
+      },
+    ],
   },
   {
-    name: "showTradeBalances",
-    title: "Trade balances",
-    desc: "Shows observed ship and train trade imports/exports.",
-  },
-];
-const GAME_HELPERS: Toggle[] = [
-  {
-    name: "markBotNationsRed",
-    title: "Mark bot nations red",
-    desc: "Adds a red marker to nation AI names.",
-  },
-  {
-    name: "markHoveredAlliesGreen",
-    title: "Alliances",
-    desc: "Highlights allies with remaining alliance time.",
-  },
-  {
-    name: "showAllianceRequestsPanel",
-    title: "Alliance requests panel",
-    desc: "Moves alliance requests into a side window.",
-  },
-  {
-    name: "showNukePrediction",
-    title: "Nuke prediction",
-    desc: "Shows predicted enemy nuke landing points & radius.",
-  },
-  {
-    name: "showBoatPrediction",
-    title: "Boat prediction",
-    desc: "Shows boat landings (blue = you, teal = team, green = allies, yellow/red = enemies).",
+    key: "alerts",
+    title: "Alerts",
+    toggles: [
+      {
+        name: "showGameTimeAlert",
+        title: "Game-time alert",
+        desc: "One-time center-screen notice when the match reaches a set time.",
+      },
+      {
+        name: "gameTimeAlertThresholdSec",
+        title: "Alert at (minutes)",
+        desc: "When to fire the game-time alert.",
+        parent: "showGameTimeAlert",
+        input: "gameTimeMinutes",
+      },
+      {
+        name: "warnIncomingBoats",
+        title: "Incoming boat warning",
+        desc: "Center-screen alert when a new boat targets your territory (like the Missile Silo warning).",
+      },
+      {
+        name: "showEnemyIntent",
+        title: "Enemy-intent warning",
+        desc: "Early warning: detects incoming attacks before they appear in game state.",
+      },
+    ],
   },
   {
-    name: "alwaysShowOwnBoatRoutes",
-    title: "Always show your boat routes",
-    desc: "Draws your own boat routes without hovering.",
-    parent: "showBoatPrediction",
-  },
-  {
-    name: "alwaysShowTeamBoatRoutes",
-    title: "Always show team boat routes",
-    desc: "Draws teammates' boat routes without hovering.",
-    parent: "showBoatPrediction",
-  },
-  {
-    name: "alwaysShowAllyBoatRoutes",
-    title: "Always show ally boat routes",
-    desc: "Draws allies' (alliance) boat routes without hovering.",
-    parent: "showBoatPrediction",
-  },
-  {
-    name: "alwaysShowEnemyBoatRoutes",
-    title: "Always show enemy boat routes",
-    desc: "Draws enemy boat routes without hovering.",
-    parent: "showBoatPrediction",
-  },
-  {
-    name: "showWarshipRoutes",
-    title: "Warship routes",
-    desc: "Draws warship destinations & routes (blue = you, teal = team, green = allies, red = enemies).",
-  },
-  {
-    name: "showBoatPanel",
-    title: "Boat panel",
-    desc: "Lists boats you sent and boats incoming to your territory, with arrival times.",
-  },
-  {
-    name: "warnIncomingBoats",
-    title: "Incoming boat warning",
-    desc: "Center-screen alert when a new boat targets your territory (like the Missile Silo warning).",
-  },
-  {
-    name: "showEstatePanel",
-    title: "Estates panel",
-    desc: "Lists your separate land parcels (tile counts); click a row to jump there.",
-  },
-  {
-    name: "showHelperUsers",
-    title: "Script users panel",
-    desc: "Lists other players running this helper (detected via a 3-emoji signature broadcast once per match).",
-  },
-  {
-    name: "showGameTimeAlert",
-    title: "Game-time alert",
-    desc: "One-time center-screen notice when the match reaches a set time (default 5 min).",
-  },
-  {
-    name: "showMapTroopCounts",
-    title: "Troop bar on map",
-    desc: "Ratio bar over each player: home troops (relation color) + attacking (orange) vs max, with the count.",
-  },
-  {
-    name: "showThreatIndicators",
-    title: "Threat indicators",
-    desc: "Marks enemies on the map: ☢ nuke-capable, red dot = stronger than you, amber dot = weak.",
-  },
-  {
-    name: "showMapMoney",
-    title: "Money on map",
-    desc: "Shows each player's gold above their name.",
-  },
-  {
-    name: "showAttackHighlight",
-    title: "Attack highlight",
-    desc: "Flags who is attacking you: pulsing rings, lines to your territory, total incoming troops.",
-  },
-  {
-    name: "showAdvisorPanel",
-    title: "Advisor panel",
-    desc: "Compact HUD: troop-economy state, growth, spendable troops, expansion advice, and top threats.",
-  },
-];
-const ADVANCED_HELPERS: Toggle[] = [
-  {
-    name: "sosDefense",
-    title: "SOS when attacked",
-    desc: "When under attack, sends an SOS emoji to allies/teammates and marks the attacker for your team. Works with or without the auto-bot.",
-  },
-  {
-    name: "showNukeSuggestions",
-    title: "Nuke suggestions",
-    desc: "Suggests high-value nuke targets.",
-  },
-  { name: "autoNuke", title: "Auto nuke", desc: "Automatically fires nukes at suggested targets." },
-  {
-    name: "showRetaliationHud",
-    title: "Retaliation HUD",
-    desc: "When hit by a nuke, shows a confirmation card to fire back (semi-auto).",
-  },
-  {
-    name: "autoNukeIncludeAllies",
-    title: "Auto nuke — include allies",
-    desc: "Allow auto nuke to target allies.",
-  },
-  {
-    name: "send1PercentBoat",
-    title: "Send 1% boat",
-    desc: "Adds a 1%-troop boat send to the context menu.",
-  },
-  { name: "hideAds", title: "Hide ads", desc: "Hides ad containers in the game page." },
-  { name: "attackRatioHotkey", title: "Attack-ratio hotkeys", desc: "Shift+1..0 sets attack ratio to 10%..100%." },
-  { name: "rightClickConquest", title: "Right-click conquest", desc: "Right-click an enemy: one-click attack, favourite/blacklist alliance policy." },
-  { name: "roundLogger", title: "Round logger", desc: "Records match timeline (attacks, nukes, troop changes) to localStorage; export as JSON." },
-  { name: "networkLogger", title: "Network logger", desc: "Records fetch/XHR metadata (URL, status, timing) for debugging. No response bodies." },
-  { name: "showBuildTimers", title: "Build timers", desc: "Shows construction countdown and missile cooldown above Missile Silos and SAM Launchers." },
-  { name: "showEnemyIntent", title: "Enemy-intent warning", desc: "Early warning via WebSocket: detects incoming attacks/boats before they appear in game state." },
-  { name: "showSpawnHeatmap", title: "Spawn heatmap", desc: "Colored grid showing spawn quality: land density, nation proximity, player distance." },
-  { name: "showSpawnMarkers", title: "Spawn top-spot markers", desc: "Numbered circles on the best spawn tiles — works with or without the heatmap grid." },
-  {
-    name: "showEconomyHeatmap",
-    title: "Economy heatmap",
-    desc: "Overlays an economic-activity heatmap.",
-  },
-  {
-    name: "showExportPartnerHeatmap",
-    title: "Export partner heatmap",
-    desc: "Highlights your trade export partners.",
+    key: "tools",
+    title: "Tools",
+    toggles: [
+      { name: "hideAds", title: "Hide ads", desc: "Hides ad containers in the game page." },
+      {
+        name: "roundLogger",
+        title: "Round logger",
+        desc: "Records match timeline (attacks, nukes, troop changes) to localStorage; export as JSON.",
+      },
+      {
+        name: "networkLogger",
+        title: "Network logger",
+        desc: "Records fetch/XHR metadata (URL, status, timing) for debugging. No response bodies.",
+      },
+    ],
   },
 ];
 
@@ -431,22 +551,63 @@ function switchRow(
   return row;
 }
 
+// Renders the minutes control for the game-time alert (a non-boolean child row).
+function gameTimeMinutesControl(): HTMLElement {
+  const input = el("input", {
+    class: "ofh-num",
+    type: "number",
+    min: "1",
+    max: "60",
+    step: "1",
+    value: String(Math.round((Number(settings.gameTimeAlertThresholdSec) || 300) / 60)),
+  }) as HTMLInputElement;
+  input.addEventListener("change", () => {
+    const mins = Math.max(1, Math.min(60, Number(input.value) || 5));
+    input.value = String(mins);
+    settings.gameTimeAlertThresholdSec = mins * 60;
+    void persist();
+  });
+  return input;
+}
+
 function helperRows(list: Toggle[]): HTMLElement {
   const grid = el("div", { class: "ofh-grid" });
-  // Sub-toggles (those with a `parent`) follow their parent in `list`. They are
-  // indented and their switch is disabled while the parent is off; toggling the
-  // parent refreshes that disabled state live (no re-render).
-  const subSwitchesByParent: Record<string, HTMLElement[]> = {};
+  // Sub-controls (those with a `parent`) follow their parent in `list`. They are
+  // indented and disabled while the parent is off; toggling the parent refreshes
+  // that disabled state live (no re-render). A control may be a switch OR an
+  // input, so each registers its own disable() fn under its parent.
+  const subControlsByParent: Record<string, Array<(disabled: boolean) => void>> = {};
 
   const refreshSubs = (parent: string): void => {
-    const on = Boolean(settings[parent]);
-    for (const sw of subSwitchesByParent[parent] || []) {
-      sw.classList.toggle("disabled", !on);
-    }
+    const off = !settings[parent];
+    for (const setDisabled of subControlsByParent[parent] || []) setDisabled(off);
   };
 
   for (const h of list) {
-    const sw = el("div", { class: `ofh-switch${settings[h.name] ? " on" : ""}` });
+    let control: HTMLElement;
+    let register: (disabled: boolean) => void;
+
+    if (h.input === "gameTimeMinutes") {
+      const input = gameTimeMinutesControl() as HTMLInputElement;
+      control = input;
+      register = (disabled) => {
+        input.disabled = disabled;
+        input.classList.toggle("disabled", disabled);
+      };
+    } else {
+      const sw = el("div", { class: `ofh-switch${settings[h.name] ? " on" : ""}` });
+      control = sw;
+      register = (disabled) => sw.classList.toggle("disabled", disabled);
+      sw.addEventListener("click", () => {
+        if (sw.classList.contains("disabled")) return;
+        const next = !sw.classList.contains("on");
+        sw.classList.toggle("on", next);
+        settings[h.name] = next;
+        void persist();
+        if (subControlsByParent[h.name]) refreshSubs(h.name);
+      });
+    }
+
     const row = el(
       "div",
       { class: `ofh-row${h.parent ? " ofh-sub" : ""}` },
@@ -456,23 +617,15 @@ function helperRows(list: Toggle[]): HTMLElement {
         el("div", { class: "ofh-name" }, t(h.title)),
         h.desc ? el("div", { class: "ofh-desc" }, t(h.desc)) : "",
       ),
-      sw,
+      control,
     );
-    sw.addEventListener("click", () => {
-      if (sw.classList.contains("disabled")) return;
-      const next = !sw.classList.contains("on");
-      sw.classList.toggle("on", next);
-      settings[h.name] = next;
-      void persist();
-      if (subSwitchesByParent[h.name]) refreshSubs(h.name);
-    });
     if (h.parent) {
-      (subSwitchesByParent[h.parent] ||= []).push(sw);
+      (subControlsByParent[h.parent] ||= []).push(register);
     }
     grid.append(row);
   }
 
-  for (const parent of Object.keys(subSwitchesByParent)) refreshSubs(parent);
+  for (const parent of Object.keys(subControlsByParent)) refreshSubs(parent);
 
   return grid;
 }
@@ -755,42 +908,37 @@ function renderMaps(body: HTMLElement): void {
 }
 
 function renderHelpers(body: HTMLElement): void {
-  body.append(el("div", { class: "ofh-section-title" }, t("Economic")));
-  body.append(helperRows(ECONOMIC_HELPERS));
-  body.append(el("div", { class: "ofh-section-title", style: "margin-top:16px" }, t("Game")));
-  body.append(helperRows(GAME_HELPERS));
+  // Render each section as a collapsible, labeled cluster. Clicking the header
+  // toggles it; the collapsed state persists per-section.
+  HELPER_SECTIONS.forEach((section, index) => {
+    const collapsed = Boolean(settings.collapsedHelperCategories?.[section.key]);
+    const grid = helperRows(section.toggles);
+    if (collapsed) grid.style.display = "none";
 
-  // Game-time alert threshold (minutes) — companion to the showGameTimeAlert toggle.
-  const alertMin = el("input", {
-    class: "ofh-num",
-    type: "number",
-    min: "1",
-    max: "60",
-    step: "1",
-    value: String(Math.round((Number(settings.gameTimeAlertThresholdSec) || 300) / 60)),
-  }) as HTMLInputElement;
-  alertMin.addEventListener("change", () => {
-    const mins = Math.max(1, Math.min(60, Number(alertMin.value) || 5));
-    alertMin.value = String(mins);
-    settings.gameTimeAlertThresholdSec = mins * 60;
-    void persist();
-  });
-  body.append(
-    el(
+    const chevron = el("span", { class: "ofh-sec-chevron" }, collapsed ? "▸" : "▾");
+    const header = el(
       "div",
-      { class: "ofh-row" },
-      el(
-        "div",
-        { class: "ofh-txt" },
-        el("div", { class: "ofh-name" }, t("Game-time alert at (min)")),
-        el("div", { class: "ofh-desc" }, t("When to fire the game-time alert, in minutes.")),
-      ),
-      el("div", { class: "ofh-field" }, alertMin),
-    ),
-  );
+      {
+        class: "ofh-section-title ofh-section-head",
+        style: index > 0 ? "margin-top:14px" : "",
+      },
+      chevron,
+      el("span", {}, t(section.title)),
+    );
+    header.addEventListener("click", () => {
+      const nowCollapsed = grid.style.display !== "none";
+      grid.style.display = nowCollapsed ? "none" : "";
+      chevron.textContent = nowCollapsed ? "▸" : "▾";
+      settings.collapsedHelperCategories = {
+        ...(settings.collapsedHelperCategories || {}),
+        [section.key]: nowCollapsed,
+      };
+      void persist();
+    });
 
-  body.append(el("div", { class: "ofh-section-title", style: "margin-top:16px" }, t("Advanced")));
-  body.append(helperRows(ADVANCED_HELPERS));
+    body.append(header);
+    body.append(grid);
+  });
 }
 
 function renderAutoBot(body: HTMLElement): void {

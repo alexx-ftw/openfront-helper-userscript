@@ -64,6 +64,10 @@
       setGameTimeAlertEnabled(data.payload?.enabled, data.payload?.thresholdSec);
     }
 
+    if (data.type === "SHOW_PLAYER_MAP_OVERLAYS") {
+      setPlayerMapOverlaysEnabled(data.payload?.enabled);
+    }
+
     if (data.type === "SHOW_MAP_TROOP_COUNTS") {
       setMapTroopCountsEnabled(data.payload?.enabled);
     }
@@ -139,8 +143,8 @@
 
     if (data.type === "SHOW_NUKE_PREDICTION") {
       setNukePredictionEnabled(data.payload?.enabled);
-      // The trajectory line is a layer on the shared map-overlay scheduler,
-      // gated by the same flag — kick the loop so it starts/stops with it.
+      // The trajectory line is a sub-toggle on the shared map-overlay scheduler.
+      setNukeTrajectoryEnabled(data.payload?.trajectory);
       requestMapOverlayLoop();
     }
 
@@ -154,7 +158,12 @@
     }
 
     if (data.type === "SHOW_WARSHIP_ROUTES") {
-      setWarshipRoutesEnabled(data.payload?.enabled);
+      setWarshipRoutesEnabled(data.payload?.enabled, {
+        own: data.payload?.own,
+        team: data.payload?.team,
+        ally: data.payload?.ally,
+        enemy: data.payload?.enemy,
+      });
     }
 
     if (data.type === "SHOW_BOAT_PANEL") {

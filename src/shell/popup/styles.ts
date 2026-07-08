@@ -124,6 +124,16 @@ export const POPUP_CSS = `
   font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
   color: rgba(187,247,208,.5); margin: 4px 0 10px;
 }
+/* collapsible section header */
+#openfront-helper-popup .ofh-section-head {
+  display: flex; align-items: center; gap: 7px;
+  cursor: pointer; user-select: none; -webkit-user-select: none;
+  transition: color .15s;
+}
+#openfront-helper-popup .ofh-section-head:hover { color: rgba(187,247,208,.85); }
+#openfront-helper-popup .ofh-sec-chevron { font-size: 10px; width: 10px; display: inline-block; }
+#openfront-helper-popup input.ofh-num:disabled,
+#openfront-helper-popup input.ofh-num.disabled { opacity: .4; cursor: not-allowed; }
 #openfront-helper-popup .ofh-grid { display: grid; gap: 8px; }
 #openfront-helper-popup .ofh-grid.cols2 { grid-template-columns: 1fr 1fr; }
 

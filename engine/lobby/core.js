@@ -202,6 +202,7 @@ function syncNukePredictionHelper() {
       type: "SHOW_NUKE_PREDICTION",
       payload: {
         enabled: Boolean(settings.showNukePrediction),
+        trajectory: Boolean(settings.showNukeTrajectory),
       },
     },
     "*",
@@ -216,6 +217,19 @@ function syncGameTimeAlertHelper() {
       payload: {
         enabled: Boolean(settings.showGameTimeAlert),
         thresholdSec: Number(settings.gameTimeAlertThresholdSec) || 300,
+      },
+    },
+    "*",
+  );
+}
+
+function syncPlayerMapOverlaysHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SHOW_PLAYER_MAP_OVERLAYS",
+      payload: {
+        enabled: Boolean(settings.showPlayerMapOverlays),
       },
     },
     "*",
@@ -441,6 +455,10 @@ function syncWarshipRoutesHelper() {
       type: "SHOW_WARSHIP_ROUTES",
       payload: {
         enabled: Boolean(settings.showWarshipRoutes),
+        own: Boolean(settings.showWarshipRoutesOwn),
+        team: Boolean(settings.showWarshipRoutesTeam),
+        ally: Boolean(settings.showWarshipRoutesAlly),
+        enemy: Boolean(settings.showWarshipRoutesEnemy),
       },
     },
     "*",
@@ -658,6 +676,7 @@ function syncHelpers() {
   syncHelperUsersHelper();
   syncSosDefenseHelper();
   syncGameTimeAlertHelper();
+  syncPlayerMapOverlaysHelper();
   syncMapTroopCountsHelper();
   syncThreatIndicatorsHelper();
   syncMapMoneyHelper();

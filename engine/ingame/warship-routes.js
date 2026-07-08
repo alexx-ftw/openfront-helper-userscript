@@ -14,6 +14,23 @@
   // headed" rather than a marker on every idle ship.
   const WARSHIP_ROUTE_MIN_DIST = 6;
   let warshipRoutesEnabled = false;
+  // Per-faction sub-toggles (default on) — which relations' warship routes draw.
+  let warshipShowOwn = true;
+  let warshipShowTeam = true;
+  let warshipShowAlly = true;
+  let warshipShowEnemy = true;
+  function warshipFactionEnabled(relation) {
+    switch (relation) {
+      case "self":
+        return warshipShowOwn;
+      case "team":
+        return warshipShowTeam;
+      case "ally":
+        return warshipShowAlly;
+      default:
+        return warshipShowEnemy;
+    }
+  }
   let warshipRoutesAnimationFrame = null;
   let lastWarshipRouteScanAt = 0;
   let warshipRouteScan = []; // [{ id, unit, color, motionPlanUnitId, destWorldX, destWorldY }]
@@ -105,6 +122,7 @@
       if (!unit?.isActive?.()) continue;
       const relation = getBoatPredictionRelation(game, unit);
       if (!relation) continue;
+      if (!warshipFactionEnabled(relation)) continue; // per-faction sub-toggle
 
       // Destination = the warship's move order (patrolTile); fall back to the end
       // of its motion plan path if no patrolTile is set.
@@ -321,13 +339,17 @@
     document.getElementById(WARSHIP_ROUTES_CONTAINER_ID)?.remove();
   }
 
-  function setWarshipRoutesEnabled(enabled) {
+  function setWarshipRoutesEnabled(enabled, factions) {
     warshipRoutesEnabled = Boolean(enabled);
-    if (!warshipRoutesEnabled) {
-      teardownWarshipRoutes();
-      return;
+    if (factions && typeof factions === "object") {
+      if (factions.own !== undefined) warshipShowOwn = Boolean(factions.own);
+      if (factions.team !== undefined) warshipShowTeam = Boolean(factions.team);
+      if (factions.ally !== undefined) warshipShowAlly = Boolean(factions.ally);
+      if (factions.enemy !== undefined) warshipShowEnemy = Boolean(factions.enemy);
     }
-    if (warshipRoutesAnimationFrame === null) {
+    // Full teardown so any now-hidden faction's DOM is removed, then rebuild.
+    teardownWarshipRoutes();
+    if (warshipRoutesEnabled) {
       syncWarshipRoutes();
     }
   }

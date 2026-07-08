@@ -40,7 +40,10 @@
   }
 
   function playerOverlayEnabled() {
-    return mapTroopCountsEnabled || threatIndicatorsEnabled || mapMoneyEnabled;
+    return (
+      playerMapOverlaysEnabled &&
+      (mapTroopCountsEnabled || threatIndicatorsEnabled || mapMoneyEnabled)
+    );
   }
 
   // Scan cache: [{ player, relation, isEnemy, troops, inCombat, maxTroops, gold, threat }].
@@ -266,6 +269,14 @@
       drawPlayerOverlay(ctx, game, transform);
     },
   });
+
+  function setPlayerMapOverlaysEnabled(enabled) {
+    playerMapOverlaysEnabled = Boolean(enabled);
+    if (!playerOverlayEnabled()) {
+      _playerOverlayScan = [];
+    }
+    requestMapOverlayLoop();
+  }
 
   function setMapTroopCountsEnabled(enabled) {
     mapTroopCountsEnabled = Boolean(enabled);

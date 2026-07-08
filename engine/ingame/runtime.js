@@ -109,6 +109,8 @@ let lastProcessedTradeBalanceTick = null;
 let lastTradeBalanceRenderAt = 0;
 let tradeBalanceRenderSignature = "";
 let nukePredictionEnabled = false;
+// Sub-toggle of nuke prediction: the flight-path (trajectory) line. Default on.
+let nukeTrajectoryEnabled = true;
 let nukeLandingAnimationFrame = null;
 let boatPredictionEnabled = false;
 let boatPredictionAlwaysOwnRoutes = false;
@@ -165,6 +167,9 @@ let gameTimeAlertInterval = null;
 let gameTimeAlertFired = false;
 let gameTimeAlertLastGame = null;
 
+// Master gate for all per-player on-map overlays (troop/threat/money). Defaults
+// on so overlays enabled via settings show before the first sync arrives.
+let playerMapOverlaysEnabled = true;
 // Per-player on-map overlay (troop counts) — first layer on the shared scheduler.
 let mapTroopCountsEnabled = false;
 // Per-player threat marks (☢ nuke-capable, weak/danger dots) on the same layer.

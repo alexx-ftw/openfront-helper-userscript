@@ -181,7 +181,8 @@
     id: "nuke-trajectory",
     scanIntervalMs: 250,
     isEnabled: function () {
-      return nukePredictionEnabled;
+      // Sub-toggle of nuke prediction: only draws when both are on.
+      return nukePredictionEnabled && nukeTrajectoryEnabled;
     },
     scan: function (game) {
       collectNukeTrajectoryScan(game);
@@ -190,3 +191,10 @@
       drawNukeTrajectory(ctx, game, transform);
     },
   });
+
+  function setNukeTrajectoryEnabled(enabled) {
+    nukeTrajectoryEnabled = Boolean(enabled);
+    if (typeof requestMapOverlayLoop === "function") {
+      requestMapOverlayLoop();
+    }
+  }
