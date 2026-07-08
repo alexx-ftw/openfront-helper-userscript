@@ -208,6 +208,215 @@ function syncNukePredictionHelper() {
   );
 }
 
+function syncGameTimeAlertHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SHOW_GAME_TIME_ALERT",
+      payload: {
+        enabled: Boolean(settings.showGameTimeAlert),
+        thresholdSec: Number(settings.gameTimeAlertThresholdSec) || 300,
+      },
+    },
+    "*",
+  );
+}
+
+function syncMapTroopCountsHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SHOW_MAP_TROOP_COUNTS",
+      payload: {
+        enabled: Boolean(settings.showMapTroopCounts),
+      },
+    },
+    "*",
+  );
+}
+
+function syncThreatIndicatorsHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SHOW_THREAT_INDICATORS",
+      payload: {
+        enabled: Boolean(settings.showThreatIndicators),
+      },
+    },
+    "*",
+  );
+}
+
+function syncMapMoneyHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SHOW_MAP_MONEY",
+      payload: {
+        enabled: Boolean(settings.showMapMoney),
+      },
+    },
+    "*",
+  );
+}
+
+function syncAttackHighlightHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SHOW_ATTACK_HIGHLIGHT",
+      payload: {
+        enabled: Boolean(settings.showAttackHighlight),
+      },
+    },
+    "*",
+  );
+}
+
+function syncAdvisorPanelHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SHOW_ADVISOR_PANEL",
+      payload: {
+        enabled: Boolean(settings.showAdvisorPanel),
+      },
+    },
+    "*",
+  );
+}
+
+function syncRetaliationHudHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SHOW_RETALIATION_HUD",
+      payload: {
+        enabled: Boolean(settings.showRetaliationHud),
+      },
+    },
+    "*",
+  );
+}
+
+function syncHideAdsHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SET_HIDE_ADS",
+      payload: {
+        enabled: Boolean(settings.hideAds),
+      },
+    },
+    "*",
+  );
+}
+
+function syncAttackRatioHotkeyHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SET_ATTACK_RATIO_HOTKEY",
+      payload: {
+        enabled: Boolean(settings.attackRatioHotkey),
+      },
+    },
+    "*",
+  );
+}
+
+function syncRightClickConquestHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SET_RIGHT_CLICK_CONQUEST",
+      payload: {
+        enabled: Boolean(settings.rightClickConquest),
+      },
+    },
+    "*",
+  );
+}
+
+function syncRoundLoggerHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SET_ROUND_LOGGER",
+      payload: {
+        enabled: Boolean(settings.roundLogger),
+      },
+    },
+    "*",
+  );
+}
+
+function syncNetworkLoggerHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SET_NETWORK_LOGGER",
+      payload: {
+        enabled: Boolean(settings.networkLogger),
+      },
+    },
+    "*",
+  );
+}
+
+function syncBuildTimersHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SHOW_BUILD_TIMERS",
+      payload: {
+        enabled: Boolean(settings.showBuildTimers),
+      },
+    },
+    "*",
+  );
+}
+
+function syncEnemyIntentHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SHOW_ENEMY_INTENT",
+      payload: {
+        enabled: Boolean(settings.showEnemyIntent),
+      },
+    },
+    "*",
+  );
+}
+
+function syncSpawnHeatmapHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SHOW_SPAWN_HEATMAP",
+      payload: {
+        enabled: Boolean(settings.showSpawnHeatmap),
+      },
+    },
+    "*",
+  );
+}
+
+function syncSpawnMarkersHelper() {
+  window.postMessage(
+    {
+      source: BRIDGE_SOURCE_EXTENSION,
+      type: "SHOW_SPAWN_MARKERS",
+      payload: {
+        enabled: Boolean(settings.showSpawnMarkers),
+      },
+    },
+    "*",
+  );
+}
+
 function syncBoatPredictionHelper() {
   window.postMessage(
     {
@@ -448,6 +657,22 @@ function syncHelpers() {
   syncTradeBalancesHelper();
   syncHelperUsersHelper();
   syncSosDefenseHelper();
+  syncGameTimeAlertHelper();
+  syncMapTroopCountsHelper();
+  syncThreatIndicatorsHelper();
+  syncMapMoneyHelper();
+  syncAttackHighlightHelper();
+  syncAdvisorPanelHelper();
+  syncRetaliationHudHelper();
+  syncHideAdsHelper();
+  syncAttackRatioHotkeyHelper();
+  syncRightClickConquestHelper();
+  syncRoundLoggerHelper();
+  syncNetworkLoggerHelper();
+  syncBuildTimersHelper();
+  syncEnemyIntentHelper();
+  syncSpawnHeatmapHelper();
+  syncSpawnMarkersHelper();
   syncSelectiveTradePolicyToggle();
   syncAutoBotI18n();
   syncNukePredictionHelper();

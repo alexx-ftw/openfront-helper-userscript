@@ -24,6 +24,8 @@
       this.active = true;
       this.behaviorsInitialized = false;
       this.spawnExecAdded = false;
+      this.lastSpawnTile = null; // last emitted spawn tile (to re-emit on change)
+      this.lastSpawnPickTick = null; // throttle re-evaluation during spawn phase
       this.status = "";
       this.lastSeenTick = -1;
       this.embargoMalusApplied = new Set(); // smallIDs we've applied embargo malus to
@@ -99,12 +101,18 @@
           this.status = tr("Spawn phase…");
           return;
         }
-        if (this.spawnExecAdded) {
-          // Spawn intent already emitted; wait for it to land.
-          return;
-        }
         if (this.feat("spawn")) {
-          this.doSpawn();
+          // Spawn immediately, then keep following the #1 spot as it shifts —
+          // re-evaluate at most every ~6 ticks (~600ms) so the bot tracks the
+          // best tile without spamming intents. doSpawn re-emits only on change.
+          if (
+            !this.spawnExecAdded ||
+            this.lastSpawnPickTick == null ||
+            ticks - this.lastSpawnPickTick >= 6
+          ) {
+            this.lastSpawnPickTick = ticks;
+            this.doSpawn();
+          }
         } else {
           this.status = tr("Spawn phase…");
         }
@@ -241,11 +249,19 @@
         this.status = tr("Spawn phase…");
         return;
       }
+      // Nothing to do if the best tile hasn't moved since the last emit.
+      if (this.spawnExecAdded && center === this.lastSpawnTile) {
+        return;
+      }
       const ctors = discoverCtors(getEventBus());
       if (ctors.spawn) {
         emitIntent(ctors.spawn, center);
+        const moved = this.spawnExecAdded;
         this.spawnExecAdded = true;
-        state.stats.spawns++;
+        this.lastSpawnTile = center;
+        if (!moved) {
+          state.stats.spawns++;
+        }
         setLastAction(tr("🏁 Spawned"), "spawn");
       }
     }
@@ -284,6 +300,70 @@
         }
         return false;
       };
+
+      // DIVERGENCE: smart spawn scoring — when enabled, sample candidates and
+      // pick the best by land density + distance from enemies + edge avoidance.
+      // When disabled, use the faithful first-valid-random-tile (SpawnExecution).
+      const useSmart = state.settings.smartSpawn;
+
+      // A tile is a valid spawn if it's unowned interior land, far enough from
+      // other players. Reused for the top-spot pick and its snap search.
+      const isValidSpawn = (tile) =>
+        tile != null &&
+        g.isLand(tile) &&
+        !g.hasOwner(tile) &&
+        !g.isBorder(tile) &&
+        !tooClose(tile);
+
+      // Search outward from (sx,sy) for the nearest valid spawn tile (ring scan).
+      // Lets the bot commit to the marked #1 area even if the exact grid point is
+      // a coast/border/occupied tile the server would reject.
+      const snapToValid = (sx, sy) => {
+        if (g.isValidCoord(sx, sy)) {
+          const c = g.ref(sx, sy);
+          if (isValidSpawn(c)) return c;
+        }
+        for (let radius = 2; radius <= 24; radius += 2) {
+          for (let dy = -radius; dy <= radius; dy += 2) {
+            for (let dx = -radius; dx <= radius; dx += 2) {
+              if (Math.abs(dx) !== radius && Math.abs(dy) !== radius) continue; // ring only
+              const nx = sx + dx;
+              const ny = sy + dy;
+              if (!g.isValidCoord(nx, ny)) continue;
+              const c = g.ref(nx, ny);
+              if (isValidSpawn(c)) return c;
+            }
+          }
+        }
+        return null;
+      };
+
+      // Prefer spawning at the spawn-heatmap's #1 circle so the bot lands exactly
+      // where the player sees it. Use the LIVE displayed topSpots if the overlay
+      // is on (identical to what's on screen), else compute them.
+      if (useSmart) {
+        let topSpots = null;
+        try {
+          if (typeof getSpawnHeatmapTopSpots === "function") {
+            topSpots = getSpawnHeatmapTopSpots();
+          }
+          if (!topSpots && typeof computeSpawnTopSpotsForBot === "function") {
+            topSpots = computeSpawnTopSpotsForBot(g, this.player);
+          }
+        } catch (_e) {
+          topSpots = null;
+        }
+        if (topSpots && topSpots.length > 0) {
+          for (let s = 0; s < topSpots.length; s++) {
+            const snapped = snapToValid(topSpots[s].x, topSpots[s].y);
+            if (snapped != null) return snapped; // spawn at / near the ranked best spot
+          }
+        }
+      }
+
+      let bestTile = null;
+      let bestScore = -Infinity;
+
       for (let tries = 0; tries < 1000; tries++) {
         const x = area
           ? this.random.nextInt(area.x, area.x + area.width)
@@ -295,9 +375,66 @@
         const tile = g.ref(x, y);
         if (!g.isLand(tile) || g.hasOwner(tile) || g.isBorder(tile)) continue;
         if (tooClose(tile)) continue;
-        return tile;
+        if (!useSmart) return tile; // faithful: first valid wins
+        const score = this.scoreSpawnTile(tile, others, W, H);
+        if (score > bestScore) {
+          bestScore = score;
+          bestTile = tile;
+        }
       }
-      return null;
+      return bestTile;
+    }
+
+    // DIVERGENCE: spawn scoring (Tactical spawn-scoring port). Scores a candidate
+    // tile by: land density in a 12-radius neighbourhood, distance from the
+    // nearest enemy nameLocation (farther = better), and edge avoidance (centre
+    // of map preferred). Team mode adds a pull toward the team spawn area centre.
+    scoreSpawnTile(tile, others, W, H) {
+      const g = this.mg;
+      const tx = g.x(tile);
+      const ty = g.y(tile);
+      let score = 0;
+
+      // Land density: count land neighbours in a 12-radius square.
+      const R = 12;
+      let land = 0;
+      let total = 0;
+      for (let dy = -R; dy <= R; dy++) {
+        for (let dx = -R; dx <= R; dx++) {
+          const nx = tx + dx;
+          const ny = ty + dy;
+          if (!g.isValidCoord(nx, ny)) continue;
+          total++;
+          if (g.isLand(g.ref(nx, ny))) land++;
+        }
+      }
+      score += (total > 0 ? land / total : 0) * 40;
+
+      // Distance from nearest enemy (farther = safer spawn).
+      let minEnemyDist = Infinity;
+      for (const o of others) {
+        const loc = o.nameLocation();
+        if (!loc) continue;
+        const d = Math.abs(loc.x - tx) + Math.abs(loc.y - ty);
+        if (d < minEnemyDist) minEnemyDist = d;
+      }
+      // Normalize: cap at 200 tiles, scale to 0..30.
+      score += Math.min(1, minEnemyDist / 200) * 30;
+
+      // Edge avoidance: prefer tiles away from map edges.
+      const edgeDist = Math.min(tx, ty, W - 1 - tx, H - 1 - ty);
+      score += Math.min(1, edgeDist / 30) * 20;
+
+      // Team area pull: bonus for being near the team spawn area centre.
+      if (area) {
+        const cx = area.x + area.width / 2;
+        const cy = area.y + area.height / 2;
+        const teamDist = Math.abs(tx - cx) + Math.abs(ty - cy);
+        const teamRadius = (area.width + area.height) / 2;
+        score += Math.max(0, 1 - teamDist / Math.max(1, teamRadius)) * 10;
+      }
+
+      return score;
     }
 
     // updateRelationsFromEmbargos — NationExecution.ts:285. AI-subjective ±20

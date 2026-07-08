@@ -60,6 +60,70 @@
       setSosDefenseEnabled(data.payload?.enabled);
     }
 
+    if (data.type === "SHOW_GAME_TIME_ALERT") {
+      setGameTimeAlertEnabled(data.payload?.enabled, data.payload?.thresholdSec);
+    }
+
+    if (data.type === "SHOW_MAP_TROOP_COUNTS") {
+      setMapTroopCountsEnabled(data.payload?.enabled);
+    }
+
+    if (data.type === "SHOW_THREAT_INDICATORS") {
+      setThreatIndicatorsEnabled(data.payload?.enabled);
+    }
+
+    if (data.type === "SHOW_MAP_MONEY") {
+      setMapMoneyEnabled(data.payload?.enabled);
+    }
+
+    if (data.type === "SHOW_ATTACK_HIGHLIGHT") {
+      setAttackHighlightEnabled(data.payload?.enabled);
+    }
+
+    if (data.type === "SHOW_ADVISOR_PANEL") {
+      setAdvisorPanelEnabled(data.payload?.enabled);
+    }
+
+    if (data.type === "SHOW_RETALIATION_HUD") {
+      setRetaliationEnabled(data.payload?.enabled);
+    }
+
+    if (data.type === "SET_HIDE_ADS") {
+      setHideAdsEnabled(data.payload?.enabled);
+    }
+
+    if (data.type === "SET_ATTACK_RATIO_HOTKEY") {
+      setAttackRatioHotkeyEnabled(data.payload?.enabled);
+    }
+
+    if (data.type === "SET_RIGHT_CLICK_CONQUEST") {
+      setRightClickMenuEnabled(data.payload?.enabled);
+    }
+
+    if (data.type === "SET_ROUND_LOGGER") {
+      setRoundLoggerEnabled(data.payload?.enabled);
+    }
+
+    if (data.type === "SET_NETWORK_LOGGER") {
+      setNetworkLoggerEnabled(data.payload?.enabled);
+    }
+
+    if (data.type === "SHOW_BUILD_TIMERS") {
+      setBuildTimerEnabled(data.payload?.enabled);
+    }
+
+    if (data.type === "SHOW_ENEMY_INTENT") {
+      setEnemyIntentEnabled(data.payload?.enabled);
+    }
+
+    if (data.type === "SHOW_SPAWN_HEATMAP") {
+      setSpawnHeatmapEnabled(data.payload?.enabled);
+    }
+
+    if (data.type === "SHOW_SPAWN_MARKERS") {
+      setSpawnMarkersEnabled(data.payload?.enabled);
+    }
+
     if (data.type === "SHOW_MY_GPM_HISTORY") {
       if (typeof setSelfGpmHistoryPanelPosition === "function") {
         setSelfGpmHistoryPanelPosition(data.payload?.panelPosition);
@@ -75,6 +139,9 @@
 
     if (data.type === "SHOW_NUKE_PREDICTION") {
       setNukePredictionEnabled(data.payload?.enabled);
+      // The trajectory line is a layer on the shared map-overlay scheduler,
+      // gated by the same flag — kick the loop so it starts/stops with it.
+      requestMapOverlayLoop();
     }
 
     if (data.type === "SHOW_BOAT_PREDICTION") {

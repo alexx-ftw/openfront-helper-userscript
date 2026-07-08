@@ -156,6 +156,57 @@ let lastReportedSelectiveTradePolicyAvailability = null;
 let lastReportedCheatsAvailability = null;
 let lastOpenFrontGameContext = null;
 
+// Game-time alert: one-shot center-screen notice at a configurable match time.
+const GAME_TIME_ALERT_CONTAINER_ID = "openfront-helper-game-time-alert-layer";
+const GAME_TIME_ALERT_STYLE_ID = "openfront-helper-game-time-alert-styles";
+let gameTimeAlertEnabled = false;
+let gameTimeAlertThresholdSec = 300;
+let gameTimeAlertInterval = null;
+let gameTimeAlertFired = false;
+let gameTimeAlertLastGame = null;
+
+// Per-player on-map overlay (troop counts) — first layer on the shared scheduler.
+let mapTroopCountsEnabled = false;
+// Per-player threat marks (☢ nuke-capable, weak/danger dots) on the same layer.
+let threatIndicatorsEnabled = false;
+// Per-player gold readout on the same layer.
+let mapMoneyEnabled = false;
+// Attack-highlight overlay (who is attacking you) — its own scheduler layer.
+let attackHighlightEnabled = false;
+// Advisor panel (manual-play HUD): economy state, expansion advice, top threats.
+const ADVISOR_PANEL_ID = "openfront-helper-advisor-panel";
+const ADVISOR_PANEL_STYLE_ID = "openfront-helper-advisor-panel-styles";
+const ADVISOR_PANEL_POS_KEY = "openfront-helper-advisor-panel-pos";
+let advisorPanelEnabled = false;
+
+// Retaliation HUD: semi-auto nuke counter-attack confirmation card.
+const RETALIATION_CONTAINER_ID = "openfront-helper-retaliation-layer";
+const RETALIATION_STYLE_ID = "openfront-helper-retaliation-styles";
+let retaliationEnabled = false;
+let retaliationInterval = null;
+
+// Hide ads: CSS injection.
+const HIDE_ADS_STYLE_ID = "openfront-helper-hide-ads-style";
+// Attack-ratio hotkey: Shift+1..0 set attack ratio 10%..100%.
+let attackRatioHotkeyEnabled = false;
+// Right-click conquest menu: one-click attack + alliance policy.
+const RIGHT_CLICK_MENU_ID = "openfront-helper-right-click-menu";
+const RIGHT_CLICK_STYLE_ID = "openfront-helper-right-click-styles";
+let rightClickMenuEnabled = false;
+
+// Round logger: timeline JSON + combat outcome tracking.
+let roundLoggerEnabled = false;
+// Network logger: hook fetch/XHR metadata.
+let networkLoggerEnabled = false;
+
+// Build timer overlay: construction countdown + missile cooldown above silos/SAMs.
+let buildTimerEnabled = false;
+// Enemy-intent early warning: WebSocket hook to detect incoming attacks/boats.
+let enemyIntentEnabled = false;
+// Spawn heatmap overlay: colored grid showing spawn quality.
+let spawnHeatmapEnabled = false;
+let spawnMarkersEnabled = false;
+
 const goldTrackers = new Map();
 const incomingGoldTransfers = new Map();
 const tradeBalanceTrackers = new Map();

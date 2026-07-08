@@ -62,6 +62,11 @@
     //    faithful Nation, which is conservative/turtle by design). Toggle winFixes
     //    OFF to restore the exact 1:1 src port. ──
     winFixes: true,
+    // DIVERGENCE: smart spawn scoring — scores candidate tiles by land density,
+    // plains ratio, distance from enemies, and edge avoidance, then picks the
+    // best instead of the first valid random tile. Toggle OFF to restore the
+    // faithful random spawn (SpawnExecution.getSpawn).
+    smartSpawn: true,
     combatCadenceScale: 0.6, // <1 shrinks the attack-tick interval → the bot makes
     // attack/expand decisions MORE often (more aggressive / less "gentle"; the pure
     // faithful Nation only decides once per attackRate ≈ every 3–5s). 1 = faithful.
@@ -293,6 +298,7 @@
       "enabled",
       "difficulty",
       "winFixes",
+      "smartSpawn",
       "minimized",
       "hidden",
       "statusOpen",

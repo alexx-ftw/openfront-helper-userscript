@@ -39,6 +39,7 @@ const LOBBY_FILES = [
 // auto-bot. Order matters (see the auto-bot README).
 const INGAME_FILES = [
   "runtime.js",
+  "panel-layout.js",
   "shared-utils.js",
   "selective-trade-policy.js",
   "alliances.js",
@@ -77,6 +78,23 @@ const INGAME_FILES = [
   "signal-scheduler.js",
   "helper-users-panel.js",
   "sos-defense.js",
+  "map-overlay-scheduler.js",
+  "advisor-intel.js",
+  "name-overlay.js",
+  "attack-highlight.js",
+  "nuke-trajectory.js",
+  "advisor-panel.js",
+  "retaliation-hud.js",
+  "hide-ads.js",
+  "attack-ratio-hotkey.js",
+  "alliance-policy.js",
+  "right-click-conquest.js",
+  "round-logger.js",
+  "network-logger.js",
+  "build-timer.js",
+  "enemy-intent-intel.js",
+  "spawn-heatmap.js",
+  "game-time-alert.js",
   "bootstrap.js",
 ].map((f) => `engine/ingame/${f}`);
 
@@ -128,6 +146,11 @@ function metadataHeader(version) {
 // @supportURL   ${repo}/issues
 // @updateURL    ${raw}
 // @downloadURL  ${raw}
+// @contributionURL https://greasyfork.org/en/scripts/581664-openfront-tactical-assistant
+// Credits: in-game overlays adapted from phil0010-gh/openfront-helper; several
+// helper/auto-bot features (spawn scoring/heatmap, advisor, threat intel, map
+// overlays) reference OpenFront Tactical Assistant:
+//   https://greasyfork.org/en/scripts/581664-openfront-tactical-assistant
 // @match        https://openfront.io/*
 // @run-at       document-start
 // @inject-into  page

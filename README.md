@@ -174,6 +174,6 @@ After any source change, rebuild and commit both the source and the regenerated 
 
 ## Credits
 
-In-game overlays and helper panels are adapted from **[phil0010-gh/openfront-helper](https://github.com/phil0010-gh/openfront-helper)** by [phil0010-gh](https://github.com/phil0010-gh). The auto-bot, macro tools, multi-language UI, and several additional features are original to this project.
+In-game overlays and helper panels are adapted from **[phil0010-gh/openfront-helper](https://github.com/phil0010-gh/openfront-helper)** by [phil0010-gh](https://github.com/phil0010-gh). Several helper and auto-bot features — spawn scoring/heatmap, the advisor, threat intel, and map overlays — reference **[OpenFront Tactical Assistant](https://greasyfork.org/en/scripts/581664-openfront-tactical-assistant)**. The auto-bot, macro tools, multi-language UI, and several additional features are original to this project.
 
 Not affiliated with or endorsed by OpenFront.io. Use at your own discretion and in line with the game's rules.

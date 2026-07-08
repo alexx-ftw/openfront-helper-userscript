@@ -42,7 +42,7 @@
     language: "en",
     enabled: false,
     searchStartedAt: null,
-    joinNotification: false,
+    joinNotification: true,
     minLobbySize: null,
     minTeamSize: 5,
     maxTeamSize: null,
@@ -58,17 +58,34 @@
     showAllianceRequestsPanel: true,
     showTradeBalances: false,
     showHelperUsers: true,
-    sosDefense: false,
+    showGameTimeAlert: false,
+    gameTimeAlertThresholdSec: 300,
+    showMapTroopCounts: true,
+    showThreatIndicators: true,
+    showMapMoney: true,
+    showAttackHighlight: true,
+    showAdvisorPanel: true,
+    showRetaliationHud: true,
+    hideAds: true,
+    attackRatioHotkey: true,
+    rightClickConquest: true,
+    roundLogger: false,
+    networkLogger: false,
+    showBuildTimers: true,
+    showEnemyIntent: true,
+    showSpawnHeatmap: false,
+    showSpawnMarkers: true,
+    sosDefense: true,
     selectiveTradePolicyEnabled: false,
-    autoCancelDeniedTradesAvailable: false,
-    cheatsAvailable: false,
+    autoCancelDeniedTradesAvailable: true,
+    cheatsAvailable: true,
     showNukePrediction: true,
     showNukeSuggestions: false,
     showBoatPrediction: true,
     showWarshipRoutes: true,
     alwaysShowOwnBoatRoutes: true,
-    alwaysShowTeamBoatRoutes: true,
-    alwaysShowAllyBoatRoutes: true,
+    alwaysShowTeamBoatRoutes: false,
+    alwaysShowAllyBoatRoutes: false,
     alwaysShowEnemyBoatRoutes: true,
     showBoatPanel: true,
     warnIncomingBoats: true,
@@ -103,7 +120,7 @@
       top: null,
     },
     floatingHelpersPanelHeight: null,
-    showFloatingAutoJoinPanel: false,
+    showFloatingAutoJoinPanel: true,
     floatingAutoJoinPanelPosition: {
       left: null,
       top: null,
@@ -120,7 +137,13 @@
     excludeFilters: {
       ...DEFAULT_INCLUDE_EXCLUDE_FILTERS,
     },
-    mapFilters: { ...createDefaultMapFilters(), baikal: true, luna: true },
+    mapFilters: {
+      ...createDefaultMapFilters(),
+      baikal: true,
+      baikalnukewars: true,
+      luna: true,
+      pluto: true,
+    },
     mapExcludeFilters: createDefaultMapFilters(),
   };
 
@@ -130,6 +153,14 @@
       return DEFAULT_SETTINGS.economyHeatmapIntensity;
     }
     return Math.max(0, Math.min(2, Math.round(intensity)));
+  }
+
+  function normalizeGameTimeAlertThreshold(value) {
+    const seconds = Number(value);
+    if (!Number.isFinite(seconds)) {
+      return DEFAULT_SETTINGS.gameTimeAlertThresholdSec;
+    }
+    return Math.max(30, Math.min(3600, Math.round(seconds)));
   }
 
   function getEconomyHeatmapIntensityLabel(value) {
@@ -371,6 +402,9 @@
     normalized.economyHeatmapIntensity = normalizeEconomyHeatmapIntensity(
       normalized.economyHeatmapIntensity,
     );
+    normalized.gameTimeAlertThresholdSec = normalizeGameTimeAlertThreshold(
+      normalized.gameTimeAlertThresholdSec,
+    );
     normalized.language = normalizeLanguage(normalized.language);
     normalized.applySelectiveTradePolicyRequestAt = normalizeActionRequestTimestamp(
       normalized.applySelectiveTradePolicyRequestAt,
@@ -394,6 +428,7 @@
     normalizeLanguage,
     normalizeMapFilters,
     normalizeEconomyHeatmapIntensity,
+    normalizeGameTimeAlertThreshold,
     normalizeFloatingHelpersPanelPosition,
     normalizeFloatingHelpersPanelHeight,
     normalizeActionRequestTimestamp,

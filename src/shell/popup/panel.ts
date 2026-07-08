@@ -14,6 +14,7 @@ type AutoBot = {
     enabled: boolean;
     difficulty: string;
     winFixes: boolean;
+    smartSpawn: boolean;
     tickMs: number;
     hidden: boolean;
     features: Record<string, boolean>;
@@ -282,6 +283,36 @@ const GAME_HELPERS: Toggle[] = [
     title: "Script users panel",
     desc: "Lists other players running this helper (detected via a 3-emoji signature broadcast once per match).",
   },
+  {
+    name: "showGameTimeAlert",
+    title: "Game-time alert",
+    desc: "One-time center-screen notice when the match reaches a set time (default 5 min).",
+  },
+  {
+    name: "showMapTroopCounts",
+    title: "Troop bar on map",
+    desc: "Ratio bar over each player: home troops (relation color) + attacking (orange) vs max, with the count.",
+  },
+  {
+    name: "showThreatIndicators",
+    title: "Threat indicators",
+    desc: "Marks enemies on the map: ☢ nuke-capable, red dot = stronger than you, amber dot = weak.",
+  },
+  {
+    name: "showMapMoney",
+    title: "Money on map",
+    desc: "Shows each player's gold above their name.",
+  },
+  {
+    name: "showAttackHighlight",
+    title: "Attack highlight",
+    desc: "Flags who is attacking you: pulsing rings, lines to your territory, total incoming troops.",
+  },
+  {
+    name: "showAdvisorPanel",
+    title: "Advisor panel",
+    desc: "Compact HUD: troop-economy state, growth, spendable troops, expansion advice, and top threats.",
+  },
 ];
 const ADVANCED_HELPERS: Toggle[] = [
   {
@@ -296,6 +327,11 @@ const ADVANCED_HELPERS: Toggle[] = [
   },
   { name: "autoNuke", title: "Auto nuke", desc: "Automatically fires nukes at suggested targets." },
   {
+    name: "showRetaliationHud",
+    title: "Retaliation HUD",
+    desc: "When hit by a nuke, shows a confirmation card to fire back (semi-auto).",
+  },
+  {
     name: "autoNukeIncludeAllies",
     title: "Auto nuke — include allies",
     desc: "Allow auto nuke to target allies.",
@@ -305,6 +341,15 @@ const ADVANCED_HELPERS: Toggle[] = [
     title: "Send 1% boat",
     desc: "Adds a 1%-troop boat send to the context menu.",
   },
+  { name: "hideAds", title: "Hide ads", desc: "Hides ad containers in the game page." },
+  { name: "attackRatioHotkey", title: "Attack-ratio hotkeys", desc: "Shift+1..0 sets attack ratio to 10%..100%." },
+  { name: "rightClickConquest", title: "Right-click conquest", desc: "Right-click an enemy: one-click attack, favourite/blacklist alliance policy." },
+  { name: "roundLogger", title: "Round logger", desc: "Records match timeline (attacks, nukes, troop changes) to localStorage; export as JSON." },
+  { name: "networkLogger", title: "Network logger", desc: "Records fetch/XHR metadata (URL, status, timing) for debugging. No response bodies." },
+  { name: "showBuildTimers", title: "Build timers", desc: "Shows construction countdown and missile cooldown above Missile Silos and SAM Launchers." },
+  { name: "showEnemyIntent", title: "Enemy-intent warning", desc: "Early warning via WebSocket: detects incoming attacks/boats before they appear in game state." },
+  { name: "showSpawnHeatmap", title: "Spawn heatmap", desc: "Colored grid showing spawn quality: land density, nation proximity, player distance." },
+  { name: "showSpawnMarkers", title: "Spawn top-spot markers", desc: "Numbered circles on the best spawn tiles — works with or without the heatmap grid." },
   {
     name: "showEconomyHeatmap",
     title: "Economy heatmap",
@@ -714,6 +759,36 @@ function renderHelpers(body: HTMLElement): void {
   body.append(helperRows(ECONOMIC_HELPERS));
   body.append(el("div", { class: "ofh-section-title", style: "margin-top:16px" }, t("Game")));
   body.append(helperRows(GAME_HELPERS));
+
+  // Game-time alert threshold (minutes) — companion to the showGameTimeAlert toggle.
+  const alertMin = el("input", {
+    class: "ofh-num",
+    type: "number",
+    min: "1",
+    max: "60",
+    step: "1",
+    value: String(Math.round((Number(settings.gameTimeAlertThresholdSec) || 300) / 60)),
+  }) as HTMLInputElement;
+  alertMin.addEventListener("change", () => {
+    const mins = Math.max(1, Math.min(60, Number(alertMin.value) || 5));
+    alertMin.value = String(mins);
+    settings.gameTimeAlertThresholdSec = mins * 60;
+    void persist();
+  });
+  body.append(
+    el(
+      "div",
+      { class: "ofh-row" },
+      el(
+        "div",
+        { class: "ofh-txt" },
+        el("div", { class: "ofh-name" }, t("Game-time alert at (min)")),
+        el("div", { class: "ofh-desc" }, t("When to fire the game-time alert, in minutes.")),
+      ),
+      el("div", { class: "ofh-field" }, alertMin),
+    ),
+  );
+
   body.append(el("div", { class: "ofh-section-title", style: "margin-top:16px" }, t("Advanced")));
   body.append(helperRows(ADVANCED_HELPERS));
 }
@@ -810,6 +885,12 @@ function renderAutoBot(body: HTMLElement): void {
       "Adjust the bot's internal win thresholds.",
       cfg.winFixes,
       (v) => ab.set({ winFixes: v }),
+    ),
+    switchRow(
+      "Smart spawn",
+      "Score spawn tiles by land density, enemy distance, and edge avoidance (instead of random).",
+      cfg.smartSpawn,
+      (v) => ab.set({ smartSpawn: v }),
     ),
   );
   const tickNum = el("input", {
