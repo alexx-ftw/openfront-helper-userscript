@@ -244,6 +244,7 @@
     "Show Economic heatmap preview": "Show Economic heatmap preview",
     "Game Found!": "Game Found!",
     "Joining now...": "Joining now...",
+    "Game started!": "Game started!",
     "Cologne": "Cologne",
     "Cologne, Germany and European Union": "Cologne, Germany and European Union",
     "Cologne Cathedral": "Cologne Cathedral",

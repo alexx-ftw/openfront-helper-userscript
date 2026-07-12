@@ -6,7 +6,11 @@ import { unitIconUrl } from "./assets";
 import { installAudio, WebAudioElement } from "./audio";
 import { installChromeShim } from "./chrome-shim";
 import { installI18nOverride } from "./i18n";
-import { requestJoinNotificationPermission, showJoinNotification } from "./notification";
+import {
+  requestJoinNotificationPermission,
+  showGameStartNotification,
+  showJoinNotification,
+} from "./notification";
 import { installLauncher } from "./popup/launcher";
 import { openPanelTo } from "./popup/panel";
 import { installViewportClamp } from "./viewport";
@@ -38,6 +42,8 @@ export function bootShell(): void {
     const msg = message as { type?: string; text?: string };
     if (msg?.type === "SHOW_JOIN_NOTIFICATION") {
       showJoinNotification(msg.text || "OpenFront Helper: lobby found — joining!");
+    } else if (msg?.type === "SHOW_GAME_START_NOTIFICATION") {
+      showGameStartNotification(msg.text || "OpenFront Helper: game started!");
     }
   });
 

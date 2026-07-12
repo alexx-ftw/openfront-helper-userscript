@@ -1,4 +1,4 @@
-// "Lobby found" notification — replaces the extension's background popup window.
+// OpenFront Helper notifications — replaces the extension's background popup window.
 //
 // Two layers, because auto-join is meant to run while you do something else:
 //   1) a native OS Notification (if permission was granted) — survives tab switches
@@ -20,10 +20,10 @@ export function requestJoinNotificationPermission(): void {
   }
 }
 
-function showOsNotification(text: string): boolean {
+function showOsNotification(text: string, tag: string): boolean {
   try {
     if ("Notification" in window && Notification.permission === "granted") {
-      const n = new Notification(TITLE, { body: text, tag: "ofh-lobby-found" });
+      const n = new Notification(TITLE, { body: text, tag });
       n.onclick = () => {
         try {
           window.focus();
@@ -73,9 +73,17 @@ function showToast(text: string): void {
   }, 5000);
 }
 
-export function showJoinNotification(text: string): void {
+function showNotification(text: string, tag: string): void {
   // Always show the in-page toast (cheap, visible on-tab); add the OS notification on top
   // when allowed so the user is alerted even with the tab in the background.
-  showOsNotification(text);
+  showOsNotification(text, tag);
   showToast(text);
+}
+
+export function showJoinNotification(text: string): void {
+  showNotification(text, "ofh-lobby-found");
+}
+
+export function showGameStartNotification(text: string): void {
+  showNotification(text, "ofh-game-started");
 }

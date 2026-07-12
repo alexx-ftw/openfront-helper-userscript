@@ -399,6 +399,9 @@ function noteOccupancy() {
   const occupied = isOccupied();
   if (occupied) {
     lastOccupiedAt = Date.now();
+    if (pendingGameStartNotification) {
+      pendingGameStartNotification.sawOccupied = true;
+    }
   }
   return occupied;
 }
@@ -409,6 +412,50 @@ function noteOccupancy() {
 // misreads during startup.
 function recentlyOccupied() {
   return lastOccupiedAt > 0 && Date.now() - lastOccupiedAt < RESUME_GRACE_MS;
+}
+
+function armGameStartNotification(gameID) {
+  pendingGameStartNotification = {
+    gameID,
+    startedAt: Date.now(),
+    sawOccupied: false,
+  };
+}
+
+function expirePendingGameStartNotification() {
+  const pending = pendingGameStartNotification;
+  if (!pending) {
+    return;
+  }
+
+  if (pending.sawOccupied) {
+    if (!isOccupied() && !recentlyOccupied()) {
+      pendingGameStartNotification = null;
+    }
+    return;
+  }
+
+  if (Date.now() - pending.startedAt > JOIN_ATTEMPT_TIMEOUT_MS && !isOccupied()) {
+    pendingGameStartNotification = null;
+  }
+}
+
+function handleGameStartedAfterSpawn() {
+  const pending = pendingGameStartNotification;
+  pendingGameStartNotification = null;
+  if (!pending || !settings.joinNotification) {
+    return;
+  }
+
+  chrome.runtime
+    .sendMessage({
+      type: "SHOW_GAME_START_NOTIFICATION",
+      gameID: pending.gameID,
+      text: t("Game started!"),
+    })
+    .catch(() => {
+      /* the toast / OS notification is best-effort */
+    });
 }
 
 // One concise line at each auto-join DECISION (the only spot that can produce a
@@ -1673,6 +1720,7 @@ async function requestJoin(lobby) {
     gameID: lobby.gameID,
     startedAt: Date.now(),
   };
+  armGameStartNotification(lobby.gameID);
 
   lobbyCooldowns.set(lobby.gameID, Date.now() + LOBBY_RETRY_COOLDOWN_MS);
 
@@ -1758,6 +1806,8 @@ function pollAutoJoinResume() {
     return;
   }
 
+  expirePendingGameStartNotification();
+
   // Un-occupied now — but wait out the grace so a transient startup blip doesn't
   // masquerade as a return to the menu.
   if (wasOccupied && !recentlyOccupied()) {
@@ -1778,6 +1828,11 @@ function handleBridgeMessage(event) {
 
   const data = event.data;
   if (!data || data.source !== BRIDGE_SOURCE_PAGE) {
+    return;
+  }
+
+  if (data.type === "GAME_STARTED_AFTER_SPAWN") {
+    handleGameStartedAfterSpawn();
     return;
   }
 

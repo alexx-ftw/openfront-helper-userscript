@@ -44,6 +44,7 @@ const INGAME_FILES = [
   "panel-layout.js",
   "shared-utils.js",
   "selective-trade-policy.js",
+  "game-start-notification.js",
   "alliances.js",
   "alliance-requests-panel.js",
   "bot-markers.js",

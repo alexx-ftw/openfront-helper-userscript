@@ -348,6 +348,38 @@ const HELPER_TICK_INTERVAL_MS = 250;
 const _helperTickListeners = new Set();
 let _helperTickIntervalId = null;
 
+function createGameStartNotificationDetector() {
+  let currentGame = null;
+  let sawSpawnPhase = false;
+  let notified = false;
+
+  return {
+    observe(game, inSpawnPhase) {
+      if (!game) {
+        return false;
+      }
+
+      if (game !== currentGame) {
+        currentGame = game;
+        sawSpawnPhase = false;
+        notified = false;
+      }
+
+      if (inSpawnPhase === true) {
+        sawSpawnPhase = true;
+        return false;
+      }
+
+      if (inSpawnPhase !== false || !sawSpawnPhase || notified) {
+        return false;
+      }
+
+      notified = true;
+      return true;
+    },
+  };
+}
+
 function _runHelperTick() {
   for (const listener of _helperTickListeners) {
     try {
