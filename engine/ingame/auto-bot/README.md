@@ -66,3 +66,35 @@ named `tr` (not `t`) because `t` is used everywhere as a `TileRef` variable.
 After reloading the extension, run `window.__autoBotDiag()` in the page console.
 It touches `state`, the lobby gate, constructor discovery and many helpers across
 modules — if it returns a full object, the wiring is intact.
+
+## Legendary construction mode
+
+The `Legendary` difficulty is an adaptive construction mode, not a copy of the
+vanilla priority list. It treats gold production and troop generation as the two
+equally weighted primary objectives and ranks candidates lexicographically by:
+
+1. mandatory/safety constraints;
+2. the weaker of the gold and troop marginal scores (max-min balance);
+3. the sum of those two productive scores;
+4. defensive safety and strategic tie-breakers.
+
+Cities receive diminishing gold credit as connected cities accumulate. Factories
+are valued by rail demand, ports by trade demand and survivability, and silos by
+current offensive target pressure. Defense Posts are excluded unless an incoming
+land assault exceeds the exceptional threat threshold.
+
+Productive sites are placed using the engine's rail connectivity score and an
+additional team-position score: nearby powerful allies are ranked by the maximum
+relative signal among troops, treasury, and gold production, with extra value for
+nearby/high-level friendly SAMs. The own border segment closest to the geometric
+center of the team is preferred when other constraints are comparable.
+
+SAM placement and upgrades are trajectory-aware. The planner reads enemy silo
+levels and available slots, enemy gold (Atom versus Hydrogen affordability),
+`nukeMagnitudes`, `defaultNukeSpeed`, `UniversalPathFinding.Parabola`, active
+missiles, and `SAMCooldown`. Cheap chained Atom bombs are simulated as consuming
+ready interceptor slots before a Hydrogen finisher. Legendary keeps a five-tick
+margin, equivalent to 0.5 seconds at the engine's 10 ticks/second, and upgrades
+the own SAM that most improves the threatened route before another productive
+build when that margin is breached. This emergency path bypasses the ordinary
+structure cooldown and team save-up block so the five-tick window is not lost.

@@ -66,6 +66,7 @@ const INGAME_FILES = [
   "auto-bot/sensing.js",
   "auto-bot/portutil.js",
   "auto-bot/gameApi.js",
+  "auto-bot/legendaryPlanner.js",
   "auto-bot/emojiBehavior.js",
   "auto-bot/allianceBehavior.js",
   "auto-bot/mirvBehavior.js",

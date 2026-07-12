@@ -61,6 +61,8 @@
           return 8;
         case Difficulty.Impossible:
           return 16; // Rarely hesitates
+        case Difficulty.Legendary:
+          return 20; // Legendary almost never hesitates
         default:
           return 16;
       }
@@ -76,6 +78,8 @@
           return 0.7;
         case Difficulty.Impossible:
           return 0.6; // Reacts early
+        case Difficulty.Legendary:
+          return 0.5; // Reacts earlier than Impossible
         default:
           return 0.6;
       }
@@ -91,6 +95,8 @@
           return 0.55;
         case Difficulty.Impossible:
           return 0.4; // Reacts early
+        case Difficulty.Legendary:
+          return 0.3; // Reacts earlier than Impossible
         default:
           return 0.4;
       }
@@ -106,6 +112,8 @@
           return 1.25;
         case Difficulty.Impossible:
           return 1.15; // Reacts to smaller gaps
+        case Difficulty.Legendary:
+          return 1.1;
         default:
           return 1.15;
       }
@@ -120,6 +128,8 @@
           return 10;
         case Difficulty.Impossible:
           return 8; // Reacts early
+        case Difficulty.Legendary:
+          return 6;
         default:
           return 8;
       }

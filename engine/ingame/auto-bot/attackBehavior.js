@@ -1097,6 +1097,12 @@
           // prettier-ignore
           order = [retaliate, bots, veryWeak, assist, traitor, afk, betray, victim, nuked, hated, weakest, island, donate];
           break;
+        case Difficulty.Legendary:
+          // Legendary keeps the aggressive Impossible order; construction
+          // planning is the only intentionally new adaptive branch.
+          // prettier-ignore
+          order = [retaliate, bots, veryWeak, assist, traitor, afk, betray, victim, nuked, hated, weakest, island, donate];
+          break;
         default:
           // src: assertNever(difficulty). currentDifficulty() defaults to Impossible
           // so this is unreachable; keep an explicit throw for parity.
@@ -1250,6 +1256,8 @@
         case Difficulty.Impossible: {
           return 100;
         }
+        case Difficulty.Legendary:
+          return 100;
         default:
           throw new Error("unreachable difficulty: " + difficulty);
       }
@@ -2004,6 +2012,9 @@
             break;
           case Difficulty.Impossible:
             // Impossible nations always try to donate
+            break;
+          case Difficulty.Legendary:
+            // Legendary nations always try to donate.
             break;
           default:
             throw new Error("unreachable difficulty: " + difficulty);

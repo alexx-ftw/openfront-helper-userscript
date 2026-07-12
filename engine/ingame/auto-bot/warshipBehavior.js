@@ -330,11 +330,14 @@
       }
 
       const difficulty = currentDifficulty();
-      // In Easy never retaliate. In Medium retaliate with 15% chance. Hard with 50%, Impossible with 80%.
+      // In Easy never retaliate. In Medium retaliate with 15% chance. Hard with
+      // 50%, Impossible with 80%, and Legendary always retaliates: attack is
+      // the preferred defense against maritime pressure.
       if (
         (difficulty === Difficulty.Medium && this.random.nextInt(0, 100) < 15) ||
         (difficulty === Difficulty.Hard && this.random.nextInt(0, 100) < 50) ||
-        (difficulty === Difficulty.Impossible && this.random.nextInt(0, 100) < 80)
+        (difficulty === Difficulty.Impossible && this.random.nextInt(0, 100) < 80) ||
+        difficulty === Difficulty.Legendary
       ) {
         // src: canBuild(Warship, tile) → addExecution / else maybeMoveWarship; then
         // emoji + relation. The buildables probe is async, so defer it; the canBuild
@@ -433,10 +436,7 @@
 
       // Only the smart nations can do this
       const difficulty = currentDifficulty();
-      if (
-        difficulty !== Difficulty.Hard &&
-        difficulty !== Difficulty.Impossible
-      ) {
+      if (!isAtLeastHardDifficulty(difficulty)) {
         return false;
       }
 

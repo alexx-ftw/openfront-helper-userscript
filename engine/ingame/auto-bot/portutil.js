@@ -18,6 +18,7 @@
     Medium: "Medium",
     Hard: "Hard",
     Impossible: "Impossible",
+    Legendary: "Legendary",
   };
   const GameType = {
     Singleplayer: "Singleplayer",
@@ -46,10 +47,24 @@
       case "Medium":
       case "Hard":
       case "Impossible":
+      case "Legendary":
         return d;
       default:
         return Difficulty.Impossible;
     }
+  }
+
+  function isAtLeastHardDifficulty(difficulty) {
+    const value = difficulty ?? currentDifficulty();
+    return (
+      value === Difficulty.Hard ||
+      value === Difficulty.Impossible ||
+      value === Difficulty.Legendary
+    );
+  }
+
+  function isLegendaryDifficulty(difficulty) {
+    return (difficulty ?? currentDifficulty()) === Difficulty.Legendary;
   }
 
   // ===========================================================================

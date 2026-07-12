@@ -27,9 +27,17 @@ heuristics. The ONLY changes allowed are the mechanical API substitutions below.
 
 src reads `this.mg.config().gameConfig().difficulty`. REPLACE every such read with
 `currentDifficulty()` (portutil) — the user-selected difficulty the bot replicates.
-Compare against `Difficulty.Easy|Medium|Hard|Impossible` (portutil constants).
+Compare against `Difficulty.Easy|Medium|Hard|Impossible|Legendary` (portutil constants).
 EXCEPTION: `config().maxTroops(player)` internally uses the real lobby difficulty —
 leave those calls as-is (they read true enemy/our stats).
+
+`Legendary` is the intentional adaptive exception to the 1:1 Nation construction
+order: `StructureBehavior` ranks City/Factory/Port/Silo/SAM candidates with an
+equal-weight max-min objective over gold production and troop generation. Missile
+defense is a safety constraint/tie-breaker, and a Defense Post is only allowed for
+an exceptional land assault. The Legendary placement scorer also uses engine rail
+connectivity, friendly ally power/proximity, the own border nearest the team's
+geometric center, and trajectory-aware SAM coverage.
 
 ## Enums & unit constants (portutil.js / gameApi.js / core.js — already global)
 

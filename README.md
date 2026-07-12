@@ -145,11 +145,18 @@ Enable and configure it live in-game from the **Auto Bot** popup tab. A status l
 
 | Setting | Options |
 |---|---|
-| Difficulty | Easy / Medium / Hard / Impossible |
+| Difficulty | Easy / Medium / Hard / Impossible / Legendary |
 | Tick speed | Decision interval in ms |
 | Per-structure build | Enable/disable City, Port, Factory, Defense Post, SAM, Silo individually |
 | Betray mode | Allow or block turning on allies |
 | Hidden mode | Bot runs without displaying the panel |
+
+`Legendary` uses an adaptive construction planner. Gold production and troop
+generation are its two equally weighted primary objectives; missile defense is a
+safety constraint and tie-breaker. It places City/Factory/Port sites near strong
+friendly economies and SAM coverage, favors the own border nearest the team's
+geometric center, and upgrades SAMs when the trajectory model falls below a
+five-tick (0.5 second) impact margin.
 
 ---
 

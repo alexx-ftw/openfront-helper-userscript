@@ -56,6 +56,8 @@
           return this.random.nextInt(45, 60);
         case Difficulty.Impossible:
           return this.random.nextInt(30, 50);
+        case Difficulty.Legendary:
+          return this.random.nextInt(20, 35);
         default:
           return this.random.nextInt(30, 50);
       }
@@ -510,8 +512,7 @@
       if (player === null) return;
       const others = this.mg.players().filter((p) => p.id() !== player.id());
       const difficulty = currentDifficulty();
-      const isHigherDifficulty =
-        difficulty === Difficulty.Hard || difficulty === Difficulty.Impossible;
+      const isHigherDifficulty = isAtLeastHardDifficulty(difficulty);
       const teamGame =
         this.mg.config().gameConfig().gameMode === GameMode.Team;
 
@@ -534,14 +535,14 @@
         } else if (
           player.relation(other) >= Relation.Neutral &&
           player.hasEmbargoAgainst(other) &&
-          difficulty !== Difficulty.Hard &&
-          difficulty !== Difficulty.Impossible
+          !isAtLeastHardDifficulty(difficulty)
         ) {
           this.stopEmbargo(other);
         } else if (
           player.relation(other) >= Relation.Friendly &&
           player.hasEmbargoAgainst(other) &&
-          difficulty !== Difficulty.Impossible
+          difficulty !== Difficulty.Impossible &&
+          difficulty !== Difficulty.Legendary
         ) {
           this.stopEmbargo(other);
         }

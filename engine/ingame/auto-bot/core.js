@@ -30,10 +30,10 @@
     enabled: true, // auto-bot ON by default (runs in public lobbies too — the
     // isPublicLobby gate is disabled; see helpers.js)
     // Which difficulty of the in-game Nation AI to faithfully replicate. The bot
-    // ports ALL FOUR difficulty branches (Easy/Medium/Hard/Impossible); this
-    // selects which one drives strategy order / ratios / probabilities. Default
-    // Impossible = the strongest, smartest src Nation.
-    difficulty: "Impossible", // "Easy" | "Medium" | "Hard" | "Impossible"
+    // ports the four faithful difficulty branches plus the adaptive Legendary
+    // construction planner; this selects which strategy drives the bot. Default
+    // Impossible = the strongest faithful src Nation.
+    difficulty: "Impossible", // "Easy" | "Medium" | "Hard" | "Impossible" | "Legendary"
     features: {
       spawn: true,
       expand: true,

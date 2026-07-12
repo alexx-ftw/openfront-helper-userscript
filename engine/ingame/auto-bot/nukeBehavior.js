@@ -416,9 +416,9 @@
       const structures = nukeTarget.units(...NUKE_STRUCTURES_TYPES);
       const structureTiles = structures.map((u) => u.tile());
       const difficulty = currentDifficulty();
-      // Use more random tiles on Impossible difficulty to improve chances of
+      // Use more random tiles on Impossible/Legendary difficulty to improve chances of
       // finding a perfect SAM outranging spot
-      const numRandomTiles = difficulty === Difficulty.Impossible ? 30 : 10;
+      const numRandomTiles = isAtLeastHardDifficulty(difficulty) ? 30 : 10;
       // randTerritoryTileArray reads nukeTarget.borderTiles() SYNCHRONOUSLY; on
       // the client that snapshot is empty for a non-"me" player unless we first
       // prefetch it. (ASYNC boundary — contract §3.) Wrap in withTimeout.
@@ -478,10 +478,9 @@
           continue;
         }
 
-        // On Hard & Impossible, avoid trajectories that can be intercepted by enemy SAMs
+        // On Hard, Impossible, and Legendary, avoid trajectories that can be intercepted by enemy SAMs
         if (
-          (difficulty === Difficulty.Hard ||
-            difficulty === Difficulty.Impossible) &&
+          isAtLeastHardDifficulty(difficulty) &&
           this.isTrajectoryInterceptableBySam(spawnTile, tile)
         ) {
           continue;
@@ -514,20 +513,20 @@
 
       if (
         bestTile !== null &&
-        (bestValue > 0 || difficulty !== Difficulty.Impossible)
+        (bestValue > 0 || !isAtLeastHardDifficulty(difficulty))
       ) {
         await this.sendNuke(bestTile, nukeType, nukeTarget);
-      } else if (difficulty === Difficulty.Impossible) {
+      } else if (isAtLeastHardDifficulty(difficulty)) {
         await this.maybeDestroyEnemySam(nukeTarget);
       }
     }
 
     // ── findBestNukeTarget — NationNukeBehavior.ts:166 ────────────────────────
     findBestNukeTarget() {
-      // On Hard & Impossible with only 2 players left, target the only other one
+      // On Hard, Impossible, and Legendary with only 2 players left, target the only other one
       const diff = currentDifficulty();
       if (
-        (diff === Difficulty.Hard || diff === Difficulty.Impossible) &&
+        isAtLeastHardDifficulty(diff) &&
         this.game.players().length === 2
       ) {
         const other = this.game
@@ -544,11 +543,11 @@
         return incomingAttackPlayer;
       }
 
-      // On Impossible, the richest nation hunts very high structure density targets
+      // On Impossible/Legendary, the richest nation hunts very high structure density targets
       // Restricting to the richest nation prevents every impossible nation
       // from piling onto the same compact player.
       if (
-        diff === Difficulty.Impossible &&
+        isAtLeastHardDifficulty(diff) &&
         this.isRichestNation() &&
         this.random.chance(2)
       ) {
@@ -558,10 +557,10 @@
         }
       }
 
-      // On impossible difficulty, prioritize nuking the crown if they have more than 50% of the map
+      // On impossible/legendary difficulty, prioritize nuking the crown if they have more than 50% of the map
       const difficulty = currentDifficulty();
       const gameMode = this.game.config().gameConfig().gameMode;
-      if (difficulty === Difficulty.Impossible && gameMode === GameMode.FFA) {
+      if (isAtLeastHardDifficulty(difficulty) && gameMode === GameMode.FFA) {
         const numTilesWithoutFallout =
           this.game.numLandTiles() - this.game.numTilesWithFallout();
         if (numTilesWithoutFallout > 0) {
@@ -679,9 +678,9 @@
         .sort((a, b) => b.numTilesOwned() - a.numTilesOwned());
       const firstPlace = sortedByTiles[0];
 
-      // If we're the crown on Impossible difficulty, target 2nd place
+      // If we're the crown on Impossible/Legendary difficulty, target 2nd place
       if (
-        difficulty === Difficulty.Impossible &&
+        isAtLeastHardDifficulty(difficulty) &&
         firstPlace.smallID() === this.player.smallID() &&
         sortedByTiles.length >= 2
       ) {
@@ -722,6 +721,9 @@
           break;
         case Difficulty.Impossible:
           threshold = 0.1; // 10%
+          break;
+        case Difficulty.Legendary:
+          threshold = 0.05; // 5%
           break;
         default:
           // assertNever(difficulty) — unreachable; keep faithful fall-through.
@@ -835,12 +837,11 @@
         return await this.cost(type);
       }
 
-      // On Hard & Impossible, ignore perceived cost when under heavy attack
+      // On Hard, Impossible, and Legendary, ignore perceived cost when under heavy attack
       // The nation is probably going to get destroyed soon, so go all-in on nukes
       const difficulty = currentDifficulty();
       if (
-        (difficulty === Difficulty.Hard ||
-          difficulty === Difficulty.Impossible) &&
+        isAtLeastHardDifficulty(difficulty) &&
         this.isUnderHeavyAttack()
       ) {
         return await this.cost(type);
@@ -1038,10 +1039,9 @@
       ) {
         return true;
       }
-      // On Hard & Impossible, allow TerraNullius (hit small islands) and in team games other non-friendly players
+      // On Hard, Impossible, and Legendary, allow TerraNullius (hit small islands) and in team games other non-friendly players
       if (
-        (difficulty === Difficulty.Hard ||
-          difficulty === Difficulty.Impossible) &&
+        isAtLeastHardDifficulty(difficulty) &&
         (!(owner && owner.isPlayer && owner.isPlayer()) ||
           (this.game.config().gameConfig().gameMode === GameMode.Team &&
             owner.isPlayer() &&
@@ -1081,7 +1081,7 @@
       const difficulty = currentDifficulty();
       // On Easy, ignore SAMs entirely.
       // On Medium, apply a simple local SAM penalty.
-      // On Hard & Impossible we rely on trajectory-based interception checks instead. See maybeSendNuke().
+      // On Hard, Impossible, and Legendary we rely on trajectory-based interception checks instead. See maybeSendNuke().
       if (difficulty === Difficulty.Medium) {
         const dist50 = euclDistFN(tile, 50, false);
         const hasSam = targets.some(
@@ -1091,9 +1091,9 @@
         if (hasSam) return -1;
       }
 
-      // On Impossible difficulty and a hydrogen bomb, add value for SAMs that can be outranged
+      // On Impossible/Legendary difficulty and a hydrogen bomb, add value for SAMs that can be outranged
       if (
-        difficulty === Difficulty.Impossible &&
+        isAtLeastHardDifficulty(difficulty) &&
         nukeType === UNIT.HydrogenBomb
       ) {
         const hydroMagnitude = this.game

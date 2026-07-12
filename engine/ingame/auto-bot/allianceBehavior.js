@@ -546,10 +546,7 @@
     // hasTooManyAlliances — NationAllianceBehavior.ts:150
     hasTooManyAlliances(otherPlayer) {
       const difficulty = currentDifficulty();
-      if (
-        difficulty !== Difficulty.Hard &&
-        difficulty !== Difficulty.Impossible
-      ) {
+      if (!isAtLeastHardDifficulty(difficulty)) {
         return false;
       }
 
@@ -576,6 +573,7 @@
         case Difficulty.Hard:
           return this.random.chance(40); // 2.5% chance to be confused on hard
         case Difficulty.Impossible:
+        case Difficulty.Legendary:
           return false; // No confusion on impossible
         default:
           return assertNever(difficulty);
@@ -606,6 +604,7 @@
             this.random.nextInt(0, 100) >= 50
           );
         case Difficulty.Impossible:
+        case Difficulty.Legendary:
           // On impossible, accept 30% in the first minute
           return (
             this.game.ticks() < 600 + spawnTicks &&
@@ -635,7 +634,8 @@
             this.game.config().maxTroops(otherPlayer) >
               this.game.config().maxTroops(this.player) * 2
           );
-        case Difficulty.Impossible: {
+        case Difficulty.Impossible:
+        case Difficulty.Legendary: {
           // On impossible we check for multiple factors and try to not mess with stronger players (we want to steamroll over weaklings)
           const otherHasMoreTroops =
             otherPlayer.troops() > this.player.troops() * 1.5;
@@ -669,6 +669,7 @@
         case Difficulty.Hard:
           return this.random.nextInt(0, 100) < 75; // 75% chance to reject on hard
         case Difficulty.Impossible:
+        case Difficulty.Legendary:
           return true; // 100% chance to reject on impossible
         default:
           return assertNever(difficulty);
@@ -684,7 +685,8 @@
         case Difficulty.Medium:
           return this.player.alliances().length >= this.random.nextInt(4, 6);
         case Difficulty.Hard:
-        case Difficulty.Impossible: {
+        case Difficulty.Impossible:
+        case Difficulty.Legendary: {
           // On hard and impossible we try to not ally with all our neighbors (If we have 2+ neighbors)
           const borderingPlayers = this.player
             .nearby()
@@ -725,6 +727,7 @@
             this.random.nextInt(0, 100) >= 17
           );
         case Difficulty.Impossible:
+        case Difficulty.Legendary:
           return (
             this.player.relation(otherPlayer) === Relation.Friendly &&
             this.random.nextInt(0, 100) >= 33
@@ -743,12 +746,14 @@
         [Difficulty.Medium]: [70, 80],
         [Difficulty.Hard]: [75, 85],
         [Difficulty.Impossible]: [80, 90],
+        [Difficulty.Legendary]: [85, 95],
       };
       const tilePercentRangeByDifficulty = {
         [Difficulty.Easy]: [70, 80],
         [Difficulty.Medium]: [80, 90],
         [Difficulty.Hard]: [85, 95],
         [Difficulty.Impossible]: [90, 100],
+        [Difficulty.Legendary]: [95, 100],
       };
 
       const troopRange = troopPercentRangeByDifficulty[difficulty];

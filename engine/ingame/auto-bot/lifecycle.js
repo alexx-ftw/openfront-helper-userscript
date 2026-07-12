@@ -1711,7 +1711,7 @@
 // =============================================================================
 window.__OFH_autobot = {
   FEATURE_KEYS: ["spawn", "expand", "build", "boat", "nuke", "warship", "alliance", "embargo", "donate", "betray"],
-  DIFFICULTIES: ["Easy", "Medium", "Hard", "Impossible"],
+  DIFFICULTIES: ["Easy", "Medium", "Hard", "Impossible", "Legendary"],
   get() {
     const s = state.settings;
     return {

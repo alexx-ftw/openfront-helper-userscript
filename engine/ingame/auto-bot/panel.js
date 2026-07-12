@@ -345,7 +345,7 @@
 
             <div class="ab-cfg-sec">${tr("Difficulty")}</div>
             <div class="ab-cfg-chips" data-role="cfg-difficulty">
-              ${["Easy", "Medium", "Hard", "Impossible"]
+              ${["Easy", "Medium", "Hard", "Impossible", "Legendary"]
                 .map(
                   (d) =>
                     `<div class="ab-cfg-chip ${state.settings.difficulty === d ? "on" : ""}" data-diff="${d}">${tr(d)}</div>`,
