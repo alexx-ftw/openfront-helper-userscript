@@ -60,24 +60,99 @@
     let profileAlliances = []; // smallID[]
     let mePlayer = null; // wrapped me
     let lastSnapshotTick = -1;
-    // The current public GameView only exposes bestTransportShipSpawn(), which
-    // answers reachability but not travel time. Keep an explicit optional hook for
-    // a client adapter that can return the exact pre-launch route or its tick count.
-    const hasTransportRouteEstimator = typeof src.transportRouteTicks === "function";
+    const transportSpawnCache = new Map(); // target TileRef -> spawn TileRef|false
+    const transportRouteCache = new Map(); // target TileRef -> ticks|null
+    // Prefer an upstream exact hook when one exists. The current GameView has no
+    // route worker message, so the local full-resolution water graph is the fallback.
+    // DIVERGENCE: this fallback measures shortest full-resolution water distance;
+    // it does not reproduce the engine worker's HPA/smoothing implementation.
+    const hasLocalTransportRouteEstimator =
+      typeof src.neighbors === "function" &&
+      typeof src.isWater === "function" &&
+      typeof src.isLand === "function" &&
+      typeof src.isShore === "function" &&
+      typeof src.ownerID === "function" &&
+      typeof src.manhattanDist === "function";
+    const hasTransportRouteEstimator =
+      typeof src.transportRouteTicks === "function" || hasLocalTransportRouteEstimator;
 
     const unwrap = (p) => (p && p.__src ? p.__src : p);
 
+    function normalizeTransportRouteResult(result) {
+      if (Number.isFinite(result)) return Math.max(0, Number(result));
+      const path = result && (result.fullPath || result.path) ? result.fullPath || result.path : result;
+      if (path == null || typeof path.length !== "number" || path.length === 0) {
+        return null;
+      }
+      const length = Number(path.length);
+      return Number.isFinite(length) ? Math.max(0, length - 1) : null;
+    }
+
+    function closestTargetShore(targetTile) {
+      const ownerID = src.ownerID(targetTile);
+      const seen = new Set([targetTile]);
+      const queue = [targetTile];
+      const candidates = [];
+      for (let head = 0; head < queue.length; head++) {
+        const current = queue[head];
+        if (src.manhattanDist(targetTile, current) > 50) continue;
+        if (
+          src.isLand(current) &&
+          src.isShore(current) &&
+          src.ownerID(current) === ownerID
+        ) {
+          candidates.push(current);
+        }
+        for (const next of src.neighbors(current) || []) {
+          if (seen.has(next)) continue;
+          if (src.manhattanDist(targetTile, next) > 50) continue;
+          seen.add(next);
+          queue.push(next);
+        }
+      }
+      candidates.sort(
+        (a, b) =>
+          src.manhattanDist(targetTile, a) - src.manhattanDist(targetTile, b),
+      );
+      return candidates[0] ?? null;
+    }
+
+    function rememberTransportShipSpawn(core, targetTile) {
+      const result = core.bestTransportShipSpawn(targetTile);
+      return Promise.resolve(result).then((spawn) => {
+        transportSpawnCache.set(targetTile, spawn);
+        return spawn;
+      });
+    }
+
     async function estimateTransportRouteTicks(targetTile) {
-      if (!hasTransportRouteEstimator) return null;
+      if (transportRouteCache.has(targetTile)) {
+        return transportRouteCache.get(targetTile);
+      }
       try {
-        const result = await src.transportRouteTicks(targetTile);
-        if (Number.isFinite(result)) return Math.max(0, Number(result));
-        const path = result && result.fullPath ? result.fullPath : result;
-        if (path == null || typeof path.length !== "number" || path.length === 0) {
+        if (typeof src.transportRouteTicks === "function") {
+          const result = normalizeTransportRouteResult(
+            await src.transportRouteTicks(targetTile),
+          );
+          transportRouteCache.set(targetTile, result);
+          return result;
+        }
+        if (!hasLocalTransportRouteEstimator || typeof findWaterRouteTicks !== "function") {
           return null;
         }
-        const length = Number(path.length);
-        return Number.isFinite(length) ? Math.max(0, length - 1) : null;
+        const spawn = transportSpawnCache.get(targetTile);
+        if (spawn == null || spawn === false) return null;
+        const goal = closestTargetShore(targetTile);
+        if (goal == null) return null;
+        const result = findWaterRouteTicks({
+          start: spawn,
+          goal,
+          neighbors: (tile) => src.neighbors(tile),
+          isWater: (tile) => src.isWater(tile),
+          maxTicks: EARLY_GAME_MAX_BOAT_TICKS,
+        });
+        transportRouteCache.set(targetTile, result);
+        return result;
       } catch (_e) {
         return null;
       }
@@ -298,7 +373,7 @@
         // ── async probes (worker calls) — used by the rank-then-probe paths ───
         borderTilesAsync: () => core.borderTiles(),
         buildables: (tile, types) => core.buildables(tile, types),
-        bestTransportShipSpawn: (tile) => core.bestTransportShipSpawn(tile),
+        bestTransportShipSpawn: (tile) => rememberTransportShipSpawn(core, tile),
         profile: () => core.profile(),
         actions: (tile, units) =>
           core.actions ? core.actions(tile, units) : Promise.resolve(null),
@@ -737,6 +812,8 @@
     async function beginTick(meCorePlayer) {
       mePlayer = wrapPlayer(meCorePlayer);
       const tick = src.ticks();
+      transportSpawnCache.clear();
+      transportRouteCache.clear();
 
       // decay overlay 0.05/tick toward 0 (PlayerImpl.decayRelations) — once per
       // game tick crossed.

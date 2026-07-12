@@ -18,6 +18,48 @@
     );
   }
 
+  // Bounded shortest-path search over the full-resolution water graph exposed by
+  // GameView. The source and destination are shore tiles; only water tiles may be
+  // traversed between them. Returning null is deliberately conservative when the
+  // route exceeds the opening window or the search budget.
+  function findWaterRouteTicks({
+    start,
+    goal,
+    neighbors,
+    isWater,
+    maxTicks = EARLY_GAME_MAX_BOAT_TICKS,
+    maxVisited = 100000,
+  } = {}) {
+    if (
+      start == null ||
+      goal == null ||
+      typeof neighbors !== "function" ||
+      typeof isWater !== "function"
+    ) {
+      return null;
+    }
+    if (start === goal) return 0;
+
+    const queue = [start];
+    const distances = new Map([[start, 0]]);
+    for (let head = 0; head < queue.length; head++) {
+      if (distances.size > maxVisited) return null;
+      const current = queue[head];
+      const currentDistance = distances.get(current);
+      if (currentDistance == null || currentDistance >= maxTicks) continue;
+
+      const nextDistance = currentDistance + 1;
+      for (const next of neighbors(current) || []) {
+        if (next !== goal && next !== start && !isWater(next)) continue;
+        if (distances.has(next)) continue;
+        if (next === goal) return nextDistance;
+        distances.set(next, nextDistance);
+        queue.push(next);
+      }
+    }
+    return null;
+  }
+
   // Transport motion plans include their source tile, therefore movement time is
   // the number of edges, not the number of path entries.
   function transportRouteTicks(path) {

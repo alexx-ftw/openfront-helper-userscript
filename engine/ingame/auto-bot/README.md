@@ -23,15 +23,17 @@ chain and gives it this priority:
 1. claim safe land first, using the existing `EARLY_EXPAND_COMMIT` minimum of 60%
    of current troops;
 2. take a reachable bordering bot tribe;
-3. use a transport boat only when an exact route ETA is at most 300 game ticks
+3. use a transport boat only when the computed route ETA is at most 300 game ticks
    (30 seconds at 100 ms per tick).
 
-`bestTransportShipSpawn()` currently reports only whether a boat route exists, not
-its path length. `gameApi.js` therefore exposes the optional
-`src.transportRouteTicks(tile)` adapter. Until the page supplies that exact route,
-Early Game rejects naval launches instead of treating reachability as a 30-second
-ETA. `window.__autoBotDiag()` reports `boatRouteAvailable`, `boatGate`, the last
-ETA, and rejection counters so this limitation is visible in-game.
+`bestTransportShipSpawn()` reports whether a boat route exists and its spawn tile,
+but not its path length. `gameApi.js` now uses that spawn plus a bounded
+full-resolution water-graph search to calculate the shortest route in ticks. An
+upstream `src.transportRouteTicks(tile)` adapter takes precedence when available.
+This local search is a documented `DIVERGENCE` from the engine's HPA/smoothing
+implementation and is active only under `winFixes`; if the graph is unavailable
+or exceeds its search budget, Early Game rejects the boat. `window.__autoBotDiag()`
+reports `boatRouteAvailable`, `boatGate`, the last ETA, and rejection counters.
 
 ## Architecture
 

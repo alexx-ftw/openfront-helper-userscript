@@ -22,6 +22,7 @@ const buildSource = fs.readFileSync(path.join(repoRoot, "build.mjs"), "utf8");
 assert.equal(typeof sandbox.createEarlyGameSnapshot, "function");
 assert.equal(typeof sandbox.chooseEarlyGameAction, "function");
 assert.equal(typeof sandbox.isEarlyGameBoatEta, "function");
+assert.equal(typeof sandbox.findWaterRouteTicks, "function");
 assert.equal(typeof sandbox.transportRouteTicks, "function");
 assert.equal(sandbox.isEarlyGameBoatEta(300), true);
 assert.equal(sandbox.isEarlyGameBoatEta(301), false);
@@ -76,12 +77,65 @@ assert.equal(sandbox.transportRouteTicks({ fullPath: ["source", "shore"] }), 1);
 assert.equal(sandbox.transportRouteTicks([]), null);
 assert.equal(sandbox.transportRouteTicks(null), null);
 
+const waterGraph = new Map([
+  [0, [1]],
+  [1, [0, 2]],
+  [2, [1, 3]],
+  [3, [2, 4]],
+  [4, [3, 5]],
+  [5, [4]],
+]);
+assert.equal(
+  sandbox.findWaterRouteTicks({
+    start: 0,
+    goal: 5,
+    neighbors: (tile) => waterGraph.get(tile) || [],
+    isWater: (tile) => tile >= 1 && tile <= 4,
+    maxTicks: 300,
+  }),
+  5,
+);
+assert.equal(
+  sandbox.findWaterRouteTicks({
+    start: 0,
+    goal: 5,
+    neighbors: (tile) => waterGraph.get(tile) || [],
+    isWater: (tile) => tile >= 1 && tile <= 4,
+    maxTicks: 4,
+  }),
+  null,
+);
+
+const routeSandbox = {};
+const routeSrc = {
+  neighbors: (tile) => waterGraph.get(tile) || [],
+  isWater: (tile) => tile >= 1 && tile <= 4,
+  isLand: (tile) => tile === 0 || tile === 5,
+  isShore: (tile) => tile === 0 || tile === 5,
+  ownerID: (tile) => (tile === 5 ? 2 : tile === 0 ? 1 : 0),
+  manhattanDist: (a, b) => Math.abs(a - b),
+};
+vm.runInNewContext(`${gameApiSource}\n${source}`, routeSandbox, {
+  filename: "gameApi+earlyGame.js",
+});
+const routeApi = routeSandbox.createGameApi(routeSrc);
+const routePlayer = routeApi.wrapPlayer({
+  isPlayer: () => true,
+  smallID: () => 1,
+  id: () => "p1",
+  bestTransportShipSpawn: () => Promise.resolve(0),
+});
+assert.equal(await routePlayer.bestTransportShipSpawn(5), 0);
+assert.equal(await routeApi.game.estimateTransportRouteTicks(5), 5);
+assert.equal(routeApi.game.hasTransportRouteEstimator, true);
+
 assert.match(attackSource, /state\.earlyGame\.action === "land"/);
 assert.match(attackSource, /async allowEarlyGameBoat\(tile\)/);
 assert.match(attackSource, /!state\.settings\.winFixes \|\| !early \|\| !early\.active/);
 assert.match(attackSource, /EARLY_EXPAND_COMMIT/);
 assert.match(gameApiSource, /estimateTransportRouteTicks/);
 assert.match(gameApiSource, /hasTransportRouteEstimator/);
+assert.match(gameApiSource, /findWaterRouteTicks\(\{/);
 assert.match(buildSource, /"auto-bot\/earlyGame\.js"/);
 
 console.log("early-game tests passed");
