@@ -155,8 +155,18 @@ Enable and configure it live in-game from the **Auto Bot** popup tab. A status l
 generation are its two equally weighted primary objectives; missile defense is a
 safety constraint and tie-breaker. It places City/Factory/Port sites near strong
 friendly economies and SAM coverage, favors the own border nearest the team's
-geometric center, and upgrades SAMs when the trajectory model falls below a
-five-tick (0.5 second) impact margin.
+geometric center, and treats missile defense as a hard safety constraint during
+an emergency. The five-tick (0.5 second) rule is the minimum time from the
+completion of a proposed SAM construction/upgrade to the first incoming impact;
+a new SAM is rejected if it cannot finish in that window or if its individual
+ready/reloading slots cannot stop the complete incoming salvo. An upgrade's
+new range applies immediately, but its added missile slot starts a full
+`SAMCooldown` reload, so it is not treated as instantly available.
+The salvo forecast also advances enemy silo queues through `SiloCooldown`,
+reserves gold for a possible Hydrogen finisher, and schedules all simultaneous
+threat routes against one shared SAM inventory. Assignment conflicts use a
+bounded exact fallback; an exhausted search is treated as unsafe, never as proof
+that a greedy miss is impossible to defend.
 
 ---
 

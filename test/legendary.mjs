@@ -210,12 +210,199 @@ assert.equal(
   "Legendary preserves a five-tick (0.5s) impact margin",
 );
 
+const scheduledChain = plannerSandbox.legendaryMissileDefenseSchedule({
+  routes: [
+    { weapon: "AtomBomb", impactTick: 20, samOptions: [{ samIndex: 0, interceptTicks: [10] }] },
+    { weapon: "AtomBomb", impactTick: 21, samOptions: [{ samIndex: 0, interceptTicks: [11] }] },
+    { weapon: "HydrogenBomb", impactTick: 22, samOptions: [{ samIndex: 0, interceptTicks: [12] }] },
+  ],
+  samProfiles: [{ id: "sam-a", availableTicks: [0, 0] }],
+  samCooldownTicks: 90,
+  marginTicks: 5,
+  completionTick: 0,
+});
+assert.equal(
+  scheduledChain.uninterceptedCount,
+  1,
+  "Per-missile scheduling catches the hydrogen finisher after two ready SAM shots",
+);
+assert.equal(
+  scheduledChain.fullyDefended,
+  false,
+  "A chained salvo is unsafe when any incoming missile has no assigned interceptor",
+);
+
+const actualWeaponLabels = plannerSandbox.legendaryMissileSalvoRisk({
+  routes: [
+    { weapon: "Atom Bomb", impactTick: 20, samOptions: [{ samIndex: 0, interceptTicks: [10] }] },
+    { weapon: "Atom Bomb", impactTick: 21, samOptions: [{ samIndex: 0, interceptTicks: [11] }] },
+    { weapon: "Hydrogen Bomb", impactTick: 22, samOptions: [{ samIndex: 0, interceptTicks: [12] }] },
+  ],
+  samProfiles: [{ id: "sam-a", availableTicks: [0, 0] }],
+  samCooldownTicks: 90,
+  marginTicks: 5,
+});
+assert.equal(
+  actualWeaponLabels.atomIntercepted,
+  2,
+  "Production weapon labels with spaces are normalized as atom bombs",
+);
+assert.equal(
+  actualWeaponLabels.hydrogenGetsThrough,
+  true,
+  "Production hydrogen label is recognized as the finisher",
+);
+
+const sameTickOverload = plannerSandbox.legendaryMissileDefenseSchedule({
+  routes: [
+    { weapon: "AtomBomb", impactTick: 20, samOptions: [{ samIndex: 0, interceptTicks: [10] }] },
+    { weapon: "AtomBomb", impactTick: 20, samOptions: [{ samIndex: 0, interceptTicks: [10] }] },
+  ],
+  samProfiles: [{ id: "sam-a", availableTicks: [0, 0] }],
+  samCooldownTicks: 90,
+  marginTicks: 5,
+});
+assert.equal(
+  sameTickOverload.uninterceptedCount,
+  1,
+  "A single SAM cannot launch two interceptor missiles in the same engine tick",
+);
+
+const reloadTooSlow = plannerSandbox.legendaryMissileDefenseSchedule({
+  routes: [
+    { weapon: "AtomBomb", impactTick: 20, samOptions: [{ samIndex: 0, interceptTicks: [10] }] },
+    { weapon: "AtomBomb", impactTick: 100, samOptions: [{ samIndex: 0, interceptTicks: [90] }] },
+  ],
+  samProfiles: [{ id: "sam-a", availableTicks: [0] }],
+  samCooldownTicks: 90,
+  marginTicks: 5,
+});
+assert.equal(
+  reloadTooSlow.uninterceptedCount,
+  1,
+  "A SAM cannot fire again before its reload completes",
+);
+
+const reloadReady = plannerSandbox.legendaryMissileDefenseSchedule({
+  routes: [
+    { weapon: "AtomBomb", impactTick: 20, samOptions: [{ samIndex: 0, interceptTicks: [10] }] },
+    { weapon: "AtomBomb", impactTick: 110, samOptions: [{ samIndex: 0, interceptTicks: [100] }] },
+  ],
+  samProfiles: [{ id: "sam-a", availableTicks: [0] }],
+  samCooldownTicks: 90,
+  marginTicks: 5,
+});
+assert.equal(
+  reloadReady.fullyDefended,
+  true,
+  "A later missile can be defended once the SAM reload window has elapsed",
+);
+
+const upgradedSlotStillReloading = plannerSandbox.legendaryMissileDefenseSchedule({
+  routes: [
+    { weapon: "AtomBomb", impactTick: 20, samOptions: [{ samIndex: 0, interceptTicks: [10] }] },
+    { weapon: "HydrogenBomb", impactTick: 80, samOptions: [{ samIndex: 0, interceptTicks: [70] }] },
+  ],
+  // The level-2 range is already available, but the added slot is still
+  // reloading after a hypothetical instant upgrade.
+  samProfiles: [{ id: "upgraded-sam", availableTicks: [0, 90] }],
+  samCooldownTicks: 90,
+  marginTicks: 5,
+});
+assert.equal(
+  upgradedSlotStillReloading.uninterceptedCount,
+  1,
+  "An upgraded SAM's added slot is not available before SAMCooldown elapses",
+);
+
+const upgradedSlotReloaded = plannerSandbox.legendaryMissileDefenseSchedule({
+  routes: [
+    { weapon: "AtomBomb", impactTick: 20, samOptions: [{ samIndex: 0, interceptTicks: [10] }] },
+    { weapon: "HydrogenBomb", impactTick: 120, samOptions: [{ samIndex: 0, interceptTicks: [100] }] },
+  ],
+  samProfiles: [{ id: "upgraded-sam", availableTicks: [0, 90] }],
+  samCooldownTicks: 90,
+  marginTicks: 5,
+});
+assert.equal(
+  upgradedSlotReloaded.fullyDefended,
+  true,
+  "An upgraded SAM can use its new range and added slot after its reload",
+);
+
+const alternateAssignment = plannerSandbox.legendaryMissileDefenseSchedule({
+  routes: [
+    {
+      weapon: "AtomBomb",
+      impactTick: 10,
+      samOptions: [
+        { samIndex: 0, interceptTicks: [0] },
+        { samIndex: 1, interceptTicks: [0] },
+      ],
+    },
+    { weapon: "AtomBomb", impactTick: 20, samOptions: [{ samIndex: 0, interceptTicks: [10] }] },
+    { weapon: "AtomBomb", impactTick: 110, samOptions: [{ samIndex: 1, interceptTicks: [100] }] },
+  ],
+  samProfiles: [
+    { id: "sam-a", availableTicks: [0] },
+    { id: "sam-b", availableTicks: [0] },
+  ],
+  samCooldownTicks: 90,
+  marginTicks: 5,
+});
+assert.equal(
+  alternateAssignment.fullyDefended,
+  true,
+  "The planner backtracks when the first valid SAM assignment would consume a constrained slot",
+);
+assert.equal(
+  alternateAssignment.scheduleMethod,
+  "backtracking",
+  "The exact fallback is observable in the schedule result",
+);
+
+const constructionTooLate = plannerSandbox.legendaryMissileDefenseSchedule({
+  routes: [
+    { weapon: "AtomBomb", impactTick: 304, samOptions: [{ samIndex: 0, interceptTicks: [300] }] },
+  ],
+  samProfiles: [{ id: "new-sam", availableTicks: [300] }],
+  samCooldownTicks: 90,
+  marginTicks: 5,
+  completionTick: 300,
+});
+assert.equal(
+  constructionTooLate.fullyDefended,
+  true,
+  "A just-completed SAM can technically intercept a missile on its covered path",
+);
+assert.equal(
+  constructionTooLate.completionMarginSatisfied,
+  false,
+  "A construction that finishes only four ticks before impact is rejected by the five-tick rule",
+);
+
+const constructionOnTime = plannerSandbox.legendaryMissileDefenseSchedule({
+  routes: [
+    { weapon: "AtomBomb", impactTick: 305, samOptions: [{ samIndex: 0, interceptTicks: [300] }] },
+  ],
+  samProfiles: [{ id: "new-sam", availableTicks: [300] }],
+  samCooldownTicks: 90,
+  marginTicks: 5,
+  completionTick: 300,
+});
+assert.equal(
+  constructionOnTime.completionMarginSatisfied,
+  true,
+  "A new SAM is eligible only when completion leaves at least five ticks before impact",
+);
+
 assert.match(read("engine/ingame/auto-bot/portutil.js"), /Legendary: "Legendary"/);
 assert.match(read("engine/ingame/auto-bot/core.js"), /difficulty: "Impossible"/);
 assert.match(read("engine/ingame/auto-bot/panel.js"), /\"Legendary\"/);
 assert.match(read("src/shell/popup/panel.ts"), /DIFFICULTIES/);
 assert.match(read("locales/en/common.json"), /\"Legendary\"/);
 assert.match(read("build.mjs"), /auto-bot\/legendaryPlanner\.js/);
+assert.match(read("engine/ingame/auto-bot/legendaryPlanner.js"), /LEGENDARY_EXACT_SCHEDULE_NODE_LIMIT/);
 const structureSource = read("engine/ingame/auto-bot/structureBehavior.js");
 assert.match(structureSource, /rankLegendaryConstructionCandidates/);
 assert.match(structureSource, /legendaryAllySupportPlacementScore/);
@@ -225,5 +412,16 @@ assert.match(structureSource, /maybeUpgradeLegendarySam/);
 assert.match(structureSource, /legendaryMissileDefenseUrgent/);
 assert.match(structureSource, /legendaryMinimumSamImpactMargin/);
 assert.match(structureSource, /missileTimerQueue/);
+assert.match(structureSource, /legendaryMissileDefenseSchedule/);
+assert.match(structureSource, /legendarySamConstructionSafeForTile/);
+assert.match(structureSource, /legendaryConstructionDuration/);
+assert.match(structureSource, /legendaryTileInsideUninterceptedBlast/);
+assert.match(structureSource, /increaseLevel\(\)/);
+assert.match(structureSource, /targetLevel/);
+assert.match(structureSource, /SiloCooldown/);
+assert.match(structureSource, /legendaryEnemyMissileLaunchPlan/);
+assert.match(structureSource, /forecastComplete/);
+assert.match(structureSource, /legendaryThreatDefensePlan/);
+assert.match(read("engine/ingame/auto-bot/gameApi.js"), /motionPlans/);
 
 console.log("LEGENDARY TESTS OK");

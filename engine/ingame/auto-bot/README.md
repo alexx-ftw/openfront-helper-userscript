@@ -92,9 +92,20 @@ center of the team is preferred when other constraints are comparable.
 SAM placement and upgrades are trajectory-aware. The planner reads enemy silo
 levels and available slots, enemy gold (Atom versus Hydrogen affordability),
 `nukeMagnitudes`, `defaultNukeSpeed`, `UniversalPathFinding.Parabola`, active
-missiles, and `SAMCooldown`. Cheap chained Atom bombs are simulated as consuming
-ready interceptor slots before a Hydrogen finisher. Legendary keeps a five-tick
-margin, equivalent to 0.5 seconds at the engine's 10 ticks/second, and upgrades
-the own SAM that most improves the threatened route before another productive
-build when that margin is breached. This emergency path bypasses the ordinary
-structure cooldown and team save-up block so the five-tick window is not lost.
+missiles, `missileTimerQueue`, `SAMCooldown`, and `SiloCooldown`. Cheap chained Atom bombs are
+scheduled individually against each friendly SAM's ready slots and reload
+times before the Hydrogen finisher; enemy silo slots that are currently queued
+are projected into the future instead of being discarded. All simultaneous
+threat routes consume one shared friendly-SAM schedule. The five-tick margin (0.5 seconds at the
+engine's 10 ticks/second) means `firstImpactTick - actionCompletionTick`: a new
+SAM uses the real construction duration (normally 300 ticks), while an upgrade
+is instant for range purposes, but each newly added upgrade slot starts with a
+full `SAMCooldown` reload and is not immediately available. Legendary spends on
+an emergency SAM only when it completes with at least five ticks before the
+first impact and the resulting schedule defends the whole salvo; otherwise it
+does not invest in the threatened construction path.
+The emergency path bypasses the ordinary structure cooldown and team save-up
+block so a viable defense action is not delayed. Short assignment conflicts use
+bounded exact backtracking; if the search budget is exhausted, Legendary treats
+the result as inconclusive/unsafe rather than assuming a greedy miss proves
+impossibility.

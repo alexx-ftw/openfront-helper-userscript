@@ -582,6 +582,8 @@
           ? src.isSpawnImmunityActive(...a)
           : false,
       config: () => configProxy(),
+      motionPlans: () =>
+        typeof src.motionPlans === "function" ? src.motionPlans() : null,
       myPlayer: () => mePlayer,
       players: () => src.players().map(wrapPlayer),
       playerViews: () => src.players().map(wrapPlayer),

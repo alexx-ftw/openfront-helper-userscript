@@ -3,7 +3,8 @@
 // Legendary is intentionally not a 1:1 Nation port. It ranks the available
 // construction intents with an equal-weight max-min objective over gold and
 // troops. Missile defense is a safety constraint/tie-breaker, not a third
-// production axis. The existing structure behavior still owns buildability,
+// production axis; during an un-defended missile salvo it becomes a hard
+// construction gate. The existing structure behavior still owns buildability,
 // cost formulas, upgrades, and rank-then-probe placement.
 
 "use strict";
@@ -13,10 +14,16 @@ const LEGENDARY_PRIMARY_FIELDS = ["gold", "troops"];
 const LEGENDARY_OBJECTIVE_FIELDS = [...LEGENDARY_PRIMARY_FIELDS, "defense"];
 const LEGENDARY_TIE_FIELDS = ["strategic", "deficit", "efficiency"];
 
+// The exact fallback covers normal emergency chains. It is bounded by both a
+// route count and a node budget: a greedy miss is never presented as a proof
+// of impossibility when the exact search is skipped or exhausted.
+const LEGENDARY_EXACT_SCHEDULE_ROUTE_LIMIT = 16;
+const LEGENDARY_EXACT_SCHEDULE_NODE_LIMIT = 100_000;
+
 // Normalized marginal-role vectors. These are deliberately not combined into a
 // hidden weighted sum: rankLegendaryConstructionCandidates maximizes the weakest
-// productive axis first. Defense is a guardrail and tie-breaker, not a reason to
-// sacrifice the economy unless the candidate is marked mandatory/safe-critical.
+// productive axis first. Defense is a guardrail and tie-breaker during normal
+// play, but an un-defended missile salvo is a hard safety gate.
 const LEGENDARY_BASE_OBJECTIVES = {
   City: { gold: 3, troops: 5, defense: 1 },
   Factory: { gold: 3, troops: 1, defense: 1 },
@@ -37,6 +44,12 @@ function legendaryBigInt(value) {
 function legendaryScoreValue(value) {
   const number = Number(value ?? 0);
   return Number.isFinite(number) ? number : 0;
+}
+
+function legendaryWeaponKey(weapon) {
+  return String(weapon ?? "")
+    .replace(/[\s_-]+/g, "")
+    .toLowerCase();
 }
 
 function legendaryClamp(value, minimum, maximum) {
@@ -280,7 +293,66 @@ function legendaryMissileSalvoRisk({
   interceptionCapacity = 0,
   samCooldownTicks = 90,
   marginTicks = 5,
+  routes = null,
+  samProfiles = [],
+  completionTick = 0,
 } = {}) {
+  // When geometry and individual SAM availability are available, use the
+  // per-missile schedule below. The legacy aggregate branch remains for old
+  // callers/tests that only provide arrival ticks and a total capacity.
+  if (Array.isArray(routes)) {
+    const schedule = legendaryMissileDefenseSchedule({
+      routes,
+      samProfiles,
+      samCooldownTicks,
+      marginTicks,
+      completionTick,
+    });
+    const atomResults = schedule.missiles.filter(
+      (missile) => legendaryWeaponKey(missile.weapon) === "atombomb",
+    );
+    const hydrogenResult = schedule.missiles.find(
+      (missile) => legendaryWeaponKey(missile.weapon) === "hydrogenbomb",
+    );
+    const atomGetsThrough = atomResults.filter(
+      (missile) => !missile.intercepted,
+    ).length;
+    const hydrogenGetsThrough = Boolean(
+      hydrogenResult && !hydrogenResult.intercepted,
+    );
+    const marginSatisfied = schedule.completionMarginTicks >= marginTicks;
+    return {
+      ...schedule,
+      risk: !schedule.fullyDefended
+        ? 1
+        : !marginSatisfied
+          ? 0.75
+          : schedule.minimumInterceptMarginTicks < 1
+            ? 0.5
+            : 0,
+      // Completion margin is a gate for a *new action*, not evidence that an
+      // already-complete current SAM network is failing. Keep those concepts
+      // separate so a fully defended target does not trigger a redundant SAM.
+      critical: !schedule.fullyDefended,
+      hydrogenGetsThrough,
+      hydrogenIntercepted: Boolean(
+        hydrogenResult && hydrogenResult.intercepted,
+      ),
+      atomIntercepted: atomResults.filter((missile) => missile.intercepted)
+        .length,
+      atomGetsThrough,
+      chainSeparation:
+        hydrogenArrivalTick === null || hydrogenArrivalTick === undefined
+          ? Infinity
+          : hydrogenArrivalTick -
+            (atomArrivalTicks.length > 0
+              ? atomArrivalTicks[atomArrivalTicks.length - 1]
+              : 0),
+      marginSatisfied,
+      timeToImpactTicks: schedule.firstImpactTick,
+    };
+  }
+
   const atoms = atomArrivalTicks
     .map((tick) => legendaryScoreValue(tick))
     .filter((tick) => Number.isFinite(tick) && tick >= 0)
@@ -353,6 +425,313 @@ function legendaryMissileSalvoRisk({
     chainSeparation,
     marginSatisfied,
     timeToImpactTicks: hydrogenArrival ?? atoms[0] ?? Infinity,
+  };
+}
+
+// Defensive scheduling primitive for Legendary. Each route is an
+// incoming missile and each `samOption` lists the trajectory ticks at which a
+// particular SAM can fire. The option ticks are absolute relative to the
+// current bot tick, so a SAM that finishes construction at tick 300 cannot be
+// assigned a trajectory opportunity at tick 80.
+//
+// The 5-tick constant is deliberately applied to `completionMarginTicks`:
+// `firstImpactTick - actionCompletionTick`. It is not a vague urgency bonus and
+// it is not incorrectly added to every interception. A new SAM is therefore a
+// valid emergency investment only when it completes at least five ticks before
+// the first landing AND the individual ready/reloading slots can stop every
+// missile. Existing SAMs and instant upgrades use actionCompletionTick = 0.
+function legendaryMissileDefenseSchedule({
+  routes = [],
+  samProfiles = [],
+  samCooldownTicks = 90,
+  marginTicks = 5,
+  completionTick = 0,
+} = {}) {
+  const cooldown = Math.max(1, legendaryScoreValue(samCooldownTicks));
+  const margin = Math.max(0, legendaryScoreValue(marginTicks));
+  const rawCompletion = Number(completionTick);
+  const completion = Number.isFinite(rawCompletion)
+    ? Math.max(0, rawCompletion)
+    : Infinity;
+  const profiles = (Array.isArray(samProfiles) ? samProfiles : []).map(
+    (profile, index) => {
+      const rawAvailability = Array.isArray(profile?.availableTicks)
+        ? profile.availableTicks
+        : Array(
+            Math.max(0, Math.floor(legendaryScoreValue(profile?.readyShots))),
+          ).fill(0);
+      const availableTicks = rawAvailability
+        .map((tick) => Number(tick))
+        .filter((tick) => Number.isFinite(tick) && tick >= 0)
+        .sort((a, b) => a - b);
+      return {
+        id: profile?.id ?? index,
+        availableTicks,
+        cooldownTicks: Math.max(
+          1,
+          legendaryScoreValue(profile?.cooldownTicks ?? cooldown),
+        ),
+        // SAMLauncherExecution emits at most one interceptor per game tick,
+        // even when a level-2+ launcher has multiple ready queue slots.
+        fireIntervalTicks: Math.max(
+          1,
+          legendaryScoreValue(profile?.fireIntervalTicks ?? 1),
+        ),
+      };
+    },
+  );
+  const slots = profiles.map((profile) => profile.availableTicks.slice());
+  const nextFireTicks = profiles.map(() => 0);
+
+  const normalizedRoutes = (Array.isArray(routes) ? routes : [])
+    .map((route, routeIndex) => {
+      const impactTick = Number(route?.impactTick);
+      if (!Number.isFinite(impactTick) || impactTick < 0) return null;
+      const rawOptions = Array.isArray(route?.samOptions)
+        ? route.samOptions
+        : (Array.isArray(route?.samCandidates) ? route.samCandidates : []).map(
+            (samIndex) => ({
+              samIndex,
+              interceptTicks:
+                Number.isFinite(Number(route?.interceptTick))
+                  ? [Number(route.interceptTick)]
+                  : [Math.max(0, impactTick)],
+            }),
+          );
+      const samOptions = rawOptions
+        .map((option) => {
+          const samIndex = Math.floor(Number(option?.samIndex));
+          if (
+            !Number.isFinite(samIndex) ||
+            samIndex < 0 ||
+            samIndex >= profiles.length
+          ) {
+            return null;
+          }
+          const interceptTicks = (Array.isArray(option?.interceptTicks)
+            ? option.interceptTicks
+            : [option?.interceptTick]
+          )
+            .map((tick) => legendaryScoreValue(tick))
+            .filter(
+              (tick) =>
+                Number.isFinite(tick) && tick >= 0 && tick <= impactTick,
+            )
+            .sort((a, b) => a - b);
+          if (interceptTicks.length === 0) return null;
+          return { samIndex, interceptTicks };
+        })
+        .filter(Boolean);
+      return {
+        ...route,
+        id: route?.id ?? routeIndex,
+        impactTick,
+        samOptions,
+      };
+    })
+    .filter(Boolean)
+    .sort(
+      (left, right) =>
+        left.impactTick - right.impactTick ||
+        left.samOptions.length - right.samOptions.length ||
+        String(left.id).localeCompare(String(right.id)),
+    );
+
+  const firstImpactTick = normalizedRoutes.length
+    ? normalizedRoutes[0].impactTick
+    : Infinity;
+  const missiles = [];
+
+  const collectFeasible = (routeIndex, slotState, fireState) => {
+    const route = normalizedRoutes[routeIndex];
+    const feasible = [];
+    for (const option of route.samOptions) {
+      const profile = profiles[option.samIndex];
+      const profileSlots = slotState[option.samIndex];
+      for (let slotIndex = 0; slotIndex < profileSlots.length; slotIndex++) {
+        const availableAt = profileSlots[slotIndex];
+        const launcherAvailableAt = Math.max(
+          availableAt,
+          fireState[option.samIndex] ?? 0,
+        );
+        const interceptTick = option.interceptTicks.find(
+          (tick) => tick >= launcherAvailableAt && tick <= route.impactTick,
+        );
+        if (interceptTick === undefined) continue;
+        let futureUse = 0;
+        for (
+          let futureIndex = routeIndex + 1;
+          futureIndex < normalizedRoutes.length;
+          futureIndex++
+        ) {
+          if (
+            normalizedRoutes[futureIndex].samOptions.some(
+              (futureOption) => futureOption.samIndex === option.samIndex,
+            )
+          ) {
+            futureUse++;
+          }
+        }
+        feasible.push({
+          samIndex: option.samIndex,
+          slotIndex,
+          availableAt,
+          launcherAvailableAt,
+          interceptTick,
+          futureUse,
+          cooldownTicks: profile.cooldownTicks,
+          fireIntervalTicks: profile.fireIntervalTicks,
+        });
+      }
+    }
+    feasible.sort(
+      (left, right) =>
+        left.futureUse - right.futureUse ||
+        left.interceptTick - right.interceptTick ||
+        left.availableAt - right.availableAt ||
+        left.samIndex - right.samIndex ||
+        left.slotIndex - right.slotIndex,
+    );
+    return feasible;
+  };
+
+  for (let routeIndex = 0; routeIndex < normalizedRoutes.length; routeIndex++) {
+    const route = normalizedRoutes[routeIndex];
+    // Use the least reusable SAM first, then fire as early as possible. This
+    // preserves a SAM that is the only option for a later route and makes the
+    // reload schedule deterministic. A missed route is never silently counted
+    // as defended.
+    const feasible = collectFeasible(routeIndex, slots, nextFireTicks);
+    const selected = feasible[0] ?? null;
+    if (selected === null) {
+      missiles.push({
+        ...route,
+        intercepted: false,
+        interceptTick: null,
+        marginTicks: 0,
+        samIndex: null,
+      });
+      continue;
+    }
+    slots[selected.samIndex][selected.slotIndex] =
+      selected.interceptTick + selected.cooldownTicks;
+    slots[selected.samIndex].sort((left, right) => left - right);
+    nextFireTicks[selected.samIndex] =
+      selected.interceptTick + selected.fireIntervalTicks;
+    missiles.push({
+      ...route,
+      intercepted: true,
+      interceptTick: selected.interceptTick,
+      marginTicks: Math.max(0, route.impactTick - selected.interceptTick),
+      samIndex: selected.samIndex,
+    });
+  }
+
+  let scheduleMethod = "greedy";
+  let fullyDefended = missiles.every((missile) => missile.intercepted);
+  let exactSearchNodes = 0;
+  let exactSearchExhausted = false;
+  if (
+    !fullyDefended &&
+    normalizedRoutes.length > 0 &&
+    normalizedRoutes.length <= LEGENDARY_EXACT_SCHEDULE_ROUTE_LIMIT
+  ) {
+    // The greedy pass is fast and normally sufficient. If it misses a route,
+    // search the finite SAM-slot state space before declaring the salvo
+    // impossible. This removes false negatives from an unfortunate early
+    // assignment while retaining a bounded amount of work in the common path:
+    // each state is memoized by route index plus every slot's next-ready tick.
+    const memo = new Set();
+    const chosen = new Array(normalizedRoutes.length);
+
+    const search = (routeIndex, slotState, fireState) => {
+      exactSearchNodes++;
+      if (exactSearchNodes > LEGENDARY_EXACT_SCHEDULE_NODE_LIMIT) {
+        exactSearchExhausted = true;
+        return null;
+      }
+      if (routeIndex >= normalizedRoutes.length) {
+        return { assignments: chosen.slice() };
+      }
+      const key = `${routeIndex}|${slotState
+        .map((profileSlots) => profileSlots.map((tick) => String(tick)).join(","))
+        .join(";")}|${fireState.join(",")}`;
+      if (memo.has(key)) return null;
+      const feasible = collectFeasible(routeIndex, slotState, fireState);
+      if (feasible.length === 0) {
+        memo.add(key);
+        return null;
+      }
+      for (const candidate of feasible) {
+        const nextSlots = slotState.map((profileSlots) => profileSlots.slice());
+        const nextFireState = fireState.slice();
+        nextSlots[candidate.samIndex][candidate.slotIndex] =
+          candidate.interceptTick + candidate.cooldownTicks;
+        nextSlots[candidate.samIndex].sort((left, right) => left - right);
+        nextFireState[candidate.samIndex] =
+          candidate.interceptTick + candidate.fireIntervalTicks;
+        chosen[routeIndex] = candidate;
+        const result = search(routeIndex + 1, nextSlots, nextFireState);
+        if (result !== null) return result;
+      }
+      memo.add(key);
+      return null;
+    };
+
+    const exact = search(
+      0,
+      profiles.map((profile) => profile.availableTicks.slice()),
+      profiles.map(() => 0),
+    );
+    if (exact !== null) {
+      missiles.length = 0;
+      for (let index = 0; index < normalizedRoutes.length; index++) {
+        const route = normalizedRoutes[index];
+        const assignment = exact.assignments[index];
+        missiles.push({
+          ...route,
+          intercepted: true,
+          interceptTick: assignment.interceptTick,
+          marginTicks: Math.max(
+            0,
+            route.impactTick - assignment.interceptTick,
+          ),
+          samIndex: assignment.samIndex,
+        });
+      }
+      fullyDefended = true;
+      scheduleMethod = "backtracking";
+    } else if (exactSearchExhausted) {
+      scheduleMethod = "inconclusive";
+    } else {
+      scheduleMethod = "exact-impossible";
+    }
+  } else if (!fullyDefended && normalizedRoutes.length > 0) {
+    scheduleMethod = "inconclusive";
+  }
+
+  const minimumInterceptMarginTicks = missiles.length
+    ? Math.min(...missiles.map((missile) => missile.marginTicks))
+    : Infinity;
+  const completionMarginTicks = Number.isFinite(firstImpactTick)
+    ? Math.max(0, firstImpactTick - completion)
+    : Infinity;
+  const completionMarginSatisfied =
+    Number.isFinite(firstImpactTick) && completionMarginTicks >= margin;
+
+  return {
+    fullyDefended,
+    completionMarginSatisfied,
+    firstImpactTick,
+    completionTick: completion,
+    completionMarginTicks,
+    minimumInterceptMarginTicks,
+    interceptedCount: missiles.filter((missile) => missile.intercepted).length,
+    uninterceptedCount: missiles.filter((missile) => !missile.intercepted).length,
+    missiles,
+    samProfiles: profiles,
+    scheduleMethod,
+    exactSearchNodes,
   };
 }
 
