@@ -297,6 +297,19 @@
           return "n/a";
         }
       })(),
+      earlyGame: state.earlyGame
+        ? {
+            active: !!state.earlyGame.active,
+            action: state.earlyGame.action ?? null,
+            hasFreeLand: !!state.earlyGame.hasFreeLand,
+            hasTribeTarget: !!state.earlyGame.hasTribeTarget,
+            boatRouteAvailable: !!state.earlyGame.boatRouteAvailable,
+            boatGate: state.earlyGame.boatGate ?? null,
+            lastBoatEtaTicks: state.earlyGame.lastBoatEtaTicks ?? null,
+            boatRejectedUnknown: state.earlyGame.boatRejectedUnknown || 0,
+            boatRejectedTooFar: state.earlyGame.boatRejectedTooFar || 0,
+          }
+        : null,
       eventsDisplayEvents: (() => {
         try {
           return document.querySelector("events-display")?.events?.length ?? null;

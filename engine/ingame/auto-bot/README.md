@@ -14,6 +14,25 @@ bot (see `src/core/execution/NationExecution.ts` and friends in the game repo).
 > by the real `config().donateTroops()` rule. To re-lock to private only, restore
 > `isPublicLobby` in `helpers.js`.
 
+## Early Game policy
+
+The Early Game snapshot starts after spawn selection while there is still free
+territory or an actionable tribe. The policy keeps the existing Nation decision
+chain and gives it this priority:
+
+1. claim safe land first, using the existing `EARLY_EXPAND_COMMIT` minimum of 60%
+   of current troops;
+2. take a reachable bordering bot tribe;
+3. use a transport boat only when an exact route ETA is at most 300 game ticks
+   (30 seconds at 100 ms per tick).
+
+`bestTransportShipSpawn()` currently reports only whether a boat route exists, not
+its path length. `gameApi.js` therefore exposes the optional
+`src.transportRouteTicks(tile)` adapter. Until the page supplies that exact route,
+Early Game rejects naval launches instead of treating reachability as a 30-second
+ETA. `window.__autoBotDiag()` reports `boatRouteAvailable`, `boatGate`, the last
+ETA, and rejection counters so this limitation is visible in-game.
+
 ## Architecture
 
 These are **classic page-context scripts**, not ES modules — there is no bundler

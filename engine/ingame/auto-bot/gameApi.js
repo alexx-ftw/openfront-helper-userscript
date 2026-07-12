@@ -60,8 +60,28 @@
     let profileAlliances = []; // smallID[]
     let mePlayer = null; // wrapped me
     let lastSnapshotTick = -1;
+    // The current public GameView only exposes bestTransportShipSpawn(), which
+    // answers reachability but not travel time. Keep an explicit optional hook for
+    // a client adapter that can return the exact pre-launch route or its tick count.
+    const hasTransportRouteEstimator = typeof src.transportRouteTicks === "function";
 
     const unwrap = (p) => (p && p.__src ? p.__src : p);
+
+    async function estimateTransportRouteTicks(targetTile) {
+      if (!hasTransportRouteEstimator) return null;
+      try {
+        const result = await src.transportRouteTicks(targetTile);
+        if (Number.isFinite(result)) return Math.max(0, Number(result));
+        const path = result && result.fullPath ? result.fullPath : result;
+        if (path == null || typeof path.length !== "number" || path.length === 0) {
+          return null;
+        }
+        const length = Number(path.length);
+        return Number.isFinite(length) ? Math.max(0, length - 1) : null;
+      } catch (_e) {
+        return null;
+      }
+    }
 
     function isPlayerObj(o) {
       try {
@@ -640,6 +660,8 @@
       // SYNC `target.borderTiles()` (and portutil.calculateTerritoryCenter /
       // randTerritoryTileArray) work for that target. `await` before use.
       ensureBorderTiles: (p) => ensureBorderTiles(p),
+      hasTransportRouteEstimator,
+      estimateTransportRouteTicks,
 
       // ── §SHIM-DATA accessors (structure placement) ────────────────────────
       // Water-component reconstruction (full-resolution union-find, cached once

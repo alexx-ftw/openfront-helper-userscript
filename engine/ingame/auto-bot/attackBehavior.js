@@ -129,6 +129,42 @@
         border.some((t) => !this.game.hasOwner(t) && !this.game.hasFallout(t)) ||
         playerNeighbors.some((n) => !n.isPlayer());
 
+      // WIN-FIX (NOT in src): make the opening state explicit without creating a
+      // second decision loop. The existing bot/land branches remain responsible for
+      // actuation; this snapshot only tells them whether the opening expansion window
+      // is still available and records why a naval target was accepted or rejected.
+      const tribeTargets = borderingEnemies
+        .filter((enemy) => enemy.isPlayer() && enemy.type() === PlayerType.Bot)
+        .map((enemy) => ({
+          id: enemy.smallID(),
+          alive: enemy.isAlive(),
+          friendly: this.player.isFriendly(enemy),
+          landBorder: border.some(
+            (t) => this.game.ownerID(t) === enemy.smallID(),
+          ),
+          boatEtaTicks: null,
+        }));
+      const earlyGameSnapshot = createEarlyGameSnapshot({
+        postSpawn: this.game.inSpawnPhase() === false && this.player.hasSpawned(),
+        hasFreeLand: hasNonNukedTerraNullius,
+        tribes: tribeTargets,
+        boatRouteAvailable: this.game.hasTransportRouteEstimator === true,
+      });
+      const previousEarlyGame = state.earlyGame || {};
+      state.earlyGame = {
+        ...earlyGameSnapshot,
+        action: chooseEarlyGameAction({
+          landTarget: earlyGameSnapshot.hasFreeLand &&
+            this.hasLandBorderWithTerraNullius(),
+          tribeTarget: earlyGameSnapshot.hasTribeTarget,
+          boatTarget: false,
+        }),
+        boatGate: null,
+        lastBoatEtaTicks: null,
+        boatRejectedUnknown: previousEarlyGame.boatRejectedUnknown || 0,
+        boatRejectedTooFar: previousEarlyGame.boatRejectedTooFar || 0,
+      };
+
       // Panel feature toggles. maybeAttack runs under feat("expand")||feat("boat"),
       // so each ACTION inside must enforce its own toggle — otherwise turning one
       // off while its sibling is on would not actually stop it. LAND conquest
@@ -177,6 +213,27 @@
         borderingEnemies.some((e) => e.isPlayer() && e.type() === PlayerType.Bot)
       ) {
         if (await this.attackBots()) return;
+      }
+
+      // WIN-FIX (NOT in src): safe empty land gets an opening burst before any
+      // opportunistic boat probe. EARLY_EXPAND_COMMIT is a minimum commitment, not
+      // a replacement for the normal reserve calculation; once an enemy borders us,
+      // this branch is disabled and the defensive reserve resumes.
+      if (
+        expandOn &&
+        state.settings.winFixes &&
+        state.earlyGame.action === "land" &&
+        borderingEnemies.length === 0
+      ) {
+        if (
+          await this.sendAttack(
+            this.game.terraNullius(),
+            false,
+            EARLY_EXPAND_COMMIT,
+          )
+        ) {
+          return;
+        }
       }
 
       // WIN-FIX (NOT in src): opportunistic amphibious landings — cheap probe boats
@@ -228,6 +285,41 @@
       if (expandOn) {
         await this.attackBestTarget(borderingFriends, borderingEnemies);
       }
+    }
+
+    // Exact ETA is deliberately fail-closed during Early Game. The current public
+    // GameView exposes only bestTransportShipSpawn(), not the WaterPathFinder path;
+    // accepting an unknown route would violate the <=30s policy. A future adapter can
+    // provide game.estimateTransportRouteTicks(tile), returning exact movement ticks.
+    async allowEarlyGameBoat(tile) {
+      const early = state.earlyGame;
+      if (!state.settings.winFixes || !early || !early.active) return true;
+      if (
+        early.boatRouteAvailable !== true ||
+        typeof this.game.estimateTransportRouteTicks !== "function"
+      ) {
+        early.boatGate = "unknown-route";
+        early.boatRejectedUnknown = (early.boatRejectedUnknown || 0) + 1;
+        return false;
+      }
+      const eta = await withTimeout(
+        this.game.estimateTransportRouteTicks(tile),
+        WORKER_TIMEOUT_MS,
+        null,
+      );
+      if (!isEarlyGameBoatEta(eta)) {
+        if (eta == null) {
+          early.boatGate = "unknown-route";
+          early.boatRejectedUnknown = (early.boatRejectedUnknown || 0) + 1;
+        } else {
+          early.boatGate = "over-30s";
+          early.boatRejectedTooFar = (early.boatRejectedTooFar || 0) + 1;
+        }
+        return false;
+      }
+      early.boatGate = "within-30s";
+      early.lastBoatEtaTicks = eta;
+      return true;
     }
 
     // attackWithRandomBoat — AiAttackBehavior (private, now async via findRandomBoatTarget).
@@ -299,6 +391,7 @@
             state.settings.boatProbeMinTroops || 8000,
           )
         : this.player.troops() / 5;
+      if (!(await this.allowEarlyGameBoat(dst))) return;
       if (ctors.boat && emitIntent(ctors.boat, dst, troops)) {
         state.stats.attacks++;
         setLastAction(tr("⛵ Random boat"), "naval");
@@ -402,7 +495,10 @@
             // Still gated by fill ≥ surplusFill below, so it never drains home defence.
             const frac = state.settings.boatSurgeFrac || 0.25;
             const troops = this.player.troops() * frac;
-            if (this.emitBoat(bh.tile, troops, "⚓ Surge landing")) {
+            if (
+              (await this.allowEarlyGameBoat(bh.tile)) &&
+              this.emitBoat(bh.tile, troops, "⚓ Surge landing")
+            ) {
               state.lastOppBoatMs = nowMs;
               bh.at = this.game.ticks(); // refresh the surge window
               bh.surged = true;
@@ -561,6 +657,7 @@
             ? "🏝️ Weak-coast grab"
             : "🏝️ Island grab"
           : "🛟 Probe landing";
+      if (!(await this.allowEarlyGameBoat(dst))) return false;
       if (this.emitBoat(dst, troops, label)) {
         console.log("[Boat] LAUNCHED", label, Math.round(troops), "troops");
         state.lastOppBoatMs = nowMs;
@@ -1609,12 +1706,12 @@
 
     // sendAttack — AiAttackBehavior (now async via sendBoatAttack/
     // sendBoatAttackToNearbyTerraNullius; sendLandAttack stays sync).
-    async sendAttack(target, force = false) {
+    async sendAttack(target, force = false, minCommitFraction = null) {
       if (!force && !this.shouldAttack(target)) return false;
 
       if (target.isPlayer()) {
         if (this.player.sharesBorderWith(target)) {
-          return this.sendLandAttack(target);
+          return this.sendLandAttack(target, minCommitFraction);
         } else {
           return await this.sendBoatAttack(target);
         }
@@ -1622,7 +1719,7 @@
         // sharesBorderWith(TerraNullius) counts water tiles as TN (ownerID 0 = TN smallID),
         // so use a land-only adjacency check to decide land vs boat attack.
         if (this.hasLandBorderWithTerraNullius()) {
-          return this.sendLandAttack(target);
+          return this.sendLandAttack(target, minCommitFraction);
         } else {
           return await this.sendBoatAttackToNearbyTerraNullius();
         }
@@ -1721,6 +1818,7 @@
         if (troops < 1) return false;
 
         // src: game.addExecution(new TransportShipExecution(player, tile, troops)).
+        if (!(await this.allowEarlyGameBoat(tile))) return false;
         const ctors = discoverCtors(getEventBus());
         if (ctors.boat && emitIntent(ctors.boat, tile, troops)) {
           state.stats.attacks++;
@@ -1758,7 +1856,7 @@
     }
 
     // sendLandAttack — AiAttackBehavior (private). SYNC: no worker calls.
-    sendLandAttack(target) {
+    sendLandAttack(target, minCommitFraction = null) {
       const maxTroops = this.game.config().maxTroops(this.player);
       const botWithStructures =
         target.isPlayer() &&
@@ -1786,6 +1884,14 @@
         );
       } else {
         troops = this.player.troops() - targetTroops;
+      }
+
+      if (
+        minCommitFraction != null &&
+        state.settings.winFixes &&
+        !target.isPlayer()
+      ) {
+        troops = Math.max(troops, this.player.troops() * minCommitFraction);
       }
 
       if (troops < 1) {
@@ -1879,6 +1985,7 @@
       }
 
       // src: game.addExecution(new TransportShipExecution(player, closest.y, troops)).
+      if (!(await this.allowEarlyGameBoat(closest.y))) return false;
       const ctors = discoverCtors(getEventBus());
       if (ctors.boat && emitIntent(ctors.boat, closest.y, troops)) {
         state.stats.attacks++;

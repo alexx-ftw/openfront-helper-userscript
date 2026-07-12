@@ -120,6 +120,10 @@ considerMIRV/maybeSpawnWarship/counterWarshipInfestation/maybeSendNuke). Wrap ea
    It is called inside RNG loops (findRandomBoatTarget 500 iters, island, TN boat). Apply
    rank-then-probe: COLLECT up to K (≈4) candidate tiles by the cheap sync src criteria,
    then await bestTransportShipSpawn down the list, take the first `!== false`.
+   Early Game must not reinterpret this reachability result as an ETA. When an adapter
+   exposes `src.transportRouteTicks(tile)`, the optional policy gate may accept only
+   exact routes up to 300 ticks; with no route-length adapter, the Early Game naval gate
+   fails closed and the faithful non-Early path remains unchanged.
 3. **borderTiles of OTHER players** — `await game.__ensureBorderTiles(player)` before
    reading that player's `borderTiles()` synchronously (e.g. before calculateTerritoryCenter
    or scanning a target's tiles). Cache is per-tick; only fetch targets you actually need

@@ -271,6 +271,21 @@
     lastAction: "—",
     stats: { spawns: 0, attacks: 0, builds: 0, nukes: 0 },
     live: { troops: 0, gold: 0, tiles: 0, fill: 0 },
+    // Snapshot of the current post-spawn expansion window. The route fields stay
+    // explicit so diagnostics distinguish "no route" from "route >30s".
+    earlyGame: {
+      active: false,
+      postSpawn: false,
+      hasFreeLand: false,
+      hasTribeTarget: false,
+      actionableTribes: [],
+      boatRouteAvailable: false,
+      action: null,
+      boatGate: null,
+      lastBoatEtaTicks: null,
+      boatRejectedUnknown: 0,
+      boatRejectedTooFar: 0,
+    },
     // In-memory action history (newest first) for the "Log" tab. Not persisted —
     // a fresh game starts with an empty log.
     log: [], // [{ t: epochMs, cat, text }]
