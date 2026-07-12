@@ -1,4 +1,4 @@
-// Notify the lobby layer once the current game's spawn phase has ended.
+// Notify the lobby layer when the current game enters its spawn phase.
 
 const gameStartNotificationDetector = createGameStartNotificationDetector();
 
@@ -23,10 +23,10 @@ function pollGameStartNotification() {
   }
 
   if (
-    typeof inSpawnPhase === "boolean" &&
+    (inSpawnPhase === true || inSpawnPhase === false || inSpawnPhase === null) &&
     gameStartNotificationDetector.observe(game, inSpawnPhase)
   ) {
-    postToExtension("GAME_STARTED_AFTER_SPAWN", {});
+    postToExtension("GAME_STARTED", {});
   }
 }
 

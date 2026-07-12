@@ -440,7 +440,7 @@ function expirePendingGameStartNotification() {
   }
 }
 
-function handleGameStartedAfterSpawn() {
+function handleGameStarted() {
   const pending = pendingGameStartNotification;
   pendingGameStartNotification = null;
   if (!pending || !settings.joinNotification) {
@@ -1831,8 +1831,8 @@ function handleBridgeMessage(event) {
     return;
   }
 
-  if (data.type === "GAME_STARTED_AFTER_SPAWN") {
-    handleGameStartedAfterSpawn();
+  if (data.type === "GAME_STARTED") {
+    handleGameStarted();
     return;
   }
 

@@ -350,27 +350,25 @@ let _helperTickIntervalId = null;
 
 function createGameStartNotificationDetector() {
   let currentGame = null;
-  let sawSpawnPhase = false;
+  let previousSpawnPhase = null;
   let notified = false;
 
   return {
     observe(game, inSpawnPhase) {
-      if (!game) {
+      if (!game || (inSpawnPhase !== true && inSpawnPhase !== false && inSpawnPhase !== null)) {
         return false;
       }
 
       if (game !== currentGame) {
         currentGame = game;
-        sawSpawnPhase = false;
+        previousSpawnPhase = null;
         notified = false;
       }
 
-      if (inSpawnPhase === true) {
-        sawSpawnPhase = true;
-        return false;
-      }
+      const enteredSpawnPhase = inSpawnPhase === true && previousSpawnPhase !== true;
+      previousSpawnPhase = inSpawnPhase;
 
-      if (inSpawnPhase !== false || !sawSpawnPhase || notified) {
+      if (!enteredSpawnPhase || notified) {
         return false;
       }
 

@@ -42,19 +42,21 @@ function test(name, fn) {
   }
 }
 
-test("notifies once when a game leaves spawn phase", () => {
+test("notifies once when a game enters spawn phase", () => {
   const detector = sandbox.createGameStartNotificationDetector();
   const game = {};
 
+  assert.equal(detector.observe(game, null), false);
+  assert.equal(detector.observe(game, true), true);
   assert.equal(detector.observe(game, true), false);
-  assert.equal(detector.observe(game, false), true);
-  assert.equal(detector.observe(game, false), false);
 });
 
-test("does not notify for a game first observed after spawn", () => {
+test("notifies when spawn phase changes from false to true", () => {
   const detector = sandbox.createGameStartNotificationDetector();
+  const game = {};
 
-  assert.equal(detector.observe({}, false), false);
+  assert.equal(detector.observe(game, false), false);
+  assert.equal(detector.observe(game, true), true);
 });
 
 test("resets between game instances", () => {
@@ -62,11 +64,10 @@ test("resets between game instances", () => {
   const firstGame = {};
   const secondGame = {};
 
-  detector.observe(firstGame, true);
-  assert.equal(detector.observe(firstGame, false), true);
-  detector.observe(null, false);
-  detector.observe(secondGame, true);
-  assert.equal(detector.observe(secondGame, false), true);
+  assert.equal(detector.observe(firstGame, false), false);
+  assert.equal(detector.observe(firstGame, true), true);
+  assert.equal(detector.observe(secondGame, null), false);
+  assert.equal(detector.observe(secondGame, true), true);
 });
 
 console.log("game-start-notification tests passed");
