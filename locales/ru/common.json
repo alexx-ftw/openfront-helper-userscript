@@ -1,6 +1,7 @@
 {
   "languageCode": "ru",
   "languageName": "Русский",
+  "Game started!": "Игра началась!",
   "settings": "Настройки",
   "openSettings": "Открыть настройки",
   "customNotificationSound": "Свой звук уведомлений",
