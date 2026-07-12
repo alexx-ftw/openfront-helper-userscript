@@ -59,6 +59,8 @@ const INGAME_FILES = [
   "auto-leave.js",
   "boat-macro.js",
   "heatmaps.js",
+  "spawn-index.js",
+  "spawn-objective.js",
   "auto-bot/core.js",
   "auto-bot/i18n.js",
   "auto-bot/helpers.js",

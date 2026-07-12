@@ -26,7 +26,9 @@
   const SPAWN_HEATMAP_TEAM_OVERLAP_MAX = 0.4;
   const SPAWN_HEATMAP_TEAM_CENTROID_R = 260;
 
-  // Weights — exact match with Tactical.
+  // Weights — exact match with Tactical's visual heatmap. The bot's exact
+  // selector uses the replay-free robust objective below; these weights remain
+  // only as a visual/fallback score.
   const SPAWN_W = {
     land: 0.25,
     plains: 0.2,
@@ -34,6 +36,9 @@
     player: 0.25,
     edge: 0.05,
     team: 0.2,
+    // Same-clan cohesion is a strong visual/fallback preference. The exact
+    // selector applies it after robust safety/expansion/team dimensions.
+    clan: 0.25,
     teamCentroid: 0.08,
     enemyPressure: 0.12,
   };
@@ -52,15 +57,32 @@
   function isLandByte(byte) {
     return (byte & (1 << SPAWN_IS_LAND_BIT)) !== 0;
   }
+  function isPassableLandByte(byte) {
+    return isLandByte(byte) && (byte & SPAWN_MAGNITUDE_MASK) !== 31;
+  }
   function isPlainsByte(byte) {
-    return isLandByte(byte) && (byte & SPAWN_MAGNITUDE_MASK) < 10;
+    return isPassableLandByte(byte) && (byte & SPAWN_MAGNITUDE_MASK) < 10;
   }
 
   let _spawnTerrainCache = null; // { terrain, W, H, raw }
   let _spawnTerrainSrcRef = null;
   function getSpawnTerrain(game) {
     const src = (game && game.__src) || game;
-    if (_spawnTerrainSrcRef === src && _spawnTerrainCache) return _spawnTerrainCache;
+    if (_spawnTerrainSrcRef === src && _spawnTerrainCache) {
+      let currentW = _spawnTerrainCache.W;
+      let currentH = _spawnTerrainCache.H;
+      let currentRaw = null;
+      try {
+        currentW = game.width ? game.width() : currentW;
+        currentH = game.height ? game.height() : currentH;
+        currentRaw = src && src._map && src._map.terrain;
+      } catch (_error) { /* keep the cached shape */ }
+      const sameShape = currentW === _spawnTerrainCache.W && currentH === _spawnTerrainCache.H;
+      const sameTerrain = _spawnTerrainCache.raw
+        ? !currentRaw || currentRaw === _spawnTerrainCache.terrain
+        : !currentRaw;
+      if (sameShape && sameTerrain) return _spawnTerrainCache;
+    }
     const W = game.width ? game.width() : 0;
     const H = game.height ? game.height() : 0;
     if (W <= 0 || H <= 0) return null;
@@ -113,10 +135,149 @@
     }
   }
 
+  // ── Exact candidate index ──────────────────────────────────────────────
+  // The heatmap remains a cheap visual approximation, but the bot gets an
+  // exact, map-resolution candidate set from spawn-index.js. Building is
+  // incremental so a large/new map never monopolizes the main thread.
+  let _spawnCandidateIndex = null;
+  let _spawnCandidateIndexSrcRef = null;
+  let _spawnCandidateIndexTerrainRef = null;
+  let _spawnCandidateBuildScheduled = false;
+  let _spawnIntentVersion = 0;
+
+  function getSpawnIndexApi() {
+    try {
+      return typeof globalThis === "object" ? globalThis.__OFHSpawnIndex : null;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function getSpawnObjectiveApi() {
+    try {
+      return typeof globalThis === "object" ? globalThis.__OFHSpawnObjective : null;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function getSpawnBlockedSnapshot(game, size) {
+    const blocked = new Uint8Array(size);
+    const src = (game && game.__src) || game;
+    try {
+      const state = src && src._map && src._map.state;
+      if (state && typeof state.length === "number" && state.length >= size) {
+        for (let ref = 0; ref < size; ref += 1) {
+          blocked[ref] = state[ref] & 0x0fff ? 1 : 0;
+        }
+        return blocked;
+      }
+    } catch (_error) { /* use the public surface below */ }
+
+    if (typeof game.hasOwner === "function") {
+      for (let ref = 0; ref < size; ref += 1) {
+        try { blocked[ref] = game.hasOwner(ref) ? 1 : 0; } catch (_error) { /* empty */ }
+      }
+    }
+    return blocked;
+  }
+
+  function scheduleSpawnCandidateBuild(index) {
+    if (!index || index.ready || _spawnCandidateBuildScheduled) return;
+    _spawnCandidateBuildScheduled = true;
+
+    const run = (deadline) => {
+      _spawnCandidateBuildScheduled = false;
+      if (index !== _spawnCandidateIndex) return;
+      if (deadline && typeof deadline.timeRemaining === "function") {
+        while (!index.ready && deadline.timeRemaining() > 0) index.buildSlice();
+      } else {
+        index.buildSlice();
+      }
+      if (!index.ready) scheduleSpawnCandidateBuild(index);
+    };
+
+    try {
+      if (typeof requestIdleCallback === "function") {
+        requestIdleCallback(run);
+        return;
+      }
+    } catch (_error) { /* use timer fallback */ }
+    setTimeout(run, 0);
+  }
+
+  function ensureSpawnCandidateIndex(game) {
+    const api = getSpawnIndexApi();
+    const td = getSpawnTerrain(game);
+    if (!api || !td || typeof api.create !== "function") return null;
+    const src = (game && game.__src) || game;
+    if (
+      _spawnCandidateIndexSrcRef !== src ||
+      _spawnCandidateIndexTerrainRef !== td.terrain ||
+      !_spawnCandidateIndex
+    ) {
+      _spawnCandidateIndex = api.create({
+        width: td.W,
+        height: td.H,
+        terrain: td.terrain,
+        blocked: getSpawnBlockedSnapshot(game, td.W * td.H),
+      });
+      _spawnCandidateIndexSrcRef = src;
+      _spawnCandidateIndexTerrainRef = td.terrain;
+      scheduleSpawnCandidateBuild(_spawnCandidateIndex);
+    }
+    return _spawnCandidateIndex;
+  }
+
+  function resetSpawnCandidateIndex() {
+    _spawnCandidateIndex = null;
+    _spawnCandidateIndexSrcRef = null;
+    _spawnCandidateIndexTerrainRef = null;
+    _spawnCandidateBuildScheduled = false;
+    _exactSpawnCacheSrcRef = null;
+    _exactSpawnCacheIndexVersion = -1;
+    _exactSpawnCacheSignature = "";
+    _exactSpawnCacheResult = null;
+  }
+
+  function refreshSpawnCandidateTerrain(game, refs = null) {
+    const index = ensureSpawnCandidateIndex(game);
+    const td = getSpawnTerrain(game);
+    if (!index || !td || typeof index.syncTerrain !== "function") return 0;
+    if (td.raw) return index.syncTerrain(td.terrain, refs);
+
+    const readByte = (ref) => {
+      try {
+        if (typeof game.terrainByte === "function") return game.terrainByte(ref);
+        if (!game.isLand(ref)) return 0;
+        let byte = 1 << SPAWN_IS_LAND_BIT;
+        if (typeof game.magnitude === "function") byte |= game.magnitude(ref) & SPAWN_MAGNITUDE_MASK;
+        return byte;
+      } catch (_error) {
+        return 0;
+      }
+    };
+    return index.syncTerrain(readByte, refs);
+  }
+
+  function getSpawnAreaForGame(game, me) {
+    try {
+      const team = me && typeof me.team === "function" ? me.team() : null;
+      const src = (game && game.__src) || game;
+      if (team !== null && src && typeof src.teamSpawnArea === "function") {
+        return src.teamSpawnArea(team) || null;
+      }
+    } catch (_error) { /* FFA or unavailable team API */ }
+    return null;
+  }
+
   // Phase 1 cache: static candidates [{x, y, staticScore}]. Computed once per
   // map (when game context changes). Sorted descending by staticScore.
   let _spawnStaticCandidates = null;
   let _spawnStaticGameRef = null;
+  let _spawnStaticTerrainRef = null;
+  let _spawnStaticWidth = 0;
+  let _spawnStaticHeight = 0;
 
   // Phase 2 cache: final scores + top spots. Recomputed every 250ms.
   let _spawnHeatmapData = null;
@@ -142,19 +303,15 @@
       if (!Number.isFinite(tile)) continue;
       // We need world coords — but we don't have game.x(tile) here.
       // Store the tile; convert to world coords during scan.
+      const previous = _spawnPlayerPositions.get(intent.clientID);
+      if (!previous || previous.tile !== tile) _spawnIntentVersion += 1;
       _spawnPlayerPositions.set(intent.clientID, { tile });
     }
   }
 
-  // Hook into the existing WS message processor (enemy-intent-intel.js).
-  // We extend processWsMessage to also extract spawn intents.
-  const _originalProcessWsMessage = typeof processWsMessage === "function"
-    ? processWsMessage
-    : null;
-
+  // enemy-intent-intel.js calls this hook after its own processing. Keep this
+  // hook one-way: calling processWsMessage() back here would recurse forever.
   function spawnHeatmapProcessWsMessage(data) {
-    // Call original if it exists.
-    if (_originalProcessWsMessage) _originalProcessWsMessage(data);
     // Extract spawn intents.
     if (!data || typeof data !== "object") return;
     try {
@@ -190,7 +347,7 @@
       for (let cx = R; cx < W - R; cx += step) {
         // Skip water grid centers immediately — avoids the neighbourhood scan
         // for the majority of cells (ocean), the biggest single speedup.
-        if (!isLandByte(terrain[cy * W + cx])) continue;
+        if (!isPassableLandByte(terrain[cy * W + cx])) continue;
 
         let landCount = 0, plainsCount = 0, totalChecked = 0;
         for (let dy = -R; dy <= R; dy += 2) {
@@ -204,7 +361,7 @@
             if (nx < 0 || nx >= W) continue;
             totalChecked += 1;
             const byte = terrain[rowBase + nx];
-            if (isLandByte(byte)) {
+            if (isPassableLandByte(byte)) {
               landCount += 1;
               if ((byte & SPAWN_MAGNITUDE_MASK) < 10) plainsCount += 1;
             }
@@ -307,7 +464,19 @@
     // excluded — they're not the human opponents the repel term is about.
     const enemySpawns = [];
     const teamSpawns = [];
+    const clanSpawns = [];
     const mySid = me && me.smallID ? me.smallID() : null;
+    const objectiveApi = getSpawnObjectiveApi();
+    const getPlayerClanTag = objectiveApi && typeof objectiveApi.getPlayerClanTag === "function"
+      ? objectiveApi.getPlayerClanTag
+      : null;
+    const sameClanTag = objectiveApi && typeof objectiveApi.sameClanTag === "function"
+      ? objectiveApi.sameClanTag
+      : null;
+    const clanProximityScore = objectiveApi && typeof objectiveApi.clanProximityScore === "function"
+      ? objectiveApi.clanProximityScore
+      : null;
+    const myClanTag = getPlayerClanTag ? getPlayerClanTag(me) : null;
     const players = getCachedPlayerViews(game);
     for (let i = 0; i < players.length; i += 1) {
       const p = players[i];
@@ -325,6 +494,12 @@
       try {
         isTeammate = Boolean(me && me.isOnSameTeam && me.isOnSameTeam(p));
       } catch (_error) { isTeammate = false; }
+      const sameClan = Boolean(
+        myClanTag &&
+          sameClanTag &&
+          sameClanTag(myClanTag, getPlayerClanTag(p)),
+      );
+      if (sameClan) clanSpawns.push({ x: loc.x, y: loc.y });
       if (isTeammate) {
         teamSpawns.push({ x: loc.x, y: loc.y });
       } else {
@@ -370,7 +545,7 @@
           pressure += 1 - d / SPAWN_HEATMAP_ENEMY_PRESSURE_R;
         }
       }
-      const enemyPressureScore = pressure > 0 ? 1 - 1 / (1 + pressure) : 1;
+      const enemyPressureScore = 1 / (1 + Math.max(0, pressure));
       score += enemyPressureScore * SPAWN_W.enemyPressure;
 
       // Team terms (team mode only).
@@ -391,6 +566,17 @@
           score += centroidScore * SPAWN_W.teamCentroid * Math.min(1, teamSpawns.length / 2);
         }
       }
+
+      const clanAttract =
+        clanProximityScore && clanSpawns.length > 0
+          ? clanProximityScore(
+              x,
+              y,
+              clanSpawns,
+              SPAWN_HEATMAP_TEAM_ATTRACT_R,
+            )
+          : 0;
+      score += clanAttract * SPAWN_W.clan;
 
       if (score > maxScore) maxScore = score;
       out.push({ x, y, score });
@@ -414,6 +600,331 @@
     return { scores: out, topSpots, maxScore };
   }
 
+  function spawnPointKey(player) {
+    try {
+      if (player && typeof player.clientID === "function") {
+        const clientID = player.clientID();
+        if (clientID != null) return `client:${clientID}`;
+      }
+    } catch (_error) { /* fall through */ }
+    try {
+      if (player && typeof player.smallID === "function") {
+        const smallID = player.smallID();
+        if (smallID != null) return `small:${smallID}`;
+      }
+    } catch (_error) { /* unknown player */ }
+    return null;
+  }
+
+  function collectExactSpawnPoints(game, me) {
+    const enemySpawns = [];
+    const teamSpawns = [];
+    const clanSpawns = [];
+    const objectiveApi = getSpawnObjectiveApi();
+    const getPlayerClanTag = objectiveApi && typeof objectiveApi.getPlayerClanTag === "function"
+      ? objectiveApi.getPlayerClanTag
+      : null;
+    const sameClanTag = objectiveApi && typeof objectiveApi.sameClanTag === "function"
+      ? objectiveApi.sameClanTag
+      : null;
+    const myClanTag = getPlayerClanTag ? getPlayerClanTag(me) : null;
+    const players = getCachedPlayerViews(game) || [];
+    const playersByClientID = new Map();
+    const ownKeys = new Set();
+    const ownKey = spawnPointKey(me);
+    if (ownKey) ownKeys.add(ownKey);
+
+    for (const player of players) {
+      const key = spawnPointKey(player);
+      if (key) playersByClientID.set(key, player);
+    }
+
+    const liveKeys = new Set();
+    for (const player of players) {
+      if (!player || !player.isAlive || !player.isAlive()) continue;
+      try {
+        if (!player.type || player.type() !== "HUMAN") continue;
+      } catch (_error) {
+        continue;
+      }
+      const key = spawnPointKey(player);
+      if (!key || ownKeys.has(key)) continue;
+      let spawned = false;
+      try { spawned = Boolean(player.hasSpawned && player.hasSpawned()); } catch (_error) { /* empty */ }
+      if (!spawned) continue;
+      let location = null;
+      try { location = player.nameLocation ? player.nameLocation() : null; } catch (_error) { /* empty */ }
+      if (!location || !Number.isFinite(location.x) || !Number.isFinite(location.y)) continue;
+      liveKeys.add(key);
+      let teammate = false;
+      try { teammate = Boolean(me && me.isOnSameTeam && me.isOnSameTeam(player)); } catch (_error) { /* empty */ }
+      const sameClan = Boolean(
+        myClanTag &&
+          sameClanTag &&
+          sameClanTag(myClanTag, getPlayerClanTag(player)),
+      );
+      if (sameClan) clanSpawns.push({ x: location.x, y: location.y });
+      (teammate ? teamSpawns : enemySpawns).push({ x: location.x, y: location.y });
+    }
+
+    // Pending spawn intents are more accurate than nameLocation during the
+    // spawn phase. Unknown clients are treated as enemies, which is the safe
+    // choice for a collision-avoidance constraint.
+    for (const [clientID, entry] of _spawnPlayerPositions) {
+      const key = `client:${clientID}`;
+      if (ownKeys.has(key) || liveKeys.has(key) || !entry) continue;
+      const tile = Number(entry.tile);
+      if (!Number.isFinite(tile) || typeof game.x !== "function" || typeof game.y !== "function") continue;
+      let x = 0;
+      let y = 0;
+      try {
+        x = game.x(tile);
+        y = game.y(tile);
+      } catch (_error) {
+        continue;
+      }
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      const player = playersByClientID.get(key);
+      let teammate = false;
+      try { teammate = Boolean(player && me && me.isOnSameTeam && me.isOnSameTeam(player)); } catch (_error) { /* unknown */ }
+      const sameClan = Boolean(
+        player &&
+          myClanTag &&
+          sameClanTag &&
+          sameClanTag(myClanTag, getPlayerClanTag(player)),
+      );
+      if (sameClan) clanSpawns.push({ x, y });
+      (teammate ? teamSpawns : enemySpawns).push({ x, y });
+    }
+
+    const signature = [
+      String(_spawnIntentVersion),
+      myClanTag || "",
+      enemySpawns.map((point) => `${point.x},${point.y}`).join(";"),
+      teamSpawns.map((point) => `${point.x},${point.y}`).join(";"),
+      clanSpawns.map((point) => `${point.x},${point.y}`).join(";"),
+    ].join("|");
+    return { enemySpawns, teamSpawns, clanSpawns, signature };
+  }
+
+  function insertExactSpawnCandidate(best, candidate) {
+    const compare = (left, right) => {
+      if (left.objective && right.objective) {
+        const dimensions = [
+          "robustFloor",
+          "safetyScore",
+          "expansionScore",
+          "teamScore",
+          "clanScore",
+          "startScore",
+        ];
+        for (const dimension of dimensions) {
+          if (left.objective[dimension] !== right.objective[dimension]) {
+            return right.objective[dimension] - left.objective[dimension];
+          }
+        }
+      }
+      if (left.score !== right.score) return right.score - left.score;
+      return (left.ref ?? Infinity) - (right.ref ?? Infinity);
+    };
+    let position = 0;
+    while (position < best.length && compare(best[position], candidate) <= 0) position += 1;
+    if (position >= SPAWN_HEATMAP_TOP_N && best.length >= SPAWN_HEATMAP_TOP_N) return;
+    best.splice(position, 0, candidate);
+    if (best.length > SPAWN_HEATMAP_TOP_N) best.pop();
+  }
+
+  let _exactSpawnCacheSrcRef = null;
+  let _exactSpawnCacheIndexVersion = -1;
+  let _exactSpawnCacheSignature = "";
+  let _exactSpawnCacheResult = null;
+
+  // Exact map-resolution ranking for the bot. This is deliberately separate
+  // from the visual heatmap: the visual layer may stay coarse, while the bot
+  // uses a replay-free robust objective over legal start and expansion metrics.
+  function computeExactSpawnTopSpotsForBot(game, me) {
+    const index = ensureSpawnCandidateIndex(game);
+    if (!index || !index.ready) return null;
+
+    const points = collectExactSpawnPoints(game, me);
+    if (
+      _exactSpawnCacheSrcRef === ((game && game.__src) || game) &&
+      _exactSpawnCacheIndexVersion === index.version &&
+      _exactSpawnCacheSignature === points.signature
+    ) {
+      return _exactSpawnCacheResult;
+    }
+
+    const W = game.width ? game.width() : index.width;
+    const H = game.height ? game.height() : index.height;
+    const area = getSpawnAreaForGame(game, me);
+    let minDist = 30;
+    try {
+      const configured = game.config().minDistanceBetweenPlayers();
+      if (Number.isFinite(configured)) minDist = configured;
+    } catch (_error) { /* keep a conservative fallback */ }
+    const nationLocs = collectNationLocations(game);
+    const best = [];
+    const objectiveApi = getSpawnObjectiveApi();
+    const frontierValueScale = Number(getSpawnIndexApi()?.FRONTIER_VALUE_SCALE) || 1000;
+    const teamMode = points.teamSpawns.length > 0;
+    let centroidX = 0;
+    let centroidY = 0;
+    for (const point of points.teamSpawns) {
+      centroidX += point.x;
+      centroidY += point.y;
+    }
+    if (teamMode) {
+      centroidX /= points.teamSpawns.length;
+      centroidY /= points.teamSpawns.length;
+    }
+
+    const tooClose = (x, y) => {
+      for (const point of points.enemySpawns) {
+        if (Math.abs(point.x - x) + Math.abs(point.y - y) < minDist) return true;
+      }
+      for (const point of points.teamSpawns) {
+        if (Math.abs(point.x - x) + Math.abs(point.y - y) < minDist) return true;
+      }
+      return false;
+    };
+
+    index.forEachCandidate({
+      mode: "explicit",
+      isCenterAllowed: (tile, x, y) => {
+        if (area && (x < area.x || x >= area.x + area.width || y < area.y || y >= area.y + area.height)) {
+          return false;
+        }
+        try {
+          if (typeof game.hasOwner === "function" && game.hasOwner(tile)) return false;
+          if (typeof game.isBorder === "function" && game.isBorder(tile)) return false;
+        } catch (_error) {
+          return false;
+        }
+        return !tooClose(x, y);
+      },
+      onCandidate: (
+        tile,
+        x,
+        y,
+        spawnGain,
+        invalidCount,
+        plainsGain,
+        frontierGain,
+        _frontierPlainsGain,
+        frontierValueGain,
+        frontierSlots,
+      ) => {
+        const totalSpawnTiles = spawnGain + invalidCount;
+        const clusterScore = spawnGain / Math.max(1, totalSpawnTiles);
+        const plainsScore = plainsGain / Math.max(1, spawnGain);
+        const edgeX = Math.min(x, W - 1 - x) / Math.max(1, W / 2);
+        const edgeY = Math.min(y, H - 1 - y) / Math.max(1, H / 2);
+        const edgeScore = Math.max(0, Math.min(edgeX, edgeY));
+        const nationScore = computeNationProximity(nationLocs, x, y);
+
+        let minEnemyDist = Infinity;
+        let pressure = 0;
+        for (const point of points.enemySpawns) {
+          const distance = Math.abs(point.x - x) + Math.abs(point.y - y);
+          minEnemyDist = Math.min(minEnemyDist, distance);
+          if (distance < SPAWN_HEATMAP_ENEMY_PRESSURE_R) {
+            pressure += 1 - distance / SPAWN_HEATMAP_ENEMY_PRESSURE_R;
+          }
+        }
+        const playerScore = Number.isFinite(minEnemyDist)
+          ? Math.min(1, minEnemyDist / SPAWN_HEATMAP_PLAYER_R)
+          : 1;
+        const pressureScore = 1 / (1 + pressure);
+
+        // Keep the exact selector's clan distance inline: this callback runs
+        // once per legal map tile, so an extra cross-file function call here is
+        // materially more expensive on large maps. `clanSpawns` is normalized
+        // by collectExactSpawnPoints above.
+        let minClanDist = Infinity;
+        for (let index = 0; index < points.clanSpawns.length; index += 1) {
+          const point = points.clanSpawns[index];
+          const distance = Math.abs(point.x - x) + Math.abs(point.y - y);
+          if (distance < minClanDist) minClanDist = distance;
+        }
+
+        let score =
+          clusterScore * SPAWN_W.land +
+          plainsScore * SPAWN_W.plains +
+          nationScore * SPAWN_W.nation +
+          playerScore * SPAWN_W.player +
+          edgeScore * SPAWN_W.edge +
+          pressureScore * SPAWN_W.enemyPressure;
+
+        let teamScore = 1;
+        if (teamMode) {
+          let minTeamDist = Infinity;
+          for (const point of points.teamSpawns) {
+            minTeamDist = Math.min(minTeamDist, Math.abs(point.x - x) + Math.abs(point.y - y));
+          }
+          const teamAttract = teamAttractScore(minTeamDist);
+          const centroidScore = Math.max(
+            0,
+            1 - Math.abs(centroidX - x) / SPAWN_HEATMAP_TEAM_CENTROID_R -
+              Math.abs(centroidY - y) / SPAWN_HEATMAP_TEAM_CENTROID_R,
+          );
+          teamScore = Math.min(teamAttract, centroidScore);
+          score += teamAttract * SPAWN_W.team;
+          const centroidDist = Math.abs(centroidX - x) + Math.abs(centroidY - y);
+          score +=
+            Math.max(0, 1 - centroidDist / SPAWN_HEATMAP_TEAM_CENTROID_R) *
+            SPAWN_W.teamCentroid * Math.min(1, points.teamSpawns.length / 2);
+        }
+
+        const clanScore =
+          minClanDist === Infinity
+            ? 0
+            : Math.max(0, 1 - minClanDist / SPAWN_HEATMAP_TEAM_ATTRACT_R);
+        score += clanScore * SPAWN_W.clan;
+
+        const frontierCoverage = Number.isFinite(Number(frontierSlots))
+          ? frontierSlots > 0
+            ? frontierValueGain / (frontierSlots * frontierValueScale)
+            : 1
+          : clusterScore;
+        const objective = objectiveApi && typeof objectiveApi.evaluateModelCandidate === "function"
+          ? objectiveApi.evaluateModelCandidate({
+              startScore: clusterScore,
+              expansionScore: Math.min(clusterScore, frontierCoverage),
+              safetyScore: Math.min(playerScore, pressureScore, edgeScore),
+              teamScore,
+              clanScore,
+            })
+          : null;
+
+        insertExactSpawnCandidate(best, {
+          ref: tile,
+          x,
+          y,
+          score,
+          spawnGain,
+          frontierGain,
+          frontierValueGain,
+          clanScore,
+          objective,
+        });
+      },
+    });
+
+    const result = best.length > 0 ? best : null;
+    _exactSpawnCacheSrcRef = (game && game.__src) || game;
+    _exactSpawnCacheIndexVersion = index.version;
+    _exactSpawnCacheSignature = points.signature;
+    _exactSpawnCacheResult = result;
+    return result;
+  }
+
+  try {
+    if (typeof globalThis === "object") {
+      globalThis.__OFHRefreshSpawnCandidateTerrain = refreshSpawnCandidateTerrain;
+    }
+  } catch (_error) { /* optional diagnostic surface */ }
+
   // ── Main scan (called by scheduler every 250ms) ────────────────────────
 
   function scanSpawnHeatmap(game) {
@@ -422,7 +933,12 @@
       _spawnHeatmapData = null;
       _spawnStaticCandidates = null;
       _spawnStaticGameRef = null;
+      _spawnStaticTerrainRef = null;
+      _spawnStaticWidth = 0;
+      _spawnStaticHeight = 0;
       _spawnPlayerPositions.clear();
+      _spawnIntentVersion += 1;
+      resetSpawnCandidateIndex();
       _spawnHeatmapWasInSpawnPhase = false;
       return;
     }
@@ -432,16 +948,24 @@
       return;
     }
 
+    ensureSpawnCandidateIndex(game);
+    const me = game.myPlayer ? game.myPlayer() : null;
+    const exactTopSpots = computeExactSpawnTopSpotsForBot(game, me);
+
     // Phase 1: static candidates (shared with the bot, computed once per map).
     const candidates = ensureSpawnStaticCandidates(game);
     if (!candidates || candidates.length === 0) {
-      _spawnHeatmapData = null;
+      _spawnHeatmapData = exactTopSpots && exactTopSpots.length > 0
+        ? { scores: [], topSpots: exactTopSpots, maxScore: 0 }
+        : null;
       return;
     }
 
     // Phase 2: dynamic scoring using live game-API player positions.
-    const me = game.myPlayer ? game.myPlayer() : null;
     _spawnHeatmapData = computeDynamicScores(game, candidates, me);
+    if (exactTopSpots && exactTopSpots.length > 0) {
+      _spawnHeatmapData.topSpots = exactTopSpots;
+    }
   }
 
   // ONE static-candidate cache shared by the overlay and the auto-bot, keyed on
@@ -450,9 +974,19 @@
   // runs a single time per map).
   function ensureSpawnStaticCandidates(game) {
     const src = (game && game.__src) || game;
-    if (_spawnStaticGameRef !== src || _spawnStaticCandidates === null) {
+    const td = getSpawnTerrain(game);
+    if (
+      _spawnStaticGameRef !== src ||
+      _spawnStaticTerrainRef !== (td && td.terrain) ||
+      _spawnStaticWidth !== (td ? td.W : 0) ||
+      _spawnStaticHeight !== (td ? td.H : 0) ||
+      _spawnStaticCandidates === null
+    ) {
       _spawnStaticCandidates = computeStaticCandidates(game);
       _spawnStaticGameRef = src;
+      _spawnStaticTerrainRef = td && td.terrain;
+      _spawnStaticWidth = td ? td.W : 0;
+      _spawnStaticHeight = td ? td.H : 0;
     }
     return _spawnStaticCandidates;
   }
@@ -476,14 +1010,19 @@
   // callers ask for it.
   let _botTopSpotsTick = -1;
   let _botTopSpotsGameRef = null;
+  let _botTopSpotsTerrainRef = null;
   let _botTopSpotsResult = null;
   function computeSpawnTopSpotsForBot(game, me) {
     try {
+      const exact = computeExactSpawnTopSpotsForBot(game, me);
+      if (exact && exact.length > 0) return exact;
       const src = (game && game.__src) || game;
+      const td = getSpawnTerrain(game);
       let tick = -1;
       try { tick = Number(game.ticks ? game.ticks() : -1); } catch (_e) { tick = -1; }
       if (
         _botTopSpotsGameRef === src &&
+        _botTopSpotsTerrainRef === (td && td.terrain) &&
         Number.isFinite(tick) &&
         tick === _botTopSpotsTick
       ) {
@@ -497,6 +1036,7 @@
       const result =
         data && data.topSpots && data.topSpots.length > 0 ? data.topSpots : null;
       _botTopSpotsGameRef = src;
+      _botTopSpotsTerrainRef = td && td.terrain;
       _botTopSpotsTick = Number.isFinite(tick) ? tick : -1;
       _botTopSpotsResult = result;
       return result;
@@ -509,13 +1049,14 @@
 
   const _spawnCellPt = { x: 0, y: 0 };
   function drawSpawnHeatmap(ctx, game, transform) {
-    if (!_spawnHeatmapData || _spawnHeatmapData.maxScore <= 0) return;
+    if (!_spawnHeatmapData) return;
     const { scores, topSpots, maxScore } = _spawnHeatmapData;
+    if (maxScore <= 0 && (!topSpots || topSpots.length === 0)) return;
     const cell = SPAWN_HEATMAP_CELL;
     const halfCell = cell / 2;
     const innerW = window.innerWidth;
     const innerH = window.innerHeight;
-    const invMax = 1 / maxScore;
+    const invMax = maxScore > 0 ? 1 / maxScore : 0;
     let drawn = 0;
 
     // Derive the affine projector ONCE (3 transform calls) then project every
@@ -525,7 +1066,7 @@
 
     ctx.save();
     // Colored heatmap cells — only when the heatmap layer is on.
-    if (spawnHeatmapEnabled) {
+    if (spawnHeatmapEnabled && maxScore > 0) {
       for (let i = 0; i < scores.length && drawn < SPAWN_HEATMAP_MAX_CELLS; i += 1) {
         const item = scores[i];
         mapProject(proj, item.x, item.y, _spawnCellPt);
@@ -587,7 +1128,12 @@
       _spawnHeatmapData = null;
       _spawnStaticCandidates = null;
       _spawnStaticGameRef = null;
+      _spawnStaticTerrainRef = null;
+      _spawnStaticWidth = 0;
+      _spawnStaticHeight = 0;
       _spawnPlayerPositions.clear();
+      _spawnIntentVersion += 1;
+      resetSpawnCandidateIndex();
       _spawnHeatmapWasInSpawnPhase = false;
     }
   }

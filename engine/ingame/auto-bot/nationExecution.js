@@ -271,7 +271,12 @@
       if (!state.settings.smartSpawn) return null;
       let ts = null;
       try {
-        if (typeof getSpawnHeatmapTopSpots === "function") ts = getSpawnHeatmapTopSpots();
+        if (typeof computeExactSpawnTopSpotsForBot === "function") {
+          ts = computeExactSpawnTopSpotsForBot(this.mg, this.player);
+        }
+        if ((!ts || ts.length === 0) && typeof getSpawnHeatmapTopSpots === "function") {
+          ts = getSpawnHeatmapTopSpots();
+        }
         if ((!ts || ts.length === 0) && typeof computeSpawnTopSpotsForBot === "function") {
           ts = computeSpawnTopSpotsForBot(this.mg, this.player);
         }
@@ -346,8 +351,9 @@
         return false;
       };
 
-      // DIVERGENCE: smart spawn scoring — when enabled, sample candidates and
-      // pick the best by land density + distance from enemies + edge avoidance.
+      // DIVERGENCE: smart spawn scoring — when the exact index is unavailable,
+      // sample candidates and pick the best by land density + distance from
+      // enemies + edge avoidance.
       // When disabled, use the faithful first-valid-random-tile (SpawnExecution).
       const useSmart = state.settings.smartSpawn;
 
@@ -356,8 +362,11 @@
       const isValidSpawn = (tile) =>
         tile != null &&
         g.isLand(tile) &&
+        (!g.magnitude || g.magnitude(tile) !== 31) &&
         !g.hasOwner(tile) &&
         !g.isBorder(tile) &&
+        (!area || (g.x(tile) >= area.x && g.x(tile) < area.x + area.width &&
+          g.y(tile) >= area.y && g.y(tile) < area.y + area.height)) &&
         !tooClose(tile);
 
       // Search outward from (sx,sy) for the nearest valid spawn tile (ring scan).
@@ -389,8 +398,11 @@
       if (useSmart) {
         let topSpots = null;
         try {
+          if (typeof computeExactSpawnTopSpotsForBot === "function") {
+            topSpots = computeExactSpawnTopSpotsForBot(g, this.player);
+          }
           if (typeof getSpawnHeatmapTopSpots === "function") {
-            topSpots = getSpawnHeatmapTopSpots();
+            if (!topSpots || topSpots.length === 0) topSpots = getSpawnHeatmapTopSpots();
           }
           if (!topSpots && typeof computeSpawnTopSpotsForBot === "function") {
             topSpots = computeSpawnTopSpotsForBot(g, this.player);
@@ -418,10 +430,9 @@
           : this.random.nextInt(0, H);
         if (!g.isValidCoord(x, y)) continue;
         const tile = g.ref(x, y);
-        if (!g.isLand(tile) || g.hasOwner(tile) || g.isBorder(tile)) continue;
-        if (tooClose(tile)) continue;
+        if (!isValidSpawn(tile)) continue;
         if (!useSmart) return tile; // faithful: first valid wins
-        const score = this.scoreSpawnTile(tile, others, W, H);
+        const score = this.scoreSpawnTile(tile, others, W, H, area);
         if (score > bestScore) {
           bestScore = score;
           bestTile = tile;
@@ -434,7 +445,7 @@
     // tile by: land density in a 12-radius neighbourhood, distance from the
     // nearest enemy nameLocation (farther = better), and edge avoidance (centre
     // of map preferred). Team mode adds a pull toward the team spawn area centre.
-    scoreSpawnTile(tile, others, W, H) {
+    scoreSpawnTile(tile, others, W, H, area = null) {
       const g = this.mg;
       const tx = g.x(tile);
       const ty = g.y(tile);
