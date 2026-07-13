@@ -386,13 +386,67 @@
     }
   }
 
-  // Estimate the worst-case tick at which a currently-under-construction SAM will
-  // come online. We don't have access to the exact remaining construction ticks,
-  // so we record the earliest tick we spotted it and assume it could take up to
-  // AUTO_NUKE_SAM_CONSTRUCTION_TICKS from that first sighting to finish.
+  function getNukeSuggestionSamConstructionTicks(game) {
+    const infoSources = [];
+    try {
+      if (typeof game?.unitInfo === "function") {
+        infoSources.push(game.unitInfo("SAM Launcher"));
+      }
+    } catch (_error) {
+      // Fall through to the config proxy.
+    }
+    try {
+      const unitInfo = game?.config?.()?.unitInfo;
+      if (typeof unitInfo === "function") {
+        infoSources.push(unitInfo("SAM Launcher"));
+      }
+    } catch (_error) {
+      // Keep the standard SAM duration below.
+    }
+
+    for (const info of infoSources) {
+      const rawDuration =
+        typeof info?.constructionDuration === "function"
+          ? info.constructionDuration()
+          : info?.constructionDuration;
+      const duration = Number(rawDuration);
+      if (Number.isFinite(duration) && duration > 0) {
+        return duration;
+      }
+    }
+
+    return AUTO_NUKE_SAM_CONSTRUCTION_TICKS;
+  }
+
+  function getNukeSuggestionConstructionStartTick(sam) {
+    const raw = sam?.__src || sam;
+    const state = raw?.state;
+    const candidates = [
+      state?.constructionStartTick,
+      raw?.constructionStartTick,
+      typeof raw?.getConstructionStartTick === "function"
+        ? raw.getConstructionStartTick()
+        : null,
+    ];
+    for (const candidate of candidates) {
+      const tick = Number(candidate);
+      if (Number.isFinite(tick)) {
+        return tick;
+      }
+    }
+    return null;
+  }
+
+  // Estimate the tick at which a currently-under-construction SAM will come online.
+  // Prefer the exact construction start exposed by UnitView; otherwise record the
+  // earliest tick we spotted it and conservatively allow the full build duration.
   function getPendingSamExpectedReadyTick(game, sam, currentTick) {
     const key = getUnitKey(sam);
     const now = Number.isFinite(currentTick) ? currentTick : getCurrentGameTick(game);
+    const constructionStartTick = getNukeSuggestionConstructionStartTick(sam);
+    if (Number.isFinite(constructionStartTick)) {
+      return constructionStartTick + getNukeSuggestionSamConstructionTicks(game);
+    }
     if (!key) {
       return now + AUTO_NUKE_SAM_CONSTRUCTION_TICKS;
     }
@@ -2091,6 +2145,8 @@
     targetTile,
     sams,
     rocketDirectionUp = true,
+    pendingSams = [],
+    pendingSamReadyTicks = null,
   ) {
     return findInterceptingSams(
       game,
@@ -2098,17 +2154,38 @@
       targetTile,
       sams,
       rocketDirectionUp,
+      pendingSams,
+      pendingSamReadyTicks,
     )[0] || null;
   }
 
+  function getPendingSamAvailableAtTick(game, sam, pendingSamReadyTicks) {
+    const currentTick = getCurrentGameTick(game);
+    const readyAt = pendingSamReadyTicks?.get?.(getUnitKey(sam));
+    const expectedReadyAt = Number.isFinite(Number(readyAt))
+      ? Number(readyAt)
+      : getPendingSamExpectedReadyTick(game, sam, currentTick);
+    return Number.isFinite(expectedReadyAt)
+      ? Math.max(0, Math.ceil(expectedReadyAt - currentTick))
+      : Infinity;
+  }
+
+  // `pendingSams` carries SAMs that are still building. Their absolute expected
+  // completion ticks are converted to a relative availability tick so a SAM only
+  // counts when it can launch its interceptor before the missile reaches that path
+  // point — completing before impact alone is not sufficient.
   function findInterceptingSams(
     game,
     sourceTile,
     targetTile,
     sams,
     rocketDirectionUp = true,
+    pendingSams = [],
+    pendingSamReadyTicks = null,
   ) {
-    if (sams.length === 0) {
+    const activeSams = Array.isArray(sams) ? sams : [];
+    const buildingSams = Array.isArray(pendingSams) ? pendingSams : [];
+    if (activeSams.length === 0 && buildingSams.length === 0) {
       return [];
     }
 
@@ -2120,17 +2197,48 @@
     );
     const samCooldown = getSamCooldown(game);
     const interceptingSams = [];
+    const seenSamKeys = new Set();
+    const entries = [
+      ...activeSams.map((sam) => ({ sam, pending: false })),
+      ...buildingSams.map((sam) => ({ sam, pending: true })),
+    ];
 
-    for (const sam of sams) {
+    for (const { sam, pending } of entries) {
+      const samKey = getUnitKey(sam);
+      if (samKey && seenSamKeys.has(samKey)) {
+        continue;
+      }
+      if (samKey) {
+        seenSamKeys.add(samKey);
+      }
+
       const samTile = getUnitTile(sam);
       if (samTile === null) {
         continue;
       }
 
-      const availableAt = getMissileAvailabilityTick(game, sam, samCooldown);
+      const availableAt = pending
+        ? getPendingSamAvailableAtTick(game, sam, pendingSamReadyTicks)
+        : getMissileAvailabilityTick(game, sam, samCooldown);
       if (!Number.isFinite(availableAt)) {
         continue;
       }
+
+      // A building SAM can only borrow the stacked range of other pending SAMs
+      // that are also ready by the time it comes online. Active SAMs always count.
+      const rangeSams = pending
+        ? [
+            ...activeSams,
+            ...buildingSams.filter(
+              (candidate) =>
+                getPendingSamAvailableAtTick(
+                  game,
+                  candidate,
+                  pendingSamReadyTicks,
+                ) <= availableAt,
+            ),
+          ]
+        : activeSams;
 
       const opportunity = findSamInterceptionOpportunity(
         game,
@@ -2138,7 +2246,7 @@
         targetTile,
         trajectory,
         sam,
-        sams,
+        rangeSams,
         rocketDirectionUp,
         0,
         availableAt,
@@ -2166,9 +2274,32 @@
       .reduce((sum, stackWeight) => sum + stackWeight, 0);
   }
 
-  function chooseBestNukeRocketDirection(game, sourceTile, targetTile, sams) {
-    const upSams = findInterceptingSams(game, sourceTile, targetTile, sams, true);
-    const downSams = findInterceptingSams(game, sourceTile, targetTile, sams, false);
+  function chooseBestNukeRocketDirection(
+    game,
+    sourceTile,
+    targetTile,
+    sams,
+    pendingSams = [],
+    pendingSamReadyTicks = null,
+  ) {
+    const upSams = findInterceptingSams(
+      game,
+      sourceTile,
+      targetTile,
+      sams,
+      true,
+      pendingSams,
+      pendingSamReadyTicks,
+    );
+    const downSams = findInterceptingSams(
+      game,
+      sourceTile,
+      targetTile,
+      sams,
+      false,
+      pendingSams,
+      pendingSamReadyTicks,
+    );
     const upWeight = getInterceptingSamsWeight(upSams);
     const downWeight = getInterceptingSamsWeight(downSams);
 
@@ -2252,6 +2383,8 @@
         sourceTile,
         candidate.tile,
         context.targetSams,
+        context.pendingTargetSams,
+        context.pendingSamReadyTicks,
       );
       const interceptingSam = directionPlan.interceptingSams[0] || null;
       const candidateWithSource = {
@@ -2354,12 +2487,30 @@
       return null;
     }
 
+    const pendingTargetSams = collectPendingHostileSams(game, myPlayer);
+    const currentTick = getCurrentGameTick(game);
+    const pendingSamReadyTicks = new Map();
+    const activePendingKeys = new Set();
+    for (const sam of pendingTargetSams) {
+      const key = getUnitKey(sam);
+      if (!key) continue;
+      activePendingKeys.add(key);
+      pendingSamReadyTicks.set(
+        key,
+        getPendingSamExpectedReadyTick(game, sam, currentTick),
+      );
+    }
+    pruneFinishedPendingSamTracker(activePendingKeys);
+
     return {
       myPlayer,
       targetPlayer,
       tileInfo,
       readySilos,
       targetSams: collectRelevantSams(game, myPlayer, targetPlayer, tileInfo),
+      pendingTargetSams,
+      pendingSamReadyTicks,
+      currentTick,
       structures: collectTargetStructures(targetPlayer),
       teamStructures: collectTeamStructures(game, myPlayer),
       allySmallIds,
@@ -2782,6 +2933,8 @@
       sourceTile,
       samTile,
       baseContext.targetSams,
+      baseContext.pendingTargetSams,
+      baseContext.pendingSamReadyTicks,
     );
     const samClearSpec = {
       ...spec,
@@ -2944,6 +3097,8 @@
         sourceTile,
         targetTile,
         baseContext.targetSams,
+        baseContext.pendingTargetSams,
+        baseContext.pendingSamReadyTicks,
       );
       const interceptsBurn = directionPlan.interceptingSams
         .some((interceptingSam) => getUnitKey(interceptingSam) === samKey);
@@ -3024,6 +3179,8 @@
           candidate.tile,
           baseContext.targetSams,
           candidate.rocketDirectionUp,
+          baseContext.pendingTargetSams,
+          baseContext.pendingSamReadyTicks,
         )) {
           const samKey = getUnitKey(sam);
           if (!samKey) {
@@ -3237,18 +3394,14 @@
     }
 
     const autoSams = collectAllHostileSams(game, baseContext.myPlayer);
-    const pendingSams = collectPendingHostileSams(game, baseContext.myPlayer);
-    const currentTick = getCurrentGameTick(game);
-    const pendingSamReadyTicks = new Map();
+    const pendingSams = baseContext.pendingTargetSams || [];
+    const currentTick = baseContext.currentTick ?? getCurrentGameTick(game);
+    const pendingSamReadyTicks = baseContext.pendingSamReadyTicks || new Map();
     const activePendingKeys = new Set();
     for (const sam of pendingSams) {
       const key = getUnitKey(sam);
       if (!key) continue;
       activePendingKeys.add(key);
-      pendingSamReadyTicks.set(
-        key,
-        getPendingSamExpectedReadyTick(game, sam, currentTick),
-      );
     }
     // Drop tracker entries for SAMs no longer under construction (finished or destroyed).
     pruneFinishedPendingSamTracker(activePendingKeys);
