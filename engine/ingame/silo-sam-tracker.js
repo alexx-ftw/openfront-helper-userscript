@@ -13,9 +13,13 @@
   var _lastGameObj = null;
   var _lastAudioAlertMs = 0;
   // Auto-fire-building state: firedIds unitId -> true (fired) | "pending" (awaiting
-  // recommendQty); lastGameObj resets firedIds when a new game starts.
-  var _samAutoFireState = { firedIds: {}, lastGameObj: null };
-  var _siloAutoFireState = { firedIds: {}, lastGameObj: null };
+  // recommendQty); plannedImpacts keeps a just-requested impact visible before the
+  // server exposes the missile through game.units(). Both maps reset per game.
+  var _samAutoFireState = { firedIds: {}, plannedImpacts: {}, lastGameObj: null };
+  var _siloAutoFireState = { firedIds: {}, plannedImpacts: {}, lastGameObj: null };
+  var _autoFireBuildingPlannedImpacts = [];
+  var _autoFireBuildingLastGameObj = null;
+  var AUTO_FIRE_PENDING_PLAN_GRACE_MS = 3000;
   var SAM_AUTO_FIRE_SAFETY_MARGIN_TICKS = 10; // ~1s buffer so the nuke lands well before completion
 
   // ---- Settings bridge (reads from Quick Panel cache, loaded before us) ----
@@ -750,23 +754,245 @@
     return _tr("Cannot fire right now.");
   }
 
+  var _AUTO_FIRE_BUILDING_TYPES = [
+    "City",
+    "Defense Post",
+    "SAM Launcher",
+    "Missile Silo",
+    "Port",
+    "Factory",
+  ];
+  var _AUTO_FIRE_NUKE_TYPES = ["Atom Bomb", "Hydrogen Bomb", "MIRV Warhead"];
+
+  function _autoFireUnitTile(unit) {
+    try {
+      return typeof unit.tile === "function" ? unit.tile() : unit.tile;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function _autoFireUnitKey(unit) {
+    try {
+      var id = typeof unit.id === "function" ? unit.id() : unit.id;
+      if (id !== null && id !== void 0) return String(id);
+      if (unit.state && unit.state.id !== null && unit.state.id !== void 0) return String(unit.state.id);
+    } catch (e) {}
+    return null;
+  }
+
+  function _autoFireUnitOwner(unit, game) {
+    try {
+      if (unit && typeof unit.owner === "function") {
+        var direct = unit.owner();
+        if (direct) return direct;
+      }
+    } catch (e) {}
+    return _safeOwner(unit, game);
+  }
+
+  function _autoFireOwnerIsHostile(owner, me) {
+    if (!owner || !me) return false;
+    try {
+      if (owner.smallID && me.smallID && owner.smallID() === me.smallID()) return false;
+    } catch (e) {}
+    try {
+      if (me.isAlliedWith && me.isAlliedWith(owner)) return false;
+    } catch (e) {}
+    try {
+      if (me.isFriendly && me.isFriendly(owner)) return false;
+    } catch (e) {}
+    try {
+      if (me.isOnSameTeam && me.isOnSameTeam(owner)) return false;
+    } catch (e) {}
+    try {
+      if (owner.isFriendly && owner.isFriendly(me)) return false;
+    } catch (e) {}
+    return true;
+  }
+
+  function _autoFireNukeRadius(game, type) {
+    var fallback = type === "Hydrogen Bomb" ? 100 : 30;
+    try {
+      var cfg = game && typeof game.config === "function" ? game.config() : null;
+      var magnitude = cfg && typeof cfg.nukeMagnitudes === "function" ? cfg.nukeMagnitudes(type) : null;
+      var radius = Number(magnitude && (magnitude.outer !== void 0 ? magnitude.outer : magnitude.inner));
+      if (Number.isFinite(radius) && radius > 0) return radius;
+    } catch (e) {}
+    return fallback;
+  }
+
+  function _autoFireGetUnits(game, types) {
+    try {
+      if (!game || typeof game.units !== "function") return [];
+      return game.units.apply(game, types) || [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function _autoFireCollectEnemyBuildings(game, me) {
+    var out = [];
+    var seen = {};
+    for (var t = 0; t < _AUTO_FIRE_BUILDING_TYPES.length; t++) {
+      var units = _autoFireGetUnits(game, [_AUTO_FIRE_BUILDING_TYPES[t]]);
+      for (var i = 0; i < units.length; i++) {
+        var unit = units[i];
+        if (!unit) continue;
+        if (unit.state && unit.state.markedForDeletion === true) continue;
+        var tile = _autoFireUnitTile(unit);
+        if (tile === null || tile === void 0) continue;
+        var owner = _autoFireUnitOwner(unit, game);
+        if (!_autoFireOwnerIsHostile(owner, me)) continue;
+        var key = _autoFireUnitKey(unit) || ("tile:" + String(tile));
+        if (seen[key]) continue;
+        seen[key] = true;
+        out.push({ unit: unit, tile: tile, key: key });
+      }
+    }
+    return out;
+  }
+
+  // Pick a legal impact tile that still hits the primary SAM/Silo and maximizes
+  // enemy buildings inside the atom blast. Candidates are existing hostile building
+  // tiles, so this never invents a coordinate that could be water or unreachable.
+  function _chooseAutoFireImpactTile(game, primaryTile, me) {
+    if (primaryTile === null || primaryTile === void 0) return primaryTile;
+    var radius = _autoFireNukeRadius(game, "Atom Bomb");
+    var radiusSq = radius * radius;
+    var buildings = _autoFireCollectEnemyBuildings(game, me);
+    var primarySeen = false;
+    for (var i = 0; i < buildings.length; i++) {
+      if (buildings[i].tile === primaryTile) {
+        primarySeen = true;
+        break;
+      }
+    }
+    if (!primarySeen) buildings.unshift({ unit: null, tile: primaryTile, key: "primary" });
+
+    var candidates = [];
+    var candidateKeys = {};
+    function addCandidate(tile) {
+      if (tile === null || tile === void 0) return;
+      var key = String(tile);
+      if (candidateKeys[key]) return;
+      candidateKeys[key] = true;
+      candidates.push(tile);
+    }
+    addCandidate(primaryTile);
+    for (var b = 0; b < buildings.length; b++) addCandidate(buildings[b].tile);
+
+    var bestTile = primaryTile;
+    var bestHits = -1;
+    for (var c = 0; c < candidates.length; c++) {
+      var candidate = candidates[c];
+      if (!(_euclideanDistSq(game, candidate, primaryTile) < radiusSq)) continue;
+      var hits = 0;
+      for (var j = 0; j < buildings.length; j++) {
+        if (_euclideanDistSq(game, candidate, buildings[j].tile) < radiusSq) hits++;
+      }
+      // Keep the original target on ties. Adjusting coordinates is useful only
+      // when it adds at least one building to the same blast.
+      if (hits > bestHits) {
+        bestHits = hits;
+        bestTile = candidate;
+      }
+    }
+    return bestTile;
+  }
+
+  function _autoFireNukeImpacts(game, state) {
+    var impacts = [];
+    var units = _autoFireGetUnits(game, _AUTO_FIRE_NUKE_TYPES);
+    for (var i = 0; i < units.length; i++) {
+      var unit = units[i];
+      if (!unit) continue;
+      try {
+        if (typeof unit.isActive !== "function" || !unit.isActive()) continue;
+      } catch (e) { continue; }
+      var targetTile = null;
+      try { targetTile = typeof unit.targetTile === "function" ? unit.targetTile() : unit.targetTile; } catch (e) {}
+      if (targetTile === null || targetTile === void 0) continue;
+      var type = null;
+      try { type = typeof unit.type === "function" ? unit.type() : unit.type; } catch (e) {}
+      impacts.push({ targetTile: targetTile, radius: _autoFireNukeRadius(game, type) });
+    }
+
+    // A just-fired salvo can take a few frames to enter game.units(). Treat its
+    // planned impact as occupied immediately, otherwise neighboring constructions
+    // can each trigger a duplicate salvo during that registration gap.
+    var planned = state && state.plannedImpacts;
+    if (planned && typeof planned === "object") {
+      for (var key in planned) {
+        if (!Object.prototype.hasOwnProperty.call(planned, key)) continue;
+        var plannedTile = planned[key];
+        if (plannedTile === null || plannedTile === void 0) continue;
+        impacts.push({ targetTile: plannedTile, radius: _autoFireNukeRadius(game, "Atom Bomb") });
+      }
+    }
+    for (var p = 0; p < _autoFireBuildingPlannedImpacts.length; p++) {
+      var sharedPlan = _autoFireBuildingPlannedImpacts[p];
+      if (!sharedPlan || sharedPlan.state === state) continue;
+      impacts.push({ targetTile: sharedPlan.tile, radius: _autoFireNukeRadius(game, "Atom Bomb") });
+    }
+    return impacts;
+  }
+
+  // Return true when any active missile — or a just-requested auto-fire salvo —
+  // already puts the target inside its blast radius. Ownership is intentionally
+  // not filtered: an incoming missile still destroys the enemy building, and the
+  // auto-fire should not spend another salvo on a demolition already guaranteed.
+  function _isAutoFireTargetCovered(game, primaryTile, me, state) {
+    if (primaryTile === null || primaryTile === void 0) return false;
+    var impacts = _autoFireNukeImpacts(game, state);
+    for (var i = 0; i < impacts.length; i++) {
+      var radius = impacts[i].radius;
+      if (_euclideanDistSq(game, primaryTile, impacts[i].targetTile) < radius * radius) return true;
+    }
+    return false;
+  }
+
   // Fire-and-forget one auto-fire shot at `tile`, tracked via `state.firedIds[id]`
   // so it is never re-attempted (pending while recommendQty/fireNow are in flight,
   // true once fired, deleted again on failure so a later tick can retry).
-  function _autoFireAttempt(state, id, tile, owner, me, maxQty, targetLabel) {
+  function _autoFireAttempt(state, id, tile, impactTile, owner, me, maxQty, targetLabel) {
+    if (!state.plannedImpacts || typeof state.plannedImpacts !== "object") state.plannedImpacts = {};
     state.firedIds[id] = "pending";
-    window.__OFH_atomBatch.recommendQty(tile).then(function(rec) {
+    state.plannedImpacts[id] = impactTile;
+    var sharedPlan = { state: state, id: id, tile: impactTile };
+    _autoFireBuildingPlannedImpacts.push(sharedPlan);
+    var releasePlan = function() {
+      delete state.plannedImpacts[id];
+      for (var i = _autoFireBuildingPlannedImpacts.length - 1; i >= 0; i--) {
+        if (_autoFireBuildingPlannedImpacts[i] === sharedPlan) _autoFireBuildingPlannedImpacts.splice(i, 1);
+      }
+    };
+    var clearPlan = function() {
+      releasePlan();
+      delete state.firedIds[id];
+    };
+    window.__OFH_atomBatch.recommendQty(impactTile).then(function(rec) {
       if (!rec || !rec.ok || rec.recommended > maxQty) {
-        delete state.firedIds[id];
+        clearPlan();
         return;
       }
-      return window.__OFH_atomBatch.fireNow(tile, rec.recommended).then(function(res) {
+      return window.__OFH_atomBatch.fireNow(impactTile, rec.recommended).then(function(res) {
+        if (!res || !(Number(res.fired) > 0)) {
+          clearPlan();
+          return;
+        }
         state.firedIds[id] = true;
+        // Keep the impact reserved briefly while the server registers the nuke.
+        // Once active, the real game.units() scan takes over; if registration fails
+        // or the missile is intercepted, a neighboring target may be reconsidered.
+        if (window && typeof window.setTimeout === "function") {
+          window.setTimeout(releasePlan, AUTO_FIRE_PENDING_PLAN_GRACE_MS);
+        }
         var label = _playerLabel(owner, me);
         _toast("🚀 " + _tr("Auto-fired") + " " + res.fired + " " + _tr("atom bomb(s)") + " → " + label + "'s " + targetLabel, "rgba(0,150,80,0.92)");
       });
     }).catch(function() {
-      delete state.firedIds[id];
+      clearPlan();
     });
   }
 
@@ -791,8 +1017,15 @@
     if (game !== state.lastGameObj) {
       state.lastGameObj = game;
       state.firedIds = {};
+      state.plannedImpacts = {};
+      if (game !== _autoFireBuildingLastGameObj) {
+        _autoFireBuildingLastGameObj = game;
+        _autoFireBuildingPlannedImpacts = [];
+      }
       return; // fresh game — re-evaluate from next tick
     }
+
+    if (!state.plannedImpacts || typeof state.plannedImpacts !== "object") state.plannedImpacts = {};
 
     if (!window.__OFH_atomBatch || typeof window.__OFH_atomBatch.recommendQty !== "function") return;
     if (opts.raceConstruction && typeof window.__OFH_atomBatch.estimateFlightTicks !== "function") return;
@@ -845,7 +1078,9 @@
         if (flightTicks == null || flightTicks >= remainingTicks - SAM_AUTO_FIRE_SAFETY_MARGIN_TICKS) continue;
       }
 
-      _autoFireAttempt(state, id, tile, owner, me, maxQty, opts.targetLabel);
+      if (_isAutoFireTargetCovered(game, tile, me, state)) continue;
+      var impactTile = _chooseAutoFireImpactTile(game, tile, me);
+      _autoFireAttempt(state, id, tile, impactTile, owner, me, maxQty, opts.targetLabel);
     }
   }
 
