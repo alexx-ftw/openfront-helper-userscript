@@ -216,6 +216,14 @@ existing rank-then-probe transport boundary and the Early Game 300-tick ETA gate
 With `winFixes` disabled, these additions are inactive and the faithful Nation
 flow remains unchanged.
 
+### Custom spawn-phase resource safety
+
+The spawn markers and visual heatmap use only their bounded coarse scorer. They
+must not initialize the exact map-wide candidate index; that index is reserved
+for the bot's smart-spawn selector. The exact path estimates its typed-array
+peak and falls back to the visual scorer when the estimate exceeds 32 MiB, so a
+large map cannot turn spawn observation into a tab-wide allocation.
+
 ### Custom team donation clan priority
 
 With `winFixes` enabled, the existing team-only troop donation keeps its needy

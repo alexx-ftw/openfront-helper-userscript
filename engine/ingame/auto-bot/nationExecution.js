@@ -265,8 +265,9 @@
     //        (which excludes coast/edge tiles) is the faithful client stand-in for
     //        "interior tile with a full land neighbourhood".
     //    Emits the UI spawn intent (the worker re-validates the chosen tile).
-    // "x,y" grid key of the current #1 spawn spot, or null. Prefers the live
-    // heatmap topSpots (what the player sees) and falls back to computing them.
+    // "x,y" grid key of the current #1 spawn spot, or null. Prefers the exact
+    // selector when its map-sized index is affordable, then the live visual
+    // heatmap topSpots and its bounded fallback scorer.
     currentSpawnTopKey() {
       if (!state.settings.smartSpawn) return null;
       let ts = null;
@@ -392,9 +393,9 @@
         return null;
       };
 
-      // Prefer spawning at the spawn-heatmap's #1 circle so the bot lands exactly
-      // where the player sees it. Use the LIVE displayed topSpots if the overlay
-      // is on (identical to what's on screen), else compute them.
+      // Prefer the exact selector when its bounded map index is available. For
+      // larger maps, use the LIVE displayed topSpots if the overlay is on, else
+      // compute the bounded visual fallback.
       if (useSmart) {
         let topSpots = null;
         try {

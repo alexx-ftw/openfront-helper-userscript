@@ -26,6 +26,12 @@
   const SPAWN_HEATMAP_TEAM_OVERLAP_MAX = 0.4;
   const SPAWN_HEATMAP_TEAM_CENTROID_R = 260;
 
+  // The exact selector keeps ten map-sized typed arrays plus transient terrain
+  // and occupancy copies. Keep its optional peak allocation below 32 MiB; larger maps
+  // use the already bounded visual scorer instead of risking a tab-wide OOM.
+  const SPAWN_INDEX_ESTIMATED_BYTES_PER_CELL = 24;
+  const SPAWN_INDEX_MEMORY_BUDGET_BYTES = 32 * 1024 * 1024;
+
   // Weights — exact match with Tactical's visual heatmap. The bot's exact
   // selector uses the replay-free robust objective below; these weights remain
   // only as a visual/fallback score.
@@ -210,6 +216,15 @@
     const api = getSpawnIndexApi();
     const td = getSpawnTerrain(game);
     if (!api || !td || typeof api.create !== "function") return null;
+    const mapSize = td.W * td.H;
+    if (
+      !Number.isSafeInteger(mapSize) ||
+      mapSize <= 0 ||
+      mapSize * SPAWN_INDEX_ESTIMATED_BYTES_PER_CELL >
+        SPAWN_INDEX_MEMORY_BUDGET_BYTES
+    ) {
+      return null;
+    }
     const src = (game && game.__src) || game;
     if (
       _spawnCandidateIndexSrcRef !== src ||
@@ -948,24 +963,19 @@
       return;
     }
 
-    ensureSpawnCandidateIndex(game);
     const me = game.myPlayer ? game.myPlayer() : null;
-    const exactTopSpots = computeExactSpawnTopSpotsForBot(game, me);
 
-    // Phase 1: static candidates (shared with the bot, computed once per map).
+    // Phase 1: static candidates for the visual overlay. The bot's exact
+    // selector is intentionally kept out of this path: spawn markers are on by
+    // default and must never allocate map-sized index buffers by themselves.
     const candidates = ensureSpawnStaticCandidates(game);
     if (!candidates || candidates.length === 0) {
-      _spawnHeatmapData = exactTopSpots && exactTopSpots.length > 0
-        ? { scores: [], topSpots: exactTopSpots, maxScore: 0 }
-        : null;
+      _spawnHeatmapData = null;
       return;
     }
 
     // Phase 2: dynamic scoring using live game-API player positions.
     _spawnHeatmapData = computeDynamicScores(game, candidates, me);
-    if (exactTopSpots && exactTopSpots.length > 0) {
-      _spawnHeatmapData.topSpots = exactTopSpots;
-    }
   }
 
   // ONE static-candidate cache shared by the overlay and the auto-bot, keyed on
@@ -999,9 +1009,10 @@
       : null;
   }
 
-  // Shared scorer entry point for the auto-bot. Computes the SAME topSpots the
-  // heatmap draws, so the bot spawns exactly where the #1 circle appears. Reuses
-  // the shared static-candidate cache (works even if the heatmap is disabled).
+  // Shared fallback scorer entry point for the auto-bot. It computes the same
+  // bounded visual topSpots the heatmap draws when the exact map-wide index is
+  // unavailable or over budget. Reuses the shared static-candidate cache (works
+  // even if the heatmap is disabled).
   //
   // Per-tick memo: the bot calls this twice in the same tick (currentSpawnTopKey
   // then pickSpawnCenter) with identical inputs, and if the overlay is on it also

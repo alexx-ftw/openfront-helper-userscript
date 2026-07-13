@@ -40,6 +40,13 @@ generic Terra Nullius land attack still has no tile argument in the client inten
 so the coast-specific direction is expressed through a coastal tribe target or an
 explicit open-ocean landing rather than by inventing a new attack API.
 
+## Spawn-phase resource safety
+
+Spawn markers and the visual heatmap stay on the bounded coarse scorer. The
+map-wide exact candidate index is created only when the bot's smart-spawn
+selector needs it; on large maps its estimated typed-array peak is capped at
+32 MiB and the bot falls back to the visual ranking.
+
 ## Team donation policy
 
 When `winFixes` is enabled, automatic troop donations remain restricted to needy
