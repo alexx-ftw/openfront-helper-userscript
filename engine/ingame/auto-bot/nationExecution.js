@@ -166,11 +166,14 @@
         this.initializeBehaviors();
         if (this.feat("expand")) {
           const openingWinFix = state.settings.winFixes === true;
-          await this.attackBehavior.forceSendAttack(
+          const openingAttackSent = await this.attackBehavior.forceSendAttack(
             this.mg.terraNullius(),
             openingWinFix ? 0.6 : 0.5,
           );
-          this.openingLandBurstPending = openingWinFix;
+          // The burst already occupies the opening attack slot. Do not run a
+          // second immediate early-game decision against the same troop stock
+          // before the first execution has removed its troops from the player.
+          this.openingLandBurstPending = openingWinFix && !openingAttackSent;
         }
         this.lastSeenTick = ticks;
         return;

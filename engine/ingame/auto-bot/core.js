@@ -101,7 +101,6 @@
     boatProbeFrac: 0.01, // the INITIAL probe + every TRANSIT boat carries just 1% of troops:
     // a warship can only sink 1% mid-sea, so crossing the water is cheap/safe. The user
     // wants every boat to CROSS at 1%.
-    boatProbeMinTroops: 1000, // tiny floor so a 1% boat is never literally 0 troops
     boatSurgeFrac: 0.25, // …BUT once a probe LANDS and we hold the beachhead (the route is
     // now proven safe), the follow-up "surge" pours in a BIG reinforcement — 25% of troops —
     // to actually CONQUER outward from the beachhead. The user's design: "gửi 1% an toàn khi
@@ -327,7 +326,7 @@
     // it here initialises it exactly when it is needed.
     // Only these USER-FACING keys are restored from localStorage; every other DEFAULT
     // (tuning: boat/donate/mirv fractions, throttles…) always comes from the code, so an
-    // old saved value (e.g. boatProbeMinTroops=8000) can't mask a new default (1000).
+    // old saved tuning values can't mask the current defaults.
     const PERSISTED_KEYS = [
       "enabled",
       "difficulty",

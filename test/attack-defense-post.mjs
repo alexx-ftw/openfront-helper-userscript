@@ -225,11 +225,45 @@ const boatTribe = {
   borderTiles: () => new Set([2]),
 };
 const boatBehavior = new sandbox.AttackBehavior({}, boatGame, boatPlayer, 0.5, 0.3, 0.1, {}, {});
+assert.equal(
+  boatBehavior.getEarlyGameProbeTroops(0.01),
+  100,
+  "a boat probe must use the interface minimum of 1% without an absolute troop floor",
+);
+const lowTroopPlayer = { ...boatPlayer, troops: () => 5000 };
+const lowTroopBehavior = new sandbox.AttackBehavior(
+  {},
+  boatGame,
+  lowTroopPlayer,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+boatIntent = null;
+assert.equal(
+  lowTroopBehavior.emitBoat(2, lowTroopBehavior.getEarlyGameProbeTroops(0.01), "test probe"),
+  true,
+);
+assert.deepEqual(
+  boatIntent,
+  [2, 50],
+  "a small early army must send 1% instead of being forced to 8000 troops",
+);
 assert.equal(await boatBehavior.sendBoatAttack(boatTribe, null, 50), true);
 assert.deepEqual(
   boatIntent,
   [2, 101],
   "an undersized planned boat attack must be raised to the simulated tribe-capture force",
+);
+
+boatIntent = null;
+assert.equal(await boatBehavior.sendBoatAttack(boatTribe, null, 9000), true);
+assert.deepEqual(
+  boatIntent,
+  [2, 8800],
+  "a planned boat attack must preserve the early-game live reserve",
 );
 
 boatIntent = null;

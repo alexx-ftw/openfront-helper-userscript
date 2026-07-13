@@ -101,6 +101,10 @@ const openingExpansionPlan = sandbox.calculateEarlyGameExpansionPlan({
 assert.equal(openingExpansionPlan.shouldAttackNow, true);
 assert.ok(openingExpansionPlan.commitTroops > 0);
 assert.ok(openingExpansionPlan.commitTroops < openingExpansionPlan.ownTroops);
+assert.ok(
+  openingExpansionPlan.commitTroops <=
+    openingExpansionPlan.ownTroops - openingExpansionPlan.reserveTroops,
+);
 assert.ok(openingExpansionPlan.generationRate > 0);
 
 const perishableExpansionPlan = sandbox.calculateEarlyGameExpansionPlan({
@@ -150,6 +154,21 @@ assert.equal(
   underfundedTribePlan.shouldAttackNow,
   false,
   "an underfunded tribe attack must wait instead of leaving a remnant",
+);
+
+const oversizedOpeningBurstPlan = sandbox.calculateEarlyGameExpansionPlan({
+  ownTroops: 10000,
+  maxTroops: 100000,
+  targetType: "tribe",
+  targetTroops: 100,
+  captureTroops: 9000,
+  initialBurst: true,
+});
+assert.equal(oversizedOpeningBurstPlan.commitTroops, 6000);
+assert.equal(
+  oversizedOpeningBurstPlan.shouldAttackNow,
+  false,
+  "the opening burst must not empty the player when the capture force is unavailable",
 );
 
 const assertAutoDonateStatus = (actual, expected) =>
@@ -649,6 +668,10 @@ assert.match(attackSource, /maybeEarlyOceanBoat/);
 assert.match(attackSource, /calculateEarlyGameExpansionPlan/);
 assert.match(attackSource, /frontierCompetitionScore/);
 assert.match(attackSource, /plannedTroops/);
+assert.match(attackSource, /getEarlyGameLiveReserveTroops/);
+assert.match(attackSource, /getEarlyGameProbeTroops/);
+assert.doesNotMatch(attackSource, /boatProbeMinTroops/);
+assert.doesNotMatch(coreSource, /boatProbeMinTroops/);
 assert.match(attackSource, /getAutoDonateExpansionStatus/);
 assert.match(attackSource, /pauseDonateDuringExpansion/);
 assert.match(attackSource, /estimateEarlyGameTribeBoatEta/);
@@ -658,6 +681,8 @@ assert.match(panelSource, /data-cfg="pauseDonateDuringExpansion"/);
 assert.match(panelSource, /ab-feat-mini\.paused/);
 assert.match(nationSource, /openingLandBurstPending/);
 assert.match(nationSource, /openingWinFix \? 0\.6 : 0\.5/);
+assert.match(nationSource, /openingAttackSent/);
+assert.match(nationSource, /openingWinFix && !openingAttackSent/);
 assert.match(nationSource, /nextExpansionTick/);
 assert.match(attackSource, /rankTeamDonationCandidates\(needy\)/);
 assert.match(attackSource, /playersShareClanTag/);

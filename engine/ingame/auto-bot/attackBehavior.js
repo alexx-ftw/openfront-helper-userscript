@@ -71,6 +71,9 @@
   const EARLY_TRIBE_BORDER_FETCH_CONCURRENCY = 4;
   const EARLY_TRIBE_BOAT_ETA_TARGETS = 4;
   const EARLY_GAME_TRIBE_CHAIN_RADIUS = 120;
+  // A planned opening attack must leave a live force even when a stale plan or
+  // a pending execution still reports the pre-attack troop total.
+  const EARLY_GAME_MIN_LIVE_RESERVE_RATIO = 0.12;
   // OpenFront's Config.attackLogic applies these effects when an operational
   // enemy Defense Post is within defensePostRange() of the tile being taken.
   // Keep fallbacks here because older client views may not expose the newer
@@ -1733,10 +1736,8 @@
           continue;
         }
 
-        const troops = Math.max(
-          this.player.troops() * (state.settings.boatProbeFrac || 0.01),
-          state.settings.boatProbeMinTroops || 1000,
-        );
+        const troops = this.getEarlyGameProbeTroops(state.settings.boatProbeFrac);
+        if (troops < 1) return false;
         if (this.emitBoat(target.tile, troops, "🏝️ Ocean coast grab")) {
           state.earlyGame.oceanTarget = {
             distance: target.dist,
@@ -1891,14 +1892,14 @@
       const ctors = discoverCtors(getEventBus());
       // USER (winFixes): EVERY boat we send is a CHEAP 1% probe, never a big invasion
       // force. The faithful random boat sends troops/5 (20%) — which the user kept
-      // seeing as "boats with lots of troops". Cap it at boatProbeFrac (1%) with the
-      // same floor as the opportunistic landings. (winFixes off → faithful troops/5.)
+      // seeing as "boats with lots of troops". Cap it at boatProbeFrac (minimum 1%).
+      // There is deliberately no absolute troop floor: the interface minimum is a
+      // percentage, so a small early army must be allowed to send a small probe.
+      // (winFixes off → faithful troops/5.)
       const troops = state.settings.winFixes
-        ? Math.max(
-            this.player.troops() * (state.settings.boatProbeFrac || 0.01),
-            state.settings.boatProbeMinTroops || 8000,
-          )
+        ? this.getEarlyGameProbeTroops(state.settings.boatProbeFrac)
         : this.player.troops() / 5;
+      if (troops < 1) return;
       if (!(await this.allowEarlyGameBoat(dst))) return;
       if (ctors.boat && emitIntent(ctors.boat, dst, troops)) {
         state.stats.attacks++;
@@ -2155,9 +2156,8 @@
         return false;
       }
 
-      const frac = state.settings.boatProbeFrac || 0.01;
-      const floor = state.settings.boatProbeMinTroops || 8000;
-      const troops = Math.max(this.player.troops() * frac, floor);
+      const troops = this.getEarlyGameProbeTroops(state.settings.boatProbeFrac);
+      if (troops < 1) return false;
       const label = dstFallout
         ? "☢️ Nuked-coast grab"
         : lowFillOk
@@ -2409,8 +2409,16 @@
       if (!(state.settings.features && state.settings.features.boat)) {
         return false;
       }
+      const requestedTroops = Number(troops);
+      if (!Number.isFinite(requestedTroops) || requestedTroops < 1) {
+        return false;
+      }
+      const safeTroops = state.settings.winFixes
+        ? Math.min(requestedTroops, this.getEarlyGameSpendableTroops())
+        : requestedTroops;
+      if (safeTroops < 1) return false;
       const ctors = discoverCtors(getEventBus());
-      if (ctors.boat && emitIntent(ctors.boat, dst, troops)) {
+      if (ctors.boat && emitIntent(ctors.boat, dst, safeTroops)) {
         state.stats.attacks++;
         setLastAction(tr(label), "naval");
         return true;
@@ -3492,7 +3500,9 @@
       if (ctors.attack && emitIntent(ctors.attack, targetId, troops)) {
         state.stats.attacks++;
         setLastAction(tr("⚔️ Attack"), "combat");
+        return true;
       }
+      return false;
     }
 
     // sendAttack — AiAttackBehavior (now async via sendBoatAttack/
@@ -3621,10 +3631,7 @@
         // USER (winFixes): EVERY boat is a cheap 1% probe — never a 20% dump (troops/5).
         // Even grabbing empty coastal TN goes by a 1% landing. (winFixes off → faithful.)
         const troops = state.settings.winFixes
-          ? Math.max(
-              this.player.troops() * (state.settings.boatProbeFrac || 0.01),
-              state.settings.boatProbeMinTroops || 8000,
-            )
+          ? this.getEarlyGameProbeTroops(state.settings.boatProbeFrac)
           : this.player.troops() / 5;
         if (troops < 1) return false;
 
@@ -3754,9 +3761,14 @@
         if (botTarget) {
           this.botAttackTroopsSent = botAttackTroopsSentBefore;
         }
+        const spendableTroops = this.getEarlyGameSpendableTroops();
+        if (botTarget && captureFloor > spendableTroops) {
+          return false;
+        }
         // Never let a stale/undersized plan downgrade a tribal capture to a
-        // probe. If the calculated full-capture force is available, use it.
-        troops = Math.min(this.player.troops(), Math.max(planned, captureFloor));
+        // probe. If the calculated force is available, use it, but preserve a
+        // live reserve even when the current troop total is stale.
+        troops = Math.min(spendableTroops, Math.max(planned, captureFloor));
         if (botTarget) {
           this.botAttackTroopsSent += troops;
         }
@@ -3874,10 +3886,7 @@
           botDefensePostProfile,
         );
       } else if (state.settings.winFixes) {
-        troops = Math.max(
-          this.player.troops() * (state.settings.boatProbeFrac || 0.01),
-          state.settings.boatProbeMinTroops || 8000,
-        );
+        troops = this.getEarlyGameProbeTroops(state.settings.boatProbeFrac);
       } else if (botTarget) {
         troops = this.calculateBotAttackTroops(target, this.player.troops() / 5);
       } else {
@@ -3917,9 +3926,14 @@
           return false;
         }
         if (botTarget) this.botAttackTroopsSent = botAttackTroopsSentBefore;
+        const spendableTroops = this.getEarlyGameSpendableTroops();
+        if (botTarget && captureFloor > spendableTroops) {
+          return false;
+        }
         // Planned early-game commitments must remain full tribal captures;
-        // otherwise the global boat-probe amount can leave a tiny remnant.
-        troops = Math.min(this.player.troops(), Math.max(planned, captureFloor));
+        // otherwise the global boat-probe amount can leave a tiny remnant. A
+        // twelve-percent live reserve still applies to every planned landing.
+        troops = Math.min(spendableTroops, Math.max(planned, captureFloor));
         if (botTarget) this.botAttackTroopsSent += troops;
       }
 
@@ -3969,6 +3983,31 @@
         competitorTroops: earlyGameCandidate.competitorTroops,
         contestPressure: earlyGameCandidate.foodRaceValue,
       });
+    }
+
+    getEarlyGameLiveReserveTroops() {
+      const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
+      return ownTroops * EARLY_GAME_MIN_LIVE_RESERVE_RATIO;
+    }
+
+    getEarlyGameSpendableTroops() {
+      const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
+      const liveReserve = state.settings.winFixes
+        ? this.getEarlyGameLiveReserveTroops()
+        : 0;
+      return Math.max(0, ownTroops - liveReserve);
+    }
+
+    getEarlyGameProbeTroops(fraction = 0.01) {
+      const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
+      const configuredFraction = Number(fraction);
+      const probeFraction = Number.isFinite(configuredFraction)
+        ? Math.max(0.01, configuredFraction)
+        : 0.01;
+      return Math.min(
+        ownTroops * probeFraction,
+        this.getEarlyGameSpendableTroops(),
+      );
     }
 
     getBotCaptureSimulationTiles(target) {

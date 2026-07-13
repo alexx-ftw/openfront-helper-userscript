@@ -562,7 +562,7 @@
     const plannedCommitCeiling = own * maxCommitFraction;
     const minimumCommit = target === "tribe" ? requiredTroops : plannedCommitCeiling;
     const commitTroops = initialBurst
-      ? Math.min(own, Math.max(plannedCommitCeiling, minimumCommit))
+      ? Math.min(own, plannedCommitCeiling)
       : Math.min(availableTroops, Math.max(plannedCommitCeiling, minimumCommit));
     const hasFullTribeCommit = target !== "tribe" || commitTroops >= requiredTroops;
     const shouldAttackNow =
