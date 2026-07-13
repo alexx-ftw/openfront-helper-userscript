@@ -68,6 +68,7 @@
   // Early-game tribe scoring may need one border snapshot per candidate. Keep the
   // async enrichment bounded so a crowded tribe map cannot starve the combat tick.
   const EARLY_TRIBE_CANDIDATES = 8;
+  const EARLY_GAME_TRIBE_CHAIN_RADIUS = 120;
 
   class AttackBehavior {
     constructor(
@@ -90,6 +91,10 @@
       this.emojiBehavior = emojiBehavior;
 
       this.botAttackTroopsSent = 0;
+      // Small per-player memory used by the early-game food-race policy. It is
+      // intentionally local to this persistent behavior instance and bounded to
+      // the players visible in the current game snapshot.
+      this.earlyFoodMovement = new Map();
     }
 
     // maybeAttack — AiAttackBehavior.maybeAttack (now async: it awaits sendAttack,
@@ -214,10 +219,10 @@
       }
 
       // WIN-FIX (NOT in src): during the concrete opening window, rank nearby
-      // tribes by open-ocean access, then by encirclement/blocking value and only
-      // then by capture cost/distance. This keeps a cheap coastal chokepoint from
-      // losing to an arbitrary inland bot. If no ranked target can be actuated,
-      // fall back to the existing aggressive bot pass below.
+      // tribes by open-ocean access, continuation food, and the rival food-race
+      // signal before the encirclement/blocking and capture-cost tie-breakers.
+      // If no ranked target can be actuated, fall back to the existing aggressive
+      // bot pass below.
       if (
         expandOn &&
         state.settings.winFixes &&
@@ -338,6 +343,9 @@
         oceanDistance: Number.isFinite(candidate.oceanDistance)
           ? candidate.oceanDistance
           : null,
+        futureFoodCount: candidate.futureFoodCount,
+        futureFoodAccess: Number(candidate.futureFoodAccess.toFixed(3)),
+        foodRaceValue: Number(candidate.foodRaceValue.toFixed(3)),
         encirclement: Number(candidate.encirclement.toFixed(3)),
         blockValue: Number(candidate.blockValue.toFixed(3)),
         cheapCapture: Number(candidate.cheapCapture.toFixed(3)),
@@ -351,7 +359,9 @@
 
       for (const candidate of ranked) {
         try {
-          if (await this.sendAttack(candidate.player)) return true;
+          if (await this.sendAttack(candidate.player, false, null, candidate)) {
+            return true;
+          }
         } catch (error) {
           console.warn("[EarlyGame] tribe target failed:", candidate.id, error);
         }
@@ -380,6 +390,10 @@
       const otherPlayers = this.game.players();
       const myCenter = this.getPlayerCenter(this.player);
       const mySid = this.player.smallID();
+      const competitorProfiles = this.getEarlyGameCompetitorProfiles(
+        otherPlayers,
+        mySid,
+      );
       const candidates = [];
 
       for (const tribe of nearbyTribes) {
@@ -475,6 +489,12 @@
           1,
           directBlock + nearbyContesters * 0.15 + incomingContesters * 0.25,
         );
+        const foodRace = this.getEarlyGameFoodRaceSignals({
+          tribe,
+          tribeSid,
+          tribeCenter,
+          competitorProfiles,
+        });
         const oceanDistance = findNearestOceanCoastDistance({
           starts: border,
           neighbors: (tile) => this.game.neighbors(tile),
@@ -494,11 +514,320 @@
           cheapCapture: Math.max(0, 1 - Math.min(1, troopRatio)),
           landBorder: ownEdges > 0,
           distance,
+          center: tribeCenter,
+          futureFoodCount: 0,
+          futureFoodTotal: 0,
+          meanFutureFoodDistance: Infinity,
+          futureFoodChainRadius: EARLY_GAME_TRIBE_CHAIN_RADIUS,
+          futureFoodAccess: null,
+          foodRaceValue: foodRace.foodRaceValue,
+          contestPressure: foodRace.contestPressure,
+          competitorTroops: foodRace.competitorTroops,
+          competitorProgress: foodRace.competitorProgress,
+          competitorVector: foodRace.competitorVector,
+          directAttackers: foodRace.directAttackers,
+          incomingAttackers: foodRace.incomingAttackers,
           contestingPlayers:
-            externalSids.size + nearbyContesters + incomingContesters,
+            Math.max(
+              externalSids.size + nearbyContesters + incomingContesters,
+              foodRace.contestingPlayers,
+            ),
         });
       }
+
+      // A bounded continuation pass estimates how many other neutral tribes will
+      // be reachable from the newly acquired frontier. This is deliberately a
+      // geometric opportunity signal, not a second attack loop.
+      const futureFoodTotal = Math.max(0, candidates.length - 1);
+      for (const candidate of candidates) {
+        const distances = candidates
+          .filter((other) => other.id !== candidate.id)
+          .map((other) =>
+            this.earlyGameCenterDistance(candidate.center, other.center),
+          )
+          .filter(
+            (distanceToFood) =>
+              Number.isFinite(distanceToFood) &&
+              distanceToFood <= EARLY_GAME_TRIBE_CHAIN_RADIUS,
+          );
+        candidate.futureFoodCount = distances.length;
+        candidate.futureFoodTotal = futureFoodTotal;
+        candidate.meanFutureFoodDistance =
+          distances.length > 0
+            ? distances.reduce((sum, value) => sum + value, 0) / distances.length
+            : Infinity;
+        candidate.futureFoodAccess = calculateEarlyGameContinuationValue(candidate);
+      }
       return candidates;
+    }
+
+    // Keep a bounded, best-effort profile of how visible rivals are expanding.
+    // Territory-centre movement and tile growth are useful leading indicators
+    // before an outgoing attack appears in the target's incoming snapshot.
+    getEarlyGameCompetitorProfiles(players, mySid) {
+      const profiles = [];
+      const seen = new Set();
+      const history = this.earlyFoodMovement;
+      let tick = 0;
+      try {
+        tick = Number(this.game.ticks?.()) || 0;
+      } catch (_e) {
+        /* older adapters do not expose ticks on the game wrapper */
+      }
+
+      for (const other of players || []) {
+        try {
+          if (!other || !other.isPlayer?.() || !other.isAlive?.()) continue;
+          const sid = other.smallID?.();
+          if (sid == null || sid === mySid) continue;
+
+          const location = other.nameLocation?.() || null;
+          const x = Number(location?.x);
+          const y = Number(location?.y);
+          const tiles = Math.max(0, Number(other.numTilesOwned?.()) || 0);
+          const previous = history.get(sid);
+          const hasLocation = Number.isFinite(x) && Number.isFinite(y);
+          const previousHasLocation =
+            previous &&
+            Number.isFinite(previous.x) &&
+            Number.isFinite(previous.y);
+          const dx = hasLocation && previousHasLocation ? x - previous.x : 0;
+          const dy = hasLocation && previousHasLocation ? y - previous.y : 0;
+          const tickDelta = previous
+            ? Math.max(1, tick - previous.tick)
+            : 1;
+          const tileDelta = previous
+            ? Math.max(0, tiles - previous.tiles)
+            : 0;
+          const progress = previous
+            ? Math.min(
+                1,
+                tileDelta /
+                  Math.max(2, previous.tiles * 0.15, tickDelta * 2),
+              )
+            : 0;
+
+          const outgoingTargets = [];
+          let outgoing = [];
+          try {
+            outgoing = other.outgoingAttacks?.() || [];
+          } catch (_e) {
+            /* attack snapshots are optional on older client builds */
+          }
+          for (const attack of outgoing) {
+            try {
+              if (attack.retreating?.() === true) continue;
+              const target = attack.target?.();
+              const targetSid = target?.smallID?.();
+              if (targetSid == null) continue;
+              outgoingTargets.push({
+                targetSid,
+                target,
+                troops: Math.max(0, Number(attack.troops?.()) || 0),
+                location: target.nameLocation?.() || null,
+              });
+            } catch (_e) {
+              /* one malformed attack must not blind the rest of the scan */
+            }
+          }
+
+          profiles.push({
+            sid,
+            location: hasLocation ? { x, y } : null,
+            dx,
+            dy,
+            progress,
+            troops: Math.max(0, Number(other.troops?.()) || 0),
+            outgoingTargets,
+          });
+          seen.add(sid);
+          history.set(sid, { tick, x, y, tiles });
+        } catch (_e) {
+          /* player wrappers can disappear while a tick is being assembled */
+        }
+      }
+
+      for (const sid of history.keys()) {
+        if (!seen.has(sid)) history.delete(sid);
+      }
+      return profiles;
+    }
+
+    earlyGameCenterDistance(a, b) {
+      if (
+        !a ||
+        !b ||
+        !Number.isFinite(Number(a.x)) ||
+        !Number.isFinite(Number(a.y)) ||
+        !Number.isFinite(Number(b.x)) ||
+        !Number.isFinite(Number(b.y))
+      ) {
+        return Infinity;
+      }
+      return (
+        Math.abs(Number(a.x) - Number(b.x)) +
+        Math.abs(Number(a.y) - Number(b.y))
+      );
+    }
+
+    earlyGameVectorAlignment(origin, target, dx, dy) {
+      if (!origin || !target) return 0;
+      const targetX = Number(target.x) - Number(origin.x);
+      const targetY = Number(target.y) - Number(origin.y);
+      const movementX = Number(dx) || 0;
+      const movementY = Number(dy) || 0;
+      const targetLength = Math.hypot(targetX, targetY);
+      const movementLength = Math.hypot(movementX, movementY);
+      if (!Number.isFinite(targetLength) || targetLength <= 0) return 0;
+      if (!Number.isFinite(movementLength) || movementLength <= 0) return 0;
+      return Math.max(
+        0,
+        Math.min(
+          1,
+          (targetX * movementX + targetY * movementY) /
+            (targetLength * movementLength),
+        ),
+      );
+    }
+
+    // Turn current attacks plus competitor motion into the candidate fields used
+    // by the pure early-game ranker. Direct outgoing/incoming attacks are merged
+    // by player id so the same attack is not counted twice.
+    getEarlyGameFoodRaceSignals({
+      tribe,
+      tribeSid,
+      tribeCenter,
+      competitorProfiles,
+    }) {
+      const records = new Map();
+      const incomingAttackers = new Set();
+      const directAttackers = new Set();
+      const recordFor = (sid) => {
+        if (!records.has(sid)) {
+          records.set(sid, {
+            troops: 0,
+            progress: 0,
+            vector: 0,
+          });
+        }
+        return records.get(sid);
+      };
+
+      try {
+        const incoming = tribe.incomingAttacks?.() || [];
+        for (const attack of incoming) {
+          if (attack.retreating?.() === true) continue;
+          const attacker = attack.attacker?.();
+          const sid = attacker?.smallID?.();
+          if (sid == null || sid === this.player.smallID() || sid === tribeSid) {
+            continue;
+          }
+          const record = recordFor(sid);
+          record.troops = Math.max(
+            record.troops,
+            Math.max(0, Number(attack.troops?.()) || 0),
+          );
+          incomingAttackers.add(sid);
+        }
+      } catch (_e) {
+        /* attack snapshots are optional on older client builds */
+      }
+
+      for (const profile of competitorProfiles || []) {
+        if (profile.sid === tribeSid) continue;
+        const direct = profile.outgoingTargets.filter(
+          (attack) => attack.targetSid === tribeSid,
+        );
+        const directRecord = direct.length > 0 ? recordFor(profile.sid) : null;
+        if (directRecord) {
+          directAttackers.add(profile.sid);
+          directRecord.troops = Math.max(
+            directRecord.troops,
+            direct.reduce((sum, attack) => sum + attack.troops, 0),
+          );
+          directRecord.vector = 1;
+          directRecord.progress = Math.max(
+            directRecord.progress,
+            profile.progress,
+          );
+        }
+
+        let alignment = directRecord ? 1 : 0;
+        if (!directRecord && profile.location && tribeCenter) {
+          alignment = this.earlyGameVectorAlignment(
+            profile.location,
+            tribeCenter,
+            profile.dx,
+            profile.dy,
+          );
+          for (const attack of profile.outgoingTargets) {
+            const targetLocation = attack.location;
+            alignment = Math.max(
+              alignment,
+              this.earlyGameVectorAlignment(
+                profile.location,
+                tribeCenter,
+                Number(targetLocation?.x) - Number(profile.location.x),
+                Number(targetLocation?.y) - Number(profile.location.y),
+              ) * 0.9,
+            );
+          }
+          const distance = this.earlyGameCenterDistance(
+            profile.location,
+            tribeCenter,
+          );
+          if (Number.isFinite(distance)) {
+            alignment *= Math.max(0, Math.min(1, 1 - distance / 160));
+          } else {
+            alignment = 0;
+          }
+          if (alignment > 0.35 && profile.progress > 0) {
+            const directional = recordFor(profile.sid);
+            directional.vector = Math.max(directional.vector, alignment);
+            directional.progress = Math.max(
+              directional.progress,
+              profile.progress,
+            );
+            directional.troops = Math.max(
+              directional.troops,
+              profile.troops * 0.1 * alignment,
+            );
+          }
+        }
+      }
+
+      const values = [...records.values()];
+      const competitorProgress = values.reduce(
+        (max, record) => Math.max(max, record.progress),
+        0,
+      );
+      const competitorVector = values.reduce(
+        (max, record) => Math.max(max, record.vector),
+        0,
+      );
+      const competitorTroops = values.reduce(
+        (sum, record) => sum + record.troops,
+        0,
+      );
+      const foodRaceValue = calculateEarlyGameFoodRaceValue({
+        directAttackers: directAttackers.size,
+        incomingAttackers: incomingAttackers.size,
+        competitorProgress,
+        competitorVector,
+        competitorTroops,
+        targetTroops: tribe.troops?.(),
+      });
+
+      return {
+        foodRaceValue,
+        contestPressure: foodRaceValue,
+        competitorTroops,
+        competitorProgress,
+        competitorVector,
+        directAttackers: directAttackers.size,
+        incomingAttackers: incomingAttackers.size,
+        contestingPlayers: records.size,
+      };
     }
 
     // With an ocean shore already in hand, take the nearest unowned open-ocean
@@ -2013,14 +2342,23 @@
 
     // sendAttack — AiAttackBehavior (now async via sendBoatAttack/
     // sendBoatAttackToNearbyTerraNullius; sendLandAttack stays sync).
-    async sendAttack(target, force = false, minCommitFraction = null) {
+    async sendAttack(
+      target,
+      force = false,
+      minCommitFraction = null,
+      earlyGameCandidate = null,
+    ) {
       if (!force && !this.shouldAttack(target)) return false;
 
       if (target.isPlayer()) {
         if (this.player.sharesBorderWith(target)) {
-          return this.sendLandAttack(target, minCommitFraction);
+          return this.sendLandAttack(
+            target,
+            minCommitFraction,
+            earlyGameCandidate,
+          );
         } else {
-          return await this.sendBoatAttack(target);
+          return await this.sendBoatAttack(target, earlyGameCandidate);
         }
       } else {
         // sharesBorderWith(TerraNullius) counts water tiles as TN (ownerID 0 = TN smallID),
@@ -2163,7 +2501,11 @@
     }
 
     // sendLandAttack — AiAttackBehavior (private). SYNC: no worker calls.
-    sendLandAttack(target, minCommitFraction = null) {
+    sendLandAttack(
+      target,
+      minCommitFraction = null,
+      earlyGameCandidate = null,
+    ) {
       const maxTroops = this.game.config().maxTroops(this.player);
       const botWithStructures =
         target.isPlayer() &&
@@ -2180,6 +2522,7 @@
       const targetTroops = maxTroops * reserveRatio;
 
       let troops;
+      const botAttackTroopsSentBefore = this.botAttackTroopsSent;
       if (
         target.isPlayer() &&
         target.type() === PlayerType.Bot &&
@@ -2191,6 +2534,17 @@
         );
       } else {
         troops = this.player.troops() - targetTroops;
+      }
+
+      const baseTroops = troops;
+      troops = this.applyEarlyGameRaceTroops({
+        target,
+        baseTroops,
+        reserveTroops: targetTroops + botAttackTroopsSentBefore,
+        earlyGameCandidate,
+      });
+      if (troops > baseTroops && target.type?.() === PlayerType.Bot) {
+        this.botAttackTroopsSent += troops - baseTroops;
       }
 
       if (
@@ -2233,7 +2587,7 @@
     // async fetch) before reading them synchronously, and the canBuild check is the
     // async bestTransportShipSpawn probe. We `await game.ensureBorderTiles(target)`
     // first (cached per tick), then probe; the dst sent is still `closest.y`.
-    async sendBoatAttack(target) {
+    async sendBoatAttack(target, earlyGameCandidate = null) {
       // Honour the panel's "boat" feature toggle (faithful boat attacks must obey
       // it too, not just the win-fix landings).
       if (!(state.settings.features && state.settings.features.boat)) {
@@ -2280,6 +2634,15 @@
         troops = this.player.troops() / 5;
       }
 
+      troops = this.applyEarlyGameRaceTroops({
+        target,
+        baseTroops: troops,
+        reserveTroops:
+          this.game.config().maxTroops(this.player) *
+          this.effectiveReserveRatio(),
+        earlyGameCandidate,
+      });
+
       if (troops < 1) {
         return false;
       }
@@ -2299,6 +2662,29 @@
         setLastAction(tr("⛵ Boat attack"), "naval");
       }
       return true;
+    }
+
+    applyEarlyGameRaceTroops({
+      target,
+      baseTroops,
+      reserveTroops,
+      earlyGameCandidate,
+    }) {
+      if (
+        !earlyGameCandidate ||
+        !target?.isPlayer?.() ||
+        earlyGameCandidate.id !== target.smallID?.()
+      ) {
+        return baseTroops;
+      }
+      return calculateEarlyGameRaceTroops({
+        ownTroops: this.player.troops(),
+        baseTroops,
+        reserveTroops,
+        targetTroops: target.troops(),
+        competitorTroops: earlyGameCandidate.competitorTroops,
+        contestPressure: earlyGameCandidate.foodRaceValue,
+      });
     }
 
     // calculateBotAttackTroops — AiAttackBehavior (private).

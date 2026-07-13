@@ -194,10 +194,20 @@ When `state.settings.winFixes` is enabled, `AttackBehavior.maybeAttack()` has a
 documented policy seam before the existing bot/Terra Nullius fallback. It may
 enrich only nearby non-friendly `PlayerType.Bot` tribes with bounded border
 snapshots and rank them by: open-ocean coast distance, encirclement by our land,
-nearby/incoming competitors that would be blocked, then cheap capture and
-distance. It reuses `sendAttack()` and `allowEarlyGameBoat()`; it does not change
-the faithful difficulty strategy arrays or the client attack intent. If no ranked
-target can be actuated, the original fallback continues.
+future tribes reachable from the candidate frontier, and the urgency of
+nearby/incoming competitors that would be blocked; encirclement by our land,
+cheap capture, and distance are later tie-breakers. The race signal combines
+outgoing/incoming attacks with a bounded per-player history of tile growth and
+`nameLocation()` movement; a direct attack is treated as an immediate race while
+a progressing vector toward the candidate still raises its urgency.
+
+When that race is real, the selected tribe attack may commit more troops than the
+normal bot-target amount. The increase is capped by the same reserve floor used by
+land attacks; boat attacks use the same bounded reserve-aware helper after their
+normal probe amount is calculated. It reuses `sendAttack()`,
+`allowEarlyGameBoat()`, and the client attack intent; it does not change the
+faithful difficulty strategy arrays. If no ranked target can be actuated, the
+original fallback continues.
 
 The same win-fix may probe an unowned `isOceanShore` tile from an existing ocean
 shore before generic opening expansion. `isOceanShore` is required so isolated

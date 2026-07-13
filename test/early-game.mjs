@@ -26,6 +26,9 @@ assert.equal(typeof sandbox.findWaterRouteTicks, "function");
 assert.equal(typeof sandbox.transportRouteTicks, "function");
 assert.equal(typeof sandbox.findNearestOceanCoastDistance, "function");
 assert.equal(typeof sandbox.rankEarlyGameTribeCandidates, "function");
+assert.equal(typeof sandbox.calculateEarlyGameContinuationValue, "function");
+assert.equal(typeof sandbox.calculateEarlyGameFoodRaceValue, "function");
+assert.equal(typeof sandbox.calculateEarlyGameRaceTroops, "function");
 assert.equal(sandbox.isEarlyGameBoatEta(300), true);
 assert.equal(sandbox.isEarlyGameBoatEta(301), false);
 assert.equal(sandbox.isEarlyGameBoatEta(null), false);
@@ -138,6 +141,74 @@ assert.deepEqual(
   ["coastal-contested", "coastal-open", "encircled-inland"],
 );
 
+const chainCandidate = sandbox.calculateEarlyGameContinuationValue({
+  futureFoodCount: 3,
+  futureFoodTotal: 3,
+  meanFutureFoodDistance: 0,
+});
+const isolatedCandidate = sandbox.calculateEarlyGameContinuationValue({
+  futureFoodCount: 0,
+  futureFoodTotal: 3,
+  meanFutureFoodDistance: Infinity,
+});
+assert.equal(chainCandidate, 1);
+assert.equal(isolatedCandidate, 0);
+
+const chainRank = sandbox.rankEarlyGameTribeCandidates([
+  {
+    id: "isolated-coast",
+    oceanDistance: 0,
+    futureFoodAccess: isolatedCandidate,
+    foodRaceValue: 1,
+  },
+  {
+    id: "food-chain",
+    oceanDistance: 0,
+    futureFoodAccess: chainCandidate,
+    foodRaceValue: 0,
+  },
+]);
+assert.deepEqual(
+  chainRank.map((candidate) => candidate.id),
+  ["food-chain", "isolated-coast"],
+);
+
+const passiveRace = sandbox.calculateEarlyGameFoodRaceValue({
+  competitorProgress: 0.1,
+  competitorVector: 0.1,
+  competitorTroops: 100,
+  targetTroops: 200,
+});
+const directRace = sandbox.calculateEarlyGameFoodRaceValue({
+  directAttackers: 1,
+  competitorProgress: 0.8,
+  competitorVector: 0.9,
+  competitorTroops: 1000,
+  targetTroops: 200,
+});
+assert.ok(directRace > passiveRace);
+assert.ok(directRace >= 0.7);
+
+const normalCommit = sandbox.calculateEarlyGameRaceTroops({
+  ownTroops: 10000,
+  baseTroops: 1000,
+  reserveTroops: 2000,
+  targetTroops: 200,
+  competitorTroops: 0,
+  contestPressure: 0,
+});
+const contestedCommit = sandbox.calculateEarlyGameRaceTroops({
+  ownTroops: 10000,
+  baseTroops: 1000,
+  reserveTroops: 2000,
+  targetTroops: 200,
+  competitorTroops: 3000,
+  contestPressure: directRace,
+});
+assert.equal(normalCommit, 1000);
+assert.ok(contestedCommit > normalCommit);
+assert.ok(contestedCommit <= 8000);
+
 const waterGraph = new Map([
   [0, [1]],
   [1, [0, 2]],
@@ -220,22 +291,25 @@ const targetSandbox = {
 const targetCoords = new Map([
   [1, [0, 0]],
   [10, [5, 0]],
-  [20, [5, 5]],
-  [21, [4, 5]],
-  [22, [6, 5]],
+  [20, [80, 80]],
+  [21, [79, 80]],
+  [22, [81, 80]],
+  [30, [80, 81]],
 ]);
-const targetLand = new Set([1, 10, 20, 21, 22]);
+const targetLand = new Set([1, 10, 20, 21, 22, 30]);
 const targetNeighbors = new Map([
   [1, []],
   [10, []],
-  [20, [21, 22]],
+  [20, [21, 22, 30]],
   [21, [20]],
   [22, [20]],
+  [30, [20]],
 ]);
 const targetOwners = new Map([
   [1, 1],
   [21, 1],
   [22, 3],
+  [30, 5],
 ]);
 const makeTargetPlayer = (sid, type, tiles, troops, location) => ({
   isPlayer: () => true,
@@ -244,19 +318,34 @@ const makeTargetPlayer = (sid, type, tiles, troops, location) => ({
   smallID: () => sid,
   id: () => `p${sid}`,
   troops: () => troops,
+  numTilesOwned: () => tiles.length,
   borderTiles: () => new Set(tiles),
   nameLocation: () => location,
   nearby: () => [],
   isFriendly: () => false,
   incomingAttacks: () => [],
+  outgoingAttacks: () => [],
 });
 const targetMe = makeTargetPlayer(1, "Human", [1], 1000, { x: 0, y: 0 });
 const targetCoastal = makeTargetPlayer(2, "Bot", [10], 100, { x: 5, y: 0 });
-const targetInland = makeTargetPlayer(4, "Bot", [20], 100, { x: 5, y: 5 });
-const targetContender = makeTargetPlayer(3, "Human", [22], 500, { x: 6, y: 5 });
-targetMe.nearby = () => [targetCoastal, targetInland];
+const targetInland = makeTargetPlayer(4, "Bot", [20], 100, { x: 80, y: 80 });
+const targetNext = makeTargetPlayer(5, "Bot", [30], 80, { x: 80, y: 81 });
+const targetContender = makeTargetPlayer(3, "Human", [22], 500, { x: 81, y: 80 });
+let moverLocation = { x: 10, y: 10 };
+let moverTiles = 5;
+const targetMover = makeTargetPlayer(6, "Human", [], 300, moverLocation);
+targetMover.nameLocation = () => moverLocation;
+targetMover.numTilesOwned = () => moverTiles;
+const targetRaceAttack = {
+  attacker: () => targetContender,
+  target: () => targetInland,
+  troops: () => 450,
+};
+targetContender.outgoingAttacks = () => [targetRaceAttack];
+targetInland.incomingAttacks = () => [targetRaceAttack];
+targetMe.nearby = () => [targetCoastal, targetInland, targetNext];
 const targetGame = {
-  players: () => [targetMe, targetCoastal, targetInland, targetContender],
+  players: () => [targetMe, targetCoastal, targetInland, targetNext, targetContender, targetMover],
   ensureBorderTiles: (player) => player.borderTiles(),
   neighbors: (tile) => targetNeighbors.get(tile) || [],
   isLand: (tile) => targetLand.has(tile),
@@ -301,7 +390,27 @@ const enrichedTargets = await targetBehavior.getEarlyGameTribeCandidates();
 const rankedEnrichedTargets = targetSandbox.rankEarlyGameTribeCandidates(enrichedTargets);
 assert.equal(rankedEnrichedTargets[0].id, 2);
 assert.equal(rankedEnrichedTargets[0].oceanDistance, 0);
-assert.equal(enrichedTargets.find((target) => target.id === 4).encirclement, 0.5);
-assert.ok(enrichedTargets.find((target) => target.id === 4).blockValue > 0);
+const enrichedInland = enrichedTargets.find((target) => target.id === 4);
+assert.equal(enrichedInland.encirclement, 1 / 3);
+assert.ok(enrichedInland.blockValue > 0);
+assert.equal(enrichedInland.futureFoodCount, 1);
+assert.ok(enrichedInland.futureFoodAccess > 0.6);
+assert.ok(enrichedInland.foodRaceValue > 0.5);
+assert.ok(
+  targetBehavior.applyEarlyGameRaceTroops({
+    target: targetInland,
+    baseTroops: 100,
+    reserveTroops: 200,
+    earlyGameCandidate: enrichedInland,
+  }) > 100,
+);
+
+moverLocation = { x: 60, y: 60 };
+moverTiles = 20;
+targetGame.ticks = () => 50;
+const movedEnrichedTargets = await targetBehavior.getEarlyGameTribeCandidates();
+const movedInland = movedEnrichedTargets.find((target) => target.id === 4);
+assert.ok(movedInland.competitorProgress > 0);
+assert.ok(movedInland.competitorVector > 0.5);
 
 console.log("early-game tests passed");

@@ -122,18 +122,111 @@
     return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : 0;
   }
 
+  // A tribe is more valuable when taking it opens a short chain of other tribes.
+  // `futureFoodAccess` is supplied by AttackBehavior when it has geometry; the
+  // count/distance fallback keeps this helper useful for deterministic tests and
+  // older adapters that only expose aggregate signals.
+  function calculateEarlyGameContinuationValue(candidate = {}) {
+    const explicit = Number(candidate.futureFoodAccess);
+    if (candidate.futureFoodAccess != null && Number.isFinite(explicit)) {
+      return finiteEarlyGameSignal(explicit);
+    }
+
+    const count = Number(candidate.futureFoodCount);
+    const total = Number(candidate.futureFoodTotal);
+    const countScore =
+      Number.isFinite(total) && total > 0
+        ? finiteEarlyGameSignal(count / total)
+        : Number.isFinite(count) && count > 0
+          ? 1
+          : 0;
+    const distance = Number(candidate.meanFutureFoodDistance);
+    const radius = Number(candidate.futureFoodChainRadius || 120);
+    const proximityScore =
+      Number.isFinite(distance) && Number.isFinite(radius) && radius > 0
+        ? finiteEarlyGameSignal(1 - distance / radius)
+        : 0;
+    return finiteEarlyGameSignal(countScore * 0.75 + proximityScore * 0.25);
+  }
+
+  // Combine direct attacks, incoming attack snapshots, and the observed growth
+  // vector of other players into one urgency signal. A direct attack is enough to
+  // make a tribe an immediate race; movement/progress still matters when the
+  // other player has not yet emitted an attack at this exact tick.
+  function calculateEarlyGameFoodRaceValue({
+    directAttackers = 0,
+    incomingAttackers = 0,
+    competitorProgress = 0,
+    competitorVector = 0,
+    competitorTroops = 0,
+    targetTroops = 0,
+  } = {}) {
+    const directSignal = finiteEarlyGameSignal(
+      Math.max(Number(directAttackers) || 0, Number(incomingAttackers) || 0),
+    );
+    const momentumSignal = Math.max(
+      finiteEarlyGameSignal(competitorProgress),
+      finiteEarlyGameSignal(competitorVector),
+    );
+    const target = Math.max(1, Number(targetTroops) || 0);
+    const strengthSignal = finiteEarlyGameSignal(
+      (Number(competitorTroops) || 0) / (target * 4),
+    );
+    return finiteEarlyGameSignal(
+      directSignal * 0.55 + momentumSignal * 0.25 + strengthSignal * 0.2,
+    );
+  }
+
+  // Race a contested tribe with more troops, but never spend the reserve that
+  // keeps the bot alive. The base amount is preserved when no meaningful rival
+  // signal exists; pressure can raise it up to the bounded commit fraction.
+  function calculateEarlyGameRaceTroops({
+    ownTroops = 0,
+    baseTroops = 0,
+    reserveTroops = 0,
+    targetTroops = 0,
+    competitorTroops = 0,
+    contestPressure = 0,
+    maxCommitFraction = 0.75,
+  } = {}) {
+    const own = Math.max(0, Number(ownTroops) || 0);
+    const reserve = Math.max(0, Number(reserveTroops) || 0);
+    const available = Math.max(0, own - reserve);
+    const base = Math.min(available, Math.max(0, Number(baseTroops) || 0));
+    const pressure = finiteEarlyGameSignal(contestPressure);
+    if (available <= 0 || pressure <= 0) return base;
+
+    const target = Math.max(0, Number(targetTroops) || 0);
+    const rivalTroops = Math.max(0, Number(competitorTroops) || 0);
+    const overtakeAmount = Math.max(target * 4, target + rivalTroops * 1.15);
+    const capFraction = finiteEarlyGameSignal(maxCommitFraction) || 0.75;
+    const urgencyFraction = Math.min(
+      capFraction,
+      0.18 + pressure * 0.55,
+    );
+    return Math.min(
+      available,
+      Math.max(base, overtakeAmount, own * urgencyFraction),
+    );
+  }
+
   // Early-Game tribe order is deliberately lexicographic. First choose tribes
-  // that can lead to open ocean, and among those choose the nearest coast. Only
-  // then do we prefer a cheap capture that closes a perimeter or blocks another
-  // player's route. This keeps the strategy understandable and prevents a cheap
-  // inland tribe from hiding the nearest useful port position.
+  // that can lead to open ocean, and among those choose a chain with more future
+  // food. A rival's active/progressing vector then raises the urgency of winning
+  // that food race before the existing encirclement/block/cost tie-breakers.
   function earlyGameTribeSortKey(candidate = {}) {
     const oceanDistance = Number(candidate.oceanDistance);
     const hasOpenOcean = Number.isFinite(oceanDistance);
     const distance = Number(candidate.distance);
+    const foodRaceValue = Math.max(
+      finiteEarlyGameSignal(candidate.foodRaceValue),
+      finiteEarlyGameSignal(candidate.contestPressure),
+    );
     return [
       hasOpenOcean ? 1 : 0,
       hasOpenOcean ? -oceanDistance : 0,
+      calculateEarlyGameContinuationValue(candidate),
+      foodRaceValue,
       finiteEarlyGameSignal(candidate.encirclement),
       finiteEarlyGameSignal(candidate.blockValue),
       finiteEarlyGameSignal(candidate.cheapCapture),

@@ -21,10 +21,12 @@ territory or an actionable tribe. With `winFixes` enabled, the policy keeps the
 existing Nation decision chain but enriches its opening target choice:
 
 1. rank nearby non-friendly bot tribes by nearest open-ocean coast, then by how
-   much of their land perimeter is already encircled by us, how much nearby-player
-   competition we would block, and finally capture cost/distance;
-2. attack the best-ranked tribe through the existing land/boat actuation, using
-   the existing reserve rules and the 300-tick boat gate;
+   many future tribes the new frontier opens, and then by the urgency of beating
+   a rival's active/progressing food vector; encirclement, blocked competition,
+   capture cost, and distance remain tie-breakers;
+2. attack the best-ranked tribe through the existing land/boat actuation. When a
+   rival is racing for the same food, the bot raises the commitment while keeping
+   the existing reserve floor;
 3. when we already hold an open-ocean shore, probe the nearest unowned
    `isOceanShore` tile before falling back to generic Terra Nullius expansion, so
    the first coastal foothold can support a Port. Closed lakes are deliberately
