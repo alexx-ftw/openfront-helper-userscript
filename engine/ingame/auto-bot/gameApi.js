@@ -13,7 +13,8 @@
 // profile) and lazily-cached per target; the behaviors then read it synchronously
 // so the ported code stays a 1:1 diff against src. The two genuinely-missing
 // datasets (sharedWaterComponents, railNetwork) are reconstructed in §SHIMS and
-// are the ONLY approximated data (used for structure-placement scoring only).
+// are the ONLY approximated data (used for structure-placement candidate
+// selection and scoring only).
 //
 // `src` is the client-shape game: the real GameView in the extension, or the
 // training coreAdapter `game` in the headless harness — both expose the same
@@ -580,15 +581,45 @@
     //     synchronously — me's border is pre-fetched each tick): ocean neighbor →
     //     mark hasOcean; non-ocean water neighbor → add its component id to
     //     "mine".
-    //   - A lake component is SHARED iff some OTHER non-bot player on that
-    //     component's coast can trade with the queried player (no mutual embargo,
-    //     different id). We resolve "other player on the component" via the
+    //   - A lake component is SHARED iff some OTHER living, non-bot ally or
+    //     teammate on that component's coast can trade with the queried player
+    //     (no mutual embargo, different id). This is a CUSTOM placement safety
+    //     rule: the core cache treats any non-embargoed player as sufficient,
+    //     but isolated inland lakes must not attract ports in the userscript.
+    //     We resolve "other player on the component" via the
     //     pre-recorded coast tiles + ownerID (both SYNC) — we do NOT iterate other
     //     players' borderTiles() (those return EMPTY synchronously through the
     //     wrapper; only me's is pre-fetched).
     //   - Ocean is always shared (sentinel -1).
     // Returns Set<number>|null (null = touches no ocean and no shared lake),
     // exactly matching core's `!== null` coastal test.
+    function isTrustedWaterPartner(player, other) {
+      try {
+        if (!other || !other.isPlayer || !other.isPlayer()) return false;
+        if (other.type && other.type() === PlayerType.Bot) return false;
+        if (typeof player.isAlive === "function" && !player.isAlive()) return false;
+        if (typeof other.isAlive === "function" && !other.isAlive()) return false;
+        if (player.id() === other.id()) return false;
+        if (player.hasEmbargoAgainst(other) || other.hasEmbargoAgainst(player)) {
+          return false;
+        }
+
+        const allied =
+          (typeof player.isAlliedWith === "function" &&
+            player.isAlliedWith(other)) ||
+          (typeof other.isAlliedWith === "function" &&
+            other.isAlliedWith(player));
+        const teammate =
+          (typeof player.isOnSameTeam === "function" &&
+            player.isOnSameTeam(other)) ||
+          (typeof other.isOnSameTeam === "function" &&
+            other.isOnSameTeam(player));
+        return allied || teammate;
+      } catch (_e) {
+        return false;
+      }
+    }
+
     function sharedWaterComponents(player) {
       if (player == null) return null;
       // Bots are never the nation AI caller in core, but guard anyway: a bot
@@ -634,13 +665,7 @@
           seen.add(ownerSid);
           const other = wrapPlayer(src.playerBySmallID(ownerSid));
           if (!other || !other.isPlayer || !other.isPlayer()) continue;
-          if (other.type && other.type() === PlayerType.Bot) continue;
-          // canTrade: different id + no mutual embargo (PlayerImpl.canTrade).
-          if (
-            player.id() !== other.id() &&
-            !player.hasEmbargoAgainst(other) &&
-            !other.hasEmbargoAgainst(player)
-          ) {
+          if (isTrustedWaterPartner(player, other)) {
             isShared = true;
             break;
           }

@@ -176,8 +176,17 @@ note it and a stub will be provided.)
 `sharedWaterComponents(player)` and `railNetwork()` are NOT client-available. The
 StructureBehavior porter must implement the two documented approximations in gameApi
 (ocean-shore for coastal; train-station proximity union-find for rail clusters) — these
-are the ONLY approximated datasets and affect placement SCORING only. Everything else is
+are the ONLY approximated datasets used by structure placement. Everything else is
 faithful.
+
+### Custom closed-lake port safety rule
+
+The custom userscript deliberately narrows the core `SharedWaterCache` rule for
+structure placement. Open-ocean coast remains eligible as in core. A closed lake is
+eligible only when the queried player shares it with a living, non-bot ally or
+teammate, without a mutual embargo. A merely tradeable or neutral player is not
+enough. This prevents inland-lake ports on maps such as Luna; it is an explicit
+placement-safety exception, not a change to the rest of the port strategy.
 
 ## What faithfulness means here
 
