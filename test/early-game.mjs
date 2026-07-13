@@ -24,6 +24,8 @@ assert.equal(typeof sandbox.chooseEarlyGameAction, "function");
 assert.equal(typeof sandbox.isEarlyGameBoatEta, "function");
 assert.equal(typeof sandbox.findWaterRouteTicks, "function");
 assert.equal(typeof sandbox.transportRouteTicks, "function");
+assert.equal(typeof sandbox.findNearestOceanCoastDistance, "function");
+assert.equal(typeof sandbox.rankEarlyGameTribeCandidates, "function");
 assert.equal(sandbox.isEarlyGameBoatEta(300), true);
 assert.equal(sandbox.isEarlyGameBoatEta(301), false);
 assert.equal(sandbox.isEarlyGameBoatEta(null), false);
@@ -33,6 +35,7 @@ const snapshot = sandbox.createEarlyGameSnapshot({
   hasFreeLand: true,
   tribes: [
     { id: "border-tribe", alive: true, friendly: false, landBorder: true },
+    { id: "boat-candidate", alive: true, friendly: false, boatCandidate: true },
     { id: "near-tribe", alive: true, friendly: false, boatEtaTicks: 300 },
     { id: "late-tribe", alive: true, friendly: false, boatEtaTicks: 301 },
     { id: "unknown-tribe", alive: true, friendly: false, boatEtaTicks: null },
@@ -46,7 +49,7 @@ assert.equal(snapshot.hasFreeLand, true);
 assert.equal(snapshot.hasTribeTarget, true);
 assert.deepEqual(
   snapshot.actionableTribes.map((target) => target.id),
-  ["border-tribe", "near-tribe"],
+  ["border-tribe", "boat-candidate", "near-tribe"],
 );
 
 assert.equal(
@@ -76,6 +79,64 @@ assert.equal(sandbox.transportRouteTicks(["source"]), 0);
 assert.equal(sandbox.transportRouteTicks({ fullPath: ["source", "shore"] }), 1);
 assert.equal(sandbox.transportRouteTicks([]), null);
 assert.equal(sandbox.transportRouteTicks(null), null);
+
+const landGraph = new Map([
+  [10, [11]],
+  [11, [10, 12]],
+  [12, [11, 13]],
+  [13, [12]],
+]);
+assert.equal(
+  sandbox.findNearestOceanCoastDistance({
+    starts: [10],
+    neighbors: (tile) => landGraph.get(tile) || [],
+    isLand: (tile) => tile >= 10 && tile <= 13,
+    isOceanShore: (tile) => tile === 13,
+    maxDistance: 20,
+  }),
+  3,
+);
+assert.equal(
+  sandbox.findNearestOceanCoastDistance({
+    starts: [10],
+    neighbors: (tile) => landGraph.get(tile) || [],
+    isLand: (tile) => tile >= 10 && tile <= 13,
+    isOceanShore: () => false,
+    maxDistance: 2,
+  }),
+  Infinity,
+);
+
+const rankedTribes = sandbox.rankEarlyGameTribeCandidates([
+  {
+    id: "encircled-inland",
+    oceanDistance: Infinity,
+    encirclement: 1,
+    blockValue: 0.1,
+    cheapCapture: 1,
+    distance: 3,
+  },
+  {
+    id: "coastal-open",
+    oceanDistance: 0,
+    encirclement: 0,
+    blockValue: 0,
+    cheapCapture: 0.2,
+    distance: 20,
+  },
+  {
+    id: "coastal-contested",
+    oceanDistance: 0,
+    encirclement: 0.8,
+    blockValue: 1,
+    cheapCapture: 0.7,
+    distance: 8,
+  },
+]);
+assert.deepEqual(
+  rankedTribes.map((candidate) => candidate.id),
+  ["coastal-contested", "coastal-open", "encircled-inland"],
+);
 
 const waterGraph = new Map([
   [0, [1]],
@@ -133,9 +194,114 @@ assert.match(attackSource, /state\.earlyGame\.action === "land"/);
 assert.match(attackSource, /async allowEarlyGameBoat\(tile\)/);
 assert.match(attackSource, /!state\.settings\.winFixes \|\| !early \|\| !early\.active/);
 assert.match(attackSource, /EARLY_EXPAND_COMMIT/);
+assert.match(attackSource, /attackEarlyGameTribe/);
+assert.match(attackSource, /maybeEarlyOceanBoat/);
 assert.match(gameApiSource, /estimateTransportRouteTicks/);
 assert.match(gameApiSource, /hasTransportRouteEstimator/);
 assert.match(gameApiSource, /findWaterRouteTicks\(\{/);
 assert.match(buildSource, /"auto-bot\/earlyGame\.js"/);
+
+// Integration probe: the real AttackBehavior enrichment must expose the same
+// coast/encirclement/blocking signals used by the pure ranker.
+const targetSandbox = {
+  UNIT: {
+    City: "City",
+    DefensePost: "Defense Post",
+    SAMLauncher: "SAM Launcher",
+    MissileSilo: "Missile Silo",
+    Port: "Port",
+    Factory: "Factory",
+  },
+  PlayerType: { Bot: "Bot", Human: "Human", Nation: "Nation" },
+  state: { settings: { winFixes: true, features: { boat: true } }, earlyGame: {}, stats: {} },
+  withTimeout: (value) => Promise.resolve(value),
+  WORKER_TIMEOUT_MS: 1000,
+};
+const targetCoords = new Map([
+  [1, [0, 0]],
+  [10, [5, 0]],
+  [20, [5, 5]],
+  [21, [4, 5]],
+  [22, [6, 5]],
+]);
+const targetLand = new Set([1, 10, 20, 21, 22]);
+const targetNeighbors = new Map([
+  [1, []],
+  [10, []],
+  [20, [21, 22]],
+  [21, [20]],
+  [22, [20]],
+]);
+const targetOwners = new Map([
+  [1, 1],
+  [21, 1],
+  [22, 3],
+]);
+const makeTargetPlayer = (sid, type, tiles, troops, location) => ({
+  isPlayer: () => true,
+  isAlive: () => true,
+  type: () => type,
+  smallID: () => sid,
+  id: () => `p${sid}`,
+  troops: () => troops,
+  borderTiles: () => new Set(tiles),
+  nameLocation: () => location,
+  nearby: () => [],
+  isFriendly: () => false,
+  incomingAttacks: () => [],
+});
+const targetMe = makeTargetPlayer(1, "Human", [1], 1000, { x: 0, y: 0 });
+const targetCoastal = makeTargetPlayer(2, "Bot", [10], 100, { x: 5, y: 0 });
+const targetInland = makeTargetPlayer(4, "Bot", [20], 100, { x: 5, y: 5 });
+const targetContender = makeTargetPlayer(3, "Human", [22], 500, { x: 6, y: 5 });
+targetMe.nearby = () => [targetCoastal, targetInland];
+const targetGame = {
+  players: () => [targetMe, targetCoastal, targetInland, targetContender],
+  ensureBorderTiles: (player) => player.borderTiles(),
+  neighbors: (tile) => targetNeighbors.get(tile) || [],
+  isLand: (tile) => targetLand.has(tile),
+  ownerID: (tile) => targetOwners.get(tile) ?? null,
+  isOceanShore: (tile) => tile === 10,
+  ref: (x, y) => {
+    for (const [tile, point] of targetCoords) {
+      if (point[0] === x && point[1] === y) return tile;
+    }
+    return null;
+  },
+  x: (tile) => targetCoords.get(tile)?.[0] ?? 0,
+  y: (tile) => targetCoords.get(tile)?.[1] ?? 0,
+  manhattanDist: (a, b) =>
+    Math.abs((targetCoords.get(a)?.[0] ?? 0) - (targetCoords.get(b)?.[0] ?? 0)) +
+    Math.abs((targetCoords.get(a)?.[1] ?? 0) - (targetCoords.get(b)?.[1] ?? 0)),
+  isValidCoord: () => true,
+};
+targetSandbox.calculateBoundingBoxCenter = (game, tiles) => {
+  const values = Array.from(tiles);
+  return {
+    x: values.reduce((sum, tile) => sum + game.x(tile), 0) / values.length,
+    y: values.reduce((sum, tile) => sum + game.y(tile), 0) / values.length,
+  };
+};
+vm.runInNewContext(
+  `${source}\n${attackSource}\nglobalThis.AttackBehavior = AttackBehavior;`,
+  targetSandbox,
+  { filename: "earlyGame+attackBehavior.js" },
+);
+const targetBehavior = new targetSandbox.AttackBehavior(
+  {},
+  targetGame,
+  targetMe,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+const enrichedTargets = await targetBehavior.getEarlyGameTribeCandidates();
+const rankedEnrichedTargets = targetSandbox.rankEarlyGameTribeCandidates(enrichedTargets);
+assert.equal(rankedEnrichedTargets[0].id, 2);
+assert.equal(rankedEnrichedTargets[0].oceanDistance, 0);
+assert.equal(enrichedTargets.find((target) => target.id === 4).encirclement, 0.5);
+assert.ok(enrichedTargets.find((target) => target.id === 4).blockValue > 0);
 
 console.log("early-game tests passed");

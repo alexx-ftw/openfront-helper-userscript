@@ -65,6 +65,10 @@
   // (findRandomBoatTarget 500 iters, etc.); we cap the worker calls.
   const BOAT_PROBE_CANDIDATES = 4;
 
+  // Early-game tribe scoring may need one border snapshot per candidate. Keep the
+  // async enrichment bounded so a crowded tribe map cannot starve the combat tick.
+  const EARLY_TRIBE_CANDIDATES = 8;
+
   class AttackBehavior {
     constructor(
       random,
@@ -142,6 +146,7 @@
           landBorder: border.some(
             (t) => this.game.ownerID(t) === enemy.smallID(),
           ),
+          boatCandidate: true,
           boatEtaTicks: null,
         }));
       const earlyGameSnapshot = createEarlyGameSnapshot({
@@ -153,12 +158,18 @@
       const previousEarlyGame = state.earlyGame || {};
       state.earlyGame = {
         ...earlyGameSnapshot,
-        action: chooseEarlyGameAction({
-          landTarget: earlyGameSnapshot.hasFreeLand &&
-            this.hasLandBorderWithTerraNullius(),
-          tribeTarget: earlyGameSnapshot.hasTribeTarget,
-          boatTarget: false,
-        }),
+        action:
+          state.settings.winFixes && earlyGameSnapshot.hasTribeTarget
+            ? "tribe"
+            : chooseEarlyGameAction({
+                landTarget:
+                  earlyGameSnapshot.hasFreeLand &&
+                  this.hasLandBorderWithTerraNullius(),
+                tribeTarget: earlyGameSnapshot.hasTribeTarget,
+                boatTarget: false,
+              }),
+        tribeTarget: null,
+        oceanTarget: null,
         boatGate: null,
         lastBoatEtaTicks: null,
         boatRejectedUnknown: previousEarlyGame.boatRejectedUnknown || 0,
@@ -200,6 +211,33 @@
           );
           if (await this.sendAttack(sleeping[0])) return;
         }
+      }
+
+      // WIN-FIX (NOT in src): during the concrete opening window, rank nearby
+      // tribes by open-ocean access, then by encirclement/blocking value and only
+      // then by capture cost/distance. This keeps a cheap coastal chokepoint from
+      // losing to an arbitrary inland bot. If no ranked target can be actuated,
+      // fall back to the existing aggressive bot pass below.
+      if (
+        expandOn &&
+        state.settings.winFixes &&
+        earlyGameSnapshot.active &&
+        earlyGameSnapshot.hasTribeTarget
+      ) {
+        if (await this.attackEarlyGameTribe()) return;
+      }
+
+      // WIN-FIX (NOT in src): if we already hold an ocean shore, take a nearby
+      // unowned open-ocean coast before generic empty-land expansion. The landing
+      // remains a cheap probe and is still subject to the exact <=30s early-game
+      // transport gate. `isOceanShore` excludes isolated lakes such as Luna.
+      if (
+        expandOn &&
+        boatOn &&
+        state.settings.winFixes &&
+        earlyGameSnapshot.active
+      ) {
+        if (await this.maybeEarlyOceanBoat()) return;
       }
 
       // WIN-FIX (NOT in src): aggressively eat bordering BOTS (the weak Tribe AI
@@ -285,6 +323,275 @@
       if (expandOn) {
         await this.attackBestTarget(borderingFriends, borderingEnemies);
       }
+    }
+
+    // Rank and eat one tribe during Early Game. This is a win-fix policy layer,
+    // not a replacement for the faithful attack strategy order below. A failed
+    // boat/land actuation simply lets the caller continue with its normal pass.
+    async attackEarlyGameTribe() {
+      const candidates = await this.getEarlyGameTribeCandidates();
+      if (candidates.length === 0) return false;
+
+      const ranked = rankEarlyGameTribeCandidates(candidates);
+      const diagnosticTargets = ranked.map((candidate) => ({
+        id: candidate.id,
+        oceanDistance: Number.isFinite(candidate.oceanDistance)
+          ? candidate.oceanDistance
+          : null,
+        encirclement: Number(candidate.encirclement.toFixed(3)),
+        blockValue: Number(candidate.blockValue.toFixed(3)),
+        cheapCapture: Number(candidate.cheapCapture.toFixed(3)),
+        landBorder: candidate.landBorder,
+        contestingPlayers: candidate.contestingPlayers,
+      }));
+      if (state.earlyGame) {
+        state.earlyGame.actionableTribes = diagnosticTargets;
+        state.earlyGame.tribeTarget = diagnosticTargets[0] || null;
+      }
+
+      for (const candidate of ranked) {
+        try {
+          if (await this.sendAttack(candidate.player)) return true;
+        } catch (error) {
+          console.warn("[EarlyGame] tribe target failed:", candidate.id, error);
+        }
+      }
+      return false;
+    }
+
+    // Build the small, bounded feature vector used by rankEarlyGameTribeCandidates.
+    // Border snapshots are fetched only for nearby bot tribes, never for every
+    // player on the map. That makes this safe at maximum game speed as well as on
+    // a tribe-heavy map.
+    async getEarlyGameTribeCandidates() {
+      const nearbyTribes = this.player
+        .nearby()
+        .filter(
+          (candidate) =>
+            candidate &&
+            candidate.isPlayer() &&
+            candidate.isAlive() &&
+            candidate.type() === PlayerType.Bot &&
+            this.player.isFriendly(candidate) === false,
+        )
+        .slice(0, EARLY_TRIBE_CANDIDATES);
+      if (nearbyTribes.length === 0) return [];
+
+      const otherPlayers = this.game.players();
+      const myCenter = this.getPlayerCenter(this.player);
+      const mySid = this.player.smallID();
+      const candidates = [];
+
+      for (const tribe of nearbyTribes) {
+        let border = new Set();
+        try {
+          if (typeof this.game.ensureBorderTiles === "function") {
+            const fetched = await withTimeout(
+              this.game.ensureBorderTiles(tribe),
+              WORKER_TIMEOUT_MS,
+              null,
+            );
+            if (fetched && fetched.size > 0) border = fetched;
+          }
+          if (border.size === 0) {
+            const snapshot = tribe.borderTiles();
+            if (snapshot && snapshot.size > 0) border = snapshot;
+          }
+        } catch (_e) {
+          /* no border snapshot → keep the candidate with conservative signals */
+        }
+
+        const tribeSid = tribe.smallID();
+        let boundaryEdges = 0;
+        let ownEdges = 0;
+        let externalEdges = 0;
+        const externalSids = new Set();
+        for (const tile of border) {
+          for (const neighbor of this.game.neighbors(tile)) {
+            if (!this.game.isLand(neighbor)) continue;
+            const ownerSid = this.game.ownerID(neighbor);
+            if (ownerSid === tribeSid) continue;
+            boundaryEdges++;
+            if (ownerSid === mySid) {
+              ownEdges++;
+            } else if (ownerSid != null) {
+              externalEdges++;
+              externalSids.add(ownerSid);
+            }
+          }
+        }
+
+        const encirclement =
+          boundaryEdges > 0 ? ownEdges / boundaryEdges : 0;
+        const directBlock =
+          boundaryEdges > 0 ? externalEdges / boundaryEdges : 0;
+        const tribeCenter =
+          border.size > 0
+            ? calculateBoundingBoxCenter(this.game, border)
+            : tribe.nameLocation?.() || null;
+        let distance = Infinity;
+        if (myCenter && tribeCenter && myCenter.x != null && tribeCenter.x != null) {
+          const myTile = this.game.ref(myCenter.x, myCenter.y);
+          const tribeTile = this.game.ref(tribeCenter.x, tribeCenter.y);
+          distance = this.game.manhattanDist(myTile, tribeTile);
+        }
+
+        let nearbyContesters = 0;
+        for (const other of otherPlayers) {
+          if (!other || !other.isPlayer() || !other.isAlive()) continue;
+          const otherSid = other.smallID();
+          if (otherSid === mySid || otherSid === tribeSid) continue;
+          const location = other.nameLocation?.();
+          if (!location || location.x == null || !tribeCenter || tribeCenter.x == null) {
+            continue;
+          }
+          if (!this.game.isValidCoord(location.x, location.y)) continue;
+          const otherTile = this.game.ref(location.x, location.y);
+          const tribeTile = this.game.ref(tribeCenter.x, tribeCenter.y);
+          if (this.game.manhattanDist(otherTile, tribeTile) <= 80) {
+            nearbyContesters++;
+          }
+        }
+
+        let incomingContesters = 0;
+        try {
+          const incoming = tribe.incomingAttacks ? tribe.incomingAttacks() : [];
+          for (const attack of incoming || []) {
+            const attacker = attack.attacker?.();
+            if (
+              attacker &&
+              attacker.isPlayer?.() &&
+              attacker.smallID() !== mySid &&
+              attacker.smallID() !== tribeSid
+            ) {
+              incomingContesters++;
+            }
+          }
+        } catch (_e) {
+          /* attack snapshots are optional on older client builds */
+        }
+
+        const blockValue = Math.min(
+          1,
+          directBlock + nearbyContesters * 0.15 + incomingContesters * 0.25,
+        );
+        const oceanDistance = findNearestOceanCoastDistance({
+          starts: border,
+          neighbors: (tile) => this.game.neighbors(tile),
+          isLand: (tile) => this.game.isLand(tile),
+          isOceanShore: (tile) => this.game.isOceanShore(tile),
+        });
+        const troopRatio =
+          this.player.troops() > 0
+            ? tribe.troops() / this.player.troops()
+            : 1;
+        candidates.push({
+          player: tribe,
+          id: tribe.smallID(),
+          oceanDistance,
+          encirclement,
+          blockValue,
+          cheapCapture: Math.max(0, 1 - Math.min(1, troopRatio)),
+          landBorder: ownEdges > 0,
+          distance,
+          contestingPlayers:
+            externalSids.size + nearbyContesters + incomingContesters,
+        });
+      }
+      return candidates;
+    }
+
+    // With an ocean shore already in hand, take the nearest unowned open-ocean
+    // coast in the opening window. This is a cheap landing probe whose only goal
+    // is to establish a future Port site; normal land expansion remains the
+    // fallback when no safe coast is reachable.
+    async maybeEarlyOceanBoat() {
+      if (!(state.settings.features && state.settings.features.boat)) return false;
+      if (this.game.config().isUnitDisabled(UNIT.TransportShip)) return false;
+      if (
+        this.player.unitCount(UNIT.TransportShip) >=
+        this.game.config().boatMaxNumber()
+      ) {
+        return false;
+      }
+
+      const shores = Array.from(this.player.borderTiles()).filter(
+        (tile) => this.game.isOceanShore(tile),
+      );
+      if (shores.length === 0) return false;
+
+      const targets = this.scanEarlyOceanTargets(shores);
+      for (const target of targets.slice(0, BOAT_PROBE_CANDIDATES)) {
+        if (this.boatTargetTaken(target.tile)) continue;
+        const spawn = await withTimeout(
+          this.player.bestTransportShipSpawn(target.tile),
+          WORKER_TIMEOUT_MS,
+          false,
+        );
+        if (spawn === false || !(await this.allowEarlyGameBoat(target.tile))) {
+          continue;
+        }
+
+        const troops = Math.max(
+          this.player.troops() * (state.settings.boatProbeFrac || 0.01),
+          state.settings.boatProbeMinTroops || 1000,
+        );
+        if (this.emitBoat(target.tile, troops, "🏝️ Ocean coast grab")) {
+          state.earlyGame.oceanTarget = {
+            distance: target.dist,
+            oceanShore: true,
+          };
+          state.earlyGame.action = "ocean";
+          return true;
+        }
+      }
+      return false;
+    }
+
+    scanEarlyOceanTargets(shores) {
+      if (typeof this.game.isOceanShore !== "function") return [];
+      const radius = state.settings.islandScanRadius || 40;
+      const step = state.settings.islandScanStep || 2;
+      const sampleCount = Math.min(
+        state.settings.islandScanSamples || 6,
+        shores.length,
+      );
+      if (sampleCount === 0) return [];
+
+      const samples = [];
+      const stride = Math.max(1, Math.ceil(shores.length / sampleCount));
+      for (let i = 0; i < shores.length && samples.length < sampleCount; i += stride) {
+        samples.push(shores[i]);
+      }
+
+      const seen = new Set();
+      const targets = [];
+      for (const shore of samples) {
+        const sx = this.game.x(shore);
+        const sy = this.game.y(shore);
+        for (let dx = -radius; dx <= radius; dx += step) {
+          for (let dy = -radius; dy <= radius; dy += step) {
+            const x = sx + dx;
+            const y = sy + dy;
+            if (!this.game.isValidCoord(x, y)) continue;
+            const tile = this.game.ref(x, y);
+            if (seen.has(tile) || !this.game.isLand(tile)) continue;
+            if (this.game.hasOwner(tile) || this.game.hasFallout(tile)) continue;
+            if (!this.game.isOceanShore(tile)) continue;
+            if (
+              this.game
+                .neighbors(tile)
+                .some((neighbor) => this.game.ownerID(neighbor) === this.player.smallID())
+            ) {
+              continue;
+            }
+            seen.add(tile);
+            targets.push({ tile, dist: dx * dx + dy * dy });
+          }
+        }
+      }
+      targets.sort((a, b) => a.dist - b.dist);
+      return targets;
     }
 
     // Exact ETA is deliberately fail-closed during Early Game. The current public

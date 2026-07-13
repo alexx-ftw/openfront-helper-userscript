@@ -279,6 +279,8 @@
       hasFreeLand: false,
       hasTribeTarget: false,
       actionableTribes: [],
+      tribeTarget: null,
+      oceanTarget: null,
       boatRouteAvailable: false,
       action: null,
       boatGate: null,

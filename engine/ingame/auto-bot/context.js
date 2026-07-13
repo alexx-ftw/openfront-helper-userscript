@@ -303,6 +303,8 @@
             action: state.earlyGame.action ?? null,
             hasFreeLand: !!state.earlyGame.hasFreeLand,
             hasTribeTarget: !!state.earlyGame.hasTribeTarget,
+            tribeTarget: state.earlyGame.tribeTarget ?? null,
+            oceanTarget: state.earlyGame.oceanTarget ?? null,
             boatRouteAvailable: !!state.earlyGame.boatRouteAvailable,
             boatGate: state.earlyGame.boatGate ?? null,
             lastBoatEtaTicks: state.earlyGame.lastBoatEtaTicks ?? null,

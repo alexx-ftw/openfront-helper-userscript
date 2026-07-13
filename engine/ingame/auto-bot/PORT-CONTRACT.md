@@ -188,6 +188,24 @@ teammate, without a mutual embargo. A merely tradeable or neutral player is not
 enough. This prevents inland-lake ports on maps such as Luna; it is an explicit
 placement-safety exception, not a change to the rest of the port strategy.
 
+### Custom Early Game coastal/tribe targeting
+
+When `state.settings.winFixes` is enabled, `AttackBehavior.maybeAttack()` has a
+documented policy seam before the existing bot/Terra Nullius fallback. It may
+enrich only nearby non-friendly `PlayerType.Bot` tribes with bounded border
+snapshots and rank them by: open-ocean coast distance, encirclement by our land,
+nearby/incoming competitors that would be blocked, then cheap capture and
+distance. It reuses `sendAttack()` and `allowEarlyGameBoat()`; it does not change
+the faithful difficulty strategy arrays or the client attack intent. If no ranked
+target can be actuated, the original fallback continues.
+
+The same win-fix may probe an unowned `isOceanShore` tile from an existing ocean
+shore before generic opening expansion. `isOceanShore` is required so isolated
+lakes cannot satisfy the coastal objective. The probe remains bounded by the
+existing rank-then-probe transport boundary and the Early Game 300-tick ETA gate.
+With `winFixes` disabled, these additions are inactive and the faithful Nation
+flow remains unchanged.
+
 ## What faithfulness means here
 
 Same strategy ORDER (the difficulty-indexed arrays), same constants/probabilities, same

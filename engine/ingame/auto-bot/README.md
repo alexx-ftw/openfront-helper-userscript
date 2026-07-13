@@ -17,14 +17,26 @@ bot (see `src/core/execution/NationExecution.ts` and friends in the game repo).
 ## Early Game policy
 
 The Early Game snapshot starts after spawn selection while there is still free
-territory or an actionable tribe. The policy keeps the existing Nation decision
-chain and gives it this priority:
+territory or an actionable tribe. With `winFixes` enabled, the policy keeps the
+existing Nation decision chain but enriches its opening target choice:
 
-1. claim safe land first, using the existing `EARLY_EXPAND_COMMIT` minimum of 60%
-   of current troops;
-2. take a reachable bordering bot tribe;
-3. use a transport boat only when the computed route ETA is at most 300 game ticks
-   (30 seconds at 100 ms per tick).
+1. rank nearby non-friendly bot tribes by nearest open-ocean coast, then by how
+   much of their land perimeter is already encircled by us, how much nearby-player
+   competition we would block, and finally capture cost/distance;
+2. attack the best-ranked tribe through the existing land/boat actuation, using
+   the existing reserve rules and the 300-tick boat gate;
+3. when we already hold an open-ocean shore, probe the nearest unowned
+   `isOceanShore` tile before falling back to generic Terra Nullius expansion, so
+   the first coastal foothold can support a Port. Closed lakes are deliberately
+   excluded;
+4. use a transport boat only when the computed route ETA is at most 300 game
+   ticks (30 seconds at 100 ms per tick).
+
+The target ranking is bounded to nearby tribes and a small number of border
+snapshots. `winFixes: false` leaves the faithful Nation bot order untouched. A
+generic Terra Nullius land attack still has no tile argument in the client intent,
+so the coast-specific direction is expressed through a coastal tribe target or an
+explicit open-ocean landing rather than by inventing a new attack API.
 
 `bestTransportShipSpawn()` reports whether a boat route exists and its spawn tile,
 but not its path length. `gameApi.js` now uses that spawn plus a bounded

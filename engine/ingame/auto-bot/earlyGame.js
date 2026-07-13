@@ -2,8 +2,8 @@
 //
 // The source Nation AI has no separate Early Game controller. These helpers keep
 // the improvement as a small policy layer around the existing attack order:
-// claim safe land first, eat reachable tribes next, and only use a boat when an
-// exact route ETA proves it is inside the 30-second opening window.
+// prefer an open-ocean route and a cheap/contested tribe, then use a boat only
+// when an exact route ETA proves it is inside the 30-second opening window.
 
 "use strict";
 
@@ -71,9 +71,105 @@
     return Number.isFinite(length) ? Math.max(0, length - 1) : null;
   }
 
+  // Measure the shortest LAND distance from any tile on a tribe's border to an
+  // open-ocean coast. `isOceanShore` is intentionally used instead of the more
+  // general `isShore`: closed lakes must not make an inland tribe look like a
+  // port-access route. A bounded search keeps a malformed or very large map from
+  // turning one attack decision into an unbounded scan.
+  function findNearestOceanCoastDistance({
+    starts,
+    neighbors,
+    isLand,
+    isOceanShore,
+    maxDistance = 80,
+    maxVisited = 5000,
+  } = {}) {
+    if (
+      starts == null ||
+      typeof neighbors !== "function" ||
+      typeof isLand !== "function" ||
+      typeof isOceanShore !== "function"
+    ) {
+      return Infinity;
+    }
+
+    const queue = [];
+    const distances = new Map();
+    for (const tile of Array.from(starts)) {
+      if (tile == null || distances.has(tile) || !isLand(tile)) continue;
+      distances.set(tile, 0);
+      queue.push(tile);
+    }
+
+    for (let head = 0; head < queue.length; head++) {
+      if (distances.size > maxVisited) return Infinity;
+      const current = queue[head];
+      const distance = distances.get(current);
+      if (isOceanShore(current)) return distance;
+      if (distance >= maxDistance) continue;
+
+      for (const next of neighbors(current) || []) {
+        if (distances.has(next) || !isLand(next)) continue;
+        distances.set(next, distance + 1);
+        queue.push(next);
+      }
+    }
+    return Infinity;
+  }
+
+  function finiteEarlyGameSignal(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : 0;
+  }
+
+  // Early-Game tribe order is deliberately lexicographic. First choose tribes
+  // that can lead to open ocean, and among those choose the nearest coast. Only
+  // then do we prefer a cheap capture that closes a perimeter or blocks another
+  // player's route. This keeps the strategy understandable and prevents a cheap
+  // inland tribe from hiding the nearest useful port position.
+  function earlyGameTribeSortKey(candidate = {}) {
+    const oceanDistance = Number(candidate.oceanDistance);
+    const hasOpenOcean = Number.isFinite(oceanDistance);
+    const distance = Number(candidate.distance);
+    return [
+      hasOpenOcean ? 1 : 0,
+      hasOpenOcean ? -oceanDistance : 0,
+      finiteEarlyGameSignal(candidate.encirclement),
+      finiteEarlyGameSignal(candidate.blockValue),
+      finiteEarlyGameSignal(candidate.cheapCapture),
+      candidate.landBorder === true ? 1 : 0,
+      Number.isFinite(distance) ? -distance : -Infinity,
+    ];
+  }
+
+  function compareEarlyGameTribes(a, b) {
+    const aKey = earlyGameTribeSortKey(a);
+    const bKey = earlyGameTribeSortKey(b);
+    for (let i = 0; i < aKey.length; i++) {
+      if (aKey[i] === bKey[i]) continue;
+      return bKey[i] - aKey[i];
+    }
+    return 0;
+  }
+
+  function rankEarlyGameTribeCandidates(candidates) {
+    if (!Array.isArray(candidates)) return [];
+    return candidates
+      .map((candidate, index) => ({ candidate, index }))
+      .sort((a, b) => compareEarlyGameTribes(a.candidate, b.candidate) || a.index - b.index)
+      .map(({ candidate }) => candidate);
+  }
+
   function isEarlyGameTribeTarget(target) {
     if (!target || target.alive === false || target.friendly === true) return false;
-    return target.landBorder === true || isEarlyGameBoatEta(target.boatEtaTicks);
+    // `boatCandidate` means the player is in the bounded nearby() transport
+    // sample. The final bestTransportShipSpawn + <=300-tick gate still decides
+    // whether the bot can actually act on it.
+    return (
+      target.landBorder === true ||
+      target.boatCandidate === true ||
+      isEarlyGameBoatEta(target.boatEtaTicks)
+    );
   }
 
   function createEarlyGameSnapshot(input = {}) {
