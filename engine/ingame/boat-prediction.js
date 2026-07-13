@@ -450,7 +450,11 @@
   function collectBoatPredictionTransports(game) {
     const transports = [];
 
-    for (const unit of game.units(...BOAT_UNIT_TYPES)) {
+    const units =
+      typeof getCachedGameUnits === "function"
+        ? getCachedGameUnits(game, ...BOAT_UNIT_TYPES)
+        : game.units(...BOAT_UNIT_TYPES);
+    for (const unit of units) {
       if (!unit?.isActive?.()) {
         continue;
       }

@@ -9,8 +9,8 @@
 //     sharedWaterComponents, railNetwork).
 //
 // gameApi presents a CORE-SHAPED, SYNCHRONOUS interface to the behaviors. Async
-// data is fetched ONCE per decision tick by beginTick() (me's borderTiles +
-// profile) and lazily-cached per target; the behaviors then read it synchronously
+// data is refreshed in short windows by beginTick() (me's borderTiles + profile)
+// and lazily-cached per target; the behaviors then read it synchronously
 // so the ported code stays a 1:1 diff against src. The two genuinely-missing
 // datasets (sharedWaterComponents, railNetwork) are reconstructed in §SHIMS and
 // are the ONLY approximated data (used for structure-placement candidate
@@ -59,6 +59,10 @@
     const overlay = new Map(); // smallID -> offset
     let profileRelations = new Map(); // smallID -> Relation bucket (from profile())
     let profileAlliances = []; // smallID[]
+    let profileLoaded = false;
+    let profileFetchedAt = 0;
+    let profileInFlight = null;
+    const PROFILE_REFRESH_MS = 1500;
     let mePlayer = null; // wrapped me
     let lastSnapshotTick = -1;
     const transportSpawnCache = new Map(); // target TileRef -> spawn TileRef|false
@@ -862,16 +866,38 @@
 
       // snapshot me.borderTiles + profile (relation buckets).
       await ensureBorderTiles(mePlayer);
-      try {
-        const prof = await withTimeout(unwrap(mePlayer).profile(), WORKER_TIMEOUT_MS, null);
-        if (prof && prof.relations) {
-          profileRelations = new Map(
-            Object.entries(prof.relations).map(([k, v]) => [Number(k), Number(v)]),
-          );
-          profileAlliances = (prof.alliances || []).map(Number);
+      const now =
+        typeof performance !== "undefined" && performance.now
+          ? performance.now()
+          : Date.now();
+      if (!profileLoaded || now - profileFetchedAt >= PROFILE_REFRESH_MS) {
+        if (!profileInFlight) {
+          profileInFlight = (async () => {
+            try {
+              const prof = await withTimeout(
+                unwrap(mePlayer).profile(),
+                WORKER_TIMEOUT_MS,
+                null,
+              );
+              if (prof && prof.relations) {
+                profileRelations = new Map(
+                  Object.entries(prof.relations).map(([k, v]) => [Number(k), Number(v)]),
+                );
+                profileAlliances = (prof.alliances || []).map(Number);
+              }
+            } catch (_e) {
+              /* keep previous profile on failure */
+            } finally {
+              profileLoaded = true;
+              profileFetchedAt =
+                typeof performance !== "undefined" && performance.now
+                  ? performance.now()
+                  : Date.now();
+              profileInFlight = null;
+            }
+          })();
         }
-      } catch (_e) {
-        /* keep previous profile on failure */
+        await profileInFlight;
       }
       return mePlayer;
     }

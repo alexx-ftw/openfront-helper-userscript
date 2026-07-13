@@ -129,7 +129,11 @@
   registerMapOverlayLayer({
     id: "attack-highlight",
     scanIntervalMs: 400,
-    animated: true, // pulsing rings animate off `now` — must redraw every frame
+    // Only pulse while there are incoming attacks. Keeping this dynamic avoids
+    // a permanent full-canvas redraw when the feature is enabled but idle.
+    animated: function () {
+      return Boolean(_attackHighlightScan?.attackers?.length);
+    },
     isEnabled: function () {
       return attackHighlightEnabled;
     },

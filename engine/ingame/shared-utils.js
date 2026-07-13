@@ -413,6 +413,51 @@ function getCachedPlayerViews(game) {
   return _cachedPlayerViewsArray;
 }
 
+// Shared per-tick cache for game.units(...types). Several overlays scan the
+// same unit families on their own cadences. GameView.units() creates a fresh
+// worker-backed snapshot, so repeating that call from rAF layers needlessly
+// allocates and traverses the same data.
+let _cachedGameUnitsGame = null;
+let _cachedGameUnitsTick = -1;
+const _cachedGameUnitsByTypes = new Map();
+
+function getCachedGameUnits(game, ...types) {
+  if (!game || typeof game.units !== "function") {
+    return [];
+  }
+
+  let currentTick = Number.NaN;
+  try {
+    currentTick = Number(game.ticks?.());
+  } catch (_error) {
+    currentTick = Number.NaN;
+  }
+
+  if (
+    game !== _cachedGameUnitsGame ||
+    !Number.isFinite(currentTick) ||
+    currentTick !== _cachedGameUnitsTick
+  ) {
+    _cachedGameUnitsGame = game;
+    _cachedGameUnitsTick = Number.isFinite(currentTick) ? currentTick : -1;
+    _cachedGameUnitsByTypes.clear();
+  }
+
+  const key = types.map((type) => String(type)).join("\u0001");
+  if (_cachedGameUnitsByTypes.has(key)) {
+    return _cachedGameUnitsByTypes.get(key);
+  }
+
+  let units = [];
+  try {
+    units = Array.from(game.units(...types) || []);
+  } catch (_error) {
+    units = [];
+  }
+  _cachedGameUnitsByTypes.set(key, units);
+  return units;
+}
+
 // FNV-1a-ish 32-bit numeric hash. Used to replace JSON.stringify-based
 // render-signature comparison in trade-balances.
 function mixHashNumber(hash, value) {

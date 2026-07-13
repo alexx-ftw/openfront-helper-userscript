@@ -35,7 +35,10 @@
   function scanBuildTimers(game) {
     let units;
     try {
-      units = game.units(...BUILD_TIMER_TYPES);
+      units =
+        typeof getCachedGameUnits === "function"
+          ? getCachedGameUnits(game, ...BUILD_TIMER_TYPES)
+          : game.units(...BUILD_TIMER_TYPES);
     } catch (_error) {
       _buildTimerScan = [];
       return;

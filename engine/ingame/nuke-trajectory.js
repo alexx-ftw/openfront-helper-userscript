@@ -75,7 +75,10 @@
   function collectNukeTrajectoryScan(game) {
     let units;
     try {
-      units = game.units(...NUKE_TRAJ_UNIT_TYPES);
+      units =
+        typeof getCachedGameUnits === "function"
+          ? getCachedGameUnits(game, ...NUKE_TRAJ_UNIT_TYPES)
+          : game.units(...NUKE_TRAJ_UNIT_TYPES);
     } catch (_error) {
       _nukeTrajScan = [];
       return;

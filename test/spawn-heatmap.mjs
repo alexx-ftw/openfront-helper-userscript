@@ -11,6 +11,8 @@ const LAND = 1 << 7;
 function loadHarness() {
   let overlayLayer = null;
   let indexCreateCalls = 0;
+  let exactIndexMode = false;
+  let exactRangeCalls = 0;
   let spawnPhase = true;
   const terrain = new Uint8Array(64).fill(LAND);
   const sandbox = {
@@ -37,8 +39,21 @@ function loadHarness() {
     __OFHSpawnIndex: {
       create() {
         indexCreateCalls += 1;
+        if (exactIndexMode) {
+          return {
+            ready: true,
+            size: 64,
+            width: 8,
+            height: 8,
+            version: 0,
+            forEachCandidateRange() {
+              exactRangeCalls += 1;
+            },
+          };
+        }
         return { ready: false };
       },
+      FRONTIER_VALUE_SCALE: 1000,
     },
   };
   sandbox.globalThis = sandbox;
@@ -55,6 +70,7 @@ function loadHarness() {
   };
   return {
     computeExactSpawnTopSpotsForBot: sandbox.computeExactSpawnTopSpotsForBot,
+    computeAsyncExactSpawnTopSpotsForBot: sandbox.computeAsyncExactSpawnTopSpotsForBot,
     game,
     getIndexCreateCalls: () => indexCreateCalls,
     layer: overlayLayer,
@@ -62,6 +78,10 @@ function loadHarness() {
       spawnPhase = value;
     },
     setSpawnMarkersEnabled: sandbox.setSpawnMarkersEnabled,
+    enableExactIndex: () => {
+      exactIndexMode = true;
+    },
+    getExactRangeCalls: () => exactRangeCalls,
   };
 }
 
@@ -104,6 +124,26 @@ assert.equal(
   harness.getIndexCreateCalls(),
   0,
   "large maps must not allocate the exact map-wide candidate index",
+);
+
+// The live exact selector must schedule its first range asynchronously. This
+// protects the spawn phase from reintroducing a synchronous full-map pass when
+// a ready index is available.
+harness.enableExactIndex();
+const asyncGame = {
+  __src: { _map: { terrain: new Uint8Array(64).fill(LAND) } },
+  height: () => 8,
+  width: () => 8,
+};
+assert.equal(
+  harness.computeAsyncExactSpawnTopSpotsForBot(asyncGame, null),
+  null,
+  "async exact selector returns the previous/fallback path while ranking is queued",
+);
+assert.equal(
+  harness.getExactRangeCalls(),
+  0,
+  "async exact selector must not scan a candidate range synchronously",
 );
 
 console.log("spawn-heatmap tests passed");

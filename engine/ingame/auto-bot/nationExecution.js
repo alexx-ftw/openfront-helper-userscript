@@ -272,14 +272,14 @@
       if (!state.settings.smartSpawn) return null;
       let ts = null;
       try {
-        if (typeof computeExactSpawnTopSpotsForBot === "function") {
-          ts = computeExactSpawnTopSpotsForBot(this.mg, this.player);
+        // The live entry point is non-blocking: exact map-resolution ranking is
+        // completed in idle slices and the function returns its last result or
+        // the bounded fallback while that job is still running.
+        if (typeof computeSpawnTopSpotsForBot === "function") {
+          ts = computeSpawnTopSpotsForBot(this.mg, this.player);
         }
         if ((!ts || ts.length === 0) && typeof getSpawnHeatmapTopSpots === "function") {
           ts = getSpawnHeatmapTopSpots();
-        }
-        if ((!ts || ts.length === 0) && typeof computeSpawnTopSpotsForBot === "function") {
-          ts = computeSpawnTopSpotsForBot(this.mg, this.player);
         }
       } catch (_e) {
         ts = null;
@@ -399,14 +399,11 @@
       if (useSmart) {
         let topSpots = null;
         try {
-          if (typeof computeExactSpawnTopSpotsForBot === "function") {
-            topSpots = computeExactSpawnTopSpotsForBot(g, this.player);
-          }
-          if (typeof getSpawnHeatmapTopSpots === "function") {
-            if (!topSpots || topSpots.length === 0) topSpots = getSpawnHeatmapTopSpots();
-          }
-          if (!topSpots && typeof computeSpawnTopSpotsForBot === "function") {
+          if (typeof computeSpawnTopSpotsForBot === "function") {
             topSpots = computeSpawnTopSpotsForBot(g, this.player);
+          }
+          if ((!topSpots || topSpots.length === 0) && typeof getSpawnHeatmapTopSpots === "function") {
+            topSpots = getSpawnHeatmapTopSpots();
           }
         } catch (_e) {
           topSpots = null;

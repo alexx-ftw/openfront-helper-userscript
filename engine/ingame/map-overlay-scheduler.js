@@ -67,9 +67,11 @@
       typeof layer.scanIntervalMs === "number"
         ? layer.scanIntervalMs
         : MAP_OVERLAY_DEFAULT_SCAN_MS;
-    // animated:true layers redraw every frame (e.g. pulsing rings); everything
-    // else is dirty-gated. Default false = gated (the heavy layers).
-    layer.animated = layer.animated === true;
+    // Animated layers may expose a cheap predicate so a pulsing effect only
+    // keeps the shared rAF loop hot while it has something visible to animate.
+    // Everything else is dirty-gated. Default false = gated (the heavy layers).
+    layer.animated =
+      typeof layer.animated === "function" ? layer.animated : layer.animated === true;
     _mapOverlayLayers.push(layer);
   }
 
@@ -210,7 +212,16 @@
             enabled = false;
           }
           if (!enabled) continue;
-          if (layer.animated) anyAnimated = true;
+          let animated = false;
+          try {
+            animated =
+              typeof layer.animated === "function"
+                ? Boolean(layer.animated())
+                : layer.animated === true;
+          } catch (_error) {
+            animated = false;
+          }
+          if (animated) anyAnimated = true;
           if (
             typeof layer.scan === "function" &&
             now - layer._lastScanAt >= layer.scanIntervalMs

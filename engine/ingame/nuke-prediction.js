@@ -191,6 +191,10 @@
   // Pre-allocated reusable objects. Eliminates per-landing per-frame allocs.
   const _nukeWorldQueryArg = { x: 0, y: 0 };
   const _nukeRadiusReusePos = { x: 0, y: 0, worldX: 0, worldY: 0 };
+  // Landing markers do not need a 60 Hz DOM pass. Keep the scan cadence at
+  // 250ms, but render the cached screen positions at about 20 FPS so the
+  // default-on overlay cannot compete with the game's own frame budget.
+  let _nukeFrameCounter = 2;
   // id → { firstTick, remainTicks } anchored once at first sight. The nuke advances exactly
   // one trajectory point per tick, so the ETA = remainTicks − (now − firstTick) counts down
   // 1:1 without recomputing the curve each frame. Pruned by id every scan (own map, separate
@@ -252,7 +256,11 @@
     const groupedByTile = new Map();
     const seenIds = new Set();
     const nowTicks = typeof game.ticks === "function" ? game.ticks() : 0;
-    for (const unit of game.units(...NUKE_UNIT_TYPES)) {
+    const units =
+      typeof getCachedGameUnits === "function"
+        ? getCachedGameUnits(game, ...NUKE_UNIT_TYPES)
+        : game.units(...NUKE_UNIT_TYPES);
+    for (const unit of units) {
       if (!unit?.isActive?.()) {
         continue;
       }
@@ -408,6 +416,12 @@
       return;
     }
 
+    _nukeFrameCounter = (_nukeFrameCounter + 1) % 3;
+    if (_nukeFrameCounter !== 0) {
+      nukeLandingAnimationFrame = requestAnimationFrame(syncNukePrediction);
+      return;
+    }
+
     const container = ensureNukeLandingContainer();
     const context = getOpenFrontGameContext();
     if (!context?.game || !context?.transform) {
@@ -538,6 +552,7 @@
 
   function setNukePredictionEnabled(enabled) {
     nukePredictionEnabled = Boolean(enabled);
+    _nukeFrameCounter = 2;
     if (!nukePredictionEnabled) {
       if (nukeLandingAnimationFrame !== null) {
         cancelAnimationFrame(nukeLandingAnimationFrame);

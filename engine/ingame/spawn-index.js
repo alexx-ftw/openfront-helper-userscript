@@ -418,11 +418,21 @@
       };
     }
 
-    forEachCandidate(options = {}) {
+    forEachCandidateRange(options = {}) {
       if (!this.ready || typeof options.onCandidate !== "function") return 0;
       const mode = options.mode === "random" ? "random" : "explicit";
+      const start = Math.max(0, Math.min(this.size, Math.floor(Number(options.startRef) || 0)));
+      const end = Math.max(
+        start,
+        Math.min(
+          this.size,
+          Number.isFinite(Number(options.endRef))
+            ? Math.floor(Number(options.endRef))
+            : this.size,
+        ),
+      );
       let count = 0;
-      for (let ref = 0; ref < this.size; ref += 1) {
+      for (let ref = start; ref < end; ref += 1) {
         if (!this._terrainValid[ref] || this.blocked[ref]) continue;
         if (mode === "random" && this.invalidCount[ref] !== 0) continue;
         if (mode === "explicit" && this.spawnGain[ref] === 0) continue;
@@ -444,6 +454,10 @@
         count += 1;
       }
       return count;
+    }
+
+    forEachCandidate(options = {}) {
+      return this.forEachCandidateRange(options);
     }
 
     stats() {

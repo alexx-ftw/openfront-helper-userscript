@@ -32,6 +32,7 @@
     }
   }
   let warshipRoutesAnimationFrame = null;
+  let _warshipFrameCounter = 2;
   let lastWarshipRouteScanAt = 0;
   let warshipRouteScan = []; // [{ id, unit, color, motionPlanUnitId, destWorldX, destWorldY }]
   const warshipRouteDomCache = new Map(); // id -> { routeLine, marker, routePoints, markerX, markerY, signature }
@@ -118,7 +119,11 @@
 
   function collectWarshipRoutes(game) {
     const out = [];
-    for (const unit of game.units("Warship")) {
+    const units =
+      typeof getCachedGameUnits === "function"
+        ? getCachedGameUnits(game, "Warship")
+        : game.units("Warship");
+    for (const unit of units) {
       if (!unit?.isActive?.()) continue;
       const relation = getBoatPredictionRelation(game, unit);
       if (!relation) continue;
@@ -229,6 +234,11 @@
       teardownWarshipRoutes();
       return;
     }
+    _warshipFrameCounter = (_warshipFrameCounter + 1) % 3;
+    if (_warshipFrameCounter !== 0) {
+      warshipRoutesAnimationFrame = requestAnimationFrame(syncWarshipRoutes);
+      return;
+    }
     const container = ensureWarshipRouteContainer();
     const context = getOpenFrontGameContext();
     if (!context?.game || !context?.transform) {
@@ -333,6 +343,7 @@
       cancelAnimationFrame(warshipRoutesAnimationFrame);
     }
     warshipRoutesAnimationFrame = null;
+    _warshipFrameCounter = 2;
     lastWarshipRouteScanAt = 0;
     warshipRouteScan = [];
     warshipRouteDomCache.clear();

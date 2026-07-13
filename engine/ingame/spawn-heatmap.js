@@ -22,6 +22,10 @@
   const SPAWN_HEATMAP_PLAYER_R = 150;
   const SPAWN_HEATMAP_CELL = 14;
   const SPAWN_HEATMAP_MAX_CELLS = 1200;
+  // Keep the fallback scorer bounded to the same number of cells that can be
+  // drawn. Exact bot ranking is still map-resolution, but large maps use this
+  // deterministic visual path while the exact result is built incrementally.
+  const SPAWN_HEATMAP_MAX_STATIC_CANDIDATES = SPAWN_HEATMAP_MAX_CELLS;
   const SPAWN_HEATMAP_TOP_N = 5;
   const SPAWN_HEATMAP_ENEMY_PRESSURE_R = 220;
   const SPAWN_HEATMAP_TEAM_ATTRACT_R = 110;
@@ -257,6 +261,11 @@
     _exactSpawnCacheIndexVersion = -1;
     _exactSpawnCacheSignature = "";
     _exactSpawnCacheResult = null;
+    _asyncExactSpawnJob = null;
+    _asyncExactSpawnResultSrcRef = null;
+    _asyncExactSpawnResultIndexVersion = -1;
+    _asyncExactSpawnResultSignature = "";
+    _asyncExactSpawnResult = null;
   }
 
   function refreshSpawnCandidateTerrain(game, refs = null) {
@@ -356,7 +365,14 @@
 
     const R = SPAWN_HEATMAP_ANALYSIS_R;
     const R2 = R * R;
-    const step = SPAWN_HEATMAP_GRID_STEP;
+    const spanWidth = Math.max(1, W - 2 * R);
+    const spanHeight = Math.max(1, H - 2 * R);
+    const boundedStep = Math.ceil(
+      Math.sqrt(
+        (spanWidth * spanHeight) / SPAWN_HEATMAP_MAX_STATIC_CANDIDATES,
+      ),
+    );
+    const step = Math.max(SPAWN_HEATMAP_GRID_STEP, boundedStep);
     const candidates = [];
 
     for (let cy = R; cy < H - R; cy += step) {
@@ -996,12 +1012,19 @@
   // Exact map-resolution ranking for the bot. This is deliberately separate
   // from the visual heatmap: the visual layer may stay coarse, while the bot
   // uses a replay-free robust objective over legal start and expansion metrics.
-  function computeExactSpawnTopSpotsForBot(game, me) {
+  function computeExactSpawnTopSpotsForBot(game, me, options = null) {
+    const incremental = Boolean(
+      options &&
+        (options.startRef !== undefined ||
+          options.endRef !== undefined ||
+          Array.isArray(options.best)),
+    );
     const index = ensureSpawnCandidateIndex(game);
     if (!index || !index.ready) return null;
 
-    const points = collectExactSpawnPoints(game, me);
+    const points = options?.points || collectExactSpawnPoints(game, me);
     if (
+      !incremental &&
       _exactSpawnCacheSrcRef === ((game && game.__src) || game) &&
       _exactSpawnCacheIndexVersion === index.version &&
       _exactSpawnCacheSignature === points.signature
@@ -1029,7 +1052,7 @@
       H,
       SPAWN_HEATMAP_NATION_R,
     );
-    const best = [];
+    const best = Array.isArray(options?.best) ? options.best : [];
     const objectiveApi = getSpawnObjectiveApi();
     const frontierValueScale = Number(getSpawnIndexApi()?.FRONTIER_VALUE_SCALE) || 1000;
     const teamMode = points.teamSpawns.length > 0;
@@ -1054,8 +1077,15 @@
       return false;
     };
 
-    index.forEachCandidate({
+    const iterateCandidates =
+      incremental && typeof index.forEachCandidateRange === "function"
+        ? (candidateOptions) => index.forEachCandidateRange(candidateOptions)
+        : (candidateOptions) => index.forEachCandidate(candidateOptions);
+    iterateCandidates({
       mode: "explicit",
+      ...(incremental
+        ? { startRef: options.startRef, endRef: options.endRef }
+        : {}),
       isCenterAllowed: (tile, x, y) => {
         if (area && (x < area.x || x >= area.x + area.width || y < area.y || y >= area.y + area.height)) {
           return false;
@@ -1214,11 +1244,164 @@
     });
 
     const result = best.length > 0 ? best : null;
-    _exactSpawnCacheSrcRef = (game && game.__src) || game;
-    _exactSpawnCacheIndexVersion = index.version;
-    _exactSpawnCacheSignature = points.signature;
-    _exactSpawnCacheResult = result;
+    if (!incremental) {
+      _exactSpawnCacheSrcRef = (game && game.__src) || game;
+      _exactSpawnCacheIndexVersion = index.version;
+      _exactSpawnCacheSignature = points.signature;
+      _exactSpawnCacheResult = result;
+    }
     return result;
+  }
+
+  // The exact scorer is intentionally kept synchronous for deterministic test
+  // callers, but the live bot must never run that full-map pass on its decision
+  // stack. Rank a small ref range during idle time and let the bot use its last
+  // completed result (or the bounded visual fallback) while the job progresses.
+  const EXACT_SPAWN_RANKING_CHUNK_REFS = 128;
+  const EXACT_SPAWN_RANKING_SLICE_MS = 4;
+  const EXACT_SPAWN_RANKING_IDLE_TIMEOUT_MS = 500;
+  let _asyncExactSpawnJob = null;
+  let _asyncExactSpawnScheduled = false;
+  let _asyncExactSpawnScheduledJob = null;
+  let _asyncExactSpawnResultSrcRef = null;
+  let _asyncExactSpawnResultIndexVersion = -1;
+  let _asyncExactSpawnResultSignature = "";
+  let _asyncExactSpawnResult = null;
+
+  function scheduleAsyncExactSpawnJob(job) {
+    if (!job || job.done) return;
+    if (_asyncExactSpawnScheduled && _asyncExactSpawnScheduledJob === job) return;
+    _asyncExactSpawnScheduled = true;
+    _asyncExactSpawnScheduledJob = job;
+
+    const run = (deadline) => {
+      if (_asyncExactSpawnScheduledJob === job) {
+        _asyncExactSpawnScheduled = false;
+        _asyncExactSpawnScheduledJob = null;
+      }
+      if (job !== _asyncExactSpawnJob || job.done) return;
+      if (job.index.version !== job.indexVersion) {
+        job.done = true;
+        return;
+      }
+
+      const startedAt = performance.now();
+      let chunks = 0;
+      const processChunk = () => {
+        const startRef = job.cursor;
+        const endRef = Math.min(
+          job.index.size,
+          startRef + EXACT_SPAWN_RANKING_CHUNK_REFS,
+        );
+        if (endRef <= startRef) {
+          job.cursor = job.index.size;
+          return;
+        }
+        computeExactSpawnTopSpotsForBot(job.game, job.me, {
+          points: job.points,
+          best: job.best,
+          startRef,
+          endRef,
+        });
+        job.cursor = endRef;
+        chunks += 1;
+      };
+
+      // A timer fallback deliberately processes one chunk only. Native idle
+      // callbacks may use the remaining budget, capped at four chunks so a
+      // browser that reports an overly generous deadline cannot monopolize a
+      // frame.
+      processChunk();
+      if (job.index.version !== job.indexVersion) {
+        job.done = true;
+        return;
+      }
+      while (
+        job.cursor < job.index.size &&
+        job.index.version === job.indexVersion &&
+        chunks < 4 &&
+        deadline &&
+        typeof deadline.timeRemaining === "function" &&
+        deadline.timeRemaining() > 0 &&
+        performance.now() - startedAt < EXACT_SPAWN_RANKING_SLICE_MS
+      ) {
+        processChunk();
+      }
+
+      if (job.index.version !== job.indexVersion) {
+        job.done = true;
+        return;
+      }
+
+      if (job.cursor < job.index.size) {
+        scheduleAsyncExactSpawnJob(job);
+        return;
+      }
+
+      job.done = true;
+      _asyncExactSpawnResultSrcRef = job.src;
+      _asyncExactSpawnResultIndexVersion = job.indexVersion;
+      _asyncExactSpawnResultSignature = job.points.signature;
+      _asyncExactSpawnResult = job.best.length > 0 ? job.best : null;
+    };
+
+    try {
+      if (typeof requestIdleCallback === "function") {
+        requestIdleCallback(run, { timeout: EXACT_SPAWN_RANKING_IDLE_TIMEOUT_MS });
+        return;
+      }
+    } catch (_error) {
+      /* use the timer fallback */
+    }
+    setTimeout(run, 0);
+  }
+
+  function computeAsyncExactSpawnTopSpotsForBot(game, me) {
+    const index = ensureSpawnCandidateIndex(game);
+    if (!index || !index.ready || typeof index.forEachCandidateRange !== "function") {
+      return null;
+    }
+
+    const src = (game && game.__src) || game;
+    const indexVersion = index.version;
+    const points = collectExactSpawnPoints(game, me);
+    if (
+      _asyncExactSpawnResultSrcRef === src &&
+      _asyncExactSpawnResultIndexVersion === indexVersion &&
+      _asyncExactSpawnResultSignature === points.signature
+    ) {
+      return _asyncExactSpawnResult;
+    }
+
+    const activeJob = _asyncExactSpawnJob;
+    if (
+      activeJob &&
+      !activeJob.done &&
+      activeJob.src === src &&
+      activeJob.index === index &&
+      activeJob.indexVersion === indexVersion
+    ) {
+      return null;
+    }
+
+    if (activeJob && !activeJob.done && activeJob.index === index) {
+      activeJob.done = true;
+    }
+
+    const job = {
+      game,
+      me,
+      src,
+      index,
+      indexVersion,
+      points,
+      cursor: 0,
+      best: [],
+      done: false,
+    };
+    _asyncExactSpawnJob = job;
+    scheduleAsyncExactSpawnJob(job);
+    return null;
   }
 
   try {
@@ -1312,7 +1495,10 @@
   let _botTopSpotsResult = null;
   function computeSpawnTopSpotsForBot(game, me) {
     try {
-      const exact = computeExactSpawnTopSpotsForBot(game, me);
+      const exact =
+        typeof computeAsyncExactSpawnTopSpotsForBot === "function"
+          ? computeAsyncExactSpawnTopSpotsForBot(game, me)
+          : computeExactSpawnTopSpotsForBot(game, me);
       if (exact && exact.length > 0) return exact;
       const src = (game && game.__src) || game;
       const td = getSpawnTerrain(game);
