@@ -206,6 +206,24 @@ existing rank-then-probe transport boundary and the Early Game 300-tick ETA gate
 With `winFixes` disabled, these additions are inactive and the faithful Nation
 flow remains unchanged.
 
+### Custom missile-defense upgrade and silo parity
+
+When `winFixes` is enabled, `StructureBehavior` checks the trajectory-aware
+missile forecast before ordinary structure pacing for Easy through Impossible.
+If upgrading one built friendly SAM improves the shared schedule enough to
+intercept an incoming missile while retaining the five-tick impact margin, that
+upgrade is emitted immediately. Legendary uses the same action through its
+adaptive path. Existing queued SAM slots and the `SAMCooldown` of a newly added
+level remain part of the forecast; an upgrade is not treated as an instantly
+ready free interceptor.
+
+The custom build policy also keeps missile-launch capacity at least equal to the
+strongest hostile SAM network: for each hostile player it sums SAM levels, takes
+the maximum of those per-player sums, and requires our missile silo level sum to
+reach that target. A SAM under construction counts as one future level. This is
+a max-per-enemy target rather than a global sum across unrelated opponents, and
+the ordinary three-silo cap is relaxed only while this parity gap exists.
+
 ## What faithfulness means here
 
 Same strategy ORDER (the difficulty-indexed arrays), same constants/probabilities, same

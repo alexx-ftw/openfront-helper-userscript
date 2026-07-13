@@ -322,6 +322,18 @@
 
     // handleStructures — NationStructureBehavior.ts:143 (now async).
     async handleStructures() {
+      // WIN-FIX: before ordinary pacing, use the trajectory forecast to upgrade
+      // an existing SAM when one level is enough to intercept an incoming
+      // missile. The faithful difficulty branches remain untouched when this
+      // custom switch is off; Legendary keeps its dedicated adaptive call below.
+      if (
+        state.settings.winFixes &&
+        !isLegendaryDifficulty() &&
+        (await this.maybeUpgradeMissileDefenseSam())
+      ) {
+        return true;
+      }
+
       const legendaryDefenseEmergency =
         isLegendaryDifficulty() && this.legendaryMissileDefenseUrgent();
 
@@ -734,6 +746,20 @@
         !config.isUnitDisabled(UNIT.HydrogenBomb) ||
         !config.isUnitDisabled(UNIT.MIRV);
 
+      // WIN-FIX: a hostile SAM network defines the silo capacity we need to
+      // saturate it. Prefer a silo build/upgrade until our sum of silo levels
+      // reaches the largest hostile player's sum of SAM levels.
+      if (
+        state.settings.winFixes &&
+        !isLegendaryDifficulty(difficulty) &&
+        missileSilosEnabled &&
+        nukesEnabled &&
+        this.missileSiloParityGap() > 0 &&
+        (await this.maybeSpawnStructure(UNIT.MissileSilo))
+      ) {
+        return true;
+      }
+
       if (isLegendaryDifficulty(difficulty)) {
         return await this.doHandleLegendaryStructures({
           config,
@@ -876,7 +902,15 @@
           ) {
             continue;
           }
-          if (this.player.isFriendly(other)) continue;
+          let friendly = false;
+          try {
+            friendly =
+              this.player.isFriendly(other) ||
+              this.player.isOnSameTeam(other);
+          } catch (_error) {
+            friendly = false;
+          }
+          if (friendly) continue;
           hostile.push(other);
         }
       } catch (_error) {
@@ -1195,6 +1229,46 @@
         return pressure;
       }
       return pressure;
+    }
+
+    // Custom missile parity target: count the built level sum of each hostile
+    // player's SAM network and choose the strongest single opponent. A SAM
+    // under construction counts as one future level so the silo target does
+    // not lag behind a defense that is about to complete.
+    enemySamCapacityParityTarget() {
+      const enemySamLevels = [];
+      for (const enemy of this.legendaryHostilePlayers()) {
+        try {
+          if (enemy.isAlive && enemy.isAlive() === false) continue;
+          const levels = [];
+          for (const sam of enemy.units(UNIT.SAMLauncher) || []) {
+            if (sam.isUnderConstruction && sam.isUnderConstruction()) {
+              levels.push(1);
+              continue;
+            }
+            if (sam.isActive && sam.isActive() === false) continue;
+            const level = Number(sam.level?.() ?? 1);
+            if (Number.isFinite(level)) {
+              levels.push(Math.max(1, Math.floor(level)));
+            }
+          }
+          if (levels.length > 0) enemySamLevels.push(levels);
+        } catch (_error) {
+          /* skip an incomplete enemy snapshot */
+        }
+      }
+      return legendaryMaxEnemySamCapacity(enemySamLevels);
+    }
+
+    missileSiloParityTarget() {
+      return state.settings.winFixes ? this.enemySamCapacityParityTarget() : 0;
+    }
+
+    missileSiloParityGap() {
+      return Math.max(
+        0,
+        this.missileSiloParityTarget() - this.ownedLevels(UNIT.MissileSilo),
+      );
     }
 
     legendaryRailMetrics(cities, ports, factories) {
@@ -2898,11 +2972,13 @@
       const cities = this.player.units(UNIT.City);
       const ports = this.player.units(UNIT.Port);
       const factories = this.player.units(UNIT.Factory);
-      const silos = this.player.units(UNIT.MissileSilo);
       const enemySilos = this.enemyMissileSiloPressure();
       const missileThreat = this.legendaryMissilePlacementContext();
       const rail = this.legendaryRailMetrics(cities, ports, factories);
       const hostile = this.legendaryHostilePlayers();
+      const ownSiloLevels = this.ownedLevels(UNIT.MissileSilo);
+      const siloParityTarget = this.missileSiloParityTarget();
+      const siloParityGap = Math.max(0, siloParityTarget - ownSiloLevels);
       let enemyWarships = 0;
       for (const enemy of hostile) {
         try {
@@ -2937,7 +3013,9 @@
         portSurvivability: this.legendaryPortSurvivability(ports, enemyWarships),
         enemySilos,
         ownSams: this.ownedLevels(UNIT.SAMLauncher),
-        ownSilos: silos.length,
+        ownSilos: ownSiloLevels,
+        siloParityTarget,
+        siloParityGap,
       };
     }
 
@@ -3013,7 +3091,8 @@
         }
         if (
           type === UNIT.MissileSilo &&
-          strategicState.targetPressure <= 0.75
+          strategicState.targetPressure <= 0.75 &&
+          strategicState.siloParityGap <= 0
         ) {
           return;
         }
@@ -3029,14 +3108,28 @@
         ) {
           ratio *= FACTORY_COASTAL_RATIO_MULTIPLIER;
         }
-        if (type === UNIT.MissileSilo && owned >= MAX_MISSILE_SILOS) return;
+        if (
+          type === UNIT.MissileSilo &&
+          owned >= MAX_MISSILE_SILOS &&
+          strategicState.siloParityGap <= 0
+        ) {
+          return;
+        }
         if (type === UNIT.MissileSilo && owned === 0) {
           ratio = FIRST_MISSILE_SILO_RATIO;
         }
-        const target = Math.floor(cityCount * ratio);
+        const ratioTarget = Math.floor(cityCount * ratio);
+        const target =
+          type === UNIT.MissileSilo
+            ? Math.max(ratioTarget, strategicState.siloParityTarget)
+            : ratioTarget;
         const deficit = Math.max(0, target - owned);
-        const strategic = Number(values.strategic || 0);
-        const mandatory = Number(values.mandatory || 0);
+        const parityGap =
+          type === UNIT.MissileSilo ? strategicState.siloParityGap : 0;
+        const strategic =
+          Number(values.strategic || 0) + Math.min(3, parityGap);
+        const mandatory =
+          Number(values.mandatory || 0) + (parityGap > 0 ? 1 : 0);
         const safety = Number(values.safety || 0);
         if (deficit <= 0 && strategic <= 0 && mandatory <= 0 && safety <= 0) {
           return;
@@ -3171,9 +3264,18 @@
       }
 
       const owned = this.ownedLevels(type);
+      const siloParityTarget =
+        type === UNIT.MissileSilo && state.settings.winFixes
+          ? this.missileSiloParityTarget()
+          : 0;
 
-      // Hard cap on missile silos
-      if (type === UNIT.MissileSilo && owned >= MAX_MISSILE_SILOS) {
+      // Hard cap on missile silos, except while the custom SAM-parity target
+      // requires additional silo levels.
+      if (
+        type === UNIT.MissileSilo &&
+        owned >= MAX_MISSILE_SILOS &&
+        owned >= siloParityTarget
+      ) {
         return false;
       }
 
@@ -3182,7 +3284,11 @@
         ratio = FIRST_MISSILE_SILO_RATIO;
       }
 
-      const targetCount = Math.floor(cityCount * ratio);
+      const ratioTarget = Math.floor(cityCount * ratio);
+      const targetCount =
+        type === UNIT.MissileSilo
+          ? Math.max(ratioTarget, siloParityTarget)
+          : ratioTarget;
 
       return owned < targetCount;
     }
@@ -3398,7 +3504,13 @@
       return false;
     }
 
-    async maybeUpgradeLegendarySam() {
+    async maybeUpgradeMissileDefenseSam() {
+      if (!autoBotBuildAllowed(UNIT.SAMLauncher)) return false;
+      try {
+        if (this.game.config().isUnitDisabled(UNIT.SAMLauncher)) return false;
+      } catch (_error) {
+        /* keep the buildable probe as the compatibility fallback */
+      }
       const context = this.legendaryMissilePlacementContext();
       if (!context || !Array.isArray(context.threats) || context.threats.length === 0) {
         return false;
@@ -3516,6 +3628,13 @@
       state.stats.builds++;
       setLastAction(tr("⬆️ Upgrade {type}", { type: UNIT.SAMLauncher }), "build");
       return true;
+    }
+
+    // Kept as a compatibility name for the Legendary adaptive flow and its
+    // existing test surface; the same trajectory-aware action is now also
+    // available to the custom win-fix path for the other difficulties.
+    async maybeUpgradeLegendarySam() {
+      return this.maybeUpgradeMissileDefenseSam();
     }
 
     // getTotalStructureDensity — NationStructureBehavior.ts:717.

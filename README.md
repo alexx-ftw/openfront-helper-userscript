@@ -168,6 +168,13 @@ threat routes against one shared SAM inventory. Assignment conflicts use a
 bounded exact fallback; an exhausted search is treated as unsafe, never as proof
 that a greedy miss is impossible to defend.
 
+With `winFixes` enabled, the custom build policy also upgrades a friendly SAM
+when one level makes its trajectory schedule intercept an incoming missile, and
+keeps our total missile-silo level sum at least equal to the largest hostile
+player's total SAM level sum. SAMs still respect their reload queues, and the
+parity target is calculated per hostile player rather than by adding unrelated
+enemies together.
+
 ---
 
 ### Companion Bot
