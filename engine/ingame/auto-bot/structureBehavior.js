@@ -322,20 +322,42 @@
 
     // handleStructures — NationStructureBehavior.ts:143 (now async).
     async handleStructures() {
+      const legendaryDifficulty = isLegendaryDifficulty();
       // WIN-FIX: before ordinary pacing, use the trajectory forecast to upgrade
       // an existing SAM when one level is enough to intercept an incoming
       // missile. The faithful difficulty branches remain untouched when this
       // custom switch is off; Legendary keeps its dedicated adaptive call below.
       if (
         state.settings.winFixes &&
-        !isLegendaryDifficulty() &&
+        !legendaryDifficulty &&
         (await this.maybeUpgradeMissileDefenseSam())
+      ) {
+        return true;
+      }
+      if (
+        state.settings.winFixes &&
+        !legendaryDifficulty &&
+        (await this.maybeUpgradeSamForSiloParity())
       ) {
         return true;
       }
 
       const legendaryDefenseEmergency =
-        isLegendaryDifficulty() && this.legendaryMissileDefenseUrgent();
+        legendaryDifficulty &&
+        (this.legendaryMissileDefenseUrgent() ||
+          (state.settings.winFixes && this.samLevelParityGap() > 0));
+
+      // If no existing SAM could be upgraded to the required level, establish
+      // one before ordinary cooldown/save-up pacing. Legendary keeps its
+      // emergency ordering inside doHandleLegendaryStructures().
+      if (
+        state.settings.winFixes &&
+        !legendaryDifficulty &&
+        this.samLevelParityGap() > 0 &&
+        (await this.maybeSpawnStructure(UNIT.SAMLauncher))
+      ) {
+        return true;
+      }
 
       // Defense posts are handled outside the normal pacing/counter system:
       // they don't increment placementsCount or lastStructureTick, and they are
@@ -838,6 +860,18 @@
         return true;
       }
 
+      if (await this.maybeUpgradeSamForSiloParity()) {
+        return true;
+      }
+      if (
+        nukesEnabled &&
+        !config.isUnitDisabled(UNIT.SAMLauncher) &&
+        this.samLevelParityGap() > 0 &&
+        (await this.maybeSpawnStructure(UNIT.SAMLauncher))
+      ) {
+        return true;
+      }
+
       // If the current per-missile schedule is not fully defensible, only
       // attempt a SAM whose construction can actually finish in time. Do not
       // spend on a City/Factory/Port/Silo in a zone that the model already
@@ -1231,33 +1265,47 @@
       return pressure;
     }
 
-    // Custom missile parity target: count the built level sum of each hostile
-    // player's SAM network and choose the strongest single opponent. A SAM
-    // under construction counts as one future level so the silo target does
-    // not lag behind a defense that is about to complete.
-    enemySamCapacityParityTarget() {
-      const enemySamLevels = [];
+    // Custom missile parity target: count the projected level sum of each
+    // hostile player's relevant unit and choose the strongest single opponent.
+    // An under-construction unit counts as one future level so the target does
+    // not lag behind a unit that is about to complete.
+    enemyUnitCapacityParityTarget(type, maxCapacity) {
+      const enemyUnitLevels = [];
       for (const enemy of this.legendaryHostilePlayers()) {
         try {
           if (enemy.isAlive && enemy.isAlive() === false) continue;
           const levels = [];
-          for (const sam of enemy.units(UNIT.SAMLauncher) || []) {
-            if (sam.isUnderConstruction && sam.isUnderConstruction()) {
+          for (const unit of enemy.units(type) || []) {
+            if (unit.isUnderConstruction && unit.isUnderConstruction()) {
               levels.push(1);
               continue;
             }
-            if (sam.isActive && sam.isActive() === false) continue;
-            const level = Number(sam.level?.() ?? 1);
+            if (unit.isActive && unit.isActive() === false) continue;
+            const level = Number(unit.level?.() ?? 1);
             if (Number.isFinite(level)) {
               levels.push(Math.max(1, Math.floor(level)));
             }
           }
-          if (levels.length > 0) enemySamLevels.push(levels);
+          if (levels.length > 0) enemyUnitLevels.push(levels);
         } catch (_error) {
           /* skip an incomplete enemy snapshot */
         }
       }
-      return legendaryMaxEnemySamCapacity(enemySamLevels);
+      return maxCapacity(enemyUnitLevels);
+    }
+
+    enemySamCapacityParityTarget() {
+      return this.enemyUnitCapacityParityTarget(
+        UNIT.SAMLauncher,
+        legendaryMaxEnemySamCapacity,
+      );
+    }
+
+    enemyMissileSiloCapacityParityTarget() {
+      return this.enemyUnitCapacityParityTarget(
+        UNIT.MissileSilo,
+        legendaryMaxEnemySiloCapacity,
+      );
     }
 
     missileSiloParityTarget() {
@@ -1269,6 +1317,33 @@
         0,
         this.missileSiloParityTarget() - this.ownedLevels(UNIT.MissileSilo),
       );
+    }
+
+    ownMaximumSamLevel() {
+      let maximum = 0;
+      for (const sam of this.player.units(UNIT.SAMLauncher) || []) {
+        try {
+          if (sam.isUnderConstruction && sam.isUnderConstruction()) continue;
+          if (sam.isActive && sam.isActive() === false) continue;
+          const level = Number(sam.level?.() ?? 1);
+          if (Number.isFinite(level)) {
+            maximum = Math.max(maximum, Math.max(1, Math.floor(level)));
+          }
+        } catch (_error) {
+          /* skip an incomplete own SAM snapshot */
+        }
+      }
+      return maximum;
+    }
+
+    samLevelParityTarget() {
+      return state.settings.winFixes
+        ? this.enemyMissileSiloCapacityParityTarget()
+        : 0;
+    }
+
+    samLevelParityGap() {
+      return Math.max(0, this.samLevelParityTarget() - this.ownMaximumSamLevel());
     }
 
     legendaryRailMetrics(cities, ports, factories) {
@@ -2979,6 +3054,11 @@
       const ownSiloLevels = this.ownedLevels(UNIT.MissileSilo);
       const siloParityTarget = this.missileSiloParityTarget();
       const siloParityGap = Math.max(0, siloParityTarget - ownSiloLevels);
+      const samLevelParityTarget = this.samLevelParityTarget();
+      const samLevelParityGap = Math.max(
+        0,
+        samLevelParityTarget - this.ownMaximumSamLevel(),
+      );
       let enemyWarships = 0;
       for (const enemy of hostile) {
         try {
@@ -3016,6 +3096,8 @@
         ownSilos: ownSiloLevels,
         siloParityTarget,
         siloParityGap,
+        samLevelParityTarget,
+        samLevelParityGap,
       };
     }
 
@@ -3085,7 +3167,8 @@
       const addRatioCandidate = (type, values = {}) => {
         if (
           type === UNIT.SAMLauncher &&
-          strategicState.missileThreat.score <= 0
+          strategicState.missileThreat.score <= 0 &&
+          strategicState.samLevelParityGap <= 0
         ) {
           return;
         }
@@ -3150,13 +3233,18 @@
         strategic: strategicState.railNeed > 1.25 ? 1 : 0,
       });
       addRatioCandidate(UNIT.SAMLauncher, {
-        mandatory: strategicState.missileThreat.critical ? 1 : 0,
-        safety: strategicState.missileThreat.critical
-          ? Math.max(
-              strategicState.defenseGap,
-              strategicState.missileThreat.score,
-            )
-          : strategicState.missileThreat.score,
+        mandatory:
+          (strategicState.missileThreat.critical ? 1 : 0) +
+          (strategicState.samLevelParityGap > 0 ? 1 : 0),
+        safety: Math.max(
+          strategicState.samLevelParityGap,
+          strategicState.missileThreat.critical
+            ? Math.max(
+                strategicState.defenseGap,
+                strategicState.missileThreat.score,
+              )
+            : strategicState.missileThreat.score,
+        ),
         strategic: strategicState.missileThreat.score > 0 ? 2 : 0,
       });
       addRatioCandidate(UNIT.MissileSilo, {
@@ -3502,6 +3590,67 @@
         return true;
       }
       return false;
+    }
+
+    async maybeUpgradeSamForSiloParity() {
+      if (!state.settings.winFixes || !autoBotBuildAllowed(UNIT.SAMLauncher)) {
+        return false;
+      }
+      try {
+        if (this.game.config().isUnitDisabled(UNIT.SAMLauncher)) return false;
+      } catch (_error) {
+        /* keep the buildable probe as the compatibility fallback */
+      }
+
+      const targetLevel = this.samLevelParityTarget();
+      if (targetLevel <= 0 || this.ownMaximumSamLevel() >= targetLevel) {
+        return false;
+      }
+
+      let reserve = 0n;
+      try {
+        reserve = this.legendaryReserveGold();
+      } catch (_error) {
+        reserve = 0n;
+      }
+      const availableGold =
+        this.player.gold() > reserve ? this.player.gold() - reserve : 0n;
+      const candidates = [];
+
+      for (const sam of this.player.units(UNIT.SAMLauncher) || []) {
+        if (sam.isUnderConstruction()) continue;
+        if (sam.isActive && sam.isActive() === false) continue;
+        const bu = await this.buildableFor(UNIT.SAMLauncher, sam.tile());
+        if (bu === null || bu.canUpgrade === false) continue;
+        let cost = this.cost(UNIT.SAMLauncher);
+        try {
+          if (bu.cost !== undefined && bu.cost !== null) cost = BigInt(bu.cost);
+        } catch (_error) {
+          /* use the formula fallback */
+        }
+        if (cost > availableGold) continue;
+        const level = Math.max(1, Number(sam.level() || 1));
+        candidates.push({ sam, bu, cost, level });
+      }
+
+      candidates.sort((left, right) => {
+        if (right.level !== left.level) return right.level - left.level;
+        if (left.cost !== right.cost) return left.cost < right.cost ? -1 : 1;
+        return String(left.sam.id?.() ?? "").localeCompare(
+          String(right.sam.id?.() ?? ""),
+        );
+      });
+      const selected = candidates[0];
+      if (!selected) return false;
+
+      const buildMenu = getBuildMenu();
+      if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
+        return false;
+      }
+      buildMenu.sendBuildOrUpgrade(selected.bu);
+      state.stats.builds++;
+      setLastAction(tr("⬆️ Upgrade {type}", { type: UNIT.SAMLauncher }), "build");
+      return true;
     }
 
     async maybeUpgradeMissileDefenseSam() {

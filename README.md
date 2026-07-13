@@ -175,6 +175,10 @@ player's total SAM level sum. SAMs still respect their reload queues, and the
 parity target is calculated per hostile player rather than by adding unrelated
 enemies together.
 
+The same custom guard works in the other direction: at least one of our built
+SAMs is upgraded until its level reaches the largest hostile missile-silo level
+sum. If we have no eligible SAM yet, the bot prioritizes constructing one.
+
 ---
 
 ### Companion Bot

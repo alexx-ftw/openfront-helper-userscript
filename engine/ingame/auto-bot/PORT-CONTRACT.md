@@ -224,6 +224,14 @@ reach that target. A SAM under construction counts as one future level. This is
 a max-per-enemy target rather than a global sum across unrelated opponents, and
 the ordinary three-silo cap is relaxed only while this parity gap exists.
 
+The inverse parity guard is also enforced: when a hostile player's projected
+missile-silo level sum exceeds the highest built SAM level on our side, at least
+one own SAM is upgraded toward that level before normal construction. If no own
+SAM can be upgraded, SAM construction is prioritized until an interceptor
+exists. Under-construction own SAMs do not count as immediately available for
+this level comparison; the policy is gated by `winFixes` and respects the
+user/game SAM-disabled settings.
+
 ## What faithfulness means here
 
 Same strategy ORDER (the difficulty-indexed arrays), same constants/probabilities, same

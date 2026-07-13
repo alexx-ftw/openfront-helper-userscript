@@ -47,13 +47,13 @@ function legendaryScoreValue(value) {
 }
 
 // The custom missile plan needs one conservative parity target: for each
-// hostile player, sum the levels of its SAM launchers and keep the largest
+// hostile player, sum the levels of the relevant unit and keep the largest
 // enemy total. This is deliberately a max-per-enemy rather than a global sum;
-// several unrelated opponents must not make one nation's silo target grow
-// without bound.
-function legendaryMaxEnemySamCapacity(enemySamLevels = []) {
+// several unrelated opponents must not make one nation's target grow without
+// bound.
+function legendaryMaxEnemyLevelSum(enemyUnitLevels = []) {
   let maximum = 0;
-  for (const levels of Array.isArray(enemySamLevels) ? enemySamLevels : []) {
+  for (const levels of Array.isArray(enemyUnitLevels) ? enemyUnitLevels : []) {
     if (!Array.isArray(levels)) continue;
     const capacity = levels.reduce((total, level) => {
       let raw = level;
@@ -72,6 +72,14 @@ function legendaryMaxEnemySamCapacity(enemySamLevels = []) {
     maximum = Math.max(maximum, capacity);
   }
   return maximum;
+}
+
+function legendaryMaxEnemySamCapacity(enemySamLevels = []) {
+  return legendaryMaxEnemyLevelSum(enemySamLevels);
+}
+
+function legendaryMaxEnemySiloCapacity(enemySiloLevels = []) {
+  return legendaryMaxEnemyLevelSum(enemySiloLevels);
 }
 
 function legendaryWeaponKey(weapon) {
