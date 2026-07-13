@@ -310,6 +310,22 @@
             lastBoatEtaTicks: state.earlyGame.lastBoatEtaTicks ?? null,
             boatRejectedUnknown: state.earlyGame.boatRejectedUnknown || 0,
             boatRejectedTooFar: state.earlyGame.boatRejectedTooFar || 0,
+            troopGenerationRate: state.earlyGame.troopGenerationRate || 0,
+            generationRatio: state.earlyGame.generationRatio || 0,
+            optimalGenerationRatio:
+              state.earlyGame.optimalGenerationRatio || 0.42,
+            nextExpansionTick: state.earlyGame.nextExpansionTick || 0,
+            frontierFreeTiles: state.earlyGame.frontierFreeTiles || 0,
+            frontierTerrainMagnitude:
+              state.earlyGame.frontierTerrainMagnitude || 10,
+            frontierTerrainScore: state.earlyGame.frontierTerrainScore || 0,
+            frontierContestedTileCount:
+              state.earlyGame.frontierContestedTileCount || 0,
+            frontierCompetingOwnerCount:
+              state.earlyGame.frontierCompetingOwnerCount || 0,
+            frontierCompetitionScore:
+              state.earlyGame.frontierCompetitionScore || 0,
+            expansionPlan: state.earlyGame.expansionPlan ?? null,
           }
         : null,
       eventsDisplayEvents: (() => {

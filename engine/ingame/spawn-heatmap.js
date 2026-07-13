@@ -49,10 +49,13 @@
     nation: 0.25,
     player: 0.25,
     edge: 0.05,
-    team: 0.2,
+    // Team/clan cohesion is intentionally weak in the opening objective. A
+    // teammate can permanently consume the free land/tribe that makes a spawn
+    // large; proximity is kept as a tie-break after our own growth signals.
+    team: 0.05,
     // Retained for the exact selector's diagnostic score; ranking applies clan
     // cohesion only after free-land availability and tribal expansion.
-    clan: 0.25,
+    clan: 0.04,
     teamCentroid: 0.08,
     enemyPressure: 0.12,
   };
@@ -978,15 +981,15 @@
           "robustFloor",
           "safetyScore",
           "expansionScore",
-          "teamScore",
           "tribeReachScore",
           "tribeReachCount",
           "freeLandScore",
           "resourceScore",
           "tribeScore",
           "nationScore",
-          "clanScore",
           "startScore",
+          "teamScore",
+          "clanScore",
         ];
         for (const dimension of dimensions) {
           if (left.objective[dimension] !== right.objective[dimension]) {

@@ -72,6 +72,25 @@
       this.player = this.mg.myPlayer();
       const me = this.player;
 
+      // WIN-FIX: naval interception is also active for Easy. It is a direct
+      // defensive response to an inbound transport, not the faithful Nation
+      // retaliation probability used by the regular warship block below.
+      if (
+        this.behaviorsInitialized &&
+        me !== null &&
+        me.isAlive() &&
+        this.feat("warship") &&
+        state.settings.winFixes &&
+        me.unitsConstructed(UNIT.Port) &&
+        !this.mg.config().isUnitDisabled(UNIT.Warship)
+      ) {
+        try {
+          await this.warshipBehavior.protectAgainstNavalInvasions();
+        } catch (e) {
+          console.error("[AutoBot] naval interception error:", e);
+        }
+      }
+
       // ── ship tracking — NationExecution.ts:90-101 (every tick, non-Easy, Port) ─
       if (
         this.behaviorsInitialized &&
@@ -174,6 +193,28 @@
         if (state.earlyGame) state.earlyGame.openingLandBurst = false;
         this.lastSeenTick = ticks;
         return;
+      }
+
+      // WIN-FIX (NOT in src): while the post-spawn frontier still contains
+      // free land or tribes, use the expansion plan's next-due tick instead of
+      // waiting for the slower/randomized normal attack cadence. The planner
+      // itself preserves a live reserve and suppresses duplicate in-flight
+      // attacks, so this is a cadence gate, not an unconditional attack loop.
+      if (
+        state.settings.winFixes === true &&
+        (this.feat("expand") || this.feat("boat")) &&
+        state.earlyGame?.active
+      ) {
+        const dueTick = Number(state.earlyGame.nextExpansionTick);
+        if (!Number.isFinite(dueTick) || ticks >= dueTick) {
+          try {
+            await this.attackBehavior.maybeAttack();
+          } catch (e) {
+            console.error("[AutoBot] early expansion decision error:", e);
+          }
+          this.lastSeenTick = ticks;
+          return;
+        }
       }
 
       // ── tick gating (edge-detected over the elapsed window) — NationExecution.ts:176 ─

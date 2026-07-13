@@ -165,4 +165,40 @@ test("tribe and nation opportunity is part of the robust spawn objective", () =>
   assert.equal(ranked[0].objective.resourceScore, 0.8);
 });
 
+test("permanent own expansion beats teammate proximity", () => {
+  const ranked = api.rankModelCandidates([
+    {
+      id: "open-frontier",
+      startScore: 0.82,
+      expansionScore: 0.92,
+      safetyScore: 0.82,
+      teamScore: 0.05,
+      tribeReachScore: 0.9,
+      tribeReachCount: 5,
+      freeLandScore: 0.92,
+      resourceScore: 0.9,
+      tribeScore: 0.9,
+      nationScore: 0.8,
+      clanScore: 0,
+    },
+    {
+      id: "teammate-cluster",
+      startScore: 0.82,
+      expansionScore: 0.72,
+      safetyScore: 0.82,
+      teamScore: 1,
+      tribeReachScore: 0.5,
+      tribeReachCount: 2,
+      freeLandScore: 0.55,
+      resourceScore: 0.7,
+      tribeScore: 0.5,
+      nationScore: 0.5,
+      clanScore: 1,
+    },
+  ]);
+
+  assert.equal(ranked[0].id, "open-frontier");
+  assert.equal(ranked[0].objective.teamScore, 0.05);
+});
+
 console.log("spawn-objective tests passed");

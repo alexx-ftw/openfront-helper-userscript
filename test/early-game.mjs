@@ -22,6 +22,8 @@ const gameApiSource = fs.readFileSync(
   "utf8",
 );
 const buildSource = fs.readFileSync(path.join(repoRoot, "build.mjs"), "utf8");
+const coreSource = fs.readFileSync(path.join(repoRoot, "engine/ingame/auto-bot/core.js"), "utf8");
+const panelSource = fs.readFileSync(path.join(repoRoot, "engine/ingame/auto-bot/panel.js"), "utf8");
 
 assert.equal(typeof sandbox.createEarlyGameSnapshot, "function");
 assert.equal(typeof sandbox.chooseEarlyGameAction, "function");
@@ -36,9 +38,132 @@ assert.equal(typeof sandbox.rankEarlyGameTribeCandidates, "function");
 assert.equal(typeof sandbox.calculateEarlyGameContinuationValue, "function");
 assert.equal(typeof sandbox.calculateEarlyGameFoodRaceValue, "function");
 assert.equal(typeof sandbox.calculateEarlyGameRaceTroops, "function");
+assert.equal(typeof sandbox.calculateTroopGenerationRate, "function");
+assert.equal(typeof sandbox.findOptimalGenerationRatio, "function");
+assert.equal(typeof sandbox.estimateTroopRecoveryTicks, "function");
+assert.equal(typeof sandbox.terrainAttackMagnitudeFromMapMagnitude, "function");
+assert.equal(typeof sandbox.calculateEarlyGameExpansionPlan, "function");
+assert.equal(typeof sandbox.getAutoDonateExpansionStatus, "function");
 assert.equal(sandbox.isEarlyGameBoatEta(300), true);
 assert.equal(sandbox.isEarlyGameBoatEta(301), false);
 assert.equal(sandbox.isEarlyGameBoatEta(null), false);
+
+const generationAtZero = sandbox.calculateTroopGenerationRate({
+  troops: 0,
+  maxTroops: 100000,
+});
+const generationAtPeak = sandbox.calculateTroopGenerationRate({
+  troops: 42000,
+  maxTroops: 100000,
+});
+const generationAtMax = sandbox.calculateTroopGenerationRate({
+  troops: 100000,
+  maxTroops: 100000,
+});
+assert.ok(generationAtZero > 0);
+assert.ok(generationAtPeak > generationAtZero);
+assert.equal(generationAtMax, 0);
+assert.ok(
+  sandbox.findOptimalGenerationRatio() >= 0.38 && sandbox.findOptimalGenerationRatio() <= 0.46,
+);
+assert.equal(sandbox.terrainAttackMagnitudeFromMapMagnitude(1), 80);
+assert.equal(sandbox.terrainAttackMagnitudeFromMapMagnitude(15), 100);
+assert.equal(sandbox.terrainAttackMagnitudeFromMapMagnitude(25), 120);
+assert.ok(
+  sandbox.estimateTroopRecoveryTicks({
+    troops: 10000,
+    maxTroops: 100000,
+    targetTroops: 20000,
+  }) > 0,
+);
+
+const openingExpansionPlan = sandbox.calculateEarlyGameExpansionPlan({
+  ownTroops: 20000,
+  maxTroops: 100000,
+  targetType: "land",
+  terrainMagnitude: 1,
+  expectedTiles: 8,
+  baseReserveRatio: 0.3,
+});
+assert.equal(openingExpansionPlan.shouldAttackNow, true);
+assert.ok(openingExpansionPlan.commitTroops > 0);
+assert.ok(openingExpansionPlan.commitTroops < openingExpansionPlan.ownTroops);
+assert.ok(openingExpansionPlan.generationRate > 0);
+
+const perishableExpansionPlan = sandbox.calculateEarlyGameExpansionPlan({
+  ownTroops: 12000,
+  maxTroops: 100000,
+  targetType: "land",
+  terrainMagnitude: 25,
+  expectedTiles: 8,
+  opportunityUrgency: 1,
+});
+assert.equal(perishableExpansionPlan.irreversibleOpportunity, true);
+assert.equal(perishableExpansionPlan.shouldAttackNow, true);
+assert.ok(perishableExpansionPlan.commitFraction >= 0.6);
+
+const activeExpansionPlan = sandbox.calculateEarlyGameExpansionPlan({
+  ownTroops: 60000,
+  maxTroops: 100000,
+  targetType: "land",
+  activeAttackTroops: 10000,
+});
+assert.equal(activeExpansionPlan.shouldAttackNow, false);
+
+const completeTribePlan = sandbox.calculateEarlyGameExpansionPlan({
+  ownTroops: 30000,
+  maxTroops: 100000,
+  targetType: "tribe",
+  targetTroops: 5000,
+  targetDefenseMultiplier: 1,
+  opportunityUrgency: 1,
+});
+assert.ok(completeTribePlan.requiredTroops >= 10000);
+assert.equal(completeTribePlan.shouldAttackNow, true);
+
+const assertAutoDonateStatus = (actual, expected) =>
+  assert.equal(JSON.stringify(actual), JSON.stringify(expected));
+
+assertAutoDonateStatus(
+  sandbox.getAutoDonateExpansionStatus({
+    active: true,
+    hasFreeLand: true,
+  }),
+  { active: true, reason: "free-land", maxTicks: 30 },
+);
+assertAutoDonateStatus(
+  sandbox.getAutoDonateExpansionStatus({
+    active: true,
+    actionableTribes: [{ landBorder: true }],
+  }),
+  { active: true, reason: "land-tribe", maxTicks: 30 },
+);
+assertAutoDonateStatus(
+  sandbox.getAutoDonateExpansionStatus({
+    active: true,
+    actionableTribes: [{ landBorder: false, boatEtaTicks: 30 }],
+  }),
+  { active: true, reason: "sea-tribe", maxTicks: 30 },
+);
+assertAutoDonateStatus(
+  sandbox.getAutoDonateExpansionStatus({
+    active: true,
+    actionableTribes: [{ landBorder: false, boatEtaTicks: 31 }],
+  }),
+  { active: false, reason: null, maxTicks: 30 },
+);
+assertAutoDonateStatus(
+  sandbox.getAutoDonateExpansionStatus({
+    active: true,
+    actionableTribes: [{ landBorder: false, seaReachableWithin30Ticks: true }],
+  }),
+  { active: true, reason: "sea-tribe", maxTicks: 30 },
+);
+assertAutoDonateStatus(sandbox.getAutoDonateExpansionStatus({ active: false, hasFreeLand: true }), {
+  active: false,
+  reason: null,
+  maxTicks: 30,
+});
 
 const snapshot = sandbox.createEarlyGameSnapshot({
   postSpawn: true,
@@ -459,15 +584,23 @@ assert.equal(routeApi.game.hasTransportRouteEstimator, true);
 assert.match(attackSource, /state\.earlyGame\.action === "land"/);
 assert.match(attackSource, /async allowEarlyGameBoat\(tile\)/);
 assert.match(attackSource, /!state\.settings\.winFixes \|\| !early \|\| !early\.active/);
-assert.match(attackSource, /EARLY_EXPAND_COMMIT/);
 assert.match(attackSource, /EARLY_TRIBE_BORDER_FETCH_CONCURRENCY/);
 assert.match(attackSource, /openingLandBurst/);
 assert.match(attackSource, /state\.settings\.winFixes && botTarget/);
 assert.match(attackSource, /calculateBotAttackTroops\(/);
 assert.match(attackSource, /attackEarlyGameTribe/);
 assert.match(attackSource, /maybeEarlyOceanBoat/);
+assert.match(attackSource, /calculateEarlyGameExpansionPlan/);
+assert.match(attackSource, /frontierCompetitionScore/);
+assert.match(attackSource, /plannedTroops/);
+assert.match(attackSource, /getAutoDonateExpansionStatus/);
+assert.match(attackSource, /pauseDonateDuringExpansion/);
+assert.match(coreSource, /pauseDonateDuringExpansion: true/);
+assert.match(panelSource, /data-cfg="pauseDonateDuringExpansion"/);
+assert.match(panelSource, /ab-feat-mini\.paused/);
 assert.match(nationSource, /openingLandBurstPending/);
 assert.match(nationSource, /openingWinFix \? 0\.6 : 0\.5/);
+assert.match(nationSource, /nextExpansionTick/);
 assert.match(attackSource, /rankTeamDonationCandidates\(needy\)/);
 assert.match(attackSource, /playersShareClanTag/);
 assert.match(gameApiSource, /estimateTransportRouteTicks/);
