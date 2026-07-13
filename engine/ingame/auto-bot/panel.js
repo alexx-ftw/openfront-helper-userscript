@@ -95,8 +95,10 @@
       }
       #${PANEL_ID} .ab-feat-mini:hover { background: var(--ab-surface-2); opacity: 0.85; }
       #${PANEL_ID} .ab-feat-mini.on { opacity: 1; border-color: var(--oh-accent-muted, rgba(96,165,250,.45)); background: var(--oh-accent-soft, rgba(96,165,250,.14)); }
+      #${PANEL_ID} .ab-feat-mini.paused { opacity: 1; border-color: rgba(251,191,36,.7); background: rgba(251,191,36,.16); }
       #${PANEL_ID} .ab-feat-mini .ab-feat-emoji { font-size: 16px; line-height: 1; transition: filter .14s; }
       #${PANEL_ID} .ab-feat-mini.on .ab-feat-emoji { filter: drop-shadow(0 0 5px var(--oh-accent-muted, rgba(96,165,250,.85))); }
+      #${PANEL_ID} .ab-feat-mini.paused .ab-feat-emoji { filter: drop-shadow(0 0 5px rgba(251,191,36,.9)); }
       .ab-feat-tip {
         position: fixed; z-index: 9000; transform: translate(-50%, -100%);
         padding: 7px 10px; border-radius: 8px; pointer-events: none;
@@ -388,6 +390,10 @@
             </div>
 
             <div class="ab-cfg-sec">${tr("Donate tuning")}</div>
+            <div class="ab-cfg-row">
+              <span class="ab-cfg-label">${tr("Pause donations during expansion")}</span>
+              <div class="ab-cfg-sw ${state.settings.pauseDonateDuringExpansion ? "on" : ""}" data-cfg="pauseDonateDuringExpansion"></div>
+            </div>
             <div class="ab-cfg-row" style="flex-direction:column;align-items:stretch;">
               <div style="display:flex;justify-content:space-between;align-items:center;">
                 <span class="ab-cfg-label">${tr("Keep fraction")}</span>
@@ -474,6 +480,7 @@
     document.body.appendChild(panel);
     wirePanel(panel);
     applyStoredPosition(panel);
+    renderDonateToggle();
     return panel;
   }
 
@@ -515,6 +522,7 @@
         state.settings.features[key] = on;
         el.classList.toggle("on", on); // tile lights up when ON (no checkmark)
         saveSettings();
+        if (key === "donate") renderDonateToggle();
       });
     });
 
@@ -581,7 +589,11 @@
           featTip.className = "ab-feat-tip";
           document.body.appendChild(featTip);
         }
-        featTip.innerHTML = `<b>${tr(info[0])}</b><br>${tr(info[1])}`;
+        if (tile.dataset.feat === "donate" && tile.classList.contains("paused")) {
+          featTip.innerHTML = `<b>${tr("Temporarily paused")}</b><br>${tile.title || tr(info[1])}`;
+        } else {
+          featTip.innerHTML = `<b>${tr(info[0])}</b><br>${tr(info[1])}`;
+        }
         const r = tile.getBoundingClientRect();
         featTip.style.left = `${r.left + r.width / 2}px`;
         featTip.style.top = `${r.top - 6}px`;
@@ -644,6 +656,7 @@
         } else {
           state.settings[key] = on;
           saveSettings();
+          if (key === "pauseDonateDuringExpansion") renderDonateToggle();
         }
       });
     });
@@ -815,6 +828,39 @@
       .classList.toggle("on", state.settings.enabled);
   }
 
+  function renderDonateToggle() {
+    const panel = document.getElementById(PANEL_ID);
+    if (!panel) return;
+    const tile = panel.querySelector('[data-feat="donate"]');
+    if (!tile) return;
+
+    let status = { active: false, reason: null };
+    try {
+      if (typeof getAutoDonateExpansionStatus === "function") {
+        status = getAutoDonateExpansionStatus(state.earlyGame);
+      }
+    } catch (_e) {
+      /* keep the normal feature color if the status probe is unavailable */
+    }
+
+    const paused =
+      state.settings.features.donate === true &&
+      state.settings.pauseDonateDuringExpansion === true &&
+      status.active === true;
+    tile.classList.toggle("paused", paused);
+    if (paused) {
+      const labels = {
+        "free-land": tr("Free land available"),
+        "land-tribe": tr("Land tribe in range"),
+        "sea-tribe": tr("Sea tribe in range"),
+      };
+      tile.title = tr("Temporarily paused") + ": " +
+        (labels[status.reason] || tr("Expansion opportunity available"));
+    } else {
+      tile.title = tr("Auto-donate troops (allies)");
+    }
+  }
+
   function refreshGateBanner() {
     const panel = document.getElementById(PANEL_ID);
     if (!panel) return;
@@ -863,4 +909,5 @@
     set("c-attacks", String(state.stats.attacks));
     set("c-builds", String(state.stats.builds));
     set("c-nukes", String(state.stats.nukes));
+    renderDonateToggle();
   }

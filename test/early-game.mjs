@@ -157,7 +157,7 @@ assertAutoDonateStatus(
     active: true,
     actionableTribes: [{ landBorder: false, seaReachableWithin30Ticks: true }],
   }),
-  { active: true, reason: "sea-tribe", maxTicks: 30 },
+  { active: false, reason: null, maxTicks: 30 },
 );
 assertAutoDonateStatus(sandbox.getAutoDonateExpansionStatus({ active: false, hasFreeLand: true }), {
   active: false,
@@ -557,6 +557,30 @@ assert.equal(
   }),
   null,
 );
+assert.equal(
+  sandbox.findWaterRouteTicks({
+    start: 0,
+    goal: 5,
+    neighbors: (tile) => waterGraph.get(tile) || [],
+    isWater: (tile) => tile >= 1 && tile <= 4,
+    speed: 2,
+    maxTicks: 3,
+  }),
+  3,
+);
+assert.equal(
+  sandbox.findWaterRouteTicks({
+    start: 0,
+    goal: 5,
+    neighbors: (tile) => waterGraph.get(tile) || [],
+    isWater: (tile) => tile >= 1 && tile <= 4,
+    speed: 2,
+    maxTicks: 2,
+  }),
+  null,
+);
+assert.equal(sandbox.transportRouteTicks([0, 1, 2, 3], { speed: 2 }), 2);
+assert.equal(sandbox.transportRouteTicks([0, 1, 2, 3], { ticksPerMove: 2 }), 6);
 
 const routeSandbox = {};
 const routeSrc = {
@@ -566,6 +590,7 @@ const routeSrc = {
   isShore: (tile) => tile === 0 || tile === 5,
   ownerID: (tile) => (tile === 5 ? 2 : tile === 0 ? 1 : 0),
   manhattanDist: (a, b) => Math.abs(a - b),
+  transportShipSpeed: 2,
 };
 vm.runInNewContext(`${gameApiSource}\n${source}`, routeSandbox, {
   filename: "gameApi+earlyGame.js",
@@ -578,7 +603,7 @@ const routePlayer = routeApi.wrapPlayer({
   bestTransportShipSpawn: () => Promise.resolve(0),
 });
 assert.equal(await routePlayer.bestTransportShipSpawn(5), 0);
-assert.equal(await routeApi.game.estimateTransportRouteTicks(5), 5);
+assert.equal(await routeApi.game.estimateTransportRouteTicks(5), 3);
 assert.equal(routeApi.game.hasTransportRouteEstimator, true);
 
 assert.match(attackSource, /state\.earlyGame\.action === "land"/);
@@ -595,6 +620,8 @@ assert.match(attackSource, /frontierCompetitionScore/);
 assert.match(attackSource, /plannedTroops/);
 assert.match(attackSource, /getAutoDonateExpansionStatus/);
 assert.match(attackSource, /pauseDonateDuringExpansion/);
+assert.match(attackSource, /estimateEarlyGameTribeBoatEta/);
+assert.match(attackSource, /boatEtaTicks <= getAutoDonateExpansionTickLimit\(\)/);
 assert.match(coreSource, /pauseDonateDuringExpansion: true/);
 assert.match(panelSource, /data-cfg="pauseDonateDuringExpansion"/);
 assert.match(panelSource, /ab-feat-mini\.paused/);
@@ -606,6 +633,8 @@ assert.match(attackSource, /playersShareClanTag/);
 assert.match(gameApiSource, /estimateTransportRouteTicks/);
 assert.match(gameApiSource, /hasTransportRouteEstimator/);
 assert.match(gameApiSource, /findWaterRouteTicks\(\{/);
+assert.match(gameApiSource, /transportShipSpeed/);
+assert.match(source, /transportPathStepsToTicks/);
 assert.match(buildSource, /"auto-bot\/earlyGame\.js"/);
 
 // Integration probe: the real AttackBehavior enrichment must expose the same

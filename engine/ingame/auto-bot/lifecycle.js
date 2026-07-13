@@ -1719,6 +1719,7 @@ window.__OFH_autobot = {
       difficulty: s.difficulty,
       winFixes: Boolean(s.winFixes),
       smartSpawn: Boolean(s.smartSpawn),
+      pauseDonateDuringExpansion: Boolean(s.pauseDonateDuringExpansion),
       tickMs: s.tickMs,
       hidden: Boolean(s.hidden),
       features: { ...s.features },
@@ -1730,6 +1731,9 @@ window.__OFH_autobot = {
     const s = state.settings;
     if ("difficulty" in patch) s.difficulty = patch.difficulty;
     if ("winFixes" in patch) s.winFixes = Boolean(patch.winFixes);
+    if ("pauseDonateDuringExpansion" in patch) {
+      s.pauseDonateDuringExpansion = Boolean(patch.pauseDonateDuringExpansion);
+    }
     if ("hidden" in patch) s.hidden = Boolean(patch.hidden);
     if ("tickMs" in patch) {
       const ms = Number(patch.tickMs);

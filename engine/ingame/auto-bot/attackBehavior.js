@@ -69,6 +69,7 @@
   // async enrichment bounded so a crowded tribe map cannot starve the combat tick.
   const EARLY_TRIBE_CANDIDATES = 8;
   const EARLY_TRIBE_BORDER_FETCH_CONCURRENCY = 4;
+  const EARLY_TRIBE_BOAT_ETA_TARGETS = 4;
   const EARLY_GAME_TRIBE_CHAIN_RADIUS = 120;
   // OpenFront's Config.attackLogic applies these effects when an operational
   // enemy Defense Post is within defensePostRange() of the tile being taken.
@@ -82,6 +83,12 @@
   // Terrain is shared by all Nation behaviors for the same game. Keep the
   // reverse maritime field per map instead of rebuilding it for every bot.
   const EARLY_GAME_MARITIME_INDEX_CACHE = new WeakMap();
+
+  function getAutoDonateExpansionTickLimit() {
+    return typeof AUTO_DONATE_EXPANSION_MAX_TICKS === "number"
+      ? AUTO_DONATE_EXPANSION_MAX_TICKS
+      : 30;
+  }
 
   function emptyDefensePostAttackProfile() {
     return {
@@ -622,13 +629,6 @@
       // second decision loop. The existing bot/land branches remain responsible for
       // actuation; this snapshot only tells them whether the opening expansion window
       // is still available and records why a naval target was accepted or rejected.
-      let transportEnabled = true;
-      try {
-        transportEnabled =
-          this.game.config().isUnitDisabled(UNIT.TransportShip) !== true;
-      } catch (_e) {
-        /* older adapters do not expose unit-disable checks */
-      }
       const tribeTargets = borderingEnemies
         .filter((enemy) => enemy.isPlayer() && enemy.type() === PlayerType.Bot)
         .map((enemy) => {
@@ -641,10 +641,10 @@
             friendly: this.player.isFriendly(enemy),
             landBorder,
             boatCandidate: !landBorder,
-            // gameApi.nearby() only adds non-land neighbors through its bounded
-            // five-water-step shore sample, which is inside the 30-tick policy
-            // range. Exact route ETAs, when available, still override this flag.
-            seaReachableWithin30Ticks: !landBorder && transportEnabled,
+            // This is only a candidate marker. The donation pause is not allowed
+            // to infer an ETA from nearby() or from raw water distance; the async
+            // tribe enrichment below must supply the pathfinder ETA first.
+            seaReachableWithin30Ticks: false,
             boatEtaTicks: null,
           };
         });
@@ -912,15 +912,11 @@
         });
       }
       const ranked = rankEarlyGameTribeCandidates(candidates);
-      let transportEnabled = true;
-      try {
-        transportEnabled =
-          this.game.config().isUnitDisabled(UNIT.TransportShip) !== true;
-      } catch (_e) {
-        /* older adapters do not expose unit-disable checks */
-      }
       const diagnosticTargets = ranked.map((candidate) => {
         const plan = candidate.expansionPlan;
+        const boatEtaTicks = Number.isFinite(candidate.boatEtaTicks)
+          ? candidate.boatEtaTicks
+          : null;
         return {
           id: candidate.id,
           maritimeDistance: Number.isFinite(candidate.maritimeDistance)
@@ -939,10 +935,11 @@
           cheapCapture: Number(finiteEarlyGameSignal(candidate.cheapCapture).toFixed(3)),
           landBorder: candidate.landBorder,
           seaReachableWithin30Ticks:
-            candidate.landBorder !== true && transportEnabled,
-          boatEtaTicks: Number.isFinite(candidate.boatEtaTicks)
-            ? candidate.boatEtaTicks
-            : null,
+            candidate.landBorder !== true &&
+            boatEtaTicks !== null &&
+            boatEtaTicks >= 0 &&
+            boatEtaTicks <= getAutoDonateExpansionTickLimit(),
+          boatEtaTicks,
           contestingPlayers: candidate.contestingPlayers,
           shouldAttackNow: plan.shouldAttackNow,
           requiredTroops: Math.round(plan.requiredTroops),
@@ -1300,6 +1297,7 @@
           blockValue,
           cheapCapture: Math.max(0, 1 - Math.min(1, troopRatio)),
           landBorder: ownEdges > 0,
+          boatEtaTicks: null,
           distance,
           center: tribeCenter,
           futureFoodCount: 0,
@@ -1322,6 +1320,31 @@
           terrainMagnitude,
           expectedTiles,
         });
+      }
+
+      // A maritime tribe qualifies for the donation pause only after the same
+      // transport pathfinder used by boat actuation has measured a route. Probe a
+      // few nearest target shores, because the geometrically nearest shore can be
+      // on a different water component. The result includes the transport
+      // movement speed/ticks-per-move conversion from gameApi.
+      const seaCandidates = candidates.filter((candidate) => !candidate.landBorder);
+      for (
+        let start = 0;
+        start < seaCandidates.length;
+        start += EARLY_TRIBE_BORDER_FETCH_CONCURRENCY
+      ) {
+        const batch = seaCandidates.slice(
+          start,
+          start + EARLY_TRIBE_BORDER_FETCH_CONCURRENCY,
+        );
+        await Promise.all(
+          batch.map(async (candidate) => {
+            candidate.boatEtaTicks = await this.estimateEarlyGameTribeBoatEta(
+              candidate.player,
+              borderByTribe.get(candidate.player) || new Set(),
+            );
+          }),
+        );
       }
 
       // A bounded continuation pass estimates how many other neutral tribes will
@@ -1348,6 +1371,64 @@
         candidate.futureFoodAccess = calculateEarlyGameContinuationValue(candidate);
       }
       return candidates;
+    }
+
+    async estimateEarlyGameTribeBoatEta(target, targetBorder) {
+      try {
+        if (this.game.config().isUnitDisabled(UNIT.TransportShip)) return null;
+      } catch (_e) {
+        /* older adapters do not expose unit-disable checks */
+      }
+      if (
+        this.game.hasTransportRouteEstimator !== true ||
+        typeof this.game.estimateTransportRouteTicks !== "function"
+      ) {
+        return null;
+      }
+
+      const ownShores = Array.from(this.player.borderTiles()).filter((tile) =>
+        this.game.isShore(tile),
+      );
+      const targetShores = Array.from(targetBorder || []).filter((tile) =>
+        this.game.isShore(tile),
+      );
+      if (ownShores.length === 0 || targetShores.length === 0) return null;
+
+      const distanceToOwnShore = (tile) => {
+        let best = Infinity;
+        for (const ownShore of ownShores) {
+          const distance = this.game.manhattanDist(ownShore, tile);
+          if (distance < best) best = distance;
+        }
+        return best;
+      };
+      targetShores.sort(
+        (a, b) => distanceToOwnShore(a) - distanceToOwnShore(b),
+      );
+
+      let bestEta = null;
+      for (const targetShore of targetShores.slice(0, EARLY_TRIBE_BOAT_ETA_TARGETS)) {
+        const spawn = await withTimeout(
+          this.player.bestTransportShipSpawn(targetShore),
+          WORKER_TIMEOUT_MS,
+          false,
+        );
+        if (spawn === false) continue;
+
+        const eta = await withTimeout(
+          this.game.estimateTransportRouteTicks(
+            targetShore,
+            getAutoDonateExpansionTickLimit(),
+          ),
+          WORKER_TIMEOUT_MS,
+          null,
+        );
+        if (!Number.isFinite(Number(eta)) || Number(eta) < 0) continue;
+        const numericEta = Number(eta);
+        bestEta = bestEta === null ? numericEta : Math.min(bestEta, numericEta);
+        if (bestEta <= getAutoDonateExpansionTickLimit()) return bestEta;
+      }
+      return bestEta;
     }
 
     // Keep a bounded, best-effort profile of how visible rivals are expanding.

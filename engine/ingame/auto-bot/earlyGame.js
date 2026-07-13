@@ -35,10 +35,10 @@
   }
 
   // Return the current reason the Auto-Bot troop donation should be paused.
-  // Land tribes are already in the local frontier. Sea tribes are marked by the
-  // bounded nearby() shore sample (five water steps), while an exact ETA wins
-  // whenever a route probe has supplied one. Unknown/distant sea routes do not
-  // block donations.
+  // Land tribes are already in the local frontier. A sea tribe only qualifies
+  // when the transport pathfinder supplied an ETA in actual movement ticks;
+  // nearby/boat-candidate flags alone are not enough because water distance and
+  // transport movement speed can differ between adapters.
   function getAutoDonateExpansionStatus(
     earlyGame = {},
     maxTicks = AUTO_DONATE_EXPANSION_MAX_TICKS,
@@ -63,8 +63,7 @@
     const hasNearbySeaTribe = tribes.some((tribe) => {
       if (!tribe || tribe.landBorder === true) return false;
       const eta = Number(tribe.boatEtaTicks);
-      if (Number.isFinite(eta)) return eta >= 0 && eta <= limit;
-      return tribe.seaReachableWithin30Ticks === true;
+      return Number.isFinite(eta) && eta >= 0 && eta <= limit;
     });
     if (hasNearbySeaTribe) {
       return { active: true, reason: "sea-tribe", maxTicks: limit };
@@ -73,10 +72,43 @@
     return inactive;
   }
 
+  function normalizeTransportMovement(options = {}) {
+    const speed = Number(options.speed);
+    if (Number.isFinite(speed) && speed > 0) {
+      return { speed };
+    }
+    const ticksPerMove = Number(options.ticksPerMove);
+    if (Number.isFinite(ticksPerMove) && ticksPerMove > 0) {
+      return { ticksPerMove };
+    }
+    // Current OpenFront TransportShipExecution advances one path node per tick.
+    return { ticksPerMove: 1 };
+  }
+
+  function transportPathStepsToTicks(steps, movement = {}) {
+    const safeSteps = Math.max(0, Number(steps) || 0);
+    const normalized = normalizeTransportMovement(movement);
+    if (Number.isFinite(normalized.speed)) {
+      return Math.ceil(safeSteps / normalized.speed);
+    }
+    return Math.ceil(safeSteps * normalized.ticksPerMove);
+  }
+
+  function maxTransportPathSteps(maxTicks, movement = {}) {
+    const limit = Math.max(0, Number(maxTicks) || 0);
+    const normalized = normalizeTransportMovement(movement);
+    if (Number.isFinite(normalized.speed)) {
+      return Math.floor(limit * normalized.speed);
+    }
+    return Math.floor(limit / normalized.ticksPerMove);
+  }
+
   // Bounded shortest-path search over the full-resolution water graph exposed by
   // GameView. The source and destination are shore tiles; only water tiles may be
-  // traversed between them. Returning null is deliberately conservative when the
-  // route exceeds the opening window or the search budget.
+  // traversed between them. The returned value is movement ticks, not raw water
+  // edges, so the caller can account for the transport's speed/ticks-per-move.
+  // Returning null is deliberately conservative when the route exceeds the
+  // requested window or the search budget.
   function findWaterRouteTicks({
     start,
     goal,
@@ -84,6 +116,8 @@
     isWater,
     maxTicks = EARLY_GAME_MAX_BOAT_TICKS,
     maxVisited = 100000,
+    speed,
+    ticksPerMove,
   } = {}) {
     if (
       start == null ||
@@ -95,19 +129,27 @@
     }
     if (start === goal) return 0;
 
+    const limit = Number.isFinite(Number(maxTicks))
+      ? Math.max(0, Number(maxTicks))
+      : EARLY_GAME_MAX_BOAT_TICKS;
+    const movement = normalizeTransportMovement({ speed, ticksPerMove });
+    const maxPathSteps = maxTransportPathSteps(limit, movement);
     const queue = [start];
     const distances = new Map([[start, 0]]);
     for (let head = 0; head < queue.length; head++) {
       if (distances.size > maxVisited) return null;
       const current = queue[head];
       const currentDistance = distances.get(current);
-      if (currentDistance == null || currentDistance >= maxTicks) continue;
+      if (currentDistance == null || currentDistance >= maxPathSteps) continue;
 
       const nextDistance = currentDistance + 1;
       for (const next of neighbors(current) || []) {
         if (next !== goal && next !== start && !isWater(next)) continue;
         if (distances.has(next)) continue;
-        if (next === goal) return nextDistance;
+        if (next === goal) {
+          const ticks = transportPathStepsToTicks(nextDistance, movement);
+          return ticks <= limit ? ticks : null;
+        }
         distances.set(next, nextDistance);
         queue.push(next);
       }
@@ -117,13 +159,15 @@
 
   // Transport motion plans include their source tile, therefore movement time is
   // the number of edges, not the number of path entries.
-  function transportRouteTicks(path) {
+  function transportRouteTicks(path, movement = {}) {
     const route = path && path.fullPath ? path.fullPath : path;
     if (route == null || typeof route.length !== "number" || route.length === 0) {
       return null;
     }
     const length = Number(route.length);
-    return Number.isFinite(length) ? Math.max(0, length - 1) : null;
+    return Number.isFinite(length)
+      ? transportPathStepsToTicks(Math.max(0, length - 1), movement)
+      : null;
   }
 
   // Measure the shortest LAND distance from any tile on a tribe's border to a
