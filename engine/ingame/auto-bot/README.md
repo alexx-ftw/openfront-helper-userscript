@@ -52,6 +52,27 @@ thresholds scale with the 5× damage effect, and attacks below the resulting
 minimum are deferred instead of wasting troops. The bounded profile is cached
 per target and game tick; cheap boat probes keep their existing behavior.
 
+## Naval invasion interception
+
+With `winFixes` enabled and a completed Port, the bot identifies hostile
+Transport ships targeting our territory, reconstructs their water route, and
+dispatches existing Warships to the earliest reachable firing-range point. It
+prefers the transport's live motion plan when exposed by the client and falls
+back to local water A*. The planner uses the transport and Warship movement
+speeds exposed by the client when available, otherwise the current engine
+contract of one water-path step per tick, and uses `warshipTargettingRange()`
+for the Euclidean firing range.
+
+Multiple invasions are scheduled as sequential interception opportunities per
+Warship. Small groups use bounded exact assignment; larger groups use a
+deterministic urgency-first assignment. If any invasion remains uncovered, the
+bot probes Warship buildability using candidate water targets and the actual
+spawn tile returned by the buildable-unit contract, builds an additional
+Warship when affordable, and replans on the next tick. The local full-resolution
+A* route is an intentional client-side divergence from the engine's HPA/
+smoothing pathfinder; the server still validates the water component when it
+receives the move intent.
+
 ## Spawn-phase resource safety
 
 Spawn markers and the visual heatmap stay on the bounded coarse scorer. The

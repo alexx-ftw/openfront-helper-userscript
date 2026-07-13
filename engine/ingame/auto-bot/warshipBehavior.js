@@ -74,6 +74,10 @@
       if (this.game.config().isUnitDisabled(UNIT.Warship)) {
         return false;
       }
+      const smartState = this.ensureSmartState();
+      if (smartState.lastInvasionBuildTick === this.game.ticks()) {
+        return false;
+      }
       if (!this.random.chance(50)) {
         return false;
       }
@@ -434,6 +438,14 @@
         return false;
       }
 
+      const smartState = this.ensureSmartState();
+      if (
+        smartState.lastInvasionBuildTick === this.game.ticks() ||
+        smartState.pendingInvasionBuilds.size > 0
+      ) {
+        return false;
+      }
+
       // Only the smart nations can do this
       const difficulty = currentDifficulty();
       if (!isAtLeastHardDifficulty(difficulty)) {
@@ -633,10 +645,9 @@
     // only MOVES an existing one when capped at 10 / it can't build). This winFix layer
     // does the opposite — it REPOSITIONS our EXISTING idle warships to the single
     // highest-priority naval threat each pass, so a 1-2 ship pool actually defends:
-    //   P1  an enemy TRANSPORT actively invading OUR land → intercept it mid-sea
-    //   P2  a fresh TRADE-RAID lane (our trade ship just captured) → kill the lingering
+    //   P1  a fresh TRADE-RAID lane (our trade ship just captured) → kill the lingering
     //       raider so that lane's FUTURE trade ships survive
-    //   P3  a persistent open-water BOAT-LOSS zone (a sea lane where our boats keep
+    //   P2  a persistent open-water BOAT-LOSS zone (a sea lane where our boats keep
     //       dying, FAR from any coast → a lurking raider). Our boats are cheap 1%
     //       probes, so this clears a recurring loss LANE, never chases one lost probe.
     // Tiny-pool-safe: serves ONLY the top threat per pass, throttled, per-warship
@@ -654,7 +665,402 @@
         cooldown: new Map(), // warshipId -> tick last tasked
         serviced: new Map(), // zoneCellKey -> tick a ship was last sent to that zone
         lastPassMs: 0,
+        lastInvasionBuildTick: -1,
+        lastInvasionPlanMs: 0,
+        invasionPlan: null,
+        invasionAssignments: new Map(), // warshipId -> { invasionId, landingTick }
+        invasionRouteCache: new Map(),
+        pendingInvasionBuilds: new Set(),
+        invasionBuildAttemptAt: new Map(),
       });
+    }
+
+    // Read a movement speed when a newer client exposes one. OpenFront's current
+    // TransportShipExecution has ticksPerMove=1 and WarshipExecution advances one
+    // WaterPathFinder step per tick, so the documented fallback is one tile/tick.
+    movementSpeed(unit, type) {
+      const config = this.game.config?.();
+      const objects = [unit, unit?.__src, config].filter(Boolean);
+      const speedNames =
+        type === UNIT.TransportShip
+          ? ["transportShipSpeed", "boatSpeed", "speed"]
+          : ["warshipSpeed", "destroyerSpeed", "speed"];
+      const ticksNames =
+        type === UNIT.TransportShip
+          ? ["transportShipTicksPerMove", "boatTicksPerMove", "ticksPerMove"]
+          : ["warshipTicksPerMove", "destroyerTicksPerMove", "ticksPerMove"];
+      for (const object of objects) {
+        for (const name of speedNames) {
+          try {
+            const value = typeof object[name] === "function" ? object[name]() : object[name];
+            if (Number.isFinite(Number(value)) && Number(value) > 0) return Number(value);
+          } catch (_e) {
+            /* probe next source */
+          }
+        }
+        for (const name of ticksNames) {
+          try {
+            const value = typeof object[name] === "function" ? object[name]() : object[name];
+            if (Number.isFinite(Number(value)) && Number(value) > 0) {
+              return 1 / Number(value);
+            }
+          } catch (_e) {
+            /* probe next source */
+          }
+        }
+      }
+      return NAVAL_INTERCEPTION_DEFAULT_SPEED;
+    }
+
+    warshipAttackRange() {
+      const config = this.game.config?.();
+      for (const name of ["warshipTargettingRange", "warshipAttackRange", "warshipRange"]) {
+        try {
+          const value = typeof config?.[name] === "function" ? config[name]() : config?.[name];
+          if (Number.isFinite(Number(value)) && Number(value) >= 0) return Number(value);
+        } catch (_e) {
+          /* probe next source */
+        }
+      }
+      return NAVAL_INTERCEPTION_DEFAULT_RANGE;
+    }
+
+    waterDistance(a, b) {
+      try {
+        if (typeof this.game.euclideanDistSquared === "function") {
+          return Math.sqrt(Math.max(0, Number(this.game.euclideanDistSquared(a, b))));
+        }
+        return Math.hypot(this.game.x(a) - this.game.x(b), this.game.y(a) - this.game.y(b));
+      } catch (_e) {
+        return Infinity;
+      }
+    }
+
+    // A* over the same cardinal water graph used by the client-facing map API.
+    // MoveWarshipExecution validates the component server-side; this route keeps
+    // the target in that component and gives the interception planner a real ETA.
+    waterRoute(start, goal) {
+      if (start === undefined || start === null || goal === undefined || goal === null) {
+        return null;
+      }
+      try {
+        if (!this.game.isWater(start) || !this.game.isWater(goal)) return null;
+        if (start === goal) return [start];
+      } catch (_e) {
+        return null;
+      }
+
+      const open = [];
+      const gScore = new Map([[start, 0]]);
+      const cameFrom = new Map();
+      const closed = new Set();
+      const heuristic = (tile) => {
+        try {
+          return this.game.manhattanDist(tile, goal);
+        } catch (_e) {
+          return Math.abs(this.game.x(tile) - this.game.x(goal)) + Math.abs(this.game.y(tile) - this.game.y(goal));
+        }
+      };
+      const push = (entry) => {
+        open.push(entry);
+        let index = open.length - 1;
+        while (index > 0) {
+          const parent = Math.floor((index - 1) / 2);
+          if (open[parent].priority <= open[index].priority) break;
+          [open[parent], open[index]] = [open[index], open[parent]];
+          index = parent;
+        }
+      };
+      const pop = () => {
+        if (open.length === 0) return null;
+        const first = open[0];
+        const last = open.pop();
+        if (open.length > 0 && last) {
+          open[0] = last;
+          let index = 0;
+          while (true) {
+            const left = index * 2 + 1;
+            const right = left + 1;
+            let smallest = index;
+            if (left < open.length && open[left].priority < open[smallest].priority) {
+              smallest = left;
+            }
+            if (right < open.length && open[right].priority < open[smallest].priority) {
+              smallest = right;
+            }
+            if (smallest === index) break;
+            [open[index], open[smallest]] = [open[smallest], open[index]];
+            index = smallest;
+          }
+        }
+        return first;
+      };
+
+      push({ tile: start, priority: heuristic(start) });
+      while (open.length > 0) {
+        const current = pop();
+        if (!current || closed.has(current.tile)) continue;
+        if (current.tile === goal) {
+          const path = [goal];
+          let cursor = goal;
+          while (cameFrom.has(cursor)) {
+            cursor = cameFrom.get(cursor);
+            path.push(cursor);
+          }
+          path.reverse();
+          return path;
+        }
+        closed.add(current.tile);
+        const neighbors =
+          typeof this.game.neighbors === "function" ? this.game.neighbors(current.tile) || [] : [];
+        for (const neighbor of neighbors) {
+          if (closed.has(neighbor)) continue;
+          try {
+            if (!this.game.isWater(neighbor)) continue;
+          } catch (_e) {
+            continue;
+          }
+          const nextScore = (gScore.get(current.tile) ?? Infinity) + 1;
+          if (nextScore >= (gScore.get(neighbor) ?? Infinity)) continue;
+          cameFrom.set(neighbor, current.tile);
+          gScore.set(neighbor, nextScore);
+          push({ tile: neighbor, priority: nextScore + heuristic(neighbor) });
+        }
+      }
+      return null;
+    }
+
+    waterTargetTile(target) {
+      if (target === undefined || target === null) return null;
+      try {
+        if (this.game.isWater(target)) return target;
+      } catch (_e) {
+        return null;
+      }
+      const neighbors =
+        typeof this.game.neighbors === "function" ? this.game.neighbors(target) || [] : [];
+      return neighbors.find((tile) => {
+        try {
+          return this.game.isWater(tile);
+        } catch (_e) {
+          return false;
+        }
+      }) ?? null;
+    }
+
+    // Prefer the live transport execution path when the client exposes it. This
+    // is the path the transport is already following, including any engine
+    // smoothing; the local A* below remains the fallback for wrappers without a
+    // motion-plan entry or when the plan has a different destination.
+    transportMotionPath(transport, goal) {
+      try {
+        const plans = this.game.motionPlans?.();
+        const id = transport.id?.();
+        const plan =
+          plans?.get(id) ??
+          plans?.get(Number(id)) ??
+          plans?.get(String(id));
+        if (!plan?.path?.length) return null;
+        const now = Number(this.game.ticks?.() ?? plan.startTick ?? 0);
+        const startTick = Number(plan.startTick ?? now);
+        const ticksPerStep = Math.max(1, Number(plan.ticksPerStep ?? 1));
+        const rawIndex =
+          now <= startTick ? 0 : Math.floor((now - startTick) / ticksPerStep);
+        const index = Math.max(0, Math.min(plan.path.length - 1, rawIndex));
+        const path = Array.from(plan.path.slice(index));
+        if (path.length === 0 || path[path.length - 1] !== goal) return null;
+        const current = transport.tile();
+        if (path[0] !== current) path.unshift(current);
+        return path.length > 1 ? path : null;
+      } catch (_e) {
+        return null;
+      }
+    }
+
+    incomingNavalInvasions(s) {
+      const mySid = this.player.smallID();
+      const nextCache = new Map();
+      const invasions = [];
+      for (const transport of this.game.units(UNIT.TransportShip)) {
+        try {
+          if (!transport.isActive()) continue;
+          const target = transport.targetTile();
+          if (target === undefined || target === null) continue;
+          if (transport.transportShipState?.()?.isRetreating) continue;
+          if (this.game.ownerID(target) !== mySid) continue;
+          const owner = transport.owner();
+          if (!owner || owner.smallID() === mySid || owner.isAlliedWith(this.player)) continue;
+
+          const current = transport.tile();
+          const goal = this.waterTargetTile(target);
+          if (current === undefined || current === null || goal === null) continue;
+          const key = `${transport.id()}:${current}:${goal}`;
+          let path = s.invasionRouteCache.get(key);
+          if (path === undefined) {
+            path = this.transportMotionPath(transport, goal) ?? this.waterRoute(current, goal);
+          }
+          nextCache.set(key, path);
+          if (!Array.isArray(path) || path.length < 2) continue;
+          invasions.push({ id: transport.id(), path });
+        } catch (_e) {
+          /* a disappearing transport is not a planner failure */
+        }
+      }
+      s.invasionRouteCache = nextCache;
+      return invasions;
+    }
+
+    dispatchInterceptor(warship, tile, s, tick) {
+      try {
+        const warshipState = warship.warshipState?.();
+        if (warshipState?.state === "retreating" || warshipState?.state === "docked") return false;
+        if (warshipState?.patrolTile === tile) return true;
+        if (!this.moveWarship(warship, tile)) return false;
+        s.cooldown.set(warship.id(), tick);
+        setLastAction(tr("🚢 Intercept invasion"), "naval");
+        return true;
+      } catch (_e) {
+        return false;
+      }
+    }
+
+    interceptionBuildCandidates(invasion) {
+      const path = invasion.path;
+      const indexes = new Set([0, Math.max(0, Math.floor((path.length - 2) / 2)), path.length - 2]);
+      const candidates = [];
+      for (const index of indexes) {
+        const tile = path[index];
+        if (tile !== undefined && !candidates.includes(tile)) candidates.push(tile);
+      }
+      const ports = this.player
+        .units(UNIT.Port)
+        .slice()
+        .sort((a, b) => this.game.manhattanDist(a.tile(), path[0]) - this.game.manhattanDist(b.tile(), path[0]));
+      for (const port of ports) {
+        const spawn = this.warshipSpawnTile(port.tile(), 250);
+        if (spawn !== null && !candidates.includes(spawn)) candidates.push(spawn);
+      }
+      return candidates;
+    }
+
+    async buildInterceptorForInvasion(invasion, boatSpeed, warshipSpeed, attackRange) {
+      if (this.player.gold() <= this.cost(UNIT.Warship)) return false;
+      const candidates = this.interceptionBuildCandidates(invasion);
+      let best = null;
+      for (const tile of candidates) {
+        const bu = await this.buildableWarship(tile);
+        if (bu === null || bu === undefined || bu.canBuild === false) continue;
+        const spawnTile = bu.canBuild;
+        if (spawnTile === null || spawnTile === undefined) continue;
+        const virtualPlan = planNavalInterceptions({
+          ships: [{ id: "pending-destroyer", tile: spawnTile }],
+          invasions: [invasion],
+          route: (from, to) => this.waterRoute(from, to),
+          distance: (from, to) => this.waterDistance(from, to),
+          boatSpeed,
+          warshipSpeed,
+          attackRange,
+        });
+        const assignment = virtualPlan.assignments[0] ?? null;
+        const spawnRoute = this.waterRoute(spawnTile, tile);
+        const spawnDistance = Array.isArray(spawnRoute) ? spawnRoute.length : Infinity;
+        const score = assignment
+          ? [1, assignment.marginTicks, -assignment.interceptTick]
+          : [0, 0, -spawnDistance];
+        if (
+          best === null ||
+          score[0] > best.score[0] ||
+          (score[0] === best.score[0] &&
+            (score[1] > best.score[1] || (score[1] === best.score[1] && score[2] > best.score[2])))
+        ) {
+          best = { bu, tile, score };
+        }
+      }
+      if (best === null) return false;
+      const buildMenu = getBuildMenu();
+      if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") return false;
+      buildMenu.sendBuildOrUpgrade(best.bu, best.tile);
+      state.stats.builds++;
+      setLastAction(tr("🚢 Intercept invasion"), "naval");
+      return true;
+    }
+
+    async protectAgainstNavalInvasions() {
+      if (this.player === null) return;
+      if (this.game.config().isUnitDisabled(UNIT.Warship)) return;
+      if (this.game.config().isUnitDisabled(UNIT.TransportShip)) return;
+      const s = this.ensureSmartState();
+      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+      const throttle = state.settings.warshipPatrolThrottleMs || 1500;
+      if (now - s.lastInvasionPlanMs < throttle) return;
+      s.lastInvasionPlanMs = now;
+
+      const invasions = this.incomingNavalInvasions(s);
+      if (invasions.length === 0) {
+        s.invasionPlan = null;
+        s.invasionAssignments.clear();
+        return;
+      }
+      // The faithful transport tracker runs later in the same decision cycle.
+      // Mark these transports handled so it cannot launch a second, competing
+      // retaliation while this planner is already assigning/building escorts.
+      for (const invasion of invasions) {
+        this.dealtWithTransportShip.add(invasion.id);
+      }
+
+      const warships = this.player.units(UNIT.Warship).filter((warship) => {
+        try {
+          return warship.isActive() && !warship.isUnderConstruction();
+        } catch (_e) {
+          return false;
+        }
+      });
+      const boatSpeed = this.movementSpeed(null, UNIT.TransportShip);
+      const warshipSpeed = this.movementSpeed(null, UNIT.Warship);
+      const attackRange = this.warshipAttackRange();
+      const plan = planNavalInterceptions({
+        ships: warships.map((warship) => ({ id: warship.id(), tile: warship.tile() })),
+        invasions,
+        route: (from, to) => this.waterRoute(from, to),
+        distance: (from, to) => this.waterDistance(from, to),
+        boatSpeed,
+        warshipSpeed,
+        attackRange,
+      });
+      s.invasionPlan = { tick: this.game.ticks(), invasions, plan };
+      const shipsById = new Map(warships.map((warship) => [warship.id(), warship]));
+      s.invasionAssignments.clear();
+      for (const assignment of plan.assignments) {
+        const warship = shipsById.get(assignment.shipId);
+        if (
+          warship &&
+          this.dispatchInterceptor(warship, assignment.interceptTile, s, this.game.ticks())
+        ) {
+          s.invasionAssignments.set(assignment.shipId, assignment);
+        }
+      }
+
+      if (plan.uncoveredIds.length === 0 || state.settings.warshipAutoSpawn === false) return;
+      const target = invasions
+        .filter((invasion) => plan.uncoveredIds.includes(invasion.id))
+        .sort((a, b) => a.path.length - b.path.length)[0];
+      if (!target) return;
+      if (s.pendingInvasionBuilds.has(target.id)) return;
+      const lastAttempt = s.invasionBuildAttemptAt.get(target.id) ?? -Infinity;
+      if (now - lastAttempt < throttle) return;
+      s.invasionBuildAttemptAt.set(target.id, now);
+      s.pendingInvasionBuilds.add(target.id);
+      try {
+        const built = await this.buildInterceptorForInvasion(
+          target,
+          boatSpeed,
+          warshipSpeed,
+          attackRange,
+        );
+        if (built) s.lastInvasionBuildTick = this.game.ticks();
+      } finally {
+        s.pendingInvasionBuilds.delete(target.id);
+      }
     }
 
     smartWarshipPatrol() {
@@ -744,10 +1150,10 @@
       s.losses = s.losses.filter((e) => tick - e.at <= lossWindow);
       s.raids = s.raids.filter((e) => tick - e.at <= raidWindow);
 
-      // 2) build the prioritized threat list ─────────────────────────────────────
+      // 2) build the prioritized secondary threat list. Inbound invasions are
+      // handled by protectAgainstNavalInvasions(), which has to preserve the
+      // boat's future path and firing-range margin instead of using one point.
       const threats = [];
-      const invasion = this.findInvasionThreat(); // P1
-      if (invasion !== null) threats.push(invasion);
       if (s.raids.length > 0) {
         const r = s.raids[s.raids.length - 1]; // freshest raid lane
         if (this.game.isValidCoord(r.x, r.y)) {
@@ -757,7 +1163,7 @@
           }
         }
       }
-      const zone = this.findLossZone(s.losses); // P3
+      const zone = this.findLossZone(s.losses); // P2
       if (zone !== null) threats.push({ tile: zone, kind: "loss-zone" });
       if (threats.length === 0) return;
 
@@ -783,46 +1189,6 @@
         }
         // no idle ship in range for this threat → fall through to the next priority
       }
-    }
-
-    // findInvasionThreat — an enemy TRANSPORT heading INTO our land, far enough to
-    // intercept and not already covered by one of our warships. Reuses the faithful
-    // trackIncoming gates (incl. the exact hasUnitNearby "already covered" check).
-    findInvasionThreat() {
-      const mySid = this.player.smallID();
-      let best = null;
-      let bestDist = Infinity;
-      for (const p of this.game.units(UNIT.TransportShip)) {
-        try {
-          if (!p.isActive()) continue;
-          const target = p.targetTile();
-          if (target == null) continue;
-          if (p.transportShipState && p.transportShipState()?.isRetreating) continue;
-          if (this.game.ownerID(target) !== mySid) continue; // must target OUR land
-          if (p.owner().smallID() === mySid) continue; // not ours
-          if (p.owner().isAlliedWith(this.player)) continue; // not an ally's
-          const d = this.game.manhattanDist(p.tile(), target);
-          if (d < 20) continue; // too close to intercept in time
-          if (
-            this.game.hasUnitNearby(
-              target,
-              90,
-              UNIT.Warship,
-              this.player.id(),
-              true,
-            )
-          ) {
-            continue; // already covered by one of our warships
-          }
-          if (d < bestDist) {
-            bestDist = d;
-            best = p.tile();
-          }
-        } catch (_e) {
-          /* skip */
-        }
-      }
-      return best === null ? null : { tile: best, kind: "invasion" };
     }
 
     // findLossZone — centroid of a CLUSTER of recent open-water losses (≥ min within a
@@ -869,6 +1235,9 @@
       const cooldownTicks = state.settings.warshipMoveCooldownTicks || 60;
       const idle = this.player.units(UNIT.Warship).filter((w) => {
         try {
+          // An assigned interceptor owns its route until the invasion plan is
+          // refreshed or its predicted landing tick has passed.
+          if (s.invasionAssignments?.has(w.id())) return false;
           const ps = w.warshipState().patrolTile;
           if (ps === undefined) return false;
           if (this.game.manhattanDist(w.tile(), ps) >= 130) return false; // mid-voyage
@@ -1352,6 +1721,10 @@
       for (const warship of myWarships) {
         try {
           const wsId = warship.id();
+          const invasionAssignment = s.invasionAssignments.get(wsId);
+          if (invasionAssignment && game.ticks() < invasionAssignment.landingTick) {
+            continue;
+          }
           // Skip if already being handled by smartWarshipPatrol this tick
           const cooldownTick = s.cooldown.get(wsId);
           if (cooldownTick !== undefined && game.ticks() - cooldownTick < 3) continue;
@@ -1427,8 +1800,9 @@
       try {
         const ctors = typeof discoverCtors === "function" ? discoverCtors(getEventBus()) : {};
         if (ctors.moveWarship) {
-          emitIntent(ctors.moveWarship, [warship.id()], tile);
+          return emitIntent(ctors.moveWarship, [warship.id()], tile);
         }
       } catch (_e) {}
+      return false;
     }
   }

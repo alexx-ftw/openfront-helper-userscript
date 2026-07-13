@@ -75,6 +75,7 @@ const INGAME_FILES = [
   "auto-bot/emojiBehavior.js",
   "auto-bot/allianceBehavior.js",
   "auto-bot/mirvBehavior.js",
+  "auto-bot/naval-interception.js",
   "auto-bot/warshipBehavior.js",
   "auto-bot/structureBehavior.js",
   "auto-bot/attackBehavior.js",
