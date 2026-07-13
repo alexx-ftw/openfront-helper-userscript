@@ -264,10 +264,10 @@
       }
 
       // WIN-FIX (NOT in src): during the concrete opening window, rank nearby
-      // tribes by open-ocean access, continuation food, and the rival food-race
-      // signal before the encirclement/blocking and capture-cost tie-breakers.
-      // If no ranked target can be actuated, fall back to the existing aggressive
-      // bot pass below.
+      // tribes by open-ocean access, immediate races, and the stronger of their
+      // encirclement/blocking opportunities before continuation food. The
+      // progressing-vector race signal remains a later tie-breaker. If no ranked
+      // target can be actuated, fall back to the existing aggressive bot pass.
       if (
         expandOn &&
         state.settings.winFixes &&

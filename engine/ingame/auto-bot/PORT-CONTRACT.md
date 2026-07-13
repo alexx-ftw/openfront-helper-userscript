@@ -193,13 +193,17 @@ placement-safety exception, not a change to the rest of the port strategy.
 When `state.settings.winFixes` is enabled, `AttackBehavior.maybeAttack()` has a
 documented policy seam before the existing bot/Terra Nullius fallback. It may
 enrich only nearby non-friendly `PlayerType.Bot` tribes with bounded border
-snapshots and rank them by: open-ocean coast distance, encirclement by our land,
-future tribes reachable from the candidate frontier, and the urgency of
-nearby/incoming competitors that would be blocked; encirclement by our land,
-cheap capture, and distance are later tie-breakers. The race signal combines
-outgoing/incoming attacks with a bounded per-player history of tile growth and
-`nameLocation()` movement; a direct attack is treated as an immediate race while
-a progressing vector toward the candidate still raises its urgency.
+snapshots and rank them by open-ocean coast distance first. A direct or incoming
+attack remains an immediate race; when there is no immediate race, encirclement
+by our land or blocking a passage take priority over a central shortcut with a
+larger future-tribe chain. The stronger of those two closure signals is used, so
+a blocking gate does not need to be encircled already. The progressing-vector
+race signal still participates after those structural opportunities, followed by
+cheap capture and distance.
+The race signal combines outgoing/incoming attacks with a bounded per-player
+history of tile growth and `nameLocation()` movement; a direct attack is treated
+as an immediate race while a progressing vector toward the candidate still
+raises its urgency.
 
 When that race is real, the selected tribe attack may commit more troops than the
 normal bot-target amount. The increase is capped by the same reserve floor used by

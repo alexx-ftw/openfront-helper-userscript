@@ -211,9 +211,13 @@
   }
 
   // Early-Game tribe order is deliberately lexicographic. First choose tribes
-  // that can lead to open ocean, and among those choose a chain with more future
-  // food. A rival's active/progressing vector then raises the urgency of winning
-  // that food race before the existing encirclement/block/cost tie-breakers.
+  // that can lead to open ocean. A direct/incoming rival attack is an immediate
+  // race and stays urgent; otherwise close an encirclement or block a passage
+  // before taking the central shortcut with the largest future-food count. The
+  // progressing-vector race signal still participates after those structural
+  // opportunities, so it is considered without making the bot cut through a
+  // winnable ring of tribes. The closure score uses the stronger of encirclement
+  // and blocking rather than requiring both at once.
   function earlyGameTribeSortKey(candidate = {}) {
     const oceanDistance = Number(candidate.oceanDistance);
     const hasOpenOcean = Number.isFinite(oceanDistance);
@@ -222,13 +226,22 @@
       finiteEarlyGameSignal(candidate.foodRaceValue),
       finiteEarlyGameSignal(candidate.contestPressure),
     );
+    const hasImmediateRace =
+      Number(candidate.directAttackers) > 0 ||
+      Number(candidate.incomingAttackers) > 0;
+    const closureValue = Math.max(
+      finiteEarlyGameSignal(candidate.encirclement),
+      finiteEarlyGameSignal(candidate.blockValue),
+    );
     return [
       hasOpenOcean ? 1 : 0,
       hasOpenOcean ? -oceanDistance : 0,
-      calculateEarlyGameContinuationValue(candidate),
-      foodRaceValue,
+      hasImmediateRace ? 1 : 0,
+      closureValue,
       finiteEarlyGameSignal(candidate.encirclement),
       finiteEarlyGameSignal(candidate.blockValue),
+      calculateEarlyGameContinuationValue(candidate),
+      foodRaceValue,
       finiteEarlyGameSignal(candidate.cheapCapture),
       candidate.landBorder === true ? 1 : 0,
       Number.isFinite(distance) ? -distance : -Infinity,

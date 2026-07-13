@@ -141,6 +141,108 @@ assert.deepEqual(
   ["coastal-contested", "coastal-open", "encircled-inland"],
 );
 
+const encirclingGateRank = sandbox.rankEarlyGameTribeCandidates([
+  {
+    id: "central-food-chain",
+    oceanDistance: 0,
+    futureFoodAccess: 1,
+    foodRaceValue: 0.7,
+    competitorVector: 0.9,
+    encirclement: 0.2,
+    blockValue: 0.1,
+    cheapCapture: 0.8,
+    distance: 8,
+  },
+  {
+    id: "encircling-gate",
+    oceanDistance: 0,
+    futureFoodAccess: 0.4,
+    foodRaceValue: 0,
+    encirclement: 0.85,
+    blockValue: 0.8,
+    cheapCapture: 0.5,
+    distance: 20,
+  },
+]);
+assert.equal(
+  encirclingGateRank[0].id,
+  "encircling-gate",
+  "a strong encircling gate must beat a central food-chain shortcut",
+);
+
+const blockingGateRank = sandbox.rankEarlyGameTribeCandidates([
+  {
+    id: "partial-encircle",
+    oceanDistance: 0,
+    futureFoodAccess: 1,
+    encirclement: 0.6,
+    blockValue: 0.1,
+    cheapCapture: 0.5,
+  },
+  {
+    id: "blocking-gate",
+    oceanDistance: 0,
+    futureFoodAccess: 0.2,
+    encirclement: 0.1,
+    blockValue: 0.95,
+    cheapCapture: 0.5,
+  },
+]);
+assert.equal(
+  blockingGateRank[0].id,
+  "blocking-gate",
+  "a strong blocking gate must beat a partial encirclement shortcut",
+);
+
+const directRaceRank = sandbox.rankEarlyGameTribeCandidates([
+  {
+    id: "direct-race",
+    oceanDistance: 0,
+    directAttackers: 1,
+    encirclement: 0.1,
+    blockValue: 0.1,
+    futureFoodAccess: 0.1,
+  },
+  {
+    id: "safe-ring",
+    oceanDistance: 0,
+    directAttackers: 0,
+    encirclement: 0.9,
+    blockValue: 0.9,
+    futureFoodAccess: 0.1,
+  },
+]);
+assert.equal(
+  directRaceRank[0].id,
+  "direct-race",
+  "a direct attack must stay urgent even without a derived race score",
+);
+
+const movementRaceRank = sandbox.rankEarlyGameTribeCandidates([
+  {
+    id: "steady-frontier",
+    oceanDistance: 0,
+    encirclement: 0.4,
+    blockValue: 0.4,
+    futureFoodAccess: 0.5,
+    foodRaceValue: 0,
+  },
+  {
+    id: "moving-rival-frontier",
+    oceanDistance: 0,
+    encirclement: 0.4,
+    blockValue: 0.4,
+    futureFoodAccess: 0.5,
+    foodRaceValue: 0.8,
+    competitorVector: 0.9,
+  },
+]);
+assert.equal(
+  movementRaceRank[0].id,
+  "moving-rival-frontier",
+  "a progressing rival vector must still break an otherwise equal tie",
+);
+
 const chainCandidate = sandbox.calculateEarlyGameContinuationValue({
   futureFoodCount: 3,
   futureFoodTotal: 3,
