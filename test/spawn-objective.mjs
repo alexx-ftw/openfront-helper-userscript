@@ -105,4 +105,64 @@ test("clan proximity outranks the legacy visual tie-break after robust dimension
   assert.equal(ranked[0].objective.clanScore, 1);
 });
 
+test("free-land availability outranks clan proximity", () => {
+  const ranked = api.rankModelCandidates([
+    {
+      id: "near-clan-open-land",
+      startScore: 0.8,
+      expansionScore: 0.8,
+      safetyScore: 0.8,
+      teamScore: 0.8,
+      tribeReachScore: 0.8,
+      tribeReachCount: 2,
+      freeLandScore: 0.9,
+      clanScore: 0,
+    },
+    {
+      id: "near-clan-limited-land",
+      startScore: 0.8,
+      expansionScore: 0.8,
+      safetyScore: 0.8,
+      teamScore: 0.8,
+      tribeReachScore: 0.8,
+      tribeReachCount: 2,
+      freeLandScore: 0.4,
+      clanScore: 1,
+    },
+  ]);
+
+  assert.equal(ranked[0].id, "near-clan-open-land");
+  assert.equal(ranked[0].objective.freeLandScore, 0.9);
+});
+
+test("tribe and nation opportunity is part of the robust spawn objective", () => {
+  const ranked = api.rankModelCandidates([
+    {
+      id: "far-targets",
+      startScore: 0.8,
+      expansionScore: 0.8,
+      safetyScore: 0.8,
+      teamScore: 0.8,
+      tribeScore: 0,
+      nationScore: 0,
+      resourceScore: 0,
+    },
+    {
+      id: "near-targets",
+      startScore: 0.8,
+      expansionScore: 0.8,
+      safetyScore: 0.8,
+      teamScore: 0.8,
+      tribeScore: 1,
+      nationScore: 0.5,
+      resourceScore: 0.8,
+    },
+  ]);
+
+  assert.equal(ranked[0].id, "near-targets");
+  assert.equal(ranked[0].objective.tribeScore, 1);
+  assert.equal(ranked[0].objective.nationScore, 0.5);
+  assert.equal(ranked[0].objective.resourceScore, 0.8);
+});
+
 console.log("spawn-objective tests passed");

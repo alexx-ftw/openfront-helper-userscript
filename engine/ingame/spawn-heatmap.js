@@ -4,9 +4,10 @@
 //
 // TWO-PHASE scoring (exactly matching Tactical):
 //   Phase 1 — STATIC (computed once per map): land density, plains ratio,
-//             nation proximity, edge avoidance.
+//             edge avoidance.
 //   Phase 2 — DYNAMIC (recomputed every 250ms during spawn): adds player
-//             distance from spawn intents, enemy pressure, team spawn pull.
+//             distance from spawn intents, enemy pressure, team spawn pull,
+//             and proximity to tribe/nation expansion targets.
 //
 // Player positions come from SPAWN INTENTS (turn.intents with type==="spawn"),
 // not from current player positions — this is critical: the Tactical tracks
@@ -14,6 +15,9 @@
 
   const SPAWN_HEATMAP_GRID_STEP = 16;
   const SPAWN_HEATMAP_ANALYSIS_R = 30;
+  const SPAWN_HEATMAP_TRIBE_R = 140;
+  const SPAWN_HEATMAP_TRIBE_REACH_BASE_R = 80;
+  const SPAWN_HEATMAP_TRIBE_REACH_BONUS_R = 160;
   const SPAWN_HEATMAP_NATION_R = 120;
   const SPAWN_HEATMAP_PLAYER_R = 150;
   const SPAWN_HEATMAP_CELL = 14;
@@ -32,18 +36,18 @@
   const SPAWN_INDEX_ESTIMATED_BYTES_PER_CELL = 24;
   const SPAWN_INDEX_MEMORY_BUDGET_BYTES = 32 * 1024 * 1024;
 
-  // Weights — exact match with Tactical's visual heatmap. The bot's exact
-  // selector uses the replay-free robust objective below; these weights remain
-  // only as a visual/fallback score.
+  // Weights for the visual/fallback base score. The exact bot selector uses the
+  // replay-free robust objective below; clan cohesion is only a late tie-break.
   const SPAWN_W = {
     land: 0.25,
     plains: 0.2,
+    tribe: 0.25,
     nation: 0.25,
     player: 0.25,
     edge: 0.05,
     team: 0.2,
-    // Same-clan cohesion is a strong visual/fallback preference. The exact
-    // selector applies it after robust safety/expansion/team dimensions.
+    // Retained for the exact selector's diagnostic score; ranking applies clan
+    // cohesion only after free-land availability and tribal expansion.
     clan: 0.25,
     teamCentroid: 0.08,
     enemyPressure: 0.12,
@@ -355,9 +359,6 @@
     const step = SPAWN_HEATMAP_GRID_STEP;
     const candidates = [];
 
-    // Gather nation-bot locations ONCE (not per candidate) for proximity scoring.
-    const nationLocs = collectNationLocations(game);
-
     for (let cy = R; cy < H - R; cy += step) {
       for (let cx = R; cx < W - R; cx += step) {
         // Skip water grid centers immediately — avoids the neighbourhood scan
@@ -385,7 +386,6 @@
 
         const landDensity = totalChecked > 0 ? landCount / totalChecked : 0;
         const plainsRatio = landCount > 0 ? plainsCount / landCount : 0;
-        const nationScore = computeNationProximity(nationLocs, cx, cy);
         const edgeX = Math.min(cx, W - cx) / (W / 2);
         const edgeY = Math.min(cy, H - cy) / (H / 2);
         const edgeScore = Math.min(edgeX, edgeY);
@@ -393,10 +393,14 @@
         const staticScore =
           landDensity * SPAWN_W.land +
           plainsRatio * SPAWN_W.plains +
-          nationScore * SPAWN_W.nation +
           edgeScore * SPAWN_W.edge;
 
-        candidates.push({ x: cx, y: cy, staticScore });
+        candidates.push({
+          x: cx,
+          y: cy,
+          staticScore,
+          freeLandScore: landDensity,
+        });
       }
     }
 
@@ -404,31 +408,209 @@
     return candidates;
   }
 
-  // Nation-bot territory centers, collected once per static computation.
-  function collectNationLocations(game) {
-    const locs = [];
-    let players = [];
-    try { players = getCachedPlayerViews(game) || []; } catch (_error) { players = []; }
-    for (let i = 0; i < players.length; i += 1) {
-      const p = players[i];
-      if (!p || !p.isAlive || !p.isAlive()) continue;
-      if (!isNationBotPlayer || !isNationBotPlayer(p)) continue;
-      let loc = null;
-      try { loc = p.nameLocation ? p.nameLocation() : null; } catch (_error) { loc = null; }
-      if (loc && Number.isFinite(loc.x) && Number.isFinite(loc.y)) locs.push(loc);
+  function getSpawnPlayerType(player) {
+    try {
+      const type = player && typeof player.type === "function" ? player.type() : null;
+      if (type) return type;
+    } catch (_error) { /* use the raw view fallback */ }
+    try {
+      return player && player.data ? player.data.playerType : null;
+    } catch (_error) {
+      return null;
     }
-    return locs;
   }
 
-  function computeNationProximity(nationLocs, cx, cy) {
-    let minDist = Infinity;
-    for (let i = 0; i < nationLocs.length; i += 1) {
-      const loc = nationLocs[i];
-      const d = Math.abs(loc.x - cx) + Math.abs(loc.y - cy);
-      if (d < minDist) minDist = d;
+  function getSpawnPlayerLocation(player) {
+    let location = null;
+    try {
+      location = player && typeof player.nameLocation === "function"
+        ? player.nameLocation()
+        : null;
+    } catch (_error) { /* use the center fallback */ }
+    if (!location) {
+      try {
+        location = player && typeof player.center === "function" ? player.center() : null;
+      } catch (_error) { /* no usable location */ }
     }
-    if (!Number.isFinite(minDist)) return 0;
-    return Math.max(0, 1 - minDist / SPAWN_HEATMAP_NATION_R);
+    if (!location || !Number.isFinite(Number(location.x)) || !Number.isFinite(Number(location.y))) {
+      return null;
+    }
+    return { x: Number(location.x), y: Number(location.y) };
+  }
+
+  function isAliveSpawnPlayer(player) {
+    try {
+      return Boolean(player && typeof player.isAlive === "function" && player.isAlive());
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  // Tribes and nations are persistent map entities during the spawn phase.
+  // Keep them separate from human spawn intents so the target signal can be
+  // weighted independently and refreshed without inflating enemy-pressure
+  // loops with hundreds of nation bots.
+  function collectSpawnEntityLocations(game) {
+    const tribeLocs = [];
+    const nationLocs = [];
+    let players = [];
+    try {
+      players = typeof getCachedPlayerViews === "function"
+        ? getCachedPlayerViews(game) || []
+        : [];
+    } catch (_error) { /* keep empty */ }
+
+    for (let i = 0; i < players.length; i += 1) {
+      const player = players[i];
+      if (!isAliveSpawnPlayer(player)) continue;
+      const type = getSpawnPlayerType(player);
+      let nation = type === "NATION";
+      try {
+        nation = nation || Boolean(
+          typeof isNationBotPlayer === "function" && isNationBotPlayer(player),
+        );
+      } catch (_error) { /* type is sufficient */ }
+      if (!nation && type !== "BOT") continue;
+
+      const location = getSpawnPlayerLocation(player);
+      if (!location) continue;
+      (nation ? nationLocs : tribeLocs).push(location);
+    }
+
+    const signature = [
+      tribeLocs.map((point) => `${point.x},${point.y}`).sort().join(";"),
+      nationLocs.map((point) => `${point.x},${point.y}`).sort().join(";"),
+    ].join("|");
+    return { tribeLocs, nationLocs, signature };
+  }
+
+  // Manhattan-distance proximity/count lookup backed by fixed-size buckets.
+  // Exact spawn selection can visit every legal map tile, so scanning every
+  // tribe and nation for every tile would recreate the spawn-phase stalls this
+  // module is intended to avoid. A point within the maximum radius can only be
+  // in one of the surrounding 3x3 buckets.
+  function buildSpawnProximityIndex(points, width, height, maxRadius) {
+    if (!Array.isArray(points) || points.length === 0 || maxRadius <= 0) return null;
+    const cellSize = Math.max(1, Number(maxRadius));
+    const columns = Math.max(1, Math.ceil(Math.max(1, Number(width) || 1) / cellSize));
+    const rows = Math.max(1, Math.ceil(Math.max(1, Number(height) || 1) / cellSize));
+    const buckets = new Array(columns * rows);
+
+    for (const point of points) {
+      if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
+      const column = Math.max(0, Math.min(columns - 1, Math.floor(point.x / cellSize)));
+      const row = Math.max(0, Math.min(rows - 1, Math.floor(point.y / cellSize)));
+      const bucketIndex = row * columns + column;
+      if (!buckets[bucketIndex]) buckets[bucketIndex] = [];
+      buckets[bucketIndex].push(point);
+    }
+
+    return {
+      nearestDistance(x, y) {
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return Infinity;
+        const centerColumn = Math.floor(x / cellSize);
+        const centerRow = Math.floor(y / cellSize);
+        let nearest = maxRadius;
+        for (let rowOffset = -1; rowOffset <= 1; rowOffset += 1) {
+          const row = centerRow + rowOffset;
+          if (row < 0 || row >= rows) continue;
+          for (let columnOffset = -1; columnOffset <= 1; columnOffset += 1) {
+            const column = centerColumn + columnOffset;
+            if (column < 0 || column >= columns) continue;
+            const bucket = buckets[row * columns + column];
+            if (!bucket) continue;
+            for (const point of bucket) {
+              const distance = Math.abs(point.x - x) + Math.abs(point.y - y);
+              if (distance < nearest) nearest = distance;
+            }
+          }
+        }
+        return nearest;
+      },
+      score(x, y, radius = maxRadius) {
+        const nearest = this.nearestDistance(x, y);
+        if (!Number.isFinite(nearest) || nearest >= radius) return 0;
+        return Math.max(0, 1 - nearest / radius);
+      },
+      countWithin(x, y, radius) {
+        if (!Number.isFinite(x) || !Number.isFinite(y) || radius <= 0) return 0;
+        const centerColumn = Math.floor(x / cellSize);
+        const centerRow = Math.floor(y / cellSize);
+        let count = 0;
+        for (let rowOffset = -1; rowOffset <= 1; rowOffset += 1) {
+          const row = centerRow + rowOffset;
+          if (row < 0 || row >= rows) continue;
+          for (let columnOffset = -1; columnOffset <= 1; columnOffset += 1) {
+            const column = centerColumn + columnOffset;
+            if (column < 0 || column >= columns) continue;
+            const bucket = buckets[row * columns + column];
+            if (!bucket) continue;
+            for (const point of bucket) {
+              const distance = Math.abs(point.x - x) + Math.abs(point.y - y);
+              if (distance <= radius) count += 1;
+            }
+          }
+        }
+        return count;
+      },
+    };
+  }
+
+  function clampSpawnScore(value, fallback = 0) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.max(0, Math.min(1, number));
+  }
+
+  function calculateSpawnFreeLandScore(
+    clusterScore,
+    frontierGain,
+    frontierSlots,
+    frontierValueGain,
+    frontierValueScale,
+  ) {
+    const safeCluster = clampSpawnScore(clusterScore);
+    const safeSlots = Math.max(0, Number(frontierSlots) || 0);
+    if (safeSlots <= 0) return safeCluster * 0.45;
+    const frontierShare = clampSpawnScore(Number(frontierGain) / safeSlots);
+    const valueShare = clampSpawnScore(
+      Number(frontierValueGain) / (safeSlots * Math.max(1, Number(frontierValueScale) || 1)),
+    );
+    return clampSpawnScore(safeCluster * 0.35 + frontierShare * 0.4 + valueShare * 0.25);
+  }
+
+  function tribeReachForCandidate(index, x, y, freeLandScore, tribeCount) {
+    if (tribeCount <= 0) {
+      return { count: 0, score: 1, radius: SPAWN_HEATMAP_TRIBE_REACH_BASE_R };
+    }
+    const radius =
+      SPAWN_HEATMAP_TRIBE_REACH_BASE_R +
+      clampSpawnScore(freeLandScore) * SPAWN_HEATMAP_TRIBE_REACH_BONUS_R;
+    const count = index ? index.countWithin(x, y, radius) : 0;
+    return {
+      count,
+      score: count / Math.max(1, tribeCount),
+      radius,
+    };
+  }
+
+  function combineSpawnEntityScore(
+    tribeScore,
+    nationScore,
+    tribeReachScore,
+    tribeCount,
+    nationCount,
+  ) {
+    if (tribeCount > 0) {
+      // Count of reachable tribes is the primary objective. Nearest-tribe
+      // proximity breaks close counts; nation proximity is only secondary.
+      const tribeTargetScore = tribeReachScore * 0.85 + tribeScore * 0.15;
+      return nationCount > 0
+        ? tribeTargetScore * 0.85 + nationScore * 0.15
+        : tribeTargetScore;
+    }
+    if (nationCount > 0) return nationScore;
+    return 1;
   }
 
   // ── Phase 2: Dynamic scoring (recomputed every 250ms) ──────────────────
@@ -469,14 +651,9 @@
     // same signal the auto-bot's pickSpawnCenter uses, so the heatmap and the bot
     // agree on where players are.
     //
-    // CRITICAL PERF: only count HUMAN players here — this mirrors Tactical, which
-    // sourced positions from WS spawn intents (only human clients emit those).
-    // A public game has up to ~400 NATION bots that all report hasSpawned()=true
-    // from tick 0; including them made enemySpawns huge and turned the per-cell
-    // scoring into an O(candidates × hundreds) loop that froze the spawn phase.
-    // Nations are already fully accounted for in the STATIC phase (nationScore),
-    // so counting them here also double-counted them. Bots ("BOT") are likewise
-    // excluded — they're not the human opponents the repel term is about.
+    // CRITICAL PERF: only count HUMAN players in the enemy-pressure loops. A
+    // public game can have hundreds of NATION/BOT entities; those are scored by
+    // the bounded proximity indexes below instead of being mixed into pressure.
     const enemySpawns = [];
     const teamSpawns = [];
     const clanSpawns = [];
@@ -522,6 +699,19 @@
       }
     }
     const teamMode = teamSpawns.length > 0;
+    const entities = collectSpawnEntityLocations(game);
+    const tribeProximity = buildSpawnProximityIndex(
+      entities.tribeLocs,
+      W,
+      H,
+      SPAWN_HEATMAP_TRIBE_REACH_BASE_R + SPAWN_HEATMAP_TRIBE_REACH_BONUS_R,
+    );
+    const nationProximity = buildSpawnProximityIndex(
+      entities.nationLocs,
+      W,
+      H,
+      SPAWN_HEATMAP_NATION_R,
+    );
 
     // Compute team centroid (if team mode).
     let teamCentroidX = 0, teamCentroidY = 0;
@@ -540,6 +730,20 @@
     for (const cand of staticCandidates) {
       const { x, y, staticScore } = cand;
       let score = staticScore;
+      const freeLandScore = clampSpawnScore(cand.freeLandScore);
+      const tribeReach = tribeReachForCandidate(
+        tribeProximity,
+        x,
+        y,
+        freeLandScore,
+        entities.tribeLocs.length,
+      );
+      const tribeScore = tribeProximity ? tribeProximity.score(x, y, SPAWN_HEATMAP_TRIBE_R) : 0;
+      const nationScore = nationProximity ? nationProximity.score(x, y) : 0;
+      score +=
+        tribeReach.score * SPAWN_W.tribe +
+        tribeScore * SPAWN_W.tribe * 0.15 +
+        nationScore * SPAWN_W.nation;
 
       // Player distance: distance from nearest enemy spawn (farther = better).
       let minEnemyDist = Infinity;
@@ -582,7 +786,10 @@
         }
       }
 
-      const clanAttract =
+      // Clan cohesion is a tie-break in the fallback path, not an additive
+      // attraction. Adding it here could pull the bot toward a clan member
+      // even when another candidate had a better open-land/target score.
+      const clanScore =
         clanProximityScore && clanSpawns.length > 0
           ? clanProximityScore(
               x,
@@ -591,14 +798,30 @@
               SPAWN_HEATMAP_TEAM_ATTRACT_R,
             )
           : 0;
-      score += clanAttract * SPAWN_W.clan;
 
       if (score > maxScore) maxScore = score;
-      out.push({ x, y, score });
+      out.push({
+        x,
+        y,
+        score,
+        freeLandScore,
+        tribeScore,
+        tribeReachCount: tribeReach.count,
+        tribeReachScore: tribeReach.score,
+        tribeReachRadius: tribeReach.radius,
+        nationScore,
+        clanScore,
+      });
     }
 
     // Pick diverse top spots (greedy, >= 60 tiles apart).
-    out.sort((a, b) => b.score - a.score);
+    out.sort((a, b) => {
+      if (a.score !== b.score) return b.score - a.score;
+      if (a.freeLandScore !== b.freeLandScore) {
+        return b.freeLandScore - a.freeLandScore;
+      }
+      return b.clanScore - a.clanScore;
+    });
     const topSpots = [];
     for (const cand of out) {
       if (topSpots.length >= SPAWN_HEATMAP_TOP_N) break;
@@ -635,6 +858,8 @@
     const enemySpawns = [];
     const teamSpawns = [];
     const clanSpawns = [];
+    const tribeLocs = [];
+    const nationLocs = [];
     const objectiveApi = getSpawnObjectiveApi();
     const getPlayerClanTag = objectiveApi && typeof objectiveApi.getPlayerClanTag === "function"
       ? objectiveApi.getPlayerClanTag
@@ -656,19 +881,25 @@
 
     const liveKeys = new Set();
     for (const player of players) {
-      if (!player || !player.isAlive || !player.isAlive()) continue;
+      if (!isAliveSpawnPlayer(player)) continue;
+      const type = getSpawnPlayerType(player);
+      let nation = type === "NATION";
       try {
-        if (!player.type || player.type() !== "HUMAN") continue;
-      } catch (_error) {
-        continue;
+        nation = nation || Boolean(
+          typeof isNationBotPlayer === "function" && isNationBotPlayer(player),
+        );
+      } catch (_error) { /* type is sufficient */ }
+      const entityLocation = getSpawnPlayerLocation(player);
+      if (entityLocation && (nation || type === "BOT")) {
+        (nation ? nationLocs : tribeLocs).push(entityLocation);
       }
+      if (type !== "HUMAN") continue;
       const key = spawnPointKey(player);
       if (!key || ownKeys.has(key)) continue;
       let spawned = false;
       try { spawned = Boolean(player.hasSpawned && player.hasSpawned()); } catch (_error) { /* empty */ }
       if (!spawned) continue;
-      let location = null;
-      try { location = player.nameLocation ? player.nameLocation() : null; } catch (_error) { /* empty */ }
+      const location = entityLocation || getSpawnPlayerLocation(player);
       if (!location || !Number.isFinite(location.x) || !Number.isFinite(location.y)) continue;
       liveKeys.add(key);
       let teammate = false;
@@ -718,8 +949,10 @@
       enemySpawns.map((point) => `${point.x},${point.y}`).join(";"),
       teamSpawns.map((point) => `${point.x},${point.y}`).join(";"),
       clanSpawns.map((point) => `${point.x},${point.y}`).join(";"),
+      tribeLocs.map((point) => `${point.x},${point.y}`).sort().join(";"),
+      nationLocs.map((point) => `${point.x},${point.y}`).sort().join(";"),
     ].join("|");
-    return { enemySpawns, teamSpawns, clanSpawns, signature };
+    return { enemySpawns, teamSpawns, clanSpawns, tribeLocs, nationLocs, signature };
   }
 
   function insertExactSpawnCandidate(best, candidate) {
@@ -730,6 +963,12 @@
           "safetyScore",
           "expansionScore",
           "teamScore",
+          "tribeReachScore",
+          "tribeReachCount",
+          "freeLandScore",
+          "resourceScore",
+          "tribeScore",
+          "nationScore",
           "clanScore",
           "startScore",
         ];
@@ -778,7 +1017,18 @@
       const configured = game.config().minDistanceBetweenPlayers();
       if (Number.isFinite(configured)) minDist = configured;
     } catch (_error) { /* keep a conservative fallback */ }
-    const nationLocs = collectNationLocations(game);
+    const tribeProximity = buildSpawnProximityIndex(
+      points.tribeLocs,
+      W,
+      H,
+      SPAWN_HEATMAP_TRIBE_REACH_BASE_R + SPAWN_HEATMAP_TRIBE_REACH_BONUS_R,
+    );
+    const nationProximity = buildSpawnProximityIndex(
+      points.nationLocs,
+      W,
+      H,
+      SPAWN_HEATMAP_NATION_R,
+    );
     const best = [];
     const objectiveApi = getSpawnObjectiveApi();
     const frontierValueScale = Number(getSpawnIndexApi()?.FRONTIER_VALUE_SCALE) || 1000;
@@ -836,7 +1086,29 @@
         const edgeX = Math.min(x, W - 1 - x) / Math.max(1, W / 2);
         const edgeY = Math.min(y, H - 1 - y) / Math.max(1, H / 2);
         const edgeScore = Math.max(0, Math.min(edgeX, edgeY));
-        const nationScore = computeNationProximity(nationLocs, x, y);
+        const freeLandScore = calculateSpawnFreeLandScore(
+          clusterScore,
+          frontierGain,
+          frontierSlots,
+          frontierValueGain,
+          frontierValueScale,
+        );
+        const tribeReach = tribeReachForCandidate(
+          tribeProximity,
+          x,
+          y,
+          freeLandScore,
+          points.tribeLocs.length,
+        );
+        const tribeScore = tribeProximity ? tribeProximity.score(x, y, SPAWN_HEATMAP_TRIBE_R) : 0;
+        const nationScore = nationProximity ? nationProximity.score(x, y) : 0;
+        const resourceScore = combineSpawnEntityScore(
+          tribeScore,
+          nationScore,
+          tribeReach.score,
+          points.tribeLocs.length,
+          points.nationLocs.length,
+        );
 
         let minEnemyDist = Infinity;
         let pressure = 0;
@@ -866,6 +1138,8 @@
         let score =
           clusterScore * SPAWN_W.land +
           plainsScore * SPAWN_W.plains +
+          tribeReach.score * SPAWN_W.tribe +
+          tribeScore * SPAWN_W.tribe * 0.15 +
           nationScore * SPAWN_W.nation +
           playerScore * SPAWN_W.player +
           edgeScore * SPAWN_W.edge +
@@ -900,7 +1174,7 @@
         const frontierCoverage = Number.isFinite(Number(frontierSlots))
           ? frontierSlots > 0
             ? frontierValueGain / (frontierSlots * frontierValueScale)
-            : 1
+            : freeLandScore
           : clusterScore;
         const objective = objectiveApi && typeof objectiveApi.evaluateModelCandidate === "function"
           ? objectiveApi.evaluateModelCandidate({
@@ -908,6 +1182,12 @@
               expansionScore: Math.min(clusterScore, frontierCoverage),
               safetyScore: Math.min(playerScore, pressureScore, edgeScore),
               teamScore,
+              tribeScore: points.tribeLocs.length > 0 ? tribeScore : 1,
+              nationScore: points.nationLocs.length > 0 ? nationScore : 1,
+              tribeReachScore: tribeReach.score,
+              tribeReachCount: tribeReach.count,
+              freeLandScore,
+              resourceScore,
               clanScore,
             })
           : null;
@@ -920,6 +1200,13 @@
           spawnGain,
           frontierGain,
           frontierValueGain,
+          freeLandScore,
+          tribeScore,
+          tribeReachCount: tribeReach.count,
+          tribeReachScore: tribeReach.score,
+          tribeReachRadius: tribeReach.radius,
+          nationScore,
+          resourceScore,
           clanScore,
           objective,
         });

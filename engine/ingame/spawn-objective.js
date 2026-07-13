@@ -3,8 +3,9 @@
 // The selector cannot learn a statistically optimal weight vector without
 // outcomes. Instead it uses a robust floor: a candidate is only as strong as
 // its weakest normalized dimension (starting territory, expansion potential,
-// safety, or team fit). This prevents one spectacular metric from hiding a
-// fatal weakness and keeps the objective deterministic across maps.
+// free-land availability, safety, team fit, or reachable tribe expansion).
+// This prevents one spectacular metric from hiding a fatal weakness and keeps
+// the objective deterministic across maps.
 
 (function installSpawnObjective(root) {
   const CLAN_TAG_PATTERN = /^\[([a-zA-Z0-9]{2,5})\] /;
@@ -88,14 +89,40 @@
     const expansionScore = clampScore(candidate.expansionScore);
     const safetyScore = clampScore(candidate.safetyScore);
     const teamScore = clampScore(candidate.teamScore, 1);
+    // A missing target category is neutral rather than a penalty. The spawn
+    // scorer supplies 1 for a category that is absent from the current map.
+    const tribeScore = clampScore(candidate.tribeScore, 1);
+    const nationScore = clampScore(candidate.nationScore, 1);
+    const tribeReachScore = clampScore(candidate.tribeReachScore, 1);
+    const tribeReachCount = Number.isFinite(Number(candidate.tribeReachCount))
+      ? Math.max(0, Number(candidate.tribeReachCount))
+      : 0;
+    // The exact selector must be able to distinguish an open expansion area
+    // from a merely equivalent-looking start. Missing data stays neutral for
+    // callers that use this API without the map index.
+    const freeLandScore = clampScore(candidate.freeLandScore, 1);
+    const resourceScore = clampScore(candidate.resourceScore, 1);
     const clanScore = clampScore(candidate.clanScore);
     return {
       startScore,
       expansionScore,
       safetyScore,
       teamScore,
+      tribeScore,
+      nationScore,
+      tribeReachScore,
+      tribeReachCount,
+      freeLandScore,
+      resourceScore,
       clanScore,
-      robustFloor: Math.min(startScore, expansionScore, safetyScore, teamScore),
+      robustFloor: Math.min(
+        startScore,
+        expansionScore,
+        freeLandScore,
+        safetyScore,
+        teamScore,
+        resourceScore,
+      ),
     };
   }
 
@@ -107,6 +134,12 @@
       "safetyScore",
       "expansionScore",
       "teamScore",
+      "tribeReachScore",
+      "tribeReachCount",
+      "freeLandScore",
+      "resourceScore",
+      "tribeScore",
+      "nationScore",
       "clanScore",
       "startScore",
     ];
