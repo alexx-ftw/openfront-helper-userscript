@@ -68,6 +68,7 @@
   // Early-game tribe scoring may need one border snapshot per candidate. Keep the
   // async enrichment bounded so a crowded tribe map cannot starve the combat tick.
   const EARLY_TRIBE_CANDIDATES = 8;
+  const EARLY_TRIBE_BORDER_FETCH_CONCURRENCY = 4;
   const EARLY_GAME_TRIBE_CHAIN_RADIUS = 120;
   // OpenFront's Config.attackLogic applies these effects when an operational
   // enemy Defense Post is within defensePostRange() of the tile being taken.
@@ -656,6 +657,7 @@
         lastBoatEtaTicks: null,
         boatRejectedUnknown: previousEarlyGame.boatRejectedUnknown || 0,
         boatRejectedTooFar: previousEarlyGame.boatRejectedTooFar || 0,
+        openingLandBurst: previousEarlyGame.openingLandBurst === true,
       };
 
       // Panel feature toggles. maybeAttack runs under feat("expand")||feat("boat"),
@@ -670,6 +672,33 @@
       const expandOn = !!f.expand;
       const boatOn = !!f.boat;
       const allianceOn = !!f.alliance;
+
+      // WIN-FIX (NOT in src): the first live poll after spawn must not wait for
+      // the expensive tribe-border enrichment or the normal attack cadence before
+      // taking adjacent free land. This flag is set by NationBot only once, so a
+      // later tick can return to the normal tribe/ocean ranking pipeline.
+      if (
+        state.settings.winFixes &&
+        state.earlyGame.openingLandBurst === true
+      ) {
+        state.earlyGame.openingLandBurst = false;
+        if (
+          expandOn &&
+          borderingEnemies.length === 0 &&
+          hasNonNukedTerraNullius &&
+          this.hasLandBorderWithTerraNullius()
+        ) {
+          if (
+            await this.sendAttack(
+              this.game.terraNullius(),
+              false,
+              EARLY_EXPAND_COMMIT,
+            )
+          ) {
+            return;
+          }
+        }
+      }
 
       // WIN-FIX (NOT in src): TAKE OVER a DISCONNECTED neighbour's land. A player who
       // left/timed-out shows the "zzz" icon (isDisconnected()), and the game already
@@ -1014,24 +1043,45 @@
       );
       const candidates = [];
 
+      // Border snapshots are worker-backed on the client. Fetch them in small
+      // batches so eight candidates cannot serialize eight timeout windows, while
+      // still keeping the amount of concurrent worker work bounded.
+      const borderByTribe = new Map();
+      for (
+        let start = 0;
+        start < nearbyTribes.length;
+        start += EARLY_TRIBE_BORDER_FETCH_CONCURRENCY
+      ) {
+        const batch = nearbyTribes.slice(
+          start,
+          start + EARLY_TRIBE_BORDER_FETCH_CONCURRENCY,
+        );
+        await Promise.all(
+          batch.map(async (tribe) => {
+            let border = new Set();
+            try {
+              if (typeof this.game.ensureBorderTiles === "function") {
+                const fetched = await withTimeout(
+                  this.game.ensureBorderTiles(tribe),
+                  WORKER_TIMEOUT_MS,
+                  null,
+                );
+                if (fetched && fetched.size > 0) border = fetched;
+              }
+              if (border.size === 0) {
+                const snapshot = tribe.borderTiles();
+                if (snapshot && snapshot.size > 0) border = snapshot;
+              }
+            } catch (_e) {
+              /* no border snapshot → keep the candidate with conservative signals */
+            }
+            borderByTribe.set(tribe, border);
+          }),
+        );
+      }
+
       for (const tribe of nearbyTribes) {
-        let border = new Set();
-        try {
-          if (typeof this.game.ensureBorderTiles === "function") {
-            const fetched = await withTimeout(
-              this.game.ensureBorderTiles(tribe),
-              WORKER_TIMEOUT_MS,
-              null,
-            );
-            if (fetched && fetched.size > 0) border = fetched;
-          }
-          if (border.size === 0) {
-            const snapshot = tribe.borderTiles();
-            if (snapshot && snapshot.size > 0) border = snapshot;
-          }
-        } catch (_e) {
-          /* no border snapshot → keep the candidate with conservative signals */
-        }
+        const border = borderByTribe.get(tribe) || new Set();
 
         const tribeSid = tribe.smallID();
         let boundaryEdges = 0;
@@ -2954,13 +3004,17 @@
     }
 
     // forceSendAttack — AiAttackBehavior (now async only by signature; nationExecution
-    // awaits it. No worker calls — a land/TN attack at half troops).
-    async forceSendAttack(target) {
+    // awaits it. No worker calls — a land/TN opening burst).
+    async forceSendAttack(target, fraction = 0.5) {
       // src: game.addExecution(new AttackExecution(troops/2, player,
       //   target.isPlayer() ? target.id() : terraNullius().id())).
       // Client: emitIntent(ctors.attack, target.id()|null, troops).
       const ctors = discoverCtors(getEventBus());
-      const troops = this.player.troops() / 2;
+      const requestedFraction = Number(fraction);
+      const commitFraction = Number.isFinite(requestedFraction)
+        ? Math.max(0, Math.min(1, requestedFraction))
+        : 0.5;
+      const troops = this.player.troops() * commitFraction;
       const targetId = target.isPlayer() ? target.id() : null;
       if (ctors.attack && emitIntent(ctors.attack, targetId, troops)) {
         state.stats.attacks++;
@@ -3264,32 +3318,57 @@
         return false;
       }
 
-      // USER (winFixes): EVERY boat is a cheap 1% probe — never a 20% dump (troops/5),
-      // and not the bot-scaled calculateBotAttackTroops either. This means the bot now
-      // HARASSES across water instead of conquering it by boat; land expansion and the
-      // opportunistic 1% landings are unaffected. (winFixes off → exact faithful troops.)
+      // USER (winFixes): a boat aimed at a neutral Bot/tribe is a real capture,
+      // not a probe. Use the same 2x/4x bot attack floor as land attacks so the
+      // tribe is taken in one crossing when the reserve allows it. Boats aimed at
+      // nations, open coast, or TerraNullius keep the cheap 1% probe policy.
       let troops;
-      if (state.settings.winFixes) {
+      const botTarget =
+        target.isPlayer() && target.type() === PlayerType.Bot;
+      const botAttackTroopsSentBefore = this.botAttackTroopsSent;
+      let captureReserveTroops =
+        this.game.config().maxTroops(this.player) *
+        this.effectiveReserveRatio();
+      if (state.settings.winFixes && botTarget) {
+        const maxTroops = this.game.config().maxTroops(this.player);
+        const botWithStructures = target
+          .units()
+          .some((u) => AttackStructures.has(u.type()));
+        const reserveRatio = botWithStructures
+          ? this.expandRatio
+          : this.effectiveReserveRatio();
+        captureReserveTroops = maxTroops * reserveRatio;
+        troops = this.calculateBotAttackTroops(
+          target,
+          this.player.troops() -
+            captureReserveTroops -
+            this.botAttackTroopsSent,
+          this.getEnemyDefensePostAttackProfile(target),
+        );
+      } else if (state.settings.winFixes) {
         troops = Math.max(
           this.player.troops() * (state.settings.boatProbeFrac || 0.01),
           state.settings.boatProbeMinTroops || 8000,
         );
-      } else if (target.type() === PlayerType.Bot) {
+      } else if (botTarget) {
         troops = this.calculateBotAttackTroops(target, this.player.troops() / 5);
       } else {
         troops = this.player.troops() / 5;
       }
 
+      const baseTroops = troops;
       troops = this.applyEarlyGameRaceTroops({
         target,
         baseTroops: troops,
-        reserveTroops:
-          this.game.config().maxTroops(this.player) *
-          this.effectiveReserveRatio(),
+        reserveTroops: captureReserveTroops + botAttackTroopsSentBefore,
         earlyGameCandidate,
       });
+      if (troops > baseTroops && botTarget) {
+        this.botAttackTroopsSent += troops - baseTroops;
+      }
 
       if (troops < 1) {
+        if (botTarget) this.botAttackTroopsSent = botAttackTroopsSentBefore;
         return false;
       }
 
@@ -3301,7 +3380,10 @@
       }
 
       // src: game.addExecution(new TransportShipExecution(player, closest.y, troops)).
-      if (!(await this.allowEarlyGameBoat(closest.y))) return false;
+      if (!(await this.allowEarlyGameBoat(closest.y))) {
+        if (botTarget) this.botAttackTroopsSent = botAttackTroopsSentBefore;
+        return false;
+      }
       const ctors = discoverCtors(getEventBus());
       if (ctors.boat && emitIntent(ctors.boat, closest.y, troops)) {
         state.stats.attacks++;

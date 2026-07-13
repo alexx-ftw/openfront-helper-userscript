@@ -23,12 +23,28 @@ const UNIT = {
   Port: "Port",
   Factory: "Factory",
 };
+let boatIntent = null;
 const sandbox = {
   UNIT,
   Difficulty,
   PlayerType: { Bot: "Bot", Human: "Human", Nation: "Nation" },
   currentDifficulty: () => Difficulty.Impossible,
-  state: { settings: { winFixes: true }, stats: {} },
+  state: {
+    settings: { winFixes: true, features: { boat: true } },
+    earlyGame: {},
+    stats: {},
+  },
+  WORKER_TIMEOUT_MS: 1000,
+  withTimeout: (value) => Promise.resolve(value),
+  closestTwoTiles: () => ({ x: 1, y: 2 }),
+  getEventBus: () => null,
+  discoverCtors: () => ({ boat: {} }),
+  emitIntent: (_ctor, ...args) => {
+    boatIntent = args;
+    return true;
+  },
+  setLastAction: () => {},
+  tr: (value) => value,
 };
 vm.runInNewContext(`${source}\nglobalThis.AttackBehavior = AttackBehavior;`, sandbox, {
   filename: sourcePath,
@@ -151,6 +167,56 @@ assert.equal(
   behavior.calculateBotAttackTroops(enemy, 500, null),
   400,
   "without coverage, the existing 4x bot attack rule is unchanged",
+);
+
+const boatConfig = {
+  isUnitDisabled: () => false,
+  maxTroops: () => 10000,
+  boatMaxNumber: () => 10,
+};
+const boatGame = {
+  ticks: () => 1,
+  numLandTiles: () => 1000,
+  config: () => boatConfig,
+  ensureBorderTiles: () => Promise.resolve(),
+  neighbors: () => [],
+  ownerID: () => 1,
+  isLand: () => true,
+  isShore: () => true,
+};
+const boatPlayer = {
+  isPlayer: () => true,
+  type: () => "Human",
+  smallID: () => 1,
+  troops: () => 10000,
+  numTilesOwned: () => 1,
+  borderTiles: () => new Set([1]),
+  bestTransportShipSpawn: () => Promise.resolve(true),
+};
+const boatTribe = {
+  isPlayer: () => true,
+  type: () => "Bot",
+  smallID: () => 2,
+  id: () => "tribe-2",
+  troops: () => 1000,
+  units: () => [],
+  borderTiles: () => new Set([2]),
+};
+const boatBehavior = new sandbox.AttackBehavior(
+  {},
+  boatGame,
+  boatPlayer,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+assert.equal(await boatBehavior.sendBoatAttack(boatTribe), true);
+assert.deepEqual(
+  boatIntent,
+  [2, 4000],
+  "a win-fix boat attack against a tribe must fund the full capture, not a 1% probe",
 );
 
 tick++;

@@ -29,6 +29,7 @@
       this.lastSpawnPickTick = null; // throttle re-evaluation during spawn phase
       this.status = "";
       this.lastSeenTick = -1;
+      this.openingLandBurstPending = false;
       this.embargoMalusApplied = new Set(); // smallIDs we've applied embargo malus to
 
       // Seed exactly like src (NationExecution.ts:54): simpleHash(playerId)+gameID.
@@ -145,8 +146,32 @@
       if (!this.behaviorsInitialized) {
         this.initializeBehaviors();
         if (this.feat("expand")) {
-          await this.attackBehavior.forceSendAttack(this.mg.terraNullius());
+          const openingWinFix = state.settings.winFixes === true;
+          await this.attackBehavior.forceSendAttack(
+            this.mg.terraNullius(),
+            openingWinFix ? 0.6 : 0.5,
+          );
+          this.openingLandBurstPending = openingWinFix;
         }
+        this.lastSeenTick = ticks;
+        return;
+      }
+
+      // WIN-FIX (NOT in src): run one immediate post-spawn decision instead of
+      // waiting for the randomized attackRate window. AttackBehavior consumes the
+      // one-shot flag and prioritizes adjacent free land before tribe enrichment.
+      if (
+        this.openingLandBurstPending &&
+        state.settings.winFixes === true &&
+        (this.feat("expand") || this.feat("boat"))
+      ) {
+        this.openingLandBurstPending = false;
+        state.earlyGame = {
+          ...(state.earlyGame || {}),
+          openingLandBurst: true,
+        };
+        await this.attackBehavior.maybeAttack();
+        if (state.earlyGame) state.earlyGame.openingLandBurst = false;
         this.lastSeenTick = ticks;
         return;
       }

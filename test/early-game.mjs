@@ -13,6 +13,10 @@ const attackSource = fs.readFileSync(
   path.join(repoRoot, "engine/ingame/auto-bot/attackBehavior.js"),
   "utf8",
 );
+const nationSource = fs.readFileSync(
+  path.join(repoRoot, "engine/ingame/auto-bot/nationExecution.js"),
+  "utf8",
+);
 const gameApiSource = fs.readFileSync(
   path.join(repoRoot, "engine/ingame/auto-bot/gameApi.js"),
   "utf8",
@@ -456,8 +460,14 @@ assert.match(attackSource, /state\.earlyGame\.action === "land"/);
 assert.match(attackSource, /async allowEarlyGameBoat\(tile\)/);
 assert.match(attackSource, /!state\.settings\.winFixes \|\| !early \|\| !early\.active/);
 assert.match(attackSource, /EARLY_EXPAND_COMMIT/);
+assert.match(attackSource, /EARLY_TRIBE_BORDER_FETCH_CONCURRENCY/);
+assert.match(attackSource, /openingLandBurst/);
+assert.match(attackSource, /state\.settings\.winFixes && botTarget/);
+assert.match(attackSource, /calculateBotAttackTroops\(/);
 assert.match(attackSource, /attackEarlyGameTribe/);
 assert.match(attackSource, /maybeEarlyOceanBoat/);
+assert.match(nationSource, /openingLandBurstPending/);
+assert.match(nationSource, /openingWinFix \? 0\.6 : 0\.5/);
 assert.match(attackSource, /rankTeamDonationCandidates\(needy\)/);
 assert.match(attackSource, /playersShareClanTag/);
 assert.match(gameApiSource, /estimateTransportRouteTicks/);
