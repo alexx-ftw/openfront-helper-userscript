@@ -226,6 +226,25 @@ and the Early Game 300-tick ETA gate.
 With `winFixes` disabled, these additions are inactive and the faithful Nation
 flow remains unchanged.
 
+### Custom enemy Defense Post-aware attacks
+
+When `state.settings.winFixes` is enabled, land-attack target ranking and troop
+commitment include the enemy Defense Post coverage of the current attack front.
+The policy mirrors `Config.attackLogic`: one active, completed enemy post within
+`defensePostRange()` (30 tiles in the current game) multiplies attacker losses
+by `defensePostDefenseBonus()` (5) and slows conquest by
+`defensePostSpeedBonus()` (3). Overlapping posts do not stack, and posts under
+construction are excluded.
+
+Coverage is measured only on the target tiles adjacent to our own border. The
+profile is bounded to 512 front tiles and 256 posts, cached by target and game
+tick, and reused by the bot attack pass. Defended targets therefore rank as
+harder than equally sized open targets; bot attacks scale their preferred and
+minimum troop thresholds by the damage multiplier, while ordinary land attacks
+are skipped when the available commitment is below the Defense Post-aware
+minimum. Boat probes keep their existing cheap-probe behavior. With `winFixes`
+disabled, the faithful attack selection and troop calculation remain unchanged.
+
 ### Custom spawn-phase resource safety
 
 The spawn markers and visual heatmap use only their bounded coarse scorer. They

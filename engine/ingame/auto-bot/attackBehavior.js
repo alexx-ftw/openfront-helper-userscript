@@ -69,9 +69,112 @@
   // async enrichment bounded so a crowded tribe map cannot starve the combat tick.
   const EARLY_TRIBE_CANDIDATES = 8;
   const EARLY_GAME_TRIBE_CHAIN_RADIUS = 120;
+  // OpenFront's Config.attackLogic applies these effects when an operational
+  // enemy Defense Post is within defensePostRange() of the tile being taken.
+  // Keep fallbacks here because older client views may not expose the newer
+  // config accessors, while still using the live values whenever available.
+  const ENEMY_DEFENSE_POST_RANGE = 30;
+  const ENEMY_DEFENSE_POST_DEFENSE_BONUS = 5;
+  const ENEMY_DEFENSE_POST_SPEED_BONUS = 3;
+  const ENEMY_DEFENSE_POST_MAX_SCAN_POSTS = 256;
+  const ENEMY_DEFENSE_POST_MAX_FRONT_TILES = 512;
   // Terrain is shared by all Nation behaviors for the same game. Keep the
   // reverse maritime field per map instead of rebuilding it for every bot.
   const EARLY_GAME_MARITIME_INDEX_CACHE = new WeakMap();
+
+  function emptyDefensePostAttackProfile() {
+    return {
+      hasCoverage: false,
+      frontTileCount: 0,
+      coveredFrontTileCount: 0,
+      coverageRatio: 0,
+      operationalPostCount: 0,
+      defenseMultiplier: 1,
+      speedMultiplier: 1,
+      attackCostMultiplier: 1,
+    };
+  }
+
+  // Mirrors Config.attackLogic's binary coverage rule: several overlapping
+  // posts still apply the bonus once, not once per post. This pure helper is
+  // intentionally independent of the game/player wrappers so it is cheap to
+  // regression-test and cannot accidentally grow a map-wide scan.
+  function calculateDefensePostAttackProfile({
+    frontTiles = [],
+    defensePosts = [],
+    distanceSquared,
+    defensePostRange = ENEMY_DEFENSE_POST_RANGE,
+    defensePostDefenseBonus = ENEMY_DEFENSE_POST_DEFENSE_BONUS,
+    defensePostSpeedBonus = ENEMY_DEFENSE_POST_SPEED_BONUS,
+  } = {}) {
+    const tiles = Array.from(new Set(frontTiles || [])).slice(
+      0,
+      ENEMY_DEFENSE_POST_MAX_FRONT_TILES,
+    );
+    const posts = Array.from(defensePosts || []).slice(
+      0,
+      ENEMY_DEFENSE_POST_MAX_SCAN_POSTS,
+    );
+    const operationalPostCount = posts.length;
+    if (tiles.length === 0 || posts.length === 0) {
+      return {
+        ...emptyDefensePostAttackProfile(),
+        operationalPostCount,
+      };
+    }
+
+    const range = Number(defensePostRange);
+    const defenseBonus = Number(defensePostDefenseBonus);
+    const speedBonus = Number(defensePostSpeedBonus);
+    const rangeSquared =
+      Number.isFinite(range) && range > 0 ? range * range : 0;
+    const safeDefenseBonus =
+      Number.isFinite(defenseBonus) && defenseBonus >= 1
+        ? defenseBonus
+        : ENEMY_DEFENSE_POST_DEFENSE_BONUS;
+    const safeSpeedBonus =
+      Number.isFinite(speedBonus) && speedBonus >= 1
+        ? speedBonus
+        : ENEMY_DEFENSE_POST_SPEED_BONUS;
+
+    let coveredFrontTileCount = 0;
+    for (const frontTile of tiles) {
+      for (const post of posts) {
+        if (post.tile == null || typeof distanceSquared !== "function") {
+          continue;
+        }
+        let distance;
+        try {
+          distance = Number(distanceSquared(post.tile, frontTile));
+        } catch (_error) {
+          distance = NaN;
+        }
+        if (Number.isFinite(distance) && distance <= rangeSquared) {
+          coveredFrontTileCount++;
+          break;
+        }
+      }
+    }
+
+    const coverageRatio = coveredFrontTileCount / tiles.length;
+    const defenseMultiplier =
+      1 + coverageRatio * Math.max(0, safeDefenseBonus - 1);
+    const speedMultiplier =
+      1 + coverageRatio * Math.max(0, safeSpeedBonus - 1);
+    return {
+      hasCoverage: coveredFrontTileCount > 0,
+      frontTileCount: tiles.length,
+      coveredFrontTileCount,
+      coverageRatio,
+      operationalPostCount,
+      defenseMultiplier,
+      speedMultiplier,
+      // The troop requirement follows the actual attackLogic magnitude
+      // multiplier. speedMultiplier is retained separately because it affects
+      // how long the attack remains exposed, not the direct troop loss.
+      attackCostMultiplier: defenseMultiplier,
+    };
+  }
 
   function earlyGameMaritimeCacheKey(game) {
     const source = game && game.__src;
@@ -154,6 +257,318 @@
       // avoids even the lookup after the first candidate pass.
       this.earlyGameMaritimeIndex = undefined;
       this.earlyGameMaritimeWaterCache = new Map();
+      // Defense-post reads are bounded and reused across all target decisions
+      // made in the same game tick. This keeps the extra combat intelligence out
+      // of the high-frequency engine poll loop.
+      this.enemyDefensePostCacheTick = -1;
+      this.enemyDefensePostUnitsCache = new Map();
+      this.enemyDefensePostProfileCache = new Map();
+      this.enemyDefensePostFrontByTarget = new Map();
+      this.enemyDefensePostFrontSeenByTarget = new Map();
+    }
+
+    enemyDefensePostPolicyEnabled() {
+      return state.settings?.winFixes === true;
+    }
+
+    currentAttackDecisionTick() {
+      try {
+        const tick = Number(this.game?.ticks?.());
+        return Number.isFinite(tick) ? tick : 0;
+      } catch (_error) {
+        return 0;
+      }
+    }
+
+    resetEnemyDefensePostCaches() {
+      const tick = this.currentAttackDecisionTick();
+      if (this.enemyDefensePostCacheTick === tick) return tick;
+      this.enemyDefensePostCacheTick = tick;
+      this.enemyDefensePostUnitsCache.clear();
+      this.enemyDefensePostProfileCache.clear();
+      this.enemyDefensePostFrontByTarget.clear();
+      this.enemyDefensePostFrontSeenByTarget.clear();
+      return tick;
+    }
+
+    cacheEnemyDefensePostFrontTiles(border) {
+      this.resetEnemyDefensePostCaches();
+      const meSid = this.player?.smallID?.();
+      for (const tile of border || []) {
+        const ownerID = this.game.ownerID(tile);
+        if (ownerID == null || ownerID === meSid) continue;
+        let tiles = this.enemyDefensePostFrontByTarget.get(ownerID);
+        if (!tiles) {
+          tiles = [];
+          this.enemyDefensePostFrontByTarget.set(ownerID, tiles);
+        }
+        if (tiles.length >= ENEMY_DEFENSE_POST_MAX_FRONT_TILES) continue;
+        let seen = this.enemyDefensePostFrontSeenByTarget.get(ownerID);
+        if (!seen) {
+          seen = new Set();
+          this.enemyDefensePostFrontSeenByTarget.set(ownerID, seen);
+        }
+        if (seen.has(tile)) continue;
+        seen.add(tile);
+        tiles.push(tile);
+      }
+    }
+
+    getEnemyDefensePostFrontTiles(target) {
+      if (!target?.isPlayer?.()) return [];
+      const targetSid = target.smallID?.();
+      if (targetSid == null) return [];
+      this.resetEnemyDefensePostCaches();
+      const cached = this.enemyDefensePostFrontByTarget.get(targetSid);
+      if (cached) return cached;
+
+      // Fallback for direct callers/tests that did not go through maybeAttack's
+      // already-required border scan. In the normal engine path this branch is
+      // not reached, so it does not duplicate the combat-tick work.
+      const front = [];
+      for (const borderTile of this.player.borderTiles?.() || []) {
+        for (const neighbor of this.game.neighbors(borderTile) || []) {
+          if (!this.game.isLand(neighbor)) continue;
+          if (this.game.ownerID(neighbor) !== targetSid) continue;
+          front.push(neighbor);
+          if (front.length >= ENEMY_DEFENSE_POST_MAX_FRONT_TILES) break;
+        }
+        if (front.length >= ENEMY_DEFENSE_POST_MAX_FRONT_TILES) break;
+      }
+      this.enemyDefensePostFrontByTarget.set(targetSid, front);
+      return front;
+    }
+
+    readEnemyDefensePostConfig(method, fallback) {
+      try {
+        const config = this.game.config?.();
+        const value =
+          typeof config?.[method] === "function"
+            ? config[method]()
+            : config?.[method];
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? numeric : fallback;
+      } catch (_error) {
+        return fallback;
+      }
+    }
+
+    tileDistanceSquared(left, right) {
+      try {
+        if (typeof this.game.euclideanDistSquared === "function") {
+          return Number(this.game.euclideanDistSquared(left, right));
+        }
+        if (
+          typeof this.game.x === "function" &&
+          typeof this.game.y === "function"
+        ) {
+          const dx = Number(this.game.x(left)) - Number(this.game.x(right));
+          const dy = Number(this.game.y(left)) - Number(this.game.y(right));
+          return dx * dx + dy * dy;
+        }
+        if (typeof this.game.manhattanDist === "function") {
+          const distance = Number(this.game.manhattanDist(left, right));
+          return distance * distance;
+        }
+      } catch (_error) {
+        /* malformed/stale tile views are treated as uncovered */
+      }
+      return Infinity;
+    }
+
+    getOperationalEnemyDefensePosts(target) {
+      if (!target?.isPlayer?.()) return [];
+      const targetSid = target.smallID?.();
+      if (targetSid == null) return [];
+      this.resetEnemyDefensePostCaches();
+      if (this.enemyDefensePostUnitsCache.has(targetSid)) {
+        return this.enemyDefensePostUnitsCache.get(targetSid);
+      }
+
+      const operational = [];
+      try {
+        for (const unit of target.units?.(UNIT.DefensePost) || []) {
+          if (
+            typeof unit.isActive === "function" &&
+            unit.isActive() === false
+          ) {
+            continue;
+          }
+          if (
+            typeof unit.isUnderConstruction === "function" &&
+            unit.isUnderConstruction()
+          ) {
+            continue;
+          }
+          const tile =
+            typeof unit.tile === "function" ? unit.tile() : unit.tile;
+          if (tile == null) continue;
+          operational.push({
+            tile,
+            x:
+              typeof this.game.x === "function"
+                ? Number(this.game.x(tile))
+                : NaN,
+            y:
+              typeof this.game.y === "function"
+                ? Number(this.game.y(tile))
+                : NaN,
+          });
+        }
+      } catch (_error) {
+        // A stale PlayerView must never abort the complete attack decision.
+      }
+      this.enemyDefensePostUnitsCache.set(targetSid, operational);
+      return operational;
+    }
+
+    selectEnemyDefensePostCandidates(frontTiles, posts, range) {
+      const candidates = Array.from(posts || []);
+      if (candidates.length <= ENEMY_DEFENSE_POST_MAX_SCAN_POSTS) {
+        return candidates;
+      }
+      if (
+        typeof this.game.x !== "function" ||
+        typeof this.game.y !== "function"
+      ) {
+        return candidates.slice(0, ENEMY_DEFENSE_POST_MAX_SCAN_POSTS);
+      }
+
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const tile of Array.from(new Set(frontTiles || [])).slice(
+        0,
+        ENEMY_DEFENSE_POST_MAX_FRONT_TILES,
+      )) {
+        const x = Number(this.game.x(tile));
+        const y = Number(this.game.y(tile));
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+      if (!Number.isFinite(minX) || !Number.isFinite(minY)) {
+        return candidates.slice(0, ENEMY_DEFENSE_POST_MAX_SCAN_POSTS);
+      }
+
+      const margin = Math.max(0, Number(range) || 0);
+      const nearby = candidates.filter(
+        (post) =>
+          !Number.isFinite(post.x) ||
+          !Number.isFinite(post.y) ||
+          (post.x >= minX - margin &&
+            post.x <= maxX + margin &&
+            post.y >= minY - margin &&
+            post.y <= maxY + margin),
+      );
+      return nearby.slice(0, ENEMY_DEFENSE_POST_MAX_SCAN_POSTS);
+    }
+
+    getEnemyDefensePostAttackProfile(target, frontTiles = null) {
+      if (!this.enemyDefensePostPolicyEnabled() || !target?.isPlayer?.()) {
+        return emptyDefensePostAttackProfile();
+      }
+
+      this.resetEnemyDefensePostCaches();
+      const explicitFront = frontTiles != null;
+      const targetSid = target.smallID?.();
+      if (!explicitFront && targetSid != null) {
+        const cached = this.enemyDefensePostProfileCache.get(targetSid);
+        if (cached) return cached;
+      }
+
+      const attackFront = explicitFront
+        ? frontTiles
+        : this.getEnemyDefensePostFrontTiles(target);
+      const defensePostRange = this.readEnemyDefensePostConfig(
+        "defensePostRange",
+        ENEMY_DEFENSE_POST_RANGE,
+      );
+      const profile = calculateDefensePostAttackProfile({
+        frontTiles: attackFront,
+        defensePosts: this.selectEnemyDefensePostCandidates(
+          attackFront,
+          this.getOperationalEnemyDefensePosts(target),
+          defensePostRange,
+        ),
+        distanceSquared: (left, right) =>
+          this.tileDistanceSquared(left, right),
+        defensePostRange,
+        defensePostDefenseBonus: this.readEnemyDefensePostConfig(
+          "defensePostDefenseBonus",
+          ENEMY_DEFENSE_POST_DEFENSE_BONUS,
+        ),
+        defensePostSpeedBonus: this.readEnemyDefensePostConfig(
+          "defensePostSpeedBonus",
+          ENEMY_DEFENSE_POST_SPEED_BONUS,
+        ),
+      });
+      if (!explicitFront && targetSid != null) {
+        this.enemyDefensePostProfileCache.set(targetSid, profile);
+      }
+      return profile;
+    }
+
+    getDefensePostMinimumAttackTroops(target, profile) {
+      if (
+        !this.enemyDefensePostPolicyEnabled() ||
+        !target?.isPlayer?.() ||
+        !profile?.hasCoverage
+      ) {
+        return 0;
+      }
+      const targetTroops = Math.max(0, Number(target.troops?.() ?? 0));
+      const multiplier = Math.max(
+        1,
+        Number(profile.attackCostMultiplier || profile.defenseMultiplier || 1),
+      );
+      // The faithful bot already refuses a player attack below 2× the target's
+      // troops. Scale that same safety floor by the actual Defense Post damage
+      // multiplier instead of throwing away the reserve on a covered front.
+      return targetTroops * 2 * multiplier;
+    }
+
+    attackIsTooWeakForDefensePosts(target, troops, profile) {
+      const minimum = this.getDefensePostMinimumAttackTroops(target, profile);
+      return minimum > 0 && Number(troops) < minimum;
+    }
+
+    attackTargetDifficulty(target) {
+      const troops = Math.max(0, Number(target?.troops?.() ?? 0));
+      if (!this.enemyDefensePostPolicyEnabled()) return troops;
+      const profile = this.getEnemyDefensePostAttackProfile(target);
+      // Target ranking considers both parts of Config.attackLogic: direct troop
+      // loss and the slower exposure window. Use the worse of the two effects so
+      // a future balance change cannot make speed invisible to target choice.
+      return (
+        troops *
+        Math.max(
+          1,
+          Number(profile.attackCostMultiplier || 1),
+          Number(profile.speedMultiplier || 1),
+        )
+      );
+    }
+
+    rankAttackTargets(targets) {
+      if (!this.enemyDefensePostPolicyEnabled()) return targets;
+      return (targets || [])
+        .map((target, index) => ({
+          target,
+          index,
+          rawTroops: Number(target?.troops?.() ?? 0),
+          difficulty: this.attackTargetDifficulty(target),
+        }))
+        .sort(
+          (left, right) =>
+            left.difficulty - right.difficulty ||
+            left.rawTroops - right.rawTroops ||
+            left.index - right.index,
+        )
+        .map(({ target }) => target);
     }
 
     // maybeAttack — AiAttackBehavior.maybeAttack (now async: it awaits sendAttack,
@@ -170,6 +585,7 @@
             this.game.isLand(t) &&
             this.game.ownerID(t) !== this.player?.smallID(),
         );
+      this.cacheEnemyDefensePostFrontTiles(border);
       const playerNeighbors = this.player.nearby();
       // DIVERGENCE: src builds the set from playerBySmallID(ownerID(t)) and filters
       // `o.isPlayer()`. On the client playerBySmallID can return null (core never
@@ -188,8 +604,10 @@
       const borderingFriends = borderingPlayers.filter(
         (o) => this.player?.isFriendly(o) === true,
       );
-      const borderingEnemies = borderingPlayers.filter(
-        (o) => this.player?.isFriendly(o) === false,
+      const borderingEnemies = this.rankAttackTargets(
+        borderingPlayers.filter(
+          (o) => this.player?.isFriendly(o) === false,
+        ),
       );
 
       // Attack TerraNullius but not nuked territory (direct border or across a river)
@@ -1880,8 +2298,8 @@
       return null;
     }
 
-    // attackBestTarget is called with borderingFriends and borderingEnemies sorted
-    // by troops (ascending). AiAttackBehavior (private, now async).
+    // attackBestTarget is called with borderingFriends sorted by troops and
+    // borderingEnemies sorted by Defense Post-aware attack difficulty.
     async attackBestTarget(borderingFriends, borderingEnemies) {
       // In games with high starting gold, nations will quickly build a lot of cities
       // This causes them to expand slowly (cities increase max troops), and bots will steal their structures
@@ -1936,7 +2354,7 @@
       };
 
       const afk = async () => {
-        // borderingEnemies is already sorted by troops (ascending), so first match is weakest afk enemy
+        // borderingEnemies is already sorted by attack difficulty, so first match is weakest afk enemy
         const afk = borderingEnemies.find(
           (enemy) =>
             enemy.isDisconnected() &&
@@ -1987,7 +2405,7 @@
 
       const weakest = async () => {
         if (borderingEnemies.length > 0) {
-          // borderingEnemies is already sorted by troops (ascending), so first match is weakest
+          // borderingEnemies is already sorted by attack difficulty, so first match is weakest
           const weakest = borderingEnemies[0];
           // In FFA, don't attack if they have more troops than us
           if (!this.isFFA() || weakest.troops() < this.player.troops()) {
@@ -2154,13 +2572,24 @@
       const density = (p) => p.troops() / p.numTilesOwned();
       const ownsStructures = (p) =>
         p.units().some((u) => AttackStructures.has(u.type()));
+      const attackDifficultyDensity = (p) => {
+        const profile = this.getEnemyDefensePostAttackProfile(p);
+        return (
+          density(p) *
+          Math.max(
+            1,
+            Number(profile.attackCostMultiplier || 1),
+            Number(profile.speedMultiplier || 1),
+          )
+        );
+      };
       const sortedBots = bots.slice().sort((a, b) => {
         const aHasStructures = ownsStructures(a);
         const bHasStructures = ownsStructures(b);
         if (aHasStructures !== bHasStructures) {
           return aHasStructures ? -1 : 1;
         }
-        return density(a) - density(b);
+        return attackDifficultyDensity(a) - attackDifficultyDensity(b);
       });
       const reducedBots = sortedBots.slice(0, this.getBotAttackMaxParallelism());
 
@@ -2234,7 +2663,7 @@
     findTraitor(borderingEnemies) {
       if (this.game.config().disableAlliances()) return null;
 
-      // borderingEnemies is already sorted by troops (ascending), so first match is weakest traitor
+      // borderingEnemies is already sorted by attack difficulty, so first match is weakest traitor
       return (
         borderingEnemies.find(
           (enemy) =>
@@ -2288,7 +2717,7 @@
     // Find someone who isn't significantly stronger than us and is under big attack from others (50%+ of their troops incoming)
     // findVictim — AiAttackBehavior (private).
     findVictim(borderingEnemies) {
-      // borderingEnemies is already sorted by troops (ascending), so first match is weakest victim
+      // borderingEnemies is already sorted by attack difficulty, so first match is weakest victim
       return (
         borderingEnemies.find((enemy) => {
           if (this.isFFA() && enemy.troops() > this.player.troops() * 1.2) {
@@ -2316,7 +2745,7 @@
         );
       });
 
-      // borderingEnemies is already sorted by troops (ascending), so first match is weakest very weak enemy
+      // borderingEnemies is already sorted by attack difficulty, so first match is weakest very weak enemy
       return veryWeakEnemies.length > 0 ? veryWeakEnemies[0] : null;
     }
 
@@ -2706,6 +3135,9 @@
       earlyGameCandidate = null,
     ) {
       const maxTroops = this.game.config().maxTroops(this.player);
+      const enemyDefensePostProfile = this.getEnemyDefensePostAttackProfile(
+        target,
+      );
       const botWithStructures =
         target.isPlayer() &&
         target.type() === PlayerType.Bot &&
@@ -2730,6 +3162,7 @@
         troops = this.calculateBotAttackTroops(
           target,
           this.player.troops() - targetTroops - this.botAttackTroopsSent,
+          enemyDefensePostProfile,
         );
       } else {
         troops = this.player.troops() - targetTroops;
@@ -2752,6 +3185,20 @@
         !target.isPlayer()
       ) {
         troops = Math.max(troops, this.player.troops() * minCommitFraction);
+      }
+
+      // A Defense Post multiplies the real per-tile attacker loss by five. Do
+      // not spend a sub-2× effective attack into a covered front; the existing
+      // reserve remains available for a later, properly sized assault.
+      if (
+        target.isPlayer() &&
+        this.attackIsTooWeakForDefensePosts(
+          target,
+          troops,
+          enemyDefensePostProfile,
+        )
+      ) {
+        return false;
       }
 
       if (troops < 1) {
@@ -2887,19 +3334,25 @@
     }
 
     // calculateBotAttackTroops — AiAttackBehavior (private).
-    calculateBotAttackTroops(target, maxTroops) {
+    calculateBotAttackTroops(target, maxTroops, defensePostProfile = null) {
       // src: `const { difficulty } = this.game.config().gameConfig();` → REPLICATED.
       const difficulty = currentDifficulty();
       if (difficulty === Difficulty.Easy) {
         this.botAttackTroopsSent += maxTroops;
         return maxTroops;
       }
-      let troops = target.troops() * 4;
+      const defenseMultiplier = Math.max(
+        1,
+        Number(defensePostProfile?.attackCostMultiplier || 1),
+      );
+      const preferredAttackTroops = target.troops() * 4 * defenseMultiplier;
+      const minimumAttackTroops = target.troops() * 2 * defenseMultiplier;
+      let troops = preferredAttackTroops;
 
       // Don't send more troops than maxTroops (Keep reserve)
       if (troops > maxTroops) {
         // If we haven't enough troops left to do a big enough bot attack, skip it
-        if (maxTroops < target.troops() * 2) {
+        if (maxTroops < minimumAttackTroops) {
           troops = 0;
         } else {
           troops = maxTroops;

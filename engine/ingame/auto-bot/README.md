@@ -42,6 +42,16 @@ generic Terra Nullius land attack still has no tile argument in the client inten
 so the coast-specific direction is expressed through a coastal tribe target or an
 explicit open-ocean landing rather than by inventing a new attack API.
 
+## Enemy Defense Post-aware attacks
+
+With `winFixes` enabled, land attacks inspect only the current frontier and apply
+the real Defense Post effects: an active completed post within 30 tiles means
+5× attacker losses and 3× slower conquest. Overlapping posts do not stack, and
+under-construction posts do not count. Covered targets rank as harder, bot attack
+thresholds scale with the 5× damage effect, and attacks below the resulting
+minimum are deferred instead of wasting troops. The bounded profile is cached
+per target and game tick; cheap boat probes keep their existing behavior.
+
 ## Spawn-phase resource safety
 
 Spawn markers and the visual heatmap stay on the bounded coarse scorer. The
