@@ -99,12 +99,14 @@ const enemyA = {
   smallID: () => 2,
   isPlayer: () => true,
   isAlive: () => true,
+  gold: () => 999_999n,
   units: (type) => (type === UNIT.SAMLauncher ? [makeUnit(201, 3), makeUnit(202, 1)] : []),
 };
 const enemyB = {
   smallID: () => 3,
   isPlayer: () => true,
   isAlive: () => true,
+  gold: () => 900_000n,
   units: (type) =>
     type === UNIT.SAMLauncher ? [makeUnit(301, 2), makeUnit(302, 2), makeUnit(303, 2)] : [],
 };
@@ -112,6 +114,7 @@ const enemyC = {
   smallID: () => 4,
   isPlayer: () => true,
   isAlive: () => true,
+  gold: () => 900_000n,
   units: (type) =>
     type === UNIT.SAMLauncher ? [makeUnit(401, 9, { underConstruction: true })] : [],
 };
@@ -120,18 +123,21 @@ const enemyTeam = {
   smallID: () => 5,
   isPlayer: () => true,
   isAlive: () => true,
+  gold: () => 5_000_000n,
   units: (type) => (type === UNIT.SAMLauncher ? [makeUnit(501, enemyTeamSamLevel)] : []),
 };
 const enemySilos = {
   smallID: () => 6,
   isPlayer: () => true,
   isAlive: () => true,
+  gold: () => 800_000n,
   units: (type) => (type === UNIT.MissileSilo ? [makeUnit(601, 4), makeUnit(602, 2)] : []),
 };
 const enemySiloUnderConstruction = {
   smallID: () => 7,
   isPlayer: () => true,
   isAlive: () => true,
+  gold: () => 700_000n,
   units: (type) =>
     type === UNIT.MissileSilo ? [makeUnit(701, 99, { underConstruction: true })] : [],
 };
@@ -157,6 +163,47 @@ assert.equal(
   "Structure behavior exposes the hostile SAM parity target",
 );
 assert.equal(
+  typeof behavior.hasHostileReachedSiloGoldThreshold,
+  "function",
+  "Structure behavior exposes the hostile silo-gold threshold check",
+);
+assert.equal(
+  behavior.hasHostileReachedSiloGoldThreshold(),
+  false,
+  "All hostile players below 1M gold keep the economy priority active",
+);
+assert.equal(
+  behavior.shouldPrioritizeEconomicGrowth(),
+  true,
+  "Economic growth is prioritized while no hostile can afford a silo",
+);
+assert.equal(
+  typeof behavior.hasHostileSiloThreat,
+  "function",
+  "Structure behavior exposes the hostile silo threat check",
+);
+assert.equal(
+  behavior.hasHostileSiloThreat(),
+  true,
+  "A built hostile silo triggers the mandatory SAM response",
+);
+assert.equal(
+  behavior.shouldBuildStructure(UNIT.MissileSilo, 10, false),
+  false,
+  "New silo construction is deferred below the hostile 1M-gold threshold",
+);
+enemyB.gold = () => 1_000_000n;
+assert.equal(
+  behavior.hasHostileReachedSiloGoldThreshold(),
+  true,
+  "The silo-gold gate opens at exactly 1M hostile gold",
+);
+assert.equal(
+  behavior.shouldPrioritizeEconomicGrowth(),
+  false,
+  "Economic priority ends once a hostile reaches the silo threshold",
+);
+assert.equal(
   behavior.enemySamCapacityParityTarget(),
   6,
   "Structure behavior selects the strongest hostile SAM stack",
@@ -167,6 +214,157 @@ assert.equal(
   true,
   "Silo construction remains eligible beyond the ordinary three-silo cap when parity is missing",
 );
+enemyB.gold = () => 999_999n;
+enemyA.isAlive = () => false;
+enemyA.gold = () => 2_000_000n;
+assert.equal(
+  behavior.hasHostileReachedSiloGoldThreshold(),
+  false,
+  "Dead hostile players do not open the silo-gold gate",
+);
+enemyA.isAlive = () => true;
+enemyA.gold = () => 999_999n;
+const originalEnemySilosUnits = enemySilos.units;
+enemySilos.units = () => [];
+enemyB.gold = () => 1_500_000n;
+assert.equal(
+  behavior.hasHostileSiloThreat(),
+  true,
+  "The mandatory SAM trigger opens at exactly 1.5M hostile gold",
+);
+enemyB.gold = () => 1_499_999n;
+assert.equal(
+  behavior.hasHostileSiloThreat(),
+  false,
+  "Gold below 1.5M does not trigger the mandatory SAM without a built silo",
+);
+enemySilos.units = originalEnemySilosUnits;
+enemyB.gold = () => 999_999n;
+const originalOwnIsFriendly = own.isFriendly;
+const originalEnemySilosGold = enemySilos.gold;
+own.isFriendly = (other) => other === enemySilos;
+enemySilos.gold = () => 2_000_000n;
+assert.equal(
+  behavior.hasHostileReachedSiloGoldThreshold(),
+  false,
+  "A friendly player with 2M gold does not open the hostile silo-gold gate",
+);
+own.isFriendly = originalOwnIsFriendly;
+enemySilos.gold = originalEnemySilosGold;
+const originalShouldBuildStructure = behavior.shouldBuildStructure;
+const originalMaybeSpawnStructure = behavior.maybeSpawnStructure;
+const economicAttemptOrder = [];
+behavior.shouldBuildStructure = (type) => type === UNIT.Port || type === UNIT.Factory;
+behavior.maybeSpawnStructure = async (type) => {
+  economicAttemptOrder.push(type);
+  return type === UNIT.Factory;
+};
+assert.equal(
+  await behavior.maybePrioritizeEconomicGrowth({
+    config: { isUnitDisabled: () => false },
+    citiesDisabled: false,
+    cityCount: 2,
+    hasCoastalTiles: true,
+  }),
+  true,
+  "Economic priority builds when an eligible economic structure is available",
+);
+assert.deepEqual(
+  economicAttemptOrder,
+  [UNIT.Port, UNIT.Factory],
+  "Economic priority attempts port and factory before falling through",
+);
+behavior.shouldBuildStructure = originalShouldBuildStructure;
+behavior.maybeSpawnStructure = originalMaybeSpawnStructure;
+behavior._hostileSiloSamBuilt = false;
+const hostileSamCalls = [];
+behavior.maybeSpawnStructure = async (...args) => {
+  hostileSamCalls.push(args);
+  return true;
+};
+assert.equal(
+  await behavior.maybeSpawnHostileSiloSam(),
+  true,
+  "A hostile silo threat requests one dedicated SAM",
+);
+assert.equal(
+  behavior._hostileSiloSamBuilt,
+  true,
+  "A successful threat SAM request is not repeated every tick",
+);
+assert.deepEqual(
+  hostileSamCalls.map(([type, options]) => [
+    type,
+    {
+      forceNewStructure: options.forceNewStructure,
+      prioritizeStructureCoverage: options.prioritizeStructureCoverage,
+    },
+  ]),
+  [[UNIT.SAMLauncher, { forceNewStructure: true, prioritizeStructureCoverage: true }]],
+  "The dedicated SAM request forces a new structure and coverage ranking",
+);
+assert.equal(
+  await behavior.maybeSpawnHostileSiloSam(),
+  false,
+  "The dedicated threat SAM is built only once per behavior instance",
+);
+behavior.maybeSpawnStructure = originalMaybeSpawnStructure;
+behavior._hostileSiloSamBuilt = false;
+const originalOwnUnits = own.units;
+const originalGameConfig = behavior.game.config;
+const originalEuclideanDistSquared = behavior.game.euclideanDistSquared;
+const protectedStructures = [
+  { type: () => UNIT.City, tile: () => 10 },
+  { type: () => UNIT.Factory, tile: () => 20 },
+];
+own.units = (...types) => {
+  if (types.includes(UNIT.SAMLauncher)) return [];
+  if (types.some((type) => protectedStructures.some((unit) => unit.type() === type))) {
+    return protectedStructures;
+  }
+  return [];
+};
+behavior.game.config = () => ({
+  defaultSamRange: () => 5,
+  samRange: () => 5,
+});
+behavior.game.euclideanDistSquared = (left, right) => (Number(left) - Number(right)) ** 2;
+const threatSamValue = behavior.threatSamLauncherValue();
+assert.equal(
+  threatSamValue(15) > threatSamValue(10),
+  true,
+  "Threat SAM placement prefers the tile covering more structures",
+);
+own.units = originalOwnUnits;
+behavior.game.config = originalGameConfig;
+behavior.game.euclideanDistSquared = originalEuclideanDistSquared;
+const originalGetPerceivedCost = behavior.getPerceivedCost;
+const originalStructureSpawnTile = behavior.structureSpawnTile;
+const originalGetTotalStructureDensity = behavior.getTotalStructureDensity;
+behavior.getPerceivedCost = () => 0n;
+behavior.structureSpawnTile = async () => ({ canBuild: true });
+behavior.getTotalStructureDensity = () => 0;
+const buildsBeforeSiloGate = sentBuilds.length;
+assert.equal(
+  await behavior.maybeSpawnStructure(UNIT.MissileSilo),
+  false,
+  "The direct silo spawn path is blocked below the hostile 1M-gold threshold",
+);
+enemyB.gold = () => 1_000_000n;
+assert.equal(
+  await behavior.maybeSpawnStructure(UNIT.MissileSilo),
+  true,
+  "The direct silo spawn path reopens at the hostile 1M-gold threshold",
+);
+assert.equal(
+  sentBuilds.length,
+  buildsBeforeSiloGate + 1,
+  "Only the threshold-opened direct silo attempt reaches the build menu",
+);
+enemyB.gold = () => 999_999n;
+behavior.getPerceivedCost = originalGetPerceivedCost;
+behavior.structureSpawnTile = originalStructureSpawnTile;
+behavior.getTotalStructureDensity = originalGetTotalStructureDensity;
 own.silos = [makeUnit(101, 6)];
 assert.equal(
   behavior.missileSiloParityGap(),
@@ -529,6 +727,9 @@ assert.equal(
 );
 samDisabled = false;
 
+// The dedicated hostile-silo SAM path is covered above; suppress its one-shot
+// action here so the wiring tests can exercise the existing parity branches.
+behavior._hostileSiloSamBuilt = true;
 let wiredParityCalls = 0;
 behavior.maybeUpgradeMissileDefenseSam = async () => false;
 behavior.maybeUpgradeSamForSiloParity = async () => {

@@ -127,6 +127,15 @@
    */
   const HIGH_STARTING_GOLD_THRESHOLD = 3_000_000n;
 
+  /** Gold at which a hostile player can afford the first missile silo. */
+  const HOSTILE_SILO_GOLD_THRESHOLD = 1_000_000n;
+
+  /** Gold at which a hostile player receives the mandatory SAM response. */
+  const HOSTILE_SAM_TRIGGER_GOLD_THRESHOLD = 1_500_000n;
+
+  /** Structures that directly grow the nation's economy. */
+  const ECONOMIC_STRUCTURE_TYPES = [UNIT.Port, UNIT.Factory, UNIT.City];
+
   /** Tick gap a high-starting-gold nation must wait before placing its Nth structure */
   const HIGH_GOLD_STRUCTURE_COOLDOWN_TICKS = [
     0, // before #1 (SAM) — no pause
@@ -294,6 +303,11 @@
       this.placementsCount = 0;
       this._hasHighStartingGold = null;
       this._postSaveUpStartTick = null;
+      this._hostileSiloSamBuilt = false;
+      this._hostilePlayersSnapshotTick = null;
+      this._hostilePlayersSnapshot = null;
+      this._hostileThreatSnapshotTick = null;
+      this._hostileThreatSnapshot = null;
       // Missile placement forecasts are shared by several Legendary and
       // win-fix construction gates. Keep one snapshot per game tick so a
       // single decision cannot rebuild the same trajectory model repeatedly.
@@ -343,6 +357,9 @@
       ) {
         return true;
       }
+      if (!legendaryDifficulty && (await this.maybeSpawnHostileSiloSam())) {
+        return true;
+      }
       if (
         state.settings.winFixes &&
         !legendaryDifficulty &&
@@ -363,7 +380,15 @@
         state.settings.winFixes &&
         !legendaryDifficulty &&
         this.samLevelParityGap() > 0 &&
-        (await this.maybeSpawnStructure(UNIT.SAMLauncher))
+        (await this.maybeSpawnStructure(
+          UNIT.SAMLauncher,
+          this.shouldBuildHostileSiloSam()
+            ? {
+                forceNewStructure: true,
+                prioritizeStructureCoverage: true,
+              }
+            : {},
+        ))
       ) {
         return true;
       }
@@ -384,6 +409,14 @@
         if (this.defensePostNeeded()) {
           return false;
         }
+      }
+
+      // A hostile player with enough gold for a meaningful silo threat, or an
+      // already-built hostile silo, gets one dedicated new SAM before ordinary
+      // pacing. Its placement value maximizes the number of our structures in
+      // range; existing missile/land-defense exceptions above remain first.
+      if (!legendaryDefenseEmergency && (await this.maybeSpawnHostileSiloSam())) {
+        return true;
       }
 
       // Legendary missile defense is an emergency exception to ordinary pacing:
@@ -748,6 +781,7 @@
         missileSilosEnabled &&
         !config.isUnitDisabled(UNIT.SAMLauncher) &&
         this.hasHighStartingGold() &&
+        !this.shouldPrioritizeEconomicGrowth() &&
         (await this.maybeSpawnStructure(UNIT.SAMLauncher))
       ) {
         return true;
@@ -772,6 +806,19 @@
         }
       }
 
+      const economyGrowthPriority = this.shouldPrioritizeEconomicGrowth();
+      if (
+        economyGrowthPriority &&
+        (await this.maybePrioritizeEconomicGrowth({
+          config,
+          citiesDisabled,
+          cityCount,
+          hasCoastalTiles,
+        }))
+      ) {
+        return true;
+      }
+
       const nukesEnabled =
         !config.isUnitDisabled(UNIT.AtomBomb) ||
         !config.isUnitDisabled(UNIT.HydrogenBomb) ||
@@ -783,6 +830,7 @@
       if (
         state.settings.winFixes &&
         !isLegendaryDifficulty(difficulty) &&
+        !economyGrowthPriority &&
         missileSilosEnabled &&
         nukesEnabled &&
         this.missileSiloParityGap() > 0 &&
@@ -799,6 +847,7 @@
           hasCoastalTiles,
           missileSilosEnabled,
           nukesEnabled,
+          economyGrowthPriority,
         });
       }
 
@@ -851,6 +900,42 @@
       return false;
     }
 
+    async maybePrioritizeEconomicGrowth({
+      config,
+      citiesDisabled,
+      cityCount,
+      hasCoastalTiles,
+    }) {
+      const buildOrder = [...ECONOMIC_STRUCTURE_TYPES];
+      for (const structureType of buildOrder) {
+        if (config.isUnitDisabled(structureType)) continue;
+        if (structureType === UNIT.Port && !hasCoastalTiles) continue;
+
+        // A first city is the baseline economic action even though the normal
+        // ratio target is zero until cityCount has been established.
+        const firstCity =
+          structureType === UNIT.City && !citiesDisabled && cityCount === 0;
+        if (
+          !firstCity &&
+          !this.shouldBuildStructure(structureType, cityCount, hasCoastalTiles)
+        ) {
+          continue;
+        }
+        if (await this.maybeSpawnStructure(structureType)) return true;
+      }
+      return false;
+    }
+
+    async maybeSpawnHostileSiloSam() {
+      if (!this.shouldBuildHostileSiloSam()) return false;
+      const built = await this.maybeSpawnStructure(UNIT.SAMLauncher, {
+        forceNewStructure: true,
+        prioritizeStructureCoverage: true,
+      });
+      if (built) this._hostileSiloSamBuilt = true;
+      return built;
+    }
+
     // Legendary deliberately chooses among all currently relevant structures
     // instead of following the faithful Nation priority list. Placement, cost,
     // upgrade, and buildability checks remain in maybeSpawnStructure().
@@ -861,6 +946,7 @@
       hasCoastalTiles,
       missileSilosEnabled,
       nukesEnabled,
+      economyGrowthPriority,
     }) {
       // A missile attack inside the five-tick safety window takes precedence over
       // economic construction: upgrade the SAM that actually covers the most
@@ -869,6 +955,8 @@
         return true;
       }
 
+      if (await this.maybeSpawnHostileSiloSam()) return true;
+
       if (await this.maybeUpgradeSamForSiloParity()) {
         return true;
       }
@@ -876,7 +964,15 @@
         nukesEnabled &&
         !config.isUnitDisabled(UNIT.SAMLauncher) &&
         this.samLevelParityGap() > 0 &&
-        (await this.maybeSpawnStructure(UNIT.SAMLauncher))
+        (await this.maybeSpawnStructure(
+          UNIT.SAMLauncher,
+          this.shouldBuildHostileSiloSam()
+            ? {
+                forceNewStructure: true,
+                prioritizeStructureCoverage: true,
+              }
+            : {},
+        ))
       ) {
         return true;
       }
@@ -902,9 +998,22 @@
         reserve: this.legendaryReserveGold(),
       });
 
-      for (const candidate of ranked) {
-        if (await this.maybeSpawnStructure(candidate.type)) {
-          return true;
+      const rankedGroups = economyGrowthPriority
+        ? [
+            ranked.filter((candidate) =>
+              ECONOMIC_STRUCTURE_TYPES.includes(candidate.type),
+            ),
+            ranked.filter(
+              (candidate) => !ECONOMIC_STRUCTURE_TYPES.includes(candidate.type),
+            ),
+          ]
+        : [ranked];
+
+      for (const group of rankedGroups) {
+        for (const candidate of group) {
+          if (await this.maybeSpawnStructure(candidate.type)) {
+            return true;
+          }
         }
       }
       return false;
@@ -960,6 +1069,185 @@
         return hostile;
       }
       return hostile;
+    }
+
+    liveHostilePlayers() {
+      if (
+        !this.player ||
+        !this.game ||
+        typeof this.game.players !== "function"
+      ) {
+        return null;
+      }
+
+      let snapshotTick = null;
+      try {
+        if (typeof this.game.ticks === "function") {
+          snapshotTick = this.game.ticks();
+        }
+      } catch (_error) {
+        snapshotTick = null;
+      }
+      if (
+        snapshotTick !== null &&
+        this._hostilePlayersSnapshotTick === snapshotTick &&
+        Array.isArray(this._hostilePlayersSnapshot)
+      ) {
+        return this._hostilePlayersSnapshot;
+      }
+
+      let players;
+      try {
+        players = this.game.players();
+      } catch (_error) {
+        return null;
+      }
+      if (!Array.isArray(players)) return null;
+
+      let mySid = null;
+      try {
+        mySid = this.player.smallID();
+      } catch (_error) {
+        /* use object identity below when the id is unavailable */
+      }
+
+      const hostile = [];
+      for (const other of players) {
+        if (!other || other === this.player) continue;
+        if (
+          typeof other.isPlayer === "function" &&
+          !other.isPlayer()
+        ) {
+          continue;
+        }
+        try {
+          if (mySid !== null && other.smallID() === mySid) continue;
+        } catch (_error) {
+          /* use object identity when the snapshot has no readable id */
+        }
+        try {
+          if (typeof other.isAlive === "function" && !other.isAlive()) {
+            continue;
+          }
+        } catch (_error) {
+          continue;
+        }
+
+        let friendly;
+        try {
+          friendly =
+            this.player.isFriendly(other) ||
+            this.player.isOnSameTeam(other);
+        } catch (_error) {
+          // Do not spend as if a player were hostile when the relation snapshot
+          // is incomplete; wait for the next authoritative player view instead.
+          continue;
+        }
+        if (!friendly) hostile.push(other);
+      }
+      if (snapshotTick !== null) {
+        this._hostilePlayersSnapshotTick = snapshotTick;
+        this._hostilePlayersSnapshot = hostile;
+      }
+      return hostile;
+    }
+
+    playerGoldBigInt(player) {
+      if (!player || typeof player.gold !== "function") return null;
+      try {
+        return BigInt(player.gold());
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    hasBuiltMissileSilo(player) {
+      if (!player || typeof player.units !== "function") return false;
+      let silos;
+      try {
+        silos = player.units(UNIT.MissileSilo);
+      } catch (_error) {
+        return false;
+      }
+      if (!Array.isArray(silos)) return false;
+      return silos.some((silo) => {
+        if (!silo) return false;
+        try {
+          if (
+            typeof silo.isUnderConstruction === "function" &&
+            silo.isUnderConstruction()
+          ) {
+            return false;
+          }
+          if (typeof silo.isActive === "function" && !silo.isActive()) {
+            return false;
+          }
+        } catch (_error) {
+          return false;
+        }
+        return true;
+      });
+    }
+
+    hasHostileReachedSiloGoldThreshold() {
+      const snapshot = this.hostileThreatSnapshot();
+      return snapshot === null ? null : snapshot.reachedSiloGoldThreshold;
+    }
+
+    hasHostileSiloThreat() {
+      const snapshot = this.hostileThreatSnapshot();
+      return snapshot === null ? null : snapshot.siloThreat;
+    }
+
+    hostileThreatSnapshot() {
+      let snapshotTick = null;
+      try {
+        if (typeof this.game?.ticks === "function") {
+          snapshotTick = this.game.ticks();
+        }
+      } catch (_error) {
+        snapshotTick = null;
+      }
+      if (
+        snapshotTick !== null &&
+        this._hostileThreatSnapshotTick === snapshotTick &&
+        this._hostileThreatSnapshot !== null
+      ) {
+        return this._hostileThreatSnapshot;
+      }
+
+      const hostile = this.liveHostilePlayers();
+      if (hostile === null) return null;
+      let reachedSiloGoldThreshold = false;
+      let siloThreat = false;
+      for (const other of hostile) {
+        const gold = this.playerGoldBigInt(other);
+        if (gold !== null && gold >= HOSTILE_SILO_GOLD_THRESHOLD) {
+          reachedSiloGoldThreshold = true;
+        }
+        if (
+          (gold !== null && gold >= HOSTILE_SAM_TRIGGER_GOLD_THRESHOLD) ||
+          this.hasBuiltMissileSilo(other)
+        ) {
+          siloThreat = true;
+        }
+      }
+      const snapshot = { reachedSiloGoldThreshold, siloThreat };
+      if (snapshotTick !== null) {
+        this._hostileThreatSnapshotTick = snapshotTick;
+        this._hostileThreatSnapshot = snapshot;
+      }
+      return snapshot;
+    }
+
+    shouldBuildHostileSiloSam() {
+      if (!state.settings.winFixes || this._hostileSiloSamBuilt) return false;
+      return this.hasHostileSiloThreat() === true;
+    }
+
+    shouldPrioritizeEconomicGrowth() {
+      if (!state.settings.winFixes) return false;
+      return this.hasHostileReachedSiloGoldThreshold() === false;
     }
 
     legendaryFriendlyPlayers() {
@@ -3647,6 +3935,12 @@
 
     // shouldBuildStructure — NationStructureBehavior.ts:540.
     shouldBuildStructure(type, cityCount, hasCoastalTiles) {
+      if (
+        type === UNIT.MissileSilo &&
+        this.shouldPrioritizeEconomicGrowth()
+      ) {
+        return false;
+      }
       const gameConfig = this.game.config();
       const difficulty = currentDifficulty();
       const ratios = getStructureRatios(difficulty);
@@ -3754,8 +4048,14 @@
     }
 
     // maybeSpawnStructure — NationStructureBehavior.ts:585 (now async).
-    async maybeSpawnStructure(type) {
+    async maybeSpawnStructure(type, options = {}) {
       if (!autoBotBuildAllowed(type)) return false; // user disallowed this type
+      if (
+        type === UNIT.MissileSilo &&
+        this.shouldPrioritizeEconomicGrowth()
+      ) {
+        return false;
+      }
       const perceivedCost = this.getPerceivedCost(type);
       let availableGold = this.player.gold();
       // WIN-FIX (NOT in src): when mirvBehavior has set a real MIRV war-chest
@@ -3786,6 +4086,7 @@
       // Check if we should upgrade instead of building new
       const structures = this.player.units(type);
       if (
+        !options.forceNewStructure &&
         !legendaryMissileEmergency &&
         this.getTotalStructureDensity() > UPGRADE_DENSITY_THRESHOLD &&
         this.game.config().unitInfo(type).upgradable
@@ -3807,7 +4108,7 @@
       // the probe. src: tile = structureSpawnTile(type); if null → return;
       // canBuild = player.canBuild(type, tile); if false → return;
       // addExecution(ConstructionExecution).
-      const bu = await this.structureSpawnTile(type);
+      const bu = await this.structureSpawnTile(type, options);
       if (bu === null) {
         return false;
       }
@@ -4267,11 +4568,37 @@
     // first valid best-value tile; probing in descending value order and taking
     // the first buildable yields the SAME tile src's loop picks — the highest-
     // value buildable in the candidate set.)
-    async structureSpawnTile(type) {
+    async structureSpawnTile(type, options = {}) {
       let tiles =
         type === UNIT.Port
           ? this.randCoastalTileArray(25)
           : randTerritoryTileArray(this.random, this.game, this.player, 25);
+      if (type === UNIT.SAMLauncher && options.prioritizeStructureCoverage) {
+        try {
+          const structures = this.player.units(
+            UNIT.City,
+            UNIT.Factory,
+            UNIT.MissileSilo,
+            UNIT.Port,
+          );
+          const coverageTiles = new Set();
+          for (const structure of structures || []) {
+            const structureTile = structure.tile();
+            coverageTiles.add(structureTile);
+            for (const neighbor of this.game.neighbors(structureTile)) {
+              coverageTiles.add(neighbor);
+            }
+          }
+          if (coverageTiles.size > 0) {
+            tiles = [
+              ...coverageTiles,
+              ...tiles.filter((tile) => !coverageTiles.has(tile)),
+            ];
+          }
+        } catch (_error) {
+          /* keep the standard territory sample */
+        }
+      }
       // WIN-FIX: for silos, PREPEND tiles that sit inside friendly SAM coverage (own SAMs
       // first, ally SAMs as fallback) so the ranked probe can actually pick a defended
       // spot — a plain 25-tile random sample often misses the SAM area entirely.
@@ -4284,9 +4611,12 @@
         }
       }
       if (tiles.length === 0) return null;
-      const valueFunction = isLegendaryDifficulty()
-        ? this.legendaryStructureSpawnTileValue(type)
-        : this.structureSpawnTileValue(type);
+      const valueFunction =
+        type === UNIT.SAMLauncher && options.prioritizeStructureCoverage
+          ? this.threatSamLauncherValue()
+          : isLegendaryDifficulty()
+            ? this.legendaryStructureSpawnTileValue(type)
+            : this.structureSpawnTileValue(type);
       if (valueFunction === null) return null;
 
       let emergencySamDefense = false;
@@ -5124,6 +5454,93 @@
           ) * structureSpacing;
 
         return w;
+      };
+    }
+
+    // Mandatory hostile-silo response: maximize total structure coverage first,
+    // then prefer tiles that add coverage beyond the existing SAM network.
+    threatSamLauncherValue() {
+      const game = this.game;
+      const player = this.player;
+      let structures;
+      let existingSams;
+      let config;
+      let range;
+      try {
+        structures = player.units(
+          UNIT.City,
+          UNIT.Factory,
+          UNIT.MissileSilo,
+          UNIT.Port,
+        );
+        existingSams = player.units(UNIT.SAMLauncher);
+        config = game.config();
+        range = Number(config.defaultSamRange());
+      } catch (_error) {
+        return () => 0;
+      }
+      if (!Array.isArray(structures) || !Number.isFinite(range) || range <= 0) {
+        return () => 0;
+      }
+
+      const rangeSquared = range * range;
+      const structureCount = structures.length;
+      const existingSamProfiles = (existingSams || [])
+        .filter((sam) => {
+          try {
+            return !(
+              typeof sam.isUnderConstruction === "function" &&
+              sam.isUnderConstruction()
+            );
+          } catch (_error) {
+            return false;
+          }
+        })
+        .map((sam) => {
+          try {
+            const samRange = Number(config.samRange(sam.level()));
+            return {
+              tile: sam.tile(),
+              rangeSquared: samRange * samRange,
+            };
+          } catch (_error) {
+            return null;
+          }
+        })
+        .filter((sam) => sam !== null && Number.isFinite(sam.rangeSquared));
+      return (tile) => {
+        let totalCoverage = 0;
+        let newCoverage = 0;
+        for (const structure of structures) {
+          if (!structure || typeof structure.tile !== "function") continue;
+          let distanceSquared;
+          try {
+            distanceSquared = game.euclideanDistSquared(
+              tile,
+              structure.tile(),
+            );
+          } catch (_error) {
+            continue;
+          }
+          if (distanceSquared > rangeSquared) continue;
+          totalCoverage++;
+
+          const alreadyCovered = existingSamProfiles.some((sam) => {
+            try {
+              return (
+                game.euclideanDistSquared(tile, sam.tile) <=
+                sam.rangeSquared
+              );
+            } catch (_error) {
+              return false;
+            }
+          });
+          if (!alreadyCovered) newCoverage++;
+        }
+
+        // The first term makes the literal structure count dominant without an
+        // arbitrary score constant; the second term breaks ties toward new cover.
+        return totalCoverage * (structureCount + 1) + newCoverage;
       };
     }
 

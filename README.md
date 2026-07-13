@@ -169,6 +169,16 @@ threat routes against one shared SAM inventory. Assignment conflicts use a
 bounded exact fallback; an exhausted search is treated as unsafe, never as proof
 that a greedy miss is impossible to defend.
 
+With `winFixes` enabled, new economic structures are prioritized while every
+hostile opponent remains below 1M gold, the threshold at which that opponent
+could afford a missile silo. Urgent missile-defense actions still take priority;
+required SAM-parity actions still take priority, and the economic gate ignores
+allies, teammates, and dead players.
+
+With `winFixes` enabled, once any hostile reaches 1.5M gold or has a built
+missile silo, the bot forces one new SAM before resuming ordinary construction
+and ranks its legal placement by the number of our structures it protects.
+
 With `winFixes` enabled, the custom build policy also upgrades a friendly SAM
 when one level makes its trajectory schedule intercept an incoming missile, and
 keeps our total missile-silo level sum at least equal to the largest hostile
