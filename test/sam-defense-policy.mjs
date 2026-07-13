@@ -265,6 +265,7 @@ assert.equal(
     citiesDisabled: false,
     cityCount: 2,
     hasCoastalTiles: true,
+    hasOceanPortTiles: true,
   }),
   true,
   "Economic priority builds when an eligible economic structure is available",

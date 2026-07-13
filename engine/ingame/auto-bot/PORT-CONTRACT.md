@@ -179,14 +179,15 @@ StructureBehavior porter must implement the two documented approximations in gam
 are the ONLY approximated datasets used by structure placement. Everything else is
 faithful.
 
-### Custom closed-lake port safety rule
+### Ocean-only port placement rule
 
 The custom userscript deliberately narrows the core `SharedWaterCache` rule for
-structure placement. Open-ocean coast remains eligible as in core. A closed lake is
-eligible only when the queried player shares it with a living, non-bot ally or
-teammate, without a mutual embargo. A merely tradeable or neutral player is not
-enough. This prevents inland-lake ports on maps such as Luna; it is an explicit
-placement-safety exception, not a change to the rest of the port strategy.
+port placement. A port candidate must be a shore tile adjacent to the canonical
+open-ocean component reported by `game.isOcean`, which is the largest connected
+navigable water surface. Smaller closed lakes and seas are never valid port sites,
+even when `sharedWaterComponents(player)` reports that a living ally or teammate
+shares the water. That shared-water result remains available to broader
+coastal/trade planning; it is not a port-placement authorization.
 
 ### Custom Early Game coastal/tribe targeting
 

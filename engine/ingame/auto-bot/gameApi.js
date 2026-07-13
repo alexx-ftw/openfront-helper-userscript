@@ -641,8 +641,8 @@
 
     // getWaterComponent(tile) — mirrors core's signature. Returns the component
     // id of a water tile (>= 0), or null for non-water. (In practice only ever
-    // called on NON-ocean water — randCoastalTileArray / SharedWaterCache
-    // short-circuit on ocean before the lookup.)
+    // called on NON-ocean water by the shared-water reconstruction; port
+    // candidate selection uses the canonical ocean predicate directly.)
     function getWaterComponent(tile) {
       ensureWaterLabels();
       if (tile < 0 || tile >= _waterLabels.length) return null;
@@ -670,6 +670,9 @@
     //     players' borderTiles() (those return EMPTY synchronously through the
     //     wrapper; only me's is pre-fetched).
     //   - Ocean is always shared (sentinel -1).
+    // This dataset remains available to broader coastal/trade planning. Port
+    // construction applies a separate ocean-only filter in structureBehavior,
+    // so a shared closed lake never authorizes a port site.
     // Returns Set<number>|null (null = touches no ocean and no shared lake),
     // exactly matching core's `!== null` coastal test.
     function isTrustedWaterPartner(player, other) {

@@ -231,9 +231,10 @@
   // (cached — terrain is static). gameApi.sharedWaterComponents reproduces core's
   // SharedWaterCache predicate exactly: ocean is always shared (sentinel -1); a
   // lake component is shared iff another non-bot player on that component's coast
-  // can trade with us (no mutual embargo). The component ids are usable with
-  // gameApi.getWaterComponent so randCoastalTileArray can run the SAME ocean-
-  // short-circuit + component-membership test core does.
+  // can trade with us (no mutual embargo). The component ids remain available
+  // to the coastal trade/factory planning logic. Port placement is stricter:
+  // randCoastalTileArray only accepts a border tile adjacent to the canonical
+  // open-ocean component.
   //
   // EXACT vs APPROXIMATE: the "shared" PREDICATE is exact (same ocean handling,
   // same bot-skip, same canTrade). The only divergence is GRANULARITY: core labels
@@ -745,6 +746,7 @@
         this.player,
       );
       const hasCoastalTiles = this._sharedWaterComponents !== null;
+      const hasOceanPortTiles = this.hasOceanPortTiles();
 
       // Once OUR side is DOMINANT (default >75% of the live map — well BELOW the 95%
       // win line at which the game would END), stop suppressing coastal factories (see
@@ -808,7 +810,7 @@
         this.isHighNationDensity()
       ) {
         const preferredFirst =
-          hasCoastalTiles && !config.isUnitDisabled(UNIT.Port)
+          hasOceanPortTiles && !config.isUnitDisabled(UNIT.Port)
             ? UNIT.Port
             : UNIT.Factory;
         if (
@@ -827,6 +829,7 @@
           citiesDisabled,
           cityCount,
           hasCoastalTiles,
+          hasOceanPortTiles,
         }))
       ) {
         return true;
@@ -858,6 +861,7 @@
           citiesDisabled,
           cityCount,
           hasCoastalTiles,
+          hasOceanPortTiles,
           missileSilosEnabled,
           nukesEnabled,
           economyGrowthPriority,
@@ -878,8 +882,10 @@
           continue;
         }
 
-        // Skip ports if no coastal tiles
-        if (structureType === UNIT.Port && !hasCoastalTiles) {
+        // Ports require the canonical open-ocean component. Shared closed
+        // lakes remain useful to the broader coastal/trade planner but never
+        // authorize a port site.
+        if (structureType === UNIT.Port && !hasOceanPortTiles) {
           continue;
         }
 
@@ -918,11 +924,12 @@
       citiesDisabled,
       cityCount,
       hasCoastalTiles,
+      hasOceanPortTiles,
     }) {
       const buildOrder = [...ECONOMIC_STRUCTURE_TYPES];
       for (const structureType of buildOrder) {
         if (config.isUnitDisabled(structureType)) continue;
-        if (structureType === UNIT.Port && !hasCoastalTiles) continue;
+        if (structureType === UNIT.Port && !hasOceanPortTiles) continue;
 
         // A first city is the baseline economic action even though the normal
         // ratio target is zero until cityCount has been established.
@@ -957,6 +964,7 @@
       citiesDisabled,
       cityCount,
       hasCoastalTiles,
+      hasOceanPortTiles,
       missileSilosEnabled,
       nukesEnabled,
       economyGrowthPriority,
@@ -1003,6 +1011,7 @@
         citiesDisabled,
         cityCount,
         hasCoastalTiles,
+        hasOceanPortTiles,
         missileSilosEnabled,
         nukesEnabled,
       });
@@ -4059,6 +4068,7 @@
       citiesDisabled,
       cityCount,
       hasCoastalTiles,
+      hasOceanPortTiles,
       missileSilosEnabled,
       nukesEnabled,
     }) {
@@ -4077,7 +4087,7 @@
 
       const add = (type, values = {}) => {
         if (config.isUnitDisabled(type) || !autoBotBuildAllowed(type)) return;
-        if (type === UNIT.Port && !hasCoastalTiles) return;
+        if (type === UNIT.Port && !hasOceanPortTiles) return;
         if (
           !nukesEnabled &&
           (type === UNIT.SAMLauncher || type === UNIT.MissileSilo)
@@ -5058,32 +5068,48 @@
         : null;
     }
 
-    // randCoastalTileArray — NationStructureBehavior.ts:836. Reproduced VERBATIM
-    // against the reconstructed water data: a shore border tile is a valid port
-    // site if it has an OCEAN neighbor (always shared — short-circuit) OR a
-    // non-ocean water neighbor whose component id is in the shared set. The shared
-    // set + getWaterComponent come from gameApi's full-resolution union-find
-    // (cached once per game). EXACT predicate; differs from core only at
-    // sub-minimap channel granularity (see shimSharedWaterComponents).
-    randCoastalTileArray(numTiles) {
+    // Port policy: unlike the broader shared-water predicate used by economic
+    // planning, a port may only be placed on a shore bordering the canonical
+    // open-ocean component. game.isOcean is supplied by the game and identifies
+    // the largest connected navigable water surface; isolated lakes and smaller
+    // closed seas therefore cannot produce port candidates.
+    isOceanPortTile(tile) {
       const game = this.game;
-      const shared = this._sharedWaterComponents;
-      const tiles = Array.from(this.player.borderTiles()).filter((t) => {
-        if (!game.isShore(t)) return false;
-        if (shared === null) return false;
-        for (const neighbor of game.neighbors(t)) {
-          if (!game.isWater(neighbor)) continue;
-          // Ocean is always considered shared, so any ocean neighbor makes the
-          // tile a valid port site — skip the component lookup.
-          if (game.isOcean(neighbor)) return true;
-          const comp =
-            typeof game.getWaterComponent === "function"
-              ? game.getWaterComponent(neighbor)
-              : null;
-          if (comp !== null && shared.has(comp)) return true;
-        }
+      if (
+        game == null ||
+        typeof game.isShore !== "function" ||
+        typeof game.isWater !== "function" ||
+        typeof game.isOcean !== "function" ||
+        typeof game.neighbors !== "function"
+      ) {
         return false;
-      });
+      }
+      try {
+        if (!game.isShore(tile)) return false;
+        for (const neighbor of game.neighbors(tile) || []) {
+          if (game.isWater(neighbor) && game.isOcean(neighbor)) return true;
+        }
+      } catch (_error) {
+        // Fail closed: an unavailable ocean predicate must never authorize a
+        // port on an unknown or potentially closed water component.
+      }
+      return false;
+    }
+
+    hasOceanPortTiles() {
+      try {
+        return Array.from(this.player.borderTiles()).some((tile) =>
+          this.isOceanPortTile(tile),
+        );
+      } catch (_error) {
+        return false;
+      }
+    }
+
+    randCoastalTileArray(numTiles) {
+      const tiles = Array.from(this.player.borderTiles()).filter((tile) =>
+        this.isOceanPortTile(tile),
+      );
       return Array.from(this.arraySampler(tiles, numTiles));
     }
 
