@@ -856,11 +856,19 @@
   // Pick a legal impact tile that still hits the primary SAM/Silo and maximizes
   // enemy buildings inside the atom blast. Candidates are existing hostile building
   // tiles, so this never invents a coordinate that could be water or unreachable.
-  function _chooseAutoFireImpactTile(game, primaryTile, me) {
+  function _chooseAutoFireImpactTile(game, primaryTile, me, buildings) {
     if (primaryTile === null || primaryTile === void 0) return primaryTile;
     var radius = _autoFireNukeRadius(game, "Atom Bomb");
-    var buildings = _autoFireCollectEnemyBuildings(game, me);
-    return chooseMaxNukeBuildingImpactTile(game, primaryTile, buildings, radius, true);
+    var enemyBuildings = Array.isArray(buildings)
+      ? buildings
+      : _autoFireCollectEnemyBuildings(game, me);
+    return chooseMaxNukeBuildingImpactTile(
+      game,
+      primaryTile,
+      enemyBuildings,
+      radius,
+      true,
+    );
   }
 
   function _autoFireNukeImpacts(game, state) {
@@ -904,12 +912,19 @@
   // already puts the target inside its blast radius. Ownership is intentionally
   // not filtered: an incoming missile still destroys the enemy building, and the
   // auto-fire should not spend another salvo on a demolition already guaranteed.
-  function _isAutoFireTargetCovered(game, primaryTile, me, state) {
+  function _isAutoFireTargetCovered(game, primaryTile, me, state, impacts) {
     if (primaryTile === null || primaryTile === void 0) return false;
-    var impacts = _autoFireNukeImpacts(game, state);
-    for (var i = 0; i < impacts.length; i++) {
-      var radius = impacts[i].radius;
-      if (_euclideanDistSq(game, primaryTile, impacts[i].targetTile) < radius * radius) return true;
+    var knownImpacts = Array.isArray(impacts)
+      ? impacts
+      : _autoFireNukeImpacts(game, state);
+    for (var i = 0; i < knownImpacts.length; i++) {
+      var radius = knownImpacts[i].radius;
+      if (
+        _euclideanDistSq(game, primaryTile, knownImpacts[i].targetTile) <
+        radius * radius
+      ) {
+        return true;
+      }
     }
     return false;
   }
@@ -997,6 +1012,8 @@
     var maxQty = Math.max(1, Math.floor(Number(_cfg(opts.maxQtyKey, 1))) || 1);
     var allUnits = opts.getUnits(game);
     var currentTick = typeof game.ticks === "function" ? game.ticks() : 0;
+    var cachedEnemyBuildings = null;
+    var cachedImpacts = null;
 
     for (var i = 0; i < allUnits.length; i++) {
       var unit = allUnits[i];
@@ -1040,8 +1057,19 @@
         if (flightTicks == null || flightTicks >= remainingTicks - SAM_AUTO_FIRE_SAFETY_MARGIN_TICKS) continue;
       }
 
-      if (_isAutoFireTargetCovered(game, tile, me, state)) continue;
-      var impactTile = _chooseAutoFireImpactTile(game, tile, me);
+      if (cachedImpacts === null) {
+        cachedImpacts = _autoFireNukeImpacts(game, state);
+      }
+      if (_isAutoFireTargetCovered(game, tile, me, state, cachedImpacts)) continue;
+      if (cachedEnemyBuildings === null) {
+        cachedEnemyBuildings = _autoFireCollectEnemyBuildings(game, me);
+      }
+      var impactTile = _chooseAutoFireImpactTile(
+        game,
+        tile,
+        me,
+        cachedEnemyBuildings,
+      );
       _autoFireAttempt(state, id, tile, impactTile, owner, me, maxQty, opts.targetLabel);
     }
   }

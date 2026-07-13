@@ -121,8 +121,14 @@
   const NUKE_SUGGESTION_BUCKET_SIZE = 16;
   const NUKE_SUGGESTION_SAMPLE_LIMIT = 80;
   const NUKE_SUGGESTION_MAX_FINAL_CANDIDATES = 40;
+  // Building-impact placement is a bounded second-stage optimization. Running
+  // it for every raw seed made a single refresh multiply the geometry search
+  // across dozens of candidates and caused visible main-thread stalls.
+  const NUKE_SUGGESTION_MAX_BUILDING_IMPACT_OPTIMIZATIONS = 16;
   const NUKE_SUGGESTION_TILE_INFO_CACHE_MS = 2500;
   const NUKE_SUGGESTION_SIGNATURE_CHECK_MS = 250;
+  let nukeSuggestionFrameCounter = 2;
+  const nukeSuggestionWorldQueryArg = { x: 0, y: 0 };
   let nukeSuggestionTileInfoCache = null;
   let nukeSuggestionDomCache = new Map();
   let lastAutoNukeActionAt = 0;
@@ -2410,8 +2416,15 @@
       rawCandidates.push(refineNukeSuggestionCandidate(game, context, candidate));
     }
 
-    const optimizedCandidates = rawCandidates.map((candidate) =>
-      optimizeNukeSuggestionCandidateForBuildingImpact(game, context, candidate),
+    rawCandidates.sort((a, b) => b.totalScore - a.totalScore);
+    const impactOptimizationCount = Math.min(
+      rawCandidates.length,
+      NUKE_SUGGESTION_MAX_BUILDING_IMPACT_OPTIMIZATIONS,
+    );
+    const optimizedCandidates = rawCandidates.map((candidate, index) =>
+      index < impactOptimizationCount
+        ? optimizeNukeSuggestionCandidateForBuildingImpact(game, context, candidate)
+        : candidate,
     );
     const candidates = dedupeNukeSuggestionCandidates(optimizedCandidates).slice(
       0,
@@ -2653,7 +2666,9 @@
     for (const result of results) {
       let screenPos = null;
       try {
-        screenPos = transform.worldToScreenCoordinates({ x: result.x, y: result.y });
+        nukeSuggestionWorldQueryArg.x = result.x;
+        nukeSuggestionWorldQueryArg.y = result.y;
+        screenPos = transform.worldToScreenCoordinates(nukeSuggestionWorldQueryArg);
       } catch (_error) {
         screenPos = null;
       }
@@ -7875,6 +7890,12 @@
       return;
     }
 
+    nukeSuggestionFrameCounter = (nukeSuggestionFrameCounter + 1) % 3;
+    if (nukeSuggestionFrameCounter !== 0) {
+      nukeSuggestionAnimationFrame = requestAnimationFrame(syncNukeSuggestions);
+      return;
+    }
+
     const container = ensureNukeSuggestionContainer();
     const overlay = getHoveredPlayerInfoOverlay();
     const game = overlay?.game;
@@ -7912,6 +7933,7 @@
 
   function setNukeSuggestionsEnabled(enabled) {
     nukeSuggestionsEnabled = Boolean(enabled);
+    nukeSuggestionFrameCounter = 2;
     if (!nukeSuggestionsEnabled) {
       if (nukeSuggestionAnimationFrame !== null) {
         cancelAnimationFrame(nukeSuggestionAnimationFrame);

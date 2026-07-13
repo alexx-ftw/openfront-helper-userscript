@@ -167,7 +167,18 @@
    * Safety guard for pathological gold reserves. A forecast that reaches this
    * cap is marked incomplete and therefore cannot be accepted as defended.
    */
-  const LEGENDARY_MAX_FORECAST_MISSILES = 256;
+  const LEGENDARY_MAX_FORECAST_MISSILES = 96;
+
+  /**
+   * A missile planner only needs representative high-value/clustered targets.
+   * The full structure list remains in the context for exposure and placement
+   * scoring, while this cap prevents rebuilding a long salvo for every remote
+   * low-value structure on large maps.
+   */
+  const LEGENDARY_MAX_MISSILE_TARGETS = 16;
+
+  /** Non-active forecasts can safely reuse a conservative snapshot briefly. */
+  const LEGENDARY_MISSILE_DEFENSE_CONTEXT_BUCKET_TICKS = 3;
 
   /**
    * Hard / Impossible: one additional defense post is allowed per this fraction
@@ -308,6 +319,8 @@
       this._hostilePlayersSnapshot = null;
       this._hostileThreatSnapshotTick = null;
       this._hostileThreatSnapshot = null;
+      this._missileDefenseSignalTick = null;
+      this._missileDefenseSignalCache = null;
       // Missile placement forecasts are shared by several Legendary and
       // win-fix construction gates. Keep one snapshot per game tick so a
       // single decision cannot rebuild the same trajectory model repeatedly.
@@ -1030,6 +1043,7 @@
     }
 
     legendaryMissileDefenseUrgent() {
+      if (this.hasMissileDefenseSignal() === false) return false;
       const context = this.getMissileDefenseContext();
       if (!context || !Array.isArray(context.threats) || context.threats.length === 0) {
         return false;
@@ -1187,6 +1201,79 @@
         }
         return true;
       });
+    }
+
+    // Gold alone opens the SAM-building gate, but it does not justify running
+    // the full trajectory planner: until a hostile silo or missile exists the
+    // forecast has no incoming routes to model. Keep this cheap signal separate
+    // from hostileThreatSnapshot(), whose gold thresholds are still used by the
+    // construction policy.
+    missileDefenseSignalSnapshot() {
+      const signalTick =
+        typeof this.game?.ticks === "function"
+          ? Number(this.game.ticks())
+          : null;
+      if (
+        Number.isFinite(signalTick) &&
+        this._missileDefenseSignalTick === signalTick
+      ) {
+        return this._missileDefenseSignalCache;
+      }
+      const cacheSignal = (signal) => {
+        if (Number.isFinite(signalTick)) {
+          this._missileDefenseSignalTick = signalTick;
+          this._missileDefenseSignalCache = signal;
+        }
+        return signal;
+      };
+      const hostile = this.liveHostilePlayers();
+      if (hostile === null) return cacheSignal(null);
+
+      const hasBuiltHostileSilo = hostile.some((other) =>
+        this.hasBuiltMissileSilo(other),
+      );
+      let hasActiveHostileMissile = false;
+      try {
+        const activeMissiles = this.game.units(UNIT.AtomBomb, UNIT.HydrogenBomb);
+        if (!Array.isArray(activeMissiles)) return cacheSignal(null);
+        const mySid = this.player.smallID();
+        for (const missile of activeMissiles) {
+          if (!missile || missile.isActive?.() === false) continue;
+          const owner = missile.owner?.();
+          if (!owner || owner.smallID?.() === mySid) continue;
+          let friendly = false;
+          try {
+            friendly =
+              this.player.isFriendly(owner) || this.player.isOnSameTeam(owner);
+          } catch (_error) {
+            friendly = false;
+          }
+          if (!friendly) {
+            hasActiveHostileMissile = true;
+            break;
+          }
+        }
+      } catch (_error) {
+        return cacheSignal({
+          hasBuiltHostileSilo,
+          hasActiveHostileMissile: null,
+        });
+      }
+      return cacheSignal({ hasBuiltHostileSilo, hasActiveHostileMissile });
+    }
+
+    hasMissileDefenseSignal() {
+      const signal = this.missileDefenseSignalSnapshot();
+      if (signal === null) return null;
+      if (
+        signal.hasActiveHostileMissile === null &&
+        !signal.hasBuiltHostileSilo
+      ) {
+        return null;
+      }
+      return (
+        signal.hasBuiltHostileSilo || signal.hasActiveHostileMissile === true
+      );
     }
 
     hasHostileReachedSiloGoldThreshold() {
@@ -2324,6 +2411,7 @@
       weapon = null,
       id = null,
       pathOverride = null,
+      coverageIndexCache = null,
     ) {
       const path =
         Array.isArray(pathOverride) && pathOverride.length > 0
@@ -2332,13 +2420,19 @@
       const samOptions = [];
       for (let samIndex = 0; samIndex < samProfiles.length; samIndex++) {
         const profile = samProfiles[samIndex];
-        const interceptTicks = this.legendarySamPathInterceptTicks(
-          profile,
-          path,
-          fromTile,
-          targetTile,
-          profile.level,
-          launchOffset,
+        let coverageIndexes = coverageIndexCache?.get(samIndex);
+        if (!coverageIndexes) {
+          coverageIndexes = this.legendarySamPathCoverageIndices(
+            profile,
+            path,
+            fromTile,
+            targetTile,
+            profile.level,
+          );
+          coverageIndexCache?.set(samIndex, coverageIndexes);
+        }
+        const interceptTicks = coverageIndexes.map(
+          (index) => Math.max(0, Number(launchOffset) || 0) + index,
         );
         if (interceptTicks.length > 0) {
           samOptions.push({ samIndex, interceptTicks });
@@ -2362,9 +2456,15 @@
     legendaryRebuildMissileRoutes(routes, samProfiles) {
       if (!Array.isArray(routes)) return null;
       const rebuilt = [];
+      const coverageCacheByPath = new Map();
       for (const route of routes) {
         if (!route || !Array.isArray(route.path) || route.path.length === 0) {
           return null;
+        }
+        let coverageIndexCache = coverageCacheByPath.get(route.path);
+        if (!coverageIndexCache) {
+          coverageIndexCache = new Map();
+          coverageCacheByPath.set(route.path, coverageIndexCache);
         }
         rebuilt.push(
           this.legendaryBuildMissileRoute(
@@ -2376,6 +2476,7 @@
             route.weapon ?? null,
             route.id ?? null,
             route.path,
+            coverageIndexCache,
           ),
         );
       }
@@ -2539,13 +2640,8 @@
     }
 
     getMissileDefenseEvaluation(context) {
-      const tick =
-        typeof this.game?.ticks === "function"
-          ? Number(this.game.ticks())
-          : null;
       if (
-        Number.isFinite(tick) &&
-        this._missileDefenseEvaluationTick === tick &&
+        context &&
         this._missileDefenseEvaluationContext === context &&
         this._missileDefenseEvaluationCache !== null
       ) {
@@ -2553,11 +2649,12 @@
       }
 
       const evaluation = this.legendaryDefenseEvaluation(context);
-      if (Number.isFinite(tick)) {
-        this._missileDefenseEvaluationTick = tick;
-        this._missileDefenseEvaluationContext = context;
-        this._missileDefenseEvaluationCache = evaluation;
-      }
+      this._missileDefenseEvaluationTick =
+        typeof this.game?.ticks === "function"
+          ? Number(this.game.ticks())
+          : null;
+      this._missileDefenseEvaluationContext = context;
+      this._missileDefenseEvaluationCache = evaluation;
       return evaluation;
     }
 
@@ -2826,7 +2923,7 @@
     legendarySamImpactMarginScore(tile, context, level = 1) {
       if (!context || !Array.isArray(context.threats)) return 0;
       const structures = Array.isArray(context.structures)
-        ? context.structures
+        ? context.priorityStructures || context.structures
         : [];
       if (structures.length === 0) return 0;
       let protectedValue = 0;
@@ -2959,6 +3056,7 @@
       const atomArrivalTicks = [];
       const routes = [];
       const pathBySilo = new Map();
+      const coverageCacheBySilo = new Map();
       let hydrogenArrivalTick = null;
       for (let index = 0; index < launches.length; index++) {
         const launch = launches[index];
@@ -2974,6 +3072,11 @@
           );
           pathBySilo.set(launch.silo, path);
         }
+        let coverageIndexCache = coverageCacheBySilo.get(launch.silo);
+        if (!coverageIndexCache) {
+          coverageIndexCache = new Map();
+          coverageCacheBySilo.set(launch.silo, coverageIndexCache);
+        }
         routes.push(
           this.legendaryBuildMissileRoute(
             launch.silo.tile(),
@@ -2986,6 +3089,7 @@
               launch.silo.id?.() ?? index,
             )}:${String(index)}`,
             path,
+            coverageIndexCache,
           ),
         );
       }
@@ -3037,6 +3141,7 @@
         marginTicks: LEGENDARY_SAM_IMPACT_MARGIN_TICKS,
         routes,
         samProfiles,
+        scheduleOverride: schedule,
         completionTick: actionCompletionTick,
       });
       if (!schedule.forecastComplete) {
@@ -3067,6 +3172,7 @@
       hydrogenCost,
       atomRadius,
       hydrogenRadius,
+      samProfilesOverride = null,
     ) {
       const threats = [];
       let activeNukes = [];
@@ -3076,6 +3182,8 @@
         return threats;
       }
       const mySid = this.player.smallID();
+      const samProfiles =
+        samProfilesOverride || this.legendaryFriendlySamProfiles();
       for (const nuke of activeNukes) {
         try {
           if (nuke.isActive && nuke.isActive() === false) continue;
@@ -3122,7 +3230,6 @@
             fromTile,
             targetTile,
           );
-          const samProfiles = this.legendaryFriendlySamProfiles();
           const nukeId =
             typeof nuke.id === "function" ? nuke.id() : "active-missile";
           const route = this.legendaryBuildMissileRoute(
@@ -3241,6 +3348,43 @@
         parts.push(`${label}[${fingerprints.join(",")}]`);
       };
 
+      let atomCost = 0n;
+      let hydrogenCost = 0n;
+      try {
+        atomCost = BigInt(this.cost(UNIT.AtomBomb));
+      } catch (_error) {
+        /* keep zero so the fingerprint remains fail-closed */
+      }
+      try {
+        hydrogenCost = BigInt(this.cost(UNIT.HydrogenBomb));
+      } catch (_error) {
+        /* keep zero so the fingerprint remains fail-closed */
+      }
+
+      // The trajectory planner only changes its threat model when an enemy can
+      // afford a different shot sequence. Including the exact gold balance here
+      // made the three-tick context bucket ineffective because gold changes on
+      // every simulation tick. Keep the hydrogen reservation and affordable atom
+      // count, which are the two values used by legendaryMissileSalvoPlan().
+      const enemyGoldCapacityFingerprint = (enemy) => {
+        const rawGold = read(() => enemy.gold(), "");
+        try {
+          const gold = BigInt(rawGold);
+          if (atomCost <= 0n && hydrogenCost <= 0n) {
+            return `raw=${String(rawGold)}`;
+          }
+          const canHydrogen = hydrogenCost > 0n && gold >= hydrogenCost;
+          const atomBudget = canHydrogen ? gold - hydrogenCost : gold;
+          const affordableAtoms =
+            atomCost > 0n ? atomBudget / atomCost : 0n;
+          return `${canHydrogen ? 1 : 0}:${affordableAtoms.toString()}`;
+        } catch (_error) {
+          // Preserve fail-closed invalidation when a client exposes a non-integer
+          // gold representation or the cost API is unavailable.
+          return `raw=${String(rawGold)}`;
+        }
+      };
+
       const mySid = read(() => this.player.smallID(), "");
       collectUnits("own-structures", this.player, [
         UNIT.City,
@@ -3285,8 +3429,9 @@
       );
       for (const enemy of hostilePlayers) {
         const sid = read(() => enemy.smallID(), "");
-        const gold = read(() => enemy.gold(), "");
-        parts.push(`enemy=${String(sid)}:gold=${String(gold)}`);
+        parts.push(
+          `enemy=${String(sid)}:capacity=${enemyGoldCapacityFingerprint(enemy)}`,
+        );
         collectUnits(`enemy-${String(sid)}-silos`, enemy, [UNIT.MissileSilo]);
       }
 
@@ -3333,13 +3478,101 @@
       );
     }
 
+    legendaryEmptyMissileDefenseContext() {
+      let config = {};
+      try {
+        config = this.game.config() || {};
+      } catch (_error) {
+        /* use compatibility fallbacks below */
+      }
+      const isDisabled = (type) => {
+        try {
+          return typeof config.isUnitDisabled === "function"
+            ? config.isUnitDisabled(type)
+            : false;
+        } catch (_error) {
+          return false;
+        }
+      };
+      const readRadius = (type, fallback) => {
+        try {
+          const radius = Number(config.nukeMagnitudes?.(type)?.outer);
+          return Number.isFinite(radius) && radius > 0 ? radius : fallback;
+        } catch (_error) {
+          return fallback;
+        }
+      };
+      const readCost = (type) => {
+        try {
+          return BigInt(this.cost(type));
+        } catch (_error) {
+          return 0n;
+        }
+      };
+      const atomCost = isDisabled(UNIT.AtomBomb)
+        ? 0n
+        : readCost(UNIT.AtomBomb);
+      const hydrogenCost = isDisabled(UNIT.HydrogenBomb)
+        ? 0n
+        : readCost(UNIT.HydrogenBomb);
+      const atomRadius = readRadius(UNIT.AtomBomb, 70);
+      const hydrogenRadius = readRadius(UNIT.HydrogenBomb, 160);
+      let structures = [];
+      try {
+        structures = this.player.units(
+          UNIT.City,
+          UNIT.Factory,
+          UNIT.Port,
+          UNIT.MissileSilo,
+        );
+      } catch (_error) {
+        structures = [];
+      }
+      if (!Array.isArray(structures)) structures = [];
+      const totalValue = structures.reduce(
+        (total, unit) => total + this.legendaryCriticalStructureValue(unit),
+        0,
+      );
+      return {
+        score: 0,
+        critical: false,
+        threats: [],
+        structures,
+        totalValue,
+        atomCost,
+        hydrogenCost,
+        atomRadius,
+        hydrogenRadius,
+        activeMissiles: [],
+      };
+    }
+
     getMissileDefenseContext() {
       const tick =
         typeof this.game?.ticks === "function"
           ? Number(this.game.ticks())
           : null;
-      const stateKey = this.missileDefenseStateFingerprint();
-      const cacheKey = Number.isFinite(tick) ? `${tick}|${stateKey}` : null;
+      const signal = this.missileDefenseSignalSnapshot();
+      const activeMissile = signal?.hasActiveHostileMissile === true;
+      const missileSignal =
+        signal === null
+          ? null
+          : signal.hasBuiltHostileSilo ||
+            signal.hasActiveHostileMissile === null ||
+            activeMissile;
+      const cacheTick = Number.isFinite(tick)
+        ? activeMissile
+          ? tick
+          : Math.floor(tick / LEGENDARY_MISSILE_DEFENSE_CONTEXT_BUCKET_TICKS)
+        : null;
+      const stateKey = missileSignal === false
+        ? "no-missile-signal"
+        : signal !== null
+          ? this.missileDefenseStateFingerprint()
+          : "unknown-missile-signal";
+      const cacheKey = Number.isFinite(cacheTick)
+        ? `${cacheTick}|${stateKey}`
+        : null;
       if (
         cacheKey !== null &&
         this._missileDefenseContextKey === cacheKey &&
@@ -3348,13 +3581,107 @@
         return this._missileDefenseContextCache;
       }
 
-      const context = this.legendaryMissilePlacementContext();
+      const context = missileSignal === false
+        ? this.legendaryEmptyMissileDefenseContext()
+        : this.legendaryMissilePlacementContext();
       if (Number.isFinite(tick)) {
         this._missileDefenseContextTick = tick;
         this._missileDefenseContextKey = cacheKey;
         this._missileDefenseContextCache = context;
       }
       return context;
+    }
+
+    legendaryMissileTargetCandidates(
+      structures,
+      enemySilos,
+      radius,
+      totalValue,
+    ) {
+      const entries = [];
+      const radiusSquared = Math.max(0, Number(radius) || 0) ** 2;
+      for (const target of structures || []) {
+        const targetTile = target?.tile?.();
+        if (targetTile === null || targetTile === undefined) continue;
+        let exposedValue = this.legendaryCriticalStructureValue(target);
+        let exposedStructures = 1;
+        for (const other of structures || []) {
+          if (other === target) continue;
+          try {
+            if (
+              this.game.euclideanDistSquared(targetTile, other.tile()) <=
+              radiusSquared
+            ) {
+              exposedValue += this.legendaryCriticalStructureValue(other);
+              exposedStructures++;
+            }
+          } catch (_error) {
+            /* skip a stale structure reference */
+          }
+        }
+        entries.push({
+          target,
+          tile: targetTile,
+          exposedValue,
+          exposedStructures,
+          exposure:
+            totalValue > 0 ? Math.min(1, exposedValue / totalValue) : 0,
+        });
+      }
+
+      const limit = Math.min(LEGENDARY_MAX_MISSILE_TARGETS, entries.length);
+      if (entries.length <= limit) return entries;
+
+      const byExposure = entries
+        .slice()
+        .sort(
+          (left, right) =>
+            right.exposedValue - left.exposedValue ||
+            right.exposedStructures - left.exposedStructures,
+        );
+      const byValue = entries
+        .slice()
+        .sort(
+          (left, right) =>
+            this.legendaryCriticalStructureValue(right.target) -
+              this.legendaryCriticalStructureValue(left.target) ||
+            right.exposedValue - left.exposedValue,
+        );
+      const selected = [];
+      const selectedEntries = new Set();
+      const add = (entry) => {
+        if (selected.length >= limit || selectedEntries.has(entry)) return;
+        selectedEntries.add(entry);
+        selected.push(entry);
+      };
+
+      for (const entry of byExposure.slice(0, Math.max(8, Math.ceil(limit * 0.6)))) {
+        add(entry);
+      }
+      for (const entry of byValue.slice(0, Math.max(4, Math.floor(limit * 0.25)))) {
+        add(entry);
+      }
+      for (const silo of enemySilos || []) {
+        let nearest = null;
+        let nearestDistance = Infinity;
+        for (const entry of entries) {
+          try {
+            const distance = this.game.manhattanDist(silo.tile(), entry.tile);
+            if (distance < nearestDistance) {
+              nearest = entry;
+              nearestDistance = distance;
+            }
+          } catch (_error) {
+            /* skip a stale silo/target pair */
+          }
+        }
+        if (nearest) add(nearest);
+      }
+      for (const entry of byExposure) {
+        add(entry);
+        if (selected.length >= limit) break;
+      }
+      return selected;
     }
 
     legendaryMissilePlacementContext() {
@@ -3381,7 +3708,16 @@
         (total, unit) => total + this.legendaryCriticalStructureValue(unit),
         0,
       );
+      const priorityStructures = structures
+        .slice()
+        .sort(
+          (left, right) =>
+            this.legendaryCriticalStructureValue(right) -
+            this.legendaryCriticalStructureValue(left),
+        )
+        .slice(0, LEGENDARY_MAX_MISSILE_TARGETS);
       const enemies = this.legendaryHostilePlayers();
+      const samProfiles = this.legendaryFriendlySamProfiles();
       const threats = [];
 
       for (const enemy of enemies) {
@@ -3406,33 +3742,32 @@
         if (!canHydrogen && !canAtom) continue;
         const weapon = canHydrogen ? UNIT.HydrogenBomb : UNIT.AtomBomb;
         const radius = canHydrogen ? hydrogenRadius : atomRadius;
-        const radiusSquared = radius * radius;
+        const targetCandidates = this.legendaryMissileTargetCandidates(
+          structures,
+          enemySilos,
+          radius,
+          totalValue,
+        );
+        const enemySiloLevels = enemySilos.map((unit) => ({
+          level: unit.level(),
+        }));
 
         let bestTarget = null;
-        for (const target of structures) {
-          let exposedValue = this.legendaryCriticalStructureValue(target);
-          let exposedStructures = 1;
-          for (const other of structures) {
-            if (other === target) continue;
-            if (
-              this.game.euclideanDistSquared(target.tile(), other.tile()) <=
-              radiusSquared
-            ) {
-              exposedValue += this.legendaryCriticalStructureValue(other);
-              exposedStructures++;
-            }
-          }
-          const exposure =
-            totalValue > 0 ? Math.min(1, exposedValue / totalValue) : 0;
+        for (const targetCandidate of targetCandidates) {
+          const targetTile = targetCandidate.tile;
+          const exposedValue = targetCandidate.exposedValue;
+          const exposedStructures = targetCandidate.exposedStructures;
+          const exposure = targetCandidate.exposure;
           // The salvo is identical for every source silo at this target; build
           // its shared route/schedule once instead of recomputing every
           // parabola inside the per-silo threat-score loop.
           const salvoPlan = this.legendaryMissileSalvoPlan(
             enemySilos,
             enemyGold,
-            target.tile(),
+            targetTile,
             atomCost,
             hydrogenCost,
+            { samProfilesOverride: samProfiles },
           );
           const sourceMetrics = new Map(
             (salvoPlan.sourceMetrics || []).map((source) => [source.silo, source]),
@@ -3441,15 +3776,15 @@
             const source = sourceMetrics.get(silo);
             const flightTimeTicks =
               source?.flightTimeTicks ??
-              this.legendaryNukeFlightTime(silo.tile(), target.tile());
+              this.legendaryNukeFlightTime(silo.tile(), targetTile);
             const interceptionCapacity =
               source?.interceptionCapacity ??
               this.legendarySamInterceptionCapacity(
                 silo.tile(),
-                target.tile(),
+                targetTile,
               );
             const threat = legendaryMissileThreatScore({
-              enemySilos: enemySilos.map((unit) => ({ level: unit.level() })),
+              enemySilos: enemySiloLevels,
               enemyGold,
               atomCost,
               hydrogenCost,
@@ -3473,7 +3808,7 @@
                 enemy,
                 enemySilos,
                 enemyGold,
-                targetTile: target.tile(),
+                targetTile,
                 salvoPlan,
               };
             }
@@ -3489,6 +3824,7 @@
         hydrogenCost,
         atomRadius,
         hydrogenRadius,
+        samProfiles,
       );
       threats.push(...activeMissiles);
 
@@ -3507,6 +3843,7 @@
         ...strongest,
         threats,
         structures,
+        priorityStructures,
         totalValue,
         atomCost,
         hydrogenCost,
@@ -3554,7 +3891,8 @@
         const radiusSquared = radius * radius;
         let exposedValue = candidateValue;
         let exposedStructures = 1;
-        for (const structure of context.structures) {
+        for (const structure of
+          context.priorityStructures || context.structures || []) {
           if (
             this.game.euclideanDistSquared(tile, structure.tile()) <=
             radiusSquared
@@ -4281,6 +4619,12 @@
       } catch (_error) {
         /* keep the buildable probe as the compatibility fallback */
       }
+      // A hostile gold reserve is enough to build a new protective SAM, but
+      // without an actual hostile silo or in-flight missile there is no route
+      // worth forecasting for an upgrade. This gate avoids waking the expensive
+      // planner on every Impossible/Legendary structure tick during the early
+      // game.
+      if (this.hasMissileDefenseSignal() === false) return false;
       const samUnits = this.player.units(UNIT.SAMLauncher) || [];
       const upgradeableSamUnits = samUnits.filter(
         (sam) =>

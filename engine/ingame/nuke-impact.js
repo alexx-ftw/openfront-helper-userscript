@@ -3,8 +3,8 @@
 // Keep the geometry search bounded: this helper is called for several scored
 // nuke candidates, so an unbounded pairwise/grid search would reintroduce the
 // frame stalls seen in large games.
-var MAX_NUKE_BUILDING_IMPACT_GEOMETRY_ENTRIES = 16;
-var MAX_NUKE_BUILDING_IMPACT_GENERATED_CANDIDATES = 256;
+var MAX_NUKE_BUILDING_IMPACT_GEOMETRY_ENTRIES = 12;
+var MAX_NUKE_BUILDING_IMPACT_GENERATED_CANDIDATES = 128;
 var NUKE_BUILDING_IMPACT_LOCAL_STEPS = [1, 2, 4];
 
   function chooseMaxNukeBuildingImpactTile(
@@ -123,7 +123,10 @@ var NUKE_BUILDING_IMPACT_LOCAL_STEPS = [1, 2, 4];
 
     addCandidate(primaryTile);
     for (var index = 0; index < entries.length; index++) {
-      addCandidate(entries[index]?.tile);
+      var buildingTileCandidate = entries[index]?.tile;
+      if (distanceSquared(buildingTileCandidate, primaryTile) < radiusSquared) {
+        addCandidate(buildingTileCandidate);
+      }
     }
 
     // Existing building tiles preserve the old behavior. The additional
@@ -194,6 +197,62 @@ var NUKE_BUILDING_IMPACT_LOCAL_STEPS = [1, 2, 4];
       }
     }
 
+    // Use x/y only as a broad phase, then preserve the game's exact distance
+    // function for the final hit test. This avoids scanning every building for
+    // every candidate when the target has a large, sparse structure list.
+    var buildingBuckets = new Map();
+    var bucketSize = numericRadius;
+    var coordinateTileKeys = new Set();
+    for (var bucketIndex = 0; bucketIndex < coordinateEntries.length; bucketIndex++) {
+      var bucketEntry = coordinateEntries[bucketIndex];
+      var bucketX = Math.floor(bucketEntry.x / bucketSize);
+      var bucketY = Math.floor(bucketEntry.y / bucketSize);
+      var bucketKey = `${bucketX}:${bucketY}`;
+      var bucket = buildingBuckets.get(bucketKey);
+      if (!bucket) {
+        bucket = [];
+        buildingBuckets.set(bucketKey, bucket);
+      }
+      bucket.push(bucketEntry);
+      coordinateTileKeys.add(tileKey(bucketEntry.tile));
+    }
+    var fallbackBuildingEntries = entries.filter(
+      (entry) => !coordinateTileKeys.has(tileKey(entry?.tile)),
+    );
+
+    function countBuildingHits(candidate) {
+      var candidateCoordinates = getTileCoordinates(candidate);
+      if (!candidateCoordinates || buildingBuckets.size === 0) {
+        return null;
+      }
+
+      var hits = 0;
+      var minBucketX = Math.floor((candidateCoordinates.x - numericRadius) / bucketSize);
+      var maxBucketX = Math.floor((candidateCoordinates.x + numericRadius) / bucketSize);
+      var minBucketY = Math.floor((candidateCoordinates.y - numericRadius) / bucketSize);
+      var maxBucketY = Math.floor((candidateCoordinates.y + numericRadius) / bucketSize);
+      for (var currentBucketX = minBucketX; currentBucketX <= maxBucketX; currentBucketX++) {
+        for (var currentBucketY = minBucketY; currentBucketY <= maxBucketY; currentBucketY++) {
+          var nearby = buildingBuckets.get(`${currentBucketX}:${currentBucketY}`);
+          if (!nearby) continue;
+          for (var nearbyIndex = 0; nearbyIndex < nearby.length; nearbyIndex++) {
+            if (distanceSquared(candidate, nearby[nearbyIndex].tile) < radiusSquared) {
+              hits++;
+            }
+          }
+        }
+      }
+      for (var fallbackIndex = 0; fallbackIndex < fallbackBuildingEntries.length; fallbackIndex++) {
+        if (
+          distanceSquared(candidate, fallbackBuildingEntries[fallbackIndex]?.tile) <
+          radiusSquared
+        ) {
+          hits++;
+        }
+      }
+      return hits;
+    }
+
     var bestTile = primaryTile;
     var bestHits = -1;
     for (var candidateIndex = 0; candidateIndex < candidates.length; candidateIndex++) {
@@ -202,11 +261,14 @@ var NUKE_BUILDING_IMPACT_LOCAL_STEPS = [1, 2, 4];
         continue;
       }
 
-      var hits = 0;
-      for (var buildingIndex = 0; buildingIndex < entries.length; buildingIndex++) {
-        var buildingTile = entries[buildingIndex]?.tile;
-        if (distanceSquared(candidate, buildingTile) < radiusSquared) {
-          hits++;
+      var hits = countBuildingHits(candidate);
+      if (hits === null) {
+        hits = 0;
+        for (var buildingIndex = 0; buildingIndex < entries.length; buildingIndex++) {
+          var buildingTile = entries[buildingIndex]?.tile;
+          if (distanceSquared(candidate, buildingTile) < radiusSquared) {
+            hits++;
+          }
         }
       }
 

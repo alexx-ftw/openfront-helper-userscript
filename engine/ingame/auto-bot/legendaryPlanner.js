@@ -332,18 +332,21 @@ function legendaryMissileSalvoRisk({
   routes = null,
   samProfiles = [],
   completionTick = 0,
+  scheduleOverride = null,
 } = {}) {
   // When geometry and individual SAM availability are available, use the
   // per-missile schedule below. The legacy aggregate branch remains for old
   // callers/tests that only provide arrival ticks and a total capacity.
   if (Array.isArray(routes)) {
-    const schedule = legendaryMissileDefenseSchedule({
-      routes,
-      samProfiles,
-      samCooldownTicks,
-      marginTicks,
-      completionTick,
-    });
+    const schedule =
+      scheduleOverride ||
+      legendaryMissileDefenseSchedule({
+        routes,
+        samProfiles,
+        samCooldownTicks,
+        marginTicks,
+        completionTick,
+      });
     const atomResults = schedule.missiles.filter(
       (missile) => legendaryWeaponKey(missile.weapon) === "atombomb",
     );
@@ -578,6 +581,24 @@ function legendaryMissileDefenseSchedule({
     : Infinity;
   const missiles = [];
 
+  // Precompute how many later routes can use each SAM. The old implementation
+  // scanned every later route while evaluating every current option, turning a
+  // large salvo into an avoidable O(routes²) pass before the actual scheduling
+  // decision even started.
+  const futureUseByRoute = normalizedRoutes.map(() =>
+    Array(profiles.length).fill(0),
+  );
+  const futureUseCounts = Array(profiles.length).fill(0);
+  for (let routeIndex = normalizedRoutes.length - 1; routeIndex >= 0; routeIndex--) {
+    futureUseByRoute[routeIndex] = futureUseCounts.slice();
+    const usedSamIndexes = new Set(
+      normalizedRoutes[routeIndex].samOptions.map((option) => option.samIndex),
+    );
+    for (const samIndex of usedSamIndexes) {
+      futureUseCounts[samIndex]++;
+    }
+  }
+
   const collectFeasible = (routeIndex, slotState, fireState) => {
     const route = normalizedRoutes[routeIndex];
     const feasible = [];
@@ -594,27 +615,13 @@ function legendaryMissileDefenseSchedule({
           (tick) => tick >= launcherAvailableAt && tick <= route.impactTick,
         );
         if (interceptTick === undefined) continue;
-        let futureUse = 0;
-        for (
-          let futureIndex = routeIndex + 1;
-          futureIndex < normalizedRoutes.length;
-          futureIndex++
-        ) {
-          if (
-            normalizedRoutes[futureIndex].samOptions.some(
-              (futureOption) => futureOption.samIndex === option.samIndex,
-            )
-          ) {
-            futureUse++;
-          }
-        }
         feasible.push({
           samIndex: option.samIndex,
           slotIndex,
           availableAt,
           launcherAvailableAt,
           interceptTick,
-          futureUse,
+          futureUse: futureUseByRoute[routeIndex][option.samIndex] ?? 0,
           cooldownTicks: profile.cooldownTicks,
           fireIntervalTicks: profile.fireIntervalTicks,
         });

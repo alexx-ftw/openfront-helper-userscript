@@ -459,13 +459,24 @@ behavior.getMissileDefenseContext();
 assert.equal(forecastCalls, 1, "Missile defense context is reused within one game tick");
 forecastTick++;
 behavior.getMissileDefenseContext();
-assert.equal(forecastCalls, 2, "Missile defense context refreshes when the game tick advances");
+assert.equal(
+  forecastCalls,
+  1,
+  "Missile defense context is reused inside its short conservative tick bucket",
+);
+forecastTick += 2;
+behavior.getMissileDefenseContext();
+assert.equal(
+  forecastCalls,
+  2,
+  "Missile defense context refreshes when the conservative tick bucket advances",
+);
 own.sams = [makeUnit(402, 1)];
 behavior.getMissileDefenseContext();
 assert.equal(
   forecastCalls,
   3,
-  "Missile defense context refreshes when a SAM changes within one game tick",
+  "Missile defense context refreshes when a SAM changes inside one tick bucket",
 );
 own.sams = [reactiveSam];
 enemyTeamSamLevel = 13;
@@ -473,9 +484,57 @@ behavior.getMissileDefenseContext();
 assert.equal(
   forecastCalls,
   4,
-  "Missile defense context refreshes when an allied SAM changes within one game tick",
+  "Missile defense context refreshes when an allied SAM changes inside one tick bucket",
 );
 enemyTeamSamLevel = 12;
+
+const originalGamePlayersForSignalTest = behavior.game.players;
+const originalGameUnitsForSignalTest = behavior.game.units;
+const originalEmptyMissileContext = behavior.legendaryEmptyMissileDefenseContext;
+const originalEnemyBGoldForSignalTest = enemyB.gold;
+behavior.game.players = () => [own, enemyB];
+behavior.game.units = () => [];
+behavior._hostilePlayersSnapshotTick = null;
+behavior._missileDefenseSignalTick = null;
+enemyB.gold = () => 1_500_000n;
+behavior.legendaryEmptyMissileDefenseContext = () => ({ threats: [] });
+forecastCalls = 0;
+assert.equal(
+  behavior.hasMissileDefenseSignal(),
+  false,
+  "Gold alone does not count as an active missile-defense forecast signal",
+);
+behavior.getMissileDefenseContext();
+assert.equal(forecastCalls, 0, "Gold alone avoids the expensive missile trajectory forecast");
+behavior.game.players = originalGamePlayersForSignalTest;
+behavior.game.units = originalGameUnitsForSignalTest;
+behavior._hostilePlayersSnapshotTick = null;
+behavior._missileDefenseSignalTick = null;
+behavior.legendaryEmptyMissileDefenseContext = originalEmptyMissileContext;
+enemyB.gold = originalEnemyBGoldForSignalTest;
+
+const originalEnemySilosGoldForCapacityTest = enemySilos.gold;
+enemySilos.gold = () => 1_500_000n;
+forecastTick = 300;
+forecastCalls = 0;
+behavior.getMissileDefenseContext();
+forecastTick = 301;
+enemySilos.gold = () => 1_500_001n;
+behavior.getMissileDefenseContext();
+assert.equal(
+  forecastCalls,
+  1,
+  "Small hostile gold changes do not invalidate the short forecast bucket",
+);
+forecastTick = 302;
+enemySilos.gold = () => 3_000_000n;
+behavior.getMissileDefenseContext();
+assert.equal(
+  forecastCalls,
+  2,
+  "A hostile gold change that adds an affordable missile refreshes the forecast",
+);
+enemySilos.gold = originalEnemySilosGoldForCapacityTest;
 
 let forecastTickSeen = null;
 const originalBuildableFor = behavior.buildableFor;
