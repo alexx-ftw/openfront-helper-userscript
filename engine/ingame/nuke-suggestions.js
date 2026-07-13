@@ -1777,6 +1777,19 @@
       return candidate;
     }
 
+    // Building-count geometry is only a fast candidate filter. Keep the
+    // refined target whenever the real scoring model says the shifted impact
+    // is not better for this objective.
+    const candidateScore = Number(candidate.totalScore);
+    const optimizedScore = Number(optimized.totalScore);
+    if (
+      Number.isFinite(candidateScore) &&
+      Number.isFinite(optimizedScore) &&
+      optimizedScore <= candidateScore
+    ) {
+      return candidate;
+    }
+
     return {
       ...optimized,
       buildingImpactAnchorTile: candidate.tile,

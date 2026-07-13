@@ -1,8 +1,11 @@
 // Shared nuke impact placement helpers.
 //
-// Candidates are deliberately restricted to existing building tiles. This
-// keeps the optimization legal on the map while preserving the original
-// target inside the same blast radius.
+// Keep the geometry search bounded: this helper is called for several scored
+// nuke candidates, so an unbounded pairwise/grid search would reintroduce the
+// frame stalls seen in large games.
+var MAX_NUKE_BUILDING_IMPACT_GEOMETRY_ENTRIES = 16;
+var MAX_NUKE_BUILDING_IMPACT_GENERATED_CANDIDATES = 256;
+var NUKE_BUILDING_IMPACT_LOCAL_STEPS = [1, 2, 4];
 
   function chooseMaxNukeBuildingImpactTile(
     game,
@@ -25,7 +28,8 @@
       entries.unshift({ tile: primaryTile });
     }
     var candidates = [];
-    var candidateKeys = {};
+    var candidateKeys = Object.create(null);
+    var generatedCandidateCount = 0;
 
     function tileKey(tile) {
       return String(tile);
@@ -41,6 +45,7 @@
       }
       candidateKeys[key] = true;
       candidates.push(tile);
+      return true;
     }
 
     function distanceSquared(tileA, tileB) {
@@ -64,9 +69,129 @@
       }
     }
 
+    function getTileCoordinates(tile) {
+      try {
+        if (typeof game?.x !== "function" || typeof game?.y !== "function") {
+          return null;
+        }
+        var x = Number(game.x(tile));
+        var y = Number(game.y(tile));
+        return Number.isFinite(x) && Number.isFinite(y) ? { tile, x, y } : null;
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    function addGeneratedCoordinateCandidate(x, y) {
+      if (
+        generatedCandidateCount >= MAX_NUKE_BUILDING_IMPACT_GENERATED_CANDIDATES ||
+        !Number.isFinite(x) ||
+        !Number.isFinite(y) ||
+        typeof game?.ref !== "function"
+      ) {
+        return;
+      }
+
+      var roundedX = Math.round(x);
+      var roundedY = Math.round(y);
+      try {
+        if (
+          typeof game?.isValidCoord === "function" &&
+          !game.isValidCoord(roundedX, roundedY)
+        ) {
+          return;
+        }
+        if (addCandidate(game.ref(roundedX, roundedY))) {
+          generatedCandidateCount++;
+        }
+      } catch (_error) {
+        // Some map implementations throw for coordinates outside the map.
+      }
+    }
+
+    function addMidpointCandidates(first, second) {
+      var midpointX = (first.x + second.x) / 2;
+      var midpointY = (first.y + second.y) / 2;
+      var xOptions = [Math.floor(midpointX), Math.ceil(midpointX)];
+      var yOptions = [Math.floor(midpointY), Math.ceil(midpointY)];
+      for (var xIndex = 0; xIndex < xOptions.length; xIndex++) {
+        for (var yIndex = 0; yIndex < yOptions.length; yIndex++) {
+          addGeneratedCoordinateCandidate(xOptions[xIndex], yOptions[yIndex]);
+        }
+      }
+    }
+
     addCandidate(primaryTile);
     for (var index = 0; index < entries.length; index++) {
       addCandidate(entries[index]?.tile);
+    }
+
+    // Existing building tiles preserve the old behavior. The additional
+    // geometry points let the blast center move into the middle of a cluster,
+    // where it can hit more structures than any single building tile.
+    var coordinateEntries = [];
+    for (var coordinateIndex = 0; coordinateIndex < entries.length; coordinateIndex++) {
+      var coordinateEntry = getTileCoordinates(entries[coordinateIndex]?.tile);
+      if (coordinateEntry) {
+        coordinateEntries.push(coordinateEntry);
+      }
+    }
+    coordinateEntries.sort(
+      (left, right) =>
+        distanceSquared(left.tile, primaryTile) - distanceSquared(right.tile, primaryTile),
+    );
+    var geometryEntries = coordinateEntries.slice(0, MAX_NUKE_BUILDING_IMPACT_GEOMETRY_ENTRIES);
+    var centroid = null;
+    if (geometryEntries.length > 0) {
+      var totalX = 0;
+      var totalY = 0;
+      for (var centroidIndex = 0; centroidIndex < geometryEntries.length; centroidIndex++) {
+        totalX += geometryEntries[centroidIndex].x;
+        totalY += geometryEntries[centroidIndex].y;
+      }
+      centroid = {
+        x: totalX / geometryEntries.length,
+        y: totalY / geometryEntries.length,
+      };
+      addGeneratedCoordinateCandidate(centroid.x, centroid.y);
+    }
+
+    var localAnchors = [];
+    var primaryCoordinates = getTileCoordinates(primaryTile);
+    if (primaryCoordinates) {
+      localAnchors.push(primaryCoordinates);
+    }
+    if (centroid) {
+      localAnchors.push(centroid);
+    }
+    var localDirections = [
+      [-1, 0],
+      [1, 0],
+      [0, -1],
+      [0, 1],
+      [-1, -1],
+      [-1, 1],
+      [1, -1],
+      [1, 1],
+    ];
+    for (var anchorIndex = 0; anchorIndex < localAnchors.length; anchorIndex++) {
+      var anchor = localAnchors[anchorIndex];
+      for (var stepIndex = 0; stepIndex < NUKE_BUILDING_IMPACT_LOCAL_STEPS.length; stepIndex++) {
+        var step = NUKE_BUILDING_IMPACT_LOCAL_STEPS[stepIndex];
+        for (var directionIndex = 0; directionIndex < localDirections.length; directionIndex++) {
+          var direction = localDirections[directionIndex];
+          addGeneratedCoordinateCandidate(
+            anchor.x + direction[0] * step,
+            anchor.y + direction[1] * step,
+          );
+        }
+      }
+    }
+
+    for (var firstIndex = 0; firstIndex < geometryEntries.length; firstIndex++) {
+      for (var secondIndex = firstIndex + 1; secondIndex < geometryEntries.length; secondIndex++) {
+        addMidpointCandidates(geometryEntries[firstIndex], geometryEntries[secondIndex]);
+      }
     }
 
     var bestTile = primaryTile;

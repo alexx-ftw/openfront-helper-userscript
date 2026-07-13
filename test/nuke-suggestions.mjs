@@ -95,6 +95,68 @@ assert.deepEqual(
   [2],
   "high-value nuke optimization should rescore the adjusted impact tile",
 );
+const lowerScoreBuildingImpactCandidate = sandbox.optimizeNukeSuggestionCandidateForBuildingImpact(
+  buildingImpactGame,
+  {
+    scoreMode: "economic",
+    magnitude: { outer: 30 },
+    structures: buildingImpactStructures,
+  },
+  { ...buildingImpactCandidate, totalScore: 20 },
+);
+assert.equal(
+  lowerScoreBuildingImpactCandidate.tile,
+  1,
+  "building-count geometry must not replace a refined target with a lower-score impact",
+);
+
+const intermediateBuildingImpactCandidate = { tile: 0, totalScore: 10 };
+const intermediateBuildingImpactStructures = [{ tile: 1200 }, { tile: 12 }];
+const intermediateBuildingImpactGame = {
+  ...game,
+  x: (tile) => Math.floor(tile / 100),
+  y: (tile) => tile % 100,
+  ref: (x, y) => x * 100 + y,
+  euclideanDistSquared: (a, b) => {
+    const dx = Math.floor(a / 100) - Math.floor(b / 100);
+    const dy = (a % 100) - (b % 100);
+    return dx ** 2 + dy ** 2;
+  },
+};
+const originalBuildingImpactScore = sandbox.scoreNukeSuggestionTile;
+const intermediateScoreCalls = [];
+sandbox.scoreNukeSuggestionTile = (_game, _context, tile) => {
+  intermediateScoreCalls.push(tile);
+  return {
+    ...intermediateBuildingImpactCandidate,
+    tile,
+    totalScore: tile === 606 ? 12 : 10,
+  };
+};
+try {
+  const optimizedIntermediateBuildingImpactCandidate =
+    sandbox.optimizeNukeSuggestionCandidateForBuildingImpact(
+      intermediateBuildingImpactGame,
+      {
+        scoreMode: "economic",
+        magnitude: { outer: 10 },
+        structures: intermediateBuildingImpactStructures,
+      },
+      intermediateBuildingImpactCandidate,
+    );
+  assert.equal(
+    optimizedIntermediateBuildingImpactCandidate.tile,
+    606,
+    "high-value nuke candidates should consider a midpoint between separated buildings",
+  );
+  assert.deepEqual(
+    intermediateScoreCalls,
+    [606],
+    "midpoint optimization should rescore the actual shifted impact coordinate",
+  );
+} finally {
+  sandbox.scoreNukeSuggestionTile = originalBuildingImpactScore;
+}
 
 function pendingSam(id) {
   return {
