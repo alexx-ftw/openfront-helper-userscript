@@ -74,6 +74,10 @@
   // A planned opening attack must leave a live force even when a stale plan or
   // a pending execution still reports the pre-attack troop total.
   const EARLY_GAME_MIN_LIVE_RESERVE_RATIO = 0.12;
+  // A Bot/tribe with more than 99 tiles needs one capture simulation per tile
+  // until the engine's conquerPlayer threshold is reached. Keep the expensive
+  // exact search bounded; larger targets are deferred instead of guessed.
+  const MAX_BOT_CAPTURE_SIMULATION_TILES = 512;
   // OpenFront's Config.attackLogic applies these effects when an operational
   // enemy Defense Post is within defensePostRange() of the tile being taken.
   // Keep fallbacks here because older client views may not expose the newer
@@ -260,6 +264,9 @@
       this.emojiBehavior = emojiBehavior;
 
       this.botAttackTroopsSent = 0;
+      this.botAttackTroopsSentTick = -1;
+      this.botAttackTroopsSentByTarget = new Map();
+      this.botAttackActiveBaselineByTarget = new Map();
       // Small per-player memory used by the early-game food-race policy. It is
       // intentionally local to this persistent behavior instance and bounded to
       // the players visible in the current game snapshot.
@@ -293,6 +300,48 @@
       } catch (_error) {
         return 0;
       }
+    }
+
+    ensureBotAttackAccounting() {
+      const tick = this.currentAttackDecisionTick();
+      if (this.botAttackTroopsSentTick !== tick) {
+        this.botAttackTroopsSentTick = tick;
+        this.botAttackTroopsSent = 0;
+        this.botAttackTroopsSentByTarget.clear();
+        this.botAttackActiveBaselineByTarget.clear();
+      }
+      return tick;
+    }
+
+    getBotAttackTargetKey(target) {
+      try {
+        const smallID = target?.smallID?.();
+        if (smallID != null) return `smallID:${smallID}`;
+        const id = target?.id?.();
+        if (id != null) return `id:${id}`;
+      } catch (_error) {
+        /* use the object identity as the final fallback */
+      }
+      return target;
+    }
+
+    getBotAttackTroopsSentForTarget(target) {
+      return Math.max(
+        0,
+        Number(this.botAttackTroopsSentByTarget.get(this.getBotAttackTargetKey(target)) || 0),
+      );
+    }
+
+    recordBotAttackTroopsSent(target, troops) {
+      if (!target?.isPlayer?.() || target.type?.() !== PlayerType.Bot) return;
+      const amount = Math.max(0, Number(troops) || 0);
+      if (amount <= 0) return;
+      const key = this.getBotAttackTargetKey(target);
+      this.botAttackTroopsSent += amount;
+      this.botAttackTroopsSentByTarget.set(
+        key,
+        this.getBotAttackTroopsSentForTarget(target) + amount,
+      );
     }
 
     resetEnemyDefensePostCaches() {
@@ -592,6 +641,10 @@
       if (this.player === null || this.allianceBehavior === undefined) {
         throw new Error("not initialized");
       }
+
+      // Keep successful emissions from this game tick separate from older
+      // decisions. Pending executions are read from outgoingAttacks() below.
+      this.ensureBotAttackAccounting();
 
       const border = Array.from(this.player.borderTiles())
         .flatMap((t) => this.game.neighbors(t))
@@ -2857,6 +2910,71 @@
       return total;
     }
 
+    getActiveBotAttackTroops(target = undefined) {
+      let attacks = [];
+      try {
+        attacks = this.player.outgoingAttacks?.() || [];
+      } catch (_error) {
+        attacks = [];
+      }
+      let total = 0;
+      const filterByTarget = target !== undefined;
+      const targetKey = filterByTarget
+        ? this.getBotAttackTargetKey(target)
+        : null;
+      for (const attack of attacks) {
+        try {
+          if (attack.retreating?.()) continue;
+          const attackTarget = attack.target?.();
+          if (
+            !attackTarget?.isPlayer?.() ||
+            attackTarget.type?.() !== PlayerType.Bot
+          ) {
+            continue;
+          }
+          if (
+            filterByTarget &&
+            this.getBotAttackTargetKey(attackTarget) !== targetKey
+          ) {
+            continue;
+          }
+          total += Math.max(0, Number(attack.troops?.() || 0));
+        } catch (_error) {
+          /* malformed/expired attack snapshots are ignored */
+        }
+      }
+      return total;
+    }
+
+    getBotAttackRequirement(
+      target,
+      defensePostProfile = null,
+      earlyGameCandidate = null,
+    ) {
+      const required = this.getBotCaptureTroopsFloor(
+        target,
+        defensePostProfile,
+        earlyGameCandidate,
+      );
+      const targetKey = this.getBotAttackTargetKey(target);
+      const activeNow = this.getActiveBotAttackTroops(target);
+      if (!this.botAttackActiveBaselineByTarget.has(targetKey)) {
+        this.botAttackActiveBaselineByTarget.set(targetKey, activeNow);
+      }
+      const activeBaseline = this.botAttackActiveBaselineByTarget.get(targetKey);
+      const active = Math.max(
+        activeNow,
+        activeBaseline + this.getBotAttackTroopsSentForTarget(target),
+      );
+      return {
+        required,
+        active,
+        remaining: Number.isFinite(required)
+          ? Math.max(0, required - active)
+          : Number.POSITIVE_INFINITY,
+      };
+    }
+
     getEarlyGameGenerationMultiplier() {
       // The custom bot is a Human player, so the formula helper is already
       // exact. If a future adapter exposes the live Config method, use its
@@ -3058,7 +3176,7 @@
         return false;
       }
 
-      this.botAttackTroopsSent = 0;
+      this.ensureBotAttackAccounting();
 
       const density = (p) => p.troops() / p.numTilesOwned();
       const ownsStructures = (p) =>
@@ -3474,6 +3592,7 @@
       earlyGameCandidate = null,
       plannedTroops = null,
     ) {
+      this.ensureBotAttackAccounting();
       if (!force && !this.shouldAttack(target)) return false;
 
       if (target.isPlayer()) {
@@ -3640,13 +3759,23 @@
       earlyGameCandidate = null,
       plannedTroops = null,
     ) {
+      this.ensureBotAttackAccounting();
       const maxTroops = this.game.config().maxTroops(this.player);
       const enemyDefensePostProfile = this.getEnemyDefensePostAttackProfile(
         target,
       );
+      const botTarget =
+        target.isPlayer() && target.type() === PlayerType.Bot;
+      const botAttackRequirement = botTarget
+        ? this.getBotAttackRequirement(
+            target,
+            enemyDefensePostProfile,
+            earlyGameCandidate,
+          )
+        : null;
+      if (botTarget && botAttackRequirement.remaining <= 0) return false;
       const botWithStructures =
-        target.isPlayer() &&
-        target.type() === PlayerType.Bot &&
+        botTarget &&
         target.units().some((u) => AttackStructures.has(u.type()));
       // Use the expand ratio when attacking a bot that owns structures — we need to
       // recapture those structures ASAP, even before reaching the normal reserve.
@@ -3660,15 +3789,13 @@
 
       let troops;
       const botAttackTroopsSentBefore = this.botAttackTroopsSent;
-      if (
-        target.isPlayer() &&
-        target.type() === PlayerType.Bot &&
-        this.player.type() !== PlayerType.Bot
-      ) {
+      if (botTarget && this.player.type() !== PlayerType.Bot) {
         troops = this.calculateBotAttackTroops(
           target,
           this.player.troops() - targetTroops - this.botAttackTroopsSent,
           enemyDefensePostProfile,
+          botAttackRequirement.active,
+          earlyGameCandidate,
         );
       } else {
         troops = this.player.troops() - targetTroops;
@@ -3681,9 +3808,6 @@
         reserveTroops: targetTroops + botAttackTroopsSentBefore,
         earlyGameCandidate,
       });
-      if (troops > baseTroops && target.type?.() === PlayerType.Bot) {
-        this.botAttackTroopsSent += troops - baseTroops;
-      }
 
       if (
         minCommitFraction != null &&
@@ -3699,39 +3823,33 @@
       // empire and would otherwise turn the first minute into a wait loop.
       if (plannedTroops != null && state.settings.winFixes) {
         const planned = Number(plannedTroops);
-        const botTarget =
-          target.isPlayer() && target.type?.() === PlayerType.Bot;
-        const captureFloor = botTarget
-          ? this.getBotCaptureTroopsFloor(
-              target,
-              enemyDefensePostProfile,
-              earlyGameCandidate,
-            )
-          : 0;
         if (!Number.isFinite(planned) || planned < 1) {
-          if (botTarget) {
-            this.botAttackTroopsSent = botAttackTroopsSentBefore;
-          }
           return false;
         }
-        if (botTarget && planned < captureFloor && this.player.troops() < captureFloor) {
-          this.botAttackTroopsSent = botAttackTroopsSentBefore;
+        const captureFloor = botAttackRequirement?.required || 0;
+        const remainingCaptureTroops = botAttackRequirement?.remaining || 0;
+        if (botTarget && !Number.isFinite(captureFloor)) return false;
+        if (botTarget && remainingCaptureTroops <= 0) return false;
+        const spendableTroops = Math.max(
+          0,
+          this.getEarlyGameSpendableTroops() -
+            (botTarget ? this.botAttackTroopsSent : 0),
+        );
+        if (botTarget && remainingCaptureTroops > spendableTroops) {
           return false;
         }
-        if (botTarget) {
-          this.botAttackTroopsSent = botAttackTroopsSentBefore;
-        }
-        const spendableTroops = this.getEarlyGameSpendableTroops();
-        if (botTarget && captureFloor > spendableTroops) {
-          return false;
-        }
-        // Never let a stale/undersized plan downgrade a tribal capture to a
-        // probe. If the calculated force is available, use it, but preserve a
-        // live reserve even when the current troop total is stale.
-        troops = Math.min(spendableTroops, Math.max(planned, captureFloor));
-        if (botTarget) {
-          this.botAttackTroopsSent += troops;
-        }
+        // `planned` is already the additional commitment from the Early Game
+        // planner. For a tribe, raise it only to the still-missing capture
+        // force; never resend the full requirement when part is in flight.
+        troops = Math.min(
+          spendableTroops,
+          Math.max(planned, botTarget ? remainingCaptureTroops : 0),
+        );
+      }
+
+      if (botTarget) {
+        if (!Number.isFinite(botAttackRequirement.required)) return false;
+        if (troops < botAttackRequirement.remaining) return false;
       }
 
       // A Defense Post multiplies the real per-tile attacker loss by five. Do
@@ -3768,8 +3886,10 @@
       if (ctors.attack && emitIntent(ctors.attack, targetId, troops)) {
         state.stats.attacks++;
         setLastAction(tr("⚔️ Attack"), "combat");
+        this.recordBotAttackTroopsSent(target, troops);
+        return true;
       }
-      return true;
+      return false;
     }
 
     // sendBoatAttack — AiAttackBehavior (private, now async).
@@ -3785,6 +3905,7 @@
       earlyGameCandidate = null,
       plannedTroops = null,
     ) {
+      this.ensureBotAttackAccounting();
       // Honour the panel's "boat" feature toggle (faithful boat attacks must obey
       // it too, not just the win-fix landings).
       if (!(state.settings.features && state.settings.features.boat)) {
@@ -3826,6 +3947,14 @@
       const botDefensePostProfile = botTarget
         ? this.getEnemyDefensePostAttackProfile(target)
         : null;
+      const botAttackRequirement = botTarget
+        ? this.getBotAttackRequirement(
+            target,
+            botDefensePostProfile,
+            earlyGameCandidate,
+          )
+        : null;
+      if (botTarget && botAttackRequirement.remaining <= 0) return false;
       let captureReserveTroops =
         this.game.config().maxTroops(this.player) *
         this.effectiveReserveRatio();
@@ -3844,6 +3973,8 @@
             captureReserveTroops -
             this.botAttackTroopsSent,
           botDefensePostProfile,
+          botAttackRequirement.active,
+          earlyGameCandidate,
         );
       } else if (state.settings.winFixes) {
         troops = this.getEarlyGameProbeTroops(state.settings.boatProbeFrac);
@@ -3860,9 +3991,6 @@
         reserveTroops: captureReserveTroops + botAttackTroopsSentBefore,
         earlyGameCandidate,
       });
-      if (troops > baseTroops && botTarget) {
-        this.botAttackTroopsSent += troops - baseTroops;
-      }
 
       // A maritime tribe is still a full capture target during the opening;
       // never downgrade the planner's complete-capture force to the global 1%
@@ -3870,36 +3998,36 @@
       // bot-accounting counter if the standard reserve calculation was skipped.
       if (plannedTroops != null && state.settings.winFixes) {
         const planned = Number(plannedTroops);
-        const captureFloor = botTarget
-          ? this.getBotCaptureTroopsFloor(
-              target,
-              botDefensePostProfile,
-              earlyGameCandidate,
-            )
-          : 0;
         if (!Number.isFinite(planned) || planned < 1) {
-          if (botTarget) this.botAttackTroopsSent = botAttackTroopsSentBefore;
           return false;
         }
-        if (botTarget && planned < captureFloor && this.player.troops() < captureFloor) {
-          this.botAttackTroopsSent = botAttackTroopsSentBefore;
+        const captureFloor = botAttackRequirement?.required || 0;
+        const remainingCaptureTroops = botAttackRequirement?.remaining || 0;
+        if (botTarget && !Number.isFinite(captureFloor)) return false;
+        if (botTarget && remainingCaptureTroops <= 0) return false;
+        const spendableTroops = Math.max(
+          0,
+          this.getEarlyGameSpendableTroops() -
+            (botTarget ? this.botAttackTroopsSent : 0),
+        );
+        if (botTarget && remainingCaptureTroops > spendableTroops) {
           return false;
         }
-        if (botTarget) this.botAttackTroopsSent = botAttackTroopsSentBefore;
-        const spendableTroops = this.getEarlyGameSpendableTroops();
-        if (botTarget && captureFloor > spendableTroops) {
-          return false;
-        }
-        // Planned early-game commitments must remain full tribal captures;
-        // otherwise the global boat-probe amount can leave a tiny remnant. A
-        // twelve-percent live reserve still applies to every planned landing.
-        troops = Math.min(spendableTroops, Math.max(planned, captureFloor));
-        if (botTarget) this.botAttackTroopsSent += troops;
+        // `planned` is already the additional commitment selected by the
+        // planner. Top up only the missing capture amount; never resend the
+        // full requirement when another boat is already in flight.
+        troops = Math.min(
+          spendableTroops,
+          Math.max(planned, botTarget ? remainingCaptureTroops : 0),
+        );
       }
 
       if (troops < 1) {
-        if (botTarget) this.botAttackTroopsSent = botAttackTroopsSentBefore;
         return false;
+      }
+      if (botTarget) {
+        if (!Number.isFinite(botAttackRequirement.required)) return false;
+        if (troops < botAttackRequirement.remaining) return false;
       }
 
       // DIVERGENCE (inert branch — kept VERBATIM): emoji gated on player type Nation;
@@ -3911,15 +4039,16 @@
 
       // src: game.addExecution(new TransportShipExecution(player, closest.y, troops)).
       if (!(await this.allowEarlyGameBoat(closest.y))) {
-        if (botTarget) this.botAttackTroopsSent = botAttackTroopsSentBefore;
         return false;
       }
       const ctors = discoverCtors(getEventBus());
       if (ctors.boat && emitIntent(ctors.boat, closest.y, troops)) {
         state.stats.attacks++;
         setLastAction(tr("⛵ Boat attack"), "naval");
+        this.recordBotAttackTroopsSent(target, troops);
+        return true;
       }
-      return true;
+      return false;
     }
 
     applyEarlyGameRaceTroops({
@@ -4030,7 +4159,16 @@
         1,
         Number(defensePostProfile?.attackCostMultiplier || 1),
       );
-      const captureTiles = 1;
+      const captureTiles =
+        typeof requiredTribeCaptureTiles === "function"
+          ? requiredTribeCaptureTiles(targetTiles, 1)
+          : Math.max(1, Math.ceil(targetTiles) - 99);
+      if (captureTiles > MAX_BOT_CAPTURE_SIMULATION_TILES) {
+        // There is no safe bounded estimate for a very large Bot. Returning
+        // Infinity makes every caller defer the attack until the target is
+        // smaller, rather than launching a knowingly incomplete assault.
+        return Number.POSITIVE_INFINITY;
+      }
       const terrainMagnitude = terrainAttackMagnitudeFromMapMagnitude(
         Number(earlyGameCandidate?.terrainMagnitude),
       );
@@ -4054,12 +4192,18 @@
           : ({ fallbackTroops: fallback } = {}) =>
               Math.max(1, Math.ceil(Number(fallback) || 1));
 
-      if (typeof attackLogic !== "function" || simulationTiles.length === 0) {
+      if (typeof attackLogic !== "function") {
         return estimate({
           targetTiles,
           captureTiles,
           fallbackTroops,
         });
+      }
+      if (simulationTiles.length === 0) {
+        // The live formula exists, but without a target front there is no
+        // terrain sequence to prove a complete capture against. Defer rather
+        // than use a partial fallback that can consume the whole assault.
+        return Number.POSITIVE_INFINITY;
       }
 
       const simulateAttack = (attackTroops, tilesToCapture) => {
@@ -4145,27 +4289,26 @@
     }
 
     // calculateBotAttackTroops — AiAttackBehavior (private).
-    calculateBotAttackTroops(target, maxTroops, defensePostProfile = null) {
-      // src: `const { difficulty } = this.game.config().gameConfig();` → REPLICATED.
-      const difficulty = currentDifficulty();
-      if (difficulty === Difficulty.Easy) {
-        this.botAttackTroopsSent += maxTroops;
-        return maxTroops;
-      }
-
+    calculateBotAttackTroops(
+      target,
+      maxTroops,
+      defensePostProfile = null,
+      activeAttackTroops = 0,
+      earlyGameCandidate = null,
+    ) {
       const captureTroops = this.getBotCaptureTroopsFloor(
         target,
         defensePostProfile,
+        earlyGameCandidate,
       );
       const available = Math.max(0, Number(maxTroops) || 0);
-      const troops =
-        captureTroops > 0
-          ? available >= captureTroops
-            ? captureTroops
-            : 0
-          : available;
-      this.botAttackTroopsSent += troops;
-      return troops;
+      if (captureTroops === Number.POSITIVE_INFINITY) return 0;
+      if (captureTroops > 0) {
+        const active = Math.max(0, Number(activeAttackTroops) || 0);
+        const remaining = Math.max(0, captureTroops - active);
+        return available >= remaining ? remaining : 0;
+      }
+      return available;
     }
 
     // donateTroops — AiAttackBehavior (private). No worker calls in src; the only

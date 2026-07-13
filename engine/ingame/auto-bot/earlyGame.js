@@ -87,6 +87,11 @@
         }
         return Math.max(1, Math.ceil(high));
       }
+
+      // A live attack-loss simulation is authoritative. If no force survives
+      // every required tile, do not fail open with a one-troop fallback: that
+      // creates an attack which can only leave a remnant and drain the reserve.
+      return Number.POSITIVE_INFINITY;
     }
 
     const fallback = Number(fallbackTroops);
@@ -537,6 +542,11 @@
     if (target === "tribe") {
       if (Number.isFinite(exactCaptureTroops) && exactCaptureTroops > 0) {
         requiredTroops = exactCaptureTroops;
+      } else {
+        // A tribe is an all-or-nothing target. Without an exact capture
+        // requirement, the planner has no safe basis for sending a partial
+        // force, so it must wait for the live attack simulation.
+        requiredTroops = Number.POSITIVE_INFINITY;
       }
       if (safeContestPressure > 0) {
         const tribeTroops = Math.max(1, Number(targetTroops) || 0);
@@ -547,6 +557,12 @@
       }
     }
     requiredTroops = Math.max(1, requiredTroops);
+    const remainingRequiredTroops =
+      target === "tribe"
+        ? Number.isFinite(requiredTroops)
+          ? Math.max(0, requiredTroops - active)
+          : Number.POSITIVE_INFINITY
+        : requiredTroops;
 
     const maxCommitFraction = initialBurst
       ? 0.6
@@ -560,16 +576,36 @@
             ? 0.72
           : 0.6;
     const plannedCommitCeiling = own * maxCommitFraction;
-    const minimumCommit = target === "tribe" ? requiredTroops : plannedCommitCeiling;
-    const commitTroops = initialBurst
-      ? Math.min(own, plannedCommitCeiling)
-      : Math.min(availableTroops, Math.max(plannedCommitCeiling, minimumCommit));
-    const hasFullTribeCommit = target !== "tribe" || commitTroops >= requiredTroops;
+    const minimumCommit =
+      target === "tribe" ? remainingRequiredTroops : plannedCommitCeiling;
+    let commitTroops = 0;
+    if (target === "tribe") {
+      if (initialBurst) {
+        // The opening burst is a single slot. Never add another burst while
+        // its troops are already in flight.
+        commitTroops = active > 0 ? 0 : Math.min(own, plannedCommitCeiling);
+      } else if (Number.isFinite(minimumCommit) && minimumCommit > 0) {
+        // For tribes the calculated requirement is the commitment. Do not
+        // replace it with a large percentage of the army; only top up what is
+        // missing from active attacks.
+        commitTroops = Math.min(availableTroops, minimumCommit);
+      }
+    } else {
+      commitTroops = initialBurst
+        ? Math.min(own, plannedCommitCeiling)
+        : Math.min(availableTroops, Math.max(plannedCommitCeiling, minimumCommit));
+    }
+    const hasFullTribeCommit =
+      target !== "tribe" ||
+      (Number.isFinite(requiredTroops) &&
+        active + commitTroops >= requiredTroops);
+    const hasRequiredCommit =
+      target === "tribe" ? hasFullTribeCommit : commitTroops >= requiredTroops;
     const shouldAttackNow =
       own >= 1 &&
-      (initialBurst || active <= 0) &&
-      commitTroops >= requiredTroops &&
-      hasFullTribeCommit;
+      (target === "tribe" || initialBurst || active <= 0) &&
+      (target !== "tribe" || remainingRequiredTroops > 0) &&
+      hasRequiredCommit;
 
     const afterCommit = Math.max(0, own - commitTroops);
     const recoveryTarget = Math.min(
@@ -630,6 +666,7 @@
       terrainLossPerTile,
       expectedTiles: tiles,
       requiredTroops,
+      remainingRequiredTroops,
       reserveTroops,
       availableTroops,
       activeAttackTroops: active,

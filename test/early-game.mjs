@@ -82,6 +82,15 @@ assert.equal(
   500,
   "capture sizing must use the supplied attack-loss simulation rather than a troop multiplier",
 );
+assert.equal(
+  sandbox.estimateTribeCaptureTroops({
+    targetTiles: 10,
+    simulateAttack: () => false,
+    fallbackTroops: 9999,
+  }),
+  Infinity,
+  "an impossible capture simulation must defer instead of falling back to one troop",
+);
 assert.ok(
   sandbox.estimateTroopRecoveryTicks({
     troops: 10000,
@@ -156,6 +165,53 @@ assert.equal(
   "an underfunded tribe attack must wait instead of leaving a remnant",
 );
 
+const topUpTribePlan = sandbox.calculateEarlyGameExpansionPlan({
+  ownTroops: 30000,
+  maxTroops: 100000,
+  targetType: "tribe",
+  targetTroops: 5000,
+  captureTroops: 750,
+  activeAttackTroops: 300,
+  opportunityUrgency: 1,
+});
+assert.equal(topUpTribePlan.remainingRequiredTroops, 450);
+assert.equal(topUpTribePlan.commitTroops, 450);
+assert.equal(
+  topUpTribePlan.shouldAttackNow,
+  true,
+  "a tribe with an underpowered attack in flight should receive only the missing force",
+);
+
+const completeActiveTribePlan = sandbox.calculateEarlyGameExpansionPlan({
+  ownTroops: 30000,
+  maxTroops: 100000,
+  targetType: "tribe",
+  targetTroops: 5000,
+  captureTroops: 750,
+  activeAttackTroops: 750,
+  opportunityUrgency: 1,
+});
+assert.equal(completeActiveTribePlan.remainingRequiredTroops, 0);
+assert.equal(completeActiveTribePlan.commitTroops, 0);
+assert.equal(
+  completeActiveTribePlan.shouldAttackNow,
+  false,
+  "a fully funded attack in flight must not be duplicated",
+);
+
+const unknownTribePlan = sandbox.calculateEarlyGameExpansionPlan({
+  ownTroops: 10000,
+  maxTroops: 100000,
+  targetType: "tribe",
+  targetTroops: 50000,
+  opportunityUrgency: 0,
+});
+assert.equal(
+  unknownTribePlan.shouldAttackNow,
+  false,
+  "a tribe without an exact capture requirement must not be treated as cheap",
+);
+
 const oversizedOpeningBurstPlan = sandbox.calculateEarlyGameExpansionPlan({
   ownTroops: 10000,
   maxTroops: 100000,
@@ -169,6 +225,21 @@ assert.equal(
   oversizedOpeningBurstPlan.shouldAttackNow,
   false,
   "the opening burst must not empty the player when the capture force is unavailable",
+);
+
+const duplicateOpeningBurstPlan = sandbox.calculateEarlyGameExpansionPlan({
+  ownTroops: 10000,
+  maxTroops: 100000,
+  targetType: "tribe",
+  targetTroops: 100,
+  captureTroops: 500,
+  activeAttackTroops: 100,
+  initialBurst: true,
+});
+assert.equal(
+  duplicateOpeningBurstPlan.shouldAttackNow,
+  false,
+  "an opening burst must not be repeated while its attack is active",
 );
 
 const assertAutoDonateStatus = (actual, expected) =>
