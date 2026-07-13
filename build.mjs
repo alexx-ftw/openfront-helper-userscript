@@ -151,7 +151,7 @@ function metadataHeader(version) {
   const repo = "https://github.com/nguyenvancaokyfpt/openfront-helper-userscript";
   const raw = `https://raw.githubusercontent.com/nguyenvancaokyfpt/openfront-helper-userscript/main/openfront-helper.user.js`;
   return `// ==UserScript==
-// @name         OpenFront Helper (userscript)
+// @name         OpenFront Helper (userscript) (CUSTOM)
 // @namespace    openfront-helper
 // @version      ${version}
 // @description  Auto-join lobbies + in-game helper overlays and a private-lobby auto-bot for OpenFront.io. Standalone userscript build with a multi-language UI.

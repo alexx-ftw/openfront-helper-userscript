@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         OpenFront Helper (userscript)
+// @name         OpenFront Helper (userscript) (CUSTOM)
 // @namespace    openfront-helper
 // @version      1.12.1
 // @description  Auto-join lobbies + in-game helper overlays and a private-lobby auto-bot for OpenFront.io. Standalone userscript build with a multi-language UI.
