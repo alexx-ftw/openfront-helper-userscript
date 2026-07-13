@@ -102,7 +102,6 @@ let teamGoldPerMinuteRenderSignature = "";
 let topGoldPerMinuteEnabled = false;
 let topGoldPerMinuteAnimationFrame = null;
 let lastTopGoldPerMinuteRenderAt = 0;
-let topGoldPerMinuteRenderSignature = "";
 let tradeBalancesEnabled = false;
 let tradeBalanceAnimationFrame = null;
 let lastProcessedTradeBalanceTick = null;
@@ -183,6 +182,7 @@ const ADVISOR_PANEL_ID = "openfront-helper-advisor-panel";
 const ADVISOR_PANEL_STYLE_ID = "openfront-helper-advisor-panel-styles";
 const ADVISOR_PANEL_POS_KEY = "openfront-helper-advisor-panel-pos";
 let advisorPanelEnabled = false;
+let advisorRenderSignature = "";
 
 // Quick Panel — compact tabbed floating control panel for fast settings + WS actions.
 const QUICK_PANEL_ID = "openfront-helper-quick-panel";

@@ -294,6 +294,15 @@
       this.placementsCount = 0;
       this._hasHighStartingGold = null;
       this._postSaveUpStartTick = null;
+      // Missile placement forecasts are shared by several Legendary and
+      // win-fix construction gates. Keep one snapshot per game tick so a
+      // single decision cannot rebuild the same trajectory model repeatedly.
+      this._missileDefenseContextTick = null;
+      this._missileDefenseContextKey = null;
+      this._missileDefenseContextCache = null;
+      this._missileDefenseEvaluationTick = null;
+      this._missileDefenseEvaluationContext = null;
+      this._missileDefenseEvaluationCache = null;
     }
 
     // ── core-semantics owned count (used wherever src uses unitsOwned) ──────────
@@ -912,11 +921,11 @@
     }
 
     legendaryMissileDefenseUrgent() {
-      const context = this.legendaryMissilePlacementContext();
+      const context = this.getMissileDefenseContext();
       if (!context || !Array.isArray(context.threats) || context.threats.length === 0) {
         return false;
       }
-      const evaluation = this.legendaryDefenseEvaluation(context);
+      const evaluation = this.getMissileDefenseEvaluation(context);
       if (evaluation.hasThreats && !evaluation.fullyDefended) {
         return true;
       }
@@ -1521,6 +1530,19 @@
         /* use the conservative one-tile-per-tick fallback */
       }
 
+      // The map and nuke speed are stable for the lifetime of a game, while a
+      // single defense forecast asks for the same source/target parabola from
+      // several planner branches. Keep one trajectory per pair so a large
+      // salvo does not turn every SAM candidate into another pathfinding pass.
+      if (!this._missileFlightPathCache) {
+        this._missileFlightPathCache = new Map();
+      }
+      const cacheKey = `${String(fromTile)}:${String(targetTile)}:${String(speed)}`;
+      const cachedPath = this._missileFlightPathCache.get(cacheKey);
+      if (cachedPath) return cachedPath;
+
+      let path = [];
+
       try {
         if (
           typeof UniversalPathFinding !== "undefined" &&
@@ -1531,18 +1553,22 @@
             distanceBasedHeight: true,
             directionUp: true,
           });
-          const path = pathFinder.findPath(fromTile, targetTile) ?? [];
-          if (path.length > 0) return path;
+          path = pathFinder.findPath(fromTile, targetTile) ?? [];
         }
       } catch (_error) {
         /* fall through to the geometry fallback */
+      }
+
+      if (path.length > 0) {
+        this._missileFlightPathCache.set(cacheKey, path);
+        return path;
       }
 
       const distance = Math.sqrt(
         this.game.euclideanDistSquared(fromTile, targetTile),
       );
       const steps = Math.max(1, Math.ceil(distance / speed));
-      const path = [fromTile];
+      path = [fromTile];
       try {
         const fromX = this.game.x(fromTile);
         const fromY = this.game.y(fromTile);
@@ -1559,6 +1585,7 @@
         /* use the endpoints when the map geometry is unavailable */
       }
       if (path[path.length - 1] !== targetTile) path.push(targetTile);
+      this._missileFlightPathCache.set(cacheKey, path);
       return path;
     }
 
@@ -2036,8 +2063,35 @@
         targetTile,
         impactTick: Number(impactTick),
         launchOffset,
+        // Keep the already computed trajectory with the route. SAM upgrade
+        // evaluations change only interceptor profiles; they must not run the
+        // parabola pathfinder again for every candidate SAM.
+        path,
         samOptions,
       };
+    }
+
+    legendaryRebuildMissileRoutes(routes, samProfiles) {
+      if (!Array.isArray(routes)) return null;
+      const rebuilt = [];
+      for (const route of routes) {
+        if (!route || !Array.isArray(route.path) || route.path.length === 0) {
+          return null;
+        }
+        rebuilt.push(
+          this.legendaryBuildMissileRoute(
+            route.fromTile,
+            route.targetTile,
+            route.impactTick,
+            samProfiles,
+            route.launchOffset ?? 0,
+            route.weapon ?? null,
+            route.id ?? null,
+            route.path,
+          ),
+        );
+      }
+      return rebuilt;
     }
 
     // The client keeps exact server motion plans for active nukes. Prefer that
@@ -2119,6 +2173,18 @@
           forecastComplete: true,
         };
       } else {
+        const cachedRoutes = threat.salvoPlan?.routes;
+        const rebuiltRoutes = this.legendaryRebuildMissileRoutes(
+          cachedRoutes,
+          samProfiles,
+        );
+        if (rebuiltRoutes !== null) {
+          return {
+            routes: rebuiltRoutes,
+            samProfiles,
+            forecastComplete: threat.salvoPlan.forecastComplete !== false,
+          };
+        }
         const plan = this.legendaryMissileSalvoPlan(
           threat.enemySilos || [],
           threat.enemyGold ?? 0n,
@@ -2182,6 +2248,29 @@
         schedule.inconclusive = true;
       }
       return schedule;
+    }
+
+    getMissileDefenseEvaluation(context) {
+      const tick =
+        typeof this.game?.ticks === "function"
+          ? Number(this.game.ticks())
+          : null;
+      if (
+        Number.isFinite(tick) &&
+        this._missileDefenseEvaluationTick === tick &&
+        this._missileDefenseEvaluationContext === context &&
+        this._missileDefenseEvaluationCache !== null
+      ) {
+        return this._missileDefenseEvaluationCache;
+      }
+
+      const evaluation = this.legendaryDefenseEvaluation(context);
+      if (Number.isFinite(tick)) {
+        this._missileDefenseEvaluationTick = tick;
+        this._missileDefenseEvaluationContext = context;
+        this._missileDefenseEvaluationCache = evaluation;
+      }
+      return evaluation;
     }
 
     legendaryDefenseEvaluation(context, options = {}) {
@@ -2312,7 +2401,7 @@
     }
 
     legendaryMissileDefenseNeedsAction(context) {
-      const evaluation = this.legendaryDefenseEvaluation(context);
+      const evaluation = this.getMissileDefenseEvaluation(context);
       return Boolean(
         evaluation.hasThreats &&
           !evaluation.fullyDefended,
@@ -2354,7 +2443,7 @@
       // same SAM slot while this placement filter decides whether a productive
       // tile is still inside an actually un-interceptable blast.
       const evaluation =
-        evaluationOverride || this.legendaryDefenseEvaluation(context);
+        evaluationOverride || this.getMissileDefenseEvaluation(context);
       for (const schedule of evaluation.schedules || []) {
         const threat = schedule.threat;
         if (!schedule || schedule.fullyDefended) continue;
@@ -2538,6 +2627,7 @@
             completionTick: actionCompletionTick,
           }),
           routes: [],
+          sourceMetrics: [],
           samProfiles: samProfilesOverride || [],
         };
       }
@@ -2611,12 +2701,28 @@
           ),
         );
       }
-      const interceptionCapacity = enemySilos.reduce(
-        (total, silo) =>
-          total + this.legendarySamInterceptionCapacity(
-            silo.tile(),
+      const launchFlightTimes = new Map();
+      for (const launch of launches) {
+        if (!launchFlightTimes.has(launch.silo)) {
+          launchFlightTimes.set(launch.silo, launch.flightTicks);
+        }
+      }
+      const sourceMetrics = enemySilos.map((silo) => {
+        const fromTile = silo.tile();
+        return {
+          silo,
+          fromTile,
+          flightTimeTicks:
+            launchFlightTimes.get(silo) ??
+            this.legendaryNukeFlightTime(fromTile, targetTile),
+          interceptionCapacity: this.legendarySamInterceptionCapacity(
+            fromTile,
             targetTile,
           ),
+        };
+      });
+      const interceptionCapacity = sourceMetrics.reduce(
+        (total, source) => total + source.interceptionCapacity,
         0,
       );
       const samCooldownTicks = this.legendarySamCooldownTicks();
@@ -2661,6 +2767,7 @@
         risk,
         schedule,
         routes,
+        sourceMetrics,
         samProfiles,
       };
     }
@@ -2803,6 +2910,165 @@
       return threats;
     }
 
+    missileDefenseStateFingerprint() {
+      const parts = [];
+      const read = (fn, fallback = "") => {
+        try {
+          const value = fn();
+          return value === null || value === undefined ? fallback : value;
+        } catch (_error) {
+          return fallback;
+        }
+      };
+      const unitFingerprint = (unit) => {
+        const id = read(() => unit.id?.(), "");
+        const tile = read(() => unit.tile?.(), "");
+        const level = read(() => unit.level?.(), "");
+        const underConstruction = read(
+          () => (unit.isUnderConstruction?.() ? 1 : 0),
+          0,
+        );
+        const active = read(() => unit.isActive?.(), "");
+        const queue = read(
+          () => {
+            const raw = unit.missileTimerQueue?.();
+            return Array.isArray(raw) ? raw.map(String).join(",") : "";
+          },
+          "",
+        );
+        return [id, tile, level, underConstruction, active, queue]
+          .map(String)
+          .join(":");
+      };
+      const collectUnits = (label, owner, types) => {
+        const fingerprints = [];
+        for (const type of types) {
+          const units = read(() => owner.units(type), []);
+          if (!Array.isArray(units)) continue;
+          for (const unit of units) {
+            if (unit) fingerprints.push(`${String(type)}=${unitFingerprint(unit)}`);
+          }
+        }
+        fingerprints.sort();
+        parts.push(`${label}[${fingerprints.join(",")}]`);
+      };
+
+      const mySid = read(() => this.player.smallID(), "");
+      collectUnits("own-structures", this.player, [
+        UNIT.City,
+        UNIT.Factory,
+        UNIT.Port,
+        UNIT.MissileSilo,
+      ]);
+      collectUnits("own-sams", this.player, [UNIT.SAMLauncher]);
+
+      const hostilePlayers = [];
+      const friendlyPlayers = [];
+      for (const other of read(() => this.game.players(), [])) {
+        if (!other) continue;
+        const sid = read(() => other.smallID(), "");
+        if (String(sid) === String(mySid)) continue;
+        let friendly = false;
+        try {
+          friendly =
+          this.player.isFriendly(other) || this.player.isOnSameTeam(other);
+        } catch (_error) {
+          friendly = false;
+        }
+        if (friendly) {
+          friendlyPlayers.push(other);
+          continue;
+        }
+        hostilePlayers.push(other);
+      }
+      friendlyPlayers.sort((left, right) =>
+        String(read(() => left.smallID(), "")).localeCompare(
+          String(read(() => right.smallID(), "")),
+        ),
+      );
+      for (const ally of friendlyPlayers) {
+        const sid = read(() => ally.smallID(), "");
+        collectUnits(`friendly-${String(sid)}-sams`, ally, [UNIT.SAMLauncher]);
+      }
+      hostilePlayers.sort((left, right) =>
+        String(read(() => left.smallID(), "")).localeCompare(
+          String(read(() => right.smallID(), "")),
+        ),
+      );
+      for (const enemy of hostilePlayers) {
+        const sid = read(() => enemy.smallID(), "");
+        const gold = read(() => enemy.gold(), "");
+        parts.push(`enemy=${String(sid)}:gold=${String(gold)}`);
+        collectUnits(`enemy-${String(sid)}-silos`, enemy, [UNIT.MissileSilo]);
+      }
+
+      const activeMissiles = read(
+        () => this.game.units(UNIT.AtomBomb, UNIT.HydrogenBomb),
+        [],
+      );
+      const missileFingerprints = [];
+      if (Array.isArray(activeMissiles)) {
+        for (const missile of activeMissiles) {
+          if (!missile) continue;
+          missileFingerprints.push(
+            [
+              read(() => missile.id?.(), ""),
+              read(() => missile.type?.(), ""),
+              read(() => missile.owner?.()?.smallID?.(), ""),
+              read(() => missile.tile?.(), ""),
+              read(() => missile.targetTile?.(), ""),
+              read(() => missile.isActive?.(), ""),
+            ]
+              .map(String)
+              .join(":"),
+          );
+        }
+      }
+      missileFingerprints.sort();
+      parts.push(`active-missiles[${missileFingerprints.join(",")}]`);
+      return parts.join("|");
+    }
+
+    missileDefenseSnapshotIsCurrent(expectedTick, expectedStateKey) {
+      const currentTick = Number(this.game?.ticks?.());
+      if (
+        Number.isFinite(expectedTick) &&
+        Number.isFinite(currentTick) &&
+        currentTick !== expectedTick
+      ) {
+        return false;
+      }
+      return (
+        expectedStateKey === null ||
+        expectedStateKey === undefined ||
+        this.missileDefenseStateFingerprint() === expectedStateKey
+      );
+    }
+
+    getMissileDefenseContext() {
+      const tick =
+        typeof this.game?.ticks === "function"
+          ? Number(this.game.ticks())
+          : null;
+      const stateKey = this.missileDefenseStateFingerprint();
+      const cacheKey = Number.isFinite(tick) ? `${tick}|${stateKey}` : null;
+      if (
+        cacheKey !== null &&
+        this._missileDefenseContextKey === cacheKey &&
+        this._missileDefenseContextCache !== null
+      ) {
+        return this._missileDefenseContextCache;
+      }
+
+      const context = this.legendaryMissilePlacementContext();
+      if (Number.isFinite(tick)) {
+        this._missileDefenseContextTick = tick;
+        this._missileDefenseContextKey = cacheKey;
+        this._missileDefenseContextCache = context;
+      }
+      return context;
+    }
+
     legendaryMissilePlacementContext() {
       const config = this.game.config();
       const atomCost = config.isUnitDisabled(UNIT.AtomBomb)
@@ -2880,15 +3146,20 @@
             atomCost,
             hydrogenCost,
           );
+          const sourceMetrics = new Map(
+            (salvoPlan.sourceMetrics || []).map((source) => [source.silo, source]),
+          );
           for (const silo of enemySilos) {
-            const flightTimeTicks = this.legendaryNukeFlightTime(
-              silo.tile(),
-              target.tile(),
-            );
-            const interceptionCapacity = this.legendarySamInterceptionCapacity(
-              silo.tile(),
-              target.tile(),
-            );
+            const source = sourceMetrics.get(silo);
+            const flightTimeTicks =
+              source?.flightTimeTicks ??
+              this.legendaryNukeFlightTime(silo.tile(), target.tile());
+            const interceptionCapacity =
+              source?.interceptionCapacity ??
+              this.legendarySamInterceptionCapacity(
+                silo.tile(),
+                target.tile(),
+              );
             const threat = legendaryMissileThreatScore({
               enemySilos: enemySilos.map((unit) => ({ level: unit.level() })),
               enemyGold,
@@ -3006,18 +3277,67 @@
         }
         const totalValue = context.totalValue + candidateValue;
         const exposure = Math.min(1, exposedValue / Math.max(1, totalValue));
-        const salvoPlan = this.legendaryMissileSalvoPlan(
+        // This method only ranks candidate placement tiles. The full salvo
+        // scheduler is reserved for hard safety gates; rebuilding it for each
+        // of 25 sampled tiles caused a large synchronous stall in Legendary.
+        // Reuse the existing threat's shot count and compute only the cheap
+        // launch/capacity proxy needed by the placement score.
+        const sourcePlan = threat.salvoPlan || {};
+        const plannedAtomCount = Array.isArray(sourcePlan.atomArrivalTicks)
+          ? sourcePlan.atomArrivalTicks.length
+          : 0;
+        const plannedHydrogenCount =
+          sourcePlan.hydrogenArrivalTick === null ||
+          sourcePlan.hydrogenArrivalTick === undefined
+            ? 0
+            : 1;
+        const plannedRouteCount = Array.isArray(sourcePlan.routes)
+          ? sourcePlan.routes.length
+          : 0;
+        const shotCount = Math.max(
+          1,
+          plannedAtomCount + plannedHydrogenCount,
+          plannedRouteCount,
+        );
+        const launches = this.legendaryEnemyMissileLaunchPlan(
           threat.enemySilos || [],
-          threat.enemyGold,
           tile,
-          context.atomCost,
-          context.hydrogenCost,
+          shotCount,
         );
-        const flightTimes = (threat.enemySilos || []).map((silo) =>
-          this.legendaryNukeFlightTime(silo.tile(), tile),
+        if (launches.length === 0) continue;
+        const hasHydrogen =
+          threat.weapon === UNIT.HydrogenBomb || plannedHydrogenCount > 0;
+        const atomArrivalTicks = [];
+        let hydrogenArrivalTick = null;
+        for (let index = 0; index < launches.length; index++) {
+          const launch = launches[index];
+          if (hasHydrogen && index === launches.length - 1) {
+            hydrogenArrivalTick = launch.impactTick;
+          } else {
+            atomArrivalTicks.push(launch.impactTick);
+          }
+        }
+        let interceptionCapacity = 0;
+        for (const silo of threat.enemySilos || []) {
+          interceptionCapacity += this.legendarySamInterceptionCapacity(
+            silo.tile(),
+            tile,
+          );
+        }
+        const salvoRisk = legendaryMissileSalvoRisk({
+          atomArrivalTicks,
+          hydrogenArrivalTick,
+          interceptionCapacity,
+          samCooldownTicks: this.legendarySamCooldownTicks(),
+          marginTicks: LEGENDARY_SAM_IMPACT_MARGIN_TICKS,
+          readyShots: sourcePlan.readyShots ?? 0,
+          routes: null,
+          samProfiles: [],
+          completionTick: 0,
+        });
+        const nearestFlightTime = Math.min(
+          ...launches.map((launch) => launch.flightTicks ?? launch.impactTick),
         );
-        if (flightTimes.length === 0) continue;
-        const nearestFlightTime = Math.min(...flightTimes);
         const risk = legendaryMissileThreatScore({
           enemySilos: (threat.enemySilos || []).map((unit) => ({
             level: unit.level(),
@@ -3034,9 +3354,9 @@
             1,
             context.hydrogenRadius * context.hydrogenRadius,
           ),
-          interceptionCapacity: salvoPlan.interceptionCapacity,
-          readyShots: salvoPlan.readyShots,
-          salvoRisk: salvoPlan.risk,
+          interceptionCapacity,
+          readyShots: sourcePlan.readyShots ?? 0,
+          salvoRisk,
         });
         worstRisk = Math.max(worstRisk, risk.score);
       }
@@ -3048,7 +3368,7 @@
       const ports = this.player.units(UNIT.Port);
       const factories = this.player.units(UNIT.Factory);
       const enemySilos = this.enemyMissileSiloPressure();
-      const missileThreat = this.legendaryMissilePlacementContext();
+      const missileThreat = this.getMissileDefenseContext();
       const rail = this.legendaryRailMetrics(cities, ports, factories);
       const hostile = this.legendaryHostilePlayers();
       const ownSiloLevels = this.ownedLevels(UNIT.MissileSilo);
@@ -3460,7 +3780,7 @@
       const legendaryMissileEmergency =
         isLegendaryDifficulty() &&
         this.legendaryMissileDefenseNeedsAction(
-          this.legendaryMissilePlacementContext(),
+          this.getMissileDefenseContext(),
         );
 
       // Check if we should upgrade instead of building new
@@ -3660,18 +3980,13 @@
       } catch (_error) {
         /* keep the buildable probe as the compatibility fallback */
       }
-      const context = this.legendaryMissilePlacementContext();
-      if (!context || !Array.isArray(context.threats) || context.threats.length === 0) {
-        return false;
-      }
-      const currentEvaluation = this.legendaryDefenseEvaluation(context);
-      const currentMargin = currentEvaluation.fullyDefended
-        ? currentEvaluation.completionMarginTicks
-        : 0;
-      const urgent =
-        currentEvaluation.hasThreats &&
-        !currentEvaluation.fullyDefended;
-      if (!urgent) return false;
+      const samUnits = this.player.units(UNIT.SAMLauncher) || [];
+      const upgradeableSamUnits = samUnits.filter(
+        (sam) =>
+          !sam.isUnderConstruction() &&
+          (!sam.isActive || sam.isActive() !== false),
+      );
+      if (upgradeableSamUnits.length === 0) return false;
 
       let reserve = 0n;
       try {
@@ -3681,12 +3996,25 @@
       }
       const availableGold =
         this.player.gold() > reserve ? this.player.gold() - reserve : 0n;
-      const currentCapacity = this.legendaryMinimumSamInterceptionCapacity(context);
-      const currentUnintercepted = currentEvaluation.uninterceptedCount;
-      const candidates = [];
+      // The formula is a cheap lower bound. Keep the early exit for clearly
+      // unaffordable upgrades, then use BuildableUnit.cost as the final live
+      // price before forecasting.
+      let minimumUpgradeCost = 0n;
+      try {
+        minimumUpgradeCost = this.cost(UNIT.SAMLauncher);
+      } catch (_error) {
+        minimumUpgradeCost = 0n;
+      }
+      if (availableGold < minimumUpgradeCost) return false;
 
-      for (const sam of this.player.units(UNIT.SAMLauncher)) {
-        if (sam.isUnderConstruction()) continue;
+      // Probe buildability and the real next-upgrade cost before entering the
+      // synchronous forecast. This keeps an unaffordable SAM from waking the
+      // full enemy-silo/trajectory planner on every structure tick. The
+      // forecast is deliberately obtained only after these awaits finish, so
+      // it cannot be older than the asynchronous buildable probes.
+      const upgradeCandidates = [];
+
+      for (const sam of upgradeableSamUnits) {
         const bu = await this.buildableFor(UNIT.SAMLauncher, sam.tile());
         if (bu === null || bu.canUpgrade === false) continue;
         let cost = this.cost(UNIT.SAMLauncher);
@@ -3699,6 +4027,34 @@
 
         const nextLevel = Math.max(1, Number(sam.level() || 1) + 1);
         const overrides = new Map([[sam.id(), nextLevel]]);
+        upgradeCandidates.push({ sam, bu, cost, nextLevel, overrides });
+      }
+      if (upgradeCandidates.length === 0) return false;
+
+      const context = this.getMissileDefenseContext();
+      if (
+        !context ||
+        !Array.isArray(context.threats) ||
+        context.threats.length === 0
+      ) {
+        return false;
+      }
+      const currentEvaluation = this.getMissileDefenseEvaluation(context);
+      const currentMargin = currentEvaluation.fullyDefended
+        ? currentEvaluation.completionMarginTicks
+        : 0;
+      const urgent =
+        currentEvaluation.hasThreats &&
+        !currentEvaluation.fullyDefended;
+      if (!urgent) return false;
+
+      const currentCapacity =
+        this.legendaryMinimumSamInterceptionCapacity(context);
+      const currentUnintercepted = currentEvaluation.uninterceptedCount;
+      const candidates = [];
+
+      for (const candidate of upgradeCandidates) {
+        const { sam, bu, cost, overrides } = candidate;
         // Upgrades are instant in the engine. Keep the five-tick safety margin,
         // but accept a material intermediate improvement: a high-level enemy
         // silo salvo can require several upgrades before it is fully covered.
@@ -3937,9 +4293,12 @@
       let emergencyProductiveDefense = false;
       let emergencyMissileContext = null;
       let emergencyMissileEvaluation = null;
+      let emergencyMissileTick = null;
+      let emergencyMissileStateKey = null;
       if (isLegendaryDifficulty()) {
-        emergencyMissileContext = this.legendaryMissilePlacementContext();
-        emergencyMissileEvaluation = this.legendaryDefenseEvaluation(
+        emergencyMissileTick = Number(this.game.ticks?.());
+        emergencyMissileContext = this.getMissileDefenseContext();
+        emergencyMissileEvaluation = this.getMissileDefenseEvaluation(
           emergencyMissileContext,
         );
         emergencyProductiveDefense =
@@ -3947,6 +4306,9 @@
           !emergencyMissileEvaluation.fullyDefended;
         emergencySamDefense =
           type === UNIT.SAMLauncher && emergencyProductiveDefense;
+        if (emergencyProductiveDefense) {
+          emergencyMissileStateKey = this.missileDefenseStateFingerprint();
+        }
       }
 
       // Score all candidates synchronously, then sort DESC by value.
@@ -3955,6 +4317,18 @@
 
       // Probe down the ranked list; first canBuild !== false wins.
       for (const { t } of scored) {
+        if (
+          emergencyProductiveDefense &&
+          !this.missileDefenseSnapshotIsCurrent(
+            emergencyMissileTick,
+            emergencyMissileStateKey,
+          )
+        ) {
+          // The safety forecast was captured before an async buildable probe.
+          // Abort rather than place a structure using an older missile/SAM
+          // snapshot; the next bot tick will rank against fresh state.
+          return null;
+        }
         if (
           emergencySamDefense &&
           !this.legendarySamConstructionSafeForTile(t, emergencyMissileContext)
@@ -3973,6 +4347,17 @@
           continue;
         }
         const bu = await this.buildableFor(type, t);
+        if (
+          emergencyProductiveDefense &&
+          !this.missileDefenseSnapshotIsCurrent(
+            emergencyMissileTick,
+            emergencyMissileStateKey,
+          )
+        ) {
+          // The probe may have crossed a game tick or changed a friendly SAM.
+          // Do not emit a buildable result based on the stale safety snapshot.
+          return null;
+        }
         if (bu !== null && bu.canBuild !== false) {
           return bu;
         }
@@ -4064,7 +4449,7 @@
 
     legendaryStructureSpawnTileValue(type) {
       const baseValue = this.structureSpawnTileValue(type);
-      const missileContext = this.legendaryMissilePlacementContext();
+      const missileContext = this.getMissileDefenseContext();
       const spacing = this.spacingConstants().structureSpacing;
       const allyPlacementContext = this.legendaryAllyPlacementContext();
       const teamCenterContext = this.legendaryTeamCenterPlacementContext();
@@ -4173,7 +4558,7 @@
         score +
         this.legendarySamImpactMarginScore(
           tile,
-          missileContext || this.legendaryMissilePlacementContext(),
+          missileContext || this.getMissileDefenseContext(),
           1,
         )
       );

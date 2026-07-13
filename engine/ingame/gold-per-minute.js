@@ -554,7 +554,7 @@
         apsExpanded = !apsExpanded;
         saveApsExpanded();
         expandBtn.textContent = apsExpanded ? "−" : "+";
-        topGoldPerMinuteRenderSignature = ""; // force a structural rebuild
+        apsRenderedOrderSig = ""; // force a structural rebuild
         updateTopGoldPerMinuteBadge();
       });
       header.append(title, expandBtn);
@@ -886,6 +886,7 @@
   }
   let apsRenderedExpanded = null; // last grid/header structure rendered
   let apsRenderedSortSig = ""; // last sort state baked into the header arrows
+  let apsRenderedOrderSig = ""; // last keyed row order appended to the grid
   let apsHeaderCells = null;
   let apsFooterEntry = null; // pinned bottom row mirroring the hovered nation
   const apsRowCache = new Map(); // smallId -> { row, cells:{key:el} }
@@ -1206,21 +1207,37 @@
 
   function updateApsRow(entry, row, rank, game, hoveredId) {
     const c = entry.cells;
-    if (c.rank) c.rank.textContent = String(rank + 1);
+    if (c.rank && c.rank.textContent !== String(rank + 1)) {
+      c.rank.textContent = String(rank + 1);
+    }
     if (c.name) {
-      c.name.textContent = row.disconnected ? `${row.name} 💤` : row.name;
+      const name = row.disconnected ? `${row.name} 💤` : row.name;
+      if (c.name.textContent !== name) c.name.textContent = name;
       const color = row.color || (row.team ? getTeamColor(row.team, game) : "");
       if (color) c.name.style.setProperty("--team-accent-color", color);
       else c.name.style.removeProperty("--team-accent-color");
     }
-    if (c.owned) c.owned.textContent = apsFormatOwned(row.owned, game);
-    if (c.gold) c.gold.textContent = apsFormatNum(row.gold);
-    if (c.gpm) c.gpm.textContent = apsFormatGpm(row.gpm);
-    if (c.maxTroops) c.maxTroops.textContent = apsFormatNum(row.maxTroops);
+    if (c.owned) {
+      const owned = apsFormatOwned(row.owned, game);
+      if (c.owned.textContent !== owned) c.owned.textContent = owned;
+    }
+    if (c.gold) {
+      const gold = apsFormatNum(row.gold);
+      if (c.gold.textContent !== gold) c.gold.textContent = gold;
+    }
+    if (c.gpm) {
+      const gpm = apsFormatGpm(row.gpm);
+      if (c.gpm.textContent !== gpm) c.gpm.textContent = gpm;
+    }
+    if (c.maxTroops) {
+      const maxTroops = apsFormatNum(row.maxTroops);
+      if (c.maxTroops.textContent !== maxTroops) c.maxTroops.textContent = maxTroops;
+    }
     if (row.counts) {
       for (const s of APS_STRUCTURES) {
         const cell = c[s.type];
-        if (cell) cell.textContent = String(row.counts[s.type] || 0);
+        const count = String(row.counts[s.type] || 0);
+        if (cell && cell.textContent !== count) cell.textContent = count;
       }
     }
     entry.row.classList.toggle("is-self", Boolean(row.isMe));
@@ -1388,6 +1405,10 @@
       apsRenderedSortSig = sortSig;
     }
 
+    const rowOrderSig = rows.map((row) => row.smallId).join(",");
+    const rowOrderChanged = apsRenderedOrderSig !== rowOrderSig;
+    apsRenderedOrderSig = rowOrderSig;
+
     // Keyed per-row reconciliation; appended in sorted order (after the header).
     const seen = new Set();
     for (let i = 0; i < rows.length; i += 1) {
@@ -1395,7 +1416,7 @@
       seen.add(row.smallId);
       const entry = getApsRowEntry(table, row, columns);
       updateApsRow(entry, row, i, game, hoveredId);
-      table.appendChild(entry.row);
+      if (rowOrderChanged) table.appendChild(entry.row);
     }
     for (const [smallId, entry] of apsRowCache) {
       if (!seen.has(smallId)) {
@@ -1407,7 +1428,9 @@
     // Pinned bottom row = the hovered nation's stats, so you can read it without
     // scrolling to find its row. Hidden when nothing is hovered.
     const footer = getApsFooter(table, columns);
-    table.appendChild(footer.row); // keep it last so sticky-bottom works
+    if (table.lastElementChild !== footer.row) {
+      table.appendChild(footer.row); // keep it last so sticky-bottom works
+    }
     const hoveredRow =
       hoveredId !== null ? rows.find((r) => r.smallId === hoveredId) : null;
     if (hoveredRow) {
@@ -1559,7 +1582,7 @@
     if (!topGoldPerMinuteEnabled) {
       topGoldPerMinuteAnimationFrame = null;
       lastTopGoldPerMinuteRenderAt = 0;
-      topGoldPerMinuteRenderSignature = "";
+      apsRenderedOrderSig = "";
       if (
         !goldPerMinuteEnabled &&
         !economyHeatmapEnabled &&

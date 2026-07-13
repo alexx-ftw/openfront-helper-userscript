@@ -115,11 +115,12 @@ const enemyC = {
   units: (type) =>
     type === UNIT.SAMLauncher ? [makeUnit(401, 9, { underConstruction: true })] : [],
 };
+let enemyTeamSamLevel = 12;
 const enemyTeam = {
   smallID: () => 5,
   isPlayer: () => true,
   isAlive: () => true,
-  units: (type) => (type === UNIT.SAMLauncher ? [makeUnit(501, 12)] : []),
+  units: (type) => (type === UNIT.SAMLauncher ? [makeUnit(501, enemyTeamSamLevel)] : []),
 };
 const enemySilos = {
   smallID: () => 6,
@@ -221,6 +222,259 @@ behavior.buildableFor = async () => ({
   canUpgrade: true,
   cost: 1_500_000n,
 });
+
+let forecastCalls = 0;
+let forecastTick = 100;
+behavior.game.ticks = () => forecastTick;
+behavior.legendaryMissilePlacementContext = () => {
+  forecastCalls++;
+  return { threats: [{ targetTile: 999 }] };
+};
+own.sams = [];
+assert.equal(
+  await behavior.maybeUpgradeMissileDefenseSam(),
+  false,
+  "Reactive SAM defense does not forecast when there is no SAM to upgrade",
+);
+assert.equal(
+  forecastCalls,
+  0,
+  "Reactive SAM defense avoids the expensive forecast when no SAM exists",
+);
+
+own.sams = [reactiveSam];
+own.gold = () => 1_000_000n;
+forecastCalls = 0;
+assert.equal(
+  await behavior.maybeUpgradeMissileDefenseSam(),
+  false,
+  "Reactive SAM defense does not forecast when the next upgrade is unaffordable",
+);
+assert.equal(
+  forecastCalls,
+  0,
+  "Reactive SAM defense avoids the expensive forecast below the upgrade cost",
+);
+own.gold = () => 5_000_000n;
+behavior.getMissileDefenseContext();
+behavior.getMissileDefenseContext();
+assert.equal(forecastCalls, 1, "Missile defense context is reused within one game tick");
+forecastTick++;
+behavior.getMissileDefenseContext();
+assert.equal(forecastCalls, 2, "Missile defense context refreshes when the game tick advances");
+own.sams = [makeUnit(402, 1)];
+behavior.getMissileDefenseContext();
+assert.equal(
+  forecastCalls,
+  3,
+  "Missile defense context refreshes when a SAM changes within one game tick",
+);
+own.sams = [reactiveSam];
+enemyTeamSamLevel = 13;
+behavior.getMissileDefenseContext();
+assert.equal(
+  forecastCalls,
+  4,
+  "Missile defense context refreshes when an allied SAM changes within one game tick",
+);
+enemyTeamSamLevel = 12;
+
+let forecastTickSeen = null;
+const originalBuildableFor = behavior.buildableFor;
+behavior.legendaryMissilePlacementContext = () => {
+  forecastCalls++;
+  forecastTickSeen = forecastTick;
+  return { threats: [{ targetTile: 999 }] };
+};
+behavior.buildableFor = async () => {
+  forecastTick++;
+  return {
+    type: UNIT.SAMLauncher,
+    canUpgrade: true,
+    cost: 1_500_000n,
+  };
+};
+forecastTick = 200;
+forecastCalls = 0;
+await behavior.maybeUpgradeMissileDefenseSam();
+assert.equal(
+  forecastTickSeen,
+  201,
+  "Reactive SAM defense forecasts after async buildable probes finish",
+);
+behavior.buildableFor = originalBuildableFor;
+sentBuilds.length = 0;
+
+let evaluationCalls = 0;
+behavior._missileDefenseEvaluationTick = null;
+behavior._missileDefenseEvaluationContext = null;
+behavior._missileDefenseEvaluationCache = null;
+const rawDefenseEvaluation = behavior.legendaryDefenseEvaluation;
+behavior.legendaryDefenseEvaluation = (context, options = {}) => {
+  if (Object.keys(options).length === 0) evaluationCalls++;
+  return rawDefenseEvaluation(context, options);
+};
+const cachedContext = behavior.getMissileDefenseContext();
+behavior.getMissileDefenseEvaluation(cachedContext);
+behavior.getMissileDefenseEvaluation(cachedContext);
+assert.equal(
+  evaluationCalls,
+  1,
+  "Base missile defense evaluation is reused for the cached context",
+);
+
+let rebuiltRoutePath = null;
+const cachedRoute = {
+  id: "cached-route",
+  weapon: UNIT.AtomBomb,
+  fromTile: 1,
+  targetTile: 9,
+  impactTick: 20,
+  launchOffset: 0,
+  path: [1, 2, 3, 9],
+};
+behavior.legendaryBuildMissileRoute = (...args) => {
+  rebuiltRoutePath = args[7];
+  return { id: args[6], path: args[7], samOptions: [] };
+};
+const rebuiltRoutes = behavior.legendaryRebuildMissileRoutes([cachedRoute], []);
+assert.equal(rebuiltRoutes.length, 1, "Cached missile routes can be rebuilt for a new SAM profile");
+assert.strictEqual(
+  rebuiltRoutePath,
+  cachedRoute.path,
+  "SAM upgrade evaluation reuses the cached flight path instead of pathfinding again",
+);
+
+let pathfinderCalls = 0;
+sandbox.UniversalPathFinding = {
+  Parabola: () => {
+    pathfinderCalls++;
+    return { findPath: () => [1, 2, 3, 9] };
+  },
+};
+const pathBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+pathBehavior.game = {
+  config: () => ({ defaultNukeSpeed: () => 1 }),
+};
+assert.deepEqual(
+  pathBehavior.legendaryNukeFlightPath(1, 9),
+  [1, 2, 3, 9],
+  "Missile pathfinding returns the planner trajectory",
+);
+assert.deepEqual(
+  pathBehavior.legendaryNukeFlightPath(1, 9),
+  [1, 2, 3, 9],
+  "Repeated requests return the same missile trajectory",
+);
+assert.equal(
+  pathfinderCalls,
+  1,
+  "Repeated missile path requests do not rerun the parabola pathfinder",
+);
+
+const metricBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+const metricSilos = [makeUnit(701, 1), makeUnit(702, 1)];
+let metricFlightCalls = 0;
+let metricCapacityCalls = 0;
+metricBehavior.legendaryFriendlySamProfiles = () => [];
+metricBehavior.legendarySiloSlotAvailability = () => [0];
+metricBehavior.legendarySiloCooldownTicks = () => 90;
+metricBehavior.legendaryNukeFlightTime = () => {
+  metricFlightCalls++;
+  return 10;
+};
+metricBehavior.legendaryEnemyMissileLaunchPlan = (silos) =>
+  silos.map((silo, index) => ({
+    silo,
+    launchTick: index,
+    flightTicks: 10 + index,
+    impactTick: 10 + index,
+  }));
+metricBehavior.legendaryNukeFlightPath = () => [1, 2, 3];
+metricBehavior.legendaryBuildMissileRoute = (
+  fromTile,
+  targetTile,
+  impactTick,
+  _samProfiles,
+  launchOffset,
+  weapon,
+  id,
+  path,
+) => ({
+  id,
+  weapon,
+  fromTile,
+  targetTile,
+  impactTick,
+  launchOffset,
+  path,
+  samOptions: [],
+});
+metricBehavior.legendarySamInterceptionCapacity = () => {
+  metricCapacityCalls++;
+  return 1;
+};
+const metricPlan = metricBehavior.legendaryMissileSalvoPlan(metricSilos, 1n, 9, 1n, 0n);
+assert.equal(
+  metricPlan.sourceMetrics.length,
+  metricSilos.length,
+  "Missile salvo plans expose one source metric per enemy silo",
+);
+assert.equal(
+  metricCapacityCalls,
+  metricSilos.length,
+  "Each silo interception capacity is calculated once while building a salvo",
+);
+assert.equal(
+  metricFlightCalls,
+  0,
+  "Salvo source metrics reuse launch-plan flight times instead of pathfinding again",
+);
+
+let placementSalvoCalls = 0;
+const placementBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+placementBehavior.game = {
+  euclideanDistSquared: (left, right) => (Number(left) - Number(right)) ** 2,
+};
+placementBehavior.legendaryCriticalStructureValue = () => 1;
+placementBehavior.legendaryEnemyMissileLaunchPlan = () => [
+  { silo: metricSilos[0], launchTick: 0, flightTicks: 10, impactTick: 10 },
+  { silo: metricSilos[1], launchTick: 1, flightTicks: 11, impactTick: 12 },
+];
+placementBehavior.legendarySamInterceptionCapacity = () => 1;
+placementBehavior.legendarySamCooldownTicks = () => 90;
+placementBehavior.legendaryMissileSalvoPlan = () => {
+  placementSalvoCalls++;
+  throw new Error("placement scoring must not build a full salvo plan");
+};
+const placementRisk = placementBehavior.legendaryMissilePlacementRisk(5, UNIT.Factory, {
+  atomCost: 1n,
+  hydrogenCost: 0n,
+  atomRadius: 10,
+  hydrogenRadius: 20,
+  totalValue: 10,
+  structures: [makeUnit(1, 1)],
+  activeMissiles: [],
+  threats: [
+    {
+      inFlight: false,
+      targetTile: 20,
+      weapon: UNIT.AtomBomb,
+      enemySilos: metricSilos,
+      enemyGold: 2n,
+      salvoPlan: {
+        routes: [{ impactTick: 10 }, { impactTick: 12 }],
+        readyShots: 2,
+      },
+    },
+  ],
+});
+assert.ok(Number.isFinite(placementRisk), "Placement risk remains a finite score");
+assert.equal(
+  placementSalvoCalls,
+  0,
+  "Placement ranking uses the lightweight threat proxy instead of rebuilding a salvo scheduler",
+);
 
 assert.equal(
   typeof behavior.maybeUpgradeSamForSiloParity,

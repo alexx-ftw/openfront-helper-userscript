@@ -163,12 +163,14 @@
     }
     const body = document.getElementById(`${ADVISOR_PANEL_ID}-body`);
     if (!context || !context.game || !body) {
+      advisorRenderSignature = "";
       panel.dataset.visible = "false";
       return;
     }
     const game = context.game;
     const me = game.myPlayer ? game.myPlayer() : null;
     if (!me) {
+      advisorRenderSignature = "";
       panel.dataset.visible = "false";
       return;
     }
@@ -243,12 +245,17 @@
       }
     }
 
-    body.innerHTML = parts.join("");
+    const nextBody = parts.join("");
+    if (advisorRenderSignature !== nextBody) {
+      advisorRenderSignature = nextBody;
+      body.innerHTML = nextBody;
+    }
   }
 
   function setAdvisorPanelEnabled(enabled) {
     advisorPanelEnabled = Boolean(enabled);
     if (!advisorPanelEnabled) {
+      advisorRenderSignature = "";
       if (typeof unregisterHelperTickListener === "function") {
         unregisterHelperTickListener(renderAdvisorPanel);
       }
