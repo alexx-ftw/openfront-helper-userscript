@@ -11,6 +11,7 @@ const LAND = 1 << 7;
 function loadHarness() {
   let overlayLayer = null;
   let indexCreateCalls = 0;
+  let spawnPhase = true;
   const terrain = new Uint8Array(64).fill(LAND);
   const sandbox = {
     Array,
@@ -48,7 +49,7 @@ function loadHarness() {
   const game = {
     __src: { _map: { terrain } },
     height: () => 8,
-    inSpawnPhase: () => true,
+    inSpawnPhase: () => spawnPhase,
     myPlayer: () => null,
     width: () => 8,
   };
@@ -57,6 +58,9 @@ function loadHarness() {
     game,
     getIndexCreateCalls: () => indexCreateCalls,
     layer: overlayLayer,
+    setSpawnPhase: (value) => {
+      spawnPhase = value;
+    },
     setSpawnMarkersEnabled: sandbox.setSpawnMarkersEnabled,
   };
 }
@@ -73,6 +77,16 @@ assert.equal(
   harness.getIndexCreateCalls(),
   0,
   "spawn markers must not allocate the exact map-wide candidate index",
+);
+
+harness.setSpawnPhase(false);
+harness.layer.scan(harness.game);
+harness.setSpawnPhase(true);
+harness.layer.scan(harness.game);
+assert.equal(
+  harness.getIndexCreateCalls(),
+  0,
+  "leaving and re-entering spawn must not reintroduce exact-index allocation",
 );
 
 const largeTerrain = { length: 1308 * 1754 };
