@@ -859,46 +859,8 @@
   function _chooseAutoFireImpactTile(game, primaryTile, me) {
     if (primaryTile === null || primaryTile === void 0) return primaryTile;
     var radius = _autoFireNukeRadius(game, "Atom Bomb");
-    var radiusSq = radius * radius;
     var buildings = _autoFireCollectEnemyBuildings(game, me);
-    var primarySeen = false;
-    for (var i = 0; i < buildings.length; i++) {
-      if (buildings[i].tile === primaryTile) {
-        primarySeen = true;
-        break;
-      }
-    }
-    if (!primarySeen) buildings.unshift({ unit: null, tile: primaryTile, key: "primary" });
-
-    var candidates = [];
-    var candidateKeys = {};
-    function addCandidate(tile) {
-      if (tile === null || tile === void 0) return;
-      var key = String(tile);
-      if (candidateKeys[key]) return;
-      candidateKeys[key] = true;
-      candidates.push(tile);
-    }
-    addCandidate(primaryTile);
-    for (var b = 0; b < buildings.length; b++) addCandidate(buildings[b].tile);
-
-    var bestTile = primaryTile;
-    var bestHits = -1;
-    for (var c = 0; c < candidates.length; c++) {
-      var candidate = candidates[c];
-      if (!(_euclideanDistSq(game, candidate, primaryTile) < radiusSq)) continue;
-      var hits = 0;
-      for (var j = 0; j < buildings.length; j++) {
-        if (_euclideanDistSq(game, candidate, buildings[j].tile) < radiusSq) hits++;
-      }
-      // Keep the original target on ties. Adjusting coordinates is useful only
-      // when it adds at least one building to the same blast.
-      if (hits > bestHits) {
-        bestHits = hits;
-        bestTile = candidate;
-      }
-    }
-    return bestTile;
+    return chooseMaxNukeBuildingImpactTile(game, primaryTile, buildings, radius, true);
   }
 
   function _autoFireNukeImpacts(game, state) {

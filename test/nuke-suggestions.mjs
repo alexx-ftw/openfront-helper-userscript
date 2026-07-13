@@ -5,6 +5,7 @@ import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const NUKE_IMPACT_SOURCE = fs.readFileSync(path.join(ROOT, "engine/ingame/nuke-impact.js"), "utf8");
 const NUKE_SUGGESTIONS_SOURCE = fs.readFileSync(
   path.join(ROOT, "engine/ingame/nuke-suggestions.js"),
   "utf8",
@@ -28,6 +29,9 @@ const sandbox = {
   },
 };
 sandbox.globalThis = sandbox;
+vm.runInNewContext(NUKE_IMPACT_SOURCE, sandbox, {
+  filename: "nuke-impact.js",
+});
 vm.runInNewContext(NUKE_SUGGESTIONS_SOURCE, sandbox, {
   filename: "nuke-suggestions.js",
 });
@@ -49,6 +53,48 @@ const game = {
   euclideanDistSquared: (a, b) => (a - b) ** 2,
   manhattanDist: (a, b) => Math.abs(a - b),
 };
+
+const buildingImpactCandidate = { tile: 1, totalScore: 10 };
+const buildingImpactStructures = [{ tile: 1 }, { tile: 2 }, { tile: 3 }];
+const buildingImpactCoords = new Map([
+  [1, { x: 0, y: 0 }],
+  [2, { x: 29, y: 0 }],
+  [3, { x: 29, y: 10 }],
+]);
+const buildingImpactGame = {
+  ...game,
+  x: (tile) => buildingImpactCoords.get(tile).x,
+  y: (tile) => buildingImpactCoords.get(tile).y,
+  euclideanDistSquared: (a, b) => {
+    const from = buildingImpactCoords.get(a);
+    const to = buildingImpactCoords.get(b);
+    return (from.x - to.x) ** 2 + (from.y - to.y) ** 2;
+  },
+};
+const scoreCalls = [];
+sandbox.scoreNukeSuggestionTile = (_game, _context, tile) => {
+  scoreCalls.push(tile);
+  return { ...buildingImpactCandidate, tile, totalScore: tile === 2 ? 12 : 10 };
+};
+const optimizedBuildingImpactCandidate = sandbox.optimizeNukeSuggestionCandidateForBuildingImpact(
+  buildingImpactGame,
+  {
+    scoreMode: "economic",
+    magnitude: { outer: 30 },
+    structures: buildingImpactStructures,
+  },
+  buildingImpactCandidate,
+);
+assert.equal(
+  optimizedBuildingImpactCandidate.tile,
+  2,
+  "high-value nuke candidates should move onto the maximum-building-impact tile",
+);
+assert.deepEqual(
+  scoreCalls,
+  [2],
+  "high-value nuke optimization should rescore the adjusted impact tile",
+);
 
 function pendingSam(id) {
   return {
@@ -124,5 +170,82 @@ assert.deepEqual(
   ["state-ready"],
   "the predictor must use an exposed construction start tick when available",
 );
+
+const candidatePipelineFunctions = [
+  "getNukeSuggestionMagnitude",
+  "buildNukeSuggestionSeeds",
+  "scoreNukeSuggestionTile",
+  "refineNukeSuggestionCandidate",
+  "findClosestReadySilo",
+  "getUnitTile",
+  "chooseBestNukeRocketDirection",
+];
+const candidatePipelineOriginals = new Map(
+  candidatePipelineFunctions.map((name) => [name, sandbox[name]]),
+);
+const candidatePipelineScoreCalls = [];
+Object.assign(sandbox, {
+  getNukeSuggestionMagnitude: () => ({ inner: 10, outer: 30 }),
+  buildNukeSuggestionSeeds: () => [1],
+  scoreNukeSuggestionTile: (_game, context, tile) => {
+    candidatePipelineScoreCalls.push(tile);
+    return {
+      id: context.spec.id,
+      spec: context.spec,
+      type: context.spec.type,
+      tile,
+      x: buildingImpactGame.x(tile),
+      y: buildingImpactGame.y(tile),
+      magnitude: context.magnitude,
+      totalScore: tile === 2 ? 12 : 10,
+    };
+  },
+  refineNukeSuggestionCandidate: (_game, _context, candidate) => candidate,
+  findClosestReadySilo: () => ({ id: () => "silo" }),
+  getUnitTile: () => 0,
+  chooseBestNukeRocketDirection: () => ({
+    rocketDirectionUp: true,
+    interceptingSams: [],
+  }),
+});
+try {
+  const pipelineCandidates = sandbox.computeNukeCandidatesForType(
+    buildingImpactGame,
+    {
+      structures: buildingImpactStructures,
+      readySilos: [{}],
+      targetSams: [],
+      pendingTargetSams: [],
+      pendingSamReadyTicks: new Map(),
+    },
+    {
+      id: "destruction-atom",
+      type: "Atom Bomb",
+      scoreMode: "destruction",
+      maxRawSeeds: 1,
+      maxRefineSeeds: 1,
+    },
+    5,
+  );
+  assert.equal(
+    pipelineCandidates[0].tile,
+    2,
+    "the high-value candidate pipeline should fire the adjusted building-cluster tile",
+  );
+  assert.equal(
+    pipelineCandidates[0].buildingImpactAnchorTile,
+    1,
+    "the pipeline should retain the original high-value target as the optimization anchor",
+  );
+  assert.equal(
+    candidatePipelineScoreCalls.includes(2),
+    true,
+    "the pipeline should re-score the adjusted tile before recalculating trajectory",
+  );
+} finally {
+  for (const [name, original] of candidatePipelineOriginals) {
+    sandbox[name] = original;
+  }
+}
 
 console.log("nuke suggestion construction tests passed");

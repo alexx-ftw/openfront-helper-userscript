@@ -110,6 +110,7 @@ Toggle each overlay independently from the **Helpers** tab. All panels are dragg
 
 **Auto-Nuke** — automatically fires nukes at high-value targets. Options:
 - Standard auto-nuke (economy and structure targeting)
+- Impact coordinates are shifted onto the best existing enemy-building cluster when that blast destroys more buildings.
 - SAM-saturation mode: runs a SAM-burn pass to exhaust enemy defenses, then a destruction wave, then optional follow-up waves
 - Ally-safe toggle (skip allied territory)
 - Real-time launch progress panel

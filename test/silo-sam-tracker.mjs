@@ -5,6 +5,7 @@ import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const NUKE_IMPACT_SOURCE = fs.readFileSync(path.join(ROOT, "engine/ingame/nuke-impact.js"), "utf8");
 const TRACKER_SOURCE = fs.readFileSync(
   path.join(ROOT, "engine/ingame/silo-sam-tracker.js"),
   "utf8",
@@ -16,6 +17,9 @@ const sandbox = {
   window: {},
 };
 sandbox.globalThis = sandbox;
+vm.runInNewContext(NUKE_IMPACT_SOURCE, sandbox, {
+  filename: "nuke-impact.js",
+});
 vm.runInNewContext(TRACKER_SOURCE, sandbox, {
   filename: "silo-sam-tracker.js",
 });

@@ -1748,6 +1748,42 @@
     return best;
   }
 
+  function optimizeNukeSuggestionCandidateForBuildingImpact(game, context, candidate) {
+    if (
+      !candidate ||
+      !context?.magnitude ||
+      !Array.isArray(context.structures) ||
+      context.scoreMode === "sam-clear" ||
+      context.scoreMode === "sam-burn-building"
+    ) {
+      return candidate;
+    }
+
+    const impactTile = chooseMaxNukeBuildingImpactTile(
+      game,
+      candidate.tile,
+      context.structures,
+      context.magnitude.outer,
+    );
+    if (impactTile === candidate.tile) {
+      return candidate;
+    }
+
+    // Re-score the coordinate that will actually be fired. This preserves all
+    // existing ally, launcher, SAM, and territory safety checks for the moved
+    // impact instead of only changing the visual/selection coordinate.
+    const optimized = scoreNukeSuggestionTile(game, context, impactTile);
+    if (!optimized) {
+      return candidate;
+    }
+
+    return {
+      ...optimized,
+      buildingImpactAnchorTile: candidate.tile,
+      buildingImpactOptimized: true,
+    };
+  }
+
   function findClosestReadySilo(game, targetTile, silos) {
     let bestSilo = null;
     let bestDistance = Infinity;
@@ -2361,7 +2397,10 @@
       rawCandidates.push(refineNukeSuggestionCandidate(game, context, candidate));
     }
 
-    const candidates = dedupeNukeSuggestionCandidates(rawCandidates).slice(
+    const optimizedCandidates = rawCandidates.map((candidate) =>
+      optimizeNukeSuggestionCandidateForBuildingImpact(game, context, candidate),
+    );
+    const candidates = dedupeNukeSuggestionCandidates(optimizedCandidates).slice(
       0,
       limit || NUKE_SUGGESTION_MAX_FINAL_CANDIDATES,
     );
