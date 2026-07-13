@@ -469,7 +469,10 @@
       const tribeTroops = Math.max(1, Number(targetTroops) || 0);
       requiredTroops = Math.max(
         requiredTroops,
-        tribeTroops * 2 * defenseMultiplier,
+        // A tribe capture must clear the same 4x effective troop margin used
+        // by the regular bot attack rule. A 2x floor is only a survivability
+        // threshold and routinely leaves a small remnant behind.
+        tribeTroops * 4 * defenseMultiplier,
       );
       if (safeContestPressure > 0) {
         requiredTroops = Math.max(
@@ -491,9 +494,11 @@
           : safeOpportunityUrgency >= 0.45
             ? 0.72
           : 0.6;
+    const plannedCommitCeiling = own * maxCommitFraction;
+    const minimumCommit = target === "tribe" ? requiredTroops : plannedCommitCeiling;
     const commitTroops = initialBurst
-      ? Math.min(own, own * maxCommitFraction)
-      : Math.min(availableTroops, own * maxCommitFraction);
+      ? Math.min(own, Math.max(plannedCommitCeiling, minimumCommit))
+      : Math.min(availableTroops, Math.max(plannedCommitCeiling, minimumCommit));
     const hasFullTribeCommit = target !== "tribe" || commitTroops >= requiredTroops;
     const shouldAttackNow =
       own >= 1 &&

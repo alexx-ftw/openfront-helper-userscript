@@ -3719,17 +3719,28 @@
       // empire and would otherwise turn the first minute into a wait loop.
       if (plannedTroops != null && state.settings.winFixes) {
         const planned = Number(plannedTroops);
+        const botTarget =
+          target.isPlayer() && target.type?.() === PlayerType.Bot;
+        const captureFloor = botTarget
+          ? this.getBotCaptureTroopsFloor(target, enemyDefensePostProfile)
+          : 0;
         if (!Number.isFinite(planned) || planned < 1) {
-          if (target.isPlayer() && target.type?.() === PlayerType.Bot) {
+          if (botTarget) {
             this.botAttackTroopsSent = botAttackTroopsSentBefore;
           }
           return false;
         }
-        if (target.isPlayer() && target.type?.() === PlayerType.Bot) {
+        if (botTarget && planned < captureFloor && this.player.troops() < captureFloor) {
+          this.botAttackTroopsSent = botAttackTroopsSentBefore;
+          return false;
+        }
+        if (botTarget) {
           this.botAttackTroopsSent = botAttackTroopsSentBefore;
         }
-        troops = Math.min(this.player.troops(), planned);
-        if (target.isPlayer() && target.type?.() === PlayerType.Bot) {
+        // Never let a stale/undersized plan downgrade a tribal capture to a
+        // probe. If the preferred full-capture force is available, use it.
+        troops = Math.min(this.player.troops(), Math.max(planned, captureFloor));
+        if (botTarget) {
           this.botAttackTroopsSent += troops;
         }
       }
@@ -3823,6 +3834,9 @@
       const botTarget =
         target.isPlayer() && target.type() === PlayerType.Bot;
       const botAttackTroopsSentBefore = this.botAttackTroopsSent;
+      const botDefensePostProfile = botTarget
+        ? this.getEnemyDefensePostAttackProfile(target)
+        : null;
       let captureReserveTroops =
         this.game.config().maxTroops(this.player) *
         this.effectiveReserveRatio();
@@ -3840,7 +3854,7 @@
           this.player.troops() -
             captureReserveTroops -
             this.botAttackTroopsSent,
-          this.getEnemyDefensePostAttackProfile(target),
+          botDefensePostProfile,
         );
       } else if (state.settings.winFixes) {
         troops = Math.max(
@@ -3870,12 +3884,21 @@
       // bot-accounting counter if the standard reserve calculation was skipped.
       if (plannedTroops != null && state.settings.winFixes) {
         const planned = Number(plannedTroops);
+        const captureFloor = botTarget
+          ? this.getBotCaptureTroopsFloor(target, botDefensePostProfile)
+          : 0;
         if (!Number.isFinite(planned) || planned < 1) {
           if (botTarget) this.botAttackTroopsSent = botAttackTroopsSentBefore;
           return false;
         }
+        if (botTarget && planned < captureFloor && this.player.troops() < captureFloor) {
+          this.botAttackTroopsSent = botAttackTroopsSentBefore;
+          return false;
+        }
         if (botTarget) this.botAttackTroopsSent = botAttackTroopsSentBefore;
-        troops = Math.min(this.player.troops(), planned);
+        // Planned early-game commitments must remain full tribal captures;
+        // otherwise the global boat-probe amount can leave a tiny remnant.
+        troops = Math.min(this.player.troops(), Math.max(planned, captureFloor));
         if (botTarget) this.botAttackTroopsSent += troops;
       }
 
@@ -3925,6 +3948,17 @@
         competitorTroops: earlyGameCandidate.competitorTroops,
         contestPressure: earlyGameCandidate.foodRaceValue,
       });
+    }
+
+    // getBotCaptureTroopsFloor — AiAttackBehavior (private).
+    getBotCaptureTroopsFloor(target, defensePostProfile = null) {
+      if (!target?.isPlayer?.() || target.type?.() !== PlayerType.Bot) return 0;
+      const targetTroops = Math.max(0, Number(target.troops()) || 0);
+      const defenseMultiplier = Math.max(
+        1,
+        Number(defensePostProfile?.attackCostMultiplier || 1),
+      );
+      return targetTroops * 4 * defenseMultiplier;
     }
 
     // calculateBotAttackTroops — AiAttackBehavior (private).

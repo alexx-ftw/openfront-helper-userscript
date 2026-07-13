@@ -38,7 +38,7 @@ const sandbox = {
   withTimeout: (value) => Promise.resolve(value),
   closestTwoTiles: () => ({ x: 1, y: 2 }),
   getEventBus: () => null,
-  discoverCtors: () => ({ boat: {} }),
+  discoverCtors: () => ({ boat: {}, attack: {} }),
   emitIntent: (_ctor, ...args) => {
     boatIntent = args;
     return true;
@@ -202,21 +202,20 @@ const boatTribe = {
   units: () => [],
   borderTiles: () => new Set([2]),
 };
-const boatBehavior = new sandbox.AttackBehavior(
-  {},
-  boatGame,
-  boatPlayer,
-  0.5,
-  0.3,
-  0.1,
-  {},
-  {},
-);
-assert.equal(await boatBehavior.sendBoatAttack(boatTribe), true);
+const boatBehavior = new sandbox.AttackBehavior({}, boatGame, boatPlayer, 0.5, 0.3, 0.1, {}, {});
+assert.equal(await boatBehavior.sendBoatAttack(boatTribe, null, 500), true);
 assert.deepEqual(
   boatIntent,
   [2, 4000],
-  "a win-fix boat attack against a tribe must fund the full capture, not a 1% probe",
+  "an undersized planned boat attack must be raised to the tribe's full-capture force",
+);
+
+boatIntent = null;
+assert.equal(await boatBehavior.sendLandAttack(boatTribe, null, null, 500), true);
+assert.deepEqual(
+  boatIntent,
+  ["tribe-2", 4000],
+  "an undersized planned land attack must be raised to the tribe's full-capture force",
 );
 
 tick++;

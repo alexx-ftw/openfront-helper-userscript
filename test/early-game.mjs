@@ -118,8 +118,24 @@ const completeTribePlan = sandbox.calculateEarlyGameExpansionPlan({
   targetDefenseMultiplier: 1,
   opportunityUrgency: 1,
 });
-assert.ok(completeTribePlan.requiredTroops >= 10000);
+assert.ok(completeTribePlan.requiredTroops >= 20000);
+assert.ok(completeTribePlan.commitTroops >= completeTribePlan.requiredTroops);
 assert.equal(completeTribePlan.shouldAttackNow, true);
+
+const underfundedTribePlan = sandbox.calculateEarlyGameExpansionPlan({
+  ownTroops: 20000,
+  maxTroops: 100000,
+  targetType: "tribe",
+  targetTroops: 5000,
+  targetDefenseMultiplier: 1,
+  opportunityUrgency: 1,
+});
+assert.ok(underfundedTribePlan.commitTroops < underfundedTribePlan.requiredTroops);
+assert.equal(
+  underfundedTribePlan.shouldAttackNow,
+  false,
+  "an underfunded tribe attack must wait instead of leaving a remnant",
+);
 
 const assertAutoDonateStatus = (actual, expected) =>
   assert.equal(JSON.stringify(actual), JSON.stringify(expected));

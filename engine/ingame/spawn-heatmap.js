@@ -590,12 +590,22 @@
   ) {
     const safeCluster = clampSpawnScore(clusterScore);
     const safeSlots = Math.max(0, Number(frontierSlots) || 0);
-    if (safeSlots <= 0) return safeCluster * 0.45;
+    // A spawn cluster without a free frontier is not an expansion position.
+    // Treat missing frontier capacity as a hard zero instead of rewarding the
+    // candidate for merely having a legal local disk.
+    if (safeSlots <= 0) return 0;
     const frontierShare = clampSpawnScore(Number(frontierGain) / safeSlots);
     const valueShare = clampSpawnScore(
       Number(frontierValueGain) / (safeSlots * Math.max(1, Number(frontierValueScale) || 1)),
     );
-    return clampSpawnScore(safeCluster * 0.35 + frontierShare * 0.4 + valueShare * 0.25);
+    // Scale the cluster quality by actual frontier access. This prevents a
+    // candidate with one or no free continuation tiles from looking as strong
+    // as an open land position just because its initial disk is clean.
+    const accessScore = Math.max(frontierShare, valueShare);
+    if (accessScore <= 0) return 0;
+    return clampSpawnScore(
+      accessScore * (safeCluster * 0.35 + frontierShare * 0.4 + valueShare * 0.25),
+    );
   }
 
   function tribeReachForCandidate(index, x, y, freeLandScore, tribeCount) {
@@ -606,9 +616,10 @@
       SPAWN_HEATMAP_TRIBE_REACH_BASE_R +
       clampSpawnScore(freeLandScore) * SPAWN_HEATMAP_TRIBE_REACH_BONUS_R;
     const count = index ? index.countWithin(x, y, radius) : 0;
+    const accessibleCount = clampSpawnScore(freeLandScore) > 0 ? count : 0;
     return {
-      count,
-      score: count / Math.max(1, tribeCount),
+      count: accessibleCount,
+      score: accessibleCount / Math.max(1, tribeCount),
       radius,
     };
   }
@@ -1207,7 +1218,7 @@
         const frontierCoverage = Number.isFinite(Number(frontierSlots))
           ? frontierSlots > 0
             ? frontierValueGain / (frontierSlots * frontierValueScale)
-            : freeLandScore
+            : 0
           : clusterScore;
         const objective = objectiveApi && typeof objectiveApi.evaluateModelCandidate === "function"
           ? objectiveApi.evaluateModelCandidate({
