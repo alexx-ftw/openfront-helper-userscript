@@ -216,6 +216,15 @@ existing rank-then-probe transport boundary and the Early Game 300-tick ETA gate
 With `winFixes` disabled, these additions are inactive and the faithful Nation
 flow remains unchanged.
 
+### Custom team donation clan priority
+
+With `winFixes` enabled, the existing team-only troop donation keeps its needy
+teammate and frontline filters, then prioritizes recipients whose clan tag matches
+the bot's. Clan tags are read through the already-loaded `__OFHSpawnObjective`
+adapter; missing tags never exclude a teammate and fall back to frontline status
+and troop percentage. With `winFixes` disabled, the faithful donation ordering is
+unchanged.
+
 ### Custom missile-defense upgrade and silo parity
 
 When `winFixes` is enabled, `StructureBehavior` checks the trajectory-aware

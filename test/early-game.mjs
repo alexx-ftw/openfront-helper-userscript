@@ -267,6 +267,8 @@ assert.match(attackSource, /!state\.settings\.winFixes \|\| !early \|\| !early\.
 assert.match(attackSource, /EARLY_EXPAND_COMMIT/);
 assert.match(attackSource, /attackEarlyGameTribe/);
 assert.match(attackSource, /maybeEarlyOceanBoat/);
+assert.match(attackSource, /rankTeamDonationCandidates\(needy\)/);
+assert.match(attackSource, /playersShareClanTag/);
 assert.match(gameApiSource, /estimateTransportRouteTicks/);
 assert.match(gameApiSource, /hasTransportRouteEstimator/);
 assert.match(gameApiSource, /findWaterRouteTicks\(\{/);
@@ -376,6 +378,24 @@ vm.runInNewContext(
   targetSandbox,
   { filename: "earlyGame+attackBehavior.js" },
 );
+assert.equal(typeof targetSandbox.rankTeamDonationCandidates, "function");
+const rankedDonationCandidates = targetSandbox.rankTeamDonationCandidates([
+  { id: "same-clan-rear", sameClan: true, frontline: false, troopPercentage: 0.75 },
+  { id: "other-frontline", sameClan: false, frontline: true, troopPercentage: 0.1 },
+  { id: "same-clan-front", sameClan: true, frontline: true, troopPercentage: 0.5 },
+  { id: "other-rear", sameClan: false, frontline: false, troopPercentage: 0.2 },
+]);
+assert.deepEqual(
+  rankedDonationCandidates.map((candidate) => candidate.id),
+  ["same-clan-front", "same-clan-rear", "other-frontline", "other-rear"],
+);
+targetSandbox.__OFHSpawnObjective = {
+  getPlayerClanTag: (player) => player?.tag ?? null,
+  sameClanTag: (left, right) =>
+    typeof left === "string" && left.toUpperCase() === String(right).toUpperCase(),
+};
+assert.equal(targetSandbox.playersShareClanTag({ tag: "FOX" }, { tag: "fox" }), true);
+assert.equal(targetSandbox.playersShareClanTag({ tag: "FOX" }, { tag: "WOLF" }), false);
 const targetBehavior = new targetSandbox.AttackBehavior(
   {},
   targetGame,

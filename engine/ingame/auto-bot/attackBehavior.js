@@ -70,6 +70,51 @@
   const EARLY_TRIBE_CANDIDATES = 8;
   const EARLY_GAME_TRIBE_CHAIN_RADIUS = 120;
 
+  function playersShareClanTag(left, right) {
+    try {
+      const objectiveApi =
+        typeof globalThis === "object" ? globalThis.__OFHSpawnObjective : null;
+      if (
+        !objectiveApi ||
+        typeof objectiveApi.getPlayerClanTag !== "function" ||
+        typeof objectiveApi.sameClanTag !== "function"
+      ) {
+        return false;
+      }
+      return objectiveApi.sameClanTag(
+        objectiveApi.getPlayerClanTag(left),
+        objectiveApi.getPlayerClanTag(right),
+      );
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  function rankTeamDonationCandidates(candidates) {
+    if (!Array.isArray(candidates)) return [];
+    return candidates
+      .map((candidate, index) => ({ candidate, index }))
+      .sort((left, right) => {
+        const leftClan = left.candidate.sameClan === true ? 1 : 0;
+        const rightClan = right.candidate.sameClan === true ? 1 : 0;
+        if (leftClan !== rightClan) return rightClan - leftClan;
+
+        const leftFrontline = left.candidate.frontline === true ? 1 : 0;
+        const rightFrontline = right.candidate.frontline === true ? 1 : 0;
+        if (leftFrontline !== rightFrontline) {
+          return rightFrontline - leftFrontline;
+        }
+
+        const leftPercentage = Number(left.candidate.troopPercentage);
+        const rightPercentage = Number(right.candidate.troopPercentage);
+        if (leftPercentage !== rightPercentage) {
+          return leftPercentage - rightPercentage;
+        }
+        return left.index - right.index;
+      })
+      .map(({ candidate }) => candidate);
+  }
+
   class AttackBehavior {
     constructor(
       random,
@@ -2867,9 +2912,11 @@
       const needThreshold = state.settings.winFixes
         ? (state.settings.donateNeedThreshold ?? 0.8)
         : 1.0; // faithful mode: any in-combat teammate (no threshold)
-      // Pool of NEEDY allies (< needThreshold), then PRIORITISE the FRONT LINE — allies
-      // in combat (being attacked OR attacking an enemy) need reinforcements most. Among
-      // equal priority, the neediest (lowest troop%) first.
+      // Pool of NEEDY allies (< needThreshold), then prioritise teammates who share
+      // our clan tag. Clan matching is deliberately a soft metadata signal: when
+      // either tag is unavailable, the candidate falls back to the ordinary team
+      // donation order. Within each clan bucket, reinforce the FRONT LINE first and
+      // then the neediest (lowest troop%) ally.
       const needy = teammatesWithTroopPercentage
         .filter(
           (e) =>
@@ -2886,20 +2933,25 @@
           } catch (_e) {
             /* client may not expose other players' attacks → treat as rear */
           }
-          return { entry: e, frontline };
+          return {
+            entry: e,
+            frontline,
+            sameClan:
+              state.settings.winFixes &&
+              playersShareClanTag(this.player, e.teammate),
+            troopPercentage: e.troopPercentage,
+          };
         });
-      needy.sort((a, b) => {
-        if (a.frontline !== b.frontline) return a.frontline ? -1 : 1; // frontline first
-        return a.entry.troopPercentage - b.entry.troopPercentage; // then neediest
-      });
+      const rankedNeedy = rankTeamDonationCandidates(needy);
       let selectedTeammate = null;
-      if (needy.length > 0) {
-        selectedTeammate = needy[0].entry.teammate;
+      if (rankedNeedy.length > 0) {
+        selectedTeammate = rankedNeedy[0].entry.teammate;
         console.log(
           "[Donate] picked ally at " +
-            Math.round(needy[0].entry.troopPercentage * 100) +
+            Math.round(rankedNeedy[0].troopPercentage * 100) +
             "% " +
-            (needy[0].frontline ? "(FRONTLINE — in combat)" : "(rear)"),
+            (rankedNeedy[0].sameClan ? "(same clan) " : "") +
+            (rankedNeedy[0].frontline ? "(FRONTLINE — in combat)" : "(rear)"),
         );
       }
 

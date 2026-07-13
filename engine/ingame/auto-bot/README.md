@@ -40,6 +40,13 @@ generic Terra Nullius land attack still has no tile argument in the client inten
 so the coast-specific direction is expressed through a coastal tribe target or an
 explicit open-ocean landing rather than by inventing a new attack API.
 
+## Team donation policy
+
+When `winFixes` is enabled, automatic troop donations remain restricted to needy
+players on our team. Among those recipients, matching clan tags are prioritized
+first, followed by frontline status and lowest troop percentage. If a clan tag is
+unavailable, the player remains eligible and uses the normal fallback order.
+
 `bestTransportShipSpawn()` reports whether a boat route exists and its spawn tile,
 but not its path length. `gameApi.js` now uses that spawn plus a bounded
 full-resolution water-graph search to calculate the shortest route in ticks. An
