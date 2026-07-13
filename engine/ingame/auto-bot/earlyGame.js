@@ -239,9 +239,9 @@
 
   // Measure the shortest LAND distance from any tile on a tribe's border to a
   // navigable maritime coast. The predicate is supplied by the caller:
-  // `isOceanShore` covers open ocean and ocean-connected rivers, while the custom
-  // attack policy can also recognise a river that exits through the map edge.
-  // Closed inland lakes must not satisfy this objective.
+  // The caller supplies the largest connected navigable-water component as the
+  // maritime predicate. Smaller isolated lakes/seas must not satisfy this
+  // objective, even when they are close or touch the map edge.
   function findNearestMaritimeCoastDistance({
     starts,
     neighbors,

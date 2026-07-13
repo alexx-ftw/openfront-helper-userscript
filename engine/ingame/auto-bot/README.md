@@ -20,19 +20,19 @@ The Early Game snapshot starts after spawn selection while there is still free
 territory or an actionable tribe. With `winFixes` enabled, the policy keeps the
 existing Nation decision chain but enriches its opening target choice:
 
-1. rank nearby non-friendly bot tribes by nearest navigable maritime route
-   (open ocean, ocean-connected water, or a river that exits through the map
-   edge), with closed inland lakes excluded and only routes within the existing
-   80-tile opening radius eligible. Within that route key, the order is direct
+1. rank nearby non-friendly bot tribes by nearest navigable maritime route. Only
+   the largest connected water surface on the map is treated as open ocean;
+   smaller isolated lakes/seas are excluded, and only routes within the existing
+   80-tile opening radius are eligible. Within that route key, the order is direct
    or incoming rival attack, encirclement/blocking closure, future-tribe access,
    progressing food-race urgency, capture cost, land border, and distance;
 2. attack the best-ranked tribe through the existing land/boat actuation. When a
    rival is racing for the same food, the bot raises the commitment while keeping
    the existing reserve floor;
-3. when we already hold an open-ocean shore, probe the nearest unowned
-   `isOceanShore` tile before falling back to generic Terra Nullius expansion, so
-   the first coastal foothold can support a Port. Closed lakes are deliberately
-   excluded;
+3. when we already hold a shore on the largest connected water surface, probe
+   the nearest unowned maritime tile before falling back to generic Terra Nullius
+   expansion, so the first coastal foothold can support a Port. Smaller closed
+   water bodies are deliberately excluded;
 4. use a transport boat only when the computed route ETA is at most 300 game
    ticks (30 seconds at 100 ms per tick).
 

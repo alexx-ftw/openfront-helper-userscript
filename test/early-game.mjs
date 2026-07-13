@@ -665,6 +665,9 @@ assert.match(attackSource, /state\.settings\.winFixes && botTarget/);
 assert.match(attackSource, /calculateBotAttackTroops\(/);
 assert.match(attackSource, /attackEarlyGameTribe/);
 assert.match(attackSource, /maybeEarlyOceanBoat/);
+assert.match(attackSource, /game\.isOcean/);
+assert.match(attackSource, /game\.isOceanShore/);
+assert.doesNotMatch(attackSource, /isEarlyGameMapEdge/);
 assert.match(attackSource, /calculateEarlyGameExpansionPlan/);
 assert.match(attackSource, /frontierCompetitionScore/);
 assert.match(attackSource, /plannedTroops/);
@@ -838,34 +841,34 @@ assert.equal(enrichedInland.futureFoodCount, 1);
 assert.ok(enrichedInland.futureFoodAccess > 0.6);
 assert.ok(enrichedInland.foodRaceValue > 0.5);
 
-// Integration probe: ocean-connected water and a river that exits through the
-// map edge count as maritime; an isolated inland lake does not.
-const maritimeLand = new Set([8, 9, 14, 15, 16]);
-const maritimeWater = new Set([10, 11, 12, 17, 18, 19, 20]);
+// Integration probe: only the largest connected navigable water surface counts
+// as maritime. The smaller component deliberately touches the map edge so the
+// old edge-based heuristic would incorrectly select it.
+const maritimeLand = new Set([2, 3, 20, 21]);
+const maritimeWater = new Set([0, 1, 22, 23, 24, 25]);
 const maritimeNeighbors = new Map([
-  [8, [9]],
-  [9, [8, 10]],
-  [10, [9, 11]],
-  [11, [10, 12]],
-  [12, [11]],
-  [15, [16]],
-  [16, [15, 17]],
-  [17, [16, 18]],
-  [18, [17, 19]],
-  [19, [18, 20]],
-  [20, [19]],
+  [0, [1]],
+  [1, [0]],
+  [2, [1, 3]],
+  [3, [2]],
+  [20, [21]],
+  [21, [20, 22]],
+  [22, [21, 23]],
+  [23, [22, 24]],
+  [24, [23, 25]],
+  [25, [24]],
 ]);
 const maritimeGame = {
-  width: () => 7,
+  width: () => 10,
   height: () => 5,
-  x: (tile) => tile % 7,
-  y: (tile) => Math.floor(tile / 7),
+  x: (tile) => tile % 10,
+  y: (tile) => Math.floor(tile / 10),
   neighbors: (tile) => maritimeNeighbors.get(tile) || [],
   isLand: (tile) => maritimeLand.has(tile),
   isWater: (tile) => maritimeWater.has(tile),
-  isOcean: () => false,
-  isOceanShore: () => false,
-  isShore: (tile) => tile === 9 || tile === 16,
+  isOcean: (tile) => tile >= 22 && tile <= 25,
+  isOceanShore: (tile) => tile === 21,
+  isShore: (tile) => tile === 2 || tile === 21,
 };
 const maritimeBehavior = new targetSandbox.AttackBehavior(
   {},
@@ -877,15 +880,17 @@ const maritimeBehavior = new targetSandbox.AttackBehavior(
   {},
   {},
 );
+assert.equal(maritimeBehavior.isEarlyGameMaritimeWater(22), true);
+assert.equal(maritimeBehavior.isEarlyGameMaritimeWater(0), false);
 assert.equal(
-  maritimeBehavior.getEarlyGameMaritimeDistance(new Set([15])),
+  maritimeBehavior.getEarlyGameMaritimeDistance(new Set([20])),
   1,
-  "a river component that exits through the map edge must count as maritime",
+  "the largest connected navigable water component must count as maritime",
 );
 assert.equal(
-  maritimeBehavior.getEarlyGameMaritimeDistance(new Set([8])),
+  maritimeBehavior.getEarlyGameMaritimeDistance(new Set([3])),
   Infinity,
-  "an isolated inland lake must not count as maritime",
+  "a smaller water component must not count as maritime even when it touches the map edge",
 );
 assert.equal(
   maritimeBehavior.getEarlyGameMaritimeIndex(),

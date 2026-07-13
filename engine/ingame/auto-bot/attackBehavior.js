@@ -788,7 +788,8 @@
       // WIN-FIX (NOT in src): if we already hold an ocean shore, take a nearby
       // unowned open-ocean coast before generic empty-land expansion. The landing
       // remains a cheap probe and is still subject to the exact <=30s early-game
-      // transport gate. `isOceanShore` excludes isolated lakes such as Luna.
+      // transport gate. The largest connected water component excludes smaller
+      // isolated lakes and seas from this objective.
       if (
         expandOn &&
         boatOn &&
@@ -983,81 +984,35 @@
       return false;
     }
 
-    // OpenFront marks the largest/open water body with `isOcean`, and that bit
-    // propagates through connected water. Smaller rivers can still be a useful
-    // maritime corridor when they leave through the map edge, while a closed
-    // inland lake must remain excluded from this objective.
+    // OpenFront's map generator marks only the largest connected water surface
+    // with `isOcean`, and `isOceanShore` marks its coast. Do not infer ocean
+    // access from map edges: smaller isolated seas/lakes can touch an edge too.
     isEarlyGameMaritimeWater(tile) {
-      if (tile == null || typeof this.game.isWater !== "function") return false;
-      try {
-        if (this.game.isOcean?.(tile) === true) return true;
-      } catch (_e) {
-        /* fall through to the component scan */
-      }
+      if (tile == null || typeof this.game.isOcean !== "function") return false;
 
       if (this.earlyGameMaritimeWaterCache.has(tile)) {
         return this.earlyGameMaritimeWaterCache.get(tile) === true;
       }
 
-      const queue = [tile];
-      const seen = new Set([tile]);
       let maritime = false;
-      for (let head = 0; head < queue.length; head++) {
-        const current = queue[head];
-        try {
-          if (
-            this.game.isOcean?.(current) === true ||
-            this.isEarlyGameMapEdge(current)
-          ) {
-            maritime = true;
-            break;
-          }
-        } catch (_e) {
-          /* malformed map adapters are handled conservatively */
-        }
-        for (const next of this.game.neighbors(current) || []) {
-          if (seen.has(next)) continue;
-          if (!this.game.isWater(next)) continue;
-          seen.add(next);
-          queue.push(next);
-        }
+      try {
+        maritime = this.game.isOcean(tile) === true;
+      } catch (_error) {
+        maritime = false;
       }
-
-      for (const waterTile of seen) {
-        this.earlyGameMaritimeWaterCache.set(waterTile, maritime);
-      }
+      this.earlyGameMaritimeWaterCache.set(tile, maritime);
       return maritime;
-    }
-
-    isEarlyGameMapEdge(tile) {
-      if (
-        typeof this.game.width !== "function" ||
-        typeof this.game.height !== "function" ||
-        typeof this.game.x !== "function" ||
-        typeof this.game.y !== "function"
-      ) {
-        return false;
-      }
-      const width = Number(this.game.width());
-      const height = Number(this.game.height());
-      const x = Number(this.game.x(tile));
-      const y = Number(this.game.y(tile));
-      return (
-        Number.isInteger(width) &&
-        Number.isInteger(height) &&
-        width > 0 &&
-        height > 0 &&
-        (x === 0 || y === 0 || x === width - 1 || y === height - 1)
-      );
     }
 
     isEarlyGameMaritimeShore(tile) {
       if (tile == null || typeof this.game.isLand !== "function") return false;
       if (!this.game.isLand(tile)) return false;
-      try {
-        if (this.game.isOceanShore?.(tile) === true) return true;
-      } catch (_e) {
-        /* fall through to river-edge detection */
+      if (typeof this.game.isOceanShore === "function") {
+        try {
+          return this.game.isOceanShore?.(tile) === true;
+        } catch (_error) {
+          /* fall through to the component-neighbor fallback */
+        }
       }
       if (typeof this.game.isShore !== "function") return false;
       if (!this.game.isShore(tile)) return false;
@@ -1719,8 +1674,8 @@
         return false;
       }
 
-      const shores = Array.from(this.player.borderTiles()).filter(
-        (tile) => this.game.isOceanShore(tile),
+      const shores = Array.from(this.player.borderTiles()).filter((tile) =>
+        this.isEarlyGameMaritimeShore(tile),
       );
       if (shores.length === 0) return false;
 
@@ -1751,7 +1706,12 @@
     }
 
     scanEarlyOceanTargets(shores) {
-      if (typeof this.game.isOceanShore !== "function") return [];
+      if (
+        typeof this.game.isShore !== "function" &&
+        typeof this.game.isOceanShore !== "function"
+      ) {
+        return [];
+      }
       const radius = state.settings.islandScanRadius || 40;
       const step = state.settings.islandScanStep || 2;
       const sampleCount = Math.min(
@@ -1779,7 +1739,7 @@
             const tile = this.game.ref(x, y);
             if (seen.has(tile) || !this.game.isLand(tile)) continue;
             if (this.game.hasOwner(tile) || this.game.hasFallout(tile)) continue;
-            if (!this.game.isOceanShore(tile)) continue;
+            if (!this.isEarlyGameMaritimeShore(tile)) continue;
             if (
               this.game
                 .neighbors(tile)
