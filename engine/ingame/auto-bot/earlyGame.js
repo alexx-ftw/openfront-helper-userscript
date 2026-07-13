@@ -25,6 +25,73 @@
   const EARLY_GAME_MAX_RECOVERY_TICKS = 600;
   const EARLY_GAME_MIN_DECISION_TICKS = 2;
   const EARLY_GAME_MAX_DECISION_TICKS = 30;
+  const EARLY_GAME_TRIBE_CAPTURE_TILE_THRESHOLD = 99;
+  const EARLY_GAME_CAPTURE_SEARCH_STEPS = 24;
+
+  function requiredTribeCaptureTiles(
+    targetTiles = 0,
+    expectedTiles = 1,
+    captureTiles = null,
+  ) {
+    const explicitTiles = Number(captureTiles);
+    if (Number.isFinite(explicitTiles) && explicitTiles > 0) {
+      return Math.max(1, Math.ceil(explicitTiles));
+    }
+    const ownedTiles = Number(targetTiles);
+    if (Number.isFinite(ownedTiles) && ownedTiles > 0) {
+      return Math.max(
+        1,
+        Math.ceil(ownedTiles) - EARLY_GAME_TRIBE_CAPTURE_TILE_THRESHOLD,
+      );
+    }
+    return Math.max(1, Math.ceil(Number(expectedTiles) || 1));
+  }
+
+  // Find the smallest attack force that survives a supplied sequence of
+  // attackLogic results. The live adapter supplies Config.attackLogic, so the
+  // caller can use the same terrain, fallout, Defense Post, traitor, and target
+  // size rules as AttackExecution instead of guessing with a troop multiplier.
+  // The fallback is intentionally caller-provided for older adapters that do not
+  // expose the engine formula.
+  function estimateTribeCaptureTroops({
+    targetTiles = 0,
+    expectedTiles = 1,
+    captureTiles = null,
+    simulateAttack = null,
+    fallbackTroops = 0,
+  } = {}) {
+    const tilesToCapture = requiredTribeCaptureTiles(
+      targetTiles,
+      expectedTiles,
+      captureTiles,
+    );
+    if (typeof simulateAttack === "function") {
+      let high = 1;
+      let canCapture = false;
+      for (let step = 0; step < EARLY_GAME_CAPTURE_SEARCH_STEPS; step += 1) {
+        if (simulateAttack(high, tilesToCapture) === true) {
+          canCapture = true;
+          break;
+        }
+        high *= 2;
+      }
+      if (canCapture) {
+        let low = 0;
+        for (let step = 0; step < EARLY_GAME_CAPTURE_SEARCH_STEPS; step += 1) {
+          const midpoint = (low + high) / 2;
+          if (simulateAttack(midpoint, tilesToCapture) === true) {
+            high = midpoint;
+          } else {
+            low = midpoint;
+          }
+        }
+        return Math.max(1, Math.ceil(high));
+      }
+    }
+
+    const fallback = Number(fallbackTroops);
+    return Math.max(1, Number.isFinite(fallback) ? Math.ceil(fallback) : 1);
+  }
 
   function isEarlyGameBoatEta(etaTicks) {
     return (
@@ -402,6 +469,7 @@
     generationMultiplier = 1,
     targetType = "land",
     targetTroops = 0,
+    captureTroops = null,
     targetDefenseMultiplier = 1,
     terrainMagnitude = 100,
     expectedTiles = 6,
@@ -444,6 +512,7 @@
     const tiles = Math.max(1, Number(expectedTiles) || 1);
     const safeContestPressure = finiteEarlyGameSignal(contestPressure);
     const rivalTroops = Math.max(0, Number(competitorTroops) || 0);
+    const exactCaptureTroops = Number(captureTroops);
 
     const targetGenerationTroops = maximum * optimalRatio;
     const belowGenerationTarget = own < targetGenerationTroops;
@@ -466,15 +535,11 @@
 
     let requiredTroops = terrainLossPerTile * tiles * 1.35;
     if (target === "tribe") {
-      const tribeTroops = Math.max(1, Number(targetTroops) || 0);
-      requiredTroops = Math.max(
-        requiredTroops,
-        // A tribe capture must clear the same 4x effective troop margin used
-        // by the regular bot attack rule. A 2x floor is only a survivability
-        // threshold and routinely leaves a small remnant behind.
-        tribeTroops * 4 * defenseMultiplier,
-      );
+      if (Number.isFinite(exactCaptureTroops) && exactCaptureTroops > 0) {
+        requiredTroops = exactCaptureTroops;
+      }
       if (safeContestPressure > 0) {
+        const tribeTroops = Math.max(1, Number(targetTroops) || 0);
         requiredTroops = Math.max(
           requiredTroops,
           tribeTroops + rivalTroops * (1.15 + safeContestPressure * 0.35),
@@ -556,6 +621,10 @@
       targetGenerationTroops,
       targetType: target,
       targetTroops: Math.max(0, Number(targetTroops) || 0),
+      captureTroops:
+        Number.isFinite(exactCaptureTroops) && exactCaptureTroops > 0
+          ? Math.ceil(exactCaptureTroops)
+          : null,
       defenseMultiplier,
       terrainMagnitude: mapMagnitude,
       terrainLossPerTile,

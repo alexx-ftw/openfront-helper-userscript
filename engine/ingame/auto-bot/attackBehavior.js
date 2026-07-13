@@ -273,6 +273,8 @@
       this.enemyDefensePostProfileCache = new Map();
       this.enemyDefensePostFrontByTarget = new Map();
       this.enemyDefensePostFrontSeenByTarget = new Map();
+      this.botCaptureTroopsCacheTick = -1;
+      this.botCaptureTroopsCache = new Map();
       this.earlyGameFrontierCacheTick = -1;
       this.earlyGameFrontierCache = null;
     }
@@ -2926,15 +2928,25 @@
       const frontier = this.getEarlyGameFrontierProfile();
       const targetPlayer = target?.isPlayer?.() === true ? target : candidate?.player;
       let defenseMultiplier = 1;
+      let defensePostProfile = null;
       if (targetPlayer?.isPlayer?.() === true) {
+        defensePostProfile = this.getEnemyDefensePostAttackProfile(targetPlayer);
         defenseMultiplier = Math.max(
           1,
-          Number(this.getEnemyDefensePostAttackProfile(targetPlayer)?.attackCostMultiplier || 1),
+          Number(defensePostProfile?.attackCostMultiplier || 1),
         );
       }
       const targetTroops = targetPlayer?.isPlayer?.()
         ? Math.max(0, Number(targetPlayer.troops?.() || 0))
         : 0;
+      const captureTroops =
+        targetType === "tribe" && targetPlayer?.type?.() === PlayerType.Bot
+          ? this.getBotCaptureTroopsFloor(
+              targetPlayer,
+              defensePostProfile,
+              candidate,
+            )
+          : null;
       const pressure = Math.max(
         finiteEarlyGameSignal(candidate?.foodRaceValue),
         finiteEarlyGameSignal(candidate?.contestPressure),
@@ -2952,6 +2964,7 @@
         generationMultiplier: this.getEarlyGameGenerationMultiplier(),
         targetType,
         targetTroops,
+        captureTroops,
         targetDefenseMultiplier: defenseMultiplier,
         terrainMagnitude:
           Number(candidate?.terrainMagnitude) || frontier.averageMagnitude,
@@ -3722,7 +3735,11 @@
         const botTarget =
           target.isPlayer() && target.type?.() === PlayerType.Bot;
         const captureFloor = botTarget
-          ? this.getBotCaptureTroopsFloor(target, enemyDefensePostProfile)
+          ? this.getBotCaptureTroopsFloor(
+              target,
+              enemyDefensePostProfile,
+              earlyGameCandidate,
+            )
           : 0;
         if (!Number.isFinite(planned) || planned < 1) {
           if (botTarget) {
@@ -3738,7 +3755,7 @@
           this.botAttackTroopsSent = botAttackTroopsSentBefore;
         }
         // Never let a stale/undersized plan downgrade a tribal capture to a
-        // probe. If the preferred full-capture force is available, use it.
+        // probe. If the calculated full-capture force is available, use it.
         troops = Math.min(this.player.troops(), Math.max(planned, captureFloor));
         if (botTarget) {
           this.botAttackTroopsSent += troops;
@@ -3827,7 +3844,7 @@
       }
 
       // USER (winFixes): a boat aimed at a neutral Bot/tribe is a real capture,
-      // not a probe. Use the same 2x/4x bot attack floor as land attacks so the
+      // not a probe. Calculate the force from the live attack-loss formula so the
       // tribe is taken in one crossing when the reserve allows it. Boats aimed at
       // nations, open coast, or TerraNullius keep the cheap 1% probe policy.
       let troops;
@@ -3885,7 +3902,11 @@
       if (plannedTroops != null && state.settings.winFixes) {
         const planned = Number(plannedTroops);
         const captureFloor = botTarget
-          ? this.getBotCaptureTroopsFloor(target, botDefensePostProfile)
+          ? this.getBotCaptureTroopsFloor(
+              target,
+              botDefensePostProfile,
+              earlyGameCandidate,
+            )
           : 0;
         if (!Number.isFinite(planned) || planned < 1) {
           if (botTarget) this.botAttackTroopsSent = botAttackTroopsSentBefore;
@@ -3950,15 +3971,178 @@
       });
     }
 
-    // getBotCaptureTroopsFloor — AiAttackBehavior (private).
-    getBotCaptureTroopsFloor(target, defensePostProfile = null) {
-      if (!target?.isPlayer?.() || target.type?.() !== PlayerType.Bot) return 0;
-      const targetTroops = Math.max(0, Number(target.troops()) || 0);
+    getBotCaptureSimulationTiles(target) {
+      const border = [];
+      try {
+        for (const tile of target?.borderTiles?.() || []) border.push(tile);
+      } catch (_error) {
+        /* an older adapter may not expose a synchronous border snapshot */
+      }
+      if (border.length === 0) {
+        const targetID = target?.smallID?.();
+        const seen = new Set();
+        try {
+          for (const ownBorder of this.player?.borderTiles?.() || []) {
+            for (const tile of this.game.neighbors(ownBorder) || []) {
+              if (seen.has(tile)) continue;
+              if (
+                this.game.isLand?.(tile) === false ||
+                this.game.ownerID(tile) !== targetID
+              ) {
+                continue;
+              }
+              seen.add(tile);
+              border.push(tile);
+              if (border.length >= 64) break;
+            }
+            if (border.length >= 64) break;
+          }
+        } catch (_error) {
+          /* the current front is optional on older adapters */
+        }
+      }
+      if (border.length <= 1) return border;
+
+      const tileMagnitude = (tile) => {
+        try {
+          const magnitude = Number(this.game.magnitude?.(tile));
+          return Number.isFinite(magnitude) ? magnitude : 0;
+        } catch (_error) {
+          return 0;
+        }
+      };
+
+      // Use the most expensive currently exposed front first. This is a small
+      // bounded safety margin for the attack heap's terrain-dependent ordering;
+      // it is materially tighter than multiplying the whole target army.
+      return border
+        .sort((left, right) => tileMagnitude(right) - tileMagnitude(left))
+        .slice(0, 64);
+    }
+
+    estimateBotCaptureTroops(
+      target,
+      defensePostProfile = null,
+      earlyGameCandidate = null,
+    ) {
+      const targetTroops = Math.max(0, Number(target?.troops?.() || 0));
+      const targetTiles = Math.max(0, Number(target?.numTilesOwned?.() || 0));
       const defenseMultiplier = Math.max(
         1,
         Number(defensePostProfile?.attackCostMultiplier || 1),
       );
-      return targetTroops * 4 * defenseMultiplier;
+      const captureTiles = 1;
+      const terrainMagnitude = terrainAttackMagnitudeFromMapMagnitude(
+        Number(earlyGameCandidate?.terrainMagnitude),
+      );
+      const defenderTroopLoss =
+        targetTroops / Math.max(1, targetTiles || 100);
+      const fallbackLossPerTile =
+        0.6 * terrainMagnitude * 0.8 * defenseMultiplier +
+        0.4 *
+          (1.3 * defenderTroopLoss * (terrainMagnitude / 100)) *
+          defenseMultiplier;
+      const fallbackTroops = Math.max(
+        1,
+        fallbackLossPerTile * captureTiles + 1,
+      );
+      const config = this.game.config?.();
+      const attackLogic = config?.attackLogic;
+      const simulationTiles = this.getBotCaptureSimulationTiles(target);
+      const estimate =
+        typeof estimateTribeCaptureTroops === "function"
+          ? estimateTribeCaptureTroops
+          : ({ fallbackTroops: fallback } = {}) =>
+              Math.max(1, Math.ceil(Number(fallback) || 1));
+
+      if (typeof attackLogic !== "function" || simulationTiles.length === 0) {
+        return estimate({
+          targetTiles,
+          captureTiles,
+          fallbackTroops,
+        });
+      }
+
+      const simulateAttack = (attackTroops, tilesToCapture) => {
+        let attackerTroops = Math.max(0, Number(attackTroops) || 0);
+        let defenderTroops = targetTroops;
+        let defenderTiles =
+          targetTiles > 0 ? targetTiles : Math.max(100, tilesToCapture + 99);
+
+        for (let index = 0; index < tilesToCapture; index += 1) {
+          // AttackExecution checks this before each tile. Requiring one
+          // surviving troop after the last tile avoids a zero/negative attack
+          // becoming a false positive in older engine builds.
+          if (attackerTroops < 1) return false;
+          const simulatedTarget = Object.create(target);
+          simulatedTarget.troops = () => defenderTroops;
+          simulatedTarget.numTilesOwned = () => defenderTiles;
+
+          let result;
+          try {
+            result = attackLogic(
+              this.game,
+              attackerTroops,
+              this.player,
+              simulatedTarget,
+              simulationTiles[index % simulationTiles.length],
+            );
+          } catch (_error) {
+            return false;
+          }
+
+          const attackerLoss = Number(result?.attackerTroopLoss);
+          if (!Number.isFinite(attackerLoss) || attackerLoss < 0) return false;
+          attackerTroops -= attackerLoss;
+          if (attackerTroops < 1) return false;
+
+          const defenderLoss = Number(result?.defenderTroopLoss);
+          if (Number.isFinite(defenderLoss) && defenderLoss > 0) {
+            defenderTroops = Math.max(0, defenderTroops - defenderLoss);
+          }
+          defenderTiles = Math.max(1, defenderTiles - 1);
+        }
+        return attackerTroops >= 1;
+      };
+
+      return estimate({
+        targetTiles,
+        captureTiles,
+        simulateAttack,
+        fallbackTroops,
+      });
+    }
+
+    // getBotCaptureTroopsFloor — AiAttackBehavior (private).
+    getBotCaptureTroopsFloor(
+      target,
+      defensePostProfile = null,
+      earlyGameCandidate = null,
+    ) {
+      if (!target?.isPlayer?.() || target.type?.() !== PlayerType.Bot) return 0;
+
+      const tick = this.currentAttackDecisionTick();
+      if (this.botCaptureTroopsCacheTick !== tick) {
+        this.botCaptureTroopsCacheTick = tick;
+        this.botCaptureTroopsCache.clear();
+      }
+      const targetID = target.smallID?.() ?? target;
+      const signature = [
+        Number(target.troops?.() || 0),
+        Number(target.numTilesOwned?.() || 0),
+        Number(earlyGameCandidate?.terrainMagnitude || 0),
+        Number(defensePostProfile?.attackCostMultiplier || 1),
+      ].join(":");
+      const cached = this.botCaptureTroopsCache.get(targetID);
+      if (cached?.signature === signature) return cached.troops;
+
+      const troops = this.estimateBotCaptureTroops(
+        target,
+        defensePostProfile,
+        earlyGameCandidate,
+      );
+      this.botCaptureTroopsCache.set(targetID, { signature, troops });
+      return troops;
     }
 
     // calculateBotAttackTroops — AiAttackBehavior (private).
@@ -3969,23 +4153,18 @@
         this.botAttackTroopsSent += maxTroops;
         return maxTroops;
       }
-      const defenseMultiplier = Math.max(
-        1,
-        Number(defensePostProfile?.attackCostMultiplier || 1),
-      );
-      const preferredAttackTroops = target.troops() * 4 * defenseMultiplier;
-      const minimumAttackTroops = target.troops() * 2 * defenseMultiplier;
-      let troops = preferredAttackTroops;
 
-      // Don't send more troops than maxTroops (Keep reserve)
-      if (troops > maxTroops) {
-        // If we haven't enough troops left to do a big enough bot attack, skip it
-        if (maxTroops < minimumAttackTroops) {
-          troops = 0;
-        } else {
-          troops = maxTroops;
-        }
-      }
+      const captureTroops = this.getBotCaptureTroopsFloor(
+        target,
+        defensePostProfile,
+      );
+      const available = Math.max(0, Number(maxTroops) || 0);
+      const troops =
+        captureTroops > 0
+          ? available >= captureTroops
+            ? captureTroops
+            : 0
+          : available;
       this.botAttackTroopsSent += troops;
       return troops;
     }

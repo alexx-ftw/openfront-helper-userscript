@@ -43,6 +43,8 @@ assert.equal(typeof sandbox.findOptimalGenerationRatio, "function");
 assert.equal(typeof sandbox.estimateTroopRecoveryTicks, "function");
 assert.equal(typeof sandbox.terrainAttackMagnitudeFromMapMagnitude, "function");
 assert.equal(typeof sandbox.calculateEarlyGameExpansionPlan, "function");
+assert.equal(typeof sandbox.requiredTribeCaptureTiles, "function");
+assert.equal(typeof sandbox.estimateTribeCaptureTroops, "function");
 assert.equal(typeof sandbox.getAutoDonateExpansionStatus, "function");
 assert.equal(sandbox.isEarlyGameBoatEta(300), true);
 assert.equal(sandbox.isEarlyGameBoatEta(301), false);
@@ -69,6 +71,17 @@ assert.ok(
 assert.equal(sandbox.terrainAttackMagnitudeFromMapMagnitude(1), 80);
 assert.equal(sandbox.terrainAttackMagnitudeFromMapMagnitude(15), 100);
 assert.equal(sandbox.terrainAttackMagnitudeFromMapMagnitude(25), 120);
+assert.equal(sandbox.requiredTribeCaptureTiles(10), 1);
+assert.equal(sandbox.requiredTribeCaptureTiles(150), 51);
+assert.equal(
+  sandbox.estimateTribeCaptureTroops({
+    targetTiles: 10,
+    simulateAttack: (attackTroops, tiles) => tiles === 1 && attackTroops >= 500,
+    fallbackTroops: 9999,
+  }),
+  500,
+  "capture sizing must use the supplied attack-loss simulation rather than a troop multiplier",
+);
 assert.ok(
   sandbox.estimateTroopRecoveryTicks({
     troops: 10000,
@@ -115,18 +128,20 @@ const completeTribePlan = sandbox.calculateEarlyGameExpansionPlan({
   maxTroops: 100000,
   targetType: "tribe",
   targetTroops: 5000,
+  captureTroops: 750,
   targetDefenseMultiplier: 1,
   opportunityUrgency: 1,
 });
-assert.ok(completeTribePlan.requiredTroops >= 20000);
+assert.equal(completeTribePlan.requiredTroops, 750);
 assert.ok(completeTribePlan.commitTroops >= completeTribePlan.requiredTroops);
 assert.equal(completeTribePlan.shouldAttackNow, true);
 
 const underfundedTribePlan = sandbox.calculateEarlyGameExpansionPlan({
-  ownTroops: 20000,
+  ownTroops: 600,
   maxTroops: 100000,
   targetType: "tribe",
   targetTroops: 5000,
+  captureTroops: 750,
   targetDefenseMultiplier: 1,
   opportunityUrgency: 1,
 });

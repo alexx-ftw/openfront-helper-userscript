@@ -7,6 +7,10 @@ import { fileURLToPath } from "node:url";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourcePath = path.join(repoRoot, "engine/ingame/auto-bot/attackBehavior.js");
 const source = fs.readFileSync(sourcePath, "utf8");
+const earlyGameSource = fs.readFileSync(
+  path.join(repoRoot, "engine/ingame/auto-bot/earlyGame.js"),
+  "utf8",
+);
 
 const Difficulty = {
   Easy: "Easy",
@@ -46,9 +50,13 @@ const sandbox = {
   setLastAction: () => {},
   tr: (value) => value,
 };
-vm.runInNewContext(`${source}\nglobalThis.AttackBehavior = AttackBehavior;`, sandbox, {
-  filename: sourcePath,
-});
+vm.runInNewContext(
+  `${earlyGameSource}\n${source}\nglobalThis.AttackBehavior = AttackBehavior;`,
+  sandbox,
+  {
+    filename: sourcePath,
+  },
+);
 
 assert.equal(typeof sandbox.calculateDefensePostAttackProfile, "function");
 assert.equal(typeof sandbox.AttackBehavior, "function");
@@ -103,8 +111,11 @@ const enemyPosts = [
 ];
 const enemy = {
   isPlayer: () => true,
+  type: () => "Bot",
   smallID: () => 2,
   troops: () => 100,
+  numTilesOwned: () => 10,
+  borderTiles: () => new Set([2]),
   units: () => {
     unitsCalls++;
     return enemyPosts;
@@ -122,6 +133,11 @@ const game = {
     defensePostRange: () => 30,
     defensePostDefenseBonus: () => 5,
     defensePostSpeedBonus: () => 3,
+    attackLogic: () => ({
+      attackerTroopLoss: 100,
+      defenderTroopLoss: 0,
+      tilesPerTickUsed: 1,
+    }),
   }),
   ownerID: (tile) => (tile === 2 ? 2 : tile === 3 ? 3 : 1),
   neighbors: (tile) => (tile === 1 ? [2, 3] : []),
@@ -153,26 +169,31 @@ assert.equal(behavior.attackIsTooWeakForDefensePosts(enemy, 999, cachedProfile),
 assert.equal(behavior.attackIsTooWeakForDefensePosts(enemy, 1000, cachedProfile), false);
 assert.equal(
   behavior.calculateBotAttackTroops(enemy, 500, cachedProfile),
-  0,
-  "a bot attack below the Defense Post-aware floor is skipped",
+  101,
+  "a bot attack uses the simulated loss floor instead of a Defense Post troop multiplier",
 );
 behavior.botAttackTroopsSent = 0;
 assert.equal(
   behavior.calculateBotAttackTroops(enemy, 1500, cachedProfile),
-  1500,
-  "a sufficiently funded attack commits the available troops",
+  101,
+  "a sufficiently funded attack commits only the troops required by the simulation",
 );
 behavior.botAttackTroopsSent = 0;
 assert.equal(
   behavior.calculateBotAttackTroops(enemy, 500, null),
-  400,
-  "without coverage, the existing 4x bot attack rule is unchanged",
+  101,
+  "the calculated requirement does not change into an arbitrary multiplier without coverage",
 );
 
 const boatConfig = {
   isUnitDisabled: () => false,
   maxTroops: () => 10000,
   boatMaxNumber: () => 10,
+  attackLogic: () => ({
+    attackerTroopLoss: 100,
+    defenderTroopLoss: 0,
+    tilesPerTickUsed: 1,
+  }),
 };
 const boatGame = {
   ticks: () => 1,
@@ -199,23 +220,24 @@ const boatTribe = {
   smallID: () => 2,
   id: () => "tribe-2",
   troops: () => 1000,
+  numTilesOwned: () => 10,
   units: () => [],
   borderTiles: () => new Set([2]),
 };
 const boatBehavior = new sandbox.AttackBehavior({}, boatGame, boatPlayer, 0.5, 0.3, 0.1, {}, {});
-assert.equal(await boatBehavior.sendBoatAttack(boatTribe, null, 500), true);
+assert.equal(await boatBehavior.sendBoatAttack(boatTribe, null, 50), true);
 assert.deepEqual(
   boatIntent,
-  [2, 4000],
-  "an undersized planned boat attack must be raised to the tribe's full-capture force",
+  [2, 101],
+  "an undersized planned boat attack must be raised to the simulated tribe-capture force",
 );
 
 boatIntent = null;
-assert.equal(await boatBehavior.sendLandAttack(boatTribe, null, null, 500), true);
+assert.equal(await boatBehavior.sendLandAttack(boatTribe, null, null, 50), true);
 assert.deepEqual(
   boatIntent,
-  ["tribe-2", 4000],
-  "an undersized planned land attack must be raised to the tribe's full-capture force",
+  ["tribe-2", 101],
+  "an undersized planned land attack must be raised to the simulated tribe-capture force",
 );
 
 tick++;
