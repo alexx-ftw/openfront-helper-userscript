@@ -193,13 +193,16 @@ placement-safety exception, not a change to the rest of the port strategy.
 When `state.settings.winFixes` is enabled, `AttackBehavior.maybeAttack()` has a
 documented policy seam before the existing bot/Terra Nullius fallback. It may
 enrich only nearby non-friendly `PlayerType.Bot` tribes with bounded border
-snapshots and rank them by open-ocean coast distance first. A direct or incoming
-attack remains an immediate race; when there is no immediate race, encirclement
-by our land or blocking a passage take priority over a central shortcut with a
-larger future-tribe chain. The stronger of those two closure signals is used, so
-a blocking gate does not need to be encircled already. The progressing-vector
-race signal still participates after those structural opportunities, followed by
-cheap capture and distance.
+snapshots and rank them by nearest navigable maritime route first: open ocean,
+ocean-connected water, or a river component that exits through the map edge.
+Only routes within the existing 80-tile opening radius count; distant coasts do
+not outrank urgent local targets. Closed inland lakes do not satisfy this signal.
+After the maritime route key, the lexicographic order is: a direct or incoming
+attack, the stronger of encirclement or passage blocking, the individual
+encirclement and blocking signals, future-tribe continuation value, the
+progressing-vector food race, cheap capture, an existing land border, and then
+distance. The stronger closure signal is used, so a blocking gate does not need
+to be encircled already.
 The race signal combines outgoing/incoming attacks with a bounded per-player
 history of tile growth and `nameLocation()` movement; a direct attack is treated
 as an immediate race while a progressing vector toward the candidate still
@@ -215,8 +218,11 @@ original fallback continues.
 
 The same win-fix may probe an unowned `isOceanShore` tile from an existing ocean
 shore before generic opening expansion. `isOceanShore` is required so isolated
-lakes cannot satisfy the coastal objective. The probe remains bounded by the
-existing rank-then-probe transport boundary and the Early Game 300-tick ETA gate.
+lakes cannot satisfy the coastal objective. The maritime distance field is
+bounded to the same 80-tile opening radius, built once per game map, and reused
+across all `AttackBehavior` instances.
+The probe remains bounded by the existing rank-then-probe transport boundary
+and the Early Game 300-tick ETA gate.
 With `winFixes` disabled, these additions are inactive and the faithful Nation
 flow remains unchanged.
 

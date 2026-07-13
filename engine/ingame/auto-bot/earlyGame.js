@@ -2,13 +2,18 @@
 //
 // The source Nation AI has no separate Early Game controller. These helpers keep
 // the improvement as a small policy layer around the existing attack order:
-// prefer an open-ocean route and a cheap/contested tribe, then use a boat only
-// when an exact route ETA proves it is inside the 30-second opening window.
+// prefer a navigable river/open-sea/ocean route and a cheap/contested tribe,
+// then use a boat only when an exact route ETA proves it is inside the
+// 30-second opening window.
 
 "use strict";
 
   // OpenFront advances one game tick every 100 ms, so 30 seconds is 300 ticks.
   const EARLY_GAME_MAX_BOAT_TICKS = 300;
+  // Keep maritime targeting local to the opening frontier. This is the same
+  // bounded radius used by the former open-ocean search; a distant coast must
+  // not outrank an urgent nearby attack merely because it is finite.
+  const EARLY_GAME_MAX_MARITIME_DISTANCE = 80;
 
   function isEarlyGameBoatEta(etaTicks) {
     return (
@@ -71,24 +76,24 @@
     return Number.isFinite(length) ? Math.max(0, length - 1) : null;
   }
 
-  // Measure the shortest LAND distance from any tile on a tribe's border to an
-  // open-ocean coast. `isOceanShore` is intentionally used instead of the more
-  // general `isShore`: closed lakes must not make an inland tribe look like a
-  // port-access route. A bounded search keeps a malformed or very large map from
-  // turning one attack decision into an unbounded scan.
-  function findNearestOceanCoastDistance({
+  // Measure the shortest LAND distance from any tile on a tribe's border to a
+  // navigable maritime coast. The predicate is supplied by the caller:
+  // `isOceanShore` covers open ocean and ocean-connected rivers, while the custom
+  // attack policy can also recognise a river that exits through the map edge.
+  // Closed inland lakes must not satisfy this objective.
+  function findNearestMaritimeCoastDistance({
     starts,
     neighbors,
     isLand,
-    isOceanShore,
-    maxDistance = 80,
+    isMaritimeShore,
+    maxDistance = EARLY_GAME_MAX_MARITIME_DISTANCE,
     maxVisited = 5000,
   } = {}) {
     if (
       starts == null ||
       typeof neighbors !== "function" ||
       typeof isLand !== "function" ||
-      typeof isOceanShore !== "function"
+      typeof isMaritimeShore !== "function"
     ) {
       return Infinity;
     }
@@ -105,7 +110,7 @@
       if (distances.size > maxVisited) return Infinity;
       const current = queue[head];
       const distance = distances.get(current);
-      if (isOceanShore(current)) return distance;
+      if (isMaritimeShore(current)) return distance;
       if (distance >= maxDistance) continue;
 
       for (const next of neighbors(current) || []) {
@@ -115,6 +120,104 @@
       }
     }
     return Infinity;
+  }
+
+  // Backwards-compatible helper name used by existing diagnostics/tests.
+  function findNearestOceanCoastDistance({
+    starts,
+    neighbors,
+    isLand,
+    isOceanShore,
+    maxDistance = EARLY_GAME_MAX_MARITIME_DISTANCE,
+    maxVisited = 5000,
+  } = {}) {
+    return findNearestMaritimeCoastDistance({
+      starts,
+      neighbors,
+      isLand,
+      isMaritimeShore: isOceanShore,
+      maxDistance,
+      maxVisited,
+    });
+  }
+
+  // A reverse multi-source distance field avoids repeating the same BFS for
+  // every tribe on every attack tick. Terrain is static for a match, so the
+  // caller can build this once and look up all candidate borders cheaply.
+  function buildMaritimeDistanceIndex({
+    width,
+    height,
+    neighbors,
+    isLand,
+    isMaritimeShore,
+    maxDistance = EARLY_GAME_MAX_MARITIME_DISTANCE,
+  } = {}) {
+    const mapWidth = Number(width);
+    const mapHeight = Number(height);
+    const total = mapWidth * mapHeight;
+    const distanceLimit = Number(maxDistance);
+    if (
+      !Number.isInteger(mapWidth) ||
+      !Number.isInteger(mapHeight) ||
+      mapWidth <= 0 ||
+      mapHeight <= 0 ||
+      !Number.isSafeInteger(total) ||
+      !Number.isInteger(distanceLimit) ||
+      distanceLimit < 0 ||
+      typeof neighbors !== "function" ||
+      typeof isLand !== "function" ||
+      typeof isMaritimeShore !== "function"
+    ) {
+      return null;
+    }
+
+    const distances = new Int32Array(total);
+    distances.fill(-1);
+    const queue = new Int32Array(total);
+    let tail = 0;
+    for (let tile = 0; tile < total; tile++) {
+      if (!isLand(tile) || !isMaritimeShore(tile)) continue;
+      distances[tile] = 0;
+      queue[tail++] = tile;
+    }
+
+    for (let head = 0; head < tail; head++) {
+      const current = queue[head];
+      if (distances[current] >= distanceLimit) continue;
+      const nextDistance = distances[current] + 1;
+      for (const next of neighbors(current) || []) {
+        if (
+          !Number.isInteger(next) ||
+          next < 0 ||
+          next >= total ||
+          !isLand(next) ||
+          distances[next] !== -1
+        ) {
+          continue;
+        }
+        distances[next] = nextDistance;
+        queue[tail++] = next;
+      }
+    }
+
+    return { distances, width: mapWidth, height: mapHeight };
+  }
+
+  function lookupMaritimeDistanceIndex(index, starts) {
+    if (!index || !index.distances || starts == null) return Infinity;
+    let best = Infinity;
+    for (const tile of Array.from(starts)) {
+      if (
+        !Number.isInteger(tile) ||
+        tile < 0 ||
+        tile >= index.distances.length
+      ) {
+        continue;
+      }
+      const distance = index.distances[tile];
+      if (distance >= 0 && distance < best) best = distance;
+    }
+    return best;
   }
 
   function finiteEarlyGameSignal(value) {
@@ -211,7 +314,8 @@
   }
 
   // Early-Game tribe order is deliberately lexicographic. First choose tribes
-  // that can lead to open ocean. A direct/incoming rival attack is an immediate
+  // that can lead to a navigable river, open sea, or ocean. A direct/incoming
+  // rival attack is an immediate
   // race and stays urgent; otherwise close an encirclement or block a passage
   // before taking the central shortcut with the largest future-food count. The
   // progressing-vector race signal still participates after those structural
@@ -219,8 +323,23 @@
   // winnable ring of tribes. The closure score uses the stronger of encirclement
   // and blocking rather than requiring both at once.
   function earlyGameTribeSortKey(candidate = {}) {
-    const oceanDistance = Number(candidate.oceanDistance);
-    const hasOpenOcean = Number.isFinite(oceanDistance);
+    const maritimeDistance =
+      candidate.maritimeDistance == null
+        ? Infinity
+        : Number(candidate.maritimeDistance);
+    const oceanDistance =
+      candidate.oceanDistance == null ? Infinity : Number(candidate.oceanDistance);
+    const nearestMaritimeDistance =
+      Number.isInteger(maritimeDistance) &&
+      maritimeDistance >= 0 &&
+      maritimeDistance <= EARLY_GAME_MAX_MARITIME_DISTANCE
+        ? maritimeDistance
+        : Number.isInteger(oceanDistance) &&
+            oceanDistance >= 0 &&
+            oceanDistance <= EARLY_GAME_MAX_MARITIME_DISTANCE
+          ? oceanDistance
+          : Infinity;
+    const hasMaritimeAccess = Number.isFinite(nearestMaritimeDistance);
     const distance = Number(candidate.distance);
     const foodRaceValue = Math.max(
       finiteEarlyGameSignal(candidate.foodRaceValue),
@@ -234,8 +353,8 @@
       finiteEarlyGameSignal(candidate.blockValue),
     );
     return [
-      hasOpenOcean ? 1 : 0,
-      hasOpenOcean ? -oceanDistance : 0,
+      hasMaritimeAccess ? 1 : 0,
+      hasMaritimeAccess ? -nearestMaritimeDistance : 0,
       hasImmediateRace ? 1 : 0,
       closureValue,
       finiteEarlyGameSignal(candidate.encirclement),

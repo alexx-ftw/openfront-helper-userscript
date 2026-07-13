@@ -24,7 +24,10 @@ assert.equal(typeof sandbox.chooseEarlyGameAction, "function");
 assert.equal(typeof sandbox.isEarlyGameBoatEta, "function");
 assert.equal(typeof sandbox.findWaterRouteTicks, "function");
 assert.equal(typeof sandbox.transportRouteTicks, "function");
+assert.equal(typeof sandbox.findNearestMaritimeCoastDistance, "function");
 assert.equal(typeof sandbox.findNearestOceanCoastDistance, "function");
+assert.equal(typeof sandbox.buildMaritimeDistanceIndex, "function");
+assert.equal(typeof sandbox.lookupMaritimeDistanceIndex, "function");
 assert.equal(typeof sandbox.rankEarlyGameTribeCandidates, "function");
 assert.equal(typeof sandbox.calculateEarlyGameContinuationValue, "function");
 assert.equal(typeof sandbox.calculateEarlyGameFoodRaceValue, "function");
@@ -109,6 +112,51 @@ assert.equal(
   }),
   Infinity,
 );
+assert.equal(
+  sandbox.findNearestMaritimeCoastDistance({
+    starts: [10],
+    neighbors: (tile) => landGraph.get(tile) || [],
+    isLand: (tile) => tile >= 10 && tile <= 13,
+    isMaritimeShore: (tile) => tile === 13,
+    maxDistance: 20,
+  }),
+  3,
+);
+assert.equal(
+  sandbox.findNearestMaritimeCoastDistance({
+    starts: [10],
+    neighbors: (tile) => landGraph.get(tile) || [],
+    isLand: (tile) => tile >= 10 && tile <= 13,
+    isMaritimeShore: () => false,
+    maxDistance: 20,
+  }),
+  Infinity,
+  "a closed lake shore must not satisfy the maritime objective",
+);
+
+const maritimeDistanceIndex = sandbox.buildMaritimeDistanceIndex({
+  width: 4,
+  height: 1,
+  neighbors: (tile) => (tile === 0 ? [1] : tile === 3 ? [2] : [tile - 1, tile + 1]),
+  isLand: () => true,
+  isMaritimeShore: (tile) => tile === 3,
+});
+assert.equal(sandbox.lookupMaritimeDistanceIndex(maritimeDistanceIndex, [0]), 3);
+assert.equal(
+  sandbox.lookupMaritimeDistanceIndex(
+    sandbox.buildMaritimeDistanceIndex({
+      width: 4,
+      height: 1,
+      neighbors: (tile) => (tile === 0 ? [1] : tile === 3 ? [2] : [tile - 1, tile + 1]),
+      isLand: () => true,
+      isMaritimeShore: (tile) => tile === 3,
+      maxDistance: 2,
+    }),
+    [0],
+  ),
+  Infinity,
+  "a distant maritime route must stay outside the local opening radius",
+);
 
 const rankedTribes = sandbox.rankEarlyGameTribeCandidates([
   {
@@ -139,6 +187,47 @@ const rankedTribes = sandbox.rankEarlyGameTribeCandidates([
 assert.deepEqual(
   rankedTribes.map((candidate) => candidate.id),
   ["coastal-contested", "coastal-open", "encircled-inland"],
+);
+
+const maritimeRouteRank = sandbox.rankEarlyGameTribeCandidates([
+  {
+    id: "river-route",
+    maritimeDistance: 4,
+    oceanDistance: Infinity,
+    futureFoodAccess: 0.1,
+    cheapCapture: 0.2,
+  },
+  {
+    id: "interior-shortcut",
+    maritimeDistance: Infinity,
+    oceanDistance: Infinity,
+    futureFoodAccess: 1,
+    cheapCapture: 1,
+  },
+]);
+assert.equal(
+  maritimeRouteRank[0].id,
+  "river-route",
+  "a tribe opening a navigable river route must beat an interior food shortcut",
+);
+const boundedMaritimeRank = sandbox.rankEarlyGameTribeCandidates([
+  {
+    id: "distant-maritime",
+    maritimeDistance: 81,
+    oceanDistance: 81,
+    futureFoodAccess: 1,
+  },
+  {
+    id: "local-inland",
+    maritimeDistance: Infinity,
+    oceanDistance: Infinity,
+    encirclement: 1,
+  },
+]);
+assert.equal(
+  boundedMaritimeRank[0].id,
+  "local-inland",
+  "a distant coast must not outrank a local structural opportunity",
 );
 
 const encirclingGateRank = sandbox.rankEarlyGameTribeCandidates([
@@ -511,13 +600,85 @@ const targetBehavior = new targetSandbox.AttackBehavior(
 const enrichedTargets = await targetBehavior.getEarlyGameTribeCandidates();
 const rankedEnrichedTargets = targetSandbox.rankEarlyGameTribeCandidates(enrichedTargets);
 assert.equal(rankedEnrichedTargets[0].id, 2);
+assert.equal(rankedEnrichedTargets[0].maritimeDistance, 0);
 assert.equal(rankedEnrichedTargets[0].oceanDistance, 0);
 const enrichedInland = enrichedTargets.find((target) => target.id === 4);
+assert.equal(enrichedInland.maritimeDistance, Infinity);
 assert.equal(enrichedInland.encirclement, 1 / 3);
 assert.ok(enrichedInland.blockValue > 0);
 assert.equal(enrichedInland.futureFoodCount, 1);
 assert.ok(enrichedInland.futureFoodAccess > 0.6);
 assert.ok(enrichedInland.foodRaceValue > 0.5);
+
+// Integration probe: ocean-connected water and a river that exits through the
+// map edge count as maritime; an isolated inland lake does not.
+const maritimeLand = new Set([8, 9, 14, 15, 16]);
+const maritimeWater = new Set([10, 11, 12, 17, 18, 19, 20]);
+const maritimeNeighbors = new Map([
+  [8, [9]],
+  [9, [8, 10]],
+  [10, [9, 11]],
+  [11, [10, 12]],
+  [12, [11]],
+  [15, [16]],
+  [16, [15, 17]],
+  [17, [16, 18]],
+  [18, [17, 19]],
+  [19, [18, 20]],
+  [20, [19]],
+]);
+const maritimeGame = {
+  width: () => 7,
+  height: () => 5,
+  x: (tile) => tile % 7,
+  y: (tile) => Math.floor(tile / 7),
+  neighbors: (tile) => maritimeNeighbors.get(tile) || [],
+  isLand: (tile) => maritimeLand.has(tile),
+  isWater: (tile) => maritimeWater.has(tile),
+  isOcean: () => false,
+  isOceanShore: () => false,
+  isShore: (tile) => tile === 9 || tile === 16,
+};
+const maritimeBehavior = new targetSandbox.AttackBehavior(
+  {},
+  maritimeGame,
+  {},
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+assert.equal(
+  maritimeBehavior.getEarlyGameMaritimeDistance(new Set([15])),
+  1,
+  "a river component that exits through the map edge must count as maritime",
+);
+assert.equal(
+  maritimeBehavior.getEarlyGameMaritimeDistance(new Set([8])),
+  Infinity,
+  "an isolated inland lake must not count as maritime",
+);
+assert.equal(
+  maritimeBehavior.getEarlyGameMaritimeIndex(),
+  maritimeBehavior.getEarlyGameMaritimeIndex(),
+  "the maritime distance field must be reused after it is built",
+);
+const sharedMaritimeBehavior = new targetSandbox.AttackBehavior(
+  {},
+  maritimeGame,
+  {},
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+assert.equal(
+  sharedMaritimeBehavior.getEarlyGameMaritimeIndex(),
+  maritimeBehavior.getEarlyGameMaritimeIndex(),
+  "the maritime distance field must be shared across behaviors for one map",
+);
 assert.ok(
   targetBehavior.applyEarlyGameRaceTroops({
     target: targetInland,

@@ -20,10 +20,12 @@ The Early Game snapshot starts after spawn selection while there is still free
 territory or an actionable tribe. With `winFixes` enabled, the policy keeps the
 existing Nation decision chain but enriches its opening target choice:
 
-1. rank nearby non-friendly bot tribes by nearest open-ocean coast, then by how
-   many future tribes the new frontier opens, and then by the urgency of beating
-   a rival's active/progressing food vector; encirclement, blocked competition,
-   capture cost, and distance remain tie-breakers;
+1. rank nearby non-friendly bot tribes by nearest navigable maritime route
+   (open ocean, ocean-connected water, or a river that exits through the map
+   edge), with closed inland lakes excluded and only routes within the existing
+   80-tile opening radius eligible. Within that route key, the order is direct
+   or incoming rival attack, encirclement/blocking closure, future-tribe access,
+   progressing food-race urgency, capture cost, land border, and distance;
 2. attack the best-ranked tribe through the existing land/boat actuation. When a
    rival is racing for the same food, the bot raises the commitment while keeping
    the existing reserve floor;

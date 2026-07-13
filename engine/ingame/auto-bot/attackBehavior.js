@@ -69,6 +69,16 @@
   // async enrichment bounded so a crowded tribe map cannot starve the combat tick.
   const EARLY_TRIBE_CANDIDATES = 8;
   const EARLY_GAME_TRIBE_CHAIN_RADIUS = 120;
+  // Terrain is shared by all Nation behaviors for the same game. Keep the
+  // reverse maritime field per map instead of rebuilding it for every bot.
+  const EARLY_GAME_MARITIME_INDEX_CACHE = new WeakMap();
+
+  function earlyGameMaritimeCacheKey(game) {
+    const source = game && game.__src;
+    return source && (typeof source === "object" || typeof source === "function")
+      ? source
+      : game;
+  }
 
   function playersShareClanTag(left, right) {
     try {
@@ -140,6 +150,10 @@
       // intentionally local to this persistent behavior instance and bounded to
       // the players visible in the current game snapshot.
       this.earlyFoodMovement = new Map();
+      // The shared WeakMap below owns the terrain index; this local reference
+      // avoids even the lookup after the first candidate pass.
+      this.earlyGameMaritimeIndex = undefined;
+      this.earlyGameMaritimeWaterCache = new Map();
     }
 
     // maybeAttack — AiAttackBehavior.maybeAttack (now async: it awaits sendAttack,
@@ -385,6 +399,9 @@
       const ranked = rankEarlyGameTribeCandidates(candidates);
       const diagnosticTargets = ranked.map((candidate) => ({
         id: candidate.id,
+        maritimeDistance: Number.isFinite(candidate.maritimeDistance)
+          ? candidate.maritimeDistance
+          : null,
         oceanDistance: Number.isFinite(candidate.oceanDistance)
           ? candidate.oceanDistance
           : null,
@@ -412,6 +429,144 @@
         }
       }
       return false;
+    }
+
+    // OpenFront marks the largest/open water body with `isOcean`, and that bit
+    // propagates through connected water. Smaller rivers can still be a useful
+    // maritime corridor when they leave through the map edge, while a closed
+    // inland lake must remain excluded from this objective.
+    isEarlyGameMaritimeWater(tile) {
+      if (tile == null || typeof this.game.isWater !== "function") return false;
+      try {
+        if (this.game.isOcean?.(tile) === true) return true;
+      } catch (_e) {
+        /* fall through to the component scan */
+      }
+
+      if (this.earlyGameMaritimeWaterCache.has(tile)) {
+        return this.earlyGameMaritimeWaterCache.get(tile) === true;
+      }
+
+      const queue = [tile];
+      const seen = new Set([tile]);
+      let maritime = false;
+      for (let head = 0; head < queue.length; head++) {
+        const current = queue[head];
+        try {
+          if (
+            this.game.isOcean?.(current) === true ||
+            this.isEarlyGameMapEdge(current)
+          ) {
+            maritime = true;
+            break;
+          }
+        } catch (_e) {
+          /* malformed map adapters are handled conservatively */
+        }
+        for (const next of this.game.neighbors(current) || []) {
+          if (seen.has(next)) continue;
+          if (!this.game.isWater(next)) continue;
+          seen.add(next);
+          queue.push(next);
+        }
+      }
+
+      for (const waterTile of seen) {
+        this.earlyGameMaritimeWaterCache.set(waterTile, maritime);
+      }
+      return maritime;
+    }
+
+    isEarlyGameMapEdge(tile) {
+      if (
+        typeof this.game.width !== "function" ||
+        typeof this.game.height !== "function" ||
+        typeof this.game.x !== "function" ||
+        typeof this.game.y !== "function"
+      ) {
+        return false;
+      }
+      const width = Number(this.game.width());
+      const height = Number(this.game.height());
+      const x = Number(this.game.x(tile));
+      const y = Number(this.game.y(tile));
+      return (
+        Number.isInteger(width) &&
+        Number.isInteger(height) &&
+        width > 0 &&
+        height > 0 &&
+        (x === 0 || y === 0 || x === width - 1 || y === height - 1)
+      );
+    }
+
+    isEarlyGameMaritimeShore(tile) {
+      if (tile == null || typeof this.game.isLand !== "function") return false;
+      if (!this.game.isLand(tile)) return false;
+      try {
+        if (this.game.isOceanShore?.(tile) === true) return true;
+      } catch (_e) {
+        /* fall through to river-edge detection */
+      }
+      if (typeof this.game.isShore !== "function") return false;
+      if (!this.game.isShore(tile)) return false;
+      return (this.game.neighbors(tile) || []).some(
+        (neighbor) =>
+          this.game.isWater?.(neighbor) === true &&
+          this.isEarlyGameMaritimeWater(neighbor),
+      );
+    }
+
+    getEarlyGameMaritimeIndex() {
+      if (this.earlyGameMaritimeIndex !== undefined) {
+        return this.earlyGameMaritimeIndex;
+      }
+      if (
+        typeof this.game.width !== "function" ||
+        typeof this.game.height !== "function"
+      ) {
+        this.earlyGameMaritimeIndex = null;
+        return null;
+      }
+      const cacheKey = earlyGameMaritimeCacheKey(this.game);
+      if (
+        cacheKey &&
+        (typeof cacheKey === "object" || typeof cacheKey === "function")
+      ) {
+        const cached = EARLY_GAME_MARITIME_INDEX_CACHE.get(cacheKey);
+        if (cached) {
+          this.earlyGameMaritimeIndex = cached;
+          return cached;
+        }
+      }
+      const index = buildMaritimeDistanceIndex({
+        width: this.game.width(),
+        height: this.game.height(),
+        neighbors: (tile) => this.game.neighbors(tile),
+        isLand: (tile) => this.game.isLand(tile),
+        isMaritimeShore: (tile) => this.isEarlyGameMaritimeShore(tile),
+      });
+      this.earlyGameMaritimeIndex = index;
+      if (
+        index &&
+        cacheKey &&
+        (typeof cacheKey === "object" || typeof cacheKey === "function")
+      ) {
+        EARLY_GAME_MARITIME_INDEX_CACHE.set(cacheKey, index);
+      }
+      return index;
+    }
+
+    getEarlyGameMaritimeDistance(starts) {
+      const index = this.getEarlyGameMaritimeIndex();
+      if (index) {
+        return lookupMaritimeDistanceIndex(index, starts);
+      }
+      return findNearestMaritimeCoastDistance({
+        starts,
+        neighbors: (tile) => this.game.neighbors(tile),
+        isLand: (tile) => this.game.isLand(tile),
+        isMaritimeShore: (tile) => this.isEarlyGameMaritimeShore(tile),
+      });
     }
 
     // Build the small, bounded feature vector used by rankEarlyGameTribeCandidates.
@@ -540,12 +695,7 @@
           tribeCenter,
           competitorProfiles,
         });
-        const oceanDistance = findNearestOceanCoastDistance({
-          starts: border,
-          neighbors: (tile) => this.game.neighbors(tile),
-          isLand: (tile) => this.game.isLand(tile),
-          isOceanShore: (tile) => this.game.isOceanShore(tile),
-        });
+        const maritimeDistance = this.getEarlyGameMaritimeDistance(border);
         const troopRatio =
           this.player.troops() > 0
             ? tribe.troops() / this.player.troops()
@@ -553,7 +703,11 @@
         candidates.push({
           player: tribe,
           id: tribe.smallID(),
-          oceanDistance,
+          maritimeDistance,
+          // Keep the legacy diagnostic/ranker field populated for adapters that
+          // still inspect oceanDistance; the new value is the maritime route
+          // distance, not a closed-lake shore distance.
+          oceanDistance: maritimeDistance,
           encirclement,
           blockValue,
           cheapCapture: Math.max(0, 1 - Math.min(1, troopRatio)),
