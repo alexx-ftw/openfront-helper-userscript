@@ -78,6 +78,11 @@
   // until the engine's conquerPlayer threshold is reached. Keep the expensive
   // exact search bounded; larger targets are deferred instead of guessed.
   const MAX_BOT_CAPTURE_SIMULATION_TILES = 512;
+  // A transport can disappear from the unit snapshot on the tick in which it
+  // becomes an AttackExecution. Keep its commitment for a few ticks while the
+  // corresponding outgoing attack becomes visible; otherwise the next decision
+  // can incorrectly launch a second full invasion.
+  const BOT_TRANSPORT_COMMITMENT_GRACE_TICKS = 3;
   // OpenFront's Config.attackLogic applies these effects when an operational
   // enemy Defense Post is within defensePostRange() of the tile being taken.
   // Keep fallbacks here because older client views may not expose the newer
@@ -266,7 +271,10 @@
       this.botAttackTroopsSent = 0;
       this.botAttackTroopsSentTick = -1;
       this.botAttackTroopsSentByTarget = new Map();
+      this.botAttackTroopsSentByTargetType = new Map();
       this.botAttackActiveBaselineByTarget = new Map();
+      this.botAttackTransportCommitments = [];
+      this.botAttackTransportReconciledTick = -1;
       // Small per-player memory used by the early-game food-race policy. It is
       // intentionally local to this persistent behavior instance and bounded to
       // the players visible in the current game snapshot.
@@ -308,8 +316,10 @@
         this.botAttackTroopsSentTick = tick;
         this.botAttackTroopsSent = 0;
         this.botAttackTroopsSentByTarget.clear();
+        this.botAttackTroopsSentByTargetType.clear();
         this.botAttackActiveBaselineByTarget.clear();
       }
+      this.reconcileBotAttackTransportCommitments(tick);
       return tick;
     }
 
@@ -325,14 +335,23 @@
       return target;
     }
 
-    getBotAttackTroopsSentForTarget(target) {
+    getBotAttackTroopsSentForTarget(target, attackType = null) {
+      const targetKey = this.getBotAttackTargetKey(target);
+      if (attackType !== null) {
+        const byType = this.botAttackTroopsSentByTargetType.get(targetKey);
+        return Math.max(0, Number(byType?.[attackType] || 0));
+      }
       return Math.max(
         0,
-        Number(this.botAttackTroopsSentByTarget.get(this.getBotAttackTargetKey(target)) || 0),
+        Number(this.botAttackTroopsSentByTarget.get(targetKey) || 0),
       );
     }
 
-    recordBotAttackTroopsSent(target, troops) {
+    recordBotAttackTroopsSent(
+      target,
+      troops,
+      { attackType = "land", destination = null } = {},
+    ) {
       if (!target?.isPlayer?.() || target.type?.() !== PlayerType.Bot) return;
       const amount = Math.max(0, Number(troops) || 0);
       if (amount <= 0) return;
@@ -342,6 +361,24 @@
         key,
         this.getBotAttackTroopsSentForTarget(target) + amount,
       );
+      const byType = this.botAttackTroopsSentByTargetType.get(key) || {
+        land: 0,
+        boat: 0,
+      };
+      byType[attackType] = Math.max(0, Number(byType[attackType]) || 0) + amount;
+      this.botAttackTroopsSentByTargetType.set(key, byType);
+
+      if (attackType === "boat") {
+        this.botAttackTransportCommitments.push({
+          targetKey: key,
+          destination,
+          troops: amount,
+          createdTick: this.currentAttackDecisionTick(),
+          unitKey: null,
+          attackId: null,
+          phase: "pending",
+        });
+      }
     }
 
     resetEnemyDefensePostCaches() {
@@ -2875,6 +2912,12 @@
     }
 
     getActiveExpansionAttackTroops(target = undefined) {
+      if (
+        target?.isPlayer?.() === true &&
+        target.type?.() === PlayerType.Bot
+      ) {
+        return this.getActiveBotAttackTroops(target);
+      }
       let attacks = [];
       try {
         attacks = this.player.outgoingAttacks?.() || [];
@@ -2910,46 +2953,357 @@
       return total;
     }
 
-    getActiveBotAttackTroops(target = undefined) {
+    reconcileBotAttackTransportCommitments(
+      tick = this.currentAttackDecisionTick(),
+    ) {
+      if (this.botAttackTransportReconciledTick === tick) return;
+      this.botAttackTransportReconciledTick = tick;
+
+      const transportType =
+        typeof UNIT !== "undefined" ? UNIT.TransportShip : null;
+      const transportUnits = [];
+      if (
+        transportType != null &&
+        typeof this.player?.units === "function"
+      ) {
+        try {
+          for (const unit of this.player.units(transportType) || []) {
+            if (
+              typeof unit?.isActive === "function" &&
+              unit.isActive() === false
+            ) {
+              continue;
+            }
+            const targetTile = unit.targetTile?.();
+            if (targetTile == null) continue;
+            const transportState = unit.transportShipState?.();
+            if (transportState?.isRetreating === true) continue;
+            transportUnits.push({
+              unit,
+              unitKey: unit.id?.() ?? unit,
+              targetTile,
+              troops: Math.max(0, Number(unit.troops?.() || 0)),
+            });
+          }
+        } catch (_error) {
+          /* transport snapshots are optional on older client adapters */
+        }
+      }
+
+      const botTransportUnits = [];
+      for (const record of transportUnits) {
+        let target = null;
+        try {
+          target = this.game.owner?.(record.targetTile) || null;
+        } catch (_error) {
+          target = null;
+        }
+        if (
+          target?.isPlayer?.() !== true ||
+          target.type?.() !== PlayerType.Bot
+        ) {
+          continue;
+        }
+        botTransportUnits.push({
+          ...record,
+          targetKey: this.getBotAttackTargetKey(target),
+        });
+      }
+
+      // Reconstruct commitments from live transport units too. This covers a
+      // userscript reload while a previous tribal invasion is still at sea.
+      for (const record of botTransportUnits) {
+        let entry = this.botAttackTransportCommitments.find(
+          (candidate) => candidate.unitKey === record.unitKey,
+        );
+        if (!entry) {
+          entry = this.botAttackTransportCommitments.find(
+            (candidate) =>
+              candidate.unitKey == null &&
+              candidate.attackId == null &&
+              candidate.targetKey === record.targetKey &&
+              (candidate.destination == null ||
+                candidate.destination === record.targetTile) &&
+              Math.abs(candidate.troops - record.troops) <=
+                Math.max(1, candidate.troops * 0.1),
+          );
+        }
+        if (!entry) {
+          entry = {
+            targetKey: record.targetKey,
+            destination: record.targetTile,
+            troops: record.troops,
+            createdTick: tick,
+            unitKey: null,
+            attackId: null,
+            phase: "transit",
+          };
+          this.botAttackTransportCommitments.push(entry);
+        }
+        entry.unitKey = record.unitKey;
+        entry.destination = record.targetTile;
+        entry.troops = record.troops;
+        entry.createdTick = Number.isFinite(entry.createdTick)
+          ? entry.createdTick
+          : tick;
+        entry.lastSeenTick = tick;
+        entry.phase = "transit";
+        entry.attackId = null;
+      }
+
+      let outgoing = [];
+      try {
+        outgoing = this.player.outgoingAttacks?.() || [];
+      } catch (_error) {
+        outgoing = [];
+      }
+      const outgoingByTarget = new Map();
+      for (const attack of outgoing) {
+        try {
+          if (attack.retreating?.()) continue;
+          const attackTarget = attack.target?.();
+          if (
+            attackTarget?.isPlayer?.() !== true ||
+            attackTarget.type?.() !== PlayerType.Bot
+          ) {
+            continue;
+          }
+          const targetKey = this.getBotAttackTargetKey(attackTarget);
+          const list = outgoingByTarget.get(targetKey) || [];
+          list.push({
+            attack,
+            id: attack.id?.(),
+            troops: Math.max(0, Number(attack.troops?.() || 0)),
+          });
+          outgoingByTarget.set(targetKey, list);
+        } catch (_error) {
+          /* malformed/expired attack snapshots are ignored */
+        }
+      }
+
+      const usedAttackObjects = new Set();
+      const nextCommitments = [];
+      for (const entry of this.botAttackTransportCommitments) {
+        const liveUnit = botTransportUnits.find(
+          (record) => record.unitKey === entry.unitKey,
+        );
+        if (liveUnit) {
+          entry.troops = liveUnit.troops;
+          entry.destination = liveUnit.targetTile;
+          entry.lastSeenTick = tick;
+          entry.phase = "transit";
+          entry.attackId = null;
+          nextCommitments.push(entry);
+          continue;
+        }
+
+        const candidates = outgoingByTarget.get(entry.targetKey) || [];
+        let matched = null;
+        if (entry.attackId != null) {
+          matched = candidates.find(
+            (candidate) =>
+              candidate.id === entry.attackId ||
+              String(candidate.id) === String(entry.attackId),
+          );
+        }
+        if (!matched) {
+          matched = candidates.find(
+            (candidate) => !usedAttackObjects.has(candidate.attack),
+          );
+        }
+        if (matched) {
+          entry.attackId = matched.id ?? matched.attack;
+          entry.troops = matched.troops;
+          entry.lastSeenTick = tick;
+          entry.phase = "attack";
+          usedAttackObjects.add(matched.attack);
+          nextCommitments.push(entry);
+          continue;
+        }
+
+        const age = tick - (Number(entry.createdTick) || tick);
+        if (age <= BOT_TRANSPORT_COMMITMENT_GRACE_TICKS) {
+          entry.phase = "awaiting-attack";
+          nextCommitments.push(entry);
+        }
+      }
+
+      this.botAttackTransportCommitments = nextCommitments;
+    }
+
+    getBotAttackTroopBreakdown(target = undefined) {
+      this.ensureBotAttackAccounting();
+      const filterByTarget = target !== undefined;
+      const targetKey = filterByTarget
+        ? this.getBotAttackTargetKey(target)
+        : null;
+      const commitments = this.botAttackTransportCommitments.filter(
+        (entry) => !filterByTarget || entry.targetKey === targetKey,
+      );
       let attacks = [];
       try {
         attacks = this.player.outgoingAttacks?.() || [];
       } catch (_error) {
         attacks = [];
       }
-      let total = 0;
-      const filterByTarget = target !== undefined;
-      const targetKey = filterByTarget
-        ? this.getBotAttackTargetKey(target)
-        : null;
+
+      let land = 0;
+      const boatAttacks = [];
       for (const attack of attacks) {
         try {
           if (attack.retreating?.()) continue;
           const attackTarget = attack.target?.();
           if (
-            !attackTarget?.isPlayer?.() ||
+            attackTarget?.isPlayer?.() !== true ||
             attackTarget.type?.() !== PlayerType.Bot
           ) {
             continue;
           }
+          const attackTargetKey = this.getBotAttackTargetKey(attackTarget);
+          if (filterByTarget && attackTargetKey !== targetKey) continue;
+
+          const attackID = attack.id?.();
+          const trackedAsBoat = commitments.some(
+            (entry) =>
+              entry.targetKey === attackTargetKey &&
+              entry.attackId != null &&
+              (entry.attackId === attackID ||
+                String(entry.attackId) === String(attackID)),
+          );
+          let sourceTileKnown = false;
+          let sourceTile = null;
+          try {
+            sourceTileKnown = attack.hasSourceTile?.() === true;
+            sourceTile = attack.sourceTile?.();
+          } catch (_error) {
+            sourceTileKnown = false;
+          }
+          let isBoat = sourceTileKnown
+            ? sourceTile != null
+            : trackedAsBoat;
+          if (!sourceTileKnown && !trackedAsBoat) {
+            try {
+              // A target that is still offshore cannot have a legitimate land
+              // attack from this player. This also recovers after a reload when
+              // the transport commitment was not persisted locally.
+              isBoat =
+                typeof this.player.sharesBorderWith === "function" &&
+                this.player.sharesBorderWith(attackTarget) === false;
+            } catch (_error) {
+              isBoat = false;
+            }
+          }
+          const troops = Math.max(0, Number(attack.troops?.() || 0));
+          if (isBoat) boatAttacks.push(troops);
+          else land += troops;
+        } catch (_error) {
+          /* malformed/expired attack snapshots are ignored */
+        }
+      }
+
+      // A commitment without an associated outgoing attack is still either in
+      // transit or in the one-tick handoff between the transport and attack
+      // executions. Count it as naval force, never as land force.
+      for (const entry of commitments) {
+        if (entry.attackId == null) {
+          boatAttacks.push(Math.max(0, Number(entry.troops) || 0));
+        }
+      }
+
+      const boat = boatAttacks.reduce((sum, troops) => sum + troops, 0);
+      return {
+        land,
+        boat,
+        boatAttacks,
+        total: land + boat,
+      };
+    }
+
+    getActiveBotAttackTroops(target = undefined) {
+      return this.getBotAttackTroopBreakdown(target).total;
+    }
+
+    getIncomingBotAttackTroops(target) {
+      const targetKey = this.getBotAttackTargetKey(target);
+      let incoming = [];
+      try {
+        incoming = this.player.incomingAttacks?.() || [];
+      } catch (_error) {
+        incoming = [];
+      }
+      let total = 0;
+      for (const attack of incoming) {
+        try {
+          if (attack.retreating?.()) continue;
+          const attacker = attack.attacker?.();
           if (
-            filterByTarget &&
-            this.getBotAttackTargetKey(attackTarget) !== targetKey
+            attacker?.isPlayer?.() !== true ||
+            attacker.type?.() !== PlayerType.Bot ||
+            this.getBotAttackTargetKey(attacker) !== targetKey
           ) {
             continue;
           }
           total += Math.max(0, Number(attack.troops?.() || 0));
         } catch (_error) {
-          /* malformed/expired attack snapshots are ignored */
+          /* malformed/expired incoming attack snapshots are ignored */
         }
       }
       return total;
+    }
+
+    getBotAttackTroopRequirement(target, required, attackType = "land") {
+      const breakdown = this.getBotAttackTroopBreakdown(target);
+      const incoming = this.getIncomingBotAttackTroops(target);
+      const finiteRequired = Number.isFinite(required);
+      const activeLand = Math.max(0, Number(breakdown.land) || 0);
+      const completeLand = finiteRequired && activeLand >= required;
+      const completeBoat =
+        finiteRequired &&
+        breakdown.boatAttacks.some((troops) => troops >= required);
+      const active =
+        attackType === "boat"
+          ? completeBoat || completeLand
+            ? required
+            : 0
+          : activeLand;
+
+      let remaining;
+      if (!finiteRequired) {
+        remaining = Number.POSITIVE_INFINITY;
+      } else if (completeLand || completeBoat) {
+        remaining = 0;
+      } else if (attackType === "boat") {
+        // Transport ships become independent AttackExecutions on arrival and
+        // are not combined. An underpowered boat therefore cannot be topped up
+        // by sending only the missing delta in another boat.
+        remaining = required + incoming;
+      } else {
+        // Land attacks are combined by the engine. Incoming attacks are removed
+        // from the NEW attack at init, so add that exact counterforce to the
+        // missing land amount instead of using a blanket multiplier.
+        remaining = Math.max(0, required - activeLand) + incoming;
+      }
+
+      return {
+        active,
+        activeLand,
+        activeBoat: breakdown.boat,
+        incoming,
+        remaining,
+        completeLand,
+        completeBoat,
+      };
+    }
+
+    getActiveBotAttackTroops(target = undefined) {
+      return this.getBotAttackTroopBreakdown(target).total;
     }
 
     getBotAttackRequirement(
       target,
       defensePostProfile = null,
       earlyGameCandidate = null,
+      attackType = "land",
     ) {
       const required = this.getBotCaptureTroopsFloor(
         target,
@@ -2957,21 +3311,42 @@
         earlyGameCandidate,
       );
       const targetKey = this.getBotAttackTargetKey(target);
-      const activeNow = this.getActiveBotAttackTroops(target);
+      const breakdown = this.getBotAttackTroopBreakdown(target);
       if (!this.botAttackActiveBaselineByTarget.has(targetKey)) {
-        this.botAttackActiveBaselineByTarget.set(targetKey, activeNow);
+        this.botAttackActiveBaselineByTarget.set(targetKey, {
+          land: breakdown.land,
+          boat: breakdown.boat,
+        });
       }
       const activeBaseline = this.botAttackActiveBaselineByTarget.get(targetKey);
-      const active = Math.max(
-        activeNow,
-        activeBaseline + this.getBotAttackTroopsSentForTarget(target),
-      );
-      return {
+      const requirement = this.getBotAttackTroopRequirement(
+        target,
         required,
-        active,
-        remaining: Number.isFinite(required)
-          ? Math.max(0, required - active)
-          : Number.POSITIVE_INFINITY,
+        attackType,
+      );
+      const activeForType = Math.max(
+        attackType === "boat"
+          ? requirement.completeBoat || requirement.completeLand
+            ? required
+            : 0
+          : breakdown.land,
+        attackType === "boat"
+          ? 0
+          : Number(activeBaseline?.[attackType] || 0) +
+              this.getBotAttackTroopsSentForTarget(target, attackType),
+      );
+      const remaining =
+        attackType === "land" && Number.isFinite(required)
+          ? requirement.completeBoat || activeForType >= required
+            ? 0
+            : Math.max(0, required - activeForType) + requirement.incoming
+          : requirement.remaining;
+      return {
+        ...requirement,
+        required,
+        active: Math.max(requirement.active, activeForType),
+        remaining,
+        activeTotal: breakdown.total,
       };
     }
 
@@ -3771,6 +4146,7 @@
             target,
             enemyDefensePostProfile,
             earlyGameCandidate,
+            "land",
           )
         : null;
       if (botTarget && botAttackRequirement.remaining <= 0) return false;
@@ -3952,6 +4328,7 @@
             target,
             botDefensePostProfile,
             earlyGameCandidate,
+            "boat",
           )
         : null;
       if (botTarget && botAttackRequirement.remaining <= 0) return false;
@@ -4013,9 +4390,9 @@
         if (botTarget && remainingCaptureTroops > spendableTroops) {
           return false;
         }
-        // `planned` is already the additional commitment selected by the
-        // planner. Top up only the missing capture amount; never resend the
-        // full requirement when another boat is already in flight.
+        // `planned` is the planner's additional commitment. For a boat, an
+        // underpowered transport does not satisfy the capture requirement, so
+        // `remainingCaptureTroops` is deliberately the next boat's full force.
         troops = Math.min(
           spendableTroops,
           Math.max(planned, botTarget ? remainingCaptureTroops : 0),
@@ -4045,7 +4422,10 @@
       if (ctors.boat && emitIntent(ctors.boat, closest.y, troops)) {
         state.stats.attacks++;
         setLastAction(tr("⛵ Boat attack"), "naval");
-        this.recordBotAttackTroopsSent(target, troops);
+        this.recordBotAttackTroopsSent(target, troops, {
+          attackType: "boat",
+          destination: closest.y,
+        });
         return true;
       }
       return false;
@@ -4306,7 +4686,12 @@
       if (captureTroops > 0) {
         const active = Math.max(0, Number(activeAttackTroops) || 0);
         const remaining = Math.max(0, captureTroops - active);
-        return available >= remaining ? remaining : 0;
+        const incoming =
+          Number.isFinite(remaining) && remaining > 0
+            ? this.getIncomingBotAttackTroops(target)
+            : 0;
+        const requiredForIntent = remaining + incoming;
+        return available >= requiredForIntent ? requiredForIntent : 0;
       }
       return available;
     }

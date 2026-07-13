@@ -26,6 +26,7 @@ const UNIT = {
   MissileSilo: "Missile Silo",
   Port: "Port",
   Factory: "Factory",
+  TransportShip: "Transport Ship",
 };
 let boatIntent = null;
 let emitAllowed = true;
@@ -231,6 +232,7 @@ const boatGame = {
   numLandTiles: () => 1000,
   config: () => boatConfig,
   ensureBorderTiles: () => Promise.resolve(),
+  owner: () => boatTribe,
   neighbors: () => [],
   ownerID: () => 1,
   isLand: () => true,
@@ -257,10 +259,20 @@ const boatTribe = {
   borderTiles: () => new Set([2]),
 };
 let activeBotAttack = false;
+let transportActive = false;
+const transportUnit = {
+  isActive: () => true,
+  id: () => 77,
+  targetTile: () => 2,
+  troops: () => 101,
+  transportShipState: () => ({ isRetreating: false }),
+};
+boatPlayer.units = () => (transportActive ? [transportUnit] : []);
 const activeBotAttackSnapshot = {
   retreating: () => false,
   target: () => boatTribe,
   troops: () => 50,
+  id: () => "active-attack",
 };
 boatPlayer.outgoingAttacks = () => (activeBotAttack ? [activeBotAttackSnapshot] : []);
 const boatBehavior = new sandbox.AttackBehavior({}, boatGame, boatPlayer, 0.5, 0.3, 0.1, {}, {});
@@ -298,19 +310,29 @@ assert.deepEqual(
 );
 
 tick++;
-activeBotAttack = true;
+activeBotAttack = false;
+transportActive = true;
 boatIntent = null;
 assert.equal(
-  await boatBehavior.sendAttack(boatTribe),
-  true,
-  "a second tribal attack tops up only the missing capture force",
+  await boatBehavior.sendBoatAttack(boatTribe),
+  false,
+  "a complete boat invasion in transit must block a duplicate boat",
 );
-assert.deepEqual(boatIntent, ["tribe-2", 51]);
-activeBotAttack = false;
+transportActive = false;
 
 tick++;
 boatIntent = null;
-assert.equal(await boatBehavior.sendBoatAttack(boatTribe, null, 9000), true);
+const reserveBoatBehavior = new sandbox.AttackBehavior(
+  {},
+  boatGame,
+  boatPlayer,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+assert.equal(await reserveBoatBehavior.sendBoatAttack(boatTribe, null, 9000), true);
 assert.deepEqual(
   boatIntent,
   [2, 8800],
@@ -319,11 +341,41 @@ assert.deepEqual(
 
 tick++;
 boatIntent = null;
-assert.equal(await boatBehavior.sendLandAttack(boatTribe, null, null, 50), true);
+activeBotAttack = true;
+const landBehavior = new sandbox.AttackBehavior({}, boatGame, boatPlayer, 0.5, 0.3, 0.1, {}, {});
+assert.equal(await landBehavior.sendLandAttack(boatTribe, null, null, 50), true);
 assert.deepEqual(
   boatIntent,
-  ["tribe-2", 101],
-  "an undersized planned land attack must be raised to the simulated tribe-capture force",
+  ["tribe-2", 51],
+  "an active land attack must be topped up only by its missing capture force",
+);
+activeBotAttack = false;
+
+const incomingAttack = {
+  retreating: () => false,
+  attacker: () => boatTribe,
+  troops: () => 20,
+};
+const incomingPlayer = {
+  ...boatPlayer,
+  incomingAttacks: () => [incomingAttack],
+  outgoingAttacks: () => [activeBotAttackSnapshot],
+};
+const incomingBehavior = new sandbox.AttackBehavior(
+  {},
+  boatGame,
+  incomingPlayer,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+const incomingRequirement = incomingBehavior.getBotAttackRequirement(boatTribe, null, null, "land");
+assert.equal(
+  incomingRequirement.remaining,
+  71,
+  "a new land attack must include the tribe's incoming counterattack force",
 );
 
 const failedEmitBehavior = new sandbox.AttackBehavior(

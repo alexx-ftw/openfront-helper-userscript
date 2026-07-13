@@ -261,6 +261,7 @@
         isActive: m("isActive", false),
         isUnderConstruction: m("isUnderConstruction", false),
         isInCombat: m("isInCombat", false),
+        troops: m("troops", 0),
         hasTrainStation: m("hasTrainStation", false),
         missileTimerQueue: m("missileTimerQueue", []),
         targetTile: m("targetTile", undefined),
