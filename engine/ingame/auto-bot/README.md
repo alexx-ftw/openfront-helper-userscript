@@ -121,10 +121,12 @@ threat routes consume one shared friendly-SAM schedule. The five-tick margin (0.
 engine's 10 ticks/second) means `firstImpactTick - actionCompletionTick`: a new
 SAM uses the real construction duration (normally 300 ticks), while an upgrade
 is instant for range purposes, but each newly added upgrade slot starts with a
-full `SAMCooldown` reload and is not immediately available. Legendary spends on
-an emergency SAM only when it completes with at least five ticks before the
-first impact and the resulting schedule defends the whole salvo; otherwise it
-does not invest in the threatened construction path.
+full `SAMCooldown` reload and is not immediately available. When a salvo is too
+large for one upgrade, Legendary stages upgrades that materially reduce the
+unintercepted threat instead of waiting for a single upgrade to solve the whole
+salvo. Legendary spends on an emergency SAM only when it completes with at least
+five ticks before the first impact and the resulting schedule defends the whole
+salvo; otherwise it does not invest in the threatened construction path.
 The emergency path bypasses the ordinary structure cooldown and team save-up
 block so a viable defense action is not delayed. Short assignment conflicts use
 bounded exact backtracking; if the search budget is exhausted, Legendary treats

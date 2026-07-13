@@ -236,7 +236,11 @@ const actualWeaponLabels = plannerSandbox.legendaryMissileSalvoRisk({
   routes: [
     { weapon: "Atom Bomb", impactTick: 20, samOptions: [{ samIndex: 0, interceptTicks: [10] }] },
     { weapon: "Atom Bomb", impactTick: 21, samOptions: [{ samIndex: 0, interceptTicks: [11] }] },
-    { weapon: "Hydrogen Bomb", impactTick: 22, samOptions: [{ samIndex: 0, interceptTicks: [12] }] },
+    {
+      weapon: "Hydrogen Bomb",
+      impactTick: 22,
+      samOptions: [{ samIndex: 0, interceptTicks: [12] }],
+    },
   ],
   samProfiles: [{ id: "sam-a", availableTicks: [0, 0] }],
   samCooldownTicks: 90,
@@ -298,6 +302,56 @@ assert.equal(
   "A later missile can be defended once the SAM reload window has elapsed",
 );
 
+assert.equal(
+  typeof plannerSandbox.legendaryDefenseActionImproves,
+  "function",
+  "Legendary exposes the incremental defense-action policy",
+);
+const lowLevelSalvoRoutes = [
+  { weapon: "AtomBomb", impactTick: 120, samOptions: [{ samIndex: 0, interceptTicks: [100] }] },
+  { weapon: "AtomBomb", impactTick: 121, samOptions: [{ samIndex: 0, interceptTicks: [101] }] },
+  { weapon: "HydrogenBomb", impactTick: 122, samOptions: [{ samIndex: 0, interceptTicks: [102] }] },
+];
+const lowLevelDefense = plannerSandbox.legendaryMissileDefenseSchedule({
+  routes: lowLevelSalvoRoutes,
+  samProfiles: [{ id: "sam-a", availableTicks: [0] }],
+  samCooldownTicks: 90,
+  marginTicks: 5,
+});
+const oneLevelHigherDefense = plannerSandbox.legendaryMissileDefenseSchedule({
+  routes: lowLevelSalvoRoutes,
+  samProfiles: [{ id: "sam-a", availableTicks: [0, 90] }],
+  samCooldownTicks: 90,
+  marginTicks: 5,
+});
+const twoLevelsHigherDefense = plannerSandbox.legendaryMissileDefenseSchedule({
+  routes: lowLevelSalvoRoutes,
+  samProfiles: [{ id: "sam-a", availableTicks: [0, 90, 90] }],
+  samCooldownTicks: 90,
+  marginTicks: 5,
+});
+assert.equal(lowLevelDefense.fullyDefended, false);
+assert.equal(oneLevelHigherDefense.fullyDefended, false);
+assert.ok(
+  oneLevelHigherDefense.uninterceptedCount < lowLevelDefense.uninterceptedCount,
+  "a higher SAM level must reduce the unresolved part of a salvo even before full defense is reached",
+);
+assert.equal(
+  twoLevelsHigherDefense.fullyDefended,
+  true,
+  "the next staged SAM upgrade must eventually cover the atom chain and Hydrogen finisher",
+);
+assert.equal(
+  plannerSandbox.legendaryDefenseActionImproves(lowLevelDefense, oneLevelHigherDefense, 1, 1),
+  true,
+  "Legendary must accept a SAM upgrade that materially improves an unresolved salvo",
+);
+assert.equal(
+  plannerSandbox.legendaryDefenseActionImproves(oneLevelHigherDefense, oneLevelHigherDefense, 2, 2),
+  false,
+  "Legendary must not repeat a SAM upgrade that adds no defensive value",
+);
+
 const upgradedSlotStillReloading = plannerSandbox.legendaryMissileDefenseSchedule({
   routes: [
     { weapon: "AtomBomb", impactTick: 20, samOptions: [{ samIndex: 0, interceptTicks: [10] }] },
@@ -318,7 +372,11 @@ assert.equal(
 const upgradedSlotReloaded = plannerSandbox.legendaryMissileDefenseSchedule({
   routes: [
     { weapon: "AtomBomb", impactTick: 20, samOptions: [{ samIndex: 0, interceptTicks: [10] }] },
-    { weapon: "HydrogenBomb", impactTick: 120, samOptions: [{ samIndex: 0, interceptTicks: [100] }] },
+    {
+      weapon: "HydrogenBomb",
+      impactTick: 120,
+      samOptions: [{ samIndex: 0, interceptTicks: [100] }],
+    },
   ],
   samProfiles: [{ id: "upgraded-sam", availableTicks: [0, 90] }],
   samCooldownTicks: 90,
@@ -402,7 +460,10 @@ assert.match(read("engine/ingame/auto-bot/panel.js"), /\"Legendary\"/);
 assert.match(read("src/shell/popup/panel.ts"), /DIFFICULTIES/);
 assert.match(read("locales/en/common.json"), /\"Legendary\"/);
 assert.match(read("build.mjs"), /auto-bot\/legendaryPlanner\.js/);
-assert.match(read("engine/ingame/auto-bot/legendaryPlanner.js"), /LEGENDARY_EXACT_SCHEDULE_NODE_LIMIT/);
+assert.match(
+  read("engine/ingame/auto-bot/legendaryPlanner.js"),
+  /LEGENDARY_EXACT_SCHEDULE_NODE_LIMIT/,
+);
 const structureSource = read("engine/ingame/auto-bot/structureBehavior.js");
 assert.match(structureSource, /rankLegendaryConstructionCandidates/);
 assert.match(structureSource, /legendaryAllySupportPlacementScore/);
@@ -413,6 +474,7 @@ assert.match(structureSource, /legendaryMissileDefenseUrgent/);
 assert.match(structureSource, /legendaryMinimumSamImpactMargin/);
 assert.match(structureSource, /missileTimerQueue/);
 assert.match(structureSource, /legendaryMissileDefenseSchedule/);
+assert.match(structureSource, /legendaryDefenseActionImproves/);
 assert.match(structureSource, /legendarySamConstructionSafeForTile/);
 assert.match(structureSource, /legendaryConstructionDuration/);
 assert.match(structureSource, /legendaryTileInsideUninterceptedBlast/);

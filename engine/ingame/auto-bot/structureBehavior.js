@@ -3438,17 +3438,16 @@
 
         const nextLevel = Math.max(1, Number(sam.level() || 1) + 1);
         const overrides = new Map([[sam.id(), nextLevel]]);
-        // Upgrades are instant in the engine. They are considered only when
-        // the upgraded schedule itself defends every incoming missile and the
-        // first landing is still at least five ticks after completion.
+        // Upgrades are instant in the engine. Keep the five-tick safety margin,
+        // but accept a material intermediate improvement: a high-level enemy
+        // silo salvo can require several upgrades before it is fully covered.
         const nextEvaluation = this.legendaryDefenseEvaluation(context, {
           levelOverrides: overrides,
           completionTick: 0,
         });
         if (
-          !nextEvaluation.fullyDefended ||
           nextEvaluation.completionMarginTicks <
-            LEGENDARY_SAM_IMPACT_MARGIN_TICKS
+          LEGENDARY_SAM_IMPACT_MARGIN_TICKS
         ) {
           continue;
         }
@@ -3464,11 +3463,20 @@
         );
         const marginGain = Math.max(0, nextMargin - currentMargin);
         const capacityGain = Math.max(0, nextCapacity - currentCapacity);
-        const reachesSafetyMargin =
-          nextMargin >= LEGENDARY_SAM_IMPACT_MARGIN_TICKS ? 100 : 0;
+        if (
+          !legendaryDefenseActionImproves(
+            currentEvaluation,
+            nextEvaluation,
+            currentCapacity,
+            nextCapacity,
+          )
+        ) {
+          continue;
+        }
+        const reachesFullDefense = nextEvaluation.fullyDefended ? 100 : 0;
         const costFactor = Math.max(1, Number(cost) / 1_500_000);
         const score =
-          (reachesSafetyMargin +
+          (reachesFullDefense +
             interceptedGain * 100 +
             marginGain * 10 +
             capacityGain * 2) /

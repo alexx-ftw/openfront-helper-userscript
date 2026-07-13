@@ -735,6 +735,43 @@ function legendaryMissileDefenseSchedule({
   };
 }
 
+// An emergency defense action is useful before it solves the whole salvo. A
+// large enemy silo stockpile can require several SAM upgrades in sequence, so
+// rejecting every intermediate improvement would deadlock the upgrade loop.
+function legendaryDefenseActionImproves(
+  currentEvaluation = {},
+  nextEvaluation = {},
+  currentCapacity = 0,
+  nextCapacity = 0,
+) {
+  if (!currentEvaluation || !nextEvaluation) return false;
+  if (nextEvaluation.hasThreats === false) return false;
+  if (nextEvaluation.fullyDefended && !currentEvaluation.fullyDefended) {
+    return true;
+  }
+
+  const currentUnintercepted = Number(currentEvaluation.uninterceptedCount);
+  const nextUnintercepted = Number(nextEvaluation.uninterceptedCount);
+  if (
+    Number.isFinite(currentUnintercepted) &&
+    Number.isFinite(nextUnintercepted) &&
+    nextUnintercepted < currentUnintercepted
+  ) {
+    return true;
+  }
+
+  if (Number(nextCapacity) > Number(currentCapacity)) {
+    return true;
+  }
+
+  const currentMargin = Number(currentEvaluation.minimumInterceptMarginTicks);
+  const nextMargin = Number(nextEvaluation.minimumInterceptMarginTicks);
+  return (
+    Number.isFinite(nextMargin) &&
+    (!Number.isFinite(currentMargin) || nextMargin > currentMargin)
+  );
+}
+
 function legendaryObjectiveBalance(candidate) {
   return Math.min(
     ...LEGENDARY_PRIMARY_FIELDS.map((field) =>
