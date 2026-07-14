@@ -40,6 +40,7 @@ assert.equal(typeof sandbox.calculateEarlyGameFoodRaceValue, "function");
 assert.equal(typeof sandbox.calculateEarlyGameRaceTroops, "function");
 assert.equal(typeof sandbox.calculateTroopGenerationRate, "function");
 assert.equal(typeof sandbox.findOptimalGenerationRatio, "function");
+assert.equal(typeof sandbox.calculatePeakProductionReserveTroops, "function");
 assert.equal(typeof sandbox.estimateTroopRecoveryTicks, "function");
 assert.equal(typeof sandbox.terrainAttackMagnitudeFromMapMagnitude, "function");
 assert.equal(typeof sandbox.calculateEarlyGameExpansionPlan, "function");
@@ -68,6 +69,10 @@ assert.equal(generationAtMax, 0);
 assert.ok(
   sandbox.findOptimalGenerationRatio() >= 0.38 && sandbox.findOptimalGenerationRatio() <= 0.46,
 );
+const peakReserve = sandbox.calculatePeakProductionReserveTroops({
+  maxTroops: 100000,
+});
+assert.equal(peakReserve, 175);
 assert.equal(sandbox.terrainAttackMagnitudeFromMapMagnitude(1), 80);
 assert.equal(sandbox.terrainAttackMagnitudeFromMapMagnitude(15), 100);
 assert.equal(sandbox.terrainAttackMagnitudeFromMapMagnitude(25), 120);
@@ -163,7 +168,7 @@ assert.equal(
   true,
   "an affordable frontier tribe must not inherit the generic 30% reserve gate",
 );
-assert.equal(largeFrontierTribePlan.reserveTroops, 7200);
+assert.equal(largeFrontierTribePlan.reserveTroops, peakReserve);
 assert.equal(largeFrontierTribePlan.commitTroops, 20000);
 
 const underfundedTribePlan = sandbox.calculateEarlyGameExpansionPlan({

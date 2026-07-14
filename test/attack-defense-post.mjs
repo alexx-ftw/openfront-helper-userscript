@@ -356,7 +356,7 @@ const reserveBoatBehavior = new sandbox.AttackBehavior(
 assert.equal(await reserveBoatBehavior.sendBoatAttack(boatTribe, null, 9000), true);
 assert.deepEqual(
   boatIntent,
-  [2, 8800],
+  [2, 9000],
   "a planned boat attack must preserve the early-game live reserve",
 );
 
@@ -376,6 +376,77 @@ assert.deepEqual(
   "an active tribal attack locks its target for the next decision",
 );
 activeBotAttack = false;
+
+// The intent bus can accept an attack before the next player snapshot reflects
+// the outgoing attack/troop deduction. The local ledger must keep the first
+// tribal force active across that tick and reject a duplicate full capture.
+const pendingPlayer = {
+  ...boatPlayer,
+  troops: () => 10000,
+  outgoingAttacks: () => [],
+};
+const pendingBehavior = new sandbox.AttackBehavior(
+  {},
+  boatGame,
+  pendingPlayer,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+pendingBehavior.getBotCaptureTroopsFloor = () => 101;
+boatIntent = null;
+assert.equal(
+  pendingBehavior.sendLandAttack(boatTribe, null, null, 50),
+  true,
+  "the first tribal intent should be emitted",
+);
+assert.equal(
+  pendingBehavior.getEarlyGameSpendableTroops(),
+  10000 - sandbox.calculatePeakProductionReserveTroops({ maxTroops: 10000 }) - 101,
+  "pending troops are removed from the next decision budget while the snapshot is stale",
+);
+tick++;
+boatIntent = null;
+assert.equal(
+  pendingBehavior.sendLandAttack(boatTribe, null, null, 50),
+  false,
+  "a stale snapshot must not launch a duplicate tribal capture",
+);
+assert.equal(boatIntent, null);
+
+// The opening burst targets TerraNullius, so it is not represented in the Bot
+// target map. It must still consume the same global pending budget before a
+// large tribal capture is considered.
+const openingPlayer = {
+  ...boatPlayer,
+  troops: () => 10000,
+  outgoingAttacks: () => [],
+};
+const openingBehavior = new sandbox.AttackBehavior(
+  {},
+  boatGame,
+  openingPlayer,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+const terraNullius = { isPlayer: () => false };
+const largePendingTribe = { ...boatTribe, numTilesOwned: () => 150 };
+openingBehavior.getBotCaptureTroopsFloor = () => 6000;
+boatIntent = null;
+assert.equal(await openingBehavior.forceSendAttack(terraNullius, 0.6), true);
+assert.deepEqual(boatIntent, [null, 6000]);
+boatIntent = null;
+assert.equal(
+  openingBehavior.sendLandAttack(largePendingTribe, null, null, 6000),
+  false,
+  "the opening burst must reserve its troops before attempting a second tribal force",
+);
+assert.equal(boatIntent, null);
 
 const botA = {
   isPlayer: () => true,

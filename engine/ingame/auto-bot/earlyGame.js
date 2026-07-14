@@ -28,10 +28,13 @@
   const EARLY_GAME_TRIBE_CAPTURE_TILE_THRESHOLD = 99;
   const EARLY_GAME_CAPTURE_SEARCH_STEPS = 24;
   // A complete tribal capture is already sized from the live attack-loss
-  // simulation. Keep only the same small live reserve used by the actuation
-  // layer; the normal 30-40% reserve is for generic nation attacks and can
-  // otherwise make a frontier tribe look unaffordable when it is not.
-  const EARLY_GAME_TRIBE_RESERVE_RATIO = 0.12;
+  // simulation. Keep the same half-peak-production reserve used by the
+  // actuation layer; the normal 30-40% reserve is for generic nation attacks
+  // and can otherwise make a frontier tribe look unaffordable when it is not.
+  // Keep half of the maximum one-tick production peak as a live troop reserve.
+  // The peak occurs around 42% fill for the current 0.73 curve; this is a
+  // production-rate reserve, not 50% of the whole army and not an 8000 floor.
+  const EARLY_GAME_PEAK_PRODUCTION_RESERVE_FRACTION = 0.5;
 
   function requiredTribeCaptureTiles(
     targetTiles = 0,
@@ -415,9 +418,11 @@
   // future upstream exponent changes. It is called once per early-game decision,
   // not from a map-wide scoring loop.
   function findOptimalGenerationRatio({
+    maxTroops = 100000,
     exponent = 0.73,
-    steps = 100,
+    steps = 1000,
   } = {}) {
+    const maximum = Math.max(1, Number(maxTroops) || 100000);
     const safeExponent = Number.isFinite(Number(exponent))
       ? Math.max(0.1, Number(exponent))
       : 0.73;
@@ -426,7 +431,7 @@
     let bestRate = -Infinity;
     for (let index = 0; index <= safeSteps; index += 1) {
       const ratio = index / safeSteps;
-      const troops = Math.max(1, ratio * 100000);
+      const troops = Math.max(1, ratio * maximum);
       const rate = (10 + Math.pow(troops, safeExponent) / 4) * (1 - ratio);
       if (rate > bestRate) {
         bestRate = rate;
@@ -434,6 +439,29 @@
       }
     }
     return bestRatio;
+  }
+
+  // Return the troop reserve corresponding to a fraction of the maximum
+  // production peak. For a 100000 max army the current curve peaks at about
+  // 41.8% (349.63 troops/tick), so the default reserve is ceil(174.82) = 175.
+  function calculatePeakProductionReserveTroops({
+    maxTroops = 1,
+    multiplier = 1,
+    peakFraction = EARLY_GAME_PEAK_PRODUCTION_RESERVE_FRACTION,
+  } = {}) {
+    const maximum = Math.max(1, Number(maxTroops) || 0);
+    const safeMultiplier = Math.max(0, Number(multiplier) || 0);
+    const safePeakFraction = Math.max(0, Number(peakFraction) || 0);
+    const peakRatio = findOptimalGenerationRatio({
+      maxTroops: maximum,
+    });
+    const peakTroops = maximum * peakRatio;
+    const peakRate = calculateTroopGenerationRate({
+      troops: peakTroops,
+      maxTroops: maximum,
+      multiplier: safeMultiplier,
+    });
+    return Math.max(1, Math.ceil(peakRate * safePeakFraction));
   }
 
   function estimateTroopRecoveryTicks({
@@ -494,7 +522,7 @@
     const maximum = Math.max(1, Number(maxTroops) || 0);
     const own = Math.max(0, Math.min(maximum, Number(ownTroops) || 0));
     const currentRatio = own / maximum;
-    const optimalRatio = findOptimalGenerationRatio();
+    const optimalRatio = findOptimalGenerationRatio({ maxTroops: maximum });
     const safeBaseReserve = Math.max(
       0.12,
       Math.min(0.8, Number(baseReserveRatio) || 0.3),
@@ -538,7 +566,10 @@
     const reserveTroops = initialBurst
       ? 0
       : target === "tribe"
-        ? own * EARLY_GAME_TRIBE_RESERVE_RATIO
+        ? calculatePeakProductionReserveTroops({
+            maxTroops: maximum,
+            multiplier: generationMultiplier,
+          })
         : belowGenerationTarget
           ? own * adaptiveReserveFraction
           : Math.max(own * safeBaseReserve, targetGenerationTroops);
