@@ -1233,6 +1233,7 @@
       const atomCost = await this.cost(UNIT.AtomBomb);
       const enemySams = nukeTarget.units(UNIT.SAMLauncher);
       if (enemySams.length === 0) {
+        state.nukeWantSlots = null;
         return;
       }
 
@@ -1249,6 +1250,43 @@
       // Track the first failed attempt so we can upgrade a silo that would
       // actually have helped that plan (rather than an unrelated silo).
       let failedTarget = null;
+      const rememberFailedTarget = ({
+        targetTile,
+        coveringSamIds,
+        totalBombs,
+        allAvailableSilos,
+      }) => {
+        if (failedTarget !== null) return;
+        const unblockedSiloIds = (allAvailableSilos || [])
+          .filter((entry) => !entry.interceptable)
+          .map((entry) => {
+            try {
+              return String(entry.silo.id());
+            } catch (_error) {
+              return null;
+            }
+          })
+          .filter((id) => id !== null);
+        failedTarget = {
+          targetTile,
+          coveringSamIds,
+          totalBombs,
+          requiredSiloCapacity: totalBombs,
+          unblockedSiloIds,
+        };
+        let at = Date.now();
+        try {
+          at = this.game.ticks();
+        } catch (_error) {
+          /* keep the wall-clock fallback */
+        }
+        state.nukeWantSlots = {
+          need: totalBombs,
+          at,
+          targetTile,
+          unblockedSiloIds,
+        };
+      };
 
       for (const targetSam of sortedSams) {
         const targetTile = targetSam.tile();
@@ -1338,7 +1376,12 @@
         }
 
         if (unblockedBombs.length < totalBombs) {
-          failedTarget ??= { targetTile, coveringSamIds, totalBombs };
+          rememberFailedTarget({
+            targetTile,
+            coveringSamIds,
+            totalBombs,
+            allAvailableSilos,
+          });
           needsMoreSilos = true;
           continue;
         }
@@ -1368,7 +1411,12 @@
         }
 
         if (bestWindowCount < totalBombs) {
-          failedTarget ??= { targetTile, coveringSamIds, totalBombs };
+          rememberFailedTarget({
+            targetTile,
+            coveringSamIds,
+            totalBombs,
+            allAvailableSilos,
+          });
           needsMoreSilos = true;
           continue;
         }
@@ -1433,6 +1481,9 @@
             waitTicksPerBomb[i],
           );
         }
+        // The capacity request was satisfied by this salvo; do not let the
+        // next structure tick keep upgrading silos for an obsolete target.
+        state.nukeWantSlots = null;
         return;
       }
 
@@ -1479,12 +1530,14 @@
      */
     // ── maybeUpgradeHelpfulSilo — NationNukeBehavior.ts:1037 (now async) ──────
     async maybeUpgradeHelpfulSilo(failedTarget) {
-      const silos = this.player.units(UNIT.MissileSilo);
-      if (silos.length === 0) return;
+      const silos = this.player
+        .units(UNIT.MissileSilo)
+        .filter((silo) => !silo.isUnderConstruction());
+      if (silos.length === 0) return false;
 
       // First pass: find silos with an unblocked trajectory to the failed
       // target. Only these contribute slots to the overwhelm plan.
-      const unblockedSilos = [];
+      const routeEligibleSilos = [];
       for (const silo of silos) {
         if (
           !this.isTrajectoryInterceptableBySam(
@@ -1493,16 +1546,42 @@
             failedTarget.coveringSamIds,
           )
         ) {
-          unblockedSilos.push(silo);
+          routeEligibleSilos.push(silo);
         }
       }
-      if (unblockedSilos.length === 0) return;
+      if (routeEligibleSilos.length === 0) return false;
+
+      const requiredSiloCapacity = Math.max(
+        Number(failedTarget.requiredSiloCapacity ?? failedTarget.totalBombs),
+        Number(failedTarget.totalBombs),
+      );
+      const currentSiloCapacity = routeEligibleSilos.reduce(
+        (sum, silo) => sum + Math.max(1, Number(silo.level() || 1)),
+        0,
+      );
+      if (currentSiloCapacity >= requiredSiloCapacity) return false;
 
       // Bail out if the target is unreachable even at max silo level —
       // crazy amounts of covering SAMs, upgrading is wasted gold.
       const maxAchievableSlots =
-        unblockedSilos.length * MAX_NATION_SILO_UPGRADE_LEVEL;
-      if (maxAchievableSlots < failedTarget.totalBombs) return;
+        routeEligibleSilos.length * MAX_NATION_SILO_UPGRADE_LEVEL;
+      if (maxAchievableSlots < requiredSiloCapacity) return false;
+
+      const preferredIds = new Set(
+        Array.isArray(failedTarget.unblockedSiloIds)
+          ? failedTarget.unblockedSiloIds.map(String)
+          : [],
+      );
+      const preferredSilos = routeEligibleSilos.filter((silo) => {
+        if (preferredIds.size === 0) return true;
+        try {
+          return preferredIds.has(String(silo.id()));
+        } catch (_error) {
+          return false;
+        }
+      });
+      const unblockedSilos =
+        preferredSilos.length > 0 ? preferredSilos : routeEligibleSilos;
 
       const ourSams = this.player.units(UNIT.SAMLauncher);
       let bestSilo = null;
@@ -1547,23 +1626,25 @@
             null,
           );
         } catch (_e) {
-          return;
+          return false;
         }
         const bu = Array.isArray(buildables)
           ? buildables.find((b) => b.type === UNIT.MissileSilo)
           : null;
-        if (bu === null || bu === undefined) return;
+        if (bu === null || bu === undefined) return false;
         if (bu.canUpgrade !== false) {
           const buildMenu = getBuildMenu();
           if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
-            return;
+            return false;
           }
           buildMenu.sendBuildOrUpgrade(bu);
           // A silo upgrade is a BUILD action, not a nuke fire — log accordingly.
           state.stats.builds++;
           setLastAction(tr("☢️ Upgrade silo"), "build");
+          return true;
         }
       }
+      return false;
     }
 
     // ── cost — NationNukeBehavior.ts:1100 ─────────────────────────────────────

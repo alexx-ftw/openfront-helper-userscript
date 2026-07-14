@@ -106,6 +106,19 @@
   /** Maximum number of missile silos a nation will build */
   const MAX_MISSILE_SILOS = 3;
 
+  /**
+   * A hostile silo threat becomes an H-bomb/SAM priority once one enemy's
+   * built-silo level sum reaches this value. A level-1 silo therefore counts
+   * as one, not as two.
+   *
+   * Keep this per-player rather than aggregating all enemies: the user-facing
+   * threat is a single opponent's launch capability, not a lobby-wide count.
+   */
+  const HYDROGEN_SAM_SILO_LEVEL_SUM_THRESHOLD = 2;
+
+  /** OpenFront's SAM upgrade ladder currently tops out at level five. */
+  const HYDROGEN_SAM_MAX_UPGRADE_LEVEL = 5;
+
   /** Ratio per city used for the first missile silo so nations start nuking earlier */
   const FIRST_MISSILE_SILO_RATIO = 0.4;
 
@@ -398,6 +411,24 @@
         state.settings.winFixes &&
         !legendaryDifficulty &&
         (await this.maybeUpgradeMissileDefenseSam())
+      ) {
+        return true;
+      }
+      if (
+        state.settings.winFixes &&
+        (await this.maybeEnsureHydrogenStructureCoverage())
+      ) {
+        return true;
+      }
+      if (
+        state.settings.winFixes &&
+        (await this.maybeUpgradeHydrogenProtectionSam())
+      ) {
+        return true;
+      }
+      if (
+        state.settings.winFixes &&
+        (await this.maybeUpgradeSiloForNukeDemand())
       ) {
         return true;
       }
@@ -1069,6 +1100,13 @@
       // economic construction: upgrade the SAM that actually covers the most
       // exposed trajectory before spending the same gold on a new structure.
       if (await this.maybeUpgradeLegendarySam()) {
+        return true;
+      }
+
+      if (
+        state.settings.winFixes &&
+        (await this.maybeUpgradeHydrogenProtectionSam())
+      ) {
         return true;
       }
 
@@ -1943,6 +1981,229 @@
 
     samLevelParityGap() {
       return Math.max(0, this.samLevelParityTarget() - this.ownSamCapacity());
+    }
+
+    /**
+     * Returns the greatest built-silo level sum belonging to one live hostile
+     * player. A level-1 Silo contributes one; under-construction Silos are not
+     * included because this is the current threat, not a future projection.
+     */
+    hostileSiloLevelSumTarget() {
+      const hostilePlayers = this.liveHostilePlayers();
+      if (!Array.isArray(hostilePlayers)) return 0;
+
+      let maximum = 0;
+      for (const enemy of hostilePlayers) {
+        let levelSum = 0;
+        try {
+          if (enemy.isAlive && enemy.isAlive() === false) continue;
+          for (const silo of enemy.units(UNIT.MissileSilo) || []) {
+            if (silo.isUnderConstruction && silo.isUnderConstruction()) {
+              continue;
+            }
+            if (silo.isActive && silo.isActive() === false) continue;
+            const level = Number(silo.level?.() ?? 1);
+            if (!Number.isFinite(level)) continue;
+            levelSum += Math.max(1, Math.floor(level));
+          }
+        } catch (_error) {
+          // Ignore an incomplete hostile snapshot and continue with the next
+          // player; a malformed player must not disable local SAM protection.
+          continue;
+        }
+
+        maximum = Math.max(maximum, levelSum);
+      }
+      return maximum;
+    }
+
+    hostileSiloLevelSumAtLeast(
+      threshold = HYDROGEN_SAM_SILO_LEVEL_SUM_THRESHOLD,
+    ) {
+      return this.hostileSiloLevelSumTarget() >= threshold;
+    }
+
+    shouldPrioritizeHydrogenSamProtection() {
+      if (!state.settings.winFixes || !autoBotBuildAllowed(UNIT.SAMLauncher)) {
+        return false;
+      }
+      try {
+        if (this.game.config().isUnitDisabled(UNIT.SAMLauncher)) return false;
+        if (this.game.config().isUnitDisabled(UNIT.HydrogenBomb)) return false;
+      } catch (_error) {
+        // Keep the threat gate active when an older client lacks one of the
+        // optional disabled-unit checks.
+      }
+      return (
+        this.hostileSiloLevelSumTarget() >=
+        HYDROGEN_SAM_SILO_LEVEL_SUM_THRESHOLD
+      );
+    }
+
+    /**
+     * Find the SAM upgrade that makes our highest built SAM reach the largest
+     * hostile built-silo level sum. This is deliberately a capacity-level
+     * rule: it avoids scanning border tiles or buildings on every build tick,
+     * and it matches the game's one-SAM-vs-total-hostile-silo requirement.
+     */
+    hydrogenSamProtectionPlan() {
+      if (!this.shouldPrioritizeHydrogenSamProtection()) return null;
+
+      const targetLevel = this.hostileSiloLevelSumTarget();
+      const sams = (this.player.units(UNIT.SAMLauncher) || []).filter((sam) => {
+        try {
+          if (sam.isUnderConstruction && sam.isUnderConstruction()) return false;
+          return !sam.isActive || sam.isActive() !== false;
+        } catch (_error) {
+          return false;
+        }
+      });
+      if (targetLevel < HYDROGEN_SAM_SILO_LEVEL_SUM_THRESHOLD || sams.length === 0) {
+        return null;
+      }
+
+      const candidates = [];
+      for (const sam of sams) {
+        const currentLevel = Math.max(1, Math.floor(Number(sam.level?.() ?? 1)));
+        if (
+          Number.isFinite(currentLevel) &&
+          currentLevel < HYDROGEN_SAM_MAX_UPGRADE_LEVEL
+        ) {
+          candidates.push({ sam, currentLevel });
+        }
+      }
+      if (candidates.length === 0) return null;
+
+      candidates.sort((left, right) => right.currentLevel - left.currentLevel);
+      const selected = candidates[0];
+      return {
+        sam: selected.sam,
+        currentLevel: selected.currentLevel,
+        targetLevel,
+      };
+    }
+
+    hydrogenStructureCoveragePlan() {
+      if (
+        !state.settings.winFixes ||
+        !autoBotBuildAllowed(UNIT.SAMLauncher) ||
+        this.hostileSiloLevelSumTarget() <
+          HYDROGEN_SAM_SILO_LEVEL_SUM_THRESHOLD
+      ) {
+        return null;
+      }
+
+      let config;
+      try {
+        config = this.game.config();
+        if (config.isUnitDisabled(UNIT.SAMLauncher)) return null;
+        if (config.isUnitDisabled(UNIT.HydrogenBomb)) return null;
+      } catch (_error) {
+        return null;
+      }
+      if (!config || typeof config.samRange !== "function") return null;
+
+      const structures = [];
+      for (const type of STRUCTURES_TYPES) {
+        try {
+          for (const structure of this.player.units(type) || []) {
+            const tile = structure.tile();
+            if (tile !== null && tile !== undefined) structures.push(tile);
+          }
+        } catch (_error) {
+          /* skip an incomplete structure snapshot */
+        }
+      }
+      if (structures.length === 0) return null;
+
+      const sams = (this.player.units(UNIT.SAMLauncher) || []).filter((sam) => {
+        try {
+          if (sam.isUnderConstruction && sam.isUnderConstruction()) return false;
+          return !sam.isActive || sam.isActive() !== false;
+        } catch (_error) {
+          return false;
+        }
+      });
+      if (sams.length === 0) return { needsNewSam: true };
+
+      const rangeSquared = (level) => {
+        try {
+          const range = Number(config.samRange(level));
+          return Number.isFinite(range) && range > 0 ? range * range : 0;
+        } catch (_error) {
+          return 0;
+        }
+      };
+      const coveredCount = (sam, level) => {
+        let count = 0;
+        let samTile;
+        try {
+          samTile = sam.tile();
+        } catch (_error) {
+          return 0;
+        }
+        for (const structureTile of structures) {
+          try {
+            if (
+              this.game.euclideanDistSquared(samTile, structureTile) <=
+              rangeSquared(level)
+            ) {
+              count++;
+            }
+          } catch (_error) {
+            /* leave this structure uncovered */
+          }
+        }
+        return count;
+      };
+
+      for (const sam of sams) {
+        const level = Math.max(1, Math.floor(Number(sam.level?.() ?? 1)));
+        if (Number.isFinite(level) && coveredCount(sam, level) === structures.length) {
+          return null;
+        }
+      }
+
+      let completePlan = null;
+      for (const sam of sams) {
+        const currentLevel = Math.max(1, Math.floor(Number(sam.level?.() ?? 1)));
+        if (
+          !Number.isFinite(currentLevel) ||
+          currentLevel >= HYDROGEN_SAM_MAX_UPGRADE_LEVEL
+        ) {
+          continue;
+        }
+        for (
+          let targetLevel = currentLevel + 1;
+          targetLevel <= HYDROGEN_SAM_MAX_UPGRADE_LEVEL;
+          targetLevel++
+        ) {
+          const covered = coveredCount(sam, targetLevel);
+          const candidate = {
+            sam,
+            currentLevel,
+            targetLevel,
+            coveredPoints: covered,
+            totalPoints: structures.length,
+            complete: covered === structures.length,
+          };
+          if (candidate.complete) {
+            if (
+              completePlan === null ||
+              targetLevel < completePlan.targetLevel ||
+              (targetLevel === completePlan.targetLevel &&
+                currentLevel > completePlan.currentLevel)
+            ) {
+              completePlan = candidate;
+            }
+            break;
+          }
+        }
+      }
+      // If no existing SAM can cover every structure even at the maximum
+      // level, the higher-priority action is to place another SAM rather than
+      // spend on a partial upgrade that still leaves the requirement unmet.
+      return completePlan || { needsNewSam: true };
     }
 
     legendaryRailMetrics(cities, ports, factories) {
@@ -4762,6 +5023,231 @@
         return true;
       }
       return false;
+    }
+
+    async maybeUpgradePlannedSam(plan) {
+      if (!plan || plan.targetLevel <= plan.currentLevel) return false;
+
+      let reserve = 0n;
+      try {
+        reserve = this.legendaryReserveGold();
+      } catch (_error) {
+        reserve = 0n;
+      }
+      const availableGold =
+        this.player.gold() > reserve ? this.player.gold() - reserve : 0n;
+      let minimumCost = 0n;
+      try {
+        minimumCost = this.cost(UNIT.SAMLauncher);
+      } catch (_error) {
+        minimumCost = 0n;
+      }
+      if (availableGold < minimumCost) return false;
+
+      const buildables = await this.buildableForUnits(
+        [plan.sam],
+        UNIT.SAMLauncher,
+        {
+          concurrency: 1,
+          timeoutMs: HOSTILE_SILO_SAM_PROBE_TIMEOUT_MS,
+        },
+      );
+      const bu = buildables[0];
+      if (bu === null || bu === undefined || bu.canUpgrade === false) {
+        return false;
+      }
+
+      let cost = minimumCost;
+      try {
+        if (bu.cost !== undefined && bu.cost !== null) cost = BigInt(bu.cost);
+      } catch (_error) {
+        /* use the formula fallback */
+      }
+      if (cost > availableGold) return false;
+
+      const buildMenu = getBuildMenu();
+      if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
+        return false;
+      }
+      buildMenu.sendBuildOrUpgrade(bu);
+      state.stats.builds++;
+      setLastAction(
+        tr("⬆️ Upgrade {type}", { type: UNIT.SAMLauncher }),
+        "build",
+      );
+      return true;
+    }
+
+    /**
+     * Highest priority: keep at least one built SAM's range over every own
+     * structure so a Hydrogen Bomb aimed at any of them has an interceptor.
+     */
+    async maybeEnsureHydrogenStructureCoverage() {
+      const plan = this.hydrogenStructureCoveragePlan();
+      if (!plan) return false;
+      if (plan.needsNewSam) {
+        return this.maybeSpawnStructure(UNIT.SAMLauncher, {
+          forceNewStructure: true,
+          prioritizeStructureCoverage: true,
+        });
+      }
+      return this.maybeUpgradePlannedSam(plan);
+    }
+
+    /**
+     * Second SAM priority: our highest SAM level must reach the largest
+     * hostile built-Silo level sum. The action is one upgrade at a time and
+     * repeats until the numeric target is met.
+     */
+    async maybeUpgradeHydrogenProtectionSam() {
+      return this.maybeUpgradePlannedSam(this.hydrogenSamProtectionPlan());
+    }
+
+    /**
+     * Service the nuke planner's target-specific silo-capacity request. This
+     * sits below both H-bomb SAM priorities and above generic hostile-SAM
+     * parity, so a required launch capacity is completed before ordinary
+     * construction.
+     */
+    async maybeUpgradeSiloForNukeDemand() {
+      if (!state.settings.winFixes) return false;
+      const request = state.nukeWantSlots;
+      const requiredCapacity = Number(request?.need);
+      if (!Number.isFinite(requiredCapacity) || requiredCapacity <= 0) {
+        return false;
+      }
+
+      try {
+        if (this.game.config().isUnitDisabled(UNIT.MissileSilo)) return false;
+      } catch (_error) {
+        /* use the buildable probe as the compatibility fallback */
+      }
+      if (!autoBotBuildAllowed(UNIT.MissileSilo)) return false;
+
+      const allSilos = this.player.units(UNIT.MissileSilo) || [];
+      const builtSilos = allSilos.filter((silo) => {
+        try {
+          return !silo.isUnderConstruction();
+        } catch (_error) {
+          return false;
+        }
+      });
+      const preferredIds = new Set(
+        Array.isArray(request.unblockedSiloIds)
+          ? request.unblockedSiloIds.map(String)
+          : [],
+      );
+      const preferredSilos = builtSilos.filter((silo) => {
+        if (preferredIds.size === 0) return true;
+        try {
+          return preferredIds.has(String(silo.id()));
+        } catch (_error) {
+          return false;
+        }
+      });
+      const scopedSilos = preferredSilos.length > 0 ? preferredSilos : builtSilos;
+      const currentCapacity = scopedSilos.reduce(
+        (sum, silo) => sum + Math.max(1, Number(silo.level?.() ?? 1)),
+        0,
+      );
+      if (currentCapacity >= requiredCapacity) {
+        state.nukeWantSlots = null;
+        return false;
+      }
+
+      const upgradeable = scopedSilos.filter((silo) => {
+        const level = Number(silo.level?.() ?? 1);
+        if (!Number.isFinite(level) || level >= HYDROGEN_SAM_MAX_UPGRADE_LEVEL) {
+          return false;
+        }
+      });
+      const fallbackUpgradeable = scopedSilos.filter((silo) => {
+        const level = Number(silo.level?.() ?? 1);
+        return Number.isFinite(level) && level < HYDROGEN_SAM_MAX_UPGRADE_LEVEL;
+      });
+      const candidates = upgradeable.length > 0 ? upgradeable : fallbackUpgradeable;
+      if (candidates.length === 0) return false;
+
+      let reserve = 0n;
+      try {
+        reserve = this.legendaryReserveGold();
+      } catch (_error) {
+        reserve = 0n;
+      }
+      const availableGold =
+        this.player.gold() > reserve ? this.player.gold() - reserve : 0n;
+      let minimumCost = 0n;
+      try {
+        minimumCost = this.cost(UNIT.MissileSilo);
+      } catch (_error) {
+        minimumCost = 0n;
+      }
+      if (availableGold < minimumCost) return false;
+
+      const buildables = await this.buildableForUnits(
+        candidates,
+        UNIT.MissileSilo,
+        {
+          concurrency: DEFENSIVE_SAM_PROBE_CONCURRENCY,
+          timeoutMs: HOSTILE_SILO_SAM_PROBE_TIMEOUT_MS,
+        },
+      );
+      const ownSams = this.player.units(UNIT.SAMLauncher) || [];
+      const ranked = [];
+      for (let index = 0; index < candidates.length; index++) {
+        const silo = candidates[index];
+        const bu = buildables[index];
+        if (!bu || bu.canUpgrade === false) continue;
+        let cost = minimumCost;
+        try {
+          if (bu.cost !== undefined && bu.cost !== null) cost = BigInt(bu.cost);
+        } catch (_error) {
+          /* use the formula fallback */
+        }
+        if (cost > availableGold) continue;
+
+        let protection = 0;
+        for (const sam of ownSams) {
+          try {
+            if (sam.isUnderConstruction && sam.isUnderConstruction()) continue;
+            const range = Number(this.game.config().samRange(sam.level()));
+            const distance = this.game.euclideanDistSquared(
+              silo.tile(),
+              sam.tile(),
+            );
+            if (distance <= range * range) protection += Number(sam.level());
+          } catch (_error) {
+            /* skip an incomplete SAM snapshot */
+          }
+        }
+        ranked.push({
+          silo,
+          bu,
+          cost,
+          level: Number(silo.level?.() ?? 1),
+          protection,
+        });
+      }
+      ranked.sort((left, right) => {
+        if (right.protection !== left.protection) {
+          return right.protection - left.protection;
+        }
+        if (left.cost !== right.cost) {
+          return left.cost < right.cost ? -1 : 1;
+        }
+        return left.level - right.level;
+      });
+      const selected = ranked[0];
+      if (!selected) return false;
+
+      const buildMenu = getBuildMenu();
+      if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
+        return false;
+      }
+      buildMenu.sendBuildOrUpgrade(selected.bu);
+      state.stats.builds++;
+      setLastAction(tr("⬆️ Upgrade {type}", { type: UNIT.MissileSilo }), "build");
+      return true;
     }
 
     async maybeUpgradeSamForSiloParity() {

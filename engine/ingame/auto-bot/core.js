@@ -250,7 +250,10 @@
     // bot's recentlySentNukes / −1M penalty). Pruned by age in nuke.js.
     hostility: new Map(), // smallID -> accumulated aggression score (relation proxy)
     nukeReserveGold: 0, // gold the build loop keeps in reserve for the next nuke
-    nukeWantSlots: null, // { need, at } — silo slots wanted to saturate an enemy SAM
+    // { need, at, targetTile, unblockedSiloIds } — silo capacity required by
+    // the latest enemy-SAM overwhelm plan. StructureBehavior services this on
+    // the next build tick, after the H-bomb SAM-protection priority.
+    nukeWantSlots: null,
     lastMirv: null, // { sid, at } — last MIRV target+time (per-target cooldown)
     navalThreatAt: 0, // ts of last enemy ship/transport near our ports (build extra hulls)
     // Game-speed tracking: the game's tick rate changes with the speed setting.

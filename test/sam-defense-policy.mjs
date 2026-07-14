@@ -143,6 +143,18 @@ const enemySiloUnderConstruction = {
   units: (type) =>
     type === UNIT.MissileSilo ? [makeUnit(701, 99, { underConstruction: true })] : [],
 };
+const enemySingleLevelOneSilo = {
+  smallID: () => 8,
+  isPlayer: () => true,
+  isAlive: () => true,
+  units: (type) => (type === UNIT.MissileSilo ? [makeUnit(801, 1)] : []),
+};
+const enemyTwoLevelOneSilos = {
+  smallID: () => 9,
+  isPlayer: () => true,
+  isAlive: () => true,
+  units: (type) => (type === UNIT.MissileSilo ? [makeUnit(901, 1), makeUnit(902, 1)] : []),
+};
 own.units = (type) => {
   if (type === UNIT.MissileSilo) return own.silos;
   if (type === UNIT.SAMLauncher) return own.sams;
@@ -189,6 +201,26 @@ assert.equal(
   true,
   "A built hostile silo triggers the mandatory SAM response",
 );
+const originalPlayersForSiloLevelSum = behavior.game.players;
+behavior.game.players = () => [own, enemySingleLevelOneSilo];
+assert.equal(
+  behavior.hostileSiloLevelSumAtLeast(),
+  false,
+  "One level-1 hostile Silo contributes one to the H-bomb trigger, not two",
+);
+behavior.game.players = () => [own, enemyTwoLevelOneSilos];
+assert.equal(
+  behavior.hostileSiloLevelSumAtLeast(),
+  true,
+  "Two hostile level-1 Silos reach the level-sum trigger",
+);
+behavior.game.players = () => [own, enemySilos, enemyTwoLevelOneSilos];
+assert.equal(
+  behavior.hostileSiloLevelSumTarget(),
+  6,
+  "The SAM target uses the greatest single enemy Silo-level-sum",
+);
+behavior.game.players = originalPlayersForSiloLevelSum;
 assert.equal(
   behavior.shouldBuildStructure(UNIT.MissileSilo, 10, false),
   false,
@@ -311,16 +343,18 @@ assert.deepEqual(
       parallelProbeCount: options.parallelProbeCount,
     },
   ]),
-  [[
-    UNIT.SAMLauncher,
-    {
-      forceNewStructure: true,
-      prioritizeStructureCoverage: true,
-      probeLimit: 6,
-      probeTimeoutMs: 750,
-      parallelProbeCount: 6,
-    },
-  ]],
+  [
+    [
+      UNIT.SAMLauncher,
+      {
+        forceNewStructure: true,
+        prioritizeStructureCoverage: true,
+        probeLimit: 6,
+        probeTimeoutMs: 750,
+        parallelProbeCount: 6,
+      },
+    ],
+  ],
   "The dedicated SAM request forces a bounded coverage-ranked placement",
 );
 assert.equal(
@@ -550,6 +584,103 @@ coverageProbe.missileSiloValue = originalMissileSiloValue;
 own.units = originalOwnUnits;
 behavior.game.config = originalGameConfig;
 behavior.game.euclideanDistSquared = originalEuclideanDistSquared;
+
+const hydrogenProtectionBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+const hydrogenSam = makeUnit(1101, 1);
+hydrogenProtectionBehavior.player = {
+  smallID: () => 1,
+  gold: () => 5_000_000n,
+  borderTiles: () => new Set([0, 10]),
+  units: (type) => {
+    if (type === UNIT.SAMLauncher) return [hydrogenSam];
+    if (type === UNIT.City) return [{ tile: () => 0 }];
+    return [];
+  },
+};
+hydrogenProtectionBehavior.game = {
+  ticks: () => 1,
+  euclideanDistSquared: (left, right) => (Number(left) - Number(right)) ** 2,
+  config: () => ({
+    isUnitDisabled: () => false,
+    samRange: (level) => level * 6,
+  }),
+};
+hydrogenProtectionBehavior.liveHostilePlayers = () => [enemyTwoLevelOneSilos];
+hydrogenProtectionBehavior.legendaryReserveGold = () => 0n;
+hydrogenProtectionBehavior.cost = () => 1n;
+hydrogenProtectionBehavior.buildableForUnits = async () => [
+  { type: UNIT.SAMLauncher, canUpgrade: true, cost: 1n },
+];
+assert.equal(
+  hydrogenProtectionBehavior.hydrogenSamProtectionPlan().targetLevel,
+  2,
+  "H-bomb SAM parity targets the largest hostile built-Silo level sum",
+);
+sentBuilds.length = 0;
+assert.equal(
+  await hydrogenProtectionBehavior.maybeUpgradeHydrogenProtectionSam(),
+  true,
+  "H-bomb coverage emits the required SAM upgrade",
+);
+assert.equal(sentBuilds.length, 1, "H-bomb coverage emits one SAM upgrade action");
+hydrogenProtectionBehavior.liveHostilePlayers = () => [enemySingleLevelOneSilo];
+hydrogenProtectionBehavior._hydrogenSamProtectionTick = null;
+assert.equal(
+  hydrogenProtectionBehavior.hydrogenSamProtectionPlan(),
+  null,
+  "A single level-1 hostile Silo does not activate H-bomb SAM protection",
+);
+
+let coverageSamLevel = 1;
+const structureCoverageSam = {
+  id: () => 1201,
+  level: () => coverageSamLevel,
+  tile: () => 0,
+  isUnderConstruction: () => false,
+  isActive: () => true,
+};
+const structureCoverageBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+structureCoverageBehavior.player = {
+  gold: () => 5_000_000n,
+  units: (type) => {
+    if (type === UNIT.SAMLauncher) return [structureCoverageSam];
+    if (type === UNIT.City) return [{ tile: () => 0 }];
+    if (type === UNIT.Factory) return [{ tile: () => 10 }];
+    return [];
+  },
+};
+structureCoverageBehavior.game = {
+  euclideanDistSquared: (left, right) => (Number(left) - Number(right)) ** 2,
+  config: () => ({
+    isUnitDisabled: () => false,
+    samRange: (level) => level * 6,
+  }),
+};
+structureCoverageBehavior.liveHostilePlayers = () => [enemyTwoLevelOneSilos];
+structureCoverageBehavior.cost = () => 1n;
+structureCoverageBehavior.legendaryReserveGold = () => 0n;
+structureCoverageBehavior.buildableForUnits = async () => [
+  { type: UNIT.SAMLauncher, canUpgrade: true, cost: 1n },
+];
+assert.equal(
+  structureCoverageBehavior.hydrogenStructureCoveragePlan().targetLevel,
+  2,
+  "Structure protection chooses the minimum SAM level covering every structure",
+);
+sentBuilds.length = 0;
+assert.equal(
+  await structureCoverageBehavior.maybeEnsureHydrogenStructureCoverage(),
+  true,
+  "Structure protection emits the required SAM upgrade",
+);
+assert.equal(sentBuilds.length, 1, "Structure protection emits one upgrade action");
+coverageSamLevel = 2;
+assert.equal(
+  structureCoverageBehavior.hydrogenStructureCoveragePlan(),
+  null,
+  "A SAM at the planned level covers all own structures",
+);
+
 const originalGetPerceivedCost = behavior.getPerceivedCost;
 const originalStructureSpawnTile = behavior.structureSpawnTile;
 const originalGetTotalStructureDensity = behavior.getTotalStructureDensity;
@@ -1071,7 +1202,15 @@ samDisabled = false;
 // The dedicated hostile-silo SAM path is covered above; the wiring tests can
 // now exercise the proactive parity branch before ordinary construction.
 const originalMaybeSpawnHostileSiloSam = behavior.maybeSpawnHostileSiloSam;
+const originalHydrogenStructureCoverage = behavior.maybeEnsureHydrogenStructureCoverage;
+const originalHydrogenSiloUpgrade = behavior.maybeUpgradeHydrogenProtectionSam;
 behavior.maybeSpawnHostileSiloSam = async () => false;
+let wiredStructureCoverageCalls = 0;
+behavior.maybeEnsureHydrogenStructureCoverage = async () => {
+  wiredStructureCoverageCalls++;
+  return true;
+};
+behavior.maybeUpgradeHydrogenProtectionSam = async () => false;
 let wiredParityCalls = 0;
 behavior.maybeUpgradeMissileDefenseSam = async () => false;
 behavior.maybeUpgradeSamForSiloParity = async () => {
@@ -1079,6 +1218,19 @@ behavior.maybeUpgradeSamForSiloParity = async () => {
   return true;
 };
 behavior.placementsCount = 0;
+assert.equal(
+  await behavior.handleStructures(),
+  true,
+  "Non-Legendary structure handling checks proactive SAM/Silo level parity",
+);
+assert.equal(
+  wiredStructureCoverageCalls,
+  1,
+  "Full structure H-bomb coverage is checked before SAM/Silo parity",
+);
+assert.equal(wiredParityCalls, 0, "Higher-priority structure coverage stops lower priorities");
+
+behavior.maybeEnsureHydrogenStructureCoverage = async () => false;
 assert.equal(
   await behavior.handleStructures(),
   true,
@@ -1099,5 +1251,7 @@ assert.equal(
 );
 assert.equal(wiredUpgradeCalls, 1, "The reactive SAM path is wired into handleStructures");
 behavior.maybeSpawnHostileSiloSam = originalMaybeSpawnHostileSiloSam;
+behavior.maybeEnsureHydrogenStructureCoverage = originalHydrogenStructureCoverage;
+behavior.maybeUpgradeHydrogenProtectionSam = originalHydrogenSiloUpgrade;
 
 console.log("SAM DEFENSE POLICY TESTS OK");
