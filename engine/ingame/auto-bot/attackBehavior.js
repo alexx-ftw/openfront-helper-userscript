@@ -69,11 +69,10 @@
   // async enrichment bounded so a crowded tribe map cannot starve the combat tick.
   const EARLY_TRIBE_CANDIDATES = 8;
   const EARLY_GAME_TRIBE_CHAIN_RADIUS = 120;
-  // Preserve a reserve derived from the game's troop-generation curve rather
-  // than a percentage of the current army. The peak is near 42% of max troops;
-  // keep half of that one-tick production as a live reserve.
+  // Preserve half of the army level where the troop-generation curve peaks.
+  // The peak is near 42% of max troops, so the live reserve is 21% of max.
   const ATTACK_EARLY_GAME_PEAK_RATIO = 0.42;
-  const ATTACK_EARLY_GAME_PEAK_PRODUCTION_RESERVE_FRACTION = 0.5;
+  const ATTACK_EARLY_GAME_PEAK_RESERVE_FRACTION = 0.5;
   // Intents are asynchronous on the client: the troop balance and outgoing
   // attack snapshot can lag the emitted command by several game ticks.
   const BOT_OUTBOUND_INTENT_GRACE_TICKS = 6;
@@ -555,13 +554,10 @@
       }
 
       const peakTroops = maximum * ATTACK_EARLY_GAME_PEAK_RATIO;
-      const peakRate =
-        (10 + Math.pow(peakTroops, 0.73) / 4) *
-        (1 - ATTACK_EARLY_GAME_PEAK_RATIO);
       const reserve = Math.max(
         1,
         Math.ceil(
-          peakRate * ATTACK_EARLY_GAME_PEAK_PRODUCTION_RESERVE_FRACTION,
+          peakTroops * ATTACK_EARLY_GAME_PEAK_RESERVE_FRACTION,
         ),
       );
       this.earlyGamePeakReserveCacheKey = maximum;

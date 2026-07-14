@@ -31,7 +31,7 @@ vm.runInNewContext(`${source}\nglobalThis.AttackBehavior = AttackBehavior;`, san
 });
 
 let tick = 0;
-let ownTroops = 10000;
+let ownTroops = 100000;
 const outgoing = [];
 const me = {
   troops: () => ownTroops,
@@ -53,12 +53,12 @@ const behavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {})
 
 assert.equal(
   behavior.getEarlyGameLiveReserveTroops(),
-  175,
-  "reserve is half the peak production for a 100000 troop cap",
+  21000,
+  "reserve is half the troop level at the production peak for a 100000 troop cap",
 );
 assert.equal(
   behavior.getEarlyGameProbeTroops(),
-  100,
+  1000,
   "a probe is 1% of the current army without an absolute troop floor",
 );
 
@@ -66,7 +66,7 @@ behavior.recordOutboundAttackIntent(target, 8000, { attackType: "land" });
 assert.equal(behavior.getPendingOutboundAttackTroops(), 8000);
 assert.equal(
   behavior.getEarlyGameSpendableTroops(),
-  1825,
+  71000,
   "a stale troop snapshot cannot spend the same 8000 twice",
 );
 
