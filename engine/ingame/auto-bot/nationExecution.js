@@ -69,7 +69,7 @@
       return !!(state.settings.features && state.settings.features[name]);
     }
 
-    async tick(ticks) {
+    async tick(ticks, profile = null) {
       this.player = this.mg.myPlayer();
       const me = this.player;
 
@@ -99,20 +99,28 @@
       ) {
         try {
           if (state.settings.warshipAutoSpawn !== false) {
-            this.warshipBehavior.trackShipsAndRetaliate();
+            autoBotProfileSyncPhase(profile, "warship-track", () =>
+              this.warshipBehavior.trackShipsAndRetaliate(),
+            );
           }
           if (state.settings.winFixes) {
             // WIN-FIX: né nuke trước (ưu tiên sống sót), rồi reposition idle warship
             // tới naval threat. dodgeNukes khoá ship vừa né khỏi patrol pass này.
             if (state.settings.warshipNukeDodge !== false) {
-              this.warshipBehavior.dodgeNukes();
+              autoBotProfileSyncPhase(profile, "warship-dodge", () =>
+                this.warshipBehavior.dodgeNukes(),
+              );
             }
             // WIN-FIX: reposition EXISTING idle warships to the top naval threat (invasion
             // > trade-raid lane > open-water loss zone). Throttled/debounced internally.
-            this.warshipBehavior.smartWarshipPatrol();
+            autoBotProfileSyncPhase(profile, "warship-patrol", () =>
+              this.warshipBehavior.smartWarshipPatrol(),
+            );
             // WIN-FIX (Blon port): battle sim + retreat HP% + hunt trade + attack weakest.
             // Runs AFTER patrol so it can override patrol targets when combat is needed.
-            this.warshipBehavior.smartWarshipCombat();
+            autoBotProfileSyncPhase(profile, "warship-combat", () =>
+              this.warshipBehavior.smartWarshipCombat(),
+            );
           }
         } catch (e) {
           console.error("[AutoBot] trackShips error:", e);
@@ -138,10 +146,14 @@
             ticks - this.lastSpawnPickTick >= 6
           ) {
             this.lastSpawnPickTick = ticks;
-            const topKey = this.currentSpawnTopKey();
+            const topKey = autoBotProfileSyncPhase(
+              profile,
+              "spawn-selection",
+              () => this.currentSpawnTopKey(),
+            );
             if (!this.spawnExecAdded || (topKey != null && topKey !== this.lastSpawnTopKey)) {
               this.lastSpawnTopKey = topKey;
-              this.doSpawn();
+              autoBotProfileSyncPhase(profile, "spawn-emit", () => this.doSpawn());
             }
           }
           this.status = tr("Spawn phase…");
@@ -162,8 +174,10 @@
         this.initializeBehaviors();
         if (this.feat("expand")) {
           const openingWinFix = state.settings.winFixes === true;
-          const openingAttackSent = await this.attackBehavior.forceSendAttack(
-            this.mg.terraNullius(),
+          const openingAttackSent = await autoBotProfileAsyncPhase(
+            profile,
+            "opening-attack",
+            () => this.attackBehavior.forceSendAttack(this.mg.terraNullius()),
           );
           // A successful opening burst already occupies this decision slot.
           // Retry only when it was not emitted; never run a second decision
@@ -182,7 +196,11 @@
         this.openingLandBurstPending = false;
         this.status = tr("Thinking…");
         try {
-          await this.attackBehavior.maybeAttack();
+          await autoBotProfileAsyncPhase(
+            profile,
+            "expansion-retry",
+            () => this.attackBehavior.maybeAttack(),
+          );
         } catch (e) {
           console.error("[AutoBot] opening expansion retry error:", e);
         }
@@ -217,7 +235,11 @@
       if (!attackCrossed) {
         // Between regular attack ticks: build at 1/3 and 2/3 (NationExecution.ts:180-190).
         if (thirdCrossed && this.feat("build")) {
-          await this.structureBehavior.handleStructures();
+          await autoBotProfileAsyncPhase(
+            profile,
+            "structures-between",
+            () => this.structureBehavior.handleStructures(),
+          );
         }
         return;
       }
@@ -225,38 +247,68 @@
       // ── full decision chain, src order (NationExecution.ts:194-204) ───────────
       this.status = tr("Thinking…");
       try {
-        this.emojiBehavior.maybeSendCasualEmoji();
-        this.updateRelationsFromEmbargos();
-        // Always reject alliance requests from regular bots — even when
-        // alliance auto-accept is off. Regular bots spam requests defensively
-        // which blocks attacks against them.
-        this.allianceBehavior.handleAllianceRequestsFromBots();
-        if (this.feat("alliance")) {
-          this.allianceBehavior.handleAllianceRequests();
-          this.allianceBehavior.handleAllianceExtensionRequests();
-        }
+        autoBotProfileSyncPhase(profile, "emoji", () =>
+          this.emojiBehavior.maybeSendCasualEmoji(),
+        );
+        autoBotProfileSyncPhase(profile, "diplomacy", () => {
+          this.updateRelationsFromEmbargos();
+          // Always reject alliance requests from regular bots — even when
+          // alliance auto-accept is off. Regular bots spam requests defensively
+          // which blocks attacks against them.
+          this.allianceBehavior.handleAllianceRequestsFromBots();
+          if (this.feat("alliance")) {
+            this.allianceBehavior.handleAllianceRequests();
+            this.allianceBehavior.handleAllianceExtensionRequests();
+          }
+        });
         if (this.feat("nuke")) {
-          await this.mirvBehavior.considerMIRV();
+          await autoBotProfileAsyncPhase(
+            profile,
+            "mirv",
+            () => this.mirvBehavior.considerMIRV(),
+          );
         }
         if (this.feat("build")) {
-          await this.structureBehavior.handleStructures();
+          await autoBotProfileAsyncPhase(
+            profile,
+            "structures",
+            () => this.structureBehavior.handleStructures(),
+          );
         }
         if (this.feat("warship") && state.settings.warshipAutoSpawn !== false) {
-          await this.warshipBehavior.maybeSpawnWarship();
+          await autoBotProfileAsyncPhase(
+            profile,
+            "warship-build",
+            () => this.warshipBehavior.maybeSpawnWarship(),
+          );
         }
         // DIVERGENCE: src gates this under alliance; we add a dedicated `embargo`
         // toggle so the user can turn off the bot's auto-stop-trading behavior.
         if (this.feat("embargo")) {
-          this.handleEmbargoesToHostileNations();
+          autoBotProfileSyncPhase(profile, "embargo", () =>
+            this.handleEmbargoesToHostileNations(),
+          );
         }
         if (this.feat("expand") || this.feat("boat")) {
-          await this.attackBehavior.maybeAttack();
+          await autoBotProfileAsyncPhase(
+            profile,
+            "attack",
+            () => this.attackBehavior.maybeAttack(),
+          );
         }
         if (this.feat("warship") && state.settings.warshipAutoSpawn !== false) {
-          await this.warshipBehavior.counterWarshipInfestation();
+          await autoBotProfileAsyncPhase(
+            profile,
+            "warship-counter",
+            () => this.warshipBehavior.counterWarshipInfestation(),
+          );
         }
         if (this.feat("nuke")) {
-          await this.nukeBehavior.maybeSendNuke();
+          await autoBotProfileAsyncPhase(
+            profile,
+            "nuke",
+            () => this.nukeBehavior.maybeSendNuke(),
+          );
         }
       } catch (e) {
         console.error("[AutoBot] decision chain error:", e);
