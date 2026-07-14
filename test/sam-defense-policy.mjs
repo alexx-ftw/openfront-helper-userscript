@@ -47,6 +47,8 @@ const sandbox = {
   getBuildMenu: () => ({
     sendBuildOrUpgrade: (buildable) => sentBuilds.push(buildable),
   }),
+  randTerritoryTileArray: (_random, _game, _player, count) =>
+    Array.from({ length: count }, (_, index) => 10_000 + index),
   setLastAction: () => {},
   tr: (value) => value,
   console,
@@ -311,6 +313,41 @@ assert.equal(
 );
 behavior.maybeSpawnStructure = originalMaybeSpawnStructure;
 behavior._hostileSiloSamBuilt = false;
+let hostileAttemptTick = 1000;
+behavior.game.ticks = () => hostileAttemptTick;
+const failedHostileSamCalls = [];
+behavior.maybeSpawnStructure = async (...args) => {
+  failedHostileSamCalls.push(args);
+  return false;
+};
+assert.equal(
+  await behavior.maybeSpawnHostileSiloSam(),
+  false,
+  "A failed dedicated SAM request returns without claiming that the SAM was built",
+);
+assert.equal(
+  await behavior.maybeSpawnHostileSiloSam(),
+  false,
+  "A failed dedicated SAM request is not repeated within the same game tick",
+);
+assert.equal(
+  failedHostileSamCalls.length,
+  1,
+  "A failed dedicated SAM request crosses the placement path only once per tick",
+);
+hostileAttemptTick++;
+await behavior.maybeSpawnHostileSiloSam();
+assert.equal(
+  failedHostileSamCalls.length,
+  2,
+  "A failed dedicated SAM request is retried after the game tick advances",
+);
+behavior.maybeSpawnStructure = originalMaybeSpawnStructure;
+behavior._hostileSiloSamAttemptTick = null;
+behavior._hostilePlayersSnapshotTick = null;
+behavior._hostilePlayersSnapshot = null;
+behavior._hostileThreatSnapshotTick = null;
+behavior._hostileThreatSnapshot = null;
 const originalOwnUnits = own.units;
 const originalGameConfig = behavior.game.config;
 const originalEuclideanDistSquared = behavior.game.euclideanDistSquared;
@@ -336,6 +373,40 @@ assert.equal(
   true,
   "Threat SAM placement prefers the tile covering more structures",
 );
+
+const coverageProbeStructures = Array.from({ length: 500 }, (_, index) => ({
+  tile: () => index * 100,
+}));
+const coverageProbe = Object.create(sandbox.__StructureBehavior.prototype);
+coverageProbe.random = {};
+coverageProbe.player = {
+  units: (...types) => (types.includes(UNIT.SAMLauncher) ? [] : coverageProbeStructures),
+};
+coverageProbe.game = {
+  neighbors: (tile) => [tile + 1, tile + 2, tile + 3],
+  config: () => ({
+    defaultSamRange: () => 10,
+    samRange: () => 10,
+  }),
+  euclideanDistSquared: (left, right) => (Number(left) - Number(right)) ** 2,
+};
+let coverageProbeCount = 0;
+coverageProbe.buildableFor = async () => {
+  coverageProbeCount++;
+  return null;
+};
+assert.equal(
+  await coverageProbe.structureSpawnTile(UNIT.SAMLauncher, {
+    prioritizeStructureCoverage: true,
+  }),
+  null,
+  "Coverage-priority SAM placement returns null when all probes are unavailable",
+);
+assert.equal(
+  coverageProbeCount,
+  25,
+  "Coverage-priority SAM placement keeps ranking and async probes bounded to the normal candidate budget",
+);
 own.units = originalOwnUnits;
 behavior.game.config = originalGameConfig;
 behavior.game.euclideanDistSquared = originalEuclideanDistSquared;
@@ -351,6 +422,7 @@ assert.equal(
   false,
   "The direct silo spawn path is blocked below the hostile 1M-gold threshold",
 );
+hostileAttemptTick++;
 enemyB.gold = () => 1_000_000n;
 assert.equal(
   await behavior.maybeSpawnStructure(UNIT.MissileSilo),
@@ -454,6 +526,31 @@ assert.equal(
   0,
   "Reactive SAM defense avoids the expensive forecast below the upgrade cost",
 );
+let parityProbeCalls = 0;
+const parityBuildableFor = behavior.buildableFor;
+const parityCost = behavior.cost;
+behavior.cost = () => 3_000_000n;
+behavior.buildableFor = async () => {
+  parityProbeCalls++;
+  return {
+    type: UNIT.SAMLauncher,
+    canUpgrade: true,
+    cost: 3_000_000n,
+  };
+};
+own.gold = () => 1_500_000n;
+assert.equal(
+  await behavior.maybeUpgradeSamForSiloParity(),
+  false,
+  "SAM parity does not attempt an upgrade when the next level costs more than the available 1.5M gold",
+);
+assert.equal(
+  parityProbeCalls,
+  0,
+  "SAM parity checks affordability before issuing per-SAM async probes",
+);
+behavior.buildableFor = parityBuildableFor;
+behavior.cost = parityCost;
 own.gold = () => 5_000_000n;
 behavior.getMissileDefenseContext();
 behavior.getMissileDefenseContext();

@@ -112,6 +112,14 @@
   /** If we have more than this many structures per tiles, prefer upgrading over building */
   const UPGRADE_DENSITY_THRESHOLD = 1 / 1500;
 
+  /**
+   * Maximum raw tiles ranked and asynchronously probed for one structure.
+   * The normal placement sampler already uses this budget; coverage-priority
+   * placement must keep the same bound even when the nation owns many
+   * structures, because each probe crosses the async worker boundary.
+   */
+  const STRUCTURE_PLACEMENT_CANDIDATE_LIMIT = 25;
+
   /** Estimated number of tiles per city equivalent, used when cities are disabled */
   const TILES_PER_CITY_EQUIVALENT = 2000;
 
@@ -316,6 +324,7 @@
       this._hasHighStartingGold = null;
       this._postSaveUpStartTick = null;
       this._hostileSiloSamBuilt = false;
+      this._hostileSiloSamAttemptTick = null;
       this._hostilePlayersSnapshotTick = null;
       this._hostilePlayersSnapshot = null;
       this._hostileThreatSnapshotTick = null;
@@ -394,6 +403,8 @@
         state.settings.winFixes &&
         !legendaryDifficulty &&
         this.samLevelParityGap() > 0 &&
+        (!this.shouldBuildHostileSiloSam() ||
+          !this.hostileSiloSamAttemptedThisTick()) &&
         (await this.maybeSpawnStructure(
           UNIT.SAMLauncher,
           this.shouldBuildHostileSiloSam()
@@ -423,14 +434,6 @@
         if (this.defensePostNeeded()) {
           return false;
         }
-      }
-
-      // A hostile player with enough gold for a meaningful silo threat, or an
-      // already-built hostile silo, gets one dedicated new SAM before ordinary
-      // pacing. Its placement value maximizes the number of our structures in
-      // range; existing missile/land-defense exceptions above remain first.
-      if (!legendaryDefenseEmergency && (await this.maybeSpawnHostileSiloSam())) {
-        return true;
       }
 
       // Legendary missile defense is an emergency exception to ordinary pacing:
@@ -948,12 +951,35 @@
 
     async maybeSpawnHostileSiloSam() {
       if (!this.shouldBuildHostileSiloSam()) return false;
+      const attemptTick = this.hostileSiloSamCurrentTick();
+      if (
+        attemptTick !== null &&
+        this._hostileSiloSamAttemptTick === attemptTick
+      ) {
+        return false;
+      }
+      if (attemptTick !== null) this._hostileSiloSamAttemptTick = attemptTick;
       const built = await this.maybeSpawnStructure(UNIT.SAMLauncher, {
         forceNewStructure: true,
         prioritizeStructureCoverage: true,
       });
       if (built) this._hostileSiloSamBuilt = true;
       return built;
+    }
+
+    hostileSiloSamCurrentTick() {
+      try {
+        if (typeof this.game?.ticks !== "function") return null;
+        const tick = this.game.ticks();
+        return tick === null || tick === undefined ? null : tick;
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    hostileSiloSamAttemptedThisTick() {
+      const tick = this.hostileSiloSamCurrentTick();
+      return tick !== null && this._hostileSiloSamAttemptTick === tick;
     }
 
     // Legendary deliberately chooses among all currently relevant structures
@@ -4584,6 +4610,7 @@
       }
       const availableGold =
         this.player.gold() > reserve ? this.player.gold() - reserve : 0n;
+      if (availableGold < this.cost(UNIT.SAMLauncher)) return false;
       const candidates = [];
 
       for (const sam of this.player.units(UNIT.SAMLauncher) || []) {
@@ -4925,8 +4952,13 @@
     async structureSpawnTile(type, options = {}) {
       let tiles =
         type === UNIT.Port
-          ? this.randCoastalTileArray(25)
-          : randTerritoryTileArray(this.random, this.game, this.player, 25);
+          ? this.randCoastalTileArray(STRUCTURE_PLACEMENT_CANDIDATE_LIMIT)
+          : randTerritoryTileArray(
+              this.random,
+              this.game,
+              this.player,
+              STRUCTURE_PLACEMENT_CANDIDATE_LIMIT,
+            );
       if (type === UNIT.SAMLauncher && options.prioritizeStructureCoverage) {
         try {
           const structures = this.player.units(
@@ -4935,18 +4967,38 @@
             UNIT.MissileSilo,
             UNIT.Port,
           );
-          const coverageTiles = new Set();
+          const coverageTiles = [];
+          const coverageTileSet = new Set();
           for (const structure of structures || []) {
             const structureTile = structure.tile();
-            coverageTiles.add(structureTile);
+            if (!coverageTileSet.has(structureTile)) {
+              coverageTileSet.add(structureTile);
+              coverageTiles.push(structureTile);
+            }
             for (const neighbor of this.game.neighbors(structureTile)) {
-              coverageTiles.add(neighbor);
+              if (
+                coverageTiles.length >= STRUCTURE_PLACEMENT_CANDIDATE_LIMIT
+              ) {
+                break;
+              }
+              if (coverageTileSet.has(neighbor)) continue;
+              coverageTileSet.add(neighbor);
+              coverageTiles.push(neighbor);
+            }
+            if (
+              coverageTiles.length >= STRUCTURE_PLACEMENT_CANDIDATE_LIMIT
+            ) {
+              break;
             }
           }
-          if (coverageTiles.size > 0) {
+          if (coverageTiles.length > 0) {
+            const remainingCandidateSlots =
+              STRUCTURE_PLACEMENT_CANDIDATE_LIMIT - coverageTiles.length;
             tiles = [
               ...coverageTiles,
-              ...tiles.filter((tile) => !coverageTiles.has(tile)),
+              ...tiles
+                .filter((tile) => !coverageTileSet.has(tile))
+                .slice(0, remainingCandidateSlots),
             ];
           }
         } catch (_error) {
