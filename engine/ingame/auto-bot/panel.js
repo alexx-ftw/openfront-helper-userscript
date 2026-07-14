@@ -323,7 +323,6 @@
           }</div>
           <div class="ab-status ${state.settings.statusOpen ? "open" : ""}" data-role="status-wrap">
             <div class="ab-st-line" data-role="status">—</div>
-            <div class="ab-st-line" data-role="profiling">—</div>
             <div class="ab-st-act" data-role="lastaction">—</div>
             <div class="ab-stats">
               <div class="ab-stat"><b data-role="s-troops">0</b><span>${tr("Troops")}</span></div>
@@ -384,10 +383,6 @@
             <div class="ab-cfg-row">
               <span class="ab-cfg-label">${tr("Smart spawn")}</span>
               <div class="ab-cfg-sw ${state.settings.smartSpawn ? "on" : ""}" data-cfg="smartSpawn"></div>
-            </div>
-            <div class="ab-cfg-row">
-              <span class="ab-cfg-label">${tr("Performance profiling")}</span>
-              <div class="ab-cfg-sw ${state.settings.performanceProfiling ? "on" : ""}" data-cfg="performanceProfiling"></div>
             </div>
             <div class="ab-cfg-row">
               <span class="ab-cfg-label">${tr("Tick interval (ms)")}</span>
@@ -633,7 +628,7 @@
         saveSettings();
       });
     });
-    // advanced boolean switches (winFixes / smartSpawn / profiling / enabled)
+    // advanced boolean switches (winFixes / smartSpawn / enabled)
     panel.querySelectorAll("[data-cfg]").forEach((el) => {
       el.addEventListener("click", () => {
         const key = el.dataset.cfg;
@@ -648,7 +643,6 @@
           state.settings[key] = on;
           saveSettings();
           if (key === "pauseDonateDuringExpansion") renderDonateToggle();
-          if (key === "performanceProfiling") renderStatus();
         }
       });
     });
@@ -894,12 +888,6 @@
       if (el) el.textContent = text;
     };
     set("status", state.status);
-    set(
-      "profiling",
-      typeof formatAutoBotProfileStatus === "function"
-        ? formatAutoBotProfileStatus()
-        : "—",
-    );
     set("lastaction", state.lastAction);
     set("s-troops", fmt(state.live.troops));
     set("s-gold", fmt(state.live.gold));

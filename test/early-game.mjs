@@ -38,7 +38,7 @@ assert.equal(typeof sandbox.calculateEarlyGameFoodRaceValue, "function");
 assert.equal(typeof sandbox.calculateEarlyGameRaceTroops, "function");
 assert.match(
   nationExecutionSource,
-  /const openingAttackSent = await [\s\S]{0,300}forceSendAttack/,
+  /const openingAttackSent = await this\.attackBehavior\.forceSendAttack/,
   "the opening burst must report whether an attack was actually emitted",
 );
 assert.match(

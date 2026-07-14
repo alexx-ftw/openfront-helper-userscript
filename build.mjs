@@ -80,7 +80,6 @@ const INGAME_FILES = [
   "auto-bot/structureBehavior.js",
   "auto-bot/attackBehavior.js",
   "auto-bot/nukeBehavior.js",
-  "auto-bot/performance.js",
   "auto-bot/nationExecution.js",
   "auto-bot/engine.js",
   "auto-bot/panel.js",
