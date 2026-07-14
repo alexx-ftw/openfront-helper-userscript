@@ -425,6 +425,8 @@
       this.outboundDonationIntentReconciledTick = null;
       this.earlyGamePeakReserveCacheKey = null;
       this.earlyGamePeakReserveCache = 0;
+      this.earlyGameProductionPeakReserveCacheKey = null;
+      this.earlyGameProductionPeakReserveCache = 0;
       // Small per-player memory used by the early-game food-race policy. It is
       // intentionally local to this persistent behavior instance and bounded to
       // the players visible in the current game snapshot.
@@ -744,15 +746,7 @@
       const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
       if (ownTroops <= 0) return 0;
 
-      let maximum = ownTroops;
-      try {
-        maximum = Math.max(
-          ownTroops,
-          Number(this.game.config().maxTroops(this.player)) || ownTroops,
-        );
-      } catch (_error) {
-        /* keep the observed troop count as a safe fallback */
-      }
+      const maximum = this.getEarlyGameMaximumTroops(ownTroops);
 
       if (this.earlyGamePeakReserveCacheKey === maximum) {
         return this.earlyGamePeakReserveCache;
@@ -768,12 +762,64 @@
       return reserve;
     }
 
-    getEarlyGameSpendableTroops() {
+    getEarlyGameMaximumTroops(ownTroops = this.player?.troops?.() || 0) {
+      const observedTroops = Math.max(0, Number(ownTroops) || 0);
+      if (observedTroops <= 0) return 0;
+
+      let maximum = observedTroops;
+      try {
+        maximum = Math.max(
+          observedTroops,
+          Number(this.game.config().maxTroops(this.player)) || observedTroops,
+        );
+      } catch (_error) {
+        /* keep the observed troop count as a safe fallback */
+      }
+      return maximum;
+    }
+
+    getEarlyGameProductionReserveTroops() {
+      const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
+      if (ownTroops <= 0) return 0;
+
+      const maximum = this.getEarlyGameMaximumTroops(ownTroops);
+      if (this.earlyGameProductionPeakReserveCacheKey === maximum) {
+        return this.earlyGameProductionPeakReserveCache;
+      }
+
+      // This is the first-derivative peak of troop production (~42% of max),
+      // not the lower acceleration peak used by free-land and tribe actions.
+      const reserve = Math.max(
+        1,
+        Math.round(findEarlyGameTroopGrowthPeak(maximum)),
+      );
+      this.earlyGameProductionPeakReserveCacheKey = maximum;
+      this.earlyGameProductionPeakReserveCache = reserve;
+      return reserve;
+    }
+
+    isProductionReserveTarget(target) {
+      if (!target?.isPlayer?.()) return false;
+      const type = target.type?.();
+      return type === PlayerType.Nation || type === PlayerType.Human;
+    }
+
+    getEarlyGameTargetReserveTroops(target) {
+      return this.isProductionReserveTarget(target)
+        ? this.getEarlyGameProductionReserveTroops()
+        : this.getEarlyGameLiveReserveTroops();
+    }
+
+    getEarlyGameSpendableTroops(reserveTroops = null) {
       const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
       // This is a hard safety floor for every troop outflow. It remains active
       // even when other winFixes are disabled: an emitted attack or donation must
       // never consume the reserve needed to keep production accelerating.
-      const reserve = this.getEarlyGameLiveReserveTroops();
+      const configuredReserve = Number(reserveTroops);
+      const reserve =
+        reserveTroops === null || !Number.isFinite(configuredReserve)
+          ? this.getEarlyGameLiveReserveTroops()
+          : Math.max(0, configuredReserve);
       const pending = this.getPendingOutboundTroopCommitments();
       return Math.max(0, ownTroops - reserve - pending);
     }
@@ -2652,7 +2698,7 @@
     }
 
     // emitBoat — fire a TransportShipExecution at dst carrying `troops`.
-    emitBoat(dst, troops, label) {
+    emitBoat(dst, troops, label, reserveTarget = null) {
       // Final chokepoint for the "boat" feature toggle: never fire when off.
       if (!(state.settings.features && state.settings.features.boat)) {
         return false;
@@ -2663,9 +2709,12 @@
       }
       // All attack types share the same hard reserve budget, including boats
       // whose caller may have calculated a larger surge from a stale snapshot.
+      const targetReserve = reserveTarget?.isPlayer?.()
+        ? this.getEarlyGameTargetReserveTroops(reserveTarget)
+        : this.getEarlyGameLiveReserveTroops();
       const safeTroops = Math.min(
         requestedTroops,
-        this.getEarlyGameSpendableTroops(),
+        this.getEarlyGameSpendableTroops(targetReserve),
       );
       if (!Number.isFinite(safeTroops) || safeTroops < 1) {
         return false;
@@ -3696,6 +3745,8 @@
         target.isPlayer() &&
         target.type() === PlayerType.Bot &&
         target.units(...AttackStructureTypes).some((u) => AttackStructures.has(u.type()));
+      const isTribeTarget =
+        target.isPlayer() && target.type() === PlayerType.Bot;
       // Use the expand ratio when attacking a bot that owns structures — we need to
       // recapture those structures ASAP, even before reaching the normal reserve.
       const useReserve = target.isPlayer() && !botWithStructures;
@@ -3705,22 +3756,34 @@
       const reserveRatio = useReserve
         ? this.effectiveReserveRatio()
         : this.expandRatio;
+      const targetReserveTroops = this.getEarlyGameTargetReserveTroops(target);
       const targetTroops = state.settings.winFixes
-        ? this.getEarlyGameLiveReserveTroops()
+        ? targetReserveTroops
         : maxTroops * reserveRatio;
+      const targetSpendableTroops =
+        this.getEarlyGameSpendableTroops(targetReserveTroops);
 
       let troops;
+      let requiredTribeAttackTroops = null;
       const botAttackTroopsSentBefore = this.botAttackTroopsSent;
-      if (
-        target.isPlayer() &&
-        target.type() === PlayerType.Bot &&
-        this.player.type() !== PlayerType.Bot
-      ) {
+      if (isTribeTarget && this.player.type() !== PlayerType.Bot) {
+        // A tribe attack is only useful if it can finish the capture. Account for
+        // both pending outbound intents and other tribe attacks already reserved
+        // during this decision before asking the combat policy for its force.
+        const availableForTribe = Math.max(
+          0,
+          targetSpendableTroops - this.botAttackTroopsSent,
+        );
         troops = this.calculateBotAttackTroops(
           target,
-          this.player.troops() - targetTroops - this.botAttackTroopsSent,
+          availableForTribe,
           enemyDefensePostProfile,
         );
+        requiredTribeAttackTroops = troops;
+        if (requiredTribeAttackTroops < 1) {
+          this.botAttackTroopsSent = botAttackTroopsSentBefore;
+          return false;
+        }
       } else {
         troops = this.player.troops() - targetTroops;
       }
@@ -3747,7 +3810,18 @@
       // `player.troops()` can still be the pre-attack snapshot. Clamp after
       // every policy adjustment so the reserve and all intents share one final
       // budget, including the opening/free-land burst.
-      troops = Math.min(troops, this.getEarlyGameSpendableTroops());
+      troops = Math.min(troops, targetSpendableTroops);
+
+      // Never turn a calculated tribal assault into a weakening attack because a
+      // stale snapshot or a pending intent reduced the final budget. Roll back the
+      // local reservation and wait for the next decision with a larger army.
+      if (
+        requiredTribeAttackTroops !== null &&
+        troops < requiredTribeAttackTroops
+      ) {
+        this.botAttackTroopsSent = botAttackTroopsSentBefore;
+        return false;
+      }
 
       // A Defense Post multiplies the real per-tile attacker loss by five. Do
       // not spend a sub-2× effective attack into a covered front; the existing
@@ -3760,10 +3834,16 @@
           enemyDefensePostProfile,
         )
       ) {
+        if (requiredTribeAttackTroops !== null) {
+          this.botAttackTroopsSent = botAttackTroopsSentBefore;
+        }
         return false;
       }
 
       if (troops < 1) {
+        if (requiredTribeAttackTroops !== null) {
+          this.botAttackTroopsSent = botAttackTroopsSentBefore;
+        }
         return false;
       }
 
@@ -3785,6 +3865,9 @@
         setLastAction(tr("⚔️ Attack"), "combat");
         this.recordOutboundAttackIntent(target, troops, { attackType: "land" });
         return true;
+      }
+      if (requiredTribeAttackTroops !== null) {
+        this.botAttackTroopsSent = botAttackTroopsSentBefore;
       }
       return false;
     }
@@ -3851,6 +3934,15 @@
         earlyGameCandidate,
       });
 
+      // Race pressure may raise a probe after its initial budget calculation.
+      // Reapply the target-specific reserve at the final emission boundary so a
+      // human/nation boat cannot spend below the production peak and no boat can
+      // bypass pending-intent accounting.
+      const boatSpendableTroops = this.getEarlyGameSpendableTroops(
+        this.getEarlyGameTargetReserveTroops(target),
+      );
+      troops = Math.min(troops, boatSpendableTroops);
+
       if (troops < 1) {
         return false;
       }
@@ -3864,7 +3956,7 @@
 
       // src: game.addExecution(new TransportShipExecution(player, closest.y, troops)).
       if (!(await this.allowEarlyGameBoat(closest.y))) return false;
-      return this.emitBoat(closest.y, troops, "⛵ Boat attack");
+      return this.emitBoat(closest.y, troops, "⛵ Boat attack", target);
     }
 
     applyEarlyGameRaceTroops({
@@ -3894,16 +3986,19 @@
     calculateBotAttackTroops(target, maxTroops, defensePostProfile = null) {
       // src: `const { difficulty } = this.game.config().gameConfig();` → REPLICATED.
       const difficulty = currentDifficulty();
-      if (difficulty === Difficulty.Easy) {
-        this.botAttackTroopsSent += maxTroops;
-        return maxTroops;
-      }
       const defenseMultiplier = Math.max(
         1,
         Number(defensePostProfile?.attackCostMultiplier || 1),
       );
-      const preferredAttackTroops = target.troops() * 4 * defenseMultiplier;
       const minimumAttackTroops = target.troops() * 2 * defenseMultiplier;
+      if (difficulty === Difficulty.Easy) {
+        if (maxTroops < minimumAttackTroops) {
+          return 0;
+        }
+        this.botAttackTroopsSent += maxTroops;
+        return maxTroops;
+      }
+      const preferredAttackTroops = target.troops() * 4 * defenseMultiplier;
       let troops = preferredAttackTroops;
 
       // Don't send more troops than maxTroops (Keep reserve)

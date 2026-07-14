@@ -25,6 +25,7 @@ const sandbox = {
   performance: { now: () => 10000 },
   discoverCtors: () => ({
     attack: "attack",
+    boat: "boat",
     donateTroops: "donateTroops",
   }),
   getEventBus: () => null,
@@ -35,7 +36,7 @@ const sandbox = {
   setLastAction: () => {},
   tr: (value) => value,
   state: {
-    settings: { winFixes: true, features: { donate: true } },
+    settings: { winFixes: true, features: { donate: true, boat: true } },
     stats: {},
   },
 };
@@ -182,13 +183,131 @@ const humanTarget = {
   type: () => "Human",
   id: () => "human-target",
 };
-ownTroops = 40000;
+ownTroops = 80000;
 assert.equal(attackBudgetBehavior.sendLandAttack(humanTarget), true);
+const productionPeakReserve =
+  attackBudgetBehavior.getEarlyGameProductionReserveTroops();
+assert.equal(
+  productionPeakReserve,
+  41788,
+  "the Nation/Human reserve is the calculated production-rate peak for maxTroops=100000",
+);
 assert.equal(
   troopEmissions.at(-1),
-  30005,
-  "a land attack may use the surplus above the calculated acceleration reserve",
+  ownTroops - productionPeakReserve,
+  "a Nation/Human land attack preserves the production-rate peak reserve",
 );
+
+// Capacity changes from newly built structures must invalidate the production
+// reserve cache instead of retaining the old maxTroops calculation.
+let dynamicMaximum = 100000;
+const dynamicGame = {
+  ticks: () => tick,
+  config: () => ({ maxTroops: () => dynamicMaximum }),
+};
+const dynamicReserveBehavior = new sandbox.AttackBehavior(
+  {},
+  dynamicGame,
+  me,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+ownTroops = 80000;
+assert.equal(dynamicReserveBehavior.getEarlyGameProductionReserveTroops(), 41788);
+dynamicMaximum = 200000;
+assert.equal(
+  dynamicReserveBehavior.getEarlyGameProductionReserveTroops(),
+  83899,
+  "a maxTroops increase recomputes the production peak reserve",
+);
+
+// emitBoat is the final synchronous boundary after the route/launch await. It
+// must reapply the same target-specific reserve instead of falling back to the
+// lower acceleration reserve when the troop snapshot changed during the await.
+const boatBudgetBehavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
+ownTroops = 80000;
+assert.equal(
+  boatBudgetBehavior.emitBoat(
+    "boat-destination",
+    50000,
+    "⛵ test boat",
+    humanTarget,
+  ),
+  true,
+);
+assert.equal(
+  troopEmissions.at(-1),
+  ownTroops - productionPeakReserve,
+  "the final boat boundary preserves the Nation/Human production peak",
+);
+ownTroops = 100000;
+
+// Tribe attacks must be all-or-nothing: if the available force cannot meet the
+// combat policy's minimum, do not emit a partial attack that merely weakens the
+// tribe and leaves it blocking expansion.
+const tribeTarget = {
+  isPlayer: () => true,
+  type: () => "Bot",
+  id: () => "tribe-target",
+  smallID: () => 3,
+  troops: () => 10000,
+  units: () => [],
+};
+const tribeBehavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
+tribeBehavior.getEnemyDefensePostAttackProfile = () => ({});
+tribeBehavior.attackIsTooWeakForDefensePosts = () => false;
+tribeBehavior.applyEarlyGameRaceTroops = ({ baseTroops }) => baseTroops;
+ownTroops = 30000;
+const tribeEmissionCount = troopEmissions.length;
+assert.equal(tribeBehavior.sendLandAttack(tribeTarget), true);
+assert.equal(
+  troopEmissions.length,
+  tribeEmissionCount + 1,
+  "a sufficiently funded tribe assault is emitted",
+);
+assert.ok(
+  troopEmissions.at(-1) >= tribeTarget.troops() * 2,
+  "a tribe assault meets the calculated minimum instead of weakening the tribe",
+);
+assert.ok(
+  ownTroops - troopEmissions.at(-1) >=
+    tribeBehavior.getEarlyGameLiveReserveTroops(),
+  "a completed tribe assault still respects the acceleration reserve",
+);
+
+const underfundedTribeBehavior = new sandbox.AttackBehavior(
+  {},
+  game,
+  me,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+underfundedTribeBehavior.getEnemyDefensePostAttackProfile = () => ({});
+underfundedTribeBehavior.attackIsTooWeakForDefensePosts = () => false;
+underfundedTribeBehavior.applyEarlyGameRaceTroops = ({ baseTroops }) => baseTroops;
+ownTroops = 40000;
+underfundedTribeBehavior.recordOutboundAttackIntent(tribeTarget, 15000, {
+  attackType: "land",
+});
+const underfundedEmissionCount = troopEmissions.length;
+sandbox.currentDifficulty = () => "Easy";
+assert.equal(
+  underfundedTribeBehavior.sendLandAttack(tribeTarget),
+  false,
+  "an underfunded tribe assault is deferred rather than sent short",
+);
+assert.equal(
+  troopEmissions.length,
+  underfundedEmissionCount,
+  "deferring an underfunded tribe assault emits no partial attack",
+);
+sandbox.currentDifficulty = () => "Impossible";
 ownTroops = 100000;
 
 // A teammate donation must use the same hard reserve, not the obsolete 45%
@@ -234,6 +353,27 @@ assert.equal(
 );
 
 sandbox.state.settings.winFixes = false;
+const nonWinFixHumanBehavior = new sandbox.AttackBehavior(
+  {},
+  game,
+  me,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+nonWinFixHumanBehavior.getEnemyDefensePostAttackProfile = () => ({});
+nonWinFixHumanBehavior.attackIsTooWeakForDefensePosts = () => false;
+nonWinFixHumanBehavior.applyEarlyGameRaceTroops = ({ baseTroops }) => baseTroops;
+ownTroops = 80000;
+assert.equal(nonWinFixHumanBehavior.sendLandAttack(humanTarget), true);
+assert.equal(
+  troopEmissions.at(-1),
+  ownTroops - nonWinFixHumanBehavior.getEarlyGameProductionReserveTroops(),
+  "the production-rate reserve remains hard even when winFixes is disabled",
+);
+ownTroops = 100000;
 assert.equal(
   behavior.getEarlyGameSpendableTroops(),
   80005,
