@@ -349,7 +349,67 @@ assert.deepEqual(
   ["tribe-2", 51],
   "an active land attack must be topped up only by its missing capture force",
 );
+assert.deepEqual(
+  [...landBehavior.getActiveBotAttackTargetKeys()],
+  ["smallID:2"],
+  "an active tribal attack locks its target for the next decision",
+);
 activeBotAttack = false;
+
+const botA = {
+  isPlayer: () => true,
+  type: () => "Bot",
+  smallID: () => 3,
+  troops: () => 100,
+  numTilesOwned: () => 10,
+  units: () => [],
+};
+const botB = {
+  ...botA,
+  smallID: () => 4,
+};
+let botCaptureActive = false;
+const botPlayer = {
+  ...boatPlayer,
+  nearby: () => [],
+  isFriendly: () => false,
+  units: () => [],
+  outgoingAttacks: () =>
+    botCaptureActive
+      ? [
+          {
+            retreating: () => false,
+            target: () => botA,
+            troops: () => 100,
+          },
+        ]
+      : [],
+};
+const botBehavior = new sandbox.AttackBehavior({}, boatGame, botPlayer, 0.5, 0.3, 0.1, {}, {});
+botBehavior.getEnemyDefensePostAttackProfile = () => ({
+  attackCostMultiplier: 1,
+  speedMultiplier: 1,
+});
+const attemptedBots = [];
+botBehavior.sendAttack = async (target) => {
+  attemptedBots.push(target.smallID());
+  return true;
+};
+assert.equal(await botBehavior.attackBots([botA, botB]), true);
+assert.deepEqual(attemptedBots, [3], "one decision must commit at most one new tribal capture");
+
+botCaptureActive = true;
+attemptedBots.length = 0;
+botBehavior.sendAttack = async (target) => {
+  attemptedBots.push(target.smallID());
+  return false;
+};
+assert.equal(await botBehavior.attackBots([botA, botB]), false);
+assert.deepEqual(
+  attemptedBots,
+  [3],
+  "an active tribal capture must be topped up before another tribe is considered",
+);
 
 const incomingAttack = {
   retreating: () => false,

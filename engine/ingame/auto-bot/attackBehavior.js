@@ -381,6 +381,47 @@
       }
     }
 
+    getActiveBotAttackTargetKeys() {
+      this.ensureBotAttackAccounting();
+      const targetKeys = new Set();
+
+      // An intent emitted earlier in this decision is already a commitment,
+      // even if the engine has not exposed its AttackExecution yet.
+      for (const [targetKey, troops] of this.botAttackTroopsSentByTarget) {
+        if (Number(troops) > 0) targetKeys.add(targetKey);
+      }
+
+      // A transport ship is an independent tribal invasion. Keep its target
+      // locked while it is in transit or during the transport/attack handoff.
+      for (const entry of this.botAttackTransportCommitments) {
+        if (Number(entry.troops) > 0) targetKeys.add(entry.targetKey);
+      }
+
+      let outgoing = [];
+      try {
+        outgoing = this.player.outgoingAttacks?.() || [];
+      } catch (_error) {
+        outgoing = [];
+      }
+      for (const attack of outgoing) {
+        try {
+          if (attack.retreating?.()) continue;
+          if (Number(attack.troops?.() || 0) <= 0) continue;
+          const target = attack.target?.();
+          if (
+            target?.isPlayer?.() !== true ||
+            target.type?.() !== PlayerType.Bot
+          ) {
+            continue;
+          }
+          targetKeys.add(this.getBotAttackTargetKey(target));
+        } catch (_error) {
+          /* malformed/expired attack snapshots are ignored */
+        }
+      }
+      return targetKeys;
+    }
+
     resetEnemyDefensePostCaches() {
       const tick = this.currentAttackDecisionTick();
       if (this.enemyDefensePostCacheTick === tick) return tick;
@@ -872,7 +913,7 @@
         earlyGameSnapshot.active &&
         earlyGameSnapshot.hasTribeTarget
       ) {
-        if (await this.attackEarlyGameTribe()) return;
+        if (await this.attackEarlyGameTribe(borderingEnemies)) return;
       }
 
       // WIN-FIX (NOT in src): if we already hold an ocean shore, take a nearby
@@ -899,7 +940,7 @@
         state.settings.winFixes &&
         borderingEnemies.some((e) => e.isPlayer() && e.type() === PlayerType.Bot)
       ) {
-        if (await this.attackBots()) return;
+        if (await this.attackBots(borderingEnemies)) return;
       }
 
       // WIN-FIX (NOT in src): safe empty land gets a planned expansion attempt
@@ -988,9 +1029,20 @@
     // Rank and eat one tribe during Early Game. This is a win-fix policy layer,
     // not a replacement for the faithful attack strategy order below. A failed
     // boat/land actuation simply lets the caller continue with its normal pass.
-    async attackEarlyGameTribe() {
-      const candidates = await this.getEarlyGameTribeCandidates();
+    async attackEarlyGameTribe(borderTargets = null) {
+      let candidates = await this.getEarlyGameTribeCandidates(borderTargets);
       if (candidates.length === 0) return false;
+
+      // Tribal captures are serialized. If a land attack, transport, or
+      // transport/attack handoff is active, spending troops on another tribe
+      // only dilutes both invasions and delays the next capture.
+      const activeBotTargetKeys = this.getActiveBotAttackTargetKeys();
+      if (activeBotTargetKeys.size > 0) {
+        candidates = candidates.filter((candidate) =>
+          activeBotTargetKeys.has(this.getBotAttackTargetKey(candidate.player)),
+        );
+        if (candidates.length === 0) return false;
+      }
 
       for (const candidate of candidates) {
         const urgent =
@@ -1007,6 +1059,33 @@
           urgent,
         });
       }
+
+      // A capture must leave enough troops for the cheapest other tribe that
+      // is currently measurable. This is derived from the exact capture
+      // requirements, not from an arbitrary 2x/4x multiplier. The interface's
+      // 1% minimum remains the only unconditional floor.
+      const ownTroops = Math.max(0, Number(this.player.troops?.() || 0));
+      const minimumContinuationReserve = Math.max(1, ownTroops * 0.01);
+      for (const candidate of candidates) {
+        const plan = candidate.expansionPlan;
+        let nextRequiredTroops = Number.POSITIVE_INFINITY;
+        for (const other of candidates) {
+          if (other === candidate) continue;
+          const required = Number(other.expansionPlan?.requiredTroops);
+          if (Number.isFinite(required) && required > 0) {
+            nextRequiredTroops = Math.min(nextRequiredTroops, required);
+          }
+        }
+        const continuationReserve =
+          minimumContinuationReserve +
+          (Number.isFinite(nextRequiredTroops) ? nextRequiredTroops : 0);
+        const commitTroops = Math.max(0, Number(plan?.commitTroops) || 0);
+        const postCommitTroops = Math.max(0, ownTroops - commitTroops);
+        plan.continuationReserveTroops = continuationReserve;
+        plan.postCommitTroops = postCommitTroops;
+        plan.continuationSafe = postCommitTroops >= continuationReserve;
+      }
+
       const ranked = rankEarlyGameTribeCandidates(candidates);
       const diagnosticTargets = ranked.map((candidate) => {
         const plan = candidate.expansionPlan;
@@ -1040,6 +1119,11 @@
           shouldAttackNow: plan.shouldAttackNow,
           requiredTroops: Math.round(plan.requiredTroops),
           commitTroops: Math.round(plan.commitTroops),
+          continuationReserveTroops: Math.round(
+            plan.continuationReserveTroops || 0,
+          ),
+          postCommitTroops: Math.round(plan.postCommitTroops || 0),
+          continuationSafe: plan.continuationSafe === true,
           terrainMagnitude: plan.terrainMagnitude,
           generationRatio: Number(plan.generationRatio.toFixed(3)),
           opportunityUrgency: Number(plan.opportunityUrgency.toFixed(3)),
@@ -1054,7 +1138,7 @@
       for (const candidate of ranked) {
         try {
           const plan = candidate.expansionPlan;
-          if (!plan?.shouldAttackNow) continue;
+          if (!plan?.shouldAttackNow || plan.continuationSafe !== true) continue;
           if (
             await this.sendAttack(
               candidate.player,
@@ -1170,9 +1254,20 @@
     // Border snapshots are fetched only for nearby bot tribes, never for every
     // player on the map. That makes this safe at maximum game speed as well as on
     // a tribe-heavy map.
-    async getEarlyGameTribeCandidates() {
-      const nearbyTribes = this.player
-        .nearby()
+    async getEarlyGameTribeCandidates(borderTargets = null) {
+      const candidatePool = [
+        ...(Array.isArray(borderTargets) ? borderTargets : []),
+        ...(this.player.nearby?.() || []),
+      ];
+      const uniqueCandidates = new Map();
+      for (const candidate of candidatePool) {
+        if (!candidate?.isPlayer?.()) continue;
+        uniqueCandidates.set(
+          this.getBotAttackTargetKey(candidate),
+          candidate,
+        );
+      }
+      const nearbyTribes = Array.from(uniqueCandidates.values())
         .filter(
           (candidate) =>
             candidate &&
@@ -2618,7 +2713,7 @@
       // This causes them to expand slowly (cities increase max troops), and bots will steal their structures
       // In this case: Attack bots before ratio checks
       if (this.hasNeighboringBotWithStructures()) {
-        if (await this.attackBots()) return;
+        if (await this.attackBots(borderingEnemies)) return;
       }
 
       // Save up troops until we reach the reserve ratio
@@ -2654,7 +2749,7 @@
         return false;
       };
 
-      const bots = async () => await this.attackBots();
+      const bots = async () => await this.attackBots(borderingEnemies);
 
       const assist = async () => await this.assistAllies();
 
@@ -3532,14 +3627,25 @@
       return null;
     }
 
-    // Sort neighboring bots by density (troops / tiles) and attempt to attack many of them (Parallel attacks)
-    // sendAttack will do nothing if we don't have enough reserve troops left
+    // Sort nearby and explicitly bordering bots by density (troops / tiles).
+    // Tribal captures are intentionally serialized: sendAttack will do nothing
+    // if the exact force cannot be funded without compromising the next expansion.
     // Bots that own structures are prioritized as targets (they might have stolen our structures and they will delete them!)
-    // attackBots — AiAttackBehavior (private, now async: awaits sendAttack
-    // sequentially so botAttackTroopsSent accumulates before the `> 0` return).
-    async attackBots() {
-      const bots = this.player
-        .nearby()
+    // attackBots — AiAttackBehavior (private, now async).
+    async attackBots(borderTargets = null) {
+      const candidatePlayers = [
+        ...(Array.isArray(borderTargets) ? borderTargets : []),
+        ...(this.player.nearby?.() || []),
+      ];
+      const uniqueCandidates = new Map();
+      for (const candidate of candidatePlayers) {
+        if (!candidate?.isPlayer?.()) continue;
+        uniqueCandidates.set(
+          this.getBotAttackTargetKey(candidate),
+          candidate,
+        );
+      }
+      const bots = Array.from(uniqueCandidates.values())
         .filter(
           (n) =>
             n.isPlayer() &&
@@ -3575,20 +3681,34 @@
         }
         return attackDifficultyDensity(a) - attackDifficultyDensity(b);
       });
-      const reducedBots = sortedBots.slice(0, this.getBotAttackMaxParallelism());
+      const activeBotTargetKeys = this.getActiveBotAttackTargetKeys();
+      const reducedBots =
+        activeBotTargetKeys.size > 0
+          ? sortedBots
+              .filter((bot) =>
+                activeBotTargetKeys.has(this.getBotAttackTargetKey(bot)),
+              )
+              .slice(0, 1)
+          : sortedBots.slice(0, this.getBotAttackMaxParallelism());
 
       for (const bot of reducedBots) {
-        await this.sendAttack(bot);
+        if (await this.sendAttack(bot)) return true;
+        // Do not fall through to a different tribe while an existing capture
+        // is active; the next decision can top up the same target if needed.
+        if (activeBotTargetKeys.size > 0) return false;
       }
 
-      // Only short-circuit the rest of the targeting pipeline if we actually
-      // allocated some troops to bot attacks.
+      // At most one new tribe can be committed in this decision. This keeps the
+      // difficulty-specific candidate window without allowing parallel attacks
+      // to drain the force needed for the following capture.
       return this.botAttackTroopsSent > 0;
     }
 
     // getBotAttackMaxParallelism — AiAttackBehavior (private).
     getBotAttackMaxParallelism() {
       // src: `const { difficulty } = this.game.config().gameConfig();` → REPLICATED.
+      // This is now a candidate-attempt window, not a number of simultaneous
+      // tribal captures; attackBots commits at most one target per decision.
       const difficulty = currentDifficulty();
       switch (difficulty) {
         case Difficulty.Easy:
@@ -3597,7 +3717,7 @@
           return this.random.chance(2) ? 1 : 2;
         case Difficulty.Hard:
           return 3;
-        // On impossible difficulty, attack as much bots as possible in parallel
+        // On impossible difficulty, keep a broad candidate window.
         case Difficulty.Impossible: {
           return 100;
         }
