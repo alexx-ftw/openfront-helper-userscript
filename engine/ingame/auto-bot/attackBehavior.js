@@ -86,6 +86,12 @@
   const ATTACK_EARLY_GAME_GROWTH_DIVISOR = 4;
   const ATTACK_EARLY_GAME_PEAK_SEARCH_ITERATIONS = 64;
   const ATTACK_EARLY_GAME_ACCELERATION_SCAN_POINTS = 128;
+  // OpenFront's Config.falloutDefenseModifier(falloutRatio) multiplies the
+  // direct troop loss on radioactive TerraNullius tiles by 5 - 2 * ratio.
+  // Keep the source values here so the radioactive commit is derived from the
+  // live map instead of using a second arbitrary percentage.
+  const ATTACK_FALLOUT_DEFENSE_BASE = 5;
+  const ATTACK_FALLOUT_DEFENSE_RATIO_SLOPE = 2;
   // Reserve the troop level where the production rate has its maximum temporal
   // acceleration. P(N) is troops per tick and N' = P(N), so acceleration is
   // dP/dt = P(N) * P'(N), not just the slope with respect to troop count.
@@ -1351,7 +1357,21 @@
       }
 
       if (expandOn && hasNonNukedTerraNullius) {
-        if (await this.sendAttack(this.game.terraNullius())) return;
+        const radioactiveTerraNullius =
+          state.settings.winFixes === true &&
+          !hasAccessibleFreeLand &&
+          this.isBorderingNukedTerritory();
+        if (
+          await this.sendAttack(
+            this.game.terraNullius(),
+            false,
+            null,
+            null,
+            radioactiveTerraNullius,
+          )
+        ) {
+          return;
+        }
       }
 
       if (borderingEnemies.length === 0) {
@@ -2562,9 +2582,16 @@
         return false;
       }
 
-      const troops = this.getEarlyGameProbeTroops(
-        state.settings.boatProbeFrac,
-      );
+      const radioactiveTerraNullius =
+        state.settings.winFixes === true && dstFallout && !dstOwned;
+      const troops = radioactiveTerraNullius
+        ? Math.min(
+            this.getRadioactiveTerraNulliusCommitTroops(),
+            this.getEarlyGameSpendableTroops(
+              this.getEarlyGameTerraNulliusReserveTroops(),
+            ),
+          )
+        : this.getEarlyGameProbeTroops(state.settings.boatProbeFrac);
       if (troops < 1) return false;
       const label = dstFallout
         ? "☢️ Nuked-coast grab"
@@ -3073,7 +3100,13 @@
 
       const nuked = async () => {
         if (this.isBorderingNukedTerritory()) {
-          return await this.sendAttack(this.game.terraNullius());
+          return await this.sendAttack(
+            this.game.terraNullius(),
+            false,
+            null,
+            null,
+            true,
+          );
         }
         return false;
       };
@@ -3416,6 +3449,46 @@
       return false;
     }
 
+    getRadioactiveTerraNulliusFalloutDefenseMultiplier() {
+      let falloutRatio = 0;
+      try {
+        const landTiles = Number(this.game.numLandTiles?.() || 0);
+        const falloutTiles = Number(this.game.numTilesWithFallout?.() || 0);
+        if (Number.isFinite(landTiles) && landTiles > 0) {
+          falloutRatio = Math.min(
+            1,
+            Math.max(
+              0,
+              (Number.isFinite(falloutTiles) ? falloutTiles : 0) / landTiles,
+            ),
+          );
+        }
+      } catch (_error) {
+        // Older client views may not expose fallout counters; use the engine's
+        // maximum defensive multiplier as the conservative fallback.
+      }
+      return Math.max(
+        1,
+        ATTACK_FALLOUT_DEFENSE_BASE -
+          ATTACK_FALLOUT_DEFENSE_RATIO_SLOPE * falloutRatio,
+      );
+    }
+
+    getRadioactiveTerraNulliusCommitFraction() {
+      if (state.settings.winFixes !== true) return EARLY_EXPAND_COMMIT;
+      const defenseMultiplier =
+        this.getRadioactiveTerraNulliusFalloutDefenseMultiplier();
+      // Clean TerraNullius uses 60%. Fallout multiplies the troop cost, so
+      // preserve the same risk-adjusted troop budget for radioactive land.
+      return Math.min(1, EARLY_EXPAND_COMMIT / defenseMultiplier);
+    }
+
+    getRadioactiveTerraNulliusCommitTroops() {
+      const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
+      if (ownTroops <= 0) return 0;
+      return ownTroops * this.getRadioactiveTerraNulliusCommitFraction();
+    }
+
     // Find someone who isn't significantly stronger than us and is under big attack from others (50%+ of their troops incoming)
     // findVictim — AiAttackBehavior (private).
     findVictim(borderingEnemies) {
@@ -3686,6 +3759,7 @@
       force = false,
       minCommitFraction = null,
       earlyGameCandidate = null,
+      radioactiveTerraNullius = false,
     ) {
       if (!force && !this.shouldAttack(target)) return false;
 
@@ -3708,6 +3782,7 @@
             target,
             minCommitFraction,
             earlyGameCandidate,
+            radioactiveTerraNullius,
           );
         } else {
           return await this.sendBoatAttack(target, earlyGameCandidate);
@@ -3716,9 +3791,16 @@
         // sharesBorderWith(TerraNullius) counts water tiles as TN (ownerID 0 = TN smallID),
         // so use a land-only adjacency check to decide land vs boat attack.
         if (this.hasLandBorderWithTerraNullius()) {
-          return this.sendLandAttack(target, minCommitFraction);
+          return this.sendLandAttack(
+            target,
+            minCommitFraction,
+            null,
+            radioactiveTerraNullius,
+          );
         } else {
-          return await this.sendBoatAttackToNearbyTerraNullius();
+          return await this.sendBoatAttackToNearbyTerraNullius(
+            radioactiveTerraNullius,
+          );
         }
       }
     }
@@ -3746,7 +3828,7 @@
     // to COLLECT up to BOAT_PROBE_CANDIDATES target tiles IN SCAN ORDER, then `await
     // bestTransportShipSpawn` down that list and send to the FIRST reachable — same
     // target src would have picked, with bounded worker calls.
-    async sendBoatAttackToNearbyTerraNullius() {
+    async sendBoatAttackToNearbyTerraNullius(radioactiveTerraNullius = false) {
       // Honour the panel's "boat" feature toggle.
       if (!(state.settings.features && state.settings.features.boat)) return false;
       if (this.game.config().isUnitDisabled(UNIT.TransportShip)) return false;
@@ -3785,6 +3867,12 @@
           const tile = this.game.ref(nx, ny);
           if (!this.game.isLand(tile)) continue;
           if (this.game.hasOwner(tile)) continue;
+          if (
+            radioactiveTerraNullius &&
+            !this.game.hasFallout?.(tile)
+          ) {
+            continue;
+          }
           // USER WIN-FIX: keep nuked (fallout) coastal TN as a boat target — it's empty
           // land ripe for a probe landing. Faithful mode (winFixes off) keeps the src skip.
           if (!state.settings.winFixes && this.game.hasFallout(tile)) continue;
@@ -3806,14 +3894,27 @@
 
         // USER (winFixes): EVERY boat is a cheap 1% probe — never a 20% dump (troops/5).
         // Even grabbing empty coastal TN goes by a 1% landing. (winFixes off → faithful.)
-        const troops = state.settings.winFixes
-          ? this.getEarlyGameProbeTroops(state.settings.boatProbeFrac)
-          : this.player.troops() / 5;
+        const troops = radioactiveTerraNullius && state.settings.winFixes
+          ? Math.min(
+              this.getRadioactiveTerraNulliusCommitTroops(),
+              this.getEarlyGameSpendableTroops(
+                this.getEarlyGameTerraNulliusReserveTroops(),
+              ),
+            )
+          : state.settings.winFixes
+            ? this.getEarlyGameProbeTroops(state.settings.boatProbeFrac)
+            : this.player.troops() / 5;
         if (troops < 1) return false;
 
         // src: game.addExecution(new TransportShipExecution(player, tile, troops)).
         if (!(await this.allowEarlyGameBoat(tile))) return false;
-        return this.emitBoat(tile, troops, "⛵ Boat (land grab)");
+        return this.emitBoat(
+          tile,
+          troops,
+          radioactiveTerraNullius
+            ? "☢️ Nuked-coast grab"
+            : "⛵ Boat (land grab)",
+        );
       }
       return false;
     }
@@ -3849,9 +3950,14 @@
       target,
       minCommitFraction = null,
       earlyGameCandidate = null,
+      radioactiveTerraNullius = false,
     ) {
       this.reconcileOutboundAttackIntentCommitments();
       const maxTroops = this.game.config().maxTroops(this.player);
+      const radioactiveCommitTroops =
+        radioactiveTerraNullius && state.settings.winFixes
+          ? this.getRadioactiveTerraNulliusCommitTroops()
+          : null;
       const enemyDefensePostProfile = this.getEnemyDefensePostAttackProfile(
         target,
       );
@@ -3874,8 +3980,10 @@
       const targetTroops = state.settings.winFixes
         ? targetReserveTroops
         : maxTroops * reserveRatio;
-      const targetSpendableTroops =
-        this.getEarlyGameSpendableTroops(targetReserveTroops);
+      const targetSpendableTroops = Math.min(
+        this.getEarlyGameSpendableTroops(targetReserveTroops),
+        radioactiveCommitTroops ?? Infinity,
+      );
 
       let troops;
       let requiredTribeAttackTroops = null;

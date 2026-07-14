@@ -58,6 +58,16 @@ assert.match(
   /this\.openingExpansionFollowUpPending =\s*openingWinFix && openingAttackSent/,
   "a successful opening burst must schedule a reconciled follow-up",
 );
+assert.match(
+  attackSource,
+  /getRadioactiveTerraNulliusCommitFraction\(\)/,
+  "radioactive TerraNullius must derive its own commit ratio",
+);
+assert.match(
+  attackSource,
+  /radioactiveCommitTroops[\s\S]{0,1400}targetSpendableTroops/,
+  "radioactive land attacks must be capped by the derived ratio",
+);
 
 const openingFractions = [];
 let openingFollowUps = 0;
@@ -810,6 +820,42 @@ const targetBehavior = new targetSandbox.AttackBehavior(
   {},
   {},
 );
+
+const radioactiveBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+let radioactiveTiles = 0;
+radioactiveBehavior.player = { troops: () => 25000 };
+radioactiveBehavior.game = {
+  numLandTiles: () => 100000,
+  numTilesWithFallout: () => radioactiveTiles,
+};
+assert.equal(
+  radioactiveBehavior.getRadioactiveTerraNulliusFalloutDefenseMultiplier(),
+  5,
+  "low fallout coverage uses the engine's maximum radioactive defense multiplier",
+);
+assert.equal(
+  radioactiveBehavior.getRadioactiveTerraNulliusCommitFraction(),
+  0.12,
+  "radioactive TerraNullius uses 60% divided by its 5x troop cost",
+);
+radioactiveTiles = 50000;
+assert.equal(
+  radioactiveBehavior.getRadioactiveTerraNulliusFalloutDefenseMultiplier(),
+  4,
+  "the live fallout ratio updates the defense multiplier",
+);
+assert.equal(
+  radioactiveBehavior.getRadioactiveTerraNulliusCommitFraction(),
+  0.15,
+  "half-map fallout raises the risk-adjusted commit to 15%",
+);
+targetSandbox.state.settings.winFixes = false;
+assert.equal(
+  radioactiveBehavior.getRadioactiveTerraNulliusCommitFraction(),
+  0.6,
+  "faithful mode keeps the normal 60% commit ratio",
+);
+targetSandbox.state.settings.winFixes = true;
 
 // A directly adjacent free tile must block both tribe and enemy food attacks.
 // The decision is allowed to return without an attack when troop/intent guards
