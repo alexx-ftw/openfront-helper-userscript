@@ -137,7 +137,10 @@
   function retuneEngine() {
     if (state.tickTimer === null) return;
     const want = desiredTickInterval();
-    if (Math.abs(want - (state.tickIntervalMs || 0)) > 60) {
+    // The panel changes tickMs in 50 ms steps. Do not leave the old timer
+    // running for a 50 ms adjustment: every valid setting must affect the
+    // actual polling cadence immediately.
+    if (want !== state.tickIntervalMs) {
       window.clearInterval(state.tickTimer);
       state.tickIntervalMs = want;
       state.tickTimer = window.setInterval(botTick, want);

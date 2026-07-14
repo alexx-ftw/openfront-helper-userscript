@@ -43,4 +43,56 @@ const nextTick = sandbox.getCachedGameUnits(game, "Warship");
 assert.notStrictEqual(nextTick, first, "a new game tick must invalidate unit snapshots");
 assert.equal(unitsCalls, 3, "a new game tick should refresh the requested family once");
 
+const ENGINE_SOURCE = path.join(ROOT, "engine/ingame/auto-bot/engine.js");
+const intervalEvents = [];
+let nextTimerId = 1;
+const engineSandbox = {
+  state: {
+    settings: { enabled: true, tickMs: 200 },
+    speed: { factor: 1 },
+    tickTimer: null,
+    tickIntervalMs: 0,
+    tickInFlight: false,
+  },
+  window: {
+    setInterval: (_callback, delay) => {
+      const id = nextTimerId++;
+      intervalEvents.push({ type: "set", id, delay });
+      return id;
+    },
+    clearInterval: (id) => intervalEvents.push({ type: "clear", id }),
+  },
+  performance: { now: () => 0 },
+  getGame: () => null,
+  setStatus: () => {},
+  tr: (value) => value,
+  clamp: (value, min, max) => Math.min(max, Math.max(min, value)),
+  globalThis: null,
+};
+engineSandbox.globalThis = engineSandbox;
+vm.runInNewContext(
+  `${fs.readFileSync(ENGINE_SOURCE, "utf8")}\nglobalThis.__engine = { startEngine, retuneEngine, stopEngine };`,
+  engineSandbox,
+  { filename: ENGINE_SOURCE },
+);
+
+engineSandbox.__engine.startEngine();
+assert.deepEqual(
+  intervalEvents,
+  [{ type: "set", id: 1, delay: 200 }],
+  "the configured tick interval is used when the engine starts",
+);
+engineSandbox.state.settings.tickMs = 250;
+engineSandbox.__engine.retuneEngine();
+assert.deepEqual(
+  intervalEvents,
+  [
+    { type: "set", id: 1, delay: 200 },
+    { type: "clear", id: 1 },
+    { type: "set", id: 2, delay: 250 },
+  ],
+  "a 50 ms setting change must replace the active timer",
+);
+engineSandbox.__engine.stopEngine();
+
 console.log("performance regression tests passed");
