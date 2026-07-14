@@ -727,7 +727,16 @@ assert.equal(await routePlayer.bestTransportShipSpawn(5), 0);
 assert.equal(await routeApi.game.estimateTransportRouteTicks(5), 3);
 assert.equal(routeApi.game.hasTransportRouteEstimator, true);
 
-assert.match(attackSource, /state\.earlyGame\.action === "land"/);
+assert.match(attackSource, /getEarlyGameFreeLandCommitTroops\(earlyLandPlan\)/);
+assert.match(attackSource, /const expansionPriorityPending/);
+assert.match(
+  attackSource,
+  /const expansionPriorityPending[\s\S]*?if \(expansionPriorityPending\) return;[\s\S]*?maybeOpportunisticBoat/,
+);
+assert.match(
+  attackSource,
+  /if \(expansionPriorityPending\) return;[\s\S]*?\[Takeover\] disconnected neighbour/,
+);
 assert.match(attackSource, /async allowEarlyGameBoat\(tile\)/);
 assert.match(attackSource, /!state\.settings\.winFixes \|\| !early \|\| !early\.active/);
 assert.match(attackSource, /EARLY_TRIBE_BORDER_FETCH_CONCURRENCY/);

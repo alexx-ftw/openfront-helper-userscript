@@ -281,6 +281,22 @@ assert.equal(
   100,
   "a boat probe must use the interface minimum of 1% without an absolute troop floor",
 );
+assert.equal(
+  boatBehavior.getEarlyGameFreeLandCommitTroops({
+    shouldAttackNow: false,
+    requiredTroops: 250,
+  }),
+  250,
+  "free land uses its exact calculated requirement when it is affordable",
+);
+assert.equal(
+  boatBehavior.getEarlyGameFreeLandCommitTroops({
+    shouldAttackNow: false,
+    requiredTroops: 10000,
+  }),
+  100,
+  "unaffordable free land falls back to the interface minimum probe",
+);
 const lowTroopPlayer = { ...boatPlayer, troops: () => 5000 };
 const lowTroopBehavior = new sandbox.AttackBehavior(
   {},

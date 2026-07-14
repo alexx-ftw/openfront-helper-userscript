@@ -878,30 +878,6 @@
         }
       }
 
-      // WIN-FIX (NOT in src): TAKE OVER a DISCONNECTED neighbour's land. A player who
-      // left/timed-out shows the "zzz" icon (isDisconnected()), and the game already
-      // treats them as NOT friendly even if they are a teammate/ally (PlayerImpl.isFriendly
-      // returns false when disconnected) — so we are allowed to attack their undefended
-      // territory. Grab it FIRST (before TN/bots/enemies) so an enemy doesn't snatch the
-      // free land. Prioritise the weakest disconnected neighbour.
-      if (expandOn && state.settings.winFixes) {
-        const sleeping = borderingPlayers.filter((p) => {
-          try {
-            return p.isPlayer() && p.isDisconnected && p.isDisconnected();
-          } catch (_e) {
-            return false;
-          }
-        });
-        if (sleeping.length > 0) {
-          sleeping.sort((a, b) => a.troops() - b.troops());
-          console.log(
-            "[Takeover] disconnected neighbour → grabbing land:",
-            sleeping[0].name?.() ?? sleeping[0].smallID?.(),
-          );
-          if (await this.sendAttack(sleeping[0])) return;
-        }
-      }
-
       // WIN-FIX (NOT in src): during the concrete opening window, rank nearby
       // tribes by open-ocean access, immediate races, and the stronger of their
       // encirclement/blocking opportunities before continuation food. The
@@ -943,28 +919,71 @@
         if (await this.attackBots(borderingEnemies)) return;
       }
 
-      // WIN-FIX (NOT in src): safe empty land gets a planned expansion attempt
-      // before any opportunistic boat probe. The planner's commitment is bounded
-      // by terrain loss, generation, and competition; once an enemy borders us,
-      // the perishable-opportunity signal determines whether to spend more.
-      if (
+      // WIN-FIX (NOT in src): free land remains a higher-value opening target
+      // than a human-player conflict. Use the planner's exact commitment when it
+      // is ready; otherwise make a cheap 1% probe (or use the exact calculated
+      // requirement when that requirement is already affordable). This keeps an
+      // unavailable full landing from turning into a human attack while still
+      // allowing the frontier to be claimed as soon as it becomes viable.
+      const earlyLandCommitTroops =
         expandOn &&
         state.settings.winFixes &&
-        state.earlyGame.action === "land" &&
-        borderingEnemies.length === 0 &&
-        earlyLandPlan?.shouldAttackNow
-      ) {
+        earlyGameSnapshot.active &&
+        hasNonNukedTerraNullius &&
+        earlyLandPlan &&
+        earlyLandPlan.activeAttack !== true
+          ? this.getEarlyGameFreeLandCommitTroops(earlyLandPlan)
+          : 0;
+      if (earlyLandCommitTroops >= 1) {
         if (
           await this.sendAttack(
             this.game.terraNullius(),
             false,
             null,
             null,
-            earlyLandPlan.commitTroops,
+            earlyLandCommitTroops,
           )
         ) {
-          this.scheduleEarlyGameExpansion(earlyLandPlan, true);
+          if (earlyLandPlan.shouldAttackNow) {
+            this.scheduleEarlyGameExpansion(earlyLandPlan, true);
+          }
           return;
+        }
+      }
+
+      // Do not let opportunistic boats, diplomacy, random human attacks, or the
+      // general target ranking outrank an expansion opportunity. Tribe capture
+      // was attempted above; if it could not be funded or emitted, keep the
+      // decision focused on free land/tribes for the next poll.
+      const expansionPriorityPending =
+        state.settings.winFixes &&
+        expandOn &&
+        earlyGameSnapshot.active &&
+        (earlyGameSnapshot.hasFreeLand ||
+          earlyGameSnapshot.hasTribeTarget ||
+          earlyLandPlan?.activeAttack === true);
+      if (expansionPriorityPending) return;
+
+      // WIN-FIX (NOT in src): TAKE OVER a DISCONNECTED neighbour's land after
+      // tribes and unowned land have had their chance. A player who left/timed-out
+      // shows the "zzz" icon (isDisconnected()), and the game already treats them
+      // as NOT friendly even if they are a teammate/ally. This is still an
+      // expansion action, not a reason to pre-empt a live tribe or TerraNullius.
+      if (expandOn && state.settings.winFixes) {
+        const sleeping = borderingPlayers.filter((p) => {
+          try {
+            return p.isPlayer() && p.isDisconnected && p.isDisconnected();
+          } catch (_e) {
+            return false;
+          }
+        });
+        if (sleeping.length > 0) {
+          sleeping.sort((a, b) => a.troops() - b.troops());
+          console.log(
+            "[Takeover] disconnected neighbour → grabbing land:",
+            sleeping[0].name?.() ?? sleeping[0].smallID?.(),
+          );
+          if (await this.sendAttack(sleeping[0])) return;
         }
       }
 
@@ -995,14 +1014,7 @@
         this.allianceBehavior.reachOutToFarNations();
       }
 
-      const deferSafeEarlyLand =
-        state.settings.winFixes &&
-        expandOn &&
-        earlyGameSnapshot.active &&
-        borderingEnemies.length === 0 &&
-        earlyLandPlan &&
-        !earlyLandPlan.shouldAttackNow;
-      if (expandOn && hasNonNukedTerraNullius && !deferSafeEarlyLand) {
+      if (expandOn && hasNonNukedTerraNullius) {
         if (await this.sendAttack(this.game.terraNullius())) return;
       }
 
@@ -4597,6 +4609,34 @@
         ownTroops * probeFraction,
         this.getEarlyGameSpendableTroops(),
       );
+    }
+
+    getEarlyGameFreeLandCommitTroops(plan = null) {
+      const spendableTroops = this.getEarlyGameSpendableTroops();
+      if (spendableTroops < 1) return 0;
+
+      const plannedTroops = Number(plan?.commitTroops);
+      if (
+        plan?.shouldAttackNow === true &&
+        Number.isFinite(plannedTroops) &&
+        plannedTroops >= 1
+      ) {
+        return Math.min(spendableTroops, plannedTroops);
+      }
+
+      const probeTroops = this.getEarlyGameProbeTroops(0.01);
+      if (probeTroops < 1) return 0;
+
+      const requiredTroops = Number(plan?.requiredTroops);
+      if (
+        Number.isFinite(requiredTroops) &&
+        requiredTroops >= 1 &&
+        requiredTroops <= spendableTroops
+      ) {
+        return Math.max(probeTroops, Math.ceil(requiredTroops));
+      }
+
+      return probeTroops;
     }
 
     getBotCaptureSimulationTiles(target) {
