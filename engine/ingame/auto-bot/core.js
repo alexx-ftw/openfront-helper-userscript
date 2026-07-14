@@ -212,9 +212,9 @@
   // tickMs cadence directly; it has no second artificial attack cooldown.
   const MAX_DEFENSE_RESERVE = 0.8; // never hold back more than this for defense
   // Soft ceiling used by the TerraNullius reserve calculation. The actual
-  // win-fix attack amount is derived from Config.attackLogic for one frontier
-  // tile, so this constant only limits how much of the live army may be
-  // considered spendable while production is accelerating.
+  // win-fix attack amount uses the Config.attackLogic loss for one frontier
+  // tile as its lower bound, then targets this fraction of the live army for
+  // a meaningful land-expansion burst, still capped by the live reserve.
   const EARLY_EXPAND_COMMIT = 0.6;
   const BUILD_THROTTLE_MS = 1800;
   const NUKE_THROTTLE_MS = 6000;

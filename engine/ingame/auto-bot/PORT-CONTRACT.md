@@ -227,6 +227,16 @@ and the Early Game 300-tick ETA gate.
 With `winFixes` disabled, these additions are inactive and the faithful Nation
 flow remains unchanged.
 
+### Custom TerraNullius land commit
+
+With `winFixes` enabled, direct land attacks against TerraNullius use the live
+`Config.attackLogic` loss for the worst available first frontier tile as a hard
+minimum. They target the existing early-expansion commit fraction of the current
+army, capped by the TerraNullius reserve and pending outbound intents, so a small
+client-reported one-tile loss cannot turn a large free-land expansion into a
+two-troop poke. Transport attacks intentionally keep the one-tile amount as a
+cheap probe and do not inherit this land burst.
+
 ### Custom maritime emergency economy
 
 The live transport detector shared with auto-donate is also consumed by

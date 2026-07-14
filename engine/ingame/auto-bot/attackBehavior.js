@@ -1060,6 +1060,7 @@
       target = null,
       preferredTile = null,
       spendableTroops = null,
+      commitFraction = null,
     ) {
       const configuredSpendable = Number(spendableTroops);
       const available =
@@ -1081,8 +1082,22 @@
       }
 
       // The engine conquers the first tile before checking whether the attack
-      // has enough troops for another tile. Sending this bounded amount keeps
-      // expansion moving while never spending the whole production reserve.
+      // has enough troops for another tile. For transport probes, the calculated
+      // one-tile loss is the complete payload. Land expansion can pass a commit
+      // fraction to turn that loss into a lower bound for a meaningful opening
+      // burst, while the spendable budget still caps the result.
+      const configuredCommitFraction = Number(commitFraction);
+      if (Number.isFinite(configuredCommitFraction)) {
+        const boundedCommitFraction = Math.min(
+          1,
+          Math.max(0, configuredCommitFraction),
+        );
+        const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
+        return Math.min(
+          available,
+          Math.max(minimum, ownTroops * boundedCommitFraction),
+        );
+      }
       return Math.min(available, minimum);
     }
 
@@ -4030,8 +4045,8 @@
       // src: game.addExecution(new AttackExecution(troops/2, player,
       //   target.isPlayer() ? target.id() : terraNullius().id())).
       // Client: emitIntent(ctors.attack, target.id()|null, troops). In win-fix
-      // mode a TerraNullius opening uses the calculated one-tile amount instead
-      // of the faithful half-army burst.
+      // mode a TerraNullius opening uses the calculated one-tile loss as a
+      // minimum and the normal early-expansion commit as the target burst.
       this.reconcileOutboundAttackIntentCommitments();
       const ctors = discoverCtors(getEventBus());
       const isTerraNullius = target?.isPlayer?.() !== true;
@@ -4047,6 +4062,7 @@
               target,
               null,
               spendableTroops,
+              EARLY_EXPAND_COMMIT,
             )
           : Math.min(requestedTroops, spendableTroops);
       if (!Number.isFinite(troops) || troops < 1) return false;
@@ -4302,6 +4318,16 @@
         radioactiveCommitTroops ?? Infinity,
       );
       const isTerraNullius = !target.isPlayer();
+      let terraNulliusCommitFraction = null;
+      if (isTerraNullius && state.settings.winFixes) {
+        const requestedCommitFraction =
+          minCommitFraction === null ? Number.NaN : Number(minCommitFraction);
+        terraNulliusCommitFraction = Number.isFinite(requestedCommitFraction)
+          ? requestedCommitFraction
+          : radioactiveTerraNullius
+            ? this.getRadioactiveTerraNulliusCommitFraction()
+            : EARLY_EXPAND_COMMIT;
+      }
 
       let troops;
       let requiredTribeAttackTroops = null;
@@ -4335,6 +4361,7 @@
                 target,
                 null,
                 targetSpendableTroops,
+                terraNulliusCommitFraction,
               )
             : this.player.troops() - targetTroops;
       }

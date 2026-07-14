@@ -910,10 +910,10 @@ const targetBehavior = new targetSandbox.AttackBehavior(
   {},
 );
 
-// TerraNullius expansion must budget one frontier tile from the engine's real
-// attackLogic loss, rather than from a percentage of the live army. A mixed
-// frontier uses the worst first-tile loss so the attack can land regardless of
-// which adjacent tile the execution dequeues first.
+// TerraNullius expansion must use the engine's real attackLogic loss as the
+// minimum for the first frontier tile. Direct land expansion then targets the
+// configured early commit when available, while a targeted transport probe can
+// still request only that tile's calculated loss.
 const minimumTerraNulliusBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 minimumTerraNulliusBehavior.player = {
   troops: () => 100000,
@@ -945,10 +945,17 @@ assert.equal(
   16,
   "a targeted TerraNullius landing uses only that tile's calculated loss",
 );
-assert.ok(
-  24 < 100000 * 0.6,
-  "the minimum TerraNullius amount must be far below the old percentage burst",
+assert.equal(
+  minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(
+    minimumTerraNulliusTarget,
+    null,
+    99000,
+    0.6,
+  ),
+  60000,
+  "a direct TerraNullius land burst uses the configured commit above the tile cost",
 );
+assert.ok(24 < 100000 * 0.6, "the per-tile TerraNullius cost remains below the early land commit");
 
 const radioactiveBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 let radioactiveTiles = 0;
