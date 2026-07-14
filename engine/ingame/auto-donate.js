@@ -3,8 +3,9 @@
 // Quick Panel settings cache. Runs on the shared helper tick (1s interval).
 //
 // Troop logic:  if currentTroops > maxTroops * (keepPct/100) → donate a
-// percentage of current troops, capped so we retain at least half the largest
-// live enemy army sharing our border.
+// percentage of current troops, capped so we retain at least 42% of max troops
+// and at least half the largest live enemy army sharing our border. Never donate
+// while we are being attacked.
 // Gold logic:   if currentGold > maxGoldThreshold → donate (currentGold * donatePct/100)
 //
 // Target matching: comma-separated player names (case-insensitive, includes clan tags).
@@ -60,6 +61,21 @@
       var outgoing = typeof player.outgoingAttacks === "function" ? player.outgoingAttacks() : [];
       return (incoming && incoming.length > 0) || (outgoing && outgoing.length > 0);
     } catch (e) { return false; }
+  }
+
+  // Return null when the live player view cannot tell us whether an attack is
+  // incoming. Troop donation fails closed in that case.
+  function _isBeingAttacked(player) {
+    if (!player || typeof player.incomingAttacks !== "function") return null;
+    try {
+      var incoming = player.incomingAttacks();
+      if (!incoming) return false;
+      if (typeof incoming.length === "number") return incoming.length > 0;
+      if (typeof incoming.size === "number") return incoming.size > 0;
+      return null;
+    } catch (e) {
+      return null;
+    }
   }
 
   function _getPlayerViews(game) {
@@ -217,6 +233,7 @@
     var game = ctx.game;
     var me = game.myPlayer ? game.myPlayer() : null;
     if (!me || !me.isAlive || !me.isAlive()) return;
+    if (_isBeingAttacked(me) !== false) return;
 
     // Check if donate is allowed in this game
     try {
@@ -224,7 +241,8 @@
       if (cfg && typeof cfg.donateTroops === "function" && cfg.donateTroops() === false) return;
     } catch (e) {}
 
-    var keepPct = Number(_cfg("autoDonateKeepPct", 40)) || 40;
+    var configuredKeepPct = Number(_cfg("autoDonateKeepPct", 42));
+    var keepPct = Number.isFinite(configuredKeepPct) ? Math.max(42, configuredKeepPct) : 42;
     var donatePct = Number(_cfg("autoDonatePercentage", 25)) || 25;
     var targetRaw = _cfg("autoDonateTargets", "");
     var targetNames = _parseTargets(targetRaw);
@@ -266,17 +284,20 @@
       // troops available at the moment the packet is emitted.
       currentTroops = Number(me.troops ? me.troops() : 0);
       if (!Number.isFinite(currentTroops)) return;
+      if (_isBeingAttacked(me) !== false) return;
       keepAmount = maxTroops * (keepPct / 100);
       if (currentTroops <= keepAmount) return;
 
       donateAmount = Math.floor(currentTroops * (donatePct / 100));
       if (donateAmount <= 0) return;
 
-      // Keep at least half of the strongest live enemy army on a shared border.
-      // Use the fractional half before flooring so odd troop counts still round
-      // toward the safer reserve.
-      var maxSafeDonation = Math.floor(currentTroops - strongestBorderOpponentTroops / 2);
-      if (maxSafeDonation <= 0) return;
+      // Keep both the configured reserve (never below 42% of max troops) and
+      // at least half of the strongest live enemy army on a shared border.
+      // Use fractional reserves before flooring so odd values round safely.
+      var maxKeepDonation = Math.floor(currentTroops - keepAmount);
+      var maxBorderDonation = Math.floor(currentTroops - strongestBorderOpponentTroops / 2);
+      if (maxKeepDonation <= 0 || maxBorderDonation <= 0) return;
+      var maxSafeDonation = Math.min(maxKeepDonation, maxBorderDonation);
       donateAmount = Math.min(donateAmount, maxSafeDonation);
       if (donateAmount <= 0) return;
 

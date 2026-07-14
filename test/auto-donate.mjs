@@ -26,19 +26,25 @@ async function runDonation({
   opponents = [],
   friendlyBorder = false,
   supportsBorderApi = true,
+  beingAttacked = false,
+  attackDuringBorderLookup = false,
 } = {}) {
   const packets = [];
+  let currentlyBeingAttacked = beingAttacked;
   const me = {
     id: () => 1,
     smallID: () => 1,
     troops: () => 1000,
     isAlive: () => true,
     isFriendly: (player) => Boolean(player.friendly),
-    incomingAttacks: () => [],
+    incomingAttacks: () => (currentlyBeingAttacked ? [{}] : []),
     outgoingAttacks: () => [],
   };
   if (supportsBorderApi) {
-    me.borderTiles = async () => ({ borderTiles: new Set([1]) });
+    me.borderTiles = async () => {
+      if (attackDuringBorderLookup) currentlyBeingAttacked = true;
+      return { borderTiles: new Set([1]) };
+    };
   }
 
   const ally = makePlayer({
@@ -90,17 +96,17 @@ async function runDonation({
 
 const strongestBorderCap = await runDonation({
   opponents: [
-    makePlayer({ id: 3, name: "border-strong", troops: 801, friendly: false, border: true }),
+    makePlayer({ id: 3, name: "border-strong", troops: 1001, friendly: false, border: true }),
     makePlayer({ id: 4, name: "border-weak", troops: 600, friendly: false, border: true }),
   ],
 });
 assert.equal(
   strongestBorderCap[0]?.troops,
-  599,
+  499,
   "odd enemy army keeps the safer fractional half reserve",
 );
 assert.ok(
-  1000 - strongestBorderCap[0].troops >= 801 / 2,
+  1000 - strongestBorderCap[0].troops >= 1001 / 2,
   "donation leaves at least half of the strongest border enemy",
 );
 
@@ -110,11 +116,7 @@ const nonBorderStrongest = await runDonation({
     makePlayer({ id: 4, name: "remote-enemy", troops: 1200, friendly: false, border: false }),
   ],
 });
-assert.equal(
-  nonBorderStrongest[0]?.troops,
-  800,
-  "non-border enemies do not lower the donation cap",
-);
+assert.equal(nonBorderStrongest[0]?.troops, 580, "non-border enemies do not lower the 42% reserve");
 
 const friendlyBorder = await runDonation({
   friendlyBorder: true,
@@ -122,8 +124,25 @@ const friendlyBorder = await runDonation({
 });
 assert.equal(
   friendlyBorder[0]?.troops,
-  800,
+  580,
   "friendly border players are not treated as opponents",
+);
+
+const minimumKeepReserve = await runDonation();
+assert.equal(minimumKeepReserve[0]?.troops, 580, "donation leaves at least 42% of maximum troops");
+assert.ok(
+  1000 - minimumKeepReserve[0].troops <= 1000 * (1 - 0.42),
+  "the donation does not cross the 42% reserve",
+);
+
+const beingAttacked = await runDonation({ beingAttacked: true });
+assert.equal(beingAttacked.length, 0, "donation is skipped while being attacked");
+
+const attackedDuringBorderLookup = await runDonation({ attackDuringBorderLookup: true });
+assert.equal(
+  attackedDuringBorderLookup.length,
+  0,
+  "donation is skipped if an attack starts during the border lookup",
 );
 
 const noSafeDonation = await runDonation({
