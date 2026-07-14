@@ -101,6 +101,7 @@
     boatProbeFrac: 0.01, // the INITIAL probe + every TRANSIT boat carries just 1% of troops:
     // a warship can only sink 1% mid-sea, so crossing the water is cheap/safe. The user
     // wants every boat to CROSS at 1%.
+    boatProbeMinTroops: 1000, // tiny floor so a 1% boat is never literally 0 troops
     boatSurgeFrac: 0.25, // …BUT once a probe LANDS and we hold the beachhead (the route is
     // now proven safe), the follow-up "surge" pours in a BIG reinforcement — 25% of troops —
     // to actually CONQUER outward from the beachhead. The user's design: "gửi 1% an toàn khi
@@ -122,8 +123,6 @@
     // The game's troop growth = (10 + troops^0.73/4)·(1 − troops/maxTroops) PEAKS at
     // troops ≈ 0.42·maxTroops, so keeping ~45% means we only give away the "excess"
     // above the fastest-regrowth point — donating barely dents our generation rate.
-    pauseDonateDuringExpansion: true, // hold team donations while free land or a nearby
-    // land/sea tribe is available in the 30-tick expansion range.
     // ── SMART DIPLOMACY (winFix) ──────────────────────────────────────────────────
     // The bot allies FAR nations (ones it does NOT border) freely while still expanding.
     // A far nation can't threaten us by land, so the alliance is pure DEFENCE — it keeps
@@ -201,6 +200,15 @@
   // to match the bot's attackRate. Build runs ~3× per combat cycle (economy
   // keeps growing between the slower, defensive attack decisions).
   const MAX_DEFENSE_RESERVE = 0.8; // never hold back more than this for defense
+  // Min fraction of ACTUAL troops to commit when grabbing SAFE empty land (no
+  // bordering enemies). The maxTroops-based reserve has a ~100k floor while we
+  // start with ~25k troops, so it would send only ~18% of our army — far slower
+  // than a real nation's opening burst (forceSendAttack troops/2). Terra-nullius
+  // doesn't fight back and unspent troops return, so committing ~60% when no
+  // enemy borders us is low-risk and fixes the "expand too slow → small → eaten
+  // fast in the early game" loss. Drops back to the defensive reserve the moment
+  // an enemy borders us.
+  const EARLY_EXPAND_COMMIT = 0.6;
   const BUILD_THROTTLE_MS = 1800;
   const NUKE_THROTTLE_MS = 6000;
   // MIRV (late-game super-weapon vs a too-strong enemy): per-target cooldown + the
@@ -279,20 +287,6 @@
       lastBoatEtaTicks: null,
       boatRejectedUnknown: 0,
       boatRejectedTooFar: 0,
-      // Adaptive opening-expansion diagnostics/cadence. AttackBehavior refreshes
-      // these from the live troop curve and frontier; keeping defaults here lets
-      // the panel/context read a stable shape before the first post-spawn poll.
-      expansionPlan: null,
-      troopGenerationRate: 0,
-      generationRatio: 0,
-      optimalGenerationRatio: 0.42,
-      nextExpansionTick: 0,
-      frontierFreeTiles: 0,
-      frontierTerrainMagnitude: 10,
-      frontierTerrainScore: 0,
-      frontierContestedTileCount: 0,
-      frontierCompetingOwnerCount: 0,
-      frontierCompetitionScore: 0,
     },
     // In-memory action history (newest first) for the "Log" tab. Not persisted —
     // a fresh game starts with an empty log.
@@ -326,7 +320,7 @@
     // it here initialises it exactly when it is needed.
     // Only these USER-FACING keys are restored from localStorage; every other DEFAULT
     // (tuning: boat/donate/mirv fractions, throttles…) always comes from the code, so an
-    // old saved tuning values can't mask the current defaults.
+    // old saved value (e.g. boatProbeMinTroops=8000) can't mask a new default (1000).
     const PERSISTED_KEYS = [
       "enabled",
       "difficulty",
@@ -343,7 +337,6 @@
       "donateNeedThreshold",
       "donateThrottleMs",
       "donateMinDonatePct",
-      "pauseDonateDuringExpansion",
       // Warship tuning
       "warshipRetreatHealthPct",
       "warshipHuntTrade",

@@ -13,17 +13,11 @@ const attackSource = fs.readFileSync(
   path.join(repoRoot, "engine/ingame/auto-bot/attackBehavior.js"),
   "utf8",
 );
-const nationSource = fs.readFileSync(
-  path.join(repoRoot, "engine/ingame/auto-bot/nationExecution.js"),
-  "utf8",
-);
 const gameApiSource = fs.readFileSync(
   path.join(repoRoot, "engine/ingame/auto-bot/gameApi.js"),
   "utf8",
 );
 const buildSource = fs.readFileSync(path.join(repoRoot, "build.mjs"), "utf8");
-const coreSource = fs.readFileSync(path.join(repoRoot, "engine/ingame/auto-bot/core.js"), "utf8");
-const panelSource = fs.readFileSync(path.join(repoRoot, "engine/ingame/auto-bot/panel.js"), "utf8");
 
 assert.equal(typeof sandbox.createEarlyGameSnapshot, "function");
 assert.equal(typeof sandbox.chooseEarlyGameAction, "function");
@@ -38,275 +32,9 @@ assert.equal(typeof sandbox.rankEarlyGameTribeCandidates, "function");
 assert.equal(typeof sandbox.calculateEarlyGameContinuationValue, "function");
 assert.equal(typeof sandbox.calculateEarlyGameFoodRaceValue, "function");
 assert.equal(typeof sandbox.calculateEarlyGameRaceTroops, "function");
-assert.equal(typeof sandbox.calculateTroopGenerationRate, "function");
-assert.equal(typeof sandbox.findOptimalGenerationRatio, "function");
-assert.equal(typeof sandbox.calculatePeakProductionReserveTroops, "function");
-assert.equal(typeof sandbox.estimateTroopRecoveryTicks, "function");
-assert.equal(typeof sandbox.terrainAttackMagnitudeFromMapMagnitude, "function");
-assert.equal(typeof sandbox.calculateEarlyGameExpansionPlan, "function");
-assert.equal(typeof sandbox.requiredTribeCaptureTiles, "function");
-assert.equal(typeof sandbox.estimateTribeCaptureTroops, "function");
-assert.equal(typeof sandbox.getAutoDonateExpansionStatus, "function");
 assert.equal(sandbox.isEarlyGameBoatEta(300), true);
 assert.equal(sandbox.isEarlyGameBoatEta(301), false);
 assert.equal(sandbox.isEarlyGameBoatEta(null), false);
-
-const generationAtZero = sandbox.calculateTroopGenerationRate({
-  troops: 0,
-  maxTroops: 100000,
-});
-const generationAtPeak = sandbox.calculateTroopGenerationRate({
-  troops: 42000,
-  maxTroops: 100000,
-});
-const generationAtMax = sandbox.calculateTroopGenerationRate({
-  troops: 100000,
-  maxTroops: 100000,
-});
-assert.ok(generationAtZero > 0);
-assert.ok(generationAtPeak > generationAtZero);
-assert.equal(generationAtMax, 0);
-assert.ok(
-  sandbox.findOptimalGenerationRatio() >= 0.38 && sandbox.findOptimalGenerationRatio() <= 0.46,
-);
-const peakReserve = sandbox.calculatePeakProductionReserveTroops({
-  maxTroops: 100000,
-});
-assert.equal(peakReserve, 175);
-assert.equal(sandbox.terrainAttackMagnitudeFromMapMagnitude(1), 80);
-assert.equal(sandbox.terrainAttackMagnitudeFromMapMagnitude(15), 100);
-assert.equal(sandbox.terrainAttackMagnitudeFromMapMagnitude(25), 120);
-assert.equal(sandbox.requiredTribeCaptureTiles(10), 1);
-assert.equal(sandbox.requiredTribeCaptureTiles(150), 51);
-assert.equal(
-  sandbox.estimateTribeCaptureTroops({
-    targetTiles: 10,
-    simulateAttack: (attackTroops, tiles) => tiles === 1 && attackTroops >= 500,
-    fallbackTroops: 9999,
-  }),
-  500,
-  "capture sizing must use the supplied attack-loss simulation rather than a troop multiplier",
-);
-assert.equal(
-  sandbox.estimateTribeCaptureTroops({
-    targetTiles: 10,
-    simulateAttack: () => false,
-    fallbackTroops: 9999,
-  }),
-  Infinity,
-  "an impossible capture simulation must defer instead of falling back to one troop",
-);
-assert.ok(
-  sandbox.estimateTroopRecoveryTicks({
-    troops: 10000,
-    maxTroops: 100000,
-    targetTroops: 20000,
-  }) > 0,
-);
-
-const openingExpansionPlan = sandbox.calculateEarlyGameExpansionPlan({
-  ownTroops: 20000,
-  maxTroops: 100000,
-  targetType: "land",
-  terrainMagnitude: 1,
-  expectedTiles: 8,
-  baseReserveRatio: 0.3,
-});
-assert.equal(openingExpansionPlan.shouldAttackNow, true);
-assert.ok(openingExpansionPlan.commitTroops > 0);
-assert.ok(openingExpansionPlan.commitTroops < openingExpansionPlan.ownTroops);
-assert.ok(
-  openingExpansionPlan.commitTroops <=
-    openingExpansionPlan.ownTroops - openingExpansionPlan.reserveTroops,
-);
-assert.ok(openingExpansionPlan.generationRate > 0);
-
-const perishableExpansionPlan = sandbox.calculateEarlyGameExpansionPlan({
-  ownTroops: 12000,
-  maxTroops: 100000,
-  targetType: "land",
-  terrainMagnitude: 25,
-  expectedTiles: 8,
-  opportunityUrgency: 1,
-});
-assert.equal(perishableExpansionPlan.irreversibleOpportunity, true);
-assert.equal(perishableExpansionPlan.shouldAttackNow, true);
-assert.ok(perishableExpansionPlan.commitFraction >= 0.6);
-
-const activeExpansionPlan = sandbox.calculateEarlyGameExpansionPlan({
-  ownTroops: 60000,
-  maxTroops: 100000,
-  targetType: "land",
-  activeAttackTroops: 10000,
-});
-assert.equal(activeExpansionPlan.shouldAttackNow, false);
-
-const completeTribePlan = sandbox.calculateEarlyGameExpansionPlan({
-  ownTroops: 30000,
-  maxTroops: 100000,
-  targetType: "tribe",
-  targetTroops: 5000,
-  captureTroops: 750,
-  targetDefenseMultiplier: 1,
-  opportunityUrgency: 1,
-});
-assert.equal(completeTribePlan.requiredTroops, 750);
-assert.ok(completeTribePlan.commitTroops >= completeTribePlan.requiredTroops);
-assert.equal(completeTribePlan.shouldAttackNow, true);
-
-const largeFrontierTribePlan = sandbox.calculateEarlyGameExpansionPlan({
-  ownTroops: 60000,
-  maxTroops: 100000,
-  targetType: "tribe",
-  targetTroops: 12000,
-  captureTroops: 20000,
-  targetDefenseMultiplier: 1,
-  opportunityUrgency: 0,
-});
-assert.equal(
-  largeFrontierTribePlan.shouldAttackNow,
-  true,
-  "an affordable frontier tribe must not inherit the generic 30% reserve gate",
-);
-assert.equal(largeFrontierTribePlan.reserveTroops, peakReserve);
-assert.equal(largeFrontierTribePlan.commitTroops, 20000);
-
-const underfundedTribePlan = sandbox.calculateEarlyGameExpansionPlan({
-  ownTroops: 600,
-  maxTroops: 100000,
-  targetType: "tribe",
-  targetTroops: 5000,
-  captureTroops: 750,
-  targetDefenseMultiplier: 1,
-  opportunityUrgency: 1,
-});
-assert.ok(underfundedTribePlan.commitTroops < underfundedTribePlan.requiredTroops);
-assert.equal(
-  underfundedTribePlan.shouldAttackNow,
-  false,
-  "an underfunded tribe attack must wait instead of leaving a remnant",
-);
-
-const topUpTribePlan = sandbox.calculateEarlyGameExpansionPlan({
-  ownTroops: 30000,
-  maxTroops: 100000,
-  targetType: "tribe",
-  targetTroops: 5000,
-  captureTroops: 750,
-  activeAttackTroops: 300,
-  opportunityUrgency: 1,
-});
-assert.equal(topUpTribePlan.remainingRequiredTroops, 450);
-assert.equal(topUpTribePlan.commitTroops, 450);
-assert.equal(
-  topUpTribePlan.shouldAttackNow,
-  true,
-  "a tribe with an underpowered attack in flight should receive only the missing force",
-);
-
-const completeActiveTribePlan = sandbox.calculateEarlyGameExpansionPlan({
-  ownTroops: 30000,
-  maxTroops: 100000,
-  targetType: "tribe",
-  targetTroops: 5000,
-  captureTroops: 750,
-  activeAttackTroops: 750,
-  opportunityUrgency: 1,
-});
-assert.equal(completeActiveTribePlan.remainingRequiredTroops, 0);
-assert.equal(completeActiveTribePlan.commitTroops, 0);
-assert.equal(
-  completeActiveTribePlan.shouldAttackNow,
-  false,
-  "a fully funded attack in flight must not be duplicated",
-);
-
-const unknownTribePlan = sandbox.calculateEarlyGameExpansionPlan({
-  ownTroops: 10000,
-  maxTroops: 100000,
-  targetType: "tribe",
-  targetTroops: 50000,
-  opportunityUrgency: 0,
-});
-assert.equal(
-  unknownTribePlan.shouldAttackNow,
-  false,
-  "a tribe without an exact capture requirement must not be treated as cheap",
-);
-
-const oversizedOpeningBurstPlan = sandbox.calculateEarlyGameExpansionPlan({
-  ownTroops: 10000,
-  maxTroops: 100000,
-  targetType: "tribe",
-  targetTroops: 100,
-  captureTroops: 9000,
-  initialBurst: true,
-});
-assert.equal(oversizedOpeningBurstPlan.commitTroops, 6000);
-assert.equal(
-  oversizedOpeningBurstPlan.shouldAttackNow,
-  false,
-  "the opening burst must not empty the player when the capture force is unavailable",
-);
-
-const duplicateOpeningBurstPlan = sandbox.calculateEarlyGameExpansionPlan({
-  ownTroops: 10000,
-  maxTroops: 100000,
-  targetType: "tribe",
-  targetTroops: 100,
-  captureTroops: 500,
-  activeAttackTroops: 100,
-  initialBurst: true,
-});
-assert.equal(
-  duplicateOpeningBurstPlan.shouldAttackNow,
-  false,
-  "an opening burst must not be repeated while its attack is active",
-);
-
-const assertAutoDonateStatus = (actual, expected) =>
-  assert.equal(JSON.stringify(actual), JSON.stringify(expected));
-
-assertAutoDonateStatus(
-  sandbox.getAutoDonateExpansionStatus({
-    active: true,
-    hasFreeLand: true,
-  }),
-  { active: true, reason: "free-land", maxTicks: 30 },
-);
-assertAutoDonateStatus(
-  sandbox.getAutoDonateExpansionStatus({
-    active: true,
-    actionableTribes: [{ landBorder: true }],
-  }),
-  { active: true, reason: "land-tribe", maxTicks: 30 },
-);
-assertAutoDonateStatus(
-  sandbox.getAutoDonateExpansionStatus({
-    active: true,
-    actionableTribes: [{ landBorder: false, boatEtaTicks: 30 }],
-  }),
-  { active: true, reason: "sea-tribe", maxTicks: 30 },
-);
-assertAutoDonateStatus(
-  sandbox.getAutoDonateExpansionStatus({
-    active: true,
-    actionableTribes: [{ landBorder: false, boatEtaTicks: 31 }],
-  }),
-  { active: false, reason: null, maxTicks: 30 },
-);
-assertAutoDonateStatus(
-  sandbox.getAutoDonateExpansionStatus({
-    active: true,
-    actionableTribes: [{ landBorder: false, seaReachableWithin30Ticks: true }],
-  }),
-  { active: false, reason: null, maxTicks: 30 },
-);
-assertAutoDonateStatus(sandbox.getAutoDonateExpansionStatus({ active: false, hasFreeLand: true }), {
-  active: false,
-  reason: null,
-  maxTicks: 30,
-});
 
 const snapshot = sandbox.createEarlyGameSnapshot({
   postSpawn: true,
@@ -700,30 +428,6 @@ assert.equal(
   }),
   null,
 );
-assert.equal(
-  sandbox.findWaterRouteTicks({
-    start: 0,
-    goal: 5,
-    neighbors: (tile) => waterGraph.get(tile) || [],
-    isWater: (tile) => tile >= 1 && tile <= 4,
-    speed: 2,
-    maxTicks: 3,
-  }),
-  3,
-);
-assert.equal(
-  sandbox.findWaterRouteTicks({
-    start: 0,
-    goal: 5,
-    neighbors: (tile) => waterGraph.get(tile) || [],
-    isWater: (tile) => tile >= 1 && tile <= 4,
-    speed: 2,
-    maxTicks: 2,
-  }),
-  null,
-);
-assert.equal(sandbox.transportRouteTicks([0, 1, 2, 3], { speed: 2 }), 2);
-assert.equal(sandbox.transportRouteTicks([0, 1, 2, 3], { ticksPerMove: 2 }), 6);
 
 const routeSandbox = {};
 const routeSrc = {
@@ -733,7 +437,6 @@ const routeSrc = {
   isShore: (tile) => tile === 0 || tile === 5,
   ownerID: (tile) => (tile === 5 ? 2 : tile === 0 ? 1 : 0),
   manhattanDist: (a, b) => Math.abs(a - b),
-  transportShipSpeed: 2,
 };
 vm.runInNewContext(`${gameApiSource}\n${source}`, routeSandbox, {
   filename: "gameApi+earlyGame.js",
@@ -746,56 +449,20 @@ const routePlayer = routeApi.wrapPlayer({
   bestTransportShipSpawn: () => Promise.resolve(0),
 });
 assert.equal(await routePlayer.bestTransportShipSpawn(5), 0);
-assert.equal(await routeApi.game.estimateTransportRouteTicks(5), 3);
+assert.equal(await routeApi.game.estimateTransportRouteTicks(5), 5);
 assert.equal(routeApi.game.hasTransportRouteEstimator, true);
 
-assert.match(attackSource, /getEarlyGameFreeLandCommitTroops\(earlyLandPlan\)/);
-assert.match(attackSource, /const expansionPriorityPending/);
-assert.match(
-  attackSource,
-  /const expansionPriorityPending[\s\S]*?if \(expansionPriorityPending\) return;[\s\S]*?maybeOpportunisticBoat/,
-);
-assert.match(
-  attackSource,
-  /if \(expansionPriorityPending\) return;[\s\S]*?\[Takeover\] disconnected neighbour/,
-);
+assert.match(attackSource, /state\.earlyGame\.action === "land"/);
 assert.match(attackSource, /async allowEarlyGameBoat\(tile\)/);
 assert.match(attackSource, /!state\.settings\.winFixes \|\| !early \|\| !early\.active/);
-assert.match(attackSource, /EARLY_TRIBE_BORDER_FETCH_CONCURRENCY/);
-assert.match(attackSource, /openingLandBurst/);
-assert.match(attackSource, /state\.settings\.winFixes && botTarget/);
-assert.match(attackSource, /calculateBotAttackTroops\(/);
+assert.match(attackSource, /EARLY_EXPAND_COMMIT/);
 assert.match(attackSource, /attackEarlyGameTribe/);
 assert.match(attackSource, /maybeEarlyOceanBoat/);
-assert.match(attackSource, /game\.isOcean/);
-assert.match(attackSource, /game\.isOceanShore/);
-assert.doesNotMatch(attackSource, /isEarlyGameMapEdge/);
-assert.match(attackSource, /calculateEarlyGameExpansionPlan/);
-assert.match(attackSource, /frontierCompetitionScore/);
-assert.match(attackSource, /plannedTroops/);
-assert.match(attackSource, /getEarlyGameLiveReserveTroops/);
-assert.match(attackSource, /getEarlyGameProbeTroops/);
-assert.doesNotMatch(attackSource, /boatProbeMinTroops/);
-assert.doesNotMatch(coreSource, /boatProbeMinTroops/);
-assert.match(attackSource, /getAutoDonateExpansionStatus/);
-assert.match(attackSource, /pauseDonateDuringExpansion/);
-assert.match(attackSource, /estimateEarlyGameTribeBoatEta/);
-assert.match(attackSource, /boatEtaTicks <= getAutoDonateExpansionTickLimit\(\)/);
-assert.match(coreSource, /pauseDonateDuringExpansion: true/);
-assert.match(panelSource, /data-cfg="pauseDonateDuringExpansion"/);
-assert.match(panelSource, /ab-feat-mini\.paused/);
-assert.match(nationSource, /openingLandBurstPending/);
-assert.match(nationSource, /openingWinFix \? 0\.6 : 0\.5/);
-assert.match(nationSource, /openingAttackSent/);
-assert.match(nationSource, /openingWinFix && !openingAttackSent/);
-assert.match(nationSource, /nextExpansionTick/);
 assert.match(attackSource, /rankTeamDonationCandidates\(needy\)/);
 assert.match(attackSource, /playersShareClanTag/);
 assert.match(gameApiSource, /estimateTransportRouteTicks/);
 assert.match(gameApiSource, /hasTransportRouteEstimator/);
 assert.match(gameApiSource, /findWaterRouteTicks\(\{/);
-assert.match(gameApiSource, /transportShipSpeed/);
-assert.match(source, /transportPathStepsToTicks/);
 assert.match(buildSource, /"auto-bot\/earlyGame\.js"/);
 
 // Integration probe: the real AttackBehavior enrichment must expose the same
@@ -943,57 +610,34 @@ assert.equal(enrichedInland.futureFoodCount, 1);
 assert.ok(enrichedInland.futureFoodAccess > 0.6);
 assert.ok(enrichedInland.foodRaceValue > 0.5);
 
-// A crowded nearby sample must not hide a direct frontier tribe behind remote
-// candidates. The direct target is deliberately placed after nine remote bots;
-// the bounded enrichment window must still retain it.
-const originalTargetNearby = targetMe.nearby;
-targetMe.sharesBorderWith = (target) => target?.smallID?.() === 4;
-const remoteTribes = Array.from({ length: 9 }, (_, index) => {
-  const sid = 100 + index;
-  return {
-    ...targetInland,
-    smallID: () => sid,
-    id: () => `p${sid}`,
-    nameLocation: () => ({ x: 200 + index, y: 200 + index }),
-    borderTiles: () => new Set([30]),
-  };
-});
-targetMe.nearby = () => [...remoteTribes, targetInland];
-const boundedTargets = await targetBehavior.getEarlyGameTribeCandidates();
-assert.ok(
-  boundedTargets.some((target) => target.id === 4),
-  "a direct frontier tribe must survive the nearby candidate cap",
-);
-targetMe.nearby = originalTargetNearby;
-
-// Integration probe: only the largest connected navigable water surface counts
-// as maritime. The smaller component deliberately touches the map edge so the
-// old edge-based heuristic would incorrectly select it.
-const maritimeLand = new Set([2, 3, 20, 21]);
-const maritimeWater = new Set([0, 1, 22, 23, 24, 25]);
+// Integration probe: ocean-connected water and a river that exits through the
+// map edge count as maritime; an isolated inland lake does not.
+const maritimeLand = new Set([8, 9, 14, 15, 16]);
+const maritimeWater = new Set([10, 11, 12, 17, 18, 19, 20]);
 const maritimeNeighbors = new Map([
-  [0, [1]],
-  [1, [0]],
-  [2, [1, 3]],
-  [3, [2]],
-  [20, [21]],
-  [21, [20, 22]],
-  [22, [21, 23]],
-  [23, [22, 24]],
-  [24, [23, 25]],
-  [25, [24]],
+  [8, [9]],
+  [9, [8, 10]],
+  [10, [9, 11]],
+  [11, [10, 12]],
+  [12, [11]],
+  [15, [16]],
+  [16, [15, 17]],
+  [17, [16, 18]],
+  [18, [17, 19]],
+  [19, [18, 20]],
+  [20, [19]],
 ]);
 const maritimeGame = {
-  width: () => 10,
+  width: () => 7,
   height: () => 5,
-  x: (tile) => tile % 10,
-  y: (tile) => Math.floor(tile / 10),
+  x: (tile) => tile % 7,
+  y: (tile) => Math.floor(tile / 7),
   neighbors: (tile) => maritimeNeighbors.get(tile) || [],
   isLand: (tile) => maritimeLand.has(tile),
   isWater: (tile) => maritimeWater.has(tile),
-  isOcean: (tile) => tile >= 22 && tile <= 25,
-  isOceanShore: (tile) => tile === 21,
-  isShore: (tile) => tile === 2 || tile === 21,
+  isOcean: () => false,
+  isOceanShore: () => false,
+  isShore: (tile) => tile === 9 || tile === 16,
 };
 const maritimeBehavior = new targetSandbox.AttackBehavior(
   {},
@@ -1005,17 +649,15 @@ const maritimeBehavior = new targetSandbox.AttackBehavior(
   {},
   {},
 );
-assert.equal(maritimeBehavior.isEarlyGameMaritimeWater(22), true);
-assert.equal(maritimeBehavior.isEarlyGameMaritimeWater(0), false);
 assert.equal(
-  maritimeBehavior.getEarlyGameMaritimeDistance(new Set([20])),
+  maritimeBehavior.getEarlyGameMaritimeDistance(new Set([15])),
   1,
-  "the largest connected navigable water component must count as maritime",
+  "a river component that exits through the map edge must count as maritime",
 );
 assert.equal(
-  maritimeBehavior.getEarlyGameMaritimeDistance(new Set([3])),
+  maritimeBehavior.getEarlyGameMaritimeDistance(new Set([8])),
   Infinity,
-  "a smaller water component must not count as maritime even when it touches the map edge",
+  "an isolated inland lake must not count as maritime",
 );
 assert.equal(
   maritimeBehavior.getEarlyGameMaritimeIndex(),

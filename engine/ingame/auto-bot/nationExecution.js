@@ -29,7 +29,6 @@
       this.lastSpawnPickTick = null; // throttle re-evaluation during spawn phase
       this.status = "";
       this.lastSeenTick = -1;
-      this.openingLandBurstPending = false;
       this.embargoMalusApplied = new Set(); // smallIDs we've applied embargo malus to
 
       // Seed exactly like src (NationExecution.ts:54): simpleHash(playerId)+gameID.
@@ -71,25 +70,6 @@
     async tick(ticks) {
       this.player = this.mg.myPlayer();
       const me = this.player;
-
-      // WIN-FIX: naval interception is also active for Easy. It is a direct
-      // defensive response to an inbound transport, not the faithful Nation
-      // retaliation probability used by the regular warship block below.
-      if (
-        this.behaviorsInitialized &&
-        me !== null &&
-        me.isAlive() &&
-        this.feat("warship") &&
-        state.settings.winFixes &&
-        me.unitsConstructed(UNIT.Port) &&
-        !this.mg.config().isUnitDisabled(UNIT.Warship)
-      ) {
-        try {
-          await this.warshipBehavior.protectAgainstNavalInvasions();
-        } catch (e) {
-          console.error("[AutoBot] naval interception error:", e);
-        }
-      }
 
       // ── ship tracking — NationExecution.ts:90-101 (every tick, non-Easy, Port) ─
       if (
@@ -165,59 +145,10 @@
       if (!this.behaviorsInitialized) {
         this.initializeBehaviors();
         if (this.feat("expand")) {
-          const openingWinFix = state.settings.winFixes === true;
-          const openingAttackSent = await this.attackBehavior.forceSendAttack(
-            this.mg.terraNullius(),
-            openingWinFix ? 0.6 : 0.5,
-          );
-          // The burst already occupies the opening attack slot. Do not run a
-          // second immediate early-game decision against the same troop stock
-          // before the first execution has removed its troops from the player.
-          this.openingLandBurstPending = openingWinFix && !openingAttackSent;
+          await this.attackBehavior.forceSendAttack(this.mg.terraNullius());
         }
         this.lastSeenTick = ticks;
         return;
-      }
-
-      // WIN-FIX (NOT in src): run one immediate post-spawn decision instead of
-      // waiting for the randomized attackRate window. AttackBehavior consumes the
-      // one-shot flag and prioritizes adjacent free land before tribe enrichment.
-      if (
-        this.openingLandBurstPending &&
-        state.settings.winFixes === true &&
-        (this.feat("expand") || this.feat("boat"))
-      ) {
-        this.openingLandBurstPending = false;
-        state.earlyGame = {
-          ...(state.earlyGame || {}),
-          openingLandBurst: true,
-        };
-        await this.attackBehavior.maybeAttack();
-        if (state.earlyGame) state.earlyGame.openingLandBurst = false;
-        this.lastSeenTick = ticks;
-        return;
-      }
-
-      // WIN-FIX (NOT in src): while the post-spawn frontier still contains
-      // free land or tribes, use the expansion plan's next-due tick instead of
-      // waiting for the slower/randomized normal attack cadence. The planner
-      // itself preserves a live reserve and suppresses duplicate in-flight
-      // attacks, so this is a cadence gate, not an unconditional attack loop.
-      if (
-        state.settings.winFixes === true &&
-        (this.feat("expand") || this.feat("boat")) &&
-        state.earlyGame?.active
-      ) {
-        const dueTick = Number(state.earlyGame.nextExpansionTick);
-        if (!Number.isFinite(dueTick) || ticks >= dueTick) {
-          try {
-            await this.attackBehavior.maybeAttack();
-          } catch (e) {
-            console.error("[AutoBot] early expansion decision error:", e);
-          }
-          this.lastSeenTick = ticks;
-          return;
-        }
       }
 
       // ── tick gating (edge-detected over the elapsed window) — NationExecution.ts:176 ─

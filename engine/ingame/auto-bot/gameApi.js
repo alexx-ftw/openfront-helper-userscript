@@ -66,7 +66,7 @@
     let mePlayer = null; // wrapped me
     let lastSnapshotTick = -1;
     const transportSpawnCache = new Map(); // target TileRef -> spawn TileRef|false
-    const transportRouteCache = new Map(); // target/maxTicks -> ticks|null
+    const transportRouteCache = new Map(); // target TileRef -> ticks|null
     // Prefer an upstream exact hook when one exists. The current GameView has no
     // route worker message, so the local full-resolution water graph is the fallback.
     // DIVERGENCE: this fallback measures shortest full-resolution water distance;
@@ -83,79 +83,14 @@
 
     const unwrap = (p) => (p && p.__src ? p.__src : p);
 
-    function readTransportMovement() {
-      const sources = [src];
-      try {
-        const config =
-          typeof src.config === "function" ? src.config() : src.config;
-        if (config) sources.push(config);
-        if (config && typeof config.gameConfig === "function") {
-          const gameConfig = config.gameConfig();
-          if (gameConfig) sources.push(gameConfig);
-        }
-      } catch (_e) {
-        /* use the documented current-game fallback below */
-      }
-
-      for (const object of sources) {
-        for (const name of [
-          "transportShipSpeed",
-          "boatSpeed",
-          "transportSpeed",
-        ]) {
-          try {
-            const value =
-              typeof object[name] === "function" ? object[name]() : object[name];
-            if (Number.isFinite(Number(value)) && Number(value) > 0) {
-              return { speed: Number(value) };
-            }
-          } catch (_e) {
-            /* probe the next adapter field */
-          }
-        }
-        for (const name of [
-          "transportShipTicksPerMove",
-          "boatTicksPerMove",
-          "ticksPerMove",
-        ]) {
-          try {
-            const value =
-              typeof object[name] === "function" ? object[name]() : object[name];
-            if (Number.isFinite(Number(value)) && Number(value) > 0) {
-              return { ticksPerMove: Number(value) };
-            }
-          } catch (_e) {
-            /* probe the next adapter field */
-          }
-        }
-      }
-
-      // OpenFront's current TransportShipExecution uses ticksPerMove = 1.
-      return { ticksPerMove: 1 };
-    }
-
-    function normalizeTransportRouteResult(result, movement) {
+    function normalizeTransportRouteResult(result) {
       if (Number.isFinite(result)) return Math.max(0, Number(result));
-      if (result && Number.isFinite(Number(result.ticks))) {
-        return Math.max(0, Number(result.ticks));
-      }
-      if (result && Number.isFinite(Number(result.etaTicks))) {
-        return Math.max(0, Number(result.etaTicks));
-      }
       const path = result && (result.fullPath || result.path) ? result.fullPath || result.path : result;
       if (path == null || typeof path.length !== "number" || path.length === 0) {
         return null;
       }
       const length = Number(path.length);
-      if (!Number.isFinite(length)) return null;
-      if (typeof transportRouteTicks === "function") {
-        return transportRouteTicks(path, movement);
-      }
-      const steps = Math.max(0, length - 1);
-      if (Number.isFinite(Number(movement?.speed))) {
-        return Math.ceil(steps / Number(movement.speed));
-      }
-      return Math.ceil(steps * Number(movement?.ticksPerMove || 1));
+      return Number.isFinite(length) ? Math.max(0, length - 1) : null;
     }
 
     function closestTargetShore(targetTile) {
@@ -195,25 +130,16 @@
       });
     }
 
-    async function estimateTransportRouteTicks(
-      targetTile,
-      maxTicks = EARLY_GAME_MAX_BOAT_TICKS,
-    ) {
-      const limit = Number.isFinite(Number(maxTicks))
-        ? Math.max(0, Number(maxTicks))
-        : EARLY_GAME_MAX_BOAT_TICKS;
-      const cacheKey = `${String(targetTile)}:${limit}`;
-      if (transportRouteCache.has(cacheKey)) {
-        return transportRouteCache.get(cacheKey);
+    async function estimateTransportRouteTicks(targetTile) {
+      if (transportRouteCache.has(targetTile)) {
+        return transportRouteCache.get(targetTile);
       }
-      const movement = readTransportMovement();
       try {
         if (typeof src.transportRouteTicks === "function") {
           const result = normalizeTransportRouteResult(
             await src.transportRouteTicks(targetTile),
-            movement,
           );
-          transportRouteCache.set(cacheKey, result);
+          transportRouteCache.set(targetTile, result);
           return result;
         }
         if (!hasLocalTransportRouteEstimator || typeof findWaterRouteTicks !== "function") {
@@ -228,10 +154,9 @@
           goal,
           neighbors: (tile) => src.neighbors(tile),
           isWater: (tile) => src.isWater(tile),
-          maxTicks: limit,
-          ...movement,
+          maxTicks: EARLY_GAME_MAX_BOAT_TICKS,
         });
-        transportRouteCache.set(cacheKey, result);
+        transportRouteCache.set(targetTile, result);
         return result;
       } catch (_e) {
         return null;
@@ -261,7 +186,6 @@
         isActive: m("isActive", false),
         isUnderConstruction: m("isUnderConstruction", false),
         isInCombat: m("isInCombat", false),
-        troops: m("troops", 0),
         hasTrainStation: m("hasTrainStation", false),
         missileTimerQueue: m("missileTimerQueue", []),
         targetTile: m("targetTile", undefined),
@@ -642,8 +566,8 @@
 
     // getWaterComponent(tile) — mirrors core's signature. Returns the component
     // id of a water tile (>= 0), or null for non-water. (In practice only ever
-    // called on NON-ocean water by the shared-water reconstruction; port
-    // candidate selection uses the canonical ocean predicate directly.)
+    // called on NON-ocean water — randCoastalTileArray / SharedWaterCache
+    // short-circuit on ocean before the lookup.)
     function getWaterComponent(tile) {
       ensureWaterLabels();
       if (tile < 0 || tile >= _waterLabels.length) return null;
@@ -671,9 +595,6 @@
     //     players' borderTiles() (those return EMPTY synchronously through the
     //     wrapper; only me's is pre-fetched).
     //   - Ocean is always shared (sentinel -1).
-    // This dataset remains available to broader coastal/trade planning. Port
-    // construction applies a separate ocean-only filter in structureBehavior,
-    // so a shared closed lake never authorizes a port site.
     // Returns Set<number>|null (null = touches no ocean and no shared lake),
     // exactly matching core's `!== null` coastal test.
     function isTrustedWaterPartner(player, other) {

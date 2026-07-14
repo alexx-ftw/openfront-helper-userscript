@@ -7,10 +7,6 @@ import { fileURLToPath } from "node:url";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourcePath = path.join(repoRoot, "engine/ingame/auto-bot/attackBehavior.js");
 const source = fs.readFileSync(sourcePath, "utf8");
-const earlyGameSource = fs.readFileSync(
-  path.join(repoRoot, "engine/ingame/auto-bot/earlyGame.js"),
-  "utf8",
-);
 
 const Difficulty = {
   Easy: "Easy",
@@ -26,40 +22,17 @@ const UNIT = {
   MissileSilo: "Missile Silo",
   Port: "Port",
   Factory: "Factory",
-  TransportShip: "Transport Ship",
 };
-let boatIntent = null;
-let emitAllowed = true;
 const sandbox = {
   UNIT,
   Difficulty,
   PlayerType: { Bot: "Bot", Human: "Human", Nation: "Nation" },
   currentDifficulty: () => Difficulty.Impossible,
-  state: {
-    settings: { winFixes: true, features: { boat: true } },
-    earlyGame: {},
-    stats: {},
-  },
-  WORKER_TIMEOUT_MS: 1000,
-  withTimeout: (value) => Promise.resolve(value),
-  closestTwoTiles: () => ({ x: 1, y: 2 }),
-  getEventBus: () => null,
-  discoverCtors: () => ({ boat: {}, attack: {} }),
-  emitIntent: (_ctor, ...args) => {
-    if (!emitAllowed) return false;
-    boatIntent = args;
-    return true;
-  },
-  setLastAction: () => {},
-  tr: (value) => value,
+  state: { settings: { winFixes: true }, stats: {} },
 };
-vm.runInNewContext(
-  `${earlyGameSource}\n${source}\nglobalThis.AttackBehavior = AttackBehavior;`,
-  sandbox,
-  {
-    filename: sourcePath,
-  },
-);
+vm.runInNewContext(`${source}\nglobalThis.AttackBehavior = AttackBehavior;`, sandbox, {
+  filename: sourcePath,
+});
 
 assert.equal(typeof sandbox.calculateDefensePostAttackProfile, "function");
 assert.equal(typeof sandbox.AttackBehavior, "function");
@@ -114,11 +87,8 @@ const enemyPosts = [
 ];
 const enemy = {
   isPlayer: () => true,
-  type: () => "Bot",
   smallID: () => 2,
   troops: () => 100,
-  numTilesOwned: () => 10,
-  borderTiles: () => new Set([2]),
   units: () => {
     unitsCalls++;
     return enemyPosts;
@@ -136,11 +106,6 @@ const game = {
     defensePostRange: () => 30,
     defensePostDefenseBonus: () => 5,
     defensePostSpeedBonus: () => 3,
-    attackLogic: () => ({
-      attackerTroopLoss: 100,
-      defenderTroopLoss: 0,
-      tilesPerTickUsed: 1,
-    }),
   }),
   ownerID: (tile) => (tile === 2 ? 2 : tile === 3 ? 3 : 1),
   neighbors: (tile) => (tile === 1 ? [2, 3] : []),
@@ -172,433 +137,21 @@ assert.equal(behavior.attackIsTooWeakForDefensePosts(enemy, 999, cachedProfile),
 assert.equal(behavior.attackIsTooWeakForDefensePosts(enemy, 1000, cachedProfile), false);
 assert.equal(
   behavior.calculateBotAttackTroops(enemy, 500, cachedProfile),
-  101,
-  "a bot attack uses the simulated loss floor instead of a Defense Post troop multiplier",
+  0,
+  "a bot attack below the Defense Post-aware floor is skipped",
 );
 behavior.botAttackTroopsSent = 0;
 assert.equal(
   behavior.calculateBotAttackTroops(enemy, 1500, cachedProfile),
-  101,
-  "a sufficiently funded attack commits only the troops required by the simulation",
+  1500,
+  "a sufficiently funded attack commits the available troops",
 );
 behavior.botAttackTroopsSent = 0;
 assert.equal(
   behavior.calculateBotAttackTroops(enemy, 500, null),
-  101,
-  "the calculated requirement does not change into an arbitrary multiplier without coverage",
+  400,
+  "without coverage, the existing 4x bot attack rule is unchanged",
 );
-behavior.botAttackTroopsSent = 77;
-assert.equal(
-  behavior.calculateBotAttackTroops(enemy, 500, null, 50),
-  51,
-  "an existing attack is subtracted from the required capture force",
-);
-assert.equal(
-  behavior.botAttackTroopsSent,
-  77,
-  "troop accounting changes only after an intent is emitted",
-);
-
-const largeTribe = {
-  ...enemy,
-  smallID: () => 4,
-  troops: () => 5000,
-  numTilesOwned: () => 120,
-  units: () => [],
-};
-assert.equal(
-  behavior.getBotCaptureTroopsFloor(largeTribe),
-  2101,
-  "a tribe above the conquer threshold must be simulated across all required tiles",
-);
-assert.equal(
-  behavior.getBotCaptureTroopsFloor({ ...largeTribe, numTilesOwned: () => 700 }),
-  60101,
-  "a large but bounded frontier tribe must still receive an exact capture estimate",
-);
-assert.equal(
-  behavior.getBotCaptureTroopsFloor({ ...largeTribe, numTilesOwned: () => 3000 }),
-  Infinity,
-  "only tribes beyond the bounded exact-simulation window are deferred",
-);
-
-const boatConfig = {
-  isUnitDisabled: () => false,
-  maxTroops: () => 10000,
-  boatMaxNumber: () => 10,
-  attackLogic: () => ({
-    attackerTroopLoss: 100,
-    defenderTroopLoss: 0,
-    tilesPerTickUsed: 1,
-  }),
-};
-const boatGame = {
-  ticks: () => tick,
-  numLandTiles: () => 1000,
-  config: () => boatConfig,
-  ensureBorderTiles: () => Promise.resolve(),
-  owner: () => boatTribe,
-  neighbors: () => [],
-  ownerID: () => 1,
-  isLand: () => true,
-  isShore: () => true,
-};
-const boatPlayer = {
-  isPlayer: () => true,
-  type: () => "Human",
-  smallID: () => 1,
-  troops: () => 10000,
-  numTilesOwned: () => 1,
-  borderTiles: () => new Set([1]),
-  bestTransportShipSpawn: () => Promise.resolve(true),
-  sharesBorderWith: () => true,
-};
-const boatTribe = {
-  isPlayer: () => true,
-  type: () => "Bot",
-  smallID: () => 2,
-  id: () => "tribe-2",
-  troops: () => 1000,
-  numTilesOwned: () => 10,
-  units: () => [],
-  borderTiles: () => new Set([2]),
-};
-let activeBotAttack = false;
-let transportActive = false;
-const transportUnit = {
-  isActive: () => true,
-  id: () => 77,
-  targetTile: () => 2,
-  troops: () => 101,
-  transportShipState: () => ({ isRetreating: false }),
-};
-boatPlayer.units = () => (transportActive ? [transportUnit] : []);
-const activeBotAttackSnapshot = {
-  retreating: () => false,
-  target: () => boatTribe,
-  troops: () => 50,
-  id: () => "active-attack",
-};
-boatPlayer.outgoingAttacks = () => (activeBotAttack ? [activeBotAttackSnapshot] : []);
-const boatBehavior = new sandbox.AttackBehavior({}, boatGame, boatPlayer, 0.5, 0.3, 0.1, {}, {});
-assert.equal(
-  boatBehavior.getEarlyGameProbeTroops(0.01),
-  100,
-  "a boat probe must use the interface minimum of 1% without an absolute troop floor",
-);
-assert.equal(
-  boatBehavior.getEarlyGameFreeLandCommitTroops({
-    shouldAttackNow: false,
-    requiredTroops: 250,
-  }),
-  250,
-  "free land uses its exact calculated requirement when it is affordable",
-);
-assert.equal(
-  boatBehavior.getEarlyGameFreeLandCommitTroops({
-    shouldAttackNow: false,
-    requiredTroops: 10000,
-  }),
-  100,
-  "unaffordable free land falls back to the interface minimum probe",
-);
-const lowTroopPlayer = { ...boatPlayer, troops: () => 5000 };
-const lowTroopBehavior = new sandbox.AttackBehavior(
-  {},
-  boatGame,
-  lowTroopPlayer,
-  0.5,
-  0.3,
-  0.1,
-  {},
-  {},
-);
-boatIntent = null;
-assert.equal(
-  lowTroopBehavior.emitBoat(2, lowTroopBehavior.getEarlyGameProbeTroops(0.01), "test probe"),
-  true,
-);
-assert.deepEqual(
-  boatIntent,
-  [2, 50],
-  "a small early army must send 1% instead of being forced to 8000 troops",
-);
-assert.equal(await boatBehavior.sendBoatAttack(boatTribe, null, 50), true);
-assert.deepEqual(
-  boatIntent,
-  [2, 101],
-  "an undersized planned boat attack must be raised to the simulated tribe-capture force",
-);
-
-tick++;
-activeBotAttack = false;
-transportActive = true;
-boatIntent = null;
-assert.equal(
-  await boatBehavior.sendBoatAttack(boatTribe),
-  false,
-  "a complete boat invasion in transit must block a duplicate boat",
-);
-transportActive = false;
-
-tick++;
-boatIntent = null;
-const reserveBoatBehavior = new sandbox.AttackBehavior(
-  {},
-  boatGame,
-  boatPlayer,
-  0.5,
-  0.3,
-  0.1,
-  {},
-  {},
-);
-assert.equal(await reserveBoatBehavior.sendBoatAttack(boatTribe, null, 9000), true);
-assert.deepEqual(
-  boatIntent,
-  [2, 9000],
-  "a planned boat attack must preserve the early-game live reserve",
-);
-
-tick++;
-boatIntent = null;
-activeBotAttack = true;
-const landBehavior = new sandbox.AttackBehavior({}, boatGame, boatPlayer, 0.5, 0.3, 0.1, {}, {});
-assert.equal(await landBehavior.sendLandAttack(boatTribe, null, null, 50), true);
-assert.deepEqual(
-  boatIntent,
-  ["tribe-2", 51],
-  "an active land attack must be topped up only by its missing capture force",
-);
-assert.deepEqual(
-  [...landBehavior.getActiveBotAttackTargetKeys()],
-  ["smallID:2"],
-  "an active tribal attack locks its target for the next decision",
-);
-activeBotAttack = false;
-
-// The intent bus can accept an attack before the next player snapshot reflects
-// the outgoing attack/troop deduction. The local ledger must keep the first
-// tribal force active across that tick and reject a duplicate full capture.
-const pendingPlayer = {
-  ...boatPlayer,
-  troops: () => 10000,
-  outgoingAttacks: () => [],
-};
-const pendingBehavior = new sandbox.AttackBehavior(
-  {},
-  boatGame,
-  pendingPlayer,
-  0.5,
-  0.3,
-  0.1,
-  {},
-  {},
-);
-pendingBehavior.getBotCaptureTroopsFloor = () => 101;
-boatIntent = null;
-assert.equal(
-  pendingBehavior.sendLandAttack(boatTribe, null, null, 50),
-  true,
-  "the first tribal intent should be emitted",
-);
-assert.equal(
-  pendingBehavior.getEarlyGameSpendableTroops(),
-  10000 - sandbox.calculatePeakProductionReserveTroops({ maxTroops: 10000 }) - 101,
-  "pending troops are removed from the next decision budget while the snapshot is stale",
-);
-tick++;
-boatIntent = null;
-assert.equal(
-  pendingBehavior.sendLandAttack(boatTribe, null, null, 50),
-  false,
-  "a stale snapshot must not launch a duplicate tribal capture",
-);
-assert.equal(boatIntent, null);
-
-// The opening burst targets TerraNullius, so it is not represented in the Bot
-// target map. It must still consume the same global pending budget before a
-// large tribal capture is considered.
-const openingPlayer = {
-  ...boatPlayer,
-  troops: () => 10000,
-  outgoingAttacks: () => [],
-};
-const openingBehavior = new sandbox.AttackBehavior(
-  {},
-  boatGame,
-  openingPlayer,
-  0.5,
-  0.3,
-  0.1,
-  {},
-  {},
-);
-const terraNullius = { isPlayer: () => false };
-const largePendingTribe = { ...boatTribe, numTilesOwned: () => 150 };
-openingBehavior.getBotCaptureTroopsFloor = () => 6000;
-boatIntent = null;
-assert.equal(await openingBehavior.forceSendAttack(terraNullius, 0.6), true);
-assert.deepEqual(boatIntent, [null, 6000]);
-boatIntent = null;
-assert.equal(
-  openingBehavior.sendLandAttack(largePendingTribe, null, null, 6000),
-  false,
-  "the opening burst must reserve its troops before attempting a second tribal force",
-);
-assert.equal(boatIntent, null);
-
-const botA = {
-  isPlayer: () => true,
-  type: () => "Bot",
-  smallID: () => 3,
-  troops: () => 100,
-  numTilesOwned: () => 10,
-  units: () => [],
-};
-const botB = {
-  ...botA,
-  smallID: () => 4,
-};
-let botCaptureActive = false;
-const botPlayer = {
-  ...boatPlayer,
-  nearby: () => [],
-  isFriendly: () => false,
-  units: () => [],
-  outgoingAttacks: () =>
-    botCaptureActive
-      ? [
-          {
-            retreating: () => false,
-            target: () => botA,
-            troops: () => 100,
-          },
-        ]
-      : [],
-};
-const botBehavior = new sandbox.AttackBehavior({}, boatGame, botPlayer, 0.5, 0.3, 0.1, {}, {});
-botBehavior.getEnemyDefensePostAttackProfile = () => ({
-  attackCostMultiplier: 1,
-  speedMultiplier: 1,
-});
-const attemptedBots = [];
-botBehavior.sendAttack = async (target) => {
-  attemptedBots.push(target.smallID());
-  return true;
-};
-assert.equal(await botBehavior.attackBots([botA, botB]), true);
-assert.deepEqual(attemptedBots, [3], "one decision must commit at most one new tribal capture");
-
-botCaptureActive = true;
-attemptedBots.length = 0;
-botBehavior.sendAttack = async (target) => {
-  attemptedBots.push(target.smallID());
-  return false;
-};
-assert.equal(await botBehavior.attackBots([botA, botB]), false);
-assert.deepEqual(
-  attemptedBots,
-  [3],
-  "an active tribal capture must be topped up before another tribe is considered",
-);
-
-// Two individually affordable frontier tribes must not deadlock each other by
-// reserving both complete capture forces before the first attack is emitted.
-const continuationPlayer = {
-  ...boatPlayer,
-  troops: () => 10000,
-  nearby: () => [],
-  isFriendly: () => false,
-  outgoingAttacks: () => [],
-};
-const continuationBehavior = new sandbox.AttackBehavior(
-  {},
-  boatGame,
-  continuationPlayer,
-  0.5,
-  0.3,
-  0.1,
-  {},
-  {},
-);
-const continuationCandidates = [
-  { player: botA, id: 3 },
-  { player: botB, id: 4 },
-];
-continuationBehavior.getEarlyGameTribeCandidates = async () => continuationCandidates;
-continuationBehavior.getEarlyGameExpansionPlan = ({ target }) => {
-  const requiredTroops = target.smallID() === 3 ? 7000 : 6000;
-  return {
-    shouldAttackNow: true,
-    requiredTroops,
-    commitTroops: requiredTroops,
-    generationRatio: 0.9,
-    opportunityUrgency: 0,
-    terrainMagnitude: 10,
-    postCommitRecoveryTicks: 4,
-    nextDecisionTicks: 4,
-  };
-};
-let continuationTarget = null;
-continuationBehavior.sendAttack = async (target) => {
-  continuationTarget = target.smallID();
-  return true;
-};
-assert.equal(
-  await continuationBehavior.attackEarlyGameTribe(),
-  true,
-  "an affordable frontier tribe must be actuated even when another tribe also needs troops",
-);
-assert.equal(continuationTarget, 3);
-
-const incomingAttack = {
-  retreating: () => false,
-  attacker: () => boatTribe,
-  troops: () => 20,
-};
-const incomingPlayer = {
-  ...boatPlayer,
-  incomingAttacks: () => [incomingAttack],
-  outgoingAttacks: () => [activeBotAttackSnapshot],
-};
-const incomingBehavior = new sandbox.AttackBehavior(
-  {},
-  boatGame,
-  incomingPlayer,
-  0.5,
-  0.3,
-  0.1,
-  {},
-  {},
-);
-const incomingRequirement = incomingBehavior.getBotAttackRequirement(boatTribe, null, null, "land");
-assert.equal(
-  incomingRequirement.remaining,
-  71,
-  "a new land attack must include the tribe's incoming counterattack force",
-);
-
-const failedEmitBehavior = new sandbox.AttackBehavior(
-  {},
-  boatGame,
-  boatPlayer,
-  0.5,
-  0.3,
-  0.1,
-  {},
-  {},
-);
-tick++;
-emitAllowed = false;
-boatIntent = null;
-assert.equal(
-  await failedEmitBehavior.sendBoatAttack(boatTribe, null, 50),
-  false,
-  "a rejected intent must not count as an emitted tribal attack",
-);
-assert.equal(failedEmitBehavior.botAttackTroopsSent, 0);
-emitAllowed = true;
 
 tick++;
 behavior.getEnemyDefensePostAttackProfile(enemy);

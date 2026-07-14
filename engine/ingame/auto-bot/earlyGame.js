@@ -10,101 +10,10 @@
 
   // OpenFront advances one game tick every 100 ms, so 30 seconds is 300 ticks.
   const EARLY_GAME_MAX_BOAT_TICKS = 300;
-  // Team donations should not consume the opening expansion force while a nearby
-  // land or sea tribe can be reached within the requested 30 game ticks.
-  const AUTO_DONATE_EXPANSION_MAX_TICKS = 30;
   // Keep maritime targeting local to the opening frontier. This is the same
   // bounded radius used by the former open-ocean search; a distant coast must
   // not outrank an urgent nearby attack merely because it is finite.
   const EARLY_GAME_MAX_MARITIME_DISTANCE = 80;
-  // The troop curve used by Config.troopIncreaseRate peaks at roughly 42% of
-  // maxTroops. The opening policy uses that point as a target, but it does not
-  // wait for a large absolute maxTroops reserve while the empire is still tiny:
-  // expansion raises the cap and is the reason to spend the surplus now.
-  const EARLY_GAME_OPTIMAL_GENERATION_RATIO = 0.42;
-  const EARLY_GAME_MAX_RECOVERY_TICKS = 600;
-  const EARLY_GAME_MIN_DECISION_TICKS = 2;
-  const EARLY_GAME_MAX_DECISION_TICKS = 30;
-  const EARLY_GAME_TRIBE_CAPTURE_TILE_THRESHOLD = 99;
-  const EARLY_GAME_CAPTURE_SEARCH_STEPS = 24;
-  // A complete tribal capture is already sized from the live attack-loss
-  // simulation. Keep the same half-peak-production reserve used by the
-  // actuation layer; the normal 30-40% reserve is for generic nation attacks
-  // and can otherwise make a frontier tribe look unaffordable when it is not.
-  // Keep half of the maximum one-tick production peak as a live troop reserve.
-  // The peak occurs around 42% fill for the current 0.73 curve; this is a
-  // production-rate reserve, not 50% of the whole army and not an 8000 floor.
-  const EARLY_GAME_PEAK_PRODUCTION_RESERVE_FRACTION = 0.5;
-
-  function requiredTribeCaptureTiles(
-    targetTiles = 0,
-    expectedTiles = 1,
-    captureTiles = null,
-  ) {
-    const explicitTiles = Number(captureTiles);
-    if (Number.isFinite(explicitTiles) && explicitTiles > 0) {
-      return Math.max(1, Math.ceil(explicitTiles));
-    }
-    const ownedTiles = Number(targetTiles);
-    if (Number.isFinite(ownedTiles) && ownedTiles > 0) {
-      return Math.max(
-        1,
-        Math.ceil(ownedTiles) - EARLY_GAME_TRIBE_CAPTURE_TILE_THRESHOLD,
-      );
-    }
-    return Math.max(1, Math.ceil(Number(expectedTiles) || 1));
-  }
-
-  // Find the smallest attack force that survives a supplied sequence of
-  // attackLogic results. The live adapter supplies Config.attackLogic, so the
-  // caller can use the same terrain, fallout, Defense Post, traitor, and target
-  // size rules as AttackExecution instead of guessing with a troop multiplier.
-  // The fallback is intentionally caller-provided for older adapters that do not
-  // expose the engine formula.
-  function estimateTribeCaptureTroops({
-    targetTiles = 0,
-    expectedTiles = 1,
-    captureTiles = null,
-    simulateAttack = null,
-    fallbackTroops = 0,
-  } = {}) {
-    const tilesToCapture = requiredTribeCaptureTiles(
-      targetTiles,
-      expectedTiles,
-      captureTiles,
-    );
-    if (typeof simulateAttack === "function") {
-      let high = 1;
-      let canCapture = false;
-      for (let step = 0; step < EARLY_GAME_CAPTURE_SEARCH_STEPS; step += 1) {
-        if (simulateAttack(high, tilesToCapture) === true) {
-          canCapture = true;
-          break;
-        }
-        high *= 2;
-      }
-      if (canCapture) {
-        let low = 0;
-        for (let step = 0; step < EARLY_GAME_CAPTURE_SEARCH_STEPS; step += 1) {
-          const midpoint = (low + high) / 2;
-          if (simulateAttack(midpoint, tilesToCapture) === true) {
-            high = midpoint;
-          } else {
-            low = midpoint;
-          }
-        }
-        return Math.max(1, Math.ceil(high));
-      }
-
-      // A live attack-loss simulation is authoritative. If no force survives
-      // every required tile, do not fail open with a one-troop fallback: that
-      // creates an attack which can only leave a remnant and drain the reserve.
-      return Number.POSITIVE_INFINITY;
-    }
-
-    const fallback = Number(fallbackTroops);
-    return Math.max(1, Number.isFinite(fallback) ? Math.ceil(fallback) : 1);
-  }
 
   function isEarlyGameBoatEta(etaTicks) {
     return (
@@ -114,81 +23,10 @@
     );
   }
 
-  // Return the current reason the Auto-Bot troop donation should be paused.
-  // Land tribes are already in the local frontier. A sea tribe only qualifies
-  // when the transport pathfinder supplied an ETA in actual movement ticks;
-  // nearby/boat-candidate flags alone are not enough because water distance and
-  // transport movement speed can differ between adapters.
-  function getAutoDonateExpansionStatus(
-    earlyGame = {},
-    maxTicks = AUTO_DONATE_EXPANSION_MAX_TICKS,
-  ) {
-    const limit = Number.isFinite(Number(maxTicks))
-      ? Math.max(0, Number(maxTicks))
-      : AUTO_DONATE_EXPANSION_MAX_TICKS;
-    const inactive = { active: false, reason: null, maxTicks: limit };
-    if (!earlyGame || earlyGame.active !== true) return inactive;
-
-    if (earlyGame.hasFreeLand === true) {
-      return { active: true, reason: "free-land", maxTicks: limit };
-    }
-
-    const tribes = Array.isArray(earlyGame.actionableTribes)
-      ? earlyGame.actionableTribes
-      : [];
-    if (tribes.some((tribe) => tribe && tribe.landBorder === true)) {
-      return { active: true, reason: "land-tribe", maxTicks: limit };
-    }
-
-    const hasNearbySeaTribe = tribes.some((tribe) => {
-      if (!tribe || tribe.landBorder === true) return false;
-      const eta = Number(tribe.boatEtaTicks);
-      return Number.isFinite(eta) && eta >= 0 && eta <= limit;
-    });
-    if (hasNearbySeaTribe) {
-      return { active: true, reason: "sea-tribe", maxTicks: limit };
-    }
-
-    return inactive;
-  }
-
-  function normalizeTransportMovement(options = {}) {
-    const speed = Number(options.speed);
-    if (Number.isFinite(speed) && speed > 0) {
-      return { speed };
-    }
-    const ticksPerMove = Number(options.ticksPerMove);
-    if (Number.isFinite(ticksPerMove) && ticksPerMove > 0) {
-      return { ticksPerMove };
-    }
-    // Current OpenFront TransportShipExecution advances one path node per tick.
-    return { ticksPerMove: 1 };
-  }
-
-  function transportPathStepsToTicks(steps, movement = {}) {
-    const safeSteps = Math.max(0, Number(steps) || 0);
-    const normalized = normalizeTransportMovement(movement);
-    if (Number.isFinite(normalized.speed)) {
-      return Math.ceil(safeSteps / normalized.speed);
-    }
-    return Math.ceil(safeSteps * normalized.ticksPerMove);
-  }
-
-  function maxTransportPathSteps(maxTicks, movement = {}) {
-    const limit = Math.max(0, Number(maxTicks) || 0);
-    const normalized = normalizeTransportMovement(movement);
-    if (Number.isFinite(normalized.speed)) {
-      return Math.floor(limit * normalized.speed);
-    }
-    return Math.floor(limit / normalized.ticksPerMove);
-  }
-
   // Bounded shortest-path search over the full-resolution water graph exposed by
   // GameView. The source and destination are shore tiles; only water tiles may be
-  // traversed between them. The returned value is movement ticks, not raw water
-  // edges, so the caller can account for the transport's speed/ticks-per-move.
-  // Returning null is deliberately conservative when the route exceeds the
-  // requested window or the search budget.
+  // traversed between them. Returning null is deliberately conservative when the
+  // route exceeds the opening window or the search budget.
   function findWaterRouteTicks({
     start,
     goal,
@@ -196,8 +34,6 @@
     isWater,
     maxTicks = EARLY_GAME_MAX_BOAT_TICKS,
     maxVisited = 100000,
-    speed,
-    ticksPerMove,
   } = {}) {
     if (
       start == null ||
@@ -209,27 +45,19 @@
     }
     if (start === goal) return 0;
 
-    const limit = Number.isFinite(Number(maxTicks))
-      ? Math.max(0, Number(maxTicks))
-      : EARLY_GAME_MAX_BOAT_TICKS;
-    const movement = normalizeTransportMovement({ speed, ticksPerMove });
-    const maxPathSteps = maxTransportPathSteps(limit, movement);
     const queue = [start];
     const distances = new Map([[start, 0]]);
     for (let head = 0; head < queue.length; head++) {
       if (distances.size > maxVisited) return null;
       const current = queue[head];
       const currentDistance = distances.get(current);
-      if (currentDistance == null || currentDistance >= maxPathSteps) continue;
+      if (currentDistance == null || currentDistance >= maxTicks) continue;
 
       const nextDistance = currentDistance + 1;
       for (const next of neighbors(current) || []) {
         if (next !== goal && next !== start && !isWater(next)) continue;
         if (distances.has(next)) continue;
-        if (next === goal) {
-          const ticks = transportPathStepsToTicks(nextDistance, movement);
-          return ticks <= limit ? ticks : null;
-        }
+        if (next === goal) return nextDistance;
         distances.set(next, nextDistance);
         queue.push(next);
       }
@@ -239,22 +67,20 @@
 
   // Transport motion plans include their source tile, therefore movement time is
   // the number of edges, not the number of path entries.
-  function transportRouteTicks(path, movement = {}) {
+  function transportRouteTicks(path) {
     const route = path && path.fullPath ? path.fullPath : path;
     if (route == null || typeof route.length !== "number" || route.length === 0) {
       return null;
     }
     const length = Number(route.length);
-    return Number.isFinite(length)
-      ? transportPathStepsToTicks(Math.max(0, length - 1), movement)
-      : null;
+    return Number.isFinite(length) ? Math.max(0, length - 1) : null;
   }
 
   // Measure the shortest LAND distance from any tile on a tribe's border to a
   // navigable maritime coast. The predicate is supplied by the caller:
-  // The caller supplies the largest connected navigable-water component as the
-  // maritime predicate. Smaller isolated lakes/seas must not satisfy this
-  // objective, even when they are close or touch the map edge.
+  // `isOceanShore` covers open ocean and ocean-connected rivers, while the custom
+  // attack policy can also recognise a river that exits through the map edge.
+  // Closed inland lakes must not satisfy this objective.
   function findNearestMaritimeCoastDistance({
     starts,
     neighbors,
@@ -399,331 +225,6 @@
     return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : 0;
   }
 
-  // Mirrors Config.troopIncreaseRate for the Human-controlled custom bot. The
-  // caller may pass a multiplier for adapters/difficulties that apply a known
-  // modifier; the default is the live human curve (no Bot 0.5 modifier).
-  function calculateTroopGenerationRate({
-    troops = 0,
-    maxTroops = 1,
-    multiplier = 1,
-  } = {}) {
-    const maximum = Math.max(1, Number(maxTroops) || 0);
-    const current = Math.max(0, Math.min(maximum, Number(troops) || 0));
-    const safeMultiplier = Math.max(0, Number(multiplier) || 0);
-    const base = 10 + Math.pow(current, 0.73) / 4;
-    return Math.max(0, base * (1 - current / maximum) * safeMultiplier);
-  }
-
-  // A small deterministic scan is more robust than hard-coding 0.42 when a
-  // future upstream exponent changes. It is called once per early-game decision,
-  // not from a map-wide scoring loop.
-  function findOptimalGenerationRatio({
-    maxTroops = 100000,
-    exponent = 0.73,
-    steps = 1000,
-  } = {}) {
-    const maximum = Math.max(1, Number(maxTroops) || 100000);
-    const safeExponent = Number.isFinite(Number(exponent))
-      ? Math.max(0.1, Number(exponent))
-      : 0.73;
-    const safeSteps = Math.max(20, Math.min(400, Math.floor(Number(steps) || 100)));
-    let bestRatio = EARLY_GAME_OPTIMAL_GENERATION_RATIO;
-    let bestRate = -Infinity;
-    for (let index = 0; index <= safeSteps; index += 1) {
-      const ratio = index / safeSteps;
-      const troops = Math.max(1, ratio * maximum);
-      const rate = (10 + Math.pow(troops, safeExponent) / 4) * (1 - ratio);
-      if (rate > bestRate) {
-        bestRate = rate;
-        bestRatio = ratio;
-      }
-    }
-    return bestRatio;
-  }
-
-  // Return the troop reserve corresponding to a fraction of the maximum
-  // production peak. For a 100000 max army the current curve peaks at about
-  // 41.8% (349.63 troops/tick), so the default reserve is ceil(174.82) = 175.
-  function calculatePeakProductionReserveTroops({
-    maxTroops = 1,
-    multiplier = 1,
-    peakFraction = EARLY_GAME_PEAK_PRODUCTION_RESERVE_FRACTION,
-  } = {}) {
-    const maximum = Math.max(1, Number(maxTroops) || 0);
-    const safeMultiplier = Math.max(0, Number(multiplier) || 0);
-    const safePeakFraction = Math.max(0, Number(peakFraction) || 0);
-    const peakRatio = findOptimalGenerationRatio({
-      maxTroops: maximum,
-    });
-    const peakTroops = maximum * peakRatio;
-    const peakRate = calculateTroopGenerationRate({
-      troops: peakTroops,
-      maxTroops: maximum,
-      multiplier: safeMultiplier,
-    });
-    return Math.max(1, Math.ceil(peakRate * safePeakFraction));
-  }
-
-  function estimateTroopRecoveryTicks({
-    troops = 0,
-    maxTroops = 1,
-    targetTroops = 0,
-    multiplier = 1,
-    maxTicks = EARLY_GAME_MAX_RECOVERY_TICKS,
-  } = {}) {
-    const maximum = Math.max(1, Number(maxTroops) || 0);
-    let current = Math.max(0, Math.min(maximum, Number(troops) || 0));
-    const target = Math.max(0, Math.min(maximum, Number(targetTroops) || 0));
-    if (current >= target) return 0;
-    const limit = Math.max(1, Math.min(5000, Math.floor(Number(maxTicks) || 0)));
-    for (let tick = 1; tick <= limit; tick += 1) {
-      current = Math.min(
-        maximum,
-        current + calculateTroopGenerationRate({
-          troops: current,
-          maxTroops: maximum,
-          multiplier,
-        }),
-      );
-      if (current >= target) return tick;
-    }
-    return limit + 1;
-  }
-
-  // Config.attackLogic's terrain magnitudes are 80/100/120 for plains,
-  // highland, and mountain. Map magnitudes are 0..31, so preserve the same
-  // thresholds used by the spawn index and the upstream attack code.
-  function terrainAttackMagnitudeFromMapMagnitude(magnitude) {
-    const value = Number(magnitude);
-    if (!Number.isFinite(value)) return 100;
-    if (value < 10) return 80;
-    if (value < 20) return 100;
-    return 120;
-  }
-
-  function calculateEarlyGameExpansionPlan({
-    ownTroops = 0,
-    maxTroops = 1,
-    generationMultiplier = 1,
-    targetType = "land",
-    targetTroops = 0,
-    captureTroops = null,
-    targetDefenseMultiplier = 1,
-    terrainMagnitude = 100,
-    expectedTiles = 6,
-    baseReserveRatio = 0.3,
-    activeAttackTroops = 0,
-    urgent = false,
-    opportunityUrgency = 0,
-    contestPressure = 0,
-    competitorTroops = 0,
-    initialBurst = false,
-  } = {}) {
-    const maximum = Math.max(1, Number(maxTroops) || 0);
-    const own = Math.max(0, Math.min(maximum, Number(ownTroops) || 0));
-    const currentRatio = own / maximum;
-    const optimalRatio = findOptimalGenerationRatio({ maxTroops: maximum });
-    const safeBaseReserve = Math.max(
-      0.12,
-      Math.min(0.8, Number(baseReserveRatio) || 0.3),
-    );
-    const generationRate = calculateTroopGenerationRate({
-      troops: own,
-      maxTroops: maximum,
-      multiplier: generationMultiplier,
-    });
-    const generationCeiling = 10 + Math.pow(maximum, 0.73) / 4;
-    const generationEfficiency = finiteEarlyGameSignal(
-      generationRate / Math.max(1, generationCeiling),
-    );
-    const target = targetType === "tribe" ? "tribe" : "land";
-    const safeOpportunityUrgency = Math.max(
-      finiteEarlyGameSignal(opportunityUrgency),
-      urgent ? 1 : 0,
-    );
-    const defenseMultiplier = Math.max(
-      1,
-      Number(targetDefenseMultiplier) || 1,
-    );
-    const mapMagnitude = terrainAttackMagnitudeFromMapMagnitude(terrainMagnitude);
-    const terrainLossPerTile = (mapMagnitude / 5) * defenseMultiplier;
-    const tiles = Math.max(1, Number(expectedTiles) || 1);
-    const safeContestPressure = finiteEarlyGameSignal(contestPressure);
-    const rivalTroops = Math.max(0, Number(competitorTroops) || 0);
-    const exactCaptureTroops = Number(captureTroops);
-
-    const targetGenerationTroops = maximum * optimalRatio;
-    const belowGenerationTarget = own < targetGenerationTroops;
-    // When the empire is below its theoretical peak, holding maxTroops*0.42
-    // would freeze the opening for a long time. Keep a small live reserve and
-    // use the conquest itself to grow the cap; once the curve is reached, the
-    // normal generation target becomes the reserve floor.
-    const adaptiveReserveFraction = safeOpportunityUrgency >= 0.45
-      ? 0.12
-      : target === "tribe"
-        ? 0.24
-        : 0.18;
-    const reserveTroops = initialBurst
-      ? 0
-      : target === "tribe"
-        ? calculatePeakProductionReserveTroops({
-            maxTroops: maximum,
-            multiplier: generationMultiplier,
-          })
-        : belowGenerationTarget
-          ? own * adaptiveReserveFraction
-          : Math.max(own * safeBaseReserve, targetGenerationTroops);
-    const active = Math.max(0, Number(activeAttackTroops) || 0);
-    const availableTroops = Math.max(0, own - reserveTroops - active);
-
-    let requiredTroops = terrainLossPerTile * tiles * 1.35;
-    if (target === "tribe") {
-      if (Number.isFinite(exactCaptureTroops) && exactCaptureTroops > 0) {
-        requiredTroops = exactCaptureTroops;
-      } else {
-        // A tribe is an all-or-nothing target. Without an exact capture
-        // requirement, the planner has no safe basis for sending a partial
-        // force, so it must wait for the live attack simulation.
-        requiredTroops = Number.POSITIVE_INFINITY;
-      }
-      if (safeContestPressure > 0) {
-        const tribeTroops = Math.max(1, Number(targetTroops) || 0);
-        requiredTroops = Math.max(
-          requiredTroops,
-          tribeTroops + rivalTroops * (1.15 + safeContestPressure * 0.35),
-        );
-      }
-    }
-    requiredTroops = Math.max(1, requiredTroops);
-    const remainingRequiredTroops =
-      target === "tribe"
-        ? Number.isFinite(requiredTroops)
-          ? Math.max(0, requiredTroops - active)
-          : Number.POSITIVE_INFINITY
-        : requiredTroops;
-
-    const maxCommitFraction = initialBurst
-      ? 0.6
-      : target === "tribe"
-        ? safeOpportunityUrgency >= 0.45 || safeContestPressure >= 0.45
-          ? 0.78
-          : 0.68
-        : urgent
-          ? 0.75
-          : safeOpportunityUrgency >= 0.45
-            ? 0.72
-          : 0.6;
-    const plannedCommitCeiling = own * maxCommitFraction;
-    const minimumCommit =
-      target === "tribe" ? remainingRequiredTroops : plannedCommitCeiling;
-    let commitTroops = 0;
-    if (target === "tribe") {
-      if (initialBurst) {
-        // The opening burst is a single slot. Never add another burst while
-        // its troops are already in flight.
-        commitTroops = active > 0 ? 0 : Math.min(own, plannedCommitCeiling);
-      } else if (Number.isFinite(minimumCommit) && minimumCommit > 0) {
-        // For tribes the calculated requirement is the commitment. Do not
-        // replace it with a large percentage of the army; only top up what is
-        // missing from active attacks.
-        commitTroops = Math.min(availableTroops, minimumCommit);
-      }
-    } else {
-      commitTroops = initialBurst
-        ? Math.min(own, plannedCommitCeiling)
-        : Math.min(availableTroops, Math.max(plannedCommitCeiling, minimumCommit));
-    }
-    const hasFullTribeCommit =
-      target !== "tribe" ||
-      (Number.isFinite(requiredTroops) &&
-        active + commitTroops >= requiredTroops);
-    const hasRequiredCommit =
-      target === "tribe" ? hasFullTribeCommit : commitTroops >= requiredTroops;
-    const shouldAttackNow =
-      own >= 1 &&
-      (target === "tribe" || initialBurst || active <= 0) &&
-      (target !== "tribe" || remainingRequiredTroops > 0) &&
-      hasRequiredCommit;
-
-    const afterCommit = Math.max(0, own - commitTroops);
-    const recoveryTarget = Math.min(
-      maximum,
-      Math.max(
-        reserveTroops,
-        Math.min(
-          targetGenerationTroops,
-          afterCommit + Math.max(requiredTroops * 0.25, afterCommit * 0.08),
-        ),
-      ),
-    );
-    const recoveryTicks = estimateTroopRecoveryTicks({
-      troops: own,
-      maxTroops: maximum,
-      targetTroops: reserveTroops,
-      multiplier: generationMultiplier,
-    });
-    const postCommitRecoveryTicks = estimateTroopRecoveryTicks({
-      troops: afterCommit,
-      maxTroops: maximum,
-      targetTroops: recoveryTarget,
-      multiplier: generationMultiplier,
-    });
-    const nextDecisionTicks = shouldAttackNow
-      ? Math.max(
-          EARLY_GAME_MIN_DECISION_TICKS,
-          Math.min(
-            EARLY_GAME_MAX_DECISION_TICKS,
-            Math.round(8 - generationEfficiency * 5) +
-              (safeOpportunityUrgency >= 0.45 ? 0 : 1),
-          ),
-        )
-      : Math.max(
-          EARLY_GAME_MIN_DECISION_TICKS,
-          Math.min(
-            EARLY_GAME_MAX_DECISION_TICKS,
-            Math.max(4, recoveryTicks || postCommitRecoveryTicks || 4),
-          ),
-        );
-
-    return {
-      ownTroops: own,
-      maxTroops: maximum,
-      generationRate,
-      generationRatio: currentRatio,
-      generationEfficiency,
-      optimalGenerationRatio: optimalRatio,
-      targetGenerationTroops,
-      targetType: target,
-      targetTroops: Math.max(0, Number(targetTroops) || 0),
-      captureTroops:
-        Number.isFinite(exactCaptureTroops) && exactCaptureTroops > 0
-          ? Math.ceil(exactCaptureTroops)
-          : null,
-      defenseMultiplier,
-      terrainMagnitude: mapMagnitude,
-      terrainLossPerTile,
-      expectedTiles: tiles,
-      requiredTroops,
-      remainingRequiredTroops,
-      reserveTroops,
-      availableTroops,
-      activeAttackTroops: active,
-      activeAttack: active > 0,
-      maxCommitFraction,
-      commitTroops,
-      commitFraction: own > 0 ? commitTroops / own : 0,
-      shouldAttackNow,
-      recoveryTicks,
-      postCommitRecoveryTicks,
-      nextDecisionTicks,
-      urgent: Boolean(
-        safeOpportunityUrgency >= 0.45 || safeContestPressure >= 0.45,
-      ),
-      opportunityUrgency: safeOpportunityUrgency,
-      irreversibleOpportunity: safeOpportunityUrgency >= 0.45,
-    };
-  }
-
   // A tribe is more valuable when taking it opens a short chain of other tribes.
   // `futureFoodAccess` is supplied by AttackBehavior when it has geometry; the
   // count/distance fallback keeps this helper useful for deterministic tests and
@@ -851,29 +352,15 @@
       finiteEarlyGameSignal(candidate.encirclement),
       finiteEarlyGameSignal(candidate.blockValue),
     );
-    const expansionPlan = candidate.expansionPlan;
-    const captureReady = expansionPlan?.shouldAttackNow === true ? 1 : 0;
-    const opportunityUrgency = finiteEarlyGameSignal(
-      expansionPlan?.opportunityUrgency,
-    );
-    const captureEfficiency = expansionPlan
-      ? finiteEarlyGameSignal(
-          Number(expansionPlan.commitTroops) /
-            Math.max(1, Number(expansionPlan.requiredTroops)),
-        )
-      : 0;
     return [
       hasMaritimeAccess ? 1 : 0,
       hasMaritimeAccess ? -nearestMaritimeDistance : 0,
       hasImmediateRace ? 1 : 0,
-      captureReady,
-      opportunityUrgency,
       closureValue,
       finiteEarlyGameSignal(candidate.encirclement),
       finiteEarlyGameSignal(candidate.blockValue),
       calculateEarlyGameContinuationValue(candidate),
       foodRaceValue,
-      captureEfficiency,
       finiteEarlyGameSignal(candidate.cheapCapture),
       candidate.landBorder === true ? 1 : 0,
       Number.isFinite(distance) ? -distance : -Infinity,

@@ -133,36 +133,6 @@ assert.equal(speedSensitive[0].x, 300, "faster free-land expansion must extend t
 assert.equal(speedSensitive[0].tribeReachCount, 1);
 assert.equal(speedSensitive[0].freeLandScore, 1);
 
-const closedFrontierRef = 50 * width + 100;
-const openFrontierRef = 50 * width + 400;
-const closedFrontierWithNearbyTribe = loadScorer({
-  width,
-  height,
-  candidates: [
-    { ref: closedFrontierRef, x: 100, y: 50 },
-    { ref: openFrontierRef, x: 400, y: 50 },
-  ],
-  metrics: {
-    [closedFrontierRef]: {
-      frontierGain: 0,
-      frontierSlots: 0,
-      frontierValueGain: 0,
-    },
-    [openFrontierRef]: {
-      frontierGain: 10,
-      frontierSlots: 10,
-      frontierValueGain: 10000,
-    },
-  },
-  players: [makePlayer("BOT", 100, 50, 6)],
-});
-assert.equal(
-  closedFrontierWithNearbyTribe[0].x,
-  400,
-  "nearby tribes must not rescue a spawn with no free continuation frontier",
-);
-assert.equal(closedFrontierWithNearbyTribe[0].freeLandScore, 1);
-
 const clanOpenLandWidth = 600;
 const clanOpenLandHeight = 300;
 const clanOpenLandNearRef = 150 * clanOpenLandWidth + 149;
