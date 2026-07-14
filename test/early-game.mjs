@@ -17,6 +17,10 @@ const gameApiSource = fs.readFileSync(
   path.join(repoRoot, "engine/ingame/auto-bot/gameApi.js"),
   "utf8",
 );
+const nationExecutionSource = fs.readFileSync(
+  path.join(repoRoot, "engine/ingame/auto-bot/nationExecution.js"),
+  "utf8",
+);
 const buildSource = fs.readFileSync(path.join(repoRoot, "build.mjs"), "utf8");
 
 assert.equal(typeof sandbox.createEarlyGameSnapshot, "function");
@@ -32,6 +36,16 @@ assert.equal(typeof sandbox.rankEarlyGameTribeCandidates, "function");
 assert.equal(typeof sandbox.calculateEarlyGameContinuationValue, "function");
 assert.equal(typeof sandbox.calculateEarlyGameFoodRaceValue, "function");
 assert.equal(typeof sandbox.calculateEarlyGameRaceTroops, "function");
+assert.match(
+  nationExecutionSource,
+  /const openingAttackSent = await this\.attackBehavior\.forceSendAttack/,
+  "the opening burst must report whether an attack was actually emitted",
+);
+assert.match(
+  nationExecutionSource,
+  /this\.openingLandBurstPending = openingWinFix && !openingAttackSent/,
+  "a successful opening burst must suppress the immediate duplicate decision",
+);
 assert.equal(sandbox.isEarlyGameBoatEta(300), true);
 assert.equal(sandbox.isEarlyGameBoatEta(301), false);
 assert.equal(sandbox.isEarlyGameBoatEta(null), false);

@@ -23,6 +23,7 @@
       this.player = game.myPlayer();
       this.active = true;
       this.behaviorsInitialized = false;
+      this.openingLandBurstPending = false;
       this.spawnExecAdded = false;
       this.lastSpawnTile = null; // last emitted spawn tile (to re-emit on change)
       this.lastSpawnTopKey = null; // "x,y" of the #1 spot we last committed to
@@ -145,7 +146,30 @@
       if (!this.behaviorsInitialized) {
         this.initializeBehaviors();
         if (this.feat("expand")) {
-          await this.attackBehavior.forceSendAttack(this.mg.terraNullius());
+          const openingWinFix = state.settings.winFixes === true;
+          const openingAttackSent = await this.attackBehavior.forceSendAttack(
+            this.mg.terraNullius(),
+          );
+          // A successful opening burst already occupies this decision slot.
+          // Retry only when it was not emitted; never run a second decision
+          // against the same stale troop snapshot.
+          this.openingLandBurstPending = openingWinFix && !openingAttackSent;
+        }
+        this.lastSeenTick = ticks;
+        return;
+      }
+
+      if (
+        this.openingLandBurstPending &&
+        state.settings.winFixes &&
+        (this.feat("expand") || this.feat("boat"))
+      ) {
+        this.openingLandBurstPending = false;
+        this.status = tr("Thinking…");
+        try {
+          await this.attackBehavior.maybeAttack();
+        } catch (e) {
+          console.error("[AutoBot] opening expansion retry error:", e);
         }
         this.lastSeenTick = ticks;
         return;
