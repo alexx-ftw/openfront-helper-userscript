@@ -2,7 +2,9 @@
 // Settings-driven: reads thresholds, percentages, and target player names from
 // Quick Panel settings cache. Runs on the shared helper tick (1s interval).
 //
-// Troop logic:  if currentTroops > maxTroops * (keepPct/100) → donate (currentTroops * donatePct/100)
+// Troop logic:  if currentTroops > maxTroops * (keepPct/100) → donate a
+// percentage of current troops, capped so we retain at least half the largest
+// live enemy army sharing our border.
 // Gold logic:   if currentGold > maxGoldThreshold → donate (currentGold * donatePct/100)
 //
 // Target matching: comma-separated player names (case-insensitive, includes clan tags).
@@ -11,6 +13,7 @@
 
   var _lastDonateTroopsMs = 0;
   var _lastDonateGoldMs = 0;
+  var _troopDonationInFlight = false;
   var DONATE_COOLDOWN_MS = 3000;
 
   function _cfg(key, fallback) {
@@ -59,6 +62,17 @@
     } catch (e) { return false; }
   }
 
+  function _getPlayerViews(game) {
+    try {
+      if (typeof getCachedPlayerViews === "function") return getCachedPlayerViews(game) || [];
+      if (game && typeof game.playerViews === "function") return Array.from(game.playerViews() || []);
+      // Keep compatibility with older game handles used by the helper tests and
+      // older OpenFront builds.
+      if (game && typeof game.players === "function") return game.players() || [];
+    } catch (e) {}
+    return null;
+  }
+
   function _troopPercentage(player, game) {
     try {
       var troops = Number(player.troops ? player.troops() : 0);
@@ -74,7 +88,7 @@
     var matches = [];
     if (!game || !me || targetNames.length === 0) return matches;
     try {
-      var players = typeof game.players === "function" ? game.players() : [];
+      var players = _getPlayerViews(game) || [];
       for (var i = 0; i < players.length; i++) {
         var p = players[i];
         if (!p) continue;
@@ -93,6 +107,93 @@
     return matches;
   }
 
+  function _isFriendly(me, player) {
+    try {
+      if (typeof me.isFriendly === "function") return Boolean(me.isFriendly(player));
+    } catch (e) {}
+    try {
+      if (player && typeof player.isFriendly === "function") return Boolean(player.isFriendly(me));
+    } catch (e) {}
+    return null;
+  }
+
+  async function _getPlayerBorderTiles(player) {
+    if (!player || typeof player.borderTiles !== "function") return null;
+    try {
+      var result = await player.borderTiles();
+      var tiles = result && result.borderTiles ? result.borderTiles : result;
+      if (!tiles || typeof tiles[Symbol.iterator] !== "function") return null;
+      return Array.from(tiles);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Return null when the live game does not expose enough map/border data to
+  // enforce the reserve. The troop donation then fails closed.
+  async function _getStrongestBorderOpponentTroops(game, me) {
+    if (
+      !game ||
+      !me ||
+      typeof me.borderTiles !== "function" ||
+      typeof game.neighbors !== "function" ||
+      typeof game.isLand !== "function" ||
+      typeof game.hasOwner !== "function" ||
+      typeof game.owner !== "function"
+    ) {
+      return null;
+    }
+
+    try {
+      var borderTiles = await _getPlayerBorderTiles(me);
+      if (!borderTiles) return null;
+      var mySid = typeof me.smallID === "function" ? me.smallID() : null;
+      if (mySid === null) return null;
+
+      var borderingOpponentIds = new Set();
+      for (var i = 0; i < borderTiles.length; i++) {
+        var neighbors = game.neighbors(borderTiles[i]) || [];
+        for (var j = 0; j < neighbors.length; j++) {
+          var neighbor = neighbors[j];
+          if (!game.isLand(neighbor) || !game.hasOwner(neighbor)) continue;
+          var owner = game.owner(neighbor);
+          var ownerSid = owner && typeof owner.smallID === "function" ? owner.smallID() : null;
+          if (ownerSid !== null && ownerSid !== mySid) borderingOpponentIds.add(ownerSid);
+        }
+      }
+
+      var players = _getPlayerViews(game);
+      if (!players) return null;
+      var hasMe = false;
+      for (var m = 0; m < players.length; m++) {
+        if (players[m] && typeof players[m].smallID === "function" && players[m].smallID() === mySid) {
+          hasMe = true;
+          break;
+        }
+      }
+      if (!hasMe) return null;
+      var strongest = 0;
+      for (var k = 0; k < players.length; k++) {
+        var player = players[k];
+        if (!player || player === me) continue;
+
+        var playerSid = typeof player.smallID === "function" ? player.smallID() : null;
+        if (playerSid === null || !borderingOpponentIds.has(playerSid)) continue;
+        if (!player.isAlive || !player.isAlive()) continue;
+
+        var friendly = _isFriendly(me, player);
+        if (friendly === null) return null;
+        if (friendly) continue;
+
+        var troops = Number(typeof player.troops === "function" ? player.troops() : 0);
+        if (Number.isFinite(troops) && troops > strongest) strongest = troops;
+      }
+      return strongest;
+    } catch (e) {
+      return null;
+    }
+  }
+
   function _formatGold(n) {
     if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
     if (n >= 1000) return (n / 1000).toFixed(1) + "K";
@@ -101,9 +202,10 @@
 
   // ---- Auto-donate troops ----
 
-  function tickDonateTroops() {
+  async function tickDonateTroops() {
     var enabled = _cfg("autoDonateEnabled", false);
     if (!enabled) return;
+    if (_troopDonationInFlight) return;
 
     var now = Date.now();
     if (now - _lastDonateTroopsMs < DONATE_COOLDOWN_MS) return;
@@ -155,15 +257,40 @@
     }
     if (!best) return;
 
-    // Send donate packet
-    var recipientId = best.id ? best.id() : (best.smallID ? best.smallID() : null);
-    if (recipientId == null) return;
+    _troopDonationInFlight = true;
     try {
+      var strongestBorderOpponentTroops = await _getStrongestBorderOpponentTroops(game, me);
+      if (strongestBorderOpponentTroops === null) return;
+
+      // Re-read after the async border lookup so the reserve is based on the
+      // troops available at the moment the packet is emitted.
+      currentTroops = Number(me.troops ? me.troops() : 0);
+      if (!Number.isFinite(currentTroops)) return;
+      keepAmount = maxTroops * (keepPct / 100);
+      if (currentTroops <= keepAmount) return;
+
+      donateAmount = Math.floor(currentTroops * (donatePct / 100));
+      if (donateAmount <= 0) return;
+
+      // Keep at least half of the strongest live enemy army on a shared border.
+      // Use the fractional half before flooring so odd troop counts still round
+      // toward the safer reserve.
+      var maxSafeDonation = Math.floor(currentTroops - strongestBorderOpponentTroops / 2);
+      if (maxSafeDonation <= 0) return;
+      donateAmount = Math.min(donateAmount, maxSafeDonation);
+      if (donateAmount <= 0) return;
+
+      // Send donate packet
+      var recipientId = best.id ? best.id() : (best.smallID ? best.smallID() : null);
+      if (recipientId == null) return;
       sendGamePacket({ type: "donate_troops", recipient: recipientId, troops: donateAmount });
       _lastDonateTroopsMs = now;
       var name = (typeof getPlayerDisplayName === "function") ? getPlayerDisplayName(best) : "ally";
       console.log("[AutoDonate] troops", donateAmount, "→", name);
     } catch (e) {}
+    finally {
+      _troopDonationInFlight = false;
+    }
   }
 
   // ---- Auto-donate gold ----
@@ -225,8 +352,15 @@
   // ---- Global tick entry point ----
 
   window.__OFH_tickAutoDonate = function() {
-    try { tickDonateTroops(); } catch (e) {}
+    var troopDonation = null;
+    try {
+      troopDonation = tickDonateTroops();
+      if (troopDonation && typeof troopDonation.catch === "function") {
+        troopDonation = troopDonation.catch(function() {});
+      }
+    } catch (e) {}
     try { tickDonateGold(); } catch (e) {}
+    return troopDonation;
   };
 
 })();

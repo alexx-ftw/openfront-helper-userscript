@@ -119,6 +119,8 @@ Toggle each overlay independently from the **Helpers** tab. All panels are dragg
 
 **Auto Leave on Win** — automatically leaves the match when a win modal appears, pairs naturally with "keep searching" to chain games continuously.
 
+**Auto Donate Troops** — sends troops to named allies in combat while preserving the configured reserve; when an enemy shares your border, the donation is additionally capped so you retain at least half of that enemy's current army, using the strongest bordering opponent as the reference.
+
 ---
 
 ### Auto-Bot
