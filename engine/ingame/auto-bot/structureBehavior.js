@@ -6838,7 +6838,12 @@
       const weightByLevel = isAtLeastHardDifficulty(difficulty);
 
       const protectEntries = [];
-      for (const unit of player.units()) {
+      for (const unit of player.units(
+        UNIT.City,
+        UNIT.Factory,
+        UNIT.MissileSilo,
+        UNIT.Port,
+      )) {
         switch (unit.type()) {
           case UNIT.City:
           case UNIT.Factory:

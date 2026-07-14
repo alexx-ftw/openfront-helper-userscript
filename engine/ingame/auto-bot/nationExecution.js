@@ -30,6 +30,7 @@
       this.lastSpawnPickTick = null; // throttle re-evaluation during spawn phase
       this.status = "";
       this.lastSeenTick = -1;
+      this.lastProcessedGameTick = null;
       this.embargoMalusApplied = new Set(); // smallIDs we've applied embargo malus to
 
       // Seed exactly like src (NationExecution.ts:54): simpleHash(playerId)+gameID.
@@ -71,6 +72,20 @@
     async tick(ticks) {
       this.player = this.mg.myPlayer();
       const me = this.player;
+
+      // The engine timer is a real-time poll, not a game-tick callback. A slow
+      // worker response or browser timer jitter can therefore call us twice for
+      // the same authoritative snapshot. Nothing in the strategy can change
+      // until the game advances, so skip the complete naval/behavior chain and
+      // its global unit scans on duplicate polls.
+      if (
+        ticks !== null &&
+        ticks !== undefined &&
+        this.lastProcessedGameTick === ticks
+      ) {
+        return;
+      }
+      this.lastProcessedGameTick = ticks;
 
       // ── ship tracking — NationExecution.ts:90-101 (every tick, non-Easy, Port) ─
       if (

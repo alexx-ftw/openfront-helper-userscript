@@ -67,6 +67,15 @@
     let lastSnapshotTick = -1;
     const transportSpawnCache = new Map(); // target TileRef -> spawn TileRef|false
     const transportRouteCache = new Map(); // target TileRef -> ticks|null
+    // GameView.units() materializes a fresh snapshot on every call. Several
+    // behaviors inspect the same unit families during one bot tick, so keep
+    // the wrapped arrays shared until the game advances. This removes repeated
+    // worker/view traversal and wrapper allocation without carrying state across
+    // authoritative game ticks.
+    let unitSnapshotTick = null;
+    const unitSnapshotCache = new Map();
+    let playerSnapshotTick = null;
+    let playerSnapshot = null;
     // Prefer an upstream exact hook when one exists. The current GameView has no
     // route worker message, so the local full-resolution water graph is the fallback.
     // DIVERGENCE: this fallback measures shortest full-resolution water distance;
@@ -82,6 +91,31 @@
       typeof src.transportRouteTicks === "function" || hasLocalTransportRouteEstimator;
 
     const unwrap = (p) => (p && p.__src ? p.__src : p);
+
+    function unitTypeKey(types) {
+      return types.map((type) => String(type)).sort().join("\u0001");
+    }
+
+    function cachedUnits(owner, ownerKey, types) {
+      const tick = typeof src.ticks === "function" ? src.ticks() : null;
+      if (tick === null || tick === undefined) {
+        return owner.units(...types).map(wrapUnit);
+      }
+
+      if (unitSnapshotTick !== tick) {
+        unitSnapshotTick = tick;
+        unitSnapshotCache.clear();
+      }
+
+      const key = `${String(ownerKey)}\u0002${unitTypeKey(types)}`;
+      if (unitSnapshotCache.has(key)) {
+        return unitSnapshotCache.get(key);
+      }
+
+      const units = owner.units(...types).map(wrapUnit);
+      unitSnapshotCache.set(key, units);
+      return units;
+    }
 
     function normalizeTransportRouteResult(result) {
       if (Number.isFinite(result)) return Math.max(0, Number(result));
@@ -263,12 +297,24 @@
         w.__src = core; // refresh underlying view (it may be a fresh object)
         return w;
       }
-      w = makePlayer(core);
+      w = makePlayer(core, sid);
       playerCache.set(sid, w);
       return w;
     }
 
-    function makePlayer(core) {
+    function cachedPlayers() {
+      const tick = typeof src.ticks === "function" ? src.ticks() : null;
+      if (tick === null || tick === undefined) {
+        return src.players().map(wrapPlayer);
+      }
+      if (playerSnapshotTick !== tick || playerSnapshot === null) {
+        playerSnapshotTick = tick;
+        playerSnapshot = src.players().map(wrapPlayer);
+      }
+      return playerSnapshot;
+    }
+
+    function makePlayer(core, sid) {
       const pass = (name, dflt) => (...a) =>
         typeof core[name] === "function"
           ? core[name](...a.map((x) => (x && x.__src ? x.__src : x)))
@@ -294,17 +340,20 @@
         betrayals: pass("betrayals", 0),
         getTraitorRemainingTicks: pass("getTraitorRemainingTicks", 0),
 
-        units: (...types) => core.units(...types).map(wrapUnit),
-        unitCount: (type) => core.units(type).length,
+        units: (...types) => cachedUnits(core, `player:${sid}`, types),
+        unitCount: (type) => cachedUnits(core, `player:${sid}`, [type]).length,
         // unitsOwned/unitsConstructed — core semantics: built (not under
         // construction) units of a type.
         unitsOwned: (type) =>
-          core.units(type).filter((u) => !(u.isUnderConstruction?.() ?? false)).length,
+          cachedUnits(core, `player:${sid}`, [type]).filter(
+            (u) => !(u.isUnderConstruction?.() ?? false),
+          ).length,
         unitsConstructed: (type) =>
-          core.units(type).some((u) => !(u.isUnderConstruction?.() ?? false)),
+          cachedUnits(core, `player:${sid}`, [type]).some(
+            (u) => !(u.isUnderConstruction?.() ?? false),
+          ),
         totalUnitLevels: (type) =>
-          core
-            .units(type)
+          cachedUnits(core, `player:${sid}`, [type])
             .filter((u) => !(u.isUnderConstruction?.() ?? false))
             .reduce((acc, u) => acc + (u.level?.() ?? 1), 0),
 
@@ -709,8 +758,8 @@
       motionPlans: () =>
         typeof src.motionPlans === "function" ? src.motionPlans() : null,
       myPlayer: () => mePlayer,
-      players: () => src.players().map(wrapPlayer),
-      playerViews: () => src.players().map(wrapPlayer),
+      players: () => cachedPlayers(),
+      playerViews: () => cachedPlayers(),
       playerBySmallID: (sid) => wrapPlayer(src.playerBySmallID(sid)),
       nations: () =>
         (src.nations ? src.nations() : src.players().filter((p) => p.type?.() === "Nation")).map(
@@ -728,8 +777,8 @@
       numTilesWithFallout: () =>
         typeof src.numTilesWithFallout === "function" ? src.numTilesWithFallout() : 0,
       getWinner: () => (typeof src.getWinner === "function" ? src.getWinner() : null),
-      units: (...types) => src.units(...types).map(wrapUnit),
-      unitCount: (type) => src.units(type).length,
+      units: (...types) => cachedUnits(src, "game", types),
+      unitCount: (type) => cachedUnits(src, "game", [type]).length,
       // GameMap surface (sync passthrough)
       ref: mapM("ref"),
       x: mapM("x"),
@@ -841,8 +890,10 @@
     async function beginTick(meCorePlayer) {
       mePlayer = wrapPlayer(meCorePlayer);
       const tick = src.ticks();
-      transportSpawnCache.clear();
-      transportRouteCache.clear();
+      if (tick !== lastSnapshotTick) {
+        transportSpawnCache.clear();
+        transportRouteCache.clear();
+      }
 
       // decay overlay 0.05/tick toward 0 (PlayerImpl.decayRelations) — once per
       // game tick crossed.

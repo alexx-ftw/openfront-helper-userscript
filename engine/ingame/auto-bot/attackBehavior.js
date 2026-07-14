@@ -56,6 +56,14 @@
     UNIT.Port,
     UNIT.Factory,
   ]);
+  const AttackStructureTypes = [
+    UNIT.City,
+    UNIT.DefensePost,
+    UNIT.SAMLauncher,
+    UNIT.MissileSilo,
+    UNIT.Port,
+    UNIT.Factory,
+  ];
 
   // HumansVsNations — src/core/game/Game.ts:81 (`"Humans Vs Nations"`).
   const HumansVsNations = "Humans Vs Nations";
@@ -3003,7 +3011,7 @@
             n.isPlayer() &&
             n.type() === PlayerType.Bot &&
             !this.player.isFriendly(n) &&
-            n.units().some((u) => AttackStructures.has(u.type())),
+            n.units(...AttackStructureTypes).some((u) => AttackStructures.has(u.type())),
         );
     }
 
@@ -3089,7 +3097,7 @@
 
       const density = (p) => p.troops() / p.numTilesOwned();
       const ownsStructures = (p) =>
-        p.units().some((u) => AttackStructures.has(u.type()));
+        p.units(...AttackStructureTypes).some((u) => AttackStructures.has(u.type()));
       const attackDifficultyDensity = (p) => {
         const profile = this.getEnemyDefensePostAttackProfile(p);
         return (
@@ -3674,7 +3682,7 @@
       const botWithStructures =
         target.isPlayer() &&
         target.type() === PlayerType.Bot &&
-        target.units().some((u) => AttackStructures.has(u.type()));
+        target.units(...AttackStructureTypes).some((u) => AttackStructures.has(u.type()));
       // Use the expand ratio when attacking a bot that owns structures — we need to
       // recapture those structures ASAP, even before reaching the normal reserve.
       const useReserve = target.isPlayer() && !botWithStructures;
