@@ -479,6 +479,23 @@
       return id == null ? null : String(id);
     }
 
+    getActiveTribeAttackTargetKeys() {
+      this.reconcileOutboundAttackIntentCommitments();
+      const targetKeys = new Set();
+
+      for (const entry of this.botAttackPendingIntentCommitments) {
+        if (!entry?.targetIsPlayer || entry.targetKey == null) continue;
+        targetKeys.add(String(entry.targetKey));
+      }
+
+      for (const entry of this.getOutboundAttackSnapshot()) {
+        if (!entry.targetIsPlayer || entry.targetKey == null) continue;
+        targetKeys.add(String(entry.targetKey));
+      }
+
+      return targetKeys;
+    }
+
     getOutboundAttackSnapshot() {
       let outgoing = [];
       try {
@@ -1415,13 +1432,18 @@
       }
     }
 
-    // Rank and eat one tribe during Early Game. This is a win-fix policy layer,
-    // not a replacement for the faithful attack strategy order below. A failed
-    // boat/land actuation simply lets the caller continue with its normal pass.
+    // Rank and eat several tribes during Early Game. This is a win-fix policy
+    // layer, not a replacement for the faithful attack strategy order below.
+    // Each successful capture reserves its own intent budget, so different
+    // tribes can be invaded in the same decision without duplicating troops.
     async attackEarlyGameTribe() {
       const candidates = await this.getEarlyGameTribeCandidates();
       if (candidates.length === 0) return false;
 
+      this.botAttackTroopsSent = 0;
+      const selectedTargetKeys = this.getActiveTribeAttackTargetKeys();
+      const maxParallelAttacks = Math.max(1, this.getBotAttackMaxParallelism());
+      let launchedAttacks = 0;
       const ranked = rankEarlyGameTribeCandidates(candidates);
       const diagnosticTargets = ranked.map((candidate) => ({
         id: candidate.id,
@@ -1454,15 +1476,29 @@
       }
 
       for (const candidate of ranked) {
+        if (launchedAttacks >= maxParallelAttacks) break;
+        const targetKey = this.getOutboundAttackTargetKey(candidate.player);
+        if (selectedTargetKeys.has(targetKey)) continue;
+
         try {
-          if (await this.sendAttack(candidate.player, false, null, candidate)) {
-            return true;
+          if (
+            await this.sendAttack(
+              candidate.player,
+              false,
+              null,
+              candidate,
+              false,
+              true,
+            )
+          ) {
+            selectedTargetKeys.add(targetKey);
+            launchedAttacks++;
           }
         } catch (error) {
           console.warn("[EarlyGame] tribe target failed:", candidate.id, error);
         }
       }
-      return false;
+      return launchedAttacks > 0;
     }
 
     // OpenFront marks the largest/open water body with `isOcean`, and that bit
@@ -3312,11 +3348,11 @@
       return null;
     }
 
-    // Sort neighboring bots by density (troops / tiles) and attempt to attack many of them (Parallel attacks)
-    // sendAttack will do nothing if we don't have enough reserve troops left
-    // Bots that own structures are prioritized as targets (they might have stolen our structures and they will delete them!)
-    // attackBots — AiAttackBehavior (private, now async: awaits sendAttack
-    // sequentially so botAttackTroopsSent accumulates before the `> 0` return).
+    // Sort neighboring bots by density (troops / tiles) and attack several of
+    // them when the configured parallelism allows it. Pending intents already
+    // consume the shared troop budget, so each new target gets the remainder.
+    // Bots that own structures are prioritized as targets (they might have stolen our structures and they will delete them!).
+    // attackBots — AiAttackBehavior (private, now async).
     async attackBots() {
       const bots = this.player
         .nearby()
@@ -3355,15 +3391,23 @@
         }
         return attackDifficultyDensity(a) - attackDifficultyDensity(b);
       });
-      const reducedBots = sortedBots.slice(0, this.getBotAttackMaxParallelism());
+      const selectedTargetKeys = this.getActiveTribeAttackTargetKeys();
+      const reducedBots = sortedBots
+        .filter(
+          (bot) =>
+            !selectedTargetKeys.has(this.getOutboundAttackTargetKey(bot)),
+        )
+        .slice(0, this.getBotAttackMaxParallelism());
 
+      let launchedAttacks = 0;
       for (const bot of reducedBots) {
-        await this.sendAttack(bot);
+        if (await this.sendAttack(bot, false, null, null, false, true)) {
+          selectedTargetKeys.add(this.getOutboundAttackTargetKey(bot));
+          launchedAttacks++;
+        }
       }
 
-      // Only short-circuit the rest of the targeting pipeline if we actually
-      // allocated some troops to bot attacks.
-      return this.botAttackTroopsSent > 0;
+      return launchedAttacks > 0;
     }
 
     // getBotAttackMaxParallelism — AiAttackBehavior (private).
@@ -3790,17 +3834,25 @@
       minCommitFraction = null,
       earlyGameCandidate = null,
       radioactiveTerraNullius = false,
+      parallelTribeAttack = false,
     ) {
       if (!force && !this.shouldAttack(target)) return false;
+
+      const isParallelTribeAttack =
+        parallelTribeAttack === true &&
+        target?.isPlayer?.() === true &&
+        target.type?.() === PlayerType.Bot;
 
       // Do not start another ordinary expansion while the previous command is
       // still only a local intent. Its troop deduction may not be present in
       // the client snapshot yet; waiting for reconciliation keeps free-land,
-      // tribe and boat branches from racing the same army. Forced retaliation
-      // still gets a chance, but its final amount is clamped by the same budget.
+      // boat and ordinary tribe branches from racing the same army. A bounded
+      // parallel tribal batch is the one intentional exception: each target
+      // gets a different commitment and the final troop budget still clamps it.
       if (
         state.settings.winFixes &&
         !force &&
+        !isParallelTribeAttack &&
         this.botAttackPendingIntentCommitments.length > 0
       ) {
         return false;
@@ -3813,6 +3865,7 @@
             minCommitFraction,
             earlyGameCandidate,
             radioactiveTerraNullius,
+            isParallelTribeAttack,
           );
         } else {
           return await this.sendBoatAttack(target, earlyGameCandidate);
@@ -3985,6 +4038,7 @@
       minCommitFraction = null,
       earlyGameCandidate = null,
       radioactiveTerraNullius = false,
+      parallelTribeAttack = false,
     ) {
       this.reconcileOutboundAttackIntentCommitments();
       const maxTroops = this.game.config().maxTroops(this.player);
@@ -4001,6 +4055,8 @@
         target.units(...AttackStructureTypes).some((u) => AttackStructures.has(u.type()));
       const isTribeTarget =
         target.isPlayer() && target.type() === PlayerType.Bot;
+      const usesPendingIntentBudget =
+        parallelTribeAttack === true && isTribeTarget;
       // Use the expand ratio when attacking a bot that owns structures — we need to
       // recapture those structures ASAP, even before reaching the normal reserve.
       const useReserve = target.isPlayer() && !botWithStructures;
@@ -4024,11 +4080,15 @@
       const botAttackTroopsSentBefore = this.botAttackTroopsSent;
       if (isTribeTarget && this.player.type() !== PlayerType.Bot) {
         // A tribe attack is only useful if it can finish the capture. Account for
-        // both pending outbound intents and other tribe attacks already reserved
-        // during this decision before asking the combat policy for its force.
+        // pending outbound intents. Parallel tribal batches already have their
+        // previous attacks in that pending budget, so do not subtract the local
+        // counter a second time.
+        const localTribeTroopsSent = usesPendingIntentBudget
+          ? 0
+          : this.botAttackTroopsSent;
         const availableForTribe = Math.max(
           0,
-          targetSpendableTroops - this.botAttackTroopsSent,
+          targetSpendableTroops - localTribeTroopsSent,
         );
         troops = this.calculateBotAttackTroops(
           target,
@@ -4048,7 +4108,9 @@
       troops = this.applyEarlyGameRaceTroops({
         target,
         baseTroops,
-        reserveTroops: targetTroops + botAttackTroopsSentBefore,
+        reserveTroops:
+          targetTroops +
+          (usesPendingIntentBudget ? 0 : botAttackTroopsSentBefore),
         earlyGameCandidate,
       });
       if (troops > baseTroops && target.type?.() === PlayerType.Bot) {

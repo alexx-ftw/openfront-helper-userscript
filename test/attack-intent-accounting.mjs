@@ -376,6 +376,132 @@ assert.equal(
   "deferring an underfunded tribe assault emits no partial attack",
 );
 sandbox.currentDifficulty = () => "Impossible";
+
+// Different tribes may be launched in the same decision. The ordinary intent
+// guard still blocks a second unqualified attack, while the explicit parallel
+// tribal path reuses the pending intent as the next attack's budget.
+const parallelMe = {
+  ...me,
+  sharesBorderWith: () => true,
+};
+const parallelTribeA = {
+  ...tribeTarget,
+  id: () => "tribe-parallel-a",
+  smallID: () => 21,
+  troops: () => 1000,
+};
+const parallelTribeB = {
+  ...tribeTarget,
+  id: () => "tribe-parallel-b",
+  smallID: () => 22,
+  troops: () => 1000,
+};
+const parallelBehavior = new sandbox.AttackBehavior({}, game, parallelMe, 0.5, 0.3, 0.1, {}, {});
+parallelBehavior.getEnemyDefensePostAttackProfile = () => ({});
+parallelBehavior.attackIsTooWeakForDefensePosts = () => false;
+parallelBehavior.applyEarlyGameRaceTroops = ({ baseTroops }) => baseTroops;
+outgoing.length = 0;
+ownTroops = 100000;
+tick = 20;
+const parallelEmissionCount = troopEmissions.length;
+assert.equal(await parallelBehavior.sendAttack(parallelTribeA), true);
+assert.equal(
+  await parallelBehavior.sendAttack(parallelTribeB),
+  false,
+  "the ordinary intent guard still blocks unrelated attacks",
+);
+assert.equal(
+  await parallelBehavior.sendAttack(parallelTribeB, false, null, null, false, true),
+  true,
+  "the explicit parallel tribal path launches a second tribe",
+);
+assert.equal(
+  troopEmissions.length,
+  parallelEmissionCount + 2,
+  "two different tribe assaults are emitted in one decision",
+);
+assert.equal(
+  parallelBehavior.getPendingOutboundAttackTroops(),
+  8000,
+  "parallel tribal intents are both reserved exactly once",
+);
+assert.deepEqual(
+  [...parallelBehavior.getActiveTribeAttackTargetKeys()].sort(),
+  ["21", "22"],
+  "active tribal targets are tracked independently",
+);
+
+const botParallelTargets = [parallelTribeA, parallelTribeB].map((target) => ({
+  ...target,
+  numTilesOwned: () => 1,
+}));
+const botParallelPlayer = {
+  ...parallelMe,
+  nearby: () => botParallelTargets,
+  isFriendly: () => false,
+};
+const botParallelBehavior = new sandbox.AttackBehavior(
+  {},
+  game,
+  botParallelPlayer,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+botParallelBehavior.getEnemyDefensePostAttackProfile = () => ({});
+botParallelBehavior.attackIsTooWeakForDefensePosts = () => false;
+botParallelBehavior.applyEarlyGameRaceTroops = ({ baseTroops }) => baseTroops;
+outgoing.length = 0;
+tick = 21;
+const botParallelEmissionCount = troopEmissions.length;
+assert.equal(await botParallelBehavior.attackBots(), true);
+assert.equal(
+  troopEmissions.length,
+  botParallelEmissionCount + 2,
+  "the general tribe attack pass also emits multiple captures",
+);
+
+const makeEarlyTribeCandidate = (id, player) => ({
+  id,
+  player,
+  maritimeDistance: 0,
+  oceanDistance: 0,
+  futureFoodCount: 1,
+  futureFoodAccess: 0.5,
+  foodRaceValue: 0.1,
+  encirclement: 0,
+  blockValue: 0,
+  cheapCapture: 0.1,
+  landBorder: true,
+  boatEtaTicks: null,
+});
+const earlyTribeCalls = [];
+const earlyTribeBatch = Object.create(sandbox.AttackBehavior.prototype);
+earlyTribeBatch.player = { troops: () => 100000 };
+earlyTribeBatch.getEarlyGameTribeCandidates = async () => [
+  makeEarlyTribeCandidate("early-a", parallelTribeA),
+  makeEarlyTribeCandidate("early-b", parallelTribeB),
+];
+earlyTribeBatch.getActiveTribeAttackTargetKeys = () => new Set();
+earlyTribeBatch.getBotAttackMaxParallelism = () => 2;
+earlyTribeBatch.sendAttack = async (...args) => {
+  earlyTribeCalls.push(args);
+  return true;
+};
+sandbox.state.earlyGame = {};
+assert.equal(await earlyTribeBatch.attackEarlyGameTribe(), true);
+assert.equal(
+  earlyTribeCalls.length,
+  2,
+  "the early-game tribe planner attempts multiple ranked captures",
+);
+assert.ok(
+  earlyTribeCalls.every((args) => args[5] === true),
+  "each early-game tribe capture opts into the bounded parallel path",
+);
+tick = 9;
 ownTroops = 100000;
 
 // A teammate donation must use the same hard reserve, not the obsolete 45%
