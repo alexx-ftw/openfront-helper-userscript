@@ -3892,8 +3892,8 @@
         );
         if (spawn === false) continue;
 
-        // USER (winFixes): EVERY boat is a cheap 1% probe — never a 20% dump (troops/5).
-        // Even grabbing empty coastal TN goes by a 1% landing. (winFixes off → faithful.)
+        // USER (winFixes): clean land keeps the cheap probe; radioactive land
+        // uses the fallout-adjusted commit derived from Config.attackLogic.
         const troops = radioactiveTerraNullius && state.settings.winFixes
           ? Math.min(
               this.getRadioactiveTerraNulliusCommitTroops(),
