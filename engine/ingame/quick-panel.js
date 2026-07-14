@@ -780,7 +780,7 @@
     var title = document.createElement("div");
     title.className = "ohqp-title";
     var _ver = (window.__OFH_ASSETS && window.__OFH_ASSETS.version) ? window.__OFH_ASSETS.version : "dev";
-    title.textContent = "⚙ OpenFront Helper v" + _ver;
+    title.textContent = "⚙ OpenFront Helper (CUSTOM) v" + _ver;
     var minBtn = document.createElement("button");
     minBtn.type = "button";
     minBtn.className = "ohqp-min-btn";

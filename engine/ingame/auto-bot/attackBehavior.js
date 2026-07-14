@@ -775,6 +775,24 @@
       return reserve;
     }
 
+    getEarlyGameTerraNulliusReserveTroops() {
+      const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
+      if (ownTroops <= 0) return 0;
+
+      const accelerationReserve = this.getEarlyGameLiveReserveTroops();
+      const commitFraction = Math.min(
+        1,
+        Math.max(0, Number(EARLY_EXPAND_COMMIT) || 0),
+      );
+      const reserveCeiling = ownTroops * (1 - commitFraction);
+
+      // TerraNullius does not fight back. If buildings or new territory raise
+      // maxTroops before the army grows, keep the acceleration reserve soft so
+      // the opening commit remains affordable instead of waiting for a moving
+      // capacity-derived target that expansion itself pushes farther away.
+      return Math.min(accelerationReserve, reserveCeiling);
+    }
+
     getEarlyGameMaximumTroops(ownTroops = this.player?.troops?.() || 0) {
       const observedTroops = Math.max(0, Number(ownTroops) || 0);
       if (observedTroops <= 0) return 0;
@@ -818,9 +836,12 @@
     }
 
     getEarlyGameTargetReserveTroops(target) {
-      return this.isProductionReserveTarget(target)
-        ? this.getEarlyGameProductionReserveTroops()
-        : this.getEarlyGameLiveReserveTroops();
+      if (this.isProductionReserveTarget(target)) {
+        return this.getEarlyGameProductionReserveTroops();
+      }
+      return target?.isPlayer?.()
+        ? this.getEarlyGameLiveReserveTroops()
+        : this.getEarlyGameTerraNulliusReserveTroops();
     }
 
     getEarlyGameSpendableTroops(reserveTroops = null) {
@@ -837,7 +858,7 @@
       return Math.max(0, ownTroops - reserve - pending);
     }
 
-    getEarlyGameProbeTroops(fraction = 0.01) {
+    getEarlyGameProbeTroops(fraction = 0.01, reserveTroops = null) {
       const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
       const configuredFraction = Number(fraction);
       const probeFraction = Number.isFinite(configuredFraction)
@@ -845,7 +866,7 @@
         : 0.01;
       return Math.min(
         ownTroops * probeFraction,
-        this.getEarlyGameSpendableTroops(),
+        this.getEarlyGameSpendableTroops(reserveTroops),
       );
     }
 
@@ -2168,9 +2189,17 @@
 
         const troops = this.getEarlyGameProbeTroops(
           state.settings.boatProbeFrac,
+          this.getEarlyGameTerraNulliusReserveTroops(),
         );
         if (troops < 1) continue;
-        if (this.emitBoat(target.tile, troops, "🏝️ Ocean coast grab")) {
+        if (
+          this.emitBoat(
+            target.tile,
+            troops,
+            "🏝️ Ocean coast grab",
+            this.game.terraNullius(),
+          )
+        ) {
           state.earlyGame.oceanTarget = {
             distance: target.dist,
             oceanShore: true,
@@ -3737,9 +3766,10 @@
       this.reconcileOutboundAttackIntentCommitments();
       const ctors = discoverCtors(getEventBus());
       const requestedTroops = this.player.troops() * Number(fraction);
+      const reserveTroops = this.getEarlyGameTargetReserveTroops(target);
       const troops = Math.min(
         requestedTroops,
-        this.getEarlyGameSpendableTroops(),
+        this.getEarlyGameSpendableTroops(reserveTroops),
       );
       if (!Number.isFinite(troops) || troops < 1) return false;
       const targetId = target.isPlayer() ? target.id() : null;
@@ -3902,7 +3932,10 @@
               ),
             )
           : state.settings.winFixes
-            ? this.getEarlyGameProbeTroops(state.settings.boatProbeFrac)
+            ? this.getEarlyGameProbeTroops(
+                state.settings.boatProbeFrac,
+                this.getEarlyGameTerraNulliusReserveTroops(),
+              )
             : this.player.troops() / 5;
         if (troops < 1) return false;
 
@@ -3914,6 +3947,7 @@
           radioactiveTerraNullius
             ? "☢️ Nuked-coast grab"
             : "⛵ Boat (land grab)",
+          this.game.terraNullius(),
         );
       }
       return false;

@@ -24,6 +24,7 @@ const sandbox = {
     Legendary: "Legendary",
   },
   currentDifficulty: () => "Impossible",
+  EARLY_EXPAND_COMMIT: 0.6,
   performance: { now: () => 10000 },
   discoverCtors: () => ({
     attack: "attack",
@@ -226,6 +227,70 @@ assert.equal(
   83899,
   "a maxTroops increase recomputes the production peak reserve",
 );
+
+// TerraNullius is free land: a capacity increase must not move the opening
+// reserve beyond the current army and make expansion wait for its own growth.
+// Keep the acceleration reserve while it is affordable, but cap it at the
+// complement of EARLY_EXPAND_COMMIT when maxTroops has jumped ahead.
+const terraNullius = { isPlayer: () => false, id: () => "TerraNullius" };
+const expandingGame = {
+  ticks: () => tick,
+  config: () => ({ maxTroops: () => 500000 }),
+};
+const expandingBehavior = new sandbox.AttackBehavior(
+  {},
+  expandingGame,
+  me,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+expandingBehavior.getEnemyDefensePostAttackProfile = () => ({});
+expandingBehavior.attackIsTooWeakForDefensePosts = () => false;
+expandingBehavior.applyEarlyGameRaceTroops = ({ baseTroops }) => baseTroops;
+ownTroops = 25000;
+assert.ok(
+  expandingBehavior.getEarlyGameLiveReserveTroops() > ownTroops * 0.4,
+  "the capacity-derived acceleration reserve is high enough to reproduce the opening wait",
+);
+assert.equal(
+  expandingBehavior.getEarlyGameTerraNulliusReserveTroops(),
+  ownTroops * 0.4,
+  "TerraNullius uses a soft reserve ceiling derived from the safe opening commit",
+);
+const terraNulliusEmissionCount = troopEmissions.length;
+assert.equal(
+  expandingBehavior.sendLandAttack(terraNullius),
+  true,
+  "free land remains actionable after maxTroops increases",
+);
+assert.equal(troopEmissions.length, terraNulliusEmissionCount + 1);
+assert.equal(
+  troopEmissions.at(-1),
+  ownTroops * 0.6,
+  "the opening commit is emitted instead of waiting for the moving capacity peak",
+);
+
+const openingBehavior = new sandbox.AttackBehavior(
+  {},
+  expandingGame,
+  me,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+const openingEmissionCount = troopEmissions.length;
+assert.equal(
+  await openingBehavior.forceSendAttack(terraNullius),
+  true,
+  "the first TerraNullius opening burst is not blocked by the capacity-derived reserve",
+);
+assert.equal(troopEmissions.length, openingEmissionCount + 1);
+assert.equal(troopEmissions.at(-1), ownTroops * 0.5);
 
 // emitBoat is the final synchronous boundary after the route/launch await. It
 // must reapply the same target-specific reserve instead of falling back to the
