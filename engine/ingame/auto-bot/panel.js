@@ -396,24 +396,10 @@
             </div>
             <div class="ab-cfg-row" style="flex-direction:column;align-items:stretch;">
               <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span class="ab-cfg-label">${tr("Keep fraction")}</span>
-                <span class="ab-cfg-val" data-cfg-val="donateKeepFrac">${Math.round((state.settings.donateKeepFrac || 0.45) * 100)}%</span>
-              </div>
-              <input type="range" min="0" max="100" step="5" value="${Math.round((state.settings.donateKeepFrac || 0.45) * 100)}" data-cfg-range="donateKeepFrac" data-cfg-div="100" style="width:100%;accent-color:var(--oh-accent);">
-            </div>
-            <div class="ab-cfg-row" style="flex-direction:column;align-items:stretch;">
-              <div style="display:flex;justify-content:space-between;align-items:center;">
                 <span class="ab-cfg-label">${tr("Need threshold")}</span>
                 <span class="ab-cfg-val" data-cfg-val="donateNeedThreshold">${Math.round((state.settings.donateNeedThreshold || 0.8) * 100)}%</span>
               </div>
               <input type="range" min="0" max="100" step="5" value="${Math.round((state.settings.donateNeedThreshold || 0.8) * 100)}" data-cfg-range="donateNeedThreshold" data-cfg-div="100" style="width:100%;accent-color:var(--oh-accent);">
-            </div>
-            <div class="ab-cfg-row" style="flex-direction:column;align-items:stretch;">
-              <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span class="ab-cfg-label">${tr("Min donate %")}</span>
-                <span class="ab-cfg-val" data-cfg-val="donateMinDonatePct">${Math.round((state.settings.donateMinDonatePct || 0.2) * 100)}%</span>
-              </div>
-              <input type="range" min="5" max="80" step="5" value="${Math.round((state.settings.donateMinDonatePct || 0.2) * 100)}" data-cfg-range="donateMinDonatePct" data-cfg-div="100" style="width:100%;accent-color:var(--oh-accent);">
             </div>
             <div class="ab-cfg-row" style="flex-direction:column;align-items:stretch;">
               <div style="display:flex;justify-content:space-between;align-items:center;">

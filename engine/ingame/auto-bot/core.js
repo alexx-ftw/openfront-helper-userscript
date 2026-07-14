@@ -115,13 +115,9 @@
     // instead of piling onto one spot (raise to spread wider, lower to allow doubling up)
     mirvBoatWindowTicks: 150, // ticks after our MIRV we keep boating into its crater
     donateThrottleMs: 1200, // min real-time gap between proactive team-donations (winFix) —
-    // lowered so the bot donates its above-keep-line excess to teammates far more often
+    // lowered so the bot releases safe troop surplus to teammates promptly
     donateNeedThreshold: 0.8, // donate to any teammate below this fraction of their max
     // troops (i.e. one that actually needs help); pick the neediest first
-    donateKeepFrac: 0.45, // keep this fraction of maxTroops when donating to a teammate.
-    // The game's troop growth = (10 + troops^0.73/4)·(1 − troops/maxTroops) PEAKS at
-    // troops ≈ 0.42·maxTroops, so keeping ~45% means we only give away the "excess"
-    // above the fastest-regrowth point — donating barely dents our generation rate.
     // ── SMART DIPLOMACY (winFix) ──────────────────────────────────────────────────
     // The bot allies FAR nations (ones it does NOT border) freely while still expanding.
     // A far nation can't threaten us by land, so the alliance is pure DEFENCE — it keeps
@@ -163,11 +159,8 @@
     warshipNukeDodgeBuffer: 20, // đẩy ship ra ngoài bán kính thêm chừng này khi tìm ô né
     warshipNukeDodgeSamples: 8, // số góc lấy mẫu khi tìm ô né (radial + xoay quanh)
     warshipNukeDodgeRings: 3, // số vòng bán kính lấy mẫu khi tìm ô né (xử lý vùng nuke phủ rộng)
-    donateMinExcessFrac: 0.05, // only donate when the excess above the keep line is ≥
-    // this × maxTroops (avoids spammy micro-donations of a few troops)
-    donateMinDonatePct: 0.2, // minimum % of current troops to donate — only fire when
-    // the donation amount ≥ this × currentTroops (e.g. 0.2 = wait until we can send
-    // a meaningful 20% chunk, dồn lực thay vì rải rác)
+    donateMinExcessFrac: 0.01, // only donate when the excess is at least 1% of
+    // maxTroops; the live-reserve floor still prevents unsafe donations
     boatWeakTroopFrac: 0.6, // the nearest-target sweep also grabs OWNED coastal land if
     // its owner has < (our troops × this) — i.e. any clearly-weaker nation, per the
     // user's "đất có chủ cũng được, miễn nước đó yếu hơn". Raise → grab near-peers too.
@@ -351,10 +344,8 @@
       "pos",
       "tickMs",
       // Donate tuning
-      "donateKeepFrac",
       "donateNeedThreshold",
       "donateThrottleMs",
-      "donateMinDonatePct",
       // Warship tuning
       "warshipRetreatHealthPct",
       "warshipHuntTrade",

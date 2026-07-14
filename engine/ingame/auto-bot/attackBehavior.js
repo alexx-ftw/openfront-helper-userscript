@@ -2827,18 +2827,31 @@
     // attackBestTarget is called with borderingFriends sorted by troops and
     // borderingEnemies sorted by Defense Post-aware attack difficulty.
     async attackBestTarget(borderingFriends, borderingEnemies) {
+      // The ratio checks below are useful descriptive strategy values, but they
+      // are not a safe spending limit. maxTroops can jump when the bot builds
+      // cities/factories, leaving a large absolute army below both ratios and
+      // causing the whole strategy pipeline to sit idle. Every actual outbound
+      // action is clamped by getEarlyGameSpendableTroops(), which already
+      // subtracts the acceleration reserve and pending intents.
+      if (this.getEarlyGameSpendableTroops() < 1) return;
+
+      // Keep the expensive far-island/strategy scan cadence-limited when there
+      // is no visible local target. A bordering target or teammate is already
+      // an actionable opportunity and must bypass the old ratio gates.
+      if (
+        borderingFriends.length === 0 &&
+        borderingEnemies.length === 0 &&
+        !this.hasTriggerRatioTroops()
+      ) {
+        return;
+      }
+
       // In games with high starting gold, nations will quickly build a lot of cities
       // This causes them to expand slowly (cities increase max troops), and bots will steal their structures
-      // In this case: Attack bots before ratio checks
+      // In this case: Attack bots before the ordinary strategy pipeline.
       if (this.hasNeighboringBotWithStructures()) {
         if (await this.attackBots()) return;
       }
-
-      // Save up troops until we reach the reserve ratio
-      if (!this.hasReserveRatioTroops()) return;
-
-      // Maybe save up troops until we reach the trigger ratio
-      if (!this.hasTriggerRatioTroops() && !this.random.chance(10)) return;
 
       // Get attack strategies in priority order based on difficulty
       const strategies = this.getAttackStrategies(
@@ -3686,12 +3699,15 @@
       // Use the expand ratio when attacking a bot that owns structures — we need to
       // recapture those structures ASAP, even before reaching the normal reserve.
       const useReserve = target.isPlayer() && !botWithStructures;
-      // WIN-FIX (sizeReserve): the player/TN reserve uses the size-aware floor;
-      // bot-with-structures recapture still uses the aggressive expandRatio.
+      // With winFixes the acceleration peak is the sole minimum reserve. The
+      // old 30–60% maxTroops target reserve could grow whenever structures
+      // increased capacity and leave the bot hoarding an otherwise usable army.
       const reserveRatio = useReserve
         ? this.effectiveReserveRatio()
         : this.expandRatio;
-      const targetTroops = maxTroops * reserveRatio;
+      const targetTroops = state.settings.winFixes
+        ? this.getEarlyGameLiveReserveTroops()
+        : maxTroops * reserveRatio;
 
       let troops;
       const botAttackTroopsSentBefore = this.botAttackTroopsSent;
@@ -4108,22 +4124,28 @@
         return false;
       }
 
-      // Donate only the EXCESS above a ~peak-regrowth keep line so giving troops to a
-      // teammate barely dents our own generation rate. The game's growth peaks near
-      // 0.42·maxTroops, so winFix mode keeps ~donateKeepFrac (45%) and donates the rest;
-      // faithful mode keeps the plain reserveRatio.
+      // In winFix mode the acceleration reserve is the only hard lower bound for
+      // donations. Keeping an additional percentage of maxTroops here caused a
+      // dead zone after buildings increased maxTroops: the bot had plenty of
+      // usable troops, but could neither attack nor help a teammate.
       const maxTroops = this.game.config().maxTroops(this.player);
-      const keepFrac = state.settings.winFixes
-        ? Math.max(this.reserveRatio, state.settings.donateKeepFrac || 0.45)
-        : this.reserveRatio;
-      const troopsToKeep = maxTroops * keepFrac;
+      const troopsToKeep = state.settings.winFixes
+        ? this.getEarlyGameLiveReserveTroops()
+        : maxTroops * this.reserveRatio;
       const availableTroops = this.player.troops() - troopsToKeep;
       const donationTroops = Math.min(
         Math.max(0, availableTroops),
         this.getEarlyGameSpendableTroops(),
       );
       const minExcess = state.settings.winFixes
-        ? maxTroops * (state.settings.donateMinExcessFrac || 0.05)
+        ? Math.max(
+            maxTroops *
+              Math.max(
+                0.01,
+                Number(state.settings.donateMinExcessFrac) || 0.01,
+              ),
+            this.player.troops() * 0.01,
+          )
         : 1;
 
       if (donationTroops < minExcess) {
@@ -4136,31 +4158,18 @@
         return false;
       }
 
-      // Minimum donation chunk: only donate when the amount is ≥ donateMinDonatePct ×
-      // currentTroops. This batches smaller donations into bigger ones — dồn lực.
-      const minDonatePct = state.settings.donateMinDonatePct || 0.2;
-      const minDonateAmount = this.player.troops() * minDonatePct;
-      if (donationTroops < minDonateAmount) {
-        console.log("[Donate] skip: donation too small (minDonatePct)", {
-          available: Math.round(donationTroops),
-          minChunk: Math.round(minDonateAmount),
-          pct: Math.round(minDonatePct * 100) + "%",
-        });
-        return false;
-      }
-
       // src: game.addExecution(new DonateTroopsExecution(player,
       //   selectedTeammate.id(), availableTroops)).
       // Client: emitIntent(ctors.donateTroops, recipient.__src ?? recipient, troops).
       const ctors = discoverCtors(getEventBus());
-      if (
+      const emitted =
         ctors.donateTroops &&
         emitIntent(
           ctors.donateTroops,
           selectedTeammate.__src ?? selectedTeammate,
           donationTroops,
-        )
-      ) {
+        );
+      if (emitted) {
         this.recordOutboundDonationIntent(donationTroops);
         console.log(
           "[Donate] SENT",
@@ -4173,6 +4182,6 @@
         console.log("[Donate] emit failed", { ctor: !!ctors.donateTroops });
       }
 
-      return true;
+      return !!emitted;
     }
   }
