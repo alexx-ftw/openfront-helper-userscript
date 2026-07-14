@@ -120,6 +120,18 @@
    */
   const STRUCTURE_PLACEMENT_CANDIDATE_LIMIT = 25;
 
+  /**
+   * The mandatory hostile-silo SAM path can wake up as soon as an enemy reaches
+   * the 1.5M-gold trigger. Keep one failed placement attempt bounded: six
+   * concurrent read-only probes with a short timeout are enough to preserve the
+   * coverage-ranked choice without serially waiting on all 25 candidates.
+   */
+  const HOSTILE_SILO_SAM_PROBE_LIMIT = 6;
+  const HOSTILE_SILO_SAM_PROBE_TIMEOUT_MS = 750;
+
+  /** Keep defensive SAM upgrade probes from serially blocking on the worker. */
+  const DEFENSIVE_SAM_PROBE_CONCURRENCY = 6;
+
   /** Estimated number of tiles per city equivalent, used when cities are disabled */
   const TILES_PER_CITY_EQUIVALENT = 2000;
 
@@ -423,10 +435,7 @@
         (await this.maybeSpawnStructure(
           UNIT.SAMLauncher,
           this.shouldBuildHostileSiloSam()
-            ? {
-                forceNewStructure: true,
-                prioritizeStructureCoverage: true,
-              }
+            ? this.hostileSiloSamPlacementOptions()
             : {},
         ))
       ) {
@@ -976,10 +985,10 @@
         return false;
       }
       if (attemptTick !== null) this._hostileSiloSamAttemptTick = attemptTick;
-      const built = await this.maybeSpawnStructure(UNIT.SAMLauncher, {
-        forceNewStructure: true,
-        prioritizeStructureCoverage: true,
-      });
+      const built = await this.maybeSpawnStructure(
+        UNIT.SAMLauncher,
+        this.hostileSiloSamPlacementOptions(),
+      );
       if (built) {
         this._hostileSiloSamRetryNotBeforeTick = null;
       } else if (attemptTick !== null) {
@@ -989,6 +998,16 @@
           retryBaseTick + HOSTILE_SILO_SAM_RETRY_TICKS;
       }
       return built;
+    }
+
+    hostileSiloSamPlacementOptions() {
+      return {
+        forceNewStructure: true,
+        prioritizeStructureCoverage: true,
+        probeLimit: HOSTILE_SILO_SAM_PROBE_LIMIT,
+        probeTimeoutMs: HOSTILE_SILO_SAM_PROBE_TIMEOUT_MS,
+        parallelProbeCount: HOSTILE_SILO_SAM_PROBE_LIMIT,
+      };
     }
 
     hostileSiloSamRetryActive(tick = this.hostileSiloSamCurrentTick()) {
@@ -1066,10 +1085,7 @@
         (await this.maybeSpawnStructure(
           UNIT.SAMLauncher,
           this.shouldBuildHostileSiloSam()
-            ? {
-                forceNewStructure: true,
-                prioritizeStructureCoverage: true,
-              }
+            ? this.hostileSiloSamPlacementOptions()
             : {},
         ))
       ) {
@@ -4774,10 +4790,24 @@
       if (availableGold < this.cost(UNIT.SAMLauncher)) return false;
       const candidates = [];
 
-      for (const sam of this.player.units(UNIT.SAMLauncher) || []) {
-        if (sam.isUnderConstruction()) continue;
-        if (sam.isActive && sam.isActive() === false) continue;
-        const bu = await this.buildableFor(UNIT.SAMLauncher, sam.tile());
+      const samUnits = (this.player.units(UNIT.SAMLauncher) || []).filter(
+        (sam) => {
+          if (sam.isUnderConstruction()) return false;
+          return !sam.isActive || sam.isActive() !== false;
+        },
+      );
+      const buildables = await this.buildableForUnits(
+        samUnits,
+        UNIT.SAMLauncher,
+        {
+          concurrency: DEFENSIVE_SAM_PROBE_CONCURRENCY,
+          timeoutMs: HOSTILE_SILO_SAM_PROBE_TIMEOUT_MS,
+        },
+      );
+
+      for (let index = 0; index < samUnits.length; index++) {
+        const sam = samUnits[index];
+        const bu = buildables[index];
         if (bu === null || bu.canUpgrade === false) continue;
         let cost = this.cost(UNIT.SAMLauncher);
         try {
@@ -4866,8 +4896,17 @@
       // it cannot be older than the asynchronous buildable probes.
       const upgradeCandidates = [];
 
-      for (const sam of upgradeableSamUnits) {
-        const bu = await this.buildableFor(UNIT.SAMLauncher, sam.tile());
+      const buildables = await this.buildableForUnits(
+        upgradeableSamUnits,
+        UNIT.SAMLauncher,
+        {
+          concurrency: DEFENSIVE_SAM_PROBE_CONCURRENCY,
+          timeoutMs: HOSTILE_SILO_SAM_PROBE_TIMEOUT_MS,
+        },
+      );
+      for (let index = 0; index < upgradeableSamUnits.length; index++) {
+        const sam = upgradeableSamUnits[index];
+        const bu = buildables[index];
         if (bu === null || bu.canUpgrade === false) continue;
         let cost = this.cost(UNIT.SAMLauncher);
         try {
@@ -5120,14 +5159,38 @@
     // the first buildable yields the SAME tile src's loop picks — the highest-
     // value buildable in the candidate set.)
     async structureSpawnTile(type, options = {}) {
+      const requestedCandidateLimit = Number(options.candidateLimit);
+      const candidateLimit = Number.isInteger(requestedCandidateLimit)
+        ? Math.max(
+            1,
+            Math.min(
+              STRUCTURE_PLACEMENT_CANDIDATE_LIMIT,
+              requestedCandidateLimit,
+            ),
+          )
+        : STRUCTURE_PLACEMENT_CANDIDATE_LIMIT;
+      const requestedProbeLimit = Number(options.probeLimit);
+      const probeLimit = Number.isInteger(requestedProbeLimit)
+        ? Math.max(1, Math.min(candidateLimit, requestedProbeLimit))
+        : candidateLimit;
+      const defaultWorkerTimeoutMs =
+        typeof WORKER_TIMEOUT_MS === "number" ? WORKER_TIMEOUT_MS : 2500;
+      const requestedProbeTimeout = Number(options.probeTimeoutMs);
+      const probeTimeoutMs = Number.isFinite(requestedProbeTimeout)
+        ? Math.max(1, requestedProbeTimeout)
+        : defaultWorkerTimeoutMs;
+      const requestedParallelProbeCount = Number(options.parallelProbeCount);
+      const parallelProbeCount = Number.isInteger(requestedParallelProbeCount)
+        ? Math.max(1, Math.min(probeLimit, requestedParallelProbeCount))
+        : 0;
       let tiles =
         type === UNIT.Port
-          ? this.randCoastalTileArray(STRUCTURE_PLACEMENT_CANDIDATE_LIMIT)
+          ? this.randCoastalTileArray(candidateLimit)
           : randTerritoryTileArray(
               this.random,
               this.game,
               this.player,
-              STRUCTURE_PLACEMENT_CANDIDATE_LIMIT,
+              candidateLimit,
             );
       if (type === UNIT.SAMLauncher && options.prioritizeStructureCoverage) {
         try {
@@ -5146,24 +5209,20 @@
               coverageTiles.push(structureTile);
             }
             for (const neighbor of this.game.neighbors(structureTile)) {
-              if (
-                coverageTiles.length >= STRUCTURE_PLACEMENT_CANDIDATE_LIMIT
-              ) {
+              if (coverageTiles.length >= candidateLimit) {
                 break;
               }
               if (coverageTileSet.has(neighbor)) continue;
               coverageTileSet.add(neighbor);
               coverageTiles.push(neighbor);
             }
-            if (
-              coverageTiles.length >= STRUCTURE_PLACEMENT_CANDIDATE_LIMIT
-            ) {
+            if (coverageTiles.length >= candidateLimit) {
               break;
             }
           }
           if (coverageTiles.length > 0) {
             const remainingCandidateSlots =
-              STRUCTURE_PLACEMENT_CANDIDATE_LIMIT - coverageTiles.length;
+              candidateLimit - coverageTiles.length;
             tiles = [
               ...coverageTiles,
               ...tiles
@@ -5180,12 +5239,12 @@
       // spot — a plain 25-tile random sample often misses the SAM area entirely.
       if (type === UNIT.MissileSilo && state.settings.winFixes) {
         try {
-          const samTiles = this.tilesNearFriendlySams(25);
+          const samTiles = this.tilesNearFriendlySams(candidateLimit);
           if (samTiles.length > 0) {
             const mergedTiles = [];
             const mergedTileSet = new Set();
             for (const tile of samTiles.concat(tiles)) {
-              if (mergedTiles.length >= STRUCTURE_PLACEMENT_CANDIDATE_LIMIT) {
+              if (mergedTiles.length >= candidateLimit) {
                 break;
               }
               if (mergedTileSet.has(tile)) continue;
@@ -5233,7 +5292,67 @@
       const scored = tiles.map((t) => ({ t, v: valueFunction(t) }));
       scored.sort((a, b) => b.v - a.v);
 
+      // The hostile-silo response is intentionally bounded more tightly than
+      // the faithful generic placement path. Its candidate scorer walks our
+      // protected structures and existing SAM network, and each buildability
+      // check crosses the worker boundary. Probe the best bounded subset in
+      // parallel so a saturated/slow worker cannot stall the structure tick
+      // once an enemy reaches the high-gold threat gate.
+      if (parallelProbeCount > 0) {
+        const probeCandidates = [];
+        for (const { t } of scored) {
+          if (
+            emergencyProductiveDefense &&
+            !this.missileDefenseSnapshotIsCurrent(
+              emergencyMissileTick,
+              emergencyMissileStateKey,
+            )
+          ) {
+            return null;
+          }
+          if (
+            emergencySamDefense &&
+            !this.legendarySamConstructionSafeForTile(t, emergencyMissileContext)
+          ) {
+            continue;
+          }
+          if (
+            emergencyProductiveDefense &&
+            type !== UNIT.SAMLauncher &&
+            this.legendaryTileInsideUninterceptedBlast(
+              t,
+              emergencyMissileContext,
+              emergencyMissileEvaluation,
+            )
+          ) {
+            continue;
+          }
+          probeCandidates.push(t);
+          if (probeCandidates.length >= parallelProbeCount) break;
+        }
+
+        const buildables = await Promise.all(
+          probeCandidates.map((tile) =>
+            this.buildableFor(type, tile, probeTimeoutMs),
+          ),
+        );
+        if (
+          emergencyProductiveDefense &&
+          !this.missileDefenseSnapshotIsCurrent(
+            emergencyMissileTick,
+            emergencyMissileStateKey,
+          )
+        ) {
+          return null;
+        }
+        for (const bu of buildables) {
+          if (bu !== null && bu.canBuild !== false) return bu;
+        }
+        return null;
+      }
+
       // Probe down the ranked list; first canBuild !== false wins.
+      let probes = 0;
       for (const { t } of scored) {
         if (
           emergencyProductiveDefense &&
@@ -5264,7 +5383,8 @@
         ) {
           continue;
         }
-        const bu = await this.buildableFor(type, t);
+        const bu = await this.buildableFor(type, t, probeTimeoutMs);
+        probes++;
         if (
           emergencyProductiveDefense &&
           !this.missileDefenseSnapshotIsCurrent(
@@ -5279,19 +5399,63 @@
         if (bu !== null && bu.canBuild !== false) {
           return bu;
         }
+        if (probes >= probeLimit) break;
       }
       return null;
+    }
+
+    // Probe a stable unit list with bounded concurrency. Defensive upgrade
+    // paths can have many SAMs once hostile silos appear; awaiting every worker
+    // request serially turns a slow buildables worker into a visible game hang.
+    // Results retain the input order so the caller's selection/ranking logic is
+    // unchanged.
+    async buildableForUnits(units, type, options = {}) {
+      const candidates = Array.isArray(units) ? units : [];
+      if (candidates.length === 0) return [];
+      const requestedConcurrency = Number(options.concurrency);
+      const concurrency = Number.isInteger(requestedConcurrency)
+        ? Math.max(1, Math.min(candidates.length, requestedConcurrency))
+        : 1;
+      const results = new Array(candidates.length).fill(null);
+      let nextIndex = 0;
+      const probe = async () => {
+        while (true) {
+          const index = nextIndex++;
+          if (index >= candidates.length) return;
+          const unit = candidates[index];
+          try {
+            const tile = unit?.tile?.();
+            if (tile === null || tile === undefined) continue;
+            results[index] = await this.buildableFor(
+              type,
+              tile,
+              options.timeoutMs,
+            );
+          } catch (_error) {
+            results[index] = null;
+          }
+        }
+      };
+      await Promise.all(
+        Array.from({ length: concurrency }, () => probe()),
+      );
+      return results;
     }
 
     // buildableFor — probe a single tile for one unit type. Returns the matching
     // BuildableUnit ({type, canBuild, canUpgrade, cost}) or null. Worker call is
     // wrapped in withTimeout. (Shared by build + upgrade + defense-post probes.)
-    async buildableFor(type, tile) {
+    async buildableFor(type, tile, timeoutMs = null) {
       let buildables;
+      const defaultWorkerTimeoutMs =
+        typeof WORKER_TIMEOUT_MS === "number" ? WORKER_TIMEOUT_MS : 2500;
+      const timeout = Number.isFinite(Number(timeoutMs))
+        ? Math.max(1, Number(timeoutMs))
+        : defaultWorkerTimeoutMs;
       try {
         buildables = await withTimeout(
           this.player.buildables(tile, [type]),
-          WORKER_TIMEOUT_MS,
+          timeout,
           null,
         );
       } catch (_e) {
@@ -6089,6 +6253,16 @@
 
       const rangeSquared = range * range;
       const structureCount = structures.length;
+      const structureTiles = [];
+      for (const structure of structures) {
+        if (!structure || typeof structure.tile !== "function") continue;
+        try {
+          const tile = structure.tile();
+          if (tile !== null && tile !== undefined) structureTiles.push(tile);
+        } catch (_error) {
+          /* skip a stale structure reference */
+        }
+      }
       const existingSamProfiles = (existingSams || [])
         .filter((sam) => {
           try {
@@ -6115,14 +6289,10 @@
       return (tile) => {
         let totalCoverage = 0;
         let newCoverage = 0;
-        for (const structure of structures) {
-          if (!structure || typeof structure.tile !== "function") continue;
+        for (const structureTile of structureTiles) {
           let distanceSquared;
           try {
-            distanceSquared = game.euclideanDistSquared(
-              tile,
-              structure.tile(),
-            );
+            distanceSquared = game.euclideanDistSquared(tile, structureTile);
           } catch (_error) {
             continue;
           }

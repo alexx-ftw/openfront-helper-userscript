@@ -306,10 +306,22 @@ assert.deepEqual(
     {
       forceNewStructure: options.forceNewStructure,
       prioritizeStructureCoverage: options.prioritizeStructureCoverage,
+      probeLimit: options.probeLimit,
+      probeTimeoutMs: options.probeTimeoutMs,
+      parallelProbeCount: options.parallelProbeCount,
     },
   ]),
-  [[UNIT.SAMLauncher, { forceNewStructure: true, prioritizeStructureCoverage: true }]],
-  "The dedicated SAM request forces a new structure and coverage ranking",
+  [[
+    UNIT.SAMLauncher,
+    {
+      forceNewStructure: true,
+      prioritizeStructureCoverage: true,
+      probeLimit: 6,
+      probeTimeoutMs: 750,
+      parallelProbeCount: 6,
+    },
+  ]],
+  "The dedicated SAM request forces a bounded coverage-ranked placement",
 );
 assert.equal(
   await behavior.maybeSpawnHostileSiloSam(),
@@ -500,6 +512,22 @@ assert.equal(
   coverageProbeCount,
   25,
   "Coverage-priority SAM placement keeps ranking and async probes bounded to the normal candidate budget",
+);
+coverageProbeCount = 0;
+assert.equal(
+  await coverageProbe.structureSpawnTile(UNIT.SAMLauncher, {
+    prioritizeStructureCoverage: true,
+    probeLimit: 6,
+    probeTimeoutMs: 20,
+    parallelProbeCount: 6,
+  }),
+  null,
+  "High-gold coverage-priority SAM placement returns null when its bounded probes are unavailable",
+);
+assert.equal(
+  coverageProbeCount,
+  6,
+  "High-gold coverage-priority SAM placement probes only six candidates",
 );
 const originalTilesNearFriendlySams = coverageProbe.tilesNearFriendlySams;
 const originalMissileSiloValue = coverageProbe.missileSiloValue;
