@@ -10,6 +10,9 @@
 
   // OpenFront advances one game tick every 100 ms, so 30 seconds is 300 ticks.
   const EARLY_GAME_MAX_BOAT_TICKS = 300;
+  // Keep the opening expansion force available when a local land opportunity or
+  // a quickly reachable tribe is still actionable.
+  const AUTO_DONATE_EXPANSION_MAX_TICKS = 30;
   // Keep maritime targeting local to the opening frontier. This is the same
   // bounded radius used by the former open-ocean search; a distant coast must
   // not outrank an urgent nearby attack merely because it is finite.
@@ -21,6 +24,44 @@
       etaTicks >= 0 &&
       etaTicks <= EARLY_GAME_MAX_BOAT_TICKS
     );
+  }
+
+  // Return the current reason the Auto-Bot troop donation should be paused.
+  // Land tribes are already in the local frontier. A sea tribe only qualifies
+  // when the transport pathfinder supplied an ETA in actual movement ticks;
+  // nearby/boat-candidate flags alone are not enough because water distance and
+  // transport movement speed can differ between adapters.
+  function getAutoDonateExpansionStatus(
+    earlyGame = {},
+    maxTicks = AUTO_DONATE_EXPANSION_MAX_TICKS,
+  ) {
+    const limit = Number.isFinite(Number(maxTicks))
+      ? Math.max(0, Number(maxTicks))
+      : AUTO_DONATE_EXPANSION_MAX_TICKS;
+    const inactive = { active: false, reason: null, maxTicks: limit };
+    if (!earlyGame || earlyGame.active !== true) return inactive;
+
+    if (earlyGame.hasFreeLand === true) {
+      return { active: true, reason: "free-land", maxTicks: limit };
+    }
+
+    const tribes = Array.isArray(earlyGame.actionableTribes)
+      ? earlyGame.actionableTribes
+      : [];
+    if (tribes.some((tribe) => tribe && tribe.landBorder === true)) {
+      return { active: true, reason: "land-tribe", maxTicks: limit };
+    }
+
+    const hasNearbySeaTribe = tribes.some((tribe) => {
+      if (!tribe || tribe.landBorder === true) return false;
+      const eta = Number(tribe.boatEtaTicks);
+      return Number.isFinite(eta) && eta >= 0 && eta <= limit;
+    });
+    if (hasNearbySeaTribe) {
+      return { active: true, reason: "sea-tribe", maxTicks: limit };
+    }
+
+    return inactive;
   }
 
   // Bounded shortest-path search over the full-resolution water graph exposed by

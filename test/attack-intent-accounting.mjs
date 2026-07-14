@@ -5,6 +5,8 @@ import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const earlyGamePath = path.join(repoRoot, "engine/ingame/auto-bot/earlyGame.js");
+const earlyGameSource = fs.readFileSync(earlyGamePath, "utf8");
 const sourcePath = path.join(repoRoot, "engine/ingame/auto-bot/attackBehavior.js");
 const source = fs.readFileSync(sourcePath, "utf8");
 
@@ -41,6 +43,7 @@ const sandbox = {
   },
 };
 
+vm.runInNewContext(earlyGameSource, sandbox, { filename: earlyGamePath });
 vm.runInNewContext(`${source}\nglobalThis.AttackBehavior = AttackBehavior;`, sandbox, {
   filename: sourcePath,
 });
@@ -351,6 +354,45 @@ assert.equal(
   25005,
   "donations may release the surplus above the calculated acceleration reserve",
 );
+
+const assertDonationPausedDuringExpansion = (earlyGame, message) => {
+  sandbox.state.settings.pauseDonateDuringExpansion = true;
+  sandbox.state.earlyGame = earlyGame;
+  const pausedBehavior = new sandbox.AttackBehavior(
+    { chance: () => true },
+    donationGame,
+    donor,
+    0.5,
+    0.3,
+    0.1,
+    {},
+    {},
+  );
+  assert.equal(pausedBehavior.donateTroops(), false, message);
+};
+
+assertDonationPausedDuringExpansion(
+  { active: true, hasFreeLand: true, actionableTribes: [] },
+  "free land pauses the complete donation path",
+);
+assertDonationPausedDuringExpansion(
+  {
+    active: true,
+    hasFreeLand: false,
+    actionableTribes: [{ landBorder: true }],
+  },
+  "a land-border tribe pauses the complete donation path",
+);
+assertDonationPausedDuringExpansion(
+  {
+    active: true,
+    hasFreeLand: false,
+    actionableTribes: [{ landBorder: false, boatEtaTicks: 30 }],
+  },
+  "a reachable sea tribe pauses the complete donation path",
+);
+sandbox.state.earlyGame = { active: false, hasFreeLand: false, actionableTribes: [] };
+sandbox.state.settings.pauseDonateDuringExpansion = false;
 
 sandbox.state.settings.winFixes = false;
 const nonWinFixHumanBehavior = new sandbox.AttackBehavior(

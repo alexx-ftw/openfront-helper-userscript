@@ -92,6 +92,12 @@ players on our team. Among those recipients, matching clan tags are prioritized
 first, followed by frontline status and lowest troop percentage. If a clan tag is
 unavailable, the player remains eligible and uses the normal fallback order.
 
+When `pauseDonateDuringExpansion` is enabled (the default), both proactive and
+strategy-driven donations pause during the post-spawn expansion window when the
+bot has direct non-nuked free land, a land-border tribe, or a sea tribe whose
+transport route is estimated at 30 game ticks or less. The setting is persisted
+with the other Donate tuning controls, and the panel reports the active reason.
+
 `bestTransportShipSpawn()` reports whether a boat route exists and its spawn tile,
 but not its path length. `gameApi.js` now uses that spawn plus a bounded
 full-resolution water-graph search to calculate the shortest route in ticks. An

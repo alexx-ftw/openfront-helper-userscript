@@ -22,10 +22,12 @@ const nationExecutionSource = fs.readFileSync(
   "utf8",
 );
 const buildSource = fs.readFileSync(path.join(repoRoot, "build.mjs"), "utf8");
+const coreSource = fs.readFileSync(path.join(repoRoot, "engine/ingame/auto-bot/core.js"), "utf8");
 
 assert.equal(typeof sandbox.createEarlyGameSnapshot, "function");
 assert.equal(typeof sandbox.chooseEarlyGameAction, "function");
 assert.equal(typeof sandbox.isEarlyGameBoatEta, "function");
+assert.equal(typeof sandbox.getAutoDonateExpansionStatus, "function");
 assert.equal(typeof sandbox.findWaterRouteTicks, "function");
 assert.equal(typeof sandbox.transportRouteTicks, "function");
 assert.equal(typeof sandbox.findNearestMaritimeCoastDistance, "function");
@@ -49,6 +51,62 @@ assert.match(
 assert.equal(sandbox.isEarlyGameBoatEta(300), true);
 assert.equal(sandbox.isEarlyGameBoatEta(301), false);
 assert.equal(sandbox.isEarlyGameBoatEta(null), false);
+
+const assertExpansionStatus = (input, expected, message) => {
+  const actual = sandbox.getAutoDonateExpansionStatus(input);
+  assert.equal(actual.active, expected.active, message);
+  assert.equal(actual.reason, expected.reason, message);
+  assert.equal(actual.maxTicks, expected.maxTicks, message);
+};
+
+assertExpansionStatus(
+  { active: true, hasFreeLand: true, actionableTribes: [] },
+  { active: true, reason: "free-land", maxTicks: 30 },
+  "free land pauses donations during the opening expansion window",
+);
+assertExpansionStatus(
+  {
+    active: true,
+    hasFreeLand: false,
+    actionableTribes: [{ landBorder: true }],
+  },
+  { active: true, reason: "land-tribe", maxTicks: 30 },
+  "a land-border tribe pauses donations",
+);
+assertExpansionStatus(
+  {
+    active: true,
+    hasFreeLand: false,
+    actionableTribes: [{ landBorder: false, boatEtaTicks: 30 }],
+  },
+  { active: true, reason: "sea-tribe", maxTicks: 30 },
+  "a sea tribe inside the transport-time window pauses donations",
+);
+assertExpansionStatus(
+  {
+    active: true,
+    hasFreeLand: false,
+    actionableTribes: [{ landBorder: false, boatEtaTicks: 31 }],
+  },
+  { active: false, reason: null, maxTicks: 30 },
+  "a sea tribe outside the transport-time window does not pause donations",
+);
+assertExpansionStatus(
+  {
+    active: false,
+    hasFreeLand: true,
+    actionableTribes: [{ landBorder: true }],
+  },
+  { active: false, reason: null, maxTicks: 30 },
+  "pre-spawn snapshots never pause donations",
+);
+
+assert.match(
+  coreSource,
+  /pauseDonateDuringExpansion:\s*true/,
+  "the pause setting has a stable default",
+);
+assert.match(coreSource, /\"pauseDonateDuringExpansion\"/, "the pause setting is persisted");
 
 const snapshot = sandbox.createEarlyGameSnapshot({
   postSpawn: true,
@@ -474,6 +532,21 @@ assert.match(attackSource, /attackEarlyGameTribe/);
 assert.match(attackSource, /maybeEarlyOceanBoat/);
 assert.match(attackSource, /rankTeamDonationCandidates\(needy\)/);
 assert.match(attackSource, /playersShareClanTag/);
+assert.match(
+  attackSource,
+  /getAutoDonateExpansionStatus\(state\.earlyGame\)/,
+  "the real donation path consults the expansion pause gate",
+);
+assert.match(
+  attackSource,
+  /estimateEarlyGameTribeBoatEta/,
+  "maritime tribe pause state uses a bounded route estimate",
+);
+assert.match(
+  attackSource,
+  /boatEtaTicks/,
+  "maritime tribe ETA is retained in the live expansion snapshot",
+);
 assert.match(gameApiSource, /estimateTransportRouteTicks/);
 assert.match(gameApiSource, /hasTransportRouteEstimator/);
 assert.match(gameApiSource, /findWaterRouteTicks\(\{/);
@@ -536,6 +609,7 @@ const makeTargetPlayer = (sid, type, tiles, troops, location) => ({
   outgoingAttacks: () => [],
 });
 const targetMe = makeTargetPlayer(1, "Human", [1], 1000, { x: 0, y: 0 });
+targetMe.bestTransportShipSpawn = () => Promise.resolve(1);
 const targetCoastal = makeTargetPlayer(2, "Bot", [10], 100, { x: 5, y: 0 });
 const targetInland = makeTargetPlayer(4, "Bot", [20], 100, { x: 80, y: 80 });
 const targetNext = makeTargetPlayer(5, "Bot", [30], 80, { x: 80, y: 81 });
@@ -555,9 +629,12 @@ targetInland.incomingAttacks = () => [targetRaceAttack];
 targetMe.nearby = () => [targetCoastal, targetInland, targetNext];
 const targetGame = {
   players: () => [targetMe, targetCoastal, targetInland, targetNext, targetContender, targetMover],
+  hasTransportRouteEstimator: true,
+  estimateTransportRouteTicks: (tile) => (tile === 10 ? 20 : null),
   ensureBorderTiles: (player) => player.borderTiles(),
   neighbors: (tile) => targetNeighbors.get(tile) || [],
   isLand: (tile) => targetLand.has(tile),
+  isShore: (tile) => tile === 1 || tile === 10,
   ownerID: (tile) => targetOwners.get(tile) ?? null,
   isOceanShore: (tile) => tile === 10,
   ref: (x, y) => {
@@ -682,6 +759,8 @@ assert.equal(targetSandbox.state.earlyGame.action, "land");
 const enrichedTargets = await targetBehavior.getEarlyGameTribeCandidates();
 const rankedEnrichedTargets = targetSandbox.rankEarlyGameTribeCandidates(enrichedTargets);
 assert.equal(rankedEnrichedTargets[0].id, 2);
+assert.equal(rankedEnrichedTargets[0].boatEtaTicks, 20);
+assert.equal(rankedEnrichedTargets[0].landBorder, false);
 assert.equal(rankedEnrichedTargets[0].maritimeDistance, 0);
 assert.equal(rankedEnrichedTargets[0].oceanDistance, 0);
 const enrichedInland = enrichedTargets.find((target) => target.id === 4);

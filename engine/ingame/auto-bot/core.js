@@ -63,6 +63,10 @@
     //    faithful Nation, which is conservative/turtle by design). Toggle winFixes
     //    OFF to restore the exact 1:1 src port. ──
     winFixes: true,
+    // Preserve the opening force for nearby free land and tribe captures before
+    // releasing surplus troops to teammates. Users can turn this off in Donate
+    // tuning when continuous support is preferred.
+    pauseDonateDuringExpansion: true,
     // DIVERGENCE: smart spawn scoring — scores candidate tiles by land density,
     // plains ratio, distance from enemies, and edge avoidance, then picks the
     // best instead of the first valid random tile. Toggle OFF to restore the
@@ -348,6 +352,7 @@
       "pos",
       "tickMs",
       // Donate tuning
+      "pauseDonateDuringExpansion",
       "donateNeedThreshold",
       "donateThrottleMs",
       // Warship tuning
