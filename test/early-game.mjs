@@ -910,10 +910,9 @@ const targetBehavior = new targetSandbox.AttackBehavior(
   {},
 );
 
-// TerraNullius expansion must use the engine's real attackLogic loss as the
-// minimum for the first frontier tile. Direct land expansion then targets the
-// configured early commit when available, while a targeted transport probe can
-// still request only that tile's calculated loss.
+// TerraNullius expansion must use the engine's real attackLogic loss for the
+// first frontier tile. Direct land expansion and targeted transport probes both
+// use that one-tile cost rather than a percentage of the live army.
 const minimumTerraNulliusBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 minimumTerraNulliusBehavior.player = {
   troops: () => 100000,
@@ -946,14 +945,9 @@ assert.equal(
   "a targeted TerraNullius landing uses only that tile's calculated loss",
 );
 assert.equal(
-  minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(
-    minimumTerraNulliusTarget,
-    null,
-    99000,
-    0.6,
-  ),
-  60000,
-  "a direct TerraNullius land burst uses the configured commit above the tile cost",
+  minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(minimumTerraNulliusTarget, null, 99000),
+  24,
+  "a direct TerraNullius land burst cannot be inflated above the tile cost",
 );
 assert.ok(24 < 100000 * 0.6, "the per-tile TerraNullius cost remains below the early land commit");
 

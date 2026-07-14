@@ -230,12 +230,10 @@ flow remains unchanged.
 ### Custom TerraNullius land commit
 
 With `winFixes` enabled, direct land attacks against TerraNullius use the live
-`Config.attackLogic` loss for the worst available first frontier tile as a hard
-minimum. They target the existing early-expansion commit fraction of the current
-army, capped by the TerraNullius reserve and pending outbound intents, so a small
-client-reported one-tile loss cannot turn a large free-land expansion into a
-two-troop poke. Transport attacks intentionally keep the one-tile amount as a
-cheap probe and do not inherit this land burst.
+`Config.attackLogic` loss for the worst available first frontier tile as their
+complete payload, capped by the TerraNullius reserve and pending outbound
+intents. This keeps a large free-land expansion from draining the home army.
+Transport attacks use the same one-tile amount as a cheap probe.
 
 ### Custom maritime emergency economy
 
