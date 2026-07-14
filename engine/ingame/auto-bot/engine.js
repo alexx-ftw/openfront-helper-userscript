@@ -62,7 +62,9 @@
 
     state.tickInFlight = true;
     state.tickStartedAt = performance.now();
+    const profile = beginAutoBotProfileTick();
     try {
+      const setupStartedAt = autoBotProfileStartPhase(profile);
       updateSpeedFactor(srcGame);
       const api = ensureGameApi(srcGame);
 
@@ -75,14 +77,29 @@
         });
         _botSeedKey = seedKey;
       }
+      autoBotProfileEndPhase(profile, "engine-setup", setupStartedAt);
 
       // Snapshot async data (me.borderTiles + profile) ONCE up front.
-      await api.beginTick(meCore);
-      const me = api.game.myPlayer();
-      updateLive(api.game, me);
+      if (profile) {
+        await autoBotProfileAsyncPhase(profile, "snapshot", async () => {
+          await api.beginTick(meCore);
+          const me = api.game.myPlayer();
+          updateLive(api.game, me);
+        });
+      } else {
+        await api.beginTick(meCore);
+        const me = api.game.myPlayer();
+        updateLive(api.game, me);
+      }
 
       if (_bot) {
-        await _bot.tick(api.game.ticks());
+        if (profile) {
+          await autoBotProfileAsyncPhase(profile, "nation-tick", () =>
+            _bot.tick(api.game.ticks(), profile),
+          );
+        } else {
+          await _bot.tick(api.game.ticks());
+        }
         setStatus(_bot.status || tr("Thinking…"));
       } else {
         setStatus(tr("Loading bot…"));
@@ -92,6 +109,7 @@
       setStatus(tr("Error (see console)"));
     } finally {
       state.tickInFlight = false;
+      finishAutoBotProfileTick(profile);
       renderStatus();
     }
   }

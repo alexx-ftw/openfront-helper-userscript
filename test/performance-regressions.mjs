@@ -143,6 +143,47 @@ assert.match(
   "NationBot must guard duplicate real-time polls for one game tick",
 );
 
+const PROFILE_SOURCE = path.join(ROOT, "engine/ingame/auto-bot/performance.js");
+let profileNow = 0;
+const profileSandbox = {
+  state: {
+    settings: { performanceProfiling: false, tickMs: 200 },
+    tickIntervalMs: 200,
+  },
+  performance: {
+    now: () => {
+      profileNow += 5;
+      return profileNow;
+    },
+  },
+  saveSettings: () => {},
+  renderStatus: () => {},
+  console: { table: () => {} },
+  globalThis: null,
+};
+profileSandbox.globalThis = profileSandbox;
+vm.runInNewContext(
+  `${fs.readFileSync(PROFILE_SOURCE, "utf8")}
+globalThis.__profile = { beginAutoBotProfileTick, finishAutoBotProfileTick, autoBotProfileStartPhase, autoBotProfileEndPhase, getAutoBotProfileSnapshot };`,
+  profileSandbox,
+  { filename: PROFILE_SOURCE },
+);
+assert.equal(
+  profileSandbox.__profile.beginAutoBotProfileTick(),
+  null,
+  "disabled profiling must not create a tick context",
+);
+assert.equal(profileNow, 0, "disabled profiling must not call performance.now()");
+profileSandbox.state.settings.performanceProfiling = true;
+const profile = profileSandbox.__profile.beginAutoBotProfileTick();
+const phaseStart = profileSandbox.__profile.autoBotProfileStartPhase(profile);
+profileSandbox.__profile.autoBotProfileEndPhase(profile, "structures", phaseStart);
+profileSandbox.__profile.finishAutoBotProfileTick(profile);
+const profileSnapshot = profileSandbox.__profile.getAutoBotProfileSnapshot();
+assert.equal(profileSnapshot.sampledTicks, 1, "enabled profiling must record a tick");
+assert.equal(profileSnapshot.phases[0].name, "structures");
+assert.ok(profileSnapshot.p95TickMs > 0, "profiling must expose a tick percentile");
+
 const ENGINE_SOURCE = path.join(ROOT, "engine/ingame/auto-bot/engine.js");
 const intervalEvents = [];
 let nextTimerId = 1;

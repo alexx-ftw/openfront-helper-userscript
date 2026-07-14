@@ -68,6 +68,9 @@
     // best instead of the first valid random tile. Toggle OFF to restore the
     // faithful random spawn (SpawnExecution.getSpawn).
     smartSpawn: true,
+    // Optional bounded profiler. Disabled by default so the normal bot path
+    // does not allocate samples or call performance.now() for diagnostics.
+    performanceProfiling: false,
     combatCadenceScale: 0.6, // <1 shrinks the attack-tick interval → the bot makes
     // attack/expand decisions MORE often (more aggressive / less "gentle"; the pure
     // faithful Nation only decides once per attackRate ≈ every 3–5s). 1 = faithful.
@@ -337,6 +340,7 @@
       "difficulty",
       "winFixes",
       "smartSpawn",
+      "performanceProfiling",
       "minimized",
       "hidden",
       "statusOpen",
