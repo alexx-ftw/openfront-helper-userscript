@@ -323,12 +323,13 @@
       this.placementsCount = 0;
       this._hasHighStartingGold = null;
       this._postSaveUpStartTick = null;
-      this._hostileSiloSamBuilt = false;
       this._hostileSiloSamAttemptTick = null;
       this._hostilePlayersSnapshotTick = null;
       this._hostilePlayersSnapshot = null;
       this._hostileThreatSnapshotTick = null;
       this._hostileThreatSnapshot = null;
+      this._hostileSiloCapacitySnapshotTick = null;
+      this._hostileSiloCapacitySnapshot = null;
       this._missileDefenseSignalTick = null;
       this._missileDefenseSignalCache = null;
       // Missile placement forecasts are shared by several Legendary and
@@ -380,7 +381,11 @@
       ) {
         return true;
       }
-      if (!legendaryDifficulty && (await this.maybeSpawnHostileSiloSam())) {
+      if (
+        state.settings.winFixes &&
+        !legendaryDifficulty &&
+        (await this.maybeSpawnHostileSiloSam())
+      ) {
         return true;
       }
       if (
@@ -396,9 +401,10 @@
         (this.legendaryMissileDefenseUrgent() ||
           (state.settings.winFixes && this.samLevelParityGap() > 0));
 
-      // If no existing SAM could be upgraded to the required level, establish
-      // one before ordinary cooldown/save-up pacing. Legendary keeps its
-      // emergency ordering inside doHandleLegendaryStructures().
+      // If the existing SAM network still lacks capacity after the dedicated
+      // site check, establish a launcher before ordinary cooldown/save-up
+      // pacing. Legendary keeps its emergency ordering inside
+      // doHandleLegendaryStructures().
       if (
         state.settings.winFixes &&
         !legendaryDifficulty &&
@@ -963,7 +969,6 @@
         forceNewStructure: true,
         prioritizeStructureCoverage: true,
       });
-      if (built) this._hostileSiloSamBuilt = true;
       return built;
     }
 
@@ -1003,7 +1008,6 @@
       }
 
       if (await this.maybeSpawnHostileSiloSam()) return true;
-
       if (await this.maybeUpgradeSamForSiloParity()) {
         return true;
       }
@@ -1210,32 +1214,104 @@
       }
     }
 
-    hasBuiltMissileSilo(player) {
-      if (!player || typeof player.units !== "function") return false;
-      let silos;
+    // A silo/SAM level is also the number of missiles it can have in its
+    // cooldown queue. Keep the defensive capacity calculation aligned with
+    // that engine mechanic: built active units contribute their level and a
+    // unit under construction contributes one projected slot.
+    playerUnitCapacitySummary(player, type) {
+      if (!player || typeof player.units !== "function") return null;
+      let units;
       try {
-        silos = player.units(UNIT.MissileSilo);
+        units = player.units(type);
       } catch (_error) {
-        return false;
+        return null;
       }
-      if (!Array.isArray(silos)) return false;
-      return silos.some((silo) => {
-        if (!silo) return false;
+      if (!Array.isArray(units)) return null;
+
+      let count = 0;
+      let capacity = 0;
+      let builtCount = 0;
+      for (const unit of units) {
+        if (!unit) continue;
         try {
+          const underConstruction =
+            typeof unit.isUnderConstruction === "function" &&
+            unit.isUnderConstruction();
+          if (underConstruction) {
+            count++;
+            capacity++;
+            continue;
+          }
           if (
-            typeof silo.isUnderConstruction === "function" &&
-            silo.isUnderConstruction()
+            typeof unit.isActive === "function" &&
+            unit.isActive() === false
           ) {
-            return false;
+            continue;
           }
-          if (typeof silo.isActive === "function" && !silo.isActive()) {
-            return false;
-          }
+          const rawLevel =
+            typeof unit.level === "function" ? unit.level() : 1;
+          const level = Number(rawLevel ?? 1);
+          count++;
+          builtCount++;
+          capacity += Number.isFinite(level)
+            ? Math.max(1, Math.floor(level))
+            : 1;
         } catch (_error) {
-          return false;
+          // Ignore an incomplete unit snapshot; the next game tick will retry.
         }
-        return true;
-      });
+      }
+      return { count, capacity, builtCount };
+    }
+
+    ownSamCapacity() {
+      return this.playerUnitCapacitySummary(this.player, UNIT.SAMLauncher)
+        ?.capacity ?? 0;
+    }
+
+    hostileMissileSiloCapacitySummary() {
+      const snapshotTick = this.hostileSiloSamCurrentTick();
+      if (
+        snapshotTick !== null &&
+        this._hostileSiloCapacitySnapshotTick === snapshotTick &&
+        this._hostileSiloCapacitySnapshot !== null
+      ) {
+        return this._hostileSiloCapacitySnapshot;
+      }
+
+      const hostile = this.liveHostilePlayers();
+      if (hostile === null) return null;
+
+      let hostileSiloCount = 0;
+      let hostileSiloCapacity = 0;
+      let builtHostileSiloCount = 0;
+      for (const other of hostile) {
+        const metrics = this.playerUnitCapacitySummary(
+          other,
+          UNIT.MissileSilo,
+        );
+        if (metrics === null) continue;
+        hostileSiloCount += metrics.count;
+        hostileSiloCapacity += metrics.capacity;
+        builtHostileSiloCount += metrics.builtCount;
+      }
+
+      const summary = {
+        hostileSiloCount,
+        hostileSiloCapacity,
+        builtHostileSiloCount,
+      };
+      if (snapshotTick !== null) {
+        this._hostileSiloCapacitySnapshotTick = snapshotTick;
+        this._hostileSiloCapacitySnapshot = summary;
+      }
+      return summary;
+    }
+
+    hasBuiltMissileSilo(player) {
+      return (
+        this.playerUnitCapacitySummary(player, UNIT.MissileSilo)?.builtCount ??
+        0
+      ) > 0;
     }
 
     // Gold alone opens the SAM-building gate, but it does not justify running
@@ -1340,21 +1416,25 @@
 
       const hostile = this.liveHostilePlayers();
       if (hostile === null) return null;
+      const siloSummary = this.hostileMissileSiloCapacitySummary();
       let reachedSiloGoldThreshold = false;
-      let siloThreat = false;
+      let siloThreat =
+        siloSummary !== null && siloSummary.builtHostileSiloCount > 0;
       for (const other of hostile) {
         const gold = this.playerGoldBigInt(other);
         if (gold !== null && gold >= HOSTILE_SILO_GOLD_THRESHOLD) {
           reachedSiloGoldThreshold = true;
         }
-        if (
-          (gold !== null && gold >= HOSTILE_SAM_TRIGGER_GOLD_THRESHOLD) ||
-          this.hasBuiltMissileSilo(other)
-        ) {
+        if (gold !== null && gold >= HOSTILE_SAM_TRIGGER_GOLD_THRESHOLD) {
           siloThreat = true;
         }
       }
-      const snapshot = { reachedSiloGoldThreshold, siloThreat };
+      const snapshot = {
+        reachedSiloGoldThreshold,
+        siloThreat,
+        hostileSiloCount: siloSummary?.hostileSiloCount ?? 0,
+        hostileSiloCapacity: siloSummary?.hostileSiloCapacity ?? 0,
+      };
       if (snapshotTick !== null) {
         this._hostileThreatSnapshotTick = snapshotTick;
         this._hostileThreatSnapshot = snapshot;
@@ -1363,8 +1443,32 @@
     }
 
     shouldBuildHostileSiloSam() {
-      if (!state.settings.winFixes || this._hostileSiloSamBuilt) return false;
-      return this.hasHostileSiloThreat() === true;
+      if (!state.settings.winFixes) return false;
+      const siloSummary = this.hostileMissileSiloCapacitySummary();
+      const threat = this.hostileThreatSnapshot();
+      if (siloSummary === null || threat === null) return false;
+
+      const ownSam = this.playerUnitCapacitySummary(
+        this.player,
+        UNIT.SAMLauncher,
+      );
+      if (ownSam === null) return false;
+
+      // Match both dimensions of the hostile network. Each silo is an
+      // independent launch origin that may require a separate point-defense
+      // site, while each level contributes one missile/interceptor slot.
+      if (siloSummary.hostileSiloCount > ownSam.count) {
+        return true;
+      }
+
+      // Keep the existing anticipatory response when a hostile nation can
+      // already afford a silo but has not placed one yet. It is only one SAM
+      // until a real silo appears, so it cannot snowball on gold alone.
+      return (
+        siloSummary.hostileSiloCount === 0 &&
+        threat.siloThreat === true &&
+        ownSam.count === 0
+      );
     }
 
     shouldPrioritizeEconomicGrowth() {
@@ -1673,15 +1777,7 @@
     }
 
     enemyMissileSiloPressure() {
-      let pressure = 0;
-      try {
-        for (const other of this.legendaryHostilePlayers()) {
-          pressure += other.units(UNIT.MissileSilo).length;
-        }
-      } catch (_error) {
-        return pressure;
-      }
-      return pressure;
+      return this.enemyMissileSiloCapacityTarget();
     }
 
     // Custom missile parity target: count the projected level sum of each
@@ -1727,6 +1823,26 @@
       );
     }
 
+    enemyUnitCapacityTarget(type) {
+      if (type === UNIT.MissileSilo) {
+        return this.hostileMissileSiloCapacitySummary()?.hostileSiloCapacity ?? 0;
+      }
+      const hostile = this.liveHostilePlayers();
+      if (hostile === null) return 0;
+      let capacity = 0;
+      for (const enemy of hostile) {
+        const metrics = this.playerUnitCapacitySummary(enemy, type);
+        if (metrics !== null) capacity += metrics.capacity;
+      }
+      return capacity;
+    }
+
+    enemyMissileSiloCapacityTarget() {
+      // Unlike offensive target selection, defensive capacity must include
+      // every live hostile silo: all of them can contribute to one salvo.
+      return this.enemyUnitCapacityTarget(UNIT.MissileSilo);
+    }
+
     missileSiloParityTarget() {
       return state.settings.winFixes ? this.enemySamCapacityParityTarget() : 0;
     }
@@ -1757,12 +1873,12 @@
 
     samLevelParityTarget() {
       return state.settings.winFixes
-        ? this.enemyMissileSiloCapacityParityTarget()
+        ? this.enemyMissileSiloCapacityTarget()
         : 0;
     }
 
     samLevelParityGap() {
-      return Math.max(0, this.samLevelParityTarget() - this.ownMaximumSamLevel());
+      return Math.max(0, this.samLevelParityTarget() - this.ownSamCapacity());
     }
 
     legendaryRailMetrics(cities, ports, factories) {
@@ -4036,10 +4152,7 @@
       const siloParityTarget = this.missileSiloParityTarget();
       const siloParityGap = Math.max(0, siloParityTarget - ownSiloLevels);
       const samLevelParityTarget = this.samLevelParityTarget();
-      const samLevelParityGap = Math.max(
-        0,
-        samLevelParityTarget - this.ownMaximumSamLevel(),
-      );
+      const samLevelParityGap = this.samLevelParityGap();
       let enemyWarships = 0;
       for (const enemy of hostile) {
         try {
@@ -4073,7 +4186,7 @@
         missileThreat,
         portSurvivability: this.legendaryPortSurvivability(ports, enemyWarships),
         enemySilos,
-        ownSams: this.ownedLevels(UNIT.SAMLauncher),
+        ownSams: this.ownSamCapacity(),
         ownSilos: ownSiloLevels,
         siloParityTarget,
         siloParityGap,
@@ -4597,8 +4710,8 @@
         /* keep the buildable probe as the compatibility fallback */
       }
 
-      const targetLevel = this.samLevelParityTarget();
-      if (targetLevel <= 0 || this.ownMaximumSamLevel() >= targetLevel) {
+      const targetCapacity = this.samLevelParityTarget();
+      if (targetCapacity <= 0 || this.ownSamCapacity() >= targetCapacity) {
         return false;
       }
 

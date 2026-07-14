@@ -234,6 +234,10 @@ assert.equal(
   true,
   "The mandatory SAM trigger opens at exactly 1.5M hostile gold",
 );
+behavior._hostileThreatSnapshotTick = null;
+behavior._hostileThreatSnapshot = null;
+behavior._hostileSiloCapacitySnapshotTick = null;
+behavior._hostileSiloCapacitySnapshot = null;
 enemyB.gold = () => 1_499_999n;
 assert.equal(
   behavior.hasHostileSiloThreat(),
@@ -279,7 +283,8 @@ assert.deepEqual(
 );
 behavior.shouldBuildStructure = originalShouldBuildStructure;
 behavior.maybeSpawnStructure = originalMaybeSpawnStructure;
-behavior._hostileSiloSamBuilt = false;
+let hostileAttemptTick = 1000;
+behavior.game.ticks = () => hostileAttemptTick;
 const hostileSamCalls = [];
 behavior.maybeSpawnStructure = async (...args) => {
   hostileSamCalls.push(args);
@@ -291,9 +296,9 @@ assert.equal(
   "A hostile silo threat requests one dedicated SAM",
 );
 assert.equal(
-  behavior._hostileSiloSamBuilt,
-  true,
-  "A successful threat SAM request is not repeated every tick",
+  hostileSamCalls.length,
+  1,
+  "A successful threat SAM request crosses the placement path once",
 );
 assert.deepEqual(
   hostileSamCalls.map(([type, options]) => [
@@ -309,12 +314,21 @@ assert.deepEqual(
 assert.equal(
   await behavior.maybeSpawnHostileSiloSam(),
   false,
-  "The dedicated threat SAM is built only once per behavior instance",
+  "The dedicated threat SAM is not repeated within the same game tick",
+);
+hostileAttemptTick++;
+assert.equal(
+  await behavior.maybeSpawnHostileSiloSam(),
+  true,
+  "A remaining hostile Silo site gap allows another SAM on a later tick",
+);
+assert.equal(
+  hostileSamCalls.length,
+  2,
+  "SAM construction is not permanently disabled after the first successful build",
 );
 behavior.maybeSpawnStructure = originalMaybeSpawnStructure;
-behavior._hostileSiloSamBuilt = false;
-let hostileAttemptTick = 1000;
-behavior.game.ticks = () => hostileAttemptTick;
+behavior._hostileSiloSamAttemptTick = null;
 const failedHostileSamCalls = [];
 behavior.maybeSpawnStructure = async (...args) => {
   failedHostileSamCalls.push(args);
@@ -458,6 +472,11 @@ assert.equal(
   behavior.enemyMissileSiloCapacityParityTarget(),
   6,
   "Silo parity selects the strongest hostile Silo level sum and treats construction as one projected level",
+);
+assert.equal(
+  behavior.enemyMissileSiloCapacityTarget(),
+  7,
+  "SAM defense sums every hostile Silo level, including one projected construction slot",
 );
 state.settings.winFixes = false;
 assert.equal(
@@ -841,19 +860,32 @@ assert.equal(
   1,
   "Only built own SAM levels count toward immediate parity",
 );
-assert.equal(behavior.samLevelParityGap(), 5, "SAM parity reports the missing level gap");
+own.sams = [makeUnit(403, 3), makeUnit(404, 3)];
+assert.equal(
+  behavior.samLevelParityGap(),
+  1,
+  "SAM parity uses total own interceptor capacity instead of only the highest SAM",
+);
+own.sams = [reactiveSam];
+assert.equal(behavior.samLevelParityGap(), 6, "SAM parity reports the missing capacity");
 assert.equal(
   await behavior.maybeUpgradeSamForSiloParity(),
   true,
-  "A SAM is upgraded when the strongest hostile Silo level sum exceeds our highest SAM",
+  "A SAM is upgraded when hostile Silo capacity exceeds our own capacity",
 );
 assert.equal(sentBuilds.length, 1, "Proactive SAM parity emits one upgrade");
-own.sams = [makeUnit(402, 6)];
+own.sams = [makeUnit(402, 7)];
 assert.equal(behavior.samLevelParityGap(), 0, "A single SAM at the target level closes SAM parity");
 assert.equal(
   await behavior.maybeUpgradeSamForSiloParity(),
   false,
   "SAM parity does not repeat an upgrade once one SAM reaches the target",
+);
+own.sams = [makeUnit(405, 3), makeUnit(406, 2), makeUnit(407, 2)];
+assert.equal(
+  behavior.shouldBuildHostileSiloSam(),
+  false,
+  "The hostile Silo site floor stops requesting new SAMs once every silo has a defensive site",
 );
 own.sams = [reactiveSam];
 sentBuilds.length = 0;
@@ -884,9 +916,10 @@ assert.equal(
 );
 samDisabled = false;
 
-// The dedicated hostile-silo SAM path is covered above; suppress its one-shot
-// action here so the wiring tests can exercise the existing parity branches.
-behavior._hostileSiloSamBuilt = true;
+// The dedicated hostile-silo SAM path is covered above; the wiring tests can
+// now exercise the proactive parity branch before ordinary construction.
+const originalMaybeSpawnHostileSiloSam = behavior.maybeSpawnHostileSiloSam;
+behavior.maybeSpawnHostileSiloSam = async () => false;
 let wiredParityCalls = 0;
 behavior.maybeUpgradeMissileDefenseSam = async () => false;
 behavior.maybeUpgradeSamForSiloParity = async () => {
@@ -913,5 +946,6 @@ assert.equal(
   "Non-Legendary structure handling checks reactive SAM upgrades before ordinary construction",
 );
 assert.equal(wiredUpgradeCalls, 1, "The reactive SAM path is wired into handleStructures");
+behavior.maybeSpawnHostileSiloSam = originalMaybeSpawnHostileSiloSam;
 
 console.log("SAM DEFENSE POLICY TESTS OK");
