@@ -1737,7 +1737,9 @@ window.__OFH_autobot = {
     if ("hidden" in patch) s.hidden = Boolean(patch.hidden);
     if ("tickMs" in patch) {
       const ms = Number(patch.tickMs);
-      if (Number.isFinite(ms) && ms > 0) s.tickMs = ms;
+      if (Number.isFinite(ms) && ms > 0) {
+        s.tickMs = normalizeTickIntervalMs(ms);
+      }
     }
     if ("smartSpawn" in patch) s.smartSpawn = Boolean(patch.smartSpawn);
     if (patch.features && typeof patch.features === "object") {

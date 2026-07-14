@@ -115,7 +115,11 @@
   // game ticks fast enough to never miss an attackTick (nationExecution does the
   // real game-tick gating internally; engine just needs to poll often enough).
   function desiredTickInterval() {
-    const base = state.settings.tickMs || 200;
+    const configured = state.settings.tickMs || 200;
+    const base =
+      typeof normalizeTickIntervalMs === "function"
+        ? normalizeTickIntervalMs(configured)
+        : configured;
     return clamp(base / Math.max(0.25, state.speed.factor || 1), 100, base);
   }
 

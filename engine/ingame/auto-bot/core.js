@@ -194,6 +194,22 @@
     pos: null, // {left, top}
   };
 
+  const MIN_TICK_INTERVAL_MS = 100;
+  const TICK_INTERVAL_STEP_MS = 100;
+  const MAX_TICK_INTERVAL_MS = 2000;
+
+  function normalizeTickIntervalMs(value) {
+    const ms = Number(value);
+    if (!Number.isFinite(ms) || ms <= 0) return DEFAULTS.tickMs;
+    return Math.min(
+      MAX_TICK_INTERVAL_MS,
+      Math.max(
+        MIN_TICK_INTERVAL_MS,
+        Math.round(ms / TICK_INTERVAL_STEP_MS) * TICK_INTERVAL_STEP_MS,
+      ),
+    );
+  }
+
   // Throttles (ms) so we don't spam the worker / re-issue intents every tick.
   // Combat decision cadence is now derived per-difficulty in combatCadenceMs()
   // to match the bot's attackRate. Build runs ~3× per combat cycle (economy
@@ -365,6 +381,7 @@
     } catch (error) {
       console.warn("[AutoBot] failed to load settings:", error);
     }
+    s.tickMs = normalizeTickIntervalMs(s.tickMs);
     return s;
   }
 

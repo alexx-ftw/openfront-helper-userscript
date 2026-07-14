@@ -172,15 +172,6 @@
   /** Current spendable gold at which an otherwise idle economy must keep building. */
   const HIGH_GOLD_CONSTRUCTION_PRESSURE_THRESHOLD = 3_000_000n;
 
-  /** Tick gap a high-starting-gold nation must wait before placing its Nth structure */
-  const HIGH_GOLD_STRUCTURE_COOLDOWN_TICKS = [
-    0, // before #1 (SAM) — no pause
-    0, // before #2 — no pause
-    250, // before #3 — 25s
-    150, // before #4 — 15s
-    100, // before #5 — 10s
-  ];
-
   /** Length in ticks of each on/off phase after the team-mode save-up target is first reached */
   const TEAM_POST_SAVE_UP_PHASE_TICKS = 150; // 15s
 
@@ -354,7 +345,6 @@
       // src private fields (NationStructureBehavior.ts:126-135).
       this.reachableStationsCache = null;
       this._sharedWaterComponents = null;
-      this.lastStructureTick = null;
       this.placementsCount = 0;
       this._hasHighStartingGold = null;
       this._postSaveUpStartTick = null;
@@ -476,8 +466,7 @@
         return true;
       }
 
-      // Defense posts are handled outside the normal pacing/counter system:
-      // they don't increment placementsCount or lastStructureTick, and they are
+      // Defense posts are handled outside the normal placement counter and are
       // never built as the very first structure.
       if (
         !legendaryDefenseEmergency &&
@@ -494,18 +483,13 @@
         }
       }
 
-      // Legendary missile defense is an emergency exception to ordinary pacing:
-      // a save-up phase or high-gold cooldown must not consume the five-tick
-      // window in which an interceptor upgrade/build can still matter.
-      if (!legendaryDefenseEmergency && this.isOnStructureCooldown()) {
-        return false;
-      }
+      // Legendary missile defense is an emergency exception to the ordinary
+      // save-up phase so an interceptor upgrade/build can still matter.
       if (!legendaryDefenseEmergency && this.isInPostSaveUpBlockedPhase()) {
         return false;
       }
       const built = await this.doHandleStructures();
       if (built) {
-        this.lastStructureTick = this.game.ticks();
         this.placementsCount++;
       }
       return built;
@@ -754,23 +738,6 @@
       }
 
       return fallback;
-    }
-
-    // isOnStructureCooldown — NationStructureBehavior.ts:383.
-    isOnStructureCooldown() {
-      // Only high-starting-gold nations pause
-      if (this.lastStructureTick === null || !this.hasHighStartingGold()) {
-        return false;
-      }
-      const requiredGap =
-        HIGH_GOLD_STRUCTURE_COOLDOWN_TICKS[this.placementsCount] ?? 0;
-      if (requiredGap === 0) {
-        return false;
-      }
-      if (this.hasAffordableHighGoldEconomicConstruction()) {
-        return false;
-      }
-      return this.game.ticks() - this.lastStructureTick < requiredGap;
     }
 
     // isInPostSaveUpBlockedPhase — NationStructureBehavior.ts:398.
@@ -1057,43 +1024,6 @@
         if (await this.maybeSpawnStructure(structureType)) return true;
       }
       return false;
-    }
-
-    hasAffordableHighGoldEconomicConstruction() {
-      if (!state.settings.winFixes || !this.hasHighStartingGold()) {
-        return false;
-      }
-
-      const config = this.game.config();
-      let availableGold = this.player.gold();
-      try {
-        const reserve = this.legendaryReserveGold();
-        if (reserve > 0n) {
-          availableGold = availableGold > reserve ? availableGold - reserve : 0n;
-        }
-      } catch (_error) {
-        // A malformed optional reserve must not disable ordinary construction.
-      }
-      if (availableGold < HIGH_GOLD_CONSTRUCTION_PRESSURE_THRESHOLD) {
-        return false;
-      }
-
-      for (const structureType of [UNIT.City, UNIT.Factory]) {
-        if (
-          !config.isUnitDisabled(structureType) &&
-          availableGold >= this.getPerceivedCost(structureType)
-        ) {
-          return true;
-        }
-      }
-
-      // This only unlocks the construction decision. doHandleStructures already
-      // validates the canonical open-ocean predicate before actually attempting
-      // a port, so avoid a full border scan in this hot cooldown check.
-      return (
-        !config.isUnitDisabled(UNIT.Port) &&
-        availableGold >= this.getPerceivedCost(UNIT.Port)
-      );
     }
 
     async maybeSpawnHostileSiloSam() {

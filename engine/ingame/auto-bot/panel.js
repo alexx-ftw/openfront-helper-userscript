@@ -386,7 +386,7 @@
             </div>
             <div class="ab-cfg-row">
               <span class="ab-cfg-label">${tr("Tick interval (ms)")}</span>
-              <input class="ab-cfg-num" type="number" min="50" max="2000" step="50" value="${state.settings.tickMs || 200}" data-cfg-num="tickMs">
+              <input class="ab-cfg-num" type="number" min="${MIN_TICK_INTERVAL_MS}" max="${MAX_TICK_INTERVAL_MS}" step="${TICK_INTERVAL_STEP_MS}" value="${state.settings.tickMs || DEFAULTS.tickMs}" data-cfg-num="tickMs">
             </div>
 
             <div class="ab-cfg-sec">${tr("Donate tuning")}</div>
@@ -666,7 +666,8 @@
       tickInput.addEventListener("change", () => {
         const ms = Number(tickInput.value);
         if (Number.isFinite(ms) && ms > 0) {
-          state.settings.tickMs = ms;
+          state.settings.tickMs = normalizeTickIntervalMs(ms);
+          tickInput.value = String(state.settings.tickMs);
           saveSettings();
           if (typeof retuneEngine === "function") retuneEngine();
         }
