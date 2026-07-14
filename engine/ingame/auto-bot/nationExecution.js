@@ -24,6 +24,7 @@
       this.active = true;
       this.behaviorsInitialized = false;
       this.openingLandBurstPending = false;
+      this.openingExpansionFollowUpPending = false;
       this.spawnExecAdded = false;
       this.lastSpawnTile = null; // last emitted spawn tile (to re-emit on change)
       this.lastSpawnTopKey = null; // "x,y" of the #1 spot we last committed to
@@ -67,6 +68,18 @@
 
     feat(name) {
       return !!(state.settings.features && state.settings.features[name]);
+    }
+
+    hasPendingOpeningExpansionIntent() {
+      try {
+        return (
+          typeof this.attackBehavior?.getPendingOutboundAttackTroops ===
+            "function" &&
+          Number(this.attackBehavior.getPendingOutboundAttackTroops()) > 0
+        );
+      } catch (_e) {
+        return false;
+      }
     }
 
     async tick(ticks, profile = null) {
@@ -174,26 +187,46 @@
         this.initializeBehaviors();
         if (this.feat("expand")) {
           const openingWinFix = state.settings.winFixes === true;
+          const openingCommitFraction = openingWinFix
+            ? EARLY_EXPAND_COMMIT
+            : 0.5;
           const openingAttackSent = await autoBotProfileAsyncPhase(
             profile,
             "opening-attack",
-            () => this.attackBehavior.forceSendAttack(this.mg.terraNullius()),
+            () =>
+              this.attackBehavior.forceSendAttack(
+                this.mg.terraNullius(),
+                openingCommitFraction,
+              ),
           );
-          // A successful opening burst already occupies this decision slot.
-          // Retry only when it was not emitted; never run a second decision
-          // against the same stale troop snapshot.
+          // A successful opening burst occupies this decision slot. With winFixes,
+          // schedule one follow-up on the next authoritative tick after the local
+          // intent is reconciled instead of waiting for attackRate.
           this.openingLandBurstPending = openingWinFix && !openingAttackSent;
+          this.openingExpansionFollowUpPending =
+            openingWinFix && openingAttackSent;
         }
         this.lastSeenTick = ticks;
         return;
       }
 
+      const openingExpansionFollowUp =
+        this.openingLandBurstPending ||
+        this.openingExpansionFollowUpPending;
       if (
-        this.openingLandBurstPending &&
+        openingExpansionFollowUp &&
         state.settings.winFixes &&
         (this.feat("expand") || this.feat("boat"))
       ) {
+        // Do not scan or emit a second intent against the same stale troop
+        // snapshot. The next poll will retry as soon as reconciliation releases
+        // the opening attack, without waiting for the regular attack cadence.
+        if (this.hasPendingOpeningExpansionIntent()) {
+          this.lastSeenTick = ticks;
+          return;
+        }
         this.openingLandBurstPending = false;
+        this.openingExpansionFollowUpPending = false;
         this.status = tr("Thinking…");
         try {
           await autoBotProfileAsyncPhase(

@@ -46,8 +46,128 @@ assert.match(
 assert.match(
   nationExecutionSource,
   /this\.openingLandBurstPending = openingWinFix && !openingAttackSent/,
-  "a successful opening burst must suppress the immediate duplicate decision",
+  "a failed opening burst must retain the immediate retry path",
 );
+assert.match(
+  nationExecutionSource,
+  /openingCommitFraction = openingWinFix[\s\S]{0,120}EARLY_EXPAND_COMMIT[\s\S]{0,80}0\.5/,
+  "winFixes must use the calculated opening commit while faithful mode keeps 50%",
+);
+assert.match(
+  nationExecutionSource,
+  /this\.openingExpansionFollowUpPending =\s*openingWinFix && openingAttackSent/,
+  "a successful opening burst must schedule a reconciled follow-up",
+);
+
+const openingFractions = [];
+let openingFollowUps = 0;
+const NoopBehavior = class {};
+const openingSandbox = {
+  Difficulty: {
+    Easy: "Easy",
+    Medium: "Medium",
+    Hard: "Hard",
+    Impossible: "Impossible",
+    Legendary: "Legendary",
+  },
+  UNIT: { Port: "Port", Warship: "Warship" },
+  EARLY_EXPAND_COMMIT: 0.6,
+  currentDifficulty: () => "Impossible",
+  simpleHash: () => 1,
+  PseudoRandom: class {
+    nextInt(min) {
+      return min;
+    }
+  },
+  autoBotProfileAsyncPhase: (_profile, _label, callback) => callback(),
+  autoBotProfileSyncPhase: (_profile, _label, callback) => callback(),
+  tr: (value) => value,
+  console,
+  state: {
+    settings: {
+      winFixes: true,
+      features: {
+        spawn: false,
+        expand: true,
+        boat: false,
+        warship: false,
+        build: false,
+        alliance: false,
+        nuke: false,
+      },
+    },
+  },
+  EmojiBehavior: NoopBehavior,
+  MirvBehavior: NoopBehavior,
+  AllianceBehavior: NoopBehavior,
+  WarshipBehavior: NoopBehavior,
+  NukeBehavior: NoopBehavior,
+  StructureBehavior: NoopBehavior,
+  AttackBehavior: class {
+    constructor() {
+      this.pending = 0;
+    }
+
+    forceSendAttack(_target, fraction) {
+      openingFractions.push(fraction);
+      this.pending = 1;
+      return true;
+    }
+
+    getPendingOutboundAttackTroops() {
+      return this.pending;
+    }
+
+    maybeAttack() {
+      openingFollowUps += 1;
+    }
+  },
+};
+const openingPlayer = {
+  hasSpawned: () => true,
+  isAlive: () => true,
+  unitsConstructed: () => false,
+};
+const openingGame = {
+  myPlayer: () => openingPlayer,
+  inSpawnPhase: () => false,
+  terraNullius: () => ({ id: () => "TerraNullius" }),
+  config: () => ({ isUnitDisabled: () => false }),
+};
+vm.runInNewContext(`${nationExecutionSource}\nglobalThis.NationBot = NationBot;`, openingSandbox, {
+  filename: path.join(repoRoot, "engine/ingame/auto-bot/nationExecution.js"),
+});
+const openingBot = new openingSandbox.NationBot(openingGame, {
+  playerId: "opening-player",
+  gameId: "opening-game",
+});
+await openingBot.tick(0);
+assert.equal(
+  openingFractions[0],
+  0.6,
+  "the first live TerraNullius burst uses the calculated 60% commit",
+);
+assert.equal(
+  openingBot.openingExpansionFollowUpPending,
+  true,
+  "a successful burst schedules a follow-up",
+);
+await openingBot.tick(1);
+assert.equal(
+  openingFollowUps,
+  0,
+  "the follow-up waits for the opening intent without duplicating it",
+);
+assert.equal(openingFractions.length, 1, "the pending opening intent is not emitted twice");
+openingBot.attackBehavior.pending = 0;
+await openingBot.tick(2);
+assert.equal(
+  openingFollowUps,
+  1,
+  "the follow-up runs on the next reconciled tick instead of attackRate",
+);
+assert.equal(openingBot.openingExpansionFollowUpPending, false);
+
 assert.equal(sandbox.isEarlyGameBoatEta(300), true);
 assert.equal(sandbox.isEarlyGameBoatEta(301), false);
 assert.equal(sandbox.isEarlyGameBoatEta(null), false);
