@@ -169,6 +169,9 @@
   /** Structures that directly grow the nation's economy. */
   const ECONOMIC_STRUCTURE_TYPES = [UNIT.Port, UNIT.Factory, UNIT.City];
 
+  /** Current spendable gold at which an otherwise idle economy must keep building. */
+  const HIGH_GOLD_CONSTRUCTION_PRESSURE_THRESHOLD = 3_000_000n;
+
   /** Tick gap a high-starting-gold nation must wait before placing its Nth structure */
   const HIGH_GOLD_STRUCTURE_COOLDOWN_TICKS = [
     0, // before #1 (SAM) — no pause
@@ -764,6 +767,9 @@
       if (requiredGap === 0) {
         return false;
       }
+      if (this.hasAffordableHighGoldEconomicConstruction()) {
+        return false;
+      }
       return this.game.ticks() - this.lastStructureTick < requiredGap;
     }
 
@@ -974,6 +980,19 @@
         return true;
       }
 
+      // All ratio-driven and defensive construction has had first chance. If
+      // the economy is still idle in a non-Legendary high-gold game, make one
+      // affordable economic attempt without repeating the probes above.
+      if (
+        !economyGrowthPriority &&
+        (await this.maybePrioritizeHighGoldEconomicConstruction({
+          config,
+          hasOceanPortTiles,
+        }))
+      ) {
+        return true;
+      }
+
       return false;
     }
 
@@ -1002,6 +1021,79 @@
         if (await this.maybeSpawnStructure(structureType)) return true;
       }
       return false;
+    }
+
+    /**
+     * High-gold games can otherwise become stuck after the initial defensive
+     * opening: economy ratios may say "wait" even though an economic structure
+     * is affordable. Keep the normal defensive/nuclear priorities, but let
+     * current spendable gold reopen economic construction when there is a real
+     * action to take.
+     */
+    async maybePrioritizeHighGoldEconomicConstruction({
+      config,
+      hasOceanPortTiles,
+    }) {
+      if (!state.settings.winFixes) return false;
+
+      let availableGold = this.player.gold();
+      try {
+        const reserve = this.legendaryReserveGold();
+        if (reserve > 0n) {
+          availableGold = availableGold > reserve ? availableGold - reserve : 0n;
+        }
+      } catch (_error) {
+        // A malformed optional reserve must not disable ordinary construction.
+      }
+      if (availableGold < HIGH_GOLD_CONSTRUCTION_PRESSURE_THRESHOLD) {
+        return false;
+      }
+
+      const buildOrder = [UNIT.City, UNIT.Factory, UNIT.Port];
+      for (const structureType of buildOrder) {
+        if (config.isUnitDisabled(structureType)) continue;
+        if (structureType === UNIT.Port && !hasOceanPortTiles) continue;
+        if (availableGold < this.getPerceivedCost(structureType)) continue;
+        if (await this.maybeSpawnStructure(structureType)) return true;
+      }
+      return false;
+    }
+
+    hasAffordableHighGoldEconomicConstruction() {
+      if (!state.settings.winFixes || !this.hasHighStartingGold()) {
+        return false;
+      }
+
+      const config = this.game.config();
+      let availableGold = this.player.gold();
+      try {
+        const reserve = this.legendaryReserveGold();
+        if (reserve > 0n) {
+          availableGold = availableGold > reserve ? availableGold - reserve : 0n;
+        }
+      } catch (_error) {
+        // A malformed optional reserve must not disable ordinary construction.
+      }
+      if (availableGold < HIGH_GOLD_CONSTRUCTION_PRESSURE_THRESHOLD) {
+        return false;
+      }
+
+      for (const structureType of [UNIT.City, UNIT.Factory]) {
+        if (
+          !config.isUnitDisabled(structureType) &&
+          availableGold >= this.getPerceivedCost(structureType)
+        ) {
+          return true;
+        }
+      }
+
+      // This only unlocks the construction decision. doHandleStructures already
+      // validates the canonical open-ocean predicate before actually attempting
+      // a port, so avoid a full border scan in this hot cooldown check.
+      return (
+        !config.isUnitDisabled(UNIT.Port) &&
+        availableGold >= this.getPerceivedCost(UNIT.Port)
+      );
     }
 
     async maybeSpawnHostileSiloSam() {

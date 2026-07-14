@@ -315,6 +315,60 @@ assert.deepEqual(
 );
 behavior.shouldBuildStructure = originalShouldBuildStructure;
 behavior.maybeSpawnStructure = originalMaybeSpawnStructure;
+
+const originalHighStartingGold = behavior.hasHighStartingGold;
+const originalEconomicPriority = behavior.shouldPrioritizeEconomicGrowth;
+const originalPerceivedCost = behavior.getPerceivedCost;
+const originalOwnGold = own.gold;
+const originalGameTicks = behavior.game.ticks;
+const originalLastStructureTick = behavior.lastStructureTick;
+const originalPlacementsCount = behavior.placementsCount;
+const highGoldEconomicCalls = [];
+behavior.hasHighStartingGold = () => true;
+behavior.shouldPrioritizeEconomicGrowth = () => false;
+behavior.getPerceivedCost = () => 1_000_000n;
+own.gold = () => 9_000_000n;
+behavior.lastStructureTick = 100;
+behavior.placementsCount = 2;
+behavior.game.ticks = () => 101;
+assert.equal(
+  behavior.isOnStructureCooldown(),
+  false,
+  "Affordable economic construction bypasses the high-gold placement cooldown",
+);
+own.gold = () => 500_000n;
+assert.equal(
+  behavior.isOnStructureCooldown(),
+  true,
+  "The high-gold placement cooldown remains active when no economic structure is affordable",
+);
+own.gold = () => 9_000_000n;
+behavior.maybeSpawnStructure = async (type) => {
+  highGoldEconomicCalls.push(type);
+  return type === UNIT.City;
+};
+assert.equal(
+  await behavior.maybePrioritizeHighGoldEconomicConstruction({
+    config: { isUnitDisabled: () => false },
+    hasOceanPortTiles: true,
+  }),
+  true,
+  "High-gold pressure requests an affordable economic structure after defensive priorities",
+);
+assert.deepEqual(
+  highGoldEconomicCalls,
+  [UNIT.City],
+  "High-gold economic construction tries the city first and stops after a successful build",
+);
+behavior.hasHighStartingGold = originalHighStartingGold;
+behavior.shouldPrioritizeEconomicGrowth = originalEconomicPriority;
+behavior.getPerceivedCost = originalPerceivedCost;
+behavior.maybeSpawnStructure = originalMaybeSpawnStructure;
+own.gold = originalOwnGold;
+behavior.game.ticks = originalGameTicks;
+behavior.lastStructureTick = originalLastStructureTick;
+behavior.placementsCount = originalPlacementsCount;
+
 let hostileAttemptTick = 1000;
 behavior.game.ticks = () => hostileAttemptTick;
 const hostileSamCalls = [];
