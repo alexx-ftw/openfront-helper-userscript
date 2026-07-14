@@ -19,6 +19,7 @@
   var _siloAutoFireState = { firedIds: {}, plannedImpacts: {}, lastGameObj: null };
   var _autoFireBuildingPlannedImpacts = [];
   var _autoFireBuildingLastGameObj = null;
+  var _autoFirePendingSamFirstSeen = {};
   var AUTO_FIRE_PENDING_PLAN_GRACE_MS = 3000;
   var SAM_AUTO_FIRE_SAFETY_MARGIN_TICKS = 10; // ~1s buffer so the nuke lands well before completion
 
@@ -219,7 +220,7 @@
     } catch (e) { return Infinity; }
   }
 
-  function _getNukeTrajectory(game, fromTile, toTile) {
+  function _getNukeTrajectory(game, fromTile, toTile, directionUp) {
     try {
       if (fromTile === null || fromTile === void 0 || toTile === null || toTile === void 0) return [];
       if (typeof game.x !== "function" || typeof game.y !== "function") return [];
@@ -235,12 +236,15 @@
       if (!refFn) return [fromTile, toTile];
 
       var maxHeight = Math.max(distance / 3, 50);
-      var p1 = { x: Math.max(0, Math.min(mapWidth - 1, p0.x + dx / 4)), y: Math.max(0, Math.min(mapHeight - 1, p0.y + dy / 4 - maxHeight)) };
-      var p2 = { x: Math.max(0, Math.min(mapWidth - 1, p0.x + dx * 3 / 4)), y: Math.max(0, Math.min(mapHeight - 1, p0.y + dy * 3 / 4 - maxHeight)) };
+      var heightSign = directionUp === false ? 1 : -1;
+      var p1 = { x: Math.max(0, Math.min(mapWidth - 1, p0.x + dx / 4)), y: Math.max(0, Math.min(mapHeight - 1, p0.y + dy / 4 + heightSign * maxHeight)) };
+      var p2 = { x: Math.max(0, Math.min(mapWidth - 1, p0.x + dx * 3 / 4)), y: Math.max(0, Math.min(mapHeight - 1, p0.y + dy * 3 / 4 + heightSign * maxHeight)) };
 
       var points = [];
       var precision = 0.002;
-      var increment = 3;
+      var cfg = typeof game.config === "function" ? game.config() : null;
+      var speed = cfg && typeof cfg.defaultNukeSpeed === "function" ? Number(cfg.defaultNukeSpeed()) : 8;
+      var increment = Number.isFinite(speed) && speed > 0 ? speed : 8;
       var t = 0, cumulative = 0;
       var prev = { x: p0.x, y: p0.y };
       points.push(prev);
@@ -831,6 +835,274 @@
     }
   }
 
+  function _autoFireNearestSiloTile(game, me, targetTile) {
+    var silos = [];
+    try {
+      silos = me && typeof me.units === "function" ? me.units("Missile Silo") || [] : [];
+    } catch (e) {}
+
+    var bestTile = null;
+    var bestDistance = Infinity;
+    for (var i = 0; i < silos.length; i++) {
+      var silo = silos[i];
+      if (!silo) continue;
+      try {
+        if (silo.isUnderConstruction && silo.isUnderConstruction()) continue;
+        if (silo.isActive && silo.isActive() === false) continue;
+      } catch (e) {
+        continue;
+      }
+      var siloTile = _autoFireUnitTile(silo);
+      if (siloTile === null || siloTile === void 0) continue;
+      var distance;
+      try {
+        distance =
+          typeof game.manhattanDist === "function"
+            ? game.manhattanDist(siloTile, targetTile)
+            : _euclideanDistSq(game, siloTile, targetTile);
+      } catch (e) {
+        distance = Infinity;
+      }
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestTile = siloTile;
+      }
+    }
+    return bestTile;
+  }
+
+  function _autoFireNukePath(game, fromTile, targetTile, directionUp) {
+    try {
+      if (
+        typeof UniversalPathFinding !== "undefined" &&
+        UniversalPathFinding.Parabola
+      ) {
+        var cfg = typeof game.config === "function" ? game.config() : null;
+        var speed =
+          cfg && typeof cfg.defaultNukeSpeed === "function"
+            ? Number(cfg.defaultNukeSpeed())
+            : 8;
+        var path = UniversalPathFinding.Parabola(game, {
+          increment: Number.isFinite(speed) && speed > 0 ? speed : 8,
+          distanceBasedHeight: true,
+          directionUp: directionUp !== false,
+        }).findPath(fromTile, targetTile);
+        if (Array.isArray(path) && path.length > 0) return path;
+      }
+    } catch (e) {}
+    return _getNukeTrajectory(game, fromTile, targetTile, directionUp);
+  }
+
+  function _autoFireCurrentTick(game) {
+    try {
+      var tick = typeof game.ticks === "function" ? Number(game.ticks()) : 0;
+      return Number.isFinite(tick) ? tick : 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  function _autoFireSamConstructionStartTick(sam) {
+    var raw = sam && sam.__src ? sam.__src : sam;
+    var state = raw && raw.state;
+    var candidates = [
+      state && state.constructionStartTick,
+      raw && raw.constructionStartTick,
+      raw && raw.data && raw.data.constructionStartTick,
+    ];
+    try {
+      if (raw && typeof raw.getConstructionStartTick === "function") {
+        candidates.push(raw.getConstructionStartTick());
+      }
+    } catch (e) {}
+    for (var i = 0; i < candidates.length; i++) {
+      if (candidates[i] === null || candidates[i] === void 0 || candidates[i] === "") continue;
+      var tick = Number(candidates[i]);
+      if (Number.isFinite(tick)) return tick;
+    }
+    return null;
+  }
+
+  function _autoFireSamConstructionTicks(game) {
+    var infos = [];
+    try {
+      if (game && typeof game.unitInfo === "function") infos.push(game.unitInfo("SAM Launcher"));
+    } catch (e) {}
+    try {
+      var cfg = game && typeof game.config === "function" ? game.config() : null;
+      if (cfg && typeof cfg.unitInfo === "function") infos.push(cfg.unitInfo("SAM Launcher"));
+    } catch (e) {}
+    for (var i = 0; i < infos.length; i++) {
+      var info = infos[i];
+      if (!info) continue;
+      var rawDuration;
+      try {
+        rawDuration = typeof info.constructionDuration === "function"
+          ? info.constructionDuration()
+          : info.constructionDuration;
+      } catch (e) {
+        rawDuration = null;
+      }
+      var duration = Number(rawDuration);
+      if (Number.isFinite(duration) && duration > 0) return duration;
+    }
+    return 300;
+  }
+
+  function _autoFireSamReadyAtTick(game, sam, currentTick, constructionTicks) {
+    if (!Number.isFinite(constructionTicks) || constructionTicks <= 0) {
+      constructionTicks = _autoFireSamConstructionTicks(game);
+    }
+    var startTick = _autoFireSamConstructionStartTick(sam);
+    if (Number.isFinite(startTick)) return startTick + constructionTicks;
+
+    // If the server view does not expose constructionStartTick, assume the SAM
+    // started when it was first observed. This is conservative: it can only make
+    // auto-fire wait longer, never turn a potentially interceptable shot into a
+    // gold-losing shot.
+    var key = _autoFireUnitKey(sam);
+    if (!key) return currentTick + constructionTicks;
+    var firstSeen = _autoFirePendingSamFirstSeen[key];
+    if (!Number.isFinite(firstSeen)) {
+      firstSeen = currentTick;
+      _autoFirePendingSamFirstSeen[key] = firstSeen;
+    }
+    return firstSeen + constructionTicks;
+  }
+
+  function _autoFirePathArrivalTicks(game, trajectory, speed) {
+    var arrivals = [];
+    var cumulativeDistance = 0;
+    for (var i = 0; i < trajectory.length; i++) {
+      if (i > 0) {
+        var segment = _euclideanDistSq(game, trajectory[i - 1], trajectory[i]);
+        if (!Number.isFinite(segment) || segment < 0) return null;
+        cumulativeDistance += Math.sqrt(segment);
+      }
+      arrivals.push(Math.max(0, Math.ceil(cumulativeDistance / speed)));
+    }
+    if (arrivals.length === 1) arrivals[0] = 1;
+    return arrivals;
+  }
+
+  function _autoFireSamTravelTicks(game, samTile, pathTile, speed) {
+    var distance = Infinity;
+    try {
+      if (typeof game.manhattanDist === "function") {
+        distance = Number(game.manhattanDist(samTile, pathTile));
+      } else {
+        var distanceSquared = _euclideanDistSq(game, samTile, pathTile);
+        distance = Number.isFinite(distanceSquared) ? Math.sqrt(distanceSquared) : Infinity;
+      }
+    } catch (e) {}
+    if (!Number.isFinite(distance) || distance < 0) return Infinity;
+    return Math.max(0, Math.ceil(distance / speed));
+  }
+
+  // Return the total level capacity of hostile SAMs that can intercept an atom
+  // along the actual approach corridor. A pending SAM counts when its expected
+  // ready tick is early enough to launch an interceptor before the nuke reaches
+  // a targetable point inside its range. This is a local safety backstop for
+  // auto-fire-building: recommendQty normally performs the same check, but a
+  // partial/stale game view must never turn a known interceptable shot into a
+  // guaranteed gold loss.
+  function _autoFireBuiltSamInterceptionCapacity(game, me, targetTile, directionUp) {
+    var sourceTile = _autoFireNearestSiloTile(game, me, targetTile);
+    if (sourceTile === null || sourceTile === void 0) return 0;
+
+    var trajectory = _autoFireNukePath(game, sourceTile, targetTile, directionUp);
+    if (!Array.isArray(trajectory) || trajectory.length === 0) return 0;
+
+    var cfg = typeof game.config === "function" ? game.config() : null;
+    var currentTick = _autoFireCurrentTick(game);
+    var nukeSpeed =
+      cfg && typeof cfg.defaultNukeSpeed === "function"
+        ? Number(cfg.defaultNukeSpeed())
+        : 8;
+    nukeSpeed = Number.isFinite(nukeSpeed) && nukeSpeed > 0 ? nukeSpeed : 8;
+    var samMissileSpeed =
+      cfg && typeof cfg.defaultSamMissileSpeed === "function"
+        ? Number(cfg.defaultSamMissileSpeed())
+        : 12;
+    samMissileSpeed = Number.isFinite(samMissileSpeed) && samMissileSpeed > 0 ? samMissileSpeed : 12;
+    var targetableRange =
+      cfg && typeof cfg.defaultNukeTargetableRange === "function"
+        ? Number(cfg.defaultNukeTargetableRange())
+        : 150;
+    var targetableRangeSquared =
+      Number.isFinite(targetableRange) && targetableRange > 0
+        ? targetableRange * targetableRange
+        : Infinity;
+    var arrivalTicks = _autoFirePathArrivalTicks(game, trajectory, nukeSpeed);
+    if (!Array.isArray(arrivalTicks) || arrivalTicks.length === 0) return 0;
+    var targetArrivalTick = arrivalTicks.length > 0 ? arrivalTicks[arrivalTicks.length - 1] : 0;
+    var constructionTicks = _autoFireSamConstructionTicks(game);
+    var sams = _getSAMTrackerUnits(game);
+    var capacity = 0;
+    var seen = {};
+
+    for (var i = 0; i < sams.length; i++) {
+      var sam = sams[i];
+      if (!sam) continue;
+      var isUnderConstruction = false;
+      try {
+        isUnderConstruction = !!(sam.isUnderConstruction && sam.isUnderConstruction());
+        if (!isUnderConstruction && sam.isActive && sam.isActive() === false) continue;
+      } catch (e) {
+        continue;
+      }
+
+      var owner = _autoFireUnitOwner(sam, game);
+      if (!_autoFireOwnerIsHostile(owner, me)) continue;
+      var samId = _autoFireUnitKey(sam) || "sam:" + i;
+      if (seen[samId]) continue;
+      seen[samId] = true;
+
+      var samTile = _autoFireUnitTile(sam);
+      if (samTile === null || samTile === void 0) continue;
+      var range = _getSamRange(game, sam);
+      if (!Number.isFinite(range) || range <= 0) continue;
+      var rangeSquared = range * range;
+      var level =
+        typeof sam.level === "function" ? Number(sam.level()) || 1 : 1;
+      var readyAt = isUnderConstruction
+        ? _autoFireSamReadyAtTick(game, sam, currentTick, constructionTicks)
+        : currentTick;
+      var readyOffset = Math.max(0, Math.ceil(readyAt - currentTick));
+
+      for (var p = 0; p < trajectory.length; p++) {
+        var pathTile = trajectory[p];
+        var fromSource = _euclideanDistSq(game, pathTile, sourceTile);
+        var toTarget = _euclideanDistSq(game, pathTile, targetTile);
+        if (
+          fromSource > targetableRangeSquared &&
+          toTarget > targetableRangeSquared
+        ) {
+          continue;
+        }
+        if (_euclideanDistSq(game, pathTile, samTile) > rangeSquared) continue;
+
+        var samTravelTicks = _autoFireSamTravelTicks(
+          game,
+          samTile,
+          pathTile,
+          samMissileSpeed,
+        );
+        if (!Number.isFinite(samTravelTicks)) continue;
+        var nukeArrivalTick = arrivalTicks[p];
+        var shootOffset = nukeArrivalTick - samTravelTicks;
+        // A pending SAM is useful only if it is online before it can launch an
+        // interceptor for this path point. It may finish after launch but before
+        // the nuke reaches a later point inside its coverage area.
+        if (shootOffset < readyOffset || shootOffset < 0) continue;
+        if (shootOffset + samTravelTicks >= targetArrivalTick) continue;
+        capacity += level;
+        break;
+      }
+    }
+    return capacity;
+  }
+
   function _autoFireCollectEnemyBuildings(game, me) {
     var out = [];
     var seen = {};
@@ -932,7 +1204,7 @@
   // Fire-and-forget one auto-fire shot at `tile`, tracked via `state.firedIds[id]`
   // so it is never re-attempted (pending while recommendQty/fireNow are in flight,
   // true once fired, deleted again on failure so a later tick can retry).
-  function _autoFireAttempt(state, id, tile, impactTile, owner, me, maxQty, targetLabel) {
+  function _autoFireAttempt(state, id, tile, impactTile, owner, me, maxQty, targetLabel, minimumQty) {
     if (!state.plannedImpacts || typeof state.plannedImpacts !== "object") state.plannedImpacts = {};
     state.firedIds[id] = "pending";
     state.plannedImpacts[id] = impactTile;
@@ -949,11 +1221,18 @@
       delete state.firedIds[id];
     };
     window.__OFH_atomBatch.recommendQty(impactTile).then(function(rec) {
-      if (!rec || !rec.ok || rec.recommended > maxQty) {
+      var recommendedQty = rec ? Number(rec.recommended) : NaN;
+      if (
+        !rec ||
+        !rec.ok ||
+        !Number.isFinite(recommendedQty) ||
+        recommendedQty > maxQty ||
+        (minimumQty && recommendedQty < minimumQty)
+      ) {
         clearPlan();
         return;
       }
-      return window.__OFH_atomBatch.fireNow(impactTile, rec.recommended).then(function(res) {
+      return window.__OFH_atomBatch.fireNow(impactTile, recommendedQty).then(function(res) {
         if (!res || !(Number(res.fired) > 0)) {
           clearPlan();
           return;
@@ -998,6 +1277,7 @@
       if (game !== _autoFireBuildingLastGameObj) {
         _autoFireBuildingLastGameObj = game;
         _autoFireBuildingPlannedImpacts = [];
+        _autoFirePendingSamFirstSeen = {};
       }
       return; // fresh game — re-evaluate from next tick
     }
@@ -1008,12 +1288,17 @@
     if (opts.raceConstruction && typeof window.__OFH_atomBatch.estimateFlightTicks !== "function") return;
     var me = game.myPlayer ? game.myPlayer() : null;
     if (!me) return;
+    var rocketDirectionUp = true;
+    try {
+      rocketDirectionUp = !(ctx.buildMenu && ctx.buildMenu.uiState && ctx.buildMenu.uiState.rocketDirectionUp === false);
+    } catch (e) {}
 
     var maxQty = Math.max(1, Math.floor(Number(_cfg(opts.maxQtyKey, 1))) || 1);
     var allUnits = opts.getUnits(game);
     var currentTick = typeof game.ticks === "function" ? game.ticks() : 0;
     var cachedEnemyBuildings = null;
     var cachedImpacts = null;
+    var cachedSamInterceptions = Object.create(null);
 
     for (var i = 0; i < allUnits.length; i++) {
       var unit = allUnits[i];
@@ -1070,7 +1355,30 @@
         me,
         cachedEnemyBuildings,
       );
-      _autoFireAttempt(state, id, tile, impactTile, owner, me, maxQty, opts.targetLabel);
+      var impactKey = String(impactTile);
+      if (!Object.prototype.hasOwnProperty.call(cachedSamInterceptions, impactKey)) {
+        cachedSamInterceptions[impactKey] = _autoFireBuiltSamInterceptionCapacity(
+          game,
+          me,
+          impactTile,
+          rocketDirectionUp,
+        );
+      }
+      // Each level-N SAM that can be active in time consumes N atom shots. If the
+      // configured auto-fire cap cannot provide the N+1 shots needed to get one
+      // through, do not fire.
+      if (cachedSamInterceptions[impactKey] + 1 > maxQty) continue;
+      _autoFireAttempt(
+        state,
+        id,
+        tile,
+        impactTile,
+        owner,
+        me,
+        maxQty,
+        opts.targetLabel,
+        cachedSamInterceptions[impactKey] + 1,
+      );
     }
   }
 

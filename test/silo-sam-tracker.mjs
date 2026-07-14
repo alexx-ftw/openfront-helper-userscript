@@ -20,9 +20,13 @@ sandbox.globalThis = sandbox;
 vm.runInNewContext(NUKE_IMPACT_SOURCE, sandbox, {
   filename: "nuke-impact.js",
 });
-vm.runInNewContext(TRACKER_SOURCE, sandbox, {
-  filename: "silo-sam-tracker.js",
-});
+vm.runInNewContext(
+  `${TRACKER_SOURCE}\nglobalThis._autoFireBuiltSamInterceptionCapacity = _autoFireBuiltSamInterceptionCapacity;`,
+  sandbox,
+  {
+    filename: "silo-sam-tracker.js",
+  },
+);
 
 const coords = new Map([
   [1, { x: 0, y: 0 }],
@@ -190,5 +194,158 @@ assert.equal(
   callsBeforeCoveredTarget,
   "auto-fire should not launch when an active missile already covers the SAM",
 );
+
+const pathCoords = new Map([
+  [10, { x: 0, y: 0 }],
+  [15, { x: 50, y: 0 }],
+  [20, { x: 100, y: 0 }],
+]);
+const pathDistanceSquared = (a, b) => {
+  const from = pathCoords.get(a);
+  const to = pathCoords.get(b);
+  return (from.x - to.x) ** 2 + (from.y - to.y) ** 2;
+};
+const ownSilo = {
+  id: () => "own-silo",
+  tile: () => 10,
+  isUnderConstruction: () => false,
+  isActive: () => true,
+};
+const builtSam = {
+  id: () => "built-sam",
+  tile: () => 15,
+  level: () => 1,
+  owner: () => enemy,
+  isUnderConstruction: () => false,
+  isActive: () => true,
+};
+const targetUnderConstructionSam = {
+  id: () => "target-under-construction",
+  tile: () => 20,
+  level: () => 1,
+  owner: () => enemy,
+  isUnderConstruction: () => true,
+  isActive: () => true,
+};
+const interceptionMe = { ...me, units: () => [ownSilo] };
+const interceptionGame = {
+  x: (tile) => pathCoords.get(tile).x,
+  y: (tile) => pathCoords.get(tile).y,
+  ref: (x) => (x < 25 ? 10 : x < 75 ? 15 : 20),
+  width: () => 200,
+  height: () => 200,
+  ticks: () => 100,
+  unitInfo: () => ({ constructionDuration: 300 }),
+  manhattanDist: (a, b) => Math.abs(a - b),
+  euclideanDistSquared: pathDistanceSquared,
+  config: () => ({
+    defaultNukeSpeed: () => 8,
+    defaultSamMissileSpeed: () => 12,
+    defaultNukeTargetableRange: () => 150,
+    maxSamRange: () => 200,
+    samRange: () => 70,
+  }),
+  units: (...types) => {
+    if (types.includes("SAM Launcher")) {
+      return [targetUnderConstructionSam, builtSam];
+    }
+    return [];
+  },
+};
+assert.equal(
+  sandbox._autoFireBuiltSamInterceptionCapacity(interceptionGame, interceptionMe, 20),
+  1,
+  "a built SAM along the nuke corridor must count as an interceptor",
+);
+
+const noBuiltSamGame = {
+  ...interceptionGame,
+  units: (...types) => (types.includes("SAM Launcher") ? [targetUnderConstructionSam] : []),
+};
+assert.equal(
+  sandbox._autoFireBuiltSamInterceptionCapacity(noBuiltSamGame, interceptionMe, 20),
+  0,
+  "a SAM without enough construction time before the shot must not count as an interceptor",
+);
+
+const pendingReadySam = {
+  ...builtSam,
+  id: () => "pending-ready-sam",
+  state: { constructionStartTick: -195 },
+  isUnderConstruction: () => true,
+  isActive: () => false,
+};
+const pendingReadyGame = {
+  ...interceptionGame,
+  units: (...types) => (types.includes("SAM Launcher") ? [pendingReadySam] : []),
+};
+assert.equal(
+  sandbox._autoFireBuiltSamInterceptionCapacity(pendingReadyGame, interceptionMe, 20),
+  1,
+  "a pending SAM ready before the corridor interception must count",
+);
+
+const pendingLateSam = {
+  ...pendingReadySam,
+  id: () => "pending-late-sam",
+  state: { constructionStartTick: 0 },
+};
+const pendingLateGame = {
+  ...interceptionGame,
+  units: (...types) => (types.includes("SAM Launcher") ? [pendingLateSam] : []),
+};
+assert.equal(
+  sandbox._autoFireBuiltSamInterceptionCapacity(pendingLateGame, interceptionMe, 20),
+  0,
+  "a pending SAM ready after the missile passes must not count",
+);
+
+const interceptionIntegrationTarget = {
+  ...targetUnderConstructionSam,
+  id: () => "integration-interception-target",
+  state: { id: "integration-interception-target", ownerID: 2, constructionStartTick: 0 },
+};
+const interceptionIntegrationGame = {
+  ...interceptionGame,
+  myPlayer: () => interceptionMe,
+  units: (...types) => {
+    if (types.includes("SAM Launcher")) {
+      return [interceptionIntegrationTarget, builtSam];
+    }
+    return [];
+  },
+};
+const callsBeforeBuiltSamGuard = autoFireCalls.recommend.length;
+sandbox._quickPanelSettingsCache.combatSamAutoFireMaxQty = 1;
+sandbox._runSamAutoFireBuilding({ game: interceptionIntegrationGame });
+sandbox._runSamAutoFireBuilding({ game: interceptionIntegrationGame });
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(
+  autoFireCalls.recommend.length,
+  callsBeforeBuiltSamGuard,
+  "auto-fire must not spend a one-shot salvo into a built SAM's corridor",
+);
+
+const callsBeforeMinimumSalvoGuard = autoFireCalls.recommend.length;
+sandbox._quickPanelSettingsCache.combatSamAutoFireMaxQty = 2;
+const minimumSalvoState = { firedIds: {}, plannedImpacts: {} };
+sandbox._autoFireAttempt(
+  minimumSalvoState,
+  "minimum-salvo-target",
+  20,
+  20,
+  enemy,
+  interceptionMe,
+  2,
+  "SAM",
+  2,
+);
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(
+  autoFireCalls.recommend.length,
+  callsBeforeMinimumSalvoGuard + 1,
+  "auto-fire may validate a larger salvo but must not fire an undersized recommendation",
+);
+assert.equal(autoFireCalls.fire.length, 1, "an undersized recommendation must not call fireNow");
 
 console.log("silo/SAM auto-fire building tests passed");
