@@ -353,11 +353,91 @@ hostileAttemptTick++;
 await behavior.maybeSpawnHostileSiloSam();
 assert.equal(
   failedHostileSamCalls.length,
+  1,
+  "A failed dedicated SAM request is not retried during its short placement backoff",
+);
+hostileAttemptTick += 9;
+await behavior.maybeSpawnHostileSiloSam();
+assert.equal(
+  failedHostileSamCalls.length,
   2,
-  "A failed dedicated SAM request is retried after the game tick advances",
+  "A failed dedicated SAM request is retried after the placement backoff expires",
 );
 behavior.maybeSpawnStructure = originalMaybeSpawnStructure;
 behavior._hostileSiloSamAttemptTick = null;
+behavior._hostileSiloSamRetryNotBeforeTick = null;
+
+const constructionBlockedCalls = [];
+behavior.maybeSpawnStructure = async (...args) => {
+  constructionBlockedCalls.push(args);
+  return true;
+};
+own.sams = [makeUnit(999, 1, { underConstruction: true })];
+assert.equal(
+  await behavior.maybeSpawnHostileSiloSam(),
+  false,
+  "A pending SAM construction blocks another dedicated hostile-Silo placement",
+);
+assert.equal(
+  constructionBlockedCalls.length,
+  0,
+  "A pending SAM construction avoids a second expensive placement probe",
+);
+own.sams = [];
+behavior.maybeSpawnStructure = originalMaybeSpawnStructure;
+
+const originalReactiveUpgrade = behavior.maybeUpgradeMissileDefenseSam;
+const originalParityUpgrade = behavior.maybeUpgradeSamForSiloParity;
+const originalSamGap = behavior.samLevelParityGap;
+const originalShouldBuildHostileSam = behavior.shouldBuildHostileSiloSam;
+const originalTryBuildDefensePost = behavior.tryBuildDefensePost;
+const originalIsOnStructureCooldown = behavior.isOnStructureCooldown;
+const originalIsInPostSaveUpBlockedPhase = behavior.isInPostSaveUpBlockedPhase;
+const originalDoHandleStructures = behavior.doHandleStructures;
+const originalGameConfigForFallback = behavior.game.config;
+const originalGameTicksForFallback = behavior.game.ticks;
+let fullPathPlacementCalls = 0;
+let fullPathTick = 2_000;
+behavior.game.ticks = () => fullPathTick;
+behavior.game.config = () => ({ isUnitDisabled: () => true });
+behavior.maybeUpgradeMissileDefenseSam = async () => false;
+behavior.maybeUpgradeSamForSiloParity = async () => false;
+behavior.samLevelParityGap = () => 1;
+behavior.shouldBuildHostileSiloSam = () => true;
+behavior.maybeSpawnStructure = async () => {
+  fullPathPlacementCalls++;
+  fullPathTick += 2;
+  return false;
+};
+behavior.tryBuildDefensePost = async () => false;
+behavior.isOnStructureCooldown = () => false;
+behavior.isInPostSaveUpBlockedPhase = () => false;
+behavior.doHandleStructures = async () => false;
+behavior._hostileSiloSamAttemptTick = null;
+behavior._hostileSiloSamRetryNotBeforeTick = null;
+assert.equal(
+  await behavior.handleStructures(),
+  false,
+  "A failed hostile-Silo placement falls through without building another SAM in the same decision",
+);
+assert.equal(
+  fullPathPlacementCalls,
+  1,
+  "A failed async hostile-Silo placement cannot be duplicated when the game tick advances during probing",
+);
+behavior.maybeUpgradeMissileDefenseSam = originalReactiveUpgrade;
+behavior.maybeUpgradeSamForSiloParity = originalParityUpgrade;
+behavior.samLevelParityGap = originalSamGap;
+behavior.shouldBuildHostileSiloSam = originalShouldBuildHostileSam;
+behavior.maybeSpawnStructure = originalMaybeSpawnStructure;
+behavior.tryBuildDefensePost = originalTryBuildDefensePost;
+behavior.isOnStructureCooldown = originalIsOnStructureCooldown;
+behavior.isInPostSaveUpBlockedPhase = originalIsInPostSaveUpBlockedPhase;
+behavior.doHandleStructures = originalDoHandleStructures;
+behavior.game.config = originalGameConfigForFallback;
+behavior.game.ticks = originalGameTicksForFallback;
+behavior._hostileSiloSamAttemptTick = null;
+behavior._hostileSiloSamRetryNotBeforeTick = null;
 behavior._hostilePlayersSnapshotTick = null;
 behavior._hostilePlayersSnapshot = null;
 behavior._hostileThreatSnapshotTick = null;
@@ -421,6 +501,24 @@ assert.equal(
   25,
   "Coverage-priority SAM placement keeps ranking and async probes bounded to the normal candidate budget",
 );
+const originalTilesNearFriendlySams = coverageProbe.tilesNearFriendlySams;
+const originalMissileSiloValue = coverageProbe.missileSiloValue;
+coverageProbe.tilesNearFriendlySams = () =>
+  Array.from({ length: 25 }, (_, index) => 20_000 + index);
+coverageProbe.missileSiloValue = () => () => 0;
+coverageProbeCount = 0;
+assert.equal(
+  await coverageProbe.structureSpawnTile(UNIT.MissileSilo),
+  null,
+  "SAM-covered silo placement returns null when all merged probes are unavailable",
+);
+assert.equal(
+  coverageProbeCount,
+  25,
+  "SAM-covered silo placement keeps the merged candidate set bounded to 25 probes",
+);
+coverageProbe.tilesNearFriendlySams = originalTilesNearFriendlySams;
+coverageProbe.missileSiloValue = originalMissileSiloValue;
 own.units = originalOwnUnits;
 behavior.game.config = originalGameConfig;
 behavior.game.euclideanDistSquared = originalEuclideanDistSquared;
@@ -652,6 +750,32 @@ assert.equal(
   "A hostile gold change that adds an affordable missile refreshes the forecast",
 );
 enemySilos.gold = originalEnemySilosGoldForCapacityTest;
+
+behavior.game.units = () => [];
+behavior._missileDefenseSignalTick = null;
+const originalReactiveSignalBuildableFor = behavior.buildableFor;
+let reactiveSignalProbeCalls = 0;
+behavior.buildableFor = async () => {
+  reactiveSignalProbeCalls++;
+  return { type: UNIT.SAMLauncher, canUpgrade: true, cost: 1_500_000n };
+};
+assert.equal(
+  await behavior.maybeUpgradeMissileDefenseSam(),
+  false,
+  "A built hostile silo without an active missile does not trigger reactive SAM upgrade work",
+);
+assert.equal(
+  reactiveSignalProbeCalls,
+  0,
+  "A built hostile silo without an active missile avoids per-SAM async probes",
+);
+behavior.buildableFor = originalReactiveSignalBuildableFor;
+const activeHostileMissile = {
+  isActive: () => true,
+  owner: () => enemySilos,
+};
+behavior.game.units = () => [activeHostileMissile];
+behavior._missileDefenseSignalTick = null;
 
 let forecastTickSeen = null;
 const originalBuildableFor = behavior.buildableFor;

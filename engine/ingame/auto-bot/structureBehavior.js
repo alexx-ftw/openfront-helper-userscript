@@ -162,6 +162,13 @@
    */
   const UNDER_ATTACK_THREAT_RATIO = 0.35;
 
+  /**
+   * Do not repeat a failed hostile-Silo SAM placement probe more than once per
+   * second of game time. The placement path can otherwise perform 25 sequential
+   * async worker probes on every structure decision.
+   */
+  const HOSTILE_SILO_SAM_RETRY_TICKS = 10;
+
   /** Legendary only spends on Defense Posts during an exceptional land assault. */
   const LEGENDARY_DEFENSE_POST_THREAT_RATIO = 1.25;
 
@@ -324,6 +331,7 @@
       this._hasHighStartingGold = null;
       this._postSaveUpStartTick = null;
       this._hostileSiloSamAttemptTick = null;
+      this._hostileSiloSamRetryNotBeforeTick = null;
       this._hostilePlayersSnapshotTick = null;
       this._hostilePlayersSnapshot = null;
       this._hostileThreatSnapshotTick = null;
@@ -410,7 +418,8 @@
         !legendaryDifficulty &&
         this.samLevelParityGap() > 0 &&
         (!this.shouldBuildHostileSiloSam() ||
-          !this.hostileSiloSamAttemptedThisTick()) &&
+          (!this.hostileSiloSamAttemptedThisTick() &&
+            !this.hostileSiloSamActionBlocked())) &&
         (await this.maybeSpawnStructure(
           UNIT.SAMLauncher,
           this.shouldBuildHostileSiloSam()
@@ -958,6 +967,8 @@
     async maybeSpawnHostileSiloSam() {
       if (!this.shouldBuildHostileSiloSam()) return false;
       const attemptTick = this.hostileSiloSamCurrentTick();
+      if (this.hostileSiloSamRetryActive(attemptTick)) return false;
+      if (this.hasOwnSamUnderConstruction()) return false;
       if (
         attemptTick !== null &&
         this._hostileSiloSamAttemptTick === attemptTick
@@ -969,7 +980,42 @@
         forceNewStructure: true,
         prioritizeStructureCoverage: true,
       });
+      if (built) {
+        this._hostileSiloSamRetryNotBeforeTick = null;
+      } else if (attemptTick !== null) {
+        const completedTick = this.hostileSiloSamCurrentTick();
+        const retryBaseTick = completedTick ?? attemptTick;
+        this._hostileSiloSamRetryNotBeforeTick =
+          retryBaseTick + HOSTILE_SILO_SAM_RETRY_TICKS;
+      }
       return built;
+    }
+
+    hostileSiloSamRetryActive(tick = this.hostileSiloSamCurrentTick()) {
+      return (
+        tick !== null &&
+        this._hostileSiloSamRetryNotBeforeTick !== null &&
+        tick < this._hostileSiloSamRetryNotBeforeTick
+      );
+    }
+
+    hasOwnSamUnderConstruction() {
+      try {
+        return (this.player.units(UNIT.SAMLauncher) || []).some(
+          (sam) =>
+            sam &&
+            typeof sam.isUnderConstruction === "function" &&
+            sam.isUnderConstruction(),
+        );
+      } catch (_error) {
+        return false;
+      }
+    }
+
+    hostileSiloSamActionBlocked() {
+      return (
+        this.hostileSiloSamRetryActive() || this.hasOwnSamUnderConstruction()
+      );
     }
 
     hostileSiloSamCurrentTick() {
@@ -1015,6 +1061,8 @@
         nukesEnabled &&
         !config.isUnitDisabled(UNIT.SAMLauncher) &&
         this.samLevelParityGap() > 0 &&
+        (!this.shouldBuildHostileSiloSam() ||
+          !this.hostileSiloSamActionBlocked()) &&
         (await this.maybeSpawnStructure(
           UNIT.SAMLauncher,
           this.shouldBuildHostileSiloSam()
@@ -4774,7 +4822,16 @@
       // worth forecasting for an upgrade. This gate avoids waking the expensive
       // planner on every Impossible/Legendary structure tick during the early
       // game.
-      if (this.hasMissileDefenseSignal() === false) return false;
+      const missileSignal = this.missileDefenseSignalSnapshot();
+      // A built hostile silo is enough to trigger proactive SAM site/level
+      // parity, but it is not an inbound route. Only an active hostile missile
+      // should wake the per-SAM buildable probes and trajectory forecast here.
+      if (
+        missileSignal === null ||
+        missileSignal.hasActiveHostileMissile !== true
+      ) {
+        return false;
+      }
       const samUnits = this.player.units(UNIT.SAMLauncher) || [];
       const upgradeableSamUnits = samUnits.filter(
         (sam) =>
@@ -5124,7 +5181,19 @@
       if (type === UNIT.MissileSilo && state.settings.winFixes) {
         try {
           const samTiles = this.tilesNearFriendlySams(25);
-          if (samTiles.length > 0) tiles = samTiles.concat(tiles);
+          if (samTiles.length > 0) {
+            const mergedTiles = [];
+            const mergedTileSet = new Set();
+            for (const tile of samTiles.concat(tiles)) {
+              if (mergedTiles.length >= STRUCTURE_PLACEMENT_CANDIDATE_LIMIT) {
+                break;
+              }
+              if (mergedTileSet.has(tile)) continue;
+              mergedTileSet.add(tile);
+              mergedTiles.push(tile);
+            }
+            tiles = mergedTiles;
+          }
         } catch (_e) {
           /* fall back to the random sample */
         }
