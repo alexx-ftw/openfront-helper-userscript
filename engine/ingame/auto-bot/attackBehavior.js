@@ -76,9 +76,10 @@
   const ATTACK_EARLY_GAME_GROWTH_EXPONENT = 0.73;
   const ATTACK_EARLY_GAME_GROWTH_DIVISOR = 4;
   const ATTACK_EARLY_GAME_PEAK_SEARCH_ITERATIONS = 64;
-  // The reserve is the lower troop level where production reaches this
-  // fraction of the maximum production rate; it is still measured in troops.
-  const ATTACK_EARLY_GAME_PEAK_PRODUCTION_RESERVE_FRACTION = 0.5;
+  const ATTACK_EARLY_GAME_ACCELERATION_SCAN_POINTS = 128;
+  // Reserve the troop level where the production rate has its maximum temporal
+  // acceleration. P(N) is troops per tick and N' = P(N), so acceleration is
+  // dP/dt = P(N) * P'(N), not just the slope with respect to troop count.
   // Intents are asynchronous on the client: the troop balance and outgoing
   // attack snapshot can lag the emitted command by several game ticks.
   const BOT_OUTBOUND_INTENT_GRACE_TICKS = 6;
@@ -121,6 +122,35 @@
     );
   }
 
+  function earlyGameTroopGrowthSecondDerivative(troops, maximum) {
+    if (troops <= 0) return -Infinity;
+
+    const exponent = ATTACK_EARLY_GAME_GROWTH_EXPONENT;
+    return (
+      (exponent * (exponent - 1)) /
+        ATTACK_EARLY_GAME_GROWTH_DIVISOR *
+        Math.pow(troops, exponent - 2) *
+        (1 - troops / maximum) -
+      (exponent / (2 * maximum)) * Math.pow(troops, exponent - 1)
+    );
+  }
+
+  function earlyGameTroopAccelerationSlope(troops, maximum) {
+    const production = earlyGameTroopGrowthRate(troops, maximum);
+    const productionSlope = earlyGameTroopGrowthDerivative(troops, maximum);
+    return (
+      productionSlope * productionSlope +
+      production * earlyGameTroopGrowthSecondDerivative(troops, maximum)
+    );
+  }
+
+  function earlyGameTroopAcceleration(troops, maximum) {
+    return (
+      earlyGameTroopGrowthRate(troops, maximum) *
+      earlyGameTroopGrowthDerivative(troops, maximum)
+    );
+  }
+
   function findEarlyGameTroopGrowthPeak(maximum) {
     let low = 0;
     let high = maximum;
@@ -139,24 +169,79 @@
     return (low + high) / 2;
   }
 
-  function findEarlyGameProductionThreshold(maximum, peakTroops, targetRate) {
-    if (earlyGameTroopGrowthRate(0, maximum) >= targetRate) return 0;
+  function findEarlyGameTroopAccelerationPeak(maximum) {
+    const productionPeak = findEarlyGameTroopGrowthPeak(maximum);
+    const lowerBound = Math.min(1, productionPeak);
+    if (productionPeak <= lowerBound) return productionPeak;
 
-    let low = 0;
-    let high = peakTroops;
+    const logLow = Math.log(lowerBound);
+    const logHigh = Math.log(productionPeak);
+    let previousTroops = lowerBound;
+    let previousSlope = earlyGameTroopAccelerationSlope(
+      previousTroops,
+      maximum,
+    );
+    let bestTroops = previousTroops;
+    let bestAcceleration = earlyGameTroopAcceleration(
+      previousTroops,
+      maximum,
+    );
+
     for (
-      let iteration = 0;
-      iteration < ATTACK_EARLY_GAME_PEAK_SEARCH_ITERATIONS;
-      iteration++
+      let sample = 1;
+      sample <= ATTACK_EARLY_GAME_ACCELERATION_SCAN_POINTS;
+      sample++
     ) {
-      const middle = (low + high) / 2;
-      if (earlyGameTroopGrowthRate(middle, maximum) < targetRate) {
-        low = middle;
-      } else {
-        high = middle;
+      const currentTroops = Math.exp(
+        logLow + ((logHigh - logLow) * sample) /
+          ATTACK_EARLY_GAME_ACCELERATION_SCAN_POINTS,
+      );
+      const currentSlope = earlyGameTroopAccelerationSlope(
+        currentTroops,
+        maximum,
+      );
+      const currentAcceleration = earlyGameTroopAcceleration(
+        currentTroops,
+        maximum,
+      );
+      if (currentAcceleration > bestAcceleration) {
+        bestTroops = currentTroops;
+        bestAcceleration = currentAcceleration;
       }
+
+      // Locate a positive-to-negative slope crossing: that is the local
+      // maximum of temporal acceleration, after the initial boundary region.
+      if (previousSlope > 0 && currentSlope <= 0) {
+        let low = previousTroops;
+        let high = currentTroops;
+        for (
+          let iteration = 0;
+          iteration < ATTACK_EARLY_GAME_PEAK_SEARCH_ITERATIONS;
+          iteration++
+        ) {
+          const middle = (low + high) / 2;
+          if (earlyGameTroopAccelerationSlope(middle, maximum) > 0) {
+            low = middle;
+          } else {
+            high = middle;
+          }
+        }
+        const candidate = (low + high) / 2;
+        const candidateAcceleration = earlyGameTroopAcceleration(
+          candidate,
+          maximum,
+        );
+        if (candidateAcceleration > bestAcceleration) {
+          bestTroops = candidate;
+        }
+        break;
+      }
+
+      previousTroops = currentTroops;
+      previousSlope = currentSlope;
     }
-    return (low + high) / 2;
+
+    return bestTroops;
   }
 
   function emptyDefensePostAttackProfile() {
@@ -623,16 +708,10 @@
         return this.earlyGamePeakReserveCache;
       }
 
-      const peakTroops = findEarlyGameTroopGrowthPeak(maximum);
-      const peakProduction = earlyGameTroopGrowthRate(peakTroops, maximum);
-      const reserveTroops = findEarlyGameProductionThreshold(
-        maximum,
-        peakTroops,
-        peakProduction * ATTACK_EARLY_GAME_PEAK_PRODUCTION_RESERVE_FRACTION,
-      );
+      const reserveTroops = findEarlyGameTroopAccelerationPeak(maximum);
       const reserve = Math.max(
         1,
-        Math.ceil(reserveTroops),
+        Math.round(reserveTroops),
       );
       this.earlyGamePeakReserveCacheKey = maximum;
       this.earlyGamePeakReserveCache = reserve;
