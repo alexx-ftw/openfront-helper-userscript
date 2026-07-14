@@ -129,9 +129,8 @@
     }
   }
 
-  // How often botTick runs in REAL time, scaled by game speed so the bot polls
-  // game ticks fast enough to never miss an attackTick (nationExecution does the
-  // real game-tick gating internally; engine just needs to poll often enough).
+  // How often botTick runs in REAL time. In win-fix mode this is also the combat
+  // decision cadence; nationExecution must not add another artificial delay.
   function desiredTickInterval() {
     const configured = state.settings.tickMs || 200;
     const base =

@@ -295,3 +295,8 @@ Same strategy ORDER (the difficulty-indexed arrays), same constants/probabilitie
 gold/cost thresholds (bigint), same branch conditions. If you cannot reproduce something
 client-side, leave a `// DIVERGENCE:` comment explaining exactly what and why — do not
 silently approximate.
+
+The decision cadence is an explicit userscript boundary: with `winFixes` enabled,
+`engine.js`'s configured `tickMs` poll is the combat cadence and does not add the
+source Nation's difficulty-based `attackRate` wait. With `winFixes` disabled, the
+faithful `attackRate` / structure-third cadence is retained.

@@ -75,9 +75,6 @@
     // Optional bounded profiler. Disabled by default so the normal bot path
     // does not allocate samples or call performance.now() for diagnostics.
     performanceProfiling: false,
-    combatCadenceScale: 0.6, // <1 shrinks the attack-tick interval → the bot makes
-    // attack/expand decisions MORE often (more aggressive / less "gentle"; the pure
-    // faithful Nation only decides once per attackRate ≈ every 3–5s). 1 = faithful.
     sizeReserveScale: 1.5, // hold back (mapShare × this) troops as we grow (anti-collapse)
     sizeReserveCap: 0.6, // cap on the size-aware reserve
     mirvLeaderShare: 0.4, // once we own ≥ this share, proactively MIRV the strongest rival
@@ -210,10 +207,9 @@
     );
   }
 
-  // Throttles (ms) so we don't spam the worker / re-issue intents every tick.
-  // Combat decision cadence is now derived per-difficulty in combatCadenceMs()
-  // to match the bot's attackRate. Build runs ~3× per combat cycle (economy
-  // keeps growing between the slower, defensive attack decisions).
+  // Throttles (ms) for non-combat work so we don't spam the worker / re-issue
+  // intents every poll. In win-fix mode, combat follows the engine's configured
+  // tickMs cadence directly; it has no second artificial attack cooldown.
   const MAX_DEFENSE_RESERVE = 0.8; // never hold back more than this for defense
   // Min fraction of ACTUAL troops to commit when grabbing SAFE empty land (no
   // bordering enemies). The maxTroops-based reserve has a ~100k floor while we

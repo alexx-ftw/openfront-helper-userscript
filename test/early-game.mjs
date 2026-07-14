@@ -178,6 +178,95 @@ assert.equal(
 );
 assert.equal(openingBot.openingExpansionFollowUpPending, false);
 
+// With winFixes enabled, NationBot.tick must use the engine's configured poll
+// cadence directly. A second attackRate gate would skip the regular decision
+// at tick 2 below (the old 0.6 cadence scale still leaves it at 18 game ticks).
+const cadenceCalls = [];
+const CadenceNoopBehavior = class {
+  maybeSendCasualEmoji() {}
+  handleAllianceRequestsFromBots() {}
+  handleAllianceRequests() {}
+  handleAllianceExtensionRequests() {}
+};
+const cadenceSandbox = {
+  Difficulty: openingSandbox.Difficulty,
+  UNIT: openingSandbox.UNIT,
+  EARLY_EXPAND_COMMIT: 0.6,
+  currentDifficulty: () => "Impossible",
+  simpleHash: () => 1,
+  PseudoRandom: class {
+    nextInt(min) {
+      return min;
+    }
+  },
+  autoBotProfileAsyncPhase: (_profile, _label, callback) => callback(),
+  autoBotProfileSyncPhase: (_profile, _label, callback) => callback(),
+  tr: (value) => value,
+  console,
+  state: {
+    settings: {
+      winFixes: true,
+      combatCadenceScale: 0.6,
+      features: {
+        spawn: false,
+        expand: true,
+        boat: false,
+        warship: false,
+        build: false,
+        alliance: false,
+        nuke: false,
+        embargo: false,
+        donate: false,
+      },
+    },
+  },
+  EmojiBehavior: CadenceNoopBehavior,
+  MirvBehavior: CadenceNoopBehavior,
+  AllianceBehavior: CadenceNoopBehavior,
+  WarshipBehavior: CadenceNoopBehavior,
+  NukeBehavior: CadenceNoopBehavior,
+  StructureBehavior: CadenceNoopBehavior,
+  AttackBehavior: class {
+    forceSendAttack() {
+      return false;
+    }
+
+    getPendingOutboundAttackTroops() {
+      return 0;
+    }
+
+    maybeAttack() {
+      cadenceCalls.push("attack");
+    }
+  },
+};
+const cadencePlayer = {
+  hasSpawned: () => true,
+  isAlive: () => true,
+};
+const cadenceGame = {
+  myPlayer: () => cadencePlayer,
+  inSpawnPhase: () => false,
+  players: () => [],
+  terraNullius: () => ({ id: () => "TerraNullius" }),
+  config: () => ({ isUnitDisabled: () => false }),
+};
+vm.runInNewContext(`${nationExecutionSource}\nglobalThis.NationBot = NationBot;`, cadenceSandbox, {
+  filename: path.join(repoRoot, "engine/ingame/auto-bot/nationExecution-cadence.js"),
+});
+const cadenceBot = new cadenceSandbox.NationBot(cadenceGame, {
+  playerId: "cadence-player",
+  gameId: "cadence-game",
+});
+await cadenceBot.tick(0);
+await cadenceBot.tick(1);
+await cadenceBot.tick(2);
+assert.equal(
+  cadenceCalls.length,
+  2,
+  "win-fix combat runs on the configured poll cadence without an attackRate delay",
+);
+
 assert.equal(sandbox.isEarlyGameBoatEta(300), true);
 assert.equal(sandbox.isEarlyGameBoatEta(301), false);
 assert.equal(sandbox.isEarlyGameBoatEta(null), false);

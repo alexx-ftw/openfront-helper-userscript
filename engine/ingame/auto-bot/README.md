@@ -57,6 +57,15 @@ thresholds scale with the 5× damage effect, and attacks below the resulting
 minimum are deferred instead of wasting troops. The bounded profile is cached
 per target and game tick; cheap boat probes keep their existing behavior.
 
+## Combat decision cadence
+
+The Auto Bot panel's `Tick interval (ms)` controls the engine polling cadence.
+With `winFixes` enabled, each new authoritative poll runs one combat decision
+pass; there is no additional `attackRate` cooldown between attacks. Duplicate
+snapshots are still skipped, and pending outbound intents continue to reserve
+troops until the client reconciles them. Disabling `winFixes` restores the
+faithful difficulty-based Nation attack cadence.
+
 ## Naval invasion interception
 
 With `winFixes` enabled and a completed Port, the bot identifies hostile
