@@ -1092,6 +1092,12 @@
             this.game.isLand(t) &&
             this.game.ownerID(t) !== this.player?.smallID(),
         );
+      // A directly adjacent, non-radioactive TerraNullius tile is the only
+      // genuinely cost-free expansion: no opponent troops and no transport
+      // spend. It must be resolved before every tribe/player-food branch.
+      const hasAccessibleFreeLand = border.some(
+        (tile) => !this.game.hasOwner(tile) && !this.game.hasFallout(tile),
+      );
       this.cacheEnemyDefensePostFrontTiles(border);
       const playerNeighbors = this.player.nearby();
       // DIVERGENCE: src builds the set from playerBySmallID(ownerID(t)) and filters
@@ -1119,7 +1125,7 @@
 
       // Attack TerraNullius but not nuked territory (direct border or across a river)
       const hasNonNukedTerraNullius =
-        border.some((t) => !this.game.hasOwner(t) && !this.game.hasFallout(t)) ||
+        hasAccessibleFreeLand ||
         playerNeighbors.some((n) => !n.isPlayer());
 
       // WIN-FIX (NOT in src): make the opening state explicit without creating a
@@ -1147,16 +1153,11 @@
       const previousEarlyGame = state.earlyGame || {};
       state.earlyGame = {
         ...earlyGameSnapshot,
-        action:
-          state.settings.winFixes && earlyGameSnapshot.hasTribeTarget
-            ? "tribe"
-            : chooseEarlyGameAction({
-                landTarget:
-                  earlyGameSnapshot.hasFreeLand &&
-                  this.hasLandBorderWithTerraNullius(),
-                tribeTarget: earlyGameSnapshot.hasTribeTarget,
-                boatTarget: false,
-              }),
+        action: chooseEarlyGameAction({
+          landTarget: hasAccessibleFreeLand,
+          tribeTarget: earlyGameSnapshot.hasTribeTarget,
+          boatTarget: false,
+        }),
         tribeTarget: null,
         oceanTarget: null,
         boatGate: null,
@@ -1177,6 +1178,19 @@
       const expandOn = !!f.expand;
       const boatOn = !!f.boat;
       const allianceOn = !!f.alliance;
+
+      // WIN-FIX: cost-free land is an absolute first choice. If the attempt
+      // cannot be emitted because troops are reserved or a prior intent is
+      // still pending, stop this decision instead of falling through to a
+      // tribe/player attack while the free tile is still available.
+      if (expandOn && state.settings.winFixes && hasAccessibleFreeLand) {
+        await this.sendAttack(
+          this.game.terraNullius(),
+          false,
+          EARLY_EXPAND_COMMIT,
+        );
+        return;
+      }
 
       // WIN-FIX (NOT in src): TAKE OVER a DISCONNECTED neighbour's land. A player who
       // left/timed-out shows the "zzz" icon (isDisconnected()), and the game already
@@ -1240,27 +1254,6 @@
         borderingEnemies.some((e) => e.isPlayer() && e.type() === PlayerType.Bot)
       ) {
         if (await this.attackBots()) return;
-      }
-
-      // WIN-FIX (NOT in src): safe empty land gets an opening burst before any
-      // opportunistic boat probe. EARLY_EXPAND_COMMIT is a minimum commitment, not
-      // a replacement for the normal reserve calculation; once an enemy borders us,
-      // this branch is disabled and the defensive reserve resumes.
-      if (
-        expandOn &&
-        state.settings.winFixes &&
-        state.earlyGame.action === "land" &&
-        borderingEnemies.length === 0
-      ) {
-        if (
-          await this.sendAttack(
-            this.game.terraNullius(),
-            false,
-            EARLY_EXPAND_COMMIT,
-          )
-        ) {
-          return;
-        }
       }
 
       // WIN-FIX (NOT in src): opportunistic amphibious landings — cheap probe boats

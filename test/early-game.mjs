@@ -466,7 +466,7 @@ assert.equal(await routePlayer.bestTransportShipSpawn(5), 0);
 assert.equal(await routeApi.game.estimateTransportRouteTicks(5), 5);
 assert.equal(routeApi.game.hasTransportRouteEstimator, true);
 
-assert.match(attackSource, /state\.earlyGame\.action === "land"/);
+assert.match(attackSource, /landTarget: hasAccessibleFreeLand/);
 assert.match(attackSource, /async allowEarlyGameBoat\(tile\)/);
 assert.match(attackSource, /!state\.settings\.winFixes \|\| !early \|\| !early\.active/);
 assert.match(attackSource, /EARLY_EXPAND_COMMIT/);
@@ -477,6 +477,7 @@ assert.match(attackSource, /playersShareClanTag/);
 assert.match(gameApiSource, /estimateTransportRouteTicks/);
 assert.match(gameApiSource, /hasTransportRouteEstimator/);
 assert.match(gameApiSource, /findWaterRouteTicks\(\{/);
+
 assert.match(buildSource, /"auto-bot\/earlyGame\.js"/);
 
 // Integration probe: the real AttackBehavior enrichment must expose the same
@@ -492,6 +493,7 @@ const targetSandbox = {
   },
   PlayerType: { Bot: "Bot", Human: "Human", Nation: "Nation" },
   state: { settings: { winFixes: true, features: { boat: true } }, earlyGame: {}, stats: {} },
+  EARLY_EXPAND_COMMIT: 0.6,
   withTimeout: (value) => Promise.resolve(value),
   WORKER_TIMEOUT_MS: 1000,
 };
@@ -611,6 +613,72 @@ const targetBehavior = new targetSandbox.AttackBehavior(
   {},
   {},
 );
+
+// A directly adjacent free tile must block both tribe and enemy food attacks.
+// The decision is allowed to return without an attack when troop/intent guards
+// reject the free-land attempt; it must never fall through to a paid target in
+// that same snapshot.
+const priorityFreeTarget = { isPlayer: () => false };
+const priorityTribe = {
+  isPlayer: () => true,
+  isAlive: () => true,
+  type: () => targetSandbox.PlayerType.Bot,
+  smallID: () => 2,
+  troops: () => 50,
+  isFriendly: () => false,
+};
+const priorityEnemy = {
+  isPlayer: () => true,
+  isAlive: () => true,
+  type: () => targetSandbox.PlayerType.Human,
+  smallID: () => 3,
+  troops: () => 100,
+  isFriendly: () => false,
+};
+const priorityPlayer = {
+  smallID: () => 1,
+  type: () => targetSandbox.PlayerType.Human,
+  hasSpawned: () => true,
+  borderTiles: () => new Set([1]),
+  nearby: () => [priorityTribe, priorityEnemy],
+  isFriendly: () => false,
+};
+const priorityGame = {
+  inSpawnPhase: () => false,
+  neighbors: (tile) => (tile === 1 ? [2, 3] : []),
+  isLand: (tile) => tile === 2 || tile === 3,
+  ownerID: (tile) => (tile === 3 ? 3 : 0),
+  hasOwner: (tile) => tile === 3,
+  hasFallout: () => false,
+  playerBySmallID: (sid) => (sid === 3 ? priorityEnemy : null),
+  terraNullius: () => priorityFreeTarget,
+};
+const priorityBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+priorityBehavior.player = priorityPlayer;
+priorityBehavior.game = priorityGame;
+priorityBehavior.allianceBehavior = {};
+priorityBehavior.reconcileOutboundAttackIntentCommitments = () => {};
+priorityBehavior.cacheEnemyDefensePostFrontTiles = () => {};
+priorityBehavior.rankAttackTargets = (players) => players;
+const priorityAttackTargets = [];
+priorityBehavior.sendAttack = async (target) => {
+  priorityAttackTargets.push(target);
+  return true;
+};
+targetSandbox.state.settings.features = {
+  expand: true,
+  boat: false,
+  alliance: false,
+};
+targetSandbox.state.earlyGame = {};
+await priorityBehavior.maybeAttack();
+assert.deepEqual(
+  priorityAttackTargets,
+  [priorityFreeTarget],
+  "accessible free land is selected before tribes or human enemies",
+);
+assert.equal(targetSandbox.state.earlyGame.action, "land");
+
 const enrichedTargets = await targetBehavior.getEarlyGameTribeCandidates();
 const rankedEnrichedTargets = targetSandbox.rankEarlyGameTribeCandidates(enrichedTargets);
 assert.equal(rankedEnrichedTargets[0].id, 2);
