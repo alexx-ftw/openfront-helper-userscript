@@ -887,6 +887,115 @@
       );
     }
 
+    getTerraNulliusFrontierTiles(preferredTile = null) {
+      if (preferredTile != null) {
+        if (
+          typeof this.game?.isLand === "function" &&
+          !this.game.isLand(preferredTile)
+        ) {
+          return [];
+        }
+        if (
+          typeof this.game?.magnitude === "function" &&
+          Number(this.game.magnitude(preferredTile)) >= 31
+        ) {
+          return [];
+        }
+        return [preferredTile];
+      }
+
+      if (
+        typeof this.game?.neighbors !== "function" ||
+        typeof this.game?.isLand !== "function" ||
+        typeof this.game?.hasOwner !== "function"
+      ) {
+        return [];
+      }
+
+      const frontier = [];
+      const seen = new Set();
+      for (const borderTile of this.player?.borderTiles?.() || []) {
+        for (const tile of this.game.neighbors(borderTile) || []) {
+          if (seen.has(tile)) continue;
+          seen.add(tile);
+          if (!this.game.isLand(tile) || this.game.hasOwner(tile)) continue;
+          if (
+            typeof this.game.magnitude === "function" &&
+            Number(this.game.magnitude(tile)) >= 31
+          ) {
+            continue;
+          }
+          frontier.push(tile);
+        }
+      }
+      return frontier;
+    }
+
+    getTerraNulliusAttackLoss(target, tile) {
+      const attackTroops = Math.max(
+        1,
+        Number(this.player?.troops?.() || 1),
+      );
+      try {
+        const attackLogic = this.game?.config?.()?.attackLogic;
+        if (typeof attackLogic === "function") {
+          const result = attackLogic(
+            this.game,
+            attackTroops,
+            this.player,
+            target,
+            tile,
+          );
+          const loss = Number(result?.attackerTroopLoss);
+          if (Number.isFinite(loss) && loss >= 0) return loss;
+        }
+      } catch (_error) {
+        // Fall through to the terrain-based client fallback below.
+      }
+
+      const magnitude = Number(this.game?.magnitude?.(tile));
+      if (!Number.isFinite(magnitude)) return 1;
+      const terrainLoss = magnitude < 10 ? 80 : magnitude < 20 ? 100 : 120;
+      const attackerLoss =
+        this.player?.type?.() === PlayerType.Bot
+          ? terrainLoss / 10
+          : terrainLoss / 5;
+      const falloutMultiplier = this.game?.hasFallout?.(tile)
+        ? this.getRadioactiveTerraNulliusFalloutDefenseMultiplier()
+        : 1;
+      return attackerLoss * falloutMultiplier;
+    }
+
+    getTerraNulliusAttackTroops(
+      target = null,
+      preferredTile = null,
+      spendableTroops = null,
+    ) {
+      const configuredSpendable = Number(spendableTroops);
+      const available =
+        spendableTroops !== null && Number.isFinite(configuredSpendable)
+          ? Math.max(0, configuredSpendable)
+          : this.getEarlyGameSpendableTroops(
+              this.getEarlyGameTerraNulliusReserveTroops(),
+            );
+      if (available < 1) return 0;
+
+      const terraNullius = target || this.game?.terraNullius?.();
+      const frontier = this.getTerraNulliusFrontierTiles(preferredTile);
+      let minimum = 1;
+      for (const tile of frontier) {
+        const loss = this.getTerraNulliusAttackLoss(terraNullius, tile);
+        if (Number.isFinite(loss) && loss > 0) {
+          minimum = Math.max(minimum, Math.ceil(loss));
+        }
+      }
+
+      // The engine conquers the first tile before checking whether the attack
+      // has enough troops for another tile. Sending this bounded amount keeps
+      // expansion moving while never spending the whole production reserve.
+      return Math.min(available, minimum);
+    }
+
     resetEnemyDefensePostCaches() {
       const tick = this.currentAttackDecisionTick();
       if (this.enemyDefensePostCacheTick === tick) return tick;
@@ -1295,11 +1404,7 @@
       // still pending, stop this decision instead of falling through to a
       // tribe/player attack while the free tile is still available.
       if (expandOn && state.settings.winFixes && hasAccessibleFreeLand) {
-        await this.sendAttack(
-          this.game.terraNullius(),
-          false,
-          EARLY_EXPAND_COMMIT,
-        );
+        await this.sendAttack(this.game.terraNullius());
         return;
       }
 
@@ -2223,10 +2328,15 @@
           continue;
         }
 
-        const troops = this.getEarlyGameProbeTroops(
-          state.settings.boatProbeFrac,
-          this.getEarlyGameTerraNulliusReserveTroops(),
-        );
+        const troops = state.settings.winFixes
+          ? this.getTerraNulliusAttackTroops(
+              this.game.terraNullius(),
+              target.tile,
+            )
+          : this.getEarlyGameProbeTroops(
+              state.settings.boatProbeFrac,
+              this.getEarlyGameTerraNulliusReserveTroops(),
+            );
         if (troops < 1) continue;
         if (
           this.emitBoat(
@@ -2391,11 +2501,26 @@
       // seeing as "boats with lots of troops". Cap it at boatProbeFrac (1%) and
       // let the shared spendable-troop gate apply the live reserve. (winFixes off
       // → faithful troops/5.)
-      const troops = state.settings.winFixes
-        ? this.getEarlyGameProbeTroops(state.settings.boatProbeFrac)
-        : this.player.troops() / 5;
+      const owner = this.game.owner?.(dst);
+      const isTerraNullius = owner
+        ? owner.isPlayer?.() !== true
+        : !this.game.hasOwner?.(dst);
+      const troops =
+        state.settings.winFixes && isTerraNullius
+          ? this.getTerraNulliusAttackTroops(
+              this.game.terraNullius(),
+              dst,
+            )
+          : state.settings.winFixes
+            ? this.getEarlyGameProbeTroops(state.settings.boatProbeFrac)
+            : this.player.troops() / 5;
       if (troops < 1 || !(await this.allowEarlyGameBoat(dst))) return;
-      this.emitBoat(dst, troops, "⛵ Random boat");
+      this.emitBoat(
+        dst,
+        troops,
+        "⛵ Random boat",
+        isTerraNullius ? this.game.terraNullius() : null,
+      );
       return;
     }
 
@@ -2649,14 +2774,13 @@
 
       const radioactiveTerraNullius =
         state.settings.winFixes === true && dstFallout && !dstOwned;
-      const troops = radioactiveTerraNullius
-        ? Math.min(
-            this.getRadioactiveTerraNulliusCommitTroops(),
-            this.getEarlyGameSpendableTroops(
-              this.getEarlyGameTerraNulliusReserveTroops(),
-            ),
-          )
-        : this.getEarlyGameProbeTroops(state.settings.boatProbeFrac);
+      const troops =
+        state.settings.winFixes === true && !dstOwned
+          ? this.getTerraNulliusAttackTroops(
+              this.game.terraNullius(),
+              dst,
+            )
+          : this.getEarlyGameProbeTroops(state.settings.boatProbeFrac);
       if (troops < 1) return false;
       const label = dstFallout
         ? "☢️ Nuked-coast grab"
@@ -2666,7 +2790,14 @@
             : "🏝️ Island grab"
           : "🛟 Probe landing";
       if (!(await this.allowEarlyGameBoat(dst))) return false;
-      if (this.emitBoat(dst, troops, label)) {
+      if (
+        this.emitBoat(
+          dst,
+          troops,
+          label,
+          !dstOwned ? this.game.terraNullius() : null,
+        )
+      ) {
         console.log("[Boat] LAUNCHED", label, Math.round(troops), "troops");
         state.lastOppBoatMs = nowMs;
         state.beachhead = { tile: dst, at: this.game.ticks(), surged: false };
@@ -2915,7 +3046,9 @@
       }
       // All attack types share the same hard reserve budget, including boats
       // whose caller may have calculated a larger surge from a stale snapshot.
-      const targetReserve = reserveTarget?.isPlayer?.()
+      // A TerraNullius target has its own soft reserve ceiling; do not silently
+      // replace it with the live production reserve at this final boundary.
+      const targetReserve = reserveTarget
         ? this.getEarlyGameTargetReserveTroops(reserveTarget)
         : this.getEarlyGameLiveReserveTroops();
       const safeTroops = Math.min(
@@ -3806,15 +3939,26 @@
     async forceSendAttack(target, fraction = 0.5) {
       // src: game.addExecution(new AttackExecution(troops/2, player,
       //   target.isPlayer() ? target.id() : terraNullius().id())).
-      // Client: emitIntent(ctors.attack, target.id()|null, troops).
+      // Client: emitIntent(ctors.attack, target.id()|null, troops). In win-fix
+      // mode a TerraNullius opening uses the calculated one-tile amount instead
+      // of the faithful half-army burst.
       this.reconcileOutboundAttackIntentCommitments();
       const ctors = discoverCtors(getEventBus());
+      const isTerraNullius = target?.isPlayer?.() !== true;
       const requestedTroops = this.player.troops() * Number(fraction);
-      const reserveTroops = this.getEarlyGameTargetReserveTroops(target);
-      const troops = Math.min(
-        requestedTroops,
-        this.getEarlyGameSpendableTroops(reserveTroops),
-      );
+      const reserveTroops =
+        isTerraNullius && state.settings.winFixes
+          ? this.getEarlyGameTerraNulliusReserveTroops()
+          : this.getEarlyGameTargetReserveTroops(target);
+      const spendableTroops = this.getEarlyGameSpendableTroops(reserveTroops);
+      const troops =
+        isTerraNullius && state.settings.winFixes
+          ? this.getTerraNulliusAttackTroops(
+              target,
+              null,
+              spendableTroops,
+            )
+          : Math.min(requestedTroops, spendableTroops);
       if (!Number.isFinite(troops) || troops < 1) return false;
       const targetId = target.isPlayer() ? target.id() : null;
       if (ctors.attack && emitIntent(ctors.attack, targetId, troops)) {
@@ -3975,21 +4119,14 @@
         );
         if (spawn === false) continue;
 
-        // USER (winFixes): clean land keeps the cheap probe; radioactive land
-        // uses the fallout-adjusted commit derived from Config.attackLogic.
-        const troops = radioactiveTerraNullius && state.settings.winFixes
-          ? Math.min(
-              this.getRadioactiveTerraNulliusCommitTroops(),
-              this.getEarlyGameSpendableTroops(
-                this.getEarlyGameTerraNulliusReserveTroops(),
-              ),
+        // USER (winFixes): send only the live Config.attackLogic cost for the
+        // first TerraNullius tile. Fallout is included in that per-tile cost.
+        const troops = state.settings.winFixes
+          ? this.getTerraNulliusAttackTroops(
+              this.game.terraNullius(),
+              tile,
             )
-          : state.settings.winFixes
-            ? this.getEarlyGameProbeTroops(
-                state.settings.boatProbeFrac,
-                this.getEarlyGameTerraNulliusReserveTroops(),
-              )
-            : this.player.troops() / 5;
+          : this.player.troops() / 5;
         if (troops < 1) return false;
 
         // src: game.addExecution(new TransportShipExecution(player, tile, troops)).
@@ -4074,6 +4211,7 @@
         this.getEarlyGameSpendableTroops(targetReserveTroops),
         radioactiveCommitTroops ?? Infinity,
       );
+      const isTerraNullius = !target.isPlayer();
 
       let troops;
       let requiredTribeAttackTroops = null;
@@ -4101,7 +4239,14 @@
           return false;
         }
       } else {
-        troops = this.player.troops() - targetTroops;
+        troops =
+          isTerraNullius && state.settings.winFixes
+            ? this.getTerraNulliusAttackTroops(
+                target,
+                null,
+                targetSpendableTroops,
+              )
+            : this.player.troops() - targetTroops;
       }
 
       const baseTroops = troops;
@@ -4115,14 +4260,6 @@
       });
       if (troops > baseTroops && target.type?.() === PlayerType.Bot) {
         this.botAttackTroopsSent += troops - baseTroops;
-      }
-
-      if (
-        minCommitFraction != null &&
-        state.settings.winFixes &&
-        !target.isPlayer()
-      ) {
-        troops = Math.max(troops, this.player.troops() * minCommitFraction);
       }
 
       // `player.troops()` can still be the pre-attack snapshot. Clamp after

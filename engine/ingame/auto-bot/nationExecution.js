@@ -187,17 +187,11 @@
         this.initializeBehaviors();
         if (this.feat("expand")) {
           const openingWinFix = state.settings.winFixes === true;
-          const openingCommitFraction = openingWinFix
-            ? EARLY_EXPAND_COMMIT
-            : 0.5;
           const openingAttackSent = await autoBotProfileAsyncPhase(
             profile,
             "opening-attack",
             () =>
-              this.attackBehavior.forceSendAttack(
-                this.mg.terraNullius(),
-                openingCommitFraction,
-              ),
+              this.attackBehavior.forceSendAttack(this.mg.terraNullius()),
           );
           // A successful opening burst occupies this decision slot. With winFixes,
           // schedule one follow-up on the next authoritative tick after the local

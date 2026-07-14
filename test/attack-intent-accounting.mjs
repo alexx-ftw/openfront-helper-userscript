@@ -57,6 +57,7 @@ const me = {
   smallID: () => 1,
   type: () => "Human",
   units: () => [],
+  borderTiles: () => new Set([1]),
   outgoingAttacks: () => outgoing,
 };
 const game = {
@@ -235,7 +236,15 @@ assert.equal(
 const terraNullius = { isPlayer: () => false, id: () => "TerraNullius" };
 const expandingGame = {
   ticks: () => tick,
-  config: () => ({ maxTroops: () => 500000 }),
+  neighbors: () => [2],
+  isLand: () => true,
+  hasOwner: () => false,
+  magnitude: () => 8,
+  hasFallout: () => false,
+  config: () => ({
+    maxTroops: () => 500000,
+    attackLogic: () => ({ attackerTroopLoss: 16 }),
+  }),
 };
 const expandingBehavior = new sandbox.AttackBehavior(
   {},
@@ -269,8 +278,8 @@ assert.equal(
 assert.equal(troopEmissions.length, terraNulliusEmissionCount + 1);
 assert.equal(
   troopEmissions.at(-1),
-  ownTroops * 0.6,
-  "the opening commit is emitted instead of waiting for the moving capacity peak",
+  16,
+  "the opening commit uses one calculated TerraNullius tile instead of the old percentage burst",
 );
 
 const openingBehavior = new sandbox.AttackBehavior(
@@ -290,7 +299,7 @@ assert.equal(
   "the first TerraNullius opening burst is not blocked by the capacity-derived reserve",
 );
 assert.equal(troopEmissions.length, openingEmissionCount + 1);
-assert.equal(troopEmissions.at(-1), ownTroops * 0.5);
+assert.equal(troopEmissions.at(-1), 16);
 
 // emitBoat is the final synchronous boundary after the route/launch await. It
 // must reapply the same target-specific reserve instead of falling back to the

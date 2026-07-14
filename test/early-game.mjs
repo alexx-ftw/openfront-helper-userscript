@@ -50,8 +50,8 @@ assert.match(
 );
 assert.match(
   nationExecutionSource,
-  /openingCommitFraction = openingWinFix[\s\S]{0,120}EARLY_EXPAND_COMMIT[\s\S]{0,80}0\.5/,
-  "winFixes must use the calculated opening commit while faithful mode keeps 50%",
+  /forceSendAttack\(this\.mg\.terraNullius\(\)\)/,
+  "the opening attack must let AttackBehavior calculate the TerraNullius amount",
 );
 assert.match(
   nationExecutionSource,
@@ -69,7 +69,7 @@ assert.match(
   "radioactive land attacks must be capped by the derived ratio",
 );
 
-const openingFractions = [];
+const openingCalls = [];
 let openingFollowUps = 0;
 const NoopBehavior = class {};
 const openingSandbox = {
@@ -118,8 +118,8 @@ const openingSandbox = {
       this.pending = 0;
     }
 
-    forceSendAttack(_target, fraction) {
-      openingFractions.push(fraction);
+    forceSendAttack(_target, ...args) {
+      openingCalls.push(args.length);
       this.pending = 1;
       return true;
     }
@@ -153,9 +153,9 @@ const openingBot = new openingSandbox.NationBot(openingGame, {
 });
 await openingBot.tick(0);
 assert.equal(
-  openingFractions[0],
-  0.6,
-  "the first live TerraNullius burst uses the calculated 60% commit",
+  openingCalls[0],
+  0,
+  "the first live TerraNullius burst delegates troop calculation to AttackBehavior",
 );
 assert.equal(
   openingBot.openingExpansionFollowUpPending,
@@ -168,7 +168,7 @@ assert.equal(
   0,
   "the follow-up waits for the opening intent without duplicating it",
 );
-assert.equal(openingFractions.length, 1, "the pending opening intent is not emitted twice");
+assert.equal(openingCalls.length, 1, "the pending opening intent is not emitted twice");
 openingBot.attackBehavior.pending = 0;
 await openingBot.tick(2);
 assert.equal(
@@ -908,6 +908,46 @@ const targetBehavior = new targetSandbox.AttackBehavior(
   0.1,
   {},
   {},
+);
+
+// TerraNullius expansion must budget one frontier tile from the engine's real
+// attackLogic loss, rather than from a percentage of the live army. A mixed
+// frontier uses the worst first-tile loss so the attack can land regardless of
+// which adjacent tile the execution dequeues first.
+const minimumTerraNulliusBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+minimumTerraNulliusBehavior.player = {
+  troops: () => 100000,
+  type: () => targetSandbox.PlayerType.Human,
+  borderTiles: () => new Set([1]),
+};
+minimumTerraNulliusBehavior.game = {
+  neighbors: (tile) => (tile === 1 ? [2, 3] : []),
+  isLand: () => true,
+  hasOwner: () => false,
+  magnitude: (tile) => (tile === 2 ? 8 : 25),
+  hasFallout: () => false,
+  config: () => ({
+    attackLogic: (_game, _troops, _attacker, _defender, tile) => ({
+      attackerTroopLoss: tile === 2 ? 16 : 24,
+    }),
+  }),
+};
+minimumTerraNulliusBehavior.getEarlyGameTerraNulliusReserveTroops = () => 1000;
+minimumTerraNulliusBehavior.getEarlyGameSpendableTroops = () => 99000;
+const minimumTerraNulliusTarget = { isPlayer: () => false };
+assert.equal(
+  minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(minimumTerraNulliusTarget),
+  24,
+  "TerraNullius land attacks use the worst one-tile attackLogic loss",
+);
+assert.equal(
+  minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(minimumTerraNulliusTarget, 2),
+  16,
+  "a targeted TerraNullius landing uses only that tile's calculated loss",
+);
+assert.ok(
+  24 < 100000 * 0.6,
+  "the minimum TerraNullius amount must be far below the old percentage burst",
 );
 
 const radioactiveBehavior = Object.create(targetSandbox.AttackBehavior.prototype);

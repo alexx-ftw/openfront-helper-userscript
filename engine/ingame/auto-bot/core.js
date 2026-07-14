@@ -211,14 +211,10 @@
   // intents every poll. In win-fix mode, combat follows the engine's configured
   // tickMs cadence directly; it has no second artificial attack cooldown.
   const MAX_DEFENSE_RESERVE = 0.8; // never hold back more than this for defense
-  // Min fraction of ACTUAL troops to commit when grabbing SAFE empty land (no
-  // bordering enemies). The maxTroops-based reserve has a ~100k floor while we
-  // start with ~25k troops, so it would send only ~18% of our army — far slower
-  // than a real nation's opening burst (forceSendAttack troops/2). Terra-nullius
-  // doesn't fight back and unspent troops return, so committing ~60% when no
-  // enemy borders us is low-risk and fixes the "expand too slow → small → eaten
-  // fast in the early game" loss. Drops back to the defensive reserve the moment
-  // an enemy borders us.
+  // Soft ceiling used by the TerraNullius reserve calculation. The actual
+  // win-fix attack amount is derived from Config.attackLogic for one frontier
+  // tile, so this constant only limits how much of the live army may be
+  // considered spendable while production is accelerating.
   const EARLY_EXPAND_COMMIT = 0.6;
   const BUILD_THROTTLE_MS = 1800;
   const NUKE_THROTTLE_MS = 6000;
