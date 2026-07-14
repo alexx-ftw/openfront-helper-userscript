@@ -69,9 +69,13 @@
   // async enrichment bounded so a crowded tribe map cannot starve the combat tick.
   const EARLY_TRIBE_CANDIDATES = 8;
   const EARLY_GAME_TRIBE_CHAIN_RADIUS = 120;
-  // Preserve half of the army level where the troop-generation curve peaks.
-  // The peak is near 42% of max troops, so the live reserve is 21% of max.
-  const ATTACK_EARLY_GAME_PEAK_RATIO = 0.42;
+  // The game's troop growth is (10 + troops^0.73 / 4) * (1 - troops / max).
+  // Keep the formula constants here so the reserve follows the real production
+  // curve instead of relying on its approximate 42% peak ratio.
+  const ATTACK_EARLY_GAME_GROWTH_BASE = 10;
+  const ATTACK_EARLY_GAME_GROWTH_EXPONENT = 0.73;
+  const ATTACK_EARLY_GAME_GROWTH_DIVISOR = 4;
+  const ATTACK_EARLY_GAME_PEAK_SEARCH_ITERATIONS = 64;
   const ATTACK_EARLY_GAME_PEAK_RESERVE_FRACTION = 0.5;
   // Intents are asynchronous on the client: the troop balance and outgoing
   // attack snapshot can lag the emitted command by several game ticks.
@@ -88,6 +92,39 @@
   // Terrain is shared by all Nation behaviors for the same game. Keep the
   // reverse maritime field per map instead of rebuilding it for every bot.
   const EARLY_GAME_MARITIME_INDEX_CACHE = new WeakMap();
+
+  function earlyGameTroopGrowthDerivative(troops, maximum) {
+    if (troops <= 0) return Infinity;
+    if (troops >= maximum) return -Infinity;
+
+    const exponent = ATTACK_EARLY_GAME_GROWTH_EXPONENT;
+    const power = Math.pow(troops, exponent);
+    return (
+      (exponent * Math.pow(troops, exponent - 1)) /
+        ATTACK_EARLY_GAME_GROWTH_DIVISOR *
+        (1 - troops / maximum) -
+      (ATTACK_EARLY_GAME_GROWTH_BASE + power / ATTACK_EARLY_GAME_GROWTH_DIVISOR) /
+        maximum
+    );
+  }
+
+  function findEarlyGameTroopGrowthPeak(maximum) {
+    let low = 0;
+    let high = maximum;
+    for (
+      let iteration = 0;
+      iteration < ATTACK_EARLY_GAME_PEAK_SEARCH_ITERATIONS;
+      iteration++
+    ) {
+      const middle = (low + high) / 2;
+      if (earlyGameTroopGrowthDerivative(middle, maximum) > 0) {
+        low = middle;
+      } else {
+        high = middle;
+      }
+    }
+    return (low + high) / 2;
+  }
 
   function emptyDefensePostAttackProfile() {
     return {
@@ -553,7 +590,7 @@
         return this.earlyGamePeakReserveCache;
       }
 
-      const peakTroops = maximum * ATTACK_EARLY_GAME_PEAK_RATIO;
+      const peakTroops = findEarlyGameTroopGrowthPeak(maximum);
       const reserve = Math.max(
         1,
         Math.ceil(
