@@ -565,9 +565,22 @@
 
   // AttackBehavior's strategy-driven donation runs in a sibling module loaded
   // before this file. Expose the same detector so both donation paths obey the
-  // maritime-defense gate without duplicating the unit scan.
+  // complete emergency gate without duplicating the unit scan. The detector is
+  // named for its original transport use, but it must also report land attacks:
+  // AttackBehavior already uses its `active` result before emitting donations.
   window.__OFH_getIncomingMaritimeInvasion = function(game, me) {
-    return _getIncomingMaritimeInvasion(game, me);
+    var maritime = _getIncomingMaritimeInvasion(game, me);
+    var incomingAttack = _isBeingAttacked(me);
+    if (incomingAttack === false) return maritime;
+
+    // Treat an unknown attack state as active so a missing/incompatible player
+    // view cannot reopen a troop outflow. Preserve the maritime troop count
+    // when that scan already succeeded, because callers use it for reserves.
+    return {
+      active: true,
+      troops: maritime && typeof maritime.troops === "number" ? maritime.troops : null,
+      reason: incomingAttack === true ? "incoming-attack" : "incoming-attack-unknown",
+    };
   };
 
   window.__OFH_tickAutoDonate = function() {

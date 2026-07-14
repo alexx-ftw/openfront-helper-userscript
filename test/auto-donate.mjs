@@ -186,6 +186,18 @@ assert.ok(
 const beingAttacked = await runDonation({ beingAttacked: true });
 assert.equal(beingAttacked.length, 0, "donation is skipped while being attacked");
 
+const sharedIncomingAttackGate = await runDonation({
+  beingAttacked: true,
+  supportsUnitApi: false,
+  returnDetails: true,
+});
+assert.equal(
+  sharedIncomingAttackGate.maritime?.active,
+  true,
+  "the shared donation gate reports land attacks even without transport data",
+);
+assert.equal(sharedIncomingAttackGate.maritime?.reason, "incoming-attack");
+
 const attackedDuringBorderLookup = await runDonation({ attackDuringBorderLookup: true });
 assert.equal(
   attackedDuringBorderLookup.length,
