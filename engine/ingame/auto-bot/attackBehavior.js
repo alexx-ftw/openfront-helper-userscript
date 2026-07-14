@@ -413,6 +413,8 @@
       this.botAttackTroopsSent = 0;
       this.botAttackPendingIntentCommitments = [];
       this.outboundIntentReconciledTick = null;
+      this.botPendingDonationIntentCommitments = [];
+      this.outboundDonationIntentReconciledTick = null;
       this.earlyGamePeakReserveCacheKey = null;
       this.earlyGamePeakReserveCache = 0;
       // Small per-player memory used by the early-game food-race policy. It is
@@ -690,6 +692,46 @@
       );
     }
 
+    recordOutboundDonationIntent(troops) {
+      const amount = Math.max(0, Number(troops) || 0);
+      if (amount <= 0) return;
+      this.botPendingDonationIntentCommitments.push({
+        troops: amount,
+        createdTick: this.currentAttackDecisionTick(),
+      });
+    }
+
+    reconcileOutboundDonationIntentCommitments(
+      tick = this.currentAttackDecisionTick(),
+    ) {
+      if (this.outboundDonationIntentReconciledTick === tick) return;
+      this.outboundDonationIntentReconciledTick = tick;
+      const pending = this.botPendingDonationIntentCommitments;
+      if (!Array.isArray(pending) || pending.length === 0) return;
+
+      this.botPendingDonationIntentCommitments = pending.filter((entry) => {
+        const createdTick = Number(entry.createdTick);
+        const age =
+          tick - (Number.isFinite(createdTick) ? createdTick : tick);
+        return age <= BOT_OUTBOUND_INTENT_GRACE_TICKS;
+      });
+    }
+
+    getPendingOutboundDonationTroops() {
+      this.reconcileOutboundDonationIntentCommitments();
+      return this.botPendingDonationIntentCommitments.reduce(
+        (total, entry) => total + Math.max(0, Number(entry.troops) || 0),
+        0,
+      );
+    }
+
+    getPendingOutboundTroopCommitments() {
+      return (
+        this.getPendingOutboundAttackTroops() +
+        this.getPendingOutboundDonationTroops()
+      );
+    }
+
     getEarlyGameLiveReserveTroops() {
       const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
       if (ownTroops <= 0) return 0;
@@ -720,12 +762,11 @@
 
     getEarlyGameSpendableTroops() {
       const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
-      const reserve = state.settings?.winFixes
-        ? this.getEarlyGameLiveReserveTroops()
-        : 0;
-      const pending = state.settings?.winFixes
-        ? this.getPendingOutboundAttackTroops()
-        : 0;
+      // This is a hard safety floor for every troop outflow. It remains active
+      // even when other winFixes are disabled: an emitted attack or donation must
+      // never consume the reserve needed to keep production accelerating.
+      const reserve = this.getEarlyGameLiveReserveTroops();
+      const pending = this.getPendingOutboundTroopCommitments();
       return Math.max(0, ownTroops - reserve - pending);
     }
 
@@ -2619,9 +2660,12 @@
       if (!Number.isFinite(requestedTroops) || requestedTroops < 1) {
         return false;
       }
-      const safeTroops = state.settings.winFixes
-        ? Math.min(requestedTroops, this.getEarlyGameSpendableTroops())
-        : requestedTroops;
+      // All attack types share the same hard reserve budget, including boats
+      // whose caller may have calculated a larger surge from a stale snapshot.
+      const safeTroops = Math.min(
+        requestedTroops,
+        this.getEarlyGameSpendableTroops(),
+      );
       if (!Number.isFinite(safeTroops) || safeTroops < 1) {
         return false;
       }
@@ -3443,9 +3487,10 @@
       this.reconcileOutboundAttackIntentCommitments();
       const ctors = discoverCtors(getEventBus());
       const requestedTroops = this.player.troops() * Number(fraction);
-      const troops = state.settings.winFixes
-        ? Math.min(requestedTroops, this.getEarlyGameSpendableTroops())
-        : requestedTroops;
+      const troops = Math.min(
+        requestedTroops,
+        this.getEarlyGameSpendableTroops(),
+      );
       if (!Number.isFinite(troops) || troops < 1) return false;
       const targetId = target.isPlayer() ? target.id() : null;
       if (ctors.attack && emitIntent(ctors.attack, targetId, troops)) {
@@ -3685,9 +3730,7 @@
       // `player.troops()` can still be the pre-attack snapshot. Clamp after
       // every policy adjustment so the reserve and all intents share one final
       // budget, including the opening/free-land burst.
-      if (state.settings.winFixes) {
-        troops = Math.min(troops, this.getEarlyGameSpendableTroops());
-      }
+      troops = Math.min(troops, this.getEarlyGameSpendableTroops());
 
       // A Defense Post multiplies the real per-tile attacker loss by five. Do
       // not spend a sub-2× effective attack into a covered front; the existing
@@ -4074,14 +4117,19 @@
         : this.reserveRatio;
       const troopsToKeep = maxTroops * keepFrac;
       const availableTroops = this.player.troops() - troopsToKeep;
+      const donationTroops = Math.min(
+        Math.max(0, availableTroops),
+        this.getEarlyGameSpendableTroops(),
+      );
       const minExcess = state.settings.winFixes
         ? maxTroops * (state.settings.donateMinExcessFrac || 0.05)
         : 1;
 
-      if (availableTroops < minExcess) {
+      if (donationTroops < minExcess) {
         console.log("[Donate] skip: not enough above the keep line", {
           troops: Math.round(this.player.troops()),
           keep: Math.round(troopsToKeep),
+          spendable: Math.round(donationTroops),
           needExcess: Math.round(minExcess),
         });
         return false;
@@ -4091,9 +4139,9 @@
       // currentTroops. This batches smaller donations into bigger ones — dồn lực.
       const minDonatePct = state.settings.donateMinDonatePct || 0.2;
       const minDonateAmount = this.player.troops() * minDonatePct;
-      if (availableTroops < minDonateAmount) {
+      if (donationTroops < minDonateAmount) {
         console.log("[Donate] skip: donation too small (minDonatePct)", {
-          available: Math.round(availableTroops),
+          available: Math.round(donationTroops),
           minChunk: Math.round(minDonateAmount),
           pct: Math.round(minDonatePct * 100) + "%",
         });
@@ -4109,12 +4157,13 @@
         emitIntent(
           ctors.donateTroops,
           selectedTeammate.__src ?? selectedTeammate,
-          availableTroops,
+          donationTroops,
         )
       ) {
+        this.recordOutboundDonationIntent(donationTroops);
         console.log(
           "[Donate] SENT",
-          Math.round(availableTroops),
+          Math.round(donationTroops),
           "→",
           selectedTeammate.name?.() ?? selectedTeammate.smallID?.(),
         );

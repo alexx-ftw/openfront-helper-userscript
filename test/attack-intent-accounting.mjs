@@ -61,6 +61,11 @@ assert.equal(
   1000,
   "a probe is 1% of the current army without an absolute troop floor",
 );
+assert.equal(
+  behavior.getEarlyGameSpendableTroops(),
+  90005,
+  "the acceleration peak is protected before any outgoing troop intent",
+);
 
 behavior.recordOutboundAttackIntent(target, 8000, { attackType: "land" });
 assert.equal(behavior.getPendingOutboundAttackTroops(), 8000);
@@ -99,6 +104,33 @@ assert.equal(
   behavior.getPendingOutboundAttackTroops(),
   2000,
   "one visible attack only settles one of two stale intents",
+);
+
+tick = 9;
+assert.equal(
+  behavior.getPendingOutboundTroopCommitments(),
+  0,
+  "expired attack intents no longer reserve troops forever",
+);
+assert.equal(
+  behavior.getEarlyGameSpendableTroops(),
+  90005,
+  "the protected reserve remains after attack intents expire",
+);
+
+behavior.recordOutboundDonationIntent(10000);
+assert.equal(behavior.getPendingOutboundDonationTroops(), 10000);
+assert.equal(
+  behavior.getEarlyGameSpendableTroops(),
+  80005,
+  "a pending donation is deducted before another attack or donation",
+);
+
+sandbox.state.settings.winFixes = false;
+assert.equal(
+  behavior.getEarlyGameSpendableTroops(),
+  80005,
+  "the hard reserve and pending donation guard is independent of winFixes",
 );
 
 console.log("attack intent accounting tests passed");
