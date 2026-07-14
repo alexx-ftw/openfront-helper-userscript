@@ -116,6 +116,9 @@
    */
   const HYDROGEN_SAM_SILO_LEVEL_SUM_THRESHOLD = 2;
 
+  /** Any built hostile silo can already launch a missile at our structures. */
+  const HOSTILE_SILO_SAM_COVERAGE_LEVEL_SUM_THRESHOLD = 1;
+
   /** OpenFront's SAM upgrade ladder currently tops out at level five. */
   const HYDROGEN_SAM_MAX_UPGRADE_LEVEL = 5;
 
@@ -356,6 +359,8 @@
       this._hostileThreatSnapshot = null;
       this._hostileSiloCapacitySnapshotTick = null;
       this._hostileSiloCapacitySnapshot = null;
+      this._hasCoastalTiles = null;
+      this._hasOceanPortTiles = null;
       this._missileDefenseSignalTick = null;
       this._missileDefenseSignalCache = null;
       // Missile placement forecasts are shared by several Legendary and
@@ -778,6 +783,8 @@
       );
       const hasCoastalTiles = this._sharedWaterComponents !== null;
       const hasOceanPortTiles = this.hasOceanPortTiles();
+      this._hasCoastalTiles = hasCoastalTiles;
+      this._hasOceanPortTiles = hasOceanPortTiles;
 
       // Once OUR side is DOMINANT (default >75% of the live map — well BELOW the 95%
       // win line at which the game would END), stop suppressing coastal factories (see
@@ -1020,7 +1027,7 @@
       for (const structureType of buildOrder) {
         if (config.isUnitDisabled(structureType)) continue;
         if (structureType === UNIT.Port && !hasOceanPortTiles) continue;
-        if (availableGold < this.getPerceivedCost(structureType)) continue;
+        if (availableGold < this.getConstructionCost(structureType)) continue;
         if (await this.maybeSpawnStructure(structureType)) return true;
       }
       return false;
@@ -1595,9 +1602,223 @@
       );
     }
 
+    /**
+     * Return the next economic action that is both strategically eligible and
+     * affordable right now. This mirrors the normal construction order without
+     * probing tiles, so the nuclear behavior can make the same resource decision
+     * without duplicating placement work.
+     */
+    spendableConstructionGold() {
+      let availableGold = 0n;
+      try {
+        availableGold = BigInt(this.player.gold() || 0n);
+      } catch (_error) {
+        return 0n;
+      }
+
+      let reserve = 0n;
+      try {
+        reserve = this.legendaryReserveGold();
+      } catch (_error) {
+        reserve = 0n;
+      }
+      return availableGold > reserve ? availableGold - reserve : 0n;
+    }
+
+    /**
+     * Productive structures use their real next-build price under win-fixes.
+     * The old MIRV save-up multiplier made a City increasingly unaffordable
+     * while the bot was still trying to grow, even though the same gold was
+     * enough to build it. Offensive structures retain the perceived-cost guard.
+     */
+    getConstructionCost(type) {
+      if (
+        state.settings.winFixes &&
+        ECONOMIC_STRUCTURE_TYPES.includes(type)
+      ) {
+        return this.cost(type);
+      }
+      return this.getPerceivedCost(type);
+    }
+
+    economicConstructionPressure() {
+      if (!state.settings.winFixes) return null;
+
+      const availableGold = this.spendableConstructionGold();
+
+      const config = this.game.config();
+      const citiesDisabled = config.isUnitDisabled(UNIT.City);
+      const cityCount = citiesDisabled
+        ? Math.max(
+            1,
+            Math.floor(this.player.numTilesOwned() / TILES_PER_CITY_EQUIVALENT),
+          )
+        : this.ownedLevels(UNIT.City);
+      const hasCoastalTiles = this._hasCoastalTiles === true;
+      const hasOceanPortTiles = this._hasOceanPortTiles === true;
+      const candidates = [UNIT.Port, UNIT.Factory, UNIT.City];
+
+      for (const type of candidates) {
+        if (config.isUnitDisabled(type) || !autoBotBuildAllowed(type)) {
+          continue;
+        }
+
+        const units = this.player.units(type) || [];
+        if (
+          units.some(
+            (unit) =>
+              unit &&
+              typeof unit.isUnderConstruction === "function" &&
+              unit.isUnderConstruction(),
+          )
+        ) {
+          continue;
+        }
+
+        let eligible = false;
+        if (type === UNIT.City) {
+          // The normal Nation order always gives City a final build/upgrade
+          // opportunity after the ratio-driven structures.
+          eligible = true;
+        } else if (type === UNIT.Port) {
+          eligible =
+            hasOceanPortTiles &&
+            (units.length === 0 ||
+              this.shouldBuildStructure(type, cityCount, hasCoastalTiles));
+        } else {
+          eligible =
+            units.length === 0 ||
+            this.shouldBuildStructure(type, cityCount, hasCoastalTiles);
+        }
+        if (!eligible) continue;
+
+        let cost;
+        try {
+          cost = this.getConstructionCost(type);
+        } catch (_error) {
+          continue;
+        }
+        if (cost <= availableGold) return { type, cost };
+      }
+      return null;
+    }
+
+    /**
+     * Return whether an offensive structure must leave room for the next
+     * productive and defensive actions. This prevents the first silo or a
+     * requested silo upgrade from crowding out the economy/SAM response, while
+     * still allowing it when the surplus covers all three spends.
+     */
+    shouldReserveEconomicGrowthForOffense(type) {
+      if (type !== UNIT.MissileSilo || !state.settings.winFixes) return false;
+
+      const economic = this.economicConstructionPressure();
+      const defensive = this.defensiveConstructionPressure();
+      const reserve = (economic?.cost ?? 0n) + (defensive?.cost ?? 0n);
+      if (reserve === 0n) return false;
+
+      let offensiveCost;
+      try {
+        offensiveCost = this.getConstructionCost(type);
+      } catch (_error) {
+        return true;
+      }
+      return this.spendableConstructionGold() < reserve + offensiveCost;
+    }
+
+    /**
+     * Return the next SAM spend required by a live missile threat. The
+     * trajectory forecast remains in the active-missile path; this cheap
+     * pressure signal only reserves the next SAM site/level before a nuke is
+     * allowed to consume the same surplus.
+     */
+    defensiveConstructionPressure() {
+      if (!state.settings.winFixes || !autoBotBuildAllowed(UNIT.SAMLauncher)) {
+        return null;
+      }
+
+      let config;
+      try {
+        config = this.game.config();
+        if (
+          typeof config.isUnitDisabled === "function" &&
+          config.isUnitDisabled(UNIT.SAMLauncher)
+        ) {
+          return null;
+        }
+      } catch (_error) {
+        return null;
+      }
+
+      let needsSam = false;
+      try {
+        const coverage = this.hydrogenStructureCoveragePlan();
+        needsSam = Boolean(
+          coverage &&
+            (coverage.needsNewSam ||
+              coverage.targetLevel > coverage.currentLevel),
+        );
+      } catch (_error) {
+        needsSam = false;
+      }
+
+      if (!needsSam) {
+        try {
+          needsSam =
+            this.shouldBuildHostileSiloSam() || this.samLevelParityGap() > 0;
+        } catch (_error) {
+          needsSam = false;
+        }
+      }
+
+      if (!needsSam) {
+        try {
+          const signal = this.missileDefenseSignalSnapshot();
+          const sams = this.player.units(UNIT.SAMLauncher) || [];
+          needsSam = signal?.hasActiveHostileMissile === true && sams.length === 0;
+        } catch (_error) {
+          needsSam = false;
+        }
+      }
+
+      if (!needsSam) return null;
+
+      try {
+        return {
+          type: UNIT.SAMLauncher,
+          cost: this.getConstructionCost(UNIT.SAMLauncher),
+        };
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    /**
+     * Keep an offensive nuke from consuming the exact surplus needed by the
+     * next productive build and the next SAM action. NukeBehavior supplies the
+     * actual perceived nuke cost and owns the emergency/retaliation exceptions.
+     */
+    shouldDeferOffensiveNuke(nukeCost = 0n) {
+      if (!state.settings.winFixes) return false;
+
+      let cost;
+      try {
+        cost = BigInt(nukeCost || 0n);
+      } catch (_error) {
+        return false;
+      }
+      if (cost <= 0n) return false;
+
+      const economic = this.economicConstructionPressure();
+      const defensive = this.defensiveConstructionPressure();
+      const reserve = (economic?.cost ?? 0n) + (defensive?.cost ?? 0n);
+      return this.spendableConstructionGold() < cost + reserve;
+    }
+
     shouldPrioritizeEconomicGrowth() {
       if (!state.settings.winFixes) return false;
-      return this.hasHostileReachedSiloGoldThreshold() === false;
+      if (this.hasHostileReachedSiloGoldThreshold() === false) return true;
+      return this.economicConstructionPressure() !== null;
     }
 
     legendaryFriendlyPlayers() {
@@ -2108,10 +2329,12 @@
     hydrogenStructureCoveragePlan() {
       if (
         !state.settings.winFixes ||
-        !autoBotBuildAllowed(UNIT.SAMLauncher) ||
-        this.hostileSiloLevelSumTarget() <
-          HYDROGEN_SAM_SILO_LEVEL_SUM_THRESHOLD
+        !autoBotBuildAllowed(UNIT.SAMLauncher)
       ) {
+        return null;
+      }
+      const hostileSiloLevelSum = this.hostileSiloLevelSumTarget();
+      if (hostileSiloLevelSum < HOSTILE_SILO_SAM_COVERAGE_LEVEL_SUM_THRESHOLD) {
         return null;
       }
 
@@ -4769,10 +4992,7 @@
 
     // shouldBuildStructure — NationStructureBehavior.ts:540.
     shouldBuildStructure(type, cityCount, hasCoastalTiles) {
-      if (
-        type === UNIT.MissileSilo &&
-        this.shouldPrioritizeEconomicGrowth()
-      ) {
+      if (this.shouldReserveEconomicGrowthForOffense(type)) {
         return false;
       }
       const gameConfig = this.game.config();
@@ -4884,13 +5104,10 @@
     // maybeSpawnStructure — NationStructureBehavior.ts:585 (now async).
     async maybeSpawnStructure(type, options = {}) {
       if (!autoBotBuildAllowed(type)) return false; // user disallowed this type
-      if (
-        type === UNIT.MissileSilo &&
-        this.shouldPrioritizeEconomicGrowth()
-      ) {
+      if (this.shouldReserveEconomicGrowthForOffense(type)) {
         return false;
       }
-      const perceivedCost = this.getPerceivedCost(type);
+      const perceivedCost = this.getConstructionCost(type);
       let availableGold = this.player.gold();
       // WIN-FIX (NOT in src): when mirvBehavior has set a real MIRV war-chest
       // reserve (state.nukeReserveGold ≥ 15M), the economy yields so the bot
@@ -5205,6 +5422,12 @@
         minimumCost = 0n;
       }
       if (availableGold < minimumCost) return false;
+
+      const economic = this.economicConstructionPressure();
+      const defensive = this.defensiveConstructionPressure();
+      const pressureReserve =
+        (economic?.cost ?? 0n) + (defensive?.cost ?? 0n);
+      if (availableGold < minimumCost + pressureReserve) return false;
 
       const buildables = await this.buildableForUnits(
         candidates,

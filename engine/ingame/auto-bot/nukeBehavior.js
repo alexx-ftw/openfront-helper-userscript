@@ -330,6 +330,10 @@
       this.player = player;
       this.attackBehavior = attackBehavior;
       this.emojiBehavior = emojiBehavior;
+      // Wired by NationBot after both behaviors are constructed. Keeping the
+      // policy owner here avoids duplicating economy/structure cost logic in
+      // the nuclear planner.
+      this.structureBehavior = null;
 
       // recentlySentNukes: [Tick, TileRef, nukeType][] — NationNukeBehavior.ts:38
       this.recentlySentNukes = [];
@@ -411,6 +415,8 @@
       } else {
         return;
       }
+      const nukeCost = nukeType === UNIT.HydrogenBomb ? hydroCost : atomCost;
+      if (this.shouldDeferNukeForEconomy(nukeTarget, nukeCost)) return;
       const range = this.game.config().nukeMagnitudes(nukeType).outer;
 
       const structures = nukeTarget.units(...NUKE_STRUCTURES_TYPES);
@@ -518,6 +524,50 @@
         await this.sendNuke(bestTile, nukeType, nukeTarget);
       } else if (isAtLeastHardDifficulty(difficulty)) {
         await this.maybeDestroyEnemySam(nukeTarget);
+      }
+    }
+
+    /**
+     * Offensive nukes yield to the shared economy/defense reserve. A heavy
+     * assault or direct retaliation keeps the emergency path responsive;
+     * ordinary target selection follows the surplus policy.
+     */
+    shouldDeferNukeForEconomy(nukeTarget, nukeCost) {
+      const policy = this.structureBehavior?.shouldDeferOffensiveNuke;
+      if (typeof policy !== "function") return false;
+
+      try {
+        if (this.isUnderHeavyAttack()) return false;
+      } catch (_error) {
+        // Keep the economy gate active if the attack snapshot is unavailable.
+      }
+
+      let incoming = null;
+      try {
+        if (typeof this.attackBehavior?.findIncomingAttackPlayer === "function") {
+          incoming = this.attackBehavior.findIncomingAttackPlayer();
+        }
+      } catch (_error) {
+        incoming = null;
+      }
+      if (incoming && nukeTarget) {
+        try {
+          if (
+            typeof incoming.smallID === "function" &&
+            typeof nukeTarget.smallID === "function" &&
+            incoming.smallID() === nukeTarget.smallID()
+          ) {
+            return false;
+          }
+        } catch (_error) {
+          // Fall through to the normal economy policy.
+        }
+      }
+
+      try {
+        return policy.call(this.structureBehavior, nukeCost) === true;
+      } catch (_error) {
+        return false;
       }
     }
 

@@ -47,6 +47,7 @@ const sandbox = {
   getBuildMenu: () => ({
     sendBuildOrUpgrade: (buildable) => sentBuilds.push(buildable),
   }),
+  autoBotBuildAllowed: () => true,
   randTerritoryTileArray: (_random, _game, _player, count) =>
     Array.from({ length: count }, (_, index) => 10_000 + index),
   setLastAction: () => {},
@@ -168,6 +169,8 @@ behavior.game = {
   players: () => [own, enemyA, enemyB, enemyC, enemyTeam, enemySilos, enemySiloUnderConstruction],
   config: () => ({
     isUnitDisabled: (type) => type === UNIT.SAMLauncher && samDisabled,
+    gameConfig: () => ({ gameMode: "FFA" }),
+    samRange: (level) => 50 * Number(level || 1),
   }),
 };
 
@@ -191,6 +194,19 @@ assert.equal(
   true,
   "Economic growth is prioritized while no hostile can afford a silo",
 );
+assert.equal(
+  behavior.economicConstructionPressure()?.type,
+  UNIT.Factory,
+  "The next affordable productive structure remains visible to the policy",
+);
+const originalOwnGoldForPressure = own.gold;
+own.gold = () => 1_000n;
+assert.equal(
+  behavior.economicConstructionPressure(),
+  null,
+  "The economy pressure clears when no productive structure is affordable",
+);
+own.gold = originalOwnGoldForPressure;
 assert.equal(
   typeof behavior.hasHostileSiloThreat,
   "function",
@@ -221,11 +237,14 @@ assert.equal(
   "The SAM target uses the greatest single enemy Silo-level-sum",
 );
 behavior.game.players = originalPlayersForSiloLevelSum;
+const originalOwnGoldForSiloReserve = own.gold;
+own.gold = () => 3_000_000n;
 assert.equal(
   behavior.shouldBuildStructure(UNIT.MissileSilo, 10, false),
   false,
-  "New silo construction is deferred below the hostile 1M-gold threshold",
+  "Silo construction leaves room for the next economy and SAM actions",
 );
+own.gold = originalOwnGoldForSiloReserve;
 enemyB.gold = () => 1_000_000n;
 assert.equal(
   behavior.hasHostileReachedSiloGoldThreshold(),
@@ -234,8 +253,8 @@ assert.equal(
 );
 assert.equal(
   behavior.shouldPrioritizeEconomicGrowth(),
-  false,
-  "Economic priority ends once a hostile reaches the silo threshold",
+  true,
+  "Economic growth remains active after the hostile silo threshold when it is affordable",
 );
 assert.equal(
   behavior.enemySamCapacityParityTarget(),
@@ -655,6 +674,37 @@ assert.equal(
   "A single level-1 hostile Silo does not activate H-bomb SAM protection",
 );
 
+const firstSiloCoverageBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+firstSiloCoverageBehavior.player = {
+  gold: () => 5_000_000n,
+  units: (type) => {
+    if (type === UNIT.SAMLauncher) return [];
+    if (type === UNIT.City) return [{ tile: () => 0 }];
+    if (type === UNIT.MissileSilo) return [makeUnit(1150, 1)];
+    return [];
+  },
+};
+firstSiloCoverageBehavior.game = {
+  euclideanDistSquared: (left, right) => (Number(left) - Number(right)) ** 2,
+  config: () => ({
+    isUnitDisabled: () => false,
+    gameConfig: () => ({ gameMode: "FFA" }),
+    samRange: (level) => level * 6,
+  }),
+};
+firstSiloCoverageBehavior.liveHostilePlayers = () => [enemySingleLevelOneSilo];
+firstSiloCoverageBehavior.legendaryReserveGold = () => 0n;
+assert.equal(
+  firstSiloCoverageBehavior.hydrogenStructureCoveragePlan()?.needsNewSam,
+  true,
+  "The first built hostile level-1 Silo requests a SAM covering our structures",
+);
+assert.equal(
+  firstSiloCoverageBehavior.defensiveConstructionPressure()?.type,
+  UNIT.SAMLauncher,
+  "The first hostile Silo creates a defensive SAM reserve before offense",
+);
+
 let coverageSamLevel = 1;
 const structureCoverageSam = {
   id: () => 1201,
@@ -708,21 +758,23 @@ assert.equal(
 const originalGetPerceivedCost = behavior.getPerceivedCost;
 const originalStructureSpawnTile = behavior.structureSpawnTile;
 const originalGetTotalStructureDensity = behavior.getTotalStructureDensity;
-behavior.getPerceivedCost = () => 0n;
 behavior.structureSpawnTile = async () => ({ canBuild: true });
 behavior.getTotalStructureDensity = () => 0;
 const buildsBeforeSiloGate = sentBuilds.length;
+const originalOwnGoldForDirectSilo = own.gold;
+own.gold = () => 100_000n;
 assert.equal(
   await behavior.maybeSpawnStructure(UNIT.MissileSilo),
   false,
-  "The direct silo spawn path is blocked below the hostile 1M-gold threshold",
+  "The direct silo spawn path preserves the economy reserve when surplus is insufficient",
 );
 hostileAttemptTick++;
 enemyB.gold = () => 1_000_000n;
+own.gold = () => 5_000_000n;
 assert.equal(
   await behavior.maybeSpawnStructure(UNIT.MissileSilo),
   true,
-  "The direct silo spawn path reopens at the hostile 1M-gold threshold",
+  "The direct silo spawn path reopens when surplus covers the economy reserve",
 );
 assert.equal(
   sentBuilds.length,
@@ -730,6 +782,7 @@ assert.equal(
   "Only the threshold-opened direct silo attempt reaches the build menu",
 );
 enemyB.gold = () => 999_999n;
+own.gold = originalOwnGoldForDirectSilo;
 behavior.getPerceivedCost = originalGetPerceivedCost;
 behavior.structureSpawnTile = originalStructureSpawnTile;
 behavior.getTotalStructureDensity = originalGetTotalStructureDensity;

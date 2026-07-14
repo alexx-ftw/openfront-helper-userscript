@@ -171,15 +171,19 @@ threat routes against one shared SAM inventory. Assignment conflicts use a
 bounded exact fallback; an exhausted search is treated as unsafe, never as proof
 that a greedy miss is impossible to defend.
 
-With `winFixes` enabled, new economic structures are prioritized while every
-hostile opponent remains below 1M gold, the threshold at which that opponent
-could afford a missile silo. Urgent missile-defense actions still take priority;
-required SAM-parity actions still take priority, and the economic gate ignores
-allies, teammates, and dead players.
+With `winFixes` enabled, construction uses a three-way reserve policy: urgent
+missile defense is handled first, the next affordable City/Port/Factory keeps
+the economy growing, and offensive silo/nuke spending uses only the surplus
+left after those reserves. A built hostile silo immediately creates a SAM
+coverage requirement for our structures; reaching 1.5M hostile gold still
+opens the anticipatory SAM response. The economy gate ignores allies,
+teammates, and dead players.
 
-With `winFixes` enabled, once any hostile reaches 1.5M gold or has a built
-missile silo, the bot forces one new SAM before resuming ordinary construction
-and ranks its legal placement by the number of our structures it protects.
+Productive structures use their real next-build cost rather than the MIRV
+save-up multiplier, so saving for an offensive option cannot silently make
+ordinary growth unaffordable. A silo or nuke is allowed when the remaining
+surplus covers the next productive action and the next defensive SAM; heavy
+assaults and direct retaliation remain emergency exceptions.
 
 With `winFixes` enabled, the custom build policy also upgrades a friendly SAM
 when one level makes its trajectory schedule intercept an incoming missile, and
