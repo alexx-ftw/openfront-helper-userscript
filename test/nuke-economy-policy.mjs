@@ -93,6 +93,17 @@ assert.equal(
   "Offensive fire is allowed when the policy reports enough surplus",
 );
 
+behavior.structureBehavior = {
+  hasActiveMaritimeInvasion: () => true,
+  shouldDeferOffensiveNuke: () => false,
+};
+behavior.isUnderHeavyAttack = () => true;
+assert.equal(
+  behavior.shouldDeferNukeForEconomy(target, 5_000_000n),
+  true,
+  "a maritime invasion reserves gold even when the ordinary nuke path is urgent",
+);
+
 behavior.structureBehavior = null;
 assert.equal(
   behavior.shouldDeferNukeForEconomy(target, 5_000_000n),

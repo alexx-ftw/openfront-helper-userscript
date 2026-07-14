@@ -4,8 +4,9 @@
 //
 // Troop logic:  if currentTroops > maxTroops * (keepPct/100) → donate a
 // percentage of current troops, capped so we retain at least 42% of max troops
-// and at least half the largest live enemy army sharing our border. Never donate
-// while we are being attacked.
+// and at least half the largest live non-self army sharing our border. Never
+// donate while we are being attacked; alliances do not remove a border owner
+// from the reserve calculation.
 // Gold logic:   if currentGold > maxGoldThreshold → donate (currentGold * donatePct/100)
 //
 // Target matching: comma-separated player names (case-insensitive, includes clan tags).
@@ -78,6 +79,179 @@
     }
   }
 
+  function _getPlayerId(player) {
+    if (!player) return null;
+    var keys = ["smallID", "id"];
+    for (var i = 0; i < keys.length; i++) {
+      try {
+        var raw = typeof player[keys[i]] === "function" ? player[keys[i]]() : player[keys[i]];
+        if (raw === null || raw === undefined) continue;
+        var id = Number(raw);
+        if (Number.isFinite(id)) return id;
+      } catch (e) {}
+    }
+    return null;
+  }
+
+  function _getTileOwnerId(game, tile) {
+    if (!game) return { known: false, id: null };
+
+    if (typeof game.ownerID === "function") {
+      try {
+        var ownerId = game.ownerID(tile);
+        if (ownerId !== null && ownerId !== undefined) {
+          var numericOwnerId = Number(ownerId);
+          if (Number.isFinite(numericOwnerId)) {
+            return { known: true, id: numericOwnerId };
+          }
+        }
+      } catch (e) {}
+    }
+
+    if (typeof game.owner === "function") {
+      try {
+        return { known: true, id: _getPlayerId(game.owner(tile)) };
+      } catch (e) {}
+    }
+
+    return {
+      known: typeof game.ownerID === "function" || typeof game.owner === "function",
+      id: null,
+    };
+  }
+
+  // Return true for an enemy transport, false for our/team/allied transport,
+  // and null when the owner relation cannot be established. This is deliberately
+  // conservative: an unknown owner must not reopen troop donations during a
+  // possible landing.
+  function _isEnemyTransport(game, me, unit) {
+    var owner;
+    try {
+      owner = typeof unit.owner === "function" ? unit.owner() : unit.owner;
+    } catch (e) {
+      return null;
+    }
+    if (!owner) return null;
+
+    var myId = _getPlayerId(me);
+    var ownerId = _getPlayerId(owner);
+    if (myId !== null && ownerId !== null && myId === ownerId) return false;
+
+    // Reuse the boat overlay's exact relation classifier when it is available
+    // in the bundled page scope. The fallback keeps this module usable on older
+    // builds and in isolated tests where that overlay is not loaded.
+    try {
+      if (typeof getBoatPredictionRelation === "function") {
+        var relation = getBoatPredictionRelation(game, unit);
+        if (relation === "self" || relation === "team" || relation === "ally") return false;
+        if (relation === "enemy") return true;
+      }
+    } catch (e) {}
+
+    var friendlyChecks = [
+      [me, "isOnSameTeam", owner],
+      [me, "isAlliedWith", owner],
+      [me, "isFriendly", owner],
+      [owner, "isFriendly", me],
+    ];
+    for (var i = 0; i < friendlyChecks.length; i++) {
+      try {
+        var subject = friendlyChecks[i][0];
+        var method = friendlyChecks[i][1];
+        if (subject && typeof subject[method] === "function" && subject[method](friendlyChecks[i][2])) {
+          return false;
+        }
+      } catch (e) {}
+    }
+
+    return true;
+  }
+
+  // Find active enemy transports whose landing tile is currently ours. The
+  // overlay scan is optional and may be disabled, so the donation gate reads
+  // the live unit list directly. `troops` is the total force still in flight;
+  // multiple incoming transports are summed so the reserve covers the whole
+  // maritime invasion. Return null when the inspection is unavailable.
+  function _getIncomingMaritimeInvasion(game, me) {
+    if (!game || !me || typeof game.units !== "function") return null;
+
+    var myId = _getPlayerId(me);
+    if (myId === null) return null;
+
+    var units;
+    try {
+      var rawUnits =
+        typeof getCachedGameUnits === "function"
+          ? getCachedGameUnits(game, "Transport")
+          : game.units("Transport");
+      units = Array.from(rawUnits || []);
+    } catch (e) {
+      return null;
+    }
+
+    var incomingTroops = 0;
+    var hasIncomingTroops = false;
+    var hasUnknownIncomingTroops = false;
+
+    for (var i = 0; i < units.length; i++) {
+      var unit = units[i];
+      if (!unit) continue;
+
+      try {
+        if (typeof unit.isActive === "function" && !unit.isActive()) continue;
+        if (unit.isActive === false) continue;
+        if (typeof unit.retreating === "function" && unit.retreating()) continue;
+      } catch (e) {
+        return null;
+      }
+
+      var rawTargetTile;
+      try {
+        rawTargetTile =
+          typeof unit.targetTile === "function" ? unit.targetTile() : unit.targetTile;
+      } catch (e) {
+        return null;
+      }
+      var targetTile = Number(rawTargetTile);
+      if (!Number.isFinite(targetTile)) continue;
+
+      var targetOwner = _getTileOwnerId(game, targetTile);
+      if (!targetOwner.known) return null;
+      if (targetOwner.id === null || targetOwner.id !== myId) continue;
+
+      var isEnemy = _isEnemyTransport(game, me, unit);
+      if (isEnemy === null) return null;
+      if (!isEnemy) continue;
+
+      var rawTroops;
+      try {
+        rawTroops = typeof unit.troops === "function" ? unit.troops() : unit.troops;
+      } catch (e) {
+        rawTroops = null;
+      }
+      if (rawTroops === null || rawTroops === undefined) {
+        hasUnknownIncomingTroops = true;
+        continue;
+      }
+
+      var troopCount = Number(rawTroops);
+      if (!Number.isFinite(troopCount)) {
+        hasUnknownIncomingTroops = true;
+      } else if (troopCount > 0) {
+        hasIncomingTroops = true;
+        incomingTroops += troopCount;
+      }
+    }
+
+    if (hasUnknownIncomingTroops) {
+      return { active: true, troops: null };
+    }
+    return {
+      active: hasIncomingTroops,
+      troops: hasIncomingTroops ? incomingTroops : 0,
+    };
+  }
+
   function _getPlayerViews(game) {
     try {
       if (typeof getCachedPlayerViews === "function") return getCachedPlayerViews(game) || [];
@@ -123,16 +297,6 @@
     return matches;
   }
 
-  function _isFriendly(me, player) {
-    try {
-      if (typeof me.isFriendly === "function") return Boolean(me.isFriendly(player));
-    } catch (e) {}
-    try {
-      if (player && typeof player.isFriendly === "function") return Boolean(player.isFriendly(me));
-    } catch (e) {}
-    return null;
-  }
-
   async function _getPlayerBorderTiles(player) {
     if (!player || typeof player.borderTiles !== "function") return null;
     try {
@@ -146,7 +310,8 @@
   }
 
   // Return null when the live game does not expose enough map/border data to
-  // enforce the reserve. The troop donation then fails closed.
+  // enforce the reserve. The troop donation then fails closed. Alliances do not
+  // remove a bordering owner from this reserve calculation.
   async function _getStrongestBorderOpponentTroops(game, me) {
     if (
       !game ||
@@ -155,7 +320,7 @@
       typeof game.neighbors !== "function" ||
       typeof game.isLand !== "function" ||
       typeof game.hasOwner !== "function" ||
-      typeof game.owner !== "function"
+      (typeof game.ownerID !== "function" && typeof game.owner !== "function")
     ) {
       return null;
     }
@@ -166,15 +331,21 @@
       var mySid = typeof me.smallID === "function" ? me.smallID() : null;
       if (mySid === null) return null;
 
-      var borderingOpponentIds = new Set();
+      var borderingPlayerIds = new Set();
       for (var i = 0; i < borderTiles.length; i++) {
         var neighbors = game.neighbors(borderTiles[i]) || [];
         for (var j = 0; j < neighbors.length; j++) {
           var neighbor = neighbors[j];
           if (!game.isLand(neighbor) || !game.hasOwner(neighbor)) continue;
-          var owner = game.owner(neighbor);
-          var ownerSid = owner && typeof owner.smallID === "function" ? owner.smallID() : null;
-          if (ownerSid !== null && ownerSid !== mySid) borderingOpponentIds.add(ownerSid);
+          var ownerSid = null;
+          if (typeof game.ownerID === "function") {
+            try { ownerSid = game.ownerID(neighbor); } catch (e) {}
+          }
+          if (ownerSid === null || ownerSid === undefined) {
+            var owner = typeof game.owner === "function" ? game.owner(neighbor) : null;
+            ownerSid = owner && typeof owner.smallID === "function" ? owner.smallID() : null;
+          }
+          if (ownerSid !== null && ownerSid !== mySid) borderingPlayerIds.add(ownerSid);
         }
       }
 
@@ -189,20 +360,24 @@
       }
       if (!hasMe) return null;
       var strongest = 0;
+      var seenBorderingPlayerIds = new Set();
       for (var k = 0; k < players.length; k++) {
         var player = players[k];
         if (!player || player === me) continue;
 
         var playerSid = typeof player.smallID === "function" ? player.smallID() : null;
-        if (playerSid === null || !borderingOpponentIds.has(playerSid)) continue;
-        if (!player.isAlive || !player.isAlive()) continue;
+        if (playerSid === null || !borderingPlayerIds.has(playerSid)) continue;
+        seenBorderingPlayerIds.add(playerSid);
+        if (typeof player.isAlive !== "function") return null;
+        if (!player.isAlive()) continue;
 
-        var friendly = _isFriendly(me, player);
-        if (friendly === null) return null;
-        if (friendly) continue;
-
-        var troops = Number(typeof player.troops === "function" ? player.troops() : 0);
-        if (Number.isFinite(troops) && troops > strongest) strongest = troops;
+        if (typeof player.troops !== "function") return null;
+        var troops = Number(player.troops());
+        if (!Number.isFinite(troops)) return null;
+        if (troops > strongest) strongest = troops;
+      }
+      for (var borderingId of borderingPlayerIds) {
+        if (!seenBorderingPlayerIds.has(borderingId)) return null;
       }
       return strongest;
     } catch (e) {
@@ -234,6 +409,13 @@
     var me = game.myPlayer ? game.myPlayer() : null;
     if (!me || !me.isAlive || !me.isAlive()) return;
     if (_isBeingAttacked(me) !== false) return;
+
+    // An enemy transport already aimed at our territory is an invasion warning,
+    // not ordinary combat. Keep every troop available and let production build
+    // an army at least as large as the incoming transport force. Fail closed if
+    // the live unit/ownership APIs cannot be inspected.
+    var maritimeInvasion = _getIncomingMaritimeInvasion(game, me);
+    if (!maritimeInvasion || maritimeInvasion.active) return;
 
     // Check if donate is allowed in this game
     try {
@@ -285,6 +467,8 @@
       currentTroops = Number(me.troops ? me.troops() : 0);
       if (!Number.isFinite(currentTroops)) return;
       if (_isBeingAttacked(me) !== false) return;
+      maritimeInvasion = _getIncomingMaritimeInvasion(game, me);
+      if (!maritimeInvasion || maritimeInvasion.active) return;
       keepAmount = maxTroops * (keepPct / 100);
       if (currentTroops <= keepAmount) return;
 
@@ -331,6 +515,13 @@
     var me = game.myPlayer ? game.myPlayer() : null;
     if (!me || !me.isAlive || !me.isAlive()) return;
 
+    // Gold is part of the same emergency reserve as troops: while an enemy
+    // transport is committed to our territory, keep it available for the
+    // Port-first / destroyer response. Fail closed when the live transport
+    // ownership scan is unavailable.
+    var maritimeInvasion = _getIncomingMaritimeInvasion(game, me);
+    if (!maritimeInvasion || maritimeInvasion.active) return;
+
     var maxGold = Number(_cfg("autoDonateGoldThreshold", 5000000)) || 5000000;
     var donatePct = Number(_cfg("autoDonateGoldPercentage", 25)) || 25;
     var targetRaw = _cfg("autoDonateGoldTargets", "");
@@ -371,6 +562,13 @@
   }
 
   // ---- Global tick entry point ----
+
+  // AttackBehavior's strategy-driven donation runs in a sibling module loaded
+  // before this file. Expose the same detector so both donation paths obey the
+  // maritime-defense gate without duplicating the unit scan.
+  window.__OFH_getIncomingMaritimeInvasion = function(game, me) {
+    return _getIncomingMaritimeInvasion(game, me);
+  };
 
   window.__OFH_tickAutoDonate = function() {
     var troopDonation = null;

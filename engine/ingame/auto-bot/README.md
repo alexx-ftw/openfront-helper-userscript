@@ -77,6 +77,16 @@ speeds exposed by the client when available, otherwise the current engine
 contract of one water-path step per tick, and uses `warshipTargettingRange()`
 for the Euclidean firing range.
 
+The emergency economy gate runs before ordinary structure pacing. While an
+invasion is active, it reserves the construction decision for a Port: an
+existing Port under construction is allowed to finish, otherwise the bot keeps
+retrying the Port and does not spend the reserve on City, Factory, SAM, or Silo
+construction. Once a completed Port exists, the Warship phase bypasses its
+normal random spawn roll and emits the first affordable destroyer. Offensive
+nukes and gold donations are also deferred while this reserve is active. If
+the map has no valid open-ocean Port site, the normal economy policy remains the
+fallback.
+
 Multiple invasions are scheduled as sequential interception opportunities per
 Warship. Small groups use bounded exact assignment; larger groups use a
 deterministic urgency-first assignment. If any invasion remains uncovered, the
@@ -94,6 +104,17 @@ map-wide exact candidate index is created only when the bot's smart-spawn
 selector needs it; on large maps its estimated typed-array peak is capped at
 32 MiB and the bot falls back to the visual ranking.
 
+### Border-pressure construction priority
+
+With `winFixes` enabled, `StructureBehavior` compares the bot's
+`config.maxTroops()` with each live hostile player that shares an exact border via
+`sharesBorderWith`. If any hostile army is strictly larger, the construction
+planner prioritizes economic growth and tries `City` before `Port` or `Factory`.
+On high-density maps, the same signal also bypasses the first `Port`/`Factory`
+shortcut so that exception cannot override the `City` priority. The pressure
+snapshot is cached for the current game tick; allied players, same-team players,
+and remote hostiles do not activate this rule.
+
 ## Team donation policy
 
 When `winFixes` is enabled, automatic troop donations remain restricted to needy
@@ -101,11 +122,24 @@ players on our team. Among those recipients, matching clan tags are prioritized
 first, followed by frontline status and lowest troop percentage. If a clan tag is
 unavailable, the player remains eligible and uses the normal fallback order.
 
+Before emitting a donation, the bot also scans every owned tile on its border and
+collects the live non-self players occupying adjacent land. It retains at least
+half of the strongest of those bordering armies, including an allied player; a
+stronger enemy elsewhere on the map does not affect this specific border reserve.
+If the live border data or player snapshot is unavailable, the donation fails
+closed for that tick.
+
 When `pauseDonateDuringExpansion` is enabled (the default), both proactive and
 strategy-driven donations pause during the post-spawn expansion window when the
 bot has direct non-nuked free land, a land-border tribe, or a sea tribe whose
 transport route is estimated at 30 game ticks or less. The setting is persisted
 with the other Donate tuning controls, and the panel reports the active reason.
+
+Both donation paths also pause when a live enemy transport targets our territory.
+The incoming transport troop payloads are summed, and donations remain paused so
+natural troop production can build a defending force at least that large. If the
+unit or ownership APIs cannot be inspected, donation fails closed until the
+maritime threat can be classified.
 
 `bestTransportShipSpawn()` reports whether a boat route exists and its spawn tile,
 but not its path length. `gameApi.js` now uses that spawn plus a bounded

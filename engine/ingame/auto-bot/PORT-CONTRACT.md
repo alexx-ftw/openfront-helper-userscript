@@ -227,6 +227,20 @@ and the Early Game 300-tick ETA gate.
 With `winFixes` disabled, these additions are inactive and the faithful Nation
 flow remains unchanged.
 
+### Custom maritime emergency economy
+
+The live transport detector shared with auto-donate is also consumed by
+`StructureBehavior` and `WarshipBehavior`. When an enemy `Transport` targets a
+tile owned by the bot, the build decision is reserved for `Port` first. A Port
+under construction blocks competing structure spends; without one, the bot
+retries a valid open-ocean Port placement even when the ordinary structure
+ratios would choose another type. Once a completed Port exists,
+`maybeSpawnWarship()` bypasses its normal random roll and uses the first
+affordable `Warship` buildable. The route-aware invasion planner is invoked from
+`NationExecution` before ordinary ship tracking. If the detector or Port
+placement contract is unavailable, the bot fails closed for the emergency path
+and preserves the ordinary policy where a Port cannot exist.
+
 ### Custom enemy Defense Post-aware attacks
 
 When `state.settings.winFixes` is enabled, land-attack target ranking and troop
@@ -262,6 +276,23 @@ the bot's. Clan tags are read through the already-loaded `__OFHSpawnObjective`
 adapter; missing tags never exclude a teammate and fall back to frontline status
 and troop percentage. With `winFixes` disabled, the faithful donation ordering is
 unchanged.
+
+Both modes apply the same client-side border reserve before emitting the donation:
+scan `player.borderTiles()`, inspect adjacent owned land through `neighbors()` and
+`ownerID()`, and retain at least half of the largest live non-self bordering
+player's troops. An alliance does not remove that player from the reserve
+calculation. Missing border/player-snapshot data blocks the donation for that
+tick.
+
+### Border-pressure construction priority
+
+When `winFixes` is enabled, `StructureBehavior` compares the bot's
+`config.maxTroops()` with each live hostile player whose exact border is reported
+by `sharesBorderWith`. If at least one hostile army is strictly larger, economic
+growth is prioritized and `City` is attempted before `Port` or `Factory`. The
+high-density first-`Port`/`Factory` shortcut is bypassed under the same signal.
+The hostile-border snapshot is cached by game tick; allied players, teammates,
+and remote hostiles do not trigger the priority.
 
 ### Custom missile-defense upgrade and silo parity
 

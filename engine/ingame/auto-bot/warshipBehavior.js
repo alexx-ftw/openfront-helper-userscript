@@ -68,6 +68,27 @@
       return m;
     }
 
+    incomingMaritimeInvasionSignal() {
+      try {
+        const host =
+          typeof window !== "undefined"
+            ? window
+            : typeof globalThis !== "undefined"
+              ? globalThis
+              : null;
+        if (
+          host &&
+          typeof host.__OFH_getIncomingMaritimeInvasion === "function"
+        ) {
+          return host.__OFH_getIncomingMaritimeInvasion(this.game, this.player);
+        }
+      } catch (_error) {
+        // Keep the normal randomized warship policy when the optional detector
+        // is unavailable on an older client.
+      }
+      return null;
+    }
+
     // maybeSpawnWarship — NationWarshipBehavior.maybeSpawnWarship (now async).
     async maybeSpawnWarship() {
       if (this.player === null) throw new Error("not initialized");
@@ -78,15 +99,29 @@
       if (smartState.lastInvasionBuildTick === this.game.ticks()) {
         return false;
       }
-      if (!this.random.chance(50)) {
+      const maritimeEmergency =
+        this.incomingMaritimeInvasionSignal()?.active === true;
+      // A live transport aimed at our territory bypasses the ordinary 50% spawn
+      // roll: the Port-first structure policy has already reserved the gold and
+      // this phase must get the first available destroyer onto the water.
+      if (!maritimeEmergency && !this.random.chance(50)) {
         return false;
       }
-      const ports = this.player.units(UNIT.Port);
+      const ports = this.player.units(UNIT.Port).filter((port) => {
+        try {
+          return (
+            typeof port?.isUnderConstruction !== "function" ||
+            !port.isUnderConstruction()
+          );
+        } catch (_error) {
+          return false;
+        }
+      });
       const ships = this.player.units(UNIT.Warship);
       if (
         ports.length > 0 &&
         ships.length === 0 &&
-        this.player.gold() > this.cost(UNIT.Warship)
+        this.player.gold() >= this.cost(UNIT.Warship)
       ) {
         const port = this.random.randElement(ports);
         const targetTile = this.warshipSpawnTile(port.tile(), 250);
@@ -944,7 +979,7 @@
     }
 
     async buildInterceptorForInvasion(invasion, boatSpeed, warshipSpeed, attackRange) {
-      if (this.player.gold() <= this.cost(UNIT.Warship)) return false;
+      if (this.player.gold() < this.cost(UNIT.Warship)) return false;
       const candidates = this.interceptionBuildCandidates(invasion);
       let best = null;
       for (const tile of candidates) {

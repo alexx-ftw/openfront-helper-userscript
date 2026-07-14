@@ -190,8 +190,7 @@ const humanTarget = {
 };
 ownTroops = 80000;
 assert.equal(attackBudgetBehavior.sendLandAttack(humanTarget), true);
-const productionPeakReserve =
-  attackBudgetBehavior.getEarlyGameProductionReserveTroops();
+const productionPeakReserve = attackBudgetBehavior.getEarlyGameProductionReserveTroops();
 assert.equal(
   productionPeakReserve,
   41788,
@@ -246,16 +245,7 @@ const expandingGame = {
     attackLogic: () => ({ attackerTroopLoss: 16 }),
   }),
 };
-const expandingBehavior = new sandbox.AttackBehavior(
-  {},
-  expandingGame,
-  me,
-  0.5,
-  0.3,
-  0.1,
-  {},
-  {},
-);
+const expandingBehavior = new sandbox.AttackBehavior({}, expandingGame, me, 0.5, 0.3, 0.1, {}, {});
 expandingBehavior.getEnemyDefensePostAttackProfile = () => ({});
 expandingBehavior.attackIsTooWeakForDefensePosts = () => false;
 expandingBehavior.applyEarlyGameRaceTroops = ({ baseTroops }) => baseTroops;
@@ -282,16 +272,7 @@ assert.equal(
   "the opening commit uses one calculated TerraNullius tile instead of the old percentage burst",
 );
 
-const openingBehavior = new sandbox.AttackBehavior(
-  {},
-  expandingGame,
-  me,
-  0.5,
-  0.3,
-  0.1,
-  {},
-  {},
-);
+const openingBehavior = new sandbox.AttackBehavior({}, expandingGame, me, 0.5, 0.3, 0.1, {}, {});
 const openingEmissionCount = troopEmissions.length;
 assert.equal(
   await openingBehavior.forceSendAttack(terraNullius),
@@ -307,12 +288,7 @@ assert.equal(troopEmissions.at(-1), 16);
 const boatBudgetBehavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
 ownTroops = 80000;
 assert.equal(
-  boatBudgetBehavior.emitBoat(
-    "boat-destination",
-    50000,
-    "⛵ test boat",
-    humanTarget,
-  ),
+  boatBudgetBehavior.emitBoat("boat-destination", 50000, "⛵ test boat", humanTarget),
   true,
 );
 assert.equal(
@@ -350,21 +326,11 @@ assert.ok(
   "a tribe assault meets the calculated minimum instead of weakening the tribe",
 );
 assert.ok(
-  ownTroops - troopEmissions.at(-1) >=
-    tribeBehavior.getEarlyGameLiveReserveTroops(),
+  ownTroops - troopEmissions.at(-1) >= tribeBehavior.getEarlyGameLiveReserveTroops(),
   "a completed tribe assault still respects the acceleration reserve",
 );
 
-const underfundedTribeBehavior = new sandbox.AttackBehavior(
-  {},
-  game,
-  me,
-  0.5,
-  0.3,
-  0.1,
-  {},
-  {},
-);
+const underfundedTribeBehavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
 underfundedTribeBehavior.getEnemyDefensePostAttackProfile = () => ({});
 underfundedTribeBehavior.attackIsTooWeakForDefensePosts = () => false;
 underfundedTribeBehavior.applyEarlyGameRaceTroops = ({ baseTroops }) => baseTroops;
@@ -515,11 +481,14 @@ ownTroops = 100000;
 
 // A teammate donation must use the same hard reserve, not the obsolete 45%
 // maxTroops keep line or the obsolete 20% chunk gate.
+let donorTroops = 35000;
+let donorBorderTiles = new Set();
 const donor = {
-  troops: () => 35000,
+  troops: () => donorTroops,
   smallID: () => 11,
   isAlive: () => true,
-  isOnSameTeam: () => true,
+  isOnSameTeam: (player) => [11, 12, 14].includes(player?.smallID?.()),
+  borderTiles: () => donorBorderTiles,
 };
 const needyTeammate = {
   troops: () => 8000,
@@ -528,12 +497,18 @@ const needyTeammate = {
   incomingAttacks: () => [],
   outgoingAttacks: () => [],
 };
+let donationPlayers = [donor, needyTeammate];
+const donationOwnerByTile = new Map();
 const donationGame = {
   ticks: () => tick,
-  players: () => [donor, needyTeammate],
+  players: () => donationPlayers,
+  neighbors: (tile) => (tile === 1 ? [...donationOwnerByTile.keys()] : []),
+  isLand: () => true,
+  hasOwner: (tile) => donationOwnerByTile.has(tile),
+  ownerID: (tile) => donationOwnerByTile.get(tile),
   getWinner: () => null,
   config: () => ({
-    maxTroops: () => 100000,
+    maxTroops: (player) => (player?.smallID?.() === 14 ? 130000 : 100000),
     gameConfig: () => ({ gameMode: "Team" }),
     donateTroops: () => true,
   }),
@@ -553,6 +528,50 @@ assert.equal(
   troopEmissions.at(-1),
   25005,
   "donations may release the surplus above the calculated acceleration reserve",
+);
+
+// The reserve must use the strongest army among every live player sharing our
+// border. A remote 200k army is irrelevant, while the allied 130k border army
+// is still a valid safety constraint, so a 100k donor may release only 35k.
+const makeBorderOpponent = (id, troops, onSameTeam = false) => ({
+  troops: () => troops,
+  smallID: () => id,
+  isAlive: () => true,
+  isOnSameTeam: () => onSameTeam,
+});
+const weakBorderOpponent = makeBorderOpponent(13, 80000);
+const strongBorderOpponent = makeBorderOpponent(15, 120000);
+const alliedBorderOpponent = makeBorderOpponent(14, 130000, true);
+const remoteOpponent = makeBorderOpponent(16, 200000);
+donorTroops = 100000;
+donorBorderTiles = new Set([1]);
+donationOwnerByTile.clear();
+donationOwnerByTile.set(2, weakBorderOpponent.smallID());
+donationOwnerByTile.set(3, strongBorderOpponent.smallID());
+donationOwnerByTile.set(4, alliedBorderOpponent.smallID());
+donationPlayers = [
+  donor,
+  needyTeammate,
+  weakBorderOpponent,
+  strongBorderOpponent,
+  alliedBorderOpponent,
+  remoteOpponent,
+];
+const borderDonationBehavior = new sandbox.AttackBehavior(
+  { chance: () => true },
+  donationGame,
+  donor,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+assert.equal(borderDonationBehavior.donateTroops(), true);
+assert.equal(
+  troopEmissions.at(-1),
+  35000,
+  "the strongest allied border army controls the donation cap; remote armies do not",
 );
 
 const assertDonationPausedDuringExpansion = (earlyGame, message) => {
@@ -595,16 +614,7 @@ sandbox.state.earlyGame = { active: false, hasFreeLand: false, actionableTribes:
 sandbox.state.settings.pauseDonateDuringExpansion = false;
 
 sandbox.state.settings.winFixes = false;
-const nonWinFixHumanBehavior = new sandbox.AttackBehavior(
-  {},
-  game,
-  me,
-  0.5,
-  0.3,
-  0.1,
-  {},
-  {},
-);
+const nonWinFixHumanBehavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
 nonWinFixHumanBehavior.getEnemyDefensePostAttackProfile = () => ({});
 nonWinFixHumanBehavior.attackIsTooWeakForDefensePosts = () => false;
 nonWinFixHumanBehavior.applyEarlyGameRaceTroops = ({ baseTroops }) => baseTroops;

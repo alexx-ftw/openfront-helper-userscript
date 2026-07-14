@@ -7,12 +7,13 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE = fs.readFileSync(path.join(ROOT, "engine/ingame/auto-donate.js"), "utf8");
 
-function makePlayer({ id, name, troops, friendly, border = false, inCombat = false }) {
+function makePlayer({ id, name, troops, gold = 0, friendly, border = false, inCombat = false }) {
   return {
     id: () => id,
     smallID: () => id,
     displayName: () => name,
     troops: () => troops,
+    gold: () => gold,
     isAlive: () => true,
     friendly,
     isFriendly: () => friendly,
@@ -22,12 +23,37 @@ function makePlayer({ id, name, troops, friendly, border = false, inCombat = fal
   };
 }
 
+function makeTransport({
+  owner,
+  targetTile = 99,
+  troops = 100,
+  active = true,
+  retreating = false,
+}) {
+  return {
+    isActive: () => active,
+    retreating: () => retreating,
+    targetTile: () => targetTile,
+    owner: () => owner,
+    troops: () => troops,
+  };
+}
+
 async function runDonation({
   opponents = [],
   friendlyBorder = false,
+  allyTroops = 50,
   supportsBorderApi = true,
+  supportsUnitApi = true,
   beingAttacked = false,
   attackDuringBorderLookup = false,
+  incomingTransports = [],
+  autoDonateTroops = true,
+  autoDonateGold = false,
+  gold = 0,
+  allyGold = 0,
+  goldThreshold = 1000,
+  returnDetails = false,
 } = {}) {
   const packets = [];
   let currentlyBeingAttacked = beingAttacked;
@@ -35,6 +61,7 @@ async function runDonation({
     id: () => 1,
     smallID: () => 1,
     troops: () => 1000,
+    gold: () => gold,
     isAlive: () => true,
     isFriendly: (player) => Boolean(player.friendly),
     incomingAttacks: () => (currentlyBeingAttacked ? [{}] : []),
@@ -50,7 +77,8 @@ async function runDonation({
   const ally = makePlayer({
     id: 2,
     name: "ally",
-    troops: 50,
+    troops: allyTroops,
+    gold: allyGold,
     friendly: true,
     border: friendlyBorder,
     inCombat: true,
@@ -61,26 +89,39 @@ async function runDonation({
     ...opponents.filter((player) => player.sharesBorder),
   ];
   const ownerByTile = new Map(borderingPlayers.map((player, index) => [index + 10, player]));
+  const transportTargetOwners = new Map(
+    incomingTransports.map((transport) => [transport.targetTile(), 1]),
+  );
   const game = {
     myPlayer: () => me,
     playerViews: () => players,
     neighbors: (tile) => (tile === 1 ? [...ownerByTile.keys()] : []),
     isLand: () => true,
     hasOwner: (tile) => ownerByTile.has(tile),
-    owner: (tile) => ownerByTile.get(tile),
+    ownerID: (tile) => transportTargetOwners.get(tile) ?? ownerByTile.get(tile)?.smallID() ?? null,
+    owner: () => {
+      throw new Error("owner() should not be needed when ownerID() is available");
+    },
     config: () => ({
       donateTroops: () => true,
       maxTroops: () => 1000,
     }),
   };
+  if (supportsUnitApi) {
+    game.units = (type) => (type === "Transport" ? incomingTransports : []);
+  }
 
   const sandbox = {
     window: {},
     _quickPanelSettingsCache: {
-      autoDonateEnabled: true,
+      autoDonateEnabled: autoDonateTroops,
+      autoDonateGoldEnabled: autoDonateGold,
       autoDonateKeepPct: 0,
       autoDonatePercentage: 80,
       autoDonateTargets: "ally",
+      autoDonateGoldThreshold: goldThreshold,
+      autoDonateGoldPercentage: 80,
+      autoDonateGoldTargets: "ally",
     },
     getOpenFrontGameContext: () => ({ game }),
     sendGamePacket: (packet) => packets.push(packet),
@@ -91,6 +132,12 @@ async function runDonation({
 
   vm.runInNewContext(SOURCE, sandbox, { filename: "auto-donate.js" });
   await sandbox.window.__OFH_tickAutoDonate();
+  if (returnDetails) {
+    return {
+      packets,
+      maritime: sandbox.window.__OFH_getIncomingMaritimeInvasion(game, me),
+    };
+  }
   return packets;
 }
 
@@ -120,12 +167,13 @@ assert.equal(nonBorderStrongest[0]?.troops, 580, "non-border enemies do not lowe
 
 const friendlyBorder = await runDonation({
   friendlyBorder: true,
+  allyTroops: 1200,
   opponents: [],
 });
-assert.equal(
-  friendlyBorder[0]?.troops,
-  580,
-  "friendly border players are not treated as opponents",
+assert.equal(friendlyBorder[0]?.troops, 400, "allied border players still determine the reserve");
+assert.ok(
+  1000 - friendlyBorder[0].troops >= 1200 / 2,
+  "the reserve includes an allied border player's army",
 );
 
 const minimumKeepReserve = await runDonation();
@@ -145,6 +193,47 @@ assert.equal(
   "donation is skipped if an attack starts during the border lookup",
 );
 
+const maritimeEnemy = makePlayer({
+  id: 5,
+  name: "maritime-enemy",
+  troops: 1800,
+  friendly: false,
+});
+const maritimeInvasion = await runDonation({
+  opponents: [maritimeEnemy],
+  incomingTransports: [
+    makeTransport({ owner: maritimeEnemy, troops: 700 }),
+    makeTransport({ owner: maritimeEnemy, troops: 500 }),
+  ],
+  returnDetails: true,
+});
+assert.equal(maritimeInvasion.maritime?.active, true);
+assert.equal(
+  maritimeInvasion.maritime?.troops,
+  1200,
+  "incoming enemy transport troops are summed as the maritime invasion force",
+);
+assert.equal(
+  maritimeInvasion.packets.length,
+  0,
+  "all troop donations stop while an enemy maritime invasion is inbound",
+);
+
+const maritimeGoldInvasion = await runDonation({
+  opponents: [maritimeEnemy],
+  incomingTransports: [makeTransport({ owner: maritimeEnemy, troops: 700 })],
+  autoDonateTroops: false,
+  autoDonateGold: true,
+  gold: 5000,
+  goldThreshold: 1000,
+  returnDetails: true,
+});
+assert.equal(
+  maritimeGoldInvasion.packets.length,
+  0,
+  "gold donations also stop while the Port/destroyer reserve is active",
+);
+
 const noSafeDonation = await runDonation({
   opponents: [
     makePlayer({ id: 3, name: "overwhelming-enemy", troops: 2001, friendly: false, border: true }),
@@ -154,5 +243,8 @@ assert.equal(noSafeDonation.length, 0, "donation is skipped when no positive saf
 
 const missingBorderApi = await runDonation({ supportsBorderApi: false });
 assert.equal(missingBorderApi.length, 0, "donation fails closed without border data");
+
+const missingUnitApi = await runDonation({ supportsUnitApi: false });
+assert.equal(missingUnitApi.length, 0, "donation fails closed without transport data");
 
 console.log("auto-donate troop reserve tests passed");

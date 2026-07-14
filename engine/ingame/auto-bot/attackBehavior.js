@@ -440,6 +440,8 @@
       this.earlyGamePeakReserveCache = 0;
       this.earlyGameProductionPeakReserveCacheKey = null;
       this.earlyGameProductionPeakReserveCache = 0;
+      this.strongestBorderOpponentTroopsCacheTick = null;
+      this.strongestBorderOpponentTroopsCache = null;
       // Small per-player memory used by the early-game food-race policy. It is
       // intentionally local to this persistent behavior instance and bounded to
       // the players visible in the current game snapshot.
@@ -873,6 +875,94 @@
           : Math.max(0, configuredReserve);
       const pending = this.getPendingOutboundTroopCommitments();
       return Math.max(0, ownTroops - reserve - pending);
+    }
+
+    getStrongestBorderOpponentTroops() {
+      const tick = this.currentAttackDecisionTick();
+      if (this.strongestBorderOpponentTroopsCacheTick === tick) {
+        return this.strongestBorderOpponentTroopsCache;
+      }
+
+      const game = this.game;
+      const me = this.player;
+      let strongest = null;
+
+      try {
+        if (
+          !game ||
+          !me ||
+          typeof me.borderTiles !== "function" ||
+          typeof me.smallID !== "function" ||
+          typeof game.neighbors !== "function" ||
+          typeof game.isLand !== "function" ||
+          typeof game.hasOwner !== "function" ||
+          typeof game.ownerID !== "function" ||
+          typeof game.players !== "function"
+        ) {
+          throw new Error("border troop data is unavailable");
+        }
+
+        const mySid = me.smallID();
+        if (mySid == null) throw new Error("own player id is unavailable");
+
+        // Relations are intentionally ignored here: an allied border owner can
+        // still be the army that determines the minimum safe reserve.
+        const borderingPlayerIds = new Set();
+        for (const borderTile of me.borderTiles() || []) {
+          for (const neighbor of game.neighbors(borderTile) || []) {
+            if (!game.isLand(neighbor) || !game.hasOwner(neighbor)) continue;
+            const ownerSid = game.ownerID(neighbor);
+            if (ownerSid != null && ownerSid !== mySid) {
+              borderingPlayerIds.add(ownerSid);
+            }
+          }
+        }
+
+        const players = Array.from(game.players() || []);
+        if (
+          !players.some(
+            (player) =>
+              player &&
+              typeof player.smallID === "function" &&
+              player.smallID() === mySid,
+          )
+        ) {
+          throw new Error("own player is missing from the player snapshot");
+        }
+
+        strongest = 0;
+        const seenBorderingPlayerIds = new Set();
+        for (const player of players) {
+          if (!player || typeof player.smallID !== "function") continue;
+          const playerSid = player.smallID();
+          if (playerSid == null || !borderingPlayerIds.has(playerSid)) continue;
+          seenBorderingPlayerIds.add(playerSid);
+          if (typeof player.isAlive !== "function") {
+            throw new Error("border opponent life state is unavailable");
+          }
+          if (!player.isAlive()) continue;
+
+          if (typeof player.troops !== "function") {
+            throw new Error("border opponent troops are unavailable");
+          }
+          const troops = Number(player.troops());
+          if (!Number.isFinite(troops)) {
+            throw new Error("border opponent troops are invalid");
+          }
+          strongest = Math.max(strongest, Math.max(0, troops));
+        }
+        for (const playerSid of borderingPlayerIds) {
+          if (!seenBorderingPlayerIds.has(playerSid)) {
+            throw new Error("border opponent is missing from the player snapshot");
+          }
+        }
+      } catch (_error) {
+        strongest = null;
+      }
+
+      this.strongestBorderOpponentTroopsCacheTick = tick;
+      this.strongestBorderOpponentTroopsCache = strongest;
+      return strongest;
     }
 
     getEarlyGameProbeTroops(fraction = 0.01, reserveTroops = null) {
@@ -4510,6 +4600,22 @@
       // Thin UX gate (PORT-CONTRACT donate strategy note — not a strategy change).
       if (!state.settings.features.donate) return false;
 
+      // A live enemy transport aimed at our territory is an impending maritime
+      // invasion. The auto-donate module owns the shared unit/ownership scan and
+      // is loaded before any engine tick; keep this strategy-driven donation on
+      // the same fail-closed gate so troop production can build up to the full
+      // incoming transport force.
+      try {
+        const maritimeInvasion =
+          typeof window !== "undefined" &&
+          typeof window.__OFH_getIncomingMaritimeInvasion === "function"
+            ? window.__OFH_getIncomingMaritimeInvasion(this.game, this.player)
+            : { active: false };
+        if (!maritimeInvasion || maritimeInvasion.active === true) return false;
+      } catch (_e) {
+        return false;
+      }
+
       // Keep the opening force available for expansion. This lives inside the
       // shared donation method so both proactive and strategy-driven donations
       // obey the same user-controlled pause.
@@ -4688,6 +4794,13 @@
         return false;
       }
 
+      const strongestBorderOpponentTroops =
+        this.getStrongestBorderOpponentTroops();
+      if (strongestBorderOpponentTroops === null) {
+        console.log("[Donate] skip: border reserve data unavailable");
+        return false;
+      }
+
       // In winFix mode the acceleration reserve is the only hard lower bound for
       // donations. Keeping an additional percentage of maxTroops here caused a
       // dead zone after buildings increased maxTroops: the bot had plenty of
@@ -4696,10 +4809,23 @@
       const troopsToKeep = state.settings.winFixes
         ? this.getEarlyGameLiveReserveTroops()
         : maxTroops * this.reserveRatio;
-      const availableTroops = this.player.troops() - troopsToKeep;
+      const currentTroops = Math.max(0, Number(this.player.troops()) || 0);
+      const maxBorderDonation = Math.floor(
+        currentTroops - strongestBorderOpponentTroops / 2,
+      );
+      if (maxBorderDonation <= 0) {
+        console.log("[Donate] skip: strongest border opponent leaves no safe reserve", {
+          troops: Math.round(currentTroops),
+          strongestBorderOpponent: Math.round(strongestBorderOpponentTroops),
+        });
+        return false;
+      }
+
+      const availableTroops = currentTroops - troopsToKeep;
       const donationTroops = Math.min(
         Math.max(0, availableTroops),
         this.getEarlyGameSpendableTroops(),
+        maxBorderDonation,
       );
       const minExcess = state.settings.winFixes
         ? Math.max(

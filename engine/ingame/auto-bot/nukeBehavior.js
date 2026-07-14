@@ -533,6 +533,13 @@
      * ordinary target selection follows the surplus policy.
      */
     shouldDeferNukeForEconomy(nukeTarget, nukeCost) {
+      try {
+        if (this.structureBehavior?.hasActiveMaritimeInvasion?.() === true) {
+          return true;
+        }
+      } catch (_error) {
+        // Fall through to the existing economy policy on an unavailable signal.
+      }
       const policy = this.structureBehavior?.shouldDeferOffensiveNuke;
       if (typeof policy !== "function") return false;
 

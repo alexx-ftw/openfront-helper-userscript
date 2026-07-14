@@ -24,12 +24,12 @@ Auto-updates via the manager's built-in `@updateURL` check.
 
 The **⊕ launcher** is your entry point. Click it to open the popup; drag it anywhere on screen. Four tabs:
 
-| Tab | What it controls |
-|---|---|
+| Tab           | What it controls                       |
+| ------------- | -------------------------------------- |
 | **Auto-Join** | Lobby search filters and notifications |
-| **Helpers** | Toggle individual overlays and panels |
-| **Auto Bot** | Enable and tune the training bot |
-| **Settings** | Language picker and global options |
+| **Helpers**   | Toggle individual overlays and panels  |
+| **Auto Bot**  | Enable and tune the training bot       |
+| **Settings**  | Language picker and global options     |
 
 ---
 
@@ -41,14 +41,14 @@ Continuously polls the public lobby list and joins the first match that passes y
 
 **Filters:**
 
-| Category | Options |
-|---|---|
-| Team size | Min / Max players per team |
-| Team count | Min / Max number of teams |
-| Lobby size | Minimum total players |
-| Starting gold | 0 M, 1 M, 5 M, 25 M |
-| Maps | 40+ individual maps (include or exclude) |
-| Modifiers | Alliances, ports, nukes, SAMs, water nukes, random spawn, 4-min peace, 2× gold |
+| Category      | Options                                                                        |
+| ------------- | ------------------------------------------------------------------------------ |
+| Team size     | Min / Max players per team                                                     |
+| Team count    | Min / Max number of teams                                                      |
+| Lobby size    | Minimum total players                                                          |
+| Starting gold | 0 M, 1 M, 5 M, 25 M                                                            |
+| Maps          | 40+ individual maps (include or exclude)                                       |
+| Modifiers     | Alliances, ports, nukes, SAMs, water nukes, random spawn, 4-min peace, 2× gold |
 
 Each modifier category uses **include** mode (must match at least one selected) or **exclude** mode (skip if matched). Defaults are tuned for medium-sized Baikal and Luna matches.
 
@@ -96,7 +96,7 @@ Toggle each overlay independently from the **Helpers** tab. All panels are dragg
 
 ### Helper Panels
 
-**Boat Panel** — two tabs: *Sent* (boats you dispatched) and *Incoming* (boats heading toward you). Each row shows the boat, destination, and real-time ETA. Hover a row to pin-highlight it on the map.
+**Boat Panel** — two tabs: _Sent_ (boats you dispatched) and _Incoming_ (boats heading toward you). Each row shows the boat, destination, and real-time ETA. Hover a row to pin-highlight it on the map.
 
 **Estate Panel** — lists every disconnected parcel of your territory ranked by tile count. Click a row to pan the camera to that parcel. Click the column header to reverse-sort.
 
@@ -109,6 +109,7 @@ Toggle each overlay independently from the **Helpers** tab. All panels are dragg
 **Send 1% Boat** — right-click context menu shortcut that sends a transport ship with exactly 1% of your troops, then restores your previous attack ratio automatically.
 
 **Auto-Nuke** — automatically fires nukes at high-value targets. Options:
+
 - Standard auto-nuke (economy and structure targeting)
 - Impact coordinates are shifted onto the best existing enemy-building cluster when that blast destroys more buildings.
 - SAM-saturation mode: runs a SAM-burn pass to exhaust enemy defenses, then a destruction wave, then optional follow-up waves
@@ -119,7 +120,7 @@ Toggle each overlay independently from the **Helpers** tab. All panels are dragg
 
 **Auto Leave on Win** — automatically leaves the match when a win modal appears, pairs naturally with "keep searching" to chain games continuously.
 
-**Auto Donate Troops** — sends troops to named allies in combat only when you are not under attack, while preserving at least 42% of your maximum troops; when an enemy shares your border, the donation is additionally capped so you retain at least half of that enemy's current army, using the strongest bordering opponent as the reference.
+**Auto Donate Troops** — sends troops to named allies in combat only when you are not under attack. It also pauses both donation paths when an enemy transport is actively targeting your territory, sums the incoming transport force, and lets troop production accumulate until the invasion is resolved; normal donations still preserve at least 42% of maximum troops and half of the strongest bordering non-self army, including an allied border owner.
 
 ---
 
@@ -131,28 +132,28 @@ Enable and configure it live in-game from the **Auto Bot** popup tab. A status l
 
 **Behavior modules** (each can be toggled individually):
 
-| Module | What it does |
-|---|---|
-| Spawn | Picks the best spawn tile automatically |
+| Module          | What it does                                   |
+| --------------- | ---------------------------------------------- |
+| Spawn           | Picks the best spawn tile automatically        |
 | Expand / Attack | Claims tiles, manages troop ratios, retaliates |
-| Build | Constructs and upgrades structures |
-| Boat | Sends and lands transport ships |
-| Nuke | Selects nuke targets and fires |
-| Warship | Builds and dispatches warships |
-| Alliance | Requests and accepts alliances |
-| MIRV | Manages MIRV warhead targeting |
-| Emoji | Reacts with in-game emojis |
-| Donate | Donates troops to allies |
+| Build           | Constructs and upgrades structures             |
+| Boat            | Sends and lands transport ships                |
+| Nuke            | Selects nuke targets and fires                 |
+| Warship         | Builds and dispatches warships                 |
+| Alliance        | Requests and accepts alliances                 |
+| MIRV            | Manages MIRV warhead targeting                 |
+| Emoji           | Reacts with in-game emojis                     |
+| Donate          | Donates troops to allies                       |
 
 **Configurable settings:**
 
-| Setting | Options |
-|---|---|
-| Difficulty | Easy / Medium / Hard / Impossible / Legendary |
-| Tick speed | Decision interval in ms |
+| Setting             | Options                                                                  |
+| ------------------- | ------------------------------------------------------------------------ |
+| Difficulty          | Easy / Medium / Hard / Impossible / Legendary                            |
+| Tick speed          | Decision interval in ms                                                  |
 | Per-structure build | Enable/disable City, Port, Factory, Defense Post, SAM, Silo individually |
-| Betray mode | Allow or block turning on allies |
-| Hidden mode | Bot runs without displaying the panel |
+| Betray mode         | Allow or block turning on allies                                         |
+| Hidden mode         | Bot runs without displaying the panel                                    |
 
 `Legendary` uses an adaptive construction planner. Gold production and troop
 generation are its two equally weighted primary objectives; missile defense is a

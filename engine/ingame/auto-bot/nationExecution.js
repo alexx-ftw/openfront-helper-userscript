@@ -100,6 +100,30 @@
       }
       this.lastProcessedGameTick = ticks;
 
+      // WIN-FIX: run the route-aware invasion planner before the ordinary
+      // warship tracker. This keeps a live maritime landing from waiting for
+      // the slower combat cadence and lets an existing destroyer cover the
+      // transport while the structure phase reserves/builds the Port.
+      if (
+        this.behaviorsInitialized &&
+        me !== null &&
+        me.isAlive() &&
+        this.feat("warship") &&
+        state.settings.winFixes &&
+        !this.mg.config().isUnitDisabled(UNIT.Warship) &&
+        !this.mg.config().isUnitDisabled(UNIT.TransportShip)
+      ) {
+        try {
+          await autoBotProfileAsyncPhase(
+            profile,
+            "naval-invasion",
+            () => this.warshipBehavior.protectAgainstNavalInvasions(),
+          );
+        } catch (e) {
+          console.error("[AutoBot] naval invasion planner error:", e);
+        }
+      }
+
       // ── ship tracking — NationExecution.ts:90-101 (every tick, non-Easy, Port) ─
       if (
         this.behaviorsInitialized &&
@@ -264,6 +288,22 @@
             profile,
             "structures-between",
             () => this.structureBehavior.handleStructures(),
+          );
+        }
+        // A maritime emergency must not wait for the next attack cadence just
+        // because this snapshot was a structure-only tick. The route-aware
+        // planner above normally handles it; this fallback covers clients that
+        // cannot expose a usable route but can still build a Warship from a Port.
+        if (
+          state.settings.winFixes &&
+          this.feat("warship") &&
+          state.settings.warshipAutoSpawn !== false &&
+          this.warshipBehavior.incomingMaritimeInvasionSignal?.()?.active === true
+        ) {
+          await autoBotProfileAsyncPhase(
+            profile,
+            "warship-emergency-build",
+            () => this.warshipBehavior.maybeSpawnWarship(),
           );
         }
         return;

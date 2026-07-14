@@ -256,6 +256,95 @@ assert.equal(
   true,
   "Economic growth remains active after the hostile silo threshold when it is affordable",
 );
+
+const borderTroopEnemy = {
+  smallID: () => 21,
+  isPlayer: () => true,
+  isAlive: () => true,
+};
+const remoteTroopEnemy = {
+  smallID: () => 22,
+  isPlayer: () => true,
+  isAlive: () => true,
+};
+const friendlyBorderTroopPlayer = {
+  smallID: () => 23,
+  isPlayer: () => true,
+  isAlive: () => true,
+};
+const borderTroopOwner = {
+  smallID: () => 20,
+  isPlayer: () => true,
+  isAlive: () => true,
+  isFriendly: () => false,
+  isOnSameTeam: () => false,
+  sharesBorderWith: (other) => other === borderTroopEnemy || other === friendlyBorderTroopPlayer,
+};
+let borderTroopTick = 1;
+let borderTroopPlayers = [borderTroopOwner, borderTroopEnemy, remoteTroopEnemy];
+const borderTroopMax = new Map([
+  [borderTroopOwner, 1_000],
+  [borderTroopEnemy, 1_200],
+  [remoteTroopEnemy, 5_000],
+  [friendlyBorderTroopPlayer, 5_000],
+]);
+const borderTroopBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+borderTroopBehavior.player = borderTroopOwner;
+borderTroopBehavior.game = {
+  ticks: () => borderTroopTick,
+  players: () => borderTroopPlayers,
+  config: () => ({
+    maxTroops: (player) => borderTroopMax.get(player) ?? 0,
+  }),
+};
+assert.equal(
+  borderTroopBehavior.hasBorderingHostileMaxTroopAdvantage(),
+  true,
+  "A hostile bordering player with a larger max army activates the economic threat signal",
+);
+assert.equal(
+  borderTroopBehavior.shouldPrioritizeEconomicGrowth(),
+  true,
+  "The bordering max-army signal prioritizes economic growth",
+);
+borderTroopMax.set(borderTroopEnemy, 900);
+borderTroopTick = 2;
+assert.equal(
+  borderTroopBehavior.hasBorderingHostileMaxTroopAdvantage(),
+  false,
+  "A stronger non-border enemy does not activate the city priority",
+);
+borderTroopPlayers = [borderTroopOwner, friendlyBorderTroopPlayer];
+borderTroopOwner.isFriendly = (other) => other === friendlyBorderTroopPlayer;
+borderTroopTick = 3;
+assert.equal(
+  borderTroopBehavior.hasBorderingHostileMaxTroopAdvantage(),
+  false,
+  "A stronger allied border player is not treated as an enemy for city priority",
+);
+const borderCityAttemptOrder = [];
+borderTroopBehavior.shouldBuildStructure = (type) => type === UNIT.City || type === UNIT.Factory;
+borderTroopBehavior.maybeSpawnStructure = async (type) => {
+  borderCityAttemptOrder.push(type);
+  return type === UNIT.City;
+};
+assert.equal(
+  await borderTroopBehavior.maybePrioritizeEconomicGrowth({
+    config: { isUnitDisabled: () => false },
+    citiesDisabled: false,
+    cityCount: 2,
+    hasCoastalTiles: true,
+    hasOceanPortTiles: true,
+    prioritizeCityForBorderThreat: true,
+  }),
+  true,
+  "Border max-army pressure builds an economic structure",
+);
+assert.deepEqual(
+  borderCityAttemptOrder,
+  [UNIT.City],
+  "Border max-army pressure attempts a City before other economic structures",
+);
 assert.equal(
   behavior.enemySamCapacityParityTarget(),
   6,

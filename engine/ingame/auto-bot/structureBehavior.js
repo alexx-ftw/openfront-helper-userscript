@@ -172,6 +172,13 @@
   /** Structures that directly grow the nation's economy. */
   const ECONOMIC_STRUCTURE_TYPES = [UNIT.Port, UNIT.Factory, UNIT.City];
 
+  /** Border troop-capacity pressure puts the City before the other economy sites. */
+  const CITY_FIRST_ECONOMIC_STRUCTURE_TYPES = [
+    UNIT.City,
+    UNIT.Port,
+    UNIT.Factory,
+  ];
+
   /** Current spendable gold at which an otherwise idle economy must keep building. */
   const HIGH_GOLD_CONSTRUCTION_PRESSURE_THRESHOLD = 3_000_000n;
 
@@ -355,6 +362,8 @@
       this._hostileSiloSamRetryNotBeforeTick = null;
       this._hostilePlayersSnapshotTick = null;
       this._hostilePlayersSnapshot = null;
+      this._borderingHostileMaxTroopAdvantageTick = null;
+      this._borderingHostileMaxTroopAdvantage = null;
       this._hostileThreatSnapshotTick = null;
       this._hostileThreatSnapshot = null;
       this._hostileSiloCapacitySnapshotTick = null;
@@ -372,6 +381,100 @@
       this._missileDefenseEvaluationTick = null;
       this._missileDefenseEvaluationContext = null;
       this._missileDefenseEvaluationCache = null;
+    }
+
+    // The auto-donate module owns the live transport/ownership scan because it
+    // also has to protect manual donation paths. Reuse that shared result here
+    // so construction, nuke spending, and donations respond to the same
+    // invasion snapshot instead of maintaining subtly different detectors.
+    incomingMaritimeInvasionSignal() {
+      try {
+        const host =
+          typeof window !== "undefined"
+            ? window
+            : typeof globalThis !== "undefined"
+              ? globalThis
+              : null;
+        if (
+          host &&
+          typeof host.__OFH_getIncomingMaritimeInvasion === "function"
+        ) {
+          return host.__OFH_getIncomingMaritimeInvasion(this.game, this.player);
+        }
+      } catch (_error) {
+        // An unavailable optional detector must not break ordinary building.
+      }
+      return null;
+    }
+
+    hasActiveMaritimeInvasion() {
+      return this.incomingMaritimeInvasionSignal()?.active === true;
+    }
+
+    // WIN-FIX: while an enemy transport is committed to our territory, spend
+    // the construction decision on the naval defense chain only: Port first,
+    // then Warship in nationExecution. A Port already under construction is
+    // treated as the active investment; no second structure is started.
+    async prioritizeMaritimeInvasionDefense() {
+      const signal = this.incomingMaritimeInvasionSignal();
+      if (!signal || signal.active !== true) return false;
+
+      let config;
+      try {
+        config = this.game.config();
+        if (
+          typeof config.isUnitDisabled === "function" &&
+          config.isUnitDisabled(UNIT.Port)
+        ) {
+          return false;
+        }
+      } catch (_error) {
+        return false;
+      }
+      if (!autoBotBuildAllowed(UNIT.Port)) return false;
+
+      let ports = [];
+      try {
+        ports = this.player.units(UNIT.Port) || [];
+      } catch (_error) {
+        // Keep the emergency lock if the live unit list is temporarily stale.
+        return true;
+      }
+
+      let hasCompletedPort = false;
+      let hasPortUnderConstruction = false;
+      for (const port of ports) {
+        try {
+          if (typeof port?.isUnderConstruction !== "function") {
+            hasCompletedPort = true;
+          } else if (port.isUnderConstruction()) {
+            hasPortUnderConstruction = true;
+          } else {
+            hasCompletedPort = true;
+          }
+        } catch (_error) {
+          hasPortUnderConstruction = true;
+        }
+      }
+
+      // Keep the economic slot reserved until the Port is ready. The following
+      // Warship phase will consume the saved gold as soon as it can.
+      if (hasPortUnderConstruction || hasCompletedPort) return true;
+
+      // A Port cannot be produced on a landlocked/closed-water map. Preserve
+      // the normal policy in that impossible case rather than freezing every
+      // other construction forever.
+      if (!this.hasOceanPortTiles()) return false;
+
+      try {
+        await this.maybeSpawnStructure(UNIT.Port, { forceNewStructure: true });
+      } catch (_error) {
+        // Keep the emergency lock and retry the Port on the next build tick.
+      }
+      // Returning true deliberately consumes this build decision even when the
+      // Port is not affordable yet, preventing City/Factory/SAM/Silo spending
+      // from draining the reserve needed for the naval defense.
+      return true;
     }
 
     // ── core-semantics owned count (used wherever src uses unitsOwned) ──────────
@@ -401,6 +504,12 @@
     // handleStructures — NationStructureBehavior.ts:143 (now async).
     async handleStructures() {
       const legendaryDifficulty = isLegendaryDifficulty();
+      if (
+        state.settings.winFixes &&
+        (await this.prioritizeMaritimeInvasionDefense())
+      ) {
+        return true;
+      }
       // WIN-FIX: before ordinary pacing, use the trajectory forecast to upgrade
       // an existing SAM when one level is enough to intercept an incoming
       // missile. The faithful difficulty branches remain untouched when this
@@ -826,6 +935,16 @@
       // lets the adaptive planner decide; defense is a guardrail there, not the
       // default opening investment.
       const difficulty = currentDifficulty();
+      const prioritizeCityForBorderThreat =
+        state.settings.winFixes &&
+        this.hasBorderingHostileMaxTroopAdvantage();
+      const economyGrowthPriority = this.shouldPrioritizeEconomicGrowth(
+        prioritizeCityForBorderThreat,
+      );
+      const cityPriorityAvailable =
+        prioritizeCityForBorderThreat &&
+        !citiesDisabled &&
+        !config.isUnitDisabled(UNIT.City);
       if (
         this.placementsCount === 0 &&
         isAtLeastHardDifficulty(difficulty) &&
@@ -834,7 +953,7 @@
         missileSilosEnabled &&
         !config.isUnitDisabled(UNIT.SAMLauncher) &&
         this.hasHighStartingGold() &&
-        !this.shouldPrioritizeEconomicGrowth() &&
+        !economyGrowthPriority &&
         (await this.maybeSpawnStructure(UNIT.SAMLauncher))
       ) {
         return true;
@@ -843,6 +962,7 @@
       // On crowded maps the first structure is a port (or factory if landlocked).
       if (
         !isLegendaryDifficulty(difficulty) &&
+        !cityPriorityAvailable &&
         !citiesDisabled &&
         this.ownedLevels(UNIT.City) === 0 &&
         this.isHighNationDensity()
@@ -859,7 +979,6 @@
         }
       }
 
-      const economyGrowthPriority = this.shouldPrioritizeEconomicGrowth();
       if (
         economyGrowthPriority &&
         (await this.maybePrioritizeEconomicGrowth({
@@ -868,6 +987,7 @@
           cityCount,
           hasCoastalTiles,
           hasOceanPortTiles,
+          prioritizeCityForBorderThreat,
         }))
       ) {
         return true;
@@ -976,8 +1096,11 @@
       cityCount,
       hasCoastalTiles,
       hasOceanPortTiles,
+      prioritizeCityForBorderThreat = false,
     }) {
-      const buildOrder = [...ECONOMIC_STRUCTURE_TYPES];
+      const buildOrder = prioritizeCityForBorderThreat
+        ? CITY_FIRST_ECONOMIC_STRUCTURE_TYPES
+        : ECONOMIC_STRUCTURE_TYPES;
       for (const structureType of buildOrder) {
         if (config.isUnitDisabled(structureType)) continue;
         if (structureType === UNIT.Port && !hasOceanPortTiles) continue;
@@ -1800,6 +1923,7 @@
      */
     shouldDeferOffensiveNuke(nukeCost = 0n) {
       if (!state.settings.winFixes) return false;
+      if (this.hasActiveMaritimeInvasion()) return true;
 
       let cost;
       try {
@@ -1815,10 +1939,94 @@
       return this.spendableConstructionGold() < cost + reserve;
     }
 
-    shouldPrioritizeEconomicGrowth() {
+    // WIN-FIX: a hostile border with a larger troop ceiling makes economic
+    // growth the safer response; the caller passes the cached snapshot so the
+    // high-starting-gold and normal build gates share one border scan.
+    shouldPrioritizeEconomicGrowth(borderTroopAdvantage = null) {
       if (!state.settings.winFixes) return false;
+      if (
+        (borderTroopAdvantage === null &&
+          this.hasBorderingHostileMaxTroopAdvantage()) ||
+        borderTroopAdvantage === true
+      ) {
+        return true;
+      }
       if (this.hasHostileReachedSiloGoldThreshold() === false) return true;
       return this.economicConstructionPressure() !== null;
+    }
+
+    // The capacity comparison deliberately uses maxTroops, not current troops:
+    // current armies fluctuate every tick while the construction response is
+    // meant to close a structural force-generation gap.
+    hasBorderingHostileMaxTroopAdvantage() {
+      let snapshotTick = null;
+      try {
+        const tick =
+          typeof this.game?.ticks === "function" ? this.game.ticks() : null;
+        snapshotTick = Number.isFinite(tick) ? tick : null;
+      } catch (_error) {
+        snapshotTick = null;
+      }
+
+      if (
+        snapshotTick !== null &&
+        this._borderingHostileMaxTroopAdvantageTick === snapshotTick &&
+        typeof this._borderingHostileMaxTroopAdvantage === "boolean"
+      ) {
+        return this._borderingHostileMaxTroopAdvantage;
+      }
+
+      let hasAdvantage = false;
+      let config = null;
+      try {
+        config = this.game.config();
+      } catch (_error) {
+        config = null;
+      }
+
+      if (config && typeof config.maxTroops === "function") {
+        let ownMaxTroops = 0;
+        try {
+          ownMaxTroops = Number(config.maxTroops(this.player));
+        } catch (_error) {
+          ownMaxTroops = 0;
+        }
+
+        if (Number.isFinite(ownMaxTroops) && ownMaxTroops > 0) {
+          const hostilePlayers = this.liveHostilePlayers();
+          if (
+            Array.isArray(hostilePlayers) &&
+            typeof this.player?.sharesBorderWith === "function"
+          ) {
+            for (const enemy of hostilePlayers) {
+              let sharesBorder = false;
+              try {
+                sharesBorder = this.player.sharesBorderWith(enemy) === true;
+              } catch (_error) {
+                sharesBorder = false;
+              }
+              if (!sharesBorder) continue;
+
+              let enemyMaxTroops = 0;
+              try {
+                enemyMaxTroops = Number(config.maxTroops(enemy));
+              } catch (_error) {
+                enemyMaxTroops = 0;
+              }
+              if (Number.isFinite(enemyMaxTroops) && enemyMaxTroops > ownMaxTroops) {
+                hasAdvantage = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      if (snapshotTick !== null) {
+        this._borderingHostileMaxTroopAdvantageTick = snapshotTick;
+        this._borderingHostileMaxTroopAdvantage = hasAdvantage;
+      }
+      return hasAdvantage;
     }
 
     legendaryFriendlyPlayers() {
@@ -5113,7 +5321,13 @@
       // reserve (state.nukeReserveGold ≥ 15M), the economy yields so the bot
       // accumulates the war chest instead of over-building — this is what funds
       // the leader/pre-empt MIRV that closes out a winning game.
-      if (state.settings.winFixes && state.nukeReserveGold) {
+      const maritimeEmergency =
+        state.settings.winFixes && this.hasActiveMaritimeInvasion();
+      if (
+        state.settings.winFixes &&
+        state.nukeReserveGold &&
+        !(maritimeEmergency && type === UNIT.Port)
+      ) {
         let reserve = 0n;
         try {
           reserve = BigInt(state.nukeReserveGold || 0);
