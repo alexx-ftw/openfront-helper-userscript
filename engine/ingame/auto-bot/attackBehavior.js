@@ -76,7 +76,9 @@
   const ATTACK_EARLY_GAME_GROWTH_EXPONENT = 0.73;
   const ATTACK_EARLY_GAME_GROWTH_DIVISOR = 4;
   const ATTACK_EARLY_GAME_PEAK_SEARCH_ITERATIONS = 64;
-  const ATTACK_EARLY_GAME_PEAK_RESERVE_FRACTION = 0.5;
+  // The reserve is the lower troop level where production reaches this
+  // fraction of the maximum production rate; it is still measured in troops.
+  const ATTACK_EARLY_GAME_PEAK_PRODUCTION_RESERVE_FRACTION = 0.5;
   // Intents are asynchronous on the client: the troop balance and outgoing
   // attack snapshot can lag the emitted command by several game ticks.
   const BOT_OUTBOUND_INTENT_GRACE_TICKS = 6;
@@ -92,6 +94,17 @@
   // Terrain is shared by all Nation behaviors for the same game. Keep the
   // reverse maritime field per map instead of rebuilding it for every bot.
   const EARLY_GAME_MARITIME_INDEX_CACHE = new WeakMap();
+
+  function earlyGameTroopGrowthRate(troops, maximum) {
+    if (maximum <= 0) return 0;
+
+    const boundedTroops = Math.max(0, Math.min(maximum, troops));
+    return (
+      ATTACK_EARLY_GAME_GROWTH_BASE +
+      Math.pow(boundedTroops, ATTACK_EARLY_GAME_GROWTH_EXPONENT) /
+        ATTACK_EARLY_GAME_GROWTH_DIVISOR
+    ) * (1 - boundedTroops / maximum);
+  }
 
   function earlyGameTroopGrowthDerivative(troops, maximum) {
     if (troops <= 0) return Infinity;
@@ -118,6 +131,26 @@
     ) {
       const middle = (low + high) / 2;
       if (earlyGameTroopGrowthDerivative(middle, maximum) > 0) {
+        low = middle;
+      } else {
+        high = middle;
+      }
+    }
+    return (low + high) / 2;
+  }
+
+  function findEarlyGameProductionThreshold(maximum, peakTroops, targetRate) {
+    if (earlyGameTroopGrowthRate(0, maximum) >= targetRate) return 0;
+
+    let low = 0;
+    let high = peakTroops;
+    for (
+      let iteration = 0;
+      iteration < ATTACK_EARLY_GAME_PEAK_SEARCH_ITERATIONS;
+      iteration++
+    ) {
+      const middle = (low + high) / 2;
+      if (earlyGameTroopGrowthRate(middle, maximum) < targetRate) {
         low = middle;
       } else {
         high = middle;
@@ -591,11 +624,15 @@
       }
 
       const peakTroops = findEarlyGameTroopGrowthPeak(maximum);
+      const peakProduction = earlyGameTroopGrowthRate(peakTroops, maximum);
+      const reserveTroops = findEarlyGameProductionThreshold(
+        maximum,
+        peakTroops,
+        peakProduction * ATTACK_EARLY_GAME_PEAK_PRODUCTION_RESERVE_FRACTION,
+      );
       const reserve = Math.max(
         1,
-        Math.ceil(
-          peakTroops * ATTACK_EARLY_GAME_PEAK_RESERVE_FRACTION,
-        ),
+        Math.ceil(reserveTroops),
       );
       this.earlyGamePeakReserveCacheKey = maximum;
       this.earlyGamePeakReserveCache = reserve;

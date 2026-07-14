@@ -53,8 +53,8 @@ const behavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {})
 
 assert.equal(
   behavior.getEarlyGameLiveReserveTroops(),
-  20894,
-  "reserve is half the formula-derived troop level at the production peak",
+  8239,
+  "reserve is the lower troop level where production reaches half of its peak",
 );
 assert.equal(
   behavior.getEarlyGameProbeTroops(),
@@ -66,7 +66,7 @@ behavior.recordOutboundAttackIntent(target, 8000, { attackType: "land" });
 assert.equal(behavior.getPendingOutboundAttackTroops(), 8000);
 assert.equal(
   behavior.getEarlyGameSpendableTroops(),
-  71106,
+  83761,
   "a stale troop snapshot cannot spend the same 8000 twice",
 );
 
