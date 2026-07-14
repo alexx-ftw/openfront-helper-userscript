@@ -27,6 +27,11 @@
   const EARLY_GAME_MAX_DECISION_TICKS = 30;
   const EARLY_GAME_TRIBE_CAPTURE_TILE_THRESHOLD = 99;
   const EARLY_GAME_CAPTURE_SEARCH_STEPS = 24;
+  // A complete tribal capture is already sized from the live attack-loss
+  // simulation. Keep only the same small live reserve used by the actuation
+  // layer; the normal 30-40% reserve is for generic nation attacks and can
+  // otherwise make a frontier tribe look unaffordable when it is not.
+  const EARLY_GAME_TRIBE_RESERVE_RATIO = 0.12;
 
   function requiredTribeCaptureTiles(
     targetTiles = 0,
@@ -532,9 +537,11 @@
         : 0.18;
     const reserveTroops = initialBurst
       ? 0
-      : belowGenerationTarget
-        ? own * adaptiveReserveFraction
-        : Math.max(own * safeBaseReserve, targetGenerationTroops);
+      : target === "tribe"
+        ? own * EARLY_GAME_TRIBE_RESERVE_RATIO
+        : belowGenerationTarget
+          ? own * adaptiveReserveFraction
+          : Math.max(own * safeBaseReserve, targetGenerationTroops);
     const active = Math.max(0, Number(activeAttackTroops) || 0);
     const availableTroops = Math.max(0, own - reserveTroops - active);
 

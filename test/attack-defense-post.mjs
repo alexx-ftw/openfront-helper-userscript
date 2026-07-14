@@ -213,8 +213,13 @@ assert.equal(
 );
 assert.equal(
   behavior.getBotCaptureTroopsFloor({ ...largeTribe, numTilesOwned: () => 700 }),
+  60101,
+  "a large but bounded frontier tribe must still receive an exact capture estimate",
+);
+assert.equal(
+  behavior.getBotCaptureTroopsFloor({ ...largeTribe, numTilesOwned: () => 3000 }),
   Infinity,
-  "very large tribes are deferred when an exact bounded capture estimate is unavailable",
+  "only tribes beyond the bounded exact-simulation window are deferred",
 );
 
 const boatConfig = {
@@ -426,6 +431,55 @@ assert.deepEqual(
   [3],
   "an active tribal capture must be topped up before another tribe is considered",
 );
+
+// Two individually affordable frontier tribes must not deadlock each other by
+// reserving both complete capture forces before the first attack is emitted.
+const continuationPlayer = {
+  ...boatPlayer,
+  troops: () => 10000,
+  nearby: () => [],
+  isFriendly: () => false,
+  outgoingAttacks: () => [],
+};
+const continuationBehavior = new sandbox.AttackBehavior(
+  {},
+  boatGame,
+  continuationPlayer,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+const continuationCandidates = [
+  { player: botA, id: 3 },
+  { player: botB, id: 4 },
+];
+continuationBehavior.getEarlyGameTribeCandidates = async () => continuationCandidates;
+continuationBehavior.getEarlyGameExpansionPlan = ({ target }) => {
+  const requiredTroops = target.smallID() === 3 ? 7000 : 6000;
+  return {
+    shouldAttackNow: true,
+    requiredTroops,
+    commitTroops: requiredTroops,
+    generationRatio: 0.9,
+    opportunityUrgency: 0,
+    terrainMagnitude: 10,
+    postCommitRecoveryTicks: 4,
+    nextDecisionTicks: 4,
+  };
+};
+let continuationTarget = null;
+continuationBehavior.sendAttack = async (target) => {
+  continuationTarget = target.smallID();
+  return true;
+};
+assert.equal(
+  await continuationBehavior.attackEarlyGameTribe(),
+  true,
+  "an affordable frontier tribe must be actuated even when another tribe also needs troops",
+);
+assert.equal(continuationTarget, 3);
 
 const incomingAttack = {
   retreating: () => false,

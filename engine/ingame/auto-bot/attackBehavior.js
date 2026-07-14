@@ -75,9 +75,10 @@
   // a pending execution still reports the pre-attack troop total.
   const EARLY_GAME_MIN_LIVE_RESERVE_RATIO = 0.12;
   // A Bot/tribe with more than 99 tiles needs one capture simulation per tile
-  // until the engine's conquerPlayer threshold is reached. Keep the expensive
-  // exact search bounded; larger targets are deferred instead of guessed.
-  const MAX_BOT_CAPTURE_SIMULATION_TILES = 512;
+  // until the engine's conquerPlayer threshold is reached. Keep the exact
+  // search bounded, but do not classify ordinary large frontier tribes as
+  // unreachable merely because the old 512-tile cap was too small for them.
+  const MAX_BOT_CAPTURE_SIMULATION_TILES = 2048;
   // A transport can disappear from the unit snapshot on the tick in which it
   // becomes an AttackExecution. Keep its commitment for a few ticks while the
   // corresponding outgoing attack becomes visible; otherwise the next decision
@@ -1072,25 +1073,17 @@
         });
       }
 
-      // A capture must leave enough troops for the cheapest other tribe that
-      // is currently measurable. This is derived from the exact capture
-      // requirements, not from an arbitrary 2x/4x multiplier. The interface's
-      // 1% minimum remains the only unconditional floor.
+      // A capture must leave a live reserve. The next tribe is re-evaluated
+      // after this capture with its current troop count; reserving its entire
+      // future capture force now made two individually affordable frontier
+      // tribes block each other and produced a no-op despite a valid target.
+      // The capture itself is still all-or-nothing and remains derived from the
+      // exact attack-loss simulation, never from an arbitrary 2x/4x multiplier.
       const ownTroops = Math.max(0, Number(this.player.troops?.() || 0));
       const minimumContinuationReserve = Math.max(1, ownTroops * 0.01);
       for (const candidate of candidates) {
         const plan = candidate.expansionPlan;
-        let nextRequiredTroops = Number.POSITIVE_INFINITY;
-        for (const other of candidates) {
-          if (other === candidate) continue;
-          const required = Number(other.expansionPlan?.requiredTroops);
-          if (Number.isFinite(required) && required > 0) {
-            nextRequiredTroops = Math.min(nextRequiredTroops, required);
-          }
-        }
-        const continuationReserve =
-          minimumContinuationReserve +
-          (Number.isFinite(nextRequiredTroops) ? nextRequiredTroops : 0);
+        const continuationReserve = minimumContinuationReserve;
         const commitTroops = Math.max(0, Number(plan?.commitTroops) || 0);
         const postCommitTroops = Math.max(0, ownTroops - commitTroops);
         plan.continuationReserveTroops = continuationReserve;
@@ -1279,16 +1272,37 @@
           candidate,
         );
       }
-      const nearbyTribes = Array.from(uniqueCandidates.values())
-        .filter(
-          (candidate) =>
-            candidate &&
-            candidate.isPlayer() &&
-            candidate.isAlive() &&
-            candidate.type() === PlayerType.Bot &&
-            this.player.isFriendly(candidate) === false,
-        )
-        .slice(0, EARLY_TRIBE_CANDIDATES);
+      // Keep every directly bordering tribe ahead of the bounded nearby sample.
+      // `nearby()` is a distance query, not a frontier query; on a crowded map
+      // it can put several remote tribes ahead of the weak tribe that is already
+      // touching our land. Losing that target before enrichment makes the bot
+      // appear idle even though the target is an immediately valid land attack.
+      const directBorderByTribe = new Map();
+      const directTribes = [];
+      const remoteTribes = [];
+      for (const candidate of uniqueCandidates.values()) {
+        if (
+          !candidate ||
+          !candidate.isPlayer() ||
+          !candidate.isAlive() ||
+          candidate.type() !== PlayerType.Bot ||
+          this.player.isFriendly(candidate) !== false
+        ) {
+          continue;
+        }
+        let landBorder = false;
+        try {
+          landBorder = this.player.sharesBorderWith(candidate) === true;
+        } catch (_error) {
+          /* older adapters may not expose the synchronous border helper */
+        }
+        directBorderByTribe.set(candidate, landBorder);
+        (landBorder ? directTribes : remoteTribes).push(candidate);
+      }
+      const nearbyTribes = [...directTribes, ...remoteTribes].slice(
+        0,
+        EARLY_TRIBE_CANDIDATES,
+      );
       if (nearbyTribes.length === 0) return [];
 
       const otherPlayers = this.game.players();
@@ -1453,7 +1467,10 @@
           encirclement,
           blockValue,
           cheapCapture: Math.max(0, 1 - Math.min(1, troopRatio)),
-          landBorder: ownEdges > 0,
+          // A complete target border snapshot is preferred, but the direct
+          // frontier check above is authoritative when worker enrichment is
+          // delayed or returns an empty snapshot for a newly visible tribe.
+          landBorder: ownEdges > 0 || directBorderByTribe.get(tribe) === true,
           boatEtaTicks: null,
           distance,
           center: tribeCenter,

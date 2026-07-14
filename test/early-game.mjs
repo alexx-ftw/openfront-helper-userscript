@@ -149,6 +149,23 @@ assert.equal(completeTribePlan.requiredTroops, 750);
 assert.ok(completeTribePlan.commitTroops >= completeTribePlan.requiredTroops);
 assert.equal(completeTribePlan.shouldAttackNow, true);
 
+const largeFrontierTribePlan = sandbox.calculateEarlyGameExpansionPlan({
+  ownTroops: 60000,
+  maxTroops: 100000,
+  targetType: "tribe",
+  targetTroops: 12000,
+  captureTroops: 20000,
+  targetDefenseMultiplier: 1,
+  opportunityUrgency: 0,
+});
+assert.equal(
+  largeFrontierTribePlan.shouldAttackNow,
+  true,
+  "an affordable frontier tribe must not inherit the generic 30% reserve gate",
+);
+assert.equal(largeFrontierTribePlan.reserveTroops, 7200);
+assert.equal(largeFrontierTribePlan.commitTroops, 20000);
+
 const underfundedTribePlan = sandbox.calculateEarlyGameExpansionPlan({
   ownTroops: 600,
   maxTroops: 100000,
@@ -920,6 +937,29 @@ assert.ok(enrichedInland.blockValue > 0);
 assert.equal(enrichedInland.futureFoodCount, 1);
 assert.ok(enrichedInland.futureFoodAccess > 0.6);
 assert.ok(enrichedInland.foodRaceValue > 0.5);
+
+// A crowded nearby sample must not hide a direct frontier tribe behind remote
+// candidates. The direct target is deliberately placed after nine remote bots;
+// the bounded enrichment window must still retain it.
+const originalTargetNearby = targetMe.nearby;
+targetMe.sharesBorderWith = (target) => target?.smallID?.() === 4;
+const remoteTribes = Array.from({ length: 9 }, (_, index) => {
+  const sid = 100 + index;
+  return {
+    ...targetInland,
+    smallID: () => sid,
+    id: () => `p${sid}`,
+    nameLocation: () => ({ x: 200 + index, y: 200 + index }),
+    borderTiles: () => new Set([30]),
+  };
+});
+targetMe.nearby = () => [...remoteTribes, targetInland];
+const boundedTargets = await targetBehavior.getEarlyGameTribeCandidates();
+assert.ok(
+  boundedTargets.some((target) => target.id === 4),
+  "a direct frontier tribe must survive the nearby candidate cap",
+);
+targetMe.nearby = originalTargetNearby;
 
 // Integration probe: only the largest connected navigable water surface counts
 // as maritime. The smaller component deliberately touches the map edge so the
