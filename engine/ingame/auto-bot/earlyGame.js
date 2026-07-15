@@ -290,7 +290,7 @@
       Number.isFinite(distance) && Number.isFinite(radius) && radius > 0
         ? finiteEarlyGameSignal(1 - distance / radius)
         : 0;
-    return finiteEarlyGameSignal(countScore * 0.75 + proximityScore * 0.25);
+    return finiteEarlyGameSignal(countScore * proximityScore);
   }
 
   // Combine direct attacks, incoming attack snapshots, and the observed growth
@@ -316,8 +316,14 @@
     const strengthSignal = finiteEarlyGameSignal(
       (Number(competitorTroops) || 0) / (target * 4),
     );
+    // Treat the three inputs as independent evidence. Their probabilistic union
+    // grows with every signal and makes a direct/incoming attack fully urgent
+    // without inventing per-signal weights.
     return finiteEarlyGameSignal(
-      directSignal * 0.55 + momentumSignal * 0.25 + strengthSignal * 0.2,
+      1 -
+        (1 - directSignal) *
+          (1 - momentumSignal) *
+          (1 - strengthSignal),
     );
   }
 
@@ -331,7 +337,6 @@
     targetTroops = 0,
     competitorTroops = 0,
     contestPressure = 0,
-    maxCommitFraction = 0.75,
   } = {}) {
     const own = Math.max(0, Number(ownTroops) || 0);
     const reserve = Math.max(0, Number(reserveTroops) || 0);
@@ -342,67 +347,84 @@
 
     const target = Math.max(0, Number(targetTroops) || 0);
     const rivalTroops = Math.max(0, Number(competitorTroops) || 0);
-    const overtakeAmount = Math.max(target * 4, target + rivalTroops * 1.15);
-    const capFraction = finiteEarlyGameSignal(maxCommitFraction) || 0.75;
-    const urgencyFraction = Math.min(
-      capFraction,
-      0.18 + pressure * 0.55,
-    );
+    const raceRequired = Math.max(base, target * 4, base + rivalTroops);
     return Math.min(
       available,
-      Math.max(base, overtakeAmount, own * urgencyFraction),
+      base + (raceRequired - base) * pressure,
     );
   }
 
-  // Early-Game tribe order is deliberately lexicographic. First choose tribes
-  // that can lead to a navigable river, open sea, or ocean. A direct/incoming
-  // rival attack is an immediate
-  // race and stays urgent; otherwise close an encirclement or block a passage
-  // before taking the central shortcut with the largest future-food count. The
-  // progressing-vector race signal still participates after those structural
-  // opportunities, so it is considered without making the bot cut through a
-  // winnable ring of tribes. The closure score uses the stronger of encirclement
-  // and blocking rather than requiring both at once.
-  function earlyGameTribeSortKey(candidate = {}) {
-    const maritimeDistance =
-      candidate.maritimeDistance == null
-        ? Infinity
-        : Number(candidate.maritimeDistance);
-    const oceanDistance =
-      candidate.oceanDistance == null ? Infinity : Number(candidate.oceanDistance);
-    const nearestMaritimeDistance =
-      Number.isInteger(maritimeDistance) &&
-      maritimeDistance >= 0 &&
-      maritimeDistance <= EARLY_GAME_MAX_MARITIME_DISTANCE
-        ? maritimeDistance
-        : Number.isInteger(oceanDistance) &&
-            oceanDistance >= 0 &&
-            oceanDistance <= EARLY_GAME_MAX_MARITIME_DISTANCE
-          ? oceanDistance
-          : Infinity;
-    const hasMaritimeAccess = Number.isFinite(nearestMaritimeDistance);
-    const distance = Number(candidate.distance);
-    const foodRaceValue = Math.max(
+  function isEarlyGameTribeActionable(candidate = {}) {
+    return (
+      candidate.landBorder === true ||
+      isEarlyGameBoatEta(candidate.boatEtaTicks)
+    );
+  }
+
+  function calculateEarlyGameRouteEfficiency(candidate = {}) {
+    if (candidate.landBorder === true) return 1;
+    const eta = candidate.boatEtaTicks;
+    return isEarlyGameBoatEta(eta)
+      ? finiteEarlyGameSignal(1 - eta / EARLY_GAME_MAX_BOAT_TICKS)
+      : 0;
+  }
+
+  function calculateEarlyGameMaritimeOpportunity(candidate = {}) {
+    const distances = [candidate.maritimeDistance, candidate.oceanDistance]
+      .map(Number)
+      .filter((distance) => Number.isFinite(distance) && distance >= 0);
+    if (distances.length === 0) return 0;
+    const distance = Math.min(...distances);
+    return finiteEarlyGameSignal(
+      1 - distance / EARLY_GAME_MAX_MARITIME_DISTANCE,
+    );
+  }
+
+  // All six strategic dimensions use the same [0, 1] scale and equal weight.
+  // Hard feasibility is handled separately so an unknown sea route cannot win
+  // by compensating with unrelated strategic signals.
+  function calculateEarlyGameTribeUtility(candidate = {}) {
+    if (!isEarlyGameTribeActionable(candidate)) return -Infinity;
+    const routeEfficiency = calculateEarlyGameRouteEfficiency(candidate);
+    const captureEfficiency = finiteEarlyGameSignal(
+      candidate.captureEfficiency == null
+        ? candidate.cheapCapture
+        : candidate.captureEfficiency,
+    );
+    const raceUrgency = Math.max(
       finiteEarlyGameSignal(candidate.foodRaceValue),
       finiteEarlyGameSignal(candidate.contestPressure),
-    );
-    const hasImmediateRace =
       Number(candidate.directAttackers) > 0 ||
-      Number(candidate.incomingAttackers) > 0;
-    const closureValue = Math.max(
+        Number(candidate.incomingAttackers) > 0
+        ? 1
+        : 0,
+    );
+    const territorialControl = Math.max(
       finiteEarlyGameSignal(candidate.encirclement),
       finiteEarlyGameSignal(candidate.blockValue),
     );
+    const continuation = calculateEarlyGameContinuationValue(candidate);
+    const maritimeOpportunity =
+      calculateEarlyGameMaritimeOpportunity(candidate);
+    return (
+      routeEfficiency +
+      captureEfficiency +
+      raceUrgency +
+      territorialControl +
+      continuation +
+      maritimeOpportunity
+    ) / 6;
+  }
+
+  // Utility decides the target; the remaining fields only make equal results
+  // deterministic and safer to execute.
+  function earlyGameTribeSortKey(candidate = {}) {
+    const distance = Number(candidate.distance);
     return [
-      hasMaritimeAccess ? 1 : 0,
-      hasMaritimeAccess ? -nearestMaritimeDistance : 0,
-      hasImmediateRace ? 1 : 0,
-      closureValue,
-      finiteEarlyGameSignal(candidate.encirclement),
-      finiteEarlyGameSignal(candidate.blockValue),
+      calculateEarlyGameTribeUtility(candidate),
+      finiteEarlyGameSignal(candidate.captureEfficiency),
+      calculateEarlyGameRouteEfficiency(candidate),
       calculateEarlyGameContinuationValue(candidate),
-      foodRaceValue,
-      finiteEarlyGameSignal(candidate.cheapCapture),
       candidate.landBorder === true ? 1 : 0,
       Number.isFinite(distance) ? -distance : -Infinity,
     ];
@@ -421,6 +443,7 @@
   function rankEarlyGameTribeCandidates(candidates) {
     if (!Array.isArray(candidates)) return [];
     return candidates
+      .filter(isEarlyGameTribeActionable)
       .map((candidate, index) => ({ candidate, index }))
       .sort((a, b) => compareEarlyGameTribes(a.candidate, b.candidate) || a.index - b.index)
       .map(({ candidate }) => candidate);
@@ -428,14 +451,7 @@
 
   function isEarlyGameTribeTarget(target) {
     if (!target || target.alive === false || target.friendly === true) return false;
-    // `boatCandidate` means the player is in the bounded nearby() transport
-    // sample. The final bestTransportShipSpawn + <=300-tick gate still decides
-    // whether the bot can actually act on it.
-    return (
-      target.landBorder === true ||
-      target.boatCandidate === true ||
-      isEarlyGameBoatEta(target.boatEtaTicks)
-    );
+    return isEarlyGameTribeActionable(target);
   }
 
   function createEarlyGameSnapshot(input = {}) {

@@ -194,20 +194,31 @@ coastal/trade planning; it is not a port-placement authorization.
 When `state.settings.winFixes` is enabled, `AttackBehavior.maybeAttack()` has a
 documented policy seam before the existing bot/Terra Nullius fallback. It may
 enrich only nearby non-friendly `PlayerType.Bot` tribes with bounded border
-snapshots and rank them by nearest navigable maritime route first: open ocean,
-ocean-connected water, or a river component that exits through the map edge.
-Only routes within the existing 80-tile opening radius count; distant coasts do
-not outrank urgent local targets. Closed inland lakes do not satisfy this signal.
-After the maritime route key, the lexicographic order is: a direct or incoming
-attack, the stronger of encirclement or passage blocking, the individual
-encirclement and blocking signals, future-tribe continuation value, the
-progressing-vector food race, cheap capture, an existing land border, and then
-distance. The stronger closure signal is used, so a blocking gate does not need
-to be encircled already.
+snapshots. A land-border tribe is actionable immediately; a sea-only tribe is
+actionable only when the same transport pathfinder used for actuation verifies
+an ETA from 0 through 300 ticks. Unknown and slower routes are excluded rather
+than merely ranked lower. The verified target shore is retained for boat
+actuation, and known land-border tribes enter the bounded sample before
+speculative sea candidates. Remaining sea candidates are preselected by the
+cheap territory/troop opportunity bound rather than opaque `nearby()` order.
+
+Eligible tribes receive a normalized utility: the equal-weight mean of route
+efficiency, territory gained per estimated defending troop (including active
+Defense Post cost), food-race urgency, the stronger of encirclement or passage
+blocking, future-tribe continuation, and nearby navigable maritime opportunity.
+Equal weights are intentional: no one proxy can rigidly override the complete
+strategic value. Capture efficiency is normalized within the bounded candidate
+set; stable safety fields break exact ties. Only actionable candidates
+participate in capture normalization and future-food continuation. A selected
+maritime tribe uses the normal reserve-aware bot conquest amount; the one-percent
+payload remains a Terra Nullius probe policy. Bounded border snapshots and
+shore-route probes are awaited in parallel groups to avoid multiplying worker
+timeout latency by every candidate.
 The race signal combines outgoing/incoming attacks with a bounded per-player
-history of tile growth and `nameLocation()` movement; a direct attack is treated
-as an immediate race while a progressing vector toward the candidate still
-raises its urgency.
+history of tile growth and `nameLocation()` movement as independent evidence; a
+direct attack is fully urgent while a progressing vector toward the candidate
+still raises urgency. Continuation is the mean remaining proximity to reachable
+tribes, without hand-tuned count/distance weights.
 
 When that race is real, the selected tribe attack may commit more troops than the
 normal bot-target amount. The increase is capped by the same reserve floor used by

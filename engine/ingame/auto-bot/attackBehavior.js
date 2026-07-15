@@ -1657,6 +1657,20 @@
       const ranked = rankEarlyGameTribeCandidates(candidates);
       const diagnosticTargets = ranked.map((candidate) => ({
         id: candidate.id,
+        utility: Number(calculateEarlyGameTribeUtility(candidate).toFixed(3)),
+        routeEfficiency: Number(
+          calculateEarlyGameRouteEfficiency(candidate).toFixed(3),
+        ),
+        captureEfficiency: Number(
+          finiteEarlyGameSignal(
+            candidate.captureEfficiency == null
+              ? candidate.cheapCapture
+              : candidate.captureEfficiency,
+          ).toFixed(3),
+        ),
+        targetTiles: Number(candidate.targetTiles) || 0,
+        estimatedCaptureCost:
+          Math.round(Number(candidate.estimatedCaptureCost)) || 0,
         maritimeDistance: Number.isFinite(candidate.maritimeDistance)
           ? candidate.maritimeDistance
           : null,
@@ -1854,16 +1868,37 @@
     // player on the map. That makes this safe at maximum game speed as well as on
     // a tribe-heavy map.
     async getEarlyGameTribeCandidates() {
-      const nearbyTribes = this.player
-        .nearby()
-        .filter(
+      const eligibleNearbyTribes = this.player.nearby().filter(
           (candidate) =>
             candidate &&
             candidate.isPlayer() &&
             candidate.isAlive() &&
             candidate.type() === PlayerType.Bot &&
             this.player.isFriendly(candidate) === false,
-        )
+        );
+      // Do not let speculative sea targets consume the bounded sample before a
+      // known bordering tribe. The remaining order stays as nearby() supplies it.
+      const borderingTribes = [];
+      const otherTribes = [];
+      for (const tribe of eligibleNearbyTribes) {
+        let bordering = false;
+        try {
+          bordering = this.player.sharesBorderWith(tribe) === true;
+        } catch (_e) {
+          /* older adapters may not expose sharesBorderWith */
+        }
+        (bordering ? borderingTribes : otherTribes).push(tribe);
+      }
+      otherTribes.sort((left, right) => {
+        const opportunity = (tribe) =>
+          Math.max(1, Number(tribe.numTilesOwned?.()) || 1) /
+          Math.max(1, Number(tribe.troops?.()) || 1);
+        const difference = opportunity(right) - opportunity(left);
+        if (difference !== 0) return difference;
+        return Number(left.smallID?.()) - Number(right.smallID?.());
+      });
+      const nearbyTribes = borderingTribes
+        .concat(otherTribes)
         .slice(0, EARLY_TRIBE_CANDIDATES);
       if (nearbyTribes.length === 0) return [];
 
@@ -1877,25 +1912,33 @@
       const candidates = [];
       const borderByTribe = new Map();
 
+      // The client worker calls are independent. Await the bounded group in
+      // parallel so one slow snapshot costs one timeout window, not eight.
+      await Promise.all(
+        nearbyTribes.map(async (tribe) => {
+          let border = new Set();
+          try {
+            if (typeof this.game.ensureBorderTiles === "function") {
+              const fetched = await withTimeout(
+                this.game.ensureBorderTiles(tribe),
+                WORKER_TIMEOUT_MS,
+                null,
+              );
+              if (fetched && fetched.size > 0) border = fetched;
+            }
+            if (border.size === 0) {
+              const snapshot = tribe.borderTiles();
+              if (snapshot && snapshot.size > 0) border = snapshot;
+            }
+          } catch (_e) {
+            /* no border snapshot → keep conservative candidate signals */
+          }
+          borderByTribe.set(tribe, border);
+        }),
+      );
+
       for (const tribe of nearbyTribes) {
-        let border = new Set();
-        try {
-          if (typeof this.game.ensureBorderTiles === "function") {
-            const fetched = await withTimeout(
-              this.game.ensureBorderTiles(tribe),
-              WORKER_TIMEOUT_MS,
-              null,
-            );
-            if (fetched && fetched.size > 0) border = fetched;
-          }
-          if (border.size === 0) {
-            const snapshot = tribe.borderTiles();
-            if (snapshot && snapshot.size > 0) border = snapshot;
-          }
-        } catch (_e) {
-          /* no border snapshot → keep the candidate with conservative signals */
-        }
-        borderByTribe.set(tribe, border);
+        const border = borderByTribe.get(tribe) || new Set();
 
         const tribeSid = tribe.smallID();
         let boundaryEdges = 0;
@@ -1967,10 +2010,9 @@
           /* attack snapshots are optional on older client builds */
         }
 
-        const blockValue = Math.min(
-          1,
-          directBlock + nearbyContesters * 0.15 + incomingContesters * 0.25,
-        );
+        // Rival proximity belongs to the race signal. Passage blocking itself
+        // is the directly observed share of the tribe frontier touching others.
+        const blockValue = directBlock;
         const foodRace = this.getEarlyGameFoodRaceSignals({
           tribe,
           tribeSid,
@@ -1982,6 +2024,26 @@
           this.player.troops() > 0
             ? tribe.troops() / this.player.troops()
             : 1;
+        let sharesLandBorder = ownEdges > 0;
+        if (!sharesLandBorder) {
+          try {
+            sharesLandBorder = this.player.sharesBorderWith(tribe) === true;
+          } catch (_e) {
+            /* older adapters may not expose an immediate border predicate */
+          }
+        }
+        const defenseProfile = this.getEnemyDefensePostAttackProfile(
+          tribe,
+          border,
+        );
+        const targetTiles = Math.max(
+          1,
+          Number(tribe.numTilesOwned?.()) || border.size || 1,
+        );
+        const estimatedCaptureCost = Math.max(
+          1,
+          Number(tribe.troops()) || 0,
+        ) * Math.max(1, Number(defenseProfile.attackCostMultiplier) || 1);
         candidates.push({
           player: tribe,
           id: tribe.smallID(),
@@ -1993,7 +2055,11 @@
           encirclement,
           blockValue,
           cheapCapture: Math.max(0, 1 - Math.min(1, troopRatio)),
-          landBorder: ownEdges > 0,
+          targetTiles,
+          estimatedCaptureCost,
+          captureEfficiencyRaw: targetTiles / estimatedCaptureCost,
+          captureEfficiency: 0,
+          landBorder: sharesLandBorder,
           distance,
           center: tribeCenter,
           futureFoodCount: 0,
@@ -2033,17 +2099,37 @@
           batch.map(async (candidate) => {
             candidate.boatEtaTicks = await this.estimateEarlyGameTribeBoatEta(
               borderByTribe.get(candidate.player) || new Set(),
+              candidate,
             );
           }),
         );
       }
 
+      const actionableCandidates = candidates.filter(
+        isEarlyGameTribeActionable,
+      );
+      const maxCaptureEfficiency = actionableCandidates.reduce(
+        (best, candidate) => Math.max(best, candidate.captureEfficiencyRaw),
+        0,
+      );
+      for (const candidate of candidates) {
+        candidate.captureEfficiency = isEarlyGameTribeActionable(candidate)
+          ? maxCaptureEfficiency > 0
+            ? candidate.captureEfficiencyRaw / maxCaptureEfficiency
+            : candidate.cheapCapture
+          : 0;
+      }
+
       // A bounded continuation pass estimates how many other neutral tribes will
       // be reachable from the newly acquired frontier. This is deliberately a
       // geometric opportunity signal, not a second attack loop.
-      const futureFoodTotal = Math.max(0, candidates.length - 1);
+      const futureFoodTotal = Math.max(0, actionableCandidates.length - 1);
       for (const candidate of candidates) {
-        const distances = candidates
+        if (!isEarlyGameTribeActionable(candidate)) {
+          candidate.futureFoodAccess = 0;
+          continue;
+        }
+        const distances = actionableCandidates
           .filter((other) => other.id !== candidate.id)
           .map((other) =>
             this.earlyGameCenterDistance(candidate.center, other.center),
@@ -2059,12 +2145,23 @@
           distances.length > 0
             ? distances.reduce((sum, value) => sum + value, 0) / distances.length
             : Infinity;
-        candidate.futureFoodAccess = calculateEarlyGameContinuationValue(candidate);
+        candidate.futureFoodAccess =
+          futureFoodTotal > 0
+            ? distances.reduce(
+                (sum, value) =>
+                  sum +
+                  Math.max(
+                    0,
+                    1 - value / EARLY_GAME_TRIBE_CHAIN_RADIUS,
+                  ),
+                0,
+              ) / futureFoodTotal
+            : 0;
       }
       return candidates;
     }
 
-    async estimateEarlyGameTribeBoatEta(targetBorder) {
+    async estimateEarlyGameTribeBoatEta(targetBorder, candidate = null) {
       try {
         if (this.game.config().isUnitDisabled(UNIT.TransportShip)) return null;
       } catch (_e) {
@@ -2101,36 +2198,37 @@
         (a, b) => distanceToOwnShore(a) - distanceToOwnShore(b),
       );
 
-      let bestEta = null;
-      for (const targetShore of targetShores.slice(0, EARLY_TRIBE_BOAT_ETA_TARGETS)) {
-        let spawn = false;
-        try {
-          spawn = await withTimeout(
-            this.player.bestTransportShipSpawn(targetShore),
-            WORKER_TIMEOUT_MS,
-            false,
-          );
-        } catch (_e) {
-          continue;
-        }
-        if (spawn === false) continue;
-
-        let eta = null;
-        try {
-          eta = await withTimeout(
-            this.game.estimateTransportRouteTicks(targetShore),
-            WORKER_TIMEOUT_MS,
-            null,
-          );
-        } catch (_e) {
-          continue;
-        }
-        if (!Number.isFinite(Number(eta)) || Number(eta) < 0) continue;
-        const numericEta = Number(eta);
-        bestEta = bestEta === null ? numericEta : Math.min(bestEta, numericEta);
-        if (bestEta <= getAutoDonateExpansionTickLimit()) return bestEta;
-      }
-      return bestEta;
+      const measuredRoutes = await Promise.all(
+        targetShores
+          .slice(0, EARLY_TRIBE_BOAT_ETA_TARGETS)
+          .map(async (targetShore) => {
+            try {
+              const spawn = await withTimeout(
+                this.player.bestTransportShipSpawn(targetShore),
+                WORKER_TIMEOUT_MS,
+                false,
+              );
+              if (spawn === false) return null;
+              const eta = await withTimeout(
+                this.game.estimateTransportRouteTicks(targetShore),
+                WORKER_TIMEOUT_MS,
+                null,
+              );
+              const numericEta = Number(eta);
+              return Number.isFinite(numericEta) && numericEta >= 0
+                ? { eta: numericEta, tile: targetShore }
+                : null;
+            } catch (_e) {
+              return null;
+            }
+          }),
+      );
+      const bestRoute = measuredRoutes
+        .filter(Boolean)
+        .sort((left, right) => left.eta - right.eta)[0];
+      if (!bestRoute) return null;
+      if (candidate) candidate.boatTargetTile = bestRoute.tile;
+      return bestRoute.eta;
     }
 
     // Keep a bounded, best-effort profile of how visible rivals are expanding.
@@ -4464,8 +4562,12 @@
         return false;
       }
 
+      const destination =
+        earlyGameCandidate?.boatTargetTile == null
+          ? closest.y
+          : earlyGameCandidate.boatTargetTile;
       const spawn = await withTimeout(
-        this.player.bestTransportShipSpawn(closest.y),
+        this.player.bestTransportShipSpawn(destination),
         WORKER_TIMEOUT_MS,
         false,
       );
@@ -4478,7 +4580,16 @@
       // HARASSES across water instead of conquering it by boat; land expansion and the
       // opportunistic 1% landings are unaffected. (winFixes off → exact faithful troops.)
       let troops;
-      if (state.settings.winFixes) {
+      if (state.settings.winFixes && earlyGameCandidate) {
+        const defenseProfile = this.getEnemyDefensePostAttackProfile(target);
+        troops = this.calculateBotAttackTroops(
+          target,
+          this.getEarlyGameSpendableTroops(
+            this.getEarlyGameTargetReserveTroops(target),
+          ),
+          defenseProfile,
+        );
+      } else if (state.settings.winFixes) {
         troops = this.getEarlyGameProbeTroops(state.settings.boatProbeFrac);
       } else if (target.type() === PlayerType.Bot) {
         troops = this.calculateBotAttackTroops(target, this.player.troops() / 5);
@@ -4486,6 +4597,9 @@
         troops = this.player.troops() / 5;
       }
 
+      // A race signal may increase a valid conquest force, but it must never
+      // turn an unaffordable zero into a sub-minimum maritime attack.
+      if (troops < 1) return false;
       troops = this.applyEarlyGameRaceTroops({
         target,
         baseTroops: troops,
@@ -4516,8 +4630,8 @@
       }
 
       // src: game.addExecution(new TransportShipExecution(player, closest.y, troops)).
-      if (!(await this.allowEarlyGameBoat(closest.y))) return false;
-      return this.emitBoat(closest.y, troops, "⛵ Boat attack", target);
+      if (!(await this.allowEarlyGameBoat(destination))) return false;
+      return this.emitBoat(destination, troops, "⛵ Boat attack", target);
     }
 
     applyEarlyGameRaceTroops({

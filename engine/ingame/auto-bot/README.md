@@ -20,21 +20,23 @@ The Early Game snapshot starts after spawn selection while there is still free
 territory or an actionable tribe. With `winFixes` enabled, the policy keeps the
 existing Nation decision chain but enriches its opening target choice:
 
-1. rank nearby non-friendly bot tribes by nearest navigable maritime route. Only
-   the largest connected water surface on the map is treated as open ocean;
-   smaller isolated lakes/seas are excluded, and only routes within the existing
-   80-tile opening radius are eligible. Within that route key, the order is direct
-   or incoming rival attack, encirclement/blocking closure, future-tribe access,
-   progressing food-race urgency, capture cost, land border, and distance;
-2. attack the best-ranked tribe through the existing land/boat actuation. When a
-   rival is racing for the same food, the bot raises the commitment while keeping
-   the existing reserve floor;
+1. discard sea-only tribes unless the transport pathfinder verifies a route of
+   at most 300 ticks. Rank the remaining tribes by the equal-weight mean of route
+   efficiency, territory gained per estimated defending troop, rival-race
+   urgency, encirclement/blocking control, access to further tribes, and nearby
+   navigable maritime opportunity. This prevents one coastal signal from
+   overriding a much better land capture;
+2. attack the best-ranked tribe through the existing land/boat actuation. A
+   selected maritime tribe receives a reserve-aware conquest force, not the
+   cheap probe used for uncertain Terra Nullius. When a rival is racing for the
+   same food, the bot raises the commitment while keeping the reserve floor;
 3. when we already hold a shore on the largest connected water surface, probe
    the nearest unowned maritime tile before falling back to generic Terra Nullius
    expansion, so the first coastal foothold can support a Port. Smaller closed
    water bodies are deliberately excluded;
 4. use a transport boat only when the computed route ETA is at most 300 game
-   ticks (30 seconds at 100 ms per tick).
+   ticks (30 seconds at 100 ms per tick). A proximity-only `boatCandidate` does
+   not activate Early Game or delay a tribe attack.
 
 The first live Terra Nullius attack uses the calculated one-tile loss as a
 minimum and commits the configured opening burst. Later land attacks and

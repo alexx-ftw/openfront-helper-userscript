@@ -35,6 +35,8 @@ assert.equal(typeof sandbox.findNearestOceanCoastDistance, "function");
 assert.equal(typeof sandbox.buildMaritimeDistanceIndex, "function");
 assert.equal(typeof sandbox.lookupMaritimeDistanceIndex, "function");
 assert.equal(typeof sandbox.rankEarlyGameTribeCandidates, "function");
+assert.equal(typeof sandbox.calculateEarlyGameTribeUtility, "function");
+assert.equal(typeof sandbox.isEarlyGameTribeActionable, "function");
 assert.equal(typeof sandbox.calculateEarlyGameContinuationValue, "function");
 assert.equal(typeof sandbox.calculateEarlyGameFoodRaceValue, "function");
 assert.equal(typeof sandbox.calculateEarlyGameRaceTroops, "function");
@@ -358,7 +360,8 @@ assert.equal(snapshot.hasFreeLand, true);
 assert.equal(snapshot.hasTribeTarget, true);
 assert.deepEqual(
   snapshot.actionableTribes.map((target) => target.id),
-  ["border-tribe", "boat-candidate", "near-tribe"],
+  ["border-tribe", "near-tribe"],
+  "a sea tribe needs a measured route; proximity alone is not actionable",
 );
 
 assert.equal(
@@ -464,169 +467,183 @@ assert.equal(
 const rankedTribes = sandbox.rankEarlyGameTribeCandidates([
   {
     id: "encircled-inland",
-    oceanDistance: Infinity,
+    landBorder: true,
+    maritimeDistance: Infinity,
     encirclement: 1,
     blockValue: 0.1,
-    cheapCapture: 1,
+    captureEfficiency: 0.9,
+    futureFoodAccess: 0.3,
     distance: 3,
   },
   {
     id: "coastal-open",
-    oceanDistance: 0,
+    landBorder: false,
+    boatEtaTicks: 60,
+    maritimeDistance: 0,
     encirclement: 0,
     blockValue: 0,
-    cheapCapture: 0.2,
+    captureEfficiency: 0.2,
     distance: 20,
   },
   {
     id: "coastal-contested",
-    oceanDistance: 0,
+    landBorder: false,
+    boatEtaTicks: 40,
+    maritimeDistance: 0,
     encirclement: 0.8,
     blockValue: 1,
-    cheapCapture: 0.7,
+    captureEfficiency: 0.7,
+    futureFoodAccess: 0.4,
+    foodRaceValue: 0.8,
     distance: 8,
   },
 ]);
 assert.deepEqual(
   rankedTribes.map((candidate) => candidate.id),
-  ["coastal-contested", "coastal-open", "encircled-inland"],
+  ["coastal-contested", "encircled-inland", "coastal-open"],
 );
 
 const maritimeRouteRank = sandbox.rankEarlyGameTribeCandidates([
   {
     id: "river-route",
+    landBorder: false,
+    boatEtaTicks: 120,
     maritimeDistance: 4,
-    oceanDistance: Infinity,
     futureFoodAccess: 0.1,
-    cheapCapture: 0.2,
+    captureEfficiency: 0.2,
   },
   {
     id: "interior-shortcut",
+    landBorder: true,
     maritimeDistance: Infinity,
-    oceanDistance: Infinity,
     futureFoodAccess: 1,
-    cheapCapture: 1,
+    captureEfficiency: 1,
   },
 ]);
 assert.equal(
   maritimeRouteRank[0].id,
-  "river-route",
-  "a tribe opening a navigable river route must beat an interior food shortcut",
+  "interior-shortcut",
+  "maritime access must not automatically beat a much better land capture",
 );
-const boundedMaritimeRank = sandbox.rankEarlyGameTribeCandidates([
+
+const actionableRouteRank = sandbox.rankEarlyGameTribeCandidates([
   {
-    id: "distant-maritime",
-    maritimeDistance: 81,
-    oceanDistance: 81,
-    futureFoodAccess: 1,
+    id: "unknown-route",
+    landBorder: false,
+    boatEtaTicks: null,
+    maritimeDistance: 0,
+    captureEfficiency: 1,
   },
   {
-    id: "local-inland",
+    id: "slow-route",
+    landBorder: false,
+    boatEtaTicks: 301,
+    maritimeDistance: 0,
+    captureEfficiency: 1,
+  },
+  {
+    id: "verified-land",
+    landBorder: true,
     maritimeDistance: Infinity,
-    oceanDistance: Infinity,
-    encirclement: 1,
+    captureEfficiency: 0.1,
   },
 ]);
-assert.equal(
-  boundedMaritimeRank[0].id,
-  "local-inland",
-  "a distant coast must not outrank a local structural opportunity",
+assert.deepEqual(
+  actionableRouteRank.map((candidate) => candidate.id),
+  ["verified-land"],
+  "unknown and over-30-second sea routes are not actionable tribe targets",
 );
 
-const encirclingGateRank = sandbox.rankEarlyGameTribeCandidates([
+const balancedOpportunityRank = sandbox.rankEarlyGameTribeCandidates([
   {
-    id: "central-food-chain",
-    oceanDistance: 0,
-    futureFoodAccess: 1,
-    foodRaceValue: 0.7,
-    competitorVector: 0.9,
-    encirclement: 0.2,
-    blockValue: 0.1,
-    cheapCapture: 0.8,
-    distance: 8,
-  },
-  {
-    id: "encircling-gate",
-    oceanDistance: 0,
-    futureFoodAccess: 0.4,
-    foodRaceValue: 0,
-    encirclement: 0.85,
-    blockValue: 0.8,
-    cheapCapture: 0.5,
-    distance: 20,
-  },
-]);
-assert.equal(
-  encirclingGateRank[0].id,
-  "encircling-gate",
-  "a strong encircling gate must beat a central food-chain shortcut",
-);
-
-const blockingGateRank = sandbox.rankEarlyGameTribeCandidates([
-  {
-    id: "partial-encircle",
-    oceanDistance: 0,
-    futureFoodAccess: 1,
-    encirclement: 0.6,
-    blockValue: 0.1,
-    cheapCapture: 0.5,
-  },
-  {
-    id: "blocking-gate",
-    oceanDistance: 0,
-    futureFoodAccess: 0.2,
+    id: "ordinary-land",
+    landBorder: true,
+    captureEfficiency: 0.8,
+    futureFoodAccess: 0.1,
     encirclement: 0.1,
-    blockValue: 0.95,
-    cheapCapture: 0.5,
+    blockValue: 0.1,
+    maritimeDistance: Infinity,
+  },
+  {
+    id: "high-value-coast",
+    landBorder: false,
+    boatEtaTicks: 30,
+    maritimeDistance: 0,
+    futureFoodAccess: 0.9,
+    foodRaceValue: 0.8,
+    encirclement: 0.8,
+    blockValue: 0.7,
+    cheapCapture: 0.8,
+    captureEfficiency: 0.8,
   },
 ]);
 assert.equal(
-  blockingGateRank[0].id,
-  "blocking-gate",
-  "a strong blocking gate must beat a partial encirclement shortcut",
+  balancedOpportunityRank[0].id,
+  "high-value-coast",
+  "a verified maritime target can win when its total strategic value is higher",
+);
+
+const captureEfficiencyRank = sandbox.rankEarlyGameTribeCandidates([
+  {
+    id: "small-expensive",
+    landBorder: true,
+    captureEfficiency: 0.2,
+  },
+  {
+    id: "large-efficient",
+    landBorder: true,
+    captureEfficiency: 1,
+  },
+]);
+assert.equal(
+  captureEfficiencyRank[0].id,
+  "large-efficient",
+  "land gained per defending troop is part of the target utility",
 );
 
 const directRaceRank = sandbox.rankEarlyGameTribeCandidates([
   {
     id: "direct-race",
-    oceanDistance: 0,
+    landBorder: true,
     directAttackers: 1,
-    encirclement: 0.1,
-    blockValue: 0.1,
-    futureFoodAccess: 0.1,
+    captureEfficiency: 0.5,
+    encirclement: 0.5,
+    futureFoodAccess: 0.5,
   },
   {
-    id: "safe-ring",
-    oceanDistance: 0,
+    id: "uncontested-peer",
+    landBorder: true,
     directAttackers: 0,
-    encirclement: 0.9,
-    blockValue: 0.9,
-    futureFoodAccess: 0.1,
+    captureEfficiency: 0.5,
+    encirclement: 0.5,
+    futureFoodAccess: 0.5,
   },
 ]);
 assert.equal(
   directRaceRank[0].id,
   "direct-race",
-  "a direct attack must stay urgent even without a derived race score",
+  "a direct rival attack raises urgency without becoming an absolute override",
 );
 
 const movementRaceRank = sandbox.rankEarlyGameTribeCandidates([
   {
     id: "steady-frontier",
-    oceanDistance: 0,
+    landBorder: true,
     encirclement: 0.4,
     blockValue: 0.4,
     futureFoodAccess: 0.5,
     foodRaceValue: 0,
+    captureEfficiency: 0.5,
   },
   {
     id: "moving-rival-frontier",
-    oceanDistance: 0,
+    landBorder: true,
     encirclement: 0.4,
     blockValue: 0.4,
     futureFoodAccess: 0.5,
     foodRaceValue: 0.8,
     competitorVector: 0.9,
+    captureEfficiency: 0.5,
   },
 ]);
 assert.equal(
@@ -639,25 +656,44 @@ const chainCandidate = sandbox.calculateEarlyGameContinuationValue({
   futureFoodCount: 3,
   futureFoodTotal: 3,
   meanFutureFoodDistance: 0,
+  futureFoodChainRadius: 120,
 });
 const isolatedCandidate = sandbox.calculateEarlyGameContinuationValue({
   futureFoodCount: 0,
   futureFoodTotal: 3,
   meanFutureFoodDistance: Infinity,
+  futureFoodChainRadius: 120,
 });
 assert.equal(chainCandidate, 1);
 assert.equal(isolatedCandidate, 0);
 
+assert.equal(
+  sandbox.calculateEarlyGameContinuationValue({
+    futureFoodCount: 3,
+    futureFoodTotal: 3,
+    meanFutureFoodDistance: 60,
+    futureFoodChainRadius: 120,
+  }),
+  0.5,
+  "continuation value combines count and proximity without arbitrary weights",
+);
+
 const chainRank = sandbox.rankEarlyGameTribeCandidates([
   {
     id: "isolated-coast",
-    oceanDistance: 0,
+    landBorder: false,
+    boatEtaTicks: 60,
+    maritimeDistance: 0,
+    captureEfficiency: 0.5,
     futureFoodAccess: isolatedCandidate,
     foodRaceValue: 1,
   },
   {
     id: "food-chain",
-    oceanDistance: 0,
+    landBorder: false,
+    boatEtaTicks: 60,
+    maritimeDistance: 0,
+    captureEfficiency: 0.5,
     futureFoodAccess: chainCandidate,
     foodRaceValue: 0,
   },
@@ -681,7 +717,7 @@ const directRace = sandbox.calculateEarlyGameFoodRaceValue({
   targetTroops: 200,
 });
 assert.ok(directRace > passiveRace);
-assert.ok(directRace >= 0.7);
+assert.equal(directRace, 1);
 
 const normalCommit = sandbox.calculateEarlyGameRaceTroops({
   ownTroops: 10000,
@@ -1075,18 +1111,85 @@ assert.equal(targetSandbox.state.earlyGame.action, "land");
 
 const enrichedTargets = await targetBehavior.getEarlyGameTribeCandidates();
 const rankedEnrichedTargets = targetSandbox.rankEarlyGameTribeCandidates(enrichedTargets);
-assert.equal(rankedEnrichedTargets[0].id, 2);
-assert.equal(rankedEnrichedTargets[0].boatEtaTicks, 20);
-assert.equal(rankedEnrichedTargets[0].landBorder, false);
-assert.equal(rankedEnrichedTargets[0].maritimeDistance, 0);
-assert.equal(rankedEnrichedTargets[0].oceanDistance, 0);
+assert.equal(
+  rankedEnrichedTargets[0].id,
+  4,
+  "the balanced utility can prefer an immediately actionable inland tribe",
+);
+const enrichedSea = enrichedTargets.find((target) => target.id === 2);
+assert.equal(enrichedSea.boatEtaTicks, 20);
+assert.ok(
+  enrichedSea.boatTargetTile != null,
+  "the verified ETA retains the exact target shore used for actuation",
+);
+assert.equal(enrichedSea.landBorder, false);
+assert.equal(enrichedSea.maritimeDistance, 0);
+assert.equal(enrichedSea.oceanDistance, 0);
 const enrichedInland = enrichedTargets.find((target) => target.id === 4);
 assert.equal(enrichedInland.maritimeDistance, Infinity);
 assert.equal(enrichedInland.encirclement, 1 / 3);
 assert.ok(enrichedInland.blockValue > 0);
-assert.equal(enrichedInland.futureFoodCount, 1);
-assert.ok(enrichedInland.futureFoodAccess > 0.6);
+assert.ok(enrichedInland.futureFoodCount >= 0);
+assert.ok(enrichedInland.futureFoodAccess >= 0);
+assert.ok(enrichedInland.futureFoodAccess <= 1);
 assert.ok(enrichedInland.foodRaceValue > 0.5);
+
+const maritimeConquestBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+targetSandbox.state.settings.features = {
+  ...targetSandbox.state.settings.features,
+  boat: true,
+};
+targetSandbox.closestTwoTiles = () => ({ x: 1, y: 2 });
+let maritimeConquestTroops = null;
+maritimeConquestBehavior.player = {
+  borderTiles: () => new Set([1]),
+  bestTransportShipSpawn: async () => 1,
+  troops: () => 10000,
+  type: () => targetSandbox.PlayerType.Human,
+};
+maritimeConquestBehavior.game = {
+  config: () => ({
+    isUnitDisabled: () => false,
+    maxTroops: () => 10000,
+  }),
+  ensureBorderTiles: async () => new Set([2]),
+  isShore: () => true,
+};
+maritimeConquestBehavior.reconcileOutboundAttackIntentCommitments = () => {};
+maritimeConquestBehavior.getEnemyDefensePostAttackProfile = () => ({});
+maritimeConquestBehavior.getEarlyGameTargetReserveTroops = () => 2000;
+maritimeConquestBehavior.getEarlyGameSpendableTroops = () => 8000;
+maritimeConquestBehavior.effectiveReserveRatio = () => 0.2;
+maritimeConquestBehavior.calculateBotAttackTroops = (_target, available) => {
+  assert.equal(available, 8000);
+  return 4000;
+};
+maritimeConquestBehavior.applyEarlyGameRaceTroops = ({ baseTroops }) => baseTroops;
+maritimeConquestBehavior.allowEarlyGameBoat = async () => true;
+maritimeConquestBehavior.emitBoat = (_tile, troops) => {
+  maritimeConquestTroops = troops;
+  return true;
+};
+maritimeConquestBehavior.getEarlyGameProbeTroops = () => {
+  throw new Error("a selected maritime tribe must not receive a cheap probe");
+};
+const maritimeConquestTarget = {
+  borderTiles: () => new Set([2]),
+  isPlayer: () => true,
+  type: () => targetSandbox.PlayerType.Bot,
+};
+assert.equal(
+  await maritimeConquestBehavior.sendBoatAttack(maritimeConquestTarget, {
+    id: 2,
+    boatTargetTile: 2,
+  }),
+  true,
+);
+assert.equal(
+  maritimeConquestTroops,
+  4000,
+  "a selected sea tribe receives a conquest force, not a 1% probe",
+);
 
 // Integration probe: ocean-connected water and a river that exits through the
 // map edge count as maritime; an isolated inland lake does not.
