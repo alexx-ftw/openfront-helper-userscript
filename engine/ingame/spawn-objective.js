@@ -90,20 +90,16 @@
     const expansionScore = clampScore(candidate.expansionScore);
     const safetyScore = clampScore(candidate.safetyScore);
     const teamScore = clampScore(candidate.teamScore, 1);
-    // A missing target category is neutral rather than a penalty. The spawn
-    // scorer supplies 1 for a category that is absent from the current map.
     const tribeScore = clampScore(candidate.tribeScore, 1);
     const nationScore = clampScore(candidate.nationScore, 1);
     const tribeReachScore = clampScore(candidate.tribeReachScore, 1);
     const tribeReachCount = Number.isFinite(Number(candidate.tribeReachCount))
       ? Math.max(0, Number(candidate.tribeReachCount))
       : 0;
-    // The exact selector must be able to distinguish an open expansion area
-    // from a merely equivalent-looking start. Missing data stays neutral for
-    // callers that use this API without the map index.
     const freeLandScore = clampScore(candidate.freeLandScore, 1);
     const resourceScore = clampScore(candidate.resourceScore, 1);
     const clanScore = clampScore(candidate.clanScore);
+    const teamPolyhedronScore = clampScore(candidate.teamPolyhedronScore);
     return {
       startScore,
       expansionScore,
@@ -116,6 +112,7 @@
       freeLandScore,
       resourceScore,
       clanScore,
+      teamPolyhedronScore,
       robustFloor: Math.min(
         startScore,
         expansionScore,
@@ -126,23 +123,14 @@
     };
   }
 
-  function compareDescending(left, right) {
+  function compareModelCandidates(left, right) {
     const leftObjective = left.objective;
     const rightObjective = right.objective;
-    const dimensions = [
-      "robustFloor",
-      "safetyScore",
-      "expansionScore",
-      "tribeReachScore",
-      "tribeReachCount",
-      "freeLandScore",
-      "resourceScore",
-      "tribeScore",
-      "nationScore",
-      "startScore",
-      "teamScore",
-      "clanScore",
-    ];
+    const insideTeamPolyhedron =
+      leftObjective.teamPolyhedronScore === 1 && rightObjective.teamPolyhedronScore === 1;
+    const dimensions = insideTeamPolyhedron
+      ? "freeLandScore expansionScore tribeReachCount tribeReachScore resourceScore robustFloor safetyScore tribeScore nationScore startScore teamScore clanScore".split(" ")
+      : "robustFloor safetyScore expansionScore tribeReachScore tribeReachCount freeLandScore resourceScore tribeScore nationScore startScore teamScore clanScore".split(" ");
     for (const dimension of dimensions) {
       if (leftObjective[dimension] !== rightObjective[dimension]) {
         return rightObjective[dimension] - leftObjective[dimension];
@@ -159,11 +147,12 @@
         ...candidate,
         objective: evaluateModelCandidate(candidate),
       }))
-      .sort(compareDescending);
+      .sort(compareModelCandidates);
   }
 
   root.__OFHSpawnObjective = {
     evaluateModelCandidate,
+    compareModelCandidates,
     rankModelCandidates,
     extractClanTag,
     sameClanTag,

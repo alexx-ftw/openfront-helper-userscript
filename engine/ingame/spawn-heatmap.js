@@ -658,6 +658,65 @@
     return (SPAWN_HEATMAP_TEAM_ATTRACT_R - dist) / (SPAWN_HEATMAP_TEAM_ATTRACT_R - SPAWN_HEATMAP_TEAM_IDEAL_MAX);
   }
 
+  // The convex hull is the largest convex polygon enclosed by the team's
+  // committed spawn positions. Once at least three non-collinear teammates
+  // define a real area, keep our exact spawn inside it; with fewer points there
+  // is no polygon to constrain against, so the existing team-area rules apply.
+  function normalizedTeamPoint(point) {
+    const x = Number(point?.x);
+    const y = Number(point?.y);
+    return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+  }
+
+  function buildLargestTeamPolyhedron(points) {
+    const unique = [];
+    const seen = new Set();
+    for (const point of points || []) {
+      const normalized = normalizedTeamPoint(point);
+      if (!normalized) continue;
+      const key = `${normalized.x},${normalized.y}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(normalized);
+    }
+    if (unique.length < 3) return null;
+    unique.sort((left, right) => left.x - right.x || left.y - right.y);
+
+    const cross = (origin, left, right) =>
+      (left.x - origin.x) * (right.y - origin.y) -
+      (left.y - origin.y) * (right.x - origin.x);
+    const lower = [];
+    for (const point of unique) {
+      while (lower.length >= 2 && cross(lower.at(-2), lower.at(-1), point) <= 0) lower.pop();
+      lower.push(point);
+    }
+    const upper = [];
+    for (let index = unique.length - 1; index >= 0; index -= 1) {
+      const point = unique[index];
+      while (upper.length >= 2 && cross(upper.at(-2), upper.at(-1), point) <= 0) upper.pop();
+      upper.push(point);
+    }
+    lower.pop();
+    upper.pop();
+    const hull = lower.concat(upper);
+    return hull.length >= 3 ? hull : null;
+  }
+
+  function isPointInsideTeamPolyhedron(x, y, polygon) {
+    if (!polygon || polygon.length < 3) return true;
+    let sign = 0;
+    for (let index = 0; index < polygon.length; index += 1) {
+      const start = polygon[index];
+      const end = polygon[(index + 1) % polygon.length];
+      const cross = (end.x - start.x) * (y - start.y) - (end.y - start.y) * (x - start.x);
+      if (cross === 0) continue;
+      const edgeSign = cross > 0 ? 1 : -1;
+      if (sign !== 0 && sign !== edgeSign) return false;
+      sign = edgeSign;
+    }
+    return true;
+  }
+
   function computeDynamicScores(game, staticCandidates, me) {
     const W = game.width ? game.width() : 0;
     const H = game.height ? game.height() : 0;
@@ -973,26 +1032,14 @@
 
   function insertExactSpawnCandidate(best, candidate) {
     const compare = (left, right) => {
-      if (left.objective && right.objective) {
-        const dimensions = [
-          "robustFloor",
-          "safetyScore",
-          "expansionScore",
-          "teamScore",
-          "tribeReachScore",
-          "tribeReachCount",
-          "freeLandScore",
-          "resourceScore",
-          "tribeScore",
-          "nationScore",
-          "clanScore",
-          "startScore",
-        ];
-        for (const dimension of dimensions) {
-          if (left.objective[dimension] !== right.objective[dimension]) {
-            return right.objective[dimension] - left.objective[dimension];
-          }
-        }
+      const objectiveApi = getSpawnObjectiveApi();
+      if (
+        left.objective &&
+        right.objective &&
+        typeof objectiveApi?.compareModelCandidates === "function"
+      ) {
+        const objectiveOrder = objectiveApi.compareModelCandidates(left, right);
+        if (objectiveOrder !== 0) return objectiveOrder;
       }
       if (left.score !== right.score) return right.score - left.score;
       return (left.ref ?? Infinity) - (right.ref ?? Infinity);
@@ -1056,6 +1103,7 @@
     const objectiveApi = getSpawnObjectiveApi();
     const frontierValueScale = Number(getSpawnIndexApi()?.FRONTIER_VALUE_SCALE) || 1000;
     const teamMode = points.teamSpawns.length > 0;
+    const teamPolyhedron = buildLargestTeamPolyhedron(points.teamSpawns);
     let centroidX = 0;
     let centroidY = 0;
     for (const point of points.teamSpawns) {
@@ -1090,6 +1138,7 @@
         if (area && (x < area.x || x >= area.x + area.width || y < area.y || y >= area.y + area.height)) {
           return false;
         }
+        if (teamPolyhedron && !isPointInsideTeamPolyhedron(x, y, teamPolyhedron)) return false;
         try {
           if (typeof game.hasOwner === "function" && game.hasOwner(tile)) return false;
           if (typeof game.isBorder === "function" && game.isBorder(tile)) return false;
@@ -1219,6 +1268,7 @@
               freeLandScore,
               resourceScore,
               clanScore,
+              teamPolyhedronScore: teamPolyhedron ? 1 : 0,
             })
           : null;
 
@@ -1238,6 +1288,7 @@
           nationScore,
           resourceScore,
           clanScore,
+          teamPolyhedronScore: teamPolyhedron ? 1 : 0,
           objective,
         });
       },

@@ -185,4 +185,64 @@ assert.equal(nationOnly[0].y, 50);
 assert.equal(nationOnly[0].nationScore, 1);
 assert.equal(nationOnly[0].resourceScore, 1);
 
+const teamOpportunityWidth = 600;
+const teamOpportunityHeight = 300;
+const teamClusterRef = 150 * teamOpportunityWidth + 150;
+const openTargetsRef = 150 * teamOpportunityWidth + 450;
+const teamOpportunityMe = makePlayer("HUMAN", 300, 150, 20);
+teamOpportunityMe.isOnSameTeam = (player) => player.smallID() === 21;
+const teamOpportunity = loadScorer({
+  width: teamOpportunityWidth,
+  height: teamOpportunityHeight,
+  candidates: [
+    { ref: teamClusterRef, x: 150, y: 150 },
+    { ref: openTargetsRef, x: 450, y: 150 },
+  ],
+  players: [
+    teamOpportunityMe,
+    makePlayer("HUMAN", 150, 110, 21, { spawned: true }),
+    makePlayer("BOT", 450, 150, 22),
+    makePlayer("BOT", 470, 150, 23),
+  ],
+  me: teamOpportunityMe,
+});
+assert.equal(
+  teamOpportunity[0].x,
+  450,
+  "reachable tribe expansion must outrank teammate proximity when core dimensions tie",
+);
+assert.equal(teamOpportunity[0].tribeReachCount, 2);
+
+const enclosedMe = makePlayer("HUMAN", 300, 150, 30);
+enclosedMe.isOnSameTeam = (player) => [31, 32, 33].includes(player.smallID());
+const enclosedWidth = 600;
+const enclosed = loadScorer({
+  width: enclosedWidth,
+  height: 300,
+  candidates: [
+    { ref: 150 * enclosedWidth + 300, x: 300, y: 150 },
+    { ref: 150 * enclosedWidth + 500, x: 500, y: 150 },
+  ],
+  metrics: {
+    [150 * enclosedWidth + 300]: { frontierGain: 30, frontierSlots: 30, frontierValueGain: 30000 },
+    [150 * enclosedWidth + 500]: {
+      frontierGain: 100,
+      frontierSlots: 100,
+      frontierValueGain: 100000,
+    },
+  },
+  players: [
+    enclosedMe,
+    makePlayer("HUMAN", 200, 80, 31, { spawned: true }),
+    makePlayer("HUMAN", 400, 80, 32, { spawned: true }),
+    makePlayer("HUMAN", 300, 240, 33, { spawned: true }),
+    makePlayer("BOT", 300, 150, 34),
+    makePlayer("BOT", 500, 150, 35),
+    makePlayer("BOT", 520, 150, 36),
+  ],
+  me: enclosedMe,
+});
+assert.equal(enclosed[0].x, 300, "spawn candidates outside the team polyhedron must be rejected");
+assert.equal(enclosed[0].teamPolyhedronScore, 1);
+
 console.log("spawn entity scoring tests passed");

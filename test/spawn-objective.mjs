@@ -201,4 +201,60 @@ test("permanent own expansion beats teammate proximity", () => {
   assert.equal(ranked[0].objective.teamScore, 0.05);
 });
 
+test("reachable expansion opportunities beat teammate proximity after the robust floor", () => {
+  const ranked = api.rankModelCandidates([
+    {
+      id: "team-cluster",
+      startScore: 0.8,
+      expansionScore: 0.8,
+      safetyScore: 0.8,
+      freeLandScore: 0.8,
+      resourceScore: 0.8,
+      tribeReachScore: 0.2,
+      tribeReachCount: 1,
+      teamScore: 1,
+    },
+    {
+      id: "reachable-frontier",
+      startScore: 0.8,
+      expansionScore: 0.8,
+      safetyScore: 0.8,
+      freeLandScore: 0.8,
+      resourceScore: 0.8,
+      tribeReachScore: 0.9,
+      tribeReachCount: 4,
+      teamScore: 0.1,
+    },
+  ]);
+
+  assert.equal(ranked[0].id, "reachable-frontier");
+});
+
+test("inside the team polyhedron, terra nullius and reachable tribes lead the objective", () => {
+  const ranked = api.rankModelCandidates([
+    {
+      id: "safe-interior",
+      startScore: 1,
+      expansionScore: 0.6,
+      safetyScore: 1,
+      freeLandScore: 0.6,
+      resourceScore: 0.6,
+      tribeReachCount: 1,
+      teamPolyhedronScore: 1,
+    },
+    {
+      id: "open-interior",
+      startScore: 0.8,
+      expansionScore: 0.9,
+      safetyScore: 0.8,
+      freeLandScore: 0.9,
+      resourceScore: 0.9,
+      tribeReachCount: 3,
+      teamPolyhedronScore: 1,
+    },
+  ]);
+
+  assert.equal(ranked[0].id, "open-interior");
+});
+
 console.log("spawn-objective tests passed");
