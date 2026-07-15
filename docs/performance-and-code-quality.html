@@ -1,41 +1,51 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>Performance and code quality</title>
-</head>
-<body>
-  <h1>Performance and code quality</h1>
+  <head>
+    <meta charset="utf-8" />
+    <title>Performance and code quality</title>
+  </head>
+  <body>
+    <h1>Performance and code quality</h1>
 
-  <p>
-    When you detect an avoidable performance problem, fix its root cause during
-    the current task whenever it is in scope and safe. Do not knowingly leave a
-    performance anti-pattern as an unspecified follow-up. If an immediate fix
-    is not safe or not in scope, record the exact blocker and the affected path.
-  </p>
+    <p>
+      When you detect an avoidable performance problem, fix its root cause during the current task
+      whenever it is in scope and safe. Do not knowingly leave a performance anti-pattern as an
+      unspecified follow-up. If an immediate fix is not safe or not in scope, record the exact
+      blocker and the affected path.
+    </p>
 
-  <p>
-    Use <strong>performance inefficiency</strong> or <strong>performance
-    problem</strong> as the umbrella term. Use <strong>performance
-    anti-pattern</strong> for a design or coding choice that causes the issue,
-    <strong>bottleneck</strong> for the limiting path, and
-    <strong>performance debt</strong> for accumulated unresolved inefficiencies.
-  </p>
+    <p>
+      Use <strong>performance inefficiency</strong> or <strong>performance problem</strong> as the
+      umbrella term. Use <strong>performance anti-pattern</strong> for a design or coding choice
+      that causes the issue, <strong>bottleneck</strong> for the limiting path, and
+      <strong>performance debt</strong> for accumulated unresolved inefficiencies.
+    </p>
 
-  <ul>
-    <li>Redundant or unnecessary work: repeated calculations, scans, or queries.</li>
-    <li>Excessive polling, hot loops, or update frequency.</li>
-    <li>Missing early filtering, pruning, bounds, or short-circuiting.</li>
-    <li>Deficient caching: missing, poorly scoped, oversized, or incorrectly invalidated caches.</li>
-    <li>Resource leaks involving memory, listeners, timers, or connections.</li>
-    <li>Incomplete coverage of edge cases that creates pathological performance paths.</li>
-  </ul>
+    <ul>
+      <li>Redundant or unnecessary work: repeated calculations, scans, or queries.</li>
+      <li>Excessive polling, hot loops, or update frequency.</li>
+      <li>Missing early filtering, pruning, bounds, or short-circuiting.</li>
+      <li>
+        Deficient caching: missing, poorly scoped, oversized, or incorrectly invalidated caches.
+      </li>
+      <li>Resource leaks involving memory, listeners, timers, or connections.</li>
+      <li>Incomplete coverage of edge cases that creates pathological performance paths.</li>
+    </ul>
 
-  <p>
-    In audits and issues, describe these as
-    <em>performance inefficiencies and anti-patterns caused by redundant work,
-    excessive frequency, weak filtering, resource retention, or incomplete
-    scenario coverage</em>.
-  </p>
-</body>
+    <p>
+      When you decide whether an existing structure can be upgraded, use the authoritative upgrade
+      cost returned by its buildable-unit probe. Do not pre-reject the upgrade using the formula for
+      constructing another new structure, because count-scaled new-build prices can be substantially
+      higher than the real upgrade price. Cover this with a regression where a new structure is
+      unaffordable but the upgrade is affordable.
+    </p>
+
+    <p>
+      In audits and issues, describe these as
+      <em
+        >performance inefficiencies and anti-patterns caused by redundant work, excessive frequency,
+        weak filtering, resource retention, or incomplete scenario coverage</em
+      >.
+    </p>
+  </body>
 </html>
