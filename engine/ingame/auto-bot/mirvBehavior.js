@@ -153,8 +153,9 @@
       // ~16% and never gets there, so it never closes out. This branch lets the
       // bot, once it becomes the map leader (≥ mirvLeaderShare), proactively MIRV
       // the strongest rival (and pre-empt a rival about to afford its own MIRV),
-      // funding the war-chest via state.nukeReserveGold so structureBehavior stops
-      // over-building and saves. Gated by settings.winFixes.
+      // recording an offensive war-chest goal in state.nukeReserveGold. Ordinary
+      // economy and defensive SAM paths remain available while saving. Gated by
+      // settings.winFixes.
       if (state.settings.winFixes) {
         // USER RULE: once our TEAM has effectively WON (owns ≥ teamWonShare of the map),
         // stop hoarding gold for a MIRV — release the war chest so structureBehavior

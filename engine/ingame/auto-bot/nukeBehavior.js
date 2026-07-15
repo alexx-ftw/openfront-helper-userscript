@@ -359,21 +359,8 @@
 
     // ── maybeSendNuke — NationNukeBehavior.ts:58 (now async) ──────────────────
     async maybeSendNuke() {
-      // WIN-FIX (NOT in src): when mirvBehavior has set the MIRV war-chest
-      // (state.nukeReserveGold ≥ 15M, saving for a leader/pre-empt MIRV), DON'T
-      // spend the gold on smaller atom/hydrogen nukes. That drain is exactly what
-      // was starving the MIRV (gold oscillated 10–18M, never reached its 25M
-      // price) and blocking the close-out from ~65% to victory. Hold fire until
-      // the MIRV launches (mirvBehavior clears the chest on fire).
-      if (state.settings.winFixes && state.nukeReserveGold) {
-        let reserve = 0n;
-        try {
-          reserve = BigInt(state.nukeReserveGold || 0);
-        } catch (_e) {
-          reserve = 0n;
-        }
-        if (reserve >= 15000000n) return;
-      }
+      // A MIRV reserve is a soft offensive goal. Ordinary atom/hydrogen nukes
+      // still use the normal economy/defense surplus policy below.
       const silos = this.player.units(UNIT.MissileSilo);
       const config = this.game.config();
       if (

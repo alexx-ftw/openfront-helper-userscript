@@ -1133,15 +1133,7 @@
     }) {
       if (!state.settings.winFixes) return false;
 
-      let availableGold = this.player.gold();
-      try {
-        const reserve = this.legendaryReserveGold();
-        if (reserve > 0n) {
-          availableGold = availableGold > reserve ? availableGold - reserve : 0n;
-        }
-      } catch (_error) {
-        // A malformed optional reserve must not disable ordinary construction.
-      }
+      const availableGold = this.spendableConstructionGold();
       if (availableGold < HIGH_GOLD_CONSTRUCTION_PRESSURE_THRESHOLD) {
         return false;
       }
@@ -1301,7 +1293,9 @@
       });
       const ranked = rankLegendaryConstructionCandidates(candidates, {
         gold: this.player.gold(),
-        reserve: this.legendaryReserveGold(),
+        // The MIRV war chest is only an offensive goal. Productive and
+        // defensive candidates must remain rankable while the bot saves it.
+        reserve: 0n,
       });
 
       const rankedGroups = economyGrowthPriority
@@ -1738,6 +1732,21 @@
       } catch (_error) {
         return 0n;
       }
+
+      // This is the budget available to ordinary construction and defensive
+      // planning. A MIRV reserve is applied only by the offensive silo paths.
+      return availableGold;
+    }
+
+    availableGoldAfterReserve(type) {
+      let availableGold = 0n;
+      try {
+        availableGold = BigInt(this.player.gold() || 0n);
+      } catch (_error) {
+        return 0n;
+      }
+
+      if (type !== UNIT.MissileSilo) return availableGold;
 
       let reserve = 0n;
       try {
@@ -5318,28 +5327,9 @@
         return false;
       }
       const perceivedCost = this.getConstructionCost(type);
-      let availableGold = this.player.gold();
-      // WIN-FIX (NOT in src): when mirvBehavior has set a real MIRV war-chest
-      // reserve (state.nukeReserveGold ≥ 15M), the economy yields so the bot
-      // accumulates the war chest instead of over-building — this is what funds
-      // the leader/pre-empt MIRV that closes out a winning game.
-      const maritimeEmergency =
-        state.settings.winFixes && this.hasActiveMaritimeInvasion();
-      if (
-        state.settings.winFixes &&
-        state.nukeReserveGold &&
-        !(maritimeEmergency && type === UNIT.Port)
-      ) {
-        let reserve = 0n;
-        try {
-          reserve = BigInt(state.nukeReserveGold || 0);
-        } catch (_e) {
-          reserve = 0n;
-        }
-        if (reserve >= 15000000n) {
-          availableGold = availableGold > reserve ? availableGold - reserve : 0n;
-        }
-      }
+      // Keep the MIRV war chest scoped to offensive silo construction. Cities,
+      // factories, ports and SAMs must still spend normal available gold.
+      const availableGold = this.availableGoldAfterReserve(type);
       if (availableGold < perceivedCost) {
         return false;
       }
@@ -5483,14 +5473,7 @@
     async maybeUpgradePlannedSam(plan) {
       if (!plan || plan.targetLevel <= plan.currentLevel) return false;
 
-      let reserve = 0n;
-      try {
-        reserve = this.legendaryReserveGold();
-      } catch (_error) {
-        reserve = 0n;
-      }
-      const availableGold =
-        this.player.gold() > reserve ? this.player.gold() - reserve : 0n;
+      const availableGold = this.spendableConstructionGold();
       let minimumCost = 0n;
       try {
         minimumCost = this.cost(UNIT.SAMLauncher);
@@ -5623,14 +5606,7 @@
       const candidates = upgradeable.length > 0 ? upgradeable : fallbackUpgradeable;
       if (candidates.length === 0) return false;
 
-      let reserve = 0n;
-      try {
-        reserve = this.legendaryReserveGold();
-      } catch (_error) {
-        reserve = 0n;
-      }
-      const availableGold =
-        this.player.gold() > reserve ? this.player.gold() - reserve : 0n;
+      const availableGold = this.availableGoldAfterReserve(UNIT.MissileSilo);
       let minimumCost = 0n;
       try {
         minimumCost = this.cost(UNIT.MissileSilo);
@@ -5726,14 +5702,7 @@
         return false;
       }
 
-      let reserve = 0n;
-      try {
-        reserve = this.legendaryReserveGold();
-      } catch (_error) {
-        reserve = 0n;
-      }
-      const availableGold =
-        this.player.gold() > reserve ? this.player.gold() - reserve : 0n;
+      const availableGold = this.spendableConstructionGold();
       if (availableGold < this.cost(UNIT.SAMLauncher)) return false;
       const candidates = [];
 
@@ -5817,14 +5786,7 @@
       );
       if (upgradeableSamUnits.length === 0) return false;
 
-      let reserve = 0n;
-      try {
-        reserve = this.legendaryReserveGold();
-      } catch (_error) {
-        reserve = 0n;
-      }
-      const availableGold =
-        this.player.gold() > reserve ? this.player.gold() - reserve : 0n;
+      const availableGold = this.spendableConstructionGold();
       // The formula is a cheap lower bound. Keep the early exit for clearly
       // unaffordable upgrades, then use BuildableUnit.cost as the final live
       // price before forecasting.

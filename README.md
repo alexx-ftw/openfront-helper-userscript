@@ -184,7 +184,9 @@ Productive structures use their real next-build cost rather than the MIRV
 save-up multiplier, so saving for an offensive option cannot silently make
 ordinary growth unaffordable. A silo or nuke is allowed when the remaining
 surplus covers the next productive action and the next defensive SAM; heavy
-assaults and direct retaliation remain emergency exceptions.
+assaults and direct retaliation remain emergency exceptions. The MIRV war chest
+is a soft offensive goal: it can defer another silo, but never City/Factory/Port,
+SAM upgrades, or ordinary Atom/Hydrogen fire.
 
 With `winFixes` enabled, the custom build policy also upgrades a friendly SAM
 when one level makes its trajectory schedule intercept an incoming missile, and

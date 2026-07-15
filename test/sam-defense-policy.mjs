@@ -450,6 +450,53 @@ behavior.getPerceivedCost = originalPerceivedCost;
 behavior.maybeSpawnStructure = originalMaybeSpawnStructure;
 own.gold = originalOwnGold;
 
+const originalReserveForBudget = behavior.legendaryReserveGold;
+const reserveBudgetCalls = [];
+behavior.legendaryReserveGold = () => 25_000_000n;
+own.gold = () => 20_000_000n;
+assert.equal(
+  behavior.spendableConstructionGold(),
+  20_000_000n,
+  "A MIRV reserve does not reduce the ordinary construction budget",
+);
+assert.equal(
+  behavior.availableGoldAfterReserve(UNIT.City),
+  20_000_000n,
+  "A MIRV reserve does not block a City",
+);
+assert.equal(
+  behavior.availableGoldAfterReserve(UNIT.SAMLauncher),
+  20_000_000n,
+  "A MIRV reserve does not block a SAM",
+);
+assert.equal(
+  behavior.availableGoldAfterReserve(UNIT.MissileSilo),
+  0n,
+  "A MIRV reserve still applies to offensive silo spending",
+);
+behavior.getPerceivedCost = () => 1_000_000n;
+behavior.maybeSpawnStructure = async (type) => {
+  reserveBudgetCalls.push(type);
+  return type === UNIT.City;
+};
+assert.equal(
+  await behavior.maybePrioritizeHighGoldEconomicConstruction({
+    config: { isUnitDisabled: () => false },
+    hasOceanPortTiles: true,
+  }),
+  true,
+  "High-gold economic construction remains active while a MIRV reserve is set",
+);
+assert.deepEqual(
+  reserveBudgetCalls,
+  [UNIT.City],
+  "The City path remains first under a MIRV reserve",
+);
+behavior.getPerceivedCost = originalPerceivedCost;
+behavior.maybeSpawnStructure = originalMaybeSpawnStructure;
+behavior.legendaryReserveGold = originalReserveForBudget;
+own.gold = originalOwnGold;
+
 let hostileAttemptTick = 1000;
 behavior.game.ticks = () => hostileAttemptTick;
 const hostileSamCalls = [];
@@ -1371,6 +1418,10 @@ assert.equal(
 );
 own.sams = [reactiveSam];
 sentBuilds.length = 0;
+const originalReactiveReserve = behavior.legendaryReserveGold;
+const originalReactiveGold = own.gold;
+behavior.legendaryReserveGold = () => 25_000_000n;
+own.gold = () => 20_000_000n;
 
 assert.equal(
   typeof behavior.maybeUpgradeMissileDefenseSam,
@@ -1397,6 +1448,8 @@ assert.equal(
   "A SAM type disabled by game configuration is never upgraded",
 );
 samDisabled = false;
+behavior.legendaryReserveGold = originalReactiveReserve;
+own.gold = originalReactiveGold;
 
 // The dedicated hostile-silo SAM path is covered above; the wiring tests can
 // now exercise the proactive parity branch before ordinary construction.
