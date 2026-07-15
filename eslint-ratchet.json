@@ -168,7 +168,7 @@
   "engine/ingame/auto-bot/attackBehavior.js": {
     "sonarjs/cognitive-complexity": {
       "warning": 0,
-      "error": 25
+      "error": 26
     },
     "complexity": {
       "warning": 0,
@@ -250,7 +250,7 @@
     },
     "no-implicit-coercion": {
       "warning": 0,
-      "error": 17
+      "error": 16
     },
     "no-console": {
       "warning": 0,
@@ -260,11 +260,11 @@
   "engine/ingame/auto-bot/earlyGame.js": {
     "complexity": {
       "warning": 0,
-      "error": 4
+      "error": 3
     },
     "sonarjs/cognitive-complexity": {
       "warning": 0,
-      "error": 3
+      "error": 2
     },
     "sonarjs/no-nested-conditional": {
       "warning": 0,
@@ -277,10 +277,6 @@
       "error": 2
     },
     "complexity": {
-      "warning": 0,
-      "error": 1
-    },
-    "sonarjs/cognitive-complexity": {
       "warning": 0,
       "error": 1
     }
@@ -331,6 +327,10 @@
     "sonarjs/pseudo-random": {
       "warning": 0,
       "error": 2
+    },
+    "no-promise-executor-return": {
+      "warning": 0,
+      "error": 1
     },
     "no-useless-assignment": {
       "warning": 0,
@@ -476,10 +476,6 @@
       "warning": 0,
       "error": 4
     },
-    "no-useless-assignment": {
-      "warning": 0,
-      "error": 2
-    },
     "sonarjs/no-ignored-exceptions": {
       "warning": 0,
       "error": 4
@@ -602,15 +598,15 @@
     },
     "sonarjs/no-ignored-exceptions": {
       "warning": 0,
-      "error": 58
+      "error": 57
     },
     "complexity": {
       "warning": 0,
-      "error": 40
+      "error": 39
     },
     "sonarjs/cognitive-complexity": {
       "warning": 0,
-      "error": 35
+      "error": 34
     },
     "no-useless-assignment": {
       "warning": 0,
@@ -634,7 +630,7 @@
     },
     "max-depth": {
       "warning": 0,
-      "error": 6
+      "error": 8
     },
     "prefer-const": {
       "warning": 0,
@@ -731,12 +727,6 @@
     "no-console": {
       "warning": 0,
       "error": 2
-    }
-  },
-  "engine/ingame/auto-leave.js": {
-    "no-useless-assignment": {
-      "warning": 0,
-      "error": 1
     }
   },
   "engine/ingame/boat-macro.js": {
@@ -927,12 +917,6 @@
       "error": 1
     },
     "require-atomic-updates": {
-      "warning": 0,
-      "error": 1
-    }
-  },
-  "engine/ingame/game-start-notification.js": {
-    "no-useless-assignment": {
       "warning": 0,
       "error": 1
     }
@@ -1780,7 +1764,7 @@
   "engine/lobby/auto-join.js": {
     "sonarjs/no-implicit-global": {
       "warning": 0,
-      "error": 14
+      "error": 13
     },
     "sonarjs/no-ignored-exceptions": {
       "warning": 0,
@@ -1818,7 +1802,7 @@
   "engine/lobby/core.js": {
     "prefer-const": {
       "warning": 0,
-      "error": 11
+      "error": 10
     },
     "sonarjs/void-use": {
       "warning": 0,
@@ -2140,7 +2124,7 @@
   "test/early-game.mjs": {
     "sonarjs/code-eval": {
       "warning": 0,
-      "error": 6
+      "error": 5
     },
     "no-useless-escape": {
       "warning": 0,
@@ -2148,7 +2132,7 @@
     },
     "sonarjs/no-nested-conditional": {
       "warning": 0,
-      "error": 4
+      "error": 3
     },
     "no-console": {
       "warning": 0,
@@ -2163,24 +2147,6 @@
     "no-console": {
       "warning": 0,
       "error": 2
-    },
-    "no-regex-spaces": {
-      "warning": 0,
-      "error": 1
-    },
-    "sonarjs/no-regex-spaces": {
-      "warning": 0,
-      "error": 1
-    }
-  },
-  "test/intent-rate-limit.mjs": {
-    "sonarjs/code-eval": {
-      "warning": 0,
-      "error": 1
-    },
-    "no-console": {
-      "warning": 0,
-      "error": 1
     }
   },
   "test/legendary.mjs": {
@@ -2240,7 +2206,7 @@
   "test/performance-regressions.mjs": {
     "sonarjs/code-eval": {
       "warning": 0,
-      "error": 6
+      "error": 5
     },
     "no-console": {
       "warning": 0,

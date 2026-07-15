@@ -3,7 +3,7 @@
 const gameStartNotificationDetector = createGameStartNotificationDetector();
 
 function pollGameStartNotification() {
-  let context = null;
+  let context;
   try {
     context = typeof getOpenFrontGameContext === "function" ? getOpenFrontGameContext() : null;
   } catch (_error) {

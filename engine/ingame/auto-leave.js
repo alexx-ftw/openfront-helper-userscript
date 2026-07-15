@@ -12,7 +12,7 @@
     if (!autoLeaveOnTeamWin || autoLeaveFired) {
       return;
     }
-    let modal = null;
+    let modal;
     try {
       modal = document.querySelector("win-modal");
     } catch (_error) {
