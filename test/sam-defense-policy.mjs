@@ -1040,8 +1040,27 @@ assert.equal(
 );
 assert.equal(
   parityProbeCalls,
-  0,
-  "SAM parity checks affordability before issuing per-SAM async probes",
+  1,
+  "SAM parity probes the authoritative upgrade cost instead of assuming the new-SAM price",
+);
+const parityBuildCountBeforeAffordableUpgrade = sentBuilds.length;
+behavior.buildableFor = async () => {
+  parityProbeCalls++;
+  return {
+    type: UNIT.SAMLauncher,
+    canUpgrade: true,
+    cost: 1_000_000n,
+  };
+};
+assert.equal(
+  await behavior.maybeUpgradeSamForSiloParity(),
+  true,
+  "SAM parity upgrades when the authoritative upgrade price is affordable even if a new SAM is not",
+);
+assert.equal(
+  sentBuilds.length,
+  parityBuildCountBeforeAffordableUpgrade + 1,
+  "Affordable authoritative SAM parity upgrades emit one build action",
 );
 behavior.buildableFor = parityBuildableFor;
 behavior.cost = parityCost;
@@ -1403,11 +1422,7 @@ assert.equal(
   false,
   "A matching level-1 SAM is not upgraded merely because an enemy owns a Silo",
 );
-assert.equal(
-  sentBuilds.length,
-  0,
-  "A matching level-1 hostile-Silo parity check emits no upgrade",
-);
+assert.equal(sentBuilds.length, 0, "A matching level-1 hostile-Silo parity check emits no upgrade");
 behavior.game.players = originalPlayersForSingleSiloParity;
 own.sams = originalOwnSamsForSingleSiloParity;
 own.sams = [makeUnit(405, 3), makeUnit(406, 2), makeUnit(407, 2)];

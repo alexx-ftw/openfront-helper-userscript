@@ -5703,7 +5703,6 @@
       }
 
       const availableGold = this.spendableConstructionGold();
-      if (availableGold < this.cost(UNIT.SAMLauncher)) return false;
       const candidates = [];
 
       const samUnits = (this.player.units(UNIT.SAMLauncher) || []).filter(
