@@ -134,6 +134,10 @@ stronger enemy elsewhere on the map does not affect this specific border reserve
 If the live border data or player snapshot is unavailable, the donation fails
 closed for that tick.
 
+If a client build does not expose the donation event constructor, the bot uses
+the same rate-limited direct intent packet as the boat macro so a valid donation
+is still delivered.
+
 When `pauseDonateDuringExpansion` is enabled (the default), both proactive and
 strategy-driven donations pause during the post-spawn expansion window when the
 bot has direct non-nuked free land, a land-border tribe, or a sea tribe whose

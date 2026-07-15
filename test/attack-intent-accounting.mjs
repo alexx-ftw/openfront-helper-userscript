@@ -494,6 +494,7 @@ const donor = {
 const needyTeammate = {
   troops: () => 8000,
   smallID: () => 12,
+  id: () => "player-12",
   isAlive: () => true,
   incomingAttacks: () => [],
   outgoingAttacks: () => [],
@@ -574,6 +575,40 @@ assert.equal(
   35000,
   "the strongest allied border army controls the donation cap; remote armies do not",
 );
+
+// If the client does not expose SendDonateTroopsIntentEvent, the wire fallback
+// must preserve the same recipient id and donation amount instead of dropping a
+// valid teammate donation.
+const fallbackPackets = [];
+sandbox.discoverCtors = () => ({ donateTroops: null });
+sandbox.sendGamePacket = (packet) => {
+  fallbackPackets.push(packet);
+  return true;
+};
+const fallbackDonationBehavior = new sandbox.AttackBehavior(
+  { chance: () => true },
+  donationGame,
+  donor,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+assert.equal(fallbackDonationBehavior.donateTroops(), true);
+assert.equal(fallbackPackets.at(-1)?.type, "donate_troops");
+assert.equal(fallbackPackets.at(-1)?.recipient, "player-12");
+assert.equal(
+  fallbackPackets.at(-1)?.troops,
+  35000,
+  "donations fall back to the rate-limited direct intent packet",
+);
+sandbox.discoverCtors = () => ({
+  attack: "attack",
+  boat: "boat",
+  donateTroops: "donateTroops",
+});
+delete sandbox.sendGamePacket;
 
 const assertDonationPausedDuringExpansion = (earlyGame, message) => {
   sandbox.state.settings.pauseDonateDuringExpansion = true;

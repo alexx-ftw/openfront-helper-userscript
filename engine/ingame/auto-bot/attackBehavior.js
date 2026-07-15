@@ -4868,13 +4868,31 @@
       //   selectedTeammate.id(), availableTroops)).
       // Client: emitIntent(ctors.donateTroops, recipient.__src ?? recipient, troops).
       const ctors = discoverCtors(getEventBus());
-      const emitted =
-        ctors.donateTroops &&
-        emitIntent(
+      let emitted = false;
+      if (ctors.donateTroops) {
+        emitted = emitIntent(
           ctors.donateTroops,
           selectedTeammate.__src ?? selectedTeammate,
           donationTroops,
         );
+      } else if (typeof sendGamePacket === "function") {
+        // Some client builds do not expose the Transport event constructor to
+        // the EventBus scanner. Keep the same rate-limited wire path as the
+        // boat macro so a valid donation is not silently dropped.
+        const recipientId =
+          typeof selectedTeammate.id === "function"
+            ? selectedTeammate.id()
+            : typeof selectedTeammate.smallID === "function"
+              ? selectedTeammate.smallID()
+              : null;
+        if (recipientId !== null && recipientId !== undefined) {
+          emitted = sendGamePacket({
+            type: "donate_troops",
+            recipient: recipientId,
+            troops: donationTroops,
+          });
+        }
+      }
       if (emitted) {
         this.recordOutboundDonationIntent(donationTroops);
         console.log(
@@ -4885,7 +4903,10 @@
         );
         setLastAction(tr("🎁 Donate troops"), "combat");
       } else {
-        console.log("[Donate] emit failed", { ctor: !!ctors.donateTroops });
+        console.log("[Donate] emit failed", {
+          ctor: !!ctors.donateTroops,
+          directFallback: typeof sendGamePacket === "function",
+        });
       }
 
       return !!emitted;
