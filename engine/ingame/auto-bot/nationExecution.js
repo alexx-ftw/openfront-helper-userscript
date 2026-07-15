@@ -6,9 +6,10 @@
 //  - DIFFICULTY: the src reads the lobby Nation difficulty; the bot REPLICATES a
 //    user-chosen difficulty (currentDifficulty()) for its strategy, while enemy
 //    stat reads (config().maxTroops(enemy)) still use the real game difficulty.
-//  - TICK GATING: in win-fix mode the engine's configured poll interval is the
-//    combat cadence, so each new snapshot gets one decision pass. With win-fix
-//    mode disabled, the faithful attackTick / structure-third cadence remains.
+//  - TICK GATING: the engine may poll faster than the Nation decision cadence.
+//    Edge-detect attackTick / structure-third crossings so polling never repeats
+//    the full strategy chain or skips a crossing. Win-fix uses the configured
+//    combatCadenceScale to stay more active than the faithful Nation cadence.
 //
 // Feature toggles (state.settings.features.*) gate whole behaviors on/off — a UX
 // switch, NOT a strategy change (default all-on == fully faithful).
@@ -259,26 +260,28 @@
         return;
       }
 
-      // ── combat decision cadence — engine poll in win-fix, source cadence otherwise ─
+      // ── tick gating (edge-detected over the elapsed window) — NationExecution.ts:176 ─
       const from = this.lastSeenTick < 0 ? ticks : this.lastSeenTick + 1;
       this.lastSeenTick = ticks;
       let attackCrossed = false;
       let thirdCrossed = false;
+      // WIN-FIX (combatCadenceScale): <1 shrinks the effective attack interval
+      // so the bot remains more active than a faithful Nation without turning
+      // every 200 ms polling callback into a full global scan.
+      let ar = this.attackRate;
       if (state.settings.winFixes) {
-        // engine.js already calls NationBot.tick at the configured tickMs rate.
-        // Running the combat pass here avoids a second attackRate-based delay
-        // that could make a short-lived attack opportunity disappear.
-        attackCrossed = true;
-      } else {
-        const ar = this.attackRate;
-        const at = this.attackTick % ar;
-        const oneThird = (at + Math.floor(ar / 3)) % ar;
-        const twoThirds = (at + Math.floor((ar * 2) / 3)) % ar;
-        for (let t = from; t <= ticks; t++) {
-          const offset = ((t % ar) + ar) % ar;
-          if (offset === at) attackCrossed = true;
-          else if (offset === oneThird || offset === twoThirds) thirdCrossed = true;
+        const scale = Number(state.settings.combatCadenceScale ?? 0.6);
+        if (Number.isFinite(scale) && scale > 0 && scale !== 1) {
+          ar = Math.max(1, Math.round(this.attackRate * scale));
         }
+      }
+      const at = this.attackTick % ar;
+      const oneThird = (at + Math.floor(ar / 3)) % ar;
+      const twoThirds = (at + Math.floor((ar * 2) / 3)) % ar;
+      for (let t = from; t <= ticks; t++) {
+        const offset = ((t % ar) + ar) % ar;
+        if (offset === at) attackCrossed = true;
+        else if (offset === oneThird || offset === twoThirds) thirdCrossed = true;
       }
 
       if (!attackCrossed) {

@@ -106,6 +106,13 @@
     }
   }
 
+  function roundLogHelperTick() {
+    try {
+      const ctx = getOpenFrontGameContext();
+      if (ctx?.game) roundLogTick(ctx.game);
+    } catch (_e) { /* ignore */ }
+  }
+
   function setRoundLoggerEnabled(enabled) {
     roundLoggerEnabled = Boolean(enabled);
     if (roundLoggerEnabled) {
@@ -116,14 +123,12 @@
       try { context = getOpenFrontGameContext(); } catch (_e) { context = null; }
       if (context?.game) roundLogStartMatch(context.game);
       if (typeof registerHelperTickListener === "function") {
-        registerHelperTickListener(() => {
-          try {
-            const ctx = getOpenFrontGameContext();
-            if (ctx?.game) roundLogTick(ctx.game);
-          } catch (_e) { /* ignore */ }
-        });
+        registerHelperTickListener(roundLogHelperTick);
       }
     } else {
+      if (typeof unregisterHelperTickListener === "function") {
+        unregisterHelperTickListener(roundLogHelperTick);
+      }
       roundLogFlush();
       if (_roundLogFlushTimer !== null) {
         window.clearInterval(_roundLogFlushTimer);

@@ -236,4 +236,43 @@ assert.deepEqual(
 );
 engineSandbox.__engine.stopEngine();
 
+const ROUND_LOGGER_SOURCE = path.join(ROOT, "engine/ingame/round-logger.js");
+const roundLoggerListeners = new Set();
+const roundLoggerIntervals = [];
+const roundLoggerSandbox = {
+  roundLoggerEnabled: false,
+  window: {
+    setInterval: (_callback, delay) => {
+      roundLoggerIntervals.push({ type: "set", delay });
+      return roundLoggerIntervals.length;
+    },
+    clearInterval: (id) => roundLoggerIntervals.push({ type: "clear", id }),
+  },
+  localStorage: { setItem: () => {}, getItem: () => null },
+  getOpenFrontGameContext: () => ({ game: { ticks: () => 0 } }),
+  getCachedPlayerViews: () => [],
+  registerHelperTickListener: (listener) => roundLoggerListeners.add(listener),
+  unregisterHelperTickListener: (listener) => roundLoggerListeners.delete(listener),
+  globalThis: null,
+};
+roundLoggerSandbox.globalThis = roundLoggerSandbox;
+vm.runInNewContext(
+  `${fs.readFileSync(ROUND_LOGGER_SOURCE, "utf8")}\nglobalThis.__roundLogger = { setRoundLoggerEnabled };`,
+  roundLoggerSandbox,
+  { filename: ROUND_LOGGER_SOURCE },
+);
+roundLoggerSandbox.__roundLogger.setRoundLoggerEnabled(true);
+roundLoggerSandbox.__roundLogger.setRoundLoggerEnabled(true);
+assert.equal(
+  roundLoggerListeners.size,
+  1,
+  "re-enabling the round logger must not accumulate helper tick listeners",
+);
+roundLoggerSandbox.__roundLogger.setRoundLoggerEnabled(false);
+assert.equal(
+  roundLoggerListeners.size,
+  0,
+  "disabling the round logger must unregister its helper tick listener",
+);
+
 console.log("performance regression tests passed");

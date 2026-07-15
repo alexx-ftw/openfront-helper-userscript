@@ -178,9 +178,8 @@ assert.equal(
 );
 assert.equal(openingBot.openingExpansionFollowUpPending, false);
 
-// With winFixes enabled, NationBot.tick must use the engine's configured poll
-// cadence directly. A second attackRate gate would skip the regular decision
-// at tick 2 below (the old 0.6 cadence scale still leaves it at 18 game ticks).
+// Polling must not rerun the full decision chain. Win-fix keeps the old 0.6
+// combat cadence scale, so a 30-tick Impossible attack rate becomes 18 ticks.
 const cadenceCalls = [];
 const CadenceNoopBehavior = class {
   maybeSendCasualEmoji() {}
@@ -263,8 +262,14 @@ await cadenceBot.tick(1);
 await cadenceBot.tick(2);
 assert.equal(
   cadenceCalls.length,
+  1,
+  "win-fix polling must not repeat the full combat chain before its cadence crossing",
+);
+await cadenceBot.tick(18);
+assert.equal(
+  cadenceCalls.length,
   2,
-  "win-fix combat runs on the configured poll cadence without an attackRate delay",
+  "win-fix combat uses the scaled attackRate cadence instead of every poll",
 );
 
 assert.equal(sandbox.isEarlyGameBoatEta(300), true);

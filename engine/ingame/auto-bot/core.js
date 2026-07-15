@@ -75,6 +75,9 @@
     // Optional bounded profiler. Disabled by default so the normal bot path
     // does not allocate samples or call performance.now() for diagnostics.
     performanceProfiling: false,
+    // Keep win-fix combat more active than the faithful Nation cadence without
+    // running the full decision chain on every 200 ms engine poll.
+    combatCadenceScale: 0.6,
     sizeReserveScale: 1.5, // hold back (mapShare × this) troops as we grow (anti-collapse)
     sizeReserveCap: 0.6, // cap on the size-aware reserve
     mirvLeaderShare: 0.4, // once we own ≥ this share, proactively MIRV the strongest rival
@@ -208,8 +211,7 @@
   }
 
   // Throttles (ms) for non-combat work so we don't spam the worker / re-issue
-  // intents every poll. In win-fix mode, combat follows the engine's configured
-  // tickMs cadence directly; it has no second artificial attack cooldown.
+  // intents every poll. Combat cadence is derived from attackRate below.
   const MAX_DEFENSE_RESERVE = 0.8; // never hold back more than this for defense
   // Soft ceiling used by the TerraNullius reserve calculation. The actual
   // win-fix attack amount uses the Config.attackLogic loss for one frontier
