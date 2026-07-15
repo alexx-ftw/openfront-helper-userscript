@@ -245,4 +245,24 @@ const enclosed = loadScorer({
 assert.equal(enclosed[0].x, 300, "spawn candidates outside the team polyhedron must be rejected");
 assert.equal(enclosed[0].teamPolyhedronScore, 1);
 
+const diverseWidth = 600;
+const diverse = loadScorer({
+  width: diverseWidth,
+  height: 300,
+  candidates: [100, 110, 120, 200, 300, 400].map((x) => ({
+    ref: 150 * diverseWidth + x,
+    x,
+    y: 150,
+  })),
+  players: [],
+});
+assert.equal(diverse[0].x, 300, "diversity filtering must preserve the best exact tile");
+for (let left = 0; left < diverse.length; left += 1) {
+  for (let right = left + 1; right < diverse.length; right += 1) {
+    const distance =
+      Math.abs(diverse[left].x - diverse[right].x) + Math.abs(diverse[left].y - diverse[right].y);
+    assert.ok(distance >= 60, "exact fallback spots must represent distinct map areas");
+  }
+}
+
 console.log("spawn entity scoring tests passed");

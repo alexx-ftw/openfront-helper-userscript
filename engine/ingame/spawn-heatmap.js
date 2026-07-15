@@ -27,6 +27,8 @@
   // deterministic visual path while the exact result is built incrementally.
   const SPAWN_HEATMAP_MAX_STATIC_CANDIDATES = SPAWN_HEATMAP_MAX_CELLS;
   const SPAWN_HEATMAP_TOP_N = 5;
+  const EXACT_SPAWN_CANDIDATE_POOL_SIZE = SPAWN_HEATMAP_TOP_N * 8;
+  const SPAWN_TOP_SPOT_MIN_DISTANCE = 60;
   const SPAWN_HEATMAP_ENEMY_PRESSURE_R = 220;
   const SPAWN_HEATMAP_TEAM_ATTRACT_R = 110;
   const SPAWN_HEATMAP_TEAM_MIN_GAP = 30;
@@ -902,7 +904,10 @@
       if (topSpots.length >= SPAWN_HEATMAP_TOP_N) break;
       let diverse = true;
       for (const spot of topSpots) {
-        if (Math.abs(cand.x - spot.x) + Math.abs(cand.y - spot.y) < 60) {
+        if (
+          Math.abs(cand.x - spot.x) + Math.abs(cand.y - spot.y) <
+          SPAWN_TOP_SPOT_MIN_DISTANCE
+        ) {
           diverse = false;
           break;
         }
@@ -1046,9 +1051,33 @@
     };
     let position = 0;
     while (position < best.length && compare(best[position], candidate) <= 0) position += 1;
-    if (position >= SPAWN_HEATMAP_TOP_N && best.length >= SPAWN_HEATMAP_TOP_N) return;
+    if (
+      position >= EXACT_SPAWN_CANDIDATE_POOL_SIZE &&
+      best.length >= EXACT_SPAWN_CANDIDATE_POOL_SIZE
+    ) return;
     best.splice(position, 0, candidate);
-    if (best.length > SPAWN_HEATMAP_TOP_N) best.pop();
+    if (best.length > EXACT_SPAWN_CANDIDATE_POOL_SIZE) best.pop();
+  }
+
+  function selectDiverseExactSpawnCandidates(candidates) {
+    if (!Array.isArray(candidates) || candidates.length === 0) return null;
+    const selected = [];
+    for (const candidate of candidates) {
+      let isDistinct = true;
+      for (const spot of selected) {
+        if (
+          Math.abs(candidate.x - spot.x) + Math.abs(candidate.y - spot.y) <
+          SPAWN_TOP_SPOT_MIN_DISTANCE
+        ) {
+          isDistinct = false;
+          break;
+        }
+      }
+      if (!isDistinct) continue;
+      selected.push(candidate);
+      if (selected.length >= SPAWN_HEATMAP_TOP_N) break;
+    }
+    return selected;
   }
 
   let _exactSpawnCacheSrcRef = null;
@@ -1294,7 +1323,8 @@
       },
     });
 
-    const result = best.length > 0 ? best : null;
+    let result = selectDiverseExactSpawnCandidates(best);
+    if (incremental) result = best.length > 0 ? best : null;
     if (!incremental) {
       _exactSpawnCacheSrcRef = (game && game.__src) || game;
       _exactSpawnCacheIndexVersion = index.version;
@@ -1393,7 +1423,7 @@
       _asyncExactSpawnResultSrcRef = job.src;
       _asyncExactSpawnResultIndexVersion = job.indexVersion;
       _asyncExactSpawnResultSignature = job.points.signature;
-      _asyncExactSpawnResult = job.best.length > 0 ? job.best : null;
+      _asyncExactSpawnResult = selectDiverseExactSpawnCandidates(job.best);
     };
 
     try {
