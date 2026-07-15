@@ -1,0 +1,19 @@
+{
+  "threshold": 1.52,
+  "mode": "strict",
+  "minLines": 5,
+  "minTokens": 50,
+  "maxLines": 500,
+  "formats": ["javascript", "typescript"],
+  "reporters": ["console", "threshold"],
+  "output": "jscpd-report",
+  "ignore": [
+    "**/node_modules/**",
+    "**/openfront-helper.user.js",
+    "**/jscpd-report/**",
+    "**/coverage/**",
+    "**/dist/**",
+    "**/build/**"
+  ],
+  "absolute": true
+}

@@ -1,0 +1,2350 @@
+{
+  "build.mjs": {
+    "no-console": {
+      "warning": 0,
+      "error": 10
+    }
+  },
+  "engine/ingame/advisor-intel.js": {
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 6
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-implicit-coercion": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/advisor-panel.js": {
+    "max-statements": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/alliance-policy.js": {
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/alliance-requests-panel.js": {
+    "max-lines-per-function": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 5
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 11
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 5
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 5
+    },
+    "max-depth": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-empty": {
+      "warning": 0,
+      "error": 8
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/alliances.js": {
+    "max-statements": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "engine/ingame/attack-highlight.js": {
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 4
+    },
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/attack-ratio-hotkey.js": {
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/auto-bot/allianceBehavior.js": {
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 11
+    },
+    "no-empty": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 4
+    },
+    "max-depth": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 3
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 2
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/auto-bot/attackBehavior.js": {
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 25
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 25
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 22
+    },
+    "max-params": {
+      "warning": 0,
+      "error": 2
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 5
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 8
+    },
+    "sonarjs/no-invariant-returns": {
+      "warning": 0,
+      "error": 1
+    },
+    "max-lines-per-function": {
+      "warning": 0,
+      "error": 4
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 5
+    },
+    "no-implicit-coercion": {
+      "warning": 0,
+      "error": 8
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 17
+    },
+    "require-atomic-updates": {
+      "warning": 0,
+      "error": 1
+    },
+    "max-depth": {
+      "warning": 0,
+      "error": 5
+    },
+    "sonarjs/no-dead-store": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-redundant-jump": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-unused-vars": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/auto-bot/context.js": {
+    "complexity": {
+      "warning": 0,
+      "error": 3
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 8
+    },
+    "no-implicit-coercion": {
+      "warning": 0,
+      "error": 17
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/auto-bot/earlyGame.js": {
+    "complexity": {
+      "warning": 0,
+      "error": 4
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 3
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/auto-bot/engine.js": {
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 2
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/auto-bot/gameApi.js": {
+    "max-lines-per-function": {
+      "warning": 0,
+      "error": 1
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 5
+    },
+    "no-implicit-coercion": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-nested-functions": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 4
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 6
+    },
+    "max-depth": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-unused-vars": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-dead-store": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "engine/ingame/auto-bot/helpers.js": {
+    "sonarjs/pseudo-random": {
+      "warning": 0,
+      "error": 2
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/auto-bot/legendaryPlanner.js": {
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 4
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 6
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-dead-store": {
+      "warning": 0,
+      "error": 1
+    },
+    "max-lines-per-function": {
+      "warning": 0,
+      "error": 1
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/auto-bot/lifecycle.js": {
+    "no-console": {
+      "warning": 0,
+      "error": 9
+    },
+    "max-lines-per-function": {
+      "warning": 0,
+      "error": 3
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 3
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 20
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 4
+    },
+    "max-params": {
+      "warning": 0,
+      "error": 2
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 8
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 7
+    },
+    "sonarjs/super-linear-regex": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-implicit-coercion": {
+      "warning": 0,
+      "error": 14
+    },
+    "no-promise-executor-return": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-unmodified-loop-condition": {
+      "warning": 0,
+      "error": 3
+    },
+    "no-empty": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/auto-bot/mirvBehavior.js": {
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 3
+    },
+    "max-depth": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-redundant-assignments": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "engine/ingame/auto-bot/nationExecution.js": {
+    "no-implicit-coercion": {
+      "warning": 0,
+      "error": 1
+    },
+    "max-lines-per-function": {
+      "warning": 0,
+      "error": 1
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 3
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 4
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 4
+    },
+    "sonarjs/no-unused-vars": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-dead-store": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "engine/ingame/auto-bot/naval-interception.js": {
+    "max-lines-per-function": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/auto-bot/nukeBehavior.js": {
+    "max-statements": {
+      "warning": 0,
+      "error": 2
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 7
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 5
+    },
+    "sonarjs/no-inverted-boolean-check": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/updated-loop-counter": {
+      "warning": 0,
+      "error": 1
+    },
+    "max-lines-per-function": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/auto-bot/panel.js": {
+    "max-lines-per-function": {
+      "warning": 0,
+      "error": 3
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-empty": {
+      "warning": 0,
+      "error": 3
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "engine/ingame/auto-bot/performance.js": {
+    "no-implicit-coercion": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-nested-template-literals": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "engine/ingame/auto-bot/sensing.js": {
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/auto-bot/structureBehavior.js": {
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 13
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 58
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 40
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 35
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 33
+    },
+    "max-lines-per-function": {
+      "warning": 0,
+      "error": 4
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 5
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-dead-store": {
+      "warning": 0,
+      "error": 5
+    },
+    "max-depth": {
+      "warning": 0,
+      "error": 6
+    },
+    "prefer-const": {
+      "warning": 0,
+      "error": 1
+    },
+    "max-params": {
+      "warning": 0,
+      "error": 4
+    },
+    "sonarjs/no-unused-vars": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/auto-bot/warshipBehavior.js": {
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 21
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 13
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 14
+    },
+    "sonarjs/no-nested-assignment": {
+      "warning": 0,
+      "error": 1
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 3
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 2
+    },
+    "no-empty": {
+      "warning": 0,
+      "error": 6
+    },
+    "max-depth": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "engine/ingame/auto-donate.js": {
+    "max-lines-per-function": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-empty": {
+      "warning": 0,
+      "error": 21
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 19
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 6
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 6
+    },
+    "max-depth": {
+      "warning": 0,
+      "error": 1
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 2
+    },
+    "require-atomic-updates": {
+      "warning": 0,
+      "error": 2
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "engine/ingame/auto-leave.js": {
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/boat-macro.js": {
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "engine/ingame/boat-panel.js": {
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 3
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/boat-prediction.js": {
+    "max-params": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 6
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 4
+    },
+    "max-depth": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 5
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 6
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 6
+    },
+    "no-func-assign": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/bootstrap.js": {
+    "max-lines-per-function": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-empty": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "engine/ingame/bot-markers.js": {
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "engine/ingame/build-timer.js": {
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 2
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 4
+    },
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/enemy-intent-intel.js": {
+    "prefer-const": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 4
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 4
+    },
+    "sonarjs/prefer-single-boolean-return": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 2
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/estate-panel.js": {
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-dead-store": {
+      "warning": 0,
+      "error": 1
+    },
+    "require-atomic-updates": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/game-start-notification.js": {
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/game-time-alert.js": {
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 5
+    }
+  },
+  "engine/ingame/gold-per-minute.js": {
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 11
+    },
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 12
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 3
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 4
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 4
+    },
+    "sonarjs/no-dead-store": {
+      "warning": 0,
+      "error": 1
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/heatmaps.js": {
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 16
+    },
+    "sonarjs/no-all-duplicated-branches": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 4
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 3
+    },
+    "max-params": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 3
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/helper-users-panel.js": {
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 2
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/map-overlay-scheduler.js": {
+    "no-implicit-coercion": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 4
+    },
+    "prefer-const": {
+      "warning": 0,
+      "error": 2
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 4
+    },
+    "max-depth": {
+      "warning": 0,
+      "error": 4
+    },
+    "max-params": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/name-overlay.js": {
+    "complexity": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 2
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 3
+    },
+    "max-params": {
+      "warning": 0,
+      "error": 3
+    },
+    "sonarjs/no-unused-vars": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-dead-store": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 4
+    }
+  },
+  "engine/ingame/network-logger.js": {
+    "prefer-const": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/nuke-impact.js": {
+    "max-lines-per-function": {
+      "warning": 0,
+      "error": 1
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 3
+    },
+    "sonarjs/no-inverted-boolean-check": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/nuke-landing-zones.js": {
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 2
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 2
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/nuke-prediction.js": {
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 3
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 3
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 2
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/nuke-suggestions.js": {
+    "prefer-const": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 47
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 37
+    },
+    "sonarjs/no-all-duplicated-branches": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 22
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 16
+    },
+    "max-params": {
+      "warning": 0,
+      "error": 13
+    },
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 9
+    },
+    "max-depth": {
+      "warning": 0,
+      "error": 1
+    },
+    "max-lines-per-function": {
+      "warning": 0,
+      "error": 7
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 8
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 18
+    },
+    "sonarjs/no-dead-store": {
+      "warning": 0,
+      "error": 8
+    },
+    "no-promise-executor-return": {
+      "warning": 0,
+      "error": 2
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 5
+    },
+    "sonarjs/no-unused-vars": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/misplaced-loop-counter": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/nuke-trajectory.js": {
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/panel-layout.js": {
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "engine/ingame/quick-panel.js": {
+    "sonarjs/no-unused-vars": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-dead-store": {
+      "warning": 0,
+      "error": 1
+    },
+    "max-lines-per-function": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/block-scoped-var": {
+      "warning": 0,
+      "error": 10
+    },
+    "no-empty": {
+      "warning": 0,
+      "error": 22
+    },
+    "no-redeclare": {
+      "warning": 0,
+      "error": 24
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 6
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 4
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 4
+    },
+    "sonarjs/max-switch-cases": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-implicit-coercion": {
+      "warning": 0,
+      "error": 2
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 4
+    },
+    "no-prototype-builtins": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 3
+    },
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/retaliation-hud.js": {
+    "complexity": {
+      "warning": 0,
+      "error": 3
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 3
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 4
+    },
+    "no-empty": {
+      "warning": 0,
+      "error": 3
+    },
+    "max-depth": {
+      "warning": 0,
+      "error": 4
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "engine/ingame/right-click-conquest.js": {
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-unused-vars": {
+      "warning": 0,
+      "error": 4
+    },
+    "sonarjs/no-dead-store": {
+      "warning": 0,
+      "error": 3
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 7
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 2
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "prefer-const": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/round-logger.js": {
+    "prefer-const": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 4
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/runtime.js": {
+    "prefer-const": {
+      "warning": 0,
+      "error": 93
+    },
+    "sonarjs/no-all-duplicated-branches": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-implicit-coercion": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-empty": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/selective-trade-policy.js": {
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 6
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 4
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 3
+    }
+  },
+  "engine/ingame/shared-utils.js": {
+    "complexity": {
+      "warning": 0,
+      "error": 2
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 6
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 5
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/super-linear-regex": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/signal-scheduler.js": {
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 2
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/silo-sam-tracker.js": {
+    "no-empty": {
+      "warning": 0,
+      "error": 44
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 32
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 15
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 18
+    },
+    "sonarjs/no-duplicated-branches": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 1
+    },
+    "max-depth": {
+      "warning": 0,
+      "error": 15
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 6
+    },
+    "no-redeclare": {
+      "warning": 0,
+      "error": 15
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 7
+    },
+    "sonarjs/block-scoped-var": {
+      "warning": 0,
+      "error": 7
+    },
+    "no-prototype-builtins": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-implicit-coercion": {
+      "warning": 0,
+      "error": 5
+    },
+    "max-params": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-inverted-boolean-check": {
+      "warning": 0,
+      "error": 1
+    },
+    "max-lines-per-function": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/sos-defense.js": {
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/spawn-heatmap.js": {
+    "complexity": {
+      "warning": 0,
+      "error": 10
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 10
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 12
+    },
+    "max-depth": {
+      "warning": 0,
+      "error": 5
+    },
+    "max-lines-per-function": {
+      "warning": 0,
+      "error": 2
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 2
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 4
+    },
+    "max-params": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-unmodified-loop-condition": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "engine/ingame/spawn-index.js": {
+    "max-lines-per-function": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 2
+    },
+    "max-params": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "engine/ingame/spawn-objective.js": {
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/team-build-stats.js": {
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 8
+    },
+    "max-lines-per-function": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 4
+    },
+    "no-empty": {
+      "warning": 0,
+      "error": 2
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 2
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 2
+    },
+    "max-depth": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-dead-store": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/trade-balances.js": {
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 5
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 11
+    },
+    "max-params": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 6
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 4
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/warship-routes.js": {
+    "complexity": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 4
+    },
+    "no-useless-assignment": {
+      "warning": 0,
+      "error": 2
+    },
+    "max-statements": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/ws-hook.js": {
+    "no-empty": {
+      "warning": 0,
+      "error": 10
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 3
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 2
+    },
+    "max-depth": {
+      "warning": 0,
+      "error": 10
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 5
+    },
+    "no-implicit-coercion": {
+      "warning": 0,
+      "error": 3
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "engine/lobby/auto-join.js": {
+    "sonarjs/no-implicit-global": {
+      "warning": 0,
+      "error": 14
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 4
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 4
+    },
+    "sonarjs/no-inverted-boolean-check": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/pseudo-random": {
+      "warning": 0,
+      "error": 8
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-redundant-jump": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/lobby/core.js": {
+    "prefer-const": {
+      "warning": 0,
+      "error": 11
+    },
+    "sonarjs/void-use": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/lobby/floating-autojoin.js": {
+    "max-lines-per-function": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-empty": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/shared/i18n.js": {
+    "max-lines-per-function": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-dupe-keys": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-ignored-exceptions": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "engine/shared/settings.js": {
+    "max-lines-per-function": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "scripts/audit-i18n.mjs": {
+    "no-console": {
+      "warning": 0,
+      "error": 5
+    }
+  },
+  "src/shell/assets.ts": {
+    "@typescript-eslint/consistent-type-definitions": {
+      "warning": 0,
+      "error": 3
+    },
+    "@typescript-eslint/prefer-nullish-coalescing": {
+      "warning": 0,
+      "error": 3
+    },
+    "@typescript-eslint/no-unnecessary-condition": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "src/shell/audio.ts": {
+    "@typescript-eslint/no-unnecessary-condition": {
+      "warning": 0,
+      "error": 1
+    },
+    "@typescript-eslint/prefer-optional-chain": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "src/shell/chrome-shim.ts": {
+    "@typescript-eslint/no-unnecessary-type-assertion": {
+      "warning": 0,
+      "error": 1
+    },
+    "@typescript-eslint/no-empty-function": {
+      "warning": 0,
+      "error": 4
+    }
+  },
+  "src/shell/i18n.ts": {
+    "@typescript-eslint/prefer-nullish-coalescing": {
+      "warning": 0,
+      "error": 1
+    },
+    "@typescript-eslint/no-unnecessary-condition": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "src/shell/index.ts": {
+    "@typescript-eslint/no-unnecessary-condition": {
+      "warning": 0,
+      "error": 2
+    },
+    "@typescript-eslint/prefer-nullish-coalescing": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "src/shell/messaging.ts": {
+    "@typescript-eslint/no-invalid-void-type": {
+      "warning": 0,
+      "error": 1
+    },
+    "@typescript-eslint/no-confusing-void-expression": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-undefined-argument": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/void-use": {
+      "warning": 0,
+      "error": 2
+    },
+    "@typescript-eslint/require-await": {
+      "warning": 0,
+      "error": 2
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "warning": 0,
+      "error": 2
+    },
+    "@typescript-eslint/array-type": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "src/shell/notification.ts": {
+    "sonarjs/no-try-promise": {
+      "warning": 0,
+      "error": 1
+    },
+    "@typescript-eslint/no-confusing-void-expression": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "src/shell/popup/launcher.ts": {
+    "@typescript-eslint/no-unsafe-return": {
+      "warning": 0,
+      "error": 1
+    },
+    "@typescript-eslint/no-unnecessary-condition": {
+      "warning": 0,
+      "error": 2
+    },
+    "@typescript-eslint/restrict-template-expressions": {
+      "warning": 0,
+      "error": 4
+    }
+  },
+  "src/shell/popup/panel.ts": {
+    "@typescript-eslint/consistent-type-definitions": {
+      "warning": 0,
+      "error": 7
+    },
+    "@typescript-eslint/array-type": {
+      "warning": 0,
+      "error": 9
+    },
+    "@typescript-eslint/prefer-nullish-coalescing": {
+      "warning": 0,
+      "error": 12
+    },
+    "@typescript-eslint/no-unnecessary-type-assertion": {
+      "warning": 0,
+      "error": 8
+    },
+    "@typescript-eslint/no-confusing-void-expression": {
+      "warning": 0,
+      "error": 11
+    },
+    "@typescript-eslint/no-unsafe-return": {
+      "warning": 0,
+      "error": 2
+    },
+    "@typescript-eslint/no-explicit-any": {
+      "warning": 0,
+      "error": 4
+    },
+    "@typescript-eslint/prefer-optional-chain": {
+      "warning": 0,
+      "error": 1
+    },
+    "@typescript-eslint/no-unsafe-assignment": {
+      "warning": 0,
+      "error": 9
+    },
+    "@typescript-eslint/no-unsafe-argument": {
+      "warning": 0,
+      "error": 4
+    },
+    "@typescript-eslint/no-unsafe-call": {
+      "warning": 0,
+      "error": 2
+    },
+    "@typescript-eslint/no-unsafe-member-access": {
+      "warning": 0,
+      "error": 15
+    },
+    "@typescript-eslint/no-unnecessary-condition": {
+      "warning": 0,
+      "error": 7
+    },
+    "sonarjs/no-nested-assignment": {
+      "warning": 0,
+      "error": 1
+    },
+    "@typescript-eslint/ban-ts-comment": {
+      "warning": 0,
+      "error": 4
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "warning": 0,
+      "error": 4
+    },
+    "@typescript-eslint/no-unnecessary-type-conversion": {
+      "warning": 0,
+      "error": 1
+    },
+    "@typescript-eslint/no-unnecessary-boolean-literal-compare": {
+      "warning": 0,
+      "error": 1
+    },
+    "@typescript-eslint/non-nullable-type-assertion-style": {
+      "warning": 0,
+      "error": 1
+    },
+    "require-atomic-updates": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "src/shell/storage.ts": {
+    "@typescript-eslint/consistent-type-definitions": {
+      "warning": 0,
+      "error": 1
+    },
+    "@typescript-eslint/prefer-optional-chain": {
+      "warning": 0,
+      "error": 1
+    },
+    "@typescript-eslint/require-await": {
+      "warning": 0,
+      "error": 3
+    },
+    "sonarjs/void-use": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "src/shell/viewport.ts": {
+    "@typescript-eslint/restrict-template-expressions": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "test/attack-defense-post.mjs": {
+    "sonarjs/code-eval": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "test/attack-intent-accounting.mjs": {
+    "sonarjs/code-eval": {
+      "warning": 0,
+      "error": 2
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "test/auto-donate.mjs": {
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/code-eval": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "test/early-game.mjs": {
+    "sonarjs/code-eval": {
+      "warning": 0,
+      "error": 6
+    },
+    "no-useless-escape": {
+      "warning": 0,
+      "error": 2
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 4
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "test/game-start-notification.mjs": {
+    "sonarjs/code-eval": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 2
+    },
+    "no-regex-spaces": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-regex-spaces": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "test/intent-rate-limit.mjs": {
+    "sonarjs/code-eval": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "test/legendary.mjs": {
+    "sonarjs/code-eval": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-useless-escape": {
+      "warning": 0,
+      "error": 4
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "test/maritime-invasion-economy.mjs": {
+    "sonarjs/code-eval": {
+      "warning": 0,
+      "error": 2
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "test/naval-interception.mjs": {
+    "sonarjs/code-eval": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "test/nuke-economy-policy.mjs": {
+    "sonarjs/code-eval": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "test/nuke-suggestions.mjs": {
+    "sonarjs/code-eval": {
+      "warning": 0,
+      "error": 2
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "test/performance-regressions.mjs": {
+    "sonarjs/code-eval": {
+      "warning": 0,
+      "error": 6
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "test/port-placement.mjs": {
+    "sonarjs/code-eval": {
+      "warning": 0,
+      "error": 2
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "test/sam-defense-policy.mjs": {
+    "sonarjs/code-eval": {
+      "warning": 0,
+      "error": 1
+    },
+    "max-params": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "test/silo-sam-tracker.mjs": {
+    "sonarjs/code-eval": {
+      "warning": 0,
+      "error": 2
+    },
+    "no-promise-executor-return": {
+      "warning": 0,
+      "error": 4
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "test/smoke.mjs": {
+    "sonarjs/code-eval": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "test/spawn-entity-scoring.mjs": {
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/code-eval": {
+      "warning": 0,
+      "error": 2
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "test/spawn-heatmap.mjs": {
+    "sonarjs/code-eval": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "test/spawn-index.mjs": {
+    "sonarjs/code-eval": {
+      "warning": 0,
+      "error": 1
+    },
+    "max-params": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "test/spawn-objective.mjs": {
+    "sonarjs/code-eval": {
+      "warning": 0,
+      "error": 1
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 2
+    }
+  }
+}
