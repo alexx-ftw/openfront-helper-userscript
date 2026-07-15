@@ -901,6 +901,11 @@ assert.equal(
   7,
   "SAM defense sums every hostile Silo level, including one projected construction slot",
 );
+assert.equal(
+  behavior.samLevelParityTarget(),
+  6,
+  "SAM upgrade parity uses the strongest hostile Silo network instead of global hostile capacity",
+);
 state.settings.winFixes = false;
 assert.equal(
   behavior.missileSiloParityTarget(),
@@ -1312,24 +1317,52 @@ assert.equal(
 own.sams = [makeUnit(403, 3), makeUnit(404, 3)];
 assert.equal(
   behavior.samLevelParityGap(),
-  1,
+  0,
   "SAM parity uses total own interceptor capacity instead of only the highest SAM",
 );
+own.sams = [makeUnit(403, 3), makeUnit(404, 2)];
+assert.equal(
+  behavior.samLevelParityGap(),
+  1,
+  "SAM parity reports the remaining capacity gap against the strongest hostile network",
+);
 own.sams = [reactiveSam];
-assert.equal(behavior.samLevelParityGap(), 6, "SAM parity reports the missing capacity");
+assert.equal(behavior.samLevelParityGap(), 5, "SAM parity reports the missing capacity");
 assert.equal(
   await behavior.maybeUpgradeSamForSiloParity(),
   true,
-  "A SAM is upgraded when hostile Silo capacity exceeds our own capacity",
+  "A SAM is upgraded when the strongest hostile Silo network exceeds our own capacity",
 );
 assert.equal(sentBuilds.length, 1, "Proactive SAM parity emits one upgrade");
-own.sams = [makeUnit(402, 7)];
+own.sams = [makeUnit(402, 6)];
 assert.equal(behavior.samLevelParityGap(), 0, "A single SAM at the target level closes SAM parity");
 assert.equal(
   await behavior.maybeUpgradeSamForSiloParity(),
   false,
   "SAM parity does not repeat an upgrade once one SAM reaches the target",
 );
+const originalPlayersForSingleSiloParity = behavior.game.players;
+const originalOwnSamsForSingleSiloParity = own.sams;
+behavior.game.players = () => [own, enemySingleLevelOneSilo];
+own.sams = [makeUnit(408, 1)];
+sentBuilds.length = 0;
+assert.equal(
+  behavior.samLevelParityTarget(),
+  1,
+  "A single level-1 hostile Silo creates only a level-1 SAM parity target",
+);
+assert.equal(
+  await behavior.maybeUpgradeSamForSiloParity(),
+  false,
+  "A matching level-1 SAM is not upgraded merely because an enemy owns a Silo",
+);
+assert.equal(
+  sentBuilds.length,
+  0,
+  "A matching level-1 hostile-Silo parity check emits no upgrade",
+);
+behavior.game.players = originalPlayersForSingleSiloParity;
+own.sams = originalOwnSamsForSingleSiloParity;
 own.sams = [makeUnit(405, 3), makeUnit(406, 2), makeUnit(407, 2)];
 assert.equal(
   behavior.shouldBuildHostileSiloSam(),

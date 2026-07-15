@@ -2426,7 +2426,9 @@
 
     samLevelParityTarget() {
       return state.settings.winFixes
-        ? this.enemyMissileSiloCapacityTarget()
+        // Match the documented parity rule: compare against the strongest
+        // hostile player's Silo network, not the sum of unrelated enemies.
+        ? this.enemyMissileSiloCapacityParityTarget()
         : 0;
     }
 
