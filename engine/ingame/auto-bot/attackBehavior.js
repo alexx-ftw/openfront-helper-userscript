@@ -1060,6 +1060,7 @@
       target = null,
       preferredTile = null,
       spendableTroops = null,
+      commitFraction = null,
     ) {
       const configuredSpendable = Number(spendableTroops);
       const available =
@@ -1081,9 +1082,22 @@
       }
 
       // The engine conquers the first tile before checking whether the attack
-      // has enough troops for another tile. Use that calculated one-tile loss
-      // as the complete payload for both land expansion and transport probes;
-      // the spendable budget still caps it against reserves and pending intents.
+      // has enough troops for another tile. Use the calculated one-tile loss as
+      // the default payload for land expansion and transport probes. The first
+      // live opening may explicitly request a larger safe burst; the spendable
+      // budget still caps it against reserves and pending intents.
+      const configuredCommitFraction = Number(commitFraction);
+      if (Number.isFinite(configuredCommitFraction)) {
+        const boundedCommitFraction = Math.min(
+          1,
+          Math.max(0, configuredCommitFraction),
+        );
+        const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
+        return Math.min(
+          available,
+          Math.max(minimum, ownTroops * boundedCommitFraction),
+        );
+      }
       return Math.min(available, minimum);
     }
 
@@ -4031,7 +4045,8 @@
       // src: game.addExecution(new AttackExecution(troops/2, player,
       //   target.isPlayer() ? target.id() : terraNullius().id())).
       // Client: emitIntent(ctors.attack, target.id()|null, troops). In win-fix
-      // mode a TerraNullius opening uses the calculated one-tile loss.
+      // mode a TerraNullius opening uses the calculated one-tile loss as a
+      // minimum, then commits the configured opening burst.
       this.reconcileOutboundAttackIntentCommitments();
       const ctors = discoverCtors(getEventBus());
       const isTerraNullius = target?.isPlayer?.() !== true;
@@ -4047,6 +4062,7 @@
               target,
               null,
               spendableTroops,
+              EARLY_EXPAND_COMMIT,
             )
           : Math.min(requestedTroops, spendableTroops);
       if (!Number.isFinite(troops) || troops < 1) return false;

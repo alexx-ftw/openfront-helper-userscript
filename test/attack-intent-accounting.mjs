@@ -230,9 +230,9 @@ assert.equal(
 
 // TerraNullius is free land: a capacity increase must not move the opening
 // reserve beyond the current army and make expansion wait for its own growth.
-// Keep the acceleration reserve while it is affordable, and use the calculated
-// one-tile attackLogic loss for direct land attacks even when the live troop
-// capacity is much larger than the current army.
+// Keep the acceleration reserve while it is affordable, use the calculated
+// one-tile attackLogic loss for normal land attacks, and allow only the first
+// opening burst to commit the configured fraction of the live army.
 const terraNullius = { isPlayer: () => false, id: () => "TerraNullius" };
 const expandingGame = {
   ticks: () => tick,
@@ -281,7 +281,7 @@ assert.equal(
   "the first TerraNullius opening burst is not blocked by the capacity-derived reserve",
 );
 assert.equal(troopEmissions.length, openingEmissionCount + 1);
-assert.equal(troopEmissions.at(-1), 2);
+assert.equal(troopEmissions.at(-1), 15000);
 
 // emitBoat is the final synchronous boundary after the route/launch await. It
 // must reapply the same target-specific reserve instead of falling back to the

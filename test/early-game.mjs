@@ -50,8 +50,8 @@ assert.match(
 );
 assert.match(
   nationExecutionSource,
-  /forceSendAttack\(this\.mg\.terraNullius\(\)\)/,
-  "the opening attack must let AttackBehavior calculate the TerraNullius amount",
+  /openingCommitFraction = openingWinFix[\s\S]{0,120}EARLY_EXPAND_COMMIT[\s\S]{0,80}0\.5/,
+  "the opening attack must use the win-fix commit while faithful mode keeps 50%",
 );
 assert.match(
   nationExecutionSource,
@@ -70,6 +70,7 @@ assert.match(
 );
 
 const openingCalls = [];
+const openingFractions = [];
 let openingFollowUps = 0;
 const NoopBehavior = class {};
 const openingSandbox = {
@@ -118,8 +119,9 @@ const openingSandbox = {
       this.pending = 0;
     }
 
-    forceSendAttack(_target, ...args) {
-      openingCalls.push(args.length);
+    forceSendAttack(_target, fraction) {
+      openingCalls.push(arguments.length - 1);
+      openingFractions.push(fraction);
       this.pending = 1;
       return true;
     }
@@ -154,8 +156,13 @@ const openingBot = new openingSandbox.NationBot(openingGame, {
 await openingBot.tick(0);
 assert.equal(
   openingCalls[0],
-  0,
-  "the first live TerraNullius burst delegates troop calculation to AttackBehavior",
+  1,
+  "the first live TerraNullius burst passes its opening commit to AttackBehavior",
+);
+assert.equal(
+  openingFractions[0],
+  0.6,
+  "the first live TerraNullius burst uses the configured 60% commit",
 );
 assert.equal(
   openingBot.openingExpansionFollowUpPending,
@@ -916,8 +923,8 @@ const targetBehavior = new targetSandbox.AttackBehavior(
 );
 
 // TerraNullius expansion must use the engine's real attackLogic loss for the
-// first frontier tile. Direct land expansion and targeted transport probes both
-// use that one-tile cost rather than a percentage of the live army.
+// first frontier tile. Normal land expansion and targeted transport probes use
+// that one-tile cost; only the first live opening may request a larger burst.
 const minimumTerraNulliusBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 minimumTerraNulliusBehavior.player = {
   troops: () => 100000,
@@ -952,9 +959,18 @@ assert.equal(
 assert.equal(
   minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(minimumTerraNulliusTarget, null, 99000),
   24,
-  "a direct TerraNullius land burst cannot be inflated above the tile cost",
+  "a normal TerraNullius land burst stays at the one-tile cost",
 );
-assert.ok(24 < 100000 * 0.6, "the per-tile TerraNullius cost remains below the early land commit");
+assert.equal(
+  minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(
+    minimumTerraNulliusTarget,
+    null,
+    99000,
+    0.6,
+  ),
+  60000,
+  "the opening TerraNullius burst can commit above the one-tile cost",
+);
 
 const radioactiveBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 let radioactiveTiles = 0;

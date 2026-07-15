@@ -36,6 +36,11 @@ existing Nation decision chain but enriches its opening target choice:
 4. use a transport boat only when the computed route ETA is at most 300 game
    ticks (30 seconds at 100 ms per tick).
 
+The first live Terra Nullius attack uses the calculated one-tile loss as a
+minimum and commits the configured opening burst. Later land attacks and
+transport probes retain the one-tile payload unless their own policy explicitly
+requests a larger commitment.
+
 Port construction applies the same largest-surface rule independently: a port
 candidate must be a border tile adjacent to the canonical open-ocean component.
 Shared closed lakes may still contribute to broader coastal/trade planning, but
