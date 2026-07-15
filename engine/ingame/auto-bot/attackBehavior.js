@@ -3432,6 +3432,7 @@
       if (
         borderingFriends.length === 0 &&
         borderingEnemies.length === 0 &&
+        !this.hasNeedyTeamDonationTarget() &&
         !this.hasTriggerRatioTroops()
       ) {
         return;
@@ -3453,6 +3454,30 @@
       for (const strategy of strategies) {
         if (await strategy()) return;
       }
+    }
+
+    hasNeedyTeamDonationTarget() {
+      if (
+        !state.settings.features.donate ||
+        !state.settings.winFixes ||
+        this.game.config().gameConfig().gameMode !== GameMode.Team ||
+        this.game.config().donateTroops() === false
+      ) {
+        return false;
+      }
+
+      const needThreshold = state.settings.donateNeedThreshold ?? 0.8;
+      return this.game.players().some((teammate) => {
+        if (
+          !this.player.isOnSameTeam(teammate) ||
+          !teammate.isAlive() ||
+          teammate.smallID() === this.player.smallID()
+        ) {
+          return false;
+        }
+        const maximum = this.game.config().maxTroops(teammate);
+        return teammate.troops() / Math.max(maximum, 1) < needThreshold;
+      });
     }
 
     // getAttackStrategies — AiAttackBehavior (private). The strategy predicates

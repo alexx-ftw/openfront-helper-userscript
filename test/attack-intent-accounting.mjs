@@ -525,6 +525,29 @@ const donorBehavior = new sandbox.AttackBehavior(
   {},
   {},
 );
+
+// A needy teammate does not have to share our border. The outer attack-strategy
+// gate must still reach donation when our army is below the unrelated attack
+// trigger ratio but has troops available above the donation reserve.
+const donorSpendableTroops = donorBehavior.getEarlyGameSpendableTroops.bind(donorBehavior);
+donorBehavior.getEarlyGameSpendableTroops = () => 1;
+donorBehavior.hasTriggerRatioTroops = () => false;
+donorBehavior.hasNeighboringBotWithStructures = () => false;
+let remoteDonationStrategyReached = false;
+donorBehavior.getAttackStrategies = () => [
+  async () => {
+    remoteDonationStrategyReached = true;
+    return true;
+  },
+];
+await donorBehavior.attackBestTarget([], []);
+assert.equal(
+  remoteDonationStrategyReached,
+  true,
+  "a remote needy teammate keeps the donation strategy reachable",
+);
+donorBehavior.getEarlyGameSpendableTroops = donorSpendableTroops;
+
 assert.equal(donorBehavior.donateTroops(), true);
 assert.equal(
   troopEmissions.at(-1),
