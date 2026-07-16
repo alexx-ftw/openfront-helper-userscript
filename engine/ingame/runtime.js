@@ -81,6 +81,10 @@ const TEAM_COLORS = {
   Nations: "#eb3333",
 };
 
+// These bindings are shared mutable state for the classic scripts concatenated
+// after runtime.js. Keep them as `let`: their setters live in later files and a
+// `const` conversion makes settings synchronization abort during UI startup.
+/* eslint-disable prefer-const -- assignments occur in later classic scripts */
 let botMarkersEnabled = false;
 let botMarkerAnimationFrame = null;
 let allyMarkersEnabled = false;
@@ -219,6 +223,7 @@ let spawnHeatmapEnabled = false;
 let spawnMarkersEnabled = false;
 // Anti-AFK: Web Worker keep-alive for background tabs.
 let antiAfkEnabled = false;
+/* eslint-enable prefer-const */
 
 const goldTrackers = new Map();
 const incomingGoldTransfers = new Map();
