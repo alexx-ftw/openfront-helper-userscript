@@ -17,10 +17,13 @@
   <li>
     You must keep every live outbound tribe attack in the attack-candidate set, even when the tribe
     is temporarily absent from <code>nearby()</code>. Compare the live committed troops with the
-    current Defense Post-aware capture floor on every decision pass. Reconcile and add
-    target-specific pending intents instead of treating their mere existence as sufficient. When the
-    combined visible and pending force is underfunded, emit only the missing reinforcement; when it
-    already meets the floor, do not emit another attack.
+    current Defense Post-aware robust conquest floor (four times the live tribe force) on every
+    decision pass. Two times the tribe force is only the engine's legal admission threshold and must
+    not be treated as sufficient for conquest. Reconcile and add target-specific pending intents
+    instead of treating their mere existence as sufficient. When the combined visible and pending
+    force is underfunded, emit only the missing reinforcement; when it already meets the floor, do
+    not emit another attack. Reinforcement of an active underfunded conquest takes priority over
+    starting a new Terra Nullius intent.
   </li>
 </ul>
 

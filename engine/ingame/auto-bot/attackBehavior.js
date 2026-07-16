@@ -1804,6 +1804,10 @@
 
     async tryImmediateAttackPriorities(context) {
       if (!context.expandOn || !state.settings.winFixes) return false;
+      // Finish conquests already in flight before opening another front. Free
+      // land is persistent; an underfunded tribe attack decays while the tribe
+      // keeps producing troops and must not be starved by Terra Nullius.
+      if (await this.reinforceIncompleteOutboundPlayerAttack()) return true;
       if (context.hasAccessibleTerraNullius) {
         const expanded = await this.sendAttack(
           this.game.terraNullius(),
@@ -1814,7 +1818,6 @@
         );
         if (expanded) return true;
       }
-      if (await this.reinforceIncompleteOutboundPlayerAttack()) return true;
       const sleeping = this.disconnectedBorderingPlayers(context.borderingPlayers);
       if (sleeping.length === 0) return false;
       runtimeDebugLog(
@@ -5483,8 +5486,9 @@
         liveCommitted,
         Math.max(0, Number(existingCommittedTroops) || 0),
       ) + pendingCommitted;
-      // Commit only the missing 2x capture floor. The former 4x preference
-      // starved other simultaneous tribe captures without changing legality.
+      // The authoritative Nation bot uses 4x as its conquest force. Treat that
+      // as the all-or-nothing capture floor: 2x merely makes an attack legal,
+      // but frequently stalls while the tribe produces troops during combat.
       if (maxTroops + committed < minimumAttackTroops) return 0;
       const troops = Math.max(
         0,
@@ -5499,15 +5503,11 @@
         1,
         Number(defensePostProfile?.attackCostMultiplier || 1),
       );
-      return Math.max(0, Number(target?.troops?.()) || 0) * 2 * defenseMultiplier;
+      return Math.max(0, Number(target?.troops?.()) || 0) * 4 * defenseMultiplier;
     }
 
     getPlayerAttackPreferredTroopFloor(target, defensePostProfile = null) {
-      const tribeFloor = this.getTribeCaptureTroopFloor(
-        target,
-        defensePostProfile,
-      );
-      return target?.type?.() === PlayerType.Bot ? tribeFloor : tribeFloor * 2;
+      return this.getTribeCaptureTroopFloor(target, defensePostProfile);
     }
 
     tribeTargetNeedsMoreTroops(target) {

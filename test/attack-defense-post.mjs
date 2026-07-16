@@ -146,15 +146,15 @@ assert.equal(
 );
 behavior.botAttackTroopsSent = 0;
 assert.equal(
-  behavior.calculateBotAttackTroops(enemy, 1500, cachedProfile),
-  1000,
-  "a sufficiently funded attack commits only the Defense Post-aware minimum",
+  behavior.calculateBotAttackTroops(enemy, 2500, cachedProfile),
+  2000,
+  "a sufficiently funded attack commits the robust Defense Post-aware conquest force",
 );
 behavior.botAttackTroopsSent = 0;
 assert.equal(
   behavior.calculateBotAttackTroops(enemy, 500, null),
-  200,
-  "without coverage, a bot attack commits only the 2x capture floor",
+  400,
+  "without coverage, a bot attack commits the robust 4x conquest floor",
 );
 
 tick++;

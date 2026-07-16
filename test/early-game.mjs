@@ -94,6 +94,21 @@ assert.match(
   /!isParallelTribeAttack[\s\S]{0,120}this\.hasPendingOutboundAttackForTarget\(target\)/,
   "pending attacks must block only duplicate targets, not unrelated expansion",
 );
+const immediatePriorityStart = attackSource.indexOf("async tryImmediateAttackPriorities(context)");
+const reinforcementPriority = attackSource.indexOf(
+  "await this.reinforceIncompleteOutboundPlayerAttack()",
+  immediatePriorityStart,
+);
+const terraNulliusPriority = attackSource.indexOf(
+  "if (context.hasAccessibleTerraNullius)",
+  immediatePriorityStart,
+);
+assert.ok(
+  immediatePriorityStart >= 0 &&
+    reinforcementPriority > immediatePriorityStart &&
+    terraNulliusPriority > reinforcementPriority,
+  "an incomplete conquest must be reinforced before starting TerraNullius expansion",
+);
 
 const openingCalls = [];
 const openingFractions = [];
