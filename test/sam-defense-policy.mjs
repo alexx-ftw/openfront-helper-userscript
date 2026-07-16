@@ -221,6 +221,7 @@ own.incomingAttacks = originalOwnIncomingForDefensePost;
 delete behavior.isLandAttack;
 
 const defensePostLivenessBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+defensePostLivenessBehavior.handleHostileSiloSamMaximumPriority = async () => null;
 defensePostLivenessBehavior.prioritizeMaritimeInvasionDefense = async () => false;
 defensePostLivenessBehavior.maybeUpgradeMissileDefenseSam = async () => false;
 defensePostLivenessBehavior.hasPriorStructureForDefensePost = () => true;
@@ -265,6 +266,50 @@ assert.equal(
   "The bot does not spend the Defense Post savings on a lower-priority structure",
 );
 
+const hostileSiloMaximumPriorityBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+hostileSiloMaximumPriorityBehavior.game = {
+  config: () => ({ isUnitDisabled: () => false }),
+};
+hostileSiloMaximumPriorityBehavior.hasBuiltHostileSiloThreat = () => true;
+hostileSiloMaximumPriorityBehavior.shouldBuildHostileSiloSam = () => true;
+let maximumPrioritySamResult = false;
+let maximumPrioritySamAttempts = 0;
+let lowerPriorityConstructionCalls = 0;
+hostileSiloMaximumPriorityBehavior.maybeSpawnHostileSiloSam = async () => {
+  maximumPrioritySamAttempts++;
+  return maximumPrioritySamResult;
+};
+hostileSiloMaximumPriorityBehavior.handleImmediateStructureDefense = async () => {
+  lowerPriorityConstructionCalls++;
+  return true;
+};
+assert.equal(
+  await hostileSiloMaximumPriorityBehavior.handleStructures(),
+  false,
+  "A failed hostile-Silo SAM placement reserves the entire construction slot",
+);
+assert.equal(maximumPrioritySamAttempts, 1);
+assert.equal(
+  lowerPriorityConstructionCalls,
+  0,
+  "No economy, naval, Defense Post, or offensive construction runs before the required SAM",
+);
+maximumPrioritySamResult = true;
+assert.equal(
+  await hostileSiloMaximumPriorityBehavior.handleStructures(),
+  true,
+  "A successful maximum-priority SAM placement consumes the construction slot",
+);
+assert.equal(maximumPrioritySamAttempts, 2);
+assert.equal(lowerPriorityConstructionCalls, 0);
+hostileSiloMaximumPriorityBehavior.hasBuiltHostileSiloThreat = () => false;
+assert.equal(
+  await hostileSiloMaximumPriorityBehavior.handleHostileSiloSamMaximumPriority(),
+  null,
+  "Enemy gold without a completed hostile Silo does not hard-reserve construction",
+);
+assert.equal(maximumPrioritySamAttempts, 2);
+
 assert.equal(
   typeof behavior.enemySamCapacityParityTarget,
   "function",
@@ -307,6 +352,11 @@ assert.equal(
   behavior.hasHostileSiloThreat(),
   true,
   "A built hostile silo triggers the mandatory SAM response",
+);
+assert.equal(
+  behavior.hasBuiltHostileSiloThreat(),
+  true,
+  "The hard SAM priority recognizes a completed hostile Silo",
 );
 const originalPlayersForSiloLevelSum = behavior.game.players;
 behavior.game.players = () => [own, enemySingleLevelOneSilo];
@@ -646,6 +696,15 @@ behavior.maybeSpawnStructure = async (...args) => {
   hostileSamCalls.push(args);
   return true;
 };
+const preemptiveOwnSams = own.sams;
+const preemptiveLaunchObserved = behavior._hostileMissileLaunchObserved;
+own.sams = [];
+behavior._hostileMissileLaunchObserved = false;
+assert.equal(
+  behavior.shouldBuildHostileSiloSam(),
+  true,
+  "A confirmed hostile Silo threat authorizes the first SAM before a missile launches",
+);
 assert.equal(
   await behavior.maybeSpawnHostileSiloSam(),
   true,
@@ -683,6 +742,8 @@ assert.deepEqual(
   ],
   "The dedicated SAM request forces a bounded coverage-ranked placement",
 );
+own.sams = preemptiveOwnSams;
+behavior._hostileMissileLaunchObserved = preemptiveLaunchObserved;
 assert.equal(
   await behavior.maybeSpawnHostileSiloSam(),
   false,
@@ -1720,6 +1781,176 @@ assert.equal(
 );
 assert.equal(sentBuilds.length, preemptiveBuildCount + 1);
 assert.equal(sentBuilds.at(-1), preemptiveSamBuildable);
+
+const economicBuildFirstBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+const existingEconomicStructure = { isUnderConstruction: () => false };
+let economicUpgradeCalls = 0;
+const newCityBuildable = { canBuild: 456 };
+economicBuildFirstBehavior.structureSpawnEligible = () => true;
+economicBuildFirstBehavior.getConstructionCost = () => 1n;
+economicBuildFirstBehavior.availableGoldAfterReserve = () => 10n;
+economicBuildFirstBehavior.player = { units: () => [existingEconomicStructure] };
+economicBuildFirstBehavior.hasStructureUnderConstruction = () => false;
+economicBuildFirstBehavior.structureSpawnTile = async () => newCityBuildable;
+economicBuildFirstBehavior.structureUpgradeBeforeSpawn = async () => {
+  economicUpgradeCalls++;
+  return true;
+};
+economicBuildFirstBehavior.maybeUpgradeStructure = async () => {
+  economicUpgradeCalls++;
+  return true;
+};
+assert.equal(
+  await economicBuildFirstBehavior.maybeSpawnStructure(UNIT.City),
+  true,
+  "An economic structure uses a legal new site before considering an upgrade",
+);
+assert.equal(economicUpgradeCalls, 0, "A legal new City site performs no upgrade probe");
+assert.equal(sentBuilds.at(-1), newCityBuildable);
+
+economicBuildFirstBehavior.structureSpawnTile = async () => null;
+economicBuildFirstBehavior.findEconomicPlacementOrExhaustion = async () => ({
+  status: "indeterminate",
+});
+assert.equal(
+  await economicBuildFirstBehavior.maybeSpawnStructure(UNIT.Factory),
+  false,
+  "An indeterminate bounded placement miss cannot authorize an economic upgrade",
+);
+assert.equal(economicUpgradeCalls, 0);
+economicBuildFirstBehavior.findEconomicPlacementOrExhaustion = async () => ({
+  status: "no-space",
+});
+assert.equal(
+  await economicBuildFirstBehavior.maybeSpawnStructure(UNIT.Port),
+  true,
+  "A complete no-space result upgrades the requested economic structure",
+);
+assert.equal(economicUpgradeCalls, 1);
+
+const exhaustiveEconomyBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+const exhaustiveStructures = [{ tile: () => 0 }];
+exhaustiveEconomyBehavior.player = {
+  smallID: () => 1,
+  numTilesOwned: () => 4,
+  borderTiles: () => new Set([0, 3]),
+};
+exhaustiveEconomyBehavior.structureTileValueFunction = () => (tile) => tile;
+exhaustiveEconomyBehavior.structureProbeOptions = () => ({ probeTimeoutMs: 2500 });
+exhaustiveEconomyBehavior.isDangerousStructureTile = () => false;
+exhaustiveEconomyBehavior.buildableFor = async (type, tile) => ({
+  type,
+  canBuild: tile,
+});
+exhaustiveEconomyBehavior.isUsableStructureBuildable = (buildable) => buildable !== null;
+exhaustiveEconomyBehavior.game = {
+  width: () => 4,
+  height: () => 1,
+  ref: (x) => x,
+  x: (tile) => tile,
+  y: () => 0,
+  isValidCoord: (x, y) => x >= 0 && x < 4 && y === 0,
+  ownerID: () => 1,
+  units: () => exhaustiveStructures,
+  nearbyUnits: () => exhaustiveStructures,
+  euclideanDistSquared: (left, right) => (left - right) ** 2,
+  config: () => ({ structureMinDist: () => 2 }),
+};
+const exhaustiveCityPlacement = await exhaustiveEconomyBehavior.findEconomicPlacementOrExhaustion(
+  UNIT.City,
+);
+assert.equal(exhaustiveCityPlacement.status, "buildable");
+assert.equal(exhaustiveCityPlacement.buildable.type, UNIT.City);
+assert.equal(
+  exhaustiveCityPlacement.buildable.canBuild,
+  3,
+  "The exhaustive fallback finds a legal new economic site missed by the bounded sample",
+);
+exhaustiveEconomyBehavior.game.width = () => 2;
+assert.equal(
+  (await exhaustiveEconomyBehavior.findEconomicPlacementOrExhaustion(UNIT.Factory)).status,
+  "no-space",
+  "Only a complete territory scan with no geometrically legal tile authorizes an upgrade",
+);
+
+const portSpaceBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+portSpaceBehavior.isOceanPortTile = (tile) => tile === "ocean-shore";
+portSpaceBehavior.localLandStructureSpawnTile = (tile) =>
+  tile === "ocean-shore" ? "snapped-port" : false;
+portSpaceBehavior.isDangerousStructureTile = () => false;
+const portScanContext = {
+  borderTiles: ["lake-shore", "ocean-shore"],
+  valueFunction: (tile) => (tile === "ocean-shore" ? 10 : 0),
+};
+const portScanState = () => ({
+  context: portScanContext,
+  index: 0,
+  hasGeometricSpace: false,
+  snappedSites: new Set(),
+});
+const portSpaceResult = portSpaceBehavior.scanAllEconomicPortSpace(UNIT.Port, portScanState());
+assert.equal(portSpaceResult.status, "candidate");
+assert.equal(
+  portSpaceResult.tile,
+  "ocean-shore",
+  "An open-ocean Port site proves that new-build space remains",
+);
+portSpaceBehavior.isOceanPortTile = () => false;
+assert.equal(
+  portSpaceBehavior.scanAllEconomicPortSpace(UNIT.Port, portScanState()).status,
+  "no-space",
+  "Lake-only shores do not prevent a Port upgrade after open-ocean space is exhausted",
+);
+
+const changingSnapshotBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+changingSnapshotBehavior.economicPlacementScanState = () => ({
+  context: { fingerprint: "before" },
+});
+changingSnapshotBehavior.scanAllLandEconomicSpace = () => ({
+  status: "no-space",
+});
+changingSnapshotBehavior.clearEconomicPlacementScan = () => {};
+changingSnapshotBehavior.economicPlacementFingerprint = () => "after";
+assert.equal(
+  (await changingSnapshotBehavior.findEconomicPlacementOrExhaustion(UNIT.City)).status,
+  "indeterminate",
+  "A territory or structure snapshot change invalidates a completed no-space proof",
+);
+
+const boundedEconomyScanBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+let boundedOwnerChecks = 0;
+const boundedEconomyContext = {
+  bounds: { minX: 0, maxX: 99_999, minY: 0, maxY: 0 },
+  game: {
+    isValidCoord: () => true,
+    ref: (x) => x,
+    ownerID: () => {
+      boundedOwnerChecks++;
+      return 2;
+    },
+  },
+  mySid: 1,
+  structures: [],
+  minDistSquared: 0,
+  valueFunction: () => 0,
+};
+const boundedEconomyScan = {
+  context: boundedEconomyContext,
+  x: 0,
+  y: 0,
+  hasGeometricSpace: false,
+};
+assert.equal(
+  boundedEconomyScanBehavior.scanAllLandEconomicSpace(UNIT.City, boundedEconomyScan).status,
+  "pending",
+  "A map-wide no-space proof pauses after one normal placement budget",
+);
+assert.equal(
+  boundedOwnerChecks,
+  25,
+  "A single construction decision examines at most 25 exhaustive-scan coordinates",
+);
+assert.equal(boundedEconomyScan.x, 25, "The next decision resumes the saved scan cursor");
 assert.equal(
   await launchGateBehavior.maybeUpgradePlannedSam({
     currentLevel: 1,
@@ -2195,9 +2426,11 @@ own.gold = originalReactiveGold;
 // The dedicated hostile-silo SAM path is covered above; the wiring tests can
 // now exercise the proactive parity branch before ordinary construction.
 const originalMaybeSpawnHostileSiloSam = behavior.maybeSpawnHostileSiloSam;
+const originalHostileSiloSamMaximumPriority = behavior.handleHostileSiloSamMaximumPriority;
 const originalHydrogenStructureCoverage = behavior.maybeEnsureHydrogenStructureCoverage;
 const originalHydrogenSiloUpgrade = behavior.maybeUpgradeHydrogenProtectionSam;
 behavior.maybeSpawnHostileSiloSam = async () => false;
+behavior.handleHostileSiloSamMaximumPriority = async () => null;
 let wiredStructureCoverageCalls = 0;
 behavior.maybeEnsureHydrogenStructureCoverage = async () => {
   wiredStructureCoverageCalls++;
@@ -2244,6 +2477,7 @@ assert.equal(
 );
 assert.equal(wiredUpgradeCalls, 1, "The reactive SAM path is wired into handleStructures");
 behavior.maybeSpawnHostileSiloSam = originalMaybeSpawnHostileSiloSam;
+behavior.handleHostileSiloSamMaximumPriority = originalHostileSiloSamMaximumPriority;
 behavior.maybeEnsureHydrogenStructureCoverage = originalHydrogenStructureCoverage;
 behavior.maybeUpgradeHydrogenProtectionSam = originalHydrogenSiloUpgrade;
 

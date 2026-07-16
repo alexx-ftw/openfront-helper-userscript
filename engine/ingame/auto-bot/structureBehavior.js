@@ -470,13 +470,8 @@
       let config;
       {
         config = this.game.config();
-        if (
-          typeof config.isUnitDisabled === "function" &&
-          config.isUnitDisabled(UNIT.Port)
-        ) {
-          return false;
-        }
       }
+      if (!this.maritimeDefenseConstructionEnabled(config)) return false;
       if (!autoBotBuildAllowed(UNIT.Port)) return false;
 
       let ports;
@@ -485,23 +480,38 @@
       }
 
       const portStatus = maritimePortConstructionStatus(ports);
+      const warships = this.player.units(UNIT.Warship) || [];
+      if (warships.length > 0) return false;
 
-      // Keep the economic slot reserved until the Port is ready. The following
-      // Warship phase will consume the saved gold as soon as it can.
-      if (portStatus.underConstruction || portStatus.completed) return true;
+      // Keep the economic slot reserved until the Port is ready. Once a
+      // Warship exists (including one under construction), ordinary structures
+      // must resume even while the transport signal remains active.
+      if (portStatus.underConstruction) return true;
+      if (portStatus.completed) return true;
 
       // A Port cannot be produced on a landlocked/closed-water map. Preserve
       // the normal policy in that impossible case rather than freezing every
       // other construction forever.
       if (!this.hasOceanPortTiles()) return false;
 
-      {
-        await this.maybeSpawnStructure(UNIT.Port, { forceNewStructure: true });
-      }
-      // Returning true deliberately consumes this build decision even when the
-      // Port is not affordable yet, preventing City/Factory/SAM/Silo spending
-      // from draining the reserve needed for the naval defense.
-      return true;
+      const availableGold = this.spendableConstructionGold();
+      const portCost = this.getConstructionCost(UNIT.Port);
+      if (availableGold < portCost) return true;
+
+      // If an affordable Port still cannot be emitted (no legal tile, a failed
+      // probe, or a missing build surface), do not claim success and starve all
+      // other construction indefinitely.
+      return this.maybeSpawnStructure(UNIT.Port, { forceNewStructure: true });
+    }
+
+    maritimeDefenseConstructionEnabled(config) {
+      if (state.settings.features?.warship !== true) return false;
+      if (state.settings.warshipAutoSpawn === false) return false;
+      if (typeof config.isUnitDisabled !== "function") return true;
+      return (
+        !config.isUnitDisabled(UNIT.Port) &&
+        !config.isUnitDisabled(UNIT.Warship)
+      );
     }
 
     // ── core-semantics owned count (used wherever src uses unitsOwned) ──────────
@@ -531,6 +541,10 @@
     // handleStructures — NationStructureBehavior.ts:143 (now async).
     async handleStructures() {
       const legendaryDifficulty = isLegendaryDifficulty();
+      const hostileSiloSamDecision =
+        await this.handleHostileSiloSamMaximumPriority();
+      if (hostileSiloSamDecision !== null) return hostileSiloSamDecision;
+
       if (await this.handleImmediateStructureDefense(legendaryDifficulty)) {
         return true;
       }
@@ -563,6 +577,19 @@
         this.placementsCount++;
       }
       return built;
+    }
+
+    async handleHostileSiloSamMaximumPriority() {
+      if (!state.settings.winFixes) return null;
+      if (this.game.config().isUnitDisabled(UNIT.SAMLauncher)) return null;
+      if (!this.hasBuiltHostileSiloThreat()) return null;
+      if (!this.shouldBuildHostileSiloSam()) return null;
+
+      // A real hostile Silo makes protective SAM placement the construction
+      // planner's hard top priority. If placement is temporarily blocked by
+      // gold, retry cadence, or an unavailable legal probe, reserve this slot
+      // instead of spending the SAM budget on economy or offense.
+      return (await this.maybeSpawnHostileSiloSam()) === true;
     }
 
     async handleImmediateStructureDefense(legendaryDifficulty) {
@@ -1525,6 +1552,11 @@
       ) > 0;
     }
 
+    hasBuiltHostileSiloThreat() {
+      const summary = this.hostileMissileSiloCapacitySummary();
+      return summary !== null && summary.builtHostileSiloCount > 0;
+    }
+
     // Gold alone opens the SAM-building gate, but it does not justify running
     // the full trajectory planner: until a hostile silo or missile exists the
     // forecast has no incoming routes to model. Keep this cheap signal separate
@@ -1672,7 +1704,6 @@
 
     shouldBuildHostileSiloSam() {
       if (!state.settings.winFixes) return false;
-      if (!this.hasObservedHostileMissileLaunch()) return false;
       const siloSummary = this.hostileMissileSiloCapacitySummary();
       const threat = this.hostileThreatSnapshot();
       if (siloSummary === null || threat === null) return false;
@@ -5425,14 +5456,26 @@
         return false;
       }
 
-      // Check if we should upgrade instead of building new
       const structures = this.player.units(type);
-      const upgradeDecision = await this.structureUpgradeBeforeSpawn(
-        type,
-        structures,
-        options,
-      );
-      if (upgradeDecision !== null) return upgradeDecision;
+      const economicType = ECONOMIC_STRUCTURE_TYPES.includes(type);
+      // Productive structures are expansion first. A failed bounded placement
+      // probe is not proof that the map has no room: it can also mean a worker
+      // timeout, an unavailable descriptor, or an unlucky candidate sample.
+      // Therefore it must never be converted into an upgrade. The planner may
+      // upgrade an economic structure only when a future exhaustive placement
+      // result explicitly supplies economicSpaceExhausted=true.
+      if (economicType && this.hasStructureUnderConstruction(structures)) {
+        return false;
+      }
+
+      if (!economicType) {
+        const upgradeDecision = await this.structureUpgradeBeforeSpawn(
+          type,
+          structures,
+          options,
+        );
+        if (upgradeDecision !== null) return upgradeDecision;
+      }
 
       // RANK-THEN-PROBE: structureSpawnTile now returns the snapped BuildableUnit
       // (the first canBuild !== false tile down the value-ranked list) instead of
@@ -5440,9 +5483,20 @@
       // the probe. src: tile = structureSpawnTile(type); if null → return;
       // canBuild = player.canBuild(type, tile); if false → return;
       // addExecution(ConstructionExecution).
-      const bu = await this.structureSpawnTile(type, options);
+      let bu = await this.structureSpawnTile(type, options);
       if (bu === null) {
-        return false;
+        if (!economicType) return false;
+        const placement = await this.findEconomicPlacementOrExhaustion(
+          type,
+          options,
+        );
+        if (placement.status === "buildable") {
+          bu = placement.buildable;
+        } else if (placement.status === "no-space") {
+          return this.maybeUpgradeStructure(structures);
+        } else {
+          return false;
+        }
       }
       const buildMenu = getBuildMenu();
       if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
@@ -6195,6 +6249,300 @@
         if (localResult.handled) return localResult.buildable;
       }
       return this.probeRankedStructureTiles(scored, type, probe, emergency);
+    }
+
+    /**
+     * A bounded random placement miss cannot authorize an economic upgrade.
+     * Enumerate the complete map incrementally and inspect every owned tile
+     * with the same local spacing primitives used by the authoritative
+     * placement reconstruction. One planner decision performs at most the
+     * upstream 25-candidate placement budget; later decisions resume the same
+     * snapshot. Only zero geometrically legal sites across a completed,
+     * unchanged scan proves that space is exhausted. Any missing API,
+     * unsafe-only site, or failed authoritative probe remains indeterminate.
+     */
+    async findEconomicPlacementOrExhaustion(type, options = {}) {
+      const scan = this.economicPlacementScanState(type, options);
+      if (scan === null) return { status: "indeterminate" };
+
+      const scanResult =
+        type === UNIT.Port
+          ? this.scanAllEconomicPortSpace(type, scan)
+          : this.scanAllLandEconomicSpace(type, scan);
+      if (scanResult.status === "pending") return { status: "indeterminate" };
+      if (scanResult.status !== "candidate") {
+        this.clearEconomicPlacementScan(type);
+        if (
+          scanResult.status === "no-space" &&
+          this.economicPlacementFingerprint(type) === scan.context.fingerprint
+        ) {
+          return scanResult;
+        }
+        return { status: "indeterminate" };
+      }
+      const buildable = await this.buildableFor(
+        type,
+        scanResult.tile,
+        this.structureProbeOptions(options).probeTimeoutMs,
+      );
+      if (!this.isUsableStructureBuildable(buildable, scanResult.tile, type)) {
+        return { status: "indeterminate" };
+      }
+      this.clearEconomicPlacementScan(type);
+      return { status: "buildable", buildable };
+    }
+
+    scanAllLandEconomicSpace(type, scan) {
+      const { context } = scan;
+      let visited = 0;
+      let bestTile = null;
+      let bestValue = -Infinity;
+      while (
+        scan.y <= context.bounds.maxY &&
+        visited < STRUCTURE_PLACEMENT_CANDIDATE_LIMIT
+      ) {
+        const x = scan.x;
+        const y = scan.y;
+        this.advanceEconomicLandScan(scan);
+        visited++;
+        const candidate = this.economicLandTileCandidate(type, context, x, y);
+        if (candidate === null) continue;
+        scan.hasGeometricSpace = true;
+        if (candidate.value <= bestValue) continue;
+        bestValue = candidate.value;
+        bestTile = candidate.tile;
+      }
+
+      if (bestTile !== null) return { status: "candidate", tile: bestTile };
+      if (scan.y <= context.bounds.maxY) return { status: "pending" };
+      return scan.hasGeometricSpace
+        ? { status: "indeterminate" }
+        : { status: "no-space" };
+    }
+
+    advanceEconomicLandScan(scan) {
+      scan.x++;
+      if (scan.x <= scan.context.bounds.maxX) return;
+      scan.x = scan.context.bounds.minX;
+      scan.y++;
+    }
+
+    economicLandTileCandidate(type, context, x, y) {
+      if (!context.game.isValidCoord(x, y)) return null;
+      const tile = context.game.ref(x, y);
+      if (context.game.ownerID(tile) !== context.mySid) return null;
+      if (
+        !this.isLocallyStructureSpaced(
+          context.game,
+          tile,
+          context.structures,
+          context.minDistSquared,
+        )
+      ) {
+        return null;
+      }
+      if (this.isDangerousStructureTile(tile, type)) {
+        return { tile, value: -Infinity };
+      }
+      const value = Number(context.valueFunction(tile));
+      return { tile, value: Number.isFinite(value) ? value : -Infinity };
+    }
+
+    scanAllEconomicPortSpace(type, scan) {
+      const { context } = scan;
+      let visited = 0;
+      let bestAnchor = null;
+      let bestValue = -Infinity;
+      while (
+        scan.index < context.borderTiles.length &&
+        visited < STRUCTURE_PLACEMENT_CANDIDATE_LIMIT
+      ) {
+        const anchor = context.borderTiles[scan.index++];
+        visited++;
+        const candidate = this.economicPortAnchorCandidate(
+          type,
+          context,
+          anchor,
+          scan.snappedSites,
+        );
+        if (candidate.status === "indeterminate") return candidate;
+        if (candidate.status !== "candidate") continue;
+        scan.hasGeometricSpace = true;
+        if (candidate.value <= bestValue) continue;
+        bestValue = candidate.value;
+        bestAnchor = anchor;
+      }
+      if (bestAnchor !== null) return { status: "candidate", tile: bestAnchor };
+      if (scan.index < context.borderTiles.length) return { status: "pending" };
+      return scan.hasGeometricSpace
+        ? { status: "indeterminate" }
+        : { status: "no-space" };
+    }
+
+    economicPortAnchorCandidate(type, context, anchor, snappedSites) {
+      if (!this.isOceanPortTile(anchor)) return { status: "skip" };
+      const snapped = this.localLandStructureSpawnTile(anchor);
+      if (snapped === null) return { status: "indeterminate" };
+      if (snapped === false || snappedSites.has(snapped)) {
+        return { status: "skip" };
+      }
+      snappedSites.add(snapped);
+      if (this.isDangerousStructureTile(snapped, type)) {
+        return { status: "candidate", value: -Infinity };
+      }
+      const value = Number(context.valueFunction(anchor));
+      return {
+        status: "candidate",
+        value: Number.isFinite(value) ? value : -Infinity,
+      };
+    }
+
+    economicPlacementScanContext(type, options) {
+      const game = this.game;
+      if (!this.hasEconomicPlacementScanApi(type, game)) return null;
+      const width = Number(game.width());
+      const height = Number(game.height());
+      const mySid = this.player?.smallID?.();
+      const valueFunction = this.structureTileValueFunction(type, options);
+      const config = game.config?.();
+      const structureMinDist = Number(config?.structureMinDist?.());
+      const borderTiles = Array.from(this.player.borderTiles());
+      const structures = game.units(...STRUCTURES_TYPES);
+      const bounds = this.economicPlacementBounds(game, borderTiles, width, height);
+      const fingerprint = this.economicPlacementFingerprint(type);
+      if (!this.economicPlacementContextIsValid({
+        width, height, mySid, valueFunction, structureMinDist,
+        structures, bounds, fingerprint,
+      })) return null;
+      return {
+        game,
+        width,
+        height,
+        mySid,
+        valueFunction,
+        borderTiles,
+        structures,
+        bounds,
+        fingerprint,
+        minDistSquared: structureMinDist * structureMinDist,
+      };
+    }
+
+    economicPlacementScanState(type, options) {
+      if (!(this._economicPlacementScans instanceof Map)) {
+        this._economicPlacementScans = new Map();
+      }
+      const key = String(type);
+      const existing = this._economicPlacementScans.get(key);
+      if (existing) return existing;
+      const context = this.economicPlacementScanContext(type, options);
+      if (context === null) return null;
+      const scan = {
+        context,
+        x: context.bounds.minX,
+        y: context.bounds.minY,
+        index: 0,
+        hasGeometricSpace: false,
+        snappedSites: new Set(),
+      };
+      this._economicPlacementScans.set(key, scan);
+      return scan;
+    }
+
+    clearEconomicPlacementScan(type) {
+      this._economicPlacementScans?.delete(String(type));
+    }
+
+    hasEconomicPlacementScanApi(type, game) {
+      if (!ECONOMIC_STRUCTURE_TYPES.includes(type) || !game) return false;
+      const methods = [
+        "width", "height", "ref", "ownerID", "isValidCoord",
+        "x", "y", "units", "euclideanDistSquared",
+      ];
+      return (
+        methods.every((method) => typeof game[method] === "function") &&
+        typeof this.player?.borderTiles === "function"
+      );
+    }
+
+    economicPlacementContextIsValid(values) {
+      return Boolean(
+        Number.isInteger(values.width) &&
+          values.width > 0 &&
+          Number.isInteger(values.height) &&
+          values.height > 0 &&
+          values.mySid !== null &&
+          values.mySid !== undefined &&
+          typeof values.valueFunction === "function" &&
+          Number.isFinite(values.structureMinDist) &&
+          values.structureMinDist >= 0 &&
+          Array.isArray(values.structures) &&
+          values.bounds !== null &&
+          values.fingerprint !== null,
+      );
+    }
+
+    economicPlacementBounds(game, borderTiles, width, height) {
+      if (!Array.isArray(borderTiles) || borderTiles.length === 0) return null;
+      let minX = width;
+      let maxX = -1;
+      let minY = height;
+      let maxY = -1;
+      for (const tile of borderTiles) {
+        const x = Number(game.x(tile));
+        const y = Number(game.y(tile));
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
+      }
+      return {
+        minX: Math.max(0, Math.floor(minX)),
+        maxX: Math.min(width - 1, Math.ceil(maxX)),
+        minY: Math.max(0, Math.floor(minY)),
+        maxY: Math.min(height - 1, Math.ceil(maxY)),
+      };
+    }
+
+    economicPlacementFingerprint(type) {
+      const game = this.game;
+      if (
+        !game ||
+        typeof game.units !== "function" ||
+        typeof game.config !== "function" ||
+        typeof this.player?.borderTiles !== "function"
+      ) {
+        return null;
+      }
+      const borderTiles = Array.from(this.player.borderTiles(), String).sort();
+      const structures = game.units(...STRUCTURES_TYPES);
+      if (!Array.isArray(structures)) return null;
+      const structureRecords = structures
+        .map((structure) => this.economicStructureFingerprintRecord(structure))
+        .sort();
+      return JSON.stringify({
+        type,
+        sid: this.player?.smallID?.(),
+        tiles: Number(this.player?.numTilesOwned?.()),
+        minDist: Number(game.config()?.structureMinDist?.()),
+        borderTiles,
+        structureRecords,
+      });
+    }
+
+    economicStructureFingerprintRecord(structure) {
+      const read = (key, fallback) => {
+        const value = structure?.[key];
+        return typeof value === "function" ? value.call(structure) : value ?? fallback;
+      };
+      return JSON.stringify([
+        String(read("type", "")),
+        String(read("id", "")),
+        String(read("tile", "")),
+        Number(read("level", 1)),
+        Boolean(read("isUnderConstruction", false)),
+      ]);
     }
 
     compareStructurePlacementScores(left, right) {

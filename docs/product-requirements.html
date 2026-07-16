@@ -1,5 +1,43 @@
 <h1>Product requirements</h1>
 
+<h2>Auto-Bot update persistence</h2>
+
+<ul>
+  <li>
+    Updating or reinjecting the userscript must preserve the user's persisted Auto-Bot master
+    toggle. Runtime safety stops, including public-lobby blocking and the slow-tick watchdog, may
+    stop the engine but must not save <code>enabled=false</code> as though the user disabled it.
+  </li>
+</ul>
+
+<h2>Economic structure expansion</h2>
+
+<ul>
+  <li>
+    When the planner wants a City, Factory, or Port, it must attempt a new structure before an
+    upgrade. A bounded placement miss, timeout, missing build descriptor, or other indeterminate
+    result must not authorize an upgrade. After the normal bounded placement search fails, the
+    planner must incrementally inspect the complete owned territory across later construction
+    decisions, examining no more than the normal 25-candidate placement budget in one decision.
+    Existing economic structures may be upgraded only when that exhaustive geometric search
+    completes against an unchanged territory/structure snapshot and finds no legal site; incomplete
+    scans, changed snapshots, unsafe-only sites, and failed authoritative probes remain
+    indeterminate and do not permit an upgrade. A no-space proof must never keep one Auto-Bot tick
+    alive while it traverses the map.
+  </li>
+</ul>
+
+<h2>Auto-fire collateral accounting</h2>
+
+<ul>
+  <li>
+    When choosing an atom impact that must cover a hostile SAM or Silo, Auto Fire Building must
+    exclude collateral structures already inside the blast radius of any active own, allied, or
+    otherwise guaranteed in-flight missile. The impact scorer should maximize additional hostile
+    structures destroyed while preserving coverage of the primary target.
+  </li>
+</ul>
+
 <h2>Spawn selection</h2>
 
 <ul>
@@ -108,13 +146,37 @@
   </li>
 </ul>
 
+<h2>Maritime-defense construction liveness</h2>
+
+<ul>
+  <li>
+    An active maritime-invasion signal may reserve construction while an emergency Port is genuinely
+    unaffordable or under construction, and until the first Warship starts. It must not suppress all
+    other structures when Warship automation is disabled, after a Warship exists, or after an
+    affordable Port placement attempt fails for legality or integration reasons.
+  </li>
+</ul>
+
 <h2>Preemptive SAM construction</h2>
 
 <ul>
   <li>
+    Once any live enemy has completed a Missile Silo, placing the required SAM that best protects
+    our structures becomes the absolute construction priority on every difficulty. Until that SAM is
+    placed or already under construction, a failed, unaffordable, or rate-limited placement attempt
+    must reserve the construction slot; economy, naval reserve, Defense Posts, and offensive Silos
+    must not consume its gold. Enemy gold without a completed Silo may remain an anticipatory
+    signal, but must not create this hard reservation.
+  </li>
+  <li>
     A confirmed hostile-silo threat may authorize the first affordable SAM before any hostile
     missile has launched. The final construction gate must preserve that explicit authorization;
     ordinary ratio-driven SAM construction remains locked until a launch is observed.
+  </li>
+  <li>
+    Radioactive Terra Nullius remains an immediate expansion target, but it is not opening free
+    land. If its attack cannot be emitted, its mere presence must not reactivate the
+    opening-expansion veto on otherwise safe troop donations.
   </li>
 </ul>
 
