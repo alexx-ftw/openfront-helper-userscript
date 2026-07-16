@@ -46,15 +46,44 @@
     retuneEngine();
   }
 
-  if (!window.__openfrontAutoBotLoaded) {
+  function runAutoBotWatcherSafely() {
+    try {
+      watcher();
+    } catch (error) {
+      captureRuntimeException(error, "engine/ingame/auto-bot/lifecycle.js:watcher");
+      console.error("[AutoBot] lifecycle watcher error:", error);
+    }
+  }
+
+  function startAutoBotLifecycle() {
+    if (window.__openfrontAutoBotLoaded || !document.body) return false;
     window.__openfrontAutoBotLoaded = true;
-    window.setInterval(watcher, 1200);
-    watcher();
+    window.__openfrontAutoBotWatcherTimer = window.setInterval(
+      runAutoBotWatcherSafely,
+      1200,
+    );
+    runAutoBotWatcherSafely();
     // Persisted enabled=true survives F5 — kick the engine so the tick timer
     // actually starts (loadSettings only restores the flag, not the timer).
     if (state.settings.enabled) setEnabled(true);
     runtimeDebugLog("[AutoBot] page bridge loaded (private-lobby training tool).");
+    return true;
   }
+
+  function scheduleAutoBotLifecycle() {
+    if (startAutoBotLifecycle() || window.__openfrontAutoBotLoadPending) return;
+    window.__openfrontAutoBotLoadPending = true;
+    document.addEventListener(
+      "DOMContentLoaded",
+      () => {
+        window.__openfrontAutoBotLoadPending = false;
+        startAutoBotLifecycle();
+      },
+      { once: true },
+    );
+  }
+
+  scheduleAutoBotLifecycle();
 
 
 // ============================================================================
