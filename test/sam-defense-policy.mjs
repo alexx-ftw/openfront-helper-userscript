@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import vm from "node:vm";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -17,6 +17,7 @@ const UNIT = {
   AtomBomb: "Atom Bomb",
   HydrogenBomb: "Hydrogen Bomb",
   MIRV: "MIRV",
+  MIRVWarhead: "MIRV Warhead",
   Warship: "Warship",
 };
 const Difficulty = {
@@ -52,11 +53,13 @@ const sandbox = {
     Array.from({ length: count }, (_, index) => 10_000 + index),
   setLastAction: () => {},
   tr: (value) => value,
+  captureRuntimeException: () => {},
+  runtimeDebugLog: () => {},
   console,
 };
 sandbox.globalThis = sandbox;
 
-vm.runInNewContext(
+executeClassicScript(
   `${read("engine/ingame/auto-bot/legendaryPlanner.js")}\n${read(
     "engine/ingame/auto-bot/structureBehavior.js",
   )}\nglobalThis.__StructureBehavior = StructureBehavior;`,
@@ -95,6 +98,8 @@ const own = {
   isFriendly: () => false,
   isOnSameTeam: (other) => other?.smallID?.() === 5,
   gold: () => 5_000_000n,
+  troops: () => 100_000,
+  incomingAttacks: () => [],
   silos: [makeUnit(101, 2)],
   sams: [],
 };
@@ -165,6 +170,9 @@ let samDisabled = false;
 
 const behavior = Object.create(sandbox.__StructureBehavior.prototype);
 behavior.player = own;
+// Most of this file exercises the post-launch defensive planner. Dedicated
+// launch-gate coverage below starts from the real locked state.
+behavior._hostileMissileLaunchObserved = true;
 behavior.game = {
   players: () => [own, enemyA, enemyB, enemyC, enemyTeam, enemySilos, enemySiloUnderConstruction],
   config: () => ({
@@ -173,6 +181,89 @@ behavior.game = {
     samRange: (level) => 50 * Number(level || 1),
   }),
 };
+
+behavior.placementsCount = 0;
+assert.equal(
+  behavior.hasPriorStructureForDefensePost(),
+  true,
+  "an emergency-built Silo satisfies the prior-structure Defense Post gate even when the ordinary placement counter is zero",
+);
+const priorSilosForDefensePostGate = own.silos;
+own.silos = [];
+assert.equal(
+  behavior.hasPriorStructureForDefensePost(),
+  false,
+  "Defense Posts remain unavailable as the literal first structure",
+);
+own.silos = priorSilosForDefensePostGate;
+
+const originalDifficultyForDefensePost = sandbox.currentDifficulty;
+const originalOwnTroopsForDefensePost = own.troops;
+const originalOwnIncomingForDefensePost = own.incomingAttacks;
+sandbox.currentDifficulty = () => Difficulty.Legendary;
+own.troops = () => 1000;
+own.incomingAttacks = () => [{ troops: () => 400 }];
+behavior.isLandAttack = () => true;
+assert.equal(
+  behavior.defensePostNeeded(),
+  true,
+  "Legendary treats a meaningful 40% land assault as requiring a Defense Post",
+);
+own.incomingAttacks = () => [{ troops: () => 300 }];
+assert.equal(
+  behavior.defensePostNeeded(),
+  false,
+  "a sub-35% probe does not trigger Defense Post construction",
+);
+sandbox.currentDifficulty = originalDifficultyForDefensePost;
+own.troops = originalOwnTroopsForDefensePost;
+own.incomingAttacks = originalOwnIncomingForDefensePost;
+delete behavior.isLandAttack;
+
+const defensePostLivenessBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+defensePostLivenessBehavior.prioritizeMaritimeInvasionDefense = async () => false;
+defensePostLivenessBehavior.maybeUpgradeMissileDefenseSam = async () => false;
+defensePostLivenessBehavior.hasPriorStructureForDefensePost = () => true;
+defensePostLivenessBehavior.game = {
+  config: () => ({ isUnitDisabled: () => false }),
+};
+defensePostLivenessBehavior.tryBuildDefensePost = async () => false;
+defensePostLivenessBehavior.defensePostNeeded = () => true;
+defensePostLivenessBehavior.maybeEnsureHydrogenStructureCoverage = async () => false;
+defensePostLivenessBehavior.maybeUpgradeHydrogenProtectionSam = async () => false;
+defensePostLivenessBehavior.maybeUpgradeSiloForNukeDemand = async () => false;
+defensePostLivenessBehavior.maybeSpawnHostileSiloSam = async () => false;
+defensePostLivenessBehavior.maybeUpgradeSamForSiloParity = async () => false;
+defensePostLivenessBehavior.samLevelParityGap = () => 0;
+defensePostLivenessBehavior.isInPostSaveUpBlockedPhase = () => false;
+defensePostLivenessBehavior.placementsCount = 0;
+let productiveConstructionCalls = 0;
+defensePostLivenessBehavior.doHandleStructures = async () => {
+  productiveConstructionCalls++;
+  return true;
+};
+defensePostLivenessBehavior.canAffordDefensePost = () => true;
+assert.equal(
+  await defensePostLivenessBehavior.handleStructures(),
+  true,
+  "An affordable Defense Post with no legal tile cannot starve productive construction",
+);
+assert.equal(
+  productiveConstructionCalls,
+  1,
+  "The ordinary construction planner runs after an affordable Defense Post placement failure",
+);
+defensePostLivenessBehavior.canAffordDefensePost = () => false;
+assert.equal(
+  await defensePostLivenessBehavior.handleStructures(),
+  false,
+  "An unaffordable urgent Defense Post still reserves its construction slot",
+);
+assert.equal(
+  productiveConstructionCalls,
+  1,
+  "The bot does not spend the Defense Post savings on a lower-priority structure",
+);
 
 assert.equal(
   typeof behavior.enemySamCapacityParityTarget,
@@ -512,10 +603,18 @@ assert.equal(
   20_000_000n,
   "A MIRV reserve does not block a SAM",
 );
+const existingSilosForReserve = own.silos;
+own.silos = [];
+assert.equal(
+  behavior.availableGoldAfterReserve(UNIT.MissileSilo),
+  20_000_000n,
+  "A nuclear war chest cannot block the first Silo needed to launch it",
+);
+own.silos = existingSilosForReserve;
 assert.equal(
   behavior.availableGoldAfterReserve(UNIT.MissileSilo),
   0n,
-  "A MIRV reserve still applies to offensive silo spending",
+  "A MIRV reserve still applies after a Silo already exists",
 );
 behavior.getPerceivedCost = () => 1_000_000n;
 behavior.maybeSpawnStructure = async (type) => {
@@ -645,12 +744,17 @@ const originalReservedSlotMaybeSpawnHostileSiloSam = behavior.maybeSpawnHostileS
 const originalReservedSlotShouldBuildHostileSiloSam = behavior.shouldBuildHostileSiloSam;
 const originalReservedSlotHostileSiloSamActionBlocked = behavior.hostileSiloSamActionBlocked;
 const originalReservedSlotMaybeUpgradeSamForSiloParity = behavior.maybeUpgradeSamForSiloParity;
+const originalReservedSlotLegendaryMissileDefenseUrgent = behavior.legendaryMissileDefenseUrgent;
+const originalReservedSlotLegendaryConstructionCandidates =
+  behavior.legendaryConstructionCandidates;
 const legendaryPostSamAttempts = [];
 behavior.maybeUpgradeLegendarySam = async () => false;
 behavior.maybeUpgradeHydrogenProtectionSam = async () => false;
 behavior.maybeSpawnHostileSiloSam = async () => false;
 behavior.shouldBuildHostileSiloSam = () => true;
 behavior.hostileSiloSamActionBlocked = () => true;
+behavior.legendaryMissileDefenseUrgent = () => false;
+behavior.legendaryConstructionCandidates = () => [{ type: UNIT.City, cost: 0n, score: 1 }];
 behavior.maybeUpgradeSamForSiloParity = async () => {
   legendaryPostSamAttempts.push("upgrade");
   return false;
@@ -670,13 +774,13 @@ assert.equal(
     nukesEnabled: true,
     economyGrowthPriority: true,
   }),
-  false,
-  "Legendary reserves the construction slot while the mandatory hostile-Silo SAM is backed off",
+  true,
+  "Legendary continues productive construction while the mandatory hostile-Silo SAM is backed off",
 );
 assert.deepEqual(
   legendaryPostSamAttempts,
-  [],
-  "Legendary does not place economy buildings while a hostile-Silo SAM remains pending",
+  [UNIT.City],
+  "Legendary lets productive construction proceed between bounded hostile-Silo SAM retries",
 );
 behavior.maybeUpgradeLegendarySam = originalReservedSlotMaybeUpgradeLegendarySam;
 behavior.maybeUpgradeHydrogenProtectionSam = originalReservedSlotMaybeUpgradeHydrogenProtectionSam;
@@ -684,7 +788,20 @@ behavior.maybeSpawnHostileSiloSam = originalReservedSlotMaybeSpawnHostileSiloSam
 behavior.shouldBuildHostileSiloSam = originalReservedSlotShouldBuildHostileSiloSam;
 behavior.hostileSiloSamActionBlocked = originalReservedSlotHostileSiloSamActionBlocked;
 behavior.maybeUpgradeSamForSiloParity = originalReservedSlotMaybeUpgradeSamForSiloParity;
+behavior.legendaryMissileDefenseUrgent = originalReservedSlotLegendaryMissileDefenseUrgent;
+behavior.legendaryConstructionCandidates = originalReservedSlotLegendaryConstructionCandidates;
 behavior.maybeSpawnStructure = originalMaybeSpawnStructure;
+
+assert.equal(
+  behavior.hasStructureUnderConstruction([makeUnit(950, 5, { underConstruction: false })]),
+  false,
+  "a completed or max-level structure cannot masquerade as pending construction",
+);
+assert.equal(
+  behavior.hasStructureUnderConstruction([makeUnit(951, 1, { underConstruction: true })]),
+  true,
+  "a real same-type construction still blocks duplicate placement",
+);
 
 const originalDemandDrivenUpgradeLegendarySam = behavior.maybeUpgradeLegendarySam;
 const originalDemandDrivenUpgradeHydrogenSam = behavior.maybeUpgradeHydrogenProtectionSam;
@@ -843,6 +960,47 @@ assert.equal(
   threatSamValue(15) > threatSamValue(10),
   true,
   "Threat SAM placement prefers the tile covering more structures",
+);
+
+const compactPlacementBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+const compactStructures = [{ tile: () => 10 }];
+const compactSams = [{ tile: () => 80, level: () => 1 }];
+compactPlacementBehavior.player = {
+  units: (...types) => {
+    if (types.length === 1 && types[0] === UNIT.SAMLauncher) return compactSams;
+    return compactStructures;
+  },
+};
+compactPlacementBehavior.game = {
+  config: () => ({ defaultSamRange: () => 20, samRange: () => 20 }),
+  euclideanDistSquared: (left, right) => (Number(left) - Number(right)) ** 2,
+};
+const compactRanker = compactPlacementBehavior.structurePlacementCompactnessRanker(UNIT.Factory);
+assert.equal(
+  compactRanker(15).sharedSamCoverage,
+  1,
+  "Economic placement recognizes structures that one future SAM can cover together",
+);
+assert.equal(
+  compactRanker(50).sharedSamCoverage,
+  0,
+  "Economic placement rejects a spread-out tile from the shared SAM cluster",
+);
+assert.equal(
+  compactPlacementBehavior.compareStructurePlacementScores(
+    { v: 1, compactness: compactRanker(15) },
+    { v: 10_000, compactness: compactRanker(50) },
+  ) < 0,
+  true,
+  "Shared SAM coverage outranks the old spread-maximizing structure score",
+);
+assert.equal(
+  compactPlacementBehavior.compareStructurePlacementScores(
+    { v: 1, compactness: compactRanker(80) },
+    { v: 10_000, compactness: compactRanker(15) },
+  ) < 0,
+  true,
+  "Existing SAM coverage outranks merely prospective compact coverage",
 );
 
 const coverageProbeStructures = Array.from({ length: 500 }, (_, index) => ({
@@ -1020,6 +1178,7 @@ behavior.game.config = originalGameConfig;
 behavior.game.euclideanDistSquared = originalEuclideanDistSquared;
 
 const hydrogenProtectionBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+hydrogenProtectionBehavior._hostileMissileLaunchObserved = true;
 const hydrogenSam = makeUnit(1101, 1);
 hydrogenProtectionBehavior.player = {
   smallID: () => 1,
@@ -1066,6 +1225,7 @@ assert.equal(
 );
 
 const firstSiloCoverageBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+firstSiloCoverageBehavior._hostileMissileLaunchObserved = true;
 firstSiloCoverageBehavior.player = {
   gold: () => 5_000_000n,
   units: (type) => {
@@ -1105,6 +1265,9 @@ const structureCoverageSam = {
   isActive: () => true,
 };
 const structureCoverageBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+structureCoverageBehavior._hostileMissileLaunchObserved = true;
+let structureCoverageTick = 1;
+let structureCoverageDistanceCalls = 0;
 structureCoverageBehavior.player = {
   gold: () => 5_000_000n,
   units: (type) => {
@@ -1115,7 +1278,11 @@ structureCoverageBehavior.player = {
   },
 };
 structureCoverageBehavior.game = {
-  euclideanDistSquared: (left, right) => (Number(left) - Number(right)) ** 2,
+  ticks: () => structureCoverageTick,
+  euclideanDistSquared: (left, right) => {
+    structureCoverageDistanceCalls++;
+    return (Number(left) - Number(right)) ** 2;
+  },
   config: () => ({
     isUnitDisabled: () => false,
     samRange: (level) => level * 6,
@@ -1132,6 +1299,7 @@ assert.equal(
   2,
   "Structure protection chooses the minimum SAM level covering every structure",
 );
+const firstCoverageDistanceCalls = structureCoverageDistanceCalls;
 sentBuilds.length = 0;
 assert.equal(
   await structureCoverageBehavior.maybeEnsureHydrogenStructureCoverage(),
@@ -1139,7 +1307,13 @@ assert.equal(
   "Structure protection emits the required SAM upgrade",
 );
 assert.equal(sentBuilds.length, 1, "Structure protection emits one upgrade action");
+assert.equal(
+  structureCoverageDistanceCalls,
+  firstCoverageDistanceCalls,
+  "Repeated coverage consumers reuse one SAM-versus-structure geometry plan per tick",
+);
 coverageSamLevel = 2;
+structureCoverageTick++;
 assert.equal(
   structureCoverageBehavior.hydrogenStructureCoveragePlan(),
   null,
@@ -1362,6 +1536,8 @@ behavior.game.players = () => [own, enemyB];
 behavior.game.units = () => [];
 behavior._hostilePlayersSnapshotTick = null;
 behavior._missileDefenseSignalTick = null;
+behavior._activeHostileMissileTick = null;
+behavior._activeHostileMissileCache = null;
 enemyB.gold = () => 1_500_000n;
 behavior.legendaryEmptyMissileDefenseContext = () => ({ threats: [] });
 forecastCalls = 0;
@@ -1378,6 +1554,116 @@ behavior._hostilePlayersSnapshotTick = null;
 behavior._missileDefenseSignalTick = null;
 behavior.legendaryEmptyMissileDefenseContext = originalEmptyMissileContext;
 enemyB.gold = originalEnemyBGoldForSignalTest;
+
+const launchGateBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+let hostileMissileActive = false;
+launchGateBehavior._hostileMissileLaunchObserved = false;
+launchGateBehavior.activeHostileMissileSnapshot = () => hostileMissileActive;
+assert.equal(
+  launchGateBehavior.hasObservedHostileMissileLaunch(),
+  false,
+  "A hostile Silo alone does not unlock SAM construction",
+);
+assert.equal(
+  await launchGateBehavior.maybeSpawnStructure(UNIT.SAMLauncher),
+  false,
+  "No SAM can be constructed before the first hostile missile launch",
+);
+assert.equal(
+  await launchGateBehavior.maybeUpgradePlannedSam({
+    currentLevel: 1,
+    targetLevel: 2,
+  }),
+  false,
+  "No SAM upgrade can spend gold before the first hostile missile launch",
+);
+hostileMissileActive = true;
+assert.equal(
+  launchGateBehavior.hasObservedHostileMissileLaunch(),
+  true,
+  "An active hostile missile unlocks SAM construction",
+);
+hostileMissileActive = false;
+assert.equal(
+  launchGateBehavior.hasObservedHostileMissileLaunch(),
+  true,
+  "The first hostile launch remains remembered after its missile resolves",
+);
+const observerScanBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+let observerMissileUnitScans = 0;
+observerScanBehavior._hostileMissileLaunchObserved = false;
+observerScanBehavior.player = own;
+observerScanBehavior.game = {
+  ticks: () => 700,
+  units: () => {
+    observerMissileUnitScans++;
+    return [];
+  },
+};
+observerScanBehavior.liveHostilePlayers = () => {
+  throw new Error("launch observation must not scan hostile players or buildings");
+};
+assert.equal(observerScanBehavior.observeHostileMissileLaunch(), false);
+assert.equal(observerScanBehavior.observeHostileMissileLaunch(), false);
+assert.equal(
+  observerMissileUnitScans,
+  1,
+  "Launch observation scans only the active missile family once per game tick",
+);
+const thirdPartyMirvBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+const hostileMirvOwner = { smallID: () => 2 };
+let observedMissileTypes = [];
+thirdPartyMirvBehavior._hostileMissileLaunchObserved = false;
+thirdPartyMirvBehavior.player = {
+  smallID: () => 1,
+  isFriendly: () => false,
+  isOnSameTeam: () => false,
+};
+thirdPartyMirvBehavior.game = {
+  ticks: () => 701,
+  units: (...types) => {
+    observedMissileTypes = types;
+    return [
+      {
+        isActive: () => true,
+        owner: () => hostileMirvOwner,
+        // Deliberately aimed at another player: launch detection is based on
+        // the hostile owner, not on whether our own territory is targeted.
+        targetTile: () => 99_999,
+      },
+    ];
+  },
+};
+assert.equal(
+  thirdPartyMirvBehavior.observeHostileMissileLaunch(),
+  true,
+  "A hostile MIRV aimed at a third party unlocks SAM construction",
+);
+assert.deepEqual(
+  observedMissileTypes,
+  [UNIT.AtomBomb, UNIT.HydrogenBomb, UNIT.MIRV, UNIT.MIRVWarhead],
+  "Launch observation covers every missile family that SAMs can intercept",
+);
+const nationExecutionSource = read("engine/ingame/auto-bot/nationExecution.js");
+const tickSource =
+  nationExecutionSource.match(
+    /async tick\(ticks, profile, tickGeneration\) \{([\s\S]*?)\n {4}\}/,
+  )?.[1] ?? "";
+const launchObserverIndex = tickSource.indexOf(
+  "this.structureBehavior.observeHostileMissileLaunch?.();",
+);
+const cadenceGateIndex = tickSource.indexOf("this.getTickCrossings(ticks)");
+const launchObserverCallCount =
+  nationExecutionSource.split("this.structureBehavior.observeHostileMissileLaunch?.();").length - 1;
+assert.ok(
+  launchObserverIndex >= 0 && launchObserverIndex < cadenceGateIndex,
+  "Hostile launches are observed every authoritative tick before slower behavior cadence gates",
+);
+assert.equal(
+  launchObserverCallCount,
+  2,
+  "The launch observer also runs immediately when behaviors initialize",
+);
 
 const originalEnemySilosGoldForCapacityTest = enemySilos.gold;
 enemySilos.gold = () => 1_500_000n;
@@ -1404,6 +1690,8 @@ enemySilos.gold = originalEnemySilosGoldForCapacityTest;
 
 behavior.game.units = () => [];
 behavior._missileDefenseSignalTick = null;
+behavior._activeHostileMissileTick = null;
+behavior._activeHostileMissileCache = null;
 const originalReactiveSignalBuildableFor = behavior.buildableFor;
 let reactiveSignalProbeCalls = 0;
 behavior.buildableFor = async () => {
@@ -1427,6 +1715,8 @@ const activeHostileMissile = {
 };
 behavior.game.units = () => [activeHostileMissile];
 behavior._missileDefenseSignalTick = null;
+behavior._activeHostileMissileTick = null;
+behavior._activeHostileMissileCache = null;
 
 const originalEmergencyUpgradeGold = own.gold;
 const originalEmergencyUpgradeCost = behavior.cost;
@@ -1511,8 +1801,9 @@ const cachedRoute = {
   path: [1, 2, 3, 9],
 };
 behavior.legendaryBuildMissileRoute = (...args) => {
-  rebuiltRoutePath = args[7];
-  return { id: args[6], path: args[7], samOptions: [] };
+  const [route] = args;
+  rebuiltRoutePath = route.path;
+  return { id: route.id, path: route.path, samOptions: [] };
 };
 const rebuiltRoutes = behavior.legendaryRebuildMissileRoutes([cachedRoute], []);
 assert.equal(rebuiltRoutes.length, 1, "Cached missile routes can be rebuilt for a new SAM profile");
@@ -1568,30 +1859,30 @@ metricBehavior.legendaryEnemyMissileLaunchPlan = (silos) =>
     impactTick: 10 + index,
   }));
 metricBehavior.legendaryNukeFlightPath = () => [1, 2, 3];
-metricBehavior.legendaryBuildMissileRoute = (
-  fromTile,
-  targetTile,
-  impactTick,
-  _samProfiles,
-  launchOffset,
-  weapon,
-  id,
-  path,
-) => ({
-  id,
-  weapon,
-  fromTile,
-  targetTile,
-  impactTick,
-  launchOffset,
-  path,
-  samOptions: [],
-});
+metricBehavior.legendaryBuildMissileRoute = (...routeArgs) => {
+  const [fromTile, targetTile, impactTick, , launchOffset, weapon, id, path] = routeArgs;
+  return {
+    id,
+    weapon,
+    fromTile,
+    targetTile,
+    impactTick,
+    launchOffset,
+    path,
+    samOptions: [],
+  };
+};
 metricBehavior.legendarySamInterceptionCapacity = () => {
   metricCapacityCalls++;
   return 1;
 };
-const metricPlan = metricBehavior.legendaryMissileSalvoPlan(metricSilos, 1n, 9, 1n, 0n);
+const metricPlan = metricBehavior.legendaryMissileSalvoPlan({
+  enemySilos: metricSilos,
+  enemyGold: 1n,
+  targetTile: 9,
+  atomCost: 1n,
+  hydrogenCost: 0n,
+});
 assert.equal(
   metricPlan.sourceMetrics.length,
   metricSilos.length,
@@ -1804,4 +2095,4 @@ behavior.maybeSpawnHostileSiloSam = originalMaybeSpawnHostileSiloSam;
 behavior.maybeEnsureHydrogenStructureCoverage = originalHydrogenStructureCoverage;
 behavior.maybeUpgradeHydrogenProtectionSam = originalHydrogenSiloUpgrade;
 
-console.log("SAM DEFENSE POLICY TESTS OK");
+process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");
