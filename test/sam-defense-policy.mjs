@@ -450,6 +450,49 @@ behavior.getPerceivedCost = originalPerceivedCost;
 behavior.maybeSpawnStructure = originalMaybeSpawnStructure;
 own.gold = originalOwnGold;
 
+const originalConstructionCostForLowGold = behavior.getConstructionCost;
+const lowGoldEconomicCalls = [];
+behavior.getConstructionCost = (type) => (type === UNIT.City ? 4_000_000n : 1_000_000n);
+own.gold = () => 1_500_000n;
+behavior.maybeSpawnStructure = async (type) => {
+  lowGoldEconomicCalls.push(type);
+  return type === UNIT.Factory;
+};
+assert.equal(
+  await behavior.maybePrioritizeHighGoldEconomicConstruction({
+    config: { isUnitDisabled: () => false },
+    hasOceanPortTiles: true,
+  }),
+  true,
+  "Economic fallback does not wait for 3M before using an affordable structure",
+);
+assert.deepEqual(
+  lowGoldEconomicCalls,
+  [UNIT.Factory],
+  "Economic fallback skips an unaffordable City and chooses the affordable Factory",
+);
+behavior.getConstructionCost = originalConstructionCostForLowGold;
+behavior.maybeSpawnStructure = originalMaybeSpawnStructure;
+own.gold = originalOwnGold;
+
+own.gold = () => 4_000_000n;
+assert.equal(
+  behavior.getPerceivedCost(UNIT.City),
+  behavior.cost(UNIT.City),
+  "winFixes does not inflate City cost while waiting for a global weapon target",
+);
+assert.equal(
+  behavior.getConstructionCost(UNIT.Factory),
+  behavior.cost(UNIT.Factory),
+  "winFixes does not inflate Factory cost while waiting for a global weapon target",
+);
+assert.equal(
+  behavior.isInPostSaveUpBlockedPhase(),
+  false,
+  "winFixes never blocks all construction behind the faithful save-up phase",
+);
+own.gold = originalOwnGold;
+
 const originalReserveForBudget = behavior.legendaryReserveGold;
 const reserveBudgetCalls = [];
 behavior.legendaryReserveGold = () => 25_000_000n;
@@ -531,8 +574,8 @@ assert.deepEqual(
       {
         forceNewStructure: true,
         prioritizeStructureCoverage: true,
-        probeLimit: 6,
-        probeTimeoutMs: 750,
+        probeLimit: 25,
+        probeTimeoutMs: 2500,
         parallelProbeCount: 6,
       },
     ],
@@ -594,6 +637,115 @@ assert.equal(
 behavior.maybeSpawnStructure = originalMaybeSpawnStructure;
 behavior._hostileSiloSamAttemptTick = null;
 behavior._hostileSiloSamRetryNotBeforeTick = null;
+
+const originalReservedSlotMaybeUpgradeLegendarySam = behavior.maybeUpgradeLegendarySam;
+const originalReservedSlotMaybeUpgradeHydrogenProtectionSam =
+  behavior.maybeUpgradeHydrogenProtectionSam;
+const originalReservedSlotMaybeSpawnHostileSiloSam = behavior.maybeSpawnHostileSiloSam;
+const originalReservedSlotShouldBuildHostileSiloSam = behavior.shouldBuildHostileSiloSam;
+const originalReservedSlotHostileSiloSamActionBlocked = behavior.hostileSiloSamActionBlocked;
+const originalReservedSlotMaybeUpgradeSamForSiloParity = behavior.maybeUpgradeSamForSiloParity;
+const legendaryPostSamAttempts = [];
+behavior.maybeUpgradeLegendarySam = async () => false;
+behavior.maybeUpgradeHydrogenProtectionSam = async () => false;
+behavior.maybeSpawnHostileSiloSam = async () => false;
+behavior.shouldBuildHostileSiloSam = () => true;
+behavior.hostileSiloSamActionBlocked = () => true;
+behavior.maybeUpgradeSamForSiloParity = async () => {
+  legendaryPostSamAttempts.push("upgrade");
+  return false;
+};
+behavior.maybeSpawnStructure = async (type) => {
+  legendaryPostSamAttempts.push(type);
+  return true;
+};
+assert.equal(
+  await behavior.doHandleLegendaryStructures({
+    config: { isUnitDisabled: () => false },
+    citiesDisabled: false,
+    cityCount: 2,
+    hasCoastalTiles: true,
+    hasOceanPortTiles: true,
+    missileSilosEnabled: true,
+    nukesEnabled: true,
+    economyGrowthPriority: true,
+  }),
+  false,
+  "Legendary reserves the construction slot while the mandatory hostile-Silo SAM is backed off",
+);
+assert.deepEqual(
+  legendaryPostSamAttempts,
+  [],
+  "Legendary does not place economy buildings while a hostile-Silo SAM remains pending",
+);
+behavior.maybeUpgradeLegendarySam = originalReservedSlotMaybeUpgradeLegendarySam;
+behavior.maybeUpgradeHydrogenProtectionSam = originalReservedSlotMaybeUpgradeHydrogenProtectionSam;
+behavior.maybeSpawnHostileSiloSam = originalReservedSlotMaybeSpawnHostileSiloSam;
+behavior.shouldBuildHostileSiloSam = originalReservedSlotShouldBuildHostileSiloSam;
+behavior.hostileSiloSamActionBlocked = originalReservedSlotHostileSiloSamActionBlocked;
+behavior.maybeUpgradeSamForSiloParity = originalReservedSlotMaybeUpgradeSamForSiloParity;
+behavior.maybeSpawnStructure = originalMaybeSpawnStructure;
+
+const originalDemandDrivenUpgradeLegendarySam = behavior.maybeUpgradeLegendarySam;
+const originalDemandDrivenUpgradeHydrogenSam = behavior.maybeUpgradeHydrogenProtectionSam;
+const originalDemandDrivenSpawnHostileSam = behavior.maybeSpawnHostileSiloSam;
+const originalDemandDrivenShouldBuildHostileSam = behavior.shouldBuildHostileSiloSam;
+const originalDemandDrivenOwnSamCapacity = behavior.ownSamCapacity;
+const originalDemandDrivenParityUpgrade = behavior.maybeUpgradeSamForSiloParity;
+const originalDemandDrivenUrgent = behavior.legendaryMissileDefenseUrgent;
+const originalDemandDrivenCandidates = behavior.legendaryConstructionCandidates;
+const demandDrivenActions = [];
+behavior.maybeUpgradeLegendarySam = async () => false;
+behavior.maybeUpgradeHydrogenProtectionSam = async () => {
+  demandDrivenActions.push("hydrogen-upgrade");
+  return true;
+};
+behavior.maybeSpawnHostileSiloSam = async () => {
+  demandDrivenActions.push("second-sam");
+  return true;
+};
+behavior.shouldBuildHostileSiloSam = () => true;
+behavior.ownSamCapacity = () => 1;
+behavior.maybeUpgradeSamForSiloParity = async () => {
+  demandDrivenActions.push("parity-upgrade");
+  return true;
+};
+behavior.legendaryMissileDefenseUrgent = () => false;
+behavior.legendaryConstructionCandidates = () => [
+  { type: UNIT.City, cost: 1n, legal: true, gold: 1, troops: 1 },
+];
+behavior.maybeSpawnStructure = async (type) => {
+  demandDrivenActions.push(type);
+  return type === UNIT.City;
+};
+assert.equal(
+  await behavior.doHandleLegendaryStructures({
+    config: { isUnitDisabled: () => false },
+    citiesDisabled: false,
+    cityCount: 1,
+    hasCoastalTiles: false,
+    hasOceanPortTiles: false,
+    missileSilosEnabled: true,
+    nukesEnabled: true,
+    economyGrowthPriority: false,
+  }),
+  true,
+  "Legendary keeps constructing after its first SAM when no missile is incoming",
+);
+assert.deepEqual(
+  demandDrivenActions,
+  [UNIT.City],
+  "Passive hydrogen and silo parity do not repeatedly level the first Legendary SAM",
+);
+behavior.maybeUpgradeLegendarySam = originalDemandDrivenUpgradeLegendarySam;
+behavior.maybeUpgradeHydrogenProtectionSam = originalDemandDrivenUpgradeHydrogenSam;
+behavior.maybeSpawnHostileSiloSam = originalDemandDrivenSpawnHostileSam;
+behavior.shouldBuildHostileSiloSam = originalDemandDrivenShouldBuildHostileSam;
+behavior.ownSamCapacity = originalDemandDrivenOwnSamCapacity;
+behavior.maybeUpgradeSamForSiloParity = originalDemandDrivenParityUpgrade;
+behavior.legendaryMissileDefenseUrgent = originalDemandDrivenUrgent;
+behavior.legendaryConstructionCandidates = originalDemandDrivenCandidates;
+behavior.maybeSpawnStructure = originalMaybeSpawnStructure;
 
 const constructionBlockedCalls = [];
 behavior.maybeSpawnStructure = async (...args) => {
@@ -696,22 +848,35 @@ assert.equal(
 const coverageProbeStructures = Array.from({ length: 500 }, (_, index) => ({
   tile: () => index * 100,
 }));
+const originalCoverageRandTerritoryTileArray = sandbox.randTerritoryTileArray;
+let coverageRequestedSampleCount = 0;
+sandbox.randTerritoryTileArray = (_random, _game, _player, count) => {
+  coverageRequestedSampleCount = count;
+  return Array.from({ length: count }, (_, index) => (index < 2 ? 10_000 : 9_999 + index));
+};
 const coverageProbe = Object.create(sandbox.__StructureBehavior.prototype);
 coverageProbe.random = {};
 coverageProbe.player = {
-  units: (...types) => (types.includes(UNIT.SAMLauncher) ? [] : coverageProbeStructures),
+  smallID: () => 1,
+  units: (...types) =>
+    types.length === 1 && types[0] === UNIT.SAMLauncher ? [] : coverageProbeStructures,
 };
 coverageProbe.game = {
   neighbors: (tile) => [tile + 1, tile + 2, tile + 3],
+  ownerID: (tile) => (tile === 10_001 ? 2 : 1),
   config: () => ({
     defaultSamRange: () => 10,
     samRange: () => 10,
+    structureMinDist: () => 2,
   }),
+  nearbyUnits: () => [],
   euclideanDistSquared: (left, right) => (Number(left) - Number(right)) ** 2,
 };
 let coverageProbeCount = 0;
-coverageProbe.buildableFor = async () => {
+const coverageProbeTiles = [];
+coverageProbe.buildableFor = async (_type, tile) => {
   coverageProbeCount++;
+  coverageProbeTiles.push(tile);
   return null;
 };
 assert.equal(
@@ -723,25 +888,115 @@ assert.equal(
 );
 assert.equal(
   coverageProbeCount,
+  3,
+  "Coverage-priority SAM placement bounds authoritative snapshot-drift fallbacks",
+);
+assert.equal(
+  coverageRequestedSampleCount,
   25,
-  "Coverage-priority SAM placement keeps ranking and async probes bounded to the normal candidate budget",
+  "Coverage-priority SAM placement preserves the upstream Nation sample budget",
+);
+assert.equal(
+  new Set(coverageProbeTiles).size,
+  coverageProbeTiles.length,
+  "Coverage-priority SAM placement removes duplicate candidates before worker probes",
+);
+assert.equal(
+  coverageProbeTiles.includes(10_001),
+  false,
+  "Coverage-priority SAM placement removes foreign-owned tiles before worker probes",
 );
 coverageProbeCount = 0;
+let validCoverageProbe = null;
+coverageProbe.buildableFor = async () => {
+  coverageProbeCount++;
+  validCoverageProbe = { canBuild: true, tile: 321 };
+  return validCoverageProbe;
+};
 assert.equal(
   await coverageProbe.structureSpawnTile(UNIT.SAMLauncher, {
     prioritizeStructureCoverage: true,
-    probeLimit: 6,
+    probeLimit: 25,
     probeTimeoutMs: 20,
-    parallelProbeCount: 6,
+    parallelProbeCount: 1,
   }),
-  null,
-  "High-gold coverage-priority SAM placement returns null when its bounded probes are unavailable",
+  validCoverageProbe,
+  "Hostile-silo SAM placement validates the best locally legal candidate",
 );
 assert.equal(
   coverageProbeCount,
-  6,
-  "High-gold coverage-priority SAM placement probes only six candidates",
+  1,
+  "Hostile-silo SAM placement normally crosses the worker boundary exactly once",
 );
+coverageProbe.buildableFor = async () => {
+  coverageProbeCount++;
+  return null;
+};
+sandbox.randTerritoryTileArray = originalCoverageRandTerritoryTileArray;
+
+const localLegalityProbe = Object.create(sandbox.__StructureBehavior.prototype);
+localLegalityProbe.player = { smallID: () => 1 };
+localLegalityProbe.game = {
+  ownerID: (tile) => (tile >= 0 && tile <= 30 ? 1 : 2),
+  neighbors: (tile) => [tile - 1, tile + 1],
+  euclideanDistSquared: (left, right) => (left - right) ** 2,
+  nearbyUnits: () => [{ unit: { tile: () => 10 } }],
+  config: () => ({ structureMinDist: () => 2 }),
+};
+const locallySnappedTile = localLegalityProbe.localLandStructureSpawnTile(10);
+assert.equal(
+  locallySnappedTile === 8 || locallySnappedTile === 12,
+  true,
+  "Local structure legality mirrors the engine spacing rule and snaps beyond occupied tiles",
+);
+assert.equal(
+  localLegalityProbe.localLandStructureSpawnTile(31),
+  false,
+  "Local structure legality rejects candidates outside the player's territory",
+);
+
+const hostileOwner = { isPlayer: () => true };
+const alliedOwner = { isPlayer: () => true };
+const placementSafetyProbe = Object.create(sandbox.__StructureBehavior.prototype);
+placementSafetyProbe.player = {
+  smallID: () => 1,
+  isFriendly: (player) => player === alliedOwner,
+  isOnSameTeam: (player) => player === alliedOwner,
+};
+placementSafetyProbe.game = {
+  neighbors: (tile) => [tile + 1],
+  ownerID: (tile) => {
+    if (tile === 11) return 2;
+    if (tile === 21) return 3;
+    return 1;
+  },
+  playerBySmallID: (sid) => {
+    if (sid === 2) return hostileOwner;
+    if (sid === 3) return alliedOwner;
+    return null;
+  },
+};
+assert.equal(
+  placementSafetyProbe.isDangerousStructureTile(10, UNIT.Factory),
+  true,
+  "Ordinary structures reject tiles directly exposed to hostile territory",
+);
+assert.equal(
+  placementSafetyProbe.isDangerousStructureTile(20, UNIT.Factory),
+  false,
+  "Allied territory does not make a construction tile dangerous",
+);
+assert.equal(
+  placementSafetyProbe.isDangerousStructureTile(10, UNIT.DefensePost),
+  false,
+  "Defense posts may still fortify an active hostile frontier",
+);
+assert.equal(
+  placementSafetyProbe.isSafeBuildablePlacement({ canBuild: 10 }, 20, UNIT.City),
+  false,
+  "The authoritative worker destination is safety-checked after snapping",
+);
+
 const originalTilesNearFriendlySams = coverageProbe.tilesNearFriendlySams;
 const originalMissileSiloValue = coverageProbe.missileSiloValue;
 coverageProbe.tilesNearFriendlySams = () =>
@@ -1171,6 +1426,34 @@ const activeHostileMissile = {
   owner: () => enemySilos,
 };
 behavior.game.units = () => [activeHostileMissile];
+behavior._missileDefenseSignalTick = null;
+
+const originalEmergencyUpgradeGold = own.gold;
+const originalEmergencyUpgradeCost = behavior.cost;
+const originalEmergencyUpgradeBuildableFor = behavior.buildableFor;
+reactiveSam.level = () => 4;
+own.gold = () => 3_000_000n;
+behavior.cost = () => 5_000_000n;
+behavior.buildableFor = async () => ({
+  type: UNIT.SAMLauncher,
+  canUpgrade: true,
+  cost: 3_000_000n,
+});
+sentBuilds.length = 0;
+assert.equal(
+  await behavior.maybeUpgradeMissileDefenseSam(),
+  true,
+  "An incoming H-bomb upgrades a level-4 SAM at the authoritative 3M price even when the planner formula says 5M",
+);
+assert.equal(
+  sentBuilds.length,
+  1,
+  "The affordable level-5 emergency upgrade is sent before Legendary can spend on a Factory",
+);
+reactiveSam.level = () => 1;
+own.gold = originalEmergencyUpgradeGold;
+behavior.cost = originalEmergencyUpgradeCost;
+behavior.buildableFor = originalEmergencyUpgradeBuildableFor;
 behavior._missileDefenseSignalTick = null;
 
 let forecastTickSeen = null;

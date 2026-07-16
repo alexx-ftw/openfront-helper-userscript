@@ -129,24 +129,37 @@
   const UPGRADE_DENSITY_THRESHOLD = 1 / 1500;
 
   /**
-   * Maximum raw tiles ranked and asynchronously probed for one structure.
-   * The normal placement sampler already uses this budget; coverage-priority
-   * placement must keep the same bound even when the nation owns many
-   * structures, because each probe crosses the async worker boundary.
+   * Maximum raw tiles sampled and ranked for one structure, matching upstream.
+   * Coverage-priority SAM placement resolves legality locally so this remains
+   * a bounded CPU search rather than 25 worker requests.
    */
   const STRUCTURE_PLACEMENT_CANDIDATE_LIMIT = 25;
 
   /**
    * The mandatory hostile-silo SAM path can wake up as soon as an enemy reaches
-   * the 1.5M-gold trigger. Keep one failed placement attempt bounded: six
-   * concurrent read-only probes with a short timeout are enough to preserve the
-   * coverage-ranked choice without serially waiting on all 25 candidates.
+   * the 1.5M-gold trigger. Preserve upstream's 25-candidate search, reconstruct
+   * its structure legality locally, then use one authoritative worker request.
+   * A small sequential fallback covers the rare case where the public snapshot
+   * changes between local selection and worker validation.
    */
-  const HOSTILE_SILO_SAM_PROBE_LIMIT = 6;
-  const HOSTILE_SILO_SAM_PROBE_TIMEOUT_MS = 750;
+  const HOSTILE_SILO_SAM_AUTHORITATIVE_FALLBACK_LIMIT = 3;
+  const HOSTILE_SILO_SAM_PROBE_TIMEOUT_MS =
+    typeof WORKER_TIMEOUT_MS === "number" ? WORKER_TIMEOUT_MS : 2500;
+
+  /** Mirrors PlayerImpl.validStructureSpawnTiles(). */
+  const LOCAL_STRUCTURE_SEARCH_RADIUS = 15;
 
   /** Keep defensive SAM upgrade probes from serially blocking on the worker. */
   const DEFENSIVE_SAM_PROBE_CONCURRENCY = 6;
+
+  /**
+   * Keep generic structure probes bounded while allowing normal worker latency.
+   * The timeout is the normal worker grace period; bounded batches remove the
+   * old serial stall without discarding a healthy-but-slow probe too early.
+   */
+  const STRUCTURE_PROBE_CONCURRENCY = 4;
+  const STRUCTURE_PROBE_TIMEOUT_MS =
+    typeof WORKER_TIMEOUT_MS === "number" ? WORKER_TIMEOUT_MS : 2500;
 
   /** Estimated number of tiles per city equivalent, used when cities are disabled */
   const TILES_PER_CITY_EQUIVALENT = 2000;
@@ -178,9 +191,6 @@
     UNIT.Port,
     UNIT.Factory,
   ];
-
-  /** Current spendable gold at which an otherwise idle economy must keep building. */
-  const HIGH_GOLD_CONSTRUCTION_PRESSURE_THRESHOLD = 3_000_000n;
 
   /** Length in ticks of each on/off phase after the team-mode save-up target is first reached */
   const TEAM_POST_SAVE_UP_PHASE_TICKS = 150; // 15s
@@ -397,6 +407,15 @@
               : null;
         if (
           host &&
+          typeof host.__OFH_getIncomingMaritimeTransport === "function"
+        ) {
+          return host.__OFH_getIncomingMaritimeTransport(this.game, this.player);
+        }
+        // Compatibility with older page-context bundles that only expose the
+        // original detector; current auto-donate.js always provides the
+        // transport-only signal above.
+        if (
+          host &&
           typeof host.__OFH_getIncomingMaritimeInvasion === "function"
         ) {
           return host.__OFH_getIncomingMaritimeInvasion(this.game, this.player);
@@ -546,6 +565,18 @@
       ) {
         return true;
       }
+      // A hostile silo requires a dedicated SAM site. If that placement is
+      // already in flight or temporarily backed off after an unsuccessful
+      // probe, preserve this construction slot instead of spending it on an
+      // economy building before the SAM can be retried.
+      if (
+        state.settings.winFixes &&
+        !legendaryDifficulty &&
+        this.shouldBuildHostileSiloSam() &&
+        this.hostileSiloSamActionBlocked()
+      ) {
+        return false;
+      }
       if (
         state.settings.winFixes &&
         !legendaryDifficulty &&
@@ -665,18 +696,33 @@
       // candidate-generation distribution; only the in-sampler canBuild filter
       // moves to the probe phase (rank-then-probe).
       const tiles = this.sampleTilesNearFront(frontTiles, 25, UNIT.DefensePost);
-      for (const tile of tiles) {
-        const bu = await this.buildableFor(UNIT.DefensePost, tile);
-        if (bu === null || bu.canBuild === false) continue;
-        const buildMenu = getBuildMenu();
-        if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
-          return false;
+      for (
+        let offset = 0;
+        offset < tiles.length;
+        offset += STRUCTURE_PROBE_CONCURRENCY
+      ) {
+        const batch = tiles.slice(offset, offset + STRUCTURE_PROBE_CONCURRENCY);
+        const buildables = await Promise.all(
+          batch.map((tile) =>
+            this.buildableFor(
+              UNIT.DefensePost,
+              tile,
+              STRUCTURE_PROBE_TIMEOUT_MS,
+            ),
+          ),
+        );
+        for (const bu of buildables) {
+          if (bu === null || bu.canBuild === false) continue;
+          const buildMenu = getBuildMenu();
+          if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
+            return false;
+          }
+          // src: addExecution(new ConstructionExecution(player, DefensePost, tile)).
+          buildMenu.sendBuildOrUpgrade(bu, bu.canBuild);
+          state.stats.builds++;
+          setLastAction(tr("🛡️ Defense post"), "build");
+          return true;
         }
-        // src: addExecution(new ConstructionExecution(player, DefensePost, tile)).
-        buildMenu.sendBuildOrUpgrade(bu, bu.canBuild);
-        state.stats.builds++;
-        setLastAction(tr("🛡️ Defense post"), "build");
-        return true;
       }
       return false;
     }
@@ -856,6 +902,10 @@
 
     // isInPostSaveUpBlockedPhase — NationStructureBehavior.ts:398.
     isInPostSaveUpBlockedPhase() {
+      // winFixes uses explicit offensive/economy reserves instead of the
+      // faithful global save-up gate. Never freeze ordinary construction while
+      // waiting for a MIRV or HydrogenBomb target.
+      if (state.settings.winFixes) return false;
       if (this.game.config().isUnitDisabled(UNIT.MissileSilo)) {
         return false;
       }
@@ -1075,10 +1125,9 @@
       }
 
       // All ratio-driven and defensive construction has had first chance. If
-      // the economy is still idle in a non-Legendary high-gold game, make one
-      // affordable economic attempt without repeating the probes above.
+      // the economy is still idle, make one affordable economic attempt even
+      // when the growth signal is already active but its ratio targets are met.
       if (
-        !economyGrowthPriority &&
         (await this.maybePrioritizeHighGoldEconomicConstruction({
           config,
           hasOceanPortTiles,
@@ -1121,11 +1170,9 @@
     }
 
     /**
-     * High-gold games can otherwise become stuck after the initial defensive
-     * opening: economy ratios may say "wait" even though an economic structure
-     * is affordable. Keep the normal defensive/nuclear priorities, but let
-     * current spendable gold reopen economic construction when there is a real
-     * action to take.
+     * Economy ratios may say "wait" even though an economic structure is
+     * affordable. Keep the normal defensive/offensive priorities, but always
+     * reopen economic construction when a concrete affordable action exists.
      */
     async maybePrioritizeHighGoldEconomicConstruction({
       config,
@@ -1134,10 +1181,6 @@
       if (!state.settings.winFixes) return false;
 
       const availableGold = this.spendableConstructionGold();
-      if (availableGold < HIGH_GOLD_CONSTRUCTION_PRESSURE_THRESHOLD) {
-        return false;
-      }
-
       const buildOrder = [UNIT.City, UNIT.Factory, UNIT.Port];
       for (const structureType of buildOrder) {
         if (config.isUnitDisabled(structureType)) continue;
@@ -1179,9 +1222,11 @@
       return {
         forceNewStructure: true,
         prioritizeStructureCoverage: true,
-        probeLimit: HOSTILE_SILO_SAM_PROBE_LIMIT,
+        probeLimit: STRUCTURE_PLACEMENT_CANDIDATE_LIMIT,
         probeTimeoutMs: HOSTILE_SILO_SAM_PROBE_TIMEOUT_MS,
-        parallelProbeCount: HOSTILE_SILO_SAM_PROBE_LIMIT,
+        // Used only when an older client lacks the primitives required for the
+        // one-request local-legality path below.
+        parallelProbeCount: DEFENSIVE_SAM_PROBE_CONCURRENCY,
       };
     }
 
@@ -1247,33 +1292,18 @@
         return true;
       }
 
+      const needsBaselineSam = this.ownSamCapacity() <= 0;
+      if (needsBaselineSam && (await this.maybeSpawnHostileSiloSam())) return true;
+      // Keep the mandatory hostile-silo defense ahead of every ranked
+      // construction candidate even when its placement is waiting for the
+      // bounded retry window or an existing SAM construction to complete.
       if (
-        state.settings.winFixes &&
-        (await this.maybeUpgradeHydrogenProtectionSam())
+        needsBaselineSam &&
+        this.shouldBuildHostileSiloSam() &&
+        this.hostileSiloSamActionBlocked()
       ) {
-        return true;
+        return false;
       }
-
-      if (await this.maybeSpawnHostileSiloSam()) return true;
-      if (await this.maybeUpgradeSamForSiloParity()) {
-        return true;
-      }
-      if (
-        nukesEnabled &&
-        !config.isUnitDisabled(UNIT.SAMLauncher) &&
-        this.samLevelParityGap() > 0 &&
-        (!this.shouldBuildHostileSiloSam() ||
-          !this.hostileSiloSamActionBlocked()) &&
-        (await this.maybeSpawnStructure(
-          UNIT.SAMLauncher,
-          this.shouldBuildHostileSiloSam()
-            ? this.hostileSiloSamPlacementOptions()
-            : {},
-        ))
-      ) {
-        return true;
-      }
-
       // If the current per-missile schedule is not fully defensible, only
       // attempt a SAM whose construction can actually finish in time. Do not
       // spend on a City/Factory/Port/Silo in a zone that the model already
@@ -5383,6 +5413,17 @@
     getPerceivedCost(type) {
       const realCost = this.cost(type);
 
+      // Productive structures use their real next-build cost. Keep the
+      // perceived-cost multiplier for offensive/defensive structures because
+      // the explicit silo reserve below still needs to protect the next
+      // economic and SAM actions without freezing the whole build planner.
+      if (
+        state.settings.winFixes &&
+        ECONOMIC_STRUCTURE_TYPES.includes(type)
+      ) {
+        return realCost;
+      }
+
       const saveUpTarget = this.getSaveUpTarget();
       if (saveUpTarget === 0n || this.player.gold() >= saveUpTarget) {
         return realCost;
@@ -5786,22 +5827,12 @@
       if (upgradeableSamUnits.length === 0) return false;
 
       const availableGold = this.spendableConstructionGold();
-      // The formula is a cheap lower bound. Keep the early exit for clearly
-      // unaffordable upgrades, then use BuildableUnit.cost as the final live
-      // price before forecasting.
-      let minimumUpgradeCost = 0n;
-      try {
-        minimumUpgradeCost = this.cost(UNIT.SAMLauncher);
-      } catch (_error) {
-        minimumUpgradeCost = 0n;
-      }
-      if (availableGold < minimumUpgradeCost) return false;
-
       // Probe buildability and the real next-upgrade cost before entering the
-      // synchronous forecast. This keeps an unaffordable SAM from waking the
-      // full enemy-silo/trajectory planner on every structure tick. The
-      // forecast is deliberately obtained only after these awaits finish, so
-      // it cannot be older than the asynchronous buildable probes.
+      // synchronous forecast. The local formula is only a fallback: its
+      // aggregate owned-level input can exceed the authoritative price of this
+      // specific upgrade, so it must never reject an emergency before the live
+      // BuildableUnit cost is known. The forecast is deliberately obtained only
+      // after these awaits finish, so it cannot be older than the probes.
       const upgradeCandidates = [];
 
       const buildables = await this.buildableForUnits(
@@ -5955,7 +5986,9 @@
     // synchronously (pre-RNG). The client has no sync canUpgradeUnit, so we PROBE
     // buildables(unit.tile(),[type]) for each candidate FIRST (keeping the
     // BuildableUnit when canUpgrade !== false) BEFORE any RNG draw, preserving the
-    // exact src RNG sequence and scoring. Returns {structure, bu} | null.
+    // exact src RNG sequence and scoring. Probe candidates in bounded batches;
+    // the first 25 preserve the normal structure candidate budget. Returns
+    // {structure, bu} | null.
     async findBestStructureToUpgrade(structures) {
       const game = this.game;
       if (structures.length === 0) {
@@ -5965,11 +5998,32 @@
       // Filter to only upgradable structures (probe before any RNG draw).
       const upgradable = [];
       const buByUnitId = new Map();
-      for (const s of structures) {
-        const bu = await this.buildableFor(s.type(), s.tile());
-        if (bu !== null && bu.canUpgrade !== false) {
-          upgradable.push(s);
-          buByUnitId.set(s.id(), bu);
+      const candidates = structures.slice(0, STRUCTURE_PLACEMENT_CANDIDATE_LIMIT);
+      for (
+        let offset = 0;
+        offset < candidates.length;
+        offset += STRUCTURE_PROBE_CONCURRENCY
+      ) {
+        const batch = candidates.slice(
+          offset,
+          offset + STRUCTURE_PROBE_CONCURRENCY,
+        );
+        const buildables = await Promise.all(
+          batch.map((structure) =>
+            this.buildableFor(
+              structure.type(),
+              structure.tile(),
+              STRUCTURE_PROBE_TIMEOUT_MS,
+            ),
+          ),
+        );
+        for (let index = 0; index < batch.length; index++) {
+          const structure = batch[index];
+          const bu = buildables[index];
+          if (bu !== null && bu.canUpgrade !== false) {
+            upgradable.push(structure);
+            buByUnitId.set(structure.id(), bu);
+          }
         }
       }
       if (upgradable.length === 0) {
@@ -6081,8 +6135,7 @@
       const probeLimit = Number.isInteger(requestedProbeLimit)
         ? Math.max(1, Math.min(candidateLimit, requestedProbeLimit))
         : candidateLimit;
-      const defaultWorkerTimeoutMs =
-        typeof WORKER_TIMEOUT_MS === "number" ? WORKER_TIMEOUT_MS : 2500;
+      const defaultWorkerTimeoutMs = STRUCTURE_PROBE_TIMEOUT_MS;
       const requestedProbeTimeout = Number(options.probeTimeoutMs);
       const probeTimeoutMs = Number.isFinite(requestedProbeTimeout)
         ? Math.max(1, requestedProbeTimeout)
@@ -6090,54 +6143,39 @@
       const requestedParallelProbeCount = Number(options.parallelProbeCount);
       const parallelProbeCount = Number.isInteger(requestedParallelProbeCount)
         ? Math.max(1, Math.min(probeLimit, requestedParallelProbeCount))
-        : 0;
+        : STRUCTURE_PROBE_CONCURRENCY;
+      const tileSampleLimit = candidateLimit;
       let tiles =
         type === UNIT.Port
-          ? this.randCoastalTileArray(candidateLimit)
+          ? this.randCoastalTileArray(tileSampleLimit)
           : randTerritoryTileArray(
               this.random,
               this.game,
               this.player,
-              candidateLimit,
+              tileSampleLimit,
             );
       if (type === UNIT.SAMLauncher && options.prioritizeStructureCoverage) {
         try {
-          const structures = this.player.units(
-            UNIT.City,
-            UNIT.Factory,
-            UNIT.MissileSilo,
-            UNIT.Port,
-          );
-          const coverageTiles = [];
-          const coverageTileSet = new Set();
-          for (const structure of structures || []) {
-            const structureTile = structure.tile();
-            if (!coverageTileSet.has(structureTile)) {
-              coverageTileSet.add(structureTile);
-              coverageTiles.push(structureTile);
-            }
-            for (const neighbor of this.game.neighbors(structureTile)) {
-              if (coverageTiles.length >= candidateLimit) {
-                break;
+          let mySid = null;
+          try {
+            mySid = this.player.smallID();
+          } catch (_error) {
+            /* the territory sampler already limits candidates to our land */
+          }
+          const seenTiles = new Set();
+          tiles = tiles.filter((tile) => {
+            if (tile === null || tile === undefined) return false;
+            if (seenTiles.has(tile)) return false;
+            if (mySid !== null && typeof this.game.ownerID === "function") {
+              try {
+                if (this.game.ownerID(tile) !== mySid) return false;
+              } catch (_error) {
+                return false;
               }
-              if (coverageTileSet.has(neighbor)) continue;
-              coverageTileSet.add(neighbor);
-              coverageTiles.push(neighbor);
             }
-            if (coverageTiles.length >= candidateLimit) {
-              break;
-            }
-          }
-          if (coverageTiles.length > 0) {
-            const remainingCandidateSlots =
-              candidateLimit - coverageTiles.length;
-            tiles = [
-              ...coverageTiles,
-              ...tiles
-                .filter((tile) => !coverageTileSet.has(tile))
-                .slice(0, remainingCandidateSlots),
-            ];
-          }
+            seenTiles.add(tile);
+            return true;
+          });
         } catch (_error) {
           /* keep the standard territory sample */
         }
@@ -6197,18 +6235,101 @@
       }
 
       // Score all candidates synchronously, then sort DESC by value.
-      const scored = tiles.map((t) => ({ t, v: valueFunction(t) }));
+      const scored = tiles
+        .map((t) => ({ t, v: valueFunction(t) }))
+        .filter(({ t }) => !this.isDangerousStructureTile(t, type));
       scored.sort((a, b) => b.v - a.v);
 
-      // The hostile-silo response is intentionally bounded more tightly than
-      // the faithful generic placement path. Its candidate scorer walks our
-      // protected structures and existing SAM network, and each buildability
-      // check crosses the worker boundary. Probe the best bounded subset in
-      // parallel so a saturated/slow worker cannot stall the structure tick
-      // once an enemy reaches the high-gold threat gate.
-      if (parallelProbeCount > 0) {
-        const probeCandidates = [];
+      // PlayerImpl.validStructureSpawnTiles() is fully reconstructible from the
+      // public game snapshot. For coverage-priority SAMs, use that exact local
+      // legality gate before crossing the worker boundary. The normal path needs
+      // one RPC; only snapshot drift can open the small sequential fallback.
+      if (type === UNIT.SAMLauncher && options.prioritizeStructureCoverage) {
+        const snappedTiles = new Set();
+        let authoritativeAttempts = 0;
+        let localLegalityAvailable = true;
         for (const { t } of scored) {
+          const snappedTile = this.localLandStructureSpawnTile(t);
+          if (snappedTile === null) {
+            localLegalityAvailable = false;
+            break;
+          }
+          if (snappedTile === false || snappedTiles.has(snappedTile)) continue;
+          snappedTiles.add(snappedTile);
+          authoritativeAttempts++;
+          const bu = await this.buildableFor(type, t, probeTimeoutMs);
+          if (
+            bu !== null &&
+            bu.canBuild !== false &&
+            this.isSafeBuildablePlacement(bu, t, type)
+          ) {
+            return bu;
+          }
+          if (
+            authoritativeAttempts >=
+            HOSTILE_SILO_SAM_AUTHORITATIVE_FALLBACK_LIMIT
+          ) {
+            return null;
+          }
+        }
+        if (localLegalityAvailable) return null;
+      }
+
+      // Each buildability check crosses the async worker boundary. Probe ranked
+      // candidates in bounded batches so a saturated/slow worker cannot turn
+      // the former 25 * 2500ms serial path into a visible game hang. The batch
+      // loop still examines the full ranked candidate budget and returns the
+      // first valid result in rank order.
+      if (parallelProbeCount > 0) {
+        const rankedCandidates = scored.slice(0, probeLimit);
+        for (
+          let offset = 0;
+          offset < rankedCandidates.length;
+          offset += parallelProbeCount
+        ) {
+          const probeCandidates = [];
+          for (const { t } of rankedCandidates.slice(
+            offset,
+            offset + parallelProbeCount,
+          )) {
+            if (
+              emergencyProductiveDefense &&
+              !this.missileDefenseSnapshotIsCurrent(
+                emergencyMissileTick,
+                emergencyMissileStateKey,
+              )
+            ) {
+              return null;
+            }
+            if (
+              emergencySamDefense &&
+              !this.legendarySamConstructionSafeForTile(
+                t,
+                emergencyMissileContext,
+              )
+            ) {
+              continue;
+            }
+            if (
+              emergencyProductiveDefense &&
+              type !== UNIT.SAMLauncher &&
+              this.legendaryTileInsideUninterceptedBlast(
+                t,
+                emergencyMissileContext,
+                emergencyMissileEvaluation,
+              )
+            ) {
+              continue;
+            }
+            probeCandidates.push(t);
+          }
+          if (probeCandidates.length === 0) continue;
+
+          const buildables = await Promise.all(
+            probeCandidates.map((tile) =>
+              this.buildableFor(type, tile, probeTimeoutMs),
+            ),
+          );
           if (
             emergencyProductiveDefense &&
             !this.missileDefenseSnapshotIsCurrent(
@@ -6218,43 +6339,20 @@
           ) {
             return null;
           }
-          if (
-            emergencySamDefense &&
-            !this.legendarySamConstructionSafeForTile(t, emergencyMissileContext)
-          ) {
-            continue;
+          for (let index = 0; index < buildables.length; index++) {
+            const bu = buildables[index];
+            if (
+              bu !== null &&
+              bu.canBuild !== false &&
+              this.isSafeBuildablePlacement(
+                bu,
+                probeCandidates[index],
+                type,
+              )
+            ) {
+              return bu;
+            }
           }
-          if (
-            emergencyProductiveDefense &&
-            type !== UNIT.SAMLauncher &&
-            this.legendaryTileInsideUninterceptedBlast(
-              t,
-              emergencyMissileContext,
-              emergencyMissileEvaluation,
-            )
-          ) {
-            continue;
-          }
-          probeCandidates.push(t);
-          if (probeCandidates.length >= parallelProbeCount) break;
-        }
-
-        const buildables = await Promise.all(
-          probeCandidates.map((tile) =>
-            this.buildableFor(type, tile, probeTimeoutMs),
-          ),
-        );
-        if (
-          emergencyProductiveDefense &&
-          !this.missileDefenseSnapshotIsCurrent(
-            emergencyMissileTick,
-            emergencyMissileStateKey,
-          )
-        ) {
-          return null;
-        }
-        for (const bu of buildables) {
-          if (bu !== null && bu.canBuild !== false) return bu;
         }
         return null;
       }
@@ -6304,12 +6402,176 @@
           // Do not emit a buildable result based on the stale safety snapshot.
           return null;
         }
-        if (bu !== null && bu.canBuild !== false) {
+        if (
+          bu !== null &&
+          bu.canBuild !== false &&
+          this.isSafeBuildablePlacement(bu, t, type)
+        ) {
           return bu;
         }
         if (probes >= probeLimit) break;
       }
       return null;
+    }
+
+    /**
+     * Keep ordinary structures off an active hostile frontier. Defense posts
+     * are deliberately exempt: their purpose is to fortify that exact front.
+     * Unknown ownership data fails open so older clients retain their existing
+     * placement behavior instead of disabling construction entirely.
+     */
+    isDangerousStructureTile(tile, type) {
+      if (type === UNIT.DefensePost || tile === null || tile === undefined) {
+        return false;
+      }
+      const game = this.game;
+      if (
+        !game ||
+        typeof game.neighbors !== "function" ||
+        typeof game.ownerID !== "function" ||
+        typeof game.playerBySmallID !== "function"
+      ) {
+        return false;
+      }
+      const mySid = this.player.smallID();
+      try {
+        for (const neighbor of game.neighbors(tile) || []) {
+          if (this.isHostileStructureNeighbor(neighbor, mySid)) return true;
+        }
+      } catch (error) {
+        console.warn("[OFH] Could not evaluate structure-front safety", error);
+        return false;
+      }
+      return false;
+    }
+
+    isHostileStructureNeighbor(tile, mySid) {
+      const ownerSid = this.game.ownerID(tile);
+      if (ownerSid === mySid || ownerSid === null || ownerSid === undefined) {
+        return false;
+      }
+      const owner = this.game.playerBySmallID(ownerSid);
+      if (!owner || owner.isPlayer?.() === false) return false;
+      return !(
+        this.player.isFriendly?.(owner) === true ||
+        this.player.isOnSameTeam?.(owner) === true
+      );
+    }
+
+    isSafeBuildablePlacement(buildable, requestedTile, type) {
+      const resolvedTile =
+        buildable &&
+        buildable.canBuild !== true &&
+        buildable.canBuild !== false &&
+        buildable.canBuild !== null &&
+        buildable.canBuild !== undefined
+          ? buildable.canBuild
+          : requestedTile;
+      return !this.isDangerousStructureTile(resolvedTile, type);
+    }
+
+    /**
+     * Client-side reconstruction of PlayerImpl.validStructureSpawnTiles().
+     * Returns the nearest legal snapped tile, false when none exists, and null
+     * only when the public snapshot lacks a primitive needed for exact parity.
+     */
+    localLandStructureSpawnTile(tile) {
+      const game = this.game;
+      if (
+        tile === null ||
+        tile === undefined ||
+        !game ||
+        typeof game.ownerID !== "function" ||
+        typeof game.neighbors !== "function" ||
+        typeof game.euclideanDistSquared !== "function" ||
+        typeof game.nearbyUnits !== "function" ||
+        typeof game.config !== "function"
+      ) {
+        return null;
+      }
+
+      let mySid;
+      let structureMinDist;
+      try {
+        mySid = this.player.smallID();
+        const config = game.config();
+        if (typeof config?.structureMinDist !== "function") return null;
+        structureMinDist = Number(config.structureMinDist());
+        if (!Number.isFinite(structureMinDist) || structureMinDist < 0) {
+          return null;
+        }
+        if (game.ownerID(tile) !== mySid) return false;
+      } catch (_error) {
+        return null;
+      }
+
+      let nearbyUnits;
+      try {
+        nearbyUnits = game.nearbyUnits(
+          tile,
+          LOCAL_STRUCTURE_SEARCH_RADIUS * 2,
+          STRUCTURES_TYPES,
+          undefined,
+          true,
+        );
+      } catch (_error) {
+        return null;
+      }
+      if (!Array.isArray(nearbyUnits)) return null;
+
+      const radiusSquared = LOCAL_STRUCTURE_SEARCH_RADIUS ** 2;
+      const queue = [tile];
+      const seen = new Set([tile]);
+      const ownedNearbyTiles = [];
+      for (let index = 0; index < queue.length; index++) {
+        const current = queue[index];
+        let insideRadius;
+        try {
+          insideRadius =
+            game.euclideanDistSquared(tile, current) < radiusSquared &&
+            game.ownerID(current) === mySid;
+        } catch (_error) {
+          return null;
+        }
+        if (!insideRadius) continue;
+        ownedNearbyTiles.push(current);
+        let neighbors;
+        try {
+          neighbors = game.neighbors(current) || [];
+        } catch (_error) {
+          return null;
+        }
+        for (const neighbor of neighbors) {
+          if (seen.has(neighbor)) continue;
+          seen.add(neighbor);
+          queue.push(neighbor);
+        }
+      }
+
+      const minDistSquared = structureMinDist ** 2;
+      const validTiles = ownedNearbyTiles.filter((candidate) => {
+        for (const entry of nearbyUnits) {
+          const unit = entry?.unit ?? entry;
+          const unitTile = unit?.tile?.();
+          if (unitTile === null || unitTile === undefined) continue;
+          try {
+            if (
+              game.euclideanDistSquared(unitTile, candidate) < minDistSquared
+            ) {
+              return false;
+            }
+          } catch (_error) {
+            return false;
+          }
+        }
+        return true;
+      });
+      validTiles.sort(
+        (left, right) =>
+          game.euclideanDistSquared(left, tile) -
+          game.euclideanDistSquared(right, tile),
+      );
+      return validTiles[0] ?? false;
     }
 
     // Probe a stable unit list with bounded concurrency. Defensive upgrade
@@ -6318,7 +6580,15 @@
     // Results retain the input order so the caller's selection/ranking logic is
     // unchanged.
     async buildableForUnits(units, type, options = {}) {
-      const candidates = Array.isArray(units) ? units : [];
+      const rawCandidates = Array.isArray(units) ? units : [];
+      const requestedMaxProbes = Number(options.maxProbes);
+      const maxProbes = Number.isInteger(requestedMaxProbes)
+        ? Math.max(
+            1,
+            Math.min(STRUCTURE_PLACEMENT_CANDIDATE_LIMIT, requestedMaxProbes),
+          )
+        : STRUCTURE_PLACEMENT_CANDIDATE_LIMIT;
+      const candidates = rawCandidates.slice(0, maxProbes);
       if (candidates.length === 0) return [];
       const requestedConcurrency = Number(options.concurrency);
       const concurrency = Number.isInteger(requestedConcurrency)
@@ -6355,8 +6625,7 @@
     // wrapped in withTimeout. (Shared by build + upgrade + defense-post probes.)
     async buildableFor(type, tile, timeoutMs = null) {
       let buildables;
-      const defaultWorkerTimeoutMs =
-        typeof WORKER_TIMEOUT_MS === "number" ? WORKER_TIMEOUT_MS : 2500;
+      const defaultWorkerTimeoutMs = STRUCTURE_PROBE_TIMEOUT_MS;
       const timeout = Number.isFinite(Number(timeoutMs))
         ? Math.max(1, Number(timeoutMs))
         : defaultWorkerTimeoutMs;
