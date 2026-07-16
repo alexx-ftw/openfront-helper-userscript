@@ -563,16 +563,23 @@
   function calculateReachableTribeClusterOpportunities(
     candidates,
     adjacentIdsById,
+    startIds = null,
   ) {
+    const allowedStarts = startIds === null ? null : new Set(startIds);
     return new Map(
-      (Array.isArray(candidates) ? candidates : []).map((candidate) => [
-        candidate.id,
-        calculateReachableTribeClusterOpportunity(
+      (Array.isArray(candidates) ? candidates : [])
+        .filter(
+          (candidate) =>
+            allowedStarts === null || allowedStarts.has(candidate.id),
+        )
+        .map((candidate) => [
           candidate.id,
-          candidates,
-          adjacentIdsById,
-        ),
-      ]),
+          calculateReachableTribeClusterOpportunity(
+            candidate.id,
+            candidates,
+            adjacentIdsById,
+          ),
+        ]),
     );
   }
 

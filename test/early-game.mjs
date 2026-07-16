@@ -1226,6 +1226,7 @@ assert.match(buildSource, /"tribe-cluster-overlay\.js"/);
 // Integration probe: the real AttackBehavior enrichment must expose the same
 // coast/encirclement/blocking signals used by the pure ranker.
 let clusterOverlayWakeups = 0;
+let topologyYieldCount = 0;
 const targetSandbox = {
   UNIT: {
     City: "City",
@@ -1242,6 +1243,13 @@ const targetSandbox = {
   WORKER_TIMEOUT_MS: 1000,
   requestMapOverlayLoop: () => {
     clusterOverlayWakeups += 1;
+  },
+  window: {
+    setTimeout(callback, delay) {
+      assert.equal(delay, 0);
+      topologyYieldCount++;
+      callback();
+    },
   },
 };
 const targetCoords = new Map([
@@ -1302,12 +1310,18 @@ const targetRaceAttack = {
 targetContender.outgoingAttacks = () => [targetRaceAttack];
 targetInland.incomingAttacks = () => [targetRaceAttack];
 targetMe.nearby = () => [targetCoastal, targetInland, targetNext];
+let targetTick = 0;
+let topologyBorderFetches = 0;
 const targetGame = {
+  ticks: () => targetTick,
   config: () => ({ isUnitDisabled: () => false }),
   players: () => [targetMe, targetCoastal, targetInland, targetNext, targetContender, targetMover],
   hasTransportRouteEstimator: true,
   estimateTransportRouteTicks: (tile) => (tile === 10 ? 20 : null),
-  ensureBorderTiles: (player) => player.borderTiles(),
+  ensureBorderTiles: (player) => {
+    topologyBorderFetches++;
+    return player.borderTiles();
+  },
   neighbors: (tile) => targetNeighbors.get(tile) || [],
   isLand: (tile) => targetLand.has(tile),
   isShore: (tile) => tile === 1 || tile === 10,
@@ -1805,6 +1819,31 @@ assert.equal(
   1,
   "publishing a preferred tribe cluster starts the initially dormant overlay scheduler",
 );
+const firstTopologyBorderFetches = topologyBorderFetches;
+targetTick = 1;
+await targetBehavior.getEarlyGameTribeCandidates();
+assert.equal(
+  topologyBorderFetches,
+  firstTopologyBorderFetches,
+  "repeated opening decisions reuse the complete tribe topology cache",
+);
+targetTick = 11;
+await targetBehavior.getEarlyGameTribeCandidates();
+assert.ok(
+  topologyBorderFetches > firstTopologyBorderFetches,
+  "the tribe topology refreshes after its bounded cache window",
+);
+const yieldProbeNodes = [{ id: 101 }, { id: 102 }];
+const yieldProbeBorders = new Map([
+  [101, new Set(Array.from({ length: 256 }, (_, index) => 10_000 + index))],
+  [102, new Set()],
+]);
+const yieldsBeforeTopologyProbe = topologyYieldCount;
+await targetBehavior.connectEarlyGameTribeAdjacency(yieldProbeNodes, yieldProbeBorders);
+assert.ok(
+  topologyYieldCount - yieldsBeforeTopologyProbe >= 2,
+  "large tribe-border scans yield before monopolizing a render frame",
+);
 assert.equal(
   targetSandbox.state.earlyGame.preferredClusterMembers
     .map((member) => member.id)
@@ -1982,7 +2021,7 @@ assert.ok(
 
 moverLocation = { x: 60, y: 60 };
 moverTiles = 20;
-targetGame.ticks = () => 50;
+targetTick = 50;
 const movedEnrichedTargets = await targetBehavior.getEarlyGameTribeCandidates();
 const movedInland = movedEnrichedTargets.find((target) => target.id === 4);
 assert.ok(movedInland.competitorProgress > 0);

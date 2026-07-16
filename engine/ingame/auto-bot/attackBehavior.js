@@ -78,6 +78,8 @@
   const EARLY_TRIBE_CANDIDATES = 8;
   const EARLY_TRIBE_BOAT_ETA_TARGETS = BOAT_PROBE_CANDIDATES;
   const EARLY_GAME_TRIBE_CHAIN_RADIUS = 120;
+  const EARLY_GAME_TRIBE_TOPOLOGY_CACHE_TICKS = 10;
+  const EARLY_GAME_TRIBE_TOPOLOGY_YIELD_TILES = 128;
   // The game's troop growth is (10 + troops^0.73 / 4) * (1 - troops / max).
   // Keep the formula constants here so the reserve follows the real production
   // curve instead of relying on its approximate 42% peak ratio.
@@ -115,6 +117,21 @@
     return typeof AUTO_DONATE_EXPANSION_MAX_TICKS === "number"
       ? AUTO_DONATE_EXPANSION_MAX_TICKS
       : 30;
+  }
+
+  function yieldEarlyGameTopologyWork() {
+    return new Promise((resolve) => {
+      if (
+        typeof window !== "undefined" &&
+        typeof window.setTimeout === "function"
+      ) {
+        window.setTimeout(resolve, 0);
+      } else if (typeof setTimeout === "function") {
+        setTimeout(resolve, 0);
+      } else {
+        resolve();
+      }
+    });
   }
 
   // A parallel attack batch must stop before it walks every target after the
@@ -554,6 +571,7 @@
       this.earlyGameMaritimeIndex = undefined;
       this.earlyGameMaritimeWaterCache = new Map();
       this.earlyGamePreferredClusterTargetKeys = new Set();
+      this.earlyGameTribeTopologyCache = null;
       // Defense-post reads are bounded and reused across all target decisions
       // made in the same game tick. This keeps the extra combat intelligence out
       // of the high-frequency engine poll loop.
@@ -2265,9 +2283,10 @@
       return border;
     }
 
-    connectEarlyGameTribeAdjacency(nodes, borders) {
+    async connectEarlyGameTribeAdjacency(nodes, borders) {
       const edibleIds = new Set(nodes.map((tribe) => tribe.id));
       const adjacency = new Map(nodes.map((tribe) => [tribe.id, new Set()]));
+      let tilesSinceYield = 0;
       for (const tribe of nodes) {
         for (const tile of borders.get(tribe.id) || []) {
           this.connectEarlyGameTribeAdjacencyTile(
@@ -2276,9 +2295,48 @@
             edibleIds,
             adjacency,
           );
+          tilesSinceYield++;
+          if (tilesSinceYield >= EARLY_GAME_TRIBE_TOPOLOGY_YIELD_TILES) {
+            tilesSinceYield = 0;
+            await yieldEarlyGameTopologyWork();
+          }
         }
       }
       return adjacency;
+    }
+
+    earlyGameTribeTopologySignature(nodes) {
+      return nodes
+        .map((tribe) => String(tribe.id))
+        .sort()
+        .join(",");
+    }
+
+    async getEarlyGameTribeTopology(nodes) {
+      const tick = this.currentAttackDecisionTick();
+      const signature = this.earlyGameTribeTopologySignature(nodes);
+      const cached = this.earlyGameTribeTopologyCache;
+      if (
+        cached?.signature === signature &&
+        tick >= cached.tick &&
+        tick - cached.tick <= EARLY_GAME_TRIBE_TOPOLOGY_CACHE_TICKS
+      ) {
+        return cached;
+      }
+      const topologyBordersById =
+        await this.fetchEarlyGameTribeTopologyBorders(nodes);
+      const tribeAdjacency = await this.connectEarlyGameTribeAdjacency(
+        nodes,
+        topologyBordersById,
+      );
+      const topology = {
+        tick,
+        signature,
+        topologyBordersById,
+        tribeAdjacency,
+      };
+      this.earlyGameTribeTopologyCache = topology;
+      return topology;
     }
 
     connectEarlyGameTribeAdjacencyTile(tribeId, tile, edibleIds, adjacency) {
@@ -2322,13 +2380,15 @@
         otherPlayers,
         competitorProfiles,
       );
-      const topologyBordersById = await this.fetchEarlyGameTribeTopologyBorders(nodes);
-      const tribeAdjacency = this.connectEarlyGameTribeAdjacency(
-        nodes,
-        topologyBordersById,
-      );
+      const { topologyBordersById, tribeAdjacency } =
+        await this.getEarlyGameTribeTopology(nodes);
+      const eligibleIds = eligible.map((tribe) => tribe.smallID());
       const clusterOpportunities =
-        calculateReachableTribeClusterOpportunities(nodes, tribeAdjacency);
+        calculateReachableTribeClusterOpportunities(
+          nodes,
+          tribeAdjacency,
+          eligibleIds,
+        );
       const { bordering, other } = this.splitEarlyGameTribesByLandBorder(eligible);
       const nearbyTribes = this.rankEarlyGameSamplingTribes(
         bordering,
@@ -2758,6 +2818,7 @@
       const clusterOpportunities = calculateReachableTribeClusterOpportunities(
         futureFoodCandidates,
         tribeAdjacency,
+        candidates.map((candidate) => candidate.id),
       );
       this.enrichEarlyGameFutureFoodScores(
         candidates,
