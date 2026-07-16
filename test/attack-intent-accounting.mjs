@@ -628,6 +628,43 @@ assert.equal(
   botParallelEmissionCount + 2,
   "the general tribe attack pass also emits multiple captures",
 );
+
+botParallelBehavior.botAttackPendingIntentCommitments = [];
+botParallelBehavior.outboundIntentReconciledTick = null;
+botParallelBehavior.earlyGamePreferredClusterTargetKeys = new Set(["21"]);
+botParallelTargets[0].troops = () => 2000;
+botParallelPlayer.nearby = () => [botParallelTargets[1]];
+outgoing.push({
+  id: () => "incomplete-general-tribe-attack",
+  retreating: () => false,
+  target: () => botParallelTargets[0],
+  troops: () => 3000,
+});
+tick = 22;
+const reinforcementEmissionCount = troopEmissions.length;
+assert.equal(
+  await botParallelBehavior.attackBots(),
+  true,
+  "the general tribe pass revisits an active attack below its live capture floor",
+);
+assert.equal(troopEmissions.length, reinforcementEmissionCount + 1);
+assert.equal(
+  troopEmissions.at(-1),
+  1000,
+  "an incomplete tribe attack receives only the missing reinforcement",
+);
+
+botParallelBehavior.botAttackPendingIntentCommitments = [];
+botParallelBehavior.outboundIntentReconciledTick = null;
+outgoing[0].troops = () => 4000;
+tick = 23;
+assert.equal(
+  await botParallelBehavior.attackBots(),
+  false,
+  "a tribe attack already at the capture floor is not reinforced again",
+);
+outgoing.length = 0;
+botParallelPlayer.nearby = () => botParallelTargets;
 const clusterFilteredCalls = [];
 botParallelBehavior.botAttackPendingIntentCommitments = [];
 botParallelBehavior.outboundIntentReconciledTick = null;

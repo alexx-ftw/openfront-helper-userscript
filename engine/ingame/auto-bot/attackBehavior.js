@@ -611,6 +611,17 @@
         .reduce((total, entry) => total + entry.troops, 0);
     }
 
+    getActiveOutboundTribeTargets() {
+      const tribesByKey = new Map();
+      for (const entry of this.getOutboundAttackSnapshot()) {
+        const target = entry.target;
+        if (target?.type?.() !== PlayerType.Bot) continue;
+        const key = this.getOutboundAttackTargetKey(target);
+        if (key != null) tribesByKey.set(key, target);
+      }
+      return [...tribesByKey.values()];
+    }
+
     getOutboundAttackSnapshot() {
       let outgoing;
       {
@@ -625,6 +636,7 @@
           return {
             attack,
             id: attack.id?.(),
+            target,
             targetIsPlayer,
             targetKey: targetIsPlayer
               ? this.getOutboundAttackTargetKey(target)
@@ -2152,6 +2164,9 @@
             this.addEligibleEarlyGameTribe(tribesById, candidate);
           }
         }
+      }
+      for (const candidate of this.getActiveOutboundTribeTargets()) {
+        this.addEligibleEarlyGameTribe(tribesById, candidate);
       }
       return [...tribesById.values()];
     }
@@ -4213,14 +4228,20 @@
     // Bots that own structures are prioritized as targets (they might have stolen our structures and they will delete them!).
     // attackBots — AiAttackBehavior (private, now async).
     async attackBots() {
-      let bots = this.player
-        .nearby()
-        .filter(
-          (n) =>
-            n.isPlayer() &&
-            this.player.isFriendly(n) === false &&
-            n.type() === PlayerType.Bot,
-        );
+      const botsByKey = new Map();
+      for (const candidate of [
+        ...this.player.nearby(),
+        ...this.getActiveOutboundTribeTargets(),
+      ]) {
+        if (
+          candidate.isPlayer() &&
+          this.player.isFriendly(candidate) === false &&
+          candidate.type() === PlayerType.Bot
+        ) {
+          botsByKey.set(this.getOutboundAttackTargetKey(candidate), candidate);
+        }
+      }
+      let bots = [...botsByKey.values()];
 
       const preferredClusterTargets =
         this.earlyGamePreferredClusterTargetKeys;
@@ -4258,19 +4279,14 @@
         }
         return attackDifficultyDensity(a) - attackDifficultyDensity(b);
       });
-      const selectedTargetKeys = this.getActiveTribeAttackTargetKeys();
       const reducedBots = sortedBots
-        .filter(
-          (bot) =>
-            !selectedTargetKeys.has(this.getOutboundAttackTargetKey(bot)),
-        )
+        .filter((bot) => this.tribeTargetNeedsMoreTroops(bot))
         .slice(0, this.getBotAttackMaxParallelism());
 
       let launchedAttacks = 0;
       for (const bot of reducedBots) {
         if (!hasAttackIntentRateCapacity()) break;
         if (await this.sendAttack(bot, false, null, null, false, true)) {
-          selectedTargetKeys.add(this.getOutboundAttackTargetKey(bot));
           launchedAttacks++;
         }
       }
@@ -5280,12 +5296,15 @@
       defensePostProfile = null,
       existingCommittedTroops = 0,
     ) {
-      const defenseMultiplier = Math.max(
-        1,
-        Number(defensePostProfile?.attackCostMultiplier || 1),
+      const minimumAttackTroops = this.getTribeCaptureTroopFloor(
+        target,
+        defensePostProfile,
       );
-      const minimumAttackTroops = target.troops() * 2 * defenseMultiplier;
-      const committed = Math.max(0, Number(existingCommittedTroops) || 0);
+      const liveCommitted = this.getLiveOutboundAttackTroopsForTarget(target);
+      const committed = Math.max(
+        liveCommitted,
+        Math.max(0, Number(existingCommittedTroops) || 0),
+      );
       // Commit only the missing 2x capture floor. The former 4x preference
       // starved other simultaneous tribe captures without changing legality.
       if (maxTroops + committed < minimumAttackTroops) return 0;
@@ -5295,6 +5314,23 @@
       );
       this.botAttackTroopsSent += troops;
       return troops;
+    }
+
+    getTribeCaptureTroopFloor(target, defensePostProfile = null) {
+      const defenseMultiplier = Math.max(
+        1,
+        Number(defensePostProfile?.attackCostMultiplier || 1),
+      );
+      return Math.max(0, Number(target?.troops?.()) || 0) * 2 * defenseMultiplier;
+    }
+
+    tribeTargetNeedsMoreTroops(target) {
+      if (this.hasPendingOutboundAttackForTarget(target)) return false;
+      const profile = this.getEnemyDefensePostAttackProfile(target);
+      return (
+        this.getLiveOutboundAttackTroopsForTarget(target) <
+        this.getTribeCaptureTroopFloor(target, profile)
+      );
     }
 
     // donateTroops — AiAttackBehavior (private). No worker calls in src; the only

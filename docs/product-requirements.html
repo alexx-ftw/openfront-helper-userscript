@@ -11,6 +11,18 @@
   </li>
 </ul>
 
+<h2>Tribe capture reinforcement</h2>
+
+<ul>
+  <li>
+    You must keep every live outbound tribe attack in the attack-candidate set, even when the tribe
+    is temporarily absent from <code>nearby()</code>. Compare the live committed troops with the
+    current Defense Post-aware capture floor on every decision pass. When the attack is underfunded,
+    emit only the missing reinforcement; when it already meets the floor or an intent for that
+    target is still pending, do not emit another attack.
+  </li>
+</ul>
+
 <h2>VM-backed tests</h2>
 
 <ul>
