@@ -447,9 +447,9 @@ assert.equal(
 );
 ownTroops = 100000;
 
-// Tribe attacks must be all-or-nothing: if the available force cannot meet the
-// combat policy's minimum, do not emit a partial attack that merely weakens the
-// tribe and leaves it blocking expansion.
+// Tribe attacks must be all-or-nothing: if visible and pending commitments plus
+// the available force cannot meet the combat policy's minimum, do not emit a
+// partial attack that merely weakens the tribe and leaves it blocking expansion.
 const tribeTarget = {
   isPlayer: () => true,
   type: () => "Bot",
@@ -491,14 +491,15 @@ const underfundedEmissionCount = troopEmissions.length;
 sandbox.currentDifficulty = () => "Easy";
 assert.equal(
   underfundedTribeBehavior.sendLandAttack(tribeTarget),
-  false,
-  "an underfunded tribe assault is deferred rather than sent short",
+  true,
+  "an underfunded pending tribe assault receives the still-missing top-up",
 );
 assert.equal(
   troopEmissions.length,
-  underfundedEmissionCount,
-  "deferring an underfunded tribe assault emits no partial attack",
+  underfundedEmissionCount + 1,
+  "the pending intent is not mistaken for a complete capture force",
 );
+assert.equal(troopEmissions.at(-1), 5000);
 sandbox.currentDifficulty = () => "Impossible";
 
 // Different hostile targets may be launched in the same decision. Pending
@@ -565,8 +566,31 @@ assert.equal(
   1000,
   "a growing tribe receives only the missing top-up to the live 2x capture floor",
 );
+
+parallelBehavior.botAttackPendingIntentCommitments = [
+  {
+    targetIsPlayer: true,
+    targetKey: "21",
+    attackType: "land",
+    troops: 500,
+    createdTick: tick,
+    baselineTroops: ownTroops,
+    baselineTargetTroops: 3000,
+    baselineAttackIDs: new Set(["growing-tribe-attack"]),
+    baselineTransportIDs: new Set(),
+  },
+];
+parallelBehavior.outboundIntentReconciledTick = tick;
+parallelTribeA.troops = () => 2500;
+parallelBehavior.botAttackTroopsSent = 0;
+assert.equal(
+  parallelBehavior.calculateBotAttackTroops(parallelTribeA, 10000, {}, 3000),
+  1500,
+  "tribe reinforcement includes a pending top-up but still fills a newly grown capture floor",
+);
 outgoing.length = 0;
 parallelTribeA.troops = () => 1000;
+parallelBehavior.botAttackPendingIntentCommitments = [];
 
 const growingNation = {
   isPlayer: () => true,

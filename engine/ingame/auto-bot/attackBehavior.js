@@ -611,6 +611,34 @@
         .reduce((total, entry) => total + entry.troops, 0);
     }
 
+    getPendingOutboundAttackTroopsForTarget(target) {
+      // Adequacy checks may run after the live attack snapshot changes within
+      // the same tick. Reconcile again here so one payload cannot be counted as
+      // both a visible attack and a still-pending intent.
+      this.reconcileOutboundAttackIntentCommitments(
+        this.currentAttackDecisionTick(),
+        true,
+      );
+      const targetKey = this.getOutboundAttackTargetKey(target);
+      if (targetKey == null) return 0;
+      return this.botAttackPendingIntentCommitments
+        .filter(
+          (entry) =>
+            entry?.targetIsPlayer === true && entry.targetKey === targetKey,
+        )
+        .reduce(
+          (total, entry) => total + Math.max(0, Number(entry.troops) || 0),
+          0,
+        );
+    }
+
+    getCommittedOutboundAttackTroopsForTarget(target) {
+      return (
+        this.getLiveOutboundAttackTroopsForTarget(target) +
+        this.getPendingOutboundAttackTroopsForTarget(target)
+      );
+    }
+
     getActiveOutboundPlayerTargets() {
       const playersByKey = new Map();
       for (const entry of this.getOutboundAttackSnapshot()) {
@@ -828,8 +856,9 @@
 
     reconcileOutboundAttackIntentCommitments(
       tick = this.currentAttackDecisionTick(),
+      force = false,
     ) {
-      if (this.outboundIntentReconciledTick === tick) return;
+      if (!force && this.outboundIntentReconciledTick === tick) return;
       this.outboundIntentReconciledTick = tick;
       const pending = this.botAttackPendingIntentCommitments;
       if (!Array.isArray(pending) || pending.length === 0) return;
@@ -1964,10 +1993,14 @@
 
     prepareExistingTribeAttack(candidate, selectedTargetKeys, targetKey) {
       if (!selectedTargetKeys.has(targetKey)) return true;
-      if (this.hasPendingOutboundAttackForTarget(candidate.player)) return false;
-      const committed = this.getLiveOutboundAttackTroopsForTarget(candidate.player);
+      const liveCommitted = this.getLiveOutboundAttackTroopsForTarget(
+        candidate.player,
+      );
+      const committed =
+        liveCommitted +
+        this.getPendingOutboundAttackTroopsForTarget(candidate.player);
       if (committed < 1) return false;
-      candidate.existingCommittedTroops = committed;
+      candidate.existingCommittedTroops = liveCommitted;
       return true;
     }
 
@@ -5358,10 +5391,11 @@
         defensePostProfile,
       );
       const liveCommitted = this.getLiveOutboundAttackTroopsForTarget(target);
+      const pendingCommitted = this.getPendingOutboundAttackTroopsForTarget(target);
       const committed = Math.max(
         liveCommitted,
         Math.max(0, Number(existingCommittedTroops) || 0),
-      );
+      ) + pendingCommitted;
       // Commit only the missing 2x capture floor. The former 4x preference
       // starved other simultaneous tribe captures without changing legality.
       if (maxTroops + committed < minimumAttackTroops) return 0;
@@ -5390,10 +5424,9 @@
     }
 
     tribeTargetNeedsMoreTroops(target) {
-      if (this.hasPendingOutboundAttackForTarget(target)) return false;
       const profile = this.getEnemyDefensePostAttackProfile(target);
       return (
-        this.getLiveOutboundAttackTroopsForTarget(target) <
+        this.getCommittedOutboundAttackTroopsForTarget(target) <
         this.getTribeCaptureTroopFloor(target, profile)
       );
     }
@@ -5403,9 +5436,8 @@
         if (target.isAlive?.() === false) continue;
         if (this.player.isFriendly(target) === true) continue;
         if (this.player.sharesBorderWith(target) !== true) continue;
-        if (this.hasPendingOutboundAttackForTarget(target)) continue;
         const profile = this.getEnemyDefensePostAttackProfile(target);
-        const committed = this.getLiveOutboundAttackTroopsForTarget(target);
+        const committed = this.getCommittedOutboundAttackTroopsForTarget(target);
         if (
           committed >=
           this.getPlayerAttackPreferredTroopFloor(target, profile)
