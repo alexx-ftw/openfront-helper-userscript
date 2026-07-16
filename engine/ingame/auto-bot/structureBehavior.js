@@ -1209,6 +1209,7 @@
 
     hostileSiloSamPlacementOptions() {
       return {
+        allowPreemptiveSam: true,
         forceNewStructure: true,
         prioritizeStructureCoverage: true,
         probeLimit: STRUCTURE_PLACEMENT_CANDIDATE_LIMIT,
@@ -5411,7 +5412,7 @@
 
     // maybeSpawnStructure — NationStructureBehavior.ts:585 (now async).
     async maybeSpawnStructure(type, options = {}) {
-      if (!this.structureSpawnEligible(type)) return false;
+      if (!this.structureSpawnEligible(type, options)) return false;
       const perceivedCost = this.getConstructionCost(type);
       // Keep the MIRV war chest scoped to offensive silo construction. Cities,
       // factories, ports and SAMs must still spend normal available gold.
@@ -5449,9 +5450,13 @@
       return true;
     }
 
-    structureSpawnEligible(type) {
+    structureSpawnEligible(type, options = {}) {
       if (!autoBotBuildAllowed(type)) return false;
-      if (type === UNIT.SAMLauncher && !this.hasObservedHostileMissileLaunch()) {
+      if (
+        type === UNIT.SAMLauncher &&
+        options.allowPreemptiveSam !== true &&
+        !this.hasObservedHostileMissileLaunch()
+      ) {
         return false;
       }
       return !this.shouldReserveEconomicGrowthForOffense(type);

@@ -660,6 +660,7 @@ assert.deepEqual(
   hostileSamCalls.map(([type, options]) => [
     type,
     {
+      allowPreemptiveSam: options.allowPreemptiveSam,
       forceNewStructure: options.forceNewStructure,
       prioritizeStructureCoverage: options.prioritizeStructureCoverage,
       probeLimit: options.probeLimit,
@@ -671,6 +672,7 @@ assert.deepEqual(
     [
       UNIT.SAMLauncher,
       {
+        allowPreemptiveSam: true,
         forceNewStructure: true,
         prioritizeStructureCoverage: true,
         probeLimit: 25,
@@ -1603,8 +1605,26 @@ assert.equal(
 assert.equal(
   await launchGateBehavior.maybeSpawnStructure(UNIT.SAMLauncher),
   false,
-  "No SAM can be constructed before the first hostile missile launch",
+  "An ordinary SAM cannot be constructed before the first hostile missile launch",
 );
+launchGateBehavior.shouldReserveEconomicGrowthForOffense = () => false;
+launchGateBehavior.getConstructionCost = () => 1_500_000n;
+launchGateBehavior.availableGoldAfterReserve = () => 2_000_000n;
+launchGateBehavior.player = { units: () => [] };
+launchGateBehavior.structureUpgradeBeforeSpawn = async () => null;
+const preemptiveSamBuildable = { canBuild: 123 };
+launchGateBehavior.structureSpawnTile = async () => preemptiveSamBuildable;
+const preemptiveBuildCount = sentBuilds.length;
+assert.equal(
+  await launchGateBehavior.maybeSpawnStructure(UNIT.SAMLauncher, {
+    allowPreemptiveSam: true,
+    forceNewStructure: true,
+  }),
+  true,
+  "A threat-authorized SAM can be built with 2M gold before the first launch",
+);
+assert.equal(sentBuilds.length, preemptiveBuildCount + 1);
+assert.equal(sentBuilds.at(-1), preemptiveSamBuildable);
 assert.equal(
   await launchGateBehavior.maybeUpgradePlannedSam({
     currentLevel: 1,
