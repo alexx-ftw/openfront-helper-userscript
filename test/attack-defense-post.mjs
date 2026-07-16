@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import vm from "node:vm";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -30,7 +30,7 @@ const sandbox = {
   currentDifficulty: () => Difficulty.Impossible,
   state: { settings: { winFixes: true }, stats: {} },
 };
-vm.runInNewContext(`${source}\nglobalThis.AttackBehavior = AttackBehavior;`, sandbox, {
+executeClassicScript(`${source}\nglobalThis.AttackBehavior = AttackBehavior;`, sandbox, {
   filename: sourcePath,
 });
 
@@ -107,7 +107,11 @@ const game = {
     defensePostDefenseBonus: () => 5,
     defensePostSpeedBonus: () => 3,
   }),
-  ownerID: (tile) => (tile === 2 ? 2 : tile === 3 ? 3 : 1),
+  ownerID: (tile) => {
+    if (tile === 2) return 2;
+    if (tile === 3) return 3;
+    return 1;
+  },
   neighbors: (tile) => (tile === 1 ? [2, 3] : []),
   isLand: () => true,
   euclideanDistSquared: (left, right) => (left - right) ** 2,
@@ -143,18 +147,18 @@ assert.equal(
 behavior.botAttackTroopsSent = 0;
 assert.equal(
   behavior.calculateBotAttackTroops(enemy, 1500, cachedProfile),
-  1500,
-  "a sufficiently funded attack commits the available troops",
+  1000,
+  "a sufficiently funded attack commits only the Defense Post-aware minimum",
 );
 behavior.botAttackTroopsSent = 0;
 assert.equal(
   behavior.calculateBotAttackTroops(enemy, 500, null),
-  400,
-  "without coverage, the existing 4x bot attack rule is unchanged",
+  200,
+  "without coverage, a bot attack commits only the 2x capture floor",
 );
 
 tick++;
 behavior.getEnemyDefensePostAttackProfile(enemy);
 assert.equal(unitsCalls, 2, "the cache is invalidated on the next game tick");
 
-console.log("attack defense-post tests passed");
+process.stdout.write("attack defense-post tests passed\n");

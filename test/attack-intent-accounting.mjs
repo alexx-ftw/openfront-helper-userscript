@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import vm from "node:vm";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -40,6 +40,8 @@ const sandbox = {
     return true;
   },
   setLastAction: () => {},
+  captureRuntimeException: () => {},
+  runtimeDebugLog: () => {},
   tr: (value) => value,
   state: {
     settings: { winFixes: true, features: { donate: true, boat: true } },
@@ -47,8 +49,8 @@ const sandbox = {
   },
 };
 
-vm.runInNewContext(earlyGameSource, sandbox, { filename: earlyGamePath });
-vm.runInNewContext(`${source}\nglobalThis.AttackBehavior = AttackBehavior;`, sandbox, {
+executeClassicScript(earlyGameSource, sandbox, { filename: earlyGamePath });
+executeClassicScript(`${source}\nglobalThis.AttackBehavior = AttackBehavior;`, sandbox, {
   filename: sourcePath,
 });
 
@@ -525,8 +527,8 @@ assert.equal(
 );
 assert.equal(
   parallelBehavior.getPendingOutboundAttackTroops(),
-  8000,
-  "parallel tribal intents are both reserved exactly once",
+  4000,
+  "parallel tribal intents reserve only each tribe's minimum capture force",
 );
 assert.deepEqual(
   [...parallelBehavior.getActiveTribeAttackTargetKeys()].sort(),
@@ -545,8 +547,8 @@ assert.equal(parallelBehavior.getLiveOutboundAttackTroopsForTarget(parallelTribe
 parallelBehavior.botAttackTroopsSent = 0;
 assert.equal(
   parallelBehavior.calculateBotAttackTroops(parallelTribeA, 10000, {}, 3000),
-  5000,
-  "a growing tribe receives only the missing top-up to the live 4x capture strength",
+  1000,
+  "a growing tribe receives only the missing top-up to the live 2x capture floor",
 );
 outgoing.length = 0;
 parallelTribeA.troops = () => 1000;
@@ -1015,4 +1017,4 @@ assert.equal(
   "the hard reserve and pending donation guard is independent of winFixes",
 );
 
-console.log("attack intent accounting tests passed");
+process.stdout.write("attack intent accounting tests passed\n");
