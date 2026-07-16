@@ -182,7 +182,7 @@ const openingSandbox = {
       return true;
     }
 
-    getPendingOutboundAttackTroops() {
+    getPendingTerraNulliusAttackTroops() {
       return this.pending;
     }
 
@@ -229,6 +229,22 @@ const openingBot = new openingSandbox.NationBot(openingGame, {
   playerId: "opening-player",
   gameId: "opening-game",
 });
+const tribeOnlyPendingBot = Object.create(openingSandbox.NationBot.prototype);
+tribeOnlyPendingBot.attackBehavior = {
+  getPendingOutboundAttackTroops: () => 5000,
+  getPendingTerraNulliusAttackTroops: () => 0,
+};
+assert.equal(
+  tribeOnlyPendingBot.hasPendingOpeningExpansionIntent(),
+  false,
+  "a pending tribe attack does not pause opening TerraNullius expansion",
+);
+tribeOnlyPendingBot.attackBehavior.getPendingTerraNulliusAttackTroops = () => 5000;
+assert.equal(
+  tribeOnlyPendingBot.hasPendingOpeningExpansionIntent(),
+  true,
+  "an unreconciled TerraNullius intent still pauses duplicate free-land expansion",
+);
 await openingBot.tick(0);
 assert.equal(
   openingCalls[0],
@@ -378,7 +394,7 @@ const cadenceSandbox = {
       return false;
     }
 
-    getPendingOutboundAttackTroops() {
+    getPendingTerraNulliusAttackTroops() {
       return 0;
     }
 
@@ -1932,6 +1948,57 @@ assert.equal(
   clusterOverlayWakeups,
   1,
   "publishing an unchanged preferred cluster does not invalidate the shared canvas again",
+);
+const temporarilyDistantMe = {
+  ...targetMe,
+  nearby: () => [],
+  sharesBorderWith: () => false,
+};
+const temporarilyDistantGame = {
+  ...targetGame,
+  players: () => [temporarilyDistantMe, targetInland, targetNext],
+};
+const temporarilyDistantBehavior = new targetSandbox.AttackBehavior(
+  {},
+  temporarilyDistantGame,
+  temporarilyDistantMe,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+temporarilyDistantBehavior.earlyGamePreferredClusterOverlaySignature =
+  targetBehavior.earlyGamePreferredClusterOverlaySignature;
+assert.equal((await temporarilyDistantBehavior.getEarlyGameTribeCandidates()).length, 0);
+assert.equal(targetSandbox.state.earlyGame.preferredClusterMembers.length, 2);
+assert.equal(
+  clusterOverlayWakeups,
+  1,
+  "a transient empty nearby selector does not hide a cluster whose tribes remain alive",
+);
+const noTribeMe = { ...targetMe, nearby: () => [], sharesBorderWith: () => false };
+const noTribeGame = { ...targetGame, players: () => [noTribeMe] };
+const noTribeBehavior = new targetSandbox.AttackBehavior(
+  {},
+  noTribeGame,
+  noTribeMe,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+noTribeBehavior.earlyGamePreferredClusterOverlaySignature =
+  targetBehavior.earlyGamePreferredClusterOverlaySignature;
+assert.equal((await noTribeBehavior.getEarlyGameTribeCandidates()).length, 0);
+assert.equal(targetSandbox.state.earlyGame.preferredClusterCenter, null);
+assert.equal(targetSandbox.state.earlyGame.preferredClusterMembers.length, 0);
+assert.equal(targetSandbox.state.earlyGame.preferredClusterSize, 0);
+assert.equal(
+  clusterOverlayWakeups,
+  2,
+  "removing the final tribes invalidates the canvas so the stale cluster disappears",
 );
 assert.doesNotMatch(
   tribeClusterOverlaySource,

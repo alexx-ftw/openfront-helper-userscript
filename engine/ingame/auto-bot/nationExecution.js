@@ -77,9 +77,9 @@
     hasPendingOpeningExpansionIntent() {
       {
         return (
-          typeof this.attackBehavior?.getPendingOutboundAttackTroops ===
+          typeof this.attackBehavior?.getPendingTerraNulliusAttackTroops ===
             "function" &&
-          Number(this.attackBehavior.getPendingOutboundAttackTroops()) > 0
+          Number(this.attackBehavior.getPendingTerraNulliusAttackTroops()) > 0
         );
       }
     }

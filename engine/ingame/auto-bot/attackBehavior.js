@@ -905,6 +905,16 @@
       );
     }
 
+    getPendingTerraNulliusAttackTroops() {
+      this.reconcileOutboundAttackIntentCommitments();
+      return this.botAttackPendingIntentCommitments
+        .filter((entry) => entry?.targetIsPlayer === false)
+        .reduce(
+          (total, entry) => total + Math.max(0, Number(entry.troops) || 0),
+          0,
+        );
+    }
+
     recordOutboundDonationIntent(troops) {
       const amount = Math.max(0, Number(troops) || 0);
       if (amount <= 0) return;
@@ -2803,7 +2813,6 @@
         overlaySignature !== this.earlyGamePreferredClusterOverlaySignature;
       this.earlyGamePreferredClusterOverlaySignature = overlaySignature;
       if (
-        hasCenter &&
         overlayChanged &&
         typeof requestMapOverlayLoop === "function"
       ) {
@@ -2830,7 +2839,31 @@
           otherPlayers,
           competitorProfiles,
         );
-      if (nearbyTribes.length === 0) return [];
+      if (nearbyTribes.length === 0) {
+        const liveTribeIds = new Set(
+          otherPlayers
+            .filter(
+              (player) =>
+                player?.isPlayer?.() === true &&
+                player.isAlive?.() === true &&
+                player.type?.() === PlayerType.Bot &&
+                this.player.isFriendly(player) !== true,
+            )
+            .map((player) => player.smallID()),
+        );
+        const publishedMembers = Array.isArray(
+          state.earlyGame?.preferredClusterMembers,
+        )
+          ? state.earlyGame.preferredClusterMembers
+          : [];
+        const publishedClusterStillLive =
+          publishedMembers.length > 1 &&
+          publishedMembers.every((member) => liveTribeIds.has(member.id));
+        if (!publishedClusterStillLive) {
+          this.publishPreferredEarlyGameCluster([], new Map());
+        }
+        return [];
+      }
 
       const playersBySid = new Map(
         otherPlayers

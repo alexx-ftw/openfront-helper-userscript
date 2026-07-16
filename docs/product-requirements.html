@@ -53,6 +53,12 @@
     free-land emission. Publishing an unchanged preferred cluster must not invalidate the shared
     overlay canvas, and a data-driven cluster layer must not register a periodic no-op scan.
   </li>
+  <li>
+    A transient empty actionable or nearby-tribe selector must not clear a published preferred
+    cluster while every published member is still a live hostile tribe. The cluster must be cleared
+    only after its published membership is no longer live, and that visual removal must wake the
+    shared overlay scheduler exactly once.
+  </li>
 </ul>
 
 <h2>Incoming-attack priority</h2>

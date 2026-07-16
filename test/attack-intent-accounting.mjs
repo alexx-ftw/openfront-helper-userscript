@@ -120,6 +120,11 @@ assert.equal(
 behavior.recordOutboundAttackIntent(target, 8000, { attackType: "land" });
 assert.equal(behavior.getPendingOutboundAttackTroops(), 8000);
 assert.equal(
+  behavior.getPendingTerraNulliusAttackTroops(),
+  0,
+  "a pending player attack does not block the TerraNullius opening lane",
+);
+assert.equal(
   behavior.getEarlyGameSpendableTroops(),
   82005,
   "a stale troop snapshot cannot spend the same 8000 twice",
@@ -664,6 +669,11 @@ assert.equal(
   parallelBehavior.getPendingOutboundAttackTroops(),
   8000,
   "parallel tribal intents reserve each tribe's fully funded conquest force",
+);
+assert.equal(
+  parallelBehavior.getPendingTerraNulliusAttackTroops(),
+  0,
+  "parallel tribal intents stay independent from TerraNullius liveness",
 );
 assert.deepEqual(
   [...parallelBehavior.getActiveTribeAttackTargetKeys()].sort(),
