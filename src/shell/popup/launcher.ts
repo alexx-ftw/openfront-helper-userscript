@@ -58,8 +58,8 @@ function ensureStyle(): void {
 }
 
 function createIcon(): void {
-  if (document.getElementById(ICON_ID)) return;
   ensureStyle();
+  if (document.getElementById(ICON_ID)) return;
 
   const icon = document.createElement("div");
   icon.id = ICON_ID;
@@ -143,6 +143,6 @@ export function installLauncher(): void {
   // OpenFront can replace its initial body while bootstrapping. Observe only
   // direct document-root children so gameplay DOM updates do not invoke this.
   new MutationObserver(() => {
-    if (document.readyState !== "loading" && !document.getElementById(ICON_ID)) mount();
+    if (document.readyState !== "loading") mount();
   }).observe(document.documentElement, { childList: true });
 }

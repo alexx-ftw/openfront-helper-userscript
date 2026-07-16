@@ -43,6 +43,7 @@ const makeEl = () => ({
 
 const mountedElements = new Map();
 let launcherMounts = 0;
+let styleMounts = 0;
 let domContentLoadedListener = null;
 let documentRootObserver = null;
 const mountContainer = () => {
@@ -50,6 +51,7 @@ const mountContainer = () => {
   el.appendChild = (child) => {
     if (child.id) mountedElements.set(child.id, child);
     if (child.id === "openfront-helper-launcher") launcherMounts += 1;
+    if (child.id === "openfront-helper-popup-styles") styleMounts += 1;
     return child;
   };
   return el;
@@ -126,6 +128,11 @@ mountedElements.delete("openfront-helper-launcher");
 document.body = mountContainer();
 documentRootObserver();
 assert.equal(launcherMounts, 2, "launcher remounts after the page replaces its body");
+mountedElements.delete("openfront-helper-popup-styles");
+document.head = mountContainer();
+documentRootObserver();
+assert.equal(styleMounts, 2, "launcher styles remount after the page replaces its head");
+assert.equal(launcherMounts, 2, "style recovery does not duplicate the launcher");
 
 const chrome = win.chrome;
 assert.equal(chrome.runtime.id, "openfront-helper", "runtime.id set on fresh shim");
