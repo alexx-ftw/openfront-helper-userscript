@@ -9,6 +9,26 @@ const source = fs.readFileSync(
   path.join(root, "engine/ingame/auto-bot/naval-interception.js"),
   "utf8",
 );
+const gameApiSource = fs.readFileSync(path.join(root, "engine/ingame/auto-bot/gameApi.js"), "utf8");
+const warshipSource = fs.readFileSync(
+  path.join(root, "engine/ingame/auto-bot/warshipBehavior.js"),
+  "utf8",
+);
+assert.match(
+  gameApiSource,
+  /forEachNeighbor:\s*\(tile, callback\).*src\.neighbors\(tile\)/s,
+  "the client-shaped game API must expose the core neighbor callback used by warships",
+);
+assert.match(
+  gameApiSource,
+  /isFriendly:\s*\(other\)\s*=>\s*wrapPlayer\(u\.owner\(\)\)\?\.isFriendly\(other\)/,
+  "wrapped units must expose owner-relative friendliness for warship targeting",
+);
+assert.match(
+  warshipSource,
+  /buildUncoveredInterceptor\(plan, invasions, smartState, timing\)[\s\S]*state\.settings\.warshipAutoSpawn/,
+  "naval interceptor state must not shadow the global settings state",
+);
 const sandbox = {};
 sandbox.globalThis = sandbox;
 executeClassicScript(

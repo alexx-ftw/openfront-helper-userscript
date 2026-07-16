@@ -223,6 +223,7 @@
       return {
         __src: u,
         owner: () => wrapPlayer(u.owner()),
+        isFriendly: (other) => wrapPlayer(u.owner())?.isFriendly(other) ?? false,
         type: m("type", null),
         tile: m("tile", null),
         level: m("level", 1),
@@ -800,6 +801,13 @@
       magnitude: mapM("magnitude"),
       hasFallout: mapM("hasFallout"),
       neighbors: mapM("neighbors"),
+      forEachNeighbor: (tile, callback) => {
+        if (typeof src.forEachNeighbor === "function") {
+          src.forEachNeighbor(tile, callback);
+          return;
+        }
+        for (const neighbor of src.neighbors(tile)) callback(neighbor);
+      },
       manhattanDist: mapM("manhattanDist"),
       euclideanDistSquared: mapM("euclideanDistSquared"),
       terrainType: (t) =>

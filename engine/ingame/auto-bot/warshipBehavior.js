@@ -1034,23 +1034,23 @@
       }
     }
 
-    async buildUncoveredInterceptor(plan, invasions, state, timing) {
+    async buildUncoveredInterceptor(plan, invasions, smartState, timing) {
       if (plan.uncoveredIds.length === 0 || state.settings.warshipAutoSpawn === false) return;
       const target = invasions
         .filter((invasion) => plan.uncoveredIds.includes(invasion.id))
         .sort((a, b) => a.path.length - b.path.length)[0];
-      if (!target || state.pendingInvasionBuilds.has(target.id)) return;
-      const lastAttempt = state.invasionBuildAttemptAt.get(target.id) ?? -Infinity;
+      if (!target || smartState.pendingInvasionBuilds.has(target.id)) return;
+      const lastAttempt = smartState.invasionBuildAttemptAt.get(target.id) ?? -Infinity;
       if (timing.now - lastAttempt < timing.throttle) return;
-      state.invasionBuildAttemptAt.set(target.id, timing.now);
-      state.pendingInvasionBuilds.add(target.id);
+      smartState.invasionBuildAttemptAt.set(target.id, timing.now);
+      smartState.pendingInvasionBuilds.add(target.id);
       try {
         const built = await this.buildInterceptorForInvasion(
           target, timing.boatSpeed, timing.warshipSpeed, timing.attackRange,
         );
-        if (built) this.recordInvasionBuild(state);
+        if (built) this.recordInvasionBuild(smartState);
       } finally {
-        state.pendingInvasionBuilds.delete(target.id);
+        smartState.pendingInvasionBuilds.delete(target.id);
       }
     }
 

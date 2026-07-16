@@ -69,6 +69,7 @@ const playerCore = {
   isPlayer: () => true,
   smallID: () => 7,
   id: () => "player-7",
+  isFriendly: (other) => other === playerCore,
   units: () => {
     playerUnitCalls += 1;
     return [rawUnit];
@@ -86,7 +87,7 @@ const gameApiSource = {
   },
   width: () => 1,
   height: () => 1,
-  neighbors: () => [],
+  neighbors: () => [2, 3],
   isWater: () => false,
   isLand: () => true,
   isShore: () => false,
@@ -107,6 +108,18 @@ assert.strictEqual(
   "gameApi player units should reuse the same snapshot within a game tick",
 );
 assert.equal(playerUnitCalls, 1, "player units should be read once per family and tick");
+assert.equal(
+  firstPlayerUnits[0].isFriendly(playerView),
+  true,
+  "wrapped units should inherit friendliness from their owner",
+);
+const visitedNeighbors = [];
+gameApi.forEachNeighbor(1, (neighbor) => visitedNeighbors.push(neighbor));
+assert.deepEqual(
+  visitedNeighbors,
+  [2, 3],
+  "gameApi should synthesize the core forEachNeighbor contract from client neighbors",
+);
 const firstGlobalUnits = gameApi.units("Warship");
 const secondGlobalUnits = gameApi.units("Warship");
 assert.strictEqual(
