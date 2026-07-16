@@ -48,9 +48,10 @@
     Cluster opportunity traversal should start only from actionable candidates, and full border
     scans must yield cooperatively so no synchronous slice monopolizes a render frame. The frequent
     Terra Nullius liveness lane must not invoke the complete strategic tribe planner; it may only
-    reconcile active conquests and emit one adjacent free-land intent. Publishing an unchanged
-    preferred cluster must not invalidate the shared overlay canvas, and a data-driven cluster layer
-    must not register a periodic no-op scan.
+    reconcile active conquests and emit one adjacent free-land intent. Pending tribe or Nation
+    attacks must not pause this lane; only an unreconciled Terra Nullius intent may defer its next
+    free-land emission. Publishing an unchanged preferred cluster must not invalidate the shared
+    overlay canvas, and a data-driven cluster layer must not register a periodic no-op scan.
   </li>
 </ul>
 
@@ -85,6 +86,18 @@
     When evaluating whether a candidate SAM adds protection, existing SAM coverage must be measured
     at each protected structure, not at the candidate SAM tile. Candidate coverage and existing
     coverage are separate geometric tests.
+  </li>
+</ul>
+
+<h2>SAM-protected structure placement</h2>
+
+<ul>
+  <li>
+    New Cities, Factories, Ports, Missile Silos, and Defense Posts should prefer the closest legal
+    placement to an existing own or allied SAM. A tile covered at the SAM's current level outranks
+    one that becomes covered only after leveling; eventual maximum-level coverage outranks an
+    uncovered tile. Distance to the covering SAM breaks ties inside each coverage tier. Candidate
+    enrichment and probing must remain inside the existing 25-candidate budget.
   </li>
 </ul>
 

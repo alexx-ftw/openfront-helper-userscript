@@ -192,6 +192,13 @@ coastal/trade planning; it is not a port-placement authorization.
 
 ### Custom Early Game coastal/tribe targeting
 
+General non-SAM construction uses a bounded SAM-protection placement tier
+before the faithful tile-value score. Current coverage from an existing own or
+allied SAM wins first, followed by coverage reachable at that SAM's maximum
+level, then proximity to the covering SAM. Candidate enrichment and worker
+probes remain capped at 25. Port legality and Defense Post front constraints
+remain authoritative.
+
 When `state.settings.winFixes` is enabled, a live hostile incoming attack owns
 the attack decision before all expansion policies. This includes attacks from
 `PlayerType.Bot` tribes against a helper-controlled Human or Nation. The

@@ -658,7 +658,10 @@
       // candidates and probe them, which can yield slightly fewer probes. Same
       // candidate-generation distribution; only the in-sampler canBuild filter
       // moves to the probe phase (rank-then-probe).
-      const tiles = this.sampleTilesNearFront(frontTiles, 25, UNIT.DefensePost);
+      const tiles = this.rankStructureTilesBySamProtection(
+        this.sampleTilesNearFront(frontTiles, 25, UNIT.DefensePost),
+        UNIT.DefensePost,
+      );
       return this.buildFirstDefensePost(tiles);
     }
 
@@ -2854,14 +2857,15 @@
         sams.push(sam);
       };
 
-      {
+      if (typeof this.game.units === "function") {
         for (const sam of this.game.units(UNIT.SAMLauncher)) add(sam);
       }
       if (sams.length === 0) {
-        for (const participant of [
-          this.player,
-          ...this.legendaryFriendlyPlayers(),
-        ]) {
+        const friendlyPlayers =
+          typeof this.game.players === "function"
+            ? this.legendaryFriendlyPlayers()
+            : [];
+        for (const participant of [this.player, ...friendlyPlayers]) {
           {
             for (const sam of participant.units(UNIT.SAMLauncher)) add(sam);
           }
@@ -6195,16 +6199,47 @@
 
     compareStructurePlacementScores(left, right) {
       if (left.compactness !== null && right.compactness !== null) {
-        const coverageDifference =
-          right.compactness.existingSamCoverage -
-          left.compactness.existingSamCoverage;
-        if (coverageDifference !== 0) return coverageDifference;
+        const samProtectionDifference = this.compareSamProtectionScores(
+          left.compactness,
+          right.compactness,
+        );
+        if (samProtectionDifference !== 0) return samProtectionDifference;
         const sharedCoverageDifference =
           right.compactness.sharedSamCoverage -
           left.compactness.sharedSamCoverage;
         if (sharedCoverageDifference !== 0) return sharedCoverageDifference;
       }
       return right.v - left.v;
+    }
+
+    compareSamProtectionScores(left, right) {
+      const coverageDifference =
+        right.existingSamCoverage - left.existingSamCoverage;
+      if (coverageDifference !== 0) return coverageDifference;
+      if (left.existingSamCoverage > 0 && right.existingSamCoverage > 0) {
+        const currentDistanceDifference =
+          left.currentSamDistanceSquared - right.currentSamDistanceSquared;
+        if (currentDistanceDifference !== 0) return currentDistanceDifference;
+      }
+      const upgradeCoverageDifference =
+        right.upgradeSamCoverage - left.upgradeSamCoverage;
+      if (upgradeCoverageDifference !== 0) return upgradeCoverageDifference;
+      if (left.upgradeSamCoverage <= 0 || right.upgradeSamCoverage <= 0) return 0;
+      return left.samDistanceSquared - right.samDistanceSquared;
+    }
+
+    rankStructureTilesBySamProtection(tiles, type) {
+      const compactness = this.structurePlacementCompactnessRanker(type);
+      if (compactness === null) return tiles;
+      return tiles
+        .map((tile) => ({ tile, compactness: compactness(tile) }))
+        .sort((left, right) =>
+          this.compareStructurePlacementScores(
+            { v: 0, compactness: left.compactness },
+            { v: 0, compactness: right.compactness },
+          ),
+        )
+        .map((entry) => entry.tile);
     }
 
     structurePlacementCompactnessRanker(type) {
@@ -6221,24 +6256,52 @@
         UNIT.Port,
         UNIT.MissileSilo,
       );
-      const sams = this.player.units(UNIT.SAMLauncher);
-      return (tile) => ({
-        existingSamCoverage: sams.some((sam) => {
+      const sams = this.legendaryFriendlySamUnits();
+      const maxRange = Number(this.game.config().maxSamRange?.());
+      return (tile) => {
+        let existingSamCoverage = 0;
+        let upgradeSamCoverage = 0;
+        let currentSamDistanceSquared = Number.POSITIVE_INFINITY;
+        let samDistanceSquared = Number.POSITIVE_INFINITY;
+        for (const sam of sams) {
+          const distanceSquared = this.game.euclideanDistSquared(tile, sam.tile());
           const samRange = Number(this.game.config().samRange(sam.level()));
-          return (
+          if (
             Number.isFinite(samRange) &&
-            this.game.euclideanDistSquared(tile, sam.tile()) <= samRange * samRange
-          );
-        }) ? 1 : 0,
-        sharedSamCoverage: structures.reduce(
-          (count, structure) =>
-            count +
-            (this.game.euclideanDistSquared(tile, structure.tile()) <= rangeSquared
-              ? 1
-              : 0),
-          0,
-        ),
-      });
+            distanceSquared <= samRange * samRange
+          ) {
+            existingSamCoverage = 1;
+            currentSamDistanceSquared = Math.min(
+              currentSamDistanceSquared,
+              distanceSquared,
+            );
+          }
+          const eventualRange = Number.isFinite(maxRange) && maxRange > 0
+            ? maxRange
+            : samRange;
+          if (
+            Number.isFinite(eventualRange) &&
+            distanceSquared <= eventualRange * eventualRange
+          ) {
+            upgradeSamCoverage = 1;
+            samDistanceSquared = Math.min(samDistanceSquared, distanceSquared);
+          }
+        }
+        return {
+          existingSamCoverage,
+          upgradeSamCoverage,
+          currentSamDistanceSquared,
+          samDistanceSquared,
+          sharedSamCoverage: structures.reduce(
+            (count, structure) =>
+              count +
+              (this.game.euclideanDistSquared(tile, structure.tile()) <= rangeSquared
+                ? 1
+                : 0),
+            0,
+          ),
+        };
+      };
     }
 
     structureProbeOptions(options) {
@@ -6277,7 +6340,11 @@
       if (type === UNIT.SAMLauncher && options.prioritizeStructureCoverage) {
         tiles = this.uniqueOwnedStructureTiles(tiles);
       }
-      if (type === UNIT.MissileSilo && state.settings.winFixes) {
+      if (
+        state.settings.winFixes &&
+        type !== UNIT.SAMLauncher &&
+        type !== UNIT.Port
+      ) {
         tiles = this.prependSamCoveredTiles(tiles, candidateLimit);
       }
       return tiles;
@@ -6930,21 +6997,20 @@
       return this.game.euclideanDistSquared(tile, unit.tile());
     }
 
-    // tilesNearFriendlySams — OUR-territory tiles that lie inside a friendly SAM's range.
-    // Prefers OUR SAMs; only if we have none does it fall back to ALLY SAMs (user rule).
-    // Returns up to maxTiles candidate TileRefs to feed silo placement.
+    // Candidate tiles inside the eventual range of an existing own or allied
+    // SAM. Sampling is shared fairly across launchers and begins at each SAM's
+    // center, so the bounded probe set can actually express "as close as
+    // possible" instead of filling itself from one launcher's range edge.
     tilesNearFriendlySams(maxTiles) {
       const game = this.game;
-      if (typeof game.nearbyUnits !== "function" && typeof game.units !== "function") {
-        return [];
-      }
+      if (typeof game.units !== "function") return [];
       const mySid = this.player.smallID();
       let allSams;
       {
         allSams = game.units(UNIT.SAMLauncher) || [];
       }
       const { own, ally } = this.partitionFriendlySams(allSams, mySid);
-      const useSams = own.length > 0 ? own : ally; // OUR SAMs first, else allies
+      const useSams = own.concat(ally);
       if (useSams.length === 0) return [];
       let cfg;
       {
@@ -6952,11 +7018,21 @@
       }
       const out = [];
       const seen = new Set();
+      const perSamLimit = Math.max(1, Math.ceil(maxTiles / useSams.length));
       for (const unit of useSams) {
-        this.appendTilesNearSam({ unit, cfg, mySid, seen, out, maxTiles });
+        const local = [];
+        this.appendTilesNearSam({
+          unit,
+          cfg,
+          mySid,
+          seen,
+          out: local,
+          maxTiles: perSamLimit,
+        });
+        out.push(...local);
         if (out.length >= maxTiles) return out;
       }
-      return out;
+      return out.slice(0, maxTiles);
     }
 
     partitionFriendlySams(allSams, mySid) {
@@ -6968,7 +7044,12 @@
           const owner = unit.owner?.();
           if (!owner) continue;
           if (owner.smallID?.() === mySid) own.push(unit);
-          else if (this.player.isFriendly(owner) === true) ally.push(unit);
+          else if (
+            this.player.isFriendly(owner) === true ||
+            this.player.isOnSameTeam(owner) === true
+          ) {
+            ally.push(unit);
+          }
         }
       }
       return { own, ally };
@@ -6980,28 +7061,45 @@
       const samTile = unit.tile();
       const cx = game.x(samTile);
       const cy = game.y(samTile);
-      const range = Number(cfg?.samRange?.(Number(unit.level?.()) || 1)) || 0;
+      const range = Number(cfg?.maxSamRange?.()) ||
+        Number(cfg?.samRange?.(Number(unit.level?.()) || 1)) || 0;
       const radius = Math.floor(range);
       if (radius <= 0) return;
       const step = Math.max(2, Math.floor(radius / 6));
-      for (let dx = -radius; dx <= radius && out.length < maxTiles; dx += step) {
-        this.appendSamTileColumn({ cx, cy, dx, radius, range, step, mySid, seen, out, maxTiles });
+      const offsets = [{ dx: 0, dy: 0, distanceSquared: 0 }];
+      for (let dx = -radius; dx <= radius; dx += step) {
+        for (let dy = -radius; dy <= radius; dy += step) {
+          const distanceSquared = dx * dx + dy * dy;
+          if (distanceSquared <= range * range) {
+            offsets.push({ dx, dy, distanceSquared });
+          }
+        }
+      }
+      offsets.sort((left, right) => left.distanceSquared - right.distanceSquared);
+      for (const offset of offsets) {
+        if (out.length >= maxTiles) break;
+        this.appendSamCandidateTile({
+          cx,
+          cy,
+          dx: offset.dx,
+          dy: offset.dy,
+          mySid,
+          seen,
+          out,
+        });
       }
     }
 
-    appendSamTileColumn(context) {
-      const { cx, cy, dx, radius, range, step, mySid, seen, out, maxTiles } = context;
+    appendSamCandidateTile(context) {
+      const { cx, cy, dx, dy, mySid, seen, out } = context;
       const game = this.game;
-      for (let dy = -radius; dy <= radius && out.length < maxTiles; dy += step) {
-        if (dx * dx + dy * dy > range * range) continue;
-        const nx = cx + dx;
-        const ny = cy + dy;
-        if (!game.isValidCoord(nx, ny)) continue;
-        const tile = game.ref(nx, ny);
-        if (seen.has(tile) || !game.isLand(tile) || game.ownerID(tile) !== mySid) continue;
-        seen.add(tile);
-        out.push(tile);
-      }
+      const nx = cx + dx;
+      const ny = cy + dy;
+      if (!game.isValidCoord(nx, ny)) return;
+      const tile = game.ref(nx, ny);
+      if (seen.has(tile) || !game.isLand(tile) || game.ownerID(tile) !== mySid) return;
+      seen.add(tile);
+      out.push(tile);
     }
 
     // portValue — NationStructureBehavior.ts:925.
