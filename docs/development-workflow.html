@@ -20,5 +20,11 @@
       the commit incomplete or incoherent, commit those affected files together instead of blocking;
       continue to exclude unrelated files that the task does not require.
     </p>
+
+    <p>
+      You should run <code>npm run lint</code> for repository lint validation. Do not substitute a
+      direct <code>eslint</code> invocation over legacy files, because the project lint script
+      applies the ratcheted baseline that distinguishes new regressions from existing debt.
+    </p>
   </body>
 </html>

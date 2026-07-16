@@ -845,6 +845,7 @@
       score += enemyPressureScore * SPAWN_W.enemyPressure;
 
       // Team terms (team mode only).
+      let teamScore = 1;
       if (teamMode) {
         // Team attract: distance from nearest teammate spawn.
         let minTeamDist = Infinity;
@@ -854,12 +855,14 @@
         }
         const teamAttract = Number.isFinite(minTeamDist) ? teamAttractScore(minTeamDist) : 0;
         score += teamAttract * SPAWN_W.team;
+        teamScore = teamAttract;
 
         // Team centroid: distance from team centroid.
         if (teamSpawns.length > 0) {
           const centroidDist = Math.abs(teamCentroidX - x) + Math.abs(teamCentroidY - y);
           const centroidScore = Math.max(0, 1 - centroidDist / SPAWN_HEATMAP_TEAM_CENTROID_R);
           score += centroidScore * SPAWN_W.teamCentroid * Math.min(1, teamSpawns.length / 2);
+          teamScore = Math.min(teamScore, centroidScore);
         }
       }
 
@@ -876,6 +879,37 @@
             )
           : 0;
 
+      // Large maps and the first idle slices of every map use this bounded
+      // scorer before the exact index is ready. Rank those candidates with the
+      // same robust objective as the exact selector: a crowded start or weak
+      // access to tribes must not be hidden by attractive local terrain/team
+      // terms in the additive diagnostic score.
+      const resourceScore = combineSpawnEntityScore(
+        tribeScore,
+        nationScore,
+        tribeReach.score,
+        entities.tribeLocs.length,
+        entities.nationLocs.length,
+      );
+      let objective = null;
+      if (objectiveApi && typeof objectiveApi.evaluateModelCandidate === "function") {
+        const objectiveTribeScore = entities.tribeLocs.length > 0 ? tribeScore : 1;
+        const objectiveNationScore = entities.nationLocs.length > 0 ? nationScore : 1;
+        objective = objectiveApi.evaluateModelCandidate({
+          startScore: freeLandScore,
+          expansionScore: freeLandScore,
+          safetyScore: Math.min(playerDistScore, enemyPressureScore),
+          teamScore,
+          tribeScore: objectiveTribeScore,
+          nationScore: objectiveNationScore,
+          tribeReachScore: tribeReach.score,
+          tribeReachCount: tribeReach.count,
+          freeLandScore,
+          resourceScore,
+          clanScore,
+        });
+      }
+
       if (score > maxScore) maxScore = score;
       out.push({
         x,
@@ -887,12 +921,23 @@
         tribeReachScore: tribeReach.score,
         tribeReachRadius: tribeReach.radius,
         nationScore,
+        resourceScore,
         clanScore,
+        objective,
       });
     }
 
     // Pick diverse top spots (greedy, >= 60 tiles apart).
     out.sort((a, b) => {
+      if (
+        a.objective &&
+        b.objective &&
+        objectiveApi &&
+        typeof objectiveApi.compareModelCandidates === "function"
+      ) {
+        const robustOrder = objectiveApi.compareModelCandidates(a, b);
+        if (robustOrder !== 0) return robustOrder;
+      }
       if (a.score !== b.score) return b.score - a.score;
       if (a.freeLandScore !== b.freeLandScore) {
         return b.freeLandScore - a.freeLandScore;

@@ -1,0 +1,22 @@
+<h1>Product requirements</h1>
+
+<h2>Spawn selection</h2>
+
+<ul>
+  <li>
+    When the user provides a screenshot, grid reference, or named map location to illustrate a
+    spawn-selection problem, you must treat it as an example unless the user explicitly requests
+    location-specific behavior. Improve the general spawn-selection objective across maps; do not
+    hard-code the pictured map, coordinate, grid cell, or nearby territories.
+  </li>
+</ul>
+
+<h2>VM-backed tests</h2>
+
+<ul>
+  <li>
+    When a test receives objects from a <code>node:vm</code> sandbox, you should assert their scalar
+    fields or normalize them before deep comparison. Objects from separate VM realms can fail strict
+    deep equality even when their visible properties are identical.
+  </li>
+</ul>
