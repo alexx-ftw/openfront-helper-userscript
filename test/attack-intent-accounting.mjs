@@ -333,6 +333,13 @@ assert.equal(
 );
 
 expandingBehavior.botAttackPendingIntentCommitments = [];
+ownTroops = 10000;
+assert.equal(
+  expandingBehavior.getTerraNulliusAttackTroops(terraNullius),
+  100,
+  "the first 1% follow-up is affordable immediately after the 60% opening burst",
+);
+ownTroops = 25000;
 assert.equal(
   expandingBehavior.getTerraNulliusAttackTroops(terraNullius),
   250,
@@ -383,10 +390,11 @@ assert.equal(
 const drainedExpansionEmissionCount = troopEmissions.length;
 assert.equal(
   expandingBehavior.sendLandAttack(terraNullius),
-  false,
-  "chained TerraNullius expansion stops below its safety percentage",
+  true,
+  "chained TerraNullius expansion keeps the derived 1% liveness allowance at the opening floor",
 );
-assert.equal(troopEmissions.length, drainedExpansionEmissionCount);
+assert.equal(troopEmissions.length, drainedExpansionEmissionCount + 1);
+assert.equal(troopEmissions.at(-1), 100);
 ownTroops = 25000;
 
 const openingBehavior = new sandbox.AttackBehavior({}, expandingGame, me, 0.5, 0.3, 0.1, {}, {});

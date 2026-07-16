@@ -979,7 +979,9 @@
       );
       return Math.max(
         borderThreat,
-        this.terraNulliusSafetyTroopHighWater * (1 - EARLY_EXPAND_COMMIT),
+        this.terraNulliusSafetyTroopHighWater *
+          (1 - EARLY_EXPAND_COMMIT) *
+          (1 - EARLY_EXPAND_FOLLOWUP_COMMIT),
       );
     }
 
@@ -2672,6 +2674,14 @@
             .filter(Boolean)
         : [];
       state.earlyGame.preferredClusterSize = hasCenter ? ids.size : 0;
+      // This layer is data-driven: it is disabled when registered at page
+      // load and only becomes enabled after the first tribe topology pass.
+      // Wake the shared scheduler at that transition; otherwise its auto-stop
+      // leaves the newly enabled cluster invisible until some unrelated map
+      // overlay happens to start it.
+      if (hasCenter && typeof requestMapOverlayLoop === "function") {
+        requestMapOverlayLoop();
+      }
     }
 
     // Build the small, bounded feature vector used by rankEarlyGameTribeCandidates.

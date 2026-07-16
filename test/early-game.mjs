@@ -1198,6 +1198,7 @@ assert.match(buildSource, /"tribe-cluster-overlay\.js"/);
 
 // Integration probe: the real AttackBehavior enrichment must expose the same
 // coast/encirclement/blocking signals used by the pure ranker.
+let clusterOverlayWakeups = 0;
 const targetSandbox = {
   UNIT: {
     City: "City",
@@ -1212,6 +1213,9 @@ const targetSandbox = {
   EARLY_EXPAND_COMMIT: 0.6,
   withTimeout: (value) => Promise.resolve(value),
   WORKER_TIMEOUT_MS: 1000,
+  requestMapOverlayLoop: () => {
+    clusterOverlayWakeups += 1;
+  },
 };
 const targetCoords = new Map([
   [1, [0, 0]],
@@ -1767,6 +1771,11 @@ assert.deepEqual(
 );
 
 const enrichedTargets = await targetBehavior.getEarlyGameTribeCandidates();
+assert.equal(
+  clusterOverlayWakeups,
+  1,
+  "publishing a preferred tribe cluster starts the initially dormant overlay scheduler",
+);
 assert.equal(
   targetSandbox.state.earlyGame.preferredClusterMembers
     .map((member) => member.id)
