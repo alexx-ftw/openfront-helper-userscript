@@ -33,6 +33,9 @@
       this.status = "";
       this.lastSeenTick = -1;
       this.lastProcessedGameTick = null;
+      this.incomingDefenseTargetKey = null;
+      this.lastIncomingDefenseAttemptTick = -Infinity;
+      this.lastIncomingDefenseStructureTick = -Infinity;
       this.embargoMalusApplied = new Set(); // smallIDs we've applied embargo malus to
 
       // Seed exactly like src (NationExecution.ts:54): simpleHash(playerId)+gameID.
@@ -188,6 +191,44 @@
       return true;
     }
 
+    incomingDefenseKey(attacker) {
+      const smallID = attacker?.smallID?.();
+      if (smallID !== null && smallID !== undefined) return String(smallID);
+      return String(attacker?.id?.() ?? "hostile");
+    }
+
+    async handleIncomingDefense(ticks, profile, tickGeneration) {
+      if (!state.settings.winFixes) return false;
+      const attacker = this.attackBehavior.findIncomingAttackPlayer();
+      if (attacker === null) {
+        this.incomingDefenseTargetKey = null;
+        return false;
+      }
+      const targetKey = this.incomingDefenseKey(attacker);
+      const newThreat = targetKey !== this.incomingDefenseTargetKey;
+      this.incomingDefenseTargetKey = targetKey;
+      this.openingLandBurstPending = false;
+      this.openingExpansionFollowUpPending = false;
+      const retryDue = newThreat || ticks - this.lastIncomingDefenseAttemptTick >= 3;
+      if (retryDue) {
+        this.lastIncomingDefenseAttemptTick = ticks;
+        await autoBotProfileAsyncPhase(profile, "incoming-defense-attack", () =>
+          this.attackBehavior.respondToIncomingAttack());
+        if (!this.tickIsCurrent(tickGeneration)) return true;
+      }
+      const structureDue =
+        this.feat("build") &&
+        (newThreat || ticks - this.lastIncomingDefenseStructureTick >= this.attackRate);
+      if (structureDue) {
+        this.lastIncomingDefenseStructureTick = ticks;
+        await autoBotProfileAsyncPhase(profile, "incoming-defense-structures", () =>
+          this.structureBehavior.handleStructures());
+        if (!this.tickIsCurrent(tickGeneration)) return true;
+      }
+      this.lastSeenTick = ticks;
+      return true;
+    }
+
     getTickCrossings(ticks) {
       const from = this.lastSeenTick < 0 ? ticks : this.lastSeenTick + 1;
       this.lastSeenTick = ticks;
@@ -276,6 +317,7 @@
       if (me === null || this.handleSpawnTick(ticks, profile)) return;
       if (this.handleEliminatedPlayer(me)) return;
       if (await this.initializeTick(ticks, profile, tickGeneration)) return;
+      if (await this.handleIncomingDefense(ticks, profile, tickGeneration)) return;
       if (await this.handleOpeningExpansion(ticks, profile, tickGeneration)) return;
       const crossings = this.getTickCrossings(ticks);
       if (!crossings.attack) {

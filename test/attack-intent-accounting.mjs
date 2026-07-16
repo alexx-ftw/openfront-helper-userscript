@@ -48,6 +48,7 @@ const sandbox = {
   state: {
     settings: { winFixes: true, features: { donate: true, boat: true } },
     stats: {},
+    earlyGame: {},
   },
 };
 
@@ -454,6 +455,60 @@ assert.equal(
   500,
   "the 60% opening fraction is a ceiling rather than a fixed payload",
 );
+
+const incomingNation = { type: () => "Nation", smallID: () => 8 };
+const openingDefenseBehavior = Object.create(sandbox.AttackBehavior.prototype);
+openingDefenseBehavior.reconcileOutboundAttackIntentCommitments = () => {};
+openingDefenseBehavior.findIncomingAttackPlayer = () => incomingNation;
+let openingDefenseTarget = null;
+openingDefenseBehavior.sendAttack = async (candidate, force) => {
+  openingDefenseTarget = { candidate, force };
+  return true;
+};
+openingDefenseBehavior.reinforceIncompleteOutboundPlayerAttack = async () => {
+  throw new Error("opening defense must precede conquest reinforcement");
+};
+openingDefenseBehavior.hasLandBorderWithTerraNullius = () => {
+  throw new Error("opening defense must precede TerraNullius expansion");
+};
+assert.equal(
+  await openingDefenseBehavior.continueOpeningExpansion(),
+  false,
+  "an incoming attack terminates the opening expansion fast lane",
+);
+assert.deepEqual(openingDefenseTarget, { candidate: incomingNation, force: true });
+openingDefenseBehavior.sendAttack = async () => false;
+assert.equal(
+  await openingDefenseBehavior.continueOpeningExpansion(),
+  false,
+  "failed defense still blocks offensive opening spending",
+);
+
+const incomingTribe = { type: () => "Bot", smallID: () => 9 };
+const incomingTribeBehavior = Object.create(sandbox.AttackBehavior.prototype);
+incomingTribeBehavior.player = {
+  type: () => "Human",
+  isFriendly: () => false,
+  incomingAttacks: () => [{ attacker: () => incomingTribe, troops: () => 4000 }],
+};
+assert.equal(
+  incomingTribeBehavior.findIncomingAttackPlayer(),
+  incomingTribe,
+  "win-fix defense includes incoming tribe attacks against controlled Humans/Nations",
+);
+
+const decisionDefenseBehavior = Object.create(sandbox.AttackBehavior.prototype);
+decisionDefenseBehavior.player = {};
+decisionDefenseBehavior.allianceBehavior = {};
+decisionDefenseBehavior.reconcileOutboundAttackIntentCommitments = () => {};
+decisionDefenseBehavior.createAttackDecisionContext = () => ({ expandOn: false });
+decisionDefenseBehavior.findIncomingAttackPlayer = () => incomingNation;
+decisionDefenseBehavior.sendAttack = async () => false;
+decisionDefenseBehavior.tryImmediateAttackPriorities = async () => {
+  throw new Error("failed defense must block offensive priorities");
+};
+await decisionDefenseBehavior.maybeAttack();
+assert.equal(sandbox.state.earlyGame.action, "defense-hold");
 
 const expensiveTileBehavior = new sandbox.AttackBehavior(
   {},

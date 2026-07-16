@@ -192,6 +192,14 @@ coastal/trade planning; it is not a port-placement authorization.
 
 ### Custom Early Game coastal/tribe targeting
 
+When `state.settings.winFixes` is enabled, a live hostile incoming attack owns
+the attack decision before all expansion policies. This includes attacks from
+`PlayerType.Bot` tribes against a helper-controlled Human or Nation. The
+opening-expansion fast path must terminate and run defensive construction plus
+retaliation before a pending outbound intent can consume the tick. If the
+defensive intent cannot emit, offensive troop spending remains blocked for that
+decision.
+
 When `state.settings.winFixes` is enabled, `AttackBehavior.maybeAttack()` has a
 documented policy seam before the existing bot/Terra Nullius fallback. It may
 enrich only nearby non-friendly `PlayerType.Bot` tribes with bounded border

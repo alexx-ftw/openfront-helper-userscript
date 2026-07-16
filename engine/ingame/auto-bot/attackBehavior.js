@@ -1954,22 +1954,14 @@
       this.reconcileOutboundAttackIntentCommitments();
       const context = this.createAttackDecisionContext();
       let acted = false;
-      if (context.expandOn && state.settings.winFixes) {
-        const incomingAttacker = this.findIncomingAttackPlayer();
-        if (
-          incomingAttacker &&
-          (await this.sendAttack(incomingAttacker, true))
-        ) {
-          state.earlyGame.action = "retaliate";
-          acted = true;
-        }
+      if (state.settings.winFixes) {
+        const defense = await this.respondToIncomingAttack();
+        if (defense !== null) return;
       }
-      // A successful retaliation or TerraNullius probe must not suppress the
-      // cluster planner. These lanes have independent intent accounting and the
-      // shared rate limiter already caps total emissions, so continue through
-      // the tribe pass and let its minimum-capture budgets use any safe surplus.
-      // This also publishes the preferred-cluster overlay while free land or a
-      // hostile border is present instead of waiting until both disappear.
+      // A successful TerraNullius probe must not suppress the cluster planner.
+      // These expansion lanes have independent intent accounting and the shared
+      // rate limiter already caps total emissions, so let the tribe pass use any
+      // safe surplus. Incoming defense has already returned above.
       if (await this.tryImmediateAttackPriorities(context)) acted = true;
       if (await this.tryEarlyAttackPolicies(context)) acted = true;
       if (acted) return;
@@ -1984,6 +1976,8 @@
     // tribe topology, race scores, maritime ETAs, or overlay diagnostics.
     async continueOpeningExpansion() {
       this.reconcileOutboundAttackIntentCommitments();
+      const defense = await this.respondToIncomingAttack();
+      if (defense !== null) return false;
       if (await this.reinforceIncompleteOutboundPlayerAttack()) return true;
       if (!this.hasLandBorderWithTerraNullius()) return false;
       return this.sendLandAttack(this.game.terraNullius());
@@ -4412,8 +4406,10 @@
       let incomingAttacks = this.player
         .incomingAttacks()
         .filter((attack) => !this.player.isFriendly(attack.attacker()));
-      // Ignore bot attacks if we are not a bot.
-      if (this.player.type() !== PlayerType.Bot) {
+      // Faithful mode keeps the upstream Nation/Human policy. Win-fix mode must
+      // also defend against tribes because their attacks consume the same land
+      // and troops as attacks from Nations and Humans.
+      if (!state.settings.winFixes && this.player.type() !== PlayerType.Bot) {
         incomingAttacks = incomingAttacks.filter(
           (attack) => attack.attacker().type() !== PlayerType.Bot,
         );
@@ -4429,6 +4425,17 @@
         return largestAttacker;
       }
       return null;
+    }
+
+    // A detected threat owns the attack decision even when the defensive
+    // intent cannot be emitted yet. This prevents another expansion from
+    // spending the troops that the next defensive attempt needs.
+    async respondToIncomingAttack() {
+      const attacker = this.findIncomingAttackPlayer();
+      if (attacker === null) return null;
+      const emitted = await this.sendAttack(attacker, true);
+      state.earlyGame.action = emitted ? "retaliate" : "defense-hold";
+      return emitted;
     }
 
     // Sort neighboring bots by density (troops / tiles) and attack several of

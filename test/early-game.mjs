@@ -118,7 +118,17 @@ const openingCalls = [];
 const openingFractions = [];
 let openingFollowUps = 0;
 let openingFullPlans = 0;
+let openingIncomingAttack = false;
+let openingDefenseResponses = 0;
+let openingDefenseStructures = 0;
+const openingDefenseOrder = [];
 const NoopBehavior = class {};
+const OpeningStructureBehavior = class {
+  handleStructures() {
+    openingDefenseStructures += 1;
+    openingDefenseOrder.push("structures");
+  }
+};
 const openingSandbox = {
   Difficulty: {
     Easy: "Easy",
@@ -148,7 +158,7 @@ const openingSandbox = {
         expand: true,
         boat: false,
         warship: false,
-        build: false,
+        build: true,
         alliance: false,
         nuke: false,
       },
@@ -159,7 +169,7 @@ const openingSandbox = {
   AllianceBehavior: NoopBehavior,
   WarshipBehavior: NoopBehavior,
   NukeBehavior: NoopBehavior,
-  StructureBehavior: NoopBehavior,
+  StructureBehavior: OpeningStructureBehavior,
   AttackBehavior: class {
     constructor() {
       this.pending = 0;
@@ -174,6 +184,16 @@ const openingSandbox = {
 
     getPendingOutboundAttackTroops() {
       return this.pending;
+    }
+
+    findIncomingAttackPlayer() {
+      return openingIncomingAttack ? { smallID: () => 7 } : null;
+    }
+
+    respondToIncomingAttack() {
+      openingDefenseResponses += 1;
+      openingDefenseOrder.push("attack");
+      return true;
     }
 
     continueOpeningExpansion() {
@@ -262,6 +282,49 @@ assert.equal(
   0,
   "fast TerraNullius follow-ups never invoke the full strategic planner",
 );
+openingIncomingAttack = true;
+await openingBot.tick(5);
+assert.equal(openingDefenseResponses, 1);
+assert.equal(
+  openingDefenseStructures,
+  1,
+  "an incoming opening attack receives an immediate defensive construction slot",
+);
+assert.deepEqual(
+  openingDefenseOrder,
+  ["attack", "structures"],
+  "the lightweight troop response precedes the full structure planner",
+);
+openingIncomingAttack = false;
+await openingBot.tick(6);
+openingSandbox.state.settings.features.expand = false;
+openingSandbox.state.settings.features.build = false;
+openingIncomingAttack = true;
+await openingBot.tick(7);
+assert.equal(
+  openingDefenseResponses,
+  2,
+  "a new attack is handled immediately outside opening even when expansion and boats are disabled",
+);
+await openingBot.tick(8);
+await openingBot.tick(9);
+assert.equal(
+  openingDefenseResponses,
+  2,
+  "a persistent attack does not spam a defensive intent every game tick",
+);
+await openingBot.tick(10);
+assert.equal(
+  openingDefenseResponses,
+  3,
+  "a persistent or initially rejected defense is retried on the bounded defensive cadence",
+);
+assert.equal(
+  openingBot.openingExpansionFollowUpPending,
+  false,
+  "an incoming attack terminates the opening expansion chain even while its prior intent is pending",
+);
+assert.equal(openingFollowUps, 2, "defense does not run another TerraNullius follow-up");
 
 // Polling must not rerun the full decision chain. Win-fix keeps the old 0.6
 // combat cadence scale, so a 30-tick Impossible attack rate becomes 18 ticks.
@@ -317,6 +380,10 @@ const cadenceSandbox = {
 
     getPendingOutboundAttackTroops() {
       return 0;
+    }
+
+    findIncomingAttackPlayer() {
+      return null;
     }
 
     continueOpeningExpansion() {
@@ -1222,8 +1289,8 @@ assert.match(attackSource, /EARLY_EXPAND_COMMIT/);
 assert.match(attackSource, /attackEarlyGameTribe/);
 assert.match(
   attackSource,
-  /const incomingAttacker = this\.findIncomingAttackPlayer\(\);[\s\S]*?this\.sendAttack\(incomingAttacker, true\)[\s\S]*?action = "retaliate"[\s\S]*?acted = true/,
-  "active hostile attacks are handled without suppressing the expansion lanes",
+  /const defense = await this\.respondToIncomingAttack\(\);[\s\S]*?defense !== null\) return/,
+  "active hostile attacks own the decision before any offensive expansion lane",
 );
 assert.match(
   attackSource,
@@ -1742,8 +1809,8 @@ priorityBehavior.sendAttack = async (target, ...args) => {
   return true;
 };
 
-// A live hostile attack is handled first, but it must not starve free-land and
-// tribe expansion when intent accounting says all three are affordable.
+// A live hostile attack owns the decision. Even if other intents look
+// affordable, they must not consume the force reserved for defense.
 priorityAttackTargets.length = 0;
 priorityIncomingAttacks = [
   {
@@ -1754,10 +1821,10 @@ priorityIncomingAttacks = [
 await priorityBehavior.maybeAttack();
 assert.deepEqual(
   priorityAttackTargets,
-  [priorityEnemy, priorityFreeTarget, priorityTribe],
-  "an incoming attacker and both expansion lanes run in the same strategy pass",
+  [priorityEnemy],
+  "an incoming attacker blocks both offensive expansion lanes",
 );
-assert.equal(targetSandbox.state.earlyGame.action, "tribe");
+assert.equal(targetSandbox.state.earlyGame.action, "retaliate");
 priorityIncomingAttacks = [];
 
 // A hostile border must not suppress the other expansion lanes. First verify
