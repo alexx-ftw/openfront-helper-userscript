@@ -524,6 +524,58 @@
     return seen;
   }
 
+  // Estimate how much of a tribe component will still be edible when we reach
+  // it. Each adjacency hop represents one prior conquest. Rival capture risk
+  // therefore compounds with route depth: a directly contested next tribe is
+  // excluded, while weak/noisy pressure only removes sufficiently remote food.
+  // Excluded nodes are not traversed because an enemy-owned corridor cannot
+  // unlock tribes beyond it for our land expansion.
+  function calculateReachableTribeClusterOpportunity(
+    startId,
+    candidates,
+    adjacentIdsById,
+  ) {
+    const nodesById = new Map(
+      (Array.isArray(candidates) ? candidates : []).map((node) => [node.id, node]),
+    );
+    if (!nodesById.has(startId)) {
+      return { score: 0, memberIds: new Set() };
+    }
+    const memberIds = new Set([startId]);
+    const queue = [{ id: startId, hops: 0 }];
+    let score = 1;
+    for (let head = 0; head < queue.length; head++) {
+      const current = queue[head];
+      for (const neighborId of adjacentIdsById?.get(current.id) || []) {
+        if (memberIds.has(neighborId) || !nodesById.has(neighborId)) continue;
+        const hops = current.hops + 1;
+        const risk = finiteEarlyGameSignal(nodesById.get(neighborId)?.captureRisk);
+        const availability = Math.max(0, 1 - risk * hops);
+        if (availability <= 0) continue;
+        memberIds.add(neighborId);
+        queue.push({ id: neighborId, hops });
+        score += availability;
+      }
+    }
+    return { score, memberIds };
+  }
+
+  function calculateReachableTribeClusterOpportunities(
+    candidates,
+    adjacentIdsById,
+  ) {
+    return new Map(
+      (Array.isArray(candidates) ? candidates : []).map((candidate) => [
+        candidate.id,
+        calculateReachableTribeClusterOpportunity(
+          candidate.id,
+          candidates,
+          adjacentIdsById,
+        ),
+      ]),
+    );
+  }
+
   function chooseTribeClusterMarkerCenter(centers) {
     const valid = (Array.isArray(centers) ? centers : []).filter(
       (center) =>

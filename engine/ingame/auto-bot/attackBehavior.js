@@ -2178,7 +2178,7 @@
       return [...tribesById.values()];
     }
 
-    getLightweightEarlyGameTribeNodes(otherPlayers) {
+    getLightweightEarlyGameTribeNodes(otherPlayers, competitorProfiles) {
       return otherPlayers
         .filter(
           (tribe) =>
@@ -2187,11 +2187,20 @@
             tribe.type?.() === PlayerType.Bot &&
             this.player.isFriendly(tribe) === false,
         )
-        .map((tribe) => ({
-          id: tribe.smallID(),
-          player: tribe,
-          center: tribe.nameLocation?.(),
-        }));
+        .map((tribe) => {
+          const center = tribe.nameLocation?.();
+          return {
+            id: tribe.smallID(),
+            player: tribe,
+            center,
+            captureRisk: this.getEarlyGameFoodRaceSignals({
+              tribe,
+              tribeSid: tribe.smallID(),
+              tribeCenter: center,
+              competitorProfiles,
+            }).foodRaceValue,
+          };
+        });
     }
 
     async fetchEarlyGameTribeTopologyBorders(nodes) {
@@ -2250,12 +2259,13 @@
       }
     }
 
-    rankEarlyGameSamplingTribes(tribes, clusterSizes) {
+    rankEarlyGameSamplingTribes(tribes, clusterOpportunities) {
       return rankEarlyGameTribeSamplingCandidates(
         tribes.map((tribe) => ({
           player: tribe,
           id: tribe.smallID(),
-          clusterSize: clusterSizes.get(tribe.smallID()) || 1,
+          clusterSize:
+            clusterOpportunities.get(tribe.smallID())?.score || 1,
           opportunity:
             Math.max(1, Number(tribe.numTilesOwned?.()) || 1) /
             Math.max(1, Number(tribe.troops?.()) || 1),
@@ -2273,18 +2283,27 @@
       return { bordering, other };
     }
 
-    async getEarlyGameTribeSampling(otherPlayers) {
+    async getEarlyGameTribeSampling(otherPlayers, competitorProfiles) {
       const eligible = this.getEligibleEarlyGameTribes(otherPlayers);
-      const nodes = this.getLightweightEarlyGameTribeNodes(otherPlayers);
+      const nodes = this.getLightweightEarlyGameTribeNodes(
+        otherPlayers,
+        competitorProfiles,
+      );
       const topologyBordersById = await this.fetchEarlyGameTribeTopologyBorders(nodes);
       const tribeAdjacency = this.connectEarlyGameTribeAdjacency(
         nodes,
         topologyBordersById,
       );
-      const clusterSizes = calculateTribeAdjacencyClusterSizes(nodes, tribeAdjacency);
+      const clusterOpportunities =
+        calculateReachableTribeClusterOpportunities(nodes, tribeAdjacency);
       const { bordering, other } = this.splitEarlyGameTribesByLandBorder(eligible);
-      const nearbyTribes = this.rankEarlyGameSamplingTribes(bordering, clusterSizes)
-        .concat(this.rankEarlyGameSamplingTribes(other, clusterSizes))
+      const nearbyTribes = this.rankEarlyGameSamplingTribes(
+        bordering,
+        clusterOpportunities,
+      )
+        .concat(
+          this.rankEarlyGameSamplingTribes(other, clusterOpportunities),
+        )
         .slice(0, EARLY_TRIBE_CANDIDATES);
       return { nearbyTribes, topologyBordersById, tribeAdjacency };
     }
@@ -2432,6 +2451,7 @@
         futureFoodAccess: null,
         tribeClusterAccess: 0,
         foodRaceValue: foodRace.foodRaceValue,
+        captureRisk: foodRace.foodRaceValue,
         contestPressure: foodRace.contestPressure,
         competitorTroops: foodRace.competitorTroops,
         competitorProgress: foodRace.competitorProgress,
@@ -2480,10 +2500,17 @@
       }
     }
 
-    getEarlyGameFutureFoodCandidates(otherPlayers, candidates) {
+    getEarlyGameFutureFoodCandidates(
+      otherPlayers,
+      candidates,
+      competitorProfiles,
+    ) {
       const byId = new Map();
       for (const tribe of otherPlayers) {
-        const record = this.earlyGameFutureFoodRecord(tribe);
+        const record = this.earlyGameFutureFoodRecord(
+          tribe,
+          competitorProfiles,
+        );
         if (record) byId.set(record.id, record);
       }
       for (const candidate of candidates) {
@@ -2497,14 +2524,24 @@
       return byId;
     }
 
-    earlyGameFutureFoodRecord(tribe) {
+    earlyGameFutureFoodRecord(tribe, competitorProfiles) {
       if (!tribe?.isPlayer?.() || !tribe.isAlive?.()) return null;
       if (tribe.type?.() !== PlayerType.Bot) return null;
       if (this.player.isFriendly(tribe) === true) return null;
       const center = tribe.nameLocation?.();
       if (!Number.isFinite(Number(center?.x))) return null;
       if (!Number.isFinite(Number(center?.y))) return null;
-      return { id: tribe.smallID(), player: tribe, center };
+      return {
+        id: tribe.smallID(),
+        player: tribe,
+        center,
+        captureRisk: this.getEarlyGameFoodRaceSignals({
+          tribe,
+          tribeSid: tribe.smallID(),
+          tribeCenter: center,
+          competitorProfiles,
+        }).foodRaceValue,
+      };
     }
 
     mergeEarlyGameCandidateAdjacency(candidates, borderByTribe, adjacency) {
@@ -2527,9 +2564,17 @@
       }
     }
 
-    earlyGameFutureFoodDistances(candidate, futureFoodCandidates) {
+    earlyGameFutureFoodDistances(
+      candidate,
+      futureFoodCandidates,
+      memberIds = null,
+    ) {
       return futureFoodCandidates
-        .filter((other) => other.id !== candidate.id)
+        .filter(
+          (other) =>
+            other.id !== candidate.id &&
+            (memberIds === null || memberIds.has(other.id)),
+        )
         .map((other) => this.earlyGameCenterDistance(candidate.center, other.center))
         .filter(
           (distance) =>
@@ -2537,7 +2582,11 @@
         );
     }
 
-    enrichEarlyGameFutureFoodScores(candidates, futureFoodCandidates, clusterSizes) {
+    enrichEarlyGameFutureFoodScores(
+      candidates,
+      futureFoodCandidates,
+      clusterOpportunities,
+    ) {
       let maxClusterSize = 0;
       for (const candidate of candidates) {
         if (!isEarlyGameTribeActionable(candidate)) {
@@ -2545,13 +2594,16 @@
           candidate.tribeClusterAccess = 0;
           continue;
         }
+        const opportunity = clusterOpportunities.get(candidate.id);
+        candidate.tribeClusterMemberIds = opportunity?.memberIds || new Set();
         const futureFoodTotal = Math.max(
           0,
-          futureFoodCandidates.length - (futureFoodCandidates.includes(candidate) ? 1 : 0),
+          candidate.tribeClusterMemberIds.size - 1,
         );
         const distances = this.earlyGameFutureFoodDistances(
           candidate,
           futureFoodCandidates,
+          candidate.tribeClusterMemberIds,
         );
         candidate.futureFoodCount = distances.length;
         candidate.futureFoodTotal = futureFoodTotal;
@@ -2563,10 +2615,7 @@
           0,
         );
         candidate.futureFoodAccess = futureFoodTotal > 0 ? weightedAccess / futureFoodTotal : 0;
-        candidate.tribeClusterSize = Math.max(
-          0,
-          (clusterSizes.get(candidate.id) || 1) - 1,
-        );
+        candidate.tribeClusterSize = Math.max(0, (opportunity?.score || 1) - 1);
         maxClusterSize = Math.max(maxClusterSize, candidate.tribeClusterSize);
       }
       for (const candidate of candidates) {
@@ -2577,7 +2626,7 @@
       }
     }
 
-    publishPreferredEarlyGameCluster(candidates, adjacency, futureFoodById) {
+    publishPreferredEarlyGameCluster(candidates, futureFoodById) {
       if (!state.earlyGame) return;
       const preferred = candidates
         .filter(isEarlyGameTribeActionable)
@@ -2586,9 +2635,7 @@
             (Number(right.tribeClusterSize) || 0) -
             (Number(left.tribeClusterSize) || 0),
         )[0];
-      const ids = preferred
-        ? getTribeAdjacencyComponentIds(preferred.id, adjacency)
-        : new Set();
+      const ids = preferred?.tribeClusterMemberIds || new Set();
       const centers = [...ids]
         .map((id) => futureFoodById.get(id)?.center)
         .filter(
@@ -2628,8 +2675,16 @@
     // easier. The expensive worker calls are separately bounded and parallel.
     async getEarlyGameTribeCandidates() {
       const otherPlayers = this.game.players();
+      const mySid = this.player.smallID();
+      const competitorProfiles = this.getEarlyGameCompetitorProfiles(
+        otherPlayers,
+        mySid,
+      );
       const { nearbyTribes, topologyBordersById, tribeAdjacency } =
-        await this.getEarlyGameTribeSampling(otherPlayers);
+        await this.getEarlyGameTribeSampling(
+          otherPlayers,
+          competitorProfiles,
+        );
       if (nearbyTribes.length === 0) return [];
 
       const playersBySid = new Map(
@@ -2638,14 +2693,9 @@
           .map((player) => [player.smallID(), player]),
       );
       const myCenter = this.getPlayerCenter(this.player);
-      const mySid = this.player.smallID();
       const hasOpenOceanAccess = Array.from(
         this.player.borderTiles?.() || [],
       ).some((tile) => this.isEarlyGameMaritimeShore(tile));
-      const competitorProfiles = this.getEarlyGameCompetitorProfiles(
-        otherPlayers,
-        mySid,
-      );
       const borderByTribe = await this.getEarlyGameCandidateBorders(
         nearbyTribes,
         topologyBordersById,
@@ -2668,21 +2718,21 @@
       const futureFoodById = this.getEarlyGameFutureFoodCandidates(
         otherPlayers,
         candidates,
+        competitorProfiles,
       );
       const futureFoodCandidates = [...futureFoodById.values()];
       this.mergeEarlyGameCandidateAdjacency(candidates, borderByTribe, tribeAdjacency);
-      const clusterSizes = calculateTribeAdjacencyClusterSizes(
+      const clusterOpportunities = calculateReachableTribeClusterOpportunities(
         futureFoodCandidates,
         tribeAdjacency,
       );
       this.enrichEarlyGameFutureFoodScores(
         candidates,
         futureFoodCandidates,
-        clusterSizes,
+        clusterOpportunities,
       );
       this.publishPreferredEarlyGameCluster(
         candidates,
-        tribeAdjacency,
         futureFoodById,
       );
 

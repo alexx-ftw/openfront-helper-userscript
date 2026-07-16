@@ -42,6 +42,7 @@ assert.equal(typeof sandbox.calculateEarlyGameTribeUtility, "function");
 assert.equal(typeof sandbox.calculateConnectedTribeClusterSizes, "function");
 assert.equal(typeof sandbox.calculateTribeAdjacencyClusterSizes, "function");
 assert.equal(typeof sandbox.getTribeAdjacencyComponentIds, "function");
+assert.equal(typeof sandbox.calculateReachableTribeClusterOpportunities, "function");
 assert.equal(typeof sandbox.chooseTribeClusterMarkerCenter, "function");
 assert.equal(typeof sandbox.rankEarlyGameTribeSamplingCandidates, "function");
 assert.equal(typeof sandbox.isEarlyGameTribeActionable, "function");
@@ -957,6 +958,32 @@ const topologyClusterSizes = sandbox.calculateTribeAdjacencyClusterSizes(
 assert.ok(
   topologyClusterSizes.get("large-gateway") > topologyClusterSizes.get("short-gateway"),
   "the larger reachable tribe chain wins regardless of direction or shape",
+);
+const timeAwareClusterOpportunities = sandbox.calculateReachableTribeClusterOpportunities(
+  [
+    { id: "doomed-gateway", captureRisk: 0 },
+    { id: "doomed-next", captureRisk: 1 },
+    { id: "doomed-tail", captureRisk: 0 },
+    { id: "safe-gateway", captureRisk: 0 },
+    { id: "safe-next", captureRisk: 0 },
+  ],
+  new Map([
+    ["doomed-gateway", new Set(["doomed-next"])],
+    ["doomed-next", new Set(["doomed-gateway", "doomed-tail"])],
+    ["doomed-tail", new Set(["doomed-next"])],
+    ["safe-gateway", new Set(["safe-next"])],
+    ["safe-next", new Set(["safe-gateway"])],
+  ]),
+);
+assert.deepEqual(
+  [...timeAwareClusterOpportunities.get("doomed-gateway").memberIds],
+  ["doomed-gateway"],
+  "a tribe being captured before our next hop cuts off the cluster behind it",
+);
+assert.ok(
+  timeAwareClusterOpportunities.get("safe-gateway").score >
+    timeAwareClusterOpportunities.get("doomed-gateway").score,
+  "a smaller available cluster outranks a larger component that rivals will consume",
 );
 const ringMarkerCenter = sandbox.chooseTribeClusterMarkerCenter([
   { x: -10, y: 0 },
