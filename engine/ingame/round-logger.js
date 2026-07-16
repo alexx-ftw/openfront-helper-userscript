@@ -1,78 +1,134 @@
 // Round logger — records a timeline of game events (attacks, nuke launches,
 // alliance changes, structure builds, combat outcomes) as a JSON array in
-// localStorage. Useful for debugging bot behavior, analyzing match flow, and
-// reporting issues. Events are keyed per-match (reset when a new game starts).
+// memory. Useful for debugging bot behavior, analyzing match flow, and
+// reporting issues. Events are keyed per-match and exported directly to files.
 //
 // The logger is intentionally lightweight: it writes to an in-memory array and
-// flushes to localStorage every FLUSH_MS (5s). Names are sanitized by default
+// never writes match data to localStorage. Names are sanitized by default
 // (player IDs only) unless roundLogKeepNames is true.
 
-  const ROUND_LOG_STORAGE_KEY = "openfront-helper-round-log";
-  const ROUND_LOG_HISTORY_STORAGE_KEY = "openfront-helper-match-history";
-  const ROUND_LOG_FLUSH_MS = 5000;
-  const ROUND_LOG_MAX_EVENTS = 4000;
-  const ROUND_LOG_MAX_MATCHES = 20;
+  const ROUND_LOG_MAX_MATCHES = 2;
 
   let _roundLogEvents = [];
-  let _roundLogFlushTimer = null;
+  let _roundLogHistory = [];
   let _roundLogGameId = null;
+  let _roundLogStartedAt = null;
+  let _roundLogSequence = 0;
+  let _roundLogExportedGameId = null;
+
+  function roundLogEncodeBytes(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    }
+    return btoa(binary);
+  }
+
+  function roundLogClone(value) {
+    if (value === undefined) return null;
+    if (typeof value === "bigint") return String(value);
+    if (typeof ArrayBuffer !== "undefined" && value instanceof ArrayBuffer) {
+      return { kind: "ArrayBuffer", byteLength: value.byteLength, base64: roundLogEncodeBytes(value) };
+    }
+    if (typeof ArrayBuffer !== "undefined" && ArrayBuffer.isView(value)) {
+      return { kind: value.constructor?.name || "TypedArray", byteLength: value.byteLength,
+        base64: roundLogEncodeBytes(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength)) };
+    }
+    if (typeof Blob !== "undefined" && value instanceof Blob) {
+      return { kind: "Blob", type: value.type, size: value.size };
+    }
+    return JSON.parse(JSON.stringify(value, (_key, nested) =>
+      typeof nested === "bigint" ? String(nested) : nested));
+  }
 
   function roundLogEntry() {
     return {
       gameId: _roundLogGameId,
+      startedAt: _roundLogStartedAt,
       events: _roundLogEvents,
       flushedAt: Date.now(),
     };
   }
 
   function readRoundLogHistory() {
-    {
-      const history = JSON.parse(localStorage.getItem(ROUND_LOG_HISTORY_STORAGE_KEY) || "[]");
-      return Array.isArray(history) ? history : [];
-    }
+    return _roundLogHistory;
   }
 
-  function archiveStoredRoundLog() {
-    {
-      const stored = JSON.parse(localStorage.getItem(ROUND_LOG_STORAGE_KEY) || "null");
-      if (!stored?.gameId || !Array.isArray(stored.events) || stored.events.length === 0) return;
-      const history = readRoundLogHistory().filter((entry) => entry?.gameId !== stored.gameId);
-      history.unshift(stored);
-      localStorage.setItem(
-        ROUND_LOG_HISTORY_STORAGE_KEY,
-        JSON.stringify(history.slice(0, ROUND_LOG_MAX_MATCHES)),
-      );
-    }
+  function archiveCurrentRoundLog() {
+    const entry = roundLogEntry();
+    if (!entry.gameId || entry.events.length === 0) return;
+    _roundLogHistory = _roundLogHistory.filter((item) => item?.gameId !== entry.gameId);
+    _roundLogHistory.unshift(entry);
+    _roundLogHistory = _roundLogHistory.slice(0, ROUND_LOG_MAX_MATCHES);
   }
 
   function roundLogRecord(category, data) {
     if (!runtimeState.roundLoggerEnabled) return;
     const event = {
       t: Date.now(),
+      seq: _roundLogSequence,
       cat: category,
-      ...data,
+      ...roundLogClone(data),
     };
+    _roundLogSequence += 1;
     _roundLogEvents.push(event);
-    if (_roundLogEvents.length > ROUND_LOG_MAX_EVENTS) {
-      _roundLogEvents = _roundLogEvents.slice(-ROUND_LOG_MAX_EVENTS);
-    }
   }
 
   function roundLogFlush() {
-    if (_roundLogEvents.length === 0) return;
-    {
-      localStorage.setItem(ROUND_LOG_STORAGE_KEY, JSON.stringify(roundLogEntry()));
-    }
+    // Deliberately memory-only. Kept as a compatibility hook for diagnostics.
   }
 
   function roundLogStartMatch(game) {
-    archiveStoredRoundLog();
+    archiveCurrentRoundLog();
     _roundLogEvents = [];
     {
       const ticks = game.ticks ? game.ticks() : 0;
       _roundLogGameId = `match-${Date.now()}-${ticks}`;
+      _roundLogStartedAt = Date.now();
+      _roundLogSequence = 0;
+      _roundLogExportedGameId = null;
     }
-    roundLogRecord("match_start", { gameId: _roundLogGameId });
+    roundLogRecord("match_start", {
+      gameId: _roundLogGameId,
+      page: typeof location === "object" ? {
+        href: location.href,
+        userAgent: typeof navigator === "object" ? navigator.userAgent : null,
+        language: typeof navigator === "object" ? navigator.language : null,
+      } : null,
+      viewport: typeof innerWidth === "number" ? { width: innerWidth, height: innerHeight,
+        devicePixelRatio: typeof globalThis.devicePixelRatio === "number" ? devicePixelRatio : 1 } : null,
+      settings: typeof state === "object" ? state.settings : null,
+      game: { ticks: game.ticks?.() ?? null, playerCount: game.players?.()?.length ?? null },
+    });
+  }
+
+  function roundLogDownload(entry, reason = "manual") {
+    if (!entry?.gameId || !Array.isArray(entry.events) || entry.events.length === 0) return null;
+    if (typeof document !== "object" || typeof Blob === "undefined" || typeof URL === "undefined") {
+      return entry;
+    }
+    const header = { type: "openfront_match_log", version: 1, gameId: entry.gameId,
+      startedAt: entry.startedAt, exportedAt: Date.now(), reason };
+    const lines = [JSON.stringify(header), ...entry.events.map((event) => JSON.stringify(event))];
+    const blob = new Blob([`${lines.join("\n")}\n`], { type: "application/x-ndjson" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `openfront-${entry.gameId}.jsonl`;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return entry;
+  }
+
+  function roundLogFinishMatch(reason) {
+    if (!_roundLogGameId || _roundLogExportedGameId === _roundLogGameId) return;
+    roundLogRecord("match_end", { reason, durationMs: Date.now() - _roundLogStartedAt });
+    roundLogFlush();
+    const entry = roundLogEntry();
+    archiveCurrentRoundLog();
+    _roundLogExportedGameId = _roundLogGameId;
+    roundLogDownload(entry, reason);
   }
 
   // Observe game state each tick and record significant changes.
@@ -81,7 +137,7 @@
 
   function roundLogResetForNewMatch(game, ticks) {
     if (ticks >= _roundLogLastTick || ticks >= 10) return;
-    roundLogFlush();
+    roundLogFinishMatch("tick_reset");
     roundLogStartMatch(game);
     _roundLogLastTick = -1;
     _roundLogLastPlayerSnapshot = null;
@@ -117,6 +173,7 @@
 
   function roundLogTick(game) {
     if (!runtimeState.roundLoggerEnabled) return;
+    if (!_roundLogGameId) roundLogStartMatch(game);
     const ticks = game.ticks ? game.ticks() : 0;
     // Tick counters reset between matches. Detect that edge before the duplicate
     // tick guard; otherwise every tick in the new match is lower than the prior
@@ -151,9 +208,6 @@
     if (runtimeState.roundLoggerEnabled === nextEnabled) return;
     runtimeState.roundLoggerEnabled = nextEnabled;
     if (runtimeState.roundLoggerEnabled) {
-      if (_roundLogFlushTimer === null) {
-        _roundLogFlushTimer = window.setInterval(roundLogFlush, ROUND_LOG_FLUSH_MS);
-      }
       const context = (() => {
         {
           return getOpenFrontGameContext();
@@ -168,10 +222,6 @@
         unregisterHelperTickListener(roundLogHelperTick);
       }
       roundLogFlush();
-      if (_roundLogFlushTimer !== null) {
-        window.clearInterval(_roundLogFlushTimer);
-        _roundLogFlushTimer = null;
-      }
       _roundLogEvents = [];
       _roundLogLastPlayerSnapshot = null;
       _roundLogLastTick = -1;
@@ -179,11 +229,9 @@
   }
 
   function exportRoundLog() {
-    roundLogFlush();
     {
-      const raw = localStorage.getItem(ROUND_LOG_STORAGE_KEY);
-      if (!raw) return null;
-      const data = JSON.parse(raw);
+      const data = roundLogEntry();
+      if (!data.gameId || data.events.length === 0) return null;
       // Sanitize: remove player names if keepNames is off.
       if (data.events) {
         for (const ev of data.events) {
@@ -192,15 +240,21 @@
           }
         }
       }
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `openfront-log-${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      return data;
+      return roundLogDownload(data);
     }
+  }
+
+  if (typeof window.addEventListener === "function") {
+    window.addEventListener("error", (event) => {
+      roundLogRecord("runtime_error", { message: event.message, filename: event.filename,
+        lineno: event.lineno, colno: event.colno, error: event.error?.stack || String(event.error || "") });
+    });
+    window.addEventListener("unhandledrejection", (event) => {
+      roundLogRecord("unhandled_rejection", { reason: event.reason?.stack || roundLogClone(event.reason) });
+    });
+    window.addEventListener("pagehide", () => {
+      if (_roundLogGameId) roundLogFinishMatch("pagehide");
+    });
   }
 
   function getRoundLogSnapshot(eventLimit = 200, matchLimit = 5) {

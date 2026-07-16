@@ -137,7 +137,7 @@
     // === Helpers Tab - Toggle Keys (Tools) ===
     hideAds: ["Hide Ads", "Injects a style tag to hide game ad containers (Google Ads, iframes, ad wrappers) using multiple CSS techniques: display:none, visibility:hidden, zero-sizing, and pointer-events:none."],
     antiAfk: ["Anti-AFK", "Prevents AFK detection when tab is in background. Uses Web Worker to send periodic WebSocket pings."],
-    roundLogger: ["Round Logger", "Records game events (match start, large troop changes, network activity) as a JSON timeline in localStorage, flushed every 5s. Useful for debugging bot behavior and match analysis."],
+    roundLogger: ["Round Logger", "Records complete per-match traffic, bot decisions, actions, metadata, and failures in memory, then exports one JSONL file per match. Match data is never stored in localStorage."],
     networkLogger: ["Network Logger", "Hooks XMLHttpRequest to record network metadata (URL, method, status, timing). Max 500 entries. Does NOT capture response bodies."],
     markBotNationsRed: ["Mark Bot Nations Red", "Draws red glowing dots on the map above AI-controlled nations to distinguish them from human players."],
 

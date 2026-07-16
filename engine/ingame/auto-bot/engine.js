@@ -192,6 +192,9 @@
   }
 
   function setStatus(text) {
+    if (state.status !== text && typeof roundLogRecord === "function") {
+      roundLogRecord("bot_decision", { kind: "status", previous: state.status, next: text });
+    }
     state.status = text;
   }
 
@@ -204,6 +207,9 @@
   }
 
   function pushLog(text, cat, ts) {
+    if (typeof roundLogRecord === "function") {
+      roundLogRecord("bot_decision", { kind: "action", category: cat, text: String(text) });
+    }
     state.log.unshift({ t: ts || Date.now(), cat, text: String(text) });
     if (state.log.length > LOG_CAP) state.log.length = LOG_CAP;
     if (state.activeTab === "log") renderLog();

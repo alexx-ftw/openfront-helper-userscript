@@ -146,6 +146,7 @@
     if (event.source !== window) return;
     const data = event.data;
     if (!data || data.source !== EXTENSION_SOURCE) return;
+    roundLogRecord("helper_message_received", { data });
     INGAME_MESSAGE_HANDLERS[data.type]?.(data);
   });
 

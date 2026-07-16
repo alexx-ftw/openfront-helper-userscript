@@ -14,8 +14,30 @@ var _wsConnectionState = false;
 // Replace the WebSocket constructor so we can track the active game socket.
 window.WebSocket = function(url, protocols) {
   var sock = protocols !== void 0 ? new _NativeWS(url, protocols) : new _NativeWS(url);
+  roundLogRecord("websocket_opening", { url: String(url), protocols: protocols || null });
+  sock.addEventListener("open", function() {
+    roundLogRecord("websocket_open", { url: String(url), protocol: sock.protocol });
+  });
+  sock.addEventListener("message", async function(event) {
+    const data = event.data;
+    if (typeof data === "string") {
+      roundLogRecord("websocket_received", { raw: data });
+    } else if (typeof Blob !== "undefined" && data instanceof Blob) {
+      const buffer = await data.arrayBuffer();
+      roundLogRecord("websocket_received", {
+        data: { kind: "Blob", type: data.type, size: data.size, base64: roundLogEncodeBytes(buffer) },
+      });
+    } else {
+      roundLogRecord("websocket_received", { data: roundLogClone(data) });
+    }
+  });
+  sock.addEventListener("error", function() {
+    roundLogRecord("websocket_error", { url: String(url), readyState: sock.readyState });
+  });
   sock.addEventListener("close", function() {
+    roundLogRecord("websocket_close", { url: String(url), readyState: sock.readyState });
     if (_activeSocket === sock) {
+      roundLogFinishMatch("websocket_close");
       _activeSocket = null;
       { if (window.top) window.top.__ohActiveSocket = null; }
       _setWsConnectionState(false);
@@ -70,7 +92,13 @@ function _processOutgoingSocketData(socket, data) {
 }
 
 _NativeWS.prototype.send = function(data) {
-  return _NativeSend.call(this, _processOutgoingSocketData(this, data));
+  const processed = _processOutgoingSocketData(this, data);
+  if (typeof processed === "string") {
+    roundLogRecord("websocket_sent", { raw: processed });
+  } else {
+    roundLogRecord("websocket_sent", { data: roundLogClone(processed) });
+  }
+  return _NativeSend.call(this, processed);
 };
 
 function _setWsConnectionState(state) {

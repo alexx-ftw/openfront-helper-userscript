@@ -504,12 +504,12 @@ const HELPER_SECTIONS: HelperSection[] = [
       {
         name: "roundLogger",
         title: "Round logger",
-        desc: "Records match timeline (attacks, nukes, troop changes) to localStorage; export as JSON.",
+        desc: "Records match traffic, bot decisions, actions, metadata, and failures; exports one JSONL file per match.",
       },
       {
         name: "networkLogger",
         title: "Network logger",
-        desc: "Records fetch/XHR metadata (URL, status, timing) for debugging. No response bodies.",
+        desc: "Adds fetch/XHR request metadata to the per-match log.",
       },
     ],
   },
