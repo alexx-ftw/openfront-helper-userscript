@@ -213,10 +213,11 @@
   // Throttles (ms) for non-combat work so we don't spam the worker / re-issue
   // intents every poll. Combat cadence is derived from attackRate below.
   const MAX_DEFENSE_RESERVE = 0.8; // never hold back more than this for defense
-  // Commit decisively into free land during the opening. Hostile-border and
-  // pending-intent reserves still cap the emitted amount.
+  // Bound cumulative opening exposure without spending that entire allowance
+  // in one intent. Each free-land attack is sized from its tile cost below.
   const EARLY_EXPAND_COMMIT = 0.6;
   const EARLY_EXPAND_FOLLOWUP_COMMIT = 0.02;
+  const EARLY_EXPAND_MINIMUM_MARGIN = 1.25;
   const BUILD_THROTTLE_MS = 1800;
   const NUKE_THROTTLE_MS = 6000;
   // MIRV (late-game super-weapon vs a too-strong enemy): per-target cooldown + the

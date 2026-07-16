@@ -38,13 +38,13 @@ existing Nation decision chain but enriches its opening target choice:
    ticks (30 seconds at 100 ms per tick). A proximity-only `boatCandidate` does
    not activate Early Game or delay a tribe attack.
 
-Terra Nullius attacks use the calculated one-tile loss as a minimum and share a
-time-indexed cumulative opening budget measured from the first post-spawn
-attempt: 0.4% of the spawning army through tick 100, 1.2% through tick 300, and
-2% through tick 500. After that window, expansion may use only troops above the
-calculated production peak or a higher threat-aware reserve. Transport probes
-share the same budget, so several reconciled intents cannot independently drain
-the opening army.
+Terra Nullius attacks use the greater of 2% of the current army or the
+calculated one-tile loss plus a 25% margin. During the first 500 ticks, all
+accepted free-land intents share a cumulative ceiling of 60% of the spawning
+army; that ceiling is never used as a fixed per-intent payload. After that
+window, expansion may use only troops above the calculated production peak or a
+higher threat-aware reserve. Transport probes share the same accounting, so
+several reconciled intents cannot independently drain the opening army.
 
 Port construction applies the same largest-surface rule independently: a port
 candidate must be a border tile adjacent to the canonical open-ocean component.
@@ -139,10 +139,11 @@ and remote hostiles do not activate this rule.
 
 ## Free-land expansion cadence
 
-With `winFixes` enabled, the first live Terra Nullius attack commits up to 60%
-of the opening army. After that burst is acknowledged, directly accessible free
-land remains on the fast follow-up path: each accepted intent sends 2% of the
-current army, or the exact first-tile cost when that is larger. Pending-intent
+With `winFixes` enabled, the first live Terra Nullius attack sends 2% of the
+current army or the calculated first-tile cost plus a 25% margin, whichever is
+larger. The 60% opening value is only a cumulative ceiling across accepted
+intents. Directly accessible free land then remains on the same fast adaptive
+path. Pending-intent
 reconciliation prevents duplicate sends from a stale troop snapshot, and the
 shared client limiter (10 intents per second and 150 per minute) remains the
 authoritative maximum cadence. Border-threat and opening-army reserves still

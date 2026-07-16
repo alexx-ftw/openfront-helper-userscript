@@ -27,6 +27,7 @@ const sandbox = {
   currentDifficulty: () => "Impossible",
   EARLY_EXPAND_COMMIT: 0.6,
   EARLY_EXPAND_FOLLOWUP_COMMIT: 0.02,
+  EARLY_EXPAND_MINIMUM_MARGIN: 1.25,
   performance: { now: () => 10000 },
   discoverCtors: () => ({
     attack: "attack",
@@ -334,8 +335,8 @@ assert.equal(
 );
 assert.equal(
   troopEmissions.at(-1),
-  15000,
-  "direct TerraNullius land expansion commits the configured opening share",
+  500,
+  "direct TerraNullius expansion sends the adaptive 2% opening payload",
 );
 
 expandingBehavior.botAttackPendingIntentCommitments = [];
@@ -363,6 +364,43 @@ assert.equal(
   500,
   "the continued TerraNullius intent emits 2% when it exceeds the one-tile cost",
 );
+
+const repeatedExpansionBehavior = new sandbox.AttackBehavior(
+  {},
+  expandingGame,
+  me,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+repeatedExpansionBehavior.getEnemyDefensePostAttackProfile = () => ({});
+repeatedExpansionBehavior.attackIsTooWeakForDefensePosts = () => false;
+repeatedExpansionBehavior.applyEarlyGameRaceTroops = ({ baseTroops }) => baseTroops;
+const repeatedExpansionEmissionCount = troopEmissions.length;
+assert.equal(
+  repeatedExpansionBehavior.sendLandAttack(terraNullius),
+  true,
+  "the first adaptive TerraNullius intent is emitted",
+);
+assert.equal(
+  await repeatedExpansionBehavior.sendAttack(terraNullius),
+  true,
+  "a pending generic TerraNullius intent does not block parallel free-land expansion",
+);
+tick += 7;
+assert.equal(
+  await repeatedExpansionBehavior.sendAttack(terraNullius),
+  true,
+  "TerraNullius expansion resumes after the previous intent grace window",
+);
+assert.equal(
+  troopEmissions.length,
+  repeatedExpansionEmissionCount + 3,
+  "a reconciled prior intent cannot permanently block free-land expansion",
+);
+tick -= 7;
 
 expandingBehavior.botAttackPendingIntentCommitments = [
   {
@@ -411,7 +449,33 @@ assert.equal(
   "the first TerraNullius opening burst is not blocked by the capacity-derived reserve",
 );
 assert.equal(troopEmissions.length, openingEmissionCount + 1);
-assert.equal(troopEmissions.at(-1), 15000);
+assert.equal(
+  troopEmissions.at(-1),
+  500,
+  "the 60% opening fraction is a ceiling rather than a fixed payload",
+);
+
+const expensiveTileBehavior = new sandbox.AttackBehavior(
+  {},
+  expandingGame,
+  me,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+expensiveTileBehavior.getTerraNulliusMinimumTroops = () => 600;
+assert.equal(
+  expensiveTileBehavior.getTerraNulliusAttackTroops(
+    terraNullius,
+    null,
+    null,
+    sandbox.EARLY_EXPAND_COMMIT,
+  ),
+  750,
+  "an expensive opening tile receives its calculated loss plus the 25% margin",
+);
 
 const scheduledBehavior = new sandbox.AttackBehavior({}, expandingGame, me, 0.5, 0.3, 0.1, {}, {});
 ownTroops = 25000;

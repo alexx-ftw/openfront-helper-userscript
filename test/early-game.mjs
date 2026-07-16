@@ -1568,13 +1568,13 @@ minimumTerraNulliusBehavior.getEarlyGameSpendableTroops = () => 99000;
 const minimumTerraNulliusTarget = { isPlayer: () => false };
 assert.equal(
   minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(minimumTerraNulliusTarget),
-  24,
-  "TerraNullius land attacks use the worst one-tile attackLogic loss",
+  2000,
+  "generic TerraNullius land attacks use at least 2% of the current army",
 );
 assert.equal(
   minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(minimumTerraNulliusTarget, 2),
-  16,
-  "a targeted TerraNullius landing uses only that tile's calculated loss",
+  2000,
+  "generic expansion still uses 2% when a preferred frontier tile is known",
 );
 assert.equal(
   minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(minimumTerraNulliusTarget, null, 99000),
@@ -1593,8 +1593,8 @@ assert.equal(
     99000,
     0.6,
   ),
-  60000,
-  "the opening TerraNullius burst is capped at the configured spawning-army share",
+  2000,
+  "the opening TerraNullius payload is adaptive while 60% remains only its ceiling",
 );
 
 const radioactiveBehavior = Object.create(targetSandbox.AttackBehavior.prototype);

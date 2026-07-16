@@ -980,9 +980,15 @@
           0,
           Number(this.getStrongestBorderOpponentTroops()) || 0,
         );
+        const openingSafetyFloor =
+          this.terraNulliusSafetyTroopHighWater * (1 - EARLY_EXPAND_COMMIT);
         return Math.min(
           ownTroops,
-          Math.max(ownTroops - remainingOpeningCommitment, borderThreat),
+          Math.max(
+            ownTroops - remainingOpeningCommitment,
+            openingSafetyFloor,
+            borderThreat,
+          ),
         );
       }
 
@@ -1337,12 +1343,31 @@
       minimum,
       commitFraction,
       livenessFollowUp,
+      adaptivePayload,
     ) {
+      const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
+      const followUpFraction =
+        typeof EARLY_EXPAND_FOLLOWUP_COMMIT === "number"
+          ? EARLY_EXPAND_FOLLOWUP_COMMIT
+          : 0.02;
       const configured = Number(commitFraction);
       if (commitFraction !== null && Number.isFinite(configured)) {
         const bounded = Math.min(1, Math.max(0, configured));
-        const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
-        return Math.min(available, Math.max(minimum, ownTroops * bounded));
+        const minimumMargin =
+          typeof EARLY_EXPAND_MINIMUM_MARGIN === "number"
+            ? EARLY_EXPAND_MINIMUM_MARGIN
+            : 1.25;
+        const adaptiveTroops = Math.ceil(
+          Math.max(minimum * minimumMargin, ownTroops * followUpFraction),
+        );
+        const perIntentCeiling = Math.max(minimum, ownTroops * bounded);
+        return Math.min(available, adaptiveTroops, perIntentCeiling);
+      }
+      if (adaptivePayload) {
+        return Math.min(
+          available,
+          Math.max(minimum, Math.ceil(ownTroops * followUpFraction)),
+        );
       }
       return livenessFollowUp
         ? Math.max(minimum, Math.floor(available))
@@ -1368,6 +1393,7 @@
         minimum,
         commitFraction,
         budget.livenessFollowUp,
+        spendableTroops === null,
       );
     }
 
@@ -4824,8 +4850,8 @@
       // src: game.addExecution(new AttackExecution(troops/2, player,
       //   target.isPlayer() ? target.id() : terraNullius().id())).
       // Client: emitIntent(ctors.attack, target.id()|null, troops). In win-fix
-      // mode a TerraNullius opening uses the calculated one-tile loss as a
-      // minimum, then commits the configured opening burst.
+      // mode a TerraNullius opening uses the calculated one-tile loss plus a
+      // margin, while the configured opening fraction remains only a ceiling.
       this.reconcileOutboundAttackIntentCommitments();
       const ctors = discoverCtors(getEventBus());
       const isTerraNullius = target?.isPlayer?.() !== true;
