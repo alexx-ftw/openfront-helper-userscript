@@ -44,6 +44,7 @@ const makeEl = () => ({
 const mountedElements = new Map();
 let launcherMounts = 0;
 let domContentLoadedListener = null;
+let documentRootObserver = null;
 const mountContainer = () => {
   const el = makeEl();
   el.appendChild = (child) => {
@@ -67,6 +68,12 @@ globalThis.document = {
     if (type === "DOMContentLoaded") domContentLoadedListener = listener;
   },
   removeEventListener() {},
+};
+globalThis.MutationObserver = class {
+  constructor(callback) {
+    documentRootObserver = callback;
+  }
+  observe() {}
 };
 
 const win = {
@@ -108,12 +115,17 @@ assert.equal(launcherMounts, 0, "launcher waits while document body and head are
 assert.equal(typeof domContentLoadedListener, "function", "launcher registers a DOM-ready mount");
 document.head = mountContainer();
 document.body = mountContainer();
+document.readyState = "interactive";
 domContentLoadedListener();
 assert.equal(launcherMounts, 1, "launcher mounts once when the DOM becomes ready");
 assert.ok(
   document.getElementById("openfront-helper-launcher"),
   "launcher is present after DOM ready",
 );
+mountedElements.delete("openfront-helper-launcher");
+document.body = mountContainer();
+documentRootObserver();
+assert.equal(launcherMounts, 2, "launcher remounts after the page replaces its body");
 
 const chrome = win.chrome;
 assert.equal(chrome.runtime.id, "openfront-helper", "runtime.id set on fresh shim");
