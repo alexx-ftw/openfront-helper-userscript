@@ -23,7 +23,19 @@ const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(ma
 function readPos(): { left: number; top: number } | null {
   try {
     const raw = localStorage.getItem(POS_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      !("left" in parsed) ||
+      !("top" in parsed) ||
+      typeof parsed.left !== "number" ||
+      typeof parsed.top !== "number"
+    ) {
+      return null;
+    }
+    return { left: parsed.left, top: parsed.top };
   } catch {
     return null;
   }
@@ -42,7 +54,7 @@ function ensureStyle(): void {
   const style = document.createElement("style");
   style.id = POPUP_STYLE_ID;
   style.textContent = POPUP_CSS;
-  (document.head || document.documentElement).appendChild(style);
+  document.head.appendChild(style);
 }
 
 function createIcon(): void {
@@ -60,8 +72,8 @@ function createIcon(): void {
   const saved = readPos();
   const left = saved ? clamp(saved.left, 0, innerWidth - size) : 16;
   const top = saved ? clamp(saved.top, 0, innerHeight - size) : innerHeight - 60;
-  icon.style.left = `${left}px`;
-  icon.style.top = `${top}px`;
+  icon.style.left = String(left) + "px";
+  icon.style.top = String(top) + "px";
 
   let dragging = false;
   let moved = false;
@@ -118,6 +130,10 @@ function createIcon(): void {
 }
 
 export function installLauncher(): void {
-  if (document.body) createIcon();
-  else document.addEventListener("DOMContentLoaded", createIcon, { once: true });
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", createIcon, { once: true });
+    return;
+  }
+
+  createIcon();
 }
