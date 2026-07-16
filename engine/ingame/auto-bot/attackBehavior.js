@@ -1915,6 +1915,7 @@
       }
       this.reconcileOutboundAttackIntentCommitments();
       const context = this.createAttackDecisionContext();
+      let acted = false;
       if (context.expandOn && state.settings.winFixes) {
         const incomingAttacker = this.findIncomingAttackPlayer();
         if (
@@ -1922,11 +1923,18 @@
           (await this.sendAttack(incomingAttacker, true))
         ) {
           state.earlyGame.action = "retaliate";
-          return;
+          acted = true;
         }
       }
-      if (await this.tryImmediateAttackPriorities(context)) return;
-      if (await this.tryEarlyAttackPolicies(context)) return;
+      // A successful retaliation or TerraNullius probe must not suppress the
+      // cluster planner. These lanes have independent intent accounting and the
+      // shared rate limiter already caps total emissions, so continue through
+      // the tribe pass and let its minimum-capture budgets use any safe surplus.
+      // This also publishes the preferred-cluster overlay while free land or a
+      // hostile border is present instead of waiting until both disappear.
+      if (await this.tryImmediateAttackPriorities(context)) acted = true;
+      if (await this.tryEarlyAttackPolicies(context)) acted = true;
+      if (acted) return;
       await this.runAuxiliaryAttackPolicies(context);
       if (await this.tryAttackFallbacks(context)) return;
       await this.runOrdinaryAttackPolicies(context);

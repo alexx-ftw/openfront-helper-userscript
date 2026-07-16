@@ -1161,8 +1161,8 @@ assert.match(attackSource, /EARLY_EXPAND_COMMIT/);
 assert.match(attackSource, /attackEarlyGameTribe/);
 assert.match(
   attackSource,
-  /const incomingAttacker = this\.findIncomingAttackPlayer\(\);[\s\S]*?this\.sendAttack\(incomingAttacker, true\)[\s\S]*?action = "retaliate"[\s\S]*?return;/,
-  "active hostile attacks are handled before expansion can return from the combat decision",
+  /const incomingAttacker = this\.findIncomingAttackPlayer\(\);[\s\S]*?this\.sendAttack\(incomingAttacker, true\)[\s\S]*?action = "retaliate"[\s\S]*?acted = true/,
+  "active hostile attacks are handled without suppressing the expansion lanes",
 );
 assert.match(
   attackSource,
@@ -1570,7 +1570,7 @@ assert.equal(
 );
 
 // A directly adjacent free tile is attempted before tribe and enemy food
-// attacks. It only blocks those fallbacks when the expansion intent is emitted.
+// attacks, but its independent intent must not suppress a parallel tribe capture.
 const priorityFreeTarget = { isPlayer: () => false };
 const priorityTribe = {
   isPlayer: () => true,
@@ -1635,10 +1635,10 @@ targetSandbox.state.earlyGame = {};
 await priorityBehavior.maybeAttack();
 assert.deepEqual(
   priorityAttackTargets,
-  [priorityFreeTarget],
-  "accessible free land is selected before tribes or human enemies",
+  [priorityFreeTarget, priorityTribe],
+  "accessible free land and a bordering tribe expand in parallel",
 );
-assert.equal(targetSandbox.state.earlyGame.action, "land");
+assert.equal(targetSandbox.state.earlyGame.action, "tribe");
 
 // A rejected free-land intent must not starve the bordering tribe until some
 // other player consumes all surrounding TerraNullius.
@@ -1661,9 +1661,8 @@ priorityBehavior.sendAttack = async (target, ...args) => {
   return true;
 };
 
-// A live hostile attack outranks even cost-free expansion. This reproduces the
-// starvation bug where an earlier expansion return prevented retaliation on
-// every decision despite a full army.
+// A live hostile attack is handled first, but it must not starve free-land and
+// tribe expansion when intent accounting says all three are affordable.
 priorityAttackTargets.length = 0;
 priorityIncomingAttacks = [
   {
@@ -1674,10 +1673,10 @@ priorityIncomingAttacks = [
 await priorityBehavior.maybeAttack();
 assert.deepEqual(
   priorityAttackTargets,
-  [priorityEnemy],
-  "an incoming attacker is targeted before expansion without waiting for another strategy pass",
+  [priorityEnemy, priorityFreeTarget, priorityTribe],
+  "an incoming attacker and both expansion lanes run in the same strategy pass",
 );
-assert.equal(targetSandbox.state.earlyGame.action, "retaliate");
+assert.equal(targetSandbox.state.earlyGame.action, "tribe");
 priorityIncomingAttacks = [];
 
 // A hostile border must not suppress the other expansion lanes. First verify
@@ -1729,10 +1728,14 @@ assert.deepEqual(
   "a bordering tribe is attacked after TerraNullius is exhausted",
 );
 
-// Directly bordering radioactive TerraNullius is still green free land. It must
-// be eaten before tribe/player branches rather than deferred as a last fallback.
+// Directly bordering radioactive TerraNullius is still green free land. It is
+// eaten first without suppressing the parallel tribe lane.
 priorityAttackTargets.length = 0;
 priorityAttackCalls.length = 0;
+priorityBehavior.attackEarlyGameTribe = async () => {
+  priorityAttackTargets.push(priorityTribe);
+  return true;
+};
 priorityPlayer.nearby = () => [];
 priorityGame.neighbors = (tile) => (tile === 1 ? [2] : []);
 priorityGame.hasFallout = (tile) => tile === 2;
@@ -1740,8 +1743,8 @@ priorityPlayer.nearby = () => [priorityTribe, priorityEnemy];
 await priorityBehavior.maybeAttack();
 assert.deepEqual(
   priorityAttackTargets,
-  [priorityFreeTarget],
-  "radioactive TerraNullius is attacked before tribe and player targets",
+  [priorityFreeTarget, priorityTribe],
+  "radioactive TerraNullius and a bordering tribe expand in parallel",
 );
 assert.equal(
   priorityAttackCalls[0].args[3],
@@ -1751,16 +1754,16 @@ assert.equal(
 priorityGame.hasFallout = () => false;
 priorityBehavior.isBorderingNukedTerritory = () => false;
 
-// Directly accessible free land remains the cheapest first move even when a
-// tribe is also bordering the player.
+// Directly accessible free land remains the cheapest first move, while the
+// minimum-budget tribe capture follows in the same decision.
 priorityAttackTargets.length = 0;
 priorityGame.neighbors = (tile) => (tile === 1 ? [2, 3] : []);
 priorityPlayer.nearby = () => [priorityFreeTarget, priorityTribe, priorityEnemy];
 await priorityBehavior.maybeAttack();
 assert.deepEqual(
   priorityAttackTargets,
-  [priorityFreeTarget],
-  "direct free land still wins over a bordering tribe",
+  [priorityFreeTarget, priorityTribe],
+  "direct free land is first without blocking a bordering tribe",
 );
 
 const enrichedTargets = await targetBehavior.getEarlyGameTribeCandidates();
