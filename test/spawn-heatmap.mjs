@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import vm from "node:vm";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -34,8 +34,10 @@ function loadHarness() {
       overlayLayer = layer;
     },
     requestMapOverlayLoop() {},
-    spawnHeatmapEnabled: false,
-    spawnMarkersEnabled: false,
+    runtimeState: {
+      spawnHeatmapEnabled: false,
+      spawnMarkersEnabled: false,
+    },
     setTimeout: () => 0,
     window: { innerHeight: 600, innerWidth: 800 },
     __OFHSpawnIndex: {
@@ -59,12 +61,10 @@ function loadHarness() {
     },
   };
   sandbox.globalThis = sandbox;
-  // eslint-disable-next-line sonarjs/code-eval -- executes the local classic userscript module in an isolated test realm.
-  vm.runInNewContext(fs.readFileSync(OBJECTIVE_SOURCE, "utf8"), sandbox, {
+  executeClassicScript(fs.readFileSync(OBJECTIVE_SOURCE, "utf8"), sandbox, {
     filename: OBJECTIVE_SOURCE,
   });
-  // eslint-disable-next-line sonarjs/code-eval -- executes the local classic userscript module in an isolated test realm.
-  vm.runInNewContext(fs.readFileSync(SOURCE, "utf8"), sandbox, {
+  executeClassicScript(fs.readFileSync(SOURCE, "utf8"), sandbox, {
     filename: SOURCE,
   });
 
@@ -196,4 +196,4 @@ assert.equal(
   "async exact selector must not scan a candidate range synchronously",
 );
 
-console.log("spawn-heatmap tests passed");
+process.stdout.write("spawn-heatmap tests passed\n");

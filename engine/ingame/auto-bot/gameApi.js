@@ -49,6 +49,17 @@
     }
   }
 
+  function makePlayerMethodPassThrough(core, name, fallback) {
+    return (...args) =>
+      typeof core[name] === "function"
+        ? core[name](...args.map((value) => (value?.__src ? value.__src : value)))
+        : fallback;
+  }
+
+  // The factory deliberately owns all mutable caches in one per-game closure so
+  // concurrent headless games cannot leak state. Splitting it into module state
+  // would weaken that isolation; its nested helpers are linted individually.
+  // eslint-disable-next-line max-lines-per-function, max-statements
   function createGameApi(src) {
     const playerCache = new Map(); // smallID -> wrapped player
     const borderCache = new Map(); // smallID -> { tick, set:Set<TileRef> }
@@ -58,7 +69,6 @@
     // OFFSET added on top of the profile bucket midpoint (§8.1), decayed 0.05/tick.
     const overlay = new Map(); // smallID -> offset
     let profileRelations = new Map(); // smallID -> Relation bucket (from profile())
-    let profileAlliances = []; // smallID[]
     let profileLoaded = false;
     let profileFetchedAt = 0;
     let profileInFlight = null;
@@ -176,30 +186,35 @@
           transportRouteCache.set(targetTile, result);
           return result;
         }
-        if (!hasLocalTransportRouteEstimator || typeof findWaterRouteTicks !== "function") {
+        const routeFinder =
+          typeof findWaterRouteTicksAsync === "function"
+            ? findWaterRouteTicksAsync
+            : findWaterRouteTicks;
+        if (!hasLocalTransportRouteEstimator || typeof routeFinder !== "function") {
           return null;
         }
         const spawn = transportSpawnCache.get(targetTile);
         if (spawn == null || spawn === false) return null;
         const goal = closestTargetShore(targetTile);
         if (goal == null) return null;
-        const result = findWaterRouteTicks({
+        const result = await routeFinder({
           start: spawn,
           goal,
           neighbors: (tile) => src.neighbors(tile),
           isWater: (tile) => src.isWater(tile),
-          maxTicks: EARLY_GAME_MAX_BOAT_TICKS,
+          maxTicks: BOAT_EXPLORATION_MAX_ROUTE_TICKS,
         });
         transportRouteCache.set(targetTile, result);
         return result;
       } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/auto-bot/gameApi.js:199");
         return null;
       }
     }
 
     function isPlayerObj(o) {
       try {
-        return !!(o && typeof o.isPlayer === "function" && o.isPlayer());
+        return Boolean(o && typeof o.isPlayer === "function" && o.isPlayer());
       } catch (_e) {
         return false;
       }
@@ -315,10 +330,8 @@
     }
 
     function makePlayer(core, sid) {
-      const pass = (name, dflt) => (...a) =>
-        typeof core[name] === "function"
-          ? core[name](...a.map((x) => (x && x.__src ? x.__src : x)))
-          : dflt;
+      const pass = (name, fallback) =>
+        makePlayerMethodPassThrough(core, name, fallback);
       const w = {
         __src: core,
         isPlayer: () => true,
@@ -445,73 +458,73 @@
     // nearby — union of (a) owners of LAND neighbors of our border tiles whose
     // owner != us (incl. TerraNullius), and (b) shore-reachable neighbors across
     // narrow rivers. Fully synchronous over the border snapshot.
+    function addNearbyOwner(neighbors, ownerSid, mySid) {
+      if (ownerSid === mySid) return;
+      if (ownerSid == null) {
+        neighbors.set("TN", api.terraNullius());
+        return;
+      }
+      const player = api.playerBySmallID(ownerSid);
+      if (player) neighbors.set(ownerSid, player);
+    }
+
+    function addLandBorderNeighbors(neighbors, border, mySid) {
+      for (const borderTile of border) {
+        for (const neighbor of src.neighbors(borderTile)) {
+          if (!src.isLand(neighbor)) continue;
+          const ownerSid = src.hasOwner(neighbor) ? src.ownerID(neighbor) : null;
+          addNearbyOwner(neighbors, ownerSid, mySid);
+        }
+      }
+    }
+
+    function shoreProbeOwner(borderTile, dx, dy) {
+      const x = src.x(borderTile);
+      const y = src.y(borderTile);
+      const waterX = x + dx;
+      const waterY = y + dy;
+      if (!src.isValidCoord(waterX, waterY) || !src.isWater(src.ref(waterX, waterY))) return undefined;
+      const probeX = x + dx * 5;
+      const probeY = y + dy * 5;
+      if (!src.isValidCoord(probeX, probeY)) return undefined;
+      const tile = src.ref(probeX, probeY);
+      if (!src.isLand(tile) || (!src.hasOwner(tile) && src.hasFallout(tile))) return undefined;
+      return src.hasOwner(tile) ? src.ownerID(tile) : null;
+    }
+
+    function addShoreReachableNeighbors(neighbors, border, mySid) {
+      const shores = border.filter((tile) => src.isShore(tile));
+      const directions = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+      for (let index = 0; index < shores.length; index += 10) {
+        for (const [dx, dy] of directions) {
+          const ownerSid = shoreProbeOwner(shores[index], dx, dy);
+          if (ownerSid !== undefined) addNearbyOwner(neighbors, ownerSid, mySid);
+        }
+      }
+    }
+
     function nearbyOf(me) {
-      const ns = new Map(); // key -> player|TN  (key: smallID, or "TN")
+      const neighbors = new Map();
       const mySid = me.smallID();
-      const addOwner = (ownerSid) => {
-        if (ownerSid === mySid) return;
-        if (ownerSid == null) {
-          const tn = api.terraNullius();
-          ns.set("TN", tn);
-        } else {
-          const p = api.playerBySmallID(ownerSid);
-          if (p) ns.set(ownerSid, p);
-        }
-      };
       const border = me.borderTiles();
-      for (const bt of border) {
-        for (const n of src.neighbors(bt)) {
-          if (!src.isLand(n)) continue;
-          const ownerSid = src.hasOwner(n) ? src.ownerID(n) : null;
-          if (ownerSid !== mySid) addOwner(ownerSid);
-        }
-      }
-      // shoreReachableNeighbors — every 10th shore border tile, 5 steps each
-      // cardinal direction that immediately enters water.
-      const shores = [];
-      for (const bt of border) if (src.isShore(bt)) shores.push(bt);
-      const dirs = [
-        [0, -1],
-        [0, 1],
-        [-1, 0],
-        [1, 0],
-      ];
-      for (let i = 0; i < shores.length; i += 10) {
-        const b = shores[i];
-        const bx = src.x(b);
-        const by = src.y(b);
-        for (const [dx, dy] of dirs) {
-          const x1 = bx + dx;
-          const y1 = by + dy;
-          if (!src.isValidCoord(x1, y1) || !src.isWater(src.ref(x1, y1))) continue;
-          const nx = bx + dx * 5;
-          const ny = by + dy * 5;
-          if (!src.isValidCoord(nx, ny)) continue;
-          const tile = src.ref(nx, ny);
-          if (!src.isLand(tile)) continue;
-          if (!src.hasOwner(tile) && src.hasFallout(tile)) continue;
-          const ownerSid = src.hasOwner(tile) ? src.ownerID(tile) : null;
-          if (ownerSid !== mySid) addOwner(ownerSid);
-        }
-      }
-      return Array.from(ns.values());
+      addLandBorderNeighbors(neighbors, border, mySid);
+      addShoreReachableNeighbors(neighbors, border, mySid);
+      return Array.from(neighbors.values());
     }
 
     // sharesBorderWith — does any LAND neighbor of our border tiles belong to other?
+    function borderNeighborMatches(neighbor, ownerSid) {
+      if (!src.isLand(neighbor)) return false;
+      return ownerSid == null
+        ? !src.hasOwner(neighbor)
+        : src.hasOwner(neighbor) && src.ownerID(neighbor) === ownerSid;
+    }
+
     function sharesBorderWith(me, other) {
-      const osid = unwrapSmallID(other);
-      if (osid == null) {
-        // TerraNullius: share a border if any unowned land neighbor exists.
-        for (const bt of me.borderTiles()) {
-          for (const n of src.neighbors(bt)) {
-            if (src.isLand(n) && !src.hasOwner(n)) return true;
-          }
-        }
-        return false;
-      }
-      for (const bt of me.borderTiles()) {
-        for (const n of src.neighbors(bt)) {
-          if (src.isLand(n) && src.hasOwner(n) && src.ownerID(n) === osid) return true;
+      const ownerSid = unwrapSmallID(other);
+      for (const borderTile of me.borderTiles()) {
+        for (const neighbor of src.neighbors(borderTile)) {
+          if (borderNeighborMatches(neighbor, ownerSid)) return true;
         }
       }
       return false;
@@ -567,6 +580,31 @@
     let _waterCompIsOcean = null;
     let _waterCompCoast = null;
 
+    function visitWaterComponentNeighbor(neighbor, id, labels, queue, coast) {
+      if (src.isWater(neighbor)) {
+        if (labels[neighbor] !== -2) return;
+        labels[neighbor] = id;
+        queue.push(neighbor);
+        return;
+      }
+      if (src.isLand(neighbor)) coast.add(neighbor);
+    }
+
+    function floodWaterComponent(start, id, labels) {
+      let isOcean = false;
+      const coast = new Set();
+      const queue = [start];
+      labels[start] = id;
+      for (let head = 0; head < queue.length; head++) {
+        const current = queue[head];
+        if (src.isOcean(current)) isOcean = true;
+        for (const neighbor of src.neighbors(current)) {
+          visitWaterComponentNeighbor(neighbor, id, labels, queue, coast);
+        }
+      }
+      return { isOcean, coast };
+    }
+
     function buildWaterLabels() {
       const w = src.width();
       const h = src.height();
@@ -579,30 +617,11 @@
       for (let t = 0; t < total; t++) {
         if (!src.isWater(t) || labels[t] !== -2) continue;
         const id = nextId++;
-        let isOcean = false;
-        const coastSet = new Set();
-        const queue = [t];
-        labels[t] = id;
-        let head = 0;
-        while (head < queue.length) {
-          const cur = queue[head++];
-          if (src.isOcean(cur)) isOcean = true;
-          for (const n of src.neighbors(cur)) {
-            if (src.isWater(n)) {
-              if (labels[n] === -2) {
-                labels[n] = id;
-                queue.push(n);
-              }
-            } else if (src.isLand(n)) {
-              // A land neighbor of this water body is part of its coastline.
-              coastSet.add(n);
-            }
-          }
-        }
+        const { isOcean, coast } = floodWaterComponent(t, id, labels);
         compIsOcean[id] = isOcean;
         // Only non-ocean components need their coast recorded (ocean is always
         // treated as shared → its coast is never scanned).
-        compCoast[id] = isOcean ? null : Array.from(coastSet);
+        compCoast[id] = isOcean ? null : Array.from(coast);
       }
       _waterLabels = labels;
       _waterCompIsOcean = compIsOcean;
@@ -648,29 +667,61 @@
     // exactly matching core's `!== null` coastal test.
     function isTrustedWaterPartner(player, other) {
       try {
-        if (!other || !other.isPlayer || !other.isPlayer()) return false;
-        if (other.type && other.type() === PlayerType.Bot) return false;
-        if (typeof player.isAlive === "function" && !player.isAlive()) return false;
-        if (typeof other.isAlive === "function" && !other.isAlive()) return false;
+        if (!isEligibleWaterPlayer(player) || !isEligibleWaterPlayer(other)) return false;
         if (player.id() === other.id()) return false;
-        if (player.hasEmbargoAgainst(other) || other.hasEmbargoAgainst(player)) {
-          return false;
-        }
-
-        const allied =
-          (typeof player.isAlliedWith === "function" &&
-            player.isAlliedWith(other)) ||
-          (typeof other.isAlliedWith === "function" &&
-            other.isAlliedWith(player));
-        const teammate =
-          (typeof player.isOnSameTeam === "function" &&
-            player.isOnSameTeam(other)) ||
-          (typeof other.isOnSameTeam === "function" &&
-            other.isOnSameTeam(player));
-        return allied || teammate;
+        if (player.hasEmbargoAgainst(other) || other.hasEmbargoAgainst(player)) return false;
+        return areAlliedWaterPlayers(player, other) || areTeamWaterPlayers(player, other);
       } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/auto-bot/gameApi.js:675");
         return false;
       }
+    }
+
+    function isEligibleWaterPlayer(player) {
+      if (!player?.isPlayer?.()) return false;
+      if (player.type?.() === PlayerType.Bot) return false;
+      return typeof player.isAlive !== "function" || player.isAlive();
+    }
+
+    function areAlliedWaterPlayers(player, other) {
+      return Boolean(player.isAlliedWith?.(other) || other.isAlliedWith?.(player));
+    }
+
+    function areTeamWaterPlayers(player, other) {
+      return Boolean(player.isOnSameTeam?.(other) || other.isOnSameTeam?.(player));
+    }
+
+    function ownedWaterComponents(player) {
+      let hasOcean = false;
+      const lakes = new Set();
+      for (const tile of player.borderTiles()) {
+        if (!src.isShore(tile)) continue;
+        for (const neighbor of src.neighbors(tile)) {
+          if (!src.isWater(neighbor)) continue;
+          if (src.isOcean(neighbor)) {
+            hasOcean = true;
+            continue;
+          }
+          const component = _waterLabels[neighbor];
+          if (component >= 0) lakes.add(component);
+        }
+      }
+      return { hasOcean, lakes };
+    }
+
+    function lakeHasTrustedPartner(component, player, mySid) {
+      const coast = _waterCompCoast[component];
+      if (!coast) return false;
+      const seen = new Set();
+      for (const landTile of coast) {
+        if (!src.hasOwner(landTile)) continue;
+        const ownerSid = src.ownerID(landTile);
+        if (ownerSid == null || ownerSid === mySid || seen.has(ownerSid)) continue;
+        seen.add(ownerSid);
+        const other = wrapPlayer(src.playerBySmallID(ownerSid));
+        if (isTrustedWaterPartner(player, other)) return true;
+      }
+      return false;
     }
 
     function sharedWaterComponents(player) {
@@ -683,47 +734,12 @@
         /* fall through */
       }
       ensureWaterLabels();
-      const border = player.borderTiles();
       const mySid = player.smallID();
-
-      let hasOcean = false;
-      const myLakes = new Set();
-      for (const t of border) {
-        if (!src.isShore(t)) continue;
-        for (const n of src.neighbors(t)) {
-          if (!src.isWater(n)) continue;
-          if (src.isOcean(n)) {
-            hasOcean = true;
-            continue;
-          }
-          const comp = _waterLabels[n];
-          if (comp >= 0) myLakes.add(comp);
-        }
-      }
-
+      const { hasOcean, lakes } = ownedWaterComponents(player);
       const shared = new Set();
       if (hasOcean) shared.add(SHARED_OCEAN_SENTINEL);
-
-      for (const comp of myLakes) {
-        const coast = _waterCompCoast[comp];
-        if (!coast) continue; // ocean component (shouldn't appear) or none
-        // Is there another NON-BOT player on this lake who can trade with us?
-        let isShared = false;
-        const seen = new Set();
-        for (const landTile of coast) {
-          if (!src.hasOwner(landTile)) continue;
-          const ownerSid = src.ownerID(landTile);
-          if (ownerSid == null || ownerSid === mySid) continue;
-          if (seen.has(ownerSid)) continue;
-          seen.add(ownerSid);
-          const other = wrapPlayer(src.playerBySmallID(ownerSid));
-          if (!other || !other.isPlayer || !other.isPlayer()) continue;
-          if (isTrustedWaterPartner(player, other)) {
-            isShared = true;
-            break;
-          }
-        }
-        if (isShared) shared.add(comp);
+      for (const component of lakes) {
+        if (lakeHasTrustedPartner(component, player, mySid)) shared.add(component);
       }
 
       return shared.size > 0 ? shared : null;
@@ -740,6 +756,7 @@
         const fd = src.frameData();
         return fd && fd.railroadState ? fd.railroadState : null;
       } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/auto-bot/gameApi.js:746");
         return null;
       }
     }
@@ -831,59 +848,94 @@
     };
 
     // ── per-tick snapshot ─────────────────────────────────────────────────────
+    function monotonicNow() {
+      return typeof performance !== "undefined" && performance.now
+        ? performance.now() : Date.now();
+    }
+
+    function reusableBorderSet(cached, now) {
+      if (!cached?.set?.size || now - (cached.at || 0) >= 1500) return null;
+      return cached.set;
+    }
+
+    async function fetchBorderSet(core) {
+      try {
+        const response = await withTimeout(core.borderTiles(), 4000, null);
+        const tiles = response?.borderTiles ?? response;
+        if (!tiles) return null;
+        const result = new Set(tiles);
+        return result.size > 0 ? result : null;
+      } catch (_e) {
+        captureRuntimeException(_e, "engine/ingame/auto-bot/gameApi.js:fetchBorderSet");
+        return null;
+      }
+    }
+
     async function ensureBorderTiles(player) {
       const core = unwrap(player);
       const sid = core.smallID();
-      const tick = src.ticks();
       const cached = borderCache.get(sid);
-      const now =
-        typeof performance !== "undefined" && performance.now
-          ? performance.now()
-          : Date.now();
+      const now = monotonicNow();
       // TIME-BASED reuse (not per-tick): serve a border up to ~1.5s old instead of
       // re-hitting the worker every tick. CRITICAL at MAX game speed, where the
       // worker/client is saturated by GameUpdates and a per-tick borderTiles
       // request times out → empty → BLIND bot. (Mirrors the old 2.2s border cache.)
-      const BORDER_REUSE_MS = 1500;
-      if (
-        cached &&
-        cached.set &&
-        cached.set.size > 0 &&
-        now - (cached.at || 0) < BORDER_REUSE_MS
-      ) {
-        return cached.set;
-      }
+      const reusable = reusableBorderSet(cached, now);
+      if (reusable) return reusable;
       // Don't pile up concurrent requests for the same player (worsens saturation)
       // — if a fetch is already in flight, serve the last-good set immediately.
-      if (cached && cached.inFlight) {
-        return cached.set || new Set();
-      }
+      if (cached?.inFlight) return cached.set || new Set();
       const entry = cached || { at: 0, set: new Set(), inFlight: false };
       entry.inFlight = true;
       borderCache.set(sid, entry);
-      let fetched = null;
-      try {
-        // Longer timeout than the default — at max speed the worker may be slow.
-        const res = await withTimeout(core.borderTiles(), 4000, null);
-        const s = res && res.borderTiles ? res.borderTiles : res;
-        if (s) {
-          const ns = new Set(s);
-          if (ns.size > 0) fetched = ns;
-        }
-      } catch (_e) {
-        /* keep last good */
-      }
+      const fetched = await fetchBorderSet(core);
       entry.inFlight = false;
       if (fetched !== null) {
         entry.set = fetched;
-        entry.at =
-          typeof performance !== "undefined" && performance.now
-            ? performance.now()
-            : Date.now();
+        entry.at = monotonicNow();
       }
       // else: keep entry.set (last good) — never blank the bot.
       borderCache.set(sid, entry);
       return entry.set || new Set();
+    }
+
+    function decayRelationOverlay(tick) {
+      if (lastSnapshotTick < 0 || tick <= lastSnapshotTick) return;
+      const steps = Math.min(tick - lastSnapshotTick, 50);
+      for (const [key, value] of overlay) {
+        let relation = value;
+        for (let index = 0; index < steps; index++) {
+          relation += -Math.sign(relation) * 0.05;
+          if (Math.abs(relation) >= 0.1) continue;
+          relation = 0;
+          break;
+        }
+        if (relation === 0) overlay.delete(key);
+        else overlay.set(key, relation);
+      }
+    }
+
+    async function refreshProfile(now) {
+      if (profileLoaded && now - profileFetchedAt < PROFILE_REFRESH_MS) return;
+      if (!profileInFlight) profileInFlight = loadProfile();
+      await profileInFlight;
+    }
+
+    async function loadProfile() {
+      try {
+        const profile = await withTimeout(unwrap(mePlayer).profile(), WORKER_TIMEOUT_MS, null);
+        if (profile?.relations) {
+          profileRelations = new Map(
+            Object.entries(profile.relations).map(([key, value]) => [Number(key), Number(value)]),
+          );
+        }
+      } catch (_e) {
+        captureRuntimeException(_e, "engine/ingame/auto-bot/gameApi.js:loadProfile");
+      } finally {
+        profileLoaded = true;
+        profileFetchedAt = monotonicNow();
+        profileInFlight = null;
+      }
     }
 
     // Called ONCE at the top of each decision tick, before any behavior runs.
@@ -897,59 +949,12 @@
 
       // decay overlay 0.05/tick toward 0 (PlayerImpl.decayRelations) — once per
       // game tick crossed.
-      if (lastSnapshotTick >= 0 && tick > lastSnapshotTick) {
-        const steps = Math.min(tick - lastSnapshotTick, 50);
-        for (const [k, v] of overlay) {
-          let r = v;
-          for (let i = 0; i < steps; i++) {
-            const sign = -1 * Math.sign(r);
-            r += sign * 0.05;
-            if (Math.abs(r) < 0.1) {
-              r = 0;
-              break;
-            }
-          }
-          if (r === 0) overlay.delete(k);
-          else overlay.set(k, r);
-        }
-      }
+      decayRelationOverlay(tick);
       lastSnapshotTick = tick;
 
       // snapshot me.borderTiles + profile (relation buckets).
       await ensureBorderTiles(mePlayer);
-      const now =
-        typeof performance !== "undefined" && performance.now
-          ? performance.now()
-          : Date.now();
-      if (!profileLoaded || now - profileFetchedAt >= PROFILE_REFRESH_MS) {
-        if (!profileInFlight) {
-          profileInFlight = (async () => {
-            try {
-              const prof = await withTimeout(
-                unwrap(mePlayer).profile(),
-                WORKER_TIMEOUT_MS,
-                null,
-              );
-              if (prof && prof.relations) {
-                profileRelations = new Map(
-                  Object.entries(prof.relations).map(([k, v]) => [Number(k), Number(v)]),
-                );
-                profileAlliances = (prof.alliances || []).map(Number);
-              }
-            } catch (_e) {
-              /* keep previous profile on failure */
-            } finally {
-              profileLoaded = true;
-              profileFetchedAt =
-                typeof performance !== "undefined" && performance.now
-                  ? performance.now()
-                  : Date.now();
-              profileInFlight = null;
-            }
-          })();
-        }
-        await profileInFlight;
-      }
+      await refreshProfile(monotonicNow());
       return mePlayer;
     }
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import vm from "node:vm";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -39,22 +39,40 @@ function makeTransport({
   };
 }
 
-async function runDonation({
-  opponents = [],
-  friendlyBorder = false,
-  allyTroops = 50,
-  supportsBorderApi = true,
-  supportsUnitApi = true,
-  beingAttacked = false,
-  attackDuringBorderLookup = false,
-  incomingTransports = [],
-  autoDonateTroops = true,
-  autoDonateGold = false,
-  gold = 0,
-  allyGold = 0,
-  goldThreshold = 1000,
-  returnDetails = false,
-} = {}) {
+const DONATION_DEFAULTS = {
+  opponents: [],
+  friendlyBorder: false,
+  allyTroops: 50,
+  supportsBorderApi: true,
+  supportsUnitApi: true,
+  beingAttacked: false,
+  attackDuringBorderLookup: false,
+  incomingTransports: [],
+  autoDonateTroops: true,
+  autoDonateGold: false,
+  gold: 0,
+  allyGold: 0,
+  goldThreshold: 1000,
+  returnDetails: false,
+};
+
+async function runDonation(options = {}) {
+  const {
+    opponents,
+    friendlyBorder,
+    allyTroops,
+    supportsBorderApi,
+    supportsUnitApi,
+    beingAttacked,
+    attackDuringBorderLookup,
+    incomingTransports,
+    autoDonateTroops,
+    autoDonateGold,
+    gold,
+    allyGold,
+    goldThreshold,
+    returnDetails,
+  } = { ...DONATION_DEFAULTS, ...options };
   const packets = [];
   let currentlyBeingAttacked = beingAttacked;
   const me = {
@@ -130,7 +148,7 @@ async function runDonation({
     console: { log() {}, error() {} },
   };
 
-  vm.runInNewContext(SOURCE, sandbox, { filename: "auto-donate.js" });
+  executeClassicScript(SOURCE, sandbox, { filename: "auto-donate.js" });
   await sandbox.window.__OFH_tickAutoDonate();
   if (returnDetails) {
     return {
@@ -259,4 +277,4 @@ assert.equal(missingBorderApi.length, 0, "donation fails closed without border d
 const missingUnitApi = await runDonation({ supportsUnitApi: false });
 assert.equal(missingUnitApi.length, 0, "donation fails closed without transport data");
 
-console.log("auto-donate troop reserve tests passed");
+process.stdout.write("auto-donate troop reserve tests passed\n");

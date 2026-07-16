@@ -884,5 +884,14 @@
   "you": "คุณ",
   "💬 Emoji": "💬 อิโมจิ",
   "📨 Requests": "📨 คำขอ",
-  "🤝 Allies": "🤝 พันธมิตร"
+  "🤝 Allies": "🤝 พันธมิตร",
+  "Expansion opportunity available": "มีโอกาสขยายดินแดน",
+  "Free land available": "มีดินแดนว่าง",
+  "Land tribe in range": "เผ่าบนบกอยู่ในระยะ",
+  "Open lobbyState.settings": "เปิด lobbyState.settings",
+  "Pause donations during expansion": "หยุดบริจาคชั่วคราวระหว่างขยายดินแดน",
+  "Sea tribe in range": "เผ่าทะเลอยู่ในระยะ",
+  "Temporarily paused": "หยุดชั่วคราว",
+  "⏸️ Auto-bot paused after a slow tick": "⏸️ ออโต้บอทหยุดหลังจากทิกทำงานช้า",
+  "🚢 Intercept invasion": "🚢 สกัดกั้นการรุกราน"
 }

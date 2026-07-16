@@ -23,20 +23,8 @@
   // =========================================================================
   // Small helpers
   // =========================================================================
-  function randInt(min, max) {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-  }
-
   function clamp(v, lo, hi) {
     return Math.max(lo, Math.min(hi, v));
-  }
-
-  function shuffleInPlace(arr) {
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    return arr;
   }
 
   function toNum(value) {
@@ -50,17 +38,29 @@
   // (Late-game 400-bot worker load was stalling buildables/borderTiles calls,
   // leaving tickInFlight stuck true → the whole bot froze.)
   function withTimeout(promise, ms, fallback) {
+    let timerId = null;
+    const timeoutPromise = new Promise((resolve) => {
+      timerId = window.setTimeout(() => resolve(fallback), ms);
+    });
     return Promise.race([
       Promise.resolve(promise).catch(() => fallback),
-      new Promise((resolve) => window.setTimeout(() => resolve(fallback), ms)),
-    ]);
+      timeoutPromise,
+    ]).finally(() => {
+      // A successful worker response used to leave this timer alive until it
+      // fired. Structure-heavy ticks create enough probes for that timer churn
+      // to become visible as main-thread stutter.
+      if (timerId !== null && typeof window.clearTimeout === "function") {
+        window.clearTimeout(timerId);
+        timerId = null;
+      }
+    });
   }
   const WORKER_TIMEOUT_MS = 2500;
 
   // Measures the live game-tick rate (baseline ~10/s) and keeps a smoothed
   // speed factor. factor 2 == game running ~2× → our cadences run ~2× faster.
   function updateSpeedFactor(game) {
-    let t = NaN;
+    let t;
     try {
       t = Number(game.ticks?.());
     } catch (_e) {
@@ -98,6 +98,7 @@
       const v = game.config().maxTroops(player);
       return Number.isFinite(v) && v > 0 ? v : 0;
     } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/auto-bot/helpers.js:112");
       return 0;
     }
   }

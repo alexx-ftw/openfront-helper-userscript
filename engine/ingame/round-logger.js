@@ -8,16 +8,51 @@
 // (player IDs only) unless roundLogKeepNames is true.
 
   const ROUND_LOG_STORAGE_KEY = "openfront-helper-round-log";
+  const ROUND_LOG_HISTORY_STORAGE_KEY = "openfront-helper-match-history";
   const ROUND_LOG_FLUSH_MS = 5000;
   const ROUND_LOG_MAX_EVENTS = 4000;
+  const ROUND_LOG_MAX_MATCHES = 20;
 
   let _roundLogEvents = [];
   let _roundLogFlushTimer = null;
   let _roundLogGameId = null;
-  let _roundLogKeepNames = false;
+
+  function roundLogEntry() {
+    return {
+      gameId: _roundLogGameId,
+      events: _roundLogEvents,
+      flushedAt: Date.now(),
+    };
+  }
+
+  function readRoundLogHistory() {
+    try {
+      const history = JSON.parse(localStorage.getItem(ROUND_LOG_HISTORY_STORAGE_KEY) || "[]");
+      return Array.isArray(history) ? history : [];
+    } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/round-logger.js:32");
+      return [];
+    }
+  }
+
+  function archiveStoredRoundLog() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(ROUND_LOG_STORAGE_KEY) || "null");
+      if (!stored?.gameId || !Array.isArray(stored.events) || stored.events.length === 0) return;
+      const history = readRoundLogHistory().filter((entry) => entry?.gameId !== stored.gameId);
+      history.unshift(stored);
+      localStorage.setItem(
+        ROUND_LOG_HISTORY_STORAGE_KEY,
+        JSON.stringify(history.slice(0, ROUND_LOG_MAX_MATCHES)),
+      );
+    } catch (error) {
+      // History is diagnostic-only; gameplay must continue if storage is unavailable.
+      console.warn("OpenFront helper could not archive match diagnostics:", error);
+    }
+  }
 
   function roundLogRecord(category, data) {
-    if (!roundLoggerEnabled) return;
+    if (!runtimeState.roundLoggerEnabled) return;
     const event = {
       t: Date.now(),
       cat: category,
@@ -32,23 +67,20 @@
   function roundLogFlush() {
     if (_roundLogEvents.length === 0) return;
     try {
-      const entry = {
-        gameId: _roundLogGameId,
-        events: _roundLogEvents,
-        flushedAt: Date.now(),
-      };
-      localStorage.setItem(ROUND_LOG_STORAGE_KEY, JSON.stringify(entry));
+      localStorage.setItem(ROUND_LOG_STORAGE_KEY, JSON.stringify(roundLogEntry()));
     } catch (_error) {
       // Storage full or unavailable — silently drop.
     }
   }
 
   function roundLogStartMatch(game) {
+    archiveStoredRoundLog();
     _roundLogEvents = [];
     try {
       const ticks = game.ticks ? game.ticks() : 0;
       _roundLogGameId = `match-${Date.now()}-${ticks}`;
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/round-logger.js:81");
       _roundLogGameId = `match-${Date.now()}`;
     }
     roundLogRecord("match_start", { gameId: _roundLogGameId });
@@ -58,69 +90,89 @@
   let _roundLogLastTick = -1;
   let _roundLogLastPlayerSnapshot = null;
 
+  function roundLogResetForNewMatch(game, ticks) {
+    if (ticks >= _roundLogLastTick || ticks >= 10) return;
+    roundLogFlush();
+    roundLogStartMatch(game);
+    _roundLogLastTick = -1;
+    _roundLogLastPlayerSnapshot = null;
+  }
+
+  function roundLogPlayerSnapshot(player, fallbackId) {
+    if (!player?.isAlive?.()) return null;
+    const smallId = player.smallID?.() ?? fallbackId;
+    return {
+      smallId,
+      troops: Number(player.troops?.() ?? 0) || 0,
+      tiles: Number(player.numTilesOwned?.() ?? 0) || 0,
+    };
+  }
+
+  function roundLogTroopChange(current) {
+    const previous = _roundLogLastPlayerSnapshot?.get(current.smallId);
+    if (!previous) return;
+    const troopDelta = current.troops - previous.troops;
+    if (
+      Math.abs(troopDelta) <= previous.troops * 0.2 ||
+      Math.abs(troopDelta) <= 1000
+    ) {
+      return;
+    }
+    roundLogRecord("troop_change", {
+      player: `p${current.smallId}`,
+      delta: troopDelta,
+      troops: current.troops,
+      tiles: current.tiles,
+    });
+  }
+
   function roundLogTick(game) {
-    if (!roundLoggerEnabled) return;
+    if (!runtimeState.roundLoggerEnabled) return;
     const ticks = game.ticks ? game.ticks() : 0;
+    // Tick counters reset between matches. Detect that edge before the duplicate
+    // tick guard; otherwise every tick in the new match is lower than the prior
+    // match's last tick and logging never resumes.
+    roundLogResetForNewMatch(game, ticks);
     if (ticks <= _roundLogLastTick) return;
     _roundLogLastTick = ticks;
-
-    // Detect new match (ticks restarted near 0).
-    if (ticks < 10 && _roundLogEvents.length > 0) {
-      roundLogFlush();
-      roundLogStartMatch(game);
-    }
 
     const players = getCachedPlayerViews(game);
     const snapshot = new Map();
     for (let i = 0; i < players.length; i += 1) {
-      const p = players[i];
-      if (!p || !p.isAlive || !p.isAlive()) continue;
-      const sid = p.smallID ? p.smallID() : i;
-      const troops = Number(p.troops ? p.troops() : 0) || 0;
-      const tiles = Number(p.numTilesOwned ? p.numTilesOwned() : 0) || 0;
-      snapshot.set(sid, { troops, tiles });
-
-      // Detect troop changes > 20% (combat events).
-      const prev = _roundLogLastPlayerSnapshot?.get(sid);
-      if (prev) {
-        const troopDelta = troops - prev.troops;
-        if (Math.abs(troopDelta) > prev.troops * 0.2 && Math.abs(troopDelta) > 1000) {
-          let name = _roundLogKeepNames ? getPlayerDisplayNameSafe(p) : `p${sid}`;
-          roundLogRecord("troop_change", {
-            player: name,
-            delta: troopDelta,
-            troops,
-            tiles,
-          });
-        }
-      }
+      const current = roundLogPlayerSnapshot(players[i], i);
+      if (!current) continue;
+      snapshot.set(current.smallId, {
+        troops: current.troops,
+        tiles: current.tiles,
+      });
+      roundLogTroopChange(current);
     }
     _roundLogLastPlayerSnapshot = snapshot;
-  }
-
-  function getPlayerDisplayNameSafe(player) {
-    try {
-      return getPlayerDisplayName ? getPlayerDisplayName(player) : "?";
-    } catch (_error) {
-      return "?";
-    }
   }
 
   function roundLogHelperTick() {
     try {
       const ctx = getOpenFrontGameContext();
       if (ctx?.game) roundLogTick(ctx.game);
-    } catch (_e) { /* ignore */ }
+    } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/round-logger.js:138"); /* ignore */ }
   }
 
   function setRoundLoggerEnabled(enabled) {
-    roundLoggerEnabled = Boolean(enabled);
-    if (roundLoggerEnabled) {
+    const nextEnabled = Boolean(enabled);
+    if (runtimeState.roundLoggerEnabled === nextEnabled) return;
+    runtimeState.roundLoggerEnabled = nextEnabled;
+    if (runtimeState.roundLoggerEnabled) {
       if (_roundLogFlushTimer === null) {
         _roundLogFlushTimer = window.setInterval(roundLogFlush, ROUND_LOG_FLUSH_MS);
       }
-      let context = null;
-      try { context = getOpenFrontGameContext(); } catch (_e) { context = null; }
+      const context = (() => {
+        try {
+          return getOpenFrontGameContext();
+        } catch (_error) {
+          return null;
+        }
+      })();
       if (context?.game) roundLogStartMatch(context.game);
       if (typeof registerHelperTickListener === "function") {
         registerHelperTickListener(roundLogHelperTick);
@@ -147,7 +199,7 @@
       if (!raw) return null;
       const data = JSON.parse(raw);
       // Sanitize: remove player names if keepNames is off.
-      if (!_roundLogKeepNames && data.events) {
+      if (data.events) {
         for (const ev of data.events) {
           if (ev.player && typeof ev.player === "string" && !ev.player.startsWith("p")) {
             ev.player = "[redacted]";
@@ -163,6 +215,21 @@
       URL.revokeObjectURL(url);
       return data;
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/round-logger.js:197");
       return null;
     }
+  }
+
+  function getRoundLogSnapshot(eventLimit = 200, matchLimit = 5) {
+    const normalizedEventLimit = Math.max(0, Math.min(1000, Number(eventLimit) || 0));
+    const normalizedMatchLimit = Math.max(0, Math.min(ROUND_LOG_MAX_MATCHES, Number(matchLimit) || 0));
+    return {
+      enabled: runtimeState.roundLoggerEnabled,
+      current: {
+        gameId: _roundLogGameId,
+        eventCount: _roundLogEvents.length,
+        events: _roundLogEvents.slice(-normalizedEventLimit),
+      },
+      history: readRoundLogHistory().slice(0, normalizedMatchLimit),
+    };
   }

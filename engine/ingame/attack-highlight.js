@@ -12,13 +12,13 @@
       _attackHighlightScan = null;
       return;
     }
-    let myLoc = null;
+    let myLoc;
     try {
       myLoc = me.nameLocation ? me.nameLocation() : null;
     } catch (_error) {
       myLoc = null;
     }
-    let atks = null;
+    let atks;
     try {
       atks = me.incomingAttacks ? me.incomingAttacks() : null;
     } catch (_error) {
@@ -44,7 +44,7 @@
 
     const attackers = [];
     byAttacker.forEach((troops, sid) => {
-      let attacker = null;
+      let attacker;
       try {
         attacker = game.playerBySmallID ? game.playerBySmallID(sid) : null;
       } catch (_error) {
@@ -61,7 +61,7 @@
       } catch (_error) {
         /* treat as hostile */
       }
-      let loc = null;
+      let loc;
       try {
         loc = attacker.nameLocation ? attacker.nameLocation() : null;
       } catch (_error) {
@@ -120,7 +120,7 @@
         myScreen.x,
         myScreen.y - 22,
         `⚔ ${troopsDisplay(scan.total)}`,
-        "rgba(254, 202, 202, 0.98)",
+        { color: "rgba(254, 202, 202, 0.98)" },
       );
     }
     ctx.restore();
@@ -135,7 +135,7 @@
       return Boolean(_attackHighlightScan?.attackers?.length);
     },
     isEnabled: function () {
-      return attackHighlightEnabled;
+      return runtimeState.attackHighlightEnabled;
     },
     scan: function (game) {
       scanAttackHighlight(game);
@@ -146,8 +146,8 @@
   });
 
   function setAttackHighlightEnabled(enabled) {
-    attackHighlightEnabled = Boolean(enabled);
-    if (!attackHighlightEnabled) {
+    runtimeState.attackHighlightEnabled = Boolean(enabled);
+    if (!runtimeState.attackHighlightEnabled) {
       _attackHighlightScan = null;
     }
     requestMapOverlayLoop();

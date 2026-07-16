@@ -117,6 +117,65 @@
     return svg;
   }
 
+  function getWarshipDestination(game, unit, motionPlanUnitId) {
+    try {
+      const patrolTile = unit.warshipState?.()?.patrolTile;
+      if (patrolTile != null) return asFiniteTileRef(patrolTile);
+    } catch (_error) {
+      captureRuntimeException(_error, "engine/ingame/warship-routes.js:patrol-tile");
+    }
+    if (!Number.isFinite(motionPlanUnitId)) return null;
+    try {
+      const path = game.motionPlans?.()?.get(motionPlanUnitId)?.path;
+      return path?.length ? asFiniteTileRef(path[path.length - 1]) : null;
+    } catch (_error) {
+      captureRuntimeException(_error, "engine/ingame/warship-routes.js:motion-plan");
+      return null;
+    }
+  }
+
+  function getWarshipDestinationWorld(game, destTile) {
+    try {
+      return { x: game.x(destTile), y: game.y(destTile) };
+    } catch (_error) {
+      captureRuntimeException(_error, "engine/ingame/warship-routes.js:destination-world");
+      return null;
+    }
+  }
+
+  function isWarshipParked(game, unit, destination) {
+    try {
+      const shipTile = unit.tile?.();
+      if (shipTile == null) return false;
+      const distance =
+        Math.abs(game.x(shipTile) - destination.x) +
+        Math.abs(game.y(shipTile) - destination.y);
+      return distance < WARSHIP_ROUTE_MIN_DIST;
+    } catch (_error) {
+      captureRuntimeException(_error, "engine/ingame/warship-routes.js:parked-check");
+      return false;
+    }
+  }
+
+  function createWarshipRouteItem(game, unit) {
+    if (!unit?.isActive?.()) return null;
+    const relation = getBoatPredictionRelation(game, unit);
+    if (!relation || !warshipFactionEnabled(relation)) return null;
+    const motionPlanUnitId = Number(unit.id?.());
+    const destTile = getWarshipDestination(game, unit, motionPlanUnitId);
+    if (destTile === null) return null;
+    const destination = getWarshipDestinationWorld(game, destTile);
+    if (!destination || isWarshipParked(game, unit, destination)) return null;
+    return {
+      id: String(unit.id?.() ?? `dest:${destTile}`),
+      unit,
+      color: warshipRouteColor(relation),
+      motionPlanUnitId: Number.isFinite(motionPlanUnitId) ? motionPlanUnitId : null,
+      destWorldX: destination.x,
+      destWorldY: destination.y,
+    };
+  }
+
   function collectWarshipRoutes(game) {
     const out = [];
     const units =
@@ -124,63 +183,8 @@
         ? getCachedGameUnits(game, "Warship")
         : game.units("Warship");
     for (const unit of units) {
-      if (!unit?.isActive?.()) continue;
-      const relation = getBoatPredictionRelation(game, unit);
-      if (!relation) continue;
-      if (!warshipFactionEnabled(relation)) continue; // per-faction sub-toggle
-
-      // Destination = the warship's move order (patrolTile); fall back to the end
-      // of its motion plan path if no patrolTile is set.
-      let destTile = null;
-      try {
-        const pt = unit.warshipState?.()?.patrolTile;
-        if (pt !== undefined && pt !== null) destTile = asFiniteTileRef(pt);
-      } catch (_e) {
-        /* ignore */
-      }
-      const motionPlanUnitId = Number(unit.id?.());
-      if (destTile === null && Number.isFinite(motionPlanUnitId)) {
-        try {
-          const plan = game.motionPlans?.()?.get(motionPlanUnitId);
-          if (plan?.path?.length) {
-            destTile = asFiniteTileRef(plan.path[plan.path.length - 1]);
-          }
-        } catch (_e) {
-          /* ignore */
-        }
-      }
-      if (destTile === null) continue; // no known destination → nothing to draw
-
-      let destWorldX = null;
-      let destWorldY = null;
-      try {
-        destWorldX = game.x(destTile);
-        destWorldY = game.y(destTile);
-      } catch (_e) {
-        continue;
-      }
-
-      // Skip warships effectively parked at their destination (idle-noise filter).
-      try {
-        const shipTile = unit.tile?.();
-        if (shipTile !== undefined && shipTile !== null) {
-          const d =
-            Math.abs(game.x(shipTile) - destWorldX) +
-            Math.abs(game.y(shipTile) - destWorldY);
-          if (d < WARSHIP_ROUTE_MIN_DIST) continue;
-        }
-      } catch (_e) {
-        /* ignore — draw it anyway if we can't measure */
-      }
-
-      out.push({
-        id: String(unit.id?.() ?? `dest:${destTile}`),
-        unit,
-        color: warshipRouteColor(relation),
-        motionPlanUnitId: Number.isFinite(motionPlanUnitId) ? motionPlanUnitId : null,
-        destWorldX,
-        destWorldY,
-      });
+      const item = createWarshipRouteItem(game, unit);
+      if (item) out.push(item);
     }
     return out;
   }
@@ -229,6 +233,80 @@
     }
   }
 
+  function scheduleWarshipRouteSync() {
+    warshipRoutesAnimationFrame = requestAnimationFrame(syncWarshipRoutes);
+  }
+
+  function refreshWarshipRouteScan(game) {
+    const now = Date.now();
+    if (lastWarshipRouteScanAt && now - lastWarshipRouteScanAt < WARSHIP_ROUTES_SCAN_MS) return;
+    warshipRouteScan = collectWarshipRoutes(game);
+    cleanupWarshipRouteDom(new Set(warshipRouteScan.map((item) => item.id)));
+    lastWarshipRouteScanAt = now;
+  }
+
+  function updateWarshipRoutePolyline(entry, points) {
+    if (points.length < 2) {
+      entry.routeLine.style.display = "none";
+      return;
+    }
+    const attribute = points.map((point) => `${point.x},${point.y}`).join(" ");
+    if (entry.routePoints !== attribute) {
+      entry.routeLine.setAttribute("points", attribute);
+      entry.routePoints = attribute;
+    }
+    entry.routeLine.style.display = "";
+  }
+
+  function updateWarshipRouteMarker(entry, destination, isNear) {
+    if (!destination || !isNear) {
+      entry.marker.hidden = true;
+      return;
+    }
+    const x = `${destination.x}px`;
+    const y = `${destination.y}px`;
+    if (entry.markerX !== x) {
+      entry.marker.style.setProperty("--ws-tx", x);
+      entry.markerX = x;
+    }
+    if (entry.markerY !== y) {
+      entry.marker.style.setProperty("--ws-ty", y);
+      entry.markerY = y;
+    }
+    entry.marker.hidden = false;
+  }
+
+  function renderWarshipRouteItem(container, svg, context, item) {
+    const destination = toScreenPointFromWorld(
+      context.transform,
+      item.destWorldX,
+      item.destWorldY,
+    );
+    const destinationNear = isNearViewport(destination, 240);
+    const shipPosition = toScreenPoint(
+      context.game,
+      context.transform,
+      asFiniteTileRef(item.unit?.tile?.()),
+    );
+    const shipNear = shipPosition && isNearViewport(shipPosition, 240);
+    const entry = getWarshipRouteEntry(container, svg, item);
+    if (!destinationNear && !shipNear) {
+      entry.routeLine.style.display = "none";
+      entry.marker.hidden = true;
+      return;
+    }
+    const points = getBoatRouteScreenPoints(
+      context.game,
+      context.transform,
+      item.unit,
+      item.motionPlanUnitId,
+      shipPosition ? { x: shipPosition.x, y: shipPosition.y } : null,
+      destination ? { x: destination.x, y: destination.y } : null,
+    );
+    updateWarshipRoutePolyline(entry, points);
+    updateWarshipRouteMarker(entry, destination, destinationNear);
+  }
+
   function syncWarshipRoutes() {
     if (!warshipRoutesEnabled) {
       teardownWarshipRoutes();
@@ -236,7 +314,7 @@
     }
     _warshipFrameCounter = (_warshipFrameCounter + 1) % 3;
     if (_warshipFrameCounter !== 0) {
-      warshipRoutesAnimationFrame = requestAnimationFrame(syncWarshipRoutes);
+      scheduleWarshipRouteSync();
       return;
     }
     const container = ensureWarshipRouteContainer();
@@ -246,96 +324,21 @@
       warshipRouteDomCache.clear();
       warshipRouteScan = [];
       lastWarshipRouteScanAt = 0;
-      warshipRoutesAnimationFrame = requestAnimationFrame(syncWarshipRoutes);
+      scheduleWarshipRouteSync();
       return;
     }
 
     const svg = ensureWarshipRouteSvg(container);
 
-    const now = Date.now();
-    if (!lastWarshipRouteScanAt || now - lastWarshipRouteScanAt >= WARSHIP_ROUTES_SCAN_MS) {
-      warshipRouteScan = collectWarshipRoutes(context.game);
-      const ids = new Set();
-      for (const item of warshipRouteScan) ids.add(item.id);
-      cleanupWarshipRouteDom(ids);
-      lastWarshipRouteScanAt = now;
-    }
+    refreshWarshipRouteScan(context.game);
 
     resetScreenPointPool();
 
-    for (let i = 0; i < warshipRouteScan.length; i += 1) {
-      const item = warshipRouteScan[i];
-
-      const destScreen = toScreenPointFromWorld(
-        context.transform,
-        item.destWorldX,
-        item.destWorldY,
-      );
-      // Cull only when BOTH ends are off-screen-ish; keep partly-visible routes.
-      const destNear = isNearViewport(destScreen, 240);
-      const shipScreenPooled = toScreenPoint(
-        context.game,
-        context.transform,
-        asFiniteTileRef(item.unit?.tile?.()),
-      );
-      const hasShip = shipScreenPooled != null;
-      const shipX = hasShip ? shipScreenPooled.x : 0;
-      const shipY = hasShip ? shipScreenPooled.y : 0;
-      const shipNear = hasShip && isNearViewport({ x: shipX, y: shipY }, 240);
-
-      const entry = getWarshipRouteEntry(container, svg, item);
-
-      if (!destNear && !shipNear) {
-        entry.routeLine.style.display = "none";
-        if (!entry.marker.hidden) entry.marker.hidden = true;
-        continue;
-      }
-
-      // Route polyline: current ship pos → motion-plan path → destination. With no
-      // motion plan, getBoatRouteScreenPoints returns just [start, end] (straight).
-      const destX = destScreen ? destScreen.x : 0;
-      const destY = destScreen ? destScreen.y : 0;
-      const points = getBoatRouteScreenPoints(
-        context.game,
-        context.transform,
-        item.unit,
-        item.motionPlanUnitId,
-        hasShip ? { x: shipX, y: shipY } : null,
-        destScreen ? { x: destX, y: destY } : null,
-      );
-      if (points.length >= 2) {
-        let attr = "";
-        for (let j = 0; j < points.length; j += 1) {
-          attr += j === 0 ? `${points[j].x},${points[j].y}` : ` ${points[j].x},${points[j].y}`;
-        }
-        if (entry.routePoints !== attr) {
-          entry.routeLine.setAttribute("points", attr);
-          entry.routePoints = attr;
-        }
-        entry.routeLine.style.display = "";
-      } else {
-        entry.routeLine.style.display = "none";
-      }
-
-      // Destination marker.
-      if (destScreen && destNear) {
-        const tx = `${destX}px`;
-        const ty = `${destY}px`;
-        if (entry.markerX !== tx) {
-          entry.marker.style.setProperty("--ws-tx", tx);
-          entry.markerX = tx;
-        }
-        if (entry.markerY !== ty) {
-          entry.marker.style.setProperty("--ws-ty", ty);
-          entry.markerY = ty;
-        }
-        if (entry.marker.hidden) entry.marker.hidden = false;
-      } else if (!entry.marker.hidden) {
-        entry.marker.hidden = true;
-      }
+    for (const item of warshipRouteScan) {
+      renderWarshipRouteItem(container, svg, context, item);
     }
 
-    warshipRoutesAnimationFrame = requestAnimationFrame(syncWarshipRoutes);
+    scheduleWarshipRouteSync();
   }
 
   function teardownWarshipRoutes() {

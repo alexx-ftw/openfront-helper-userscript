@@ -31,9 +31,7 @@
   }
 
   function autoBotProfilingEnabled() {
-    return !!(
-      state.settings && state.settings.performanceProfiling === true
-    );
+    return Boolean(state.settings && state.settings.performanceProfiling === true);
   }
 
   function beginAutoBotProfileTick() {
@@ -210,7 +208,9 @@
   }
 
   function formatAutoBotProfileMs(value) {
-    return Number.isFinite(value) ? value.toFixed(value >= 10 ? 0 : 1) : "0";
+    if (!Number.isFinite(value)) return "0";
+    const precision = value >= 10 ? 0 : 1;
+    return value.toFixed(precision);
   }
 
   function formatAutoBotProfileStatus() {
@@ -221,14 +221,13 @@
       .slice(0, 2)
       .map((phase) => `${phase.name} p95 ${formatAutoBotProfileMs(phase.p95Ms)}ms`)
       .join(" · ");
-    return `Profiler: last ${formatAutoBotProfileMs(snapshot.lastTickMs)}ms · p95 ${formatAutoBotProfileMs(snapshot.p95TickMs)}ms · max ${formatAutoBotProfileMs(snapshot.maxTickMs)}ms${top ? ` · ${top}` : ""}`;
+    const topSuffix = top ? ` · ${top}` : "";
+    return `Profiler: last ${formatAutoBotProfileMs(snapshot.lastTickMs)}ms · p95 ${formatAutoBotProfileMs(snapshot.p95TickMs)}ms · max ${formatAutoBotProfileMs(snapshot.maxTickMs)}ms${topSuffix}`;
   }
 
   function printAutoBotProfile() {
     const snapshot = getAutoBotProfileSnapshot();
-    if (typeof console !== "undefined" && typeof console.table === "function") {
-      console.table(snapshot.phases);
-    }
+    runtimeDebugLog(snapshot.phases);
     return snapshot;
   }
 

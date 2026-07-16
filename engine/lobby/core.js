@@ -39,31 +39,34 @@ const PREFERRED_GROUP_ORDER = ["special", "ffa", "team"];
 
 const lobbyCooldowns = new Map();
 
-let settings = normalizeSettings();
-let latestLobbySnapshot = null;
-let pendingJoin = null;
-let pendingGameStartNotification = null;
+const lobbyState = {
+  settings: normalizeSettings(),
+  latestLobbySnapshot: null,
+  pendingJoin: null,
+  pendingGameStartNotification: null,
+  sawLobbyWaitingBeforeGameStart: false,
+  wasOccupied: false,
+  lastOccupiedAt: 0,
+  lastJoinRequestedAt: 0,
+  joinAlertAudio: null,
+  customJoinAlertAudio: null,
+  hasCustomNotificationSound: false,
+  customNotificationSoundData: null,
+  selectiveTradePolicyAvailable: false,
+  cheatsAvailable: false,
+};
 // "Keep searching after joining": searching is paused whenever we're "occupied"
 // (in the public-lobby waiting modal OR in an active game) and resumes when we
 // return to the menu — whether the game ended or the user backed out of the
-// lobby. wasOccupied tracks the previous tick to detect that return edge.
-let wasOccupied = false;
+// lobby. lobbyState.wasOccupied tracks the previous tick to detect that return edge.
 // Timestamp (ms) we last OBSERVED an "occupied" state, and when we last fired a
 // join request. Drive the resume/join debounce (RESUME_GRACE_MS) and the
 // `[autojoin-diag]` log; 0 means "never yet" so cold-start searching isn't
 // delayed.
-let lastOccupiedAt = 0;
-let lastJoinRequestedAt = 0;
-let joinAlertAudio = null;
-let customJoinAlertAudio = null;
-let hasCustomNotificationSound = false;
-let customNotificationSoundData = null;
 let lastProcessedSelectiveTradePolicyRequestAt = null;
-let selectiveTradePolicyAvailable = false;
-let cheatsAvailable = false;
 let translations = i18n?.DEFAULT_TRANSLATIONS || {};
 
-// Shared settings, defaults, and filter normalization live in `shared/settings.js`
+// Shared lobbyState.settings, defaults, and filter normalization live in `shared/lobbyState.settings.js`
 // so popup and content stay in sync.
 
 function t(key) {
@@ -74,7 +77,7 @@ async function loadContentTranslations() {
   if (!i18n) {
     return;
   }
-  translations = await i18n.loadBundle(settings.language);
+  translations = await i18n.loadBundle(lobbyState.settings.language);
 }
 
 // Helper bridge sync -------------------------------------------------------
@@ -84,7 +87,7 @@ function syncBotNationMarkers() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "MARK_BOT_NATIONS_RED",
       payload: {
-        enabled: Boolean(settings.markBotNationsRed),
+        enabled: Boolean(lobbyState.settings.markBotNationsRed),
       },
     },
     "*",
@@ -97,7 +100,7 @@ function syncGoldPerMinuteHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_GOLD_PER_MINUTE",
       payload: {
-        enabled: Boolean(settings.showGoldPerMinute),
+        enabled: Boolean(lobbyState.settings.showGoldPerMinute),
       },
     },
     "*",
@@ -124,7 +127,7 @@ function syncTopGoldPerMinuteHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_TOP_GOLD_PER_MINUTE",
       payload: {
-        enabled: Boolean(settings.showTopGoldPerMinute),
+        enabled: Boolean(lobbyState.settings.showTopGoldPerMinute),
       },
     },
     "*",
@@ -137,7 +140,7 @@ function syncTeamBuildStatsHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_TEAM_BUILD_STATS",
       payload: {
-        enabled: Boolean(settings.showTeamBuildStats),
+        enabled: Boolean(lobbyState.settings.showTeamBuildStats),
       },
     },
     "*",
@@ -150,7 +153,7 @@ function syncHoveredAlliesHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "MARK_HOVERED_ALLIES_GREEN",
       payload: {
-        enabled: Boolean(settings.markHoveredAlliesGreen),
+        enabled: Boolean(lobbyState.settings.markHoveredAlliesGreen),
       },
     },
     "*",
@@ -163,7 +166,7 @@ function syncAllianceRequestsPanelHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_ALLIANCE_REQUESTS_PANEL",
       payload: {
-        enabled: Boolean(settings.showAllianceRequestsPanel),
+        enabled: Boolean(lobbyState.settings.showAllianceRequestsPanel),
       },
     },
     "*",
@@ -176,7 +179,7 @@ function syncTradeBalancesHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_TRADE_BALANCES",
       payload: {
-        enabled: Boolean(settings.showTradeBalances),
+        enabled: Boolean(lobbyState.settings.showTradeBalances),
       },
     },
     "*",
@@ -190,7 +193,7 @@ function syncHelperUsersHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_HELPER_USERS",
       payload: {
-        enabled: Boolean(settings.showHelperUsers),
+        enabled: Boolean(lobbyState.settings.showHelperUsers),
       },
     },
     "*",
@@ -203,7 +206,7 @@ function syncSosDefenseHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SET_SOS_DEFENSE",
       payload: {
-        enabled: Boolean(settings.sosDefense),
+        enabled: Boolean(lobbyState.settings.sosDefense),
       },
     },
     "*",
@@ -216,8 +219,8 @@ function syncNukePredictionHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_NUKE_PREDICTION",
       payload: {
-        enabled: Boolean(settings.showNukePrediction),
-        trajectory: Boolean(settings.showNukeTrajectory),
+        enabled: Boolean(lobbyState.settings.showNukePrediction),
+        trajectory: Boolean(lobbyState.settings.showNukeTrajectory),
       },
     },
     "*",
@@ -230,8 +233,8 @@ function syncGameTimeAlertHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_GAME_TIME_ALERT",
       payload: {
-        enabled: Boolean(settings.showGameTimeAlert),
-        thresholdSec: Number(settings.gameTimeAlertThresholdSec) || 300,
+        enabled: Boolean(lobbyState.settings.showGameTimeAlert),
+        thresholdSec: Number(lobbyState.settings.gameTimeAlertThresholdSec) || 300,
       },
     },
     "*",
@@ -244,7 +247,7 @@ function syncPlayerMapOverlaysHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_PLAYER_MAP_OVERLAYS",
       payload: {
-        enabled: Boolean(settings.showPlayerMapOverlays),
+        enabled: Boolean(lobbyState.settings.showPlayerMapOverlays),
       },
     },
     "*",
@@ -257,7 +260,7 @@ function syncMapTroopCountsHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_MAP_TROOP_COUNTS",
       payload: {
-        enabled: Boolean(settings.showMapTroopCounts),
+        enabled: Boolean(lobbyState.settings.showMapTroopCounts),
       },
     },
     "*",
@@ -270,7 +273,7 @@ function syncThreatIndicatorsHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_THREAT_INDICATORS",
       payload: {
-        enabled: Boolean(settings.showThreatIndicators),
+        enabled: Boolean(lobbyState.settings.showThreatIndicators),
       },
     },
     "*",
@@ -283,7 +286,7 @@ function syncMapMoneyHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_MAP_MONEY",
       payload: {
-        enabled: Boolean(settings.showMapMoney),
+        enabled: Boolean(lobbyState.settings.showMapMoney),
       },
     },
     "*",
@@ -296,7 +299,7 @@ function syncAttackHighlightHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_ATTACK_HIGHLIGHT",
       payload: {
-        enabled: Boolean(settings.showAttackHighlight),
+        enabled: Boolean(lobbyState.settings.showAttackHighlight),
       },
     },
     "*",
@@ -309,7 +312,7 @@ function syncAdvisorPanelHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_ADVISOR_PANEL",
       payload: {
-        enabled: Boolean(settings.showAdvisorPanel),
+        enabled: Boolean(lobbyState.settings.showAdvisorPanel),
       },
     },
     "*",
@@ -322,7 +325,7 @@ function syncRetaliationHudHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_RETALIATION_HUD",
       payload: {
-        enabled: Boolean(settings.showRetaliationHud),
+        enabled: Boolean(lobbyState.settings.showRetaliationHud),
       },
     },
     "*",
@@ -335,7 +338,7 @@ function syncHideAdsHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SET_HIDE_ADS",
       payload: {
-        enabled: Boolean(settings.hideAds),
+        enabled: Boolean(lobbyState.settings.hideAds),
       },
     },
     "*",
@@ -361,7 +364,7 @@ function syncAttackRatioHotkeyHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SET_ATTACK_RATIO_HOTKEY",
       payload: {
-        enabled: Boolean(settings.attackRatioHotkey),
+        enabled: Boolean(lobbyState.settings.attackRatioHotkey),
       },
     },
     "*",
@@ -374,7 +377,7 @@ function syncRightClickConquestHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SET_RIGHT_CLICK_CONQUEST",
       payload: {
-        enabled: Boolean(settings.rightClickConquest),
+        enabled: Boolean(lobbyState.settings.rightClickConquest),
       },
     },
     "*",
@@ -387,7 +390,7 @@ function syncRoundLoggerHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SET_ROUND_LOGGER",
       payload: {
-        enabled: Boolean(settings.roundLogger),
+        enabled: Boolean(lobbyState.settings.roundLogger),
       },
     },
     "*",
@@ -400,7 +403,7 @@ function syncNetworkLoggerHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SET_NETWORK_LOGGER",
       payload: {
-        enabled: Boolean(settings.networkLogger),
+        enabled: Boolean(lobbyState.settings.networkLogger),
       },
     },
     "*",
@@ -413,7 +416,7 @@ function syncBuildTimersHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_BUILD_TIMERS",
       payload: {
-        enabled: Boolean(settings.showBuildTimers),
+        enabled: Boolean(lobbyState.settings.showBuildTimers),
       },
     },
     "*",
@@ -426,7 +429,7 @@ function syncEnemyIntentHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_ENEMY_INTENT",
       payload: {
-        enabled: Boolean(settings.showEnemyIntent),
+        enabled: Boolean(lobbyState.settings.showEnemyIntent),
       },
     },
     "*",
@@ -439,7 +442,7 @@ function syncSpawnHeatmapHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_SPAWN_HEATMAP",
       payload: {
-        enabled: Boolean(settings.showSpawnHeatmap),
+        enabled: Boolean(lobbyState.settings.showSpawnHeatmap),
       },
     },
     "*",
@@ -452,7 +455,7 @@ function syncSpawnMarkersHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_SPAWN_MARKERS",
       payload: {
-        enabled: Boolean(settings.showSpawnMarkers),
+        enabled: Boolean(lobbyState.settings.showSpawnMarkers),
       },
     },
     "*",
@@ -465,11 +468,11 @@ function syncBoatPredictionHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_BOAT_PREDICTION",
       payload: {
-        enabled: Boolean(settings.showBoatPrediction),
-        alwaysOwnRoutes: Boolean(settings.alwaysShowOwnBoatRoutes),
-        alwaysTeamRoutes: Boolean(settings.alwaysShowTeamBoatRoutes),
-        alwaysAllyRoutes: Boolean(settings.alwaysShowAllyBoatRoutes),
-        alwaysEnemyRoutes: Boolean(settings.alwaysShowEnemyBoatRoutes),
+        enabled: Boolean(lobbyState.settings.showBoatPrediction),
+        alwaysOwnRoutes: Boolean(lobbyState.settings.alwaysShowOwnBoatRoutes),
+        alwaysTeamRoutes: Boolean(lobbyState.settings.alwaysShowTeamBoatRoutes),
+        alwaysAllyRoutes: Boolean(lobbyState.settings.alwaysShowAllyBoatRoutes),
+        alwaysEnemyRoutes: Boolean(lobbyState.settings.alwaysShowEnemyBoatRoutes),
       },
     },
     "*",
@@ -482,11 +485,11 @@ function syncWarshipRoutesHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_WARSHIP_ROUTES",
       payload: {
-        enabled: Boolean(settings.showWarshipRoutes),
-        own: Boolean(settings.showWarshipRoutesOwn),
-        team: Boolean(settings.showWarshipRoutesTeam),
-        ally: Boolean(settings.showWarshipRoutesAlly),
-        enemy: Boolean(settings.showWarshipRoutesEnemy),
+        enabled: Boolean(lobbyState.settings.showWarshipRoutes),
+        own: Boolean(lobbyState.settings.showWarshipRoutesOwn),
+        team: Boolean(lobbyState.settings.showWarshipRoutesTeam),
+        ally: Boolean(lobbyState.settings.showWarshipRoutesAlly),
+        enemy: Boolean(lobbyState.settings.showWarshipRoutesEnemy),
       },
     },
     "*",
@@ -499,7 +502,7 @@ function syncBoatPanelHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_BOAT_PANEL",
       payload: {
-        enabled: Boolean(settings.showBoatPanel),
+        enabled: Boolean(lobbyState.settings.showBoatPanel),
       },
     },
     "*",
@@ -512,7 +515,7 @@ function syncBoatIncomingWarningHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SET_BOAT_INCOMING_WARNING",
       payload: {
-        enabled: Boolean(settings.warnIncomingBoats),
+        enabled: Boolean(lobbyState.settings.warnIncomingBoats),
       },
     },
     "*",
@@ -525,7 +528,7 @@ function syncEstatePanelHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_ESTATE_PANEL",
       payload: {
-        enabled: Boolean(settings.showEstatePanel),
+        enabled: Boolean(lobbyState.settings.showEstatePanel),
       },
     },
     "*",
@@ -538,7 +541,7 @@ function syncAutoLeaveOnTeamWinHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SET_AUTO_LEAVE_ON_TEAM_WIN",
       payload: {
-        enabled: Boolean(settings.autoLeaveOnTeamWin),
+        enabled: Boolean(lobbyState.settings.autoLeaveOnTeamWin),
       },
     },
     "*",
@@ -551,7 +554,7 @@ function syncNukeSuggestionsHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_NUKE_SUGGESTIONS",
       payload: {
-        enabled: Boolean(settings.showNukeSuggestions && cheatsAvailable),
+        enabled: Boolean(lobbyState.settings.showNukeSuggestions && lobbyState.cheatsAvailable),
       },
     },
     "*",
@@ -564,8 +567,8 @@ function syncAutoNukeHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SET_AUTO_NUKE",
       payload: {
-        enabled: Boolean(settings.autoNuke && cheatsAvailable),
-        includeAllies: Boolean(settings.autoNukeIncludeAllies),
+        enabled: Boolean(lobbyState.settings.autoNuke && lobbyState.cheatsAvailable),
+        includeAllies: Boolean(lobbyState.settings.autoNukeIncludeAllies),
       },
     },
     "*",
@@ -578,8 +581,8 @@ function syncSend1PercentBoatHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SET_SEND_1_PERCENT_BOAT",
       payload: {
-        enabled: Boolean(settings.send1PercentBoat),
-        contextMenu: settings.send1PercentBoatContextMenu !== false,
+        enabled: Boolean(lobbyState.settings.send1PercentBoat),
+        contextMenu: lobbyState.settings.send1PercentBoatContextMenu !== false,
       },
     },
     "*",
@@ -592,8 +595,8 @@ function syncEconomyHeatmapHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_ECONOMY_HEATMAP",
       payload: {
-        enabled: Boolean(settings.showEconomyHeatmap),
-        intensity: settings.economyHeatmapIntensity,
+        enabled: Boolean(lobbyState.settings.showEconomyHeatmap),
+        intensity: lobbyState.settings.economyHeatmapIntensity,
       },
     },
     "*",
@@ -606,7 +609,7 @@ function syncExportPartnerHeatmapHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_EXPORT_PARTNER_HEATMAP",
       payload: {
-        enabled: Boolean(settings.showExportPartnerHeatmap),
+        enabled: Boolean(lobbyState.settings.showExportPartnerHeatmap),
       },
     },
     "*",
@@ -615,13 +618,13 @@ function syncExportPartnerHeatmapHelper() {
 
 function syncQuickPanelHelper() {
   // Only sync if showQuickPanel is explicitly set — don't auto-hide on first load
-  if (settings.showQuickPanel == null) return;
+  if (lobbyState.settings.showQuickPanel == null) return;
   window.postMessage(
     {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_QUICK_PANEL",
       payload: {
-        enabled: Boolean(settings.showQuickPanel),
+        enabled: Boolean(lobbyState.settings.showQuickPanel),
       },
     },
     "*",
@@ -634,7 +637,7 @@ function syncQuickPanelSettings() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SYNC_QUICK_PANEL_SETTINGS",
       payload: {
-        settings: settings,
+        settings: lobbyState.settings,
       },
     },
     "*",
@@ -647,19 +650,19 @@ window.addEventListener("ofh-quick-panel-setting", function(e) {
   var key = e.detail.key;
   var value = e.detail.value;
   // Guard: skip if value unchanged (prevents feedback loop from panel self-close).
-  if (key in settings && settings[key] === value) return;
+  if (key in lobbyState.settings && lobbyState.settings[key] === value) return;
   if (key.indexOf("collapsedHelperCategories.") === 0) {
     var catKey = key.split(".")[1];
-    settings.collapsedHelperCategories = settings.collapsedHelperCategories || {};
-    settings.collapsedHelperCategories[catKey] = value;
-  } else if (key in settings) {
-    settings[key] = value;
+    lobbyState.settings.collapsedHelperCategories = lobbyState.settings.collapsedHelperCategories || {};
+    lobbyState.settings.collapsedHelperCategories[catKey] = value;
+  } else if (key in lobbyState.settings) {
+    lobbyState.settings[key] = value;
   }
-  settings = normalizeSettings(settings);
+  lobbyState.settings = normalizeSettings(lobbyState.settings);
 
   if (key === "language") {
     var newLang = value;
-    chrome.storage.local.set({ [STORAGE_KEY]: settings }).catch(function(err) {
+    chrome.storage.local.set({ [STORAGE_KEY]: lobbyState.settings }).catch(function(err) {
       console.error("Quick Panel language persist failed:", err);
     });
     if (i18n) {
@@ -684,7 +687,7 @@ window.addEventListener("ofh-quick-panel-setting", function(e) {
       });
     }
   } else {
-    chrome.storage.local.set({ [STORAGE_KEY]: settings }).catch(function(err) {
+    chrome.storage.local.set({ [STORAGE_KEY]: lobbyState.settings }).catch(function(err) {
       console.error("Quick Panel setting persist failed:", err);
     });
     syncHelpers();
@@ -713,7 +716,7 @@ function syncAutoBotI18n() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SET_AUTO_BOT_I18N",
       payload: {
-        language: settings.language,
+        language: lobbyState.settings.language,
         bundle: translations,
       },
     },
@@ -727,7 +730,7 @@ function syncSelectiveTradePolicyToggle() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SET_SELECTIVE_TRADE_POLICY",
       payload: {
-        enabled: Boolean(settings.selectiveTradePolicyEnabled),
+        enabled: Boolean(lobbyState.settings.selectiveTradePolicyEnabled),
       },
     },
     "*",
@@ -737,17 +740,17 @@ function syncSelectiveTradePolicyToggle() {
 function updateAutoCancelDeniedTradesAvailability(available) {
   const nextAvailable = Boolean(available);
   const availabilityChanged =
-    nextAvailable !== selectiveTradePolicyAvailable ||
-    nextAvailable !== Boolean(settings.autoCancelDeniedTradesAvailable);
+    nextAvailable !== lobbyState.selectiveTradePolicyAvailable ||
+    nextAvailable !== Boolean(lobbyState.settings.autoCancelDeniedTradesAvailable);
 
-  selectiveTradePolicyAvailable = nextAvailable;
+  lobbyState.selectiveTradePolicyAvailable = nextAvailable;
 
   if (availabilityChanged) {
     saveSettings({
-      ...settings,
+      ...lobbyState.settings,
       autoCancelDeniedTradesAvailable: nextAvailable,
       selectiveTradePolicyEnabled:
-        settings.selectiveTradePolicyEnabled && nextAvailable,
+        lobbyState.settings.selectiveTradePolicyEnabled && nextAvailable,
     }).catch((error) => {
       console.error("Failed to sync denied trade cancellation availability:", error);
     });
@@ -761,17 +764,16 @@ function updateCheatsAvailability(available) {
   // Force-enabled for multiplayer testing — nuke suggestion / auto nuke gate
   // on this flag, and public lobbies report cheats unavailable.
   // Original: const nextAvailable = Boolean(available);
-  void available;
   const nextAvailable = true;
   const availabilityChanged =
-    nextAvailable !== cheatsAvailable ||
-    nextAvailable !== Boolean(settings.cheatsAvailable);
+    nextAvailable !== lobbyState.cheatsAvailable ||
+    nextAvailable !== Boolean(lobbyState.settings.cheatsAvailable);
 
-  cheatsAvailable = nextAvailable;
+  lobbyState.cheatsAvailable = nextAvailable;
 
   if (availabilityChanged) {
     saveSettings({
-      ...settings,
+      ...lobbyState.settings,
       cheatsAvailable: nextAvailable,
     }).catch((error) => {
       console.error("Failed to sync cheats availability:", error);
@@ -829,23 +831,23 @@ function syncHelpers() {
 
 async function loadSettings() {
   const stored = await chrome.storage.local.get(STORAGE_KEY);
-  settings = normalizeSettings(stored[STORAGE_KEY]);
+  lobbyState.settings = normalizeSettings(stored[STORAGE_KEY]);
   await loadContentTranslations();
-  selectiveTradePolicyAvailable = Boolean(settings.autoCancelDeniedTradesAvailable);
+  lobbyState.selectiveTradePolicyAvailable = Boolean(lobbyState.settings.autoCancelDeniedTradesAvailable);
   // Match updateCheatsAvailability override so cold-start UI sees cheats on.
-  cheatsAvailable = true;
-  console.info("[openfront-helper] cheats override active");
-  // Persist so the popup-ui (which reads settings.cheatsAvailable from
+  lobbyState.cheatsAvailable = true;
+  console.warn("[openfront-helper] cheats override active");
+  // Persist so the popup-ui (which reads lobbyState.settings.cheatsAvailable from
   // chrome.storage) sees the override even before the page-bridge sends its
   // first CHEATS_AVAILABILITY message.
-  if (settings.cheatsAvailable !== true) {
-    settings.cheatsAvailable = true;
+  if (lobbyState.settings.cheatsAvailable !== true) {
+    lobbyState.settings.cheatsAvailable = true;
     chrome.storage.local
-      .set({ [STORAGE_KEY]: settings })
+      .set({ [STORAGE_KEY]: lobbyState.settings })
       .catch((error) => console.error("Failed to persist cheats override:", error));
   }
   lastProcessedSelectiveTradePolicyRequestAt =
-    settings.applySelectiveTradePolicyRequestAt;
+    lobbyState.settings.applySelectiveTradePolicyRequestAt;
   syncHelpers();
   syncQuickPanelSettings();
   syncFloatingHelpersPanel();
@@ -853,9 +855,9 @@ async function loadSettings() {
 }
 
 async function saveSettings(nextSettings) {
-  settings = normalizeSettings(nextSettings);
+  lobbyState.settings = normalizeSettings(nextSettings);
   await chrome.storage.local.set({
-    [STORAGE_KEY]: settings,
+    [STORAGE_KEY]: lobbyState.settings,
   });
 }
 

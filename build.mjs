@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const read = (rel) => fs.readFileSync(path.resolve(__dirname, rel), "utf8");
+const logBuild = (...parts) => process.stdout.write(`${parts.join(" ")}\n`);
 
 // Raw/debug build: skip all minification so the engine keeps its original
 // formatting, identifiers, and console.log debug output for in-browser
@@ -40,6 +41,7 @@ const LOBBY_FILES = [
 const INGAME_FILES = [
   "anti-afk.js",
   "runtime.js",
+  "intent-rate-limit.js",
   "ws-hook.js",
   "panel-layout.js",
   "shared-utils.js",
@@ -89,6 +91,7 @@ const INGAME_FILES = [
   "helper-users-panel.js",
   "sos-defense.js",
   "map-overlay-scheduler.js",
+  "tribe-cluster-overlay.js",
   "advisor-intel.js",
   "name-overlay.js",
   "attack-highlight.js",
@@ -101,6 +104,7 @@ const INGAME_FILES = [
   "right-click-conquest.js",
   "round-logger.js",
   "network-logger.js",
+  "runtime-diagnostics.js",
   "build-timer.js",
   "enemy-intent-intel.js",
   "spawn-heatmap.js",
@@ -182,7 +186,7 @@ async function main() {
   const pkg = JSON.parse(read("package.json"));
   const version = pkg.version || "0.0.0";
 
-  console.log("[build] discovering locales…");
+  logBuild("[build] discovering locales…");
   // Auto-discover every locales/<code>/common.json and inline them all. Adding a
   // new language is just dropping in a folder — no code change. English is the
   // fallback (loadBundle layers DEFAULT_TRANSLATIONS + en + <lang>).
@@ -195,10 +199,10 @@ async function main() {
     }
   }
   if (!locales.en) throw new Error("locales/en/common.json is required (English fallback)");
-  console.log(`[build] locales: ${Object.keys(locales).join(", ")}`);
+  logBuild(`[build] locales: ${Object.keys(locales).join(", ")}`);
   const assetsLiteral = `window.__OFH_ASSETS = ${JSON.stringify({ version, locales })};\n`;
 
-  console.log("[build] bundling shell (esbuild)…");
+  logBuild("[build] bundling shell (esbuild)…");
   const shellResult = await esbuild({
     entryPoints: [path.resolve(__dirname, "src/shell/index.ts")],
     bundle: true,
@@ -211,7 +215,7 @@ async function main() {
   });
   const shell = shellResult.outputFiles[0].text;
 
-  console.log("[build] concatenating lobby layer…");
+  logBuild("[build] concatenating lobby layer…");
   const lobbyPrelude =
     "const chrome = (window.__OFH && window.__OFH.chrome) || window.chrome;\n" +
     "const Audio = (window.__OFH && window.__OFH.Audio) || window.Audio;\n" +
@@ -220,10 +224,10 @@ async function main() {
     "function positionFloatingHelpersPanel(){}\n";
   const lobby = lobbyPrelude + LOBBY_FILES.map(readLobbyFile).join("");
 
-  console.log("[build] concatenating in-game layer…");
+  logBuild("[build] concatenating in-game layer…");
   const ingame = INGAME_FILES.map((rel) => `\n// ===== ${rel} =====\n${read(rel)}\n`).join("");
 
-  console.log(RAW ? "[build] minify OFF (raw/debug build)…" : "[build] minifying…");
+  logBuild(RAW ? "[build] minify OFF (raw/debug build)…" : "[build] minifying…");
   const out =
     metadataHeader(version) +
     assetsLiteral +
@@ -234,20 +238,24 @@ async function main() {
   const outPath = path.resolve(__dirname, "openfront-helper.user.js");
   fs.writeFileSync(outPath, out, "utf8");
   const kb = (Buffer.byteLength(out, "utf8") / 1024).toFixed(0);
-  console.log(`[build] wrote ${outPath} (${kb} KB)`);
+  logBuild(`[build] wrote ${outPath} (${kb} KB)`);
 
   // Copy to clipboard for quick Tampermonkey paste.
   try {
     const { execSync } = await import("node:child_process");
     if (process.platform === "win32") {
-      execSync("powershell -Command \"Set-Clipboard -Value ([System.IO.File]::ReadAllText('" + outPath.replace(/\\/g, "\\\\") + "'))\"");
-      console.log("[build] copied to clipboard");
+      execSync(
+        "powershell -Command \"Set-Clipboard -Value ([System.IO.File]::ReadAllText('" +
+          outPath.replace(/\\/g, "\\\\") +
+          "'))\"",
+      );
+      logBuild("[build] copied to clipboard");
     } else if (process.platform === "darwin") {
-      execSync("pbcopy < \"" + outPath + "\"");
-      console.log("[build] copied to clipboard");
+      execSync('pbcopy < "' + outPath + '"');
+      logBuild("[build] copied to clipboard");
     }
   } catch (e) {
-    console.log("[build] clipboard copy skipped:", e.message);
+    logBuild("[build] clipboard copy skipped:", e.message);
   }
 }
 

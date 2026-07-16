@@ -18,7 +18,8 @@
     try {
       ls = window.localStorage;
       if (ls.getItem(SEED_FLAG)) return; // already seeded this install
-    } catch (_error) {
+    } catch (error) {
+      console.warn("[ofh] panel layout storage is unavailable:", error);
       return; // no storage → nothing to seed
     }
 
@@ -73,8 +74,8 @@
         blob.pos = { left: leftX, top: 540 };
         ls.setItem(BOT_KEY, JSON.stringify(blob));
       }
-    } catch (_error) {
-      /* ignore */
+    } catch (error) {
+      console.warn("[ofh] could not seed the default panel layout:", error);
     }
 
     try {

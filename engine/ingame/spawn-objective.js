@@ -40,8 +40,9 @@
     try {
       const value = target?.[key];
       return typeof value === "function" ? value.call(target) : value;
-    } catch (_error) {
-      return null;
+    } catch (error) {
+      if (error instanceof TypeError) return null;
+      throw error;
     }
   }
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import vm from "node:vm";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -49,10 +49,12 @@ const structureSandbox = {
   setLastAction: () => {},
   tr: (value) => value,
   withTimeout: async (promise) => promise,
+  captureRuntimeException: () => {},
+  runtimeDebugLog: () => {},
   console,
 };
 structureSandbox.globalThis = structureSandbox;
-vm.runInNewContext(
+executeClassicScript(
   `${STRUCTURE_SOURCE}\nglobalThis.__StructureBehavior = StructureBehavior;`,
   structureSandbox,
   { filename: "structureBehavior.js" },
@@ -150,10 +152,12 @@ function makeScenario({ ocean = false, allied = false, otherAlive = true } = {})
   const sandbox = {
     PlayerType: { Bot: "BOT" },
     withTimeout: async (promise) => promise,
+    captureRuntimeException: () => {},
+    runtimeDebugLog: () => {},
     console,
   };
   sandbox.globalThis = sandbox;
-  vm.runInNewContext(GAME_API_SOURCE, sandbox, { filename: "gameApi.js" });
+  executeClassicScript(GAME_API_SOURCE, sandbox, { filename: "gameApi.js" });
   return { handle: sandbox.createGameApi(src), me, other };
 }
 
@@ -246,4 +250,4 @@ assert.deepEqual(
   "port candidate selection keeps the ocean shore",
 );
 
-console.log("port placement tests passed");
+process.stdout.write("port placement tests passed\n");

@@ -158,32 +158,49 @@
       const context = getOpenFrontGameContext();
       if (!context?.game) return;
       const game = context.game;
-      // Find a tile owned by the attacker to focus on
-      const targetId = attackerPlayer.smallID ? attackerPlayer.smallID() : null;
+      const targetId = getRetaliationPlayerId(attackerPlayer);
       if (targetId == null) return;
-      // Try to find the nuke that's targeting us — focus on its source
       const nukes = game.units("Atom Bomb", "Hydrogen Bomb");
       for (const unit of nukes) {
-        if (!unit || !unit.isActive || !unit.isActive()) continue;
-        // Skip MIRV warheads — one launch spawns many, flooding the HUD
-        var utype;
-        try { utype = unit.type ? unit.type() : ""; } catch (_e) { utype = ""; }
-        if (utype === "MIRV Warhead") continue;
-        const owner = unit.owner ? unit.owner() : null;
-        if (!owner) continue;
-        const ownerSid = owner.smallID ? owner.smallID() : null;
-        if (ownerSid === targetId) {
-          // Found the nuke — use its tile (launch source)
-          const tile = unit.tile ? unit.tile() : null;
-          if (tile != null && typeof game.x === "function" && typeof game.y === "function") {
-            _centerCameraOnTile(game.x(tile), game.y(tile));
-            return;
-          }
-        }
+        if (!isActiveRetaliationNuke(unit) || getRetaliationPlayerId(getRetaliationOwner(unit)) !== targetId) continue;
+        const tile = unit.tile?.();
+        if (tile == null || typeof game.x !== "function" || typeof game.y !== "function") continue;
+        _centerCameraOnTile(game.x(tile), game.y(tile));
+        return;
       }
-      // Fallback: use GoToPositionEvent with attacker's ID to focus territory
-      // (the game will center on their capital/first city)
-    } catch (_error) {}
+    } catch (_error) {
+      captureRuntimeException(_error, "engine/ingame/retaliation-hud.js:focusOnAttacker");
+    }
+  }
+
+  function getRetaliationOwner(unit) {
+    try { return unit?.owner?.() || null; } catch (_error) { return null; }
+  }
+
+  function getRetaliationPlayerId(player) {
+    try { return player?.smallID?.() ?? null; } catch (_error) { return null; }
+  }
+
+  function getRetaliationUnitType(unit) {
+    try { return unit?.type?.() || ""; } catch (_error) { return ""; }
+  }
+
+  function isActiveRetaliationNuke(unit) {
+    try {
+      return Boolean(unit?.isActive?.()) && getRetaliationUnitType(unit) !== "MIRV Warhead";
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  function isGoToPositionListener(ctor, callbacks) {
+    if (ctor?.name === "GoToPositionEvent") return true;
+    if (!Array.isArray(callbacks)) return false;
+    return callbacks.some((callback) => {
+      if (typeof callback !== "function") return false;
+      const source = callback.toString();
+      return source.includes("onGoToPosition") || source.includes("GoToPositionEvent");
+    });
   }
 
   // Camera jump (same as silo-sam-tracker)
@@ -193,110 +210,87 @@
       if (!overlay || !overlay.eventBus) return;
       var bus = overlay.eventBus;
       if (!bus.listeners || typeof bus.listeners.entries !== "function") return;
-      var it = bus.listeners.entries();
-      var entry = it.next();
-      while (!entry.done) {
-        var ctor = entry.value[0];
-        var callbacks = entry.value[1];
-        if (ctor) {
-          var matched = ctor.name === "GoToPositionEvent";
-          if (!matched && Array.isArray(callbacks)) {
-            for (var i = 0; i < callbacks.length; i++) {
-              if (typeof callbacks[i] === "function") {
-                var s = callbacks[i].toString();
-                if (s.indexOf("onGoToPosition") !== -1 || s.indexOf("GoToPositionEvent") !== -1) {
-                  matched = true;
-                  break;
-                }
-              }
-            }
-          }
-          if (matched) {
-            try { bus.emit(new ctor(x, y)); } catch (e) {}
-            return;
-          }
+      for (const [ctor, callbacks] of bus.listeners.entries()) {
+        if (!ctor || !isGoToPositionListener(ctor, callbacks)) continue;
+        try { bus.emit(new ctor(x, y)); } catch (error) {
+          captureRuntimeException(error, "engine/ingame/retaliation-hud.js:centerCamera");
         }
-        entry = it.next();
+        return;
       }
-    } catch (e) {}
+    } catch (e) {
+      captureRuntimeException(e, "engine/ingame/retaliation-hud.js:centerCamera");
+    }
   }
 
   // One-shot latch per nuke-hit: fires once per distinct nuke that hits us.
   const _retaliationSeenHits = new Set();
 
-  function checkRetaliation() {
-    if (!retaliationEnabled) return;
-    let context = null;
+  function getRetaliationGame() {
     try {
-      context = getOpenFrontGameContext();
+      return getOpenFrontGameContext()?.game || null;
     } catch (_error) {
-      return;
+      return null;
     }
-    if (!context?.game) return;
-    const game = context.game;
-    const me = game.myPlayer ? game.myPlayer() : null;
-    if (!me) return;
+  }
 
-    // Check for incoming nukes targeting us.
+  function isHostileNukeTargetingMe(unit, game, me) {
+    if (!isActiveRetaliationNuke(unit)) return false;
+    const owner = getRetaliationOwner(unit);
+    if (!owner) return false;
+    try { if (me.isFriendly?.(owner)) return false; } catch (_error) { /* hostile fallback */ }
+    const targetTile = unit.targetTile?.();
+    if (targetTile === undefined) return false;
     try {
-      const nukes = game.units("Atom Bomb", "Hydrogen Bomb");
-      for (const unit of nukes) {
-        if (!unit || !unit.isActive || !unit.isActive()) continue;
-        // Skip MIRV warheads — one launch spawns many, flooding the HUD
-        var utype;
-        try { utype = unit.type ? unit.type() : ""; } catch (_e) { utype = ""; }
-        if (utype === "MIRV Warhead") continue;
-        const owner = unit.owner ? unit.owner() : null;
-        if (!owner) continue;
-        // Skip our own / allied nukes.
-        try {
-          if (me.isFriendly && me.isFriendly(owner)) continue;
-        } catch (_e) { /* treat as hostile */ }
-        const targetTile = unit.targetTile ? unit.targetTile() : undefined;
-        if (targetTile === undefined) continue;
-        // Check if the target is our territory (approximate: check if the unit
-        // is targeting a tile owned by us via ownerID).
-        try {
-          if (game.ownerID && game.ownerID(targetTile) !== me.smallID()) continue;
-        } catch (_e) { continue; }
-        const hitKey = `${unit.id ? unit.id() : targetTile}`;
-        if (_retaliationSeenHits.has(hitKey)) continue;
-        _retaliationSeenHits.add(hitKey);
-        let attackerName = "?";
-        try {
-          attackerName = getPlayerDisplayName ? getPlayerDisplayName(owner) : owner.name && owner.name();
-        } catch (_e) { attackerName = "?"; }
-        showRetaliationCard(attackerName, owner);
-      }
-    } catch (_error) { /* ignore */ }
+      return !game.ownerID || game.ownerID(targetTile) === me.smallID();
+    } catch (_error) { return false; }
+  }
 
-    // Prune seen-hits for nukes no longer in flight.
-    if (_retaliationSeenHits.size > 0) {
-      try {
-        const activeIds = new Set();
-        const nukes = game.units("Atom Bomb", "Hydrogen Bomb", "MIRV Warhead");
-        for (const unit of nukes) {
-          if (unit && unit.id) activeIds.add(String(unit.id()));
-        }
-        for (const id of _retaliationSeenHits) {
-          if (!activeIds.has(id)) _retaliationSeenHits.delete(id);
-        }
-      } catch (_error) { /* ignore */ }
+  function processIncomingRetaliationNukes(game, me) {
+    for (const unit of game.units("Atom Bomb", "Hydrogen Bomb")) {
+      if (!isHostileNukeTargetingMe(unit, game, me)) continue;
+      const targetTile = unit.targetTile?.();
+      const hitKey = `${unit.id?.() ?? targetTile}`;
+      if (_retaliationSeenHits.has(hitKey)) continue;
+      _retaliationSeenHits.add(hitKey);
+      const owner = getRetaliationOwner(unit);
+      let attackerName = "?";
+      try { attackerName = getPlayerDisplayName?.(owner) || owner?.name?.() || "?"; } catch (_error) { /* fallback */ }
+      showRetaliationCard(attackerName, owner);
+    }
+  }
+
+  function pruneRetaliationHits(game) {
+    if (_retaliationSeenHits.size === 0) return;
+    const activeIds = new Set(game.units("Atom Bomb", "Hydrogen Bomb", "MIRV Warhead")
+      .map((unit) => unit?.id?.()).filter((id) => id != null).map(String));
+    for (const id of _retaliationSeenHits) if (!activeIds.has(id)) _retaliationSeenHits.delete(id);
+  }
+
+  function checkRetaliation() {
+    if (!runtimeState.retaliationEnabled) return;
+    const game = getRetaliationGame();
+    const me = game?.myPlayer?.();
+    if (!game || !me) return;
+    try { processIncomingRetaliationNukes(game, me); } catch (error) {
+      captureRuntimeException(error, "engine/ingame/retaliation-hud.js:incoming");
+    }
+    try { pruneRetaliationHits(game); } catch (error) {
+      captureRuntimeException(error, "engine/ingame/retaliation-hud.js:prune");
     }
   }
 
   function setRetaliationEnabled(enabled) {
-    retaliationEnabled = Boolean(enabled);
-    if (!retaliationEnabled) {
-      if (retaliationInterval !== null) {
-        window.clearInterval(retaliationInterval);
-        retaliationInterval = null;
+    runtimeState.retaliationEnabled = Boolean(enabled);
+    if (!runtimeState.retaliationEnabled) {
+      if (runtimeState.retaliationInterval !== null) {
+        window.clearInterval(runtimeState.retaliationInterval);
+        runtimeState.retaliationInterval = null;
       }
       _retaliationSeenHits.clear();
       document.getElementById(RETALIATION_CONTAINER_ID)?.remove();
       return;
     }
-    if (retaliationInterval === null) {
-      retaliationInterval = window.setInterval(checkRetaliation, 800);
+    if (runtimeState.retaliationInterval === null) {
+      runtimeState.retaliationInterval = window.setInterval(checkRetaliation, 800);
     }
   }

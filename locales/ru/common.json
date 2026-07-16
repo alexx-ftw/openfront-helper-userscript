@@ -884,5 +884,14 @@
   "you": "вы",
   "💬 Emoji": "💬 Эмодзи",
   "📨 Requests": "📨 Запросы",
-  "🤝 Allies": "🤝 Союзники"
+  "🤝 Allies": "🤝 Союзники",
+  "Expansion opportunity available": "Доступна возможность расширения",
+  "Free land available": "Доступна свободная земля",
+  "Land tribe in range": "Наземное племя в радиусе действия",
+  "Open lobbyState.settings": "Открыть lobbyState.settings",
+  "Pause donations during expansion": "Приостановить пожертвования во время расширения",
+  "Sea tribe in range": "Морское племя в радиусе действия",
+  "Temporarily paused": "Временно приостановлено",
+  "⏸️ Auto-bot paused after a slow tick": "⏸️ Автобот приостановлен после медленного тика",
+  "🚢 Intercept invasion": "🚢 Перехватить вторжение"
 }

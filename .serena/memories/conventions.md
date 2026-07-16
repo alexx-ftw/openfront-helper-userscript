@@ -1,4 +1,5 @@
 # Conventions
+
 - Keep engine modules browser-safe and defensive against partially initialized game state, especially during lobby/spawn phase.
 - Expose testable helpers through the module's agreed global API when a file is loaded in a VM sandbox.
 - Preserve existing feature ordering in `build.mjs`; source order can affect globals.

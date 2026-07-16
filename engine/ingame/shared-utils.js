@@ -38,16 +38,36 @@ function getPlayerDisplayName(player) {
   }
 }
 
-function getPlayerRelationToMyPlayer(game, player) {
-  let myPlayer = null;
+function getPlayerView(game) {
   try {
-    myPlayer = game?.myPlayer?.();
-    if (!player?.isPlayer?.() || !myPlayer?.isPlayer?.()) {
-      return null;
-    }
+    return game?.myPlayer?.() ?? null;
   } catch (_error) {
+    captureRuntimeException(_error, "engine/ingame/shared-utils.js:getPlayerView");
     return null;
   }
+}
+
+function isPlayerView(player) {
+  try {
+    return Boolean(player?.isPlayer?.());
+  } catch (_error) {
+    captureRuntimeException(_error, "engine/ingame/shared-utils.js:isPlayerView");
+    return false;
+  }
+}
+
+function playersAreFriendly(first, second) {
+  try {
+    return Boolean(first.isFriendly?.(second) || second.isFriendly?.(first));
+  } catch (_error) {
+    captureRuntimeException(_error, "engine/ingame/shared-utils.js:playersAreFriendly");
+    return false;
+  }
+}
+
+function getPlayerRelationToMyPlayer(game, player) {
+  const myPlayer = getPlayerView(game);
+  if (!isPlayerView(player) || !isPlayerView(myPlayer)) return null;
 
   const playerId = getPlayerSmallId(player, NaN);
   const myPlayerId = getPlayerSmallId(myPlayer, NaN);
@@ -55,15 +75,7 @@ function getPlayerRelationToMyPlayer(game, player) {
     return "self";
   }
 
-  try {
-    if (player.isFriendly?.(myPlayer) || myPlayer.isFriendly?.(player)) {
-      return "ally";
-    }
-  } catch (_error) {
-    return "enemy";
-  }
-
-  return "enemy";
+  return playersAreFriendly(player, myPlayer) ? "ally" : "enemy";
 }
 
 function getPlayerTeamName(player) {
@@ -71,6 +83,7 @@ function getPlayerTeamName(player) {
     const team = player?.team?.();
     return team == null ? null : String(team);
   } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/shared-utils.js:73");
     return null;
   }
 }
@@ -97,6 +110,7 @@ function _playerTerritoryHex(player) {
       return hex;
     }
   } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/shared-utils.js:99");
     // PlayerView.territoryColor() unavailable on this build → palette fallback.
   }
   return null;
@@ -110,13 +124,39 @@ let _teamRepColorTick = -1;
 const _teamRepColors = new Map();
 const _teamRepSmallIds = new Map();
 
-function _ensureTeamRepColors(game) {
-  let tick = Number.NaN;
+function _teamRepTick(game) {
   try {
-    tick = Number(game?.ticks?.());
+    return Number(game?.ticks?.());
   } catch (_error) {
-    tick = Number.NaN;
+    captureRuntimeException(_error, "engine/ingame/shared-utils.js:_teamRepTick");
+    return Number.NaN;
   }
+}
+
+function _isAlivePlayer(player) {
+  try {
+    return Boolean(player?.isAlive?.());
+  } catch (_error) {
+    captureRuntimeException(_error, "engine/ingame/shared-utils.js:_isAlivePlayer");
+    return false;
+  }
+}
+
+function _recordTeamRepresentative(player) {
+  if (!_isAlivePlayer(player)) return;
+  const team = getPlayerTeamName(player);
+  if (!team || team === "Bot") return;
+  const smallId = getPlayerSmallId(player, Number.MAX_SAFE_INTEGER);
+  const previousId = _teamRepSmallIds.get(team);
+  if (previousId !== undefined && previousId <= smallId) return;
+  const hex = _playerTerritoryHex(player);
+  if (!hex) return;
+  _teamRepColors.set(team, hex);
+  _teamRepSmallIds.set(team, smallId);
+}
+
+function _ensureTeamRepColors(game) {
+  const tick = _teamRepTick(game);
   if (
     game === _teamRepColorGame &&
     Number.isFinite(tick) &&
@@ -129,29 +169,7 @@ function _ensureTeamRepColors(game) {
   _teamRepColors.clear();
   _teamRepSmallIds.clear();
   for (const player of getCachedPlayerViews(game)) {
-    let alive = false;
-    try {
-      alive = Boolean(player?.isAlive?.());
-    } catch (_error) {
-      alive = false;
-    }
-    if (!alive) {
-      continue;
-    }
-    const team = getPlayerTeamName(player);
-    if (!team || team === "Bot") {
-      continue;
-    }
-    const smallId = getPlayerSmallId(player, Number.MAX_SAFE_INTEGER);
-    const prevId = _teamRepSmallIds.get(team);
-    if (prevId !== undefined && prevId <= smallId) {
-      continue;
-    }
-    const hex = _playerTerritoryHex(player);
-    if (hex) {
-      _teamRepColors.set(team, hex);
-      _teamRepSmallIds.set(team, smallId);
-    }
+    _recordTeamRepresentative(player);
   }
   return _teamRepColors;
 }
@@ -230,9 +248,15 @@ function _hslToHex(h, s, l) {
 // well separated; any other name falls back to a stable FNV-1a hue.
 function _generateTeamColor(name) {
   const str = String(name ?? "");
-  const numbered = /(\d+)\s*$/.exec(str);
-  if (numbered) {
-    const n = Number(numbered[1]);
+  const trimmed = str.trimEnd();
+  let digitStart = trimmed.length;
+  while (digitStart > 0) {
+    const code = trimmed.charCodeAt(digitStart - 1);
+    if (code < 48 || code > 57) break;
+    digitStart -= 1;
+  }
+  if (digitStart < trimmed.length) {
+    const n = Number(trimmed.slice(digitStart));
     return _hslToHex(Math.floor((n * 137.508) % 360), 68, 60);
   }
   let h = 2166136261;
@@ -294,6 +318,7 @@ function isNationBotPlayer(player) {
     const playerType = player?.type?.() ?? player?.data?.playerType;
     return playerType === "NATION";
   } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/shared-utils.js:302");
     return false;
   }
 }
@@ -320,6 +345,7 @@ function getPlayerGoldNumber(player) {
     }
     return Number(gold);
   } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/shared-utils.js:328");
     return NaN;
   }
 }
@@ -387,7 +413,7 @@ function getCachedPlayerViews(game) {
     return [];
   }
 
-  let currentTick = Number.NaN;
+  let currentTick;
   try {
     currentTick = Number(game.ticks?.());
   } catch (_error) {
@@ -426,7 +452,7 @@ function getCachedGameUnits(game, ...types) {
     return [];
   }
 
-  let currentTick = Number.NaN;
+  let currentTick;
   try {
     currentTick = Number(game.ticks?.());
   } catch (_error) {
@@ -448,7 +474,7 @@ function getCachedGameUnits(game, ...types) {
     return _cachedGameUnitsByTypes.get(key);
   }
 
-  let units = [];
+  let units;
   try {
     units = Array.from(game.units(...types) || []);
   } catch (_error) {

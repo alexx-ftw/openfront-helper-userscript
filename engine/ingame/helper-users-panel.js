@@ -31,6 +31,7 @@
       const id = game?.gameID?.() ?? game?.id?.() ?? null;
       if (id !== null && id !== undefined) return String(id);
     } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/helper-users-panel.js:33");
       /* ignore */
     }
     return "default";
@@ -90,13 +91,37 @@
     _helperLastProcessedTick = null;
   }
 
-  function _processHelperEmojiUpdates(game) {
-    let currentTick = Number.NaN;
+  function _helperCurrentTick(game) {
     try {
-      currentTick = Number(game?.ticks?.());
-    } catch (_e) {
-      currentTick = Number.NaN;
+      return Number(game?.ticks?.());
+    } catch (_error) {
+      captureRuntimeException(_error, "engine/ingame/helper-users-panel.js:_helperCurrentTick");
+      return Number.NaN;
     }
+  }
+
+  function _helperEmojiPayload(event) {
+    const payload =
+      event?.emoji && typeof event.emoji === "object" ? event.emoji : event;
+    if (
+      !payload ||
+      typeof payload.senderID !== "number" ||
+      typeof payload.message !== "string"
+    ) {
+      return null;
+    }
+    return payload;
+  }
+
+  function _processHelperEmojiEvent(event, mySmallId, nowMs) {
+    const emoji = _helperEmojiPayload(event);
+    if (!emoji || emoji.senderID === mySmallId) return;
+    if (!HELPER_SIGNATURE_SEQUENCE.includes(emoji.message)) return;
+    _recordHelperEmoji(emoji.senderID, emoji.message, nowMs);
+  }
+
+  function _processHelperEmojiUpdates(game) {
+    const currentTick = _helperCurrentTick(game);
     if (Number.isFinite(currentTick)) {
       if (currentTick === _helperLastProcessedTick) return; // same game tick
       _helperLastProcessedTick = currentTick;
@@ -109,15 +134,8 @@
 
     for (const group of Object.values(updates)) {
       if (!Array.isArray(group)) continue;
-      for (const ev of group) {
-        // EmojiUpdate: nested { emoji: {senderID, message} } OR flat {senderID, message}.
-        const em = ev && ev.emoji && typeof ev.emoji === "object" ? ev.emoji : ev;
-        if (!em || typeof em.senderID !== "number" || typeof em.message !== "string") {
-          continue;
-        }
-        if (em.senderID === mySid) continue; // don't list yourself
-        if (!HELPER_SIGNATURE_SEQUENCE.includes(em.message)) continue;
-        _recordHelperEmoji(em.senderID, em.message, nowMs);
+      for (const event of group) {
+        _processHelperEmojiEvent(event, mySid, nowMs);
       }
     }
   }
@@ -234,6 +252,7 @@
         target.emitGoToPlayerEvent(Number(smallId));
       }
     } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/helper-users-panel.js:236");
       /* ignore */
     }
   }

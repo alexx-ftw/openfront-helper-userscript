@@ -23,13 +23,17 @@
 
     // Watchdog: if a tick has been "in flight" too long (a worker call hung
     // despite the per-call timeouts, or an unexpected throw skipped finally),
-    // force-clear the flag so the bot never stays frozen.
+    // stop the bot fail-closed. Clearing only the flag would let the interval
+    // start a second full tick while the original async chain was still alive,
+    // duplicating worker traffic and action intents.
     if (
+      state.settings.enabled &&
       state.tickInFlight &&
       performance.now() - state.tickStartedAt > 8000
     ) {
-      console.warn("[AutoBot] tick watchdog: clearing stuck tickInFlight");
-      state.tickInFlight = false;
+      console.warn("[AutoBot] tick watchdog: disabling slow bot tick");
+      setEnabled(false);
+      setStatus(tr("⏸️ Auto-bot paused after a slow tick"));
     }
 
     const game = getGame();
@@ -49,7 +53,7 @@
     // Persisted enabled=true survives F5 — kick the engine so the tick timer
     // actually starts (loadSettings only restores the flag, not the timer).
     if (state.settings.enabled) setEnabled(true);
-    console.info("[AutoBot] page bridge loaded (private-lobby training tool).");
+    runtimeDebugLog("[AutoBot] page bridge loaded (private-lobby training tool).");
   }
 
 
@@ -73,14 +77,16 @@
 // NEVER collide with the shared global lexical scope — a redeclaration there aborts
 // the whole script BEFORE any log, which is exactly the "no [AtomMacro] log at all"
 // symptom we hit. The IIFE still sees shared globals (tr, lastOpenFrontGameContext).
+// Its physical size is an isolation boundary; every nested workflow remains fully linted.
+// eslint-disable-next-line max-lines-per-function, max-statements
 (function () {
   "use strict";
-  console.log("[AtomMacro] script start — file is injected & executing");
+  runtimeDebugLog("[AtomMacro] script start — file is injected & executing");
   // Page-level idempotency guard: the same code also lives at the end of
   // lifecycle.js (so a plain F5 loads it without an extension reload). Whichever
   // copy runs first installs; the other no-ops.
   if (window.__ofhAtomMacroInstalled) {
-    console.log("[AtomMacro] already installed in this page → skip duplicate");
+    runtimeDebugLog("[AtomMacro] already installed in this page → skip duplicate");
     return;
   }
 
@@ -121,18 +127,22 @@
     const radial = atomRadialElement();
     const game =
       radial?.game ||
-      (typeof lastOpenFrontGameContext !== "undefined"
-        ? lastOpenFrontGameContext?.game
+      (typeof runtimeState.lastOpenFrontGameContext !== "undefined"
+        ? runtimeState.lastOpenFrontGameContext?.game
         : null);
     const transform =
       radial?.transformHandler ||
       radial?.transform ||
-      (typeof lastOpenFrontGameContext !== "undefined"
-        ? lastOpenFrontGameContext?.transform
+      (typeof runtimeState.lastOpenFrontGameContext !== "undefined"
+        ? runtimeState.lastOpenFrontGameContext?.transform
         : null);
     const buildMenu = radial?.buildMenu || document.querySelector("build-menu");
     const myPlayer = game?.myPlayer?.();
     return { game, transform, buildMenu, myPlayer };
+  }
+
+  function atomHasPlayableContext(ctx) {
+    return Boolean(ctx.game && ctx.myPlayer?.isPlayer?.());
   }
 
   function atomTileFromScreen(ctx, clientX, clientY) {
@@ -144,6 +154,7 @@
       const tile = game.ref(w.x, w.y);
       return tile == null ? null : tile;
     } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:150");
       return null;
     }
   }
@@ -153,7 +164,7 @@
   // so ready shots = level − queue.length, summed over built, active silos.
   function atomReadyShots(player) {
     let shots = 0;
-    let silos = [];
+    let silos;
     try {
       silos = player.units(SILO_UNIT) || [];
     } catch (_e) {
@@ -168,6 +179,7 @@
         const qlen = Array.isArray(queue) ? queue.length : 0;
         shots += Math.max(0, level - qlen);
       } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:174");
         shots += 1; // defensive: assume the silo can fire once
       }
     }
@@ -188,24 +200,29 @@
   // {unit, level} when the SAM is a built, hostile (non-own; non-ally unless our
   // team has already won) launcher whose level-scaled range covers refTile, else
   // null. samRange(level) grows with level, so higher-level SAMs reach further.
-  function atomSamCovering(game, cfg, myPlayer, mySid, won, s, refTile) {
-    const unit = s.unit || s;
+  function atomSamCovering(options) {
+    const { game, cfg, myPlayer, mySid, won, candidate, refTile } = options;
+    const unit = candidate.unit || candidate;
     const owner = unit.owner && unit.owner();
-    if (!owner) return null;
-    if (owner.smallID && owner.smallID() === mySid) return null; // never our own SAMs
+    if (!atomIsHostileSamOwner(owner, myPlayer, mySid, won)) return null;
     // ally SAMs are ignored UNTIL the team win (then they intercept us too)
-    if (!won && myPlayer.isFriendly && myPlayer.isFriendly(owner)) return null;
-    if (unit.isUnderConstruction && unit.isUnderConstruction()) return null;
+    if (unit.isUnderConstruction?.()) return null;
     const level = (unit.level && Number(unit.level())) || 1;
     const range = cfg && cfg.samRange ? Number(cfg.samRange(level)) : 0;
-    let distSq = s.distSquared;
-    if (distSq == null && game.euclideanDistSquared && unit.tile) {
-      distSq = game.euclideanDistSquared(refTile, unit.tile());
-    }
-    if (range > 0 && distSq != null && distSq <= range * range) {
-      return { unit, level };
-    }
-    return null;
+    const distSq = atomSamDistanceSquared(game, candidate, unit, refTile);
+    return range > 0 && distSq != null && distSq <= range * range
+      ? { unit, level } : null;
+  }
+
+  function atomSamDistanceSquared(game, candidate, unit, refTile) {
+    if (candidate.distSquared != null) return candidate.distSquared;
+    return game.euclideanDistSquared && unit.tile
+      ? game.euclideanDistSquared(refTile, unit.tile()) : null;
+  }
+
+  function atomIsHostileSamOwner(owner, myPlayer, mySid, won) {
+    if (!owner || owner.smallID?.() === mySid) return false;
+    return won || !myPlayer.isFriendly?.(owner);
   }
 
   // Impact-tile coverage only — SAMs whose range covers `tile` itself. The safe
@@ -224,10 +241,13 @@
         : [];
       const mySid = myPlayer.smallID ? myPlayer.smallID() : -1;
       for (const s of nearby) {
-        const hit = atomSamCovering(game, cfg, myPlayer, mySid, won, s, tile);
+        const hit = atomSamCovering({
+          game, cfg, myPlayer, mySid, won, candidate: s, refTile: tile,
+        });
         if (hit) out.push(hit);
       }
     } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:234");
       /* ignore → treat as no coverage */
     }
     return out;
@@ -242,8 +262,7 @@
       let best = null;
       let bestDist = Infinity;
       for (const s of silos) {
-        if (s.isUnderConstruction && s.isUnderConstruction()) continue;
-        if (s.isActive && s.isActive() === false) continue;
+        if (!atomSiloCanLaunch(s)) continue;
         const st = s.tile && s.tile();
         if (st == null) continue;
         const d = game.manhattanDist ? game.manhattanDist(st, tile) : 0;
@@ -254,8 +273,14 @@
       }
       return best;
     } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:260");
       return null;
     }
+  }
+
+  function atomSiloCanLaunch(silo) {
+    if (silo.isUnderConstruction?.()) return false;
+    return !silo.isActive || silo.isActive() !== false;
   }
 
   // Trajectory-aware coverage: every SAM that can intercept the nuke ANYWHERE
@@ -272,13 +297,7 @@
   // failure so the dialog never breaks.
   function atomCoveringSamsAlongPath(game, myPlayer, tile, rocketDirectionUp) {
     try {
-      if (
-        typeof UniversalPathFinding === "undefined" ||
-        !UniversalPathFinding.Parabola ||
-        !game.euclideanDistSquared
-      ) {
-        return atomCoveringSams(game, myPlayer, tile);
-      }
+      if (!atomCanTraceTrajectory(game)) return atomCoveringSams(game, myPlayer, tile);
       const src = atomLaunchSiloTile(game, myPlayer, tile);
       if (src == null) return atomCoveringSams(game, myPlayer, tile);
 
@@ -298,8 +317,6 @@
       const trajectory = pathFinder.findPath(src, tile) || [];
       if (trajectory.length === 0) return atomCoveringSams(game, myPlayer, tile);
 
-      const won = atomTeamHasWon(game, myPlayer);
-      const mySid = myPlayer.smallID ? myPlayer.smallID() : -1;
       const maxRange = cfg && cfg.maxSamRange ? Number(cfg.maxSamRange()) : 200;
       const tRange =
         cfg && cfg.defaultNukeTargetableRange
@@ -309,28 +326,47 @@
 
       // Dedup: a SAM in range of several trajectory tiles still intercepts only
       // ONE nuke per its level — count each SAM exactly once, by unit id.
-      const byId = new Map();
-      for (const tt of trajectory) {
-        // Only "targetable" tiles can be intercepted (within range of the launch
-        // site OR the target). Skip the untargetable mid-flight arc — SAMs there
-        // physically can't fire, so counting them would over-recommend.
-        const dToTarget = game.euclideanDistSquared(tt, tile);
-        const dToSrc = game.euclideanDistSquared(tt, src);
-        if (!(dToTarget < tRangeSq || dToSrc < tRangeSq)) continue;
-        const nearby = game.nearbyUnits
-          ? game.nearbyUnits(tt, maxRange, SAM_UNIT)
-          : [];
-        for (const s of nearby) {
-          const hit = atomSamCovering(game, cfg, myPlayer, mySid, won, s, tt);
-          if (!hit) continue;
-          const id = hit.unit.id ? hit.unit.id() : hit.unit;
-          if (!byId.has(id)) byId.set(id, hit);
-        }
-      }
-      return Array.from(byId.values());
+      return atomSamsOnTrajectory({
+        game, myPlayer, trajectory, target: tile, source: src, cfg, maxRange, tRangeSq,
+      });
     } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:335");
       return atomCoveringSams(game, myPlayer, tile);
     }
+  }
+
+  function atomCanTraceTrajectory(game) {
+    return typeof UniversalPathFinding !== "undefined" &&
+      Boolean(UniversalPathFinding.Parabola) && Boolean(game.euclideanDistSquared);
+  }
+
+  function atomTrajectoryTileIsTargetable(game, tile, target, source, rangeSquared) {
+    return game.euclideanDistSquared(tile, target) < rangeSquared ||
+      game.euclideanDistSquared(tile, source) < rangeSquared;
+  }
+
+  function atomSamsOnTrajectory(options) {
+    const { game, myPlayer, trajectory, target, source, cfg, maxRange, tRangeSq } = options;
+    const byId = new Map();
+    const won = atomTeamHasWon(game, myPlayer);
+    const mySid = myPlayer.smallID ? myPlayer.smallID() : -1;
+    for (const tile of trajectory) {
+      if (!atomTrajectoryTileIsTargetable(game, tile, target, source, tRangeSq)) continue;
+      const nearby = game.nearbyUnits ? game.nearbyUnits(tile, maxRange, SAM_UNIT) : [];
+      for (const candidate of nearby) {
+        atomRememberCoveringSam(byId, {
+          game, cfg, myPlayer, mySid, won, candidate, refTile: tile,
+        });
+      }
+    }
+    return Array.from(byId.values());
+  }
+
+  function atomRememberCoveringSam(byId, options) {
+    const hit = atomSamCovering(options);
+    if (!hit) return;
+    const id = hit.unit.id ? hit.unit.id() : hit.unit;
+    if (!byId.has(id)) byId.set(id, hit);
   }
 
   // Fastest server-safe fire cadence (ms between atom intents). The server drops build
@@ -381,6 +417,7 @@
           : 90;
       if (Number.isFinite(c) && c > 0) cooldownTicks = c;
     } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:387");
       /* keep 90 */
     }
     const gap = Number.isFinite(gapMs) && gapMs > 0 ? gapMs : ATOM_SAFE_GAP_MS;
@@ -410,7 +447,7 @@
     const neg = v < 0n;
     const abs = neg ? -v : v;
     let s;
-    if (abs >= 1000000n) s = (Number(abs) / 1e6).toFixed(2).replace(/\.?0+$/, "") + "M";
+    if (abs >= 1000000n) s = String(Number((Number(abs) / 1e6).toFixed(2))) + "M";
     else if (abs >= 1000n) s = (Number(abs) / 1e3).toFixed(1).replace(/\.0$/, "") + "k";
     else s = abs.toString();
     return (neg ? "-" : "") + s;
@@ -586,6 +623,7 @@
       const r = Number(m?.outer ?? m?.inner);
       if (Number.isFinite(r) && r > 0) return r;
     } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:592");
       /* use fallback */
     }
     return fallback;
@@ -603,6 +641,7 @@
       const b = t.worldToScreenCoordinates({ x: w.x + worldRadius, y: w.y });
       return Math.hypot(b.x - a.x, b.y - a.y);
     } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:609");
       return worldRadius;
     }
   }
@@ -730,8 +769,9 @@
   function atomNativeOverlayAvailable(ctx) {
     try {
       const ui = ctx && ctx.buildMenu && ctx.buildMenu.uiState;
-      return !!ui && "ghostStructure" in ui;
+      return Boolean(ui) && "ghostStructure" in ui;
     } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:738");
       return false;
     }
   }
@@ -740,6 +780,7 @@
       const ui = ctx && ctx.buildMenu && ctx.buildMenu.uiState;
       if (ui) ui.ghostStructure = type;
     } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:746");
       /* best-effort */
     }
   }
@@ -800,6 +841,7 @@
         cfg.lastHydrogen = p.lastHydrogen === true;
       }
     } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:806");
       /* defaults */
     }
     return cfg;
@@ -815,7 +857,9 @@
     }
   }
   function atomSleep(ms) {
-    return new Promise((r) => setTimeout(r, Math.max(0, ms | 0)));
+    return new Promise((resolve) => {
+      setTimeout(resolve, Math.max(0, ms | 0));
+    });
   }
   let atomFireCancel = false; // Esc during a batch run aborts it
 
@@ -839,12 +883,144 @@
         const p = Number(game.config().percentageTilesOwnedToWin());
         if (Number.isFinite(p)) winFrac = p / 100;
       } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:845");
         /* keep 0.95 */
       }
       return teamTiles / denom > winFrac;
     } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:849");
       return false;
     }
+  }
+
+  function atomRecommendationWarning(recommendation) {
+    if (recommendation.achievable) return "";
+    const message = recommendation.achievableAtMaxRate
+      ? "Too slow — SAMs reload before impact. Lower the Delay in the Atom settings tab."
+      : "Too many SAM levels here — atoms can't overwhelm them even at full speed. Use MIRV.";
+    return `<div class="atom-warn">⚠ ${atomT(message)}</div>`;
+  }
+
+  function atomValidationValues(options) {
+    const { ctx, myPlayer, tile, dialog, qtyInput, cost, hydroCost, hydroAvailable } = options;
+    const cfg = atomLoadCfg();
+    const gapMs = atomFireGapMs(cfg.batchSize, cfg.delayMs);
+    const gold = atomToBig(myPlayer.gold?.() ?? 0);
+    const readyShots = atomReadyShots(myPlayer);
+    const recommendation = atomRecommendedQty(
+      ctx.game, myPlayer, tile, ctx.buildMenu?.uiState?.rocketDirectionUp, gapMs,
+    );
+    const parsedQty = parseInt(qtyInput.value, 10);
+    const qty = Number.isFinite(parsedQty) && parsedQty >= 1 ? parsedQty : 1;
+    const lastHydro = hydroAvailable &&
+      dialog.querySelector('[data-role="atom-last-hydro"]')?.checked === true;
+    const atomShots = lastHydro ? Math.max(0, qty - 1) : qty;
+    const total = cost * BigInt(atomShots) + (lastHydro ? hydroCost : 0n);
+    const goldShort = total > gold ? total - gold : 0n;
+    const siloShort = qty > readyShots ? qty - readyShots : 0;
+    const blocked = goldShort > 0n || siloShort > 0;
+    const affordable = cost > 0n ? Number(gold / cost) : Number.MAX_SAFE_INTEGER;
+    return {
+      gapMs, gold, readyShots, recommendation, qty, total, goldShort, siloShort,
+      blocked, maxNow: Math.max(0, Math.min(readyShots, affordable)),
+    };
+  }
+
+  function atomValidationHtml(values) {
+    const { recommendation: rec, qty, total, gold, readyShots, goldShort, siloShort } = values;
+    const recClass = rec.achievableAtMaxRate && qty >= rec.recommended ? "atom-ok" : "atom-bad";
+    const recommended = rec.achievableAtMaxRate ? rec.recommended : "—";
+    const goldDelta = goldShort > 0n ? ` <span class="atom-bad">(−${atomFmt(goldShort)})</span>` : "";
+    const siloDelta = siloShort > 0 ? ` <span class="atom-bad">(−${siloShort})</span>` : "";
+    return `
+      <div class="atom-stats">
+        <div class="atom-line"><span class="atom-k">🛡 ${atomT("SAMs covering")}</span><span class="atom-v">${rec.sams} · ${atomT("int")} ${rec.intercept}</span></div>
+        <div class="atom-line"><span class="atom-k">${atomT("Recommended")}</span><span class="atom-v ${recClass}">${recommended}</span></div>
+        <div class="atom-line"><span class="atom-k">${atomT("Cost")} ≈</span><span class="atom-v ${goldShort > 0n ? "atom-bad" : "atom-ok"}">${atomFmt(total)} 💰</span></div>
+        <div class="atom-line"><span class="atom-k">${atomT("Gold")}</span><span class="atom-v">${atomFmt(gold)}${goldDelta}</span></div>
+        <div class="atom-line"><span class="atom-k">${atomT("Silos ready")}</span><span class="atom-v ${siloShort > 0 ? "atom-bad" : "atom-ok"}">${readyShots}${siloDelta}</span></div>
+        <div class="atom-line atom-hl"><span class="atom-k">${atomT("Will fire now")}</span><span class="atom-v atom-ok">${Math.max(0, Math.min(qty, readyShots))}</span></div>
+      </div>${atomRecommendationWarning(rec)}`;
+  }
+
+  function keepAtomDialogOnscreen(dialog, x, y) {
+    if (dialog.style.visibility === "hidden") return;
+    const rect = dialog.getBoundingClientRect();
+    const margin = 6;
+    const outside = rect.right > window.innerWidth - margin ||
+      rect.bottom > window.innerHeight - margin || rect.left < margin || rect.top < margin;
+    if (outside) positionAtomDialog(dialog, x, y);
+  }
+
+  function renderAtomValidation(options) {
+    const { dialog, timerState, cadChip, fireBtn, forceBtn, validateBox, x, y } = options;
+    if (!dialog.isConnected) {
+      if (timerState.value) clearInterval(timerState.value);
+      timerState.value = null;
+      return;
+    }
+    const values = atomValidationValues(options);
+    if (cadChip) cadChip.textContent = `≈ ${(1000 / values.gapMs).toFixed(1)}/s`;
+    const canForce = values.blocked && values.maxNow >= 1;
+    if (fireBtn) {
+      fireBtn.disabled = values.qty < 1 || values.blocked;
+      fireBtn.hidden = canForce;
+    }
+    if (forceBtn) {
+      forceBtn.hidden = !canForce;
+      if (canForce) {
+        forceBtn.disabled = false;
+        forceBtn.textContent = `🚀 ${atomT("Force fire")} (${values.maxNow})`;
+      }
+    }
+    validateBox.innerHTML = atomValidationHtml(values);
+    keepAtomDialogOnscreen(dialog, x, y);
+  }
+
+  async function atomBuildableDescriptors(player, tile) {
+    try {
+      const buildables = await player.buildables(tile, [ATOM_UNIT, HYDROGEN_UNIT]);
+      if (!Array.isArray(buildables)) return { atom: null, hydrogen: null };
+      return {
+        atom: buildables.find((item) => item.type === ATOM_UNIT) ?? null,
+        hydrogen: buildables.find((item) => item.type === HYDROGEN_UNIT) ?? null,
+      };
+    } catch (_e) {
+      captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:atomBuildableDescriptors");
+      return { atom: null, hydrogen: null };
+    }
+  }
+
+  function createAtomDialogElement(options) {
+    const { recommendation, gapMs, hydroAvailable, lastHydrogen } = options;
+    const dialog = document.createElement("div");
+    dialog.id = ATOM_MACRO_DIALOG_ID;
+    dialog.innerHTML = `
+      <div class="atom-hd">
+        <span class="atom-ico">☢️</span><span class="atom-ttl">${atomT("Atom batch-fire")}</span>
+        <span class="atom-key">\\</span>
+        <button class="atom-x" data-role="atom-x" title="${atomT("Close")}" aria-label="${atomT("Close")}">✕</button>
+      </div>
+      <div class="atom-bd">
+        <div class="atom-qty"><label>${atomT("Qty")}</label>
+          <input type="number" min="1" step="1" value="${Math.max(1, recommendation.recommended)}" data-role="atom-qty">
+          <span class="atom-cad" data-role="atom-cad" title="${atomT("Delivery rate — set the throttle in the Atom settings tab")}">≈ ${(1000 / gapMs).toFixed(1)}/s</span>
+        </div>
+        <label class="atom-hydro"${hydroAvailable ? "" : ' data-disabled="true"'}>
+          <input type="checkbox" data-role="atom-last-hydro"${lastHydrogen && hydroAvailable ? " checked" : ""}${hydroAvailable ? "" : " disabled"}>
+          <span class="atom-hico">⚛️</span><span>${atomT("Final shot → Hydrogen")}${hydroAvailable ? "" : ` · ${atomT("unavailable")}`}</span>
+        </label>
+        <div data-role="atom-validate"></div>
+        <div class="atom-note">${atomT("Paced under the server's rate limit so no shots drop, then tops up any the server missed. Pacing is set in the Atom settings tab. Esc aborts.")}</div>
+        <div class="atom-btns">
+          <button class="atom-fire" data-role="atom-fire">🚀 ${atomT("Fire")}</button>
+          <button class="atom-force" data-role="atom-force" hidden>🚀 ${atomT("Force fire")}</button>
+          <button class="atom-cancel" data-role="atom-cancel">${atomT("Cancel")}</button>
+        </div>
+      </div>`;
+    Object.assign(dialog.style, { left: "0px", top: "0px", visibility: "hidden" });
+    document.body.appendChild(dialog);
+    return dialog;
   }
 
   async function showAtomDialog(ctx, tile, x, y) {
@@ -859,20 +1035,7 @@
     if (!myPlayer || !buildMenu) return;
 
     // Probe the live atom + hydrogen cost / buildable descriptors for this tile.
-    let bu = null;
-    let hu = null;
-    try {
-      const buildables = await myPlayer.buildables(tile, [ATOM_UNIT, HYDROGEN_UNIT]);
-      bu = Array.isArray(buildables)
-        ? buildables.find((b) => b.type === ATOM_UNIT)
-        : null;
-      hu = Array.isArray(buildables)
-        ? buildables.find((b) => b.type === HYDROGEN_UNIT)
-        : null;
-    } catch (_e) {
-      bu = null;
-      hu = null;
-    }
+    const { atom: bu, hydrogen: hu } = await atomBuildableDescriptors(myPlayer, tile);
     const cost = bu ? atomToBig(bu.cost) : 0n;
     const hydroCost = hu ? atomToBig(hu.cost) : 0n;
     // Hydrogen is SELECTABLE whenever it's a valid build type here. We deliberately do NOT
@@ -881,7 +1044,7 @@
     // silo, same alive/nukes-enabled prereqs. The macro fires the hydrogen LAST (after the
     // atoms' spend / income), and the cost line + Fire button now surface affordability —
     // so greying the checkbox out (the old behaviour) just hid a usable option.
-    const hydroAvailable = !!hu && hydroCost > 0n;
+    const hydroAvailable = Boolean(hu) && hydroCost > 0n;
     const disabledOrNoSilo = !bu || cost <= 0n;
     // Smart default = enough to overwhelm the SAMs along the flight path + 1 to
     // land. The path bows by the live "Flip rocket trajectory" toggle on the shared
@@ -893,7 +1056,7 @@
     // the pacing from there (cfg) and only shows the resulting cadence as a chip.
     const cfg = atomLoadCfg();
     const gapMs = atomFireGapMs(cfg.batchSize, cfg.delayMs);
-    let rec = atomRecommendedQty(
+    const rec = atomRecommendedQty(
       ctx.game,
       myPlayer,
       tile,
@@ -901,42 +1064,9 @@
       gapMs,
     );
 
-    const dlg = document.createElement("div");
-    dlg.id = ATOM_MACRO_DIALOG_ID;
-    const defaultQty = Math.max(1, rec.recommended);
-    dlg.innerHTML = `
-      <div class="atom-hd">
-        <span class="atom-ico">☢️</span>
-        <span class="atom-ttl">${atomT("Atom batch-fire")}</span>
-        <span class="atom-key">\\</span>
-        <button class="atom-x" data-role="atom-x" title="${atomT("Close")}" aria-label="${atomT("Close")}">✕</button>
-      </div>
-      <div class="atom-bd">
-        <div class="atom-qty">
-          <label>${atomT("Qty")}</label>
-          <input type="number" min="1" step="1" value="${defaultQty}" data-role="atom-qty">
-          <span class="atom-cad" data-role="atom-cad" title="${atomT("Delivery rate — set the throttle in the Atom settings tab")}">≈ ${(1000 / gapMs).toFixed(1)}/s</span>
-        </div>
-        <label class="atom-hydro"${hydroAvailable ? "" : ' data-disabled="true"'}>
-          <input type="checkbox" data-role="atom-last-hydro"${cfg.lastHydrogen && hydroAvailable ? " checked" : ""}${hydroAvailable ? "" : " disabled"}>
-          <span class="atom-hico">⚛️</span>
-          <span>${atomT("Final shot → Hydrogen")}${hydroAvailable ? "" : ` · ${atomT("unavailable")}`}</span>
-        </label>
-        <div data-role="atom-validate"></div>
-        <div class="atom-note">${atomT("Paced under the server's rate limit so no shots drop, then tops up any the server missed. Pacing is set in the Atom settings tab. Esc aborts.")}</div>
-        <div class="atom-btns">
-          <button class="atom-fire" data-role="atom-fire">🚀 ${atomT("Fire")}</button>
-          <button class="atom-force" data-role="atom-force" hidden>🚀 ${atomT("Force fire")}</button>
-          <button class="atom-cancel" data-role="atom-cancel">${atomT("Cancel")}</button>
-        </div>
-      </div>`;
-    // Hide until placed: the real position is computed AFTER the validation rows
-    // render (below) — measuring an empty dialog under-counts its height and let the
-    // bottom (Cancel/Fire) spill off-screen near the lower edge.
-    dlg.style.left = "0px";
-    dlg.style.top = "0px";
-    dlg.style.visibility = "hidden";
-    document.body.appendChild(dlg);
+    const dlg = createAtomDialogElement({
+      recommendation: rec, gapMs, hydroAvailable, lastHydrogen: cfg.lastHydrogen,
+    });
 
     const qtyInput = dlg.querySelector('[data-role="atom-qty"]');
     const validateBox = dlg.querySelector('[data-role="atom-validate"]');
@@ -944,99 +1074,11 @@
     const forceBtn = dlg.querySelector('[data-role="atom-force"]');
 
     const cadChip = dlg.querySelector('[data-role="atom-cad"]');
-    let liveTimer = null;
-    const renderValidation = () => {
-      // Dialog đã bị gỡ (đóng/ESC/Fire) nhưng interval còn treo → tự dọn & thoát.
-      if (!dlg.isConnected) {
-        if (liveTimer) {
-          clearInterval(liveTimer);
-          liveTimer = null;
-        }
-        return;
-      }
-      // Re-read the live flip toggle AND the current pacing each render: flipping the arc
-      // changes which SAMs are hit, and a slower cadence stretches delivery past the SAM
-      // cooldown so SAMs reload — both must be reflected in the recommendation. Per-spam/
-      // delay now live in the popup's Atom tab, so reload the cfg (cheap) to stay live if
-      // the user re-tunes the throttle between opens.
-      const cfgNow = atomLoadCfg();
-      const curGapMs = atomFireGapMs(cfgNow.batchSize, cfgNow.delayMs);
-      if (cadChip) cadChip.textContent = `≈ ${(1000 / curGapMs).toFixed(1)}/s`;
-      // Đọc TƯƠI mỗi render: tiền tăng theo income, silo hồi cooldown → live.
-      const gold = atomToBig(myPlayer.gold?.() ?? 0);
-      const readyShots = atomReadyShots(myPlayer);
-      rec = atomRecommendedQty(
-        ctx.game,
-        myPlayer,
-        tile,
-        ctx.buildMenu?.uiState?.rocketDirectionUp,
-        curGapMs,
-      );
-      let qty = parseInt(qtyInput.value, 10);
-      if (!Number.isFinite(qty) || qty < 1) qty = 1;
-      // When "last bomb = Hydrogen" is ticked, the final shot swaps to a (pricier)
-      // hydrogen — so the cost is (qty-1) atoms + 1 hydrogen.
-      const lastHydro =
-        hydroAvailable &&
-        dlg.querySelector('[data-role="atom-last-hydro"]')?.checked === true;
-      const atomShots = lastHydro ? Math.max(0, qty - 1) : qty;
-      const total = cost * BigInt(atomShots) + (lastHydro ? hydroCost : 0n);
-      const goldShort = total > gold ? total - gold : 0n;
-      const siloShort = qty > readyShots ? qty - readyShots : 0;
-      const willFire = Math.max(0, Math.min(qty, readyShots));
-      const recMatch = qty >= rec.recommended;
-      // Can't fire the requested salvo right now (not enough gold for it, or not enough silo
-      // shots ready) → block the button. The red Gold / Silos deltas below say which one.
-      // Fire ⇄ Force are mutually exclusive so the row stays compact — always just
-      // [primary][Cancel]. Normal Fire when the requested salvo is affordable; when
-      // blocked (not enough gold/silo) Fire steps aside for Force fire, which fires the
-      // max possible NOW = min(silo ready, floor(gold / cost)). cost === 0n is infinite-
-      // gold → gold isn't the limit, silos decide. When blocked AND not even one shot is
-      // possible (maxNow < 1) we keep a disabled Fire (the red Gold/Silos deltas explain).
-      const blocked = goldShort > 0n || siloShort > 0;
-      const affordAtoms = cost > 0n ? Number(gold / cost) : Number.MAX_SAFE_INTEGER;
-      const maxNow = Math.max(0, Math.min(readyShots, affordAtoms));
-      const canForce = blocked && maxNow >= 1;
-      if (fireBtn) {
-        fireBtn.disabled = qty < 1 || blocked;
-        fireBtn.hidden = canForce;
-      }
-      if (forceBtn) {
-        forceBtn.hidden = !canForce;
-        if (canForce) {
-          forceBtn.disabled = false;
-          forceBtn.textContent = `🚀 ${atomT("Force fire")} (${maxNow})`;
-        }
-      }
-      const warn = rec.achievable
-        ? ""
-        : rec.achievableAtMaxRate
-          ? `<div class="atom-warn">⚠ ${atomT("Too slow — SAMs reload before impact. Lower the Delay in the Atom settings tab.")}</div>`
-          : `<div class="atom-warn">⚠ ${atomT("Too many SAM levels here — atoms can't overwhelm them even at full speed. Use MIRV.")}</div>`;
-      validateBox.innerHTML = `
-        <div class="atom-stats">
-          <div class="atom-line"><span class="atom-k">🛡 ${atomT("SAMs covering")}</span><span class="atom-v">${rec.sams} · ${atomT("int")} ${rec.intercept}</span></div>
-          <div class="atom-line"><span class="atom-k">${atomT("Recommended")}</span><span class="atom-v ${rec.achievableAtMaxRate && recMatch ? "atom-ok" : "atom-bad"}">${rec.achievableAtMaxRate ? rec.recommended : "—"}</span></div>
-          <div class="atom-line"><span class="atom-k">${atomT("Cost")} ≈</span><span class="atom-v ${goldShort > 0n ? "atom-bad" : "atom-ok"}">${atomFmt(total)} 💰</span></div>
-          <div class="atom-line"><span class="atom-k">${atomT("Gold")}</span><span class="atom-v">${atomFmt(gold)}${goldShort > 0n ? ` <span class="atom-bad">(−${atomFmt(goldShort)})</span>` : ""}</span></div>
-          <div class="atom-line"><span class="atom-k">${atomT("Silos ready")}</span><span class="atom-v ${siloShort > 0 ? "atom-bad" : "atom-ok"}">${readyShots}${siloShort > 0 ? ` <span class="atom-bad">(−${siloShort})</span>` : ""}</span></div>
-          <div class="atom-line atom-hl"><span class="atom-k">${atomT("Will fire now")}</span><span class="atom-v atom-ok">${willFire}</span></div>
-        </div>${warn}`;
-      // Once visible, a freshly shown short/warn line can grow the dialog past an edge;
-      // nudge it back so Fire/Cancel stay reachable (the header X is always on-screen too).
-      if (dlg.style.visibility !== "hidden") {
-        const r = dlg.getBoundingClientRect();
-        const M = 6;
-        if (
-          r.right > window.innerWidth - M ||
-          r.bottom > window.innerHeight - M ||
-          r.left < M ||
-          r.top < M
-        ) {
-          positionAtomDialog(dlg, x, y);
-        }
-      }
-    };
+    const timerState = { value: null };
+    const renderValidation = () => renderAtomValidation({
+      ctx, myPlayer, tile, dialog: dlg, qtyInput, cost, hydroCost, hydroAvailable,
+      timerState, cadChip, fireBtn, forceBtn, validateBox, x, y,
+    });
 
     if (disabledOrNoSilo) {
       validateBox.innerHTML = `<div class="atom-warn">${atomT("Cannot build atom here (no silo / disabled / unreachable).")}</div>`;
@@ -1048,7 +1090,7 @@
       const hydroBox = dlg.querySelector('[data-role="atom-last-hydro"]');
       if (hydroBox) hydroBox.addEventListener("change", renderValidation);
       // Làm tươi Gold / Silos ready / Will fire / Cost / Recommended khi dialog mở.
-      liveTimer = setInterval(renderValidation, 350);
+      timerState.value = setInterval(renderValidation, 350);
     }
     // Place + reveal now that the full content (incl. validation rows) has rendered, so
     // the height is final and the flip-up/flip-left logic keeps the whole dialog on-screen.
@@ -1063,9 +1105,9 @@
       hideAtomDialog();
       hideAtomRings();
       atomClearGhost(ctx); // safety: clear native overlay (already cleared on commit)
-      if (liveTimer) {
-        clearInterval(liveTimer);
-        liveTimer = null;
+      if (timerState.value) {
+        clearInterval(timerState.value);
+        timerState.value = null;
       }
     };
     dlg.querySelector('[data-role="atom-cancel"]').addEventListener("click", close);
@@ -1086,14 +1128,9 @@
       atomBanner("☢️ " + atomT("Firing… (Esc to stop)"), "arm");
       // fireAtoms returns the number CONFIRMED in flight (server-accepted), not the
       // intents emitted — so the banner can't claim shots the rate limiter silently ate.
-      const launched = await fireAtoms(
-        ctx,
-        tile,
-        qty,
-        batchSize,
-        delayMs,
-        lastHydrogen,
-      );
+      const launched = await fireAtoms({
+        ctx, tile, qty, batchSize, delayMs, lastHydrogen,
+      });
       atomBanner(
         `☢️ ${atomT("Fired")} ${launched}/${qty} ${atomT("atom bomb(s)")}`,
         launched >= qty ? "ok" : "arm",
@@ -1118,14 +1155,10 @@
       atomSaveCfg(cfgNow.batchSize, cfgNow.delayMs, wantHydro);
       close();
       atomBanner("☢️ " + atomT("Firing… (Esc to stop)"), "arm");
-      const launched = await fireAtoms(
-        ctx,
-        tile,
-        maxNow,
-        cfgNow.batchSize,
-        cfgNow.delayMs,
-        wantHydro,
-      );
+      const launched = await fireAtoms({
+        ctx, tile, qty: maxNow, batchSize: cfgNow.batchSize,
+        delayMs: cfgNow.delayMs, lastHydrogen: wantHydro,
+      });
       atomBanner(
         `☢️ ${atomT("Fired")} ${launched}/${maxNow} ${atomT("atom bomb(s)")}`,
         launched >= maxNow ? "ok" : "arm",
@@ -1144,7 +1177,139 @@
   //    still dropped. Returns the count we CONFIRMED in flight (not intents emitted —
   //    that was the number that lied). Mirrors nuke-prediction's "count nukes heading to
   //    a tile" to verify launches, and auto-nuke's pace-don't-spam firing.
-  async function fireAtoms(ctx, tile, qty, batchSize, delayMs, lastHydrogen) {
+  function atomInFlightUnits(player, unitType, mySid, tile) {
+    const result = [];
+    try {
+      for (const unit of player.units?.(unitType) ?? []) {
+        try {
+          const owner = unit.owner?.();
+          if (owner?.smallID && owner.smallID() !== mySid) continue;
+          if (unit.targetTile?.() !== tile) continue;
+          result.push(unit);
+        } catch (_e) {
+          captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:atomInFlightUnits.unit");
+        }
+      }
+    } catch (_e) {
+      captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:atomInFlightUnits");
+    }
+    return result;
+  }
+
+  function atomUnitIdentity(unit) {
+    try {
+      return unit.id ? unit.id() : unit;
+    } catch (_e) {
+      return unit;
+    }
+  }
+
+  function makeAtomLaunchCounter(player, unitType, mySid, tile) {
+    const baseline = new Set(
+      atomInFlightUnits(player, unitType, mySid, tile).map(atomUnitIdentity),
+    );
+    const seen = new Set();
+    return () => {
+      for (const unit of atomInFlightUnits(player, unitType, mySid, tile)) {
+        const id = atomUnitIdentity(unit);
+        if (!baseline.has(id)) seen.add(id);
+      }
+      return seen.size;
+    };
+  }
+
+  function atomPerMinuteAvailable(fireTimes) {
+    const now = performance.now();
+    while (fireTimes.length && now - fireTimes[0] > 60000) fireTimes.shift();
+    return fireTimes.length < 140;
+  }
+
+  async function atomProbeBuildable(player, tile, unitType) {
+    try {
+      const buildables = await player.buildables(tile, [unitType]);
+      return Array.isArray(buildables)
+        ? buildables.find((item) => item.type === unitType) ?? null : null;
+    } catch (_e) {
+      captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:atomProbeBuildable");
+      return null;
+    }
+  }
+
+  function atomEmitBuild(session, descriptor) {
+    try {
+      session.buildMenu.sendBuildOrUpgrade(descriptor, session.tile);
+      session.fireTimes.push(performance.now());
+      session.emitted++;
+      return true;
+    } catch (_e) {
+      captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:atomEmitBuild");
+      return false;
+    }
+  }
+
+  function atomCanFireDescriptor(session, descriptor) {
+    return Boolean(descriptor) && descriptor.canBuild !== false &&
+      atomReadyShots(session.myPlayer) > 0;
+  }
+
+  async function emitPrimaryAtomSalvo(session) {
+    let lastProgressMs = performance.now();
+    while (session.emitted < session.atomQty) {
+      if (atomFireCancel) return;
+      const descriptor = await atomProbeBuildable(session.myPlayer, session.tile, ATOM_UNIT);
+      if (!atomCanFireDescriptor(session, descriptor)) {
+        if (performance.now() - lastProgressMs > session.stallMs) {
+          session.stopReason = "stalled";
+          return;
+        }
+        await atomSleep(Math.min(session.gapMs, 250));
+        continue;
+      }
+      if (!atomPerMinuteAvailable(session.fireTimes)) {
+        lastProgressMs = performance.now();
+        await atomSleep(1000);
+        continue;
+      }
+      if (atomEmitBuild(session, descriptor)) lastProgressMs = performance.now();
+      session.scanAtoms();
+      if (session.emitted < session.atomQty && !atomFireCancel) await atomSleep(session.gapMs);
+    }
+  }
+
+  async function topUpAtomSalvo(session) {
+    if (atomFireCancel || session.stopReason === "stalled" || session.atomQty <= 0) return;
+    await atomSleep(700);
+    const shortfall = Math.min(
+      session.atomQty - session.scanAtoms(), session.maxEmit - session.emitted,
+    );
+    for (let index = 0; index < shortfall && session.emitted < session.maxEmit; index++) {
+      if (atomFireCancel) return;
+      const descriptor = await atomProbeBuildable(session.myPlayer, session.tile, ATOM_UNIT);
+      if (!atomCanFireDescriptor(session, descriptor)) return;
+      if (!atomPerMinuteAvailable(session.fireTimes)) await atomSleep(1000);
+      atomEmitBuild(session, descriptor);
+      session.scanAtoms();
+      await atomSleep(session.gapMs);
+    }
+  }
+
+  async function emitHydrogenTail(session) {
+    if (!session.wantHydro || atomFireCancel || session.stopReason === "stalled") return;
+    if (session.scanHydro() >= 1) return;
+    await atomSleep(session.trailMs);
+    for (let round = 0; round < 3 && session.emitted < session.maxEmit; round++) {
+      if (atomFireCancel || session.scanHydro() >= 1) return;
+      const descriptor = await atomProbeBuildable(session.myPlayer, session.tile, HYDROGEN_UNIT);
+      if (atomCanFireDescriptor(session, descriptor)) {
+        if (!atomPerMinuteAvailable(session.fireTimes)) await atomSleep(1000);
+        atomEmitBuild(session, descriptor);
+      }
+      await atomSleep(Math.max(session.gapMs, 700));
+    }
+  }
+
+  async function fireAtoms(options) {
+    const { ctx, tile, qty, batchSize, delayMs, lastHydrogen } = options;
     const { myPlayer, buildMenu } = ctx;
     if (!myPlayer || !buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
       return 0;
@@ -1155,8 +1320,6 @@
     // dialog's Fire/Force buttons (SAM tracker one-click-fire, auto-fire-building).
     atomFireCancel = false;
 
-    const PER_MIN_CAP = 140; // stay under the 150/min server cap (margin)
-    const ROLL_MS = 60000;
     const STALL_MS = state.settings.atomStallMs || 30000; // zero-progress give-up
     // Per-spam/delay are a rate HINT: the per-shot interval the user implied, but never
     // FASTER than the server-safe cadence. Bursting is gone — a burst drained the token
@@ -1178,131 +1341,17 @@
     // Confirmed-launch counter for a nuke type: unique ids of OUR units of that type in
     // flight toward this exact tile since we started, ACCUMULATED (never shrinks) so a
     // bomb that detonates mid-run still counts. Immune to intents the server dropped.
-    const makeCounter = (unitType) => {
-      const inFlight = () => {
-        const out = [];
-        try {
-          const us = myPlayer.units ? myPlayer.units(unitType) : [];
-          for (const u of us) {
-            try {
-              const o = u.owner && u.owner();
-              if (o && o.smallID && o.smallID() !== mySid) continue;
-              if ((u.targetTile && u.targetTile()) === tile) out.push(u);
-            } catch (_e) {
-              /* skip this unit */
-            }
-          }
-        } catch (_e) {
-          /* ignore */
-        }
-        return out;
-      };
-      const baseline = new Set(); // exclude a prior salvo already heading here
-      for (const u of inFlight()) {
-        try {
-          baseline.add(u.id ? u.id() : u);
-        } catch (_e) {
-          /* ignore */
-        }
-      }
-      const seen = new Set();
-      return () => {
-        for (const u of inFlight()) {
-          try {
-            const id = u.id ? u.id() : u;
-            if (!baseline.has(id)) seen.add(id);
-          } catch (_e) {
-            /* ignore */
-          }
-        }
-        return seen.size;
-      };
+    const scanAtoms = makeAtomLaunchCounter(myPlayer, ATOM_UNIT, mySid, tile);
+    const scanHydro = wantHydro
+      ? makeAtomLaunchCounter(myPlayer, HYDROGEN_UNIT, mySid, tile) : null;
+    const session = {
+      myPlayer, buildMenu, tile, qty, atomQty, wantHydro, gapMs,
+      stallMs: STALL_MS, maxEmit: MAX_EMIT, scanAtoms, scanHydro,
+      fireTimes: [], emitted: 0, stopReason: "reached-qty",
+      trailMs: Math.max(2 * gapMs, 250),
     };
-    const scanAtoms = makeCounter(ATOM_UNIT);
-    const scanHydro = wantHydro ? makeCounter(HYDROGEN_UNIT) : null;
-
-    // Rolling-minute window of emit timestamps for the 150/min cap.
-    const fireTimes = [];
-    const perMinuteOk = () => {
-      const now = performance.now();
-      while (fireTimes.length && now - fireTimes[0] > ROLL_MS) fireTimes.shift();
-      return fireTimes.length < PER_MIN_CAP;
-    };
-    // Live descriptor for a nuke type (cost rises per bomb; silos cool) → or null.
-    const probe = async (unitType) => {
-      try {
-        const b = await myPlayer.buildables(tile, [unitType]);
-        return Array.isArray(b) ? b.find((x) => x.type === unitType) : null;
-      } catch (_e) {
-        return null;
-      }
-    };
-    const fireOne = (descriptor) => {
-      try {
-        buildMenu.sendBuildOrUpgrade(descriptor, tile);
-        fireTimes.push(performance.now());
-        return true;
-      } catch (_e) {
-        return false;
-      }
-    };
-
-    let emitted = 0;
-    let stopReason = "reached-qty";
-
-    // ── Phase 1: emit the atom salvo (qty, or qty-1 if a hydrogen tail), paced safely ─
-    let lastProgressMs = performance.now();
-    while (emitted < atomQty && !atomFireCancel) {
-      const descriptor = await probe(ATOM_UNIT);
-      const canAfford = !!descriptor && descriptor.canBuild !== false;
-      const ready = descriptor ? atomReadyShots(myPlayer) : 0;
-      if (!canAfford || ready <= 0) {
-        // Broke or every silo cooling — wait briefly; give up only after STALL_MS.
-        if (performance.now() - lastProgressMs > STALL_MS) {
-          stopReason = "stalled";
-          break;
-        }
-        await atomSleep(Math.min(gapMs, 250));
-        continue;
-      }
-      if (!perMinuteOk()) {
-        // Hit the 150/min cap (big salvos only) — pace down; NOT a stall.
-        lastProgressMs = performance.now();
-        await atomSleep(1000);
-        continue;
-      }
-      if (fireOne(descriptor)) {
-        emitted++;
-        lastProgressMs = performance.now();
-      }
-      scanAtoms(); // catch bombs while in flight (some detonate before Phase 2)
-      if (emitted >= atomQty || atomFireCancel) break;
-      await atomSleep(gapMs);
-    }
-
-    // ── Phase 2: a LIGHT confirm/top-up so the bait is complete before the hydrogen trails
-    // it. A brief settle lets just-fired atoms register; if the server dropped any (≈never
-    // with rate-safe pacing) we top up. CRITICALLY this does NOT wait to observe
-    // interception — only that the stream launched — so the hydrogen's flight is not
-    // serialised after the atoms'. Bounded by MAX_EMIT.
-    if (!atomFireCancel && stopReason !== "stalled" && atomQty > 0) {
-      await atomSleep(700); // brief round-trip settle so launched atoms register
-      const shortfall = Math.min(atomQty - scanAtoms(), MAX_EMIT - emitted);
-      for (let k = 0; k < shortfall && !atomFireCancel && emitted < MAX_EMIT; k++) {
-        const descriptor = await probe(ATOM_UNIT);
-        if (
-          !descriptor ||
-          descriptor.canBuild === false ||
-          atomReadyShots(myPlayer) <= 0
-        ) {
-          break;
-        }
-        if (!perMinuteOk()) await atomSleep(1000);
-        if (fireOne(descriptor)) emitted++;
-        scanAtoms();
-        await atomSleep(gapMs);
-      }
-    }
+    await emitPrimaryAtomSalvo(session);
+    await topUpAtomSalvo(session);
 
     // ── Phase 3: the hydrogen tail, fired to TRAIL the last atom by a small fixed margin ─
     // Atom and hydrogen fly IDENTICALLY; SAMs prioritise hydrogen ONLY among nukes due the
@@ -1314,34 +1363,18 @@
     // the hydrogen the SAME distance again (~2×T_flight), long enough for a slot to reload
     // and pick the hydrogen off (the "fires too late" symptom). The trail keeps the
     // hydrogen in flight right behind the stream, concurrent with the interception window.
-    const trailMs = Math.max(2 * gapMs, 250);
-    if (wantHydro && !atomFireCancel && stopReason !== "stalled" && scanHydro() < 1) {
-      await atomSleep(trailMs); // fall just behind the genuinely-last atom fired
-      for (let round = 0; round < 3 && !atomFireCancel && emitted < MAX_EMIT; round++) {
-        if (scanHydro() >= 1) break; // confirmed in flight → done
-        const descriptor = await probe(HYDROGEN_UNIT);
-        if (
-          descriptor &&
-          descriptor.canBuild !== false &&
-          atomReadyShots(myPlayer) > 0
-        ) {
-          if (!perMinuteOk()) await atomSleep(1000);
-          if (fireOne(descriptor)) emitted++;
-        }
-        await atomSleep(Math.max(gapMs, 700)); // settle before re-judging (avoid double-fire)
-      }
-    }
+    await emitHydrogenTail(session);
 
     const confirmed = scanAtoms() + (scanHydro ? scanHydro() : 0);
-    if (atomFireCancel) stopReason = "cancelled";
-    console.log("[Atom] fireAtoms done", {
-      emitted,
+    if (atomFireCancel) session.stopReason = "cancelled";
+    runtimeDebugLog("[Atom] fireAtoms done", {
+      emitted: session.emitted,
       confirmed,
       qty,
       atomQty,
       hydro: scanHydro ? scanHydro() : 0,
-      trailMs: wantHydro ? trailMs : 0,
-      stopReason,
+      trailMs: wantHydro ? session.trailMs : 0,
+      stopReason: session.stopReason,
       gapMs,
     });
     return confirmed;
@@ -1349,7 +1382,7 @@
 
   // ── input handling ─────────────────────────────────────────────────────────
   function atomInOwnDialog(el) {
-    return !!(el && el.closest && el.closest("#" + ATOM_MACRO_DIALOG_ID));
+    return Boolean(el && el.closest && el.closest("#" + ATOM_MACRO_DIALOG_ID));
   }
   function atomIsTyping(event) {
     // Focus inside OUR dialog (e.g. the Qty field) must NOT block the "\" hotkey — "\"
@@ -1366,41 +1399,42 @@
       return true;
     }
     const a = document.activeElement;
-    return !!(
-      a instanceof HTMLInputElement ||
+    return Boolean(a instanceof HTMLInputElement ||
       a instanceof HTMLTextAreaElement ||
-      (a && a.isContentEditable)
-    );
+      (a && a.isContentEditable));
   }
 
   // Hotkey = "\" (Backslash). Chosen to AVOID the game's "8" atom hotkey.
-  function atomIsHotkey(event) {
-    // Read hotkey from settings (stored in _quickPanelSettingsCache or localStorage)
-    var code = "Backslash"; // default
+  function atomConfiguredHotkey() {
     try {
-      if (typeof _quickPanelSettingsCache === "object" && _quickPanelSettingsCache && _quickPanelSettingsCache.atomBatchHotkey) {
-        code = _quickPanelSettingsCache.atomBatchHotkey;
-      } else {
-        var raw = localStorage.getItem("openfront-helper-settings");
-        if (raw) { var s = JSON.parse(raw); if (s.atomBatchHotkey) code = s.atomBatchHotkey; }
+      if (typeof _quickPanelSettingsCache === "object" && _quickPanelSettingsCache?.atomBatchHotkey) {
+        return _quickPanelSettingsCache.atomBatchHotkey;
       }
-    } catch (e) {}
-    // Parse hotkey string like "Shift+KeyK" or "Backslash"
-    var parts = code.split("+");
-    var needShift = false, needCtrl = false, needAlt = false, needMeta = false, targetCode = code;
-    for (var i = 0; i < parts.length; i++) {
-      if (parts[i] === "Shift") needShift = true;
-      else if (parts[i] === "Ctrl") needCtrl = true;
-      else if (parts[i] === "Alt") needAlt = true;
-      else if (parts[i] === "Meta") needMeta = true;
-      else targetCode = parts[i];
+      const raw = localStorage.getItem("openfront-helper-settings");
+      return raw ? JSON.parse(raw).atomBatchHotkey || "Backslash" : "Backslash";
+    } catch (e) {
+      captureRuntimeException(e, "engine/ingame/auto-bot/lifecycle.js:atomConfiguredHotkey");
+      return "Backslash";
     }
+  }
+
+  function atomHotkeyParts(code) {
+    const parts = new Set(code.split("+"));
+    const targetCode = code.split("+").find(
+      (part) => !["Shift", "Ctrl", "Alt", "Meta"].includes(part),
+    ) || code;
+    return { targetCode, shift: parts.has("Shift"), ctrl: parts.has("Ctrl"),
+      alt: parts.has("Alt"), meta: parts.has("Meta") };
+  }
+
+  function atomIsHotkey(event) {
+    const hotkey = atomHotkeyParts(atomConfiguredHotkey());
     return (
-      event.code === targetCode &&
-      !!event.shiftKey === needShift &&
-      !!event.altKey === needAlt &&
-      !!event.ctrlKey === needCtrl &&
-      !!event.metaKey === needMeta &&
+      event.code === hotkey.targetCode &&
+      Boolean(event.shiftKey) === hotkey.shift &&
+      Boolean(event.altKey) === hotkey.alt &&
+      Boolean(event.ctrlKey) === hotkey.ctrl &&
+      Boolean(event.metaKey) === hotkey.meta &&
       !atomIsTyping(event)
     );
   }
@@ -1434,18 +1468,18 @@
       return;
     }
     if (!atomIsHotkey(event)) return;
-    console.log("[AtomMacro] key '\\' detected");
+    runtimeDebugLog("[AtomMacro] key '\\' detected");
     // Swallow the key (chosen to NOT collide with the game's "8" atom hotkey).
     event.preventDefault();
     event.stopImmediatePropagation();
     const ctx = atomGameContext();
     if (!ctx.game || !ctx.myPlayer?.isPlayer?.()) {
-      console.log("[AtomMacro] no game/player context", {
-        radial: !!atomRadialElement(),
-        game: !!ctx.game,
-        transform: !!ctx.transform,
-        buildMenu: !!ctx.buildMenu,
-        myPlayer: !!ctx.myPlayer,
+      runtimeDebugLog("[AtomMacro] no game/player context", {
+        radial: Boolean(atomRadialElement()),
+        game: Boolean(ctx.game),
+        transform: Boolean(ctx.transform),
+        buildMenu: Boolean(ctx.buildMenu),
+        myPlayer: Boolean(ctx.myPlayer),
       });
       atomBanner("☢️ " + atomT("Start a game first to use atom batch-fire"), "arm");
       setTimeout(hideAtomBanner, 1400);
@@ -1454,7 +1488,7 @@
     // Enter (or re-enter) ring-aiming: the atom + hydrogen blast radius preview at the
     // cursor; a LEFT-CLICK then commits the target tile and opens the dialog. Pressing \
     // again re-aims (closing any open dialog), so a fresh aim + click retargets the strike.
-    console.log("[AtomMacro] entering aim mode");
+    runtimeDebugLog("[AtomMacro] entering aim mode");
     startAtomAiming(ctx);
   }
 
@@ -1531,7 +1565,7 @@
     }
     const cx = event.clientX;
     const cy = event.clientY;
-    console.log("[AtomMacro] aim click → tile", tile);
+    runtimeDebugLog("[AtomMacro] aim click → tile", tile);
     atomAiming = false;
     if (atomUsingNativeOverlay) {
       // Đường đạn native bám con trỏ → khi mở dialog sẽ chạy lệch mục tiêu, nên tắt.
@@ -1625,15 +1659,9 @@
       // opening the dialog.
       async recommendQty(tile) {
         const ctx = atomGameContext();
-        if (!ctx.game || !ctx.myPlayer?.isPlayer?.()) return { ok: false, reason: "no-game" };
+        if (!atomHasPlayableContext(ctx)) return { ok: false, reason: "no-game" };
         const { myPlayer } = ctx;
-        let bu = null;
-        try {
-          const buildables = await myPlayer.buildables(tile, [ATOM_UNIT, HYDROGEN_UNIT]);
-          bu = Array.isArray(buildables) ? buildables.find((b) => b.type === ATOM_UNIT) : null;
-        } catch (_e) {
-          bu = null;
-        }
+        const { atom: bu } = await atomBuildableDescriptors(myPlayer, tile);
         const cost = bu ? atomToBig(bu.cost) : 0n;
         if (!bu || cost <= 0n) return { ok: false, reason: "no-silo" };
         const cfg = atomLoadCfg();
@@ -1668,7 +1696,10 @@
         const ctx = atomGameContext();
         if (!ctx.game || !ctx.myPlayer?.isPlayer?.()) return { fired: 0, qty };
         const cfg = atomLoadCfg();
-        const fired = await fireAtoms(ctx, tile, qty, cfg.batchSize, cfg.delayMs, false);
+        const fired = await fireAtoms({
+          ctx, tile, qty, batchSize: cfg.batchSize, delayMs: cfg.delayMs,
+          lastHydrogen: false,
+        });
         return { fired, qty };
       },
 
@@ -1698,11 +1729,35 @@
   try {
     installAtomMacro();
     window.__ofhAtomMacroInstalled = true;
-    console.log("[AtomMacro] installed (point mouse + press '\\' → dialog)");
+    runtimeDebugLog("[AtomMacro] installed (point mouse + press '\\' → dialog)");
   } catch (e) {
     console.warn("[AtomMacro] install failed:", e);
   }
 })();
+
+function ofhApplyAutobotScalarSettings(settings, patch) {
+  if ("difficulty" in patch) settings.difficulty = patch.difficulty;
+  if ("winFixes" in patch) settings.winFixes = Boolean(patch.winFixes);
+  if ("smartSpawn" in patch) settings.smartSpawn = Boolean(patch.smartSpawn);
+  if ("pauseDonateDuringExpansion" in patch) {
+    settings.pauseDonateDuringExpansion = Boolean(patch.pauseDonateDuringExpansion);
+  }
+  if ("hidden" in patch) settings.hidden = Boolean(patch.hidden);
+  if (!("tickMs" in patch)) return;
+  const milliseconds = Number(patch.tickMs);
+  if (Number.isFinite(milliseconds) && milliseconds > 0) {
+    settings.tickMs = normalizeTickIntervalMs(milliseconds);
+  }
+}
+
+function ofhApplyAutobotObjectSettings(settings, patch) {
+  if (patch.features && typeof patch.features === "object") {
+    Object.assign(settings.features, patch.features);
+  }
+  if (!patch.buildStructures || typeof patch.buildStructures !== "object") return;
+  settings.buildStructures ??= {};
+  Object.assign(settings.buildStructures, patch.buildStructures);
+}
 
 // =============================================================================
 // Popup bridge — exposes the auto-bot config so the userscript settings popup's
@@ -1729,26 +1784,8 @@ window.__OFH_autobot = {
   set(patch) {
     if (!patch || typeof patch !== "object") return;
     const s = state.settings;
-    if ("difficulty" in patch) s.difficulty = patch.difficulty;
-    if ("winFixes" in patch) s.winFixes = Boolean(patch.winFixes);
-    if ("pauseDonateDuringExpansion" in patch) {
-      s.pauseDonateDuringExpansion = Boolean(patch.pauseDonateDuringExpansion);
-    }
-    if ("hidden" in patch) s.hidden = Boolean(patch.hidden);
-    if ("tickMs" in patch) {
-      const ms = Number(patch.tickMs);
-      if (Number.isFinite(ms) && ms > 0) {
-        s.tickMs = normalizeTickIntervalMs(ms);
-      }
-    }
-    if ("smartSpawn" in patch) s.smartSpawn = Boolean(patch.smartSpawn);
-    if (patch.features && typeof patch.features === "object") {
-      Object.assign(s.features, patch.features);
-    }
-    if (patch.buildStructures && typeof patch.buildStructures === "object") {
-      if (!s.buildStructures) s.buildStructures = {};
-      Object.assign(s.buildStructures, patch.buildStructures);
-    }
+    ofhApplyAutobotScalarSettings(s, patch);
+    ofhApplyAutobotObjectSettings(s, patch);
     if ("enabled" in patch) setEnabled(Boolean(patch.enabled));
     saveSettings();
     if (typeof retuneEngine === "function") retuneEngine();

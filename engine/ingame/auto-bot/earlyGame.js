@@ -10,6 +10,18 @@
 
   // OpenFront advances one game tick every 100 ms, so 30 seconds is 300 ticks.
   const EARLY_GAME_MAX_BOAT_TICKS = 300;
+  // Exploration boats must stay local enough to be useful. Keep this as a hard
+  // policy cap: at the normal 10 ticks/s rate, two minutes is 1,200 movement
+  // ticks. The route estimator may return a longer exact route, but callers
+  // must reject it rather than silently treating it as merely reachable.
+  const BOAT_EXPLORATION_MAX_ROUTE_TICKS = 1200;
+  // A local water graph can branch heavily. Keep the synchronous compatibility
+  // helper and the yielding estimator from exploring an unbounded map region.
+  const WATER_ROUTE_MAX_VISITED = 25000;
+  // Keep each live fallback-search slice below a frame budget on slower CPUs.
+  // The route helpers call into wrapped GameView methods for every expansion,
+  // so a smaller batch is safer than assuming each graph lookup is trivial.
+  const WATER_ROUTE_YIELD_EVERY = 64;
   // Keep the opening expansion force available when a local land opportunity or
   // a quickly reachable tribe is still actionable.
   const AUTO_DONATE_EXPANSION_MAX_TICKS = 30;
@@ -23,6 +35,16 @@
       Number.isFinite(etaTicks) &&
       etaTicks >= 0 &&
       etaTicks <= EARLY_GAME_MAX_BOAT_TICKS
+    );
+  }
+
+  function isBoatExplorationEta(etaTicks) {
+    if (etaTicks == null) return false;
+    const numericEta = Number(etaTicks);
+    return (
+      Number.isFinite(numericEta) &&
+      numericEta >= 0 &&
+      numericEta <= BOAT_EXPLORATION_MAX_ROUTE_TICKS
     );
   }
 
@@ -74,16 +96,9 @@
     neighbors,
     isWater,
     maxTicks = EARLY_GAME_MAX_BOAT_TICKS,
-    maxVisited = 100000,
+    maxVisited = WATER_ROUTE_MAX_VISITED,
   } = {}) {
-    if (
-      start == null ||
-      goal == null ||
-      typeof neighbors !== "function" ||
-      typeof isWater !== "function"
-    ) {
-      return null;
-    }
+    if (!validWaterRouteSearch(start, goal, neighbors, isWater)) return null;
     if (start === goal) return 0;
 
     const queue = [start];
@@ -95,13 +110,131 @@
       if (currentDistance == null || currentDistance >= maxTicks) continue;
 
       const nextDistance = currentDistance + 1;
-      for (const next of neighbors(current) || []) {
-        if (next !== goal && next !== start && !isWater(next)) continue;
-        if (distances.has(next)) continue;
-        if (next === goal) return nextDistance;
-        distances.set(next, nextDistance);
-        queue.push(next);
+      const found = expandWaterRouteNode({
+        current,
+        start,
+        goal,
+        nextDistance,
+        neighbors,
+        isWater,
+        distances,
+        queue,
+      });
+      if (found) return nextDistance;
+    }
+    return null;
+  }
+
+  function validWaterRouteSearch(start, goal, neighbors, isWater) {
+    return (
+      start != null &&
+      goal != null &&
+      typeof neighbors === "function" &&
+      typeof isWater === "function"
+    );
+  }
+
+  function yieldWaterRouteSearch() {
+    return new Promise((resolve) => {
+      if (typeof window !== "undefined" && typeof window.setTimeout === "function") {
+        window.setTimeout(resolve, 0);
+      } else if (typeof setTimeout === "function") {
+        setTimeout(resolve, 0);
+      } else {
+        resolve();
       }
+    });
+  }
+
+  function waterRouteDeadlineExpired(deadlineMs, startedAt) {
+    return deadlineMs > 0 && Date.now() - startedAt >= deadlineMs;
+  }
+
+  function shouldYieldWaterRouteSearch(head, batchSize) {
+    return head > 0 && head % batchSize === 0;
+  }
+
+  function normalizeWaterRouteBatchSize(yieldEvery) {
+    const requested = Number(yieldEvery);
+    const value = Number.isFinite(requested) ? requested : WATER_ROUTE_YIELD_EVERY;
+    return Math.max(1, Math.floor(value));
+  }
+
+  function canExpandWaterRouteNode(distance, maxTicks) {
+    return distance != null && distance < maxTicks;
+  }
+
+  function expandWaterRouteNode({
+    current,
+    start,
+    goal,
+    nextDistance,
+    neighbors,
+    isWater,
+    distances,
+    queue,
+  }) {
+    for (const next of neighbors(current) || []) {
+      if (next !== goal && next !== start && !isWater(next)) continue;
+      if (distances.has(next)) continue;
+      if (next === goal) return true;
+      distances.set(next, nextDistance);
+      queue.push(next);
+    }
+    return false;
+  }
+
+  // Async counterpart used by the live GameApi fallback. The old route search
+  // ran synchronously before withTimeout could install its timer, so a wide
+  // water graph could monopolize the main thread even though callers awaited
+  // the returned Promise. Yield between bounded BFS batches to keep rendering
+  // and input responsive while preserving the same shortest-path result.
+  async function findWaterRouteTicksAsync({
+    start,
+    goal,
+    neighbors,
+    isWater,
+    maxTicks = EARLY_GAME_MAX_BOAT_TICKS,
+    maxVisited = WATER_ROUTE_MAX_VISITED,
+    yieldEvery = WATER_ROUTE_YIELD_EVERY,
+    deadlineMs = 50,
+  } = {}) {
+    if (!validWaterRouteSearch(start, goal, neighbors, isWater)) return null;
+    if (start === goal) return 0;
+
+    const batchSize = normalizeWaterRouteBatchSize(yieldEvery);
+    const searchStartedAt = Date.now();
+    const searchDeadlineMs = Math.max(0, Number(deadlineMs) || 0);
+    const queue = [start];
+    const distances = new Map([[start, 0]]);
+    for (let head = 0; head < queue.length; head++) {
+      if (distances.size > maxVisited) return null;
+      // Promise.race timeouts cannot cancel work that is already running. Stop
+      // the search itself so repeated candidate probes cannot accumulate stale
+      // BFS jobs and saturate the game renderer after callers time out.
+      if (waterRouteDeadlineExpired(searchDeadlineMs, searchStartedAt)) {
+        return null;
+      }
+      if (shouldYieldWaterRouteSearch(head, batchSize)) {
+        await yieldWaterRouteSearch();
+      }
+
+      const current = queue[head];
+      const currentDistance = distances.get(current);
+      if (!canExpandWaterRouteNode(currentDistance, maxTicks)) continue;
+
+      const nextDistance = currentDistance + 1;
+      const found = expandWaterRouteNode({
+        current,
+        start,
+        goal,
+        nextDistance,
+        neighbors,
+        isWater,
+        distances,
+        queue,
+      });
+      if (found) return nextDistance;
     }
     return null;
   }
@@ -122,6 +255,25 @@
   // `isOceanShore` covers open ocean and ocean-connected rivers, while the custom
   // attack policy can also recognise a river that exits through the map edge.
   // Closed inland lakes must not satisfy this objective.
+  function seedMaritimeCoastSearch(starts, isLand) {
+    const queue = [];
+    const distances = new Map();
+    for (const tile of Array.from(starts)) {
+      if (tile == null || distances.has(tile) || !isLand(tile)) continue;
+      distances.set(tile, 0);
+      queue.push(tile);
+    }
+    return { queue, distances };
+  }
+
+  function expandMaritimeCoastNode(current, distance, neighbors, isLand, search) {
+    for (const next of neighbors(current) || []) {
+      if (search.distances.has(next) || !isLand(next)) continue;
+      search.distances.set(next, distance + 1);
+      search.queue.push(next);
+    }
+  }
+
   function findNearestMaritimeCoastDistance({
     starts,
     neighbors,
@@ -130,37 +282,28 @@
     maxDistance = EARLY_GAME_MAX_MARITIME_DISTANCE,
     maxVisited = 5000,
   } = {}) {
-    if (
-      starts == null ||
-      typeof neighbors !== "function" ||
-      typeof isLand !== "function" ||
-      typeof isMaritimeShore !== "function"
-    ) {
-      return Infinity;
-    }
+    if (!validMaritimeDistanceSearch(starts, neighbors, isLand, isMaritimeShore)) return Infinity;
 
-    const queue = [];
-    const distances = new Map();
-    for (const tile of Array.from(starts)) {
-      if (tile == null || distances.has(tile) || !isLand(tile)) continue;
-      distances.set(tile, 0);
-      queue.push(tile);
-    }
+    const search = seedMaritimeCoastSearch(starts, isLand);
 
-    for (let head = 0; head < queue.length; head++) {
-      if (distances.size > maxVisited) return Infinity;
-      const current = queue[head];
-      const distance = distances.get(current);
+    for (let head = 0; head < search.queue.length; head++) {
+      if (search.distances.size > maxVisited) return Infinity;
+      const current = search.queue[head];
+      const distance = search.distances.get(current);
       if (isMaritimeShore(current)) return distance;
       if (distance >= maxDistance) continue;
-
-      for (const next of neighbors(current) || []) {
-        if (distances.has(next) || !isLand(next)) continue;
-        distances.set(next, distance + 1);
-        queue.push(next);
-      }
+      expandMaritimeCoastNode(current, distance, neighbors, isLand, search);
     }
     return Infinity;
+  }
+
+  function validMaritimeDistanceSearch(starts, neighbors, isLand, isMaritimeShore) {
+    return (
+      starts != null &&
+      typeof neighbors === "function" &&
+      typeof isLand === "function" &&
+      typeof isMaritimeShore === "function"
+    );
   }
 
   // Backwards-compatible helper name used by existing diagnostics/tests.
@@ -185,6 +328,47 @@
   // A reverse multi-source distance field avoids repeating the same BFS for
   // every tribe on every attack tick. Terrain is static for a match, so the
   // caller can build this once and look up all candidate borders cheaply.
+  function validMaritimeDistanceIndexOptions(options) {
+    return (
+      Number.isInteger(options.width) &&
+      Number.isInteger(options.height) &&
+      options.width > 0 &&
+      options.height > 0 &&
+      Number.isSafeInteger(options.total) &&
+      Number.isInteger(options.distanceLimit) &&
+      options.distanceLimit >= 0 &&
+      typeof options.neighbors === "function" &&
+      typeof options.isLand === "function" &&
+      typeof options.isMaritimeShore === "function"
+    );
+  }
+
+  function seedMaritimeDistanceIndex(total, isLand, isMaritimeShore, distances, queue) {
+    let tail = 0;
+    for (let tile = 0; tile < total; tile++) {
+      if (!isLand(tile) || !isMaritimeShore(tile)) continue;
+      distances[tile] = 0;
+      queue[tail++] = tile;
+    }
+    return tail;
+  }
+
+  function addMaritimeDistanceNeighbors(options) {
+    let tail = options.tail;
+    for (const next of options.neighbors(options.current) || []) {
+      const invalid =
+        !Number.isInteger(next) ||
+        next < 0 ||
+        next >= options.total ||
+        !options.isLand(next) ||
+        options.distances[next] !== -1;
+      if (invalid) continue;
+      options.distances[next] = options.nextDistance;
+      options.queue[tail++] = next;
+    }
+    return tail;
+  }
+
   function buildMaritimeDistanceIndex({
     width,
     height,
@@ -197,48 +381,36 @@
     const mapHeight = Number(height);
     const total = mapWidth * mapHeight;
     const distanceLimit = Number(maxDistance);
-    if (
-      !Number.isInteger(mapWidth) ||
-      !Number.isInteger(mapHeight) ||
-      mapWidth <= 0 ||
-      mapHeight <= 0 ||
-      !Number.isSafeInteger(total) ||
-      !Number.isInteger(distanceLimit) ||
-      distanceLimit < 0 ||
-      typeof neighbors !== "function" ||
-      typeof isLand !== "function" ||
-      typeof isMaritimeShore !== "function"
-    ) {
-      return null;
-    }
+    const validOptions = validMaritimeDistanceIndexOptions({
+      width: mapWidth,
+      height: mapHeight,
+      total,
+      distanceLimit,
+      neighbors,
+      isLand,
+      isMaritimeShore,
+    });
+    if (!validOptions) return null;
 
     const distances = new Int32Array(total);
     distances.fill(-1);
     const queue = new Int32Array(total);
-    let tail = 0;
-    for (let tile = 0; tile < total; tile++) {
-      if (!isLand(tile) || !isMaritimeShore(tile)) continue;
-      distances[tile] = 0;
-      queue[tail++] = tile;
-    }
+    let tail = seedMaritimeDistanceIndex(total, isLand, isMaritimeShore, distances, queue);
 
     for (let head = 0; head < tail; head++) {
       const current = queue[head];
       if (distances[current] >= distanceLimit) continue;
       const nextDistance = distances[current] + 1;
-      for (const next of neighbors(current) || []) {
-        if (
-          !Number.isInteger(next) ||
-          next < 0 ||
-          next >= total ||
-          !isLand(next) ||
-          distances[next] !== -1
-        ) {
-          continue;
-        }
-        distances[next] = nextDistance;
-        queue[tail++] = next;
-      }
+      tail = addMaritimeDistanceNeighbors({
+        current,
+        nextDistance,
+        total,
+        neighbors,
+        isLand,
+        distances,
+        queue,
+        tail,
+      });
     }
 
     return { distances, width: mapWidth, height: mapHeight };
@@ -266,31 +438,147 @@
     return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : 0;
   }
 
+  function isMuchWeakerAllianceTarget({
+    ownTroops = 0,
+    ownOutgoingTroops = 0,
+    otherTroops = 0,
+    otherOutgoingTroops = 0,
+    advantageRatio = 4,
+  } = {}) {
+    const ownTotal =
+      Math.max(0, Number(ownTroops) || 0) +
+      Math.max(0, Number(ownOutgoingTroops) || 0);
+    const otherTotal =
+      Math.max(0, Number(otherTroops) || 0) +
+      Math.max(0, Number(otherOutgoingTroops) || 0);
+    const ratio = Math.max(1, Number(advantageRatio) || 4);
+    return ownTotal > 0 && ownTotal >= Math.max(1, otherTotal) * ratio;
+  }
+
+  // Group tribes by transitive reachability: A may lead to B, which leads to C,
+  // even when A and C are farther apart than the local chain radius. This is the
+  // strategic shape of a large edible cluster, not merely local point density.
+  function calculateConnectedTribeClusterSizes(
+    candidates,
+    distanceBetween,
+    linkRadius,
+  ) {
+    const nodes = Array.isArray(candidates) ? candidates : [];
+    const radius = Math.max(0, Number(linkRadius) || 0);
+    const sizes = new Map();
+    const remaining = new Set(nodes.map((_node, index) => index));
+    while (remaining.size > 0) {
+      const first = remaining.values().next().value;
+      remaining.delete(first);
+      const component = [first];
+      for (let head = 0; head < component.length; head++) {
+        const current = nodes[component[head]];
+        for (const index of [...remaining]) {
+          const distance = Number(distanceBetween(current, nodes[index]));
+          if (!Number.isFinite(distance) || distance > radius) continue;
+          remaining.delete(index);
+          component.push(index);
+        }
+      }
+      for (const index of component) {
+        sizes.set(nodes[index].id, component.length);
+      }
+    }
+    return sizes;
+  }
+
+  // Calculate connected edible components from real shared-border edges. This
+  // is invariant to rotation, scale, winding corridors, and territory shape.
+  function calculateTribeAdjacencyClusterSizes(candidates, adjacentIdsById) {
+    const nodes = Array.isArray(candidates) ? candidates : [];
+    const ids = new Set(nodes.map((node) => node.id));
+    const sizes = new Map();
+    const remaining = new Set(ids);
+    while (remaining.size > 0) {
+      const first = remaining.values().next().value;
+      remaining.delete(first);
+      const component = [first];
+      for (let head = 0; head < component.length; head++) {
+        for (const neighbor of adjacentIdsById?.get(component[head]) || []) {
+          if (!ids.has(neighbor) || !remaining.has(neighbor)) continue;
+          remaining.delete(neighbor);
+          component.push(neighbor);
+        }
+      }
+      for (const id of component) sizes.set(id, component.length);
+    }
+    return sizes;
+  }
+
+  function getTribeAdjacencyComponentIds(startId, adjacentIdsById) {
+    if (startId == null) return new Set();
+    const seen = new Set([startId]);
+    const queue = [startId];
+    for (let head = 0; head < queue.length; head++) {
+      for (const neighbor of adjacentIdsById?.get(queue[head]) || []) {
+        if (seen.has(neighbor)) continue;
+        seen.add(neighbor);
+        queue.push(neighbor);
+      }
+    }
+    return seen;
+  }
+
+  function chooseTribeClusterMarkerCenter(centers) {
+    const valid = (Array.isArray(centers) ? centers : []).filter(
+      (center) =>
+        Number.isFinite(Number(center?.x)) &&
+        Number.isFinite(Number(center?.y)),
+    );
+    if (valid.length === 0) return null;
+    const centroid = {
+      x:
+        valid.reduce((sum, center) => sum + Number(center.x), 0) /
+        valid.length,
+      y:
+        valid.reduce((sum, center) => sum + Number(center.y), 0) /
+        valid.length,
+    };
+    return valid.reduce((best, center) => {
+      const bestDistance =
+        (Number(best.x) - centroid.x) ** 2 +
+        (Number(best.y) - centroid.y) ** 2;
+      const distance =
+        (Number(center.x) - centroid.x) ** 2 +
+        (Number(center.y) - centroid.y) ** 2;
+      return distance < bestDistance ? center : best;
+    });
+  }
+
   // A tribe is more valuable when taking it opens a short chain of other tribes.
   // `futureFoodAccess` is supplied by AttackBehavior when it has geometry; the
   // count/distance fallback keeps this helper useful for deterministic tests and
   // older adapters that only expose aggregate signals.
   function calculateEarlyGameContinuationValue(candidate = {}) {
+    const clusterAccess = finiteEarlyGameSignal(candidate.tribeClusterAccess);
     const explicit = Number(candidate.futureFoodAccess);
     if (candidate.futureFoodAccess != null && Number.isFinite(explicit)) {
-      return finiteEarlyGameSignal(explicit);
+      return Math.max(finiteEarlyGameSignal(explicit), clusterAccess);
     }
 
     const count = Number(candidate.futureFoodCount);
     const total = Number(candidate.futureFoodTotal);
-    const countScore =
-      Number.isFinite(total) && total > 0
-        ? finiteEarlyGameSignal(count / total)
-        : Number.isFinite(count) && count > 0
-          ? 1
-          : 0;
+    let countScore = 0;
+    if (Number.isFinite(total) && total > 0) {
+      countScore = finiteEarlyGameSignal(count / total);
+    } else if (Number.isFinite(count) && count > 0) {
+      countScore = 1;
+    }
     const distance = Number(candidate.meanFutureFoodDistance);
     const radius = Number(candidate.futureFoodChainRadius || 120);
     const proximityScore =
       Number.isFinite(distance) && Number.isFinite(radius) && radius > 0
         ? finiteEarlyGameSignal(1 - distance / radius)
         : 0;
-    return finiteEarlyGameSignal(countScore * proximityScore);
+    return Math.max(
+      finiteEarlyGameSignal(countScore * proximityScore),
+      clusterAccess,
+    );
   }
 
   // Combine direct attacks, incoming attack snapshots, and the observed growth
@@ -375,14 +663,20 @@
       .filter((distance) => Number.isFinite(distance) && distance >= 0);
     if (distances.length === 0) return 0;
     const distance = Math.min(...distances);
-    return finiteEarlyGameSignal(
+    const coastalSignal = finiteEarlyGameSignal(
       1 - distance / EARLY_GAME_MAX_MARITIME_DISTANCE,
     );
+    // Reaching the coast is strategic only until we already own an open-ocean
+    // shore. Afterwards another coastal tribe is redundant and should yield to
+    // inland expansion or a gateway into a larger tribe cluster.
+    return candidate.hasOpenOceanAccess === true
+      ? -coastalSignal
+      : coastalSignal;
   }
 
-  // All six strategic dimensions use the same [0, 1] scale and equal weight.
-  // Hard feasibility is handled separately so an unknown sea route cannot win
-  // by compensating with unrelated strategic signals.
+  // Strategic dimensions use the same [0, 1] scale. Continuation receives two
+  // shares because opening a large tribe chain is the primary expansion goal;
+  // hard feasibility remains separate so an invalid route can never compensate.
   function calculateEarlyGameTribeUtility(candidate = {}) {
     if (!isEarlyGameTribeActionable(candidate)) return -Infinity;
     const routeEfficiency = calculateEarlyGameRouteEfficiency(candidate);
@@ -394,6 +688,8 @@
     const raceUrgency = Math.max(
       finiteEarlyGameSignal(candidate.foodRaceValue),
       finiteEarlyGameSignal(candidate.contestPressure),
+      finiteEarlyGameSignal(candidate.alliedCutoffPressure),
+      finiteEarlyGameSignal(candidate.oceanGatewayUrgency),
       Number(candidate.directAttackers) > 0 ||
         Number(candidate.incomingAttackers) > 0
         ? 1
@@ -411,20 +707,33 @@
       captureEfficiency +
       raceUrgency +
       territorialControl +
-      continuation +
+      continuation * 2 +
       maritimeOpportunity
-    ) / 6;
+    ) / 7;
   }
 
-  // Utility decides the target; the remaining fields only make equal results
-  // deterministic and safer to execute.
+  // Preserve irreversible/race urgency first, then choose the direction with
+  // the largest connected tribe cluster. Utility decides among equivalent
+  // cluster opportunities. Keeping cluster value only inside the averaged
+  // utility allowed several attractive local signals to overwhelm the actual
+  // opening objective: reaching the largest chain of edible tribes.
   function earlyGameTribeSortKey(candidate = {}) {
     const distance = Number(candidate.distance);
+    const urgentGatewayOrRace = Math.max(
+      finiteEarlyGameSignal(candidate.alliedCutoffPressure),
+      finiteEarlyGameSignal(candidate.oceanGatewayUrgency),
+      Number(candidate.directAttackers) > 0 ||
+        Number(candidate.incomingAttackers) > 0
+        ? 1
+        : 0,
+    );
     return [
+      urgentGatewayOrRace,
+      finiteEarlyGameSignal(candidate.tribeClusterAccess),
+      calculateEarlyGameContinuationValue(candidate),
       calculateEarlyGameTribeUtility(candidate),
       finiteEarlyGameSignal(candidate.captureEfficiency),
       calculateEarlyGameRouteEfficiency(candidate),
-      calculateEarlyGameContinuationValue(candidate),
       candidate.landBorder === true ? 1 : 0,
       Number.isFinite(distance) ? -distance : -Infinity,
     ];
@@ -446,6 +755,59 @@
       .filter(isEarlyGameTribeActionable)
       .map((candidate, index) => ({ candidate, index }))
       .sort((a, b) => compareEarlyGameTribes(a.candidate, b.candidate) || a.index - b.index)
+      .map(({ candidate }) => candidate);
+  }
+
+  function keepLargestTribeClusterCandidates(candidates) {
+    if (!Array.isArray(candidates)) return [];
+    const maxClusterAccess = candidates.reduce(
+      (best, candidate) =>
+        Math.max(best, finiteEarlyGameSignal(candidate.tribeClusterAccess)),
+      0,
+    );
+    if (maxClusterAccess <= 0) return candidates.slice();
+    const firstOceanGateways = candidates.filter(
+      (candidate) =>
+        finiteEarlyGameSignal(candidate.oceanGatewayUrgency) > 0,
+    );
+    const soleFirstOceanGateway =
+      firstOceanGateways.length === 1 ? firstOceanGateways[0] : null;
+    return candidates.filter(
+      (candidate) => {
+        const belongsToLargestCluster =
+          Math.abs(
+          finiteEarlyGameSignal(candidate.tribeClusterAccess) -
+            maxClusterAccess,
+          ) <= 1e-9;
+        return (
+          belongsToLargestCluster || candidate === soleFirstOceanGateway
+        );
+      },
+    );
+  }
+
+  // Select which tribes deserve the bounded, expensive border/route snapshot.
+  // Cluster size is deliberately the first key: otherwise eight locally cheap
+  // decoys can remove the only gateway toward a much larger food chain before
+  // the full strategic ranker gets a chance to evaluate it.
+  function rankEarlyGameTribeSamplingCandidates(candidates) {
+    if (!Array.isArray(candidates)) return [];
+    return candidates
+      .map((candidate, index) => ({ candidate, index }))
+      .sort((left, right) => {
+        const clusterDifference =
+          (Number(right.candidate.clusterSize) || 1) -
+          (Number(left.candidate.clusterSize) || 1);
+        if (clusterDifference !== 0) return clusterDifference;
+        const opportunityDifference =
+          (Number(right.candidate.opportunity) || 0) -
+          (Number(left.candidate.opportunity) || 0);
+        if (opportunityDifference !== 0) return opportunityDifference;
+        const idDifference =
+          (Number(left.candidate.id) || 0) -
+          (Number(right.candidate.id) || 0);
+        return idDifference || left.index - right.index;
+      })
       .map(({ candidate }) => candidate);
   }
 

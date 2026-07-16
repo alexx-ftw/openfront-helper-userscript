@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import vm from "node:vm";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -19,7 +19,7 @@ function loadApi() {
     Int32Array,
   };
   sandbox.globalThis = sandbox;
-  vm.runInNewContext(fs.readFileSync(SOURCE, "utf8"), sandbox, { filename: SOURCE });
+  executeClassicScript(fs.readFileSync(SOURCE, "utf8"), sandbox, { filename: SOURCE });
   assert.ok(sandbox.__OFHSpawnIndex, "spawn index API must be exposed for the engine");
   return sandbox.__OFHSpawnIndex;
 }
@@ -40,18 +40,19 @@ function collect(index, options = {}) {
   const result = [];
   index.forEachCandidate({
     ...options,
-    onCandidate: (
-      refValue,
-      x,
-      y,
-      spawnGain,
-      invalidCount,
-      plainsGain,
-      frontierGain,
-      frontierPlainsGain,
-      frontierValueGain,
-      frontierSlots,
-    ) =>
+    onCandidate: (...candidateArgs) => {
+      const [
+        refValue,
+        x,
+        y,
+        spawnGain,
+        invalidCount,
+        plainsGain,
+        frontierGain,
+        frontierPlainsGain,
+        frontierValueGain,
+        frontierSlots,
+      ] = candidateArgs;
       result.push({
         ref: refValue,
         x,
@@ -63,7 +64,8 @@ function collect(index, options = {}) {
         frontierPlainsGain,
         frontierValueGain,
         frontierSlots,
-      }),
+      });
+    },
   });
   return result;
 }
@@ -71,7 +73,7 @@ function collect(index, options = {}) {
 function test(name, fn) {
   try {
     fn();
-    console.log(`ok - ${name}`);
+    process.stdout.write(`ok - ${name}\n`);
   } catch (error) {
     console.error(`not ok - ${name}`);
     throw error;
@@ -224,4 +226,4 @@ test("enemy pressure is a monotonic safety penalty", () => {
   assert.equal(api.safePressureScore(10) < api.safePressureScore(2), true);
 });
 
-console.log("spawn-index tests passed");
+process.stdout.write("spawn-index tests passed\n");

@@ -71,7 +71,7 @@
   }
 
   function handleAttackRatioHotkey(event) {
-    if (!attackRatioHotkeyEnabled) return;
+    if (!runtimeState.attackRatioHotkeyEnabled) return;
     if (!event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
     const percent = ATTACK_RATIO_HOTKEY_BINDINGS[event.code];
     if (percent === undefined) return;
@@ -81,8 +81,8 @@
   }
 
   function setAttackRatioHotkeyEnabled(enabled) {
-    attackRatioHotkeyEnabled = Boolean(enabled);
-    if (!attackRatioHotkeyEnabled) {
+    runtimeState.attackRatioHotkeyEnabled = Boolean(enabled);
+    if (!runtimeState.attackRatioHotkeyEnabled) {
       _attackRatioSlider = null;
     }
   }

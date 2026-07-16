@@ -136,6 +136,42 @@
     }
 
     // ── main entry — NationMIRVBehavior.considerMIRV (now async) ──────────────
+    async considerWinFixMIRV(mirvCost) {
+      if (!state.settings.winFixes) return null;
+      if (this.teamHasWon()) {
+        state.nukeReserveGold = 0n;
+        return false;
+      }
+      const target = this.selectWinFixMirvTarget(mirvCost);
+      if (!target || this.wasRecentlyMirved(target)) {
+        state.nukeReserveGold = 0n;
+        return null;
+      }
+      if (this.player.gold() >= mirvCost) {
+        state.nukeReserveGold = 0n;
+        await this.maybeSendMIRV(target);
+        return true;
+      }
+      const earlyTicks = state.settings.mirvEarlyGameTicks ?? 6000;
+      state.nukeReserveGold = this.game.ticks() >= earlyTicks ? mirvCost : 0n;
+      return false;
+    }
+
+    async sendFirstEligibleMIRV() {
+      const selectors = [
+        () => this.selectCounterMirvTarget(),
+        () => this.selectVictoryDenialTarget(),
+        () => this.selectSteamrollStopTarget(),
+      ];
+      for (const selectTarget of selectors) {
+        const target = selectTarget();
+        if (!target || this.wasRecentlyMirved(target)) continue;
+        await this.maybeSendMIRV(target);
+        return true;
+      }
+      return false;
+    }
+
     async considerMIRV() {
       if (this.player === null) throw new Error("not initialized");
       if (this.game.config().isUnitDisabled(UNIT.MIRV)) {
@@ -156,36 +192,8 @@
       // recording an offensive war-chest goal in state.nukeReserveGold. Ordinary
       // economy and defensive SAM paths remain available while saving. Gated by
       // settings.winFixes.
-      if (state.settings.winFixes) {
-        // USER RULE: once our TEAM has effectively WON (owns ≥ teamWonShare of the map),
-        // stop hoarding gold for a MIRV — release the war chest so structureBehavior
-        // pours gold into ECONOMY / SAMs / defence instead of saving for an offence we
-        // no longer need.
-        if (this.teamHasWon()) {
-          if (state.nukeReserveGold) state.nukeReserveGold = 0n;
-          return false;
-        }
-        const wfTarget = this.selectWinFixMirvTarget(mirvCost);
-        if (wfTarget && !this.wasRecentlyMirved(wfTarget)) {
-          if (this.player.gold() >= mirvCost) {
-            state.nukeReserveGold = 0n;
-            await this.maybeSendMIRV(wfTarget);
-            return true;
-          }
-          // Not affordable yet. USER RULE: in the EARLY game (before mirvEarlyGameTicks
-          // ≈ 10 min) do NOT hoard gold for a MIRV — leave the war chest empty so the
-          // bot keeps firing cheap atom/hydrogen nukes. Only past 10 min do we save up.
-          const earlyTicks = state.settings.mirvEarlyGameTicks ?? 6000;
-          if (this.game.ticks() >= earlyTicks) {
-            state.nukeReserveGold = mirvCost;
-          } else if (state.nukeReserveGold) {
-            state.nukeReserveGold = 0n;
-          }
-          return false;
-        }
-        // No win-fix target → release any war chest we were holding.
-        if (state.nukeReserveGold) state.nukeReserveGold = 0n;
-      }
+      const winFixResult = await this.considerWinFixMIRV(mirvCost);
+      if (winFixResult !== null) return winFixResult;
 
       if (this.player.gold() < mirvCost) {
         return false;
@@ -195,25 +203,7 @@
         return false;
       }
 
-      const inboundMIRVSender = this.selectCounterMirvTarget();
-      if (inboundMIRVSender && !this.wasRecentlyMirved(inboundMIRVSender)) {
-        await this.maybeSendMIRV(inboundMIRVSender);
-        return true;
-      }
-
-      const victoryDenialTarget = this.selectVictoryDenialTarget();
-      if (victoryDenialTarget && !this.wasRecentlyMirved(victoryDenialTarget)) {
-        await this.maybeSendMIRV(victoryDenialTarget);
-        return true;
-      }
-
-      const steamrollStopTarget = this.selectSteamrollStopTarget();
-      if (steamrollStopTarget && !this.wasRecentlyMirved(steamrollStopTarget)) {
-        await this.maybeSendMIRV(steamrollStopTarget);
-        return true;
-      }
-
-      return false;
+      return this.sendFirstEligibleMIRV();
     }
 
     // ── MIRV Strategy Methods ────────────────────────────────────────────────
@@ -227,49 +217,34 @@
       return attackers[0];
     }
 
+    getTeamVictorySeverity(player, totalLand) {
+      const teamMembers = this.game
+        .players()
+        .filter((candidate) => candidate.team() === player.team() && candidate.isPlayer());
+      const teamTerritory = teamMembers.reduce((sum, member) => sum + member.numTilesOwned(), 0);
+      const teamShare = teamTerritory / totalLand;
+      if (teamShare < this.victoryDenialTeamThreshold) return 0;
+      const largestMember = teamMembers.reduce(
+        (largest, member) => member.numTilesOwned() > largest.numTilesOwned() ? member : largest,
+      );
+      return largestMember.smallID() === player.smallID() ? teamShare : 0;
+    }
+
+    getVictorySeverity(player, totalLand) {
+      if (player.team() !== null) return this.getTeamVictorySeverity(player, totalLand);
+      const share = player.numTilesOwned() / totalLand;
+      return share >= this.victoryDenialIndividualThreshold ? share : 0;
+    }
+
     selectVictoryDenialTarget() {
       if (this.player === null) throw new Error("not initialized");
       const totalLand = this.game.numLandTiles();
       if (totalLand === 0) return null;
-      let best = null;
-      for (const p of this.getValidMirvTargetPlayers()) {
-        let severity = 0;
-        const team = p.team();
-        if (team !== null) {
-          // NOTE: team is a team id, not a player — keep the `===` compare.
-          const teamMembers = this.game
-            .players()
-            .filter((x) => x.team() === team && x.isPlayer());
-          const teamTerritory = teamMembers
-            .map((x) => x.numTilesOwned())
-            .reduce((a, b) => a + b, 0);
-          const teamShare = teamTerritory / totalLand;
-          if (teamShare >= this.victoryDenialTeamThreshold) {
-            // Only consider the largest team member as the target when team exceeds threshold
-            let largestMember = null;
-            let largestTiles = -1;
-            for (const member of teamMembers) {
-              const tiles = member.numTilesOwned();
-              if (tiles > largestTiles) {
-                largestTiles = tiles;
-                largestMember = member;
-              }
-            }
-            if (largestMember !== null && largestMember.smallID() === p.smallID()) {
-              severity = teamShare;
-            } else {
-              severity = 0; // Skip non-largest members
-            }
-          }
-        } else {
-          const share = p.numTilesOwned() / totalLand;
-          if (share >= this.victoryDenialIndividualThreshold) severity = share;
-        }
-        if (severity > 0) {
-          if (best === null || severity > best.severity) best = { p, severity };
-        }
-      }
-      return best ? best.p : null;
+      const ranked = this.getValidMirvTargetPlayers()
+        .map((player) => ({ player, severity: this.getVictorySeverity(player, totalLand) }))
+        .filter((candidate) => candidate.severity > 0)
+        .sort((a, b) => b.severity - a.severity);
+      return ranked[0]?.player ?? null;
     }
 
     selectSteamrollStopTarget() {
@@ -345,6 +320,7 @@
         const p = Number(this.game.config().percentageTilesOwnedToWin());
         if (Number.isFinite(p)) winFrac = p / 100;
       } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/auto-bot/mirvBehavior.js:347");
         /* keep 0.95 */
       }
       if (Number.isFinite(state.settings.teamWonShare)) {
@@ -484,6 +460,30 @@
       return p.unitCount(UNIT.City);
     }
 
+    calculateBorderBounds(tiles) {
+      const bounds = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
+      for (const tile of tiles) {
+        const x = this.game.x(tile);
+        const y = this.game.y(tile);
+        bounds.minX = Math.min(bounds.minX, x);
+        bounds.maxX = Math.max(bounds.maxX, x);
+        bounds.minY = Math.min(bounds.minY, y);
+        bounds.maxY = Math.max(bounds.maxY, y);
+      }
+      return bounds;
+    }
+
+    findClosestBorderTile(tiles, centerX, centerY) {
+      return tiles.reduce((closest, tile) => {
+        const dx = this.game.x(tile) - centerX;
+        const dy = this.game.y(tile) - centerY;
+        const distanceSquared = dx * dx + dy * dy;
+        return distanceSquared < closest.distanceSquared
+          ? { tile, distanceSquared }
+          : closest;
+      }, { tile: null, distanceSquared: Infinity }).tile;
+    }
+
     // calculateTerritoryCenter — src/core/execution/Util.ts:233, made async.
     // The src wraps portutil.calculateTerritoryCenter, which reads
     // target.borderTiles() SYNCHRONOUSLY. On the client a non-"me" player's sync
@@ -505,28 +505,16 @@
         // envelope depending on the worker shape — unwrap defensively.
         tiles = res && res.borderTiles ? res.borderTiles : res;
       } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/auto-bot/mirvBehavior.js:507");
         return null;
       }
       if (!tiles) return null;
       const arr = Array.from(tiles);
       if (arr.length === 0) return null;
 
-      // Calculate bounding box center in a single pass through border tiles.
-      let minX = Infinity,
-        maxX = -Infinity;
-      let minY = Infinity,
-        maxY = -Infinity;
-      for (const tile of arr) {
-        const x = this.game.x(tile);
-        const y = this.game.y(tile);
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      }
-
-      const centerX = Math.floor((minX + maxX) / 2);
-      const centerY = Math.floor((minY + maxY) / 2);
+      const bounds = this.calculateBorderBounds(arr);
+      const centerX = Math.floor((bounds.minX + bounds.maxX) / 2);
+      const centerY = Math.floor((bounds.minY + bounds.maxY) / 2);
       const centerTile = this.game.ref(centerX, centerY);
 
       // Verify ownership of the center tile (src compares identity; smallID here).
@@ -537,19 +525,7 @@
         return centerTile;
       }
 
-      // Fall back to nearest border tile if center is not owned.
-      let closestTile = null;
-      let closestDistanceSquared = Infinity;
-      for (const tile of arr) {
-        const dx = this.game.x(tile) - centerX;
-        const dy = this.game.y(tile) - centerY;
-        const distSquared = dx * dx + dy * dy;
-        if (distSquared < closestDistanceSquared) {
-          closestDistanceSquared = distSquared;
-          closestTile = tile;
-        }
-      }
-      return closestTile;
+      return this.findClosestBorderTile(arr, centerX, centerY);
     }
 
     // cost — src reads unitInfo(type).cost(game, player). The MIRV cost fn calls

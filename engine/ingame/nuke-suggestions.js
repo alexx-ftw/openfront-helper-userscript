@@ -130,7 +130,7 @@
   let nukeSuggestionFrameCounter = 2;
   const nukeSuggestionWorldQueryArg = { x: 0, y: 0 };
   let nukeSuggestionTileInfoCache = null;
-  let nukeSuggestionDomCache = new Map();
+  const nukeSuggestionDomCache = new Map();
   let lastAutoNukeActionAt = 0;
   let autoNukeIncludeAllies = false;
   let autoNukeContextMenuInstalled = false;
@@ -248,6 +248,7 @@
         };
       }
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:250");
       // Fall back to OpenFront defaults.
     }
 
@@ -265,23 +266,26 @@
   }
 
   function getNukeSuggestionUnitCost(game, player, unitType) {
+    const readCost = (unitInfo) => {
+      const numericCost = Number(unitInfo?.(unitType)?.cost?.(game, player));
+      return Number.isFinite(numericCost) && numericCost >= 0
+        ? numericCost
+        : null;
+    };
     try {
-      const cost = game?.unitInfo?.(unitType)?.cost?.(game, player);
-      const numericCost = typeof cost === "bigint" ? Number(cost) : Number(cost);
-      if (Number.isFinite(numericCost) && numericCost >= 0) {
-        return numericCost;
-      }
+      const cost = readCost(game?.unitInfo?.bind(game));
+      if (cost !== null) return cost;
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:274");
       // PlayerView does not expose every server-side cost helper dependency.
     }
 
     try {
-      const cost = game?.config?.().unitInfo?.(unitType)?.cost?.(game, player);
-      const numericCost = typeof cost === "bigint" ? Number(cost) : Number(cost);
-      if (Number.isFinite(numericCost) && numericCost >= 0) {
-        return numericCost;
-      }
+      const config = game?.config?.();
+      const cost = readCost(config?.unitInfo?.bind(config));
+      if (cost !== null) return cost;
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:284");
       // Fall back to OpenFront defaults.
     }
 
@@ -317,6 +321,7 @@
       });
       return Math.hypot(reference.x - screenPos.x, reference.y - screenPos.y);
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:319");
       return worldRadius;
     }
   }
@@ -326,6 +331,7 @@
       const tile = Number(unit?.tile?.());
       return Number.isFinite(tile) ? tile : null;
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:328");
       return null;
     }
   }
@@ -345,6 +351,7 @@
         return String(id);
       }
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:347");
       // Fall back to the tile below.
     }
 
@@ -368,6 +375,7 @@
         return queue;
       }
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:370");
       // Fall back to the UnitView data shape.
     }
 
@@ -407,6 +415,7 @@
         infoSources.push(unitInfo("SAM Launcher"));
       }
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:409");
       // Keep the standard SAM duration below.
     }
 
@@ -527,6 +536,7 @@
       const player = game?.playerBySmallID?.(numericId);
       return player?.isPlayer?.() ? player : null;
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:529");
       return null;
     }
   }
@@ -537,29 +547,11 @@
       return tileInfo.adjacentHostileSamsCache;
     }
 
-    const targetId = getPlayerSmallId(targetPlayer);
-    const adjacentPlayerIds = new Set();
-
-    for (const point of tileInfo.tiles) {
-      let neighbors = [];
-      try {
-        neighbors = game.neighbors?.(point.tile) || [];
-      } catch (_error) {
-        neighbors = [];
-      }
-
-      for (const neighborTile of neighbors) {
-        let ownerId = 0;
-        try {
-          ownerId = game.ownerID(neighborTile);
-        } catch (_error) {
-          continue;
-        }
-        if (ownerId > 0 && ownerId !== targetId) {
-          adjacentPlayerIds.add(ownerId);
-        }
-      }
-    }
+    const adjacentPlayerIds = collectAdjacentPlayerIds(
+      game,
+      tileInfo.tiles,
+      getPlayerSmallId(targetPlayer),
+    );
 
     const sams = [];
     const seenSamIds = new Set();
@@ -581,6 +573,33 @@
 
     tileInfo.adjacentHostileSamsCache = sams;
     return sams;
+  }
+
+  function collectAdjacentPlayerIds(game, tiles, targetId) {
+    const playerIds = new Set();
+    for (const point of tiles) {
+      let neighbors = [];
+      try {
+        neighbors = game.neighbors?.(point.tile) || [];
+      } catch (_error) {
+        captureRuntimeException(
+          _error,
+          "engine/ingame/nuke-suggestions.js:collectAdjacentPlayerIds:neighbors",
+        );
+      }
+      for (const neighborTile of neighbors) {
+        try {
+          const ownerId = game.ownerID(neighborTile);
+          if (ownerId > 0 && ownerId !== targetId) playerIds.add(ownerId);
+        } catch (_error) {
+          captureRuntimeException(
+            _error,
+            "engine/ingame/nuke-suggestions.js:collectAdjacentPlayerIds:owner",
+          );
+        }
+      }
+    }
+    return playerIds;
   }
 
   function collectRelevantSams(game, myPlayer, targetPlayer, tileInfo) {
@@ -611,7 +630,7 @@
         return;
       }
 
-      let owner = null;
+      let owner;
       try {
         owner = sam?.owner?.();
       } catch (_error) {
@@ -635,6 +654,7 @@
         addSam(sam);
       }
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:637");
       // Fall back below.
     }
 
@@ -650,6 +670,7 @@
         }
       }
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:652");
       // No usable global player list.
     }
 
@@ -665,7 +686,7 @@
         return;
       }
 
-      let owner = null;
+      let owner;
       try {
         owner = sam?.owner?.();
       } catch (_error) {
@@ -688,6 +709,7 @@
         addSam(sam);
       }
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:690");
       // Fall back below.
     }
 
@@ -701,6 +723,7 @@
         }
       }
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:703");
       // No usable global player list.
     }
 
@@ -807,39 +830,38 @@
 
   function collectAlliedPlayerSmallIds(game, myPlayer) {
     const allyIds = new Set();
+    const addAllyId = (ally) => {
+      const allyId = getPlayerSmallId(ally);
+      if (Number.isFinite(allyId)) allyIds.add(allyId);
+    };
 
     try {
       for (const ally of myPlayer?.allies?.() || []) {
-        const allyId = getPlayerSmallId(ally);
-        if (Number.isFinite(allyId)) {
-          allyIds.add(allyId);
-        }
+        addAllyId(ally);
       }
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:818");
       // Fall back to scanning player views below.
     }
 
     try {
       for (const player of game?.playerViews?.() || []) {
-        if (
-          player?.isPlayer?.() &&
-          getPlayerSmallId(player) !== getPlayerSmallId(myPlayer) &&
-          (
-            myPlayer?.isAlliedWith?.(player) ||
-            player?.isAlliedWith?.(myPlayer)
-          )
-        ) {
-          const allyId = getPlayerSmallId(player);
-          if (Number.isFinite(allyId)) {
-            allyIds.add(allyId);
-          }
-        }
+        if (isDistinctAlliedPlayer(myPlayer, player)) addAllyId(player);
       }
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:838");
       // The direct allies list is enough when available.
     }
 
     return allyIds;
+  }
+
+  function isDistinctAlliedPlayer(myPlayer, player) {
+    if (!player?.isPlayer?.()) return false;
+    if (getPlayerSmallId(player) === getPlayerSmallId(myPlayer)) return false;
+    return (
+      myPlayer?.isAlliedWith?.(player) || player?.isAlliedWith?.(myPlayer) || false
+    );
   }
 
   function collectAlliedStructures(game, allySmallIds) {
@@ -870,27 +892,26 @@
       const threshold = Number(game?.config?.().nukeAllianceBreakThreshold?.());
       return Number.isFinite(threshold) && threshold >= 0 ? threshold : 100;
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:872");
       return 100;
     }
   }
 
   function isEnemyNukeSuggestionTarget(game, targetPlayer) {
     const myPlayer = game?.myPlayer?.();
-    if (!myPlayer?.isPlayer?.() || !targetPlayer?.isPlayer?.()) {
-      return false;
-    }
-    if (!targetPlayer?.isAlive?.()) {
-      return false;
-    }
-    if (getPlayerSmallId(myPlayer) === getPlayerSmallId(targetPlayer)) {
-      return false;
-    }
+    if (!isDistinctAlivePlayer(myPlayer, targetPlayer)) return false;
 
     try {
       return !myPlayer.isFriendly?.(targetPlayer) && !targetPlayer.isFriendly?.(myPlayer);
     } catch (_error) {
       return true;
     }
+  }
+
+  function isDistinctAlivePlayer(myPlayer, targetPlayer) {
+    if (!myPlayer?.isPlayer?.() || !targetPlayer?.isPlayer?.()) return false;
+    if (!targetPlayer.isAlive?.()) return false;
+    return getPlayerSmallId(myPlayer) !== getPlayerSmallId(targetPlayer);
   }
 
   function makeNukeSuggestionBucketKey(x, y, bucketSize = NUKE_SUGGESTION_BUCKET_SIZE) {
@@ -931,7 +952,8 @@
     ].join(":");
   }
 
-  function runTileScan(game, targetId, myPlayerId, allySmallIds, width, height) {
+  function runTileScan(game, scan) {
+    const { targetId, myPlayerId, allySmallIds, width, height } = scan;
     const tiles = [];
     const buckets = new Map();
     const selfBuckets = new Map();
@@ -946,7 +968,7 @@
 
     const totalTiles = width * height;
     for (let tile = 0; tile < totalTiles; tile++) {
-      let ownerId = null;
+      let ownerId;
       try {
         ownerId = game.ownerID(tile);
       } catch (_error) {
@@ -1006,16 +1028,7 @@
     const myPlayerId = getPlayerSmallId(myPlayer);
     const width = Number(game?.width?.());
     const height = Number(game?.height?.());
-    if (
-      !Number.isFinite(targetId) ||
-      !Number.isFinite(myPlayerId) ||
-      !Number.isFinite(width) ||
-      !Number.isFinite(height) ||
-      width <= 0 ||
-      height <= 0
-    ) {
-      return null;
-    }
+    if (!isValidTileScanShape({ targetId, myPlayerId, width, height })) return null;
 
     const cacheKey = getNukeSuggestionTileInfoCacheKey(
       game,
@@ -1034,30 +1047,46 @@
 
     // Defer the expensive tile scan to a setTimeout so it doesn't block
     // the current animation frame. Return stale data (or null) in the meantime.
-    if (nukeSuggestionTileComputeKey !== cacheKey) {
-      nukeSuggestionTileComputeKey = cacheKey;
-      setTimeout(() => {
-        if (nukeSuggestionTileComputeKey !== cacheKey) {
-          return;
-        }
-        const tileInfo = runTileScan(game, targetId, myPlayerId, allySmallIds, width, height);
-        if (nukeSuggestionTileComputeKey !== cacheKey) {
-          return;
-        }
-        nukeSuggestionTileComputeKey = null;
-        nukeSuggestionTileInfoCache = {
-          key: cacheKey,
-          updatedAt: performance.now(),
-          value: tileInfo,
-        };
-        // Force signature recheck so results update on the next poll cycle.
-        lastNukeSuggestionSignatureCheckAt = 0;
-        lastNukeSuggestionSignature = "";
-      }, 0);
+    if (runtimeState.nukeSuggestionTileComputeKey !== cacheKey) {
+      scheduleTargetTileInfoScan(game, cacheKey, {
+        targetId,
+        myPlayerId,
+        allySmallIds,
+        width,
+        height,
+      });
     }
 
     // Return stale data while recomputing, or null for the very first hover.
     return nukeSuggestionTileInfoCache?.value ?? null;
+  }
+
+  function isValidTileScanShape({ targetId, myPlayerId, width, height }) {
+    return (
+      Number.isFinite(targetId) &&
+      Number.isFinite(myPlayerId) &&
+      Number.isFinite(width) &&
+      Number.isFinite(height) &&
+      width > 0 &&
+      height > 0
+    );
+  }
+
+  function scheduleTargetTileInfoScan(game, cacheKey, scan) {
+    runtimeState.nukeSuggestionTileComputeKey = cacheKey;
+    setTimeout(() => {
+      if (runtimeState.nukeSuggestionTileComputeKey !== cacheKey) return;
+      const tileInfo = runTileScan(game, scan);
+      if (runtimeState.nukeSuggestionTileComputeKey !== cacheKey) return;
+      runtimeState.nukeSuggestionTileComputeKey = null;
+      nukeSuggestionTileInfoCache = {
+        key: cacheKey,
+        updatedAt: performance.now(),
+        value: tileInfo,
+      };
+      runtimeState.lastNukeSuggestionSignatureCheckAt = 0;
+      runtimeState.lastNukeSuggestionSignature = "";
+    }, 0);
   }
 
   function getTileFromXY(game, x, y) {
@@ -1069,6 +1098,7 @@
       }
       return game.ref(tileX, tileY);
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1071");
       return null;
     }
   }
@@ -1126,7 +1156,8 @@
     }
   }
 
-  function buildNukeSuggestionSeeds(game, targetPlayer, tileInfo, structures, magnitude, spec) {
+  function buildNukeSuggestionSeeds(game, request) {
+    const { targetPlayer, tileInfo, structures, magnitude, spec } = request;
     const seeds = new Map();
     const nameLocation = targetPlayer?.nameLocation?.();
     if (nameLocation) {
@@ -1173,6 +1204,7 @@
       const increase = Number(game?.config?.().cityTroopIncrease?.());
       return Number.isFinite(increase) && increase > 0 ? increase : 250000;
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1175");
       return 250000;
     }
   }
@@ -1182,6 +1214,7 @@
       const troops = Number(player?.troops?.());
       return Number.isFinite(troops) && troops > 0 ? troops : 0;
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1184");
       return 0;
     }
   }
@@ -1193,6 +1226,7 @@
         return maxTroops;
       }
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1195");
       // Fall back to the default max-troops shape.
     }
 
@@ -1230,17 +1264,10 @@
     const cappedTiles = Math.min(expectedTiles, tilesBeforeNuke);
     const wholeTiles = Math.floor(cappedTiles);
     const partialTile = cappedTiles - wholeTiles;
-    let remainingRatio = 1;
-    if (wholeTiles > 0) {
-      if (tilesBeforeNuke <= 5 || tilesBeforeNuke - wholeTiles <= 4) {
-        remainingRatio = 0;
-      } else {
-        const end = tilesBeforeNuke - wholeTiles;
-        for (let offset = 0; offset < 5; offset++) {
-          remainingRatio *= (end - offset) / (tilesBeforeNuke - offset);
-        }
-      }
-    }
+    let remainingRatio = nukeRemainingRatioAfterWholeTiles(
+      tilesBeforeNuke,
+      wholeTiles,
+    );
 
     if (partialTile > 0) {
       const numTilesLeft = Math.max(1, tilesBeforeNuke - wholeTiles);
@@ -1249,6 +1276,17 @@
     }
 
     return troops * (1 - remainingRatio);
+  }
+
+  function nukeRemainingRatioAfterWholeTiles(tilesBeforeNuke, wholeTiles) {
+    if (wholeTiles <= 0) return 1;
+    if (tilesBeforeNuke <= 5 || tilesBeforeNuke - wholeTiles <= 4) return 0;
+    const end = tilesBeforeNuke - wholeTiles;
+    let ratio = 1;
+    for (let offset = 0; offset < 5; offset++) {
+      ratio *= (end - offset) / (tilesBeforeNuke - offset);
+    }
+    return ratio;
   }
 
   function estimateCityPopulationHit(game, context, cx, cy, outerSquared) {
@@ -1282,6 +1320,7 @@
           hitCityPopulationWeights.set(getStructureImpactKey(structure), cityHit);
         }
       } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1284");
         // Ignore stale unit refs.
       }
     }
@@ -1351,6 +1390,7 @@
           );
         }
       } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1353");
         // Ignore stale unit refs.
       }
     }
@@ -1395,6 +1435,7 @@
           return true;
         }
       } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1397");
         // Ignore stale unit refs.
       }
     }
@@ -1405,53 +1446,68 @@
     if (!context.allySmallIds?.size) {
       return false;
     }
+    if (
+      anyStructureWithinBlast(
+        game,
+        context.alliedStructures,
+        cx,
+        cy,
+        outerSquared,
+      )
+    ) {
+      return true;
+    }
+    return alliedTileCountsBreakAlliance(context, cx, cy, outerSquared);
+  }
 
-    for (const structure of context.alliedStructures) {
+  function anyStructureWithinBlast(game, structures, cx, cy, outerSquared) {
+    for (const structure of structures) {
       try {
-        const sx = game.x(structure.tile);
-        const sy = game.y(structure.tile);
-        const dx = sx - cx;
-        const dy = sy - cy;
-        if (dx * dx + dy * dy <= outerSquared) {
-          return true;
-        }
+        const dx = game.x(structure.tile) - cx;
+        const dy = game.y(structure.tile) - cy;
+        if (dx * dx + dy * dy <= outerSquared) return true;
       } catch (_error) {
-        // Ignore stale unit refs.
+        captureRuntimeException(
+          _error,
+          "engine/ingame/nuke-suggestions.js:anyStructureWithinBlast",
+        );
       }
     }
+    return false;
+  }
 
-    const minBucketX = Math.floor((cx - context.magnitude.outer) / NUKE_SUGGESTION_BUCKET_SIZE);
-    const maxBucketX = Math.floor((cx + context.magnitude.outer) / NUKE_SUGGESTION_BUCKET_SIZE);
-    const minBucketY = Math.floor((cy - context.magnitude.outer) / NUKE_SUGGESTION_BUCKET_SIZE);
-    const maxBucketY = Math.floor((cy + context.magnitude.outer) / NUKE_SUGGESTION_BUCKET_SIZE);
+  function alliedTileCountsBreakAlliance(context, cx, cy, outerSquared) {
     const innerSquared = context.magnitude.inner * context.magnitude.inner;
     const counts = new Map();
-
-    for (let by = minBucketY; by <= maxBucketY; by++) {
-      for (let bx = minBucketX; bx <= maxBucketX; bx++) {
+    const bounds = getNukeBucketBounds(cx, cy, context.magnitude.outer);
+    for (let by = bounds.minY; by <= bounds.maxY; by++) {
+      for (let bx = bounds.minX; bx <= bounds.maxX; bx++) {
         const bucket = context.tileInfo.allyBuckets.get(`${bx}:${by}`);
-        if (!bucket) {
-          continue;
-        }
-
-        for (const point of bucket) {
-          const dx = point.x - cx;
-          const dy = point.y - cy;
-          const distSquared = dx * dx + dy * dy;
-          if (distSquared > outerSquared) {
-            continue;
-          }
-
-          const weight = distSquared <= innerSquared ? 1 : 0.5;
-          const nextCount = (counts.get(point.ownerId) || 0) + weight;
-          if (nextCount > context.allianceBreakThreshold) {
-            return true;
-          }
-          counts.set(point.ownerId, nextCount);
-        }
+        if (
+          alliedBucketBreaksThreshold(bucket, counts, context, {
+            cx,
+            cy,
+            innerSquared,
+            outerSquared,
+          })
+        ) return true;
       }
     }
 
+    return false;
+  }
+
+  function alliedBucketBreaksThreshold(bucket, counts, context, blast) {
+    for (const point of bucket || []) {
+      const dx = point.x - blast.cx;
+      const dy = point.y - blast.cy;
+      const distanceSquared = dx * dx + dy * dy;
+      if (distanceSquared > blast.outerSquared) continue;
+      const weight = distanceSquared <= blast.innerSquared ? 1 : 0.5;
+      const nextCount = (counts.get(point.ownerId) || 0) + weight;
+      if (nextCount > context.allianceBreakThreshold) return true;
+      counts.set(point.ownerId, nextCount);
+    }
     return false;
   }
 
@@ -1491,13 +1547,9 @@
       return false;
     }
 
-    const minBucketX = Math.floor((cx - context.magnitude.outer) / NUKE_SUGGESTION_BUCKET_SIZE);
-    const maxBucketX = Math.floor((cx + context.magnitude.outer) / NUKE_SUGGESTION_BUCKET_SIZE);
-    const minBucketY = Math.floor((cy - context.magnitude.outer) / NUKE_SUGGESTION_BUCKET_SIZE);
-    const maxBucketY = Math.floor((cy + context.magnitude.outer) / NUKE_SUGGESTION_BUCKET_SIZE);
-
-    for (let by = minBucketY; by <= maxBucketY; by++) {
-      for (let bx = minBucketX; bx <= maxBucketX; bx++) {
+    const bounds = getNukeBucketBounds(cx, cy, context.magnitude.outer);
+    for (let by = bounds.minY; by <= bounds.maxY; by++) {
+      for (let bx = bounds.minX; bx <= bounds.maxX; bx++) {
         const bucketKey = `${bx}:${by}`;
         const buckets = [
           context.tileInfo.otherPlayerBuckets?.get(bucketKey),
@@ -1505,18 +1557,30 @@
           context.tileInfo.selfBuckets?.get(bucketKey),
         ].filter(Boolean);
 
-        for (const bucket of buckets) {
-          for (const point of bucket) {
-            const dx = point.x - cx;
-            const dy = point.y - cy;
-            if (dx * dx + dy * dy <= outerSquared) {
-              return true;
-            }
-          }
-        }
+        if (anyNukeBucketPointWithin(buckets, cx, cy, outerSquared)) return true;
       }
     }
 
+    return false;
+  }
+
+  function getNukeBucketBounds(cx, cy, outer) {
+    return {
+      minX: Math.floor((cx - outer) / NUKE_SUGGESTION_BUCKET_SIZE),
+      maxX: Math.floor((cx + outer) / NUKE_SUGGESTION_BUCKET_SIZE),
+      minY: Math.floor((cy - outer) / NUKE_SUGGESTION_BUCKET_SIZE),
+      maxY: Math.floor((cy + outer) / NUKE_SUGGESTION_BUCKET_SIZE),
+    };
+  }
+
+  function anyNukeBucketPointWithin(buckets, cx, cy, outerSquared) {
+    for (const bucket of buckets) {
+      for (const point of bucket) {
+        const dx = point.x - cx;
+        const dy = point.y - cy;
+        if (dx * dx + dy * dy <= outerSquared) return true;
+      }
+    }
     return false;
   }
 
@@ -1554,27 +1618,10 @@
   }
 
   function scoreNukeSuggestionTile(game, context, tile) {
-    if (
-      tile == null ||
-      !isNukeSuggestionTileAllowed(
-        game,
-        context.myPlayer,
-        tile,
-        context.magnitude,
-        context.teamStructures,
-      )
-    ) {
-      return null;
-    }
-
-    let cx;
-    let cy;
-    try {
-      cx = game.x(tile);
-      cy = game.y(tile);
-    } catch (_error) {
-      return null;
-    }
+    if (!isNukeScoreTileAllowed(game, context, tile)) return null;
+    const coordinates = getNukeTileCoordinates(game, tile);
+    if (coordinates === null) return null;
+    const { x: cx, y: cy } = coordinates;
 
     const innerSquared = context.magnitude.inner * context.magnitude.inner;
     const outerSquared = context.magnitude.outer * context.magnitude.outer;
@@ -1588,113 +1635,25 @@
       return null;
     }
 
-    let expectedTilesHit = 0;
-    let innerTiles = 0;
-    let outerTiles = 0;
+    const tileHits = countNukeSuggestionTileHits(context, cx, cy, {
+      innerSquared,
+      outerSquared,
+    });
+    const impact = scoreNukeSuggestionImpact(game, {
+      context,
+      cx,
+      cy,
+      outerSquared,
+      tileHits,
+    });
+    const samHits = collectNukeSuggestionSamHits(game, context, cx, cy, outerSquared);
 
-    const minBucketX = Math.floor((cx - context.magnitude.outer) / NUKE_SUGGESTION_BUCKET_SIZE);
-    const maxBucketX = Math.floor((cx + context.magnitude.outer) / NUKE_SUGGESTION_BUCKET_SIZE);
-    const minBucketY = Math.floor((cy - context.magnitude.outer) / NUKE_SUGGESTION_BUCKET_SIZE);
-    const maxBucketY = Math.floor((cy + context.magnitude.outer) / NUKE_SUGGESTION_BUCKET_SIZE);
-
-    for (let by = minBucketY; by <= maxBucketY; by++) {
-      for (let bx = minBucketX; bx <= maxBucketX; bx++) {
-        const bucket = context.tileInfo.buckets.get(`${bx}:${by}`);
-        if (!bucket) {
-          continue;
-        }
-
-        for (const point of bucket) {
-          const dx = point.x - cx;
-          const dy = point.y - cy;
-          const distSquared = dx * dx + dy * dy;
-          if (distSquared <= innerSquared) {
-            expectedTilesHit += 1;
-            innerTiles++;
-          } else if (distSquared <= outerSquared) {
-            expectedTilesHit += 0.5;
-            outerTiles++;
-          }
-        }
-      }
-    }
-
-    let populationLoss = 0;
-    let cityPopulationHit = 0;
-    let citiesHit = 0;
-    let economicImpact = 0;
-    let economicStructuresHit = 0;
-    let hitEconomicStructureWeights = new Map();
-    let hitCityPopulationWeights = new Map();
-    let hitDestructionStructureWeights = new Map();
-    let destructionImpact = 0;
-
-    if (context.scoreMode === "economic" || context.scoreMode === "destruction") {
-      const economicResult = estimateNukeEconomicImpact(context, cx, cy, outerSquared);
-      economicImpact = economicResult.economicImpact;
-      economicStructuresHit = economicResult.economicStructuresHit;
-      hitEconomicStructureWeights =
-        economicResult.hitEconomicStructureWeights || new Map();
-    }
-
-    if (context.scoreMode !== "economic") {
-      populationLoss = estimateNukePopulationLoss(
-        game,
-        context.spec.type,
-        context.targetPlayer,
-        expectedTilesHit,
-      );
-      const cityResult = estimateCityPopulationHit(
-        game,
-        context,
-        cx,
-        cy,
-        outerSquared,
-      );
-      cityPopulationHit = cityResult.cityPopulationHit;
-      citiesHit = cityResult.citiesHit;
-      hitCityPopulationWeights = cityResult.hitCityPopulationWeights || new Map();
-    }
-    if (context.scoreMode === "destruction") {
-      hitDestructionStructureWeights = combineDestructionStructureWeights(
-        hitEconomicStructureWeights,
-        hitCityPopulationWeights,
-      );
-      for (const weight of hitDestructionStructureWeights.values()) {
-        destructionImpact += weight;
-      }
-      destructionImpact += populationLoss * 0.15;
-    }
-    let samsHit = 0;
-    const hitSamKeys = [];
-    for (const sam of context.targetSams || []) {
-      try {
-        const samTile = getUnitTile(sam);
-        if (samTile === null) {
-          continue;
-        }
-        const sx = game.x(samTile);
-        const sy = game.y(samTile);
-        const dx = sx - cx;
-        const dy = sy - cy;
-        if (dx * dx + dy * dy < outerSquared) {
-          samsHit++;
-          const samKey = getUnitKey(sam);
-          if (samKey) {
-            hitSamKeys.push(samKey);
-          }
-        }
-      } catch (_error) {
-        // Ignore stale unit refs.
-      }
-    }
-
-    const totalScore =
-      context.scoreMode === "economic"
-        ? economicImpact
-        : context.scoreMode === "destruction"
-          ? destructionImpact
-          : populationLoss + cityPopulationHit + economicImpact;
+    const totalScore = getNukeSuggestionTotalScore(context.scoreMode, {
+      economicImpact: impact.economicImpact,
+      destructionImpact: impact.destructionImpact,
+      populationLoss: impact.populationLoss,
+      cityPopulationHit: impact.cityPopulationHit,
+    });
     if (totalScore <= 0) {
       return null;
     }
@@ -1707,21 +1666,159 @@
       x: cx,
       y: cy,
       magnitude: context.magnitude,
-      populationLoss,
-      cityPopulationHit,
-      economicImpact,
-      expectedTilesHit,
-      innerTiles,
-      outerTiles,
-      citiesHit,
-      economicStructuresHit,
-      hitEconomicStructureWeights: hitEconomicStructureWeights || new Map(),
-      hitCityPopulationWeights: hitCityPopulationWeights || new Map(),
-      hitDestructionStructureWeights: hitDestructionStructureWeights || new Map(),
-      hitSamKeys,
-      samsHit,
+      populationLoss: impact.populationLoss,
+      cityPopulationHit: impact.cityPopulationHit,
+      economicImpact: impact.economicImpact,
+      expectedTilesHit: tileHits.expectedTilesHit,
+      innerTiles: tileHits.innerTiles,
+      outerTiles: tileHits.outerTiles,
+      citiesHit: impact.citiesHit,
+      economicStructuresHit: impact.economicStructuresHit,
+      hitEconomicStructureWeights: impact.hitEconomicStructureWeights,
+      hitCityPopulationWeights: impact.hitCityPopulationWeights,
+      hitDestructionStructureWeights: impact.hitDestructionStructureWeights,
+      hitSamKeys: samHits.hitSamKeys,
+      samsHit: samHits.samsHit,
       totalScore,
     };
+  }
+
+  function isNukeScoreTileAllowed(game, context, tile) {
+    return (
+      tile != null &&
+      isNukeSuggestionTileAllowed(
+        game,
+        context.myPlayer,
+        tile,
+        context.magnitude,
+        context.teamStructures,
+      )
+    );
+  }
+
+  function getNukeTileCoordinates(game, tile) {
+    try {
+      return { x: game.x(tile), y: game.y(tile) };
+    } catch (_error) {
+      captureRuntimeException(
+        _error,
+        "engine/ingame/nuke-suggestions.js:getNukeTileCoordinates",
+      );
+      return null;
+    }
+  }
+
+  function countNukeSuggestionTileHits(context, cx, cy, radii) {
+    const result = { expectedTilesHit: 0, innerTiles: 0, outerTiles: 0 };
+    const outer = context.magnitude.outer;
+    const minBucketX = Math.floor((cx - outer) / NUKE_SUGGESTION_BUCKET_SIZE);
+    const maxBucketX = Math.floor((cx + outer) / NUKE_SUGGESTION_BUCKET_SIZE);
+    const minBucketY = Math.floor((cy - outer) / NUKE_SUGGESTION_BUCKET_SIZE);
+    const maxBucketY = Math.floor((cy + outer) / NUKE_SUGGESTION_BUCKET_SIZE);
+    for (let by = minBucketY; by <= maxBucketY; by++) {
+      for (let bx = minBucketX; bx <= maxBucketX; bx++) {
+        countNukeBucketHits(
+          context.tileInfo.buckets.get(`${bx}:${by}`),
+          cx,
+          cy,
+          radii,
+          result,
+        );
+      }
+    }
+    return result;
+  }
+
+  function countNukeBucketHits(bucket, cx, cy, radii, result) {
+    for (const point of bucket || []) {
+      const dx = point.x - cx;
+      const dy = point.y - cy;
+      const distanceSquared = dx * dx + dy * dy;
+      if (distanceSquared <= radii.innerSquared) {
+        result.expectedTilesHit += 1;
+        result.innerTiles++;
+      } else if (distanceSquared <= radii.outerSquared) {
+        result.expectedTilesHit += 0.5;
+        result.outerTiles++;
+      }
+    }
+  }
+
+  function scoreNukeSuggestionImpact(game, request) {
+    const { context, cx, cy, outerSquared, tileHits } = request;
+    const result = {
+      populationLoss: 0,
+      cityPopulationHit: 0,
+      citiesHit: 0,
+      economicImpact: 0,
+      economicStructuresHit: 0,
+      hitEconomicStructureWeights: new Map(),
+      hitCityPopulationWeights: new Map(),
+      hitDestructionStructureWeights: new Map(),
+      destructionImpact: 0,
+    };
+    if (
+      context.scoreMode === "economic" ||
+      context.scoreMode === "destruction"
+    ) {
+      const economic = estimateNukeEconomicImpact(context, cx, cy, outerSquared);
+      result.economicImpact = economic.economicImpact;
+      result.economicStructuresHit = economic.economicStructuresHit;
+      result.hitEconomicStructureWeights =
+        economic.hitEconomicStructureWeights || new Map();
+    }
+    if (context.scoreMode !== "economic") {
+      result.populationLoss = estimateNukePopulationLoss(
+        game,
+        context.spec.type,
+        context.targetPlayer,
+        tileHits.expectedTilesHit,
+      );
+      const city = estimateCityPopulationHit(game, context, cx, cy, outerSquared);
+      result.cityPopulationHit = city.cityPopulationHit;
+      result.citiesHit = city.citiesHit;
+      result.hitCityPopulationWeights = city.hitCityPopulationWeights || new Map();
+    }
+    if (context.scoreMode === "destruction") {
+      result.hitDestructionStructureWeights = combineDestructionStructureWeights(
+        result.hitEconomicStructureWeights,
+        result.hitCityPopulationWeights,
+      );
+      result.destructionImpact =
+        Array.from(result.hitDestructionStructureWeights.values()).reduce(
+          (sum, weight) => sum + weight,
+          0,
+        ) +
+        result.populationLoss * 0.15;
+    }
+    return result;
+  }
+
+  function collectNukeSuggestionSamHits(game, context, cx, cy, outerSquared) {
+    const hitSamKeys = [];
+    for (const sam of context.targetSams || []) {
+      try {
+        const samTile = getUnitTile(sam);
+        if (samTile === null) continue;
+        const dx = game.x(samTile) - cx;
+        const dy = game.y(samTile) - cy;
+        if (dx * dx + dy * dy >= outerSquared) continue;
+        const samKey = getUnitKey(sam);
+        if (samKey) hitSamKeys.push(samKey);
+      } catch (_error) {
+        captureRuntimeException(
+          _error,
+          "engine/ingame/nuke-suggestions.js:collectNukeSuggestionSamHits",
+        );
+      }
+    }
+    return { samsHit: hitSamKeys.length, hitSamKeys };
+  }
+
+  function getNukeSuggestionTotalScore(scoreMode, impact) {
+    if (scoreMode === "economic") return impact.economicImpact;
+    if (scoreMode === "destruction") return impact.destructionImpact;
+    return impact.populationLoss + impact.cityPopulationHit + impact.economicImpact;
   }
 
   function refineNukeSuggestionCandidate(game, context, candidate) {
@@ -1813,7 +1910,7 @@
         continue;
       }
 
-      let distance = Infinity;
+      let distance;
       try {
         distance = game.manhattanDist(siloTile, targetTile);
       } catch (_error) {
@@ -1834,6 +1931,7 @@
       const speed = Number(game?.config?.().defaultNukeSpeed?.());
       return Number.isFinite(speed) && speed > 0 ? speed : 6;
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1836");
       return 6;
     }
   }
@@ -1843,6 +1941,7 @@
       const range = Number(game?.config?.().defaultNukeTargetableRange?.());
       return Number.isFinite(range) && range > 0 ? range : 150;
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1845");
       return 150;
     }
   }
@@ -1852,6 +1951,7 @@
       const speed = Number(game?.config?.().defaultSamMissileSpeed?.());
       return Number.isFinite(speed) && speed > 0 ? speed : 12;
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1854");
       return 12;
     }
   }
@@ -1861,6 +1961,7 @@
       const cooldown = Number(game?.config?.().SAMCooldown?.());
       return Number.isFinite(cooldown) && cooldown > 0 ? cooldown : 120;
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1863");
       return 120;
     }
   }
@@ -1933,6 +2034,7 @@
       const range = Number(game?.config?.().samRange?.(rangeLevel));
       return Number.isFinite(range) && range > 0 ? range : 70;
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1935");
       return 70;
     }
   }
@@ -1942,6 +2044,7 @@
       const range = Number(game?.config?.().maxSamRange?.());
       return Number.isFinite(range) && range > 0 ? range : 150;
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1944");
       return 150;
     }
   }
@@ -2053,66 +2156,17 @@
     }
   }
 
-  function canSamInterceptFromTrajectoryIndex(
-    game,
-    sourceTile,
-    targetTile,
-    trajectory,
-    currentIndex,
-    samTile,
-    samRangeSquared,
-    samMissileSpeed,
-    targetableRangeSquared,
-  ) {
-    const explosionTick = trajectory.length - currentIndex;
-    for (let index = currentIndex; index < trajectory.length; index++) {
-      const tile = trajectory[index];
-      if (
-        !isNukeSuggestionTrajectoryTargetable(
-          game,
-          sourceTile,
-          targetTile,
-          tile,
-          targetableRangeSquared,
-        )
-      ) {
-        continue;
-      }
-
-      let distSquared = Infinity;
-      let samTickToReach = Infinity;
-      try {
-        distSquared = game.euclideanDistSquared(samTile, tile);
-        samTickToReach = Math.ceil(game.manhattanDist(samTile, tile) / samMissileSpeed);
-      } catch (_error) {
-        continue;
-      }
-
-      const nukeTickToReach = index - currentIndex;
-      const tickBeforeShooting = nukeTickToReach - samTickToReach;
-      if (
-        distSquared <= samRangeSquared &&
-        samTickToReach < explosionTick &&
-        tickBeforeShooting >= 0
-      ) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  function findSamInterceptionOpportunity(
-    game,
-    sourceTile,
-    targetTile,
-    trajectory,
-    sam,
-    sams,
-    rocketDirectionUp = true,
-    nukeLaunchOffsetTicks = 0,
-    samAvailableAtTick = 0,
-  ) {
+  function findSamInterceptionOpportunity(game, request) {
+    const {
+      sourceTile,
+      targetTile,
+      trajectory,
+      sam,
+      sams,
+      rocketDirectionUp = true,
+      nukeLaunchOffsetTicks = 0,
+      samAvailableAtTick = 0,
+    } = request;
     const samTile = getUnitTile(sam);
     if (samTile === null || !Array.isArray(trajectory) || trajectory.length === 0) {
       return null;
@@ -2128,90 +2182,89 @@
     const launchTick = Math.max(0, Math.floor(Number(nukeLaunchOffsetTicks) || 0));
     const availableTick = Math.max(0, Math.floor(Number(samAvailableAtTick) || 0));
     const earliestShootTick = Math.max(launchTick, availableTick);
+    const scan = {
+      sourceTile,
+      targetTile,
+      trajectory,
+      sam,
+      samTile,
+      rocketDirectionUp,
+      targetableRangeSquared,
+      samMissileSpeed,
+      samRangeSquared,
+      detectionRangeSquared,
+      launchTick,
+      earliestShootTick,
+    };
     let best = null;
 
     for (let index = 0; index < trajectory.length; index++) {
-      const tile = trajectory[index];
-      if (
-        !isNukeSuggestionTrajectoryTargetable(
-          game,
-          sourceTile,
-          targetTile,
-          tile,
-          targetableRangeSquared,
-        )
-      ) {
-        continue;
-      }
-
-      let samTickToReach = Infinity;
-      let distSquared = Infinity;
-      try {
-        distSquared = game.euclideanDistSquared(samTile, tile);
-        samTickToReach = Math.ceil(game.manhattanDist(samTile, tile) / samMissileSpeed);
-      } catch (_error) {
-        continue;
-      }
-      if (distSquared > samRangeSquared) {
-        continue;
-      }
-
-      const shootTick = launchTick + index - samTickToReach;
-      if (shootTick < earliestShootTick) {
-        continue;
-      }
-      if (shootTick + samTickToReach >= launchTick + trajectory.length) {
-        continue;
-      }
-
-      const nukeIndexAtShot = Math.max(
-        0,
-        Math.min(trajectory.length - 1, shootTick - launchTick),
-      );
-      try {
-        if (
-          game.euclideanDistSquared(samTile, trajectory[nukeIndexAtShot]) >
-            detectionRangeSquared
-        ) {
-          continue;
-        }
-      } catch (_error) {
-        continue;
-      }
-
-      if (!best || shootTick < best.shootTick) {
-        best = {
-          sam,
-          samTile,
-          rocketDirectionUp,
-          shootTick,
-          interceptTile: tile,
-          trajectoryIndex: index,
-        };
+      const candidate = getSamTrajectoryInterception(game, scan, index);
+      if (candidate && (!best || candidate.shootTick < best.shootTick)) {
+        best = candidate;
       }
     }
 
     return best;
   }
 
-  function findInterceptingSam(
-    game,
-    sourceTile,
-    targetTile,
-    sams,
-    rocketDirectionUp = true,
-    pendingSams = [],
-    pendingSamReadyTicks = null,
-  ) {
-    return findInterceptingSams(
-      game,
-      sourceTile,
-      targetTile,
-      sams,
-      rocketDirectionUp,
-      pendingSams,
-      pendingSamReadyTicks,
-    )[0] || null;
+  function getSamTrajectoryInterception(game, scan, index) {
+    const tile = scan.trajectory[index];
+    if (
+      !isNukeSuggestionTrajectoryTargetable(
+        game,
+        scan.sourceTile,
+        scan.targetTile,
+        tile,
+        scan.targetableRangeSquared,
+      )
+    ) {
+      return null;
+    }
+    let distanceSquared;
+    let samTickToReach;
+    try {
+      distanceSquared = game.euclideanDistSquared(scan.samTile, tile);
+      samTickToReach = Math.ceil(
+        game.manhattanDist(scan.samTile, tile) / scan.samMissileSpeed,
+      );
+    } catch (_error) {
+      captureRuntimeException(
+        _error,
+        "engine/ingame/nuke-suggestions.js:getSamTrajectoryInterception",
+      );
+      return null;
+    }
+    const shootTick = scan.launchTick + index - samTickToReach;
+    if (distanceSquared > scan.samRangeSquared) return null;
+    if (shootTick < scan.earliestShootTick) return null;
+    if (shootTick + samTickToReach >= scan.launchTick + scan.trajectory.length) {
+      return null;
+    }
+    if (!isSamDetectionRangeReached(game, scan, shootTick)) return null;
+    return {
+      sam: scan.sam,
+      samTile: scan.samTile,
+      rocketDirectionUp: scan.rocketDirectionUp,
+      shootTick,
+      interceptTile: tile,
+      trajectoryIndex: index,
+    };
+  }
+
+  function isSamDetectionRangeReached(game, scan, shootTick) {
+    const nukeIndex = Math.max(
+      0,
+      Math.min(scan.trajectory.length - 1, shootTick - scan.launchTick),
+    );
+    try {
+      return (
+        game.euclideanDistSquared(scan.samTile, scan.trajectory[nukeIndex]) <=
+        scan.detectionRangeSquared
+      );
+    } catch (_error) {
+      return false;
+    }
   }
 
   function getPendingSamAvailableAtTick(game, sam, pendingSamReadyTicks) {
@@ -2229,15 +2282,15 @@
   // completion ticks are converted to a relative availability tick so a SAM only
   // counts when it can launch its interceptor before the missile reaches that path
   // point — completing before impact alone is not sufficient.
-  function findInterceptingSams(
-    game,
-    sourceTile,
-    targetTile,
-    sams,
-    rocketDirectionUp = true,
-    pendingSams = [],
-    pendingSamReadyTicks = null,
-  ) {
+  function findInterceptingSams(game, request) {
+    const {
+      sourceTile,
+      targetTile,
+      sams,
+      rocketDirectionUp = true,
+      pendingSams = [],
+      pendingSamReadyTicks = null,
+    } = request;
     const activeSams = Array.isArray(sams) ? sams : [];
     const buildingSams = Array.isArray(pendingSams) ? pendingSams : [];
     if (activeSams.length === 0 && buildingSams.length === 0) {
@@ -2259,18 +2312,7 @@
     ];
 
     for (const { sam, pending } of entries) {
-      const samKey = getUnitKey(sam);
-      if (samKey && seenSamKeys.has(samKey)) {
-        continue;
-      }
-      if (samKey) {
-        seenSamKeys.add(samKey);
-      }
-
-      const samTile = getUnitTile(sam);
-      if (samTile === null) {
-        continue;
-      }
+      if (!markSamEntryUnseen(sam, seenSamKeys)) continue;
 
       const availableAt = pending
         ? getPendingSamAvailableAtTick(game, sam, pendingSamReadyTicks)
@@ -2281,37 +2323,51 @@
 
       // A building SAM can only borrow the stacked range of other pending SAMs
       // that are also ready by the time it comes online. Active SAMs always count.
-      const rangeSams = pending
-        ? [
-            ...activeSams,
-            ...buildingSams.filter(
-              (candidate) =>
-                getPendingSamAvailableAtTick(
-                  game,
-                  candidate,
-                  pendingSamReadyTicks,
-                ) <= availableAt,
-            ),
-          ]
-        : activeSams;
+      const rangeSams = getAvailableSamRangeStack(game, {
+        pending,
+        availableAt,
+        activeSams,
+        buildingSams,
+        pendingSamReadyTicks,
+      });
 
-      const opportunity = findSamInterceptionOpportunity(
-        game,
+      const opportunity = findSamInterceptionOpportunity(game, {
         sourceTile,
         targetTile,
         trajectory,
         sam,
-        rangeSams,
+        sams: rangeSams,
         rocketDirectionUp,
-        0,
-        availableAt,
-      );
+        samAvailableAtTick: availableAt,
+      });
       if (opportunity) {
         interceptingSams.push(sam);
       }
     }
 
     return interceptingSams;
+  }
+
+  function markSamEntryUnseen(sam, seenSamKeys) {
+    const samKey = getUnitKey(sam);
+    if (samKey && seenSamKeys.has(samKey)) return false;
+    if (samKey) seenSamKeys.add(samKey);
+    return getUnitTile(sam) !== null;
+  }
+
+  function getAvailableSamRangeStack(game, request) {
+    if (!request.pending) return request.activeSams;
+    return [
+      ...request.activeSams,
+      ...request.buildingSams.filter(
+        (candidate) =>
+          getPendingSamAvailableAtTick(
+            game,
+            candidate,
+            request.pendingSamReadyTicks,
+          ) <= request.availableAt,
+      ),
+    ];
   }
 
   function getInterceptingSamsWeight(sams) {
@@ -2329,32 +2385,29 @@
       .reduce((sum, stackWeight) => sum + stackWeight, 0);
   }
 
-  function chooseBestNukeRocketDirection(
-    game,
-    sourceTile,
-    targetTile,
-    sams,
-    pendingSams = [],
-    pendingSamReadyTicks = null,
-  ) {
-    const upSams = findInterceptingSams(
-      game,
+  function chooseBestNukeRocketDirection(game, request) {
+    const {
       sourceTile,
       targetTile,
       sams,
-      true,
-      pendingSams,
-      pendingSamReadyTicks,
-    );
-    const downSams = findInterceptingSams(
-      game,
+      pendingSams = [],
+      pendingSamReadyTicks = null,
+    } = request;
+    const interceptionRequest = {
       sourceTile,
       targetTile,
       sams,
-      false,
       pendingSams,
       pendingSamReadyTicks,
-    );
+    };
+    const upSams = findInterceptingSams(game, {
+      ...interceptionRequest,
+      rocketDirectionUp: true,
+    });
+    const downSams = findInterceptingSams(game, {
+      ...interceptionRequest,
+      rocketDirectionUp: false,
+    });
     const upWeight = getInterceptingSamsWeight(upSams);
     const downWeight = getInterceptingSamsWeight(downSams);
 
@@ -2393,14 +2446,13 @@
       spec,
       scoreMode: spec.scoreMode || "population",
     };
-    const seeds = buildNukeSuggestionSeeds(
-      game,
-      context.targetPlayer,
-      context.tileInfo,
-      context.structures,
+    const seeds = buildNukeSuggestionSeeds(game, {
+      targetPlayer: context.targetPlayer,
+      tileInfo: context.tileInfo,
+      structures: context.structures,
       magnitude,
       spec,
-    );
+    });
 
     const rawCandidates = [];
     for (const seed of seeds) {
@@ -2443,14 +2495,13 @@
         continue;
       }
 
-      const directionPlan = chooseBestNukeRocketDirection(
-        game,
+      const directionPlan = chooseBestNukeRocketDirection(game, {
         sourceTile,
-        candidate.tile,
-        context.targetSams,
-        context.pendingTargetSams,
-        context.pendingSamReadyTicks,
-      );
+        targetTile: candidate.tile,
+        sams: context.targetSams,
+        pendingSams: context.pendingTargetSams,
+        pendingSamReadyTicks: context.pendingSamReadyTicks,
+      });
       const interceptingSam = directionPlan.interceptingSams[0] || null;
       const candidateWithSource = {
         ...candidate,
@@ -2662,105 +2713,9 @@
 
   function renderNukeSuggestions(container, game, transform, results) {
     const activeIds = new Set();
-
     for (const result of results) {
-      let screenPos = null;
-      try {
-        nukeSuggestionWorldQueryArg.x = result.x;
-        nukeSuggestionWorldQueryArg.y = result.y;
-        screenPos = transform.worldToScreenCoordinates(nukeSuggestionWorldQueryArg);
-      } catch (_error) {
-        screenPos = null;
-      }
-
-      if (!Number.isFinite(screenPos?.x) || !Number.isFinite(screenPos?.y)) {
-        continue;
-      }
-
-      const radius = Math.max(
-        12,
-        getNukeSuggestionScreenRadius(
-          transform,
-          { ...screenPos, worldX: result.x, worldY: result.y },
-          result.magnitude.outer,
-        ),
-      );
-      if (
-        screenPos.x < -radius - 220 ||
-        screenPos.y < -radius - 220 ||
-        screenPos.x > window.innerWidth + radius + 220 ||
-        screenPos.y > window.innerHeight + radius + 220
-      ) {
-        continue;
-      }
-
-      const markerId = result.id;
-      activeIds.add(markerId);
-
-      let cached = nukeSuggestionDomCache.get(markerId);
-      if (!cached) {
-        const zone = document.createElement("div");
-        zone.className = "openfront-helper-nuke-suggestion-zone";
-        zone.dataset.suggestionId = markerId;
-        container.appendChild(zone);
-
-        const label = document.createElement("div");
-        label.className = "openfront-helper-nuke-suggestion-label";
-        label.dataset.suggestionId = markerId;
-        container.appendChild(label);
-
-        // Static CSS properties set once on element creation — never change.
-        const labelGap = markerId.startsWith("economic")
-          ? "22px"
-          : markerId === "hydrogen" ? "16px" : "10px";
-        for (const element of [zone, label]) {
-          element.style.setProperty("--suggestion-color", result.spec.color);
-          element.style.setProperty("--suggestion-fill", result.spec.fill);
-          element.style.setProperty("--suggestion-glow", result.spec.glow);
-          element.style.setProperty("--suggestion-label-gap", labelGap);
-        }
-
-        cached = {
-          zone,
-          label,
-          lastX: Infinity,
-          lastY: Infinity,
-          lastRadius: Infinity,
-          lastStatus: null,
-        };
-        nukeSuggestionDomCache.set(markerId, cached);
-      }
-
-      const { zone, label } = cached;
-      const status = result.intercepted ? "blocked" : "active";
-
-      if (cached.lastStatus !== status) {
-        cached.lastStatus = status;
-        zone.dataset.suggestionStatus = status;
-        label.dataset.suggestionStatus = status;
-      }
-
-      // Only update position/size CSS when values have meaningfully changed.
-      if (
-        Math.abs(screenPos.x - cached.lastX) > 0.5 ||
-        Math.abs(screenPos.y - cached.lastY) > 0.5 ||
-        Math.abs(radius - cached.lastRadius) > 0.5
-      ) {
-        cached.lastX = screenPos.x;
-        cached.lastY = screenPos.y;
-        cached.lastRadius = radius;
-        for (const element of [zone, label]) {
-          element.style.setProperty("--suggestion-x", `${screenPos.x}px`);
-          element.style.setProperty("--suggestion-y", `${screenPos.y}px`);
-          element.style.setProperty("--suggestion-radius", `${radius}px`);
-          element.style.setProperty("--suggestion-diameter", `${radius * 2}px`);
-        }
-      }
-
-      const newText = formatNukeSuggestionLabel(result);
-      if (label.textContent !== newText) {
-        label.textContent = newText;
-      }
+      const markerId = renderNukeSuggestionResult(container, transform, result);
+      if (markerId !== null) activeIds.add(markerId);
     }
 
     for (const [id, { zone, label }] of nukeSuggestionDomCache) {
@@ -2772,24 +2727,122 @@
     }
   }
 
+  function renderNukeSuggestionResult(container, transform, result) {
+    const screenPos = getNukeSuggestionScreenPosition(transform, result);
+    if (screenPos === null) return null;
+    const radius = Math.max(
+      12,
+      getNukeSuggestionScreenRadius(
+        transform,
+        { ...screenPos, worldX: result.x, worldY: result.y },
+        result.magnitude.outer,
+      ),
+    );
+    if (isNukeSuggestionOffscreen(screenPos, radius)) return null;
+    let cached = nukeSuggestionDomCache.get(result.id);
+    if (!cached) cached = createNukeSuggestionDomEntry(container, result);
+    updateNukeSuggestionDomEntry(cached, result, screenPos, radius);
+    return result.id;
+  }
+
+  function getNukeSuggestionScreenPosition(transform, result) {
+    try {
+      nukeSuggestionWorldQueryArg.x = result.x;
+      nukeSuggestionWorldQueryArg.y = result.y;
+      const position = transform.worldToScreenCoordinates(nukeSuggestionWorldQueryArg);
+      return Number.isFinite(position?.x) && Number.isFinite(position?.y)
+        ? position
+        : null;
+    } catch (_error) {
+      captureRuntimeException(
+        _error,
+        "engine/ingame/nuke-suggestions.js:getNukeSuggestionScreenPosition",
+      );
+      return null;
+    }
+  }
+
+  function isNukeSuggestionOffscreen(position, radius) {
+    return (
+      position.x < -radius - 220 ||
+      position.y < -radius - 220 ||
+      position.x > window.innerWidth + radius + 220 ||
+      position.y > window.innerHeight + radius + 220
+    );
+  }
+
+  function createNukeSuggestionDomEntry(container, result) {
+    const zone = document.createElement("div");
+    zone.className = "openfront-helper-nuke-suggestion-zone";
+    const label = document.createElement("div");
+    label.className = "openfront-helper-nuke-suggestion-label";
+    let labelGap = "10px";
+    if (result.id === "hydrogen") labelGap = "16px";
+    if (result.id.startsWith("economic")) labelGap = "22px";
+    for (const element of [zone, label]) {
+      element.dataset.suggestionId = result.id;
+      element.style.setProperty("--suggestion-color", result.spec.color);
+      element.style.setProperty("--suggestion-fill", result.spec.fill);
+      element.style.setProperty("--suggestion-glow", result.spec.glow);
+      element.style.setProperty("--suggestion-label-gap", labelGap);
+      container.appendChild(element);
+    }
+    const entry = {
+      zone,
+      label,
+      lastX: Infinity,
+      lastY: Infinity,
+      lastRadius: Infinity,
+      lastStatus: null,
+    };
+    nukeSuggestionDomCache.set(result.id, entry);
+    return entry;
+  }
+
+  function updateNukeSuggestionDomEntry(entry, result, position, radius) {
+    const { zone, label } = entry;
+    const status = result.intercepted ? "blocked" : "active";
+    if (entry.lastStatus !== status) {
+      entry.lastStatus = status;
+      zone.dataset.suggestionStatus = status;
+      label.dataset.suggestionStatus = status;
+    }
+    if (hasNukeSuggestionGeometryChanged(entry, position, radius)) {
+      entry.lastX = position.x;
+      entry.lastY = position.y;
+      entry.lastRadius = radius;
+      for (const element of [zone, label]) {
+        element.style.setProperty("--suggestion-x", `${position.x}px`);
+        element.style.setProperty("--suggestion-y", `${position.y}px`);
+        element.style.setProperty("--suggestion-radius", `${radius}px`);
+        element.style.setProperty("--suggestion-diameter", `${radius * 2}px`);
+      }
+    }
+    const text = formatNukeSuggestionLabel(result);
+    if (label.textContent !== text) label.textContent = text;
+  }
+
+  function hasNukeSuggestionGeometryChanged(entry, position, radius) {
+    return (
+      Math.abs(position.x - entry.lastX) > 0.5 ||
+      Math.abs(position.y - entry.lastY) > 0.5 ||
+      Math.abs(radius - entry.lastRadius) > 0.5
+    );
+  }
+
   function clearNukeSuggestionState(container = null) {
-    currentNukeSuggestionResults = [];
-    lastNukeSuggestionSignature = "";
-    lastNukeSuggestionComputedAt = 0;
-    lastNukeSuggestionSignatureCheckAt = 0;
+    runtimeState.currentNukeSuggestionResults = [];
+    runtimeState.lastNukeSuggestionSignature = "";
+    runtimeState.lastNukeSuggestionComputedAt = 0;
+    runtimeState.lastNukeSuggestionSignatureCheckAt = 0;
     nukeSuggestionTileInfoCache = null;
-    nukeSuggestionTileComputeKey = null;
+    runtimeState.nukeSuggestionTileComputeKey = null;
     nukeSuggestionDomCache.clear();
     container?.replaceChildren();
   }
 
   function isAutoNukeRadialTarget(params) {
-    if (!autoNukeEnabled || !params?.game || !params?.myPlayer?.isPlayer?.()) {
-      return false;
-    }
-    if (!params.selected?.isPlayer?.() || !params.selected?.isAlive?.()) {
-      return false;
-    }
+    if (!hasValidAutoNukeRadialContext(params)) return false;
     if (getPlayerSmallId(params.myPlayer) === getPlayerSmallId(params.selected)) {
       return false;
     }
@@ -2797,6 +2850,14 @@
       return true;
     }
     return autoNukeIncludeAllies;
+  }
+
+  function hasValidAutoNukeRadialContext(params) {
+    if (!runtimeState.autoNukeEnabled || !params?.game) return false;
+    if (params.myPlayer?.isPlayer?.() !== true) return false;
+    return (
+      params.selected?.isPlayer?.() === true && params.selected.isAlive?.() === true
+    );
   }
 
   function hasAutoNukeBuildTypeAvailable(game, player) {
@@ -2918,6 +2979,7 @@
       cx = game.x(samTile);
       cy = game.y(samTile);
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:2920");
       return null;
     }
 
@@ -2939,32 +3001,17 @@
       return null;
     }
 
-    const hitSamKeys = [];
     const combinedSams = [
       ...(baseContext.targetSams || []),
       ...(baseContext.pendingTargetSams || []),
     ];
-    const seenHitSam = new Set();
-    for (const targetSam of combinedSams) {
-      const targetSamTile = getUnitTile(targetSam);
-      if (targetSamTile === null) {
-        continue;
-      }
-
-      try {
-        const dx = game.x(targetSamTile) - cx;
-        const dy = game.y(targetSamTile) - cy;
-        if (dx * dx + dy * dy <= outerSquared) {
-          const samKey = getUnitKey(targetSam);
-          if (samKey && !seenHitSam.has(samKey)) {
-            seenHitSam.add(samKey);
-            hitSamKeys.push(samKey);
-          }
-        }
-      } catch (_error) {
-        // Ignore stale SAM refs.
-      }
-    }
+    const hitSamKeys = collectSamsWithinBlast(
+      game,
+      combinedSams,
+      cx,
+      cy,
+      outerSquared,
+    );
 
     const samKey = getUnitKey(sam);
     if (!samKey || !hitSamKeys.includes(samKey)) {
@@ -2978,16 +3025,10 @@
     // Compute total level of units in this SAM stack (live + pending). Used to
     // scale insurance overshoot so single weak SAMs don't waste nukes while
     // thick high-level stacks get proper coverage.
-    let samClearStackLevelSum = 0;
-    const liveSamsInStack = (baseContext.targetSams || []).filter(
-      (s) => samClearStackSamKeys.includes(getUnitKey(s)),
+    const samClearStackLevelSum = getSamClearStackLevelSum(
+      baseContext.targetSams,
+      samClearStackSamKeys,
     );
-    for (const s of liveSamsInStack) {
-      samClearStackLevelSum += Math.max(1, getUnitLevel(s));
-    }
-    if (samClearStackLevelSum === 0) {
-      samClearStackLevelSum = samClearStackSamKeys.length || 1;
-    }
 
     const sourceSilo = findClosestReadySilo(game, samTile, baseContext.readySilos);
     const sourceTile = getUnitTile(sourceSilo);
@@ -2995,14 +3036,13 @@
       return null;
     }
 
-    const directionPlan = chooseBestNukeRocketDirection(
-      game,
+    const directionPlan = chooseBestNukeRocketDirection(game, {
       sourceTile,
-      samTile,
-      baseContext.targetSams,
-      baseContext.pendingTargetSams,
-      baseContext.pendingSamReadyTicks,
-    );
+      targetTile: samTile,
+      sams: baseContext.targetSams,
+      pendingSams: baseContext.pendingTargetSams,
+      pendingSamReadyTicks: baseContext.pendingSamReadyTicks,
+    });
     const samClearSpec = {
       ...spec,
       id: `sam-clear-${spec.id}`,
@@ -3053,166 +3093,38 @@
     };
   }
 
-  function isAutoNukeBurnStructureForMode(structure, mode) {
-    if (structure?.tile == null) {
-      return false;
-    }
-    if (mode === "destruction" || mode === "sams") {
-      return structure.type === "City" || getEconomicStructureWeight(structure) > 0;
-    }
-    if (mode === "economic") {
-      return getEconomicStructureWeight(structure) > 0;
-    }
-    return structure.type === "City";
-  }
-
-  function getAutoNukeBurnStructureFallbackScore(structure, mode) {
-    if (mode === "destruction" || mode === "sams") {
-      return (structure.type === "City" ? getUnitLevel(structure.unit) * 650000 : 0) +
-        getEconomicStructureWeight(structure);
-    }
-    if (mode === "economic") {
-      return getEconomicStructureWeight(structure);
-    }
-    return structure.type === "City" ? getUnitLevel(structure.unit) : 0;
-  }
-
-  function scoreAutoNukeTargetBuildingBurnCandidate(
-    game,
-    baseContext,
-    spec,
-    sam,
-    unlockScore,
-    mode,
-  ) {
-    const samTile = getUnitTile(sam);
-    const samKey = getUnitKey(sam);
-    if (samTile === null || !samKey) {
-      return null;
-    }
-
-    const relevantStructures = baseContext.structures
-      .filter((structure) => isAutoNukeBurnStructureForMode(structure, mode))
-      .sort((a, b) => {
-        let distanceA = Infinity;
-        let distanceB = Infinity;
-        try {
-          distanceA = game.manhattanDist(samTile, a.tile);
-          distanceB = game.manhattanDist(samTile, b.tile);
-        } catch (_error) {
-          // Keep invalid stale refs at the end.
-        }
-        return distanceA - distanceB ||
-          getAutoNukeBurnStructureFallbackScore(b, mode) -
-            getAutoNukeBurnStructureFallbackScore(a, mode);
-      });
-
-    for (const structure of relevantStructures) {
-      const targetTile = structure.tile;
-      const magnitude = getNukeSuggestionMagnitude(game, spec.type);
-      if (
-        !isNukeSuggestionTileAllowed(
-          game,
-          baseContext.myPlayer,
-          targetTile,
-          magnitude,
-          baseContext.teamStructures,
-        )
-      ) {
-        continue;
-      }
-
-      let cx;
-      let cy;
+  function collectSamsWithinBlast(game, sams, cx, cy, outerSquared) {
+    const keys = new Set();
+    for (const sam of sams) {
+      const tile = getUnitTile(sam);
+      if (tile === null) continue;
       try {
-        cx = game.x(targetTile);
-        cy = game.y(targetTile);
+        const dx = game.x(tile) - cx;
+        const dy = game.y(tile) - cy;
+        const key = getUnitKey(sam);
+        if (dx * dx + dy * dy <= outerSquared && key) keys.add(key);
       } catch (_error) {
-        continue;
+        captureRuntimeException(
+          _error,
+          "engine/ingame/nuke-suggestions.js:collectSamsWithinBlast",
+        );
       }
-
-      const outerSquared = magnitude.outer * magnitude.outer;
-      const context = {
-        ...baseContext,
-        game,
-        magnitude,
-        spec,
-        scoreMode: "sam-burn-building",
-      };
-      if (wouldNukeSuggestionAffectLauncher(game, context, cx, cy, outerSquared)) {
-        continue;
-      }
-      if (wouldNukeSuggestionBreakAlliance(game, context, cx, cy, outerSquared)) {
-        continue;
-      }
-      if (wouldHydrogenNukeAffectOtherPlayers(context, cx, cy, outerSquared)) {
-        continue;
-      }
-
-      const sourceSilo = findClosestReadySilo(
-        game,
-        targetTile,
-        baseContext.readySilos,
-      );
-      const sourceTile = getUnitTile(sourceSilo);
-      if (sourceTile === null) {
-        continue;
-      }
-
-      const directionPlan = chooseBestNukeRocketDirection(
-        game,
-        sourceTile,
-        targetTile,
-        baseContext.targetSams,
-        baseContext.pendingTargetSams,
-        baseContext.pendingSamReadyTicks,
-      );
-      const interceptsBurn = directionPlan.interceptingSams
-        .some((interceptingSam) => getUnitKey(interceptingSam) === samKey);
-      if (!interceptsBurn) {
-        continue;
-      }
-
-      const burnSpec = {
-        ...spec,
-        id: `sam-burn-${spec.id}`,
-        label: "Burn SAM",
-        scoreMode: "sam-burn-building",
-      };
-
-      return {
-        id: `sam-burn-${samKey}-${mode}-${targetTile}-${spec.id}`,
-        spec: burnSpec,
-        type: spec.type,
-        tile: targetTile,
-        x: cx,
-        y: cy,
-        magnitude,
-        populationLoss: 0,
-        cityPopulationHit: 0,
-        economicImpact: 0,
-        expectedTilesHit: 0,
-        innerTiles: 0,
-        outerTiles: 0,
-        citiesHit: 0,
-        economicStructuresHit: 0,
-        hitEconomicStructureWeights: new Map(),
-        hitCityPopulationWeights: new Map(),
-        hitDestructionStructureWeights: new Map(),
-        hitSamKeys: [],
-        samsHit: 0,
-        totalScore: Math.max(1, unlockScore * 0.08),
-        sourceTile,
-        rocketDirectionUp: directionPlan.rocketDirectionUp,
-        interceptingSamTile: samTile,
-        intercepted: true,
-        isSamBurnBuilding: true,
-        samClearOwnedByTarget: false,
-      };
     }
-
-    return null;
+    return Array.from(keys);
   }
+
+  function getSamClearStackLevelSum(targetSams, stackKeys) {
+    let levelSum = 0;
+    for (const sam of targetSams || []) {
+      if (stackKeys.includes(getUnitKey(sam))) {
+        levelSum += Math.max(1, getUnitLevel(sam));
+      }
+    }
+    return levelSum || stackKeys.length || 1;
+  }
+
+
+
 
   function getAutoNukeSamBurnSpec(game, player) {
     const atomSpec = NUKE_SUGGESTION_TYPES.find((spec) => spec.id === "atom");
@@ -3227,230 +3139,196 @@
     ) || null;
   }
 
-  function addAutoNukeSamClearCandidates(game, baseContext, specs, candidates, mode) {
-    if (!specs.length) {
-      return;
-    }
+  function recordAutoNukeSamScore(scoreState, sam, score, keepMaximum = false) {
+    const samKey = getUnitKey(sam);
+    if (!samKey) return null;
+    scoreState.samsByKey.set(samKey, sam);
+    const previous = scoreState.samUnlockScores.get(samKey) || 0;
+    scoreState.samUnlockScores.set(
+      samKey,
+      keepMaximum ? Math.max(previous, score) : previous + score,
+    );
+    return samKey;
+  }
 
-    const samUnlockScores = new Map();
-    const samsByKey = new Map();
-    if (candidates.length > 0) {
-      for (const candidate of candidates) {
-        if (candidate.sourceTile == null) {
-          continue;
-        }
-
-        for (const sam of findInterceptingSams(
-          game,
-          candidate.sourceTile,
-          candidate.tile,
-          baseContext.targetSams,
-          candidate.rocketDirectionUp,
-          baseContext.pendingTargetSams,
-          baseContext.pendingSamReadyTicks,
-        )) {
-          const samKey = getUnitKey(sam);
-          if (!samKey) {
-            continue;
-          }
-          samsByKey.set(samKey, sam);
-          samUnlockScores.set(
-            samKey,
-            (samUnlockScores.get(samKey) || 0) + candidate.totalScore,
-          );
-        }
+  function collectAutoNukeInterceptScores(game, baseContext, candidates, scoreState) {
+    for (const candidate of candidates) {
+      if (candidate.sourceTile == null) continue;
+      const sams = findInterceptingSams(game, {
+        sourceTile: candidate.sourceTile,
+        targetTile: candidate.tile,
+        sams: baseContext.targetSams,
+        rocketDirectionUp: candidate.rocketDirectionUp,
+        pendingSams: baseContext.pendingTargetSams,
+        pendingSamReadyTicks: baseContext.pendingSamReadyTicks,
+      });
+      for (const sam of sams) {
+        recordAutoNukeSamScore(scoreState, sam, candidate.totalScore);
       }
     }
+  }
 
-    const burnSpec = getAutoNukeSamBurnSpec(game, baseContext.myPlayer);
-    if (!burnSpec) {
-      return;
+  function collectAutoNukeTargetSamScores(game, baseContext, scoreState) {
+    const seenStacks = new Set();
+    for (const sam of baseContext.targetSams || []) {
+      if (!isSamOwnedByNukeTarget(baseContext, sam)) continue;
+      const stackKey = getSamStackKey(sam) || getUnitKey(sam);
+      if (!stackKey || seenStacks.has(stackKey)) continue;
+      seenStacks.add(stackKey);
+      const stackSams = (baseContext.targetSams || []).filter(
+        (stackSam) => getSamStackKey(stackSam) === stackKey,
+      );
+      const capacity = getSamStackInterceptionCapacity(
+        game,
+        stackSams.length > 0 ? stackSams : [sam],
+      );
+      recordAutoNukeSamScore(
+        scoreState,
+        sam,
+        AUTO_NUKE_DESTRUCTION_SAM_BONUS * Math.max(1, capacity),
+        true,
+      );
     }
-
-    if (mode === "destruction" || mode === "sams") {
-      const seenTargetSamStacks = new Set();
-      for (const sam of baseContext.targetSams || []) {
-        if (!isSamOwnedByNukeTarget(baseContext, sam)) {
-          continue;
-        }
-        const stackKey = getSamStackKey(sam) || getUnitKey(sam);
-        if (!stackKey || seenTargetSamStacks.has(stackKey)) {
-          continue;
-        }
-        seenTargetSamStacks.add(stackKey);
-        const stackSams = (baseContext.targetSams || []).filter(
-          (stackSam) => getSamStackKey(stackSam) === stackKey,
-        );
-        const stackLevel = getSamStackInterceptionCapacity(
-          game,
-          stackSams.length > 0 ? stackSams : [sam],
-        );
-        const samKey = getUnitKey(sam);
-        if (samKey) {
-          samsByKey.set(samKey, sam);
-          samUnlockScores.set(
-            samKey,
-            Math.max(
-              samUnlockScores.get(samKey) || 0,
-              AUTO_NUKE_DESTRUCTION_SAM_BONUS * Math.max(1, stackLevel),
-            ),
-          );
-        }
-      }
-
-      // Also target pending (under-construction) SAMs owned by the target — these
-      // will become active mid-attack if we don't destroy them in time.
-      for (const sam of baseContext.pendingTargetSams || []) {
-        if (!isSamOwnedByNukeTarget(baseContext, sam)) {
-          continue;
-        }
-        const stackKey = getSamStackKey(sam) || getUnitKey(sam);
-        if (!stackKey || seenTargetSamStacks.has(stackKey)) {
-          continue;
-        }
-        seenTargetSamStacks.add(stackKey);
-        const samKey = getUnitKey(sam);
-        if (samKey) {
-          samsByKey.set(samKey, sam);
-          samUnlockScores.set(
-            samKey,
-            Math.max(
-              samUnlockScores.get(samKey) || 0,
-              AUTO_NUKE_DESTRUCTION_SAM_BONUS,
-            ),
-          );
-        }
-      }
+    for (const sam of baseContext.pendingTargetSams || []) {
+      if (!isSamOwnedByNukeTarget(baseContext, sam)) continue;
+      const stackKey = getSamStackKey(sam) || getUnitKey(sam);
+      if (!stackKey || seenStacks.has(stackKey)) continue;
+      seenStacks.add(stackKey);
+      recordAutoNukeSamScore(
+        scoreState,
+        sam,
+        AUTO_NUKE_DESTRUCTION_SAM_BONUS,
+        true,
+      );
     }
+  }
 
-    // For all modes: detect blocking stacks (flight-time-aware) and boost their clear score.
-    // A stack is "blocking" when its effective capacity (accounting for SAM cooldown recharge
-    // during nuke flight) is so high that regular waves cannot get through without first
-    // concentrating fire to destroy it.
-    //
-    // Also considers SAMs currently under construction (pending) at each stack: if they are
-    // expected to come online before our nukes arrive, they contribute to effective capacity.
-    // Already-built stacks get an additional +1 upgrade-buffer slot to hedge against the
-    // enemy instantly stacking (level++) mid-flight.
-    const blockingSamKeys = new Set();
-    {
-      const regularCandidates = candidates.filter((c) => !c.isSamClear);
-      const sampleSize = Math.min(5, regularCandidates.length);
-      const typicalFlightTicks = sampleSize > 0
-        ? Math.round(
-          regularCandidates.slice(0, sampleSize).reduce(
-            (s, c) => s + getAutoNukeCandidateFlightTicks(game, c),
-            0,
-          ) / sampleSize,
-        )
-        : 180;
+  function getTypicalAutoNukeFlightTicks(game, candidates) {
+    const regularCandidates = candidates.filter((candidate) => !candidate.isSamClear);
+    const sample = regularCandidates.slice(0, 5);
+    if (sample.length === 0) return 180;
+    const total = sample.reduce(
+      (sum, candidate) => sum + getAutoNukeCandidateFlightTicks(game, candidate),
+      0,
+    );
+    return Math.round(total / sample.length);
+  }
 
-      const seenBlockingStacks = new Set();
-      const capacityOptions = {
+  function recordBlockingAutoNukeSam(request) {
+    const { game, baseContext, scoreState, sam, stackSams, pendingSams } = request;
+    const effectiveCapacity = estimateSamStackEffectiveCapacity(
+      game,
+      stackSams,
+      request.typicalFlightTicks,
+      {
         pendingSamReadyTicks: baseContext.pendingSamReadyTicks,
         currentTick: baseContext.currentTick,
-      };
+        pendingSams,
+        includeUpgradeBuffer: request.includeUpgradeBuffer,
+      },
+    );
+    if (effectiveCapacity < AUTO_NUKE_BLOCKING_STACK_BASE_CAPACITY) return null;
+    const bonus = AUTO_NUKE_DESTRUCTION_SAM_BONUS *
+      Math.max(1, effectiveCapacity) *
+      AUTO_NUKE_BLOCKING_STACK_SCORE_FRACTION;
+    return recordAutoNukeSamScore(scoreState, sam, bonus, true);
+  }
 
-      // Include ALL hostile SAMs (both target-owned and third-party) in blocking stack detection.
-      // Third-party hostile SAMs can also block flight paths and need to be clearable.
-      for (const sam of baseContext.targetSams || []) {
-        const stackKey = getSamStackKey(sam) || getUnitKey(sam);
-        if (!stackKey || seenBlockingStacks.has(stackKey)) {
-          continue;
-        }
-        seenBlockingStacks.add(stackKey);
-
-        const stackSams = (baseContext.targetSams || []).filter(
-          (s) => getSamStackKey(s) === stackKey,
-        );
-        const pendingStackSams = getAutoNukePendingStackSams(baseContext, stackKey);
-        const effectiveCapacity = estimateSamStackEffectiveCapacity(
-          game,
-          stackSams.length > 0 ? stackSams : [sam],
-          typicalFlightTicks,
-          {
-            ...capacityOptions,
-            pendingSams: pendingStackSams,
-            includeUpgradeBuffer: true,
-          },
-        );
-
-        if (effectiveCapacity >= AUTO_NUKE_BLOCKING_STACK_BASE_CAPACITY) {
-          const samKey = getUnitKey(sam);
-          if (samKey) {
-            samsByKey.set(samKey, sam);
-            const blockingBonus = AUTO_NUKE_DESTRUCTION_SAM_BONUS *
-              Math.max(1, effectiveCapacity) *
-              AUTO_NUKE_BLOCKING_STACK_SCORE_FRACTION;
-            if ((samUnlockScores.get(samKey) || 0) < blockingBonus) {
-              samUnlockScores.set(samKey, blockingBonus);
-            }
-            blockingSamKeys.add(samKey);
-          }
-        }
-      }
-
-      // Also consider stacks that have ONLY pending (under-construction) SAMs — a brand
-      // new SAM being built where no active SAM exists yet. If it will come online before
-      // our nukes arrive, treat it as a blocking stack so subsequent waves can target it.
-      for (const sam of baseContext.pendingTargetSams || []) {
-        const stackKey = getSamStackKey(sam) || getUnitKey(sam);
-        if (!stackKey || seenBlockingStacks.has(stackKey)) {
-          continue;
-        }
-        seenBlockingStacks.add(stackKey);
-
-        const pendingStackSams = getAutoNukePendingStackSams(baseContext, stackKey);
-        const effectiveCapacity = estimateSamStackEffectiveCapacity(
-          game,
-          [],
-          typicalFlightTicks,
-          {
-            ...capacityOptions,
-            pendingSams: pendingStackSams,
-            includeUpgradeBuffer: false,
-          },
-        );
-
-        if (effectiveCapacity >= AUTO_NUKE_BLOCKING_STACK_BASE_CAPACITY) {
-          const samKey = getUnitKey(sam);
-          if (samKey) {
-            samsByKey.set(samKey, sam);
-            const blockingBonus = AUTO_NUKE_DESTRUCTION_SAM_BONUS *
-              Math.max(1, effectiveCapacity) *
-              AUTO_NUKE_BLOCKING_STACK_SCORE_FRACTION;
-            if ((samUnlockScores.get(samKey) || 0) < blockingBonus) {
-              samUnlockScores.set(samKey, blockingBonus);
-            }
-            blockingSamKeys.add(samKey);
-          }
-        }
-      }
+  function collectBlockingAutoNukeSamKeys(game, baseContext, candidates, scoreState) {
+    const blockingKeys = new Set();
+    const seenStacks = new Set();
+    const typicalFlightTicks = getTypicalAutoNukeFlightTicks(game, candidates);
+    for (const sam of baseContext.targetSams || []) {
+      const stackKey = getSamStackKey(sam) || getUnitKey(sam);
+      if (!stackKey || seenStacks.has(stackKey)) continue;
+      seenStacks.add(stackKey);
+      const activeSams = (baseContext.targetSams || []).filter(
+        (stackSam) => getSamStackKey(stackSam) === stackKey,
+      );
+      const samKey = recordBlockingAutoNukeSam({
+        game,
+        baseContext,
+        scoreState,
+        sam,
+        stackSams: activeSams.length > 0 ? activeSams : [sam],
+        pendingSams: getAutoNukePendingStackSams(baseContext, stackKey),
+        typicalFlightTicks,
+        includeUpgradeBuffer: true,
+      });
+      if (samKey) blockingKeys.add(samKey);
     }
+    for (const sam of baseContext.pendingTargetSams || []) {
+      const stackKey = getSamStackKey(sam) || getUnitKey(sam);
+      if (!stackKey || seenStacks.has(stackKey)) continue;
+      seenStacks.add(stackKey);
+      const samKey = recordBlockingAutoNukeSam({
+        game,
+        baseContext,
+        scoreState,
+        sam,
+        stackSams: [],
+        pendingSams: getAutoNukePendingStackSams(baseContext, stackKey),
+        typicalFlightTicks,
+        includeUpgradeBuffer: false,
+      });
+      if (samKey) blockingKeys.add(samKey);
+    }
+    return blockingKeys;
+  }
 
-    for (const [samKey, unlockScore] of samUnlockScores) {
-      const sam = samsByKey.get(samKey);
-      // Only generate explicit SAM-clear candidates for the target player's SAMs.
-      // Third-party hostile SAMs are handled in the burn simulation by redirecting
-      // extra nukes toward the target player (those nukes get intercepted by the
-      // third-party SAM, draining its slots without us targeting another nation).
-      if (!isSamOwnedByNukeTarget(baseContext, sam)) {
-        continue;
-      }
-      const clearCandidate = scoreAutoNukeSamClearCandidate(
+  function appendAutoNukeSamClearCandidates(request) {
+    const {
+      game,
+      baseContext,
+      burnSpec,
+      candidates,
+      scoreState,
+      blockingSamKeys,
+    } = request;
+    for (const [samKey, unlockScore] of scoreState.samUnlockScores) {
+      const sam = scoreState.samsByKey.get(samKey);
+      if (!isSamOwnedByNukeTarget(baseContext, sam)) continue;
+      const candidate = scoreAutoNukeSamClearCandidate(
         game,
         baseContext,
         burnSpec,
         sam,
         unlockScore,
       );
-      if (clearCandidate) {
-        clearCandidate.isBlockingStack = blockingSamKeys.has(samKey);
-        candidates.push(clearCandidate);
-      }
+      if (!candidate) continue;
+      candidate.isBlockingStack = blockingSamKeys.has(samKey);
+      candidates.push(candidate);
     }
   }
 
+  function addAutoNukeSamClearCandidates(game, baseContext, specs, candidates, mode) {
+    if (specs.length === 0) return;
+    const burnSpec = getAutoNukeSamBurnSpec(game, baseContext.myPlayer);
+    if (!burnSpec) return;
+
+    const scoreState = {
+      samUnlockScores: new Map(),
+      samsByKey: new Map(),
+    };
+    collectAutoNukeInterceptScores(game, baseContext, candidates, scoreState);
+    if (mode === "destruction" || mode === "sams") {
+      collectAutoNukeTargetSamScores(game, baseContext, scoreState);
+    }
+    const blockingSamKeys = collectBlockingAutoNukeSamKeys(
+      game,
+      baseContext,
+      candidates,
+      scoreState,
+    );
+    appendAutoNukeSamClearCandidates({
+      game,
+      baseContext,
+      burnSpec,
+      candidates,
+      scoreState,
+      blockingSamKeys,
+    });
+  }
   function computeAutoNukeCandidatePool(game, targetPlayer, mode, options = null) {
     const baseContext = buildNukeSuggestionBaseContext(game, targetPlayer);
     if (!baseContext) {
@@ -3536,21 +3414,11 @@
     let base = getSamStackInterceptionCapacity(game, sams);
 
     // Include pending SAMs whose construction will complete before our nukes land.
-    const pendingSams = options?.pendingSams || null;
-    if (pendingSams && pendingSams.length > 0) {
-      const readyTicks = options?.pendingSamReadyTicks;
-      const currentTick = Number.isFinite(options?.currentTick)
-        ? options.currentTick
-        : getCurrentGameTick(game);
-      const arrivalTick = currentTick + Math.max(0, Number(candidateFlightTicks) || 0);
-      for (const sam of pendingSams) {
-        const key = getUnitKey(sam);
-        const readyAt = readyTicks?.get?.(key);
-        if (Number.isFinite(readyAt) && readyAt <= arrivalTick) {
-          base += getUnitLevel(sam);
-        }
-      }
-    }
+    base += getPendingSamCapacityBeforeArrival(
+      game,
+      candidateFlightTicks,
+      options,
+    );
 
     // Instant-upgrade safety buffer: only meaningful if the stack already has a
     // live SAM the enemy can upgrade.
@@ -3562,6 +3430,23 @@
     const cooldown = getSamCooldown(game);
     if (!cooldown) return base;
     return base * Math.max(1, Math.ceil(candidateFlightTicks / cooldown));
+  }
+
+  function getPendingSamCapacityBeforeArrival(game, flightTicks, options) {
+    const pendingSams = options?.pendingSams || [];
+    if (pendingSams.length === 0) return 0;
+    const currentTick = Number.isFinite(options?.currentTick)
+      ? options.currentTick
+      : getCurrentGameTick(game);
+    const arrivalTick = currentTick + Math.max(0, Number(flightTicks) || 0);
+    let capacity = 0;
+    for (const sam of pendingSams) {
+      const readyAt = options?.pendingSamReadyTicks?.get?.(getUnitKey(sam));
+      if (Number.isFinite(readyAt) && readyAt <= arrivalTick) {
+        capacity += getUnitLevel(sam);
+      }
+    }
+    return capacity;
   }
 
   // Returns pending SAMs at a given stack key (from baseContext.pendingTargetSams).
@@ -3591,14 +3476,14 @@
     );
   }
 
-  function findAutoNukeSamStackInterceptionSlot(
-    game,
-    stack,
-    slotAvailableTicks,
-    candidate,
-    shotIndexOffset,
-    state = null,
-  ) {
+  function findAutoNukeSamStackInterceptionSlot(game, request) {
+    const {
+      stack,
+      slotAvailableTicks,
+      candidate,
+      shotIndexOffset,
+      state = null,
+    } = request;
     if (!stack?.sams?.length || candidate?.sourceTile == null || candidate?.tile == null) {
       return null;
     }
@@ -3617,37 +3502,48 @@
         0,
         Math.floor(Number(slotAvailableTicks[slotIndex]) || 0),
       );
-      for (const sam of stack.sams) {
-        const samKey = getUnitKey(sam);
-        const opportunity = findSamInterceptionOpportunity(
-          game,
-          candidate.sourceTile,
-          candidate.tile,
-          trajectory,
-          sam,
-          stack.sams,
-          candidate.rocketDirectionUp,
-          launchOffsetTicks,
-          slotAvailableAt,
-        );
-        if (
-          opportunity &&
-          isAutoNukeSamDestroyedBeforeTick(state, samKey, opportunity.shootTick)
-        ) {
-          continue;
-        }
-        if (
-          opportunity &&
-          (!best || opportunity.shootTick < best.shootTick)
-        ) {
-          best = {
-            ...opportunity,
-            slotIndex,
-          };
-        }
+      const opportunity = findAutoNukeSlotOpportunity(game, {
+        stack,
+        candidate,
+        trajectory,
+        launchOffsetTicks,
+        state,
+        slotIndex,
+        slotAvailableAt,
+      });
+      if (opportunity && (!best || opportunity.shootTick < best.shootTick)) {
+        best = opportunity;
       }
     }
 
+    return best;
+  }
+
+  function findAutoNukeSlotOpportunity(game, request) {
+    let best = null;
+    for (const sam of request.stack.sams) {
+      const opportunity = findSamInterceptionOpportunity(game, {
+        sourceTile: request.candidate.sourceTile,
+        targetTile: request.candidate.tile,
+        trajectory: request.trajectory,
+        sam,
+        sams: request.stack.sams,
+        rocketDirectionUp: request.candidate.rocketDirectionUp,
+        nukeLaunchOffsetTicks: request.launchOffsetTicks,
+        samAvailableAtTick: request.slotAvailableAt,
+      });
+      if (!opportunity) continue;
+      if (
+        isAutoNukeSamDestroyedBeforeTick(
+          request.state,
+          getUnitKey(sam),
+          opportunity.shootTick,
+        )
+      ) continue;
+      if (!best || opportunity.shootTick < best.shootTick) {
+        best = { ...opportunity, slotIndex: request.slotIndex };
+      }
+    }
     return best;
   }
 
@@ -3746,336 +3642,296 @@
     });
   }
 
-  function getAutoNukeInterceptionPlan(
-    game,
-    baseContext,
-    candidate,
-    state,
-    mode,
-    shotIndexOffset = 0,
-  ) {
-    if (candidate.sourceTile == null) {
-      return {
-        shotsNeededBeforeLanding: Infinity,
-        shotSamKeys: [],
-        samSlotUpdates: new Map(),
-      };
-    }
+  function getFailedAutoNukeInterceptionPlan() {
+    return {
+      shotsNeededBeforeLanding: Infinity,
+      shotSamKeys: [],
+      samSlotUpdates: new Map(),
+      burnCost: Infinity,
+    };
+  }
 
-    const shotSamKeys = [];
-    const samSlotUpdates = new Map();
-    const routeInterceptorStacks = groupInterceptingSamsByStack(
+  function buildAutoNukeSimStacks(baseContext) {
+    const stacks = groupInterceptingSamsByStack(
       baseContext.targetSams || [],
       baseContext,
     );
-    const launchTick = getAutoNukeShotLaunchOffsetTicks(shotIndexOffset);
-
-    // Pre-build simStack for every route interceptor stack.
-    // This lets us do cross-stack burn interception checks: when a burn nuke aimed at
-    // stack A flies over stack B first, B fires (not A). We need B's simStack available
-    // inside A's burn loop to find which stack fires earliest.
-    const simStacksByKey = new Map();
-    for (const stack of routeInterceptorStacks) {
+    const byKey = new Map();
+    for (const stack of stacks) {
       if (!stack.key) continue;
       const stackSams = getAutoNukeSamStackSams(baseContext, stack.key, stack.sams);
-      simStacksByKey.set(stack.key, {
+      byKey.set(stack.key, {
         ...stack,
         sams: stackSams.length > 0 ? stackSams : stack.sams,
       });
     }
+    return { stacks, byKey };
+  }
 
-    // Helper: given a burn candidate being fired, find which stack (among all route
-    // interceptors) shoots at it first (lowest shootTick). Returns the key and slot info
-    // of the actual interceptor, consuming from samSlotUpdates correctly.
-    const findActualBurnInterceptor = (burnCandidate, currentStackKey, currentSimStack, currentSlots) => {
-      // Check the current stack first as baseline
-      const currentInterception = findAutoNukeSamStackInterceptionSlot(
-        game,
-        currentSimStack,
-        currentSlots,
-        burnCandidate,
-        shotIndexOffset + shotSamKeys.length,
-        state,
+  function getAutoNukeSimStackSlots(context, stackKey, simStack) {
+    if (context.samSlotUpdates.has(stackKey)) {
+      return [...context.samSlotUpdates.get(stackKey)];
+    }
+    return getAutoNukeSamStackSlots(
+      context.game,
+      context.baseContext,
+      context.state,
+      stackKey,
+      simStack?.sams,
+    );
+  }
+
+  function isAutoNukeRouteStackDestroyed(context, stackKey) {
+    const unitKeys = getSamStackUnitKeys(context.baseContext.targetSams, stackKey);
+    return unitKeys.length > 0 &&
+      unitKeys.every((key) =>
+        isAutoNukeSamDestroyedBeforeTick(context.state, key, context.launchTick),
       );
-      if (!currentInterception) {
-        // Current stack doesn't intercept — return null to signal can't burn
-        return null;
-      }
+  }
 
-      let bestKey = currentStackKey;
-      let bestShootTick = currentInterception.shootTick;
-      let bestSlotIndex = currentInterception.slotIndex;
-      let bestOwnedByTarget = currentSimStack.ownedByTarget;
+  function findActualAutoNukeBurnInterceptor(context, request) {
+    const currentInterception = findAutoNukeSamStackInterceptionSlot(context.game, {
+      stack: request.currentSimStack,
+      slotAvailableTicks: request.currentSlots,
+      candidate: request.burnCandidate,
+      shotIndexOffset: context.shotIndexOffset + context.shotSamKeys.length,
+      state: context.state,
+    });
+    if (!currentInterception) return null;
 
-      // Check all other stacks — the one with the earliest shootTick fires (targetedBySAM mechanic)
-      for (const [otherKey, otherSimStack] of simStacksByKey) {
-        if (otherKey === currentStackKey) continue;
-
-        const otherUnitKeys = getSamStackUnitKeys(baseContext.targetSams, otherKey);
-        if (
-          otherUnitKeys.length > 0 &&
-          otherUnitKeys.every((k) => isAutoNukeSamDestroyedBeforeTick(state, k, launchTick))
-        ) {
-          continue;
-        }
-
-        const otherCurrentSlots = samSlotUpdates.has(otherKey)
-          ? [...samSlotUpdates.get(otherKey)]
-          : getAutoNukeSamStackSlots(game, baseContext, state, otherKey, otherSimStack.sams);
-
-        const otherInterception = findAutoNukeSamStackInterceptionSlot(
-          game,
-          otherSimStack,
-          otherCurrentSlots,
-          burnCandidate,
-          shotIndexOffset + shotSamKeys.length,
-          state,
-        );
-
-        if (otherInterception && otherInterception.shootTick < bestShootTick) {
-          bestKey = otherKey;
-          bestShootTick = otherInterception.shootTick;
-          bestSlotIndex = otherInterception.slotIndex;
-          bestOwnedByTarget = otherSimStack.ownedByTarget;
-        }
-      }
-
-      return {
-        key: bestKey,
-        shootTick: bestShootTick,
-        slotIndex: bestSlotIndex,
-        ownedByTarget: bestOwnedByTarget,
-      };
+    let best = {
+      key: request.currentStackKey,
+      shootTick: currentInterception.shootTick,
+      slotIndex: currentInterception.slotIndex,
+      ownedByTarget: request.currentSimStack.ownedByTarget,
     };
-
-    // Helper: apply a burn interception result to samSlotUpdates and update the local
-    // stackSlots reference if the actual firer is the current stack.
-    const applyBurnInterception = (result, currentStackKey, currentSlots) => {
-      const { key: actualKey, shootTick, slotIndex } = result;
-      let actualSlots;
-      if (actualKey === currentStackKey) {
-        actualSlots = currentSlots;
-      } else {
-        const otherSimStack = simStacksByKey.get(actualKey);
-        actualSlots = samSlotUpdates.has(actualKey)
-          ? [...samSlotUpdates.get(actualKey)]
-          : getAutoNukeSamStackSlots(game, baseContext, state, actualKey, otherSimStack?.sams);
-      }
-      actualSlots[slotIndex] = shootTick + getSamCooldown(game) + 1;
-      actualSlots = actualSlots.sort((a, b) => a - b);
-      samSlotUpdates.set(actualKey, [...actualSlots]);
-      // Return updated currentSlots if it was modified (alias check)
-      return actualKey === currentStackKey ? [...actualSlots] : currentSlots;
-    };
-
-    for (const stack of routeInterceptorStacks) {
-      if (!stack.key) {
-        continue;
-      }
-
-      const stackUnitKeys = getSamStackUnitKeys(baseContext.targetSams, stack.key);
+    for (const [otherKey, otherStack] of context.simStacksByKey) {
       if (
-        stackUnitKeys.length > 0 &&
-        stackUnitKeys.every((samKey) =>
-          isAutoNukeSamDestroyedBeforeTick(state, samKey, launchTick),
-        )
+        otherKey === request.currentStackKey ||
+        isAutoNukeRouteStackDestroyed(context, otherKey)
       ) {
         continue;
       }
-
-      const simStack = simStacksByKey.get(stack.key);
-      if (!simStack) continue;
-
-      let stackSlots = samSlotUpdates.has(stack.key)
-        ? [...samSlotUpdates.get(stack.key)]
-        : getAutoNukeSamStackSlots(game, baseContext, state, stack.key, simStack.sams);
-      const firstMainInterception = findAutoNukeSamStackInterceptionSlot(
-        game,
-        simStack,
-        stackSlots,
-        candidate,
-        shotIndexOffset + shotSamKeys.length,
-        state,
-      );
-      if (!firstMainInterception) {
-        continue;
-      }
-
-      const sam = stack.sams[0];
-      const ownedByTarget = stack.ownedByTarget;
-      // For target-player SAMs: use a dedicated SAM-clear burn candidate.
-      // For third-party hostile SAMs: redirect burn shots to the main target candidate.
-      // Those nukes fly over the third-party SAM en-route; the third-party SAM intercepts
-      // them and drains its own slots — without us ever firing at another nation.
-      let burnCandidate;
-      if (ownedByTarget) {
-        const samBurnSpec = getAutoNukeSamBurnSpec(game, baseContext.myPlayer);
-        if (!samBurnSpec) {
-          return {
-            shotsNeededBeforeLanding: Infinity,
-            shotSamKeys: [],
-            samSlotUpdates: new Map(),
-            burnCost: Infinity,
-          };
-        }
-        burnCandidate = scoreAutoNukeSamClearCandidate(
-          game,
-          baseContext,
-          samBurnSpec,
-          sam,
-          candidate.totalScore,
-        );
-      } else {
-        burnCandidate = candidate;
-      }
-      if (!burnCandidate) {
-        return {
-          shotsNeededBeforeLanding: Infinity,
-          shotSamKeys: [],
-          samSlotUpdates: new Map(),
-          burnCost: Infinity,
+      const interception = findAutoNukeSamStackInterceptionSlot(context.game, {
+        stack: otherStack,
+        slotAvailableTicks: getAutoNukeSimStackSlots(context, otherKey, otherStack),
+        candidate: request.burnCandidate,
+        shotIndexOffset: context.shotIndexOffset + context.shotSamKeys.length,
+        state: context.state,
+      });
+      if (interception && interception.shootTick < best.shootTick) {
+        best = {
+          key: otherKey,
+          shootTick: interception.shootTick,
+          slotIndex: interception.slotIndex,
+          ownedByTarget: otherStack.ownedByTarget,
         };
-      }
-
-      let guard = 0;
-      while (guard < AUTO_NUKE_MAX_SAM_BURN_SHOTS_PER_STACK) {
-        guard++;
-        // Re-read stackSlots: a previous burn iteration may have updated samSlotUpdates
-        // for this stack (e.g., via cross-stack consumption).
-        if (samSlotUpdates.has(stack.key)) {
-          stackSlots = [...samSlotUpdates.get(stack.key)];
-        }
-        const mainInterception = findAutoNukeSamStackInterceptionSlot(
-          game,
-          simStack,
-          stackSlots,
-          candidate,
-          shotIndexOffset + shotSamKeys.length,
-          state,
-        );
-        if (!mainInterception) {
-          break;
-        }
-
-        // Cross-stack burn interception: the burn nuke may fly over another hostile stack
-        // before reaching this stack. The first SAM to preshot wins (targetedBySAM mechanic).
-        // We find which stack fires earliest and consume THAT stack's slot.
-        const burnResult = findActualBurnInterceptor(burnCandidate, stack.key, simStack, stackSlots);
-        if (!burnResult) {
-          return {
-            shotsNeededBeforeLanding: Infinity,
-            shotSamKeys: [],
-            samSlotUpdates: new Map(),
-            burnCost: Infinity,
-          };
-        }
-
-        stackSlots = applyBurnInterception(burnResult, stack.key, stackSlots);
-        shotSamKeys.push({
-          key: burnResult.key,
-          ownedByTarget: burnResult.ownedByTarget,
-          candidate: burnCandidate,
-          interceptedAtTick: burnResult.shootTick,
-        });
-      }
-
-      // Check that this stack is cleared after the burn loop
-      if (samSlotUpdates.has(stack.key)) {
-        stackSlots = [...samSlotUpdates.get(stack.key)];
-      }
-      const stillIntercepts = findAutoNukeSamStackInterceptionSlot(
-        game,
-        simStack,
-        stackSlots,
-        candidate,
-        shotIndexOffset + shotSamKeys.length,
-        state,
-      );
-      if (stillIntercepts) {
-        return {
-          shotsNeededBeforeLanding: Infinity,
-          shotSamKeys: [],
-          samSlotUpdates: new Map(),
-          burnCost: Infinity,
-        };
-      }
-
-      // Safety overshoot for heavily stacked SAMs.
-      // Key sources of uncertainty our tick-level simulation can't perfectly capture:
-      //   - Enemy can INSTANT-upgrade a SAM (level++) during our nuke flight.
-      //   - A pending (under-construction) SAM at this stack may finish before landing.
-      //   - The real-game missile queue/capacity may diverge from what we observe.
-      // Scale safety burns with TOTAL STACK LEVEL (not just unit count) so single high-
-      // level SAMs and heavy multi-unit stacks both get proportional overshoot. Also
-      // add one burn per pending SAM level that will come online before landing plus a
-      // +upgrade buffer per existing stack for instant-upgrade hedging.
-      const stackSamCount = simStack.sams?.length || 0;
-      const stackLevelSum = (simStack.sams || []).reduce(
-        (sum, s) => sum + Math.max(1, getUnitLevel(s)),
-        0,
-      );
-      const pendingStackSams = getAutoNukePendingStackSams(baseContext, stack.key);
-      const candidateArrivalTick =
-        getCurrentGameTick(game) +
-        getAutoNukeCandidateFlightTicks(game, candidate);
-      let pendingReadyLevels = 0;
-      for (const pSam of pendingStackSams) {
-        const readyAt = baseContext.pendingSamReadyTicks?.get?.(getUnitKey(pSam));
-        if (Number.isFinite(readyAt) && readyAt <= candidateArrivalTick) {
-          pendingReadyLevels += Math.max(1, getUnitLevel(pSam));
-        }
-      }
-      const upgradeBuffer =
-        stackSamCount > 0 ? AUTO_NUKE_SAM_UPGRADE_BUFFER : 0;
-      const unitBasedSafety =
-        Math.max(0, stackSamCount - 1) *
-        AUTO_NUKE_SAM_STACK_SAFETY_BURN_PER_EXTRA_LEVEL;
-      const levelBasedSafety = Math.ceil(
-        stackLevelSum * AUTO_NUKE_SAM_STACK_SAFETY_BURN_LEVEL_FRACTION,
-      );
-      const safetyBurns = Math.min(
-        AUTO_NUKE_SAM_STACK_SAFETY_BURN_CAP,
-        Math.max(unitBasedSafety, levelBasedSafety) +
-          pendingReadyLevels +
-          upgradeBuffer,
-      );
-      for (let safetyIndex = 0; safetyIndex < safetyBurns; safetyIndex++) {
-        if (samSlotUpdates.has(stack.key)) {
-          stackSlots = [...samSlotUpdates.get(stack.key)];
-        }
-        // Apply cross-stack check for safety burns too
-        const safetyResult = findActualBurnInterceptor(burnCandidate, stack.key, simStack, stackSlots);
-        if (!safetyResult) {
-          break;
-        }
-        stackSlots = applyBurnInterception(safetyResult, stack.key, stackSlots);
-        shotSamKeys.push({
-          key: safetyResult.key,
-          ownedByTarget: safetyResult.ownedByTarget,
-          candidate: burnCandidate,
-          interceptedAtTick: safetyResult.shootTick,
-          safety: true,
-        });
       }
     }
+    return best;
+  }
 
-    const burnCost = shotSamKeys.reduce((sum, shotSam) => {
+  function applyAutoNukeBurnInterception(context, request) {
+    const actualStack = context.simStacksByKey.get(request.result.key);
+    const slots = request.result.key === request.currentStackKey
+      ? request.currentSlots
+      : getAutoNukeSimStackSlots(context, request.result.key, actualStack);
+    slots[request.result.slotIndex] =
+      request.result.shootTick + getSamCooldown(context.game) + 1;
+    slots.sort((left, right) => left - right);
+    context.samSlotUpdates.set(request.result.key, [...slots]);
+    return request.result.key === request.currentStackKey
+      ? [...slots]
+      : request.currentSlots;
+  }
+
+  function getAutoNukeStackBurnCandidate(context, stack) {
+    if (!stack.ownedByTarget) return context.candidate;
+    const spec = getAutoNukeSamBurnSpec(
+      context.game,
+      context.baseContext.myPlayer,
+    );
+    if (!spec) return null;
+    return scoreAutoNukeSamClearCandidate(
+      context.game,
+      context.baseContext,
+      spec,
+      stack.sams[0],
+      context.candidate.totalScore,
+    );
+  }
+
+  function appendAutoNukeBurnShot(context, burnCandidate, result, safety = false) {
+    context.shotSamKeys.push({
+      key: result.key,
+      ownedByTarget: result.ownedByTarget,
+      candidate: burnCandidate,
+      interceptedAtTick: result.shootTick,
+      ...(safety ? { safety: true } : {}),
+    });
+  }
+
+  function burnAutoNukeStackSlots(context, stack, simStack, burnCandidate) {
+    for (let guard = 0; guard < AUTO_NUKE_MAX_SAM_BURN_SHOTS_PER_STACK; guard++) {
+      const stackSlots = getAutoNukeSimStackSlots(context, stack.key, simStack);
+      const mainInterception = findAutoNukeSamStackInterceptionSlot(context.game, {
+        stack: simStack,
+        slotAvailableTicks: stackSlots,
+        candidate: context.candidate,
+        shotIndexOffset: context.shotIndexOffset + context.shotSamKeys.length,
+        state: context.state,
+      });
+      if (!mainInterception) return stackSlots;
+      const result = findActualAutoNukeBurnInterceptor(context, {
+        burnCandidate,
+        currentStackKey: stack.key,
+        currentSimStack: simStack,
+        currentSlots: stackSlots,
+      });
+      if (!result) return null;
+      applyAutoNukeBurnInterception(context, {
+        result,
+        currentStackKey: stack.key,
+        currentSlots: stackSlots,
+      });
+      appendAutoNukeBurnShot(context, burnCandidate, result);
+    }
+    const stackSlots = getAutoNukeSimStackSlots(context, stack.key, simStack);
+    const stillIntercepts = findAutoNukeSamStackInterceptionSlot(context.game, {
+      stack: simStack,
+      slotAvailableTicks: stackSlots,
+      candidate: context.candidate,
+      shotIndexOffset: context.shotIndexOffset + context.shotSamKeys.length,
+      state: context.state,
+    });
+    return stillIntercepts ? null : stackSlots;
+  }
+
+  function getAutoNukeStackSafetyBurnCount(context, stackKey, simStack) {
+    const stackSams = simStack.sams || [];
+    const stackLevelSum = stackSams.reduce(
+      (sum, sam) => sum + Math.max(1, getUnitLevel(sam)),
+      0,
+    );
+    const arrivalTick =
+      getCurrentGameTick(context.game) +
+      getAutoNukeCandidateFlightTicks(context.game, context.candidate);
+    let pendingReadyLevels = 0;
+    for (const sam of getAutoNukePendingStackSams(context.baseContext, stackKey)) {
+      const readyAt = context.baseContext.pendingSamReadyTicks?.get?.(getUnitKey(sam));
+      if (Number.isFinite(readyAt) && readyAt <= arrivalTick) {
+        pendingReadyLevels += Math.max(1, getUnitLevel(sam));
+      }
+    }
+    const upgradeBuffer = stackSams.length > 0 ? AUTO_NUKE_SAM_UPGRADE_BUFFER : 0;
+    const unitSafety =
+      Math.max(0, stackSams.length - 1) *
+      AUTO_NUKE_SAM_STACK_SAFETY_BURN_PER_EXTRA_LEVEL;
+    const levelSafety = Math.ceil(
+      stackLevelSum * AUTO_NUKE_SAM_STACK_SAFETY_BURN_LEVEL_FRACTION,
+    );
+    return Math.min(
+      AUTO_NUKE_SAM_STACK_SAFETY_BURN_CAP,
+      Math.max(unitSafety, levelSafety) + pendingReadyLevels + upgradeBuffer,
+    );
+  }
+
+  function appendAutoNukeStackSafetyBurns(
+    context,
+    stack,
+    simStack,
+    burnCandidate,
+  ) {
+    const count = getAutoNukeStackSafetyBurnCount(context, stack.key, simStack);
+    for (let index = 0; index < count; index++) {
+      const stackSlots = getAutoNukeSimStackSlots(context, stack.key, simStack);
+      const result = findActualAutoNukeBurnInterceptor(context, {
+        burnCandidate,
+        currentStackKey: stack.key,
+        currentSimStack: simStack,
+        currentSlots: stackSlots,
+      });
+      if (!result) break;
+      applyAutoNukeBurnInterception(context, {
+        result,
+        currentStackKey: stack.key,
+        currentSlots: stackSlots,
+      });
+      appendAutoNukeBurnShot(context, burnCandidate, result, true);
+    }
+  }
+
+  function processAutoNukeInterceptionStack(context, stack) {
+    if (!stack.key || isAutoNukeRouteStackDestroyed(context, stack.key)) return true;
+    const simStack = context.simStacksByKey.get(stack.key);
+    if (!simStack) return true;
+    const initialSlots = getAutoNukeSimStackSlots(context, stack.key, simStack);
+    const firstInterception = findAutoNukeSamStackInterceptionSlot(context.game, {
+      stack: simStack,
+      slotAvailableTicks: initialSlots,
+      candidate: context.candidate,
+      shotIndexOffset: context.shotIndexOffset + context.shotSamKeys.length,
+      state: context.state,
+    });
+    if (!firstInterception) return true;
+
+    const burnCandidate = getAutoNukeStackBurnCandidate(context, stack);
+    if (!burnCandidate) return false;
+    const clearedSlots = burnAutoNukeStackSlots(
+      context,
+      stack,
+      simStack,
+      burnCandidate,
+    );
+    if (!clearedSlots) return false;
+    appendAutoNukeStackSafetyBurns(
+      context,
+      stack,
+      simStack,
+      burnCandidate,
+    );
+    return true;
+  }
+
+  function getAutoNukeInterceptionBurnCost(context) {
+    return context.shotSamKeys.reduce((sum, shot) => {
       const cost = getNukeSuggestionUnitCost(
-        game,
-        baseContext.myPlayer,
-        shotSam.candidate.spec.type,
+        context.game,
+        context.baseContext.myPlayer,
+        shot.candidate.spec.type,
       );
       return sum + (Number.isFinite(cost) && cost > 0 ? cost : Infinity);
     }, 0);
-
-    return {
-      shotsNeededBeforeLanding: shotSamKeys.length,
-      shotSamKeys,
-      samSlotUpdates,
-      burnCost,
-    };
   }
 
+  function getAutoNukeInterceptionPlan(game, request) {
+    const { baseContext, candidate, state, shotIndexOffset = 0 } = request;
+    if (candidate.sourceTile == null) return getFailedAutoNukeInterceptionPlan();
+
+    const stackState = buildAutoNukeSimStacks(baseContext);
+    const context = {
+      game,
+      baseContext,
+      candidate,
+      state,
+      shotIndexOffset,
+      shotSamKeys: [],
+      samSlotUpdates: new Map(),
+      simStacksByKey: stackState.byKey,
+      launchTick: getAutoNukeShotLaunchOffsetTicks(shotIndexOffset),
+    };
+    for (const stack of stackState.stacks) {
+      if (!processAutoNukeInterceptionStack(context, stack)) {
+        return getFailedAutoNukeInterceptionPlan();
+      }
+    }
+    return {
+      shotsNeededBeforeLanding: context.shotSamKeys.length,
+      shotSamKeys: context.shotSamKeys,
+      samSlotUpdates: context.samSlotUpdates,
+      burnCost: getAutoNukeInterceptionBurnCost(context),
+    };
+  }
   function getAutoNukeCircleOverlapFactor(
     candidate,
     selectedCandidates,
@@ -4161,13 +4017,9 @@
         continue;
       }
 
-      const stackKeys = candidate.samClearStackSamKeys || [];
-      if (stackKeys.length > 0) {
-        state.samClearStackUnitKeys.set(stackKey, stackKeys);
-      }
-      const remainingSamCount = stackKeys.reduce(
-        (sum, samKey) => sum + (state.destroyedSamKeys.has(samKey) ? 0 : 1),
-        0,
+      const remainingSamCount = registerAutoNukeStackCandidate(
+        candidate,
+        state,
       );
       if (remainingSamCount <= 0) {
         continue;
@@ -4190,68 +4042,73 @@
     return state.focusedSamStackKey;
   }
 
+  function registerAutoNukeStackCandidate(candidate, state) {
+    const stackKey = candidate.samClearStackKey;
+    const stackKeys = candidate.samClearStackSamKeys || [];
+    if (stackKeys.length > 0) state.samClearStackUnitKeys.set(stackKey, stackKeys);
+    return stackKeys.reduce(
+      (sum, samKey) => sum + (state.destroyedSamKeys.has(samKey) ? 0 : 1),
+      0,
+    );
+  }
+
   function getAutoNukeMarginalScore(candidate, mode, state) {
     if (candidate.isSamClear || candidate.spec?.scoreMode === "sam-clear") {
-      if (mode === "destruction" || mode === "sams") {
-        if (mode === "destruction" && state.destructionPhase !== "sams") {
-          return 0;
-        }
-        const samScore = (candidate.hitSamKeys || []).reduce(
-          (sum, samKey) => sum + (state.destroyedSamKeys.has(samKey) ? 0 : 1),
-          0,
-        );
-        return samScore > 0 ? candidate.totalScore * 4 : 0;
-      }
-      return (candidate.hitSamKeys || []).some(
-        (samKey) => !state.destroyedSamKeys.has(samKey),
-      )
-        ? candidate.totalScore
-        : 0;
+      return getAutoNukeSamClearMarginalScore(candidate, mode, state);
     }
 
     if (mode === "economic" && candidate.hitEconomicStructureWeights?.size) {
-      let marginalEconomicImpact = 0;
-      for (const [structureKey, weight] of candidate.hitEconomicStructureWeights) {
-        if (!state.hitEconomicStructureKeys.has(structureKey)) {
-          marginalEconomicImpact += weight;
-        }
-      }
-      return marginalEconomicImpact;
+      return sumUnseenAutoNukeWeights(
+        candidate.hitEconomicStructureWeights,
+        state.hitEconomicStructureKeys,
+      );
     }
 
-    if (mode === "destruction") {
-      const phase = state.destructionPhase || "buildings";
-      if (phase === "sams") {
-        // During SAM-clearing, allow unguarded buildings to be struck immediately.
-        // Intercepted candidates must wait — their flight path is covered by SAMs.
-        if (candidate.intercepted) {
-          return 0;
-        }
-        // Fall through to building impact scoring below.
-      }
-      let marginalBuildingImpact = 0;
-      for (const [structureKey, weight] of candidate.hitDestructionStructureWeights || []) {
-        if (!state.hitDestructionStructureKeys.has(structureKey)) {
-          marginalBuildingImpact += weight;
-        }
-      }
-      // Only count residual population impact when there are new buildings to destroy.
-      // Without this guard, nukes re-fire at already-covered areas for population alone.
-      const residualPopulationImpact = marginalBuildingImpact > 0
-        ? (candidate.populationLoss || 0) * 0.15
-        : 0;
-      return (marginalBuildingImpact + residualPopulationImpact) *
-        getAutoNukeRemoteObjectiveFactor(candidate, state) *
-        getAutoNukeCircleOverlapFactor(
-          candidate,
-          state.selectedCandidates,
-          state.spreadMultiplier,
-        );
-    }
+    if (mode === "destruction") return getAutoNukeDestructionMarginalScore(candidate, state);
 
-    if (mode === "sams") {
-      return 0;
+    if (mode === "sams") return 0;
+    return getAutoNukePopulationMarginalScore(candidate, state);
+  }
+
+  function getAutoNukeSamClearMarginalScore(candidate, mode, state) {
+    const relevantMode = mode === "destruction" || mode === "sams";
+    if (mode === "destruction" && state.destructionPhase !== "sams") return 0;
+    const remaining = (candidate.hitSamKeys || []).reduce(
+      (sum, key) => sum + (state.destroyedSamKeys.has(key) ? 0 : 1),
+      0,
+    );
+    if (remaining <= 0) return 0;
+    return relevantMode ? candidate.totalScore * 4 : candidate.totalScore;
+  }
+
+  function sumUnseenAutoNukeWeights(entries, seen) {
+    let total = 0;
+    for (const [key, weight] of entries || []) {
+      if (!seen.has(key)) total += weight;
     }
+    return total;
+  }
+
+  function getAutoNukeDestructionMarginalScore(candidate, state) {
+    if (state.destructionPhase === "sams" && candidate.intercepted) return 0;
+    const buildingImpact = sumUnseenAutoNukeWeights(
+      candidate.hitDestructionStructureWeights,
+      state.hitDestructionStructureKeys,
+    );
+    const populationImpact =
+      buildingImpact > 0 ? (candidate.populationLoss || 0) * 0.15 : 0;
+    return (
+      (buildingImpact + populationImpact) *
+      getAutoNukeRemoteObjectiveFactor(candidate, state) *
+      getAutoNukeCircleOverlapFactor(
+        candidate,
+        state.selectedCandidates,
+        state.spreadMultiplier,
+      )
+    );
+  }
+
+  function getAutoNukePopulationMarginalScore(candidate, state) {
 
     // Population mode: marginal score — subtract contributions from already-hit
     // cities/structures so overlapping nukes don't over-value the same buildings.
@@ -4283,18 +4140,18 @@
       );
   }
 
-  function isAutoNukeHydrogenCandidateEfficient(
-    game,
-    baseContext,
-    candidate,
-    candidates,
-    mode,
-    state,
-    marginalScore,
-    totalCost,
-    remainingGold,
-    remainingSiloSlots,
-  ) {
+  function isAutoNukeHydrogenCandidateEfficient(game, request) {
+    const {
+      baseContext,
+      candidate,
+      candidates,
+      mode,
+      state,
+      marginalScore,
+      totalCost,
+      remainingGold,
+      remainingSiloSlots,
+    } = request;
     if (candidate.spec?.type !== "Hydrogen Bomb") {
       return true;
     }
@@ -4311,10 +4168,28 @@
       return marginalScore > 0;
     }
 
-    const atomAlternatives = [];
-    for (const atomCandidate of candidates) {
+    const atomAlternatives = collectAutoNukeAtomAlternatives(game, {
+      baseContext,
+      candidate,
+      candidates,
+      mode,
+      state,
+      atomCost,
+      remainingGold,
+      remainingSiloSlots,
+    });
+    const atomPlan = selectAutoNukeAtomAlternatives(atomAlternatives);
+    if (atomPlan.score <= 0 || atomPlan.cost <= 0) return marginalScore > 0;
+    const hydrogenDensity = marginalScore / totalCost;
+    const atomDensity = atomPlan.score / atomPlan.cost;
+    return marginalScore >= atomPlan.score || hydrogenDensity >= atomDensity * 1.05;
+  }
+
+  function collectAutoNukeAtomAlternatives(game, request) {
+    const alternatives = [];
+    for (const atomCandidate of request.candidates) {
       if (
-        atomCandidate === candidate ||
+        atomCandidate === request.candidate ||
         atomCandidate.isSamClear ||
         atomCandidate.spec?.type !== "Atom Bomb"
       ) {
@@ -4322,71 +4197,51 @@
       }
 
       const atomKey = `${atomCandidate.spec.type}:${atomCandidate.tile}`;
-      if (state.selectedCandidateKeys.has(atomKey)) {
-        continue;
-      }
+      if (request.state.selectedCandidateKeys.has(atomKey)) continue;
 
-      const atomPlan = getAutoNukeInterceptionPlan(
-        game,
-        baseContext,
-        atomCandidate,
-        state,
-        mode,
-      );
-      const atomShotsNeeded = atomPlan.shotsNeededBeforeLanding + 1;
-      const atomTotalCost = atomCost + atomPlan.burnCost;
+      const interception = getAutoNukeInterceptionPlan(game, {
+        baseContext: request.baseContext,
+        candidate: atomCandidate,
+        state: request.state,
+      });
+      const atomShotsNeeded = interception.shotsNeededBeforeLanding + 1;
+      const atomTotalCost = request.atomCost + interception.burnCost;
       if (
         !Number.isFinite(atomTotalCost) ||
         atomShotsNeeded > 5 ||
-        atomShotsNeeded > remainingSiloSlots ||
-        atomTotalCost > remainingGold
+        atomShotsNeeded > request.remainingSiloSlots ||
+        atomTotalCost > request.remainingGold
       ) {
         continue;
       }
 
       const atomMarginalScore = getAutoNukeMarginalScore(
         atomCandidate,
-        mode,
-        state,
+        request.mode,
+        request.state,
       );
-      if (atomMarginalScore < AUTO_NUKE_MIN_MARGINAL_SCORE) {
-        continue;
-      }
+      if (atomMarginalScore < AUTO_NUKE_MIN_MARGINAL_SCORE) continue;
 
-      atomAlternatives.push({
+      alternatives.push({
         score: atomMarginalScore,
         cost: atomTotalCost,
         shots: atomShotsNeeded,
         density: atomMarginalScore / atomTotalCost,
       });
     }
+    return alternatives.sort((a, b) => b.density - a.density || b.score - a.score);
+  }
 
-    atomAlternatives.sort((a, b) =>
-      b.density - a.density || b.score - a.score,
-    );
-
-    let atomScore = 0;
-    let atomTotalCost = 0;
-    let atomShots = 0;
-    for (const alternative of atomAlternatives) {
-      if (atomShots + alternative.shots > 5) {
-        continue;
-      }
-      atomScore += alternative.score;
-      atomTotalCost += alternative.cost;
-      atomShots += alternative.shots;
-      if (atomShots >= 5) {
-        break;
-      }
+  function selectAutoNukeAtomAlternatives(alternatives) {
+    const result = { score: 0, cost: 0, shots: 0 };
+    for (const alternative of alternatives) {
+      if (result.shots + alternative.shots > 5) continue;
+      result.score += alternative.score;
+      result.cost += alternative.cost;
+      result.shots += alternative.shots;
+      if (result.shots >= 5) break;
     }
-
-    if (atomScore <= 0 || atomTotalCost <= 0) {
-      return marginalScore > 0;
-    }
-
-    const hydrogenDensity = marginalScore / totalCost;
-    const atomDensity = atomScore / atomTotalCost;
-    return marginalScore >= atomScore || hydrogenDensity >= atomDensity * 1.05;
+    return result;
   }
 
   function markAutoNukeCandidateLanded(candidate, state, landingTick = 0) {
@@ -4394,54 +4249,59 @@
       state.selectedCandidates.push(candidate);
     }
 
+    markAutoNukeSamsDestroyed(candidate, state, landingTick);
+    addMapKeysToSet(candidate.hitEconomicStructureWeights, state.hitEconomicStructureKeys);
+    addMapKeysToSet(candidate.hitCityPopulationWeights, state.hitCityPopulationKeys);
+    addMapKeysToSet(
+      candidate.hitDestructionStructureWeights,
+      state.hitDestructionStructureKeys,
+    );
+  }
+
+  function markAutoNukeSamsDestroyed(candidate, state, landingTick) {
+    const destroyedAt = Math.max(0, Math.floor(Number(landingTick) || 0));
+    state.samDestroyedAtTicks ||= new Map();
     for (const samKey of candidate.hitSamKeys || []) {
       state.destroyedSamKeys.add(samKey);
-      if (!state.samDestroyedAtTicks) {
-        state.samDestroyedAtTicks = new Map();
-      }
-      const currentDestroyedAt = Number(state.samDestroyedAtTicks.get(samKey));
-      const destroyedAt = Math.max(0, Math.floor(Number(landingTick) || 0));
-      if (!Number.isFinite(currentDestroyedAt) || destroyedAt < currentDestroyedAt) {
+      const current = Number(state.samDestroyedAtTicks.get(samKey));
+      if (!Number.isFinite(current) || destroyedAt < current) {
         state.samDestroyedAtTicks.set(samKey, destroyedAt);
       }
     }
+  }
 
-    for (const structureKey of candidate.hitEconomicStructureWeights?.keys?.() || []) {
-      state.hitEconomicStructureKeys.add(structureKey);
-    }
-
-    for (const cityKey of candidate.hitCityPopulationWeights?.keys?.() || []) {
-      state.hitCityPopulationKeys.add(cityKey);
-    }
-
-    for (const structureKey of candidate.hitDestructionStructureWeights?.keys?.() || []) {
-      state.hitDestructionStructureKeys.add(structureKey);
-    }
+  function addMapKeysToSet(map, set) {
+    for (const key of map?.keys?.() || []) set.add(key);
   }
 
   function cloneAutoNukePlanState(state = null) {
+    const source = withAutoNukeFallback(state, {});
     return {
-      selectedCandidates: [...(state?.selectedCandidates || [])],
-      selectedCandidateKeys: new Set(state?.selectedCandidateKeys || []),
-      hitEconomicStructureKeys: new Set(state?.hitEconomicStructureKeys || []),
-      hitCityPopulationKeys: new Set(state?.hitCityPopulationKeys || []),
-      hitDestructionStructureKeys: new Set(state?.hitDestructionStructureKeys || []),
-      destroyedSamKeys: new Set(state?.destroyedSamKeys || []),
-      samClearStackUnitKeys: new Map(state?.samClearStackUnitKeys || []),
-      focusedSamStackKey: state?.focusedSamStackKey || null,
-      samDestroyedAtTicks: cloneAutoNukeTickMap(state?.samDestroyedAtTicks),
-      usedSamShots: new Map(state?.usedSamShots || []),
+      selectedCandidates: [...withAutoNukeFallback(source.selectedCandidates, [])],
+      selectedCandidateKeys: new Set(withAutoNukeFallback(source.selectedCandidateKeys, [])),
+      hitEconomicStructureKeys: new Set(withAutoNukeFallback(source.hitEconomicStructureKeys, [])),
+      hitCityPopulationKeys: new Set(withAutoNukeFallback(source.hitCityPopulationKeys, [])),
+      hitDestructionStructureKeys: new Set(withAutoNukeFallback(source.hitDestructionStructureKeys, [])),
+      destroyedSamKeys: new Set(withAutoNukeFallback(source.destroyedSamKeys, [])),
+      samClearStackUnitKeys: new Map(withAutoNukeFallback(source.samClearStackUnitKeys, [])),
+      focusedSamStackKey: withAutoNukeFallback(source.focusedSamStackKey, null),
+      samDestroyedAtTicks: cloneAutoNukeTickMap(source.samDestroyedAtTicks),
+      usedSamShots: new Map(withAutoNukeFallback(source.usedSamShots, [])),
       samSlotAvailableTicks: cloneAutoNukeSamSlotUpdates(
-        state?.samSlotAvailableTicks,
+        source.samSlotAvailableTicks,
       ),
-      plannedAtTick: Number.isFinite(Number(state?.plannedAtTick))
-        ? Number(state.plannedAtTick)
+      plannedAtTick: Number.isFinite(Number(source.plannedAtTick))
+        ? Number(source.plannedAtTick)
         : null,
-      spreadMultiplier: Math.max(1, Number(state?.spreadMultiplier) || 1),
-      destructionPhase: state?.destructionPhase || "buildings",
-      hasPrioritySamClear: Boolean(state?.hasPrioritySamClear),
-      remoteOrigin: state?.remoteOrigin || null,
+      spreadMultiplier: Math.max(1, withAutoNukeFallback(Number(source.spreadMultiplier), 1)),
+      destructionPhase: withAutoNukeFallback(source.destructionPhase, "buildings"),
+      hasPrioritySamClear: Boolean(source.hasPrioritySamClear),
+      remoteOrigin: withAutoNukeFallback(source.remoteOrigin, null),
     };
+  }
+
+  function withAutoNukeFallback(value, fallback) {
+    return value || fallback;
   }
 
   function normalizeAutoNukePlanStateTiming(game, state) {
@@ -4511,35 +4371,51 @@
       return;
     }
 
-    for (const [cityKey, weight] of candidate.hitCityPopulationWeights || []) {
-      if (!metrics.hitCityPopulationKeys.has(cityKey)) {
-        metrics.hitCityPopulationKeys.add(cityKey);
-        metrics.populationDamage += Math.max(0, Number(weight) || 0);
-      }
-    }
+    metrics.populationDamage += addUnseenWeightedMetrics(
+      candidate.hitCityPopulationWeights,
+      metrics.hitCityPopulationKeys,
+    );
+    metrics.populationDamage += addAutoNukePopulationLossMetric(
+      metrics,
+      candidate,
+    );
+    metrics.economicDamage += addUnseenWeightedMetrics(
+      candidate.hitEconomicStructureWeights,
+      metrics.hitEconomicStructureKeys,
+    );
+    metrics.samsDestroyed += addUnseenKeys(
+      candidate.hitSamKeys,
+      metrics.hitSamKeys,
+    );
+  }
 
-    const populationLoss = Math.max(0, Number(candidate.populationLoss) || 0);
-    if (populationLoss > 0) {
-      const populationCandidateKey = `${candidate.spec?.type || ""}:${candidate.tile}`;
-      if (!metrics.hitPopulationCandidateKeys.has(populationCandidateKey)) {
-        metrics.hitPopulationCandidateKeys.add(populationCandidateKey);
-        metrics.populationDamage += populationLoss;
-      }
+  function addUnseenWeightedMetrics(entries, seen) {
+    let added = 0;
+    for (const [key, weight] of entries || []) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      added += Math.max(0, Number(weight) || 0);
     }
+    return added;
+  }
 
-    for (const [structureKey, weight] of candidate.hitEconomicStructureWeights || []) {
-      if (!metrics.hitEconomicStructureKeys.has(structureKey)) {
-        metrics.hitEconomicStructureKeys.add(structureKey);
-        metrics.economicDamage += Math.max(0, Number(weight) || 0);
-      }
+  function addUnseenKeys(keys, seen) {
+    let added = 0;
+    for (const key of keys || []) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      added++;
     }
+    return added;
+  }
 
-    for (const samKey of candidate.hitSamKeys || []) {
-      if (!metrics.hitSamKeys.has(samKey)) {
-        metrics.hitSamKeys.add(samKey);
-        metrics.samsDestroyed++;
-      }
-    }
+  function addAutoNukePopulationLossMetric(metrics, candidate) {
+    const loss = Math.max(0, Number(candidate.populationLoss) || 0);
+    if (loss <= 0) return 0;
+    const key = `${candidate.spec?.type || ""}:${candidate.tile}`;
+    if (metrics.hitPopulationCandidateKeys.has(key)) return 0;
+    metrics.hitPopulationCandidateKeys.add(key);
+    return loss;
   }
 
   function finalizeAutoNukePlanMetrics(metrics, shotCount, cost) {
@@ -4552,23 +4428,22 @@
     };
   }
 
-  function appendAutoNukeDestructionConfirmationShots(
-    game,
-    baseContext,
-    mode,
-    state,
-    shots,
-    remainingGold,
-    remainingSiloSlots,
-    totalCost,
-    confirmationShotLimit = AUTO_NUKE_DESTRUCTION_CONFIRMATION_SHOTS,
-    metrics = null,
-  ) {
+  function appendAutoNukeDestructionConfirmationShots(game, request) {
+    const {
+      baseContext,
+      state,
+      shots,
+      confirmationShotLimit = AUTO_NUKE_DESTRUCTION_CONFIRMATION_SHOTS,
+      metrics = null,
+    } = request;
+    const remainingGold = request.remainingGold;
+    const remainingSiloSlots = request.remainingSiloSlots;
+    const totalCost = request.totalCost;
     if (
-      (mode !== "destruction" && mode !== "sams") ||
-      confirmationShotLimit <= 0 ||
-      remainingGold <= 0 ||
-      remainingSiloSlots <= 0
+      !canAppendAutoNukeConfirmationShots({
+        ...request,
+        confirmationShotLimit,
+      })
     ) {
       return {
         remainingGold,
@@ -4593,119 +4468,124 @@
 
     let confirmationShots = 0;
     let objectiveIndex = 0;
+    const budget = { remainingGold, remainingSiloSlots, totalCost };
     while (
       confirmationShots < confirmationShotLimit &&
-      remainingGold > 0 &&
-      remainingSiloSlots > 0 &&
+      budget.remainingGold > 0 &&
+      budget.remainingSiloSlots > 0 &&
       objectiveIndex < mainObjectives.length * confirmationShotLimit
     ) {
       const candidate = mainObjectives[objectiveIndex % mainObjectives.length];
       objectiveIndex++;
-
-      const nukeCost = getNukeSuggestionUnitCost(
-        game,
-        baseContext.myPlayer,
-        candidate.spec.type,
-      );
-      if (!Number.isFinite(nukeCost) || nukeCost <= 0) {
-        continue;
-      }
-
-      const interceptionPlan = getAutoNukeInterceptionPlan(
-        game,
+      const appended = tryAppendAutoNukeConfirmationShot(game, {
         baseContext,
         candidate,
         state,
-        mode,
-        shots.length,
-      );
-      const shotsNeeded = interceptionPlan.shotsNeededBeforeLanding + 1;
-      const burnCost = interceptionPlan.burnCost || 0;
-      const shotCost = nukeCost + burnCost;
-      if (
-        !Number.isFinite(shotCost) ||
-        !Number.isFinite(shotsNeeded) ||
-        shotsNeeded > remainingSiloSlots ||
-        shotCost > remainingGold
-      ) {
-        continue;
-      }
-
-      for (const shotSam of interceptionPlan.shotSamKeys) {
-        shots.push({
-          tile: shotSam.candidate.tile,
-          sourceTile: shotSam.candidate.sourceTile,
-          rocketDirectionUp: shotSam.candidate.rocketDirectionUp,
-          spec: shotSam.candidate.spec,
-          reason: "sam-intercept",
-          interceptingSamKey: shotSam.key,
-          interceptingSamOwnedByTarget: shotSam.ownedByTarget,
-        });
-      }
-      applyAutoNukeInterceptionPlan(state, interceptionPlan);
-
-      shots.push({
-        tile: candidate.tile,
-        sourceTile: candidate.sourceTile,
-        rocketDirectionUp: candidate.rocketDirectionUp,
-        spec: candidate.spec,
-        reason: "confirmation",
+        shots,
+        metrics,
+        budget,
       });
-      addAutoNukeCandidateMetrics(metrics, candidate);
-      markAutoNukeCandidateLanded(
-        candidate,
-        state,
-        getAutoNukeCandidateLandingTick(game, candidate, shots.length - 1),
-      );
-      remainingGold -= shotCost;
-      remainingSiloSlots -= shotsNeeded;
-      totalCost += shotCost;
-      confirmationShots++;
+      if (appended) confirmationShots++;
     }
 
+    return budget;
+  }
+
+  function canAppendAutoNukeConfirmationShots(request) {
+    const supportedMode = request.mode === "destruction" || request.mode === "sams";
+    return (
+      supportedMode &&
+      request.confirmationShotLimit > 0 &&
+      request.remainingGold > 0 &&
+      request.remainingSiloSlots > 0
+    );
+  }
+
+  function tryAppendAutoNukeConfirmationShot(game, request) {
+    const { baseContext, candidate, state, shots, metrics, budget } = request;
+    const nukeCost = getNukeSuggestionUnitCost(
+      game,
+      baseContext.myPlayer,
+      candidate.spec.type,
+    );
+    if (!Number.isFinite(nukeCost) || nukeCost <= 0) return false;
+    const interceptionPlan = getAutoNukeInterceptionPlan(game, {
+      baseContext,
+      candidate,
+      state,
+      shotIndexOffset: shots.length,
+    });
+    const shotsNeeded = interceptionPlan.shotsNeededBeforeLanding + 1;
+    const shotCost = nukeCost + (interceptionPlan.burnCost || 0);
+    if (!canAffordAutoNukeShot(budget, shotCost, shotsNeeded)) return false;
+    appendAutoNukeInterceptionShots(shots, interceptionPlan);
+    applyAutoNukeInterceptionPlan(state, interceptionPlan);
+    shots.push({
+      tile: candidate.tile,
+      sourceTile: candidate.sourceTile,
+      rocketDirectionUp: candidate.rocketDirectionUp,
+      spec: candidate.spec,
+      reason: "confirmation",
+    });
+    addAutoNukeCandidateMetrics(metrics, candidate);
+    markAutoNukeCandidateLanded(
+      candidate,
+      state,
+      getAutoNukeCandidateLandingTick(game, candidate, shots.length - 1),
+    );
+    budget.remainingGold -= shotCost;
+    budget.remainingSiloSlots -= shotsNeeded;
+    budget.totalCost += shotCost;
+    return true;
+  }
+
+  function canAffordAutoNukeShot(budget, cost, slots) {
+    return (
+      Number.isFinite(cost) &&
+      Number.isFinite(slots) &&
+      slots <= budget.remainingSiloSlots &&
+      cost <= budget.remainingGold
+    );
+  }
+
+  function appendAutoNukeInterceptionShots(shots, plan) {
+    for (const shotSam of plan.shotSamKeys) {
+      shots.push({
+        tile: shotSam.candidate.tile,
+        sourceTile: shotSam.candidate.sourceTile,
+        rocketDirectionUp: shotSam.candidate.rocketDirectionUp,
+        spec: shotSam.candidate.spec,
+        reason: "sam-intercept",
+        interceptingSamKey: shotSam.key,
+        interceptingSamOwnedByTarget: shotSam.ownedByTarget,
+      });
+    }
+  }
+
+  function getEmptyAutoNukePlan(options) {
     return {
-      remainingGold,
-      remainingSiloSlots,
-      totalCost,
+      shots: [],
+      score: 0,
+      cost: 0,
+      budgetGold: 0,
+      budgetSiloSlots: 0,
+      availableGold: 0,
+      availableSiloSlots: 0,
+      minimumRequiredGold: Infinity,
+      minimumRequiredSiloSlots: Infinity,
+      metrics: finalizeAutoNukePlanMetrics(null, 0, 0),
+      followupState: cloneAutoNukePlanState(),
+      destructionPhase: options?.destructionPhase || "buildings",
     };
   }
 
-  function buildAutoNukePlan(
-    game,
-    targetPlayer,
-    mode,
-    options = null,
-    candidatePool = null,
-  ) {
-    const { baseContext, candidates } = candidatePool ||
-      computeAutoNukeCandidatePool(
-        game,
-        targetPlayer,
-        mode,
-      );
-    if (!baseContext || candidates.length === 0) {
-      return {
-        shots: [],
-        score: 0,
-        cost: 0,
-        budgetGold: 0,
-        budgetSiloSlots: 0,
-        availableGold: 0,
-        availableSiloSlots: 0,
-        minimumRequiredGold: Infinity,
-        minimumRequiredSiloSlots: Infinity,
-        metrics: finalizeAutoNukePlanMetrics(null, 0, 0),
-        followupState: cloneAutoNukePlanState(),
-        destructionPhase: options?.destructionPhase || "buildings",
-      };
-    }
-
+  function getAutoNukePlanAvailability(baseContext, options) {
     const gold = getPlayerGoldNumber(baseContext.myPlayer);
     const availableGold = Number.isFinite(gold) ? Math.max(0, gold) : 0;
-    const overrideSiloSlots = Number(options?.availableSiloSlotsOverride);
+    const overrideSlots = Number(options?.availableSiloSlotsOverride);
     const availableSiloSlots =
-      Number.isFinite(overrideSiloSlots) && overrideSiloSlots >= 0
-        ? Math.floor(overrideSiloSlots)
+      Number.isFinite(overrideSlots) && overrideSlots >= 0
+        ? Math.floor(overrideSlots)
         : getReadyNukeSiloSlotCount(baseContext.myPlayer);
     const budgetGold = Math.min(
       availableGold,
@@ -4715,8 +4595,10 @@
       availableSiloSlots,
       Math.max(0, Math.floor(Number(options?.maxSiloSlots ?? availableSiloSlots))),
     );
-    let remainingGold = budgetGold;
-    let remainingSiloSlots = budgetSiloSlots;
+    return { availableGold, availableSiloSlots, budgetGold, budgetSiloSlots };
+  }
+
+  function createAutoNukePlanningState(game, baseContext, options) {
     const state = cloneAutoNukePlanState(options?.initialState);
     normalizeAutoNukePlanStateTiming(game, state);
     state.spreadMultiplier = Math.max(
@@ -4731,302 +4613,375 @@
         y: baseContext.tileInfo.centroid.y,
       };
     }
-    const shots = [];
-    const metrics = createAutoNukePlanMetrics();
-    let totalScore = 0;
-    let totalCost = 0;
-    let minimumRequiredGold = Infinity;
-    let minimumRequiredSiloSlots = Infinity;
-    const confirmationShotLimit = mode === "destruction"
-      ? Math.max(
-        0,
-        Math.floor(
-          Number(
-            options?.confirmationShots ??
-              AUTO_NUKE_DESTRUCTION_CONFIRMATION_SHOTS,
-          ),
-        ),
-      )
-      : 0;
-    const confirmationShotReserve = mode === "destruction"
-      ? Math.min(
-        confirmationShotLimit,
-        Math.max(0, budgetSiloSlots - 2),
-      )
-      : 0;
+    return state;
+  }
 
-    // Detect blocking SAM stacks in pop/eco modes: if any candidate represents a
-    // flight-time-aware high-capacity stack, enable the priority SAM-clear phase.
-    if (!isAutoNukeSamClearPhase(mode, state)) {
-      if (candidates.some((c) => c.isSamClear && c.isBlockingStack)) {
-        state.hasPrioritySamClear = true;
-      }
-    }
+  function getAutoNukeConfirmationShotLimit(mode, options) {
+    if (mode !== "destruction") return 0;
+    const requested = options?.confirmationShots ??
+      AUTO_NUKE_DESTRUCTION_CONFIRMATION_SHOTS;
+    return Math.max(0, Math.floor(Number(requested)));
+  }
 
-    while (remainingSiloSlots > confirmationShotReserve && remainingGold > 0) {
-      let best = null;
-      const focusedSamStackKey = isAutoNukeSamClearPhase(mode, state)
-        ? chooseAutoNukeFocusedSamStackKey(candidates, state)
-        : null;
-
-      for (const candidate of candidates) {
-        if (
-          focusedSamStackKey &&
-          candidate.isSamClear &&
-          candidate.samClearStackKey !== focusedSamStackKey
-        ) {
-          continue;
-        }
-
-        const candidateKey = `${candidate.spec.type}:${candidate.tile}`;
-        if (state.selectedCandidateKeys.has(candidateKey)) {
-          continue;
-        }
-
-        const nukeCost = getNukeSuggestionUnitCost(
-          game,
-          baseContext.myPlayer,
-          candidate.spec.type,
-        );
-        if (!Number.isFinite(nukeCost) || nukeCost <= 0) {
-          continue;
-        }
-
-        const interceptionPlan = getAutoNukeInterceptionPlan(
-          game,
-          baseContext,
-          candidate,
-          state,
-          mode,
-          shots.length,
-        );
-        const shotsNeeded = interceptionPlan.shotsNeededBeforeLanding + 1;
-        const totalCost = nukeCost + interceptionPlan.burnCost;
-        if (!Number.isFinite(totalCost) || !Number.isFinite(shotsNeeded)) {
-          continue;
-        }
-
-        const marginalScore = getAutoNukeMarginalScore(candidate, mode, state);
-        if (marginalScore < AUTO_NUKE_MIN_MARGINAL_SCORE) {
-          continue;
-        }
-
-        // In SAM-clear phase (priority blocking stacks / destruction sams), the entire
-        // wave's purpose is to clear SAMs; the real attack follows in a later wave.
-        // Don't reserve a followup slot — doing so prevents clearing the last blocking
-        // stack when the budget is exactly enough (e.g. 8 slots, 2 stacks × 4 shots each:
-        // stack A uses 4, then 4 remain but 4+1=5 > 4 would block stack B).
-        // Only apply the reserve in non-priority SAM-clear scenarios (pop/eco modes where
-        // SAM clearing is incidental and we still want 1 slot left for actual target nukes).
-        const inSamClearPhase = isAutoNukeSamClearPhase(mode, state);
-        const reserveFollowupShot =
-          candidate.isSamClear && mode !== "sams" && !inSamClearPhase ? 1 : 0;
-        const reserveFollowupCost = candidate.isSamClear && mode !== "sams" && !inSamClearPhase
-          ? getAutoNukeMinimumAvailableCost(game, baseContext.myPlayer)
-          : 0;
-        if (
-          (
-            shotsNeeded + reserveFollowupShot + confirmationShotReserve >
-              remainingSiloSlots ||
-            totalCost + reserveFollowupCost > remainingGold
-          )
-        ) {
-          minimumRequiredSiloSlots = Math.min(
-            minimumRequiredSiloSlots,
-            budgetSiloSlots - remainingSiloSlots + shotsNeeded +
-              reserveFollowupShot + confirmationShotReserve,
-          );
-          minimumRequiredGold = Math.min(
-            minimumRequiredGold,
-            budgetGold - remainingGold + totalCost + reserveFollowupCost,
-          );
-          continue;
-        }
-        if (
-          !isAutoNukeHydrogenCandidateEfficient(
-            game,
-            baseContext,
-            candidate,
-            candidates,
-            mode,
-            state,
-            marginalScore,
-            totalCost,
-            remainingGold,
-            remainingSiloSlots,
-          )
-        ) {
-          continue;
-        }
-
-        const valueDensity = marginalScore / totalCost;
-        if (
-          !best ||
-          valueDensity > best.valueDensity ||
-          (
-            valueDensity === best.valueDensity &&
-            marginalScore > best.marginalScore
-          )
-        ) {
-          best = {
-            candidate,
-            candidateKey,
-            interceptionPlan,
-            marginalScore,
-            nukeCost,
-            shotsNeeded,
-            totalCost,
-            valueDensity,
-          };
-        }
-      }
-
-      if (!best) {
-        break;
-      }
-
-      for (const shotSam of best.interceptionPlan.shotSamKeys) {
-        shots.push({
-          tile: shotSam.candidate.tile,
-          sourceTile: shotSam.candidate.sourceTile,
-          rocketDirectionUp: shotSam.candidate.rocketDirectionUp,
-          spec: shotSam.candidate.spec,
-          reason: "sam-intercept",
-          interceptingSamKey: shotSam.key,
-          interceptingSamOwnedByTarget: shotSam.ownedByTarget,
-        });
-      }
-      applyAutoNukeInterceptionPlan(state, best.interceptionPlan);
-
-      const mainShotIndex = shots.length;
-      shots.push({
-        tile: best.candidate.tile,
-        sourceTile: best.candidate.sourceTile,
-        rocketDirectionUp: best.candidate.rocketDirectionUp,
-        spec: best.candidate.spec,
-        reason: best.candidate.isSamClear ? "sam-clear" : "impact",
-        targetSamOwnedByTarget: best.candidate.samClearOwnedByTarget,
-      });
-      addAutoNukeCandidateMetrics(metrics, best.candidate);
-      let samOvershootShots = 0;
-      if (
-        best.candidate.isSamClear &&
-        (
-          (mode === "destruction" && state.destructionPhase === "sams") ||
-          mode === "sams" ||
-          (state.hasPrioritySamClear && best.candidate.isBlockingStack && best.candidate.samsHit >= 3)
-        )
-      ) {
-        const remainingSlotsAfterClear = remainingSiloSlots - best.shotsNeeded;
-        const remainingGoldAfterClear = remainingGold - best.totalCost;
-
-        // Overshoot is PURE INSURANCE on top of the math-derived shotsNeeded.
-        // We tune it based on how risky the stack is:
-        //   - single level-1 SAM → 0 (the normal shots already handle it)
-        //   - single level-2+ SAM → 1 (hedge against an instant upgrade)
-        //   - 2-SAM stack → 1
-        //   - 3-SAM stack → 2
-        //   - 4+ SAM stack → 3
-        //   - high total level (≥10) → +1 extra hedge against instant-upgrades
-        //   - blocking stack (inbound nukes depend on this) → +1 hedge
-        const samsHit = Math.max(1, best.candidate.samsHit || 1);
-        const stackKeys = best.candidate.samClearStackSamKeys || [];
-        const liveKeys = stackKeys.filter(
-          (k) => !state.destroyedSamKeys.has(k),
-        );
-        const stackSize = Math.max(samsHit, liveKeys.length);
-        const levelSum = Math.max(
-          stackSize,
-          Number(best.candidate.samClearStackLevelSum) || stackSize,
-        );
-
-        let baseOvershoot;
-        if (stackSize <= 1) {
-          baseOvershoot = levelSum >= 2 ? 1 : 0;
-        } else if (stackSize === 2) {
-          baseOvershoot = 1;
-        } else if (stackSize === 3) {
-          baseOvershoot = 2;
-        } else {
-          baseOvershoot = 3;
-        }
-
-        const heavyLevelBonus = levelSum >= 10 ? 1 : 0;
-        const blockingBonus =
-          best.candidate.isBlockingStack && stackSize >= 3 ? 1 : 0;
-
-        const scaledOvershoot = Math.min(
-          AUTO_NUKE_MAX_SAM_OVERSHOOT_SHOTS,
-          baseOvershoot + heavyLevelBonus + blockingBonus,
-        );
-        samOvershootShots = Math.min(
-          scaledOvershoot,
-          Math.max(0, remainingSlotsAfterClear),
-          Math.max(0, Math.floor(remainingGoldAfterClear / best.nukeCost)),
-        );
-        for (let index = 0; index < samOvershootShots; index++) {
-          shots.push({
-            tile: best.candidate.tile,
-            sourceTile: best.candidate.sourceTile,
-            rocketDirectionUp: best.candidate.rocketDirectionUp,
-            spec: best.candidate.spec,
-            reason: "sam-clear-overshoot",
-            targetSamOwnedByTarget: best.candidate.samClearOwnedByTarget,
-          });
-        }
-      }
-      state.selectedCandidateKeys.add(best.candidateKey);
-      markAutoNukeCandidateLanded(
-        best.candidate,
-        state,
-        getAutoNukeCandidateLandingTick(game, best.candidate, mainShotIndex),
-      );
-      if (
-        isAutoNukeSamClearPhase(mode, state) &&
-        isAutoNukeSamClearStackCleared(state, state.focusedSamStackKey)
-      ) {
-        state.focusedSamStackKey = null;
-      }
-      remainingGold -= best.totalCost + samOvershootShots * best.nukeCost;
-      remainingSiloSlots -= best.shotsNeeded + samOvershootShots;
-      totalCost += best.totalCost + samOvershootShots * best.nukeCost;
-      if (!best.candidate.isSamClear || mode === "destruction" || mode === "sams" || state.hasPrioritySamClear) {
-        totalScore += best.marginalScore;
-      }
-    }
-
-    const confirmationResult = appendAutoNukeDestructionConfirmationShots(
+  function createAutoNukePlanContext(game, baseContext, mode, options) {
+    const availability = getAutoNukePlanAvailability(baseContext, options);
+    const state = createAutoNukePlanningState(game, baseContext, options);
+    const confirmationShotLimit = getAutoNukeConfirmationShotLimit(mode, options);
+    const { availableGold, availableSiloSlots, budgetGold, budgetSiloSlots } =
+      availability;
+    return {
       game,
       baseContext,
       mode,
       state,
-      shots,
-      remainingGold,
-      remainingSiloSlots,
-      totalCost,
-      confirmationShotLimit,
-      metrics,
-    );
-    remainingGold = confirmationResult.remainingGold;
-    remainingSiloSlots = confirmationResult.remainingSiloSlots;
-    totalCost = confirmationResult.totalCost;
-
-    return {
-      shots,
-      score: totalScore,
-      cost: totalCost,
-      budgetGold,
-      budgetSiloSlots,
+      shots: [],
+      metrics: createAutoNukePlanMetrics(),
       availableGold,
       availableSiloSlots,
-      minimumRequiredGold,
-      minimumRequiredSiloSlots,
-      metrics: finalizeAutoNukePlanMetrics(metrics, shots.length, totalCost),
-      followupState: cloneAutoNukePlanState(state),
-      destructionPhase: state.destructionPhase,
+      budgetGold,
+      budgetSiloSlots,
+      remainingGold: budgetGold,
+      remainingSiloSlots: budgetSiloSlots,
+      totalScore: 0,
+      totalCost: 0,
+      minimumRequiredGold: Infinity,
+      minimumRequiredSiloSlots: Infinity,
+      confirmationShotLimit,
+      confirmationShotReserve:
+        mode === "destruction"
+          ? Math.min(confirmationShotLimit, Math.max(0, budgetSiloSlots - 2))
+          : 0,
     };
   }
 
+  function getAutoNukeCandidateReservation(context, candidate) {
+    const inClearPhase = isAutoNukeSamClearPhase(context.mode, context.state);
+    const shouldReserve = candidate.isSamClear &&
+      context.mode !== "sams" &&
+      !inClearPhase;
+    return {
+      slots: shouldReserve ? 1 : 0,
+      gold: shouldReserve
+        ? getAutoNukeMinimumAvailableCost(
+          context.game,
+          context.baseContext.myPlayer,
+        )
+        : 0,
+    };
+  }
+
+  function recordAutoNukeMinimumRequirements(context, evaluation, reservation) {
+    context.minimumRequiredSiloSlots = Math.min(
+      context.minimumRequiredSiloSlots,
+      context.budgetSiloSlots -
+        context.remainingSiloSlots +
+        evaluation.shotsNeeded +
+        reservation.slots +
+        context.confirmationShotReserve,
+    );
+    context.minimumRequiredGold = Math.min(
+      context.minimumRequiredGold,
+      context.budgetGold -
+        context.remainingGold +
+        evaluation.totalCost +
+        reservation.gold,
+    );
+  }
+
+  function evaluateAutoNukePlanCandidate(context, candidates, candidate) {
+    const candidateKey = `${candidate.spec.type}:${candidate.tile}`;
+    if (context.state.selectedCandidateKeys.has(candidateKey)) return null;
+    const nukeCost = getNukeSuggestionUnitCost(
+      context.game,
+      context.baseContext.myPlayer,
+      candidate.spec.type,
+    );
+    if (!Number.isFinite(nukeCost) || nukeCost <= 0) return null;
+
+    const interceptionPlan = getAutoNukeInterceptionPlan(context.game, {
+      baseContext: context.baseContext,
+      candidate,
+      state: context.state,
+      shotIndexOffset: context.shots.length,
+    });
+    const shotsNeeded = interceptionPlan.shotsNeededBeforeLanding + 1;
+    const totalCost = nukeCost + interceptionPlan.burnCost;
+    if (!Number.isFinite(totalCost) || !Number.isFinite(shotsNeeded)) return null;
+
+    const marginalScore = getAutoNukeMarginalScore(
+      candidate,
+      context.mode,
+      context.state,
+    );
+    if (marginalScore < AUTO_NUKE_MIN_MARGINAL_SCORE) return null;
+
+    const reservation = getAutoNukeCandidateReservation(context, candidate);
+    const exceedsBudget =
+      shotsNeeded + reservation.slots + context.confirmationShotReserve >
+        context.remainingSiloSlots ||
+      totalCost + reservation.gold > context.remainingGold;
+    if (exceedsBudget) {
+      recordAutoNukeMinimumRequirements(
+        context,
+        { shotsNeeded, totalCost },
+        reservation,
+      );
+      return null;
+    }
+    if (
+      !isAutoNukeHydrogenCandidateEfficient(context.game, {
+        baseContext: context.baseContext,
+        candidate,
+        candidates,
+        mode: context.mode,
+        state: context.state,
+        marginalScore,
+        totalCost,
+        remainingGold: context.remainingGold,
+        remainingSiloSlots: context.remainingSiloSlots,
+      })
+    ) {
+      return null;
+    }
+    return {
+      candidate,
+      candidateKey,
+      interceptionPlan,
+      marginalScore,
+      nukeCost,
+      shotsNeeded,
+      totalCost,
+      valueDensity: marginalScore / totalCost,
+    };
+  }
+
+  function isBetterAutoNukePlanCandidate(evaluation, best) {
+    return (
+      !best ||
+      evaluation.valueDensity > best.valueDensity ||
+      (
+        evaluation.valueDensity === best.valueDensity &&
+        evaluation.marginalScore > best.marginalScore
+      )
+    );
+  }
+
+  function findBestAutoNukePlanCandidate(context, candidates) {
+    let best = null;
+    const focusedStackKey = isAutoNukeSamClearPhase(context.mode, context.state)
+      ? chooseAutoNukeFocusedSamStackKey(candidates, context.state)
+      : null;
+    for (const candidate of candidates) {
+      if (
+        focusedStackKey &&
+        candidate.isSamClear &&
+        candidate.samClearStackKey !== focusedStackKey
+      ) {
+        continue;
+      }
+      const evaluation = evaluateAutoNukePlanCandidate(
+        context,
+        candidates,
+        candidate,
+      );
+      if (evaluation && isBetterAutoNukePlanCandidate(evaluation, best)) {
+        best = evaluation;
+      }
+    }
+    return best;
+  }
+
+  function shouldOvershootAutoNukeSamClear(context, candidate) {
+    if (!candidate.isSamClear) return false;
+    if (context.mode === "sams") return true;
+    if (
+      context.mode === "destruction" &&
+      context.state.destructionPhase === "sams"
+    ) return true;
+    return context.state.hasPrioritySamClear &&
+      candidate.isBlockingStack &&
+      candidate.samsHit >= 3;
+  }
+
+  function getAutoNukeBaseSamOvershoot(stackSize, levelSum) {
+    if (stackSize <= 1) return levelSum >= 2 ? 1 : 0;
+    if (stackSize === 2) return 1;
+    if (stackSize === 3) return 2;
+    return 3;
+  }
+
+  function getAutoNukeSamOvershootCount(context, best) {
+    if (!shouldOvershootAutoNukeSamClear(context, best.candidate)) return 0;
+
+    const samsHit = Math.max(1, best.candidate.samsHit || 1);
+    const liveKeys = (best.candidate.samClearStackSamKeys || []).filter(
+      (key) => !context.state.destroyedSamKeys.has(key),
+    );
+    const stackSize = Math.max(samsHit, liveKeys.length);
+    const levelSum = Math.max(
+      stackSize,
+      Number(best.candidate.samClearStackLevelSum) || stackSize,
+    );
+    const baseOvershoot = getAutoNukeBaseSamOvershoot(stackSize, levelSum);
+
+    const scaled = Math.min(
+      AUTO_NUKE_MAX_SAM_OVERSHOOT_SHOTS,
+      baseOvershoot +
+        (levelSum >= 10 ? 1 : 0) +
+        (best.candidate.isBlockingStack && stackSize >= 3 ? 1 : 0),
+    );
+    return Math.min(
+      scaled,
+      Math.max(0, context.remainingSiloSlots - best.shotsNeeded),
+      Math.max(
+        0,
+        Math.floor(
+          (context.remainingGold - best.totalCost) / best.nukeCost,
+        ),
+      ),
+    );
+  }
+
+  function appendAutoNukePlanSelection(context, best) {
+    for (const shotSam of best.interceptionPlan.shotSamKeys) {
+      context.shots.push({
+        tile: shotSam.candidate.tile,
+        sourceTile: shotSam.candidate.sourceTile,
+        rocketDirectionUp: shotSam.candidate.rocketDirectionUp,
+        spec: shotSam.candidate.spec,
+        reason: "sam-intercept",
+        interceptingSamKey: shotSam.key,
+        interceptingSamOwnedByTarget: shotSam.ownedByTarget,
+      });
+    }
+    applyAutoNukeInterceptionPlan(context.state, best.interceptionPlan);
+    const mainShotIndex = context.shots.length;
+    context.shots.push({
+      tile: best.candidate.tile,
+      sourceTile: best.candidate.sourceTile,
+      rocketDirectionUp: best.candidate.rocketDirectionUp,
+      spec: best.candidate.spec,
+      reason: best.candidate.isSamClear ? "sam-clear" : "impact",
+      targetSamOwnedByTarget: best.candidate.samClearOwnedByTarget,
+    });
+    addAutoNukeCandidateMetrics(context.metrics, best.candidate);
+
+    const overshootCount = getAutoNukeSamOvershootCount(context, best);
+    for (let index = 0; index < overshootCount; index++) {
+      context.shots.push({
+        tile: best.candidate.tile,
+        sourceTile: best.candidate.sourceTile,
+        rocketDirectionUp: best.candidate.rocketDirectionUp,
+        spec: best.candidate.spec,
+        reason: "sam-clear-overshoot",
+        targetSamOwnedByTarget: best.candidate.samClearOwnedByTarget,
+      });
+    }
+    context.state.selectedCandidateKeys.add(best.candidateKey);
+    markAutoNukeCandidateLanded(
+      best.candidate,
+      context.state,
+      getAutoNukeCandidateLandingTick(
+        context.game,
+        best.candidate,
+        mainShotIndex,
+      ),
+    );
+    if (
+      isAutoNukeSamClearPhase(context.mode, context.state) &&
+      isAutoNukeSamClearStackCleared(
+        context.state,
+        context.state.focusedSamStackKey,
+      )
+    ) {
+      context.state.focusedSamStackKey = null;
+    }
+
+    const overshootCost = overshootCount * best.nukeCost;
+    context.remainingGold -= best.totalCost + overshootCost;
+    context.remainingSiloSlots -= best.shotsNeeded + overshootCount;
+    context.totalCost += best.totalCost + overshootCost;
+    if (
+      !best.candidate.isSamClear ||
+      context.mode === "destruction" ||
+      context.mode === "sams" ||
+      context.state.hasPrioritySamClear
+    ) {
+      context.totalScore += best.marginalScore;
+    }
+  }
+
+  function finalizeAutoNukePlan(context) {
+    const confirmation = appendAutoNukeDestructionConfirmationShots(
+      context.game,
+      {
+        baseContext: context.baseContext,
+        mode: context.mode,
+        state: context.state,
+        shots: context.shots,
+        remainingGold: context.remainingGold,
+        remainingSiloSlots: context.remainingSiloSlots,
+        totalCost: context.totalCost,
+        confirmationShotLimit: context.confirmationShotLimit,
+        metrics: context.metrics,
+      },
+    );
+    return {
+      shots: context.shots,
+      score: context.totalScore,
+      cost: confirmation.totalCost,
+      budgetGold: context.budgetGold,
+      budgetSiloSlots: context.budgetSiloSlots,
+      availableGold: context.availableGold,
+      availableSiloSlots: context.availableSiloSlots,
+      minimumRequiredGold: context.minimumRequiredGold,
+      minimumRequiredSiloSlots: context.minimumRequiredSiloSlots,
+      metrics: finalizeAutoNukePlanMetrics(
+        context.metrics,
+        context.shots.length,
+        confirmation.totalCost,
+      ),
+      followupState: cloneAutoNukePlanState(context.state),
+      destructionPhase: context.state.destructionPhase,
+    };
+  }
+
+  function buildAutoNukePlan(
+    game,
+    targetPlayer,
+    mode,
+    options = null,
+    candidatePool = null,
+  ) {
+    const pool = candidatePool ||
+      computeAutoNukeCandidatePool(game, targetPlayer, mode);
+    if (!pool.baseContext || pool.candidates.length === 0) {
+      return getEmptyAutoNukePlan(options);
+    }
+    const context = createAutoNukePlanContext(
+      game,
+      pool.baseContext,
+      mode,
+      options,
+    );
+    if (
+      !isAutoNukeSamClearPhase(mode, context.state) &&
+      pool.candidates.some(
+        (candidate) => candidate.isSamClear && candidate.isBlockingStack,
+      )
+    ) {
+      context.state.hasPrioritySamClear = true;
+    }
+    while (
+      context.remainingSiloSlots > context.confirmationShotReserve &&
+      context.remainingGold > 0
+    ) {
+      const best = findBestAutoNukePlanCandidate(context, pool.candidates);
+      if (!best) break;
+      appendAutoNukePlanSelection(context, best);
+    }
+    return finalizeAutoNukePlan(context);
+  }
   function buildAutoNukePlanForMode(
     game,
     targetPlayer,
@@ -5062,44 +5017,47 @@
   }
 
   function waitForAutoNukeDelay(ms) {
-    return new Promise((resolve) => window.setTimeout(resolve, ms));
+    return new Promise((resolve) => {
+      window.setTimeout(resolve, ms);
+    });
+  }
+
+  async function queryAutoNukeBuildable(params, candidate, method) {
+    const lookup = params?.myPlayer?.[method];
+    if (typeof lookup !== "function") return null;
+    try {
+      const result = await lookup.call(
+        params.myPlayer,
+        candidate.tile,
+        [candidate.spec.type],
+      );
+      const items = method === "actions" ? result?.buildableUnits : result;
+      return Array.from(items || []).find(
+        (item) => item?.type === candidate.spec.type && item.canBuild,
+      ) || null;
+    } catch (error) {
+      runtimeDebugLog(`OpenFront Helper: ${method} nuke lookup failed.`, error);
+      return null;
+    }
   }
 
   async function getAutoNukeBuildableUnit(params, candidate) {
-    const unitType = candidate?.spec?.type;
-    if (!unitType || candidate?.tile == null) {
-      return null;
-    }
+    if (!candidate?.spec?.type || candidate.tile == null) return null;
+    const direct = await queryAutoNukeBuildable(
+      params,
+      candidate,
+      "buildables",
+    );
+    return direct || queryAutoNukeBuildable(params, candidate, "actions");
+  }
 
-    if (typeof params?.myPlayer?.buildables === "function") {
-      try {
-        const buildables = await params.myPlayer.buildables(candidate.tile, [unitType]);
-        const buildable = Array.from(buildables || []).find(
-          (item) => item?.type === unitType,
-        );
-        if (buildable?.canBuild) {
-          return buildable;
-        }
-      } catch (_error) {
-        // Fall back to the broader action lookup.
-      }
+  function applyAutoNukeRocketDirection(params, candidate) {
+    const type = candidate.spec?.type;
+    if (type !== "Atom Bomb" && type !== "Hydrogen Bomb") return;
+    if (params?.buildMenu?.uiState) {
+      params.buildMenu.uiState.rocketDirectionUp =
+        candidate.rocketDirectionUp !== false;
     }
-
-    if (typeof params?.myPlayer?.actions === "function") {
-      try {
-        const actions = await params.myPlayer.actions(candidate.tile, [unitType]);
-        const buildable = Array.from(actions?.buildableUnits || []).find(
-          (item) => item?.type === unitType,
-        );
-        if (buildable?.canBuild) {
-          return buildable;
-        }
-      } catch (_error) {
-        return null;
-      }
-    }
-
-    return null;
   }
 
   async function launchAutoNukeCandidate(params, candidate) {
@@ -5112,16 +5070,7 @@
       return false;
     }
 
-    if (
-      candidate.spec?.type === "Atom Bomb" ||
-      candidate.spec?.type === "Hydrogen Bomb"
-    ) {
-      const rocketDirectionUp = candidate.rocketDirectionUp !== false;
-      if (params?.buildMenu?.uiState) {
-        params.buildMenu.uiState.rocketDirectionUp = rocketDirectionUp;
-      }
-    }
-
+    applyAutoNukeRocketDirection(params, candidate);
     params?.buildMenu?.sendBuildOrUpgrade?.(buildableUnit, candidate.tile);
     return true;
   }
@@ -5148,7 +5097,8 @@
       ).length;
       return trajectoryTicks * AUTO_NUKE_GAME_TICK_MS +
         shotIndex * AUTO_NUKE_SEQUENCE_DELAY_MS;
-    } catch (_error) {
+    } catch (error) {
+      runtimeDebugLog("OpenFront Helper: nuke trajectory estimate failed.", error);
       return AUTO_NUKE_FALLBACK_LANDING_MS +
         shotIndex * AUTO_NUKE_SEQUENCE_DELAY_MS;
     }
@@ -5167,45 +5117,79 @@
     );
   }
 
+  function getAutoNukeImpactLabel(objective) {
+    const labels = {
+      "Destroy SAM stacks": "Strike SAM position",
+      "Destroy SAMs + unguarded targets": "Strike unguarded target",
+      "Destroy main buildings": "Strike key building",
+      "Destroy remote buildings": "Remote building strike",
+      "Maximize economic damage": "Strike economic target",
+      "Maximize population damage": "Strike population center",
+    };
+    return labels[objective] || "Strike target";
+  }
+
+  function getAutoNukeShotLabel(shot, objective) {
+    if (shot?.reason === "sam-intercept") {
+      return shot.interceptingSamOwnedByTarget
+        ? "Burn SAM slot (decoy)"
+        : "Bait allied SAM fire";
+    }
+    if (shot?.reason === "sam-clear") {
+      return shot.targetSamOwnedByTarget === false
+        ? "Route thru allied SAM"
+        : "Destroy SAM stack";
+    }
+    if (shot?.reason === "sam-clear-overshoot") return "SAM overshoot (insurance)";
+    if (shot?.reason === "confirmation") return "Confirm destruction";
+    return getAutoNukeImpactLabel(objective);
+  }
+
+  function renderAutoNukePlanSteps(plan, progress) {
+    const list = ensureAutoNukeProcessPanel().querySelector(
+      ".openfront-helper-auto-nuke-process-steps",
+    );
+    if (!list) return null;
+    const objective = progress?.objective || "";
+    list.innerHTML = plan.shots
+      .map((shot, index) =>
+        `<li data-shot-index="${index}">${getAutoNukeShotLabel(shot, objective)}</li>`,
+      )
+      .join("");
+    return list;
+  }
+
+  function getAutoNukeNextShotAction(shot) {
+    if (!shot) return "All nukes away";
+    if (shot.reason === "sam-intercept") return "Burning SAM slot";
+    if (shot.reason === "sam-clear" || shot.reason === "sam-clear-overshoot") {
+      return "Striking SAM stack";
+    }
+    if (shot.reason === "confirmation") return "Confirming hit";
+    return "Striking target";
+  }
+
+  function updateAutoNukeLaunchProgress(progress, plan, launchedCount) {
+    if (!progress) return;
+    updateAutoNukeProcessPanel({
+      ...progress,
+      detail: `${getAutoNukeNextShotAction(plan.shots[launchedCount])} — ${launchedCount}/${plan.shots.length}`,
+      progress: plan.shots.length > 0 ? launchedCount / plan.shots.length : 1,
+    });
+  }
+
+  function markAutoNukePlanStepDone(stepsList, launchedCount) {
+    const item = stepsList?.querySelector(`[data-shot-index="${launchedCount}"]`);
+    if (!item) return;
+    item.setAttribute("data-done", "");
+    item.scrollIntoView?.({ block: "nearest" });
+  }
+
   async function launchAutoNukePlan(params, plan, progress = null) {
     let launchedCount = 0;
     plan.estimatedLandingDelayMs = estimateAutoNukePlanLandingDelayMs(params, plan);
     plan.estimatedImpactAtMs = performance.now() + plan.estimatedLandingDelayMs;
-
-    const panel = ensureAutoNukeProcessPanel();
-    const stepsList = panel.querySelector(".openfront-helper-auto-nuke-process-steps");
-
-    // Build one step per shot describing WHY the nuke is fired (not what type it is).
-    if (stepsList) {
-      const objectiveCtx = progress?.objective || "";
-      stepsList.innerHTML = plan.shots.map((shot, i) => {
-        const reason = shot?.reason;
-        let label;
-        if (reason === "sam-intercept") {
-          label = shot.interceptingSamOwnedByTarget
-            ? "Burn SAM slot (decoy)"
-            : "Bait allied SAM fire";
-        } else if (reason === "sam-clear") {
-          label = shot.targetSamOwnedByTarget === false
-            ? "Route thru allied SAM"
-            : "Destroy SAM stack";
-        } else if (reason === "sam-clear-overshoot") {
-          label = "SAM overshoot (insurance)";
-        } else if (reason === "confirmation") {
-          label = "Confirm destruction";
-        } else {
-          // "impact" — use the wave objective for context
-          label = objectiveCtx === "Destroy SAM stacks" ? "Strike SAM position"
-            : objectiveCtx === "Destroy SAMs + unguarded targets" ? "Strike unguarded target"
-            : objectiveCtx === "Destroy main buildings" ? "Strike key building"
-            : objectiveCtx === "Destroy remote buildings" ? "Remote building strike"
-            : objectiveCtx === "Maximize economic damage" ? "Strike economic target"
-            : objectiveCtx === "Maximize population damage" ? "Strike population center"
-            : "Strike target";
-        }
-        return `<li data-shot-index="${i}">${label}</li>`;
-      }).join("");
-    }
+    const stepsList = renderAutoNukePlanSteps(plan, progress);
 
     if (progress) {
       updateAutoNukeProcessPanel({
@@ -5225,38 +5209,9 @@
         break;
       }
 
-      // Tick off the step for this shot.
-      if (stepsList) {
-        const item = stepsList.querySelector(`[data-shot-index="${launchedCount}"]`);
-        if (item) {
-          item.setAttribute("data-done", "");
-          item.scrollIntoView?.({ block: "nearest" });
-        }
-      }
-
+      markAutoNukePlanStepDone(stepsList, launchedCount);
       launchedCount++;
-      if (progress) {
-        // Show a contextual verb for the NEXT shot being queued, so the message varies.
-        const nextShot = plan.shots[launchedCount];
-        const nextReason = nextShot?.reason;
-        let actionVerb;
-        if (!nextShot) {
-          actionVerb = "All nukes away";
-        } else if (nextReason === "sam-intercept") {
-          actionVerb = "Burning SAM slot";
-        } else if (nextReason === "sam-clear" || nextReason === "sam-clear-overshoot") {
-          actionVerb = "Striking SAM stack";
-        } else if (nextReason === "confirmation") {
-          actionVerb = "Confirming hit";
-        } else {
-          actionVerb = "Striking target";
-        }
-        updateAutoNukeProcessPanel({
-          ...progress,
-          detail: `${actionVerb} — ${launchedCount}/${plan.shots.length}`,
-          progress: plan.shots.length > 0 ? launchedCount / plan.shots.length : 1,
-        });
-      }
+      updateAutoNukeLaunchProgress(progress, plan, launchedCount);
     }
 
     return launchedCount;
@@ -5316,13 +5271,14 @@
       let cls = "wave-dot";
       if (entry.status === "done") cls += " wave-dot--done";
       else if (entry.status === "active") cls += " wave-dot--active";
-      return `<span class="${cls}" title="${entry.label}">${entry.status === "done" ? "✓" : (i + 1)}</span>`;
+      const dotLabel = entry.status === "done" ? "✓" : i + 1;
+      return `<span class="${cls}" title="${entry.label}">${dotLabel}</span>`;
     }).join(`<span class="wave-connector"></span>`);
 
     const activeEntry = activeIdx >= 0 ? autoNukeWaveLog[activeIdx] : null;
-    const activeLabel = activeEntry
-      ? activeEntry.label.replace(/^Wave \d+ — /, "")
-      : (doneCount === total ? "Done" : "");
+    let activeLabel = "";
+    if (activeEntry) activeLabel = activeEntry.label.replace(/^Wave \d+ — /, "");
+    else if (doneCount === total) activeLabel = "Done";
 
     container.innerHTML = `
       <div class="wave-summary">
@@ -5374,210 +5330,7 @@
 
     const style = document.createElement("style");
     style.id = AUTO_NUKE_PROCESS_PANEL_STYLE_ID;
-    style.textContent = `
-      #${AUTO_NUKE_PROCESS_PANEL_ID} {
-        position: fixed;
-        right: 14px;
-        top: calc(50% + 118px);
-        z-index: 9000;
-        width: min(320px, calc(100vw - 28px));
-        padding: 10px;
-        border: 1px solid rgba(56, 189, 248, 0.46);
-        border-radius: 8px;
-        background: rgba(13, 18, 24, 0.97);
-        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.44);
-        color: #f8fafc;
-        font: 800 12px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        letter-spacing: 0;
-        transform: translateY(-50%);
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID}[hidden] {
-        display: none;
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-top {
-        display: flex;
-        justify-content: space-between;
-        gap: 8px;
-        margin-bottom: 5px;
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-wave {
-        color: #bae6fd;
-        font-size: 12px;
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-target {
-        color: #94a3b8;
-        font-size: 11px;
-        max-width: 128px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        text-align: right;
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-objective {
-        color: #e2e8f0;
-        font-size: 11px;
-        margin-bottom: 7px;
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-track {
-        height: 7px;
-        overflow: hidden;
-        border-radius: 6px;
-        background: rgba(51, 65, 85, 0.92);
-        margin-bottom: 7px;
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-fill {
-        width: 0%;
-        height: 100%;
-        border-radius: 6px;
-        background: linear-gradient(90deg, #38bdf8, #facc15);
-        transition: width 140ms linear;
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID}.openfront-helper-auto-nuke-process-waiting .openfront-helper-auto-nuke-process-fill {
-        width: 38%;
-        animation: openfront-helper-auto-nuke-process-wait 1.2s ease-in-out infinite alternate;
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-detail {
-        color: #cbd5e1;
-        font-size: 11px;
-        font-weight: 750;
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-steps {
-        list-style: none;
-        margin: 6px 0 0;
-        padding: 0;
-        max-height: 120px;
-        overflow-y: auto;
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-waves {
-        margin: 0 0 8px;
-        padding: 0;
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-waves:empty {
-        display: none;
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .wave-summary {
-        display: flex;
-        justify-content: space-between;
-        align-items: baseline;
-        margin-bottom: 6px;
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .wave-summary-label {
-        font-size: 11px;
-        font-weight: 600;
-        color: #e2e8f0;
-        letter-spacing: 0.01em;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        max-width: 72%;
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .wave-summary-count {
-        font-size: 10px;
-        font-weight: 500;
-        color: #64748b;
-        white-space: nowrap;
-        flex-shrink: 0;
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .wave-track {
-        display: flex;
-        align-items: center;
-        gap: 0;
-        flex-wrap: wrap;
-        row-gap: 4px;
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .wave-connector {
-        flex: 1;
-        min-width: 6px;
-        max-width: 18px;
-        height: 1px;
-        background: #334155;
-        border-radius: 1px;
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .wave-dot {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 20px;
-        height: 20px;
-        border-radius: 50%;
-        font-size: 8px;
-        font-weight: 700;
-        background: #1e293b;
-        color: #475569;
-        border: 1.5px solid #334155;
-        flex-shrink: 0;
-        transition: background 200ms, border-color 200ms, color 200ms, box-shadow 200ms;
-        cursor: default;
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .wave-dot--done {
-        background: #14532d;
-        border-color: #22c55e;
-        color: #4ade80;
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .wave-dot--active {
-        background: #0c4a6e;
-        border-color: #38bdf8;
-        color: #7dd3fc;
-        box-shadow: 0 0 6px 1px rgba(56, 189, 248, 0.35);
-        animation: wave-dot-pulse 1.4s ease-in-out infinite;
-      }
-
-      @keyframes wave-dot-pulse {
-        0%, 100% { box-shadow: 0 0 6px 1px rgba(56, 189, 248, 0.35); }
-        50% { box-shadow: 0 0 10px 3px rgba(56, 189, 248, 0.55); }
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-steps:empty {
-        display: none;
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-steps li {
-        font-size: 10px;
-        color: #64748b;
-        padding: 1px 0;
-        transition: color 100ms;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-steps li::before {
-        content: "○ ";
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-steps li[data-done] {
-        color: #4ade80;
-      }
-
-      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-steps li[data-done]::before {
-        content: "✓ ";
-      }
-
-      @keyframes openfront-helper-auto-nuke-process-wait {
-        from { transform: translateX(-16%); }
-        to { transform: translateX(180%); }
-      }
-    `;
+    style.textContent = AUTO_NUKE_PROCESS_PANEL_CSS;
     (document.head || document.documentElement).appendChild(style);
   }
 
@@ -5673,7 +5426,16 @@
     return "Launch nukes";
   }
 
-  function getAutoNukeProcessWaveStatus(params, mode, waveNumber, phase, detail, extra = {}, plan = null) {
+
+  function getAutoNukeProcessWaveStatus(params, request) {
+    const {
+      mode,
+      waveNumber,
+      phase,
+      detail,
+      extra = {},
+      plan = null,
+    } = request;
     return {
       targetName: getPlayerDisplayName(params.selected),
       waveLabel: `Wave ${waveNumber}`,
@@ -5728,6 +5490,49 @@
       : null;
   }
 
+  function getDesiredAutoNukeReadySlots(player, potentialPlan, waveOptions) {
+    const totalSlots = getTotalNukeSiloSlotCount(player);
+    const readyFraction = Number(waveOptions.readySlotFraction) || 0.6;
+    return Math.min(
+      totalSlots,
+      Math.max(
+        1,
+        Math.min(
+          potentialPlan.budgetSiloSlots || totalSlots,
+          Math.max(2, Math.ceil(totalSlots * readyFraction)),
+        ),
+      ),
+    );
+  }
+
+  function updateAutoNukeWaitingStatus(processStatus, detail) {
+    if (!processStatus) return;
+    updateAutoNukeProcessPanel({ ...processStatus, detail, waiting: true });
+  }
+
+  function getAutoNukeWaveResources(player, desiredReadySiloSlots) {
+    const readySiloSlots = getReadyNukeSiloSlotCount(player);
+    const gold = getPlayerGoldNumber(player);
+    const availableGold = Number.isFinite(gold) ? Math.max(0, gold) : 0;
+    let waitingDetail = null;
+    if (readySiloSlots <= 0) {
+      waitingDetail = `Waiting for silos 0/${desiredReadySiloSlots}`;
+    } else if (availableGold <= 0) {
+      waitingDetail = "Waiting for gold";
+    } else if (readySiloSlots < desiredReadySiloSlots) {
+      waitingDetail = `Waiting for silos ${readySiloSlots}/${desiredReadySiloSlots}`;
+    }
+    return { availableGold, readySiloSlots, waitingDetail };
+  }
+
+  function getAutoNukeWaveLaunchSlots(readySiloSlots, waveOptions) {
+    const fraction = Number(waveOptions.launchSlotFraction);
+    if (!Number.isFinite(fraction) || fraction <= 0 || fraction >= 1) {
+      return readySiloSlots;
+    }
+    return Math.max(1, Math.ceil(readySiloSlots * fraction));
+  }
+
   async function waitForAutoNukeWavePlan(
     params,
     mode,
@@ -5745,70 +5550,37 @@
       return null;
     }
 
-    const totalSiloSlots = getTotalNukeSiloSlotCount(params.myPlayer);
-    const readySlotFraction = Number(waveOptions.readySlotFraction) || 0.6;
-    const desiredReadySiloSlots = Math.min(
-      totalSiloSlots,
-      Math.max(
-        1,
-        Math.min(
-          potentialPlan.budgetSiloSlots || totalSiloSlots,
-          Math.max(
-            2,
-            Math.ceil(totalSiloSlots * readySlotFraction),
-          ),
-        ),
-      ),
+    const desiredReadySiloSlots = getDesiredAutoNukeReadySlots(
+      params.myPlayer,
+      potentialPlan,
+      waveOptions,
     );
     const startedAt = performance.now();
     let cachedCandidatePool = null;
     let cachedCandidatePoolAt = -Infinity;
     const CANDIDATE_POOL_TTL_MS = 3500;
-    if (processStatus) {
-      updateAutoNukeProcessPanel({
-        ...processStatus,
-        detail: `Waiting for silos ${getReadyNukeSiloSlotCount(params.myPlayer)}/${desiredReadySiloSlots}`,
-        waiting: true,
-      });
-    }
+    updateAutoNukeWaitingStatus(
+      processStatus,
+      `Waiting for silos ${getReadyNukeSiloSlotCount(params.myPlayer)}/${desiredReadySiloSlots}`,
+    );
     while (performance.now() - startedAt < AUTO_NUKE_SECOND_PASS_MAX_WAIT_MS) {
       if (!canContinueAutoNukeSecondPass(params)) {
         return null;
       }
 
-      const readySiloSlots = getReadyNukeSiloSlotCount(params.myPlayer);
-      const gold = getPlayerGoldNumber(params.myPlayer);
-      const availableGold = Number.isFinite(gold) ? Math.max(0, gold) : 0;
-      if (readySiloSlots <= 0 || availableGold <= 0) {
-        if (processStatus) {
-          updateAutoNukeProcessPanel({
-            ...processStatus,
-            detail: readySiloSlots <= 0
-              ? `Waiting for silos 0/${desiredReadySiloSlots}`
-              : "Waiting for gold",
-            waiting: true,
-          });
-        }
+      const resources = getAutoNukeWaveResources(
+        params.myPlayer,
+        desiredReadySiloSlots,
+      );
+      if (resources.waitingDetail) {
+        updateAutoNukeWaitingStatus(processStatus, resources.waitingDetail);
         await waitForAutoNukeDelay(AUTO_NUKE_SECOND_PASS_POLL_MS);
         continue;
       }
-      if (readySiloSlots < desiredReadySiloSlots) {
-        if (processStatus) {
-          updateAutoNukeProcessPanel({
-            ...processStatus,
-            detail: `Waiting for silos ${readySiloSlots}/${desiredReadySiloSlots}`,
-            waiting: true,
-          });
-        }
-        await waitForAutoNukeDelay(AUTO_NUKE_SECOND_PASS_POLL_MS);
-        continue;
-      }
-      const launchSlotFraction = Number(waveOptions.launchSlotFraction);
-      const maxSiloSlots = Number.isFinite(launchSlotFraction) &&
-        launchSlotFraction > 0 &&
-        launchSlotFraction < 1
-        ? Math.max(1, Math.ceil(readySiloSlots * launchSlotFraction))
-        : readySiloSlots;
+      const maxSiloSlots = getAutoNukeWaveLaunchSlots(
+        resources.readySiloSlots,
+        waveOptions,
+      );
 
       const nowMs = performance.now();
       if (
@@ -5829,7 +5601,7 @@
         params.selected,
         mode,
         {
-          maxGold: availableGold,
+          maxGold: resources.availableGold,
           maxSiloSlots,
           initialState,
           spreadMultiplier: waveOptions.spreadMultiplier,
@@ -5843,24 +5615,75 @@
       }
       // Force refresh next iteration in case stale pool caused empty plan.
       cachedCandidatePool = null;
-      if (processStatus) {
-        updateAutoNukeProcessPanel({
-          ...processStatus,
-          detail: "Scanning targets...",
-          waiting: true,
-        });
-      }
+      updateAutoNukeWaitingStatus(processStatus, "Scanning targets...");
       await waitForAutoNukeDelay(AUTO_NUKE_SECOND_PASS_POLL_MS);
     }
 
     return null;
   }
 
+  async function launchAutoNukePreemptiveSamWaves(request) {
+    const { params, mode } = request;
+    let { followupWaveState, waveNumber, latestImpactAtMs } = request;
+    const shouldLaunch = followupWaveState?.hasPrioritySamClear &&
+      request.initialPlan.shots.some((shot) => shot.reason === "sam-clear");
+    if (!shouldLaunch) return { followupWaveState, waveNumber, latestImpactAtMs };
+
+    for (let wave = 0; wave < AUTO_NUKE_MAX_PREEMPTIVE_SAM_WAVES; wave++) {
+      if (!canContinueAutoNukeSecondPass(params)) break;
+      waveNumber++;
+      const logIndex = pushAutoNukeWaveEntry(`Wave ${waveNumber} — SAM burn`, "active");
+      const samClearPlan = await waitForAutoNukeWavePlan(
+        params,
+        mode,
+        followupWaveState,
+        {
+          spreadMultiplier: 1,
+          readySlotFraction: AUTO_NUKE_SECOND_PASS_READY_SLOT_FRACTION,
+          launchSlotFraction: 1,
+          confirmationShots: 0,
+        },
+        getAutoNukeProcessWaveStatus(params, {
+          mode,
+          waveNumber,
+          phase: "sam-clear",
+          detail: `Burning SAM stacks — wave ${wave + 1}`,
+        }),
+      );
+      if (!samClearPlan?.shots.some((shot) => shot.reason === "sam-clear")) {
+        waveNumber--;
+        completeAutoNukeWaveEntry(logIndex);
+        break;
+      }
+      const launched = await launchAutoNukePlan(
+        params,
+        samClearPlan,
+        getAutoNukeProcessWaveStatus(params, {
+          mode,
+          waveNumber,
+          phase: "sam-clear",
+          detail: `Firing ${samClearPlan.shots.length} SAM-clear nukes`,
+        }),
+      );
+      completeAutoNukeWaveEntry(logIndex);
+      if (launched === 0) {
+        waveNumber--;
+        break;
+      }
+      latestImpactAtMs = Math.max(
+        latestImpactAtMs,
+        samClearPlan.estimatedImpactAtMs || 0,
+      );
+      followupWaveState = samClearPlan.followupState;
+    }
+    return { followupWaveState, waveNumber, latestImpactAtMs };
+  }
+
   async function launchAutoNukeWithOptionalSecondPass(params, mode, tierId, plan) {
     resetAutoNukeWaveLog();
     const isSamOnlyMode = mode === "sams";
     const isDestructionFlow = mode === "destruction" || isSamOnlyMode;
-    let waveNumber = 1;
+    const waveNumber = 1;
 
     // Pre-populate wave 1 entry so user sees what's happening immediately.
     const phase1 = isDestructionFlow ? plan.destructionPhase : mode;
@@ -5870,396 +5693,39 @@
     const launchedCount = await launchAutoNukePlan(
       params,
       plan,
-      getAutoNukeProcessWaveStatus(
-        params,
-        mode,
-        waveNumber,
-        phase1,
-        `Firing ${plan.shots.length} nukes`,
-        {},
-        plan,
-      ),
+      getAutoNukeProcessWaveStatus(params, { mode: mode, waveNumber: waveNumber, phase: phase1, detail: `Firing ${plan.shots.length} nukes`, extra: {}, plan: plan }),
     );
-    let latestImpactAtMs = plan.estimatedImpactAtMs || 0;
+    const latestImpactAtMs = plan.estimatedImpactAtMs || 0;
     completeAutoNukeWaveEntry(wave1LogIdx);
 
     if (launchedCount === 0) {
-      console.info(`OpenFront Helper: auto ${mode} nukes could not be launched.`);
+      runtimeDebugLog(`OpenFront Helper: auto ${mode} nukes could not be launched.`);
       updateAutoNukeProcessPanel(
-        getAutoNukeProcessWaveStatus(
-          params,
-          mode,
-          waveNumber,
-          isDestructionFlow ? plan.destructionPhase : mode,
-          "Launch failed",
-          { progress: 1 },
-        ),
+        getAutoNukeProcessWaveStatus(params, { mode: mode, waveNumber: waveNumber, phase: isDestructionFlow ? plan.destructionPhase : mode, detail: "Launch failed", extra: { progress: 1 } }),
       );
       hideAutoNukeProcessPanel(AUTO_NUKE_PROCESS_COMPLETE_HIDE_MS);
       return;
     }
 
     if (!isDestructionFlow) {
-      let followupWaveState = plan.followupState;
-
-      // SAM-clear pre-phase: if the first wave contained SAM-clear shots targeting a
-      // blocking stack, keep launching concentrated SAM-clear waves until the stacks are
-      // gone. These fire before the regular follow-up waves so SAMs are destroyed while
-      // the initial nukes are still in flight.
-      if (
-        followupWaveState?.hasPrioritySamClear &&
-        plan.shots.some((s) => s.reason === "sam-clear")
-      ) {
-        for (let samClearWave = 0; samClearWave < AUTO_NUKE_MAX_PREEMPTIVE_SAM_WAVES; samClearWave++) {
-          if (!canContinueAutoNukeSecondPass(params)) {
-            break;
-          }
-          waveNumber++;
-          const samClearLogIdx = pushAutoNukeWaveEntry(`Wave ${waveNumber} — SAM burn`, "active");
-          const samClearPlan = await waitForAutoNukeWavePlan(
-            params,
-            mode,
-            followupWaveState,
-            {
-              spreadMultiplier: 1,
-              readySlotFraction: AUTO_NUKE_SECOND_PASS_READY_SLOT_FRACTION,
-              launchSlotFraction: 1,
-              confirmationShots: 0,
-            },
-            getAutoNukeProcessWaveStatus(
-              params,
-              mode,
-              waveNumber,
-              "sam-clear",
-              `Burning SAM stacks — wave ${samClearWave + 1}`,
-            ),
-          );
-          if (!samClearPlan || !samClearPlan.shots.some((s) => s.reason === "sam-clear")) {
-            waveNumber--;
-            completeAutoNukeWaveEntry(samClearLogIdx);
-            break;
-          }
-          const samClearLaunched = await launchAutoNukePlan(
-            params,
-            samClearPlan,
-            getAutoNukeProcessWaveStatus(
-              params,
-              mode,
-              waveNumber,
-              "sam-clear",
-              `Firing ${samClearPlan.shots.length} SAM-clear nukes`,
-            ),
-          );
-          completeAutoNukeWaveEntry(samClearLogIdx);
-          if (samClearLaunched === 0) {
-            waveNumber--;
-            break;
-          }
-          latestImpactAtMs = Math.max(latestImpactAtMs, samClearPlan.estimatedImpactAtMs || 0);
-          followupWaveState = samClearPlan.followupState;
-        }
-      }
-
-      let followupWaveNumber = waveNumber + 1;
-      let followupWavesLaunched = 0;
-      while (followupWavesLaunched < AUTO_NUKE_MAX_FOLLOWUP_WAVES) {
-        if (!canContinueAutoNukeSecondPass(params)) {
-          break;
-        }
-        const followupPhaseLabel = getAutoNukePhaseShortLabel(mode, mode);
-        const followupLogIdx = pushAutoNukeWaveEntry(
-          `Wave ${followupWaveNumber} — ${followupPhaseLabel}`,
-          "active",
-        );
-        const followupWavePlan = await waitForAutoNukeWavePlan(
-          params,
-          mode,
-          followupWaveState,
-          {
-            spreadMultiplier: AUTO_NUKE_FOLLOWUP_SPREAD_MULTIPLIER,
-            readySlotFraction: AUTO_NUKE_SECOND_PASS_READY_SLOT_FRACTION,
-            launchSlotFraction: AUTO_NUKE_SECOND_PASS_LAUNCH_SLOT_FRACTION,
-            confirmationShots: 0,
-          },
-          getAutoNukeProcessWaveStatus(
-            params,
-            mode,
-            followupWaveNumber,
-            mode,
-            `Targeting follow-up — wave ${followupWaveNumber}`,
-          ),
-        );
-        if (!followupWavePlan) {
-          completeAutoNukeWaveEntry(followupLogIdx);
-          break;
-        }
-        const followupWaveLaunched = await launchAutoNukePlan(
-          params,
-          followupWavePlan,
-          getAutoNukeProcessWaveStatus(
-            params,
-            mode,
-            followupWaveNumber,
-            mode,
-            `Firing ${followupWavePlan.shots.length} nukes`,
-          ),
-        );
-        completeAutoNukeWaveEntry(followupLogIdx);
-        if (followupWaveLaunched === 0) {
-          break;
-        }
-        latestImpactAtMs = Math.max(
-          latestImpactAtMs,
-          followupWavePlan.estimatedImpactAtMs || 0,
-        );
-        followupWaveState = followupWavePlan.followupState;
-        followupWavesLaunched++;
-        followupWaveNumber++;
-      }
-      const finalWaveNumber = followupWavesLaunched > 0
-        ? followupWaveNumber - 1
-        : waveNumber;
-      updateAutoNukeProcessPanel(
-        getAutoNukeProcessWaveStatus(
-          params,
-          mode,
-          finalWaveNumber,
-          mode,
-          followupWavesLaunched > 0
-            ? `Complete — ${1 + followupWavesLaunched} waves`
-            : `Complete — ${launchedCount} nukes`,
-          { progress: 1 },
-        ),
-      );
-      hideAutoNukeProcessPanelAfterLanding(latestImpactAtMs);
-      return;
-    }
-    waveNumber++;
-
-    let currentState = plan.followupState;
-    let samClearWaveCount = plan.destructionPhase === "sams" ? 1 : 0;
-    while (samClearWaveCount > 0 && samClearWaveCount < AUTO_NUKE_MAX_SAM_CLEAR_WAVES) {
-      const samWaveLogIdx = pushAutoNukeWaveEntry(`Wave ${waveNumber} — SAM clear`, "active");
-      const samWavePlan = await waitForAutoNukeWavePlan(
+      await launchAutoNukeStandardFlow({
         params,
         mode,
-        currentState,
-        {
-          destructionPhase: "sams",
-          spreadMultiplier: 1,
-          readySlotFraction: AUTO_NUKE_SECOND_PASS_READY_SLOT_FRACTION,
-          launchSlotFraction: 1,
-          confirmationShots: 0,
-        },
-        getAutoNukeProcessWaveStatus(
-          params,
-          mode,
-          waveNumber,
-          "sams",
-          "Clearing SAM stacks…",
-        ),
-      );
-      if (!samWavePlan) {
-        completeAutoNukeWaveEntry(samWaveLogIdx);
-        break;
-      }
-
-      const samWaveLaunchedCount = await launchAutoNukePlan(
-        params,
-        samWavePlan,
-        getAutoNukeProcessWaveStatus(
-          params,
-          mode,
-          waveNumber,
-          "sams",
-          `Firing ${samWavePlan.shots.length} SAM-clear nukes`,
-        ),
-      );
-      completeAutoNukeWaveEntry(samWaveLogIdx);
-      if (samWaveLaunchedCount === 0) {
-        console.info("OpenFront Helper: total destruction SAM pass could not be launched.");
-        updateAutoNukeProcessPanel(
-          getAutoNukeProcessWaveStatus(
-            params,
-            mode,
-            waveNumber,
-            "sams",
-            "SAM clear failed",
-            { progress: 1 },
-          ),
-        );
-        hideAutoNukeProcessPanelAfterLanding(latestImpactAtMs);
-        return;
-      }
-      latestImpactAtMs = Math.max(
+        plan,
+        launchedCount,
+        waveNumber,
         latestImpactAtMs,
-        samWavePlan.estimatedImpactAtMs || 0,
-      );
-      currentState = samWavePlan.followupState;
-      samClearWaveCount++;
-      waveNumber++;
-    }
-
-    if (isSamOnlyMode) {
-      updateAutoNukeProcessPanel(
-        getAutoNukeProcessWaveStatus(
-          params,
-          mode,
-          Math.max(1, waveNumber - 1),
-          "sams",
-          "All SAMs neutralized",
-          { progress: 1 },
-        ),
-      );
-      hideAutoNukeProcessPanelAfterLanding(latestImpactAtMs);
+      });
       return;
     }
-
-    // Mark "Building strike" pre-populated entry active (or add if missing).
-    const bldgLogIdx = pushAutoNukeWaveEntry(`Wave ${waveNumber} — Building strike`, "active");
-    const secondWavePlan = await waitForAutoNukeWavePlan(
+    await launchAutoNukeDestructionFlow({
       params,
       mode,
-      currentState,
-      {
-        destructionPhase: "buildings",
-        spreadMultiplier: AUTO_NUKE_SECOND_PASS_SPREAD_MULTIPLIER,
-        readySlotFraction: AUTO_NUKE_SECOND_PASS_READY_SLOT_FRACTION,
-        launchSlotFraction: AUTO_NUKE_SECOND_PASS_LAUNCH_SLOT_FRACTION,
-        confirmationShots: AUTO_NUKE_DESTRUCTION_CONFIRMATION_SHOTS,
-      },
-      getAutoNukeProcessWaveStatus(
-        params,
-        mode,
-        waveNumber,
-        "buildings",
-        "Identifying key buildings…",
-      ),
-    );
-    if (!secondWavePlan) {
-      completeAutoNukeWaveEntry(bldgLogIdx);
-      updateAutoNukeProcessPanel(
-        getAutoNukeProcessWaveStatus(
-          params,
-          mode,
-          Math.max(1, waveNumber - 1),
-          "sams",
-          "No buildings found",
-          { progress: 1 },
-        ),
-      );
-      hideAutoNukeProcessPanelAfterLanding(latestImpactAtMs);
-      return;
-    }
-
-    const secondWaveLaunchedCount = await launchAutoNukePlan(
-      params,
-      secondWavePlan,
-      getAutoNukeProcessWaveStatus(
-        params,
-        mode,
-        waveNumber,
-        "buildings",
-        `Firing ${secondWavePlan.shots.length} nukes`,
-      ),
-    );
-    completeAutoNukeWaveEntry(bldgLogIdx);
-    if (secondWaveLaunchedCount === 0) {
-      console.info("OpenFront Helper: total destruction second pass could not be launched.");
-      updateAutoNukeProcessPanel(
-        getAutoNukeProcessWaveStatus(
-          params,
-          mode,
-          waveNumber,
-          "buildings",
-          "Building strike failed",
-          { progress: 1 },
-        ),
-      );
-      hideAutoNukeProcessPanelAfterLanding(latestImpactAtMs);
-      return;
-    }
-    latestImpactAtMs = Math.max(
+      plan,
+      isSamOnlyMode,
+      waveNumber,
       latestImpactAtMs,
-      secondWavePlan.estimatedImpactAtMs || 0,
-    );
-    waveNumber++;
-
-    // Continue firing "remote" cleanup waves until no targets remain or wave cap hit.
-    let remoteState = secondWavePlan.followupState;
-    let remoteWaveCount = 0;
-    const maxRemoteWaves = AUTO_NUKE_MAX_DESTRUCTION_WAVES - waveNumber + 1;
-    while (remoteWaveCount < maxRemoteWaves) {
-      if (!canContinueAutoNukeSecondPass(params)) {
-        break;
-      }
-      const remoteWaveLabel = remoteWaveCount === 0
-        ? `Wave ${waveNumber} — Cleanup`
-        : `Wave ${waveNumber} — Cleanup ${remoteWaveCount + 1}`;
-      const remoteLogIdx = pushAutoNukeWaveEntry(remoteWaveLabel, "active");
-      const remoteSpread = AUTO_NUKE_THIRD_PASS_SPREAD_MULTIPLIER +
-        remoteWaveCount * 0.4;
-      const remoteWavePlan = await waitForAutoNukeWavePlan(
-        params,
-        mode,
-        remoteState,
-        {
-          destructionPhase: "remote",
-          spreadMultiplier: remoteSpread,
-          readySlotFraction: 0.45,
-          launchSlotFraction: 1,
-          confirmationShots: 0,
-        },
-        getAutoNukeProcessWaveStatus(
-          params,
-          mode,
-          waveNumber,
-          "remote",
-          remoteWaveCount === 0
-            ? "Mopping up remaining targets…"
-            : `Cleanup wave ${remoteWaveCount + 1}`,
-        ),
-      );
-      if (!remoteWavePlan) {
-        completeAutoNukeWaveEntry(remoteLogIdx);
-        break;
-      }
-
-      const remoteWaveLaunched = await launchAutoNukePlan(
-        params,
-        remoteWavePlan,
-        getAutoNukeProcessWaveStatus(
-          params,
-          mode,
-          waveNumber,
-          "remote",
-          `Firing ${remoteWavePlan.shots.length} nukes`,
-        ),
-      );
-      completeAutoNukeWaveEntry(remoteLogIdx);
-      if (remoteWaveLaunched === 0) {
-        break;
-      }
-      latestImpactAtMs = Math.max(
-        latestImpactAtMs,
-        remoteWavePlan.estimatedImpactAtMs || 0,
-      );
-      remoteState = remoteWavePlan.followupState;
-      remoteWaveCount++;
-      waveNumber++;
-    }
-
-    updateAutoNukeProcessPanel(
-      getAutoNukeProcessWaveStatus(
-        params,
-        mode,
-        Math.max(1, waveNumber - 1),
-        "remote",
-        `Mission complete — ${waveNumber - 1} waves`,
-        { progress: 1 },
-      ),
-    );
-    hideAutoNukeProcessPanelAfterLanding(latestImpactAtMs);
+    });
   }
 
   function getAutoNukePlanKey(mode, tierId = "default") {
@@ -6318,12 +5784,12 @@
         mode,
       );
       if (!fallbackCandidate) {
-        console.info(`OpenFront Helper: no valid auto ${mode} nuke target found.`);
+        runtimeDebugLog(`OpenFront Helper: no valid auto ${mode} nuke target found.`);
         return;
       }
       launchAutoNukeCandidate(params, fallbackCandidate).then((launched) => {
         if (!launched) {
-          console.info(`OpenFront Helper: auto ${mode} nuke could not be launched.`);
+          runtimeDebugLog(`OpenFront Helper: auto ${mode} nuke could not be launched.`);
         }
       });
       return;
@@ -6332,14 +5798,7 @@
     launchAutoNukeWithOptionalSecondPass(params, mode, tierId, plan);
   }
 
-  function ensureAutoNukeContextMenuStyles() {
-    if (document.getElementById(AUTO_NUKE_CONTEXT_MENU_STYLE_ID)) {
-      return;
-    }
-
-    const style = document.createElement("style");
-    style.id = AUTO_NUKE_CONTEXT_MENU_STYLE_ID;
-    style.textContent = `
+  const AUTO_NUKE_CONTEXT_MENU_CSS = `
       #${AUTO_NUKE_CONTEXT_MENU_ID} {
         position: fixed;
         z-index: 9000;
@@ -6627,6 +6086,15 @@
         background: rgba(250, 204, 21, 0.2);
       }
     `;
+
+  function ensureAutoNukeContextMenuStyles() {
+    if (document.getElementById(AUTO_NUKE_CONTEXT_MENU_STYLE_ID)) {
+      return;
+    }
+
+    const style = document.createElement("style");
+    style.id = AUTO_NUKE_CONTEXT_MENU_STYLE_ID;
+    style.textContent = AUTO_NUKE_CONTEXT_MENU_CSS;
     (document.head || document.documentElement).appendChild(style);
   }
 
@@ -6672,65 +6140,65 @@
       <div class="openfront-helper-auto-nuke-section" data-auto-nuke-section-label="destruction">Total destruction</div>
       <button type="button" data-auto-nuke-mode="destruction" data-auto-nuke-tier="high"></button>
     `;
-    menu.addEventListener("click", (event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLElement)) {
-        return;
-      }
-
-      const expandButton = target.closest("[data-auto-nuke-expand]");
-      if (expandButton instanceof HTMLButtonElement) {
-        if (!expandButton.disabled) {
-          expandAutoNukeContextMenu(menu);
-        }
-        return;
-      }
-
-      const buildSiloButton = target.closest("[data-auto-nuke-build-silo]");
-      if (buildSiloButton instanceof HTMLButtonElement && !buildSiloButton.disabled) {
-        const params = autoNukeContextMenuParams;
-        handleAutoNukeBuildSiloClick(menu, params, buildSiloButton).catch((error) => {
-          console.error("OpenFront Helper: failed to build missile silo.", error);
-        });
-        return;
-      }
-
-      const backButton = target.closest("[data-auto-nuke-back]");
-      if (backButton instanceof HTMLButtonElement && !backButton.disabled) {
-        goBackToAutoNukeBranchMenu(menu);
-        return;
-      }
-
-      const branchButton = target.closest("[data-auto-nuke-branch]");
-      if (branchButton instanceof HTMLButtonElement && !branchButton.disabled) {
-        expandAutoNukeModeDetails(menu, branchButton.dataset.autoNukeBranch).catch((error) => {
-          console.error("OpenFront Helper: failed to calculate auto nuke plan.", error);
-        });
-        return;
-      }
-
-      const button = target.closest("[data-auto-nuke-mode]");
-      if (!(button instanceof HTMLButtonElement) || button.disabled) {
-        return;
-      }
-      const mode = button.dataset.autoNukeMode;
-      const tierId = button.dataset.autoNukeTier;
-      const params = autoNukeContextMenuParams;
-      hideAutoNukeContextMenu();
-      if (
-        params &&
-        (
-          mode === "economic" ||
-          mode === "population" ||
-          mode === "destruction" ||
-          mode === "sams"
-        )
-      ) {
-        executeAutoNuke(params, mode, tierId);
-      }
-    });
+    menu.addEventListener("click", (event) => handleAutoNukeMenuClick(menu, event));
     (document.body || document.documentElement).appendChild(menu);
     return menu;
+  }
+
+  function handleAutoNukeMenuClick(menu, event) {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (handleAutoNukeExpandClick(menu, target)) return;
+    if (handleAutoNukeBuildSiloMenuClick(menu, target)) return;
+    if (handleAutoNukeBackClick(menu, target)) return;
+    if (handleAutoNukeBranchClick(menu, target)) return;
+    handleAutoNukeModeClick(target);
+  }
+
+  function handleAutoNukeExpandClick(menu, target) {
+    const button = target.closest("[data-auto-nuke-expand]");
+    if (!(button instanceof HTMLButtonElement)) return false;
+    if (!button.disabled) expandAutoNukeContextMenu(menu);
+    return true;
+  }
+
+  function handleAutoNukeBuildSiloMenuClick(menu, target) {
+    const button = target.closest("[data-auto-nuke-build-silo]");
+    if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+    handleAutoNukeBuildSiloClick(menu, autoNukeContextMenuParams, button).catch(
+      (error) => console.error("OpenFront Helper: failed to build missile silo.", error),
+    );
+    return true;
+  }
+
+  function handleAutoNukeBackClick(menu, target) {
+    const button = target.closest("[data-auto-nuke-back]");
+    if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+    goBackToAutoNukeBranchMenu(menu);
+    return true;
+  }
+
+  function handleAutoNukeBranchClick(menu, target) {
+    const button = target.closest("[data-auto-nuke-branch]");
+    if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+    expandAutoNukeModeDetails(menu, button.dataset.autoNukeBranch).catch((error) =>
+      console.error("OpenFront Helper: failed to calculate auto nuke plan.", error),
+    );
+    return true;
+  }
+
+  function handleAutoNukeModeClick(target) {
+    const button = target.closest("[data-auto-nuke-mode]");
+    if (!(button instanceof HTMLButtonElement) || button.disabled) return;
+    const mode = button.dataset.autoNukeMode;
+    const tierId = button.dataset.autoNukeTier;
+    const params = autoNukeContextMenuParams;
+    hideAutoNukeContextMenu();
+    if (params && isAutoNukeMode(mode)) executeAutoNuke(params, mode, tierId);
+  }
+
+  function isAutoNukeMode(mode) {
+    return ["economic", "population", "destruction", "sams"].includes(mode);
   }
 
   function hideAutoNukeContextMenu() {
@@ -6854,23 +6322,11 @@
   }
 
   function getAutoNukePlanFailureReason(params, plan) {
-    if (plan?.budgetSiloSlots === 0 || plan?.availableSiloSlots === 0) {
-      const totalSlots = getTotalNukeSiloSlotCount(params.myPlayer);
-      if (totalSlots === 0) {
-        return "No missile silos built yet.";
-      }
-      const readySlots = getReadyNukeSiloSlotCount(params.myPlayer);
-      return `0 / ${totalSlots} silo slot${totalSlots !== 1 ? "s" : ""} ready.`;
-    }
+    const siloReason = getAutoNukeSiloFailureReason(params.myPlayer, plan);
+    if (siloReason) return siloReason;
 
     const minimumCost = getAutoNukeMinimumAvailableCost(params.game, params.myPlayer);
-    if (
-      Number.isFinite(minimumCost) &&
-      (
-        plan?.budgetGold < minimumCost ||
-        plan?.availableGold < minimumCost
-      )
-    ) {
+    if (isAutoNukeBelowMinimumCost(plan, minimumCost)) {
       return `Need ${formatAutoNukeGold(minimumCost - (plan?.availableGold || 0))} more gold.`;
     }
 
@@ -6893,6 +6349,18 @@
     return "No safe plan.";
   }
 
+  function getAutoNukeSiloFailureReason(player, plan) {
+    if (plan?.budgetSiloSlots !== 0 && plan?.availableSiloSlots !== 0) return "";
+    const totalSlots = getTotalNukeSiloSlotCount(player);
+    if (totalSlots === 0) return "No missile silos built yet.";
+    return `0 / ${totalSlots} silo slot${totalSlots !== 1 ? "s" : ""} ready.`;
+  }
+
+  function isAutoNukeBelowMinimumCost(plan, minimumCost) {
+    if (!Number.isFinite(minimumCost)) return false;
+    return plan?.budgetGold < minimumCost || plan?.availableGold < minimumCost;
+  }
+
   function getAutoNukePlanMetrics(plan) {
     return plan?.metrics || finalizeAutoNukePlanMetrics(null, plan?.shots?.length || 0, plan?.cost || 0);
   }
@@ -6906,13 +6374,14 @@
       `${formatAutoNukeGold(metrics.cost || plan?.cost || 0)} gold`,
     ];
 
-    if (mode === "population" || mode === "destruction") {
+    const sections = getAutoNukeMetaSections(mode, metrics);
+    if (sections.population) {
       parts.push(`${formatAutoNukeMetric(metrics.populationDamage)} pop`);
     }
-    if (mode === "economic" || mode === "destruction") {
+    if (sections.economy) {
       parts.push(`${formatAutoNukeMetric(metrics.economicDamage)} econ`);
     }
-    if (mode === "sams" || mode === "destruction" || metrics.samsDestroyed > 0) {
+    if (sections.sams) {
       parts.push(`${metrics.samsDestroyed || 0} SAMs`);
     }
     if (mode === "destruction") {
@@ -6924,6 +6393,17 @@
     return parts.join(" | ");
   }
 
+  function getAutoNukeMetaSections(mode, metrics) {
+    const byMode = {
+      population: { population: true, economy: false, sams: false },
+      economic: { population: false, economy: true, sams: false },
+      destruction: { population: true, economy: true, sams: true },
+      sams: { population: false, economy: false, sams: true },
+    };
+    const sections = byMode[mode] || byMode.population;
+    return { ...sections, sams: sections.sams || metrics.samsDestroyed > 0 };
+  }
+
   function enforceAutoNukeTierPlanOrder(entries) {
     const sortedEntries = entries
       .filter((entry) => entry.tierId)
@@ -6932,24 +6412,33 @@
 
     for (const entry of sortedEntries) {
       const plan = entry.plan;
-      const planShotCount = plan?.metrics?.shotCount || plan?.shots?.length || 0;
-      const lowerShotCount =
-        strongestLowerPlan?.metrics?.shotCount || strongestLowerPlan?.shots?.length || 0;
+      const planShotCount = getAutoNukePlanShotCount(plan);
+      const lowerShotCount = getAutoNukePlanShotCount(strongestLowerPlan);
 
-      if (!entry.reason && plan?.shots?.length && strongestLowerPlan && planShotCount < lowerShotCount) {
+      if (
+        isUsableAutoNukeTierEntry(entry) &&
+        strongestLowerPlan &&
+        planShotCount < lowerShotCount
+      ) {
         entry.plan = strongestLowerPlan;
       }
 
-      if (!entry.reason && entry.plan?.shots?.length) {
-        const entryShotCount =
-          entry.plan?.metrics?.shotCount || entry.plan?.shots?.length || 0;
-        const currentBestShotCount =
-          strongestLowerPlan?.metrics?.shotCount || strongestLowerPlan?.shots?.length || 0;
+      if (isUsableAutoNukeTierEntry(entry)) {
+        const entryShotCount = getAutoNukePlanShotCount(entry.plan);
+        const currentBestShotCount = getAutoNukePlanShotCount(strongestLowerPlan);
         if (!strongestLowerPlan || entryShotCount >= currentBestShotCount) {
           strongestLowerPlan = entry.plan;
         }
       }
     }
+  }
+
+  function getAutoNukePlanShotCount(plan) {
+    return plan?.metrics?.shotCount || plan?.shots?.length || 0;
+  }
+
+  function isUsableAutoNukeTierEntry(entry) {
+    return !entry.reason && Boolean(entry.plan?.shots?.length);
   }
 
   function renderAutoNukeButton(button, mode, tierId, plan, reason = "") {
@@ -7034,9 +6523,11 @@
   }
 
   function waitForAutoNukeMenuFrame() {
-    return new Promise((resolve) =>
-      window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)),
-    );
+    return new Promise((resolve) => {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(resolve);
+      });
+    });
   }
 
   function isAutoNukeMenuComputeActive(menu, params, computeId) {
@@ -7170,13 +6661,7 @@
     );
   }
 
-  async function expandAutoNukeModeDetails(menu, mode) {
-    const params = autoNukeContextMenuParams;
-    if (!params) {
-      return;
-    }
-    const computeId = ++autoNukeContextMenuComputeId;
-
+  function prepareAutoNukeModeDetails(menu, mode) {
     setAutoNukeBranchButtonsHidden(menu, true);
     setAutoNukeSectionLabelsHidden(menu, true);
     setAutoNukeModeButtonsHidden(menu, true);
@@ -7188,27 +6673,24 @@
     }
 
     const sectionLabel = menu.querySelector(`[data-auto-nuke-section-label="${mode}"]`);
-    if (sectionLabel instanceof HTMLElement) {
-      sectionLabel.hidden = false;
-    }
+    if (sectionLabel instanceof HTMLElement) sectionLabel.hidden = false;
 
     const modeButtons = Array.from(
       menu.querySelectorAll(`[data-auto-nuke-mode="${mode}"]`),
-    ).filter((b) => b instanceof HTMLButtonElement);
-
-    const totalSteps = 1 + modeButtons.length;
-    let completedSteps = 0;
-
+    ).filter((button) => button instanceof HTMLButtonElement);
     for (const button of modeButtons) {
       button.hidden = false;
       renderAutoNukeLoadingButton(button, mode, button.dataset.autoNukeTier);
     }
+    return modeButtons;
+  }
 
+  function startAutoNukeModeLoading(menu, mode, modeButtons) {
     setAutoNukeMenuLoading(menu, true, 0.02, `Calculating ${getAutoNukeModeLabel(mode)}...`);
     initAutoNukeMenuLoadingSteps(menu, [
       "Computing targets",
-      ...modeButtons.map((b) => {
-        const tier = getAutoNukeTierById(b.dataset.autoNukeTier);
+      ...modeButtons.map((button) => {
+        const tier = getAutoNukeTierById(button.dataset.autoNukeTier);
         return tier ? `${tier.label} intensity` : "Calculating plan";
       }),
     ]);
@@ -7217,54 +6699,33 @@
       Number.parseFloat(menu.style.left) || 6,
       Number.parseFloat(menu.style.top) || 6,
     );
+  }
 
-    await waitForAutoNukeMenuFrame();
-    if (!isAutoNukeMenuComputeActive(menu, params, computeId)) {
-      return;
+  function renderDisabledAutoNukeMode(menu, params, mode, modeButtons, reason) {
+    for (const button of modeButtons) {
+      renderAutoNukeButton(button, mode, button.dataset.autoNukeTier, null, reason);
     }
-
-    const reason = getAutoNukeContextMenuDisableReason(params);
-
-    if (reason) {
-      for (const button of modeButtons) {
-        renderAutoNukeButton(button, mode, button.dataset.autoNukeTier, null, reason);
-      }
-      const buildSiloButton = menu.querySelector("[data-auto-nuke-build-silo]");
-      if (buildSiloButton instanceof HTMLButtonElement) {
-        const canOfferBuild = isAutoNukeSiloShortageReason(reason) &&
-          Boolean(params?.buildMenu?.sendBuildOrUpgrade);
-        if (canOfferBuild) {
-          buildSiloButton.hidden = false;
-          renderAutoNukeBuildSiloButton(buildSiloButton, params);
-        }
-      }
-      setAutoNukeMenuLoading(menu, false);
-      positionAutoNukeContextMenu(
-        menu,
-        Number.parseFloat(menu.style.left) || 6,
-        Number.parseFloat(menu.style.top) || 6,
-      );
-      return;
+    const buildSiloButton = menu.querySelector("[data-auto-nuke-build-silo]");
+    if (
+      buildSiloButton instanceof HTMLButtonElement &&
+      isAutoNukeSiloShortageReason(reason) &&
+      params.buildMenu?.sendBuildOrUpgrade
+    ) {
+      buildSiloButton.hidden = false;
+      renderAutoNukeBuildSiloButton(buildSiloButton, params);
     }
-
-    const candidatePool = computeAutoNukeCandidatePool(params.game, params.selected, mode);
-    completedSteps++;
-    markAutoNukeMenuLoadingStepDone(menu, 0);
-    setAutoNukeMenuLoading(
+    setAutoNukeMenuLoading(menu, false);
+    positionAutoNukeContextMenu(
       menu,
-      true,
-      completedSteps / Math.max(1, totalSteps),
-      `Calculating ${getAutoNukeModeLabel(mode)}...`,
+      Number.parseFloat(menu.style.left) || 6,
+      Number.parseFloat(menu.style.top) || 6,
     );
+  }
 
-    await waitForAutoNukeMenuFrame();
-    if (!isAutoNukeMenuComputeActive(menu, params, computeId)) {
-      return;
-    }
-
-    const modeEntries = [];
-    let tierStepIndex = 1;
-
+  async function computeAutoNukeModeEntries(request) {
+    const { menu, params, mode, modeButtons, candidatePool, computeId } = request;
+    const entries = [];
+    let stepIndex = 1;
     for (const button of modeButtons) {
       const tierId = button.dataset.autoNukeTier;
       const tierOptions = getAutoNukeTierPlanOptions(params, tierId);
@@ -7277,29 +6738,24 @@
           getAutoNukeBuildPlanOptions(mode, tierOptions),
           candidatePool,
         );
-      modeEntries.push({ button, mode, tierId, plan, reason: tierOptions.reason });
-      markAutoNukeMenuLoadingStepDone(menu, tierStepIndex++);
+      entries.push({ button, mode, tierId, plan, reason: tierOptions.reason });
+      markAutoNukeMenuLoadingStepDone(menu, stepIndex++);
       await waitForAutoNukeMenuFrame();
-      if (!isAutoNukeMenuComputeActive(menu, params, computeId)) {
-        return;
-      }
+      if (!isAutoNukeMenuComputeActive(menu, params, computeId)) return null;
     }
+    return entries;
+  }
 
-    enforceAutoNukeTierPlanOrder(modeEntries);
-
-    for (const entry of modeEntries) {
-      if (!isAutoNukeMenuComputeActive(menu, params, computeId)) {
-        return;
-      }
+  function renderAutoNukeModeEntries(menu, params, mode, entries, totalSteps) {
+    let completedSteps = 1;
+    enforceAutoNukeTierPlanOrder(entries);
+    for (const entry of entries) {
       const planKey = getAutoNukePlanKey(entry.mode, entry.tierId);
-      if (entry.plan) {
-        params.autoNukePlans[planKey] = entry.plan;
-      }
+      if (entry.plan) params.autoNukePlans[planKey] = entry.plan;
       const buttonReason = entry.reason ||
         (!entry.plan?.shots?.length || entry.plan.score <= 0
           ? getAutoNukePlanFailureReason(params, entry.plan)
           : "");
-      // Store the final displayed reason so the silo-shortage check below can use it.
       entry.displayReason = buttonReason;
       renderAutoNukeButton(entry.button, entry.mode, entry.tierId, entry.plan, buttonReason);
       completedSteps++;
@@ -7310,27 +6766,62 @@
         `Calculated ${getAutoNukeModeLabel(mode)}`,
       );
     }
+  }
 
-    if (!isAutoNukeMenuComputeActive(menu, params, computeId)) {
+  function updateAutoNukeBuildSiloOffer(menu, params, entries) {
+    const button = menu.querySelector("[data-auto-nuke-build-silo]");
+    if (!(button instanceof HTMLButtonElement)) return;
+    const allSiloBlocked = entries.length > 0 &&
+      entries.every((entry) =>
+        isAutoNukeSiloShortageReason(entry.displayReason || entry.reason),
+      );
+    const canOfferBuild = allSiloBlocked && Boolean(params.buildMenu?.sendBuildOrUpgrade);
+    button.hidden = !canOfferBuild;
+    if (canOfferBuild) renderAutoNukeBuildSiloButton(button, params);
+  }
+
+  async function expandAutoNukeModeDetails(menu, mode) {
+    const params = autoNukeContextMenuParams;
+    if (!params) return;
+    const computeId = ++autoNukeContextMenuComputeId;
+    const modeButtons = prepareAutoNukeModeDetails(menu, mode);
+    const totalSteps = 1 + modeButtons.length;
+    startAutoNukeModeLoading(menu, mode, modeButtons);
+
+    await waitForAutoNukeMenuFrame();
+    if (!isAutoNukeMenuComputeActive(menu, params, computeId)) return;
+
+    const reason = getAutoNukeContextMenuDisableReason(params);
+    if (reason) {
+      renderDisabledAutoNukeMode(menu, params, mode, modeButtons, reason);
       return;
     }
 
-    const buildSiloButton = menu.querySelector("[data-auto-nuke-build-silo]");
-    if (buildSiloButton instanceof HTMLButtonElement) {
-      // Use displayReason (includes plan-level failures) so button shows even when
-      // the tier pre-check passes but the plan itself ran out of silo slots.
-      const allSiloBlocked = modeEntries.length > 0 &&
-        modeEntries.every((e) => isAutoNukeSiloShortageReason(e.displayReason || e.reason));
-      const canOfferBuild = allSiloBlocked &&
-        Boolean(params?.buildMenu?.sendBuildOrUpgrade);
-      if (canOfferBuild) {
-        buildSiloButton.hidden = false;
-        renderAutoNukeBuildSiloButton(buildSiloButton, params);
-      } else {
-        buildSiloButton.hidden = true;
-      }
-    }
+    const candidatePool = computeAutoNukeCandidatePool(params.game, params.selected, mode);
+    markAutoNukeMenuLoadingStepDone(menu, 0);
+    setAutoNukeMenuLoading(
+      menu,
+      true,
+      1 / Math.max(1, totalSteps),
+      `Calculating ${getAutoNukeModeLabel(mode)}...`,
+    );
 
+    await waitForAutoNukeMenuFrame();
+    if (!isAutoNukeMenuComputeActive(menu, params, computeId)) return;
+
+    const entries = await computeAutoNukeModeEntries({
+      menu,
+      params,
+      mode,
+      modeButtons,
+      candidatePool,
+      computeId,
+    });
+    if (!entries || !isAutoNukeMenuComputeActive(menu, params, computeId)) return;
+
+    renderAutoNukeModeEntries(menu, params, mode, entries, totalSteps);
+    if (!isAutoNukeMenuComputeActive(menu, params, computeId)) return;
+    updateAutoNukeBuildSiloOffer(menu, params, entries);
     setAutoNukeMenuLoading(menu, false);
     positionAutoNukeContextMenu(
       menu,
@@ -7338,7 +6829,6 @@
       Number.parseFloat(menu.style.top) || 6,
     );
   }
-
   function positionAutoNukeContextMenu(menu, x, y) {
     menu.hidden = false;
     menu.style.left = "0px";
@@ -7444,99 +6934,96 @@
   // Returns how many silos were successfully queued (0 on failure).
   async function autoBuildMissileSilo(params) {
     const myPlayer = params.myPlayer;
-    if (!myPlayer) {
-      return 0;
-    }
+    if (!myPlayer) return 0;
 
     // Determine how many silo slots are actually needed by checking:
     // 1. Plans that were computed but ran out of silo slots.
     // 2. Tier pre-checks that failed due to insufficient slots.
     // 3. A generous floor to give the user a comfortable nuke arsenal in one click.
-    let neededCount = 1;
-    for (const plan of Object.values(params.autoNukePlans || {})) {
-      if (
-        Number.isFinite(plan?.minimumRequiredSiloSlots) &&
-        Number.isFinite(plan?.budgetSiloSlots)
-      ) {
-        const missing = Math.ceil(plan.minimumRequiredSiloSlots - plan.budgetSiloSlots);
-        if (missing > 0) neededCount = Math.max(neededCount, missing);
-      }
-    }
-    // Also check tier minimums for all known tiers.
     const availableSlots = getReadyNukeSiloSlotCount(myPlayer);
-    for (const tier of AUTO_NUKE_INTENSITY_TIERS) {
-      if (availableSlots < tier.minShots) {
-        neededCount = Math.max(neededCount, tier.minShots - availableSlots);
-      }
-    }
-    // Generous floor: always try to bring the user up to the target total
-    // unless they already have plenty of slots.
-    if (availableSlots < AUTO_NUKE_BUILD_SILO_TARGET) {
-      neededCount = Math.max(
-        neededCount,
-        AUTO_NUKE_BUILD_SILO_TARGET - availableSlots,
-      );
-    }
-    neededCount = Math.min(neededCount, AUTO_NUKE_BUILD_SILO_MAX_PER_CLICK);
+    const neededCount = getAutoNukeSilosNeeded(params, availableSlots);
 
     // Prefer stacking on existing missile silos (upgrade = +1 slot each).
     // Each silo can only receive one upgrade at a time, so iterate all of them.
-    const siloUnits = getPlayerUnits(myPlayer, "Missile Silo");
-    const siloTiles = siloUnits
-      .map((unit) => getUnitTile(unit))
-      .filter((tile) => tile !== null && tile !== undefined);
-
-    // Also include any owned structure tile so the feature can place FRESH silos
-    // on empty land / other structures instead of only stacking existing ones.
-    // This is essential when stacking is exhausted (max level) or when there are
-    // too few silos to satisfy the request by stacking alone.
-    const fallbackTiles = getPlayerUnits(myPlayer, ...NUKE_SUGGESTION_STRUCTURE_TYPES)
-      .map((unit) => getUnitTile(unit))
-      .filter((tile) => tile !== null && tile !== undefined);
-
-    // Deduplicate tiles (multiple units can share a tile). Silo tiles first so
-    // stacking is tried before fresh builds.
-    const seen = new Set();
-    const uniqueTiles = [...siloTiles, ...fallbackTiles].filter((tile) => {
-      if (seen.has(tile)) return false;
-      seen.add(tile);
-      return true;
-    });
-
+    const uniqueTiles = getAutoNukeSiloCandidateTiles(myPlayer);
     if (uniqueTiles.length === 0) return 0;
 
     // If we need more stacks than available tiles, cycle through tiles again —
     // each upgrade on the SAME silo tile bumps the silo's level by 1 (one extra
     // missile slot each), so repeating the same tile is intentional and useful.
-    const candidateTiles = [];
+    const candidateTiles = cycleAutoNukeSiloCandidateTiles(uniqueTiles, neededCount);
+    return buildAutoNukeSilos(params, candidateTiles, neededCount);
+  }
+
+  function getAutoNukeSilosNeeded(params, availableSlots) {
+    let needed = 1;
+    for (const plan of Object.values(params.autoNukePlans || {})) {
+      if (!Number.isFinite(plan?.minimumRequiredSiloSlots)) continue;
+      if (!Number.isFinite(plan?.budgetSiloSlots)) continue;
+      needed = Math.max(
+        needed,
+        Math.ceil(plan.minimumRequiredSiloSlots - plan.budgetSiloSlots),
+      );
+    }
+    for (const tier of AUTO_NUKE_INTENSITY_TIERS) {
+      needed = Math.max(needed, tier.minShots - availableSlots);
+    }
+    needed = Math.max(needed, AUTO_NUKE_BUILD_SILO_TARGET - availableSlots);
+    return Math.max(1, Math.min(needed, AUTO_NUKE_BUILD_SILO_MAX_PER_CLICK));
+  }
+
+  function getAutoNukeSiloCandidateTiles(player) {
+    const siloTiles = getPlayerUnits(player, "Missile Silo").map(getUnitTile);
+    const fallbackTiles = getPlayerUnits(
+      player,
+      ...NUKE_SUGGESTION_STRUCTURE_TYPES,
+    ).map(getUnitTile);
+    return Array.from(
+      new Set(
+        [...siloTiles, ...fallbackTiles].filter(
+          (tile) => tile !== null && tile !== undefined,
+        ),
+      ),
+    );
+  }
+
+  function cycleAutoNukeSiloCandidateTiles(tiles, neededCount) {
+    const candidates = [];
     const maxCycles = Math.max(
       AUTO_NUKE_BUILD_SILO_MAX_PER_CLICK,
-      uniqueTiles.length * 10,
+      tiles.length * 10,
     );
-    for (let i = 0; candidateTiles.length < neededCount; i++) {
-      candidateTiles.push(uniqueTiles[i % uniqueTiles.length]);
-      if (i >= maxCycles) break;
+    for (let index = 0; candidates.length < neededCount && index <= maxCycles; index++) {
+      candidates.push(tiles[index % tiles.length]);
     }
+    return candidates;
+  }
 
+  async function buildAutoNukeSilos(params, tiles, neededCount) {
     let builtCount = 0;
-    for (const tile of candidateTiles) {
+    for (const tile of tiles) {
       if (builtCount >= neededCount) break;
-      const buildable = await getBuildableMissileSilo(myPlayer, tile);
-      // Accept both fresh builds (canBuild) and upgrades/stacks (canUpgrade).
-      const canPlace =
-        (buildable?.canBuild !== false && buildable?.canBuild !== undefined) ||
-        (buildable?.canUpgrade !== false && buildable?.canUpgrade !== undefined);
-      if (buildable && canPlace) {
-        try {
-          params.buildMenu.sendBuildOrUpgrade(buildable, tile);
-          builtCount++;
-        } catch (_error) {
-          // try next tile
-        }
+      const buildable = await getBuildableMissileSilo(params.myPlayer, tile);
+      if (!isPlaceableAutoNukeSilo(buildable)) continue;
+      try {
+        params.buildMenu.sendBuildOrUpgrade(buildable, tile);
+        builtCount++;
+      } catch (_error) {
+        captureRuntimeException(
+          _error,
+          "engine/ingame/nuke-suggestions.js:buildAutoNukeSilos",
+        );
       }
     }
-
     return builtCount;
+  }
+
+  function isPlaceableAutoNukeSilo(buildable) {
+    if (!buildable) return false;
+    const canBuild = buildable.canBuild !== false && buildable.canBuild !== undefined;
+    const canUpgrade =
+      buildable.canUpgrade !== false && buildable.canUpgrade !== undefined;
+    return canBuild || canUpgrade;
   }
 
   async function getBuildableMissileSilo(player, tile) {
@@ -7548,6 +7035,7 @@
         );
         if (buildable) return buildable;
       } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:7550");
         // fall back to actions API
       }
     }
@@ -7558,6 +7046,7 @@
           (item) => item?.type === "Missile Silo",
         ) || null;
       } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:7560");
         return null;
       }
     }
@@ -7574,11 +7063,7 @@
 
   function getAutoNukeContextParamsFromEvent(event) {
     const radialMenuElement = getAutoNukeRadialElement();
-    const game = radialMenuElement?.game || lastOpenFrontGameContext?.game;
-    const transform =
-      radialMenuElement?.transformHandler ||
-      radialMenuElement?.transform ||
-      lastOpenFrontGameContext?.transform;
+    const { game, transform } = getAutoNukeRadialGameContext(radialMenuElement);
     const myPlayer = game?.myPlayer?.();
     const buildMenu = getAutoNukeBuildMenu(radialMenuElement);
     if (
@@ -7590,34 +7075,13 @@
       return null;
     }
 
-    let worldCoords = null;
-    try {
-      worldCoords = transform.screenToWorldCoordinates(event.clientX, event.clientY);
-      if (!game.isValidCoord?.(worldCoords.x, worldCoords.y)) {
-        return null;
-      }
-    } catch (_error) {
-      return null;
-    }
-
-    let tile = null;
-    let selected = null;
-    try {
-      tile = game.ref(worldCoords.x, worldCoords.y);
-      const owner = game.owner(tile);
-      selected = owner?.isPlayer?.() ? owner : null;
-    } catch (_error) {
-      return null;
-    }
-
-    if (!selected?.isPlayer?.()) {
-      return null;
-    }
+    const selection = getAutoNukeEventSelection(game, transform, event);
+    if (selection === null) return null;
 
     return {
       myPlayer,
-      selected,
-      tile,
+      selected: selection.selected,
+      tile: selection.tile,
       playerActions: { buildableUnits: [] },
       game,
       buildMenu,
@@ -7625,8 +7089,35 @@
     };
   }
 
+  function getAutoNukeRadialGameContext(radialMenuElement) {
+    const fallback = runtimeState.lastOpenFrontGameContext || {};
+    return {
+      game: radialMenuElement?.game || fallback.game,
+      transform:
+        radialMenuElement?.transformHandler ||
+        radialMenuElement?.transform ||
+        fallback.transform,
+    };
+  }
+
+  function getAutoNukeEventSelection(game, transform, event) {
+    try {
+      const world = transform.screenToWorldCoordinates(event.clientX, event.clientY);
+      if (!game.isValidCoord?.(world.x, world.y)) return null;
+      const tile = game.ref(world.x, world.y);
+      const owner = game.owner(tile);
+      return owner?.isPlayer?.() ? { selected: owner, tile } : null;
+    } catch (_error) {
+      captureRuntimeException(
+        _error,
+        "engine/ingame/nuke-suggestions.js:getAutoNukeEventSelection",
+      );
+      return null;
+    }
+  }
+
   function handleAutoNukeContextMenu(event) {
-    if (!autoNukeEnabled) {
+    if (!runtimeState.autoNukeEnabled) {
       return;
     }
 
@@ -7683,40 +7174,21 @@
   }
 
   function createAutoNukeMenuItem(mode, placement) {
-    const isEconomic = mode === "economic";
     const isDestruction = mode === "destruction";
-    const isSamClear = mode === "sams";
+    const config = getAutoNukeMenuModeConfig(mode);
     return {
       id: `${AUTO_NUKE_MENU_ITEM_PREFIX}-${placement}-${mode}`,
-      name: isEconomic
-        ? "auto econ nuke"
-        : isDestruction
-          ? "total destruction nuke"
-          : isSamClear ? "destroy all sams" : "auto population nuke",
-      text: isEconomic
-        ? "Auto Econ"
-        : isDestruction ? "Destroy" : isSamClear ? "SAMs" : "Auto Pop",
+      name: config.name,
+      text: config.text,
       fontSize: "10px",
-      color: isEconomic
-        ? "#16a34a"
-        : isDestruction ? "#ca8a04" : isSamClear ? "#0284c7" : "#dc2626",
+      color: config.color,
       tooltipItems: [
         {
-          text: isEconomic
-            ? "Auto econ nuke"
-            : isDestruction
-              ? "Total destruction nuke"
-              : isSamClear ? "Destroy all SAMs" : "Auto population nuke",
+          text: config.title,
           className: "title",
         },
         {
-          text: isEconomic
-            ? "Fires at the best valid economy suggestion."
-            : isDestruction
-              ? "Fires at combined population and economy damage, then retries once after silo cooldown."
-              : isSamClear
-                ? "Fires SAM-clear waves and stops before population or economy targets."
-              : "Fires at the best valid population suggestion.",
+          text: config.description,
           className: "description",
         },
       ],
@@ -7724,6 +7196,42 @@
       action: (params) =>
         executeAutoNuke(params, mode, isDestruction ? "high" : null),
     };
+  }
+
+  function getAutoNukeMenuModeConfig(mode) {
+    const configs = {
+      economic: {
+        name: "auto econ nuke",
+        text: "Auto Econ",
+        color: "#16a34a",
+        title: "Auto econ nuke",
+        description: "Fires at the best valid economy suggestion.",
+      },
+      destruction: {
+        name: "total destruction nuke",
+        text: "Destroy",
+        color: "#ca8a04",
+        title: "Total destruction nuke",
+        description:
+          "Fires at combined population and economy damage, then retries once after silo cooldown.",
+      },
+      sams: {
+        name: "destroy all sams",
+        text: "SAMs",
+        color: "#0284c7",
+        title: "Destroy all SAMs",
+        description:
+          "Fires SAM-clear waves and stops before population or economy targets.",
+      },
+      population: {
+        name: "auto population nuke",
+        text: "Auto Pop",
+        color: "#dc2626",
+        title: "Auto population nuke",
+        description: "Fires at the best valid population suggestion.",
+      },
+    };
+    return configs[mode] || configs.population;
   }
 
   function createAutoNukeMenuItems(params, placement) {
@@ -7758,7 +7266,7 @@
     const originalSubMenu = menuItem.subMenu;
     menuItem.subMenu = function openFrontHelperAutoNukeAttackSubMenu(params) {
       const menuItems = Array.from(originalSubMenu.call(this, params) || []);
-      if (!autoNukeEnabled || !menuItemsContainManualNukeActions(menuItems)) {
+      if (!runtimeState.autoNukeEnabled || !menuItemsContainManualNukeActions(menuItems)) {
         return menuItems;
       }
 
@@ -7805,7 +7313,7 @@
     rootMenu.subMenu = function openFrontHelperAutoNukeRootSubMenu(params) {
       const menuItems = Array.from(originalSubMenu.call(this, params) || []);
       patchAutoNukeAttackSubMenus(menuItems);
-      if (!autoNukeEnabled) {
+      if (!runtimeState.autoNukeEnabled) {
         return menuItems;
       }
 
@@ -7839,18 +7347,18 @@
   }
 
   function scheduleAutoNukePatchRetry() {
-    if (!autoNukeEnabled || autoNukePatchTimeout !== null) {
+    if (!runtimeState.autoNukeEnabled || runtimeState.autoNukePatchTimeout !== null) {
       return;
     }
 
-    autoNukePatchTimeout = window.setTimeout(() => {
-      autoNukePatchTimeout = null;
+    runtimeState.autoNukePatchTimeout = window.setTimeout(() => {
+      runtimeState.autoNukePatchTimeout = null;
       syncAutoNukeRadialMenuPatch();
     }, AUTO_NUKE_PATCH_RETRY_MS);
   }
 
   function syncAutoNukeRadialMenuPatch() {
-    if (!autoNukeEnabled) {
+    if (!runtimeState.autoNukeEnabled) {
       restoreAutoNukeRootMenus();
       return;
     }
@@ -7866,15 +7374,15 @@
   }
 
   function setAutoNukeEnabled(enabled, includeAllies = false) {
-    autoNukeEnabled = Boolean(enabled);
+    runtimeState.autoNukeEnabled = Boolean(enabled);
     autoNukeIncludeAllies = Boolean(includeAllies);
-    if (autoNukePatchTimeout !== null) {
-      window.clearTimeout(autoNukePatchTimeout);
-      autoNukePatchTimeout = null;
+    if (runtimeState.autoNukePatchTimeout !== null) {
+      window.clearTimeout(runtimeState.autoNukePatchTimeout);
+      runtimeState.autoNukePatchTimeout = null;
     }
 
     restoreAutoNukeRootMenus();
-    if (!autoNukeEnabled) {
+    if (!runtimeState.autoNukeEnabled) {
       uninstallAutoNukeContextMenu();
       return;
     }
@@ -7883,16 +7391,16 @@
   }
 
   function syncNukeSuggestions() {
-    if (!nukeSuggestionsEnabled) {
+    if (!runtimeState.nukeSuggestionsEnabled) {
       document.getElementById(NUKE_SUGGESTION_CONTAINER_ID)?.remove();
-      nukeSuggestionAnimationFrame = null;
+      runtimeState.nukeSuggestionAnimationFrame = null;
       clearNukeSuggestionState();
       return;
     }
 
     nukeSuggestionFrameCounter = (nukeSuggestionFrameCounter + 1) % 3;
     if (nukeSuggestionFrameCounter !== 0) {
-      nukeSuggestionAnimationFrame = requestAnimationFrame(syncNukeSuggestions);
+      runtimeState.nukeSuggestionAnimationFrame = requestAnimationFrame(syncNukeSuggestions);
       return;
     }
 
@@ -7902,49 +7410,516 @@
     const transform = overlay?.transform;
     const targetPlayer = overlay?.player;
 
-    if (
-      !game ||
-      !transform ||
-      !targetPlayer?.isPlayer?.() ||
-      !isEnemyNukeSuggestionTarget(game, targetPlayer)
-    ) {
+    if (!isValidNukeSuggestionOverlay(game, transform, targetPlayer)) {
       clearNukeSuggestionState(container);
-      nukeSuggestionAnimationFrame = requestAnimationFrame(syncNukeSuggestions);
+      runtimeState.nukeSuggestionAnimationFrame = requestAnimationFrame(syncNukeSuggestions);
       return;
     }
 
-    const now = performance.now();
-    if (now - lastNukeSuggestionSignatureCheckAt >= NUKE_SUGGESTION_SIGNATURE_CHECK_MS) {
-      lastNukeSuggestionSignatureCheckAt = now;
-      const signature = getNukeSuggestionSignature(game, targetPlayer);
-      if (
-        signature !== lastNukeSuggestionSignature ||
-        now - lastNukeSuggestionComputedAt >= NUKE_SUGGESTION_REFRESH_MS
-      ) {
-        currentNukeSuggestionResults = computeNukeSuggestions(game, targetPlayer);
-        lastNukeSuggestionSignature = signature;
-        lastNukeSuggestionComputedAt = now;
-      }
-    }
+    refreshNukeSuggestionsIfNeeded(game, targetPlayer, performance.now());
 
-    renderNukeSuggestions(container, game, transform, currentNukeSuggestionResults);
-    nukeSuggestionAnimationFrame = requestAnimationFrame(syncNukeSuggestions);
+    renderNukeSuggestions(container, game, transform, runtimeState.currentNukeSuggestionResults);
+    runtimeState.nukeSuggestionAnimationFrame = requestAnimationFrame(syncNukeSuggestions);
+  }
+
+  function isValidNukeSuggestionOverlay(game, transform, targetPlayer) {
+    if (!game || !transform || targetPlayer?.isPlayer?.() !== true) return false;
+    return isEnemyNukeSuggestionTarget(game, targetPlayer);
+  }
+
+  function refreshNukeSuggestionsIfNeeded(game, targetPlayer, now) {
+    if (
+      now - runtimeState.lastNukeSuggestionSignatureCheckAt <
+      NUKE_SUGGESTION_SIGNATURE_CHECK_MS
+    ) return;
+    runtimeState.lastNukeSuggestionSignatureCheckAt = now;
+    const signature = getNukeSuggestionSignature(game, targetPlayer);
+    const signatureChanged = signature !== runtimeState.lastNukeSuggestionSignature;
+    const expired =
+      now - runtimeState.lastNukeSuggestionComputedAt >= NUKE_SUGGESTION_REFRESH_MS;
+    if (!signatureChanged && !expired) return;
+    runtimeState.currentNukeSuggestionResults = computeNukeSuggestions(
+      game,
+      targetPlayer,
+    );
+    runtimeState.lastNukeSuggestionSignature = signature;
+    runtimeState.lastNukeSuggestionComputedAt = now;
   }
 
   function setNukeSuggestionsEnabled(enabled) {
-    nukeSuggestionsEnabled = Boolean(enabled);
+    runtimeState.nukeSuggestionsEnabled = Boolean(enabled);
     nukeSuggestionFrameCounter = 2;
-    if (!nukeSuggestionsEnabled) {
-      if (nukeSuggestionAnimationFrame !== null) {
-        cancelAnimationFrame(nukeSuggestionAnimationFrame);
+    if (!runtimeState.nukeSuggestionsEnabled) {
+      if (runtimeState.nukeSuggestionAnimationFrame !== null) {
+        cancelAnimationFrame(runtimeState.nukeSuggestionAnimationFrame);
       }
-      nukeSuggestionAnimationFrame = null;
+      runtimeState.nukeSuggestionAnimationFrame = null;
       document.getElementById(NUKE_SUGGESTION_CONTAINER_ID)?.remove();
       clearNukeSuggestionState();
       return;
     }
 
-    if (nukeSuggestionAnimationFrame === null) {
+    if (runtimeState.nukeSuggestionAnimationFrame === null) {
       syncNukeSuggestions();
     }
   }
+  async function launchAutoNukeStandardFlow(request) {
+    const { params, mode, plan, launchedCount } = request;
+    let { waveNumber, latestImpactAtMs } = request;
+    let followupWaveState = plan.followupState;
+
+    const preemptiveResult = await launchAutoNukePreemptiveSamWaves({
+      params,
+      mode,
+      initialPlan: plan,
+      followupWaveState,
+      waveNumber,
+      latestImpactAtMs,
+    });
+    ({ followupWaveState, waveNumber, latestImpactAtMs } = preemptiveResult);
+
+    let followupWaveNumber = waveNumber + 1;
+    let followupWavesLaunched = 0;
+    while (followupWavesLaunched < AUTO_NUKE_MAX_FOLLOWUP_WAVES) {
+      if (!canContinueAutoNukeSecondPass(params)) {
+        break;
+      }
+      const followupPhaseLabel = getAutoNukePhaseShortLabel(mode, mode);
+      const followupLogIdx = pushAutoNukeWaveEntry(
+        `Wave ${followupWaveNumber} — ${followupPhaseLabel}`,
+        "active",
+      );
+      const followupWavePlan = await waitForAutoNukeWavePlan(
+        params,
+        mode,
+        followupWaveState,
+        {
+          spreadMultiplier: AUTO_NUKE_FOLLOWUP_SPREAD_MULTIPLIER,
+          readySlotFraction: AUTO_NUKE_SECOND_PASS_READY_SLOT_FRACTION,
+          launchSlotFraction: AUTO_NUKE_SECOND_PASS_LAUNCH_SLOT_FRACTION,
+          confirmationShots: 0,
+        },
+        getAutoNukeProcessWaveStatus(params, { mode: mode, waveNumber: followupWaveNumber, phase: mode, detail: `Targeting follow-up — wave ${followupWaveNumber}` }),
+      );
+      if (!followupWavePlan) {
+        completeAutoNukeWaveEntry(followupLogIdx);
+        break;
+      }
+      const followupWaveLaunched = await launchAutoNukePlan(
+        params,
+        followupWavePlan,
+        getAutoNukeProcessWaveStatus(params, { mode: mode, waveNumber: followupWaveNumber, phase: mode, detail: `Firing ${followupWavePlan.shots.length} nukes` }),
+      );
+      completeAutoNukeWaveEntry(followupLogIdx);
+      if (followupWaveLaunched === 0) {
+        break;
+      }
+      latestImpactAtMs = Math.max(
+        latestImpactAtMs,
+        followupWavePlan.estimatedImpactAtMs || 0,
+      );
+      followupWaveState = followupWavePlan.followupState;
+      followupWavesLaunched++;
+      followupWaveNumber++;
+    }
+    const finalWaveNumber = followupWavesLaunched > 0
+      ? followupWaveNumber - 1
+      : waveNumber;
+    updateAutoNukeProcessPanel(
+      getAutoNukeProcessWaveStatus(params, { mode: mode, waveNumber: finalWaveNumber, phase: mode, detail: followupWavesLaunched > 0
+          ? `Complete — ${1 + followupWavesLaunched} waves`
+          : `Complete — ${launchedCount} nukes`, extra: { progress: 1 } }),
+    );
+    hideAutoNukeProcessPanelAfterLanding(latestImpactAtMs);
+  }
+  async function launchAutoNukeDestructionSamWaves(request) {
+    const { params, mode, plan } = request;
+    let { currentState, waveNumber, latestImpactAtMs } = request;
+    let waveCount = plan.destructionPhase === "sams" ? 1 : 0;
+    while (waveCount > 0 && waveCount < AUTO_NUKE_MAX_SAM_CLEAR_WAVES) {
+      const logIndex = pushAutoNukeWaveEntry(`Wave ${waveNumber} — SAM clear`, "active");
+      const wavePlan = await waitForAutoNukeWavePlan(
+        params,
+        mode,
+        currentState,
+        {
+          destructionPhase: "sams",
+          spreadMultiplier: 1,
+          readySlotFraction: AUTO_NUKE_SECOND_PASS_READY_SLOT_FRACTION,
+          launchSlotFraction: 1,
+          confirmationShots: 0,
+        },
+        getAutoNukeProcessWaveStatus(params, {
+          mode,
+          waveNumber,
+          phase: "sams",
+          detail: "Clearing SAM stacks…",
+        }),
+      );
+      if (!wavePlan) {
+        completeAutoNukeWaveEntry(logIndex);
+        break;
+      }
+      const launched = await launchAutoNukePlan(
+        params,
+        wavePlan,
+        getAutoNukeProcessWaveStatus(params, {
+          mode,
+          waveNumber,
+          phase: "sams",
+          detail: `Firing ${wavePlan.shots.length} SAM-clear nukes`,
+        }),
+      );
+      completeAutoNukeWaveEntry(logIndex);
+      if (launched === 0) {
+        runtimeDebugLog("OpenFront Helper: total destruction SAM pass could not be launched.");
+        updateAutoNukeProcessPanel(
+          getAutoNukeProcessWaveStatus(params, {
+            mode,
+            waveNumber,
+            phase: "sams",
+            detail: "SAM clear failed",
+            extra: { progress: 1 },
+          }),
+        );
+        hideAutoNukeProcessPanelAfterLanding(latestImpactAtMs);
+        return { aborted: true, currentState, waveNumber, latestImpactAtMs };
+      }
+      latestImpactAtMs = Math.max(latestImpactAtMs, wavePlan.estimatedImpactAtMs || 0);
+      currentState = wavePlan.followupState;
+      waveCount++;
+      waveNumber++;
+    }
+    return { aborted: false, currentState, waveNumber, latestImpactAtMs };
+  }
+
+  async function launchAutoNukeDestructionFlow(request) {
+    const { params, mode, plan, isSamOnlyMode } = request;
+    let { waveNumber, latestImpactAtMs } = request;
+    waveNumber++;
+
+    const samResult = await launchAutoNukeDestructionSamWaves({
+      params,
+      mode,
+      plan,
+      currentState: plan.followupState,
+      waveNumber,
+      latestImpactAtMs,
+    });
+    if (samResult.aborted) return;
+    const currentState = samResult.currentState;
+    ({ waveNumber, latestImpactAtMs } = samResult);
+
+    if (isSamOnlyMode) {
+      updateAutoNukeProcessPanel(
+        getAutoNukeProcessWaveStatus(params, { mode: mode, waveNumber: Math.max(1, waveNumber - 1), phase: "sams", detail: "All SAMs neutralized", extra: { progress: 1 } }),
+      );
+      hideAutoNukeProcessPanelAfterLanding(latestImpactAtMs);
+      return;
+    }
+
+    // Mark "Building strike" pre-populated entry active (or add if missing).
+    const bldgLogIdx = pushAutoNukeWaveEntry(`Wave ${waveNumber} — Building strike`, "active");
+    const secondWavePlan = await waitForAutoNukeWavePlan(
+      params,
+      mode,
+      currentState,
+      {
+        destructionPhase: "buildings",
+        spreadMultiplier: AUTO_NUKE_SECOND_PASS_SPREAD_MULTIPLIER,
+        readySlotFraction: AUTO_NUKE_SECOND_PASS_READY_SLOT_FRACTION,
+        launchSlotFraction: AUTO_NUKE_SECOND_PASS_LAUNCH_SLOT_FRACTION,
+        confirmationShots: AUTO_NUKE_DESTRUCTION_CONFIRMATION_SHOTS,
+      },
+      getAutoNukeProcessWaveStatus(params, { mode: mode, waveNumber: waveNumber, phase: "buildings", detail: "Identifying key buildings…" }),
+    );
+    if (!secondWavePlan) {
+      completeAutoNukeWaveEntry(bldgLogIdx);
+      updateAutoNukeProcessPanel(
+        getAutoNukeProcessWaveStatus(params, { mode: mode, waveNumber: Math.max(1, waveNumber - 1), phase: "sams", detail: "No buildings found", extra: { progress: 1 } }),
+      );
+      hideAutoNukeProcessPanelAfterLanding(latestImpactAtMs);
+      return;
+    }
+
+    const secondWaveLaunchedCount = await launchAutoNukePlan(
+      params,
+      secondWavePlan,
+      getAutoNukeProcessWaveStatus(params, { mode: mode, waveNumber: waveNumber, phase: "buildings", detail: `Firing ${secondWavePlan.shots.length} nukes` }),
+    );
+    completeAutoNukeWaveEntry(bldgLogIdx);
+    if (secondWaveLaunchedCount === 0) {
+      runtimeDebugLog("OpenFront Helper: total destruction second pass could not be launched.");
+      updateAutoNukeProcessPanel(
+        getAutoNukeProcessWaveStatus(params, { mode: mode, waveNumber: waveNumber, phase: "buildings", detail: "Building strike failed", extra: { progress: 1 } }),
+      );
+      hideAutoNukeProcessPanelAfterLanding(latestImpactAtMs);
+      return;
+    }
+    latestImpactAtMs = Math.max(
+      latestImpactAtMs,
+      secondWavePlan.estimatedImpactAtMs || 0,
+    );
+    waveNumber++;
+
+    // Continue firing "remote" cleanup waves until no targets remain or wave cap hit.
+    let remoteState = secondWavePlan.followupState;
+    let remoteWaveCount = 0;
+    const maxRemoteWaves = AUTO_NUKE_MAX_DESTRUCTION_WAVES - waveNumber + 1;
+    while (remoteWaveCount < maxRemoteWaves) {
+      if (!canContinueAutoNukeSecondPass(params)) {
+        break;
+      }
+      const remoteWaveLabel = remoteWaveCount === 0
+        ? `Wave ${waveNumber} — Cleanup`
+        : `Wave ${waveNumber} — Cleanup ${remoteWaveCount + 1}`;
+      const remoteLogIdx = pushAutoNukeWaveEntry(remoteWaveLabel, "active");
+      const remoteSpread = AUTO_NUKE_THIRD_PASS_SPREAD_MULTIPLIER +
+        remoteWaveCount * 0.4;
+      const remoteWavePlan = await waitForAutoNukeWavePlan(
+        params,
+        mode,
+        remoteState,
+        {
+          destructionPhase: "remote",
+          spreadMultiplier: remoteSpread,
+          readySlotFraction: 0.45,
+          launchSlotFraction: 1,
+          confirmationShots: 0,
+        },
+        getAutoNukeProcessWaveStatus(params, { mode: mode, waveNumber: waveNumber, phase: "remote", detail: remoteWaveCount === 0
+            ? "Mopping up remaining targets…"
+            : `Cleanup wave ${remoteWaveCount + 1}` }),
+      );
+      if (!remoteWavePlan) {
+        completeAutoNukeWaveEntry(remoteLogIdx);
+        break;
+      }
+
+      const remoteWaveLaunched = await launchAutoNukePlan(
+        params,
+        remoteWavePlan,
+        getAutoNukeProcessWaveStatus(params, { mode: mode, waveNumber: waveNumber, phase: "remote", detail: `Firing ${remoteWavePlan.shots.length} nukes` }),
+      );
+      completeAutoNukeWaveEntry(remoteLogIdx);
+      if (remoteWaveLaunched === 0) {
+        break;
+      }
+      latestImpactAtMs = Math.max(
+        latestImpactAtMs,
+        remoteWavePlan.estimatedImpactAtMs || 0,
+      );
+      remoteState = remoteWavePlan.followupState;
+      remoteWaveCount++;
+      waveNumber++;
+    }
+
+    updateAutoNukeProcessPanel(
+      getAutoNukeProcessWaveStatus(params, { mode: mode, waveNumber: Math.max(1, waveNumber - 1), phase: "remote", detail: `Mission complete — ${waveNumber - 1} waves`, extra: { progress: 1 } }),
+    );
+    hideAutoNukeProcessPanelAfterLanding(latestImpactAtMs);
+  }
+  const AUTO_NUKE_PROCESS_PANEL_CSS = `
+      #${AUTO_NUKE_PROCESS_PANEL_ID} {
+        position: fixed;
+        right: 14px;
+        top: calc(50% + 118px);
+        z-index: 9000;
+        width: min(320px, calc(100vw - 28px));
+        padding: 10px;
+        border: 1px solid rgba(56, 189, 248, 0.46);
+        border-radius: 8px;
+        background: rgba(13, 18, 24, 0.97);
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.44);
+        color: #f8fafc;
+        font: 800 12px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        letter-spacing: 0;
+        transform: translateY(-50%);
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID}[hidden] {
+        display: none;
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 5px;
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-wave {
+        color: #bae6fd;
+        font-size: 12px;
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-target {
+        color: #94a3b8;
+        font-size: 11px;
+        max-width: 128px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        text-align: right;
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-objective {
+        color: #e2e8f0;
+        font-size: 11px;
+        margin-bottom: 7px;
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-track {
+        height: 7px;
+        overflow: hidden;
+        border-radius: 6px;
+        background: rgba(51, 65, 85, 0.92);
+        margin-bottom: 7px;
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-fill {
+        width: 0%;
+        height: 100%;
+        border-radius: 6px;
+        background: linear-gradient(90deg, #38bdf8, #facc15);
+        transition: width 140ms linear;
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID}.openfront-helper-auto-nuke-process-waiting .openfront-helper-auto-nuke-process-fill {
+        width: 38%;
+        animation: openfront-helper-auto-nuke-process-wait 1.2s ease-in-out infinite alternate;
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-detail {
+        color: #cbd5e1;
+        font-size: 11px;
+        font-weight: 750;
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-steps {
+        list-style: none;
+        margin: 6px 0 0;
+        padding: 0;
+        max-height: 120px;
+        overflow-y: auto;
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-waves {
+        margin: 0 0 8px;
+        padding: 0;
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-waves:empty {
+        display: none;
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .wave-summary {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 6px;
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .wave-summary-label {
+        font-size: 11px;
+        font-weight: 600;
+        color: #e2e8f0;
+        letter-spacing: 0.01em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 72%;
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .wave-summary-count {
+        font-size: 10px;
+        font-weight: 500;
+        color: #64748b;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .wave-track {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        flex-wrap: wrap;
+        row-gap: 4px;
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .wave-connector {
+        flex: 1;
+        min-width: 6px;
+        max-width: 18px;
+        height: 1px;
+        background: #334155;
+        border-radius: 1px;
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .wave-dot {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        font-size: 8px;
+        font-weight: 700;
+        background: #1e293b;
+        color: #475569;
+        border: 1.5px solid #334155;
+        flex-shrink: 0;
+        transition: background 200ms, border-color 200ms, color 200ms, box-shadow 200ms;
+        cursor: default;
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .wave-dot--done {
+        background: #14532d;
+        border-color: #22c55e;
+        color: #4ade80;
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .wave-dot--active {
+        background: #0c4a6e;
+        border-color: #38bdf8;
+        color: #7dd3fc;
+        box-shadow: 0 0 6px 1px rgba(56, 189, 248, 0.35);
+        animation: wave-dot-pulse 1.4s ease-in-out infinite;
+      }
+
+      @keyframes wave-dot-pulse {
+        0%, 100% { box-shadow: 0 0 6px 1px rgba(56, 189, 248, 0.35); }
+        50% { box-shadow: 0 0 10px 3px rgba(56, 189, 248, 0.55); }
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-steps:empty {
+        display: none;
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-steps li {
+        font-size: 10px;
+        color: #64748b;
+        padding: 1px 0;
+        transition: color 100ms;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-steps li::before {
+        content: "○ ";
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-steps li[data-done] {
+        color: #4ade80;
+      }
+
+      #${AUTO_NUKE_PROCESS_PANEL_ID} .openfront-helper-auto-nuke-process-steps li[data-done]::before {
+        content: "✓ ";
+      }
+
+      @keyframes openfront-helper-auto-nuke-process-wait {
+        from { transform: translateX(-16%); }
+        to { transform: translateX(180%); }
+      }
+    `;

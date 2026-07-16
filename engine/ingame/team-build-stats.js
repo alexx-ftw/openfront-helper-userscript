@@ -79,7 +79,7 @@
   // Owned territory as a % of the conquerable map — matching the game's own
   // team-stats: denominator = land tiles MINUS fallout (nuked) tiles.
   function formatTeamBuildOwned(ownedTiles, game) {
-    let total = 0;
+    let total;
     try {
       total =
         (Number(game?.numLandTiles?.()) || 0) -
@@ -148,14 +148,7 @@
   let teamBuildGameRef = null;
   let teamBuildRenderSignature = "";
 
-  function ensureTeamBuildStatsStyles() {
-    if (document.getElementById(TEAM_BUILD_STYLE_ID)) {
-      return;
-    }
-
-    const style = document.createElement("style");
-    style.id = TEAM_BUILD_STYLE_ID;
-    style.textContent = `
+  const TEAM_BUILD_STATS_CSS = `
       #${TEAM_BUILD_PANEL_ID} {
         position: fixed;
         top: var(--team-build-top, 96px);
@@ -483,6 +476,12 @@
         background: rgba(248, 113, 113, 0.3);
       }
     `;
+
+  function ensureTeamBuildStatsStyles() {
+    if (document.getElementById(TEAM_BUILD_STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = TEAM_BUILD_STYLE_ID;
+    style.textContent = TEAM_BUILD_STATS_CSS;
     (document.head || document.documentElement).appendChild(style);
   }
 
@@ -525,6 +524,7 @@
         return true;
       }
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/team-build-stats.js:527");
       // Nothing else to try.
     }
     return false;
@@ -663,7 +663,8 @@
         panel.style.width = s.w + "px";
         panel.style.height = s.h + "px";
       }
-    } catch (_e) {}
+    } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/team-build-stats.js:666");}
   }
   function saveTeamBuildStatsSize(panel) {
     var w = parseInt(panel.style.width, 10);
@@ -671,11 +672,12 @@
     if (!Number.isFinite(w) || !Number.isFinite(h)) return;
     try {
       window.localStorage.setItem(TEAM_BUILD_POS_KEY + ":size", JSON.stringify({ w: w, h: h }));
-    } catch (_e) {}
+    } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/team-build-stats.js:676");}
   }
 
   function applyStoredTeamBuildStatsPosition(panel) {
-    let pos = null;
+    let pos;
     try {
       pos = JSON.parse(window.localStorage.getItem(TEAM_BUILD_POS_KEY) || "null");
     } catch (_error) {
@@ -758,164 +760,157 @@
   // displayed counts are the SUM OF LEVELS excluding under-construction units
   // (matching the game's stats), while `silo` is a building count that DOES
   // include under-construction silos so the alert can fire as early as possible.
-  function getTeamBuildRows(game) {
-    const structureTypes = TEAM_BUILD_STRUCTURES.map((s) => s.type);
-    let units = [];
+  function getTeamBuildUnits(game) {
     try {
-      units = game.units(...structureTypes) || [];
+      return game.units(...TEAM_BUILD_STRUCTURES.map((structure) => structure.type)) || [];
     } catch (_error) {
-      units = [];
+      return [];
     }
+  }
+
+  function getTeamBuildConfig(game) {
+    try {
+      return game.config?.() || null;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function getOrCreateTeamStat(teamStatAcc, team) {
+    let acc = teamStatAcc.get(team);
+    if (!acc) {
+      acc = { owned: 0, maxTroops: 0, gpmTotal: 0, gpmTracked: 0 };
+      teamStatAcc.set(team, acc);
+    }
+    return acc;
+  }
+
+  function addPlayerTeamStats(acc, player, index, config) {
+    try {
+      acc.owned += Number(player.numTilesOwned?.()) || 0;
+    } catch (_error) {
+      // ignore
+    }
+    try {
+      if (config?.maxTroops) acc.maxTroops += (Number(config.maxTroops(player)) || 0) / 10;
+    } catch (_error) {
+      // ignore
+    }
+    const gpm = getGoldPerMinuteForPlayer(player, index);
+    if (Number.isFinite(gpm)) {
+      acc.gpmTotal += gpm;
+      acc.gpmTracked += 1;
+    }
+  }
+
+  function collectTeamBuildPlayerData(game) {
+    const teamBySmallId = new Map();
+    const aliveTeams = new Set();
+    const teamStatAcc = new Map();
+    const config = getTeamBuildConfig(game);
+    getCachedPlayerViews(game).forEach((player, index) => {
+      const team = getPlayerTeamName(player);
+      if (!team || team === "Bot") return;
+      teamBySmallId.set(getPlayerSmallId(player, index), team);
+      let alive = false;
+      try {
+        alive = Boolean(player?.isAlive?.());
+      } catch (_error) {
+        // keep false
+      }
+      if (!alive) return;
+      aliveTeams.add(team);
+      addPlayerTeamStats(getOrCreateTeamStat(teamStatAcc, team), player, index, config);
+    });
+    return { teamBySmallId, aliveTeams, teamStatAcc };
+  }
+
+  function createTeamBuildEntry(team) {
+    const counts = {};
+    for (const structure of TEAM_BUILD_STRUCTURES) counts[structure.type] = 0;
+    return { team, total: 0, silo: 0, siloUnit: null, siloOwnerSmallId: NaN,
+      counts, owned: 0, maxTroops: 0, gpm: null };
+  }
+
+  function getOrCreateTeamBuildEntry(teams, team) {
+    let entry = teams.get(team);
+    if (!entry) {
+      entry = createTeamBuildEntry(team);
+      teams.set(team, entry);
+    }
+    return entry;
+  }
+
+  function getTeamBuildUnitData(unit) {
+    try {
+      return { smallId: Number(unit.owner?.()?.smallID?.()), type: unit.type?.() };
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function getTeamBuildUnitLevel(unit) {
+    try {
+      const level = Number(unit.level?.());
+      return Number.isFinite(level) && level > 0 ? level : 1;
+    } catch (_error) {
+      captureRuntimeException(_error, "engine/ingame/team-build-stats.js:getTeamBuildUnitLevel");
+      return 1;
+    }
+  }
+
+  function addTeamBuildUnit(entry, unit, type, smallId) {
+    let underConstruction = false;
+    try {
+      underConstruction = Boolean(unit.isUnderConstruction?.());
+    } catch (_error) {
+      // keep false
+    }
+    if (!underConstruction) {
+      const level = getTeamBuildUnitLevel(unit);
+      entry.counts[type] += level;
+      entry.total += level;
+    }
+    if (type !== TEAM_BUILD_SILO_TYPE) return;
+    entry.silo += 1;
+    if (!entry.siloUnit || (!underConstruction && entry.siloUnderConstruction)) {
+      entry.siloUnit = unit;
+      entry.siloOwnerSmallId = smallId;
+      entry.siloUnderConstruction = underConstruction;
+    }
+  }
+
+  function getTeamBuildRows(game) {
+    const units = getTeamBuildUnits(game);
 
     // smallID -> team name, resolved once from the cached player views so we do
     // not call unit.owner() (a map lookup) more than necessary. aliveTeams is
     // every team with at least one living player — used to seed empty rows so
     // the panel shows all teams from the very start of the game (at 0), rather
     // than waiting for the first structure to be built.
-    const teamBySmallId = new Map();
-    const aliveTeams = new Set();
     // Per-team economy aggregates, accumulated in this same player loop so the
     // GPM tracker key (fallbackIndex) matches gold-per-minute.js exactly.
-    const teamStatAcc = new Map(); // team -> {owned, maxTroops, gpmTotal, gpmTracked}
-    const players = getCachedPlayerViews(game);
-    let config = null;
-    try {
-      config = game.config?.();
-    } catch (_error) {
-      config = null;
-    }
-    let index = 0;
-    for (const player of players) {
-      const team = getPlayerTeamName(player);
-      const smallId = getPlayerSmallId(player, index);
-      if (team && team !== "Bot") {
-        teamBySmallId.set(smallId, team);
-        let alive = false;
-        try {
-          alive = Boolean(player?.isAlive?.());
-        } catch (_error) {
-          alive = false;
-        }
-        if (alive) {
-          aliveTeams.add(team);
-          let acc = teamStatAcc.get(team);
-          if (!acc) {
-            acc = { owned: 0, maxTroops: 0, gpmTotal: 0, gpmTracked: 0 };
-            teamStatAcc.set(team, acc);
-          }
-          try {
-            acc.owned += Number(player.numTilesOwned?.()) || 0;
-          } catch (_error) {
-            // ignore
-          }
-          try {
-            // Troops are stored at 10x and shown /10 in-game (renderTroops).
-            if (config?.maxTroops) {
-              acc.maxTroops += (Number(config.maxTroops(player)) || 0) / 10;
-            }
-          } catch (_error) {
-            // ignore
-          }
-          // getGoldPerMinuteForPlayer is provided by gold-per-minute.js (shared
-          // scope); needs the sampler running — updateTeamBuildStatsPanel pumps it.
-          const gpm = getGoldPerMinuteForPlayer(player, index);
-          if (Number.isFinite(gpm)) {
-            acc.gpmTotal += gpm;
-            acc.gpmTracked += 1;
-          }
-        }
-      }
-      index += 1;
-    }
+    const { teamBySmallId, aliveTeams, teamStatAcc } = collectTeamBuildPlayerData(game);
 
     const teams = new Map();
-    function ensureTeamEntry(team) {
-      let entry = teams.get(team);
-      if (!entry) {
-        entry = {
-          team,
-          total: 0,
-          silo: 0,
-          siloUnit: null,
-          siloOwnerSmallId: NaN,
-          counts: {},
-          owned: 0,
-          maxTroops: 0,
-          gpm: null,
-        };
-        for (const s of TEAM_BUILD_STRUCTURES) {
-          entry.counts[s.type] = 0;
-        }
-        teams.set(team, entry);
-      }
-      return entry;
-    }
-
     // Seed every living team up front (all counts 0) so the panel is populated
     // immediately on game start; structure counts then fill in as they appear.
     for (const team of aliveTeams) {
-      ensureTeamEntry(team);
+      getOrCreateTeamBuildEntry(teams, team);
     }
 
     for (const unit of units) {
-      let smallId = NaN;
-      try {
-        smallId = Number(unit.owner?.()?.smallID?.());
-      } catch (_error) {
-        continue;
-      }
-      const team = teamBySmallId.get(smallId);
-      if (!team) {
-        continue;
-      }
-      let type = null;
-      try {
-        type = unit.type?.();
-      } catch (_error) {
-        type = null;
-      }
-      const entry = ensureTeamEntry(team);
-      if (type == null || !(type in entry.counts)) {
-        continue;
-      }
+      const data = getTeamBuildUnitData(unit);
+      if (!data) continue;
+      const team = teamBySmallId.get(data.smallId);
+      if (!team) continue;
+      const entry = getOrCreateTeamBuildEntry(teams, team);
+      if (data.type == null || !(data.type in entry.counts)) continue;
       // Structures are upgradable, so the game reports counts as the SUM OF
       // LEVELS excluding units still under construction (PlayerView.totalUnitLevels).
       // A team with 3 silos upgraded to total level 7 shows "7" — matching the
       // game's own UnitDisplay / team-stats panels, not the raw building count.
-      let underConstruction = false;
-      try {
-        underConstruction = Boolean(unit.isUnderConstruction?.());
-      } catch (_error) {
-        underConstruction = false;
-      }
-      if (!underConstruction) {
-        let level = 1;
-        try {
-          const lv = Number(unit.level?.());
-          if (Number.isFinite(lv) && lv > 0) {
-            level = lv;
-          }
-        } catch (_error) {
-          level = 1;
-        }
-        entry.counts[type] += level;
-        entry.total += level;
-      }
-      if (type === TEAM_BUILD_SILO_TYPE) {
-        // The silo ALERT deliberately stays building-based and includes ones
-        // still under construction, so a team is flagged the moment it STARTS a
-        // silo — earliest possible warning, independent of the level-based
-        // display count above.
-        entry.silo += 1;
-        // Remember one silo unit (+ owner) so the alert's Focus button can pan
-        // the camera straight to it. Prefer a finished silo over one still under
-        // construction, but keep any silo as a fallback.
-        if (!entry.siloUnit || (!underConstruction && entry.siloUnderConstruction)) {
-          entry.siloUnit = unit;
-          entry.siloOwnerSmallId = smallId;
-          entry.siloUnderConstruction = underConstruction;
-        }
-      }
+      addTeamBuildUnit(entry, unit, data.type, data.smallId);
     }
 
     // Fold the economy aggregates into each team entry (gpm = null when no
@@ -995,6 +990,7 @@
       const myPlayer = game?.myPlayer?.();
       return getPlayerTeamName(myPlayer);
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/team-build-stats.js:997");
       return null;
     }
   }
@@ -1034,9 +1030,7 @@
     }
   }
 
-  function renderTeamBuildGrid(grid, rows, game) {
-    const children = [];
-
+  function appendTeamBuildHeaders(children) {
     const corner = document.createElement("span");
     corner.className = "openfront-helper-tbs-cell openfront-helper-tbs-head";
     corner.textContent = "";
@@ -1072,12 +1066,31 @@
       attachTeamBuildSort(head, stat.key);
       children.push(head);
     });
+  }
 
-    for (const row of rows) {
-      const color = getTeamColor(row.team, game);
+  function appendTeamBuildStructureCells(children, row) {
+    for (const structure of TEAM_BUILD_STRUCTURES) {
+      const count = row.counts[structure.type] || 0;
+      const cell = document.createElement("span");
+      cell.className = "openfront-helper-tbs-cell openfront-helper-tbs-value";
+      if (count === 0) cell.classList.add("openfront-helper-tbs-zero");
+      else if (structure.type === TEAM_BUILD_SILO_TYPE) cell.classList.add("openfront-helper-tbs-silo-has");
+      cell.textContent = String(count);
+      children.push(cell);
+    }
+  }
+
+  function appendTeamBuildStatCell(children, className, text) {
+    const cell = document.createElement("span");
+    cell.className = className;
+    cell.textContent = text;
+    children.push(cell);
+  }
+
+  function appendTeamBuildRow(children, row, game) {
       const name = document.createElement("span");
       name.className = "openfront-helper-tbs-cell openfront-helper-tbs-name";
-      name.style.setProperty("--team-accent-color", color);
+      name.style.setProperty("--team-accent-color", getTeamColor(row.team, game));
       name.textContent = row.team;
       name.title = `${row.team} · ${row.total} công trình`;
       children.push(name);
@@ -1087,38 +1100,16 @@
         "openfront-helper-tbs-cell openfront-helper-tbs-value openfront-helper-tbs-total";
       totalCell.textContent = String(row.total);
       children.push(totalCell);
+      appendTeamBuildStructureCells(children, row);
+      appendTeamBuildStatCell(children, "openfront-helper-tbs-cell openfront-helper-tbs-value openfront-helper-tbs-stat openfront-helper-tbs-stat-first", formatTeamBuildGpm(row.gpm));
+      appendTeamBuildStatCell(children, "openfront-helper-tbs-cell openfront-helper-tbs-value openfront-helper-tbs-stat", formatTeamBuildOwned(row.owned, game));
+      appendTeamBuildStatCell(children, "openfront-helper-tbs-cell openfront-helper-tbs-value openfront-helper-tbs-stat", formatTeamBuildCount(row.maxTroops));
+  }
 
-      for (const s of TEAM_BUILD_STRUCTURES) {
-        const count = row.counts[s.type] || 0;
-        const cell = document.createElement("span");
-        cell.className = "openfront-helper-tbs-cell openfront-helper-tbs-value";
-        if (count === 0) {
-          cell.classList.add("openfront-helper-tbs-zero");
-        } else if (s.type === TEAM_BUILD_SILO_TYPE) {
-          cell.classList.add("openfront-helper-tbs-silo-has");
-        }
-        cell.textContent = String(count);
-        children.push(cell);
-      }
-
-      const gpmCell = document.createElement("span");
-      gpmCell.className =
-        "openfront-helper-tbs-cell openfront-helper-tbs-value openfront-helper-tbs-stat openfront-helper-tbs-stat-first";
-      gpmCell.textContent = formatTeamBuildGpm(row.gpm);
-      children.push(gpmCell);
-
-      const ownedCell = document.createElement("span");
-      ownedCell.className =
-        "openfront-helper-tbs-cell openfront-helper-tbs-value openfront-helper-tbs-stat";
-      ownedCell.textContent = formatTeamBuildOwned(row.owned, game);
-      children.push(ownedCell);
-
-      const troopsCell = document.createElement("span");
-      troopsCell.className =
-        "openfront-helper-tbs-cell openfront-helper-tbs-value openfront-helper-tbs-stat";
-      troopsCell.textContent = formatTeamBuildCount(row.maxTroops);
-      children.push(troopsCell);
-    }
+  function renderTeamBuildGrid(grid, rows, game) {
+    const children = [];
+    appendTeamBuildHeaders(children);
+    for (const row of rows) appendTeamBuildRow(children, row, game);
 
     grid.replaceChildren(...children);
   }
@@ -1129,6 +1120,47 @@
       panel.setAttribute("aria-hidden", "true");
     }
     teamBuildRenderSignature = "";
+  }
+
+  function resetTeamBuildGameState(game) {
+    if (game === teamBuildGameRef) return;
+    teamBuildGameRef = game;
+    teamBuildPrevSiloCounts.clear();
+    teamBuildSiloWarnings.clear();
+    clearAllTeamBuildSiloAlerts();
+    teamBuildSeeded = false;
+  }
+
+  function updateTeamBuildWarningState(rows, game) {
+    if (!teamBuildSeeded) {
+      for (const row of rows) teamBuildPrevSiloCounts.set(row.team, row.silo);
+      teamBuildSeeded = true;
+      return;
+    }
+    updateTeamBuildSiloWarnings(rows, getMyTeamName(game), Date.now(), game);
+  }
+
+  function getTeamBuildRenderSignature(rows, warnTeams, game) {
+    const rowSignature = rows.map((row) => {
+      const counts = TEAM_BUILD_STRUCTURES.map((structure) => row.counts[structure.type] || 0).join(",");
+      const gpm = row.gpm == null ? "" : Math.round(row.gpm);
+      return `${row.team}|${getTeamColor(row.team, game)}|${counts}|${gpm}|${row.owned}|${row.maxTroops}`;
+    }).join(";");
+    return `sort:${teamBuildSortKey || ""}:${teamBuildSortDir};${rowSignature}#warn:${warnTeams.join(",")}`;
+  }
+
+  function renderTeamBuildPanelChanges(panel, rows, warnTeams, game) {
+    const signature = getTeamBuildRenderSignature(rows, warnTeams, game);
+    if (teamBuildRenderSignature === signature) return;
+    teamBuildRenderSignature = signature;
+    const grid = panel.querySelector(".openfront-helper-tbs-grid");
+    if (grid) renderTeamBuildGrid(grid, rows, game);
+    const warn = panel.querySelector(".openfront-helper-tbs-warn");
+    if (!warn) return;
+    warn.dataset.active = warnTeams.length > 0 ? "true" : "false";
+    warn.textContent = warnTeams.length > 0
+      ? tr("⚠ First silo: {teams}", { teams: warnTeams.join(", ") })
+      : "";
   }
 
   function updateTeamBuildStatsPanel() {
@@ -1156,13 +1188,7 @@
     }
 
     // A fresh game invalidates all warning/seed state.
-    if (game !== teamBuildGameRef) {
-      teamBuildGameRef = game;
-      teamBuildPrevSiloCounts.clear();
-      teamBuildSiloWarnings.clear();
-      clearAllTeamBuildSiloAlerts();
-      teamBuildSeeded = false;
-    }
+    resetTeamBuildGameState(game);
 
     const rows = getTeamBuildRows(game);
     if (rows.length === 0) {
@@ -1170,54 +1196,13 @@
       return;
     }
 
-    const now = Date.now();
-    const myTeam = getMyTeamName(game);
-
-    if (!teamBuildSeeded) {
-      // First render against this game: record existing silos WITHOUT warning.
-      for (const row of rows) {
-        teamBuildPrevSiloCounts.set(row.team, row.silo);
-      }
-      teamBuildSeeded = true;
-    } else {
-      updateTeamBuildSiloWarnings(rows, myTeam, now, game);
-    }
+    updateTeamBuildWarningState(rows, game);
 
     const warnTeams = rows
       .filter((row) => teamBuildSiloWarnings.has(row.team))
       .map((row) => row.team);
 
-    const signature =
-      `sort:${teamBuildSortKey || ""}:${teamBuildSortDir};` +
-      rows
-        .map((row) => {
-          const counts = TEAM_BUILD_STRUCTURES.map(
-            (s) => row.counts[s.type] || 0,
-          ).join(",");
-          const gpm = row.gpm == null ? "" : Math.round(row.gpm);
-          return `${row.team}|${getTeamColor(row.team, game)}|${counts}|${gpm}|${row.owned}|${row.maxTroops}`;
-        })
-        .join(";") + `#warn:${warnTeams.join(",")}`;
-
-    if (teamBuildRenderSignature !== signature) {
-      teamBuildRenderSignature = signature;
-
-      const grid = panel.querySelector(".openfront-helper-tbs-grid");
-      if (grid) {
-        renderTeamBuildGrid(grid, rows, game);
-      }
-
-      const warn = panel.querySelector(".openfront-helper-tbs-warn");
-      if (warn) {
-        if (warnTeams.length > 0) {
-          warn.textContent = tr("⚠ First silo: {teams}", { teams: warnTeams.join(", ") });
-          warn.dataset.active = "true";
-        } else {
-          warn.dataset.active = "false";
-          warn.textContent = "";
-        }
-      }
-    }
+    renderTeamBuildPanelChanges(panel, rows, warnTeams, game);
 
     if (panel.dataset.visible !== "true") {
       panel.dataset.visible = "true";
@@ -1243,5 +1228,5 @@
       return;
     }
 
-    registerHelperTickListener(updateTeamBuildStatsPanel);
+    registerHelperTickListener(updateTeamBuildStatsPanel, 1000);
   }

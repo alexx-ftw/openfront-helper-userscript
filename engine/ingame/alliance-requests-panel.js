@@ -12,14 +12,7 @@
     ...RENEW_ALLIANCE_MESSAGE_TYPES,
   ]);
 
-  function ensureAllianceRequestPanelStyles() {
-    if (document.getElementById(ALLIANCE_REQUEST_PANEL_STYLE_ID)) {
-      return;
-    }
-
-    const style = document.createElement("style");
-    style.id = ALLIANCE_REQUEST_PANEL_STYLE_ID;
-    style.textContent = `
+  const ALLIANCE_REQUEST_PANEL_CSS = `
       #${ALLIANCE_REQUEST_PANEL_ID} {
         position: fixed;
         right: max(14px, env(safe-area-inset-right, 0px));
@@ -296,6 +289,12 @@
         color: var(--oh-panel-text-dim, rgba(148,163,184,0.6));
       }
     `;
+
+  function ensureAllianceRequestPanelStyles() {
+    if (document.getElementById(ALLIANCE_REQUEST_PANEL_STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = ALLIANCE_REQUEST_PANEL_STYLE_ID;
+    style.textContent = ALLIANCE_REQUEST_PANEL_CSS;
     (document.head || document.documentElement).appendChild(style);
   }
 
@@ -315,7 +314,7 @@
           <button
             type="button"
             class="openfront-helper-alliance-request-autorenew"
-            data-on="${allianceRequestsAutoRenewEnabled ? "true" : "false"}"
+            data-on="${runtimeState.allianceRequestsAutoRenewEnabled ? "true" : "false"}"
             title="Tự động gửi lại liên minh khi sắp hết hạn"
           >🔁 Auto</button>
         </div>
@@ -337,7 +336,9 @@
       if (autoRenewButton) {
         autoRenewButton.addEventListener("click", (event) => {
           event.stopPropagation();
-          setAllianceRequestsAutoRenewEnabled(!allianceRequestsAutoRenewEnabled);
+          setAllianceRequestsAutoRenewEnabled(
+            !runtimeState.allianceRequestsAutoRenewEnabled,
+          );
         });
       }
       if (header) {
@@ -359,11 +360,11 @@
   }
 
   function setAllianceRequestsAutoRenewEnabled(enabled) {
-    allianceRequestsAutoRenewEnabled = Boolean(enabled);
+    runtimeState.allianceRequestsAutoRenewEnabled = Boolean(enabled);
     try {
       window.localStorage.setItem(
         ALLIANCE_REQUEST_PANEL_AUTORENEW_KEY,
-        allianceRequestsAutoRenewEnabled ? "1" : "0",
+        runtimeState.allianceRequestsAutoRenewEnabled ? "1" : "0",
       );
     } catch (_error) {
       // Persistence is best-effort; the toggle still works for this session.
@@ -372,12 +373,14 @@
       .getElementById(ALLIANCE_REQUEST_PANEL_ID)
       ?.querySelector(".openfront-helper-alliance-request-autorenew");
     if (button) {
-      button.dataset.on = allianceRequestsAutoRenewEnabled ? "true" : "false";
+      button.dataset.on = runtimeState.allianceRequestsAutoRenewEnabled
+        ? "true"
+        : "false";
     }
   }
 
   function applyStoredAllianceRequestPanelPosition(panel) {
-    let pos = null;
+    let pos;
     try {
       pos = JSON.parse(
         window.localStorage.getItem(ALLIANCE_REQUEST_PANEL_POS_KEY) || "null",
@@ -583,6 +586,7 @@
       const player = game.playerBySmallID?.(Number(playerSmallId));
       return player?.isPlayer?.() ? player : null;
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/alliance-requests-panel.js:589");
       return null;
     }
   }
@@ -594,6 +598,7 @@
         return ownerId;
       }
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/alliance-requests-panel.js:600");
       // Fall back to owner().smallID() below.
     }
 
@@ -607,15 +612,11 @@
   function createAllianceFocusFlashMask(context, playerSmallId) {
     const { game } = context;
     const targetSmallId = Number(playerSmallId);
-    if (!Number.isFinite(targetSmallId)) {
-      return null;
-    }
+    if (!Number.isFinite(targetSmallId)) return null;
 
     const width = Math.floor(Number(game.width?.()));
     const height = Math.floor(Number(game.height?.()));
-    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-      return null;
-    }
+    if (!isValidAllianceMaskSize(width, height)) return null;
 
     const primaryMask = document.createElement("canvas");
     const secondaryMask = document.createElement("canvas");
@@ -643,6 +644,7 @@
         x = Number(game.x?.(tile));
         y = Number(game.y?.(tile));
       } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/alliance-requests-panel.js:649");
         return;
       }
       if (!Number.isFinite(x) || !Number.isFinite(y)) {
@@ -683,6 +685,10 @@
     return { primaryMask, secondaryMask, transform: context.transform };
   }
 
+  function isValidAllianceMaskSize(width, height) {
+    return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
+  }
+
   function drawAllianceFocusFlashMask(ctx, maskData, pixelRatio, progress) {
     const { primaryMask, secondaryMask, transform } = maskData;
     const easedProgress = 1 - Math.pow(1 - progress, 2.4);
@@ -701,6 +707,7 @@
       xAxis = transform.worldToScreenCoordinates({ x: 1, y: 0 });
       yAxis = transform.worldToScreenCoordinates({ x: 0, y: 1 });
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/alliance-requests-panel.js:707");
       return;
     }
 
@@ -745,17 +752,31 @@
       return points;
     }
 
-    let topLeft;
-    let bottomRight;
-    try {
-      [topLeft, bottomRight] = transform.screenBoundingRect?.() ?? [];
-    } catch (_error) {
-      topLeft = null;
-      bottomRight = null;
+    const bounds = getAllianceFocusBounds(game, transform);
+    if (!bounds) return points;
+
+    const { minX, maxX, minY, maxY } = bounds;
+    for (let y = minY; y <= maxY; y += 1) {
+      for (let x = minX; x <= maxX; x += 1) {
+        const point = getAllianceFocusFlashPoint(game, transform, targetSmallId, x, y);
+        if (point) points.push(point);
+      }
     }
 
+    return points;
+  }
+
+  function getAllianceFocusBounds(game, transform) {
+    let corners;
+    try {
+      corners = transform.screenBoundingRect?.() ?? [];
+    } catch (_error) {
+      return null;
+    }
+
+    const [topLeft, bottomRight] = corners;
     if (!topLeft || !bottomRight) {
-      return points;
+      return null;
     }
 
     const minX = Math.max(0, Math.floor(Math.min(topLeft.x, bottomRight.x)) - 2);
@@ -770,36 +791,22 @@
     );
 
     if (maxX < minX || maxY < minY) {
-      return points;
+      return null;
     }
+    return { minX, maxX, minY, maxY };
+  }
 
-    for (let y = minY; y <= maxY; y += 1) {
-      for (let x = minX; x <= maxX; x += 1) {
-        let tile;
-        try {
-          tile = game.ref?.(x, y);
-        } catch (_error) {
-          continue;
-        }
-        if (getAllianceFocusTileOwnerId(game, tile) !== targetSmallId) {
-          continue;
-        }
-
-        try {
-          const screenPoint = transform.worldToScreenCoordinates({ x, y });
-          if (Number.isFinite(screenPoint?.x) && Number.isFinite(screenPoint?.y)) {
-            points.push({
-              ...screenPoint,
-              patternBand: Math.floor((x + y) / 3) % 2,
-            });
-          }
-        } catch (_error) {
-          // Ignore coordinates that cannot be projected during camera updates.
-        }
-      }
+  function getAllianceFocusFlashPoint(game, transform, targetSmallId, x, y) {
+    try {
+      const tile = game.ref?.(x, y);
+      if (getAllianceFocusTileOwnerId(game, tile) !== targetSmallId) return null;
+      const point = transform.worldToScreenCoordinates({ x, y });
+      if (!Number.isFinite(point?.x) || !Number.isFinite(point?.y)) return null;
+      return { ...point, patternBand: Math.floor((x + y) / 3) % 2 };
+    } catch (_error) {
+      captureRuntimeException(_error, "engine/ingame/alliance-requests-panel.js:focusPoint");
+      return null;
     }
-
-    return points;
   }
 
   function drawAllianceFocusFlashPoints(ctx, points, pixelRatio, progress, transform) {
@@ -840,9 +847,9 @@
       return;
     }
 
-    if (allianceFocusFlashAnimationFrame !== null) {
-      cancelAnimationFrame(allianceFocusFlashAnimationFrame);
-      allianceFocusFlashAnimationFrame = null;
+    if (runtimeState.allianceFocusFlashAnimationFrame !== null) {
+      cancelAnimationFrame(runtimeState.allianceFocusFlashAnimationFrame);
+      runtimeState.allianceFocusFlashAnimationFrame = null;
     }
 
     const startedAt = performance.now();
@@ -859,7 +866,7 @@
       const { canvas, pixelRatio } = ensureAllianceFocusFlashCanvas();
       const ctx = canvas.getContext("2d");
       if (!ctx || !context) {
-        allianceFocusFlashAnimationFrame = null;
+        runtimeState.allianceFocusFlashAnimationFrame = null;
         canvas.remove();
         return;
       }
@@ -883,15 +890,15 @@
       }
 
       if (progress < 1) {
-        allianceFocusFlashAnimationFrame = requestAnimationFrame(drawFrame);
+        runtimeState.allianceFocusFlashAnimationFrame = requestAnimationFrame(drawFrame);
         return;
       }
 
-      allianceFocusFlashAnimationFrame = null;
+      runtimeState.allianceFocusFlashAnimationFrame = null;
       canvas.parentElement?.remove();
     }
 
-    allianceFocusFlashAnimationFrame = requestAnimationFrame(drawFrame);
+    runtimeState.allianceFocusFlashAnimationFrame = requestAnimationFrame(drawFrame);
   }
 
   function flashAllianceFocusTerritoryAfterCameraMove(eventsDisplay, playerSmallId) {
@@ -974,28 +981,11 @@
     let changed = false;
 
     for (const event of events) {
-      if (
-        isAllianceRequestPanelEvent(event) &&
-        !capturedAllianceRequestEvents.has(event)
-      ) {
-        // Filter out alliance requests from regular bots BEFORE Vue processes them.
-        // This prevents Vue watchers from auto-accepting bot alliance requests.
-        try {
-          const sid = Number(event?.focusID);
-          if (Number.isFinite(sid)) {
-            const game = eventsDisplay?.game;
-            const player = game?.playerBySmallID ? game.playerBySmallID(sid) : null;
-            if (player && isRegularBotPlayer(player)) {
-              capturedAllianceRequestEvents.add(event); // prevent re-processing
-              continue; // don't add to panel
-            }
-          }
-        } catch (_e) { /* proceed normally on error */ }
-
-        capturedAllianceRequestEvents.add(event);
-        allianceRequestsPanelEvents.push(event);
-        changed = true;
-      }
+      if (!isAllianceRequestPanelEvent(event) || capturedAllianceRequestEvents.has(event)) continue;
+      capturedAllianceRequestEvents.add(event);
+      if (isAllianceRequestFromRegularBot(event, eventsDisplay)) continue;
+      allianceRequestsPanelEvents.push(event);
+      changed = true;
     }
 
     const remainingEvents = events.filter((event) => !isAllianceRequestPanelEvent(event));
@@ -1007,12 +997,26 @@
     return changed;
   }
 
+  function isAllianceRequestFromRegularBot(event, eventsDisplay) {
+    try {
+      const smallId = Number(event?.focusID);
+      if (!Number.isFinite(smallId)) return false;
+      const game = eventsDisplay?.game;
+      const player = game?.playerBySmallID?.(smallId);
+      return Boolean(player && isRegularBotPlayer(player));
+    } catch (_error) {
+      captureRuntimeException(_error, "engine/ingame/alliance-requests-panel.js:regularBot");
+      return false;
+    }
+  }
+
   function isRegularBotPlayer(player) {
     if (!player) return false;
     try {
       if (typeof player.type === "function" && player.type() === "BOT") return true;
       if (player.data && player.data.playerType === "BOT") return true;
-    } catch (_e) {}
+    } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/alliance-requests-panel.js:1019");}
     return false;
   }
 
@@ -1031,7 +1035,7 @@
   // Incoming requests (type 15) are intentionally left alone — that is the
   // auto-bot's job, not this toggle's.
   function autoRenewAllianceRequestPanelEvents() {
-    if (!allianceRequestsAutoRenewEnabled) {
+    if (!runtimeState.allianceRequestsAutoRenewEnabled) {
       return false;
     }
     let changed = false;
@@ -1042,13 +1046,7 @@
       if (autoRenewedAllianceEvents.has(event)) {
         continue;
       }
-      const buttons = Array.isArray(event.buttons) ? event.buttons : [];
-      const renew =
-        buttons.find(
-          (button) =>
-            typeof button?.action === "function" &&
-            getAllianceRequestPanelButtonClass(button.className) === "btn",
-        ) || (typeof buttons[1]?.action === "function" ? buttons[1] : null);
+      const renew = getAllianceRenewButton(event);
       if (!renew) {
         continue;
       }
@@ -1058,6 +1056,7 @@
         renew.action();
         confirmed = true;
       } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/alliance-requests-panel.js:1064");
         // Leave the card in place so it can be confirmed manually; the WeakSet
         // still stops us from retrying this exact event every frame.
       }
@@ -1067,6 +1066,14 @@
       }
     }
     return changed;
+  }
+
+  function getAllianceRenewButton(event) {
+    const buttons = Array.isArray(event.buttons) ? event.buttons : [];
+    const primary = buttons.find((button) =>
+      typeof button?.action === "function" &&
+      getAllianceRequestPanelButtonClass(button.className) === "btn");
+    return primary || (typeof buttons[1]?.action === "function" ? buttons[1] : null);
   }
 
   function getAllianceRequestPanelButtonClass(className) {
@@ -1104,7 +1111,8 @@
           result.type = "player";
         }
       }
-    } catch (_error) {}
+    } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/alliance-requests-panel.js:1111");}
 
     return result;
   }
@@ -1125,17 +1133,81 @@
       .join("|");
   }
 
+  function hasAllianceRequestGame() {
+    try { return Boolean(getOpenFrontGameContext()?.game); }
+    catch (_error) { return false; }
+  }
+
+  function createAllianceRequestAction(buttonConfig, event, eventsDisplay) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = getAllianceRequestPanelButtonClass(buttonConfig.className);
+    button.textContent = String(buttonConfig.text ?? "");
+    button.addEventListener("click", (clickEvent) => {
+      clickEvent.stopPropagation();
+      clickEvent.preventDefault();
+      if (typeof buttonConfig.action === "function") {
+        try { buttonConfig.action(); } catch (error) {
+          console.error("[AlliancePanel] action error:", error);
+        }
+      }
+      if (buttonConfig.preventClose && event.focusID) {
+        flashAllianceFocusTerritoryAfterCameraMove(eventsDisplay, event.focusID);
+      }
+      if (buttonConfig.preventClose) return;
+      removeAllianceRequestPanelEvent(event);
+      renderAllianceRequestPanel(eventsDisplay);
+    });
+    return button;
+  }
+
+  function createAllianceRequestCard(event, eventsDisplay) {
+    const senderInfo = getAllianceRequestSenderInfo(eventsDisplay, event);
+    const remainingSeconds = getAllianceRequestRemainingSeconds(eventsDisplay, event);
+    const card = document.createElement("div");
+    card.className = "openfront-helper-alliance-request-card";
+    card.dataset.senderType = senderInfo.type;
+    const description = document.createElement(event.focusID ? "button" : "div");
+    description.className = "openfront-helper-alliance-request-description";
+    description.textContent = String(event.description ?? "");
+    if (senderInfo.color) description.style.color = senderInfo.color;
+    if (event.focusID) {
+      description.type = "button";
+      description.addEventListener("click", () => {
+        eventsDisplay?.emitGoToPlayerEvent?.(event.focusID);
+        flashAllianceFocusTerritoryAfterCameraMove(eventsDisplay, event.focusID);
+      });
+    }
+    const meta = document.createElement("div");
+    meta.className = "openfront-helper-alliance-request-meta";
+    meta.appendChild(description);
+    if (senderInfo.label) {
+      const senderType = document.createElement("span");
+      senderType.className = "openfront-helper-alliance-request-sender-type";
+      senderType.textContent = senderInfo.label;
+      meta.appendChild(senderType);
+    }
+    const timeLeft = document.createElement("span");
+    timeLeft.className = "openfront-helper-alliance-request-time";
+    timeLeft.dataset.urgency = getAllianceRequestTimeUrgency(remainingSeconds);
+    timeLeft.textContent = formatAllianceRequestRemainingTime(remainingSeconds);
+    meta.appendChild(timeLeft);
+    card.appendChild(meta);
+    const buttons = Array.isArray(event.buttons) ? event.buttons : [];
+    if (buttons.length > 0) {
+      const actions = document.createElement("div");
+      actions.className = "openfront-helper-alliance-request-actions";
+      actions.append(...buttons.map((config) =>
+        createAllianceRequestAction(config, event, eventsDisplay)));
+      card.appendChild(actions);
+    }
+    return card;
+  }
+
   function renderAllianceRequestPanel(eventsDisplay) {
     const panel = ensureAllianceRequestPanel();
     // Only show when the user is actually in a game (not in lobby/menu).
-    try {
-      var ctx = getOpenFrontGameContext();
-      if (!ctx || !ctx.game) {
-        panel.dataset.visible = "false";
-        panel.style.display = "none";
-        return;
-      }
-    } catch(e) {
+    if (!hasAllianceRequestGame()) {
       panel.dataset.visible = "false";
       panel.style.display = "none";
       return;
@@ -1156,76 +1228,12 @@
     }
     list.replaceChildren();
 
-    for (const event of allianceRequestsPanelEvents) {
-      const senderInfo = getAllianceRequestSenderInfo(eventsDisplay, event);
-      const remainingSeconds = getAllianceRequestRemainingSeconds(eventsDisplay, event);
-      const card = document.createElement("div");
-      card.className = "openfront-helper-alliance-request-card";
-      card.dataset.senderType = senderInfo.type;
-
-      const description = document.createElement(event.focusID ? "button" : "div");
-      description.className = "openfront-helper-alliance-request-description";
-      description.textContent = String(event.description ?? "");
-      if (senderInfo.color) description.style.color = senderInfo.color;
-      if (event.focusID) {
-        description.type = "button";
-        description.addEventListener("click", () => {
-          eventsDisplay?.emitGoToPlayerEvent?.(event.focusID);
-          flashAllianceFocusTerritoryAfterCameraMove(eventsDisplay, event.focusID);
-        });
-      }
-
-      const meta = document.createElement("div");
-      meta.className = "openfront-helper-alliance-request-meta";
-      meta.appendChild(description);
-      if (senderInfo.label) {
-        const senderType = document.createElement("span");
-        senderType.className = "openfront-helper-alliance-request-sender-type";
-        senderType.textContent = senderInfo.label;
-        meta.appendChild(senderType);
-      }
-      const timeLeft = document.createElement("span");
-      timeLeft.className = "openfront-helper-alliance-request-time";
-      timeLeft.dataset.urgency = getAllianceRequestTimeUrgency(remainingSeconds);
-      timeLeft.textContent = formatAllianceRequestRemainingTime(remainingSeconds);
-      meta.appendChild(timeLeft);
-      card.appendChild(meta);
-
-      if (Array.isArray(event.buttons) && event.buttons.length > 0) {
-        const actions = document.createElement("div");
-        actions.className = "openfront-helper-alliance-request-actions";
-        for (const buttonConfig of event.buttons) {
-          const button = document.createElement("button");
-          button.type = "button";
-          button.className = getAllianceRequestPanelButtonClass(buttonConfig.className);
-          button.textContent = String(buttonConfig.text ?? "");
-          console.log("[AlliancePanel] button:", buttonConfig.text, "hasAction:", typeof buttonConfig.action === "function", "className:", buttonConfig.className);
-          button.addEventListener("click", function(ev) {
-            ev.stopPropagation();
-            ev.preventDefault();
-            console.log("[AlliancePanel] button clicked:", buttonConfig.text);
-            if (typeof buttonConfig.action === "function") {
-              try { buttonConfig.action(); } catch(e) { console.error("[AlliancePanel] action error:", e); }
-            }
-            if (buttonConfig.preventClose && event.focusID) {
-              flashAllianceFocusTerritoryAfterCameraMove(eventsDisplay, event.focusID);
-            }
-            if (!buttonConfig.preventClose) {
-              removeAllianceRequestPanelEvent(event);
-              renderAllianceRequestPanel(eventsDisplay);
-            }
-          });
-          actions.appendChild(button);
-        }
-        card.appendChild(actions);
-      }
-
-      list.appendChild(card);
-    }
+    list.append(...allianceRequestsPanelEvents.map((event) =>
+      createAllianceRequestCard(event, eventsDisplay)));
   }
 
   function syncAllianceRequestPanel() {
-    if (!allianceRequestsPanelEnabled) {
+    if (!runtimeState.allianceRequestsPanelEnabled) {
       return;
     }
 
@@ -1239,115 +1247,154 @@
     // Dirty-check: only rebuild DOM when data actually changes — not every frame.
     // Rebuilding DOM every frame destroys+recreates buttons mid-click.
     var sig = allianceRequestsPanelEvents.length + "|" + _alliesListSignature;
-    if (sig !== allianceRequestsPanelRenderSignature) {
-      allianceRequestsPanelRenderSignature = sig;
+    if (sig !== runtimeState.allianceRequestsPanelRenderSignature) {
+      runtimeState.allianceRequestsPanelRenderSignature = sig;
       renderAllianceRequestPanel(eventsDisplay);
     }
     renderAlliesList();
-    allianceRequestsPanelAnimationFrame =
+    runtimeState.allianceRequestsPanelAnimationFrame =
       requestAnimationFrame(syncAllianceRequestPanel);
   }
 
   function setAllianceRequestsPanelEnabled(enabled) {
-    allianceRequestsPanelEnabled = Boolean(enabled);
-    if (!allianceRequestsPanelEnabled) {
-      if (allianceRequestsPanelAnimationFrame !== null) {
-        cancelAnimationFrame(allianceRequestsPanelAnimationFrame);
-        allianceRequestsPanelAnimationFrame = null;
+    runtimeState.allianceRequestsPanelEnabled = Boolean(enabled);
+    if (!runtimeState.allianceRequestsPanelEnabled) {
+      if (runtimeState.allianceRequestsPanelAnimationFrame !== null) {
+        cancelAnimationFrame(runtimeState.allianceRequestsPanelAnimationFrame);
+        runtimeState.allianceRequestsPanelAnimationFrame = null;
       }
       allianceRequestsPanelEvents.splice(0, allianceRequestsPanelEvents.length);
-      allianceRequestsPanelRenderSignature = "";
+      runtimeState.allianceRequestsPanelRenderSignature = "";
       document.getElementById(ALLIANCE_REQUEST_PANEL_ID)?.remove();
       return;
     }
 
     // Force first render on re-enable
-    allianceRequestsPanelRenderSignature = "";
-    if (allianceRequestsPanelAnimationFrame === null) {
+    runtimeState.allianceRequestsPanelRenderSignature = "";
+    if (runtimeState.allianceRequestsPanelAnimationFrame === null) {
       syncAllianceRequestPanel();
     }
   }
 
   var _alliesListSignature = "";
-  function renderAlliesList() {
-    var panel = document.getElementById(ALLIANCE_REQUEST_PANEL_ID);
-    if (!panel) return;
-    var list = panel.querySelector(".ofh-ar-allies-list");
-    if (!list || list.style.display === "none") return;
-
-    var ctx = null;
-    try { ctx = getOpenFrontGameContext(); } catch(e) {}
-    if (!ctx || !ctx.game) {
-      if (_alliesListSignature !== "no-game") {
-        _alliesListSignature = "no-game";
-        list.innerHTML = '<div class="ofh-ar-empty">' + tr("Waiting for game…") + '</div>';
-      }
-      return;
-    }
-    var me = ctx.game.myPlayer ? ctx.game.myPlayer() : null;
-    // allies() returns PlayerView[] of current allies — simpler than parsing AllianceView.
-    var allies = [];
+  function getAllianceListContext() {
     try {
-      if (me && typeof me.allies === "function") allies = me.allies() || [];
-    } catch(e) { allies = []; }
-
-    // Build a signature so we only rebuild the DOM when the ally SET changes
-    // (rebuilding every rAF frame makes buttons unclickable).
-    var sigParts = [];
-    for (var s = 0; s < allies.length; s++) {
-      var sid = null;
-      try { sid = allies[s].smallID ? allies[s].smallID() : (allies[s].id ? allies[s].id() : s); } catch(e) { sid = s; }
-      sigParts.push(String(sid));
+      const context = getOpenFrontGameContext();
+      if (!context?.game) return null;
+      const me = context.game.myPlayer?.();
+      const allies = typeof me?.allies === "function" ? me.allies() ?? [] : [];
+      return { game: context.game, allies };
+    } catch (error) {
+      captureRuntimeException(error, "engine/ingame/alliance-requests-panel.js:getAllianceListContext");
+      return null;
     }
-    var sig = sigParts.join(",");
-    if (sig === _alliesListSignature) return; // no change → keep existing DOM (clicks work)
-    _alliesListSignature = sig;
+  }
 
-    if (allies.length === 0) {
-      list.innerHTML = '<div class="ofh-ar-empty">' + tr("No allies yet") + '</div>';
-      return;
+  function getAllianceAllyIdentifier(ally, fallback) {
+    try {
+      if (typeof ally.smallID === "function") return ally.smallID();
+      if (typeof ally.id === "function") return ally.id();
+      return ally.id ?? fallback;
+    } catch (error) {
+      captureRuntimeException(error, "engine/ingame/alliance-requests-panel.js:getAllianceAllyIdentifier");
+      return fallback;
     }
+  }
 
-    var h = [];
-    for (var i = 0; i < allies.length; i++) {
-      var other = allies[i];
-      var name = getPlayerDisplayName ? getPlayerDisplayName(other) : "?";
-      var nameColor = "";
-      try { nameColor = typeof getPlayerColor === "function" ? getPlayerColor(other, ctx && ctx.game) || "" : ""; } catch(e) {}
-      var otherId = null;
-      try { otherId = typeof other.id === "function" ? other.id() : other.id; } catch(e) {}
-      var idStr = otherId != null ? String(otherId) : ("ally_" + i);
-      var autoKey = "ar-auto-" + idStr;
-      var autoOn = true; // default ON — auto-renew is opt-out
-      try { var stored = window.localStorage.getItem(autoKey); if (stored !== null) autoOn = stored === "1"; } catch(e) {}
-      h.push(
-        '<div class="ofh-ar-ally-row">',
-        '<span class="ofh-ar-ally-name"' + (nameColor ? ' style="color:' + nameColor + '"' : '') + '>' + String(name).replace(/&/g,"&amp;").replace(/</g,"&lt;") + '</span>',
-        '<button class="ofh-ar-ally-btn auto-renew' + (autoOn ? ' on' : '') + '" data-ar-auto="' + autoKey + '" title="' + tr("Auto-renew") + '">🔁</button>',
-        '<button class="ofh-ar-ally-btn cancel" data-ar-cancel="' + idStr + '" title="' + tr("Cancel alliance") + '">✕</button>',
-        '</div>'
-      );
+  function isAllianceAutoRenewEnabled(key) {
+    try {
+      const stored = window.localStorage.getItem(key);
+      return stored === null || stored === "1";
+    } catch (error) {
+      captureRuntimeException(error, "engine/ingame/alliance-requests-panel.js:isAllianceAutoRenewEnabled");
+      return true;
     }
-    list.innerHTML = h.join("");
+  }
 
-    list.querySelectorAll("[data-ar-auto]").forEach(function(btn) {
-      btn.addEventListener("click", function(e) {
-        e.stopPropagation();
-        var key = this.dataset.arAuto;
-        var on = !this.classList.contains("on");
-        this.classList.toggle("on", on);
-        try { window.localStorage.setItem(key, on ? "1" : "0"); } catch(err) {}
+  function createAllianceAllyRow(ally, index, game) {
+    const id = String(getAllianceAllyIdentifier(ally, `ally_${index}`));
+    const autoKey = `ar-auto-${id}`;
+    const row = document.createElement("div");
+    row.className = "ofh-ar-ally-row";
+    const name = document.createElement("span");
+    name.className = "ofh-ar-ally-name";
+    name.textContent = typeof getPlayerDisplayName === "function"
+      ? getPlayerDisplayName(ally)
+      : "?";
+    try {
+      name.style.color = typeof getPlayerColor === "function"
+        ? getPlayerColor(ally, game) || ""
+        : "";
+    } catch (error) {
+      captureRuntimeException(error, "engine/ingame/alliance-requests-panel.js:createAllianceAllyRow");
+    }
+    const autoRenew = document.createElement("button");
+    autoRenew.className = "ofh-ar-ally-btn auto-renew";
+    autoRenew.classList.toggle("on", isAllianceAutoRenewEnabled(autoKey));
+    autoRenew.dataset.arAuto = autoKey;
+    autoRenew.title = tr("Auto-renew");
+    autoRenew.textContent = "🔁";
+    const cancel = document.createElement("button");
+    cancel.className = "ofh-ar-ally-btn cancel";
+    cancel.dataset.arCancel = id;
+    cancel.title = tr("Cancel alliance");
+    cancel.textContent = "✕";
+    row.append(name, autoRenew, cancel);
+    return row;
+  }
+
+  function bindAllianceListActions(list) {
+    list.querySelectorAll("[data-ar-auto]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const enabled = !button.classList.contains("on");
+        button.classList.toggle("on", enabled);
+        try { window.localStorage.setItem(button.dataset.arAuto, enabled ? "1" : "0"); }
+        catch (error) {
+          captureRuntimeException(error, "engine/ingame/alliance-requests-panel.js:bindAllianceListActions");
+        }
       });
     });
-    list.querySelectorAll("[data-ar-cancel]").forEach(function(btn) {
-      btn.addEventListener("click", function(e) {
-        e.stopPropagation();
-        var targetId = this.dataset.arCancel;
-        _cancelAllianceWith(targetId);
-        // Force a rebuild next frame so the removed ally disappears.
+    list.querySelectorAll("[data-ar-cancel]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        _cancelAllianceWith(button.dataset.arCancel);
         _alliesListSignature = "";
       });
     });
+  }
+
+  function renderAllianceListEmpty(list, signature, message) {
+    if (_alliesListSignature === signature) return;
+    _alliesListSignature = signature;
+    list.replaceChildren();
+    const empty = document.createElement("div");
+    empty.className = "ofh-ar-empty";
+    empty.textContent = tr(message);
+    list.appendChild(empty);
+  }
+
+  function renderAlliesList() {
+    const panel = document.getElementById(ALLIANCE_REQUEST_PANEL_ID);
+    const list = panel?.querySelector(".ofh-ar-allies-list");
+    if (!list || list.style.display === "none") return;
+    const context = getAllianceListContext();
+    if (!context) {
+      renderAllianceListEmpty(list, "no-game", "Waiting for game…");
+      return;
+    }
+    const signature = context.allies
+      .map((ally, index) => String(getAllianceAllyIdentifier(ally, index)))
+      .join(",");
+    if (signature === _alliesListSignature) return;
+    if (context.allies.length === 0) {
+      renderAllianceListEmpty(list, signature, "No allies yet");
+      return;
+    }
+    _alliesListSignature = signature;
+    list.replaceChildren(...context.allies.map((ally, index) =>
+      createAllianceAllyRow(ally, index, context.game)));
+    bindAllianceListActions(list);
   }
 
   // Break alliance via the WS hook — the game wire format (Transport.ts /
@@ -1360,5 +1407,6 @@
       if (typeof sendGamePacket === "function") {
         sendGamePacket({ type: "breakAlliance", recipient: targetId });
       }
-    } catch(e) {}
+    } catch(e) {
+  captureRuntimeException(e, "engine/ingame/alliance-requests-panel.js:1378");}
   }

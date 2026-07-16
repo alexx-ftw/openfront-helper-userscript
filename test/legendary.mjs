@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import vm from "node:vm";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 
 const plannerSandbox = {};
-vm.runInNewContext(read("engine/ingame/auto-bot/legendaryPlanner.js"), plannerSandbox, {
+executeClassicScript(read("engine/ingame/auto-bot/legendaryPlanner.js"), plannerSandbox, {
   filename: "legendaryPlanner.js",
 });
 
@@ -456,9 +456,9 @@ assert.equal(
 
 assert.match(read("engine/ingame/auto-bot/portutil.js"), /Legendary: "Legendary"/);
 assert.match(read("engine/ingame/auto-bot/core.js"), /difficulty: "Impossible"/);
-assert.match(read("engine/ingame/auto-bot/panel.js"), /\"Legendary\"/);
+assert.match(read("engine/ingame/auto-bot/panel.js"), /"Legendary"/);
 assert.match(read("src/shell/popup/panel.ts"), /DIFFICULTIES/);
-assert.match(read("locales/en/common.json"), /\"Legendary\"/);
+assert.match(read("locales/en/common.json"), /"Legendary"/);
 assert.match(read("build.mjs"), /auto-bot\/legendaryPlanner\.js/);
 assert.match(
   read("engine/ingame/auto-bot/legendaryPlanner.js"),
@@ -486,4 +486,4 @@ assert.match(structureSource, /forecastComplete/);
 assert.match(structureSource, /legendaryThreatDefensePlan/);
 assert.match(read("engine/ingame/auto-bot/gameApi.js"), /motionPlans/);
 
-console.log("LEGENDARY TESTS OK");
+process.stdout.write("LEGENDARY TESTS OK\n");

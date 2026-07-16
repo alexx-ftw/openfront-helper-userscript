@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import vm from "node:vm";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -58,7 +58,7 @@ function makeStructureSandbox() {
     window: {},
   };
   sandbox.globalThis = sandbox;
-  vm.runInNewContext(
+  executeClassicScript(
     `${read("engine/ingame/auto-bot/legendaryPlanner.js")}\n${read(
       "engine/ingame/auto-bot/structureBehavior.js",
     )}\nglobalThis.__StructureBehavior = StructureBehavior;`,
@@ -70,7 +70,11 @@ function makeStructureSandbox() {
 
 const { sandbox: structureSandbox } = makeStructureSandbox();
 let invasionSignal = { active: true, troops: 1200 };
-structureSandbox.window.__OFH_getIncomingMaritimeInvasion = () => invasionSignal;
+structureSandbox.window.__OFH_getIncomingMaritimeTransport = () => invasionSignal;
+structureSandbox.window.__OFH_getIncomingMaritimeInvasion = () => ({
+  active: true,
+  reason: "incoming-attack",
+});
 
 const structureBehavior = Object.create(structureSandbox.__StructureBehavior.prototype);
 structureBehavior.game = {
@@ -147,6 +151,7 @@ const warshipSandbox = {
   tr: (value) => value,
   console,
   window: {
+    __OFH_getIncomingMaritimeTransport: () => ({ active: true, troops: 1200 }),
     __OFH_getIncomingMaritimeInvasion: () => ({ active: true, troops: 1200 }),
   },
 };
@@ -155,7 +160,7 @@ const warshipBuilds = [];
 warshipSandbox.getBuildMenu = () => ({
   sendBuildOrUpgrade: (...args) => warshipBuilds.push(args),
 });
-vm.runInNewContext(
+executeClassicScript(
   `${read("engine/ingame/auto-bot/naval-interception.js")}\n${read(
     "engine/ingame/auto-bot/warshipBehavior.js",
   )}\nglobalThis.__WarshipBehavior = WarshipBehavior;`,
@@ -200,4 +205,4 @@ assert.equal(warshipBuilds[0][0].type, UNIT.Warship, "the buildable is a Warship
 assert.equal(warshipBuilds[0][0].canBuild, 44, "the Warship keeps its port spawn tile");
 assert.equal(warshipBuilds[0][1], 55, "the build menu receives the water target tile");
 
-console.log("maritime invasion economy tests passed");
+process.stdout.write("maritime invasion economy tests passed\n");

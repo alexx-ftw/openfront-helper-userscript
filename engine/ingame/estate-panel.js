@@ -16,6 +16,10 @@
   let estateSortDir = 1; // 1 = most tiles first, -1 = fewest first
   let estateData = []; // [{ key, tiles, cx, cy }]
   let estateComputing = false;
+
+  function setEstateComputing(value) {
+    estateComputing = value;
+  }
   let estateIntervalId = null;
   const estateRowCache = new Map(); // key -> { row, cells:{rank,tiles} }
 
@@ -181,6 +185,7 @@
             transform.onGoToPosition({ x: entry.cx, y: entry.cy });
           }
         } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/estate-panel.js:183");
           // ignore
         }
       });
@@ -248,49 +253,49 @@
 
   // Flood-fill the player's owned tiles into connected components. Seeds are the
   // border tiles (every component has a border); each owned tile is visited once.
+  function estateNeighborOwner(game, tile) {
+    try {
+      return Number(game.ownerID(tile));
+    } catch (_error) {
+      captureRuntimeException(_error, "engine/ingame/estate-panel.js:estateNeighborOwner");
+      return Number.NaN;
+    }
+  }
+
+  function computeEstateComponent(game, seed, mySmallId, visited) {
+    visited.add(seed);
+    const stack = [seed];
+    let size = 0;
+    let sumX = 0;
+    let sumY = 0;
+    let minRef = seed;
+    while (stack.length > 0) {
+      const tile = stack.pop();
+      size += 1;
+      sumX += game.x(tile);
+      sumY += game.y(tile);
+      if (tile < minRef) minRef = tile;
+      for (const neighbor of game.neighbors(tile)) {
+        if (visited.has(neighbor)) continue;
+        if (estateNeighborOwner(game, neighbor) !== mySmallId) continue;
+        visited.add(neighbor);
+        stack.push(neighbor);
+      }
+    }
+    return {
+      key: String(minRef),
+      tiles: size,
+      cx: sumX / size,
+      cy: sumY / size,
+    };
+  }
+
   function computeEstateComponents(game, borderTiles, mySmallId) {
     const visited = new Set();
     const components = [];
     for (const seed of borderTiles) {
-      if (visited.has(seed)) {
-        continue;
-      }
-      visited.add(seed);
-      const stack = [seed];
-      let size = 0;
-      let sumX = 0;
-      let sumY = 0;
-      let minRef = seed;
-      while (stack.length) {
-        const t = stack.pop();
-        size += 1;
-        sumX += game.x(t);
-        sumY += game.y(t);
-        if (t < minRef) {
-          minRef = t;
-        }
-        for (const n of game.neighbors(t)) {
-          if (visited.has(n)) {
-            continue;
-          }
-          let owner = NaN;
-          try {
-            owner = Number(game.ownerID(n));
-          } catch (_error) {
-            continue;
-          }
-          if (owner === mySmallId) {
-            visited.add(n);
-            stack.push(n);
-          }
-        }
-      }
-      components.push({
-        key: String(minRef), // smallest tile ref = stable id while unchanged
-        tiles: size,
-        cx: sumX / size,
-        cy: sumY / size,
-      });
+      if (visited.has(seed)) continue;
+      components.push(computeEstateComponent(game, seed, mySmallId, visited));
     }
     return components;
   }
@@ -306,7 +311,7 @@
       renderEstatePanel();
       return;
     }
-    let me = null;
+    let me;
     try {
       me = game.myPlayer?.();
     } catch (_error) {
@@ -318,7 +323,7 @@
       return;
     }
 
-    estateComputing = true;
+    setEstateComputing(true);
     try {
       const mySmallId = Number(me.smallID());
       const result = await me.borderTiles();
@@ -329,9 +334,10 @@
       estateData = computeEstateComponents(game, borderTiles, mySmallId);
       renderEstatePanel();
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/estate-panel.js:331");
       // Worker call failed this round; keep the last data.
     } finally {
-      estateComputing = false;
+      setEstateComputing(false);
     }
   }
 

@@ -69,13 +69,32 @@
     return null;
   }
 
-  function getBoatMacroContextParamsFromEvent(event) {
-    const radialMenuElement = getBoatMacroRadialElement();
-    const game = radialMenuElement?.game || lastOpenFrontGameContext?.game;
-    const transform =
+  function getBoatMacroTransform(radialMenuElement) {
+    return (
       radialMenuElement?.transformHandler ||
       radialMenuElement?.transform ||
-      lastOpenFrontGameContext?.transform;
+      runtimeState.lastOpenFrontGameContext?.transform
+    );
+  }
+
+  function getBoatMacroTile(game, transform, event) {
+    try {
+      const worldCoords = transform.screenToWorldCoordinates(
+        event.clientX,
+        event.clientY,
+      );
+      if (!game.isValidCoord?.(worldCoords.x, worldCoords.y)) return null;
+      return game.ref(worldCoords.x, worldCoords.y) ?? null;
+    } catch (_error) {
+      captureRuntimeException(_error, "engine/ingame/boat-macro.js:getBoatMacroTile");
+      return null;
+    }
+  }
+
+  function getBoatMacroContextParamsFromEvent(event) {
+    const radialMenuElement = getBoatMacroRadialElement();
+    const game = radialMenuElement?.game || runtimeState.lastOpenFrontGameContext?.game;
+    const transform = getBoatMacroTransform(radialMenuElement);
     const myPlayer = game?.myPlayer?.();
 
     if (
@@ -86,25 +105,8 @@
       return null;
     }
 
-    let worldCoords = null;
-    try {
-      worldCoords = transform.screenToWorldCoordinates(event.clientX, event.clientY);
-      if (!game.isValidCoord?.(worldCoords.x, worldCoords.y)) {
-        return null;
-      }
-    } catch (_error) {
-      return null;
-    }
-
-    let tile = null;
-    try {
-      tile = game.ref(worldCoords.x, worldCoords.y);
-      if (tile == null) {
-        return null;
-      }
-    } catch (_error) {
-      return null;
-    }
+    const tile = getBoatMacroTile(game, transform, event);
+    if (tile === null) return null;
 
     return { myPlayer, tile, radialMenuElement };
   }
@@ -198,25 +200,22 @@
       const BoatAttackCtor = findBoatAttackEventCtor(eventBus);
       if (BoatAttackCtor) {
         const troops = 0.01 * (myPlayer.troops?.() || 0);
-        eventBus.emit(new BoatAttackCtor(tile, troops));
+        if (typeof emitIntent === "function") {
+          emitIntent(BoatAttackCtor, tile, troops);
+        }
         return;
       }
     }
 
-    // Fallback: use playerActionHandler with attackRatio temporarily set to 1%.
-    const uiState = getBoatMacroUiState(radialMenuElement);
-    const playerActionHandler = findPlayerActionHandler(radialMenuElement);
-    if (!playerActionHandler) {
-      console.warn("[OpenFront Helper] Send 1% Boat: could not find playerActionHandler or eventBus");
+    // Fallback: use the same rate-limited direct intent path when constructor
+    // discovery is unavailable. Do not call the UI handler here: it would emit
+    // directly and bypass the shared client-side budget.
+    if (typeof sendGamePacket === "function") {
+      const troops = 0.01 * (myPlayer.troops?.() || 0);
+      sendGamePacket({ type: "boat", dst: tile, troops });
       return;
     }
-    const prevRatio = uiState ? uiState.attackRatio : null;
-    if (uiState) uiState.attackRatio = 0.01;
-    try {
-      playerActionHandler.handleBoatAttack(myPlayer, tile);
-    } finally {
-      if (uiState && prevRatio !== null) uiState.attackRatio = prevRatio;
-    }
+    console.warn("[OpenFront Helper] Send 1% Boat: no rate-limited intent path available");
   }
 
   function showBoatMacroContextMenu(x, y, params) {

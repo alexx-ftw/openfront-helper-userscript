@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import vm from "node:vm";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -18,7 +18,7 @@ const sandbox = {
   globalThis: null,
 };
 sandbox.globalThis = sandbox;
-vm.runInNewContext(fs.readFileSync(SOURCE, "utf8"), sandbox, { filename: SOURCE });
+executeClassicScript(fs.readFileSync(SOURCE, "utf8"), sandbox, { filename: SOURCE });
 
 let tick = 10;
 let unitsCalls = 0;
@@ -51,7 +51,7 @@ const gameApiSandbox = {
   globalThis: null,
 };
 gameApiSandbox.globalThis = gameApiSandbox;
-vm.runInNewContext(
+executeClassicScript(
   `${fs.readFileSync(GAME_API_SOURCE, "utf8")}\nglobalThis.__createGameApi = createGameApi;`,
   gameApiSandbox,
   { filename: GAME_API_SOURCE },
@@ -136,6 +136,54 @@ assert.notStrictEqual(
 );
 assert.equal(playerListCalls, 2, "players should refresh after the game advances");
 
+const HELPERS_SOURCE = path.join(ROOT, "engine/ingame/auto-bot/helpers.js");
+let helperTimerCallback = null;
+const helperTimerEvents = [];
+const helperSandbox = {
+  window: {
+    setTimeout: (callback, delay) => {
+      helperTimerCallback = callback;
+      helperTimerEvents.push({ type: "set", delay });
+      return 1;
+    },
+    clearTimeout: (id) => helperTimerEvents.push({ type: "clear", id }),
+  },
+  globalThis: null,
+};
+helperSandbox.globalThis = helperSandbox;
+executeClassicScript(
+  `${fs.readFileSync(HELPERS_SOURCE, "utf8")}\nglobalThis.__helpers = { withTimeout };`,
+  helperSandbox,
+  { filename: HELPERS_SOURCE },
+);
+let resolveFastWorker;
+const fastWorker = new Promise((resolve) => {
+  resolveFastWorker = resolve;
+});
+const fastResult = helperSandbox.__helpers.withTimeout(fastWorker, 2500, "fallback");
+resolveFastWorker("ok");
+assert.equal(await fastResult, "ok", "a worker result should win the timeout race");
+assert.deepEqual(
+  helperTimerEvents,
+  [
+    { type: "set", delay: 2500 },
+    { type: "clear", id: 1 },
+  ],
+  "a completed worker query must clear its pending timeout",
+);
+helperTimerEvents.length = 0;
+const slowResult = helperSandbox.__helpers.withTimeout(new Promise(() => {}), 750, "fallback");
+helperTimerCallback();
+assert.equal(await slowResult, "fallback", "a timeout should return its fallback");
+assert.deepEqual(
+  helperTimerEvents,
+  [
+    { type: "set", delay: 750 },
+    { type: "clear", id: 1 },
+  ],
+  "a fired timeout should also release its timer handle",
+);
+
 const NATION_SOURCE = path.join(ROOT, "engine/ingame/auto-bot/nationExecution.js");
 assert.match(
   fs.readFileSync(NATION_SOURCE, "utf8"),
@@ -162,7 +210,7 @@ const profileSandbox = {
   globalThis: null,
 };
 profileSandbox.globalThis = profileSandbox;
-vm.runInNewContext(
+executeClassicScript(
   `${fs.readFileSync(PROFILE_SOURCE, "utf8")}
 globalThis.__profile = { beginAutoBotProfileTick, finishAutoBotProfileTick, autoBotProfileStartPhase, autoBotProfileEndPhase, getAutoBotProfileSnapshot };`,
   profileSandbox,
@@ -184,6 +232,63 @@ assert.equal(profileSnapshot.sampledTicks, 1, "enabled profiling must record a t
 assert.equal(profileSnapshot.phases[0].name, "structures");
 assert.ok(profileSnapshot.p95TickMs > 0, "profiling must expose a tick percentile");
 
+const RUNTIME_SOURCE = path.join(ROOT, "engine/ingame/runtime.js");
+const runtimeSource = fs.readFileSync(RUNTIME_SOURCE, "utf8");
+const schedulerStart = runtimeSource.indexOf("const HELPER_TICK_INTERVAL_MS");
+const schedulerEnd = runtimeSource.indexOf("// Sync a panel's visibility state", schedulerStart);
+assert.ok(schedulerStart >= 0 && schedulerEnd > schedulerStart, "helper scheduler source exists");
+let schedulerNow = 0;
+let schedulerCallback = null;
+const schedulerSandbox = {
+  window: {
+    setInterval: (callback, delay) => {
+      assert.equal(delay, 250, "the scheduler keeps one responsive base timer");
+      schedulerCallback = callback;
+      return 1;
+    },
+    clearInterval: () => {},
+  },
+  performance: { now: () => schedulerNow },
+  Date,
+  Number,
+  Map,
+  console,
+  globalThis: null,
+};
+schedulerSandbox.globalThis = schedulerSandbox;
+executeClassicScript(
+  `${runtimeSource.slice(schedulerStart, schedulerEnd)}\nglobalThis.__scheduler = { registerHelperTickListener, unregisterHelperTickListener };`,
+  schedulerSandbox,
+  { filename: RUNTIME_SOURCE },
+);
+let fastTicks = 0;
+let slowTicks = 0;
+const fastListener = () => {
+  fastTicks += 1;
+};
+const slowListener = () => {
+  slowTicks += 1;
+};
+schedulerSandbox.__scheduler.registerHelperTickListener(fastListener);
+schedulerSandbox.__scheduler.registerHelperTickListener(slowListener, 1000);
+assert.deepEqual([fastTicks, slowTicks], [1, 1], "listeners run once when registered");
+schedulerSandbox.__scheduler.registerHelperTickListener(slowListener, 1000);
+assert.equal(slowTicks, 1, "duplicate registration must not repeat initial work");
+for (schedulerNow = 250; schedulerNow <= 750; schedulerNow += 250) {
+  schedulerCallback();
+}
+assert.deepEqual([fastTicks, slowTicks], [4, 1], "slow listeners skip unnecessary base ticks");
+schedulerNow = 1000;
+schedulerCallback();
+assert.deepEqual([fastTicks, slowTicks], [5, 2], "slow listeners run when their cadence is due");
+
+const BUILD_TIMER_SOURCE = path.join(ROOT, "engine/ingame/build-timer.js");
+assert.match(
+  fs.readFileSync(BUILD_TIMER_SOURCE, "utf8"),
+  /scanIntervalMs:\s*1000/,
+  "build timers should not rescan every structure more than once per second",
+);
+
 const ENGINE_SOURCE = path.join(ROOT, "engine/ingame/auto-bot/engine.js");
 const intervalEvents = [];
 let nextTimerId = 1;
@@ -194,6 +299,7 @@ const engineSandbox = {
     tickTimer: null,
     tickIntervalMs: 0,
     tickInFlight: false,
+    tickGeneration: 0,
   },
   window: {
     setInterval: (_callback, delay) => {
@@ -211,7 +317,7 @@ const engineSandbox = {
   globalThis: null,
 };
 engineSandbox.globalThis = engineSandbox;
-vm.runInNewContext(
+executeClassicScript(
   `${fs.readFileSync(ENGINE_SOURCE, "utf8")}\nglobalThis.__engine = { startEngine, retuneEngine, stopEngine };`,
   engineSandbox,
   { filename: ENGINE_SOURCE },
@@ -235,12 +341,21 @@ assert.deepEqual(
   "a 50 ms setting change must replace the active timer",
 );
 engineSandbox.__engine.stopEngine();
+engineSandbox.state.tickInFlight = true;
+engineSandbox.__engine.stopEngine();
+assert.equal(
+  engineSandbox.state.tickInFlight,
+  true,
+  "stopping the engine must not release a still-running tick lock",
+);
 
 const ROUND_LOGGER_SOURCE = path.join(ROOT, "engine/ingame/round-logger.js");
 const roundLoggerListeners = new Set();
 const roundLoggerIntervals = [];
+const roundLoggerStorage = new Map();
+let roundLoggerGameTick = 0;
 const roundLoggerSandbox = {
-  roundLoggerEnabled: false,
+  runtimeState: { roundLoggerEnabled: false },
   window: {
     setInterval: (_callback, delay) => {
       roundLoggerIntervals.push({ type: "set", delay });
@@ -248,16 +363,19 @@ const roundLoggerSandbox = {
     },
     clearInterval: (id) => roundLoggerIntervals.push({ type: "clear", id }),
   },
-  localStorage: { setItem: () => {}, getItem: () => null },
-  getOpenFrontGameContext: () => ({ game: { ticks: () => 0 } }),
+  localStorage: {
+    setItem: (key, value) => roundLoggerStorage.set(key, value),
+    getItem: (key) => roundLoggerStorage.get(key) ?? null,
+  },
+  getOpenFrontGameContext: () => ({ game: { ticks: () => roundLoggerGameTick } }),
   getCachedPlayerViews: () => [],
   registerHelperTickListener: (listener) => roundLoggerListeners.add(listener),
   unregisterHelperTickListener: (listener) => roundLoggerListeners.delete(listener),
   globalThis: null,
 };
 roundLoggerSandbox.globalThis = roundLoggerSandbox;
-vm.runInNewContext(
-  `${fs.readFileSync(ROUND_LOGGER_SOURCE, "utf8")}\nglobalThis.__roundLogger = { setRoundLoggerEnabled };`,
+executeClassicScript(
+  `${fs.readFileSync(ROUND_LOGGER_SOURCE, "utf8")}\nglobalThis.__roundLogger = { setRoundLoggerEnabled, getRoundLogSnapshot };`,
   roundLoggerSandbox,
   { filename: ROUND_LOGGER_SOURCE },
 );
@@ -268,6 +386,16 @@ assert.equal(
   1,
   "re-enabling the round logger must not accumulate helper tick listeners",
 );
+const roundLoggerListener = [...roundLoggerListeners][0];
+roundLoggerGameTick = 100;
+roundLoggerListener();
+roundLoggerGameTick = 2;
+roundLoggerListener();
+assert.equal(
+  roundLoggerSandbox.__roundLogger.getRoundLogSnapshot(10, 5).history.length,
+  1,
+  "a game tick reset must archive the prior match and resume logging",
+);
 roundLoggerSandbox.__roundLogger.setRoundLoggerEnabled(false);
 assert.equal(
   roundLoggerListeners.size,
@@ -275,4 +403,4 @@ assert.equal(
   "disabling the round logger must unregister its helper tick listener",
 );
 
-console.log("performance regression tests passed");
+process.stdout.write("performance regression tests passed\n");

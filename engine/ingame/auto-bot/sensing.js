@@ -11,7 +11,7 @@
     if (state.border.tiles && now - state.border.atMs < scaled(BORDER_CACHE_MS)) {
       return state.border.tiles;
     }
-    let tiles = [];
+    let tiles;
     try {
       const res = await withTimeout(me.borderTiles(), WORKER_TIMEOUT_MS, null);
       const set = res?.borderTiles ?? res;
@@ -39,50 +39,54 @@
     return false;
   }
 
+  function classifyBorderNeighbor(game, me, mySmallId, tile, scan) {
+    if (!game.isLand(tile) || game.ownerID(tile) === mySmallId) return;
+    if (!game.hasOwner(tile)) {
+      if (game.hasFallout?.(tile)) scan.hasNukedLand = true;
+      else scan.hasOpenLand = true;
+      return;
+    }
+    const owner = game.owner(tile);
+    if (!owner?.isPlayer?.() || owner.smallID?.() === mySmallId) return;
+    const collection = me.isFriendly?.(owner) ? scan.friends : scan.enemies;
+    collection.set(owner.smallID(), owner);
+  }
+
+  function scanBorderTile(game, me, mySmallId, borderTile, scan) {
+    if (!scan.hasShore && game.isShore?.(borderTile)) scan.hasShore = true;
+    if (!scan.hasCoastal && isOceanAdjacent(game, borderTile)) {
+      scan.hasCoastal = true;
+    }
+    for (const neighbor of game.neighbors(borderTile)) {
+      classifyBorderNeighbor(game, me, mySmallId, neighbor, scan);
+    }
+  }
+
   // Scans border-tile land neighbours to classify the frontier: empty (terra
   // nullius) land available, shore presence (for boats), ocean-coast presence
   // (for port/factory ratios), and the set of bordering enemies.
   function analyzeBorder(game, me, border) {
     const mySmallId = me.smallID?.();
-    let hasOpenLand = false;
-    let hasNukedLand = false; // unowned land WITH fallout — reclaimable nuked turf
-    let hasShore = false;
-    let hasCoastal = false;
-    const enemies = new Map();
-    const friends = new Map(); // bordering allied/same-team players (betrayal candidates)
+    const scan = {
+      hasOpenLand: false,
+      hasNukedLand: false,
+      hasShore: false,
+      hasCoastal: false,
+      enemies: new Map(),
+      friends: new Map(),
+    };
 
-    for (const bt of border) {
-      if (!hasShore && game.isShore?.(bt)) hasShore = true;
-      if (!hasCoastal && isOceanAdjacent(game, bt)) hasCoastal = true;
-      for (const n of game.neighbors(bt)) {
-        if (!game.isLand(n)) continue;
-        if (game.ownerID(n) === mySmallId) continue;
-        if (!game.hasOwner(n)) {
-          if (game.hasFallout?.(n)) {
-            hasNukedLand = true;
-          } else {
-            hasOpenLand = true;
-          }
-          continue;
-        }
-        const owner = game.owner(n);
-        if (!owner?.isPlayer?.()) continue;
-        if (owner.smallID?.() === mySmallId) continue;
-        if (me.isFriendly?.(owner)) {
-          friends.set(owner.smallID(), owner);
-          continue;
-        }
-        enemies.set(owner.smallID(), owner);
-      }
+    for (const borderTile of border) {
+      scanBorderTile(game, me, mySmallId, borderTile, scan);
     }
 
     return {
-      hasOpenLand,
-      hasNukedLand,
-      hasShore,
-      hasCoastal,
-      enemies: Array.from(enemies.values()),
-      friends: Array.from(friends.values()),
+      hasOpenLand: scan.hasOpenLand,
+      hasNukedLand: scan.hasNukedLand,
+      hasShore: scan.hasShore,
+      hasCoastal: scan.hasCoastal,
+      enemies: Array.from(scan.enemies.values()),
+      friends: Array.from(scan.friends.values()),
     };
   }
 

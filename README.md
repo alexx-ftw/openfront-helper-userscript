@@ -120,7 +120,7 @@ Toggle each overlay independently from the **Helpers** tab. All panels are dragg
 
 **Auto Leave on Win** — automatically leaves the match when a win modal appears, pairs naturally with "keep searching" to chain games continuously.
 
-**Auto Donate Troops** — sends troops to named allies in combat only when you are not under attack. It also pauses both donation paths when an enemy transport is actively targeting your territory, sums the incoming transport force, and lets troop production accumulate until the invasion is resolved; normal donations still preserve at least 42% of maximum troops and half of the strongest bordering non-self army, including an allied border owner.
+**Auto Donate Troops** — sends troops to named allies only when you are not under attack. The Auto-Bot likewise donates peaceful surplus above the calculated ~42% troop-production peak, prioritizing allies under attack, then frontline allies, then rear allies; closer recipients receive more weight within each urgency tier. Both paths pause when an enemy transport targets your territory and preserve the higher border-threat reserve.
 
 ---
 
@@ -178,7 +178,10 @@ the economy growing, and offensive silo/nuke spending uses only the surplus
 left after those reserves. A built hostile silo immediately creates a SAM
 coverage requirement for our structures; reaching 1.5M hostile gold still
 opens the anticipatory SAM response. The economy gate ignores allies,
-teammates, and dead players.
+teammates, and dead players. Coverage placement mirrors the engine's bounded
+25-tile sampler and reconstructs its ownership, radius, and structure-spacing
+legality locally. The best legal candidate normally needs one authoritative
+worker request; at most three sequential requests cover snapshot drift.
 
 Productive structures use their real next-build cost rather than the MIRV
 save-up multiplier, so saving for an offensive option cannot silently make
@@ -234,6 +237,23 @@ npm run build:raw   # unminified + console.log debugging
 npm run check       # TypeScript type-check (src/ only)
 npm test            # Node smoke test
 ```
+
+### Live runtime diagnostics
+
+Start Chromium with a DevTools port (for example `--remote-debugging-port=9222`),
+open an OpenFront match, then query the installed helper from this repository:
+
+```bash
+npm run probe:runtime
+npm run probe:runtime -- --watch 1000 --enable-profiling --enable-loggers --compact
+```
+
+The probe attaches only to an OpenFront page and returns current script/version
+status, WebSocket and match state, auto-bot diagnostics and bounded performance
+samples, browser long tasks and heap usage, action/network logs, the current round
+timeline, and up to 20 archived match timelines. Run
+`npm run probe:runtime -- --help` for target-port and output controls. Collection
+adds no polling loop to gameplay; snapshots are assembled only when requested.
 
 After any source change, rebuild and commit both the source and the regenerated `openfront-helper.user.js` — the published userscript is that file.
 

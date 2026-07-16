@@ -32,6 +32,7 @@
       const gc = srcGame.config().gameConfig();
       if (gc && gc.gameID != null) return String(gc.gameID);
     } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/auto-bot/engine.js:34");
       /* fall through */
     }
     return "openfront";
@@ -40,6 +41,40 @@
   // =========================================================================
   // Engine tick — thin driver
   // =========================================================================
+  function currentAutoBotTickGeneration(tickGeneration) {
+    return state.settings.enabled && state.tickGeneration === tickGeneration;
+  }
+
+  async function prepareAutoBotSnapshot(profile, api, meCore) {
+    const snapshot = async () => {
+      await api.beginTick(meCore);
+      const me = api.game.myPlayer();
+      updateLive(api.game, me);
+    };
+    if (profile) {
+      await autoBotProfileAsyncPhase(profile, "snapshot", snapshot);
+      return;
+    }
+    await snapshot();
+  }
+
+  async function runAutoBotNationTick(profile, api, tickGeneration) {
+    if (!_bot) {
+      setStatus(tr("Loading bot…"));
+      return;
+    }
+    if (profile) {
+      await autoBotProfileAsyncPhase(profile, "nation-tick", () =>
+        _bot.tick(api.game.ticks(), profile, tickGeneration),
+      );
+    } else {
+      await _bot.tick(api.game.ticks(), null, tickGeneration);
+    }
+    if (currentAutoBotTickGeneration(tickGeneration)) {
+      setStatus(_bot.status || tr("Thinking…"));
+    }
+  }
+
   async function botTick() {
     if (!state.settings.enabled || state.tickInFlight) return;
 
@@ -60,6 +95,7 @@
       return;
     }
 
+    const tickGeneration = state.tickGeneration;
     state.tickInFlight = true;
     state.tickStartedAt = performance.now();
     const profile = beginAutoBotProfileTick();
@@ -80,30 +116,12 @@
       autoBotProfileEndPhase(profile, "engine-setup", setupStartedAt);
 
       // Snapshot async data (me.borderTiles + profile) ONCE up front.
-      if (profile) {
-        await autoBotProfileAsyncPhase(profile, "snapshot", async () => {
-          await api.beginTick(meCore);
-          const me = api.game.myPlayer();
-          updateLive(api.game, me);
-        });
-      } else {
-        await api.beginTick(meCore);
-        const me = api.game.myPlayer();
-        updateLive(api.game, me);
-      }
+      await prepareAutoBotSnapshot(profile, api, meCore);
 
-      if (_bot) {
-        if (profile) {
-          await autoBotProfileAsyncPhase(profile, "nation-tick", () =>
-            _bot.tick(api.game.ticks(), profile),
-          );
-        } else {
-          await _bot.tick(api.game.ticks());
-        }
-        setStatus(_bot.status || tr("Thinking…"));
-      } else {
-        setStatus(tr("Loading bot…"));
-      }
+      // A stop/restart can invalidate this snapshot while the worker call is
+      // pending. Do not hand stale state to the NationBot chain.
+      if (!currentAutoBotTickGeneration(tickGeneration)) return;
+      await runAutoBotNationTick(profile, api, tickGeneration);
     } catch (error) {
       console.error("[AutoBot] tick error:", error);
       setStatus(tr("Error (see console)"));
@@ -125,6 +143,7 @@
         fill: maxTroops > 0 ? troops / maxTroops : 0,
       };
     } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/auto-bot/engine.js:144");
       /* ignore */
     }
   }
@@ -152,7 +171,10 @@
       window.clearInterval(state.tickTimer);
       state.tickTimer = null;
     }
-    state.tickInFlight = false;
+    // Do not clear tickInFlight here: the async tick may still be inside a
+    // worker call. Leaving the lock set prevents an immediate stop/start from
+    // launching a second chain before the first one reaches finally.
+    state.tickGeneration = (Number(state.tickGeneration) || 0) + 1;
   }
 
   function retuneEngine() {

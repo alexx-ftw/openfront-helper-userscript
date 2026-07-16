@@ -14,8 +14,9 @@
     try {
       const raw = localStorage.getItem(ALLIANCE_POLICY_KEY);
       return raw ? JSON.parse(raw) : {};
-    } catch (_error) {
-      return {};
+    } catch (error) {
+      if (error instanceof SyntaxError) return {};
+      throw error;
     }
   }
 

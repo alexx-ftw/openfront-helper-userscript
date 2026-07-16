@@ -11,22 +11,29 @@
 //
 // Target matching: comma-separated player names (case-insensitive, includes clan tags).
 
-(function initAutoDonate() {
+  var lastAutoDonateTroopsMs = 0;
+  var lastAutoDonateGoldMs = 0;
+  var autoDonateTroopDonationInFlight = false;
 
-  var _lastDonateTroopsMs = 0;
-  var _lastDonateGoldMs = 0;
-  var _troopDonationInFlight = false;
+  function setTroopDonationInFlight(value) {
+    autoDonateTroopDonationInFlight = value;
+  }
+
+  function markTroopDonationNow() {
+    lastAutoDonateTroopsMs = Date.now();
+  }
   var DONATE_COOLDOWN_MS = 3000;
 
-  function _cfg(key, fallback) {
+  function autoDonateCfg(key, fallback) {
     try {
       if (typeof _quickPanelSettingsCache === "object" && _quickPanelSettingsCache && key in _quickPanelSettingsCache)
         return _quickPanelSettingsCache[key];
-    } catch (e) {}
+    } catch (e) {
+  captureRuntimeException(e, "engine/ingame/auto-donate.js:25");}
     return fallback;
   }
 
-  function _parseTargets(raw) {
+  function parseAutoDonateTargets(raw) {
     if (!raw || typeof raw !== "string") return [];
     var parts = raw.split(",");
     var result = [];
@@ -37,9 +44,9 @@
     return result;
   }
 
-  function _matchPlayer(player, targetNames) {
+  function matchesAutoDonatePlayer(player, targetNames) {
     if (!player || targetNames.length === 0) return false;
-    var displayName = "";
+    var displayName;
     try {
       displayName = String(
         (typeof player.displayName === "function" ? player.displayName() : null) ??
@@ -56,17 +63,18 @@
     return false;
   }
 
-  function _isInCombat(player) {
+  function isAutoDonateTargetInCombat(player) {
     try {
       var incoming = typeof player.incomingAttacks === "function" ? player.incomingAttacks() : [];
       var outgoing = typeof player.outgoingAttacks === "function" ? player.outgoingAttacks() : [];
       return (incoming && incoming.length > 0) || (outgoing && outgoing.length > 0);
-    } catch (e) { return false; }
+    } catch (e) {
+  captureRuntimeException(e, "engine/ingame/auto-donate.js:64"); return false; }
   }
 
   // Return null when the live player view cannot tell us whether an attack is
   // incoming. Troop donation fails closed in that case.
-  function _isBeingAttacked(player) {
+  function isAutoDonatePlayerBeingAttacked(player) {
     if (!player || typeof player.incomingAttacks !== "function") return null;
     try {
       var incoming = player.incomingAttacks();
@@ -75,11 +83,12 @@
       if (typeof incoming.size === "number") return incoming.size > 0;
       return null;
     } catch (e) {
+  captureRuntimeException(e, "engine/ingame/auto-donate.js:77");
       return null;
     }
   }
 
-  function _getPlayerId(player) {
+  function getAutoDonatePlayerId(player) {
     if (!player) return null;
     var keys = ["smallID", "id"];
     for (var i = 0; i < keys.length; i++) {
@@ -88,12 +97,13 @@
         if (raw === null || raw === undefined) continue;
         var id = Number(raw);
         if (Number.isFinite(id)) return id;
-      } catch (e) {}
+      } catch (e) {
+  captureRuntimeException(e, "engine/ingame/auto-donate.js:91");}
     }
     return null;
   }
 
-  function _getTileOwnerId(game, tile) {
+  function getAutoDonateTileOwnerId(game, tile) {
     if (!game) return { known: false, id: null };
 
     if (typeof game.ownerID === "function") {
@@ -105,13 +115,15 @@
             return { known: true, id: numericOwnerId };
           }
         }
-      } catch (e) {}
+      } catch (e) {
+  captureRuntimeException(e, "engine/ingame/auto-donate.js:108");}
     }
 
     if (typeof game.owner === "function") {
       try {
-        return { known: true, id: _getPlayerId(game.owner(tile)) };
-      } catch (e) {}
+        return { known: true, id: getAutoDonatePlayerId(game.owner(tile)) };
+      } catch (e) {
+  captureRuntimeException(e, "engine/ingame/auto-donate.js:118");}
     }
 
     return {
@@ -124,47 +136,101 @@
   // and null when the owner relation cannot be established. This is deliberately
   // conservative: an unknown owner must not reopen troop donations during a
   // possible landing.
-  function _isEnemyTransport(game, me, unit) {
-    var owner;
+  function getAutoDonateUnitOwner(unit) {
     try {
-      owner = typeof unit.owner === "function" ? unit.owner() : unit.owner;
-    } catch (e) {
+      return typeof unit.owner === "function" ? unit.owner() : unit.owner;
+    } catch (error) {
+      captureRuntimeException(error, "engine/ingame/auto-donate.js:getAutoDonateUnitOwner");
       return null;
     }
-    if (!owner) return null;
+  }
 
-    var myId = _getPlayerId(me);
-    var ownerId = _getPlayerId(owner);
-    if (myId !== null && ownerId !== null && myId === ownerId) return false;
-
-    // Reuse the boat overlay's exact relation classifier when it is available
-    // in the bundled page scope. The fallback keeps this module usable on older
-    // builds and in isolated tests where that overlay is not loaded.
+  function getAutoDonateBoatRelation(game, unit) {
     try {
-      if (typeof getBoatPredictionRelation === "function") {
-        var relation = getBoatPredictionRelation(game, unit);
-        if (relation === "self" || relation === "team" || relation === "ally") return false;
-        if (relation === "enemy") return true;
-      }
-    } catch (e) {}
-
-    var friendlyChecks = [
-      [me, "isOnSameTeam", owner],
-      [me, "isAlliedWith", owner],
-      [me, "isFriendly", owner],
-      [owner, "isFriendly", me],
-    ];
-    for (var i = 0; i < friendlyChecks.length; i++) {
-      try {
-        var subject = friendlyChecks[i][0];
-        var method = friendlyChecks[i][1];
-        if (subject && typeof subject[method] === "function" && subject[method](friendlyChecks[i][2])) {
-          return false;
-        }
-      } catch (e) {}
+      return typeof getBoatPredictionRelation === "function"
+        ? getBoatPredictionRelation(game, unit)
+        : null;
+    } catch (error) {
+      captureRuntimeException(error, "engine/ingame/auto-donate.js:getAutoDonateBoatRelation");
+      return null;
     }
+  }
 
-    return true;
+  function hasAutoDonateFriendlyRelation(me, owner) {
+    const checks = [
+      [me, "isOnSameTeam", owner], [me, "isAlliedWith", owner],
+      [me, "isFriendly", owner], [owner, "isFriendly", me],
+    ];
+    for (const [subject, method, other] of checks) {
+      try {
+        if (typeof subject?.[method] === "function" && subject[method](other)) return true;
+      } catch (error) {
+        captureRuntimeException(error, "engine/ingame/auto-donate.js:hasAutoDonateFriendlyRelation");
+      }
+    }
+    return false;
+  }
+
+  function isAutoDonateEnemyTransport(game, me, unit) {
+    const owner = getAutoDonateUnitOwner(unit);
+    if (!owner) return null;
+    const myId = getAutoDonatePlayerId(me);
+    const ownerId = getAutoDonatePlayerId(owner);
+    if (myId !== null && ownerId !== null && myId === ownerId) return false;
+    const relation = getAutoDonateBoatRelation(game, unit);
+    if (["self", "team", "ally"].includes(relation)) return false;
+    if (relation === "enemy") return true;
+    return !hasAutoDonateFriendlyRelation(me, owner);
+  }
+
+  function getAutoDonateTransportTarget(unit) {
+    try {
+      const raw = typeof unit.targetTile === "function" ? unit.targetTile() : unit.targetTile;
+      const tile = Number(raw);
+      return Number.isFinite(tile) ? tile : null;
+    } catch (error) {
+      captureRuntimeException(error, "engine/ingame/auto-donate.js:getAutoDonateTransportTarget");
+      return null;
+    }
+  }
+
+  function getAutoDonateTransportTroops(unit) {
+    try {
+      const raw = typeof unit.troops === "function" ? unit.troops() : unit.troops;
+      if (raw === null || raw === undefined) return null;
+      const troops = Number(raw);
+      return Number.isFinite(troops) ? troops : null;
+    } catch (error) {
+      captureRuntimeException(error, "engine/ingame/auto-donate.js:getAutoDonateTransportTroops");
+      return null;
+    }
+  }
+
+  function isActiveAutoDonateTransport(unit) {
+    try {
+      if (typeof unit?.isActive === "function" && !unit.isActive()) return false;
+      if (unit?.isActive === false) return false;
+      return typeof unit?.retreating !== "function" || !unit.retreating();
+    } catch (error) {
+      captureRuntimeException(error, "engine/ingame/auto-donate.js:isActiveAutoDonateTransport");
+      return null;
+    }
+  }
+
+  function inspectAutoDonateTransport(game, me, myId, unit) {
+    const active = isActiveAutoDonateTransport(unit);
+    if (active === null) return { unknown: true };
+    if (!active) return { ignored: true };
+    const targetTile = getAutoDonateTransportTarget(unit);
+    if (targetTile === null) return { ignored: true };
+    const targetOwner = getAutoDonateTileOwnerId(game, targetTile);
+    if (!targetOwner.known) return { unknown: true };
+    if (targetOwner.id !== myId) return { ignored: true };
+    const enemy = isAutoDonateEnemyTransport(game, me, unit);
+    if (enemy === null) return { unknown: true };
+    if (!enemy) return { ignored: true };
+    const troops = getAutoDonateTransportTroops(unit);
+    return troops === null ? { incoming: true, unknownTroops: true } : { incoming: true, troops };
   }
 
   // Find active enemy transports whose landing tile is currently ours. The
@@ -172,10 +238,10 @@
   // the live unit list directly. `troops` is the total force still in flight;
   // multiple incoming transports are summed so the reserve covers the whole
   // maritime invasion. Return null when the inspection is unavailable.
-  function _getIncomingMaritimeInvasion(game, me) {
+  function getAutoDonateMaritimeInvasion(game, me) {
     if (!game || !me || typeof game.units !== "function") return null;
 
-    var myId = _getPlayerId(me);
+    var myId = getAutoDonatePlayerId(me);
     if (myId === null) return null;
 
     var units;
@@ -186,84 +252,35 @@
           : game.units("Transport");
       units = Array.from(rawUnits || []);
     } catch (e) {
+  captureRuntimeException(e, "engine/ingame/auto-donate.js:188");
       return null;
     }
 
-    var incomingTroops = 0;
-    var hasIncomingTroops = false;
-    var hasUnknownIncomingTroops = false;
-
-    for (var i = 0; i < units.length; i++) {
-      var unit = units[i];
-      if (!unit) continue;
-
-      try {
-        if (typeof unit.isActive === "function" && !unit.isActive()) continue;
-        if (unit.isActive === false) continue;
-        if (typeof unit.retreating === "function" && unit.retreating()) continue;
-      } catch (e) {
-        return null;
-      }
-
-      var rawTargetTile;
-      try {
-        rawTargetTile =
-          typeof unit.targetTile === "function" ? unit.targetTile() : unit.targetTile;
-      } catch (e) {
-        return null;
-      }
-      var targetTile = Number(rawTargetTile);
-      if (!Number.isFinite(targetTile)) continue;
-
-      var targetOwner = _getTileOwnerId(game, targetTile);
-      if (!targetOwner.known) return null;
-      if (targetOwner.id === null || targetOwner.id !== myId) continue;
-
-      var isEnemy = _isEnemyTransport(game, me, unit);
-      if (isEnemy === null) return null;
-      if (!isEnemy) continue;
-
-      var rawTroops;
-      try {
-        rawTroops = typeof unit.troops === "function" ? unit.troops() : unit.troops;
-      } catch (e) {
-        rawTroops = null;
-      }
-      if (rawTroops === null || rawTroops === undefined) {
-        hasUnknownIncomingTroops = true;
-        continue;
-      }
-
-      var troopCount = Number(rawTroops);
-      if (!Number.isFinite(troopCount)) {
-        hasUnknownIncomingTroops = true;
-      } else if (troopCount > 0) {
-        hasIncomingTroops = true;
-        incomingTroops += troopCount;
-      }
-    }
-
-    if (hasUnknownIncomingTroops) {
-      return { active: true, troops: null };
-    }
+    const inspections = units.filter(Boolean)
+      .map((unit) => inspectAutoDonateTransport(game, me, myId, unit));
+    if (inspections.some((result) => result.unknown)) return null;
+    const incoming = inspections.filter((result) => result.incoming);
+    if (incoming.some((result) => result.unknownTroops)) return { active: true, troops: null };
+    const incomingTroops = incoming.reduce((sum, result) => sum + Math.max(0, result.troops), 0);
     return {
-      active: hasIncomingTroops,
-      troops: hasIncomingTroops ? incomingTroops : 0,
+      active: incomingTroops > 0,
+      troops: incomingTroops,
     };
   }
 
-  function _getPlayerViews(game) {
+  function getAutoDonatePlayerViews(game) {
     try {
       if (typeof getCachedPlayerViews === "function") return getCachedPlayerViews(game) || [];
       if (game && typeof game.playerViews === "function") return Array.from(game.playerViews() || []);
       // Keep compatibility with older game handles used by the helper tests and
       // older OpenFront builds.
       if (game && typeof game.players === "function") return game.players() || [];
-    } catch (e) {}
+    } catch (e) {
+  captureRuntimeException(e, "engine/ingame/auto-donate.js:262");}
     return null;
   }
 
-  function _troopPercentage(player, game) {
+  function getAutoDonateTroopPercentage(player, game) {
     try {
       var troops = Number(player.troops ? player.troops() : 0);
       var max = 1;
@@ -271,33 +288,33 @@
         max = game.config().maxTroops(player);
       if (max <= 0) max = 1;
       return troops / max;
-    } catch (e) { return 0; }
+    } catch (e) {
+  captureRuntimeException(e, "engine/ingame/auto-donate.js:274"); return 0; }
   }
 
-  function _findTargetPlayers(game, me, targetNames, combatOnly) {
-    var matches = [];
-    if (!game || !me || targetNames.length === 0) return matches;
+  function isEligibleAutoDonateTarget(player, me, targetNames, combatOnly) {
     try {
-      var players = _getPlayerViews(game) || [];
-      for (var i = 0; i < players.length; i++) {
-        var p = players[i];
-        if (!p) continue;
-        try {
-          if (!p.isAlive || !p.isAlive()) continue;
-          var mySid = me.smallID ? me.smallID() : null;
-          var pSid = p.smallID ? p.smallID() : null;
-          if (mySid !== null && pSid !== null && mySid === pSid) continue;
-          if (!_matchPlayer(p, targetNames)) continue;
-          // If combatOnly: skip players who are at peace
-          if (combatOnly && !_isInCombat(p)) continue;
-          matches.push(p);
-        } catch (e) {}
-      }
-    } catch (e) {}
-    return matches;
+      if (!player?.isAlive?.()) return false;
+      const myId = getAutoDonatePlayerId(me);
+      const playerId = getAutoDonatePlayerId(player);
+      if (myId !== null && playerId !== null && myId === playerId) return false;
+      if (!matchesAutoDonatePlayer(player, targetNames)) return false;
+      return !combatOnly || isAutoDonateTargetInCombat(player);
+    } catch (error) {
+      captureRuntimeException(error, "engine/ingame/auto-donate.js:isEligibleAutoDonateTarget");
+      return false;
+    }
   }
 
-  async function _getPlayerBorderTiles(player) {
+  function findAutoDonateTargetPlayers(game, me, targetNames, combatOnly = false) {
+    if (!game || !me || targetNames.length === 0) return [];
+    const players = getAutoDonatePlayerViews(game);
+    if (!players) return [];
+    return players.filter((player) =>
+      isEligibleAutoDonateTarget(player, me, targetNames, combatOnly));
+  }
+
+  async function getAutoDonatePlayerBorderTiles(player) {
     if (!player || typeof player.borderTiles !== "function") return null;
     try {
       var result = await player.borderTiles();
@@ -305,294 +322,295 @@
       if (!tiles || typeof tiles[Symbol.iterator] !== "function") return null;
       return Array.from(tiles);
     } catch (e) {
+  captureRuntimeException(e, "engine/ingame/auto-donate.js:307");
       return null;
     }
+  }
+
+  function hasAutoDonateBorderApi(game, me) {
+    return Boolean(game && me && typeof me.borderTiles === "function" &&
+      typeof game.neighbors === "function" && typeof game.isLand === "function" &&
+      typeof game.hasOwner === "function" &&
+      (typeof game.ownerID === "function" || typeof game.owner === "function"));
+  }
+
+  function collectAutoDonateBorderingPlayerIds(game, borderTiles, myId) {
+    const ids = new Set();
+    for (const borderTile of borderTiles) {
+      for (const neighbor of game.neighbors(borderTile) || []) {
+        if (!game.isLand(neighbor) || !game.hasOwner(neighbor)) continue;
+        const owner = getAutoDonateTileOwnerId(game, neighbor);
+        if (!owner.known) return null;
+        if (owner.id !== null && owner.id !== myId) ids.add(owner.id);
+      }
+    }
+    return ids;
+  }
+
+  function getAutoDonateBorderOpponentTroops(players, borderingIds, myId) {
+    if (!players.some((player) => getAutoDonatePlayerId(player) === myId)) return null;
+    const seen = new Set();
+    let strongest = 0;
+    for (const player of players) {
+      const playerId = getAutoDonatePlayerId(player);
+      if (playerId === null || !borderingIds.has(playerId)) continue;
+      seen.add(playerId);
+      if (typeof player.isAlive !== "function" || typeof player.troops !== "function") return null;
+      if (!player.isAlive()) continue;
+      const troops = Number(player.troops());
+      if (!Number.isFinite(troops)) return null;
+      strongest = Math.max(strongest, troops);
+    }
+    return [...borderingIds].every((id) => seen.has(id)) ? strongest : null;
   }
 
   // Return null when the live game does not expose enough map/border data to
   // enforce the reserve. The troop donation then fails closed. Alliances do not
   // remove a bordering owner from this reserve calculation.
-  async function _getStrongestBorderOpponentTroops(game, me) {
-    if (
-      !game ||
-      !me ||
-      typeof me.borderTiles !== "function" ||
-      typeof game.neighbors !== "function" ||
-      typeof game.isLand !== "function" ||
-      typeof game.hasOwner !== "function" ||
-      (typeof game.ownerID !== "function" && typeof game.owner !== "function")
-    ) {
-      return null;
-    }
-
+  async function getAutoDonateStrongestBorderOpponentTroops(game, me) {
+    if (!hasAutoDonateBorderApi(game, me)) return null;
     try {
-      var borderTiles = await _getPlayerBorderTiles(me);
+      const borderTiles = await getAutoDonatePlayerBorderTiles(me);
       if (!borderTiles) return null;
-      var mySid = typeof me.smallID === "function" ? me.smallID() : null;
+      const mySid = getAutoDonatePlayerId(me);
       if (mySid === null) return null;
-
-      var borderingPlayerIds = new Set();
-      for (var i = 0; i < borderTiles.length; i++) {
-        var neighbors = game.neighbors(borderTiles[i]) || [];
-        for (var j = 0; j < neighbors.length; j++) {
-          var neighbor = neighbors[j];
-          if (!game.isLand(neighbor) || !game.hasOwner(neighbor)) continue;
-          var ownerSid = null;
-          if (typeof game.ownerID === "function") {
-            try { ownerSid = game.ownerID(neighbor); } catch (e) {}
-          }
-          if (ownerSid === null || ownerSid === undefined) {
-            var owner = typeof game.owner === "function" ? game.owner(neighbor) : null;
-            ownerSid = owner && typeof owner.smallID === "function" ? owner.smallID() : null;
-          }
-          if (ownerSid !== null && ownerSid !== mySid) borderingPlayerIds.add(ownerSid);
-        }
-      }
-
-      var players = _getPlayerViews(game);
+      const borderingPlayerIds = collectAutoDonateBorderingPlayerIds(game, borderTiles, mySid);
+      if (!borderingPlayerIds) return null;
+      const players = getAutoDonatePlayerViews(game);
       if (!players) return null;
-      var hasMe = false;
-      for (var m = 0; m < players.length; m++) {
-        if (players[m] && typeof players[m].smallID === "function" && players[m].smallID() === mySid) {
-          hasMe = true;
-          break;
-        }
-      }
-      if (!hasMe) return null;
-      var strongest = 0;
-      var seenBorderingPlayerIds = new Set();
-      for (var k = 0; k < players.length; k++) {
-        var player = players[k];
-        if (!player || player === me) continue;
-
-        var playerSid = typeof player.smallID === "function" ? player.smallID() : null;
-        if (playerSid === null || !borderingPlayerIds.has(playerSid)) continue;
-        seenBorderingPlayerIds.add(playerSid);
-        if (typeof player.isAlive !== "function") return null;
-        if (!player.isAlive()) continue;
-
-        if (typeof player.troops !== "function") return null;
-        var troops = Number(player.troops());
-        if (!Number.isFinite(troops)) return null;
-        if (troops > strongest) strongest = troops;
-      }
-      for (var borderingId of borderingPlayerIds) {
-        if (!seenBorderingPlayerIds.has(borderingId)) return null;
-      }
-      return strongest;
+      return getAutoDonateBorderOpponentTroops(players, borderingPlayerIds, mySid);
     } catch (e) {
+  captureRuntimeException(e, "engine/ingame/auto-donate.js:383");
       return null;
     }
   }
 
-  function _formatGold(n) {
+  function formatAutoDonateGold(n) {
     if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
     if (n >= 1000) return (n / 1000).toFixed(1) + "K";
     return String(Math.round(n));
   }
 
+  function getAutoDonateGameContext() {
+    try {
+      return typeof getOpenFrontGameContext === "function"
+        ? getOpenFrontGameContext()
+        : null;
+    } catch (error) {
+      captureRuntimeException(error, "engine/ingame/auto-donate.js:getAutoDonateGameContext");
+      return null;
+    }
+  }
+
+  function getAutoDonateLivingPlayer(game) {
+    const player = game?.myPlayer?.();
+    return player?.isAlive?.() ? player : null;
+  }
+
+  function gameAllowsTroopDonation(game) {
+    try {
+      const config = game?.config?.();
+      return typeof config?.donateTroops !== "function" || config.donateTroops() !== false;
+    } catch (error) {
+      captureRuntimeException(error, "engine/ingame/auto-donate.js:gameAllowsTroopDonation");
+      return true;
+    }
+  }
+
+  function getAutoDonateMaxTroops(game, player) {
+    try {
+      const maxTroops = Number(game?.config?.().maxTroops?.(player));
+      return Number.isFinite(maxTroops) && maxTroops > 0 ? maxTroops : 1;
+    } catch (error) {
+      captureRuntimeException(error, "engine/ingame/auto-donate.js:getAutoDonateMaxTroops");
+      return 1;
+    }
+  }
+
+  function findNeediestAutoDonateTarget(targets, game) {
+    return targets.map((player) => ({
+      player,
+      percentage: getAutoDonateTroopPercentage(player, game),
+    })).sort((a, b) => a.percentage - b.percentage)[0]?.player ?? null;
+  }
+
+  function getAutoDonateRecipientId(player) {
+    try {
+      if (typeof player?.id === "function") return player.id();
+      if (typeof player?.smallID === "function") return player.smallID();
+      return null;
+    } catch (error) {
+      captureRuntimeException(error, "engine/ingame/auto-donate.js:getAutoDonateRecipientId");
+      return null;
+    }
+  }
+
+  function getAutoDonatePlayerName(player) {
+    return typeof getPlayerDisplayName === "function"
+      ? getPlayerDisplayName(player)
+      : "ally";
+  }
+
+  function hasNoAutoDonateMaritimeThreat(game, player) {
+    const maritime = getAutoDonateMaritimeInvasion(game, player);
+    return Boolean(maritime && !maritime.active);
+  }
+
+  function createTroopDonationPlan() {
+    if (!autoDonateCfg("autoDonateEnabled", false)) return null;
+    const context = getAutoDonateGameContext();
+    if (!context?.game) return null;
+    const game = context.game;
+    const me = getAutoDonateLivingPlayer(game);
+    if (!me || isAutoDonatePlayerBeingAttacked(me) !== false) return null;
+    if (!hasNoAutoDonateMaritimeThreat(game, me) || !gameAllowsTroopDonation(game)) return null;
+    const targetNames = parseAutoDonateTargets(autoDonateCfg("autoDonateTargets", ""));
+    if (targetNames.length === 0) return null;
+    const configuredKeep = Number(autoDonateCfg("autoDonateKeepPct", 42));
+    const keepPct = Number.isFinite(configuredKeep) ? Math.max(42, configuredKeep) : 42;
+    const donatePct = Number(autoDonateCfg("autoDonatePercentage", 25)) || 25;
+    const maxTroops = getAutoDonateMaxTroops(game, me);
+    const currentTroops = Number(me.troops?.() ?? 0);
+    if (currentTroops <= maxTroops * keepPct / 100) return null;
+    const targets = findAutoDonateTargetPlayers(game, me, targetNames, true);
+    const recipient = findNeediestAutoDonateTarget(targets, game);
+    return recipient ? { game, me, recipient, keepPct, donatePct, maxTroops } : null;
+  }
+
+  function getSafeAutoDonateTroops(plan, borderOpponentTroops) {
+    const currentTroops = Number(plan.me.troops?.() ?? 0);
+    if (!Number.isFinite(currentTroops)) return 0;
+    if (isAutoDonatePlayerBeingAttacked(plan.me) !== false) return 0;
+    const maritime = getAutoDonateMaritimeInvasion(plan.game, plan.me);
+    if (!maritime || maritime.active) return 0;
+    const keepAmount = plan.maxTroops * plan.keepPct / 100;
+    if (currentTroops <= keepAmount) return 0;
+    const requested = Math.floor(currentTroops * plan.donatePct / 100);
+    const keepLimit = Math.floor(currentTroops - keepAmount);
+    const borderLimit = Math.floor(currentTroops - borderOpponentTroops / 2);
+    return Math.max(0, Math.min(requested, keepLimit, borderLimit));
+  }
+
+  function sendAutoDonateTroops(plan, amount) {
+    const recipient = getAutoDonateRecipientId(plan.recipient);
+    if (recipient == null || amount <= 0) return false;
+    sendGamePacket({ type: "donate_troops", recipient, troops: amount });
+    markTroopDonationNow();
+    runtimeDebugLog(
+      "[AutoDonate] troops", amount, "→", getAutoDonatePlayerName(plan.recipient),
+    );
+    return true;
+  }
+
   // ---- Auto-donate troops ----
 
-  async function tickDonateTroops() {
-    var enabled = _cfg("autoDonateEnabled", false);
-    if (!enabled) return;
-    if (_troopDonationInFlight) return;
-
-    var now = Date.now();
-    if (now - _lastDonateTroopsMs < DONATE_COOLDOWN_MS) return;
-
-    var ctx;
-    try { ctx = (typeof getOpenFrontGameContext === "function" ? getOpenFrontGameContext() : null); } catch (e) {}
-    if (!ctx || !ctx.game) return;
-
-    var game = ctx.game;
-    var me = game.myPlayer ? game.myPlayer() : null;
-    if (!me || !me.isAlive || !me.isAlive()) return;
-    if (_isBeingAttacked(me) !== false) return;
-
-    // An enemy transport already aimed at our territory is an invasion warning,
-    // not ordinary combat. Keep every troop available and let production build
-    // an army at least as large as the incoming transport force. Fail closed if
-    // the live unit/ownership APIs cannot be inspected.
-    var maritimeInvasion = _getIncomingMaritimeInvasion(game, me);
-    if (!maritimeInvasion || maritimeInvasion.active) return;
-
-    // Check if donate is allowed in this game
+  async function tickAutoDonateTroops() {
+    if (autoDonateTroopDonationInFlight) return;
+    if (Date.now() - lastAutoDonateTroopsMs < DONATE_COOLDOWN_MS) return;
+    const plan = createTroopDonationPlan();
+    if (!plan) return;
+    setTroopDonationInFlight(true);
     try {
-      var cfg = typeof game.config === "function" ? game.config() : null;
-      if (cfg && typeof cfg.donateTroops === "function" && cfg.donateTroops() === false) return;
-    } catch (e) {}
-
-    var configuredKeepPct = Number(_cfg("autoDonateKeepPct", 42));
-    var keepPct = Number.isFinite(configuredKeepPct) ? Math.max(42, configuredKeepPct) : 42;
-    var donatePct = Number(_cfg("autoDonatePercentage", 25)) || 25;
-    var targetRaw = _cfg("autoDonateTargets", "");
-    var targetNames = _parseTargets(targetRaw);
-
-    if (targetNames.length === 0) return;
-
-    var currentTroops = Number(me.troops ? me.troops() : 0);
-    var maxTroops = 1;
-    try { maxTroops = typeof game.config === "function" && typeof game.config().maxTroops === "function" ? game.config().maxTroops(me) : 1; } catch (e) {}
-    if (maxTroops <= 0) maxTroops = 1;
-
-    var keepAmount = maxTroops * (keepPct / 100);
-    if (currentTroops <= keepAmount) return;
-
-    var donateAmount = Math.floor(currentTroops * (donatePct / 100));
-    if (donateAmount <= 0) return;
-
-    // Find matching teammates who are IN COMBAT (attacking or being attacked)
-    var targets = _findTargetPlayers(game, me, targetNames, true);
-    if (targets.length === 0) return;
-
-    // Pick the neediest (lowest troop %) among combat targets
-    var best = null;
-    var bestPct = Infinity;
-    for (var i = 0; i < targets.length; i++) {
-      try {
-        var pct = _troopPercentage(targets[i], game);
-        if (pct < bestPct) { bestPct = pct; best = targets[i]; }
-      } catch (e) {}
-    }
-    if (!best) return;
-
-    _troopDonationInFlight = true;
-    try {
-      var strongestBorderOpponentTroops = await _getStrongestBorderOpponentTroops(game, me);
-      if (strongestBorderOpponentTroops === null) return;
-
-      // Re-read after the async border lookup so the reserve is based on the
-      // troops available at the moment the packet is emitted.
-      currentTroops = Number(me.troops ? me.troops() : 0);
-      if (!Number.isFinite(currentTroops)) return;
-      if (_isBeingAttacked(me) !== false) return;
-      maritimeInvasion = _getIncomingMaritimeInvasion(game, me);
-      if (!maritimeInvasion || maritimeInvasion.active) return;
-      keepAmount = maxTroops * (keepPct / 100);
-      if (currentTroops <= keepAmount) return;
-
-      donateAmount = Math.floor(currentTroops * (donatePct / 100));
-      if (donateAmount <= 0) return;
-
-      // Keep both the configured reserve (never below 42% of max troops) and
-      // at least half of the strongest live enemy army on a shared border.
-      // Use fractional reserves before flooring so odd values round safely.
-      var maxKeepDonation = Math.floor(currentTroops - keepAmount);
-      var maxBorderDonation = Math.floor(currentTroops - strongestBorderOpponentTroops / 2);
-      if (maxKeepDonation <= 0 || maxBorderDonation <= 0) return;
-      var maxSafeDonation = Math.min(maxKeepDonation, maxBorderDonation);
-      donateAmount = Math.min(donateAmount, maxSafeDonation);
-      if (donateAmount <= 0) return;
-
-      // Send donate packet
-      var recipientId = best.id ? best.id() : (best.smallID ? best.smallID() : null);
-      if (recipientId == null) return;
-      sendGamePacket({ type: "donate_troops", recipient: recipientId, troops: donateAmount });
-      _lastDonateTroopsMs = now;
-      var name = (typeof getPlayerDisplayName === "function") ? getPlayerDisplayName(best) : "ally";
-      console.log("[AutoDonate] troops", donateAmount, "→", name);
-    } catch (e) {}
-    finally {
-      _troopDonationInFlight = false;
+      const borderTroops = await getAutoDonateStrongestBorderOpponentTroops(plan.game, plan.me);
+      if (borderTroops !== null) {
+        sendAutoDonateTroops(plan, getSafeAutoDonateTroops(plan, borderTroops));
+      }
+    } catch (error) {
+      captureRuntimeException(error, "engine/ingame/auto-donate.js:tickAutoDonateTroops");
+    } finally {
+      setTroopDonationInFlight(false);
     }
   }
 
   // ---- Auto-donate gold ----
 
-  function tickDonateGold() {
-    var enabled = _cfg("autoDonateGoldEnabled", false);
-    if (!enabled) return;
-
-    var now = Date.now();
-    if (now - _lastDonateGoldMs < DONATE_COOLDOWN_MS) return;
-
-    var ctx;
-    try { ctx = (typeof getOpenFrontGameContext === "function" ? getOpenFrontGameContext() : null); } catch (e) {}
-    if (!ctx || !ctx.game) return;
-
-    var game = ctx.game;
-    var me = game.myPlayer ? game.myPlayer() : null;
-    if (!me || !me.isAlive || !me.isAlive()) return;
-
-    // Gold is part of the same emergency reserve as troops: while an enemy
-    // transport is committed to our territory, keep it available for the
-    // Port-first / destroyer response. Fail closed when the live transport
-    // ownership scan is unavailable.
-    var maritimeInvasion = _getIncomingMaritimeInvasion(game, me);
-    if (!maritimeInvasion || maritimeInvasion.active) return;
-
-    var maxGold = Number(_cfg("autoDonateGoldThreshold", 5000000)) || 5000000;
-    var donatePct = Number(_cfg("autoDonateGoldPercentage", 25)) || 25;
-    var targetRaw = _cfg("autoDonateGoldTargets", "");
-    var targetNames = _parseTargets(targetRaw);
-
-    if (targetNames.length === 0) return;
-
-    var currentGold = 0;
-    try { currentGold = typeof me.gold === "function" ? Number(me.gold()) : 0; } catch (e) {}
-    if (currentGold <= maxGold) return;
-
-    var donateAmount = Math.floor(currentGold * (donatePct / 100));
-    if (donateAmount <= 0) return;
-
-    // Find matching players (gold can go to allies, not just teammates)
-    var targets = _findTargetPlayers(game, me, targetNames);
-    if (targets.length === 0) return;
-
-    // Pick the poorest
-    var best = null;
-    var bestGold = Infinity;
-    for (var i = 0; i < targets.length; i++) {
-      try {
-        var g = typeof targets[i].gold === "function" ? Number(targets[i].gold()) : 0;
-        if (g < bestGold) { bestGold = g; best = targets[i]; }
-      } catch (e) {}
-    }
-    if (!best) return;
-
-    var recipientId = best.id ? best.id() : (best.smallID ? best.smallID() : null);
-    if (recipientId == null) return;
+  function getAutoDonatePlayerGold(player) {
     try {
-      sendGamePacket({ type: "donate_gold", recipient: recipientId, gold: donateAmount });
-      _lastDonateGoldMs = now;
-      var name = (typeof getPlayerDisplayName === "function") ? getPlayerDisplayName(best) : "ally";
-      console.log("[AutoDonate] gold", _formatGold(donateAmount), "→", name);
-    } catch (e) {}
+      return typeof player?.gold === "function" ? Number(player.gold()) : 0;
+    } catch (error) {
+      captureRuntimeException(error, "engine/ingame/auto-donate.js:getAutoDonatePlayerGold");
+      return 0;
+    }
+  }
+
+  function findPoorestAutoDonateTarget(targets) {
+    return targets.map((player) => ({ player, gold: getAutoDonatePlayerGold(player) }))
+      .sort((a, b) => a.gold - b.gold)[0]?.player ?? null;
+  }
+
+  function createGoldDonationPlan() {
+    if (!autoDonateCfg("autoDonateGoldEnabled", false)) return null;
+    const context = getAutoDonateGameContext();
+    if (!context?.game) return null;
+    const game = context.game;
+    const me = getAutoDonateLivingPlayer(game);
+    if (!me) return null;
+    if (!hasNoAutoDonateMaritimeThreat(game, me)) return null;
+    const targetNames = parseAutoDonateTargets(autoDonateCfg("autoDonateGoldTargets", ""));
+    if (targetNames.length === 0) return null;
+    const currentGold = getAutoDonatePlayerGold(me);
+    const maxGold = Number(autoDonateCfg("autoDonateGoldThreshold", 5000000)) || 5000000;
+    if (currentGold <= maxGold) return null;
+    const donatePct = Number(autoDonateCfg("autoDonateGoldPercentage", 25)) || 25;
+    const amount = Math.floor(currentGold * donatePct / 100);
+    if (amount <= 0) return null;
+    const targets = findAutoDonateTargetPlayers(game, me, targetNames);
+    const recipient = findPoorestAutoDonateTarget(targets);
+    return recipient ? { recipient, amount } : null;
+  }
+
+  function tickAutoDonateGold() {
+    const now = Date.now();
+    if (now - lastAutoDonateGoldMs < DONATE_COOLDOWN_MS) return;
+    const plan = createGoldDonationPlan();
+    if (!plan) return;
+    const recipient = getAutoDonateRecipientId(plan.recipient);
+    if (recipient == null) return;
+    try {
+      sendGamePacket({ type: "donate_gold", recipient, gold: plan.amount });
+      lastAutoDonateGoldMs = now;
+      runtimeDebugLog(
+        "[AutoDonate] gold", formatAutoDonateGold(plan.amount),
+        "→", getAutoDonatePlayerName(plan.recipient),
+      );
+    } catch (error) {
+      captureRuntimeException(error, "engine/ingame/auto-donate.js:tickAutoDonateGold");
+    }
   }
 
   // ---- Global tick entry point ----
 
-  // AttackBehavior's strategy-driven donation runs in a sibling module loaded
-  // before this file. Expose the same detector so both donation paths obey the
-  // complete emergency gate without duplicating the unit scan. The detector is
-  // named for its original transport use, but it must also report land attacks:
-  // AttackBehavior already uses its `active` result before emitting donations.
+  // The broad signal is kept for donation/attack strategy callers: an incoming
+  // land attack must also stop troop outflow. Structure/warship/nuke callers
+  // use the transport-only signal below so a land attack cannot freeze their
+  // maritime construction path.
   window.__OFH_getIncomingMaritimeInvasion = function(game, me) {
-    var maritime = _getIncomingMaritimeInvasion(game, me);
-    var incomingAttack = _isBeingAttacked(me);
+    var maritime = getAutoDonateMaritimeInvasion(game, me);
+    var incomingAttack = isAutoDonatePlayerBeingAttacked(me);
     if (incomingAttack === false) return maritime;
-
-    // Treat an unknown attack state as active so a missing/incompatible player
-    // view cannot reopen a troop outflow. Preserve the maritime troop count
-    // when that scan already succeeded, because callers use it for reserves.
     return {
       active: true,
-      troops: maritime && typeof maritime.troops === "number" ? maritime.troops : null,
+      troops: typeof maritime?.troops === "number" ? maritime.troops : null,
       reason: incomingAttack === true ? "incoming-attack" : "incoming-attack-unknown",
     };
+  };
+
+  // Construction and warship policy need the actual maritime transport scan,
+  // not the broad donation/combat pause above.
+  window.__OFH_getIncomingMaritimeTransport = function(game, me) {
+    return getAutoDonateMaritimeInvasion(game, me);
   };
 
   window.__OFH_tickAutoDonate = function() {
     var troopDonation = null;
     try {
-      troopDonation = tickDonateTroops();
+      troopDonation = tickAutoDonateTroops();
       if (troopDonation && typeof troopDonation.catch === "function") {
         troopDonation = troopDonation.catch(function() {});
       }
-    } catch (e) {}
-    try { tickDonateGold(); } catch (e) {}
+    } catch (e) {
+  captureRuntimeException(e, "engine/ingame/auto-donate.js:594");}
+    try { tickAutoDonateGold(); } catch (e) {
+  captureRuntimeException(e, "engine/ingame/auto-donate.js:614");}
     return troopDonation;
   };
-
-})();

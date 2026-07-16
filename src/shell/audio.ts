@@ -11,18 +11,14 @@
 let ctx: AudioContext | null = null;
 
 function getCtx(): AudioContext {
-  if (!ctx) {
-    const Ctor =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    ctx = new Ctor();
-  }
+  ctx ??= new AudioContext();
   return ctx;
 }
 
 function installGestureResume(): void {
   const resume = () => {
-    if (ctx && ctx.state === "suspended") void ctx.resume();
+    const context = getCtx();
+    if (context.state === "suspended") void context.resume();
   };
   const opts = { capture: true, passive: true } as const;
   window.addEventListener("pointerdown", resume, opts);
@@ -119,9 +115,16 @@ export class WebAudioElement {
 }
 
 /** Directly ring the chime (used by the popup's "test sound" button). */
-export function ringChime(): void {
+export async function ringChime(): Promise<void> {
   const context = getCtx();
-  if (context.state === "suspended") void context.resume();
+  if (context.state === "suspended") {
+    try {
+      await context.resume();
+    } catch {
+      /* needs a user gesture first — the gesture listeners will prime later cues */
+    }
+  }
+  if (context.state !== "running") return;
   playChime(1);
 }
 

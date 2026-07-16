@@ -95,30 +95,17 @@
     }
   }
 
-  // Find the nearest enemy player to a world coordinate by scanning all living
-  // players and picking the one with the smallest manhattan distance to their
-  // nameLocation.
-  function findNearestEnemy(game, worldX, worldY) {
-    const players = getCachedPlayerViews(game);
-    const me = game.myPlayer ? game.myPlayer() : null;
-    let best = null;
-    let bestDist = Infinity;
-    for (let i = 0; i < players.length; i += 1) {
-      const p = players[i];
-      if (!p || !p.isAlive || !p.isAlive()) continue;
-      let rel = "enemy";
-      try { rel = getPlayerRelationToMyPlayer(game, p) || "enemy"; } catch (_e) { rel = "enemy"; }
-      if (rel !== "enemy") continue;
-      let loc = null;
-      try { loc = p.nameLocation ? p.nameLocation() : null; } catch (_e) { loc = null; }
-      if (!loc) continue;
-      const d = Math.abs(loc.x - worldX) + Math.abs(loc.y - worldY);
-      if (d < bestDist) {
-        bestDist = d;
-        best = p;
-      }
+  function safeRightClickValue(read, fallback) {
+    try {
+      return read();
+    } catch (error) {
+      console.warn("[ofh] could not read right-click conquest state:", error);
+      return fallback;
     }
-    return best;
+  }
+
+  function isLiveRightClickTarget(player) {
+    return Boolean(player?.isAlive?.());
   }
 
   function showRightClickMenu(screenX, screenY, game, transform, targetPlayer) {
@@ -131,7 +118,6 @@
     const me = game.myPlayer ? game.myPlayer() : null;
     const myTroops = me ? advTroops(me) : 0;
     const targetTroops = advTroops(targetPlayer);
-    const maxTroops = advMaxTroops(game, targetPlayer);
 
     // Capture assessment: easy if we have >=2x their troops, risky if <1x.
     let tier = "moderate";
@@ -139,8 +125,13 @@
     else if (myTroops < targetTroops) tier = "risky";
 
     const ts = captureTierStyle(tier);
-    let name = "?";
-    try { name = getPlayerDisplayName ? getPlayerDisplayName(targetPlayer) : targetPlayer.name && targetPlayer.name(); } catch (_e) { name = "?"; }
+    const name = safeRightClickValue(
+      () =>
+        getPlayerDisplayName
+          ? getPlayerDisplayName(targetPlayer)
+          : targetPlayer.name && targetPlayer.name(),
+      "?",
+    );
 
     // Header: name + tier badge.
     const header = document.createElement("div");
@@ -211,47 +202,40 @@
       if (targetId != null) {
         emitIntent(ctors.attack, targetId, troops);
       }
-    } catch (_error) {
-      // Silent.
+    } catch (error) {
+      console.warn("[ofh] could not send the right-click conquest attack:", error);
     }
   }
 
   function handleRightClick(event) {
-    if (!rightClickMenuEnabled) return;
+    if (!runtimeState.rightClickMenuEnabled) return;
     // Only intercept right-clicks on the game canvas (not on our panels).
     if (event.target.closest(`#${RIGHT_CLICK_MENU_ID}, [id^="openfront-helper-"]`)) return;
-    let context = null;
-    try { context = getOpenFrontGameContext(); } catch (_error) { context = null; }
+    const context = safeRightClickValue(() => getOpenFrontGameContext(), null);
     if (!context?.game || !context?.transform) return;
 
-    // Convert screen coords to world coords.
     const screenX = event.clientX;
     const screenY = event.clientY;
-    let worldPoint = null;
-    try {
-      // worldToScreenCoordinates goes world→screen; we need the inverse.
-      // Approximate by iterating players and finding the nearest by screen dist.
-      // (A proper inverse-transform would require the game's transform object
-      // which may not expose screenToWorldCoordinates.)
-    } catch (_error) { /* ignore */ }
 
     // Find nearest enemy by screen distance (more intuitive than world distance
     // when zoomed in).
     const players = getCachedPlayerViews(context.game);
-    const me = context.game.myPlayer ? context.game.myPlayer() : null;
     let best = null;
     let bestScreenDist = 80; // max click radius in px
     for (let i = 0; i < players.length; i += 1) {
       const p = players[i];
-      if (!p || !p.isAlive || !p.isAlive()) continue;
-      let rel = "enemy";
-      try { rel = getPlayerRelationToMyPlayer(context.game, p) || "enemy"; } catch (_e) { rel = "enemy"; }
+      if (!isLiveRightClickTarget(p)) continue;
+      const rel = safeRightClickValue(
+        () => getPlayerRelationToMyPlayer(context.game, p) || "enemy",
+        "enemy",
+      );
       if (rel !== "enemy") continue;
-      let loc = null;
-      try { loc = p.nameLocation ? p.nameLocation() : null; } catch (_e) { loc = null; }
+      const loc = safeRightClickValue(() => (p.nameLocation ? p.nameLocation() : null), null);
       if (!loc) continue;
-      let sp = null;
-      try { sp = context.transform.worldToScreenCoordinates(loc); } catch (_e) { sp = null; }
+      const sp = safeRightClickValue(
+        () => context.transform.worldToScreenCoordinates(loc),
+        null,
+      );
       if (!sp) continue;
       const d = Math.hypot(sp.x - screenX, sp.y - screenY);
       if (d < bestScreenDist) {
@@ -281,8 +265,8 @@
   }, true);
 
   function setRightClickMenuEnabled(enabled) {
-    rightClickMenuEnabled = Boolean(enabled);
-    if (!rightClickMenuEnabled) {
+    runtimeState.rightClickMenuEnabled = Boolean(enabled);
+    if (!runtimeState.rightClickMenuEnabled) {
       closeRightClickMenu();
     }
   }

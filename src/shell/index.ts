@@ -3,7 +3,7 @@
 // English i18n override), wires the "lobby found" toast, and mounts the launcher.
 
 import { unitIconUrl } from "./assets";
-import { installAudio, WebAudioElement } from "./audio";
+import { installAudio, ringChime, WebAudioElement } from "./audio";
 import { installChromeShim } from "./chrome-shim";
 import { installI18nOverride } from "./i18n";
 import {
@@ -39,11 +39,12 @@ export function bootShell(): void {
     requestJoinNotificationPermission;
 
   chromeShim.runtime.onMessage.addListener((message: unknown) => {
-    const msg = message as { type?: string; text?: string };
+    const msg = message as { type?: string; text?: string } | null;
     if (msg?.type === "SHOW_JOIN_NOTIFICATION") {
-      showJoinNotification(msg.text || "OpenFront Helper: lobby found — joining!");
+      showJoinNotification(msg.text ?? "OpenFront Helper: lobby found — joining!");
     } else if (msg?.type === "SHOW_GAME_START_NOTIFICATION") {
-      showGameStartNotification(msg.text || "OpenFront Helper: game started!");
+      void ringChime();
+      showGameStartNotification(msg.text ?? "OpenFront Helper: game started!");
     }
   });
 

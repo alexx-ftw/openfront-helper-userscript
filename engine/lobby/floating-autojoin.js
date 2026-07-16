@@ -3,18 +3,11 @@
 // OpenFront page (mirror of the floating helpers panel). Holds the essentials:
 // the Auto-Join power toggle, the game-found notification toggle, and a
 // read-only lobby forecast. Shares the content-script global scope, so it uses
-// `settings`, `saveSettings`, `t`, and `hasSelectedCriteria` from the other
+// `lobbyState.settings`, `saveSettings`, `t`, and `hasSelectedCriteria` from the other
 // content scripts. Filters/maps stay in the popup — this panel is on purpose
 // compact.
 
-function ensureFloatingAutoJoinStyles() {
-  if (document.getElementById(FLOATING_AUTOJOIN_STYLE_ID)) {
-    return;
-  }
-
-  const style = document.createElement("style");
-  style.id = FLOATING_AUTOJOIN_STYLE_ID;
-  style.textContent = `
+const FLOATING_AUTOJOIN_CSS = `
     #${FLOATING_AUTOJOIN_PANEL_ID} {
       position: fixed;
       left: var(--ofh-aj-left, 18px);
@@ -408,6 +401,12 @@ function ensureFloatingAutoJoinStyles() {
     }
 
   `;
+
+function ensureFloatingAutoJoinStyles() {
+  if (document.getElementById(FLOATING_AUTOJOIN_STYLE_ID)) return;
+  const style = document.createElement("style");
+  style.id = FLOATING_AUTOJOIN_STYLE_ID;
+  style.textContent = FLOATING_AUTOJOIN_CSS;
   (document.head || document.documentElement).appendChild(style);
 }
 
@@ -449,13 +448,13 @@ function floatingAutoJoinRangeSummary(min, max) {
 }
 
 function floatingAutoJoinTeamSizeSummary() {
-  return floatingAutoJoinRangeSummary(settings.minTeamSize, settings.maxTeamSize);
+  return floatingAutoJoinRangeSummary(lobbyState.settings.minTeamSize, lobbyState.settings.maxTeamSize);
 }
 
 function floatingAutoJoinTeamCountSummary() {
   return floatingAutoJoinRangeSummary(
-    settings.minTeamCount,
-    settings.maxTeamCount,
+    lobbyState.settings.minTeamCount,
+    lobbyState.settings.maxTeamCount,
   );
 }
 
@@ -471,10 +470,10 @@ function floatingAutoJoinMapsSummary() {
     ? globalThis.OPENFRONT_MAPS
     : [];
   const included = maps
-    .filter((map) => settings.mapFilters && settings.mapFilters[map.id])
+    .filter((map) => lobbyState.settings.mapFilters && lobbyState.settings.mapFilters[map.id])
     .map((map) => map.name);
   const excluded = maps
-    .filter((map) => settings.mapExcludeFilters && settings.mapExcludeFilters[map.id])
+    .filter((map) => lobbyState.settings.mapExcludeFilters && lobbyState.settings.mapExcludeFilters[map.id])
     .map((map) => map.name);
   if (included.length) {
     return floatingAutoJoinCondenseNames(included);
@@ -486,7 +485,7 @@ function floatingAutoJoinMapsSummary() {
 }
 
 function floatingAutoJoinMinLobbySummary() {
-  return settings.minLobbySize == null ? t("Any") : `> ${settings.minLobbySize}`;
+  return lobbyState.settings.minLobbySize == null ? t("Any") : `> ${lobbyState.settings.minLobbySize}`;
 }
 
 // Why is the search paused right now? (Same occupancy predicates the auto-join
@@ -510,7 +509,7 @@ function updateFloatingAutoJoinSearchTime(panel) {
   const wrap = panel.querySelector('[data-role="timer-wrap"]');
   const timer = panel.querySelector('[data-role="timer"]');
   const labelText = panel.querySelector('[data-role="timer-label"]');
-  const enabled = Boolean(settings.enabled);
+  const enabled = Boolean(lobbyState.settings.enabled);
   // Paused = auto-join is on but currently occupied (waiting room / game-start
   // loading / live game) or within the post-game resume grace, so it deliberately
   // isn't joining anything. recentlyOccupied() also covers the loading gap where
@@ -519,7 +518,7 @@ function updateFloatingAutoJoinSearchTime(panel) {
     enabled &&
     ((typeof isOccupied === "function" && isOccupied()) ||
       (typeof recentlyOccupied === "function" && recentlyOccupied()));
-  const searching = enabled && Number.isFinite(settings.searchStartedAt);
+  const searching = enabled && Number.isFinite(lobbyState.settings.searchStartedAt);
 
   if (wrap instanceof HTMLElement) {
     wrap.hidden = !(searching || paused);
@@ -532,7 +531,7 @@ function updateFloatingAutoJoinSearchTime(panel) {
     if (paused) {
       timer.textContent = floatingAutoJoinPauseReason();
     } else if (searching) {
-      timer.textContent = formatFloatingAutoJoinElapsed(settings.searchStartedAt);
+      timer.textContent = formatFloatingAutoJoinElapsed(lobbyState.settings.searchStartedAt);
     }
   }
 }
@@ -542,7 +541,7 @@ function updateFloatingAutoJoinSearchTime(panel) {
 // is up — see OModal.open()) or a game is running (`in-game` body class added
 // in Main.ts). So: home = no modal up AND not in a game.
 function shouldShowFloatingAutoJoinPanel() {
-  if (!settings.showFloatingAutoJoinPanel) {
+  if (!lobbyState.settings.showFloatingAutoJoinPanel) {
     return false;
   }
   const body = document.body;
@@ -569,7 +568,7 @@ function createFloatingAutoJoinPanel() {
     <div class="ofh-aj-header">
       <p class="ofh-aj-title"><span aria-hidden="true">⚡</span>${t("Auto-Join")}</p>
       <div class="ofh-aj-header-actions">
-        <button class="ofh-aj-iconbtn" type="button" data-role="settings" title="${t("Open settings")}">⚙</button>
+        <button class="ofh-aj-iconbtn" type="button" data-role="lobbyState.settings" title="${t("Open lobbyState.settings")}">⚙</button>
         <button class="ofh-aj-iconbtn" type="button" data-role="collapse" title="${t("Collapse")}">—</button>
         <button class="ofh-aj-iconbtn ofh-aj-close" type="button" data-role="close" aria-label="${t("Close auto-join panel")}">x</button>
       </div>
@@ -588,7 +587,7 @@ function createFloatingAutoJoinPanel() {
         <input type="checkbox" data-role="notif">
         <span class="ofh-aj-switch"></span>
       </label>
-      <div class="ofh-aj-summary ${settings.floatingAutoJoinFiltersCollapsed ? "ofh-aj-sec-collapsed" : ""}">
+      <div class="ofh-aj-summary ${lobbyState.settings.floatingAutoJoinFiltersCollapsed ? "ofh-aj-sec-collapsed" : ""}">
         <p class="ofh-aj-summary-title" data-role="filters-toggle"><span>${t("Filters")}</span><span class="ofh-aj-chev" aria-hidden="true">▾</span></p>
         <div class="ofh-aj-sec-rows">
           <div class="ofh-aj-summary-row"><span>${t("Players per team")}</span><strong data-role="teamsize">${t("Any")}</strong></div>
@@ -598,7 +597,7 @@ function createFloatingAutoJoinPanel() {
           <button class="ofh-aj-editbtn" type="button" data-role="edit-filters">${t("Edit filters")}</button>
         </div>
       </div>
-      <div class="ofh-aj-forecast ${settings.floatingAutoJoinForecastCollapsed ? "ofh-aj-sec-collapsed" : ""}">
+      <div class="ofh-aj-forecast ${lobbyState.settings.floatingAutoJoinForecastCollapsed ? "ofh-aj-sec-collapsed" : ""}">
         <p class="ofh-aj-forecast-title" data-role="forecast-toggle"><span>${t("Lobby forecast")}</span><span class="ofh-aj-chev" aria-hidden="true">▾</span></p>
         <div class="ofh-aj-sec-rows">
           <div class="ofh-aj-forecast-row"><span>${t("ETA (estimate)")}</span><strong data-role="eta">—</strong></div>
@@ -615,17 +614,19 @@ function createFloatingAutoJoinPanel() {
       window.dispatchEvent(new CustomEvent("ofh-quick-panel-setting", {
         detail: { key: "showFloatingAutoJoinPanel", value: false }
       }));
-    } catch(e) {}
-    saveSettings({ ...settings, showFloatingAutoJoinPanel: false }).catch((error) => {
+    } catch (error) {
+      console.warn("Failed to synchronize floating auto-join closure:", error);
+    }
+    saveSettings({ ...lobbyState.settings, showFloatingAutoJoinPanel: false }).catch((error) => {
       console.error("Failed to close floating auto-join panel:", error);
     });
   });
 
   panel.querySelector('[data-role="collapse"]')?.addEventListener("click", () => {
-    const collapsed = !settings.floatingAutoJoinPanelCollapsed;
+    const collapsed = !lobbyState.settings.floatingAutoJoinPanelCollapsed;
     // Toggle immediately for snappy feedback, then persist.
     panel.classList.toggle("ofh-aj-collapsed", collapsed);
-    saveSettings({ ...settings, floatingAutoJoinPanelCollapsed: collapsed }).catch((error) => {
+    saveSettings({ ...lobbyState.settings, floatingAutoJoinPanelCollapsed: collapsed }).catch((error) => {
       console.error("Failed to collapse floating auto-join panel:", error);
     });
   });
@@ -635,9 +636,9 @@ function createFloatingAutoJoinPanel() {
     if (button instanceof HTMLButtonElement && button.disabled) {
       return;
     }
-    const enabling = !settings.enabled;
+    const enabling = !lobbyState.settings.enabled;
     saveSettings({
-      ...settings,
+      ...lobbyState.settings,
       enabled: enabling,
       searchStartedAt: enabling ? Date.now() : null,
     }).catch((error) => {
@@ -654,13 +655,13 @@ function createFloatingAutoJoinPanel() {
     if (target.checked && typeof window.__OFH_requestNotifyPermission === "function") {
       window.__OFH_requestNotifyPermission();
     }
-    saveSettings({ ...settings, joinNotification: target.checked }).catch((error) => {
+    saveSettings({ ...lobbyState.settings, joinNotification: target.checked }).catch((error) => {
       console.error("Failed to toggle notification from floating panel:", error);
     });
   });
 
-  // Open the main settings popup (gear → general; "Edit filters" → Filters tab).
-  panel.querySelector('[data-role="settings"]')?.addEventListener("click", () => {
+  // Open the main lobbyState.settings popup (gear → general; "Edit filters" → Filters tab).
+  panel.querySelector('[data-role="lobbyState.settings"]')?.addEventListener("click", () => {
     if (typeof window.__OFH_openPopup === "function") window.__OFH_openPopup();
   });
   panel.querySelector('[data-role="edit-filters"]')?.addEventListener("click", () => {
@@ -669,18 +670,18 @@ function createFloatingAutoJoinPanel() {
     }
   });
 
-  // Collapsible Filters / Lobby-forecast sections (persisted via settings).
+  // Collapsible Filters / Lobby-forecast sections (persisted via lobbyState.settings).
   panel.querySelector('[data-role="filters-toggle"]')?.addEventListener("click", () => {
-    const collapsed = !settings.floatingAutoJoinFiltersCollapsed;
+    const collapsed = !lobbyState.settings.floatingAutoJoinFiltersCollapsed;
     panel.querySelector(".ofh-aj-summary")?.classList.toggle("ofh-aj-sec-collapsed", collapsed);
-    saveSettings({ ...settings, floatingAutoJoinFiltersCollapsed: collapsed }).catch((error) => {
+    saveSettings({ ...lobbyState.settings, floatingAutoJoinFiltersCollapsed: collapsed }).catch((error) => {
       console.error("Failed to toggle filters section:", error);
     });
   });
   panel.querySelector('[data-role="forecast-toggle"]')?.addEventListener("click", () => {
-    const collapsed = !settings.floatingAutoJoinForecastCollapsed;
+    const collapsed = !lobbyState.settings.floatingAutoJoinForecastCollapsed;
     panel.querySelector(".ofh-aj-forecast")?.classList.toggle("ofh-aj-sec-collapsed", collapsed);
-    saveSettings({ ...settings, floatingAutoJoinForecastCollapsed: collapsed }).catch((error) => {
+    saveSettings({ ...lobbyState.settings, floatingAutoJoinForecastCollapsed: collapsed }).catch((error) => {
       console.error("Failed to toggle forecast section:", error);
     });
   });
@@ -730,7 +731,7 @@ function installFloatingAutoJoinDrag(panel) {
     dragState = null;
     const rect = panel.getBoundingClientRect();
     saveSettings({
-      ...settings,
+      ...lobbyState.settings,
       floatingAutoJoinPanelPosition: {
         left: Math.round(rect.left),
         top: Math.round(rect.top),
@@ -752,7 +753,7 @@ function setFloatingAutoJoinPosition(panel, left, top) {
 
 
 function positionFloatingAutoJoinPanel(panel) {
-  const position = settings.floatingAutoJoinPanelPosition || {};
+  const position = lobbyState.settings.floatingAutoJoinPanelPosition || {};
   const left = position.left ?? window.innerWidth - 320;
   const top = position.top ?? 92;
   const maxLeft = Math.max(8, window.innerWidth - panel.offsetWidth - 8);
@@ -765,8 +766,8 @@ function positionFloatingAutoJoinPanel(panel) {
   // Panel auto-sizes to its content now (no manual resize / stored height).
 }
 
-function updateFloatingAutoJoinPanel(panel) {
-  const collapsed = Boolean(settings.floatingAutoJoinPanelCollapsed);
+function updateFloatingAutoJoinCollapse(panel) {
+  const collapsed = Boolean(lobbyState.settings.floatingAutoJoinPanelCollapsed);
   panel.classList.toggle("ofh-aj-collapsed", collapsed);
   const collapseBtn = panel.querySelector('[data-role="collapse"]');
   if (collapseBtn instanceof HTMLElement) {
@@ -774,11 +775,14 @@ function updateFloatingAutoJoinPanel(panel) {
     collapseBtn.title = collapsed ? t("Expand") : t("Collapse");
   }
 
+}
+
+function updateFloatingAutoJoinPower(panel) {
   const canSearch =
     typeof hasSelectedCriteria === "function" ? hasSelectedCriteria() : true;
   const power = panel.querySelector('[data-role="power"]');
   if (power instanceof HTMLButtonElement) {
-    const enabled = Boolean(settings.enabled);
+    const enabled = Boolean(lobbyState.settings.enabled);
     power.dataset.enabled = String(enabled);
     power.disabled = !enabled && !canSearch;
     const label = power.querySelector(".ofh-aj-power-label");
@@ -791,12 +795,18 @@ function updateFloatingAutoJoinPanel(panel) {
         : "";
   }
 
+}
+
+function updateFloatingAutoJoinNotification(panel) {
   const notif = panel.querySelector('[data-role="notif"]');
   if (notif instanceof HTMLInputElement) {
-    notif.checked = Boolean(settings.joinNotification);
+    notif.checked = Boolean(lobbyState.settings.joinNotification);
   }
 
-  const forecast = settings.lobbyForecast || {};
+}
+
+function updateFloatingAutoJoinForecast(panel) {
+  const forecast = lobbyState.settings.lobbyForecast || {};
   const etaEl = panel.querySelector('[data-role="eta"]');
   const hitEl = panel.querySelector('[data-role="hit"]');
   const medianEl = panel.querySelector('[data-role="median"]');
@@ -817,6 +827,9 @@ function updateFloatingAutoJoinPanel(panel) {
       : "—";
   }
 
+}
+
+function updateFloatingAutoJoinCriteria(panel) {
   const teamSizeEl = panel.querySelector('[data-role="teamsize"]');
   if (teamSizeEl) {
     teamSizeEl.textContent = floatingAutoJoinTeamSizeSummary();
@@ -834,6 +847,14 @@ function updateFloatingAutoJoinPanel(panel) {
     minLobbyEl.textContent = floatingAutoJoinMinLobbySummary();
   }
 
+}
+
+function updateFloatingAutoJoinPanel(panel) {
+  updateFloatingAutoJoinCollapse(panel);
+  updateFloatingAutoJoinPower(panel);
+  updateFloatingAutoJoinNotification(panel);
+  updateFloatingAutoJoinForecast(panel);
+  updateFloatingAutoJoinCriteria(panel);
   updateFloatingAutoJoinSearchTime(panel);
 }
 
@@ -859,7 +880,7 @@ function syncFloatingAutoJoinPanel() {
   // home screen, hides it the moment a room/game modal opens or a game starts,
   // and ticks the live search timer. (The SPA never reloads between screens, so
   // a poll is the simplest reliable way to react to those transitions.)
-  if (settings.showFloatingAutoJoinPanel) {
+  if (lobbyState.settings.showFloatingAutoJoinPanel) {
     if (floatingAutoJoinWatcherId === null) {
       floatingAutoJoinWatcherId = window.setInterval(
         applyFloatingAutoJoinPanelState,

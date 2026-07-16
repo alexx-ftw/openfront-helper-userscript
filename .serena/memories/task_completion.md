@@ -1,4 +1,5 @@
 # Completion checklist
+
 - Run the focused affected test(s) first.
 - Run `npm test`.
 - Run `node build.mjs`.

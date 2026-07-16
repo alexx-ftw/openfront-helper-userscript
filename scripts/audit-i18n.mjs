@@ -57,7 +57,7 @@ const bundles = Object.fromEntries(
   codes.map((c) => [c, JSON.parse(read(`locales/${c}/common.json`))]),
 );
 
-console.log(`engine UI keys: ${engineKeys.length} · locales: ${codes.join(", ")}\n`);
+process.stdout.write(`engine UI keys: ${engineKeys.length} · locales: ${codes.join(", ")}\n\n`);
 let missingTotal = 0;
 for (const code of codes) {
   if (code === "en") continue;
@@ -67,13 +67,17 @@ for (const code of codes) {
   // terms are kept in English on purpose (MIRV, FFA, …), so this never fails.
   const sameAsEnglish = engineKeys.filter((k) => k in b && b[k] === k && /\s/.test(k));
   missingTotal += missing.length;
-  console.log(`[${code}] missing: ${missing.length}, kept-as-English: ${sameAsEnglish.length}`);
-  if (missing.length) console.log("  missing:   " + missing.join(" | "));
-  if (sameAsEnglish.length) console.log("  as-English: " + sameAsEnglish.join(" | "));
+  process.stdout.write(
+    `[${code}] missing: ${missing.length}, kept-as-English: ${sameAsEnglish.length}\n`,
+  );
+  if (missing.length) process.stdout.write("  missing:   " + missing.join(" | ") + "\n");
+  if (sameAsEnglish.length) {
+    process.stdout.write("  as-English: " + sameAsEnglish.join(" | ") + "\n");
+  }
 }
-console.log(
+process.stdout.write(
   missingTotal === 0
-    ? "\nOK — every locale covers all engine keys (missing keys fall back to English)."
-    : `\n${missingTotal} missing key(s).`,
+    ? "\nOK — every locale covers all engine keys (missing keys fall back to English).\n"
+    : `\n${missingTotal} missing key(s).\n`,
 );
 process.exit(missingTotal === 0 ? 0 : 1); // only MISSING keys fail; kept-as-English is fine

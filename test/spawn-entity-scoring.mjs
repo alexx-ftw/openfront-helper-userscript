@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import vm from "node:vm";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -23,6 +23,7 @@ function makePlayer(type, x, y, id, { displayName = null, spawned = false } = {}
 
 function loadScorer({ players, width, height, candidates, metrics = {}, me = null }) {
   const terrain = new Uint8Array(width * height).fill(LAND);
+  const metricValue = (candidateRef, key, fallback) => metrics[candidateRef]?.[key] ?? fallback;
   const sandbox = {
     Array,
     JSON,
@@ -39,8 +40,10 @@ function loadScorer({ players, width, height, candidates, metrics = {}, me = nul
     performance: { now: () => 0 },
     registerMapOverlayLayer() {},
     requestMapOverlayLoop() {},
-    spawnHeatmapEnabled: false,
-    spawnMarkersEnabled: false,
+    runtimeState: {
+      spawnHeatmapEnabled: false,
+      spawnMarkersEnabled: false,
+    },
     setTimeout: () => 0,
     window: { innerHeight: 600, innerWidth: 800 },
     __OFHSpawnIndex: {
@@ -56,13 +59,13 @@ function loadScorer({ players, width, height, candidates, metrics = {}, me = nul
                 candidate.ref,
                 candidate.x,
                 candidate.y,
-                metrics[candidate.ref]?.spawnGain ?? 100,
-                metrics[candidate.ref]?.invalidCount ?? 0,
-                metrics[candidate.ref]?.plainsGain ?? 100,
-                metrics[candidate.ref]?.frontierGain ?? 10,
-                metrics[candidate.ref]?.frontierPlainsGain ?? 10,
-                metrics[candidate.ref]?.frontierValueGain ?? 10000,
-                metrics[candidate.ref]?.frontierSlots ?? 10,
+                metricValue(candidate.ref, "spawnGain", 100),
+                metricValue(candidate.ref, "invalidCount", 0),
+                metricValue(candidate.ref, "plainsGain", 100),
+                metricValue(candidate.ref, "frontierGain", 10),
+                metricValue(candidate.ref, "frontierPlainsGain", 10),
+                metricValue(candidate.ref, "frontierValueGain", 10000),
+                metricValue(candidate.ref, "frontierSlots", 10),
               );
             }
           },
@@ -71,10 +74,10 @@ function loadScorer({ players, width, height, candidates, metrics = {}, me = nul
     },
   };
   sandbox.globalThis = sandbox;
-  vm.runInNewContext(fs.readFileSync(OBJECTIVE_SOURCE, "utf8"), sandbox, {
+  executeClassicScript(fs.readFileSync(OBJECTIVE_SOURCE, "utf8"), sandbox, {
     filename: OBJECTIVE_SOURCE,
   });
-  vm.runInNewContext(fs.readFileSync(HEATMAP_SOURCE, "utf8"), sandbox, {
+  executeClassicScript(fs.readFileSync(HEATMAP_SOURCE, "utf8"), sandbox, {
     filename: HEATMAP_SOURCE,
   });
 
@@ -265,4 +268,4 @@ for (let left = 0; left < diverse.length; left += 1) {
   }
 }
 
-console.log("spawn entity scoring tests passed");
+process.stdout.write("spawn entity scoring tests passed\n");

@@ -884,5 +884,14 @@
   "you": "du",
   "💬 Emoji": "💬 Emoji",
   "📨 Requests": "📨 Anfragen",
-  "🤝 Allies": "🤝 Verbündete"
+  "🤝 Allies": "🤝 Verbündete",
+  "Expansion opportunity available": "Expansionsmöglichkeit verfügbar",
+  "Free land available": "Freies Land verfügbar",
+  "Land tribe in range": "Landstamm in Reichweite",
+  "Open lobbyState.settings": "lobbyState.settings öffnen",
+  "Pause donations during expansion": "Spenden während der Expansion pausieren",
+  "Sea tribe in range": "Seestamm in Reichweite",
+  "Temporarily paused": "Vorübergehend pausiert",
+  "⏸️ Auto-bot paused after a slow tick": "⏸️ Auto-Bot nach langsamem Tick pausiert",
+  "🚢 Intercept invasion": "🚢 Invasion abfangen"
 }

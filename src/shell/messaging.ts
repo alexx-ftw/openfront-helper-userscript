@@ -6,7 +6,7 @@ type MessageListener = (
   message: unknown,
   sender: { id?: string; tab?: { id: number } },
   sendResponse: (response?: unknown) => void,
-) => boolean | void | Promise<unknown>;
+) => unknown;
 
 const messageListeners = new Set<MessageListener>();
 const SENDER = { id: "openfront-helper", tab: { id: 1 } };
@@ -32,26 +32,33 @@ function dispatch(message: unknown): Promise<unknown> {
         console.error("[ofh] message listener threw:", error);
       }
     }
-    queueMicrotask(() => sendResponse(undefined));
+    queueMicrotask(() => {
+      sendResponse();
+    });
   });
 }
 
 export const runtimeOnMessage = {
-  addListener: (cb: MessageListener) => void messageListeners.add(cb),
-  removeListener: (cb: MessageListener) => void messageListeners.delete(cb),
+  addListener: (cb: MessageListener) => {
+    messageListeners.add(cb);
+  },
+  removeListener: (cb: MessageListener) => {
+    messageListeners.delete(cb);
+  },
   hasListener: (cb: MessageListener) => messageListeners.has(cb),
 };
 
 export const runtimeSendMessage = (message: unknown) => dispatch(message);
 
 export const tabs = {
-  async query(_info?: unknown): Promise<Array<{ id: number; url: string }>> {
-    return [{ id: SENDER.tab.id, url: location.href }];
+  query(): Promise<{ id: number; url: string }[]> {
+    return Promise.resolve([{ id: SENDER.tab.id, url: location.href }]);
   },
   async sendMessage(_tabId: number, message: unknown): Promise<unknown> {
     return dispatch(message);
   },
-  async reload(_tabId?: number): Promise<void> {
+  reload(): Promise<void> {
     location.reload();
+    return Promise.resolve();
   },
 };

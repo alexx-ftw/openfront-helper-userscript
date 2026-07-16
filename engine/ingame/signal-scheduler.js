@@ -32,6 +32,7 @@
       const id = recipient?.id?.();
       if (id !== undefined && id !== null) return "i" + id;
     } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/signal-scheduler.js:34");
       /* ignore */
     }
     return "unknown";
@@ -57,8 +58,52 @@
       const t = Number(game?.ticks?.());
       return Number.isFinite(t) ? t : null;
     } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/signal-scheduler.js:59");
       return null;
     }
+  }
+
+  function _signalItemBlocked(item, constructors, currentTick) {
+    if (!_signalCtorFor(item.kind, constructors)) return true;
+    const key = item.kind + ":" + _signalRecipientKey(item.recipient);
+    const cooldownTicks = SIGNAL_COOLDOWN_TICKS[item.kind] || 0;
+    const lastTick = _signalLastSentByKey.get(key);
+    if (lastTick === undefined) return false;
+    const elapsedTicks = currentTick - lastTick;
+    return elapsedTicks >= 0 && elapsedTicks < cooldownTicks;
+  }
+
+  function _findReadySignalIndex(constructors, currentTick) {
+    for (let index = 0; index < _signalQueue.length; index += 1) {
+      const item = _signalQueue[index];
+      if (!_signalItemBlocked(item, constructors, currentTick)) return index;
+      item.attempts += 1;
+    }
+    return -1;
+  }
+
+  function _dropExpiredSignals(readyIndex) {
+    let adjustedIndex = readyIndex;
+    for (let index = _signalQueue.length - 1; index >= 0; index -= 1) {
+      if (_signalQueue[index].attempts <= SIGNAL_MAX_ATTEMPTS) continue;
+      _signalQueue.splice(index, 1);
+      if (index <= adjustedIndex) adjustedIndex -= 1;
+    }
+    return adjustedIndex;
+  }
+
+  function _emitReadySignal(readyIndex, constructors, currentTick, now) {
+    const item = _signalQueue.splice(readyIndex, 1)[0];
+    const constructor = _signalCtorFor(item.kind, constructors);
+    const key = item.kind + ":" + _signalRecipientKey(item.recipient);
+    if (emitIntent(constructor, ...item.args)) {
+      _signalLastEmitAt = now;
+      _signalLastSentByKey.set(key, currentTick);
+      _signalFireTimes.push(now);
+      return;
+    }
+    item.attempts += 1;
+    if (item.attempts <= SIGNAL_MAX_ATTEMPTS) _signalQueue.unshift(item);
   }
 
   function _runSignalScheduler() {
@@ -80,55 +125,14 @@
     // Find the first sendable item (ctor ready + per-recipient game-tick cooldown
     // elapsed). Skipping a cooldown-blocked head keeps a throttled item (TN1's
     // signature broadcast) from starving an urgent one (TN2 SOS).
-    let readyIndex = -1;
-    for (let i = 0; i < _signalQueue.length; i += 1) {
-      const it = _signalQueue[i];
-      const c = _signalCtorFor(it.kind, ctors);
-      let blocked = false;
-      if (!c) {
-        blocked = true;
-      } else {
-        const k = it.kind + ":" + _signalRecipientKey(it.recipient);
-        const cdTicks = SIGNAL_COOLDOWN_TICKS[it.kind] || 0;
-        const lastTick = _signalLastSentByKey.get(k);
-        if (lastTick !== undefined) {
-          const dt = curTick - lastTick;
-          // dt < 0 means the game clock reset (new match) → prior cooldown is moot.
-          if (dt >= 0 && dt < cdTicks) blocked = true;
-        }
-      }
-      if (blocked) {
-        it.attempts += 1;
-        continue;
-      }
-      readyIndex = i;
-      break;
-    }
+    let readyIndex = _findReadySignalIndex(ctors, curTick);
 
     // Drop items blocked past the attempt ceiling (anywhere in the queue).
-    for (let i = _signalQueue.length - 1; i >= 0; i -= 1) {
-      if (_signalQueue[i].attempts > SIGNAL_MAX_ATTEMPTS) {
-        _signalQueue.splice(i, 1);
-        if (i <= readyIndex) readyIndex -= 1;
-      }
-    }
+    readyIndex = _dropExpiredSignals(readyIndex);
 
     if (readyIndex < 0 || readyIndex >= _signalQueue.length) return;
 
-    const item = _signalQueue.splice(readyIndex, 1)[0];
-    const ctor = _signalCtorFor(item.kind, ctors);
-    const key = item.kind + ":" + _signalRecipientKey(item.recipient);
-    const ok = emitIntent(ctor, ...item.args);
-    if (ok) {
-      _signalLastEmitAt = now;
-      _signalLastSentByKey.set(key, curTick);
-      _signalFireTimes.push(now);
-    } else {
-      // Transient emit failure — requeue at the front (bounded) so a once-only
-      // signature signal isn't silently lost.
-      item.attempts += 1;
-      if (item.attempts <= SIGNAL_MAX_ATTEMPTS) _signalQueue.unshift(item);
-    }
+    _emitReadySignal(readyIndex, ctors, curTick, now);
   }
 
   function _ensureSignalSchedulerRunning() {

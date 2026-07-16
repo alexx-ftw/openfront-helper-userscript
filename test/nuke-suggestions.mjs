@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import vm from "node:vm";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -12,6 +12,8 @@ const NUKE_SUGGESTIONS_SOURCE = fs.readFileSync(
 );
 
 const sandbox = {
+  captureRuntimeException: () => {},
+  runtimeDebugLog: () => {},
   console,
   document: {},
   window: { setTimeout, clearTimeout },
@@ -29,10 +31,10 @@ const sandbox = {
   },
 };
 sandbox.globalThis = sandbox;
-vm.runInNewContext(NUKE_IMPACT_SOURCE, sandbox, {
+executeClassicScript(NUKE_IMPACT_SOURCE, sandbox, {
   filename: "nuke-impact.js",
 });
-vm.runInNewContext(NUKE_SUGGESTIONS_SOURCE, sandbox, {
+executeClassicScript(NUKE_SUGGESTIONS_SOURCE, sandbox, {
   filename: "nuke-suggestions.js",
 });
 
@@ -170,28 +172,26 @@ function pendingSam(id) {
 }
 
 const readyAtPass = pendingSam("ready-at-pass");
-const readyAtPassResult = sandbox.findInterceptingSams(
-  game,
-  0,
-  4,
-  [],
-  true,
-  [readyAtPass],
-  new Map([["ready-at-pass", 2]]),
-);
+const readyAtPassResult = sandbox.findInterceptingSams(game, {
+  sourceTile: 0,
+  targetTile: 4,
+  sams: [],
+  rocketDirectionUp: true,
+  pendingSams: [readyAtPass],
+  pendingSamReadyTicks: new Map([["ready-at-pass", 2]]),
+});
 assert.deepEqual(
   Array.from(readyAtPassResult, (sam) => sam.id()),
   ["ready-at-pass"],
   "a SAM that completes when the missile reaches its influence area must be predicted",
 );
-const directionPlan = sandbox.chooseBestNukeRocketDirection(
-  game,
-  0,
-  4,
-  [],
-  [readyAtPass],
-  new Map([["ready-at-pass", 2]]),
-);
+const directionPlan = sandbox.chooseBestNukeRocketDirection(game, {
+  sourceTile: 0,
+  targetTile: 4,
+  sams: [],
+  pendingSams: [readyAtPass],
+  pendingSamReadyTicks: new Map([["ready-at-pass", 2]]),
+});
 assert.equal(
   directionPlan.interceptingSams.length,
   1,
@@ -199,15 +199,14 @@ assert.equal(
 );
 
 const readyTooLate = pendingSam("ready-too-late");
-const readyTooLateResult = sandbox.findInterceptingSams(
-  game,
-  0,
-  4,
-  [],
-  true,
-  [readyTooLate],
-  new Map([["ready-too-late", 3]]),
-);
+const readyTooLateResult = sandbox.findInterceptingSams(game, {
+  sourceTile: 0,
+  targetTile: 4,
+  sams: [],
+  rocketDirectionUp: true,
+  pendingSams: [readyTooLate],
+  pendingSamReadyTicks: new Map([["ready-too-late", 3]]),
+});
 assert.deepEqual(
   readyTooLateResult.length,
   0,
@@ -224,9 +223,13 @@ const stateReadyGame = {
     unitInfo: () => ({ constructionDuration: 2 }),
   }),
 };
-const stateReadyResult = sandbox.findInterceptingSams(stateReadyGame, 0, 4, [], true, [
-  stateReadySam,
-]);
+const stateReadyResult = sandbox.findInterceptingSams(stateReadyGame, {
+  sourceTile: 0,
+  targetTile: 4,
+  sams: [],
+  rocketDirectionUp: true,
+  pendingSams: [stateReadySam],
+});
 assert.deepEqual(
   Array.from(stateReadyResult, (sam) => sam.id()),
   ["state-ready"],
@@ -310,4 +313,4 @@ try {
   }
 }
 
-console.log("nuke suggestion construction tests passed");
+process.stdout.write("nuke suggestion construction tests passed\n");

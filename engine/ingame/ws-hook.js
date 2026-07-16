@@ -17,10 +17,12 @@
     sock.addEventListener("close", function() {
       if (_activeSocket === sock) {
         _activeSocket = null;
-        try { if (window.top) window.top.__ohActiveSocket = null; } catch (e) {}
+        try { if (window.top) window.top.__ohActiveSocket = null; } catch (e) {
+  captureRuntimeException(e, "engine/ingame/ws-hook.js:20");}
         _setWsConnectionState(false);
         // Leaving a game → restore native JSON.parse so the lobby stays fast.
-        try { _uninstallParseHook(); } catch (e) {}
+        try { _uninstallParseHook(); } catch (e) {
+  captureRuntimeException(e, "engine/ingame/ws-hook.js:23");}
         _resolvedSkin = null;
         _desiredCosmetics = null;
       }
@@ -29,51 +31,55 @@
   };
   window.WebSocket.prototype = _NativeWS.prototype;
   Object.getOwnPropertyNames(_NativeWS).forEach(function(k) {
-    try { window.WebSocket[k] = _NativeWS[k]; } catch (_) {}
+    try { window.WebSocket[k] = _NativeWS[k]; } catch (_) {
+  captureRuntimeException(_, "engine/ingame/ws-hook.js:32");}
   });
 
-  // Hook send to detect the active game socket and track last-known tile.
-  _NativeWS.prototype.send = function(data) {
-    var payload = data;
-    if (typeof data === "string") {
-      try {
-        var msg = JSON.parse(data);
-        if (msg) {
-          var isGameMsg = (msg.type === "intent" && msg.intent)
-                       || msg.type === "quick_chat"
-                       || msg.type === "ping";
-          if (isGameMsg && _activeSocket !== this) {
-            _activeSocket = this;
-            try { if (window.top) window.top.__ohActiveSocket = this; } catch (e) {}
-            _setWsConnectionState(true);
-          }
-          var intent = msg.intent || msg;
-          if (typeof intent.tile === "number") _setLastKnownTile(intent.tile);
-          if (typeof intent.dst  === "number") _setLastKnownTile(intent.dst);
-          if (typeof intent.src  === "number") _setLastKnownTile(intent.src);
-
-          // Skin unlocker (Blon 1:1): ALWAYS capture username from join; when
-          // enabled, remember the desired cosmetic REFS and strip them from the
-          // outgoing join so the server never validates them — the JSON.parse
-          // hook re-injects the resolved skin into start/lobby_info locally.
-          // PERF: the JSON.parse hook is installed HERE (on join), not at load —
-          // so at the lobby/menu (before any join) JSON.parse stays NATIVE and
-          // V8 keeps its fast path. Only once we're actually entering a game do
-          // we swap in the JS hook, matching the window where it's needed.
-          if (msg.type === "join") {
-            _myUsername = msg.username;
-            if (_skinUnlockerEnabled) {
-              _desiredCosmetics = msg.cosmetics || {};
-              if (_cosmeticsData) _resolvedSkin = _resolveSkin(_desiredCosmetics);
-              msg.cosmetics = {};
-              payload = JSON.stringify(msg);
-              _installParseHook();
-            }
-          }
-        }
-      } catch (e) {}
+  function _captureActiveGameSocket(socket, message) {
+    const isGameMessage = (message.type === "intent" && message.intent) ||
+      message.type === "quick_chat" || message.type === "ping";
+    if (!isGameMessage || _activeSocket === socket) return;
+    _activeSocket = socket;
+    try { if (window.top) window.top.__ohActiveSocket = socket; } catch (error) {
+      captureRuntimeException(error, "engine/ingame/ws-hook.js:captureSocket");
     }
-    return _NativeSend.call(this, payload);
+    _setWsConnectionState(true);
+  }
+
+  function _trackIntentTiles(message) {
+    const intent = message.intent || message;
+    for (const key of ["tile", "dst", "src"]) {
+      if (typeof intent[key] === "number") _setLastKnownTile(intent[key]);
+    }
+  }
+
+  function _rewriteJoinMessage(message) {
+    if (message.type !== "join") return null;
+    _myUsername = message.username;
+    if (!_skinUnlockerEnabled) return null;
+    _desiredCosmetics = message.cosmetics || {};
+    if (_cosmeticsData) _resolvedSkin = _resolveSkin(_desiredCosmetics);
+    message.cosmetics = {};
+    _installParseHook();
+    return JSON.stringify(message);
+  }
+
+  function _processOutgoingSocketData(socket, data) {
+    if (typeof data !== "string") return data;
+    try {
+      const message = JSON.parse(data);
+      if (!message) return data;
+      _captureActiveGameSocket(socket, message);
+      _trackIntentTiles(message);
+      return _rewriteJoinMessage(message) || data;
+    } catch (error) {
+      captureRuntimeException(error, "engine/ingame/ws-hook.js:outgoingData");
+      return data;
+    }
+  }
+
+  _NativeWS.prototype.send = function(data) {
+    return _NativeSend.call(this, _processOutgoingSocketData(this, data));
   };
 
   function _setWsConnectionState(state) {
@@ -81,12 +87,14 @@
     try {
       var el = document.getElementById("ohqp-connection");
       if (el) el.dataset.status = state ? "connected" : "disconnected";
-    } catch (e) {}
+    } catch (e) {
+  captureRuntimeException(e, "engine/ingame/ws-hook.js:84");}
   }
 
   function _setLastKnownTile(tile) {
     _lastKnownTile = tile;
-    try { if (window.top) window.top.__ohLastKnownTile = tile; } catch (e) {}
+    try { if (window.top) window.top.__ohLastKnownTile = tile; } catch (e) {
+  captureRuntimeException(e, "engine/ingame/ws-hook.js:91");}
   }
 
   function getActiveSocket() {
@@ -95,7 +103,8 @@
       if (window.top && window.top.__ohActiveSocket
           && window.top.__ohActiveSocket.readyState === (_NativeWS.OPEN || 1))
         return window.top.__ohActiveSocket;
-    } catch (e) {}
+    } catch (e) {
+  captureRuntimeException(e, "engine/ingame/ws-hook.js:100");}
     return null;
   }
 
@@ -103,13 +112,14 @@
     try {
       if (window.top && window.top.__ohLastKnownTile != null)
         return window.top.__ohLastKnownTile;
-    } catch (e) {}
+    } catch (e) {
+  captureRuntimeException(e, "engine/ingame/ws-hook.js:108");}
     return _lastKnownTile;
   }
 
   function isSocketConnected() {
     var sock = getActiveSocket();
-    return !!(sock && sock.readyState === (_NativeWS.OPEN || 1));
+    return Boolean(sock && sock.readyState === (_NativeWS.OPEN || 1));
   }
 
   // Send a game intent packet directly through the WebSocket. The object is
@@ -118,9 +128,20 @@
     var sock = getActiveSocket();
     if (!sock || sock.readyState !== (_NativeWS.OPEN || 1)) return false;
     try {
-      _NativeSend.call(sock, JSON.stringify({ type: "intent", intent: obj }));
+      var payload = JSON.stringify({ type: "intent", intent: obj });
+      // Keep direct fallback packets under the same client-side budget as
+      // EventBus intents. Failing closed avoids silently bypassing the server's
+      // 10/sec and 150/min limiter if the shared gate is unavailable.
+      if (
+        typeof tryAcquireIntentRateLimit !== "function" ||
+        !tryAcquireIntentRateLimit()
+      ) {
+        return false;
+      }
+      _NativeSend.call(sock, payload);
       return true;
     } catch (e) {
+  captureRuntimeException(e, "engine/ingame/ws-hook.js:133");
       return false;
     }
   }
@@ -134,6 +155,7 @@
       _NativeSend.call(sock, JSON.stringify(obj));
       return true;
     } catch (e) {
+  captureRuntimeException(e, "engine/ingame/ws-hook.js:146");
       return false;
     }
   }
@@ -149,9 +171,10 @@
     var _rawSettings = localStorage.getItem("ofh:settings");
     if (_rawSettings) {
       var _parsedSettings = JSON.parse(_rawSettings);
-      _skinUnlockerEnabled = !!(_parsedSettings && _parsedSettings.skinUnlocker);
+      _skinUnlockerEnabled = Boolean(_parsedSettings && _parsedSettings.skinUnlocker);
     }
-  } catch (e) {}
+  } catch (e) {
+  captureRuntimeException(e, "engine/ingame/ws-hook.js:164");}
 
   var _cosmeticsData = null;
   var _desiredCosmetics = null;
@@ -165,73 +188,77 @@
   // (the REFS the game's join message carries). flag/color are copied/wrapped
   // DIRECTLY; the pattern is looked up BY NAME across cosmeticsData.patterns and
   // emitted as result.pattern = {name, patternData, colorPalette}.
+  function _resolvePatternPalette(refs) {
+    const palette = _cosmeticsData.colorPalettes?.[refs.patternColorPaletteName];
+    if (palette) return palette;
+    if (!refs.patternColorPaletteName) return null;
+    return {
+      name: refs.patternColorPaletteName || "fallback",
+      primaryColor: "#00ff00",
+      secondaryColor: "#00aa00",
+    };
+  }
+
+  function _resolveSkinPattern(refs) {
+    if (!refs.patternName) return null;
+    for (const pattern of Object.values(_cosmeticsData.patterns || {})) {
+      if (pattern.name !== refs.patternName) continue;
+      const result = { name: pattern.name, patternData: pattern.pattern };
+      const palette = _resolvePatternPalette(refs);
+      if (palette) result.colorPalette = palette;
+      return result;
+    }
+    return null;
+  }
+
   function _resolveSkin(refs) {
     if (!refs || !_cosmeticsData) return null;
     var result = {};
     if (refs.flag) result.flag = refs.flag;
     if (refs.color && typeof refs.color === "string") result.color = { color: refs.color };
-    if (refs.patternName) {
-      for (var key in _cosmeticsData.patterns) {
-        var p = _cosmeticsData.patterns[key];
-        if (p.name === refs.patternName) {
-          var patternObj = {
-            name: p.name,
-            patternData: p.pattern
-          };
-          var pPalette = _cosmeticsData.colorPalettes ? _cosmeticsData.colorPalettes[refs.patternColorPaletteName] : null;
-          if (pPalette) {
-            patternObj.colorPalette = pPalette;
-          } else if (refs.patternColorPaletteName) {
-            patternObj.colorPalette = {
-              name: refs.patternColorPaletteName || "fallback",
-              primaryColor: "#00ff00",
-              secondaryColor: "#00aa00"
-            };
-          }
-          result.pattern = patternObj;
-          break;
-        }
-      }
-    }
+    const pattern = _resolveSkinPattern(refs);
+    if (pattern) result.pattern = pattern;
     return Object.keys(result).length > 0 ? result : null;
   }
 
   // hookedFetch — Blon 1:1: cache cosmetics.json; mod /users/@me json()/text() to
   // inject pattern:* flare + donor role. Gate on the live enabled flag per-call.
+  function _getFetchUrl(input) {
+    if (typeof input === "string") return input;
+    if (!input || typeof input !== "object") return "";
+    return input.url || (input instanceof URL ? input.href : "");
+  }
+
+  function _captureCosmeticsResponse(response) {
+    response.clone().json().then((data) => { _cosmeticsData = data; }).catch(() => {});
+    return response;
+  }
+
+  function _addUnlockedCosmetics(data) {
+    if (!data?.player) return data;
+    data.player.flares ||= [];
+    if (!data.player.flares.includes("pattern:*")) data.player.flares.push("pattern:*");
+    data.player.roles ||= [];
+    if (!data.player.roles.includes("donor")) data.player.roles.push("donor");
+    return data;
+  }
+
+  function _modifyUserResponse(response) {
+    const modified = new Response(response.body, response);
+    const readJson = () => response.clone().text().then((text) =>
+      _addUnlockedCosmetics(_originalParse(text)));
+    modified.json = readJson;
+    modified.text = () => readJson().then((data) => JSON.stringify(data));
+    return modified;
+  }
+
   var _hookedFetch = function(input, init) {
-    var url = input && typeof input === "object" ? (input.url || (input instanceof URL ? input.href : "")) : (typeof input === "string" ? input : "");
-    if (_skinUnlockerEnabled) {
-      if (url.indexOf("cosmetics.json") !== -1) {
-        return _originalFetch.call(window, input, init).then(function(res) {
-          var clone = res.clone();
-          clone.json().then(function(data) {
-            _cosmeticsData = data;
-          }).catch(function() {});
-          return res;
-        });
-      }
-      if (url.indexOf("/users/@me") !== -1) {
-        return _originalFetch.call(window, input, init).then(function(response) {
-          var moddedResponse = new Response(response.body, response);
-          var asyncJson = function() {
-            return response.clone().text().then(function(text) {
-              var data = _originalParse(text);
-              if (data && data.player) {
-                data.player.flares = data.player.flares || [];
-                if (data.player.flares.indexOf("pattern:*") === -1) data.player.flares.push("pattern:*");
-                data.player.roles = data.player.roles || [];
-                if (data.player.roles.indexOf("donor") === -1) data.player.roles.push("donor");
-              }
-              return data;
-            });
-          };
-          moddedResponse.json = asyncJson;
-          moddedResponse.text = function() { return asyncJson().then(function(d) { return JSON.stringify(d); }); };
-          return moddedResponse;
-        });
-      }
-    }
-    return _originalFetch.call(window, input, init);
+    const request = () => _originalFetch.call(window, input, init);
+    if (!_skinUnlockerEnabled) return request();
+    const url = _getFetchUrl(input);
+    if (url.includes("cosmetics.json")) return request().then(_captureCosmeticsResponse);
+    if (url.includes("/users/@me")) return request().then(_modifyUserResponse);
+    return request();
   };
   // Blon locks fetch via defineProperty (writable:false) so the game can't
   // overwrite the hook; configurable:true keeps it re-hookable on reload.
@@ -251,43 +278,40 @@
   // every asset, the lobby list poll). Fast-path out unless BOTH the unlocker
   // is on AND a join already captured cosmetics to re-inject — before a join
   // there is nothing to do, so the lobby's heavy parses stay zero-cost.
-  var _hookedParse = function(text, reviver) {
-    var obj = _originalParse.call(this, text, reviver);
-    if (!_skinUnlockerEnabled) return obj;
-    try {
-      if (obj && typeof obj === "object") {
-        var t = obj.type;
-        if (t === "start" || t === "lobby_info") {
-          var myClientID = obj.myClientID || obj.clientID;
-          if (_resolvedSkin || _desiredCosmetics) {
-            if (!_resolvedSkin && _desiredCosmetics && _cosmeticsData) {
-              _resolvedSkin = _resolveSkin(_desiredCosmetics);
-            }
-            if (_resolvedSkin) {
-              var players = [];
-              if (t === "start") {
-                players = (obj.gameStartInfo && obj.gameStartInfo.players) || [];
-              } else {
-                players = (obj.lobby && (obj.lobby.clients || obj.lobby.players)) || [];
-              }
-              var me = null;
-              if (myClientID) {
-                me = players.find(function(p) { return p.clientID === myClientID; });
-              }
-              if (!me && _myUsername) {
-                me = players.find(function(p) { return p.username === _myUsername; });
-              }
-              if (me) {
-                me.cosmetics = _resolvedSkin;
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      console.error("[SkinUnlocker] Error during JSON parse hook:", e);
+  function _getSkinMessagePlayers(message) {
+    if (message.type === "start") return message.gameStartInfo?.players || [];
+    if (message.type === "lobby_info") return message.lobby?.clients || message.lobby?.players || [];
+    return null;
+  }
+
+  function _findSkinPlayer(players, clientId) {
+    if (clientId) {
+      const player = players.find((entry) => entry.clientID === clientId);
+      if (player) return player;
     }
-    return obj;
+    return _myUsername
+      ? players.find((entry) => entry.username === _myUsername) || null
+      : null;
+  }
+
+  function _injectResolvedSkin(message) {
+    const players = _getSkinMessagePlayers(message);
+    if (!players || (!_resolvedSkin && !_desiredCosmetics)) return;
+    if (!_resolvedSkin && _cosmeticsData) _resolvedSkin = _resolveSkin(_desiredCosmetics);
+    if (!_resolvedSkin) return;
+    const player = _findSkinPlayer(players, message.myClientID || message.clientID);
+    if (player) player.cosmetics = _resolvedSkin;
+  }
+
+  var _hookedParse = function(text, reviver) {
+    const result = _originalParse.call(this, text, reviver);
+    if (!_skinUnlockerEnabled || !result || typeof result !== "object") return result;
+    try {
+      _injectResolvedSkin(result);
+    } catch (error) {
+      console.error("[SkinUnlocker] Error during JSON parse hook:", error);
+    }
+    return result;
   };
 
   // LAZY INSTALL (perf): replacing JSON.parse with a JS function DEFEATS V8's
@@ -313,7 +337,7 @@
   }
 
   function _setSkinUnlockerEnabled(on) {
-    _skinUnlockerEnabled = !!on;
+    _skinUnlockerEnabled = Boolean(on);
     // Turning OFF always restores native parse. Turning ON does NOT install
     // immediately — the join hook installs it right before entering a game, so
     // the lobby stays fast.

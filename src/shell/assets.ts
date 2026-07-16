@@ -12,7 +12,10 @@
 // global (e.g. CDN_BASE === "") still falls through to BOOTSTRAP_CONFIG.
 
 type Manifest = Record<string, string>;
-type BootstrapConfig = { assetManifest?: Manifest; cdnBase?: string };
+interface BootstrapConfig {
+  assetManifest?: Manifest;
+  cdnBase?: string;
+}
 
 function bootstrap(): BootstrapConfig | null {
   const b = (window as unknown as { BOOTSTRAP_CONFIG?: BootstrapConfig }).BOOTSTRAP_CONFIG;
@@ -20,12 +23,14 @@ function bootstrap(): BootstrapConfig | null {
 }
 
 function manifest(): Manifest | null {
-  const m = (window as unknown as { ASSET_MANIFEST?: Manifest }).ASSET_MANIFEST || bootstrap()?.assetManifest;
+  const m =
+    (window as unknown as { ASSET_MANIFEST?: Manifest }).ASSET_MANIFEST ??
+    bootstrap()?.assetManifest;
   return m && typeof m === "object" ? m : null;
 }
 
 function cdnBase(): string {
-  return (window as unknown as { CDN_BASE?: string }).CDN_BASE || bootstrap()?.cdnBase || "";
+  return (window as unknown as { CDN_BASE?: string }).CDN_BASE ?? bootstrap()?.cdnBase ?? "";
 }
 
 /** Resolve a logical asset path (e.g. "maps/world/thumbnail.webp") to a full URL. */
@@ -57,17 +62,20 @@ export function unitIconUrl(structureType: string): string | null {
 
 // Build-injected extras (version + the inlined locale bundles). Set by build.mjs
 // before the shell runs.
-type Injected = {
+interface Injected {
   version: string;
   locales: Record<string, Record<string, string>>;
-};
-export const injected: Injected = ((globalThis as Record<string, unknown>)
-  .__OFH_ASSETS as Injected) ?? {
+}
+export const injected: Injected = (globalThis as { __OFH_ASSETS?: Injected }).__OFH_ASSETS ?? {
   version: "0.0.0",
   locales: {},
 };
 
-export type LanguageOption = { code: string; name: string; nativeName: string };
+export interface LanguageOption {
+  code: string;
+  name: string;
+  nativeName: string;
+}
 
 function displayName(code: string, inLocale: string): string {
   try {
@@ -92,8 +100,10 @@ export function availableLanguages(uiLocale = "en"): LanguageOption[] {
     name: displayName(code, uiLocale),
     nativeName: displayName(code, code),
   }));
-  list.sort((a, b) =>
-    a.code === "en" ? -1 : b.code === "en" ? 1 : a.nativeName.localeCompare(b.nativeName),
-  );
+  list.sort((a, b) => {
+    if (a.code === "en") return -1;
+    if (b.code === "en") return 1;
+    return a.nativeName.localeCompare(b.nativeName);
+  });
   return list;
 }

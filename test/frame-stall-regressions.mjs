@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import vm from "node:vm";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { fileURLToPath } from "node:url";
-
-/* eslint-disable sonarjs/code-eval -- the test intentionally loads the production classic script in an isolated VM */
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourcePath = path.join(repoRoot, "engine/ingame/auto-bot/earlyGame.js");
@@ -26,7 +24,7 @@ const sandbox = {
     },
   },
 };
-vm.runInNewContext(source, sandbox, { filename: sourcePath });
+executeClassicScript(source, sandbox, { filename: sourcePath });
 
 const goal = 4096;
 const result = await sandbox.findWaterRouteTicksAsync({

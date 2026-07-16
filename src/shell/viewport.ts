@@ -27,8 +27,8 @@ function clampOne(el: HTMLElement): void {
   const left = Math.min(Math.max(rect.left, MARGIN), maxLeft);
   const top = Math.min(Math.max(rect.top, MARGIN), maxTop);
   if (Math.round(left) !== Math.round(rect.left) || Math.round(top) !== Math.round(rect.top)) {
-    el.style.left = `${Math.round(left)}px`;
-    el.style.top = `${Math.round(top)}px`;
+    el.style.left = String(Math.round(left)) + "px";
+    el.style.top = String(Math.round(top)) + "px";
     el.style.right = "auto";
     el.style.bottom = "auto";
   }

@@ -81,148 +81,179 @@ const TEAM_COLORS = {
   Nations: "#eb3333",
 };
 
-// These bindings are shared mutable state for the classic scripts concatenated
-// after runtime.js. Keep them as `let`: their setters live in later files and a
-// `const` conversion makes settings synchronization abort during UI startup.
-/* eslint-disable prefer-const -- assignments occur in later classic scripts */
-let botMarkersEnabled = false;
-let botMarkerAnimationFrame = null;
-let allyMarkersEnabled = false;
-let allyMarkerAnimationFrame = null;
-let allianceRequestsPanelEnabled = false;
-let allianceRequestsPanelAnimationFrame = null;
-let allianceFocusFlashAnimationFrame = null;
-let goldPerMinuteEnabled = false;
-let goldPerMinuteInterval = null;
-let goldPerMinuteAnimationFrame = null;
-let lastGoldPerMinuteSampleAt = 0;
-let lastGoldPerMinuteRenderAt = 0;
-let goldPerMinuteRenderSignature = "";
-let lastProcessedIncomingGoldTransferTick = null;
-let teamGoldPerMinuteEnabled = false;
-let teamGoldPerMinuteAnimationFrame = null;
-let lastTeamGoldPerMinuteRenderAt = 0;
-let teamGoldPerMinuteRenderSignature = "";
-let topGoldPerMinuteEnabled = false;
-let topGoldPerMinuteAnimationFrame = null;
-let lastTopGoldPerMinuteRenderAt = 0;
-let tradeBalancesEnabled = false;
-let tradeBalanceAnimationFrame = null;
-let lastProcessedTradeBalanceTick = null;
-let lastTradeBalanceRenderAt = 0;
-let tradeBalanceRenderSignature = "";
-let nukePredictionEnabled = false;
+const RUNTIME_EXCEPTION_LIMIT = 200;
+const runtimeExceptions = [];
+const RUNTIME_EVENT_LIMIT = 500;
+const runtimeEvents = [];
+
+function captureRuntimeException(error, source) {
+  runtimeExceptions.push({
+    at: Date.now(),
+    source,
+    name: typeof error?.name === "string" ? error.name : "Error",
+    message: typeof error?.message === "string" ? error.message : String(error),
+    stack: typeof error?.stack === "string" ? error.stack : null,
+  });
+  if (runtimeExceptions.length > RUNTIME_EXCEPTION_LIMIT) {
+    runtimeExceptions.splice(0, runtimeExceptions.length - RUNTIME_EXCEPTION_LIMIT);
+  }
+}
+
+globalThis.__OFH_CAPTURE_EXCEPTION__ = captureRuntimeException;
+globalThis.__OFH_RUNTIME_EXCEPTIONS__ = runtimeExceptions;
+
+function runtimeDebugLog(...values) {
+  runtimeEvents.push({ at: Date.now(), values });
+  if (runtimeEvents.length > RUNTIME_EVENT_LIMIT) {
+    runtimeEvents.splice(0, runtimeEvents.length - RUNTIME_EVENT_LIMIT);
+  }
+}
+
+globalThis.__OFH_RUNTIME_EVENTS__ = runtimeEvents;
+
+// Mutable state shared by the concatenated in-game modules. Keeping these
+// values behind one explicit object prevents later classic scripts from
+// assigning to another file's lexical binding.
+const runtimeState = Object.create(null);
+
+runtimeState.botMarkersEnabled = false;
+runtimeState.botMarkerAnimationFrame = null;
+runtimeState.allyMarkersEnabled = false;
+runtimeState.allyMarkerAnimationFrame = null;
+runtimeState.allianceRequestsPanelEnabled = false;
+runtimeState.allianceRequestsPanelAnimationFrame = null;
+runtimeState.allianceFocusFlashAnimationFrame = null;
+runtimeState.goldPerMinuteEnabled = false;
+runtimeState.goldPerMinuteInterval = null;
+runtimeState.goldPerMinuteAnimationFrame = null;
+runtimeState.lastGoldPerMinuteSampleAt = 0;
+runtimeState.lastGoldPerMinuteRenderAt = 0;
+runtimeState.goldPerMinuteRenderSignature = "";
+runtimeState.lastProcessedIncomingGoldTransferTick = null;
+runtimeState.teamGoldPerMinuteEnabled = false;
+runtimeState.teamGoldPerMinuteAnimationFrame = null;
+runtimeState.lastTeamGoldPerMinuteRenderAt = 0;
+runtimeState.teamGoldPerMinuteRenderSignature = "";
+runtimeState.topGoldPerMinuteEnabled = false;
+runtimeState.topGoldPerMinuteAnimationFrame = null;
+runtimeState.lastTopGoldPerMinuteRenderAt = 0;
+runtimeState.tradeBalancesEnabled = false;
+runtimeState.tradeBalanceAnimationFrame = null;
+runtimeState.lastProcessedTradeBalanceTick = null;
+runtimeState.lastTradeBalanceRenderAt = 0;
+runtimeState.tradeBalanceRenderSignature = "";
+runtimeState.nukePredictionEnabled = false;
 // Sub-toggle of nuke prediction: the flight-path (trajectory) line. Default on.
-let nukeTrajectoryEnabled = true;
-let nukeLandingAnimationFrame = null;
-let boatPredictionEnabled = false;
-let boatPredictionAlwaysOwnRoutes = false;
-let boatPredictionAlwaysTeamRoutes = false;
-let boatPredictionAlwaysAllyRoutes = false;
-let boatPredictionAlwaysEnemyRoutes = false;
-let boatLandingAnimationFrame = null;
+runtimeState.nukeTrajectoryEnabled = true;
+runtimeState.nukeLandingAnimationFrame = null;
+runtimeState.boatPredictionEnabled = false;
+runtimeState.boatPredictionAlwaysOwnRoutes = false;
+runtimeState.boatPredictionAlwaysTeamRoutes = false;
+runtimeState.boatPredictionAlwaysAllyRoutes = false;
+runtimeState.boatPredictionAlwaysEnemyRoutes = false;
+runtimeState.boatLandingAnimationFrame = null;
 // Boat list panel: open state + the boat id the user is hovering in the list.
 // The map overlay reads these so a focused boat draws its route/highlight even
 // when the prediction overlay itself is off.
-let boatPanelOpen = false;
-let boatPanelFocusedId = null;
+runtimeState.boatPanelOpen = false;
+runtimeState.boatPanelFocusedId = null;
 // Incoming-boat warning: when on, a new transport that targets my territory
 // raises a center-screen alert (like the Missile Silo warning). Keeps the scan
 // loop alive on its own so it works without the overlay or panel.
-let boatWarnIncoming = false;
-let nukeSuggestionsEnabled = false;
-let nukeSuggestionAnimationFrame = null;
-let autoNukeEnabled = false;
-let autoNukePatchTimeout = null;
-let lastNukeSuggestionComputedAt = 0;
-let lastNukeSuggestionSignature = "";
-let lastNukeSuggestionSignatureCheckAt = 0;
-let currentNukeSuggestionResults = [];
-let nukeSuggestionTileComputeKey = null;
-let economyHeatmapEnabled = false;
-let economyHeatmapAnimationFrame = null;
-let lastEconomyHeatmapDrawAt = 0;
-let lastEconomyHeatmapDataAt = 0;
-let economyHeatmapDataGame = null;
-let economyHeatmapSources = [];
-let economyHeatmapIntensity = 1;
-let exportPartnerHeatmapEnabled = false;
-let exportPartnerHeatmapAnimationFrame = null;
-let lastExportPartnerHeatmapDrawAt = 0;
-let exportPartnerHeatmapSourceCacheGame = null;
-let exportPartnerHeatmapSourceCachePlayerId = null;
-let exportPartnerHeatmapSourceCacheAt = 0;
-let exportPartnerHeatmapSourceCache = [];
-let selectiveTradePolicyEnabled = false;
-let selectiveTradePolicyNeedsEmbargoSync = false;
-let selectiveTradePolicyMyPlayerId = null;
-let lastSelectiveTradePolicyRequestAt = null;
-let lastReportedSelectiveTradePolicyAvailability = null;
-let lastReportedCheatsAvailability = null;
-let lastOpenFrontGameContext = null;
+runtimeState.boatWarnIncoming = false;
+runtimeState.nukeSuggestionsEnabled = false;
+runtimeState.nukeSuggestionAnimationFrame = null;
+runtimeState.autoNukeEnabled = false;
+runtimeState.autoNukePatchTimeout = null;
+runtimeState.lastNukeSuggestionComputedAt = 0;
+runtimeState.lastNukeSuggestionSignature = "";
+runtimeState.lastNukeSuggestionSignatureCheckAt = 0;
+runtimeState.currentNukeSuggestionResults = [];
+runtimeState.nukeSuggestionTileComputeKey = null;
+runtimeState.economyHeatmapEnabled = false;
+runtimeState.economyHeatmapAnimationFrame = null;
+runtimeState.lastEconomyHeatmapDrawAt = 0;
+runtimeState.lastEconomyHeatmapDataAt = 0;
+runtimeState.economyHeatmapDataGame = null;
+runtimeState.economyHeatmapSources = [];
+runtimeState.economyHeatmapIntensity = 1;
+runtimeState.exportPartnerHeatmapEnabled = false;
+runtimeState.exportPartnerHeatmapAnimationFrame = null;
+runtimeState.lastExportPartnerHeatmapDrawAt = 0;
+runtimeState.exportPartnerHeatmapSourceCacheGame = null;
+runtimeState.exportPartnerHeatmapSourceCachePlayerId = null;
+runtimeState.exportPartnerHeatmapSourceCacheAt = 0;
+runtimeState.exportPartnerHeatmapSourceCache = [];
+runtimeState.selectiveTradePolicyEnabled = false;
+runtimeState.selectiveTradePolicyNeedsEmbargoSync = false;
+runtimeState.selectiveTradePolicyMyPlayerId = null;
+runtimeState.lastSelectiveTradePolicyRequestAt = null;
+runtimeState.lastReportedSelectiveTradePolicyAvailability = null;
+runtimeState.lastReportedCheatsAvailability = null;
+runtimeState.lastOpenFrontGameContext = null;
 
 // Game-time alert: one-shot center-screen notice at a configurable match time.
 const GAME_TIME_ALERT_CONTAINER_ID = "openfront-helper-game-time-alert-layer";
 const GAME_TIME_ALERT_STYLE_ID = "openfront-helper-game-time-alert-styles";
-let gameTimeAlertEnabled = false;
-let gameTimeAlertThresholdSec = 300;
-let gameTimeAlertInterval = null;
-let gameTimeAlertFired = false;
-let gameTimeAlertLastGame = null;
+runtimeState.gameTimeAlertEnabled = false;
+runtimeState.gameTimeAlertThresholdSec = 300;
+runtimeState.gameTimeAlertInterval = null;
+runtimeState.gameTimeAlertFired = false;
+runtimeState.gameTimeAlertLastGame = null;
 
 // Master gate for all per-player on-map overlays (troop/threat/money). Defaults
 // on so overlays enabled via settings show before the first sync arrives.
-let playerMapOverlaysEnabled = true;
+runtimeState.playerMapOverlaysEnabled = true;
 // Per-player on-map overlay (troop counts) — first layer on the shared scheduler.
-let mapTroopCountsEnabled = false;
+runtimeState.mapTroopCountsEnabled = false;
 // Per-player threat marks (☢ nuke-capable, weak/danger dots) on the same layer.
-let threatIndicatorsEnabled = false;
+runtimeState.threatIndicatorsEnabled = false;
 // Per-player gold readout on the same layer.
-let mapMoneyEnabled = false;
+runtimeState.mapMoneyEnabled = false;
 // Attack-highlight overlay (who is attacking you) — its own scheduler layer.
-let attackHighlightEnabled = false;
+runtimeState.attackHighlightEnabled = false;
 // Advisor panel (manual-play HUD): economy state, expansion advice, top threats.
 const ADVISOR_PANEL_ID = "openfront-helper-advisor-panel";
 const ADVISOR_PANEL_STYLE_ID = "openfront-helper-advisor-panel-styles";
 const ADVISOR_PANEL_POS_KEY = "openfront-helper-advisor-panel-pos";
-let advisorPanelEnabled = false;
-let advisorRenderSignature = "";
+runtimeState.advisorPanelEnabled = false;
+runtimeState.advisorRenderSignature = "";
 
 // Quick Panel — compact tabbed floating control panel for fast settings + WS actions.
 const QUICK_PANEL_ID = "openfront-helper-quick-panel";
 const QUICK_PANEL_STYLE_ID = "openfront-helper-quick-panel-styles";
 const QUICK_PANEL_POS_KEY = "openfront-helper-quick-panel-pos";
-let quickPanelEnabled = false;
+runtimeState.quickPanelEnabled = false;
 
 // Retaliation HUD: semi-auto nuke counter-attack confirmation card.
 const RETALIATION_CONTAINER_ID = "openfront-helper-retaliation-layer";
 const RETALIATION_STYLE_ID = "openfront-helper-retaliation-styles";
-let retaliationEnabled = false;
-let retaliationInterval = null;
+runtimeState.retaliationEnabled = false;
+runtimeState.retaliationInterval = null;
 
 // Hide ads: CSS injection.
 const HIDE_ADS_STYLE_ID = "openfront-helper-hide-ads-style";
 // Attack-ratio hotkey: Shift+1..0 set attack ratio 10%..100%.
-let attackRatioHotkeyEnabled = false;
+runtimeState.attackRatioHotkeyEnabled = false;
 // Right-click conquest menu: one-click attack + alliance policy.
 const RIGHT_CLICK_MENU_ID = "openfront-helper-right-click-menu";
 const RIGHT_CLICK_STYLE_ID = "openfront-helper-right-click-styles";
-let rightClickMenuEnabled = false;
+runtimeState.rightClickMenuEnabled = false;
 
 // Round logger: timeline JSON + combat outcome tracking.
-let roundLoggerEnabled = false;
+runtimeState.roundLoggerEnabled = false;
 // Network logger: hook fetch/XHR metadata.
-let networkLoggerEnabled = false;
+runtimeState.networkLoggerEnabled = false;
 
 // Build timer overlay: construction countdown + missile cooldown above silos/SAMs.
-let buildTimerEnabled = false;
+runtimeState.buildTimerEnabled = false;
 // Enemy-intent early warning: WebSocket hook to detect incoming attacks/boats.
-let enemyIntentEnabled = false;
+runtimeState.enemyIntentEnabled = false;
 // Spawn heatmap overlay: colored grid showing spawn quality.
-let spawnHeatmapEnabled = false;
-let spawnMarkersEnabled = false;
+runtimeState.spawnHeatmapEnabled = false;
+runtimeState.spawnMarkersEnabled = false;
 // Anti-AFK: Web Worker keep-alive for background tabs.
-let antiAfkEnabled = false;
+runtimeState.antiAfkEnabled = false;
 /* eslint-enable prefer-const */
 
 const goldTrackers = new Map();
@@ -240,7 +271,7 @@ const selectiveTradePolicyAllowedPartnerIds = new Set();
 const originalPlayerHasEmbargoMethods = new WeakMap();
 const allianceRequestsPanelEvents = [];
 const capturedAllianceRequestEvents = new WeakSet();
-let allianceRequestsPanelRenderSignature = "";
+runtimeState.allianceRequestsPanelRenderSignature = "";
 // Auto-renew: when on, the alliance requests panel auto-confirms renewal
 // prompts (RENEW_ALLIANCE / type 24) so expiring alliances are re-sent without
 // a manual click. Persisted in localStorage; the position is saved per drag.
@@ -248,7 +279,7 @@ const ALLIANCE_REQUEST_PANEL_POS_KEY =
   "openfront-helper-alliance-request-panel-pos";
 const ALLIANCE_REQUEST_PANEL_AUTORENEW_KEY =
   "openfront-helper-alliance-request-autorenew";
-let allianceRequestsAutoRenewEnabled = (() => {
+runtimeState.allianceRequestsAutoRenewEnabled = (() => {
   try {
     return window.localStorage.getItem(ALLIANCE_REQUEST_PANEL_AUTORENEW_KEY) === "1";
   } catch (_error) {
@@ -272,7 +303,7 @@ document.addEventListener("public-lobbies-update", (event) => {
 });
 
 function toFiniteNumber(value, fallback = 0) {
-  const numberValue = typeof value === "bigint" ? Number(value) : Number(value);
+  const numberValue = Number(value);
   return Number.isFinite(numberValue) ? numberValue : fallback;
 }
 
@@ -346,12 +377,18 @@ function addEconomicSource(sources, tile, weight, type = "Industry") {
 
 // ---------- Consolidated helper update scheduler ----------
 // Replaces 4 self-recursive requestAnimationFrame loops (gold-per-minute,
-// team-gpm, top-gpm, trade-balance). Each helper registers a callback that
-// runs at HELPER_TICK_INTERVAL_MS instead of waking the main thread every
-// 16 ms only to throttle itself back to 250 ms.
+// team-gpm, top-gpm, trade-balance). Each helper registers a callback and an
+// optional cadence. The base timer remains responsive while expensive panels
+// can avoid rescanning the full late-game state four times per second.
 const HELPER_TICK_INTERVAL_MS = 250;
-const _helperTickListeners = new Set();
+const _helperTickListeners = new Map();
 let _helperTickIntervalId = null;
+
+function _helperTickNow() {
+  return typeof globalThis.performance?.now === "function"
+    ? globalThis.performance.now()
+    : Date.now();
+}
 
 function createGameStartNotificationDetector() {
   let currentGame = null;
@@ -384,7 +421,12 @@ function createGameStartNotificationDetector() {
 }
 
 function _runHelperTick() {
-  for (const listener of _helperTickListeners) {
+  const now = _helperTickNow();
+  for (const [listener, registration] of _helperTickListeners) {
+    if (now - registration.lastRunAt < registration.intervalMs) {
+      continue;
+    }
+    registration.lastRunAt = now;
     try {
       listener();
     } catch (error) {
@@ -400,11 +442,23 @@ function _ensureHelperTickRunning() {
   _helperTickIntervalId = window.setInterval(_runHelperTick, HELPER_TICK_INTERVAL_MS);
 }
 
-function registerHelperTickListener(fn) {
+function registerHelperTickListener(fn, intervalMs = HELPER_TICK_INTERVAL_MS) {
   if (typeof fn !== "function") {
     return;
   }
-  _helperTickListeners.add(fn);
+  const normalizedIntervalMs = Math.max(
+    HELPER_TICK_INTERVAL_MS,
+    Number.isFinite(Number(intervalMs)) ? Number(intervalMs) : HELPER_TICK_INTERVAL_MS,
+  );
+  const existing = _helperTickListeners.get(fn);
+  if (existing) {
+    existing.intervalMs = normalizedIntervalMs;
+    return;
+  }
+  _helperTickListeners.set(fn, {
+    intervalMs: normalizedIntervalMs,
+    lastRunAt: _helperTickNow(),
+  });
   _ensureHelperTickRunning();
   try {
     fn();
@@ -427,7 +481,8 @@ function unregisterHelperTickListener(fn) {
 function _qpSync(settingKey, enabled) {
   try {
     window.dispatchEvent(new CustomEvent("ofh-quick-panel-setting", {
-      detail: { key: settingKey, value: !!enabled }
+      detail: { key: settingKey, value: Boolean(enabled) }
     }));
-  } catch (e) {}
+  } catch (e) {
+  captureRuntimeException(e, "engine/ingame/runtime.js:472");}
 }

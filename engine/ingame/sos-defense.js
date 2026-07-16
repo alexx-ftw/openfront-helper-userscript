@@ -22,7 +22,7 @@
 
   function _sosGetHostileAttackers(game, me) {
     const out = [];
-    let attacks = [];
+    let attacks;
     try {
       attacks = me.incomingAttacks?.() || [];
     } catch (_e) {
@@ -62,6 +62,39 @@
     return allies;
   }
 
+  function _sosSendAllySalvo(game, me, nowMs) {
+    if (nowMs - _sosLastSalvoAt < SOS_RESEND_MS) return;
+    _sosLastSalvoAt = nowMs;
+    const sosEmojiNum = emojiId(SOS_EMOJI);
+    for (const ally of _sosGetAllies(game, me)) {
+      enqueueSignal("emoji", ally, [ally, sosEmojiNum]);
+    }
+  }
+
+  function _sosAttackerTargetId(attacker) {
+    try {
+      return attacker.id?.();
+    } catch (_error) {
+      captureRuntimeException(_error, "engine/ingame/sos-defense.js:_sosAttackerTargetId");
+      return undefined;
+    }
+  }
+
+  function _sosMarkAttacker(attacker, nowMs) {
+    const smallId = getPlayerSmallId(attacker, Number.NaN);
+    if (!Number.isFinite(smallId)) return;
+    const lastMarkedAt = _sosLastTargetAt.get(smallId);
+    if (
+      lastMarkedAt !== undefined &&
+      nowMs - lastMarkedAt < SOS_TARGET_RESEND_MS
+    ) {
+      return;
+    }
+    _sosLastTargetAt.set(smallId, nowMs);
+    const targetId = _sosAttackerTargetId(attacker);
+    if (targetId !== undefined) enqueueSignal("target", attacker, [targetId]);
+  }
+
   function updateSosDefense() {
     if (!sosDefenseEnabled) return;
     const context = getOpenFrontGameContext();
@@ -74,30 +107,11 @@
     if (hostiles.length === 0) return;
 
     const nowMs = performance.now();
-    const sosEmojiNum = emojiId(SOS_EMOJI);
-
-    // 1) SOS to allies/teammates — one salvo per SOS_RESEND_MS.
-    if (nowMs - _sosLastSalvoAt >= SOS_RESEND_MS) {
-      _sosLastSalvoAt = nowMs;
-      for (const ally of _sosGetAllies(game, me)) {
-        enqueueSignal("emoji", ally, [ally, sosEmojiNum]);
-      }
-    }
+    _sosSendAllySalvo(game, me, nowMs);
 
     // 2) Mark each hostile attacker — throttled per-target.
     for (const attacker of hostiles) {
-      const sid = getPlayerSmallId(attacker, Number.NaN);
-      if (!Number.isFinite(sid)) continue;
-      const last = _sosLastTargetAt.get(sid);
-      if (last !== undefined && nowMs - last < SOS_TARGET_RESEND_MS) continue;
-      _sosLastTargetAt.set(sid, nowMs);
-      let targetId;
-      try {
-        targetId = attacker.id?.();
-      } catch (_e) {
-        targetId = undefined;
-      }
-      if (targetId !== undefined) enqueueSignal("target", attacker, [targetId]);
+      _sosMarkAttacker(attacker, nowMs);
     }
   }
 

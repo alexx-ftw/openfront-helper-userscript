@@ -21,6 +21,7 @@ function isExtensionContextAlive() {
   try {
     return typeof chrome !== "undefined" && Boolean(chrome.runtime?.id);
   } catch (_error) {
+    globalThis.__OFH_CAPTURE_EXCEPTION__?.(_error, "engine/lobby/auto-join.js:362");
     return false;
   }
 }
@@ -29,6 +30,13 @@ const LOBBY_FORECAST_MAX_RATE_SAMPLES = 240;
 const LOBBY_FORECAST_MAX_DISTANCE_SAMPLES = 120;
 const LOBBY_FORECAST_PERSIST_MS = 4000;
 const LOBBY_FORECAST_MODEL_DRAWS = 3500;
+let lobbyForecastRandomState = 0x9e3779b9;
+
+function nextLobbyForecastRandom() {
+  lobbyForecastRandomState =
+    (Math.imul(lobbyForecastRandomState, 1_664_525) + 1_013_904_223) >>> 0;
+  return lobbyForecastRandomState / 0x1_0000_0000;
+}
 const LOBBY_FORECAST_PRIOR_STRENGTH = 36;
 const LOBBY_FORECAST_MIN_GROUP_SAMPLES_FOR_WEIGHTING = 12;
 const LOBBY_FORECAST_AVERAGE_WINDOW = 100;
@@ -299,8 +307,8 @@ function mapMatchesTokens(map, tokens) {
 }
 
 function lobbyMatchesMapFilters(lobby) {
-  const includedMaps = MAPS.filter((map) => settings.mapFilters[map.id]);
-  const excludedMaps = MAPS.filter((map) => settings.mapExcludeFilters[map.id]);
+  const includedMaps = MAPS.filter((map) => lobbyState.settings.mapFilters[map.id]);
+  const excludedMaps = MAPS.filter((map) => lobbyState.settings.mapExcludeFilters[map.id]);
   if (includedMaps.length === 0 && excludedMaps.length === 0) {
     return true;
   }
@@ -335,12 +343,12 @@ function pruneCooldowns() {
 }
 
 function resetPendingJoinIfExpired() {
-  if (!pendingJoin) {
+  if (!lobbyState.pendingJoin) {
     return;
   }
 
-  if (isOccupied() || Date.now() - pendingJoin.startedAt > JOIN_ATTEMPT_TIMEOUT_MS) {
-    pendingJoin = null;
+  if (isOccupied() || Date.now() - lobbyState.pendingJoin.startedAt > JOIN_ATTEMPT_TIMEOUT_MS) {
+    lobbyState.pendingJoin = null;
   }
 }
 
@@ -360,6 +368,7 @@ function isInLobbyWaiting() {
     const modal = document.querySelector("join-lobby-modal");
     return Boolean(modal && modal.isModalOpen === true);
   } catch (_error) {
+    globalThis.__OFH_CAPTURE_EXCEPTION__?.(_error, "engine/lobby/auto-join.js:383");
     return false;
   }
 }
@@ -381,6 +390,7 @@ function isGameStarting() {
       modal && modal.isVisible === true && !modal.classList.contains("hidden"),
     );
   } catch (_error) {
+    globalThis.__OFH_CAPTURE_EXCEPTION__?.(_error, "engine/lobby/auto-join.js:isGameStarting");
     return false;
   }
 }
@@ -393,14 +403,18 @@ function isOccupied() {
 }
 
 // Sample occupancy AND remember the moment we last saw it. Everything that gates
-// searching reads occupancy through here so `lastOccupiedAt` stays fresh enough
+// searching reads occupancy through here so `lobbyState.lastOccupiedAt` stays fresh enough
 // for the RESUME_GRACE_MS debounce to measure "how long have we been free".
 function noteOccupancy() {
-  const occupied = isOccupied();
+  const inLobbyWaiting = isInLobbyWaiting();
+  const occupied = isInActiveGame() || inLobbyWaiting || isGameStarting();
+  if (inLobbyWaiting) {
+    lobbyState.sawLobbyWaitingBeforeGameStart = true;
+  }
   if (occupied) {
-    lastOccupiedAt = Date.now();
-    if (pendingGameStartNotification) {
-      pendingGameStartNotification.sawOccupied = true;
+    lobbyState.lastOccupiedAt = Date.now();
+    if (lobbyState.pendingGameStartNotification) {
+      lobbyState.pendingGameStartNotification.sawOccupied = true;
     }
   }
   return occupied;
@@ -411,11 +425,11 @@ function noteOccupancy() {
 // debounce that makes the fix independent of which exact DOM signal momentarily
 // misreads during startup.
 function recentlyOccupied() {
-  return lastOccupiedAt > 0 && Date.now() - lastOccupiedAt < RESUME_GRACE_MS;
+  return lobbyState.lastOccupiedAt > 0 && Date.now() - lobbyState.lastOccupiedAt < RESUME_GRACE_MS;
 }
 
 function armGameStartNotification(gameID) {
-  pendingGameStartNotification = {
+  lobbyState.pendingGameStartNotification = {
     gameID,
     startedAt: Date.now(),
     sawOccupied: false,
@@ -423,34 +437,36 @@ function armGameStartNotification(gameID) {
 }
 
 function expirePendingGameStartNotification() {
-  const pending = pendingGameStartNotification;
+  const pending = lobbyState.pendingGameStartNotification;
   if (!pending) {
     return;
   }
 
   if (pending.sawOccupied) {
     if (!isOccupied() && !recentlyOccupied()) {
-      pendingGameStartNotification = null;
+      lobbyState.pendingGameStartNotification = null;
     }
     return;
   }
 
   if (Date.now() - pending.startedAt > JOIN_ATTEMPT_TIMEOUT_MS && !isOccupied()) {
-    pendingGameStartNotification = null;
+    lobbyState.pendingGameStartNotification = null;
   }
 }
 
 function handleGameStarted() {
-  const pending = pendingGameStartNotification;
-  pendingGameStartNotification = null;
-  if (!pending || !settings.joinNotification) {
+  const pending = lobbyState.pendingGameStartNotification;
+  lobbyState.pendingGameStartNotification = null;
+  const startedFromLobby = lobbyState.sawLobbyWaitingBeforeGameStart;
+  lobbyState.sawLobbyWaitingBeforeGameStart = false;
+  if ((!pending && !startedFromLobby) || !lobbyState.settings.joinNotification) {
     return;
   }
 
   chrome.runtime
     .sendMessage({
       type: "SHOW_GAME_START_NOTIFICATION",
-      gameID: pending.gameID,
+      gameID: pending?.gameID,
       text: t("Game started!"),
     })
     .catch(() => {
@@ -460,20 +476,20 @@ function handleGameStarted() {
 
 // One concise line at each auto-join DECISION (the only spot that can produce a
 // wrong join), capturing every raw input. Lets a single reproduction settle why
-// a spurious join happened — stale build, an un-cleared pendingJoin, or which
+// a spurious join happened — stale build, an un-cleared lobbyState.pendingJoin, or which
 // occupancy signal read false — instead of guessing. console.info survives
 // minification (string literals are kept), so it works in the shipped build.
 function logAutoJoinDecision(context, lobby) {
   try {
     const joinModal = document.querySelector("join-lobby-modal");
     const startingModal = document.querySelector("game-starting-modal");
-    console.info("[openfront-helper][autojoin-diag]", context, {
+    console.warn("[openfront-helper][autojoin-diag]", context, {
       build: AUTOJOIN_DIAG_BUILD,
       gameID: lobby?.gameID ?? null,
-      sinceLastJoinMs: lastJoinRequestedAt ? Date.now() - lastJoinRequestedAt : null,
-      sinceOccupiedMs: lastOccupiedAt ? Date.now() - lastOccupiedAt : null,
+      sinceLastJoinMs: lobbyState.lastJoinRequestedAt ? Date.now() - lobbyState.lastJoinRequestedAt : null,
+      sinceOccupiedMs: lobbyState.lastOccupiedAt ? Date.now() - lobbyState.lastOccupiedAt : null,
       recentlyOccupied: recentlyOccupied(),
-      pendingJoin,
+      pendingJoin: lobbyState.pendingJoin,
       isInActiveGame: isInActiveGame(),
       isInLobbyWaiting: isInLobbyWaiting(),
       isGameStarting: isGameStarting(),
@@ -486,6 +502,7 @@ function logAutoJoinDecision(context, lobby) {
       location: location.pathname + location.search,
     });
   } catch (_error) {
+    globalThis.__OFH_CAPTURE_EXCEPTION__?.(_error, "engine/lobby/auto-join.js:494");
     /* diagnostics are best-effort */
   }
 }
@@ -562,35 +579,16 @@ function getTeamSizePerLobby(lobby) {
 
   const playerTeams = config.playerTeams;
   const normalizedTeams = normalizeComparableText(playerTeams);
-  if (normalizedTeams === "duos") {
-    return 2;
-  }
-  if (normalizedTeams === "trios") {
-    return 3;
-  }
-  if (normalizedTeams === "quads") {
-    return 4;
-  }
+  const namedTeamSize = { duos: 2, trios: 3, quads: 4 }[normalizedTeams];
+  if (namedTeamSize) return namedTeamSize;
 
   const maxPlayers = Number(config.maxPlayers);
   if (typeof playerTeams === "number" && Number.isFinite(playerTeams) && playerTeams > 0 && Number.isFinite(maxPlayers) && maxPlayers > 0) {
     return Math.floor(maxPlayers / playerTeams);
   }
 
-  if (objectContainsPhrase(lobby, "teams of 2")) {
-    return 2;
-  }
-  if (objectContainsPhrase(lobby, "teams of 3")) {
-    return 3;
-  }
-  if (objectContainsPhrase(lobby, "teams of 4")) {
-    return 4;
-  }
-  if (objectContainsPhrase(lobby, "teams of 5")) {
-    return 5;
-  }
-  if (objectContainsPhrase(lobby, "teams of 6")) {
-    return 6;
+  for (const size of [2, 3, 4, 5, 6]) {
+    if (objectContainsPhrase(lobby, `teams of ${size}`)) return size;
   }
 
   return null;
@@ -606,7 +604,7 @@ function getLobbyTeamSizeForFilter(lobby, groupKey) {
 }
 
 function lobbyMatchesTeamSizeRange(lobby, groupKey) {
-  if (settings.minTeamSize == null && settings.maxTeamSize == null) {
+  if (lobbyState.settings.minTeamSize == null && lobbyState.settings.maxTeamSize == null) {
     return true;
   }
 
@@ -615,11 +613,11 @@ function lobbyMatchesTeamSizeRange(lobby, groupKey) {
     return false;
   }
 
-  if (settings.minTeamSize != null && teamSize < settings.minTeamSize) {
+  if (lobbyState.settings.minTeamSize != null && teamSize < lobbyState.settings.minTeamSize) {
     return false;
   }
 
-  if (settings.maxTeamSize != null && teamSize > settings.maxTeamSize) {
+  if (lobbyState.settings.maxTeamSize != null && teamSize > lobbyState.settings.maxTeamSize) {
     return false;
   }
 
@@ -670,7 +668,7 @@ function getLobbyTeamCountForFilter(lobby, groupKey) {
 }
 
 function lobbyMatchesTeamCountRange(lobby, groupKey) {
-  if (settings.minTeamCount == null && settings.maxTeamCount == null) {
+  if (lobbyState.settings.minTeamCount == null && lobbyState.settings.maxTeamCount == null) {
     return true;
   }
 
@@ -679,11 +677,11 @@ function lobbyMatchesTeamCountRange(lobby, groupKey) {
     return false;
   }
 
-  if (settings.minTeamCount != null && teamCount < settings.minTeamCount) {
+  if (lobbyState.settings.minTeamCount != null && teamCount < lobbyState.settings.minTeamCount) {
     return false;
   }
 
-  if (settings.maxTeamCount != null && teamCount > settings.maxTeamCount) {
+  if (lobbyState.settings.maxTeamCount != null && teamCount > lobbyState.settings.maxTeamCount) {
     return false;
   }
 
@@ -803,9 +801,9 @@ function extractTrackedFilters(lobby, groupKey) {
 }
 
 function lobbyMatchesFilters(lobby, groupKey) {
-  if (settings.minLobbySize != null) {
+  if (lobbyState.settings.minLobbySize != null) {
     const maxPlayers = getLobbyMaxPlayers(lobby);
-    if (!Number.isFinite(maxPlayers) || maxPlayers <= settings.minLobbySize) {
+    if (!Number.isFinite(maxPlayers) || maxPlayers <= lobbyState.settings.minLobbySize) {
       return false;
     }
   }
@@ -829,11 +827,11 @@ function lobbyMatchesFilters(lobby, groupKey) {
       return true;
     }
 
-    if (settings.includeFilters[key] && !modifiers[key]) {
+    if (lobbyState.settings.includeFilters[key] && !modifiers[key]) {
       return false;
     }
 
-    if (settings.excludeFilters[key] && modifiers[key]) {
+    if (lobbyState.settings.excludeFilters[key] && modifiers[key]) {
       return false;
     }
 
@@ -845,10 +843,10 @@ function lobbyMatchesFilters(lobby, groupKey) {
   }
 
   const selectedStartGoldIncludes = START_GOLD_FILTER_KEYS.filter(
-    (key) => settings.includeFilters[key],
+    (key) => lobbyState.settings.includeFilters[key],
   );
   const selectedStartGoldExcludes = START_GOLD_FILTER_KEYS.filter(
-    (key) => settings.excludeFilters[key],
+    (key) => lobbyState.settings.excludeFilters[key],
   );
 
   const startGoldExcluded = selectedStartGoldExcludes.some(
@@ -869,28 +867,28 @@ function lobbyMatchesFilters(lobby, groupKey) {
 function hasSelectedCriteria() {
   return (
     FILTER_KEYS.some(
-      (key) => settings.includeFilters[key] || settings.excludeFilters[key],
+      (key) => lobbyState.settings.includeFilters[key] || lobbyState.settings.excludeFilters[key],
     ) ||
-    settings.minLobbySize != null ||
-    settings.minTeamSize != null ||
-    settings.maxTeamSize != null ||
-    settings.minTeamCount != null ||
-    settings.maxTeamCount != null ||
-    MAP_IDS.some((id) => settings.mapFilters[id] || settings.mapExcludeFilters[id])
+    lobbyState.settings.minLobbySize != null ||
+    lobbyState.settings.minTeamSize != null ||
+    lobbyState.settings.maxTeamSize != null ||
+    lobbyState.settings.minTeamCount != null ||
+    lobbyState.settings.maxTeamCount != null ||
+    MAP_IDS.some((id) => lobbyState.settings.mapFilters[id] || lobbyState.settings.mapExcludeFilters[id])
   );
 }
 
 function createForecastFilterSignature() {
   return JSON.stringify({
-    include: settings.includeFilters,
-    exclude: settings.excludeFilters,
-    mapFilters: settings.mapFilters,
-    mapExcludeFilters: settings.mapExcludeFilters,
-    minLobbySize: settings.minLobbySize,
-    minTeamSize: settings.minTeamSize,
-    maxTeamSize: settings.maxTeamSize,
-    minTeamCount: settings.minTeamCount,
-    maxTeamCount: settings.maxTeamCount,
+    include: lobbyState.settings.includeFilters,
+    exclude: lobbyState.settings.excludeFilters,
+    mapFilters: lobbyState.settings.mapFilters,
+    mapExcludeFilters: lobbyState.settings.mapExcludeFilters,
+    minLobbySize: lobbyState.settings.minLobbySize,
+    minTeamSize: lobbyState.settings.minTeamSize,
+    maxTeamSize: lobbyState.settings.maxTeamSize,
+    minTeamCount: lobbyState.settings.minTeamCount,
+    maxTeamCount: lobbyState.settings.maxTeamCount,
   });
 }
 
@@ -936,6 +934,10 @@ function updateLast100LobbyAverages(now, matchOutcome = null) {
   }
 }
 
+function positiveFiniteOrNull(value) {
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
 function computeLast100LobbyAverages() {
   const sampleSize = lobbyForecastRecentLobbyCount;
   const hitSampleSize = lobbyForecastRecentMatchOutcomes.length;
@@ -975,14 +977,8 @@ function computeLast100LobbyAverages() {
     sampleSize,
     hitSampleSize,
     hitRate: Number.isFinite(hitRate) ? hitRate : null,
-    avgLobbyIntervalMs:
-      Number.isFinite(avgLobbyIntervalMs) && avgLobbyIntervalMs > 0
-        ? avgLobbyIntervalMs
-        : null,
-    avgLobbiesPerMinute:
-      Number.isFinite(avgLobbiesPerMinute) && avgLobbiesPerMinute > 0
-        ? avgLobbiesPerMinute
-        : null,
+    avgLobbyIntervalMs: positiveFiniteOrNull(avgLobbyIntervalMs),
+    avgLobbiesPerMinute: positiveFiniteOrNull(avgLobbiesPerMinute),
     etaSeconds,
     updatedAt: sampleSize > 0 ? Date.now() : null,
   };
@@ -1019,11 +1015,11 @@ function pickWeighted(items) {
   }
 
   const total = items.reduce((sum, item) => sum + item.weight, 0);
-  if (!(total > 0)) {
+  if (total <= 0) {
     return null;
   }
 
-  let roll = Math.random() * total;
+  let roll = nextLobbyForecastRandom() * total;
   for (const item of items) {
     roll -= item.weight;
     if (roll <= 0) {
@@ -1035,19 +1031,19 @@ function pickWeighted(items) {
 
 function shuffleInPlace(values) {
   for (let i = values.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(nextLobbyForecastRandom() * (i + 1));
     [values[i], values[j]] = [values[j], values[i]];
   }
 }
 
 function randomTeamConfigForMap(mapId) {
-  if (mapId === "baikal" && Math.random() < 0.75) {
+  if (mapId === "baikal" && nextLobbyForecastRandom() < 0.75) {
     return 2;
   }
-  if (mapId === "fourislands" && Math.random() < 0.75) {
+  if (mapId === "fourislands" && nextLobbyForecastRandom() < 0.75) {
     return 4;
   }
-  if (mapId === "luna" && Math.random() < 0.75) {
+  if (mapId === "luna" && nextLobbyForecastRandom() < 0.75) {
     return 2;
   }
 
@@ -1072,7 +1068,7 @@ function getRandomSpecialModifiers(excluded, countReduction = 0) {
   const excludedSet = new Set(excluded);
   const rolledCount =
     FORECAST_SPECIAL_COUNT_ROLLS[
-    Math.floor(Math.random() * FORECAST_SPECIAL_COUNT_ROLLS.length)
+    Math.floor(nextLobbyForecastRandom() * FORECAST_SPECIAL_COUNT_ROLLS.length)
     ];
   const wantedCount = Math.max(0, rolledCount - countReduction);
 
@@ -1098,15 +1094,14 @@ function getRandomSpecialModifiers(excluded, countReduction = 0) {
     }
   }
 
+  let startingGold = 0;
+  if (selected.has("startingGold25M")) startingGold = 25_000_000;
+  else if (selected.has("startingGold5M")) startingGold = 5_000_000;
+  else if (selected.has("startingGold1M")) startingGold = 1_000_000;
+
   return {
     isRandomSpawn: selected.has("isRandomSpawn"),
-    startingGold: selected.has("startingGold25M")
-      ? 25_000_000
-      : selected.has("startingGold5M")
-        ? 5_000_000
-        : selected.has("startingGold1M")
-          ? 1_000_000
-          : 0,
+    startingGold,
     goldMultiplier: selected.has("goldMultiplier") ? 2 : 1,
     isAlliancesDisabled: selected.has("isAlliancesDisabled"),
     isPortsDisabled: selected.has("isPortsDisabled"),
@@ -1117,36 +1112,9 @@ function getRandomSpecialModifiers(excluded, countReduction = 0) {
   };
 }
 
-function createForecastScenario(type) {
-  const map = pickWeighted(getForecastMapsForType(type));
-  if (!map) {
-    return null;
-  }
-
-  if (type === "ffa") {
-    return {
-      mapId: map.id,
-      teamSize: 1,
-      startingGold0M: true,
-      randomSpawn: false,
-      alliancesDisabled: false,
-      portsDisabled: false,
-      nukesDisabled: false,
-      samsDisabled: false,
-      waterNukes: false,
-      peaceTime4m: false,
-      startingGold1M: false,
-      startingGold5M: false,
-      startingGold25M: false,
-      goldMultiplier2x: false,
-    };
-  }
-
-  if (type === "team") {
-    const teamConfig = randomTeamConfigForMap(map.id);
-    const teamSize = teamConfigToTeamSize(teamConfig);
-    return {
-      mapId: map.id,
+function createStandardForecastScenario(mapId, teamSize) {
+  return {
+      mapId,
       teamSize,
       startingGold0M: true,
       randomSpawn: false,
@@ -1161,27 +1129,33 @@ function createForecastScenario(type) {
       startingGold25M: false,
       goldMultiplier2x: false,
     };
-  }
+}
 
-  const isTeamMode = Math.random() >= 0.5;
-  const teamConfig = isTeamMode ? randomTeamConfigForMap(map.id) : null;
+function getSpecialForecastExclusions(mapId, isTeamMode, teamConfig) {
   const excludedModifiers = [];
+  if (["duos", "trios", "quads"].includes(teamConfig)) excludedModifiers.push("isRandomSpawn");
+  if (mapId === "fourislands" && isTeamMode) excludedModifiers.push("goldMultiplier", "startingGold25M");
+  if (isTeamMode) excludedModifiers.push("isHardNations");
+  if (teamConfig === "humansVsNations") excludedModifiers.push("startingGold25M", "isPeaceTime");
+  return excludedModifiers;
+}
 
-  if (teamConfig === "duos" || teamConfig === "trios" || teamConfig === "quads") {
-    excludedModifiers.push("isRandomSpawn");
+function createForecastScenario(type) {
+  const map = pickWeighted(getForecastMapsForType(type));
+  if (!map) return null;
+  if (type === "ffa") return createStandardForecastScenario(map.id, 1);
+
+  if (type === "team") {
+    const teamConfig = randomTeamConfigForMap(map.id);
+    return createStandardForecastScenario(map.id, teamConfigToTeamSize(teamConfig));
   }
-  if (map.id === "fourislands" && isTeamMode) {
-    excludedModifiers.push("goldMultiplier", "startingGold25M");
-  }
-  if (isTeamMode) {
-    excludedModifiers.push("isHardNations");
-  }
-  if (teamConfig === "humansVsNations") {
-    excludedModifiers.push("startingGold25M", "isPeaceTime");
-  }
+
+  const isTeamMode = nextLobbyForecastRandom() >= 0.5;
+  const teamConfig = isTeamMode ? randomTeamConfigForMap(map.id) : null;
+  const excludedModifiers = getSpecialForecastExclusions(map.id, isTeamMode, teamConfig);
 
   let forcedWaterNukes = false;
-  if (FORECAST_WATER_NUKES_BOOSTED_MAPS.has(map.id) && Math.random() < 0.5) {
+  if (FORECAST_WATER_NUKES_BOOSTED_MAPS.has(map.id) && nextLobbyForecastRandom() < 0.5) {
     excludedModifiers.push("isWaterNukes", "isNukesDisabled");
     forcedWaterNukes = true;
   }
@@ -1213,7 +1187,7 @@ function createForecastScenario(type) {
 }
 
 function scenarioMatchesTeamSizeRange(scenario) {
-  if (settings.minTeamSize == null && settings.maxTeamSize == null) {
+  if (lobbyState.settings.minTeamSize == null && lobbyState.settings.maxTeamSize == null) {
     return true;
   }
 
@@ -1222,11 +1196,11 @@ function scenarioMatchesTeamSizeRange(scenario) {
     return false;
   }
 
-  if (settings.minTeamSize != null && teamSize < settings.minTeamSize) {
+  if (lobbyState.settings.minTeamSize != null && teamSize < lobbyState.settings.minTeamSize) {
     return false;
   }
 
-  if (settings.maxTeamSize != null && teamSize > settings.maxTeamSize) {
+  if (lobbyState.settings.maxTeamSize != null && teamSize > lobbyState.settings.maxTeamSize) {
     return false;
   }
 
@@ -1238,8 +1212,8 @@ function scenarioMatchesFilters(scenario) {
     return false;
   }
 
-  const includedMapIds = MAP_IDS.filter((id) => settings.mapFilters[id]);
-  const excludedMapIds = MAP_IDS.filter((id) => settings.mapExcludeFilters[id]);
+  const includedMapIds = MAP_IDS.filter((id) => lobbyState.settings.mapFilters[id]);
+  const excludedMapIds = MAP_IDS.filter((id) => lobbyState.settings.mapExcludeFilters[id]);
   if (excludedMapIds.includes(scenario.mapId)) {
     return false;
   }
@@ -1259,10 +1233,10 @@ function scenarioMatchesFilters(scenario) {
     if (START_GOLD_FILTER_KEYS.includes(key)) {
       return true;
     }
-    if (settings.includeFilters[key] && !scenario[key]) {
+    if (lobbyState.settings.includeFilters[key] && !scenario[key]) {
       return false;
     }
-    if (settings.excludeFilters[key] && scenario[key]) {
+    if (lobbyState.settings.excludeFilters[key] && scenario[key]) {
       return false;
     }
     return true;
@@ -1272,10 +1246,10 @@ function scenarioMatchesFilters(scenario) {
   }
 
   const selectedStartGoldIncludes = START_GOLD_FILTER_KEYS.filter(
-    (key) => settings.includeFilters[key],
+    (key) => lobbyState.settings.includeFilters[key],
   );
   const selectedStartGoldExcludes = START_GOLD_FILTER_KEYS.filter(
-    (key) => settings.excludeFilters[key],
+    (key) => lobbyState.settings.excludeFilters[key],
   );
   if (selectedStartGoldExcludes.some((key) => scenario[key] === true)) {
     return false;
@@ -1385,6 +1359,22 @@ function estimateLobbiesUntilMatch(p, percentile) {
   return Number.isFinite(value) && value > 0 ? Math.max(1, Math.ceil(value)) : null;
 }
 
+function getForecastLobbiesPerSecond(last100Averages) {
+  if (lobbyForecastNewLobbyTimestamps.length >= 2) {
+    const firstSeen = lobbyForecastNewLobbyTimestamps[0];
+    const lastSeen = lobbyForecastNewLobbyTimestamps.at(-1);
+    const durationMs = Math.max(1, lastSeen - firstSeen);
+    return (lobbyForecastNewLobbyTimestamps.length - 1) / (durationMs / 1000);
+  }
+  const intervalMs = positiveFiniteOrNull(last100Averages.avgLobbyIntervalMs);
+  return intervalMs == null ? null : 1000 / intervalMs;
+}
+
+function getForecastEtaSeconds(lobbies, lobbiesPerSecond) {
+  if (lobbies == null || lobbiesPerSecond == null || lobbiesPerSecond <= 0) return null;
+  return Math.max(1, Math.round(lobbies / lobbiesPerSecond));
+}
+
 function buildLobbyForecastPayload() {
   const last100Averages = computeLast100LobbyAverages();
 
@@ -1429,41 +1419,15 @@ function buildLobbyForecastPayload() {
   const minLobbies = minLobbiesEmpirical ?? minLobbiesModel;
   const maxLobbies = maxLobbiesEmpirical ?? maxLobbiesModel;
 
-  let etaMinSeconds = null;
-  let etaMaxSeconds = null;
-  let lobbiesPerSecond = null;
-  if (lobbyForecastNewLobbyTimestamps.length >= 2) {
-    const firstSeen = lobbyForecastNewLobbyTimestamps[0];
-    const lastSeen =
-      lobbyForecastNewLobbyTimestamps[lobbyForecastNewLobbyTimestamps.length - 1];
-    const durationMs = Math.max(1, lastSeen - firstSeen);
-    lobbiesPerSecond =
-      (lobbyForecastNewLobbyTimestamps.length - 1) / (durationMs / 1000);
-  } else if (
-    Number.isFinite(last100Averages.avgLobbyIntervalMs) &&
-    last100Averages.avgLobbyIntervalMs > 0
-  ) {
-    lobbiesPerSecond = 1000 / last100Averages.avgLobbyIntervalMs;
-  }
-
-  if (lobbiesPerSecond > 0) {
-    etaMinSeconds =
-      minLobbies != null ? Math.max(1, Math.round(minLobbies / lobbiesPerSecond)) : null;
-    etaMaxSeconds =
-      maxLobbies != null ? Math.max(1, Math.round(maxLobbies / lobbiesPerSecond)) : null;
-  }
+  const lobbiesPerSecond = getForecastLobbiesPerSecond(last100Averages);
+  const etaMinSeconds = getForecastEtaSeconds(minLobbies, lobbiesPerSecond);
+  const etaMaxSeconds = getForecastEtaSeconds(maxLobbies, lobbiesPerSecond);
 
   return {
     available: true,
     sampleSize: lobbyForecastTotalNew,
-    etaMinSeconds:
-      Number.isFinite(etaMinSeconds) && etaMinSeconds > 0
-        ? etaMinSeconds
-        : null,
-    etaMaxSeconds:
-      Number.isFinite(etaMaxSeconds) && etaMaxSeconds > 0
-        ? etaMaxSeconds
-        : null,
+    etaMinSeconds: positiveFiniteOrNull(etaMinSeconds),
+    etaMaxSeconds: positiveFiniteOrNull(etaMaxSeconds),
     hitChanceNext10: Number.isFinite(hitChanceNext10) ? hitChanceNext10 : null,
     medianLobbiesToMatch:
       medianLobbiesToMatch != null ? Math.max(1, Math.round(medianLobbiesToMatch)) : null,
@@ -1641,28 +1605,28 @@ function findMatchingLobby(snapshot) {
 }
 
 function ensureJoinAlertAudio() {
-  if (joinAlertAudio) {
-    return joinAlertAudio;
+  if (lobbyState.joinAlertAudio) {
+    return lobbyState.joinAlertAudio;
   }
 
-  joinAlertAudio = new Audio(chrome.runtime.getURL("assets/autojoin.mp3"));
-  joinAlertAudio.preload = "auto";
-  return joinAlertAudio;
+  lobbyState.joinAlertAudio = new Audio(chrome.runtime.getURL("assets/autojoin.mp3"));
+  lobbyState.joinAlertAudio.preload = "auto";
+  return lobbyState.joinAlertAudio;
 }
 
 function ensureCustomJoinAlertAudio() {
-  if (!customNotificationSoundData) {
-    customJoinAlertAudio = null;
+  if (!lobbyState.customNotificationSoundData) {
+    lobbyState.customJoinAlertAudio = null;
     return null;
   }
 
-  if (customJoinAlertAudio?.src === customNotificationSoundData) {
-    return customJoinAlertAudio;
+  if (lobbyState.customJoinAlertAudio?.src === lobbyState.customNotificationSoundData) {
+    return lobbyState.customJoinAlertAudio;
   }
 
-  customJoinAlertAudio = new Audio(customNotificationSoundData);
-  customJoinAlertAudio.preload = "auto";
-  return customJoinAlertAudio;
+  lobbyState.customJoinAlertAudio = new Audio(lobbyState.customNotificationSoundData);
+  lobbyState.customJoinAlertAudio.preload = "auto";
+  return lobbyState.customJoinAlertAudio;
 }
 
 function tryPlayAudio(audio, onFailure) {
@@ -1680,6 +1644,7 @@ function tryPlayAudio(audio, onFailure) {
     }
     return true;
   } catch (_error) {
+    globalThis.__OFH_CAPTURE_EXCEPTION__?.(_error, "engine/lobby/auto-join.js:1688");
     onFailure?.();
     return false;
   }
@@ -1687,7 +1652,7 @@ function tryPlayAudio(audio, onFailure) {
 
 function playJoinAlert() {
   if (
-    hasCustomNotificationSound &&
+    lobbyState.hasCustomNotificationSound &&
     tryPlayAudio(ensureCustomJoinAlertAudio(), () => {
       tryPlayAudio(ensureJoinAlertAudio());
     })
@@ -1703,20 +1668,20 @@ function playJoinAlert() {
 }
 
 async function disableAutoJoin() {
-  settings = {
-    ...settings,
+  lobbyState.settings = {
+    ...lobbyState.settings,
     enabled: false,
     searchStartedAt: null,
   };
 
   await chrome.storage.local.set({
-    [STORAGE_KEY]: settings,
+    [STORAGE_KEY]: lobbyState.settings,
   });
 }
 
 async function requestJoin(lobby) {
-  lastJoinRequestedAt = Date.now();
-  pendingJoin = {
+  lobbyState.lastJoinRequestedAt = Date.now();
+  lobbyState.pendingJoin = {
     gameID: lobby.gameID,
     startedAt: Date.now(),
   };
@@ -1724,7 +1689,7 @@ async function requestJoin(lobby) {
 
   lobbyCooldowns.set(lobby.gameID, Date.now() + LOBBY_RETRY_COOLDOWN_MS);
 
-  if (settings.joinNotification) {
+  if (lobbyState.settings.joinNotification) {
     try {
       await chrome.runtime.sendMessage({
         type: "SHOW_JOIN_NOTIFICATION",
@@ -1739,14 +1704,14 @@ async function requestJoin(lobby) {
   // Normally auto-join turns itself off once it joins a match. With "keep
   // searching" on, leave the toggle ENABLED — isOccupied() (waiting modal / live
   // game) pauses searching meanwhile, and it resumes when we return to the menu.
-  if (!settings.keepAutoJoinAfterMatch) {
+  if (!lobbyState.settings.keepAutoJoinAfterMatch) {
     await disableAutoJoin();
   }
   // The userscript's notification (in-page toast + OS notification) is SILENT — the old
   // extension build had a separate notification window that made its own sound — so we ring
   // the alert here whenever notifications are on. With them off, stay silent: the
   // "Found-game notification" toggle governs BOTH the popup and the chime.
-  if (settings.joinNotification) {
+  if (lobbyState.settings.joinNotification) {
     playJoinAlert();
   }
 
@@ -1766,27 +1731,27 @@ async function requestJoin(lobby) {
 function tryAutoJoin() {
   resetPendingJoinIfExpired();
 
-  // noteOccupancy() refreshes lastOccupiedAt as a side effect; recentlyOccupied()
+  // noteOccupancy() refreshes lobbyState.lastOccupiedAt as a side effect; recentlyOccupied()
   // is the grace-window backstop that blocks a join during the game-start gap
   // even if every DOM "occupied" signal momentarily reads false.
   if (
-    !settings.enabled ||
-    !latestLobbySnapshot ||
-    pendingJoin ||
+    !lobbyState.settings.enabled ||
+    !lobbyState.latestLobbySnapshot ||
+    lobbyState.pendingJoin ||
     noteOccupancy() ||
     recentlyOccupied()
   ) {
     return;
   }
 
-  const matchingLobby = findMatchingLobby(latestLobbySnapshot);
+  const matchingLobby = findMatchingLobby(lobbyState.latestLobbySnapshot);
   if (!matchingLobby) {
     return;
   }
 
   logAutoJoinDecision("join", matchingLobby);
   requestJoin(matchingLobby).catch((error) => {
-    pendingJoin = null;
+    lobbyState.pendingJoin = null;
     console.error("Failed to auto-join matching lobby:", error);
   });
 }
@@ -1802,7 +1767,7 @@ function tryAutoJoin() {
 // joined a DIFFERENT lobby while the chosen game was still starting.
 function pollAutoJoinResume() {
   if (noteOccupancy()) {
-    wasOccupied = true;
+    lobbyState.wasOccupied = true;
     return;
   }
 
@@ -1810,11 +1775,12 @@ function pollAutoJoinResume() {
 
   // Un-occupied now — but wait out the grace so a transient startup blip doesn't
   // masquerade as a return to the menu.
-  if (wasOccupied && !recentlyOccupied()) {
-    wasOccupied = false;
-    if (settings.enabled && settings.keepAutoJoinAfterMatch) {
-      settings = { ...settings, searchStartedAt: Date.now() };
-      chrome.storage.local.set({ [STORAGE_KEY]: settings }).catch(() => {});
+  if (lobbyState.wasOccupied && !recentlyOccupied()) {
+    lobbyState.wasOccupied = false;
+    lobbyState.sawLobbyWaitingBeforeGameStart = false;
+    if (lobbyState.settings.enabled && lobbyState.settings.keepAutoJoinAfterMatch) {
+      lobbyState.settings = { ...lobbyState.settings, searchStartedAt: Date.now() };
+      chrome.storage.local.set({ [STORAGE_KEY]: lobbyState.settings }).catch(() => {});
       resetLobbyForecastTracking();
     }
     tryAutoJoin();
@@ -1837,9 +1803,10 @@ function handleBridgeMessage(event) {
   }
 
   if (data.type === "PUBLIC_LOBBIES_UPDATE") {
-    latestLobbySnapshot = data.payload;
+    // Declared in core.js; both files share one concatenated userscript scope.
+    lobbyState.latestLobbySnapshot = data.payload;
     try {
-      updateLobbyForecast(latestLobbySnapshot);
+      updateLobbyForecast(lobbyState.latestLobbySnapshot);
       tryAutoJoin();
     } catch (error) {
       if (isExtensionContextInvalidatedError(error)) {
@@ -1857,7 +1824,6 @@ function handleBridgeMessage(event) {
 
   if (data.type === "CHEATS_AVAILABILITY") {
     updateCheatsAvailability(data.payload?.available);
-    return;
   }
 
 }
@@ -1867,29 +1833,29 @@ async function handleStorageChange(changes, areaName) {
     return;
   }
 
-  const previousLanguage = settings.language;
+  const previousLanguage = lobbyState.settings.language;
   const previousForecastSignature = createForecastFilterSignature();
-  settings = normalizeSettings(changes[STORAGE_KEY].newValue);
-  if (settings.language !== previousLanguage) {
+  lobbyState.settings = normalizeSettings(changes[STORAGE_KEY].newValue);
+  if (lobbyState.settings.language !== previousLanguage) {
     await loadContentTranslations();
     document.getElementById(FLOATING_HELPERS_PANEL_ID)?.remove();
     document.getElementById(FLOATING_AUTOJOIN_PANEL_ID)?.remove();
   }
-  selectiveTradePolicyAvailable = Boolean(settings.autoCancelDeniedTradesAvailable);
-  cheatsAvailable = Boolean(settings.cheatsAvailable);
+  lobbyState.selectiveTradePolicyAvailable = Boolean(lobbyState.settings.autoCancelDeniedTradesAvailable);
+  lobbyState.cheatsAvailable = Boolean(lobbyState.settings.cheatsAvailable);
   syncHelpers();
   syncFloatingHelpersPanel();
   syncFloatingAutoJoinPanel();
-  if (!settings.enabled) {
-    pendingJoin = null;
+  if (!lobbyState.settings.enabled) {
+    lobbyState.pendingJoin = null;
   }
   const nextForecastSignature = createForecastFilterSignature();
   if (nextForecastSignature !== previousForecastSignature) {
     lobbyForecastFilterSignature = nextForecastSignature;
     lobbyForecastRecentMatchOutcomes = [];
     resetLobbyForecastTracking(
-      latestLobbySnapshot
-        ? flattenLobbies(latestLobbySnapshot)
+      lobbyState.latestLobbySnapshot
+        ? flattenLobbies(lobbyState.latestLobbySnapshot)
           .map(({ lobby }) => String(lobby?.gameID || ""))
           .filter(Boolean)
         : [],
@@ -1905,32 +1871,32 @@ async function init() {
   chrome.storage.onChanged.addListener(handleStorageChange);
   chrome.storage.onChanged.addListener((changes) => {
     if ("joinNotificationSoundData" in changes) {
-      customNotificationSoundData =
+      lobbyState.customNotificationSoundData =
         typeof changes.joinNotificationSoundData.newValue === "string"
           ? changes.joinNotificationSoundData.newValue
           : null;
-      hasCustomNotificationSound = Boolean(customNotificationSoundData);
-      if (!hasCustomNotificationSound) {
-        customJoinAlertAudio = null;
+      lobbyState.hasCustomNotificationSound = Boolean(lobbyState.customNotificationSoundData);
+      if (!lobbyState.hasCustomNotificationSound) {
+        lobbyState.customJoinAlertAudio = null;
       }
     }
   });
   await loadSettings();
   // Full reload back to the menu while "keep searching" is on → start a fresh
   // search timer instead of carrying the stale one from before the last game.
-  if (settings.enabled && settings.keepAutoJoinAfterMatch) {
-    settings = { ...settings, searchStartedAt: Date.now() };
-    await chrome.storage.local.set({ [STORAGE_KEY]: settings });
+  if (lobbyState.settings.enabled && lobbyState.settings.keepAutoJoinAfterMatch) {
+    lobbyState.settings = { ...lobbyState.settings, searchStartedAt: Date.now() };
+    await chrome.storage.local.set({ [STORAGE_KEY]: lobbyState.settings });
   }
   lobbyForecastFilterSignature = createForecastFilterSignature();
   resetLobbyForecastTracking();
   persistLobbyForecast(true);
   const soundStore = await chrome.storage.local.get("joinNotificationSoundData");
-  customNotificationSoundData =
+  lobbyState.customNotificationSoundData =
     typeof soundStore.joinNotificationSoundData === "string"
       ? soundStore.joinNotificationSoundData
       : null;
-  hasCustomNotificationSound = Boolean(customNotificationSoundData);
+  lobbyState.hasCustomNotificationSound = Boolean(lobbyState.customNotificationSoundData);
   window.addEventListener("resize", () => {
     const panel = document.getElementById(FLOATING_HELPERS_PANEL_ID);
     if (panel) {

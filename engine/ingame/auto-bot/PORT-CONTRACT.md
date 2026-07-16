@@ -122,11 +122,12 @@ considerMIRV/maybeSpawnWarship/counterWarshipInfestation/maybeSendNuke). Wrap ea
    then await bestTransportShipSpawn down the list, take the first `!== false`.
    Early Game must not reinterpret reachability alone as an ETA. Under `winFixes`,
    `gameApi` combines the returned spawn tile with a bounded full-resolution water-graph
-   search and accepts only routes up to 300 ticks. `src.transportRouteTicks(tile)` takes
-   precedence when an upstream exact adapter exists. The local graph search is a marked
-   `DIVERGENCE` from the engine's HPA/smoothing path; if it is unavailable or exceeds its
-   budget, the Early Game naval gate fails closed. The faithful non-Early path remains
-   unchanged.
+   search; the strict Early Game gate accepts only routes up to 300 ticks, while
+   exploratory/probe boats accept at most 1,200 ticks (two minutes at 10 ticks/s).
+   `src.transportRouteTicks(tile)` takes precedence when an upstream exact adapter
+   exists. The local graph search is a marked `DIVERGENCE` from the engine's
+   HPA/smoothing path; if it is unavailable or exceeds the two-minute budget, the
+   exploratory boat gate fails closed. The faithful non-Early path remains unchanged.
 3. **borderTiles of OTHER players** — `await game.__ensureBorderTiles(player)` before
    reading that player's `borderTiles()` synchronously (e.g. before calculateTerritoryCenter
    or scanning a target's tiles). Cache is per-tick; only fetch targets you actually need
@@ -238,13 +239,22 @@ and the Early Game 300-tick ETA gate.
 With `winFixes` disabled, these additions are inactive and the faithful Nation
 flow remains unchanged.
 
+Expansion is independent of hostile borders: direct TerraNullius and nearby
+tribe targets are evaluated before the fallback attack against bordering enemy
+players. A hostile border may resume the combat pipeline only after the current
+free-land/tribe opportunity cannot be emitted; it must not suppress those
+expansion lanes by itself.
+
 ### Custom TerraNullius land commit
 
-With `winFixes` enabled, direct land attacks against TerraNullius use the live
+With `winFixes` enabled, direct attacks against TerraNullius use the live
 `Config.attackLogic` loss for the worst available first frontier tile as their
-complete payload, capped by the TerraNullius reserve and pending outbound
-intents. This keeps a large free-land expansion from draining the home army.
-Transport attacks use the same one-tile amount as a cheap probe.
+minimum payload. All land attacks and transport probes share a cumulative
+opening commitment limit measured from the first post-spawn attempt: 0.4% of
+the spawning army through tick 100, interpolating to 1.2% at tick 300 and 2% at
+tick 500. After tick 500, the calculated troop-production peak and any higher
+border-threat reserve are the hard floor. Pending outbound intents are deducted
+from the same budget, so reconciled follow-ups cannot multiply the allowance.
 
 ### Custom maritime emergency economy
 
@@ -290,11 +300,12 @@ large map cannot turn spawn observation into a tab-wide allocation.
 ### Custom team donation clan priority
 
 With `winFixes` enabled, the existing team-only troop donation keeps its needy
-teammate and frontline filters, then prioritizes recipients whose clan tag matches
-the bot's. Clan tags are read through the already-loaded `__OFHSpawnObjective`
-adapter; missing tags never exclude a teammate and fall back to frontline status
-and troop percentage. With `winFixes` disabled, the faithful donation ordering is
-unchanged.
+teammate filter, prioritizes allies under attack and then other frontline allies,
+and weights closer recipients ahead of farther ones within each urgency tier.
+Troop percentage and matching clan tag break the remaining ties. Clan tags are
+read through the already-loaded `__OFHSpawnObjective` adapter; missing location
+or clan data never excludes a teammate. With `winFixes` disabled, the faithful
+donation ordering is unchanged.
 
 Both modes apply the same client-side border reserve before emitting the donation:
 scan `player.borderTiles()`, inspect adjacent owned land through `neighbors()` and
@@ -330,6 +341,37 @@ the maximum of those per-player sums, and requires our missile silo level sum to
 reach that target. A SAM under construction counts as one future level. This is
 a max-per-enemy target rather than a global sum across unrelated opponents, and
 the ordinary three-silo cap is relaxed only while this parity gap exists.
+The first missile silo is exempt from the nuclear weapon gold reserve because
+that reserve cannot be used until a launcher exists. Once one silo is built, the
+reserve again applies to additional silo construction and upgrades.
+
+An urgent land-attack Defense Post is evaluated after a concrete incoming-missile
+SAM upgrade but before routine SAM coverage/parity and offensive silo work. A
+meaningful attack starts at 35% of the current army on every non-Easy difficulty;
+routine Legendary SAM parity does not suppress that land-defense response. The
+"not the first structure" rule uses both the ordinary placement counter and the
+actual owned structure snapshot, so an emergency-built SAM or Silo cannot leave
+Defense Posts permanently gated off. An unaffordable urgent post reserves its
+construction slot, but an affordable post with no legal placement does not
+starve all lower-priority construction.
+
+A failed hostile-Silo SAM placement retains its bounded retry cadence but no
+longer reserves every construction slot between retries. Likewise, the
+high-density upgrade preference blocks a new same-type structure only while one
+is actually under construction; max-level, unaffordable, or unavailable upgrades
+fall through to normal new placement.
+
+SAM construction and upgrades remain locked until an active hostile Atom Bomb
+or Hydrogen Bomb is observed in flight. A hostile Silo, hostile gold, or numeric
+Silo/SAM parity gap cannot open this gate. The first observed hostile launch is
+sampled on every authoritative bot tick and latched for the remainder of the
+match, so short-lived missiles cannot pass between construction decisions and
+later defensive construction remains available after that missile resolves.
+The high-frequency observer reads only the active Atom/Hydrogen unit family;
+hostile-player, Silo, and structure geometry scans remain on the slower
+construction cadence. Active-missile and Hydrogen coverage results are cached
+per authoritative tick so multiple policy consumers cannot repeat work that
+scales with the late-game building count.
 
 The inverse parity guard is also enforced: when a hostile player's projected
 missile-silo level sum exceeds the highest built SAM level on our side, at least

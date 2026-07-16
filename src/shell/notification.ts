@@ -11,13 +11,13 @@ const TITLE = "⊕ OpenFront Helper";
 /** Ask for OS-notification permission. Must be called from a user gesture (toggle /
  *  popup open); a no-op once the user has already granted or denied it. */
 export function requestJoinNotificationPermission(): void {
+  let shouldRequest = false;
   try {
-    if ("Notification" in window && Notification.permission === "default") {
-      void Notification.requestPermission();
-    }
+    shouldRequest = "Notification" in window && Notification.permission === "default";
   } catch {
     /* some embedders throw on Notification access — ignore */
   }
+  if (shouldRequest) void Notification.requestPermission().catch(() => undefined);
 }
 
 function showOsNotification(text: string, tag: string): boolean {
@@ -65,11 +65,15 @@ function showToast(text: string): void {
       "transition:opacity .3s",
     ].join(";"),
   );
-  el.onclick = () => el.remove();
+  el.onclick = () => {
+    el.remove();
+  };
   document.body.appendChild(el);
   setTimeout(() => {
     el.style.opacity = "0";
-    setTimeout(() => el.remove(), 350);
+    setTimeout(() => {
+      el.remove();
+    }, 350);
   }, 5000);
 }
 

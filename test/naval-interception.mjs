@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import vm from "node:vm";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -11,7 +11,7 @@ const source = fs.readFileSync(
 );
 const sandbox = {};
 sandbox.globalThis = sandbox;
-vm.runInNewContext(
+executeClassicScript(
   `${source}\nglobalThis.planNavalInterceptions = planNavalInterceptions;`,
   sandbox,
   {
@@ -118,4 +118,4 @@ const twoShips = planNavalInterceptions({
 assert.deepEqual(twoShips.uncoveredIds, []);
 assert.equal(twoShips.assignments.length, 2);
 
-console.log("naval interception tests passed");
+process.stdout.write("naval interception tests passed\n");

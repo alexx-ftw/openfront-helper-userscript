@@ -28,80 +28,103 @@
       if (info && Number.isFinite(info.constructionDuration) && info.constructionDuration > 0) {
         return info.constructionDuration;
       }
-    } catch (_error) { /* ignore */ }
+    } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/build-timer.js:31"); /* ignore */ }
     return BUILD_TIMER_DEFAULT_DURATION[type] || 100;
   }
 
-  function scanBuildTimers(game) {
-    let units;
+  function getBuildTimerUnits(game) {
     try {
-      units =
-        typeof getCachedGameUnits === "function"
-          ? getCachedGameUnits(game, ...BUILD_TIMER_TYPES)
-          : game.units(...BUILD_TIMER_TYPES);
+      return typeof getCachedGameUnits === "function"
+        ? getCachedGameUnits(game, ...BUILD_TIMER_TYPES)
+        : game.units(...BUILD_TIMER_TYPES);
     } catch (_error) {
-      _buildTimerScan = [];
-      return;
+      captureRuntimeException(_error, "engine/ingame/build-timer.js:getBuildTimerUnits");
+      return [];
     }
+  }
+
+  function getBuildTimerBase(game, unit) {
+    if (!unit?.isActive?.()) return null;
+    const id = unit.id?.();
+    const tile = unit.tile?.();
+    if (id == null || tile == null) return null;
+    try {
+      return {
+        id,
+        type: unit.type?.() ?? null,
+        worldX: game.x(tile),
+        worldY: game.y(tile),
+      };
+    } catch (_error) {
+      captureRuntimeException(_error, "engine/ingame/build-timer.js:getBuildTimerBase");
+      return null;
+    }
+  }
+
+  function getBuildTimerQueue(unit) {
+    try {
+      return unit.missileTimerQueue?.() ?? [];
+    } catch (_error) {
+      captureRuntimeException(_error, "engine/ingame/build-timer.js:getBuildTimerQueue");
+      return [];
+    }
+  }
+
+  function getBuildTimerLevel(unit) {
+    try {
+      return Number(unit.level?.() ?? 1) || 1;
+    } catch (_error) {
+      captureRuntimeException(_error, "engine/ingame/build-timer.js:getBuildTimerLevel");
+      return 1;
+    }
+  }
+
+  function getConstructionTimerEntry(game, base, ticks) {
+    if (!_buildTimerConstructionSeen.has(base.id)) {
+      _buildTimerConstructionSeen.set(base.id, ticks);
+    }
+    const firstSeen = _buildTimerConstructionSeen.get(base.id);
+    const duration = getConstructionDuration(game, base.type);
+    const remaining = Math.max(0, duration - (ticks - firstSeen));
+    const seconds = Math.round(remaining / 10);
+    return {
+      ...base,
+      label: seconds > 0 ? `🏗 ${seconds}s` : tr("Building"),
+      state: "building",
+    };
+  }
+
+  function getCompletedTimerEntry(unit, base, ticks) {
+    _buildTimerConstructionSeen.delete(base.id);
+    const queue = getBuildTimerQueue(unit);
+    const level = getBuildTimerLevel(unit);
+    if (!Array.isArray(queue) || queue.length < level) {
+      return { ...base, label: "✓", state: "ready" };
+    }
+    const remaining = BUILD_TIMER_COOLDOWN_TICKS - (ticks - queue[0]);
+    if (remaining <= 0) return { ...base, label: "✓", state: "ready" };
+    return {
+      ...base,
+      label: `⟳ ${Math.round(remaining / 10)}s`,
+      state: "cooldown",
+    };
+  }
+
+  function scanBuildTimers(game) {
+    const units = getBuildTimerUnits(game);
     const ticks = game.ticks ? game.ticks() : 0;
     const out = [];
     const seenIds = new Set();
 
     for (const unit of units) {
-      if (!unit || !unit.isActive || !unit.isActive()) continue;
-      const id = unit.id ? unit.id() : null;
-      if (id == null) continue;
-      seenIds.add(id);
-      const type = unit.type ? unit.type() : null;
-      const tile = unit.tile ? unit.tile() : null;
-      if (tile == null) continue;
-
-      let worldX = 0, worldY = 0;
-      try {
-        worldX = game.x(tile);
-        worldY = game.y(tile);
-      } catch (_error) { continue; }
-
-      const underConstruction = Boolean(unit.isUnderConstruction && unit.isUnderConstruction());
-
-      if (underConstruction) {
-        // Track when we first saw this unit under construction.
-        if (!_buildTimerConstructionSeen.has(id)) {
-          _buildTimerConstructionSeen.set(id, ticks);
-        }
-        const firstSeen = _buildTimerConstructionSeen.get(id);
-        const duration = getConstructionDuration(game, type);
-        const remaining = Math.max(0, duration - (ticks - firstSeen));
-        const sec = Math.round(remaining / 10);
-        const label = sec > 0 ? `🏗 ${sec}s` : tr("Building");
-        out.push({ id, type, worldX, worldY, label, state: "building" });
-      } else {
-        // Done building — remove from construction tracker.
-        _buildTimerConstructionSeen.delete(id);
-
-        // Check missile cooldown.
-        let queue = [];
-        try {
-          queue = unit.missileTimerQueue ? unit.missileTimerQueue() : [];
-        } catch (_error) { queue = []; }
-        let level = 1;
-        try {
-          level = Number(unit.level ? unit.level() : 1) || 1;
-        } catch (_error) { level = 1; }
-
-        if (Array.isArray(queue) && queue.length >= level) {
-          const lastFired = queue[0];
-          const remaining = BUILD_TIMER_COOLDOWN_TICKS - (ticks - lastFired);
-          if (remaining > 0) {
-            const sec = Math.round(remaining / 10);
-            out.push({ id, type, worldX, worldY, label: `⟳ ${sec}s`, state: "cooldown" });
-          } else {
-            out.push({ id, type, worldX, worldY, label: "✓", state: "ready" });
-          }
-        } else {
-          out.push({ id, type, worldX, worldY, label: "✓", state: "ready" });
-        }
-      }
+      const base = getBuildTimerBase(game, unit);
+      if (!base) continue;
+      seenIds.add(base.id);
+      const entry = unit.isUnderConstruction?.()
+        ? getConstructionTimerEntry(game, base, ticks)
+        : getCompletedTimerEntry(unit, base, ticks);
+      out.push(entry);
     }
 
     // Prune construction tracker for units no longer in the scan.
@@ -156,15 +179,15 @@
 
   registerMapOverlayLayer({
     id: "build-timers",
-    scanIntervalMs: 250,
-    isEnabled: function () { return buildTimerEnabled; },
+    scanIntervalMs: 1000,
+    isEnabled: function () { return runtimeState.buildTimerEnabled; },
     scan: function (game) { scanBuildTimers(game); },
     draw: function (ctx, game, transform) { drawBuildTimers(ctx, game, transform); },
   });
 
   function setBuildTimerEnabled(enabled) {
-    buildTimerEnabled = Boolean(enabled);
-    if (!buildTimerEnabled) {
+    runtimeState.buildTimerEnabled = Boolean(enabled);
+    if (!runtimeState.buildTimerEnabled) {
       _buildTimerScan = [];
       _buildTimerConstructionSeen.clear();
     }

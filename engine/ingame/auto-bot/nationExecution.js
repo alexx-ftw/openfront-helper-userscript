@@ -83,347 +83,223 @@
       }
     }
 
-    async tick(ticks, profile = null, tickGeneration = null) {
-      const tickIsCurrent = () =>
-        tickGeneration === null ||
+    tickIsCurrent(tickGeneration) {
+      return tickGeneration == null ||
         (state.settings.enabled && state.tickGeneration === tickGeneration);
-      if (!tickIsCurrent()) return;
-      this.player = this.mg.myPlayer();
-      const me = this.player;
+    }
 
-      // The engine timer is a real-time poll, not a game-tick callback. A slow
-      // worker response or browser timer jitter can therefore call us twice for
-      // the same authoritative snapshot. Nothing in the strategy can change
-      // until the game advances, so skip the complete naval/behavior chain and
-      // its global unit scans on duplicate polls.
-      if (
-        ticks !== null &&
-        ticks !== undefined &&
-        this.lastProcessedGameTick === ticks
-      ) {
-        return;
-      }
-      this.lastProcessedGameTick = ticks;
+    shouldRunNavalInvasion(me, config) {
+      return Boolean(this.behaviorsInitialized && me?.isAlive() && this.feat("warship") &&
+        state.settings.winFixes && !config.isUnitDisabled(UNIT.Warship) &&
+        !config.isUnitDisabled(UNIT.TransportShip));
+    }
 
-      // Observe missile launches on every authoritative game tick, not only
-      // on the much slower structure cadence. Otherwise a short-lived missile
-      // can launch and resolve between build decisions, leaving the SAM gate
-      // permanently locked even though an enemy has fired.
-      if (this.behaviorsInitialized && me?.isAlive()) {
-        this.structureBehavior.observeHostileMissileLaunch?.();
-      }
+    shouldTrackWarships(me, config) {
+      return Boolean(this.behaviorsInitialized && me?.isAlive() && this.feat("warship") &&
+        currentDifficulty() !== Difficulty.Easy && me.unitsConstructed(UNIT.Port) &&
+        !config.isUnitDisabled(UNIT.Warship));
+    }
 
-      // WIN-FIX: run the route-aware invasion planner before the ordinary
-      // warship tracker. This keeps a live maritime landing from waiting for
-      // the slower combat cadence and lets an existing destroyer cover the
-      // transport while the structure phase reserves/builds the Port.
-      if (
-        this.behaviorsInitialized &&
-        me !== null &&
-        me.isAlive() &&
-        this.feat("warship") &&
-        state.settings.winFixes &&
-        !this.mg.config().isUnitDisabled(UNIT.Warship) &&
-        !this.mg.config().isUnitDisabled(UNIT.TransportShip)
-      ) {
+    async runNavalTickPhases(me, profile, tickGeneration) {
+      const live = () => this.tickIsCurrent(tickGeneration);
+      const config = this.mg.config();
+      if (this.shouldRunNavalInvasion(me, config)) {
         try {
-          await autoBotProfileAsyncPhase(
-            profile,
-            "naval-invasion",
-            () => this.warshipBehavior.protectAgainstNavalInvasions(),
-          );
-          if (!tickIsCurrent()) return;
-        } catch (e) {
-          console.error("[AutoBot] naval invasion planner error:", e);
+          await autoBotProfileAsyncPhase(profile, "naval-invasion", () =>
+            this.warshipBehavior.protectAgainstNavalInvasions());
+          if (!live()) return false;
+        } catch (error) {
+          console.error("[AutoBot] naval invasion planner error:", error);
         }
       }
+      if (!this.shouldTrackWarships(me, config)) return true;
+      try {
+        if (state.settings.warshipAutoSpawn !== false) {
+          autoBotProfileSyncPhase(profile, "warship-track", () =>
+            this.warshipBehavior.trackShipsAndRetaliate());
+        }
+        if (!state.settings.winFixes) return true;
+        if (state.settings.warshipNukeDodge !== false) {
+          autoBotProfileSyncPhase(profile, "warship-dodge", () =>
+            this.warshipBehavior.dodgeNukes());
+        }
+        autoBotProfileSyncPhase(profile, "warship-patrol", () =>
+          this.warshipBehavior.smartWarshipPatrol());
+        autoBotProfileSyncPhase(profile, "warship-combat", () =>
+          this.warshipBehavior.smartWarshipCombat());
+      } catch (error) {
+        console.error("[AutoBot] trackShips error:", error);
+      }
+      return true;
+    }
 
-      // ── ship tracking — NationExecution.ts:90-101 (every tick, non-Easy, Port) ─
-      if (
-        this.behaviorsInitialized &&
-        me !== null &&
-        me.isAlive() &&
-        this.feat("warship") &&
-        currentDifficulty() !== Difficulty.Easy &&
-        me.unitsConstructed(UNIT.Port) &&
-        !this.mg.config().isUnitDisabled(UNIT.Warship)
-      ) {
-        try {
-          if (state.settings.warshipAutoSpawn !== false) {
-            autoBotProfileSyncPhase(profile, "warship-track", () =>
-              this.warshipBehavior.trackShipsAndRetaliate(),
-            );
-          }
-          if (state.settings.winFixes) {
-            // WIN-FIX: né nuke trước (ưu tiên sống sót), rồi reposition idle warship
-            // tới naval threat. dodgeNukes khoá ship vừa né khỏi patrol pass này.
-            if (state.settings.warshipNukeDodge !== false) {
-              autoBotProfileSyncPhase(profile, "warship-dodge", () =>
-                this.warshipBehavior.dodgeNukes(),
-              );
-            }
-            // WIN-FIX: reposition EXISTING idle warships to the top naval threat (invasion
-            // > trade-raid lane > open-water loss zone). Throttled/debounced internally.
-            autoBotProfileSyncPhase(profile, "warship-patrol", () =>
-              this.warshipBehavior.smartWarshipPatrol(),
-            );
-            // WIN-FIX (Blon port): battle sim + retreat HP% + hunt trade + attack weakest.
-            // Runs AFTER patrol so it can override patrol targets when combat is needed.
-            autoBotProfileSyncPhase(profile, "warship-combat", () =>
-              this.warshipBehavior.smartWarshipCombat(),
-            );
-          }
-        } catch (e) {
-          console.error("[AutoBot] trackShips error:", e);
+    handleSpawnTick(ticks, profile) {
+      if (!this.mg.inSpawnPhase()) return false;
+      if (this.feat("spawn") &&
+        (this.lastSpawnPickTick == null || ticks - this.lastSpawnPickTick >= 6)) {
+        this.lastSpawnPickTick = ticks;
+        const topKey = autoBotProfileSyncPhase(profile, "spawn-selection", () =>
+          this.currentSpawnTopKey());
+        if (!this.spawnExecAdded || (topKey != null && topKey !== this.lastSpawnTopKey)) {
+          this.lastSpawnTopKey = topKey;
+          autoBotProfileSyncPhase(profile, "spawn-emit", () => this.doSpawn());
         }
       }
+      this.status = tr("Spawn phase…");
+      return true;
+    }
 
-      if (me === null) return;
-
-      // ── spawn phase — NationExecution.ts:107-162 ─────────────────────────────
-      if (this.mg.inSpawnPhase()) {
-        // NOTE: we deliberately do NOT bail on me.hasSpawned() here. During the
-        // spawn phase the game's SpawnExecution relinquishes the old spawn and
-        // re-conquers when we emit a new spawn intent (non-random-spawn maps),
-        // so the bot can keep MOVING its spawn to follow the #1 spot even after
-        // it has already spawned once.
-        if (this.feat("spawn")) {
-          // Re-evaluate at most every ~6 ticks (~600ms). Re-emit only when the
-          // ranked #1 GRID point actually moves — comparing the grid key (not
-          // the snapped tile, which changes once we own territory) keeps a
-          // stable #1 from drifting while still following a moving #1.
-          if (
-            this.lastSpawnPickTick == null ||
-            ticks - this.lastSpawnPickTick >= 6
-          ) {
-            this.lastSpawnPickTick = ticks;
-            const topKey = autoBotProfileSyncPhase(
-              profile,
-              "spawn-selection",
-              () => this.currentSpawnTopKey(),
-            );
-            if (!this.spawnExecAdded || (topKey != null && topKey !== this.lastSpawnTopKey)) {
-              this.lastSpawnTopKey = topKey;
-              autoBotProfileSyncPhase(profile, "spawn-emit", () => this.doSpawn());
-            }
-          }
-          this.status = tr("Spawn phase…");
-        } else {
-          this.status = tr("Spawn phase…");
-        }
-        return;
+    async initializeTick(ticks, profile, tickGeneration) {
+      if (this.behaviorsInitialized) return false;
+      this.initializeBehaviors();
+      this.structureBehavior.observeHostileMissileLaunch?.();
+      if (this.feat("expand")) {
+        const openingWinFix = state.settings.winFixes === true;
+        const openingCommitFraction = openingWinFix ? EARLY_EXPAND_COMMIT : 0.5;
+        const openingAttackSent = await autoBotProfileAsyncPhase(profile, "opening-attack", () =>
+          this.attackBehavior.forceSendAttack(this.mg.terraNullius(), openingCommitFraction));
+        if (!this.tickIsCurrent(tickGeneration)) return true;
+        this.openingLandBurstPending = openingWinFix && !openingAttackSent;
+        this.openingExpansionFollowUpPending = openingWinFix && openingAttackSent;
       }
+      this.lastSeenTick = ticks;
+      return true;
+    }
 
-      if (!me.isAlive()) {
-        this.active = false;
-        this.status = tr("💀 Eliminated");
-        return;
+    async handleOpeningExpansion(ticks, profile, tickGeneration) {
+      const pending = this.openingLandBurstPending || this.openingExpansionFollowUpPending;
+      if (!pending || !state.settings.winFixes || !(this.feat("expand") || this.feat("boat"))) {
+        return false;
       }
-
-      // ── first live tick — NationExecution.ts:170-174 ─────────────────────────
-      if (!this.behaviorsInitialized) {
-        this.initializeBehaviors();
-        this.structureBehavior.observeHostileMissileLaunch?.();
-        if (this.feat("expand")) {
-          const openingWinFix = state.settings.winFixes === true;
-          const openingCommitFraction = openingWinFix
-            ? EARLY_EXPAND_COMMIT
-            : 0.5;
-          const openingAttackSent = await autoBotProfileAsyncPhase(
-            profile,
-            "opening-attack",
-            () =>
-              this.attackBehavior.forceSendAttack(
-                this.mg.terraNullius(),
-                openingCommitFraction,
-              ),
-          );
-          if (!tickIsCurrent()) return;
-          // A successful opening burst occupies this decision slot. With winFixes,
-          // schedule one follow-up on the next authoritative tick after the local
-          // intent is reconciled instead of waiting for attackRate.
-          this.openingLandBurstPending = openingWinFix && !openingAttackSent;
-          this.openingExpansionFollowUpPending =
-            openingWinFix && openingAttackSent;
-        }
+      if (this.hasPendingOpeningExpansionIntent()) {
         this.lastSeenTick = ticks;
-        return;
+        return true;
       }
-
-      const openingExpansionFollowUp =
-        this.openingLandBurstPending ||
-        this.openingExpansionFollowUpPending;
-      if (
-        openingExpansionFollowUp &&
-        state.settings.winFixes &&
-        (this.feat("expand") || this.feat("boat"))
-      ) {
-        // Do not scan or emit a second intent against the same stale troop
-        // snapshot. The next poll will retry as soon as reconciliation releases
-        // the opening attack, without waiting for the regular attack cadence.
-        if (this.hasPendingOpeningExpansionIntent()) {
-          this.lastSeenTick = ticks;
-          return;
-        }
-        this.openingLandBurstPending = false;
-        this.openingExpansionFollowUpPending = false;
-        this.status = tr("Thinking…");
-        try {
-          await autoBotProfileAsyncPhase(
-            profile,
-            "expansion-retry",
-            () => this.attackBehavior.maybeAttack(),
-          );
-          if (!tickIsCurrent()) return;
-          // Continue while an intent is pending OR directly accessible free land
-          // remains. A temporary reserve/rate-limit rejection must not demote the
-          // 1% follow-up loop to the much slower normal combat cadence.
-          this.openingExpansionFollowUpPending =
-            this.hasPendingOpeningExpansionIntent() ||
-            state.earlyGame?.hasFreeLand === true;
-        } catch (e) {
-          console.error("[AutoBot] opening expansion retry error:", e);
-        }
-        this.lastSeenTick = ticks;
-        return;
+      this.openingLandBurstPending = false;
+      this.openingExpansionFollowUpPending = false;
+      this.status = tr("Thinking…");
+      try {
+        await autoBotProfileAsyncPhase(profile, "expansion-retry", () =>
+          this.attackBehavior.maybeAttack());
+        if (!this.tickIsCurrent(tickGeneration)) return true;
+        this.openingExpansionFollowUpPending =
+          this.hasPendingOpeningExpansionIntent() || state.earlyGame?.hasFreeLand === true;
+      } catch (error) {
+        console.error("[AutoBot] opening expansion retry error:", error);
       }
+      this.lastSeenTick = ticks;
+      return true;
+    }
 
-      // ── tick gating (edge-detected over the elapsed window) — NationExecution.ts:176 ─
+    getTickCrossings(ticks) {
       const from = this.lastSeenTick < 0 ? ticks : this.lastSeenTick + 1;
       this.lastSeenTick = ticks;
-      // WIN-FIX (combatCadenceScale): <1 shrinks the effective attack interval
-      // so the bot remains more active than a faithful Nation without turning
-      // every 200 ms polling callback into a full global scan.
-      let ar = this.attackRate;
-      if (state.settings.winFixes) {
-        const scale = Number(state.settings.combatCadenceScale ?? 0.6);
-        if (Number.isFinite(scale) && scale > 0 && scale !== 1) {
-          ar = Math.max(1, Math.round(this.attackRate * scale));
-        }
+      let attackRate = this.attackRate;
+      const scale = Number(state.settings.combatCadenceScale ?? 0.6);
+      if (state.settings.winFixes && Number.isFinite(scale) && scale > 0 && scale !== 1) {
+        attackRate = Math.max(1, Math.round(this.attackRate * scale));
       }
-      const at = this.attackTick % ar;
-      const oneThird = (at + Math.floor(ar / 3)) % ar;
-      const twoThirds = (at + Math.floor((ar * 2) / 3)) % ar;
-      // Detect residue crossings arithmetically. Iterating every missed game
-      // tick made a delayed tab pay O(delay) CPU before it could recover.
+      const attackOffset = this.attackTick % attackRate;
       const span = Math.max(0, ticks - from);
-      const firstOffset = ((from % ar) + ar) % ar;
-      const intervalContainsOffset = (targetOffset) => {
-        const delta = (targetOffset - firstOffset + ar) % ar;
-        return delta <= span;
+      const firstOffset = ((from % attackRate) + attackRate) % attackRate;
+      const contains = (target) => (target - firstOffset + attackRate) % attackRate <= span;
+      return {
+        attack: contains(attackOffset),
+        third: contains((attackOffset + Math.floor(attackRate / 3)) % attackRate) ||
+          contains((attackOffset + Math.floor((attackRate * 2) / 3)) % attackRate),
       };
-      const attackCrossed = intervalContainsOffset(at);
-      const thirdCrossed =
-        intervalContainsOffset(oneThird) || intervalContainsOffset(twoThirds);
+    }
 
-      if (!attackCrossed) {
-        // Between regular attack ticks: build at 1/3 and 2/3 (NationExecution.ts:180-190).
-        if (thirdCrossed && this.feat("build")) {
-          await autoBotProfileAsyncPhase(
-            profile,
-            "structures-between",
-            () => this.structureBehavior.handleStructures(),
-          );
-          if (!tickIsCurrent()) return;
-        }
-        // A maritime emergency must not wait for the next attack cadence just
-        // because this snapshot was a structure-only tick. The route-aware
-        // planner above normally handles it; this fallback covers clients that
-        // cannot expose a usable route but can still build a Warship from a Port.
-        if (
-          state.settings.winFixes &&
-          this.feat("warship") &&
-          state.settings.warshipAutoSpawn !== false &&
-          this.warshipBehavior.incomingMaritimeInvasionSignal?.()?.active === true
-        ) {
-          await autoBotProfileAsyncPhase(
-            profile,
-            "warship-emergency-build",
-            () => this.warshipBehavior.maybeSpawnWarship(),
-          );
-          if (!tickIsCurrent()) return;
-        }
-        return;
+    async handleBetweenAttackTicks(thirdCrossed, profile, tickGeneration) {
+      if (thirdCrossed && this.feat("build")) {
+        await autoBotProfileAsyncPhase(profile, "structures-between", () =>
+          this.structureBehavior.handleStructures());
+        if (!this.tickIsCurrent(tickGeneration)) return;
       }
+      const emergency = state.settings.winFixes && this.feat("warship") &&
+        state.settings.warshipAutoSpawn !== false &&
+        this.warshipBehavior.incomingMaritimeInvasionSignal?.()?.active === true;
+      if (!emergency) return;
+      await autoBotProfileAsyncPhase(profile, "warship-emergency-build", () =>
+        this.warshipBehavior.maybeSpawnWarship());
+    }
 
-      // ── full decision chain, src order (NationExecution.ts:194-204) ───────────
+    runDiplomacy(profile) {
+      autoBotProfileSyncPhase(profile, "diplomacy", () => {
+        this.updateRelationsFromEmbargos();
+        this.allianceBehavior.handleAllianceRequestsFromBots();
+        if (!this.feat("alliance")) return;
+        this.allianceBehavior.handleAllianceRequests();
+        this.allianceBehavior.handleAllianceExtensionRequests();
+      });
+    }
+
+    async runOptionalAsyncPhase(enabled, profile, name, action, tickGeneration) {
+      if (!enabled) return true;
+      await autoBotProfileAsyncPhase(profile, name, action);
+      return this.tickIsCurrent(tickGeneration);
+    }
+
+    async runDecisionChain(profile, tickGeneration) {
       this.status = tr("Thinking…");
       try {
         autoBotProfileSyncPhase(profile, "emoji", () =>
-          this.emojiBehavior.maybeSendCasualEmoji(),
-        );
-        autoBotProfileSyncPhase(profile, "diplomacy", () => {
-          this.updateRelationsFromEmbargos();
-          // Always reject alliance requests from regular bots — even when
-          // alliance auto-accept is off. Regular bots spam requests defensively
-          // which blocks attacks against them.
-          this.allianceBehavior.handleAllianceRequestsFromBots();
-          if (this.feat("alliance")) {
-            this.allianceBehavior.handleAllianceRequests();
-            this.allianceBehavior.handleAllianceExtensionRequests();
-          }
-        });
-        if (this.feat("nuke")) {
-          await autoBotProfileAsyncPhase(
-            profile,
-            "mirv",
-            () => this.mirvBehavior.considerMIRV(),
-          );
-          if (!tickIsCurrent()) return;
-        }
-        if (this.feat("build")) {
-          await autoBotProfileAsyncPhase(
-            profile,
-            "structures",
-            () => this.structureBehavior.handleStructures(),
-          );
-          if (!tickIsCurrent()) return;
-        }
-        if (this.feat("warship") && state.settings.warshipAutoSpawn !== false) {
-          await autoBotProfileAsyncPhase(
-            profile,
-            "warship-build",
-            () => this.warshipBehavior.maybeSpawnWarship(),
-          );
-          if (!tickIsCurrent()) return;
-        }
-        // DIVERGENCE: src gates this under alliance; we add a dedicated `embargo`
-        // toggle so the user can turn off the bot's auto-stop-trading behavior.
+          this.emojiBehavior.maybeSendCasualEmoji());
+        this.runDiplomacy(profile);
+        if (!await this.runOptionalAsyncPhase(this.feat("nuke"), profile, "mirv",
+          () => this.mirvBehavior.considerMIRV(), tickGeneration)) return;
+        if (!await this.runOptionalAsyncPhase(this.feat("build"), profile, "structures",
+          () => this.structureBehavior.handleStructures(), tickGeneration)) return;
+        const warship = this.feat("warship") && state.settings.warshipAutoSpawn !== false;
+        if (!await this.runOptionalAsyncPhase(warship, profile, "warship-build",
+          () => this.warshipBehavior.maybeSpawnWarship(), tickGeneration)) return;
         if (this.feat("embargo")) {
           autoBotProfileSyncPhase(profile, "embargo", () =>
-            this.handleEmbargoesToHostileNations(),
-          );
+            this.handleEmbargoesToHostileNations());
         }
-        if (this.feat("expand") || this.feat("boat")) {
-          await autoBotProfileAsyncPhase(
-            profile,
-            "attack",
-            () => this.attackBehavior.maybeAttack(),
-          );
-          if (!tickIsCurrent()) return;
-        }
-        if (this.feat("warship") && state.settings.warshipAutoSpawn !== false) {
-          await autoBotProfileAsyncPhase(
-            profile,
-            "warship-counter",
-            () => this.warshipBehavior.counterWarshipInfestation(),
-          );
-          if (!tickIsCurrent()) return;
-        }
-        if (this.feat("nuke")) {
-          await autoBotProfileAsyncPhase(
-            profile,
-            "nuke",
-            () => this.nukeBehavior.maybeSendNuke(),
-          );
-          if (!tickIsCurrent()) return;
-        }
-      } catch (e) {
-        console.error("[AutoBot] decision chain error:", e);
+        if (!await this.runOptionalAsyncPhase(this.feat("expand") || this.feat("boat"),
+          profile, "attack", () => this.attackBehavior.maybeAttack(), tickGeneration)) return;
+        if (!await this.runOptionalAsyncPhase(warship, profile, "warship-counter",
+          () => this.warshipBehavior.counterWarshipInfestation(), tickGeneration)) return;
+        await this.runOptionalAsyncPhase(this.feat("nuke"), profile, "nuke",
+          () => this.nukeBehavior.maybeSendNuke(), tickGeneration);
+      } catch (error) {
+        console.error("[AutoBot] decision chain error:", error);
       }
     }
 
-    // initializeBehaviors — NationExecution.ts:207
+    async tick(ticks, profile, tickGeneration) {
+      if (!this.tickIsCurrent(tickGeneration)) return;
+      this.player = this.mg.myPlayer();
+      const me = this.player;
+      if (this.isDuplicateGameTick(ticks)) return;
+      this.lastProcessedGameTick = ticks;
+      if (this.behaviorsInitialized && me?.isAlive()) {
+        this.structureBehavior.observeHostileMissileLaunch?.();
+      }
+      if (!await this.runNavalTickPhases(me, profile, tickGeneration)) return;
+      if (me === null || this.handleSpawnTick(ticks, profile)) return;
+      if (this.handleEliminatedPlayer(me)) return;
+      if (await this.initializeTick(ticks, profile, tickGeneration)) return;
+      if (await this.handleOpeningExpansion(ticks, profile, tickGeneration)) return;
+      const crossings = this.getTickCrossings(ticks);
+      if (!crossings.attack) {
+        await this.handleBetweenAttackTicks(crossings.third, profile, tickGeneration);
+        return;
+      }
+      await this.runDecisionChain(profile, tickGeneration);
+    }
+
+    handleEliminatedPlayer(player) {
+      if (player.isAlive()) return false;
+      this.active = false;
+      this.status = tr("💀 Eliminated");
+      return true;
+    }
+
+    isDuplicateGameTick(ticks) {
+      return ticks != null && this.lastProcessedGameTick === ticks;
+    }
     initializeBehaviors() {
       const r = this.random;
       const g = this.mg;
@@ -432,22 +308,18 @@
       this.mirvBehavior = new MirvBehavior(r, g, p, this.emojiBehavior);
       this.allianceBehavior = new AllianceBehavior(r, g, p, this.emojiBehavior);
       this.warshipBehavior = new WarshipBehavior(r, g, p, this.emojiBehavior);
-      this.attackBehavior = new AttackBehavior(
-        r,
-        g,
-        p,
-        this.triggerRatio,
-        this.reserveRatio,
-        this.expandRatio,
-        this.allianceBehavior,
-        this.emojiBehavior,
-      );
+      this.attackBehavior = new AttackBehavior({
+        random: r,
+        game: g,
+        player: p,
+        triggerRatio: this.triggerRatio,
+        reserveRatio: this.reserveRatio,
+        expandRatio: this.expandRatio,
+        allianceBehavior: this.allianceBehavior,
+        emojiBehavior: this.emojiBehavior,
+      });
       this.nukeBehavior = new NukeBehavior(
-        r,
-        g,
-        p,
-        this.attackBehavior,
-        this.emojiBehavior,
+        r, g, p, this.attackBehavior, this.emojiBehavior,
       );
       this.structureBehavior = new StructureBehavior(r, g, p);
       this.nukeBehavior.structureBehavior = this.structureBehavior;
@@ -481,7 +353,8 @@
         if ((!ts || ts.length === 0) && typeof getSpawnHeatmapTopSpots === "function") {
           ts = getSpawnHeatmapTopSpots();
         }
-      } catch (_e) { globalThis.__OFH_RECORD_EXCEPTION__?.(_e, "engine/ingame/auto-bot/nationExecution.js:484");
+      } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/auto-bot/nationExecution.js:484");
         ts = null;
       }
       return ts && ts.length > 0 ? `${ts[0].x},${ts[0].y}` : null;
@@ -510,146 +383,149 @@
       }
     }
 
+    getSpawnConstraints() {
+      const game = this.mg;
+      let minDistance = 30;
+      try {
+        const configured = game.config().minDistanceBetweenPlayers();
+        if (Number.isFinite(configured)) minDistance = configured;
+      } catch (error) {
+        captureRuntimeException(error, "engine/ingame/auto-bot/nationExecution.js:minSpawnDistance");
+      }
+      let area = null;
+      try {
+        const team = this.player.team();
+        if (team !== null && typeof game.__src?.teamSpawnArea === "function") {
+          area = game.__src.teamSpawnArea(team) ?? null;
+        }
+      } catch (error) {
+        captureRuntimeException(error, "engine/ingame/auto-bot/nationExecution.js:teamSpawnArea");
+      }
+      const others = game.players().filter((player) =>
+        player.smallID() !== this.player.smallID() && player.hasSpawned());
+      return { game, area, others, minDistance, width: game.width(), height: game.height() };
+    }
+
+    isSpawnTooClose(tile, constraints) {
+      const { game, others, minDistance } = constraints;
+      return others.some((other) => {
+        const location = other.nameLocation();
+        return location &&
+          game.manhattanDist(game.ref(location.x, location.y), tile) < minDistance;
+      });
+    }
+
+    isValidSpawnTile(tile, constraints) {
+      const { game, area } = constraints;
+      if (tile == null || !game.isLand(tile) || game.hasOwner(tile) || game.isBorder(tile)) return false;
+      if (game.magnitude && game.magnitude(tile) === 31) return false;
+      if (area) {
+        const x = game.x(tile);
+        const y = game.y(tile);
+        if (x < area.x || x >= area.x + area.width || y < area.y || y >= area.y + area.height) {
+          return false;
+        }
+      }
+      return !this.isSpawnTooClose(tile, constraints);
+    }
+
+    findValidSpawnOnRing(sx, sy, radius, constraints) {
+      const game = constraints.game;
+      for (let dy = -radius; dy <= radius; dy += 2) {
+        for (let dx = -radius; dx <= radius; dx += 2) {
+          if (Math.abs(dx) !== radius && Math.abs(dy) !== radius) continue;
+          const x = sx + dx;
+          const y = sy + dy;
+          if (!game.isValidCoord(x, y)) continue;
+          const tile = game.ref(x, y);
+          if (this.isValidSpawnTile(tile, constraints)) return tile;
+        }
+      }
+      return null;
+    }
+
+    snapToValidSpawn(sx, sy, constraints) {
+      const game = constraints.game;
+      if (game.isValidCoord(sx, sy)) {
+        const tile = game.ref(sx, sy);
+        if (this.isValidSpawnTile(tile, constraints)) return tile;
+      }
+      for (let radius = 2; radius <= 24; radius += 2) {
+        const tile = this.findValidSpawnOnRing(sx, sy, radius, constraints);
+        if (tile != null) return tile;
+      }
+      return null;
+    }
+
+    getRankedSpawnTile(constraints) {
+      let topSpots = null;
+      try {
+        if (typeof computeSpawnTopSpotsForBot === "function") {
+          topSpots = computeSpawnTopSpotsForBot(this.mg, this.player);
+        }
+        if ((!topSpots || topSpots.length === 0) &&
+          typeof getSpawnHeatmapTopSpots === "function") {
+          topSpots = getSpawnHeatmapTopSpots();
+        }
+      } catch (error) {
+        captureRuntimeException(error, "engine/ingame/auto-bot/nationExecution.js:rankedSpawn");
+      }
+      if (!topSpots) return null;
+      for (const spot of topSpots) {
+        const tile = this.snapToValidSpawn(spot.x, spot.y, constraints);
+        if (tile != null) return tile;
+      }
+      return null;
+    }
+
+    getRandomSpawnCoordinate(limit, start = 0) {
+      return this.random.nextInt(start, start + limit);
+    }
+
+    pickSampledSpawnTile(constraints, useSmart) {
+      const { game, area, others, width, height } = constraints;
+      let bestTile = null;
+      let bestScore = -Infinity;
+      for (let tries = 0; tries < 1000; tries += 1) {
+        const x = area
+          ? this.getRandomSpawnCoordinate(area.width, area.x)
+          : this.getRandomSpawnCoordinate(width);
+        const y = area
+          ? this.getRandomSpawnCoordinate(area.height, area.y)
+          : this.getRandomSpawnCoordinate(height);
+        if (!game.isValidCoord(x, y)) continue;
+        const tile = game.ref(x, y);
+        if (!this.isValidSpawnTile(tile, constraints)) continue;
+        if (!useSmart) return tile;
+        const score = this.scoreSpawnTile(tile, others, width, height, area);
+        if (score <= bestScore) continue;
+        bestScore = score;
+        bestTile = tile;
+      }
+      return bestTile;
+    }
+
     pickSpawnCenter() {
-      // DIVERGENCE: Companion mode pins the spawn next to the configured boss.
-      // Returns null unless companion is enabled AND in Active mode, so with the
-      // feature off this is a single typeof check and the port is unchanged.
+      // Companion mode pins the spawn next to the configured boss when active.
       if (typeof companionSpawnCenter === "function") {
         const companionTile = companionSpawnCenter(this.mg, this.player);
         if (companionTile != null) return companionTile;
       }
-      const g = this.mg;
-      const W = g.width();
-      const H = g.height();
-      let minDist = 30;
-      try {
-        const md = g.config().minDistanceBetweenPlayers();
-        if (Number.isFinite(md)) minDist = md;
-      } catch (_e) { globalThis.__OFH_RECORD_EXCEPTION__?.(_e, "engine/ingame/auto-bot/nationExecution.js:521");
-        /* default */
-      }
-      // Team spawn area (SpawnExecution.getTeamSpawnArea) — null in FFA.
-      let area = null;
-      try {
-        const team = this.player.team();
-        if (team !== null && typeof g.__src?.teamSpawnArea === "function") {
-          area = g.__src.teamSpawnArea(team) ?? null;
-        }
-      } catch (_e) { globalThis.__OFH_RECORD_EXCEPTION__?.(_e, "engine/ingame/auto-bot/nationExecution.js:531");
-        /* none */
-      }
-      const others = g
-        .players()
-        .filter((p) => p.smallID() !== this.player.smallID() && p.hasSpawned());
-      const tooClose = (tile) => {
-        const tx = g.x(tile);
-        const ty = g.y(tile);
-        for (const o of others) {
-          const loc = o.nameLocation();
-          if (!loc) continue;
-          if (g.manhattanDist(g.ref(loc.x, loc.y), tile) < minDist) return true;
-        }
-        return false;
-      };
-
-      // DIVERGENCE: smart spawn scoring — when the exact index is unavailable,
-      // sample candidates and pick the best by land density + distance from
-      // enemies + edge avoidance.
-      // When disabled, use the faithful first-valid-random-tile (SpawnExecution).
+      const constraints = this.getSpawnConstraints();
       const useSmart = state.settings.smartSpawn;
-
-      // A tile is a valid spawn if it's unowned interior land, far enough from
-      // other players. Reused for the top-spot pick and its snap search.
-      const isValidSpawn = (tile) =>
-        tile != null &&
-        g.isLand(tile) &&
-        (!g.magnitude || g.magnitude(tile) !== 31) &&
-        !g.hasOwner(tile) &&
-        !g.isBorder(tile) &&
-        (!area || (g.x(tile) >= area.x && g.x(tile) < area.x + area.width &&
-          g.y(tile) >= area.y && g.y(tile) < area.y + area.height)) &&
-        !tooClose(tile);
-
-      // Search outward from (sx,sy) for the nearest valid spawn tile (ring scan).
-      // Lets the bot commit to the marked #1 area even if the exact grid point is
-      // a coast/border/occupied tile the server would reject.
-      const snapToValid = (sx, sy) => {
-        if (g.isValidCoord(sx, sy)) {
-          const c = g.ref(sx, sy);
-          if (isValidSpawn(c)) return c;
-        }
-        for (let radius = 2; radius <= 24; radius += 2) {
-          for (let dy = -radius; dy <= radius; dy += 2) {
-            for (let dx = -radius; dx <= radius; dx += 2) {
-              if (Math.abs(dx) !== radius && Math.abs(dy) !== radius) continue; // ring only
-              const nx = sx + dx;
-              const ny = sy + dy;
-              if (!g.isValidCoord(nx, ny)) continue;
-              const c = g.ref(nx, ny);
-              if (isValidSpawn(c)) return c;
-            }
-          }
-        }
-        return null;
-      };
-
-      // Prefer the exact selector when its bounded map index is available. For
-      // larger maps, use the LIVE displayed topSpots if the overlay is on, else
-      // compute the bounded visual fallback.
       if (useSmart) {
-        let topSpots = null;
-        try {
-          if (typeof computeSpawnTopSpotsForBot === "function") {
-            topSpots = computeSpawnTopSpotsForBot(g, this.player);
-          }
-          if ((!topSpots || topSpots.length === 0) && typeof getSpawnHeatmapTopSpots === "function") {
-            topSpots = getSpawnHeatmapTopSpots();
-          }
-        } catch (_e) { globalThis.__OFH_RECORD_EXCEPTION__?.(_e, "engine/ingame/auto-bot/nationExecution.js:601");
-          topSpots = null;
-        }
-        if (topSpots && topSpots.length > 0) {
-          for (let s = 0; s < topSpots.length; s++) {
-            const snapped = snapToValid(topSpots[s].x, topSpots[s].y);
-            if (snapped != null) return snapped; // spawn at / near the ranked best spot
-          }
-        }
+        const rankedTile = this.getRankedSpawnTile(constraints);
+        if (rankedTile != null) return rankedTile;
       }
-
-      let bestTile = null;
-      let bestScore = -Infinity;
-
-      for (let tries = 0; tries < 1000; tries++) {
-        const x = area
-          ? this.random.nextInt(area.x, area.x + area.width)
-          : this.random.nextInt(0, W);
-        const y = area
-          ? this.random.nextInt(area.y, area.y + area.height)
-          : this.random.nextInt(0, H);
-        if (!g.isValidCoord(x, y)) continue;
-        const tile = g.ref(x, y);
-        if (!isValidSpawn(tile)) continue;
-        if (!useSmart) return tile; // faithful: first valid wins
-        const score = this.scoreSpawnTile(tile, others, W, H, area);
-        if (score > bestScore) {
-          bestScore = score;
-          bestTile = tile;
-        }
-      }
-      return bestTile;
+      return this.pickSampledSpawnTile(constraints, useSmart);
     }
 
     // DIVERGENCE: spawn scoring (Tactical spawn-scoring port). Scores a candidate
     // tile by: land density in a 12-radius neighbourhood, distance from the
     // nearest enemy nameLocation (farther = better), and edge avoidance (centre
     // of map preferred). Team mode adds a pull toward the team spawn area centre.
-    scoreSpawnTile(tile, others, W, H, area = null) {
+    getSpawnLandDensity(tx, ty) {
       const g = this.mg;
-      const tx = g.x(tile);
-      const ty = g.y(tile);
-      let score = 0;
-
-      // Land density: count land neighbours in a 12-radius square.
       const R = 12;
       let land = 0;
       let total = 0;
@@ -662,18 +538,26 @@
           if (g.isLand(g.ref(nx, ny))) land++;
         }
       }
-      score += (total > 0 ? land / total : 0) * 40;
+      return total > 0 ? land / total : 0;
+    }
 
-      // Distance from nearest enemy (farther = safer spawn).
+    getNearestSpawnEnemyDistance(tx, ty, others) {
       let minEnemyDist = Infinity;
-      for (const o of others) {
-        const loc = o.nameLocation();
+      for (const other of others) {
+        const loc = other.nameLocation();
         if (!loc) continue;
         const d = Math.abs(loc.x - tx) + Math.abs(loc.y - ty);
         if (d < minEnemyDist) minEnemyDist = d;
       }
-      // Normalize: cap at 200 tiles, scale to 0..30.
-      score += Math.min(1, minEnemyDist / 200) * 30;
+      return minEnemyDist;
+    }
+
+    scoreSpawnTile(tile, others, W, H, area = null) {
+      const g = this.mg;
+      const tx = g.x(tile);
+      const ty = g.y(tile);
+      let score = this.getSpawnLandDensity(tx, ty) * 40;
+      score += Math.min(1, this.getNearestSpawnEnemyDistance(tx, ty, others) / 200) * 30;
 
       // Edge avoidance: prefer tiles away from map edges.
       const edgeDist = Math.min(tx, ty, W - 1 - tx, H - 1 - ty);
@@ -691,6 +575,19 @@
       return score;
     }
 
+    updateEmbargoRelation(other, player, embargoMalus) {
+      const smallId = other.smallID();
+      const embargoed = other.hasEmbargoAgainst(player);
+      const applied = this.embargoMalusApplied.has(smallId);
+      if (embargoed && !applied) {
+        player.updateRelation(other, embargoMalus);
+        this.embargoMalusApplied.add(smallId);
+      } else if (!embargoed && applied) {
+        player.updateRelation(other, -embargoMalus);
+        this.embargoMalusApplied.delete(smallId);
+      }
+    }
+
     // updateRelationsFromEmbargos — NationExecution.ts:285. AI-subjective ±20
     // (overlay write via player.updateRelation).
     updateRelationsFromEmbargos() {
@@ -698,64 +595,38 @@
       if (player === null) return;
       const others = this.mg.players().filter((p) => p.id() !== player.id());
       const embargoMalus = -20;
-      others.forEach((other) => {
-        if (
-          other.hasEmbargoAgainst(player) &&
-          !this.embargoMalusApplied.has(other.smallID())
-        ) {
-          player.updateRelation(other, embargoMalus);
-          this.embargoMalusApplied.add(other.smallID());
-        } else if (
-          !other.hasEmbargoAgainst(player) &&
-          this.embargoMalusApplied.has(other.smallID())
-        ) {
-          player.updateRelation(other, -embargoMalus);
-          this.embargoMalusApplied.delete(other.smallID());
-        }
-      });
+      others.forEach((other) => this.updateEmbargoRelation(other, player, embargoMalus));
     }
 
     // handleEmbargoesToHostileNations — NationExecution.ts:308.
+    handleEmbargoForPlayer(other, player, difficulty, forceTeamEmbargo) {
+      const sameTeam = player.isOnSameTeam(other);
+      const embargoed = player.hasEmbargoAgainst(other);
+      if (forceTeamEmbargo && other.type() !== PlayerType.Bot && !sameTeam) {
+        if (!embargoed) this.addEmbargo(other, false);
+        return;
+      }
+      const relation = player.relation(other);
+      if (relation <= Relation.Hostile && !embargoed && !sameTeam) {
+        this.addEmbargo(other, false);
+      } else if (relation >= Relation.Neutral && embargoed &&
+        !isAtLeastHardDifficulty(difficulty)) {
+        this.stopEmbargo(other);
+      } else if (relation >= Relation.Friendly && embargoed &&
+        ![Difficulty.Impossible, Difficulty.Legendary].includes(difficulty)) {
+        this.stopEmbargo(other);
+      }
+    }
+
     handleEmbargoesToHostileNations() {
       const player = this.player;
       if (player === null) return;
       const others = this.mg.players().filter((p) => p.id() !== player.id());
       const difficulty = currentDifficulty();
-      const isHigherDifficulty = isAtLeastHardDifficulty(difficulty);
-      const teamGame =
+      const forceTeamEmbargo = isAtLeastHardDifficulty(difficulty) &&
         this.mg.config().gameConfig().gameMode === GameMode.Team;
-
-      others.forEach((other) => {
-        if (
-          teamGame &&
-          isHigherDifficulty &&
-          other.type() !== PlayerType.Bot &&
-          !player.isOnSameTeam(other)
-        ) {
-          if (!player.hasEmbargoAgainst(other)) this.addEmbargo(other, false);
-          return;
-        }
-        if (
-          player.relation(other) <= Relation.Hostile &&
-          !player.hasEmbargoAgainst(other) &&
-          !player.isOnSameTeam(other)
-        ) {
-          this.addEmbargo(other, false);
-        } else if (
-          player.relation(other) >= Relation.Neutral &&
-          player.hasEmbargoAgainst(other) &&
-          !isAtLeastHardDifficulty(difficulty)
-        ) {
-          this.stopEmbargo(other);
-        } else if (
-          player.relation(other) >= Relation.Friendly &&
-          player.hasEmbargoAgainst(other) &&
-          difficulty !== Difficulty.Impossible &&
-          difficulty !== Difficulty.Legendary
-        ) {
-          this.stopEmbargo(other);
-        }
-      });
+      others.forEach((other) =>
+        this.handleEmbargoForPlayer(other, player, difficulty, forceTeamEmbargo));
     }
 
     addEmbargo(other, _temporary) {

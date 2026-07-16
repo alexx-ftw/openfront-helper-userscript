@@ -41,14 +41,60 @@
 
   function playerOverlayEnabled() {
     return (
-      playerMapOverlaysEnabled &&
-      (mapTroopCountsEnabled || threatIndicatorsEnabled || mapMoneyEnabled)
+      runtimeState.playerMapOverlaysEnabled &&
+      (runtimeState.mapTroopCountsEnabled || runtimeState.threatIndicatorsEnabled || runtimeState.mapMoneyEnabled)
     );
   }
 
   // Scan cache: [{ player, relation, isEnemy, troops, inCombat, maxTroops, gold, threat }].
   // troops/inCombat/maxTroops are RAW (10x); divide by 10 only when displaying.
   let _playerOverlayScan = [];
+
+  function playerOverlayRelation(game, player) {
+    try {
+      return getPlayerRelationToMyPlayer(game, player) || "enemy";
+    } catch (_error) {
+      return "enemy";
+    }
+  }
+
+  function isRegularOverlayBot(player, isEnemy) {
+    if (!isEnemy || typeof isNationBotPlayer !== "function") return false;
+    return !isNationBotPlayer(player) && player.type?.() === "BOT";
+  }
+
+  function playerOverlayMetric(enabled, read) {
+    return enabled ? read() : 0;
+  }
+
+  function createPlayerOverlayEntry({ game, me, nukeBuilders, needBar }, player) {
+    if (!player?.isAlive?.()) return null;
+    const relation = playerOverlayRelation(game, player);
+    const isEnemy = relation !== "self" && relation !== "ally" && relation !== "team";
+    const isRegularBot = isRegularOverlayBot(player, isEnemy);
+    const entry = {
+      player,
+      relation,
+      isEnemy,
+      troops: advTroops(player),
+      skipOverlay: isRegularBot,
+      inCombat: playerOverlayMetric(needBar && !isRegularBot, () => advTroopsInCombat(player)),
+      maxTroops: playerOverlayMetric(
+        (needBar || runtimeState.threatIndicatorsEnabled) && !isRegularBot,
+        () => advMaxTroops(game, player),
+      ),
+      gold: playerOverlayMetric(runtimeState.mapMoneyEnabled && !isRegularBot, () => advGoldNumber(player)),
+      threat: null,
+    };
+    if (runtimeState.threatIndicatorsEnabled && isEnemy && me) {
+      try {
+        entry.threat = advEvaluateThreat(game, me, player, nukeBuilders);
+      } catch (_error) {
+        entry.threat = null;
+      }
+    }
+    return entry;
+  }
 
   function scanPlayerOverlay(game) {
     // Skip overlay during spawn phase — many players crowd the screen and
@@ -63,52 +109,13 @@
 
     const players = getCachedPlayerViews(game);
     const me = game.myPlayer ? game.myPlayer() : null;
-    const nukeBuilders = threatIndicatorsEnabled ? advNukeBuilderIds(game) : null;
-    const needBar = mapTroopCountsEnabled;
+    const nukeBuilders = runtimeState.threatIndicatorsEnabled ? advNukeBuilderIds(game) : null;
+    const needBar = runtimeState.mapTroopCountsEnabled;
     const out = [];
+    const scanContext = { game, me, nukeBuilders, needBar };
     for (let i = 0; i < players.length; i += 1) {
-      const player = players[i];
-      if (!player || !player.isAlive || !player.isAlive()) {
-        continue;
-      }
-      let relation = "enemy";
-      try {
-        relation = getPlayerRelationToMyPlayer(game, player) || "enemy";
-      } catch (_error) {
-        relation = "enemy";
-      }
-      const isEnemy =
-        relation !== "self" && relation !== "ally" && relation !== "team";
-      const troops = advTroops(player);
-
-      // Skip regular bots for troop bar + money overlays (too many early game).
-      // Keep for human players AND nation AI (isNationBotPlayer).
-      // PlayerType.Bot = "BOT" (portutil.js:28).
-      const isRegularBot =
-        isEnemy &&
-        typeof isNationBotPlayer === "function" &&
-        !isNationBotPlayer(player) &&
-        player.type && player.type() === "BOT";
-
-      const entry = {
-        player,
-        relation,
-        isEnemy,
-        troops,
-        skipOverlay: isRegularBot,
-        inCombat: (needBar && !isRegularBot) ? advTroopsInCombat(player) : 0,
-        maxTroops: (needBar || threatIndicatorsEnabled) && !isRegularBot ? advMaxTroops(game, player) : 0,
-        gold: (mapMoneyEnabled && !isRegularBot) ? advGoldNumber(player) : 0,
-        threat: null,
-      };
-      if (threatIndicatorsEnabled && isEnemy && me) {
-        try {
-          entry.threat = advEvaluateThreat(game, me, player, nukeBuilders);
-        } catch (_error) {
-          entry.threat = null;
-        }
-      }
-      out.push(entry);
+      const entry = createPlayerOverlayEntry(scanContext, players[i]);
+      if (entry) out.push(entry);
     }
     _playerOverlayScan = out;
   }
@@ -165,7 +172,15 @@
     var h = Math.max(10, fs + 3);
     var x0 = cx - w / 2;
     var y0 = cy - h / 2;
-    fillRoundRect(ctx, x0, y0, w, h, 4, "rgba(7, 12, 18, " + dyn.pillBgAlpha + ")", "rgba(252, 211, 77, " + dyn.pillBdAlpha + ")");
+    fillRoundRect(ctx, {
+      x: x0,
+      y: y0,
+      w,
+      h,
+      r: 4,
+      bg: "rgba(7, 12, 18, " + dyn.pillBgAlpha + ")",
+      border: "rgba(252, 211, 77, " + dyn.pillBdAlpha + ")",
+    });
     ctx.fillStyle = "rgba(252, 211, 77, 0.98)";
     ctx.shadowColor = "transparent";
     ctx.shadowBlur = 0;
@@ -186,7 +201,15 @@
     var h = Math.max(10, fs + 3);
     var x0 = cx - w / 2;
     var y0 = cy - h / 2;
-    fillRoundRect(ctx, x0, y0, w, h, 4, "rgba(7, 12, 18, " + dyn.pillBgAlpha + ")", "rgba(95, 178, 255, " + dyn.pillBdAlpha + ")");
+    fillRoundRect(ctx, {
+      x: x0,
+      y: y0,
+      w,
+      h,
+      r: 4,
+      bg: "rgba(7, 12, 18, " + dyn.pillBgAlpha + ")",
+      border: "rgba(95, 178, 255, " + dyn.pillBdAlpha + ")",
+    });
     ctx.fillStyle = "rgba(95, 178, 255, 0.98)";
     ctx.shadowColor = "transparent";
     ctx.shadowBlur = 0;
@@ -194,7 +217,7 @@
   }
 
   // Combined money + max troops pill on a single line.
-  function drawMoneyTroopPill(ctx, cx, cy, moneyText, maxTroops, dyn) {
+  function drawMoneyTroopPill(ctx, { cx, cy, moneyText, maxTroops, dyn }) {
     var fs = dyn.moneyFontSize;
     var maxLabel = "/" + troopsDisplay(maxTroops);
     var combined = moneyText + "  " + maxLabel;
@@ -211,14 +234,21 @@
     var x0 = cx - w / 2;
     var y0 = cy - h / 2;
 
-    fillRoundRect(ctx, x0, y0, w, h, 4, "rgba(7, 12, 18, " + dyn.pillBgAlpha + ")", "rgba(252, 211, 77, " + dyn.pillBdAlpha + ")");
+    fillRoundRect(ctx, {
+      x: x0,
+      y: y0,
+      w,
+      h,
+      r: 4,
+      bg: "rgba(7, 12, 18, " + dyn.pillBgAlpha + ")",
+      border: "rgba(252, 211, 77, " + dyn.pillBdAlpha + ")",
+    });
 
     ctx.shadowColor = "transparent";
     ctx.shadowBlur = 0;
 
     // Draw money part (gold)
     var moneyW = ctx.measureText(moneyText).width;
-    var maxW = ctx.measureText(maxLabel).width;
     var gap = ctx.measureText("  ").width;
     var startX = cx - tw / 2;
 
@@ -234,7 +264,7 @@
   }
 
   // Small rounded-rect helper (background + optional border).
-  function fillRoundRect(ctx, x, y, w, h, r, bg, border) {
+  function fillRoundRect(ctx, { x, y, w, h, r, bg, border }) {
     ctx.beginPath();
     ctx.moveTo(x + r, y);
     ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -255,15 +285,19 @@
   // home troops = green (fixed, NOT faction color), attacking = orange, total bar
   // length = total/max. The "/max" label is drawn as its own pill on the line
   // above (drawMoneyTroopPill or drawMaxTroopPill), never on the bar itself.
-  function drawTroopBar(ctx, cx, barTop, relation, troops, attacking, maxTroops, dyn) {
+  function drawTroopBar(ctx, { cx, barTop, troops, attacking, maxTroops, dyn }) {
     var barW = dyn.troopBarW;
     var barH = dyn.troopBarH;
     var barX = cx - barW / 2;
     var max = Math.max(1, maxTroops);
     var total = troops + attacking;
     var totalRatio = Math.min(total / max, 1);
-    var mainRatio = attacking === 0 ? 1 : total > 0 ? troops / total : 0;
-    var bufferRatio = attacking === 0 ? 0 : total > 0 ? attacking / total : 0;
+    var mainRatio = 1;
+    var bufferRatio = 0;
+    if (attacking !== 0) {
+      mainRatio = total > 0 ? troops / total : 0;
+      bufferRatio = total > 0 ? attacking / total : 0;
+    }
     var mainW = mainRatio * totalRatio * barW;
     var bufferW = bufferRatio * totalRatio * barW;
 
@@ -280,63 +314,73 @@
     ctx.strokeRect(barX + 0.5, barTop + 0.5, barW - 1, barH - 1);
   }
 
+  function currentPlayerOverlayTroops(entry) {
+    if (!runtimeState.mapTroopCountsEnabled) return entry.troops;
+    try {
+      return Number(entry.player.troops?.()) || entry.troops;
+    } catch (_error) {
+      return entry.troops;
+    }
+  }
+
+  function drawPlayerOverlayStats(ctx, entry, p, dyn) {
+    const liveTroops = currentPlayerOverlayTroops(entry);
+    const troopBar = {
+      cx: p.x,
+      barTop: p.y - dyn.troopOffsetY,
+      troops: liveTroops,
+      attacking: entry.inCombat,
+      maxTroops: entry.maxTroops,
+      dyn,
+    };
+    if (runtimeState.mapMoneyEnabled && runtimeState.mapTroopCountsEnabled) {
+      drawMoneyTroopPill(ctx, {
+        cx: p.x,
+        cy: p.y - dyn.moneyOffsetY,
+        moneyText: formatMapGold(entry.gold),
+        maxTroops: entry.maxTroops,
+        dyn,
+      });
+      drawTroopBar(ctx, troopBar);
+    } else if (runtimeState.mapMoneyEnabled) {
+      drawMoneyPill(ctx, p.x, p.y - dyn.moneyOffsetY, formatMapGold(entry.gold), dyn);
+    } else if (runtimeState.mapTroopCountsEnabled) {
+      drawMaxTroopPill(ctx, p.x, p.y - dyn.moneyOffsetY, entry.maxTroops, dyn);
+      drawTroopBar(ctx, troopBar);
+    }
+  }
+
+  function playerOverlayLocation(entry) {
+    try {
+      return entry.player.nameLocation?.() || null;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function drawPlayerOverlayEntry(ctx, transform, entry, myTroops) {
+    const loc = playerOverlayLocation(entry);
+    if (!loc) return;
+    const p = mapWorldToScreen(transform, loc.x, loc.y);
+    if (!p || !mapPointOnScreen(p.x, p.y, 30)) return;
+    const dyn = _getDynamicSizes(loc, transform);
+    if (!dyn.visible) return;
+    if (!entry.skipOverlay) drawPlayerOverlayStats(ctx, entry, p, dyn);
+    if (runtimeState.threatIndicatorsEnabled && entry.isEnemy && !entry.skipOverlay) {
+      drawThreatMarks(ctx, p.x, p.y + 10, entry, myTroops);
+    }
+  }
+
   function drawPlayerOverlay(ctx, game, transform) {
-    const me = game.myPlayer ? game.myPlayer() : null;
+    const me = game.myPlayer?.() || null;
     let myTroops = 1;
     try {
-      myTroops = Math.max(1, Number(me && me.troops ? me.troops() : 1) || 1);
+      myTroops = Math.max(1, Number(me?.troops?.()) || 1);
     } catch (_error) {
-      myTroops = 1;
+      // Keep the conservative fallback when the player view is unavailable.
     }
-
     for (let i = 0; i < _playerOverlayScan.length; i += 1) {
-      const entry = _playerOverlayScan[i];
-      const player = entry.player;
-      let loc = null;
-      try {
-        loc = player.nameLocation ? player.nameLocation() : null;
-      } catch (_error) {
-        loc = null;
-      }
-      if (!loc) {
-        continue;
-      }
-      var p = mapWorldToScreen(transform, loc.x, loc.y);
-      if (!p || !mapPointOnScreen(p.x, p.y, 30)) {
-        continue;
-      }
-      var dyn = _getDynamicSizes(loc, transform);
-      if (!dyn.visible) {
-        continue;
-      }
-      var color = mapFactionColor(entry.relation);
-
-      if (!entry.skipOverlay) {
-        var liveTroops = entry.troops;
-        if (mapTroopCountsEnabled) {
-          try {
-            liveTroops = Number(player.troops ? player.troops() : entry.troops) || entry.troops;
-          } catch (_error) {
-            liveTroops = entry.troops;
-          }
-        }
-
-        if (mapMoneyEnabled && mapTroopCountsEnabled) {
-          // Combined: money + /max on one line, troop bar below.
-          drawMoneyTroopPill(ctx, p.x, p.y - dyn.moneyOffsetY, formatMapGold(entry.gold), entry.maxTroops, dyn);
-          drawTroopBar(ctx, p.x, p.y - dyn.troopOffsetY, entry.relation, liveTroops, entry.inCombat, entry.maxTroops, dyn);
-        } else if (mapMoneyEnabled) {
-          drawMoneyPill(ctx, p.x, p.y - dyn.moneyOffsetY, formatMapGold(entry.gold), dyn);
-        } else if (mapTroopCountsEnabled) {
-          // Money off: /max still gets its own line above the bar.
-          drawMaxTroopPill(ctx, p.x, p.y - dyn.moneyOffsetY, entry.maxTroops, dyn);
-          drawTroopBar(ctx, p.x, p.y - dyn.troopOffsetY, entry.relation, liveTroops, entry.inCombat, entry.maxTroops, dyn);
-        }
-      }
-
-      if (threatIndicatorsEnabled && entry.isEnemy && !entry.skipOverlay) {
-        drawThreatMarks(ctx, p.x, p.y + 10, entry, myTroops);
-      }
+      drawPlayerOverlayEntry(ctx, transform, _playerOverlayScan[i], myTroops);
     }
   }
 
@@ -344,7 +388,7 @@
     const threat = entry.threat;
     const troops = entry.troops;
     if (threat && (threat.nukeCapable || threat.buildingNuke)) {
-      drawMapHaloText(ctx, x - 30, baseY, "☢", "rgba(248, 113, 113, 0.95)");
+      drawMapHaloText(ctx, x - 30, baseY, "☢", { color: "rgba(248, 113, 113, 0.95)" });
     }
     // Ratios are scale-invariant → compare raw values directly.
     let dot = null;
@@ -377,7 +421,7 @@
   });
 
   function setPlayerMapOverlaysEnabled(enabled) {
-    playerMapOverlaysEnabled = Boolean(enabled);
+    runtimeState.playerMapOverlaysEnabled = Boolean(enabled);
     if (!playerOverlayEnabled()) {
       _playerOverlayScan = [];
     }
@@ -385,7 +429,7 @@
   }
 
   function setMapTroopCountsEnabled(enabled) {
-    mapTroopCountsEnabled = Boolean(enabled);
+    runtimeState.mapTroopCountsEnabled = Boolean(enabled);
     if (!playerOverlayEnabled()) {
       _playerOverlayScan = [];
     }
@@ -393,7 +437,7 @@
   }
 
   function setThreatIndicatorsEnabled(enabled) {
-    threatIndicatorsEnabled = Boolean(enabled);
+    runtimeState.threatIndicatorsEnabled = Boolean(enabled);
     if (!playerOverlayEnabled()) {
       _playerOverlayScan = [];
     }
@@ -401,7 +445,7 @@
   }
 
   function setMapMoneyEnabled(enabled) {
-    mapMoneyEnabled = Boolean(enabled);
+    runtimeState.mapMoneyEnabled = Boolean(enabled);
     if (!playerOverlayEnabled()) {
       _playerOverlayScan = [];
     }

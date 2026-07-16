@@ -48,6 +48,7 @@
       const path = pf.findPath(fromTile, toTile);
       return Array.isArray(path) ? path : null;
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/nuke-trajectory.js:49");
       return null;
     }
   }
@@ -58,18 +59,40 @@
   // removes the "laggy" step-by-step redraw of a recomputed current→target line.
   const _nukeTrajById = new Map(); // id -> { relation, worldPts }
 
-  // Try to read the player's current rocket-direction toggle from the
-  // game's build-menu UI. Used for the player's OWN nukes only to match
-  // the actual arc they chose (hotkey U flips this). AI nukes always use
-  // true (up). Falls back to true on any failure.
-  function readNukeDirection() {
-    try {
-      var bm = document.querySelector("build-menu");
-      if (bm && bm.uiState && typeof bm.uiState.rocketDirectionUp === "boolean") {
-        return bm.uiState.rocketDirectionUp;
-      }
-    } catch (_e) {}
-    return true;
+  function getNukeTrajectoryUnitData(game, unit) {
+    if (!unit?.isActive?.()) return null;
+    const relation = getNukePredictionRelation(game, unit);
+    if (!relation) return null;
+    const targetTile = unit.targetTile?.();
+    const fromTile = unit.tile?.();
+    if (targetTile == null || fromTile == null) return null;
+    return {
+      relation,
+      targetTile,
+      fromTile,
+      id: unit.id?.() ?? `${fromTile}:${targetTile}`,
+      type: unit.type?.(),
+    };
+  }
+
+  function buildNukeTrajectoryPoints(game, data) {
+    const path = NUKE_TRAJ_PARABOLA_TYPES.has(data.type)
+      ? computeNukeTrajectoryPath(game, data.fromTile, data.targetTile)
+      : null;
+    if (!path || path.length < 2) {
+      return [
+        { x: game.x(data.fromTile), y: game.y(data.fromTile) },
+        { x: game.x(data.targetTile), y: game.y(data.targetTile) },
+      ];
+    }
+    const worldPts = [];
+    const step = Math.max(1, Math.ceil(path.length / NUKE_TRAJ_MAX_POINTS));
+    for (let index = 0; index < path.length; index += step) {
+      worldPts.push({ x: game.x(path[index]), y: game.y(path[index]) });
+    }
+    const last = path[path.length - 1];
+    worldPts.push({ x: game.x(last), y: game.y(last) });
+    return worldPts;
   }
 
   function collectNukeTrajectoryScan(game) {
@@ -86,55 +109,20 @@
     const out = [];
     const seen = new Set();
     for (const unit of units) {
-      if (!unit || !unit.isActive || !unit.isActive()) {
-        continue;
-      }
-      const relation = getNukePredictionRelation(game, unit);
-      if (!relation) {
-        continue;
-      }
-      const targetTile = unit.targetTile ? unit.targetTile() : undefined;
-      const fromTile = unit.tile ? unit.tile() : undefined;
-      if (
-        targetTile === undefined ||
-        targetTile === null ||
-        fromTile === undefined ||
-        fromTile === null
-      ) {
-        continue;
-      }
-      const id = unit.id ? unit.id() : `${fromTile}:${targetTile}`;
-      seen.add(id);
+      const data = getNukeTrajectoryUnitData(game, unit);
+      if (!data) continue;
+      seen.add(data.id);
 
       // Reuse the anchored path if we've already computed it for this nuke.
-      let cached = _nukeTrajById.get(id);
+      let cached = _nukeTrajById.get(data.id);
       if (cached) {
-        cached.relation = relation; // relation may flip (self→ally), keep fresh
+        cached.relation = data.relation; // relation may flip (self→ally), keep fresh
         out.push(cached);
         continue;
       }
 
-      const type = unit.type ? unit.type() : null;
-      const worldPts = [];
-      let path = null;
-      if (NUKE_TRAJ_PARABOLA_TYPES.has(type)) {
-        var dirUp = relation === "self" ? readNukeDirection() : true;
-        path = computeNukeTrajectoryPath(game, fromTile, targetTile, dirUp);
-      }
-      if (path && path.length >= 2) {
-        const step = Math.max(1, Math.ceil(path.length / NUKE_TRAJ_MAX_POINTS));
-        for (let i = 0; i < path.length; i += step) {
-          worldPts.push({ x: game.x(path[i]), y: game.y(path[i]) });
-        }
-        const last = path[path.length - 1];
-        worldPts.push({ x: game.x(last), y: game.y(last) });
-      } else {
-        // MIRV / parabola unavailable → straight launch→target line.
-        worldPts.push({ x: game.x(fromTile), y: game.y(fromTile) });
-        worldPts.push({ x: game.x(targetTile), y: game.y(targetTile) });
-      }
-      cached = { relation, worldPts };
-      _nukeTrajById.set(id, cached);
+      cached = { relation: data.relation, worldPts: buildNukeTrajectoryPoints(game, data) };
+      _nukeTrajById.set(data.id, cached);
       out.push(cached);
     }
     // Prune paths of nukes that have landed / been intercepted.
@@ -144,6 +132,32 @@
       }
     }
     _nukeTrajScan = out;
+  }
+
+  function drawNukeTrajectoryPath(ctx, transform, projector, trajectory, point) {
+    if (!trajectory.worldPts || trajectory.worldPts.length < 2) return;
+    ctx.beginPath();
+    let started = false;
+    let anyVisible = false;
+    for (const worldPoint of trajectory.worldPts) {
+      let screenPoint;
+      if (projector) {
+        mapProject(projector, worldPoint.x, worldPoint.y, point);
+        screenPoint = point;
+      } else {
+        screenPoint = mapWorldToScreen(transform, worldPoint.x, worldPoint.y);
+        if (!screenPoint) {
+          started = false;
+          continue;
+        }
+      }
+      anyVisible ||= mapPointOnScreen(screenPoint.x, screenPoint.y, 200);
+      ctx[started ? "lineTo" : "moveTo"](screenPoint.x, screenPoint.y);
+      started = true;
+    }
+    if (!anyVisible) return;
+    ctx.strokeStyle = nukeTrajColor(trajectory.relation);
+    ctx.stroke();
   }
 
   function drawNukeTrajectory(ctx, game, transform) {
@@ -157,41 +171,8 @@
     ctx.lineJoin = "round";
     ctx.setLineDash([5, 6]);
     const pt = { x: 0, y: 0 };
-    for (let i = 0; i < _nukeTrajScan.length; i += 1) {
-      const traj = _nukeTrajScan[i];
-      const pts = traj.worldPts;
-      if (!pts || pts.length < 2) {
-        continue;
-      }
-      ctx.beginPath();
-      let started = false;
-      let anyVisible = false;
-      for (let j = 0; j < pts.length; j += 1) {
-        let sp;
-        if (proj) {
-          mapProject(proj, pts[j].x, pts[j].y, pt);
-          sp = pt;
-        } else {
-          sp = mapWorldToScreen(transform, pts[j].x, pts[j].y);
-          if (!sp) {
-            started = false;
-            continue;
-          }
-        }
-        if (mapPointOnScreen(sp.x, sp.y, 200)) {
-          anyVisible = true;
-        }
-        if (!started) {
-          ctx.moveTo(sp.x, sp.y);
-          started = true;
-        } else {
-          ctx.lineTo(sp.x, sp.y);
-        }
-      }
-      if (anyVisible) {
-        ctx.strokeStyle = nukeTrajColor(traj.relation);
-        ctx.stroke();
-      }
+    for (const trajectory of _nukeTrajScan) {
+      drawNukeTrajectoryPath(ctx, transform, proj, trajectory, pt);
     }
     ctx.restore();
   }
@@ -201,7 +182,7 @@
     scanIntervalMs: 250,
     isEnabled: function () {
       // Sub-toggle of nuke prediction: only draws when both are on.
-      return nukePredictionEnabled && nukeTrajectoryEnabled;
+      return runtimeState.nukePredictionEnabled && runtimeState.nukeTrajectoryEnabled;
     },
     scan: function (game) {
       collectNukeTrajectoryScan(game);
@@ -212,7 +193,7 @@
   });
 
   function setNukeTrajectoryEnabled(enabled) {
-    nukeTrajectoryEnabled = Boolean(enabled);
+    runtimeState.nukeTrajectoryEnabled = Boolean(enabled);
     if (typeof requestMapOverlayLoop === "function") {
       requestMapOverlayLoop();
     }

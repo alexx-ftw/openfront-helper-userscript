@@ -1,4 +1,5 @@
 # Commands
+
 - Full verification: `npm test`.
 - Build distributable: `node build.mjs`.
 - Inspect source quickly: `rg -n 'pattern' engine test`.

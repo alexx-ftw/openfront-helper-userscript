@@ -7,7 +7,7 @@ import { availableLanguages, mapThumbnailUrl } from "../assets";
 import { requestJoinNotificationPermission } from "../notification";
 
 // ---- auto-bot bridge (exposed by the page-bridge engine in-game) ------------
-type AutoBot = {
+interface AutoBot {
   FEATURE_KEYS: string[];
   DIFFICULTIES: string[];
   get: () => {
@@ -21,12 +21,12 @@ type AutoBot = {
     buildStructures: Record<string, boolean>;
   };
   set: (patch: Record<string, unknown>) => void;
-};
+}
 
 // Structure types the auto-bot can build (type string + emoji fallback). Same
 // types/icons as the team-build panel; the game SVG icon resolves via the global
 // __OFH_gameIconUrl, falling back to the emoji.
-const AB_STRUCTURES: Array<[string, string]> = [
+const AB_STRUCTURES: [string, string][] = [
   ["City", "🏙️"],
   ["Port", "⚓"],
   ["Factory", "🏭"],
@@ -37,8 +37,9 @@ const AB_STRUCTURES: Array<[string, string]> = [
 
 function gameStructureIcon(type: string, emoji: string): HTMLElement {
   const url =
-    (window as unknown as { __OFH_gameIconUrl?: (t: string) => string })
-      .__OFH_gameIconUrl?.(type) || "";
+    (window as unknown as { __OFH_gameIconUrl?: (t: string) => string }).__OFH_gameIconUrl?.(
+      type,
+    ) ?? "";
   if (!url) {
     return el("span", {}, emoji);
   }
@@ -49,10 +50,16 @@ function gameStructureIcon(type: string, emoji: string): HTMLElement {
     height: "16",
     draggable: "false",
     style: "object-fit:contain;",
-  }) as HTMLImageElement;
-  img.addEventListener("error", () => img.replaceWith(el("span", {}, emoji)), {
-    once: true,
   });
+  img.addEventListener(
+    "error",
+    () => {
+      img.replaceWith(el("span", {}, emoji));
+    },
+    {
+      once: true,
+    },
+  );
   return img;
 }
 const autobot = () => (window as unknown as { __OFH_autobot?: AutoBot }).__OFH_autobot;
@@ -62,17 +69,32 @@ const autobot = () => (window as unknown as { __OFH_autobot?: AutoBot }).__OFH_a
 // on each fire. The bridge is a thin accessor over that blob (always available,
 // even in the lobby). localStorage is the single source of truth, so if the
 // in-game layer ever faulted before exposing the bridge we read/write it directly.
-type AtomCfg = { batchSize: number; delayMs: number; lastHydrogen: boolean };
-type AtomBridge = {
+interface AtomCfg {
+  batchSize: number;
+  delayMs: number;
+  lastHydrogen: boolean;
+}
+interface AtomBridge {
   SAFE_GAP_MS?: number;
   get: () => AtomCfg;
   set: (patch: Partial<AtomCfg>) => void;
   effectiveGapMs?: (batchSize: number, delayMs: number) => number;
-};
+}
 const ATOM_KEY = "openfront-helper-atom-batch-v1";
 const ATOM_SAFE_GAP_MS = 140; // server-safe floor (~7 shots/sec); mirror of the engine
 const ATOM_DEFAULTS: AtomCfg = { batchSize: 10, delayMs: 150, lastHydrogen: false };
 const atomBridge = () => (window as unknown as { __OFH_atomBatch?: AtomBridge }).__OFH_atomBatch;
+
+function normalizeAtomCfg(value: unknown): AtomCfg {
+  if (!value || typeof value !== "object") return { ...ATOM_DEFAULTS };
+  const cfg = value as Partial<Record<keyof AtomCfg, unknown>>;
+  return {
+    batchSize: typeof cfg.batchSize === "number" ? cfg.batchSize : ATOM_DEFAULTS.batchSize,
+    delayMs: typeof cfg.delayMs === "number" ? cfg.delayMs : ATOM_DEFAULTS.delayMs,
+    lastHydrogen:
+      typeof cfg.lastHydrogen === "boolean" ? cfg.lastHydrogen : ATOM_DEFAULTS.lastHydrogen,
+  };
+}
 
 function atomGetCfg(): AtomCfg {
   const b = atomBridge();
@@ -85,7 +107,7 @@ function atomGetCfg(): AtomCfg {
   }
   try {
     const raw = window.localStorage.getItem(ATOM_KEY);
-    if (raw) return { ...ATOM_DEFAULTS, ...JSON.parse(raw) };
+    if (raw) return normalizeAtomCfg(JSON.parse(raw) as unknown);
   } catch {
     /* defaults */
   }
@@ -141,22 +163,29 @@ const FEATURE_LABELS: Record<string, [string, string]> = {
 };
 
 // ---- engine globals (set by the content IIFE at runtime) --------------------
-type Shared = {
+interface Shared {
   STORAGE_KEY: string;
-  MAPS: Array<{ id: string; name: string }>;
+  MAPS: { id: string; name: string }[];
   normalizeSettings: (
     raw: unknown,
     options?: { ensureActiveSearchTimestamp?: boolean },
-  ) => Record<string, any>;
-};
-type I18n = {
+  ) => Settings;
+}
+interface I18n {
   getMessage: (bundle: Record<string, string>, key: string) => string;
   loadBundle: (lang: string) => Promise<Record<string, string>>;
-};
+}
 const shared = () =>
   (window as unknown as { OpenFrontHelperSettings?: Shared }).OpenFrontHelperSettings;
 const i18n = () => (window as unknown as { OpenFrontHelperI18n?: I18n }).OpenFrontHelperI18n;
-const chromeApi = () => (window as unknown as { chrome: any }).chrome;
+interface ChromeStorageArea {
+  get: (key: string) => Promise<Record<string, unknown>>;
+  set: (items: Record<string, unknown>) => Promise<void>;
+}
+interface ChromeApi {
+  storage: { local: ChromeStorageArea };
+}
+const chromeApi = () => (window as unknown as { chrome: ChromeApi }).chrome;
 
 // ---- filter / helper config (English labels) --------------------------------
 const START_GOLD = [
@@ -177,7 +206,7 @@ const MODIFIERS = [
   ["goldMultiplier2x", "2x gold"],
 ] as const;
 
-const TEAM_PRESETS: Array<[string, number, number | null]> = [
+const TEAM_PRESETS: [string, number, number | null][] = [
   ["FFA", 1, 1],
   ["Duos", 2, 2],
   ["Trios", 3, 3],
@@ -187,15 +216,19 @@ const TEAM_PRESETS: Array<[string, number, number | null]> = [
 
 // A Toggle is one switch row. `parent` makes it an indented sub-toggle (disabled
 // while the parent is off). `input` renders a value control instead of a switch.
-type Toggle = {
+interface Toggle {
   name: string;
   title: string;
   desc: string;
   parent?: string;
   input?: "gameTimeMinutes";
-};
+}
 // Helper toggles are grouped into collapsible, labeled sections.
-type HelperSection = { key: string; title: string; toggles: Toggle[] };
+interface HelperSection {
+  key: string;
+  title: string;
+  toggles: Toggle[];
+}
 
 const HELPER_SECTIONS: HelperSection[] = [
   {
@@ -495,7 +528,18 @@ const HELPER_SECTIONS: HelperSection[] = [
 // ---- state ------------------------------------------------------------------
 let overlay: HTMLDivElement | null = null;
 let opening = false;
-let settings: Record<string, any> = {};
+interface Settings extends Record<string, unknown> {
+  includeFilters?: Record<string, boolean>;
+  excludeFilters?: Record<string, boolean>;
+  includeMaps?: Record<string, boolean>;
+  excludeMaps?: Record<string, boolean>;
+  mapFilters?: Record<string, boolean>;
+  mapExcludeFilters?: Record<string, boolean>;
+  collapsedHelperCategories?: Record<string, boolean>;
+  language?: string;
+}
+
+let settings: Settings = {};
 let translations: Record<string, string> = {};
 let activeTab = "autojoin";
 let activeAutoTab = "main"; // sub-tab within Auto-Join (main / filters / maps)
@@ -503,22 +547,29 @@ let mapMode: "include" | "exclude" = "include";
 
 const t = (key: string): string => {
   const m = i18n();
-  return (m && m.getMessage(translations, key)) || key;
+  return m?.getMessage(translations, key) ?? key;
 };
 
 // ---- tiny DOM helper --------------------------------------------------------
+function domAttributeText(value: unknown): string {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return "";
+}
+
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
-  attrs: Record<string, any> = {},
-  ...children: Array<Node | string>
+  attrs: Record<string, unknown> = {},
+  ...children: (Node | string)[]
 ): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
-    if (k === "class") node.className = v;
-    else if (k === "html") node.innerHTML = v;
+    if (k === "class") node.className = domAttributeText(v);
+    else if (k === "html") node.innerHTML = domAttributeText(v);
     else if (k.startsWith("on") && typeof v === "function") {
-      node.addEventListener(k.slice(2).toLowerCase(), v);
-    } else if (v != null) node.setAttribute(k, String(v));
+      node.addEventListener(k.slice(2).toLowerCase(), v as EventListener);
+    } else if (v != null) node.setAttribute(k, domAttributeText(v));
   }
   for (const c of children) node.append(c);
   return node;
@@ -570,7 +621,7 @@ function gameTimeMinutesControl(): HTMLElement {
     max: "60",
     step: "1",
     value: String(Math.round((Number(settings.gameTimeAlertThresholdSec) || 300) / 60)),
-  }) as HTMLInputElement;
+  });
   input.addEventListener("change", () => {
     const mins = Math.max(1, Math.min(60, Number(input.value) || 5));
     input.value = String(mins);
@@ -586,11 +637,11 @@ function helperRows(list: Toggle[]): HTMLElement {
   // indented and disabled while the parent is off; toggling the parent refreshes
   // that disabled state live (no re-render). A control may be a switch OR an
   // input, so each registers its own disable() fn under its parent.
-  const subControlsByParent: Record<string, Array<(disabled: boolean) => void>> = {};
+  const subControlsByParent: Record<string, ((disabled: boolean) => void)[]> = {};
 
   const refreshSubs = (parent: string): void => {
     const off = !settings[parent];
-    for (const setDisabled of subControlsByParent[parent] || []) setDisabled(off);
+    for (const setDisabled of subControlsByParent[parent] ?? []) setDisabled(off);
   };
 
   for (const h of list) {
@@ -614,7 +665,7 @@ function helperRows(list: Toggle[]): HTMLElement {
         sw.classList.toggle("on", next);
         settings[h.name] = next;
         void persist();
-        if (subControlsByParent[h.name]) refreshSubs(h.name);
+        refreshSubs(h.name);
       });
     }
 
@@ -630,7 +681,9 @@ function helperRows(list: Toggle[]): HTMLElement {
       control,
     );
     if (h.parent) {
-      (subControlsByParent[h.parent] ||= []).push(register);
+      const controls = subControlsByParent[h.parent] ?? [];
+      controls.push(register);
+      subControlsByParent[h.parent] = controls;
     }
     grid.append(row);
   }
@@ -703,7 +756,9 @@ function renderAutoJoinMain(body: HTMLElement): void {
     chip.addEventListener("click", () => {
       settings.minTeamSize = mn;
       settings.maxTeamSize = mx;
-      chips.querySelectorAll(".ofh-chip").forEach((c) => c.classList.remove("on"));
+      chips.querySelectorAll(".ofh-chip").forEach((c) => {
+        c.classList.remove("on");
+      });
       chip.classList.add("on");
       void persist();
     });
@@ -718,7 +773,7 @@ function renderAutoJoinMain(body: HTMLElement): void {
     min: "0",
     max: "100",
     value: settings.minLobbySize ?? "",
-  }) as HTMLInputElement;
+  });
   num.addEventListener("change", () => {
     settings.minLobbySize = num.value === "" ? null : Number(num.value);
     void persist();
@@ -749,7 +804,7 @@ function renderAutoJoinMain(body: HTMLElement): void {
       min: "1",
       max: "100",
       value: settings[k] ?? "",
-    }) as HTMLInputElement;
+    });
     input.addEventListener("change", () => {
       settings[k] = input.value === "" ? null : Number(input.value);
       void persist();
@@ -795,12 +850,14 @@ function renderAutoJoinMain(body: HTMLElement): void {
 
   // test chime
   const testBtn = el("button", { class: "ofh-btn" }, "▶ " + t("Test chime"));
-  testBtn.addEventListener("click", () => ringChime());
+  testBtn.addEventListener("click", () => {
+    void ringChime();
+  });
   body.append(el("div", { style: "margin-top:14px" }, testBtn));
 }
 
 function renderFilters(body: HTMLElement): void {
-  const groups: Array<[string, ReadonlyArray<readonly [string, string]>]> = [
+  const groups: [string, readonly (readonly [string, string])[]][] = [
     ["Start gold", START_GOLD],
     ["Modifiers", MODIFIERS],
   ];
@@ -824,10 +881,10 @@ function renderFilters(body: HTMLElement): void {
       };
       apply();
       chip.addEventListener("click", () => {
-        settings.includeFilters = settings.includeFilters || {};
-        settings.excludeFilters = settings.excludeFilters || {};
-        const inc = Boolean(settings.includeFilters[key]);
-        const exc = Boolean(settings.excludeFilters[key]);
+        settings.includeFilters ??= {};
+        settings.excludeFilters ??= {};
+        const inc = settings.includeFilters[key];
+        const exc = settings.excludeFilters[key];
         if (!inc && !exc) {
           settings.includeFilters[key] = true;
         } else if (inc) {
@@ -864,7 +921,8 @@ function renderMaps(body: HTMLElement): void {
   });
   body.append(modeChips);
 
-  const key = mapMode === "include" ? "mapFilters" : "mapExcludeFilters";
+  const key: "mapFilters" | "mapExcludeFilters" =
+    mapMode === "include" ? "mapFilters" : "mapExcludeFilters";
   const tools = el("div", { class: "ofh-chips", style: "margin-bottom:12px" });
   const allBtn = el("button", { class: "ofh-btn" }, t("Select all"));
   const noneBtn = el("button", { class: "ofh-btn" }, t("Clear"));
@@ -893,7 +951,7 @@ function renderMaps(body: HTMLElement): void {
         alt: map.name,
         draggable: "false",
         loading: "lazy",
-      }) as HTMLImageElement;
+      });
       img.addEventListener("error", () => {
         img.replaceWith(el("div", { class: "ofh-noimg" }, "🗺"));
       });
@@ -906,9 +964,10 @@ function renderMaps(body: HTMLElement): void {
       el("div", { class: "ofh-check" }, "✓"),
     );
     card.addEventListener("click", () => {
-      settings[key] = settings[key] || {};
-      const next = !settings[key][map.id];
-      settings[key][map.id] = next;
+      const selections = settings[key] ?? {};
+      const next = !selections[map.id];
+      selections[map.id] = next;
+      settings[key] = selections;
       card.classList.toggle("on", next);
       void persist();
     });
@@ -917,8 +976,7 @@ function renderMaps(body: HTMLElement): void {
   body.append(grid);
 }
 
-// @ts-ignore TS6133 — Helpers tab moved to Quick Panel (in-game floating panel)
-function renderHelpers(body: HTMLElement): void {
+export function renderHelpers(body: HTMLElement): void {
   // Render each section as a collapsible, labeled cluster. Clicking the header
   // toggles it; the collapsed state persists per-section.
   HELPER_SECTIONS.forEach((section, index) => {
@@ -941,7 +999,7 @@ function renderHelpers(body: HTMLElement): void {
       grid.style.display = nowCollapsed ? "none" : "";
       chevron.textContent = nowCollapsed ? "▸" : "▾";
       settings.collapsedHelperCategories = {
-        ...(settings.collapsedHelperCategories || {}),
+        ...(settings.collapsedHelperCategories ?? {}),
         [section.key]: nowCollapsed,
       };
       void persist();
@@ -952,8 +1010,7 @@ function renderHelpers(body: HTMLElement): void {
   });
 }
 
-// @ts-ignore TS6133 — Auto Bot tab now uses in-game panel exclusively
-function renderAutoBot(body: HTMLElement): void {
+export function renderAutoBot(body: HTMLElement): void {
   const ab = autobot();
   if (!ab) {
     body.append(
@@ -972,7 +1029,9 @@ function renderAutoBot(body: HTMLElement): void {
       "Auto-bot enabled",
       "Run the auto-bot (private-lobby training tool).",
       cfg.enabled,
-      (v) => ab.set({ enabled: v }),
+      (v) => {
+        ab.set({ enabled: v });
+      },
     ),
   );
   body.append(
@@ -980,7 +1039,9 @@ function renderAutoBot(body: HTMLElement): void {
       "Show auto-bot panel",
       "Show the in-game auto-bot panel (X on the panel hides it).",
       !cfg.hidden,
-      (v) => ab.set({ hidden: !v }),
+      (v) => {
+        ab.set({ hidden: !v });
+      },
     ),
   );
 
@@ -990,7 +1051,9 @@ function renderAutoBot(body: HTMLElement): void {
     const chip = el("div", { class: `ofh-chip${cfg.difficulty === d ? " on" : ""}` }, t(d));
     chip.addEventListener("click", () => {
       ab.set({ difficulty: d });
-      diffChips.querySelectorAll(".ofh-chip").forEach((c) => c.classList.remove("on"));
+      diffChips.querySelectorAll(".ofh-chip").forEach((c) => {
+        c.classList.remove("on");
+      });
       chip.classList.add("on");
     });
     diffChips.append(chip);
@@ -1000,9 +1063,11 @@ function renderAutoBot(body: HTMLElement): void {
   body.append(el("div", { class: "ofh-section-title", style: "margin-top:16px" }, t("Behaviors")));
   const grid = el("div", { class: "ofh-grid" });
   for (const k of ab.FEATURE_KEYS) {
-    const [title, desc] = FEATURE_LABELS[k] || [k, ""];
+    const [title, desc] = FEATURE_LABELS[k] ?? [k, ""];
     grid.append(
-      switchRow(title, desc, Boolean(cfg.features[k]), (v) => ab.set({ features: { [k]: v } })),
+      switchRow(title, desc, cfg.features[k], (v) => {
+        ab.set({ features: { [k]: v } });
+      }),
     );
   }
   body.append(grid);
@@ -1013,10 +1078,10 @@ function renderAutoBot(body: HTMLElement): void {
     el("div", { class: "ofh-section-title", style: "margin-top:16px" }, t("Auto-build structures")),
   );
   const structGrid = el("div", { class: "ofh-grid" });
-  const allowedStructs = cfg.buildStructures || {};
+  const allowedStructs = cfg.buildStructures;
   for (const [type, emoji] of AB_STRUCTURES) {
     const sw = el("div", {
-      class: `ofh-switch${allowedStructs[type] !== false ? " on" : ""}`,
+      class: `ofh-switch${allowedStructs[type] ? " on" : ""}`,
     });
     const row = el(
       "div",
@@ -1044,13 +1109,17 @@ function renderAutoBot(body: HTMLElement): void {
       "Win-condition fixes",
       "Adjust the bot's internal win thresholds.",
       cfg.winFixes,
-      (v) => ab.set({ winFixes: v }),
+      (v) => {
+        ab.set({ winFixes: v });
+      },
     ),
     switchRow(
       "Smart spawn",
       "Score spawn tiles by land density, enemy distance, and edge avoidance (instead of random).",
       cfg.smartSpawn,
-      (v) => ab.set({ smartSpawn: v }),
+      (v) => {
+        ab.set({ smartSpawn: v });
+      },
     ),
   );
   const tickNum = el("input", {
@@ -1060,7 +1129,7 @@ function renderAutoBot(body: HTMLElement): void {
     max: "2000",
     step: "50",
     value: cfg.tickMs,
-  }) as HTMLInputElement;
+  });
   tickNum.addEventListener("change", () => {
     const v = Number(tickNum.value);
     if (v > 0) ab.set({ tickMs: v });
@@ -1080,8 +1149,7 @@ function renderAutoBot(body: HTMLElement): void {
   );
 }
 
-// @ts-ignore TS6133 — Atom tab moved to Quick Panel
-function renderAtom(body: HTMLElement): void {
+export function renderAtom(body: HTMLElement): void {
   body.append(el("div", { class: "ofh-section-title" }, t("Atom batch-fire")));
 
   // how-it-works hero (red is a danger accent only — the tab stays on the teal system)
@@ -1137,7 +1205,7 @@ function renderAtom(body: HTMLElement): void {
       min: String(min),
       step: String(step),
       value: String(atomGetCfg()[key]),
-    }) as HTMLInputElement;
+    });
     const commit = (): void => {
       let v = Math.floor(Number(input.value));
       if (!Number.isFinite(v) || v < min) v = min;
@@ -1239,15 +1307,15 @@ function selectLanguage(code: string): void {
 
 // Searchable language dropdown, auto-populated from the build-discovered locales.
 function languageDropdown(): HTMLElement {
-  const langs = availableLanguages(settings.language || "en");
-  const current = langs.find((l) => l.code === settings.language) || langs[0];
+  const langs = availableLanguages(settings.language ?? "en");
+  const current = langs.find((l) => l.code === settings.language) ?? langs[0];
 
   const menu = el("div", { class: "ofh-dd-menu", hidden: "" });
   const search = el("input", {
     class: "ofh-dd-search",
     type: "text",
     placeholder: t("Search languages"),
-  }) as HTMLInputElement;
+  });
   const list = el("div", { class: "ofh-dd-list" });
 
   const renderList = (q: string) => {
@@ -1271,7 +1339,9 @@ function languageDropdown(): HTMLElement {
         el("span", {}, l.nativeName),
         el("span", { class: "ofh-dd-code" }, l.code.toUpperCase()),
       );
-      item.addEventListener("click", () => selectLanguage(l.code));
+      item.addEventListener("click", () => {
+        selectLanguage(l.code);
+      });
       list.append(item);
     }
   };
@@ -1279,7 +1349,7 @@ function languageDropdown(): HTMLElement {
   const btn = el(
     "button",
     { class: "ofh-dd-btn", type: "button" },
-    el("span", {}, current ? current.nativeName : settings.language || "en"),
+    el("span", {}, current.nativeName),
     el("span", { class: "ofh-dd-caret" }, "▾"),
   );
   const dd = el("div", { class: "ofh-dd" }, btn, menu);
@@ -1303,13 +1373,14 @@ function languageDropdown(): HTMLElement {
       close();
     }
   });
-  search.addEventListener("input", () => renderList(search.value));
+  search.addEventListener("input", () => {
+    renderList(search.value);
+  });
 
   return dd;
 }
 
-// @ts-ignore TS6133 — Settings moved to Quick Panel Config tab, kept for reference
-function renderSettings(body: HTMLElement): void {
+export function renderSettings(body: HTMLElement): void {
   body.append(el("div", { class: "ofh-section-title" }, t("Language")));
   body.append(languageDropdown());
   body.append(
@@ -1321,7 +1392,7 @@ function renderSettings(body: HTMLElement): void {
   );
 
   const version =
-    (window as unknown as { __OFH_ASSETS?: { version?: string } }).__OFH_ASSETS?.version || "";
+    (window as unknown as { __OFH_ASSETS?: { version?: string } }).__OFH_ASSETS?.version ?? "";
   body.append(el("div", { class: "ofh-section-title", style: "margin-top:16px" }, t("About")));
   body.append(
     el(
@@ -1347,7 +1418,8 @@ function renderSettings(body: HTMLElement): void {
 }
 
 // Filters and Maps are sub-tabs of Auto-Join.
-const AUTO_SUBTABS: Array<[string, string, (body: HTMLElement) => void]> = [
+
+const AUTO_SUBTABS: [string, string, (body: HTMLElement) => void][] = [
   ["main", "Auto-join", renderAutoJoinMain],
   ["filters", "Filters", renderFilters],
   ["maps", "Maps", renderMaps],
@@ -1369,13 +1441,13 @@ function renderAutoJoin(body: HTMLElement): void {
   AUTO_SUBTABS.find(([id]) => id === activeAutoTab)?.[2](sub);
 }
 
-const TABS: Array<[string, string, (body: HTMLElement) => void]> = [
+const TABS: [string, string, (body: HTMLElement) => void][] = [
   ["autojoin", "Auto-Join", renderAutoJoin],
 ];
 
 function renderActiveTab(): void {
   if (!overlay) return;
-  const body = overlay.querySelector(".ofh-body") as HTMLElement;
+  const body = overlay.querySelector<HTMLElement>(".ofh-body");
   if (!body) return;
   body.replaceChildren();
   TABS.find(([id]) => id === activeTab)?.[2](body);
@@ -1429,6 +1501,10 @@ function onKey(e: KeyboardEvent): void {
   if (e.key === "Escape") closePanel();
 }
 
+function markPanelOpeningComplete(): void {
+  opening = false;
+}
+
 export async function openPanel(): Promise<void> {
   if (overlay || opening) return; // guard the await window against double-mount
   opening = true;
@@ -1438,7 +1514,7 @@ export async function openPanel(): Promise<void> {
     console.error("[ofh] popup failed to open:", error);
     closePanel();
   } finally {
-    opening = false;
+    markPanelOpeningComplete();
   }
 }
 
@@ -1475,13 +1551,13 @@ async function openPanelInner(): Promise<void> {
   try {
     // Open in the SAVED language, not a hardcoded "en" — otherwise the popup always
     // boots in English even when the user already picked Vietnamese.
-    translations = await m.loadBundle(settings.language || "en");
+    translations = await m.loadBundle(settings.language ?? "en");
   } catch {
     translations = {};
   }
 
   const version =
-    (window as unknown as { __OFH_ASSETS?: { version?: string } }).__OFH_ASSETS?.version || "";
+    (window as unknown as { __OFH_ASSETS?: { version?: string } }).__OFH_ASSETS?.version ?? "";
   overlay = build(version);
   document.body.append(overlay);
   document.addEventListener("keydown", onKey);

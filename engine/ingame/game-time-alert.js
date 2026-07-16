@@ -174,10 +174,10 @@
   }
 
   function checkGameTimeAlert() {
-    if (!gameTimeAlertEnabled) {
+    if (!runtimeState.gameTimeAlertEnabled) {
       return;
     }
-    let game = null;
+    let game;
     try {
       game = getOpenFrontGameContext()?.game || null;
     } catch (_error) {
@@ -188,45 +188,45 @@
     }
     // A new match hands out a fresh game instance (and ticks restart near 0),
     // so re-arm the one-shot latch whenever the instance changes.
-    if (game !== gameTimeAlertLastGame) {
-      gameTimeAlertLastGame = game;
-      gameTimeAlertFired = false;
+    if (game !== runtimeState.gameTimeAlertLastGame) {
+      runtimeState.gameTimeAlertLastGame = game;
+      runtimeState.gameTimeAlertFired = false;
     }
-    let ticks = 0;
+    let ticks;
     try {
       ticks = Number(game.ticks()) || 0;
     } catch (_error) {
       return;
     }
     const elapsedSeconds = ticks / 10; // OpenFront advances 10 ticks per second.
-    if (elapsedSeconds < gameTimeAlertThresholdSec) {
-      gameTimeAlertFired = false; // still before the threshold (covers restarts)
+    if (elapsedSeconds < runtimeState.gameTimeAlertThresholdSec) {
+      runtimeState.gameTimeAlertFired = false; // still before the threshold (covers restarts)
       return;
     }
-    if (gameTimeAlertFired) {
+    if (runtimeState.gameTimeAlertFired) {
       return;
     }
-    gameTimeAlertFired = true;
+    runtimeState.gameTimeAlertFired = true;
     showGameTimeAlertCard(elapsedSeconds);
   }
 
   function setGameTimeAlertEnabled(enabled, thresholdSec) {
-    gameTimeAlertEnabled = Boolean(enabled);
+    runtimeState.gameTimeAlertEnabled = Boolean(enabled);
     const parsed = Number(thresholdSec);
     if (Number.isFinite(parsed) && parsed > 0) {
-      gameTimeAlertThresholdSec = Math.max(30, Math.min(3600, Math.round(parsed)));
+      runtimeState.gameTimeAlertThresholdSec = Math.max(30, Math.min(3600, Math.round(parsed)));
     }
-    if (!gameTimeAlertEnabled) {
-      if (gameTimeAlertInterval !== null) {
-        window.clearInterval(gameTimeAlertInterval);
-        gameTimeAlertInterval = null;
+    if (!runtimeState.gameTimeAlertEnabled) {
+      if (runtimeState.gameTimeAlertInterval !== null) {
+        window.clearInterval(runtimeState.gameTimeAlertInterval);
+        runtimeState.gameTimeAlertInterval = null;
       }
-      gameTimeAlertFired = false;
-      gameTimeAlertLastGame = null;
+      runtimeState.gameTimeAlertFired = false;
+      runtimeState.gameTimeAlertLastGame = null;
       document.getElementById(GAME_TIME_ALERT_CONTAINER_ID)?.remove();
       return;
     }
-    if (gameTimeAlertInterval === null) {
-      gameTimeAlertInterval = window.setInterval(checkGameTimeAlert, 1000);
+    if (runtimeState.gameTimeAlertInterval === null) {
+      runtimeState.gameTimeAlertInterval = window.setInterval(checkGameTimeAlert, 1000);
     }
   }

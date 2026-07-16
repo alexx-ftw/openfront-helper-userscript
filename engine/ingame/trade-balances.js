@@ -144,7 +144,7 @@
     if (now >= tradeBadgeHideAt) {
       tradeBadgeHideAt = 0;
       badge.dataset.visible = "false";
-      tradeBalanceRenderSignature = "";
+      runtimeState.tradeBalanceRenderSignature = "";
       syncHelperStatsContainerVisibility();
     }
   }
@@ -210,16 +210,19 @@
     return tracker;
   }
 
+  function getExportProfitSource(unit) {
+    const tile = unit.tile?.();
+    return {
+      tile,
+      id: unit.id?.() ?? tile,
+      type: String(unit.type?.() ?? "Industry"),
+    };
+  }
+
   function addExportPartnerProfitSource(exporterId, partnerId, unit, goldAmount) {
-    if (
-      !Number.isFinite(exporterId) ||
-      !Number.isFinite(Number(partnerId)) ||
-      !unit ||
-      !Number.isFinite(goldAmount) ||
-      goldAmount <= 0
-    ) {
-      return;
-    }
+    const validIds = Number.isFinite(exporterId) && Number.isFinite(Number(partnerId));
+    const validGold = Number.isFinite(goldAmount) && goldAmount > 0;
+    if (!validIds || !unit || !validGold) return;
 
     const exporterKey = String(exporterId);
     let sourceTracker = exportPartnerSourceTrackers.get(exporterKey);
@@ -228,21 +231,24 @@
       exportPartnerSourceTrackers.set(exporterKey, sourceTracker);
     }
 
-    const tile = unit.tile?.();
-    const sourceKey = `${partnerId}:${unit.id?.() ?? tile}`;
+    const source = getExportProfitSource(unit);
+    const sourceKey = `${partnerId}:${source.id}`;
     const entry = sourceTracker.get(sourceKey) ?? {
       partnerId: Number(partnerId),
-      tile,
-      type: String(unit?.type?.() ?? "Industry"),
+      tile: source.tile,
+      type: source.type,
       total: 0,
     };
-    entry.tile = tile ?? entry.tile;
-    entry.type = String(unit?.type?.() ?? entry.type);
+    entry.tile = source.tile ?? entry.tile;
+    entry.type = source.type;
     entry.total += goldAmount;
     sourceTracker.set(sourceKey, entry);
   }
 
-  function addTradeBalance(receiverId, partnerId, partnerName, goldAmount, direction = "unknown", sourceUnit = null) {
+  function addTradeBalance({
+    receiverId, partnerId, partnerName, goldAmount,
+    direction = "unknown", sourceUnit = null,
+  }) {
     if (!Number.isFinite(receiverId) || !Number.isFinite(goldAmount) || goldAmount <= 0) {
       return;
     }
@@ -283,38 +289,42 @@
     return Number(value);
   }
 
-  function findOwnedStructureAtTile(game, tile, allowedTypes, owner = null, radius = 2) {
-    if (tile == null) {
-      return null;
+  function matchesOwnedStructure(unit, allowedTypes, owner) {
+    try {
+      if (!unit?.isActive?.() || !allowedTypes.includes(unit?.type?.())) return false;
+      if (owner === null) return true;
+      return getPlayerSmallId(unit?.owner?.()) === getPlayerSmallId(owner);
+    } catch (error) {
+      captureRuntimeException(error, "engine/ingame/trade-balances.js:matchesOwnedStructure");
+      return false;
     }
+  }
 
-    function matches(unit) {
-      try {
-        return (
-          unit?.isActive?.() &&
-          allowedTypes.includes(unit?.type?.()) &&
-          (owner === null ||
-            getPlayerSmallId(unit?.owner?.()) === getPlayerSmallId(owner))
-        );
-      } catch (_error) {
-        return false;
-      }
-    }
-
+  function findExactOwnedStructure(game, tile, allowedTypes, owner) {
     try {
       for (const unit of game?.units?.(...allowedTypes) || []) {
-        if (matches(unit) && unit.tile?.() === tile) {
+        if (matchesOwnedStructure(unit, allowedTypes, owner) && unit.tile?.() === tile) {
           return unit;
         }
       }
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/trade-balances.js:310");
       // Try nearbyUnits below.
     }
+    return null;
+  }
+
+  function findOwnedStructureAtTile(game, tile, allowedTypes, owner = null, radius = 2) {
+    if (tile == null) return null;
+    const exact = findExactOwnedStructure(game, tile, allowedTypes, owner);
+    if (exact) return exact;
 
     try {
       const nearby = game?.nearbyUnits?.(tile, radius, allowedTypes);
-      return nearby?.find((entry) => matches(entry?.unit))?.unit ?? null;
+      return nearby?.find((entry) =>
+        matchesOwnedStructure(entry?.unit, allowedTypes, owner))?.unit ?? null;
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/trade-balances.js:317");
       return null;
     }
   }
@@ -333,6 +343,7 @@
           return unit;
         }
       } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/trade-balances.js:335");
         // Fall back to sourceTile.
       }
     }
@@ -345,28 +356,21 @@
     );
   }
 
-  function refreshTradeShipSourceTrackers(game) {
-    const now = Date.now();
-    const activeShipIds = new Set();
-    for (const ship of game?.units?.("Trade Ship") || []) {
-      const shipId = ship?.id?.();
-      if (!Number.isFinite(shipId) || !ship?.isActive?.()) {
-        continue;
-      }
-      activeShipIds.add(String(shipId));
+  function getTradeShipSourceTracker(ship, now) {
+    const key = String(ship.id());
+    return tradeShipSourceTrackers.get(key) ?? {
+      sourceUnitId: null,
+      sourceTile: null,
+      sourceOwner: ship?.owner?.() ?? null,
+      targetUnitId: toFiniteNumber(ship?.targetUnitId?.(), NaN),
+      lastSeenAt: now,
+    };
+  }
 
-      let tracker = tradeShipSourceTrackers.get(String(shipId));
-      if (!tracker) {
-        tracker = {
-          sourceUnitId: null,
-          sourceTile: null,
-          sourceOwner: ship?.owner?.() ?? null,
-          targetUnitId: toFiniteNumber(ship?.targetUnitId?.(), NaN),
-          lastSeenAt: now,
-        };
-      }
+  function updateTradeShipSourceTracker(game, ship, now) {
+      const shipId = String(ship.id());
+      const tracker = getTradeShipSourceTracker(ship, now);
       tracker.lastSeenAt = now;
-
       if (!Number.isFinite(Number(tracker.sourceUnitId))) {
         const sourcePort = findOwnedStructureAtTile(
           game,
@@ -374,27 +378,36 @@
           ["Port"],
           ship?.owner?.(),
         );
-        if (sourcePort) {
-          const sourceUnitId = toFiniteNumber(sourcePort?.id?.(), NaN);
-          tracker.sourceUnitId = Number.isFinite(sourceUnitId)
-            ? sourceUnitId
-            : tracker.sourceUnitId;
-          tracker.sourceTile = sourcePort?.tile?.() ?? tracker.sourceTile;
-          tracker.sourceOwner = sourcePort?.owner?.() ?? tracker.sourceOwner;
-        }
+        if (sourcePort) rememberTradeShipSource(tracker, sourcePort);
       }
+      tradeShipSourceTrackers.set(shipId, tracker);
+  }
 
-      tradeShipSourceTrackers.set(String(shipId), tracker);
-    }
+  function rememberTradeShipSource(tracker, sourcePort) {
+    const sourceUnitId = toFiniteNumber(sourcePort?.id?.(), NaN);
+    if (Number.isFinite(sourceUnitId)) tracker.sourceUnitId = sourceUnitId;
+    tracker.sourceTile = sourcePort?.tile?.() ?? tracker.sourceTile;
+    tracker.sourceOwner = sourcePort?.owner?.() ?? tracker.sourceOwner;
+  }
 
+  function pruneTradeShipSourceTrackers(activeShipIds, now) {
     for (const shipId of tradeShipSourceTrackers.keys()) {
-      if (!activeShipIds.has(shipId)) {
-        const tracker = tradeShipSourceTrackers.get(shipId);
-        if (!Number.isFinite(tracker?.lastSeenAt) || now - tracker.lastSeenAt > 30000) {
-          tradeShipSourceTrackers.delete(shipId);
-        }
-      }
+      if (activeShipIds.has(shipId)) continue;
+      const tracker = tradeShipSourceTrackers.get(shipId);
+      const expired = !Number.isFinite(tracker?.lastSeenAt) || now - tracker.lastSeenAt > 30000;
+      if (expired) tradeShipSourceTrackers.delete(shipId);
     }
+  }
+
+  function refreshTradeShipSourceTrackers(game) {
+    const now = Date.now();
+    const activeShips = (game?.units?.("Trade Ship") || []).filter((ship) =>
+      Number.isFinite(ship?.id?.()) && ship?.isActive?.());
+    const activeShipIds = new Set(activeShips.map((ship) => String(ship.id())));
+    for (const ship of activeShips) {
+      updateTradeShipSourceTracker(game, ship, now);
+    }
+    pruneTradeShipSourceTrackers(activeShipIds, now);
   }
 
   function getTradeDirection(receiverId, partnerId, boatRoutes) {
@@ -405,40 +418,28 @@
     return route.sourceId === receiverId ? "export" : "import";
   }
 
+  function getCompletedBoatTradeRoute(game, event) {
+    const completed = event?.unitType === "Trade Ship" &&
+      event?.isActive === false && event?.targetUnitId !== undefined;
+    if (!completed) return null;
+    const targetUnit = game?.unit?.(event.targetUnitId);
+    const destinationOwner = targetUnit?.owner?.();
+    const destinationId = destinationOwner ? getPlayerSmallId(destinationOwner) : NaN;
+    const sourceId = Number(event.ownerID);
+    if (!Number.isFinite(sourceId) || !Number.isFinite(destinationId)) return null;
+    if (sourceId === destinationId) return null;
+    return {
+      shipId: String(event.id), sourceId, destinationId,
+      sourceUnit: getTradeShipSourceUnit(game, event.id),
+      destinationUnit: targetUnit,
+    };
+  }
+
   function collectCompletedBoatTradeRoutes(game, updates) {
-    const routes = [];
-    for (const updateGroup of Object.values(updates || {})) {
-      if (!Array.isArray(updateGroup)) {
-        continue;
-      }
-
-      for (const event of updateGroup) {
-        if (
-          event?.unitType !== "Trade Ship" ||
-          event?.isActive !== false ||
-          event?.targetUnitId === undefined
-        ) {
-          continue;
-        }
-
-        const targetUnit = game?.unit?.(event.targetUnitId);
-        const destinationOwner = targetUnit?.owner?.();
-        const destinationId = destinationOwner ? getPlayerSmallId(destinationOwner) : NaN;
-        const sourceId = Number(event.ownerID);
-        if (!Number.isFinite(sourceId) || !Number.isFinite(destinationId) || sourceId === destinationId) {
-          continue;
-        }
-
-        routes.push({
-          shipId: String(event.id),
-          sourceId,
-          destinationId,
-          sourceUnit: getTradeShipSourceUnit(game, event.id),
-          destinationUnit: targetUnit,
-        });
-      }
-    }
-    return routes;
+    return Object.values(updates || {})
+      .filter(Array.isArray)
+      .flatMap((events) => events.map((event) => getCompletedBoatTradeRoute(game, event)))
+      .filter(Boolean);
   }
 
   function getTradeRoute(receiverId, partnerId, boatRoutes) {
@@ -472,61 +473,59 @@
       }
       return getPlayerSmallId(unit?.owner?.()) === getPlayerSmallId(owner);
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/trade-balances.js:474");
       return false;
     }
   }
 
   function findTrainStationAtTile(game, tile, allowedTypes = ["City", "Port"], owner = null) {
-    if (tile == null) {
+    if (tile == null) return null;
+    const exact = (game?.units?.(...allowedTypes) || []).find((unit) =>
+      isTrainStationUnit(unit, allowedTypes, owner) && unit.tile?.() === tile);
+    if (exact) return exact;
+    const nearby = game?.nearbyUnits?.(tile, 2, allowedTypes);
+    return nearby?.find((entry) =>
+      isTrainStationUnit(entry?.unit, allowedTypes, owner))?.unit ?? null;
+  }
+
+  function getActiveTrainFactory(factory) {
+    try {
+      if (!factory?.isActive?.() || !factory?.hasTrainStation?.()) return null;
+      const tile = factory.tile?.();
+      return tile == null ? null : { factory, tile };
+    } catch (error) {
+      captureRuntimeException(error, "engine/ingame/trade-balances.js:getActiveTrainFactory");
       return null;
     }
-
-    for (const unit of game?.units?.(...allowedTypes) || []) {
-      if (isTrainStationUnit(unit, allowedTypes, owner) && unit.tile?.() === tile) {
-        return unit;
-      }
-    }
-
-    const nearby = game?.nearbyUnits?.(tile, 2, allowedTypes);
-    return (
-      nearby?.find((entry) => isTrainStationUnit(entry?.unit, allowedTypes, owner))?.unit ??
-      null
-    );
   }
 
   function findNearestOwnedFactory(game, tile, owner) {
-    if (tile == null || !owner) {
-      return null;
-    }
-
-    let bestFactory = null;
-    let bestDistance = Number.POSITIVE_INFINITY;
+    if (tile == null || !owner) return null;
+    let candidates;
     try {
-      for (const factory of owner?.units?.("Factory") || []) {
-        if (!factory?.isActive?.() || !factory?.hasTrainStation?.()) {
-          continue;
-        }
-
-        const factoryTile = factory.tile?.();
-        if (factoryTile == null) {
-          continue;
-        }
-
-        const distance = toFiniteNumber(game?.manhattanDist?.(tile, factoryTile), NaN);
-        if (Number.isFinite(distance) && distance < bestDistance) {
-          bestDistance = distance;
-          bestFactory = factory;
-        }
-      }
-    } catch (_error) {
+      candidates = (owner.units?.("Factory") || [])
+        .map(getActiveTrainFactory)
+        .filter(Boolean)
+        .map(({ factory, tile: factoryTile }) => ({
+          factory,
+          distance: toFiniteNumber(game?.manhattanDist?.(tile, factoryTile), NaN),
+        }))
+        .filter(({ distance }) => Number.isFinite(distance))
+        .sort((a, b) => a.distance - b.distance);
+    } catch (error) {
+      captureRuntimeException(error, "engine/ingame/trade-balances.js:findNearestOwnedFactory");
       return null;
     }
-
     const maxRange = Math.max(
       1,
       toFiniteNumber(game?.config?.().trainStationMaxRange?.(), 100),
     );
-    return bestDistance <= maxRange ? bestFactory : null;
+    return candidates[0]?.distance <= maxRange ? candidates[0].factory : null;
+  }
+
+  function isTrackedTrainFactory(unit, trainOwner) {
+    return unit?.isActive?.() && String(unit?.type?.() ?? "") === "Factory" &&
+      getPlayerSmallId(unit?.owner?.()) === getPlayerSmallId(trainOwner);
   }
 
   function getTrackedTrainSourceFactory(game, tracker, trainOwner) {
@@ -534,14 +533,9 @@
     if (Number.isFinite(sourceUnitId)) {
       try {
         const unit = game?.unit?.(sourceUnitId);
-        if (
-          unit?.isActive?.() &&
-          String(unit?.type?.() ?? "") === "Factory" &&
-          getPlayerSmallId(unit?.owner?.()) === getPlayerSmallId(trainOwner)
-        ) {
-          return unit;
-        }
+        if (isTrackedTrainFactory(unit, trainOwner)) return unit;
       } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/trade-balances.js:544");
         // Try to rediscover the source from the stored source tile below.
       }
     }
@@ -608,54 +602,34 @@
     }
   }
 
-  function processTrainTradeStops(game) {
-    const activeEngineIds = new Set();
+  function createTrainTradeTracker(game, engine, station) {
+    const tracker = {
+      firstTile: engine.tile?.(),
+      lastStationKey: station ? String(station.id?.() ?? station.tile?.()) : null,
+      stopsVisited: 0,
+      sourceUnitId: null,
+      sourceTile: null,
+    };
+    rememberTrainSourceFactory(tracker, findTrainSourceFactory(game, engine));
+    return tracker;
+  }
 
-    for (const engine of game?.units?.("Train") || []) {
-      if (engine?.trainType?.() !== "Engine" || !engine?.isActive?.()) {
-        continue;
-      }
+  function getNewTrainStation(tracker, station) {
+    if (!station) {
+      tracker.lastStationKey = null;
+      return null;
+    }
+    const stationKey = String(station.id?.() ?? station.tile?.());
+    if (tracker.lastStationKey === stationKey) return null;
+    tracker.lastStationKey = stationKey;
+    return station;
+  }
 
-      const engineId = engine.id?.();
-      if (!Number.isFinite(engineId)) {
-        continue;
-      }
-      activeEngineIds.add(engineId);
-
-      const station = findTrainStationAtTile(game, engine.tile?.());
-      let tracker = trainTradeTrackers.get(engineId);
-      if (!tracker) {
-        const sourceFactory = findTrainSourceFactory(game, engine);
-        tracker = {
-          firstTile: engine.tile?.(),
-          lastStationKey: station ? String(station.id?.() ?? station.tile?.()) : null,
-          stopsVisited: 0,
-          sourceUnitId: null,
-          sourceTile: null,
-        };
-        rememberTrainSourceFactory(tracker, sourceFactory);
-        trainTradeTrackers.set(engineId, tracker);
-        continue;
-      }
-      rememberTrainSourceFactory(tracker, findTrainSourceFactory(game, engine, tracker));
-
-      if (!station) {
-        tracker.lastStationKey = null;
-        continue;
-      }
-
-      const stationKey = String(station.id?.() ?? station.tile?.());
-      if (tracker.lastStationKey === stationKey) {
-        continue;
-      }
-      tracker.lastStationKey = stationKey;
-
+  function recordTrainTrade(game, engine, station, tracker) {
       const trainOwner = engine.owner?.();
       const stationOwner = station.owner?.();
-      if (!trainOwner || !stationOwner || !canStationTradeWith(trainOwner, stationOwner)) {
-        continue;
-      }
-
+      if (!trainOwner || !stationOwner) return;
+      if (!canStationTradeWith(trainOwner, stationOwner)) return;
       const relation = getTrainRelation(trainOwner, stationOwner);
       // Pass trainOwner as the 3rd arg: the game's trainGold → goldMultiplierFor(player)
       // calls player.isLobbyCreator() whenever the server enables the goldMultiplier
@@ -667,33 +641,56 @@
       );
       tracker.stopsVisited += 1;
       if (!Number.isFinite(goldAmount) || goldAmount <= 0) {
-        continue;
+        return;
       }
 
       addEconomyRevenueSource(station, goldAmount);
       addEconomyRevenueSource(findTrainSourceFactory(game, engine, tracker), goldAmount);
 
       if (!canPlayersTrade(trainOwner, stationOwner)) {
-        continue;
+        return;
       }
 
       const trainOwnerId = getPlayerSmallId(trainOwner);
       const stationOwnerId = getPlayerSmallId(stationOwner);
-      addTradeBalance(
-        trainOwnerId,
-        stationOwnerId,
-        getPlayerDisplayName(stationOwner),
+      addTradeBalance({
+        receiverId: trainOwnerId,
+        partnerId: stationOwnerId,
+        partnerName: getPlayerDisplayName(stationOwner),
         goldAmount,
-        "export",
-        station,
-      );
-      addTradeBalance(
-        stationOwnerId,
-        trainOwnerId,
-        getPlayerDisplayName(trainOwner),
+        direction: "export",
+        sourceUnit: station,
+      });
+      addTradeBalance({
+        receiverId: stationOwnerId,
+        partnerId: trainOwnerId,
+        partnerName: getPlayerDisplayName(trainOwner),
         goldAmount,
-        "import",
-      );
+        direction: "import",
+      });
+  }
+
+  function processTrainEngineStop(game, engine, activeEngineIds) {
+      if (engine?.trainType?.() !== "Engine" || !engine?.isActive?.()) return;
+      const engineId = engine.id?.();
+      if (!Number.isFinite(engineId)) return;
+      activeEngineIds.add(engineId);
+      const station = findTrainStationAtTile(game, engine.tile?.());
+      let tracker = trainTradeTrackers.get(engineId);
+      if (!tracker) {
+        tracker = createTrainTradeTracker(game, engine, station);
+        trainTradeTrackers.set(engineId, tracker);
+        return;
+      }
+      rememberTrainSourceFactory(tracker, findTrainSourceFactory(game, engine, tracker));
+      const newStation = getNewTrainStation(tracker, station);
+      if (newStation) recordTrainTrade(game, engine, newStation, tracker);
+  }
+
+  function processTrainTradeStops(game) {
+    const activeEngineIds = new Set();
+    for (const engine of game?.units?.("Train") || []) {
+      processTrainEngineStop(game, engine, activeEngineIds);
     }
 
     for (const engineId of trainTradeTrackers.keys()) {
@@ -704,10 +701,10 @@
   }
   function processTradeBalanceUpdates(game) {
     const currentTick = Number(game?.ticks?.());
-    if (!Number.isFinite(currentTick) || currentTick === lastProcessedTradeBalanceTick) {
+    if (!Number.isFinite(currentTick) || currentTick === runtimeState.lastProcessedTradeBalanceTick) {
       return;
     }
-    lastProcessedTradeBalanceTick = currentTick;
+    runtimeState.lastProcessedTradeBalanceTick = currentTick;
 
     processFactoryPortSpendUpdates(game);
     refreshTradeShipSourceTrackers(game);
@@ -720,40 +717,36 @@
 
     const players = getCachedPlayerViews(game);
     const boatRoutes = collectCompletedBoatTradeRoutes(game, updates);
-    for (const updateGroup of Object.values(updates)) {
-      if (!Array.isArray(updateGroup)) {
-        continue;
-      }
+    const events = Object.values(updates).filter(Array.isArray).flat();
+    for (const event of events) processTradeBalanceEvent(event, players, boatRoutes);
+  }
 
-      for (const event of updateGroup) {
-        if (event?.message !== "events_display.received_gold_from_trade") {
-          continue;
-        }
+  function getTradeEventRoute(receiverId, partnerId, boatRoutes) {
+    const matched = getTradeRoute(receiverId, partnerId, boatRoutes);
+    if (!matched) return { direction: "unknown", route: null };
+    if (matched.sourceId !== receiverId) return { direction: "import", route: matched };
+    return {
+      direction: "export",
+      route: takeTradeRoute(receiverId, partnerId, boatRoutes),
+    };
+  }
 
-        const receiverId = Number(event.playerID);
-        const goldAmount = getTradeEventGoldAmount(event.goldAmount);
-        const partnerName = String(event.params?.name ?? "Unknown");
-        const partner = findPlayerByTradeName(players, partnerName);
-        const partnerId = partner ? getPlayerSmallId(partner) : `name:${partnerName}`;
-        const numericPartnerId = Number(partnerId);
-        const matchedRoute = getTradeRoute(receiverId, numericPartnerId, boatRoutes);
-        const direction = matchedRoute
-          ? matchedRoute.sourceId === receiverId
-            ? "export"
-            : "import"
-          : "unknown";
-        const route =
-          direction === "export"
-            ? takeTradeRoute(receiverId, numericPartnerId, boatRoutes)
-            : matchedRoute;
-        const sourceUnit = direction === "export" ? route?.destinationUnit : null;
-        if (direction === "export" && route) {
-          addEconomyRevenueSource(route.sourceUnit, goldAmount);
-          addEconomyRevenueSource(route.destinationUnit, goldAmount);
-        }
-        addTradeBalance(receiverId, partnerId, partnerName, goldAmount, direction, sourceUnit);
-      }
+  function processTradeBalanceEvent(event, players, boatRoutes) {
+    if (event?.message !== "events_display.received_gold_from_trade") return;
+    const receiverId = Number(event.playerID);
+    const goldAmount = getTradeEventGoldAmount(event.goldAmount);
+    const partnerName = String(event.params?.name ?? "Unknown");
+    const partner = findPlayerByTradeName(players, partnerName);
+    const partnerId = partner ? getPlayerSmallId(partner) : `name:${partnerName}`;
+    const { direction, route } = getTradeEventRoute(receiverId, Number(partnerId), boatRoutes);
+    const sourceUnit = direction === "export" ? route?.destinationUnit : null;
+    if (direction === "export" && route) {
+      addEconomyRevenueSource(route.sourceUnit, goldAmount);
+      addEconomyRevenueSource(route.destinationUnit, goldAmount);
     }
+    addTradeBalance({
+      receiverId, partnerId, partnerName, goldAmount, direction, sourceUnit,
+    });
   }
 
   function formatTradeBalanceAmount(value) {
@@ -874,16 +867,12 @@
     factoryPortSpendTrackers.set(key, tracker);
   }
 
-  function processFactoryPortSpendUpdates(game) {
-    const activeUnitKeys = new Set();
-    for (const unit of game?.units?.("Factory", "Port") || []) {
+  function processFactoryPortSpendUnit(unit, activeUnitKeys) {
       const unitId = unit?.id?.();
       const owner = unit?.owner?.();
       const ownerId = owner ? getPlayerSmallId(owner) : NaN;
       const level = getUnitLevel(unit);
-      if (!Number.isFinite(unitId) || !Number.isFinite(ownerId) || level <= 0) {
-        continue;
-      }
+      if (!Number.isFinite(unitId) || !Number.isFinite(ownerId) || level <= 0) return;
 
       const key = String(unitId);
       activeUnitKeys.add(key);
@@ -894,7 +883,7 @@
           level,
         });
         addFactoryPortSpend(ownerId, level);
-        continue;
+        return;
       }
 
       if (tracked.ownerId === ownerId && level > tracked.level) {
@@ -902,6 +891,12 @@
       }
       tracked.ownerId = ownerId;
       tracked.level = level;
+  }
+
+  function processFactoryPortSpendUpdates(game) {
+    const activeUnitKeys = new Set();
+    for (const unit of game?.units?.("Factory", "Port") || []) {
+      processFactoryPortSpendUnit(unit, activeUnitKeys);
     }
 
     for (const key of factoryPortUnitTrackers.keys()) {
@@ -1058,9 +1053,73 @@
     return sources;
   }
 
+  function createTradeBalanceRow(entry) {
+    const row = document.createElement("span");
+    row.className = "openfront-helper-trade-row";
+    const name = document.createElement("span");
+    name.className = "openfront-helper-trade-name";
+    name.textContent = entry.partnerName;
+    const valueWrap = document.createElement("span");
+    valueWrap.className = "openfront-helper-trade-value-wrap";
+    const value = document.createElement("span");
+    value.className = "openfront-helper-trade-value";
+    value.textContent = formatTradeBalanceAmount(entry.total);
+    const direction = document.createElement("span");
+    direction.className = "openfront-helper-trade-direction";
+    direction.textContent = getTradeBalanceDirection(entry);
+    valueWrap.append(value, direction);
+    row.append(name, valueWrap);
+    return row;
+  }
+
+  function renderTradeBalanceRows(badge, entries) {
+    const rows = badge.querySelector(".openfront-helper-trade-rows");
+    if (!rows) return;
+    if (entries.length === 0) {
+      rows.innerHTML = `<span class="openfront-helper-trade-empty">${tr("No observed trade yet")}</span>`;
+      return;
+    }
+    rows.replaceChildren(...entries.map(createTradeBalanceRow));
+  }
+
+  function setTradeBalanceSummary(badge, selector, text) {
+    const element = badge.querySelector(selector);
+    if (element) element.textContent = text;
+    return element;
+  }
+
+  function renderTradeBalanceBadge(badge, totals, spend, entries) {
+    setTradeBalanceSummary(badge, ".openfront-helper-trade-imports",
+      formatTradeBalanceAmount(totals.imports));
+    setTradeBalanceSummary(badge, ".openfront-helper-trade-exports",
+      formatTradeBalanceAmount(totals.exports));
+    setTradeBalanceSummary(badge, ".openfront-helper-trade-factory-port-spend",
+      formatTradeSpendAmount(spend));
+    const roi = setTradeBalanceSummary(badge, ".openfront-helper-trade-roi",
+      formatTradeRoi(totals.exports, spend));
+    if (roi) roi.dataset.status = getTradeRoiStatus(totals.exports, spend);
+    renderTradeBalanceRows(badge, entries);
+    markHelperStatsLayoutDirty();
+  }
+
+  function updateTradeBalanceBreakEven(badge, totals, spend, exportWindowMs) {
+    const breakEven = badge.querySelector(".openfront-helper-trade-break-even");
+    if (!breakEven) return;
+    const text = formatBreakEvenEstimate(totals.exports, spend, exportWindowMs);
+    if (breakEven.textContent !== text) breakEven.textContent = text;
+  }
+
+  function showTradeBalanceBadge(badge) {
+    tradeBadgeHideAt = 0;
+    if (badge.dataset.visible === "true") return;
+    badge.dataset.visible = "true";
+    syncHelperStatsContainerVisibility();
+    markHelperStatsLayoutDirty();
+  }
+
   function updateTradeBalanceBadge() {
     const badge = ensureTradeBalanceBadge();
-    if (!tradeBalancesEnabled) {
+    if (!runtimeState.tradeBalancesEnabled) {
       if (badge.dataset.visible !== "false") {
         badge.dataset.visible = "false";
         syncHelperStatsContainerVisibility();
@@ -1095,91 +1154,27 @@
       ? Date.now() - totals.firstExportAt
       : NaN;
 
-    if (nextRenderSignature !== tradeBalanceRenderSignature) {
-      tradeBalanceRenderSignature = nextRenderSignature;
-
-      const imports = badge.querySelector(".openfront-helper-trade-imports");
-      const exports = badge.querySelector(".openfront-helper-trade-exports");
-      const factoryPortSpend = badge.querySelector(
-        ".openfront-helper-trade-factory-port-spend",
-      );
-      const roi = badge.querySelector(".openfront-helper-trade-roi");
-      if (imports) {
-        imports.textContent = formatTradeBalanceAmount(totals.imports);
-      }
-      if (exports) {
-        exports.textContent = formatTradeBalanceAmount(totals.exports);
-      }
-      if (factoryPortSpend) {
-        factoryPortSpend.textContent = formatTradeSpendAmount(factoryPortSpendTotal);
-      }
-      if (roi) {
-        roi.textContent = formatTradeRoi(totals.exports, factoryPortSpendTotal);
-        roi.dataset.status = getTradeRoiStatus(totals.exports, factoryPortSpendTotal);
-      }
-
-      const rows = badge.querySelector(".openfront-helper-trade-rows");
-      if (rows) {
-        if (entries.length === 0) {
-          rows.innerHTML = `<span class="openfront-helper-trade-empty">${tr("No observed trade yet")}</span>`;
-        } else {
-          rows.replaceChildren(
-            ...entries.map((entry) => {
-              const row = document.createElement("span");
-              row.className = "openfront-helper-trade-row";
-              const name = document.createElement("span");
-              name.className = "openfront-helper-trade-name";
-              name.textContent = entry.partnerName;
-              const valueWrap = document.createElement("span");
-              valueWrap.className = "openfront-helper-trade-value-wrap";
-              const value = document.createElement("span");
-              value.className = "openfront-helper-trade-value";
-              value.textContent = formatTradeBalanceAmount(entry.total);
-              const direction = document.createElement("span");
-              direction.className = "openfront-helper-trade-direction";
-              direction.textContent = getTradeBalanceDirection(entry);
-              valueWrap.append(value, direction);
-              row.append(name, valueWrap);
-              return row;
-            }),
-          );
-        }
-      }
-      markHelperStatsLayoutDirty();
+    if (nextRenderSignature !== runtimeState.tradeBalanceRenderSignature) {
+      runtimeState.tradeBalanceRenderSignature = nextRenderSignature;
+      renderTradeBalanceBadge(badge, totals, factoryPortSpendTotal, entries);
     }
 
     // Break-even depends on wall-clock time even when no other data changed;
     // update only its text node (no full re-render).
-    const breakEven = badge.querySelector(".openfront-helper-trade-break-even");
-    if (breakEven) {
-      const nextBreakEvenText = formatBreakEvenEstimate(
-        totals.exports,
-        factoryPortSpendTotal,
-        exportWindowMs,
-      );
-      if (breakEven.textContent !== nextBreakEvenText) {
-        breakEven.textContent = nextBreakEvenText;
-      }
-    }
-
-    tradeBadgeHideAt = 0; // hovering a nation again — cancel any pending hide
-    if (badge.dataset.visible !== "true") {
-      badge.dataset.visible = "true";
-      syncHelperStatsContainerVisibility();
-      markHelperStatsLayoutDirty();
-    }
+    updateTradeBalanceBreakEven(badge, totals, factoryPortSpendTotal, exportWindowMs);
+    showTradeBalanceBadge(badge);
     syncHelperStatsLayoutIfDirty();
   }
 
   function setTradeBalancesEnabled(enabled) {
-    tradeBalancesEnabled = Boolean(enabled);
-    if (!tradeBalancesEnabled) {
-      tradeBalanceAnimationFrame = null;
-      lastProcessedTradeBalanceTick = null;
-      lastTradeBalanceRenderAt = 0;
-      tradeBalanceRenderSignature = "";
+    runtimeState.tradeBalancesEnabled = Boolean(enabled);
+    if (!runtimeState.tradeBalancesEnabled) {
+      runtimeState.tradeBalanceAnimationFrame = null;
+      runtimeState.lastProcessedTradeBalanceTick = null;
+      runtimeState.lastTradeBalanceRenderAt = 0;
+      runtimeState.tradeBalanceRenderSignature = "";
       unregisterHelperTickListener(updateTradeBalanceBadge);
-      if (!exportPartnerHeatmapEnabled && !economyHeatmapEnabled) {
+      if (!runtimeState.exportPartnerHeatmapEnabled && !runtimeState.economyHeatmapEnabled) {
         tradeBalanceTrackers.clear();
         exportPartnerSourceTrackers.clear();
         factoryPortSpendTrackers.clear();
@@ -1197,4 +1192,3 @@
 
     registerHelperTickListener(updateTradeBalanceBadge);
   }
-

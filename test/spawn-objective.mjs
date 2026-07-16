@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import vm from "node:vm";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -10,7 +10,7 @@ const SOURCE = path.join(ROOT, "engine/ingame/spawn-objective.js");
 function loadApi() {
   const sandbox = { Array, Math, Number, Uint8Array, Uint16Array };
   sandbox.globalThis = sandbox;
-  vm.runInNewContext(fs.readFileSync(SOURCE, "utf8"), sandbox, { filename: SOURCE });
+  executeClassicScript(fs.readFileSync(SOURCE, "utf8"), sandbox, { filename: SOURCE });
   assert.ok(sandbox.__OFHSpawnObjective, "spawn objective API must be exposed");
   return sandbox.__OFHSpawnObjective;
 }
@@ -20,7 +20,7 @@ const api = loadApi();
 function test(name, fn) {
   try {
     fn();
-    console.log(`ok - ${name}`);
+    process.stdout.write(`ok - ${name}\n`);
   } catch (error) {
     console.error(`not ok - ${name}`);
     throw error;
@@ -257,4 +257,4 @@ test("inside the team polyhedron, terra nullius and reachable tribes lead the ob
   assert.equal(ranked[0].id, "open-interior");
 });
 
-console.log("spawn-objective tests passed");
+process.stdout.write("spawn-objective tests passed\n");

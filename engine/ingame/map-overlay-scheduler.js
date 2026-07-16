@@ -34,8 +34,9 @@
       _lowLagCheckedAt = now;
       try {
         var raw = localStorage.getItem("ofh:settings");
-        _lowLagCached = raw ? !!(JSON.parse(raw) || {}).lowLagMode : false;
-      } catch (_e) { _lowLagCached = false; }
+        _lowLagCached = raw ? Boolean((JSON.parse(raw) || {}).lowLagMode) : false;
+      } catch (_e) {
+  captureRuntimeException(_e, "engine/ingame/map-overlay-scheduler.js:38"); _lowLagCached = false; }
     }
     return _lowLagCached;
   }
@@ -54,8 +55,6 @@
   // per world→screen call. Tactical Assistant's smoothness comes from this: the
   // transform object is stable across pan/zoom, so caching it for 250ms removes
   // ~1000 getOpenFrontGameContext() DOM scans per frame while positions stay live.
-  let _mapOverlayCachedTransform = null;
-  let _mapOverlayCachedTransformAt = 0;
   const MAP_OVERLAY_TRANSFORM_CACHE_MS = 250;
 
   function registerMapOverlayLayer(layer) {
@@ -154,6 +153,7 @@
         sy = p.y;
       }
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/map-overlay-scheduler.js:154");
       /* keep zeros */
     }
     let scale = 1;
@@ -161,9 +161,98 @@
       const s = Number(transform.scale);
       if (Number.isFinite(s)) scale = s;
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/map-overlay-scheduler.js:161");
       /* keep 1 */
     }
     return `${Math.round(sx)},${Math.round(sy)},${scale}`;
+  }
+
+  function getMapOverlayContext() {
+    try {
+      return getOpenFrontGameContext();
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function isMapOverlayLayerEnabled(layer) {
+    try {
+      return layer.isEnabled();
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  function isMapOverlayLayerAnimated(layer) {
+    try {
+      return typeof layer.animated === "function"
+        ? Boolean(layer.animated())
+        : layer.animated === true;
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  function scanMapOverlayLayers(context, now) {
+    let anyAnimated = false;
+    for (const layer of _mapOverlayLayers) {
+      if (!isMapOverlayLayerEnabled(layer)) continue;
+      const animated = isMapOverlayLayerAnimated(layer);
+      anyAnimated = animated || anyAnimated;
+      if (typeof layer.scan !== "function" || now - layer._lastScanAt < layer.scanIntervalMs) {
+        continue;
+      }
+      try {
+        layer.scan(context.game, context.transform, now);
+      } catch (error) {
+        console.error("OpenFront map-overlay scan failed:", layer.id, error);
+      }
+      layer._lastScanAt = now;
+      _mapOverlayDirty = true;
+    }
+    return anyAnimated;
+  }
+
+  function drawMapOverlayLayers(ctx, context, now) {
+    if (typeof resetScreenPointPool === "function") resetScreenPointPool();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, _mapOverlayCssW, _mapOverlayCssH);
+    for (const layer of _mapOverlayLayers) {
+      if (!isMapOverlayLayerEnabled(layer)) continue;
+      try {
+        layer.draw(ctx, context.game, context.transform, now);
+      } catch (error) {
+        console.error("OpenFront map-overlay draw failed:", layer.id, error);
+      }
+    }
+    _mapOverlayDirty = false;
+  }
+
+  function clearLostMapOverlayContext(ctx) {
+    if (!_mapOverlayHadContext) return;
+    _mapOverlayHadContext = false;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, _mapOverlayCssW, _mapOverlayCssH);
+    _mapOverlayLastCamSig = "";
+  }
+
+  function renderMapOverlayFrame(ctx, context) {
+    if (!context?.game || !context?.transform) {
+      clearLostMapOverlayContext(ctx);
+      return;
+    }
+    if (!_mapOverlayHadContext) {
+      _mapOverlayHadContext = true;
+      _mapOverlayDirty = true;
+    }
+    const now = performance.now();
+    const anyAnimated = scanMapOverlayLayers(context, now);
+    const camSig = computeCameraSignature(context.transform);
+    if (camSig !== _mapOverlayLastCamSig) {
+      _mapOverlayLastCamSig = camSig;
+      _mapOverlayDirty = true;
+    }
+    if (_mapOverlayDirty || anyAnimated) drawMapOverlayLayers(ctx, context, now);
   }
 
   function _mapOverlayTick() {
@@ -185,96 +274,7 @@
 
     ensureMapOverlayCanvas();
     const ctx = _mapOverlayCtx;
-    if (ctx) {
-      let context = null;
-      try {
-        context = getOpenFrontGameContext();
-      } catch (_error) {
-        context = null;
-      }
-
-      if (context && context.game && context.transform) {
-        if (!_mapOverlayHadContext) {
-          _mapOverlayHadContext = true;
-          _mapOverlayDirty = true; // first frame with a live game → draw
-        }
-        const now = performance.now();
-
-        // 1) Run due scans (throttled per layer). A scan that runs makes the
-        //    frame dirty because the cached data changed.
-        let anyAnimated = false;
-        for (let i = 0; i < _mapOverlayLayers.length; i += 1) {
-          const layer = _mapOverlayLayers[i];
-          let enabled = false;
-          try {
-            enabled = layer.isEnabled();
-          } catch (_error) {
-            enabled = false;
-          }
-          if (!enabled) continue;
-          let animated = false;
-          try {
-            animated =
-              typeof layer.animated === "function"
-                ? Boolean(layer.animated())
-                : layer.animated === true;
-          } catch (_error) {
-            animated = false;
-          }
-          if (animated) anyAnimated = true;
-          if (
-            typeof layer.scan === "function" &&
-            now - layer._lastScanAt >= layer.scanIntervalMs
-          ) {
-            try {
-              layer.scan(context.game, context.transform, now);
-            } catch (error) {
-              console.error("OpenFront map-overlay scan failed:", layer.id, error);
-            }
-            layer._lastScanAt = now;
-            _mapOverlayDirty = true;
-          }
-        }
-
-        // 2) Camera-move detection: one transform call per frame.
-        const camSig = computeCameraSignature(context.transform);
-        if (camSig !== _mapOverlayLastCamSig) {
-          _mapOverlayLastCamSig = camSig;
-          _mapOverlayDirty = true;
-        }
-
-        // 3) Only clear+redraw when dirty, or when an animated layer is on.
-        if (_mapOverlayDirty || anyAnimated) {
-          if (typeof resetScreenPointPool === "function") {
-            resetScreenPointPool();
-          }
-          ctx.setTransform(1, 0, 0, 1, 0, 0);
-          ctx.clearRect(0, 0, _mapOverlayCssW, _mapOverlayCssH);
-          for (let i = 0; i < _mapOverlayLayers.length; i += 1) {
-            const layer = _mapOverlayLayers[i];
-            let enabled = false;
-            try {
-              enabled = layer.isEnabled();
-            } catch (_error) {
-              enabled = false;
-            }
-            if (!enabled) continue;
-            try {
-              layer.draw(ctx, context.game, context.transform, now);
-            } catch (error) {
-              console.error("OpenFront map-overlay draw failed:", layer.id, error);
-            }
-          }
-          _mapOverlayDirty = false;
-        }
-      } else if (_mapOverlayHadContext) {
-        // Lost the game (match ended) — clear once and reset.
-        _mapOverlayHadContext = false;
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.clearRect(0, 0, _mapOverlayCssW, _mapOverlayCssH);
-        _mapOverlayLastCamSig = "";
-      }
-    }
+    if (ctx) renderMapOverlayFrame(ctx, getMapOverlayContext());
 
     _mapOverlayFrame = requestAnimationFrame(_mapOverlayTick);
   }
@@ -319,6 +319,7 @@
       }
       return p;
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/map-overlay-scheduler.js:319");
       return null;
     }
   }
@@ -359,7 +360,7 @@
 
   // Text with a dark halo so it stays readable over any territory color. Matches
   // the DOM label look (font 900 11px, dark outline) used by boat/nuke labels.
-  function drawMapHaloText(ctx, x, y, text, color, options) {
+  function drawMapHaloText(ctx, x, y, text, options) {
     const opts = options || {};
     const font = opts.font || '900 11px "Aptos", "Trebuchet MS", "Segoe UI", sans-serif';
     ctx.font = font;
@@ -369,6 +370,6 @@
     ctx.lineWidth = opts.haloWidth || 3;
     ctx.strokeStyle = opts.halo || "rgba(0, 0, 0, 0.9)";
     ctx.strokeText(text, x, y);
-    ctx.fillStyle = color || "#e2e8f0";
+    ctx.fillStyle = opts.color || "#e2e8f0";
     ctx.fillText(text, x, y);
   }

@@ -1,4 +1,5 @@
-(function initOpenFrontHelperI18n(globalScope) {
+{
+  const globalScope = globalThis;
   const LANGUAGE_CODES = [
     "af", "ak", "am", "an", "ar", "as", "av", "ay", "az",
     "ba", "be", "bg", "bh", "bi", "bm", "bn", "bo", "br", "bs", "ca", "ce",
@@ -52,7 +53,6 @@
     "recover": "recover",
     "growing": "growing",
     "spend now": "spend now",
-    "Troops": "Troops",
     "Growth": "Growth",
     "Spend": "Spend",
     "Push in": "Push in",
@@ -76,7 +76,6 @@
     "Attack": "Attack",
     "Favourite": "Favourite",
     "Blacklist": "Blacklist",
-    "Building": "Building",
     "Ready": "Ready",
     searchLanguages: "Search languages",
     noLanguagesFound: "No languages found",
@@ -492,8 +491,9 @@
     try {
       const displayNames = new Intl.DisplayNames([locale], { type: "language" });
       return displayNames.of(code) || code;
-    } catch (_) {
-      return code;
+    } catch (error) {
+      if (error instanceof RangeError) return code;
+      throw error;
     }
   }
 
@@ -537,7 +537,8 @@
     try {
       const bundle = await fetchBundle(language);
       return { ...DEFAULT_TRANSLATIONS, ...defaultBundle, ...bundle };
-    } catch (_) {
+    } catch (error) {
+      console.warn("[ofh] could not load the requested translation bundle:", error);
       return { ...DEFAULT_TRANSLATIONS, ...defaultBundle };
     }
   }
@@ -551,4 +552,4 @@
     localizeElement,
     loadBundle,
   };
-})(globalThis);
+}

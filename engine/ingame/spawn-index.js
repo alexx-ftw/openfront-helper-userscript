@@ -5,7 +5,7 @@
 // locally when a terrain/occupancy tile changes. The engine-specific adapter
 // supplies ownership, border, team-area, and distance rules.
 
-(function installSpawnIndex(root) {
+{
   const SPAWN_IS_LAND_BIT = 7;
   const SPAWN_MAGNITUDE_MASK = 31;
   const DEFAULT_IMPASSABLE_MAGNITUDE = 31;
@@ -87,55 +87,62 @@
     return frontier;
   }
 
+  function createSpawnIndexConfiguration(options) {
+    const width = Number(options.width);
+    const height = Number(options.height);
+    if (!isInteger(width) || width === 0 || !isInteger(height) || height === 0) {
+      throw new Error("SpawnCandidateIndex requires positive integer dimensions");
+    }
+    const size = width * height;
+    const terrain = options.terrain;
+    if (!terrain || typeof terrain.length !== "number" || terrain.length < size) {
+      throw new Error("SpawnCandidateIndex requires a terrain buffer covering the map");
+    }
+    return {
+      width,
+      height,
+      size,
+      terrain: Uint8Array.from(terrain.slice(0, size)),
+      spawnRadius: Number.isFinite(options.spawnRadius)
+        ? Math.max(0, Number(options.spawnRadius))
+        : DEFAULT_SPAWN_RADIUS,
+      impassableMagnitude: Number.isFinite(options.impassableMagnitude)
+        ? Number(options.impassableMagnitude) & SPAWN_MAGNITUDE_MASK
+        : DEFAULT_IMPASSABLE_MAGNITUDE,
+    };
+  }
+
+  function createSpawnBlockedBuffer(options, size) {
+    const blocked = new Uint8Array(size);
+    if (!options.blocked) return blocked;
+    if (options.blocked.length < size) {
+      throw new Error("SpawnCandidateIndex blocked buffer is smaller than the map");
+    }
+    for (let ref = 0; ref < size; ref += 1) blocked[ref] = options.blocked[ref] ? 1 : 0;
+    return blocked;
+  }
+
   class SpawnCandidateIndex {
     constructor(options = {}) {
-      const width = Number(options.width);
-      const height = Number(options.height);
-      if (!isInteger(width) || width === 0 || !isInteger(height) || height === 0) {
-        throw new Error("SpawnCandidateIndex requires positive integer dimensions");
-      }
-
-      const size = width * height;
-      const terrain = options.terrain;
-      if (!terrain || typeof terrain.length !== "number" || terrain.length < size) {
-        throw new Error("SpawnCandidateIndex requires a terrain buffer covering the map");
-      }
-
-      this.width = width;
-      this.height = height;
-      this.size = size;
-      this.spawnRadius = Number.isFinite(options.spawnRadius)
-        ? Math.max(0, Number(options.spawnRadius))
-        : DEFAULT_SPAWN_RADIUS;
-      this.impassableMagnitude = Number.isFinite(options.impassableMagnitude)
-        ? Number(options.impassableMagnitude) & SPAWN_MAGNITUDE_MASK
-        : DEFAULT_IMPASSABLE_MAGNITUDE;
-      this.terrain = Uint8Array.from(terrain.slice(0, size));
-      this.blocked = new Uint8Array(size);
-      if (options.blocked) {
-        if (options.blocked.length < size) {
-          throw new Error("SpawnCandidateIndex blocked buffer is smaller than the map");
-        }
-        for (let ref = 0; ref < size; ref += 1) {
-          this.blocked[ref] = options.blocked[ref] ? 1 : 0;
-        }
-      }
+      const configuration = createSpawnIndexConfiguration(options);
+      Object.assign(this, configuration);
+      this.blocked = createSpawnBlockedBuffer(options, this.size);
 
       this.diskOffsets = buildSpawnDiskOffsets(this.spawnRadius);
       this.frontierOffsets = buildSpawnFrontierOffsets(this.diskOffsets);
-      this._terrainValid = new Uint8Array(size);
-      this.spawnGain = new Uint16Array(size);
-      this.plainsGain = new Uint16Array(size);
-      this.invalidCount = new Uint16Array(size);
-      this.frontierGain = new Uint16Array(size);
-      this.frontierPlainsGain = new Uint16Array(size);
-      this.frontierValueGain = new Uint32Array(size);
-      this.frontierSlots = new Uint16Array(size);
+      this._terrainValid = new Uint8Array(this.size);
+      this.spawnGain = new Uint16Array(this.size);
+      this.plainsGain = new Uint16Array(this.size);
+      this.invalidCount = new Uint16Array(this.size);
+      this.frontierGain = new Uint16Array(this.size);
+      this.frontierPlainsGain = new Uint16Array(this.size);
+      this.frontierValueGain = new Uint32Array(this.size);
+      this.frontierSlots = new Uint16Array(this.size);
       this._buildCursor = 0;
       this.ready = false;
       this.version = 0;
 
-      for (let ref = 0; ref < size; ref += 1) {
+      for (let ref = 0; ref < this.size; ref += 1) {
         this._terrainValid[ref] = isValidTerrainByte(
           this.terrain[ref],
           this.impassableMagnitude,
@@ -189,15 +196,15 @@
       }
     }
 
-    _applyCellStateDelta(
-      tileRef,
-      oldValid,
-      newValid,
-      oldPlains,
-      newPlains,
-      oldExpansionValue = 0,
-      newExpansionValue = 0,
-    ) {
+    _applyCellStateDelta(tileRef, delta) {
+      const {
+        oldValid,
+        newValid,
+        oldPlains,
+        newPlains,
+        oldExpansionValue = 0,
+        newExpansionValue = 0,
+      } = delta;
       if (
         oldValid === newValid &&
         oldPlains === newPlains &&
@@ -240,9 +247,7 @@
       });
     }
 
-    _buildCenter(centerRef) {
-      const centerX = centerRef % this.width;
-      const centerY = Math.floor(centerRef / this.width);
+    _measureSpawnDisk(centerX, centerY) {
       let spawnGain = 0;
       let plainsGain = 0;
       let invalidCount = 0;
@@ -260,6 +265,10 @@
           invalidCount += 1;
         }
       }
+      return { spawnGain, plainsGain, invalidCount };
+    }
+
+    _measureSpawnFrontier(centerX, centerY) {
       let frontierGain = 0;
       let frontierPlainsGain = 0;
       let frontierValueGain = 0;
@@ -280,13 +289,21 @@
           frontierPlainsGain += 1;
         }
       }
-      this.spawnGain[centerRef] = spawnGain;
-      this.plainsGain[centerRef] = plainsGain;
-      this.invalidCount[centerRef] = invalidCount;
-      this.frontierGain[centerRef] = frontierGain;
-      this.frontierPlainsGain[centerRef] = frontierPlainsGain;
-      this.frontierValueGain[centerRef] = frontierValueGain;
-      this.frontierSlots[centerRef] = frontierSlots;
+      return { frontierGain, frontierPlainsGain, frontierValueGain, frontierSlots };
+    }
+
+    _buildCenter(centerRef) {
+      const centerX = centerRef % this.width;
+      const centerY = Math.floor(centerRef / this.width);
+      const disk = this._measureSpawnDisk(centerX, centerY);
+      const frontier = this._measureSpawnFrontier(centerX, centerY);
+      this.spawnGain[centerRef] = disk.spawnGain;
+      this.plainsGain[centerRef] = disk.plainsGain;
+      this.invalidCount[centerRef] = disk.invalidCount;
+      this.frontierGain[centerRef] = frontier.frontierGain;
+      this.frontierPlainsGain[centerRef] = frontier.frontierPlainsGain;
+      this.frontierValueGain[centerRef] = frontier.frontierValueGain;
+      this.frontierSlots[centerRef] = frontier.frontierSlots;
     }
 
     // Build a bounded number of centers. Callers can pass a small number from
@@ -331,15 +348,14 @@
       const newExpansionValue = newValid
         ? terrainExpansionValue(nextByte, this.impassableMagnitude)
         : 0;
-      this._applyCellStateDelta(
-        ref,
+      this._applyCellStateDelta(ref, {
         oldValid,
         newValid,
         oldPlains,
         newPlains,
         oldExpansionValue,
         newExpansionValue,
-      );
+      });
       this.version += 1;
       return true;
     }
@@ -360,15 +376,14 @@
       const newExpansionValue = newValid
         ? terrainExpansionValue(this.terrain[ref], this.impassableMagnitude)
         : 0;
-      this._applyCellStateDelta(
-        ref,
+      this._applyCellStateDelta(ref, {
         oldValid,
         newValid,
         oldPlains,
         newPlains,
         oldExpansionValue,
         newExpansionValue,
-      );
+      });
       this.version += 1;
       return true;
     }
@@ -376,23 +391,30 @@
     // Synchronize only the supplied refs when a tile-update event identifies
     // them. Without refs, the full scan is intentionally explicit: callers
     // should use it only at map load or when the game reports a terrain revision.
+    _syncAllTerrain(readByte) {
+      let changed = 0;
+      for (let ref = 0; ref < this.size; ref += 1) {
+        if (this.updateTerrain(ref, readByte(ref))) changed += 1;
+      }
+      return changed;
+    }
+
+    _syncTerrainRefs(readByte, refs) {
+      let changed = 0;
+      for (const ref of refs) {
+        if (this.updateTerrain(ref, readByte(ref))) changed += 1;
+      }
+      return changed;
+    }
+
     syncTerrain(source, refs = null) {
       const readByte =
         typeof source === "function"
           ? source
           : (ref) => source[ref];
-      const targets = refs == null ? null : Array.from(refs);
-      let changed = 0;
-      if (targets === null) {
-        for (let ref = 0; ref < this.size; ref += 1) {
-          if (this.updateTerrain(ref, readByte(ref))) changed += 1;
-        }
-      } else {
-        for (const ref of targets) {
-          if (this.updateTerrain(ref, readByte(ref))) changed += 1;
-        }
-      }
-      return changed;
+      return refs == null
+        ? this._syncAllTerrain(readByte)
+        : this._syncTerrainRefs(readByte, refs);
     }
 
     getCandidate(ref, options = {}) {
@@ -418,6 +440,14 @@
       };
     }
 
+    _candidateRangeAllowed(ref, mode, isCenterAllowed) {
+      if (!this._terrainValid[ref] || this.blocked[ref]) return false;
+      if (mode === "random" && this.invalidCount[ref] !== 0) return false;
+      if (mode === "explicit" && this.spawnGain[ref] === 0) return false;
+      if (!isCenterAllowed) return true;
+      return isCenterAllowed(ref, ref % this.width, Math.floor(ref / this.width));
+    }
+
     forEachCandidateRange(options = {}) {
       if (!this.ready || typeof options.onCandidate !== "function") return 0;
       const mode = options.mode === "random" ? "random" : "explicit";
@@ -433,12 +463,9 @@
       );
       let count = 0;
       for (let ref = start; ref < end; ref += 1) {
-        if (!this._terrainValid[ref] || this.blocked[ref]) continue;
-        if (mode === "random" && this.invalidCount[ref] !== 0) continue;
-        if (mode === "explicit" && this.spawnGain[ref] === 0) continue;
+        if (!this._candidateRangeAllowed(ref, mode, options.isCenterAllowed)) continue;
         const x = ref % this.width;
         const y = Math.floor(ref / this.width);
-        if (options.isCenterAllowed && !options.isCenterAllowed(ref, x, y)) continue;
         options.onCandidate(
           ref,
           x,
@@ -490,5 +517,6 @@
     safePressureScore,
   };
 
-  root.__OFHSpawnIndex = api;
-})(typeof globalThis === "object" ? globalThis : window);
+  const spawnIndexRoot = typeof globalThis === "object" ? globalThis : window;
+  spawnIndexRoot.__OFHSpawnIndex = api;
+}

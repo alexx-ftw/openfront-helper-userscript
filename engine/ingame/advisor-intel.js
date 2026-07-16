@@ -26,7 +26,9 @@
 
   function advClamp01(v) {
     if (!Number.isFinite(v)) return 0;
-    return v < 0 ? 0 : v > 1 ? 1 : v;
+    if (v < 0) return 0;
+    if (v > 1) return 1;
+    return v;
   }
 
   function advGoldNumber(player) {
@@ -38,65 +40,40 @@
       const g = player.gold ? player.gold() : 0;
       return typeof g === "bigint" ? Number(g) : Number(g) || 0;
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/advisor-intel.js:40");
       return 0;
     }
   }
 
-  // Sum of a player's outgoing (non-retreating) attack troops. Client
-  // outgoing/incoming attacks are PLAIN objects: { troops, attackerID, targetID,
-  // retreating, id } (fields, not methods) — see auto-bot/gameApi.js.
-  function advTroopsInCombat(player) {
+  // Client attacks are plain objects: {troops, attackerID, targetID,
+  // retreating, id}. Keep their defensive parsing in one place.
+  function advAttackTroopSum(player, method, attackerSmallId = null) {
     let sum = 0;
     try {
-      const atks = player.outgoingAttacks ? player.outgoingAttacks() : null;
-      if (atks) {
-        for (let i = 0; i < atks.length; i += 1) {
-          const a = atks[i];
-          if (a && !a.retreating) {
-            sum += Number(a.troops) || 0;
-          }
-        }
+      const attacks = typeof player?.[method] === "function" ? player[method]() : [];
+      for (const attack of attacks || []) {
+        if (!attack || attack.retreating) continue;
+        if (attackerSmallId != null && attack.attackerID !== attackerSmallId) continue;
+        sum += Number(attack.troops) || 0;
       }
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/advisor-intel.js:56");
       /* ignore */
     }
     return sum;
+  }
+
+  // Sum of a player's outgoing (non-retreating) attack troops.
+  function advTroopsInCombat(player) {
+    return advAttackTroopSum(player, "outgoingAttacks");
   }
 
   function advIncomingTroops(me) {
-    let sum = 0;
-    try {
-      const atks = me.incomingAttacks ? me.incomingAttacks() : null;
-      if (atks) {
-        for (let i = 0; i < atks.length; i += 1) {
-          const a = atks[i];
-          if (a && !a.retreating) {
-            sum += Number(a.troops) || 0;
-          }
-        }
-      }
-    } catch (_error) {
-      /* ignore */
-    }
-    return sum;
+    return advAttackTroopSum(me, "incomingAttacks");
   }
 
   function advIncomingFromSmallId(me, attackerSmallId) {
-    let sum = 0;
-    try {
-      const atks = me.incomingAttacks ? me.incomingAttacks() : null;
-      if (atks) {
-        for (let i = 0; i < atks.length; i += 1) {
-          const a = atks[i];
-          if (a && !a.retreating && a.attackerID === attackerSmallId) {
-            sum += Number(a.troops) || 0;
-          }
-        }
-      }
-    } catch (_error) {
-      /* ignore */
-    }
-    return sum;
+    return advAttackTroopSum(me, "incomingAttacks", attackerSmallId);
   }
 
   function advMaxTroops(game, player) {
@@ -109,6 +86,7 @@
         }
       }
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/advisor-intel.js:84");
       /* ignore */
     }
     return 0;
@@ -146,6 +124,7 @@
         }
       }
     } catch (_error) {
+  captureRuntimeException(_error, "engine/ingame/advisor-intel.js:121");
       /* ignore */
     }
     return set;
@@ -164,6 +143,27 @@
     return Math.tanh(v / Math.max(1e-4, scale));
   }
 
+  function advEconomyBand(currentRatio) {
+    for (const band of ADV_ECO_STATES) {
+      if (currentRatio < band.max) return band;
+    }
+    return ADV_ECO_STATES[ADV_ECO_STATES.length - 1];
+  }
+
+  function advTimeToPush(currentTroops, maxTroops) {
+    const target = 0.45 * maxTroops;
+    if (currentTroops >= target) return null;
+    let troops = currentTroops;
+    let ticks = 0;
+    while (troops < target && ticks < 6000) {
+      const growth = advGrowthRate(troops, maxTroops);
+      if (growth <= 0) break;
+      troops += growth;
+      ticks += 1;
+    }
+    return troops >= target ? Math.round(ticks / 10) : null;
+  }
+
   // ── Self troop-economy (Tactical evaluateTroopEconomy, self-only slice) ──
   // Returns { currentTroops, maxTroops, currentRatio, growthEfficiency,
   //           combatSafety, safePush, safeSpendableTroops, recommendedReserve,
@@ -175,13 +175,7 @@
       return null;
     }
     const currentRatio = advClamp01(currentTroops / maxTroops);
-    let band = ADV_ECO_STATES[ADV_ECO_STATES.length - 1];
-    for (let i = 0; i < ADV_ECO_STATES.length; i += 1) {
-      if (currentRatio < ADV_ECO_STATES[i].max) {
-        band = ADV_ECO_STATES[i];
-        break;
-      }
-    }
+    const band = advEconomyBand(currentRatio);
     const rate = advGrowthRate(currentTroops, maxTroops);
     const peakRate = advGrowthRate(ADV_PEAK_RATIO * maxTroops, maxTroops);
     const growthEfficiency = peakRate > 0 ? advClamp01(rate / peakRate) : 0;
@@ -204,19 +198,7 @@
     );
 
     // ETA to a 0.45*max push window by summing growthRate per tick (10 ticks/s).
-    let timeToPushSec = null;
-    const target = 0.45 * maxTroops;
-    if (currentTroops < target) {
-      let t = currentTroops;
-      let ticks = 0;
-      while (t < target && ticks < 6000) {
-        const g = advGrowthRate(t, maxTroops);
-        if (g <= 0) break;
-        t += g;
-        ticks += 1;
-      }
-      timeToPushSec = t >= target ? Math.round(ticks / 10) : null;
-    }
+    const timeToPushSec = advTimeToPush(currentTroops, maxTroops);
 
     return {
       currentTroops,
@@ -256,13 +238,12 @@
     );
     const directAttackRatio = directAttackTroops / myTroops;
 
-    const nukePotential =
-      gold >= ADV_HYDROGEN_COST ? 2 : gold >= ADV_ATOM_COST ? 1 : 0;
-    const buildingNuke = !!(
-      nukeBuilders &&
+    let nukePotential = 0;
+    if (gold >= ADV_HYDROGEN_COST) nukePotential = 2;
+    else if (gold >= ADV_ATOM_COST) nukePotential = 1;
+    const buildingNuke = Boolean(nukeBuilders &&
       player.smallID &&
-      nukeBuilders.has(player.smallID())
-    );
+      nukeBuilders.has(player.smallID()));
 
     let score =
       advSaturate(troopsRatio, 2.4) * 0.42 +

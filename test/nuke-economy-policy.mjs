@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import vm from "node:vm";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -43,7 +43,7 @@ const sandbox = {
 };
 sandbox.globalThis = sandbox;
 
-vm.runInNewContext(`${source}\nglobalThis.__NukeBehavior = NukeBehavior;`, sandbox, {
+executeClassicScript(`${source}\nglobalThis.__NukeBehavior = NukeBehavior;`, sandbox, {
   filename: "nuke-economy-policy.vm.js",
 });
 
@@ -111,4 +111,22 @@ assert.equal(
   "The nuke behavior remains compatible when no structure policy is wired",
 );
 
-console.log("nuke economy policy tests passed");
+let distanceChecks = 0;
+behavior.game = {
+  config: () => ({ defaultNukeTargetableRange: () => 2 }),
+  euclideanDistSquared: (left, right) => {
+    distanceChecks += 1;
+    return (left - right) ** 2;
+  },
+};
+assert.deepEqual(
+  { ...behavior.findUntargetableTrajectoryRange([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 0, 10) },
+  { start: 3, end: 9 },
+  "The trajectory scan finds the bounded mid-air untargetable segment",
+);
+assert.ok(
+  distanceChecks <= 22,
+  "The trajectory scan terminates after a bounded number of distance checks",
+);
+
+process.stdout.write("nuke economy policy tests passed\n");
