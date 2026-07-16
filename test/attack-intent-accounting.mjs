@@ -507,6 +507,7 @@ sandbox.currentDifficulty = () => "Impossible";
 const parallelMe = {
   ...me,
   sharesBorderWith: () => true,
+  isFriendly: () => false,
 };
 const parallelTribeA = {
   ...tribeTarget,
@@ -585,9 +586,9 @@ parallelBehavior.botAttackPendingIntentCommitments = [];
 parallelBehavior.outboundIntentReconciledTick = null;
 const nationReinforcementEmissionCount = troopEmissions.length;
 assert.equal(
-  parallelBehavior.sendLandAttack(growingNation),
+  await parallelBehavior.reinforceIncompleteOutboundPlayerAttack(),
   true,
-  "an active attack against a growing Nation is reinforced",
+  "an active attack against a growing Nation is rediscovered and reinforced",
 );
 assert.equal(troopEmissions.length, nationReinforcementEmissionCount + 1);
 assert.equal(

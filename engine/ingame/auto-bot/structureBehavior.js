@@ -6810,7 +6810,7 @@
         const alreadyCovered = existingSams.some((sam) => {
           const samRange = Number(this.game.config().samRange(sam.level()));
           return (
-            this.game.euclideanDistSquared(tile, sam.tile()) <=
+            this.game.euclideanDistSquared(structure.tile(), sam.tile()) <=
             samRange * samRange
           );
         });
@@ -7464,7 +7464,7 @@
           const alreadyCovered = existingSamProfiles.some((sam) => {
             {
               return (
-                game.euclideanDistSquared(tile, sam.tile) <=
+                game.euclideanDistSquared(structureTile, sam.tile) <=
                 sam.rangeSquared
               );
             }

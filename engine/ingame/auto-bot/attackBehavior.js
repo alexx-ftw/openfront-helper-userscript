@@ -611,15 +611,21 @@
         .reduce((total, entry) => total + entry.troops, 0);
     }
 
-    getActiveOutboundTribeTargets() {
-      const tribesByKey = new Map();
+    getActiveOutboundPlayerTargets() {
+      const playersByKey = new Map();
       for (const entry of this.getOutboundAttackSnapshot()) {
         const target = entry.target;
-        if (target?.type?.() !== PlayerType.Bot) continue;
+        if (target?.isPlayer?.() !== true) continue;
         const key = this.getOutboundAttackTargetKey(target);
-        if (key != null) tribesByKey.set(key, target);
+        if (key != null) playersByKey.set(key, target);
       }
-      return [...tribesByKey.values()];
+      return [...playersByKey.values()];
+    }
+
+    getActiveOutboundTribeTargets() {
+      return this.getActiveOutboundPlayerTargets().filter(
+        (target) => target.type?.() === PlayerType.Bot,
+      );
     }
 
     getOutboundAttackSnapshot() {
@@ -1735,6 +1741,7 @@
         );
         if (expanded) return true;
       }
+      if (await this.reinforceIncompleteOutboundPlayerAttack()) return true;
       const sleeping = this.disconnectedBorderingPlayers(context.borderingPlayers);
       if (sleeping.length === 0) return false;
       runtimeDebugLog(
@@ -5324,6 +5331,14 @@
       return Math.max(0, Number(target?.troops?.()) || 0) * 2 * defenseMultiplier;
     }
 
+    getPlayerAttackPreferredTroopFloor(target, defensePostProfile = null) {
+      const tribeFloor = this.getTribeCaptureTroopFloor(
+        target,
+        defensePostProfile,
+      );
+      return target?.type?.() === PlayerType.Bot ? tribeFloor : tribeFloor * 2;
+    }
+
     tribeTargetNeedsMoreTroops(target) {
       if (this.hasPendingOutboundAttackForTarget(target)) return false;
       const profile = this.getEnemyDefensePostAttackProfile(target);
@@ -5331,6 +5346,36 @@
         this.getLiveOutboundAttackTroopsForTarget(target) <
         this.getTribeCaptureTroopFloor(target, profile)
       );
+    }
+
+    async reinforceIncompleteOutboundPlayerAttack() {
+      for (const target of this.getActiveOutboundPlayerTargets()) {
+        if (target.isAlive?.() === false) continue;
+        if (this.player.isFriendly(target) === true) continue;
+        if (this.player.sharesBorderWith(target) !== true) continue;
+        if (this.hasPendingOutboundAttackForTarget(target)) continue;
+        const profile = this.getEnemyDefensePostAttackProfile(target);
+        const committed = this.getLiveOutboundAttackTroopsForTarget(target);
+        if (
+          committed >=
+          this.getPlayerAttackPreferredTroopFloor(target, profile)
+        ) {
+          continue;
+        }
+        if (
+          await this.sendAttack(
+            target,
+            false,
+            null,
+            null,
+            false,
+            target.type?.() === PlayerType.Bot,
+          )
+        ) {
+          return true;
+        }
+      }
+      return false;
     }
 
     // donateTroops — AiAttackBehavior (private). No worker calls in src; the only

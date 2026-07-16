@@ -962,6 +962,42 @@ assert.equal(
   "Threat SAM placement prefers the tile covering more structures",
 );
 
+const existingCoverageSam = {
+  tile: () => 0,
+  level: () => 1,
+  isUnderConstruction: () => false,
+};
+const uncoveredStructure = { type: () => UNIT.City, tile: () => 40 };
+own.units = (...types) => {
+  if (types.includes(UNIT.SAMLauncher)) return [existingCoverageSam];
+  return types.includes(UNIT.City) ? [uncoveredStructure] : [];
+};
+behavior.game.config = () => ({
+  defaultSamRange: () => 25,
+  samRange: () => 25,
+});
+const uncoveredThreatSamValue = behavior.threatSamLauncherValue();
+assert.equal(
+  uncoveredThreatSamValue(20),
+  3,
+  "Threat SAM placement measures existing coverage from the protected structure",
+);
+
+const legendaryCoverageBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+legendaryCoverageBehavior.player = {
+  units: (...types) => (types.includes(UNIT.City) ? [uncoveredStructure] : []),
+};
+legendaryCoverageBehavior.game = behavior.game;
+legendaryCoverageBehavior.legendaryFriendlySamUnits = () => [existingCoverageSam];
+legendaryCoverageBehavior.spacingConstants = () => ({ structureSpacing: 10 });
+legendaryCoverageBehavior.legendaryCriticalStructureValue = () => 1;
+legendaryCoverageBehavior.legendarySamImpactMarginScore = () => 0;
+assert.equal(
+  legendaryCoverageBehavior.legendarySamCoveragePlacementScore(20, {}),
+  10,
+  "Legendary SAM placement counts a structure outside the existing SAM range as uncovered",
+);
+
 const compactPlacementBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 const compactStructures = [{ tile: () => 10 }];
 const compactSams = [{ tile: () => 80, level: () => 1 }];
