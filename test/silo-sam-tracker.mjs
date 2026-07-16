@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import vm from "node:vm";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -17,16 +17,49 @@ const sandbox = {
   window: {},
 };
 sandbox.globalThis = sandbox;
-vm.runInNewContext(NUKE_IMPACT_SOURCE, sandbox, {
+executeClassicScript(NUKE_IMPACT_SOURCE, sandbox, {
   filename: "nuke-impact.js",
 });
-vm.runInNewContext(
-  `${TRACKER_SOURCE}\nglobalThis._autoFireBuiltSamInterceptionCapacity = _autoFireBuiltSamInterceptionCapacity;`,
+executeClassicScript(
+  `${TRACKER_SOURCE}\nglobalThis._autoFireBuiltSamInterceptionCapacity = _autoFireBuiltSamInterceptionCapacity;\nglobalThis._scanNukesToTile = _scanNukesToTile;`,
   sandbox,
   {
     filename: "silo-sam-tracker.js",
   },
 );
+
+let trackerTick = 50;
+let trackerNukeScans = 0;
+const trackerOwner = { smallID: () => 1 };
+const trackedNukes = [
+  {
+    owner: () => trackerOwner,
+    targetTile: () => 100,
+    tile: () => 90,
+  },
+];
+const trackerPlayer = {
+  smallID: () => 1,
+  units: (type) => {
+    trackerNukeScans += 1;
+    return type === "Atom Bomb" ? trackedNukes : [];
+  },
+};
+const trackerGame = { ticks: () => trackerTick };
+const trackedAtom = sandbox._scanNukesToTile(trackerGame, trackerPlayer, 100);
+assert.equal(trackedAtom?.count, 1, "the tracker indexes an in-flight atom by target tile");
+assert.equal(trackedAtom?.etaSec, null, "an unavailable ETA remains explicitly unknown");
+for (let tile = 101; tile < 301; tile += 1) {
+  assert.equal(sandbox._scanNukesToTile(trackerGame, trackerPlayer, tile), null);
+}
+assert.equal(
+  trackerNukeScans,
+  2,
+  "hundreds of tracker rows share one Atom/Hydrogen snapshot per game tick",
+);
+trackerTick += 1;
+sandbox._scanNukesToTile(trackerGame, trackerPlayer, 100);
+assert.equal(trackerNukeScans, 4, "the shared missile index refreshes when the game advances");
 
 const coords = new Map([
   [1, { x: 0, y: 0 }],
@@ -165,7 +198,9 @@ const integrationGame = {
 };
 sandbox._runSamAutoFireBuilding({ game: integrationGame });
 sandbox._runSamAutoFireBuilding({ game: integrationGame });
-await new Promise((resolve) => setImmediate(resolve));
+await new Promise((resolve) => {
+  setImmediate(resolve);
+});
 assert.deepEqual(
   autoFireCalls.recommend,
   [2],
@@ -188,7 +223,9 @@ const coveredIntegrationGame = {
 const callsBeforeCoveredTarget = autoFireCalls.recommend.length;
 sandbox._runSamAutoFireBuilding({ game: coveredIntegrationGame });
 sandbox._runSamAutoFireBuilding({ game: coveredIntegrationGame });
-await new Promise((resolve) => setImmediate(resolve));
+await new Promise((resolve) => {
+  setImmediate(resolve);
+});
 assert.equal(
   autoFireCalls.recommend.length,
   callsBeforeCoveredTarget,
@@ -231,7 +268,10 @@ const interceptionMe = { ...me, units: () => [ownSilo] };
 const interceptionGame = {
   x: (tile) => pathCoords.get(tile).x,
   y: (tile) => pathCoords.get(tile).y,
-  ref: (x) => (x < 25 ? 10 : x < 75 ? 15 : 20),
+  ref: (x) => {
+    if (x < 25) return 10;
+    return x < 75 ? 15 : 20;
+  },
   width: () => 200,
   height: () => 200,
   ticks: () => 100,
@@ -319,7 +359,9 @@ const callsBeforeBuiltSamGuard = autoFireCalls.recommend.length;
 sandbox._quickPanelSettingsCache.combatSamAutoFireMaxQty = 1;
 sandbox._runSamAutoFireBuilding({ game: interceptionIntegrationGame });
 sandbox._runSamAutoFireBuilding({ game: interceptionIntegrationGame });
-await new Promise((resolve) => setImmediate(resolve));
+await new Promise((resolve) => {
+  setImmediate(resolve);
+});
 assert.equal(
   autoFireCalls.recommend.length,
   callsBeforeBuiltSamGuard,
@@ -340,7 +382,9 @@ sandbox._autoFireAttempt(
   "SAM",
   2,
 );
-await new Promise((resolve) => setImmediate(resolve));
+await new Promise((resolve) => {
+  setImmediate(resolve);
+});
 assert.equal(
   autoFireCalls.recommend.length,
   callsBeforeMinimumSalvoGuard + 1,
@@ -348,4 +392,4 @@ assert.equal(
 );
 assert.equal(autoFireCalls.fire.length, 1, "an undersized recommendation must not call fireNow");
 
-console.log("silo/SAM auto-fire building tests passed");
+process.stdout.write("silo/SAM auto-fire building tests passed\n");
