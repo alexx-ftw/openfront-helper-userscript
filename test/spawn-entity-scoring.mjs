@@ -211,10 +211,10 @@ const teamOpportunity = loadScorer({
 });
 assert.equal(
   teamOpportunity[0].x,
-  450,
-  "reachable tribe expansion must outrank teammate proximity when core dimensions tie",
+  150,
+  "a reachable allied position must outrank an isolated tribe-rich frontier",
 );
-assert.equal(teamOpportunity[0].tribeReachCount, 2);
+assert.equal(teamOpportunity[0].teamPolyhedronScore, 0);
 
 const enclosedMe = makePlayer("HUMAN", 300, 150, 30);
 enclosedMe.isOnSameTeam = (player) => [31, 32, 33].includes(player.smallID());

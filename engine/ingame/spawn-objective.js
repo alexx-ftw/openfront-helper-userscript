@@ -3,10 +3,10 @@
 // The selector cannot learn a statistically optimal weight vector without
 // outcomes. Instead it uses a robust floor: a candidate is only as strong as
 // its weakest normalized dimension (starting territory, expansion potential,
-// free-land availability, safety, or reachable tribe expansion). Team/clan
-// proximity is deliberately not part of that floor: in the opening, an ally
-// can consume a one-time tribe or frontier that we can never reclaim. Team fit
-// remains a late tie-break and spawn legality is still enforced by the caller.
+// free-land availability, safety, reachable tribe expansion, or allied support).
+// A rich isolated start is not robust: enemies can surround it before teammates
+// can connect. Clan proximity remains a late tie-break, while team proximity is
+// part of the survival floor whenever spawned allies are known.
 
 (function installSpawnObjective(root) {
   const CLAN_TAG_PATTERN = /^\[([a-zA-Z0-9]{2,5})\] /;
@@ -120,6 +120,7 @@
         freeLandScore,
         safetyScore,
         resourceScore,
+        teamScore,
       ),
     };
   }

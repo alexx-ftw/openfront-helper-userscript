@@ -165,7 +165,7 @@ test("tribe and nation opportunity is part of the robust spawn objective", () =>
   assert.equal(ranked[0].objective.resourceScore, 0.8);
 });
 
-test("permanent own expansion beats teammate proximity", () => {
+test("allied support beats an isolated richer frontier", () => {
   const ranked = api.rankModelCandidates([
     {
       id: "open-frontier",
@@ -197,11 +197,11 @@ test("permanent own expansion beats teammate proximity", () => {
     },
   ]);
 
-  assert.equal(ranked[0].id, "open-frontier");
-  assert.equal(ranked[0].objective.teamScore, 0.05);
+  assert.equal(ranked[0].id, "teammate-cluster");
+  assert.equal(ranked[0].objective.teamScore, 1);
 });
 
-test("reachable expansion opportunities beat teammate proximity after the robust floor", () => {
+test("reachable expansion cannot override the allied support floor", () => {
   const ranked = api.rankModelCandidates([
     {
       id: "team-cluster",
@@ -227,7 +227,7 @@ test("reachable expansion opportunities beat teammate proximity after the robust
     },
   ]);
 
-  assert.equal(ranked[0].id, "reachable-frontier");
+  assert.equal(ranked[0].id, "team-cluster");
 });
 
 test("inside the team polyhedron, terra nullius and reachable tribes lead the objective", () => {
