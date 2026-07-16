@@ -1316,7 +1316,7 @@
       const followUpFraction =
         typeof EARLY_EXPAND_FOLLOWUP_COMMIT === "number"
           ? EARLY_EXPAND_FOLLOWUP_COMMIT
-          : 0.01;
+          : 0.02;
       const followUpTroops = Math.max(minimum, ownTroops * followUpFraction);
       if (available >= followUpTroops) {
         return { available, livenessFollowUp: false };

@@ -141,7 +141,7 @@ and remote hostiles do not activate this rule.
 
 With `winFixes` enabled, the first live Terra Nullius attack commits up to 60%
 of the opening army. After that burst is acknowledged, directly accessible free
-land remains on the fast follow-up path: each accepted intent sends 1% of the
+land remains on the fast follow-up path: each accepted intent sends 2% of the
 current army, or the exact first-tile cost when that is larger. Pending-intent
 reconciliation prevents duplicate sends from a stale troop snapshot, and the
 shared client limiter (10 intents per second and 150 per minute) remains the

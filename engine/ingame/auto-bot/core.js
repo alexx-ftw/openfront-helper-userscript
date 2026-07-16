@@ -216,7 +216,7 @@
   // Commit decisively into free land during the opening. Hostile-border and
   // pending-intent reserves still cap the emitted amount.
   const EARLY_EXPAND_COMMIT = 0.6;
-  const EARLY_EXPAND_FOLLOWUP_COMMIT = 0.01;
+  const EARLY_EXPAND_FOLLOWUP_COMMIT = 0.02;
   const BUILD_THROTTLE_MS = 1800;
   const NUKE_THROTTLE_MS = 6000;
   // MIRV (late-game super-weapon vs a too-strong enemy): per-target cooldown + the

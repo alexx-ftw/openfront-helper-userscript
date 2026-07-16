@@ -26,7 +26,7 @@ const sandbox = {
   },
   currentDifficulty: () => "Impossible",
   EARLY_EXPAND_COMMIT: 0.6,
-  EARLY_EXPAND_FOLLOWUP_COMMIT: 0.01,
+  EARLY_EXPAND_FOLLOWUP_COMMIT: 0.02,
   performance: { now: () => 10000 },
   discoverCtors: () => ({
     attack: "attack",
@@ -342,14 +342,14 @@ expandingBehavior.botAttackPendingIntentCommitments = [];
 ownTroops = 10000;
 assert.equal(
   expandingBehavior.getTerraNulliusAttackTroops(terraNullius),
-  100,
-  "the first 1% follow-up is affordable immediately after the 60% opening burst",
+  200,
+  "the first 2% follow-up is affordable immediately after the 60% opening burst",
 );
 ownTroops = 25000;
 assert.equal(
   expandingBehavior.getTerraNulliusAttackTroops(terraNullius),
-  250,
-  "an exhausted opening allowance continues adjacent TerraNullius expansion at 1%",
+  500,
+  "an exhausted opening allowance continues adjacent TerraNullius expansion at 2%",
 );
 const continuedTerraNulliusEmissionCount = troopEmissions.length;
 assert.equal(
@@ -360,8 +360,8 @@ assert.equal(
 assert.equal(troopEmissions.length, continuedTerraNulliusEmissionCount + 1);
 assert.equal(
   troopEmissions.at(-1),
-  250,
-  "the continued TerraNullius intent emits 1% when it exceeds the one-tile cost",
+  500,
+  "the continued TerraNullius intent emits 2% when it exceeds the one-tile cost",
 );
 
 expandingBehavior.botAttackPendingIntentCommitments = [
@@ -397,10 +397,10 @@ const drainedExpansionEmissionCount = troopEmissions.length;
 assert.equal(
   expandingBehavior.sendLandAttack(terraNullius),
   true,
-  "chained TerraNullius expansion keeps the derived 1% liveness allowance at the opening floor",
+  "chained TerraNullius expansion keeps the derived 2% liveness allowance at the opening floor",
 );
 assert.equal(troopEmissions.length, drainedExpansionEmissionCount + 1);
-assert.equal(troopEmissions.at(-1), 100);
+assert.equal(troopEmissions.at(-1), 200);
 ownTroops = 25000;
 
 const openingBehavior = new sandbox.AttackBehavior({}, expandingGame, me, 0.5, 0.3, 0.1, {}, {});
