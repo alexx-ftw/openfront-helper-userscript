@@ -1741,6 +1741,7 @@
       });
       const previous = state.earlyGame || {};
       state.earlyGame = {
+        ...previous,
         ...snapshot,
         action: chooseEarlyGameAction({
           landTarget: hasAccessibleTerraNullius,

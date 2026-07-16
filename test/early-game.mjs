@@ -1409,6 +1409,7 @@ const makeTargetPlayer = (sid, type, tiles, troops, location) => ({
   outgoingAttacks: () => [],
 });
 const targetMe = makeTargetPlayer(1, "Human", [1], 1000, { x: 0, y: 0 });
+targetMe.hasSpawned = () => true;
 targetMe.bestTransportShipSpawn = () => Promise.resolve(1);
 const targetCoastal = makeTargetPlayer(2, "Bot", [10], 100, { x: 5, y: 0 });
 const targetInland = makeTargetPlayer(4, "Bot", [20], 100, { x: 80, y: 80 });
@@ -1431,6 +1432,7 @@ let targetTick = 0;
 let topologyBorderFetches = 0;
 const targetGame = {
   ticks: () => targetTick,
+  inSpawnPhase: () => false,
   config: () => ({ isUnitDisabled: () => false }),
   players: () => [targetMe, targetCoastal, targetInland, targetNext, targetContender, targetMover],
   hasTransportRouteEstimator: true,
@@ -1948,6 +1950,19 @@ assert.equal(
   clusterOverlayWakeups,
   1,
   "publishing an unchanged preferred cluster does not invalidate the shared canvas again",
+);
+targetBehavior.publishAttackEarlyGameSnapshot({
+  hasAccessibleTerraNullius: false,
+  borderingEnemies: [],
+  border: [],
+});
+assert.equal(targetSandbox.state.earlyGame.preferredClusterMembers.length, 2);
+assert.equal(targetSandbox.state.earlyGame.preferredClusterSize, 2);
+assert.ok(targetSandbox.state.earlyGame.preferredClusterCenter);
+assert.equal(
+  clusterOverlayWakeups,
+  1,
+  "refreshing the attack snapshot preserves the independently owned cluster overlay state",
 );
 const temporarilyDistantMe = {
   ...targetMe,
