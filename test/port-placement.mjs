@@ -49,6 +49,7 @@ const structureSandbox = {
   setLastAction: () => {},
   tr: (value) => value,
   withTimeout: async (promise) => promise,
+  WORKER_TIMEOUT_MS: 1000,
   captureRuntimeException: () => {},
   runtimeDebugLog: () => {},
   console,
@@ -134,6 +135,7 @@ function makeScenario({ ocean = false, allied = false, otherAlive = true } = {})
     isValidCoord: (x, y) => x >= 0 && x < width && y >= 0 && y < height,
     ownerID: (tile) => ownerByTile.get(tile) ?? 0,
     hasOwner: (tile) => ownerByTile.has(tile),
+    hasFallout: () => false,
     players: () => players,
     playerBySmallID: (smallID) => players.find((p) => p.smallID() === smallID) ?? null,
     owner: () => me,
@@ -152,6 +154,7 @@ function makeScenario({ ocean = false, allied = false, otherAlive = true } = {})
   const sandbox = {
     PlayerType: { Bot: "BOT" },
     withTimeout: async (promise) => promise,
+    WORKER_TIMEOUT_MS: 1000,
     captureRuntimeException: () => {},
     runtimeDebugLog: () => {},
     console,
@@ -167,6 +170,17 @@ async function sharedWater({ ocean, allied, otherAlive }) {
   const shared = scenario.handle.game.sharedWaterComponents(wrappedMe);
   return shared ? [...shared].sort((a, b) => a - b) : null;
 }
+
+async function nearbyPlayers() {
+  const scenario = makeScenario({ ocean: false, allied: true });
+  const wrappedMe = await scenario.handle.beginTick(scenario.me);
+  return wrappedMe.nearby();
+}
+
+assert.ok(
+  Array.isArray(await nearbyPlayers()),
+  "the real Set border snapshot is accepted by the nearby-player adapter",
+);
 
 async function portTiles({ ocean, allied = true } = {}) {
   const scenario = makeScenario({ ocean, allied });

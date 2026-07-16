@@ -153,7 +153,7 @@
   }
 
   function focusOnAttacker(attackerPlayer) {
-    try {
+    {
       if (!attackerPlayer) return;
       const context = getOpenFrontGameContext();
       if (!context?.game) return;
@@ -168,28 +168,24 @@
         _centerCameraOnTile(game.x(tile), game.y(tile));
         return;
       }
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/retaliation-hud.js:focusOnAttacker");
     }
   }
 
   function getRetaliationOwner(unit) {
-    try { return unit?.owner?.() || null; } catch (_error) { return null; }
+    { return unit?.owner?.() || null; }
   }
 
   function getRetaliationPlayerId(player) {
-    try { return player?.smallID?.() ?? null; } catch (_error) { return null; }
+    { return player?.smallID?.() ?? null; }
   }
 
   function getRetaliationUnitType(unit) {
-    try { return unit?.type?.() || ""; } catch (_error) { return ""; }
+    { return unit?.type?.() || ""; }
   }
 
   function isActiveRetaliationNuke(unit) {
-    try {
+    {
       return Boolean(unit?.isActive?.()) && getRetaliationUnitType(unit) !== "MIRV Warhead";
-    } catch (_error) {
-      return false;
     }
   }
 
@@ -205,20 +201,16 @@
 
   // Camera jump (same as silo-sam-tracker)
   function _centerCameraOnTile(x, y) {
-    try {
+    {
       var overlay = document.querySelector("player-info-overlay");
       if (!overlay || !overlay.eventBus) return;
       var bus = overlay.eventBus;
       if (!bus.listeners || typeof bus.listeners.entries !== "function") return;
       for (const [ctor, callbacks] of bus.listeners.entries()) {
         if (!ctor || !isGoToPositionListener(ctor, callbacks)) continue;
-        try { bus.emit(new ctor(x, y)); } catch (error) {
-          captureRuntimeException(error, "engine/ingame/retaliation-hud.js:centerCamera");
-        }
+        { bus.emit(new ctor(x, y)); }
         return;
       }
-    } catch (e) {
-      captureRuntimeException(e, "engine/ingame/retaliation-hud.js:centerCamera");
     }
   }
 
@@ -226,10 +218,8 @@
   const _retaliationSeenHits = new Set();
 
   function getRetaliationGame() {
-    try {
+    {
       return getOpenFrontGameContext()?.game || null;
-    } catch (_error) {
-      return null;
     }
   }
 
@@ -237,12 +227,12 @@
     if (!isActiveRetaliationNuke(unit)) return false;
     const owner = getRetaliationOwner(unit);
     if (!owner) return false;
-    try { if (me.isFriendly?.(owner)) return false; } catch (_error) { /* hostile fallback */ }
+    { if (me.isFriendly?.(owner)) return false; }
     const targetTile = unit.targetTile?.();
     if (targetTile === undefined) return false;
-    try {
+    {
       return !game.ownerID || game.ownerID(targetTile) === me.smallID();
-    } catch (_error) { return false; }
+    }
   }
 
   function processIncomingRetaliationNukes(game, me) {
@@ -253,8 +243,7 @@
       if (_retaliationSeenHits.has(hitKey)) continue;
       _retaliationSeenHits.add(hitKey);
       const owner = getRetaliationOwner(unit);
-      let attackerName = "?";
-      try { attackerName = getPlayerDisplayName?.(owner) || owner?.name?.() || "?"; } catch (_error) { /* fallback */ }
+      const attackerName = getPlayerDisplayName?.(owner) || owner?.name?.() || "?";
       showRetaliationCard(attackerName, owner);
     }
   }
@@ -271,12 +260,7 @@
     const game = getRetaliationGame();
     const me = game?.myPlayer?.();
     if (!game || !me) return;
-    try { processIncomingRetaliationNukes(game, me); } catch (error) {
-      captureRuntimeException(error, "engine/ingame/retaliation-hud.js:incoming");
-    }
-    try { pruneRetaliationHits(game); } catch (error) {
-      captureRuntimeException(error, "engine/ingame/retaliation-hud.js:prune");
-    }
+    { processIncomingRetaliationNukes(game, me); }{ pruneRetaliationHits(game); }
   }
 
   function setRetaliationEnabled(enabled) {

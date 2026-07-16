@@ -18,16 +18,8 @@
   let _enemyIntentHookInstalled = false;
 
   function enemyIntentRead(label, read, fallback) {
-    try {
+    {
       return read();
-    } catch (error) {
-      const now = performance.now();
-      const lastLoggedAt = _enemyIntentLogCooldowns.get(label) || 0;
-      if (now - lastLoggedAt >= ENEMY_INTENT_LOG_COOLDOWN_MS) {
-        _enemyIntentLogCooldowns.set(label, now);
-        console.warn(`[ofh] enemy-intent ${label} failed:`, error);
-      }
-      return fallback;
     }
   }
 

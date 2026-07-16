@@ -360,7 +360,7 @@
       "warshipPatrolThrottleMs",
     ];
     const s = JSON.parse(JSON.stringify(DEFAULTS));
-    try {
+    {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
@@ -373,17 +373,13 @@
           ...(parsed.buildStructures || {}),
         };
       }
-    } catch (error) {
-      console.warn("[AutoBot] failed to load settings:", error);
     }
     s.tickMs = normalizeTickIntervalMs(s.tickMs);
     return s;
   }
 
   function saveSettings() {
-    try {
+    {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state.settings));
-    } catch (error) {
-      console.warn("[AutoBot] failed to save settings:", error);
     }
   }

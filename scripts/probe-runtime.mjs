@@ -66,15 +66,13 @@ function parseArgs(argv) {
 async function findTarget(options) {
   const failures = [];
   for (const port of options.ports) {
-    try {
+    {
       const targets = await CDP.List({ host: options.host, port });
       const target = targets.find(
         (candidate) => candidate.type === "page" && candidate.url.includes(options.url),
       );
       if (target) return { port, target };
       failures.push(`${port}: no page URL containing ${JSON.stringify(options.url)}`);
-    } catch (error) {
-      failures.push(`${port}: ${error.message}`);
     }
   }
   throw new Error(`No matching Chromium target found (${failures.join("; ")})`);
@@ -138,7 +136,4 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(`probe:runtime: ${error.message}`);
-  process.exitCode = 1;
-});
+main();

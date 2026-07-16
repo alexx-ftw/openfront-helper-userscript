@@ -78,13 +78,10 @@
   }
 
   function getGameConfig(game) {
-    try {
+    {
       const value = game?.config;
       const config = typeof value === "function" ? value.call(game) : value;
       return isObject(config) ? config : null;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/selective-trade-policy.js:85");
-      return null;
     }
   }
 
@@ -177,12 +174,9 @@
   }
 
   function isHumanPlayer(player) {
-    try {
+    {
       const playerType = player?.type?.() ?? player?.data?.playerType;
       return playerType === "HUMAN";
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/selective-trade-policy.js:182");
-      return false;
     }
   }
 
@@ -225,14 +219,11 @@
       return true;
     }
 
-    try {
+    {
       if (isTeamGame(game)) {
         return Boolean(myPlayer?.isOnSameTeam?.(otherPlayer));
       }
       return Boolean(myPlayer?.isAlliedWith?.(otherPlayer));
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/selective-trade-policy.js:231");
-      return false;
     }
   }
 
@@ -310,10 +301,8 @@
         return true;
       }
 
-      try {
+      {
         return Boolean(originalHasEmbargo(otherPlayer));
-      } catch (_error) {
-        return false;
       }
     };
   }
@@ -330,12 +319,9 @@
       return false;
     }
 
-    try {
+    {
       method.apply(target, args);
       return true;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/selective-trade-policy.js:333");
-      return false;
     }
   }
 

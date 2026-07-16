@@ -12,7 +12,7 @@ var NUKE_BUILDING_IMPACT_LOCAL_STEPS = [1, 2, 4];
   }
 
   function nukeImpactDistanceSquared(context, tileA, tileB) {
-    try {
+    {
       if (typeof context.game?.euclideanDistSquared === "function") {
         var directDistance = Number(context.game.euclideanDistSquared(tileA, tileB));
         return Number.isFinite(directDistance) ? directDistance : Infinity;
@@ -27,21 +27,15 @@ var NUKE_BUILDING_IMPACT_LOCAL_STEPS = [1, 2, 4];
       var dx = coordinates[0] - coordinates[2];
       var dy = coordinates[1] - coordinates[3];
       return dx * dx + dy * dy;
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/nuke-impact.js:distance");
-      return Infinity;
     }
   }
 
   function getNukeImpactCoordinates(context, tile) {
-    try {
+    {
       if (typeof context.game?.x !== "function" || typeof context.game?.y !== "function") return null;
       var x = Number(context.game.x(tile));
       var y = Number(context.game.y(tile));
       return Number.isFinite(x) && Number.isFinite(y) ? { tile, x, y } : null;
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/nuke-impact.js:coordinates");
-      return null;
     }
   }
 
@@ -63,13 +57,11 @@ var NUKE_BUILDING_IMPACT_LOCAL_STEPS = [1, 2, 4];
     ) return;
     var roundedX = Math.round(x);
     var roundedY = Math.round(y);
-    try {
+    {
       if (typeof context.game?.isValidCoord === "function" && !context.game.isValidCoord(roundedX, roundedY)) return;
       if (addNukeImpactCandidate(context, context.game.ref(roundedX, roundedY))) {
         context.generatedCandidateCount++;
       }
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/nuke-impact.js:generated-candidate");
     }
   }
 

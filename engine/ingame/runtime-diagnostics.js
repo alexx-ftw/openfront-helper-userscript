@@ -23,15 +23,13 @@ function runtimeDiagnosticRecordLongTask(entry) {
   }
 }
 
-try {
+{
   if (typeof PerformanceObserver === "function") {
     const observer = new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) runtimeDiagnosticRecordLongTask(entry);
     });
     observer.observe({ type: "longtask", buffered: true });
   }
-} catch (_error) {
-  // Long-task observation is optional and unavailable in some browser builds.
 }
 
 function runtimeDiagnosticLimit(value, fallback, max) {
@@ -40,7 +38,7 @@ function runtimeDiagnosticLimit(value, fallback, max) {
 }
 
 // Recursive serialization necessarily branches by JavaScript value type.
-// eslint-disable-next-line complexity
+
 function runtimeDiagnosticPlainValue(value, depth = 0, seen = new WeakSet()) {
   if (value == null || typeof value === "string" || typeof value === "boolean") return value;
   if (typeof value === "number") return Number.isFinite(value) ? value : String(value);
@@ -54,28 +52,22 @@ function runtimeDiagnosticPlainValue(value, depth = 0, seen = new WeakSet()) {
   }
   const output = {};
   for (const key of Object.keys(value).slice(0, 200)) {
-    try {
+    {
       output[key] = runtimeDiagnosticPlainValue(value[key], depth + 1, seen);
-    } catch (error) {
-      output[key] = `[unavailable: ${error?.message || "error"}]`;
     }
   }
   return output;
 }
 
 function runtimeDiagnosticContext() {
-  try {
+  {
     return getOpenFrontGameContext();
-  } catch (_error) {
-    return null;
   }
 }
 
 function runtimeDiagnosticPlayers(game) {
-  try {
+  {
     return game ? getCachedPlayerViews(game) : [];
-  } catch (_error) {
-    return [];
   }
 }
 

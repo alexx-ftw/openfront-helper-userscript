@@ -32,16 +32,12 @@
   }
 
   function advGoldNumber(player) {
-    // Reuse the shared bigint-safe reader when available.
-    try {
+    {
       if (typeof getPlayerGoldNumber === "function") {
         return getPlayerGoldNumber(player);
       }
       const g = player.gold ? player.gold() : 0;
       return typeof g === "bigint" ? Number(g) : Number(g) || 0;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/advisor-intel.js:40");
-      return 0;
     }
   }
 
@@ -49,16 +45,13 @@
   // retreating, id}. Keep their defensive parsing in one place.
   function advAttackTroopSum(player, method, attackerSmallId = null) {
     let sum = 0;
-    try {
+    {
       const attacks = typeof player?.[method] === "function" ? player[method]() : [];
       for (const attack of attacks || []) {
         if (!attack || attack.retreating) continue;
         if (attackerSmallId != null && attack.attackerID !== attackerSmallId) continue;
         sum += Number(attack.troops) || 0;
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/advisor-intel.js:56");
-      /* ignore */
     }
     return sum;
   }
@@ -77,7 +70,7 @@
   }
 
   function advMaxTroops(game, player) {
-    try {
+    {
       const c = game.config ? game.config() : null;
       if (c && typeof c.maxTroops === "function") {
         const m = Number(c.maxTroops(player));
@@ -85,26 +78,19 @@
           return m;
         }
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/advisor-intel.js:84");
-      /* ignore */
     }
     return 0;
   }
 
   function advTroops(player) {
-    try {
+    {
       return Number(player.troops ? player.troops() : 0) || 0;
-    } catch (_error) {
-      return 0;
     }
   }
 
   function advTiles(player) {
-    try {
+    {
       return Number(player.numTilesOwned ? player.numTilesOwned() : 0) || 0;
-    } catch (_error) {
-      return 0;
     }
   }
 
@@ -112,7 +98,7 @@
   // (Tactical enemyNukeBuilders). Excludes my own / allied silos at the call site.
   function advNukeBuilderIds(game) {
     const set = new Set();
-    try {
+    {
       const silos = game.units ? game.units("Missile Silo") : [];
       for (const u of silos) {
         if (!u || !u.isUnderConstruction || !u.isUnderConstruction()) {
@@ -123,9 +109,6 @@
           set.add(owner.smallID());
         }
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/advisor-intel.js:121");
-      /* ignore */
     }
     return set;
   }

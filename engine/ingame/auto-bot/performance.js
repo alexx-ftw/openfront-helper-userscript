@@ -68,11 +68,8 @@
     if (!profile) return fn();
     const startedAt = performance.now();
     let result;
-    try {
+    {
       result = fn();
-    } catch (error) {
-      autoBotProfileEndPhase(profile, name, startedAt);
-      throw error;
     }
     return Promise.resolve(result).then(
       (value) => {

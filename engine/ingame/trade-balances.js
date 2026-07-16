@@ -290,26 +290,20 @@
   }
 
   function matchesOwnedStructure(unit, allowedTypes, owner) {
-    try {
+    {
       if (!unit?.isActive?.() || !allowedTypes.includes(unit?.type?.())) return false;
       if (owner === null) return true;
       return getPlayerSmallId(unit?.owner?.()) === getPlayerSmallId(owner);
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/trade-balances.js:matchesOwnedStructure");
-      return false;
     }
   }
 
   function findExactOwnedStructure(game, tile, allowedTypes, owner) {
-    try {
+    {
       for (const unit of game?.units?.(...allowedTypes) || []) {
         if (matchesOwnedStructure(unit, allowedTypes, owner) && unit.tile?.() === tile) {
           return unit;
         }
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/trade-balances.js:310");
-      // Try nearbyUnits below.
     }
     return null;
   }
@@ -319,13 +313,10 @@
     const exact = findExactOwnedStructure(game, tile, allowedTypes, owner);
     if (exact) return exact;
 
-    try {
+    {
       const nearby = game?.nearbyUnits?.(tile, radius, allowedTypes);
       return nearby?.find((entry) =>
         matchesOwnedStructure(entry?.unit, allowedTypes, owner))?.unit ?? null;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/trade-balances.js:317");
-      return null;
     }
   }
 
@@ -337,14 +328,11 @@
 
     const sourceUnitId = Number(tracker.sourceUnitId);
     if (Number.isFinite(sourceUnitId)) {
-      try {
+      {
         const unit = game?.unit?.(sourceUnitId);
         if (unit?.isActive?.() && String(unit?.type?.() ?? "") === "Port") {
           return unit;
         }
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/trade-balances.js:335");
-        // Fall back to sourceTile.
       }
     }
 
@@ -463,7 +451,7 @@
   }
 
   function isTrainStationUnit(unit, allowedTypes = ["City", "Port"], owner = null) {
-    try {
+    {
       const type = unit?.type?.();
       if (!allowedTypes.includes(type) || !unit?.hasTrainStation?.()) {
         return false;
@@ -472,9 +460,6 @@
         return true;
       }
       return getPlayerSmallId(unit?.owner?.()) === getPlayerSmallId(owner);
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/trade-balances.js:474");
-      return false;
     }
   }
 
@@ -489,20 +474,17 @@
   }
 
   function getActiveTrainFactory(factory) {
-    try {
+    {
       if (!factory?.isActive?.() || !factory?.hasTrainStation?.()) return null;
       const tile = factory.tile?.();
       return tile == null ? null : { factory, tile };
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/trade-balances.js:getActiveTrainFactory");
-      return null;
     }
   }
 
   function findNearestOwnedFactory(game, tile, owner) {
     if (tile == null || !owner) return null;
     let candidates;
-    try {
+    {
       candidates = (owner.units?.("Factory") || [])
         .map(getActiveTrainFactory)
         .filter(Boolean)
@@ -512,9 +494,6 @@
         }))
         .filter(({ distance }) => Number.isFinite(distance))
         .sort((a, b) => a.distance - b.distance);
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/trade-balances.js:findNearestOwnedFactory");
-      return null;
     }
     const maxRange = Math.max(
       1,
@@ -531,12 +510,9 @@
   function getTrackedTrainSourceFactory(game, tracker, trainOwner) {
     const sourceUnitId = Number(tracker?.sourceUnitId);
     if (Number.isFinite(sourceUnitId)) {
-      try {
+      {
         const unit = game?.unit?.(sourceUnitId);
         if (isTrackedTrainFactory(unit, trainOwner)) return unit;
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/trade-balances.js:544");
-        // Try to rediscover the source from the stored source tile below.
       }
     }
 
@@ -591,14 +567,12 @@
   }
 
   function canPlayersTrade(player, otherPlayer) {
-    try {
+    {
       return (
         getPlayerSmallId(player) !== getPlayerSmallId(otherPlayer) &&
         !isBlockedBySelectiveTradePolicy(player, otherPlayer) &&
         !player?.hasEmbargo?.(otherPlayer)
       );
-    } catch (_error) {
-      return false;
     }
   }
 

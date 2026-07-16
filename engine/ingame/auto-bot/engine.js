@@ -23,17 +23,11 @@
 
   // gameID for the PseudoRandom seed (src seeds simpleHash(playerId)+simpleHash(gameID)).
   function resolveGameId(srcGame) {
-    try {
+    {
       if (typeof srcGame.gameID === "function") return String(srcGame.gameID());
-    } catch (_e) {
-      /* fall through */
-    }
-    try {
+    }{
       const gc = srcGame.config().gameConfig();
       if (gc && gc.gameID != null) return String(gc.gameID);
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/engine.js:34");
-      /* fall through */
     }
     return "openfront";
   }
@@ -122,9 +116,6 @@
       // pending. Do not hand stale state to the NationBot chain.
       if (!currentAutoBotTickGeneration(tickGeneration)) return;
       await runAutoBotNationTick(profile, api, tickGeneration);
-    } catch (error) {
-      console.error("[AutoBot] tick error:", error);
-      setStatus(tr("Error (see console)"));
     } finally {
       state.tickInFlight = false;
       finishAutoBotProfileTick(profile);
@@ -133,7 +124,7 @@
   }
 
   function updateLive(game, me) {
-    try {
+    {
       const troops = toNum(me.troops?.());
       const maxTroops = safeMaxTroops(game, me);
       state.live = {
@@ -142,9 +133,6 @@
         tiles: toNum(me.numTilesOwned?.()),
         fill: maxTroops > 0 ? troops / maxTroops : 0,
       };
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/engine.js:144");
-      /* ignore */
     }
   }
 

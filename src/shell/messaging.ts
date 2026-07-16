@@ -21,15 +21,13 @@ function dispatch(message: unknown): Promise<unknown> {
       }
     };
     for (const listener of messageListeners) {
-      try {
+      {
         const result = listener(message, SENDER, sendResponse);
         if (result instanceof Promise) {
           void result.then((value) => {
             if (value !== undefined) sendResponse(value);
           });
         }
-      } catch (error) {
-        console.error("[ofh] message listener threw:", error);
       }
     }
     queueMicrotask(() => {

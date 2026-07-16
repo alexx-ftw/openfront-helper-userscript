@@ -7,10 +7,8 @@
   // Lobby gate
   // =========================================================================
   function gameType(game) {
-    try {
+    {
       return game?.config?.().gameConfig?.().gameType ?? null;
-    } catch (_e) {
-      return null;
     }
   }
 
@@ -43,7 +41,7 @@
       timerId = window.setTimeout(() => resolve(fallback), ms);
     });
     return Promise.race([
-      Promise.resolve(promise).catch(() => fallback),
+      Promise.resolve(promise),
       timeoutPromise,
     ]).finally(() => {
       // A successful worker response used to leave this timer alive until it
@@ -61,10 +59,8 @@
   // speed factor. factor 2 == game running ~2× → our cadences run ~2× faster.
   function updateSpeedFactor(game) {
     let t;
-    try {
+    {
       t = Number(game.ticks?.());
-    } catch (_e) {
-      t = NaN;
     }
     if (!Number.isFinite(t)) return;
     const now = performance.now();
@@ -94,19 +90,14 @@
   }
 
   function safeMaxTroops(game, player) {
-    try {
+    {
       const v = game.config().maxTroops(player);
       return Number.isFinite(v) && v > 0 ? v : 0;
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/helpers.js:112");
-      return 0;
     }
   }
 
   function safeName(player) {
-    try {
+    {
       return String(player.displayName?.() ?? player.name?.() ?? "?");
-    } catch (_e) {
-      return "?";
     }
   }

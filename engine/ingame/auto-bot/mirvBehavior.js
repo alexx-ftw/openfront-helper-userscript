@@ -289,12 +289,10 @@
     // to "build economy / SAMs" once the win is effectively secured.
     teamHasWon() {
       if (this.player === null) return false;
-      try {
+      {
         if (String(this.game.config().gameConfig().gameMode) !== "Team") {
           return false;
         }
-      } catch (_e) {
-        return false;
       }
       const fallout =
         typeof this.game.numTilesWithFallout === "function"
@@ -304,24 +302,19 @@
       if (denom <= 0) return false;
       let teamTiles = 0;
       for (const p of this.game.players()) {
-        try {
+        {
           if (p.isPlayer() && this.player.isOnSameTeam(p)) {
             teamTiles += p.numTilesOwned();
           }
-        } catch (_e) {
-          /* skip */
         }
       }
       // Use the GAME's REAL team-win threshold (Config.percentageTilesOwnedToWin → 95%
       // for Team, 80% FFA), exactly like WinCheckExecution.checkWinnerTeam. teamWonShare
       // overrides it ONLY if explicitly set to a number (e.g. to react a bit earlier).
       let winFrac = 0.95;
-      try {
+      {
         const p = Number(this.game.config().percentageTilesOwnedToWin());
         if (Number.isFinite(p)) winFrac = p / 100;
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/mirvBehavior.js:347");
-        /* keep 0.95 */
       }
       if (Number.isFinite(state.settings.teamWonShare)) {
         winFrac = state.settings.teamWonShare;
@@ -419,14 +412,12 @@
       // check it's buildable AND affordable (gold is BigInt — keep bigint math),
       // then fire through the build menu aimed at the territory centre.
       let buildables;
-      try {
+      {
         buildables = await withTimeout(
           this.player.buildables(centerTile, [UNIT.MIRV]),
           WORKER_TIMEOUT_MS,
           null,
         );
-      } catch (_e) {
-        return;
       }
       const bu = Array.isArray(buildables)
         ? buildables.find((b) => b.type === UNIT.MIRV)
@@ -495,7 +486,7 @@
     // just sourcing the tiles from the async read. (Mirrors nuke.js mirvCenter.)
     async calculateTerritoryCenter(target) {
       let tiles;
-      try {
+      {
         const res = await withTimeout(
           target.borderTilesAsync(),
           WORKER_TIMEOUT_MS,
@@ -504,9 +495,6 @@
         // borderTilesAsync may resolve to a Set, an array, or a {borderTiles}
         // envelope depending on the worker shape — unwrap defensively.
         tiles = res && res.borderTiles ? res.borderTiles : res;
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/mirvBehavior.js:507");
-        return null;
       }
       if (!tiles) return null;
       const arr = Array.from(tiles);
@@ -539,14 +527,12 @@
       const tile = border && border.size > 0 ? border.values().next().value : null;
       if (tile === null || tile === undefined) return 0n;
       let buildables;
-      try {
+      {
         buildables = await withTimeout(
           this.player.buildables(tile, [type]),
           WORKER_TIMEOUT_MS,
           null,
         );
-      } catch (_e) {
-        return 0n;
       }
       const bu = Array.isArray(buildables)
         ? buildables.find((b) => b.type === type)

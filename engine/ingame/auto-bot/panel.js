@@ -450,13 +450,11 @@
       state.settings.hidden = true;
       saveSettings();
       panel.remove();
-      // Notify Quick Panel so the "Auto-Bot panel" toggle reflects the new state.
-      try {
+      {
         window.dispatchEvent(new CustomEvent("ofh-quick-panel-setting", {
           detail: { key: "showAutoBotPanel", value: false }
         }));
-      } catch (e) {
-  captureRuntimeException(e, "engine/ingame/auto-bot/panel.js:504");}
+      }
     });
   }
 
@@ -646,16 +644,13 @@
     const cfgBody = panel.querySelector(".ab-cfg-body");
     if (cfgBody) {
       const SCROLL_KEY = "openfront-helper-autobot-config-scroll";
-      // Restore saved scroll
-      try {
+      {
         const saved = Number(localStorage.getItem(SCROLL_KEY));
         if (saved > 0) setTimeout(() => { cfgBody.scrollTop = saved; }, 50);
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/panel.js:692");}
+      }
       // Save on scroll
       cfgBody.addEventListener("scroll", () => {
-        try { localStorage.setItem(SCROLL_KEY, String(cfgBody.scrollTop)); } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/panel.js:696");}
+        { localStorage.setItem(SCROLL_KEY, String(cfgBody.scrollTop)); }
       }, { passive: true });
     }
   }
@@ -800,12 +795,10 @@
     if (!tile) return;
 
     let status = { active: false, reason: null };
-    try {
+    {
       if (typeof getAutoDonateExpansionStatus === "function") {
         status = getAutoDonateExpansionStatus(state.earlyGame);
       }
-    } catch (_e) {
-      /* keep the normal feature color if the status probe is unavailable */
     }
 
     const paused =

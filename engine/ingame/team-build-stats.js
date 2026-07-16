@@ -80,12 +80,10 @@
   // team-stats: denominator = land tiles MINUS fallout (nuked) tiles.
   function formatTeamBuildOwned(ownedTiles, game) {
     let total;
-    try {
+    {
       total =
         (Number(game?.numLandTiles?.()) || 0) -
         (Number(game?.numTilesWithFallout?.()) || 0);
-    } catch (_error) {
-      total = 0;
     }
     if (total <= 0) {
       return "—";
@@ -502,15 +500,12 @@
   // no constructor juggling). Falls back to focusing the silo's owner.
   function focusTeamBuildSilo(siloUnit, ownerSmallId) {
     const eventsDisplay = document.querySelector("events-display");
-    try {
+    {
       if (siloUnit && eventsDisplay && typeof eventsDisplay.emitGoToUnitEvent === "function") {
         eventsDisplay.emitGoToUnitEvent(siloUnit);
         return true;
       }
-    } catch (_error) {
-      // Fall through to the owner-focus fallback.
-    }
-    try {
+    }{
       const target =
         document.querySelector("actionable-events") ||
         eventsDisplay ||
@@ -523,9 +518,6 @@
         target.emitGoToPlayerEvent(Number(ownerSmallId));
         return true;
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/team-build-stats.js:527");
-      // Nothing else to try.
     }
     return false;
   }
@@ -657,31 +649,27 @@
   }
 
   function applyStoredTeamBuildStatsSize(panel) {
-    try {
+    {
       var s = JSON.parse(window.localStorage.getItem(TEAM_BUILD_POS_KEY + ":size") || "null");
       if (s && Number.isFinite(s.w) && Number.isFinite(s.h)) {
         panel.style.width = s.w + "px";
         panel.style.height = s.h + "px";
       }
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/team-build-stats.js:666");}
+    }
   }
   function saveTeamBuildStatsSize(panel) {
     var w = parseInt(panel.style.width, 10);
     var h = parseInt(panel.style.height, 10);
     if (!Number.isFinite(w) || !Number.isFinite(h)) return;
-    try {
+    {
       window.localStorage.setItem(TEAM_BUILD_POS_KEY + ":size", JSON.stringify({ w: w, h: h }));
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/team-build-stats.js:676");}
+    }
   }
 
   function applyStoredTeamBuildStatsPosition(panel) {
     let pos;
-    try {
+    {
       pos = JSON.parse(window.localStorage.getItem(TEAM_BUILD_POS_KEY) || "null");
-    } catch (_error) {
-      pos = null;
     }
     if (!pos || !Number.isFinite(pos.left) || !Number.isFinite(pos.top)) {
       return;
@@ -726,7 +714,7 @@
       dragging = false;
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
-      try {
+      {
         window.localStorage.setItem(
           TEAM_BUILD_POS_KEY,
           JSON.stringify({
@@ -734,8 +722,6 @@
             top: parseInt(panel.style.getPropertyValue("--team-build-top"), 10),
           }),
         );
-      } catch (_error) {
-        // Best-effort — the panel stays where dragged for this session regardless.
       }
     }
 
@@ -761,18 +747,14 @@
   // (matching the game's stats), while `silo` is a building count that DOES
   // include under-construction silos so the alert can fire as early as possible.
   function getTeamBuildUnits(game) {
-    try {
+    {
       return game.units(...TEAM_BUILD_STRUCTURES.map((structure) => structure.type)) || [];
-    } catch (_error) {
-      return [];
     }
   }
 
   function getTeamBuildConfig(game) {
-    try {
+    {
       return game.config?.() || null;
-    } catch (_error) {
-      return null;
     }
   }
 
@@ -786,15 +768,10 @@
   }
 
   function addPlayerTeamStats(acc, player, index, config) {
-    try {
+    {
       acc.owned += Number(player.numTilesOwned?.()) || 0;
-    } catch (_error) {
-      // ignore
-    }
-    try {
+    }{
       if (config?.maxTroops) acc.maxTroops += (Number(config.maxTroops(player)) || 0) / 10;
-    } catch (_error) {
-      // ignore
     }
     const gpm = getGoldPerMinuteForPlayer(player, index);
     if (Number.isFinite(gpm)) {
@@ -812,12 +789,7 @@
       const team = getPlayerTeamName(player);
       if (!team || team === "Bot") return;
       teamBySmallId.set(getPlayerSmallId(player, index), team);
-      let alive = false;
-      try {
-        alive = Boolean(player?.isAlive?.());
-      } catch (_error) {
-        // keep false
-      }
+      const alive = Boolean(player?.isAlive?.());
       if (!alive) return;
       aliveTeams.add(team);
       addPlayerTeamStats(getOrCreateTeamStat(teamStatAcc, team), player, index, config);
@@ -842,30 +814,20 @@
   }
 
   function getTeamBuildUnitData(unit) {
-    try {
+    {
       return { smallId: Number(unit.owner?.()?.smallID?.()), type: unit.type?.() };
-    } catch (_error) {
-      return null;
     }
   }
 
   function getTeamBuildUnitLevel(unit) {
-    try {
+    {
       const level = Number(unit.level?.());
       return Number.isFinite(level) && level > 0 ? level : 1;
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/team-build-stats.js:getTeamBuildUnitLevel");
-      return 1;
     }
   }
 
   function addTeamBuildUnit(entry, unit, type, smallId) {
-    let underConstruction = false;
-    try {
-      underConstruction = Boolean(unit.isUnderConstruction?.());
-    } catch (_error) {
-      // keep false
-    }
+    const underConstruction = Boolean(unit.isUnderConstruction?.());
     if (!underConstruction) {
       const level = getTeamBuildUnitLevel(unit);
       entry.counts[type] += level;
@@ -986,12 +948,9 @@
   }
 
   function getMyTeamName(game) {
-    try {
+    {
       const myPlayer = game?.myPlayer?.();
       return getPlayerTeamName(myPlayer);
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/team-build-stats.js:997");
-      return null;
     }
   }
 

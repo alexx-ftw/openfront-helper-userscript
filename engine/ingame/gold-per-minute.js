@@ -87,10 +87,8 @@
   // default bottom-anchored CSS.
   function applyStoredGoldStatPanelPosition(el, storageKey) {
     let pos;
-    try {
+    {
       pos = JSON.parse(window.localStorage.getItem(storageKey) || "null");
-    } catch (_error) {
-      pos = null;
     }
     if (!pos || !Number.isFinite(pos.left) || !Number.isFinite(pos.top)) {
       return;
@@ -149,7 +147,7 @@
       if (!moved) {
         return;
       }
-      try {
+      {
         window.localStorage.setItem(
           storageKey,
           JSON.stringify({
@@ -157,8 +155,6 @@
             top: parseInt(panel.style.top, 10),
           }),
         );
-      } catch (_error) {
-        // Best-effort — the panel stays where dragged for this session regardless.
       }
     }
 
@@ -848,29 +844,22 @@
   let apsExpanded = false;
 
   function loadApsExpanded() {
-    try {
+    {
       return window.localStorage.getItem(APS_EXPAND_KEY) === "1";
-    } catch (_error) {
-      return false;
     }
   }
   function saveApsExpanded() {
-    try {
+    {
       window.localStorage.setItem(APS_EXPAND_KEY, apsExpanded ? "1" : "0");
-    } catch (_error) {
-      // ignore
     }
   }
   function applyStoredApsSize(panel) {
-    try {
+    {
       const s = JSON.parse(window.localStorage.getItem(APS_SIZE_KEY) || "null");
       if (s && Number.isFinite(s.w) && Number.isFinite(s.h)) {
         panel.style.width = `${s.w}px`;
         panel.style.height = `${s.h}px`;
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/gold-per-minute.js:871");
-      // ignore
     }
   }
   function saveApsSize(panel) {
@@ -879,10 +868,8 @@
     if (!Number.isFinite(w) || !Number.isFinite(h)) {
       return; // not resized yet (still CSS default, no inline size)
     }
-    try {
+    {
       window.localStorage.setItem(APS_SIZE_KEY, JSON.stringify({ w, h }));
-    } catch (_error) {
-      // ignore
     }
   }
   let apsRenderedExpanded = null; // last grid/header structure rendered
@@ -931,12 +918,10 @@
   function apsFormatOwned(owned, game) {
     // Match the game's own stats: denominator = land tiles minus fallout tiles.
     let total;
-    try {
+    {
       total =
         (Number(game?.numLandTiles?.()) || 0) -
         (Number(game?.numTilesWithFallout?.()) || 0);
-    } catch (_error) {
-      total = 0;
     }
     if (total <= 0) return "—";
     const pct = ((Number(owned) || 0) / total) * 100;
@@ -946,26 +931,21 @@
   // One pass over all structure units → smallId -> { type: count } (only built
   // when the panel is expanded, since it's the costly part).
   function getApsStructureUnitData(unit) {
-    try {
+    {
       const smallId = Number(unit.owner?.()?.smallID?.());
       const type = unit.type?.();
       if (!Number.isFinite(smallId) || !type || unit.isUnderConstruction?.()) return null;
       const rawLevel = Number(unit.level?.());
       const level = Number.isFinite(rawLevel) && rawLevel > 0 ? rawLevel : 1;
       return { smallId, type, level };
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/gold-per-minute.js:getApsStructureUnitData");
-      return null;
     }
   }
 
   function getApsStructureCounts(game) {
     const counts = new Map();
     let units;
-    try {
+    {
       units = game.units(...APS_STRUCTURES.map((s) => s.type)) || [];
-    } catch (_error) {
-      units = [];
     }
     for (const unit of units) {
       const data = getApsStructureUnitData(unit);
@@ -981,16 +961,15 @@
   }
 
   function readApsPlayerNumber(player, methodName) {
-    try { return Number(player?.[methodName]?.()) || 0; } catch (_error) { return 0; }
+    { return Number(player?.[methodName]?.()) || 0; }
   }
 
   function getApsMaxTroops(config, player) {
-    try { return config?.maxTroops ? (Number(config.maxTroops(player)) || 0) / 10 : 0; }
-    catch (_error) { return 0; }
+    { return config?.maxTroops ? (Number(config.maxTroops(player)) || 0) / 10 : 0; }
   }
 
   function isApsPlayerDisconnected(player) {
-    try { return Boolean(player.isDisconnected?.()); } catch (_error) { return false; }
+    { return Boolean(player.isDisconnected?.()); }
   }
 
   function apsRowSortValue(row, key) {
@@ -1014,16 +993,12 @@
     const players = getCachedPlayerViews(game);
     const structureCounts = apsExpanded ? getApsStructureCounts(game) : null;
     let config;
-    try {
+    {
       config = game.config?.();
-    } catch (_error) {
-      config = null;
     }
     let myId;
-    try {
+    {
       myId = Number(game.myPlayer?.()?.smallID?.());
-    } catch (_error) {
-      myId = NaN;
     }
 
     const rows = [];
@@ -1113,16 +1088,13 @@
     if (!Number.isFinite(smallId)) {
       return;
     }
-    try {
+    {
       const target =
         document.querySelector("actionable-events") ||
         document.querySelector("events-display");
       if (target && typeof target.emitGoToPlayerEvent === "function") {
         target.emitGoToPlayerEvent(Number(smallId));
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/gold-per-minute.js:1144");
-      // ignore
     }
   }
 

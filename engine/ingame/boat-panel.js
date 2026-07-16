@@ -283,11 +283,8 @@
   }
 
   function isActiveBoatPanelTransport(transport) {
-    try {
+    {
       return Boolean(transport.unit?.isActive?.());
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/boat-panel.js:isActiveBoatPanelTransport");
-      return false;
     }
   }
 
@@ -496,14 +493,11 @@
   // Pan the camera to a boat via the game's own events-display HUD (same hook the
   // game uses for "go to unit"). Best-effort; silently no-ops if unavailable.
   function focusIncomingBoat(unit) {
-    try {
+    {
       const eventsDisplay = document.querySelector("events-display");
       if (unit && eventsDisplay && typeof eventsDisplay.emitGoToUnitEvent === "function") {
         eventsDisplay.emitGoToUnitEvent(unit);
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/boat-panel.js:501");
-      // ignore
     }
   }
 
@@ -567,12 +561,10 @@
       if (transport.relation === "self" || !transport.targetsMyTerritory) {
         continue;
       }
-      try {
+      {
         if (!transport.unit?.isActive?.()) {
           continue;
         }
-      } catch (_error) {
-        continue;
       }
       current.add(transport.domUnitId);
       if (boatIncomingWarnInit && !boatIncomingSeen.has(transport.domUnitId)) {

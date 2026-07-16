@@ -78,13 +78,11 @@ export interface LanguageOption {
 }
 
 function displayName(code: string, inLocale: string): string {
-  try {
+  {
     const n = new Intl.DisplayNames([inLocale], { type: "language" }).of(code);
     if (n && n.toLowerCase() !== code.toLowerCase()) {
       return n.charAt(0).toUpperCase() + n.slice(1);
     }
-  } catch {
-    /* Intl.DisplayNames unsupported or unknown code */
   }
   return code;
 }

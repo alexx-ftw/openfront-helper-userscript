@@ -7,19 +7,13 @@ import { executeClassicScript } from "./helpers/classic-script.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const userscript = fs.readFileSync(path.join(root, "openfront-helper.user.js"), "utf8");
-const sectionStart = userscript.lastIndexOf(";(function(){\ntry {\n");
-const sectionEnd = userscript.indexOf(
-  '} catch (e) { console.error("[ofh] ingame section error:", e); }\n})();',
-  sectionStart,
-);
+const sectionStart = userscript.lastIndexOf(";(function(){\n");
+const sectionEnd = userscript.lastIndexOf("\n})();\n");
 assert.ok(
   sectionStart >= 0 && sectionEnd > sectionStart,
   "built userscript contains in-game section",
 );
-const source = userscript.slice(
-  sectionStart,
-  sectionEnd + '} catch (e) { console.error("[ofh] ingame section error:", e); }\n})();'.length,
-);
+const source = userscript.slice(sectionStart, sectionEnd + "\n})();".length);
 
 const { document, window: domWindow } = parseHTML(
   "<!doctype html><html><head></head><body></body></html>",

@@ -82,7 +82,7 @@
     }
     const orig = eventBus.emit;
     eventBus.emit = function (ev) {
-      try {
+      {
         if (
           ev &&
           ev.requestor !== undefined &&
@@ -91,8 +91,6 @@
         ) {
           _ctors.allianceRequest = ev.constructor;
         }
-      } catch (_e) {
-        /* ignore */
       }
       return orig.call(this, ev);
     };
@@ -116,14 +114,11 @@
       const s2 = { __probe: 2 };
       for (const C of map.keys()) {
         if (typeof C !== "function") continue;
-        try {
+        {
           const inst = new C(s1, s2);
           if (inst && inst.requestor === s1 && inst.recipient === s2) {
             found.push(C);
           }
-        } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/allianceBehavior.js:124");
-          /* skip */
         }
       }
     }
@@ -138,23 +133,18 @@
   function collectAllianceEvents() {
     const events = [];
     for (const sel of ["events-display", "actionable-events"]) {
-      try {
+      {
         const el = document.querySelector(sel);
         if (Array.isArray(el?.events)) events.push(...el.events);
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/allianceBehavior.js:143");
-        /* element absent */
       }
     }
-    try {
+    {
       if (
         typeof allianceRequestsPanelEvents !== "undefined" &&
         Array.isArray(allianceRequestsPanelEvents)
       ) {
         events.push(...allianceRequestsPanelEvents);
       }
-    } catch (_e) {
-      /* helper panel not loaded */
     }
     return events;
   }
@@ -201,11 +191,10 @@
     // Game has PlayerType.Bot = "BOT", PlayerType.Nation = "NATION", PlayerType.Human = "HUMAN".
     isRegularBot(player) {
       if (!player) return false;
-      try {
+      {
         if (typeof player.type === "function" && player.type() === "BOT") return true;
         if (player.data && player.data.playerType === "BOT") return true;
-      } catch (e) {
-  captureRuntimeException(e, "engine/ingame/auto-bot/allianceBehavior.js:205");}
+      }
       return false;
     }
 
@@ -256,15 +245,14 @@
       // Defense-in-depth: this runs at tick level, while the panel capture filter
       // prevents Vue from ever seeing bot events.
       for (const ev of collectAllianceEvents()) {
-        try {
+        {
           const requestor = this.resolveEventPlayer(ev);
           if (!requestor) continue;
           if (this.isRegularBot(requestor)) {
             // Force-mark as actioned — prevents alliance handler from accepting
             _allianceBehaviorActioned.add(ev);
           }
-        } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/allianceBehavior.js:257");}
+        }
       }
     }
 
@@ -272,15 +260,13 @@
     renewAllianceEvent(event, human, buttons) {
       const renew = pickAllianceButton(buttons, "btn", 1);
       if (!renew) return;
-      try {
+      {
         renew.action();
         _allianceBehaviorActioned.add(event);
         setLastAction(
           tr("🔁 Renew alliance {name}", { name: safeName(human) }),
           "diplo",
         );
-      } catch (_error) {
-        captureRuntimeException(_error, "engine/ingame/auto-bot/allianceBehavior.js:renew");
       }
     }
 
@@ -382,7 +368,7 @@
     // probe). On any error we answer FALSE (treat as near) so the faithful case-by-case
     // logic runs rather than a blanket accept.
     isFarNation(other) {
-      try {
+      {
         const sid = other.smallID();
         for (const n of this.player.nearby()) {
           if (n && n.isPlayer && n.isPlayer() && n.smallID() === sid) {
@@ -390,9 +376,6 @@
           }
         }
         return true; // not adjacent → far
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/allianceBehavior.js:363");
-        return false;
       }
     }
 
@@ -406,12 +389,10 @@
     calculateDiplomacyTeamTiles() {
       let owned = 0;
       for (const player of this.game.players()) {
-        try {
+        {
           if (player.isPlayer() && this.player.isOnSameTeam(player)) {
             owned += player.numTilesOwned();
           }
-        } catch (_error) {
-          captureRuntimeException(_error, "engine/ingame/auto-bot/allianceBehavior.js:team-tiles");
         }
       }
       return owned;
@@ -420,7 +401,7 @@
     isDominantForDiplomacy() {
       if (!state.settings.winFixes) return false;
       if (typeof state.dominant === "boolean") return state.dominant;
-      try {
+      {
         const isTeam =
           String(this.game.config().gameConfig().gameMode) === "Team";
         const fallout =
@@ -436,9 +417,6 @@
           ? state.settings.factoryRailShare
           : 0.75;
         return owned / denom > trigger;
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/allianceBehavior.js:405");
-        return false;
       }
     }
 
@@ -447,7 +425,7 @@
     // Suppressed until the alliance-request ctor is learned (lazily, on our first
     // accept), and skipped once we're dominant (self-gated, below).
     isFarAllianceCandidate(player, mySid) {
-      try {
+      {
         return (
           player.isPlayer?.() &&
           player.smallID() !== mySid &&
@@ -458,9 +436,6 @@
           this.isFarNation(player) &&
           this.canSendAllianceRequest(player)
         );
-      } catch (_error) {
-        captureRuntimeException(_error, "engine/ingame/auto-bot/allianceBehavior.js:far-candidate");
-        return false;
       }
     }
 
@@ -972,10 +947,8 @@
     incomingAllianceRequests() {
       const out = [];
       const inSpawn = (() => {
-        try {
+        {
           return this.game.inSpawnPhase() === true;
-        } catch (_e) {
-          return false;
         }
       })();
       for (const ev of collectAllianceEvents()) {
@@ -1003,10 +976,8 @@
           // reject gate does NOT fire). This matches the common case (a live
           // request prompt the human would see now).
           createdAtTick = (() => {
-            try {
+            {
               return this.game.ticks();
-            } catch (_e) {
-              return this.game.config().numSpawnPhaseTurns() + 2;
             }
           })();
         }
@@ -1019,26 +990,21 @@
           accept: () => {
             const accept = pickAllianceButton(buttons, "btn", 1);
             if (!accept) return;
-            try {
+            {
               runAndCaptureAllianceCtor(() => accept.action());
               _allianceBehaviorActioned.add(ev);
               setLastAction(
                 tr("🤝 Alliance {name}", { name: safeName(requestor) }),
                 "diplo",
               );
-            } catch (error) {
-              console.error("[AutoBot] alliance accept failed:", error);
             }
           },
           reject: () => {
             const reject = pickAllianceButton(buttons, "btn-info", 2);
             if (!reject) return;
-            try {
+            {
               reject.action();
               _allianceBehaviorActioned.add(ev);
-            } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/allianceBehavior.js:976");
-              /* ignore */
             }
           },
         });
@@ -1056,13 +1022,11 @@
     canSendAllianceRequest(other) {
       const src = this.player.__src;
       if (src && typeof src.canSendAllianceRequest === "function") {
-        try {
+        {
           return src.canSendAllianceRequest(other.__src ?? other);
-        } catch (_e) {
-          /* fall through to local checks */
         }
       }
-      try {
+      {
         if (other.isAlive && other.isAlive() === false) return false;
         if (this.player.isAlliedWith(other)) return false;
         if (this.player.isOnSameTeam && this.player.isOnSameTeam(other)) {
@@ -1074,9 +1038,6 @@
         ) {
           return false;
         }
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/allianceBehavior.js:1013");
-        return false;
       }
       return true;
     }
@@ -1089,19 +1050,14 @@
       const sid = Number(ev?.focusID);
       if (!Number.isFinite(sid)) return null;
       let p;
-      try {
+      {
         p = this.game.playerBySmallID ? this.game.playerBySmallID(sid) : null;
-      } catch (_e) {
-        p = null;
       }
       if (p && p.isPlayer && p.isPlayer()) return p;
-      try {
+      {
         for (const cand of this.game.players()) {
           if (cand.smallID() === sid) return cand;
         }
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/allianceBehavior.js:1037");
-        /* ignore */
       }
       return null;
     }

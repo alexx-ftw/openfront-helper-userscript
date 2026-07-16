@@ -26,5 +26,14 @@
       direct <code>eslint</code> invocation over legacy files, because the project lint script
       applies the ratcheted baseline that distinguishes new regressions from existing debt.
     </p>
+
+    <p>
+      You must not use JavaScript or TypeScript <code>catch</code> clauses or Promise
+      <code>.catch()</code> handlers in this project. They can make a broken integration look alive
+      while silently disabling later gameplay, UI, construction, or combat phases. Let failures
+      propagate so diagnostics and static runtime simulations fail at the original cause; use
+      <code>try/finally</code> only when deterministic cleanup is required, and fix expected failure
+      states through explicit capability checks or result values rather than exceptions.
+    </p>
   </body>
 </html>

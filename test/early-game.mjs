@@ -1251,6 +1251,7 @@ const makeTargetPlayer = (sid, type, tiles, troops, location) => ({
   borderTiles: () => new Set(tiles),
   nameLocation: () => location,
   nearby: () => [],
+  sharesBorderWith: () => false,
   isFriendly: () => false,
   incomingAttacks: () => [],
   outgoingAttacks: () => [],
@@ -1275,6 +1276,7 @@ targetContender.outgoingAttacks = () => [targetRaceAttack];
 targetInland.incomingAttacks = () => [targetRaceAttack];
 targetMe.nearby = () => [targetCoastal, targetInland, targetNext];
 const targetGame = {
+  config: () => ({ isUnitDisabled: () => false }),
   players: () => [targetMe, targetCoastal, targetInland, targetNext, targetContender, targetMover],
   hasTransportRouteEstimator: true,
   estimateTransportRouteTicks: (tile) => (tile === 10 ? 20 : null),

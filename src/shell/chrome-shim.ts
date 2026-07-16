@@ -56,15 +56,11 @@ const chromeShim = {
 
 export function installChromeShim(): typeof chromeShim {
   const w = window as unknown as Record<string, unknown>;
-  try {
+  {
     w.chrome = chromeShim;
-  } catch (error) {
-    console.warn("[ofh] could not set window.chrome:", error);
   }
-  try {
+  {
     if (typeof w.browser === "undefined") w.browser = chromeShim;
-  } catch {
-    /* ignore */
   }
   installCrossTabSync();
   return chromeShim;

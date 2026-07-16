@@ -23,10 +23,8 @@
   function _sosGetHostileAttackers(game, me) {
     const out = [];
     let attacks;
-    try {
+    {
       attacks = me.incomingAttacks?.() || [];
-    } catch (_e) {
-      attacks = [];
     }
     for (const atk of attacks) {
       // Client AttackUpdate is a plain object: { troops, attackerID, targetID, ... }.
@@ -34,10 +32,8 @@
       if (!Number.isFinite(attackerId)) continue;
       const attacker = _sosResolvePlayerBySmallId(game, attackerId);
       if (!attacker) continue;
-      try {
+      {
         if (me.isFriendly?.(attacker)) continue; // ignore allied "attacks"
-      } catch (_e) {
-        /* treat as hostile */
       }
       out.push(attacker);
     }
@@ -53,10 +49,8 @@
       if (!Number.isFinite(sid) || sid === mySid) continue;
       if (!p?.isAlive?.()) continue;
       if (isNationBotPlayer(p)) continue; // a nation bot won't come to help
-      try {
+      {
         if (me.isFriendly?.(p)) allies.push(p);
-      } catch (_e) {
-        /* skip */
       }
     }
     return allies;
@@ -72,11 +66,8 @@
   }
 
   function _sosAttackerTargetId(attacker) {
-    try {
+    {
       return attacker.id?.();
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/sos-defense.js:_sosAttackerTargetId");
-      return undefined;
     }
   }
 

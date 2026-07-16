@@ -315,21 +315,16 @@
   function getActiveRevenueUnit(game, entry) {
     const unitId = Number(entry?.unitId);
     if (Number.isFinite(unitId)) {
-      try {
+      {
         const unit = game?.unit?.(unitId);
         if (activeRevenueUnitTypeMatches(unit, entry)) return unit;
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/heatmaps.js:314");
-        // Fall back to a tile lookup below.
       }
     }
 
-    try {
+    {
       return Array.from(game?.units?.(entry.type) || []).find(
         (unit) => activeRevenueUnitTypeMatches(unit, entry) && unit?.tile?.() === entry.tile,
       ) ?? null;
-    } catch (_error) {
-      return null;
     }
   }
 
@@ -385,7 +380,7 @@
         continue;
       }
 
-      try {
+      {
         const worldPoint = {
           x: game.x(source.tile),
           y: game.y(source.tile),
@@ -407,9 +402,6 @@
             zoomScale,
           });
         }
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/heatmaps.js:397");
-        // Ignore points from stale units or off-map references.
       }
     }
 
@@ -807,14 +799,9 @@
   }
 
   function getEconomyHeatmapPoints(context, canvas) {
-    try {
+    {
       const sources = getEconomyHeatmapSources(context.game);
       return projectEconomyHeatmapPoints(sources, context.game, context.transform);
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/heatmaps.js:economy-points");
-      clearHeatmapCanvas(canvas);
-      canvas.parentElement?.setAttribute("data-status", "Economic heatmap: data error");
-      return null;
     }
   }
 

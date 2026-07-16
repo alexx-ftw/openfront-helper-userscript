@@ -1847,6 +1847,7 @@ let metricCapacityCalls = 0;
 metricBehavior.legendaryFriendlySamProfiles = () => [];
 metricBehavior.legendarySiloSlotAvailability = () => [0];
 metricBehavior.legendarySiloCooldownTicks = () => 90;
+metricBehavior.legendarySamCooldownTicks = () => 90;
 metricBehavior.legendaryNukeFlightTime = () => {
   metricFlightCalls++;
   return 10;

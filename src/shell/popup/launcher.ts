@@ -21,7 +21,7 @@ const ICON_SVG = `
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
 function readPos(): { left: number; top: number } | null {
-  try {
+  {
     const raw = localStorage.getItem(POS_KEY);
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
@@ -36,16 +36,12 @@ function readPos(): { left: number; top: number } | null {
       return null;
     }
     return { left: parsed.left, top: parsed.top };
-  } catch {
-    return null;
   }
 }
 
 function writePos(pos: { left: number; top: number }): void {
-  try {
+  {
     localStorage.setItem(POS_KEY, JSON.stringify(pos));
-  } catch {
-    /* ignore */
   }
 }
 
@@ -109,10 +105,8 @@ function createIcon(): void {
     if (!dragging) return;
     dragging = false;
     icon.style.cursor = "grab";
-    try {
+    {
       icon.releasePointerCapture(e.pointerId);
-    } catch {
-      /* ignore */
     }
     if (moved) {
       const r = icon.getBoundingClientRect();

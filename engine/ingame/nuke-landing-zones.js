@@ -118,15 +118,12 @@
   }
 
   function getNukeLandingRadius(game, unit) {
-    try {
+    {
       const magnitude = game?.config?.().nukeMagnitudes?.(unit.type());
       const radius = Number(magnitude?.outer ?? magnitude?.inner);
       if (Number.isFinite(radius) && radius > 0) {
         return radius;
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-landing-zones.js:127");
-      // Fall back to the same radii used by OpenFront's nuke FX layer.
     }
 
     return unit?.type?.() === "Hydrogen Bomb" ? 160 : 70;
@@ -138,7 +135,7 @@
       return worldRadius * scale;
     }
 
-    try {
+    {
       const reference = transform.worldToScreenCoordinates({
         x: screenPos.worldX + worldRadius,
         y: screenPos.worldY,
@@ -146,9 +143,6 @@
       const dx = reference.x - screenPos.x;
       const dy = reference.y - screenPos.y;
       return Math.hypot(dx, dy);
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-landing-zones.js:148");
-      return worldRadius;
     }
   }
 
@@ -171,11 +165,8 @@
     const worldX = context.game.x(targetTile);
     const worldY = context.game.y(targetTile);
     let screenPos;
-    try {
+    {
       screenPos = context.transform.worldToScreenCoordinates({ x: worldX, y: worldY });
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/nuke-landing-zones.js:screen-position");
-      return null;
     }
     if (isNukeLandingOutsideViewport(screenPos)) return null;
     return {

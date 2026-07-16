@@ -26,9 +26,8 @@
     return "rgba(248, 113, 113, 0.85)";
   }
 
-  function computeNukeTrajectoryPath(game, fromTile, toTile, directionUp) {
-    if (directionUp === undefined) directionUp = true;
-    try {
+  function computeNukeTrajectoryPath(game, fromTile, toTile) {
+    {
       if (
         typeof UniversalPathFinding === "undefined" ||
         !UniversalPathFinding.Parabola
@@ -47,9 +46,6 @@
       });
       const path = pf.findPath(fromTile, toTile);
       return Array.isArray(path) ? path : null;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-trajectory.js:49");
-      return null;
     }
   }
 
@@ -97,14 +93,11 @@
 
   function collectNukeTrajectoryScan(game) {
     let units;
-    try {
+    {
       units =
         typeof getCachedGameUnits === "function"
           ? getCachedGameUnits(game, ...NUKE_TRAJ_UNIT_TYPES)
           : game.units(...NUKE_TRAJ_UNIT_TYPES);
-    } catch (_error) {
-      _nukeTrajScan = [];
-      return;
     }
     const out = [];
     const seen = new Set();

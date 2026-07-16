@@ -662,9 +662,7 @@ window.addEventListener("ofh-quick-panel-setting", function(e) {
 
   if (key === "language") {
     var newLang = value;
-    chrome.storage.local.set({ [STORAGE_KEY]: lobbyState.settings }).catch(function(err) {
-      console.error("Quick Panel language persist failed:", err);
-    });
+    chrome.storage.local.set({ [STORAGE_KEY]: lobbyState.settings });
     if (i18n) {
       i18n.loadBundle(newLang).then(function(bundle) {
         translations = bundle;
@@ -682,14 +680,10 @@ window.addEventListener("ofh-quick-panel-setting", function(e) {
         var ajPanel = document.getElementById(FLOATING_AUTOJOIN_PANEL_ID);
         if (ajPanel) ajPanel.remove();
         syncFloatingAutoJoinPanel();
-      }).catch(function(err) {
-        console.error("i18n loadBundle failed:", err);
       });
     }
   } else {
-    chrome.storage.local.set({ [STORAGE_KEY]: lobbyState.settings }).catch(function(err) {
-      console.error("Quick Panel setting persist failed:", err);
-    });
+    chrome.storage.local.set({ [STORAGE_KEY]: lobbyState.settings });
     syncHelpers();
     if (key === "showFloatingAutoJoinPanel") {
       syncFloatingAutoJoinPanel();
@@ -751,8 +745,6 @@ function updateAutoCancelDeniedTradesAvailability(available) {
       autoCancelDeniedTradesAvailable: nextAvailable,
       selectiveTradePolicyEnabled:
         lobbyState.settings.selectiveTradePolicyEnabled && nextAvailable,
-    }).catch((error) => {
-      console.error("Failed to sync denied trade cancellation availability:", error);
     });
   }
 
@@ -775,8 +767,6 @@ function updateCheatsAvailability(available) {
     saveSettings({
       ...lobbyState.settings,
       cheatsAvailable: nextAvailable,
-    }).catch((error) => {
-      console.error("Failed to sync cheats availability:", error);
     });
   }
 
@@ -843,8 +833,7 @@ async function loadSettings() {
   if (lobbyState.settings.cheatsAvailable !== true) {
     lobbyState.settings.cheatsAvailable = true;
     chrome.storage.local
-      .set({ [STORAGE_KEY]: lobbyState.settings })
-      .catch((error) => console.error("Failed to persist cheats override:", error));
+      .set({ [STORAGE_KEY]: lobbyState.settings });
   }
   lastProcessedSelectiveTradePolicyRequestAt =
     lobbyState.settings.applySelectiveTradePolicyRequestAt;

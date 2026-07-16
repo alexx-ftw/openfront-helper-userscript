@@ -59,11 +59,9 @@
     const key = `${String(from)}>${String(to)}`;
     if (context.routeCache.has(key)) return context.routeCache.get(key);
     let result = null;
-    try {
+    {
       const candidate = context.route(from, to);
       if (Array.isArray(candidate) && candidate.length > 0) result = candidate;
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/auto-bot/naval-interception.js:route");
     }
     context.routeCache.set(key, result);
     return result;
@@ -86,12 +84,7 @@
         Math.floor((tick - startTick) * context.warshipSpeed),
       );
       for (let index = maxReachableIndex; index >= 0; index--) {
-        let inRange = false;
-        try {
-          inRange = Number(context.distance(waterRoute[index], boatTile)) <= context.attackRange;
-        } catch (_error) {
-          captureRuntimeException(_error, "engine/ingame/auto-bot/naval-interception.js:distance");
-        }
+        const inRange = Number(context.distance(waterRoute[index], boatTile)) <= context.attackRange;
         if (!inRange) continue;
         return {
           shipId: ship.id,

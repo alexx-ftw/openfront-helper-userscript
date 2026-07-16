@@ -26,14 +26,11 @@
 
   function _signalRecipientKey(recipient) {
     if (recipient === AllPlayers) return "ALL";
-    try {
+    {
       const sid = recipient?.smallID?.();
       if (sid !== undefined && sid !== null) return "s" + sid;
       const id = recipient?.id?.();
       if (id !== undefined && id !== null) return "i" + id;
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/signal-scheduler.js:34");
-      /* ignore */
     }
     return "unknown";
   }
@@ -53,13 +50,10 @@
   }
 
   function _signalCurrentTick() {
-    try {
+    {
       const game = getOpenFrontGameContext()?.game;
       const t = Number(game?.ticks?.());
       return Number.isFinite(t) ? t : null;
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/signal-scheduler.js:59");
-      return null;
     }
   }
 

@@ -13,22 +13,18 @@
       return;
     }
     let modal;
-    try {
+    {
       modal = document.querySelector("win-modal");
-    } catch (_error) {
-      return;
     }
     if (!modal) {
       return;
     }
     if (modal.isVisible === true && modal.isWin === true) {
       autoLeaveFired = true;
-      try {
+      {
         // Exit to home; with "keep searching" auto-join on, the lobby page that
         // loads will resume searching for the next match.
         window.location.href = "/";
-      } catch (_error) {
-        // navigation is best-effort
       }
     }
   }

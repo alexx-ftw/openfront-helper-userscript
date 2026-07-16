@@ -178,10 +178,8 @@
       return;
     }
     let game;
-    try {
+    {
       game = getOpenFrontGameContext()?.game || null;
-    } catch (_error) {
-      game = null;
     }
     if (!game || typeof game.ticks !== "function") {
       return;
@@ -193,10 +191,8 @@
       runtimeState.gameTimeAlertFired = false;
     }
     let ticks;
-    try {
+    {
       ticks = Number(game.ticks()) || 0;
-    } catch (_error) {
-      return;
     }
     const elapsedSeconds = ticks / 10; // OpenFront advances 10 ticks per second.
     if (elapsedSeconds < runtimeState.gameTimeAlertThresholdSec) {

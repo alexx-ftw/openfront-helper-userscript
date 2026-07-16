@@ -18,11 +18,8 @@ function isExtensionContextInvalidatedError(error) {
 }
 
 function isExtensionContextAlive() {
-  try {
+  {
     return typeof chrome !== "undefined" && Boolean(chrome.runtime?.id);
-  } catch (_error) {
-    globalThis.__OFH_CAPTURE_EXCEPTION__?.(_error, "engine/lobby/auto-join.js:362");
-    return false;
   }
 }
 
@@ -364,12 +361,9 @@ function isInActiveGame() {
 // BaseModal with isModalOpen) without changing the URL, so this is the only
 // reliable signal that we've joined a lobby but the game hasn't started.
 function isInLobbyWaiting() {
-  try {
+  {
     const modal = document.querySelector("join-lobby-modal");
     return Boolean(modal && modal.isModalOpen === true);
-  } catch (_error) {
-    globalThis.__OFH_CAPTURE_EXCEPTION__?.(_error, "engine/lobby/auto-join.js:383");
-    return false;
   }
 }
 
@@ -384,14 +378,11 @@ function isInLobbyWaiting() {
 // so it can stay true at the menu — guard on the `hidden` class too, otherwise a
 // failed start would wedge the search "occupied" forever (never resumes).
 function isGameStarting() {
-  try {
+  {
     const modal = document.querySelector("game-starting-modal");
     return Boolean(
       modal && modal.isVisible === true && !modal.classList.contains("hidden"),
     );
-  } catch (_error) {
-    globalThis.__OFH_CAPTURE_EXCEPTION__?.(_error, "engine/lobby/auto-join.js:isGameStarting");
-    return false;
   }
 }
 
@@ -468,9 +459,6 @@ function handleGameStarted() {
       type: "SHOW_GAME_START_NOTIFICATION",
       gameID: pending?.gameID,
       text: t("Game started!"),
-    })
-    .catch(() => {
-      /* the toast / OS notification is best-effort */
     });
 }
 
@@ -480,7 +468,7 @@ function handleGameStarted() {
 // occupancy signal read false — instead of guessing. console.info survives
 // minification (string literals are kept), so it works in the shipped build.
 function logAutoJoinDecision(context, lobby) {
-  try {
+  {
     const joinModal = document.querySelector("join-lobby-modal");
     const startingModal = document.querySelector("game-starting-modal");
     console.warn("[openfront-helper][autojoin-diag]", context, {
@@ -501,9 +489,6 @@ function logAutoJoinDecision(context, lobby) {
       bodyInGame: document.body ? document.body.classList.contains("in-game") : null,
       location: location.pathname + location.search,
     });
-  } catch (_error) {
-    globalThis.__OFH_CAPTURE_EXCEPTION__?.(_error, "engine/lobby/auto-join.js:494");
-    /* diagnostics are best-effort */
   }
 }
 
@@ -1442,15 +1427,9 @@ function persistLobbyForecast(force = false) {
 
   let payload;
   let serialized;
-  try {
+  {
     payload = buildLobbyForecastPayload();
     serialized = JSON.stringify(payload);
-  } catch (error) {
-    if (isExtensionContextInvalidatedError(error)) {
-      return;
-    }
-    console.error("Failed to build lobby forecast payload:", error);
-    return;
   }
 
   if (!force && serialized === lobbyForecastLastPersistedPayload) {
@@ -1465,7 +1444,7 @@ function persistLobbyForecast(force = false) {
   lobbyForecastLastPersistedAt = now;
   lobbyForecastLastPersistedPayload = serialized;
   (async () => {
-    try {
+    {
       if (!isExtensionContextAlive()) {
         return;
       }
@@ -1482,18 +1461,8 @@ function persistLobbyForecast(force = false) {
           lobbyForecast: payload,
         },
       });
-    } catch (error) {
-      if (isExtensionContextInvalidatedError(error)) {
-        return;
-      }
-      console.error("Failed to persist lobby forecast:", error);
     }
-  })().catch((error) => {
-    if (isExtensionContextInvalidatedError(error)) {
-      return;
-    }
-    console.error("Failed to persist lobby forecast:", error);
-  });
+  })();
 }
 
 function updateLobbyForecast(snapshot) {
@@ -1629,41 +1598,28 @@ function ensureCustomJoinAlertAudio() {
   return lobbyState.customJoinAlertAudio;
 }
 
-function tryPlayAudio(audio, onFailure) {
+function tryPlayAudio(audio) {
   if (!audio) {
     return false;
   }
 
-  try {
+  {
     audio.currentTime = 0;
-    const playPromise = audio.play();
-    if (playPromise && typeof playPromise.catch === "function") {
-      playPromise.catch(() => {
-        onFailure?.();
-      });
-    }
+    void audio.play();
     return true;
-  } catch (_error) {
-    globalThis.__OFH_CAPTURE_EXCEPTION__?.(_error, "engine/lobby/auto-join.js:1688");
-    onFailure?.();
-    return false;
   }
 }
 
 function playJoinAlert() {
   if (
     lobbyState.hasCustomNotificationSound &&
-    tryPlayAudio(ensureCustomJoinAlertAudio(), () => {
-      tryPlayAudio(ensureJoinAlertAudio());
-    })
+    tryPlayAudio(ensureCustomJoinAlertAudio())
   ) {
     return;
   }
 
-  try {
+  {
     tryPlayAudio(ensureJoinAlertAudio());
-  } catch (_error) {
-    // Ignore audio playback failures caused by browser autoplay rules.
   }
 }
 
@@ -1690,14 +1646,12 @@ async function requestJoin(lobby) {
   lobbyCooldowns.set(lobby.gameID, Date.now() + LOBBY_RETRY_COOLDOWN_MS);
 
   if (lobbyState.settings.joinNotification) {
-    try {
+    {
       await chrome.runtime.sendMessage({
         type: "SHOW_JOIN_NOTIFICATION",
         gameID: lobby.gameID,
         text: t("Lobby found — joining!"),
       });
-    } catch (_error) {
-      /* the toast / OS notification is best-effort */
     }
   }
 
@@ -1750,10 +1704,7 @@ function tryAutoJoin() {
   }
 
   logAutoJoinDecision("join", matchingLobby);
-  requestJoin(matchingLobby).catch((error) => {
-    lobbyState.pendingJoin = null;
-    console.error("Failed to auto-join matching lobby:", error);
-  });
+  requestJoin(matchingLobby);
 }
 
 // Detect the return to the menu (occupied → free): the game ended OR the user
@@ -1780,7 +1731,7 @@ function pollAutoJoinResume() {
     lobbyState.sawLobbyWaitingBeforeGameStart = false;
     if (lobbyState.settings.enabled && lobbyState.settings.keepAutoJoinAfterMatch) {
       lobbyState.settings = { ...lobbyState.settings, searchStartedAt: Date.now() };
-      chrome.storage.local.set({ [STORAGE_KEY]: lobbyState.settings }).catch(() => {});
+      chrome.storage.local.set({ [STORAGE_KEY]: lobbyState.settings });
       resetLobbyForecastTracking();
     }
     tryAutoJoin();
@@ -1805,14 +1756,9 @@ function handleBridgeMessage(event) {
   if (data.type === "PUBLIC_LOBBIES_UPDATE") {
     // Declared in core.js; both files share one concatenated userscript scope.
     lobbyState.latestLobbySnapshot = data.payload;
-    try {
+    {
       updateLobbyForecast(lobbyState.latestLobbySnapshot);
       tryAutoJoin();
-    } catch (error) {
-      if (isExtensionContextInvalidatedError(error)) {
-        return;
-      }
-      throw error;
     }
     return;
   }
@@ -1914,6 +1860,4 @@ async function init() {
   window.setInterval(pollAutoJoinResume, 1000);
 }
 
-init().catch((error) => {
-  console.error("OpenFront Auto Join failed to initialize:", error);
-});
+init();

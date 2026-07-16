@@ -164,20 +164,16 @@
   }
 
   function isAlliedPlayer(player, otherPlayer) {
-    try {
+    {
       return player !== otherPlayer && Boolean(player?.isAlliedWith?.(otherPlayer));
-    } catch (_error) {
-      return false;
     }
   }
 
   function getAllianceView(player, otherPlayer) {
-    try {
+    {
       return Array.from(player?.alliances?.() || []).find(
         (alliance) => alliance?.other === otherPlayer?.id?.(),
       );
-    } catch (_error) {
-      return null;
     }
   }
 

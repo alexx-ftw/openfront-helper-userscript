@@ -99,17 +99,13 @@ function normalizeAtomCfg(value: unknown): AtomCfg {
 function atomGetCfg(): AtomCfg {
   const b = atomBridge();
   if (b?.get) {
-    try {
+    {
       return { ...ATOM_DEFAULTS, ...b.get() };
-    } catch {
-      /* fall through to localStorage */
     }
   }
-  try {
+  {
     const raw = window.localStorage.getItem(ATOM_KEY);
     if (raw) return normalizeAtomCfg(JSON.parse(raw) as unknown);
-  } catch {
-    /* defaults */
   }
   return { ...ATOM_DEFAULTS };
 }
@@ -117,19 +113,15 @@ function atomGetCfg(): AtomCfg {
 function atomSetCfg(patch: Partial<AtomCfg>): void {
   const b = atomBridge();
   if (b?.set) {
-    try {
+    {
       b.set(patch);
       return;
-    } catch {
-      /* fall through to localStorage */
     }
   }
   // read-merge-write so a partial patch never wipes sibling fields
   const next = { ...atomGetCfg(), ...patch };
-  try {
+  {
     window.localStorage.setItem(ATOM_KEY, JSON.stringify(next));
-  } catch {
-    /* best-effort */
   }
 }
 
@@ -138,10 +130,8 @@ function atomSetCfg(patch: Partial<AtomCfg>): void {
 function atomGapMs(batchSize: number, delayMs: number): number {
   const b = atomBridge();
   if (b?.effectiveGapMs) {
-    try {
+    {
       return b.effectiveGapMs(batchSize, delayMs);
-    } catch {
-      /* fall through to local formula */
     }
   }
   const perShot = batchSize >= 1 ? (delayMs || 0) / batchSize : delayMs || 0;
@@ -1295,10 +1285,8 @@ function selectLanguage(code: string): void {
     await persist();
     const m = i18n();
     if (m) {
-      try {
+      {
         translations = await m.loadBundle(code);
-      } catch {
-        /* keep current translations */
       }
     }
     renderActiveTab();
@@ -1510,9 +1498,6 @@ export async function openPanel(): Promise<void> {
   opening = true;
   try {
     await openPanelInner();
-  } catch (error) {
-    console.error("[ofh] popup failed to open:", error);
-    closePanel();
   } finally {
     markPanelOpeningComplete();
   }
@@ -1548,12 +1533,10 @@ async function openPanelInner(): Promise<void> {
   // Opening the popup is a user gesture — if notifications are already enabled, this is a
   // good moment to (re)request OS-notification permission for users who turned it on before.
   if (settings.joinNotification) requestJoinNotificationPermission();
-  try {
+  {
     // Open in the SAVED language, not a hardcoded "en" — otherwise the popup always
     // boots in English even when the user already picked Vietnamese.
     translations = await m.loadBundle(settings.language ?? "en");
-  } catch {
-    translations = {};
   }
 
   const version =

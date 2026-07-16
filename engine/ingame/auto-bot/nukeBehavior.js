@@ -456,17 +456,12 @@
       if (this.hasActiveMaritimeInvasion()) return true;
       const policy = this.structureBehavior?.shouldDeferOffensiveNuke;
       if (typeof policy !== "function") return false;
-      try {
+      {
         if (this.isUnderHeavyAttack()) return false;
-      } catch (_error) {
-        // Keep the economy gate active if the attack snapshot is unavailable.
       }
       if (this.isRetaliationNukeTarget(nukeTarget)) return false;
-      try {
+      {
         return policy.call(this.structureBehavior, nukeCost) === true;
-      } catch (error) {
-        captureRuntimeException(error, "engine/ingame/auto-bot/nukeBehavior.js:shouldDeferNukeForEconomy");
-        return false;
       }
     }
 
@@ -482,25 +477,19 @@
     }
 
     hasActiveMaritimeInvasion() {
-      try {
+      {
         return this.structureBehavior?.hasActiveMaritimeInvasion?.() === true;
-      } catch (error) {
-        captureRuntimeException(error, "engine/ingame/auto-bot/nukeBehavior.js:hasActiveMaritimeInvasion");
-        return false;
       }
     }
 
     isRetaliationNukeTarget(nukeTarget) {
-      try {
+      {
         const findIncoming = this.attackBehavior?.findIncomingAttackPlayer;
         if (typeof findIncoming !== "function" || !nukeTarget) return false;
         const incoming = findIncoming.call(this.attackBehavior);
         if (typeof incoming?.smallID !== "function") return false;
         if (typeof nukeTarget.smallID !== "function") return false;
         return incoming.smallID() === nukeTarget.smallID();
-      } catch (error) {
-        captureRuntimeException(error, "engine/ingame/auto-bot/nukeBehavior.js:isRetaliationNukeTarget");
-        return false;
       }
     }
 
@@ -1076,14 +1065,12 @@
       // nuke BuildableUnit at the target tile, confirm canBuild and gold (BigInt),
       // then fire through the build menu aimed at the target tile.
       let buildables;
-      try {
+      {
         buildables = await withTimeout(
           this.player.buildables(tile, [nukeType]),
           WORKER_TIMEOUT_MS,
           null,
         );
-      } catch (_e) {
-        return;
       }
       const bu = Array.isArray(buildables)
         ? buildables.find((b) => b.type === nukeType)
@@ -1199,8 +1186,7 @@
     }
 
     getSiloIdOrNull(entry) {
-      try { return String(entry.silo.id()); }
-      catch (_error) { return null; }
+      { return String(entry.silo.id()); }
     }
 
     rememberFailedSamTarget(plan) {
@@ -1338,8 +1324,7 @@
       );
       const preferredSilos = silos.filter((silo) => {
         if (preferredIds.size === 0) return true;
-        try { return preferredIds.has(String(silo.id())); }
-        catch (_error) { return false; }
+        { return preferredIds.has(String(silo.id())); }
       });
       return preferredSilos.length > 0 ? preferredSilos : silos;
     }
@@ -1362,13 +1347,11 @@
 
     async actuateSiloUpgrade(silo) {
       let buildables;
-      try {
+      {
         buildables = await withTimeout(
           this.player.buildables(silo.tile(), [UNIT.MissileSilo]),
           WORKER_TIMEOUT_MS, null,
         );
-      } catch (_error) {
-        return false;
       }
       const buildable = Array.isArray(buildables)
         ? buildables.find((entry) => entry.type === UNIT.MissileSilo)
@@ -1417,14 +1400,12 @@
         border && border.size > 0 ? border.values().next().value : null;
       if (tile === null || tile === undefined) return 0n;
       let buildables;
-      try {
+      {
         buildables = await withTimeout(
           this.player.buildables(tile, [type]),
           WORKER_TIMEOUT_MS,
           null,
         );
-      } catch (_e) {
-        return 0n;
       }
       const bu = Array.isArray(buildables)
         ? buildables.find((b) => b.type === type)
@@ -1477,14 +1458,12 @@
     // just async. (Affordability is checked separately in sendNuke.)
     async probeCanBuildNuke(tile, nukeType) {
       let buildables;
-      try {
+      {
         buildables = await withTimeout(
           this.player.buildables(tile, [nukeType]),
           WORKER_TIMEOUT_MS,
           null,
         );
-      } catch (_e) {
-        return false;
       }
       const bu = Array.isArray(buildables)
         ? buildables.find((b) => b.type === nukeType)

@@ -361,13 +361,11 @@
 
   function setAllianceRequestsAutoRenewEnabled(enabled) {
     runtimeState.allianceRequestsAutoRenewEnabled = Boolean(enabled);
-    try {
+    {
       window.localStorage.setItem(
         ALLIANCE_REQUEST_PANEL_AUTORENEW_KEY,
         runtimeState.allianceRequestsAutoRenewEnabled ? "1" : "0",
       );
-    } catch (_error) {
-      // Persistence is best-effort; the toggle still works for this session.
     }
     const button = document
       .getElementById(ALLIANCE_REQUEST_PANEL_ID)
@@ -381,12 +379,10 @@
 
   function applyStoredAllianceRequestPanelPosition(panel) {
     let pos;
-    try {
+    {
       pos = JSON.parse(
         window.localStorage.getItem(ALLIANCE_REQUEST_PANEL_POS_KEY) || "null",
       );
-    } catch (_error) {
-      pos = null;
     }
     if (!pos || !Number.isFinite(pos.left) || !Number.isFinite(pos.top)) {
       return;
@@ -431,7 +427,7 @@
       dragging = false;
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
-      try {
+      {
         window.localStorage.setItem(
           ALLIANCE_REQUEST_PANEL_POS_KEY,
           JSON.stringify({
@@ -439,8 +435,6 @@
             top: parseInt(panel.style.top, 10),
           }),
         );
-      } catch (_error) {
-        // Ignore — the panel stays where dragged for this session regardless.
       }
     }
 
@@ -582,30 +576,20 @@
       return null;
     }
 
-    try {
+    {
       const player = game.playerBySmallID?.(Number(playerSmallId));
       return player?.isPlayer?.() ? player : null;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/alliance-requests-panel.js:589");
-      return null;
     }
   }
 
   function getAllianceFocusTileOwnerId(game, tile) {
-    try {
+    {
       const ownerId = Number(game.ownerID?.(tile));
       if (Number.isFinite(ownerId)) {
         return ownerId;
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/alliance-requests-panel.js:600");
-      // Fall back to owner().smallID() below.
-    }
-
-    try {
+    }{
       return Number(game.owner?.(tile)?.smallID?.());
-    } catch (_error) {
-      return NaN;
     }
   }
 
@@ -640,12 +624,9 @@
       }
       let x;
       let y;
-      try {
+      {
         x = Number(game.x?.(tile));
         y = Number(game.y?.(tile));
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/alliance-requests-panel.js:649");
-        return;
       }
       if (!Number.isFinite(x) || !Number.isFinite(y)) {
         return;
@@ -666,10 +647,8 @@
       for (let y = 0; y < height; y += 1) {
         for (let x = 0; x < width; x += 1) {
           let tile;
-          try {
+          {
             tile = game.ref?.(x, y);
-          } catch (_error) {
-            continue;
           }
           paintTile(tile);
         }
@@ -702,13 +681,10 @@
     let origin;
     let xAxis;
     let yAxis;
-    try {
+    {
       origin = transform.worldToScreenCoordinates({ x: 0, y: 0 });
       xAxis = transform.worldToScreenCoordinates({ x: 1, y: 0 });
       yAxis = transform.worldToScreenCoordinates({ x: 0, y: 1 });
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/alliance-requests-panel.js:707");
-      return;
     }
 
     const scaleX = Number(xAxis?.x) - Number(origin?.x);
@@ -768,10 +744,8 @@
 
   function getAllianceFocusBounds(game, transform) {
     let corners;
-    try {
+    {
       corners = transform.screenBoundingRect?.() ?? [];
-    } catch (_error) {
-      return null;
     }
 
     const [topLeft, bottomRight] = corners;
@@ -797,15 +771,12 @@
   }
 
   function getAllianceFocusFlashPoint(game, transform, targetSmallId, x, y) {
-    try {
+    {
       const tile = game.ref?.(x, y);
       if (getAllianceFocusTileOwnerId(game, tile) !== targetSmallId) return null;
       const point = transform.worldToScreenCoordinates({ x, y });
       if (!Number.isFinite(point?.x) || !Number.isFinite(point?.y)) return null;
       return { ...point, patternBand: Math.floor((x + y) / 3) % 2 };
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/alliance-requests-panel.js:focusPoint");
-      return null;
     }
   }
 
@@ -998,25 +969,21 @@
   }
 
   function isAllianceRequestFromRegularBot(event, eventsDisplay) {
-    try {
+    {
       const smallId = Number(event?.focusID);
       if (!Number.isFinite(smallId)) return false;
       const game = eventsDisplay?.game;
       const player = game?.playerBySmallID?.(smallId);
       return Boolean(player && isRegularBotPlayer(player));
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/alliance-requests-panel.js:regularBot");
-      return false;
     }
   }
 
   function isRegularBotPlayer(player) {
     if (!player) return false;
-    try {
+    {
       if (typeof player.type === "function" && player.type() === "BOT") return true;
       if (player.data && player.data.playerType === "BOT") return true;
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/alliance-requests-panel.js:1019");}
+    }
     return false;
   }
 
@@ -1051,19 +1018,9 @@
         continue;
       }
       autoRenewedAllianceEvents.add(event);
-      let confirmed = false;
-      try {
-        renew.action();
-        confirmed = true;
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/alliance-requests-panel.js:1064");
-        // Leave the card in place so it can be confirmed manually; the WeakSet
-        // still stops us from retrying this exact event every frame.
-      }
-      if (confirmed) {
-        removeAllianceRequestPanelEvent(event);
-        changed = true;
-      }
+      renew.action();
+      removeAllianceRequestPanelEvent(event);
+      changed = true;
     }
     return changed;
   }
@@ -1095,15 +1052,14 @@
     };
     if (!Number.isFinite(focusId)) return result;
 
-    try {
+    {
       var player = eventsDisplay?.game?.playerBySmallID?.(focusId);
       if (player?.isPlayer?.()) {
-        // Add team color
-        try {
+        {
           result.color = typeof getPlayerColor === "function"
             ? getPlayerColor(player, eventsDisplay?.game) || ""
             : "";
-        } catch (_e) { result.color = ""; }
+        }
         if (isNationBotPlayer(player)) {
           result.type = "nation";
           result.label = tr("Nation");
@@ -1111,8 +1067,7 @@
           result.type = "player";
         }
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/alliance-requests-panel.js:1111");}
+    }
 
     return result;
   }
@@ -1134,8 +1089,7 @@
   }
 
   function hasAllianceRequestGame() {
-    try { return Boolean(getOpenFrontGameContext()?.game); }
-    catch (_error) { return false; }
+    { return Boolean(getOpenFrontGameContext()?.game); }
   }
 
   function createAllianceRequestAction(buttonConfig, event, eventsDisplay) {
@@ -1147,9 +1101,7 @@
       clickEvent.stopPropagation();
       clickEvent.preventDefault();
       if (typeof buttonConfig.action === "function") {
-        try { buttonConfig.action(); } catch (error) {
-          console.error("[AlliancePanel] action error:", error);
-        }
+        { buttonConfig.action(); }
       }
       if (buttonConfig.preventClose && event.focusID) {
         flashAllianceFocusTerritoryAfterCameraMove(eventsDisplay, event.focusID);
@@ -1278,36 +1230,27 @@
 
   var _alliesListSignature = "";
   function getAllianceListContext() {
-    try {
+    {
       const context = getOpenFrontGameContext();
       if (!context?.game) return null;
       const me = context.game.myPlayer?.();
       const allies = typeof me?.allies === "function" ? me.allies() ?? [] : [];
       return { game: context.game, allies };
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/alliance-requests-panel.js:getAllianceListContext");
-      return null;
     }
   }
 
   function getAllianceAllyIdentifier(ally, fallback) {
-    try {
+    {
       if (typeof ally.smallID === "function") return ally.smallID();
       if (typeof ally.id === "function") return ally.id();
       return ally.id ?? fallback;
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/alliance-requests-panel.js:getAllianceAllyIdentifier");
-      return fallback;
     }
   }
 
   function isAllianceAutoRenewEnabled(key) {
-    try {
+    {
       const stored = window.localStorage.getItem(key);
       return stored === null || stored === "1";
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/alliance-requests-panel.js:isAllianceAutoRenewEnabled");
-      return true;
     }
   }
 
@@ -1321,12 +1264,10 @@
     name.textContent = typeof getPlayerDisplayName === "function"
       ? getPlayerDisplayName(ally)
       : "?";
-    try {
+    {
       name.style.color = typeof getPlayerColor === "function"
         ? getPlayerColor(ally, game) || ""
         : "";
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/alliance-requests-panel.js:createAllianceAllyRow");
     }
     const autoRenew = document.createElement("button");
     autoRenew.className = "ofh-ar-ally-btn auto-renew";
@@ -1349,10 +1290,7 @@
         event.stopPropagation();
         const enabled = !button.classList.contains("on");
         button.classList.toggle("on", enabled);
-        try { window.localStorage.setItem(button.dataset.arAuto, enabled ? "1" : "0"); }
-        catch (error) {
-          captureRuntimeException(error, "engine/ingame/alliance-requests-panel.js:bindAllianceListActions");
-        }
+        { window.localStorage.setItem(button.dataset.arAuto, enabled ? "1" : "0"); }
       });
     });
     list.querySelectorAll("[data-ar-cancel]").forEach((button) => {
@@ -1403,10 +1341,9 @@
   // sendGamePacket wraps our object as {type:"intent", intent:obj}, so we pass
   // just the inner intent. This needs no event-bus ctor discovery and always works.
   function _cancelAllianceWith(targetId) {
-    try {
+    {
       if (typeof sendGamePacket === "function") {
         sendGamePacket({ type: "breakAlliance", recipient: targetId });
       }
-    } catch(e) {
-  captureRuntimeException(e, "engine/ingame/alliance-requests-panel.js:1378");}
+    }
   }

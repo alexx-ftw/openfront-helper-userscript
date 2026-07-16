@@ -51,10 +51,8 @@
   let _playerOverlayScan = [];
 
   function playerOverlayRelation(game, player) {
-    try {
+    {
       return getPlayerRelationToMyPlayer(game, player) || "enemy";
-    } catch (_error) {
-      return "enemy";
     }
   }
 
@@ -87,25 +85,20 @@
       threat: null,
     };
     if (runtimeState.threatIndicatorsEnabled && isEnemy && me) {
-      try {
+      {
         entry.threat = advEvaluateThreat(game, me, player, nukeBuilders);
-      } catch (_error) {
-        entry.threat = null;
       }
     }
     return entry;
   }
 
   function scanPlayerOverlay(game) {
-    // Skip overlay during spawn phase — many players crowd the screen and
-    // overlays add cost with little value. Uses the game's own spawn-phase
-    // detection (game.inSpawnPhase()) instead of heuristics.
-    try {
+    {
       if (game?.inSpawnPhase?.()) {
         _playerOverlayScan = [];
         return;
       }
-    } catch (_error) { /* ignore */ }
+    }
 
     const players = getCachedPlayerViews(game);
     const me = game.myPlayer ? game.myPlayer() : null;
@@ -316,10 +309,8 @@
 
   function currentPlayerOverlayTroops(entry) {
     if (!runtimeState.mapTroopCountsEnabled) return entry.troops;
-    try {
+    {
       return Number(entry.player.troops?.()) || entry.troops;
-    } catch (_error) {
-      return entry.troops;
     }
   }
 
@@ -351,10 +342,8 @@
   }
 
   function playerOverlayLocation(entry) {
-    try {
+    {
       return entry.player.nameLocation?.() || null;
-    } catch (_error) {
-      return null;
     }
   }
 
@@ -373,12 +362,7 @@
 
   function drawPlayerOverlay(ctx, game, transform) {
     const me = game.myPlayer?.() || null;
-    let myTroops = 1;
-    try {
-      myTroops = Math.max(1, Number(me?.troops?.()) || 1);
-    } catch (_error) {
-      // Keep the conservative fallback when the player view is unavailable.
-    }
+    const myTroops = Math.max(1, Number(me?.troops?.()) || 1);
     for (let i = 0; i < _playerOverlayScan.length; i += 1) {
       drawPlayerOverlayEntry(ctx, transform, _playerOverlayScan[i], myTroops);
     }

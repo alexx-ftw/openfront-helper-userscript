@@ -36,12 +36,9 @@ assert.equal(
 );
 
 function test(name, fn) {
-  try {
+  {
     fn();
     process.stdout.write(`ok - ${name}\n`);
-  } catch (error) {
-    console.error(`not ok - ${name}`);
-    throw error;
   }
 }
 

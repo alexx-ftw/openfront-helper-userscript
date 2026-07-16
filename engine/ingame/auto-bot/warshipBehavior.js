@@ -50,22 +50,18 @@
 
   function readWarshipPositiveValue(object, names) {
     for (const name of names) {
-      try {
+      {
         const value = typeof object?.[name] === "function" ? object[name]() : object?.[name];
         const numeric = Number(value);
         if (Number.isFinite(numeric) && numeric > 0) return numeric;
-      } catch (error) {
-        captureRuntimeException(error, "engine/ingame/auto-bot/warshipBehavior.js:readWarshipPositiveValue");
       }
     }
     return null;
   }
 
   function isCompletedWarshipPort(port) {
-    try {
+    {
       return typeof port?.isUnderConstruction !== "function" || !port.isUnderConstruction();
-    } catch (_error) {
-      return false;
     }
   }
 
@@ -137,7 +133,7 @@
     }
 
     incomingMaritimeInvasionSignal() {
-      try {
+      {
         const host = getWarshipRuntimeHost();
         if (
           host &&
@@ -151,10 +147,6 @@
         ) {
           return host.__OFH_getIncomingMaritimeInvasion(this.game, this.player);
         }
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/warshipBehavior.js:91");
-        // Keep the normal randomized warship policy when the optional detector
-        // is unavailable on an older client.
       }
       return null;
     }
@@ -434,10 +426,9 @@
     // and then emote + apply the relation malus — mirroring src order:
     //   canBuild === false → maybeMoveWarship(tile); return;
     //   else addExecution(ConstructionExecution); maybeSendEmoji; updateRelation.
-    // The internal try/catch is REQUIRED: this runs un-awaited off the sync tracker
-    // chain, so a rejection must not escape into nationExecution's sync catch.
+    // This promise is deliberately allowed to reject so integration failures remain visible.
     async _retaliateBuildAsync(tile, enemy, reason) {
-      try {
+      {
         const bu = await this.buildableWarship(tile);
         if (bu === null || bu === undefined || bu.canBuild === false) {
           this.maybeMoveWarship(tile);
@@ -453,9 +444,6 @@
         setLastAction(tr("🚢 Retaliate warship"), "naval");
         this.emojiBehavior.maybeSendEmoji(enemy, EMOJI_WARSHIP_RETALIATION);
         this.player.updateRelation(enemy, reason === "trade" ? -7.5 : -15);
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/warshipBehavior.js:419");
-        /* swallow — un-awaited tracker tail must not reject into nationExecution */
       }
     }
 
@@ -685,14 +673,12 @@
     // is the client stand-in for the src sync canBuild(Warship, tile) check.
     async buildableWarship(waterTile) {
       let buildables;
-      try {
+      {
         buildables = await withTimeout(
           this.player.buildables(waterTile, [UNIT.Warship]),
           WORKER_TIMEOUT_MS,
           null,
         );
-      } catch (_e) {
-        return null;
       }
       return Array.isArray(buildables)
         ? buildables.find((b) => b.type === UNIT.Warship) ?? null
@@ -780,26 +766,20 @@
     warshipAttackRange() {
       const config = this.game.config?.();
       for (const name of ["warshipTargettingRange", "warshipAttackRange", "warshipRange"]) {
-        try {
+        {
           const value = typeof config?.[name] === "function" ? config[name]() : config?.[name];
           if (Number.isFinite(Number(value)) && Number(value) >= 0) return Number(value);
-        } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/warshipBehavior.js:762");
-          /* probe next source */
         }
       }
       return NAVAL_INTERCEPTION_DEFAULT_RANGE;
     }
 
     waterDistance(a, b) {
-      try {
+      {
         if (typeof this.game.euclideanDistSquared === "function") {
           return Math.sqrt(Math.max(0, Number(this.game.euclideanDistSquared(a, b))));
         }
         return Math.hypot(this.game.x(a) - this.game.x(b), this.game.y(a) - this.game.y(b));
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/warshipBehavior.js:775");
-        return Infinity;
       }
     }
 
@@ -807,11 +787,7 @@
     // MoveWarshipExecution validates the component server-side; this route keeps
     // the target in that component and gives the interception planner a real ETA.
     warshipRouteHeuristic(tile, goal) {
-      try { return this.game.manhattanDist(tile, goal); }
-      catch (_error) {
-        return Math.abs(this.game.x(tile) - this.game.x(goal)) +
-          Math.abs(this.game.y(tile) - this.game.y(goal));
-      }
+      { return this.game.manhattanDist(tile, goal); }
     }
 
     reconstructWaterRoute(cameFrom, goal) {
@@ -826,9 +802,9 @@
 
     visitWaterRouteNeighbor(neighbor, current, routeState, goal) {
       if (routeState.closed.has(neighbor)) return;
-      try {
+      {
         if (!this.game.isWater(neighbor)) return;
-      } catch (_error) { return; }
+      }
       const nextScore = (routeState.gScore.get(current) ?? Infinity) + 1;
       if (nextScore >= (routeState.gScore.get(neighbor) ?? Infinity)) return;
       routeState.cameFrom.set(neighbor, current);
@@ -849,12 +825,9 @@
       if (start === undefined || start === null || goal === undefined || goal === null) {
         return null;
       }
-      try {
+      {
         if (!this.game.isWater(start) || !this.game.isWater(goal)) return null;
         if (start === goal) return [start];
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/warshipBehavior.js:790");
-        return null;
       }
 
       const routeState = {
@@ -878,18 +851,14 @@
 
     waterTargetTile(target) {
       if (target === undefined || target === null) return null;
-      try {
+      {
         if (this.game.isWater(target)) return target;
-      } catch (_e) {
-        return null;
       }
       const neighbors =
         typeof this.game.neighbors === "function" ? this.game.neighbors(target) || [] : [];
       return neighbors.find((tile) => {
-        try {
+        {
           return this.game.isWater(tile);
-        } catch (_e) {
-          return false;
         }
       }) ?? null;
     }
@@ -917,15 +886,12 @@
     }
 
     transportMotionPath(transport, goal) {
-      try {
+      {
         const plan = this.getTransportMotionPlan(transport);
         if (!plan?.path?.length) return null;
         const path = this.getRemainingTransportPath(transport, plan);
         if (path.length === 0 || path[path.length - 1] !== goal) return null;
         return path.length > 1 ? path : null;
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/warshipBehavior.js:916");
-        return null;
       }
     }
 
@@ -960,12 +926,9 @@
       const nextCache = new Map();
       const invasions = [];
       for (const transport of this.game.units(UNIT.TransportShip)) {
-        try {
+        {
           const invasion = this.createIncomingNavalInvasion(transport, s, nextCache, mySid);
           if (invasion) invasions.push(invasion);
-        } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/warshipBehavior.js:946");
-          /* a disappearing transport is not a planner failure */
         }
       }
       s.invasionRouteCache = nextCache;
@@ -973,7 +936,7 @@
     }
 
     dispatchInterceptor(warship, tile, s, tick) {
-      try {
+      {
         const warshipState = warship.warshipState?.();
         if (warshipState?.state === "retreating" || warshipState?.state === "docked") return false;
         if (warshipState?.patrolTile === tile) return true;
@@ -981,9 +944,6 @@
         s.cooldown.set(warship.id(), tick);
         setLastAction(tr("🚢 Intercept invasion"), "naval");
         return true;
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/warshipBehavior.js:963");
-        return false;
       }
     }
 
@@ -1057,10 +1017,8 @@
 
     activeWarships() {
       return this.player.units(UNIT.Warship).filter((warship) => {
-        try {
+        {
           return warship.isActive() && !warship.isUnderConstruction();
-        } catch (_e) {
-          return false;
         }
       });
     }
@@ -1103,15 +1061,13 @@
     refreshTransportEvents(s, tick, mySid) {
       const transportIndex = this.indexById(this.game.units(UNIT.TransportShip));
       for (const unit of this.player.units(UNIT.TransportShip)) {
-        try {
+        {
           const target = unit.targetTile ? unit.targetTile() : null;
           s.transportPos.set(unit.id(), {
             x: this.game.x(unit.tile()), y: this.game.y(unit.tile()),
             tx: target != null ? this.game.x(target) : null,
             ty: target != null ? this.game.y(target) : null,
           });
-        } catch (_e) {
-          captureRuntimeException(_e, "engine/ingame/auto-bot/warshipBehavior.js:refreshTransportEvents");
         }
       }
       const farFromTarget = state.settings.warshipLossMinDist || 25;
@@ -1133,10 +1089,8 @@
     refreshTradeEvents(s, tick, myId) {
       const tradeIndex = this.indexById(this.game.units(UNIT.TradeShip));
       for (const unit of this.player.units(UNIT.TradeShip)) {
-        try {
+        {
           s.tradePos.set(unit.id(), { x: this.game.x(unit.tile()), y: this.game.y(unit.tile()) });
-        } catch (_e) {
-          captureRuntimeException(_e, "engine/ingame/auto-bot/warshipBehavior.js:refreshTradeEvents");
         }
       }
       for (const [id] of Array.from(s.tradePos)) this.harvestTradeEvent(s, tradeIndex.get(id), id, tick, myId);
@@ -1148,10 +1102,8 @@
         return;
       }
       if (current.owner().id() === myId) return;
-      try {
+      {
         s.raids.push({ x: this.game.x(current.tile()), y: this.game.y(current.tile()), at: tick });
-      } catch (_e) {
-        captureRuntimeException(_e, "engine/ingame/auto-bot/warshipBehavior.js:harvestTradeEvent");
       }
       s.tradePos.delete(id);
     }
@@ -1300,7 +1252,7 @@
       const maxDist = state.settings.warshipMoveMaxDist || 160;
       const cooldownTicks = state.settings.warshipMoveCooldownTicks || 60;
       const idle = this.player.units(UNIT.Warship).filter((w) => {
-        try {
+        {
           // An assigned interceptor owns its route until the invasion plan is
           // refreshed or its predicted landing tick has passed.
           if (s.invasionAssignments?.has(w.id())) return false;
@@ -1310,9 +1262,6 @@
           const last = s.cooldown.get(w.id());
           if (last !== undefined && tick - last < cooldownTicks) return false; // just tasked
           return true;
-        } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/warshipBehavior.js:1288");
-          return false;
         }
       });
       if (idle.length === 0) return false;
@@ -1351,7 +1300,7 @@
     // target, via the same parabola the game uses (mirrors nuke-prediction.js).
     // UniversalPathFinding lives in nukeBehavior.js (shared scope) — guarded.
     computeNukeRemainingTicks(fromTile, toTile) {
-      try {
+      {
         if (!this.canComputeNukePath(fromTile, toTile)) return null;
         const speed = this.game.config?.().defaultNukeSpeed?.() ?? 8;
         const pf = UniversalPathFinding.Parabola(this.game, {
@@ -1371,9 +1320,6 @@
           arc += Math.hypot(ax - bx, ay - by);
         }
         return Math.floor(arc / (speed > 0 ? speed : 8)) + 1;
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/warshipBehavior.js:1357");
-        return null;
       }
     }
 
@@ -1399,16 +1345,13 @@
           nuke.targetTile?.(),
         );
         if (remainTicks === null) {
-          try {
+          {
             const speed = this.game.config?.().defaultNukeSpeed?.() ?? 8;
             const d2 = this.game.euclideanDistSquared(
               nuke.tile(),
               nuke.targetTile(),
             );
             remainTicks = Math.floor(Math.sqrt(d2) / (speed > 0 ? speed : 8)) + 1;
-          } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/warshipBehavior.js:1386");
-            remainTicks = 1;
           }
         }
         anchor = { firstTick: nowTick, remainTicks };
@@ -1420,13 +1363,10 @@
     // Outer blast radius (tile units) of a nuke, with the same fallback the overlay
     // (nuke-prediction.js) uses when nukeMagnitudes is unavailable.
     nukeOuterRadius(nuke) {
-      try {
+      {
         const mag = this.game.config().nukeMagnitudes(nuke.type());
         const outer = Number(mag?.outer ?? mag?.inner);
         if (Number.isFinite(outer) && outer > 0) return outer;
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/warshipBehavior.js:1403");
-        /* fall through */
       }
       return nuke.type && nuke.type() === UNIT.HydrogenBomb ? 160 : 70;
     }
@@ -1503,7 +1443,7 @@
       const zones = [];
       const seen = new Set();
       for (const nuke of this.game.units(UNIT.AtomBomb, UNIT.HydrogenBomb, UNIT.MIRVWarhead)) {
-        try {
+        {
           if (!nuke.isActive()) continue;
           const target = nuke.targetTile();
           if (target == null) continue;
@@ -1515,8 +1455,6 @@
             r2: radius * radius, owner: nuke.owner()?.smallID?.(),
             eta: this.nukeEtaTicks(nuke, tick),
           });
-        } catch (_e) {
-          captureRuntimeException(_e, "engine/ingame/auto-bot/warshipBehavior.js:activeNukeZones");
         }
       }
       return { zones, seen };
@@ -1595,11 +1533,8 @@
       //    tick (the early nuke's zone vanishes on detonation → it runs onward).
       const s = this.ensureSmartState();
       for (const ship of myWarships) {
-        try {
+        {
           this.dodgeWarshipFromNukes(ship, zones, coverEta, s, tick);
-        } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/warshipBehavior.js:1569");
-          /* skip */
         }
       }
     }
@@ -1735,10 +1670,8 @@
     collectCombatUnits(type, predicate, label) {
       const units = [];
       for (const unit of this.game.units(type) || []) {
-        try {
+        {
           if (predicate(unit)) units.push(unit);
-        } catch (_e) {
-          captureRuntimeException(_e, `engine/ingame/auto-bot/warshipBehavior.js:${label}`);
         }
       }
       return units;
@@ -1881,23 +1814,20 @@
       };
 
       for (const warship of myWarships) {
-        try {
+        {
           this.handleWarshipCombat(warship, context);
-        } catch (_e) {
-          captureRuntimeException(_e, "engine/ingame/auto-bot/warshipBehavior.js:smartWarshipCombat");
         }
       }
     }
 
     // moveWarship helper — send move intent via WS
     moveWarship(warship, tile) {
-      try {
+      {
         const ctors = typeof discoverCtors === "function" ? discoverCtors(getEventBus()) : {};
         if (ctors.moveWarship) {
           return emitIntent(ctors.moveWarship, [warship.id()], tile);
         }
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/warshipBehavior.js:1846");}
+      }
       return false;
     }
   }

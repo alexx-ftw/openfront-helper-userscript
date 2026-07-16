@@ -179,14 +179,11 @@
       entry = { row: rowEl, cells: { rank, tiles }, cx: estate.cx, cy: estate.cy };
       // Click → pan the camera to this parcel's centre.
       rowEl.addEventListener("click", () => {
-        try {
+        {
           const transform = getOpenFrontGameContext()?.transform;
           if (transform && typeof transform.onGoToPosition === "function") {
             transform.onGoToPosition({ x: entry.cx, y: entry.cy });
           }
-        } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/estate-panel.js:183");
-          // ignore
         }
       });
       estateRowCache.set(estate.key, entry);
@@ -254,11 +251,8 @@
   // Flood-fill the player's owned tiles into connected components. Seeds are the
   // border tiles (every component has a border); each owned tile is visited once.
   function estateNeighborOwner(game, tile) {
-    try {
+    {
       return Number(game.ownerID(tile));
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/estate-panel.js:estateNeighborOwner");
-      return Number.NaN;
     }
   }
 
@@ -312,10 +306,8 @@
       return;
     }
     let me;
-    try {
+    {
       me = game.myPlayer?.();
-    } catch (_error) {
-      me = null;
     }
     if (!me?.isPlayer?.()) {
       estateData = [];
@@ -333,9 +325,6 @@
       }
       estateData = computeEstateComponents(game, borderTiles, mySmallId);
       renderEstatePanel();
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/estate-panel.js:331");
-      // Worker call failed this round; keep the last data.
     } finally {
       setEstateComputing(false);
     }

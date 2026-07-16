@@ -152,10 +152,7 @@
   window.setInterval(() => {
     refreshSelectiveTradePolicyAvailability();
     refreshCheatsAvailability();
-    try { if (typeof window.__OFH_updateSiloSamTracker === "function") window.__OFH_updateSiloSamTracker(); } catch (e) {
-  captureRuntimeException(e, "engine/ingame/bootstrap.js:247");}
-    try { if (typeof window.__OFH_tickAutoDonate === "function") window.__OFH_tickAutoDonate(); } catch (e) {
-  captureRuntimeException(e, "engine/ingame/bootstrap.js:248");}
+    { if (typeof window.__OFH_updateSiloSamTracker === "function") window.__OFH_updateSiloSamTracker(); }{ if (typeof window.__OFH_tickAutoDonate === "function") window.__OFH_tickAutoDonate(); }
   }, 1000);
   refreshSelectiveTradePolicyAvailability();
   refreshCheatsAvailability();

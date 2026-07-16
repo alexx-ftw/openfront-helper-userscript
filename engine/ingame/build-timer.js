@@ -21,26 +21,22 @@
   let _buildTimerScan = [];
 
   function getConstructionDuration(game, type) {
-    try {
+    {
       const info = game.config && game.config().unitInfo
         ? game.config().unitInfo(type)
         : null;
       if (info && Number.isFinite(info.constructionDuration) && info.constructionDuration > 0) {
         return info.constructionDuration;
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/build-timer.js:31"); /* ignore */ }
+    }
     return BUILD_TIMER_DEFAULT_DURATION[type] || 100;
   }
 
   function getBuildTimerUnits(game) {
-    try {
+    {
       return typeof getCachedGameUnits === "function"
         ? getCachedGameUnits(game, ...BUILD_TIMER_TYPES)
         : game.units(...BUILD_TIMER_TYPES);
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/build-timer.js:getBuildTimerUnits");
-      return [];
     }
   }
 
@@ -49,34 +45,25 @@
     const id = unit.id?.();
     const tile = unit.tile?.();
     if (id == null || tile == null) return null;
-    try {
+    {
       return {
         id,
         type: unit.type?.() ?? null,
         worldX: game.x(tile),
         worldY: game.y(tile),
       };
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/build-timer.js:getBuildTimerBase");
-      return null;
     }
   }
 
   function getBuildTimerQueue(unit) {
-    try {
+    {
       return unit.missileTimerQueue?.() ?? [];
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/build-timer.js:getBuildTimerQueue");
-      return [];
     }
   }
 
   function getBuildTimerLevel(unit) {
-    try {
+    {
       return Number(unit.level?.() ?? 1) || 1;
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/build-timer.js:getBuildTimerLevel");
-      return 1;
     }
   }
 

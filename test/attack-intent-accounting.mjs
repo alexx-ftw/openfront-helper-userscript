@@ -42,6 +42,7 @@ const sandbox = {
   setLastAction: () => {},
   captureRuntimeException: () => {},
   runtimeDebugLog: () => {},
+  calculateBoundingBoxCenter: () => ({ x: 0, y: 0 }),
   tr: (value) => value,
   state: {
     settings: { winFixes: true, features: { donate: true, boat: true } },
@@ -60,6 +61,7 @@ const outgoing = [];
 const me = {
   troops: () => ownTroops,
   smallID: () => 1,
+  numTilesOwned: () => 100,
   type: () => "Human",
   units: () => [],
   borderTiles: () => new Set([1]),
@@ -67,6 +69,8 @@ const me = {
 };
 const game = {
   ticks: () => tick,
+  numLandTiles: () => 1000,
+  numTilesWithFallout: () => 0,
   config: () => ({ maxTroops: () => 100000 }),
 };
 const target = {
@@ -290,9 +294,11 @@ assert.equal(
 );
 const expandingGame = {
   ticks: () => tick,
+  players: () => [me],
   neighbors: () => [2],
   isLand: () => true,
   hasOwner: () => false,
+  ownerID: () => null,
   magnitude: () => 8,
   hasFallout: () => false,
   config: () => ({

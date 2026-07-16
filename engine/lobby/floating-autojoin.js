@@ -609,26 +609,19 @@ function createFloatingAutoJoinPanel() {
   `;
 
   panel.querySelector('[data-role="close"]')?.addEventListener("click", () => {
-    // Sync to Quick Panel BEFORE saving so the guard doesn't block the event.
-    try {
+    {
       window.dispatchEvent(new CustomEvent("ofh-quick-panel-setting", {
         detail: { key: "showFloatingAutoJoinPanel", value: false }
       }));
-    } catch (error) {
-      console.warn("Failed to synchronize floating auto-join closure:", error);
     }
-    saveSettings({ ...lobbyState.settings, showFloatingAutoJoinPanel: false }).catch((error) => {
-      console.error("Failed to close floating auto-join panel:", error);
-    });
+    saveSettings({ ...lobbyState.settings, showFloatingAutoJoinPanel: false });
   });
 
   panel.querySelector('[data-role="collapse"]')?.addEventListener("click", () => {
     const collapsed = !lobbyState.settings.floatingAutoJoinPanelCollapsed;
     // Toggle immediately for snappy feedback, then persist.
     panel.classList.toggle("ofh-aj-collapsed", collapsed);
-    saveSettings({ ...lobbyState.settings, floatingAutoJoinPanelCollapsed: collapsed }).catch((error) => {
-      console.error("Failed to collapse floating auto-join panel:", error);
-    });
+    saveSettings({ ...lobbyState.settings, floatingAutoJoinPanelCollapsed: collapsed });
   });
 
   panel.querySelector('[data-role="power"]')?.addEventListener("click", () => {
@@ -641,8 +634,6 @@ function createFloatingAutoJoinPanel() {
       ...lobbyState.settings,
       enabled: enabling,
       searchStartedAt: enabling ? Date.now() : null,
-    }).catch((error) => {
-      console.error("Failed to toggle auto-join from floating panel:", error);
     });
   });
 
@@ -655,9 +646,7 @@ function createFloatingAutoJoinPanel() {
     if (target.checked && typeof window.__OFH_requestNotifyPermission === "function") {
       window.__OFH_requestNotifyPermission();
     }
-    saveSettings({ ...lobbyState.settings, joinNotification: target.checked }).catch((error) => {
-      console.error("Failed to toggle notification from floating panel:", error);
-    });
+    saveSettings({ ...lobbyState.settings, joinNotification: target.checked });
   });
 
   // Open the main lobbyState.settings popup (gear → general; "Edit filters" → Filters tab).
@@ -674,16 +663,12 @@ function createFloatingAutoJoinPanel() {
   panel.querySelector('[data-role="filters-toggle"]')?.addEventListener("click", () => {
     const collapsed = !lobbyState.settings.floatingAutoJoinFiltersCollapsed;
     panel.querySelector(".ofh-aj-summary")?.classList.toggle("ofh-aj-sec-collapsed", collapsed);
-    saveSettings({ ...lobbyState.settings, floatingAutoJoinFiltersCollapsed: collapsed }).catch((error) => {
-      console.error("Failed to toggle filters section:", error);
-    });
+    saveSettings({ ...lobbyState.settings, floatingAutoJoinFiltersCollapsed: collapsed });
   });
   panel.querySelector('[data-role="forecast-toggle"]')?.addEventListener("click", () => {
     const collapsed = !lobbyState.settings.floatingAutoJoinForecastCollapsed;
     panel.querySelector(".ofh-aj-forecast")?.classList.toggle("ofh-aj-sec-collapsed", collapsed);
-    saveSettings({ ...lobbyState.settings, floatingAutoJoinForecastCollapsed: collapsed }).catch((error) => {
-      console.error("Failed to toggle forecast section:", error);
-    });
+    saveSettings({ ...lobbyState.settings, floatingAutoJoinForecastCollapsed: collapsed });
   });
 
   installFloatingAutoJoinDrag(panel);
@@ -736,8 +721,6 @@ function installFloatingAutoJoinDrag(panel) {
         left: Math.round(rect.left),
         top: Math.round(rect.top),
       },
-    }).catch((error) => {
-      console.error("Failed to save floating auto-join position:", error);
     });
   }
 

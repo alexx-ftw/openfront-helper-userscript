@@ -27,12 +27,9 @@
   // ---- Signature broadcast (once per match) --------------------------------
 
   function _helperGameKey(game) {
-    try {
+    {
       const id = game?.gameID?.() ?? game?.id?.() ?? null;
       if (id !== null && id !== undefined) return String(id);
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/helper-users-panel.js:33");
-      /* ignore */
     }
     return "default";
   }
@@ -92,11 +89,8 @@
   }
 
   function _helperCurrentTick(game) {
-    try {
+    {
       return Number(game?.ticks?.());
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/helper-users-panel.js:_helperCurrentTick");
-      return Number.NaN;
     }
   }
 
@@ -244,16 +238,13 @@
 
   function _focusHelperUser(smallId) {
     if (!Number.isFinite(smallId)) return;
-    try {
+    {
       const target =
         document.querySelector("actionable-events") ||
         document.querySelector("events-display");
       if (target && typeof target.emitGoToPlayerEvent === "function") {
         target.emitGoToPlayerEvent(Number(smallId));
       }
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/helper-users-panel.js:236");
-      /* ignore */
     }
   }
 

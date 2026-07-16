@@ -294,12 +294,10 @@
   // merges (or a strait it splits) can land in a different component. This is
   // strictly better than the old bounded 400-tile BFS.
   function shimSharedWaterComponents(game, player) {
-    try {
+    {
       if (typeof game.sharedWaterComponents === "function") {
         return game.sharedWaterComponents(player);
       }
-    } catch (_e) {
-      /* fall through to null — treat as no coastal access */
     }
     return null;
   }
@@ -356,7 +354,7 @@
   function maritimePortConstructionStatus(ports) {
     const status = { completed: false, underConstruction: false };
     for (const port of ports) {
-      try {
+      {
         if (typeof port?.isUnderConstruction !== "function") {
           status.completed = true;
         } else if (port.isUnderConstruction()) {
@@ -364,18 +362,14 @@
         } else {
           status.completed = true;
         }
-      } catch (_error) {
-        status.underConstruction = true;
       }
     }
     return status;
   }
 
   function safeStructureGameTick(game) {
-    try {
+    {
       return Number(game?.ticks?.());
-    } catch (_error) {
-      return null;
     }
   }
 
@@ -383,10 +377,8 @@
     if (!missile || missile.isActive?.() === false) return false;
     const owner = missile.owner?.();
     if (!owner || owner.smallID?.() === mySid) return false;
-    try {
+    {
       return !(player.isFriendly(owner) || player.isOnSameTeam(owner));
-    } catch (_error) {
-      return true;
     }
   }
 
@@ -440,7 +432,7 @@
     // so construction, nuke spending, and donations respond to the same
     // invasion snapshot instead of maintaining subtly different detectors.
     incomingMaritimeInvasionSignal() {
-      try {
+      {
         let host = null;
         if (typeof globalThis !== "undefined") host = globalThis;
         if (typeof window !== "undefined") host = window;
@@ -459,9 +451,6 @@
         ) {
           return host.__OFH_getIncomingMaritimeInvasion(this.game, this.player);
         }
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:465");
-        // An unavailable optional detector must not break ordinary building.
       }
       return null;
     }
@@ -479,7 +468,7 @@
       if (!signal || signal.active !== true) return false;
 
       let config;
-      try {
+      {
         config = this.game.config();
         if (
           typeof config.isUnitDisabled === "function" &&
@@ -487,18 +476,12 @@
         ) {
           return false;
         }
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:492");
-        return false;
       }
       if (!autoBotBuildAllowed(UNIT.Port)) return false;
 
       let ports;
-      try {
+      {
         ports = this.player.units(UNIT.Port) || [];
-      } catch (_error) {
-        // Keep the emergency lock if the live unit list is temporarily stale.
-        return true;
       }
 
       const portStatus = maritimePortConstructionStatus(ports);
@@ -512,10 +495,8 @@
       // other construction forever.
       if (!this.hasOceanPortTiles()) return false;
 
-      try {
+      {
         await this.maybeSpawnStructure(UNIT.Port, { forceNewStructure: true });
-      } catch (_error) {
-        // Keep the emergency lock and retry the Port on the next build tick.
       }
       // Returning true deliberately consumes this build decision even when the
       // Port is not affordable yet, preventing City/Factory/SAM/Silo spending
@@ -639,14 +620,12 @@
 
     hasPriorStructureForDefensePost() {
       if (this.placementsCount > 0) return true;
-      try {
+      {
         return STRUCTURES_TYPES.some(
           (type) =>
             type !== UNIT.DefensePost &&
             (this.player.units(type) || []).length > 0,
         );
-      } catch (_error) {
-        return false;
       }
     }
 
@@ -753,13 +732,11 @@
     }
 
     canAffordDefensePost() {
-      try {
+      {
         return (
           BigInt(this.player.gold() || 0) >=
           BigInt(this.cost(UNIT.DefensePost) || 0)
         );
-      } catch (_error) {
-        return false;
       }
     }
 
@@ -1013,10 +990,7 @@
           ? state.settings.factoryRailShare
           : 0.75;
         this._dominant = share !== null && share > trigger;
-        // DIAG (throttled ~8s by game-tick): is the dominance gate WHY factories do /
-        // don't build? share=our map fraction, trigger=factoryRailShare, dominant=gate.
-        // If dominant=false at end-game, lower factoryRailShare in core.js DEFAULTS.
-        try {
+        {
           const t = this.game.ticks();
           if (t - (state._buildDomDiagTick || -999) >= 80) {
             state._buildDomDiagTick = t;
@@ -1026,9 +1000,6 @@
               dominant: this._dominant,
             });
           }
-        } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/structureBehavior.js:1013");
-          /* ignore */
         }
       }
       // Publish the dominance flag so OTHER behaviors share one source of truth (e.g.
@@ -1257,15 +1228,13 @@
     }
 
     hasOwnSamUnderConstruction() {
-      try {
+      {
         return (this.player.units(UNIT.SAMLauncher) || []).some(
           (sam) =>
             sam &&
             typeof sam.isUnderConstruction === "function" &&
             sam.isUnderConstruction(),
         );
-      } catch (_error) {
-        return false;
       }
     }
 
@@ -1276,13 +1245,10 @@
     }
 
     hostileSiloSamCurrentTick() {
-      try {
+      {
         if (typeof this.game?.ticks !== "function") return null;
         const tick = this.game.ticks();
         return tick === null || tick === undefined ? null : tick;
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:1305");
-        return null;
       }
     }
 
@@ -1362,12 +1328,9 @@
 
     legendaryReserveGold() {
       if (!state.settings.winFixes || !state.nukeReserveGold) return 0n;
-      try {
+      {
         const reserve = BigInt(state.nukeReserveGold || 0);
         return reserve >= 15_000_000n ? reserve : 0n;
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:1389");
-        return 0n;
       }
     }
 
@@ -1388,7 +1351,7 @@
     legendaryHostilePlayers() {
       const mySid = this.player.smallID();
       const hostile = [];
-      try {
+      {
         for (const other of this.game.players()) {
           if (
             !other ||
@@ -1397,20 +1360,11 @@
           ) {
             continue;
           }
-          let friendly = false;
-          try {
-            friendly =
-              this.player.isFriendly(other) ||
-              this.player.isOnSameTeam(other);
-          } catch (_error) {
-            friendly = false;
-          }
+          const friendly =
+            this.player.isFriendly(other) || this.player.isOnSameTeam(other);
           if (friendly) continue;
           hostile.push(other);
         }
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:1431");
-        return hostile;
       }
       return hostile;
     }
@@ -1442,26 +1396,14 @@
     }
 
     structurePlayersSnapshot() {
-      try {
+      {
         return this.game.players();
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:unitCapacityContribution",
-        );
-        return null;
       }
     }
 
     readPlayerSmallId(player) {
-      try {
+      {
         return player.smallID();
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:readPlayerSmallId",
-        );
-        return null;
       }
     }
 
@@ -1470,31 +1412,18 @@
       if (typeof other.isPlayer === "function" && !other.isPlayer()) return false;
       const otherSid = this.readPlayerSmallId(other);
       if (mySid !== null && otherSid === mySid) return false;
-      try {
+      {
         if (typeof other.isAlive === "function" && !other.isAlive()) return false;
         return !(
           this.player.isFriendly(other) || this.player.isOnSameTeam(other)
         );
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:isLiveHostilePlayer",
-        );
-        // An incomplete relation snapshot is not evidence of hostility.
-        return false;
       }
     }
 
     playerGoldBigInt(player) {
       if (!player || typeof player.gold !== "function") return null;
-      try {
+      {
         return BigInt(player.gold());
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:unitCapacityContribution",
-        );
-        return null;
       }
     }
 
@@ -1505,14 +1434,8 @@
     playerUnitCapacitySummary(player, type) {
       if (!player || typeof player.units !== "function") return null;
       let units;
-      try {
+      {
         units = player.units(type);
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:playerUnitCapacitySummary",
-        );
-        return null;
       }
       if (!Array.isArray(units)) return null;
 
@@ -1531,7 +1454,7 @@
 
     unitCapacityContribution(unit) {
       if (!unit) return null;
-      try {
+      {
         const underConstruction =
           typeof unit.isUnderConstruction === "function" &&
           unit.isUnderConstruction();
@@ -1544,12 +1467,6 @@
           capacity: Number.isFinite(level) ? Math.max(1, Math.floor(level)) : 1,
           builtCount: 1,
         };
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:unitCapacityContribution",
-        );
-        return null;
       }
     }
 
@@ -1679,17 +1596,13 @@
         }
         return value;
       };
-      let activeMissiles;
-      try {
-        activeMissiles = this.game.units(
+      if (typeof this.game?.units !== "function") return cache(null);
+      const activeMissiles = this.game.units(
           UNIT.AtomBomb,
           UNIT.HydrogenBomb,
           UNIT.MIRV,
           UNIT.MIRVWarhead,
         );
-      } catch (_error) {
-        return cache(null);
-      }
       if (!Array.isArray(activeMissiles)) return cache(null);
       const mySid = this.player.smallID();
       for (const missile of activeMissiles) {
@@ -1791,10 +1704,8 @@
      */
     spendableConstructionGold() {
       let availableGold;
-      try {
+      {
         availableGold = BigInt(this.player.gold() || 0n);
-      } catch (_error) {
-        return 0n;
       }
 
       // This is the budget available to ordinary construction and defensive
@@ -1804,10 +1715,8 @@
 
     availableGoldAfterReserve(type) {
       let availableGold;
-      try {
+      {
         availableGold = BigInt(this.player.gold() || 0n);
-      } catch (_error) {
-        return 0n;
       }
 
       if (type !== UNIT.MissileSilo) return availableGold;
@@ -1820,10 +1729,8 @@
       if (this.ownedLevels(UNIT.MissileSilo) === 0) return availableGold;
 
       let reserve;
-      try {
+      {
         reserve = this.legendaryReserveGold();
-      } catch (_error) {
-        reserve = 0n;
       }
       return availableGold > reserve ? availableGold - reserve : 0n;
     }
@@ -1902,10 +1809,8 @@
     }
 
     safeConstructionCost(type) {
-      try {
+      {
         return this.getConstructionCost(type);
-      } catch (_error) {
-        return null;
       }
     }
 
@@ -1924,10 +1829,8 @@
       if (reserve === 0n) return false;
 
       let offensiveCost;
-      try {
+      {
         offensiveCost = this.getConstructionCost(type);
-      } catch (_error) {
-        return true;
       }
       return this.spendableConstructionGold() < reserve + offensiveCost;
     }
@@ -1944,7 +1847,7 @@
       }
       if (!this.hasObservedHostileMissileLaunch()) return null;
 
-      try {
+      {
         const config = this.game.config();
         if (
           typeof config.isUnitDisabled === "function" &&
@@ -1952,9 +1855,6 @@
         ) {
           return null;
         }
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:1972");
-        return null;
       }
       if (!this.hasDefensiveSamPressure()) return null;
       const cost = this.safeConstructionCost(UNIT.SAMLauncher);
@@ -1963,46 +1863,29 @@
 
     hasDefensiveSamPressure() {
       if (this.hydrogenCoverageNeedsSam()) return true;
-      try {
+      {
         if (this.shouldBuildHostileSiloSam() || this.samLevelParityGap() > 0) {
           return true;
         }
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:hasDefensiveSamPressure",
-        );
       }
       return this.activeMissileNeedsFirstSam();
     }
 
     hydrogenCoverageNeedsSam() {
-      try {
+      {
         const coverage = this.hydrogenStructureCoveragePlan();
         return Boolean(
           coverage &&
             (coverage.needsNewSam || coverage.targetLevel > coverage.currentLevel),
         );
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:hydrogenCoverageNeedsSam",
-        );
-        return false;
       }
     }
 
     activeMissileNeedsFirstSam() {
-      try {
+      {
         const signal = this.missileDefenseSignalSnapshot();
         const sams = this.player.units(UNIT.SAMLauncher) || [];
         return signal?.hasActiveHostileMissile === true && sams.length === 0;
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:activeMissileNeedsFirstSam",
-        );
-        return false;
       }
     }
 
@@ -2016,10 +1899,8 @@
       if (this.hasActiveMaritimeInvasion()) return true;
 
       let cost;
-      try {
+      {
         cost = BigInt(nukeCost || 0n);
-      } catch (_error) {
-        return false;
       }
       if (cost <= 0n) return false;
 
@@ -2071,10 +1952,8 @@
 
     computeBorderingHostileTroopAdvantage() {
       let config;
-      try {
+      {
         config = this.game.config();
-      } catch (_error) {
-        return false;
       }
       if (!config || typeof config.maxTroops !== "function") return false;
       const ownMaxTroops = this.safeMaxTroops(config, this.player);
@@ -2090,30 +1969,22 @@
     }
 
     safeMaxTroops(config, player) {
-      try {
+      {
         const troops = Number(config.maxTroops(player));
         return Number.isFinite(troops) ? troops : 0;
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:safeMaxTroops",
-        );
-        return 0;
       }
     }
 
     safeSharesBorder(enemy) {
-      try {
+      {
         return this.player.sharesBorderWith(enemy) === true;
-      } catch (_error) {
-        return false;
       }
     }
 
     legendaryFriendlyPlayers() {
       const mySid = this.player.smallID();
       const friendly = [];
-      try {
+      {
         for (const other of this.game.players()) {
           if (
             !other ||
@@ -2122,31 +1993,21 @@
           ) {
             continue;
           }
-          let isFriendly = false;
-          try {
-            isFriendly =
-              this.player.isFriendly(other) || this.player.isOnSameTeam(other);
-          } catch (_error) {
-            isFriendly = false;
-          }
+          const isFriendly =
+            this.player.isFriendly(other) || this.player.isOnSameTeam(other);
           if (isFriendly && other.isAlive() !== false) friendly.push(other);
         }
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:2153");
-        return friendly;
       }
       return friendly;
     }
 
     legendaryProductionMetrics(player) {
-      let troops = 0;
-      let gold = 0n;
+      const troops = Math.max(0, Number(player.troops() || 0));
+      const gold = BigInt(player.gold() || 0n);
       let goldProduction = 0;
       const tiles = [];
       const samUnits = [];
-      try {
-        troops = Math.max(0, Number(player.troops() || 0));
-        gold = BigInt(player.gold() || 0n);
+      {
         for (const unit of player.units(UNIT.City, UNIT.Factory, UNIT.Port)) {
           const metrics = this.legendaryProductiveUnitMetrics(unit);
           if (metrics.tile !== null) tiles.push(metrics.tile);
@@ -2158,9 +2019,6 @@
           const tile = sam.tile();
           if (tile !== null && tile !== undefined) tiles.push(tile);
         }
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:2190");
-        /* keep the partial metrics available to the placement scorer */
       }
       return { troops, gold, goldProduction, tiles, samUnits };
     }
@@ -2180,24 +2038,17 @@
 
     legendaryAllyPlacementContext() {
       const own = this.legendaryProductionMetrics(this.player);
-      let supportRadius = 100;
-      try {
-        supportRadius = Math.max(
-          1,
-          Number(this.game.config().trainStationMaxRange()),
-        );
-      } catch (_error) {
-        /* keep the geometry fallback */
-      }
+      const supportRadius = Math.max(
+        1,
+        Number(this.game.config().trainStationMaxRange()),
+      );
 
       const allies = [];
       for (const ally of this.legendaryFriendlyPlayers()) {
         const metrics = this.legendaryProductionMetrics(ally);
         let location;
-        try {
+        {
           location = ally.nameLocation();
-        } catch (_error) {
-          location = null;
         }
         allies.push({
           player: ally,
@@ -2253,10 +2104,8 @@
     }
 
     safeParticipantBorder(participant) {
-      try {
+      {
         return participant.borderTiles();
-      } catch (_error) {
-        return null;
       }
     }
 
@@ -2272,49 +2121,35 @@
     }
 
     participantStructurePoints(participant) {
-      try {
+      {
         return participant
           .units(UNIT.City, UNIT.Factory, UNIT.Port, UNIT.SAMLauncher)
           .map((unit) => unit.tile())
           .filter((tile) => tile !== null && tile !== undefined)
           .map((tile) => ({ x: this.game.x(tile), y: this.game.y(tile) }));
-      } catch (_error) {
-        return [];
       }
     }
 
     safeParticipantLocation(participant) {
-      try {
+      {
         const location = participant.nameLocation();
         if (!location) return null;
         if (!Number.isFinite(location.x) || !Number.isFinite(location.y)) return null;
         return { x: Number(location.x), y: Number(location.y) };
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:safeParticipantLocation",
-        );
-        return null;
       }
     }
 
     legendaryCenterTile(center) {
-      try {
+      {
         const x = Math.round(center.x);
         const y = Math.round(center.y);
         return this.game.isValidCoord(x, y) ? this.game.ref(x, y) : null;
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:legendaryCenterTile",
-        );
-        return null;
       }
     }
 
     nearestOwnBorderToPoint(point) {
       let nearest = { tile: null, distanceSquared: Infinity };
-      try {
+      {
         for (const tile of this.player.borderTiles()) {
           const dx = this.game.x(tile) - point.x;
           const dy = this.game.y(tile) - point.y;
@@ -2322,12 +2157,6 @@
           if (distanceSquared >= nearest.distanceSquared) continue;
           nearest = { tile, distanceSquared };
         }
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:nearestOwnBorderToPoint",
-        );
-        return nearest;
       }
       return nearest;
     }
@@ -2351,10 +2180,8 @@
     }
 
     safeGameConfig() {
-      try {
+      {
         return this.game.config();
-      } catch (_error) {
-        return null;
       }
     }
 
@@ -2409,13 +2236,10 @@
       if (!center) return 0;
       const spacing = this.spacingConstants().structureSpacing;
       let centerDistance;
-      try {
+      {
         const dx = this.game.x(tile) - center.x;
         const dy = this.game.y(tile) - center.y;
         centerDistance = Math.sqrt(dx * dx + dy * dy);
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:2406");
-        return 0;
       }
 
       let borderDistance = Infinity;
@@ -2425,10 +2249,8 @@
         );
       }
       let radius = spacing;
-      try {
+      {
         radius = Math.max(radius, Number(this.game.config().trainStationMaxRange()));
-      } catch (_error) {
-        /* keep spacing radius */
       }
       const centerScore = legendaryPlacementProximityScore(centerDistance, radius);
       const borderScore = Number.isFinite(borderDistance)
@@ -2458,17 +2280,11 @@
     }
 
     enemyProjectedUnitLevels(enemy, type) {
-      try {
+      {
         if (enemy.isAlive && enemy.isAlive() === false) return [];
         return (enemy.units(type) || [])
           .map((unit) => this.projectedUnitLevel(unit))
           .filter((level) => level !== null);
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:enemyProjectedUnitLevels",
-        );
-        return [];
       }
     }
 
@@ -2527,16 +2343,13 @@
     ownMaximumSamLevel() {
       let maximum = 0;
       for (const sam of this.player.units(UNIT.SAMLauncher) || []) {
-        try {
+        {
           if (sam.isUnderConstruction && sam.isUnderConstruction()) continue;
           if (sam.isActive && sam.isActive() === false) continue;
           const level = Number(sam.level?.() ?? 1);
           if (Number.isFinite(level)) {
             maximum = Math.max(maximum, Math.max(1, Math.floor(level)));
           }
-        } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:2520");
-          /* skip an incomplete own SAM snapshot */
         }
       }
       return maximum;
@@ -2571,7 +2384,7 @@
     }
 
     hostileBuiltSiloLevelSum(enemy) {
-      try {
+      {
         if (enemy.isAlive && enemy.isAlive() === false) return 0;
         let sum = 0;
         for (const silo of enemy.units(UNIT.MissileSilo) || []) {
@@ -2581,12 +2394,6 @@
           if (Number.isFinite(level)) sum += Math.max(1, Math.floor(level));
         }
         return sum;
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:hostileBuiltSiloLevelSum",
-        );
-        return 0;
       }
     }
 
@@ -2600,13 +2407,9 @@
       if (!state.settings.winFixes || !autoBotBuildAllowed(UNIT.SAMLauncher)) {
         return false;
       }
-      try {
+      {
         if (this.game.config().isUnitDisabled(UNIT.SAMLauncher)) return false;
         if (this.game.config().isUnitDisabled(UNIT.HydrogenBomb)) return false;
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:2586");
-        // Keep the threat gate active when an older client lacks one of the
-        // optional disabled-unit checks.
       }
       return (
         this.hostileSiloLevelSumTarget() >=
@@ -2625,12 +2428,9 @@
 
       const targetLevel = this.hostileSiloLevelSumTarget();
       const sams = (this.player.units(UNIT.SAMLauncher) || []).filter((sam) => {
-        try {
+        {
           if (sam.isUnderConstruction && sam.isUnderConstruction()) return false;
           return !sam.isActive || sam.isActive() !== false;
-        } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:2610");
-          return false;
         }
       });
       if (targetLevel < HYDROGEN_SAM_SILO_LEVEL_SUM_THRESHOLD || sams.length === 0) {
@@ -2711,79 +2511,52 @@
     }
 
     hydrogenCoverageConfig() {
-      try {
+      {
         const config = this.game.config();
         if (config.isUnitDisabled(UNIT.SAMLauncher)) return null;
         if (config.isUnitDisabled(UNIT.HydrogenBomb)) return null;
         return typeof config.samRange === "function" ? config : null;
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:hydrogenCoverageConfig",
-        );
-        return null;
       }
     }
 
     ownedStructureTiles() {
       const tiles = [];
       for (const type of STRUCTURES_TYPES) {
-        try {
+        {
           for (const structure of this.player.units(type) || []) {
             const tile = structure.tile();
             if (tile !== null && tile !== undefined) tiles.push(tile);
           }
-        } catch (_error) {
-          captureRuntimeException(
-            _error,
-            "engine/ingame/auto-bot/structureBehavior.js:ownedStructureTiles",
-          );
         }
       }
       return tiles;
     }
 
     isBuiltActiveSam(sam) {
-      try {
+      {
         if (sam.isUnderConstruction && sam.isUnderConstruction()) return false;
         return !sam.isActive || sam.isActive() !== false;
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:isBuiltActiveSam",
-        );
-        return false;
       }
     }
 
     samRangeSquared(config, level) {
-      try {
+      {
         const range = Number(config.samRange(level));
         return Number.isFinite(range) && range > 0 ? range * range : 0;
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:samRangeSquared",
-        );
-        return 0;
       }
     }
 
     samCoveredStructureCount(sam, level, structures, config) {
       let samTile;
-      try {
+      {
         samTile = sam.tile();
-      } catch (_error) {
-        return 0;
       }
       const rangeSquared = this.samRangeSquared(config, level);
       return structures.filter((structureTile) => {
-        try {
+        {
           return (
             this.game.euclideanDistSquared(samTile, structureTile) <= rangeSquared
           );
-        } catch (_error) {
-          return false;
         }
       }).length;
     }
@@ -2835,15 +2608,13 @@
 
     legendaryRailMetrics(cities, ports, factories) {
       let reachableStations = [];
-      try {
+      {
         reachableStations = this.getOrBuildReachableStations();
-      } catch (_error) {
-        reachableStations = [];
       }
 
       let connectedCities;
       let connectedPorts;
-      try {
+      {
         const config = this.game.config();
         const minRangeSquared = config.trainStationMinRange() ** 2;
         const maxRangeSquared = config.trainStationMaxRange() ** 2;
@@ -2858,10 +2629,6 @@
           ) > 0;
         connectedCities = cities.filter(isConnected).length;
         connectedPorts = ports.filter(isConnected).length;
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:2805");
-        connectedCities = 0;
-        connectedPorts = 0;
       }
 
       const stationDemand = cities.length + ports.length;
@@ -2895,10 +2662,8 @@
 
       let uncovered = 0;
       let samRange;
-      try {
+      {
         samRange = (sam) => this.game.config().samRange(sam.level());
-      } catch (_error) {
-        samRange = () => 0;
       }
 
       for (const structure of protectableStructures) {
@@ -2931,8 +2696,7 @@
       let strongestTarget = 0.25;
 
       for (const enemy of enemies) {
-        let targetValue = 0.25;
-        try {
+        const targetValue = (() => {
           const goldRatio = Number(enemy.gold()) / Math.max(1, ownGold);
           const troopRatio =
             this.game.config().maxTroops(enemy) / ownMaxTroops;
@@ -2946,17 +2710,14 @@
             enemy.units(UNIT.City).length +
             enemy.units(UNIT.Factory).length +
             enemy.units(UNIT.Port).length;
-          targetValue = Math.max(
+          return Math.max(
             goldRatio,
             troopRatio,
             attackCapacity / 3,
             defenseCapacity / 3,
             structureCapacity / 5,
           );
-        } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:2902");
-          /* keep the conservative baseline */
-        }
+        })();
         strongestTarget = Math.max(
           strongestTarget,
           Math.min(2.5, 0.75 + targetValue),
@@ -3000,12 +2761,7 @@
     }
 
     legendaryNukeFlightPath(fromTile, targetTile) {
-      let speed = 1;
-      try {
-        speed = Math.max(1, Number(this.game.config().defaultNukeSpeed()));
-      } catch (_error) {
-        /* use the conservative one-tile-per-tick fallback */
-      }
+      const speed = Math.max(1, Number(this.game.config().defaultNukeSpeed()));
 
       // The map and nuke speed are stable for the lifetime of a game, while a
       // single defense forecast asks for the same source/target parabola from
@@ -3020,7 +2776,7 @@
 
       let path = [];
 
-      try {
+      {
         if (
           typeof UniversalPathFinding !== "undefined" &&
           UniversalPathFinding.Parabola
@@ -3032,8 +2788,6 @@
           });
           path = pathFinder.findPath(fromTile, targetTile) ?? [];
         }
-      } catch (_error) {
-        /* fall through to the geometry fallback */
       }
 
       if (path.length > 0) {
@@ -3046,7 +2800,7 @@
       );
       const steps = Math.max(1, Math.ceil(distance / speed));
       path = [fromTile];
-      try {
+      {
         const fromX = this.game.x(fromTile);
         const fromY = this.game.y(fromTile);
         const targetX = this.game.x(targetTile);
@@ -3058,9 +2812,6 @@
           const tile = this.game.ref(x, y);
           if (path[path.length - 1] !== tile) path.push(tile);
         }
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:3006");
-        /* use the endpoints when the map geometry is unavailable */
       }
       if (path[path.length - 1] !== targetTile) path.push(targetTile);
       this._missileFlightPathCache.set(cacheKey, path);
@@ -3070,12 +2821,7 @@
     legendaryNukeFlightTime(fromTile, targetTile) {
       const path = this.legendaryNukeFlightPath(fromTile, targetTile);
       if (path.length > 2) return path.length;
-      let speed = 1;
-      try {
-        speed = Math.max(1, Number(this.game.config().defaultNukeSpeed()));
-      } catch (_error) {
-        /* use the conservative one-tile-per-tick fallback */
-      }
+      const speed = Math.max(1, Number(this.game.config().defaultNukeSpeed()));
       return Math.max(
         1,
         Math.ceil(
@@ -3097,11 +2843,9 @@
         if (!owner) return;
         let friendly = owner.smallID() === mySid;
         if (!friendly) {
-          try {
+          {
             friendly =
               this.player.isFriendly(owner) || this.player.isOnSameTeam(owner);
-          } catch (_error) {
-            friendly = false;
           }
         }
         if (!friendly) return;
@@ -3109,22 +2853,16 @@
         sams.push(sam);
       };
 
-      try {
+      {
         for (const sam of this.game.units(UNIT.SAMLauncher)) add(sam);
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:3058");
-        /* fallback below */
       }
       if (sams.length === 0) {
         for (const participant of [
           this.player,
           ...this.legendaryFriendlyPlayers(),
         ]) {
-          try {
+          {
             for (const sam of participant.units(UNIT.SAMLauncher)) add(sam);
-          } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:3068");
-            /* skip a participant whose unit snapshot is unavailable */
           }
         }
       }
@@ -3139,22 +2877,16 @@
     }
 
     legendarySamCooldownTicks() {
-      try {
+      {
         const cooldown = Number(this.game.config().SAMCooldown());
         return Number.isFinite(cooldown) && cooldown > 0 ? cooldown : 90;
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:3087");
-        return 90;
       }
     }
 
     legendarySiloCooldownTicks() {
-      try {
+      {
         const cooldown = Number(this.game.config().SiloCooldown());
         return Number.isFinite(cooldown) && cooldown > 0 ? cooldown : 90;
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:3096");
-        return 90;
       }
     }
 
@@ -3191,15 +2923,9 @@
     }
 
     structureMissileQueue(unit, limit) {
-      try {
+      {
         const queue = unit.missileTimerQueue?.();
         return Array.isArray(queue) ? queue.slice(0, limit) : [];
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:structureMissileQueue",
-        );
-        return [];
       }
     }
 
@@ -3212,16 +2938,14 @@
     legendaryEnemyMissileLaunchPlan(enemySilos, targetTile, shotCount) {
       const entries = (Array.isArray(enemySilos) ? enemySilos : [])
         .filter((silo) => {
-          try {
-            return (
-              silo &&
-              !silo.isUnderConstruction?.() &&
-              (!silo.isActive || silo.isActive() !== false)
-            );
-          } catch (_error) {
-            return false;
-          }
-        })
+        {
+          return (
+            silo &&
+            !silo.isUnderConstruction?.() &&
+            (!silo.isActive || silo.isActive() !== false)
+          );
+        }
+      })
         .map((silo) => ({
           silo,
           distance: this.game.manhattanDist(silo.tile(), targetTile),
@@ -3323,14 +3047,11 @@
     }
 
     legendaryConstructionDuration(type) {
-      try {
+      {
         const duration = Number(
           this.game.config().unitInfo(type).constructionDuration,
         );
         if (Number.isFinite(duration) && duration >= 0) return duration;
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:3275");
-        /* use the engine defaults below */
       }
       if (type === UNIT.SAMLauncher) return 300;
       if (type === UNIT.MissileSilo) return 100;
@@ -3378,7 +3099,7 @@
     }
 
     legendaryTrajectoryTileTargetable(pathTile, fromTile, targetTile) {
-      try {
+      {
         const targetableRange = Number(
           this.game.config().defaultNukeTargetableRange(),
         );
@@ -3388,9 +3109,6 @@
           this.game.euclideanDistSquared(pathTile, fromTile) <= rangeSquared ||
           this.game.euclideanDistSquared(pathTile, targetTile) <= rangeSquared
         );
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:3334");
-        return true;
       }
     }
 
@@ -3479,15 +3197,9 @@
       let rawLevel = samOrTile.level ?? 1;
       if (typeof samOrTile.level === "function") rawLevel = samOrTile.level();
       const level = Math.max(1, Number(levelOverride ?? rawLevel));
-      try {
+      {
         const range = Number(this.game.config().samRange(level));
         return range > 0 ? { samTile, range } : null;
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:legendarySamCoverageProfile",
-        );
-        return null;
       }
     }
 
@@ -3578,7 +3290,7 @@
     // latter loses the original launch arc and can move a near-impact window
     // across the five-tick safety boundary.
     legendaryActiveMissileMotion(nuke, fromTile) {
-      try {
+      {
         const plan = this.legendaryActiveMotionPlan(nuke);
         if (!plan || !plan.path || plan.path.length === 0) return null;
         const now = Number(this.game.ticks?.() ?? 0);
@@ -3599,9 +3311,6 @@
           path,
           impactTick: Math.max(1, path.length),
         };
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:3561");
-        return null;
       }
     }
 
@@ -4358,16 +4067,14 @@
     legendaryActiveMissileThreats(context) {
       const threats = [];
       let activeNukes;
-      try {
+      {
         activeNukes = this.game.units(UNIT.AtomBomb, UNIT.HydrogenBomb);
-      } catch (_error) {
-        return threats;
       }
       const mySid = this.player.smallID();
       const samProfiles =
         context.samProfiles || this.legendaryFriendlySamProfiles();
       for (const nuke of activeNukes) {
-        try {
+        {
           const threat = this.legendaryActiveMissileThreat(
             nuke,
             mySid,
@@ -4375,9 +4082,6 @@
             samProfiles,
           );
           if (threat !== null) threats.push(threat);
-        } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:4348");
-          /* a partially decoded in-flight unit must not stop construction */
         }
       }
       return threats;
@@ -4535,12 +4239,9 @@
     missileDefenseStateFingerprint() {
       const parts = [];
       const read = (fn, fallback = "") => {
-        try {
+        {
           const value = fn();
           return value === null || value === undefined ? fallback : value;
-        } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:4361");
-          return fallback;
         }
       };
       const unitFingerprint = (unit) => {
@@ -4566,7 +4267,7 @@
       const collectUnits = (label, owner, types) => {
         const fingerprints = [];
         for (const type of types) {
-          const units = read(() => owner.units(type), []);
+          const units = typeof owner?.units === "function" ? owner.units(type) : [];
           if (!Array.isArray(units)) continue;
           for (const unit of units) {
             if (unit) fingerprints.push(`${String(type)}=${unitFingerprint(unit)}`);
@@ -4578,15 +4279,10 @@
 
       let atomCost = 0n;
       let hydrogenCost = 0n;
-      try {
+      {
         atomCost = BigInt(this.cost(UNIT.AtomBomb));
-      } catch (_error) {
-        /* keep zero so the fingerprint remains fail-closed */
-      }
-      try {
+      }{
         hydrogenCost = BigInt(this.cost(UNIT.HydrogenBomb));
-      } catch (_error) {
-        /* keep zero so the fingerprint remains fail-closed */
       }
 
       // The trajectory planner only changes its threat model when an enemy can
@@ -4596,7 +4292,7 @@
       // count, which are the two values used by legendaryMissileSalvoPlan().
       const enemyGoldCapacityFingerprint = (enemy) => {
         const rawGold = read(() => enemy.gold(), "");
-        try {
+        {
           const gold = BigInt(rawGold);
           if (atomCost <= 0n && hydrogenCost <= 0n) {
             return `raw=${String(rawGold)}`;
@@ -4606,11 +4302,6 @@
           const affordableAtoms =
             atomCost > 0n ? atomBudget / atomCost : 0n;
           return `${canHydrogen ? 1 : 0}:${affordableAtoms.toString()}`;
-        } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:4428");
-          // Preserve fail-closed invalidation when a client exposes a non-integer
-          // gold representation or the cost API is unavailable.
-          return `raw=${String(rawGold)}`;
         }
       };
 
@@ -4650,10 +4341,9 @@
         collectUnits(`enemy-${String(sid)}-silos`, enemy, [UNIT.MissileSilo]);
       }
 
-      const activeMissiles = read(
-        () => this.game.units(UNIT.AtomBomb, UNIT.HydrogenBomb),
-        [],
-      );
+      const activeMissiles = typeof this.game?.units === "function"
+        ? this.game.units(UNIT.AtomBomb, UNIT.HydrogenBomb)
+        : [];
       const missileFingerprints = [];
       if (Array.isArray(activeMissiles)) {
         for (const missile of activeMissiles) {
@@ -4684,13 +4374,8 @@
         if (!other) continue;
         const sid = read(() => other.smallID(), "");
         if (String(sid) === String(mySid)) continue;
-        let friendly = false;
-        try {
-          friendly =
-            this.player.isFriendly(other) || this.player.isOnSameTeam(other);
-        } catch (_error) {
-          /* fail closed: the initialized value remains false */
-        }
+        const friendly =
+          this.player.isFriendly(other) || this.player.isOnSameTeam(other);
         (friendly ? friendlyPlayers : hostilePlayers).push(other);
       }
       return { hostilePlayers, friendlyPlayers };
@@ -4714,34 +4399,25 @@
 
     legendaryEmptyMissileDefenseContext() {
       let config = {};
-      try {
+      {
         config = this.game.config() || {};
-      } catch (_error) {
-        /* use compatibility fallbacks below */
       }
       const isDisabled = (type) => {
-        try {
+        {
           return typeof config.isUnitDisabled === "function"
             ? config.isUnitDisabled(type)
             : false;
-        } catch (_error) {
-          return false;
         }
       };
       const readRadius = (type, fallback) => {
-        try {
+        {
           const radius = Number(config.nukeMagnitudes?.(type)?.outer);
           return Number.isFinite(radius) && radius > 0 ? radius : fallback;
-        } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:4548");
-          return fallback;
         }
       };
       const readCost = (type) => {
-        try {
+        {
           return BigInt(this.cost(type));
-        } catch (_error) {
-          return 0n;
         }
       };
       const atomCost = isDisabled(UNIT.AtomBomb)
@@ -4753,15 +4429,13 @@
       const atomRadius = readRadius(UNIT.AtomBomb, 70);
       const hydrogenRadius = readRadius(UNIT.HydrogenBomb, 160);
       let structures;
-      try {
+      {
         structures = this.player.units(
           UNIT.City,
           UNIT.Factory,
           UNIT.Port,
           UNIT.MissileSilo,
         );
-      } catch (_error) {
-        structures = [];
       }
       if (!Array.isArray(structures)) structures = [];
       const totalValue = structures.reduce(
@@ -4881,7 +4555,7 @@
       let exposedStructures = 1;
       for (const other of structures || []) {
         if (other === target) continue;
-        try {
+        {
           if (
             this.game.euclideanDistSquared(targetTile, other.tile()) <=
             radiusSquared
@@ -4889,11 +4563,6 @@
             exposedValue += this.legendaryCriticalStructureValue(other);
             exposedStructures++;
           }
-        } catch (_error) {
-          captureRuntimeException(
-            _error,
-            "engine/ingame/auto-bot/structureBehavior.js:legendaryMissileTargetEntry",
-          );
         }
       }
       return {
@@ -4959,16 +4628,11 @@
       let nearest = null;
       let nearestDistance = Infinity;
       for (const entry of entries) {
-        try {
+        {
           const distance = this.game.manhattanDist(silo.tile(), entry.tile);
           if (distance >= nearestDistance) continue;
           nearest = entry;
           nearestDistance = distance;
-        } catch (_error) {
-          captureRuntimeException(
-            _error,
-            "engine/ingame/auto-bot/structureBehavior.js:nearestLegendaryMissileTarget",
-          );
         }
       }
       return nearest;
@@ -5112,7 +4776,7 @@
     }
 
     legendaryEnemyMissileResources(enemy) {
-      try {
+      {
         const enemyGold = BigInt(enemy.gold());
         const enemySilos = enemy
           .units(UNIT.MissileSilo)
@@ -5122,12 +4786,6 @@
               (!silo.isActive || silo.isActive() !== false),
           );
         return { enemyGold, enemySilos };
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:legendaryEnemyMissileResources",
-        );
-        return null;
       }
     }
 
@@ -5350,10 +5008,8 @@
       const samLevelParityGap = this.samLevelParityGap();
       let enemyWarships = 0;
       for (const enemy of hostile) {
-        try {
+        {
           enemyWarships += enemy.units(UNIT.Warship).length;
-        } catch (_error) {
-          /* skip unavailable unit snapshots */
         }
       }
 
@@ -5617,10 +5273,8 @@
     dominanceShare() {
       if (this.player === null) return null;
       let isTeam;
-      try {
+      {
         isTeam = String(this.game.config().gameConfig().gameMode) === "Team";
-      } catch (_e) {
-        return null;
       }
       const fallout =
         typeof this.game.numTilesWithFallout === "function"
@@ -5632,12 +5286,10 @@
       let ownedTiles = 0;
       if (isTeam) {
         for (const p of this.game.players()) {
-          try {
+          {
             if (p.isPlayer() && this.player.isOnSameTeam(p)) {
               ownedTiles += p.numTilesOwned();
             }
-          } catch (_e) {
-            /* skip */
           }
         }
       } else {
@@ -5825,10 +5477,8 @@
     hasStructureUnderConstruction(structures) {
       if (!Array.isArray(structures)) return false;
       return structures.some((structure) => {
-        try {
+        {
           return structure?.isUnderConstruction?.() === true;
-        } catch (_error) {
-          return false;
         }
       });
     }
@@ -5941,10 +5591,8 @@
 
       const availableGold = this.spendableConstructionGold();
       let minimumCost;
-      try {
+      {
         minimumCost = this.cost(UNIT.SAMLauncher);
-      } catch (_error) {
-        minimumCost = 0n;
       }
       if (availableGold < minimumCost) return false;
 
@@ -5962,10 +5610,8 @@
       }
 
       let cost = minimumCost;
-      try {
+      {
         if (bu.cost !== undefined && bu.cost !== null) cost = BigInt(bu.cost);
-      } catch (_error) {
-        /* use the formula fallback */
       }
       if (cost > availableGold) return false;
 
@@ -6058,13 +5704,8 @@
       const request = state.nukeWantSlots;
       const requiredCapacity = Number(request?.need);
       if (!Number.isFinite(requiredCapacity) || requiredCapacity <= 0) return null;
-      try {
+      {
         if (this.game.config().isUnitDisabled(UNIT.MissileSilo)) return null;
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:validNukeSiloUpgradeRequest",
-        );
       }
       return { ...request, requiredCapacity };
     }
@@ -6086,14 +5727,8 @@
     }
 
     isBuiltStructure(structure) {
-      try {
+      {
         return !structure.isUnderConstruction();
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:isBuiltStructure",
-        );
-        return false;
       }
     }
 
@@ -6103,14 +5738,8 @@
     }
 
     safeStructureCost(type) {
-      try {
+      {
         return this.cost(type);
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:safeStructureCost",
-        );
-        return 0n;
       }
     }
 
@@ -6144,32 +5773,21 @@
     }
 
     buildableCostOrFallback(buildable, fallback) {
-      try {
+      {
         return buildable.cost === undefined || buildable.cost === null
           ? fallback
           : BigInt(buildable.cost);
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:buildableCostOrFallback",
-        );
-        return fallback;
       }
     }
 
     siloSamProtectionScore(silo, sams) {
       let protection = 0;
       for (const sam of sams) {
-        try {
+        {
           if (sam.isUnderConstruction && sam.isUnderConstruction()) continue;
           const range = Number(this.game.config().samRange(sam.level()));
           const distance = this.game.euclideanDistSquared(silo.tile(), sam.tile());
           if (distance <= range * range) protection += Number(sam.level());
-        } catch (_error) {
-          captureRuntimeException(
-            _error,
-            "engine/ingame/auto-bot/structureBehavior.js:siloSamProtectionScore",
-          );
         }
       }
       return protection;
@@ -6217,14 +5835,8 @@
         return false;
       }
       if (!this.hasObservedHostileMissileLaunch()) return false;
-      try {
+      {
         return !this.game.config().isUnitDisabled(UNIT.SAMLauncher);
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:samParityUpgradeEnabled",
-        );
-        return true;
       }
     }
 
@@ -6235,10 +5847,8 @@
         const bu = buildables[index];
         if (bu === null || bu.canUpgrade === false) continue;
         let cost = this.cost(UNIT.SAMLauncher);
-        try {
+        {
           if (bu.cost !== undefined && bu.cost !== null) cost = BigInt(bu.cost);
-        } catch (_error) {
-          /* use the formula fallback */
         }
         if (cost > availableGold) continue;
         const level = Math.max(1, Number(sam.level() || 1));
@@ -6302,13 +5912,8 @@
 
     missileDefenseSamUpgradeEnabled() {
       if (!autoBotBuildAllowed(UNIT.SAMLauncher)) return false;
-      try {
+      {
         if (this.game.config().isUnitDisabled(UNIT.SAMLauncher)) return false;
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:missileDefenseSamUpgradeEnabled",
-        );
       }
       const signal = this.missileDefenseSignalSnapshot();
       return signal !== null && signal.hasActiveHostileMissile === true;
@@ -6600,10 +6205,8 @@
     structurePlacementCompactnessRanker(type) {
       if (!state.settings.winFixes || type === UNIT.SAMLauncher) return null;
       let range;
-      try {
+      {
         range = Number(this.game.config().defaultSamRange());
-      } catch (_error) {
-        return null;
       }
       if (!Number.isFinite(range) || range <= 0) return null;
       const rangeSquared = range * range;
@@ -6681,10 +6284,8 @@
       return tiles.filter((tile) => {
         if (tile === null || tile === undefined || seen.has(tile)) return false;
         if (mySid !== null && typeof this.game.ownerID === "function") {
-          try {
+          {
             if (this.game.ownerID(tile) !== mySid) return false;
-          } catch (_error) {
-            return false;
           }
         }
         seen.add(tile);
@@ -6693,7 +6294,7 @@
     }
 
     prependSamCoveredTiles(tiles, candidateLimit) {
-      try {
+      {
         const samTiles = this.tilesNearFriendlySams(candidateLimit);
         if (samTiles.length === 0) return tiles;
         const merged = [];
@@ -6705,12 +6306,6 @@
           merged.push(tile);
         }
         return merged;
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:prependSamCoveredTiles",
-        );
-        return tiles;
       }
     }
 
@@ -6834,13 +6429,10 @@
         return false;
       }
       const mySid = this.player.smallID();
-      try {
+      {
         for (const neighbor of game.neighbors(tile) || []) {
           if (this.isHostileStructureNeighbor(neighbor, mySid)) return true;
         }
-      } catch (error) {
-        console.warn("[OFH] Could not evaluate structure-front safety", error);
-        return false;
       }
       return false;
     }
@@ -6922,7 +6514,7 @@
     }
 
     localStructurePlacementSetup(game, tile) {
-      try {
+      {
         const mySid = this.player.smallID();
         const config = game.config();
         if (typeof config?.structureMinDist !== "function") return null;
@@ -6930,17 +6522,11 @@
         if (!Number.isFinite(structureMinDist) || structureMinDist < 0) return null;
         if (game.ownerID(tile) !== mySid) return false;
         return { mySid, structureMinDist };
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/structureBehavior.js:localStructurePlacementSetup",
-        );
-        return null;
       }
     }
 
     localNearbyStructures(game, tile) {
-      try {
+      {
         return game.nearbyUnits(
           tile,
           LOCAL_STRUCTURE_SEARCH_RADIUS * 2,
@@ -6948,8 +6534,6 @@
           undefined,
           true,
         );
-      } catch (_error) {
-        return null;
       }
     }
 
@@ -6961,20 +6545,16 @@
       for (let index = 0; index < queue.length; index++) {
         const current = queue[index];
         let insideRadius;
-        try {
+        {
           insideRadius =
             game.euclideanDistSquared(tile, current) < radiusSquared &&
             game.ownerID(current) === mySid;
-        } catch (_error) {
-          return null;
         }
         if (!insideRadius) continue;
         ownedNearbyTiles.push(current);
         let neighbors;
-        try {
+        {
           neighbors = game.neighbors(current) || [];
-        } catch (_error) {
-          return null;
         }
         for (const neighbor of neighbors) {
           if (seen.has(neighbor)) continue;
@@ -6989,12 +6569,10 @@
       for (const entry of nearbyUnits) {
         const unitTile = (entry?.unit ?? entry)?.tile?.();
         if (unitTile === null || unitTile === undefined) continue;
-        try {
+        {
           if (game.euclideanDistSquared(unitTile, candidate) < minDistSquared) {
             return false;
           }
-        } catch (_error) {
-          return false;
         }
       }
       return true;
@@ -7027,7 +6605,7 @@
           const index = nextIndex++;
           if (index >= candidates.length) return;
           const unit = candidates[index];
-          try {
+          {
             const tile = unit?.tile?.();
             if (tile === null || tile === undefined) continue;
             results[index] = await this.buildableFor(
@@ -7035,9 +6613,6 @@
               tile,
               options.timeoutMs,
             );
-          } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:6717");
-            results[index] = null;
           }
         }
       };
@@ -7056,14 +6631,12 @@
       const timeout = Number.isFinite(Number(timeoutMs))
         ? Math.max(1, Number(timeoutMs))
         : defaultWorkerTimeoutMs;
-      try {
+      {
         buildables = await withTimeout(
           this.player.buildables(tile, [type]),
           timeout,
           null,
         );
-      } catch (_e) {
-        return null;
       }
       return Array.isArray(buildables)
         ? buildables.find((b) => b.type === type) ?? null
@@ -7086,26 +6659,20 @@
       ) {
         return false;
       }
-      try {
+      {
         if (!game.isShore(tile)) return false;
         for (const neighbor of game.neighbors(tile) || []) {
           if (game.isWater(neighbor) && game.isOcean(neighbor)) return true;
         }
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:6772");
-        // Fail closed: an unavailable ocean predicate must never authorize a
-        // port on an unknown or potentially closed water component.
       }
       return false;
     }
 
     hasOceanPortTiles() {
-      try {
+      {
         return Array.from(this.player.borderTiles()).some((tile) =>
           this.isOceanPortTile(tile),
         );
-      } catch (_error) {
-        return false;
       }
     }
 
@@ -7205,7 +6772,7 @@
     }
 
     legendaryRailConnectivityPlacementScore(tile) {
-      try {
+      {
         const config = this.game.config();
         const stations = this.getOrBuildReachableStations();
         const score = this.computeConnectivityScore(
@@ -7215,19 +6782,14 @@
           config.trainStationMaxRange() ** 2,
         );
         return score * this.spacingConstants().structureSpacing;
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:6895");
-        return 0;
       }
     }
 
     legendarySamCoveragePlacementScore(tile, missileContext = null) {
       let score = 0;
       let range;
-      try {
+      {
         range = Number(this.game.config().defaultSamRange());
-      } catch (_error) {
-        return 0;
       }
       if (range <= 0) return 0;
       const rangeSquared = range * range;
@@ -7314,17 +6876,13 @@
       const game = this.game;
       if (typeof game.nearbyUnits !== "function") return 0;
       let cfg;
-      try {
+      {
         cfg = game.config();
-      } catch (_e) {
-        return 0;
       }
       const maxRange = cfg && cfg.maxSamRange ? Number(cfg.maxSamRange()) : 200;
       let nearby;
-      try {
+      {
         nearby = game.nearbyUnits(tile, maxRange, UNIT.SAMLauncher);
-      } catch (_e) {
-        return 0;
       }
       const mySid = this.player.smallID();
       let bestOwn = -1;
@@ -7377,19 +6935,15 @@
       }
       const mySid = this.player.smallID();
       let allSams;
-      try {
+      {
         allSams = game.units(UNIT.SAMLauncher) || [];
-      } catch (_e) {
-        return [];
       }
       const { own, ally } = this.partitionFriendlySams(allSams, mySid);
       const useSams = own.length > 0 ? own : ally; // OUR SAMs first, else allies
       if (useSams.length === 0) return [];
       let cfg;
-      try {
+      {
         cfg = game.config();
-      } catch (_e) {
-        return [];
       }
       const out = [];
       const seen = new Set();
@@ -7404,17 +6958,12 @@
       const own = [];
       const ally = [];
       for (const unit of allSams) {
-        try {
+        {
           if (unit.isUnderConstruction?.()) continue;
           const owner = unit.owner?.();
           if (!owner) continue;
           if (owner.smallID?.() === mySid) own.push(unit);
           else if (this.player.isFriendly(owner) === true) ally.push(unit);
-        } catch (_error) {
-          captureRuntimeException(
-            _error,
-            "engine/ingame/auto-bot/structureBehavior.js:partitionFriendlySams",
-          );
         }
       }
       return { own, ally };
@@ -7652,12 +7201,10 @@
     }
 
     readRailroadState(game) {
-      try {
+      {
         return typeof game.railroadState === "function"
           ? game.railroadState()
           : null;
-      } catch (_error) {
-        return null;
       }
     }
 
@@ -7698,7 +7245,7 @@
     // for scoring). Returns null only on an unexpected failure so the caller can
     // fall back to proximity. Bounded: flood-fill visits each rail tile once.
     assignRailClusters(stationed, railState) {
-      try {
+      {
         const game = this.game;
         const width = game.width();
         const height = game.height();
@@ -7757,9 +7304,6 @@
           out[i] = id === null ? null : "rail#" + id;
         }
         return out;
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/structureBehavior.js:7415");
-        return null;
       }
     }
 
@@ -7862,7 +7406,7 @@
       let existingSams;
       let config;
       let range;
-      try {
+      {
         structures = player.units(
           UNIT.City,
           UNIT.Factory,
@@ -7872,9 +7416,6 @@
         existingSams = player.units(UNIT.SAMLauncher);
         config = game.config();
         range = Number(config.defaultSamRange());
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:7529");
-        return () => 0;
       }
       if (!Array.isArray(structures) || !Number.isFinite(range) || range <= 0) {
         return () => 0;
@@ -7885,59 +7426,47 @@
       const structureTiles = [];
       for (const structure of structures) {
         if (!structure || typeof structure.tile !== "function") continue;
-        try {
+        {
           const tile = structure.tile();
           if (tile !== null && tile !== undefined) structureTiles.push(tile);
-        } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:7544");
-          /* skip a stale structure reference */
         }
       }
       const existingSamProfiles = (existingSams || [])
         .filter((sam) => {
-          try {
-            return !(
-              typeof sam.isUnderConstruction === "function" &&
-              sam.isUnderConstruction()
-            );
-          } catch (_error) {
-            return false;
-          }
-        })
+        {
+          return !(
+            typeof sam.isUnderConstruction === "function" &&
+            sam.isUnderConstruction()
+          );
+        }
+      })
         .map((sam) => {
-          try {
-            const samRange = Number(config.samRange(sam.level()));
-            return {
-              tile: sam.tile(),
-              rangeSquared: samRange * samRange,
-            };
-          } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/structureBehavior.js:7566");
-            return null;
-          }
-        })
+        {
+          const samRange = Number(config.samRange(sam.level()));
+          return {
+            tile: sam.tile(),
+            rangeSquared: samRange * samRange,
+          };
+        }
+      })
         .filter((sam) => sam !== null && Number.isFinite(sam.rangeSquared));
       return (tile) => {
         let totalCoverage = 0;
         let newCoverage = 0;
         for (const structureTile of structureTiles) {
           let distanceSquared;
-          try {
+          {
             distanceSquared = game.euclideanDistSquared(tile, structureTile);
-          } catch (_error) {
-            continue;
           }
           if (distanceSquared > rangeSquared) continue;
           totalCoverage++;
 
           const alreadyCovered = existingSamProfiles.some((sam) => {
-            try {
+            {
               return (
                 game.euclideanDistSquared(tile, sam.tile) <=
                 sam.rangeSquared
               );
-            } catch (_error) {
-              return false;
             }
           });
           if (!alreadyCovered) newCoverage++;

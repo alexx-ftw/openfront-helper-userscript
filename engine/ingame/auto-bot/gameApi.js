@@ -178,7 +178,7 @@
       if (transportRouteCache.has(targetTile)) {
         return transportRouteCache.get(targetTile);
       }
-      try {
+      {
         if (typeof src.transportRouteTicks === "function") {
           const result = normalizeTransportRouteResult(
             await src.transportRouteTicks(targetTile),
@@ -206,17 +206,12 @@
         });
         transportRouteCache.set(targetTile, result);
         return result;
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/gameApi.js:199");
-        return null;
       }
     }
 
     function isPlayerObj(o) {
-      try {
+      {
         return Boolean(o && typeof o.isPlayer === "function" && o.isPlayer());
-      } catch (_e) {
-        return false;
       }
     }
 
@@ -283,10 +278,8 @@
 
     function srcPlayerBySmallID(sid) {
       if (sid == null) return null;
-      try {
+      {
         return src.playerBySmallID(sid);
-      } catch (_e) {
-        return null;
       }
     }
 
@@ -493,7 +486,7 @@
     }
 
     function addShoreReachableNeighbors(neighbors, border, mySid) {
-      const shores = border.filter((tile) => src.isShore(tile));
+      const shores = Array.from(border).filter((tile) => src.isShore(tile));
       const directions = [[0, -1], [0, 1], [-1, 0], [1, 0]];
       for (let index = 0; index < shores.length; index += 10) {
         for (const [dx, dy] of directions) {
@@ -666,14 +659,11 @@
     // Returns Set<number>|null (null = touches no ocean and no shared lake),
     // exactly matching core's `!== null` coastal test.
     function isTrustedWaterPartner(player, other) {
-      try {
+      {
         if (!isEligibleWaterPlayer(player) || !isEligibleWaterPlayer(other)) return false;
         if (player.id() === other.id()) return false;
         if (player.hasEmbargoAgainst(other) || other.hasEmbargoAgainst(player)) return false;
         return areAlliedWaterPlayers(player, other) || areTeamWaterPlayers(player, other);
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/gameApi.js:675");
-        return false;
       }
     }
 
@@ -726,12 +716,8 @@
 
     function sharedWaterComponents(player) {
       if (player == null) return null;
-      // Bots are never the nation AI caller in core, but guard anyway: a bot
-      // player has no shared-water relevance.
-      try {
+      {
         if (player.type && player.type() === PlayerType.Bot) return null;
-      } catch (_e) {
-        /* fall through */
       }
       ensureWaterLabels();
       const mySid = player.smallID();
@@ -751,13 +737,10 @@
     // harness coreAdapter has no frameData → returns null, and structureBehavior
     // falls back to the station-proximity union-find.
     function railroadState() {
-      try {
+      {
         if (typeof src.frameData !== "function") return null;
         const fd = src.frameData();
         return fd && fd.railroadState ? fd.railroadState : null;
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/gameApi.js:746");
-        return null;
       }
     }
 
@@ -859,15 +842,12 @@
     }
 
     async function fetchBorderSet(core) {
-      try {
+      {
         const response = await withTimeout(core.borderTiles(), 4000, null);
         const tiles = response?.borderTiles ?? response;
         if (!tiles) return null;
         const result = new Set(tiles);
         return result.size > 0 ? result : null;
-      } catch (_e) {
-        captureRuntimeException(_e, "engine/ingame/auto-bot/gameApi.js:fetchBorderSet");
-        return null;
       }
     }
 
@@ -929,8 +909,6 @@
             Object.entries(profile.relations).map(([key, value]) => [Number(key), Number(value)]),
           );
         }
-      } catch (_e) {
-        captureRuntimeException(_e, "engine/ingame/auto-bot/gameApi.js:loadProfile");
       } finally {
         profileLoaded = true;
         profileFetchedAt = monotonicNow();

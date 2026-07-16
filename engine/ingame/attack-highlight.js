@@ -13,16 +13,12 @@
       return;
     }
     let myLoc;
-    try {
+    {
       myLoc = me.nameLocation ? me.nameLocation() : null;
-    } catch (_error) {
-      myLoc = null;
     }
     let atks;
-    try {
+    {
       atks = me.incomingAttacks ? me.incomingAttacks() : null;
-    } catch (_error) {
-      atks = null;
     }
     if (!atks || atks.length === 0) {
       _attackHighlightScan = { myLoc, attackers: [], total: 0 };
@@ -45,27 +41,20 @@
     const attackers = [];
     byAttacker.forEach((troops, sid) => {
       let attacker;
-      try {
+      {
         attacker = game.playerBySmallID ? game.playerBySmallID(sid) : null;
-      } catch (_error) {
-        attacker = null;
       }
       if (!attacker) {
         return;
       }
-      // Skip friendly fire (teammates/allies shouldn't be flagged as threats).
-      try {
+      {
         if (me.isFriendly && me.isFriendly(attacker)) {
           return;
         }
-      } catch (_error) {
-        /* treat as hostile */
       }
       let loc;
-      try {
+      {
         loc = attacker.nameLocation ? attacker.nameLocation() : null;
-      } catch (_error) {
-        loc = null;
       }
       if (loc) {
         attackers.push({ loc, troops });

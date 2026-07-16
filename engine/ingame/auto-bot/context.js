@@ -7,13 +7,11 @@
   // Game / UI handle discovery
   // =========================================================================
   function findSharedGameContext() {
-    try {
+    {
       if (typeof getOpenFrontGameContext === "function") {
         const c = getOpenFrontGameContext();
         if (c?.game?.myPlayer) return c;
       }
-    } catch (_e) {
-      captureRuntimeException(_e, "engine/ingame/auto-bot/context.js:shared-context");
     }
     return null;
   }
@@ -22,12 +20,10 @@
     // Preferred: robust DOM scan shared from selective-trade-policy.js.
     const sharedContext = findSharedGameContext();
     if (sharedContext) return sharedContext;
-    try {
+    {
       if (runtimeState.lastOpenFrontGameContext?.game?.myPlayer) {
         return runtimeState.lastOpenFrontGameContext;
       }
-    } catch (_e) {
-      captureRuntimeException(_e, "engine/ingame/auto-bot/context.js:cached-context");
     }
     const selectors = [
       "main-radial-menu",
@@ -99,11 +95,8 @@
   const _alliancesActioned = new WeakSet();
 
   function matchesIntentConstructor(Ctor, args, predicate, source) {
-    try {
+    {
       return predicate(new Ctor(...args));
-    } catch (_error) {
-      captureRuntimeException(_error, source);
-      return false;
     }
   }
 
@@ -182,10 +175,8 @@
   function getListenersMap(eventBus) {
     if (eventBus?.listeners instanceof Map) return eventBus.listeners;
     for (const key of Object.getOwnPropertyNames(eventBus || {})) {
-      try {
+      {
         if (eventBus[key] instanceof Map) return eventBus[key];
-      } catch (_e) {
-        /* ignore */
       }
     }
     return null;
@@ -215,7 +206,7 @@
   function emitIntent(ctor, ...args) {
     const eventBus = getEventBus();
     if (!eventBus || typeof ctor !== "function") return false;
-    try {
+    {
       const event = new ctor(...args);
       if (
         typeof tryAcquireIntentRateLimit !== "function" ||
@@ -225,9 +216,6 @@
       }
       eventBus.emit(event);
       return true;
-    } catch (error) {
-      console.error("[AutoBot] emit failed:", error);
-      return false;
     }
   }
 
@@ -236,21 +224,15 @@
   }
 
   function callDiagnosticMethod(target, methodName, fallback = null) {
-    try {
+    {
       const method = target?.[methodName];
       return typeof method === "function" ? method.call(target) : fallback;
-    } catch (_error) {
-      captureRuntimeException(_error, `engine/ingame/auto-bot/context.js:diag-${methodName}`);
-      return fallback;
     }
   }
 
   function getBotDiagnosticStatus() {
-    try {
+    {
       return typeof _bot !== "undefined" && _bot ? _bot.status : "no-bot";
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/auto-bot/context.js:diag-bot");
-      return "n/a";
     }
   }
 
@@ -284,11 +266,8 @@
   }
 
   function getEventsDisplayDiagnostic() {
-    try {
+    {
       return diagnosticValue(document.querySelector("events-display")?.events?.length, null);
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/auto-bot/context.js:diag-events");
-      return null;
     }
   }
 

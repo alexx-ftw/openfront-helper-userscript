@@ -47,11 +47,8 @@
   }
 
   function runAutoBotWatcherSafely() {
-    try {
+    {
       watcher();
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/auto-bot/lifecycle.js:watcher");
-      console.error("[AutoBot] lifecycle watcher error:", error);
     }
   }
 
@@ -177,14 +174,11 @@
   function atomTileFromScreen(ctx, clientX, clientY) {
     const { game, transform } = ctx;
     if (!game || !transform?.screenToWorldCoordinates) return null;
-    try {
+    {
       const w = transform.screenToWorldCoordinates(clientX, clientY);
       if (!game.isValidCoord?.(w.x, w.y)) return null;
       const tile = game.ref(w.x, w.y);
       return tile == null ? null : tile;
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:150");
-      return null;
     }
   }
 
@@ -194,22 +188,17 @@
   function atomReadyShots(player) {
     let shots = 0;
     let silos;
-    try {
+    {
       silos = player.units(SILO_UNIT) || [];
-    } catch (_e) {
-      return 0;
     }
     for (const s of silos) {
-      try {
+      {
         if (s.isUnderConstruction && s.isUnderConstruction()) continue;
         if (s.isActive && s.isActive() === false) continue;
         const level = (s.level && Number(s.level())) || 1;
         const queue = (s.missileTimerQueue && s.missileTimerQueue()) || [];
         const qlen = Array.isArray(queue) ? queue.length : 0;
         shots += Math.max(0, level - qlen);
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:174");
-        shots += 1; // defensive: assume the silo can fire once
       }
     }
     return shots;
@@ -258,7 +247,7 @@
   // fallback used whenever we can't build a flight path.
   function atomCoveringSams(game, myPlayer, tile) {
     const out = [];
-    try {
+    {
       // After our TEAM has won, allies can nuke each other and ALLIED SAMs will
       // intercept our missiles too — so once won we STOP excluding friendly SAMs.
       const won = atomTeamHasWon(game, myPlayer);
@@ -275,9 +264,6 @@
         });
         if (hit) out.push(hit);
       }
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:234");
-      /* ignore → treat as no coverage */
     }
     return out;
   }
@@ -286,7 +272,7 @@
   // MissileSilo by Manhattan distance to the target). Cooldown is ignored: it is
   // transient and never changes a silo's flight geometry. Returns a tile or null.
   function atomLaunchSiloTile(game, myPlayer, tile) {
-    try {
+    {
       const silos = (myPlayer.units && myPlayer.units(SILO_UNIT)) || [];
       let best = null;
       let bestDist = Infinity;
@@ -301,9 +287,6 @@
         }
       }
       return best;
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:260");
-      return null;
     }
   }
 
@@ -325,7 +308,7 @@
   // and may meet different SAMs. Falls back to impact-tile coverage on any
   // failure so the dialog never breaks.
   function atomCoveringSamsAlongPath(game, myPlayer, tile, rocketDirectionUp) {
-    try {
+    {
       if (!atomCanTraceTrajectory(game)) return atomCoveringSams(game, myPlayer, tile);
       const src = atomLaunchSiloTile(game, myPlayer, tile);
       if (src == null) return atomCoveringSams(game, myPlayer, tile);
@@ -358,9 +341,6 @@
       return atomSamsOnTrajectory({
         game, myPlayer, trajectory, target: tile, source: src, cfg, maxRange, tRangeSq,
       });
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:335");
-      return atomCoveringSams(game, myPlayer, tile);
     }
   }
 
@@ -439,15 +419,12 @@
     const sams = atomCoveringSamsAlongPath(game, myPlayer, tile, rocketDirectionUp);
     const intercept = sams.reduce((sum, s) => sum + s.level, 0);
     let cooldownTicks = 90;
-    try {
+    {
       const c =
         game.config && game.config().SAMCooldown
           ? Number(game.config().SAMCooldown())
           : 90;
       if (Number.isFinite(c) && c > 0) cooldownTicks = c;
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:387");
-      /* keep 90 */
     }
     const gap = Number.isFinite(gapMs) && gapMs > 0 ? gapMs : ATOM_SAFE_GAP_MS;
     const plan = atomReloadAwareSalvo(intercept, gap, cooldownTicks);
@@ -465,10 +442,8 @@
   }
 
   function atomToBig(n) {
-    try {
+    {
       return typeof n === "bigint" ? n : BigInt(Math.floor(Number(n) || 0));
-    } catch (_e) {
-      return 0n;
     }
   }
   function atomFmt(n) {
@@ -483,11 +458,8 @@
   }
 
   function atomT(s) {
-    // Use the auto-bot translator if present, else passthrough.
-    try {
+    {
       if (typeof tr === "function") return tr(s);
-    } catch (_e) {
-      /* ignore */
     }
     return s;
   }
@@ -647,13 +619,10 @@
   // back to the known defaults). nukeMagnitudes(type) → { inner, outer }; the OUTER
   // ring is the destruction radius, which is what we preview.
   function atomWorldRadius(game, type, fallback) {
-    try {
+    {
       const m = game?.config?.().nukeMagnitudes?.(type);
       const r = Number(m?.outer ?? m?.inner);
       if (Number.isFinite(r) && r > 0) return r;
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:592");
-      /* use fallback */
     }
     return fallback;
   }
@@ -664,14 +633,11 @@
     const t = ctx && ctx.transform;
     const scale = Number(t && t.scale);
     if (Number.isFinite(scale) && scale > 0) return worldRadius * scale;
-    try {
+    {
       const w = t.screenToWorldCoordinates(cx, cy);
       const a = t.worldToScreenCoordinates({ x: w.x, y: w.y });
       const b = t.worldToScreenCoordinates({ x: w.x + worldRadius, y: w.y });
       return Math.hypot(b.x - a.x, b.y - a.y);
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:609");
-      return worldRadius;
     }
   }
 
@@ -796,21 +762,15 @@
   // isn't reachable. Cleared (→ null) the instant we commit / cancel / close.
   let atomUsingNativeOverlay = false;
   function atomNativeOverlayAvailable(ctx) {
-    try {
+    {
       const ui = ctx && ctx.buildMenu && ctx.buildMenu.uiState;
       return Boolean(ui) && "ghostStructure" in ui;
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:738");
-      return false;
     }
   }
   function atomSetGhost(ctx, type) {
-    try {
+    {
       const ui = ctx && ctx.buildMenu && ctx.buildMenu.uiState;
       if (ui) ui.ghostStructure = type;
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:746");
-      /* best-effort */
     }
   }
   function atomClearGhost(ctx) {
@@ -861,7 +821,7 @@
   const ATOM_CFG_KEY = "openfront-helper-atom-batch-v1";
   function atomLoadCfg() {
     const cfg = { batchSize: 10, delayMs: 150, lastHydrogen: false };
-    try {
+    {
       const raw = window.localStorage.getItem(ATOM_CFG_KEY);
       if (raw) {
         const p = JSON.parse(raw);
@@ -869,20 +829,15 @@
         if (Number.isFinite(p.delayMs) && p.delayMs >= 0) cfg.delayMs = Math.floor(p.delayMs);
         cfg.lastHydrogen = p.lastHydrogen === true;
       }
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:806");
-      /* defaults */
     }
     return cfg;
   }
   function atomSaveCfg(batchSize, delayMs, lastHydrogen) {
-    try {
+    {
       window.localStorage.setItem(
         ATOM_CFG_KEY,
         JSON.stringify({ batchSize, delayMs, lastHydrogen: lastHydrogen === true }),
       );
-    } catch (_e) {
-      /* ignore */
     }
   }
   function atomSleep(ms) {
@@ -896,7 +851,7 @@
   // After the team win the game lets allies nuke each other AND allied SAMs intercept
   // our missiles, so the recommended-count must then include FRIENDLY SAMs too.
   function atomTeamHasWon(game, myPlayer) {
-    try {
+    {
       if (String(game.config().gameConfig().gameMode) !== "Team") return false;
       const fallout =
         typeof game.numTilesWithFallout === "function" ? game.numTilesWithFallout() : 0;
@@ -908,17 +863,11 @@
       }
       // GAME's real team-win threshold (Config.percentageTilesOwnedToWin → 95% Team).
       let winFrac = 0.95;
-      try {
+      {
         const p = Number(game.config().percentageTilesOwnedToWin());
         if (Number.isFinite(p)) winFrac = p / 100;
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:845");
-        /* keep 0.95 */
       }
       return teamTiles / denom > winFrac;
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:849");
-      return false;
     }
   }
 
@@ -1007,16 +956,13 @@
   }
 
   async function atomBuildableDescriptors(player, tile) {
-    try {
+    {
       const buildables = await player.buildables(tile, [ATOM_UNIT, HYDROGEN_UNIT]);
       if (!Array.isArray(buildables)) return { atom: null, hydrogen: null };
       return {
         atom: buildables.find((item) => item.type === ATOM_UNIT) ?? null,
         hydrogen: buildables.find((item) => item.type === HYDROGEN_UNIT) ?? null,
       };
-    } catch (_e) {
-      captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:atomBuildableDescriptors");
-      return { atom: null, hydrogen: null };
     }
   }
 
@@ -1208,28 +1154,22 @@
   //    a tile" to verify launches, and auto-nuke's pace-don't-spam firing.
   function atomInFlightUnits(player, unitType, mySid, tile) {
     const result = [];
-    try {
+    {
       for (const unit of player.units?.(unitType) ?? []) {
-        try {
+        {
           const owner = unit.owner?.();
           if (owner?.smallID && owner.smallID() !== mySid) continue;
           if (unit.targetTile?.() !== tile) continue;
           result.push(unit);
-        } catch (_e) {
-          captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:atomInFlightUnits.unit");
         }
       }
-    } catch (_e) {
-      captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:atomInFlightUnits");
     }
     return result;
   }
 
   function atomUnitIdentity(unit) {
-    try {
+    {
       return unit.id ? unit.id() : unit;
-    } catch (_e) {
-      return unit;
     }
   }
 
@@ -1254,25 +1194,19 @@
   }
 
   async function atomProbeBuildable(player, tile, unitType) {
-    try {
+    {
       const buildables = await player.buildables(tile, [unitType]);
       return Array.isArray(buildables)
         ? buildables.find((item) => item.type === unitType) ?? null : null;
-    } catch (_e) {
-      captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:atomProbeBuildable");
-      return null;
     }
   }
 
   function atomEmitBuild(session, descriptor) {
-    try {
+    {
       session.buildMenu.sendBuildOrUpgrade(descriptor, session.tile);
       session.fireTimes.push(performance.now());
       session.emitted++;
       return true;
-    } catch (_e) {
-      captureRuntimeException(_e, "engine/ingame/auto-bot/lifecycle.js:atomEmitBuild");
-      return false;
     }
   }
 
@@ -1435,15 +1369,12 @@
 
   // Hotkey = "\" (Backslash). Chosen to AVOID the game's "8" atom hotkey.
   function atomConfiguredHotkey() {
-    try {
+    {
       if (typeof _quickPanelSettingsCache === "object" && _quickPanelSettingsCache?.atomBatchHotkey) {
         return _quickPanelSettingsCache.atomBatchHotkey;
       }
       const raw = localStorage.getItem("openfront-helper-settings");
       return raw ? JSON.parse(raw).atomBatchHotkey || "Backslash" : "Backslash";
-    } catch (e) {
-      captureRuntimeException(e, "engine/ingame/auto-bot/lifecycle.js:atomConfiguredHotkey");
-      return "Backslash";
     }
   }
 
@@ -1535,7 +1466,7 @@
   // pointercancel → onPointerUp, which clears pointerDown BEFORE its menu check, and the far
   // distance keeps that check from opening the radial menu. (Verified vs InputHandler source.)
   function atomReleaseGamePointer() {
-    try {
+    {
       window.dispatchEvent(
         new PointerEvent("pointercancel", {
           bubbles: true,
@@ -1546,8 +1477,6 @@
           clientY: -10000,
         }),
       );
-    } catch (_e) {
-      /* best-effort: PointerEvent construction is the only thing that can throw */
     }
   }
 
@@ -1640,12 +1569,7 @@
     window.addEventListener("click", handleAtomClick, true);
   }
 
-  // Settings bridge — lets the userscript popup's "Atom" tab read/write the batch-
-  // fire pacing (per-spam / delay), persisted to the same localStorage blob the
-  // dialog reads on each fire. Pure config (no game access), so it is always usable
-  // — even in the lobby. Mirrors window.__OFH_autobot. Read-merge-write on set() so
-  // a partial patch never wipes the sibling fields (e.g. the hydrogen choice).
-  try {
+  {
     window.__OFH_atomBatch = {
       SAFE_GAP_MS: ATOM_SAFE_GAP_MS,
       get() {
@@ -1750,17 +1674,10 @@
         return computeNukeRemainingTicks(ctx.game, src, tile);
       },
     };
-  } catch (_e) {
-    /* bridge is best-effort */
-  }
-
-  // Always-on manual macro (inert until "\" is pressed in a game).
-  try {
+  }{
     installAtomMacro();
     window.__ofhAtomMacroInstalled = true;
     runtimeDebugLog("[AtomMacro] installed (point mouse + press '\\' → dialog)");
-  } catch (e) {
-    console.warn("[AtomMacro] install failed:", e);
   }
 })();
 

@@ -64,11 +64,8 @@ function decodeCustom(src: string): Promise<AudioBuffer | null> {
     const marker = ";base64,";
     const idx = src.indexOf(marker);
     if (!src.startsWith("data:") || idx < 0) return null;
-    try {
+    {
       return await getCtx().decodeAudioData(base64ToArrayBuffer(src.slice(idx + marker.length)));
-    } catch (error) {
-      console.error("[ofh] custom sound decode failed:", error);
-      return null;
     }
   })();
   decodeCache.set(src, cached);
@@ -89,10 +86,8 @@ export class WebAudioElement {
   async play(): Promise<void> {
     const context = getCtx();
     if (context.state === "suspended") {
-      try {
+      {
         await context.resume();
-      } catch {
-        /* needs a user gesture first — same as HTMLAudioElement */
       }
     }
     // A real base64 sound (custom upload) -> play it; otherwise the chime.
@@ -118,10 +113,8 @@ export class WebAudioElement {
 export async function ringChime(): Promise<void> {
   const context = getCtx();
   if (context.state === "suspended") {
-    try {
+    {
       await context.resume();
-    } catch {
-      /* needs a user gesture first — the gesture listeners will prime later cues */
     }
   }
   if (context.state !== "running") return;

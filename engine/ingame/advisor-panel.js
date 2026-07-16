@@ -173,21 +173,11 @@
     const nukeBuilders = advNukeBuilderIds(game);
     for (const player of players) {
       if (!player?.isAlive?.()) continue;
-      let relation = "enemy";
-      try {
-        relation = getPlayerRelationToMyPlayer(game, player) || "enemy";
-      } catch (_error) {
-        captureRuntimeException(_error, "engine/ingame/advisor-panel.js:collect-relation");
-      }
+      const relation = getPlayerRelationToMyPlayer(game, player) || "enemy";
       if (["self", "ally", "team"].includes(relation)) continue;
       const threat = advEvaluateThreat(game, me, player, nukeBuilders);
       if (threat.level === "Weak") continue;
-      let name = "?";
-      try {
-        name = getPlayerDisplayName ? getPlayerDisplayName(player) : player.name?.();
-      } catch (_error) {
-        captureRuntimeException(_error, "engine/ingame/advisor-panel.js:collect-name");
-      }
+      const name = getPlayerDisplayName ? getPlayerDisplayName(player) : player.name?.();
       threats.push({ name, threat });
     }
     return threats.sort((a, b) => b.threat.score - a.threat.score).slice(0, 6);
@@ -195,12 +185,7 @@
 
   function appendAdvisorThreats(parts, game, me) {
     parts.push(`<div class="ofh-adv-sec-title">${tr("Threats")}</div>`);
-    let threats = [];
-    try {
-      threats = collectAdvisorThreats(game, me);
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/advisor-panel.js:collect-threats");
-    }
+    const threats = collectAdvisorThreats(game, me);
     if (threats.length === 0) {
       parts.push(`<div class="ofh-adv-empty">${tr("No notable threats")}</div>`);
       return;
@@ -224,10 +209,8 @@
       return;
     }
     let context;
-    try {
+    {
       context = getOpenFrontGameContext();
-    } catch (_error) {
-      context = null;
     }
     const body = document.getElementById(`${ADVISOR_PANEL_ID}-body`);
     if (!context || !context.game || !body) {

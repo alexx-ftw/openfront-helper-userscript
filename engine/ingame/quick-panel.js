@@ -515,8 +515,7 @@
           { duration: 220, easing: "cubic-bezier(0.22, 1, 0.36, 1)", fill: "forwards" }
         );
         anim.onfinish = function() {
-          try { anim.cancel(); } catch(e) {
-  captureRuntimeException(e, "engine/ingame/quick-panel.js:498");}
+          { anim.cancel(); }
           panel.style.transform = "";
           panel.style.opacity = "";
         };
@@ -537,8 +536,7 @@
       );
       anim.onfinish = function() {
         panel.dataset.visible = "false";
-        try { anim.cancel(); } catch(e) {
-  captureRuntimeException(e, "engine/ingame/quick-panel.js:519");}
+        { anim.cancel(); }
         panel.style.transform = "";
         panel.style.opacity = "";
       };
@@ -588,23 +586,20 @@
   }
 
   function _notifySettingChanged(key, value) {
-    try {
+    {
       window.dispatchEvent(new CustomEvent("ofh-quick-panel-setting", {
         detail: { key: key, value: value }
       }));
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/quick-panel.js:573");}
+    }
   }
 
   function _getSetting(key, fallback) {
     if (_quickPanelSettingsCache && key in _quickPanelSettingsCache)
       return _quickPanelSettingsCache[key];
-    // Fallback: read from DEFAULT_SETTINGS if cache is empty
-    try {
+    {
       var defs = window.OpenFrontHelperSettings && window.OpenFrontHelperSettings.DEFAULT_SETTINGS;
       if (defs && key in defs) return defs[key];
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/quick-panel.js:583");}
+    }
     return fallback;
   }
 
@@ -735,19 +730,15 @@
   function _applyStandardSetting(key, enabled) {
     const setter = _resolveSetter(key);
     if (!setter) return;
-    try { setter(enabled); } catch (error) {
-      captureRuntimeException(error, "engine/ingame/quick-panel.js:_applyStandardSetting");
-    }
+    { setter(enabled); }
     _animateSettingPanel(key, enabled);
   }
 
   function _refreshSiloSamTracker() {
-    try {
+    {
       if (typeof window.__OFH_updateSiloSamTracker === "function") {
         window.__OFH_updateSiloSamTracker();
       }
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/quick-panel.js:_refreshSiloSamTracker");
     }
   }
 
@@ -776,10 +767,8 @@
 
   function _applyAutoDonateSetting(key, enabled) {
     if (key !== "autoDonateEnabled" && key !== "autoDonateGoldEnabled") return;
-    try {
+    {
       window.__OFH_autobot?.set?.({ features: { donate: !enabled } });
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/quick-panel.js:_applyAutoDonateSetting");
     }
     const message = enabled
       ? "Auto-donate ON — bot donate OFF"
@@ -791,10 +780,7 @@
     const enabled = Boolean(value);
     _applyStandardSetting(key, enabled);
     if (key === "showAutoBotPanel") {
-      try { window.__OFH_autobot?.set?.({ hidden: !enabled }); }
-      catch (error) {
-        captureRuntimeException(error, "engine/ingame/quick-panel.js:_applySettingLocally");
-      }
+      { window.__OFH_autobot?.set?.({ hidden: !enabled }); }
       _animateSettingPanel(key, enabled);
     }
     _applyCombatTrackerSetting(key, enabled);
@@ -993,7 +979,7 @@
 
   function _resetAllSettings() {
     if (!confirm(_tr("Reset all settings to default? This will reload the page."))) return;
-    try {
+    {
       // Clear all openfront-helper keys from localStorage
       var keysToRemove = [];
       for (let i = 0; i < localStorage.length; i++) {
@@ -1005,8 +991,7 @@
       for (let i = 0; i < keysToRemove.length; i++) {
         localStorage.removeItem(keysToRemove[i]);
       }
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/quick-panel.js:907");}
+    }
     // Reload page
     location.reload();
   }
@@ -1147,26 +1132,23 @@
   // Atom config helpers (bridge to engine's __OFH_atomBatch)
   var _ATOM_DEFAULTS = { batchSize: 10, delayMs: 150, lastHydrogen: false };
   function _atomGetCfg() {
-    try {
+    {
       if (window.__OFH_atomBatch && typeof window.__OFH_atomBatch.get === "function")
         return window.__OFH_atomBatch.get();
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/quick-panel.js:1079");}
+    }
     return _ATOM_DEFAULTS;
   }
   function _atomSetCfg(patch) {
-    try {
+    {
       if (window.__OFH_atomBatch && typeof window.__OFH_atomBatch.set === "function")
         window.__OFH_atomBatch.set(patch);
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/quick-panel.js:1086");}
+    }
   }
   function _atomGapMs(batchSize, delayMs) {
-    try {
+    {
       if (window.__OFH_atomBatch && typeof window.__OFH_atomBatch.effectiveGapMs === "function")
         return window.__OFH_atomBatch.effectiveGapMs(batchSize, delayMs);
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/quick-panel.js:1092");}
+    }
     var perShot = batchSize >= 1 ? (delayMs || 0) / batchSize : delayMs || 0;
     return Math.max(140, perShot); // 140ms = server-safe floor
   }
@@ -1404,8 +1386,7 @@
   }
 
   function _resetLayout() {
-    try { localStorage.removeItem(QUICK_PANEL_POS_KEY); } catch (e) {
-  captureRuntimeException(e, "engine/ingame/quick-panel.js:1301");}
+    { localStorage.removeItem(QUICK_PANEL_POS_KEY); }
     var panel = document.getElementById(QUICK_PANEL_ID);
     if (panel) { panel.style.left = ""; panel.style.top = ""; panel.style.right = "16px"; }
   }
@@ -1430,16 +1411,13 @@
   }
 
   function _getAvailableQuickPanelLanguages() {
-    try {
+    {
       const locales = window.__OFH_ASSETS?.locales;
       if (!locales) return [{ code: "en", name: "English" }];
       const languages = Object.keys(locales)
         .filter((key) => key.length === 2)
         .map((key) => ({ code: key, name: locales[key].languageName || key }));
       return languages.length > 0 ? languages : [{ code: "en", name: "English" }];
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/quick-panel.js:_getAvailableQuickPanelLanguages");
-      return [{ code: "en", name: "English" }, { code: "vi", name: "Tiếng Việt" }];
     }
   }
 
@@ -1695,7 +1673,7 @@
   document.addEventListener("mousemove", function(e) { _ksMouseX = e.clientX; _ksMouseY = e.clientY; });
 
   function _getTileUnderCursor() {
-    try {
+    {
       var ctx = getOpenFrontGameContext();
       if (!ctx || !ctx.transform) return null;
       var w = ctx.transform.screenToWorldCoordinates(_ksMouseX, _ksMouseY);
@@ -1704,26 +1682,19 @@
       var y = Math.floor(w.y);
       var game = ctx.game;
       if (typeof game.ref === "function") return game.ref(x, y);
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/quick-panel.js:1612");}
+    }
     return null;
   }
 
   function _getPlayerId(player) {
-    try {
+    {
       return typeof player?.id === "function" ? player.id() : null;
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/quick-panel.js:_getPlayerId");
-      return null;
     }
   }
 
   function _getPlayerTroops(player) {
-    try {
+    {
       return Number(typeof player?.troops === "function" ? player.troops() : 0);
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/quick-panel.js:_getPlayerTroops");
-      return 0;
     }
   }
 
@@ -1743,11 +1714,8 @@
   }
 
   function _getKillShotTarget(game, tile) {
-    try {
+    {
       return typeof game.owner === "function" ? game.owner(tile) : null;
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/quick-panel.js:_getKillShotTarget");
-      return null;
     }
   }
 
@@ -1776,7 +1744,7 @@
       _toast("✗ " + _tr("No target selected"), "rgba(220,40,40,0.92)");
       return;
     }
-    try {
+    {
       var ctx = getOpenFrontGameContext();
       if (!ctx || !ctx.game) {
         _toast("✗ " + _tr("No game state"), "rgba(220,40,40,0.92)");
@@ -1800,12 +1768,11 @@
       const enemyTroops = _getPlayerTroops(target);
       if (myTroops <= 0) { _toast("✗ " + _tr("No troops"), "rgba(220,40,40,0.92)"); return; }
       _sendKillShotForTroops(target, myTroops, enemyTroops);
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/quick-panel.js:1695");}
+    }
   }
 
   function _setGameAttackRatio(pct) {
-    try {
+    {
       var sliders = document.querySelectorAll('control-panel input[type="range"]');
       for (let i = 0; i < sliders.length; i++) {
         sliders[i].value = String(pct);
@@ -1813,8 +1780,7 @@
         sliders[i].dispatchEvent(new InputEvent("input", { bubbles: true, composed: true }));
         sliders[i].dispatchEvent(new Event("change", { bubbles: true, composed: true }));
       }
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/quick-panel.js:1707");}
+    }
   }
 
   // ---- Lifecycle ----
@@ -1897,8 +1863,7 @@
       { duration: 260, easing: "cubic-bezier(0.22, 1, 0.36, 1)", fill: "forwards" }
     );
     anim.onfinish = function() {
-      try { anim.cancel(); } catch(e) {
-  captureRuntimeException(e, "engine/ingame/quick-panel.js:1794");}
+      { anim.cancel(); }
       panel.style.transform = "";
       panel.style.opacity = "";
       _qpInTransition = false;
@@ -1919,8 +1884,7 @@
       runtimeState.quickPanelEnabled = false;
       // Notify lobby so syncQuickPanelHelper won't re-show it
       _notifySettingChanged("showQuickPanel", false);
-      try { anim.cancel(); } catch(e) {
-  captureRuntimeException(e, "engine/ingame/quick-panel.js:1815");}
+      { anim.cancel(); }
       panel.style.transform = "";
       panel.style.opacity = "";
       _qpInTransition = false;

@@ -26,17 +26,14 @@
   }
 
   function readRoundLogHistory() {
-    try {
+    {
       const history = JSON.parse(localStorage.getItem(ROUND_LOG_HISTORY_STORAGE_KEY) || "[]");
       return Array.isArray(history) ? history : [];
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/round-logger.js:32");
-      return [];
     }
   }
 
   function archiveStoredRoundLog() {
-    try {
+    {
       const stored = JSON.parse(localStorage.getItem(ROUND_LOG_STORAGE_KEY) || "null");
       if (!stored?.gameId || !Array.isArray(stored.events) || stored.events.length === 0) return;
       const history = readRoundLogHistory().filter((entry) => entry?.gameId !== stored.gameId);
@@ -45,9 +42,6 @@
         ROUND_LOG_HISTORY_STORAGE_KEY,
         JSON.stringify(history.slice(0, ROUND_LOG_MAX_MATCHES)),
       );
-    } catch (error) {
-      // History is diagnostic-only; gameplay must continue if storage is unavailable.
-      console.warn("OpenFront helper could not archive match diagnostics:", error);
     }
   }
 
@@ -66,22 +60,17 @@
 
   function roundLogFlush() {
     if (_roundLogEvents.length === 0) return;
-    try {
+    {
       localStorage.setItem(ROUND_LOG_STORAGE_KEY, JSON.stringify(roundLogEntry()));
-    } catch (_error) {
-      // Storage full or unavailable — silently drop.
     }
   }
 
   function roundLogStartMatch(game) {
     archiveStoredRoundLog();
     _roundLogEvents = [];
-    try {
+    {
       const ticks = game.ticks ? game.ticks() : 0;
       _roundLogGameId = `match-${Date.now()}-${ticks}`;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/round-logger.js:81");
-      _roundLogGameId = `match-${Date.now()}`;
     }
     roundLogRecord("match_start", { gameId: _roundLogGameId });
   }
@@ -151,11 +140,10 @@
   }
 
   function roundLogHelperTick() {
-    try {
+    {
       const ctx = getOpenFrontGameContext();
       if (ctx?.game) roundLogTick(ctx.game);
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/round-logger.js:138"); /* ignore */ }
+    }
   }
 
   function setRoundLoggerEnabled(enabled) {
@@ -167,10 +155,8 @@
         _roundLogFlushTimer = window.setInterval(roundLogFlush, ROUND_LOG_FLUSH_MS);
       }
       const context = (() => {
-        try {
+        {
           return getOpenFrontGameContext();
-        } catch (_error) {
-          return null;
         }
       })();
       if (context?.game) roundLogStartMatch(context.game);
@@ -194,7 +180,7 @@
 
   function exportRoundLog() {
     roundLogFlush();
-    try {
+    {
       const raw = localStorage.getItem(ROUND_LOG_STORAGE_KEY);
       if (!raw) return null;
       const data = JSON.parse(raw);
@@ -214,9 +200,6 @@
       a.click();
       URL.revokeObjectURL(url);
       return data;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/round-logger.js:197");
-      return null;
     }
   }
 

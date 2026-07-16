@@ -4,10 +4,8 @@ const gameStartNotificationDetector = createGameStartNotificationDetector();
 
 function pollGameStartNotification() {
   let context;
-  try {
+  {
     context = typeof getOpenFrontGameContext === "function" ? getOpenFrontGameContext() : null;
-  } catch (_error) {
-    return;
   }
 
   const game = context?.game;
@@ -16,10 +14,8 @@ function pollGameStartNotification() {
   }
 
   let inSpawnPhase;
-  try {
+  {
     inSpawnPhase = game.inSpawnPhase();
-  } catch (_error) {
-    return;
   }
 
   if (

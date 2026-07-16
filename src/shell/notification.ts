@@ -12,30 +12,24 @@ const TITLE = "⊕ OpenFront Helper";
  *  popup open); a no-op once the user has already granted or denied it. */
 export function requestJoinNotificationPermission(): void {
   let shouldRequest = false;
-  try {
+  {
     shouldRequest = "Notification" in window && Notification.permission === "default";
-  } catch {
-    /* some embedders throw on Notification access — ignore */
   }
-  if (shouldRequest) void Notification.requestPermission().catch(() => undefined);
+  if (shouldRequest) void Notification.requestPermission();
 }
 
 function showOsNotification(text: string, tag: string): boolean {
-  try {
+  {
     if ("Notification" in window && Notification.permission === "granted") {
       const n = new Notification(TITLE, { body: text, tag });
       n.onclick = () => {
-        try {
+        {
           window.focus();
-        } catch {
-          /* ignore */
         }
         n.close();
       };
       return true;
     }
-  } catch {
-    /* fall through to the in-page toast */
   }
   return false;
 }

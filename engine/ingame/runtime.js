@@ -280,10 +280,8 @@ const ALLIANCE_REQUEST_PANEL_POS_KEY =
 const ALLIANCE_REQUEST_PANEL_AUTORENEW_KEY =
   "openfront-helper-alliance-request-autorenew";
 runtimeState.allianceRequestsAutoRenewEnabled = (() => {
-  try {
+  {
     return window.localStorage.getItem(ALLIANCE_REQUEST_PANEL_AUTORENEW_KEY) === "1";
-  } catch (_error) {
-    return false;
   }
 })();
 const autoRenewedAllianceEvents = new WeakSet();
@@ -427,10 +425,8 @@ function _runHelperTick() {
       continue;
     }
     registration.lastRunAt = now;
-    try {
+    {
       listener();
-    } catch (error) {
-      console.error("OpenFront helper tick listener failed:", error);
     }
   }
 }
@@ -460,10 +456,8 @@ function registerHelperTickListener(fn, intervalMs = HELPER_TICK_INTERVAL_MS) {
     lastRunAt: _helperTickNow(),
   });
   _ensureHelperTickRunning();
-  try {
+  {
     fn();
-  } catch (error) {
-    console.error("OpenFront helper tick listener (initial) failed:", error);
   }
 }
 
@@ -479,10 +473,9 @@ function unregisterHelperTickListener(fn) {
 // this so the Quick Panel toggle reflects the actual state when a panel is
 // closed via its own X button (not just the QP toggle).
 function _qpSync(settingKey, enabled) {
-  try {
+  {
     window.dispatchEvent(new CustomEvent("ofh-quick-panel-setting", {
       detail: { key: settingKey, value: Boolean(enabled) }
     }));
-  } catch (e) {
-  captureRuntimeException(e, "engine/ingame/runtime.js:472");}
+  }
 }

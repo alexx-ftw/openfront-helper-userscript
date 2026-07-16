@@ -61,10 +61,10 @@
     }
     if (!listenersMap) return null;
     for (const ctor of listenersMap.keys()) {
-      try {
+      {
         const inst = new ctor(0, 100);
         if (inst && inst.dst === 0 && inst.troops === 100) return ctor;
-      } catch { /* skip ctors that throw */ }
+      }
     }
     return null;
   }
@@ -78,16 +78,13 @@
   }
 
   function getBoatMacroTile(game, transform, event) {
-    try {
+    {
       const worldCoords = transform.screenToWorldCoordinates(
         event.clientX,
         event.clientY,
       );
       if (!game.isValidCoord?.(worldCoords.x, worldCoords.y)) return null;
       return game.ref(worldCoords.x, worldCoords.y) ?? null;
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/boat-macro.js:getBoatMacroTile");
-      return null;
     }
   }
 

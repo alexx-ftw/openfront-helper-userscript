@@ -12,13 +12,10 @@
       return state.border.tiles;
     }
     let tiles;
-    try {
+    {
       const res = await withTimeout(me.borderTiles(), WORKER_TIMEOUT_MS, null);
       const set = res?.borderTiles ?? res;
       tiles = set ? Array.from(set) : [];
-    } catch (error) {
-      console.warn("[AutoBot] borderTiles failed:", error);
-      tiles = [];
     }
     state.border = { tiles, atMs: now };
     return tiles;
@@ -28,10 +25,8 @@
   // treats a nation as "coastal" when it can trade by sea — lakes/closed seas
   // don't count (mirrors NationStructureBehavior's sharedWaterComponents).
   function isOceanAdjacent(game, t) {
-    try {
+    {
       if (typeof game.isOceanShore === "function") return game.isOceanShore(t);
-    } catch (_e) {
-      /* fall through */
     }
     for (const n of game.neighbors(t)) {
       if (game.isOcean?.(n)) return true;

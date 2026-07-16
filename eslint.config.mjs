@@ -18,6 +18,17 @@ const strictRules = {
   "no-duplicate-imports": "error",
   "no-implicit-coercion": "error",
   "no-promise-executor-return": "error",
+  "no-restricted-syntax": [
+    "error",
+    {
+      selector: "CatchClause",
+      message: "Do not intercept exceptions; fix the cause and let failures propagate.",
+    },
+    {
+      selector: "MemberExpression[property.name='catch']",
+      message: "Do not use Promise.catch; await or return the promise and let rejection propagate.",
+    },
+  ],
   "no-template-curly-in-string": "error",
   "no-unmodified-loop-condition": "error",
   "no-unreachable-loop": "error",

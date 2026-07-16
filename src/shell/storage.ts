@@ -20,10 +20,8 @@ const rawKey = (key: string) => PREFIX + key;
 function readKey(key: string): unknown {
   const raw = localStorage.getItem(rawKey(key));
   if (raw === null) return undefined;
-  try {
+  {
     return JSON.parse(raw);
-  } catch {
-    return undefined;
   }
 }
 
@@ -33,10 +31,8 @@ function writeKey(key: string, value: unknown): void {
 
 function emit(changes: Record<string, StorageChange>): void {
   for (const listener of listeners) {
-    try {
+    {
       listener(changes, "local");
-    } catch (error) {
-      console.error("[ofh] storage listener threw:", error);
     }
   }
 }
@@ -111,10 +107,8 @@ export function installCrossTabSync(): void {
     }
     const parse = (raw: string | null): unknown => {
       if (raw === null) return undefined;
-      try {
+      {
         return JSON.parse(raw);
-      } catch {
-        return undefined;
       }
     };
     emit({

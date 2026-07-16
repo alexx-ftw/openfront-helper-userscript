@@ -96,11 +96,8 @@
   }
 
   function safeRightClickValue(read, fallback) {
-    try {
+    {
       return read();
-    } catch (error) {
-      console.warn("[ofh] could not read right-click conquest state:", error);
-      return fallback;
     }
   }
 
@@ -192,7 +189,7 @@
   }
 
   function fireOneClickAttack(game, targetPlayer, troops) {
-    try {
+    {
       if (typeof discoverCtors !== "function" || typeof getEventBus !== "function") return;
       const eventBus = getEventBus();
       if (!eventBus) return;
@@ -202,8 +199,6 @@
       if (targetId != null) {
         emitIntent(ctors.attack, targetId, troops);
       }
-    } catch (error) {
-      console.warn("[ofh] could not send the right-click conquest attack:", error);
     }
   }
 

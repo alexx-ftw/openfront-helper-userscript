@@ -488,12 +488,9 @@
       return LANGUAGE_NAME_OVERRIDES[code];
     }
 
-    try {
+    {
       const displayNames = new Intl.DisplayNames([locale], { type: "language" });
       return displayNames.of(code) || code;
-    } catch (error) {
-      if (error instanceof RangeError) return code;
-      throw error;
     }
   }
 
@@ -526,7 +523,7 @@
 
   async function loadBundle(language) {
     if (!defaultBundlePromise) {
-      defaultBundlePromise = fetchBundle("en").catch(() => DEFAULT_TRANSLATIONS);
+      defaultBundlePromise = fetchBundle("en");
     }
 
     const defaultBundle = await defaultBundlePromise;
@@ -534,12 +531,9 @@
       return { ...DEFAULT_TRANSLATIONS, ...defaultBundle };
     }
 
-    try {
+    {
       const bundle = await fetchBundle(language);
       return { ...DEFAULT_TRANSLATIONS, ...defaultBundle, ...bundle };
-    } catch (error) {
-      console.warn("[ofh] could not load the requested translation bundle:", error);
-      return { ...DEFAULT_TRANSLATIONS, ...defaultBundle };
     }
   }
 

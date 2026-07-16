@@ -312,15 +312,9 @@
 
   function defensePostCoversTile(post, frontTile, distanceSquared, rangeSquared) {
     if (post.tile == null || typeof distanceSquared !== "function") return false;
-    try {
+    {
       const distance = Number(distanceSquared(post.tile, frontTile));
       return Number.isFinite(distance) && distance <= rangeSquared;
-    } catch (_error) {
-      captureRuntimeException(
-        _error,
-        "engine/ingame/auto-bot/attackBehavior.js:defensePostCoversTile",
-      );
-      return false;
     }
   }
 
@@ -401,7 +395,7 @@
   }
 
   function playersShareClanTag(left, right) {
-    try {
+    {
       const objectiveApi =
         typeof globalThis === "object" ? globalThis.__OFHSpawnObjective : null;
       if (
@@ -415,9 +409,6 @@
         objectiveApi.getPlayerClanTag(left),
         objectiveApi.getPlayerClanTag(right),
       );
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/attackBehavior.js:395");
-      return false;
     }
   }
 
@@ -578,12 +569,9 @@
     }
 
     currentAttackDecisionTick() {
-      try {
+      {
         const tick = Number(this.game?.ticks?.());
         return Number.isFinite(tick) ? tick : 0;
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/attackBehavior.js:553");
-        return 0;
       }
     }
 
@@ -625,31 +613,26 @@
 
     getOutboundAttackSnapshot() {
       let outgoing;
-      try {
+      {
         outgoing = this.player.outgoingAttacks?.() || [];
-      } catch (_error) {
-        outgoing = [];
       }
       return outgoing
         .map((attack) => {
-          try {
-            if (attack.retreating?.()) return null;
-            const target = attack.target?.();
-            const targetIsPlayer = target?.isPlayer?.() === true;
-            return {
-              attack,
-              id: attack.id?.(),
-              targetIsPlayer,
-              targetKey: targetIsPlayer
-                ? this.getOutboundAttackTargetKey(target)
-                : null,
-              troops: Math.max(0, Number(attack.troops?.() || 0)),
-            };
-          } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/attackBehavior.js:616");
-            return null;
-          }
-        })
+        {
+          if (attack.retreating?.()) return null;
+          const target = attack.target?.();
+          const targetIsPlayer = target?.isPlayer?.() === true;
+          return {
+            attack,
+            id: attack.id?.(),
+            targetIsPlayer,
+            targetKey: targetIsPlayer
+              ? this.getOutboundAttackTargetKey(target)
+              : null,
+            troops: Math.max(0, Number(attack.troops?.() || 0)),
+          };
+        }
+      })
         .filter(Boolean);
     }
 
@@ -660,35 +643,30 @@
         return [];
       }
       let units;
-      try {
+      {
         units = this.player.units(transportType) || [];
-      } catch (_error) {
-        units = [];
       }
       return units
         .map((unit) => {
-          try {
-            if (
-              typeof unit?.isActive === "function" &&
-              unit.isActive() === false
-            ) {
-              return null;
-            }
-            const targetTile = unit.targetTile?.();
-            if (targetTile == null) return null;
-            const transportState = unit.transportShipState?.();
-            if (transportState?.isRetreating === true) return null;
-            return {
-              unit,
-              id: unit.id?.(),
-              targetTile,
-              troops: Math.max(0, Number(unit.troops?.() || 0)),
-            };
-          } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/attackBehavior.js:654");
+        {
+          if (
+            typeof unit?.isActive === "function" &&
+            unit.isActive() === false
+          ) {
             return null;
           }
-        })
+          const targetTile = unit.targetTile?.();
+          if (targetTile == null) return null;
+          const transportState = unit.transportShipState?.();
+          if (transportState?.isRetreating === true) return null;
+          return {
+            unit,
+            id: unit.id?.(),
+            targetTile,
+            troops: Math.max(0, Number(unit.troops?.() || 0)),
+          };
+        }
+      })
         .filter(Boolean);
     }
 
@@ -997,16 +975,10 @@
       const observedTroops = Math.max(0, Number(ownTroops) || 0);
       if (observedTroops <= 0) return 0;
 
-      let maximum = observedTroops;
-      try {
-        maximum = Math.max(
-          observedTroops,
-          Number(this.game.config().maxTroops(this.player)) || observedTroops,
-        );
-      } catch (_error) {
-        /* keep the observed troop count as a safe fallback */
-      }
-      return maximum;
+      return Math.max(
+        observedTroops,
+        Number(this.game.config().maxTroops(this.player)) || observedTroops,
+      );
     }
 
     getEarlyGameProductionReserveTroops() {
@@ -1149,14 +1121,8 @@
       }
 
       let strongest;
-      try {
+      {
         strongest = this.calculateStrongestBorderOpponentTroops(includeFriendly);
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/attackBehavior.js:getStrongestBorderOpponentTroops",
-        );
-        strongest = null;
       }
 
       this.strongestBorderOpponentTroopsCacheTick = tick;
@@ -1217,7 +1183,7 @@
     }
 
     terraNulliusEngineAttackLoss(target, tile, attackTroops) {
-      try {
+      {
         const attackLogic = this.game?.config?.()?.attackLogic;
         if (typeof attackLogic !== "function") return null;
         const result = attackLogic(
@@ -1229,12 +1195,6 @@
         );
         const loss = Number(result?.attackerTroopLoss);
         return Number.isFinite(loss) && loss >= 0 ? loss : null;
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/attackBehavior.js:terraNulliusEngineAttackLoss",
-        );
-        return null;
       }
     }
 
@@ -1410,7 +1370,7 @@
     }
 
     readEnemyDefensePostConfig(method, fallback) {
-      try {
+      {
         const config = this.game.config?.();
         const value =
           typeof config?.[method] === "function"
@@ -1418,14 +1378,11 @@
             : config?.[method];
         const numeric = Number(value);
         return Number.isFinite(numeric) ? numeric : fallback;
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/attackBehavior.js:1381");
-        return fallback;
       }
     }
 
     tileDistanceSquared(left, right) {
-      try {
+      {
         if (typeof this.game.euclideanDistSquared === "function") {
           return Number(this.game.euclideanDistSquared(left, right));
         }
@@ -1441,9 +1398,6 @@
           const distance = Number(this.game.manhattanDist(left, right));
           return distance * distance;
         }
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/attackBehavior.js:1403");
-        /* malformed/stale tile views are treated as uncovered */
       }
       return Infinity;
     }
@@ -1458,14 +1412,11 @@
       }
 
       const operational = [];
-      try {
+      {
         for (const unit of target.units?.(UNIT.DefensePost) ?? []) {
           const record = this.operationalEnemyDefensePostRecord(unit);
           if (record) operational.push(record);
         }
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/attackBehavior.js:1448");
-        // A stale PlayerView must never abort the complete attack decision.
       }
       this.enemyDefensePostUnitsCache.set(targetSid, operational);
       return operational;
@@ -1652,13 +1603,8 @@
       );
       for (const neighbor of nearby) {
         if (!neighbor.isPlayer() || players.has(neighbor)) continue;
-        try {
+        {
           if (this.player.sharesBorderWith(neighbor) === true) players.add(neighbor);
-        } catch (_error) {
-          captureRuntimeException(
-            _error,
-            "engine/ingame/auto-bot/attackBehavior.js:borderingPlayersFrom",
-          );
         }
       }
       return [...players].sort((left, right) => left.troops() - right.troops());
@@ -1758,16 +1704,10 @@
     disconnectedBorderingPlayers(players) {
       return players
         .filter((player) => {
-          try {
-            return player.isPlayer() && player.isDisconnected?.() === true;
-          } catch (_error) {
-            captureRuntimeException(
-              _error,
-              "engine/ingame/auto-bot/attackBehavior.js:disconnectedBorderingPlayers",
-            );
-            return false;
-          }
-        })
+        {
+          return player.isPlayer() && player.isDisconnected?.() === true;
+        }
+      })
         .sort((left, right) => left.troops() - right.troops());
     }
 
@@ -2017,7 +1957,7 @@
       if (!this.prepareExistingTribeAttack(candidate, selectedTargetKeys, targetKey)) {
         return false;
       }
-      try {
+      {
         const launched = await this.sendAttack(
           candidate.player,
           false,
@@ -2028,9 +1968,6 @@
         );
         if (launched) selectedTargetKeys.add(targetKey);
         return launched;
-      } catch (error) {
-        console.warn("[EarlyGame] tribe target failed:", candidate.id, error);
-        return false;
       }
     }
 
@@ -2065,17 +2002,11 @@
     // maritime corridor when they leave through the map edge, while a closed
     // inland lake must remain excluded from this objective.
     earlyGameWaterIsOpen(tile) {
-      try {
+      {
         return (
           this.game.isOcean?.(tile) === true ||
           this.isEarlyGameMapEdge(tile)
         );
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/attackBehavior.js:earlyGameWaterIsOpen",
-        );
-        return false;
       }
     }
 
@@ -2138,10 +2069,8 @@
     isEarlyGameMaritimeShore(tile) {
       if (tile == null || typeof this.game.isLand !== "function") return false;
       if (!this.game.isLand(tile)) return false;
-      try {
+      {
         if (this.game.isOceanShore?.(tile) === true) return true;
-      } catch (_e) {
-        /* fall through to river-edge detection */
       }
       if (typeof this.game.isShore !== "function") return false;
       if (!this.game.isShore(tile)) return false;
@@ -2218,12 +2147,10 @@
         this.addEligibleEarlyGameTribe(tribesById, candidate);
       }
       for (const candidate of otherPlayers) {
-        try {
+        {
           if (this.player.sharesBorderWith(candidate) === true) {
             this.addEligibleEarlyGameTribe(tribesById, candidate);
           }
-        } catch (error) {
-          recordOptionalAttackSnapshotFailure(error);
         }
       }
       return [...tribesById.values()];
@@ -2260,7 +2187,7 @@
 
     async fetchEarlyGameTribeBorder(tribe) {
       let border = new Set();
-      try {
+      {
         if (typeof this.game.ensureBorderTiles === "function") {
           const fetched = await withTimeout(
             this.game.ensureBorderTiles(tribe),
@@ -2270,8 +2197,6 @@
           if (fetched?.size > 0) border = fetched;
         }
         if (border.size === 0) border = tribe.borderTiles?.() || new Set();
-      } catch (error) {
-        recordOptionalAttackSnapshotFailure(error);
       }
       return border;
     }
@@ -2320,12 +2245,7 @@
       const bordering = [];
       const other = [];
       for (const tribe of tribes) {
-        let sharesBorder = false;
-        try {
-          sharesBorder = this.player.sharesBorderWith(tribe) === true;
-        } catch (error) {
-          recordOptionalAttackSnapshotFailure(error);
-        }
+        const sharesBorder = this.player.sharesBorderWith(tribe) === true;
         (sharesBorder ? bordering : other).push(tribe);
       }
       return { bordering, other };
@@ -2352,7 +2272,7 @@
       await Promise.all(
         tribes.map(async (tribe) => {
           let border = topologyBordersById.get(tribe.smallID()) || new Set();
-          try {
+          {
             if (border.size === 0 && typeof this.game.ensureBorderTiles === "function") {
               const fetched = await withTimeout(
                 this.game.ensureBorderTiles(tribe),
@@ -2365,8 +2285,6 @@
               const snapshot = tribe.borderTiles();
               if (snapshot?.size > 0) border = snapshot;
             }
-          } catch (error) {
-            recordOptionalAttackSnapshotFailure(error);
           }
           borderByTribe.set(tribe, border);
         }),
@@ -2407,25 +2325,20 @@
 
     countEarlyGameIncomingContesters(tribe, tribeSid, mySid) {
       let count = 0;
-      try {
+      {
         for (const attack of tribe.incomingAttacks?.() ?? []) {
           const attacker = attack.attacker?.();
           const sid = attacker?.smallID?.();
           if (attacker?.isPlayer?.() && sid !== mySid && sid !== tribeSid) count++;
         }
-      } catch (error) {
-        recordOptionalAttackSnapshotFailure(error);
       }
       return count;
     }
 
     earlyGameTribeSharesLandBorder(tribe, ownEdges) {
       if (ownEdges > 0) return true;
-      try {
+      {
         return this.player.sharesBorderWith(tribe) === true;
-      } catch (error) {
-        recordOptionalAttackSnapshotFailure(error);
-        return false;
       }
     }
 
@@ -2755,10 +2668,8 @@
     }
 
     async estimateEarlyGameTribeBoatEta(targetBorder, candidate = null) {
-      try {
+      {
         if (this.game.config().isUnitDisabled(UNIT.TransportShip)) return null;
-      } catch (_e) {
-        /* older adapters do not expose unit-disable checks */
       }
       if (
         this.game.hasTransportRouteEstimator !== true ||
@@ -2795,27 +2706,24 @@
         targetShores
           .slice(0, EARLY_TRIBE_BOAT_ETA_TARGETS)
           .map(async (targetShore) => {
-            try {
-              const spawn = await withTimeout(
-                this.player.bestTransportShipSpawn(targetShore),
-                WORKER_TIMEOUT_MS,
-                false,
-              );
-              if (spawn === false) return null;
-              const eta = await withTimeout(
-                this.game.estimateTransportRouteTicks(targetShore),
-                WORKER_TIMEOUT_MS,
-                null,
-              );
-              const numericEta = Number(eta);
-              return Number.isFinite(numericEta) && numericEta >= 0
-                ? { eta: numericEta, tile: targetShore }
-                : null;
-            } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/attackBehavior.js:2809");
-              return null;
-            }
-          }),
+          {
+            const spawn = await withTimeout(
+              this.player.bestTransportShipSpawn(targetShore),
+              WORKER_TIMEOUT_MS,
+              false,
+            );
+            if (spawn === false) return null;
+            const eta = await withTimeout(
+              this.game.estimateTransportRouteTicks(targetShore),
+              WORKER_TIMEOUT_MS,
+              null,
+            );
+            const numericEta = Number(eta);
+            return Number.isFinite(numericEta) && numericEta >= 0
+              ? { eta: numericEta, tile: targetShore }
+              : null;
+          }
+        }),
       );
       const bestRoute = measuredRoutes
         .filter(Boolean)
@@ -2829,37 +2737,18 @@
     // Territory-centre movement and tile growth are useful leading indicators
     // before an outgoing attack appears in the target's incoming snapshot.
     earlyGameCompetitorTick() {
-      try {
+      {
         return Number(this.game.ticks?.()) || 0;
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/attackBehavior.js:earlyGameCompetitorTick",
-        );
-        return 0;
       }
     }
 
     earlyGameCompetitorOutgoingTargets(other) {
-      let outgoing = [];
-      try {
-        outgoing = other.outgoingAttacks?.() ?? [];
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/attackBehavior.js:earlyGameCompetitorOutgoingTargets",
-        );
-      }
+      const outgoing = other.outgoingAttacks?.() ?? [];
       const targets = [];
       for (const attack of outgoing) {
-        try {
+        {
           const target = this.earlyGameCompetitorAttackTarget(attack);
           if (target) targets.push(target);
-        } catch (_error) {
-          captureRuntimeException(
-            _error,
-            "engine/ingame/auto-bot/attackBehavior.js:earlyGameCompetitorOutgoingTargets:attack",
-          );
         }
       }
       return targets;
@@ -2928,16 +2817,11 @@
       const seen = new Set();
       const tick = this.earlyGameCompetitorTick();
       for (const other of players ?? []) {
-        try {
+        {
           const profile = this.earlyGameCompetitorProfile(other, mySid, tick);
           if (!profile) continue;
           profiles.push(profile);
           seen.add(profile.sid);
-        } catch (_error) {
-          captureRuntimeException(
-            _error,
-            "engine/ingame/auto-bot/attackBehavior.js:getEarlyGameCompetitorProfiles",
-          );
         }
       }
       for (const sid of this.earlyFoodMovement.keys()) {
@@ -2996,7 +2880,7 @@
     }
 
     appendIncomingFoodRaceSignals(tribe, tribeSid, context) {
-      try {
+      {
         for (const attack of tribe.incomingAttacks?.() ?? []) {
           if (attack.retreating?.() === true) continue;
           const sid = attack.attacker?.()?.smallID?.();
@@ -3008,11 +2892,6 @@
           );
           context.incomingAttackers.add(sid);
         }
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/attackBehavior.js:appendIncomingFoodRaceSignals",
-        );
       }
     }
 
@@ -3242,14 +3121,12 @@
       ) {
         return null;
       }
-      try {
+      {
         return await withTimeout(
           this.game.estimateTransportRouteTicks(tile),
           WORKER_TIMEOUT_MS,
           null,
         );
-      } catch (_e) {
-        return null;
       }
     }
 
@@ -3394,7 +3271,7 @@
     }
 
     logOpportunisticBoatDiagnostic(context) {
-      try {
+      {
         if (context.nowMs - (state._boatDiagAt || 0) <= 5000) return;
         state._boatDiagAt = context.nowMs;
         runtimeDebugLog("[Boat] diag:", {
@@ -3410,11 +3287,6 @@
           islandFill: state.settings.boatIslandFill || 0.35,
           maxShips: this.game.config().boatMaxNumber(),
         });
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/attackBehavior.js:logOpportunisticBoatDiagnostic",
-        );
       }
     }
 
@@ -3476,18 +3348,13 @@
     refreshInflightBoatTargets() {
       this._inflightBoatTargets = [];
       for (const unit of this.player.units(UNIT.TransportShip)) {
-        try {
+        {
           const tile = unit.targetTile ? unit.targetTile() : null;
           if (tile == null) continue;
           this._inflightBoatTargets.push({
             x: this.game.x(tile),
             y: this.game.y(tile),
           });
-        } catch (_error) {
-          captureRuntimeException(
-            _error,
-            "engine/ingame/auto-bot/attackBehavior.js:refreshInflightBoatTargets",
-          );
         }
       }
     }
@@ -3667,12 +3534,9 @@
       const r = state.settings.boatSpreadRadius || 30;
       let tx;
       let ty;
-      try {
+      {
         tx = this.game.x(tile);
         ty = this.game.y(tile);
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/attackBehavior.js:3678");
-        return false;
       }
       for (const p of this._inflightBoatTargets) {
         if (Math.abs(p.x - tx) + Math.abs(p.y - ty) <= r) return true;
@@ -3788,14 +3652,9 @@
       };
       const candidates = [];
       for (const player of this.game.players()) {
-        try {
+        {
           const candidate = this.boatPlayerCandidate(player, context);
           if (candidate) candidates.push(candidate);
-        } catch (_error) {
-          captureRuntimeException(
-            _error,
-            "engine/ingame/auto-bot/attackBehavior.js:boatPlayerCandidates",
-          );
         }
       }
       return candidates.sort((left, right) => left.dist - right.dist);
@@ -3925,10 +3784,8 @@
         state.stats.attacks++;
         setLastAction(tr(label), "naval");
         let target;
-        try {
+        {
           target = this.game.owner?.(dst) || null;
-        } catch (_error) {
-          target = null;
         }
         this.recordOutboundAttackIntent(target, safeTroops, {
           attackType: "boat",
@@ -4307,7 +4164,7 @@
     // stick). Gated by settings.winFixes (off → exactly this.reserveRatio = src).
     effectiveReserveRatio() {
       let r = this.reserveRatio;
-      try {
+      {
         if (state.settings.winFixes) {
           const total = this.game.numLandTiles() || 1;
           const share = this.player.numTilesOwned() / total;
@@ -4315,8 +4172,6 @@
           const cap = state.settings.sizeReserveCap ?? 0.6;
           r = Math.max(r, Math.min(cap, share * scale));
         }
-      } catch (_e) {
-        /* default to src reserveRatio */
       }
       return r;
     }
@@ -4537,7 +4392,7 @@
 
     getRadioactiveTerraNulliusFalloutDefenseMultiplier() {
       let falloutRatio = 0;
-      try {
+      {
         const landTiles = Number(this.game.numLandTiles?.() || 0);
         const falloutTiles = Number(this.game.numTilesWithFallout?.() || 0);
         if (Number.isFinite(landTiles) && landTiles > 0) {
@@ -4549,10 +4404,6 @@
             ),
           );
         }
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/attackBehavior.js:4569");
-        // Older client views may not expose fallout counters; use the engine's
-        // maximum defensive multiplier as the conservative fallback.
       }
       return Math.max(
         1,
@@ -4742,12 +4593,12 @@
       if (player.largestClusterBoundingBox) {
         return boundingBoxCenter(player.largestClusterBoundingBox);
       }
-      const border = player.borderTiles();
+      const border = typeof player.borderTiles === "function" ? player.borderTiles() : null;
       if (border && border.size > 0) {
         return calculateBoundingBoxCenter(this.game, border);
       }
       // Border not snapshotted (other player, sort phase) → nameLocation proxy.
-      return player.nameLocation();
+      return typeof player.nameLocation === "function" ? player.nameLocation() : null;
     }
 
     // attackRandomTarget — AiAttackBehavior (now async via sendAttack). Not invoked
@@ -5450,7 +5301,7 @@
     // async-shaped read (canDonateTroops) is core-only — see DIVERGENCE below.
     // Kept sync (returns a plain boolean) — the strategy wrapper `donate` awaits it.
     logDonationDiagnostic() {
-      try {
+      {
         const now = performance.now();
         if (now - (state._donDiagAt || 0) <= 5000) return;
         state._donDiagAt = now;
@@ -5474,29 +5325,18 @@
               myTroops: Math.round(this.player.troops()),
             }),
         );
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/attackBehavior.js:logDonationDiagnostic",
-        );
       }
     }
 
     donationHasIncomingAttack() {
-      try {
+      {
         if (typeof this.player?.incomingAttacks !== "function") return false;
         return this.player.incomingAttacks().length > 0;
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/attackBehavior.js:donationHasIncomingAttack",
-        );
-        return true;
       }
     }
 
     donationHasMaritimeInvasion() {
-      try {
+      {
         if (
           typeof window === "undefined" ||
           typeof window.__OFH_getIncomingMaritimeInvasion !== "function"
@@ -5508,12 +5348,6 @@
           this.player,
         );
         return !invasion || invasion.active === true;
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/attackBehavior.js:donationHasMaritimeInvasion",
-        );
-        return true;
       }
     }
 
@@ -5584,17 +5418,8 @@
       if (!teammate.isAlive()) return null;
       if (teammate.smallID() === this.player.smallID()) return null;
       if (entry.troopPercentage >= needThreshold) return null;
-      let underAttack = false;
-      let frontline = false;
-      try {
-        underAttack = teammate.incomingAttacks().length > 0;
-        frontline = underAttack || teammate.outgoingAttacks().length > 0;
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/auto-bot/attackBehavior.js:donationCandidate",
-        );
-      }
+      const underAttack = teammate.incomingAttacks().length > 0;
+      const frontline = underAttack || teammate.outgoingAttacks().length > 0;
       return {
         entry,
         frontline,
@@ -5738,7 +5563,7 @@
     }
 
     teamDonationDistance(teammate) {
-      try {
+      {
         const ownCenter = this.getPlayerCenter(this.player);
         const teammateCenter = this.getPlayerCenter(teammate);
         if (
@@ -5755,9 +5580,6 @@
           Math.abs(Number(ownCenter.x) - Number(teammateCenter.x)) +
           Math.abs(Number(ownCenter.y) - Number(teammateCenter.y))
         );
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/attackBehavior.js:5820");
-        return Number.POSITIVE_INFINITY;
       }
     }
   }

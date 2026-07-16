@@ -144,6 +144,7 @@ async function runDonation(options = {}) {
     getOpenFrontGameContext: () => ({ game }),
     sendGamePacket: (packet) => packets.push(packet),
     getPlayerDisplayName: (player) => player.displayName(),
+    runtimeDebugLog() {},
     Date: { now: () => 5000 },
     console: { log() {}, error() {} },
   };

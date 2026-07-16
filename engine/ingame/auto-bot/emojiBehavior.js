@@ -327,10 +327,8 @@
           otherPlayer === AllPlayers
             ? AllPlayers
             : otherPlayer.__src ?? otherPlayer;
-        try {
+        {
           return src.canSendEmoji(recipient);
-        } catch (_e) {
-          return true;
         }
       }
       return true;
@@ -420,10 +418,8 @@
         otherPlayer === AllPlayers
           ? AllPlayers
           : (otherPlayer && otherPlayer.__src) || otherPlayer;
-      try {
+      {
         return src.canSendEmoji(recipient);
-      } catch (_e) {
-        return true;
       }
     }
     return true;

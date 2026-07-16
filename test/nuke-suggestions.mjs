@@ -65,11 +65,11 @@ const buildingImpactCoords = new Map([
 ]);
 const buildingImpactGame = {
   ...game,
-  x: (tile) => buildingImpactCoords.get(tile).x,
-  y: (tile) => buildingImpactCoords.get(tile).y,
+  x: (tile) => buildingImpactCoords.get(tile)?.x ?? Number(tile),
+  y: (tile) => buildingImpactCoords.get(tile)?.y ?? 0,
   euclideanDistSquared: (a, b) => {
-    const from = buildingImpactCoords.get(a);
-    const to = buildingImpactCoords.get(b);
+    const from = buildingImpactCoords.get(a) ?? { x: Number(a), y: 0 };
+    const to = buildingImpactCoords.get(b) ?? { x: Number(b), y: 0 };
     return (from.x - to.x) ** 2 + (from.y - to.y) ** 2;
   },
 };

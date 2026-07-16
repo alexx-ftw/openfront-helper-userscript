@@ -128,9 +128,8 @@ function readLobbyFile(rel) {
   return `\n// ===== ${rel} =====\n${read(rel)}\n`;
 }
 
-function wrapIife(body, label) {
-  const msg = JSON.stringify(`[ofh] ${label} section error:`);
-  return `\n;(function(){\ntry {\n${body}\n} catch (e) { console.error(${msg}, e); }\n})();\n`;
+function wrapIife(body) {
+  return `\n;(function(){\n${body}\n})();\n`;
 }
 
 // Minify an engine layer: strip whitespace/comments and mangle nested-local
@@ -232,16 +231,15 @@ async function main() {
     metadataHeader(version) +
     assetsLiteral +
     shell +
-    wrapIife(await minifyLayer(lobby), "lobby") +
-    wrapIife(await minifyLayer(ingame), "ingame");
+    wrapIife(await minifyLayer(lobby)) +
+    wrapIife(await minifyLayer(ingame));
 
   const outPath = path.resolve(__dirname, "openfront-helper.user.js");
   fs.writeFileSync(outPath, out, "utf8");
   const kb = (Buffer.byteLength(out, "utf8") / 1024).toFixed(0);
   logBuild(`[build] wrote ${outPath} (${kb} KB)`);
 
-  // Copy to clipboard for quick Tampermonkey paste.
-  try {
+  {
     const { execSync } = await import("node:child_process");
     if (process.platform === "win32") {
       execSync(
@@ -254,12 +252,7 @@ async function main() {
       execSync('pbcopy < "' + outPath + '"');
       logBuild("[build] copied to clipboard");
     }
-  } catch (e) {
-    logBuild("[build] clipboard copy skipped:", e.message);
   }
 }
 
-main().catch((e) => {
-  console.error("[build] FAILED:", e);
-  process.exit(1);
-});
+main();

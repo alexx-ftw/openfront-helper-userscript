@@ -237,7 +237,7 @@
   }
 
   function getNukeSuggestionMagnitude(game, unitType) {
-    try {
+    {
       const magnitude = game?.config?.().nukeMagnitudes?.(unitType);
       const inner = Number(magnitude?.inner);
       const outer = Number(magnitude?.outer);
@@ -247,9 +247,6 @@
           outer,
         };
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:250");
-      // Fall back to OpenFront defaults.
     }
 
     return unitType === "Hydrogen Bomb"
@@ -258,10 +255,8 @@
   }
 
   function isNukeSuggestionTypeEnabled(game, unitType) {
-    try {
+    {
       return !game?.config?.().isUnitDisabled?.(unitType);
-    } catch (_error) {
-      return true;
     }
   }
 
@@ -272,21 +267,13 @@
         ? numericCost
         : null;
     };
-    try {
+    {
       const cost = readCost(game?.unitInfo?.bind(game));
       if (cost !== null) return cost;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:274");
-      // PlayerView does not expose every server-side cost helper dependency.
-    }
-
-    try {
+    }{
       const config = game?.config?.();
       const cost = readCost(config?.unitInfo?.bind(config));
       if (cost !== null) return cost;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:284");
-      // Fall back to OpenFront defaults.
     }
 
     return NUKE_SUGGESTION_FALLBACK_COSTS[unitType] ?? Infinity;
@@ -314,45 +301,34 @@
       return worldRadius * scale;
     }
 
-    try {
+    {
       const reference = transform.worldToScreenCoordinates({
         x: screenPos.worldX + worldRadius,
         y: screenPos.worldY,
       });
       return Math.hypot(reference.x - screenPos.x, reference.y - screenPos.y);
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:319");
-      return worldRadius;
     }
   }
 
   function getUnitTile(unit) {
-    try {
+    {
       const tile = Number(unit?.tile?.());
       return Number.isFinite(tile) ? tile : null;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:328");
-      return null;
     }
   }
 
   function getUnitType(unit) {
-    try {
+    {
       return String(unit?.type?.() ?? unit?.data?.unitType ?? "");
-    } catch (_error) {
-      return "";
     }
   }
 
   function getUnitKey(unit) {
-    try {
+    {
       const id = unit?.id?.();
       if (id !== undefined && id !== null) {
         return String(id);
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:347");
-      // Fall back to the tile below.
     }
 
     if (unit && (typeof unit === "object" || typeof unit === "function")) {
@@ -369,14 +345,11 @@
   }
 
   function getMissileTimerQueue(unit) {
-    try {
+    {
       const queue = unit?.missileTimerQueue?.();
       if (Array.isArray(queue)) {
         return queue;
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:370");
-      // Fall back to the UnitView data shape.
     }
 
     return Array.isArray(unit?.data?.missileTimerQueue)
@@ -385,38 +358,28 @@
   }
 
   function isActiveFinishedUnit(unit) {
-    try {
+    {
       return Boolean(unit?.isActive?.()) && !unit?.isUnderConstruction?.();
-    } catch (_error) {
-      return false;
     }
   }
 
   function isActiveUnderConstructionUnit(unit) {
-    try {
+    {
       return Boolean(unit?.isActive?.()) && Boolean(unit?.isUnderConstruction?.());
-    } catch (_error) {
-      return false;
     }
   }
 
   function getNukeSuggestionSamConstructionTicks(game) {
     const infoSources = [];
-    try {
+    {
       if (typeof game?.unitInfo === "function") {
         infoSources.push(game.unitInfo("SAM Launcher"));
       }
-    } catch (_error) {
-      // Fall through to the config proxy.
-    }
-    try {
+    }{
       const unitInfo = game?.config?.()?.unitInfo;
       if (typeof unitInfo === "function") {
         infoSources.push(unitInfo("SAM Launcher"));
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:409");
-      // Keep the standard SAM duration below.
     }
 
     for (const info of infoSources) {
@@ -492,10 +455,8 @@
   }
 
   function getPlayerUnits(player, ...types) {
-    try {
+    {
       return Array.from(player?.units?.(...types) || []);
-    } catch (_error) {
-      return [];
     }
   }
 
@@ -519,10 +480,8 @@
       return false;
     }
 
-    try {
+    {
       return !myPlayer.isFriendly?.(player) && !player.isFriendly?.(myPlayer);
-    } catch (_error) {
-      return true;
     }
   }
 
@@ -532,12 +491,9 @@
       return null;
     }
 
-    try {
+    {
       const player = game?.playerBySmallID?.(numericId);
       return player?.isPlayer?.() ? player : null;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:529");
-      return null;
     }
   }
 
@@ -578,24 +534,11 @@
   function collectAdjacentPlayerIds(game, tiles, targetId) {
     const playerIds = new Set();
     for (const point of tiles) {
-      let neighbors = [];
-      try {
-        neighbors = game.neighbors?.(point.tile) || [];
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/nuke-suggestions.js:collectAdjacentPlayerIds:neighbors",
-        );
-      }
+      const neighbors = game.neighbors?.(point.tile) || [];
       for (const neighborTile of neighbors) {
-        try {
+        {
           const ownerId = game.ownerID(neighborTile);
           if (ownerId > 0 && ownerId !== targetId) playerIds.add(ownerId);
-        } catch (_error) {
-          captureRuntimeException(
-            _error,
-            "engine/ingame/nuke-suggestions.js:collectAdjacentPlayerIds:owner",
-          );
         }
       }
     }
@@ -631,10 +574,8 @@
       }
 
       let owner;
-      try {
+      {
         owner = sam?.owner?.();
-      } catch (_error) {
-        owner = null;
       }
       if (!isNukeSuggestionSamOwnerHostileToLauncher(myPlayer, owner)) {
         return;
@@ -648,19 +589,11 @@
       sams.push(sam);
     }
 
-    // Prefer global units() listing — includes third-party hostiles.
-    try {
+    {
       for (const sam of game?.units?.("SAM Launcher") || []) {
         addSam(sam);
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:637");
-      // Fall back below.
-    }
-
-    // Always also iterate player views so we pick up SAMs from third-party
-    // nations that aren't returned by game.units() in the current view.
-    try {
+    }{
       for (const player of game?.playerViews?.() || []) {
         if (!isNukeSuggestionSamOwnerHostileToLauncher(myPlayer, player)) {
           continue;
@@ -669,9 +602,6 @@
           addSam(sam);
         }
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:652");
-      // No usable global player list.
     }
 
     return sams;
@@ -687,10 +617,8 @@
       }
 
       let owner;
-      try {
+      {
         owner = sam?.owner?.();
-      } catch (_error) {
-        owner = null;
       }
       if (!isNukeSuggestionSamOwnerHostileToLauncher(myPlayer, owner)) {
         return;
@@ -704,16 +632,11 @@
       sams.push(sam);
     }
 
-    try {
+    {
       for (const sam of game?.units?.("SAM Launcher") || []) {
         addSam(sam);
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:690");
-      // Fall back below.
-    }
-
-    try {
+    }{
       for (const player of game?.playerViews?.() || []) {
         if (!isNukeSuggestionSamOwnerHostileToLauncher(myPlayer, player)) {
           continue;
@@ -722,19 +645,14 @@
           addSam(sam);
         }
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:703");
-      // No usable global player list.
     }
 
     return sams;
   }
 
   function getUnitOwner(unit) {
-    try {
+    {
       return unit?.owner?.() || null;
-    } catch (_error) {
-      return null;
     }
   }
 
@@ -783,12 +701,10 @@
   function collectTargetStructures(player) {
     return getPlayerUnits(player, ...NUKE_SUGGESTION_STRUCTURE_TYPES)
       .filter((unit) => {
-        try {
-          return Boolean(unit?.isActive?.());
-        } catch (_error) {
-          return false;
-        }
-      })
+      {
+        return Boolean(unit?.isActive?.());
+      }
+    })
       .map((unit) => ({
         unit,
         tile: getUnitTile(unit),
@@ -798,10 +714,8 @@
   }
 
   function isTeamGame(game) {
-    try {
+    {
       return game?.config?.().gameConfig?.().gameMode === "Team";
-    } catch (_error) {
-      return false;
     }
   }
 
@@ -810,7 +724,7 @@
       return [];
     }
 
-    try {
+    {
       return Array.from(game.units?.(...NUKE_SUGGESTION_STRUCTURE_TYPES) || [])
         .filter((unit) => {
           if (!isActiveFinishedUnit(unit)) {
@@ -823,8 +737,6 @@
           tile: getUnitTile(unit),
         }))
         .filter((entry) => entry.tile !== null);
-    } catch (_error) {
-      return [];
     }
   }
 
@@ -835,22 +747,14 @@
       if (Number.isFinite(allyId)) allyIds.add(allyId);
     };
 
-    try {
+    {
       for (const ally of myPlayer?.allies?.() || []) {
         addAllyId(ally);
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:818");
-      // Fall back to scanning player views below.
-    }
-
-    try {
+    }{
       for (const player of game?.playerViews?.() || []) {
         if (isDistinctAlliedPlayer(myPlayer, player)) addAllyId(player);
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:838");
-      // The direct allies list is enough when available.
     }
 
     return allyIds;
@@ -869,7 +773,7 @@
       return [];
     }
 
-    try {
+    {
       return Array.from(game.units?.(...NUKE_SUGGESTION_STRUCTURE_TYPES) || [])
         .filter((unit) => {
           if (!isActiveFinishedUnit(unit)) {
@@ -882,18 +786,13 @@
           tile: getUnitTile(unit),
         }))
         .filter((entry) => entry.tile !== null);
-    } catch (_error) {
-      return [];
     }
   }
 
   function getNukeAllianceBreakThreshold(game) {
-    try {
+    {
       const threshold = Number(game?.config?.().nukeAllianceBreakThreshold?.());
       return Number.isFinite(threshold) && threshold >= 0 ? threshold : 100;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:872");
-      return 100;
     }
   }
 
@@ -901,10 +800,8 @@
     const myPlayer = game?.myPlayer?.();
     if (!isDistinctAlivePlayer(myPlayer, targetPlayer)) return false;
 
-    try {
+    {
       return !myPlayer.isFriendly?.(targetPlayer) && !targetPlayer.isFriendly?.(myPlayer);
-    } catch (_error) {
-      return true;
     }
   }
 
@@ -969,10 +866,8 @@
     const totalTiles = width * height;
     for (let tile = 0; tile < totalTiles; tile++) {
       let ownerId;
-      try {
+      {
         ownerId = game.ownerID(tile);
-      } catch (_error) {
-        continue;
       }
       const x = game.x(tile);
       const y = game.y(tile);
@@ -1092,14 +987,11 @@
   function getTileFromXY(game, x, y) {
     const tileX = Math.round(x);
     const tileY = Math.round(y);
-    try {
+    {
       if (!game?.isValidCoord?.(tileX, tileY)) {
         return null;
       }
       return game.ref(tileX, tileY);
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1071");
-      return null;
     }
   }
 
@@ -1108,12 +1000,10 @@
       return;
     }
 
-    try {
+    {
       if (!game?.isValidRef?.(tile)) {
         return;
       }
-    } catch (_error) {
-      return;
     }
 
     seeds.set(String(tile), tile);
@@ -1200,34 +1090,25 @@
   }
 
   function getCityTroopIncrease(game) {
-    try {
+    {
       const increase = Number(game?.config?.().cityTroopIncrease?.());
       return Number.isFinite(increase) && increase > 0 ? increase : 250000;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1175");
-      return 250000;
     }
   }
 
   function getPlayerTroopsNumber(player) {
-    try {
+    {
       const troops = Number(player?.troops?.());
       return Number.isFinite(troops) && troops > 0 ? troops : 0;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1184");
-      return 0;
     }
   }
 
   function getPlayerMaxTroopsNumber(game, player) {
-    try {
+    {
       const maxTroops = Number(game?.config?.().maxTroops?.(player));
       if (Number.isFinite(maxTroops) && maxTroops > 0) {
         return maxTroops;
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1195");
-      // Fall back to the default max-troops shape.
     }
 
     const tilesOwned = Math.max(0, toFiniteNumber(player?.numTilesOwned?.(), 0));
@@ -1247,7 +1128,7 @@
 
     const tilesBeforeNuke = Math.max(1, toFiniteNumber(player?.numTilesOwned?.(), 1));
     if (nukeType === "MIRV Warhead") {
-      try {
+      {
         return Number(
           game?.config?.().nukeDeathFactor?.(
             nukeType,
@@ -1256,8 +1137,6 @@
             getPlayerMaxTroopsNumber(game, player),
           ),
         ) || 0;
-      } catch (_error) {
-        return 0;
       }
     }
 
@@ -1308,7 +1187,7 @@
         continue;
       }
 
-      try {
+      {
         const sx = game.x(structure.tile);
         const sy = game.y(structure.tile);
         const dx = sx - cx;
@@ -1319,9 +1198,6 @@
           citiesHit++;
           hitCityPopulationWeights.set(getStructureImpactKey(structure), cityHit);
         }
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1284");
-        // Ignore stale unit refs.
       }
     }
 
@@ -1333,10 +1209,8 @@
   }
 
   function hasNukeSuggestionTrainStation(unit) {
-    try {
+    {
       return Boolean(unit?.hasTrainStation?.());
-    } catch (_error) {
-      return false;
     }
   }
 
@@ -1376,7 +1250,7 @@
         continue;
       }
 
-      try {
+      {
         const sx = context.game.x(structure.tile);
         const sy = context.game.y(structure.tile);
         const dx = sx - cx;
@@ -1389,9 +1263,6 @@
             structureWeight,
           );
         }
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1353");
-        // Ignore stale unit refs.
       }
     }
 
@@ -1426,7 +1297,7 @@
 
   function anyTeamStructureInBlast(game, structures, cx, cy, outerSquared) {
     for (const structure of structures) {
-      try {
+      {
         const sx = game.x(structure.tile);
         const sy = game.y(structure.tile);
         const dx = sx - cx;
@@ -1434,9 +1305,6 @@
         if (dx * dx + dy * dy < outerSquared) {
           return true;
         }
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1397");
-        // Ignore stale unit refs.
       }
     }
     return false;
@@ -1462,15 +1330,10 @@
 
   function anyStructureWithinBlast(game, structures, cx, cy, outerSquared) {
     for (const structure of structures) {
-      try {
+      {
         const dx = game.x(structure.tile) - cx;
         const dy = game.y(structure.tile) - cy;
         if (dx * dx + dy * dy <= outerSquared) return true;
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/nuke-suggestions.js:anyStructureWithinBlast",
-        );
       }
     }
     return false;
@@ -1585,10 +1448,8 @@
   }
 
   function getOwnerAtTile(game, tile) {
-    try {
+    {
       return game.owner?.(tile) ?? null;
-    } catch (_error) {
-      return null;
     }
   }
 
@@ -1697,14 +1558,8 @@
   }
 
   function getNukeTileCoordinates(game, tile) {
-    try {
+    {
       return { x: game.x(tile), y: game.y(tile) };
-    } catch (_error) {
-      captureRuntimeException(
-        _error,
-        "engine/ingame/nuke-suggestions.js:getNukeTileCoordinates",
-      );
-      return null;
     }
   }
 
@@ -1797,7 +1652,7 @@
   function collectNukeSuggestionSamHits(game, context, cx, cy, outerSquared) {
     const hitSamKeys = [];
     for (const sam of context.targetSams || []) {
-      try {
+      {
         const samTile = getUnitTile(sam);
         if (samTile === null) continue;
         const dx = game.x(samTile) - cx;
@@ -1805,11 +1660,6 @@
         if (dx * dx + dy * dy >= outerSquared) continue;
         const samKey = getUnitKey(sam);
         if (samKey) hitSamKeys.push(samKey);
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/nuke-suggestions.js:collectNukeSuggestionSamHits",
-        );
       }
     }
     return { samsHit: hitSamKeys.length, hitSamKeys };
@@ -1911,10 +1761,8 @@
       }
 
       let distance;
-      try {
+      {
         distance = game.manhattanDist(siloTile, targetTile);
-      } catch (_error) {
-        continue;
       }
 
       if (distance < bestDistance) {
@@ -1927,42 +1775,30 @@
   }
 
   function getDefaultNukeSpeed(game) {
-    try {
+    {
       const speed = Number(game?.config?.().defaultNukeSpeed?.());
       return Number.isFinite(speed) && speed > 0 ? speed : 6;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1836");
-      return 6;
     }
   }
 
   function getDefaultNukeTargetableRange(game) {
-    try {
+    {
       const range = Number(game?.config?.().defaultNukeTargetableRange?.());
       return Number.isFinite(range) && range > 0 ? range : 150;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1845");
-      return 150;
     }
   }
 
   function getDefaultSamMissileSpeed(game) {
-    try {
+    {
       const speed = Number(game?.config?.().defaultSamMissileSpeed?.());
       return Number.isFinite(speed) && speed > 0 ? speed : 12;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1854");
-      return 12;
     }
   }
 
   function getSamCooldown(game) {
-    try {
+    {
       const cooldown = Number(game?.config?.().SAMCooldown?.());
       return Number.isFinite(cooldown) && cooldown > 0 ? cooldown : 120;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1863");
-      return 120;
     }
   }
 
@@ -2029,23 +1865,17 @@
   }
 
   function getSamRange(game, sam, sams = null) {
-    try {
+    {
       const rangeLevel = sams ? getStackedSamLevel(sams, sam) : getUnitLevel(sam);
       const range = Number(game?.config?.().samRange?.(rangeLevel));
       return Number.isFinite(range) && range > 0 ? range : 70;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1935");
-      return 70;
     }
   }
 
   function getMaxSamRange(game) {
-    try {
+    {
       const range = Number(game?.config?.().maxSamRange?.());
       return Number.isFinite(range) && range > 0 ? range : 150;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:1944");
-      return 150;
     }
   }
 
@@ -2133,12 +1963,10 @@
     for (const point of points) {
       const x = Math.floor(point.x);
       const y = Math.floor(point.y);
-      try {
+      {
         if (game.isValidCoord?.(x, y)) {
           trajectory.push(game.ref(x, y));
         }
-      } catch (_error) {
-        // Ignore any point that falls outside a stale map.
       }
     }
 
@@ -2146,13 +1974,11 @@
   }
 
   function isNukeSuggestionTrajectoryTargetable(game, sourceTile, targetTile, tile, rangeSquared) {
-    try {
+    {
       return (
         game.euclideanDistSquared(tile, targetTile) < rangeSquared ||
         game.euclideanDistSquared(sourceTile, tile) < rangeSquared
       );
-    } catch (_error) {
-      return false;
     }
   }
 
@@ -2223,17 +2049,11 @@
     }
     let distanceSquared;
     let samTickToReach;
-    try {
+    {
       distanceSquared = game.euclideanDistSquared(scan.samTile, tile);
       samTickToReach = Math.ceil(
         game.manhattanDist(scan.samTile, tile) / scan.samMissileSpeed,
       );
-    } catch (_error) {
-      captureRuntimeException(
-        _error,
-        "engine/ingame/nuke-suggestions.js:getSamTrajectoryInterception",
-      );
-      return null;
     }
     const shootTick = scan.launchTick + index - samTickToReach;
     if (distanceSquared > scan.samRangeSquared) return null;
@@ -2257,13 +2077,11 @@
       0,
       Math.min(scan.trajectory.length - 1, shootTick - scan.launchTick),
     );
-    try {
+    {
       return (
         game.euclideanDistSquared(scan.samTile, scan.trajectory[nukeIndex]) <=
         scan.detectionRangeSquared
       );
-    } catch (_error) {
-      return false;
     }
   }
 
@@ -2746,19 +2564,13 @@
   }
 
   function getNukeSuggestionScreenPosition(transform, result) {
-    try {
+    {
       nukeSuggestionWorldQueryArg.x = result.x;
       nukeSuggestionWorldQueryArg.y = result.y;
       const position = transform.worldToScreenCoordinates(nukeSuggestionWorldQueryArg);
       return Number.isFinite(position?.x) && Number.isFinite(position?.y)
         ? position
         : null;
-    } catch (_error) {
-      captureRuntimeException(
-        _error,
-        "engine/ingame/nuke-suggestions.js:getNukeSuggestionScreenPosition",
-      );
-      return null;
     }
   }
 
@@ -2975,12 +2787,9 @@
 
     let cx;
     let cy;
-    try {
+    {
       cx = game.x(samTile);
       cy = game.y(samTile);
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:2920");
-      return null;
     }
 
     const outerSquared = magnitude.outer * magnitude.outer;
@@ -3098,16 +2907,11 @@
     for (const sam of sams) {
       const tile = getUnitTile(sam);
       if (tile === null) continue;
-      try {
+      {
         const dx = game.x(tile) - cx;
         const dy = game.y(tile) - cy;
         const key = getUnitKey(sam);
         if (dx * dx + dy * dy <= outerSquared && key) keys.add(key);
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/nuke-suggestions.js:collectSamsWithinBlast",
-        );
       }
     }
     return Array.from(keys);
@@ -3571,15 +3375,13 @@
       return 0;
     }
 
-    try {
+    {
       return createNukeSuggestionTrajectory(
         game,
         candidate.sourceTile,
         candidate.tile,
         candidate.rocketDirectionUp,
       ).length;
-    } catch (_error) {
-      return 0;
     }
   }
 
@@ -5025,7 +4827,7 @@
   async function queryAutoNukeBuildable(params, candidate, method) {
     const lookup = params?.myPlayer?.[method];
     if (typeof lookup !== "function") return null;
-    try {
+    {
       const result = await lookup.call(
         params.myPlayer,
         candidate.tile,
@@ -5035,9 +4837,6 @@
       return Array.from(items || []).find(
         (item) => item?.type === candidate.spec.type && item.canBuild,
       ) || null;
-    } catch (error) {
-      runtimeDebugLog(`OpenFront Helper: ${method} nuke lookup failed.`, error);
-      return null;
     }
   }
 
@@ -5088,7 +4887,7 @@
         shotIndex * AUTO_NUKE_SEQUENCE_DELAY_MS;
     }
 
-    try {
+    {
       const trajectoryTicks = createNukeSuggestionTrajectory(
         game,
         sourceTile,
@@ -5096,10 +4895,6 @@
         shot.rocketDirectionUp,
       ).length;
       return trajectoryTicks * AUTO_NUKE_GAME_TICK_MS +
-        shotIndex * AUTO_NUKE_SEQUENCE_DELAY_MS;
-    } catch (error) {
-      runtimeDebugLog("OpenFront Helper: nuke trajectory estimate failed.", error);
-      return AUTO_NUKE_FALLBACK_LANDING_MS +
         shotIndex * AUTO_NUKE_SEQUENCE_DELAY_MS;
     }
   }
@@ -6165,9 +5960,7 @@
   function handleAutoNukeBuildSiloMenuClick(menu, target) {
     const button = target.closest("[data-auto-nuke-build-silo]");
     if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
-    handleAutoNukeBuildSiloClick(menu, autoNukeContextMenuParams, button).catch(
-      (error) => console.error("OpenFront Helper: failed to build missile silo.", error),
-    );
+    handleAutoNukeBuildSiloClick(menu, autoNukeContextMenuParams, button);
     return true;
   }
 
@@ -6181,9 +5974,7 @@
   function handleAutoNukeBranchClick(menu, target) {
     const button = target.closest("[data-auto-nuke-branch]");
     if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
-    expandAutoNukeModeDetails(menu, button.dataset.autoNukeBranch).catch((error) =>
-      console.error("OpenFront Helper: failed to calculate auto nuke plan.", error),
-    );
+    expandAutoNukeModeDetails(menu, button.dataset.autoNukeBranch);
     return true;
   }
 
@@ -7005,14 +6796,9 @@
       if (builtCount >= neededCount) break;
       const buildable = await getBuildableMissileSilo(params.myPlayer, tile);
       if (!isPlaceableAutoNukeSilo(buildable)) continue;
-      try {
+      {
         params.buildMenu.sendBuildOrUpgrade(buildable, tile);
         builtCount++;
-      } catch (_error) {
-        captureRuntimeException(
-          _error,
-          "engine/ingame/nuke-suggestions.js:buildAutoNukeSilos",
-        );
       }
     }
     return builtCount;
@@ -7028,26 +6814,20 @@
 
   async function getBuildableMissileSilo(player, tile) {
     if (typeof player?.buildables === "function") {
-      try {
+      {
         const buildables = await player.buildables(tile, ["Missile Silo"]);
         const buildable = Array.from(buildables || []).find(
           (item) => item?.type === "Missile Silo",
         );
         if (buildable) return buildable;
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:7550");
-        // fall back to actions API
       }
     }
     if (typeof player?.actions === "function") {
-      try {
+      {
         const actions = await player.actions(tile, ["Missile Silo"]);
         return Array.from(actions?.buildableUnits || []).find(
           (item) => item?.type === "Missile Silo",
         ) || null;
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-suggestions.js:7560");
-        return null;
       }
     }
     return null;
@@ -7101,18 +6881,12 @@
   }
 
   function getAutoNukeEventSelection(game, transform, event) {
-    try {
+    {
       const world = transform.screenToWorldCoordinates(event.clientX, event.clientY);
       if (!game.isValidCoord?.(world.x, world.y)) return null;
       const tile = game.ref(world.x, world.y);
       const owner = game.owner(tile);
       return owner?.isPlayer?.() ? { selected: owner, tile } : null;
-    } catch (_error) {
-      captureRuntimeException(
-        _error,
-        "engine/ingame/nuke-suggestions.js:getAutoNukeEventSelection",
-      );
-      return null;
     }
   }
 

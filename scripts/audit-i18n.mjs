@@ -36,10 +36,8 @@ const reDq = /(?<![\w$])(?:companionTr|_tr|tr|t)\("((?:[^"\\]|\\.)+)"\)/g;
 const reTl = /(?<![\w$])(?:companionTr|_tr|tr|t)\(`([^`]*)`\)/g;
 for (const f of FILES) {
   let s;
-  try {
+  {
     s = read(f);
-  } catch {
-    continue;
   }
   let m;
   while ((m = reDq.exec(s))) keys.add(JSON.parse(`"${m[1]}"`));

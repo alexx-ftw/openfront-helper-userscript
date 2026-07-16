@@ -26,17 +26,13 @@
   // ---- Settings bridge (reads from Quick Panel cache, loaded before us) ----
 
   function _cfg(key, fallback) {
-    try {
+    {
       if (typeof _quickPanelSettingsCache === "object" && _quickPanelSettingsCache && key in _quickPanelSettingsCache)
         return _quickPanelSettingsCache[key];
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:32");}
-    // Fallback: read from DEFAULT_SETTINGS if cache is empty
-    try {
+    }{
       var defs = window.OpenFrontHelperSettings && window.OpenFrontHelperSettings.DEFAULT_SETTINGS;
       if (defs && key in defs) return defs[key];
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:37");}
+    }
     return fallback;
   }
 
@@ -54,14 +50,11 @@
 
   function _safeOwner(unit, game) {
     if (!unit || !game) return null;
-    try {
+    {
       var ownerID = _unitOwnerId(unit);
       if (ownerID === null || ownerID === void 0) return null;
       if (ownerID !== 0 && !_ownerIdIsRegistered(game, ownerID)) return null;
       return typeof unit.owner === "function" ? unit.owner() : null;
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:67");
-      return null;
     }
   }
 
@@ -69,38 +62,36 @@
     if (!myPlayer || !unit) return false;
     var owner = _safeOwner(unit, game);
     if (!owner) return false;
-    try {
+    {
       return myPlayer.isAlliedWith ? myPlayer.isAlliedWith(owner) : false;
-    } catch (e) { return false; }
+    }
   }
 
   function _getTileCoords(game, unit) {
-    try {
+    {
       var tile = typeof unit.tile === "function" ? unit.tile() : unit.tile;
       if (tile === null || tile === void 0) return null;
       if (typeof game.x !== "function" || typeof game.y !== "function") return null;
       return { x: game.x(tile), y: game.y(tile) };
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:87"); return null; }
+    }
   }
 
   function _playerLabel(player, myPlayer) {
     if (!player) return "Unknown";
-    try {
+    {
       if (myPlayer && typeof player.smallID === "function" && typeof myPlayer.smallID === "function") {
         if (player.smallID() === myPlayer.smallID()) return _tr("You");
       }
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:99");}
+    }
     if (typeof getPlayerDisplayName === "function") return getPlayerDisplayName(player);
     var smallID = typeof player.smallID === "function" ? player.smallID() : "?";
     return "Player " + smallID;
   }
 
   function _playerColor(player, game) {
-    try {
+    {
       return typeof getPlayerColor === "function" ? getPlayerColor(player, game) || "" : "";
-    } catch (e) { return ""; }
+    }
   }
 
   // ---- Silo unit collection ----
@@ -125,12 +116,7 @@
   function _appendUniqueUnits(target, units, seen) {
     for (const unit of units) {
       if (!unit) continue;
-      var id = null;
-      try {
-        id = typeof unit.id === "function" ? unit.id() : unit.id ?? unit.state?.id;
-      } catch (error) {
-        captureRuntimeException(error, "engine/ingame/silo-sam-tracker.js:_appendUniqueUnits");
-      }
+      const id = typeof unit.id === "function" ? unit.id() : unit.id ?? unit.state?.id;
       if (id != null && seen.has(id)) continue;
       if (id != null) seen.add(id);
       if (!target.includes(unit)) target.push(unit);
@@ -138,7 +124,7 @@
   }
 
   function _getSiloConstructionInfo(game) {
-    try {
+    {
       var stateUnit = _unitStatesOfType(
         game, "Missile Silo", (state) => state.underConstruction === true,
       )[0];
@@ -146,19 +132,16 @@
       return _directUnitsOfType(game, "Missile Silo").find(
         (silo) => silo.isUnderConstruction?.(),
       ) || null;
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:129");}
-    return null;
+    }
   }
 
   function _getAllSilos(game) {
     var list = [];
-    try {
+    {
       var seen = new Set();
       _appendUniqueUnits(list, _directUnitsOfType(game, "Missile Silo"), seen);
       _appendUniqueUnits(list, _unitStatesOfType(game, "Missile Silo"), seen);
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:157");}
+    }
     return list;
   }
 
@@ -167,34 +150,30 @@
   function _getSAMTrackerUnits(game) {
     var units = [];
     var seen = new Set();
-    try {
+    {
       _appendUniqueUnits(units, _unitStatesOfType(
         game, "SAM Launcher",
         (state) => state.markedForDeletion !== true,
       ), seen);
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:206");}
-    try {
+    }{
       if (typeof game.units === "function") {
         _appendUniqueUnits(units, game.units("SAM Launcher") || [], seen);
       }
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:212");}
+    }
     return units;
   }
 
   // ---- Distance & trajectory ----
 
   function _euclideanDistSq(game, tileA, tileB) {
-    try {
+    {
       if (typeof game.euclideanDistSquared === "function") return game.euclideanDistSquared(tileA, tileB);
       var ax = game.x(tileA), ay = game.y(tileA);
       var bx = game.x(tileB), by = game.y(tileB);
       if (ax === void 0 || ay === void 0 || bx === void 0 || by === void 0) return Infinity;
       var dx = ax - bx, dy = ay - by;
       return dx * dx + dy * dy;
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:220"); return Infinity; }
+    }
   }
 
   function _nukeTrajectorySpec(game, fromTile, toTile, directionUp) {
@@ -255,41 +234,34 @@
   }
 
   function _linearNukeTrajectory(game, fromTile, toTile) {
-    try {
+    {
       var x0 = game.x(fromTile), y0 = game.y(fromTile);
       var x1 = game.x(toTile), y1 = game.y(toTile);
       return Array.from({ length: 51 }, (_value, index) => {
         var ratio = index / 50;
         return game.ref(Math.floor(x0 + (x1 - x0) * ratio), Math.floor(y0 + (y1 - y0) * ratio));
       });
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/silo-sam-tracker.js:_linearNukeTrajectory");
-      return [fromTile, toTile];
     }
   }
 
   function _getNukeTrajectory(game, fromTile, toTile, directionUp) {
-    try {
+    {
       var spec = _nukeTrajectorySpec(game, fromTile, toTile, directionUp);
       if (!spec) return [];
       if (spec.stationary) return [fromTile];
       if (spec.direct) return [fromTile, toTile];
       return _sampleNukeBezier(spec);
-    } catch (e) {
-      captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:_getNukeTrajectory");
-      return _linearNukeTrajectory(game, fromTile, toTile);
     }
   }
 
   function _getSamRange(game, sam) {
-    try {
+    {
       var level = typeof sam.level === "function" ? sam.level() : 1;
       if (typeof game.config === "function" && typeof game.config().samRange === "function") {
         return game.config().samRange(level);
       }
       return 150 - 480 / (level + 5);
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:297"); return 70; }
+    }
   }
 
   // ---- Silo notification (shown inside Quick Panel) ----
@@ -299,8 +271,7 @@
     if (!panelEnabled) return;
 
     var ctx;
-    try { ctx = (typeof getOpenFrontGameContext === "function" ? getOpenFrontGameContext() : null); } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:317");}
+    { ctx = (typeof getOpenFrontGameContext === "function" ? getOpenFrontGameContext() : null); }
     if (!ctx || !ctx.game) return;
 
     var silo = _getSiloConstructionInfo(ctx.game);
@@ -484,20 +455,17 @@
           } else {
             _toast(_atomFireFailureMessage(res), "rgba(220,40,40,0.92)");
           }
-        }).catch(function() {
-          _toast(_tr("Cannot fire right now."), "rgba(220,40,40,0.92)");
         });
         return;
       }
-      try {
+      {
         if (window.__OFH_atomBatch && typeof window.__OFH_atomBatch.openDialog === "function") {
           window.__OFH_atomBatch.openDialog(row._blonTile);
         } else if (typeof sendGamePacket === "function") {
           // Fallback: direct fire
           sendGamePacket({ type: "build_unit", unit: "Atom Bomb", tile: row._blonTile });
         }
-      } catch (err) {
-  captureRuntimeException(err, "engine/ingame/silo-sam-tracker.js:513");}
+      }
     };
     row.appendChild(nukeBtn);
 
@@ -550,14 +518,11 @@
   function _siloVisibleToTracker(silo, game, me, showAll, buildingOnly) {
     if (buildingOnly && !silo.isUnderConstruction?.()) return false;
     if (!me) return true;
-    try {
+    {
       var owner = _safeOwner(silo, game);
       if (_sameTrackerPlayer(me, owner)) return false;
       if (showAll) return true;
       return !_isAlly(silo, me, game) && !_sameTrackerTeam(me, owner);
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/silo-sam-tracker.js:_siloVisibleToTracker");
-      return false;
     }
   }
 
@@ -575,11 +540,9 @@
   function _siloConstructionTimeLabel(game, unit, currentTick, isBuilding) {
     if (!isBuilding) return "";
     var buildTicks = 100;
-    try {
+    {
       var duration = game.unitInfo?.("Missile Silo")?.constructionDuration;
       if (duration != null) buildTicks = duration;
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/silo-sam-tracker.js:_siloConstructionTimeLabel");
     }
     var startTick = unit.state?.constructionStartTick;
     return startTick == null ? "" : (Math.max(0, buildTicks - (currentTick - startTick)) / 10).toFixed(1) + "s";
@@ -588,12 +551,7 @@
   function _siloPanelItem(game, me, unit, currentTick) {
     var owner = _safeOwner(unit, game);
     var coords = _getTileCoords(game, unit);
-    var tile = null;
-    try {
-      tile = typeof unit.tile === "function" ? unit.tile() : unit.tile;
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/silo-sam-tracker.js:_siloPanelItem");
-    }
+    const tile = typeof unit.tile === "function" ? unit.tile() : unit.tile;
     var isBuilding = Boolean(unit.isUnderConstruction?.());
     return {
       unit, unitKey: String(typeof unit.id === "function" ? unit.id() : unit),
@@ -638,8 +596,7 @@
     if (!content) return;
 
     var ctx;
-    try { ctx = (typeof getOpenFrontGameContext === "function" ? getOpenFrontGameContext() : null); } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:572");}
+    { ctx = (typeof getOpenFrontGameContext === "function" ? getOpenFrontGameContext() : null); }
     if (!ctx || !ctx.game) {
       _setEmpty(content, _tr("No game state available"));
       return;
@@ -681,7 +638,7 @@
   let _nukeTrackIndex = new Map();
 
   function _addNukeTrackUnit(game, mySid, byTarget, unit) {
-    try {
+    {
       var owner = unit.owner?.();
       if (owner?.smallID && owner.smallID() !== mySid) return;
       var targetTile = unit.targetTile?.();
@@ -697,8 +654,6 @@
       if (nukeTile == null) return;
       var eta = computeNukeRemainingTicks(game, nukeTile, targetTile);
       if (eta != null) entry.minEta = Math.min(entry.minEta, eta);
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/silo-sam-tracker.js:_addNukeTrackUnit");
     }
   }
 
@@ -730,15 +685,14 @@
 
   function _scanNukesToTile(game, myPlayer, tile) {
     if (!game || !myPlayer || tile == null) return null;
-    try {
+    {
       var entry = _getNukeTrackIndex(game, myPlayer).get(tile);
       if (!entry) return null;
       return {
         count: entry.count,
         etaSec: entry.minEta === Infinity ? null : entry.minEta / 10,
       };
-    } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/silo-sam-tracker.js:721"); return null; }
+    }
   }
 
   // Create or update a compact inline badge on a row showing nuke-flight status.
@@ -787,31 +741,27 @@
   var _AUTO_FIRE_NUKE_TYPES = ["Atom Bomb", "Hydrogen Bomb", "MIRV Warhead"];
 
   function _autoFireUnitTile(unit) {
-    try {
+    {
       return typeof unit.tile === "function" ? unit.tile() : unit.tile;
-    } catch (e) {
-      return null;
     }
   }
 
   function _autoFireUnitKey(unit) {
-    try {
+    {
       var id = typeof unit.id === "function" ? unit.id() : unit.id;
       if (id !== null && id !== void 0) return String(id);
       if (unit.state && unit.state.id !== null && unit.state.id !== void 0) return String(unit.state.id);
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:784");}
+    }
     return null;
   }
 
   function _autoFireUnitOwner(unit, game) {
-    try {
+    {
       if (unit && typeof unit.owner === "function") {
         var direct = unit.owner();
         if (direct) return direct;
       }
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:809");}
+    }
     return _safeOwner(unit, game);
   }
 
@@ -825,42 +775,31 @@
   }
 
   function _autoFireSafeRelation(read) {
-    try {
+    {
       return Boolean(read());
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/silo-sam-tracker.js:_autoFireSafeRelation");
-      return false;
     }
   }
 
   function _autoFireNukeRadius(game, type) {
     var fallback = type === "Hydrogen Bomb" ? 100 : 30;
-    try {
+    {
       var cfg = game && typeof game.config === "function" ? game.config() : null;
       var magnitude = cfg && typeof cfg.nukeMagnitudes === "function" ? cfg.nukeMagnitudes(type) : null;
       var radius = Number(magnitude && (magnitude.outer !== void 0 ? magnitude.outer : magnitude.inner));
       if (Number.isFinite(radius) && radius > 0) return radius;
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:825");}
+    }
     return fallback;
   }
 
   function _autoFireGetUnits(game, types) {
-    try {
+    {
       if (!game || typeof game.units !== "function") return [];
       return game.units.apply(game, types) || [];
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:833");
-      return [];
     }
   }
 
   function _autoFireNearestSiloTile(game, me, targetTile) {
-    var silos = [];
-    try {
-      silos = me && typeof me.units === "function" ? me.units("Missile Silo") || [] : [];
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:859");}
+    const silos = me && typeof me.units === "function" ? me.units("Missile Silo") || [] : [];
 
     var bestTile = null;
     var bestDistance = Infinity;
@@ -880,26 +819,21 @@
 
   function _autoFireSiloIsUsable(silo) {
     if (!silo) return false;
-    try {
+    {
       return !silo.isUnderConstruction?.() && silo.isActive?.() !== false;
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/silo-sam-tracker.js:_autoFireSiloIsUsable");
-      return false;
     }
   }
 
   function _autoFireSiloDistance(game, siloTile, targetTile) {
-    try {
+    {
       return typeof game.manhattanDist === "function"
         ? game.manhattanDist(siloTile, targetTile)
         : _euclideanDistSq(game, siloTile, targetTile);
-    } catch (_error) {
-      return Infinity;
     }
   }
 
   function _autoFireNukePath(game, fromTile, targetTile, directionUp) {
-    try {
+    {
       if (
         typeof UniversalPathFinding !== "undefined" &&
         UniversalPathFinding.Parabola
@@ -916,18 +850,14 @@
         }).findPath(fromTile, targetTile);
         if (Array.isArray(path) && path.length > 0) return path;
       }
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:910");}
+    }
     return _getNukeTrajectory(game, fromTile, targetTile, directionUp);
   }
 
   function _autoFireCurrentTick(game) {
-    try {
+    {
       var tick = typeof game.ticks === "function" ? Number(game.ticks()) : 0;
       return Number.isFinite(tick) ? tick : 0;
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:900");
-      return 0;
     }
   }
 
@@ -939,12 +869,11 @@
       raw && raw.constructionStartTick,
       raw && raw.data && raw.data.constructionStartTick,
     ];
-    try {
+    {
       if (raw && typeof raw.getConstructionStartTick === "function") {
         candidates.push(raw.getConstructionStartTick());
       }
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:936");}
+    }
     var found = candidates
       .filter((value) => value !== null && value !== void 0 && value !== "")
       .map(Number).find(Number.isFinite);
@@ -953,15 +882,12 @@
 
   function _autoFireSamConstructionTicks(game) {
     var infos = [];
-    try {
+    {
       if (game && typeof game.unitInfo === "function") infos.push(game.unitInfo("SAM Launcher"));
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:949");}
-    try {
+    }{
       var cfg = game && typeof game.config === "function" ? game.config() : null;
       if (cfg && typeof cfg.unitInfo === "function") infos.push(cfg.unitInfo("SAM Launcher"));
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:934");}
+    }
     for (const info of infos) {
       var duration = _autoFireConstructionDuration(info);
       if (duration !== null) return duration;
@@ -971,14 +897,11 @@
 
   function _autoFireConstructionDuration(info) {
     if (!info) return null;
-    try {
+    {
       var raw = typeof info.constructionDuration === "function"
         ? info.constructionDuration() : info.constructionDuration;
       var duration = Number(raw);
       return Number.isFinite(duration) && duration > 0 ? duration : null;
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/silo-sam-tracker.js:_autoFireConstructionDuration");
-      return null;
     }
   }
 
@@ -1019,16 +942,12 @@
   }
 
   function _autoFireSamTravelTicks(game, samTile, pathTile, speed) {
-    var distance = Infinity;
-    try {
-      if (typeof game.manhattanDist === "function") {
-        distance = Number(game.manhattanDist(samTile, pathTile));
-      } else {
-        var distanceSquared = _euclideanDistSq(game, samTile, pathTile);
-        distance = Number.isFinite(distanceSquared) ? Math.sqrt(distanceSquared) : Infinity;
-      }
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:1017");}
+    const distance = typeof game.manhattanDist === "function"
+      ? Number(game.manhattanDist(samTile, pathTile))
+      : (() => {
+          const distanceSquared = _euclideanDistSq(game, samTile, pathTile);
+          return Number.isFinite(distanceSquared) ? Math.sqrt(distanceSquared) : Infinity;
+        })();
     if (!Number.isFinite(distance) || distance < 0) return Infinity;
     return Math.max(0, Math.ceil(distance / speed));
   }
@@ -1062,12 +981,9 @@
   }
 
   function _autoFirePositiveConfig(config, method, fallback) {
-    try {
+    {
       var value = Number(config?.[method]?.());
       return Number.isFinite(value) && value > 0 ? value : fallback;
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/silo-sam-tracker.js:_autoFirePositiveConfig");
-      return fallback;
     }
   }
 
@@ -1085,12 +1001,9 @@
 
   function _autoFireSamInterceptionLevel(context, sam) {
     var underConstruction;
-    try {
+    {
       underConstruction = Boolean(sam.isUnderConstruction?.());
       if (!underConstruction && sam.isActive?.() === false) return 0;
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/silo-sam-tracker.js:_autoFireSamInterceptionLevel");
-      return 0;
     }
     if (!_autoFireOwnerIsHostile(_autoFireUnitOwner(sam, context.game), context.me)) return 0;
     var samTile = _autoFireUnitTile(sam);
@@ -1191,15 +1104,12 @@
 
   function _autoFireActiveNukeImpact(game, unit) {
     if (!unit) return null;
-    try {
+    {
       if (typeof unit.isActive !== "function" || !unit.isActive()) return null;
       var targetTile = typeof unit.targetTile === "function" ? unit.targetTile() : unit.targetTile;
       if (targetTile == null) return null;
       var type = typeof unit.type === "function" ? unit.type() : unit.type;
       return { targetTile, radius: _autoFireNukeRadius(game, type) };
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/silo-sam-tracker.js:_autoFireActiveNukeImpact");
-      return null;
     }
   }
 
@@ -1281,8 +1191,6 @@
         var label = _playerLabel(owner, me);
         _toast("🚀 " + _tr("Auto-fired") + " " + res.fired + " " + _tr("atom bomb(s)") + " → " + label + "'s " + targetLabel, "rgba(0,150,80,0.92)");
       });
-    }).catch(function() {
-      clearPlan();
     });
   }
 
@@ -1324,12 +1232,7 @@
     opts.state.plannedImpacts ??= {};
     var me = game.myPlayer?.();
     if (!me) return null;
-    var rocketDirectionUp = true;
-    try {
-      rocketDirectionUp = ctx.buildMenu?.uiState?.rocketDirectionUp !== false;
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/silo-sam-tracker.js:_autoFireBuildingReady");
-    }
+    const rocketDirectionUp = ctx.buildMenu?.uiState?.rocketDirectionUp !== false;
     return {
       ctx, opts, game, state: opts.state, me, rocketDirectionUp,
       maxQty: Math.max(1, Math.floor(Number(_cfg(opts.maxQtyKey, 1))) || 1),
@@ -1350,11 +1253,9 @@
   function _autoFireRaceAllows(context, unit, tile) {
     if (!context.opts.raceConstruction) return true;
     var buildTicks = context.opts.defaultBuildTicks;
-    try {
+    {
       var duration = context.game.unitInfo?.(context.opts.unitInfoName)?.constructionDuration;
       if (duration != null) buildTicks = duration;
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/silo-sam-tracker.js:_autoFireRaceAllows");
     }
     var startTick = unit.state?.constructionStartTick;
     if (startTick == null) return false;
@@ -1453,11 +1354,8 @@
     var tile = _autoFireUnitTile(sam);
     if (tile == null) return null;
     var coords;
-    try {
+    {
       coords = { x: game.x(tile), y: game.y(tile) };
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/silo-sam-tracker.js:_samPanelItem");
-      return null;
     }
     var owner = _safeOwner(sam, game);
     var isBuilding = Boolean(sam.isUnderConstruction?.());
@@ -1489,18 +1387,16 @@
       if (result?.ok) {
         _toast("🚀 " + _tr("Fired") + " " + result.fired + "/" + result.qty + " " + _tr("atom bomb(s)"), "rgba(0,150,80,0.92)");
       } else _toast(_atomFireFailureMessage(result), "rgba(220,40,40,0.92)");
-    }).catch(() => _toast(_tr("Cannot fire right now."), "rgba(220,40,40,0.92)"));
+    });
   }
 
   function _openSamAtomDialog(tile) {
-    try {
+    {
       if (typeof window.__OFH_atomBatch?.openDialog === "function") {
         window.__OFH_atomBatch.openDialog(tile);
       } else if (typeof sendGamePacket === "function") {
         sendGamePacket({ type: "build_unit", unit: "Atom Bomb", tile });
       }
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/silo-sam-tracker.js:_openSamAtomDialog");
     }
   }
 
@@ -1559,8 +1455,7 @@
     if (!content) return;
 
     var ctx;
-    try { ctx = (typeof getOpenFrontGameContext === "function" ? getOpenFrontGameContext() : null); } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:1451");}
+    { ctx = (typeof getOpenFrontGameContext === "function" ? getOpenFrontGameContext() : null); }
     if (!ctx || !ctx.game) {
       content.innerHTML = '<div class="ohss-empty">' + _tr("No game state available.") + '</div>';
       return;
@@ -1618,15 +1513,12 @@
       var cur = Boolean(_cfg(key, false));
       if (typeof _setAndNotify === "function") _setAndNotify(key, !cur);
       btn.classList.toggle("on", !cur);
-      // Mirror the Quick Panel's own switch immediately if it's open — otherwise
-      // it stays stale (showing the old state) until the tab is re-opened.
-      try {
+      {
         var qpPanel = document.getElementById("openfront-helper-quick-panel");
         if (qpPanel && qpPanel.dataset.visible === "true" && typeof _renderActiveTab === "function") {
           _renderActiveTab();
         }
-      } catch (err) {
-  captureRuntimeException(err, "engine/ingame/silo-sam-tracker.js:1640");}
+      }
     });
     return btn;
   }
@@ -1680,28 +1572,21 @@
 
   function _syncClosedTrackerSetting(settingKey) {
     if (!settingKey) return;
-    try {
+    {
       if (typeof _quickPanelSettingsCache === "object" && _quickPanelSettingsCache) {
         _quickPanelSettingsCache[settingKey] = false;
       }
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/silo-sam-tracker.js:_syncClosedTrackerSetting:cache");
-    }
-    try {
+    }{
       window.dispatchEvent(new CustomEvent("ofh-quick-panel-setting", {
         detail: { key: settingKey, value: false },
       }));
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/silo-sam-tracker.js:_syncClosedTrackerSetting:event");
     }
   }
 
   function _refreshQuickPanelAfterTrackerClose() {
-    try {
+    {
       var panel = document.getElementById("openfront-helper-quick-panel");
       if (panel?.dataset.visible === "true" && typeof _renderActiveTab === "function") _renderActiveTab();
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/silo-sam-tracker.js:_refreshQuickPanelAfterTrackerClose");
     }
   }
 
@@ -1800,11 +1685,10 @@
   }
 
   function _applyStoredPanelSize(panel, id) {
-    try {
+    {
       var s = JSON.parse(window.localStorage.getItem(id + "-size") || "null");
       if (s && Number.isFinite(s.h)) { panel.style.height = s.h + "px"; return; }
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:1815");}
+    }
     // No stored size yet — same default height the old max-height:380px gave,
     // but as a real height (not a cap) so the resize handle can go taller too.
     panel.style.height = "380px";
@@ -1812,10 +1696,9 @@
   function _savePanelSize(panel, id) {
     var h = parseInt(panel.style.height, 10);
     if (!Number.isFinite(h)) return;
-    try {
+    {
       window.localStorage.setItem(id + "-size", JSON.stringify({ h: h }));
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:1854");}
+    }
   }
 
   // ---- New silo placement detection (audio alert) ----
@@ -1868,7 +1751,7 @@
   }
 
   function _playPing() {
-    try {
+    {
       var ctx = new (window.AudioContext || window.webkitAudioContext)();
       var osc = ctx.createOscillator();
       var gain = ctx.createGain();
@@ -1880,8 +1763,7 @@
       gain.connect(ctx.destination);
       osc.start(ctx.currentTime);
       osc.stop(ctx.currentTime + 0.15);
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:1882");}
+    }
   }
 
   // ---- Camera jump (ported from Blon centerCameraOnTile) ----
@@ -1899,15 +1781,13 @@
   }
 
   function _emitCameraEvent(bus, ctor, x, y) {
-    try {
+    {
       bus.emit(new ctor(x, y));
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/silo-sam-tracker.js:_emitCameraEvent");
     }
   }
 
   function _centerCameraOnTile(x, y) {
-    try {
+    {
       var overlay = document.querySelector("player-info-overlay");
       if (!overlay?.eventBus) return;
       var bus = overlay.eventBus;
@@ -1917,15 +1797,13 @@
         _emitCameraEvent(bus, ctor, x, y);
         return;
       }
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/silo-sam-tracker.js:_centerCameraOnTile");
     }
   }
 
   // ---- Global tick entry point (called from bootstrap game loop) ----
 
   window.__OFH_updateSiloSamTracker = function() {
-    try {
+    {
       var siloPanel = _cfg("combatSiloPanel", false);
       var samTracker = _cfg("combatSamTracker", false);
       runtimeDebugLog("[SiloSAM] tick:", { siloPanel: siloPanel, samTracker: samTracker, cache: Boolean(_quickPanelSettingsCache) });
@@ -1947,6 +1825,5 @@
         updateSAMTrackerPanel();
         _runSamAutoFireBuilding(ctx);
       }
-    } catch (e) {
-  captureRuntimeException(e, "engine/ingame/silo-sam-tracker.js:1946");}
+    }
   };

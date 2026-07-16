@@ -72,14 +72,12 @@
     }
 
     hasPendingOpeningExpansionIntent() {
-      try {
+      {
         return (
           typeof this.attackBehavior?.getPendingOutboundAttackTroops ===
             "function" &&
           Number(this.attackBehavior.getPendingOutboundAttackTroops()) > 0
         );
-      } catch (_e) {
-        return false;
       }
     }
 
@@ -104,16 +102,14 @@
       const live = () => this.tickIsCurrent(tickGeneration);
       const config = this.mg.config();
       if (this.shouldRunNavalInvasion(me, config)) {
-        try {
+        {
           await autoBotProfileAsyncPhase(profile, "naval-invasion", () =>
             this.warshipBehavior.protectAgainstNavalInvasions());
           if (!live()) return false;
-        } catch (error) {
-          console.error("[AutoBot] naval invasion planner error:", error);
         }
       }
       if (!this.shouldTrackWarships(me, config)) return true;
-      try {
+      {
         if (state.settings.warshipAutoSpawn !== false) {
           autoBotProfileSyncPhase(profile, "warship-track", () =>
             this.warshipBehavior.trackShipsAndRetaliate());
@@ -127,8 +123,6 @@
           this.warshipBehavior.smartWarshipPatrol());
         autoBotProfileSyncPhase(profile, "warship-combat", () =>
           this.warshipBehavior.smartWarshipCombat());
-      } catch (error) {
-        console.error("[AutoBot] trackShips error:", error);
       }
       return true;
     }
@@ -178,14 +172,12 @@
       this.openingLandBurstPending = false;
       this.openingExpansionFollowUpPending = false;
       this.status = tr("Thinking…");
-      try {
+      {
         await autoBotProfileAsyncPhase(profile, "expansion-retry", () =>
           this.attackBehavior.maybeAttack());
         if (!this.tickIsCurrent(tickGeneration)) return true;
         this.openingExpansionFollowUpPending =
           this.hasPendingOpeningExpansionIntent() || state.earlyGame?.hasFreeLand === true;
-      } catch (error) {
-        console.error("[AutoBot] opening expansion retry error:", error);
       }
       this.lastSeenTick = ticks;
       return true;
@@ -242,29 +234,27 @@
 
     async runDecisionChain(profile, tickGeneration) {
       this.status = tr("Thinking…");
-      try {
+      {
         autoBotProfileSyncPhase(profile, "emoji", () =>
           this.emojiBehavior.maybeSendCasualEmoji());
         this.runDiplomacy(profile);
-        if (!await this.runOptionalAsyncPhase(this.feat("nuke"), profile, "mirv",
-          () => this.mirvBehavior.considerMIRV(), tickGeneration)) return;
-        if (!await this.runOptionalAsyncPhase(this.feat("build"), profile, "structures",
-          () => this.structureBehavior.handleStructures(), tickGeneration)) return;
+        if (!(await this.runOptionalAsyncPhase(this.feat("nuke"), profile, "mirv",
+          () => this.mirvBehavior.considerMIRV(), tickGeneration))) return;
+        if (!(await this.runOptionalAsyncPhase(this.feat("build"), profile, "structures",
+          () => this.structureBehavior.handleStructures(), tickGeneration))) return;
         const warship = this.feat("warship") && state.settings.warshipAutoSpawn !== false;
-        if (!await this.runOptionalAsyncPhase(warship, profile, "warship-build",
-          () => this.warshipBehavior.maybeSpawnWarship(), tickGeneration)) return;
+        if (!(await this.runOptionalAsyncPhase(warship, profile, "warship-build",
+          () => this.warshipBehavior.maybeSpawnWarship(), tickGeneration))) return;
         if (this.feat("embargo")) {
           autoBotProfileSyncPhase(profile, "embargo", () =>
             this.handleEmbargoesToHostileNations());
         }
-        if (!await this.runOptionalAsyncPhase(this.feat("expand") || this.feat("boat"),
-          profile, "attack", () => this.attackBehavior.maybeAttack(), tickGeneration)) return;
-        if (!await this.runOptionalAsyncPhase(warship, profile, "warship-counter",
-          () => this.warshipBehavior.counterWarshipInfestation(), tickGeneration)) return;
+        if (!(await this.runOptionalAsyncPhase(this.feat("expand") || this.feat("boat"),
+          profile, "attack", () => this.attackBehavior.maybeAttack(), tickGeneration))) return;
+        if (!(await this.runOptionalAsyncPhase(warship, profile, "warship-counter",
+          () => this.warshipBehavior.counterWarshipInfestation(), tickGeneration))) return;
         await this.runOptionalAsyncPhase(this.feat("nuke"), profile, "nuke",
           () => this.nukeBehavior.maybeSendNuke(), tickGeneration);
-      } catch (error) {
-        console.error("[AutoBot] decision chain error:", error);
       }
     }
 
@@ -277,7 +267,7 @@
       if (this.behaviorsInitialized && me?.isAlive()) {
         this.structureBehavior.observeHostileMissileLaunch?.();
       }
-      if (!await this.runNavalTickPhases(me, profile, tickGeneration)) return;
+      if (!(await this.runNavalTickPhases(me, profile, tickGeneration))) return;
       if (me === null || this.handleSpawnTick(ticks, profile)) return;
       if (this.handleEliminatedPlayer(me)) return;
       if (await this.initializeTick(ticks, profile, tickGeneration)) return;
@@ -343,7 +333,7 @@
     currentSpawnTopKey() {
       if (!state.settings.smartSpawn) return null;
       let ts = null;
-      try {
+      {
         // The live entry point is non-blocking: exact map-resolution ranking is
         // completed in idle slices and the function returns its last result or
         // the bounded fallback while that job is still running.
@@ -353,9 +343,6 @@
         if ((!ts || ts.length === 0) && typeof getSpawnHeatmapTopSpots === "function") {
           ts = getSpawnHeatmapTopSpots();
         }
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/auto-bot/nationExecution.js:484");
-        ts = null;
       }
       return ts && ts.length > 0 ? `${ts[0].x},${ts[0].y}` : null;
     }
@@ -386,20 +373,16 @@
     getSpawnConstraints() {
       const game = this.mg;
       let minDistance = 30;
-      try {
+      {
         const configured = game.config().minDistanceBetweenPlayers();
         if (Number.isFinite(configured)) minDistance = configured;
-      } catch (error) {
-        captureRuntimeException(error, "engine/ingame/auto-bot/nationExecution.js:minSpawnDistance");
       }
       let area = null;
-      try {
+      {
         const team = this.player.team();
         if (team !== null && typeof game.__src?.teamSpawnArea === "function") {
           area = game.__src.teamSpawnArea(team) ?? null;
         }
-      } catch (error) {
-        captureRuntimeException(error, "engine/ingame/auto-bot/nationExecution.js:teamSpawnArea");
       }
       const others = game.players().filter((player) =>
         player.smallID() !== this.player.smallID() && player.hasSpawned());
@@ -459,7 +442,7 @@
 
     getRankedSpawnTile(constraints) {
       let topSpots = null;
-      try {
+      {
         if (typeof computeSpawnTopSpotsForBot === "function") {
           topSpots = computeSpawnTopSpotsForBot(this.mg, this.player);
         }
@@ -467,8 +450,6 @@
           typeof getSpawnHeatmapTopSpots === "function") {
           topSpots = getSpawnHeatmapTopSpots();
         }
-      } catch (error) {
-        captureRuntimeException(error, "engine/ingame/auto-bot/nationExecution.js:rankedSpawn");
       }
       if (!topSpots) return null;
       for (const spot of topSpots) {

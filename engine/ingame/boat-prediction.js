@@ -191,10 +191,8 @@
   }) {
     const points = [];
     if (boatScreenPos) points.push({ x: boatScreenPos.x, y: boatScreenPos.y });
-    try {
+    {
       appendBoatMotionPlanPoints(points, game, transform, motionPlanUnitId);
-    } catch (error) {
-      captureRuntimeException(error, "engine/ingame/boat-prediction.js:getBoatRouteScreenPoints");
     }
     if (landingScreenPos) points.push({ x: landingScreenPos.x, y: landingScreenPos.y });
     return points;
@@ -213,15 +211,12 @@
   }
 
   function getBoatPredictionRelation(game, unit) {
-    try {
+    {
       const owner = unit?.owner?.();
       const myPlayer = game?.myPlayer?.();
       return isBoatPlayer(owner) && isBoatPlayer(myPlayer)
         ? getGranularBoatRelation(myPlayer, owner)
         : null;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/boat-prediction.js:242");
-      return null;
     }
   }
 
@@ -291,16 +286,13 @@
   }
 
   function computeBoatEtaMs(game, transport) {
-    try {
+    {
       const plan = getBoatMotionPlan(game, transport);
       if (!plan?.path?.length) return null;
       const endTick = plan.startTick + plan.path.length * plan.ticksPerStep;
       const remainingTicks = endTick - Number(game?.ticks?.());
       const msPerTick = Number(game?.config?.()?.msPerTick?.()) || 100;
       return Math.max(0, remainingTicks * msPerTick);
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/boat-prediction.js:320");
-      return null;
     }
   }
 
@@ -318,16 +310,13 @@
   }
 
   function isBoatTargetingMyPlayer(game, targetTile) {
-    try {
+    {
       const myPlayer = game?.myPlayer?.();
       if (!myPlayer?.isPlayer?.()) {
         return false;
       }
       const ownerId = game.ownerID?.(targetTile);
       return Number(ownerId) === Number(myPlayer.smallID?.());
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/boat-prediction.js:346");
-      return false;
     }
   }
 
@@ -347,12 +336,10 @@
     }
 
     let name;
-    try {
+    {
       name = typeof getPlayerDisplayName === "function"
         ? getPlayerDisplayName(owner)
         : String(owner.displayName?.() ?? owner.name?.() ?? "Unknown");
-    } catch (_error) {
-      name = "Unknown";
     }
 
     const compactName = String(name || "Unknown").trim();
@@ -382,13 +369,10 @@
     if (tile == null) {
       return null;
     }
-    try {
+    {
       const worldX = game.x(tile);
       const worldY = game.y(tile);
       return toScreenPointFromWorld(transform, worldX, worldY);
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/boat-prediction.js:406");
-      return null;
     }
   }
 
@@ -398,7 +382,7 @@
     if (!Number.isFinite(worldX) || !Number.isFinite(worldY)) {
       return null;
     }
-    try {
+    {
       _toScreenPointQueryArg.x = worldX;
       _toScreenPointQueryArg.y = worldY;
       const point = transform.worldToScreenCoordinates(_toScreenPointQueryArg);
@@ -414,9 +398,6 @@
       slot.worldX = worldX;
       slot.worldY = worldY;
       return slot;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/boat-prediction.js:433");
-      return null;
     }
   }
 
@@ -433,11 +414,7 @@
   }
 
   function isBoatRetreating(unit) {
-    try { return unit.retreating?.() === true; }
-    catch (error) {
-      captureRuntimeException(error, "engine/ingame/boat-prediction.js:isBoatRetreating");
-      return false;
-    }
+    { return unit.retreating?.() === true; }
   }
 
   function getBoatLandingLabel(relation, targeting) {

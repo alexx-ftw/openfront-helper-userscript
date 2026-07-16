@@ -32,11 +32,10 @@
     var now = performance.now();
     if (now - _lowLagCheckedAt > 1000) {
       _lowLagCheckedAt = now;
-      try {
+      {
         var raw = localStorage.getItem("ofh:settings");
         _lowLagCached = raw ? Boolean((JSON.parse(raw) || {}).lowLagMode) : false;
-      } catch (_e) {
-  captureRuntimeException(_e, "engine/ingame/map-overlay-scheduler.js:38"); _lowLagCached = false; }
+      }
     }
     return _lowLagCached;
   }
@@ -81,12 +80,10 @@
 
   function anyMapOverlayLayerEnabled() {
     for (let i = 0; i < _mapOverlayLayers.length; i += 1) {
-      try {
+      {
         if (_mapOverlayLayers[i].isEnabled()) {
           return true;
         }
-      } catch (_error) {
-        // A misbehaving predicate must not wedge the loop.
       }
     }
     return false;
@@ -144,7 +141,7 @@
   function computeCameraSignature(transform) {
     let sx = 0;
     let sy = 0;
-    try {
+    {
       _mapOverlayCamProbe.x = 0;
       _mapOverlayCamProbe.y = 0;
       const p = transform.worldToScreenCoordinates(_mapOverlayCamProbe);
@@ -152,44 +149,32 @@
         sx = p.x;
         sy = p.y;
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/map-overlay-scheduler.js:154");
-      /* keep zeros */
     }
     let scale = 1;
-    try {
+    {
       const s = Number(transform.scale);
       if (Number.isFinite(s)) scale = s;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/map-overlay-scheduler.js:161");
-      /* keep 1 */
     }
     return `${Math.round(sx)},${Math.round(sy)},${scale}`;
   }
 
   function getMapOverlayContext() {
-    try {
+    {
       return getOpenFrontGameContext();
-    } catch (_error) {
-      return null;
     }
   }
 
   function isMapOverlayLayerEnabled(layer) {
-    try {
+    {
       return layer.isEnabled();
-    } catch (_error) {
-      return false;
     }
   }
 
   function isMapOverlayLayerAnimated(layer) {
-    try {
+    {
       return typeof layer.animated === "function"
         ? Boolean(layer.animated())
         : layer.animated === true;
-    } catch (_error) {
-      return false;
     }
   }
 
@@ -202,10 +187,8 @@
       if (typeof layer.scan !== "function" || now - layer._lastScanAt < layer.scanIntervalMs) {
         continue;
       }
-      try {
+      {
         layer.scan(context.game, context.transform, now);
-      } catch (error) {
-        console.error("OpenFront map-overlay scan failed:", layer.id, error);
       }
       layer._lastScanAt = now;
       _mapOverlayDirty = true;
@@ -219,10 +202,8 @@
     ctx.clearRect(0, 0, _mapOverlayCssW, _mapOverlayCssH);
     for (const layer of _mapOverlayLayers) {
       if (!isMapOverlayLayerEnabled(layer)) continue;
-      try {
+      {
         layer.draw(ctx, context.game, context.transform, now);
-      } catch (error) {
-        console.error("OpenFront map-overlay draw failed:", layer.id, error);
       }
     }
     _mapOverlayDirty = false;
@@ -312,15 +293,12 @@
   function mapWorldToScreen(transform, worldX, worldY) {
     _mapOverlayWorldArg.x = worldX;
     _mapOverlayWorldArg.y = worldY;
-    try {
+    {
       const p = transform.worldToScreenCoordinates(_mapOverlayWorldArg);
       if (!Number.isFinite(p?.x) || !Number.isFinite(p?.y)) {
         return null;
       }
       return p;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/map-overlay-scheduler.js:319");
-      return null;
     }
   }
 

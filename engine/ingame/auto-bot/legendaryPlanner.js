@@ -34,10 +34,8 @@ const LEGENDARY_BASE_OBJECTIVES = {
 
 function legendaryBigInt(value) {
   if (typeof value === "bigint") return value;
-  try {
+  {
     return BigInt(value ?? 0);
-  } catch (_error) {
-    return 0n;
   }
 }
 
@@ -60,14 +58,11 @@ function legendaryMaxEnemyLevelSum(enemyUnitLevels = []) {
       if (level !== null && typeof level === "object") {
         raw = level.level ?? level.value ?? 0;
       }
-      try {
+      {
         if (typeof raw === "function") raw = raw();
         const number = Number(raw);
         return total +
           (Number.isFinite(number) ? Math.max(0, Math.floor(number)) : 0);
-      } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/auto-bot/legendaryPlanner.js:68");
-        return total;
       }
     }, 0);
     maximum = Math.max(maximum, capacity);

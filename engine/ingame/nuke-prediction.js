@@ -149,15 +149,12 @@
   }
 
   function getNukeLandingRadius(game, unit) {
-    try {
+    {
       const magnitude = game?.config?.().nukeMagnitudes?.(unit.type());
       const radius = Number(magnitude?.outer ?? magnitude?.inner);
       if (Number.isFinite(radius) && radius > 0) {
         return radius;
       }
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-prediction.js:158");
-      // Fall back to the same radii used by OpenFront's nuke FX layer.
     }
 
     return unit?.type?.() === "Hydrogen Bomb" ? 160 : 70;
@@ -169,7 +166,7 @@
       return worldRadius * scale;
     }
 
-    try {
+    {
       const reference = transform.worldToScreenCoordinates({
         x: screenPos.worldX + worldRadius,
         y: screenPos.worldY,
@@ -177,9 +174,6 @@
       const dx = reference.x - screenPos.x;
       const dy = reference.y - screenPos.y;
       return Math.hypot(dx, dy);
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-prediction.js:179");
-      return worldRadius;
     }
   }
 
@@ -225,7 +219,7 @@
   }
 
   function computeNukeRemainingTicks(game, fromTile, toTile) {
-    try {
+    {
       if (!canComputeNukeRemainingTicks(fromTile, toTile)) return null;
       const speed = game.config?.().defaultNukeSpeed?.() ?? 8;
       const pf = UniversalPathFinding.Parabola(game, {
@@ -249,9 +243,6 @@
         arc += Math.hypot(ax - bx, ay - by);
       }
       return Math.floor(arc / (speed > 0 ? speed : 8)) + 1;
-    } catch (_error) {
-  captureRuntimeException(_error, "engine/ingame/nuke-prediction.js:250");
-      return null;
     }
   }
 
@@ -411,11 +402,8 @@
   function getNukeLandingScreenPosition(transform, landing) {
     _nukeWorldQueryArg.x = landing.worldX;
     _nukeWorldQueryArg.y = landing.worldY;
-    try {
+    {
       return transform.worldToScreenCoordinates(_nukeWorldQueryArg);
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/nuke-prediction.js:screen-position");
-      return null;
     }
   }
 

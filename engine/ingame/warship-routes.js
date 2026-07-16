@@ -118,42 +118,31 @@
   }
 
   function getWarshipDestination(game, unit, motionPlanUnitId) {
-    try {
+    {
       const patrolTile = unit.warshipState?.()?.patrolTile;
       if (patrolTile != null) return asFiniteTileRef(patrolTile);
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/warship-routes.js:patrol-tile");
     }
     if (!Number.isFinite(motionPlanUnitId)) return null;
-    try {
+    {
       const path = game.motionPlans?.()?.get(motionPlanUnitId)?.path;
       return path?.length ? asFiniteTileRef(path[path.length - 1]) : null;
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/warship-routes.js:motion-plan");
-      return null;
     }
   }
 
   function getWarshipDestinationWorld(game, destTile) {
-    try {
+    {
       return { x: game.x(destTile), y: game.y(destTile) };
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/warship-routes.js:destination-world");
-      return null;
     }
   }
 
   function isWarshipParked(game, unit, destination) {
-    try {
+    {
       const shipTile = unit.tile?.();
       if (shipTile == null) return false;
       const distance =
         Math.abs(game.x(shipTile) - destination.x) +
         Math.abs(game.y(shipTile) - destination.y);
       return distance < WARSHIP_ROUTE_MIN_DIST;
-    } catch (_error) {
-      captureRuntimeException(_error, "engine/ingame/warship-routes.js:parked-check");
-      return false;
     }
   }
 
