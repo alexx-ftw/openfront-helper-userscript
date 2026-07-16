@@ -7,3 +7,4 @@ locales/
 # Build output + deps
 openfront-helper.user.js
 node_modules/
+openfront-engine/

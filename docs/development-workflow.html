@@ -35,5 +35,22 @@
       <code>try/finally</code> only when deterministic cleanup is required, and fix expected failure
       states through explicit capability checks or result values rather than exceptions.
     </p>
+
+    <h2>OpenFront engine compatibility</h2>
+
+    <p>
+      The official OpenFront repository is tracked as the <code>openfront-engine</code> Git
+      submodule. Every pre-commit run fetches the latest <code>origin/main</code>, checks out that
+      exact revision, stages the updated gitlink, and runs the static engine compatibility test as
+      part of the full test suite. A network failure blocks the commit so a change is never
+      validated against a silently stale engine revision.
+    </p>
+
+    <p>
+      The updater refuses to replace local changes inside the submodule. Commit, discard, or move
+      those changes before committing the helper. The helper's lint, formatting, and duplication
+      tools exclude the upstream source; compatibility is enforced by
+      <code>test/openfront-engine-compat.mjs</code> instead.
+    </p>
   </body>
 </html>

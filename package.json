@@ -8,6 +8,7 @@
     "build:raw": "node build.mjs --raw",
     "check": "tsc -p tsconfig.json --noEmit",
     "check:i18n": "node scripts/audit-i18n.mjs",
+    "engine:update": "node scripts/update-openfront-engine.mjs",
     "probe:runtime": "node scripts/probe-runtime.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -19,7 +20,7 @@
     "quality:global": "npm run lint && npm run check && npm run quality:dead-code && npm run quality:dependencies && npm run quality:duplicates",
     "quality:strict": "npm run format:check && npm run lint && npm run quality:global",
     "prepare": "husky",
-    "test": "node test/smoke.mjs && node test/companion.mjs && node test/ingame-bootstrap.mjs && node test/ingame-section-bootstrap.mjs && node test/runtime-mutable-state.mjs && node test/intent-rate-limit.mjs && node test/auto-donate.mjs && node test/legendary.mjs && node test/sam-defense-policy.mjs && node test/nuke-economy-policy.mjs && node test/maritime-invasion-economy.mjs && node test/spawn-index.mjs && node test/spawn-heatmap.mjs && node test/performance-regressions.mjs && node test/frame-stall-regressions.mjs && node test/runtime-diagnostics.mjs && node test/spawn-entity-scoring.mjs && node test/spawn-objective.mjs && node test/game-start-notification.mjs && node test/early-game.mjs && node test/attack-defense-post.mjs && node test/attack-intent-accounting.mjs && node test/port-placement.mjs && node test/nuke-suggestions.mjs && node test/silo-sam-tracker.mjs && node test/naval-interception.mjs"
+    "test": "node test/openfront-engine-compat.mjs && node test/smoke.mjs && node test/companion.mjs && node test/ingame-bootstrap.mjs && node test/ingame-section-bootstrap.mjs && node test/runtime-mutable-state.mjs && node test/intent-rate-limit.mjs && node test/auto-donate.mjs && node test/legendary.mjs && node test/sam-defense-policy.mjs && node test/nuke-economy-policy.mjs && node test/maritime-invasion-economy.mjs && node test/spawn-index.mjs && node test/spawn-heatmap.mjs && node test/performance-regressions.mjs && node test/frame-stall-regressions.mjs && node test/runtime-diagnostics.mjs && node test/spawn-entity-scoring.mjs && node test/spawn-objective.mjs && node test/game-start-notification.mjs && node test/early-game.mjs && node test/attack-defense-post.mjs && node test/attack-intent-accounting.mjs && node test/port-placement.mjs && node test/nuke-suggestions.mjs && node test/silo-sam-tracker.mjs && node test/naval-interception.mjs"
   },
   "lint-staged": {
     "*.{js,mjs,ts}": "eslint --max-warnings=0",

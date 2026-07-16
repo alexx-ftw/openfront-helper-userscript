@@ -41,6 +41,7 @@ export default tseslint.config(
   {
     ignores: [
       "node_modules/**",
+      "openfront-engine/**",
       "openfront-helper.user.js",
       "coverage/**",
       "jscpd-report/**",
