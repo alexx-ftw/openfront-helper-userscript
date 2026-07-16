@@ -68,7 +68,7 @@
     }
 
     feat(name) {
-      return !!(state.settings.features && state.settings.features[name]);
+      return Boolean(state.settings.features && state.settings.features[name]);
     }
 
     hasPendingOpeningExpansionIntent() {
@@ -83,7 +83,11 @@
       }
     }
 
-    async tick(ticks, profile = null) {
+    async tick(ticks, profile = null, tickGeneration = null) {
+      const tickIsCurrent = () =>
+        tickGeneration === null ||
+        (state.settings.enabled && state.tickGeneration === tickGeneration);
+      if (!tickIsCurrent()) return;
       this.player = this.mg.myPlayer();
       const me = this.player;
 
@@ -100,6 +104,14 @@
         return;
       }
       this.lastProcessedGameTick = ticks;
+
+      // Observe missile launches on every authoritative game tick, not only
+      // on the much slower structure cadence. Otherwise a short-lived missile
+      // can launch and resolve between build decisions, leaving the SAM gate
+      // permanently locked even though an enemy has fired.
+      if (this.behaviorsInitialized && me?.isAlive()) {
+        this.structureBehavior.observeHostileMissileLaunch?.();
+      }
 
       // WIN-FIX: run the route-aware invasion planner before the ordinary
       // warship tracker. This keeps a live maritime landing from waiting for
@@ -120,6 +132,7 @@
             "naval-invasion",
             () => this.warshipBehavior.protectAgainstNavalInvasions(),
           );
+          if (!tickIsCurrent()) return;
         } catch (e) {
           console.error("[AutoBot] naval invasion planner error:", e);
         }
@@ -210,6 +223,7 @@
       // ── first live tick — NationExecution.ts:170-174 ─────────────────────────
       if (!this.behaviorsInitialized) {
         this.initializeBehaviors();
+        this.structureBehavior.observeHostileMissileLaunch?.();
         if (this.feat("expand")) {
           const openingWinFix = state.settings.winFixes === true;
           const openingCommitFraction = openingWinFix
@@ -224,6 +238,7 @@
                 openingCommitFraction,
               ),
           );
+          if (!tickIsCurrent()) return;
           // A successful opening burst occupies this decision slot. With winFixes,
           // schedule one follow-up on the next authoritative tick after the local
           // intent is reconciled instead of waiting for attackRate.
@@ -259,6 +274,13 @@
             "expansion-retry",
             () => this.attackBehavior.maybeAttack(),
           );
+          if (!tickIsCurrent()) return;
+          // Continue while an intent is pending OR directly accessible free land
+          // remains. A temporary reserve/rate-limit rejection must not demote the
+          // 1% follow-up loop to the much slower normal combat cadence.
+          this.openingExpansionFollowUpPending =
+            this.hasPendingOpeningExpansionIntent() ||
+            state.earlyGame?.hasFreeLand === true;
         } catch (e) {
           console.error("[AutoBot] opening expansion retry error:", e);
         }
@@ -269,8 +291,6 @@
       // ── tick gating (edge-detected over the elapsed window) — NationExecution.ts:176 ─
       const from = this.lastSeenTick < 0 ? ticks : this.lastSeenTick + 1;
       this.lastSeenTick = ticks;
-      let attackCrossed = false;
-      let thirdCrossed = false;
       // WIN-FIX (combatCadenceScale): <1 shrinks the effective attack interval
       // so the bot remains more active than a faithful Nation without turning
       // every 200 ms polling callback into a full global scan.
@@ -284,11 +304,17 @@
       const at = this.attackTick % ar;
       const oneThird = (at + Math.floor(ar / 3)) % ar;
       const twoThirds = (at + Math.floor((ar * 2) / 3)) % ar;
-      for (let t = from; t <= ticks; t++) {
-        const offset = ((t % ar) + ar) % ar;
-        if (offset === at) attackCrossed = true;
-        else if (offset === oneThird || offset === twoThirds) thirdCrossed = true;
-      }
+      // Detect residue crossings arithmetically. Iterating every missed game
+      // tick made a delayed tab pay O(delay) CPU before it could recover.
+      const span = Math.max(0, ticks - from);
+      const firstOffset = ((from % ar) + ar) % ar;
+      const intervalContainsOffset = (targetOffset) => {
+        const delta = (targetOffset - firstOffset + ar) % ar;
+        return delta <= span;
+      };
+      const attackCrossed = intervalContainsOffset(at);
+      const thirdCrossed =
+        intervalContainsOffset(oneThird) || intervalContainsOffset(twoThirds);
 
       if (!attackCrossed) {
         // Between regular attack ticks: build at 1/3 and 2/3 (NationExecution.ts:180-190).
@@ -298,6 +324,7 @@
             "structures-between",
             () => this.structureBehavior.handleStructures(),
           );
+          if (!tickIsCurrent()) return;
         }
         // A maritime emergency must not wait for the next attack cadence just
         // because this snapshot was a structure-only tick. The route-aware
@@ -314,6 +341,7 @@
             "warship-emergency-build",
             () => this.warshipBehavior.maybeSpawnWarship(),
           );
+          if (!tickIsCurrent()) return;
         }
         return;
       }
@@ -341,6 +369,7 @@
             "mirv",
             () => this.mirvBehavior.considerMIRV(),
           );
+          if (!tickIsCurrent()) return;
         }
         if (this.feat("build")) {
           await autoBotProfileAsyncPhase(
@@ -348,6 +377,7 @@
             "structures",
             () => this.structureBehavior.handleStructures(),
           );
+          if (!tickIsCurrent()) return;
         }
         if (this.feat("warship") && state.settings.warshipAutoSpawn !== false) {
           await autoBotProfileAsyncPhase(
@@ -355,6 +385,7 @@
             "warship-build",
             () => this.warshipBehavior.maybeSpawnWarship(),
           );
+          if (!tickIsCurrent()) return;
         }
         // DIVERGENCE: src gates this under alliance; we add a dedicated `embargo`
         // toggle so the user can turn off the bot's auto-stop-trading behavior.
@@ -369,6 +400,7 @@
             "attack",
             () => this.attackBehavior.maybeAttack(),
           );
+          if (!tickIsCurrent()) return;
         }
         if (this.feat("warship") && state.settings.warshipAutoSpawn !== false) {
           await autoBotProfileAsyncPhase(
@@ -376,6 +408,7 @@
             "warship-counter",
             () => this.warshipBehavior.counterWarshipInfestation(),
           );
+          if (!tickIsCurrent()) return;
         }
         if (this.feat("nuke")) {
           await autoBotProfileAsyncPhase(
@@ -383,6 +416,7 @@
             "nuke",
             () => this.nukeBehavior.maybeSendNuke(),
           );
+          if (!tickIsCurrent()) return;
         }
       } catch (e) {
         console.error("[AutoBot] decision chain error:", e);
@@ -447,7 +481,7 @@
         if ((!ts || ts.length === 0) && typeof getSpawnHeatmapTopSpots === "function") {
           ts = getSpawnHeatmapTopSpots();
         }
-      } catch (_e) {
+      } catch (_e) { globalThis.__OFH_RECORD_EXCEPTION__?.(_e, "engine/ingame/auto-bot/nationExecution.js:484");
         ts = null;
       }
       return ts && ts.length > 0 ? `${ts[0].x},${ts[0].y}` : null;
@@ -491,7 +525,7 @@
       try {
         const md = g.config().minDistanceBetweenPlayers();
         if (Number.isFinite(md)) minDist = md;
-      } catch (_e) {
+      } catch (_e) { globalThis.__OFH_RECORD_EXCEPTION__?.(_e, "engine/ingame/auto-bot/nationExecution.js:521");
         /* default */
       }
       // Team spawn area (SpawnExecution.getTeamSpawnArea) — null in FFA.
@@ -501,7 +535,7 @@
         if (team !== null && typeof g.__src?.teamSpawnArea === "function") {
           area = g.__src.teamSpawnArea(team) ?? null;
         }
-      } catch (_e) {
+      } catch (_e) { globalThis.__OFH_RECORD_EXCEPTION__?.(_e, "engine/ingame/auto-bot/nationExecution.js:531");
         /* none */
       }
       const others = g
@@ -571,7 +605,7 @@
           if ((!topSpots || topSpots.length === 0) && typeof getSpawnHeatmapTopSpots === "function") {
             topSpots = getSpawnHeatmapTopSpots();
           }
-        } catch (_e) {
+        } catch (_e) { globalThis.__OFH_RECORD_EXCEPTION__?.(_e, "engine/ingame/auto-bot/nationExecution.js:601");
           topSpots = null;
         }
         if (topSpots && topSpots.length > 0) {

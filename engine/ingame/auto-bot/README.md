@@ -38,10 +38,13 @@ existing Nation decision chain but enriches its opening target choice:
    ticks (30 seconds at 100 ms per tick). A proximity-only `boatCandidate` does
    not activate Early Game or delay a tribe attack.
 
-The first live Terra Nullius attack uses the calculated one-tile loss as a
-minimum and commits the configured opening burst. Later land attacks and
-transport probes retain the one-tile payload unless their own policy explicitly
-requests a larger commitment.
+Terra Nullius attacks use the calculated one-tile loss as a minimum and share a
+time-indexed cumulative opening budget measured from the first post-spawn
+attempt: 0.4% of the spawning army through tick 100, 1.2% through tick 300, and
+2% through tick 500. After that window, expansion may use only troops above the
+calculated production peak or a higher threat-aware reserve. Transport probes
+share the same budget, so several reconciled intents cannot independently drain
+the opening army.
 
 Port construction applies the same largest-surface rule independently: a port
 candidate must be a border tile adjacent to the canonical open-ocean component.
@@ -67,11 +70,23 @@ per target and game tick; cheap boat probes keep their existing behavior.
 ## Combat decision cadence
 
 The Auto Bot panel's `Tick interval (ms)` controls the engine polling cadence.
-With `winFixes` enabled, each new authoritative poll runs one combat decision
-pass; there is no additional `attackRate` cooldown between attacks. Duplicate
-snapshots are still skipped, and pending outbound intents continue to reserve
+Polling is intentionally separate from the strategy cadence: duplicate
+snapshots are skipped, while attack and structure decisions run only when the
+edge-detected `attackRate` / structure-third crossings are reached. With
+`winFixes` enabled, `combatCadenceScale` defaults to `0.6`, so the bot remains
+more active than the faithful difficulty-based Nation without rerunning the
+full decision chain on every poll. Pending outbound intents continue to reserve
 troops until the client reconciles them. Disabling `winFixes` restores the
-faithful difficulty-based Nation attack cadence.
+faithful cadence exactly.
+
+All helper-owned intents share a client-side token budget matching the server:
+10 intents per second and 150 intents per minute. When the budget is empty,
+`emitIntent()` and the direct WebSocket fallback return `false` without sending;
+bot callers can retry on the next decision instead of asking the server to drop
+the packet. Parallel attack batches stop before walking more targets once the
+budget is empty, so Impossible/Legendary does not attempt 100 rejected sends in
+one decision. `window.__autoBotDiag()` exposes the current budget and local
+backpressure counters.
 
 ## Naval invasion interception
 
@@ -122,12 +137,24 @@ shortcut so that exception cannot override the `City` priority. The pressure
 snapshot is cached for the current game tick; allied players, same-team players,
 and remote hostiles do not activate this rule.
 
+## Free-land expansion cadence
+
+With `winFixes` enabled, the first live Terra Nullius attack commits up to 60%
+of the opening army. After that burst is acknowledged, directly accessible free
+land remains on the fast follow-up path: each accepted intent sends 1% of the
+current army, or the exact first-tile cost when that is larger. Pending-intent
+reconciliation prevents duplicate sends from a stale troop snapshot, and the
+shared client limiter (10 intents per second and 150 per minute) remains the
+authoritative maximum cadence. Border-threat and opening-army reserves still
+block a follow-up that cannot be funded safely.
+
 ## Team donation policy
 
 When `winFixes` is enabled, automatic troop donations remain restricted to needy
-players on our team. Among those recipients, matching clan tags are prioritized
-first, followed by frontline status and lowest troop percentage. If a clan tag is
-unavailable, the player remains eligible and uses the normal fallback order.
+players on our team. Allies under attack rank first, then other frontline allies,
+then rear allies. Within each urgency tier, closer recipients rank ahead of farther
+ones, followed by lowest troop percentage and matching clan tag. Missing location
+or clan data never excludes a teammate and falls back to the remaining signals.
 
 Before emitting a donation, the bot also scans every owned tile on its border and
 collects the live non-self players occupying adjacent land. It retains at least
@@ -157,9 +184,10 @@ but not its path length. `gameApi.js` now uses that spawn plus a bounded
 full-resolution water-graph search to calculate the shortest route in ticks. An
 upstream `src.transportRouteTicks(tile)` adapter takes precedence when available.
 This local search is a documented `DIVERGENCE` from the engine's HPA/smoothing
-implementation and is active only under `winFixes`; if the graph is unavailable
-or exceeds its search budget, Early Game rejects the boat. `window.__autoBotDiag()`
-reports `boatRouteAvailable`, `boatGate`, the last ETA, and rejection counters.
+implementation and is active only under `winFixes`; Early Game keeps its strict
+300-tick gate, while exploratory/probe boats reject unknown or longer-than-1,200-
+tick routes (two minutes at 10 ticks/s). `window.__autoBotDiag()` reports
+`boatRouteAvailable`, `boatGate`, the last ETA, and rejection counters.
 
 ## Architecture
 

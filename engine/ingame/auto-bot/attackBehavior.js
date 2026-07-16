@@ -21,7 +21,7 @@
 //   - ACTUATION: the client has no synchronous `game.addExecution`. Replace:
 //       * land attack  `new AttackExecution(troops, attacker, targetID)`
 //           → `emitIntent(ctors.attack, target.id()|null, troops)`
-//         (targetID = `target.id()` for a player, `null` for TerraNullius).
+//         (`null` is the client protocol's explicit TerraNullius target).
 //       * boat        `new TransportShipExecution(player, dstTile, troops)`
 //           → `emitIntent(ctors.boat, dstTile, troops)`.
 //       * donate      `new DonateTroopsExecution(player, recipient.id(), troops)`
@@ -115,6 +115,17 @@
     return typeof AUTO_DONATE_EXPANSION_MAX_TICKS === "number"
       ? AUTO_DONATE_EXPANSION_MAX_TICKS
       : 30;
+  }
+
+  // A parallel attack batch must stop before it walks every target after the
+  // shared client intent budget is exhausted. Keep the fallback permissive for
+  // isolated/unit test loads that do not include the shared rate-limit module;
+  // the final emit gate remains authoritative in the full userscript build.
+  function hasAttackIntentRateCapacity() {
+    return (
+      typeof hasIntentRateLimitCapacity !== "function" ||
+      hasIntentRateLimitCapacity()
+    );
   }
 
   function earlyGameTroopGrowthRate(troops, maximum) {
@@ -381,7 +392,7 @@
         objectiveApi.getPlayerClanTag(left),
         objectiveApi.getPlayerClanTag(right),
       );
-    } catch (_error) {
+    } catch (_error) { globalThis.__OFH_RECORD_EXCEPTION__?.(_error, "engine/ingame/auto-bot/attackBehavior.js:395");
       return false;
     }
   }
@@ -391,9 +402,11 @@
     return candidates
       .map((candidate, index) => ({ candidate, index }))
       .sort((left, right) => {
-        const leftClan = left.candidate.sameClan === true ? 1 : 0;
-        const rightClan = right.candidate.sameClan === true ? 1 : 0;
-        if (leftClan !== rightClan) return rightClan - leftClan;
+        const leftUnderAttack = left.candidate.underAttack === true ? 1 : 0;
+        const rightUnderAttack = right.candidate.underAttack === true ? 1 : 0;
+        if (leftUnderAttack !== rightUnderAttack) {
+          return rightUnderAttack - leftUnderAttack;
+        }
 
         const leftFrontline = left.candidate.frontline === true ? 1 : 0;
         const rightFrontline = right.candidate.frontline === true ? 1 : 0;
@@ -401,14 +414,77 @@
           return rightFrontline - leftFrontline;
         }
 
+        const leftDistance = Number(left.candidate.distance);
+        const rightDistance = Number(right.candidate.distance);
+        const normalizedLeftDistance = Number.isFinite(leftDistance)
+          ? leftDistance
+          : Number.POSITIVE_INFINITY;
+        const normalizedRightDistance = Number.isFinite(rightDistance)
+          ? rightDistance
+          : Number.POSITIVE_INFINITY;
+        if (normalizedLeftDistance !== normalizedRightDistance) {
+          return normalizedLeftDistance - normalizedRightDistance;
+        }
+
         const leftPercentage = Number(left.candidate.troopPercentage);
         const rightPercentage = Number(right.candidate.troopPercentage);
         if (leftPercentage !== rightPercentage) {
           return leftPercentage - rightPercentage;
         }
+
+        const leftClan = left.candidate.sameClan === true ? 1 : 0;
+        const rightClan = right.candidate.sameClan === true ? 1 : 0;
+        if (leftClan !== rightClan) return rightClan - leftClan;
         return left.index - right.index;
       })
       .map(({ candidate }) => candidate);
+  }
+
+  function recordOptionalAttackSnapshotFailure(error) {
+    state.optionalAttackSnapshotFailures =
+      (Number(state.optionalAttackSnapshotFailures) || 0) + 1;
+    if (state.settings.performanceProfiling === true) {
+      console.warn("[AutoBot] optional attack snapshot unavailable:", error);
+    }
+  }
+
+  function normalizeCaptureEfficiency(candidate, maximum) {
+    if (!isEarlyGameTribeActionable(candidate)) return 0;
+    return maximum > 0
+      ? candidate.captureEfficiencyRaw / maximum
+      : candidate.cheapCapture;
+  }
+
+  function recordTribeBoundaryOwner(result, player, ownerSid, mySid, playersBySid) {
+    if (ownerSid === mySid) {
+      result.ownEdges += 1;
+      return;
+    }
+    if (ownerSid == null) return;
+    result.externalEdges += 1;
+    result.externalSids.add(ownerSid);
+    const owner = playersBySid.get(ownerSid);
+    if (owner && player.isFriendly(owner) === true) result.alliedEdges += 1;
+  }
+
+  function analyzeTribeBoundary({ game, player, border, tribeSid, mySid, playersBySid }) {
+    const result = {
+      boundaryEdges: 0,
+      ownEdges: 0,
+      externalEdges: 0,
+      alliedEdges: 0,
+      externalSids: new Set(),
+    };
+    for (const tile of border) {
+      for (const neighbor of game.neighbors(tile)) {
+        if (!game.isLand(neighbor)) continue;
+        const ownerSid = game.ownerID(neighbor);
+        if (ownerSid === tribeSid) continue;
+        result.boundaryEdges += 1;
+        recordTribeBoundaryOwner(result, player, ownerSid, mySid, playersBySid);
+      }
+    }
+    return result;
   }
 
   class AttackBehavior {
@@ -440,7 +516,12 @@
       this.earlyGamePeakReserveCache = 0;
       this.earlyGameProductionPeakReserveCacheKey = null;
       this.earlyGameProductionPeakReserveCache = 0;
+      this.terraNulliusSafetyTroopHighWater = 0;
+      this.terraNulliusOpeningStartTick = null;
+      this.terraNulliusOpeningTroops = 0;
+      this.terraNulliusOpeningCommittedTroops = 0;
       this.strongestBorderOpponentTroopsCacheTick = null;
+      this.strongestBorderOpponentTroopsCacheIncludeFriendly = null;
       this.strongestBorderOpponentTroopsCache = null;
       // Small per-player memory used by the early-game food-race policy. It is
       // intentionally local to this persistent behavior instance and bounded to
@@ -450,6 +531,7 @@
       // avoids even the lookup after the first candidate pass.
       this.earlyGameMaritimeIndex = undefined;
       this.earlyGameMaritimeWaterCache = new Map();
+      this.earlyGamePreferredClusterTargetKeys = new Set();
       // Defense-post reads are bounded and reused across all target decisions
       // made in the same game tick. This keeps the extra combat intelligence out
       // of the high-frequency engine poll loop.
@@ -468,7 +550,7 @@
       try {
         const tick = Number(this.game?.ticks?.());
         return Number.isFinite(tick) ? tick : 0;
-      } catch (_error) {
+      } catch (_error) { globalThis.__OFH_RECORD_EXCEPTION__?.(_error, "engine/ingame/auto-bot/attackBehavior.js:553");
         return 0;
       }
     }
@@ -498,6 +580,17 @@
       return targetKeys;
     }
 
+    getLiveOutboundAttackTroopsForTarget(target) {
+      const targetKey = this.getOutboundAttackTargetKey(target);
+      if (targetKey == null) return 0;
+      return this.getOutboundAttackSnapshot()
+        .filter(
+          (entry) =>
+            entry.targetIsPlayer === true && entry.targetKey === targetKey,
+        )
+        .reduce((total, entry) => total + entry.troops, 0);
+    }
+
     getOutboundAttackSnapshot() {
       let outgoing = [];
       try {
@@ -520,7 +613,7 @@
                 : null,
               troops: Math.max(0, Number(attack.troops?.() || 0)),
             };
-          } catch (_error) {
+          } catch (_error) { globalThis.__OFH_RECORD_EXCEPTION__?.(_error, "engine/ingame/auto-bot/attackBehavior.js:616");
             return null;
           }
         })
@@ -558,7 +651,7 @@
               targetTile,
               troops: Math.max(0, Number(unit.troops?.() || 0)),
             };
-          } catch (_error) {
+          } catch (_error) { globalThis.__OFH_RECORD_EXCEPTION__?.(_error, "engine/ingame/auto-bot/attackBehavior.js:654");
             return null;
           }
         })
@@ -574,6 +667,10 @@
       if (amount <= 0) return;
 
       const targetIsPlayer = target?.isPlayer?.() === true;
+      if (!targetIsPlayer) {
+        this.terraNulliusOpeningCommittedTroops =
+          (Number(this.terraNulliusOpeningCommittedTroops) || 0) + amount;
+      }
       const targetKey = targetIsPlayer
         ? this.getOutboundAttackTargetKey(target)
         : null;
@@ -798,18 +895,70 @@
       const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
       if (ownTroops <= 0) return 0;
 
-      const accelerationReserve = this.getEarlyGameLiveReserveTroops();
-      const commitFraction = Math.min(
-        1,
-        Math.max(0, Number(EARLY_EXPAND_COMMIT) || 0),
+      this.terraNulliusSafetyTroopHighWater = Math.max(
+        this.terraNulliusSafetyTroopHighWater,
+        ownTroops,
       );
-      const reserveCeiling = ownTroops * (1 - commitFraction);
 
-      // TerraNullius does not fight back. If buildings or new territory raise
-      // maxTroops before the army grows, keep the acceleration reserve soft so
-      // the opening commit remains affordable instead of waiting for a moving
-      // capacity-derived target that expansion itself pushes farther away.
-      return Math.min(accelerationReserve, reserveCeiling);
+      const remainingOpeningCommitment =
+        this.getRemainingTerraNulliusOpeningCommitment();
+      if (Number.isFinite(remainingOpeningCommitment)) {
+        const borderThreat = Math.max(
+          0,
+          Number(this.getStrongestBorderOpponentTroops()) || 0,
+        );
+        return Math.min(
+          ownTroops,
+          Math.max(ownTroops - remainingOpeningCommitment, borderThreat),
+        );
+      }
+
+      // After the opening budget expires, TerraNullius expansion must never
+      // cross the troop-production peak. The live reserve can raise this floor
+      // further when border pressure warrants it.
+      return Math.max(
+        this.getEarlyGameProductionReserveTroops(),
+        this.getEarlyGameLiveReserveTroops(),
+      );
+    }
+
+    getTerraNulliusOpeningCommitLimit() {
+      const tick = this.currentAttackDecisionTick();
+      const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
+      if (!Number.isFinite(this.terraNulliusOpeningStartTick)) {
+        this.terraNulliusOpeningStartTick = tick;
+        this.terraNulliusOpeningTroops = ownTroops;
+      }
+
+      const elapsed = Math.max(0, tick - this.terraNulliusOpeningStartTick);
+      if (elapsed > 500) {
+        return Number.POSITIVE_INFINITY;
+      }
+      return Math.max(0, this.terraNulliusOpeningTroops * EARLY_EXPAND_COMMIT);
+    }
+
+    getTerraNulliusLivenessReserveTroops() {
+      const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
+      this.terraNulliusSafetyTroopHighWater = Math.max(
+        this.terraNulliusSafetyTroopHighWater,
+        ownTroops,
+      );
+      const borderThreat = Math.max(
+        0,
+        Number(this.getStrongestBorderOpponentTroops()) || 0,
+      );
+      return Math.max(
+        borderThreat,
+        this.terraNulliusSafetyTroopHighWater * (1 - EARLY_EXPAND_COMMIT),
+      );
+    }
+
+    getRemainingTerraNulliusOpeningCommitment() {
+      return Math.max(
+        0,
+        this.getTerraNulliusOpeningCommitLimit() -
+          (Number(this.terraNulliusOpeningCommittedTroops) || 0),
+      );
     }
 
     getEarlyGameMaximumTroops(ownTroops = this.player?.troops?.() || 0) {
@@ -877,9 +1026,13 @@
       return Math.max(0, ownTroops - reserve - pending);
     }
 
-    getStrongestBorderOpponentTroops() {
+    getStrongestBorderOpponentTroops(includeFriendly = false) {
       const tick = this.currentAttackDecisionTick();
-      if (this.strongestBorderOpponentTroopsCacheTick === tick) {
+      if (
+        this.strongestBorderOpponentTroopsCacheTick === tick &&
+        this.strongestBorderOpponentTroopsCacheIncludeFriendly ===
+          includeFriendly
+      ) {
         return this.strongestBorderOpponentTroopsCache;
       }
 
@@ -905,8 +1058,6 @@
         const mySid = me.smallID();
         if (mySid == null) throw new Error("own player id is unavailable");
 
-        // Relations are intentionally ignored here: an allied border owner can
-        // still be the army that determines the minimum safe reserve.
         const borderingPlayerIds = new Set();
         for (const borderTile of me.borderTiles() || []) {
           for (const neighbor of game.neighbors(borderTile) || []) {
@@ -942,6 +1093,17 @@
           }
           if (!player.isAlive()) continue;
 
+          // Allies are not an immediate combat reserve requirement. Counting a
+          // stronger ally here could reserve our entire army and permanently
+          // suppress adjacent TerraNullius while that same ally closed the
+          // remaining expansion corridor.
+          if (!includeFriendly) {
+            if (typeof me.isFriendly !== "function") {
+              throw new Error("border relation data is unavailable");
+            }
+            if (me.isFriendly(player) === true) continue;
+          }
+
           if (typeof player.troops !== "function") {
             throw new Error("border opponent troops are unavailable");
           }
@@ -956,11 +1118,12 @@
             throw new Error("border opponent is missing from the player snapshot");
           }
         }
-      } catch (_error) {
+      } catch (_error) { globalThis.__OFH_RECORD_EXCEPTION__?.(_error, "engine/ingame/auto-bot/attackBehavior.js:1121");
         strongest = null;
       }
 
       this.strongestBorderOpponentTroopsCacheTick = tick;
+      this.strongestBorderOpponentTroopsCacheIncludeFriendly = includeFriendly;
       this.strongestBorderOpponentTroopsCache = strongest;
       return strongest;
     }
@@ -1039,7 +1202,7 @@
           const loss = Number(result?.attackerTroopLoss);
           if (Number.isFinite(loss) && loss >= 0) return loss;
         }
-      } catch (_error) {
+      } catch (_error) { globalThis.__OFH_RECORD_EXCEPTION__?.(_error, "engine/ingame/auto-bot/attackBehavior.js:1205");
         // Fall through to the terrain-based client fallback below.
       }
 
@@ -1063,22 +1226,69 @@
       commitFraction = null,
     ) {
       const configuredSpendable = Number(spendableTroops);
-      const available =
+      const reserveSpendable =
         spendableTroops !== null && Number.isFinite(configuredSpendable)
           ? Math.max(0, configuredSpendable)
           : this.getEarlyGameSpendableTroops(
               this.getEarlyGameTerraNulliusReserveTroops(),
             );
-      if (available < 1) return 0;
-
+      let available = reserveSpendable;
+      if (state.settings.winFixes) {
+        available = Math.min(
+          available,
+          this.getRemainingTerraNulliusOpeningCommitment(),
+        );
+      }
       const terraNullius = target || this.game?.terraNullius?.();
       const frontier = this.getTerraNulliusFrontierTiles(preferredTile);
       let minimum = 1;
+      let livenessFollowUp = false;
       for (const tile of frontier) {
         const loss = this.getTerraNulliusAttackLoss(terraNullius, tile);
         if (Number.isFinite(loss) && loss > 0) {
           minimum = Math.max(minimum, Math.ceil(loss));
         }
+      }
+
+      // An underfunded TerraNullius intent is not partial progress: the engine
+      // charges the first-tile loss before ownership changes. Wait until the
+      // exact first tile is affordable instead of repeatedly emitting attacks
+      // that cannot expand the border.
+      const ownTroops = Math.max(
+        0,
+        Number(this.player?.troops?.() || 0),
+      );
+      const followUpFraction =
+        typeof EARLY_EXPAND_FOLLOWUP_COMMIT === "number"
+          ? EARLY_EXPAND_FOLLOWUP_COMMIT
+          : 0.01;
+      const followUpTroops = Math.max(
+        minimum,
+        ownTroops * followUpFraction,
+      );
+      if (available < followUpTroops) {
+        // The cumulative opening allowance is a pacing target, not permission
+        // to deadlock while free land remains adjacent. Permit exactly one
+        // frontier-tile loss when the normal production and border-threat
+        // reserve can afford it; pending-intent reconciliation still prevents
+        // duplicate emissions against the same stale troop snapshot.
+        // An explicit spendable amount is an authoritative caller safety cap.
+        // The automatic path may bypass the moving production-peak target, but
+        // never the opening-army safety floor or the strongest border threat.
+        if (spendableTroops !== null) return 0;
+        const livenessAvailable = this.getEarlyGameSpendableTroops(
+          this.getTerraNulliusLivenessReserveTroops(),
+        );
+        if (livenessAvailable < minimum) return 0;
+        // After the decisive opening burst, keep free-land expansion moving at
+        // 1% per acknowledged intent (or the exact one-tile minimum when that is
+        // larger). Pending reconciliation and the shared rate limiter determine
+        // the fastest safe emission cadence.
+        available = Math.min(
+          livenessAvailable,
+          followUpTroops,
+        );
+        livenessFollowUp = true;
       }
 
       // The engine conquers the first tile before checking whether the attack
@@ -1087,7 +1297,10 @@
       // live opening may explicitly request a larger safe burst; the spendable
       // budget still caps it against reserves and pending intents.
       const configuredCommitFraction = Number(commitFraction);
-      if (Number.isFinite(configuredCommitFraction)) {
+      if (
+        commitFraction !== null &&
+        Number.isFinite(configuredCommitFraction)
+      ) {
         const boundedCommitFraction = Math.min(
           1,
           Math.max(0, configuredCommitFraction),
@@ -1098,7 +1311,9 @@
           Math.max(minimum, ownTroops * boundedCommitFraction),
         );
       }
-      return Math.min(available, minimum);
+      return livenessFollowUp
+        ? Math.max(minimum, Math.floor(available))
+        : Math.min(available, minimum);
     }
 
     resetEnemyDefensePostCaches() {
@@ -1169,7 +1384,7 @@
             : config?.[method];
         const numeric = Number(value);
         return Number.isFinite(numeric) ? numeric : fallback;
-      } catch (_error) {
+      } catch (_error) { globalThis.__OFH_RECORD_EXCEPTION__?.(_error, "engine/ingame/auto-bot/attackBehavior.js:1384");
         return fallback;
       }
     }
@@ -1191,7 +1406,7 @@
           const distance = Number(this.game.manhattanDist(left, right));
           return distance * distance;
         }
-      } catch (_error) {
+      } catch (_error) { globalThis.__OFH_RECORD_EXCEPTION__?.(_error, "engine/ingame/auto-bot/attackBehavior.js:1406");
         /* malformed/stale tile views are treated as uncovered */
       }
       return Infinity;
@@ -1236,7 +1451,7 @@
                 : NaN,
           });
         }
-      } catch (_error) {
+      } catch (_error) { globalThis.__OFH_RECORD_EXCEPTION__?.(_error, "engine/ingame/auto-bot/attackBehavior.js:1451");
         // A stale PlayerView must never abort the complete attack decision.
       }
       this.enemyDefensePostUnitsCache.set(targetSid, operational);
@@ -1417,6 +1632,11 @@
       const hasAccessibleFreeLand = border.some(
         (tile) => !this.game.hasOwner(tile) && !this.game.hasFallout(tile),
       );
+      const hasAccessibleRadioactiveLand = border.some(
+        (tile) => !this.game.hasOwner(tile) && this.game.hasFallout(tile),
+      );
+      const hasAccessibleTerraNullius =
+        hasAccessibleFreeLand || hasAccessibleRadioactiveLand;
       this.cacheEnemyDefensePostFrontTiles(border);
       const playerNeighbors = this.player.nearby();
       // DIVERGENCE: src builds the set from playerBySmallID(ownerID(t)) and filters
@@ -1428,7 +1648,15 @@
           .filter((o) => o != null && o.isPlayer()),
       );
       for (const n of playerNeighbors) {
-        if (n.isPlayer()) borderingPlayerSet.add(n);
+        if (!n.isPlayer() || borderingPlayerSet.has(n)) continue;
+        try {
+          if (this.player.sharesBorderWith(n) === true) {
+            borderingPlayerSet.add(n);
+          }
+        } catch (_error) {
+          // The tile-owner pass above remains authoritative when the optional
+          // convenience predicate is unavailable.
+        }
       }
       const borderingPlayers = [...borderingPlayerSet].sort(
         (a, b) => a.troops() - b.troops(),
@@ -1445,6 +1673,13 @@
       // Attack TerraNullius but not nuked territory (direct border or across a river)
       const hasNonNukedTerraNullius =
         hasAccessibleFreeLand ||
+        playerNeighbors.some((n) => !n.isPlayer());
+      // A maritime-only TerraNullius target is speculative: a transport can be
+      // sunk or fail to land, so it must not suppress the tribe food race. We
+      // still send one cheap probe when boats are enabled, then fall through to
+      // the normal tribe pass in this same decision.
+      const hasMaritimeTerraNullius =
+        !hasAccessibleTerraNullius &&
         playerNeighbors.some((n) => !n.isPlayer());
 
       // WIN-FIX (NOT in src): make the opening state explicit without creating a
@@ -1471,7 +1706,10 @@
         });
       const earlyGameSnapshot = createEarlyGameSnapshot({
         postSpawn: this.game.inSpawnPhase() === false && this.player.hasSpawned(),
-        hasFreeLand: hasNonNukedTerraNullius,
+        // Only directly reachable land is guaranteed. A nearby non-player can
+        // represent a sea-only TerraNullius route, which remains uncertain until
+        // the probe actually lands.
+        hasFreeLand: hasAccessibleTerraNullius,
         tribes: tribeTargets,
         boatRouteAvailable: this.game.hasTransportRouteEstimator === true,
       });
@@ -1479,10 +1717,11 @@
       state.earlyGame = {
         ...earlyGameSnapshot,
         action: chooseEarlyGameAction({
-          landTarget: hasAccessibleFreeLand,
+          landTarget: hasAccessibleTerraNullius,
           tribeTarget: earlyGameSnapshot.hasTribeTarget,
           boatTarget: false,
         }),
+        maritimeProbeSent: false,
         tribeTarget: null,
         oceanTarget: null,
         boatGate: null,
@@ -1500,17 +1739,40 @@
       // when the toggle is OFF (a non-faithful config), so the default (all on)
       // keeps the exact faithful RNG stream.
       const f = state.settings.features || {};
-      const expandOn = !!f.expand;
-      const boatOn = !!f.boat;
-      const allianceOn = !!f.alliance;
+      const expandOn = Boolean(f.expand);
+      const boatOn = Boolean(f.boat);
+      const allianceOn = Boolean(f.alliance);
 
-      // WIN-FIX: cost-free land is an absolute first choice. If the attempt
-      // cannot be emitted because troops are reserved or a prior intent is
-      // still pending, stop this decision instead of falling through to a
-      // tribe/player attack while the free tile is still available.
-      if (expandOn && state.settings.winFixes && hasAccessibleFreeLand) {
-        await this.sendAttack(this.game.terraNullius());
-        return;
+      // WIN-FIX: an active hostile attack is the first combat priority. Keeping
+      // retaliation inside the later difficulty strategy list allowed free-land,
+      // tribe, boat, and other expansion branches to return every cycle before
+      // that strategy was reached. `force` bypasses target reluctance and stale
+      // pending expansion intents; sendLandAttack still enforces the live troop
+      // reserve, Defense Post safety, and the shared intent-rate budget.
+      if (expandOn && state.settings.winFixes) {
+        const incomingAttacker = this.findIncomingAttackPlayer();
+        if (incomingAttacker && (await this.sendAttack(incomingAttacker, true))) {
+          state.earlyGame.action = "retaliate";
+          return;
+        }
+      }
+
+      // WIN-FIX: adjacent TerraNullius is the first choice, including radioactive
+      // green land. Only stop after an expansion intent is actually emitted. A
+      // reserve, pending-intent, or rate-limit rejection must not let one visible
+      // free tile starve every tribe/player attack until another player claims it.
+      if (expandOn && state.settings.winFixes && hasAccessibleTerraNullius) {
+        if (
+          await this.sendAttack(
+            this.game.terraNullius(),
+            false,
+            null,
+            null,
+            hasAccessibleRadioactiveLand,
+          )
+        ) {
+          return;
+        }
       }
 
       // WIN-FIX (NOT in src): TAKE OVER a DISCONNECTED neighbour's land. A player who
@@ -1537,18 +1799,48 @@
         }
       }
 
-      // WIN-FIX (NOT in src): during the concrete opening window, rank nearby
-      // tribes by open-ocean access, immediate races, and the stronger of their
-      // encirclement/blocking opportunities before continuation food. The
+      let maritimeTerraNulliusProbeSent = false;
+      if (
+        expandOn &&
+        boatOn &&
+        state.settings.winFixes &&
+        hasMaritimeTerraNullius
+      ) {
+        const radioactiveTerraNullius = this.isBorderingNukedTerritory();
+        // Deliberately do not return after this sendAttack. The sea route is a
+        // wager, not owned land yet; the tribe attack below must proceed without
+        // waiting for the transport to prove itself.
+        maritimeTerraNulliusProbeSent = await this.sendAttack(
+          this.game.terraNullius(),
+          false,
+          null,
+          null,
+          radioactiveTerraNullius,
+        );
+        if (maritimeTerraNulliusProbeSent) {
+          state.earlyGame.action = "maritime-probe";
+          state.earlyGame.maritimeProbeSent = true;
+        }
+      }
+
+      // WIN-FIX (NOT in src): after spawning, probe nearby tribes whenever the
+      // higher-priority direct free-land attempt did not emit. The preliminary
+      // snapshot only knows about current land borders; getEarlyGameTribeCandidates
+      // performs the bounded maritime route check needed to discover the first
+      // attack without a manual opener.
+      // Rank verified tribe routes by balanced capture, race, control, continuation, and
+      // maritime-opportunity utility. The
       // progressing-vector race signal remains a later tie-breaker. If no ranked
       // target can be actuated, fall back to the existing aggressive bot pass.
       if (
         expandOn &&
         state.settings.winFixes &&
-        earlyGameSnapshot.active &&
-        earlyGameSnapshot.hasTribeTarget
+        earlyGameSnapshot.postSpawn
       ) {
-        if (await this.attackEarlyGameTribe()) return;
+        if (await this.attackEarlyGameTribe()) {
+          state.earlyGame.action = "tribe";
+          return;
+        }
       }
 
       // WIN-FIX (NOT in src): if we already hold an ocean shore, take a nearby
@@ -1559,22 +1851,15 @@
         expandOn &&
         boatOn &&
         state.settings.winFixes &&
-        earlyGameSnapshot.active
+        earlyGameSnapshot.active &&
+        !maritimeTerraNulliusProbeSent
       ) {
-        if (await this.maybeEarlyOceanBoat()) return;
-      }
-
-      // WIN-FIX (NOT in src): aggressively eat bordering BOTS (the weak Tribe AI
-      // that crowds a bot-heavy map) BEFORE grabbing TerraNullius and BEFORE the
-      // reserve/trigger gates — so the bot ACTIVELY conquers the bots around it
-      // instead of passively expanding into empty land / waiting for fill. The
-      // pure faithful AI grabs TN first and only fights bots via the gated pipeline.
-      if (
-        expandOn &&
-        state.settings.winFixes &&
-        borderingEnemies.some((e) => e.isPlayer() && e.type() === PlayerType.Bot)
-      ) {
-        if (await this.attackBots()) return;
+        if (await this.maybeEarlyOceanBoat()) {
+          // An ocean probe is also speculative. If a tribe is actionable, keep
+          // the decision alive for the tribe pass; with no tribe, the probe is
+          // the useful expansion action for this cycle.
+          if (!earlyGameSnapshot.hasTribeTarget) return;
+        }
       }
 
       // WIN-FIX (NOT in src): opportunistic amphibious landings — cheap probe boats
@@ -1604,11 +1889,19 @@
         this.allianceBehavior.reachOutToFarNations();
       }
 
-      if (expandOn && hasNonNukedTerraNullius) {
-        const radioactiveTerraNullius =
-          state.settings.winFixes === true &&
-          !hasAccessibleFreeLand &&
-          this.isBorderingNukedTerritory();
+      // Final TerraNullius fallback. Faithful mode keeps its original clean-land
+      // behavior. In win-fix mode, radioactive land is deliberately deferred
+      // until the actionable tribe/boat/player lanes above have failed, then it
+      // becomes the expansion target instead of leaving the bot permanently idle.
+      const radioactiveTerraNullius =
+        state.settings.winFixes === true &&
+        !hasAccessibleFreeLand &&
+        this.isBorderingNukedTerritory();
+      if (
+        expandOn &&
+        ((!state.settings.winFixes && hasNonNukedTerraNullius) ||
+          radioactiveTerraNullius)
+      ) {
         if (
           await this.sendAttack(
             this.game.terraNullius(),
@@ -1618,6 +1911,19 @@
             radioactiveTerraNullius,
           )
         ) {
+          return;
+        }
+      }
+
+      // If free-land expansion was not actionable, keep the aggressive tribe pass
+      // available before the ordinary difficulty strategy pipeline.
+      if (
+        expandOn &&
+        state.settings.winFixes &&
+        borderingEnemies.some((e) => e.isPlayer() && e.type() === PlayerType.Bot)
+      ) {
+        if (await this.attackBots()) {
+          state.earlyGame.action = "tribe";
           return;
         }
       }
@@ -1655,6 +1961,19 @@
       const maxParallelAttacks = Math.max(1, this.getBotAttackMaxParallelism());
       let launchedAttacks = 0;
       const ranked = rankEarlyGameTribeCandidates(candidates);
+      // Concentrate the opening army on the largest reachable tribe component.
+      // Ranking the best gateway first was insufficient because the parallel
+      // loop then spent its remaining budget on smaller clusters in unrelated
+      // directions. Parallel attacks are now allowed only within the same
+      // maximum-size component.
+      const strategicRanked = keepLargestTribeClusterCandidates(ranked);
+      this.earlyGamePreferredClusterTargetKeys = new Set(
+        strategicRanked
+          .map((candidate) =>
+            this.getOutboundAttackTargetKey(candidate.player),
+          )
+          .filter((key) => key != null),
+      );
       const diagnosticTargets = ranked.map((candidate) => ({
         id: candidate.id,
         utility: Number(calculateEarlyGameTribeUtility(candidate).toFixed(3)),
@@ -1679,7 +1998,16 @@
           : null,
         futureFoodCount: candidate.futureFoodCount,
         futureFoodAccess: Number(candidate.futureFoodAccess.toFixed(3)),
+        tribeClusterAccess: Number(
+          finiteEarlyGameSignal(candidate.tribeClusterAccess).toFixed(3),
+        ),
         foodRaceValue: Number(candidate.foodRaceValue.toFixed(3)),
+        alliedCutoffPressure: Number(
+          finiteEarlyGameSignal(candidate.alliedCutoffPressure).toFixed(3),
+        ),
+        oceanGatewayUrgency: Number(
+          finiteEarlyGameSignal(candidate.oceanGatewayUrgency).toFixed(3),
+        ),
         encirclement: Number(candidate.encirclement.toFixed(3)),
         blockValue: Number(candidate.blockValue.toFixed(3)),
         cheapCapture: Number(candidate.cheapCapture.toFixed(3)),
@@ -1697,12 +2025,30 @@
       if (state.earlyGame) {
         state.earlyGame.actionableTribes = diagnosticTargets;
         state.earlyGame.tribeTarget = diagnosticTargets[0] || null;
+        if (diagnosticTargets.length > 0) {
+          state.earlyGame.active = true;
+          state.earlyGame.hasTribeTarget = true;
+        }
       }
 
-      for (const candidate of ranked) {
-        if (launchedAttacks >= maxParallelAttacks) break;
+      for (const candidate of strategicRanked) {
+        if (
+          launchedAttacks >= maxParallelAttacks ||
+          !hasAttackIntentRateCapacity()
+        )
+          break;
         const targetKey = this.getOutboundAttackTargetKey(candidate.player);
-        if (selectedTargetKeys.has(targetKey)) continue;
+        if (selectedTargetKeys.has(targetKey)) {
+          // A tribe can keep conquering TerraNullius after our attack starts,
+          // raising both its troops and capture cost. Do not abandon that live
+          // attack forever. Wait for any prior top-up intent to reconcile, then
+          // send only the newly missing strength.
+          if (this.hasPendingOutboundAttackForTarget(candidate.player)) continue;
+          const committedTroops =
+            this.getLiveOutboundAttackTroopsForTarget(candidate.player);
+          if (committedTroops < 1) continue;
+          candidate.existingCommittedTroops = committedTroops;
+        }
 
         try {
           if (
@@ -1864,18 +2210,131 @@
     }
 
     // Build the small, bounded feature vector used by rankEarlyGameTribeCandidates.
-    // Border snapshots are fetched only for nearby bot tribes, never for every
-    // player on the map. That makes this safe at maximum game speed as well as on
-    // a tribe-heavy map.
+    // Border snapshots are fetched in bounded batches. Complete tribe topology
+    // is required before the eight expensive attack candidates are selected;
+    // otherwise uncached surrounding tribes disappear from the cluster graph.
+    // The stages remain together so their bounded maps share one coherent game
+    // snapshot; splitting this orchestration would make cross-tick data mixing
+    // easier. The expensive worker calls are separately bounded and parallel.
+    // eslint-disable-next-line max-lines-per-function
     async getEarlyGameTribeCandidates() {
-      const eligibleNearbyTribes = this.player.nearby().filter(
-          (candidate) =>
-            candidate &&
-            candidate.isPlayer() &&
-            candidate.isAlive() &&
-            candidate.type() === PlayerType.Bot &&
-            this.player.isFriendly(candidate) === false,
+      const otherPlayers = this.game.players();
+      const eligibleTribesById = new Map();
+      const addEligibleTribe = (candidate) => {
+        if (
+          candidate &&
+          candidate.isPlayer() &&
+          candidate.isAlive() &&
+          candidate.type() === PlayerType.Bot &&
+          this.player.isFriendly(candidate) === false
+        ) {
+          eligibleTribesById.set(candidate.smallID(), candidate);
+        }
+      };
+      for (const candidate of this.player.nearby()) addEligibleTribe(candidate);
+      // nearby() is an opportunistic client snapshot and can omit a tribe when
+      // a hostile human/nation also occupies our frontier. Confirmed land-border
+      // tribes from the authoritative player list must remain edible regardless
+      // of which neighbour happened to dominate that snapshot.
+      for (const candidate of otherPlayers) {
+        try {
+          if (this.player.sharesBorderWith(candidate) === true) {
+            addEligibleTribe(candidate);
+          }
+        } catch (error) {
+          recordOptionalAttackSnapshotFailure(error);
+          /* nearby() remains the fallback on older adapters */
+        }
+      }
+      const eligibleNearbyTribes = [...eligibleTribesById.values()];
+      // Choose the bounded enrichment sample with the strategic destination in
+      // view. Previously cluster value was calculated only after this list had
+      // already been truncated, so a cheap/local tribe could hide the gateway
+      // into the largest tribe group before the cluster-aware ranker saw it.
+      const lightweightTribeNodes = otherPlayers
+        .filter(
+          (tribe) =>
+            tribe?.isPlayer?.() === true &&
+            tribe.isAlive?.() === true &&
+            tribe.type?.() === PlayerType.Bot &&
+            this.player.isFriendly(tribe) === false,
+        )
+        .map((tribe) => ({
+          id: tribe.smallID(),
+          player: tribe,
+          center: tribe.nameLocation?.(),
+        }));
+      const edibleTribeIds = new Set(
+        lightweightTribeNodes.map((tribe) => tribe.id),
+      );
+      const tribeAdjacency = new Map(
+        lightweightTribeNodes.map((tribe) => [tribe.id, new Set()]),
+      );
+      const topologyBordersById = new Map();
+      for (
+        let start = 0;
+        start < lightweightTribeNodes.length;
+        start += EARLY_TRIBE_CANDIDATES
+      ) {
+        const batch = lightweightTribeNodes.slice(
+          start,
+          start + EARLY_TRIBE_CANDIDATES,
         );
+        await Promise.all(
+          batch.map(async (tribe) => {
+            let border = new Set();
+            try {
+              if (typeof this.game.ensureBorderTiles === "function") {
+                const fetched = await withTimeout(
+                  this.game.ensureBorderTiles(tribe.player),
+                  WORKER_TIMEOUT_MS,
+                  null,
+                );
+                if (fetched && fetched.size > 0) border = fetched;
+              }
+              if (border.size === 0) {
+                border = tribe.player.borderTiles?.() || new Set();
+              }
+            } catch (error) {
+              recordOptionalAttackSnapshotFailure(error);
+            }
+            topologyBordersById.set(tribe.id, border);
+          }),
+        );
+      }
+      for (const tribe of lightweightTribeNodes) {
+        const border = topologyBordersById.get(tribe.id) || [];
+        for (const tile of border) {
+          for (const neighbor of this.game.neighbors(tile) || []) {
+            if (!this.game.isLand(neighbor)) continue;
+            const neighborId = this.game.ownerID(neighbor);
+            if (
+              neighborId == null ||
+              neighborId === tribe.id ||
+              !edibleTribeIds.has(neighborId)
+            ) {
+              continue;
+            }
+            tribeAdjacency.get(tribe.id).add(neighborId);
+            tribeAdjacency.get(neighborId).add(tribe.id);
+          }
+        }
+      }
+      const lightweightClusterSizes = calculateTribeAdjacencyClusterSizes(
+        lightweightTribeNodes,
+        tribeAdjacency,
+      );
+      const rankSamplingTribes = (tribes) =>
+        rankEarlyGameTribeSamplingCandidates(
+          tribes.map((tribe) => ({
+            player: tribe,
+            id: tribe.smallID(),
+            clusterSize: lightweightClusterSizes.get(tribe.smallID()) || 1,
+            opportunity:
+              Math.max(1, Number(tribe.numTilesOwned?.()) || 1) /
+              Math.max(1, Number(tribe.troops?.()) || 1),
+          })),
+        ).map((candidate) => candidate.player);
       // Do not let speculative sea targets consume the bounded sample before a
       // known bordering tribe. The remaining order stays as nearby() supplies it.
       const borderingTribes = [];
@@ -1889,22 +2348,21 @@
         }
         (bordering ? borderingTribes : otherTribes).push(tribe);
       }
-      otherTribes.sort((left, right) => {
-        const opportunity = (tribe) =>
-          Math.max(1, Number(tribe.numTilesOwned?.()) || 1) /
-          Math.max(1, Number(tribe.troops?.()) || 1);
-        const difference = opportunity(right) - opportunity(left);
-        if (difference !== 0) return difference;
-        return Number(left.smallID?.()) - Number(right.smallID?.());
-      });
-      const nearbyTribes = borderingTribes
-        .concat(otherTribes)
+      const nearbyTribes = rankSamplingTribes(borderingTribes)
+        .concat(rankSamplingTribes(otherTribes))
         .slice(0, EARLY_TRIBE_CANDIDATES);
       if (nearbyTribes.length === 0) return [];
 
-      const otherPlayers = this.game.players();
+      const playersBySid = new Map(
+        otherPlayers
+          .filter((player) => player?.isPlayer?.() === true)
+          .map((player) => [player.smallID(), player]),
+      );
       const myCenter = this.getPlayerCenter(this.player);
       const mySid = this.player.smallID();
+      const hasOpenOceanAccess = Array.from(
+        this.player.borderTiles?.() || [],
+      ).some((tile) => this.isEarlyGameMaritimeShore(tile));
       const competitorProfiles = this.getEarlyGameCompetitorProfiles(
         otherPlayers,
         mySid,
@@ -1916,9 +2374,13 @@
       // parallel so one slow snapshot costs one timeout window, not eight.
       await Promise.all(
         nearbyTribes.map(async (tribe) => {
-          let border = new Set();
+          let border =
+            topologyBordersById.get(tribe.smallID()) || new Set();
           try {
-            if (typeof this.game.ensureBorderTiles === "function") {
+            if (
+              border.size === 0 &&
+              typeof this.game.ensureBorderTiles === "function"
+            ) {
               const fetched = await withTimeout(
                 this.game.ensureBorderTiles(tribe),
                 WORKER_TIMEOUT_MS,
@@ -1930,7 +2392,8 @@
               const snapshot = tribe.borderTiles();
               if (snapshot && snapshot.size > 0) border = snapshot;
             }
-          } catch (_e) {
+          } catch (error) {
+            recordOptionalAttackSnapshotFailure(error);
             /* no border snapshot → keep conservative candidate signals */
           }
           borderByTribe.set(tribe, border);
@@ -1941,29 +2404,30 @@
         const border = borderByTribe.get(tribe) || new Set();
 
         const tribeSid = tribe.smallID();
-        let boundaryEdges = 0;
-        let ownEdges = 0;
-        let externalEdges = 0;
-        const externalSids = new Set();
-        for (const tile of border) {
-          for (const neighbor of this.game.neighbors(tile)) {
-            if (!this.game.isLand(neighbor)) continue;
-            const ownerSid = this.game.ownerID(neighbor);
-            if (ownerSid === tribeSid) continue;
-            boundaryEdges++;
-            if (ownerSid === mySid) {
-              ownEdges++;
-            } else if (ownerSid != null) {
-              externalEdges++;
-              externalSids.add(ownerSid);
-            }
-          }
-        }
+        const {
+          boundaryEdges,
+          ownEdges,
+          externalEdges,
+          alliedEdges,
+          externalSids,
+        } = analyzeTribeBoundary({
+          game: this.game,
+          player: this.player,
+          border,
+          tribeSid,
+          mySid,
+          playersBySid,
+        });
 
         const encirclement =
           boundaryEdges > 0 ? ownEdges / boundaryEdges : 0;
         const directBlock =
           boundaryEdges > 0 ? externalEdges / boundaryEdges : 0;
+        // An ally closing around a tribe is more urgent than an ordinary rival:
+        // once the ally owns the chokepoint we cannot reopen that expansion path
+        // without breaking diplomacy. Race for the neutral tribe, never the ally.
+        const alliedCutoffPressure =
+          boundaryEdges > 0 ? alliedEdges / boundaryEdges : 0;
         const tribeCenter =
           border.size > 0
             ? calculateBoundingBoxCenter(this.game, border)
@@ -2006,7 +2470,8 @@
               incomingContesters++;
             }
           }
-        } catch (_e) {
+        } catch (error) {
+          recordOptionalAttackSnapshotFailure(error);
           /* attack snapshots are optional on older client builds */
         }
 
@@ -2020,6 +2485,11 @@
           competitorProfiles,
         });
         const maritimeDistance = this.getEarlyGameMaritimeDistance(border);
+        // If we do not own an open-ocean shore yet, a tribe on that shore is a
+        // strategic gateway rather than a generic maritime bonus. Claiming it
+        // now prevents allies from permanently sealing our naval expansion.
+        const oceanGatewayUrgency =
+          !hasOpenOceanAccess && maritimeDistance === 0 ? 1 : 0;
         const troopRatio =
           this.player.troops() > 0
             ? tribe.troops() / this.player.troops()
@@ -2054,6 +2524,9 @@
           oceanDistance: maritimeDistance,
           encirclement,
           blockValue,
+          alliedCutoffPressure,
+          oceanGatewayUrgency,
+          hasOpenOceanAccess,
           cheapCapture: Math.max(0, 1 - Math.min(1, troopRatio)),
           targetTiles,
           estimatedCaptureCost,
@@ -2067,6 +2540,7 @@
           meanFutureFoodDistance: Infinity,
           futureFoodChainRadius: EARLY_GAME_TRIBE_CHAIN_RADIUS,
           futureFoodAccess: null,
+          tribeClusterAccess: 0,
           foodRaceValue: foodRace.foodRaceValue,
           contestPressure: foodRace.contestPressure,
           competitorTroops: foodRace.competitorTroops,
@@ -2113,23 +2587,93 @@
         0,
       );
       for (const candidate of candidates) {
-        candidate.captureEfficiency = isEarlyGameTribeActionable(candidate)
-          ? maxCaptureEfficiency > 0
-            ? candidate.captureEfficiencyRaw / maxCaptureEfficiency
-            : candidate.cheapCapture
-          : 0;
+        candidate.captureEfficiency = normalizeCaptureEfficiency(
+          candidate,
+          maxCaptureEfficiency,
+        );
       }
 
       // A bounded continuation pass estimates how many other neutral tribes will
       // be reachable from the newly acquired frontier. This is deliberately a
       // geometric opportunity signal, not a second attack loop.
-      const futureFoodTotal = Math.max(0, actionableCandidates.length - 1);
+      // Continuation value must include tribes that are not actionable from our
+      // current frontier. Those are precisely the targets that eating this
+      // tribe may unlock. Restricting the pool to actionableCandidates only
+      // measured redundant access we already had before the conquest.
+      // Border/route enrichment remains capped at eight candidates, but cluster
+      // direction can use every living tribe's cheap name-location snapshot.
+      // This lets a gateway point toward a large cluster that is not yet in our
+      // nearby() attack sample without adding map-wide worker calls.
+      const futureFoodById = new Map();
+      for (const tribe of otherPlayers) {
+        if (
+          !tribe?.isPlayer?.() ||
+          !tribe.isAlive?.() ||
+          tribe.type?.() !== PlayerType.Bot ||
+          this.player.isFriendly(tribe) === true
+        ) {
+          continue;
+        }
+        const center = tribe.nameLocation?.();
+        if (
+          center &&
+          Number.isFinite(Number(center.x)) &&
+          Number.isFinite(Number(center.y))
+        ) {
+          futureFoodById.set(tribe.smallID(), {
+            id: tribe.smallID(),
+            player: tribe,
+            center,
+          });
+        }
+      }
+      for (const candidate of candidates) {
+        if (
+          candidate.center &&
+          Number.isFinite(Number(candidate.center.x)) &&
+          Number.isFinite(Number(candidate.center.y))
+        ) {
+          futureFoodById.set(candidate.id, candidate);
+        }
+      }
+      const futureFoodCandidates = [...futureFoodById.values()];
+      // Candidate borders were refreshed asynchronously above. Merge those
+      // authoritative snapshots into the same topology graph before scoring.
+      for (const candidate of candidates) {
+        if (!tribeAdjacency.has(candidate.id)) continue;
+        for (const tile of borderByTribe.get(candidate.player) || []) {
+          for (const neighbor of this.game.neighbors(tile) || []) {
+            if (!this.game.isLand(neighbor)) continue;
+            const neighborId = this.game.ownerID(neighbor);
+            if (
+              neighborId == null ||
+              neighborId === candidate.id ||
+              !tribeAdjacency.has(neighborId)
+            ) {
+              continue;
+            }
+            tribeAdjacency.get(candidate.id).add(neighborId);
+            tribeAdjacency.get(neighborId).add(candidate.id);
+          }
+        }
+      }
+      const clusterSizes = calculateTribeAdjacencyClusterSizes(
+        futureFoodCandidates,
+        tribeAdjacency,
+      );
+      let maxClusterSize = 0;
       for (const candidate of candidates) {
         if (!isEarlyGameTribeActionable(candidate)) {
           candidate.futureFoodAccess = 0;
+          candidate.tribeClusterAccess = 0;
           continue;
         }
-        const distances = actionableCandidates
+        const futureFoodTotal = Math.max(
+          0,
+          futureFoodCandidates.length -
+            (futureFoodCandidates.includes(candidate) ? 1 : 0),
+        );
+        const distances = futureFoodCandidates
           .filter((other) => other.id !== candidate.id)
           .map((other) =>
             this.earlyGameCenterDistance(candidate.center, other.center),
@@ -2157,6 +2701,56 @@
                 0,
               ) / futureFoodTotal
             : 0;
+        candidate.tribeClusterSize = Math.max(
+          0,
+          (clusterSizes.get(candidate.id) || 1) - 1,
+        );
+        maxClusterSize = Math.max(maxClusterSize, candidate.tribeClusterSize);
+      }
+      for (const candidate of candidates) {
+        candidate.tribeClusterAccess =
+          isEarlyGameTribeActionable(candidate) && maxClusterSize > 0
+            ? candidate.tribeClusterSize / maxClusterSize
+            : 0;
+      }
+      if (state.earlyGame) {
+        const preferred = candidates
+          .filter(isEarlyGameTribeActionable)
+          .sort(
+            (left, right) =>
+              (Number(right.tribeClusterSize) || 0) -
+              (Number(left.tribeClusterSize) || 0),
+          )[0];
+        const componentIds = preferred
+          ? getTribeAdjacencyComponentIds(preferred.id, tribeAdjacency)
+          : new Set();
+        const componentCenters = [...componentIds]
+          .map((id) => futureFoodById.get(id)?.center)
+          .filter(
+            (center) =>
+              Number.isFinite(Number(center?.x)) &&
+              Number.isFinite(Number(center?.y)),
+          );
+        state.earlyGame.preferredClusterCenter =
+          componentIds.size > 1
+            ? chooseTribeClusterMarkerCenter(componentCenters)
+            : null;
+        state.earlyGame.preferredClusterMembers =
+          state.earlyGame.preferredClusterCenter == null
+            ? []
+            : [...componentIds]
+                .map((id) => {
+                  const center = futureFoodById.get(id)?.center;
+                  return Number.isFinite(Number(center?.x)) &&
+                    Number.isFinite(Number(center?.y))
+                    ? { id, x: Number(center.x), y: Number(center.y) }
+                    : null;
+                })
+                .filter(Boolean);
+        state.earlyGame.preferredClusterSize =
+          state.earlyGame.preferredClusterCenter == null
+            ? 0
+            : componentIds.size;
       }
       return candidates;
     }
@@ -2218,7 +2812,7 @@
               return Number.isFinite(numericEta) && numericEta >= 0
                 ? { eta: numericEta, tile: targetShore }
                 : null;
-            } catch (_e) {
+            } catch (_e) { globalThis.__OFH_RECORD_EXCEPTION__?.(_e, "engine/ingame/auto-bot/attackBehavior.js:2812");
               return null;
             }
           }),
@@ -2296,7 +2890,7 @@
                 troops: Math.max(0, Number(attack.troops?.()) || 0),
                 location: target.nameLocation?.() || null,
               });
-            } catch (_e) {
+            } catch (_e) { globalThis.__OFH_RECORD_EXCEPTION__?.(_e, "engine/ingame/auto-bot/attackBehavior.js:2890");
               /* one malformed attack must not blind the rest of the scan */
             }
           }
@@ -2312,7 +2906,7 @@
           });
           seen.add(sid);
           history.set(sid, { tick, x, y, tiles });
-        } catch (_e) {
+        } catch (_e) { globalThis.__OFH_RECORD_EXCEPTION__?.(_e, "engine/ingame/auto-bot/attackBehavior.js:2906");
           /* player wrappers can disappear while a tick is being assembled */
         }
       }
@@ -2399,7 +2993,7 @@
           );
           incomingAttackers.add(sid);
         }
-      } catch (_e) {
+      } catch (_e) { globalThis.__OFH_RECORD_EXCEPTION__?.(_e, "engine/ingame/auto-bot/attackBehavior.js:2993");
         /* attack snapshots are optional on older client builds */
       }
 
@@ -2422,9 +3016,8 @@
           );
         }
 
-        let alignment = directRecord ? 1 : 0;
         if (!directRecord && profile.location && tribeCenter) {
-          alignment = this.earlyGameVectorAlignment(
+          let alignment = this.earlyGameVectorAlignment(
             profile.location,
             tribeCenter,
             profile.dx,
@@ -2531,29 +3124,29 @@
           continue;
         }
 
-        const troops = state.settings.winFixes
-          ? this.getTerraNulliusAttackTroops(
-              this.game.terraNullius(),
-              target.tile,
-            )
-          : this.getEarlyGameProbeTroops(
-              state.settings.boatProbeFrac,
-              this.getEarlyGameTerraNulliusReserveTroops(),
-            );
+        const troops = this.getEarlyGameProbeTroops(
+          state.settings.boatProbeFrac,
+          this.getEarlyGameTerraNulliusReserveTroops(),
+        );
         if (troops < 1) continue;
         if (
           this.emitBoat(
             target.tile,
             troops,
-            "🏝️ Ocean coast grab",
+            "⛵ TerraNullius probe",
             this.game.terraNullius(),
           )
         ) {
+          state.beachhead = {
+            tile: target.tile,
+            at: this.game.ticks(),
+            surged: false,
+          };
           state.earlyGame.oceanTarget = {
             distance: target.dist,
             oceanShore: true,
           };
-          state.earlyGame.action = "ocean";
+          state.earlyGame.action = "maritime-probe";
           return true;
         }
       }
@@ -2606,10 +3199,41 @@
       return targets;
     }
 
-    // Exact ETA is deliberately fail-closed during Early Game. The current public
-    // GameView exposes only bestTransportShipSpawn(), not the WaterPathFinder path;
-    // accepting an unknown route would violate the <=30s policy. A future adapter can
-    // provide game.estimateTransportRouteTicks(tile), returning exact movement ticks.
+    // Read the cached pathfinder result after bestTransportShipSpawn() has proven
+    // that a transport can be launched. The gameApi adapter uses the upstream
+    // transport route when available and otherwise performs a bounded water-graph
+    // search, so a bare "reachable" result is never treated as a short ETA.
+    async getBoatRouteEta(tile) {
+      if (
+        this.game.hasTransportRouteEstimator !== true ||
+        typeof this.game.estimateTransportRouteTicks !== "function"
+      ) {
+        return null;
+      }
+      try {
+        return await withTimeout(
+          this.game.estimateTransportRouteTicks(tile),
+          WORKER_TIMEOUT_MS,
+          null,
+        );
+      } catch (_e) {
+        return null;
+      }
+    }
+
+    // Exploratory/probe boats are useful only when they can return quickly
+    // enough to affect the current frontier. Fail closed when pathfinding is
+    // unavailable: reachability alone must not reopen the old multi-minute
+    // fallback.
+    async allowBoatExplorationRoute(tile) {
+      if (!state.settings.winFixes) return true;
+      const eta = await this.getBoatRouteEta(tile);
+      return isBoatExplorationEta(eta);
+    }
+
+    // Exact ETA remains deliberately fail-closed during Early Game. Its stricter
+    // 30-second opening-window policy is independent from the two-minute cap on
+    // exploratory boats.
     async allowEarlyGameBoat(tile) {
       const early = state.earlyGame;
       if (!state.settings.winFixes || !early || !early.active) return true;
@@ -2688,11 +3312,23 @@
 
       const src = this.random.randElement(shore);
 
-      // First look for high-interest targets (unowned or bot-owned). Mainly relevant for earlygame
-      let dst = await this.findRandomBoatTarget(src, borderingEnemies, true);
+      // First look for high-interest targets (unowned or bot-owned). When the
+      // win-fix probe policy is active, only keep candidates whose pathfinder
+      // route is inside the hard exploration-time cap.
+      let dst = await this.findRandomBoatTarget(
+        src,
+        borderingEnemies,
+        true,
+        state.settings.winFixes,
+      );
       if (dst === null) {
         // None found? Then look for players
-        dst = await this.findRandomBoatTarget(src, borderingEnemies, false);
+        dst = await this.findRandomBoatTarget(
+          src,
+          borderingEnemies,
+          false,
+          state.settings.winFixes,
+        );
         if (dst === null) {
           return;
         }
@@ -2710,20 +3346,23 @@
         : !this.game.hasOwner?.(dst);
       const troops =
         state.settings.winFixes && isTerraNullius
-          ? this.getTerraNulliusAttackTroops(
-              this.game.terraNullius(),
-              dst,
+          ? this.getEarlyGameProbeTroops(
+              state.settings.boatProbeFrac,
+              this.getEarlyGameTerraNulliusReserveTroops(),
             )
           : state.settings.winFixes
             ? this.getEarlyGameProbeTroops(state.settings.boatProbeFrac)
             : this.player.troops() / 5;
       if (troops < 1 || !(await this.allowEarlyGameBoat(dst))) return;
-      this.emitBoat(
+      const emitted = this.emitBoat(
         dst,
         troops,
         "⛵ Random boat",
         isTerraNullius ? this.game.terraNullius() : null,
       );
+      if (emitted && state.settings.winFixes && isTerraNullius) {
+        state.beachhead = { tile: dst, at: this.game.ticks(), surged: false };
+      }
       return;
     }
 
@@ -2824,8 +3463,9 @@
             const frac = state.settings.boatSurgeFrac || 0.25;
             const troops = this.player.troops() * frac;
             if (
-              (await this.allowEarlyGameBoat(bh.tile)) &&
-              this.emitBoat(bh.tile, troops, "⚓ Surge landing")
+            (await this.allowBoatExplorationRoute(bh.tile)) &&
+            (await this.allowEarlyGameBoat(bh.tile)) &&
+            this.emitBoat(bh.tile, troops, "⚓ Surge landing")
             ) {
               state.lastOppBoatMs = nowMs;
               bh.at = this.game.ticks(); // refresh the surge window
@@ -2858,7 +3498,7 @@
               y: this.game.y(tt),
             });
           }
-        } catch (_e) {
+        } catch (_e) { globalThis.__OFH_RECORD_EXCEPTION__?.(_e, "engine/ingame/auto-bot/attackBehavior.js:3498");
           /* skip */
         }
       }
@@ -2890,7 +3530,10 @@
           WORKER_TIMEOUT_MS,
           false,
         );
-        if (sp !== false) {
+        if (
+          sp !== false &&
+          (await this.allowBoatExplorationRoute(targets[i].tile))
+        ) {
           dst = targets[i].tile;
           dstOwned = targets[i].owned;
           dstFallout = targets[i].fallout;
@@ -2907,7 +3550,10 @@
             WORKER_TIMEOUT_MS,
             false,
           );
-          if (sp !== false) {
+          if (
+            sp !== false &&
+            (await this.allowBoatExplorationRoute(crater))
+          ) {
             dst = crater;
             dstOwned = true;
           }
@@ -2915,7 +3561,7 @@
       }
       if (dst === null) {
         const src = this.random.randElement(shore);
-        const r = await this.findRandomBoatTarget(src, [], true);
+        const r = await this.findRandomBoatTarget(src, [], true, true);
         if (r !== null && !this.boatTargetTaken(r)) {
           dst = r;
           dstOwned = this.game.hasOwner(r);
@@ -2927,17 +3573,15 @@
       // friendlies and (in FFA) stronger players, and probes reachability.
       if (dst === null) {
         const src2 = this.random.randElement(shore);
-        const r2 = await this.findRandomBoatTarget(src2, [], false);
+        const r2 = await this.findRandomBoatTarget(src2, [], false, true);
         if (r2 !== null && !this.boatTargetTaken(r2)) {
           dst = r2;
           dstOwned = this.game.hasOwner(r2);
         }
       }
-      // FINAL FALLBACK (user: "boat must try every way to send 1% — even if surrounded
-      // by teammates and the enemy is very far"): probe EVERY non-friendly enemy's
-      // territory (nearest first) and boat to the first one reachable across water, even
-      // a long voyage. A distant overseas enemy also resists the max-speed boat-to-self
-      // staleness (we can't conquer it by land before the boat arrives).
+      // FINAL FALLBACK: probe non-friendly enemy territory (nearest first) and boat
+      // only to the first one whose pathfinder ETA is inside the two-minute
+      // exploration cap. A merely reachable long voyage is intentionally rejected.
       if (dst === null) {
         const far = await this.findDistantBoatTarget();
         if (far !== null) {
@@ -2979,9 +3623,9 @@
         state.settings.winFixes === true && dstFallout && !dstOwned;
       const troops =
         state.settings.winFixes === true && !dstOwned
-          ? this.getTerraNulliusAttackTroops(
-              this.game.terraNullius(),
-              dst,
+          ? this.getEarlyGameProbeTroops(
+              state.settings.boatProbeFrac,
+              this.getEarlyGameTerraNulliusReserveTroops(),
             )
           : this.getEarlyGameProbeTroops(state.settings.boatProbeFrac);
       if (troops < 1) return false;
@@ -2992,7 +3636,12 @@
             ? "🏝️ Weak-coast grab"
             : "🏝️ Island grab"
           : "🛟 Probe landing";
-      if (!(await this.allowEarlyGameBoat(dst))) return false;
+      if (
+        !(await this.allowBoatExplorationRoute(dst)) ||
+        !(await this.allowEarlyGameBoat(dst))
+      ) {
+        return false;
+      }
       if (
         this.emitBoat(
           dst,
@@ -3032,7 +3681,7 @@
       try {
         tx = this.game.x(tile);
         ty = this.game.y(tile);
-      } catch (_e) {
+      } catch (_e) { globalThis.__OFH_RECORD_EXCEPTION__?.(_e, "engine/ingame/auto-bot/attackBehavior.js:3681");
         return false;
       }
       for (const p of this._inflightBoatTargets) {
@@ -3084,12 +3733,10 @@
               let grab = weakCache.get(oid);
               if (grab === undefined) {
                 const o = this.game.playerBySmallID(oid);
-                grab = !!(
-                  o &&
+                grab = Boolean(o &&
                   o.isPlayer() &&
                   this.player.isFriendly(o) === false &&
-                  o.troops() < myTroops * weakFrac
-                );
+                  o.troops() < myTroops * weakFrac);
                 weakCache.set(oid, grab);
               }
               if (!grab) continue;
@@ -3116,8 +3763,8 @@
 
     // findDisconnectedBoatTarget — like findDistantBoatTarget but ONLY disconnected
     // players (allies or enemies showing the "zzz" icon), nearest first. Their land is
-    // undefended, so this lets the bot boat over — even far across water — to take over
-    // a disconnected teammate's territory.
+    // undefended, so this can take over a disconnected teammate's territory, but only
+    // after the transport pathfinder proves the route is inside the exploration cap.
     async findDisconnectedBoatTarget() {
       if (this.player === null) return null;
       const mySid = this.player.smallID();
@@ -3141,7 +3788,7 @@
             dist = dx * dx + dy * dy;
           }
           cands.push({ tile, dist });
-        } catch (_e) {
+        } catch (_e) { globalThis.__OFH_RECORD_EXCEPTION__?.(_e, "engine/ingame/auto-bot/attackBehavior.js:3788");
           /* skip this player */
         }
       }
@@ -3154,15 +3801,30 @@
           WORKER_TIMEOUT_MS,
           false,
         );
-        if (sp !== false) return cands[i].tile;
+        if (
+          sp !== false &&
+          (await this.allowBoatExplorationRoute(cands[i].tile))
+        ) {
+          return cands[i].tile;
+        }
       }
       return null;
     }
 
-    // findDistantBoatTarget — probe EVERY alive non-friendly enemy's territory (a tile
-    // at their name location ≈ centroid), nearest first, and return the first one
-    // reachable across water. Lets the bot lead a 1% boat on a long voyage to a far
-    // enemy even when it's hemmed in by teammates with no nearby coastal target.
+    hasPendingOutboundAttackForTarget(target) {
+      if (target?.isPlayer?.() !== true) return false;
+      const targetKey = this.getOutboundAttackTargetKey(target);
+      if (targetKey == null) return false;
+      return this.botAttackPendingIntentCommitments.some(
+        (entry) =>
+          entry?.targetIsPlayer === true && entry.targetKey === targetKey,
+      );
+    }
+
+    // findDistantBoatTarget — probe alive non-friendly enemy territory (a tile at their
+    // name location ≈ centroid), nearest first, and return the first one whose actual
+    // transport route is within the two-minute exploration cap. A reachable but long
+    // voyage is not a valid fallback.
     async findDistantBoatTarget() {
       if (this.player === null) return null;
       const mySid = this.player.smallID();
@@ -3186,7 +3848,7 @@
             dist = dx * dx + dy * dy;
           }
           cands.push({ tile, dist });
-        } catch (_e) {
+        } catch (_e) { globalThis.__OFH_RECORD_EXCEPTION__?.(_e, "engine/ingame/auto-bot/attackBehavior.js:3848");
           /* skip this player */
         }
       }
@@ -3212,7 +3874,10 @@
           timedOut++;
           continue;
         }
-        if (sp !== false) {
+        if (
+          sp !== false &&
+          (await this.allowBoatExplorationRoute(cands[i].tile))
+        ) {
           state._distantDiag = {
             enemies: cands.length,
             probed,
@@ -3262,7 +3927,11 @@
         return false;
       }
       const ctors = discoverCtors(getEventBus());
-      if (ctors.boat && emitIntent(ctors.boat, dst, safeTroops)) {
+      if (
+        ctors.boat &&
+        hasAttackIntentRateCapacity() &&
+        emitIntent(ctors.boat, dst, safeTroops)
+      ) {
         state.stats.attacks++;
         setLastAction(tr(label), "naval");
         let target = null;
@@ -3328,8 +3997,14 @@
     // to BOAT_PROBE_CANDIDATES tiles in the src's selection order, THEN `await
     // bestTransportShipSpawn` down that short list and return the FIRST reachable —
     // the same target src would have chosen, with bounded worker calls. The probe is
-    // a GATE only; the returned value is the original `randTile`.
-    async findRandomBoatTarget(tile, borderingEnemies, highInterestOnly = false) {
+    // a GATE only; the returned value is the original `randTile`. Exploratory callers
+    // can additionally require the pathfinder ETA cap before accepting a candidate.
+    async findRandomBoatTarget(
+      tile,
+      borderingEnemies,
+      highInterestOnly = false,
+      requireExplorationRoute = false,
+    ) {
       if (this.player === null) throw new Error("not initialized");
       const x = this.game.x(tile);
       const y = this.game.y(tile);
@@ -3408,6 +4083,12 @@
           if (cand.owner.isPlayer()) {
             unreachablePlayers.add(cand.owner.id());
           }
+          continue;
+        }
+        if (
+          requireExplorationRoute &&
+          !(await this.allowBoatExplorationRoute(cand.tile))
+        ) {
           continue;
         }
         return cand.tile;
@@ -3565,13 +4246,12 @@
       };
 
       const weakest = async () => {
-        if (borderingEnemies.length > 0) {
-          // borderingEnemies is already sorted by attack difficulty, so first match is weakest
-          const weakest = borderingEnemies[0];
-          // In FFA, don't attack if they have more troops than us
-          if (!this.isFFA() || weakest.troops() < this.player.troops()) {
-            return await this.sendAttack(weakest);
-          }
+        // Walk the ranked *confirmed land-border* list. A rejected first target
+        // (stale pending state, Defense Post safety, or FFA strength) must not
+        // hide another hostile border that is immediately actionable.
+        for (const enemy of borderingEnemies) {
+          if (this.isFFA() && enemy.troops() >= this.player.troops()) continue;
+          if (await this.sendAttack(enemy)) return true;
         }
         return false;
       };
@@ -3620,20 +4300,6 @@
           throw new Error("unreachable difficulty: " + difficulty);
       }
 
-      // USER WIN-FIX (NOT in src): DEPRIORITISE grabbing radioactive (nuked) TerraNullius.
-      // The faithful order runs `nuked` (grab fallout TN bordering us) BEFORE attacking
-      // adjacent ENEMIES (hated/weakest). The user wants bordering enemies dealt with
-      // FIRST, then mop up the radioactive craters — so move `nuked` to just AFTER
-      // `weakest` (the last bordering-enemy strategy). winFixes off → exact faithful order.
-      if (state.settings.winFixes) {
-        const ni = order.indexOf(nuked);
-        if (ni !== -1) {
-          order.splice(ni, 1);
-          const wi = order.indexOf(weakest);
-          if (wi !== -1) order.splice(wi + 1, 0, nuked);
-          else order.push(nuked);
-        }
-      }
       return order;
     }
 
@@ -3715,7 +4381,7 @@
     // Bots that own structures are prioritized as targets (they might have stolen our structures and they will delete them!).
     // attackBots — AiAttackBehavior (private, now async).
     async attackBots() {
-      const bots = this.player
+      let bots = this.player
         .nearby()
         .filter(
           (n) =>
@@ -3723,6 +4389,14 @@
             this.player.isFriendly(n) === false &&
             n.type() === PlayerType.Bot,
         );
+
+      const preferredClusterTargets =
+        this.earlyGamePreferredClusterTargetKeys;
+      if (preferredClusterTargets?.size > 0) {
+        bots = bots.filter((bot) =>
+          preferredClusterTargets.has(this.getOutboundAttackTargetKey(bot)),
+        );
+      }
 
       if (bots.length === 0) {
         return false;
@@ -3762,6 +4436,7 @@
 
       let launchedAttacks = 0;
       for (const bot of reducedBots) {
+        if (!hasAttackIntentRateCapacity()) break;
         if (await this.sendAttack(bot, false, null, null, false, true)) {
           selectedTargetKeys.add(this.getOutboundAttackTargetKey(bot));
           launchedAttacks++;
@@ -3856,7 +4531,11 @@
               borderingFriends.length + borderingEnemies.length,
             )
           ) {
-            return await this.sendAttack(friend, true);
+            // Breaking an alliance is authoritative only on a later game turn.
+            // An immediate same-tick attack is rejected while the target is
+            // still friendly. Consume this decision and let the next attack
+            // cycle see the former ally in borderingEnemies before conquering.
+            return true;
           }
         }
       }
@@ -3865,10 +4544,6 @@
 
     // isBorderingNukedTerritory — AiAttackBehavior (private).
     isBorderingNukedTerritory() {
-      if (this.game.config().isUnitDisabled(UNIT.MissileSilo)) {
-        return false;
-      }
-
       for (const tile of this.player.borderTiles()) {
         for (const neighbor of this.game.neighbors(tile)) {
           if (
@@ -3897,7 +4572,7 @@
             ),
           );
         }
-      } catch (_error) {
+      } catch (_error) { globalThis.__OFH_RECORD_EXCEPTION__?.(_error, "engine/ingame/auto-bot/attackBehavior.js:4572");
         // Older client views may not expose fallout counters; use the engine's
         // maximum defensive multiplier as the conservative fallback.
       }
@@ -3906,21 +4581,6 @@
         ATTACK_FALLOUT_DEFENSE_BASE -
           ATTACK_FALLOUT_DEFENSE_RATIO_SLOPE * falloutRatio,
       );
-    }
-
-    getRadioactiveTerraNulliusCommitFraction() {
-      if (state.settings.winFixes !== true) return EARLY_EXPAND_COMMIT;
-      const defenseMultiplier =
-        this.getRadioactiveTerraNulliusFalloutDefenseMultiplier();
-      // Clean TerraNullius uses 60%. Fallout multiplies the troop cost, so
-      // preserve the same risk-adjusted troop budget for radioactive land.
-      return Math.min(1, EARLY_EXPAND_COMMIT / defenseMultiplier);
-    }
-
-    getRadioactiveTerraNulliusCommitTroops() {
-      const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
-      if (ownTroops <= 0) return 0;
-      return ownTroops * this.getRadioactiveTerraNulliusCommitFraction();
     }
 
     // Find someone who isn't significantly stronger than us and is under big attack from others (50%+ of their troops incoming)
@@ -4184,13 +4844,17 @@
           ? this.getTerraNulliusAttackTroops(
               target,
               null,
-              spendableTroops,
+              null,
               EARLY_EXPAND_COMMIT,
             )
           : Math.min(requestedTroops, spendableTroops);
       if (!Number.isFinite(troops) || troops < 1) return false;
       const targetId = target.isPlayer() ? target.id() : null;
-      if (ctors.attack && emitIntent(ctors.attack, targetId, troops)) {
+      if (
+        ctors.attack &&
+        hasAttackIntentRateCapacity() &&
+        emitIntent(ctors.attack, targetId, troops)
+      ) {
         state.stats.attacks++;
         setLastAction(tr("⚔️ Attack"), "combat");
         this.recordOutboundAttackIntent(target, troops, { attackType: "land" });
@@ -4216,17 +4880,15 @@
         target?.isPlayer?.() === true &&
         target.type?.() === PlayerType.Bot;
 
-      // Do not start another ordinary expansion while the previous command is
-      // still only a local intent. Its troop deduction may not be present in
-      // the client snapshot yet; waiting for reconciliation keeps free-land,
-      // boat and ordinary tribe branches from racing the same army. A bounded
-      // parallel tribal batch is the one intentional exception: each target
-      // gets a different commitment and the final troop budget still clamps it.
+      // Do not duplicate an attack against the same stale target snapshot.
+      // Different targets are safe: every pending intent is already subtracted
+      // from the shared spendable-troop budget. A global lock here allowed a
+      // continuous tribe batch to starve all hostile land borders indefinitely.
       if (
         state.settings.winFixes &&
         !force &&
         !isParallelTribeAttack &&
-        this.botAttackPendingIntentCommitments.length > 0
+        this.hasPendingOutboundAttackForTarget(target)
       ) {
         return false;
       }
@@ -4348,26 +5010,37 @@
         );
         if (spawn === false) continue;
 
-        // USER (winFixes): send only the live Config.attackLogic cost for the
-        // first TerraNullius tile. Fallout is included in that per-tile cost.
+        // USER (winFixes): maritime TerraNullius is a cheap probe, not a full
+        // land-grab commitment. Fallout is still considered by the target and
+        // reserve gates, but the payload stays at boatProbeFrac.
         const troops = state.settings.winFixes
-          ? this.getTerraNulliusAttackTroops(
-              this.game.terraNullius(),
-              tile,
+          ? this.getEarlyGameProbeTroops(
+              state.settings.boatProbeFrac,
+              this.getEarlyGameTerraNulliusReserveTroops(),
             )
           : this.player.troops() / 5;
         if (troops < 1) return false;
 
         // src: game.addExecution(new TransportShipExecution(player, tile, troops)).
-        if (!(await this.allowEarlyGameBoat(tile))) return false;
-        return this.emitBoat(
+        if (!(await this.allowEarlyGameBoat(tile))) continue;
+        const emitted = this.emitBoat(
           tile,
           troops,
           radioactiveTerraNullius
             ? "☢️ Nuked-coast grab"
-            : "⛵ Boat (land grab)",
+            : "⛵ TerraNullius probe",
           this.game.terraNullius(),
         );
+        if (emitted && state.settings.winFixes) {
+          // The existing beachhead watcher checks landingSucceeded() on the next
+          // cycle. Once the probe owns a tile, normal land expansion can resume.
+          state.beachhead = {
+            tile,
+            at: this.game.ticks(),
+            surged: false,
+          };
+        }
+        return emitted;
       }
       return false;
     }
@@ -4408,10 +5081,6 @@
     ) {
       this.reconcileOutboundAttackIntentCommitments();
       const maxTroops = this.game.config().maxTroops(this.player);
-      const radioactiveCommitTroops =
-        radioactiveTerraNullius && state.settings.winFixes
-          ? this.getRadioactiveTerraNulliusCommitTroops()
-          : null;
       const enemyDefensePostProfile = this.getEnemyDefensePostAttackProfile(
         target,
       );
@@ -4436,11 +5105,32 @@
       const targetTroops = state.settings.winFixes
         ? targetReserveTroops
         : maxTroops * reserveRatio;
-      const targetSpendableTroops = Math.min(
-        this.getEarlyGameSpendableTroops(targetReserveTroops),
-        radioactiveCommitTroops ?? Infinity,
-      );
+      // Fallout already raises the exact per-tile loss returned by
+      // getTerraNulliusAttackTroops(). Do not cap that required loss with a
+      // percentage of the current army: the cap can be smaller than one
+      // radioactive tile's cost, producing an attack intent that cannot conquer
+      // anything. The shared reserve and pending-intent budget remain the hard
+      // safety boundary.
+      const targetSpendableTroops =
+        this.getEarlyGameSpendableTroops(targetReserveTroops);
       const isTerraNullius = !target.isPlayer();
+      const finalSpendableTroops =
+        isTerraNullius && state.settings.winFixes
+          ? Math.max(
+              targetSpendableTroops,
+              this.getEarlyGameSpendableTroops(
+                this.getTerraNulliusLivenessReserveTroops(),
+              ),
+            )
+          : targetSpendableTroops;
+      let terraNulliusCommitFraction = null;
+      if (isTerraNullius && state.settings.winFixes) {
+        const requestedCommitFraction =
+          minCommitFraction === null ? Number.NaN : Number(minCommitFraction);
+        terraNulliusCommitFraction = Number.isFinite(requestedCommitFraction)
+          ? requestedCommitFraction
+          : EARLY_EXPAND_COMMIT;
+      }
 
       let troops;
       let requiredTribeAttackTroops = null;
@@ -4461,6 +5151,7 @@
           target,
           availableForTribe,
           enemyDefensePostProfile,
+          earlyGameCandidate?.existingCommittedTroops,
         );
         requiredTribeAttackTroops = troops;
         if (requiredTribeAttackTroops < 1) {
@@ -4468,14 +5159,44 @@
           return false;
         }
       } else {
-        troops =
-          isTerraNullius && state.settings.winFixes
-            ? this.getTerraNulliusAttackTroops(
-                target,
-                null,
-                targetSpendableTroops,
-              )
-            : this.player.troops() - targetTroops;
+        if (isTerraNullius && state.settings.winFixes) {
+          troops = this.getTerraNulliusAttackTroops(
+            target,
+            null,
+            null,
+            terraNulliusCommitFraction,
+          );
+        } else {
+          troops = this.player.troops() - targetTroops;
+          // Human and Nation targets can also grow after an attack begins.
+          // Once an outgoing attack is visible, reinforce it to the same 2x
+          // minimum / 4x preferred live strength used for decisive tribe
+          // captures instead of blindly sending the whole reserve again.
+          const existingCommittedTroops = target.isPlayer()
+            ? this.getLiveOutboundAttackTroopsForTarget(target)
+            : 0;
+          if (existingCommittedTroops > 0) {
+            const defenseMultiplier = Math.max(
+              1,
+              Number(enemyDefensePostProfile?.attackCostMultiplier || 1),
+            );
+            const minimumAttackTroops =
+              Math.max(0, Number(target.troops?.()) || 0) *
+              2 *
+              defenseMultiplier;
+            const preferredAttackTroops = minimumAttackTroops * 2;
+            if (
+              existingCommittedTroops + targetSpendableTroops <
+              minimumAttackTroops
+            ) {
+              return false;
+            }
+            troops = Math.min(
+              targetSpendableTroops,
+              Math.max(0, preferredAttackTroops - existingCommittedTroops),
+            );
+          }
+        }
       }
 
       const baseTroops = troops;
@@ -4494,7 +5215,7 @@
       // `player.troops()` can still be the pre-attack snapshot. Clamp after
       // every policy adjustment so the reserve and all intents share one final
       // budget, including the opening/free-land burst.
-      troops = Math.min(troops, targetSpendableTroops);
+      troops = Math.min(troops, finalSpendableTroops);
 
       // Never turn a calculated tribal assault into a weakening attack because a
       // stale snapshot or a pending intent reduced the final budget. Roll back the
@@ -4544,7 +5265,11 @@
       //   target.isPlayer() ? target.id() : terraNullius().id())).
       const ctors = discoverCtors(getEventBus());
       const targetId = target.isPlayer() ? target.id() : null;
-      if (ctors.attack && emitIntent(ctors.attack, targetId, troops)) {
+      if (
+        ctors.attack &&
+        hasAttackIntentRateCapacity() &&
+        emitIntent(ctors.attack, targetId, troops)
+      ) {
         state.stats.attacks++;
         setLastAction(tr("⚔️ Attack"), "combat");
         this.recordOutboundAttackIntent(target, troops, { attackType: "land" });
@@ -4683,7 +5408,12 @@
     }
 
     // calculateBotAttackTroops — AiAttackBehavior (private).
-    calculateBotAttackTroops(target, maxTroops, defensePostProfile = null) {
+    calculateBotAttackTroops(
+      target,
+      maxTroops,
+      defensePostProfile = null,
+      existingCommittedTroops = 0,
+    ) {
       // src: `const { difficulty } = this.game.config().gameConfig();` → REPLICATED.
       const difficulty = currentDifficulty();
       const defenseMultiplier = Math.max(
@@ -4691,20 +5421,25 @@
         Number(defensePostProfile?.attackCostMultiplier || 1),
       );
       const minimumAttackTroops = target.troops() * 2 * defenseMultiplier;
+      const committed = Math.max(0, Number(existingCommittedTroops) || 0);
       if (difficulty === Difficulty.Easy) {
-        if (maxTroops < minimumAttackTroops) {
+        if (maxTroops + committed < minimumAttackTroops) {
           return 0;
         }
-        this.botAttackTroopsSent += maxTroops;
-        return maxTroops;
+        const troops = Math.max(
+          0,
+          Math.min(maxTroops, minimumAttackTroops - committed),
+        );
+        this.botAttackTroopsSent += troops;
+        return troops;
       }
       const preferredAttackTroops = target.troops() * 4 * defenseMultiplier;
-      let troops = preferredAttackTroops;
+      let troops = Math.max(0, preferredAttackTroops - committed);
 
       // Don't send more troops than maxTroops (Keep reserve)
       if (troops > maxTroops) {
         // If we haven't enough troops left to do a big enough bot attack, skip it
-        if (maxTroops < minimumAttackTroops) {
+        if (maxTroops + committed < minimumAttackTroops) {
           troops = 0;
         } else {
           troops = maxTroops;
@@ -4737,8 +5472,8 @@
           console.log(
             "[Donate] diag: " +
               JSON.stringify({
-                featureOn: !!state.settings.features.donate,
-                winFixes: !!state.settings.winFixes,
+                featureOn: Boolean(state.settings.features.donate),
+                winFixes: Boolean(state.settings.winFixes),
                 replicatedDifficulty: String(currentDifficulty()),
                 gameType: String(cfg.gameConfig().gameType),
                 gameMode: String(cfg.gameConfig().gameMode),
@@ -4748,12 +5483,26 @@
               }),
           );
         }
-      } catch (_e) {
+      } catch (_e) { globalThis.__OFH_RECORD_EXCEPTION__?.(_e, "engine/ingame/auto-bot/attackBehavior.js:5483");
         /* ignore */
       }
 
       // Thin UX gate (PORT-CONTRACT donate strategy note — not a strategy change).
       if (!state.settings.features.donate) return false;
+
+      // Being attacked is an absolute donation veto. Check the authoritative
+      // player attack list directly before the broader shared invasion scan so
+      // neither land pressure nor a helper-data mismatch can release troops.
+      try {
+        if (
+          typeof this.player?.incomingAttacks === "function" &&
+          this.player.incomingAttacks().length > 0
+        ) {
+          return false;
+        }
+      } catch (_error) {
+        return false;
+      }
 
       // A live enemy transport aimed at our territory is an impending maritime
       // invasion. The auto-donate module owns the shared unit/ownership scan and
@@ -4767,7 +5516,7 @@
             ? window.__OFH_getIncomingMaritimeInvasion(this.game, this.player)
             : { active: false };
         if (!maritimeInvasion || maritimeInvasion.active === true) return false;
-      } catch (_e) {
+      } catch (_e) { globalThis.__OFH_RECORD_EXCEPTION__?.(_e, "engine/ingame/auto-bot/attackBehavior.js:5516");
         return false;
       }
 
@@ -4915,16 +5664,18 @@
         )
         .map((e) => {
           let frontline = false;
+          let underAttack = false;
           try {
-            frontline =
-              e.teammate.incomingAttacks().length > 0 ||
-              e.teammate.outgoingAttacks().length > 0;
-          } catch (_e) {
+            underAttack = e.teammate.incomingAttacks().length > 0;
+            frontline = underAttack || e.teammate.outgoingAttacks().length > 0;
+          } catch (_e) { globalThis.__OFH_RECORD_EXCEPTION__?.(_e, "engine/ingame/auto-bot/attackBehavior.js:5668");
             /* client may not expose other players' attacks → treat as rear */
           }
           return {
             entry: e,
             frontline,
+            underAttack,
+            distance: this.teamDonationDistance(e.teammate),
             sameClan:
               state.settings.winFixes &&
               playersShareClanTag(this.player, e.teammate),
@@ -4940,7 +5691,11 @@
             Math.round(rankedNeedy[0].troopPercentage * 100) +
             "% " +
             (rankedNeedy[0].sameClan ? "(same clan) " : "") +
-            (rankedNeedy[0].frontline ? "(FRONTLINE — in combat)" : "(rear)"),
+            (rankedNeedy[0].underAttack
+              ? "(UNDER ATTACK)"
+              : rankedNeedy[0].frontline
+                ? "(FRONTLINE — in combat)"
+                : "(rear)"),
         );
       }
 
@@ -4950,19 +5705,18 @@
       }
 
       const strongestBorderOpponentTroops =
-        this.getStrongestBorderOpponentTroops();
+        this.getStrongestBorderOpponentTroops(true);
       if (strongestBorderOpponentTroops === null) {
         console.log("[Donate] skip: border reserve data unavailable");
         return false;
       }
 
-      // In winFix mode the acceleration reserve is the only hard lower bound for
-      // donations. Keeping an additional percentage of maxTroops here caused a
-      // dead zone after buildings increased maxTroops: the bot had plenty of
-      // usable troops, but could neither attack nor help a teammate.
+      // Peaceful donations release only the surplus above the troop-production
+      // peak (~42% of current capacity). Border pressure can raise that reserve;
+      // active land or maritime attacks are rejected by the gates above.
       const maxTroops = this.game.config().maxTroops(this.player);
       const troopsToKeep = state.settings.winFixes
-        ? this.getEarlyGameLiveReserveTroops()
+        ? this.getEarlyGameProductionReserveTroops()
         : maxTroops * this.reserveRatio;
       const currentTroops = Math.max(0, Number(this.player.troops()) || 0);
       const maxBorderDonation = Math.floor(
@@ -4979,7 +5733,7 @@
       const availableTroops = currentTroops - troopsToKeep;
       const donationTroops = Math.min(
         Math.max(0, availableTroops),
-        this.getEarlyGameSpendableTroops(),
+        this.getEarlyGameSpendableTroops(troopsToKeep),
         maxBorderDonation,
       );
       const minExcess = state.settings.winFixes
@@ -5043,11 +5797,34 @@
         setLastAction(tr("🎁 Donate troops"), "combat");
       } else {
         console.log("[Donate] emit failed", {
-          ctor: !!ctors.donateTroops,
+          ctor: Boolean(ctors.donateTroops),
           directFallback: typeof sendGamePacket === "function",
         });
       }
 
-      return !!emitted;
+      return Boolean(emitted);
+    }
+
+    teamDonationDistance(teammate) {
+      try {
+        const ownCenter = this.getPlayerCenter(this.player);
+        const teammateCenter = this.getPlayerCenter(teammate);
+        if (
+          !ownCenter ||
+          !teammateCenter ||
+          !Number.isFinite(Number(ownCenter.x)) ||
+          !Number.isFinite(Number(ownCenter.y)) ||
+          !Number.isFinite(Number(teammateCenter.x)) ||
+          !Number.isFinite(Number(teammateCenter.y))
+        ) {
+          return Number.POSITIVE_INFINITY;
+        }
+        return (
+          Math.abs(Number(ownCenter.x) - Number(teammateCenter.x)) +
+          Math.abs(Number(ownCenter.y) - Number(teammateCenter.y))
+        );
+      } catch (_error) { globalThis.__OFH_RECORD_EXCEPTION__?.(_error, "engine/ingame/auto-bot/attackBehavior.js:5823");
+        return Number.POSITIVE_INFINITY;
+      }
     }
   }

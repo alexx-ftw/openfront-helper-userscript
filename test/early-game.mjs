@@ -4,6 +4,8 @@ import path from "node:path";
 import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 
+/* eslint-disable sonarjs/code-eval -- VM execution validates classic userscript modules. */
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourcePath = path.join(repoRoot, "engine/ingame/auto-bot/earlyGame.js");
 const source = fs.existsSync(sourcePath) ? fs.readFileSync(sourcePath, "utf8") : "";
@@ -27,19 +29,42 @@ const coreSource = fs.readFileSync(path.join(repoRoot, "engine/ingame/auto-bot/c
 assert.equal(typeof sandbox.createEarlyGameSnapshot, "function");
 assert.equal(typeof sandbox.chooseEarlyGameAction, "function");
 assert.equal(typeof sandbox.isEarlyGameBoatEta, "function");
+assert.equal(typeof sandbox.isBoatExplorationEta, "function");
 assert.equal(typeof sandbox.getAutoDonateExpansionStatus, "function");
 assert.equal(typeof sandbox.findWaterRouteTicks, "function");
+assert.equal(typeof sandbox.findWaterRouteTicksAsync, "function");
 assert.equal(typeof sandbox.transportRouteTicks, "function");
 assert.equal(typeof sandbox.findNearestMaritimeCoastDistance, "function");
 assert.equal(typeof sandbox.findNearestOceanCoastDistance, "function");
 assert.equal(typeof sandbox.buildMaritimeDistanceIndex, "function");
 assert.equal(typeof sandbox.lookupMaritimeDistanceIndex, "function");
 assert.equal(typeof sandbox.rankEarlyGameTribeCandidates, "function");
+assert.equal(typeof sandbox.keepLargestTribeClusterCandidates, "function");
 assert.equal(typeof sandbox.calculateEarlyGameTribeUtility, "function");
+assert.equal(typeof sandbox.calculateConnectedTribeClusterSizes, "function");
+assert.equal(typeof sandbox.calculateTribeAdjacencyClusterSizes, "function");
+assert.equal(typeof sandbox.getTribeAdjacencyComponentIds, "function");
+assert.equal(typeof sandbox.chooseTribeClusterMarkerCenter, "function");
+assert.equal(typeof sandbox.rankEarlyGameTribeSamplingCandidates, "function");
 assert.equal(typeof sandbox.isEarlyGameTribeActionable, "function");
 assert.equal(typeof sandbox.calculateEarlyGameContinuationValue, "function");
 assert.equal(typeof sandbox.calculateEarlyGameFoodRaceValue, "function");
 assert.equal(typeof sandbox.calculateEarlyGameRaceTroops, "function");
+assert.equal(typeof sandbox.isMuchWeakerAllianceTarget, "function");
+assert.equal(sandbox.isBoatExplorationEta(0), true);
+assert.equal(sandbox.isBoatExplorationEta(1200), true);
+assert.equal(sandbox.isBoatExplorationEta(1201), false);
+assert.equal(sandbox.isBoatExplorationEta(null), false);
+assert.equal(
+  sandbox.isMuchWeakerAllianceTarget({
+    ownTroops: 80000,
+    ownOutgoingTroops: 20000,
+    otherTroops: 20000,
+    otherOutgoingTroops: 5000,
+  }),
+  true,
+  "a bordering ally with one quarter of our total force is a conquest target",
+);
 assert.match(
   nationExecutionSource,
   /const openingAttackSent = await [\s\S]{0,300}forceSendAttack/,
@@ -62,18 +87,19 @@ assert.match(
 );
 assert.match(
   attackSource,
-  /getRadioactiveTerraNulliusCommitFraction\(\)/,
-  "radioactive TerraNullius must derive its own commit ratio",
+  /if \(livenessAvailable < minimum\) return 0;/,
+  "TerraNullius attacks must not emit below the exact first-tile cost",
 );
 assert.match(
   attackSource,
-  /radioactiveCommitTroops[\s\S]{0,1400}targetSpendableTroops/,
-  "radioactive land attacks must be capped by the derived ratio",
+  /!isParallelTribeAttack[\s\S]{0,120}this\.hasPendingOutboundAttackForTarget\(target\)/,
+  "pending attacks must block only duplicate targets, not unrelated expansion",
 );
 
 const openingCalls = [];
 const openingFractions = [];
 let openingFollowUps = 0;
+let openingFollowUpAccepted = true;
 const NoopBehavior = class {};
 const openingSandbox = {
   Difficulty: {
@@ -134,6 +160,7 @@ const openingSandbox = {
 
     maybeAttack() {
       openingFollowUps += 1;
+      if (openingFollowUpAccepted) this.pending = 1;
     }
   },
 };
@@ -185,7 +212,46 @@ assert.equal(
   1,
   "the follow-up runs on the next reconciled tick instead of attackRate",
 );
-assert.equal(openingBot.openingExpansionFollowUpPending, false);
+assert.equal(
+  openingBot.openingExpansionFollowUpPending,
+  true,
+  "a successful follow-up keeps the reconciled TerraNullius expansion chain active",
+);
+await openingBot.tick(3);
+assert.equal(
+  openingFollowUps,
+  1,
+  "the chained follow-up still waits for its preceding expansion intent",
+);
+openingBot.attackBehavior.pending = 0;
+await openingBot.tick(4);
+assert.equal(
+  openingFollowUps,
+  2,
+  "TerraNullius expansion continues again immediately after reconciliation",
+);
+openingBot.attackBehavior.pending = 0;
+openingFollowUpAccepted = false;
+openingSandbox.state.earlyGame = { hasFreeLand: true };
+await openingBot.tick(5);
+assert.equal(
+  openingBot.openingExpansionFollowUpPending,
+  true,
+  "a temporarily rejected follow-up remains scheduled while free land is accessible",
+);
+await openingBot.tick(6);
+assert.equal(
+  openingFollowUps,
+  4,
+  "a rejected follow-up retries on the next tick instead of waiting for combat cadence",
+);
+openingSandbox.state.earlyGame.hasFreeLand = false;
+await openingBot.tick(7);
+assert.equal(
+  openingBot.openingExpansionFollowUpPending,
+  false,
+  "the fast follow-up chain ends once no directly accessible free land remains",
+);
 
 // Polling must not rerun the full decision chain. Win-fix keeps the old 0.6
 // combat cadence scale, so a 30-tick Impossible attack rate becomes 18 ticks.
@@ -526,6 +592,30 @@ assert.equal(
   "maritime access must not automatically beat a much better land capture",
 );
 
+const redundantCoastRank = sandbox.rankEarlyGameTribeCandidates([
+  {
+    id: "redundant-coast",
+    landBorder: true,
+    maritimeDistance: 0,
+    hasOpenOceanAccess: true,
+    futureFoodAccess: 0.5,
+    captureEfficiency: 0.5,
+  },
+  {
+    id: "inland-expansion",
+    landBorder: true,
+    maritimeDistance: Infinity,
+    hasOpenOceanAccess: true,
+    futureFoodAccess: 0.5,
+    captureEfficiency: 0.5,
+  },
+]);
+assert.equal(
+  redundantCoastRank[0].id,
+  "inland-expansion",
+  "after securing open sea, an equivalent inland tribe outranks a redundant coastal tribe",
+);
+
 const actionableRouteRank = sandbox.rankEarlyGameTribeCandidates([
   {
     id: "unknown-route",
@@ -703,6 +793,206 @@ assert.deepEqual(
   ["food-chain", "isolated-coast"],
 );
 
+const alliedCutoffRank = sandbox.rankEarlyGameTribeCandidates([
+  {
+    id: "ordinary-chain",
+    landBorder: true,
+    captureEfficiency: 0.5,
+    futureFoodAccess: 1,
+  },
+  {
+    id: "ally-closing-chokepoint",
+    landBorder: true,
+    captureEfficiency: 0.5,
+    futureFoodAccess: 1,
+    alliedCutoffPressure: 1,
+  },
+]);
+assert.equal(
+  alliedCutoffRank[0].id,
+  "ally-closing-chokepoint",
+  "an ally closing a neutral chokepoint makes that tribe an urgent target",
+);
+
+const oceanGatewayRank = sandbox.rankEarlyGameTribeCandidates([
+  {
+    id: "ordinary-inland-chain",
+    landBorder: true,
+    captureEfficiency: 0.5,
+    futureFoodAccess: 1,
+  },
+  {
+    id: "first-open-ocean-gateway",
+    landBorder: true,
+    captureEfficiency: 0.5,
+    futureFoodAccess: 1,
+    maritimeDistance: 0,
+    oceanGatewayUrgency: 1,
+  },
+]);
+assert.equal(
+  oceanGatewayRank[0].id,
+  "first-open-ocean-gateway",
+  "the tribe preserving first access to open ocean is an urgent target",
+);
+
+const largeClusterRank = sandbox.rankEarlyGameTribeCandidates([
+  {
+    id: "small-local-chain",
+    landBorder: true,
+    captureEfficiency: 0.5,
+    futureFoodAccess: 0.5,
+    tribeClusterAccess: 0.2,
+  },
+  {
+    id: "gateway-to-large-cluster",
+    landBorder: true,
+    captureEfficiency: 0.5,
+    futureFoodAccess: 0.2,
+    tribeClusterAccess: 1,
+  },
+]);
+assert.equal(
+  largeClusterRank[0].id,
+  "gateway-to-large-cluster",
+  "the bot expands toward the densest wider tribe cluster",
+);
+
+const clusterOverLocalTemptationRank = sandbox.rankEarlyGameTribeCandidates([
+  {
+    id: "locally-attractive-dead-end",
+    landBorder: true,
+    captureEfficiency: 1,
+    encirclement: 1,
+    blockValue: 1,
+    futureFoodAccess: 0,
+    tribeClusterAccess: 0,
+  },
+  {
+    id: "costly-gateway-to-large-cluster",
+    landBorder: true,
+    captureEfficiency: 0.1,
+    encirclement: 0,
+    blockValue: 0,
+    futureFoodAccess: 0.1,
+    tribeClusterAccess: 1,
+  },
+]);
+assert.equal(
+  clusterOverLocalTemptationRank[0].id,
+  "costly-gateway-to-large-cluster",
+  "a large tribe cluster outranks an attractive local dead end",
+);
+
+assert.deepEqual(
+  sandbox
+    .keepLargestTribeClusterCandidates([
+      { id: "largest", tribeClusterAccess: 1 },
+      {
+        id: "first-ocean-gateway",
+        tribeClusterAccess: 0.2,
+        oceanGatewayUrgency: 1,
+      },
+      { id: "ordinary-smaller-cluster", tribeClusterAccess: 0.4 },
+    ])
+    .map((candidate) => candidate.id),
+  ["largest", "first-ocean-gateway"],
+  "first-ocean access remains an exception while ordinary smaller clusters are excluded",
+);
+assert.deepEqual(
+  sandbox
+    .keepLargestTribeClusterCandidates([
+      { id: "largest", tribeClusterAccess: 1 },
+      {
+        id: "contested-small-cluster",
+        tribeClusterAccess: 0.2,
+        directAttackers: 1,
+        alliedCutoffPressure: 1,
+      },
+      {
+        id: "ocean-option-a",
+        tribeClusterAccess: 0.2,
+        oceanGatewayUrgency: 1,
+      },
+      {
+        id: "ocean-option-b",
+        tribeClusterAccess: 0.3,
+        oceanGatewayUrgency: 1,
+      },
+    ])
+    .map((candidate) => candidate.id),
+  ["largest"],
+  "races, allied cutoffs, and non-unique sea routes do not divert troops from the largest cluster",
+);
+
+const transitiveClusterSizes = sandbox.calculateConnectedTribeClusterSizes(
+  [
+    { id: "a", center: { x: 0, y: 0 } },
+    { id: "b", center: { x: 100, y: 0 } },
+    { id: "c", center: { x: 200, y: 0 } },
+    { id: "d", center: { x: 300, y: 0 } },
+    { id: "isolated", center: { x: 1000, y: 0 } },
+  ],
+  (left, right) => Math.abs(left.center.x - right.center.x),
+  120,
+);
+assert.equal(
+  transitiveClusterSizes.get("a"),
+  4,
+  "a gateway sees the complete transitive tribe cluster beyond its local radius",
+);
+assert.equal(transitiveClusterSizes.get("isolated"), 1);
+
+const topologyClusterSizes = sandbox.calculateTribeAdjacencyClusterSizes(
+  [
+    { id: "short-gateway" },
+    { id: "short-end" },
+    { id: "large-gateway" },
+    { id: "large-1" },
+    { id: "large-2" },
+    { id: "large-3" },
+    { id: "large-4" },
+  ],
+  new Map([
+    ["short-gateway", new Set(["short-end"])],
+    ["short-end", new Set(["short-gateway"])],
+    ["large-gateway", new Set(["large-1"])],
+    ["large-1", new Set(["large-gateway", "large-2"])],
+    ["large-2", new Set(["large-1", "large-3"])],
+    ["large-3", new Set(["large-2", "large-4"])],
+    ["large-4", new Set(["large-3"])],
+  ]),
+);
+assert.ok(
+  topologyClusterSizes.get("large-gateway") > topologyClusterSizes.get("short-gateway"),
+  "the larger reachable tribe chain wins regardless of direction or shape",
+);
+const ringMarkerCenter = sandbox.chooseTribeClusterMarkerCenter([
+  { x: -10, y: 0 },
+  { x: 10, y: 0 },
+  { x: 0, y: -10 },
+  { x: 0, y: 10 },
+]);
+assert.ok(
+  ringMarkerCenter.x !== 0 || ringMarkerCenter.y !== 0,
+  "a cluster wrapping around us places its marker on a real tribe, not the empty centroid over our territory",
+);
+
+const boundedClusterSample = sandbox
+  .rankEarlyGameTribeSamplingCandidates([
+    ...Array.from({ length: 8 }, (_, index) => ({
+      id: index + 1,
+      clusterSize: 1,
+      opportunity: 100 - index,
+    })),
+    { id: 99, clusterSize: 6, opportunity: 0.01 },
+  ])
+  .slice(0, 8);
+assert.ok(
+  boundedClusterSample.some((candidate) => candidate.id === 99),
+  "a gateway into a large tribe cluster survives the bounded eight-target sample",
+);
+
 const passiveRace = sandbox.calculateEarlyGameFoodRaceValue({
   competitorProgress: 0.1,
   competitorVector: 0.1,
@@ -767,14 +1057,53 @@ assert.equal(
   }),
   null,
 );
+assert.equal(
+  await sandbox.findWaterRouteTicksAsync({
+    start: 0,
+    goal: 5,
+    neighbors: (tile) => waterGraph.get(tile) || [],
+    isWater: (tile) => tile >= 1 && tile <= 4,
+    maxTicks: 300,
+    yieldEvery: 1,
+  }),
+  5,
+  "the yielding water route search must preserve shortest-path results",
+);
+
+let deadlineProbeCount = 0;
+assert.equal(
+  await sandbox.findWaterRouteTicksAsync({
+    start: 0,
+    goal: 100_000,
+    neighbors: (tile) => {
+      deadlineProbeCount += 1;
+      return [tile + 1];
+    },
+    isWater: () => true,
+    maxTicks: 100_000,
+    maxVisited: 100_000,
+    yieldEvery: 1,
+    deadlineMs: 1,
+  }),
+  null,
+  "a route search must stop its own work when its deadline expires",
+);
+assert.ok(
+  deadlineProbeCount < 100_000,
+  "the deadline must cancel the BFS instead of merely timing out its caller",
+);
 
 const routeSandbox = {};
+const routeOwnerId = (tile) => {
+  if (tile === 5) return 2;
+  return tile === 0 ? 1 : 0;
+};
 const routeSrc = {
   neighbors: (tile) => waterGraph.get(tile) || [],
   isWater: (tile) => tile >= 1 && tile <= 4,
   isLand: (tile) => tile === 0 || tile === 5,
   isShore: (tile) => tile === 0 || tile === 5,
-  ownerID: (tile) => (tile === 5 ? 2 : tile === 0 ? 1 : 0),
+  ownerID: routeOwnerId,
   manhattanDist: (a, b) => Math.abs(a - b),
 };
 vm.runInNewContext(`${gameApiSource}\n${source}`, routeSandbox, {
@@ -791,11 +1120,60 @@ assert.equal(await routePlayer.bestTransportShipSpawn(5), 0);
 assert.equal(await routeApi.game.estimateTransportRouteTicks(5), 5);
 assert.equal(routeApi.game.hasTransportRouteEstimator, true);
 
-assert.match(attackSource, /landTarget: hasAccessibleFreeLand/);
+// The local gameApi pathfinder must evaluate routes longer than the old
+// 300-tick Early Game window so the two-minute exploration gate can reject them
+// by their real route length instead of treating them as merely unreachable.
+const longerWaterGraph = new Map();
+for (let tile = 0; tile <= 351; tile++) {
+  const neighbors = [];
+  if (tile > 0) neighbors.push(tile - 1);
+  if (tile < 351) neighbors.push(tile + 1);
+  longerWaterGraph.set(tile, neighbors);
+}
+const longerRouteSandbox = {};
+const longerRouteSrc = {
+  neighbors: (tile) => longerWaterGraph.get(tile) || [],
+  isWater: (tile) => tile >= 1 && tile <= 350,
+  isLand: (tile) => tile === 0 || tile === 351,
+  isShore: (tile) => tile === 0 || tile === 351,
+  ownerID: (tile) => (tile === 351 ? 2 : tile === 0 ? 1 : 0),
+  manhattanDist: (a, b) => Math.abs(a - b),
+};
+vm.runInNewContext(`${gameApiSource}\n${source}`, longerRouteSandbox, {
+  filename: "gameApi+earlyGame-long-route.js",
+});
+const longerRouteApi = longerRouteSandbox.createGameApi(longerRouteSrc);
+const longerRoutePlayer = longerRouteApi.wrapPlayer({
+  isPlayer: () => true,
+  smallID: () => 1,
+  id: () => "p1",
+  bestTransportShipSpawn: () => Promise.resolve(0),
+});
+assert.equal(await longerRoutePlayer.bestTransportShipSpawn(351), 0);
+assert.equal(await longerRouteApi.game.estimateTransportRouteTicks(351), 351);
+
+assert.match(attackSource, /landTarget: hasAccessibleTerraNullius/);
+assert.match(attackSource, /hasFreeLand: hasAccessibleTerraNullius/);
+assert.match(attackSource, /hasMaritimeTerraNullius/);
+assert.match(
+  attackSource,
+  /getEarlyGameProbeTroops\(\s*state\.settings\.boatProbeFrac/,
+  "maritime TerraNullius boats use the configured cheap probe payload",
+);
 assert.match(attackSource, /async allowEarlyGameBoat\(tile\)/);
 assert.match(attackSource, /!state\.settings\.winFixes \|\| !early \|\| !early\.active/);
 assert.match(attackSource, /EARLY_EXPAND_COMMIT/);
 assert.match(attackSource, /attackEarlyGameTribe/);
+assert.match(
+  attackSource,
+  /const incomingAttacker = this\.findIncomingAttackPlayer\(\);[\s\S]*?this\.sendAttack\(incomingAttacker, true\)[\s\S]*?action = "retaliate"[\s\S]*?return;/,
+  "active hostile attacks are handled before expansion can return from the combat decision",
+);
+assert.match(
+  attackSource,
+  /earlyGameSnapshot\.postSpawn[\s\S]*?attackEarlyGameTribe\(\)/,
+  "the first tribe probe runs after spawn when a higher-priority expansion cannot emit",
+);
 assert.match(attackSource, /maybeEarlyOceanBoat/);
 assert.match(attackSource, /rankTeamDonationCandidates\(needy\)/);
 assert.match(attackSource, /playersShareClanTag/);
@@ -816,9 +1194,12 @@ assert.match(
 );
 assert.match(gameApiSource, /estimateTransportRouteTicks/);
 assert.match(gameApiSource, /hasTransportRouteEstimator/);
-assert.match(gameApiSource, /findWaterRouteTicks\(\{/);
+assert.match(gameApiSource, /findWaterRouteTicksAsync/);
+assert.match(gameApiSource, /maxTicks: BOAT_EXPLORATION_MAX_ROUTE_TICKS/);
+assert.match(attackSource, /allowBoatExplorationRoute/);
 
 assert.match(buildSource, /"auto-bot\/earlyGame\.js"/);
+assert.match(buildSource, /"tribe-cluster-overlay\.js"/);
 
 // Integration probe: the real AttackBehavior enrichment must expose the same
 // coast/encirclement/blocking signals used by the pure ranker.
@@ -931,14 +1312,38 @@ vm.runInNewContext(
 );
 assert.equal(typeof targetSandbox.rankTeamDonationCandidates, "function");
 const rankedDonationCandidates = targetSandbox.rankTeamDonationCandidates([
-  { id: "same-clan-rear", sameClan: true, frontline: false, troopPercentage: 0.75 },
-  { id: "other-frontline", sameClan: false, frontline: true, troopPercentage: 0.1 },
-  { id: "same-clan-front", sameClan: true, frontline: true, troopPercentage: 0.5 },
-  { id: "other-rear", sameClan: false, frontline: false, troopPercentage: 0.2 },
+  { id: "same-clan-rear", sameClan: true, frontline: false, troopPercentage: 0.75, distance: 80 },
+  { id: "other-frontline", sameClan: false, frontline: true, troopPercentage: 0.1, distance: 10 },
+  { id: "same-clan-front", sameClan: true, frontline: true, troopPercentage: 0.5, distance: 100 },
+  { id: "other-rear", sameClan: false, frontline: false, troopPercentage: 0.2, distance: 20 },
+  {
+    id: "attacked-far",
+    sameClan: false,
+    underAttack: true,
+    frontline: true,
+    troopPercentage: 0.05,
+    distance: 200,
+  },
+  {
+    id: "attacked-near",
+    sameClan: false,
+    underAttack: true,
+    frontline: true,
+    troopPercentage: 0.7,
+    distance: 30,
+  },
 ]);
 assert.deepEqual(
   rankedDonationCandidates.map((candidate) => candidate.id),
-  ["same-clan-front", "same-clan-rear", "other-frontline", "other-rear"],
+  [
+    "attacked-near",
+    "attacked-far",
+    "other-frontline",
+    "same-clan-front",
+    "other-rear",
+    "same-clan-rear",
+  ],
+  "attacked allies outrank every other tier and closer allies win within each urgency tier",
 );
 targetSandbox.__OFHSpawnObjective = {
   getPlayerClanTag: (player) => player?.tag ?? null,
@@ -956,6 +1361,143 @@ const targetBehavior = new targetSandbox.AttackBehavior(
   0.1,
   {},
   {},
+);
+
+const borderFallbackBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+targetSandbox.currentDifficulty = () => "Impossible";
+targetSandbox.Difficulty = {
+  Easy: "Easy",
+  Medium: "Medium",
+  Hard: "Hard",
+  Impossible: "Impossible",
+  Legendary: "Legendary",
+};
+borderFallbackBehavior.isFFA = () => false;
+const rejectedBorderEnemy = { id: () => "rejected", troops: () => 10 };
+const actionableBorderEnemy = { id: () => "actionable", troops: () => 20 };
+const attemptedBorderEnemies = [];
+borderFallbackBehavior.sendAttack = async (enemy) => {
+  attemptedBorderEnemies.push(enemy.id());
+  return enemy === actionableBorderEnemy;
+};
+const impossibleStrategies = borderFallbackBehavior.getAttackStrategies(
+  [],
+  [rejectedBorderEnemy, actionableBorderEnemy],
+);
+assert.equal(
+  await impossibleStrategies[10](),
+  true,
+  "the weakest fallback continues after the first hostile border is rejected",
+);
+assert.deepEqual(attemptedBorderEnemies, ["rejected", "actionable"]);
+
+const betrayalTimingBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+betrayalTimingBehavior.game = {
+  config: () => ({ disableAlliances: () => false }),
+};
+betrayalTimingBehavior.allianceBehavior = { maybeBetray: () => true };
+let sameTickBetrayalAttacks = 0;
+betrayalTimingBehavior.sendAttack = async () => {
+  sameTickBetrayalAttacks++;
+  return true;
+};
+assert.equal(await betrayalTimingBehavior.maybeBetrayAndAttack([{}], []), true);
+assert.equal(
+  sameTickBetrayalAttacks,
+  0,
+  "the bot waits for the alliance break to become authoritative before attacking",
+);
+
+// A live client can know that we share a border before the target's async
+// border snapshot is populated. That tribe must remain actionable instead of
+// disappearing from the ranked attack pass.
+const emptyBorderTribe = {
+  ...targetCoastal,
+  borderTiles: () => new Set(),
+};
+const emptyBorderMe = {
+  ...targetMe,
+  nearby: () => [emptyBorderTribe],
+  sharesBorderWith: (target) => target === emptyBorderTribe,
+};
+const emptyBorderGame = {
+  ...targetGame,
+  players: () => [emptyBorderMe, emptyBorderTribe],
+  ensureBorderTiles: () => new Set(),
+};
+const emptyBorderBehavior = new targetSandbox.AttackBehavior(
+  {},
+  emptyBorderGame,
+  emptyBorderMe,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+const emptyBorderCandidates = await emptyBorderBehavior.getEarlyGameTribeCandidates();
+assert.equal(emptyBorderCandidates.length, 1);
+assert.equal(
+  emptyBorderCandidates[0].landBorder,
+  true,
+  "sharesBorderWith keeps a tribe actionable while its border snapshot is empty",
+);
+assert.equal(
+  targetSandbox.rankEarlyGameTribeCandidates(emptyBorderCandidates).length,
+  1,
+  "the bordering tribe reaches the ranked attack pass",
+);
+
+// A hostile player can dominate the live nearby() snapshot. The authoritative
+// border predicate must still recover an omitted bordering tribe.
+const hostileSnapshotEnemy = makeTargetPlayer(9, "Nation", [], 900, { x: 1, y: 0 });
+const hostileSnapshotMe = {
+  ...targetMe,
+  nearby: () => [hostileSnapshotEnemy],
+  sharesBorderWith: (target) => target === targetInland,
+};
+const hostileSnapshotGame = {
+  ...targetGame,
+  players: () => [hostileSnapshotMe, hostileSnapshotEnemy, targetInland],
+};
+const hostileSnapshotBehavior = new targetSandbox.AttackBehavior(
+  {},
+  hostileSnapshotGame,
+  hostileSnapshotMe,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+const hostileSnapshotCandidates = await hostileSnapshotBehavior.getEarlyGameTribeCandidates();
+assert.ok(
+  hostileSnapshotCandidates.some((candidate) => candidate.id === 4),
+  "a bordering tribe omitted by nearby() remains actionable beside a hostile Nation",
+);
+
+const explorationRouteBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+let explorationEta = 1200;
+explorationRouteBehavior.game = {
+  hasTransportRouteEstimator: true,
+  estimateTransportRouteTicks: () => explorationEta,
+};
+assert.equal(
+  await explorationRouteBehavior.allowBoatExplorationRoute(1),
+  true,
+  "a two-minute exploration route is allowed",
+);
+explorationEta = 1201;
+assert.equal(
+  await explorationRouteBehavior.allowBoatExplorationRoute(1),
+  false,
+  "an exploration route over two minutes is rejected",
+);
+explorationEta = null;
+assert.equal(
+  await explorationRouteBehavior.allowBoatExplorationRoute(1),
+  false,
+  "an unknown exploration route is rejected",
 );
 
 // TerraNullius expansion must use the engine's real attackLogic loss for the
@@ -998,6 +1540,11 @@ assert.equal(
   "a normal TerraNullius land burst stays at the one-tile cost",
 );
 assert.equal(
+  minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(minimumTerraNulliusTarget, 3, 20),
+  0,
+  "TerraNullius attacks wait when the exact first-tile loss is not affordable",
+);
+assert.equal(
   minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(
     minimumTerraNulliusTarget,
     null,
@@ -1005,7 +1552,7 @@ assert.equal(
     0.6,
   ),
   60000,
-  "the opening TerraNullius burst can commit above the one-tile cost",
+  "the opening TerraNullius burst is capped at the configured spawning-army share",
 );
 
 const radioactiveBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
@@ -1020,34 +1567,15 @@ assert.equal(
   5,
   "low fallout coverage uses the engine's maximum radioactive defense multiplier",
 );
-assert.equal(
-  radioactiveBehavior.getRadioactiveTerraNulliusCommitFraction(),
-  0.12,
-  "radioactive TerraNullius uses 60% divided by its 5x troop cost",
-);
 radioactiveTiles = 50000;
 assert.equal(
   radioactiveBehavior.getRadioactiveTerraNulliusFalloutDefenseMultiplier(),
   4,
   "the live fallout ratio updates the defense multiplier",
 );
-assert.equal(
-  radioactiveBehavior.getRadioactiveTerraNulliusCommitFraction(),
-  0.15,
-  "half-map fallout raises the risk-adjusted commit to 15%",
-);
-targetSandbox.state.settings.winFixes = false;
-assert.equal(
-  radioactiveBehavior.getRadioactiveTerraNulliusCommitFraction(),
-  0.6,
-  "faithful mode keeps the normal 60% commit ratio",
-);
-targetSandbox.state.settings.winFixes = true;
 
-// A directly adjacent free tile must block both tribe and enemy food attacks.
-// The decision is allowed to return without an attack when troop/intent guards
-// reject the free-land attempt; it must never fall through to a paid target in
-// that same snapshot.
+// A directly adjacent free tile is attempted before tribe and enemy food
+// attacks. It only blocks those fallbacks when the expansion intent is emitted.
 const priorityFreeTarget = { isPlayer: () => false };
 const priorityTribe = {
   isPlayer: () => true,
@@ -1065,6 +1593,7 @@ const priorityEnemy = {
   troops: () => 100,
   isFriendly: () => false,
 };
+let priorityIncomingAttacks = [];
 const priorityPlayer = {
   smallID: () => 1,
   type: () => targetSandbox.PlayerType.Human,
@@ -1072,6 +1601,8 @@ const priorityPlayer = {
   borderTiles: () => new Set([1]),
   nearby: () => [priorityTribe, priorityEnemy],
   isFriendly: () => false,
+  incomingAttacks: () => priorityIncomingAttacks,
+  sharesBorderWith: (target) => target === priorityTribe || target === priorityEnemy,
 };
 const priorityGame = {
   inSpawnPhase: () => false,
@@ -1084,20 +1615,25 @@ const priorityGame = {
   terraNullius: () => priorityFreeTarget,
 };
 const priorityBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+priorityBehavior.random = { chance: () => false };
 priorityBehavior.player = priorityPlayer;
+priorityBehavior.attackBestTarget = async () => {};
 priorityBehavior.game = priorityGame;
 priorityBehavior.allianceBehavior = {};
 priorityBehavior.reconcileOutboundAttackIntentCommitments = () => {};
 priorityBehavior.cacheEnemyDefensePostFrontTiles = () => {};
 priorityBehavior.rankAttackTargets = (players) => players;
+priorityBehavior.attackEarlyGameTribe = async () => priorityBehavior.sendAttack(priorityTribe);
 const priorityAttackTargets = [];
-priorityBehavior.sendAttack = async (target) => {
+const priorityAttackCalls = [];
+priorityBehavior.sendAttack = async (target, ...args) => {
   priorityAttackTargets.push(target);
+  priorityAttackCalls.push({ target, args });
   return true;
 };
 targetSandbox.state.settings.features = {
   expand: true,
-  boat: false,
+  boat: true,
   alliance: false,
 };
 targetSandbox.state.earlyGame = {};
@@ -1109,7 +1645,138 @@ assert.deepEqual(
 );
 assert.equal(targetSandbox.state.earlyGame.action, "land");
 
+// A rejected free-land intent must not starve the bordering tribe until some
+// other player consumes all surrounding TerraNullius.
+priorityAttackTargets.length = 0;
+priorityBehavior.sendAttack = async (target, ...args) => {
+  priorityAttackTargets.push(target);
+  priorityAttackCalls.push({ target, args });
+  return target !== priorityFreeTarget;
+};
+await priorityBehavior.maybeAttack();
+assert.deepEqual(
+  priorityAttackTargets,
+  [priorityFreeTarget, priorityTribe],
+  "a rejected free-land expansion falls through to the bordering tribe",
+);
+assert.equal(targetSandbox.state.earlyGame.action, "tribe");
+priorityBehavior.sendAttack = async (target, ...args) => {
+  priorityAttackTargets.push(target);
+  priorityAttackCalls.push({ target, args });
+  return true;
+};
+
+// A live hostile attack outranks even cost-free expansion. This reproduces the
+// starvation bug where an earlier expansion return prevented retaliation on
+// every decision despite a full army.
+priorityAttackTargets.length = 0;
+priorityIncomingAttacks = [
+  {
+    attacker: () => priorityEnemy,
+    troops: () => 100,
+  },
+];
+await priorityBehavior.maybeAttack();
+assert.deepEqual(
+  priorityAttackTargets,
+  [priorityEnemy],
+  "an incoming attacker is targeted before expansion without waiting for another strategy pass",
+);
+assert.equal(targetSandbox.state.earlyGame.action, "retaliate");
+priorityIncomingAttacks = [];
+
+// A hostile border must not suppress the other expansion lanes. First verify
+// that a nearby tribe remains actionable when the border owner is human.
+priorityAttackTargets.length = 0;
+priorityGame.neighbors = (tile) => (tile === 1 ? [3] : []);
+priorityPlayer.nearby = () => [priorityTribe, priorityEnemy];
+priorityBehavior.attackEarlyGameTribe = async () => {
+  priorityAttackTargets.push(priorityTribe);
+  return true;
+};
+priorityBehavior.attackBots = async () => {
+  priorityAttackTargets.push(priorityTribe);
+  return true;
+};
+priorityBehavior.maybeEarlyOceanBoat = async () => false;
+priorityBehavior.maybeOpportunisticBoat = async () => {};
+priorityBehavior.isBorderingNukedTerritory = () => false;
+await priorityBehavior.maybeAttack();
+assert.deepEqual(
+  priorityAttackTargets,
+  [priorityTribe],
+  "a human enemy border does not disable tribe expansion",
+);
+
+// Maritime-only TerraNullius gets a cheap probe, but the uncertain route must
+// not block the tribe race in the same decision.
+priorityAttackTargets.length = 0;
+priorityPlayer.nearby = () => [priorityFreeTarget, priorityTribe, priorityEnemy];
+priorityBehavior.attackEarlyGameTribe = async () => false;
+await priorityBehavior.maybeAttack();
+assert.deepEqual(
+  priorityAttackTargets,
+  [priorityFreeTarget, priorityTribe],
+  "a maritime TerraNullius probe does not block the bordering tribe",
+);
+assert.equal(targetSandbox.state.earlyGame.hasFreeLand, false);
+assert.equal(targetSandbox.state.earlyGame.maritimeProbeSent, true);
+assert.equal(targetSandbox.state.earlyGame.action, "tribe");
+
+// Once there is no TerraNullius neighbour left, the tribe pass must run without
+// requiring a manual attack to wake it up.
+priorityAttackTargets.length = 0;
+priorityPlayer.nearby = () => [priorityTribe, priorityEnemy];
+await priorityBehavior.maybeAttack();
+assert.deepEqual(
+  priorityAttackTargets,
+  [priorityTribe],
+  "a bordering tribe is attacked after TerraNullius is exhausted",
+);
+
+// Directly bordering radioactive TerraNullius is still green free land. It must
+// be eaten before tribe/player branches rather than deferred as a last fallback.
+priorityAttackTargets.length = 0;
+priorityAttackCalls.length = 0;
+priorityPlayer.nearby = () => [];
+priorityGame.neighbors = (tile) => (tile === 1 ? [2] : []);
+priorityGame.hasFallout = (tile) => tile === 2;
+priorityPlayer.nearby = () => [priorityTribe, priorityEnemy];
+await priorityBehavior.maybeAttack();
+assert.deepEqual(
+  priorityAttackTargets,
+  [priorityFreeTarget],
+  "radioactive TerraNullius is attacked before tribe and player targets",
+);
+assert.equal(
+  priorityAttackCalls[0].args[3],
+  true,
+  "the direct land grab uses the radioactive troop-cost policy",
+);
+priorityGame.hasFallout = () => false;
+priorityBehavior.isBorderingNukedTerritory = () => false;
+
+// Directly accessible free land remains the cheapest first move even when a
+// tribe is also bordering the player.
+priorityAttackTargets.length = 0;
+priorityGame.neighbors = (tile) => (tile === 1 ? [2, 3] : []);
+priorityPlayer.nearby = () => [priorityFreeTarget, priorityTribe, priorityEnemy];
+await priorityBehavior.maybeAttack();
+assert.deepEqual(
+  priorityAttackTargets,
+  [priorityFreeTarget],
+  "direct free land still wins over a bordering tribe",
+);
+
 const enrichedTargets = await targetBehavior.getEarlyGameTribeCandidates();
+assert.equal(
+  targetSandbox.state.earlyGame.preferredClusterMembers
+    .map((member) => member.id)
+    .sort((left, right) => left - right)
+    .join(","),
+  "4,5",
+  "the overlay receives every tribe in the preferred border-connected component",
+);
 const rankedEnrichedTargets = targetSandbox.rankEarlyGameTribeCandidates(enrichedTargets);
 assert.equal(
   rankedEnrichedTargets[0].id,
@@ -1129,7 +1796,15 @@ const enrichedInland = enrichedTargets.find((target) => target.id === 4);
 assert.equal(enrichedInland.maritimeDistance, Infinity);
 assert.equal(enrichedInland.encirclement, 1 / 3);
 assert.ok(enrichedInland.blockValue > 0);
-assert.ok(enrichedInland.futureFoodCount >= 0);
+assert.equal(
+  enrichedInland.futureFoodCount,
+  1,
+  "an actionable tribe counts a nearby currently unreachable tribe as continuation food",
+);
+assert.ok(
+  enrichedInland.futureFoodAccess > 0,
+  "taking the inland tribe is rewarded for unlocking the adjacent tribe",
+);
 assert.ok(enrichedInland.futureFoodAccess >= 0);
 assert.ok(enrichedInland.futureFoodAccess <= 1);
 assert.ok(enrichedInland.foodRaceValue > 0.5);

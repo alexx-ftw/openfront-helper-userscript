@@ -12,6 +12,7 @@ const source = fs.readFileSync(sourcePath, "utf8");
 
 const UNIT = { TransportShip: "Transport" };
 const troopEmissions = [];
+const attackRecipients = [];
 const sandbox = {
   UNIT,
   GameMode: { Team: "Team" },
@@ -25,6 +26,7 @@ const sandbox = {
   },
   currentDifficulty: () => "Impossible",
   EARLY_EXPAND_COMMIT: 0.6,
+  EARLY_EXPAND_FOLLOWUP_COMMIT: 0.01,
   performance: { now: () => 10000 },
   discoverCtors: () => ({
     attack: "attack",
@@ -32,7 +34,8 @@ const sandbox = {
     donateTroops: "donateTroops",
   }),
   getEventBus: () => null,
-  emitIntent: (_ctor, _recipient, troops) => {
+  emitIntent: (_ctor, recipient, troops) => {
+    attackRecipients.push(recipient);
     troopEmissions.push(troops);
     return true;
   },
@@ -71,6 +74,24 @@ const target = {
 };
 
 const behavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
+
+behavior.botAttackPendingIntentCommitments = [
+  { targetIsPlayer: true, targetKey: "2", troops: 1000 },
+];
+assert.equal(
+  behavior.hasPendingOutboundAttackForTarget(target),
+  true,
+  "a pending attack blocks a duplicate intent against the same target",
+);
+assert.equal(
+  behavior.hasPendingOutboundAttackForTarget({
+    isPlayer: () => true,
+    smallID: () => 3,
+  }),
+  false,
+  "a pending tribe intent does not globally block another hostile border",
+);
+behavior.botAttackPendingIntentCommitments = [];
 
 assert.equal(
   behavior.getEarlyGameLiveReserveTroops(),
@@ -228,12 +249,43 @@ assert.equal(
   "a maxTroops increase recomputes the production peak reserve",
 );
 
-// TerraNullius is free land: a capacity increase must not move the opening
-// reserve beyond the current army and make expansion wait for its own growth.
-// Keep the acceleration reserve while it is affordable, use the calculated
-// one-tile attackLogic loss for normal land attacks, and allow only the first
-// opening burst to commit the configured fraction of the live army.
+// TerraNullius is the opening expansion lane. Commit decisively while retaining
+// the hostile-border safety reserve.
 const terraNullius = { isPlayer: () => false, id: () => "TerraNullius" };
+const strongAlly = {
+  smallID: () => 7,
+  isAlive: () => true,
+  troops: () => 50000,
+};
+const alliedBorderMe = {
+  ...me,
+  isFriendly: (player) => player === strongAlly,
+};
+const alliedBorderGame = {
+  ticks: () => tick,
+  neighbors: () => [2],
+  isLand: () => true,
+  hasOwner: () => true,
+  ownerID: () => 7,
+  players: () => [alliedBorderMe, strongAlly],
+  config: () => ({ maxTroops: () => 100000 }),
+};
+const alliedBorderBehavior = new sandbox.AttackBehavior(
+  {},
+  alliedBorderGame,
+  alliedBorderMe,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+ownTroops = 25000;
+assert.equal(
+  alliedBorderBehavior.getStrongestBorderOpponentTroops(),
+  0,
+  "a stronger bordering ally does not consume the TerraNullius attack budget",
+);
 const expandingGame = {
   ticks: () => tick,
   neighbors: () => [2],
@@ -258,7 +310,7 @@ assert.ok(
 assert.equal(
   expandingBehavior.getEarlyGameTerraNulliusReserveTroops(),
   ownTroops * 0.4,
-  "TerraNullius uses a soft reserve ceiling derived from the safe opening commit",
+  "TerraNullius retains the configured 40% opening safety reserve",
 );
 const terraNulliusEmissionCount = troopEmissions.length;
 assert.equal(
@@ -268,10 +320,72 @@ assert.equal(
 );
 assert.equal(troopEmissions.length, terraNulliusEmissionCount + 1);
 assert.equal(
-  troopEmissions.at(-1),
-  2,
-  "the opening TerraNullius land commit uses only the calculated one-tile cost",
+  attackRecipients.at(-1),
+  null,
+  "a free-land attack uses the client protocol's explicit null target",
 );
+assert.equal(
+  troopEmissions.at(-1),
+  15000,
+  "direct TerraNullius land expansion commits the configured opening share",
+);
+
+expandingBehavior.botAttackPendingIntentCommitments = [];
+assert.equal(
+  expandingBehavior.getTerraNulliusAttackTroops(terraNullius),
+  250,
+  "an exhausted opening allowance continues adjacent TerraNullius expansion at 1%",
+);
+const continuedTerraNulliusEmissionCount = troopEmissions.length;
+assert.equal(
+  expandingBehavior.sendLandAttack(terraNullius),
+  true,
+  "the live land emitter uses the TerraNullius liveness budget",
+);
+assert.equal(troopEmissions.length, continuedTerraNulliusEmissionCount + 1);
+assert.equal(
+  troopEmissions.at(-1),
+  250,
+  "the continued TerraNullius intent emits 1% when it exceeds the one-tile cost",
+);
+
+expandingBehavior.botAttackPendingIntentCommitments = [
+  {
+    targetIsPlayer: true,
+    targetKey: "tribe-pending",
+    attackType: "land",
+    troops: 2,
+    createdTick: tick,
+    baselineTroops: ownTroops,
+    baselineTargetTroops: 0,
+    baselineAttackIDs: new Set(),
+    baselineTransportIDs: new Set(),
+  },
+];
+expandingBehavior.outboundIntentReconciledTick = null;
+const pendingTribeTerraNulliusEmissionCount = troopEmissions.length;
+assert.equal(
+  await expandingBehavior.sendAttack(terraNullius),
+  true,
+  "a pending tribe intent cannot starve higher-priority adjacent TerraNullius",
+);
+assert.equal(troopEmissions.length, pendingTribeTerraNulliusEmissionCount + 1);
+expandingBehavior.botAttackPendingIntentCommitments = [];
+
+ownTroops = 10000;
+assert.equal(
+  expandingBehavior.getEarlyGameTerraNulliusReserveTroops(),
+  10000,
+  "TerraNullius keeps the original safety floor after the opening army shrinks",
+);
+const drainedExpansionEmissionCount = troopEmissions.length;
+assert.equal(
+  expandingBehavior.sendLandAttack(terraNullius),
+  false,
+  "chained TerraNullius expansion stops below its safety percentage",
+);
+assert.equal(troopEmissions.length, drainedExpansionEmissionCount);
+ownTroops = 25000;
 
 const openingBehavior = new sandbox.AttackBehavior({}, expandingGame, me, 0.5, 0.3, 0.1, {}, {});
 const openingEmissionCount = troopEmissions.length;
@@ -282,6 +396,24 @@ assert.equal(
 );
 assert.equal(troopEmissions.length, openingEmissionCount + 1);
 assert.equal(troopEmissions.at(-1), 15000);
+
+const scheduledBehavior = new sandbox.AttackBehavior({}, expandingGame, me, 0.5, 0.3, 0.1, {}, {});
+ownTroops = 25000;
+tick = 20;
+assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 15000);
+tick = 120;
+assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 15000);
+tick = 320;
+assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 15000);
+tick = 520;
+assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 15000);
+tick = 521;
+assert.equal(
+  scheduledBehavior.getTerraNulliusOpeningCommitLimit(),
+  Number.POSITIVE_INFINITY,
+  "after opening tick 500, the adaptive production/threat reserve takes over",
+);
+tick = 9;
 
 // emitBoat is the final synchronous boundary after the route/launch await. It
 // must reapply the same target-specific reserve instead of falling back to the
@@ -353,9 +485,9 @@ assert.equal(
 );
 sandbox.currentDifficulty = () => "Impossible";
 
-// Different tribes may be launched in the same decision. The ordinary intent
-// guard still blocks a second unqualified attack, while the explicit parallel
-// tribal path reuses the pending intent as the next attack's budget.
+// Different hostile targets may be launched in the same decision. Pending
+// intent accounting reserves the first payload without globally locking the
+// second target.
 const parallelMe = {
   ...me,
   sharesBorderWith: () => true,
@@ -383,13 +515,8 @@ const parallelEmissionCount = troopEmissions.length;
 assert.equal(await parallelBehavior.sendAttack(parallelTribeA), true);
 assert.equal(
   await parallelBehavior.sendAttack(parallelTribeB),
-  false,
-  "the ordinary intent guard still blocks unrelated attacks",
-);
-assert.equal(
-  await parallelBehavior.sendAttack(parallelTribeB, false, null, null, false, true),
   true,
-  "the explicit parallel tribal path launches a second tribe",
+  "a pending intent against one tribe does not block another hostile target",
 );
 assert.equal(
   troopEmissions.length,
@@ -406,6 +533,53 @@ assert.deepEqual(
   ["21", "22"],
   "active tribal targets are tracked independently",
 );
+
+outgoing.push({
+  id: () => "growing-tribe-attack",
+  retreating: () => false,
+  target: () => parallelTribeA,
+  troops: () => 3000,
+});
+parallelTribeA.troops = () => 2000;
+assert.equal(parallelBehavior.getLiveOutboundAttackTroopsForTarget(parallelTribeA), 3000);
+parallelBehavior.botAttackTroopsSent = 0;
+assert.equal(
+  parallelBehavior.calculateBotAttackTroops(parallelTribeA, 10000, {}, 3000),
+  5000,
+  "a growing tribe receives only the missing top-up to the live 4x capture strength",
+);
+outgoing.length = 0;
+parallelTribeA.troops = () => 1000;
+
+const growingNation = {
+  isPlayer: () => true,
+  smallID: () => 31,
+  id: () => "nation-31",
+  type: () => sandbox.PlayerType.Nation,
+  troops: () => 2000,
+  units: () => [],
+};
+outgoing.push({
+  id: () => "growing-nation-attack",
+  retreating: () => false,
+  target: () => growingNation,
+  troops: () => 3000,
+});
+parallelBehavior.botAttackPendingIntentCommitments = [];
+parallelBehavior.outboundIntentReconciledTick = null;
+const nationReinforcementEmissionCount = troopEmissions.length;
+assert.equal(
+  parallelBehavior.sendLandAttack(growingNation),
+  true,
+  "an active attack against a growing Nation is reinforced",
+);
+assert.equal(troopEmissions.length, nationReinforcementEmissionCount + 1);
+assert.equal(
+  troopEmissions.at(-1),
+  5000,
+  "the Nation reinforcement sends only the missing live 4x strength",
+);
+outgoing.length = 0;
 
 const botParallelTargets = [parallelTribeA, parallelTribeB].map((target) => ({
   ...target,
@@ -438,6 +612,21 @@ assert.equal(
   botParallelEmissionCount + 2,
   "the general tribe attack pass also emits multiple captures",
 );
+const clusterFilteredCalls = [];
+botParallelBehavior.botAttackPendingIntentCommitments = [];
+botParallelBehavior.outboundIntentReconciledTick = null;
+botParallelBehavior.earlyGamePreferredClusterTargetKeys = new Set(["21"]);
+botParallelBehavior.sendAttack = async (...args) => {
+  clusterFilteredCalls.push(args);
+  return true;
+};
+assert.equal(await botParallelBehavior.attackBots(), true);
+assert.equal(
+  clusterFilteredCalls.length,
+  1,
+  "the generic tribe fallback cannot leak troops outside the preferred cluster",
+);
+assert.equal(clusterFilteredCalls[0][0].smallID(), parallelTribeA.smallID());
 
 const makeEarlyTribeCandidate = (id, player) => ({
   id,
@@ -477,19 +666,107 @@ assert.ok(
   earlyTribeCalls.every((args) => args[5] === true),
   "each early-game tribe capture opts into the bounded parallel path",
 );
+
+earlyTribeCalls.length = 0;
+earlyTribeBatch.getEarlyGameTribeCandidates = async () => [
+  {
+    ...makeEarlyTribeCandidate("largest-cluster", parallelTribeA),
+    tribeClusterAccess: 1,
+  },
+  {
+    ...makeEarlyTribeCandidate("smaller-cluster", parallelTribeB),
+    tribeClusterAccess: 0.25,
+  },
+];
+assert.equal(await earlyTribeBatch.attackEarlyGameTribe(), true);
+assert.equal(
+  earlyTribeCalls.length,
+  1,
+  "parallel expansion does not spend troops outside the largest tribe cluster",
+);
+assert.equal(earlyTribeCalls[0][0], parallelTribeA);
+
+// A crowded Impossible batch must stop at the local intent budget instead of
+// calling sendAttack for every one of the 100 possible parallel targets.
+let remainingIntentCapacity = 2;
+sandbox.hasIntentRateLimitCapacity = () => remainingIntentCapacity > 0;
+const throttledTargets = Array.from({ length: 12 }, (_, index) => ({
+  ...parallelTribeA,
+  id: () => `throttled-${index}`,
+  smallID: () => 100 + index,
+  numTilesOwned: () => 1,
+}));
+const throttledParallelPlayer = {
+  ...parallelMe,
+  nearby: () => throttledTargets,
+  isFriendly: () => false,
+};
+const throttledParallelCalls = [];
+const throttledParallelBehavior = new sandbox.AttackBehavior(
+  {},
+  game,
+  throttledParallelPlayer,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+throttledParallelBehavior.getEnemyDefensePostAttackProfile = () => ({});
+throttledParallelBehavior.sendAttack = async (...args) => {
+  throttledParallelCalls.push(args);
+  remainingIntentCapacity -= 1;
+  return true;
+};
+assert.equal(await throttledParallelBehavior.attackBots(), true);
+assert.equal(
+  throttledParallelCalls.length,
+  2,
+  "a parallel batch stops when the local intent budget is empty",
+);
+assert.equal(
+  remainingIntentCapacity,
+  0,
+  "the batch consumes only the available local intent capacity",
+);
+
+remainingIntentCapacity = 1;
+const throttledEarlyTribeCalls = [];
+const throttledEarlyTribeBatch = Object.create(sandbox.AttackBehavior.prototype);
+throttledEarlyTribeBatch.player = { troops: () => 100000 };
+throttledEarlyTribeBatch.getEarlyGameTribeCandidates = async () =>
+  throttledTargets.map((target, index) =>
+    makeEarlyTribeCandidate(`early-throttled-${index}`, target),
+  );
+throttledEarlyTribeBatch.getActiveTribeAttackTargetKeys = () => new Set();
+throttledEarlyTribeBatch.getBotAttackMaxParallelism = () => 100;
+throttledEarlyTribeBatch.sendAttack = async (...args) => {
+  throttledEarlyTribeCalls.push(args);
+  remainingIntentCapacity -= 1;
+  return true;
+};
+assert.equal(await throttledEarlyTribeBatch.attackEarlyGameTribe(), true);
+assert.equal(
+  throttledEarlyTribeCalls.length,
+  1,
+  "the early-game parallel tribe batch also stops at the local budget",
+);
+sandbox.hasIntentRateLimitCapacity = undefined;
 tick = 9;
 ownTroops = 100000;
 
-// A teammate donation must use the same hard reserve, not the obsolete 45%
-// maxTroops keep line or the obsolete 20% chunk gate.
-let donorTroops = 35000;
+// A peaceful teammate donation may release only the surplus above the
+// calculated ~42% troop-production peak.
+let donorTroops = 80000;
 let donorBorderTiles = new Set();
+let donorIncomingAttacks = [];
 const donor = {
   troops: () => donorTroops,
   smallID: () => 11,
   isAlive: () => true,
   isOnSameTeam: (player) => [11, 12, 14].includes(player?.smallID?.()),
   borderTiles: () => donorBorderTiles,
+  incomingAttacks: () => donorIncomingAttacks,
 };
 const needyTeammate = {
   troops: () => 8000,
@@ -551,9 +828,56 @@ donorBehavior.getEarlyGameSpendableTroops = donorSpendableTroops;
 assert.equal(donorBehavior.donateTroops(), true);
 assert.equal(
   troopEmissions.at(-1),
-  25005,
-  "donations may release the surplus above the calculated acceleration reserve",
+  38212,
+  "donations release only the surplus above the calculated production peak",
 );
+
+const emissionsBeforeAttackedDonation = troopEmissions.length;
+donorIncomingAttacks = [{ troops: () => 1 }];
+assert.equal(
+  donorBehavior.donateTroops(),
+  false,
+  "being under attack is an absolute donation veto",
+);
+assert.equal(troopEmissions.length, emissionsBeforeAttackedDonation);
+donorIncomingAttacks = [];
+
+// An actively attacked ally outranks a needier rear ally. Immediate danger is
+// more important than clan affinity or raw troop percentage.
+const attackedTeammate = {
+  troops: () => 50000,
+  smallID: () => 17,
+  id: () => "player-17",
+  isAlive: () => true,
+  incomingAttacks: () => [{ troops: () => 20000 }],
+  outgoingAttacks: () => [],
+};
+donor.isOnSameTeam = (player) => [11, 12, 14, 17].includes(player?.smallID?.());
+donationPlayers = [donor, needyTeammate, attackedTeammate];
+const donationRecipients = [];
+const originalEmitIntent = sandbox.emitIntent;
+sandbox.emitIntent = (_ctor, recipient, troops) => {
+  donationRecipients.push(recipient);
+  troopEmissions.push(troops);
+  return true;
+};
+const urgentDonationBehavior = new sandbox.AttackBehavior(
+  { chance: () => true },
+  donationGame,
+  donor,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+assert.equal(urgentDonationBehavior.donateTroops(), true);
+assert.equal(
+  donationRecipients.at(-1),
+  attackedTeammate,
+  "an actively attacked ally receives peaceful surplus before a needier rear ally",
+);
+sandbox.emitIntent = originalEmitIntent;
 
 // The reserve must use the strongest army among every live player sharing our
 // border. A remote 200k army is irrelevant, while the allied 130k border army
