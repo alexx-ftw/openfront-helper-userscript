@@ -78,8 +78,6 @@
 
   registerMapOverlayLayer({
     id: "preferred-tribe-cluster",
-    scanIntervalMs: 500,
     isEnabled: preferredTribeClusterMarkerEnabled,
-    scan: function () {},
     draw: drawPreferredTribeClusterMarker,
   });

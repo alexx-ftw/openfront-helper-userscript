@@ -21,6 +21,10 @@ const nationExecutionSource = fs.readFileSync(
   path.join(repoRoot, "engine/ingame/auto-bot/nationExecution.js"),
   "utf8",
 );
+const tribeClusterOverlaySource = fs.readFileSync(
+  path.join(repoRoot, "engine/ingame/tribe-cluster-overlay.js"),
+  "utf8",
+);
 const buildSource = fs.readFileSync(path.join(repoRoot, "build.mjs"), "utf8");
 const coreSource = fs.readFileSync(path.join(repoRoot, "engine/ingame/auto-bot/core.js"), "utf8");
 
@@ -113,6 +117,7 @@ assert.ok(
 const openingCalls = [];
 const openingFractions = [];
 let openingFollowUps = 0;
+let openingFullPlans = 0;
 const NoopBehavior = class {};
 const openingSandbox = {
   Difficulty: {
@@ -171,9 +176,14 @@ const openingSandbox = {
       return this.pending;
     }
 
-    maybeAttack() {
+    continueOpeningExpansion() {
       openingFollowUps += 1;
       this.pending = 1;
+      return true;
+    }
+
+    maybeAttack() {
+      openingFullPlans += 1;
     }
   },
 };
@@ -247,6 +257,11 @@ assert.equal(
   2,
   "TerraNullius expansion continues again immediately after reconciliation",
 );
+assert.equal(
+  openingFullPlans,
+  0,
+  "fast TerraNullius follow-ups never invoke the full strategic planner",
+);
 
 // Polling must not rerun the full decision chain. Win-fix keeps the old 0.6
 // combat cadence scale, so a 30-tick Impossible attack rate becomes 18 ticks.
@@ -304,6 +319,10 @@ const cadenceSandbox = {
       return 0;
     }
 
+    continueOpeningExpansion() {
+      return false;
+    }
+
     maybeAttack() {
       cadenceCalls.push("attack");
     }
@@ -336,13 +355,13 @@ await cadenceBot.tick(1);
 await cadenceBot.tick(2);
 assert.equal(
   cadenceCalls.length,
-  1,
-  "win-fix polling must not repeat the full combat chain before its cadence crossing",
+  0,
+  "opening polling must not invoke the full combat chain before its cadence crossing",
 );
 await cadenceBot.tick(18);
 assert.equal(
   cadenceCalls.length,
-  2,
+  1,
   "win-fix combat uses the scaled attackRate cadence instead of every poll",
 );
 
@@ -1841,6 +1860,16 @@ assert.equal(
   topologyBorderFetches,
   firstTopologyBorderFetches,
   "repeated opening decisions reuse the complete tribe topology cache",
+);
+assert.equal(
+  clusterOverlayWakeups,
+  1,
+  "publishing an unchanged preferred cluster does not invalidate the shared canvas again",
+);
+assert.doesNotMatch(
+  tribeClusterOverlaySource,
+  /scan\s*:/,
+  "the data-driven tribe overlay must not install a no-op periodic scan",
 );
 targetTick = 11;
 await targetBehavior.getEarlyGameTribeCandidates();

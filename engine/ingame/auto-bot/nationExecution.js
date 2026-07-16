@@ -173,11 +173,16 @@
       this.openingExpansionFollowUpPending = false;
       this.status = tr("Thinking…");
       {
-        await autoBotProfileAsyncPhase(profile, "expansion-retry", () =>
-          this.attackBehavior.maybeAttack());
+        const continued = await autoBotProfileAsyncPhase(
+          profile,
+          "expansion-follow-up",
+          () => this.attackBehavior.continueOpeningExpansion(),
+        );
         if (!this.tickIsCurrent(tickGeneration)) return true;
-        this.openingExpansionFollowUpPending =
-          this.hasPendingOpeningExpansionIntent() || state.earlyGame?.hasFreeLand === true;
+        const followUpPending =
+          this.hasPendingOpeningExpansionIntent() || continued === true;
+        this.openingExpansionFollowUpPending = followUpPending;
+        if (!followUpPending) return false;
       }
       this.lastSeenTick = ticks;
       return true;

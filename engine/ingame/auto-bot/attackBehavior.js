@@ -572,6 +572,7 @@
       this.earlyGameMaritimeWaterCache = new Map();
       this.earlyGamePreferredClusterTargetKeys = new Set();
       this.earlyGameTribeTopologyCache = null;
+      this.earlyGamePreferredClusterOverlaySignature = "";
       // Defense-post reads are bounded and reused across all target decisions
       // made in the same game tick. This keeps the extra combat intelligence out
       // of the high-frequency engine poll loop.
@@ -1977,6 +1978,17 @@
       await this.runOrdinaryAttackPolicies(context);
     }
 
+    // Opening Terra Nullius liveness runs more frequently than the strategic
+    // attack cadence. Keep this path deliberately small: finish an active
+    // conquest first, then emit one adjacent free-land intent without rebuilding
+    // tribe topology, race scores, maritime ETAs, or overlay diagnostics.
+    async continueOpeningExpansion() {
+      this.reconcileOutboundAttackIntentCommitments();
+      if (await this.reinforceIncompleteOutboundPlayerAttack()) return true;
+      if (!this.hasLandBorderWithTerraNullius()) return false;
+      return this.sendLandAttack(this.game.terraNullius());
+    }
+
     // Rank and eat several tribes during Early Game. This is a win-fix policy
     // layer, not a replacement for the faithful attack strategy order below.
     // Each successful capture reserves its own intent budget, so different
@@ -2783,7 +2795,24 @@
       // Wake the shared scheduler at that transition; otherwise its auto-stop
       // leaves the newly enabled cluster invisible until some unrelated map
       // overlay happens to start it.
-      if (hasCenter && typeof requestMapOverlayLoop === "function") {
+      const overlaySignature = hasCenter
+        ? [
+            Number(state.earlyGame.preferredClusterCenter.x),
+            Number(state.earlyGame.preferredClusterCenter.y),
+            state.earlyGame.preferredClusterSize,
+            ...state.earlyGame.preferredClusterMembers.map(
+              (member) => `${member.id}:${member.x}:${member.y}`,
+            ),
+          ].join("|")
+        : "";
+      const overlayChanged =
+        overlaySignature !== this.earlyGamePreferredClusterOverlaySignature;
+      this.earlyGamePreferredClusterOverlaySignature = overlaySignature;
+      if (
+        hasCenter &&
+        overlayChanged &&
+        typeof requestMapOverlayLoop === "function"
+      ) {
         requestMapOverlayLoop();
       }
     }

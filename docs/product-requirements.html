@@ -46,7 +46,11 @@
     Consecutive opening-expansion decisions must reuse the complete tribe-border topology for a
     short, bounded game-tick window, invalidating immediately when the live tribe-id set changes.
     Cluster opportunity traversal should start only from actionable candidates, and full border
-    scans must yield cooperatively so no synchronous slice monopolizes a render frame.
+    scans must yield cooperatively so no synchronous slice monopolizes a render frame. The frequent
+    Terra Nullius liveness lane must not invoke the complete strategic tribe planner; it may only
+    reconcile active conquests and emit one adjacent free-land intent. Publishing an unchanged
+    preferred cluster must not invalidate the shared overlay canvas, and a data-driven cluster layer
+    must not register a periodic no-op scan.
   </li>
 </ul>
 
