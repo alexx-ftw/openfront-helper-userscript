@@ -2303,6 +2303,21 @@ assert.deepEqual(
   normalizedAdjacency(fullIncrementalAdjacency),
   "incremental tribe adjacency is exactly equivalent to a full rebuild",
 );
+const indexedBorderSplitBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+indexedBorderSplitBehavior.player = {
+  sharesBorderWith: () => {
+    throw new Error("the existing border-owner index should classify candidates");
+  },
+};
+const indexedBorderTribes = [{ smallID: () => 301 }, { smallID: () => 302 }];
+const indexedBorderSplit = indexedBorderSplitBehavior.splitEarlyGameTribesByLandBorder(
+  indexedBorderTribes,
+  new Set([302]),
+);
+assert.equal(indexedBorderSplit.bordering.length, 1);
+assert.strictEqual(indexedBorderSplit.bordering[0], indexedBorderTribes[1]);
+assert.equal(indexedBorderSplit.other.length, 1);
+assert.strictEqual(indexedBorderSplit.other[0], indexedBorderTribes[0]);
 assert.equal(
   targetSandbox.state.earlyGame.preferredClusterMembers
     .map((member) => member.id)

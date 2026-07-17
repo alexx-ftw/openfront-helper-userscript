@@ -2623,11 +2623,13 @@
       ).map((candidate) => candidate.player);
     }
 
-    splitEarlyGameTribesByLandBorder(tribes) {
+    splitEarlyGameTribesByLandBorder(tribes, borderingOwnerIds = null) {
       const bordering = [];
       const other = [];
       for (const tribe of tribes) {
-        const sharesBorder = this.player.sharesBorderWith(tribe) === true;
+        const sharesBorder = borderingOwnerIds
+          ? borderingOwnerIds.has(tribe.smallID())
+          : this.player.sharesBorderWith(tribe) === true;
         (sharesBorder ? bordering : other).push(tribe);
       }
       return { bordering, other };
@@ -2679,7 +2681,11 @@
       const { bordering, other } = profileAttackSync(
         profile,
         "tribes-sampling-split",
-        () => this.splitEarlyGameTribesByLandBorder(eligible),
+        () =>
+          this.splitEarlyGameTribesByLandBorder(
+            eligible,
+            borderingOwnerIds,
+          ),
       );
       const nearbyTribes = profileAttackSync(
         profile,
