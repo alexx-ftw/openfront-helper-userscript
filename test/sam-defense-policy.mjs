@@ -1240,6 +1240,64 @@ assert.equal(
   true,
   "Within future upgraded coverage, the tile closer to a friendly SAM wins",
 );
+const compactSnapshotBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+let compactSnapshotTileReads = 0;
+let compactSnapshotConfigReads = 0;
+const compactSnapshotSams = [
+  {
+    tile: () => {
+      compactSnapshotTileReads++;
+      return 10;
+    },
+    level: () => 1,
+  },
+  {
+    tile: () => {
+      compactSnapshotTileReads++;
+      return 40;
+    },
+    level: () => 1,
+  },
+];
+compactSnapshotBehavior.player = {
+  units: () => [
+    {
+      tile: () => {
+        compactSnapshotTileReads++;
+        return 20;
+      },
+    },
+  ],
+};
+compactSnapshotBehavior.legendaryFriendlySamUnits = () => compactSnapshotSams;
+compactSnapshotBehavior.game = {
+  config: () => {
+    compactSnapshotConfigReads++;
+    return {
+      defaultSamRange: () => 20,
+      maxSamRange: () => 40,
+      samRange: () => 20,
+    };
+  },
+  euclideanDistSquared: (left, right) => (Number(left) - Number(right)) ** 2,
+};
+const compactSnapshotRanker = compactSnapshotBehavior.structurePlacementCompactnessRanker(
+  UNIT.Factory,
+);
+const compactSnapshotReadsAfterSetup = {
+  tiles: compactSnapshotTileReads,
+  config: compactSnapshotConfigReads,
+};
+compactSnapshotRanker(15);
+compactSnapshotRanker(25);
+assert.deepEqual(
+  {
+    tiles: compactSnapshotTileReads,
+    config: compactSnapshotConfigReads,
+  },
+  compactSnapshotReadsAfterSetup,
+  "Economic compactness snapshots SAM and structure geometry once per decision, not once per candidate",
+);
 assert.deepEqual(
   Array.from(
     compactPlacementBehavior.rankStructureTilesBySamProtection([0, 15, 25], UNIT.DefensePost),

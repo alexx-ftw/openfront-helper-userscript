@@ -7183,7 +7183,16 @@
         UNIT.Port,
         UNIT.MissileSilo,
       );
-      const sams = this.legendaryFriendlySamUnits();
+      // Placement ranks up to 25 candidates.  Snapshot the immutable geometry
+      // once, rather than repeatedly crossing the GameView wrapper for every
+      // candidate × SAM/structure pair.  A structure decision is synchronous,
+      // so this is the same snapshot the old per-candidate reads observed.
+      const structureTiles = structures.map((structure) => structure.tile());
+      const config = this.game.config();
+      const sams = this.legendaryFriendlySamUnits().map((sam) => ({
+        tile: sam.tile(),
+        range: Number(config.samRange(sam.level())),
+      }));
       const maxRange = Number(this.game.config().maxSamRange?.());
       return (tile) => {
         let existingSamCoverage = 0;
@@ -7191,8 +7200,8 @@
         let currentSamDistanceSquared = Number.POSITIVE_INFINITY;
         let samDistanceSquared = Number.POSITIVE_INFINITY;
         for (const sam of sams) {
-          const distanceSquared = this.game.euclideanDistSquared(tile, sam.tile());
-          const samRange = Number(this.game.config().samRange(sam.level()));
+          const distanceSquared = this.game.euclideanDistSquared(tile, sam.tile);
+          const samRange = sam.range;
           if (
             Number.isFinite(samRange) &&
             distanceSquared <= samRange * samRange
@@ -7219,10 +7228,10 @@
           upgradeSamCoverage,
           currentSamDistanceSquared,
           samDistanceSquared,
-          sharedSamCoverage: structures.reduce(
-            (count, structure) =>
+          sharedSamCoverage: structureTiles.reduce(
+            (count, structureTile) =>
               count +
-              (this.game.euclideanDistSquared(tile, structure.tile()) <= rangeSquared
+              (this.game.euclideanDistSquared(tile, structureTile) <= rangeSquared
                 ? 1
                 : 0),
             0,
@@ -8176,15 +8185,16 @@
     // NOTE: pure port-spacing; does NOT consume the water shim.
     portValue() {
       const game = this.game;
-      const otherUnits = this.player.units(UNIT.Port);
+      const otherTiles = new Set(this.player.units(UNIT.Port).map((u) => u.tile()));
 
       return (tile) => {
         let w = 0;
 
         // Prefer to be as far as possible from other ports
-        const otherTiles = new Set(otherUnits.map((u) => u.tile()));
-        otherTiles.delete(tile);
-        const closest = closestTile(game, otherTiles, tile);
+        const candidates = otherTiles.has(tile)
+          ? new Set([...otherTiles].filter((otherTile) => otherTile !== tile))
+          : otherTiles;
+        const closest = closestTile(game, candidates, tile);
         const closestOtherDist = closest[1];
         w += closestOtherDist;
 
@@ -8197,7 +8207,7 @@
       const game = this.game;
       const player = this.player;
       const borderTiles = this.player.borderTiles();
-      const otherUnits = player.units(UNIT.Factory);
+      const otherTiles = new Set(player.units(UNIT.Factory).map((u) => u.tile()));
       const { borderSpacing, structureSpacing } = this.spacingConstants();
       const stationRange = game.config().trainStationMaxRange();
       const stationRangeSquared = stationRange * stationRange;
@@ -8224,9 +8234,10 @@
         w += Math.min(closestBorderDist, borderSpacing);
 
         // Prefer to be away from other factories
-        const otherTiles = new Set(otherUnits.map((u) => u.tile()));
-        otherTiles.delete(tile);
-        const closestOther = closestTwoTiles(game, otherTiles, [tile]);
+        const candidates = otherTiles.has(tile)
+          ? new Set([...otherTiles].filter((otherTile) => otherTile !== tile))
+          : otherTiles;
+        const closestOther = closestTwoTiles(game, candidates, [tile]);
         if (closestOther !== null) {
           const d = game.manhattanDist(closestOther.x, tile);
           w += Math.min(d, stationRange);
@@ -8513,7 +8524,7 @@
       const game = this.game;
       const player = this.player;
       const borderTiles = player.borderTiles();
-      const otherUnits = player.units(UNIT.City);
+      const otherTiles = new Set(player.units(UNIT.City).map((u) => u.tile()));
       const { borderSpacing, structureSpacing } = this.spacingConstants();
       const stationRange = game.config().trainStationMaxRange();
       const stationRangeSquared = stationRange * stationRange;
@@ -8539,9 +8550,10 @@
         const closestBorderDist = closest[1];
         w += Math.min(closestBorderDist, borderSpacing);
 
-        const otherTiles = new Set(otherUnits.map((u) => u.tile()));
-        otherTiles.delete(tile);
-        const closestOther = closestTwoTiles(game, otherTiles, [tile]);
+        const candidates = otherTiles.has(tile)
+          ? new Set([...otherTiles].filter((otherTile) => otherTile !== tile))
+          : otherTiles;
+        const closestOther = closestTwoTiles(game, candidates, [tile]);
         if (closestOther !== null) {
           const d = game.manhattanDist(closestOther.x, tile);
           w += Math.min(d, structureSpacing);
