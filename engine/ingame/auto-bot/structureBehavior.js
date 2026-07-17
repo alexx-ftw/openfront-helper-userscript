@@ -731,13 +731,13 @@
     }
 
     activeMissileDefenseContext() {
-      const context = this.getMissileDefenseContext();
-      const threats = Array.isArray(context?.threats)
-        ? context.threats.filter((threat) => threat?.inFlight === true)
-        : [];
+      // An incoming missile has a fixed trajectory and deadline.  Do not first
+      // build the full prospective-silo forecast and then discard it: on a
+      // mature board that evaluates every hostile silo/target pair every tick
+      // while an active missile needs only its observed trajectory.
+      const context = this.legendaryActiveMissileDefenseContext();
       return {
         ...context,
-        threats,
         mirvDemands: this.activeMirvDefenseDemands(),
       };
     }
@@ -5252,6 +5252,28 @@
         hydrogenCost,
         atomRadius,
         hydrogenRadius,
+        activeMissiles,
+      };
+    }
+
+    legendaryActiveMissileDefenseContext() {
+      const base = this.legendaryMissilePlacementBaseContext();
+      const samProfiles = this.legendaryFriendlySamProfiles();
+      const activeMissiles = this.legendaryActiveMissileThreats({
+        ...base,
+        samProfiles,
+      });
+      const strongest = activeMissiles[0] ?? {
+        score: 0,
+        critical: false,
+        weapon: null,
+        flightTimeTicks: Infinity,
+        targetTile: null,
+      };
+      return {
+        ...strongest,
+        threats: activeMissiles,
+        ...base,
         activeMissiles,
       };
     }

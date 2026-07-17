@@ -2712,6 +2712,48 @@ assert.equal(
   "Active missile placement enables trajectory candidate selection",
 );
 
+let prospectiveThreatCalls = 0;
+const originalActiveMissileBaseContext = behavior.legendaryMissilePlacementBaseContext;
+const originalActiveMissileThreats = behavior.legendaryActiveMissileThreats;
+const originalProspectiveMissileThreat = behavior.legendaryEnemyMissileThreat;
+const originalActiveMissileSamProfiles = behavior.legendaryFriendlySamProfiles;
+behavior.legendaryMissilePlacementBaseContext = () => ({
+  atomCost: 1n,
+  hydrogenCost: 2n,
+  atomRadius: 10,
+  hydrogenRadius: 20,
+  structures: [],
+  totalValue: 0,
+  priorityStructures: [],
+});
+behavior.legendaryActiveMissileThreats = () => [
+  {
+    inFlight: true,
+    score: 4,
+    targetTile: 321,
+  },
+];
+behavior.legendaryFriendlySamProfiles = () => [];
+behavior.legendaryEnemyMissileThreat = () => {
+  prospectiveThreatCalls++;
+  return null;
+};
+const activeOnlyContext = originalActiveMissileContext.call(behavior);
+assert.deepEqual(
+  activeOnlyContext.threats.map((threat) => threat.targetTile),
+  [321],
+  "Active missile defense preserves the observed in-flight threat",
+);
+assert.equal(
+  prospectiveThreatCalls,
+  0,
+  "Active missile defense does not construct irrelevant hostile-silo forecasts",
+);
+behavior.legendaryMissilePlacementBaseContext = originalActiveMissileBaseContext;
+behavior.legendaryActiveMissileThreats = originalActiveMissileThreats;
+behavior.legendaryEnemyMissileThreat = originalProspectiveMissileThreat;
+behavior.legendaryFriendlySamProfiles = originalActiveMissileSamProfiles;
+
 behavior.legendaryDefenseEvaluation = () => ({
   hasThreats: true,
   fullyDefended: true,
