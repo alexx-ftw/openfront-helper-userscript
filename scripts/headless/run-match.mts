@@ -188,6 +188,9 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
           targetType: target?.type() ?? "Terra Nullius",
           targetTroops: Math.round(target?.troops() ?? 0),
           pendingTroops: Math.round(pendingTroops),
+          committedTroops: Math.round(pendingTroops + intent.troops),
+          robustCaptureFloor:
+            target?.type() === "BOT" ? Math.round(target.troops() * 4) : null,
         };
       });
     console.warn(

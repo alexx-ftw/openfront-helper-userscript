@@ -24,6 +24,8 @@ assert.match(runner, /phase:\s*"decision"/);
 assert.match(runner, /attackTargets/);
 assert.match(runner, /targetTroops/);
 assert.match(runner, /pendingTroops/);
+assert.match(runner, /committedTroops/);
+assert.match(runner, /robustCaptureFloor/);
 assert.match(runner, /phase:\s*"naval-trace"/);
 assert.match(runner, /phase:\s*"slow_tick"/);
 assert.match(runner, /decisionMs/);
