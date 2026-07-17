@@ -234,7 +234,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
           committedTroops: Math.round(committedTroops),
           robustCaptureFloor:
             (snapshot?.type ?? target?.type()) === "BOT"
-              ? Math.ceil((snapshot?.troops ?? target?.troops() ?? 0) * 1.4)
+              ? Math.ceil((snapshot?.troops ?? target?.troops() ?? 0) * 1.5)
               : null,
         };
       });

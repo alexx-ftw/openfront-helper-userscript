@@ -695,7 +695,7 @@ assert.equal(
   "a sufficiently funded tribe assault is emitted",
 );
 assert.ok(
-  troopEmissions.at(-1) >= Math.ceil(tribeTarget.troops() * 1.4),
+  troopEmissions.at(-1) >= Math.ceil(tribeTarget.troops() * 1.5),
   "a tribe assault meets the lean whole-troop conquest floor",
 );
 assert.ok(
@@ -725,8 +725,8 @@ assert.equal(
 assert.equal(troopEmissions.length, botControlledEmissionCount + 1);
 assert.equal(
   troopEmissions.at(-1),
-  14000,
-  "controller type cannot bypass the 1.4x tribe conquest floor",
+  15000,
+  "controller type cannot bypass the 1.5x tribe conquest floor",
 );
 
 const fractionalTribeTarget = {
@@ -735,8 +735,8 @@ const fractionalTribeTarget = {
 };
 assert.equal(
   tribeBehavior.getTribeCaptureTroopFloor(fractionalTribeTarget),
-  14001,
-  "a fractional 1.4x tribe requirement rounds up to the minimum whole-troop conquest force",
+  15001,
+  "a fractional 1.5x tribe requirement rounds up to the minimum whole-troop conquest force",
 );
 
 const underfundedTribeBehavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
@@ -759,7 +759,7 @@ assert.equal(
   underfundedEmissionCount + 1,
   "the pending intent is not mistaken for a complete capture force",
 );
-assert.equal(troopEmissions.at(-1), 13000);
+assert.equal(troopEmissions.at(-1), 14000);
 sandbox.currentDifficulty = () => "Impossible";
 
 // Different hostile targets may be launched in the same decision. Pending
@@ -803,7 +803,7 @@ assert.equal(
 );
 assert.equal(
   parallelBehavior.getPendingOutboundAttackTroops(),
-  2800,
+  3000,
   "parallel tribal intents reserve each tribe's fully funded conquest force",
 );
 assert.equal(
@@ -828,8 +828,8 @@ assert.equal(parallelBehavior.getLiveOutboundAttackTroopsForTarget(parallelTribe
 parallelBehavior.botAttackTroopsSent = 0;
 assert.equal(
   parallelBehavior.calculateBotAttackTroops(parallelTribeA, 10000, {}, 3000),
-  2600,
-  "a growing tribe receives the missing top-up to the live 1.4x conquest floor",
+  3000,
+  "a growing tribe receives the missing top-up to the live 1.5x conquest floor",
 );
 
 parallelBehavior.botAttackPendingIntentCommitments = [
@@ -850,7 +850,7 @@ parallelTribeA.troops = () => 4500;
 parallelBehavior.botAttackTroopsSent = 0;
 assert.equal(
   parallelBehavior.calculateBotAttackTroops(parallelTribeA, 10000, {}, 3000),
-  2800,
+  3250,
   "tribe reinforcement includes a pending top-up but still fills a newly grown capture floor",
 );
 
@@ -871,12 +871,12 @@ const fractionalPendingTribeBehavior = new sandbox.AttackBehavior(
 fractionalPendingTribeBehavior.getLiveOutboundAttackTroopsForTarget = () => 0;
 fractionalPendingTribeBehavior.getPendingOutboundAttackTroopsForTarget = () => 945.408;
 assert.equal(
-  fractionalPendingTribeBehavior.calculateBotAttackTroops(fractionalPendingTribeTarget, 82922),
-  82922,
+  fractionalPendingTribeBehavior.calculateBotAttackTroops(fractionalPendingTribeTarget, 88913),
+  88913,
   "a fractional pending force rounds the remaining whole-troop conquest payload up",
 );
 assert.equal(
-  fractionalPendingTribeBehavior.calculateBotAttackTroops(fractionalPendingTribeTarget, 82921),
+  fractionalPendingTribeBehavior.calculateBotAttackTroops(fractionalPendingTribeTarget, 88912),
   0,
   "a tribe capture is deferred rather than emitting one troop below its conquest floor",
 );
@@ -967,7 +967,7 @@ assert.equal(
 assert.equal(troopEmissions.length, reinforcementEmissionCount + 1);
 assert.equal(
   troopEmissions.at(-1),
-  2600,
+  3000,
   "an incomplete tribe attack receives only the missing reinforcement",
 );
 
