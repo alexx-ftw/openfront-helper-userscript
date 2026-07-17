@@ -1476,10 +1476,19 @@ sandbox.state.settings.islandScanSamples = originalIslandScanSamples;
 const boatEtaBudgetBehavior = Object.create(sandbox.AttackBehavior.prototype);
 let boatEtaBudgetTick = 1;
 const boatEtaRouteCalls = [];
+let concurrentBoatEtaCandidateGroups = 0;
+let maximumConcurrentBoatEtaCandidateGroups = 0;
 const boatEtaOwnShores = [1];
 boatEtaBudgetBehavior.currentAttackDecisionTick = () => boatEtaBudgetTick;
 boatEtaBudgetBehavior.getEarlyGameOwnShores = () => boatEtaOwnShores;
 boatEtaBudgetBehavior.estimateEarlyGameTribeBoatEta = async (_border, candidate) => {
+  concurrentBoatEtaCandidateGroups++;
+  maximumConcurrentBoatEtaCandidateGroups = Math.max(
+    maximumConcurrentBoatEtaCandidateGroups,
+    concurrentBoatEtaCandidateGroups,
+  );
+  await Promise.resolve();
+  concurrentBoatEtaCandidateGroups--;
   boatEtaRouteCalls.push(candidate.id);
   candidate.boatTargetTile = Number(candidate.id.slice(-1));
   return 12;
@@ -1505,6 +1514,11 @@ assert.deepEqual(
   boatEtaRouteCalls,
   ["sea-1", "sea-2", "sea-3", "sea-4"],
   "one opening decision probes only the prioritized maritime ETA batch",
+);
+assert.equal(
+  maximumConcurrentBoatEtaCandidateGroups,
+  1,
+  "each cold tribe's bounded route-probe group settles before the next begins",
 );
 assert.equal(
   firstBoatEtaBudgetCandidates[4].boatEtaTicks,

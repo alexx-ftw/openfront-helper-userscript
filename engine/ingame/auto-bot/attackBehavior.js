@@ -3303,8 +3303,15 @@
         0,
         EARLY_TRIBE_BOAT_ETA_CANDIDATE_BUDGET,
       );
-      const results = await Promise.all(
-        batch.map(async ({ candidate, targetBorder }) => ({
+      // Each candidate can issue its own bounded set of transport-route
+      // queries. Starting every candidate together multiplied that set into a
+      // sixteen-probe burst, which can make the worker and the main thread
+      // stutter on a crowded coast. Preserve every candidate and every target
+      // probe, but let one candidate's bounded probe group settle before
+      // starting the next.
+      const results = [];
+      for (const { candidate, targetBorder } of batch) {
+        results.push({
           candidate,
           targetBorder,
           boatEtaTicks: await this.estimateEarlyGameTribeBoatEta(
@@ -3312,8 +3319,9 @@
             candidate,
             ownShores,
           ),
-        })),
-      );
+        });
+        if (results.length < batch.length) await yieldEarlyGameTopologyWork();
+      }
       for (const { candidate, targetBorder, boatEtaTicks } of results) {
         candidate.boatEtaTicks = boatEtaTicks;
         this.cacheEarlyGameTribeBoatEta(
