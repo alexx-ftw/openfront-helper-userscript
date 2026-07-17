@@ -2246,6 +2246,17 @@ assert.deepEqual(
 );
 
 const enrichedTargets = await targetBehavior.getEarlyGameTribeCandidates();
+const topologySnapshotBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+const topologySnapshot = new Set([11, 12]);
+topologySnapshotBehavior.fetchEarlyGameTribeBorder = async () => topologySnapshot;
+const topologySnapshotBorders = await topologySnapshotBehavior.fetchEarlyGameTribeTopologyBorders([
+  { id: "snapshot-tribe", player: {} },
+]);
+assert.strictEqual(
+  topologySnapshotBorders.get("snapshot-tribe"),
+  topologySnapshot,
+  "topology retains the immutable API border snapshot instead of cloning it",
+);
 assert.equal(
   clusterOverlayWakeups,
   1,

@@ -2643,9 +2643,13 @@
         const batch = nodes.slice(start, start + EARLY_TRIBE_CANDIDATES);
         await Promise.all(
           batch.map(async (tribe) => {
+            // fetchEarlyGameTribeBorder returns the Game API's replacement-only
+            // snapshot Set. Retaining it is safe: a refresh swaps the cached Set
+            // rather than mutating it, and avoids cloning every tribe border on
+            // each topology refresh.
             borders.set(
               tribe.id,
-              new Set(await this.fetchEarlyGameTribeBorder(tribe.player)),
+              await this.fetchEarlyGameTribeBorder(tribe.player),
             );
           }),
         );
