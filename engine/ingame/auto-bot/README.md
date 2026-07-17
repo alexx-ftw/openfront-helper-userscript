@@ -85,6 +85,10 @@ Neighbor-owner membership uses the engine's bounded integer `smallID` space as
 a dense lookup table, while the published adjacency remains the same ordered
 map of sets. This removes repeated hash lookups from the hottest border loop
 without changing graph traversal or target ordering.
+The cooperative adjacency scan samples its four-millisecond deadline once per
+128 border tiles instead of reading the clock on every tile, while retaining
+the unconditional 2,048-tile yield. Graph contents and insertion order remain
+unchanged, but large opening maps spend less time inside topology bookkeeping.
 
 ## Enemy Defense Post-aware attacks
 

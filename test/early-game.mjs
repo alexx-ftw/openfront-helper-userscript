@@ -1394,6 +1394,7 @@ assert.match(buildSource, /"tribe-cluster-overlay\.js"/);
 // coast/encirclement/blocking signals used by the pure ranker.
 let clusterOverlayWakeups = 0;
 let topologyYieldCount = 0;
+let topologyDeadlineReads = 0;
 const targetSandbox = {
   UNIT: {
     City: "City",
@@ -1412,6 +1413,10 @@ const targetSandbox = {
     clusterOverlayWakeups += 1;
   },
   window: {
+    __OFH_deadlineNow() {
+      topologyDeadlineReads++;
+      return 0;
+    },
     setTimeout(callback, delay) {
       assert.equal(delay, 0);
       topologyYieldCount++;
@@ -2338,10 +2343,16 @@ const yieldProbeBorders = new Map([
   [102, new Set()],
 ]);
 const yieldsBeforeTopologyProbe = topologyYieldCount;
+const deadlineReadsBeforeTopologyProbe = topologyDeadlineReads;
 await targetBehavior.connectEarlyGameTribeAdjacency(yieldProbeNodes, yieldProbeBorders);
 assert.ok(
   topologyYieldCount - yieldsBeforeTopologyProbe >= 2,
   "large tribe-border scans yield before monopolizing a render frame",
+);
+assert.equal(
+  topologyDeadlineReads - deadlineReadsBeforeTopologyProbe,
+  33,
+  "large tribe-border scans sample the deadline by bounded tile blocks",
 );
 const ownerOnlyAdjacencyBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 ownerOnlyAdjacencyBehavior.game = {

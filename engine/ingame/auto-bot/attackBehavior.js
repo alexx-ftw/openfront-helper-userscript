@@ -155,10 +155,13 @@
 
   function shouldYieldEarlyGameTopology(tiles, startedAt) {
     if (tiles >= EARLY_GAME_TRIBE_TOPOLOGY_MAX_SLICE_TILES) return true;
-    return (
-      tiles >= EARLY_GAME_TRIBE_TOPOLOGY_MIN_SLICE_TILES &&
-      earlyGameTopologyNow() - startedAt >= EARLY_GAME_TRIBE_TOPOLOGY_SLICE_MS
-    );
+    if (
+      tiles < EARLY_GAME_TRIBE_TOPOLOGY_MIN_SLICE_TILES ||
+      tiles % EARLY_GAME_TRIBE_TOPOLOGY_MIN_SLICE_TILES !== 0
+    ) {
+      return false;
+    }
+    return earlyGameTopologyNow() - startedAt >= EARLY_GAME_TRIBE_TOPOLOGY_SLICE_MS;
   }
 
   function profileAttackSync(profile, name, action) {
