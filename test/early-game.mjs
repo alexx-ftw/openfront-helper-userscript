@@ -2436,6 +2436,58 @@ assert.deepEqual(
   normalizedAdjacency(fullIncrementalAdjacency),
   "incremental tribe adjacency is exactly equivalent to a full rebuild",
 );
+topologyOwners.set(41, 3);
+const addedIncrementalNodes = [...incrementalNodes, { id: 4 }];
+const addedIncrementalBorders = new Map([...initialIncrementalBorders, [4, new Set([40])]]);
+incrementalNeighborCalls = 0;
+const addedIncrementalAdjacency = await incrementalTopologyBehavior.updateEarlyGameTribeAdjacency(
+  addedIncrementalNodes,
+  addedIncrementalBorders,
+  incrementalCache,
+);
+assert.equal(
+  incrementalNeighborCalls,
+  1,
+  "adding one tribe scans only its new border instead of rebuilding the graph",
+);
+const fullAddedIncrementalAdjacency =
+  await incrementalTopologyBehavior.connectEarlyGameTribeAdjacency(
+    addedIncrementalNodes,
+    addedIncrementalBorders,
+  );
+assert.deepEqual(
+  normalizedAdjacency(addedIncrementalAdjacency),
+  normalizedAdjacency(fullAddedIncrementalAdjacency),
+  "adding a tribe incrementally is exactly equivalent to a full rebuild",
+);
+const addedIncrementalCache = {
+  signature: incrementalTopologyBehavior.earlyGameTribeTopologySignature(addedIncrementalNodes),
+  topologyBordersById: addedIncrementalBorders,
+  tribeAdjacency: addedIncrementalAdjacency,
+};
+const removedIncrementalNodes = addedIncrementalNodes.filter((tribe) => tribe.id !== 2);
+const removedIncrementalBorders = new Map([...addedIncrementalBorders].filter(([id]) => id !== 2));
+incrementalNeighborCalls = 0;
+const removedIncrementalAdjacency = await incrementalTopologyBehavior.updateEarlyGameTribeAdjacency(
+  removedIncrementalNodes,
+  removedIncrementalBorders,
+  addedIncrementalCache,
+);
+assert.equal(
+  incrementalNeighborCalls,
+  0,
+  "removing a tribe filters its cached edges without rescanning retained borders",
+);
+const fullRemovedIncrementalAdjacency =
+  await incrementalTopologyBehavior.connectEarlyGameTribeAdjacency(
+    removedIncrementalNodes,
+    removedIncrementalBorders,
+  );
+assert.deepEqual(
+  normalizedAdjacency(removedIncrementalAdjacency),
+  normalizedAdjacency(fullRemovedIncrementalAdjacency),
+  "removing a tribe incrementally is exactly equivalent to a full rebuild",
+);
 const indexedBorderSplitBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 indexedBorderSplitBehavior.player = {
   sharesBorderWith: () => {

@@ -77,6 +77,10 @@ The complete tribe-border topology is retained for one profiled 30-tick
 strategic cadence and invalidated immediately when the live tribe-id set
 changes. This avoids rebuilding the same graph at the next decision while
 keeping territorial changes bounded to a three-second snapshot window.
+When that ID set changes, retained tribes reuse their cached adjacency and only
+new or territorially changed tribes rescan their borders; removed tribes and
+their edges are filtered directly. The incremental graph is equivalent to a
+full rebuild while avoiding a map-wide border traversal after every capture.
 
 ## Enemy Defense Post-aware attacks
 

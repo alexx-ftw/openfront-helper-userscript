@@ -2505,37 +2505,46 @@
       return false;
     }
 
-    async updateEarlyGameTribeAdjacency(nodes, borders, cached) {
-      if (cached?.signature !== this.earlyGameTribeTopologySignature(nodes)) {
-        return this.connectEarlyGameTribeAdjacency(nodes, borders);
-      }
+    getChangedEarlyGameTribeIds(nodes, borders, cachedBorders) {
       const changedIds = new Set();
       for (const tribe of nodes) {
         if (
           this.earlyGameTribeBorderChanged(
-            cached.topologyBordersById.get(tribe.id),
+            cachedBorders.get(tribe.id),
             borders.get(tribe.id),
           )
         ) {
           changedIds.add(tribe.id);
         }
       }
-      if (changedIds.size === 0) return cached.tribeAdjacency;
+      return changedIds;
+    }
 
-      const edibleIds = new Set(nodes.map((tribe) => tribe.id));
-      const adjacency = new Map(
+    reuseEarlyGameTribeAdjacency(nodes, cachedAdjacency, edibleIds) {
+      return new Map(
         nodes.map((tribe) => [
           tribe.id,
-          new Set(cached.tribeAdjacency.get(tribe.id) || []),
+          new Set(
+            [...(cachedAdjacency.get(tribe.id) || [])].filter((neighborId) =>
+              edibleIds.has(neighborId)),
+          ),
         ]),
       );
-      for (const changedId of changedIds) {
-        adjacency.get(changedId).clear();
-      }
+    }
+
+    resetChangedEarlyGameTribeAdjacency(adjacency, changedIds) {
+      for (const changedId of changedIds) adjacency.get(changedId).clear();
       for (const neighbors of adjacency.values()) {
         for (const changedId of changedIds) neighbors.delete(changedId);
       }
+    }
 
+    async connectChangedEarlyGameTribeAdjacency(
+      changedIds,
+      borders,
+      edibleIds,
+      adjacency,
+    ) {
       let tilesSinceYield = 0;
       let sliceStartedAt = earlyGameTopologyNow();
       for (const changedId of changedIds) {
@@ -2554,6 +2563,36 @@
           }
         }
       }
+    }
+
+    async updateEarlyGameTribeAdjacency(nodes, borders, cached) {
+      if (!cached?.topologyBordersById || !cached?.tribeAdjacency) {
+        return this.connectEarlyGameTribeAdjacency(nodes, borders);
+      }
+      const signatureChanged =
+        cached.signature !== this.earlyGameTribeTopologySignature(nodes);
+      const changedIds = this.getChangedEarlyGameTribeIds(
+        nodes,
+        borders,
+        cached.topologyBordersById,
+      );
+      if (!signatureChanged && changedIds.size === 0) {
+        return cached.tribeAdjacency;
+      }
+
+      const edibleIds = new Set(nodes.map((tribe) => tribe.id));
+      const adjacency = this.reuseEarlyGameTribeAdjacency(
+        nodes,
+        cached.tribeAdjacency,
+        edibleIds,
+      );
+      this.resetChangedEarlyGameTribeAdjacency(adjacency, changedIds);
+      await this.connectChangedEarlyGameTribeAdjacency(
+        changedIds,
+        borders,
+        edibleIds,
+        adjacency,
+      );
       return adjacency;
     }
 
