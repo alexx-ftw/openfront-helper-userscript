@@ -2704,6 +2704,25 @@ assert.equal(
   0,
   "valid map dimensions avoid the allocation-heavy Set fallback",
 );
+const slicedMaritimeBehavior = new targetSandbox.AttackBehavior(
+  {},
+  maritimeGame,
+  {},
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+slicedMaritimeBehavior.earlyGameMaritimeSliceWorkRemaining = 1;
+assert.equal(slicedMaritimeBehavior.isEarlyGameMaritimeWater(10), null);
+slicedMaritimeBehavior.earlyGameMaritimeSliceWorkRemaining = Infinity;
+assert.equal(slicedMaritimeBehavior.isEarlyGameMaritimeWater(10), false);
+assert.deepEqual(
+  [9, 10].map((tile) => slicedMaritimeBehavior.earlyGameMaritimeWaterState[tile]),
+  [9, 10].map((tile) => maritimeBehavior.earlyGameMaritimeWaterState[tile]),
+  "bounded and synchronous water classification produce the same dense state",
+);
 const sharedMaritimeBehavior = new targetSandbox.AttackBehavior(
   {},
   maritimeGame,

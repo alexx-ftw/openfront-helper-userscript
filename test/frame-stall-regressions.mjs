@@ -106,4 +106,26 @@ assert.deepEqual(
   "incremental maritime preparation preserves the exact distance field",
 );
 
+let pendingClassifications = 2;
+const pendingMaritimeBuilder = sandbox.createMaritimeDistanceIndexBuilder({
+  ...maritimeOptions,
+  width: 4,
+  height: 1,
+  isMaritimeShore: (tile) => {
+    if (tile !== 0) return false;
+    if (pendingClassifications-- > 0) return null;
+    return true;
+  },
+});
+for (let attempt = 0; attempt < 2; attempt++) {
+  assert.equal(
+    sandbox.advanceMaritimeDistanceIndexBuilder(pendingMaritimeBuilder, {
+      shouldYield: () => false,
+    }),
+    null,
+  );
+  assert.equal(pendingMaritimeBuilder.seedCursor, 0);
+}
+assert.equal(sandbox.advanceMaritimeDistanceIndexBuilder(pendingMaritimeBuilder).distances[0], 0);
+
 console.warn("frame-stall regression tests passed");

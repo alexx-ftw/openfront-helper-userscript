@@ -407,12 +407,18 @@
   }
 
   function seedMaritimeDistanceIndexStep(builder) {
-    const tile = builder.seedCursor++;
-    if (builder.isLand(tile) && builder.isMaritimeShore(tile)) {
+    const tile = builder.seedCursor;
+    const maritime = builder.isLand(tile)
+      ? builder.isMaritimeShore(tile)
+      : false;
+    if (maritime === null) return false;
+    builder.seedCursor++;
+    if (maritime) {
       builder.distances[tile] = 0;
       builder.queue[builder.tail++] = tile;
     }
     if (builder.seedCursor >= builder.total) builder.phase = "expand";
+    return true;
   }
 
   function addMaritimeBuilderNeighbor(builder, next, nextDistance) {
@@ -455,10 +461,10 @@
 
   function advanceMaritimeDistanceIndexStep(builder) {
     if (builder.phase === "seed") {
-      seedMaritimeDistanceIndexStep(builder);
-      return;
+      return seedMaritimeDistanceIndexStep(builder);
     }
     expandMaritimeDistanceIndexStep(builder);
+    return true;
   }
 
   function maritimeDistanceSliceShouldYield(
@@ -485,9 +491,13 @@
     const checkInterval = Math.max(1, Math.floor(yieldCheckInterval));
     let steps = 0;
     while (!builder.done && steps < stepLimit) {
-      advanceMaritimeDistanceIndexStep(builder);
-      steps++;
+      const progressed = advanceMaritimeDistanceIndexStep(builder);
+      if (progressed) steps++;
       if (maritimeDistanceSliceShouldYield(steps, checkInterval, shouldYield)) break;
+      if (!progressed && typeof shouldYield !== "function") {
+        throw new Error("Synchronous maritime classification cannot remain pending");
+      }
+      if (!progressed) break;
     }
     return builder.index;
   }

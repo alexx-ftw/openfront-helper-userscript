@@ -85,6 +85,7 @@
   const EARLY_GAME_TRIBE_TOPOLOGY_MIN_SLICE_TILES = 128;
   const EARLY_GAME_TRIBE_TOPOLOGY_MAX_SLICE_TILES = 2048;
   const EARLY_GAME_TRIBE_TOPOLOGY_SLICE_MS = 4;
+  const EARLY_GAME_MARITIME_SLICE_WORK = 50_000;
   // The game's troop growth is (10 + troops^0.73 / 4) * (1 - troops / max).
   // Keep the formula constants here so the reserve follows the real production
   // curve instead of relying on its approximate 42% peak ratio.
@@ -118,7 +119,6 @@
   // Terrain is shared by all Nation behaviors for the same game. Keep the
   // reverse maritime field per map instead of rebuilding it for every bot.
   const EARLY_GAME_MARITIME_INDEX_CACHE = new WeakMap();
-  const EARLY_GAME_MARITIME_INDEX_BUILDER_CACHE = new WeakMap();
 
   function getAutoDonateExpansionTickLimit() {
     return typeof AUTO_DONATE_EXPANSION_MAX_TICKS === "number"
@@ -623,8 +623,11 @@
       this.earlyGameMaritimeWaterCache = new Map();
       this.earlyGameMaritimeWaterState = null;
       this.earlyGameMaritimeWaterQueue = null;
+      this.earlyGameMaritimeWaterQueueHead = 0;
       this.earlyGameMaritimeWaterQueueTail = 0;
+      this.earlyGameMaritimeWaterTraversalTile = null;
       this.earlyGameMaritimeWaterTraversalFoundOpen = false;
+      this.earlyGameMaritimeSliceWorkRemaining = Infinity;
       this.opportunisticBoatSurgeTickByTile = new Map();
       this.earlyGamePreferredClusterTargetKeys = new Set();
       this.earlyGameTribeTopologyCache = null;
@@ -2296,29 +2299,60 @@
       for (let index = 0; index < this.earlyGameMaritimeWaterQueueTail; index++) {
         this.earlyGameMaritimeWaterState[this.earlyGameMaritimeWaterQueue[index]] = value;
       }
+      this.earlyGameMaritimeWaterQueueHead = 0;
+      this.earlyGameMaritimeWaterQueueTail = 0;
+      this.earlyGameMaritimeWaterTraversalTile = null;
+      this.earlyGameMaritimeWaterTraversalFoundOpen = false;
       return maritime;
     }
 
-    isDenseEarlyGameMaritimeWater(tile) {
-      const state = this.earlyGameMaritimeWaterState;
-      if (!Number.isInteger(tile) || tile < 0 || tile >= state.length) return false;
-      if (state[tile] !== 0) return state[tile] === 2;
-      state[tile] = 3;
+    consumeEarlyGameMaritimeSliceWork(amount = 1) {
+      if (!Number.isFinite(this.earlyGameMaritimeSliceWorkRemaining)) return false;
+      this.earlyGameMaritimeSliceWorkRemaining -= amount;
+      return this.earlyGameMaritimeSliceWorkRemaining <= 0;
+    }
+
+    beginDenseEarlyGameMaritimeWaterTraversal(tile) {
+      this.earlyGameMaritimeWaterState[tile] = 3;
       this.earlyGameMaritimeWaterQueue[0] = tile;
+      this.earlyGameMaritimeWaterQueueHead = 0;
       this.earlyGameMaritimeWaterQueueTail = 1;
+      this.earlyGameMaritimeWaterTraversalTile = tile;
       this.earlyGameMaritimeWaterTraversalFoundOpen = false;
-      for (let head = 0; head < this.earlyGameMaritimeWaterQueueTail; head++) {
-        const current = this.earlyGameMaritimeWaterQueue[head];
+    }
+
+    advanceDenseEarlyGameMaritimeWaterTraversal() {
+      while (
+        this.earlyGameMaritimeWaterQueueHead <
+        this.earlyGameMaritimeWaterQueueTail
+      ) {
+        const current =
+          this.earlyGameMaritimeWaterQueue[
+            this.earlyGameMaritimeWaterQueueHead++
+          ];
         if (this.earlyGameWaterIsOpen(current)) {
           this.earlyGameMaritimeWaterTraversalFoundOpen = true;
           break;
         }
         this.appendDenseEarlyGameWaterNeighbors(current);
         if (this.earlyGameMaritimeWaterTraversalFoundOpen) break;
+        if (this.consumeEarlyGameMaritimeSliceWork()) return null;
       }
       return this.finalizeDenseEarlyGameMaritimeWaterTraversal(
         this.earlyGameMaritimeWaterTraversalFoundOpen,
       );
+    }
+
+    isDenseEarlyGameMaritimeWater(tile) {
+      const state = this.earlyGameMaritimeWaterState;
+      if (!Number.isInteger(tile) || tile < 0 || tile >= state.length) return false;
+      if (state[tile] === 1 || state[tile] === 2) return state[tile] === 2;
+      if (this.earlyGameMaritimeWaterTraversalTile == null) {
+        this.beginDenseEarlyGameMaritimeWaterTraversal(tile);
+      } else if (state[tile] !== 3) {
+        return null;
+      }
+      return this.advanceDenseEarlyGameMaritimeWaterTraversal();
     }
 
     isEarlyGameMaritimeWater(tile) {
@@ -2381,11 +2415,13 @@
       }
       if (typeof this.game.isShore !== "function") return false;
       if (!this.game.isShore(tile)) return false;
-      return (this.game.neighbors(tile) || []).some(
-        (neighbor) =>
-          this.game.isWater?.(neighbor) === true &&
-          this.isEarlyGameMaritimeWater(neighbor),
-      );
+      for (const neighbor of this.game.neighbors(tile) || []) {
+        if (this.game.isWater?.(neighbor) !== true) continue;
+        const maritime = this.isEarlyGameMaritimeWater(neighbor);
+        if (maritime === null) return null;
+        if (maritime) return true;
+      }
+      return false;
     }
 
     earlyGameMaritimeIndexOptions() {
@@ -2402,20 +2438,14 @@
       };
     }
 
-    getEarlyGameMaritimeIndexBuilder(cacheKey) {
+    getEarlyGameMaritimeIndexBuilder() {
       if (this.earlyGameMaritimeIndexBuilder !== undefined) {
         return this.earlyGameMaritimeIndexBuilder;
       }
-      const shared = isEarlyGameMaritimeCacheKey(cacheKey)
-        ? EARLY_GAME_MARITIME_INDEX_BUILDER_CACHE.get(cacheKey)
-        : null;
-      const builder =
-        shared ??
-        createMaritimeDistanceIndexBuilder(this.earlyGameMaritimeIndexOptions());
+      const builder = createMaritimeDistanceIndexBuilder(
+        this.earlyGameMaritimeIndexOptions(),
+      );
       this.earlyGameMaritimeIndexBuilder = builder;
-      if (builder && isEarlyGameMaritimeCacheKey(cacheKey)) {
-        EARLY_GAME_MARITIME_INDEX_BUILDER_CACHE.set(cacheKey, builder);
-      }
       return builder;
     }
 
@@ -2424,7 +2454,6 @@
       this.earlyGameMaritimeIndex = builder.index;
       if (isEarlyGameMaritimeCacheKey(cacheKey)) {
         EARLY_GAME_MARITIME_INDEX_CACHE.set(cacheKey, builder.index);
-        EARLY_GAME_MARITIME_INDEX_BUILDER_CACHE.delete(cacheKey);
       }
       return builder.index;
     }
@@ -2446,16 +2475,23 @@
         this.earlyGameMaritimeIndex = cached;
         return;
       }
-      const builder = this.getEarlyGameMaritimeIndexBuilder(cacheKey);
+      const builder = this.getEarlyGameMaritimeIndexBuilder();
       if (!builder) {
         this.earlyGameMaritimeIndex = null;
         return;
       }
       profileAttackSync(profile, "tribes-maritime-index-prep", () => {
-        const deadline = performance.now() + EARLY_GAME_TRIBE_TOPOLOGY_SLICE_MS;
-        advanceMaritimeDistanceIndexBuilder(builder, {
-          shouldYield: () => performance.now() >= deadline,
-        });
+        this.earlyGameMaritimeSliceWorkRemaining =
+          EARLY_GAME_MARITIME_SLICE_WORK;
+        try {
+          advanceMaritimeDistanceIndexBuilder(builder, {
+            maxSteps: EARLY_GAME_MARITIME_SLICE_WORK,
+            shouldYield: () =>
+              this.consumeEarlyGameMaritimeSliceWork(256),
+          });
+        } finally {
+          this.earlyGameMaritimeSliceWorkRemaining = Infinity;
+        }
       });
       this.adoptCompletedEarlyGameMaritimeIndex(cacheKey, builder);
     }
@@ -2481,7 +2517,7 @@
           return cached;
         }
       }
-      const builder = this.getEarlyGameMaritimeIndexBuilder(cacheKey);
+      const builder = this.getEarlyGameMaritimeIndexBuilder();
       const index = builder
         ? advanceMaritimeDistanceIndexBuilder(builder)
         : buildMaritimeDistanceIndex(this.earlyGameMaritimeIndexOptions());
