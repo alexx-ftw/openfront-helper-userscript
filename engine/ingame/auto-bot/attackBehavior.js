@@ -1940,18 +1940,21 @@
     }
 
     async tryEarlyAttackPolicies(context, profile = null) {
-      await profileAttackAsync(profile, "attack-early-maritime", () =>
-        this.tryMaritimeTerraNulliusProbe(context));
-      if (
+      const attackedTribe =
         context.expandOn &&
         state.settings.winFixes &&
         context.earlyGameSnapshot.postSpawn &&
         (await profileAttackAsync(profile, "attack-early-tribes", () =>
-          this.attackEarlyGameTribe(profile)))
-      ) {
+          this.attackEarlyGameTribe(profile)));
+      if (attackedTribe) {
         state.earlyGame.action = "tribe";
-        return true;
       }
+      // Resolve the strategic conquest first. A parallel Terra Nullius probe may
+      // still use another coast, but emitBoat must not launch a second transport
+      // to the exact destination already reserved by the conquest this tick.
+      await profileAttackAsync(profile, "attack-early-maritime", () =>
+        this.tryMaritimeTerraNulliusProbe(context));
+      if (attackedTribe) return true;
       const canProbeOcean =
         context.expandOn &&
         context.boatOn &&
@@ -4485,12 +4488,26 @@
       return null;
     }
 
+    boatDestinationAlreadyEmittedThisTick(dst) {
+      const tick = this.currentAttackDecisionTick();
+      if (this.botBoatDestinationIntentTick !== tick) {
+        this.botBoatDestinationIntentTick = tick;
+        this.botBoatDestinationIntents = new Set();
+      }
+      return this.botBoatDestinationIntents.has(dst);
+    }
+
+    recordBoatDestinationIntent(dst) {
+      this.botBoatDestinationIntents.add(dst);
+    }
+
     // emitBoat — fire a TransportShipExecution at dst carrying `troops`.
     emitBoat(dst, troops, label, reserveTarget = null) {
       // Final chokepoint for the "boat" feature toggle: never fire when off.
       if (!(state.settings.features && state.settings.features.boat)) {
         return false;
       }
+      if (this.boatDestinationAlreadyEmittedThisTick(dst)) return false;
       const requestedTroops = Number(troops);
       if (!Number.isFinite(requestedTroops) || requestedTroops < 1) {
         return false;
@@ -4525,6 +4542,7 @@
           attackType: "boat",
           destination: dst,
         });
+        this.recordBoatDestinationIntent(dst);
         return true;
       }
       return false;

@@ -569,6 +569,13 @@ assert.equal(
   ownTroops - productionPeakReserve,
   "the final boat boundary preserves the Nation/Human production peak",
 );
+const boatEmissionCount = troopEmissions.length;
+assert.equal(
+  boatBudgetBehavior.emitBoat("boat-destination", 1, "⛵ duplicate boat", humanTarget),
+  false,
+  "one decision never emits two transport ships to the same destination",
+);
+assert.equal(troopEmissions.length, boatEmissionCount);
 ownTroops = 100000;
 
 // Tribe attacks must be all-or-nothing: if visible and pending commitments plus

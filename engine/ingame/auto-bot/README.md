@@ -29,7 +29,10 @@ existing Nation decision chain but enriches its opening target choice:
 2. attack the best-ranked tribe through the existing land/boat actuation. A
    selected maritime tribe receives a reserve-aware conquest force, not the
    cheap probe used for uncertain Terra Nullius. When a rival is racing for the
-   same food, the bot raises the commitment while keeping the reserve floor;
+   same food, the bot raises the commitment while keeping the reserve floor.
+   The conquest reserves its destination before any parallel free-land probe,
+   and the boat-emission chokepoint permits at most one transport to the same
+   destination in a game tick;
 3. when we already hold a shore on the largest connected water surface, probe
    the nearest unowned maritime tile before falling back to generic Terra Nullius
    expansion, so the first coastal foothold can support a Port. Smaller closed

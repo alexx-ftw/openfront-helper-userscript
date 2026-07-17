@@ -2611,6 +2611,30 @@ assert.equal(
   "a selected sea tribe receives a conquest force, not a 1% probe",
 );
 
+const maritimePolicyOrder = [];
+const maritimePolicyBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+maritimePolicyBehavior.attackEarlyGameTribe = async () => {
+  maritimePolicyOrder.push("tribe");
+  return true;
+};
+maritimePolicyBehavior.tryMaritimeTerraNulliusProbe = async () => {
+  maritimePolicyOrder.push("maritime-probe");
+};
+assert.equal(
+  await maritimePolicyBehavior.tryEarlyAttackPolicies({
+    expandOn: true,
+    boatOn: true,
+    earlyGameSnapshot: { active: true, postSpawn: true, hasTribeTarget: true },
+    maritimeTerraNulliusProbeSent: false,
+  }),
+  true,
+);
+assert.deepEqual(
+  maritimePolicyOrder,
+  ["tribe", "maritime-probe"],
+  "a maritime tribe conquest reserves its destination before parallel free-land probes",
+);
+
 // Integration probe: ocean-connected water and a river that exits through the
 // map edge count as maritime; an isolated inland lake does not.
 const maritimeLand = new Set([8, 9, 14, 15, 16]);
