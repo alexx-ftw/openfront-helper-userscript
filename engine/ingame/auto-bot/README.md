@@ -161,6 +161,13 @@ A* route is an intentional client-side divergence from the engine's HPA/
 smoothing pathfinder; the server still validates the water component when it
 receives the move intent.
 
+All Warship construction paths share one pending-intent reservation. The client
+may expose an accepted build several ticks after the build menu emits it, so the
+initial, retaliation, infestation-counter, and invasion-interceptor paths cannot
+issue another Warship build until a new unit appears (including one under
+construction) or the six-tick reconciliation grace confirms that the intent did
+not materialize.
+
 Once a Warship is dispatched, its assignment is keyed by the stable transport
 ID and retained while both units remain active. The moving transport must not
 trigger a fresh A* plan or a new patrol destination on every planning interval;

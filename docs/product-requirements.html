@@ -172,6 +172,18 @@
   </li>
 </ul>
 
+<h2>Warship build-intent reconciliation</h2>
+
+<ul>
+  <li>
+    Initial deployment, retaliation, infestation-counter, and invasion-interceptor construction must
+    share one pending Warship reservation. No path may emit another build while the client is still
+    waiting for the accepted unit to appear. A newly visible Warship, including one under
+    construction, confirms the intent; an intent that does not materialize releases after the normal
+    six-game-tick reconciliation grace so a legitimate retry remains possible.
+  </li>
+</ul>
+
 <h2>Outbound transport destination reservations</h2>
 
 <ul>

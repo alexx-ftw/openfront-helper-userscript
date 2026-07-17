@@ -42,6 +42,11 @@
 
 "use strict";
 
+  // Client snapshots can lag an accepted build command by several game ticks.
+  // Hold one shared reservation across every Warship construction path until a
+  // new unit becomes visible or the normal outbound-intent grace expires.
+  const WARSHIP_BUILD_INTENT_GRACE_TICKS = 6;
+
   function getWarshipRuntimeHost() {
     if (typeof window !== "undefined") return window;
     if (typeof globalThis !== "undefined") return globalThis;
@@ -165,7 +170,10 @@
         return false;
       }
       const smartState = this.ensureSmartState();
-      if (smartState.lastInvasionBuildTick === this.game.ticks()) {
+      if (
+        smartState.lastInvasionBuildTick === this.game.ticks() ||
+        this.hasPendingWarshipBuild(smartState)
+      ) {
         return false;
       }
       const maritimeEmergency =
@@ -191,14 +199,12 @@
         }
         // src: game.addExecution(new ConstructionExecution(player, Warship, targetTile)).
         // Client: fire through the build menu, aimed at the WATER targetTile.
-        const buildMenu = getBuildMenu();
-        if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
-          return false;
-        }
-        buildMenu.sendBuildOrUpgrade(bu, targetTile);
-        state.stats.builds++;
-        setLastAction(tr("🚢 Deploy warship"), "naval");
-        return true;
+        return this.tryEmitWarshipBuild(
+          bu,
+          targetTile,
+          tr("🚢 Deploy warship"),
+          "initial",
+        );
       }
       return false;
     }
@@ -429,19 +435,20 @@
     // This promise is deliberately allowed to reject so integration failures remain visible.
     async _retaliateBuildAsync(tile, enemy, reason) {
       {
+        if (this.hasPendingWarshipBuild()) return;
         const bu = await this.buildableWarship(tile);
         if (bu === null || bu === undefined || bu.canBuild === false) {
           this.maybeMoveWarship(tile);
           return;
         }
-        const buildMenu = getBuildMenu();
-        if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
-          this.maybeMoveWarship(tile);
-          return;
-        }
-        buildMenu.sendBuildOrUpgrade(bu, tile);
-        state.stats.builds++;
-        setLastAction(tr("🚢 Retaliate warship"), "naval");
+        if (
+          !this.tryEmitWarshipBuild(
+            bu,
+            tile,
+            tr("🚢 Retaliate warship"),
+            "retaliation",
+          )
+        ) return;
         this.emojiBehavior.maybeSendEmoji(enemy, EMOJI_WARSHIP_RETALIATION);
         this.player.updateRelation(enemy, reason === "trade" ? -7.5 : -15);
       }
@@ -645,6 +652,7 @@
 
     // buildCounterWarship — NationWarshipBehavior (private, now async).
     async buildCounterWarship(target) {
+      if (this.hasPendingWarshipBuild()) return;
       const tile = target.warship.tile();
       // src: canBuild = player.canBuild(Warship, target.warship.tile()); if false →
       // move + return. Client: probe buildables on the enemy warship's WATER tile.
@@ -655,14 +663,14 @@
       }
 
       // src: game.addExecution(new ConstructionExecution(player, Warship, tile)).
-      const buildMenu = getBuildMenu();
-      if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
-        this.maybeMoveWarship(tile);
-        return;
-      }
-      buildMenu.sendBuildOrUpgrade(bu, tile);
-      state.stats.builds++;
-      setLastAction(tr("🚢 Counter warship"), "naval");
+      if (
+        !this.tryEmitWarshipBuild(
+          bu,
+          tile,
+          tr("🚢 Counter warship"),
+          "counter",
+        )
+      ) return;
       this.emojiBehavior.sendEmoji(AllPlayers, EMOJI_WARSHIP_RETALIATION);
     }
 
@@ -736,8 +744,55 @@
         invasionRouteCache: new Map(),
         pendingInvasionBuilds: new Set(),
         invasionBuildAttemptAt: new Map(),
+        pendingWarshipBuild: null,
       };
       return this.smartState;
+    }
+
+    currentWarshipBuildSnapshot() {
+      const warships = this.player.units(UNIT.Warship);
+      const ids = new Set();
+      for (const warship of warships) {
+        const id = warship?.id?.();
+        if (id !== null && id !== undefined) ids.add(String(id));
+      }
+      return { ids, count: warships.length };
+    }
+
+    hasPendingWarshipBuild(smartState = this.ensureSmartState()) {
+      const pending = smartState.pendingWarshipBuild;
+      if (pending === null) return false;
+      const current = this.currentWarshipBuildSnapshot();
+      const accepted =
+        current.count > pending.baselineCount ||
+        [...current.ids].some((id) => !pending.baselineIds.has(id));
+      if (accepted) {
+        smartState.pendingWarshipBuild = null;
+        return false;
+      }
+      const age = this.game.ticks() - pending.createdTick;
+      if (age <= WARSHIP_BUILD_INTENT_GRACE_TICKS) return true;
+      smartState.pendingWarshipBuild = null;
+      return false;
+    }
+
+    tryEmitWarshipBuild(bu, tile, action, purpose) {
+      const smartState = this.ensureSmartState();
+      if (this.hasPendingWarshipBuild(smartState)) return false;
+      const buildMenu = getBuildMenu();
+      if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") return false;
+      const baseline = this.currentWarshipBuildSnapshot();
+      buildMenu.sendBuildOrUpgrade(bu, tile);
+      smartState.pendingWarshipBuild = {
+        createdTick: this.game.ticks(),
+        baselineIds: baseline.ids,
+        baselineCount: baseline.count,
+        tile,
+        purpose,
+      };
+      state.stats.builds++;
+      setLastAction(action, "naval");
+      return true;
     }
 
     // Read a movement speed when a newer client exposes one. OpenFront's current
@@ -1087,6 +1142,7 @@
     }
 
     async buildInterceptorForInvasion(invasion, boatSpeed, warshipSpeed, attackRange) {
+      if (this.hasPendingWarshipBuild()) return false;
       if (this.player.gold() < this.cost(UNIT.Warship)) return false;
       const candidates = this.interceptionBuildCandidates(invasion);
       let best = null;
@@ -1097,12 +1153,12 @@
         if (candidate && this.isBetterInterceptorBuild(candidate, best)) best = candidate;
       }
       if (best === null) return false;
-      const buildMenu = getBuildMenu();
-      if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") return false;
-      buildMenu.sendBuildOrUpgrade(best.bu, best.tile);
-      state.stats.builds++;
-      setLastAction(tr("🚢 Intercept invasion"), "naval");
-      return true;
+      return this.tryEmitWarshipBuild(
+        best.bu,
+        best.tile,
+        tr("🚢 Intercept invasion"),
+        "interception",
+      );
     }
 
     activeWarships() {

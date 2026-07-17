@@ -169,6 +169,8 @@ executeClassicScript(
 );
 
 let randomChanceCalls = 0;
+let warshipTick = 7;
+let visibleWarships = [];
 const warshipBehavior = Object.create(warshipSandbox.__WarshipBehavior.prototype);
 warshipBehavior.random = {
   chance: () => {
@@ -178,12 +180,15 @@ warshipBehavior.random = {
   randElement: (items) => items[0],
 };
 warshipBehavior.game = {
-  ticks: () => 7,
+  ticks: () => warshipTick,
   config: () => ({ isUnitDisabled: () => false }),
 };
 warshipBehavior.player = {
-  units: (type) =>
-    type === UNIT.Port ? [{ isUnderConstruction: () => false, tile: () => 10 }] : [],
+  units: (type) => {
+    if (type === UNIT.Port) return [{ isUnderConstruction: () => false, tile: () => 10 }];
+    if (type === UNIT.Warship) return visibleWarships;
+    return [];
+  },
   unitsOwned: () => 0,
   gold: () => 250000n,
 };
@@ -204,5 +209,54 @@ assert.equal(warshipBuilds.length, 1, "the emergency path emits one destroyer bu
 assert.equal(warshipBuilds[0][0].type, UNIT.Warship, "the buildable is a Warship");
 assert.equal(warshipBuilds[0][0].canBuild, 44, "the Warship keeps its port spawn tile");
 assert.equal(warshipBuilds[0][1], 55, "the build menu receives the water target tile");
+
+warshipTick++;
+await warshipBehavior._retaliateBuildAsync(56, {}, "trade");
+await warshipBehavior.buildCounterWarship({ warship: { tile: () => 57 } });
+assert.equal(
+  await warshipBehavior.buildInterceptorForInvasion({}, 1, 1, 1),
+  false,
+  "interception builds share the pending Warship reservation",
+);
+assert.equal(
+  warshipBuilds.length,
+  1,
+  "retaliation, counter, and interception paths cannot race the pending build",
+);
+assert.equal(
+  await warshipBehavior.maybeSpawnWarship(),
+  false,
+  "a lagging unit snapshot cannot emit a duplicate Warship on the next tick",
+);
+assert.equal(warshipBuilds.length, 1, "the pending Warship intent owns the build slot");
+assert.equal(warshipSandbox.state.stats.builds, 1, "a duplicate attempt does not inflate stats");
+
+warshipTick += 6;
+assert.equal(
+  await warshipBehavior.maybeSpawnWarship(),
+  true,
+  "a build that never materializes is retried after the six-tick grace",
+);
+assert.equal(warshipBuilds.length, 2, "the failed build intent releases exactly once");
+
+visibleWarships = [{ id: () => 91, isUnderConstruction: () => true }];
+warshipTick++;
+assert.equal(
+  await warshipBehavior.maybeSpawnWarship(),
+  false,
+  "an under-construction Warship reconciles the pending build as accepted",
+);
+assert.equal(warshipBuilds.length, 2, "a visible pending Warship prevents another build");
+assert.equal(
+  warshipBehavior.tryEmitWarshipBuild(
+    { type: UNIT.Warship, canBuild: 45 },
+    58,
+    "intercept another invasion",
+    "interception",
+  ),
+  true,
+  "a distinct uncovered invasion may build after the first Warship materializes",
+);
+assert.equal(warshipBuilds.length, 3, "accepted construction releases the shared reservation");
 
 process.stdout.write("maritime invasion economy tests passed\n");
