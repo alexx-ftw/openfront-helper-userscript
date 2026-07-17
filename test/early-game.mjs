@@ -2246,6 +2246,29 @@ assert.deepEqual(
 );
 
 const enrichedTargets = await targetBehavior.getEarlyGameTribeCandidates();
+const oceanTargetRankBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+const rankedOceanTargets = [];
+for (const target of [
+  { tile: 90, dist: 6 },
+  { tile: 91, dist: 2 },
+  { tile: 92, dist: 2 },
+  { tile: 93, dist: 9 },
+  { tile: 94, dist: 1 },
+  { tile: 95, dist: 4 },
+  { tile: 96, dist: 2 },
+]) {
+  oceanTargetRankBehavior.insertEarlyOceanTarget(rankedOceanTargets, target);
+}
+assert.deepEqual(
+  Array.from(rankedOceanTargets, ({ tile, dist }) => [tile, dist]),
+  [
+    [94, 1],
+    [91, 2],
+    [92, 2],
+    [96, 2],
+  ],
+  "streaming ocean-target ranking preserves the stable four-route probe order",
+);
 const topologySnapshotBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 const topologySnapshot = new Set([11, 12]);
 topologySnapshotBehavior.fetchEarlyGameTribeBorder = async () => topologySnapshot;

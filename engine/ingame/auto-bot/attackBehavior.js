@@ -4023,7 +4023,6 @@
       for (const shore of samples) {
         this.appendEarlyOceanTargets(shore, radius, step, scan);
       }
-      targets.sort((a, b) => a.dist - b.dist);
       return targets;
     }
 
@@ -4061,9 +4060,25 @@
           const tile = this.game.ref(x, y);
           if (!this.earlyOceanTileIsEligible(tile, seen, rejected)) continue;
           seen.add(tile);
-          targets.push({ tile, dist: dx * dx + dy * dy });
+          this.insertEarlyOceanTarget(targets, {
+            tile,
+            dist: dx * dx + dy * dy,
+          });
         }
       }
+    }
+
+    // The caller only probes four routes. Keep the same first four entries a
+    // stable full distance sort would produce, without retaining or sorting the
+    // potentially thousands of other eligible ocean tiles.
+    insertEarlyOceanTarget(targets, target) {
+      let index = 0;
+      while (index < targets.length && targets[index].dist <= target.dist) {
+        index++;
+      }
+      if (index >= BOAT_PROBE_CANDIDATES) return;
+      targets.splice(index, 0, target);
+      if (targets.length > BOAT_PROBE_CANDIDATES) targets.pop();
     }
 
     // Read the cached pathfinder result after bestTransportShipSpawn() has proven
