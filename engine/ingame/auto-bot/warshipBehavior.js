@@ -46,6 +46,10 @@
   // Hold one shared reservation across every Warship construction path until a
   // new unit becomes visible or the normal outbound-intent grace expires.
   const WARSHIP_BUILD_INTENT_GRACE_TICKS = 6;
+  // A distant fallback transport route can cross most of a large map. Build it
+  // incrementally so a single hostile boat cannot freeze the game loop before
+  // the naval planner can react.
+  const NAVAL_INVASION_ROUTE_SLICE_NODES = 1024;
 
   function getWarshipRuntimeHost() {
     if (typeof window !== "undefined") return window;
@@ -742,6 +746,7 @@
         invasionPlan: null,
         invasionAssignments: new Map(), // warshipId -> { invasionId, landingTick }
         invasionRouteCache: new Map(),
+        invasionRouteBuilders: new Map(),
         pendingInvasionBuilds: new Set(),
         invasionBuildAttemptAt: new Map(),
         pendingWarshipBuild: null,
@@ -845,7 +850,24 @@
       { return this.game.manhattanDist(tile, goal); }
     }
 
-    createWaterRouteState(start, goal) {
+    createWaterRouteState(start, goal, persistent = false) {
+      if (persistent) return this.createSparseWaterRouteState(start);
+      return this.createDenseWaterRouteState(start, goal) ??
+        this.createSparseWaterRouteState(start);
+    }
+
+    createSparseWaterRouteState(start) {
+      return {
+        open: new WarshipRouteHeap(),
+        dense: false,
+        start,
+        gScore: new Map([[start, 0]]),
+        cameFrom: new Map(),
+        closed: new Set(),
+      };
+    }
+
+    createDenseWaterRouteState(start, goal) {
       const width = Number(this.game.width?.());
       const height = Number(this.game.height?.());
       const total = width * height;
@@ -888,14 +910,7 @@
           cameFrom: scratch.cameFrom,
         };
       }
-      return {
-        open: new WarshipRouteHeap(),
-        dense: false,
-        start,
-        gScore: new Map([[start, 0]]),
-        cameFrom: new Map(),
-        closed: new Set(),
-      };
+      return null;
     }
 
     waterRouteNodeClosed(routeState, tile) {
@@ -964,6 +979,24 @@
       for (const neighbor of this.game.neighbors?.(tile) || []) visit(neighbor);
     }
 
+    advanceWaterRoute(routeState, goal, maxExpansions = Infinity) {
+      let expansions = 0;
+      while (routeState.open.length > 0) {
+        const current = routeState.open.pop();
+        if (!current || this.waterRouteNodeClosed(routeState, current.tile)) continue;
+        if (current.tile === goal) {
+          return { complete: true, path: this.reconstructWaterRoute(routeState, goal) };
+        }
+        this.closeWaterRouteNode(routeState, current.tile);
+        this.forEachWarshipNeighbor(current.tile, (neighbor) =>
+          this.visitWaterRouteNeighbor(neighbor, current.tile, routeState, goal),
+        );
+        expansions += 1;
+        if (expansions >= maxExpansions) return { complete: false, path: null };
+      }
+      return { complete: true, path: null };
+    }
+
     waterRoute(start, goal) {
       if (start === undefined || start === null || goal === undefined || goal === null) {
         return null;
@@ -975,16 +1008,7 @@
 
       const routeState = this.createWaterRouteState(start, goal);
       routeState.open.push({ tile: start, priority: this.warshipRouteHeuristic(start, goal) });
-      while (routeState.open.length > 0) {
-        const current = routeState.open.pop();
-        if (!current || this.waterRouteNodeClosed(routeState, current.tile)) continue;
-        if (current.tile === goal) return this.reconstructWaterRoute(routeState, goal);
-        this.closeWaterRouteNode(routeState, current.tile);
-        this.forEachWarshipNeighbor(current.tile, (neighbor) =>
-          this.visitWaterRouteNeighbor(neighbor, current.tile, routeState, goal),
-        );
-      }
-      return null;
+      return this.advanceWaterRoute(routeState, goal).path;
     }
 
     waterTargetTile(target) {
@@ -1033,6 +1057,31 @@
       }
     }
 
+    incrementalTransportRoute(transport, current, goal, smartState) {
+      const id = transport.id();
+      const key = `${id}:${goal}`;
+      let builder = smartState.invasionRouteBuilders.get(key);
+      if (!builder) {
+        const routeState = this.createWaterRouteState(current, goal, true);
+        routeState.open.push({
+          tile: current,
+          priority: this.warshipRouteHeuristic(current, goal),
+        });
+        builder = { start: current, routeState };
+        smartState.invasionRouteBuilders.set(key, builder);
+      }
+      const outcome = this.advanceWaterRoute(
+        builder.routeState,
+        goal,
+        NAVAL_INVASION_ROUTE_SLICE_NODES,
+      );
+      if (!outcome.complete) return null;
+      smartState.invasionRouteBuilders.delete(key);
+      if (!Array.isArray(outcome.path)) return null;
+      const currentIndex = outcome.path.indexOf(current);
+      return currentIndex >= 0 ? outcome.path.slice(currentIndex) : null;
+    }
+
     createIncomingNavalInvasion(transport, state, nextCache, mySid) {
       if (!this.isHostileIncomingTransport(transport, mySid)) return null;
       const target = transport.targetTile();
@@ -1042,7 +1091,8 @@
       const key = `${transport.id()}:${current}:${goal}`;
       let path = state.invasionRouteCache.get(key);
       if (path === undefined) {
-        path = this.transportMotionPath(transport, goal) ?? this.waterRoute(current, goal);
+        path = this.transportMotionPath(transport, goal) ??
+          this.incrementalTransportRoute(transport, current, goal, state);
       }
       nextCache.set(key, path);
       return Array.isArray(path) && path.length >= 2

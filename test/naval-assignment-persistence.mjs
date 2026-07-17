@@ -147,4 +147,52 @@ fallbackRouteBehavior.game = {
 };
 assert.equal([...fallbackRouteBehavior.waterRoute("start", "goal")].join(","), "start,goal");
 
+const slicedRouteBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
+slicedRouteBehavior.game = {
+  isWater: () => true,
+  manhattanDist: (left, right) => Math.abs(left - right),
+  neighbors: (tile) => (tile < 8 ? [tile + 1] : []),
+};
+const slicedRouteState = slicedRouteBehavior.createWaterRouteState(0, 8, true);
+slicedRouteState.open.push({ tile: 0, priority: 8 });
+const pausedSlicedRoute = slicedRouteBehavior.advanceWaterRoute(slicedRouteState, 8, 2);
+assert.equal(
+  pausedSlicedRoute.complete,
+  false,
+  "a long fallback route yields after its bounded naval planning slice",
+);
+assert.equal(pausedSlicedRoute.path, null);
+const completedSlicedRoute = slicedRouteBehavior.advanceWaterRoute(slicedRouteState, 8, 32);
+assert.equal(completedSlicedRoute.complete, true);
+assert.deepEqual([...completedSlicedRoute.path], [0, 1, 2, 3, 4, 5, 6, 7, 8]);
+
+const longRouteBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
+longRouteBehavior.game = {
+  isWater: () => true,
+  manhattanDist: (left, right) => Math.abs(left - right),
+  neighbors: (tile) => (tile < 1025 ? [tile + 1] : []),
+};
+const longRouteState = { invasionRouteBuilders: new Map() };
+const longTransport = { id: () => "long-transport" };
+assert.equal(
+  longRouteBehavior.incrementalTransportRoute(longTransport, 0, 1025, longRouteState),
+  null,
+  "a distant incoming transport keeps its unfinished route builder for the next naval pass",
+);
+assert.equal(longRouteState.invasionRouteBuilders.size, 1);
+const resumedTransportRoute = longRouteBehavior.incrementalTransportRoute(
+  longTransport,
+  5,
+  1025,
+  longRouteState,
+);
+assert.equal(resumedTransportRoute.length, 1021);
+assert.equal(resumedTransportRoute[0], 5);
+assert.equal(resumedTransportRoute.at(-1), 1025);
+assert.equal(
+  longRouteState.invasionRouteBuilders.size,
+  0,
+  "a completed fallback transport route releases its incremental builder",
+);
+
 process.stdout.write("naval assignment persistence tests passed\n");
