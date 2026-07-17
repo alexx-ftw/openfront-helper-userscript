@@ -2574,13 +2574,288 @@ samDisabled = false;
 behavior.legendaryReserveGold = originalReactiveReserve;
 own.gold = originalReactiveGold;
 
+const originalActiveMissileSignal = behavior.missileDefenseSignalSnapshot;
+const originalActiveMissileContext = behavior.activeMissileDefenseContext;
+const originalDefenseEvaluation = behavior.legendaryDefenseEvaluation;
+const originalMaybeUpgradeMissileDefenseSam = behavior.maybeUpgradeMissileDefenseSam;
+const originalActiveMissileMaybeSpawnStructure = behavior.maybeSpawnStructure;
+behavior.missileDefenseSignalSnapshot = () => ({ hasActiveHostileMissile: true });
+behavior.activeMissileDefenseContext = () => ({
+  threats: [{ inFlight: true }],
+});
+behavior.legendaryDefenseEvaluation = () => ({
+  hasThreats: true,
+  fullyDefended: false,
+});
+let activeMissileUpgradeContext = null;
+behavior.maybeUpgradeMissileDefenseSam = async (context) => {
+  activeMissileUpgradeContext = context;
+  return false;
+};
+let activeMissileSpawnOptions = null;
+behavior.maybeSpawnStructure = async (type, options) => {
+  assert.equal(type, UNIT.SAMLauncher, "Active missile defense only requests a SAM");
+  activeMissileSpawnOptions = options;
+  return false;
+};
+own.sams = [reactiveSam];
+assert.equal(
+  await behavior.handleActiveMissileSamMaximumPriority(),
+  false,
+  "An unresolved airborne missile reserves the construction slot when placement is not yet possible",
+);
+assert.equal(
+  activeMissileUpgradeContext,
+  activeMissileSpawnOptions.missileDefenseContext,
+  "Upgrade and placement score the same active-missile-only trajectory context",
+);
+assert.equal(
+  activeMissileSpawnOptions.forceNewStructure,
+  true,
+  "A geometrically useless existing SAM permits a new defensive site",
+);
+assert.equal(
+  activeMissileSpawnOptions.activeMissileDefense,
+  true,
+  "Active missile placement enables trajectory candidate selection",
+);
+
+behavior.legendaryDefenseEvaluation = () => ({
+  hasThreats: true,
+  fullyDefended: true,
+});
+activeMissileSpawnOptions = null;
+assert.equal(
+  await behavior.handleActiveMissileSamMaximumPriority(),
+  null,
+  "A fully defended airborne missile does not multiply SAM sites",
+);
+assert.equal(activeMissileSpawnOptions, null, "No redundant SAM placement is attempted");
+
+const originalThreatOwnerId = behavior.game.ownerID;
+behavior.game.ownerID = () => own.smallID();
+const activeRouteTiles = behavior.prependActiveMissileRouteTiles([99, 100], 6, {
+  threats: [
+    {
+      inFlight: true,
+      salvoPlan: { routes: [{ path: [10, 20, 30] }] },
+    },
+  ],
+});
+assert.deepEqual(
+  Array.from(activeRouteTiles),
+  [30, 20, 10, 99, 100],
+  "Active missile placement searches from impact backward while preserving fallback capacity",
+);
+
+const originalScoredActiveMissileThreat = behavior.legendaryScoredActiveMissileThreat;
+behavior.game.ownerID = (tile) => (tile === 777 ? own.smallID() : 0);
+behavior.legendaryScoredActiveMissileThreat = (input) => input;
+const territoryOnlyThreat = behavior.legendaryActiveMissileThreat(
+  {
+    isActive: () => true,
+    owner: () => ({ smallID: () => 1234 }),
+    targetTile: () => 777,
+    tile: () => 700,
+    type: () => UNIT.AtomBomb,
+  },
+  own.smallID(),
+  {
+    atomRadius: 10,
+    hydrogenRadius: 20,
+    structures: [],
+    totalValue: 0,
+  },
+  [],
+);
+assert.equal(
+  territoryOnlyThreat.exposure.targetsOwnedTerritory,
+  true,
+  "A hostile nuclear strike on owned territory remains a threat without exposed structures",
+);
+assert.equal(
+  territoryOnlyThreat.exposure.value,
+  1,
+  "Territorial connectivity receives non-zero defensive value",
+);
+behavior.game.ownerID = originalThreatOwnerId;
+behavior.legendaryScoredActiveMissileThreat = originalScoredActiveMissileThreat;
+
+const originalThreatGameUnits = behavior.game.units;
+let enumeratedActiveMissileTypes = [];
+behavior.game.units = (...types) => {
+  enumeratedActiveMissileTypes = types;
+  return [];
+};
+behavior.legendaryActiveMissileThreats({ samProfiles: [] });
+assert.deepEqual(
+  Array.from(enumeratedActiveMissileTypes),
+  [UNIT.AtomBomb, UNIT.HydrogenBomb],
+  "Generic trajectory interception enumerates only Atom and Hydrogen bombs",
+);
+behavior.activeMirvDefenseDemands();
+assert.deepEqual(
+  Array.from(enumeratedActiveMissileTypes),
+  [UNIT.MIRV, UNIT.MIRVWarhead],
+  "MIRV carriers and warheads use the dedicated destination-geometry model",
+);
+let requestedMirvBlastType = null;
+const mirvImpactZone = behavior.hostileMissileImpactZone(
+  {
+    isActive: () => true,
+    owner: () => ({ smallID: () => 1234 }),
+    targetTile: () => 777,
+    type: () => UNIT.MIRV,
+  },
+  {
+    nukeMagnitudes: (type) => {
+      requestedMirvBlastType = type;
+      return { outer: 18 };
+    },
+  },
+  own.smallID(),
+);
+assert.equal(
+  requestedMirvBlastType,
+  null,
+  "A MIRV carrier never requests an unsupported direct-blast magnitude",
+);
+assert.equal(mirvImpactZone, null, "Only separated MIRV warheads create exact impact zones");
+const originalMirvPlayerUnits = own.units;
+const originalMirvDistance = behavior.game.euclideanDistSquared;
+own.units = (...types) =>
+  types.includes(UNIT.City)
+    ? [makeUnit(120, 1), makeUnit(5000, 1)]
+    : originalMirvPlayerUnits(...types);
+behavior.game.euclideanDistSquared = (left, right) => (left - right) ** 2;
+const carrierSiteDemands = [];
+behavior.appendMirvCarrierSiteDemands(carrierSiteDemands, { id: () => 9000 }, 100, 200);
+assert.deepEqual(
+  carrierSiteDemands.map((demand) => demand.targetTile),
+  [120],
+  "A MIRV carrier creates preparation demand for each exposed strategic site, not one false central target",
+);
+assert.equal(
+  carrierSiteDemands[0].carrierPreparation,
+  true,
+  "Carrier preparation remains distinct from exact separated-warhead destinations",
+);
+const originalMirvManhattanDistance = behavior.game.manhattanDist;
+behavior.game.manhattanDist = () => 49;
+const mirvDeadlineBoundary = { targetTile: 120, deadlineTick: 100 };
+assert.equal(
+  behavior.samTileCoversMirvDemand(100, mirvDeadlineBoundary, 95),
+  true,
+  "A MIRV SAM slot ready exactly at the five-tick safety boundary is usable",
+);
+assert.equal(
+  behavior.samTileCoversMirvDemand(100, mirvDeadlineBoundary, 96),
+  false,
+  "A MIRV SAM slot ready one tick inside the safety boundary is not coverage",
+);
+behavior.game.manhattanDist = originalMirvManhattanDistance;
+own.units = originalMirvPlayerUnits;
+behavior.game.euclideanDistSquared = originalMirvDistance;
+behavior.game.units = originalThreatGameUnits;
+
+const originalConstructionDuration = behavior.legendaryConstructionDuration;
+const originalPendingEvaluation = behavior.legendaryDefenseEvaluation;
+const originalPendingGameTicks = behavior.game.ticks;
+behavior.legendaryConstructionDuration = () => 5;
+behavior.legendaryDefenseEvaluation = (_context, options) => ({
+  hasThreats: true,
+  fullyDefended: false,
+  uninterceptedCount: options.extraSam.tile === 2222 ? 1 : 2,
+  minimumInterceptMarginTicks: 0,
+});
+const pendingCurrentEvaluation = {
+  hasThreats: true,
+  fullyDefended: false,
+  uninterceptedCount: 2,
+  minimumInterceptMarginTicks: 0,
+};
+behavior.legendaryConstructionDuration = () => 100;
+behavior.game.ticks = () => 150;
+const nearlyBuiltSam = makeUnit(3333, 1, { underConstruction: true });
+nearlyBuiltSam.__src = { state: { constructionStartTick: 75 } };
+assert.equal(
+  behavior.pendingSamRemainingConstructionTicks(nearlyBuiltSam),
+  25,
+  "Pending defense uses remaining construction time instead of restarting the full duration",
+);
+behavior.legendaryConstructionDuration = () => 5;
+own.sams = [makeUnit(1111, 1, { underConstruction: true })];
+assert.equal(
+  behavior.activeMissilePendingSamImproves({}, pendingCurrentEvaluation),
+  false,
+  "An unrelated SAM under construction does not block a useful defensive site",
+);
+own.sams = [makeUnit(2222, 1, { underConstruction: true })];
+assert.equal(
+  behavior.activeMissilePendingSamImproves({}, pendingCurrentEvaluation),
+  true,
+  "A pending SAM that reduces uncovered missiles suppresses redundant placement",
+);
+behavior.legendaryConstructionDuration = originalConstructionDuration;
+behavior.legendaryDefenseEvaluation = originalPendingEvaluation;
+behavior.game.ticks = originalPendingGameTicks;
+
+const originalIncrementalSamImprovement = behavior.activeMissileSamConstructionImproves;
+const originalUncoveredMirvDemands = behavior.uncoveredActiveMirvDemands;
+const originalMirvEmergencyEvaluation = behavior.legendaryDefenseEvaluation;
+behavior.uncoveredActiveMirvDemands = () => [{ targetTile: 777 }];
+behavior.legendaryDefenseEvaluation = () => ({
+  hasThreats: false,
+  fullyDefended: true,
+});
+const mirvOnlyEmergency = behavior.structureMissileEmergency(UNIT.SAMLauncher, {
+  activeMissileDefense: true,
+  missileDefenseContext: { threats: [] },
+});
+assert.equal(mirvOnlyEmergency.samDefense, true, "A MIRV-only demand activates SAM safety gating");
+assert.equal(
+  mirvOnlyEmergency.incrementalSamDefense,
+  true,
+  "Every MIRV-only candidate must prove destination coverage",
+);
+behavior.uncoveredActiveMirvDemands = originalUncoveredMirvDemands;
+behavior.legendaryDefenseEvaluation = originalMirvEmergencyEvaluation;
+behavior.activeMissileSamConstructionImproves = (tile) => tile === 42;
+const incrementalEmergency = {
+  active: true,
+  samDefense: true,
+  incrementalSamDefense: true,
+  context: {},
+  evaluation: {},
+};
+assert.equal(
+  behavior.structureEmergencyTileAllowed(41, UNIT.SAMLauncher, incrementalEmergency),
+  false,
+  "An active-missile SAM candidate that improves no trajectory is rejected",
+);
+assert.equal(
+  behavior.structureEmergencyTileAllowed(42, UNIT.SAMLauncher, incrementalEmergency),
+  true,
+  "A SAM candidate may make one measurable step across simultaneous trajectories",
+);
+behavior.activeMissileSamConstructionImproves = originalIncrementalSamImprovement;
+own.sams = [reactiveSam];
+
+behavior.missileDefenseSignalSnapshot = originalActiveMissileSignal;
+behavior.activeMissileDefenseContext = originalActiveMissileContext;
+behavior.legendaryDefenseEvaluation = originalDefenseEvaluation;
+behavior.maybeUpgradeMissileDefenseSam = originalMaybeUpgradeMissileDefenseSam;
+behavior.maybeSpawnStructure = originalActiveMissileMaybeSpawnStructure;
+
 // The dedicated hostile-silo SAM path is covered above; the wiring tests can
 // now exercise the proactive parity branch before ordinary construction.
+const originalActiveMissileMaximumPriority = behavior.handleActiveMissileSamMaximumPriority;
 const originalMaybeSpawnHostileSiloSam = behavior.maybeSpawnHostileSiloSam;
 const originalHostileSiloSamMaximumPriority = behavior.handleHostileSiloSamMaximumPriority;
 const originalHydrogenStructureCoverage = behavior.maybeEnsureHydrogenStructureCoverage;
 const originalHydrogenSiloUpgrade = behavior.maybeUpgradeHydrogenProtectionSam;
 behavior.maybeSpawnHostileSiloSam = async () => false;
+behavior.handleActiveMissileSamMaximumPriority = async () => null;
 behavior.handleHostileSiloSamMaximumPriority = async () => null;
 let wiredStructureCoverageCalls = 0;
 behavior.maybeEnsureHydrogenStructureCoverage = async () => {
@@ -2628,6 +2903,7 @@ assert.equal(
 );
 assert.equal(wiredUpgradeCalls, 1, "The reactive SAM path is wired into handleStructures");
 behavior.maybeSpawnHostileSiloSam = originalMaybeSpawnHostileSiloSam;
+behavior.handleActiveMissileSamMaximumPriority = originalActiveMissileMaximumPriority;
 behavior.handleHostileSiloSamMaximumPriority = originalHostileSiloSamMaximumPriority;
 behavior.maybeEnsureHydrogenStructureCoverage = originalHydrogenStructureCoverage;
 behavior.maybeUpgradeHydrogenProtectionSam = originalHydrogenSiloUpgrade;

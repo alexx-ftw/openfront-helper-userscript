@@ -122,6 +122,9 @@
   /** OpenFront's SAM upgrade ladder currently tops out at level five. */
   const HYDROGEN_SAM_MAX_UPGRADE_LEVEL = 5;
 
+  /** MirvExecution scatters candidate destinations across this map radius. */
+  const MIRV_CARRIER_TARGET_RADIUS = 1500;
+
   /** Ratio per city used for the first missile silo so nations start nuking earlier */
   const FIRST_MISSILE_SILO_RATIO = 0.4;
 
@@ -543,6 +546,10 @@
     // handleStructures — NationStructureBehavior.ts:143 (now async).
     async handleStructures() {
       const legendaryDifficulty = isLegendaryDifficulty();
+      const activeMissileSamDecision =
+        await this.handleActiveMissileSamMaximumPriority();
+      if (activeMissileSamDecision !== null) return activeMissileSamDecision;
+
       const hostileSiloSamDecision =
         await this.handleHostileSiloSamMaximumPriority();
       if (hostileSiloSamDecision !== null) return hostileSiloSamDecision;
@@ -579,6 +586,118 @@
         this.placementsCount++;
       }
       return built;
+    }
+
+    async handleActiveMissileSamMaximumPriority() {
+      if (!state.settings.winFixes) return null;
+      if (!autoBotBuildAllowed(UNIT.SAMLauncher)) return null;
+      if (this.game.config().isUnitDisabled(UNIT.SAMLauncher)) return null;
+      const signal = this.missileDefenseSignalSnapshot();
+      if (signal?.hasActiveHostileMissile !== true) return null;
+
+      const context = this.activeMissileDefenseContext();
+      const evaluation = this.legendaryDefenseEvaluation(context);
+      const uncoveredMirvDemands = this.uncoveredActiveMirvDemands(context);
+      if (
+        (!evaluation.hasThreats || evaluation.fullyDefended) &&
+        uncoveredMirvDemands.length === 0
+      ) return null;
+
+      // Consolidate first, but only when an upgrade measurably improves the
+      // actual trajectory schedule. A distant SAM must not consume gold merely
+      // because a missile exists somewhere on the map.
+      if (
+        evaluation.hasThreats &&
+        !evaluation.fullyDefended &&
+        (await this.maybeUpgradeMissileDefenseSam(context))
+      ) return true;
+      if (
+        this.activeMissilePendingSamImproves(
+          context,
+          evaluation,
+          uncoveredMirvDemands,
+        )
+      ) return false;
+
+      // The missile has a fixed deadline. Reserve the whole construction slot
+      // until a geometrically useful SAM can be afforded and placed; spending
+      // it on a Port/Warship/economy action can make the interception impossible.
+      return (await this.maybeSpawnStructure(UNIT.SAMLauncher, {
+        allowPreemptiveSam: true,
+        forceNewStructure: true,
+        prioritizeStructureCoverage: true,
+        missileDefenseContext: context,
+        activeMissileDefense: true,
+        probeLimit: STRUCTURE_PLACEMENT_CANDIDATE_LIMIT,
+        probeTimeoutMs: HOSTILE_SILO_SAM_PROBE_TIMEOUT_MS,
+        parallelProbeCount: DEFENSIVE_SAM_PROBE_CONCURRENCY,
+      })) === true;
+    }
+
+    activeMissilePendingSamImproves(
+      context,
+      currentEvaluation,
+      uncoveredMirvDemands = [],
+    ) {
+      const pendingSams = (this.player.units(UNIT.SAMLauncher) || []).filter(
+        (sam) => sam?.isUnderConstruction?.() === true,
+      );
+      if (pendingSams.length === 0) return false;
+      for (const sam of pendingSams) {
+        const completionTick = this.pendingSamRemainingConstructionTicks(sam);
+        if (
+          uncoveredMirvDemands.some((demand) =>
+            this.samTileCoversMirvDemand(
+              sam.tile?.(),
+              demand,
+              completionTick,
+            ),
+          )
+        ) return true;
+        const nextEvaluation = this.legendaryDefenseEvaluation(context, {
+          extraSam: {
+            id: `pending:${String(sam.id?.() ?? "sam")}`,
+            tile: sam.tile?.(),
+            level: Math.max(1, Number(sam.level?.() ?? 1)),
+            completionTick,
+          },
+          completionTick,
+        });
+        if (
+          legendaryDefenseActionImproves(
+            currentEvaluation,
+            nextEvaluation,
+            0,
+            0,
+          )
+        ) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    pendingSamRemainingConstructionTicks(sam) {
+      const duration = this.legendaryConstructionDuration(UNIT.SAMLauncher);
+      const raw = sam?.__src || sam;
+      const startTick = Number(
+        raw?.state?.constructionStartTick ?? raw?.constructionStartTick,
+      );
+      const now = Number(this.game.ticks?.());
+      if (!Number.isFinite(startTick) || !Number.isFinite(now)) return duration;
+      return Math.max(0, duration - Math.max(0, now - startTick));
+    }
+
+    activeMissileDefenseContext() {
+      const context = this.getMissileDefenseContext();
+      const threats = Array.isArray(context?.threats)
+        ? context.threats.filter((threat) => threat?.inFlight === true)
+        : [];
+      return {
+        ...context,
+        threats,
+        mirvDemands: this.activeMirvDefenseDemands(),
+      };
     }
 
     async handleHostileSiloSamMaximumPriority() {
@@ -1704,6 +1823,11 @@
       if (!isHostileActiveMissile(this.player, missile, mySid)) return null;
       const targetTile = missile.targetTile?.();
       const type = missile.type?.();
+      // The MIRV carrier separates into independently targeted warheads and
+      // never creates a blast of its own. Warhead units get exact zones once
+      // their destinations exist; querying nukeMagnitudes(MIRV) also throws in
+      // the authoritative engine because no carrier magnitude is defined.
+      if (type === UNIT.MIRV) return null;
       const radius = Number(config.nukeMagnitudes(type)?.outer);
       if (targetTile === null || targetTile === undefined) return null;
       if (!Number.isFinite(radius) || radius <= 0) return null;
@@ -3788,6 +3912,35 @@
       );
     }
 
+    activeMissileSamConstructionImproves(tile, context, currentEvaluation) {
+      if (tile === null || tile === undefined) return false;
+      const completionTick = this.legendaryConstructionDuration(
+        UNIT.SAMLauncher,
+      );
+      if (
+        this.uncoveredActiveMirvDemands(context).some((demand) =>
+          this.samTileCoversMirvDemand(tile, demand, completionTick),
+        )
+      ) return true;
+      if (!currentEvaluation?.hasThreats) return false;
+      const nextEvaluation = this.legendaryDefenseEvaluation(context, {
+        extraSam: {
+          id: "active-missile-candidate-sam",
+          tile,
+          level: 1,
+          completionTick,
+          availableTicks: [completionTick],
+        },
+        completionTick,
+      });
+      return legendaryDefenseActionImproves(
+        currentEvaluation,
+        nextEvaluation,
+        0,
+        0,
+      );
+    }
+
     legendaryTileInsideUninterceptedBlast(
       tile,
       context,
@@ -4201,7 +4354,10 @@
       const threats = [];
       let activeNukes;
       {
-        activeNukes = this.game.units(UNIT.AtomBomb, UNIT.HydrogenBomb);
+        activeNukes = this.game.units(
+          UNIT.AtomBomb,
+          UNIT.HydrogenBomb,
+        );
       }
       const mySid = this.player.smallID();
       const samProfiles =
@@ -4220,6 +4376,115 @@
       return threats;
     }
 
+    activeMirvDefenseDemands() {
+      const demands = [];
+      const mySid = this.player.smallID();
+      for (const missile of this.game.units(UNIT.MIRV, UNIT.MIRVWarhead) || []) {
+        if (!isHostileActiveMissile(this.player, missile, mySid)) continue;
+        const targetTile = missile.targetTile?.();
+        if (targetTile === null || targetTile === undefined) continue;
+        const fromTile = missile.tile?.();
+        if (fromTile === null || fromTile === undefined) continue;
+        const deadlineTick = this.activeMirvDeadlineTick(
+          missile,
+          fromTile,
+          targetTile,
+        );
+        if (missile.type?.() === UNIT.MIRV) {
+          this.appendMirvCarrierSiteDemands(
+            demands,
+            missile,
+            targetTile,
+            deadlineTick,
+          );
+          continue;
+        }
+        if (
+          typeof this.game.ownerID !== "function" ||
+          this.game.ownerID(targetTile) === mySid
+        ) {
+          demands.push({
+            missile,
+            type: UNIT.MIRVWarhead,
+            targetTile,
+            deadlineTick,
+            exactDestination: true,
+          });
+        }
+      }
+      return demands;
+    }
+
+    activeMirvDeadlineTick(missile, fromTile, targetTile) {
+      const motion = this.legendaryActiveMissileMotion(missile, fromTile);
+      return Math.max(
+        0,
+        Number(
+          motion?.impactTick ??
+            this.legendaryNukeFlightTime(fromTile, targetTile),
+        ),
+      );
+    }
+
+    appendMirvCarrierSiteDemands(
+      demands,
+      missile,
+      carrierTargetTile,
+      deadlineTick,
+    ) {
+      const radiusSquared = MIRV_CARRIER_TARGET_RADIUS ** 2;
+      const structures = this.player.units(
+        UNIT.City,
+        UNIT.Factory,
+        UNIT.Port,
+        UNIT.MissileSilo,
+      );
+      for (const structure of structures || []) {
+        const structureTile = structure.tile?.();
+        if (structureTile === null || structureTile === undefined) continue;
+        if (
+          this.game.euclideanDistSquared(carrierTargetTile, structureTile) >
+          radiusSquared
+        ) continue;
+        demands.push({
+          missile,
+          type: UNIT.MIRV,
+          targetTile: structureTile,
+          deadlineTick,
+          carrierPreparation: true,
+          protectedStructureId: structure.id?.(),
+        });
+      }
+    }
+
+    uncoveredActiveMirvDemands(context) {
+      return (context?.mirvDemands || []).filter(
+        (demand) => !this.activeMirvDemandCovered(demand),
+      );
+    }
+
+    activeMirvDemandCovered(demand) {
+      return this.legendaryFriendlySamUnits().some(
+        (sam) =>
+          this.legendarySamSlotAvailability(sam).some(
+            (tick) =>
+              this.samTileCoversMirvDemand(
+                sam.tile(),
+                demand,
+                tick,
+              ),
+          ),
+      );
+    }
+
+    samTileCoversMirvDemand(tile, demand, completionTick = 0) {
+      if (tile === null || tile === undefined) return false;
+      if (completionTick + LEGENDARY_SAM_IMPACT_MARGIN_TICKS > demand.deadlineTick) {
+        return false;
+      }
+      return this.game.manhattanDist(tile, demand.targetTile) < 50;
+    }
+
     legendaryActiveMissileThreat(nuke, mySid, context, samProfiles) {
       if (nuke.isActive && nuke.isActive() === false) return null;
       const owner = nuke.owner();
@@ -4231,15 +4496,26 @@
       if (targetTile === null || targetTile === undefined) return null;
       if (fromTile === null || fromTile === undefined) return null;
       const type = nuke.type();
-      if (type !== UNIT.AtomBomb && type !== UNIT.HydrogenBomb) return null;
-      const radius =
-        type === UNIT.HydrogenBomb ? context.hydrogenRadius : context.atomRadius;
+      if (!this.isNuclearMissileType(type)) return null;
+      const radius = this.activeMissileBlastRadius(type, context);
       const exposure = this.legendaryActiveMissileExposure(
         targetTile,
         radius,
         context.structures,
       );
-      if (exposure.count === 0) return null;
+      const targetsOwnedTerritory = this.activeMissileTargetsOwnedTerritory(
+        targetTile,
+        mySid,
+      );
+      // Nuclear strikes can sever the only territorial bridge and trigger
+      // cluster cleanup even when no City/Factory/Port/Silo is inside the
+      // blast. Owned land is therefore a first-class defensive asset.
+      if (exposure.count === 0 && !targetsOwnedTerritory) return null;
+      this.addActiveMissileTerritoryExposure(
+        exposure,
+        targetsOwnedTerritory,
+        context.totalValue,
+      );
       return this.legendaryScoredActiveMissileThreat({
         nuke,
         fromTile,
@@ -4250,6 +4526,34 @@
         context,
         samProfiles,
       });
+    }
+
+    isNuclearMissileType(type) {
+      return (
+        type === UNIT.AtomBomb ||
+        type === UNIT.HydrogenBomb
+      );
+    }
+
+    activeMissileBlastRadius(type, context) {
+      if (type === UNIT.HydrogenBomb) return context.hydrogenRadius;
+      const configured = Number(this.game.config().nukeMagnitudes?.(type)?.outer);
+      return Number.isFinite(configured) && configured > 0
+        ? configured
+        : context.atomRadius;
+    }
+
+    activeMissileTargetsOwnedTerritory(targetTile, mySid) {
+      return (
+        typeof this.game.ownerID === "function" &&
+        this.game.ownerID(targetTile) === mySid
+      );
+    }
+
+    addActiveMissileTerritoryExposure(exposure, targetsOwnedTerritory, totalValue) {
+      if (!targetsOwnedTerritory || exposure.value !== 0) return;
+      exposure.value = Math.max(1, Number(totalValue || 0));
+      exposure.targetsOwnedTerritory = true;
     }
 
     legendaryActiveMissileExposure(targetTile, radius, structures) {
@@ -4292,7 +4596,7 @@
       );
       const salvoRisk = legendaryMissileSalvoRisk({
         atomArrivalTicks:
-          input.type === UNIT.AtomBomb ? [flightTimeTicks] : [],
+          input.type === UNIT.HydrogenBomb ? [] : [flightTimeTicks],
         hydrogenArrivalTick:
           input.type === UNIT.HydrogenBomb ? flightTimeTicks : null,
         interceptionCapacity,
@@ -6033,7 +6337,7 @@
       return true;
     }
 
-    async maybeUpgradeMissileDefenseSam() {
+    async maybeUpgradeMissileDefenseSam(contextOverride = null) {
       if (!this.missileDefenseSamUpgradeEnabled()) return false;
       this._hostileMissileLaunchObserved = true;
       const upgradeableSamUnits = (
@@ -6054,9 +6358,11 @@
         this.spendableConstructionGold(),
       );
       if (upgradeCandidates.length === 0) return false;
-      const context = this.getMissileDefenseContext();
+      const context = contextOverride || this.getMissileDefenseContext();
       if (!context || !Array.isArray(context.threats) || context.threats.length === 0) return false;
-      const currentEvaluation = this.getMissileDefenseEvaluation(context);
+      const currentEvaluation = contextOverride
+        ? this.legendaryDefenseEvaluation(context)
+        : this.getMissileDefenseEvaluation(context);
       if (!currentEvaluation.hasThreats || currentEvaluation.fullyDefended) return false;
       const candidates = this.rankMissileDefenseSamUpgrades(
         upgradeCandidates,
@@ -6326,7 +6632,7 @@
       const valueFunction = this.structureTileValueFunction(type, options);
       if (valueFunction === null) return null;
       const compactness = this.structurePlacementCompactnessRanker(type);
-      const emergency = this.structureMissileEmergency(type);
+      const emergency = this.structureMissileEmergency(type, options);
       const scored = tiles
         .map((t) => ({
           t,
@@ -6340,6 +6646,7 @@
           scored,
           type,
           probe.probeTimeoutMs,
+          emergency,
         );
         if (localResult.handled) return localResult.buildable;
       }
@@ -6781,6 +7088,13 @@
               candidateLimit,
             );
       if (type === UNIT.SAMLauncher && options.prioritizeStructureCoverage) {
+        if (options.activeMissileDefense === true) {
+          tiles = this.prependActiveMissileRouteTiles(
+            tiles,
+            candidateLimit,
+            options.missileDefenseContext,
+          );
+        }
         tiles = this.uniqueOwnedStructureTiles(tiles);
       }
       if (
@@ -6791,6 +7105,87 @@
         tiles = this.prependSamCoveredTiles(tiles, candidateLimit);
       }
       return tiles;
+    }
+
+    prependActiveMissileRouteTiles(tiles, candidateLimit, context) {
+      const routeLimit = Math.max(1, Math.floor(candidateLimit / 2));
+      const routeTiles = this.activeMirvCandidateTiles(context).slice(
+        0,
+        routeLimit,
+      );
+      const seen = new Set();
+      for (const tile of routeTiles) seen.add(tile);
+      for (const path of this.activeMissileRoutePaths(context)) {
+        this.appendActiveMissilePathTiles(
+          routeTiles,
+          seen,
+          path,
+          routeLimit,
+        );
+        if (routeTiles.length >= routeLimit) break;
+      }
+      return routeTiles.concat(tiles).slice(0, candidateLimit);
+    }
+
+    activeMirvCandidateTiles(context) {
+      if (
+        typeof this.game.x !== "function" ||
+        typeof this.game.y !== "function" ||
+        typeof this.game.ref !== "function" ||
+        typeof this.game.isValidCoord !== "function"
+      ) return [];
+      const candidates = [];
+      const offsets = [
+        [40, 0],
+        [-40, 0],
+        [0, 40],
+        [0, -40],
+        [28, 20],
+        [-28, 20],
+        [28, -20],
+        [-28, -20],
+      ];
+      for (const demand of this.uncoveredActiveMirvDemands(context)) {
+        const x = this.game.x(demand.targetTile);
+        const y = this.game.y(demand.targetTile);
+        for (const [dx, dy] of offsets) {
+          if (!this.game.isValidCoord(x + dx, y + dy)) continue;
+          const tile = this.game.ref(x + dx, y + dy);
+          if (this.activeMissileRouteTileUsable(tile)) candidates.push(tile);
+        }
+      }
+      return candidates;
+    }
+
+    activeMissileRoutePaths(context) {
+      return (context?.threats || [])
+        .filter((threat) => threat?.inFlight === true)
+        .flatMap((threat) => threat.salvoPlan?.routes || [])
+        .map((route) => route?.path)
+        .filter(Array.isArray);
+    }
+
+    appendActiveMissilePathTiles(routeTiles, seen, path, candidateLimit) {
+      for (let index = path.length - 1; index >= 0; index--) {
+        const tile = path[index];
+        if (tile === null || tile === undefined || seen.has(tile)) continue;
+        if (!this.activeMissileRouteTileUsable(tile)) continue;
+        seen.add(tile);
+        routeTiles.push(tile);
+        if (routeTiles.length >= candidateLimit) return;
+      }
+    }
+
+    activeMissileRouteTileUsable(tile) {
+      const mySid = this.readPlayerSmallId(this.player);
+      if (
+        mySid !== null &&
+        typeof this.game.ownerID === "function" &&
+        this.game.ownerID(tile) !== mySid
+      ) {
+        return false;
+      }
+      return !this.isDangerousStructureTile(tile, UNIT.SAMLauncher);
     }
 
     uniqueOwnedStructureTiles(tiles) {
@@ -6833,15 +7228,28 @@
         : this.structureSpawnTileValue(type);
     }
 
-    structureMissileEmergency(type) {
-      if (!isLegendaryDifficulty()) return { active: false };
+    structureMissileEmergency(type, options = {}) {
+      if (
+        !isLegendaryDifficulty() &&
+        options.activeMissileDefense !== true &&
+        this.missileDefenseSignalSnapshot()?.hasActiveHostileMissile !== true
+      ) {
+        return { active: false };
+      }
       const tick = Number(this.game.ticks?.());
-      const context = this.getMissileDefenseContext();
-      const evaluation = this.getMissileDefenseEvaluation(context);
-      const active = evaluation.hasThreats && !evaluation.fullyDefended;
+      const context = options.missileDefenseContext || this.getMissileDefenseContext();
+      const evaluation = options.missileDefenseContext
+        ? this.legendaryDefenseEvaluation(context)
+        : this.getMissileDefenseEvaluation(context);
+      const uncoveredMirvDemands = this.uncoveredActiveMirvDemands(context);
+      const active =
+        (evaluation.hasThreats && !evaluation.fullyDefended) ||
+        uncoveredMirvDemands.length > 0;
       return {
         active,
         samDefense: type === UNIT.SAMLauncher && active,
+        incrementalSamDefense:
+          type === UNIT.SAMLauncher && options.activeMissileDefense === true,
         tick,
         context,
         evaluation,
@@ -6849,7 +7257,7 @@
       };
     }
 
-    async probeCoveragePrioritySamTiles(scored, type, timeoutMs) {
+    async probeCoveragePrioritySamTiles(scored, type, timeoutMs, emergency) {
       const snappedTiles = new Set();
       let attempts = 0;
       for (const { t } of scored) {
@@ -6857,6 +7265,9 @@
         if (snappedTile === null) return { handled: false, buildable: null };
         if (snappedTile === false || snappedTiles.has(snappedTile)) continue;
         snappedTiles.add(snappedTile);
+        if (!this.structureEmergencyTileAllowed(snappedTile, type, emergency)) {
+          continue;
+        }
         attempts++;
         const bu = await this.buildableFor(type, t, timeoutMs);
         if (this.isUsableStructureBuildable(bu, t, type)) {
@@ -6903,7 +7314,13 @@
     structureEmergencyTileAllowed(tile, type, emergency) {
       if (
         emergency.samDefense &&
-        !this.legendarySamConstructionSafeForTile(tile, emergency.context)
+        !(emergency.incrementalSamDefense
+          ? this.activeMissileSamConstructionImproves(
+              tile,
+              emergency.context,
+              emergency.evaluation,
+            )
+          : this.legendarySamConstructionSafeForTile(tile, emergency.context))
       ) return false;
       return !(
         emergency.active &&
