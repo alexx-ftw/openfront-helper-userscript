@@ -666,6 +666,7 @@
       // it on a Port/Warship/economy action can make the interception impossible.
       return (await this.maybeSpawnStructure(UNIT.SAMLauncher, {
         allowPreemptiveSam: true,
+        useActualCost: true,
         forceNewStructure: true,
         prioritizeStructureCoverage: true,
         missileDefenseContext: context,
@@ -1447,6 +1448,7 @@
     hostileSiloSamPlacementOptions() {
       return {
         allowPreemptiveSam: true,
+        useActualCost: true,
         forceNewStructure: true,
         prioritizeStructureCoverage: true,
         probeLimit: STRUCTURE_PLACEMENT_CANDIDATE_LIMIT,
@@ -5990,7 +5992,7 @@
     // maybeSpawnStructure — NationStructureBehavior.ts:585 (now async).
     async maybeSpawnStructure(type, options = {}) {
       if (!this.structureSpawnEligible(type, options)) return false;
-      const perceivedCost = this.getConstructionCost(type);
+      const perceivedCost = this.constructionCostForOptions(type, options);
       // Keep the MIRV war chest scoped to offensive silo construction. Cities,
       // factories, ports and SAMs must still spend normal available gold.
       const availableGold = this.availableGoldAfterReserve(type);
@@ -6050,6 +6052,11 @@
         bu.canBuild,
         tr("🏗️ Build {type}", { type }),
       );
+    }
+
+    constructionCostForOptions(type, options = {}) {
+      if (options.useActualCost === true) return this.cost(type);
+      return this.getConstructionCost(type);
     }
 
     emitStructureBuild(buildMenu, buildable, tile, action) {
@@ -6204,7 +6211,14 @@
     }
 
     async maybeUpgradePlannedSam(plan) {
-      if (!this.hasObservedHostileMissileLaunch()) return false;
+      // A built hostile Silo is enough evidence to complete a proven coverage
+      // or capacity upgrade before its first missile consumes that window.
+      if (
+        !this.hasObservedHostileMissileLaunch() &&
+        !this.hasBuiltHostileSiloThreat()
+      ) {
+        return false;
+      }
       if (!plan || plan.targetLevel <= plan.currentLevel) return false;
 
       const availableGold = this.spendableConstructionGold();
@@ -6252,10 +6266,10 @@
       const plan = this.hydrogenStructureCoveragePlan();
       if (!plan) return false;
       if (plan.needsNewSam) {
-        return this.maybeSpawnStructure(UNIT.SAMLauncher, {
-          forceNewStructure: true,
-          prioritizeStructureCoverage: true,
-        });
+        return this.maybeSpawnStructure(
+          UNIT.SAMLauncher,
+          this.hostileSiloSamPlacementOptions(),
+        );
       }
       return this.maybeUpgradePlannedSam(plan);
     }

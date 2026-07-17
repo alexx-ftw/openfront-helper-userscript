@@ -801,6 +801,7 @@ assert.deepEqual(
     type,
     {
       allowPreemptiveSam: options.allowPreemptiveSam,
+      useActualCost: options.useActualCost,
       forceNewStructure: options.forceNewStructure,
       prioritizeStructureCoverage: options.prioritizeStructureCoverage,
       probeLimit: options.probeLimit,
@@ -813,6 +814,7 @@ assert.deepEqual(
       UNIT.SAMLauncher,
       {
         allowPreemptiveSam: true,
+        useActualCost: true,
         forceNewStructure: true,
         prioritizeStructureCoverage: true,
         probeLimit: 25,
@@ -1711,6 +1713,22 @@ assert.equal(
   UNIT.SAMLauncher,
   "The first hostile Silo creates a defensive SAM reserve before offense",
 );
+const firstSiloCoverageSpawns = [];
+firstSiloCoverageBehavior._hostileMissileLaunchObserved = false;
+firstSiloCoverageBehavior.maybeSpawnStructure = async (...args) => {
+  firstSiloCoverageSpawns.push(args);
+  return true;
+};
+assert.equal(
+  await firstSiloCoverageBehavior.maybeEnsureHydrogenStructureCoverage(),
+  true,
+  "A first hostile Silo authorizes the required coverage SAM before a missile launches",
+);
+assert.deepEqual(
+  firstSiloCoverageSpawns.map(([type, options]) => [type, options.useActualCost]),
+  [[UNIT.SAMLauncher, true]],
+  "Pre-launch coverage SAMs use the literal affordable cost instead of a save-up multiplier",
+);
 
 let coverageSamLevel = 1;
 const structureCoverageSam = {
@@ -1721,7 +1739,7 @@ const structureCoverageSam = {
   isActive: () => true,
 };
 const structureCoverageBehavior = Object.create(sandbox.__StructureBehavior.prototype);
-structureCoverageBehavior._hostileMissileLaunchObserved = true;
+structureCoverageBehavior._hostileMissileLaunchObserved = false;
 let structureCoverageTick = 1;
 let structureCoverageDistanceCalls = 0;
 structureCoverageBehavior.player = {
@@ -1760,9 +1778,32 @@ sentBuilds.length = 0;
 assert.equal(
   await structureCoverageBehavior.maybeEnsureHydrogenStructureCoverage(),
   true,
-  "Structure protection emits the required SAM upgrade",
+  "A built hostile Silo emits the required SAM upgrade before its first missile",
 );
 assert.equal(sentBuilds.length, 1, "Structure protection emits one upgrade action");
+const literalCostSamBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+literalCostSamBehavior.structureSpawnEligible = () => true;
+literalCostSamBehavior.cost = () => 3_000_000n;
+literalCostSamBehavior.getConstructionCost = () => {
+  throw new Error("Emergency SAM must bypass perceived-cost gating");
+};
+literalCostSamBehavior.availableGoldAfterReserve = () => 3_000_000n;
+literalCostSamBehavior.player = { units: () => [] };
+literalCostSamBehavior.structureUpgradeBeforeSpawn = async () => null;
+const literalCostSamBuildable = { type: UNIT.SAMLauncher, canBuild: 77 };
+literalCostSamBehavior.structureSpawnTile = async () => literalCostSamBuildable;
+const literalCostSamBuildCount = sentBuilds.length;
+assert.equal(
+  await literalCostSamBehavior.maybeSpawnStructure(UNIT.SAMLauncher, {
+    allowPreemptiveSam: true,
+    forceNewStructure: true,
+    useActualCost: true,
+  }),
+  true,
+  "A hostile-Silo SAM builds when literal gold covers its authoritative cost",
+);
+assert.equal(sentBuilds.length, literalCostSamBuildCount + 1);
+assert.equal(sentBuilds.at(-1), literalCostSamBuildable);
 assert.equal(
   structureCoverageDistanceCalls,
   firstCoverageDistanceCalls,
