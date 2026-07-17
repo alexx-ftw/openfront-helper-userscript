@@ -1700,6 +1700,54 @@ assert.equal(
   "future-food scoring reuses the coherent per-decision food-race snapshot",
 );
 
+let contesterLocationReads = 0;
+const indexedContester = makeTargetPlayer(31, "Human", [], 100, { x: 5, y: 0 });
+indexedContester.nameLocation = () => {
+  contesterLocationReads++;
+  return { x: 5, y: 0 };
+};
+const indexedTargetTribe = makeTargetPlayer(32, "Bot", [], 100, { x: 10, y: 0 });
+indexedTargetTribe.nameLocation = () => {
+  contesterLocationReads++;
+  return { x: 10, y: 0 };
+};
+const indexedContesterBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+indexedContesterBehavior.player = targetMe;
+indexedContesterBehavior.game = {
+  isValidCoord: () => true,
+  ref: (x) => x,
+  manhattanDist: (left, right) => Math.abs(left - right),
+};
+const indexedContesterTiles = indexedContesterBehavior.getEarlyGameContesterTiles(
+  [targetMe, indexedContester, indexedTargetTribe],
+  targetMe.smallID(),
+);
+assert.equal(
+  indexedContesterBehavior.countEarlyGameNearbyContesters(
+    [],
+    indexedTargetTribe.smallID(),
+    targetMe.smallID(),
+    { x: 10, y: 0 },
+    indexedContesterTiles,
+  ),
+  1,
+);
+assert.equal(
+  indexedContesterBehavior.countEarlyGameNearbyContesters(
+    [],
+    indexedTargetTribe.smallID(),
+    targetMe.smallID(),
+    { x: 10, y: 0 },
+    indexedContesterTiles,
+  ),
+  1,
+);
+assert.equal(
+  contesterLocationReads,
+  2,
+  "candidate scoring reads each contester location once per decision",
+);
+
 const explorationRouteBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 let explorationEta = 1200;
 explorationRouteBehavior.game = {

@@ -2662,14 +2662,40 @@
       return this.game.manhattanDist(myTile, tribeTile);
     }
 
-    countEarlyGameNearbyContesters(otherPlayers, tribeSid, mySid, tribeCenter) {
+    getEarlyGameContesterTiles(otherPlayers, mySid) {
+      const contesters = [];
+      for (const other of otherPlayers) {
+        const location = this.earlyGameContesterLocation(other, null, mySid);
+        if (!location) continue;
+        contesters.push({
+          sid: other.smallID(),
+          tile: this.game.ref(location.x, location.y),
+        });
+      }
+      return contesters;
+    }
+
+    countEarlyGameNearbyContesters(
+      otherPlayers,
+      tribeSid,
+      mySid,
+      tribeCenter,
+      contesterTiles = null,
+    ) {
       if (!tribeCenter || tribeCenter.x == null) return 0;
       let count = 0;
+      const tribeTile = this.game.ref(tribeCenter.x, tribeCenter.y);
+      if (contesterTiles) {
+        for (const contester of contesterTiles) {
+          if (contester.sid === tribeSid) continue;
+          if (this.game.manhattanDist(contester.tile, tribeTile) <= 80) count++;
+        }
+        return count;
+      }
       for (const other of otherPlayers) {
         const location = this.earlyGameContesterLocation(other, tribeSid, mySid);
         if (!location) continue;
         const otherTile = this.game.ref(location.x, location.y);
-        const tribeTile = this.game.ref(tribeCenter.x, tribeCenter.y);
         if (this.game.manhattanDist(otherTile, tribeTile) <= 80) count++;
       }
       return count;
@@ -2706,39 +2732,72 @@
     createEarlyGameTribeCandidate(tribe, context) {
       const border = context.borderByTribe.get(tribe) || new Set();
       const tribeSid = tribe.smallID();
-      const boundary = analyzeTribeBoundary({
-        game: this.game,
-        player: this.player,
-        border,
-        tribeSid,
-        mySid: context.mySid,
-        playersBySid: context.playersBySid,
-      });
+      const boundary = profileAttackSync(
+        context.profile,
+        "tribes-candidate-boundary",
+        () =>
+          analyzeTribeBoundary({
+            game: this.game,
+            player: this.player,
+            border,
+            tribeSid,
+            mySid: context.mySid,
+            playersBySid: context.playersBySid,
+          }),
+      );
       const ratio = (value) =>
         boundary.boundaryEdges > 0 ? value / boundary.boundaryEdges : 0;
-      const tribeCenter =
-        border.size > 0
-          ? calculateBoundingBoxCenter(this.game, border)
-          : tribe.nameLocation?.() || null;
-      const nearbyContesters = this.countEarlyGameNearbyContesters(
-        context.otherPlayers,
-        tribeSid,
-        context.mySid,
-        tribeCenter,
+      const tribeCenter = profileAttackSync(
+        context.profile,
+        "tribes-candidate-center",
+        () =>
+          border.size > 0
+            ? calculateBoundingBoxCenter(this.game, border)
+            : tribe.nameLocation?.() || null,
       );
-      const incomingContesters = this.countEarlyGameIncomingContesters(
-        tribe,
-        tribeSid,
-        context.mySid,
+      const nearbyContesters = profileAttackSync(
+        context.profile,
+        "tribes-candidate-nearby-contesters",
+        () =>
+          this.countEarlyGameNearbyContesters(
+            context.otherPlayers,
+            tribeSid,
+            context.mySid,
+            tribeCenter,
+            context.contesterTiles,
+          ),
       );
-      const foodRace = this.getEarlyGameFoodRaceSignals({
-        tribe,
-        tribeSid,
-        tribeCenter,
-        competitorProfiles: context.competitorProfiles,
-      });
-      const maritimeDistance = this.getEarlyGameMaritimeDistance(border);
-      const defenseProfile = this.getEnemyDefensePostAttackProfile(tribe, border);
+      const incomingContesters = profileAttackSync(
+        context.profile,
+        "tribes-candidate-incoming-contesters",
+        () =>
+          this.countEarlyGameIncomingContesters(
+            tribe,
+            tribeSid,
+            context.mySid,
+          ),
+      );
+      const foodRace = profileAttackSync(
+        context.profile,
+        "tribes-candidate-food-race",
+        () =>
+          this.getEarlyGameFoodRaceSignals({
+            tribe,
+            tribeSid,
+            tribeCenter,
+            competitorProfiles: context.competitorProfiles,
+          }),
+      );
+      const maritimeDistance = profileAttackSync(
+        context.profile,
+        "tribes-candidate-maritime-distance",
+        () => this.getEarlyGameMaritimeDistance(border),
+      );
+      const defenseProfile = profileAttackSync(
+        context.profile,
+        "tribes-candidate-defense-profile",
+        () => this.getEnemyDefensePostAttackProfile(tribe, border),
+      );
       const targetTiles = Math.max(1, Number(tribe.numTilesOwned?.()) || border.size || 1);
       const estimatedCaptureCost =
         Math.max(1, Number(tribe.troops()) || 0) *
@@ -3084,6 +3143,11 @@
           .map((player) => [player.smallID(), player]),
       );
       const myCenter = this.getPlayerCenter(this.player);
+      const contesterTiles = profileAttackSync(
+        profile,
+        "tribes-contester-index",
+        () => this.getEarlyGameContesterTiles(otherPlayers, mySid),
+      );
       const hasOpenOceanAccess = Array.from(
         this.player.borderTiles?.() || [],
       ).some((tile) => this.isEarlyGameMaritimeShore(tile));
@@ -3093,10 +3157,12 @@
         () => this.getEarlyGameCandidateBorders(nearbyTribes, topologyBordersById),
       );
       const candidateContext = {
+        profile,
         otherPlayers,
         playersBySid,
         myCenter,
         mySid,
+        contesterTiles,
         hasOpenOceanAccess,
         competitorProfiles,
         borderByTribe,
