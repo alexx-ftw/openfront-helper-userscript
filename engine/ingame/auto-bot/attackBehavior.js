@@ -77,6 +77,11 @@
   // async enrichment bounded so a crowded tribe map cannot starve the combat tick.
   const EARLY_TRIBE_CANDIDATES = 8;
   const EARLY_TRIBE_BOAT_ETA_TARGETS = BOAT_PROBE_CANDIDATES;
+  // A route ETA can fan out into several pathfinder probes.  Evaluate only
+  // the highest-priority cold candidates in one strategic decision; after
+  // that batch is cached, the next decision naturally advances to the
+  // remaining cluster gateways without a multi-batch frame spike.
+  const EARLY_TRIBE_BOAT_ETA_CANDIDATE_BUDGET = EARLY_TRIBE_BOAT_ETA_TARGETS;
   // A stable coast does not need sixteen new pathfinder probes every strategic
   // decision. Revalidate promptly, and invalidate immediately on either border
   // snapshot changing so new ports/territory can still alter the route.
@@ -3278,32 +3283,29 @@
         candidate.boatEtaTicks = cached.eta;
         candidate.boatTargetTile = cached.targetTile;
       }
-      for (
-        let start = 0;
-        start < uncachedCandidates.length;
-        start += EARLY_TRIBE_BOAT_ETA_TARGETS
-      ) {
-        const batch = uncachedCandidates.slice(start, start + EARLY_TRIBE_BOAT_ETA_TARGETS);
-        const results = await Promise.all(
-          batch.map(async ({ candidate, targetBorder }) => ({
-            candidate,
+      const batch = uncachedCandidates.slice(
+        0,
+        EARLY_TRIBE_BOAT_ETA_CANDIDATE_BUDGET,
+      );
+      const results = await Promise.all(
+        batch.map(async ({ candidate, targetBorder }) => ({
+          candidate,
+          targetBorder,
+          boatEtaTicks: await this.estimateEarlyGameTribeBoatEta(
             targetBorder,
-            boatEtaTicks: await this.estimateEarlyGameTribeBoatEta(
-              targetBorder,
-              candidate,
-              ownShores,
-            ),
-          })),
+            candidate,
+            ownShores,
+          ),
+        })),
+      );
+      for (const { candidate, targetBorder, boatEtaTicks } of results) {
+        candidate.boatEtaTicks = boatEtaTicks;
+        this.cacheEarlyGameTribeBoatEta(
+          candidate,
+          ownBorder,
+          targetBorder,
+          tick,
         );
-        for (const { candidate, targetBorder, boatEtaTicks } of results) {
-          candidate.boatEtaTicks = boatEtaTicks;
-          this.cacheEarlyGameTribeBoatEta(
-            candidate,
-            ownBorder,
-            targetBorder,
-            tick,
-          );
-        }
       }
     }
 

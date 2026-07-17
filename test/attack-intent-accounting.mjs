@@ -1471,4 +1471,54 @@ sandbox.state.settings.islandScanRadius = originalIslandScanRadius;
 sandbox.state.settings.islandScanStep = originalIslandScanStep;
 sandbox.state.settings.islandScanSamples = originalIslandScanSamples;
 
+const boatEtaBudgetBehavior = Object.create(sandbox.AttackBehavior.prototype);
+let boatEtaBudgetTick = 1;
+const boatEtaRouteCalls = [];
+const boatEtaOwnShores = [1];
+boatEtaBudgetBehavior.currentAttackDecisionTick = () => boatEtaBudgetTick;
+boatEtaBudgetBehavior.getEarlyGameOwnShores = () => boatEtaOwnShores;
+boatEtaBudgetBehavior.estimateEarlyGameTribeBoatEta = async (_border, candidate) => {
+  boatEtaRouteCalls.push(candidate.id);
+  candidate.boatTargetTile = Number(candidate.id.slice(-1));
+  return 12;
+};
+const boatEtaBudgetPlayers = Array.from({ length: 6 }, (_unused, index) => ({
+  id: `sea-${index + 1}`,
+}));
+const makeBoatEtaBudgetCandidates = () =>
+  boatEtaBudgetPlayers.map((player, index) => ({
+    id: `sea-${index + 1}`,
+    player,
+    landBorder: false,
+  }));
+const boatEtaBudgetBorders = new Map(
+  boatEtaBudgetPlayers.map((player, index) => [player, new Set([100 + index])]),
+);
+const firstBoatEtaBudgetCandidates = makeBoatEtaBudgetCandidates();
+await boatEtaBudgetBehavior.enrichEarlyGameTribeBoatEtas(
+  firstBoatEtaBudgetCandidates,
+  boatEtaBudgetBorders,
+);
+assert.deepEqual(
+  boatEtaRouteCalls,
+  ["sea-1", "sea-2", "sea-3", "sea-4"],
+  "one opening decision probes only the prioritized maritime ETA batch",
+);
+assert.equal(
+  firstBoatEtaBudgetCandidates[4].boatEtaTicks,
+  undefined,
+  "uncached lower-priority sea tribes wait for a later decision instead of extending the frame",
+);
+const secondBoatEtaBudgetCandidates = makeBoatEtaBudgetCandidates();
+boatEtaBudgetTick += 1;
+await boatEtaBudgetBehavior.enrichEarlyGameTribeBoatEtas(
+  secondBoatEtaBudgetCandidates,
+  boatEtaBudgetBorders,
+);
+assert.deepEqual(
+  boatEtaRouteCalls,
+  ["sea-1", "sea-2", "sea-3", "sea-4", "sea-5", "sea-6"],
+  "cached priorities let the next decision advance to every remaining sea gateway",
+);
+
 process.stdout.write("attack intent accounting tests passed\n");
