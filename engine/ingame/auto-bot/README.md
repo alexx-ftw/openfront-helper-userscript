@@ -43,6 +43,12 @@ each snapshot. A successful route is reused across snapshots only when that
 probe returns the exact same spawn tile for the same destination; a changed
 spawn recalculates the route immediately.
 
+Within one tribe-ranking decision, every maritime candidate shares one
+authoritative snapshot of our shore tiles. Target shores compute their minimum
+distance to that snapshot once before stable ranking, rather than repeatedly
+rescanning every owned shore from the sort comparator. Direct ETA calls still
+materialize their own current snapshot, so only same-decision work is reused.
+
 Terra Nullius attacks use the greater of 3% of the current army or the
 calculated one-tile loss plus a 25% margin. During the first 500 ticks, all
 accepted free-land intents share a cumulative ceiling of 60% of the spawning

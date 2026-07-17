@@ -2934,6 +2934,9 @@
 
     async enrichEarlyGameTribeBoatEtas(candidates, borderByTribe) {
       const seaCandidates = candidates.filter((candidate) => !candidate.landBorder);
+      const ownShores = Array.from(this.player.borderTiles()).filter((tile) =>
+        this.game.isShore(tile),
+      );
       for (
         let start = 0;
         start < seaCandidates.length;
@@ -2946,6 +2949,7 @@
             boatEtaTicks: await this.estimateEarlyGameTribeBoatEta(
               borderByTribe.get(candidate.player) || new Set(),
               candidate,
+              ownShores,
             ),
           })),
         );
@@ -3310,7 +3314,11 @@
       return candidates;
     }
 
-    async estimateEarlyGameTribeBoatEta(targetBorder, candidate = null) {
+    async estimateEarlyGameTribeBoatEta(
+      targetBorder,
+      candidate = null,
+      sharedOwnShores = null,
+    ) {
       {
         if (this.game.config().isUnitDisabled(UNIT.TransportShip)) return null;
       }
@@ -3325,9 +3333,7 @@
         return null;
       }
 
-      const ownShores = Array.from(this.player.borderTiles()).filter((tile) =>
-        this.game.isShore(tile),
-      );
+      const ownShores = this.getEarlyGameOwnShores(sharedOwnShores);
       const targetShores = Array.from(targetBorder || []).filter((tile) =>
         this.game.isShore(tile),
       );
@@ -3341,14 +3347,14 @@
         }
         return best;
       };
-      targetShores.sort(
-        (a, b) => distanceToOwnShore(a) - distanceToOwnShore(b),
-      );
+      const rankedTargetShores = targetShores
+        .map((tile) => ({ tile, distance: distanceToOwnShore(tile) }))
+        .sort((left, right) => left.distance - right.distance);
 
       const measuredRoutes = await Promise.all(
-        targetShores
+        rankedTargetShores
           .slice(0, EARLY_TRIBE_BOAT_ETA_TARGETS)
-          .map(async (targetShore) => {
+          .map(async ({ tile: targetShore }) => {
           {
             const spawn = await withTimeout(
               this.player.bestTransportShipSpawn(targetShore),
@@ -3374,6 +3380,13 @@
       if (!bestRoute) return null;
       if (candidate) candidate.boatTargetTile = bestRoute.tile;
       return bestRoute.eta;
+    }
+
+    getEarlyGameOwnShores(sharedOwnShores = null) {
+      if (Array.isArray(sharedOwnShores)) return sharedOwnShores;
+      return Array.from(this.player.borderTiles()).filter((tile) =>
+        this.game.isShore(tile),
+      );
     }
 
     // Keep a bounded, best-effort profile of how visible rivals are expanding.

@@ -1574,6 +1574,37 @@ const targetBehavior = new targetSandbox.AttackBehavior(
   {},
 );
 
+const sharedShoreBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+let sharedShoreBorderReads = 0;
+sharedShoreBehavior.player = {
+  borderTiles: () => {
+    sharedShoreBorderReads++;
+    return new Set([1, 2, 3]);
+  },
+};
+sharedShoreBehavior.game = { isShore: (tile) => tile !== 2 };
+const sharedShoreSnapshots = [];
+sharedShoreBehavior.estimateEarlyGameTribeBoatEta = async (_border, _candidate, ownShores) => {
+  sharedShoreSnapshots.push(ownShores);
+  return 10;
+};
+const sharedShorePlayers = [{ id: "sea-a" }, { id: "sea-b" }];
+const sharedShoreCandidates = sharedShorePlayers.map((player) => ({
+  player,
+  landBorder: false,
+}));
+await sharedShoreBehavior.enrichEarlyGameTribeBoatEtas(
+  sharedShoreCandidates,
+  new Map(sharedShorePlayers.map((player) => [player, new Set()])),
+);
+assert.equal(sharedShoreBorderReads, 1, "one decision materializes our shores once");
+assert.strictEqual(
+  sharedShoreSnapshots[1],
+  sharedShoreSnapshots[0],
+  "all maritime tribe probes share the same authoritative shore snapshot",
+);
+assert.deepEqual([...sharedShoreSnapshots[0]], [1, 3]);
+
 const surgeBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 surgeBehavior.game = { ticks: () => 110 };
 surgeBehavior.player = {
