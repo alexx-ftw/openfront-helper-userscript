@@ -2593,12 +2593,19 @@
     }
 
     connectEarlyGameTribeAdjacencyTile(tribeId, tile, edibleIds, adjacency) {
-      for (const neighbor of this.game.neighbors(tile) || []) {
+      const connectNeighbor = (neighbor) => {
         const neighborId = this.game.ownerID(neighbor);
-        if (neighborId == null || neighborId === tribeId) continue;
-        if (!edibleIds.has(neighborId)) continue;
+        if (neighborId == null || neighborId === tribeId) return;
+        if (!edibleIds.has(neighborId)) return;
         adjacency.get(tribeId).add(neighborId);
         adjacency.get(neighborId).add(tribeId);
+      };
+      if (typeof this.game.forEachNeighbor === "function") {
+        this.game.forEachNeighbor(tile, connectNeighbor);
+        return;
+      }
+      for (const neighbor of this.game.neighbors(tile) || []) {
+        connectNeighbor(neighbor);
       }
     }
 

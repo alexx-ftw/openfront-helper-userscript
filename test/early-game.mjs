@@ -2212,7 +2212,10 @@ assert.ok(
 );
 const ownerOnlyAdjacencyBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 ownerOnlyAdjacencyBehavior.game = {
-  neighbors: () => [20_001],
+  forEachNeighbor: (_tile, visit) => visit(20_001),
+  neighbors: () => {
+    throw new Error("tribe adjacency should use zero-allocation neighbor iteration");
+  },
   ownerID: () => 202,
   isLand: () => {
     throw new Error("an edible owner id already proves that the neighbor is land");
@@ -2240,9 +2243,9 @@ const topologyOwners = new Map([
   [31, 2],
 ]);
 incrementalTopologyBehavior.game = {
-  neighbors: (tile) => {
+  forEachNeighbor: (tile, visit) => {
     incrementalNeighborCalls++;
-    return [tile + 1];
+    visit(tile + 1);
   },
   ownerID: (tile) => topologyOwners.get(tile),
 };
