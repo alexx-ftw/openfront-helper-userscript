@@ -1610,6 +1610,22 @@ assert.strictEqual(
 );
 assert.deepEqual([...sharedShoreSnapshots[0]], [1, 3]);
 
+const boatEtaRankBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+const rankedBoatEtaShores = boatEtaRankBehavior.rankEarlyGameTribeBoatTargetShores(
+  [90, 91, 92, 93, 94, 95, 96],
+  (tile) => ({ 90: 6, 91: 2, 92: 2, 93: 9, 94: 1, 95: 4, 96: 2 })[tile],
+);
+assert.deepEqual(
+  Array.from(rankedBoatEtaShores, ({ tile, distance }) => [tile, distance]),
+  [
+    [94, 1],
+    [91, 2],
+    [92, 2],
+    [96, 2],
+  ],
+  "streaming boat-ETA ranking keeps the stable top four shores from the full sort",
+);
+
 const surgeBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 surgeBehavior.game = { ticks: () => 110 };
 surgeBehavior.player = {

@@ -3595,9 +3595,10 @@
         }
         return best;
       };
-      const rankedTargetShores = targetShores
-        .map((tile) => ({ tile, distance: distanceToOwnShore(tile) }))
-        .sort((left, right) => left.distance - right.distance);
+      const rankedTargetShores = this.rankEarlyGameTribeBoatTargetShores(
+        targetShores,
+        distanceToOwnShore,
+      );
 
       const measuredRoutes = await Promise.all(
         rankedTargetShores
@@ -3628,6 +3629,29 @@
       if (!bestRoute) return null;
       if (candidate) candidate.boatTargetTile = bestRoute.tile;
       return bestRoute.eta;
+    }
+
+    // Keep only the same first K shores that a stable full distance sort would
+    // select. Tribe borders can contain thousands of shore tiles; materializing
+    // and sorting every `{ tile, distance }` record was a measurable main-thread
+    // spike even though the next stage probes only K routes. Strictly inserting
+    // before larger distances preserves original border iteration order for ties.
+    rankEarlyGameTribeBoatTargetShores(targetShores, distanceToOwnShore) {
+      const ranked = [];
+      for (const tile of targetShores) {
+        const distance = distanceToOwnShore(tile);
+        let index = 0;
+        while (
+          index < ranked.length &&
+          ranked[index].distance <= distance
+        ) {
+          index++;
+        }
+        if (index >= EARLY_TRIBE_BOAT_ETA_TARGETS) continue;
+        ranked.splice(index, 0, { tile, distance });
+        if (ranked.length > EARLY_TRIBE_BOAT_ETA_TARGETS) ranked.pop();
+      }
+      return ranked;
     }
 
     getEarlyGameOwnShores(sharedOwnShores = null) {
