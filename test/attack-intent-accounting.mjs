@@ -826,6 +826,33 @@ assert.equal(
   6500,
   "tribe reinforcement includes a pending top-up but still fills a newly grown capture floor",
 );
+
+const fractionalPendingTribeTarget = {
+  ...parallelTribeA,
+  troops: () => 59905,
+};
+const fractionalPendingTribeBehavior = new sandbox.AttackBehavior(
+  {},
+  game,
+  parallelMe,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+fractionalPendingTribeBehavior.getLiveOutboundAttackTroopsForTarget = () => 0;
+fractionalPendingTribeBehavior.getPendingOutboundAttackTroopsForTarget = () => 945.408;
+assert.equal(
+  fractionalPendingTribeBehavior.calculateBotAttackTroops(fractionalPendingTribeTarget, 238675),
+  238675,
+  "a fractional pending force rounds the remaining whole-troop conquest payload up",
+);
+assert.equal(
+  fractionalPendingTribeBehavior.calculateBotAttackTroops(fractionalPendingTribeTarget, 238674),
+  0,
+  "a tribe capture is deferred rather than emitting one troop below its conquest floor",
+);
 outgoing.length = 0;
 parallelTribeA.troops = () => 1000;
 parallelBehavior.botAttackPendingIntentCommitments = [];

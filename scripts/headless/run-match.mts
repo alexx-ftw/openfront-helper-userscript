@@ -171,26 +171,29 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
     const attackTargets = intents
       .filter((intent) => intent.type === "attack")
       .map((intent) => {
+        const snapshot = intent.attackTargetSnapshot;
         const target =
           intent.targetID === null
             ? null
             : runner.game.players().find((player) => player.id() === intent.targetID);
         const pendingTroops =
-          target === null || decisionPlayer === undefined
+          target === null || target === undefined || decisionPlayer === undefined
             ? 0
             : decisionPlayer
                 .outgoingAttacks()
-                .filter((attack) => attack.target().id() === target.id())
+                .filter((attack) => attack.target()?.id() === target.id())
                 .reduce((total, attack) => total + attack.troops(), 0);
         return {
           targetID: intent.targetID,
-          targetName: target?.name() ?? "Terra Nullius",
-          targetType: target?.type() ?? "Terra Nullius",
-          targetTroops: Math.round(target?.troops() ?? 0),
-          pendingTroops: Math.round(pendingTroops),
-          committedTroops: Math.round(pendingTroops + intent.troops),
+          targetName: snapshot?.name ?? target?.name() ?? "Terra Nullius",
+          targetType: snapshot?.type ?? target?.type() ?? "Terra Nullius",
+          targetTroops: Math.round(snapshot?.troops ?? target?.troops() ?? 0),
+          pendingTroops: Math.round(snapshot?.pendingTroops ?? pendingTroops),
+          committedTroops: Math.round((snapshot?.pendingTroops ?? pendingTroops) + intent.troops),
           robustCaptureFloor:
-            target?.type() === "BOT" ? Math.round(target.troops() * 4) : null,
+            (snapshot?.type ?? target?.type()) === "BOT"
+              ? Math.ceil((snapshot?.troops ?? target?.troops() ?? 0) * 4)
+              : null,
         };
       });
     console.warn(

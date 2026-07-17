@@ -427,7 +427,7 @@ function createEventBus(bot, window) {
       [AllianceRequestEvent, []],
     ]),
     emit(event) {
-      const intent = eventToIntent(event);
+      const intent = eventToIntent(event, bot.game, bot.clientID);
       if (intent) bot.intentBuffer.push(intent);
     },
   };
@@ -446,15 +446,44 @@ function spawnEventToIntent(event) {
   return null;
 }
 
-function attackEventToIntent(event) {
+function attackEventToIntent(event, game, clientID) {
   if (event.targetID !== undefined && event.troops !== undefined) {
+    const targetID = event.targetID === null ? null : unwrapID(event.targetID);
     return {
       type: "attack",
-      targetID: event.targetID,
+      targetID,
       troops: Math.max(0, Math.floor(Number(event.troops))),
+      attackTargetSnapshot: captureAttackTargetSnapshot(game, clientID, targetID),
     };
   }
   return null;
+}
+
+function captureAttackTargetSnapshot(game, clientID, targetID) {
+  const target = findPlayerByID(game, targetID);
+  const attacker = game?.playerByClientID?.(clientID);
+  const pendingTroops =
+    isAbsentPlayer(target) || attacker === undefined
+      ? 0
+      : attacker
+          .outgoingAttacks()
+          .filter((attack) => attack.target()?.id() === target.id())
+          .reduce((total, attack) => total + attack.troops(), 0);
+  return {
+    name: target?.name() ?? "Terra Nullius",
+    type: target?.type() ?? "Terra Nullius",
+    troops: Number(target?.troops() ?? 0),
+    pendingTroops: Number(pendingTroops),
+  };
+}
+
+function findPlayerByID(game, playerID) {
+  if (playerID === null || playerID === undefined) return null;
+  return game?.players?.().find((player) => player.id() === playerID);
+}
+
+function isAbsentPlayer(player) {
+  return player === null || player === undefined;
 }
 
 function boatEventToIntent(event) {
@@ -524,11 +553,11 @@ function allianceEventToIntent(event) {
   return null;
 }
 
-function eventToIntent(event) {
+function eventToIntent(event, game, clientID) {
   return (
     warshipEventToIntent(event) ??
     spawnEventToIntent(event) ??
-    attackEventToIntent(event) ??
+    attackEventToIntent(event, game, clientID) ??
     boatEventToIntent(event) ??
     embargoEventToIntent(event) ??
     donationEventToIntent(event) ??

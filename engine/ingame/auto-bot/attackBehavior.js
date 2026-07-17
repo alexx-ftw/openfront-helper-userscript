@@ -6367,11 +6367,13 @@
       // The authoritative Nation bot uses 4x as its conquest force. Treat that
       // as the all-or-nothing capture floor: 2x merely makes an attack legal,
       // but frequently stalls while the tribe produces troops during combat.
-      if (maxTroops + committed < minimumAttackTroops) return 0;
-      const troops = Math.max(
+      const requiredTroops = Math.max(
         0,
-        Math.min(maxTroops, minimumAttackTroops - committed),
+        Math.ceil(minimumAttackTroops - committed),
       );
+      const availableTroops = Math.max(0, Math.floor(maxTroops));
+      if (availableTroops < requiredTroops) return 0;
+      const troops = Math.min(availableTroops, requiredTroops);
       this.botAttackTroopsSent += troops;
       return troops;
     }
