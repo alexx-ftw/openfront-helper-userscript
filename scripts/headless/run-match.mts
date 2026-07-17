@@ -168,6 +168,28 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   countIntents(intents);
   if (logIntents && intents.length > 0) {
     const decisionPlayer = runner.game.playerByClientID(clientID);
+    const attackTargets = intents
+      .filter((intent) => intent.type === "attack")
+      .map((intent) => {
+        const target =
+          intent.targetID === null
+            ? null
+            : runner.game.players().find((player) => player.id() === intent.targetID);
+        const pendingTroops =
+          target === null || decisionPlayer === undefined
+            ? 0
+            : decisionPlayer
+                .outgoingAttacks()
+                .filter((attack) => attack.target().id() === target.id())
+                .reduce((total, attack) => total + attack.troops(), 0);
+        return {
+          targetID: intent.targetID,
+          targetName: target?.name() ?? "Terra Nullius",
+          targetType: target?.type() ?? "Terra Nullius",
+          targetTroops: Math.round(target?.troops() ?? 0),
+          pendingTroops: Math.round(pendingTroops),
+        };
+      });
     console.warn(
       JSON.stringify({
         phase: "decision",
@@ -181,6 +203,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
             attackerType: attack.attacker().type(),
             troops: Math.round(attack.troops()),
           })) ?? [],
+        attackTargets,
         intents,
       }),
     );
