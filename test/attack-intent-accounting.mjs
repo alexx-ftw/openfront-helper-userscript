@@ -28,6 +28,7 @@ const sandbox = {
   EARLY_EXPAND_COMMIT: 0.6,
   EARLY_EXPAND_FOLLOWUP_COMMIT: 0.03,
   EARLY_EXPAND_MINIMUM_MARGIN: 1.25,
+  WORKER_TIMEOUT_MS: 100,
   performance: { now: () => 10000 },
   discoverCtors: () => ({
     attack: "attack",
@@ -43,6 +44,7 @@ const sandbox = {
   setLastAction: () => {},
   captureRuntimeException: () => {},
   runtimeDebugLog: () => {},
+  withTimeout: async (promise) => promise,
   calculateBoundingBoxCenter: () => ({ x: 0, y: 0 }),
   tr: (value) => value,
   state: {
@@ -1520,6 +1522,34 @@ assert.deepEqual(
   ["sea-1", "sea-2", "sea-3", "sea-4", "sea-5", "sea-6"],
   "cached priorities let the next decision advance to every remaining sea gateway",
 );
+
+const cachedTopologyBorderBehavior = Object.create(sandbox.AttackBehavior.prototype);
+let cachedTopologyWorkerCalls = 0;
+const retainedTopologyBorder = new Set([31, 32]);
+const cachedTopologyPlayer = { borderTiles: () => retainedTopologyBorder };
+cachedTopologyBorderBehavior.game = {
+  ensureBorderTiles: async () => {
+    cachedTopologyWorkerCalls++;
+    return new Set([99]);
+  },
+};
+assert.strictEqual(
+  await cachedTopologyBorderBehavior.fetchEarlyGameTribeBorder(cachedTopologyPlayer),
+  retainedTopologyBorder,
+  "a surviving tribe reuses its retained border snapshot when topology membership changes",
+);
+assert.equal(
+  cachedTopologyWorkerCalls,
+  0,
+  "a known surviving tribe does not add another worker border request",
+);
+cachedTopologyPlayer.borderTiles = () => new Set();
+assert.deepEqual(
+  Array.from(await cachedTopologyBorderBehavior.fetchEarlyGameTribeBorder(cachedTopologyPlayer)),
+  [99],
+  "a tribe without a cached border still refreshes through the authoritative worker path",
+);
+assert.equal(cachedTopologyWorkerCalls, 1);
 
 const impassableTerraBehavior = Object.create(sandbox.AttackBehavior.prototype);
 const impassableTerraGame = {

@@ -2717,7 +2717,7 @@
       return nodes;
     }
 
-    async fetchEarlyGameTribeTopologyBorders(nodes) {
+    async fetchEarlyGameTribeTopologyBorders(nodes, refreshCached = false) {
       const borders = new Map();
       for (let start = 0; start < nodes.length; start += EARLY_TRIBE_CANDIDATES) {
         const batch = nodes.slice(start, start + EARLY_TRIBE_CANDIDATES);
@@ -2729,7 +2729,10 @@
             // each topology refresh.
             borders.set(
               tribe.id,
-              await this.fetchEarlyGameTribeBorder(tribe.player),
+              await this.fetchEarlyGameTribeBorder(
+                tribe.player,
+                refreshCached,
+              ),
             );
           }),
         );
@@ -2737,9 +2740,16 @@
       return borders;
     }
 
-    async fetchEarlyGameTribeBorder(tribe) {
+    async fetchEarlyGameTribeBorder(tribe, refreshCached = false) {
       let border = new Set();
       {
+        // GameView retains each target's last-good border snapshot for roughly
+        // 1.5 seconds. Reuse it before asking the worker again: a live tribe-id
+        // change invalidates the topology graph, but it does not make every
+        // surviving tribe's known border unknown. This keeps a single capture
+        // from fanning out into a full worker refresh of the entire map.
+        const cached = tribe.borderTiles?.();
+        if (!refreshCached && cached?.size > 0) return cached;
         if (typeof this.game.ensureBorderTiles === "function") {
           const fetched = await withTimeout(
             this.game.ensureBorderTiles(tribe),
@@ -2905,7 +2915,11 @@
       const topologyBordersById = await profileAttackAsync(
         profile,
         "tribes-topology-borders",
-        () => this.fetchEarlyGameTribeTopologyBorders(nodes),
+        () =>
+          this.fetchEarlyGameTribeTopologyBorders(
+            nodes,
+            cached?.signature === signature,
+          ),
       );
       const tribeAdjacency = await profileAttackAsync(
         profile,
