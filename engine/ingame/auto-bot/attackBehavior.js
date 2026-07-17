@@ -4501,13 +4501,34 @@
       this.botBoatDestinationIntents.add(dst);
     }
 
+    boatDestinationHasPendingIntent(dst) {
+      this.reconcileOutboundAttackIntentCommitments();
+      return this.botAttackPendingIntentCommitments.some(
+        (entry) => entry?.attackType === "boat" && entry.destination === dst,
+      );
+    }
+
+    boatDestinationHasLiveTransport(dst) {
+      return this.getOutboundTransportSnapshot().some(
+        (entry) => entry.targetTile === dst,
+      );
+    }
+
+    boatDestinationReserved(dst) {
+      return (
+        this.boatDestinationAlreadyEmittedThisTick(dst) ||
+        this.boatDestinationHasPendingIntent(dst) ||
+        this.boatDestinationHasLiveTransport(dst)
+      );
+    }
+
     // emitBoat — fire a TransportShipExecution at dst carrying `troops`.
     emitBoat(dst, troops, label, reserveTarget = null) {
       // Final chokepoint for the "boat" feature toggle: never fire when off.
       if (!(state.settings.features && state.settings.features.boat)) {
         return false;
       }
-      if (this.boatDestinationAlreadyEmittedThisTick(dst)) return false;
+      if (this.boatDestinationReserved(dst)) return false;
       const requestedTroops = Number(troops);
       if (!Number.isFinite(requestedTroops) || requestedTroops < 1) {
         return false;

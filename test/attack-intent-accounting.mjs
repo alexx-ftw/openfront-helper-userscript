@@ -53,19 +53,22 @@ const sandbox = {
 };
 
 executeClassicScript(earlyGameSource, sandbox, { filename: earlyGamePath });
-executeClassicScript(`${source}\nglobalThis.AttackBehavior = AttackBehavior;`, sandbox, {
-  filename: sourcePath,
-});
+executeClassicScript(
+  `${source}\nglobalThis.AttackBehavior = AttackBehavior;\nglobalThis.BOT_OUTBOUND_INTENT_GRACE_TICKS = BOT_OUTBOUND_INTENT_GRACE_TICKS;`,
+  sandbox,
+  { filename: sourcePath },
+);
 
 let tick = 0;
 let ownTroops = 100000;
 const outgoing = [];
+let transports = [];
 const me = {
   troops: () => ownTroops,
   smallID: () => 1,
   numTilesOwned: () => 100,
   type: () => "Human",
-  units: () => [],
+  units: (type) => (type === UNIT.TransportShip ? transports : []),
   borderTiles: () => new Set([1]),
   outgoingAttacks: () => outgoing,
 };
@@ -576,7 +579,54 @@ assert.equal(
   "one decision never emits two transport ships to the same destination",
 );
 assert.equal(troopEmissions.length, boatEmissionCount);
+tick += 1;
+assert.equal(
+  boatBudgetBehavior.emitBoat("boat-destination", 1, "⛵ pending boat", humanTarget),
+  false,
+  "a pending transport intent reserves its destination across game ticks",
+);
+transports = [
+  {
+    id: () => "transport-1",
+    isActive: () => true,
+    targetTile: () => "boat-destination",
+    troops: () => 50000,
+    transportShipState: () => ({ isRetreating: false }),
+  },
+];
+tick += 1;
+assert.equal(
+  boatBudgetBehavior.emitBoat("boat-destination", 1, "⛵ in-flight boat", humanTarget),
+  false,
+  "a live transport keeps its exact destination reserved after intent reconciliation",
+);
+transports = [];
+tick += 1;
+assert.equal(
+  boatBudgetBehavior.emitBoat("boat-destination", 1, "⛵ landed boat", humanTarget),
+  true,
+  "the destination becomes eligible after the transport is no longer active",
+);
+const failedBoatBehavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
+tick = 30;
+assert.equal(
+  failedBoatBehavior.emitBoat("failed-destination", 1, "⛵ failed boat", humanTarget),
+  true,
+);
+tick += sandbox.BOT_OUTBOUND_INTENT_GRACE_TICKS + 1;
+assert.equal(
+  failedBoatBehavior.emitBoat("failed-destination", 1, "⛵ retried boat", humanTarget),
+  true,
+  "an intent that never creates a transport releases its destination after the grace window",
+);
 ownTroops = 100000;
+const parallelBoatBehavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
+assert.equal(parallelBoatBehavior.emitBoat("parallel-a", 1000, "⛵ parallel A"), true);
+assert.equal(
+  parallelBoatBehavior.emitBoat("parallel-b", 1000, "⛵ parallel B"),
+  true,
+  "a reserved destination does not block a parallel transport elsewhere",
+);
 
 // Tribe attacks must be all-or-nothing: if visible and pending commitments plus
 // the available force cannot meet the combat policy's minimum, do not emit a
