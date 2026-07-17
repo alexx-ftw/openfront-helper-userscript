@@ -1521,4 +1521,41 @@ assert.deepEqual(
   "cached priorities let the next decision advance to every remaining sea gateway",
 );
 
+const impassableTerraBehavior = Object.create(sandbox.AttackBehavior.prototype);
+const impassableTerraGame = {
+  neighbors: () => [2],
+  isLand: () => true,
+  hasOwner: () => false,
+  isImpassable: () => true,
+  hasFallout: () => true,
+};
+impassableTerraBehavior.player = { borderTiles: () => [1] };
+impassableTerraBehavior.game = impassableTerraGame;
+assert.equal(
+  impassableTerraBehavior.hasLandBorderWithTerraNullius(),
+  false,
+  "impassable free-looking land must not schedule a Terra Nullius attack the engine will retire",
+);
+assert.equal(
+  impassableTerraBehavior.isBorderingNukedTerritory(),
+  false,
+  "impassable fallout cannot reactivate the radioactive Terra Nullius lane",
+);
+impassableTerraGame.isImpassable = () => false;
+assert.equal(
+  impassableTerraBehavior.hasLandBorderWithTerraNullius(),
+  true,
+  "a passable unowned land neighbor remains an eligible Terra Nullius target",
+);
+assert.equal(
+  impassableTerraBehavior.isBorderingNukedTerritory(),
+  true,
+  "a passable fallout neighbor remains eligible for the radioactive expansion policy",
+);
+assert.match(
+  fs.readFileSync(path.join(repoRoot, "engine/ingame/auto-bot/gameApi.js"), "utf8"),
+  /isImpassable:/,
+  "the behavior receives the engine's impassability predicate through GameView",
+);
+
 process.stdout.write("attack intent accounting tests passed\n");

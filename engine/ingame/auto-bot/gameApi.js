@@ -907,6 +907,8 @@
           : src.isValidCoord(cell.x, cell.y),
       isLand: mapM("isLand"),
       isWater: mapM("isWater"),
+      isImpassable: (tile) =>
+        typeof src.isImpassable === "function" ? src.isImpassable(tile) : false,
       isOcean: mapM("isOcean"),
       isShore: mapM("isShore"),
       isOceanShore: mapM("isOceanShore"),

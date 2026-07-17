@@ -1885,10 +1885,12 @@
       const border = this.attackBorderTiles();
       const nearby = this.player.nearby();
       const hasAccessibleFreeLand = border.some(
-        (tile) => !this.game.hasOwner(tile) && !this.game.hasFallout(tile),
+        (tile) =>
+          this.isAttackableTerraNulliusTile(tile) && !this.game.hasFallout(tile),
       );
       const hasAccessibleRadioactiveLand = border.some(
-        (tile) => !this.game.hasOwner(tile) && this.game.hasFallout(tile),
+        (tile) =>
+          this.isAttackableTerraNulliusTile(tile) && this.game.hasFallout(tile),
       );
       const hasAccessibleTerraNullius =
         hasAccessibleFreeLand || hasAccessibleRadioactiveLand;
@@ -5636,8 +5638,7 @@
       for (const tile of this.player.borderTiles()) {
         for (const neighbor of this.game.neighbors(tile)) {
           if (
-            this.game.isLand(neighbor) &&
-            !this.game.hasOwner(neighbor) &&
+            this.isAttackableTerraNulliusTile(neighbor) &&
             this.game.hasFallout(neighbor)
           ) {
             return true;
@@ -5912,6 +5913,7 @@
       this.reconcileOutboundAttackIntentCommitments();
       const ctors = discoverCtors(getEventBus());
       const isTerraNullius = target?.isPlayer?.() !== true;
+      if (!this.canForceAttackTarget(target)) return false;
       const requestedTroops = this.player.troops() * Number(fraction);
       const reserveTroops =
         isTerraNullius && state.settings.winFixes
@@ -5940,6 +5942,10 @@
         return true;
       }
       return false;
+    }
+
+    canForceAttackTarget(target) {
+      return target?.isPlayer?.() === true || this.hasLandBorderWithTerraNullius();
     }
 
     // sendAttack — AiAttackBehavior (now async via sendBoatAttack/
@@ -6022,12 +6028,23 @@
     hasLandBorderWithTerraNullius() {
       for (const border of this.player.borderTiles()) {
         for (const neighbor of this.game.neighbors(border)) {
-          if (this.game.isLand(neighbor) && !this.game.hasOwner(neighbor)) {
+          if (this.isAttackableTerraNulliusTile(neighbor)) {
             return true;
           }
         }
       }
       return false;
+    }
+
+    // Keep the client-side Terra Nullius gate identical to AttackExecution:
+    // impassable land looks like free territory in a simple ownership scan, but
+    // the engine skips it and immediately retires the generic TN attack.
+    isAttackableTerraNulliusTile(tile) {
+      return (
+        this.game.isLand(tile) &&
+        !this.game.hasOwner(tile) &&
+        this.game.isImpassable?.(tile) !== true
+      );
     }
 
     // Scans shore border tiles (every 10th) for unowned land within 5 water tiles
