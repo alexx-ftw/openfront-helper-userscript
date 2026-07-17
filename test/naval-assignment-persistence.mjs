@@ -112,4 +112,21 @@ stableBehavior.incomingNavalInvasions = () => {
 await stableBehavior.protectAgainstNavalInvasions();
 assert.equal(routePlanningCalls, 0, "a covered invasion skips A* and replanning");
 
+const routeBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
+let zeroAllocationNeighborCalls = 0;
+routeBehavior.game = {
+  isWater: (tile) => tile >= 0 && tile <= 4,
+  manhattanDist: (left, right) => Math.abs(left - right),
+  forEachNeighbor: (tile, visit) => {
+    zeroAllocationNeighborCalls++;
+    if (tile > 0) visit(tile - 1);
+    if (tile < 4) visit(tile + 1);
+  },
+  neighbors: () => {
+    throw new Error("water A* should prefer zero-allocation neighbor iteration");
+  },
+};
+assert.equal([...routeBehavior.waterRoute(0, 4)].join(","), "0,1,2,3,4");
+assert.ok(zeroAllocationNeighborCalls > 0);
+
 process.stdout.write("naval assignment persistence tests passed\n");

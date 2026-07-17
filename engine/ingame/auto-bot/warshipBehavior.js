@@ -815,10 +815,12 @@
       });
     }
 
-    getWarshipNeighbors(tile) {
-      return typeof this.game.neighbors === "function"
-        ? this.game.neighbors(tile) || []
-        : [];
+    forEachWarshipNeighbor(tile, visit) {
+      if (typeof this.game.forEachNeighbor === "function") {
+        this.game.forEachNeighbor(tile, visit);
+        return;
+      }
+      for (const neighbor of this.game.neighbors?.(tile) || []) visit(neighbor);
     }
 
     waterRoute(start, goal) {
@@ -842,9 +844,9 @@
         if (!current || routeState.closed.has(current.tile)) continue;
         if (current.tile === goal) return this.reconstructWaterRoute(routeState.cameFrom, goal);
         routeState.closed.add(current.tile);
-        for (const neighbor of this.getWarshipNeighbors(current.tile)) {
-          this.visitWaterRouteNeighbor(neighbor, current.tile, routeState, goal);
-        }
+        this.forEachWarshipNeighbor(current.tile, (neighbor) =>
+          this.visitWaterRouteNeighbor(neighbor, current.tile, routeState, goal),
+        );
       }
       return null;
     }
