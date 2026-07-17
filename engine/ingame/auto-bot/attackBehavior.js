@@ -123,7 +123,7 @@
   // Tribes have no strategic counterplay comparable to Nations. A small capture
   // margin lets the opening spread across many tribes in parallel instead of
   // parking four times their strength in one conquest.
-  const TRIBE_CAPTURE_TROOP_MULTIPLIER = 1.7;
+  const TRIBE_CAPTURE_TROOP_MULTIPLIER = 1.8;
   const PLAYER_CAPTURE_TROOP_MULTIPLIER = 4;
   // Reserve the troop level where the production rate has its maximum temporal
   // acceleration. P(N) is troops per tick and N' = P(N), so acceleration is
