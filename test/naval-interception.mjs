@@ -84,6 +84,27 @@ const speedSensitive = planNavalInterceptions({
 assert.equal(speedSensitive.assignments[0].interceptTick, 2);
 assert.equal(speedSensitive.assignments[0].marginTicks, 1);
 
+let lowerBoundRouteCalls = 0;
+const lowerBoundRejected = planNavalInterceptions({
+  ships: [{ id: "lower-bound-destroyer", tile: tile(0, 0) }],
+  invasions: [
+    {
+      id: "unreachable-before-landing",
+      path: [tile(100, 0), tile(101, 0), tile(102, 0), tile(103, 0)],
+    },
+  ],
+  route: (from, to) => {
+    lowerBoundRouteCalls++;
+    return route(from, to);
+  },
+  distance,
+  boatSpeed: 1,
+  warshipSpeed: 1,
+  attackRange: 1,
+});
+assert.equal(lowerBoundRejected.assignments.length, 0);
+assert.equal(lowerBoundRouteCalls, 0, "direct-distance impossibility skips full water routes");
+
 let longRouteCalls = 0;
 const longInvasionPath = Array.from({ length: 8192 }, (_, index) => tile(4096 + index, 0));
 const longInterception = planNavalInterceptions({

@@ -74,11 +74,25 @@
       Math.max(0, Math.floor(tick * context.boatSpeed)),
     );
     const boatTile = invasion.path[pathIndex];
+    const maxTravelSteps = Math.floor(
+      (tick - timing.startTick) * context.warshipSpeed,
+    );
+    // Exact lower bound: even on an unobstructed straight route, a Warship
+    // cannot get within firing range when the direct distance exceeds its
+    // travel budget plus attack range. Reject those binary-search probes before
+    // paying for full-resolution water A*; feasible probes still use the exact
+    // route below, so the selected intercept tick and tile remain unchanged.
+    if (
+      context.distance(ship.tile, boatTile) >
+      maxTravelSteps + context.attackRange
+    ) {
+      return null;
+    }
     const waterRoute = getCachedNavalRoute(context, ship.tile, boatTile);
     if (!waterRoute) return null;
     const maxReachableIndex = Math.min(
       waterRoute.length - 1,
-      Math.floor((tick - timing.startTick) * context.warshipSpeed),
+      maxTravelSteps,
     );
     for (let index = maxReachableIndex; index >= 0; index--) {
       const inRange =

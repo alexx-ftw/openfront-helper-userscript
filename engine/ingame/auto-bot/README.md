@@ -102,7 +102,9 @@ prefers the transport's live motion plan when exposed by the client and falls
 back to local water A*. The planner uses the transport and Warship movement
 speeds exposed by the client when available, otherwise the current engine
 contract of one water-path step per tick, and uses `warshipTargettingRange()`
-for the Euclidean firing range.
+for the Euclidean firing range. Binary-search probes that cannot possibly enter
+range even on an unobstructed straight route are rejected by an exact
+direct-distance lower bound before invoking full-resolution water A*.
 
 The emergency economy gate runs before ordinary structure pacing. While an
 invasion is active, it reserves the construction decision for a Port: an
