@@ -27,7 +27,7 @@ assert.match(runner, /pendingTroops/);
 assert.match(runner, /committedTroops/);
 assert.match(runner, /recentCommittedTroops/);
 assert.match(runner, /robustCaptureFloor/);
-assert.match(runner, /Math\.ceil\(\(snapshot\?\.troops.*\* 1\.5\)/);
+assert.match(runner, /Math\.ceil\(\(snapshot\?\.troops.*\* 1\.6\)/);
 assert.match(
   runner,
   /Math\.max\(\s*Number\(snapshot\?\.pendingTroops\) \|\| 0,\s*liveCommittedTroops,\s*recentCommittedTroops/,
