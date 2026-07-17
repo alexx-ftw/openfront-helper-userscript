@@ -34,21 +34,31 @@
     return Boolean(state.settings && state.settings.performanceProfiling === true);
   }
 
+  function autoBotProfileNow() {
+    if (
+      typeof window !== "undefined" &&
+      typeof window.__OFH_deadlineNow === "function"
+    ) {
+      return Number(window.__OFH_deadlineNow());
+    }
+    return performance.now();
+  }
+
   function beginAutoBotProfileTick() {
     if (!autoBotProfilingEnabled()) return null;
     return {
-      startedAt: performance.now(),
+      startedAt: autoBotProfileNow(),
       phases: Object.create(null),
     };
   }
 
   function autoBotProfileStartPhase(profile) {
-    return profile ? performance.now() : 0;
+    return profile ? autoBotProfileNow() : 0;
   }
 
   function autoBotProfileEndPhase(profile, name, startedAt) {
     if (!profile) return;
-    const elapsed = Math.max(0, performance.now() - startedAt);
+    const elapsed = Math.max(0, autoBotProfileNow() - startedAt);
     profile.phases[name] = (profile.phases[name] || 0) + elapsed;
   }
 
@@ -56,7 +66,7 @@
   // They are used only around already-expensive decision phases when enabled.
   function autoBotProfileSyncPhase(profile, name, fn) {
     if (!profile) return fn();
-    const startedAt = performance.now();
+    const startedAt = autoBotProfileNow();
     try {
       return fn();
     } finally {
@@ -66,7 +76,7 @@
 
   function autoBotProfileAsyncPhase(profile, name, fn) {
     if (!profile) return fn();
-    const startedAt = performance.now();
+    const startedAt = autoBotProfileNow();
     let result;
     {
       result = fn();
@@ -123,7 +133,7 @@
   function finishAutoBotProfileTick(profile) {
     if (!profile) return;
     const data = getAutoBotProfileState();
-    const elapsed = Math.max(0, performance.now() - profile.startedAt);
+    const elapsed = Math.max(0, autoBotProfileNow() - profile.startedAt);
     data.sampledTicks += 1;
     data.lastTickMs = elapsed;
     data.maxTickMs = Math.max(data.maxTickMs, elapsed);

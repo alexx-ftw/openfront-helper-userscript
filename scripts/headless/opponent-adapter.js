@@ -149,7 +149,10 @@ window.__OFH_realOpponentHarness = {
   UNIT,
   discoverCtors,
   getEventBus,
-  getBuildMenu
+  getBuildMenu,
+  beginAutoBotProfileTick,
+  finishAutoBotProfileTick,
+  getAutoBotProfileSnapshot
 };
 `;
   return rawSource.slice(0, exportIndex) + exportHook + rawSource.slice(exportIndex);
@@ -198,6 +201,7 @@ export class BundledOpponentBot {
     this.winFixes = options.winFixes ?? true;
     this.tickMs = options.tickMs ?? 1;
     this.responsiveness = options.responsiveness ?? "maximum";
+    this.performanceProfiling = options.performanceProfiling === true;
     this.features = { ...(options.features ?? {}) };
     this.buildStructures = { ...(options.buildStructures ?? {}) };
     this.intentBuffer = [];
@@ -240,11 +244,17 @@ export class BundledOpponentBot {
     await this.api.beginTick(player);
     profileEnd("api.beginTick", beginTickStart);
     const nationTickStart = profileStart();
-    await this.nationBot.tick(this.game.ticks());
+    const botProfile = harness.internals.beginAutoBotProfileTick();
+    await this.nationBot.tick(this.game.ticks(), botProfile);
+    harness.internals.finishAutoBotProfileTick(botProfile);
     profileEnd("nationBot.tick", nationTickStart);
 
     harness.current.buildMenu = null;
     return sanitizeIntents(this.applyWinFixes(this.intentBuffer));
+  }
+
+  getPerformanceProfile() {
+    return this.harness.internals.getAutoBotProfileSnapshot();
   }
 
   applyWinFixes(intents) {
@@ -283,6 +293,7 @@ function configureHardMode(state, bot) {
   state.settings.difficulty = bot.difficulty;
   state.settings.winFixes = bot.winFixes;
   state.settings.tickMs = bot.tickMs;
+  state.settings.performanceProfiling = bot.performanceProfiling;
   state.settings.features = { ...state.settings.features, ...bot.features };
   state.settings.buildStructures = {
     ...state.settings.buildStructures,

@@ -79,7 +79,9 @@
   const EARLY_TRIBE_BOAT_ETA_TARGETS = BOAT_PROBE_CANDIDATES;
   const EARLY_GAME_TRIBE_CHAIN_RADIUS = 120;
   const EARLY_GAME_TRIBE_TOPOLOGY_CACHE_TICKS = 10;
-  const EARLY_GAME_TRIBE_TOPOLOGY_YIELD_TILES = 128;
+  const EARLY_GAME_TRIBE_TOPOLOGY_MIN_SLICE_TILES = 128;
+  const EARLY_GAME_TRIBE_TOPOLOGY_MAX_SLICE_TILES = 2048;
+  const EARLY_GAME_TRIBE_TOPOLOGY_SLICE_MS = 4;
   // The game's troop growth is (10 + troops^0.73 / 4) * (1 - troops / max).
   // Keep the formula constants here so the reserve follows the real production
   // curve instead of relying on its approximate 42% peak ratio.
@@ -133,6 +135,41 @@
         resolve();
       }
     });
+  }
+
+  function earlyGameTopologyNow() {
+    if (
+      typeof window !== "undefined" &&
+      typeof window.__OFH_deadlineNow === "function"
+    ) {
+      return Number(window.__OFH_deadlineNow());
+    }
+    if (typeof performance !== "undefined" && typeof performance.now === "function") {
+      return performance.now();
+    }
+    return Date.now();
+  }
+
+  function shouldYieldEarlyGameTopology(tiles, startedAt) {
+    if (tiles >= EARLY_GAME_TRIBE_TOPOLOGY_MAX_SLICE_TILES) return true;
+    return (
+      tiles >= EARLY_GAME_TRIBE_TOPOLOGY_MIN_SLICE_TILES &&
+      earlyGameTopologyNow() - startedAt >= EARLY_GAME_TRIBE_TOPOLOGY_SLICE_MS
+    );
+  }
+
+  function profileAttackSync(profile, name, action) {
+    if (typeof autoBotProfileSyncPhase === "function") {
+      return autoBotProfileSyncPhase(profile, name, action);
+    }
+    return action();
+  }
+
+  function profileAttackAsync(profile, name, action) {
+    if (typeof autoBotProfileAsyncPhase === "function") {
+      return autoBotProfileAsyncPhase(profile, name, action);
+    }
+    return action();
   }
 
   // A parallel attack batch must stop before it walks every target after the
@@ -1895,13 +1932,15 @@
       context.maritimeTerraNulliusProbeSent = sent;
     }
 
-    async tryEarlyAttackPolicies(context) {
-      await this.tryMaritimeTerraNulliusProbe(context);
+    async tryEarlyAttackPolicies(context, profile = null) {
+      await profileAttackAsync(profile, "attack-early-maritime", () =>
+        this.tryMaritimeTerraNulliusProbe(context));
       if (
         context.expandOn &&
         state.settings.winFixes &&
         context.earlyGameSnapshot.postSpawn &&
-        (await this.attackEarlyGameTribe())
+        (await profileAttackAsync(profile, "attack-early-tribes", () =>
+          this.attackEarlyGameTribe(profile)))
       ) {
         state.earlyGame.action = "tribe";
         return true;
@@ -1912,7 +1951,13 @@
         state.settings.winFixes &&
         context.earlyGameSnapshot.active &&
         !context.maritimeTerraNulliusProbeSent;
-      if (!canProbeOcean || !(await this.maybeEarlyOceanBoat())) return false;
+      if (
+        !canProbeOcean ||
+        !(await profileAttackAsync(profile, "attack-early-ocean", () =>
+          this.maybeEarlyOceanBoat()))
+      ) {
+        return false;
+      }
       return !context.earlyGameSnapshot.hasTribeTarget;
     }
 
@@ -1988,27 +2033,50 @@
     }
 
     // maybeAttack — AiAttackBehavior.maybeAttack.
-    async maybeAttack() {
+    async maybeAttack(profile = null) {
       if (this.player === null || this.allianceBehavior === undefined) {
         throw new Error("not initialized");
       }
-      this.reconcileOutboundAttackIntentCommitments();
-      const context = this.createAttackDecisionContext();
+      profileAttackSync(profile, "attack-intent-reconcile", () =>
+        this.reconcileOutboundAttackIntentCommitments());
+      const context = profileAttackSync(profile, "attack-context", () =>
+        this.createAttackDecisionContext());
       let acted = false;
       if (state.settings.winFixes) {
-        const defense = await this.respondToIncomingAttack();
+        const defense = await profileAttackAsync(
+          profile,
+          "attack-defense",
+          () => this.respondToIncomingAttack(),
+        );
         if (defense !== null) return;
       }
       // A successful TerraNullius probe must not suppress the cluster planner.
       // These expansion lanes have independent intent accounting and the shared
       // rate limiter already caps total emissions, so let the tribe pass use any
       // safe surplus. Incoming defense has already returned above.
-      if (await this.tryImmediateAttackPriorities(context)) acted = true;
-      if (await this.tryEarlyAttackPolicies(context)) acted = true;
+      if (
+        await profileAttackAsync(profile, "attack-immediate", () =>
+          this.tryImmediateAttackPriorities(context))
+      ) {
+        acted = true;
+      }
+      if (
+        await profileAttackAsync(profile, "attack-early", () =>
+          this.tryEarlyAttackPolicies(context, profile))
+      ) {
+        acted = true;
+      }
       if (acted) return;
-      await this.runAuxiliaryAttackPolicies(context);
-      if (await this.tryAttackFallbacks(context)) return;
-      await this.runOrdinaryAttackPolicies(context);
+      await profileAttackAsync(profile, "attack-auxiliary", () =>
+        this.runAuxiliaryAttackPolicies(context));
+      if (
+        await profileAttackAsync(profile, "attack-fallbacks", () =>
+          this.tryAttackFallbacks(context))
+      ) {
+        return;
+      }
+      await profileAttackAsync(profile, "attack-ordinary", () =>
+        this.runOrdinaryAttackPolicies(context));
     }
 
     // Opening Terra Nullius liveness runs more frequently than the strategic
@@ -2117,8 +2185,12 @@
       }
     }
 
-    async attackEarlyGameTribe() {
-      const candidates = await this.getEarlyGameTribeCandidates();
+    async attackEarlyGameTribe(profile = null) {
+      const candidates = await profileAttackAsync(
+        profile,
+        "tribes-candidates",
+        () => this.getEarlyGameTribeCandidates(profile),
+      );
       if (candidates.length === 0) return false;
 
       this.botAttackTroopsSent = 0;
@@ -2363,6 +2435,7 @@
       const edibleIds = new Set(nodes.map((tribe) => tribe.id));
       const adjacency = new Map(nodes.map((tribe) => [tribe.id, new Set()]));
       let tilesSinceYield = 0;
+      let sliceStartedAt = earlyGameTopologyNow();
       for (const tribe of nodes) {
         for (const tile of borders.get(tribe.id) || []) {
           this.connectEarlyGameTribeAdjacencyTile(
@@ -2372,9 +2445,10 @@
             adjacency,
           );
           tilesSinceYield++;
-          if (tilesSinceYield >= EARLY_GAME_TRIBE_TOPOLOGY_YIELD_TILES) {
+          if (shouldYieldEarlyGameTopology(tilesSinceYield, sliceStartedAt)) {
             tilesSinceYield = 0;
             await yieldEarlyGameTopologyWork();
+            sliceStartedAt = earlyGameTopologyNow();
           }
         }
       }
@@ -2388,7 +2462,7 @@
         .join(",");
     }
 
-    async getEarlyGameTribeTopology(nodes) {
+    async getEarlyGameTribeTopology(nodes, profile = null) {
       const tick = this.currentAttackDecisionTick();
       const signature = this.earlyGameTribeTopologySignature(nodes);
       const cached = this.earlyGameTribeTopologyCache;
@@ -2399,11 +2473,15 @@
       ) {
         return cached;
       }
-      const topologyBordersById =
-        await this.fetchEarlyGameTribeTopologyBorders(nodes);
-      const tribeAdjacency = await this.connectEarlyGameTribeAdjacency(
-        nodes,
-        topologyBordersById,
+      const topologyBordersById = await profileAttackAsync(
+        profile,
+        "tribes-topology-borders",
+        () => this.fetchEarlyGameTribeTopologyBorders(nodes),
+      );
+      const tribeAdjacency = await profileAttackAsync(
+        profile,
+        "tribes-topology-adjacency",
+        () => this.connectEarlyGameTribeAdjacency(nodes, topologyBordersById),
       );
       const topology = {
         tick,
@@ -2450,14 +2528,18 @@
       return { bordering, other };
     }
 
-    async getEarlyGameTribeSampling(otherPlayers, competitorProfiles) {
+    async getEarlyGameTribeSampling(
+      otherPlayers,
+      competitorProfiles,
+      profile = null,
+    ) {
       const eligible = this.getEligibleEarlyGameTribes(otherPlayers);
       const nodes = this.getLightweightEarlyGameTribeNodes(
         otherPlayers,
         competitorProfiles,
       );
       const { topologyBordersById, tribeAdjacency } =
-        await this.getEarlyGameTribeTopology(nodes);
+        await this.getEarlyGameTribeTopology(nodes, profile);
       const eligibleIds = eligible.map((tribe) => tribe.smallID());
       const clusterOpportunities =
         calculateReachableTribeClusterOpportunities(
@@ -2858,7 +2940,7 @@
     // The stages remain together so their bounded maps share one coherent game
     // snapshot; splitting this orchestration would make cross-tick data mixing
     // easier. The expensive worker calls are separately bounded and parallel.
-    async getEarlyGameTribeCandidates() {
+    async getEarlyGameTribeCandidates(profile = null) {
       const otherPlayers = this.game.players();
       const mySid = this.player.smallID();
       const competitorProfiles = this.getEarlyGameCompetitorProfiles(
@@ -2866,9 +2948,15 @@
         mySid,
       );
       const { nearbyTribes, topologyBordersById, tribeAdjacency } =
-        await this.getEarlyGameTribeSampling(
-          otherPlayers,
-          competitorProfiles,
+        await profileAttackAsync(
+          profile,
+          "tribes-sampling",
+          () =>
+            this.getEarlyGameTribeSampling(
+              otherPlayers,
+              competitorProfiles,
+              profile,
+            ),
         );
       if (nearbyTribes.length === 0) {
         const liveTribeIds = new Set(
@@ -2905,9 +2993,10 @@
       const hasOpenOceanAccess = Array.from(
         this.player.borderTiles?.() || [],
       ).some((tile) => this.isEarlyGameMaritimeShore(tile));
-      const borderByTribe = await this.getEarlyGameCandidateBorders(
-        nearbyTribes,
-        topologyBordersById,
+      const borderByTribe = await profileAttackAsync(
+        profile,
+        "tribes-candidate-borders",
+        () => this.getEarlyGameCandidateBorders(nearbyTribes, topologyBordersById),
       );
       const candidateContext = {
         otherPlayers,
@@ -2922,7 +3011,8 @@
         this.createEarlyGameTribeCandidate(tribe, candidateContext),
       );
 
-      await this.enrichEarlyGameTribeBoatEtas(candidates, borderByTribe);
+      await profileAttackAsync(profile, "tribes-boat-etas", () =>
+        this.enrichEarlyGameTribeBoatEtas(candidates, borderByTribe));
       this.normalizeEarlyGameCaptureEfficiencies(candidates);
       const futureFoodById = this.getEarlyGameFutureFoodCandidates(
         otherPlayers,

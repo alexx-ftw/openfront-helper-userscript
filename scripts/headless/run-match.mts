@@ -6,6 +6,7 @@ import {
   Difficulty,
   HumansVsNations,
   PlayerType,
+  UnitType,
 } from "../../openfront-engine/src/core/game/Game.ts";
 import { createGameRunner } from "../../openfront-engine/src/core/GameRunner.ts";
 import type { StampedIntent, Turn } from "../../openfront-engine/src/core/Schemas.ts";
@@ -69,7 +70,12 @@ const runner = await createGameRunner(
     if ("errMsg" in update) fatalError = `${update.errMsg}\n${update.stack ?? ""}`;
   },
 );
-const bot = createMaxDifficultyOpponent({ clientID, name: "OFH Auto Bot" });
+const profileBot = process.env.OFH_PROFILE_BOT === "1";
+const bot = createMaxDifficultyOpponent({
+  clientID,
+  name: "OFH Auto Bot",
+  performanceProfiling: profileBot,
+});
 bot.attach({ runner, clientID, gameID: seed });
 
 const initialPlayers = runner.game
@@ -77,6 +83,24 @@ const initialPlayers = runner.game
   .filter((player) => player.type() !== PlayerType.Bot);
 const nations = initialPlayers.filter((player) => player.type() === PlayerType.Nation);
 const me = runner.game.playerByClientID(clientID);
+const originalConquerPlayer = runner.game.conquerPlayer.bind(runner.game);
+runner.game.conquerPlayer = (conqueror, conquered) => {
+  if (conquered.clientID() === clientID) {
+    console.warn(
+      JSON.stringify({
+        phase: "conquered",
+        tick: runner.game.ticks(),
+        conqueror: conqueror.name(),
+        conquerorType: conqueror.type(),
+        conquered: conquered.name(),
+        tiles: conquered.numTilesOwned(),
+        troops: conquered.troops(),
+        stack: new Error("conquerPlayer trace").stack,
+      }),
+    );
+  }
+  originalConquerPlayer(conqueror, conquered);
+};
 
 console.warn(
   JSON.stringify({
@@ -95,19 +119,138 @@ console.warn(
 
 const startedAt = performance.now();
 const maxTicks = Number(process.env.OFH_MAX_TICKS ?? 103_000);
+const progressEveryTicks = Math.max(1, Number(process.env.OFH_PROGRESS_TICKS ?? 500));
+const progressFromTick = Math.max(0, Number(process.env.OFH_PROGRESS_FROM_TICK ?? 0));
+const slowTickThresholdMs = Math.max(1, Number(process.env.OFH_SLOW_TICK_MS ?? 250));
+const stopWhenBotDies = process.env.OFH_STOP_WHEN_DEAD !== "0";
 let turnNumber = 0;
 let emittedIntents = 0;
+let hasEverBeenAlive = me?.isAlive() === true;
+let stopReason: "winner" | "max_ticks" | "bot_dead" | "engine_stop" = "max_ticks";
+const cumulativeIntentTypes = new Map<string, number>();
+let intervalIntentTypes = new Map<string, number>();
+const trackedUnitTypes = [
+  UnitType.City,
+  UnitType.Factory,
+  UnitType.Port,
+  UnitType.DefensePost,
+  UnitType.SAMLauncher,
+  UnitType.MissileSilo,
+  UnitType.Warship,
+  UnitType.TransportShip,
+] as const;
+const trackedMissileTypes = [
+  UnitType.AtomBomb,
+  UnitType.HydrogenBomb,
+  UnitType.MIRV,
+  UnitType.MIRVWarhead,
+] as const;
+const countIntents = (intents: readonly { type: string }[]) => {
+  for (const intent of intents) {
+    cumulativeIntentTypes.set(intent.type, (cumulativeIntentTypes.get(intent.type) ?? 0) + 1);
+    intervalIntentTypes.set(intent.type, (intervalIntentTypes.get(intent.type) ?? 0) + 1);
+  }
+};
+const sortedCounts = (counts: ReadonlyMap<string, number>) =>
+  Object.fromEntries([...counts].sort(([left], [right]) => left.localeCompare(right)));
 while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fatalError === null) {
+  const decisionStartedAt = performance.now();
   const intents = await bot.decide();
+  const decisionMs = performance.now() - decisionStartedAt;
   emittedIntents += intents.length;
+  countIntents(intents);
   const turn: Turn = {
     turnNumber: turnNumber++,
     intents: intents.map((intent): StampedIntent => ({ ...intent, clientID })),
   };
   runner.addTurn(turn);
-  if (!runner.executeNextTick()) break;
-  if (runner.game.ticks() % 500 === 0) {
+  const executionStartedAt = performance.now();
+  if (!runner.executeNextTick()) {
+    stopReason = "engine_stop";
+    break;
+  }
+  const executionMs = performance.now() - executionStartedAt;
+  const currentPlayer = runner.game.playerByClientID(clientID);
+  if (currentPlayer?.isAlive() === true) hasEverBeenAlive = true;
+  const tickMs = decisionMs + executionMs;
+  if (tickMs >= slowTickThresholdMs) {
+    console.warn(
+      JSON.stringify({
+        phase: "slow_tick",
+        tick: runner.game.ticks(),
+        decisionMs: Math.round(decisionMs),
+        executionMs: Math.round(executionMs),
+        totalMs: Math.round(tickMs),
+        intents: intents.length,
+        alive: currentPlayer?.isAlive() ?? false,
+        tiles: currentPlayer?.numTilesOwned() ?? 0,
+        phases: profileBot ? bot.getPerformanceProfile().lastPhases : undefined,
+      }),
+    );
+  }
+  if (stopWhenBotDies && hasEverBeenAlive && currentPlayer?.isAlive() !== true) {
+    stopReason = "bot_dead";
+    break;
+  }
+  if (runner.game.ticks() >= progressFromTick && runner.game.ticks() % progressEveryTicks === 0) {
     const player = runner.game.playerByClientID(clientID);
+    const incoming =
+      player?.incomingAttacks().map((attack) => ({
+        attacker: attack.attacker().name(),
+        attackerType: attack.attacker().type(),
+        troops: Math.round(attack.troops()),
+      })) ?? [];
+    const units = Object.fromEntries(
+      trackedUnitTypes
+        .map((type) => [type, player?.units(type).length ?? 0] as const)
+        .filter(([, count]) => count > 0),
+    );
+    const unitDetails = Object.fromEntries(
+      trackedUnitTypes
+        .map(
+          (type) =>
+            [
+              type,
+              (player?.units(type) ?? []).map((unit) => ({
+                id: unit.id(),
+                level: unit.level(),
+                tile: unit.tile(),
+                active: unit.isActive(),
+                underConstruction: unit.isUnderConstruction(),
+              })),
+            ] as const,
+        )
+        .filter(([, entries]) => entries.length > 0),
+    );
+    const activeMissiles = runner.game
+      .units(...trackedMissileTypes)
+      .filter((unit) => unit.isActive())
+      .map((unit) => {
+        const targetTile = unit.targetTile();
+        const targetOwner = targetTile === undefined ? null : runner.game.owner(targetTile);
+        const targetOwnerName = typeof targetOwner?.name === "function" ? targetOwner.name() : null;
+        const targetOwnerTeam = typeof targetOwner?.team === "function" ? targetOwner.team() : null;
+        return {
+          id: unit.id(),
+          type: unit.type(),
+          owner: unit.owner().name(),
+          ownerTeam: unit.owner().team(),
+          targetTile: targetTile ?? null,
+          targetOwner: targetOwnerName,
+          targetOwnerTeam,
+          trajectoryIndex: unit.trajectoryIndex(),
+          trajectoryLength: unit.trajectory().length,
+          targetedBySam: unit.targetedBySAM(),
+        };
+      });
+    const attackBehavior = bot.nationBot?.attackBehavior;
+    const productionReserve = Math.round(
+      Number(attackBehavior?.getEarlyGameProductionReserveTroops?.() ?? 0),
+    );
+    const liveReserve = Math.round(Number(attackBehavior?.getEarlyGameLiveReserveTroops?.() ?? 0));
+    const pendingTroops = Math.round(
+      Number(attackBehavior?.getPendingOutboundTroopCommitments?.() ?? 0),
+    );
     console.warn(
       JSON.stringify({
         phase: "progress",
@@ -115,19 +258,31 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
         alive: player?.isAlive() ?? false,
         tiles: player?.numTilesOwned() ?? 0,
         troops: player?.troops() ?? 0,
+        maxTroops: player ? runner.game.config().maxTroops(player) : 0,
+        productionReserve,
+        liveReserve,
+        pendingTroops,
         gold: Number(player?.gold() ?? 0n),
         incomingAttacks: player?.incomingAttacks().length ?? 0,
         outgoingAttacks: player?.outgoingAttacks().length ?? 0,
+        incoming,
+        units,
+        unitDetails,
+        activeMissiles,
         team: player?.team() ?? null,
         intents: emittedIntents,
+        intervalIntentTypes: sortedCounts(intervalIntentTypes),
+        cumulativeIntentTypes: sortedCounts(cumulativeIntentTypes),
         elapsedMs: Math.round(performance.now() - startedAt),
       }),
     );
+    intervalIntentTypes = new Map<string, number>();
   }
 }
 
 if (fatalError !== null) throw new Error(fatalError);
 const winner = runner.game.getWinner();
+if (winner !== null) stopReason = "winner";
 const finalMe = runner.game.playerByClientID(clientID);
 const won =
   winner !== null &&
@@ -152,7 +307,10 @@ console.warn(
     myTeam: finalMe?.team() ?? null,
     alive: finalMe?.isAlive() ?? false,
     ticks: runner.game.ticks(),
+    stopReason,
+    performanceProfile: profileBot ? bot.getPerformanceProfile() : undefined,
     emittedIntents,
+    cumulativeIntentTypes: sortedCounts(cumulativeIntentTypes),
     runtimeMs: Math.round(performance.now() - startedAt),
     topPlayers: players.slice(0, 10),
   }),

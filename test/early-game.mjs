@@ -1310,7 +1310,7 @@ assert.match(
 );
 assert.match(
   attackSource,
-  /earlyGameSnapshot\.postSpawn[\s\S]*?attackEarlyGameTribe\(\)/,
+  /earlyGameSnapshot\.postSpawn[\s\S]*?attackEarlyGameTribe\(profile\)/,
   "the first tribe probe runs after spawn when a higher-priority expansion cannot emit",
 );
 assert.match(attackSource, /maybeEarlyOceanBoat/);
@@ -2090,7 +2090,7 @@ assert.ok(
 );
 const yieldProbeNodes = [{ id: 101 }, { id: 102 }];
 const yieldProbeBorders = new Map([
-  [101, new Set(Array.from({ length: 256 }, (_, index) => 10_000 + index))],
+  [101, new Set(Array.from({ length: 4096 }, (_, index) => 10_000 + index))],
   [102, new Set()],
 ]);
 const yieldsBeforeTopologyProbe = topologyYieldCount;

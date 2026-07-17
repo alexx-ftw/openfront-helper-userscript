@@ -296,7 +296,7 @@
             this.handleEmbargoesToHostileNations());
         }
         if (!(await this.runOptionalAsyncPhase(this.feat("expand") || this.feat("boat"),
-          profile, "attack", () => this.attackBehavior.maybeAttack(), tickGeneration))) return;
+          profile, "attack", () => this.attackBehavior.maybeAttack(profile), tickGeneration))) return;
         if (!(await this.runOptionalAsyncPhase(warship, profile, "warship-counter",
           () => this.warshipBehavior.counterWarshipInfestation(), tickGeneration))) return;
         await this.runOptionalAsyncPhase(this.feat("nuke"), profile, "nuke",
