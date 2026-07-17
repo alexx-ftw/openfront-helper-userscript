@@ -4488,37 +4488,63 @@
       return null;
     }
 
-    boatDestinationAlreadyEmittedThisTick(dst) {
+    boatDestinationsOverlap(first, second) {
+      if (first === second) return true;
+      if (
+        first == null ||
+        second == null ||
+        typeof this.game.x !== "function" ||
+        typeof this.game.y !== "function"
+      ) {
+        return false;
+      }
+      const firstX = Number(this.game.x(first));
+      const firstY = Number(this.game.y(first));
+      const secondX = Number(this.game.x(second));
+      const secondY = Number(this.game.y(second));
+      if (![firstX, firstY, secondX, secondY].every(Number.isFinite)) {
+        return false;
+      }
+      const radius = state.settings.boatSpreadRadius || 30;
+      return Math.abs(firstX - secondX) + Math.abs(firstY - secondY) <= radius;
+    }
+
+    boatDestinationOverlapsEmissionThisTick(dst) {
       const tick = this.currentAttackDecisionTick();
       if (this.botBoatDestinationIntentTick !== tick) {
         this.botBoatDestinationIntentTick = tick;
         this.botBoatDestinationIntents = new Set();
       }
-      return this.botBoatDestinationIntents.has(dst);
+      for (const reserved of this.botBoatDestinationIntents) {
+        if (this.boatDestinationsOverlap(reserved, dst)) return true;
+      }
+      return false;
     }
 
     recordBoatDestinationIntent(dst) {
       this.botBoatDestinationIntents.add(dst);
     }
 
-    boatDestinationHasPendingIntent(dst) {
+    boatDestinationOverlapsPendingIntent(dst) {
       this.reconcileOutboundAttackIntentCommitments();
       return this.botAttackPendingIntentCommitments.some(
-        (entry) => entry?.attackType === "boat" && entry.destination === dst,
+        (entry) =>
+          entry?.attackType === "boat" &&
+          this.boatDestinationsOverlap(entry.destination, dst),
       );
     }
 
-    boatDestinationHasLiveTransport(dst) {
+    boatDestinationOverlapsLiveTransport(dst) {
       return this.getOutboundTransportSnapshot().some(
-        (entry) => entry.targetTile === dst,
+        (entry) => this.boatDestinationsOverlap(entry.targetTile, dst),
       );
     }
 
     boatDestinationReserved(dst) {
       return (
-        this.boatDestinationAlreadyEmittedThisTick(dst) ||
-        this.boatDestinationHasPendingIntent(dst) ||
-        this.boatDestinationHasLiveTransport(dst)
+        this.boatDestinationOverlapsEmissionThisTick(dst) ||
+        this.boatDestinationOverlapsPendingIntent(dst) ||
+        this.boatDestinationOverlapsLiveTransport(dst)
       );
     }
 

@@ -176,11 +176,11 @@
 
 <ul>
   <li>
-    A successfully emitted transport intent reserves its exact destination while the intent is
-    pending and while a non-retreating active transport is traveling there. Parallel transports to
-    different destinations remain legal. The reservation is released when the intent fails to
-    materialize after the normal reconciliation grace or when the observed transport completes,
-    disappears, becomes inactive, or retreats.
+    A successfully emitted transport intent reserves its destination and the surrounding configured
+    boat-spread radius while the intent is pending and while a non-retreating active transport is
+    traveling there. Parallel transports to spatially distinct opportunities remain legal. The
+    reservation is released when the intent fails to materialize after the normal reconciliation
+    grace or when the observed transport completes, disappears, becomes inactive, or retreats.
   </li>
 </ul>
 

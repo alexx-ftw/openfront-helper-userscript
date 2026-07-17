@@ -74,6 +74,8 @@ const me = {
 };
 const game = {
   ticks: () => tick,
+  x: (tile) => Number(tile) % 100,
+  y: (tile) => Math.floor(Number(tile) / 100),
   numLandTiles: () => 1000,
   numTilesWithFallout: () => 0,
   config: () => ({ maxTroops: () => 100000 }),
@@ -626,6 +628,47 @@ assert.equal(
   parallelBoatBehavior.emitBoat("parallel-b", 1000, "⛵ parallel B"),
   true,
   "a reserved destination does not block a parallel transport elsewhere",
+);
+const spatialBoatBehavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
+tick = 50;
+assert.equal(spatialBoatBehavior.emitBoat(1000, 10000, "⛵ priority conquest"), true);
+assert.equal(
+  spatialBoatBehavior.emitBoat(1002, 1000, "⛵ overlapping probe"),
+  false,
+  "the higher-priority transport reserves nearby tiles in the same beach opportunity",
+);
+assert.equal(
+  spatialBoatBehavior.emitBoat(5000, 1000, "⛵ distant parallel boat"),
+  true,
+  "the configured spread radius still permits genuinely separate opportunities",
+);
+tick += 1;
+assert.equal(
+  spatialBoatBehavior.emitBoat(1005, 1000, "⛵ pending nearby probe"),
+  false,
+  "a pending transport reserves nearby tiles across game ticks",
+);
+transports = [
+  {
+    id: () => "transport-spatial",
+    isActive: () => true,
+    targetTile: () => 2000,
+    troops: () => 1000,
+    transportShipState: () => ({ isRetreating: false }),
+  },
+];
+const liveSpatialBoatBehavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
+assert.equal(
+  liveSpatialBoatBehavior.emitBoat(2020, 1000, "⛵ nearby live boat"),
+  false,
+  "a live transport reserves the surrounding beach even when its target tile was adjusted",
+);
+transports = [];
+tick += 1;
+assert.equal(
+  liveSpatialBoatBehavior.emitBoat(2020, 1000, "⛵ cleared nearby boat"),
+  true,
+  "a nearby opportunity becomes eligible immediately after the live transport clears",
 );
 
 // Tribe attacks must be all-or-nothing: if visible and pending commitments plus
