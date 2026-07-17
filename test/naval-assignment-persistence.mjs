@@ -195,4 +195,34 @@ assert.equal(
   "a completed fallback transport route releases its incremental builder",
 );
 
+const boundedInterceptionBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
+let boundedNeighborCalls = 0;
+boundedInterceptionBehavior.game = {
+  width: () => 1000,
+  height: () => 1,
+  isWater: () => true,
+  manhattanDist: (left, right) => Math.abs(left - right),
+  forEachNeighbor: (tile, visit) => {
+    boundedNeighborCalls++;
+    if (tile < 999) visit(tile + 1);
+  },
+};
+assert.equal(
+  boundedInterceptionBehavior.interceptionRoute(0, 999),
+  null,
+  "a long interceptor route must yield instead of running an unbounded A*",
+);
+assert.ok(boundedNeighborCalls <= 256, "interceptor route expansion stays within its budget");
+assert.deepEqual(
+  [...boundedInterceptionBehavior.interceptionRoute(0, 4)],
+  [0, 1, 2, 3, 4],
+  "short interceptor routes remain exact",
+);
+
+assert.doesNotMatch(
+  read("engine/ingame/auto-bot/warshipBehavior.js"),
+  /planNavalInterceptions\(\{[\s\S]{0,500}route: \(from, to\) => this\.waterRoute\(from, to\)/,
+  "interception planner must not invoke unbounded waterRoute directly",
+);
+
 process.stdout.write("naval assignment persistence tests passed\n");

@@ -50,6 +50,11 @@
   // incrementally so a single hostile boat cannot freeze the game loop before
   // the naval planner can react.
   const NAVAL_INVASION_ROUTE_SLICE_NODES = 1024;
+  // Interception planning probes several future transport positions for every
+  // available warship. Each probe must stay small: an unresolved long route can
+  // be retried on the next throttled planner pass, whereas one full A* freezes
+  // the entire combat tick and prevents every defensive response.
+  const NAVAL_INTERCEPTION_ROUTE_MAX_EXPANSIONS = 256;
 
   function getWarshipRuntimeHost() {
     if (typeof window !== "undefined") return window;
@@ -1011,6 +1016,22 @@
       return this.advanceWaterRoute(routeState, goal).path;
     }
 
+    interceptionRoute(start, goal) {
+      if (start === undefined || start === null || goal === undefined || goal === null) {
+        return null;
+      }
+      if (!this.game.isWater(start) || !this.game.isWater(goal)) return null;
+      if (start === goal) return [start];
+      const routeState = this.createWaterRouteState(start, goal);
+      routeState.open.push({ tile: start, priority: this.warshipRouteHeuristic(start, goal) });
+      const outcome = this.advanceWaterRoute(
+        routeState,
+        goal,
+        NAVAL_INTERCEPTION_ROUTE_MAX_EXPANSIONS,
+      );
+      return outcome.complete ? outcome.path : null;
+    }
+
     waterTargetTile(target) {
       if (target === undefined || target === null) return null;
       {
@@ -1178,12 +1199,12 @@
       const plan = planNavalInterceptions({
         ships: [{ id: "pending-destroyer", tile: spawnTile }],
         invasions: [invasion],
-        route: (from, to) => this.waterRoute(from, to),
+        route: (from, to) => this.interceptionRoute(from, to),
         distance: (from, to) => this.waterDistance(from, to),
         ...speeds,
       });
       const assignment = plan.assignments[0] ?? null;
-      const spawnRoute = this.waterRoute(spawnTile, tile);
+      const spawnRoute = this.interceptionRoute(spawnTile, tile);
       const spawnDistance = Array.isArray(spawnRoute) ? spawnRoute.length : Infinity;
       const score = assignment
         ? [1, assignment.marginTicks, -assignment.interceptTick]
@@ -1398,7 +1419,7 @@
       const plan = planNavalInterceptions({
         ships: availableWarships.map((warship) => ({ id: warship.id(), tile: warship.tile() })),
         invasions,
-        route: (from, to) => this.waterRoute(from, to),
+        route: (from, to) => this.interceptionRoute(from, to),
         distance: (from, to) => this.waterDistance(from, to),
         boatSpeed,
         warshipSpeed,
