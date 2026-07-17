@@ -1710,6 +1710,17 @@ assert.equal(
   firstCoverageDistanceCalls,
   "Repeated coverage consumers reuse one SAM-versus-structure geometry plan per tick",
 );
+structureCoverageTick++;
+assert.equal(
+  structureCoverageBehavior.hydrogenStructureCoveragePlan().targetLevel,
+  2,
+  "Unchanged SAM and structure geometry preserves the coverage plan across ticks",
+);
+assert.equal(
+  structureCoverageDistanceCalls,
+  firstCoverageDistanceCalls,
+  "Unchanged geometry is not recomputed merely because the game tick advanced",
+);
 coverageSamLevel = 2;
 structureCoverageTick++;
 assert.equal(

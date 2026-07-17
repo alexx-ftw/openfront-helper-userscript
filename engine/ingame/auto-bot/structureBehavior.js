@@ -440,7 +440,9 @@
       // hostile missile in flight. Once opened, the gate remains open for the
       // rest of the match even after that first missile resolves.
       this._hostileMissileLaunchObserved = false;
-      this._hydrogenStructureCoveragePlanTick = null;
+      // Full SAM-versus-structure coverage checks are expensive on mature
+      // boards. Cache them by their exact geometry, not merely by game tick.
+      this._hydrogenStructureCoveragePlanKey = null;
       this._hydrogenStructureCoveragePlanCache = null;
       // Missile placement forecasts are shared by several Legendary and
       // win-fix construction gates. Keep one snapshot per game tick so a
@@ -2784,22 +2786,18 @@
     }
 
     hydrogenStructureCoveragePlan() {
-      const tick = safeStructureGameTick(this.game);
-      if (
-        Number.isFinite(tick) &&
-        this._hydrogenStructureCoveragePlanTick === tick
-      ) {
+      const input = this.hydrogenStructureCoverageInputs();
+      if (input === null) return null;
+      if (this._hydrogenStructureCoveragePlanKey === input.key) {
         return this._hydrogenStructureCoveragePlanCache;
       }
-      const plan = this.computeHydrogenStructureCoveragePlan();
-      if (Number.isFinite(tick)) {
-        this._hydrogenStructureCoveragePlanTick = tick;
-        this._hydrogenStructureCoveragePlanCache = plan;
-      }
+      const plan = this.computeHydrogenStructureCoveragePlan(input);
+      this._hydrogenStructureCoveragePlanKey = input.key;
+      this._hydrogenStructureCoveragePlanCache = plan;
       return plan;
     }
 
-    computeHydrogenStructureCoveragePlan() {
+    hydrogenStructureCoverageInputs() {
       if (
         !state.settings.winFixes ||
         !autoBotBuildAllowed(UNIT.SAMLauncher)
@@ -2814,9 +2812,34 @@
       if (config === null) return null;
       const structures = this.ownedStructureTiles();
       if (structures.length === 0) return null;
-      const sams = (this.player.units(UNIT.SAMLauncher) || []).filter((sam) =>
-        this.isBuiltActiveSam(sam),
-      );
+      const sams = [];
+      for (const sam of this.player.units(UNIT.SAMLauncher) || []) {
+        if (!this.isBuiltActiveSam(sam)) continue;
+        const tile = sam.tile();
+        const level = Math.max(1, Math.floor(Number(sam.level?.() ?? 1)));
+        if (tile === null || tile === undefined || !Number.isFinite(level)) continue;
+        sams.push({ sam, tile, level });
+      }
+      return {
+        config,
+        structures,
+        sams,
+        key: [
+          hostileSiloLevelSum,
+          structures.join(","),
+          sams
+            .map(({ sam, tile, level }, index) =>
+              [sam.id?.() ?? index, tile, level].join(":"),
+            )
+            .join(","),
+        ].join("|"),
+      };
+    }
+
+    computeHydrogenStructureCoveragePlan(input = null) {
+      const coverage = input || this.hydrogenStructureCoverageInputs();
+      if (coverage === null) return null;
+      const { config, structures, sams } = coverage;
       if (sams.length === 0) return { needsNewSam: true };
       if (
         this.hydrogenCoveredStructureCount(sams, structures, config) ===
@@ -2893,10 +2916,9 @@
           const level =
             sam === upgradedSam
               ? upgradedLevel
-              : Math.max(1, Math.floor(Number(sam.level?.() ?? 1)));
-          if (!Number.isFinite(level)) return false;
+              : sam.level;
           return (
-            this.game.euclideanDistSquared(sam.tile(), structureTile) <=
+            this.game.euclideanDistSquared(sam.tile, structureTile) <=
             this.samRangeSquared(config, level)
           );
         });
@@ -2913,7 +2935,7 @@
       );
       let bestPlan = null;
       for (const sam of sams) {
-        const currentLevel = Math.max(1, Math.floor(Number(sam.level?.() ?? 1)));
+        const currentLevel = sam.level;
         if (
           !Number.isFinite(currentLevel) ||
           currentLevel >= HYDROGEN_SAM_MAX_UPGRADE_LEVEL
@@ -2934,7 +2956,7 @@
           );
           if (covered <= currentCovered) continue;
           const candidate = {
-            sam,
+            sam: sam.sam,
             currentLevel,
             targetLevel,
             coveredPoints: covered,
