@@ -2359,13 +2359,37 @@
       tribesById.set(candidate.smallID(), candidate);
     }
 
-    getEligibleEarlyGameTribes(otherPlayers) {
+    getEarlyGameBorderingOwnerIds() {
+      if (
+        typeof this.player?.borderTiles !== "function" ||
+        typeof this.game?.neighbors !== "function" ||
+        typeof this.game?.ownerID !== "function"
+      ) {
+        return null;
+      }
+      const ownerIds = new Set();
+      for (const border of this.player.borderTiles()) {
+        for (const neighbor of this.game.neighbors(border) || []) {
+          const ownerId = this.game.ownerID(neighbor);
+          if (ownerId != null) ownerIds.add(ownerId);
+        }
+      }
+      return ownerIds;
+    }
+
+    getEligibleEarlyGameTribes(otherPlayers, borderingOwnerIds = null) {
       const tribesById = new Map();
       for (const candidate of this.player.nearby()) {
         this.addEligibleEarlyGameTribe(tribesById, candidate);
       }
-      for (const candidate of otherPlayers) {
-        {
+      if (borderingOwnerIds?.size > 0) {
+        for (const candidate of otherPlayers) {
+          if (borderingOwnerIds.has(candidate?.smallID?.())) {
+            this.addEligibleEarlyGameTribe(tribesById, candidate);
+          }
+        }
+      } else {
+        for (const candidate of otherPlayers) {
           if (this.player.sharesBorderWith(candidate) === true) {
             this.addEligibleEarlyGameTribe(tribesById, candidate);
           }
@@ -2533,29 +2557,60 @@
       competitorProfiles,
       profile = null,
     ) {
-      const eligible = this.getEligibleEarlyGameTribes(otherPlayers);
-      const nodes = this.getLightweightEarlyGameTribeNodes(
-        otherPlayers,
-        competitorProfiles,
+      const borderingOwnerIds = profileAttackSync(
+        profile,
+        "tribes-sampling-border-owners",
+        () => this.getEarlyGameBorderingOwnerIds(),
+      );
+      const eligible = profileAttackSync(
+        profile,
+        "tribes-sampling-eligible",
+        () => this.getEligibleEarlyGameTribes(otherPlayers, borderingOwnerIds),
+      );
+      const nodes = profileAttackSync(
+        profile,
+        "tribes-sampling-nodes",
+        () =>
+          this.getLightweightEarlyGameTribeNodes(
+            otherPlayers,
+            competitorProfiles,
+          ),
       );
       const { topologyBordersById, tribeAdjacency } =
-        await this.getEarlyGameTribeTopology(nodes, profile);
-      const eligibleIds = eligible.map((tribe) => tribe.smallID());
-      const clusterOpportunities =
-        calculateReachableTribeClusterOpportunities(
-          nodes,
-          tribeAdjacency,
-          eligibleIds,
+        await profileAttackAsync(
+          profile,
+          "tribes-sampling-topology",
+          () => this.getEarlyGameTribeTopology(nodes, profile),
         );
-      const { bordering, other } = this.splitEarlyGameTribesByLandBorder(eligible);
-      const nearbyTribes = this.rankEarlyGameSamplingTribes(
-        bordering,
-        clusterOpportunities,
-      )
-        .concat(
-          this.rankEarlyGameSamplingTribes(other, clusterOpportunities),
-        )
-        .slice(0, EARLY_TRIBE_CANDIDATES);
+      const eligibleIds = eligible.map((tribe) => tribe.smallID());
+      const clusterOpportunities = profileAttackSync(
+        profile,
+        "tribes-sampling-clusters",
+        () =>
+          calculateReachableTribeClusterOpportunities(
+            nodes,
+            tribeAdjacency,
+            eligibleIds,
+          ),
+      );
+      const { bordering, other } = profileAttackSync(
+        profile,
+        "tribes-sampling-split",
+        () => this.splitEarlyGameTribesByLandBorder(eligible),
+      );
+      const nearbyTribes = profileAttackSync(
+        profile,
+        "tribes-sampling-rank",
+        () =>
+          this.rankEarlyGameSamplingTribes(
+            bordering,
+            clusterOpportunities,
+          )
+            .concat(
+              this.rankEarlyGameSamplingTribes(other, clusterOpportunities),
+            )
+            .slice(0, EARLY_TRIBE_CANDIDATES),
+      );
       return { nearbyTribes, topologyBordersById, tribeAdjacency };
     }
 

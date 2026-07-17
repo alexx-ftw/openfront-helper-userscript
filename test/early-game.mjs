@@ -1637,6 +1637,43 @@ assert.ok(
   "a bordering tribe omitted by nearby() remains actionable beside a hostile Nation",
 );
 
+const indexedBorderTribe = makeTargetPlayer(7, "Bot", [101], 100, { x: 1, y: 0 });
+const indexedRemoteTribe = makeTargetPlayer(8, "Bot", [102], 100, { x: 2, y: 0 });
+let indexedBorderScans = 0;
+const indexedBorderMe = {
+  ...targetMe,
+  borderTiles: () => new Set([100]),
+  nearby: () => [],
+  sharesBorderWith: () => {
+    throw new Error("the indexed owner path must avoid pairwise border scans");
+  },
+};
+const indexedBorderBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+indexedBorderBehavior.player = indexedBorderMe;
+indexedBorderBehavior.game = {
+  neighbors: () => {
+    indexedBorderScans++;
+    return [101];
+  },
+  ownerID: (tile) => (tile === 101 ? 7 : null),
+};
+const indexedBorderOwnerIds = indexedBorderBehavior.getEarlyGameBorderingOwnerIds();
+const indexedEligibleTribes = indexedBorderBehavior.getEligibleEarlyGameTribes(
+  [indexedBorderMe, indexedBorderTribe, indexedRemoteTribe],
+  indexedBorderOwnerIds,
+);
+assert.equal(
+  indexedEligibleTribes.length,
+  1,
+  "one border-owner scan recovers only the truly adjacent tribe",
+);
+assert.equal(indexedEligibleTribes[0].smallID(), 7);
+assert.equal(
+  indexedBorderScans,
+  1,
+  "the eligible-tribe fast path scans each owned border tile once",
+);
+
 const explorationRouteBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 let explorationEta = 1200;
 explorationRouteBehavior.game = {
