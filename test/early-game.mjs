@@ -2689,6 +2689,21 @@ assert.equal(
   maritimeBehavior.getEarlyGameMaritimeIndex(),
   "the maritime distance field must be reused after it is built",
 );
+assert.equal(
+  maritimeBehavior.earlyGameMaritimeWaterState[10],
+  1,
+  "the dense water traversal caches an isolated component as closed",
+);
+assert.equal(
+  maritimeBehavior.earlyGameMaritimeWaterState[17],
+  2,
+  "the dense water traversal caches an edge-connected component as open",
+);
+assert.equal(
+  maritimeBehavior.earlyGameMaritimeWaterCache.size,
+  0,
+  "valid map dimensions avoid the allocation-heavy Set fallback",
+);
 const sharedMaritimeBehavior = new targetSandbox.AttackBehavior(
   {},
   maritimeGame,

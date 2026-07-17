@@ -304,6 +304,16 @@
       }
     }
 
+    prepareEarlyGameMaritimeState(profile) {
+      if (
+        !state.settings.winFixes ||
+        !(this.feat("expand") || this.feat("boat"))
+      ) {
+        return;
+      }
+      this.attackBehavior.prepareEarlyGameMaritimeIndexSlice?.(profile);
+    }
+
     async tick(ticks, profile, tickGeneration) {
       if (!this.tickIsCurrent(tickGeneration)) return;
       this.player = this.mg.myPlayer();
@@ -312,6 +322,7 @@
       this.lastProcessedGameTick = ticks;
       if (this.behaviorsInitialized && me?.isAlive()) {
         this.structureBehavior.observeHostileMissileLaunch?.();
+        this.prepareEarlyGameMaritimeState(profile);
       }
       if (!(await this.runNavalTickPhases(me, profile, tickGeneration))) return;
       if (me === null || this.handleSpawnTick(ticks, profile)) return;

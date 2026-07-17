@@ -51,4 +51,43 @@ assert.ok(
   `route search performed ${maxCallsBetweenYields} expansions without yielding`,
 );
 
+const maritimeOptions = {
+  width: 128,
+  height: 64,
+  forEachNeighbor(tile, visit) {
+    const x = tile % 128;
+    const y = Math.floor(tile / 128);
+    if (x > 0) visit(tile - 1);
+    if (x < 127) visit(tile + 1);
+    if (y > 0) visit(tile - 128);
+    if (y < 63) visit(tile + 128);
+  },
+  isLand: () => true,
+  isMaritimeShore: (tile) => tile === 127,
+};
+const incrementalMaritimeBuilder = sandbox.createMaritimeDistanceIndexBuilder(maritimeOptions);
+let maritimeYieldChecks = 0;
+assert.equal(
+  sandbox.advanceMaritimeDistanceIndexBuilder(incrementalMaritimeBuilder, {
+    maxSteps: 512,
+    yieldCheckInterval: 64,
+    shouldYield: () => ++maritimeYieldChecks >= 2,
+  }),
+  null,
+  "a bounded maritime slice must not publish a partial distance field",
+);
+assert.ok(
+  incrementalMaritimeBuilder.seedCursor < incrementalMaritimeBuilder.total,
+  "the first maritime slice leaves the full-map seed scan resumable",
+);
+const incrementalMaritimeIndex = sandbox.advanceMaritimeDistanceIndexBuilder(
+  incrementalMaritimeBuilder,
+);
+const synchronousMaritimeIndex = sandbox.buildMaritimeDistanceIndex(maritimeOptions);
+assert.deepEqual(
+  [...incrementalMaritimeIndex.distances],
+  [...synchronousMaritimeIndex.distances],
+  "incremental maritime preparation preserves the exact distance field",
+);
+
 console.warn("frame-stall regression tests passed");

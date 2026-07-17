@@ -118,6 +118,7 @@
   // Terrain is shared by all Nation behaviors for the same game. Keep the
   // reverse maritime field per map instead of rebuilding it for every bot.
   const EARLY_GAME_MARITIME_INDEX_CACHE = new WeakMap();
+  const EARLY_GAME_MARITIME_INDEX_BUILDER_CACHE = new WeakMap();
 
   function getAutoDonateExpansionTickLimit() {
     return typeof AUTO_DONATE_EXPANSION_MAX_TICKS === "number"
@@ -455,6 +456,10 @@
       : game;
   }
 
+  function isEarlyGameMaritimeCacheKey(value) {
+    return value && (typeof value === "object" || typeof value === "function");
+  }
+
   function playersShareClanTag(left, right) {
     {
       const objectiveApi =
@@ -614,7 +619,12 @@
       // The shared WeakMap below owns the terrain index; this local reference
       // avoids even the lookup after the first candidate pass.
       this.earlyGameMaritimeIndex = undefined;
+      this.earlyGameMaritimeIndexBuilder = undefined;
       this.earlyGameMaritimeWaterCache = new Map();
+      this.earlyGameMaritimeWaterState = null;
+      this.earlyGameMaritimeWaterQueue = null;
+      this.earlyGameMaritimeWaterQueueTail = 0;
+      this.earlyGameMaritimeWaterTraversalFoundOpen = false;
       this.opportunisticBoatSurgeTickByTile = new Map();
       this.earlyGamePreferredClusterTargetKeys = new Set();
       this.earlyGameTribeTopologyCache = null;
@@ -2246,9 +2256,78 @@
       }
     }
 
+    ensureDenseEarlyGameMaritimeWaterState() {
+      if (this.earlyGameMaritimeWaterState) return true;
+      const width = Number(this.game.width?.());
+      const height = Number(this.game.height?.());
+      const total = width * height;
+      if (!Number.isSafeInteger(total) || total <= 0) return false;
+      this.earlyGameMaritimeWaterState = new Uint8Array(total);
+      this.earlyGameMaritimeWaterQueue = new Int32Array(total);
+      return true;
+    }
+
+    enqueueDenseEarlyGameWaterNeighbor(next) {
+      if (!Number.isInteger(next) || next < 0) return;
+      const state = this.earlyGameMaritimeWaterState;
+      if (next >= state.length) return;
+      if (state[next] === 2) {
+        this.earlyGameMaritimeWaterTraversalFoundOpen = true;
+        return;
+      }
+      if (state[next] !== 0 || !this.game.isWater(next)) return;
+      state[next] = 3;
+      this.earlyGameMaritimeWaterQueue[this.earlyGameMaritimeWaterQueueTail++] = next;
+    }
+
+    appendDenseEarlyGameWaterNeighbors(tile) {
+      if (typeof this.game.forEachNeighbor === "function") {
+        this.game.forEachNeighbor(tile, (next) =>
+          this.enqueueDenseEarlyGameWaterNeighbor(next));
+        return;
+      }
+      for (const next of this.game.neighbors(tile) || []) {
+        this.enqueueDenseEarlyGameWaterNeighbor(next);
+      }
+    }
+
+    finalizeDenseEarlyGameMaritimeWaterTraversal(maritime) {
+      const value = maritime ? 2 : 1;
+      for (let index = 0; index < this.earlyGameMaritimeWaterQueueTail; index++) {
+        this.earlyGameMaritimeWaterState[this.earlyGameMaritimeWaterQueue[index]] = value;
+      }
+      return maritime;
+    }
+
+    isDenseEarlyGameMaritimeWater(tile) {
+      const state = this.earlyGameMaritimeWaterState;
+      if (!Number.isInteger(tile) || tile < 0 || tile >= state.length) return false;
+      if (state[tile] !== 0) return state[tile] === 2;
+      state[tile] = 3;
+      this.earlyGameMaritimeWaterQueue[0] = tile;
+      this.earlyGameMaritimeWaterQueueTail = 1;
+      this.earlyGameMaritimeWaterTraversalFoundOpen = false;
+      for (let head = 0; head < this.earlyGameMaritimeWaterQueueTail; head++) {
+        const current = this.earlyGameMaritimeWaterQueue[head];
+        if (this.earlyGameWaterIsOpen(current)) {
+          this.earlyGameMaritimeWaterTraversalFoundOpen = true;
+          break;
+        }
+        this.appendDenseEarlyGameWaterNeighbors(current);
+        if (this.earlyGameMaritimeWaterTraversalFoundOpen) break;
+      }
+      return this.finalizeDenseEarlyGameMaritimeWaterTraversal(
+        this.earlyGameMaritimeWaterTraversalFoundOpen,
+      );
+    }
+
     isEarlyGameMaritimeWater(tile) {
       if (tile == null || typeof this.game.isWater !== "function") return false;
       if (this.earlyGameWaterIsOpen(tile)) return true;
+
+      if (this.ensureDenseEarlyGameMaritimeWaterState()) {
+        return this.isDenseEarlyGameMaritimeWater(tile);
+      }
 
       if (this.earlyGameMaritimeWaterCache.has(tile)) {
         return this.earlyGameMaritimeWaterCache.get(tile) === true;
@@ -2309,6 +2388,78 @@
       );
     }
 
+    earlyGameMaritimeIndexOptions() {
+      return {
+        width: this.game.width(),
+        height: this.game.height(),
+        neighbors: (tile) => this.game.neighbors(tile),
+        forEachNeighbor:
+          typeof this.game.forEachNeighbor === "function"
+            ? (tile, visit) => this.game.forEachNeighbor(tile, visit)
+            : undefined,
+        isLand: (tile) => this.game.isLand(tile),
+        isMaritimeShore: (tile) => this.isEarlyGameMaritimeShore(tile),
+      };
+    }
+
+    getEarlyGameMaritimeIndexBuilder(cacheKey) {
+      if (this.earlyGameMaritimeIndexBuilder !== undefined) {
+        return this.earlyGameMaritimeIndexBuilder;
+      }
+      const shared = isEarlyGameMaritimeCacheKey(cacheKey)
+        ? EARLY_GAME_MARITIME_INDEX_BUILDER_CACHE.get(cacheKey)
+        : null;
+      const builder =
+        shared ??
+        createMaritimeDistanceIndexBuilder(this.earlyGameMaritimeIndexOptions());
+      this.earlyGameMaritimeIndexBuilder = builder;
+      if (builder && isEarlyGameMaritimeCacheKey(cacheKey)) {
+        EARLY_GAME_MARITIME_INDEX_BUILDER_CACHE.set(cacheKey, builder);
+      }
+      return builder;
+    }
+
+    adoptCompletedEarlyGameMaritimeIndex(cacheKey, builder) {
+      if (!builder?.done || !builder.index) return null;
+      this.earlyGameMaritimeIndex = builder.index;
+      if (isEarlyGameMaritimeCacheKey(cacheKey)) {
+        EARLY_GAME_MARITIME_INDEX_CACHE.set(cacheKey, builder.index);
+        EARLY_GAME_MARITIME_INDEX_BUILDER_CACHE.delete(cacheKey);
+      }
+      return builder.index;
+    }
+
+    prepareEarlyGameMaritimeIndexSlice(profile = null) {
+      if (this.earlyGameMaritimeIndex !== undefined) return;
+      if (
+        typeof this.game.width !== "function" ||
+        typeof this.game.height !== "function"
+      ) {
+        this.earlyGameMaritimeIndex = null;
+        return;
+      }
+      const cacheKey = earlyGameMaritimeCacheKey(this.game);
+      const cached = isEarlyGameMaritimeCacheKey(cacheKey)
+        ? EARLY_GAME_MARITIME_INDEX_CACHE.get(cacheKey)
+        : null;
+      if (cached) {
+        this.earlyGameMaritimeIndex = cached;
+        return;
+      }
+      const builder = this.getEarlyGameMaritimeIndexBuilder(cacheKey);
+      if (!builder) {
+        this.earlyGameMaritimeIndex = null;
+        return;
+      }
+      profileAttackSync(profile, "tribes-maritime-index-prep", () => {
+        const deadline = performance.now() + EARLY_GAME_TRIBE_TOPOLOGY_SLICE_MS;
+        advanceMaritimeDistanceIndexBuilder(builder, {
+          shouldYield: () => performance.now() >= deadline,
+        });
+      });
+      this.adoptCompletedEarlyGameMaritimeIndex(cacheKey, builder);
+    }
+
     getEarlyGameMaritimeIndex() {
       if (this.earlyGameMaritimeIndex !== undefined) {
         return this.earlyGameMaritimeIndex;
@@ -2322,8 +2473,7 @@
       }
       const cacheKey = earlyGameMaritimeCacheKey(this.game);
       if (
-        cacheKey &&
-        (typeof cacheKey === "object" || typeof cacheKey === "function")
+        isEarlyGameMaritimeCacheKey(cacheKey)
       ) {
         const cached = EARLY_GAME_MARITIME_INDEX_CACHE.get(cacheKey);
         if (cached) {
@@ -2331,23 +2481,13 @@
           return cached;
         }
       }
-      const index = buildMaritimeDistanceIndex({
-        width: this.game.width(),
-        height: this.game.height(),
-        neighbors: (tile) => this.game.neighbors(tile),
-        forEachNeighbor:
-          typeof this.game.forEachNeighbor === "function"
-            ? (tile, visit) => this.game.forEachNeighbor(tile, visit)
-            : undefined,
-        isLand: (tile) => this.game.isLand(tile),
-        isMaritimeShore: (tile) => this.isEarlyGameMaritimeShore(tile),
-      });
+      const builder = this.getEarlyGameMaritimeIndexBuilder(cacheKey);
+      const index = builder
+        ? advanceMaritimeDistanceIndexBuilder(builder)
+        : buildMaritimeDistanceIndex(this.earlyGameMaritimeIndexOptions());
       this.earlyGameMaritimeIndex = index;
-      if (
-        index &&
-        cacheKey &&
-        (typeof cacheKey === "object" || typeof cacheKey === "function")
-      ) {
+      if (builder) this.adoptCompletedEarlyGameMaritimeIndex(cacheKey, builder);
+      else if (index && isEarlyGameMaritimeCacheKey(cacheKey)) {
         EARLY_GAME_MARITIME_INDEX_CACHE.set(cacheKey, index);
       }
       return index;

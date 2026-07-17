@@ -357,33 +357,7 @@
     );
   }
 
-  function seedMaritimeDistanceIndex(total, isLand, isMaritimeShore, distances, queue) {
-    let tail = 0;
-    for (let tile = 0; tile < total; tile++) {
-      if (!isLand(tile) || !isMaritimeShore(tile)) continue;
-      distances[tile] = 0;
-      queue[tail++] = tile;
-    }
-    return tail;
-  }
-
-  function addMaritimeDistanceNeighbors(options) {
-    let tail = options.tail;
-    for (const next of options.neighbors(options.current) || []) {
-      const invalid =
-        !Number.isInteger(next) ||
-        next < 0 ||
-        next >= options.total ||
-        !options.isLand(next) ||
-        options.distances[next] !== -1;
-      if (invalid) continue;
-      options.distances[next] = options.nextDistance;
-      options.queue[tail++] = next;
-    }
-    return tail;
-  }
-
-  function buildMaritimeDistanceIndex({
+  function createMaritimeDistanceIndexBuilder({
     width,
     height,
     neighbors,
@@ -396,7 +370,23 @@
     const mapHeight = Number(height);
     const total = mapWidth * mapHeight;
     const distanceLimit = Number(maxDistance);
-    const validOptions = validMaritimeDistanceIndexOptions({
+    if (
+      !validMaritimeDistanceIndexOptions({
+        width: mapWidth,
+        height: mapHeight,
+        total,
+        distanceLimit,
+        neighbors,
+        forEachNeighbor,
+        isLand,
+        isMaritimeShore,
+      })
+    ) {
+      return null;
+    }
+    const distances = new Int32Array(total);
+    distances.fill(-1);
+    return {
       width: mapWidth,
       height: mapHeight,
       total,
@@ -405,55 +395,123 @@
       forEachNeighbor,
       isLand,
       isMaritimeShore,
-    });
-    if (!validOptions) return null;
+      distances,
+      queue: new Int32Array(total),
+      seedCursor: 0,
+      head: 0,
+      tail: 0,
+      phase: "seed",
+      done: false,
+      index: null,
+    };
+  }
 
-    const distances = new Int32Array(total);
-    distances.fill(-1);
-    const queue = new Int32Array(total);
-    let tail = seedMaritimeDistanceIndex(total, isLand, isMaritimeShore, distances, queue);
+  function seedMaritimeDistanceIndexStep(builder) {
+    const tile = builder.seedCursor++;
+    if (builder.isLand(tile) && builder.isMaritimeShore(tile)) {
+      builder.distances[tile] = 0;
+      builder.queue[builder.tail++] = tile;
+    }
+    if (builder.seedCursor >= builder.total) builder.phase = "expand";
+  }
 
-    if (typeof forEachNeighbor === "function") {
-      let nextDistance = 0;
-      const addNeighbor = (next) => {
-        if (
-          !Number.isInteger(next) ||
-          next < 0 ||
-          next >= total ||
-          !isLand(next) ||
-          distances[next] !== -1
-        ) {
-          return;
-        }
-        distances[next] = nextDistance;
-        queue[tail++] = next;
+  function addMaritimeBuilderNeighbor(builder, next, nextDistance) {
+    if (
+      !Number.isInteger(next) ||
+      next < 0 ||
+      next >= builder.total ||
+      !builder.isLand(next) ||
+      builder.distances[next] !== -1
+    ) {
+      return;
+    }
+    builder.distances[next] = nextDistance;
+    builder.queue[builder.tail++] = next;
+  }
+
+  function expandMaritimeDistanceIndexStep(builder) {
+    if (builder.head >= builder.tail) {
+      builder.done = true;
+      builder.index = {
+        distances: builder.distances,
+        width: builder.width,
+        height: builder.height,
       };
-      for (let head = 0; head < tail; head++) {
-        const current = queue[head];
-        if (distances[current] >= distanceLimit) continue;
-        nextDistance = distances[current] + 1;
-        forEachNeighbor(current, addNeighbor);
-      }
-      return { distances, width: mapWidth, height: mapHeight };
+      return;
     }
-
-    for (let head = 0; head < tail; head++) {
-      const current = queue[head];
-      if (distances[current] >= distanceLimit) continue;
-      const nextDistance = distances[current] + 1;
-      tail = addMaritimeDistanceNeighbors({
-        current,
-        nextDistance,
-        total,
-        neighbors,
-        isLand,
-        distances,
-        queue,
-        tail,
-      });
+    const current = builder.queue[builder.head++];
+    const currentDistance = builder.distances[current];
+    if (currentDistance >= builder.distanceLimit) return;
+    const nextDistance = currentDistance + 1;
+    if (typeof builder.forEachNeighbor === "function") {
+      builder.forEachNeighbor(current, (next) =>
+        addMaritimeBuilderNeighbor(builder, next, nextDistance));
+      return;
     }
+    for (const next of builder.neighbors(current) || []) {
+      addMaritimeBuilderNeighbor(builder, next, nextDistance);
+    }
+  }
 
-    return { distances, width: mapWidth, height: mapHeight };
+  function advanceMaritimeDistanceIndexStep(builder) {
+    if (builder.phase === "seed") {
+      seedMaritimeDistanceIndexStep(builder);
+      return;
+    }
+    expandMaritimeDistanceIndexStep(builder);
+  }
+
+  function maritimeDistanceSliceShouldYield(
+    steps,
+    checkInterval,
+    shouldYield,
+  ) {
+    return (
+      typeof shouldYield === "function" &&
+      steps % checkInterval === 0 &&
+      shouldYield()
+    );
+  }
+
+  function advanceMaritimeDistanceIndexBuilder(
+    builder,
+    { maxSteps = Infinity, shouldYield = null, yieldCheckInterval = 256 } = {},
+  ) {
+    if (!builder) return null;
+    if (builder.done) return builder.index;
+    const stepLimit = Number.isFinite(maxSteps)
+      ? Math.max(1, Math.floor(maxSteps))
+      : Infinity;
+    const checkInterval = Math.max(1, Math.floor(yieldCheckInterval));
+    let steps = 0;
+    while (!builder.done && steps < stepLimit) {
+      advanceMaritimeDistanceIndexStep(builder);
+      steps++;
+      if (maritimeDistanceSliceShouldYield(steps, checkInterval, shouldYield)) break;
+    }
+    return builder.index;
+  }
+
+  function buildMaritimeDistanceIndex({
+    width,
+    height,
+    neighbors,
+    forEachNeighbor,
+    isLand,
+    isMaritimeShore,
+    maxDistance = EARLY_GAME_MAX_MARITIME_DISTANCE,
+  } = {}) {
+    const builder = createMaritimeDistanceIndexBuilder({
+      width,
+      height,
+      neighbors,
+      forEachNeighbor,
+      isLand,
+      isMaritimeShore,
+      maxDistance,
+    });
+    if (!builder) return null;
+    return advanceMaritimeDistanceIndexBuilder(builder);
   }
 
   function lookupMaritimeDistanceIndex(index, starts) {
