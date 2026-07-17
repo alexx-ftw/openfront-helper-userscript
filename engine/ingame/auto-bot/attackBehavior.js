@@ -85,7 +85,8 @@
   const EARLY_GAME_TRIBE_TOPOLOGY_MIN_SLICE_TILES = 128;
   const EARLY_GAME_TRIBE_TOPOLOGY_MAX_SLICE_TILES = 2048;
   const EARLY_GAME_TRIBE_TOPOLOGY_SLICE_MS = 4;
-  const EARLY_GAME_MARITIME_SLICE_WORK = 50_000;
+  const EARLY_GAME_MARITIME_SLICE_WORK = 20_000;
+  const EARLY_GAME_MARITIME_SLICE_MS = 4;
   // The game's troop growth is (10 + troops^0.73 / 4) * (1 - troops / max).
   // Keep the formula constants here so the reserve follows the real production
   // curve instead of relying on its approximate 42% peak ratio.
@@ -628,6 +629,8 @@
       this.earlyGameMaritimeWaterTraversalTile = null;
       this.earlyGameMaritimeWaterTraversalFoundOpen = false;
       this.earlyGameMaritimeSliceWorkRemaining = Infinity;
+      this.earlyGameMaritimeSliceDeadline = Infinity;
+      this.earlyGameMaritimeSliceDeadlineProbe = 0;
       this.opportunisticBoatSurgeTickByTile = new Map();
       this.earlyGamePreferredClusterTargetKeys = new Set();
       this.earlyGameTribeTopologyCache = null;
@@ -2309,7 +2312,11 @@
     consumeEarlyGameMaritimeSliceWork(amount = 1) {
       if (!Number.isFinite(this.earlyGameMaritimeSliceWorkRemaining)) return false;
       this.earlyGameMaritimeSliceWorkRemaining -= amount;
-      return this.earlyGameMaritimeSliceWorkRemaining <= 0;
+      if (this.earlyGameMaritimeSliceWorkRemaining <= 0) return true;
+      this.earlyGameMaritimeSliceDeadlineProbe += amount;
+      if (this.earlyGameMaritimeSliceDeadlineProbe < 256) return false;
+      this.earlyGameMaritimeSliceDeadlineProbe = 0;
+      return earlyGameTopologyNow() >= this.earlyGameMaritimeSliceDeadline;
     }
 
     beginDenseEarlyGameMaritimeWaterTraversal(tile) {
@@ -2483,14 +2490,20 @@
       profileAttackSync(profile, "tribes-maritime-index-prep", () => {
         this.earlyGameMaritimeSliceWorkRemaining =
           EARLY_GAME_MARITIME_SLICE_WORK;
+        this.earlyGameMaritimeSliceDeadline =
+          earlyGameTopologyNow() + EARLY_GAME_MARITIME_SLICE_MS;
+        this.earlyGameMaritimeSliceDeadlineProbe = 0;
         try {
           advanceMaritimeDistanceIndexBuilder(builder, {
             maxSteps: EARLY_GAME_MARITIME_SLICE_WORK,
             shouldYield: () =>
-              this.consumeEarlyGameMaritimeSliceWork(256),
+              this.consumeEarlyGameMaritimeSliceWork(256) ||
+              earlyGameTopologyNow() >= this.earlyGameMaritimeSliceDeadline,
           });
         } finally {
           this.earlyGameMaritimeSliceWorkRemaining = Infinity;
+          this.earlyGameMaritimeSliceDeadline = Infinity;
+          this.earlyGameMaritimeSliceDeadlineProbe = 0;
         }
       });
       this.adoptCompletedEarlyGameMaritimeIndex(cacheKey, builder);
@@ -2517,16 +2530,11 @@
           return cached;
         }
       }
-      const builder = this.getEarlyGameMaritimeIndexBuilder();
-      const index = builder
-        ? advanceMaritimeDistanceIndexBuilder(builder)
-        : buildMaritimeDistanceIndex(this.earlyGameMaritimeIndexOptions());
-      this.earlyGameMaritimeIndex = index;
-      if (builder) this.adoptCompletedEarlyGameMaritimeIndex(cacheKey, builder);
-      else if (index && isEarlyGameMaritimeCacheKey(cacheKey)) {
-        EARLY_GAME_MARITIME_INDEX_CACHE.set(cacheKey, index);
-      }
-      return index;
+      // This accessor is called while scoring tribe candidates. Finishing a
+      // multi-million-tile field here would turn a cooperative preparation into
+      // a synchronous frame stall. NationBot advances the builder before every
+      // decision tick and publishes it atomically once complete.
+      return null;
     }
 
     getEarlyGameMaritimeDistance(starts) {
@@ -2534,12 +2542,18 @@
       if (index) {
         return lookupMaritimeDistanceIndex(index, starts);
       }
-      return findNearestMaritimeCoastDistance({
-        starts,
-        neighbors: (tile) => this.game.neighbors(tile),
-        isLand: (tile) => this.game.isLand(tile),
-        isMaritimeShore: (tile) => this.isEarlyGameMaritimeShore(tile),
-      });
+      if (this.earlyGameMaritimeIndex === null) {
+        return findNearestMaritimeCoastDistance({
+          starts,
+          neighbors: (tile) => this.game.neighbors(tile),
+          isLand: (tile) => this.game.isLand(tile),
+          isMaritimeShore: (tile) => this.isEarlyGameMaritimeShore(tile),
+        });
+      }
+      // A missing distance is deliberately treated as not-yet-actionable. The
+      // next regular preparation slice will make maritime candidates available
+      // without blocking the attack decision or UI on a cold full-map scan.
+      return Infinity;
     }
 
     addEligibleEarlyGameTribe(tribesById, candidate) {

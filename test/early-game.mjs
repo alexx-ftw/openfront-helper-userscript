@@ -2676,6 +2676,12 @@ const maritimeBehavior = new targetSandbox.AttackBehavior(
 );
 assert.equal(
   maritimeBehavior.getEarlyGameMaritimeDistance(new Set([15])),
+  Infinity,
+  "a cold maritime lookup must defer",
+);
+maritimeBehavior.prepareEarlyGameMaritimeIndexSlice();
+assert.equal(
+  maritimeBehavior.getEarlyGameMaritimeDistance(new Set([15])),
   1,
   "a river component that exits through the map edge must count as maritime",
 );
@@ -2722,6 +2728,15 @@ assert.deepEqual(
   [9, 10].map((tile) => slicedMaritimeBehavior.earlyGameMaritimeWaterState[tile]),
   [9, 10].map((tile) => maritimeBehavior.earlyGameMaritimeWaterState[tile]),
   "bounded and synchronous water classification produce the same dense state",
+);
+const deadlineBoundedMaritimeBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+deadlineBoundedMaritimeBehavior.earlyGameMaritimeSliceWorkRemaining = 1_000_000;
+deadlineBoundedMaritimeBehavior.earlyGameMaritimeSliceDeadline = -Infinity;
+deadlineBoundedMaritimeBehavior.earlyGameMaritimeSliceDeadlineProbe = 255;
+assert.equal(
+  deadlineBoundedMaritimeBehavior.consumeEarlyGameMaritimeSliceWork(),
+  true,
+  "a maritime preparation slice must yield when its time budget expires",
 );
 const sharedMaritimeBehavior = new targetSandbox.AttackBehavior(
   {},
