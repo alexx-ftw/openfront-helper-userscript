@@ -608,17 +608,20 @@
         queue.push(neighbor);
         return;
       }
-      if (src.isLand(neighbor)) coast.add(neighbor);
+      if (coast !== null && src.isLand(neighbor)) coast.add(neighbor);
     }
 
     function floodWaterComponent(start, id, labels) {
       let isOcean = false;
-      const coast = new Set();
+      let coast = new Set();
       const queue = [start];
       labels[start] = id;
       for (let head = 0; head < queue.length; head++) {
         const current = queue[head];
-        if (src.isOcean(current)) isOcean = true;
+        if (!isOcean && src.isOcean(current)) {
+          isOcean = true;
+          coast = null;
+        }
         forEachSourceNeighbor(current, (neighbor) =>
           visitWaterComponentNeighbor(neighbor, id, labels, queue, coast),
         );

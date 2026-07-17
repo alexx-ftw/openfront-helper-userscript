@@ -127,13 +127,17 @@ function makeScenario({
   const me = makePlayer(1, meCoast);
   const other = makePlayer(2, otherCoast);
   const players = [me, other];
+  let landNeighborChecks = 0;
 
   const src = {
     width: () => width,
     height: () => height,
     ticks: () => 1,
     inSpawnPhase: () => false,
-    isLand: (tile) => land.has(tile),
+    isLand: (tile) => {
+      landNeighborChecks++;
+      return land.has(tile);
+    },
     isWater: (tile) => !land.has(tile),
     isOcean: (tile) => ocean && tile >= width * 3 && tile < width * 4,
     isShore: (tile) =>
@@ -182,6 +186,7 @@ function makeScenario({
     me,
     other,
     neighborArrayCalls: () => neighborArrayCalls,
+    landNeighborChecks: () => landNeighborChecks,
   };
 }
 
@@ -212,6 +217,14 @@ assert.equal(
   zeroAllocationScenario.neighborArrayCalls(),
   0,
   "shared-water labeling and coast scans prefer zero-allocation neighbor iteration",
+);
+const oceanCoastScenario = makeScenario({ ocean: true });
+const oceanCoastMe = await oceanCoastScenario.handle.beginTick(oceanCoastScenario.me);
+assert.deepEqual([...oceanCoastScenario.handle.game.sharedWaterComponents(oceanCoastMe)], [-1]);
+assert.equal(
+  oceanCoastScenario.landNeighborChecks(),
+  0,
+  "an ocean component does not collect a coastline that will be discarded",
 );
 
 assert.ok(
