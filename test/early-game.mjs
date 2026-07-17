@@ -1710,6 +1710,7 @@ surgeBehavior.emitBoat = () => {
 };
 const previousBeachhead = targetSandbox.state.beachhead;
 const previousLastOppBoatMs = targetSandbox.state.lastOppBoatMs;
+const previousLastOppBoatMissMs = targetSandbox.state.lastOppBoatMissMs;
 targetSandbox.state.beachhead = { tile: 10, at: 100, surged: false };
 const surgeContext = { fill: 1, surplusFill: 0.5, nowMs: 1234 };
 assert.equal(await surgeBehavior.tryOpportunisticBoatSurge(surgeContext), true);
@@ -1731,6 +1732,37 @@ assert.equal(await surgeBehavior.tryOpportunisticBoatSurge(surgeContext), true);
 assert.equal(surgeEmissions, 2, "a different beachhead still receives its reinforcement");
 targetSandbox.state.beachhead = previousBeachhead;
 targetSandbox.state.lastOppBoatMs = previousLastOppBoatMs;
+targetSandbox.state.lastOppBoatMissMs = previousLastOppBoatMissMs;
+
+const opportunisticBackoffBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+const previousRuntimeDebugLog = targetSandbox.runtimeDebugLog;
+targetSandbox.runtimeDebugLog = () => {};
+targetSandbox.state.lastOppBoatMs = 200;
+targetSandbox.state.lastOppBoatMissMs = 500;
+assert.equal(
+  opportunisticBackoffBehavior.opportunisticBoatLastAttemptMs(),
+  500,
+  "the opportunistic boat cadence includes the latest successful or unsuccessful attempt",
+);
+opportunisticBackoffBehavior.opportunisticBoatContext = () => ({
+  nowMs: 800,
+  shores: [],
+});
+opportunisticBackoffBehavior.tryOpportunisticBoatSurge = async () => false;
+opportunisticBackoffBehavior.refreshInflightBoatTargets = () => {};
+opportunisticBackoffBehavior.findOpportunisticBoatTarget = async () => ({
+  dst: null,
+  scanCandidates: 0,
+});
+await opportunisticBackoffBehavior.maybeOpportunisticBoat();
+assert.equal(
+  targetSandbox.state.lastOppBoatMissMs,
+  800,
+  "a failed route search starts the configured opportunistic retry cadence",
+);
+targetSandbox.state.lastOppBoatMs = previousLastOppBoatMs;
+targetSandbox.state.lastOppBoatMissMs = previousLastOppBoatMissMs;
+targetSandbox.runtimeDebugLog = previousRuntimeDebugLog;
 
 const borderFallbackBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 targetSandbox.currentDifficulty = () => "Impossible";

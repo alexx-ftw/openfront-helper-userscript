@@ -176,23 +176,29 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
           intent.targetID === null
             ? null
             : runner.game.players().find((player) => player.id() === intent.targetID);
-        const pendingTroops =
+        const liveCommittedTroops =
           target === null || target === undefined || decisionPlayer === undefined
             ? 0
             : decisionPlayer
                 .outgoingAttacks()
                 .filter((attack) => attack.target()?.id() === target.id())
                 .reduce((total, attack) => total + attack.troops(), 0);
+        // The adapter snapshot is captured when the intent is emitted, while
+        // the runner observes the same game immediately after the full decision.
+        // A boat can become a live attack during that gap; retain whichever
+        // authoritative view has observed more existing commitment, rather than
+        // reporting a partial conquest as underfunded.
+        const pendingTroops = Math.max(Number(snapshot?.pendingTroops) || 0, liveCommittedTroops);
         return {
           targetID: intent.targetID,
           targetName: snapshot?.name ?? target?.name() ?? "Terra Nullius",
           targetType: snapshot?.type ?? target?.type() ?? "Terra Nullius",
           targetTroops: Math.round(snapshot?.troops ?? target?.troops() ?? 0),
-          pendingTroops: Math.round(snapshot?.pendingTroops ?? pendingTroops),
-          committedTroops: Math.round((snapshot?.pendingTroops ?? pendingTroops) + intent.troops),
+          pendingTroops: Math.round(pendingTroops),
+          committedTroops: Math.round(pendingTroops + intent.troops),
           robustCaptureFloor:
             (snapshot?.type ?? target?.type()) === "BOT"
-              ? Math.ceil((snapshot?.troops ?? target?.troops() ?? 0) * 1.1)
+              ? Math.ceil((snapshot?.troops ?? target?.troops() ?? 0) * 1.2)
               : null,
         };
       });

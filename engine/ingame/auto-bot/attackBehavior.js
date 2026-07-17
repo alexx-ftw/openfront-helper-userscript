@@ -109,7 +109,7 @@
   // Tribes have no strategic counterplay comparable to Nations. A small capture
   // margin lets the opening spread across many tribes in parallel instead of
   // parking four times their strength in one conquest.
-  const TRIBE_CAPTURE_TROOP_MULTIPLIER = 1.1;
+  const TRIBE_CAPTURE_TROOP_MULTIPLIER = 1.2;
   const PLAYER_CAPTURE_TROOP_MULTIPLIER = 4;
   // Reserve the troop level where the production rate has its maximum temporal
   // acceleration. P(N) is troops per tick and N' = P(N), so acceleration is
@@ -4304,6 +4304,14 @@
       return shoreCount === 0 ? "no-shore" : "ok";
     }
 
+    opportunisticBoatLastAttemptMs() {
+      return Math.max(
+        0,
+        Number(state.lastOppBoatMs) || 0,
+        Number(state.lastOppBoatMissMs) || 0,
+      );
+    }
+
     logOpportunisticBoatDiagnostic(context) {
       {
         if (context.nowMs - (state._boatDiagAt || 0) <= 5000) return;
@@ -4341,12 +4349,14 @@
         ships,
         nowMs,
         capped: ships >= boatCap,
-        throttled: nowMs - (state.lastOppBoatMs || 0) < throttle,
+        // A no-target pass can probe several worker routes. Treat it as one
+        // normal opportunistic attempt too, so an unreachable sea does not
+        // re-run the same ladder every combat decision before the configured
+        // launch cadence has elapsed.
+        throttled: nowMs - this.opportunisticBoatLastAttemptMs() < throttle,
         fill: maxTroops > 0 ? this.player.troops() / maxTroops : 1,
         surplusFill: state.settings.boatSurplusFill || 0.75,
-        shores: Array.from(this.player.borderTiles()).filter((tile) =>
-          this.game.isShore(tile),
-        ),
+        shores: this.getEarlyGameOwnShores(),
       };
       this.logOpportunisticBoatDiagnostic(context);
       if (context.capped || context.throttled || context.shores.length === 0) return null;
@@ -4552,6 +4562,7 @@
       }
       runtimeDebugLog("[Boat] LAUNCHED", label, Math.round(troops), "troops");
       state.lastOppBoatMs = context.nowMs;
+      state.lastOppBoatMissMs = 0;
       state.beachhead = {
         tile: target.dst,
         at: this.game.ticks(),
@@ -4567,6 +4578,7 @@
       this.refreshInflightBoatTargets();
       const target = await this.findOpportunisticBoatTarget(context.shores);
       if (target.dst === null) {
+        state.lastOppBoatMissMs = context.nowMs;
         runtimeDebugLog("[Boat] no reachable target", {
           scanCandidates: target.scanCandidates,
           shoreSamples: Math.min(
@@ -6169,7 +6181,11 @@
     }
 
     calculateLandAttackTroops(context) {
-      if (context.isTribeTarget && this.player.type() !== PlayerType.Bot) {
+      // Target type, not our own controller type, defines the conquest policy.
+      // The client exposes auto-controlled Nations as Bot in some modes; letting
+      // that representation fall through to the generic retaliation formula
+      // emits partial attacks against tribes and strands the expansion.
+      if (context.isTribeTarget) {
         return this.calculateTribeLandAttackTroops(context);
       }
       return this.calculateRegularLandAttackTroops(context);

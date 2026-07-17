@@ -26,7 +26,11 @@ assert.match(runner, /targetTroops/);
 assert.match(runner, /pendingTroops/);
 assert.match(runner, /committedTroops/);
 assert.match(runner, /robustCaptureFloor/);
-assert.match(runner, /Math\.ceil\(\(snapshot\?\.troops.*\* 1\.1\)/);
+assert.match(runner, /Math\.ceil\(\(snapshot\?\.troops.*\* 1\.2\)/);
+assert.match(
+  runner,
+  /Math\.max\(\s*Number\(snapshot\?\.pendingTroops\) \|\| 0,\s*liveCommittedTroops/,
+);
 assert.match(runner, /attackTargetSnapshot/);
 assert.match(adapter, /attackTargetSnapshot/);
 assert.match(adapter, /eventToIntent\(event, bot\.game, bot\.clientID\)/);
