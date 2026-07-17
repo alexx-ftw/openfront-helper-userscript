@@ -7427,13 +7427,7 @@
     structureEmergencyTileAllowed(tile, type, emergency) {
       if (
         emergency.samDefense &&
-        !(emergency.incrementalSamDefense
-          ? this.activeMissileSamConstructionImproves(
-              tile,
-              emergency.context,
-              emergency.evaluation,
-            )
-          : this.legendarySamConstructionSafeForTile(tile, emergency.context))
+        !this.structureEmergencySamTileAllowed(tile, emergency)
       ) return false;
       return !(
         emergency.active &&
@@ -7444,6 +7438,27 @@
           emergency.evaluation,
         )
       );
+    }
+
+    structureEmergencySamTileAllowed(tile, emergency) {
+      if (emergency.incrementalSamDefense !== true) {
+        return this.legendarySamConstructionSafeForTile(tile, emergency.context);
+      }
+      // Candidate scoring and coverage probing may revisit the same snapped
+      // tile during one immutable missile-defense snapshot. A full trajectory
+      // evaluation is expensive, so memoize only within that snapshot; a new
+      // tick/fingerprint gets a fresh emergency object and recalculates it.
+      const cache =
+        emergency.activeSamTileAllowedCache ||
+        (emergency.activeSamTileAllowedCache = new Map());
+      if (cache.has(tile)) return cache.get(tile);
+      const allowed = this.activeMissileSamConstructionImproves(
+        tile,
+        emergency.context,
+        emergency.evaluation,
+      );
+      cache.set(tile, allowed);
+      return allowed;
     }
 
     isUsableStructureBuildable(buildable, tile, type) {

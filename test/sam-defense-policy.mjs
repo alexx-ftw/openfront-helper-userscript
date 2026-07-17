@@ -76,6 +76,42 @@ assert.equal(
   "function",
   "Planner exposes the hostile SAM-capacity parity helper",
 );
+const emergencyTileCacheBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+let emergencyTileEvaluationCalls = 0;
+emergencyTileCacheBehavior.activeMissileSamConstructionImproves = () => {
+  emergencyTileEvaluationCalls++;
+  return true;
+};
+emergencyTileCacheBehavior.legendaryTileInsideUninterceptedBlast = () => false;
+const emergencyTileSnapshot = {
+  samDefense: true,
+  incrementalSamDefense: true,
+  context: {},
+  evaluation: {},
+  active: true,
+};
+assert.equal(
+  emergencyTileCacheBehavior.structureEmergencyTileAllowed(
+    42,
+    UNIT.SAMLauncher,
+    emergencyTileSnapshot,
+  ),
+  true,
+);
+assert.equal(
+  emergencyTileCacheBehavior.structureEmergencyTileAllowed(
+    42,
+    UNIT.SAMLauncher,
+    emergencyTileSnapshot,
+  ),
+  true,
+  "revisiting an emergency SAM tile keeps its prior feasibility result",
+);
+assert.equal(
+  emergencyTileEvaluationCalls,
+  1,
+  "one immutable emergency snapshot evaluates each SAM tile once",
+);
 assert.equal(
   sandbox.legendaryMaxEnemySamCapacity([[3, 1], [2, 2, 2], []]),
   6,
