@@ -1246,13 +1246,23 @@ assert.ok(
   "the deadline must cancel the BFS instead of merely timing out its caller",
 );
 
-const routeSandbox = {};
+const routeSandbox = {
+  WORKER_TIMEOUT_MS: 4000,
+  withTimeout: async (promise) => promise,
+};
+let routeTick = 0;
+let routeNeighborCalls = 0;
+let routeSpawn = 0;
 const routeOwnerId = (tile) => {
   if (tile === 5) return 2;
   return tile === 0 ? 1 : 0;
 };
 const routeSrc = {
-  neighbors: (tile) => waterGraph.get(tile) || [],
+  ticks: () => routeTick,
+  neighbors: (tile) => {
+    routeNeighborCalls++;
+    return waterGraph.get(tile) || [];
+  },
   isWater: (tile) => tile >= 1 && tile <= 4,
   isLand: (tile) => tile === 0 || tile === 5,
   isShore: (tile) => tile === 0 || tile === 5,
@@ -1263,15 +1273,37 @@ executeClassicScript(`${gameApiSource}\n${source}`, routeSandbox, {
   filename: "gameApi+earlyGame.js",
 });
 const routeApi = routeSandbox.createGameApi(routeSrc);
-const routePlayer = routeApi.wrapPlayer({
+const routeCorePlayer = {
   isPlayer: () => true,
   smallID: () => 1,
   id: () => "p1",
-  bestTransportShipSpawn: () => Promise.resolve(0),
-});
+  borderTiles: () => Promise.resolve(new Set([0])),
+  profile: () => Promise.resolve({ relations: {} }),
+  bestTransportShipSpawn: () => Promise.resolve(routeSpawn),
+};
+const routePlayer = routeApi.wrapPlayer(routeCorePlayer);
 assert.equal(await routePlayer.bestTransportShipSpawn(5), 0);
 assert.equal(await routeApi.game.estimateTransportRouteTicks(5), 5);
 assert.equal(routeApi.game.hasTransportRouteEstimator, true);
+const firstRouteNeighborCalls = routeNeighborCalls;
+routeTick = 1;
+await routeApi.beginTick(routeCorePlayer);
+assert.equal(await routePlayer.bestTransportShipSpawn(5), 0);
+assert.equal(await routeApi.game.estimateTransportRouteTicks(5), 5);
+assert.equal(
+  routeNeighborCalls,
+  firstRouteNeighborCalls,
+  "a stable authoritative spawn reuses the exact local water route across ticks",
+);
+routeSpawn = 1;
+routeTick = 2;
+await routeApi.beginTick(routeCorePlayer);
+assert.equal(await routePlayer.bestTransportShipSpawn(5), 1);
+assert.equal(await routeApi.game.estimateTransportRouteTicks(5), 4);
+assert.ok(
+  routeNeighborCalls > firstRouteNeighborCalls,
+  "a changed authoritative spawn invalidates the local water route",
+);
 
 // The local gameApi pathfinder must evaluate routes longer than the old
 // 300-tick Early Game window so the two-minute exploration gate can reject them

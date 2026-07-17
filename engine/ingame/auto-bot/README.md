@@ -38,6 +38,11 @@ existing Nation decision chain but enriches its opening target choice:
    ticks (30 seconds at 100 ms per tick). A proximity-only `boatCandidate` does
    not activate Early Game or delay a tribe attack.
 
+The local water-path fallback still probes the authoritative transport spawn on
+each snapshot. A successful route is reused across snapshots only when that
+probe returns the exact same spawn tile for the same destination; a changed
+spawn recalculates the route immediately.
+
 Terra Nullius attacks use the greater of 3% of the current army or the
 calculated one-tile loss plus a 25% margin. During the first 500 ticks, all
 accepted free-land intents share a cumulative ceiling of 60% of the spawning

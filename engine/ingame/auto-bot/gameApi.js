@@ -77,6 +77,10 @@
     let lastSnapshotTick = -1;
     const transportSpawnCache = new Map(); // target TileRef -> spawn TileRef|false
     const transportRouteCache = new Map(); // target TileRef -> ticks|null
+    // The fallback water graph is static. Preserve successful routes across
+    // snapshots and reuse them only when the authoritative launch probe returns
+    // the exact same spawn tile for the same destination.
+    const localTransportRouteCache = new Map(); // target -> { spawn, ticks }
     // GameView.units() materializes a fresh snapshot on every call. Several
     // behaviors inspect the same unit families during one bot tick, so keep
     // the wrapped arrays shared until the game advances. This removes repeated
@@ -195,6 +199,8 @@
         }
         const spawn = transportSpawnCache.get(targetTile);
         if (spawn == null || spawn === false) return null;
+        const cachedRoute = localTransportRouteCache.get(targetTile);
+        if (cachedRoute?.spawn === spawn) return cachedRoute.ticks;
         const goal = closestTargetShore(targetTile);
         if (goal == null) return null;
         const result = await routeFinder({
@@ -204,6 +210,9 @@
           isWater: (tile) => src.isWater(tile),
           maxTicks: BOAT_EXPLORATION_MAX_ROUTE_TICKS,
         });
+        if (result !== null) {
+          localTransportRouteCache.set(targetTile, { spawn, ticks: result });
+        }
         transportRouteCache.set(targetTile, result);
         return result;
       }
