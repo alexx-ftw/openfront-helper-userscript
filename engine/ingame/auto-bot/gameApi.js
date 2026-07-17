@@ -593,6 +593,14 @@
     let _waterCompIsOcean = null;
     let _waterCompCoast = null;
 
+    function forEachSourceNeighbor(tile, visit) {
+      if (typeof src.forEachNeighbor === "function") {
+        src.forEachNeighbor(tile, visit);
+        return;
+      }
+      for (const neighbor of src.neighbors(tile)) visit(neighbor);
+    }
+
     function visitWaterComponentNeighbor(neighbor, id, labels, queue, coast) {
       if (src.isWater(neighbor)) {
         if (labels[neighbor] !== -2) return;
@@ -611,9 +619,9 @@
       for (let head = 0; head < queue.length; head++) {
         const current = queue[head];
         if (src.isOcean(current)) isOcean = true;
-        for (const neighbor of src.neighbors(current)) {
-          visitWaterComponentNeighbor(neighbor, id, labels, queue, coast);
-        }
+        forEachSourceNeighbor(current, (neighbor) =>
+          visitWaterComponentNeighbor(neighbor, id, labels, queue, coast),
+        );
       }
       return { isOcean, coast };
     }
@@ -706,15 +714,15 @@
       const lakes = new Set();
       for (const tile of player.borderTiles()) {
         if (!src.isShore(tile)) continue;
-        for (const neighbor of src.neighbors(tile)) {
-          if (!src.isWater(neighbor)) continue;
+        forEachSourceNeighbor(tile, (neighbor) => {
+          if (!src.isWater(neighbor)) return;
           if (src.isOcean(neighbor)) {
             hasOcean = true;
-            continue;
+            return;
           }
           const component = _waterLabels[neighbor];
           if (component >= 0) lakes.add(component);
-        }
+        });
       }
       return { hasOcean, lakes };
     }

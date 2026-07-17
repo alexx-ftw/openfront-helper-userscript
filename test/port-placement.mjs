@@ -61,14 +61,19 @@ executeClassicScript(
   { filename: "structureBehavior.js" },
 );
 
-function makeScenario({ ocean = false, allied = false, otherAlive = true } = {}) {
+function makeScenario({
+  ocean = false,
+  allied = false,
+  otherAlive = true,
+  zeroAllocationNeighbors = false,
+} = {}) {
   const width = 9;
   const height = 9;
   const lake = new Set();
   for (let y = 3; y <= 5; y += 1) {
     for (let x = 3; x <= 5; x += 1) lake.add(y * width + x);
   }
-  const neighbors = (tile) => {
+  const cardinalNeighbors = (tile) => {
     const x = tile % width;
     const y = Math.floor(tile / width);
     const out = [];
@@ -77,6 +82,11 @@ function makeScenario({ ocean = false, allied = false, otherAlive = true } = {})
     if (y > 0) out.push(tile - width);
     if (y < height - 1) out.push(tile + width);
     return out;
+  };
+  let neighborArrayCalls = 0;
+  const neighbors = (tile) => {
+    neighborArrayCalls++;
+    return cardinalNeighbors(tile);
   };
   const land = new Set();
   for (let tile = 0; tile < width * height; tile += 1) {
@@ -126,7 +136,8 @@ function makeScenario({ ocean = false, allied = false, otherAlive = true } = {})
     isLand: (tile) => land.has(tile),
     isWater: (tile) => !land.has(tile),
     isOcean: (tile) => ocean && tile >= width * 3 && tile < width * 4,
-    isShore: (tile) => land.has(tile) && neighbors(tile).some((neighbor) => !land.has(neighbor)),
+    isShore: (tile) =>
+      land.has(tile) && cardinalNeighbors(tile).some((neighbor) => !land.has(neighbor)),
     isOceanShore: () => false,
     neighbors,
     x: (tile) => tile % width,
@@ -150,6 +161,11 @@ function makeScenario({ ocean = false, allied = false, otherAlive = true } = {})
     units: () => [],
     numTilesWithFallout: () => 0,
   };
+  if (zeroAllocationNeighbors) {
+    src.forEachNeighbor = (tile, visit) => {
+      for (const neighbor of cardinalNeighbors(tile)) visit(neighbor);
+    };
+  }
 
   const sandbox = {
     PlayerType: { Bot: "BOT" },
@@ -161,7 +177,12 @@ function makeScenario({ ocean = false, allied = false, otherAlive = true } = {})
   };
   sandbox.globalThis = sandbox;
   executeClassicScript(GAME_API_SOURCE, sandbox, { filename: "gameApi.js" });
-  return { handle: sandbox.createGameApi(src), me, other };
+  return {
+    handle: sandbox.createGameApi(src),
+    me,
+    other,
+    neighborArrayCalls: () => neighborArrayCalls,
+  };
 }
 
 async function sharedWater({ ocean, allied, otherAlive }) {
@@ -176,6 +197,22 @@ async function nearbyPlayers() {
   const wrappedMe = await scenario.handle.beginTick(scenario.me);
   return wrappedMe.nearby();
 }
+
+const zeroAllocationScenario = makeScenario({
+  ocean: false,
+  allied: true,
+  zeroAllocationNeighbors: true,
+});
+const zeroAllocationMe = await zeroAllocationScenario.handle.beginTick(zeroAllocationScenario.me);
+assert.deepEqual(
+  [...zeroAllocationScenario.handle.game.sharedWaterComponents(zeroAllocationMe)],
+  [0],
+);
+assert.equal(
+  zeroAllocationScenario.neighborArrayCalls(),
+  0,
+  "shared-water labeling and coast scans prefer zero-allocation neighbor iteration",
+);
 
 assert.ok(
   Array.isArray(await nearbyPlayers()),
