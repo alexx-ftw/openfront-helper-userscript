@@ -3753,14 +3753,7 @@
       );
       if (ownShores.length === 0 || targetShores.length === 0) return null;
 
-      const distanceToOwnShore = (tile) => {
-        let best = Infinity;
-        for (const ownShore of ownShores) {
-          const distance = this.game.manhattanDist(ownShore, tile);
-          if (distance < best) best = distance;
-        }
-        return best;
-      };
+      const distanceToOwnShore = this.earlyGameOwnShoreDistance(ownShores);
       const rankedTargetShores = this.rankEarlyGameTribeBoatTargetShores(
         targetShores,
         distanceToOwnShore,
@@ -3844,6 +3837,96 @@
       return Array.from(this.player.borderTiles()).filter((tile) =>
         this.game.isShore(tile),
       );
+    }
+
+    earlyGameOwnShoreDistance(ownShores) {
+      const cached = this.earlyGameOwnShoreDistanceIndex;
+      if (cached?.shores === ownShores) return cached.distance;
+      const points = ownShores
+        .map((tile) => ({ tile, x: this.game.x(tile), y: this.game.y(tile) }))
+        .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+      const index = this.buildEarlyGameOwnShoreDistanceIndex(points);
+      const distance = (tile) => {
+        const x = this.game.x(tile);
+        const y = this.game.y(tile);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return Infinity;
+        return this.queryEarlyGameOwnShoreDistanceIndex(index, x, y, Infinity);
+      };
+      this.earlyGameOwnShoreDistanceIndex = { shores: ownShores, distance };
+      return distance;
+    }
+
+    buildEarlyGameOwnShoreDistanceIndex(points, depth = 0) {
+      if (points.length === 0) return null;
+      const { point, leftPoints, rightPoints } =
+        this.splitEarlyGameOwnShoreDistanceIndexPoints(points, depth);
+      const left = this.buildEarlyGameOwnShoreDistanceIndex(leftPoints, depth + 1);
+      const right = this.buildEarlyGameOwnShoreDistanceIndex(rightPoints, depth + 1);
+      return this.createEarlyGameOwnShoreDistanceIndexNode(point, left, right);
+    }
+
+    splitEarlyGameOwnShoreDistanceIndexPoints(points, depth) {
+      const axis = depth % 2 === 0 ? "x" : "y";
+      points.sort((left, right) => left[axis] - right[axis]);
+      const middle = Math.floor(points.length / 2);
+      return {
+        point: points[middle],
+        leftPoints: points.slice(0, middle),
+        rightPoints: points.slice(middle + 1),
+      };
+    }
+
+    createEarlyGameOwnShoreDistanceIndexNode(point, left, right) {
+      return {
+        ...point,
+        left,
+        right,
+        ...this.earlyGameOwnShoreDistanceIndexBounds(point, left, right),
+      };
+    }
+
+    earlyGameOwnShoreDistanceIndexBounds(point, left, right) {
+      return {
+        minX: this.earlyGameOwnShoreIndexMinimum(point.x, left?.minX, right?.minX),
+        maxX: this.earlyGameOwnShoreIndexMaximum(point.x, left?.maxX, right?.maxX),
+        minY: this.earlyGameOwnShoreIndexMinimum(point.y, left?.minY, right?.minY),
+        maxY: this.earlyGameOwnShoreIndexMaximum(point.y, left?.maxY, right?.maxY),
+      };
+    }
+
+    earlyGameOwnShoreIndexMinimum(value, left, right) {
+      return Math.min(value, left ?? Infinity, right ?? Infinity);
+    }
+
+    earlyGameOwnShoreIndexMaximum(value, left, right) {
+      return Math.max(value, left ?? -Infinity, right ?? -Infinity);
+    }
+
+    queryEarlyGameOwnShoreDistanceIndex(index, x, y, best) {
+      if (index === null) return best;
+      const distance = Math.abs(index.x - x) + Math.abs(index.y - y);
+      let nextBest = Math.min(best, distance);
+      const branches = [index.left, index.right].filter(Boolean).sort((left, right) =>
+        this.earlyGameOwnShoreIndexLowerBound(left, x, y) -
+        this.earlyGameOwnShoreIndexLowerBound(right, x, y),
+      );
+      for (const branch of branches) {
+        if (this.earlyGameOwnShoreIndexLowerBound(branch, x, y) >= nextBest) continue;
+        nextBest = this.queryEarlyGameOwnShoreDistanceIndex(branch, x, y, nextBest);
+      }
+      return nextBest;
+    }
+
+    earlyGameOwnShoreIndexLowerBound(index, x, y) {
+      const dx = this.earlyGameOwnShoreAxisDistance(x, index.minX, index.maxX);
+      const dy = this.earlyGameOwnShoreAxisDistance(y, index.minY, index.maxY);
+      return dx + dy;
+    }
+
+    earlyGameOwnShoreAxisDistance(value, minimum, maximum) {
+      if (value < minimum) return minimum - value;
+      if (value > maximum) return value - maximum;
+      return 0;
     }
 
     // Keep a bounded, best-effort profile of how visible rivals are expanding.
