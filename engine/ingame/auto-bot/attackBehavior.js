@@ -6381,7 +6381,12 @@
         1,
         Number(defensePostProfile?.attackCostMultiplier || 1),
       );
-      return Math.max(0, Number(target?.troops?.()) || 0) * 4 * defenseMultiplier;
+      // Attack intents are whole troops. Round the required conquest force up,
+      // never down: a fractional 4x/Defense-Post result truncated by the engine
+      // can leave a tribe alive by one troop and strand the opening expansion.
+      return Math.ceil(
+        Math.max(0, Number(target?.troops?.()) || 0) * 4 * defenseMultiplier,
+      );
     }
 
     getPlayerAttackPreferredTroopFloor(target, defensePostProfile = null) {

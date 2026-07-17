@@ -702,6 +702,15 @@ assert.ok(
   ownTroops - troopEmissions.at(-1) >= tribeBehavior.getEarlyGameLiveReserveTroops(),
   "a completed tribe assault still respects the acceleration reserve",
 );
+const fractionalTribeTarget = {
+  ...tribeTarget,
+  troops: () => 10000.125,
+};
+assert.equal(
+  tribeBehavior.getTribeCaptureTroopFloor(fractionalTribeTarget),
+  40001,
+  "a fractional 4x tribe requirement rounds up to the minimum whole-troop conquest force",
+);
 
 const underfundedTribeBehavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
 underfundedTribeBehavior.getEnemyDefensePostAttackProfile = () => ({});
