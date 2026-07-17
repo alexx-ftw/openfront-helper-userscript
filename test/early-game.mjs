@@ -1908,6 +1908,29 @@ assert.equal(
   "future-food scoring reuses the coherent per-decision food-race snapshot",
 );
 
+const incrementalFoodRaceBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+incrementalFoodRaceBehavior.player = { isFriendly: () => false };
+incrementalFoodRaceBehavior.getEarlyGameFoodRaceSignals = ({ tribeSid }) => ({
+  foodRaceValue: tribeSid / 10,
+});
+const incrementalFoodRaceById = new Map();
+const incrementalTribeNodes = await incrementalFoodRaceBehavior.getIncrementalEarlyGameTribeNodes(
+  [indexedBorderTribe, indexedRemoteTribe],
+  [],
+  incrementalFoodRaceById,
+);
+assert.deepEqual(
+  Array.from(incrementalTribeNodes, (node) => [node.id, node.captureRisk]),
+  [
+    [7, 0.7],
+    [8, 0.8],
+  ],
+  "incremental tribe-node preparation preserves every strategic node and food-race score",
+);
+assert.equal(incrementalFoodRaceById.size, 2);
+assert.match(attackSource, /await profileAttackAsync\([\s\S]*tribes-sampling-nodes/);
+assert.match(attackSource, /shouldYieldEarlyGameTribeNodes/);
+
 let contesterLocationReads = 0;
 const indexedContester = makeTargetPlayer(31, "Human", [], 100, { x: 5, y: 0 });
 indexedContester.nameLocation = () => {

@@ -85,6 +85,10 @@
   const EARLY_GAME_TRIBE_TOPOLOGY_MIN_SLICE_TILES = 128;
   const EARLY_GAME_TRIBE_TOPOLOGY_MAX_SLICE_TILES = 2048;
   const EARLY_GAME_TRIBE_TOPOLOGY_SLICE_MS = 4;
+  // Food-race signals compare each visible tribe against all current rivals.
+  // Preserve that complete strategic view, but never evaluate a crowded map in
+  // one browser task.
+  const EARLY_GAME_TRIBE_NODE_SLICE_MS = 4;
   const EARLY_GAME_MARITIME_SLICE_WORK = 20_000;
   const EARLY_GAME_MARITIME_SLICE_MS = 4;
   // The game's troop growth is (10 + troops^0.73 / 4) * (1 - troops / max).
@@ -102,6 +106,11 @@
   const ATTACK_FALLOUT_DEFENSE_BASE = 5;
   const ATTACK_FALLOUT_DEFENSE_RATIO_SLOPE = 2;
   const ATTACK_FALLOUT_RESERVE_RATIO = 0.42;
+  // Tribes have no strategic counterplay comparable to Nations. A small capture
+  // margin lets the opening spread across many tribes in parallel instead of
+  // parking four times their strength in one conquest.
+  const TRIBE_CAPTURE_TROOP_MULTIPLIER = 1.1;
+  const PLAYER_CAPTURE_TROOP_MULTIPLIER = 4;
   // Reserve the troop level where the production rate has its maximum temporal
   // acceleration. P(N) is troops per tick and N' = P(N), so acceleration is
   // dP/dt = P(N) * P'(N), not just the slope with respect to troop count.
@@ -164,6 +173,10 @@
       return false;
     }
     return earlyGameTopologyNow() - startedAt >= EARLY_GAME_TRIBE_TOPOLOGY_SLICE_MS;
+  }
+
+  function shouldYieldEarlyGameTribeNodes(startedAt) {
+    return earlyGameTopologyNow() - startedAt >= EARLY_GAME_TRIBE_NODE_SLICE_MS;
   }
 
   function profileAttackSync(profile, name, action) {
@@ -2610,31 +2623,68 @@
       competitorProfiles,
       foodRaceById = null,
     ) {
-      return otherPlayers
-        .filter(
-          (tribe) =>
-            tribe?.isPlayer?.() === true &&
-            tribe.isAlive?.() === true &&
-            tribe.type?.() === PlayerType.Bot &&
-            this.player.isFriendly(tribe) === false,
-        )
-        .map((tribe) => {
-          const tribeSid = tribe.smallID();
-          const center = tribe.nameLocation?.();
-          const foodRace = this.getEarlyGameFoodRaceSignals({
-            tribe,
-            tribeSid,
-            tribeCenter: center,
-            competitorProfiles,
-          });
-          foodRaceById?.set(tribeSid, foodRace);
-          return {
-            id: tribeSid,
-            player: tribe,
-            center,
-            captureRisk: foodRace.foodRaceValue,
-          };
-        });
+      const nodes = [];
+      for (const tribe of otherPlayers) {
+        const node = this.createLightweightEarlyGameTribeNode(
+          tribe,
+          competitorProfiles,
+          foodRaceById,
+        );
+        if (node) nodes.push(node);
+      }
+      return nodes;
+    }
+
+    createLightweightEarlyGameTribeNode(
+      tribe,
+      competitorProfiles,
+      foodRaceById = null,
+    ) {
+      if (
+        tribe?.isPlayer?.() !== true ||
+        tribe.isAlive?.() !== true ||
+        tribe.type?.() !== PlayerType.Bot ||
+        this.player.isFriendly(tribe) !== false
+      ) {
+        return null;
+      }
+      const tribeSid = tribe.smallID();
+      const center = tribe.nameLocation?.();
+      const foodRace = this.getEarlyGameFoodRaceSignals({
+        tribe,
+        tribeSid,
+        tribeCenter: center,
+        competitorProfiles,
+      });
+      foodRaceById?.set(tribeSid, foodRace);
+      return {
+        id: tribeSid,
+        player: tribe,
+        center,
+        captureRisk: foodRace.foodRaceValue,
+      };
+    }
+
+    async getIncrementalEarlyGameTribeNodes(
+      otherPlayers,
+      competitorProfiles,
+      foodRaceById = null,
+    ) {
+      const nodes = [];
+      let sliceStartedAt = earlyGameTopologyNow();
+      for (const tribe of otherPlayers) {
+        const node = this.createLightweightEarlyGameTribeNode(
+          tribe,
+          competitorProfiles,
+          foodRaceById,
+        );
+        if (node) nodes.push(node);
+        if (shouldYieldEarlyGameTribeNodes(sliceStartedAt)) {
+          await yieldEarlyGameTopologyWork();
+          sliceStartedAt = earlyGameTopologyNow();
+        }
+      }
+      return nodes;
     }
 
     async fetchEarlyGameTribeTopologyBorders(nodes) {
@@ -2911,11 +2961,11 @@
         "tribes-sampling-eligible",
         () => this.getEligibleEarlyGameTribes(otherPlayers, borderingOwnerIds),
       );
-      const nodes = profileAttackSync(
+      const nodes = await profileAttackAsync(
         profile,
         "tribes-sampling-nodes",
         () =>
-          this.getLightweightEarlyGameTribeNodes(
+          this.getIncrementalEarlyGameTribeNodes(
             otherPlayers,
             competitorProfiles,
             foodRaceById,
@@ -6379,9 +6429,8 @@
         liveCommitted,
         Math.max(0, Number(existingCommittedTroops) || 0),
       ) + pendingCommitted;
-      // The authoritative Nation bot uses 4x as its conquest force. Treat that
-      // as the all-or-nothing capture floor: 2x merely makes an attack legal,
-      // but frequently stalls while the tribe produces troops during combat.
+      // Keep capture all-or-nothing: the target-specific floor includes the
+      // tribe's lean opening margin or the higher Nation conquest margin.
       const requiredTroops = Math.max(
         0,
         Math.ceil(minimumAttackTroops - committed),
@@ -6398,11 +6447,17 @@
         1,
         Number(defensePostProfile?.attackCostMultiplier || 1),
       );
+      const captureMultiplier =
+        target?.type?.() === PlayerType.Bot
+          ? TRIBE_CAPTURE_TROOP_MULTIPLIER
+          : PLAYER_CAPTURE_TROOP_MULTIPLIER;
       // Attack intents are whole troops. Round the required conquest force up,
-      // never down: a fractional 4x/Defense-Post result truncated by the engine
-      // can leave a tribe alive by one troop and strand the opening expansion.
+      // never down: a fractional tribe/Defense-Post result truncated by the
+      // engine can leave a tribe alive by one troop and strand the opening expansion.
       return Math.ceil(
-        Math.max(0, Number(target?.troops?.()) || 0) * 4 * defenseMultiplier,
+        Math.max(0, Number(target?.troops?.()) || 0) *
+          captureMultiplier *
+          defenseMultiplier,
       );
     }
 
