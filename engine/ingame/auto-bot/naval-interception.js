@@ -52,6 +52,7 @@
         ),
       ),
       routeCache: new Map(),
+      candidateCache: new Map(),
     };
   }
 
@@ -67,36 +68,89 @@
     return result;
   }
 
-  function findNavalInterceptionCandidate(context, ship, invasion) {
-    const startTick = Math.max(0, Math.floor(ship.time || 0));
-    const arrival = Math.ceil((invasion.path.length - 1) / context.boatSpeed);
-    if (startTick >= arrival) return null;
-    for (let tick = startTick; tick < arrival; tick++) {
-      const pathIndex = Math.min(
-        invasion.path.length - 1,
-        Math.max(0, Math.floor(tick * context.boatSpeed)),
-      );
-      const boatTile = invasion.path[pathIndex];
-      const waterRoute = getCachedNavalRoute(context, ship.tile, boatTile);
-      if (!waterRoute) continue;
-      const maxReachableIndex = Math.min(
-        waterRoute.length - 1,
-        Math.floor((tick - startTick) * context.warshipSpeed),
-      );
-      for (let index = maxReachableIndex; index >= 0; index--) {
-        const inRange = Number(context.distance(waterRoute[index], boatTile)) <= context.attackRange;
-        if (!inRange) continue;
-        return {
-          shipId: ship.id,
-          invasionId: invasion.id,
-          interceptTick: tick,
-          interceptTile: waterRoute[index],
-          landingTick: arrival,
-          marginTicks: arrival - tick,
-        };
-      }
+  function navalInterceptionAtTick(context, ship, invasion, tick, timing) {
+    const pathIndex = Math.min(
+      invasion.path.length - 1,
+      Math.max(0, Math.floor(tick * context.boatSpeed)),
+    );
+    const boatTile = invasion.path[pathIndex];
+    const waterRoute = getCachedNavalRoute(context, ship.tile, boatTile);
+    if (!waterRoute) return null;
+    const maxReachableIndex = Math.min(
+      waterRoute.length - 1,
+      Math.floor((tick - timing.startTick) * context.warshipSpeed),
+    );
+    for (let index = maxReachableIndex; index >= 0; index--) {
+      const inRange =
+        Number(context.distance(waterRoute[index], boatTile)) <= context.attackRange;
+      if (!inRange) continue;
+      return {
+        shipId: ship.id,
+        invasionId: invasion.id,
+        interceptTick: tick,
+        interceptTile: waterRoute[index],
+        landingTick: timing.arrival,
+        marginTicks: timing.arrival - tick,
+      };
     }
     return null;
+  }
+
+  function searchFirstNavalInterception(context, ship, invasion, startTick, arrival) {
+    const timing = { startTick, arrival };
+    // Feasibility is monotonic only while the interceptor gains at least as
+    // much route budget per tick as the invasion advances. Preserve the exact
+    // scan for any future ruleset with a slower warship.
+    if (context.warshipSpeed < context.boatSpeed) {
+      for (let tick = startTick; tick < arrival; tick++) {
+        const candidate = navalInterceptionAtTick(
+          context,
+          ship,
+          invasion,
+          tick,
+          timing,
+        );
+        if (candidate !== null) return candidate;
+      }
+      return null;
+    }
+    let first = startTick;
+    let last = arrival - 1;
+    let best = null;
+    while (first <= last) {
+      const tick = Math.floor((first + last) / 2);
+      const candidate = navalInterceptionAtTick(
+        context,
+        ship,
+        invasion,
+        tick,
+        timing,
+      );
+      if (candidate === null) {
+        first = tick + 1;
+      } else {
+        best = candidate;
+        last = tick - 1;
+      }
+    }
+    return best;
+  }
+
+  function findNavalInterceptionCandidate(context, ship, invasion) {
+    const cacheKey = `${String(ship.id)}:${String(ship.tile)}:${Math.floor(
+      ship.time || 0,
+    )}>${String(invasion.id)}`;
+    if (context.candidateCache.has(cacheKey)) {
+      return context.candidateCache.get(cacheKey);
+    }
+    const startTick = Math.max(0, Math.floor(ship.time || 0));
+    const arrival = Math.ceil((invasion.path.length - 1) / context.boatSpeed);
+    const candidate =
+      startTick >= arrival
+        ? null
+        : searchFirstNavalInterception(context, ship, invasion, startTick, arrival);
+    context.candidateCache.set(cacheKey, candidate);
+    return candidate;
   }
 
   function compareNavalCandidates(a, b) {

@@ -12,9 +12,11 @@ assert.match(runner, /playlist\.gameConfig\("team"\)/);
 assert.match(runner, /difficulty:\s*Difficulty\.Easy/);
 assert.match(runner, /nations:\s*"default"/);
 assert.match(runner, /createMaxDifficultyOpponent/);
+assert.match(runner, /OFH_GAME_MAP/);
 assert.match(batch, /availableParallelism\(\)/);
 assert.match(batch, /spawn\(/);
 assert.match(batch, /OFH_SIM_WORKERS/);
+assert.match(adapter, /window\.__OFH_deadlineNow = hostDeadlineNow/);
 assert.doesNotMatch(
   adapter,
   /return new Proxy\(game/,

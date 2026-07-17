@@ -146,8 +146,21 @@
     });
   }
 
+  function waterRouteDeadlineNow() {
+    if (
+      typeof window !== "undefined" &&
+      typeof window.__OFH_deadlineNow === "function"
+    ) {
+      return Number(window.__OFH_deadlineNow());
+    }
+    if (typeof performance !== "undefined" && typeof performance.now === "function") {
+      return performance.now();
+    }
+    return Date.now();
+  }
+
   function waterRouteDeadlineExpired(deadlineMs, startedAt) {
-    return deadlineMs > 0 && Date.now() - startedAt >= deadlineMs;
+    return deadlineMs > 0 && waterRouteDeadlineNow() - startedAt >= deadlineMs;
   }
 
   function shouldYieldWaterRouteSearch(head, batchSize) {
@@ -203,7 +216,7 @@
     if (start === goal) return 0;
 
     const batchSize = normalizeWaterRouteBatchSize(yieldEvery);
-    const searchStartedAt = Date.now();
+    const searchStartedAt = waterRouteDeadlineNow();
     const searchDeadlineMs = Math.max(0, Number(deadlineMs) || 0);
     const queue = [start];
     const distances = new Map([[start, 0]]);

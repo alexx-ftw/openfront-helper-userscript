@@ -216,7 +216,7 @@
   // Bound cumulative opening exposure without spending that entire allowance
   // in one intent. Each free-land attack is sized from its tile cost below.
   const EARLY_EXPAND_COMMIT = 0.6;
-  const EARLY_EXPAND_FOLLOWUP_COMMIT = 0.02;
+  const EARLY_EXPAND_FOLLOWUP_COMMIT = 0.03;
   const EARLY_EXPAND_MINIMUM_MARGIN = 1.25;
   const BUILD_THROTTLE_MS = 1800;
   const NUKE_THROTTLE_MS = 6000;

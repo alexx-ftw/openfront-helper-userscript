@@ -49,6 +49,8 @@ export function createBundledOpponentHarness(options = {}) {
   }
   const clock = { now: 0 };
   window.__OFH_realOpponentClock = clock;
+  const hostDeadlineNow = globalThis.performance.now.bind(globalThis.performance);
+  window.__OFH_deadlineNow = hostDeadlineNow;
   window.Date.now = () => clock.now;
   Object.defineProperty(window.performance, "now", {
     configurable: true,

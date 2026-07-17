@@ -266,7 +266,7 @@ With `winFixes` enabled, direct attacks against TerraNullius use the live
 `Config.attackLogic` loss for the worst available first frontier tile as their
 minimum payload. All land attacks and transport probes share a cumulative
 opening commitment limit measured from the first post-spawn attempt: 0.4% of
-the spawning army through tick 100, interpolating to 1.2% at tick 300 and 2% at
+the spawning army through tick 100, interpolating to 1.8% at tick 300 and 3% at
 tick 500. After tick 500, the calculated troop-production peak and any higher
 border-threat reserve are the hard floor. Pending outbound intents are deducted
 from the same budget, so reconciled follow-ups cannot multiply the allowance.

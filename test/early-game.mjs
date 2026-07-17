@@ -1687,13 +1687,13 @@ minimumTerraNulliusBehavior.getEarlyGameSpendableTroops = () => 99000;
 const minimumTerraNulliusTarget = { isPlayer: () => false };
 assert.equal(
   minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(minimumTerraNulliusTarget),
-  2000,
-  "generic TerraNullius land attacks use at least 2% of the current army",
+  3000,
+  "generic TerraNullius land attacks use at least 3% of the current army",
 );
 assert.equal(
   minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(minimumTerraNulliusTarget, 2),
-  2000,
-  "generic expansion still uses 2% when a preferred frontier tile is known",
+  3000,
+  "generic expansion still uses 3% when a preferred frontier tile is known",
 );
 assert.equal(
   minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(minimumTerraNulliusTarget, null, 99000),
@@ -1712,7 +1712,7 @@ assert.equal(
     99000,
     0.6,
   ),
-  2000,
+  3000,
   "the opening TerraNullius payload is adaptive while 60% remains only its ceiling",
 );
 

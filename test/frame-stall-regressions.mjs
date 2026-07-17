@@ -11,14 +11,17 @@ const source = fs.readFileSync(sourcePath, "utf8");
 let callsSinceYield = 0;
 let maxCallsBetweenYields = 0;
 let yieldCount = 0;
+let deadlineNow = 0;
 const sandbox = {
-  Date,
+  Date: { now: () => 0 },
   window: {
+    __OFH_deadlineNow: () => deadlineNow,
     setTimeout(callback, delay) {
       assert.equal(delay, 0, "route-search yields must resume on the next task");
       maxCallsBetweenYields = Math.max(maxCallsBetweenYields, callsSinceYield);
       callsSinceYield = 0;
       yieldCount += 1;
+      deadlineNow += 1;
       callback();
       return yieldCount;
     },

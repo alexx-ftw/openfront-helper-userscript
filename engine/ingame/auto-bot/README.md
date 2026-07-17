@@ -38,7 +38,7 @@ existing Nation decision chain but enriches its opening target choice:
    ticks (30 seconds at 100 ms per tick). A proximity-only `boatCandidate` does
    not activate Early Game or delay a tribe attack.
 
-Terra Nullius attacks use the greater of 2% of the current army or the
+Terra Nullius attacks use the greater of 3% of the current army or the
 calculated one-tile loss plus a 25% margin. During the first 500 ticks, all
 accepted free-land intents share a cumulative ceiling of 60% of the spawning
 army; that ceiling is never used as a fixed per-intent payload. After that
@@ -139,7 +139,7 @@ and remote hostiles do not activate this rule.
 
 ## Free-land expansion cadence
 
-With `winFixes` enabled, the first live Terra Nullius attack sends 2% of the
+With `winFixes` enabled, the first live Terra Nullius attack sends 3% of the
 current army or the calculated first-tile cost plus a 25% margin, whichever is
 larger. The 60% opening value is only a cumulative ceiling across accepted
 intents. Directly accessible free land then remains on the same fast adaptive

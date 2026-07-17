@@ -1334,7 +1334,7 @@
       const followUpFraction =
         typeof EARLY_EXPAND_FOLLOWUP_COMMIT === "number"
           ? EARLY_EXPAND_FOLLOWUP_COMMIT
-          : 0.02;
+          : 0.03;
       const followUpTroops = Math.max(minimum, ownTroops * followUpFraction);
       if (available >= followUpTroops) {
         return { available, livenessFollowUp: false };
@@ -1361,7 +1361,7 @@
       const followUpFraction =
         typeof EARLY_EXPAND_FOLLOWUP_COMMIT === "number"
           ? EARLY_EXPAND_FOLLOWUP_COMMIT
-          : 0.02;
+          : 0.03;
       const configured = Number(commitFraction);
       if (commitFraction !== null && Number.isFinite(configured)) {
         const bounded = Math.min(1, Math.max(0, configured));

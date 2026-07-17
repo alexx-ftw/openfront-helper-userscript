@@ -26,7 +26,7 @@ const sandbox = {
   },
   currentDifficulty: () => "Impossible",
   EARLY_EXPAND_COMMIT: 0.6,
-  EARLY_EXPAND_FOLLOWUP_COMMIT: 0.02,
+  EARLY_EXPAND_FOLLOWUP_COMMIT: 0.03,
   EARLY_EXPAND_MINIMUM_MARGIN: 1.25,
   performance: { now: () => 10000 },
   discoverCtors: () => ({
@@ -341,22 +341,22 @@ assert.equal(
 );
 assert.equal(
   troopEmissions.at(-1),
-  500,
-  "direct TerraNullius expansion sends the adaptive 2% opening payload",
+  750,
+  "direct TerraNullius expansion sends the adaptive 3% opening payload",
 );
 
 expandingBehavior.botAttackPendingIntentCommitments = [];
 ownTroops = 10000;
 assert.equal(
   expandingBehavior.getTerraNulliusAttackTroops(terraNullius),
-  200,
-  "the first 2% follow-up is affordable immediately after the 60% opening burst",
+  300,
+  "the first 3% follow-up is affordable immediately after the 60% opening burst",
 );
 ownTroops = 25000;
 assert.equal(
   expandingBehavior.getTerraNulliusAttackTroops(terraNullius),
-  500,
-  "an exhausted opening allowance continues adjacent TerraNullius expansion at 2%",
+  750,
+  "an exhausted opening allowance continues adjacent TerraNullius expansion at 3%",
 );
 const continuedTerraNulliusEmissionCount = troopEmissions.length;
 assert.equal(
@@ -367,8 +367,8 @@ assert.equal(
 assert.equal(troopEmissions.length, continuedTerraNulliusEmissionCount + 1);
 assert.equal(
   troopEmissions.at(-1),
-  500,
-  "the continued TerraNullius intent emits 2% when it exceeds the one-tile cost",
+  750,
+  "the continued TerraNullius intent emits 3% when it exceeds the one-tile cost",
 );
 
 const repeatedExpansionBehavior = new sandbox.AttackBehavior(
@@ -441,10 +441,10 @@ const drainedExpansionEmissionCount = troopEmissions.length;
 assert.equal(
   expandingBehavior.sendLandAttack(terraNullius),
   true,
-  "chained TerraNullius expansion keeps the derived 2% liveness allowance at the opening floor",
+  "chained TerraNullius expansion keeps the derived 3% liveness allowance at the opening floor",
 );
 assert.equal(troopEmissions.length, drainedExpansionEmissionCount + 1);
-assert.equal(troopEmissions.at(-1), 200);
+assert.equal(troopEmissions.at(-1), 300);
 ownTroops = 25000;
 
 const openingBehavior = new sandbox.AttackBehavior({}, expandingGame, me, 0.5, 0.3, 0.1, {}, {});
@@ -457,7 +457,7 @@ assert.equal(
 assert.equal(troopEmissions.length, openingEmissionCount + 1);
 assert.equal(
   troopEmissions.at(-1),
-  500,
+  750,
   "the 60% opening fraction is a ceiling rather than a fixed payload",
 );
 

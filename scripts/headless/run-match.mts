@@ -22,8 +22,25 @@ let playlistConfig = await playlist.gameConfig("team");
 while (playlistConfig.playerTeams === HumansVsNations) {
   playlistConfig = await playlist.gameConfig("team");
 }
+const requestedTeams = process.env.OFH_PLAYER_TEAMS;
+const numericTeams = Number(requestedTeams);
+const fixedConfig = process.env.OFH_GAME_MAP
+  ? {
+      gameMap: process.env.OFH_GAME_MAP,
+      gameMapSize: process.env.OFH_GAME_MAP_SIZE ?? playlistConfig.gameMapSize,
+      gameMode: "Team",
+      playerTeams:
+        requestedTeams === undefined
+          ? playlistConfig.playerTeams
+          : Number.isFinite(numericTeams)
+            ? numericTeams
+            : requestedTeams,
+      bots: Number(process.env.OFH_BOTS ?? playlistConfig.bots),
+    }
+  : {};
 const config = {
   ...playlistConfig,
+  ...fixedConfig,
   ...(process.env.OFH_FIXED_WARSHIP === "1"
     ? {
         gameMap: "Warship Warship",
