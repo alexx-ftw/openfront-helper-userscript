@@ -1036,12 +1036,19 @@
 
     // Called ONCE at the top of each decision tick, before any behavior runs.
     async function beginTick(meCorePlayer) {
-      mePlayer = wrapPlayer(meCorePlayer);
       const tick = src.ticks();
       if (tick !== lastSnapshotTick) {
+        // PlayerView instances are snapshots and the client replaces them as the
+        // game advances. Retaining a wrapper by smallID across ticks would retain
+        // the old view too, which can turn a newly-grown tribe into an underfunded
+        // capture even though the troop calculation itself uses a 4x floor.
+        playerCache.clear();
+        playerSnapshot = null;
+        playerSnapshotTick = -1;
         transportSpawnCache.clear();
         transportRouteCache.clear();
       }
+      mePlayer = wrapPlayer(meCorePlayer);
 
       // decay overlay 0.05/tick toward 0 (PlayerImpl.decayRelations) — once per
       // game tick crossed.

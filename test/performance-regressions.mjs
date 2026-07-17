@@ -167,6 +167,21 @@ assert.strictEqual(
 );
 assert.equal(playerListCalls, 1, "players should be read once per game tick");
 gameApiTick += 1;
+const replacementPlayerCore = {
+  ...playerCore,
+  troops: () => 999,
+};
+await wrappedApi.beginTick(replacementPlayerCore);
+assert.notStrictEqual(
+  gameApi.myPlayer(),
+  playerView,
+  "a new game tick must replace stale wrapped PlayerView snapshots",
+);
+assert.equal(
+  gameApi.myPlayer().troops(),
+  999,
+  "the refreshed player wrapper must read the current snapshot state",
+);
 assert.equal(playerView.sharesBorderWith(playerView), true);
 assert.ok(
   borderNeighborCalls > callsAfterFirstBorderCheck,

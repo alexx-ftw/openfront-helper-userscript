@@ -317,6 +317,7 @@
     async tick(ticks, profile, tickGeneration) {
       if (!this.tickIsCurrent(tickGeneration)) return;
       this.player = this.mg.myPlayer();
+      this.refreshBehaviorPlayerReferences();
       const me = this.player;
       if (this.isDuplicateGameTick(ticks)) return;
       this.lastProcessedGameTick = ticks;
@@ -336,6 +337,21 @@
         return;
       }
       await this.runDecisionChain(profile, tickGeneration);
+    }
+
+    refreshBehaviorPlayerReferences() {
+      if (!this.behaviorsInitialized) return;
+      for (const behavior of [
+        this.emojiBehavior,
+        this.mirvBehavior,
+        this.allianceBehavior,
+        this.warshipBehavior,
+        this.attackBehavior,
+        this.nukeBehavior,
+        this.structureBehavior,
+      ]) {
+        if (behavior) behavior.player = this.player;
+      }
     }
 
     handleEliminatedPlayer(player) {
