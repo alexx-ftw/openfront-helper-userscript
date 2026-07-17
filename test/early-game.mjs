@@ -1764,6 +1764,44 @@ targetSandbox.state.lastOppBoatMs = previousLastOppBoatMs;
 targetSandbox.state.lastOppBoatMissMs = previousLastOppBoatMissMs;
 targetSandbox.runtimeDebugLog = previousRuntimeDebugLog;
 
+const earlyOceanProbeBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+let earlyOceanProbeTick = 100;
+const earlyOceanProbeCalls = [];
+earlyOceanProbeBehavior.earlyOceanProbeRetryTicks = new Map();
+earlyOceanProbeBehavior.game = {
+  config: () => ({ isUnitDisabled: () => false, boatMaxNumber: () => 8 }),
+  ticks: () => earlyOceanProbeTick,
+};
+earlyOceanProbeBehavior.player = {
+  unitCount: () => 0,
+  oceanShoreBorderTiles: () => [1],
+  bestTransportShipSpawn: (tile) => {
+    earlyOceanProbeCalls.push(tile);
+    return Promise.resolve(false);
+  },
+};
+earlyOceanProbeBehavior.scanEarlyOceanTargets = () => [
+  { tile: 11, dist: 1 },
+  { tile: 12, dist: 2 },
+  { tile: 13, dist: 3 },
+  { tile: 14, dist: 4 },
+];
+earlyOceanProbeBehavior.boatTargetTaken = () => false;
+earlyOceanProbeBehavior.allowEarlyGameBoat = async () => false;
+assert.equal(await earlyOceanProbeBehavior.maybeEarlyOceanBoat(), false);
+assert.deepEqual(
+  earlyOceanProbeCalls,
+  [11],
+  "one ocean decision submits only one expensive route probe",
+);
+earlyOceanProbeTick += 30;
+assert.equal(await earlyOceanProbeBehavior.maybeEarlyOceanBoat(), false);
+assert.deepEqual(
+  earlyOceanProbeCalls,
+  [11, 12],
+  "a failed nearest coast yields to the next ranked fallback before retrying",
+);
+
 const borderFallbackBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 targetSandbox.currentDifficulty = () => "Impossible";
 targetSandbox.Difficulty = {

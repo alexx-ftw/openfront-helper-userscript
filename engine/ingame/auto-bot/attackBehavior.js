@@ -77,6 +77,11 @@
   // async enrichment bounded so a crowded tribe map cannot starve the combat tick.
   const EARLY_TRIBE_CANDIDATES = 8;
   const EARLY_TRIBE_BOAT_ETA_TARGETS = BOAT_PROBE_CANDIDATES;
+  // An ocean probe performs two worker route queries. Spread failed destinations
+  // across the strategic cadence instead of chaining four pathfinders in one
+  // combat decision; the retry window leaves room to try every ranked fallback.
+  const EARLY_OCEAN_ROUTE_PROBE_BUDGET = 1;
+  const EARLY_OCEAN_PROBE_RETRY_TICKS = BOAT_PROBE_CANDIDATES * 30;
   const EARLY_GAME_TRIBE_CHAIN_RADIUS = 120;
   // The profiled strategic cadence is 30 game ticks. Keep one complete graph
   // available through the next decision; a changed live tribe-id signature
@@ -109,7 +114,7 @@
   // Tribes have no strategic counterplay comparable to Nations. A small capture
   // margin lets the opening spread across many tribes in parallel instead of
   // parking four times their strength in one conquest.
-  const TRIBE_CAPTURE_TROOP_MULTIPLIER = 1.2;
+  const TRIBE_CAPTURE_TROOP_MULTIPLIER = 1.3;
   const PLAYER_CAPTURE_TROOP_MULTIPLIER = 4;
   // Reserve the troop level where the production rate has its maximum temporal
   // acceleration. P(N) is troops per tick and N' = P(N), so acceleration is
@@ -648,6 +653,10 @@
       this.earlyGamePreferredClusterTargetKeys = new Set();
       this.earlyGameTribeTopologyCache = null;
       this.earlyGamePreferredClusterOverlaySignature = "";
+      // A destination that just failed the route gate is unlikely to become
+      // reachable before another opening decision. Keep this instance-local so
+      // a fresh game never inherits a stale water-path result.
+      this.earlyOceanProbeRetryTicks = new Map();
       // Defense-post reads are bounded and reused across all target decisions
       // made in the same game tick. This keeps the extra combat intelligence out
       // of the high-frequency engine poll loop.
@@ -4022,44 +4031,67 @@
       if (shores.length === 0) return false;
 
       const targets = this.scanEarlyOceanTargets(shores);
-      for (const target of targets.slice(0, BOAT_PROBE_CANDIDATES)) {
-        if (this.boatTargetTaken(target.tile)) continue;
-        const spawn = await withTimeout(
-          this.player.bestTransportShipSpawn(target.tile),
-          WORKER_TIMEOUT_MS,
-          false,
-        );
-        if (spawn === false || !(await this.allowEarlyGameBoat(target.tile))) {
-          continue;
-        }
+      const tick = this.currentAttackDecisionTick();
+      const target = this.nextEarlyOceanProbeTarget(targets, tick);
+      if (target === null) return false;
+      const spawn = await withTimeout(
+        this.player.bestTransportShipSpawn(target.tile),
+        WORKER_TIMEOUT_MS,
+        false,
+      );
+      if (spawn === false || !(await this.allowEarlyGameBoat(target.tile))) {
+        this.rememberEarlyOceanProbeFailure(target.tile, tick);
+        return false;
+      }
 
-        const troops = this.getEarlyGameProbeTroops(
-          state.settings.boatProbeFrac,
-          this.getEarlyGameTerraNulliusReserveTroops(),
-        );
-        if (troops < 1) continue;
-        if (
-          this.emitBoat(
-            target.tile,
-            troops,
-            "⛵ TerraNullius probe",
-            this.game.terraNullius(),
-          )
-        ) {
-          state.beachhead = {
-            tile: target.tile,
-            at: this.game.ticks(),
-            surged: false,
-          };
-          state.earlyGame.oceanTarget = {
-            distance: target.dist,
-            oceanShore: true,
-          };
-          state.earlyGame.action = "maritime-probe";
-          return true;
-        }
+      const troops = this.getEarlyGameProbeTroops(
+        state.settings.boatProbeFrac,
+        this.getEarlyGameTerraNulliusReserveTroops(),
+      );
+      if (troops < 1) return false;
+      if (
+        this.emitBoat(
+          target.tile,
+          troops,
+          "⛵ TerraNullius probe",
+          this.game.terraNullius(),
+        )
+      ) {
+        this.earlyOceanProbeRetryTicks.delete(target.tile);
+        state.beachhead = {
+          tile: target.tile,
+          at: this.game.ticks(),
+          surged: false,
+        };
+        state.earlyGame.oceanTarget = {
+          distance: target.dist,
+          oceanShore: true,
+        };
+        state.earlyGame.action = "maritime-probe";
+        return true;
       }
       return false;
+    }
+
+    nextEarlyOceanProbeTarget(targets, tick) {
+      const ready = [];
+      for (const target of targets.slice(0, BOAT_PROBE_CANDIDATES)) {
+        if (this.boatTargetTaken(target.tile)) continue;
+        if (this.earlyOceanProbeRetryTicks.get(target.tile) > tick) continue;
+        ready.push(target);
+        if (ready.length >= EARLY_OCEAN_ROUTE_PROBE_BUDGET) break;
+      }
+      return ready[0] || null;
+    }
+
+    rememberEarlyOceanProbeFailure(tile, tick = this.currentAttackDecisionTick()) {
+      this.earlyOceanProbeRetryTicks.set(tile, tick + EARLY_OCEAN_PROBE_RETRY_TICKS);
+      // The opening window is finite, but prune expired entries so long games
+      // cannot retain every rejected coast visited during expansion.
+      if (this.earlyOceanProbeRetryTicks.size <= BOAT_PROBE_CANDIDATES * 4) return;
+      for (const [candidate, retryTick] of this.earlyOceanProbeRetryTicks) {
+        if (retryTick <= tick) this.earlyOceanProbeRetryTicks.delete(candidate);
+      }
     }
 
     scanEarlyOceanTargets(shores) {
