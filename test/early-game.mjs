@@ -2230,6 +2230,76 @@ ownerOnlyAdjacencyBehavior.connectEarlyGameTribeAdjacencyTile(
 );
 assert.equal(ownerOnlyAdjacency.get(201).has(202), true);
 assert.equal(ownerOnlyAdjacency.get(202).has(201), true);
+const incrementalTopologyBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+let incrementalNeighborCalls = 0;
+const topologyOwners = new Map([
+  [11, 2],
+  [12, 1],
+  [21, 1],
+  [22, 3],
+  [31, 2],
+]);
+incrementalTopologyBehavior.game = {
+  neighbors: (tile) => {
+    incrementalNeighborCalls++;
+    return [tile + 1];
+  },
+  ownerID: (tile) => topologyOwners.get(tile),
+};
+const incrementalNodes = [{ id: 1 }, { id: 2 }, { id: 3 }];
+const initialIncrementalBorders = new Map([
+  [1, new Set([10])],
+  [2, new Set([20])],
+  [3, new Set([30])],
+]);
+const initialIncrementalAdjacency =
+  await incrementalTopologyBehavior.connectEarlyGameTribeAdjacency(
+    incrementalNodes,
+    initialIncrementalBorders,
+  );
+const incrementalCache = {
+  signature: incrementalTopologyBehavior.earlyGameTribeTopologySignature(incrementalNodes),
+  topologyBordersById: initialIncrementalBorders,
+  tribeAdjacency: initialIncrementalAdjacency,
+};
+incrementalNeighborCalls = 0;
+assert.strictEqual(
+  await incrementalTopologyBehavior.updateEarlyGameTribeAdjacency(
+    incrementalNodes,
+    new Map([...initialIncrementalBorders].map(([id, border]) => [id, new Set(border)])),
+    incrementalCache,
+  ),
+  initialIncrementalAdjacency,
+  "unchanged tribe borders reuse the exact cached adjacency graph",
+);
+assert.equal(
+  incrementalNeighborCalls,
+  0,
+  "unchanged tribe borders perform no neighbor topology probes",
+);
+const changedIncrementalBorders = new Map([
+  [1, new Set([10])],
+  [2, new Set([20, 21])],
+  [3, new Set([30])],
+]);
+incrementalNeighborCalls = 0;
+const updatedIncrementalAdjacency = await incrementalTopologyBehavior.updateEarlyGameTribeAdjacency(
+  incrementalNodes,
+  changedIncrementalBorders,
+  incrementalCache,
+);
+assert.equal(incrementalNeighborCalls, 2, "only a changed tribe border is rescanned");
+const fullIncrementalAdjacency = await incrementalTopologyBehavior.connectEarlyGameTribeAdjacency(
+  incrementalNodes,
+  changedIncrementalBorders,
+);
+const normalizedAdjacency = (adjacency) =>
+  [...adjacency].map(([id, neighbors]) => [id, [...neighbors].sort()]);
+assert.deepEqual(
+  normalizedAdjacency(updatedIncrementalAdjacency),
+  normalizedAdjacency(fullIncrementalAdjacency),
+  "incremental tribe adjacency is exactly equivalent to a full rebuild",
+);
 assert.equal(
   targetSandbox.state.earlyGame.preferredClusterMembers
     .map((member) => member.id)

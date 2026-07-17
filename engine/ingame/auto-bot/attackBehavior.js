@@ -2439,7 +2439,10 @@
         const batch = nodes.slice(start, start + EARLY_TRIBE_CANDIDATES);
         await Promise.all(
           batch.map(async (tribe) => {
-            borders.set(tribe.id, await this.fetchEarlyGameTribeBorder(tribe.player));
+            borders.set(
+              tribe.id,
+              new Set(await this.fetchEarlyGameTribeBorder(tribe.player)),
+            );
           }),
         );
       }
@@ -2486,6 +2489,66 @@
       return adjacency;
     }
 
+    earlyGameTribeBorderChanged(previous, current) {
+      if (previous?.size !== current?.size) return true;
+      for (const tile of current || []) {
+        if (!previous.has(tile)) return true;
+      }
+      return false;
+    }
+
+    async updateEarlyGameTribeAdjacency(nodes, borders, cached) {
+      if (cached?.signature !== this.earlyGameTribeTopologySignature(nodes)) {
+        return this.connectEarlyGameTribeAdjacency(nodes, borders);
+      }
+      const changedIds = new Set();
+      for (const tribe of nodes) {
+        if (
+          this.earlyGameTribeBorderChanged(
+            cached.topologyBordersById.get(tribe.id),
+            borders.get(tribe.id),
+          )
+        ) {
+          changedIds.add(tribe.id);
+        }
+      }
+      if (changedIds.size === 0) return cached.tribeAdjacency;
+
+      const edibleIds = new Set(nodes.map((tribe) => tribe.id));
+      const adjacency = new Map(
+        nodes.map((tribe) => [
+          tribe.id,
+          new Set(cached.tribeAdjacency.get(tribe.id) || []),
+        ]),
+      );
+      for (const changedId of changedIds) {
+        adjacency.get(changedId).clear();
+      }
+      for (const neighbors of adjacency.values()) {
+        for (const changedId of changedIds) neighbors.delete(changedId);
+      }
+
+      let tilesSinceYield = 0;
+      let sliceStartedAt = earlyGameTopologyNow();
+      for (const changedId of changedIds) {
+        for (const tile of borders.get(changedId) || []) {
+          this.connectEarlyGameTribeAdjacencyTile(
+            changedId,
+            tile,
+            edibleIds,
+            adjacency,
+          );
+          tilesSinceYield++;
+          if (shouldYieldEarlyGameTopology(tilesSinceYield, sliceStartedAt)) {
+            tilesSinceYield = 0;
+            await yieldEarlyGameTopologyWork();
+            sliceStartedAt = earlyGameTopologyNow();
+          }
+        }
+      }
+      return adjacency;
+    }
+
     earlyGameTribeTopologySignature(nodes) {
       return nodes
         .map((tribe) => String(tribe.id))
@@ -2512,7 +2575,12 @@
       const tribeAdjacency = await profileAttackAsync(
         profile,
         "tribes-topology-adjacency",
-        () => this.connectEarlyGameTribeAdjacency(nodes, topologyBordersById),
+        () =>
+          this.updateEarlyGameTribeAdjacency(
+            nodes,
+            topologyBordersById,
+            cached,
+          ),
       );
       const topology = {
         tick,
