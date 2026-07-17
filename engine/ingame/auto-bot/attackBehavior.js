@@ -3186,9 +3186,7 @@
 
     async enrichEarlyGameTribeBoatEtas(candidates, borderByTribe) {
       const seaCandidates = candidates.filter((candidate) => !candidate.landBorder);
-      const ownShores = Array.from(this.player.borderTiles()).filter((tile) =>
-        this.game.isShore(tile),
-      );
+      const ownShores = this.getEarlyGameOwnShores();
       for (
         let start = 0;
         start < seaCandidates.length;

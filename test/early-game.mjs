@@ -1610,6 +1610,27 @@ assert.strictEqual(
 );
 assert.deepEqual([...sharedShoreSnapshots[0]], [1, 3]);
 
+const cachedShoreBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+let cachedShoreReads = 0;
+cachedShoreBehavior.player = {
+  shoreBorderTiles: () => {
+    cachedShoreReads++;
+    return [1, 3];
+  },
+  borderTiles: () => {
+    throw new Error("boat ETA enrichment must reuse the cached shore subset");
+  },
+};
+cachedShoreBehavior.estimateEarlyGameTribeBoatEta = async (_border, _candidate, shores) => {
+  assert.deepEqual(shores, [1, 3]);
+  return 10;
+};
+await cachedShoreBehavior.enrichEarlyGameTribeBoatEtas(
+  sharedShoreCandidates,
+  new Map(sharedShorePlayers.map((player) => [player, new Set()])),
+);
+assert.equal(cachedShoreReads, 1, "tribe boat ETA enrichment reuses the API's cached shore subset");
+
 const boatEtaRankBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 const rankedBoatEtaShores = boatEtaRankBehavior.rankEarlyGameTribeBoatTargetShores(
   [90, 91, 92, 93, 94, 95, 96],
