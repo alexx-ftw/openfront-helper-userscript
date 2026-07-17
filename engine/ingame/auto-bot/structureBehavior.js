@@ -911,7 +911,9 @@
             return false;
           }
           // src: addExecution(new ConstructionExecution(player, DefensePost, tile)).
-          buildMenu.sendBuildOrUpgrade(bu, bu.canBuild);
+          if (!sendAutoBotBuildOrUpgrade(buildMenu, bu, bu.canBuild, this.game, this.player)) {
+            return false;
+          }
           state.stats.builds++;
           setLastAction(tr("🛡️ Defense post"), "build");
           return true;
@@ -5997,9 +5999,20 @@
       if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
         return false;
       }
-      buildMenu.sendBuildOrUpgrade(bu, bu.canBuild);
+      return this.emitStructureBuild(
+        buildMenu,
+        bu,
+        bu.canBuild,
+        tr("🏗️ Build {type}", { type }),
+      );
+    }
+
+    emitStructureBuild(buildMenu, buildable, tile, action) {
+      if (!sendAutoBotBuildOrUpgrade(buildMenu, buildable, tile, this.game, this.player)) {
+        return false;
+      }
       state.stats.builds++;
-      setLastAction(tr("🏗️ Build {type}", { type }), "build");
+      setLastAction(action, "build");
       return true;
     }
 
@@ -6132,7 +6145,9 @@
         if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
           return false;
         }
-        buildMenu.sendBuildOrUpgrade(result.bu);
+        if (!sendAutoBotBuildOrUpgrade(buildMenu, result.bu, undefined, this.game, this.player)) {
+          return false;
+        }
         state.stats.builds++;
         setLastAction(
           tr("⬆️ Upgrade {type}", { type: result.structure.type() }),
@@ -6173,7 +6188,9 @@
       if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
         return false;
       }
-      buildMenu.sendBuildOrUpgrade(bu);
+      if (!sendAutoBotBuildOrUpgrade(buildMenu, bu, undefined, this.game, this.player)) {
+        return false;
+      }
       state.stats.builds++;
       setLastAction(
         tr("⬆️ Upgrade {type}", { type: UNIT.SAMLauncher }),
@@ -6425,7 +6442,9 @@
       if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
         return false;
       }
-      buildMenu.sendBuildOrUpgrade(selected.bu);
+      if (!sendAutoBotBuildOrUpgrade(buildMenu, selected.bu, undefined, this.game, this.player)) {
+        return false;
+      }
       state.stats.builds++;
       setLastAction(tr("⬆️ Upgrade {type}", { type }), "build");
       return true;

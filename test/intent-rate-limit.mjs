@@ -36,7 +36,7 @@ function createSandbox() {
   };
   sandbox.globalThis = sandbox;
   executeClassicScript(
-    `${RATE_LIMIT_SOURCE}\n${CONTEXT_SOURCE}\nglobalThis.__intentTest = { emitIntent, getIntentRateLimitSnapshot, hasIntentRateLimitCapacity };`,
+    `${RATE_LIMIT_SOURCE}\n${CONTEXT_SOURCE}\nglobalThis.__intentTest = { emitIntent, getIntentRateLimitSnapshot, hasIntentRateLimitCapacity, sendAutoBotBuildOrUpgrade };`,
     sandbox,
     { filename: path.join(ROOT, "engine/ingame/intent-rate-limit.js") },
   );
@@ -128,3 +128,47 @@ assert.match(
 );
 
 process.stdout.write("INTENT RATE LIMIT OK — 10/s and 150/min client budget enforced\n");
+
+const construction = createSandbox();
+let constructionTick = 100;
+const purchases = [];
+const constructionMenu = {
+  sendBuildOrUpgrade: (...args) => purchases.push(args),
+};
+const constructionGame = { ticks: () => constructionTick };
+const constructionPlayer = { id: () => "bot", gold: () => 1_000_000n };
+assert.equal(
+  construction.api.sendAutoBotBuildOrUpgrade(
+    constructionMenu,
+    { cost: 750_000n },
+    12,
+    constructionGame,
+    constructionPlayer,
+  ),
+  true,
+  "the first exact-cost construction reserves its gold",
+);
+assert.equal(
+  construction.api.sendAutoBotBuildOrUpgrade(
+    constructionMenu,
+    { cost: 500_000n },
+    13,
+    constructionGame,
+    constructionPlayer,
+  ),
+  false,
+  "a second build cannot spend gold already committed by another bot phase",
+);
+assert.equal(purchases.length, 1, "only the affordable construction reaches the build menu");
+constructionTick += 7;
+assert.equal(
+  construction.api.sendAutoBotBuildOrUpgrade(
+    constructionMenu,
+    { cost: 500_000n },
+    13,
+    constructionGame,
+    constructionPlayer,
+  ),
+  true,
+  "the reservation expires after the client intent grace window",
+);

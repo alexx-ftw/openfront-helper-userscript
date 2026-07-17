@@ -48,6 +48,10 @@ const sandbox = {
   getBuildMenu: () => ({
     sendBuildOrUpgrade: (buildable) => sentBuilds.push(buildable),
   }),
+  sendAutoBotBuildOrUpgrade: (menu, buildable, tile) => {
+    menu.sendBuildOrUpgrade(buildable, tile);
+    return true;
+  },
   autoBotBuildAllowed: () => true,
   randTerritoryTileArray: (_random, _game, _player, count) =>
     Array.from({ length: count }, (_, index) => 10_000 + index),

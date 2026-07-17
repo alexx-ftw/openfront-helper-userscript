@@ -792,7 +792,9 @@
       const buildMenu = getBuildMenu();
       if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") return false;
       const baseline = this.currentWarshipBuildSnapshot();
-      buildMenu.sendBuildOrUpgrade(bu, tile);
+      if (!sendAutoBotBuildOrUpgrade(buildMenu, bu, tile, this.game, this.player)) {
+        return false;
+      }
       smartState.pendingWarshipBuild = {
         createdTick: this.game.ticks(),
         baselineIds: baseline.ids,

@@ -427,7 +427,7 @@
       if (bu.canBuild !== false && this.player.gold() >= bu.cost) {
         const buildMenu = getBuildMenu();
         if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") return;
-        buildMenu.sendBuildOrUpgrade(bu, centerTile);
+        if (!sendAutoBotBuildOrUpgrade(buildMenu, bu, centerTile, this.game, this.player)) return;
         this.recordMirvHit(enemy);
         // WIN-FIX (NOT in src): remember this crater centre so the attack behaviour
         // pours amphibious landings into the freshly-MIRV'd (weakened) nation. We

@@ -1080,7 +1080,7 @@
 
       const buildMenu = getBuildMenu();
       if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") return;
-      buildMenu.sendBuildOrUpgrade(bu, tile);
+      if (!sendAutoBotBuildOrUpgrade(buildMenu, bu, tile, this.game, this.player)) return;
 
       // Mirror src state updates only AFTER a successful fire (src does these
       // unconditionally because addExecution can't "fail"; on the client the build
@@ -1359,7 +1359,9 @@
       if (!buildable || buildable.canUpgrade === false) return false;
       const buildMenu = getBuildMenu();
       if (typeof buildMenu?.sendBuildOrUpgrade !== "function") return false;
-      buildMenu.sendBuildOrUpgrade(buildable);
+      if (!sendAutoBotBuildOrUpgrade(buildMenu, buildable, undefined, this.game, this.player)) {
+        return false;
+      }
       state.stats.builds++;
       setLastAction(tr("☢️ Upgrade silo"), "build");
       return true;

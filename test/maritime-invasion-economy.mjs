@@ -52,6 +52,10 @@ function makeStructureSandbox() {
       difficulty === Difficulty.Impossible ||
       difficulty === Difficulty.Legendary,
     getBuildMenu: () => ({ sendBuildOrUpgrade() {} }),
+    sendAutoBotBuildOrUpgrade: (menu, buildable, tile) => {
+      menu.sendBuildOrUpgrade(buildable, tile);
+      return true;
+    },
     setLastAction() {},
     tr: (value) => value,
     console,
@@ -147,6 +151,10 @@ const warshipSandbox = {
   WORKER_TIMEOUT_MS: 100,
   withTimeout: async (promise) => promise,
   getBuildMenu: null,
+  sendAutoBotBuildOrUpgrade: (menu, buildable, tile) => {
+    menu.sendBuildOrUpgrade(buildable, tile);
+    return true;
+  },
   setLastAction() {},
   tr: (value) => value,
   console,

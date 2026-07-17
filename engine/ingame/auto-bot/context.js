@@ -62,6 +62,61 @@
     );
   }
 
+  // The game client validates each BuildableUnit against one asynchronous
+  // snapshot. Two bot phases can therefore both see the same gold and emit
+  // individually-valid purchases whose combined cost the engine later rejects.
+  // Keep those not-yet-observed purchases reserved for the short client intent
+  // round trip. This is deliberately shared by every auto-bot construction
+  // caller, rather than being a separate per-behavior estimate.
+  const AUTO_BOT_BUILD_RESERVATION_GRACE_TICKS = 6;
+  let autoBotBuildReservations = [];
+
+  function autoBotBuildTick(game) {
+    const tick = game?.ticks?.();
+    return Number.isFinite(tick) ? Number(tick) : 0;
+  }
+
+  function autoBotBuildPlayerId(player) {
+    const id = player?.id?.() ?? player?.smallID?.();
+    return id === null || id === undefined ? "" : String(id);
+  }
+
+  function autoBotBuildCost(buildable) {
+    const cost = buildable?.cost;
+    if (typeof cost === "bigint") return cost;
+    if (typeof cost === "number" && Number.isFinite(cost) && cost >= 0) {
+      return BigInt(Math.floor(cost));
+    }
+    return null;
+  }
+
+  function sendAutoBotBuildOrUpgrade(buildMenu, buildable, tile, game, player) {
+    if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
+      return false;
+    }
+    const cost = autoBotBuildCost(buildable);
+    if (cost === null) return false;
+    const tick = autoBotBuildTick(game);
+    const playerId = autoBotBuildPlayerId(player);
+    autoBotBuildReservations = autoBotBuildReservations.filter(
+      (reservation) => reservation.expiresAt >= tick,
+    );
+    const reserved = autoBotBuildReservations.reduce(
+      (total, reservation) =>
+        reservation.playerId === playerId ? total + reservation.cost : total,
+      0n,
+    );
+    const gold = player?.gold?.();
+    if (typeof gold !== "bigint" || gold - reserved < cost) return false;
+    buildMenu.sendBuildOrUpgrade(buildable, tile);
+    autoBotBuildReservations.push({
+      playerId,
+      cost,
+      expiresAt: tick + AUTO_BOT_BUILD_RESERVATION_GRACE_TICKS,
+    });
+    return true;
+  }
+
   function getEventBus() {
     const bm = getBuildMenu();
     if (bm?.eventBus) return bm.eventBus;
