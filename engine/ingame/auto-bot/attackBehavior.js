@@ -78,7 +78,10 @@
   const EARLY_TRIBE_CANDIDATES = 8;
   const EARLY_TRIBE_BOAT_ETA_TARGETS = BOAT_PROBE_CANDIDATES;
   const EARLY_GAME_TRIBE_CHAIN_RADIUS = 120;
-  const EARLY_GAME_TRIBE_TOPOLOGY_CACHE_TICKS = 10;
+  // The profiled strategic cadence is 30 game ticks. Keep one complete graph
+  // available through the next decision; a changed live tribe-id signature
+  // still invalidates it immediately.
+  const EARLY_GAME_TRIBE_TOPOLOGY_CACHE_TICKS = 30;
   const EARLY_GAME_TRIBE_TOPOLOGY_MIN_SLICE_TILES = 128;
   const EARLY_GAME_TRIBE_TOPOLOGY_MAX_SLICE_TILES = 2048;
   const EARLY_GAME_TRIBE_TOPOLOGY_SLICE_MS = 4;

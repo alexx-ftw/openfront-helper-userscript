@@ -62,6 +62,11 @@ generic Terra Nullius land attack still has no tile argument in the client inten
 so the coast-specific direction is expressed through a coastal tribe target or an
 explicit open-ocean landing rather than by inventing a new attack API.
 
+The complete tribe-border topology is retained for one profiled 30-tick
+strategic cadence and invalidated immediately when the live tribe-id set
+changes. This avoids rebuilding the same graph at the next decision while
+keeping territorial changes bounded to a three-second snapshot window.
+
 ## Enemy Defense Post-aware attacks
 
 With `winFixes` enabled, land attacks inspect only the current frontier and apply
