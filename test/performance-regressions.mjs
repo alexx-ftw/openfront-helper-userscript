@@ -63,6 +63,7 @@ let playerUnitCalls = 0;
 let globalUnitCalls = 0;
 let playerListCalls = 0;
 let borderNeighborCalls = 0;
+let oceanShoreCalls = 0;
 const rawUnit = {
   type: () => "Warship",
   owner: () => playerCore,
@@ -99,7 +100,10 @@ const gameApiSource = {
   isLand: () => true,
   isShore: () => false,
   isOcean: () => false,
-  isOceanShore: () => false,
+  isOceanShore: (tile) => {
+    oceanShoreCalls += 1;
+    return tile === 1;
+  },
   ownerID: () => 7,
   hasOwner: () => true,
   playerBySmallID: () => playerCore,
@@ -109,6 +113,15 @@ const gameApi = wrappedApi.game;
 const playerView = gameApi._wrapPlayer(playerCore);
 await wrappedApi.beginTick(playerCore);
 assert.deepEqual([...playerView.borderTiles()], [1]);
+const firstOceanShores = playerView.oceanShoreBorderTiles();
+const secondOceanShores = playerView.oceanShoreBorderTiles();
+assert.deepEqual([...firstOceanShores], [1], "ocean shore cache must preserve the exact predicate");
+assert.strictEqual(
+  secondOceanShores,
+  firstOceanShores,
+  "repeated ocean-shore reads should reuse the current border snapshot",
+);
+assert.equal(oceanShoreCalls, 1, "the exact ocean-shore predicate runs once per border snapshot");
 assert.equal(playerView.sharesBorderWith(playerView), true);
 const callsAfterFirstBorderCheck = borderNeighborCalls;
 assert.equal(playerView.sharesBorderWith(playerView), true);

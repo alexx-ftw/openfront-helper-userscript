@@ -3920,9 +3920,12 @@
         return false;
       }
 
-      const shores = Array.from(this.player.borderTiles()).filter(
-        (tile) => this.game.isOceanShore(tile),
-      );
+      const shores =
+        typeof this.player.oceanShoreBorderTiles === "function"
+          ? this.player.oceanShoreBorderTiles()
+          : Array.from(this.player.borderTiles()).filter((tile) =>
+              this.game.isOceanShore(tile),
+            );
       if (shores.length === 0) return false;
 
       const targets = this.scanEarlyOceanTargets(shores);

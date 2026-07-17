@@ -64,6 +64,7 @@
     const playerCache = new Map(); // smallID -> wrapped player
     const borderCache = new Map(); // smallID -> { tick, set:Set<TileRef> }
     const shoreBorderCache = new WeakMap(); // border Set -> shore TileRef[]
+    const oceanShoreBorderCache = new WeakMap(); // border Set -> ocean-shore TileRef[]
     // Relation overlay: ONLY the AI-subjective deltas WE issue this game
     // (embargo malus ±20, assist −20, warship −7.5/−15). The engine-applied
     // relation changes for our slot are already in profile(); the overlay is an
@@ -412,6 +413,10 @@
         // snapshot. Derive it once because isShore can be much more expensive
         // than walking the already-cached Set.
         shoreBorderTiles: () => shoreBorderTilesFor(core),
+        // Open-ocean shores are a stricter subset than generic shores: lakes and
+        // closed seas cannot launch the early maritime probe. Cache this exact
+        // predicate separately so consumers never trade correctness for reuse.
+        oceanShoreBorderTiles: () => oceanShoreBorderTilesFor(core),
 
         // ── relation (reconstructed via profile() + overlay) ──────────────────
         relation: (o) => {
@@ -481,6 +486,22 @@
 
     function shoreBorderTilesFor(player) {
       return shoreBorderTilesFrom(borderCache.get(player.smallID())?.set);
+    }
+
+    function oceanShoreBorderTilesFrom(border) {
+      if (!border?.size || typeof src.isOceanShore !== "function") return [];
+      const cached = oceanShoreBorderCache.get(border);
+      if (cached) return cached;
+      const shores = [];
+      for (const tile of border) {
+        if (src.isOceanShore(tile)) shores.push(tile);
+      }
+      oceanShoreBorderCache.set(border, shores);
+      return shores;
+    }
+
+    function oceanShoreBorderTilesFor(player) {
+      return oceanShoreBorderTilesFrom(borderCache.get(player.smallID())?.set);
     }
 
     // nearby — union of (a) owners of LAND neighbors of our border tiles whose
