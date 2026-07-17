@@ -1365,6 +1365,7 @@ sandbox.state.settings.islandScanRadius = 2;
 sandbox.state.settings.islandScanStep = 1;
 sandbox.state.settings.islandScanSamples = 2;
 let oceanOwnerChecks = 0;
+let oceanLandChecks = 0;
 const overlappingOceanScan = Object.create(sandbox.AttackBehavior.prototype);
 overlappingOceanScan.player = { smallID: () => 1 };
 overlappingOceanScan.game = {
@@ -1372,7 +1373,10 @@ overlappingOceanScan.game = {
   y: (tile) => Math.floor(tile / 100),
   isValidCoord: (x, y) => x >= 0 && x < 8 && y >= 0 && y < 8,
   ref: (x, y) => y * 100 + x,
-  isLand: () => true,
+  isLand: () => {
+    oceanLandChecks += 1;
+    return true;
+  },
   hasOwner: () => {
     oceanOwnerChecks += 1;
     return true;
@@ -1387,6 +1391,18 @@ assert.equal(
   oceanOwnerChecks,
   30,
   "overlapping early-ocean samples inspect each rejected tile once per synchronous scan",
+);
+assert.equal(oceanLandChecks, 30);
+let oceanWaterChecks = 0;
+overlappingOceanScan.game.isLand = () => {
+  oceanWaterChecks += 1;
+  return false;
+};
+assert.equal(overlappingOceanScan.scanEarlyOceanTargets([202, 203]).length, 0);
+assert.equal(
+  oceanWaterChecks,
+  30,
+  "overlapping early-ocean samples also inspect each rejected water tile once per synchronous scan",
 );
 sandbox.state.settings.islandScanRadius = originalIslandScanRadius;
 sandbox.state.settings.islandScanStep = originalIslandScanStep;

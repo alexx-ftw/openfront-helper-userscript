@@ -3997,8 +3997,11 @@
     }
 
     earlyOceanTileIsEligible(tile, seen, rejected = null) {
-      if (seen.has(tile) || !this.game.isLand(tile)) return false;
-      if (rejected?.has(tile)) return false;
+      if (seen.has(tile) || rejected?.has(tile)) return false;
+      if (!this.game.isLand(tile)) {
+        rejected?.add(tile);
+        return false;
+      }
       if (this.game.hasOwner(tile) || this.game.hasFallout(tile)) {
         rejected?.add(tile);
         return false;
