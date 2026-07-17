@@ -66,9 +66,9 @@ function makeScenario({
   allied = false,
   otherAlive = true,
   zeroAllocationNeighbors = false,
+  width = 9,
+  height = 9,
 } = {}) {
-  const width = 9;
-  const height = 9;
   const lake = new Set();
   for (let y = 3; y <= 5; y += 1) {
     for (let x = 3; x <= 5; x += 1) lake.add(y * width + x);
@@ -92,8 +92,8 @@ function makeScenario({
   for (let tile = 0; tile < width * height; tile += 1) {
     if (!lake.has(tile)) land.add(tile);
   }
-  const meCoast = new Set([29, 38, 47]);
-  const otherCoast = new Set([33, 42, 51]);
+  const meCoast = new Set([3 * width + 2, 4 * width + 2, 5 * width + 2]);
+  const otherCoast = new Set([3 * width + 6, 4 * width + 6, 5 * width + 6]);
   const ownerByTile = new Map([
     ...Array.from(meCoast, (tile) => [tile, 1]),
     ...Array.from(otherCoast, (tile) => [tile, 2]),
@@ -128,6 +128,7 @@ function makeScenario({
   const other = makePlayer(2, otherCoast);
   const players = [me, other];
   let landNeighborChecks = 0;
+  let waterChecks = 0;
 
   const src = {
     width: () => width,
@@ -138,7 +139,10 @@ function makeScenario({
       landNeighborChecks++;
       return land.has(tile);
     },
-    isWater: (tile) => !land.has(tile),
+    isWater: (tile) => {
+      waterChecks++;
+      return !land.has(tile);
+    },
     isOcean: (tile) => ocean && tile >= width * 3 && tile < width * 4,
     isShore: (tile) =>
       land.has(tile) && cardinalNeighbors(tile).some((neighbor) => !land.has(neighbor)),
@@ -187,6 +191,7 @@ function makeScenario({
     other,
     neighborArrayCalls: () => neighborArrayCalls,
     landNeighborChecks: () => landNeighborChecks,
+    waterChecks: () => waterChecks,
   };
 }
 
@@ -225,6 +230,67 @@ assert.equal(
   oceanCoastScenario.landNeighborChecks(),
   0,
   "an ocean component does not collect a coastline that will be discarded",
+);
+
+const fastOceanScenario = makeScenario({
+  ocean: true,
+  zeroAllocationNeighbors: true,
+  width: 300,
+  height: 300,
+});
+const fastOceanMe = await fastOceanScenario.handle.beginTick(fastOceanScenario.me);
+assert.equal(
+  fastOceanScenario.handle.game.hasSharedWater(fastOceanMe),
+  true,
+  "ocean access satisfies the boolean shared-water query",
+);
+assert.ok(
+  fastOceanScenario.waterChecks() < 20,
+  "the ocean boolean fast path inspects only the small live border",
+);
+assert.equal(
+  fastOceanScenario.neighborArrayCalls(),
+  0,
+  "the ocean boolean fast path keeps allocation-free neighbor iteration",
+);
+
+const sharedLakeScenario = makeScenario({ ocean: false, allied: true });
+const sharedLakeMe = await sharedLakeScenario.handle.beginTick(sharedLakeScenario.me);
+assert.equal(
+  sharedLakeScenario.handle.game.hasSharedWater(sharedLakeMe),
+  true,
+  "a trusted shared inland lake remains coastal for economy policy",
+);
+const isolatedLakeScenario = makeScenario({ ocean: false, allied: false });
+const isolatedLakeMe = await isolatedLakeScenario.handle.beginTick(isolatedLakeScenario.me);
+assert.equal(
+  isolatedLakeScenario.handle.game.hasSharedWater(isolatedLakeMe),
+  false,
+  "an isolated inland lake remains unavailable",
+);
+
+let exactSharedWaterCalls = 0;
+const contextBehavior = Object.create(structureSandbox.__StructureBehavior.prototype);
+contextBehavior.game = {
+  config: () => ({ isUnitDisabled: () => false }),
+  hasSharedWater: () => true,
+  sharedWaterComponents: () => {
+    exactSharedWaterCalls++;
+    return new Set([-1]);
+  },
+};
+contextBehavior.player = { numTilesOwned: () => 1, units: () => [] };
+contextBehavior.hasOceanPortTiles = () => true;
+contextBehavior.updateConstructionDominance = () => {};
+contextBehavior.hasBorderingHostileMaxTroopAdvantage = () => false;
+contextBehavior.shouldPrioritizeEconomicGrowth = () => false;
+const fastStructureContext = contextBehavior.structureBuildContext();
+assert.equal(fastStructureContext.hasCoastalTiles, true);
+assert.equal(fastStructureContext.hasOceanPortTiles, true);
+assert.equal(
+  exactSharedWaterCalls,
+  0,
+  "structure context uses the boolean water contract instead of exact global labels",
 );
 
 assert.ok(

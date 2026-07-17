@@ -50,6 +50,11 @@ each snapshot. A successful route is reused across snapshots only when that
 probe returns the exact same spawn tile for the same destination; a changed
 spawn recalculates the route immediately.
 
+Structure planning uses a bounded boolean water-access query. Direct ocean
+access is proven from the player's cached border without constructing the
+full-map component index; exact full-resolution labeling remains lazy for the
+rarer inland-lake case where a trusted allied or team coast must be verified.
+
 Within one tribe-ranking decision, every maritime candidate shares one
 authoritative snapshot of our shore tiles. Target shores compute their minimum
 distance to that snapshot once before stable ranking, rather than repeatedly

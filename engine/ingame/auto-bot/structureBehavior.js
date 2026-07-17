@@ -319,6 +319,13 @@
     return null;
   }
 
+  function shimHasSharedWater(game, player) {
+    if (typeof game.hasSharedWater === "function") {
+      return game.hasSharedWater(player);
+    }
+    return shimSharedWaterComponents(game, player) !== null;
+  }
+
   // railNetwork connectivity — src builds a global station→cluster graph
   // (TrainStation/Railroad), then factory/cityValue score a candidate by the
   // distinct rail clusters reachable within [trainStationMinRange,
@@ -1153,14 +1160,13 @@
             Math.floor(this.player.numTilesOwned() / TILES_PER_CITY_EQUIVALENT),
           )
         : this.ownedLevels(UNIT.City);
-      // sharedWaterComponents → real Set<number>|null from gameApi's cached
-      // full-resolution water union-find (core SharedWaterCache predicate).
-      this._sharedWaterComponents = profileStructureSync(
+      // Ocean access is answered from our cached border. The exact full-map
+      // component reconstruction remains available for the inland-lake fallback.
+      const hasCoastalTiles = profileStructureSync(
         profile,
         "structures-context-shared-water",
-        () => shimSharedWaterComponents(this.game, this.player),
+        () => shimHasSharedWater(this.game, this.player),
       );
-      const hasCoastalTiles = this._sharedWaterComponents !== null;
       const hasOceanPortTiles = profileStructureSync(
         profile,
         "structures-context-ocean-port",

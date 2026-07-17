@@ -739,6 +739,21 @@
       return { hasOcean, lakes };
     }
 
+    function ownedWaterAccessSummary(player) {
+      let hasOcean = false;
+      let hasInlandWater = false;
+      for (const tile of player.borderTiles()) {
+        if (!src.isShore(tile)) continue;
+        forEachSourceNeighbor(tile, (neighbor) => {
+          if (!src.isWater(neighbor)) return;
+          if (src.isOcean(neighbor)) hasOcean = true;
+          else hasInlandWater = true;
+        });
+        if (hasOcean) return { hasOcean, hasInlandWater };
+      }
+      return { hasOcean, hasInlandWater };
+    }
+
     function lakeHasTrustedPartner(component, player, mySid) {
       const coast = _waterCompCoast[component];
       if (!coast) return false;
@@ -769,6 +784,19 @@
       }
 
       return shared.size > 0 ? shared : null;
+    }
+
+    // Structure policy only needs the SharedWaterCache result as a boolean.
+    // Ocean access is locally provable from the player's cached border, so do
+    // not synchronously flood-fill the whole map unless an inland component
+    // actually needs the trusted-partner test.
+    function hasSharedWater(player) {
+      if (player == null) return false;
+      if (player.type?.() === PlayerType.Bot) return false;
+      const access = ownedWaterAccessSummary(player);
+      if (access.hasOcean) return true;
+      if (!access.hasInlandWater) return false;
+      return sharedWaterComponents(player) !== null;
     }
 
     // RAIL — railroadState buffer (EXTENSION only). Core RailroadCache keeps a
@@ -869,6 +897,7 @@
       // core SharedWaterCache. railroadState exposes the real rail-tile buffer in
       // the extension (null under the harness → proximity fallback).
       getWaterComponent: (tile) => getWaterComponent(tile),
+      hasSharedWater: (p) => hasSharedWater(p),
       sharedWaterComponents: (p) => sharedWaterComponents(p),
       railroadState: () => railroadState(),
 
