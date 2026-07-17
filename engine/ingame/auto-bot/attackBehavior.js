@@ -77,6 +77,10 @@
   // async enrichment bounded so a crowded tribe map cannot starve the combat tick.
   const EARLY_TRIBE_CANDIDATES = 8;
   const EARLY_TRIBE_BOAT_ETA_TARGETS = BOAT_PROBE_CANDIDATES;
+  // A stable coast does not need sixteen new pathfinder probes every strategic
+  // decision. Revalidate promptly, and invalidate immediately on either border
+  // snapshot changing so new ports/territory can still alter the route.
+  const EARLY_TRIBE_BOAT_ETA_CACHE_TICKS = 60;
   // An ocean probe performs two worker route queries. Spread failed destinations
   // across the strategic cadence instead of chaining four pathfinders in one
   // combat decision; the retry window leaves room to try every ranked fallback.
@@ -114,7 +118,7 @@
   // Tribes have no strategic counterplay comparable to Nations. A small capture
   // margin lets the opening spread across many tribes in parallel instead of
   // parking four times their strength in one conquest.
-  const TRIBE_CAPTURE_TROOP_MULTIPLIER = 1.3;
+  const TRIBE_CAPTURE_TROOP_MULTIPLIER = 1.4;
   const PLAYER_CAPTURE_TROOP_MULTIPLIER = 4;
   // Reserve the troop level where the production rate has its maximum temporal
   // acceleration. P(N) is troops per tick and N' = P(N), so acceleration is
@@ -653,6 +657,7 @@
       this.earlyGamePreferredClusterTargetKeys = new Set();
       this.earlyGameTribeTopologyCache = null;
       this.earlyGamePreferredClusterOverlaySignature = "";
+      this.earlyGameTribeBoatEtaCache = new Map();
       // A destination that just failed the route gate is unlikely to become
       // reachable before another opening decision. Keep this instance-local so
       // a fresh game never inherits a stale water-path result.
@@ -2009,17 +2014,23 @@
       return !context.earlyGameSnapshot.hasTribeTarget;
     }
 
-    async runAuxiliaryAttackPolicies(context) {
-      if (state.settings.winFixes) await this.maybeOpportunisticBoat();
+    async runAuxiliaryAttackPolicies(context, profile = null) {
+      if (state.settings.winFixes) {
+        await profileAttackAsync(profile, "attack-auxiliary-boat", () =>
+          this.maybeOpportunisticBoat());
+      }
       if (state.settings.winFixes && state.settings.features.donate) {
         const now = performance.now();
         const throttle = state.settings.donateThrottleMs || 3000;
-        if (now - (state.lastDonateMs || 0) > throttle && this.donateTroops()) {
+        const donated = profileAttackSync(profile, "attack-auxiliary-donate", () =>
+          now - (state.lastDonateMs || 0) > throttle && this.donateTroops());
+        if (donated) {
           state.lastDonateMs = now;
         }
       }
       if (context.allianceOn && state.settings.winFixes) {
-        this.allianceBehavior.reachOutToFarNations();
+        profileAttackSync(profile, "attack-auxiliary-alliance", () =>
+          this.allianceBehavior.reachOutToFarNations());
       }
     }
 
@@ -2058,14 +2069,16 @@
       return false;
     }
 
-    async runOrdinaryAttackPolicies(context) {
+    async runOrdinaryAttackPolicies(context, profile = null) {
       if (context.borderingEnemies.length === 0) {
         if (context.boatOn && this.random.chance(5)) {
-          await this.attackWithRandomBoat();
+          await profileAttackAsync(profile, "attack-ordinary-boat", () =>
+            this.attackWithRandomBoat());
         }
       } else {
         if (context.boatOn && this.random.chance(10)) {
-          await this.attackWithRandomBoat(context.borderingEnemies);
+          await profileAttackAsync(profile, "attack-ordinary-boat", () =>
+            this.attackWithRandomBoat(context.borderingEnemies));
           return;
         }
         if (context.allianceOn) {
@@ -2073,10 +2086,11 @@
         }
       }
       if (context.expandOn) {
-        await this.attackBestTarget(
-          context.borderingFriends,
-          context.borderingEnemies,
-        );
+        await profileAttackAsync(profile, "attack-ordinary-target", () =>
+          this.attackBestTarget(
+            context.borderingFriends,
+            context.borderingEnemies,
+          ));
       }
     }
 
@@ -2116,7 +2130,7 @@
       }
       if (acted) return;
       await profileAttackAsync(profile, "attack-auxiliary", () =>
-        this.runAuxiliaryAttackPolicies(context));
+        this.runAuxiliaryAttackPolicies(context, profile));
       if (
         await profileAttackAsync(profile, "attack-fallbacks", () =>
           this.tryAttackFallbacks(context))
@@ -2124,7 +2138,7 @@
         return;
       }
       await profileAttackAsync(profile, "attack-ordinary", () =>
-        this.runOrdinaryAttackPolicies(context));
+        this.runOrdinaryAttackPolicies(context, profile));
     }
 
     // Opening Terra Nullius liveness runs more frequently than the strategic
@@ -3245,25 +3259,89 @@
 
     async enrichEarlyGameTribeBoatEtas(candidates, borderByTribe) {
       const seaCandidates = candidates.filter((candidate) => !candidate.landBorder);
+      const tick = this.currentAttackDecisionTick();
       const ownShores = this.getEarlyGameOwnShores();
+      const ownBorder = ownShores;
+      const uncachedCandidates = [];
+      for (const candidate of seaCandidates) {
+        const targetBorder = borderByTribe.get(candidate.player) || new Set();
+        const cached = this.getCachedEarlyGameTribeBoatEta(
+          candidate,
+          ownBorder,
+          targetBorder,
+          tick,
+        );
+        if (cached === null) {
+          uncachedCandidates.push({ candidate, targetBorder });
+          continue;
+        }
+        candidate.boatEtaTicks = cached.eta;
+        candidate.boatTargetTile = cached.targetTile;
+      }
       for (
         let start = 0;
-        start < seaCandidates.length;
+        start < uncachedCandidates.length;
         start += EARLY_TRIBE_BOAT_ETA_TARGETS
       ) {
-        const batch = seaCandidates.slice(start, start + EARLY_TRIBE_BOAT_ETA_TARGETS);
+        const batch = uncachedCandidates.slice(start, start + EARLY_TRIBE_BOAT_ETA_TARGETS);
         const results = await Promise.all(
-          batch.map(async (candidate) => ({
+          batch.map(async ({ candidate, targetBorder }) => ({
             candidate,
+            targetBorder,
             boatEtaTicks: await this.estimateEarlyGameTribeBoatEta(
-              borderByTribe.get(candidate.player) || new Set(),
+              targetBorder,
               candidate,
               ownShores,
             ),
           })),
         );
-        for (const { candidate, boatEtaTicks } of results) {
+        for (const { candidate, targetBorder, boatEtaTicks } of results) {
           candidate.boatEtaTicks = boatEtaTicks;
+          this.cacheEarlyGameTribeBoatEta(
+            candidate,
+            ownBorder,
+            targetBorder,
+            tick,
+          );
+        }
+      }
+    }
+
+    earlyGameTribeBoatEtaCacheKey(candidate) {
+      return candidate?.id ?? candidate?.player?.smallID?.() ?? null;
+    }
+
+    getCachedEarlyGameTribeBoatEta(candidate, ownBorder, targetBorder, tick) {
+      const key = this.earlyGameTribeBoatEtaCacheKey(candidate);
+      if (key === null) return null;
+      const cached = this.earlyGameTribeBoatEtaCache?.get(key);
+      if (
+        cached?.ownBorder !== ownBorder ||
+        cached.targetBorder !== targetBorder ||
+        tick < cached.tick ||
+        tick - cached.tick > EARLY_TRIBE_BOAT_ETA_CACHE_TICKS
+      ) {
+        return null;
+      }
+      return cached;
+    }
+
+    cacheEarlyGameTribeBoatEta(candidate, ownBorder, targetBorder, tick) {
+      const key = this.earlyGameTribeBoatEtaCacheKey(candidate);
+      if (key === null) return;
+      const cache = this.earlyGameTribeBoatEtaCache || new Map();
+      this.earlyGameTribeBoatEtaCache = cache;
+      cache.set(key, {
+        ownBorder,
+        targetBorder,
+        tick,
+        eta: candidate.boatEtaTicks,
+        targetTile: candidate.boatTargetTile ?? null,
+      });
+      if (cache.size <= EARLY_TRIBE_CANDIDATES * 4) return;
+      for (const [cachedKey, cached] of cache) {
+        if (tick - cached.tick > EARLY_TRIBE_BOAT_ETA_CACHE_TICKS) {
+          cache.delete(cachedKey);
         }
       }
     }

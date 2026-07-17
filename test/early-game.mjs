@@ -1631,6 +1631,48 @@ await cachedShoreBehavior.enrichEarlyGameTribeBoatEtas(
 );
 assert.equal(cachedShoreReads, 1, "tribe boat ETA enrichment reuses the API's cached shore subset");
 
+const tribeEtaCacheBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+let tribeEtaCacheTick = 100;
+let tribeEtaRouteCalls = 0;
+const stableOwnShores = [1];
+const stableTargetBorder = new Set([10]);
+const stableTargetPlayer = {
+  id: "stable-sea-target",
+  smallID: () => 44,
+  borderTiles: () => stableTargetBorder,
+  shoreBorderTiles: () => [10],
+};
+tribeEtaCacheBehavior.game = { ticks: () => tribeEtaCacheTick };
+tribeEtaCacheBehavior.player = { shoreBorderTiles: () => stableOwnShores };
+tribeEtaCacheBehavior.estimateEarlyGameTribeBoatEta = async (_border, candidate) => {
+  tribeEtaRouteCalls++;
+  candidate.boatTargetTile = 10;
+  return 12;
+};
+const makeStableSeaCandidate = () => ({
+  id: "stable-sea-target",
+  player: stableTargetPlayer,
+  landBorder: false,
+});
+await tribeEtaCacheBehavior.enrichEarlyGameTribeBoatEtas(
+  [makeStableSeaCandidate()],
+  new Map([[stableTargetPlayer, stableTargetBorder]]),
+);
+const cachedStableSeaCandidate = makeStableSeaCandidate();
+await tribeEtaCacheBehavior.enrichEarlyGameTribeBoatEtas(
+  [cachedStableSeaCandidate],
+  new Map([[stableTargetPlayer, stableTargetBorder]]),
+);
+assert.equal(tribeEtaRouteCalls, 1, "unchanged tribe coast reuses its recent route ETA");
+assert.equal(cachedStableSeaCandidate.boatEtaTicks, 12);
+assert.equal(cachedStableSeaCandidate.boatTargetTile, 10);
+tribeEtaCacheTick += 61;
+await tribeEtaCacheBehavior.enrichEarlyGameTribeBoatEtas(
+  [makeStableSeaCandidate()],
+  new Map([[stableTargetPlayer, stableTargetBorder]]),
+);
+assert.equal(tribeEtaRouteCalls, 2, "the tribe route ETA is revalidated after its short TTL");
+
 const boatEtaRankBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 const rankedBoatEtaShores = boatEtaRankBehavior.rankEarlyGameTribeBoatTargetShores(
   [90, 91, 92, 93, 94, 95, 96],

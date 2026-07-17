@@ -131,6 +131,11 @@ let hasEverBeenAlive = me?.isAlive() === true;
 let stopReason: "winner" | "max_ticks" | "bot_dead" | "engine_stop" = "max_ticks";
 const cumulativeIntentTypes = new Map<string, number>();
 let intervalIntentTypes = new Map<string, number>();
+// The engine can remove a just-issued attack from outgoingAttacks before the
+// next bot decision, while the bot still correctly treats it as committed when
+// it emits a small top-up. Retain that short handoff in telemetry only.
+const RECENT_ATTACK_INTENT_COMMITMENT_TICKS = 10;
+const recentAttackIntentCommitments = new Map<string, { tick: number; troops: number }>();
 const trackedUnitTypes = [
   UnitType.City,
   UnitType.Factory,
@@ -168,6 +173,12 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   countIntents(intents);
   if (logIntents && intents.length > 0) {
     const decisionPlayer = runner.game.playerByClientID(clientID);
+    const decisionTick = runner.game.ticks();
+    for (const [targetID, commitment] of recentAttackIntentCommitments) {
+      if (decisionTick - commitment.tick > RECENT_ATTACK_INTENT_COMMITMENT_TICKS) {
+        recentAttackIntentCommitments.delete(targetID);
+      }
+    }
     const attackTargets = intents
       .filter((intent) => intent.type === "attack")
       .map((intent) => {
@@ -187,18 +198,36 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
         // the runner observes the same game immediately after the full decision.
         // A boat can become a live attack during that gap; retain whichever
         // authoritative view has observed more existing commitment, rather than
-        // reporting a partial conquest as underfunded.
-        const pendingTroops = Math.max(Number(snapshot?.pendingTroops) || 0, liveCommittedTroops);
+        // reporting a partial conquest as underfunded. The engine may also
+        // briefly hide a newly-issued attack before it is visible in either
+        // snapshot, so bridge the bot's immediately preceding intent briefly.
+        const recentCommittedTroops =
+          intent.targetID === null
+            ? 0
+            : recentAttackIntentCommitments.get(String(intent.targetID))?.troops || 0;
+        const pendingTroops = Math.max(
+          Number(snapshot?.pendingTroops) || 0,
+          liveCommittedTroops,
+          recentCommittedTroops,
+        );
+        const committedTroops = pendingTroops + intent.troops;
+        if (intent.targetID !== null) {
+          recentAttackIntentCommitments.set(String(intent.targetID), {
+            tick: decisionTick,
+            troops: committedTroops,
+          });
+        }
         return {
           targetID: intent.targetID,
           targetName: snapshot?.name ?? target?.name() ?? "Terra Nullius",
           targetType: snapshot?.type ?? target?.type() ?? "Terra Nullius",
           targetTroops: Math.round(snapshot?.troops ?? target?.troops() ?? 0),
           pendingTroops: Math.round(pendingTroops),
-          committedTroops: Math.round(pendingTroops + intent.troops),
+          recentCommittedTroops: Math.round(recentCommittedTroops),
+          committedTroops: Math.round(committedTroops),
           robustCaptureFloor:
             (snapshot?.type ?? target?.type()) === "BOT"
-              ? Math.ceil((snapshot?.troops ?? target?.troops() ?? 0) * 1.3)
+              ? Math.ceil((snapshot?.troops ?? target?.troops() ?? 0) * 1.4)
               : null,
         };
       });
