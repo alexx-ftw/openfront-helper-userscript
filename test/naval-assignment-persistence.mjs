@@ -115,6 +115,8 @@ assert.equal(routePlanningCalls, 0, "a covered invasion skips A* and replanning"
 const routeBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
 let zeroAllocationNeighborCalls = 0;
 routeBehavior.game = {
+  width: () => 5,
+  height: () => 1,
   isWater: (tile) => tile >= 0 && tile <= 4,
   manhattanDist: (left, right) => Math.abs(left - right),
   forEachNeighbor: (tile, visit) => {
@@ -128,5 +130,21 @@ routeBehavior.game = {
 };
 assert.equal([...routeBehavior.waterRoute(0, 4)].join(","), "0,1,2,3,4");
 assert.ok(zeroAllocationNeighborCalls > 0);
+const firstDenseScratch = routeBehavior._denseWaterRouteScratch;
+assert.equal([...routeBehavior.waterRoute(4, 0)].join(","), "4,3,2,1,0");
+assert.strictEqual(
+  routeBehavior._denseWaterRouteScratch,
+  firstDenseScratch,
+  "successive A* probes reuse the same dense route buffers",
+);
+assert.equal(firstDenseScratch.generation, 2);
+
+const fallbackRouteBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
+fallbackRouteBehavior.game = {
+  isWater: () => true,
+  manhattanDist: (left, right) => Math.abs(left - right),
+  neighbors: (tile) => (tile === "start" ? ["goal"] : []),
+};
+assert.equal([...fallbackRouteBehavior.waterRoute("start", "goal")].join(","), "start,goal");
 
 process.stdout.write("naval assignment persistence tests passed\n");

@@ -790,25 +790,111 @@
       { return this.game.manhattanDist(tile, goal); }
     }
 
-    reconstructWaterRoute(cameFrom, goal) {
+    createWaterRouteState(start, goal) {
+      const width = Number(this.game.width?.());
+      const height = Number(this.game.height?.());
+      const total = width * height;
+      if (
+        Number.isInteger(start) &&
+        Number.isInteger(goal) &&
+        Number.isSafeInteger(total) &&
+        total > 0 &&
+        start >= 0 &&
+        start < total &&
+        goal >= 0 &&
+        goal < total
+      ) {
+        let scratch = this._denseWaterRouteScratch;
+        if (scratch?.status?.length !== total) {
+          scratch = {
+            status: new Int32Array(total),
+            gScore: new Int32Array(total),
+            cameFrom: new Int32Array(total),
+            generation: 0,
+          };
+          this._denseWaterRouteScratch = scratch;
+        }
+        let generation = scratch.generation + 1;
+        if (generation >= 2_147_483_647) {
+          scratch.status.fill(0);
+          generation = 1;
+        }
+        scratch.generation = generation;
+        scratch.status[start] = generation;
+        scratch.gScore[start] = 0;
+        scratch.cameFrom[start] = -1;
+        return {
+          open: new WarshipRouteHeap(),
+          dense: true,
+          start,
+          generation,
+          status: scratch.status,
+          gScore: scratch.gScore,
+          cameFrom: scratch.cameFrom,
+        };
+      }
+      return {
+        open: new WarshipRouteHeap(),
+        dense: false,
+        start,
+        gScore: new Map([[start, 0]]),
+        cameFrom: new Map(),
+        closed: new Set(),
+      };
+    }
+
+    waterRouteNodeClosed(routeState, tile) {
+      return routeState.dense
+        ? routeState.status[tile] === -routeState.generation
+        : routeState.closed.has(tile);
+    }
+
+    waterRouteNodeScore(routeState, tile) {
+      if (!routeState.dense) return routeState.gScore.get(tile) ?? Infinity;
+      return Math.abs(routeState.status[tile]) === routeState.generation
+        ? routeState.gScore[tile]
+        : Infinity;
+    }
+
+    setWaterRouteNode(routeState, tile, parent, score) {
+      if (routeState.dense) {
+        routeState.status[tile] = routeState.generation;
+        routeState.gScore[tile] = score;
+        routeState.cameFrom[tile] = parent;
+        return;
+      }
+      routeState.cameFrom.set(tile, parent);
+      routeState.gScore.set(tile, score);
+    }
+
+    closeWaterRouteNode(routeState, tile) {
+      if (routeState.dense) {
+        routeState.status[tile] = -routeState.generation;
+        return;
+      }
+      routeState.closed.add(tile);
+    }
+
+    reconstructWaterRoute(routeState, goal) {
       const path = [goal];
       let cursor = goal;
-      while (cameFrom.has(cursor)) {
-        cursor = cameFrom.get(cursor);
+      while (cursor !== routeState.start) {
+        cursor = routeState.dense
+          ? routeState.cameFrom[cursor]
+          : routeState.cameFrom.get(cursor);
         path.push(cursor);
       }
       return path.reverse();
     }
 
     visitWaterRouteNeighbor(neighbor, current, routeState, goal) {
-      if (routeState.closed.has(neighbor)) return;
+      if (this.waterRouteNodeClosed(routeState, neighbor)) return;
       {
         if (!this.game.isWater(neighbor)) return;
       }
-      const nextScore = (routeState.gScore.get(current) ?? Infinity) + 1;
-      if (nextScore >= (routeState.gScore.get(neighbor) ?? Infinity)) return;
-      routeState.cameFrom.set(neighbor, current);
-      routeState.gScore.set(neighbor, nextScore);
+      const nextScore = this.waterRouteNodeScore(routeState, current) + 1;
+      if (nextScore >= this.waterRouteNodeScore(routeState, neighbor)) return;
+      this.setWaterRouteNode(routeState, neighbor, current, nextScore);
       routeState.open.push({
         tile: neighbor,
         priority: nextScore + this.warshipRouteHeuristic(neighbor, goal),
@@ -832,18 +918,13 @@
         if (start === goal) return [start];
       }
 
-      const routeState = {
-        open: new WarshipRouteHeap(),
-        gScore: new Map([[start, 0]]),
-        cameFrom: new Map(),
-        closed: new Set(),
-      };
+      const routeState = this.createWaterRouteState(start, goal);
       routeState.open.push({ tile: start, priority: this.warshipRouteHeuristic(start, goal) });
       while (routeState.open.length > 0) {
         const current = routeState.open.pop();
-        if (!current || routeState.closed.has(current.tile)) continue;
-        if (current.tile === goal) return this.reconstructWaterRoute(routeState.cameFrom, goal);
-        routeState.closed.add(current.tile);
+        if (!current || this.waterRouteNodeClosed(routeState, current.tile)) continue;
+        if (current.tile === goal) return this.reconstructWaterRoute(routeState, goal);
+        this.closeWaterRouteNode(routeState, current.tile);
         this.forEachWarshipNeighbor(current.tile, (neighbor) =>
           this.visitWaterRouteNeighbor(neighbor, current.tile, routeState, goal),
         );
