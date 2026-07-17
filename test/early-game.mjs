@@ -638,6 +638,24 @@ assert.equal(
   Infinity,
   "a distant maritime route must stay outside the local opening radius",
 );
+const zeroAllocationMaritimeIndex = sandbox.buildMaritimeDistanceIndex({
+  width: 4,
+  height: 1,
+  neighbors: () => {
+    throw new Error("the maritime index should use zero-allocation neighbor iteration");
+  },
+  forEachNeighbor: (tile, visit) => {
+    if (tile > 0) visit(tile - 1);
+    if (tile < 3) visit(tile + 1);
+  },
+  isLand: () => true,
+  isMaritimeShore: (tile) => tile === 3,
+});
+assert.deepEqual(
+  [...zeroAllocationMaritimeIndex.distances],
+  [...maritimeDistanceIndex.distances],
+  "zero-allocation maritime traversal preserves the exact distance field",
+);
 
 const rankedTribes = sandbox.rankEarlyGameTribeCandidates([
   {

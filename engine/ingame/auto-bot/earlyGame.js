@@ -350,7 +350,8 @@
       Number.isSafeInteger(options.total) &&
       Number.isInteger(options.distanceLimit) &&
       options.distanceLimit >= 0 &&
-      typeof options.neighbors === "function" &&
+      (typeof options.forEachNeighbor === "function" ||
+        typeof options.neighbors === "function") &&
       typeof options.isLand === "function" &&
       typeof options.isMaritimeShore === "function"
     );
@@ -386,6 +387,7 @@
     width,
     height,
     neighbors,
+    forEachNeighbor,
     isLand,
     isMaritimeShore,
     maxDistance = EARLY_GAME_MAX_MARITIME_DISTANCE,
@@ -400,6 +402,7 @@
       total,
       distanceLimit,
       neighbors,
+      forEachNeighbor,
       isLand,
       isMaritimeShore,
     });
@@ -409,6 +412,30 @@
     distances.fill(-1);
     const queue = new Int32Array(total);
     let tail = seedMaritimeDistanceIndex(total, isLand, isMaritimeShore, distances, queue);
+
+    if (typeof forEachNeighbor === "function") {
+      let nextDistance = 0;
+      const addNeighbor = (next) => {
+        if (
+          !Number.isInteger(next) ||
+          next < 0 ||
+          next >= total ||
+          !isLand(next) ||
+          distances[next] !== -1
+        ) {
+          return;
+        }
+        distances[next] = nextDistance;
+        queue[tail++] = next;
+      };
+      for (let head = 0; head < tail; head++) {
+        const current = queue[head];
+        if (distances[current] >= distanceLimit) continue;
+        nextDistance = distances[current] + 1;
+        forEachNeighbor(current, addNeighbor);
+      }
+      return { distances, width: mapWidth, height: mapHeight };
+    }
 
     for (let head = 0; head < tail; head++) {
       const current = queue[head];

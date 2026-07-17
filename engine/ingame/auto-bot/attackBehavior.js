@@ -2325,6 +2325,10 @@
         width: this.game.width(),
         height: this.game.height(),
         neighbors: (tile) => this.game.neighbors(tile),
+        forEachNeighbor:
+          typeof this.game.forEachNeighbor === "function"
+            ? (tile, visit) => this.game.forEachNeighbor(tile, visit)
+            : undefined,
         isLand: (tile) => this.game.isLand(tile),
         isMaritimeShore: (tile) => this.isEarlyGameMaritimeShore(tile),
       });
