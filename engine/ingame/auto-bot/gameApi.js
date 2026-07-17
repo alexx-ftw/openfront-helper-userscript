@@ -63,6 +63,7 @@
   function createGameApi(src) {
     const playerCache = new Map(); // smallID -> wrapped player
     const borderCache = new Map(); // smallID -> { tick, set:Set<TileRef> }
+    const shoreBorderCache = new WeakMap(); // border Set -> shore TileRef[]
     // Relation overlay: ONLY the AI-subjective deltas WE issue this game
     // (embargo malus ±20, assist −20, warship −7.5/−15). The engine-applied
     // relation changes for our slot are already in profile(); the overlay is an
@@ -407,6 +408,10 @@
           const c = borderCache.get(core.smallID());
           return c && c.set ? c.set : new Set();
         },
+        // Multiple combat policies consume the same coast during one border
+        // snapshot. Derive it once because isShore can be much more expensive
+        // than walking the already-cached Set.
+        shoreBorderTiles: () => shoreBorderTilesFor(core),
 
         // ── relation (reconstructed via profile() + overlay) ──────────────────
         relation: (o) => {
@@ -462,6 +467,22 @@
       return null;
     }
 
+    function shoreBorderTilesFrom(border) {
+      if (!border?.size) return [];
+      const cached = shoreBorderCache.get(border);
+      if (cached) return cached;
+      const shores = [];
+      for (const tile of border) {
+        if (src.isShore(tile)) shores.push(tile);
+      }
+      shoreBorderCache.set(border, shores);
+      return shores;
+    }
+
+    function shoreBorderTilesFor(player) {
+      return shoreBorderTilesFrom(borderCache.get(player.smallID())?.set);
+    }
+
     // nearby — union of (a) owners of LAND neighbors of our border tiles whose
     // owner != us (incl. TerraNullius), and (b) shore-reachable neighbors across
     // narrow rivers. Fully synchronous over the border snapshot.
@@ -500,7 +521,7 @@
     }
 
     function addShoreReachableNeighbors(neighbors, border, mySid) {
-      const shores = Array.from(border).filter((tile) => src.isShore(tile));
+      const shores = shoreBorderTilesFrom(border);
       const directions = [[0, -1], [0, 1], [-1, 0], [1, 0]];
       for (let index = 0; index < shores.length; index += 10) {
         for (const [dx, dy] of directions) {

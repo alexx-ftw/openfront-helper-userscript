@@ -3442,6 +3442,9 @@
 
     getEarlyGameOwnShores(sharedOwnShores = null) {
       if (Array.isArray(sharedOwnShores)) return sharedOwnShores;
+      if (typeof this.player.shoreBorderTiles === "function") {
+        return this.player.shoreBorderTiles();
+      }
       return Array.from(this.player.borderTiles()).filter((tile) =>
         this.game.isShore(tile),
       );
@@ -3902,9 +3905,7 @@
       ) {
         return [];
       }
-      return Array.from(this.player.borderTiles()).filter((tile) =>
-        this.game.isShore(tile),
-      );
+      return this.getEarlyGameOwnShores();
     }
 
     async findRandomBoatDestination(source, borderingEnemies) {
@@ -5289,10 +5290,8 @@
       }
 
       // Check if we have any shore tiles to launch from
-      const hasShore = Array.from(this.player.borderTiles()).some((t) =>
-        this.game.isShore(t),
-      );
-      if (!hasShore) return null;
+      const myShores = this.getEarlyGameOwnShores();
+      if (myShores.length === 0) return null;
 
       const filteredPlayers = this.game.players().filter((p) => {
         // src: `p === this.player` (identity) → smallID compare.
@@ -5336,11 +5335,6 @@
           return { player: filteredPlayer, distance };
         })
         .sort((a, b) => a.distance - b.distance); // Sort by distance (ascending)
-
-      // Our shore tiles are stable across the loop — compute once.
-      const myShores = Array.from(this.player.borderTiles()).filter((t) =>
-        this.game.isShore(t),
-      );
 
       // Try players in order of distance until we find reachable candidates
       const reachablePlayers = [];

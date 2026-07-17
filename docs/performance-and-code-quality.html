@@ -47,5 +47,12 @@
         weak filtering, resource retention, or incomplete scenario coverage</em
       >.
     </p>
+
+    <p>
+      Attack policies that need the player's coastal frontier must reuse the shore subset derived
+      from the current cached border snapshot. Random boats, island targeting, and nearby-player
+      reconstruction must not independently reclassify the complete border with
+      <code>isShore</code> during the same snapshot window.
+    </p>
   </body>
 </html>

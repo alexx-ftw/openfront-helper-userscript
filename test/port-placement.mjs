@@ -129,6 +129,7 @@ function makeScenario({
   const players = [me, other];
   let landNeighborChecks = 0;
   let waterChecks = 0;
+  let shoreChecks = 0;
 
   const src = {
     width: () => width,
@@ -144,8 +145,10 @@ function makeScenario({
       return !land.has(tile);
     },
     isOcean: (tile) => ocean && tile >= width * 3 && tile < width * 4,
-    isShore: (tile) =>
-      land.has(tile) && cardinalNeighbors(tile).some((neighbor) => !land.has(neighbor)),
+    isShore: (tile) => {
+      shoreChecks++;
+      return land.has(tile) && cardinalNeighbors(tile).some((neighbor) => !land.has(neighbor));
+    },
     isOceanShore: () => false,
     neighbors,
     x: (tile) => tile % width,
@@ -192,6 +195,7 @@ function makeScenario({
     neighborArrayCalls: () => neighborArrayCalls,
     landNeighborChecks: () => landNeighborChecks,
     waterChecks: () => waterChecks,
+    shoreChecks: () => shoreChecks,
   };
 }
 
@@ -207,6 +211,21 @@ async function nearbyPlayers() {
   const wrappedMe = await scenario.handle.beginTick(scenario.me);
   return wrappedMe.nearby();
 }
+
+const shoreCacheScenario = makeScenario({ ocean: false, allied: true });
+const shoreCacheMe = await shoreCacheScenario.handle.beginTick(shoreCacheScenario.me);
+const firstShoreScan = shoreCacheMe.shoreBorderTiles();
+const checksAfterFirstShoreScan = shoreCacheScenario.shoreChecks();
+assert.strictEqual(
+  shoreCacheMe.shoreBorderTiles(),
+  firstShoreScan,
+  "shore-border callers share one array for the current border snapshot",
+);
+assert.equal(
+  shoreCacheScenario.shoreChecks(),
+  checksAfterFirstShoreScan,
+  "reusing shore-border tiles performs no repeated terrain classification",
+);
 
 const zeroAllocationScenario = makeScenario({
   ocean: false,
