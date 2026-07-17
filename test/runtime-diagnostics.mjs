@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE = path.join(ROOT, "engine/ingame/runtime-diagnostics.js");
+const PERFORMANCE_SOURCE = path.join(ROOT, "engine/ingame/auto-bot/performance.js");
 let longTaskObserver = null;
 const sandbox = {
   window: { __OFH_ASSETS: { version: "test" }, location: { href: "https://openfront.io/game" } },
@@ -72,5 +73,31 @@ assert.equal(snapshot.runtimeEvents[0].values[0], "test-event");
 assert.equal(snapshot.browserPerformance.longTaskCount, 1);
 assert.equal(snapshot.browserPerformance.maxRecentLongTaskMs, 3250.3);
 assert.doesNotThrow(() => JSON.stringify(snapshot), "CDP snapshots must be serializable by value");
+
+let profileNow = 0;
+const profileSandbox = {
+  state: { settings: { performanceProfiling: true } },
+  window: { __OFH_deadlineNow: () => profileNow },
+  performance: { now: () => profileNow },
+  Math,
+  Number,
+  Object,
+  Promise,
+  globalThis: null,
+};
+profileSandbox.globalThis = profileSandbox;
+executeClassicScript(fs.readFileSync(PERFORMANCE_SOURCE, "utf8"), profileSandbox, {
+  filename: PERFORMANCE_SOURCE,
+});
+const profile = profileSandbox.beginAutoBotProfileTick();
+await profileSandbox.autoBotProfileAsyncPhase(profile, "worker-probe", () => {
+  profileNow += 3;
+  return Promise.resolve().then(() => {
+    profileNow += 7;
+  });
+});
+assert.equal(profile.phases["worker-probe-sync"], 3);
+assert.equal(profile.phases["worker-probe-await"], 7);
+assert.equal(profile.phases["worker-probe"], 10);
 
 process.stdout.write("runtime diagnostics tests passed\n");

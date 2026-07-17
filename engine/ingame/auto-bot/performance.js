@@ -81,12 +81,16 @@
     {
       result = fn();
     }
+    const syncFinishedAt = autoBotProfileNow();
+    autoBotProfileEndPhase(profile, `${name}-sync`, startedAt);
     return Promise.resolve(result).then(
       (value) => {
+        autoBotProfileEndPhase(profile, `${name}-await`, syncFinishedAt);
         autoBotProfileEndPhase(profile, name, startedAt);
         return value;
       },
       (error) => {
+        autoBotProfileEndPhase(profile, `${name}-await`, syncFinishedAt);
         autoBotProfileEndPhase(profile, name, startedAt);
         throw error;
       },
