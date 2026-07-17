@@ -131,6 +131,8 @@ let hasEverBeenAlive = me?.isAlive() === true;
 let stopReason: "winner" | "max_ticks" | "bot_dead" | "engine_stop" = "max_ticks";
 const cumulativeIntentTypes = new Map<string, number>();
 let intervalIntentTypes = new Map<string, number>();
+let cumulativeTerraNulliusAttacks = 0;
+let intervalTerraNulliusAttacks = 0;
 // The engine can remove a just-issued attack from outgoingAttacks before the
 // next bot decision, while the bot still correctly treats it as committed when
 // it emits a small top-up. Retain that short handoff in telemetry only.
@@ -171,6 +173,11 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   const decisionMs = performance.now() - decisionStartedAt;
   emittedIntents += intents.length;
   countIntents(intents);
+  const terraNulliusAttacks = intents.filter(
+    (intent) => intent.type === "attack" && intent.targetID === null,
+  ).length;
+  cumulativeTerraNulliusAttacks += terraNulliusAttacks;
+  intervalTerraNulliusAttacks += terraNulliusAttacks;
   if (logIntents && intents.length > 0) {
     const decisionPlayer = runner.game.playerByClientID(clientID);
     const decisionTick = runner.game.ticks();
@@ -361,12 +368,15 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
         activeMissiles,
         team: player?.team() ?? null,
         intents: emittedIntents,
+        intervalTerraNulliusAttacks,
+        cumulativeTerraNulliusAttacks,
         intervalIntentTypes: sortedCounts(intervalIntentTypes),
         cumulativeIntentTypes: sortedCounts(cumulativeIntentTypes),
         elapsedMs: Math.round(performance.now() - startedAt),
       }),
     );
     intervalIntentTypes = new Map<string, number>();
+    intervalTerraNulliusAttacks = 0;
   }
 }
 
