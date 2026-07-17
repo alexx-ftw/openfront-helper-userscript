@@ -1358,4 +1358,38 @@ assert.equal(
   "the hard reserve and pending donation guard is independent of winFixes",
 );
 
+const originalIslandScanRadius = sandbox.state.settings.islandScanRadius;
+const originalIslandScanStep = sandbox.state.settings.islandScanStep;
+const originalIslandScanSamples = sandbox.state.settings.islandScanSamples;
+sandbox.state.settings.islandScanRadius = 2;
+sandbox.state.settings.islandScanStep = 1;
+sandbox.state.settings.islandScanSamples = 2;
+let oceanOwnerChecks = 0;
+const overlappingOceanScan = Object.create(sandbox.AttackBehavior.prototype);
+overlappingOceanScan.player = { smallID: () => 1 };
+overlappingOceanScan.game = {
+  x: (tile) => tile % 100,
+  y: (tile) => Math.floor(tile / 100),
+  isValidCoord: (x, y) => x >= 0 && x < 8 && y >= 0 && y < 8,
+  ref: (x, y) => y * 100 + x,
+  isLand: () => true,
+  hasOwner: () => {
+    oceanOwnerChecks += 1;
+    return true;
+  },
+  hasFallout: () => false,
+  isOceanShore: () => true,
+  neighbors: () => [],
+  ownerID: () => null,
+};
+assert.equal(overlappingOceanScan.scanEarlyOceanTargets([202, 203]).length, 0);
+assert.equal(
+  oceanOwnerChecks,
+  30,
+  "overlapping early-ocean samples inspect each rejected tile once per synchronous scan",
+);
+sandbox.state.settings.islandScanRadius = originalIslandScanRadius;
+sandbox.state.settings.islandScanStep = originalIslandScanStep;
+sandbox.state.settings.islandScanSamples = originalIslandScanSamples;
+
 process.stdout.write("attack intent accounting tests passed\n");

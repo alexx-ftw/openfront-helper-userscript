@@ -3983,25 +3983,40 @@
       }
 
       const seen = new Set();
+      // Adjacent shore samples overlap heavily. Remember only rejected tiles
+      // for this scan; the game state cannot change during this synchronous
+      // loop, while successful tiles stay governed by `seen` as before.
+      const rejected = new Set();
       const targets = [];
+      const scan = { seen, rejected, targets };
       for (const shore of samples) {
-        this.appendEarlyOceanTargets(shore, radius, step, seen, targets);
+        this.appendEarlyOceanTargets(shore, radius, step, scan);
       }
       targets.sort((a, b) => a.dist - b.dist);
       return targets;
     }
 
-    earlyOceanTileIsEligible(tile, seen) {
+    earlyOceanTileIsEligible(tile, seen, rejected = null) {
       if (seen.has(tile) || !this.game.isLand(tile)) return false;
-      if (this.game.hasOwner(tile) || this.game.hasFallout(tile)) return false;
-      if (!this.game.isOceanShore(tile)) return false;
+      if (rejected?.has(tile)) return false;
+      if (this.game.hasOwner(tile) || this.game.hasFallout(tile)) {
+        rejected?.add(tile);
+        return false;
+      }
+      if (!this.game.isOceanShore(tile)) {
+        rejected?.add(tile);
+        return false;
+      }
       const mySid = this.player.smallID();
-      return !this.game
+      const eligible = !this.game
         .neighbors(tile)
         .some((neighbor) => this.game.ownerID(neighbor) === mySid);
+      if (!eligible) rejected?.add(tile);
+      return eligible;
     }
 
-    appendEarlyOceanTargets(shore, radius, step, seen, targets) {
+    appendEarlyOceanTargets(shore, radius, step, scan) {
+      const { seen, rejected, targets } = scan;
       const sx = this.game.x(shore);
       const sy = this.game.y(shore);
       for (let dx = -radius; dx <= radius; dx += step) {
@@ -4010,7 +4025,7 @@
           const y = sy + dy;
           if (!this.game.isValidCoord(x, y)) continue;
           const tile = this.game.ref(x, y);
-          if (!this.earlyOceanTileIsEligible(tile, seen)) continue;
+          if (!this.earlyOceanTileIsEligible(tile, seen, rejected)) continue;
           seen.add(tile);
           targets.push({ tile, dist: dx * dx + dy * dy });
         }
