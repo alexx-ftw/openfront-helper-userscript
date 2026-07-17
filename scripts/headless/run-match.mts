@@ -123,6 +123,7 @@ const progressEveryTicks = Math.max(1, Number(process.env.OFH_PROGRESS_TICKS ?? 
 const progressFromTick = Math.max(0, Number(process.env.OFH_PROGRESS_FROM_TICK ?? 0));
 const slowTickThresholdMs = Math.max(1, Number(process.env.OFH_SLOW_TICK_MS ?? 250));
 const stopWhenBotDies = process.env.OFH_STOP_WHEN_DEAD !== "0";
+const logIntents = process.env.OFH_LOG_INTENTS === "1";
 let turnNumber = 0;
 let emittedIntents = 0;
 let hasEverBeenAlive = me?.isAlive() === true;
@@ -159,6 +160,25 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   const decisionMs = performance.now() - decisionStartedAt;
   emittedIntents += intents.length;
   countIntents(intents);
+  if (logIntents && intents.length > 0) {
+    const decisionPlayer = runner.game.playerByClientID(clientID);
+    console.warn(
+      JSON.stringify({
+        phase: "decision",
+        tick: runner.game.ticks(),
+        tiles: decisionPlayer?.numTilesOwned() ?? 0,
+        troops: decisionPlayer?.troops() ?? 0,
+        gold: Number(decisionPlayer?.gold() ?? 0n),
+        incoming:
+          decisionPlayer?.incomingAttacks().map((attack) => ({
+            attacker: attack.attacker().name(),
+            attackerType: attack.attacker().type(),
+            troops: Math.round(attack.troops()),
+          })) ?? [],
+        intents,
+      }),
+    );
+  }
   const turn: Turn = {
     turnNumber: turnNumber++,
     intents: intents.map((intent): StampedIntent => ({ ...intent, clientID })),

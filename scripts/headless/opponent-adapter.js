@@ -260,7 +260,9 @@ export class BundledOpponentBot {
   applyWinFixes(intents) {
     if (!this.winFixes) return intents;
     const player = this.game.playerByClientID(this.clientID);
-    if (!this.game.inSpawnPhase?.() || player?.hasSpawned?.()) return intents;
+    if (!this.game.inSpawnPhase?.() || player?.hasSpawned?.()) {
+      return intents.filter((intent) => intent?.type !== "spawn");
+    }
     const spawnIntent = intents.find(
       (intent) => intent?.type === "spawn" && Number.isFinite(Number(intent.tile)),
     );
@@ -399,6 +401,7 @@ function createEventBus(bot, window) {
 function spawnEventToIntent(event) {
   if (
     event.tile !== undefined &&
+    event.unitIds === undefined &&
     event.targetID === undefined &&
     event.dst === undefined &&
     event.troops === undefined
@@ -488,10 +491,10 @@ function allianceEventToIntent(event) {
 
 function eventToIntent(event) {
   return (
+    warshipEventToIntent(event) ??
     spawnEventToIntent(event) ??
     attackEventToIntent(event) ??
     boatEventToIntent(event) ??
-    warshipEventToIntent(event) ??
     embargoEventToIntent(event) ??
     donationEventToIntent(event) ??
     emojiEventToIntent(event) ??

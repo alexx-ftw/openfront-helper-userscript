@@ -18,6 +18,8 @@ assert.match(runner, /OFH_PROGRESS_FROM_TICK/);
 assert.match(runner, /OFH_SLOW_TICK_MS/);
 assert.match(runner, /OFH_STOP_WHEN_DEAD/);
 assert.match(runner, /OFH_PROFILE_BOT/);
+assert.match(runner, /OFH_LOG_INTENTS/);
+assert.match(runner, /phase:\s*"decision"/);
 assert.match(runner, /phase:\s*"slow_tick"/);
 assert.match(runner, /decisionMs/);
 assert.match(runner, /executionMs/);
@@ -38,6 +40,21 @@ assert.match(batch, /OFH_SIM_WORKERS/);
 assert.match(adapter, /window\.__OFH_deadlineNow = hostDeadlineNow/);
 assert.match(adapter, /beginAutoBotProfileTick/);
 assert.match(adapter, /getPerformanceProfile/);
+assert.match(
+  adapter,
+  /event\.unitIds === undefined/,
+  "a warship move must never satisfy the spawn-event shape",
+);
+assert.ok(
+  adapter.indexOf("warshipEventToIntent(event) ??") <
+    adapter.indexOf("spawnEventToIntent(event) ??"),
+  "warship events must be serialized before the more generic spawn shape",
+);
+assert.match(
+  adapter,
+  /return intents\.filter\(\(intent\) => intent\?\.type !== "spawn"\)/,
+  "post-opening spawn intents must be rejected before reaching SpawnExecution",
+);
 assert.match(
   fs.readFileSync(path.join(root, "engine/ingame/auto-bot/attackBehavior.js"), "utf8"),
   /attack-context/,
