@@ -1674,6 +1674,32 @@ assert.equal(
   "the eligible-tribe fast path scans each owned border tile once",
 );
 
+let foodRaceComputations = 0;
+const cachedFoodRaceBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+cachedFoodRaceBehavior.player = { isFriendly: () => false };
+cachedFoodRaceBehavior.getEarlyGameFoodRaceSignals = () => {
+  foodRaceComputations++;
+  return { foodRaceValue: 0.7 };
+};
+const cachedFoodRaceById = new Map();
+cachedFoodRaceBehavior.getLightweightEarlyGameTribeNodes(
+  [indexedBorderTribe],
+  [],
+  cachedFoodRaceById,
+);
+const cachedFutureFood = cachedFoodRaceBehavior.getEarlyGameFutureFoodCandidates(
+  [indexedBorderTribe],
+  [],
+  [],
+  cachedFoodRaceById,
+);
+assert.equal(cachedFutureFood.get(7).captureRisk, 0.7);
+assert.equal(
+  foodRaceComputations,
+  1,
+  "future-food scoring reuses the coherent per-decision food-race snapshot",
+);
+
 const explorationRouteBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 let explorationEta = 1200;
 explorationRouteBehavior.game = {
