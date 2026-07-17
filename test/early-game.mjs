@@ -2210,6 +2210,26 @@ assert.ok(
   topologyYieldCount - yieldsBeforeTopologyProbe >= 2,
   "large tribe-border scans yield before monopolizing a render frame",
 );
+const ownerOnlyAdjacencyBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+ownerOnlyAdjacencyBehavior.game = {
+  neighbors: () => [20_001],
+  ownerID: () => 202,
+  isLand: () => {
+    throw new Error("an edible owner id already proves that the neighbor is land");
+  },
+};
+const ownerOnlyAdjacency = new Map([
+  [201, new Set()],
+  [202, new Set()],
+]);
+ownerOnlyAdjacencyBehavior.connectEarlyGameTribeAdjacencyTile(
+  201,
+  20_000,
+  new Set([201, 202]),
+  ownerOnlyAdjacency,
+);
+assert.equal(ownerOnlyAdjacency.get(201).has(202), true);
+assert.equal(ownerOnlyAdjacency.get(202).has(201), true);
 assert.equal(
   targetSandbox.state.earlyGame.preferredClusterMembers
     .map((member) => member.id)
