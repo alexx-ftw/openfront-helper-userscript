@@ -1647,6 +1647,53 @@ assert.deepEqual(
   "streaming boat-ETA ranking keeps the stable top four shores from the full sort",
 );
 
+const cachedTargetShoreBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+const cachedTargetBorder = new Set([30, 31, 32]);
+let cachedTargetShoreReads = 0;
+cachedTargetShoreBehavior.game = {
+  isShore: () => {
+    throw new Error("the identical target border must reuse its cached shore subset");
+  },
+};
+assert.deepEqual(
+  Array.from(
+    cachedTargetShoreBehavior.getEarlyGameTribeBoatTargetShores(cachedTargetBorder, {
+      player: {
+        borderTiles: () => cachedTargetBorder,
+        shoreBorderTiles: () => {
+          cachedTargetShoreReads++;
+          return [30, 32];
+        },
+      },
+    }),
+  ),
+  [30, 32],
+);
+assert.equal(cachedTargetShoreReads, 1);
+
+const fallbackTargetShoreBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+let fallbackTargetShoreChecks = 0;
+fallbackTargetShoreBehavior.game = {
+  isShore: (tile) => {
+    fallbackTargetShoreChecks++;
+    return tile !== 31;
+  },
+};
+assert.deepEqual(
+  Array.from(
+    fallbackTargetShoreBehavior.getEarlyGameTribeBoatTargetShores(cachedTargetBorder, {
+      player: {
+        borderTiles: () => new Set([30, 31, 32]),
+        shoreBorderTiles: () => {
+          throw new Error("a different target snapshot must not reuse stale shores");
+        },
+      },
+    }),
+  ),
+  [30, 32],
+);
+assert.equal(fallbackTargetShoreChecks, 3);
+
 const surgeBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 surgeBehavior.game = { ticks: () => 110 };
 surgeBehavior.player = {

@@ -3584,8 +3584,9 @@
       }
 
       const ownShores = this.getEarlyGameOwnShores(sharedOwnShores);
-      const targetShores = Array.from(targetBorder || []).filter((tile) =>
-        this.game.isShore(tile),
+      const targetShores = this.getEarlyGameTribeBoatTargetShores(
+        targetBorder,
+        candidate,
       );
       if (ownShores.length === 0 || targetShores.length === 0) return null;
 
@@ -3631,6 +3632,22 @@
       if (!bestRoute) return null;
       if (candidate) candidate.boatTargetTile = bestRoute.tile;
       return bestRoute.eta;
+    }
+
+    getEarlyGameTribeBoatTargetShores(targetBorder, candidate = null) {
+      const target = candidate?.player;
+      const targetSnapshot = target?.borderTiles?.();
+      // A candidate border comes from the target's authoritative snapshot in the
+      // normal path. Reuse its cached shore subset only when it is that exact
+      // snapshot: a newer/different border must retain the direct classification
+      // below, rather than using a coast from a different game state.
+      if (
+        targetSnapshot === targetBorder &&
+        typeof target?.shoreBorderTiles === "function"
+      ) {
+        return target.shoreBorderTiles();
+      }
+      return Array.from(targetBorder || []).filter((tile) => this.game.isShore(tile));
     }
 
     // Keep only the same first K shores that a stable full distance sort would
