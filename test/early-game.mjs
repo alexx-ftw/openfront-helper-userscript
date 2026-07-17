@@ -1718,11 +1718,73 @@ assert.equal(
 
 const radioactiveBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 let radioactiveTiles = 0;
-radioactiveBehavior.player = { troops: () => 25000 };
+radioactiveBehavior.player = { troops: () => 100000 };
 radioactiveBehavior.game = {
+  config: () => ({ maxTroops: () => 200000 }),
   numLandTiles: () => 100000,
   numTilesWithFallout: () => radioactiveTiles,
 };
+assert.equal(
+  radioactiveBehavior.getRadioactiveTerraNulliusReserveTroops(),
+  84000,
+  "radioactive TerraNullius expansion may spend down to 42% of maximum troops",
+);
+let radioactiveBoatReserve = null;
+radioactiveBehavior.getEarlyGameProbeTroops = (_fraction, reserve) => {
+  radioactiveBoatReserve = reserve;
+  return 1;
+};
+radioactiveBehavior.nearbyTerraNulliusBoatTroops(true);
+assert.equal(
+  radioactiveBoatReserve,
+  84000,
+  "radioactive coastal expansion uses the same 42% reserve",
+);
+radioactiveBehavior.getEnemyDefensePostAttackProfile = () => null;
+radioactiveBehavior.effectiveReserveRatio = () => 0.6;
+radioactiveBehavior.getEarlyGameTargetReserveTroops = () => 99000;
+radioactiveBehavior.getEarlyGameSpendableTroops = (reserve) => 100000 - reserve;
+radioactiveBehavior.getTerraNulliusLivenessReserveTroops = () => 99000;
+const radioactiveLandContext = radioactiveBehavior.createLandAttackContext(
+  { isPlayer: () => false },
+  null,
+  null,
+  true,
+  false,
+);
+assert.equal(
+  radioactiveLandContext.targetTroops,
+  84000,
+  "radioactive land attacks replace the ordinary TerraNullius reserve with 42%",
+);
+assert.equal(
+  radioactiveLandContext.finalSpendableTroops,
+  16000,
+  "radioactive land attacks can spend every troop above the 42% floor",
+);
+radioactiveBehavior.getRemainingTerraNulliusOpeningCommitment = () => 0;
+radioactiveBehavior.getTerraNulliusMinimumTroops = () => 10;
+assert.equal(
+  radioactiveBehavior.getTerraNulliusAttackTroops(
+    { isPlayer: () => false },
+    null,
+    16000,
+    0.03,
+    false,
+  ),
+  0,
+  "ordinary TerraNullius remains capped after its opening commitment is exhausted",
+);
+assert.ok(
+  radioactiveBehavior.getTerraNulliusAttackTroops(
+    { isPlayer: () => false },
+    null,
+    16000,
+    0.03,
+    true,
+  ) > 0,
+  "Fallout expansion remains live after the ordinary opening commitment is exhausted",
+);
 assert.equal(
   radioactiveBehavior.getRadioactiveTerraNulliusFalloutDefenseMultiplier(),
   5,

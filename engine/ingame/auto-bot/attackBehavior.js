@@ -94,6 +94,7 @@
   // live map instead of using a second arbitrary percentage.
   const ATTACK_FALLOUT_DEFENSE_BASE = 5;
   const ATTACK_FALLOUT_DEFENSE_RATIO_SLOPE = 2;
+  const ATTACK_FALLOUT_RESERVE_RATIO = 0.42;
   // Reserve the troop level where the production rate has its maximum temporal
   // acceleration. P(N) is troops per tick and N' = P(N), so acceleration is
   // dP/dt = P(N) * P'(N), not just the slope with respect to troop count.
@@ -1084,6 +1085,15 @@
       return reserve;
     }
 
+    getRadioactiveTerraNulliusReserveTroops() {
+      const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
+      if (ownTroops <= 0) return 0;
+      return (
+        this.getEarlyGameMaximumTroops(ownTroops) *
+        ATTACK_FALLOUT_RESERVE_RATIO
+      );
+    }
+
     isProductionReserveTarget(target) {
       if (!target?.isPlayer?.()) return false;
       const type = target.type?.();
@@ -1097,6 +1107,13 @@
       return target?.isPlayer?.()
         ? this.getEarlyGameLiveReserveTroops()
         : this.getEarlyGameTerraNulliusReserveTroops();
+    }
+
+    getLandAttackTargetReserveTroops(target, radioactiveTerraNullius) {
+      if (!target.isPlayer() && radioactiveTerraNullius) {
+        return this.getRadioactiveTerraNulliusReserveTroops();
+      }
+      return this.getEarlyGameTargetReserveTroops(target);
     }
 
     getEarlyGameSpendableTroops(reserveTroops = null) {
@@ -1302,7 +1319,10 @@
       );
     }
 
-    getTerraNulliusAvailableTroops(spendableTroops) {
+    getTerraNulliusAvailableTroops(
+      spendableTroops,
+      bypassOpeningBudget = false,
+    ) {
       const configured = Number(spendableTroops);
       const reserveSpendable =
         spendableTroops !== null && Number.isFinite(configured)
@@ -1311,6 +1331,7 @@
               this.getEarlyGameTerraNulliusReserveTroops(),
             );
       if (!state.settings.winFixes) return reserveSpendable;
+      if (bypassOpeningBudget) return reserveSpendable;
       return Math.min(
         reserveSpendable,
         this.getRemainingTerraNulliusOpeningCommitment(),
@@ -1391,8 +1412,12 @@
       preferredTile = null,
       spendableTroops = null,
       commitFraction = null,
+      radioactiveTerraNullius = false,
     ) {
-      const available = this.getTerraNulliusAvailableTroops(spendableTroops);
+      const available = this.getTerraNulliusAvailableTroops(
+        spendableTroops,
+        radioactiveTerraNullius,
+      );
       const minimum = this.getTerraNulliusMinimumTroops(target, preferredTile);
       const budget = this.getTerraNulliusFollowUpBudget(
         available,
@@ -5114,11 +5139,13 @@
       return candidates;
     }
 
-    nearbyTerraNulliusBoatTroops() {
+    nearbyTerraNulliusBoatTroops(radioactive = false) {
       if (!state.settings.winFixes) return this.player.troops() / 5;
       return this.getEarlyGameProbeTroops(
         state.settings.boatProbeFrac,
-        this.getEarlyGameTerraNulliusReserveTroops(),
+        radioactive
+          ? this.getRadioactiveTerraNulliusReserveTroops()
+          : this.getEarlyGameTerraNulliusReserveTroops(),
       );
     }
 
@@ -5151,7 +5178,9 @@
           false,
         );
         if (spawn === false || !(await this.allowEarlyGameBoat(tile))) continue;
-        const troops = this.nearbyTerraNulliusBoatTroops();
+        const troops = this.nearbyTerraNulliusBoatTroops(
+          radioactiveTerraNullius,
+        );
         if (troops < 1) return false;
         return this.emitNearbyTerraNulliusBoat(
           tile,
@@ -5193,6 +5222,7 @@
       target,
       minCommitFraction,
       earlyGameCandidate,
+      radioactiveTerraNullius,
       parallelTribeAttack,
     ) {
       const defenseProfile = this.getEnemyDefensePostAttackProfile(target);
@@ -5207,15 +5237,18 @@
       const reserveRatio = useReserve
         ? this.effectiveReserveRatio()
         : this.expandRatio;
-      const targetReserveTroops = this.getEarlyGameTargetReserveTroops(target);
+      const isTerraNullius = !target.isPlayer();
+      const targetReserveTroops = this.getLandAttackTargetReserveTroops(
+        target,
+        radioactiveTerraNullius,
+      );
       const targetTroops = state.settings.winFixes
         ? targetReserveTroops
         : this.game.config().maxTroops(this.player) * reserveRatio;
       const targetSpendableTroops =
         this.getEarlyGameSpendableTroops(targetReserveTroops);
-      const isTerraNullius = !target.isPlayer();
       const finalSpendableTroops =
-        isTerraNullius && state.settings.winFixes
+        isTerraNullius && state.settings.winFixes && !radioactiveTerraNullius
           ? Math.max(
               targetSpendableTroops,
               this.getEarlyGameSpendableTroops(
@@ -5237,6 +5270,7 @@
         defenseProfile,
         isTribeTarget,
         isTerraNullius,
+        radioactiveTerraNullius,
         usesPendingIntentBudget:
           parallelTribeAttack === true && isTribeTarget,
         targetTroops,
@@ -5272,8 +5306,11 @@
         return this.getTerraNulliusAttackTroops(
           context.target,
           null,
-          null,
+          context.radioactiveTerraNullius
+            ? context.finalSpendableTroops
+            : null,
           context.terraNulliusCommitFraction,
+          context.radioactiveTerraNullius,
         );
       }
       let troops = this.player.troops() - context.targetTroops;
@@ -5384,7 +5421,7 @@
       target,
       minCommitFraction = null,
       earlyGameCandidate = null,
-      _radioactiveTerraNullius = false,
+      radioactiveTerraNullius = false,
       parallelTribeAttack = false,
     ) {
       this.reconcileOutboundAttackIntentCommitments();
@@ -5392,6 +5429,7 @@
         target,
         minCommitFraction,
         earlyGameCandidate,
+        radioactiveTerraNullius,
         parallelTribeAttack,
       );
       let troops = this.calculateLandAttackTroops(context);

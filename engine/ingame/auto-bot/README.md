@@ -46,6 +46,11 @@ window, expansion may use only troops above the calculated production peak or a
 higher threat-aware reserve. Transport probes share the same accounting, so
 several reconciled intents cannot independently drain the opening army.
 
+Radioactive Terra Nullius uses the live Fallout defense multiplier and may keep
+expanding by land or short coastal transport until the army reaches 42% of its
+current maximum capacity. This deeper reserve applies only to Fallout; ordinary
+free land and player attacks keep their own safety floors.
+
 Port construction applies the same largest-surface rule independently: a port
 candidate must be a border tile adjacent to the canonical open-ocean component.
 Shared closed lakes may still contribute to broader coastal/trade planning, but

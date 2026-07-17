@@ -410,6 +410,8 @@
       this._missileDefenseSignalCache = null;
       this._activeHostileMissileTick = null;
       this._activeHostileMissileCache = null;
+      this._hostileMissileImpactZonesTick = null;
+      this._hostileMissileImpactZonesCache = null;
       // SAM spending stays locked until this nation has observed an actual
       // hostile missile in flight. Once opened, the gate remains open for the
       // rest of the match even after that first missile resolves.
@@ -620,12 +622,14 @@
 
     async handleWinFixStructurePriorities(legendaryDifficulty) {
       if (!state.settings.winFixes) return false;
+      // The coverage plan upgrades an existing useful SAM whenever increased
+      // range can cover the structure set. It asks for another physical site
+      // only when geometry proves that leveling cannot close the gap.
       if (await this.maybeEnsureHydrogenStructureCoverage()) return true;
       if (await this.maybeUpgradeHydrogenProtectionSam()) return true;
       if (await this.maybeUpgradeSiloForNukeDemand()) return true;
       if (legendaryDifficulty) return false;
       if (await this.maybeSpawnHostileSiloSam()) return true;
-      // A blocked dedicated-SAM retry must not freeze unrelated construction.
       if (await this.maybeUpgradeSamForSiloParity()) return true;
       if (!this.shouldSpawnSamForParity()) return false;
       return this.maybeSpawnStructure(
@@ -721,8 +725,11 @@
         offset += STRUCTURE_PROBE_CONCURRENCY
       ) {
         const batch = tiles.slice(offset, offset + STRUCTURE_PROBE_CONCURRENCY);
+        const safeBatch = batch.filter(
+          (tile) => !this.isDangerousStructureTile(tile, UNIT.DefensePost),
+        );
         const buildables = await Promise.all(
-          batch.map((tile) =>
+          safeBatch.map((tile) =>
             this.buildableFor(
               UNIT.DefensePost,
               tile,
@@ -730,8 +737,17 @@
             ),
           ),
         );
-        for (const bu of buildables) {
-          if (bu === null || bu.canBuild === false) continue;
+        for (let index = 0; index < buildables.length; index++) {
+          const bu = buildables[index];
+          if (
+            !this.isUsableStructureBuildable(
+              bu,
+              safeBatch[index],
+              UNIT.DefensePost,
+            )
+          ) {
+            continue;
+          }
           const buildMenu = getBuildMenu();
           if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
             return false;
@@ -1647,6 +1663,67 @@
       return cache(false);
     }
 
+    activeHostileMissileImpactZones() {
+      const tick = safeStructureGameTick(this.game);
+      if (
+        Number.isFinite(tick) &&
+        this._hostileMissileImpactZonesTick === tick
+      ) {
+        return this._hostileMissileImpactZonesCache;
+      }
+      const cache = (zones) => {
+        if (Number.isFinite(tick)) {
+          this._hostileMissileImpactZonesTick = tick;
+          this._hostileMissileImpactZonesCache = zones;
+        }
+        return zones;
+      };
+      if (typeof this.game?.units !== "function") return cache([]);
+      const config = this.game.config?.();
+      if (!config || typeof config.nukeMagnitudes !== "function") {
+        return cache([]);
+      }
+      const missiles = this.game.units(
+        UNIT.AtomBomb,
+        UNIT.HydrogenBomb,
+        UNIT.MIRV,
+        UNIT.MIRVWarhead,
+      );
+      if (!Array.isArray(missiles)) return cache([]);
+
+      const mySid = this.player.smallID();
+      const zones = [];
+      for (const missile of missiles) {
+        const zone = this.hostileMissileImpactZone(missile, config, mySid);
+        if (zone !== null) zones.push(zone);
+      }
+      return cache(zones);
+    }
+
+    hostileMissileImpactZone(missile, config, mySid) {
+      if (!isHostileActiveMissile(this.player, missile, mySid)) return null;
+      const targetTile = missile.targetTile?.();
+      const type = missile.type?.();
+      const radius = Number(config.nukeMagnitudes(type)?.outer);
+      if (targetTile === null || targetTile === undefined) return null;
+      if (!Number.isFinite(radius) || radius <= 0) return null;
+      return { targetTile, radiusSquared: radius * radius };
+    }
+
+    tileInsideActiveHostileMissileImpact(tile) {
+      if (tile === null || tile === undefined) return false;
+      if (typeof this.game?.euclideanDistSquared !== "function") return false;
+      for (const zone of this.activeHostileMissileImpactZones()) {
+        if (
+          this.game.euclideanDistSquared(tile, zone.targetTile) <=
+          zone.radiusSquared
+        ) {
+          return true;
+        }
+      }
+      return false;
+    }
+
     observeHostileMissileLaunch() {
       return this.hasObservedHostileMissileLaunch();
     }
@@ -1714,20 +1791,12 @@
       );
       if (ownSam === null) return false;
 
-      // Match both dimensions of the hostile network. Each silo is an
-      // independent launch origin that may require a separate point-defense
-      // site, while each level contributes one missile/interceptor slot.
-      if (siloSummary.hostileSiloCount > ownSam.count) {
-        return true;
-      }
-
-      // Keep the existing anticipatory response when a hostile nation can
-      // already afford a silo but has not placed one yet. It is only one SAM
-      // until a real silo appears, so it cannot snowball on gold alone.
+      // Hostile Silo count is not a spatial coverage requirement. Establish
+      // one defensive site, then let capacity upgrades and the structure-
+      // coverage plan prove whether another physical site is actually needed.
       return (
-        siloSummary.hostileSiloCount === 0 &&
-        threat.siloThreat === true &&
-        ownSam.count === 0
+        ownSam.count === 0 &&
+        (siloSummary.hostileSiloCount > 0 || threat.siloThreat === true)
       );
     }
 
@@ -2528,16 +2597,10 @@
         this.isBuiltActiveSam(sam),
       );
       if (sams.length === 0) return { needsNewSam: true };
-      for (const sam of sams) {
-        const level = Math.max(1, Math.floor(Number(sam.level?.() ?? 1)));
-        if (
-          Number.isFinite(level) &&
-          this.samCoveredStructureCount(sam, level, structures, config) ===
-            structures.length
-        ) {
-          return null;
-        }
-      }
+      if (
+        this.hydrogenCoveredStructureCount(sams, structures, config) ===
+        structures.length
+      ) return null;
       return (
         this.bestHydrogenCoverageUpgrade(sams, structures, config) || {
           needsNewSam: true,
@@ -2596,8 +2659,38 @@
       }).length;
     }
 
+    hydrogenCoveredStructureCount(
+      sams,
+      structures,
+      config,
+      upgradedSam = null,
+      upgradedLevel = null,
+    ) {
+      let covered = 0;
+      for (const structureTile of structures) {
+        const protectedByAny = sams.some((sam) => {
+          const level =
+            sam === upgradedSam
+              ? upgradedLevel
+              : Math.max(1, Math.floor(Number(sam.level?.() ?? 1)));
+          if (!Number.isFinite(level)) return false;
+          return (
+            this.game.euclideanDistSquared(sam.tile(), structureTile) <=
+            this.samRangeSquared(config, level)
+          );
+        });
+        if (protectedByAny) covered++;
+      }
+      return covered;
+    }
+
     bestHydrogenCoverageUpgrade(sams, structures, config) {
-      let completePlan = null;
+      const currentCovered = this.hydrogenCoveredStructureCount(
+        sams,
+        structures,
+        config,
+      );
+      let bestPlan = null;
       for (const sam of sams) {
         const currentLevel = Math.max(1, Math.floor(Number(sam.level?.() ?? 1)));
         if (
@@ -2611,12 +2704,14 @@
           targetLevel <= HYDROGEN_SAM_MAX_UPGRADE_LEVEL;
           targetLevel++
         ) {
-          const covered = this.samCoveredStructureCount(
-            sam,
-            targetLevel,
+          const covered = this.hydrogenCoveredStructureCount(
+            sams,
             structures,
             config,
+            sam,
+            targetLevel,
           );
+          if (covered <= currentCovered) continue;
           const candidate = {
             sam,
             currentLevel,
@@ -2625,20 +2720,22 @@
             totalPoints: structures.length,
             complete: covered === structures.length,
           };
-          if (candidate.complete) {
-            if (
-              completePlan === null ||
-              targetLevel < completePlan.targetLevel ||
-              (targetLevel === completePlan.targetLevel &&
-                currentLevel > completePlan.currentLevel)
-            ) {
-              completePlan = candidate;
-            }
-            break;
+          if (this.isBetterHydrogenCoveragePlan(candidate, bestPlan)) {
+            bestPlan = candidate;
           }
+          if (candidate.complete) break;
         }
       }
-      return completePlan;
+      return bestPlan;
+    }
+
+    isBetterHydrogenCoveragePlan(candidate, current) {
+      if (current === null) return true;
+      if (candidate.complete !== current.complete) return candidate.complete;
+      if (candidate.coveredPoints !== current.coveredPoints) {
+        return candidate.coveredPoints > current.coveredPoints;
+      }
+      return candidate.targetLevel < current.targetLevel;
     }
 
     legendaryRailMetrics(cities, ports, factories) {
@@ -5653,11 +5750,7 @@
       if (!plan || plan.targetLevel <= plan.currentLevel) return false;
 
       const availableGold = this.spendableConstructionGold();
-      let minimumCost;
-      {
-        minimumCost = this.cost(UNIT.SAMLauncher);
-      }
-      if (availableGold < minimumCost) return false;
+      const fallbackCost = this.cost(UNIT.SAMLauncher);
 
       const buildables = await this.buildableForUnits(
         [plan.sam],
@@ -5672,7 +5765,7 @@
         return false;
       }
 
-      let cost = minimumCost;
+      let cost = fallbackCost;
       {
         if (bu.cost !== undefined && bu.cost !== null) cost = BigInt(bu.cost);
       }
@@ -6146,13 +6239,15 @@
           offset + STRUCTURE_PROBE_CONCURRENCY,
         );
         const buildables = await Promise.all(
-          batch.map((structure) =>
-            this.buildableFor(
+          batch.map((structure) => {
+            const tile = structure.tile();
+            if (this.tileInsideActiveHostileMissileImpact(tile)) return null;
+            return this.buildableFor(
               structure.type(),
-              structure.tile(),
+              tile,
               STRUCTURE_PROBE_TIMEOUT_MS,
-            ),
-          ),
+            );
+          }),
         );
         for (let index = 0; index < batch.length; index++) {
           const structure = batch[index];
@@ -6836,9 +6931,12 @@
      * placement behavior instead of disabling construction entirely.
      */
     isDangerousStructureTile(tile, type) {
-      if (type === UNIT.DefensePost || tile === null || tile === undefined) {
-        return false;
-      }
+      if (tile === null || tile === undefined) return false;
+      // Never spend on a structure that an already in-flight hostile missile
+      // will destroy. This applies to every difficulty and to Defense Posts;
+      // their frontier exemption is unrelated to blast safety.
+      if (this.tileInsideActiveHostileMissileImpact(tile)) return true;
+      if (type === UNIT.DefensePost) return false;
       const game = this.game;
       if (
         !game ||
@@ -7028,6 +7126,7 @@
           {
             const tile = unit?.tile?.();
             if (tile === null || tile === undefined) continue;
+            if (this.tileInsideActiveHostileMissileImpact(tile)) continue;
             results[index] = await this.buildableFor(
               type,
               tile,

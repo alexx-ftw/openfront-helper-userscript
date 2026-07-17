@@ -1343,6 +1343,110 @@ assert.equal(
   "The authoritative worker destination is safety-checked after snapping",
 );
 
+let impactTick = 100;
+let placementMissileActive = true;
+let impactProbeCalls = 0;
+const missileOwner = { smallID: () => 2 };
+const ownMissileOwner = { smallID: () => 1 };
+const alliedMissileOwner = { smallID: () => 3 };
+let missileImpactOwner = missileOwner;
+const hostileAtom = {
+  owner: () => missileImpactOwner,
+  isActive: () => placementMissileActive,
+  targetTile: () => 100,
+  type: () => UNIT.AtomBomb,
+};
+const missileImpactProbe = Object.create(sandbox.__StructureBehavior.prototype);
+missileImpactProbe.player = {
+  smallID: () => 1,
+  isFriendly: (owner) => owner === alliedMissileOwner,
+  isOnSameTeam: (owner) => owner === alliedMissileOwner,
+};
+missileImpactProbe.game = {
+  ticks: () => impactTick,
+  units: () => [hostileAtom],
+  config: () => ({
+    nukeMagnitudes: () => ({ outer: 10 }),
+  }),
+  euclideanDistSquared: (left, right) => (left - right) ** 2,
+  neighbors: () => [],
+  ownerID: () => 1,
+  playerBySmallID: () => null,
+};
+missileImpactProbe.buildableFor = async (_type, tile) => {
+  impactProbeCalls++;
+  return { canUpgrade: true, tile };
+};
+assert.equal(
+  missileImpactProbe.isDangerousStructureTile(105, UNIT.Factory),
+  true,
+  "Every structure rejects a tile inside an active hostile missile blast",
+);
+assert.equal(
+  missileImpactProbe.isDangerousStructureTile(105, UNIT.DefensePost),
+  true,
+  "The frontier exemption does not let a Defense Post enter a missile blast",
+);
+assert.equal(
+  missileImpactProbe.isDangerousStructureTile(111, UNIT.Factory),
+  false,
+  "A tile beyond the configured outer blast radius remains buildable",
+);
+const impactUpgradeResults = await missileImpactProbe.buildableForUnits(
+  [makeUnit(105, 1), makeUnit(120, 1)],
+  UNIT.SAMLauncher,
+  { concurrency: 2 },
+);
+assert.equal(
+  impactUpgradeResults[0],
+  null,
+  "An upgrade inside an imminent hostile impact is not probed or purchased",
+);
+assert.equal(impactUpgradeResults[1]?.canUpgrade, true);
+assert.equal(impactProbeCalls, 1, "Only the missile-safe upgrade candidate is probed");
+placementMissileActive = false;
+impactTick++;
+assert.equal(
+  missileImpactProbe.isDangerousStructureTile(105, UNIT.Factory),
+  false,
+  "Missile impact safety invalidates with the game tick after the threat ends",
+);
+placementMissileActive = true;
+missileImpactOwner = ownMissileOwner;
+impactTick++;
+assert.equal(
+  missileImpactProbe.isDangerousStructureTile(105, UNIT.Factory),
+  false,
+  "Our own in-flight missile does not suppress construction",
+);
+missileImpactOwner = alliedMissileOwner;
+impactTick++;
+assert.equal(
+  missileImpactProbe.isDangerousStructureTile(105, UNIT.Factory),
+  false,
+  "An allied in-flight missile does not suppress construction",
+);
+missileImpactOwner = missileOwner;
+impactProbeCalls = 0;
+sentBuilds.length = 0;
+impactTick++;
+assert.equal(
+  await missileImpactProbe.buildFirstDefensePost([105, 120]),
+  true,
+  "The direct Defense Post path skips an unsafe raw tile and builds the safe candidate",
+);
+assert.equal(sentBuilds.at(-1)?.tile, 120);
+assert.equal(impactProbeCalls, 1, "The unsafe Defense Post tile is never probed");
+missileImpactProbe.buildableFor = async () => ({ canBuild: 105 });
+sentBuilds.length = 0;
+impactTick++;
+assert.equal(
+  await missileImpactProbe.buildFirstDefensePost([120]),
+  false,
+  "The direct Defense Post path rejects an authoritative snap into the blast",
+);
+assert.equal(sentBuilds.length, 0);
+
 const originalTilesNearFriendlySams = coverageProbe.tilesNearFriendlySams;
 const originalMissileSiloValue = coverageProbe.missileSiloValue;
 coverageProbe.tilesNearFriendlySams = () =>
@@ -1374,9 +1478,10 @@ behavior.game.euclideanDistSquared = originalEuclideanDistSquared;
 const hydrogenProtectionBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 hydrogenProtectionBehavior._hostileMissileLaunchObserved = true;
 const hydrogenSam = makeUnit(1101, 1);
+let hydrogenProtectionGold = 5_000_000n;
 hydrogenProtectionBehavior.player = {
   smallID: () => 1,
-  gold: () => 5_000_000n,
+  gold: () => hydrogenProtectionGold,
   borderTiles: () => new Set([0, 10]),
   units: (type) => {
     if (type === UNIT.SAMLauncher) return [hydrogenSam];
@@ -1410,6 +1515,24 @@ assert.equal(
   "H-bomb coverage emits the required SAM upgrade",
 );
 assert.equal(sentBuilds.length, 1, "H-bomb coverage emits one SAM upgrade action");
+hydrogenProtectionGold = 1_000_000n;
+hydrogenProtectionBehavior.cost = () => 3_000_000n;
+hydrogenProtectionBehavior.buildableForUnits = async () => [
+  { type: UNIT.SAMLauncher, canUpgrade: true, cost: 500_000n },
+];
+sentBuilds.length = 0;
+assert.equal(
+  await hydrogenProtectionBehavior.maybeUpgradePlannedSam({
+    sam: hydrogenSam,
+    currentLevel: 1,
+    targetLevel: 2,
+  }),
+  true,
+  "An affordable authoritative SAM upgrade is not rejected by the higher new-site price",
+);
+assert.equal(sentBuilds.length, 1);
+hydrogenProtectionGold = 5_000_000n;
+hydrogenProtectionBehavior.cost = () => 1n;
 hydrogenProtectionBehavior.liveHostilePlayers = () => [enemySingleLevelOneSilo];
 hydrogenProtectionBehavior._hydrogenSamProtectionTick = null;
 assert.equal(
@@ -1512,6 +1635,28 @@ assert.equal(
   structureCoverageBehavior.hydrogenStructureCoveragePlan(),
   null,
   "A SAM at the planned level covers all own structures",
+);
+
+const jointCoverageBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+jointCoverageBehavior.player = {
+  units: (type) => {
+    if (type === UNIT.SAMLauncher) return [makeUnit(0, 1), makeUnit(100, 1)];
+    if (type === UNIT.City) return [{ tile: () => 0 }, { tile: () => 100 }];
+    return [];
+  },
+};
+jointCoverageBehavior.game = {
+  euclideanDistSquared: (left, right) => (Number(left) - Number(right)) ** 2,
+  config: () => ({
+    isUnitDisabled: () => false,
+    samRange: (level) => level * 6,
+  }),
+};
+jointCoverageBehavior.liveHostilePlayers = () => [enemyTwoLevelOneSilos];
+assert.equal(
+  jointCoverageBehavior.computeHydrogenStructureCoveragePlan(),
+  null,
+  "Joint coverage by existing SAMs does not request another physical site",
 );
 
 const originalGetPerceivedCost = behavior.getPerceivedCost;
@@ -2386,7 +2531,13 @@ own.sams = [makeUnit(405, 3), makeUnit(406, 2), makeUnit(407, 2)];
 assert.equal(
   behavior.shouldBuildHostileSiloSam(),
   false,
-  "The hostile Silo site floor stops requesting new SAMs once every silo has a defensive site",
+  "An existing SAM prevents hostile Silo count from multiplying defensive sites",
+);
+own.sams = [makeUnit(405, 1)];
+assert.equal(
+  behavior.shouldBuildHostileSiloSam(),
+  false,
+  "Multiple hostile Silos create upgrade pressure instead of one new SAM per Silo",
 );
 own.sams = [reactiveSam];
 sentBuilds.length = 0;
