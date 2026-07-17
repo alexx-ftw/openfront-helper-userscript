@@ -262,6 +262,20 @@
     return !allow || allow[type] !== false;
   }
 
+  function profileStructureAsync(profile, name, action) {
+    if (typeof autoBotProfileAsyncPhase === "function") {
+      return autoBotProfileAsyncPhase(profile, name, action);
+    }
+    return action();
+  }
+
+  function profileStructureSync(profile, name, action) {
+    if (typeof autoBotProfileSyncPhase === "function") {
+      return autoBotProfileSyncPhase(profile, name, action);
+    }
+    return action();
+  }
+
   // ===========================================================================
   // §SHIMS — the two genuinely-missing datasets, reconstructed client-side.
   // These are the ONLY approximations; they affect placement SCORING only.
@@ -544,17 +558,26 @@
     }
 
     // handleStructures — NationStructureBehavior.ts:143 (now async).
-    async handleStructures() {
+    async handleStructures(profile = null) {
       const legendaryDifficulty = isLegendaryDifficulty();
-      const activeMissileSamDecision =
-        await this.handleActiveMissileSamMaximumPriority();
+      const activeMissileSamDecision = await profileStructureAsync(
+        profile,
+        "structures-active-missile-sam",
+        () => this.handleActiveMissileSamMaximumPriority(),
+      );
       if (activeMissileSamDecision !== null) return activeMissileSamDecision;
 
-      const hostileSiloSamDecision =
-        await this.handleHostileSiloSamMaximumPriority();
+      const hostileSiloSamDecision = await profileStructureAsync(
+        profile,
+        "structures-hostile-silo-sam",
+        () => this.handleHostileSiloSamMaximumPriority(),
+      );
       if (hostileSiloSamDecision !== null) return hostileSiloSamDecision;
 
-      if (await this.handleImmediateStructureDefense(legendaryDifficulty)) {
+      if (
+        await profileStructureAsync(profile, "structures-immediate-defense", () =>
+          this.handleImmediateStructureDefense(legendaryDifficulty))
+      ) {
         return true;
       }
 
@@ -567,12 +590,17 @@
           this.hasObservedHostileMissileLaunch() &&
           this.samLevelParityGap() > 0);
 
-      const defensePostDecision = await this.handleDefensePostPriority(
-        legendaryMissileEmergency,
+      const defensePostDecision = await profileStructureAsync(
+        profile,
+        "structures-defense-post",
+        () => this.handleDefensePostPriority(legendaryMissileEmergency),
       );
       if (defensePostDecision !== null) return defensePostDecision;
 
-      if (await this.handleWinFixStructurePriorities(legendaryDifficulty)) {
+      if (
+        await profileStructureAsync(profile, "structures-winfix-priorities", () =>
+          this.handleWinFixStructurePriorities(legendaryDifficulty))
+      ) {
         return true;
       }
 
@@ -581,7 +609,11 @@
       if (!legendaryDefenseEmergency && this.isInPostSaveUpBlockedPhase()) {
         return false;
       }
-      const built = await this.doHandleStructures();
+      const built = await profileStructureAsync(
+        profile,
+        "structures-ordinary",
+        () => this.doHandleStructures(profile),
+      );
       if (built) {
         this.placementsCount++;
       }
@@ -1078,23 +1110,40 @@
     }
 
     // doHandleStructures — NationStructureBehavior.ts:416 (now async).
-    async doHandleStructures() {
-      const context = this.structureBuildContext();
-      if (await this.handleOpeningStructurePriorities(context)) return true;
+    async doHandleStructures(profile = null) {
+      const context = profileStructureSync(
+        profile,
+        "structures-ordinary-context",
+        () => this.structureBuildContext(profile),
+      );
       if (
-        context.economyGrowthPriority &&
-        (await this.maybePrioritizeEconomicGrowth(context))
+        await profileStructureAsync(profile, "structures-ordinary-opening", () =>
+          this.handleOpeningStructurePriorities(context))
       ) {
         return true;
       }
-      if (await this.handleMissileSiloParity(context)) return true;
-      if (isLegendaryDifficulty(context.difficulty)) {
-        return this.doHandleLegendaryStructures(context);
+      if (
+        context.economyGrowthPriority &&
+        (await profileStructureAsync(profile, "structures-ordinary-economy", () =>
+          this.maybePrioritizeEconomicGrowth(context)))
+      ) {
+        return true;
       }
-      return this.handleOrdinaryStructurePriorities(context);
+      if (
+        await profileStructureAsync(profile, "structures-ordinary-silo-parity", () =>
+          this.handleMissileSiloParity(context))
+      ) {
+        return true;
+      }
+      if (isLegendaryDifficulty(context.difficulty)) {
+        return profileStructureAsync(profile, "structures-ordinary-legendary", () =>
+          this.doHandleLegendaryStructures(context));
+      }
+      return profileStructureAsync(profile, "structures-ordinary-policy", () =>
+        this.handleOrdinaryStructurePriorities(context));
     }
 
-    structureBuildContext() {
+    structureBuildContext(profile = null) {
       this.reachableStationsCache = null;
       const config = this.game.config();
       const citiesDisabled = config.isUnitDisabled(UNIT.City);
@@ -1106,23 +1155,35 @@
         : this.ownedLevels(UNIT.City);
       // sharedWaterComponents → real Set<number>|null from gameApi's cached
       // full-resolution water union-find (core SharedWaterCache predicate).
-      this._sharedWaterComponents = shimSharedWaterComponents(
-        this.game,
-        this.player,
+      this._sharedWaterComponents = profileStructureSync(
+        profile,
+        "structures-context-shared-water",
+        () => shimSharedWaterComponents(this.game, this.player),
       );
       const hasCoastalTiles = this._sharedWaterComponents !== null;
-      const hasOceanPortTiles = this.hasOceanPortTiles();
+      const hasOceanPortTiles = profileStructureSync(
+        profile,
+        "structures-context-ocean-port",
+        () => this.hasOceanPortTiles(),
+      );
       this._hasCoastalTiles = hasCoastalTiles;
       this._hasOceanPortTiles = hasOceanPortTiles;
-      this.updateConstructionDominance();
+      profileStructureSync(profile, "structures-context-dominance", () =>
+        this.updateConstructionDominance());
 
       const missileSilosEnabled = !config.isUnitDisabled(UNIT.MissileSilo);
       const difficulty = currentDifficulty();
-      const prioritizeCityForBorderThreat =
-        state.settings.winFixes &&
-        this.hasBorderingHostileMaxTroopAdvantage();
-      const economyGrowthPriority = this.shouldPrioritizeEconomicGrowth(
-        prioritizeCityForBorderThreat,
+      const prioritizeCityForBorderThreat = profileStructureSync(
+        profile,
+        "structures-context-border-threat",
+        () =>
+          state.settings.winFixes &&
+          this.hasBorderingHostileMaxTroopAdvantage(),
+      );
+      const economyGrowthPriority = profileStructureSync(
+        profile,
+        "structures-context-economy-growth",
+        () => this.shouldPrioritizeEconomicGrowth(prioritizeCityForBorderThreat),
       );
       const nukesEnabled =
         !config.isUnitDisabled(UNIT.AtomBomb) ||
@@ -2188,12 +2249,39 @@
       if (ownMaxTroops <= 0) return false;
       const hostilePlayers = this.liveHostilePlayers();
       if (!Array.isArray(hostilePlayers)) return false;
+      const borderingOwnerIds = this.borderingLandOwnerIds();
+      if (borderingOwnerIds !== null) {
+        return hostilePlayers.some(
+          (enemy) =>
+            borderingOwnerIds.has(enemy.smallID()) &&
+            this.safeMaxTroops(config, enemy) > ownMaxTroops,
+        );
+      }
       if (typeof this.player?.sharesBorderWith !== "function") return false;
       return hostilePlayers.some(
         (enemy) =>
           this.safeSharesBorder(enemy) &&
           this.safeMaxTroops(config, enemy) > ownMaxTroops,
       );
+    }
+
+    borderingLandOwnerIds() {
+      if (typeof this.player?.borderTiles !== "function") return null;
+      if (typeof this.game?.neighbors !== "function") return null;
+      if (typeof this.game?.isLand !== "function") return null;
+      if (typeof this.game?.ownerID !== "function") return null;
+
+      const ownSid = this.player.smallID();
+      const ownerIds = new Set();
+      for (const borderTile of this.player.borderTiles()) {
+        for (const neighbor of this.game.neighbors(borderTile)) {
+          if (!this.game.isLand(neighbor)) continue;
+          const ownerSid = this.game.ownerID(neighbor);
+          if (ownerSid == null || ownerSid === ownSid) continue;
+          ownerIds.add(ownerSid);
+        }
+      }
+      return ownerIds;
     }
 
     safeMaxTroops(config, player) {

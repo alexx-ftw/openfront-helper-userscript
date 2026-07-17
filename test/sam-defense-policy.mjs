@@ -443,6 +443,47 @@ assert.equal(
   true,
   "A hostile bordering player with a larger max army activates the economic threat signal",
 );
+let fastBorderNeighborScans = 0;
+const fastBorderOwner = {
+  ...borderTroopOwner,
+  borderTiles: () => new Set([1, 2]),
+  sharesBorderWith: () => {
+    throw new Error("the indexed border-owner path must avoid pairwise border scans");
+  },
+};
+const fastBorderBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+fastBorderBehavior.player = fastBorderOwner;
+const fastBorderMaxTroops = (player) => {
+  if (player === fastBorderOwner) return 1_000;
+  return borderTroopMax.get(player) ?? 0;
+};
+fastBorderBehavior.game = {
+  ticks: () => 1,
+  players: () => [fastBorderOwner, borderTroopEnemy, remoteTroopEnemy],
+  config: () => ({
+    maxTroops: fastBorderMaxTroops,
+  }),
+  neighbors: (tile) => {
+    fastBorderNeighborScans++;
+    return tile === 1 ? [10, 11] : [12];
+  },
+  isLand: () => true,
+  ownerID: (tile) => {
+    if (tile === 10) return 21;
+    if (tile === 12) return 22;
+    return null;
+  },
+};
+assert.equal(
+  fastBorderBehavior.hasBorderingHostileMaxTroopAdvantage(),
+  true,
+  "one border-owner scan preserves the stronger-hostile economic threat signal",
+);
+assert.equal(
+  fastBorderNeighborScans,
+  2,
+  "the fast path scans each owned border tile once instead of once per hostile",
+);
 assert.equal(
   borderTroopBehavior.shouldPrioritizeEconomicGrowth(),
   true,

@@ -222,7 +222,7 @@
       if (structureDue) {
         this.lastIncomingDefenseStructureTick = ticks;
         await autoBotProfileAsyncPhase(profile, "incoming-defense-structures", () =>
-          this.structureBehavior.handleStructures());
+          this.structureBehavior.handleStructures(profile));
         if (!this.tickIsCurrent(tickGeneration)) return true;
       }
       this.lastSeenTick = ticks;
@@ -251,7 +251,7 @@
     async handleBetweenAttackTicks(thirdCrossed, profile, tickGeneration) {
       if (thirdCrossed && this.feat("build")) {
         await autoBotProfileAsyncPhase(profile, "structures-between", () =>
-          this.structureBehavior.handleStructures());
+          this.structureBehavior.handleStructures(profile));
         if (!this.tickIsCurrent(tickGeneration)) return;
       }
       const emergency = state.settings.winFixes && this.feat("warship") &&
@@ -287,7 +287,7 @@
         if (!(await this.runOptionalAsyncPhase(this.feat("nuke"), profile, "mirv",
           () => this.mirvBehavior.considerMIRV(), tickGeneration))) return;
         if (!(await this.runOptionalAsyncPhase(this.feat("build"), profile, "structures",
-          () => this.structureBehavior.handleStructures(), tickGeneration))) return;
+          () => this.structureBehavior.handleStructures(profile), tickGeneration))) return;
         const warship = this.feat("warship") && state.settings.warshipAutoSpawn !== false;
         if (!(await this.runOptionalAsyncPhase(warship, profile, "warship-build",
           () => this.warshipBehavior.maybeSpawnWarship(), tickGeneration))) return;
