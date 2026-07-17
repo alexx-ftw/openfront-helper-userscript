@@ -566,6 +566,7 @@
 
     // handleStructures — NationStructureBehavior.ts:143 (now async).
     async handleStructures(profile = null) {
+      this._economicPlacementDecisionBudget = STRUCTURE_PLACEMENT_CANDIDATE_LIMIT;
       const legendaryDifficulty = isLegendaryDifficulty();
       const activeMissileSamDecision = await profileStructureAsync(
         profile,
@@ -6740,7 +6741,13 @@
     // value buildable in the candidate set.)
     async structureSpawnTile(type, options = {}) {
       const probe = this.structureProbeOptions(options);
-      const tiles = this.structureCandidateTiles(type, options, probe.candidateLimit);
+      const economicType = ECONOMIC_STRUCTURE_TYPES.includes(type);
+      const candidateLimit = economicType
+        ? this.economicPlacementBudgetLimit(probe.candidateLimit)
+        : probe.candidateLimit;
+      if (candidateLimit < 1) return null;
+      const tiles = this.structureCandidateTiles(type, options, candidateLimit);
+      if (economicType) this.consumeEconomicPlacementBudget(tiles.length);
       if (tiles.length === 0) return null;
       const valueFunction = this.structureTileValueFunction(type, options);
       if (valueFunction === null) return null;
@@ -6779,11 +6786,16 @@
     async findEconomicPlacementOrExhaustion(type, options = {}) {
       const scan = this.economicPlacementScanState(type, options);
       if (scan === null) return { status: "indeterminate" };
+      const scanLimit = this.economicPlacementBudgetLimit(
+        STRUCTURE_PLACEMENT_CANDIDATE_LIMIT,
+      );
+      if (scanLimit < 1) return { status: "indeterminate" };
 
       const scanResult =
         type === UNIT.Port
-          ? this.scanAllEconomicPortSpace(type, scan)
-          : this.scanAllLandEconomicSpace(type, scan);
+          ? this.scanAllEconomicPortSpace(type, scan, scanLimit)
+          : this.scanAllLandEconomicSpace(type, scan, scanLimit);
+      this.consumeEconomicPlacementBudget(scanResult.visited || 0);
       if (scanResult.status === "pending") return { status: "indeterminate" };
       if (scanResult.status !== "candidate") {
         this.clearEconomicPlacementScan(type);
@@ -6807,14 +6819,18 @@
       return { status: "buildable", buildable };
     }
 
-    scanAllLandEconomicSpace(type, scan) {
+  scanAllLandEconomicSpace(
+    type,
+    scan,
+    limit = STRUCTURE_PLACEMENT_CANDIDATE_LIMIT,
+  ) {
       const { context } = scan;
       let visited = 0;
       let bestTile = null;
       let bestValue = -Infinity;
       while (
         scan.y <= context.bounds.maxY &&
-        visited < STRUCTURE_PLACEMENT_CANDIDATE_LIMIT
+        visited < limit
       ) {
         const x = scan.x;
         const y = scan.y;
@@ -6828,11 +6844,11 @@
         bestTile = candidate.tile;
       }
 
-      if (bestTile !== null) return { status: "candidate", tile: bestTile };
-      if (scan.y <= context.bounds.maxY) return { status: "pending" };
+      if (bestTile !== null) return { status: "candidate", tile: bestTile, visited };
+      if (scan.y <= context.bounds.maxY) return { status: "pending", visited };
       return scan.hasGeometricSpace
-        ? { status: "indeterminate" }
-        : { status: "no-space" };
+        ? { status: "indeterminate", visited }
+        : { status: "no-space", visited };
     }
 
     advanceEconomicLandScan(scan) {
@@ -6863,14 +6879,18 @@
       return { tile, value: Number.isFinite(value) ? value : -Infinity };
     }
 
-    scanAllEconomicPortSpace(type, scan) {
+  scanAllEconomicPortSpace(
+    type,
+    scan,
+    limit = STRUCTURE_PLACEMENT_CANDIDATE_LIMIT,
+  ) {
       const { context } = scan;
       let visited = 0;
       let bestAnchor = null;
       let bestValue = -Infinity;
       while (
         scan.index < context.borderTiles.length &&
-        visited < STRUCTURE_PLACEMENT_CANDIDATE_LIMIT
+        visited < limit
       ) {
         const anchor = context.borderTiles[scan.index++];
         visited++;
@@ -6880,18 +6900,18 @@
           anchor,
           scan.snappedSites,
         );
-        if (candidate.status === "indeterminate") return candidate;
+        if (candidate.status === "indeterminate") return { ...candidate, visited };
         if (candidate.status !== "candidate") continue;
         scan.hasGeometricSpace = true;
         if (candidate.value <= bestValue) continue;
         bestValue = candidate.value;
         bestAnchor = anchor;
       }
-      if (bestAnchor !== null) return { status: "candidate", tile: bestAnchor };
-      if (scan.index < context.borderTiles.length) return { status: "pending" };
+      if (bestAnchor !== null) return { status: "candidate", tile: bestAnchor, visited };
+      if (scan.index < context.borderTiles.length) return { status: "pending", visited };
       return scan.hasGeometricSpace
-        ? { status: "indeterminate" }
-        : { status: "no-space" };
+        ? { status: "indeterminate", visited }
+        : { status: "no-space", visited };
     }
 
     economicPortAnchorCandidate(type, context, anchor, snappedSites) {
@@ -7165,6 +7185,20 @@
           ),
         };
       };
+    }
+
+    economicPlacementBudgetLimit(requested) {
+      const remaining = Number(this._economicPlacementDecisionBudget);
+      if (!Number.isFinite(remaining)) return requested;
+      return Math.max(0, Math.min(requested, remaining));
+    }
+
+    consumeEconomicPlacementBudget(count) {
+      if (!Number.isFinite(Number(this._economicPlacementDecisionBudget))) return;
+      this._economicPlacementDecisionBudget = Math.max(
+        0,
+        this._economicPlacementDecisionBudget - Math.max(0, Number(count) || 0),
+      );
     }
 
     structureProbeOptions(options) {

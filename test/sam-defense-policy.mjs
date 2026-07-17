@@ -2989,4 +2989,34 @@ behavior.handleHostileSiloSamMaximumPriority = originalHostileSiloSamMaximumPrio
 behavior.maybeEnsureHydrogenStructureCoverage = originalHydrogenStructureCoverage;
 behavior.maybeUpgradeHydrogenProtectionSam = originalHydrogenSiloUpgrade;
 
+const economicBudgetBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+const economicCandidateLimits = [];
+economicBudgetBehavior._economicPlacementDecisionBudget = 25;
+economicBudgetBehavior.structureProbeOptions = () => ({
+  candidateLimit: 25,
+  probeLimit: 25,
+  probeTimeoutMs: 1,
+  parallelProbeCount: 1,
+});
+economicBudgetBehavior.structureCandidateTiles = (_type, _options, limit) => {
+  economicCandidateLimits.push(limit);
+  return Array.from({ length: limit }, (_, index) => index);
+};
+economicBudgetBehavior.structureTileValueFunction = () => () => 0;
+economicBudgetBehavior.structurePlacementCompactnessRanker = () => null;
+economicBudgetBehavior.structureMissileEmergency = () => null;
+economicBudgetBehavior.isDangerousStructureTile = () => false;
+economicBudgetBehavior.probeRankedStructureTiles = async () => null;
+assert.equal(await economicBudgetBehavior.structureSpawnTile(UNIT.Factory), null);
+assert.equal(
+  await economicBudgetBehavior.structureSpawnTile(UNIT.City),
+  null,
+  "the same construction decision does not grant a second economic placement budget",
+);
+assert.deepEqual(
+  economicCandidateLimits,
+  [25],
+  "all economic placement attempts share the normal 25-candidate decision budget",
+);
+
 process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");
