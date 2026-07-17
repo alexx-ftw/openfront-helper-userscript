@@ -205,6 +205,12 @@ implementation and is active only under `winFixes`; Early Game keeps its strict
 tick routes (two minutes at 10 ticks/s). `window.__autoBotDiag()` reports
 `boatRouteAvailable`, `boatGate`, the last ETA, and rejection counters.
 
+An opportunistic beachhead receives at most one 25% surge during its 150-tick
+window. The destination-keyed history survives replacement of the transient
+beachhead record, preventing repeated probes of the same tile from reopening the
+surge loop. Fresh destinations remain eligible, preserving parallel naval
+expansion while keeping the army available for land attacks.
+
 ## Architecture
 
 These are **classic page-context scripts**, not ES modules — there is no bundler

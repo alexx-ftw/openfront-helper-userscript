@@ -609,6 +609,7 @@
       // avoids even the lookup after the first candidate pass.
       this.earlyGameMaritimeIndex = undefined;
       this.earlyGameMaritimeWaterCache = new Map();
+      this.opportunisticBoatSurgeTickByTile = new Map();
       this.earlyGamePreferredClusterTargetKeys = new Set();
       this.earlyGameTribeTopologyCache = null;
       this.earlyGamePreferredClusterOverlaySignature = "";
@@ -3958,12 +3959,35 @@
       return context;
     }
 
+    recentOpportunisticBoatSurge(tile, currentTick, windowTicks) {
+      const surgeHistory =
+        this.opportunisticBoatSurgeTickByTile ||
+        (this.opportunisticBoatSurgeTickByTile = new Map());
+      for (const [historyTile, surgeTick] of surgeHistory) {
+        if (currentTick - surgeTick >= windowTicks) {
+          surgeHistory.delete(historyTile);
+        }
+      }
+      return surgeHistory.has(tile);
+    }
+
     async tryOpportunisticBoatSurge(context) {
       const beachhead = state.beachhead;
       const windowTicks = state.settings.mirvBoatWindowTicks || 150;
       if (!beachhead || beachhead.tile == null) return false;
+      const currentTick = this.game.ticks();
+      if (
+        this.recentOpportunisticBoatSurge(
+          beachhead.tile,
+          currentTick,
+          windowTicks,
+        )
+      ) {
+        return false;
+      }
+      if (beachhead.surged === true) return false;
       if (context.fill < context.surplusFill) return false;
-      if (this.game.ticks() - (beachhead.at || 0) >= windowTicks) return false;
+      if (currentTick - (beachhead.at || 0) >= windowTicks) return false;
       if (!this.landingSucceeded(beachhead.tile)) return false;
       const spawn = await withTimeout(
         this.player.bestTransportShipSpawn(beachhead.tile),
@@ -3979,8 +4003,8 @@
         return false;
       }
       state.lastOppBoatMs = context.nowMs;
-      beachhead.at = this.game.ticks();
       beachhead.surged = true;
+      this.opportunisticBoatSurgeTickByTile.set(beachhead.tile, currentTick);
       return true;
     }
 

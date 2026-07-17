@@ -1542,6 +1542,44 @@ const targetBehavior = new targetSandbox.AttackBehavior(
   {},
 );
 
+const surgeBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+surgeBehavior.game = { ticks: () => 110 };
+surgeBehavior.player = {
+  bestTransportShipSpawn: async () => 1,
+  troops: () => 1000,
+};
+surgeBehavior.landingSucceeded = () => true;
+surgeBehavior.allowBoatExplorationRoute = async () => true;
+surgeBehavior.allowEarlyGameBoat = async () => true;
+let surgeEmissions = 0;
+surgeBehavior.emitBoat = () => {
+  surgeEmissions++;
+  return true;
+};
+const previousBeachhead = targetSandbox.state.beachhead;
+const previousLastOppBoatMs = targetSandbox.state.lastOppBoatMs;
+targetSandbox.state.beachhead = { tile: 10, at: 100, surged: false };
+const surgeContext = { fill: 1, surplusFill: 0.5, nowMs: 1234 };
+assert.equal(await surgeBehavior.tryOpportunisticBoatSurge(surgeContext), true);
+assert.equal(surgeEmissions, 1);
+assert.equal(
+  targetSandbox.state.beachhead.at,
+  100,
+  "the reinforcement does not extend the original beachhead window",
+);
+targetSandbox.state.beachhead = { tile: 10, at: 105, surged: false };
+assert.equal(await surgeBehavior.tryOpportunisticBoatSurge(surgeContext), false);
+assert.equal(
+  surgeEmissions,
+  1,
+  "replacing the beachhead record cannot surge the same destination twice",
+);
+targetSandbox.state.beachhead = { tile: 11, at: 105, surged: false };
+assert.equal(await surgeBehavior.tryOpportunisticBoatSurge(surgeContext), true);
+assert.equal(surgeEmissions, 2, "a different beachhead still receives its reinforcement");
+targetSandbox.state.beachhead = previousBeachhead;
+targetSandbox.state.lastOppBoatMs = previousLastOppBoatMs;
+
 const borderFallbackBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 targetSandbox.currentDifficulty = () => "Impossible";
 targetSandbox.Difficulty = {
