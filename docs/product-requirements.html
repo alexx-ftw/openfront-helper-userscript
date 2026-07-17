@@ -189,3 +189,15 @@
     deep equality even when their visible properties are identical.
   </li>
 </ul>
+
+<h2>Team donation legality</h2>
+
+<ul>
+  <li>
+    The Auto-Bot must not emit a troop donation when the authoritative player capability reports
+    that the recipient is ineligible. After emitting a donation, it must honor the engine's
+    recipient-specific donation cooldown before considering that teammate again. An invalid or
+    cooldown-blocked donation must not consume a decision slot or intent budget that could otherwise
+    be used for defense, expansion, or construction.
+  </li>
+</ul>

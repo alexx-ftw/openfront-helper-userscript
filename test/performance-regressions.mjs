@@ -47,6 +47,7 @@ const GAME_API_SOURCE = path.join(ROOT, "engine/ingame/auto-bot/gameApi.js");
 const gameApiSandbox = {
   PlayerType: { Bot: "BOT" },
   UNIT: {},
+  WORKER_TIMEOUT_MS: 4000,
   withTimeout: (promise) => Promise.resolve(promise),
   globalThis: null,
 };
@@ -61,6 +62,7 @@ let gameApiTick = 1;
 let playerUnitCalls = 0;
 let globalUnitCalls = 0;
 let playerListCalls = 0;
+let borderNeighborCalls = 0;
 const rawUnit = {
   type: () => "Warship",
   owner: () => playerCore,
@@ -70,6 +72,8 @@ const playerCore = {
   smallID: () => 7,
   id: () => "player-7",
   isFriendly: (other) => other === playerCore,
+  borderTiles: async () => ({ borderTiles: new Set([1]) }),
+  profile: async () => ({ relations: {} }),
   units: () => {
     playerUnitCalls += 1;
     return [rawUnit];
@@ -87,7 +91,10 @@ const gameApiSource = {
   },
   width: () => 1,
   height: () => 1,
-  neighbors: () => [2, 3],
+  neighbors: () => {
+    borderNeighborCalls += 1;
+    return [2, 3];
+  },
   isWater: () => false,
   isLand: () => true,
   isShore: () => false,
@@ -100,6 +107,16 @@ const gameApiSource = {
 const wrappedApi = gameApiSandbox.__createGameApi(gameApiSource);
 const gameApi = wrappedApi.game;
 const playerView = gameApi._wrapPlayer(playerCore);
+await wrappedApi.beginTick(playerCore);
+assert.deepEqual([...playerView.borderTiles()], [1]);
+assert.equal(playerView.sharesBorderWith(playerView), true);
+const callsAfterFirstBorderCheck = borderNeighborCalls;
+assert.equal(playerView.sharesBorderWith(playerView), true);
+assert.equal(
+  borderNeighborCalls,
+  callsAfterFirstBorderCheck,
+  "repeated border relations should reuse the exact result within one game tick",
+);
 const firstPlayerUnits = playerView.units("Warship");
 const secondPlayerUnits = playerView.units("Warship");
 assert.strictEqual(
@@ -137,6 +154,11 @@ assert.strictEqual(
 );
 assert.equal(playerListCalls, 1, "players should be read once per game tick");
 gameApiTick += 1;
+assert.equal(playerView.sharesBorderWith(playerView), true);
+assert.ok(
+  borderNeighborCalls > callsAfterFirstBorderCheck,
+  "advancing the game tick invalidates cached border relations",
+);
 assert.notStrictEqual(
   playerView.units("Warship"),
   firstPlayerUnits,

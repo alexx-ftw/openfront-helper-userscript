@@ -375,6 +375,10 @@
         isFriendly: (o) => core.isFriendly(unwrap(o)),
         isAlliedWith: (o) => core.isAlliedWith(unwrap(o)),
         isOnSameTeam: (o) => core.isOnSameTeam(unwrap(o)),
+        canDonateTroops: (o) =>
+          typeof core.canDonateTroops === "function"
+            ? core.canDonateTroops(unwrap(o))
+            : true,
         isRequestingAllianceWith: (o) =>
           core.isRequestingAllianceWith
             ? core.isRequestingAllianceWith(unwrap(o))
@@ -514,13 +518,28 @@
         : src.hasOwner(neighbor) && src.ownerID(neighbor) === ownerSid;
     }
 
+    let borderRelationCacheTick = null;
+    const borderRelationCache = new Map();
     function sharesBorderWith(me, other) {
       const ownerSid = unwrapSmallID(other);
+      const tick = typeof src.ticks === "function" ? src.ticks() : null;
+      if (borderRelationCacheTick !== tick) {
+        borderRelationCacheTick = tick;
+        borderRelationCache.clear();
+      }
+      const cacheKey = `${me.smallID()}:${ownerSid ?? "terra-nullius"}`;
+      if (borderRelationCache.has(cacheKey)) {
+        return borderRelationCache.get(cacheKey);
+      }
       for (const borderTile of me.borderTiles()) {
         for (const neighbor of src.neighbors(borderTile)) {
-          if (borderNeighborMatches(neighbor, ownerSid)) return true;
+          if (borderNeighborMatches(neighbor, ownerSid)) {
+            borderRelationCache.set(cacheKey, true);
+            return true;
+          }
         }
       }
+      borderRelationCache.set(cacheKey, false);
       return false;
     }
 

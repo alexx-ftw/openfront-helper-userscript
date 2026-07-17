@@ -37,7 +37,10 @@ export default {
     },
   ],
   options: {
-    doNotFollow: { path: "node_modules" },
+    // The official engine is an independently validated submodule boundary.
+    // Harness imports may point into it, but this repository must not cruise
+    // and re-audit the engine's aliases, dependencies, or intentional cycles.
+    doNotFollow: { path: "(?:^|/)node_modules|^openfront-engine/" },
     exclude: "(?:^|/)node_modules/|openfront-helper\\.user\\.js$",
     tsConfig: { fileName: "tsconfig.json" },
     enhancedResolveOptions: { exportsFields: ["exports"] },

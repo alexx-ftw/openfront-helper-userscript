@@ -974,6 +974,7 @@ const donor = {
   isOnSameTeam: (player) => [11, 12, 14].includes(player?.smallID?.()),
   borderTiles: () => donorBorderTiles,
   incomingAttacks: () => donorIncomingAttacks,
+  canDonateTroops: () => true,
 };
 const needyTeammate = {
   troops: () => 8000,
@@ -997,6 +998,7 @@ const donationGame = {
     maxTroops: (player) => (player?.smallID?.() === 14 ? 130000 : 100000),
     gameConfig: () => ({ gameMode: "Team" }),
     donateTroops: () => true,
+    donateCooldown: () => 100,
   }),
 };
 const donorBehavior = new sandbox.AttackBehavior(
@@ -1038,6 +1040,40 @@ assert.equal(
   38212,
   "donations release only the surplus above the calculated production peak",
 );
+
+const emissionsAfterFirstDonation = troopEmissions.length;
+assert.equal(
+  donorBehavior.donateTroops(),
+  false,
+  "a recipient remains ineligible for the authoritative donation cooldown",
+);
+assert.equal(troopEmissions.length, emissionsAfterFirstDonation);
+tick += 100;
+assert.equal(
+  donorBehavior.donateTroops(),
+  true,
+  "the recipient becomes eligible when the authoritative cooldown expires",
+);
+tick -= 100;
+
+donor.canDonateTroops = () => false;
+const emissionsBeforeIneligibleDonation = troopEmissions.length;
+assert.equal(
+  new sandbox.AttackBehavior(
+    { chance: () => true },
+    donationGame,
+    donor,
+    0.5,
+    0.3,
+    0.1,
+    {},
+    {},
+  ).donateTroops(),
+  false,
+  "the core donation eligibility gate prevents invalid intents",
+);
+assert.equal(troopEmissions.length, emissionsBeforeIneligibleDonation);
+donor.canDonateTroops = () => true;
 
 const emissionsBeforeAttackedDonation = troopEmissions.length;
 donorIncomingAttacks = [{ troops: () => 1 }];

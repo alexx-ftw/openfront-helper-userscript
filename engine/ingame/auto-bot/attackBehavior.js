@@ -551,6 +551,7 @@
       this.outboundIntentReconciledTick = null;
       this.botPendingDonationIntentCommitments = [];
       this.outboundDonationIntentReconciledTick = null;
+      this.botDonationNextEligibleTickByRecipient = new Map();
       this.earlyGamePeakReserveCacheKey = null;
       this.earlyGamePeakReserveCache = 0;
       this.earlyGameProductionPeakReserveCacheKey = null;
@@ -1732,10 +1733,14 @@
     }
 
     publishAttackEarlyGameSnapshot(context) {
-      const { hasAccessibleTerraNullius } = context;
+      const { hasAccessibleFreeLand, hasAccessibleTerraNullius } = context;
       const snapshot = createEarlyGameSnapshot({
         postSpawn: this.game.inSpawnPhase() === false && this.player.hasSpawned(),
-        hasFreeLand: hasAccessibleTerraNullius,
+        // Fallout is a late-game expansion target, not part of the opening
+        // expansion window. Keep attacking it through the immediate land lane,
+        // but do not let an unaffordable radioactive grab suppress troop
+        // donations indefinitely.
+        hasFreeLand: hasAccessibleFreeLand,
         tribes: this.earlyGameTribeTargets(context.borderingEnemies, context.border),
         boatRouteAvailable: this.game.hasTransportRouteEstimator === true,
       });
@@ -5738,6 +5743,11 @@
       if (!teammate.isAlive()) return null;
       if (teammate.smallID() === this.player.smallID()) return null;
       if (entry.troopPercentage >= needThreshold) return null;
+      if (this.player.canDonateTroops?.(teammate) === false) return null;
+      const recipientKey = this.donationRecipientId(teammate);
+      const nextEligibleTick =
+        this.botDonationNextEligibleTickByRecipient.get(recipientKey) ?? 0;
+      if (this.currentAttackDecisionTick() < nextEligibleTick) return null;
       const underAttack = teammate.incomingAttacks().length > 0;
       const frontline = underAttack || teammate.outgoingAttacks().length > 0;
       return {
@@ -5851,6 +5861,12 @@
         });
         return false;
       }
+      const cooldown = Number(this.game.config().donateCooldown?.()) || 0;
+      const recipientKey = this.donationRecipientId(teammate);
+      this.botDonationNextEligibleTickByRecipient.set(
+        recipientKey,
+        this.currentAttackDecisionTick() + Math.max(0, cooldown),
+      );
       this.recordOutboundDonationIntent(troops);
       runtimeDebugLog(
         "[Donate] SENT",
