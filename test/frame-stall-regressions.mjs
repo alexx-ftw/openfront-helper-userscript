@@ -12,6 +12,7 @@ let callsSinceYield = 0;
 let maxCallsBetweenYields = 0;
 let yieldCount = 0;
 let deadlineNow = 0;
+let deadlineAdvance = 1;
 const sandbox = {
   Date: { now: () => 0 },
   window: {
@@ -21,7 +22,7 @@ const sandbox = {
       maxCallsBetweenYields = Math.max(maxCallsBetweenYields, callsSinceYield);
       callsSinceYield = 0;
       yieldCount += 1;
-      deadlineNow += 1;
+      deadlineNow += deadlineAdvance;
       callback();
       return yieldCount;
     },
@@ -49,6 +50,21 @@ assert.ok(yieldCount >= 31, "a wide search must yield repeatedly");
 assert.ok(
   maxCallsBetweenYields <= 64,
   `route search performed ${maxCallsBetweenYields} expansions without yielding`,
+);
+
+deadlineAdvance = 100_000;
+const deterministicRouteGoal = 256;
+assert.equal(
+  await sandbox.findWaterRouteTicksAsync({
+    start: 0,
+    goal: deterministicRouteGoal,
+    neighbors: (tile) => (tile < deterministicRouteGoal ? [tile + 1] : []),
+    isWater: () => true,
+    maxTicks: deterministicRouteGoal,
+    maxVisited: deterministicRouteGoal + 1,
+  }),
+  deterministicRouteGoal,
+  "default route reachability must not depend on wall-clock speed",
 );
 
 const maritimeOptions = {

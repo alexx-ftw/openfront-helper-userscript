@@ -17,7 +17,7 @@
   const BOAT_EXPLORATION_MAX_ROUTE_TICKS = 1200;
   // A local water graph can branch heavily. Keep the synchronous compatibility
   // helper and the yielding estimator from exploring an unbounded map region.
-  const WATER_ROUTE_MAX_VISITED = 25000;
+  const WATER_ROUTE_MAX_VISITED = 1280;
   // Keep each live fallback-search slice below a frame budget on slower CPUs.
   // The route helpers call into wrapped GameView methods for every expansion,
   // so a smaller batch is safer than assuming each graph lookup is trivial.
@@ -210,7 +210,7 @@
     maxTicks = EARLY_GAME_MAX_BOAT_TICKS,
     maxVisited = WATER_ROUTE_MAX_VISITED,
     yieldEvery = WATER_ROUTE_YIELD_EVERY,
-    deadlineMs = 50,
+    deadlineMs = 0,
   } = {}) {
     if (!validWaterRouteSearch(start, goal, neighbors, isWater)) return null;
     if (start === goal) return 0;

@@ -80,6 +80,12 @@ complete, it finishes the remaining work and publishes only the complete field,
 so target selection remains identical without concentrating the full cold scan
 inside one combat decision.
 
+Fallback water-route searches are deterministic by default: they yield between
+small BFS batches and stop at a 1,280-node cap, rather than declaring
+the same coast reachable or unreachable according to current CPU speed. A wall
+clock deadline remains available only to callers that explicitly request one as
+an additional safety fuse.
+
 Port construction applies the same largest-surface rule independently: a port
 candidate must be a border tile adjacent to the canonical open-ocean component.
 Shared closed lakes may still contribute to broader coastal/trade planning, but

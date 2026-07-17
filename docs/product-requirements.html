@@ -110,6 +110,11 @@
     and no partial field may be published or used for ranking. Incremental and one-shot construction
     must produce the exact same distance field.
   </li>
+  <li>
+    Cooperative water-route estimation must make reachability decisions from deterministic route
+    length and visited-node limits, not from machine speed. Wall-clock deadlines may be used only as
+    explicit secondary safety fuses; yielding between bounded batches remains mandatory.
+  </li>
 </ul>
 
 <h2>Incoming-attack priority</h2>
