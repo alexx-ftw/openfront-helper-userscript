@@ -259,12 +259,16 @@
     // retreating:bool, id:string } (NO attacker()/target() methods, sourceTile
     // is absent on the wire). The coreAdapter wraps core attacks into the same
     // field shape. The ported behaviors call core-style METHOD accessors, so we
-    // expose methods over the fields. `val` tolerates either a value or a fn.
+    // expose methods over the fields. `val` tolerates either a value or a fn
+    // while preserving the source attack as a method receiver.
     function wrapAttack(a) {
-      const val = (x) => (typeof x === "function" ? x() : x);
+      const val = (key) => {
+        const value = a[key];
+        return typeof value === "function" ? value.call(a) : value;
+      };
       return {
         __src: a,
-        troops: () => Number(val(a.troops) ?? 0),
+        troops: () => Number(val("troops") ?? 0),
         attacker: () =>
           wrapPlayer(
             typeof a.attacker === "function"
@@ -277,14 +281,14 @@
               ? a.target()
               : srcPlayerBySmallID(a.targetID),
           ),
-        retreating: () => val(a.retreating) ?? false,
-        id: () => val(a.id),
+        retreating: () => val("retreating") ?? false,
+        id: () => val("id"),
         // client AttackUpdate has no sourceTile on the wire → undefined in the
         // extension; the coreAdapter (harness) DOES set it. `hasSourceTile()`
         // lets consumers use the exact value when present and reconstruct it
         // (land = attacker shares a land border) when absent — see structureBehavior.
         hasSourceTile: () => a.sourceTile !== undefined,
-        sourceTile: () => (a.sourceTile !== undefined ? val(a.sourceTile) : null),
+        sourceTile: () => (a.sourceTile !== undefined ? val("sourceTile") : null),
       };
     }
 

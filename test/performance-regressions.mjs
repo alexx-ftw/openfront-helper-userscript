@@ -182,6 +182,37 @@ assert.equal(
   999,
   "the refreshed player wrapper must read the current snapshot state",
 );
+const receiverSensitiveAttack = {
+  _id: "receiver-sensitive-attack",
+  _retreating: true,
+  _troops: 17,
+  id() {
+    return this._id;
+  },
+  retreating() {
+    return this._retreating;
+  },
+  troops() {
+    return this._troops;
+  },
+};
+replacementPlayerCore.outgoingAttacks = () => [receiverSensitiveAttack];
+const wrappedReceiverSensitiveAttack = gameApi.myPlayer().outgoingAttacks()[0];
+assert.equal(
+  wrappedReceiverSensitiveAttack.retreating(),
+  true,
+  "wrapped attacks must preserve the source receiver for retreating()",
+);
+assert.equal(
+  wrappedReceiverSensitiveAttack.troops(),
+  17,
+  "wrapped attacks must preserve the source receiver for troops()",
+);
+assert.equal(
+  wrappedReceiverSensitiveAttack.id(),
+  "receiver-sensitive-attack",
+  "wrapped attacks must preserve the source receiver for id()",
+);
 assert.equal(playerView.sharesBorderWith(playerView), true);
 assert.ok(
   borderNeighborCalls > callsAfterFirstBorderCheck,
