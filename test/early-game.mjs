@@ -2361,7 +2361,7 @@ const ownerOnlyAdjacency = new Map([
 ownerOnlyAdjacencyBehavior.connectEarlyGameTribeAdjacencyTile(
   201,
   20_000,
-  new Set([201, 202]),
+  ownerOnlyAdjacencyBehavior.createEarlyGameEdibleIdFlags([{ id: 201 }, { id: 202 }]),
   ownerOnlyAdjacency,
 );
 assert.equal(ownerOnlyAdjacency.get(201).has(202), true);

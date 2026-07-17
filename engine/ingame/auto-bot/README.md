@@ -81,6 +81,10 @@ When that ID set changes, retained tribes reuse their cached adjacency and only
 new or territorially changed tribes rescan their borders; removed tribes and
 their edges are filtered directly. The incremental graph is equivalent to a
 full rebuild while avoiding a map-wide border traversal after every capture.
+Neighbor-owner membership uses the engine's bounded integer `smallID` space as
+a dense lookup table, while the published adjacency remains the same ordered
+map of sets. This removes repeated hash lookups from the hottest border loop
+without changing graph traversal or target ordering.
 
 ## Enemy Defense Post-aware attacks
 
