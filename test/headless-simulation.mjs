@@ -19,7 +19,9 @@ assert.match(runner, /OFH_SLOW_TICK_MS/);
 assert.match(runner, /OFH_STOP_WHEN_DEAD/);
 assert.match(runner, /OFH_PROFILE_BOT/);
 assert.match(runner, /OFH_LOG_INTENTS/);
+assert.match(runner, /OFH_LOG_NAVAL/);
 assert.match(runner, /phase:\s*"decision"/);
+assert.match(runner, /phase:\s*"naval-trace"/);
 assert.match(runner, /phase:\s*"slow_tick"/);
 assert.match(runner, /decisionMs/);
 assert.match(runner, /executionMs/);
@@ -40,6 +42,7 @@ assert.match(batch, /OFH_SIM_WORKERS/);
 assert.match(adapter, /window\.__OFH_deadlineNow = hostDeadlineNow/);
 assert.match(adapter, /beginAutoBotProfileTick/);
 assert.match(adapter, /getPerformanceProfile/);
+assert.match(adapter, /caller: new Error\(\)\.stack\?\.split\("\\n"\)\[2\]/);
 assert.match(
   adapter,
   /event\.unitIds === undefined/,

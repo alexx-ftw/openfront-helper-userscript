@@ -921,11 +921,18 @@
       return Boolean(owner && owner.smallID() !== mySid && !owner.isAlliedWith(this.player));
     }
 
-    incomingNavalInvasions(s) {
+    incomingNavalTransports() {
+      const mySid = this.player.smallID();
+      return this.game
+        .units(UNIT.TransportShip)
+        .filter((transport) => this.isHostileIncomingTransport(transport, mySid));
+    }
+
+    incomingNavalInvasions(s, transports = null) {
       const mySid = this.player.smallID();
       const nextCache = new Map();
       const invasions = [];
-      for (const transport of this.game.units(UNIT.TransportShip)) {
+      for (const transport of transports ?? this.game.units(UNIT.TransportShip)) {
         {
           const invasion = this.createIncomingNavalInvasion(transport, s, nextCache, mySid);
           if (invasion) invasions.push(invasion);
@@ -1023,15 +1030,36 @@
       });
     }
 
+    reconcileNavalInterceptorAssignments(warships, liveInvasionIds, state) {
+      const liveShipIds = new Set(warships.map((warship) => warship.id()));
+      const assignedInvasionIds = new Set();
+      for (const [shipId, assignment] of state.invasionAssignments) {
+        if (!liveShipIds.has(shipId) || !liveInvasionIds.has(assignment.invasionId)) {
+          state.invasionAssignments.delete(shipId);
+          continue;
+        }
+        assignedInvasionIds.add(assignment.invasionId);
+      }
+      return assignedInvasionIds;
+    }
+
     assignNavalInterceptors(plan, warships, state) {
       const shipsById = new Map(warships.map((warship) => [warship.id(), warship]));
-      state.invasionAssignments.clear();
+      const newlyAssignedInvasionIds = new Set();
       for (const assignment of plan.assignments) {
+        if (state.invasionAssignments.has(assignment.shipId)) continue;
         const warship = shipsById.get(assignment.shipId);
         if (!warship) continue;
         if (!this.dispatchInterceptor(warship, assignment.interceptTile, state, this.game.ticks())) continue;
-        state.invasionAssignments.set(assignment.shipId, assignment);
+        state.invasionAssignments.set(assignment.shipId, {
+          ...assignment,
+          assignedAtTick: this.game.ticks(),
+          absoluteInterceptTick: this.game.ticks() + assignment.interceptTick,
+          absoluteLandingTick: this.game.ticks() + assignment.landingTick,
+        });
+        newlyAssignedInvasionIds.add(assignment.invasionId);
       }
+      return newlyAssignedInvasionIds;
     }
 
     async buildUncoveredInterceptor(plan, invasions, smartState, timing) {
@@ -1146,8 +1174,8 @@
       if (now - s.lastInvasionPlanMs < throttle) return;
       s.lastInvasionPlanMs = now;
 
-      const invasions = this.incomingNavalInvasions(s);
-      if (invasions.length === 0) {
+      const transports = this.incomingNavalTransports();
+      if (transports.length === 0) {
         s.invasionPlan = null;
         s.invasionAssignments.clear();
         return;
@@ -1155,16 +1183,31 @@
       // The faithful transport tracker runs later in the same decision cycle.
       // Mark these transports handled so it cannot launch a second, competing
       // retaliation while this planner is already assigning/building escorts.
-      for (const invasion of invasions) {
-        this.dealtWithTransportShip.add(invasion.id);
+      for (const transport of transports) {
+        this.dealtWithTransportShip.add(transport.id());
       }
 
       const warships = this.activeWarships();
+      const liveInvasionIds = new Set(transports.map((transport) => transport.id()));
+      const assignedInvasionIds = this.reconcileNavalInterceptorAssignments(
+        warships,
+        liveInvasionIds,
+        s,
+      );
+      const unassignedTransports = transports.filter(
+        (transport) => !assignedInvasionIds.has(transport.id()),
+      );
+      if (unassignedTransports.length === 0) return;
+      const availableWarships = warships.filter(
+        (warship) => !s.invasionAssignments.has(warship.id()),
+      );
+      const invasions = this.incomingNavalInvasions(s, unassignedTransports);
+      if (invasions.length === 0) return;
       const boatSpeed = this.movementSpeed(null, UNIT.TransportShip);
       const warshipSpeed = this.movementSpeed(null, UNIT.Warship);
       const attackRange = this.warshipAttackRange();
       const plan = planNavalInterceptions({
-        ships: warships.map((warship) => ({ id: warship.id(), tile: warship.tile() })),
+        ships: availableWarships.map((warship) => ({ id: warship.id(), tile: warship.tile() })),
         invasions,
         route: (from, to) => this.waterRoute(from, to),
         distance: (from, to) => this.waterDistance(from, to),
@@ -1173,8 +1216,18 @@
         attackRange,
       });
       s.invasionPlan = { tick: this.game.ticks(), invasions, plan };
-      this.assignNavalInterceptors(plan, warships, s);
-      await this.buildUncoveredInterceptor(plan, invasions, s, {
+      const newlyAssignedInvasionIds = this.assignNavalInterceptors(
+        plan,
+        availableWarships,
+        s,
+      );
+      const actionablePlan = {
+        ...plan,
+        uncoveredIds: invasions
+          .filter((invasion) => !newlyAssignedInvasionIds.has(invasion.id))
+          .map((invasion) => invasion.id),
+      };
+      await this.buildUncoveredInterceptor(actionablePlan, invasions, s, {
         now, throttle, boatSpeed, warshipSpeed, attackRange,
       });
     }

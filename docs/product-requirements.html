@@ -157,6 +157,21 @@
   </li>
 </ul>
 
+<h2>Stable naval interception assignments</h2>
+
+<ul>
+  <li>
+    A Warship assigned to an incoming transport must retain that transport ID and commanded
+    interception target while both units remain live. Transport movement must not trigger repeated
+    A* planning or redirect the same Warship on every naval-planner interval.
+  </li>
+  <li>
+    A planning pass may emit at most one immediate movement order per Warship. The assignment is
+    released when the transport invasion ends or the assigned Warship is no longer active, after
+    which uncovered live invasions may be planned normally.
+  </li>
+</ul>
+
 <h2>Preemptive SAM construction</h2>
 
 <ul>

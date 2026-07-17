@@ -124,6 +124,14 @@ A* route is an intentional client-side divergence from the engine's HPA/
 smoothing pathfinder; the server still validates the water component when it
 receives the move intent.
 
+Once a Warship is dispatched, its assignment is keyed by the stable transport
+ID and retained while both units remain active. The moving transport must not
+trigger a fresh A* plan or a new patrol destination on every planning interval;
+the assignment is released only when the invasion or assigned Warship is no
+longer live. A single planning pass emits at most one immediate movement order
+per Warship; later sequential opportunities are reconsidered after the active
+assignment clears.
+
 ## Spawn-phase resource safety
 
 Spawn markers and the visual heatmap stay on the bounded coarse scorer. The

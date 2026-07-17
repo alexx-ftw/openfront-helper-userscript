@@ -124,6 +124,7 @@ const progressFromTick = Math.max(0, Number(process.env.OFH_PROGRESS_FROM_TICK ?
 const slowTickThresholdMs = Math.max(1, Number(process.env.OFH_SLOW_TICK_MS ?? 250));
 const stopWhenBotDies = process.env.OFH_STOP_WHEN_DEAD !== "0";
 const logIntents = process.env.OFH_LOG_INTENTS === "1";
+const logNaval = process.env.OFH_LOG_NAVAL === "1";
 let turnNumber = 0;
 let emittedIntents = 0;
 let hasEverBeenAlive = me?.isAlive() === true;
@@ -157,6 +158,11 @@ const sortedCounts = (counts: ReadonlyMap<string, number>) =>
 while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fatalError === null) {
   const decisionStartedAt = performance.now();
   const intents = await bot.decide();
+  if (logNaval) {
+    for (const entry of bot.drainNavalTrace()) {
+      console.warn(JSON.stringify({ ...entry, phase: "naval-trace", event: entry.phase }));
+    }
+  }
   const decisionMs = performance.now() - decisionStartedAt;
   emittedIntents += intents.length;
   countIntents(intents);

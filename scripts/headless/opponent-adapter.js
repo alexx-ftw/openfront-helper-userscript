@@ -143,6 +143,7 @@ function createBundledHarnessSource() {
   const exportHook = `
 window.__OFH_realOpponentHarness = {
   NationBot,
+  WarshipBehavior,
   createGameApi,
   state,
   DEFAULTS,
@@ -205,6 +206,7 @@ export class BundledOpponentBot {
     this.features = { ...(options.features ?? {}) };
     this.buildStructures = { ...(options.buildStructures ?? {}) };
     this.intentBuffer = [];
+    this.navalTrace = [];
     this.api = null;
     this.pageGame = null;
     this.nationBot = null;
@@ -223,6 +225,38 @@ export class BundledOpponentBot {
       gameId: this.gameID,
       playerId: this.clientID,
     });
+    if (process.env.OFH_LOG_NAVAL === "1") this.enableNavalTrace();
+  }
+
+  enableNavalTrace() {
+    const prototype = this.harness.internals.WarshipBehavior?.prototype;
+    if (!prototype || prototype.__headlessNavalTraceEnabled) return;
+    prototype.__headlessNavalTraceEnabled = true;
+    const originalMove = prototype.moveWarship;
+    prototype.moveWarship = (warship, tile) => {
+      this.navalTrace.push({
+        phase: "move",
+        tick: this.game.ticks(),
+        shipId: warship.id(),
+        tile,
+        caller: new Error().stack?.split("\n")[2]?.trim() ?? "unknown",
+      });
+      return originalMove.call(this.nationBot.warshipBehavior, warship, tile);
+    };
+    const originalAssign = prototype.assignNavalInterceptors;
+    prototype.assignNavalInterceptors = (plan, warships, state) => {
+      this.navalTrace.push({
+        phase: "assignment-plan",
+        tick: this.game.ticks(),
+        assignments: plan.assignments.map((assignment) => ({ ...assignment })),
+        retained: Array.from(state.invasionAssignments.entries()),
+      });
+      return originalAssign.call(this.nationBot.warshipBehavior, plan, warships, state);
+    };
+  }
+
+  drainNavalTrace() {
+    return this.navalTrace.splice(0);
   }
 
   async decide() {
@@ -231,6 +265,7 @@ export class BundledOpponentBot {
     }
     const harness = this.harness;
     configureHardMode(harness.internals.state, this);
+    if (process.env.OFH_LOG_NAVAL === "1") this.enableNavalTrace();
     if (harness.window.__OFH_realOpponentClock) {
       harness.window.__OFH_realOpponentClock.now = this.game.ticks() * 100;
     }
