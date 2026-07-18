@@ -127,10 +127,11 @@
    */
   const HYDROGEN_SAM_SILO_LEVEL_SUM_THRESHOLD = 1;
 
-  // A level-one SAM is the baseline atom interceptor. Once an opponent can
-  // launch a Hydrogen Bomb, immediately raise that first useful SAM one level
-  // before spending on economy or offense.
-  const HYDROGEN_SAM_MINIMUM_READY_LEVEL = 2;
+  // A completed external Silo can turn its first launch into an H-bomb before
+  // a low-level launcher has time to catch up. Once that capability exists,
+  // finish the best protective SAM to the top of the current upgrade ladder
+  // before discretionary economy or offense spending.
+  const HYDROGEN_SAM_MINIMUM_READY_LEVEL = 5;
 
   /** Any built hostile silo can already launch a missile at our structures. */
   const HOSTILE_SILO_SAM_COVERAGE_LEVEL_SUM_THRESHOLD = 1;
@@ -8927,8 +8928,21 @@
       };
     }
 
-    // Mandatory hostile-silo response: maximize total structure coverage first,
-    // then prefer tiles that add coverage beyond the existing SAM network.
+    samCriticalStructureWeight(structure) {
+      const type = structure?.type?.();
+      const level = Math.max(1, Math.floor(Number(structure?.level?.() ?? 1)));
+      if (!type || !Number.isFinite(level)) return 1;
+      const cost = this.safeStructureCost(type);
+      const costWeight = typeof cost === "bigint"
+        ? Number(cost / 250_000n)
+        : Math.floor(Number(cost) / 250_000);
+      return level * Math.max(1, Math.min(20, Number.isFinite(costWeight) ? costWeight : 1));
+    }
+
+    // Mandatory hostile-silo response: protect the highest-value *cluster*,
+    // not merely the largest count of cheap buildings. Weighted coverage is
+    // dominant; weighted closeness breaks ties toward the cluster's center so
+    // the same SAM retains useful coverage as its range rises through level 5.
     threatSamLauncherValue() {
       const game = this.game;
       const player = this.player;
@@ -8952,15 +8966,20 @@
       }
 
       const rangeSquared = range * range;
-      const structureCount = structures.length;
-      const structureTiles = [];
+      const structureEntries = [];
       for (const structure of structures) {
         if (!structure || typeof structure.tile !== "function") continue;
         {
           const tile = structure.tile();
-          if (tile !== null && tile !== undefined) structureTiles.push(tile);
+          if (tile !== null && tile !== undefined) {
+            structureEntries.push({
+              tile,
+              weight: this.samCriticalStructureWeight(structure),
+            });
+          }
         }
       }
+      const totalWeight = structureEntries.reduce((sum, entry) => sum + entry.weight, 0);
       const existingSamProfiles = (existingSams || [])
         .filter((sam) => {
         {
@@ -8983,13 +9002,16 @@
       return (tile) => {
         let totalCoverage = 0;
         let newCoverage = 0;
-        for (const structureTile of structureTiles) {
+        let centeredCoverage = 0;
+        for (const entry of structureEntries) {
+          const structureTile = entry.tile;
           let distanceSquared;
           {
             distanceSquared = game.euclideanDistSquared(tile, structureTile);
           }
           if (distanceSquared > rangeSquared) continue;
-          totalCoverage++;
+          totalCoverage += entry.weight;
+          centeredCoverage += entry.weight * Math.max(0, 1 - distanceSquared / rangeSquared);
 
           const alreadyCovered = existingSamProfiles.some((sam) => {
             {
@@ -8999,12 +9021,10 @@
               );
             }
           });
-          if (!alreadyCovered) newCoverage++;
+          if (!alreadyCovered) newCoverage += entry.weight;
         }
 
-        // The first term makes the literal structure count dominant without an
-        // arbitrary score constant; the second term breaks ties toward new cover.
-        return totalCoverage * (structureCount + 1) + newCoverage;
+        return totalCoverage * (totalWeight + 1) + newCoverage + centeredCoverage;
       };
     }
 

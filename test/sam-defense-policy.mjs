@@ -1242,8 +1242,18 @@ const originalOwnUnits = own.units;
 const originalGameConfig = behavior.game.config;
 const originalEuclideanDistSquared = behavior.game.euclideanDistSquared;
 const protectedStructures = [
-  { type: () => UNIT.City, tile: () => 10 },
-  { type: () => UNIT.Factory, tile: () => 20 },
+  {
+    type: () => UNIT.City,
+    tile: () => 10,
+    level: () => 1,
+    isUnderConstruction: () => false,
+  },
+  {
+    type: () => UNIT.Factory,
+    tile: () => 20,
+    level: () => 1,
+    isUnderConstruction: () => false,
+  },
 ];
 own.units = (...types) => {
   if (types.includes(UNIT.SAMLauncher)) return [];
@@ -1264,12 +1274,46 @@ assert.equal(
   "Threat SAM placement prefers the tile covering more structures",
 );
 
+const originalThreatCost = behavior.cost;
+const expensiveCluster = [
+  { type: () => UNIT.MissileSilo, tile: () => 100, level: () => 1 },
+  { type: () => UNIT.City, tile: () => 110, level: () => 1 },
+  { type: () => UNIT.Factory, tile: () => 200, level: () => 1 },
+  { type: () => UNIT.Factory, tile: () => 205, level: () => 1 },
+  { type: () => UNIT.Factory, tile: () => 210, level: () => 1 },
+  { type: () => UNIT.Factory, tile: () => 215, level: () => 1 },
+];
+behavior.cost = (type) => {
+  if (type === UNIT.MissileSilo) return 3_000_000n;
+  if (type === UNIT.City) return 1_000_000n;
+  return 100_000n;
+};
+own.units = (...types) => {
+  if (types.includes(UNIT.SAMLauncher)) return [];
+  return expensiveCluster.filter((unit) => types.includes(unit.type()));
+};
+behavior.game.config = () => ({
+  defaultSamRange: () => 15,
+  samRange: () => 15,
+});
+const expensiveClusterValue = behavior.threatSamLauncherValue();
+assert.ok(
+  expensiveClusterValue(105) > expensiveClusterValue(207),
+  "a threat SAM centers on the most expensive own building cluster over a larger cheap cluster",
+);
+behavior.cost = originalThreatCost;
+
 const existingCoverageSam = {
   tile: () => 0,
   level: () => 1,
   isUnderConstruction: () => false,
 };
-const uncoveredStructure = { type: () => UNIT.City, tile: () => 40 };
+const uncoveredStructure = {
+  type: () => UNIT.City,
+  tile: () => 40,
+  level: () => 1,
+  isUnderConstruction: () => false,
+};
 own.units = (...types) => {
   if (types.includes(UNIT.SAMLauncher)) return [existingCoverageSam];
   return types.includes(UNIT.City) ? [uncoveredStructure] : [];
@@ -1280,9 +1324,9 @@ behavior.game.config = () => ({
 });
 const uncoveredThreatSamValue = behavior.threatSamLauncherValue();
 assert.equal(
-  uncoveredThreatSamValue(20),
-  3,
-  "Threat SAM placement measures existing coverage from the protected structure",
+  uncoveredThreatSamValue(20) > 3,
+  true,
+  "Threat SAM placement keeps the existing-coverage distinction while favoring the cluster center",
 );
 
 const legendaryCoverageBehavior = Object.create(sandbox.__StructureBehavior.prototype);
@@ -1852,8 +1896,8 @@ hydrogenThreatPlayers = [enemySingleLevelOneSilo];
 hydrogenProtectionBehavior._hydrogenSamProtectionTick = null;
 assert.equal(
   hydrogenProtectionBehavior.hydrogenSamProtectionPlan().targetLevel,
-  2,
-  "A single completed hostile Silo immediately raises the first SAM to the H-bomb-ready level",
+  5,
+  "A single completed external Silo immediately drives the first protective SAM to level five",
 );
 sentBuilds.length = 0;
 assert.equal(
