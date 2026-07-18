@@ -8114,12 +8114,19 @@
         // Return all elements
         yield* a;
       } else {
-        // Sample `sampleSize` elements
-        const remaining = new Set(a);
-        while (sampleSize--) {
-          const t = this.random.randFromSet(remaining);
-          remaining.delete(t);
-          yield t;
+        // Sample uniformly without replacement.  The previous Set-based port
+        // path copied every ocean-border tile, then randFromSet walked that
+        // whole Set for each of the 25 picks. Mature coastlines consequently
+        // made a Port decision synchronously O(border × candidates). A lazy
+        // partial Fisher-Yates permutation is the same distribution while it
+        // stores only the sampled indices: O(candidates) time and memory.
+        const moved = new Map();
+        for (let index = 0; index < sampleSize; index++) {
+          const selectedIndex = this.random.nextInt(index, a.length);
+          const selected = moved.get(selectedIndex) ?? selectedIndex;
+          const replacement = moved.get(index) ?? index;
+          moved.set(selectedIndex, replacement);
+          yield a[selected];
         }
       }
     }

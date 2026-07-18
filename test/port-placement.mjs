@@ -367,7 +367,7 @@ async function portTiles({ ocean, allied = true } = {}) {
   behavior.game = scenario.handle.game;
   behavior.player = wrappedMe;
   behavior.random = {
-    randFromSet: (values) => values.values().next().value,
+    nextInt: (min) => min,
   };
   // A shared lake is deliberately present here to prove that the port filter
   // does not fall back to the broader shared-water predicate.
@@ -440,6 +440,28 @@ assert.deepEqual(
   Array.from(oceanBehavior.randCoastalTileArray(25)),
   [29],
   "port candidate selection keeps the ocean shore",
+);
+
+const largeCoastBehavior = Object.create(structureSandbox.__StructureBehavior.prototype);
+let largeCoastRandomCalls = 0;
+largeCoastBehavior.random = {
+  nextInt: (_min, max) => {
+    largeCoastRandomCalls++;
+    return max - 1;
+  },
+};
+const largeCoastSample = Array.from(
+  largeCoastBehavior.arraySampler(
+    Array.from({ length: 10_000 }, (_, index) => index),
+    25,
+  ),
+);
+assert.equal(largeCoastSample.length, 25);
+assert.equal(new Set(largeCoastSample).size, 25, "coastal samples never repeat a tile");
+assert.equal(
+  largeCoastRandomCalls,
+  25,
+  "large coastal sampling makes one bounded random draw per candidate",
 );
 
 const cachedOceanPortTiles = [29];
