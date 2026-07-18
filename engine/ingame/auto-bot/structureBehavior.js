@@ -3153,7 +3153,18 @@
       }
       if (candidates.length === 0) return null;
 
-      candidates.sort((left, right) => right.currentLevel - left.currentLevel);
+      // A defensive upgrade is only as valuable as the buildings that remain
+      // inside its eventual level-five envelope.  When more than one launcher
+      // exists, prefer the one centred on the most expensive connected clump;
+      // choosing the numerically highest level could otherwise keep improving
+      // an isolated coastal SAM while the economic core stays at level one.
+      candidates.sort((left, right) => {
+        const protectionDifference =
+          this.samCriticalCoverageScore(right.sam, targetLevel) -
+          this.samCriticalCoverageScore(left.sam, targetLevel);
+        if (protectionDifference !== 0) return protectionDifference;
+        return right.currentLevel - left.currentLevel;
+      });
       const selected = candidates[0];
       return {
         sam: selected.sam,
@@ -3256,6 +3267,43 @@
         if (sam.isUnderConstruction && sam.isUnderConstruction()) return false;
         return !sam.isActive || sam.isActive() !== false;
       }
+    }
+
+    samCriticalCoverageScore(sam, level) {
+      const tile = sam?.tile?.();
+      const config = this.game?.config?.();
+      if (tile === null || tile === undefined || !config) return 0;
+      const rangeSquared = this.samRangeSquared(config, level);
+      if (rangeSquared <= 0) return 0;
+      return this.samCriticalCoverageScoreForEntries(
+        tile,
+        rangeSquared,
+        this.samCriticalStructureEntries(),
+      );
+    }
+
+    samCriticalStructureEntries() {
+      const entries = [];
+      for (const type of SAM_PROTECTABLE_STRUCTURE_TYPES) {
+        for (const structure of this.player.units(type) || []) {
+          const tile = structure?.tile?.();
+          if (tile === null || tile === undefined) continue;
+          entries.push({ tile, weight: this.samCriticalStructureWeight(structure) });
+        }
+      }
+      return entries;
+    }
+
+    samCriticalCoverageScoreForEntries(tile, rangeSquared, entries) {
+      let score = 0;
+      for (const structure of entries) {
+        const distanceSquared = this.game.euclideanDistSquared(tile, structure.tile);
+        if (distanceSquared > rangeSquared) continue;
+        // Weight plus centred closeness keeps the upgrade on the heart of
+        // the valuable group, not merely its outer edge.
+        score += structure.weight * (2 - distanceSquared / rangeSquared);
+      }
+      return score;
     }
 
     samRangeSquared(config, level) {
@@ -7764,6 +7812,12 @@
             options.missileDefenseContext,
           );
         }
+        // The ordinary sampler is intentionally random for varied economy
+        // placement, but a first anti-missile site has one clear strategic
+        // purpose: sit in the heart of the most valuable compact group. Seed
+        // that deterministic group before the random fallback so its centre
+        // cannot disappear merely because it missed a 25-tile sample.
+        tiles = this.prependCriticalSamClusterTiles(tiles, candidateLimit);
         tiles = this.uniqueOwnedStructureTiles(tiles);
       }
       if (
@@ -7774,6 +7828,34 @@
         tiles = this.prependSamCoveredTiles(tiles, candidateLimit);
       }
       return tiles;
+    }
+
+    prependCriticalSamClusterTiles(tiles, candidateLimit) {
+      const config = this.game?.config?.();
+      const range = Number(config?.defaultSamRange?.());
+      if (!Number.isFinite(range) || range <= 0) return tiles;
+      const entries = this.samCriticalStructureEntries();
+      if (entries.length === 0) return tiles;
+      const rangeSquared = range * range;
+      const anchors = entries
+        .map((entry) => ({
+          tile: entry.tile,
+          score: this.samCriticalCoverageScoreForEntries(
+            entry.tile,
+            rangeSquared,
+            entries,
+          ),
+        }))
+        .sort((left, right) => right.score - left.score)
+        .map((entry) => entry.tile);
+      const merged = [];
+      const seen = new Set();
+      for (const tile of anchors.concat(tiles)) {
+        if (merged.length >= candidateLimit || seen.has(tile)) continue;
+        seen.add(tile);
+        merged.push(tile);
+      }
+      return merged;
     }
 
     prependActiveMissileRouteTiles(tiles, candidateLimit, context) {

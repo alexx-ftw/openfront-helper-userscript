@@ -2222,6 +2222,60 @@ assert.equal(
   "Joint coverage by existing SAMs does not request another physical site",
 );
 
+const criticalSamClusterBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+const criticalClusterSam = (tile, level) => ({
+  tile: () => tile,
+  level: () => level,
+  isUnderConstruction: () => false,
+  isActive: () => true,
+});
+const criticalClusterStructure = (type, tile, level = 1) => ({
+  type: () => type,
+  tile: () => tile,
+  level: () => level,
+});
+const expensiveClusterStructures = [
+  criticalClusterStructure(UNIT.City, 100, 3),
+  criticalClusterStructure(UNIT.Factory, 104, 3),
+  criticalClusterStructure(UNIT.Port, 108, 2),
+];
+const isolatedStructure = criticalClusterStructure(UNIT.City, 900, 1);
+const isolatedSam = criticalClusterSam(900, 4);
+const centralClusterSam = criticalClusterSam(104, 1);
+criticalSamClusterBehavior.player = {
+  units: (type) => {
+    if (type === UNIT.SAMLauncher) return [isolatedSam, centralClusterSam];
+    if (type === UNIT.City) return [expensiveClusterStructures[0], isolatedStructure];
+    if (type === UNIT.Factory) return [expensiveClusterStructures[1]];
+    if (type === UNIT.Port) return [expensiveClusterStructures[2]];
+    return [];
+  },
+};
+criticalSamClusterBehavior.game = {
+  euclideanDistSquared: (left, right) => (Number(left) - Number(right)) ** 2,
+  config: () => ({
+    defaultSamRange: () => 20,
+    samRange: (level) => Number(level) * 20,
+  }),
+};
+criticalSamClusterBehavior.safeStructureCost = (type) => {
+  if (type === UNIT.Factory) return 2_000_000n;
+  if (type === UNIT.Port) return 1_000_000n;
+  return 750_000n;
+};
+assert.deepEqual(
+  Array.from(criticalSamClusterBehavior.prependCriticalSamClusterTiles([900, 500], 4)),
+  [104, 100, 108, 900],
+  "a coverage-priority SAM seeds the weighted centre of the expensive building cluster before random tiles",
+);
+criticalSamClusterBehavior.shouldPrioritizeHydrogenSamProtection = () => true;
+criticalSamClusterBehavior.externalSiloLevelSumTarget = () => 1;
+assert.strictEqual(
+  criticalSamClusterBehavior.hydrogenSamProtectionPlan().sam,
+  centralClusterSam,
+  "level-five escalation upgrades the SAM covering the expensive core before an isolated higher-level launcher",
+);
+
 const originalGetPerceivedCost = behavior.getPerceivedCost;
 const originalStructureSpawnTile = behavior.structureSpawnTile;
 const originalGetTotalStructureDensity = behavior.getTotalStructureDensity;
