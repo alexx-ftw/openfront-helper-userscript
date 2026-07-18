@@ -216,7 +216,7 @@
   // Bound cumulative opening exposure without spending that entire allowance
   // in one intent. Each free-land attack is sized from its tile cost below.
   const EARLY_EXPAND_COMMIT = 0.6;
-  const EARLY_EXPAND_FOLLOWUP_COMMIT = 0.05;
+  const EARLY_EXPAND_FOLLOWUP_COMMIT = 0.1;
   const EARLY_EXPAND_MINIMUM_MARGIN = 1.25;
   const BUILD_THROTTLE_MS = 1800;
   const NUKE_THROTTLE_MS = 6000;
@@ -241,6 +241,10 @@
     tickInFlight: false,
     tickStartedAt: 0,
     tickGeneration: 0,
+    // Runtime safety pauses must never overwrite the user's persisted master
+    // toggle. In particular, reinjecting an updated userscript while the page
+    // is showing a public lobby must not save enabled=false.
+    runtimePausedAfterSlowTick: false,
     lastCombatMs: 0,
     lastPlayerAttackMs: 0,
     lastRetaliateMs: 0,

@@ -72,6 +72,10 @@
   // spawn probe (PORT-CONTRACT §Async #2). The src loops are unbounded
   // (findRandomBoatTarget 500 iters, etc.); we cap the worker calls.
   const BOAT_PROBE_CANDIDATES = 4;
+  // Nearby boat discovery can inspect every sampled coastal coordinate when
+  // no suitable landing exists. Keep its exact ordering, but yield between
+  // bounded coordinate batches so an empty coast cannot freeze the main loop.
+  const BOAT_NEARBY_SCAN_SLICE_OFFSETS = 256;
   // One opportunistic decision must not serially monopolize the worker with
   // every boat strategy. Each stage retains its normal ranked candidates, but
   // the stage itself advances only after its bounded probe batch is exhausted.
@@ -1582,7 +1586,7 @@
       const followUpFraction =
         typeof EARLY_EXPAND_FOLLOWUP_COMMIT === "number"
           ? EARLY_EXPAND_FOLLOWUP_COMMIT
-          : 0.05;
+          : 0.1;
       const followUpTroops = Math.max(minimum, ownTroops * followUpFraction);
       if (available >= followUpTroops) {
         return { available, livenessFollowUp: false };
@@ -1609,7 +1613,7 @@
       const followUpFraction =
         typeof EARLY_EXPAND_FOLLOWUP_COMMIT === "number"
           ? EARLY_EXPAND_FOLLOWUP_COMMIT
-          : 0.05;
+          : 0.1;
       const configured = Number(commitFraction);
       if (commitFraction !== null && Number.isFinite(configured)) {
         const bounded = Math.min(1, Math.max(0, configured));
@@ -5311,7 +5315,7 @@
     }
 
     async nearbyOpportunisticBoatTarget(shores) {
-      const { targets, scanCandidates } = this.scanNearbyTargets(shores);
+      const { targets, scanCandidates } = await this.scanNearbyTargets(shores);
       for (const target of targets) {
         if (this.boatTargetTaken(target.tile)) continue;
         const spawn = await withTimeout(
@@ -5626,7 +5630,14 @@
       if (context.targets.length > context.targetLimit) context.targets.pop();
     }
 
-    scanNearbyTargets(shore) {
+    shouldYieldNearbyBoatScan(offsetsSinceYield, offsetIndex, offsetCount) {
+      return (
+        offsetsSinceYield >= BOAT_NEARBY_SCAN_SLICE_OFFSETS &&
+        offsetIndex + 1 < offsetCount
+      );
+    }
+
+    async scanNearbyTargets(shore) {
       const targetLimit = state.settings.islandProbeMax || 4;
       const context = {
         radius: state.settings.islandScanRadius || 40,
@@ -5649,7 +5660,9 @@
         sampledShores.push(this.random.randElement(shore));
       }
       const offsets = this.nearbyBoatScanOffsets(context.radius, context.step);
-      for (const offset of offsets) {
+      let offsetsSinceYield = 0;
+      for (let offsetIndex = 0; offsetIndex < offsets.length; offsetIndex++) {
+        const offset = offsets[offsetIndex];
         const furthest = context.targets[context.targets.length - 1];
         // Process an entire equal-distance ring before stopping: otherwise a
         // later tie could be the stable preferred target. Every later offset
@@ -5669,6 +5682,11 @@
             context,
           );
           if (record) this.insertNearbyBoatTarget(context, record);
+        }
+        offsetsSinceYield++;
+        if (this.shouldYieldNearbyBoatScan(offsetsSinceYield, offsetIndex, offsets.length)) {
+          offsetsSinceYield = 0;
+          await yieldEarlyGameTopologyWork();
         }
       }
       return {

@@ -1468,6 +1468,7 @@ const targetSandbox = {
   PlayerType: { Bot: "Bot", Human: "Human", Nation: "Nation" },
   state: { settings: { winFixes: true, features: { boat: true } }, earlyGame: {}, stats: {} },
   EARLY_EXPAND_COMMIT: 0.6,
+  EARLY_EXPAND_FOLLOWUP_COMMIT: 0.1,
   withTimeout: (value) => Promise.resolve(value),
   WORKER_TIMEOUT_MS: 1000,
   requestMapOverlayLoop: () => {
@@ -2342,7 +2343,7 @@ nearbyBoatScanBehavior.nearbyBoatTargetRecord = (tile, dx, dy) => {
   nearbyBoatCoordinatesInspected++;
   return { tile, dist: dx * dx + dy * dy, owned: false, fallout: false };
 };
-const nearbyBoatScan = nearbyBoatScanBehavior.scanNearbyTargets([0]);
+const nearbyBoatScan = await nearbyBoatScanBehavior.scanNearbyTargets([0]);
 assert.equal(nearbyBoatScan.targets.length, 4);
 assert.ok(
   nearbyBoatCoordinatesInspected < 81,
@@ -2594,13 +2595,13 @@ minimumTerraNulliusBehavior.getEarlyGameSpendableTroops = () => 99000;
 const minimumTerraNulliusTarget = { isPlayer: () => false };
 assert.equal(
   minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(minimumTerraNulliusTarget),
-  5000,
-  "generic TerraNullius land attacks use at least 5% of the current army",
+  10000,
+  "generic TerraNullius land attacks use at least 10% of the current army",
 );
 assert.equal(
   minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(minimumTerraNulliusTarget, 2),
-  5000,
-  "generic expansion still uses 5% when a preferred frontier tile is known",
+  10000,
+  "generic expansion still uses 10% when a preferred frontier tile is known",
 );
 assert.equal(
   minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(minimumTerraNulliusTarget, null, 99000),
@@ -2619,8 +2620,8 @@ assert.equal(
     99000,
     0.6,
   ),
-  5000,
-  "the opening TerraNullius payload keeps the 5% liveness minimum while 60% remains only its ceiling",
+  10000,
+  "the opening TerraNullius payload keeps the 10% liveness minimum while 60% remains only its ceiling",
 );
 
 const radioactiveBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
