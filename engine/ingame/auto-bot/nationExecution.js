@@ -485,7 +485,17 @@
       }
       const others = game.players().filter((player) =>
         player.smallID() !== this.player.smallID() && player.hasSpawned());
-      return { game, area, others, minDistance, width: game.width(), height: game.height() };
+      // The heatmap's asynchronous exact ranker and its bounded fallback both
+      // select points inside this hull. Keep the final snap/search inside it
+      // too: an invalid scored point must not be repaired by moving outside
+      // the geometry formed by already-spawned teammates.
+      const teamPolyhedron = typeof getTeamSpawnPolyhedron === "function"
+        ? getTeamSpawnPolyhedron(game, this.player)
+        : null;
+      return {
+        game, area, others, minDistance, teamPolyhedron,
+        width: game.width(), height: game.height(),
+      };
     }
 
     isSpawnTooClose(tile, constraints) {
@@ -498,9 +508,12 @@
     }
 
     isValidSpawnTile(tile, constraints) {
-      const { game, area } = constraints;
+      const { game, area, teamPolyhedron } = constraints;
       if (tile == null || !game.isLand(tile) || game.hasOwner(tile) || game.isBorder(tile)) return false;
       if (game.magnitude && game.magnitude(tile) === 31) return false;
+      if (teamPolyhedron && typeof isPointInsideTeamPolyhedron === "function") {
+        if (!isPointInsideTeamPolyhedron(game.x(tile), game.y(tile), teamPolyhedron)) return false;
+      }
       if (area) {
         const x = game.x(tile);
         const y = game.y(tile);

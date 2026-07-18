@@ -137,10 +137,10 @@ assert.equal(
   "large maps must not allocate the exact map-wide candidate index",
 );
 
-const makePlayer = (type, x, y, id) => ({
+const makePlayer = (type, x, y, id, { spawned = type === "HUMAN" } = {}) => ({
   type: () => type,
   isAlive: () => true,
-  hasSpawned: () => type === "HUMAN",
+  hasSpawned: () => spawned,
   nameLocation: () => ({ x, y }),
   smallID: () => id,
 });
@@ -175,6 +175,29 @@ assert.ok(
   fallback.scores[1].score > fallback.scores[0].score,
   "the robust fallback must override the legacy additive score in this regression",
 );
+
+const geometryMe = makePlayer("HUMAN", 0, 0, 98);
+geometryMe.isOnSameTeam = (player) => [10, 11, 12].includes(player.smallID());
+harness.setPlayers([
+  geometryMe,
+  makePlayer("NATION", 80, 80, 10, { spawned: true }),
+  makePlayer("NATION", 180, 80, 11, { spawned: true }),
+  makePlayer("NATION", 130, 180, 12, { spawned: true }),
+]);
+const geometryFallback = harness.computeDynamicScores(
+  { width: () => 600, height: () => 300 },
+  [
+    { x: 130, y: 120, staticScore: 0.1, freeLandScore: 1 },
+    { x: 500, y: 120, staticScore: 100, freeLandScore: 1 },
+  ],
+  geometryMe,
+);
+assert.equal(
+  geometryFallback.topSpots[0].x,
+  130,
+  "the fast fallback rejects a richer position outside the Nation-team hull",
+);
+assert.equal(geometryFallback.scores.length, 1);
 
 // The live exact selector must schedule its first range asynchronously. This
 // protects the spawn phase from reintroducing a synchronous full-map pass when

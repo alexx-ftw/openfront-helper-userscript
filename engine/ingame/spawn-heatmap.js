@@ -719,14 +719,19 @@ function isPointInsideTeamPolyhedron(x, y, polygon) {
 }
 
 function classifySpawnPlayer(player, context) {
-  {
-    const location = eligibleHumanSpawnLocation(player, context.mySid);
-    if (!location) return;
-    const point = { x: location.x, y: location.y };
-    if (spawnPlayersShareClan(player, context)) context.clanSpawns.push(point);
-    const teammate = spawnPlayersAreTeammates(context.me, player);
-    (teammate ? context.teamSpawns : context.enemySpawns).push(point);
+  const teammate = spawnPlayersAreTeammates(context.me, player);
+  let location = eligibleHumanSpawnLocation(player, context.mySid);
+  // The fast fallback must model the same team geometry as exact ranking.
+  // In Teams games Nation teammates are already placed while human players
+  // are still selecting, so omitting them lets the fallback escape the team
+  // hull before the asynchronous exact pass has completed.
+  if (!location && teammate && player?.isAlive?.() && player.hasSpawned?.()) {
+    location = getSpawnPlayerLocation(player);
   }
+  if (!location) return;
+  const point = { x: location.x, y: location.y };
+  if (spawnPlayersShareClan(player, context)) context.clanSpawns.push(point);
+  (teammate ? context.teamSpawns : context.enemySpawns).push(point);
 }
 
 function eligibleHumanSpawnLocation(player, excludedSmallId) {
@@ -890,9 +895,17 @@ function computeDynamicScores(game, staticCandidates, me) {
     clanProximityScore: typeof objectiveApi?.clanProximityScore === "function"
       ? objectiveApi.clanProximityScore : null,
     teamCentroid: spawnCentroid(groups.teamSpawns),
+    teamPolyhedron: buildLargestTeamPolyhedron(groups.teamSpawns),
   };
 
-  const out = staticCandidates.map((candidate) => evaluateDynamicSpawnCandidate(candidate, context));
+  // The exact ranker rejects exterior candidates. The bounded fallback runs
+  // before that asynchronous pass is ready, so it must enforce the identical
+  // hard geometry rule rather than merely adding a team-proximity score.
+  const eligibleCandidates = context.teamPolyhedron
+    ? staticCandidates.filter((candidate) =>
+      isPointInsideTeamPolyhedron(candidate.x, candidate.y, context.teamPolyhedron))
+    : staticCandidates;
+  const out = eligibleCandidates.map((candidate) => evaluateDynamicSpawnCandidate(candidate, context));
   const maxScore = out.reduce((maximum, candidate) => Math.max(maximum, candidate.score), 0);
 
   out.sort((left, right) => compareDynamicSpawnCandidates(left, right, objectiveApi));
@@ -1009,6 +1022,13 @@ function collectExactSpawnPoints(game, me) {
     enemySpawns, teamSpawns, clanSpawns, tribeLocs, nationLocs,
     signature: exactSpawnSignature(context),
   };
+}
+
+// Shared by exact ranking, the bounded fallback and NationBot's final snap.
+// A hull exists only with three non-collinear teammates; with fewer anchors
+// there is no enclosed spawn region to impose as a hard constraint.
+function getTeamSpawnPolyhedron(game, me) {
+  return buildLargestTeamPolyhedron(collectExactSpawnPoints(game, me).teamSpawns);
 }
 
 function insertExactSpawnCandidate(best, candidate) {
