@@ -5658,10 +5658,30 @@
     }
 
     // findIncomingAttackPlayer — AiAttackBehavior.
-    findIncomingAttackPlayer() {
-      let incomingAttacks = this.player
+    incomingHostileAttacks() {
+      if (this.player === null) return [];
+      return this.player
         .incomingAttacks()
         .filter((attack) => !this.player.isFriendly(attack.attacker()));
+    }
+
+    // Aggregate pressure is deliberately separate from the single strongest
+    // attacker used as the counterattack target. Structure policy must see a
+    // coordinated attack from several Nations as one siege, rather than wait
+    // for any one of them to cross an arbitrary per-attacker threshold.
+    incomingHostileAttackPressure() {
+      if (this.player === null) return 0;
+      const ownTroops = Math.max(0, Number(this.player.troops?.()) || 0);
+      const incomingTroops = this.incomingHostileAttacks().reduce(
+        (total, attack) => total + Math.max(0, Number(attack.troops?.()) || 0),
+        0,
+      );
+      if (incomingTroops === 0) return 0;
+      return ownTroops > 0 ? incomingTroops / ownTroops : Infinity;
+    }
+
+    findIncomingAttackPlayer() {
+      let incomingAttacks = this.incomingHostileAttacks();
       // Faithful mode keeps the upstream Nation/Human policy. Win-fix mode must
       // also defend against tribes because their attacks consume the same land
       // and troops as attacks from Nations and Humans.

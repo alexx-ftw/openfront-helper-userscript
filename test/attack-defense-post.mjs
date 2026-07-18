@@ -37,6 +37,36 @@ executeClassicScript(`${source}\nglobalThis.AttackBehavior = AttackBehavior;`, s
 assert.equal(typeof sandbox.calculateDefensePostAttackProfile, "function");
 assert.equal(typeof sandbox.AttackBehavior, "function");
 
+const hostileAttackPressureBehavior = Object.create(sandbox.AttackBehavior.prototype);
+hostileAttackPressureBehavior.player = {
+  troops: () => 500_000,
+  isFriendly: () => false,
+  incomingAttacks: () => [
+    { attacker: () => ({}), troops: () => 1_200_000 },
+    { attacker: () => ({}), troops: () => 1_300_000 },
+  ],
+};
+assert.equal(
+  hostileAttackPressureBehavior.incomingHostileAttackPressure(),
+  5,
+  "coordinated hostile attacks are aggregated for siege-defense escalation",
+);
+hostileAttackPressureBehavior.player.incomingAttacks = () => [];
+assert.equal(
+  hostileAttackPressureBehavior.incomingHostileAttackPressure(),
+  0,
+  "no hostile attacks means no defensive-escalation pressure",
+);
+hostileAttackPressureBehavior.player.troops = () => 0;
+hostileAttackPressureBehavior.player.incomingAttacks = () => [
+  { attacker: () => ({}), troops: () => 1 },
+];
+assert.equal(
+  hostileAttackPressureBehavior.incomingHostileAttackPressure(),
+  Infinity,
+  "an inbound attack against an exhausted force remains an overwhelming siege",
+);
+
 const overlapping = sandbox.calculateDefensePostAttackProfile({
   frontTiles: [0, 10, 30, 31],
   defensePosts: [{ tile: 0 }, { tile: 0 }],

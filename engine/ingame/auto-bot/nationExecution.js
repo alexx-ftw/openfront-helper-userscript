@@ -18,6 +18,12 @@
 
 "use strict";
 
+  // A coordinated invasion needs construction retries at the defensive combat
+  // cadence. Routine probes still retain the ordinary attack-rate cadence, so
+  // they cannot crowd out economy or create a Defense Post for every scout.
+  const OVERWHELMING_INCOMING_ATTACK_RATIO = 2;
+  const OVERWHELMING_DEFENSE_STRUCTURE_INTERVAL_TICKS = 3;
+
   class NationBot {
     constructor(game, opts) {
       this.mg = game;
@@ -197,6 +203,15 @@
       return String(attacker?.id?.() ?? "hostile");
     }
 
+    incomingDefenseStructureInterval() {
+      const pressure = Number(
+        this.attackBehavior.incomingHostileAttackPressure?.(),
+      );
+      return pressure >= OVERWHELMING_INCOMING_ATTACK_RATIO
+        ? OVERWHELMING_DEFENSE_STRUCTURE_INTERVAL_TICKS
+        : this.attackRate;
+    }
+
     async handleIncomingDefense(ticks, profile, tickGeneration) {
       if (!state.settings.winFixes) return false;
       const attacker = this.attackBehavior.findIncomingAttackPlayer();
@@ -218,7 +233,9 @@
       }
       const structureDue =
         this.feat("build") &&
-        (newThreat || ticks - this.lastIncomingDefenseStructureTick >= this.attackRate);
+        (newThreat ||
+          ticks - this.lastIncomingDefenseStructureTick >=
+            this.incomingDefenseStructureInterval());
       if (structureDue) {
         this.lastIncomingDefenseStructureTick = ticks;
         await autoBotProfileAsyncPhase(profile, "incoming-defense-structures", () =>
