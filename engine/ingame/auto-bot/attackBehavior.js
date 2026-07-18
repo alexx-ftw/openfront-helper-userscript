@@ -106,7 +106,11 @@
   // The profiled strategic cadence is 19 game ticks. Keep the complete graph
   // through two decisions (rather than rebuilding it every other decision),
   // while a changed live tribe-id signature still invalidates it immediately.
-  const EARLY_GAME_TRIBE_TOPOLOGY_CACHE_TICKS = 40;
+  // Topology changes immediately when a tribe enters/leaves the membership
+  // signature. Between those changes, refreshing full border adjacency every
+  // four seconds created 250ms+ opening stalls on dense maps, so retain the
+  // coherent graph for twelve seconds instead.
+  const EARLY_GAME_TRIBE_TOPOLOGY_CACHE_TICKS = 120;
   const EARLY_GAME_TRIBE_TOPOLOGY_MIN_SLICE_TILES = 128;
   const EARLY_GAME_TRIBE_TOPOLOGY_MAX_SLICE_TILES = 2048;
   const EARLY_GAME_TRIBE_TOPOLOGY_SLICE_MS = 4;

@@ -2673,11 +2673,11 @@ assert.equal(
   firstTopologyBorderFetches,
   "the complete topology remains reusable through two profiled strategic decisions",
 );
-targetTick = 41;
+targetTick = 121;
 await targetBehavior.getEarlyGameTribeCandidates();
 assert.ok(
   topologyBorderFetches > firstTopologyBorderFetches,
-  "the bounded topology cache refreshes after its two-decision window",
+  "the bounded topology cache refreshes after its twelve-second window",
 );
 targetTick = 1;
 assert.equal(
