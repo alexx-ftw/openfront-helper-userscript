@@ -3612,9 +3612,10 @@
     async getEarlyGameTribeCandidates(profile = null) {
       const otherPlayers = this.game.players();
       const mySid = this.player.smallID();
-      const competitorProfiles = this.getEarlyGameCompetitorProfiles(
-        otherPlayers,
-        mySid,
+      const competitorProfiles = await profileAttackAsync(
+        profile,
+        "tribes-competitor-profiles",
+        () => this.getEarlyGameCompetitorProfiles(otherPlayers, mySid),
       );
       const {
         nearbyTribes,
@@ -4038,20 +4039,28 @@
     }
 
     // Keep a bounded, best-effort profile of how visible rivals are expanding.
-    getEarlyGameCompetitorProfiles(players, mySid) {
+    async getEarlyGameCompetitorProfiles(players, mySid) {
       const profiles = [];
       const seen = new Set();
       const tick = this.earlyGameCompetitorTick();
+      let sliceStartedAt = earlyGameTopologyNow();
       for (const other of players ?? []) {
-        {
-          const profile = this.earlyGameCompetitorProfile(other, mySid, tick);
-          if (!profile) continue;
+        const profile = this.earlyGameCompetitorProfile(other, mySid, tick);
+        if (profile) {
           profiles.push(profile);
           seen.add(profile.sid);
+        }
+        if (shouldYieldEarlyGameTribeNodes(sliceStartedAt)) {
+          await yieldEarlyGameTopologyWork();
+          sliceStartedAt = earlyGameTopologyNow();
         }
       }
       for (const sid of this.earlyFoodMovement.keys()) {
         if (!seen.has(sid)) this.earlyFoodMovement.delete(sid);
+        if (shouldYieldEarlyGameTribeNodes(sliceStartedAt)) {
+          await yieldEarlyGameTopologyWork();
+          sliceStartedAt = earlyGameTopologyNow();
+        }
       }
       return profiles;
     }

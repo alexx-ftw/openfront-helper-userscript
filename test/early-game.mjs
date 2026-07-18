@@ -2130,6 +2130,11 @@ assert.deepEqual(
 );
 assert.equal(incrementalFoodRaceById.size, 2);
 assert.match(attackSource, /await profileAttackAsync\([\s\S]*tribes-sampling-nodes/);
+assert.match(
+  attackSource,
+  /await profileAttackAsync\([\s\S]*tribes-competitor-profiles/,
+  "competitor profiling yields before the full tribe topology pass",
+);
 assert.match(attackSource, /shouldYieldEarlyGameTribeNodes/);
 
 let contesterLocationReads = 0;
