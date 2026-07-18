@@ -1416,12 +1416,29 @@
         return [];
       }
 
+      return this.getTerraNulliusFrontierSnapshot().frontier;
+    }
+
+    getTerraNulliusFrontierSnapshot() {
+      const border = this.player?.borderTiles?.() ?? [];
+      const tick = this.currentAttackDecisionTick();
+      const cached = this.terraNulliusFrontierCache;
+      if (cached?.tick === tick && cached.border === border) return cached;
+
       const frontier = [];
+      const attackableFrontier = [];
       const seen = new Set();
-      for (const borderTile of this.player?.borderTiles?.() ?? []) {
-        this.appendTerraNulliusFrontierNeighbors(borderTile, seen, frontier);
+      for (const borderTile of border) {
+        for (const tile of this.game.neighbors(borderTile) ?? []) {
+          if (seen.has(tile)) continue;
+          seen.add(tile);
+          if (this.isAttackableTerraNulliusTile(tile)) attackableFrontier.push(tile);
+          if (this.terraNulliusTileIsEligible(tile, true)) frontier.push(tile);
+        }
       }
-      return frontier;
+      const snapshot = { tick, border, frontier, attackableFrontier };
+      this.terraNulliusFrontierCache = snapshot;
+      return snapshot;
     }
 
     terraNulliusEngineAttackLoss(target, tile, attackTroops) {
@@ -6796,14 +6813,7 @@
 
     // hasLandBorderWithTerraNullius — AiAttackBehavior (private).
     hasLandBorderWithTerraNullius() {
-      for (const border of this.player.borderTiles()) {
-        for (const neighbor of this.game.neighbors(border)) {
-          if (this.isAttackableTerraNulliusTile(neighbor)) {
-            return true;
-          }
-        }
-      }
-      return false;
+      return this.getTerraNulliusFrontierSnapshot().attackableFrontier.length > 0;
     }
 
     // Keep the client-side Terra Nullius gate identical to AttackExecution:

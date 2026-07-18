@@ -1616,6 +1616,43 @@ assert.deepEqual(
 );
 assert.equal(cachedTopologyWorkerCalls, 1);
 
+const cachedTerraFrontierBehavior = Object.create(sandbox.AttackBehavior.prototype);
+let terraFrontierTick = 40;
+let terraFrontierNeighborReads = 0;
+let terraFrontierBorder = [1, 2];
+cachedTerraFrontierBehavior.player = { borderTiles: () => terraFrontierBorder };
+cachedTerraFrontierBehavior.game = {
+  ticks: () => terraFrontierTick,
+  neighbors: (tile) => {
+    terraFrontierNeighborReads++;
+    return [tile + 100];
+  },
+  isLand: () => true,
+  hasOwner: () => false,
+  isImpassable: () => false,
+};
+assert.equal(cachedTerraFrontierBehavior.hasLandBorderWithTerraNullius(), true);
+assert.deepEqual(
+  Array.from(cachedTerraFrontierBehavior.getTerraNulliusFrontierTiles()),
+  [101, 102],
+  "the exact frontier remains available for the following troop-floor calculation",
+);
+assert.equal(
+  terraFrontierNeighborReads,
+  2,
+  "the opening presence check and troop-floor read share one frontier scan per decision snapshot",
+);
+terraFrontierTick++;
+cachedTerraFrontierBehavior.getTerraNulliusFrontierTiles();
+assert.equal(terraFrontierNeighborReads, 4, "a later decision rebuilds its frontier");
+terraFrontierBorder = [1, 2];
+cachedTerraFrontierBehavior.getTerraNulliusFrontierTiles();
+assert.equal(
+  terraFrontierNeighborReads,
+  6,
+  "a new border snapshot rebuilds its frontier immediately",
+);
+
 const impassableTerraBehavior = Object.create(sandbox.AttackBehavior.prototype);
 const impassableTerraGame = {
   neighbors: () => [2],
