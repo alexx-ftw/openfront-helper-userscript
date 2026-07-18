@@ -77,6 +77,41 @@ assert.equal(
   "function",
   "Planner exposes the hostile SAM-capacity parity helper",
 );
+const activeMissileCapacityFallbackBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+activeMissileCapacityFallbackBehavior.game = {
+  config: () => ({ isUnitDisabled: () => false }),
+};
+activeMissileCapacityFallbackBehavior.missileDefenseSignalSnapshot = () => ({
+  hasActiveHostileMissile: true,
+});
+activeMissileCapacityFallbackBehavior.activeMissileDefenseContext = () => ({});
+activeMissileCapacityFallbackBehavior.legendaryDefenseEvaluation = () => ({
+  hasThreats: true,
+  fullyDefended: false,
+});
+activeMissileCapacityFallbackBehavior.uncoveredActiveMirvDemands = () => [];
+activeMissileCapacityFallbackBehavior.maybeUpgradeMissileDefenseSam = async () => false;
+activeMissileCapacityFallbackBehavior.activeMissilePendingSamImproves = () => false;
+activeMissileCapacityFallbackBehavior.maybeSpawnStructure = async () => false;
+activeMissileCapacityFallbackBehavior.hydrogenSamProtectionPlan = () => ({
+  currentLevel: 2,
+  targetLevel: 5,
+});
+let activeMissileCapacityUpgradeAttempts = 0;
+activeMissileCapacityFallbackBehavior.maybeUpgradePlannedSam = async (plan) => {
+  activeMissileCapacityUpgradeAttempts++;
+  return plan.targetLevel === 5;
+};
+assert.equal(
+  await activeMissileCapacityFallbackBehavior.handleActiveMissileSamMaximumPriority(),
+  true,
+  "an unsolved active missile falls through to the level-five external-Silo SAM upgrade",
+);
+assert.equal(
+  activeMissileCapacityUpgradeAttempts,
+  1,
+  "active-missile handling attempts the capacity upgrade exactly once",
+);
 const emergencyTileCacheBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 let emergencyTileEvaluationCalls = 0;
 emergencyTileCacheBehavior.activeMissileSamConstructionImproves = () => {
@@ -3120,6 +3155,7 @@ const originalActiveMissileContext = behavior.activeMissileDefenseContext;
 const originalDefenseEvaluation = behavior.legendaryDefenseEvaluation;
 const originalMaybeUpgradeMissileDefenseSam = behavior.maybeUpgradeMissileDefenseSam;
 const originalActiveMissileMaybeSpawnStructure = behavior.maybeSpawnStructure;
+const originalActiveMissileHydrogenPlan = behavior.hydrogenSamProtectionPlan;
 behavior.missileDefenseSignalSnapshot = () => ({ hasActiveHostileMissile: true });
 behavior.activeMissileDefenseContext = () => ({
   threats: [{ inFlight: true }],
@@ -3133,6 +3169,7 @@ behavior.maybeUpgradeMissileDefenseSam = async (context) => {
   activeMissileUpgradeContext = context;
   return false;
 };
+behavior.hydrogenSamProtectionPlan = () => null;
 let activeMissileSpawnOptions = null;
 behavior.maybeSpawnStructure = async (type, options) => {
   assert.equal(type, UNIT.SAMLauncher, "Active missile defense only requests a SAM");
@@ -3429,6 +3466,7 @@ behavior.activeMissileDefenseContext = originalActiveMissileContext;
 behavior.legendaryDefenseEvaluation = originalDefenseEvaluation;
 behavior.maybeUpgradeMissileDefenseSam = originalMaybeUpgradeMissileDefenseSam;
 behavior.maybeSpawnStructure = originalActiveMissileMaybeSpawnStructure;
+behavior.hydrogenSamProtectionPlan = originalActiveMissileHydrogenPlan;
 
 // The dedicated hostile-silo SAM path is covered above; the wiring tests can
 // now exercise the proactive parity branch before ordinary construction.

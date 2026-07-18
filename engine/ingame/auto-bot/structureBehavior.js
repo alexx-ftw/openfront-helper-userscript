@@ -704,7 +704,11 @@
       // The missile has a fixed deadline. Reserve the whole construction slot
       // until a geometrically useful SAM can be afforded and placed; spending
       // it on a Port/Warship/economy action can make the interception impossible.
-      return (await this.maybeSpawnStructure(UNIT.SAMLauncher, {
+      return this.resolveActiveMissileSamFallback(context);
+    }
+
+    async resolveActiveMissileSamFallback(context) {
+      if (await this.maybeSpawnStructure(UNIT.SAMLauncher, {
         allowPreemptiveSam: true,
         useActualCost: true,
         forceNewStructure: true,
@@ -714,7 +718,26 @@
         probeLimit: STRUCTURE_PLACEMENT_CANDIDATE_LIMIT,
         probeTimeoutMs: HOSTILE_SILO_SAM_PROBE_TIMEOUT_MS,
         parallelProbeCount: DEFENSIVE_SAM_PROBE_CONCURRENCY,
-      })) === true;
+      })) {
+        return true;
+      }
+
+      // A trajectory-local placement failure must not hide the broader Silo
+      // capacity response. In particular, an already-built level-one SAM may
+      // be unable to improve this missile's geometry but still needs to reach
+      // the external-Silo target before the next launch. Previously this path
+      // returned false here, which starved the level-five upgrade behind every
+      // active missile that could not be solved by a new launcher.
+      const capacityPlan = this.hydrogenSamProtectionPlan?.();
+      if (
+        capacityPlan !== null &&
+        capacityPlan !== undefined &&
+        capacityPlan.targetLevel > capacityPlan.currentLevel &&
+        (await this.maybeUpgradePlannedSam(capacityPlan))
+      ) {
+        return true;
+      }
+      return false;
     }
 
     activeMissilePendingSamImproves(
