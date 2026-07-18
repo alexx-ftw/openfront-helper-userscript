@@ -248,6 +248,30 @@ const enclosed = loadScorer({
 assert.equal(enclosed[0].x, 300, "spawn candidates outside the team polyhedron must be rejected");
 assert.equal(enclosed[0].teamPolyhedronScore, 1);
 
+const nationTeamMe = makePlayer("HUMAN", 300, 150, 40);
+nationTeamMe.isOnSameTeam = (player) => [41, 42, 43].includes(player.smallID());
+const nationTeamGeometry = loadScorer({
+  width: enclosedWidth,
+  height: 300,
+  candidates: [
+    { ref: 150 * enclosedWidth + 300, x: 300, y: 150 },
+    { ref: 150 * enclosedWidth + 500, x: 500, y: 150 },
+  ],
+  players: [
+    nationTeamMe,
+    makePlayer("NATION", 200, 80, 41, { spawned: true }),
+    makePlayer("NATION", 400, 80, 42, { spawned: true }),
+    makePlayer("NATION", 300, 240, 43, { spawned: true }),
+  ],
+  me: nationTeamMe,
+});
+assert.equal(
+  nationTeamGeometry[0].x,
+  300,
+  "spawn geometry includes already-spawned Nation teammates instead of placing us outside their hull",
+);
+assert.equal(nationTeamGeometry[0].teamPolyhedronScore, 1);
+
 const diverseWidth = 600;
 const diverse = loadScorer({
   width: diverseWidth,

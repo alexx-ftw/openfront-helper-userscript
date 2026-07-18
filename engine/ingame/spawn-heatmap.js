@@ -929,7 +929,12 @@ function collectExactEntityLocation(player, collections) {
 }
 
 function collectExactHumanLocation(player, context) {
-  if (getSpawnPlayerType(player) !== "HUMAN") return;
+  const teammate = spawnPlayersAreTeammates(context.me, player);
+  // Spawn geometry is a team property, not a human-only property. In Teams
+  // games Nation teammates are already placed and can be the only reliable
+  // anchors while humans are still selecting their spawn. Keep non-team AI out
+  // of the enemy-spawn model, but include every spawned teammate in the hull.
+  if (getSpawnPlayerType(player) !== "HUMAN" && !teammate) return;
   const key = spawnPointKey(player);
   if (!key || context.ownKeys.has(key) || !player.hasSpawned?.()) return;
   const location = getSpawnPlayerLocation(player);
@@ -937,8 +942,7 @@ function collectExactHumanLocation(player, context) {
   context.liveKeys.add(key);
   const point = { x: location.x, y: location.y };
   if (spawnPlayersShareClan(player, context)) context.clanSpawns.push(point);
-  const target = spawnPlayersAreTeammates(context.me, player)
-    ? context.teamSpawns : context.enemySpawns;
+  const target = teammate ? context.teamSpawns : context.enemySpawns;
   target.push(point);
 }
 
