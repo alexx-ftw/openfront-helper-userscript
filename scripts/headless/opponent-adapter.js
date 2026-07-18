@@ -313,6 +313,40 @@ export class BundledOpponentBot {
         return emitted;
       };
     }
+    const originalDefensePostFallbackTiles = behavior.defensePostFallbackTiles;
+    if (typeof originalDefensePostFallbackTiles === "function") {
+      behavior.defensePostFallbackTiles = (...args) => {
+        const tiles = originalDefensePostFallbackTiles.apply(behavior, args);
+        this.structureTrace.push({
+          kind: "defense-post-fallback",
+          tick: this.game.ticks(),
+          candidates: tiles.length,
+        });
+        return tiles;
+      };
+    }
+    const originalTryBuildDefensePost = behavior.tryBuildDefensePost;
+    if (typeof originalTryBuildDefensePost === "function") {
+      behavior.tryBuildDefensePost = async () => {
+        const needed = behavior.defensePostNeeded?.() === true;
+        const before = (this.pageGame.myPlayer()?.units?.("Defense Post") ?? []).length;
+        const tick = this.game.ticks();
+        const rawGold = this.pageGame.myPlayer()?.gold?.();
+        const gold = rawGold === null || rawGold === undefined ? null : String(rawGold);
+        const emitted = await originalTryBuildDefensePost.call(behavior);
+        if (needed || emitted) {
+          this.structureTrace.push({
+            kind: "defense-post-attempt",
+            tick,
+            emitted,
+            gold,
+            before,
+            after: (this.pageGame.myPlayer()?.units?.("Defense Post") ?? []).length,
+          });
+        }
+        return emitted;
+      };
+    }
   }
 
   drainStructureTrace() {

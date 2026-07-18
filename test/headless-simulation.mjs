@@ -111,6 +111,8 @@ assert.match(batch, /OFH_SIM_WORKERS/);
 assert.match(adapter, /window\.__OFH_deadlineNow = hostDeadlineNow/);
 assert.match(adapter, /sam-upgrade-plan/);
 assert.match(adapter, /targetLevel: plan\?\.targetLevel/);
+assert.match(adapter, /defense-post-fallback/);
+assert.match(adapter, /defense-post-attempt/);
 assert.match(adapter, /beginAutoBotProfileTick/);
 assert.match(adapter, /drainStructureTrace/);
 assert.match(adapter, /getPerformanceProfile/);
