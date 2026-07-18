@@ -456,6 +456,43 @@ assert.equal(
   "The bot does not spend the Defense Post savings on a lower-priority structure",
 );
 
+const defensePostFallbackBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+defensePostFallbackBehavior.player = {
+  gold: () => 2_000_000n,
+};
+defensePostFallbackBehavior.game = {
+  config: () => ({ isUnitDisabled: () => false }),
+};
+defensePostFallbackBehavior.defensePostThreat = () => ({
+  allowed: 1,
+  landAttacks: [{}],
+});
+defensePostFallbackBehavior.getAttackFrontTiles = () => [10];
+defensePostFallbackBehavior.countDefensePostsNearFront = () => 0;
+defensePostFallbackBehavior.cost = () => 50_000n;
+defensePostFallbackBehavior.sampleTilesNearFront = () => [11];
+defensePostFallbackBehavior.rankStructureTilesBySamProtection = (tiles) => tiles;
+const defensePostProbeRounds = [];
+defensePostFallbackBehavior.buildFirstDefensePost = async (tiles) => {
+  defensePostProbeRounds.push(tiles);
+  return tiles.includes(22);
+};
+defensePostFallbackBehavior.defensePostFallbackTiles = (front, sampled) => {
+  assert.deepEqual(front, [10]);
+  assert.deepEqual(sampled, [11]);
+  return [22];
+};
+assert.equal(
+  await defensePostFallbackBehavior.tryBuildDefensePost(),
+  true,
+  "an affordable live Defense Post retries deterministic nearby territory after the random sample is unbuildable",
+);
+assert.deepEqual(
+  defensePostProbeRounds,
+  [[11], [22]],
+  "the fallback probes only after the bounded front sample fails",
+);
+
 const hostileSiloMaximumPriorityBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 hostileSiloMaximumPriorityBehavior.game = {
   config: () => ({ isUnitDisabled: () => false }),

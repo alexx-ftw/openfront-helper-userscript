@@ -181,6 +181,11 @@
   const STRUCTURE_PROBE_TIMEOUT_MS =
     typeof WORKER_TIMEOUT_MS === "number" ? WORKER_TIMEOUT_MS : 2500;
 
+  /** A failed random front sample gets one bounded deterministic retry. */
+  const DEFENSE_POST_FALLBACK_CANDIDATE_LIMIT = 48;
+  const DEFENSE_POST_FALLBACK_FRONT_ANCHORS = 8;
+  const DEFENSE_POST_FALLBACK_MAX_DEPTH = 4;
+
   /** Estimated number of tiles per city equivalent, used when cities are disabled */
   const TILES_PER_CITY_EQUIVALENT = 2000;
 
@@ -944,11 +949,26 @@
       // candidates and probe them, which can yield slightly fewer probes. Same
       // candidate-generation distribution; only the in-sampler canBuild filter
       // moves to the probe phase (rank-then-probe).
-      const tiles = this.rankStructureTilesBySamProtection(
-        this.sampleTilesNearFront(frontTiles, 25, UNIT.DefensePost),
+      const sampledTiles = this.sampleTilesNearFront(
+        frontTiles,
+        25,
         UNIT.DefensePost,
       );
-      return this.buildFirstDefensePost(tiles);
+      const tiles = this.rankStructureTilesBySamProtection(
+        sampledTiles,
+        UNIT.DefensePost,
+      );
+      if (await this.buildFirstDefensePost(tiles)) return true;
+
+      // The core sampler filters canBuild while sampling. Our client-side
+      // rank-then-probe cannot do that synchronously, so 25 raw samples can all
+      // be invalid even when an affordable, useful post exists nearby. Retry a
+      // small deterministic owned-territory ring before giving up this defense.
+      const fallbackTiles = this.defensePostFallbackTiles(frontTiles, sampledTiles);
+      if (fallbackTiles.length === 0) return false;
+      return this.buildFirstDefensePost(
+        this.rankStructureTilesBySamProtection(fallbackTiles, UNIT.DefensePost),
+      );
     }
 
     defensePostThreat(difficulty) {
@@ -1022,6 +1042,60 @@
         }
       }
       return false;
+    }
+
+    defensePostFallbackTiles(frontTiles, sampledTiles = []) {
+      const excluded = new Set(sampledTiles);
+      const candidates = [];
+      const seen = new Set();
+      for (const anchor of this.defensePostFallbackAnchors(frontTiles)) {
+        if (this.appendDefensePostFallbackCandidates(anchor, excluded, seen, candidates)) {
+          break;
+        }
+      }
+      return candidates;
+    }
+
+    defensePostFallbackAnchors(frontTiles) {
+      const ordered = Array.from(new Set(frontTiles)).sort(
+        (left, right) => Number(left) - Number(right),
+      );
+      const count = Math.min(DEFENSE_POST_FALLBACK_FRONT_ANCHORS, ordered.length);
+      return Array.from(
+        { length: count },
+        (_, index) => ordered[Math.floor((index * ordered.length) / count)],
+      );
+    }
+
+    appendDefensePostFallbackCandidates(anchor, excluded, seen, candidates) {
+      const game = this.game;
+      const mySid = this.player.smallID();
+      const queue = [{ tile: anchor, depth: 0 }];
+      seen.add(anchor);
+      for (let cursor = 0; cursor < queue.length; cursor++) {
+        const { tile, depth } = queue[cursor];
+        if (!excluded.has(tile)) candidates.push(tile);
+        if (candidates.length >= DEFENSE_POST_FALLBACK_CANDIDATE_LIMIT) {
+          return true;
+        }
+        if (depth >= DEFENSE_POST_FALLBACK_MAX_DEPTH) continue;
+        for (const neighbor of game.neighbors(tile)) {
+          if (!this.isOwnedUnseenDefensePostFallbackTile(neighbor, mySid, seen)) {
+            continue;
+          }
+          seen.add(neighbor);
+          queue.push({ tile: neighbor, depth: depth + 1 });
+        }
+      }
+      return false;
+    }
+
+    isOwnedUnseenDefensePostFallbackTile(tile, mySid, seen) {
+      return (
+        !seen.has(tile) &&
+        this.game.hasOwner(tile) &&
+        this.game.ownerID(tile) === mySid
+      );
     }
 
     // defensePostNeeded — NationStructureBehavior.ts:229.
