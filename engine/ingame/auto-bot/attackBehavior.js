@@ -5327,23 +5327,24 @@
       return { tile, dist: dx * dx + dy * dy, owned, fallout };
     }
 
-    appendNearbyBoatTargets(shore, context) {
-      const sx = this.game.x(shore);
-      const sy = this.game.y(shore);
-      for (let dx = -context.radius; dx <= context.radius; dx += context.step) {
-        for (let dy = -context.radius; dy <= context.radius; dy += context.step) {
-          const x = sx + dx;
-          const y = sy + dy;
-          if (!this.game.isValidCoord(x, y)) continue;
-          const record = this.nearbyBoatTargetRecord(
-            this.game.ref(x, y),
-            dx,
-            dy,
-            context,
-          );
-          if (record) this.insertNearbyBoatTarget(context, record);
+    nearbyBoatScanOffsets(radius, step) {
+      const key = `${radius}:${step}`;
+      if (this._nearbyBoatScanOffsets?.key === key) {
+        return this._nearbyBoatScanOffsets.offsets;
+      }
+      const offsets = [];
+      let index = 0;
+      for (let dx = -radius; dx <= radius; dx += step) {
+        for (let dy = -radius; dy <= radius; dy += step) {
+          offsets.push({ dx, dy, dist: dx * dx + dy * dy, index: index++ });
         }
       }
+      // Inspecting closest coordinates first lets the scan stop as soon as
+      // every remaining coordinate is farther than the retained top-K. The
+      // original nested-loop index breaks equal-distance ties deterministically.
+      offsets.sort((left, right) => left.dist - right.dist || left.index - right.index);
+      this._nearbyBoatScanOffsets = { key, offsets };
+      return offsets;
     }
 
     insertNearbyBoatTarget(context, record) {
@@ -5379,8 +5380,32 @@
         state.settings.islandScanSamples || 6,
         shore.length,
       );
+      const sampledShores = [];
       for (let sample = 0; sample < sampleCount; sample++) {
-        this.appendNearbyBoatTargets(this.random.randElement(shore), context);
+        sampledShores.push(this.random.randElement(shore));
+      }
+      const offsets = this.nearbyBoatScanOffsets(context.radius, context.step);
+      for (const offset of offsets) {
+        const furthest = context.targets[context.targets.length - 1];
+        // Process an entire equal-distance ring before stopping: otherwise a
+        // later tie could be the stable preferred target. Every later offset
+        // is strictly farther from every sampled shore.
+        if (
+          context.targets.length >= context.targetLimit &&
+          offset.dist > furthest.dist
+        ) break;
+        for (const sampledShore of sampledShores) {
+          const x = this.game.x(sampledShore) + offset.dx;
+          const y = this.game.y(sampledShore) + offset.dy;
+          if (!this.game.isValidCoord(x, y)) continue;
+          const record = this.nearbyBoatTargetRecord(
+            this.game.ref(x, y),
+            offset.dx,
+            offset.dy,
+            context,
+          );
+          if (record) this.insertNearbyBoatTarget(context, record);
+        }
       }
       return {
         targets: context.targets,

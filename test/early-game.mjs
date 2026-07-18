@@ -2260,6 +2260,42 @@ assert.equal(
   nearbyBoatRecords.length,
   "nearby-boat diagnostics retain every scanned candidate after bounded ranking",
 );
+const nearbyBoatScanBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+const previousIslandProbeMax = targetSandbox.state.settings.islandProbeMax;
+const previousIslandScanRadius = targetSandbox.state.settings.islandScanRadius;
+const previousIslandScanStep = targetSandbox.state.settings.islandScanStep;
+const previousIslandScanSamples = targetSandbox.state.settings.islandScanSamples;
+targetSandbox.state.settings.islandProbeMax = 4;
+targetSandbox.state.settings.islandScanRadius = 8;
+targetSandbox.state.settings.islandScanStep = 2;
+targetSandbox.state.settings.islandScanSamples = 1;
+nearbyBoatScanBehavior.player = { smallID: () => 1, troops: () => 100 };
+nearbyBoatScanBehavior.random = { randElement: (items) => items[0] };
+nearbyBoatScanBehavior.game = {
+  x: () => 0,
+  y: () => 0,
+  isValidCoord: () => true,
+  ref: (x, y) => `${x},${y}`,
+};
+let nearbyBoatCoordinatesInspected = 0;
+nearbyBoatScanBehavior.nearbyBoatTargetRecord = (tile, dx, dy) => {
+  nearbyBoatCoordinatesInspected++;
+  return { tile, dist: dx * dx + dy * dy, owned: false, fallout: false };
+};
+const nearbyBoatScan = nearbyBoatScanBehavior.scanNearbyTargets([0]);
+assert.equal(nearbyBoatScan.targets.length, 4);
+assert.ok(
+  nearbyBoatCoordinatesInspected < 81,
+  "nearby-boat scanning stops after the closest complete ring once the bounded target set is full",
+);
+assert.ok(
+  nearbyBoatCoordinatesInspected <= 5,
+  "a fully grabbable shore scans only the centre and its first equal-distance ring",
+);
+targetSandbox.state.settings.islandProbeMax = previousIslandProbeMax;
+targetSandbox.state.settings.islandScanRadius = previousIslandScanRadius;
+targetSandbox.state.settings.islandScanStep = previousIslandScanStep;
+targetSandbox.state.settings.islandScanSamples = previousIslandScanSamples;
 const foodRaceTribe = {
   troops: () => 100,
   incomingAttacks: () => [],
