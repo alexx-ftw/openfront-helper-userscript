@@ -1867,6 +1867,48 @@ targetSandbox.state.lastOppBoatMs = previousLastOppBoatMs;
 targetSandbox.state.lastOppBoatMissMs = previousLastOppBoatMissMs;
 targetSandbox.runtimeDebugLog = previousRuntimeDebugLog;
 
+const boatStageBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+const boatStageCalls = [];
+boatStageBehavior.boatTargetTaken = () => false;
+boatStageBehavior.nearbyOpportunisticBoatTarget = async () => {
+  boatStageCalls.push("nearby");
+  return { dst: null, scanCandidates: 4 };
+};
+boatStageBehavior.craterOpportunisticBoatTarget = async () => {
+  boatStageCalls.push("crater");
+  return null;
+};
+boatStageBehavior.randomOpportunisticBoatTarget = async (_shores, highInterest) => {
+  boatStageCalls.push(highInterest ? "random-high" : "random-player");
+  return null;
+};
+boatStageBehavior.findDistantBoatTarget = async (_profile, limit) => {
+  boatStageCalls.push(`distant:${limit}`);
+  return null;
+};
+boatStageBehavior.findDisconnectedBoatTarget = async (limit) => {
+  boatStageCalls.push(`disconnected:${limit}`);
+  return null;
+};
+for (const expected of [
+  "nearby",
+  "crater",
+  "random-high",
+  "random-player",
+  "distant:4",
+  "disconnected:4",
+]) {
+  const target = await boatStageBehavior.findOpportunisticBoatTarget([1]);
+  assert.equal(target.dst, null);
+  boatStageBehavior.opportunisticBoatSearchStageName = target.nextSearchStage;
+  assert.equal(boatStageCalls.at(-1), expected);
+}
+assert.equal(
+  boatStageCalls.length,
+  6,
+  "one opportunistic decision probes exactly one bounded target category",
+);
+
 const earlyOceanProbeBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 let earlyOceanProbeTick = 100;
 const earlyOceanProbeCalls = [];

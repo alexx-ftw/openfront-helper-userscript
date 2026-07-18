@@ -72,6 +72,17 @@
   // spawn probe (PORT-CONTRACT §Async #2). The src loops are unbounded
   // (findRandomBoatTarget 500 iters, etc.); we cap the worker calls.
   const BOAT_PROBE_CANDIDATES = 4;
+  // One opportunistic decision must not serially monopolize the worker with
+  // every boat strategy. Each stage retains its normal ranked candidates, but
+  // the stage itself advances only after its bounded probe batch is exhausted.
+  const OPPORTUNISTIC_BOAT_SEARCH_STAGES = [
+    "nearby",
+    "crater",
+    "random-high",
+    "random-player",
+    "distant",
+    "disconnected",
+  ];
 
   // Early-game tribe scoring may need one border snapshot per candidate. Keep the
   // async enrichment bounded so a crowded tribe map cannot starve the combat tick.
@@ -4740,52 +4751,78 @@
       };
     }
 
+    opportunisticBoatSearchStage() {
+      return OPPORTUNISTIC_BOAT_SEARCH_STAGES.includes(
+        this.opportunisticBoatSearchStageName,
+      )
+        ? this.opportunisticBoatSearchStageName
+        : OPPORTUNISTIC_BOAT_SEARCH_STAGES[0];
+    }
+
+    nextOpportunisticBoatSearchStage(stage) {
+      const index = OPPORTUNISTIC_BOAT_SEARCH_STAGES.indexOf(stage);
+      return OPPORTUNISTIC_BOAT_SEARCH_STAGES[
+        (index + 1) % OPPORTUNISTIC_BOAT_SEARCH_STAGES.length
+      ];
+    }
+
+    emptyOpportunisticBoatTarget(stage, scanCandidates = 0) {
+      return {
+        dst: null,
+        scanCandidates,
+        nextSearchStage: this.nextOpportunisticBoatSearchStage(stage),
+      };
+    }
+
     async findOpportunisticBoatTarget(shores, profile = null) {
+      const stage = this.opportunisticBoatSearchStage();
+      if (stage === "nearby") {
+        const nearby = await profileAttackAsync(profile, "boat-target-nearby", () =>
+          this.nearbyOpportunisticBoatTarget(shores),
+        );
+        return nearby.dst === null
+          ? this.emptyOpportunisticBoatTarget(stage, nearby.scanCandidates)
+          : nearby;
+      }
+      if (stage === "crater") {
+        const crater = await profileAttackAsync(profile, "boat-target-crater", () =>
+          this.craterOpportunisticBoatTarget(),
+        );
+        return crater || this.emptyOpportunisticBoatTarget(stage);
+      }
+      if (stage === "random-high" || stage === "random-player") {
+        const highInterest = stage === "random-high";
+        const target = await profileAttackAsync(
+          profile,
+          highInterest ? "boat-target-random-high" : "boat-target-random-player",
+          () => this.randomOpportunisticBoatTarget(shores, highInterest),
+        );
+        return target || this.emptyOpportunisticBoatTarget(stage);
+      }
+      if (stage === "distant") {
+        const far = await profileAttackAsync(profile, "boat-target-distant", () =>
+          this.findDistantBoatTarget(profile, BOAT_PROBE_CANDIDATES),
+        );
+        return far === null
+          ? this.emptyOpportunisticBoatTarget(stage)
+          : { dst: far, dstOwned: true, dstFallout: false, lowFillOk: true };
+      }
       const disconnected = await profileAttackAsync(
         profile,
         "boat-target-disconnected",
-        () => this.findDisconnectedBoatTarget(),
+        () => this.findDisconnectedBoatTarget(BOAT_PROBE_CANDIDATES),
       );
-      if (disconnected !== null && !this.boatTargetTaken(disconnected)) {
-        runtimeDebugLog("[Boat] heading to a DISCONNECTED neighbour's land");
-        return {
-          dst: disconnected,
-          dstOwned: true,
-          dstFallout: false,
-          lowFillOk: true,
-          scanCandidates: 0,
-        };
+      if (disconnected === null || this.boatTargetTaken(disconnected)) {
+        return this.emptyOpportunisticBoatTarget(stage);
       }
-
-      const nearby = await profileAttackAsync(profile, "boat-target-nearby", () =>
-        this.nearbyOpportunisticBoatTarget(shores),
-      );
-      if (nearby.dst !== null) return nearby;
-      const crater = await profileAttackAsync(profile, "boat-target-crater", () =>
-        this.craterOpportunisticBoatTarget(),
-      );
-      if (crater) return { ...crater, scanCandidates: nearby.scanCandidates };
-      const highInterest = await profileAttackAsync(profile, "boat-target-random-high", () =>
-        this.randomOpportunisticBoatTarget(shores, true),
-      );
-      if (highInterest) return { ...highInterest, scanCandidates: nearby.scanCandidates };
-      const player = await profileAttackAsync(profile, "boat-target-random-player", () =>
-        this.randomOpportunisticBoatTarget(shores, false),
-      );
-      if (player) return { ...player, scanCandidates: nearby.scanCandidates };
-      const far = await profileAttackAsync(profile, "boat-target-distant", () =>
-        this.findDistantBoatTarget(profile),
-      );
-      if (far !== null) {
-        return {
-          dst: far,
-          dstOwned: true,
-          dstFallout: false,
-          lowFillOk: true,
-          scanCandidates: nearby.scanCandidates,
-        };
-      }
-      return { dst: null, scanCandidates: nearby.scanCandidates };
+      runtimeDebugLog("[Boat] heading to a DISCONNECTED neighbour's land");
+      return {
+        dst: disconnected,
+        dstOwned: true,
+        dstFallout: false,
+        lowFillOk: true,
+        scanCandidates: 0,
+      };
     }
 
     opportunisticBoatLabel(target) {
@@ -4869,6 +4906,7 @@
         this.findOpportunisticBoatTarget(context.shores, profile),
       );
       if (target.dst === null) {
+        this.opportunisticBoatSearchStageName = target.nextSearchStage;
         state.lastOppBoatMissMs = context.nowMs;
         runtimeDebugLog("[Boat] no reachable target", {
           scanCandidates: target.scanCandidates,
@@ -4880,9 +4918,13 @@
         });
         return false;
       }
-      return profileAttackAsync(profile, "boat-opportunistic-emit", () =>
+      const emitted = await profileAttackAsync(profile, "boat-opportunistic-emit", () =>
         this.emitOpportunisticBoatTarget(target, context),
       );
+      if (emitted) {
+        this.opportunisticBoatSearchStageName = OPPORTUNISTIC_BOAT_SEARCH_STAGES[0];
+      }
+      return emitted;
     }
 
     // boatTargetTaken — true if one of our in-flight transport ships is ALREADY heading
@@ -5026,10 +5068,11 @@
     // players (allies or enemies showing the "zzz" icon), nearest first. Their land is
     // undefended, so this can take over a disconnected teammate's territory, but only
     // after the transport pathfinder proves the route is inside the exploration cap.
-    async findDisconnectedBoatTarget() {
+    async findDisconnectedBoatTarget(probeLimit = null) {
       if (this.player === null) return null;
       const cands = this.boatPlayerCandidates(true);
-      const cap = state.settings.distantBoatProbeMax || 12;
+      const configuredCap = state.settings.distantBoatProbeMax || 12;
+      const cap = probeLimit === null ? configuredCap : Math.min(configuredCap, probeLimit);
       for (let i = 0; i < cands.length && i < cap; i++) {
         if (this.boatTargetTaken(cands[i].tile)) continue; // a boat already heads here
         const sp = await withTimeout(
@@ -5061,10 +5104,11 @@
     // name location ≈ centroid), nearest first, and return the first one whose actual
     // transport route is within the two-minute exploration cap. A reachable but long
     // voyage is not a valid fallback.
-    async findDistantBoatTarget(profile = null) {
+    async findDistantBoatTarget(profile = null, probeLimit = null) {
       if (this.player === null) return null;
       const cands = this.boatPlayerCandidates(false);
-      const cap = state.settings.distantBoatProbeMax || 12;
+      const configuredCap = state.settings.distantBoatProbeMax || 12;
+      const cap = probeLimit === null ? configuredCap : Math.min(configuredCap, probeLimit);
       // Sentinel default lets us tell a TIMED-OUT probe (worker saturated at MAX
       // game speed) apart from a genuine `false` (enemy not reachable across water,
       // i.e. land-connected). Without this, both look identical and we can't tell
