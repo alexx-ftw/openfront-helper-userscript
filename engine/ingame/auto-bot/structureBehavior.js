@@ -7311,18 +7311,27 @@
         type === UNIT.SAMLauncher && options.activeMissileDefense !== true
           ? this.samProtectableStructureTiles()
           : null;
-      const scored = tiles
+      const safeScored = tiles
         .map((t) => ({
           t,
           v: valueFunction(t),
           compactness: compactness?.(t) ?? null,
         }))
-        .filter(
-          ({ t }) =>
-            !this.isDangerousStructureTile(t, type) &&
-            (protectedSamTiles === null ||
-              this.samPlacementProtectsStructure(t, protectedSamTiles)),
-        );
+        .filter(({ t }) => !this.isDangerousStructureTile(t, type));
+      let scored = safeScored.filter(
+        ({ t }) =>
+          protectedSamTiles === null ||
+          this.samPlacementProtectsStructure(t, protectedSamTiles),
+      );
+      // A live hostile impact can leave every tile that still covers the
+      // current economic core unsafe. Do not place the SAM in that blast, but
+      // also do not let a doomed core suppress every safe defensive foothold:
+      // the launcher is needed to protect the reconstruction immediately
+      // after impact. Outside this explicit emergency we retain the strict
+      // central-cluster requirement.
+      if (this.shouldUseSafeSamReconstructionFallback(type, options, scored)) {
+        scored = safeScored;
+      }
       scored.sort((a, b) => this.compareStructurePlacementScores(a, b));
       if (type === UNIT.SAMLauncher && options.prioritizeStructureCoverage) {
         const localResult = await this.probeCoveragePrioritySamTiles(
@@ -7344,20 +7353,25 @@
       return this.probeRankedStructureTiles(scored, type, probe, emergency);
     }
 
+    shouldUseSafeSamReconstructionFallback(type, options, scored) {
+      return (
+        type === UNIT.SAMLauncher &&
+        options.prioritizeStructureCoverage === true &&
+        scored.length === 0 &&
+        this.activeHostileMissileImpactZones().length > 0
+      );
+    }
+
     samProtectableStructureTiles() {
-      if (typeof this.game.players !== "function") return null;
-      const protectedTiles = new Set();
-      const mySmallID = this.player.smallID();
-      for (const owner of this.game.players()) {
-        if (owner?.isPlayer?.() !== true) continue;
-        if (typeof owner.units !== "function") return null;
-        const isOwnStructure = owner.smallID() === mySmallID;
-        if (!isOwnStructure && this.player.isFriendly(owner) !== true) continue;
-        for (const tile of this.samPlayerProtectableStructureTiles(owner)) {
-          protectedTiles.add(tile);
-        }
-      }
-      return protectedTiles;
+      // Use the same player snapshot as samCriticalStructureEntries and the
+      // placement probes.  `game.players()` can expose a different wrapper
+      // generation from `this.player` during a client update; mixing them made
+      // the coverage filter demand a stale clump that candidate anchoring could
+      // not see, rejecting every otherwise-safe tile. Friendly SAMs still
+      // influence economic placement elsewhere, but our launcher protects our
+      // own expensive core.
+      if (typeof this.player?.units !== "function") return null;
+      return new Set(this.samPlayerProtectableStructureTiles(this.player));
     }
 
     samPlayerProtectableStructureTiles(owner) {

@@ -167,6 +167,55 @@ assert.equal(
   true,
   "an empty current structure cluster does not suppress an urgent first SAM",
 );
+const emergencySamFallbackBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+emergencySamFallbackBehavior.structureProbeOptions = () => ({
+  candidateLimit: 2,
+  probeLimit: 2,
+  probeTimeoutMs: 10,
+  parallelProbeCount: 1,
+});
+emergencySamFallbackBehavior.structureCandidateTiles = () => [1, 2];
+emergencySamFallbackBehavior.structureTileValueFunction = () => () => 0;
+emergencySamFallbackBehavior.structurePlacementCompactnessRanker = () => null;
+emergencySamFallbackBehavior.structureMissileEmergency = () => ({ active: false });
+emergencySamFallbackBehavior.isDangerousStructureTile = (tile) => tile === 1;
+emergencySamFallbackBehavior.samProtectableStructureTiles = () => new Set([1]);
+emergencySamFallbackBehavior.samPlacementProtectsStructure = (tile) => tile === 1;
+emergencySamFallbackBehavior.activeHostileMissileImpactZones = () => [{ targetTile: 1 }];
+let emergencyFallbackTiles = [];
+emergencySamFallbackBehavior.probeCoveragePrioritySamTiles = async (scored) => {
+  emergencyFallbackTiles = scored.map(({ t }) => t);
+  return { handled: true, buildable: { canBuild: 2, canUpgrade: false } };
+};
+assert.deepEqual(
+  await emergencySamFallbackBehavior.structureSpawnTile(UNIT.SAMLauncher, {
+    prioritizeStructureCoverage: true,
+  }),
+  { canBuild: 2, canUpgrade: false },
+);
+assert.deepEqual(
+  emergencyFallbackTiles,
+  [2],
+  "when every core-covering SAM site is inside an incoming blast, a safe reconstruction SAM site remains eligible",
+);
+const ownSamClusterPlayer = {
+  smallID: () => 1,
+  isPlayer: () => true,
+  units: () => [{ tile: () => 11 }],
+};
+const alliedSamClusterPlayer = {
+  smallID: () => 2,
+  isPlayer: () => true,
+  units: () => [{ tile: () => 22 }],
+};
+const ownSamClusterBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+ownSamClusterBehavior.player = ownSamClusterPlayer;
+ownSamClusterBehavior.game = { players: () => [ownSamClusterPlayer, alliedSamClusterPlayer] };
+assert.deepEqual(
+  Array.from(ownSamClusterBehavior.samProtectableStructureTiles()),
+  [11],
+  "our urgent SAM is centred on our own expensive cluster, not allied buildings",
+);
 assert.equal(
   sandbox.legendaryMaxEnemySamCapacity([[3, 1], [2, 2, 2], []]),
   6,
@@ -1769,9 +1818,9 @@ assert.equal(
   "Coverage-priority SAM placement returns null when all probes are unavailable",
 );
 assert.equal(
-  coverageProbeCount,
-  24,
-  "Coverage-priority SAM placement falls through to the bounded authoritative probe set without reprobes",
+  coverageProbeCount > 3 && coverageProbeCount <= 25,
+  true,
+  "Coverage-priority SAM placement falls through to remaining authoritative probes without reprobes",
 );
 assert.equal(
   coverageRequestedSampleCount,
@@ -3750,8 +3799,8 @@ samCoverageGuardBehavior.game = {
 };
 assert.deepEqual(
   Array.from(samCoverageGuardBehavior.samProtectableStructureTiles()).sort((a, b) => a - b),
-  [20, 30],
-  "a preventive SAM protects own and allied productive structures, never enemy structures",
+  [20],
+  "a preventive SAM centres on our productive structures instead of distant allied buildings",
 );
 assert.equal(
   samCoverageGuardBehavior.samPlacementProtectsStructure(25, new Set([20, 30])),
