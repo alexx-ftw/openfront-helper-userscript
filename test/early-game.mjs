@@ -2164,6 +2164,48 @@ assert.equal(
   1,
   "future-food scoring reuses the coherent per-decision food-race snapshot",
 );
+const reusedFutureFoodNodes = [
+  {
+    id: 7,
+    player: indexedBorderTribe,
+    center: { x: 7, y: 7 },
+    captureRisk: 0.7,
+  },
+];
+const reusedFutureFood = cachedFoodRaceBehavior.getEarlyGameFutureFoodCandidates(
+  [indexedBorderTribe],
+  [],
+  [],
+  cachedFoodRaceById,
+  reusedFutureFoodNodes,
+);
+assert.strictEqual(
+  reusedFutureFood.get(7),
+  reusedFutureFoodNodes[0],
+  "future-food scoring reuses nodes created by the current sampling pass",
+);
+assert.equal(
+  foodRaceComputations,
+  1,
+  "reusing current sampling nodes avoids a second tribe food-race calculation",
+);
+const ambiguousRelationTribe = {
+  ...indexedBorderTribe,
+  smallID: () => 8,
+};
+cachedFoodRaceBehavior.player = { isFriendly: () => undefined };
+const ambiguousFutureFood = cachedFoodRaceBehavior.getEarlyGameFutureFoodCandidates(
+  [ambiguousRelationTribe],
+  [],
+  [],
+  new Map(),
+  [],
+);
+assert.equal(
+  ambiguousFutureFood.has(8),
+  true,
+  "future-food fallback retains tribes whose relationship is not strictly hostile",
+);
 
 const indexedDirectFoodRaceBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 const indexedDirectContext = {

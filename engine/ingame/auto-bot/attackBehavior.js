@@ -3133,6 +3133,7 @@
         topologyBordersById,
         tribeAdjacency,
         foodRaceById,
+        nodes,
       };
     }
 
@@ -3500,9 +3501,11 @@
       candidates,
       competitorProfiles,
       foodRaceById = null,
+      lightweightNodes = null,
     ) {
-      const byId = new Map();
+      const byId = this.seedEarlyGameFutureFoodFromNodes(lightweightNodes);
       for (const tribe of otherPlayers) {
+        if (byId.has(tribe?.smallID?.())) continue;
         const record = this.earlyGameFutureFoodRecord(
           tribe,
           competitorProfiles,
@@ -3517,6 +3520,20 @@
         ) {
           byId.set(candidate.id, candidate);
         }
+      }
+      return byId;
+    }
+
+    seedEarlyGameFutureFoodFromNodes(lightweightNodes) {
+      const byId = new Map();
+      // The sampling pass just built these strict-hostile tribe records. Reuse
+      // them for this decision instead of recomputing the same centres and
+      // food-race values across every tribe. They are intentionally not kept
+      // beyond this pass: liveness and diplomatic relations may change.
+      for (const node of lightweightNodes || []) {
+        if (!Number.isFinite(Number(node?.center?.x))) continue;
+        if (!Number.isFinite(Number(node?.center?.y))) continue;
+        byId.set(node.id, node);
       }
       return byId;
     }
@@ -3717,6 +3734,7 @@
         topologyBordersById,
         tribeAdjacency,
         foodRaceById,
+        nodes,
       } =
         await profileAttackAsync(
           profile,
@@ -3810,6 +3828,7 @@
             candidates,
             competitorProfiles,
             foodRaceById,
+            nodes,
           ),
       );
       const futureFoodCandidates = [...futureFoodById.values()];
