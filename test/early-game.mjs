@@ -2666,18 +2666,18 @@ assert.equal(
   firstTopologyBorderFetches,
   "repeated opening decisions reuse the complete tribe topology cache",
 );
-targetTick = 30;
+targetTick = 38;
 await targetBehavior.getEarlyGameTribeCandidates();
 assert.equal(
   topologyBorderFetches,
   firstTopologyBorderFetches,
-  "the complete topology remains reusable through the profiled strategic cadence",
+  "the complete topology remains reusable through two profiled strategic decisions",
 );
-targetTick = 31;
+targetTick = 41;
 await targetBehavior.getEarlyGameTribeCandidates();
 assert.ok(
   topologyBorderFetches > firstTopologyBorderFetches,
-  "the bounded topology cache refreshes after one strategic cadence",
+  "the bounded topology cache refreshes after its two-decision window",
 );
 targetTick = 1;
 assert.equal(
