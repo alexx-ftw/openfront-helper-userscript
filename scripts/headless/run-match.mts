@@ -343,6 +343,25 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
         )
         .filter(([, entries]) => entries.length > 0),
     );
+    const externalSiloNetworks = runner.game
+      .players()
+      .filter((other) => other.clientID() !== clientID && other.isAlive())
+      .map((other) => {
+        const silos = other
+          .units(UnitType.MissileSilo)
+          .filter((silo) => silo.isActive() && !silo.isUnderConstruction());
+        const sams = other
+          .units(UnitType.SAMLauncher)
+          .filter((sam) => sam.isActive() && !sam.isUnderConstruction());
+        return {
+          name: other.name(),
+          team: other.team(),
+          siloLevels: silos.map((silo) => silo.level()),
+          siloCapacity: silos.reduce((total, silo) => total + Math.max(1, silo.level()), 0),
+          samLevels: sams.map((sam) => sam.level()),
+        };
+      })
+      .filter((network) => network.siloLevels.length > 0 || network.samLevels.length > 0);
     const activeMissiles = runner.game
       .units(...trackedMissileTypes)
       .filter((unit) => unit.isActive())
@@ -389,6 +408,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
         incoming,
         units,
         unitDetails,
+        externalSiloNetworks,
         activeMissiles,
         team: player?.team() ?? null,
         intents: emittedIntents,
