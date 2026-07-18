@@ -964,7 +964,12 @@
         0,
       );
       const ratio = incomingTroops / ourTroops;
-      if (ratio < UNDER_ATTACK_THREAT_RATIO) return null;
+      const preemptiveStrategicThreat =
+        ratio >= PREEMPTIVE_DEFENSE_POST_THREAT_RATIO &&
+        landAttacks.some((attack) => this.isStrategicLandAttack(attack));
+      if (ratio < UNDER_ATTACK_THREAT_RATIO && !preemptiveStrategicThreat) {
+        return null;
+      }
       const allowed =
         difficulty === Difficulty.Medium
           ? 1
@@ -1022,15 +1027,12 @@
     defensePostNeeded() {
       const difficulty = currentDifficulty();
       if (difficulty === Difficulty.Easy) return false;
-      const landAttacks = this.player
-        .incomingAttacks()
-        .filter((a) => this.isLandAttack(a));
-      if (landAttacks.length === 0) return false;
-      const ourTroops = this.player.troops();
-      if (ourTroops <= 0) return false;
-      const incomingTroops = landAttacks.reduce((sum, a) => sum + a.troops(), 0);
-      const ratio = incomingTroops / ourTroops;
-      return ratio >= UNDER_ATTACK_THREAT_RATIO;
+      return this.defensePostThreat(difficulty) !== null;
+    }
+
+    isStrategicLandAttack(attack) {
+      const type = attack.attacker?.()?.type?.();
+      return type === PlayerType.Nation || type === PlayerType.Human;
     }
 
     canAffordDefensePost() {
@@ -2413,9 +2415,7 @@
         .incomingAttacks()
         .filter((attack) => {
           if (!this.isLandAttack(attack)) return false;
-          const attacker = attack.attacker?.();
-          const type = attacker?.type?.();
-          return type === PlayerType.Nation || type === PlayerType.Human;
+          return this.isStrategicLandAttack(attack);
         });
       const incomingTroops = strategicLandAttacks.reduce(
         (sum, attack) => sum + Math.max(0, Number(attack.troops?.() || 0)),

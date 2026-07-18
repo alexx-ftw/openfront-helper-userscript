@@ -339,6 +339,17 @@ assert.equal(
   false,
   "a sub-35% probe does not trigger Defense Post construction",
 );
+own.incomingAttacks = () => [
+  {
+    troops: () => 150,
+    attacker: () => ({ type: () => sandbox.PlayerType.Nation }),
+  },
+];
+assert.equal(
+  behavior.defensePostNeeded(),
+  true,
+  "a 15% Nation land push starts the first Defense Post before it becomes a siege",
+);
 sandbox.currentDifficulty = originalDifficultyForDefensePost;
 own.troops = originalOwnTroopsForDefensePost;
 own.incomingAttacks = originalOwnIncomingForDefensePost;
