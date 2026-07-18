@@ -87,6 +87,11 @@ assert.match(runner, /decisionMs/);
 assert.match(runner, /executionMs/);
 assert.match(runner, /stopReason/);
 assert.match(runner, /performanceProfile/);
+assert.match(
+  runner,
+  /cumulativeIntentTypes:[\s\S]*performanceProfile: profileBot \? bot\.getPerformanceProfile\(\) : undefined,[\s\S]*elapsedMs/,
+  "persisted progress checkpoints retain the aggregate bot profile even when no later tick crosses the slow threshold",
+);
 assert.match(runner, /intervalIntentTypes/);
 assert.match(runner, /cumulativeIntentTypes/);
 assert.match(runner, /intervalTerraNulliusAttacks/);

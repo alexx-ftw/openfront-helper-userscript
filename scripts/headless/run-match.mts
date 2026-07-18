@@ -478,6 +478,11 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
         cumulativeTerraNulliusAttacks,
         intervalIntentTypes: sortedCounts(intervalIntentTypes),
         cumulativeIntentTypes: sortedCounts(cumulativeIntentTypes),
+        // A persisted trace must expose the aggregate profile at normal
+        // progress checkpoints as well as at rare slow ticks. Otherwise a
+        // match with no individual threshold breach leaves no evidence for the
+        // phases that collectively consumed its decision budget.
+        performanceProfile: profileBot ? bot.getPerformanceProfile() : undefined,
         elapsedMs: Math.round(performance.now() - startedAt),
       }),
     );
