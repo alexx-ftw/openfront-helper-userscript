@@ -121,6 +121,11 @@
   // live-state signature proves that no owner, movement, troop, or attack
   // signal has changed; any contested tribe therefore invalidates at once.
   const EARLY_GAME_TRIBE_RISK_SNAPSHOT_CACHE_TICKS = 40;
+  // Directional food-race pressure is exactly zero once competitors are this
+  // far from a tribe centre. Keep the spatial bucket width equal to that
+  // radius so checking a tribe's neighbouring buckets preserves every
+  // non-zero directional signal.
+  const EARLY_GAME_FOOD_RACE_RADIUS = 160;
   const EARLY_GAME_TRIBE_TOPOLOGY_MIN_SLICE_TILES = 128;
   const EARLY_GAME_TRIBE_TOPOLOGY_MAX_SLICE_TILES = 2048;
   const EARLY_GAME_TRIBE_TOPOLOGY_SLICE_MS = 4;
@@ -4270,6 +4275,55 @@
       return true;
     }
 
+    earlyGameFoodRaceCellKey(location) {
+      const x = Number(location?.x);
+      const y = Number(location?.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      return [
+        Math.floor(x / EARLY_GAME_FOOD_RACE_RADIUS),
+        Math.floor(y / EARLY_GAME_FOOD_RACE_RADIUS),
+      ].join(":");
+    }
+
+    earlyGameFoodRaceProfileIndex(competitorProfiles) {
+      const cached = this.earlyGameFoodRaceProfileIndexCache;
+      if (cached?.competitorProfiles === competitorProfiles) return cached;
+
+      const directionalByCell = new Map();
+      const directByTarget = new Map();
+      for (const profile of competitorProfiles ?? []) {
+        const cell = this.earlyGameFoodRaceCellKey(profile.location);
+        if (cell !== null) {
+          const directional = directionalByCell.get(cell);
+          if (directional) directional.push(profile);
+          else directionalByCell.set(cell, [profile]);
+        }
+        for (const targetSid of profile.outgoingTargetsByTarget?.keys?.() ?? []) {
+          const direct = directByTarget.get(targetSid);
+          if (direct) direct.push(profile);
+          else directByTarget.set(targetSid, [profile]);
+        }
+      }
+      const index = { competitorProfiles, directionalByCell, directByTarget };
+      this.earlyGameFoodRaceProfileIndexCache = index;
+      return index;
+    }
+
+    earlyGameRelevantFoodRaceProfiles(index, tribeSid, tribeCenter) {
+      const relevant = new Set(index.directByTarget.get(tribeSid) || []);
+      const cell = this.earlyGameFoodRaceCellKey(tribeCenter);
+      if (cell === null) return relevant;
+      const [cellX, cellY] = cell.split(":").map(Number);
+      for (let x = cellX - 1; x <= cellX + 1; x++) {
+        for (let y = cellY - 1; y <= cellY + 1; y++) {
+          for (const profile of index.directionalByCell.get(`${x}:${y}`) || []) {
+            relevant.add(profile);
+          }
+        }
+      }
+      return relevant;
+    }
+
     earlyGameProfileTribeAlignment(profile, tribeCenter) {
       let alignment = this.earlyGameVectorAlignment(
         profile.location,
@@ -4291,7 +4345,10 @@
       }
       const distance = this.earlyGameCenterDistance(profile.location, tribeCenter);
       if (!Number.isFinite(distance)) return 0;
-      return alignment * Math.max(0, Math.min(1, 1 - distance / 160));
+      return alignment * Math.max(
+        0,
+        Math.min(1, 1 - distance / EARLY_GAME_FOOD_RACE_RADIUS),
+      );
     }
 
     applyDirectionalFoodRaceSignal(profile, tribeCenter, context) {
@@ -4350,7 +4407,12 @@
         directAttackers: new Set(),
       };
       this.appendIncomingFoodRaceSignals(tribe, tribeSid, context);
-      for (const profile of competitorProfiles ?? []) {
+      const index = this.earlyGameFoodRaceProfileIndex(competitorProfiles);
+      for (const profile of this.earlyGameRelevantFoodRaceProfiles(
+        index,
+        tribeSid,
+        tribeCenter,
+      )) {
         if (profile.sid === tribeSid) continue;
         const direct = this.applyDirectFoodRaceSignal(profile, tribeSid, context);
         if (!direct) this.applyDirectionalFoodRaceSignal(profile, tribeCenter, context);

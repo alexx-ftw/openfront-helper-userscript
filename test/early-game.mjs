@@ -2193,6 +2193,91 @@ assert.equal(indexedDirectContext.records.get(4).troops, 120);
 assert.equal(indexedDirectContext.records.get(4).progress, 0.6);
 assert.equal(indexedDirectContext.records.get(4).vector, 1);
 
+const spatialFoodRaceBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+const spatialFoodRaceProfiles = [
+  {
+    sid: 11,
+    location: { x: 5, y: 5 },
+    outgoingTargetsByTarget: new Map(),
+  },
+  {
+    sid: 12,
+    location: { x: 1000, y: 1000 },
+    outgoingTargetsByTarget: new Map([[7, [{ targetSid: 7, troops: 120 }]]]),
+  },
+  {
+    sid: 13,
+    location: { x: 1000, y: 1000 },
+    outgoingTargetsByTarget: new Map(),
+  },
+];
+const spatialFoodRaceIndex =
+  spatialFoodRaceBehavior.earlyGameFoodRaceProfileIndex(spatialFoodRaceProfiles);
+assert.deepEqual(
+  Array.from(
+    spatialFoodRaceBehavior.earlyGameRelevantFoodRaceProfiles(spatialFoodRaceIndex, 7, {
+      x: 10,
+      y: 10,
+    }),
+    (profile) => profile.sid,
+  ).sort((left, right) => left - right),
+  [11, 12],
+  "food-race indexing keeps nearby directional pressure and every direct attacker while excluding only directionally-zero distant profiles",
+);
+assert.strictEqual(
+  spatialFoodRaceBehavior.earlyGameFoodRaceProfileIndex(spatialFoodRaceProfiles),
+  spatialFoodRaceIndex,
+  "food-race indexing is reused for every tribe in the same competitor snapshot",
+);
+const foodRaceTribe = {
+  troops: () => 100,
+  incomingAttacks: () => [],
+};
+const foodRaceProfiles = spatialFoodRaceProfiles.map((profile) => ({
+  ...profile,
+  dx: 1,
+  dy: 0,
+  progress: 0.5,
+  troops: 200,
+  outgoingTargets: [],
+}));
+const indexedFoodRaceBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+indexedFoodRaceBehavior.player = { smallID: () => 1 };
+let indexedDirectionalCalls = 0;
+const originalIndexedDirectional = indexedFoodRaceBehavior.applyDirectionalFoodRaceSignal;
+indexedFoodRaceBehavior.applyDirectionalFoodRaceSignal = function (...args) {
+  indexedDirectionalCalls++;
+  return originalIndexedDirectional.apply(this, args);
+};
+const indexedFoodRace = indexedFoodRaceBehavior.getEarlyGameFoodRaceSignals({
+  tribe: foodRaceTribe,
+  tribeSid: 7,
+  tribeCenter: { x: 10, y: 10 },
+  competitorProfiles: foodRaceProfiles,
+});
+const exhaustiveFoodRaceBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+exhaustiveFoodRaceBehavior.player = { smallID: () => 1 };
+exhaustiveFoodRaceBehavior.earlyGameFoodRaceProfileIndex = () => null;
+exhaustiveFoodRaceBehavior.earlyGameRelevantFoodRaceProfiles = () => new Set(foodRaceProfiles);
+let exhaustiveDirectionalCalls = 0;
+const originalExhaustiveDirectional = exhaustiveFoodRaceBehavior.applyDirectionalFoodRaceSignal;
+exhaustiveFoodRaceBehavior.applyDirectionalFoodRaceSignal = function (...args) {
+  exhaustiveDirectionalCalls++;
+  return originalExhaustiveDirectional.apply(this, args);
+};
+assert.deepEqual(
+  indexedFoodRace,
+  exhaustiveFoodRaceBehavior.getEarlyGameFoodRaceSignals({
+    tribe: foodRaceTribe,
+    tribeSid: 7,
+    tribeCenter: { x: 10, y: 10 },
+    competitorProfiles: foodRaceProfiles,
+  }),
+  "the food-race spatial index is exactly equivalent to the full competitor scan",
+);
+assert.equal(indexedDirectionalCalls, 1);
+assert.equal(exhaustiveDirectionalCalls, 2);
+
 const incrementalFoodRaceBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 incrementalFoodRaceBehavior.player = { isFriendly: () => false };
 incrementalFoodRaceBehavior.getEarlyGameFoodRaceSignals = ({ tribeSid }) => ({
