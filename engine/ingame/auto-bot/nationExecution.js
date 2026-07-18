@@ -37,6 +37,7 @@
       this.behaviorsInitialized = false;
       this.openingLandBurstPending = false;
       this.openingExpansionFollowUpPending = false;
+      this.lastOpeningCityAttemptTick = -Infinity;
       this.spawnExecAdded = false;
       this.lastSpawnTile = null; // last emitted spawn tile (to re-emit on change)
       this.lastSpawnTopKey = null; // "x,y" of the #1 spot we last committed to
@@ -179,6 +180,11 @@
       if (!pending || !state.settings.winFixes || !(this.feat("expand") || this.feat("boat"))) {
         return false;
       }
+      // The opening troop chain can remain pending for many engine ticks.
+      // Do not make that movement-only period postpone the foundational City
+      // until the ordinary cadence finally resumes: one City compounds troop
+      // and gold production, whereas Ports, Factories and upgrades can wait.
+      if (!(await this.maybeBuildOpeningCity(ticks, profile, tickGeneration))) return true;
       if (this.hasPendingOpeningExpansionIntent()) {
         this.lastSeenTick = ticks;
         return true;
@@ -200,6 +206,21 @@
       }
       this.lastSeenTick = ticks;
       return true;
+    }
+
+    async maybeBuildOpeningCity(ticks, profile, tickGeneration) {
+      if (!this.feat("build")) return true;
+      if (ticks - this.lastOpeningCityAttemptTick < 12) return true;
+      const config = this.mg.config?.();
+      if (config?.isUnitDisabled?.(UNIT.City)) return true;
+      const cities = this.player?.units?.(UNIT.City) || [];
+      if (cities.length > 0) return true;
+      if (typeof this.structureBehavior?.maybeSpawnStructure !== "function") return true;
+
+      this.lastOpeningCityAttemptTick = ticks;
+      await autoBotProfileAsyncPhase(profile, "opening-city", () =>
+        this.structureBehavior.maybeSpawnStructure(UNIT.City));
+      return this.tickIsCurrent(tickGeneration);
     }
 
     incomingDefenseKey(attacker) {
