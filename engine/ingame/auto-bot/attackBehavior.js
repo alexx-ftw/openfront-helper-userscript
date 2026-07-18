@@ -3167,7 +3167,44 @@
       return this.game.manhattanDist(myTile, tribeTile);
     }
 
-    getEarlyGameContesterTiles(otherPlayers, mySid) {
+    earlyGameContesterProfilesSignature(competitorProfiles) {
+      return competitorProfiles
+        .map((profile) => {
+          const location = profile.location;
+          const x = Number(location?.x);
+          const y = Number(location?.y);
+          const valid =
+            Number.isFinite(x) &&
+            Number.isFinite(y) &&
+            this.game.isValidCoord(x, y);
+          return [profile.sid, valid ? x : "", valid ? y : ""].join(":");
+        })
+        .sort()
+        .join(";");
+    }
+
+    getEarlyGameContesterTiles(otherPlayers, mySid, competitorProfiles = null) {
+      if (Array.isArray(competitorProfiles)) {
+        const signature = this.earlyGameContesterProfilesSignature(
+          competitorProfiles,
+        );
+        const cached = this.earlyGameContesterTilesCache;
+        if (cached?.signature === signature) return cached.tiles;
+        const tiles = [];
+        for (const profile of competitorProfiles) {
+          const location = profile.location;
+          if (
+            !location ||
+            !this.game.isValidCoord(location.x, location.y)
+          ) continue;
+          tiles.push({
+            sid: profile.sid,
+            tile: this.game.ref(location.x, location.y),
+          });
+        }
+        this.earlyGameContesterTilesCache = { signature, tiles };
+        return tiles;
+      }
       const contesters = [];
       for (const other of otherPlayers) {
         const location = this.earlyGameContesterLocation(other, null, mySid);
@@ -3723,7 +3760,12 @@
       const contesterTiles = profileAttackSync(
         profile,
         "tribes-contester-index",
-        () => this.getEarlyGameContesterTiles(otherPlayers, mySid),
+        () =>
+          this.getEarlyGameContesterTiles(
+            otherPlayers,
+            mySid,
+            competitorProfiles,
+          ),
       );
       const hasOpenOceanAccess = Array.from(
         this.player.borderTiles?.() || [],

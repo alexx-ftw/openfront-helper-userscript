@@ -2384,6 +2384,40 @@ assert.equal(
   2,
   "candidate scoring reads each contester location once per decision",
 );
+const cachedContesterBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+let cachedContesterRefReads = 0;
+cachedContesterBehavior.game = {
+  isValidCoord: () => true,
+  ref: (x, y) => {
+    cachedContesterRefReads++;
+    return `${x}:${y}`;
+  },
+};
+const stableContesterProfiles = [{ sid: 51, location: { x: 5, y: 6 }, troops: 100 }];
+const cachedContesterTiles = cachedContesterBehavior.getEarlyGameContesterTiles(
+  [],
+  1,
+  stableContesterProfiles,
+);
+assert.strictEqual(
+  cachedContesterBehavior.getEarlyGameContesterTiles([], 1, [
+    { sid: 51, location: { x: 5, y: 6 }, troops: 200 },
+  ]),
+  cachedContesterTiles,
+  "troop-only competitor refreshes reuse the contester tile index",
+);
+assert.equal(cachedContesterRefReads, 1);
+assert.deepEqual(
+  Array.from(
+    cachedContesterBehavior.getEarlyGameContesterTiles([], 1, [
+      { sid: 51, location: { x: 7, y: 6 }, troops: 200 },
+    ]),
+    ({ sid, tile }) => [sid, tile],
+  ),
+  [[51, "7:6"]],
+  "a moved competitor invalidates the contester tile cache",
+);
+assert.equal(cachedContesterRefReads, 2);
 
 const explorationRouteBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 let explorationEta = 1200;
