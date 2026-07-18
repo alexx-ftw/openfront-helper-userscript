@@ -120,8 +120,10 @@
    * as one, not as two.
    *
    * Hydrogen bombs require only one completed Silo: their 5M-gold cost is the
-   * gate, not a Silo level. Keep this per-player rather than aggregating all
-   * enemies: the user-facing threat is a single opponent's launch capability.
+   * gate, not a Silo level. Two Silo slots on one player (two level-one Silos
+   * or one level-two Silo) are an immediate full-SAM emergency. Keep this
+   * per-player rather than aggregating all enemies: the user-facing threat is
+   * a single opponent's launch capability.
    */
   const HYDROGEN_SAM_SILO_LEVEL_SUM_THRESHOLD = 1;
 
@@ -2907,7 +2909,9 @@
         HYDROGEN_SAM_MAX_UPGRADE_LEVEL,
         Math.max(
           HYDROGEN_SAM_MINIMUM_READY_LEVEL,
-          this.hostileSiloLevelSumTarget(),
+          this.hostileSiloLevelSumTarget() >= 2
+            ? HYDROGEN_SAM_MAX_UPGRADE_LEVEL
+            : this.hostileSiloLevelSumTarget(),
         ),
       );
       const sams = (this.player.units(UNIT.SAMLauncher) || []).filter((sam) => {

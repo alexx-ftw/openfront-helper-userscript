@@ -199,6 +199,12 @@ const enemySingleLevelOneSilo = {
   isAlive: () => true,
   units: (type) => (type === UNIT.MissileSilo ? [makeUnit(801, 1)] : []),
 };
+const enemySingleLevelTwoSilo = {
+  smallID: () => 81,
+  isPlayer: () => true,
+  isAlive: () => true,
+  units: (type) => (type === UNIT.MissileSilo ? [makeUnit(811, 2)] : []),
+};
 const enemyTwoLevelOneSilos = {
   smallID: () => 9,
   isPlayer: () => true,
@@ -1731,8 +1737,8 @@ hydrogenProtectionBehavior.buildableForUnits = async () => [
 ];
 assert.equal(
   hydrogenProtectionBehavior.hydrogenSamProtectionPlan().targetLevel,
-  2,
-  "H-bomb SAM parity targets the largest hostile built-Silo level sum",
+  5,
+  "Two Silo slots on one hostile player force the maximum SAM level",
 );
 sentBuilds.length = 0;
 assert.equal(
@@ -1773,6 +1779,13 @@ assert.equal(
   "The H-bomb policy upgrades a level-1 SAM before the hostile player can spend 5M on a launch",
 );
 assert.equal(sentBuilds.length, 1, "The single-Silo H-bomb policy sends exactly one SAM upgrade");
+hydrogenProtectionBehavior.liveHostilePlayers = () => [enemySingleLevelTwoSilo];
+hydrogenProtectionBehavior._hydrogenSamProtectionTick = null;
+assert.equal(
+  hydrogenProtectionBehavior.hydrogenSamProtectionPlan().targetLevel,
+  5,
+  "One level-2 hostile Silo also forces the maximum SAM level",
+);
 
 const firstSiloCoverageBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 firstSiloCoverageBehavior._hostileMissileLaunchObserved = true;
