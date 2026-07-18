@@ -707,24 +707,30 @@ assert.equal(
 );
 enemyA.isAlive = () => true;
 enemyA.gold = () => 999_999n;
+const originalPlayersForSiloGoldThreshold = behavior.game.players;
+behavior.game.players = () => [own, enemyA, enemyB];
 const originalEnemySilosUnits = enemySilos.units;
 enemySilos.units = () => [];
-enemyB.gold = () => 1_000_000n;
+enemyB.gold = () => 500_000n;
 assert.equal(
   behavior.hasHostileSiloThreat(),
   true,
-  "The mandatory SAM trigger opens as soon as a hostile can afford a Silo",
+  "The mandatory SAM trigger opens while a hostile is still saving for a Silo",
 );
 behavior._hostileThreatSnapshotTick = null;
 behavior._hostileThreatSnapshot = null;
 behavior._hostileSiloCapacitySnapshotTick = null;
 behavior._hostileSiloCapacitySnapshot = null;
-enemyB.gold = () => 999_999n;
+enemyB.gold = () => 499_999n;
+enemyA.gold = () => 499_999n;
+behavior._hostileThreatSnapshotTick = null;
+behavior._hostileThreatSnapshot = null;
 assert.equal(
   behavior.hasHostileSiloThreat(),
   false,
-  "Gold below the Silo cost does not trigger the mandatory SAM without a built silo",
+  "Gold below the preemptive Silo-funding threshold does not trigger the mandatory SAM without a built silo",
 );
+behavior.game.players = originalPlayersForSiloGoldThreshold;
 enemySilos.units = originalEnemySilosUnits;
 enemyB.gold = () => 999_999n;
 const originalOwnIsFriendly = own.isFriendly;

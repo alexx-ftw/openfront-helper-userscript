@@ -199,11 +199,12 @@
   const HOSTILE_SILO_GOLD_THRESHOLD = 1_000_000n;
 
   /**
-   * A silo finishes before a SAM. Start the interceptor as soon as a hostile
-   * player can pay the silo's real 1M cost, leaving construction time before
-   * their first launch instead of reacting after the launcher appears.
+   * A Silo completes in 100 ticks while a SAM takes 300.  Waiting until an
+   * opponent has the full 1M Silo cost starts both constructions together and
+   * leaves their Silo ready 200 ticks first.  Reserve and start our interceptor
+   * at half the Silo cost so it can finish while they accumulate the remainder.
    */
-  const HOSTILE_SAM_TRIGGER_GOLD_THRESHOLD = HOSTILE_SILO_GOLD_THRESHOLD;
+  const HOSTILE_SAM_TRIGGER_GOLD_THRESHOLD = HOSTILE_SILO_GOLD_THRESHOLD / 2n;
 
   /** Structures that directly grow the nation's economy. */
   const ECONOMIC_STRUCTURE_TYPES = [UNIT.Port, UNIT.Factory, UNIT.City];
