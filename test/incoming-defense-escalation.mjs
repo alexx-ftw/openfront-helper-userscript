@@ -42,18 +42,18 @@ assert.equal(
 );
 assert.equal(bot.lastIncomingDefenseStructureTick, 11);
 
-bot.attackBehavior.incomingHostileAttackPressure = () => 1.5;
+bot.attackBehavior.incomingHostileAttackPressure = () => 1;
 bot.lastIncomingDefenseStructureTick = 11;
 await bot.handleIncomingDefense(14, null, 0);
 assert.equal(
   structureCalls,
   2,
-  "a serious 1.5x invasion retries defensive construction before the routine cadence",
+  "a parity invasion retries defensive construction before the routine cadence",
 );
 
-bot.attackBehavior.incomingHostileAttackPressure = () => 1.1;
+bot.attackBehavior.incomingHostileAttackPressure = () => 0.99;
 bot.lastIncomingDefenseStructureTick = 14;
 await bot.handleIncomingDefense(17, null, 0);
-assert.equal(structureCalls, 2, "a small border probe keeps the normal construction cadence");
+assert.equal(structureCalls, 2, "a sub-parity border probe keeps the normal construction cadence");
 
 process.stdout.write("incoming defense escalation tests passed\n");

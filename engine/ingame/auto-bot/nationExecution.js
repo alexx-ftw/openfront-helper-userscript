@@ -23,11 +23,11 @@
   // they cannot crowd out economy or create a Defense Post for every scout.
   const OVERWHELMING_DEFENSE_STRUCTURE_INTERVAL_TICKS = 3;
 
-  // A force already 25% larger than our entire current army is not a routine
-  // border probe. It needs the same rapid construction retries as a full
-  // overwhelming siege, while the aggregate parity threshold separately decides
-  // whether counterattacking would weaken the front further.
-  const SERIOUS_INCOMING_DEFENSE_RATIO = 1.25;
+  // Once aggregate incoming troops match our current army, the bot already
+  // keeps its troops home instead of counterattacking. The construction lane
+  // must use that same threshold; otherwise a parity siege waits an ordinary
+  // attack cadence before it can reinforce the threatened frontier.
+  const SERIOUS_INCOMING_DEFENSE_RATIO = 1;
 
   class NationBot {
     constructor(game, opts) {
