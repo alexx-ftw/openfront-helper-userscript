@@ -23,6 +23,12 @@
   // they cannot crowd out economy or create a Defense Post for every scout.
   const OVERWHELMING_DEFENSE_STRUCTURE_INTERVAL_TICKS = 3;
 
+  // A force already 25% larger than our entire current army is not a routine
+  // border probe. It needs the same rapid construction retries as a full
+  // overwhelming siege, while the stricter 2x attack threshold still decides
+  // whether counterattacking would weaken the front further.
+  const SERIOUS_INCOMING_DEFENSE_RATIO = 1.25;
+
   class NationBot {
     constructor(game, opts) {
       this.mg = game;
@@ -209,7 +215,7 @@
       const pressure = Number(
         this.attackBehavior.incomingHostileAttackPressure?.(),
       );
-      return pressure >= 2
+      return pressure >= SERIOUS_INCOMING_DEFENSE_RATIO
         ? OVERWHELMING_DEFENSE_STRUCTURE_INTERVAL_TICKS
         : this.attackRate;
     }
