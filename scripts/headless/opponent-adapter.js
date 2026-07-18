@@ -207,6 +207,7 @@ export class BundledOpponentBot {
     this.buildStructures = { ...(options.buildStructures ?? {}) };
     this.intentBuffer = [];
     this.navalTrace = [];
+    this.structureTrace = [];
     this.api = null;
     this.pageGame = null;
     this.nationBot = null;
@@ -226,6 +227,7 @@ export class BundledOpponentBot {
       playerId: this.clientID,
     });
     if (process.env.OFH_LOG_NAVAL === "1") this.enableNavalTrace();
+    if (process.env.OFH_LOG_STRUCTURES === "1") this.enableStructureTrace();
   }
 
   enableNavalTrace() {
@@ -259,6 +261,44 @@ export class BundledOpponentBot {
     return this.navalTrace.splice(0);
   }
 
+  enableStructureTrace() {
+    const behavior = this.nationBot?.structureBehavior;
+    if (!behavior || behavior.__ofhStructureTraceEnabled === true) return;
+    const originalMaybeSpawnStructure = behavior.maybeSpawnStructure;
+    if (typeof originalMaybeSpawnStructure !== "function") return;
+    behavior.__ofhStructureTraceEnabled = true;
+    behavior.maybeSpawnStructure = async (type, options) => {
+      const tick = this.game.ticks();
+      const rawGold = this.pageGame.myPlayer()?.gold?.();
+      const gold = rawGold === null || rawGold === undefined ? null : String(rawGold);
+      const emitted = await originalMaybeSpawnStructure.call(behavior, type, options);
+      this.structureTrace.push({ kind: "spawn", tick, type, emitted, gold });
+      return emitted;
+    };
+    const originalMaybeUpgradeStructure = behavior.maybeUpgradeStructure;
+    if (typeof originalMaybeUpgradeStructure !== "function") return;
+    behavior.maybeUpgradeStructure = async (structures, options) => {
+      const tick = this.game.ticks();
+      const rawGold = this.pageGame.myPlayer()?.gold?.();
+      const gold = rawGold === null || rawGold === undefined ? null : String(rawGold);
+      const type = structures?.[0]?.type?.() ?? null;
+      const emitted = await originalMaybeUpgradeStructure.call(behavior, structures, options);
+      this.structureTrace.push({
+        kind: "upgrade",
+        tick,
+        type,
+        emitted,
+        gold,
+        economicSpaceExhausted: options?.economicSpaceExhausted === true,
+      });
+      return emitted;
+    };
+  }
+
+  drainStructureTrace() {
+    return this.structureTrace.splice(0);
+  }
+
   async decide() {
     if (!this.runner || !this.api || !this.nationBot) {
       throw new Error("Bundled opponent must be attached before decide()");
@@ -266,6 +306,7 @@ export class BundledOpponentBot {
     const harness = this.harness;
     configureHardMode(harness.internals.state, this);
     if (process.env.OFH_LOG_NAVAL === "1") this.enableNavalTrace();
+    if (process.env.OFH_LOG_STRUCTURES === "1") this.enableStructureTrace();
     if (harness.window.__OFH_realOpponentClock) {
       harness.window.__OFH_realOpponentClock.now = this.game.ticks() * 100;
     }

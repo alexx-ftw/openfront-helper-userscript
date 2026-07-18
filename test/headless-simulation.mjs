@@ -20,6 +20,7 @@ assert.match(runner, /OFH_STOP_WHEN_DEAD/);
 assert.match(runner, /OFH_PROFILE_BOT/);
 assert.match(runner, /OFH_LOG_INTENTS/);
 assert.match(runner, /OFH_LOG_NAVAL/);
+assert.match(runner, /OFH_LOG_STRUCTURES/);
 assert.match(runner, /phase:\s*"decision"/);
 assert.match(runner, /attackTargets/);
 assert.match(runner, /targetTroops/);
@@ -59,6 +60,7 @@ assert.match(batch, /spawn\(/);
 assert.match(batch, /OFH_SIM_WORKERS/);
 assert.match(adapter, /window\.__OFH_deadlineNow = hostDeadlineNow/);
 assert.match(adapter, /beginAutoBotProfileTick/);
+assert.match(adapter, /drainStructureTrace/);
 assert.match(adapter, /getPerformanceProfile/);
 assert.match(adapter, /caller: new Error\(\)\.stack\?\.split\("\\n"\)\[2\]/);
 assert.match(

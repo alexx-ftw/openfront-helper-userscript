@@ -125,6 +125,7 @@ const slowTickThresholdMs = Math.max(1, Number(process.env.OFH_SLOW_TICK_MS ?? 2
 const stopWhenBotDies = process.env.OFH_STOP_WHEN_DEAD !== "0";
 const logIntents = process.env.OFH_LOG_INTENTS === "1";
 const logNaval = process.env.OFH_LOG_NAVAL === "1";
+const logStructures = process.env.OFH_LOG_STRUCTURES === "1";
 let turnNumber = 0;
 let emittedIntents = 0;
 let hasEverBeenAlive = me?.isAlive() === true;
@@ -168,6 +169,11 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   if (logNaval) {
     for (const entry of bot.drainNavalTrace()) {
       console.warn(JSON.stringify({ ...entry, phase: "naval-trace", event: entry.phase }));
+    }
+  }
+  if (logStructures) {
+    for (const entry of bot.drainStructureTrace()) {
+      console.warn(JSON.stringify({ ...entry, phase: "structure-trace" }));
     }
   }
   const decisionMs = performance.now() - decisionStartedAt;

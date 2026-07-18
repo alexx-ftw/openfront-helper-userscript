@@ -1435,7 +1435,7 @@ coverageProbeCount = 0;
 let validCoverageProbe = null;
 coverageProbe.buildableFor = async () => {
   coverageProbeCount++;
-  validCoverageProbe = { canBuild: true, tile: 321 };
+  validCoverageProbe = { canBuild: true, canUpgrade: false, tile: 321 };
   return validCoverageProbe;
 };
 assert.equal(
@@ -1608,6 +1608,10 @@ assert.equal(
 missileImpactOwner = missileOwner;
 impactProbeCalls = 0;
 sentBuilds.length = 0;
+missileImpactProbe.buildableFor = async (_type, tile) => {
+  impactProbeCalls++;
+  return { canBuild: tile, canUpgrade: false, tile };
+};
 impactTick++;
 assert.equal(
   await missileImpactProbe.buildFirstDefensePost([105, 120]),
@@ -1616,7 +1620,7 @@ assert.equal(
 );
 assert.equal(sentBuilds.at(-1)?.tile, 120);
 assert.equal(impactProbeCalls, 1, "The unsafe Defense Post tile is never probed");
-missileImpactProbe.buildableFor = async () => ({ canBuild: 105 });
+missileImpactProbe.buildableFor = async () => ({ canBuild: 105, canUpgrade: false });
 sentBuilds.length = 0;
 impactTick++;
 assert.equal(
@@ -1828,7 +1832,7 @@ literalCostSamBehavior.getConstructionCost = () => {
 literalCostSamBehavior.availableGoldAfterReserve = () => 3_000_000n;
 literalCostSamBehavior.player = { units: () => [] };
 literalCostSamBehavior.structureUpgradeBeforeSpawn = async () => null;
-const literalCostSamBuildable = { type: UNIT.SAMLauncher, canBuild: 77 };
+const literalCostSamBuildable = { type: UNIT.SAMLauncher, canBuild: 77, canUpgrade: false };
 literalCostSamBehavior.structureSpawnTile = async () => literalCostSamBuildable;
 const literalCostSamBuildCount = sentBuilds.length;
 assert.equal(
@@ -1891,7 +1895,7 @@ assert.equal(
 const originalGetPerceivedCost = behavior.getPerceivedCost;
 const originalStructureSpawnTile = behavior.structureSpawnTile;
 const originalGetTotalStructureDensity = behavior.getTotalStructureDensity;
-behavior.structureSpawnTile = async () => ({ canBuild: true });
+behavior.structureSpawnTile = async () => ({ canBuild: true, canUpgrade: false });
 behavior.getTotalStructureDensity = () => 0;
 const buildsBeforeSiloGate = sentBuilds.length;
 const originalOwnGoldForDirectSilo = own.gold;
@@ -2142,7 +2146,7 @@ launchGateBehavior.getConstructionCost = () => 1_500_000n;
 launchGateBehavior.availableGoldAfterReserve = () => 2_000_000n;
 launchGateBehavior.player = { units: () => [] };
 launchGateBehavior.structureUpgradeBeforeSpawn = async () => null;
-const preemptiveSamBuildable = { canBuild: 123 };
+const preemptiveSamBuildable = { canBuild: 123, canUpgrade: false };
 launchGateBehavior.structureSpawnTile = async () => preemptiveSamBuildable;
 const preemptiveBuildCount = sentBuilds.length;
 assert.equal(
@@ -2159,7 +2163,7 @@ assert.equal(sentBuilds.at(-1), preemptiveSamBuildable);
 const economicBuildFirstBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 const existingEconomicStructure = { isUnderConstruction: () => false };
 let economicUpgradeCalls = 0;
-const newCityBuildable = { canBuild: 456 };
+const newCityBuildable = { canBuild: 456, canUpgrade: false };
 economicBuildFirstBehavior.structureSpawnEligible = () => true;
 economicBuildFirstBehavior.getConstructionCost = () => 1n;
 economicBuildFirstBehavior.availableGoldAfterReserve = () => 10n;
@@ -2181,6 +2185,25 @@ assert.equal(
 );
 assert.equal(economicUpgradeCalls, 0, "A legal new City site performs no upgrade probe");
 assert.equal(sentBuilds.at(-1), newCityBuildable);
+
+const hybridCityBuildable = { canBuild: 789, canUpgrade: 1234 };
+assert.equal(
+  economicBuildFirstBehavior.isUsableStructureBuildable(hybridCityBuildable, 789, UNIT.City),
+  false,
+  "A build probe that also targets an existing City cannot be used for a new City",
+);
+const hybridBuildCount = sentBuilds.length;
+economicBuildFirstBehavior.structureSpawnTile = async () => hybridCityBuildable;
+assert.equal(
+  await economicBuildFirstBehavior.maybeSpawnStructure(UNIT.City),
+  false,
+  "A hybrid City descriptor cannot silently emit an upgrade through the new-build path",
+);
+assert.equal(
+  sentBuilds.length,
+  hybridBuildCount,
+  "The construction actuation boundary emits no event for a hybrid descriptor",
+);
 
 economicBuildFirstBehavior.structureSpawnTile = async () => null;
 economicBuildFirstBehavior.findEconomicPlacementOrExhaustion = async () => ({

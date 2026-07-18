@@ -31,8 +31,10 @@
 //     over ~25 candidates, short-circuiting on the first valid best-value tile.
 //     The client canBuild is async, so we score ALL candidates SYNC by the src
 //     value function, sort DESC, then await buildables down the ranked list and
-//     take the FIRST whose returned BuildableUnit `.canBuild !== false`. Same
-//     candidate set + value fn → same winner (the highest-value buildable tile).
+//     take the FIRST whose returned BuildableUnit has `.canBuild !== false` and
+//     `.canUpgrade === false`. The client menu prioritizes upgrades in a hybrid
+//     descriptor, so only the latter is a construction candidate. Same candidate
+//     set + value fn → same winner (the highest-value build-only tile).
 //   - COST: src reads `unitInfo(type).cost(game, player)`. That cost fn is built
 //     on `costWrapper`, whose `numUnits = Σ min(unitsOwned(type), unitsConstructed
 //     (type))`. The client GameView does NOT expose unitsOwned/unitsConstructed
@@ -6100,7 +6102,7 @@
       }
 
       // RANK-THEN-PROBE: structureSpawnTile now returns the snapped BuildableUnit
-      // (the first canBuild !== false tile down the value-ranked list) instead of
+      // (the first build-only descriptor down the value-ranked list) instead of
       // a bare TileRef, folding the src `player.canBuild(type, tile)` check into
       // the probe. src: tile = structureSpawnTile(type); if null → return;
       // canBuild = player.canBuild(type, tile); if false → return;
@@ -6140,6 +6142,15 @@
     }
 
     emitStructureBuild(buildMenu, buildable, tile, action) {
+      // BuildMenu intentionally prioritizes canUpgrade whenever a descriptor
+      // exposes both operations. A placement probe can legally expose that
+      // hybrid state when its requested tile is an existing structure while a
+      // nearby snapped construction tile also exists. This method is the final
+      // construction-only boundary: never let such a descriptor turn a planned
+      // new City/Factory/Port/SAM into an upgrade.
+      if (!this.isUsableStructureBuildable(buildable, tile, buildable?.type)) {
+        return false;
+      }
       if (!sendAutoBotBuildOrUpgrade(buildMenu, buildable, tile, this.game, this.player)) {
         return false;
       }
@@ -6886,7 +6897,7 @@
     // structureSpawnTile — NationStructureBehavior.ts:814 (now async).
     // RANK-THEN-PROBE: score ALL candidate tiles SYNC by the src value function,
     // sort DESC, then await buildables down the ranked list and take the FIRST
-    // whose BuildableUnit.canBuild !== false. Returns that BuildableUnit | null.
+    // whose BuildableUnit describes construction only. Returns that BuildableUnit | null.
     // (src interleaves the value fn with a SYNC canBuild and short-circuits on the
     // first valid best-value tile; probing in descending value order and taking
     // the first buildable yields the SAME tile src's loop picks — the highest-
@@ -7713,7 +7724,14 @@
     isUsableStructureBuildable(buildable, tile, type) {
       return Boolean(
         buildable !== null &&
+          buildable !== undefined &&
           buildable.canBuild !== false &&
+          buildable.canBuild !== null &&
+          buildable.canBuild !== undefined &&
+          // The client BuildMenu sends an upgrade before it considers canBuild.
+          // A fresh construction must therefore reject a hybrid descriptor even
+          // if the worker also found a snapped construction tile nearby.
+          buildable.canUpgrade === false &&
           this.isSafeBuildablePlacement(buildable, tile, type),
       );
     }
