@@ -277,6 +277,36 @@ assert.equal(
   "the ocean boolean fast path keeps allocation-free neighbor iteration",
 );
 
+const deferredLakeScenario = makeScenario({
+  ocean: false,
+  allied: true,
+  width: 300,
+  height: 300,
+});
+const deferredLakeMe = await deferredLakeScenario.handle.beginTick(deferredLakeScenario.me);
+assert.equal(
+  deferredLakeScenario.handle.game.hasSharedWater(deferredLakeMe),
+  false,
+  "an inland-water decision defers until its component index is ready",
+);
+assert.ok(
+  deferredLakeScenario.waterChecks() < 5_000,
+  "a large inland-water index advances in one bounded tick slice instead of a full-map stall",
+);
+let deferredLakeResolved = false;
+for (let slice = 0; slice < 50; slice++) {
+  const player = await deferredLakeScenario.handle.beginTick(deferredLakeScenario.me);
+  if (deferredLakeScenario.handle.game.hasSharedWater(player)) {
+    deferredLakeResolved = true;
+    break;
+  }
+}
+assert.equal(
+  deferredLakeResolved,
+  true,
+  "the completed cooperative index restores the exact shared-lake policy",
+);
+
 const sharedLakeScenario = makeScenario({ ocean: false, allied: true });
 const sharedLakeMe = await sharedLakeScenario.handle.beginTick(sharedLakeScenario.me);
 assert.equal(

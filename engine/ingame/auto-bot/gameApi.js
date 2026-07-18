@@ -669,6 +669,11 @@
     let _waterLabels = null;
     let _waterCompIsOcean = null;
     let _waterCompCoast = null;
+    let _waterLabelBuilder = null;
+    // This reconstruction can cover a full world map. Advance it only in
+    // bounded slices from beginTick so an inland lake never turns an Auto-build
+    // decision into a long synchronous frame stall.
+    const WATER_LABEL_SLICE_STEPS = 2048;
 
     function forEachSourceNeighbor(tile, visit) {
       if (typeof src.forEachNeighbor === "function") {
@@ -688,49 +693,88 @@
       if (coast !== null && src.isLand(neighbor)) coast.add(neighbor);
     }
 
-    function floodWaterComponent(start, id, labels) {
-      let isOcean = false;
-      let coast = new Set();
-      const queue = [start];
-      labels[start] = id;
-      for (let head = 0; head < queue.length; head++) {
-        const current = queue[head];
-        if (!isOcean && src.isOcean(current)) {
-          isOcean = true;
-          coast = null;
-        }
-        forEachSourceNeighbor(current, (neighbor) =>
-          visitWaterComponentNeighbor(neighbor, id, labels, queue, coast),
-        );
-      }
-      return { isOcean, coast };
-    }
-
-    function buildWaterLabels() {
+    function startWaterLabelBuilder() {
+      if (_waterLabelBuilder !== null || _waterLabels !== null) return;
       const w = src.width();
       const h = src.height();
       const total = w * h;
-      const labels = new Int32Array(total).fill(-2);
-      const compIsOcean = [];
-      const compCoast = [];
-      let nextId = 0;
-      // Iterative flood fill (queue) over every water tile.
-      for (let t = 0; t < total; t++) {
-        if (!src.isWater(t) || labels[t] !== -2) continue;
-        const id = nextId++;
-        const { isOcean, coast } = floodWaterComponent(t, id, labels);
-        compIsOcean[id] = isOcean;
-        // Only non-ocean components need their coast recorded (ocean is always
-        // treated as shared → its coast is never scanned).
-        compCoast[id] = isOcean ? null : Array.from(coast);
-      }
-      _waterLabels = labels;
-      _waterCompIsOcean = compIsOcean;
-      _waterCompCoast = compCoast;
+      _waterLabelBuilder = {
+        labels: new Int32Array(total).fill(-2),
+        compIsOcean: [],
+        compCoast: [],
+        nextId: 0,
+        scanTile: 0,
+        queue: [],
+        queueHead: 0,
+        componentId: null,
+        componentOcean: false,
+        componentCoast: null,
+      };
     }
 
-    function ensureWaterLabels() {
-      if (_waterLabels === null) buildWaterLabels();
+    function finishWaterLabelComponent(builder) {
+      const id = builder.componentId;
+      builder.compIsOcean[id] = builder.componentOcean;
+      // Only non-ocean components need their coast recorded (ocean is always
+      // treated as shared → its coast is never scanned).
+      builder.compCoast[id] = builder.componentOcean
+        ? null
+        : Array.from(builder.componentCoast);
+      builder.queue = [];
+      builder.queueHead = 0;
+      builder.componentId = null;
+      builder.componentCoast = null;
+    }
+
+    function publishWaterLabels(builder) {
+      _waterLabels = builder.labels;
+      _waterCompIsOcean = builder.compIsOcean;
+      _waterCompCoast = builder.compCoast;
+      _waterLabelBuilder = null;
+    }
+
+    function advanceWaterLabelBuilder(maxSteps = WATER_LABEL_SLICE_STEPS) {
+      startWaterLabelBuilder();
+      const builder = _waterLabelBuilder;
+      if (builder === null) return _waterLabels !== null;
+      let steps = 0;
+      while (steps < maxSteps) {
+        if (builder.componentId !== null) {
+          if (builder.queueHead >= builder.queue.length) {
+            finishWaterLabelComponent(builder);
+            continue;
+          }
+          const current = builder.queue[builder.queueHead++];
+          if (!builder.componentOcean && src.isOcean(current)) {
+            builder.componentOcean = true;
+            builder.componentCoast = null;
+          }
+          forEachSourceNeighbor(current, (neighbor) =>
+            visitWaterComponentNeighbor(
+              neighbor,
+              builder.componentId,
+              builder.labels,
+              builder.queue,
+              builder.componentCoast,
+            ),
+          );
+          steps++;
+          continue;
+        }
+        if (builder.scanTile >= builder.labels.length) {
+          publishWaterLabels(builder);
+          return true;
+        }
+        const tile = builder.scanTile++;
+        steps++;
+        if (!src.isWater(tile) || builder.labels[tile] !== -2) continue;
+        builder.componentId = builder.nextId++;
+        builder.componentOcean = false;
+        builder.componentCoast = new Set();
+        builder.labels[tile] = builder.componentId;
+        builder.queue.push(tile);
+      }
+      return false;
     }
 
     // getWaterComponent(tile) — mirrors core's signature. Returns the component
@@ -738,7 +782,10 @@
     // called on NON-ocean water — randCoastalTileArray / SharedWaterCache
     // short-circuit on ocean before the lookup.)
     function getWaterComponent(tile) {
-      ensureWaterLabels();
+      if (_waterLabels === null) {
+        startWaterLabelBuilder();
+        return null;
+      }
       if (tile < 0 || tile >= _waterLabels.length) return null;
       const id = _waterLabels[tile];
       return id >= 0 ? id : null;
@@ -842,7 +889,12 @@
       {
         if (player.type && player.type() === PlayerType.Bot) return null;
       }
-      ensureWaterLabels();
+      const access = ownedWaterAccessSummary(player);
+      if (access.hasOcean) return new Set([SHARED_OCEAN_SENTINEL]);
+      if (_waterLabels === null) {
+        startWaterLabelBuilder();
+        return null;
+      }
       const mySid = player.smallID();
       const { hasOcean, lakes } = ownedWaterComponents(player);
       const shared = new Set();
@@ -864,6 +916,10 @@
       const access = ownedWaterAccessSummary(player);
       if (access.hasOcean) return true;
       if (!access.hasInlandWater) return false;
+      if (_waterLabels === null) {
+        startWaterLabelBuilder();
+        return false;
+      }
       return sharedWaterComponents(player) !== null;
     }
 
@@ -1086,6 +1142,19 @@
       // snapshot me.borderTiles + profile (relation buckets).
       await ensureBorderTiles(mePlayer);
       await refreshProfile(monotonicNow());
+      // Open ocean is already answered directly from the cached border. Only
+      // an inland shore needs the component reconstruction, and its bounded
+      // slice belongs here rather than in a structure decision.
+      if (
+        typeof src.isShore === "function" &&
+        typeof src.isWater === "function" &&
+        typeof src.isOcean === "function"
+      ) {
+        const waterAccess = ownedWaterAccessSummary(mePlayer);
+        if (!waterAccess.hasOcean && waterAccess.hasInlandWater) {
+          advanceWaterLabelBuilder();
+        }
+      }
       return mePlayer;
     }
 

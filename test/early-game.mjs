@@ -2081,6 +2081,34 @@ assert.equal(
   "future-food scoring reuses the coherent per-decision food-race snapshot",
 );
 
+const indexedDirectFoodRaceBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+const indexedDirectContext = {
+  records: new Map(),
+  directAttackers: new Set(),
+};
+const indexedDirectTargets = [{ targetSid: 7, troops: 120 }];
+const indexedDirectProfile = {
+  sid: 4,
+  progress: 0.6,
+  outgoingTargetsByTarget: new Map([[7, indexedDirectTargets]]),
+};
+Object.defineProperty(indexedDirectProfile, "outgoingTargets", {
+  get() {
+    throw new Error("indexed direct signals must not rescan outgoing attacks");
+  },
+});
+assert.equal(
+  indexedDirectFoodRaceBehavior.applyDirectFoodRaceSignal(
+    indexedDirectProfile,
+    7,
+    indexedDirectContext,
+  ),
+  true,
+);
+assert.equal(indexedDirectContext.records.get(4).troops, 120);
+assert.equal(indexedDirectContext.records.get(4).progress, 0.6);
+assert.equal(indexedDirectContext.records.get(4).vector, 1);
+
 const incrementalFoodRaceBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 incrementalFoodRaceBehavior.player = { isFriendly: () => false };
 incrementalFoodRaceBehavior.getEarlyGameFoodRaceSignals = ({ tribeSid }) => ({

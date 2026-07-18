@@ -3966,6 +3966,16 @@
       return targets;
     }
 
+    indexEarlyGameCompetitorOutgoingTargets(targets) {
+      const byTarget = new Map();
+      for (const attack of targets) {
+        const direct = byTarget.get(attack.targetSid);
+        if (direct) direct.push(attack);
+        else byTarget.set(attack.targetSid, [attack]);
+      }
+      return byTarget;
+    }
+
     earlyGameCompetitorAttackTarget(attack) {
       if (attack.retreating?.() === true) return null;
       const target = attack.target?.();
@@ -4015,11 +4025,15 @@
       if (!other?.isPlayer?.() || !other.isAlive?.()) return null;
       const sid = other.smallID?.();
       if (sid == null || sid === mySid) return null;
+      const outgoingTargets = this.earlyGameCompetitorOutgoingTargets(other);
       return {
         sid,
         ...this.earlyGameCompetitorMovement(other, sid, tick),
         troops: Math.max(0, Number(other.troops?.()) || 0),
-        outgoingTargets: this.earlyGameCompetitorOutgoingTargets(other),
+        outgoingTargets,
+        outgoingTargetsByTarget: this.indexEarlyGameCompetitorOutgoingTargets(
+          outgoingTargets,
+        ),
       };
     }
 
@@ -4108,9 +4122,8 @@
     }
 
     applyDirectFoodRaceSignal(profile, tribeSid, context) {
-      const direct = profile.outgoingTargets.filter(
-        (attack) => attack.targetSid === tribeSid,
-      );
+      const direct = profile.outgoingTargetsByTarget?.get(tribeSid) ||
+        profile.outgoingTargets.filter((attack) => attack.targetSid === tribeSid);
       if (direct.length === 0) return false;
       const record = this.earlyFoodRaceRecord(context.records, profile.sid);
       context.directAttackers.add(profile.sid);
