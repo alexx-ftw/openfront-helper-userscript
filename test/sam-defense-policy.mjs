@@ -656,18 +656,17 @@ assert.equal(
 assert.equal(preemptiveHostileGoldSamCalls, 1);
 
 const preemptiveSamReserveBehavior = Object.create(sandbox.__StructureBehavior.prototype);
-preemptiveSamReserveBehavior.safeConstructionCost = () => 1_500_000n;
-preemptiveSamReserveBehavior.spendableConstructionGold = () => 374_999n;
+preemptiveSamReserveBehavior.ownedLevels = () => 0;
 assert.equal(
   preemptiveSamReserveBehavior.shouldReserveHostileSiloSamBudget(),
   false,
-  "A poor nation keeps productive construction available while it is far from its first SAM",
+  "a zero-income opening keeps construction available so it can establish its first income site",
 );
-preemptiveSamReserveBehavior.spendableConstructionGold = () => 375_000n;
+preemptiveSamReserveBehavior.ownedLevels = () => 1;
 assert.equal(
   preemptiveSamReserveBehavior.shouldReserveHostileSiloSamBudget(),
   true,
-  "Once 25% of the first SAM is saved, hostile-Silo defense reserves the remaining budget",
+  "an established economy reserves every partial fund for the first SAM after an external Silo",
 );
 
 const poorPreemptiveHostileGoldBehavior = Object.create(sandbox.__StructureBehavior.prototype);
@@ -682,7 +681,7 @@ poorPreemptiveHostileGoldBehavior.shouldReserveHostileSiloSamBudget = () => fals
 assert.equal(
   await poorPreemptiveHostileGoldBehavior.handleHostileSiloSamMaximumPriority(),
   null,
-  "An unaffordable SAM threat does not starve an early economy before the reserve threshold",
+  "an unaffordable SAM threat does not starve a zero-income opening",
 );
 hostileSiloMaximumPriorityBehavior.shouldBuildSiloTriggeredSam = () => false;
 hostileSiloMaximumPriorityBehavior.hydrogenSamProtectionPlan = () => ({

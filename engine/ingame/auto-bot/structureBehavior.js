@@ -212,17 +212,6 @@
    */
   const HOSTILE_SAM_TRIGGER_GOLD_THRESHOLD = HOSTILE_SILO_GOLD_THRESHOLD / 2n;
 
-  /**
-   * A nation that has not yet built an economy cannot recover by saving every
-   * coin from its first tiles for a SAM it is far from affording. Once it has
-   * 25% of the real first-SAM price, protect that purchase from ordinary
-   * construction. A live external Silo has already won the construction-time
-   * race, so waiting until 60% repeatedly funded ships and economy instead of
-   * the first interceptor.
-   */
-  const HOSTILE_SAM_SAVEUP_RESERVE_NUMERATOR = 1n;
-  const HOSTILE_SAM_SAVEUP_RESERVE_DENOMINATOR = 4n;
-
   /** Structures that directly grow the nation's economy. */
   const ECONOMIC_STRUCTURE_TYPES = [UNIT.Port, UNIT.Factory, UNIT.City];
 
@@ -2357,13 +2346,12 @@
     }
 
     shouldReserveHostileSiloSamBudget() {
-      const cost = this.safeConstructionCost(UNIT.SAMLauncher);
-      if (cost === null || cost <= 0n) return true;
-      const gold = this.spendableConstructionGold();
-      return (
-        gold * HOSTILE_SAM_SAVEUP_RESERVE_DENOMINATOR >=
-        cost * HOSTILE_SAM_SAVEUP_RESERVE_NUMERATOR
-      );
+      // Once any Silo is visible, the first SAM is the only construction goal.
+      // Preserve the opening escape hatch: without a completed income site,
+      // saving from zero can never fund the launcher. With any City, Factory,
+      // or Port established, do not spend even a small partial SAM fund on an
+      // unrelated structure while an external nuclear threat exists.
+      return ECONOMIC_STRUCTURE_TYPES.some((type) => this.ownedLevels(type) > 0);
     }
 
     availableGoldAfterReserve(type) {
