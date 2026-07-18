@@ -25,7 +25,7 @@
 
   // A force already 25% larger than our entire current army is not a routine
   // border probe. It needs the same rapid construction retries as a full
-  // overwhelming siege, while the stricter 2x attack threshold still decides
+  // overwhelming siege, while the aggregate parity threshold separately decides
   // whether counterattacking would weaken the front further.
   const SERIOUS_INCOMING_DEFENSE_RATIO = 1.25;
 

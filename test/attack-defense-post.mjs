@@ -57,6 +57,23 @@ assert.equal(
   0,
   "no hostile attacks means no defensive-escalation pressure",
 );
+hostileAttackPressureBehavior.player.troops = () => 500_000;
+hostileAttackPressureBehavior.player.incomingAttacks = () => [
+  { attacker: () => ({}), troops: () => 500_000 },
+];
+assert.equal(
+  hostileAttackPressureBehavior.hasOverwhelmingIncomingAttack(),
+  true,
+  "aggregate incoming troops at parity reserve the whole defense budget instead of counterattacking",
+);
+hostileAttackPressureBehavior.player.incomingAttacks = () => [
+  { attacker: () => ({}), troops: () => 499_999 },
+];
+assert.equal(
+  hostileAttackPressureBehavior.hasOverwhelmingIncomingAttack(),
+  false,
+  "an incoming force below parity still permits a responsive counterattack",
+);
 hostileAttackPressureBehavior.player.troops = () => 0;
 hostileAttackPressureBehavior.player.incomingAttacks = () => [
   { attacker: () => ({}), troops: () => 1 },

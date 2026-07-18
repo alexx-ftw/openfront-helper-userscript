@@ -136,11 +136,11 @@
   // parking four times their strength in one conquest.
   const TRIBE_CAPTURE_TROOP_MULTIPLIER = 2;
   const PLAYER_CAPTURE_TROOP_MULTIPLIER = 4;
-  // Above this aggregate hostile-incoming / own-troop ratio, a token
-  // counterattack cannot materially change the battle but does weaken the
-  // defended front. Keep troops home and let the defensive construction lane
-  // use its accelerated siege cadence instead.
-  const OVERWHELMING_INCOMING_ATTACK_RATIO = 2;
+  // Once aggregate hostile incoming troops match our whole current army, a
+  // counterattack removes the exact troops needed at home while still failing
+  // to cover the simultaneous invasion. Keep that projected defense budget
+  // home and let the defensive construction lane use its accelerated cadence.
+  const OVERWHELMING_INCOMING_ATTACK_RATIO = 1;
   // Reserve the troop level where the production rate has its maximum temporal
   // acceleration. P(N) is troops per tick and N' = P(N), so acceleration is
   // dP/dt = P(N) * P'(N), not just the slope with respect to troop count.
