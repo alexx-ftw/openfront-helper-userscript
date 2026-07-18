@@ -433,6 +433,7 @@
       );
       this.structureBehavior = new StructureBehavior(r, g, p);
       this.nukeBehavior.structureBehavior = this.structureBehavior;
+      this.warshipBehavior.structureBehavior = this.structureBehavior;
       this.behaviorsInitialized = true;
     }
 

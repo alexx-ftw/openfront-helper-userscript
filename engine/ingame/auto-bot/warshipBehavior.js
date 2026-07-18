@@ -187,6 +187,12 @@
       }
       const maritimeEmergency =
         this.incomingMaritimeInvasionSignal()?.active === true;
+      if (
+        !maritimeEmergency &&
+        this.shouldDeferWarshipForDefense(this.cost(UNIT.Warship))
+      ) {
+        return false;
+      }
       // A live transport aimed at our territory bypasses the ordinary 50% spawn
       // roll: the Port-first structure policy has already reserved the gold and
       // this phase must get the first available destroyer onto the water.
@@ -216,6 +222,13 @@
         );
       }
       return false;
+    }
+
+    shouldDeferWarshipForDefense(warshipCost) {
+      return (
+        this.structureBehavior?.shouldDeferOffensiveWarship?.(warshipCost) ===
+        true
+      );
     }
 
     // warshipSpawnTile — NationWarshipBehavior.warshipSpawnTile (private).

@@ -2612,6 +2612,16 @@
       return this.spendableConstructionGold() < cost + reserve;
     }
 
+    shouldDeferOffensiveWarship(warshipCost = 0n) {
+      if (!state.settings.winFixes) return false;
+      const cost = BigInt(warshipCost || 0n);
+      if (cost <= 0n) return false;
+      const economic = this.economicConstructionPressure();
+      const reserve =
+        (economic?.cost ?? 0n) + this.offensiveNukeDefenseReserve();
+      return this.spendableConstructionGold() < cost + reserve;
+    }
+
     // WIN-FIX: a hostile border with a larger troop ceiling makes economic
     // growth the safer response; the caller passes the cached snapshot so the
     // high-starting-gold and normal build gates share one border scan.

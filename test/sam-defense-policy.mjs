@@ -2223,6 +2223,22 @@ assert.equal(
   0n,
   "redundant SAM coverage does not reserve a second replacement launcher",
 );
+nukeSamLiquidityBehavior.player.units = (type) =>
+  type === UNIT.SAMLauncher ? [makeUnit(1160, 1)] : [];
+nukeSamLiquidityBehavior.economicConstructionPressure = () => null;
+nukeSamLiquidityBehavior.defensiveConstructionReserve = () => 0n;
+nukeSamLiquidityBehavior.spendableConstructionGold = () => 1_700_000n;
+assert.equal(
+  nukeSamLiquidityBehavior.shouldDeferOffensiveWarship(250_000n),
+  true,
+  "an offensive Warship cannot consume the sole-SAM replacement reserve",
+);
+nukeSamLiquidityBehavior.spendableConstructionGold = () => 1_750_000n;
+assert.equal(
+  nukeSamLiquidityBehavior.shouldDeferOffensiveWarship(250_000n),
+  false,
+  "a Warship remains available once its cost and the SAM replacement reserve are covered",
+);
 
 let coverageSamLevel = 1;
 const structureCoverageSam = {
