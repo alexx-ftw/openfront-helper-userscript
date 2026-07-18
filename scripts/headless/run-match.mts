@@ -154,6 +154,7 @@ const cumulativeIntentTypes = new Map<string, number>();
 let intervalIntentTypes = new Map<string, number>();
 const cumulativeBuildUnitTypes = new Map<string, number>();
 let intervalBuildUnitTypes = new Map<string, number>();
+let intervalBuildEvents: Array<{ tick: number; unit: string; tile: number | null }> = [];
 let cumulativeTerraNulliusAttacks = 0;
 let intervalTerraNulliusAttacks = 0;
 const observedSamLevels = new Map<string, number>();
@@ -179,19 +180,22 @@ const trackedMissileTypes = [
   UnitType.MIRVWarhead,
 ] as const;
 const PREEMPTIVE_SAM_SILO_GOLD = 1_000_000n;
-const countIntents = (intents: readonly { type: string; unit?: unknown }[]) => {
+const countIntents = (
+  intents: readonly { type: string; unit?: unknown; tile?: unknown }[],
+  tick: number,
+) => {
   for (const intent of intents) {
     cumulativeIntentTypes.set(intent.type, (cumulativeIntentTypes.get(intent.type) ?? 0) + 1);
     intervalIntentTypes.set(intent.type, (intervalIntentTypes.get(intent.type) ?? 0) + 1);
     if (intent.type !== "build_unit" || typeof intent.unit !== "string") continue;
-    cumulativeBuildUnitTypes.set(
-      intent.unit,
-      (cumulativeBuildUnitTypes.get(intent.unit) ?? 0) + 1,
-    );
-    intervalBuildUnitTypes.set(
-      intent.unit,
-      (intervalBuildUnitTypes.get(intent.unit) ?? 0) + 1,
-    );
+    cumulativeBuildUnitTypes.set(intent.unit, (cumulativeBuildUnitTypes.get(intent.unit) ?? 0) + 1);
+    intervalBuildUnitTypes.set(intent.unit, (intervalBuildUnitTypes.get(intent.unit) ?? 0) + 1);
+    const tile = Number(intent.tile);
+    intervalBuildEvents.push({
+      tick,
+      unit: intent.unit,
+      tile: Number.isFinite(tile) ? tile : null,
+    });
   }
 };
 const sortedCounts = (counts: ReadonlyMap<string, number>) =>
@@ -211,7 +215,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   }
   const decisionMs = performance.now() - decisionStartedAt;
   emittedIntents += intents.length;
-  countIntents(intents);
+  countIntents(intents, runner.game.ticks());
   const terraNulliusAttacks = intents.filter(
     (intent) => intent.type === "attack" && intent.targetID === null,
   ).length;
@@ -491,6 +495,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
         cumulativeIntentTypes: sortedCounts(cumulativeIntentTypes),
         intervalBuildUnitTypes: sortedCounts(intervalBuildUnitTypes),
         cumulativeBuildUnitTypes: sortedCounts(cumulativeBuildUnitTypes),
+        intervalBuildEvents,
         // A persisted trace must expose the aggregate profile at normal
         // progress checkpoints as well as at rare slow ticks. Otherwise a
         // match with no individual threshold breach leaves no evidence for the
@@ -501,6 +506,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
     );
     intervalIntentTypes = new Map<string, number>();
     intervalBuildUnitTypes = new Map<string, number>();
+    intervalBuildEvents = [];
     intervalTerraNulliusAttacks = 0;
   }
 }
