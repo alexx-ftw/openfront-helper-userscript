@@ -4249,11 +4249,16 @@
     earlyGameCompetitorProfilesSignatures(players, mySid) {
       const signatures = [];
       const stableSignatures = [];
+      const stableSignaturesBySid = new Map();
       for (const other of players ?? []) {
         const stableSignature = this.earlyGameCompetitorStableSignatureRecord(
           other,
           mySid,
         );
+        const sid = other?.smallID?.();
+        if (sid !== null && sid !== undefined) {
+          stableSignaturesBySid.set(sid, stableSignature);
+        }
         stableSignatures.push(stableSignature);
         signatures.push(
           [
@@ -4265,6 +4270,7 @@
       return {
         signature: signatures.sort().join(";"),
         stableSignature: stableSignatures.sort().join(";"),
+        stableSignaturesBySid,
       };
     }
 
@@ -4347,7 +4353,7 @@
       const profiles = [];
       const seen = new Set();
       const tick = this.earlyGameCompetitorTick();
-      const { signature, stableSignature } =
+      const { signature, stableSignature, stableSignaturesBySid } =
         this.earlyGameCompetitorProfilesSignatures(
         players,
         mySid,
@@ -4382,7 +4388,8 @@
           other,
           mySid,
           tick,
-          this.earlyGameCompetitorStableSignatureRecord(other, mySid),
+          stableSignaturesBySid.get(other?.smallID?.()) ??
+            this.earlyGameCompetitorStableSignatureRecord(other, mySid),
         );
         if (profile) {
           profiles.push(profile);

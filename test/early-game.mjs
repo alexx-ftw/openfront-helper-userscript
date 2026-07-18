@@ -3010,6 +3010,13 @@ const changedCompetitor = makePerCompetitor(
 perCompetitorTopologyBehavior.player = { isFriendly: () => false };
 perCompetitorTopologyBehavior.game = { ticks: () => perCompetitorTopologyTick };
 perCompetitorTopologyBehavior.earlyFoodMovement = new Map();
+let perCompetitorStableSignatureReads = 0;
+const originalPerCompetitorStableSignature =
+  perCompetitorTopologyBehavior.earlyGameCompetitorStableSignatureRecord;
+perCompetitorTopologyBehavior.earlyGameCompetitorStableSignatureRecord = function (...args) {
+  perCompetitorStableSignatureReads++;
+  return originalPerCompetitorStableSignature.apply(this, args);
+};
 perCompetitorTopologyBehavior.earlyGameCompetitorProfile = function (...args) {
   perCompetitorTopologyBuilds++;
   return targetSandbox.AttackBehavior.prototype.earlyGameCompetitorProfile.apply(this, args);
@@ -3019,6 +3026,11 @@ await perCompetitorTopologyBehavior.getEarlyGameCompetitorProfiles(
   1,
 );
 assert.equal(perCompetitorTopologyBuilds, 2);
+assert.equal(
+  perCompetitorStableSignatureReads,
+  2,
+  "a full competitor snapshot reuses the cache-key signatures while building profiles",
+);
 perCompetitorTopologyTick++;
 perCompetitorChangedTarget = 32;
 perCompetitorStableTroops = 125;
@@ -3030,6 +3042,11 @@ assert.equal(
   perCompetitorTopologyBuilds,
   3,
   "a topology change for one competitor rebuilds only that competitor's attack index",
+);
+assert.equal(
+  perCompetitorStableSignatureReads,
+  4,
+  "each later snapshot computes one stable signature per competitor, not a second profile-loop copy",
 );
 assert.equal(
   perCompetitorProfiles.find((profile) => profile.sid === 20).troops,
