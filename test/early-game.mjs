@@ -2229,6 +2229,37 @@ assert.strictEqual(
   spatialFoodRaceIndex,
   "food-race indexing is reused for every tribe in the same competitor snapshot",
 );
+const nearbyBoatRankBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+const nearbyBoatRecords = [
+  { tile: 1, dist: 7 },
+  { tile: 2, dist: 2 },
+  { tile: 3, dist: 4 },
+  { tile: 4, dist: 2 },
+  { tile: 5, dist: 1 },
+  { tile: 6, dist: 9 },
+  { tile: 7, dist: 3 },
+];
+const boundedNearbyBoatTargets = {
+  targetLimit: 4,
+  targets: [],
+  scanCandidates: 0,
+};
+for (const record of nearbyBoatRecords) {
+  nearbyBoatRankBehavior.insertNearbyBoatTarget(boundedNearbyBoatTargets, record);
+}
+assert.deepEqual(
+  boundedNearbyBoatTargets.targets,
+  nearbyBoatRecords
+    .slice()
+    .sort((left, right) => left.dist - right.dist)
+    .slice(0, 4),
+  "bounded nearby-boat selection preserves the stable full-sort probe order",
+);
+assert.equal(
+  boundedNearbyBoatTargets.scanCandidates,
+  nearbyBoatRecords.length,
+  "nearby-boat diagnostics retain every scanned candidate after bounded ranking",
+);
 const foodRaceTribe = {
   troops: () => 100,
   incomingAttacks: () => [],

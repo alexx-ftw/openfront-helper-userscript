@@ -5002,9 +5002,8 @@
     }
 
     async nearbyOpportunisticBoatTarget(shores) {
-      const targets = this.scanNearbyTargets(shores);
-      const limit = state.settings.islandProbeMax || 4;
-      for (const target of targets.slice(0, limit)) {
+      const { targets, scanCandidates } = this.scanNearbyTargets(shores);
+      for (const target of targets) {
         if (this.boatTargetTaken(target.tile)) continue;
         const spawn = await withTimeout(
           this.player.bestTransportShipSpawn(target.tile),
@@ -5018,10 +5017,10 @@
           dstOwned: target.owned,
           dstFallout: target.fallout,
           lowFillOk: true,
-          scanCandidates: targets.length,
+          scanCandidates,
         };
       }
-      return { dst: null, scanCandidates: targets.length };
+      return { dst: null, scanCandidates };
     }
 
     async craterOpportunisticBoatTarget() {
@@ -5297,12 +5296,28 @@
             dy,
             context,
           );
-          if (record) context.targets.push(record);
+          if (record) this.insertNearbyBoatTarget(context, record);
         }
       }
     }
 
+    insertNearbyBoatTarget(context, record) {
+      context.scanCandidates++;
+      let index = 0;
+      // Insert after ties to match the stable full-sort ordering exactly.
+      while (
+        index < context.targets.length &&
+        context.targets[index].dist <= record.dist
+      ) {
+        index++;
+      }
+      if (index >= context.targetLimit) return;
+      context.targets.splice(index, 0, record);
+      if (context.targets.length > context.targetLimit) context.targets.pop();
+    }
+
     scanNearbyTargets(shore) {
+      const targetLimit = state.settings.islandProbeMax || 4;
       const context = {
         radius: state.settings.islandScanRadius || 40,
         step: state.settings.islandScanStep || 2,
@@ -5312,6 +5327,8 @@
         weakCache: new Map(),
         seen: new Set(),
         targets: [],
+        scanCandidates: 0,
+        targetLimit,
       };
       const sampleCount = Math.min(
         state.settings.islandScanSamples || 6,
@@ -5320,8 +5337,10 @@
       for (let sample = 0; sample < sampleCount; sample++) {
         this.appendNearbyBoatTargets(this.random.randElement(shore), context);
       }
-      context.targets.sort((a, b) => a.dist - b.dist);
-      return context.targets;
+      return {
+        targets: context.targets,
+        scanCandidates: context.scanCandidates,
+      };
     }
 
     boatPlayerCandidate(player, context) {
