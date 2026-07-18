@@ -20,7 +20,14 @@ const seed = process.env.OFH_MATCH_SEED ?? `ofh-random-team-${Date.now()}`;
 const clientID = "ofh-auto-bot";
 const playlist = new MapPlaylist();
 let playlistConfig = await playlist.gameConfig("team");
-while (playlistConfig.playerTeams === HumansVsNations) {
+// A Team match with one team fails inside GameImpl before tick zero. Keep the
+// random/default playlist semantics, but redraw incompatible entries so every
+// default simulation actually reaches the bot instead of consuming a run.
+while (
+  playlistConfig.playerTeams === HumansVsNations ||
+  !Number.isFinite(Number(playlistConfig.playerTeams)) ||
+  Number(playlistConfig.playerTeams) < 2
+) {
   playlistConfig = await playlist.gameConfig("team");
 }
 const requestedTeams = process.env.OFH_PLAYER_TEAMS;

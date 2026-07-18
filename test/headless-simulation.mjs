@@ -13,6 +13,7 @@ const headlessModuleScope = JSON.parse(
 );
 
 assert.match(runner, /playlist\.gameConfig\("team"\)/);
+assert.match(runner, /Number\(playlistConfig\.playerTeams\) < 2/);
 assert.match(runner, /difficulty:\s*Difficulty\.Impossible/);
 assert.match(runner, /nations:\s*"default"/);
 assert.match(runner, /createMaxDifficultyOpponent/);
