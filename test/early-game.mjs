@@ -2825,8 +2825,13 @@ riskSnapshotTick = 21;
 await riskSnapshotBehavior.getEarlyGameCompetitorProfiles([riskSnapshotRival], 1);
 assert.equal(
   riskProfileBuilds,
-  2,
-  "a troop change invalidates the risk snapshot before contested-cluster ranking",
+  1,
+  "a troop-only change refreshes contested-cluster resources without rebuilding attack topology",
+);
+assert.equal(
+  riskSnapshotBehavior.earlyGameCompetitorProfilesCache.profiles[0].troops,
+  21,
+  "a troop-only refresh still exposes the live rival troop total to food-race ranking",
 );
 riskSnapshotBehavior.createLightweightEarlyGameTribeNode = (tribe, _profiles, races) => {
   riskNodeBuilds++;

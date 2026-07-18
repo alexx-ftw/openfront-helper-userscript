@@ -4144,18 +4144,97 @@
 
     earlyGameCompetitorSignatureRecord(other, mySid) {
       return [
+        this.earlyGameCompetitorStableSignatureRecord(other, mySid),
+        this.earlyGameCompetitorResourcesSignature(other),
+      ].join("|");
+    }
+
+    earlyGameCompetitorStableSignatureRecord(other, mySid) {
+      return [
         this.earlyGameCompetitorIdentitySignature(other, mySid),
         this.earlyGameCompetitorLocationSignature(other),
-        this.earlyGameCompetitorResourcesSignature(other),
+        // Territory changes affect movement progress even if the label has not
+        // moved, so they remain part of the stable topology signature.
+        Math.max(0, Number(other?.numTilesOwned?.()) || 0),
         this.earlyGameCompetitorAttackSignature(other),
       ].join("|");
     }
 
     earlyGameCompetitorProfilesSignature(players, mySid) {
-      return (players ?? [])
-        .map((other) => this.earlyGameCompetitorSignatureRecord(other, mySid))
-        .sort()
-        .join(";");
+      return this.earlyGameCompetitorProfilesSignatures(players, mySid).signature;
+    }
+
+    earlyGameCompetitorProfilesStableSignature(players, mySid) {
+      return this.earlyGameCompetitorProfilesSignatures(players, mySid)
+        .stableSignature;
+    }
+
+    earlyGameCompetitorProfilesSignatures(players, mySid) {
+      const signatures = [];
+      const stableSignatures = [];
+      for (const other of players ?? []) {
+        const stableSignature = this.earlyGameCompetitorStableSignatureRecord(
+          other,
+          mySid,
+        );
+        stableSignatures.push(stableSignature);
+        signatures.push(
+          [
+            stableSignature,
+            this.earlyGameCompetitorResourcesSignature(other),
+          ].join("|"),
+        );
+      }
+      return {
+        signature: signatures.sort().join(";"),
+        stableSignature: stableSignatures.sort().join(";"),
+      };
+    }
+
+    async refreshEarlyGameCompetitorProfilesFromResources(
+      players,
+      cachedProfiles,
+      tick,
+    ) {
+      const profilesBySid = new Map(
+        cachedProfiles.map((profile) => [profile.sid, profile]),
+      );
+      const profiles = [];
+      let sliceStartedAt = earlyGameTopologyNow();
+      for (const other of players ?? []) {
+        const sid = other?.smallID?.();
+        const cached = sid === null || sid === undefined
+          ? null
+          : profilesBySid.get(sid);
+        if (cached) {
+          profiles.push({
+            ...cached,
+            ...this.earlyGameCompetitorMovement(other, sid, tick),
+            troops: Math.max(0, Number(other.troops?.()) || 0),
+          });
+        }
+        if (shouldYieldEarlyGameTribeNodes(sliceStartedAt)) {
+          await yieldEarlyGameTopologyWork();
+          sliceStartedAt = earlyGameTopologyNow();
+        }
+      }
+      return profiles;
+    }
+
+    earlyGameCompetitorProfilesCacheFresh(cached, signature, tick) {
+      return (
+        cached?.signature === signature &&
+        tick >= cached.tick &&
+        tick - cached.tick <= EARLY_GAME_TRIBE_RISK_SNAPSHOT_CACHE_TICKS
+      );
+    }
+
+    earlyGameCompetitorTopologyCacheFresh(cached, stableSignature, tick) {
+      return (
+        cached?.stableSignature === stableSignature &&
+        tick >= cached.tick &&
+        tick - cached.tick <= EARLY_GAME_TRIBE_RISK_SNAPSHOT_CACHE_TICKS
+      );
     }
 
     // Keep a bounded, best-effort profile of how visible rivals are expanding.
@@ -4163,14 +4242,34 @@
       const profiles = [];
       const seen = new Set();
       const tick = this.earlyGameCompetitorTick();
-      const signature = this.earlyGameCompetitorProfilesSignature(players, mySid);
+      const { signature, stableSignature } =
+        this.earlyGameCompetitorProfilesSignatures(
+        players,
+        mySid,
+      );
       const cached = this.earlyGameCompetitorProfilesCache;
-      if (
-        cached?.signature === signature &&
-        tick >= cached.tick &&
-        tick - cached.tick <= EARLY_GAME_TRIBE_RISK_SNAPSHOT_CACHE_TICKS
-      ) {
+      if (this.earlyGameCompetitorProfilesCacheFresh(cached, signature, tick)) {
         return cached.profiles;
+      }
+      if (
+        this.earlyGameCompetitorTopologyCacheFresh(
+          cached,
+          stableSignature,
+          tick,
+        )
+      ) {
+        const refreshed = await this.refreshEarlyGameCompetitorProfilesFromResources(
+          players,
+          cached.profiles,
+          tick,
+        );
+        this.earlyGameCompetitorProfilesCache = {
+          tick,
+          signature,
+          stableSignature,
+          profiles: refreshed,
+        };
+        return refreshed;
       }
       let sliceStartedAt = earlyGameTopologyNow();
       for (const other of players ?? []) {
@@ -4191,7 +4290,12 @@
           sliceStartedAt = earlyGameTopologyNow();
         }
       }
-      this.earlyGameCompetitorProfilesCache = { tick, signature, profiles };
+      this.earlyGameCompetitorProfilesCache = {
+        tick,
+        signature,
+        stableSignature,
+        profiles,
+      };
       return profiles;
     }
 
