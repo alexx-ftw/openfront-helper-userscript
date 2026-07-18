@@ -660,9 +660,14 @@
       this.earlyGameMaritimeSliceDeadlineProbe = 0;
       this.opportunisticBoatSurgeTickByTile = new Map();
       this.earlyGamePreferredClusterTargetKeys = new Set();
-      this.earlyGameTribeTopologyCache = null;
-      this.earlyGamePreferredClusterOverlaySignature = "";
+      this.resetEarlyGameTribeTopologyCache();
       this.earlyGameTribeBoatEtaCache = new Map();
+      // Opportunistic boat selection proves a route before returning a target,
+      // then emission checks that identical target again. Keep the authoritative
+      // ETA only for the current game tick: it eliminates duplicate worker
+      // pathfinding in one decision without carrying a route across a changing
+      // frontier.
+      this.resetBoatRouteEtaCache();
       // A destination that just failed the route gate is unlikely to become
       // reachable before another opening decision. Keep this instance-local so
       // a fresh game never inherits a stale water-path result.
@@ -686,6 +691,16 @@
         const tick = Number(this.game?.ticks?.());
         return Number.isFinite(tick) ? tick : 0;
       }
+    }
+
+    resetBoatRouteEtaCache(tick = null) {
+      this.boatRouteEtaCacheTick = tick;
+      this.boatRouteEtaCache = new Map();
+    }
+
+    resetEarlyGameTribeTopologyCache() {
+      this.earlyGameTribeTopologyCache = null;
+      this.earlyGamePreferredClusterOverlaySignature = "";
     }
 
     getOutboundAttackTargetKey(target) {
@@ -4377,13 +4392,25 @@
       ) {
         return null;
       }
-      {
-        return await withTimeout(
-          this.game.estimateTransportRouteTicks(tile),
-          WORKER_TIMEOUT_MS,
-          null,
-        );
+      // A test/detached behavior may not expose a game clock. In that case do
+      // not cache: there is no sound boundary on which to expire the route.
+      const hasGameTick = typeof this.game.ticks === "function";
+      const tick = hasGameTick ? this.currentAttackDecisionTick() : null;
+      if (tick !== null) {
+        if (this.boatRouteEtaCacheTick !== tick) {
+          this.resetBoatRouteEtaCache(tick);
+        }
+        if (this.boatRouteEtaCache?.has(tile)) {
+          return this.boatRouteEtaCache.get(tile);
+        }
       }
+      const eta = await withTimeout(
+        this.game.estimateTransportRouteTicks(tile),
+        WORKER_TIMEOUT_MS,
+        null,
+      );
+      if (tick !== null) this.boatRouteEtaCache.set(tile, eta);
+      return eta;
     }
 
     // Exploratory/probe boats are useful only when they can return quickly
@@ -4410,11 +4437,7 @@
         early.boatRejectedUnknown = (early.boatRejectedUnknown || 0) + 1;
         return false;
       }
-      const eta = await withTimeout(
-        this.game.estimateTransportRouteTicks(tile),
-        WORKER_TIMEOUT_MS,
-        null,
-      );
+      const eta = await this.getBoatRouteEta(tile);
       if (!isEarlyGameBoatEta(eta)) {
         if (eta == null) {
           early.boatGate = "unknown-route";

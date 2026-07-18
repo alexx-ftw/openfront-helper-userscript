@@ -2176,6 +2176,35 @@ assert.equal(
   "an unknown exploration route is rejected",
 );
 
+const cachedExplorationRouteBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+let cachedExplorationRouteCalls = 0;
+cachedExplorationRouteBehavior.game = {
+  ticks: () => 42,
+  hasTransportRouteEstimator: true,
+  estimateTransportRouteTicks: () => {
+    cachedExplorationRouteCalls++;
+    return 120;
+  },
+};
+assert.equal(
+  await cachedExplorationRouteBehavior.allowBoatExplorationRoute(1),
+  true,
+  "the initial current-tick exploration route remains valid",
+);
+const previousEarlyGameRouteState = targetSandbox.state.earlyGame;
+targetSandbox.state.earlyGame = { active: true, boatRouteAvailable: true };
+assert.equal(
+  await cachedExplorationRouteBehavior.allowEarlyGameBoat(1),
+  true,
+  "early-game emission reuses the selection route from the same tick",
+);
+assert.equal(
+  cachedExplorationRouteCalls,
+  1,
+  "one boat destination runs one authoritative route estimate per game tick",
+);
+targetSandbox.state.earlyGame = previousEarlyGameRouteState;
+
 // TerraNullius expansion must use the engine's real attackLogic loss for the
 // first frontier tile. Normal land expansion and targeted transport probes use
 // that one-tile cost; only the first live opening may request a larger burst.
