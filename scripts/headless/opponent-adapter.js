@@ -231,6 +231,7 @@ export class BundledOpponentBot {
   }
 
   enableNavalTrace() {
+    const adapter = this;
     const prototype = this.harness.internals.WarshipBehavior?.prototype;
     if (!prototype || prototype.__headlessNavalTraceEnabled) return;
     prototype.__headlessNavalTraceEnabled = true;
@@ -258,12 +259,12 @@ export class BundledOpponentBot {
     const originalMaybeSpawnWarship = prototype.maybeSpawnWarship;
     if (typeof originalMaybeSpawnWarship === "function") {
       prototype.maybeSpawnWarship = async function () {
-        const event = this.__ofhHeadlessAdapter.warshipBuildTraceSnapshot(this);
+        const event = adapter.warshipBuildTraceSnapshot(this);
         this.__ofhHeadlessWarshipTrace = event;
         const emitted = await originalMaybeSpawnWarship.call(this);
         event.emitted = emitted;
         this.__ofhHeadlessWarshipTrace = null;
-        this.__ofhHeadlessAdapter?.navalTrace.push(event);
+        adapter.navalTrace.push(event);
         return emitted;
       };
     }
@@ -305,7 +306,6 @@ export class BundledOpponentBot {
         return emitted;
       };
     }
-    this.nationBot.warshipBehavior.__ofhHeadlessAdapter = this;
   }
 
   warshipBuildTraceSnapshot(behavior) {
