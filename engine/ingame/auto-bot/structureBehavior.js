@@ -7884,25 +7884,25 @@
       const entries = this.samCriticalStructureEntries();
       if (entries.length === 0) return tiles;
       const rangeSquared = range * range;
-      const anchors = entries
-        .map((entry) => ({
-          tile: entry.tile,
+      // Building tiles are useful geometric anchors but are normally occupied,
+      // so they cannot themselves be a SAM site. Rank the legal placement
+      // candidates by the same weighted core score instead. This puts the
+      // first actual build probe in the centre of the costly clump rather than
+      // repeatedly probing an occupied City/Factory and falling back to a
+      // random peripheral tile.
+      return tiles
+        .map((tile, index) => ({
+          tile,
+          index,
           score: this.samCriticalCoverageScoreForEntries(
-            entry.tile,
+            tile,
             rangeSquared,
             entries,
           ),
         }))
-        .sort((left, right) => right.score - left.score)
+        .sort((left, right) => right.score - left.score || left.index - right.index)
+        .slice(0, candidateLimit)
         .map((entry) => entry.tile);
-      const merged = [];
-      const seen = new Set();
-      for (const tile of anchors.concat(tiles)) {
-        if (merged.length >= candidateLimit || seen.has(tile)) continue;
-        seen.add(tile);
-        merged.push(tile);
-      }
-      return merged;
     }
 
     prependActiveMissileRouteTiles(tiles, candidateLimit, context) {

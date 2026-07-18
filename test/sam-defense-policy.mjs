@@ -2301,9 +2301,9 @@ criticalSamClusterBehavior.safeStructureCost = (type) => {
   return 750_000n;
 };
 assert.deepEqual(
-  Array.from(criticalSamClusterBehavior.prependCriticalSamClusterTiles([900, 500], 4)),
-  [104, 100, 108, 900],
-  "a coverage-priority SAM seeds the weighted centre of the expensive building cluster before random tiles",
+  Array.from(criticalSamClusterBehavior.prependCriticalSamClusterTiles([900, 106, 500], 4)),
+  [106, 900, 500],
+  "a coverage-priority SAM probes the legal candidate nearest the weighted centre of the expensive building cluster first",
 );
 criticalSamClusterBehavior.shouldPrioritizeHydrogenSamProtection = () => true;
 criticalSamClusterBehavior.externalSiloLevelSumTarget = () => 1;
