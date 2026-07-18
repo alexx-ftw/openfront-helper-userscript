@@ -149,7 +149,11 @@ function makeScenario({
       shoreChecks++;
       return land.has(tile) && cardinalNeighbors(tile).some((neighbor) => !land.has(neighbor));
     },
-    isOceanShore: () => false,
+    isOceanShore: (tile) =>
+      land.has(tile) &&
+      cardinalNeighbors(tile).some(
+        (neighbor) => !land.has(neighbor) && ocean && neighbor >= width * 3 && neighbor < width * 4,
+      ),
     neighbors,
     x: (tile) => tile % width,
     y: (tile) => Math.floor(tile / width),
@@ -399,12 +403,40 @@ assert.deepEqual(
   "port candidate selection keeps the ocean shore",
 );
 
+const cachedOceanPortTiles = [29];
+let cachedOceanPortReads = 0;
+const uncachedOceanPortClassifier = oceanBehavior.isOceanPortTile;
+oceanBehavior.player = {
+  ...oceanBehavior.player,
+  oceanShoreBorderTiles: () => {
+    cachedOceanPortReads++;
+    return cachedOceanPortTiles;
+  },
+};
+oceanBehavior.isOceanPortTile = () => {
+  throw new Error("Auto-build must reuse the cached open-ocean border subset");
+};
+assert.strictEqual(
+  oceanBehavior.oceanPortBorderTiles(),
+  cachedOceanPortTiles,
+  "Auto-build reuses the exact cached open-ocean border subset",
+);
+assert.equal(oceanBehavior.hasOceanPortTiles(), true);
+assert.deepEqual(
+  Array.from(oceanBehavior.randCoastalTileArray(25)),
+  [29],
+  "Port candidate selection consumes the shared cached open-ocean subset",
+);
+assert.equal(cachedOceanPortReads, 3, "all port queries delegate to the cached border adapter");
+oceanBehavior.isOceanPortTile = uncachedOceanPortClassifier;
+
 let oceanBorderSnapshot = new Set([29]);
 let oceanTileClassificationCalls = 0;
 const originalOceanPortTile = oceanBehavior.isOceanPortTile.bind(oceanBehavior);
 oceanBehavior.player = {
   ...oceanBehavior.player,
   borderTiles: () => oceanBorderSnapshot,
+  oceanShoreBorderTiles: () => null,
 };
 oceanBehavior.isOceanPortTile = (tile) => {
   oceanTileClassificationCalls++;

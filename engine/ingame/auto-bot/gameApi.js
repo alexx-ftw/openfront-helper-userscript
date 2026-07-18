@@ -510,7 +510,12 @@
     }
 
     function oceanShoreBorderTilesFrom(border) {
-      if (!border?.size || typeof src.isOceanShore !== "function") return [];
+      if (!border?.size) return [];
+      // `null` means this client cannot answer the exact ocean predicate. It
+      // is distinct from an empty array: structure placement can then use its
+      // compatible isShore/isWater/isOcean reconstruction without mistaking an
+      // unavailable client capability for a coastless territory.
+      if (typeof src.isOceanShore !== "function") return null;
       const cached = oceanShoreBorderCache.get(border);
       if (cached) return cached;
       const shores = [];

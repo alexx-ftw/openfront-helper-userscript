@@ -8000,6 +8000,15 @@
     }
 
     oceanPortBorderTiles() {
+      // gameApi derives this exact open-ocean subset once per cached border
+      // snapshot and shares it with the naval planner. Reclassifying every
+      // border tile here repeats terrain/neighbor reads whenever Auto-build
+      // runs, which becomes expensive on mature frontiers. Keep the local
+      // fallback for older page bundles that do not expose the cached adapter.
+      if (typeof this.player.oceanShoreBorderTiles === "function") {
+        const oceanPortTiles = this.player.oceanShoreBorderTiles();
+        if (Array.isArray(oceanPortTiles)) return oceanPortTiles;
+      }
       const borderTiles = this.player.borderTiles();
       if (this._oceanPortBorderSnapshot === borderTiles) {
         return this._oceanPortBorderTiles || [];

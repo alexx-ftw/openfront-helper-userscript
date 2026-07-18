@@ -122,6 +122,14 @@ assert.strictEqual(
   "repeated ocean-shore reads should reuse the current border snapshot",
 );
 assert.equal(oceanShoreCalls, 1, "the exact ocean-shore predicate runs once per border snapshot");
+delete gameApiSource.isOceanShore;
+gameApiTick += 1;
+await wrappedApi.beginTick(playerCore);
+assert.equal(
+  playerView.oceanShoreBorderTiles(),
+  null,
+  "an unavailable exact ocean predicate is distinguishable from a coastless border",
+);
 assert.equal(playerView.sharesBorderWith(playerView), true);
 const callsAfterFirstBorderCheck = borderNeighborCalls;
 assert.equal(playerView.sharesBorderWith(playerView), true);

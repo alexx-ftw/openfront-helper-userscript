@@ -4212,7 +4212,7 @@
 
       const shores =
         typeof this.player.oceanShoreBorderTiles === "function"
-          ? this.player.oceanShoreBorderTiles()
+          ? this.player.oceanShoreBorderTiles() || []
           : Array.from(this.player.borderTiles()).filter((tile) =>
               this.game.isOceanShore(tile),
             );
