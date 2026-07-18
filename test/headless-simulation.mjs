@@ -9,7 +9,7 @@ const batch = fs.readFileSync(path.join(root, "scripts/headless/run-batch.mjs"),
 const adapter = fs.readFileSync(path.join(root, "scripts/headless/opponent-adapter.js"), "utf8");
 
 assert.match(runner, /playlist\.gameConfig\("team"\)/);
-assert.match(runner, /difficulty:\s*Difficulty\.Easy/);
+assert.match(runner, /difficulty:\s*Difficulty\.Impossible/);
 assert.match(runner, /nations:\s*"default"/);
 assert.match(runner, /createMaxDifficultyOpponent/);
 assert.match(runner, /OFH_GAME_MAP/);

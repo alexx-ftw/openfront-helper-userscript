@@ -51,7 +51,7 @@ const config = {
         bots: 400,
       }
     : {}),
-  difficulty: Difficulty.Easy,
+  difficulty: Difficulty.Impossible,
   nations: "default" as const,
 };
 const gameStart = {
