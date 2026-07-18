@@ -119,10 +119,16 @@
    * built-silo level sum reaches this value. A level-1 silo therefore counts
    * as one, not as two.
    *
-   * Keep this per-player rather than aggregating all enemies: the user-facing
-   * threat is a single opponent's launch capability, not a lobby-wide count.
+   * Hydrogen bombs require only one completed Silo: their 5M-gold cost is the
+   * gate, not a Silo level. Keep this per-player rather than aggregating all
+   * enemies: the user-facing threat is a single opponent's launch capability.
    */
-  const HYDROGEN_SAM_SILO_LEVEL_SUM_THRESHOLD = 2;
+  const HYDROGEN_SAM_SILO_LEVEL_SUM_THRESHOLD = 1;
+
+  // A level-one SAM is the baseline atom interceptor. Once an opponent can
+  // launch a Hydrogen Bomb, immediately raise that first useful SAM one level
+  // before spending on economy or offense.
+  const HYDROGEN_SAM_MINIMUM_READY_LEVEL = 2;
 
   /** Any built hostile silo can already launch a missile at our structures. */
   const HOSTILE_SILO_SAM_COVERAGE_LEVEL_SUM_THRESHOLD = 1;
@@ -760,13 +766,28 @@
       // construction, while the later capacity/coverage planner still uses
       // completed structures where their actual level matters.
       if (!this.hasPlacedSiloOnMap()) return null;
-      if (!this.shouldBuildSiloTriggeredSam()) return null;
 
       // A real hostile Silo makes protective SAM placement the construction
       // planner's hard top priority. If placement is temporarily blocked by
       // gold, retry cadence, or an unavailable legal probe, reserve this slot
       // instead of spending the SAM budget on economy or offense.
-      return (await this.maybeSpawnHostileSiloSam()) === true;
+      if (this.shouldBuildSiloTriggeredSam()) {
+        return (await this.maybeSpawnHostileSiloSam()) === true;
+      }
+
+      // Building the first SAM is not enough once a hostile Silo is live: a
+      // level-one launcher must immediately be upgraded to the minimum H-bomb
+      // ready level. A failed/temporarily unaffordable upgrade reserves this
+      // same top-priority slot rather than funding an unrelated structure.
+      const hydrogenPlan = this.hydrogenSamProtectionPlan?.();
+      if (
+        hydrogenPlan !== null &&
+        hydrogenPlan !== undefined &&
+        hydrogenPlan.targetLevel > hydrogenPlan.currentLevel
+      ) {
+        return this.maybeUpgradePlannedSam(hydrogenPlan);
+      }
+      return null;
     }
 
     async handleImmediateStructureDefense(legendaryDifficulty) {
@@ -2874,15 +2895,21 @@
     }
 
     /**
-     * Find the SAM upgrade that makes our highest built SAM reach the largest
-     * hostile built-silo level sum. This is deliberately a capacity-level
-     * rule: it avoids scanning border tiles or buildings on every build tick,
-     * and it matches the game's one-SAM-vs-total-hostile-silo requirement.
+     * A completed hostile Silo can launch an H-bomb at level one, so establish
+     * level two on our first built SAM immediately. Higher enemy Silo capacity
+     * may still raise the target afterwards. This remains a cheap capacity rule
+     * and avoids scanning every structure during each construction tick.
      */
     hydrogenSamProtectionPlan() {
       if (!this.shouldPrioritizeHydrogenSamProtection()) return null;
 
-      const targetLevel = this.hostileSiloLevelSumTarget();
+      const targetLevel = Math.min(
+        HYDROGEN_SAM_MAX_UPGRADE_LEVEL,
+        Math.max(
+          HYDROGEN_SAM_MINIMUM_READY_LEVEL,
+          this.hostileSiloLevelSumTarget(),
+        ),
+      );
       const sams = (this.player.units(UNIT.SAMLauncher) || []).filter((sam) => {
         {
           if (sam.isUnderConstruction && sam.isUnderConstruction()) return false;

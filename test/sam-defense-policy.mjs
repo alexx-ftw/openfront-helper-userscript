@@ -384,6 +384,23 @@ assert.equal(
 );
 assert.equal(maximumPrioritySamAttempts, 2);
 assert.equal(lowerPriorityConstructionCalls, 0);
+hostileSiloMaximumPriorityBehavior.shouldBuildSiloTriggeredSam = () => false;
+hostileSiloMaximumPriorityBehavior.hydrogenSamProtectionPlan = () => ({
+  currentLevel: 1,
+  targetLevel: 2,
+});
+let maximumPrioritySamUpgradeAttempts = 0;
+hostileSiloMaximumPriorityBehavior.maybeUpgradePlannedSam = async () => {
+  maximumPrioritySamUpgradeAttempts++;
+  return true;
+};
+assert.equal(
+  await hostileSiloMaximumPriorityBehavior.handleStructures(),
+  true,
+  "A level-1 SAM upgrade for H-bomb defense remains above all lower-priority construction",
+);
+assert.equal(maximumPrioritySamUpgradeAttempts, 1);
+assert.equal(lowerPriorityConstructionCalls, 0);
 hostileSiloMaximumPriorityBehavior.hasPlacedSiloOnMap = () => false;
 assert.equal(
   await hostileSiloMaximumPriorityBehavior.handleHostileSiloSamMaximumPriority(),
@@ -466,14 +483,14 @@ assert.equal(
 behavior.game.players = () => [own, enemySingleLevelOneSilo];
 assert.equal(
   behavior.hostileSiloLevelSumAtLeast(),
-  false,
-  "One level-1 hostile Silo contributes one to the H-bomb trigger, not two",
+  true,
+  "One completed level-1 hostile Silo is enough to enable H-bomb SAM protection",
 );
 behavior.game.players = () => [own, enemyTwoLevelOneSilos];
 assert.equal(
   behavior.hostileSiloLevelSumAtLeast(),
   true,
-  "Two hostile level-1 Silos reach the level-sum trigger",
+  "Two hostile level-1 Silos remain inside the H-bomb protection policy",
 );
 behavior.game.players = () => [own, enemySilos, enemyTwoLevelOneSilos];
 assert.equal(
@@ -1745,10 +1762,17 @@ hydrogenProtectionBehavior.cost = () => 1n;
 hydrogenProtectionBehavior.liveHostilePlayers = () => [enemySingleLevelOneSilo];
 hydrogenProtectionBehavior._hydrogenSamProtectionTick = null;
 assert.equal(
-  hydrogenProtectionBehavior.hydrogenSamProtectionPlan(),
-  null,
-  "A single level-1 hostile Silo does not activate H-bomb SAM protection",
+  hydrogenProtectionBehavior.hydrogenSamProtectionPlan().targetLevel,
+  2,
+  "A single completed hostile Silo immediately raises the first SAM to the H-bomb-ready level",
 );
+sentBuilds.length = 0;
+assert.equal(
+  await hydrogenProtectionBehavior.maybeUpgradeHydrogenProtectionSam(),
+  true,
+  "The H-bomb policy upgrades a level-1 SAM before the hostile player can spend 5M on a launch",
+);
+assert.equal(sentBuilds.length, 1, "The single-Silo H-bomb policy sends exactly one SAM upgrade");
 
 const firstSiloCoverageBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 firstSiloCoverageBehavior._hostileMissileLaunchObserved = true;
