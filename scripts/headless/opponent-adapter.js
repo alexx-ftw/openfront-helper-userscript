@@ -276,23 +276,43 @@ export class BundledOpponentBot {
       return emitted;
     };
     const originalMaybeUpgradeStructure = behavior.maybeUpgradeStructure;
-    if (typeof originalMaybeUpgradeStructure !== "function") return;
-    behavior.maybeUpgradeStructure = async (structures, options) => {
-      const tick = this.game.ticks();
-      const rawGold = this.pageGame.myPlayer()?.gold?.();
-      const gold = rawGold === null || rawGold === undefined ? null : String(rawGold);
-      const type = structures?.[0]?.type?.() ?? null;
-      const emitted = await originalMaybeUpgradeStructure.call(behavior, structures, options);
-      this.structureTrace.push({
-        kind: "upgrade",
-        tick,
-        type,
-        emitted,
-        gold,
-        economicSpaceExhausted: options?.economicSpaceExhausted === true,
-      });
-      return emitted;
-    };
+    if (typeof originalMaybeUpgradeStructure === "function") {
+      behavior.maybeUpgradeStructure = async (structures, options) => {
+        const tick = this.game.ticks();
+        const rawGold = this.pageGame.myPlayer()?.gold?.();
+        const gold = rawGold === null || rawGold === undefined ? null : String(rawGold);
+        const type = structures?.[0]?.type?.() ?? null;
+        const emitted = await originalMaybeUpgradeStructure.call(behavior, structures, options);
+        this.structureTrace.push({
+          kind: "upgrade",
+          tick,
+          type,
+          emitted,
+          gold,
+          economicSpaceExhausted: options?.economicSpaceExhausted === true,
+        });
+        return emitted;
+      };
+    }
+    const originalMaybeUpgradePlannedSam = behavior.maybeUpgradePlannedSam;
+    if (typeof originalMaybeUpgradePlannedSam === "function") {
+      behavior.maybeUpgradePlannedSam = async (plan) => {
+        const tick = this.game.ticks();
+        const rawGold = this.pageGame.myPlayer()?.gold?.();
+        const gold = rawGold === null || rawGold === undefined ? null : String(rawGold);
+        const emitted = await originalMaybeUpgradePlannedSam.call(behavior, plan);
+        this.structureTrace.push({
+          kind: "sam-upgrade-plan",
+          tick,
+          emitted,
+          gold,
+          samID: plan?.sam?.id?.() ?? null,
+          currentLevel: plan?.currentLevel ?? null,
+          targetLevel: plan?.targetLevel ?? null,
+        });
+        return emitted;
+      };
+    }
   }
 
   drainStructureTrace() {

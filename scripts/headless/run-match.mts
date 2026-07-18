@@ -134,6 +134,7 @@ const cumulativeIntentTypes = new Map<string, number>();
 let intervalIntentTypes = new Map<string, number>();
 let cumulativeTerraNulliusAttacks = 0;
 let intervalTerraNulliusAttacks = 0;
+const observedSamLevels = new Map<string, number>();
 // The engine can remove a just-issued attack from outgoingAttacks before the
 // next bot decision, while the bot still correctly treats it as committed when
 // it emits a small top-up. Retain that short handoff in telemetry only.
@@ -275,6 +276,43 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   }
   const executionMs = performance.now() - executionStartedAt;
   const currentPlayer = runner.game.playerByClientID(clientID);
+  if (logStructures) {
+    const currentSamLevels = new Map(
+      (currentPlayer?.units(UnitType.SAMLauncher) ?? []).map((sam) => [
+        String(sam.id()),
+        Number(sam.level()),
+      ]),
+    );
+    for (const [samID, level] of currentSamLevels) {
+      const priorLevel = observedSamLevels.get(samID);
+      if (priorLevel === undefined || priorLevel !== level) {
+        console.warn(
+          JSON.stringify({
+            phase: "sam-lifecycle",
+            event: priorLevel === undefined ? "observed" : "level-changed",
+            tick: runner.game.ticks(),
+            samID,
+            previousLevel: priorLevel ?? null,
+            level,
+          }),
+        );
+      }
+    }
+    for (const [samID, level] of observedSamLevels) {
+      if (currentSamLevels.has(samID)) continue;
+      console.warn(
+        JSON.stringify({
+          phase: "sam-lifecycle",
+          event: "removed",
+          tick: runner.game.ticks(),
+          samID,
+          previousLevel: level,
+        }),
+      );
+    }
+    observedSamLevels.clear();
+    for (const [samID, level] of currentSamLevels) observedSamLevels.set(samID, level);
+  }
   if (currentPlayer?.isAlive() === true) hasEverBeenAlive = true;
   const tickMs = decisionMs + executionMs;
   if (tickMs >= slowTickThresholdMs) {
