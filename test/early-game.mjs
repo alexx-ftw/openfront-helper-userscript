@@ -3029,6 +3029,22 @@ const passiveTribe = {
   troops: () => passiveTribeTroops,
   outgoingAttacks: () => [],
 };
+const passiveTribeOutgoingProfile = Object.create(targetSandbox.AttackBehavior.prototype);
+const passiveTribeOutgoing = {
+  type: () => targetSandbox.PlayerType.Bot,
+  outgoingAttacks: () => {
+    throw new Error("passive tribe direct races arrive through candidate incoming attacks");
+  },
+};
+assert.deepEqual(
+  Array.from(passiveTribeOutgoingProfile.earlyGameCompetitorOutgoingTargets(passiveTribeOutgoing)),
+  [],
+  "passive tribe profiling avoids a redundant outgoing-attack traversal",
+);
+assert.equal(
+  passiveTribeOutgoingProfile.earlyGameCompetitorAttackSignature(passiveTribeOutgoing),
+  "",
+);
 passiveTribeSnapshotBehavior.player = { isFriendly: () => false };
 passiveTribeSnapshotBehavior.game = { ticks: () => passiveTribeTick };
 passiveTribeSnapshotBehavior.earlyFoodMovement = new Map();

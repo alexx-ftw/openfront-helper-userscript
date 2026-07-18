@@ -4056,6 +4056,12 @@
     }
 
     earlyGameCompetitorOutgoingTargets(other) {
+      // Direct attacks from passive tribes are already read from each selected
+      // candidate's incoming attacks. Re-reading every tribe's outgoing list
+      // repeats hundreds of player-view traversals on dense maps. Nations and
+      // Humans retain their complete topology because they can race a cluster
+      // from outside the candidate's immediate incoming snapshot.
+      if (!this.earlyGameCompetitorTracksOutgoingAttacks(other)) return [];
       const outgoing = other.outgoingAttacks?.() ?? [];
       const targets = [];
       for (const attack of outgoing) {
@@ -4065,6 +4071,10 @@
         }
       }
       return targets;
+    }
+
+    earlyGameCompetitorTracksOutgoingAttacks(other) {
+      return other?.type?.() !== PlayerType.Bot;
     }
 
     indexEarlyGameCompetitorOutgoingTargets(targets) {
@@ -4139,6 +4149,7 @@
     }
 
     earlyGameCompetitorAttackSignature(other) {
+      if (!this.earlyGameCompetitorTracksOutgoingAttacks(other)) return "";
       const attacks = other?.outgoingAttacks?.() ?? [];
       return attacks
         .map((attack) => [
