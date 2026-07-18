@@ -3305,6 +3305,22 @@ assert.equal(
   0,
   "unchanged tribe borders perform no neighbor topology probes",
 );
+const originalIncrementalTopologySignature =
+  incrementalTopologyBehavior.earlyGameTribeTopologySignature;
+incrementalTopologyBehavior.earlyGameTribeTopologySignature = () => {
+  throw new Error("a caller-provided topology signature must be reused");
+};
+assert.strictEqual(
+  await incrementalTopologyBehavior.updateEarlyGameTribeAdjacency(
+    incrementalNodes,
+    new Map([...initialIncrementalBorders].map(([id, border]) => [id, new Set(border)])),
+    incrementalCache,
+    incrementalCache.signature,
+  ),
+  initialIncrementalAdjacency,
+  "topology refresh reuses the signature already calculated by its caller",
+);
+incrementalTopologyBehavior.earlyGameTribeTopologySignature = originalIncrementalTopologySignature;
 const changedIncrementalBorders = new Map([
   [1, new Set([10])],
   [2, new Set([20, 21])],

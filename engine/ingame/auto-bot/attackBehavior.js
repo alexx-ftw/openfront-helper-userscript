@@ -2937,12 +2937,13 @@
       }
     }
 
-    async updateEarlyGameTribeAdjacency(nodes, borders, cached) {
+    async updateEarlyGameTribeAdjacency(nodes, borders, cached, signature = null) {
       if (!cached?.topologyBordersById || !cached?.tribeAdjacency) {
         return this.connectEarlyGameTribeAdjacency(nodes, borders);
       }
+      const currentSignature = signature ?? this.earlyGameTribeTopologySignature(nodes);
       const signatureChanged =
-        cached.signature !== this.earlyGameTribeTopologySignature(nodes);
+        cached.signature !== currentSignature;
       const changedIds = this.getChangedEarlyGameTribeIds(
         nodes,
         borders,
@@ -3003,6 +3004,7 @@
             nodes,
             topologyBordersById,
             cached,
+            signature,
           ),
       );
       const topology = {
