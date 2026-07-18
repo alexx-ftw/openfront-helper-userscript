@@ -152,6 +152,8 @@ let hasEverBeenAlive = me?.isAlive() === true;
 let stopReason: "winner" | "max_ticks" | "bot_dead" | "engine_stop" = "max_ticks";
 const cumulativeIntentTypes = new Map<string, number>();
 let intervalIntentTypes = new Map<string, number>();
+const cumulativeBuildUnitTypes = new Map<string, number>();
+let intervalBuildUnitTypes = new Map<string, number>();
 let cumulativeTerraNulliusAttacks = 0;
 let intervalTerraNulliusAttacks = 0;
 const observedSamLevels = new Map<string, number>();
@@ -177,10 +179,19 @@ const trackedMissileTypes = [
   UnitType.MIRVWarhead,
 ] as const;
 const PREEMPTIVE_SAM_SILO_GOLD = 1_000_000n;
-const countIntents = (intents: readonly { type: string }[]) => {
+const countIntents = (intents: readonly { type: string; unit?: unknown }[]) => {
   for (const intent of intents) {
     cumulativeIntentTypes.set(intent.type, (cumulativeIntentTypes.get(intent.type) ?? 0) + 1);
     intervalIntentTypes.set(intent.type, (intervalIntentTypes.get(intent.type) ?? 0) + 1);
+    if (intent.type !== "build_unit" || typeof intent.unit !== "string") continue;
+    cumulativeBuildUnitTypes.set(
+      intent.unit,
+      (cumulativeBuildUnitTypes.get(intent.unit) ?? 0) + 1,
+    );
+    intervalBuildUnitTypes.set(
+      intent.unit,
+      (intervalBuildUnitTypes.get(intent.unit) ?? 0) + 1,
+    );
   }
 };
 const sortedCounts = (counts: ReadonlyMap<string, number>) =>
@@ -478,6 +489,8 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
         cumulativeTerraNulliusAttacks,
         intervalIntentTypes: sortedCounts(intervalIntentTypes),
         cumulativeIntentTypes: sortedCounts(cumulativeIntentTypes),
+        intervalBuildUnitTypes: sortedCounts(intervalBuildUnitTypes),
+        cumulativeBuildUnitTypes: sortedCounts(cumulativeBuildUnitTypes),
         // A persisted trace must expose the aggregate profile at normal
         // progress checkpoints as well as at rare slow ticks. Otherwise a
         // match with no individual threshold breach leaves no evidence for the
@@ -487,6 +500,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
       }),
     );
     intervalIntentTypes = new Map<string, number>();
+    intervalBuildUnitTypes = new Map<string, number>();
     intervalTerraNulliusAttacks = 0;
   }
 }

@@ -94,6 +94,9 @@ assert.match(
 );
 assert.match(runner, /intervalIntentTypes/);
 assert.match(runner, /cumulativeIntentTypes/);
+assert.match(runner, /intervalBuildUnitTypes/);
+assert.match(runner, /cumulativeBuildUnitTypes/);
+assert.match(runner, /intent\.type !== "build_unit"/);
 assert.match(runner, /intervalTerraNulliusAttacks/);
 assert.match(runner, /cumulativeTerraNulliusAttacks/);
 assert.match(runner, /intent\.type === "attack" && intent\.targetID === null/);
