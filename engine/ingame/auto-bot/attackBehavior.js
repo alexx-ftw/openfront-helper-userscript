@@ -2863,18 +2863,19 @@
     ) {
       const tick = this.currentAttackDecisionTick();
       const cached = this.earlyGameTribeNodesCache;
-      if (
-        cached?.competitorProfiles === competitorProfiles &&
-        tick >= cached.tick &&
-        tick - cached.tick <= EARLY_GAME_TRIBE_RISK_SNAPSHOT_CACHE_TICKS
-      ) {
-        if (foodRaceById) {
-          for (const [tribeId, race] of cached.foodRaceById) {
-            foodRaceById.set(tribeId, race);
-          }
-        }
-        return cached.nodes;
-      }
+      const competitorCache = this.earlyGameCompetitorProfilesCache;
+      const competitorStableSignature =
+        competitorCache?.profiles === competitorProfiles
+          ? competitorCache.stableSignature
+          : null;
+      const reused = this.reuseIncrementalEarlyGameTribeNodes(
+        cached,
+        competitorProfiles,
+        competitorStableSignature,
+        foodRaceById,
+        tick,
+      );
+      if (reused !== null) return reused;
       const nodes = [];
       let sliceStartedAt = earlyGameTopologyNow();
       for (const tribe of otherPlayers) {
@@ -2893,10 +2894,50 @@
       this.earlyGameTribeNodesCache = {
         tick,
         competitorProfiles,
+        competitorStableSignature,
         nodes,
         foodRaceById: new Map(foodRaceById),
       };
       return nodes;
+    }
+
+    reuseIncrementalEarlyGameTribeNodes(
+      cached,
+      competitorProfiles,
+      competitorStableSignature,
+      foodRaceById,
+      tick,
+    ) {
+      if (
+        !cached ||
+        tick < cached.tick ||
+        tick - cached.tick > EARLY_GAME_TRIBE_RISK_SNAPSHOT_CACHE_TICKS
+      ) {
+        return null;
+      }
+      if (cached.competitorProfiles === competitorProfiles) {
+        if (foodRaceById) {
+          for (const [tribeId, race] of cached.foodRaceById) {
+            foodRaceById.set(tribeId, race);
+          }
+        }
+        return cached.nodes;
+      }
+      if (
+        cached.competitorStableSignature !== competitorStableSignature ||
+        competitorStableSignature === null
+      ) {
+        return null;
+      }
+      // A resource-only competitor refresh returns a new profile array, while
+      // the tribe topology stays exactly the same. Reuse that topology but
+      // discard every old food-race value: the reachable pass below rebuilds
+      // it from the new troops and movement snapshot.
+      for (const node of cached.nodes) node.captureRisk = 0;
+      cached.tick = tick;
+      cached.competitorProfiles = competitorProfiles;
+      cached.foodRaceById = new Map();
+      return cached.nodes;
     }
 
     earlyGameReachableTribeIds(startIds, tribeAdjacency) {

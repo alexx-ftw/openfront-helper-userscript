@@ -3166,7 +3166,7 @@ assert.equal(
 riskSnapshotBehavior.createLightweightEarlyGameTribeNode = (tribe, _profiles, races) => {
   riskNodeBuilds++;
   races?.set(tribe.smallID(), { foodRaceValue: 0 });
-  return { id: tribe.smallID(), player: tribe };
+  return { id: tribe.smallID(), player: tribe, captureRisk: 99 };
 };
 const currentRiskProfiles = riskSnapshotBehavior.earlyGameCompetitorProfilesCache.profiles;
 const firstRiskRaces = new Map();
@@ -3184,6 +3184,30 @@ await riskSnapshotBehavior.getIncrementalEarlyGameTribeNodes(
 );
 assert.equal(riskNodeBuilds, 1, "unchanged tribe food-race nodes reuse the same short snapshot");
 assert.equal(reusedRiskRaces.get(91).foodRaceValue, 0);
+riskSnapshotTroops = 22;
+riskSnapshotTick = 31;
+const refreshedRiskProfiles = await riskSnapshotBehavior.getEarlyGameCompetitorProfiles(
+  [riskSnapshotRival],
+  1,
+);
+const refreshedRiskRaces = new Map();
+const refreshedRiskNodes = await riskSnapshotBehavior.getIncrementalEarlyGameTribeNodes(
+  [riskSnapshotRival],
+  refreshedRiskProfiles,
+  refreshedRiskRaces,
+  false,
+);
+assert.equal(
+  riskNodeBuilds,
+  1,
+  "a resource-only competitor refresh reuses tribe topology instead of rebuilding every node",
+);
+assert.equal(refreshedRiskNodes[0].captureRisk, 0);
+assert.equal(
+  refreshedRiskRaces.size,
+  0,
+  "the refreshed competitor resources invalidate old food-race values",
+);
 const passiveTribeSnapshotBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 let passiveTribeTick = 1;
 let passiveTribeTroops = 20;
