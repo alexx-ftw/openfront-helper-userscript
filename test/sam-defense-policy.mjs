@@ -3284,4 +3284,22 @@ assert.deepEqual(
   "a live-missile emergency retains its trajectory-specific placement candidates",
 );
 
+const samNetworkBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+samNetworkBehavior.game = {
+  config: () => ({ samRange: (level) => Number(level) * 10 }),
+  euclideanDistSquared: (left, right) => (left - right) ** 2,
+};
+samNetworkBehavior.legendaryFriendlySamUnits = () => [{ tile: () => 0, level: () => 1 }];
+const samNetworkScore = samNetworkBehavior.friendlyUsefulSamPlacementScore(new Set([10, 20]), 8);
+assert.ok(
+  samNetworkScore(15) > 0,
+  "a new SAM prefers a site near a friendly umbrella when it adds coverage to an asset the umbrella reaches after an upgrade",
+);
+assert.equal(
+  samNetworkScore(5),
+  0,
+  "a new SAM does not clump inside a friendly umbrella when it adds no coverage",
+);
+assert.equal(samNetworkScore(30), 0, "a distant SAM receives no friendly-network preference");
+
 process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");

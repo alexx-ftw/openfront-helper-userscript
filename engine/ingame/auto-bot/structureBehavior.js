@@ -8838,6 +8838,10 @@
       }
       const range = game.config().defaultSamRange();
       const rangeSquared = range * range;
+      const friendlySamNetworkScore = this.friendlyUsefulSamPlacementScore(
+        this.samProtectableStructureTiles(),
+        structureSpacing,
+      );
 
       const useCoverageWeighting = isLegendaryDifficulty(difficulty)
         ? true
@@ -8886,7 +8890,76 @@
           }
         }
 
+        // Extend a useful friendly SAM umbrella only when this site protects an
+        // additional asset. This favors coherent own/allied coverage without
+        // stacking a redundant launcher inside an already complete umbrella.
+        w += friendlySamNetworkScore(tile);
+
         return w;
+      };
+    }
+
+    friendlyUsefulSamPlacementScore(protectedTiles, structureSpacing) {
+      if (protectedTiles === null || protectedTiles.size === 0) {
+        return () => 0;
+      }
+      const config = this.game.config();
+      const candidateRange = Math.max(
+        0,
+        Number(config.samRange?.(1) ?? config.defaultSamRange?.() ?? 0),
+      );
+      if (candidateRange <= 0) return () => 0;
+      const anchors = this.legendaryFriendlySamUnits()
+        .map((sam) => {
+          const level = Math.max(1, Number(sam.level()));
+          const currentRange = Math.max(0, Number(config.samRange(level)));
+          const upgradedRange = Math.max(
+            currentRange,
+            Number(config.samRange(level + 1)),
+          );
+          return { tile: sam.tile(), currentRange, upgradedRange };
+        })
+        .filter((anchor) => anchor.currentRange > 0 && anchor.upgradedRange > 0);
+      if (anchors.length === 0) return () => 0;
+      const candidateRangeSquared = candidateRange * candidateRange;
+
+      return (tile) => {
+        let best = 0;
+        for (const anchor of anchors) {
+          const anchorRangeSquared = anchor.currentRange * anchor.currentRange;
+          const upgradedRangeSquared = anchor.upgradedRange * anchor.upgradedRange;
+          const anchorDistanceSquared = this.game.euclideanDistSquared(
+            tile,
+            anchor.tile,
+          );
+          if (anchorDistanceSquared > upgradedRangeSquared) continue;
+
+          let anchorProtectsAsset = false;
+          let candidateAddsCoverage = false;
+          for (const structureTile of protectedTiles) {
+            const anchorDistance = this.game.euclideanDistSquared(
+              anchor.tile,
+              structureTile,
+            );
+            if (anchorDistance <= upgradedRangeSquared) {
+              anchorProtectsAsset = true;
+            }
+            if (
+              this.game.euclideanDistSquared(tile, structureTile) <=
+                candidateRangeSquared &&
+              anchorDistance > anchorRangeSquared
+            ) {
+              candidateAddsCoverage = true;
+            }
+          }
+          if (!anchorProtectsAsset || !candidateAddsCoverage) continue;
+          const proximity = Math.max(
+            0,
+            1 - Math.sqrt(anchorDistanceSquared) / anchor.upgradedRange,
+          );
+          best = Math.max(best, structureSpacing * proximity);
+        }
+        return best;
       };
     }
 
