@@ -275,6 +275,21 @@ export class BundledOpponentBot {
       this.structureTrace.push({ kind: "spawn", tick, type, emitted, gold });
       return emitted;
     };
+    const originalStructureSpawnTile = behavior.structureSpawnTile;
+    if (typeof originalStructureSpawnTile === "function") {
+      behavior.structureSpawnTile = async (type, options) => {
+        const buildable = await originalStructureSpawnTile.call(behavior, type, options);
+        if (type === "Defense Post") {
+          this.structureTrace.push({
+            kind: "defense-post-probe",
+            tick: this.game.ticks(),
+            eligible: buildable !== null && buildable !== undefined,
+            tile: buildable?.tile ?? null,
+          });
+        }
+        return buildable;
+      };
+    }
     const originalHandleHostileSiloSam = behavior.handleHostileSiloSamMaximumPriority;
     if (typeof originalHandleHostileSiloSam === "function") {
       behavior.handleHostileSiloSamMaximumPriority = async () => {
@@ -376,6 +391,34 @@ export class BundledOpponentBot {
           });
         }
         return emitted;
+      };
+    }
+    this.enableLandDefenseTrace();
+  }
+
+  enableLandDefenseTrace() {
+    const attackBehavior = this.nationBot?.attackBehavior;
+    const originalRespondToIncomingAttack = attackBehavior?.respondToIncomingAttack;
+    if (typeof originalRespondToIncomingAttack === "function") {
+      attackBehavior.respondToIncomingAttack = async () => {
+        const player = attackBehavior.player;
+        const incoming = player?.incomingAttacks?.() ?? [];
+        const before = incoming.map((attack) => ({
+          attacker: attack?.attacker?.()?.name?.() ?? null,
+          troops: attack?.troops?.() ?? null,
+          target: attack?.target?.()?.smallID?.() ?? null,
+        }));
+        const result = await originalRespondToIncomingAttack.call(attackBehavior);
+        if (before.length > 0 || result !== null) {
+          this.structureTrace.push({
+            kind: "land-defense",
+            tick: this.game.ticks(),
+            ownTroops: player?.troops?.() ?? null,
+            incoming: before,
+            result,
+          });
+        }
+        return result;
       };
     }
   }
