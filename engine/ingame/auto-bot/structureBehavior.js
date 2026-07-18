@@ -6103,7 +6103,9 @@
         if (placement.status === "buildable") {
           bu = placement.buildable;
         } else if (placement.status === "no-space") {
-          return this.maybeUpgradeStructure(structures);
+          return this.maybeUpgradeStructure(structures, {
+            economicSpaceExhausted: true,
+          });
         } else {
           return false;
         }
@@ -6250,7 +6252,18 @@
     }
 
     // maybeUpgradeStructure — NationStructureBehavior.ts:696 (now async).
-    async maybeUpgradeStructure(structures) {
+    async maybeUpgradeStructure(structures, options = {}) {
+      const type = structures?.[0]?.type?.();
+      // Economic upgrades are strictly an exhaustion fallback. Keep that
+      // proof at the actuation boundary as well as in maybeSpawnStructure so
+      // no direct or future caller can trade a legal new City/Factory/Port
+      // site for an upgrade.
+      if (
+        ECONOMIC_STRUCTURE_TYPES.includes(type) &&
+        options.economicSpaceExhausted !== true
+      ) {
+        return false;
+      }
       if (this.getTotalStructureDensity() <= UPGRADE_DENSITY_THRESHOLD) {
         return false;
       }

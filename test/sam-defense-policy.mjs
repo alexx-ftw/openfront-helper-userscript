@@ -2202,6 +2202,25 @@ assert.equal(
 );
 assert.equal(economicUpgradeCalls, 1);
 
+const directEconomicUpgradeGuard = Object.create(sandbox.__StructureBehavior.prototype);
+const guardedEconomicStructure = { type: () => UNIT.City };
+let directEconomicUpgradeProbeCalls = 0;
+directEconomicUpgradeGuard.getTotalStructureDensity = () => 1;
+directEconomicUpgradeGuard.findBestStructureToUpgrade = async () => {
+  directEconomicUpgradeProbeCalls++;
+  return null;
+};
+assert.equal(
+  await directEconomicUpgradeGuard.maybeUpgradeStructure([guardedEconomicStructure]),
+  false,
+  "A direct economic upgrade request is rejected without a completed no-space proof",
+);
+assert.equal(
+  directEconomicUpgradeProbeCalls,
+  0,
+  "The economic no-space guard runs before any upgrade selection work",
+);
+
 const exhaustiveEconomyBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 const exhaustiveStructures = [{ tile: () => 0 }];
 exhaustiveEconomyBehavior.player = {
