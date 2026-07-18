@@ -398,6 +398,75 @@ export class BundledOpponentBot {
 
   enableLandDefenseTrace() {
     const attackBehavior = this.nationBot?.attackBehavior;
+    if (!attackBehavior || attackBehavior.__ofhLandDefenseTraceEnabled === true) return;
+    attackBehavior.__ofhLandDefenseTraceEnabled = true;
+    let forcedAttackTrace = null;
+    const originalSendAttack = attackBehavior.sendAttack;
+    if (typeof originalSendAttack === "function") {
+      attackBehavior.sendAttack = async (...args) => {
+        const [target, force] = args;
+        if (force !== true || target?.isPlayer?.() !== true) {
+          return originalSendAttack.apply(attackBehavior, args);
+        }
+        forcedAttackTrace = {
+          attacker: target.name?.() ?? null,
+          landBorder: attackBehavior.player?.sharesBorderWith?.(target) === true,
+        };
+        const result = await originalSendAttack.apply(attackBehavior, args);
+        this.structureTrace.push({
+          kind: "forced-retaliation-gate",
+          tick: this.game.ticks(),
+          ...forcedAttackTrace,
+          result,
+        });
+        forcedAttackTrace = null;
+        return result;
+      };
+    }
+    const originalCreateLandAttackContext = attackBehavior.createLandAttackContext;
+    if (typeof originalCreateLandAttackContext === "function") {
+      attackBehavior.createLandAttackContext = (...args) => {
+        const context = originalCreateLandAttackContext.apply(attackBehavior, args);
+        if (forcedAttackTrace !== null) {
+          forcedAttackTrace.context = {
+            targetTroops: context.targetTroops,
+            targetSpendableTroops: context.targetSpendableTroops,
+            finalSpendableTroops: context.finalSpendableTroops,
+          };
+        }
+        return context;
+      };
+    }
+    const originalCalculateLandAttackTroops = attackBehavior.calculateLandAttackTroops;
+    if (typeof originalCalculateLandAttackTroops === "function") {
+      attackBehavior.calculateLandAttackTroops = (context) => {
+        const troops = originalCalculateLandAttackTroops.call(attackBehavior, context);
+        if (forcedAttackTrace !== null) {
+          forcedAttackTrace.calculated = {
+            troops,
+            attackBlocked: context.attackBlocked,
+            requiredTribeAttackTroops: context.requiredTribeAttackTroops,
+          };
+        }
+        return troops;
+      };
+    }
+    const originalLandAttackTroopsAreSafe = attackBehavior.landAttackTroopsAreSafe;
+    if (typeof originalLandAttackTroopsAreSafe === "function") {
+      attackBehavior.landAttackTroopsAreSafe = (context, troops) => {
+        const safe = originalLandAttackTroopsAreSafe.call(attackBehavior, context, troops);
+        if (forcedAttackTrace !== null) forcedAttackTrace.safe = safe;
+        return safe;
+      };
+    }
+    const originalEmitLandAttackIntent = attackBehavior.emitLandAttackIntent;
+    if (typeof originalEmitLandAttackIntent === "function") {
+      attackBehavior.emitLandAttackIntent = (context, troops) => {
+        const emitted = originalEmitLandAttackIntent.call(attackBehavior, context, troops);
+        if (forcedAttackTrace !== null) forcedAttackTrace.intentEmitted = emitted;
+        return emitted;
+      };
+    }
     const originalRespondToIncomingAttack = attackBehavior?.respondToIncomingAttack;
     if (typeof originalRespondToIncomingAttack === "function") {
       attackBehavior.respondToIncomingAttack = async () => {
