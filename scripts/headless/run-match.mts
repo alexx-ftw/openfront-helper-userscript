@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   Difficulty,
+  GameMapSize,
   HumansVsNations,
   PlayerType,
   UnitType,
@@ -25,10 +26,27 @@ while (playlistConfig.playerTeams === HumansVsNations) {
 }
 const requestedTeams = process.env.OFH_PLAYER_TEAMS;
 const numericTeams = Number(requestedTeams);
+const requestedMapSize = process.env.OFH_GAME_MAP_SIZE;
+const normalizedMapSize =
+  requestedMapSize === undefined
+    ? playlistConfig.gameMapSize
+    : (() => {
+        switch (requestedMapSize.trim().toLowerCase()) {
+          case "low":
+          case "compact":
+            return GameMapSize.Compact;
+          case "normal":
+            return GameMapSize.Normal;
+          default:
+            throw new Error(
+              `Invalid OFH_GAME_MAP_SIZE=${requestedMapSize}; use Low/Compact or Normal`,
+            );
+        }
+      })();
 const fixedConfig = process.env.OFH_GAME_MAP
   ? {
       gameMap: process.env.OFH_GAME_MAP,
-      gameMapSize: process.env.OFH_GAME_MAP_SIZE ?? playlistConfig.gameMapSize,
+      gameMapSize: normalizedMapSize,
       gameMode: "Team",
       playerTeams:
         requestedTeams === undefined
