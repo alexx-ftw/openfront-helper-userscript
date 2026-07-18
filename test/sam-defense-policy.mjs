@@ -2206,6 +2206,24 @@ assert.deepEqual(
   "Pre-launch coverage SAMs use the literal affordable cost instead of a save-up multiplier",
 );
 
+const nukeSamLiquidityBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+nukeSamLiquidityBehavior.player = {
+  units: (type) => (type === UNIT.SAMLauncher ? [makeUnit(1160, 1)] : []),
+};
+nukeSamLiquidityBehavior.hasPlacedSiloOnMap = () => true;
+nukeSamLiquidityBehavior.safeConstructionCost = () => 1_500_000n;
+assert.equal(
+  nukeSamLiquidityBehavior.singleSamHostileSiloReplacementReserve(),
+  1_500_000n,
+  "a sole SAM retains the actual replacement cost while another player has a Silo",
+);
+nukeSamLiquidityBehavior.player.units = () => [makeUnit(1160, 1), makeUnit(1161, 1)];
+assert.equal(
+  nukeSamLiquidityBehavior.singleSamHostileSiloReplacementReserve(),
+  0n,
+  "redundant SAM coverage does not reserve a second replacement launcher",
+);
+
 let coverageSamLevel = 1;
 const structureCoverageSam = {
   id: () => 1201,

@@ -2549,6 +2549,20 @@
       );
     }
 
+    singleSamHostileSiloReplacementReserve() {
+      if (!state.settings.winFixes || !this.hasPlacedSiloOnMap()) return 0n;
+      const sams = this.player.units(UNIT.SAMLauncher) || [];
+      if (sams.length > 1) return 0n;
+      return this.safeConstructionCost(UNIT.SAMLauncher) ?? 0n;
+    }
+
+    offensiveNukeDefenseReserve() {
+      return (
+        this.defensiveConstructionReserve() +
+        this.singleSamHostileSiloReplacementReserve()
+      );
+    }
+
     hasDefensiveSamPressure() {
       if (this.hydrogenCoverageNeedsSam()) return true;
       {
@@ -2594,7 +2608,7 @@
 
       const economic = this.economicConstructionPressure();
       const reserve =
-        (economic?.cost ?? 0n) + this.defensiveConstructionReserve();
+        (economic?.cost ?? 0n) + this.offensiveNukeDefenseReserve();
       return this.spendableConstructionGold() < cost + reserve;
     }
 
