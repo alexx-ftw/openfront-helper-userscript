@@ -249,6 +249,10 @@
    * while a Tribe probe must never freeze the opening economy.
    */
   const PREEMPTIVE_DEFENSE_POST_THREAT_RATIO = 0.1;
+  // A hostile Nation/Human sharing land with at least half our current army can
+  // turn into a siege before the next construction cadence. One cheap Post on
+  // that actual front is a preventive measure; tribes remain excluded.
+  const PREEMPTIVE_BORDER_DEFENSE_POST_RATIO = 0.5;
 
   /**
    * Do not repeat a failed hostile-Silo SAM placement probe more than once per
@@ -929,9 +933,10 @@
       if (difficulty === Difficulty.Medium && !this.random.chance(2)) {
         return false;
       }
-      const threat = this.defensePostThreat(difficulty);
+      const threat = this.defensePostPlacementThreat(difficulty);
       if (threat === null) return false;
-      const frontTiles = this.getAttackFrontTiles(threat.landAttacks);
+      const frontTiles = threat.frontTiles ||
+        this.getAttackFrontTiles(threat.landAttacks);
       if (
         this.countDefensePostsNearFront(frontTiles, threat.allowed) >=
         threat.allowed
@@ -969,6 +974,48 @@
       return this.buildFirstDefensePost(
         this.rankStructureTilesBySamProtection(fallbackTiles, UNIT.DefensePost),
       );
+    }
+
+    defensePostPlacementThreat(difficulty) {
+      const activeThreat = this.defensePostThreat(difficulty);
+      if (activeThreat !== null) return activeThreat;
+      return this.preemptiveBorderDefensePostThreat();
+    }
+
+    isStrategicBorderDefenseOpponent(opponent) {
+      if (!opponent?.isPlayer?.() || opponent.isAlive?.() === false) return false;
+      if (this.player.isFriendly(opponent) === true) return false;
+      return opponent.type?.() === PlayerType.Nation ||
+        opponent.type?.() === PlayerType.Human;
+    }
+
+    preemptiveBorderDefensePostThreat() {
+      if (
+        typeof this.game.ownerID !== "function" ||
+        typeof this.game.playerBySmallID !== "function"
+      ) return null;
+      const ownTroops = Math.max(0, Number(this.player.troops?.()) || 0);
+      if (ownTroops <= 0) return null;
+      const opponents = new Map();
+      const frontTiles = [];
+      for (const borderTile of this.player.borderTiles()) {
+        let threatened = false;
+        for (const neighbor of this.game.neighbors(borderTile) || []) {
+          const opponent = this.game.playerBySmallID(this.game.ownerID(neighbor));
+          if (!this.isStrategicBorderDefenseOpponent(opponent)) continue;
+          opponents.set(opponent.smallID(), opponent);
+          threatened = true;
+        }
+        if (threatened) frontTiles.push(borderTile);
+      }
+      const hostileTroops = [...opponents.values()].reduce(
+        (total, opponent) => total + Math.max(0, Number(opponent.troops?.()) || 0),
+        0,
+      );
+      if (hostileTroops / ownTroops < PREEMPTIVE_BORDER_DEFENSE_POST_RATIO) {
+        return null;
+      }
+      return frontTiles.length > 0 ? { allowed: 1, frontTiles } : null;
     }
 
     defensePostThreat(difficulty) {

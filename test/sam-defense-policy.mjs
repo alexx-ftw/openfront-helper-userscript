@@ -493,6 +493,43 @@ assert.deepEqual(
   "the fallback probes only after the bounded front sample fails",
 );
 
+const preemptiveBorderPostBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+let borderThreatTroops = 50;
+let borderThreatType = sandbox.PlayerType.Nation;
+const borderThreatOpponent = {
+  smallID: () => 2,
+  isPlayer: () => true,
+  isAlive: () => true,
+  type: () => borderThreatType,
+  troops: () => borderThreatTroops,
+};
+preemptiveBorderPostBehavior.player = {
+  troops: () => 100,
+  borderTiles: () => [10, 20],
+  isFriendly: () => false,
+};
+preemptiveBorderPostBehavior.game = {
+  neighbors: (tile) => (tile === 10 ? [11] : [21]),
+  ownerID: (tile) => (tile === 11 ? 2 : null),
+  playerBySmallID: (sid) => (sid === 2 ? borderThreatOpponent : null),
+};
+const preemptiveBorderThreat = preemptiveBorderPostBehavior.preemptiveBorderDefensePostThreat();
+assert.equal(preemptiveBorderThreat.allowed, 1);
+assert.deepEqual(Array.from(preemptiveBorderThreat.frontTiles), [10]);
+borderThreatTroops = 49;
+assert.equal(
+  preemptiveBorderPostBehavior.preemptiveBorderDefensePostThreat(),
+  null,
+  "a weaker hostile border does not divert early expansion into a preventive Post",
+);
+borderThreatTroops = 100;
+borderThreatType = sandbox.PlayerType.Bot;
+assert.equal(
+  preemptiveBorderPostBehavior.preemptiveBorderDefensePostThreat(),
+  null,
+  "tribe borders never trigger the Nation/Human preventive Post policy",
+);
+
 const hostileSiloMaximumPriorityBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 hostileSiloMaximumPriorityBehavior.game = {
   config: () => ({ isUnitDisabled: () => false }),
