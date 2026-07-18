@@ -4282,6 +4282,34 @@
       );
     }
 
+    earlyGameCompetitorProfileForSnapshot(other, mySid, tick, stableSignature) {
+      const sid = other?.smallID?.();
+      const cached = sid === null || sid === undefined
+        ? null
+        : this.earlyGameCompetitorProfileTopologyCache?.get(sid);
+      // A change in one Nation's frontier or outgoing attacks must not make us
+      // rebuild every other Nation's attack index. Movement and troops remain
+      // live per decision; only the immutable topology portion is reused.
+      if (cached?.stableSignature === stableSignature) {
+        return {
+          ...cached.profile,
+          ...this.earlyGameCompetitorMovement(other, sid, tick),
+          troops: Math.max(0, Number(other.troops?.()) || 0),
+        };
+      }
+      const profile = this.earlyGameCompetitorProfile(other, mySid, tick);
+      if (profile) {
+        if (!this.earlyGameCompetitorProfileTopologyCache) {
+          this.earlyGameCompetitorProfileTopologyCache = new Map();
+        }
+        this.earlyGameCompetitorProfileTopologyCache.set(profile.sid, {
+          stableSignature,
+          profile,
+        });
+      }
+      return profile;
+    }
+
     // Keep a bounded, best-effort profile of how visible rivals are expanding.
     async getEarlyGameCompetitorProfiles(players, mySid) {
       const profiles = [];
@@ -4318,7 +4346,12 @@
       }
       let sliceStartedAt = earlyGameTopologyNow();
       for (const other of players ?? []) {
-        const profile = this.earlyGameCompetitorProfile(other, mySid, tick);
+        const profile = this.earlyGameCompetitorProfileForSnapshot(
+          other,
+          mySid,
+          tick,
+          this.earlyGameCompetitorStableSignatureRecord(other, mySid),
+        );
         if (profile) {
           profiles.push(profile);
           seen.add(profile.sid);

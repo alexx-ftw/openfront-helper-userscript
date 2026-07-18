@@ -2934,6 +2934,66 @@ assert.equal(
   21,
   "a troop-only refresh still exposes the live rival troop total to food-race ranking",
 );
+const perCompetitorTopologyBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+let perCompetitorTopologyTick = 1;
+let perCompetitorTopologyBuilds = 0;
+let perCompetitorStableTroops = 100;
+let perCompetitorChangedTarget = 31;
+const makePerCompetitor = (sid, troops, target) => ({
+  isPlayer: () => true,
+  isAlive: () => true,
+  smallID: () => sid,
+  type: () => targetSandbox.PlayerType.Nation,
+  nameLocation: () => ({ x: sid, y: sid }),
+  numTilesOwned: () => 10,
+  troops: () => troops(),
+  outgoingAttacks: () => [
+    {
+      target: () => ({ smallID: () => target() }),
+      troops: () => 10,
+      retreating: () => false,
+    },
+  ],
+});
+const stableCompetitor = makePerCompetitor(
+  20,
+  () => perCompetitorStableTroops,
+  () => 30,
+);
+const changedCompetitor = makePerCompetitor(
+  21,
+  () => 100,
+  () => perCompetitorChangedTarget,
+);
+perCompetitorTopologyBehavior.player = { isFriendly: () => false };
+perCompetitorTopologyBehavior.game = { ticks: () => perCompetitorTopologyTick };
+perCompetitorTopologyBehavior.earlyFoodMovement = new Map();
+perCompetitorTopologyBehavior.earlyGameCompetitorProfile = function (...args) {
+  perCompetitorTopologyBuilds++;
+  return targetSandbox.AttackBehavior.prototype.earlyGameCompetitorProfile.apply(this, args);
+};
+await perCompetitorTopologyBehavior.getEarlyGameCompetitorProfiles(
+  [stableCompetitor, changedCompetitor],
+  1,
+);
+assert.equal(perCompetitorTopologyBuilds, 2);
+perCompetitorTopologyTick++;
+perCompetitorChangedTarget = 32;
+perCompetitorStableTroops = 125;
+const perCompetitorProfiles = await perCompetitorTopologyBehavior.getEarlyGameCompetitorProfiles(
+  [stableCompetitor, changedCompetitor],
+  1,
+);
+assert.equal(
+  perCompetitorTopologyBuilds,
+  3,
+  "a topology change for one competitor rebuilds only that competitor's attack index",
+);
+assert.equal(
+  perCompetitorProfiles.find((profile) => profile.sid === 20).troops,
+  125,
+  "an unchanged competitor still refreshes live troops while its attack topology is reused",
+);
 riskSnapshotBehavior.createLightweightEarlyGameTribeNode = (tribe, _profiles, races) => {
   riskNodeBuilds++;
   races?.set(tribe.smallID(), { foodRaceValue: 0 });
