@@ -102,6 +102,11 @@
   // combat decision; the retry window leaves room to try every ranked fallback.
   const EARLY_OCEAN_ROUTE_PROBE_BUDGET = 1;
   const EARLY_OCEAN_PROBE_RETRY_TICKS = BOAT_PROBE_CANDIDATES * 30;
+  // Ordinary random boats are a low-priority fallback, unlike the directed
+  // early/oportunistic naval lanes. Never let several slow worker probes turn
+  // one combat decision into a visible frame stall.
+  const ORDINARY_RANDOM_BOAT_PROBE_TIMEOUT_MS = 75;
+  const ORDINARY_RANDOM_BOAT_RETRY_TICKS = 30;
   const EARLY_GAME_TRIBE_CHAIN_RADIUS = 120;
   // The profiled strategic cadence is 19 game ticks. Keep the complete graph
   // through two decisions (rather than rebuilding it every other decision),
@@ -4513,19 +4518,25 @@
     }
 
     async findRandomBoatDestination(source, borderingEnemies) {
-      const preferred = await this.findRandomBoatTarget(
+      // Probe one ranked candidate per ordinary decision.  The old high-interest
+      // plus generic fallback ladder could await several worker timeouts in the
+      // same frame. Persist which half is due next so the fallback remains part
+      // of the strategy, just in the following eligible decision.
+      const highInterestOnly = this.randomBoatFallbackOnly !== true;
+      const destination = await this.findRandomBoatTarget(
         source,
         borderingEnemies,
-        true,
-        state.settings.winFixes,
+        highInterestOnly,
+        highInterestOnly && state.settings.winFixes,
+        {
+          maxProbes: 1,
+          timeoutMs: ORDINARY_RANDOM_BOAT_PROBE_TIMEOUT_MS,
+        },
       );
-      if (preferred !== null) return preferred;
-      return this.findRandomBoatTarget(
-        source,
-        borderingEnemies,
-        false,
-        state.settings.winFixes,
-      );
+      this.randomBoatFallbackOnly = destination === null
+        ? highInterestOnly
+        : false;
+      return destination;
     }
 
     randomBoatTargetIsTerraNullius(tile) {
@@ -4547,6 +4558,11 @@
     // attackWithRandomBoat — AiAttackBehavior (private, now async via findRandomBoatTarget).
     async attackWithRandomBoat(borderingEnemies = []) {
       if (this.player === null) throw new Error("not initialized");
+      const tick = this.currentAttackDecisionTick();
+      if (
+        this.randomBoatRetryNotBeforeTick !== null &&
+        tick < this.randomBoatRetryNotBeforeTick
+      ) return;
       const shores = this.randomBoatLaunchShores();
       if (shores.length === 0) return;
 
@@ -4555,11 +4571,19 @@
         source,
         borderingEnemies,
       );
-      if (destination === null) return;
+      if (destination === null) {
+        this.randomBoatRetryNotBeforeTick =
+          tick + ORDINARY_RANDOM_BOAT_RETRY_TICKS;
+        return;
+      }
 
       const isTerraNullius = this.randomBoatTargetIsTerraNullius(destination);
       const troops = this.randomBoatTroops(isTerraNullius);
-      if (troops < 1 || !(await this.allowEarlyGameBoat(destination))) return;
+      if (troops < 1 || !(await this.allowEarlyGameBoat(destination))) {
+        this.randomBoatRetryNotBeforeTick =
+          tick + ORDINARY_RANDOM_BOAT_RETRY_TICKS;
+        return;
+      }
       const emitted = this.emitBoat(
         destination,
         troops,
@@ -5372,14 +5396,31 @@
       return { candidates, unreachablePlayers: context.unreachablePlayers };
     }
 
-    async probeRandomBoatCandidates(candidates, unreachablePlayers, requireRoute) {
-      for (const candidate of candidates) {
+    async probeRandomBoatCandidates(
+      candidates,
+      unreachablePlayers,
+      requireRoute,
+      options = {},
+    ) {
+      const maxProbes = Math.max(
+        1,
+        Math.min(
+          candidates.length,
+          Number.isInteger(options.maxProbes)
+            ? options.maxProbes
+            : candidates.length,
+        ),
+      );
+      const timeoutMs = Number.isFinite(options.timeoutMs)
+        ? Math.max(1, options.timeoutMs)
+        : WORKER_TIMEOUT_MS;
+      for (const candidate of candidates.slice(0, maxProbes)) {
         if (candidate.owner.isPlayer() && unreachablePlayers.has(candidate.owner.id())) {
           continue;
         }
         const spawn = await withTimeout(
           this.player.bestTransportShipSpawn(candidate.tile),
-          WORKER_TIMEOUT_MS,
+          timeoutMs,
           false,
         );
         if (spawn === false) {
@@ -5399,6 +5440,7 @@
       borderingEnemies,
       highInterestOnly = false,
       requireExplorationRoute = false,
+      probeOptions = {},
     ) {
       if (this.player === null) throw new Error("not initialized");
       const { candidates, unreachablePlayers } = this.collectRandomBoatCandidates(
@@ -5410,6 +5452,7 @@
         candidates,
         unreachablePlayers,
         requireExplorationRoute,
+        probeOptions,
       );
     }
 

@@ -1734,6 +1734,48 @@ await tribeEtaCacheBehavior.enrichEarlyGameTribeBoatEtas(
 );
 assert.equal(tribeEtaRouteCalls, 2, "the tribe route ETA is revalidated after its short TTL");
 
+const ordinaryBoatBudgetBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+const ordinaryBoatProbeCalls = [];
+const ordinaryBoatProbeResults = [null, null, 99];
+ordinaryBoatBudgetBehavior.findRandomBoatTarget = async (...args) => {
+  ordinaryBoatProbeCalls.push(args);
+  return ordinaryBoatProbeResults.shift();
+};
+assert.equal(
+  await ordinaryBoatBudgetBehavior.findRandomBoatDestination(1, []),
+  null,
+  "the first ordinary boat decision keeps the high-interest target class",
+);
+assert.deepEqual(
+  Array.from(ordinaryBoatProbeCalls[0].slice(2, 4)),
+  [true, true],
+  "ordinary random boats submit exactly one short, ranked worker probe",
+);
+assert.equal(ordinaryBoatProbeCalls[0][4].maxProbes, 1);
+assert.equal(ordinaryBoatProbeCalls[0][4].timeoutMs, 75);
+assert.equal(
+  await ordinaryBoatBudgetBehavior.findRandomBoatDestination(1, []),
+  null,
+  "an unsuccessful high-interest pass yields its fallback class to the next decision",
+);
+assert.deepEqual(
+  Array.from(ordinaryBoatProbeCalls[1].slice(2, 4)),
+  [false, false],
+  "the generic fallback retains its original route policy without sharing the same frame",
+);
+assert.equal(ordinaryBoatProbeCalls[1][4].maxProbes, 1);
+assert.equal(ordinaryBoatProbeCalls[1][4].timeoutMs, 75);
+assert.equal(
+  await ordinaryBoatBudgetBehavior.findRandomBoatDestination(1, []),
+  99,
+  "after the fallback misses, the next decision returns to high-interest exploration",
+);
+assert.equal(
+  ordinaryBoatBudgetBehavior.randomBoatFallbackOnly,
+  false,
+  "a successful ordinary boat resets the preferred target class",
+);
+
 const boatEtaRankBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 const rankedBoatEtaShores = boatEtaRankBehavior.rankEarlyGameTribeBoatTargetShores(
   [90, 91, 92, 93, 94, 95, 96],
