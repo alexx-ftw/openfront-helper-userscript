@@ -390,6 +390,25 @@ assert.equal(
 );
 assert.equal(maximumPrioritySamAttempts, 2);
 assert.equal(lowerPriorityConstructionCalls, 0);
+
+const preemptiveHostileGoldBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+let preemptiveHostileGoldSamCalls = 0;
+preemptiveHostileGoldBehavior.game = {
+  config: () => ({ isUnitDisabled: () => false }),
+};
+preemptiveHostileGoldBehavior.hasPlacedSiloOnMap = () => false;
+preemptiveHostileGoldBehavior.shouldBuildHostileSiloSam = () => true;
+preemptiveHostileGoldBehavior.shouldBuildSiloTriggeredSam = () => false;
+preemptiveHostileGoldBehavior.maybeSpawnHostileSiloSam = async () => {
+  preemptiveHostileGoldSamCalls++;
+  return true;
+};
+assert.equal(
+  await preemptiveHostileGoldBehavior.handleHostileSiloSamMaximumPriority(),
+  true,
+  "hostile silo funding starts our first SAM before the enemy launcher appears",
+);
+assert.equal(preemptiveHostileGoldSamCalls, 1);
 hostileSiloMaximumPriorityBehavior.shouldBuildSiloTriggeredSam = () => false;
 hostileSiloMaximumPriorityBehavior.hydrogenSamProtectionPlan = () => ({
   currentLevel: 1,
@@ -690,21 +709,21 @@ enemyA.isAlive = () => true;
 enemyA.gold = () => 999_999n;
 const originalEnemySilosUnits = enemySilos.units;
 enemySilos.units = () => [];
-enemyB.gold = () => 1_500_000n;
+enemyB.gold = () => 1_000_000n;
 assert.equal(
   behavior.hasHostileSiloThreat(),
   true,
-  "The mandatory SAM trigger opens at exactly 1.5M hostile gold",
+  "The mandatory SAM trigger opens as soon as a hostile can afford a Silo",
 );
 behavior._hostileThreatSnapshotTick = null;
 behavior._hostileThreatSnapshot = null;
 behavior._hostileSiloCapacitySnapshotTick = null;
 behavior._hostileSiloCapacitySnapshot = null;
-enemyB.gold = () => 1_499_999n;
+enemyB.gold = () => 999_999n;
 assert.equal(
   behavior.hasHostileSiloThreat(),
   false,
-  "Gold below 1.5M does not trigger the mandatory SAM without a built silo",
+  "Gold below the Silo cost does not trigger the mandatory SAM without a built silo",
 );
 enemySilos.units = originalEnemySilosUnits;
 enemyB.gold = () => 999_999n;

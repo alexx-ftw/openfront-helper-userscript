@@ -198,8 +198,12 @@
   /** Gold at which a hostile player can afford the first missile silo. */
   const HOSTILE_SILO_GOLD_THRESHOLD = 1_000_000n;
 
-  /** Gold at which a hostile player receives the mandatory SAM response. */
-  const HOSTILE_SAM_TRIGGER_GOLD_THRESHOLD = 1_500_000n;
+  /**
+   * A silo finishes before a SAM. Start the interceptor as soon as a hostile
+   * player can pay the silo's real 1M cost, leaving construction time before
+   * their first launch instead of reacting after the launcher appears.
+   */
+  const HOSTILE_SAM_TRIGGER_GOLD_THRESHOLD = HOSTILE_SILO_GOLD_THRESHOLD;
 
   /** Structures that directly grow the nation's economy. */
   const ECONOMIC_STRUCTURE_TYPES = [UNIT.Port, UNIT.Factory, UNIT.City];
@@ -767,13 +771,20 @@
       // window.  The placement count intentionally includes structures under
       // construction, while the later capacity/coverage planner still uses
       // completed structures where their actual level matters.
-      if (!this.hasPlacedSiloOnMap()) return null;
+      // A hostile player with the silo trigger gold can place a launcher and
+      // fire before a newly-started SAM finishes. The first interceptor must
+      // therefore start during that funding window, not only after a Silo is
+      // visible on the board. A placed allied/enemy Silo remains the immediate
+      // global trigger below.
+      const placedSilo = this.hasPlacedSiloOnMap();
+      const preemptiveHostileSiloRisk = this.shouldBuildHostileSiloSam();
+      if (!placedSilo && !preemptiveHostileSiloRisk) return null;
 
       // A real hostile Silo makes protective SAM placement the construction
       // planner's hard top priority. If placement is temporarily blocked by
       // gold, retry cadence, or an unavailable legal probe, reserve this slot
       // instead of spending the SAM budget on economy or offense.
-      if (this.shouldBuildSiloTriggeredSam()) {
+      if (this.shouldBuildSiloTriggeredSam() || preemptiveHostileSiloRisk) {
         return (await this.maybeSpawnHostileSiloSam()) === true;
       }
 
