@@ -2737,36 +2737,57 @@
       tribe,
       competitorProfiles,
       foodRaceById = null,
+      includeFoodRace = true,
     ) {
-      if (
-        tribe?.isPlayer?.() !== true ||
-        tribe.isAlive?.() !== true ||
-        tribe.type?.() !== PlayerType.Bot ||
-        this.player.isFriendly(tribe) !== false
-      ) {
-        return null;
-      }
+      if (!this.isLightweightEarlyGameTribe(tribe)) return null;
       const tribeSid = tribe.smallID();
       const center = tribe.nameLocation?.();
-      const foodRace = this.getEarlyGameFoodRaceSignals({
+      const foodRace = this.lightweightEarlyGameFoodRace(
         tribe,
         tribeSid,
-        tribeCenter: center,
+        center,
         competitorProfiles,
-      });
-      foodRaceById?.set(tribeSid, foodRace);
+        includeFoodRace,
+      );
+      if (foodRace !== null) foodRaceById?.set(tribeSid, foodRace);
       return {
         id: tribeSid,
         player: tribe,
         center,
-        captureRisk: foodRace.foodRaceValue,
+        captureRisk: foodRace?.foodRaceValue ?? 0,
       };
+    }
+
+    isLightweightEarlyGameTribe(tribe) {
+      return (
+        tribe?.isPlayer?.() === true &&
+        tribe.isAlive?.() === true &&
+        tribe.type?.() === PlayerType.Bot &&
+        this.player.isFriendly(tribe) === false
+      );
+    }
+
+    lightweightEarlyGameFoodRace(
+      tribe,
+      tribeSid,
+      tribeCenter,
+      competitorProfiles,
+      includeFoodRace,
+    ) {
+      if (includeFoodRace !== true) return null;
+      return this.getEarlyGameFoodRaceSignals({
+        tribe,
+        tribeSid,
+        tribeCenter,
+        competitorProfiles,
+      });
     }
 
     async getIncrementalEarlyGameTribeNodes(
       otherPlayers,
       competitorProfiles,
       foodRaceById = null,
+      includeFoodRace = true,
     ) {
       const tick = this.currentAttackDecisionTick();
       const cached = this.earlyGameTribeNodesCache;
@@ -2789,6 +2810,7 @@
           tribe,
           competitorProfiles,
           foodRaceById,
+          includeFoodRace,
         );
         if (node) nodes.push(node);
         if (shouldYieldEarlyGameTribeNodes(sliceStartedAt)) {
@@ -2803,6 +2825,44 @@
         foodRaceById: new Map(foodRaceById),
       };
       return nodes;
+    }
+
+    earlyGameReachableTribeIds(startIds, tribeAdjacency) {
+      const reachable = new Set(startIds);
+      const queue = [...reachable];
+      for (let head = 0; head < queue.length; head++) {
+        for (const neighborId of tribeAdjacency.get(queue[head]) || []) {
+          if (reachable.has(neighborId)) continue;
+          reachable.add(neighborId);
+          queue.push(neighborId);
+        }
+      }
+      return reachable;
+    }
+
+    enrichReachableEarlyGameTribeRisks(
+      nodes,
+      reachableIds,
+      competitorProfiles,
+      foodRaceById,
+    ) {
+      for (const node of nodes) {
+        if (!reachableIds.has(node.id)) continue;
+        let foodRace = foodRaceById.get(node.id);
+        if (!foodRace) {
+          foodRace = this.getEarlyGameFoodRaceSignals({
+            tribe: node.player,
+            tribeSid: node.id,
+            tribeCenter: node.center,
+            competitorProfiles,
+          });
+          foodRaceById.set(node.id, foodRace);
+        }
+        node.captureRisk = foodRace.foodRaceValue;
+      }
+      if (this.earlyGameTribeNodesCache?.nodes === nodes) {
+        this.earlyGameTribeNodesCache.foodRaceById = new Map(foodRaceById);
+      }
     }
 
     async fetchEarlyGameTribeTopologyBorders(nodes, refreshCached = false) {
@@ -3106,6 +3166,7 @@
             otherPlayers,
             competitorProfiles,
             foodRaceById,
+            false,
           ),
       );
       const { topologyBordersById, tribeAdjacency } =
@@ -3115,6 +3176,22 @@
           () => this.getEarlyGameTribeTopology(nodes, profile),
         );
       const eligibleIds = eligible.map((tribe) => tribe.smallID());
+      const reachableIds = profileAttackSync(
+        profile,
+        "tribes-sampling-reachable",
+        () => this.earlyGameReachableTribeIds(eligibleIds, tribeAdjacency),
+      );
+      profileAttackSync(
+        profile,
+        "tribes-sampling-reachable-risks",
+        () =>
+          this.enrichReachableEarlyGameTribeRisks(
+            nodes,
+            reachableIds,
+            competitorProfiles,
+            foodRaceById,
+          ),
+      );
       const clusterOpportunities = profileAttackSync(
         profile,
         "tribes-sampling-clusters",
