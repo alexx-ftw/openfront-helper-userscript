@@ -1305,6 +1305,67 @@ assert.ok(
   "a changed authoritative spawn invalidates the local water route",
 );
 
+let negativeRouteTick = 0;
+let negativeRouteNeighborCalls = 0;
+let negativeRouteGoal = 5;
+const negativeRouteGraph = new Map([
+  [0, [1]],
+  [1, [0]],
+  [5, [6]],
+  [6, [5]],
+]);
+const negativeRouteSandbox = {
+  WORKER_TIMEOUT_MS: 4000,
+  withTimeout: async (promise) => promise,
+};
+executeClassicScript(`${gameApiSource}\n${source}`, negativeRouteSandbox, {
+  filename: "gameApi+earlyGame-negative-route.js",
+});
+const negativeRouteApi = negativeRouteSandbox.createGameApi({
+  ticks: () => negativeRouteTick,
+  neighbors: (tile) => {
+    negativeRouteNeighborCalls++;
+    return negativeRouteGraph.get(tile) || [];
+  },
+  isWater: (tile) => tile === 1,
+  isLand: (tile) => tile === 0 || tile === negativeRouteGoal,
+  isShore: (tile) => tile === 0 || tile === negativeRouteGoal,
+  ownerID: (tile) => {
+    if (tile === 0) return 1;
+    return tile === negativeRouteGoal ? 2 : 0;
+  },
+  manhattanDist: (a, b) => Math.abs(a - b),
+});
+const negativeRoutePlayer = negativeRouteApi.wrapPlayer({
+  isPlayer: () => true,
+  smallID: () => 1,
+  id: () => "p1",
+  borderTiles: () => Promise.resolve(new Set([0])),
+  profile: () => Promise.resolve({ relations: {} }),
+  bestTransportShipSpawn: () => Promise.resolve(0),
+});
+assert.equal(await negativeRoutePlayer.bestTransportShipSpawn(5), 0);
+assert.equal(await negativeRouteApi.game.estimateTransportRouteTicks(5), null);
+const firstNegativeRouteNeighborCalls = negativeRouteNeighborCalls;
+negativeRouteTick = 1;
+await negativeRouteApi.beginTick(negativeRoutePlayer.__src);
+assert.equal(await negativeRoutePlayer.bestTransportShipSpawn(5), 0);
+assert.equal(await negativeRouteApi.game.estimateTransportRouteTicks(5), null);
+assert.equal(
+  negativeRouteNeighborCalls - firstNegativeRouteNeighborCalls,
+  2,
+  "a stable unreachable target rechecks only its target coast instead of rerunning the water BFS",
+);
+negativeRouteGoal = 6;
+negativeRouteTick = 2;
+await negativeRouteApi.beginTick(negativeRoutePlayer.__src);
+assert.equal(await negativeRoutePlayer.bestTransportShipSpawn(5), 0);
+assert.equal(await negativeRouteApi.game.estimateTransportRouteTicks(5), null);
+assert.ok(
+  negativeRouteNeighborCalls > firstNegativeRouteNeighborCalls,
+  "a changed target coast invalidates a negative route result",
+);
+
 // The local gameApi pathfinder must evaluate routes longer than the old
 // 300-tick Early Game window so the two-minute exploration gate can reject them
 // by their real route length instead of treating them as merely unreachable.
@@ -1342,7 +1403,7 @@ assert.equal(await longerRoutePlayer.bestTransportShipSpawn(351), 0);
 assert.equal(await longerRouteApi.game.estimateTransportRouteTicks(351), 351);
 
 assert.match(attackSource, /landTarget: hasAccessibleTerraNullius/);
-assert.match(attackSource, /hasFreeLand: hasAccessibleTerraNullius/);
+assert.match(attackSource, /hasFreeLand: hasAccessibleFreeLand/);
 assert.match(attackSource, /hasMaritimeTerraNullius/);
 assert.match(
   attackSource,
@@ -2432,6 +2493,11 @@ assert.equal(
   priorityAttackCalls[0].args[3],
   true,
   "the direct land grab uses the radioactive troop-cost policy",
+);
+assert.equal(
+  targetSandbox.state.earlyGame.hasFreeLand,
+  false,
+  "radioactive land does not reactivate the opening-expansion donation veto",
 );
 priorityGame.hasFallout = () => false;
 priorityBehavior.isBorderingNukedTerritory = () => false;

@@ -202,9 +202,25 @@
         const spawn = transportSpawnCache.get(targetTile);
         if (spawn == null || spawn === false) return null;
         const cachedRoute = localTransportRouteCache.get(targetTile);
-        if (cachedRoute?.spawn === spawn) return cachedRoute.ticks;
+        // A successful path stays reusable as long as the authoritative spawn
+        // is unchanged. Do not resolve a coast just to validate this hot path.
+        if (cachedRoute?.spawn === spawn && cachedRoute.ticks !== null) {
+          return cachedRoute.ticks;
+        }
         const goal = closestTargetShore(targetTile);
-        if (goal == null) return null;
+        if (cachedRoute?.spawn === spawn && cachedRoute.goal === goal) {
+          return cachedRoute.ticks;
+        }
+        if (goal == null) {
+          // Keep a negative route result too. A distant target that has no
+          // reachable coast would otherwise restart the same bounded BFS every
+          // game tick. The authoritative launch tile and resolved goal are part
+          // of the cache key, so a new port/spawn or changed target coast
+          // invalidates this result before it can affect target selection.
+          localTransportRouteCache.set(targetTile, { spawn, goal, ticks: null });
+          transportRouteCache.set(targetTile, null);
+          return null;
+        }
         const result = await routeFinder({
           start: spawn,
           goal,
@@ -212,9 +228,10 @@
           isWater: (tile) => src.isWater(tile),
           maxTicks: BOAT_EXPLORATION_MAX_ROUTE_TICKS,
         });
-        if (result !== null) {
-          localTransportRouteCache.set(targetTile, { spawn, ticks: result });
-        }
+        // A failed bounded search is as stable as a successful route while the
+        // authoritative spawn and target shore remain unchanged. Cache both to
+        // avoid repeating an expensive negative BFS every auxiliary attack tick.
+        localTransportRouteCache.set(targetTile, { spawn, goal, ticks: result });
         transportRouteCache.set(targetTile, result);
         return result;
       }

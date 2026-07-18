@@ -3209,4 +3209,79 @@ assert.deepEqual(
   "all economic placement attempts share the normal 25-candidate decision budget",
 );
 
+const samCoverageGuardBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+const ownProtectedStructure = { tile: () => 20 };
+const alliedProtectedStructure = { tile: () => 30 };
+const enemyProtectedStructure = { tile: () => 40 };
+const guardedPlayer = {
+  isPlayer: () => true,
+  smallID: () => 1,
+  isFriendly: (other) => other.smallID() === 2,
+  units: (type) => (type === UNIT.City ? [ownProtectedStructure] : []),
+};
+const alliedPlayer = {
+  isPlayer: () => true,
+  smallID: () => 2,
+  units: (type) => (type === UNIT.Factory ? [alliedProtectedStructure] : []),
+};
+const enemyPlayer = {
+  isPlayer: () => true,
+  smallID: () => 3,
+  units: (type) => (type === UNIT.Port ? [enemyProtectedStructure] : []),
+};
+samCoverageGuardBehavior.player = guardedPlayer;
+samCoverageGuardBehavior.game = {
+  players: () => [guardedPlayer, alliedPlayer, enemyPlayer],
+  config: () => ({ samRange: () => 5, defaultSamRange: () => 5 }),
+  euclideanDistSquared: (left, right) => (left - right) ** 2,
+};
+assert.deepEqual(
+  Array.from(samCoverageGuardBehavior.samProtectableStructureTiles()).sort((a, b) => a - b),
+  [20, 30],
+  "a preventive SAM protects own and allied productive structures, never enemy structures",
+);
+assert.equal(
+  samCoverageGuardBehavior.samPlacementProtectsStructure(25, new Set([20, 30])),
+  true,
+  "a SAM site that covers an own structure remains eligible",
+);
+assert.equal(
+  samCoverageGuardBehavior.samPlacementProtectsStructure(100, new Set([20, 30])),
+  false,
+  "a SAM site with no protected structure in range is rejected",
+);
+const guardedSamCandidates = [];
+samCoverageGuardBehavior.structureProbeOptions = () => ({
+  candidateLimit: 2,
+  probeLimit: 2,
+  probeTimeoutMs: 1,
+  parallelProbeCount: 1,
+});
+samCoverageGuardBehavior.structureCandidateTiles = () => [100, 25];
+samCoverageGuardBehavior.structureTileValueFunction = () => (tile) => tile;
+samCoverageGuardBehavior.structurePlacementCompactnessRanker = () => null;
+samCoverageGuardBehavior.structureMissileEmergency = () => null;
+samCoverageGuardBehavior.isDangerousStructureTile = () => false;
+samCoverageGuardBehavior.probeRankedStructureTiles = async (scored) => {
+  guardedSamCandidates.push(scored.map(({ t }) => t));
+  return null;
+};
+assert.equal(await samCoverageGuardBehavior.structureSpawnTile(UNIT.SAMLauncher), null);
+assert.deepEqual(
+  guardedSamCandidates.pop(),
+  [25],
+  "ordinary and hostile-silo SAM routes cannot select an empty coastal site",
+);
+assert.equal(
+  await samCoverageGuardBehavior.structureSpawnTile(UNIT.SAMLauncher, {
+    activeMissileDefense: true,
+  }),
+  null,
+);
+assert.deepEqual(
+  guardedSamCandidates.pop(),
+  [100, 25],
+  "a live-missile emergency retains its trajectory-specific placement candidates",
+);
+
 process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");

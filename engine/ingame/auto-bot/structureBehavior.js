@@ -105,6 +105,12 @@
 
   /** Maximum number of missile silos a nation will build */
   const MAX_MISSILE_SILOS = 3;
+  const SAM_PROTECTABLE_STRUCTURE_TYPES = [
+    UNIT.City,
+    UNIT.Factory,
+    UNIT.Port,
+    UNIT.MissileSilo,
+  ];
 
   /**
    * A hostile silo threat becomes an H-bomb/SAM priority once one enemy's
@@ -6874,13 +6880,22 @@
       if (valueFunction === null) return null;
       const compactness = this.structurePlacementCompactnessRanker(type);
       const emergency = this.structureMissileEmergency(type, options);
+      const protectedSamTiles =
+        type === UNIT.SAMLauncher && options.activeMissileDefense !== true
+          ? this.samProtectableStructureTiles()
+          : null;
       const scored = tiles
         .map((t) => ({
           t,
           v: valueFunction(t),
           compactness: compactness?.(t) ?? null,
         }))
-        .filter(({ t }) => !this.isDangerousStructureTile(t, type));
+        .filter(
+          ({ t }) =>
+            !this.isDangerousStructureTile(t, type) &&
+            (protectedSamTiles === null ||
+              this.samPlacementProtectsStructure(t, protectedSamTiles)),
+        );
       scored.sort((a, b) => this.compareStructurePlacementScores(a, b));
       if (type === UNIT.SAMLauncher && options.prioritizeStructureCoverage) {
         const localResult = await this.probeCoveragePrioritySamTiles(
@@ -6892,6 +6907,51 @@
         if (localResult.handled) return localResult.buildable;
       }
       return this.probeRankedStructureTiles(scored, type, probe, emergency);
+    }
+
+    samProtectableStructureTiles() {
+      if (typeof this.game.players !== "function") return null;
+      const protectedTiles = new Set();
+      const mySmallID = this.player.smallID();
+      for (const owner of this.game.players()) {
+        if (owner?.isPlayer?.() !== true) continue;
+        if (typeof owner.units !== "function") return null;
+        const isOwnStructure = owner.smallID() === mySmallID;
+        if (!isOwnStructure && this.player.isFriendly(owner) !== true) continue;
+        for (const tile of this.samPlayerProtectableStructureTiles(owner)) {
+          protectedTiles.add(tile);
+        }
+      }
+      return protectedTiles;
+    }
+
+    samPlayerProtectableStructureTiles(owner) {
+      const protectedTiles = [];
+      for (const type of SAM_PROTECTABLE_STRUCTURE_TYPES) {
+        for (const structure of owner.units(type) || []) {
+          const tile = structure?.tile?.();
+          if (tile !== null && tile !== undefined) protectedTiles.push(tile);
+        }
+      }
+      return protectedTiles;
+    }
+
+    samPlacementProtectsStructure(tile, protectedTiles) {
+      if (protectedTiles === null) return true;
+      if (protectedTiles.size === 0) return false;
+      const config = this.game.config();
+      const range = Math.max(
+        0,
+        Number(config.samRange?.(1) ?? config.defaultSamRange?.() ?? 0),
+      );
+      if (range <= 0) return false;
+      const rangeSquared = range * range;
+      for (const structureTile of protectedTiles) {
+        if (this.game.euclideanDistSquared(tile, structureTile) <= rangeSquared) {
+          return true;
+        }
+      }
+      return false;
     }
 
     /**
