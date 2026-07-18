@@ -3,7 +3,7 @@
 // English i18n override), wires the "lobby found" toast, and mounts the launcher.
 
 import { unitIconUrl } from "./assets";
-import { installAudio, ringChime, WebAudioElement } from "./audio";
+import { installAudio, ringChime, speakSpawnPrompt, WebAudioElement } from "./audio";
 import { installChromeShim } from "./chrome-shim";
 import { installI18nOverride } from "./i18n";
 import {
@@ -24,6 +24,7 @@ export function bootShell(): void {
     Audio: AudioCtor,
     WebAudioElement,
     installI18nOverride,
+    speakSpawnPrompt,
   };
 
   // The bundled team-build-stats engine resolves its unit icons through this

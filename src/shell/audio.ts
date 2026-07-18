@@ -121,6 +121,34 @@ export async function ringChime(): Promise<void> {
   playChime(1);
 }
 
+interface SpawnSpeechSurface {
+  SpeechSynthesisUtterance?: typeof SpeechSynthesisUtterance;
+  speechSynthesis?: SpeechSynthesis;
+}
+
+function preferredFemaleVoice(speech: SpeechSynthesis): SpeechSynthesisVoice | null {
+  const voices = speech.getVoices();
+  const feminineName =
+    /(female|woman|samantha|zira|aria|jenny|ava|serena|susan|victoria|karen|moira|tessa)/i;
+  return voices.find((voice) => feminineName.test(voice.name)) ?? null;
+}
+
+/** Spawn-phase spoken prompts. Native speech keeps the userscript self-contained. */
+export function speakSpawnPrompt(text: string): void {
+  const surface = window as unknown as SpawnSpeechSurface;
+  const Utterance = surface.SpeechSynthesisUtterance;
+  const speech = surface.speechSynthesis;
+  if (typeof Utterance !== "function" || !speech || typeof speech.speak !== "function") return;
+  const utterance = new Utterance(text);
+  const voice = preferredFemaleVoice(speech);
+  if (voice) utterance.voice = voice;
+  utterance.lang = voice?.lang ?? "en-US";
+  utterance.rate = 1;
+  utterance.pitch = 1.12;
+  utterance.volume = 1;
+  speech.speak(utterance);
+}
+
 export function installAudio(): typeof WebAudioElement {
   installGestureResume();
   return WebAudioElement;
