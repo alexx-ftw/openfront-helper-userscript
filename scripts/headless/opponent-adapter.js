@@ -339,7 +339,11 @@ export class BundledOpponentBot {
   }
 
   drainNavalTrace() {
-    return this.navalTrace.splice(0);
+    return JSON.parse(
+      JSON.stringify(this.navalTrace.splice(0), (_key, value) =>
+        typeof value === "bigint" ? String(value) : value,
+      ),
+    );
   }
 
   enableStructureTrace() {
