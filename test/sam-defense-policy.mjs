@@ -2221,6 +2221,29 @@ assert.equal(
   "The economic no-space guard runs before any upgrade selection work",
 );
 
+const foundationalCityBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+const foundationalCityAttempts = [];
+foundationalCityBehavior.maybeSpawnStructure = async (type) => {
+  foundationalCityAttempts.push(type);
+  return type === UNIT.City;
+};
+assert.equal(
+  await foundationalCityBehavior.handleOrdinaryStructurePriorities({
+    citiesDisabled: false,
+    cityCount: 0,
+    config: { isUnitDisabled: () => false },
+    hasCoastalTiles: true,
+    hasOceanPortTiles: true,
+  }),
+  true,
+  "The first ordinary economic action builds a City before any coastal Port",
+);
+assert.deepEqual(
+  foundationalCityAttempts,
+  [UNIT.City],
+  "A zero-City opening never reaches Port/Factory priority before its City attempt",
+);
+
 const exhaustiveEconomyBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 const exhaustiveStructures = [{ tile: () => 0 }];
 exhaustiveEconomyBehavior.player = {

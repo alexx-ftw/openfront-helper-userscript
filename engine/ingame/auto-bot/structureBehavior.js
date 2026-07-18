@@ -1381,6 +1381,18 @@
         hasCoastalTiles,
         hasOceanPortTiles,
       } = context;
+      // A coastal opening must not spend its first economic windows on Ports.
+      // Without a City, Ports and their Warship follow-up add little durable
+      // troop/economic capacity and can starve the foundational growth needed
+      // to survive a fast Nation opening. Urgent missile and land-defense
+      // paths run before this ordinary phase; here the first City is absolute.
+      if (
+        !citiesDisabled &&
+        cityCount === 0 &&
+        (await this.maybeSpawnStructure(UNIT.City))
+      ) {
+        return true;
+      }
       // Build order for non-city structures (priority order)
       const buildOrder = [
         UNIT.Port,
