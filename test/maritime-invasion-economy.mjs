@@ -7,6 +7,12 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8");
 
+assert.match(
+  read("engine/ingame/auto-bot/warshipBehavior.js"),
+  /random\.chance\(2\)/,
+  "the normal first-Warship roll uses the Random chance denominator for 50%, not 2%",
+);
+
 const UNIT = {
   City: "City",
   Port: "Port",
@@ -34,6 +40,8 @@ function makeStructureSandbox() {
   const state = {
     settings: {
       winFixes: true,
+      features: { warship: true },
+      warshipAutoSpawn: true,
       buildStructures: { [UNIT.Port]: true },
     },
     stats: { builds: 0 },
@@ -81,10 +89,13 @@ structureSandbox.window.__OFH_getIncomingMaritimeInvasion = () => ({
 });
 
 const structureBehavior = Object.create(structureSandbox.__StructureBehavior.prototype);
+let disabledStructureType = null;
 structureBehavior.game = {
-  config: () => ({ isUnitDisabled: () => false }),
+  config: () => ({ isUnitDisabled: (type) => type === disabledStructureType }),
 };
 structureBehavior.hasOceanPortTiles = () => true;
+structureBehavior.spendableConstructionGold = () => 2_000_000n;
+structureBehavior.getConstructionCost = () => 1_000_000n;
 const structureBuildCalls = [];
 structureBehavior.maybeSpawnStructure = async (...args) => {
   structureBuildCalls.push(args);
@@ -109,7 +120,7 @@ assert.equal(
 
 structureBuildCalls.length = 0;
 structureBehavior.player = {
-  units: () => [{ isUnderConstruction: () => true }],
+  units: (type) => (type === UNIT.Port ? [{ isUnderConstruction: () => true }] : []),
 };
 assert.equal(
   await structureBehavior.prioritizeMaritimeInvasionDefense(),
@@ -123,14 +134,117 @@ assert.equal(
 );
 
 structureBehavior.player = {
-  units: () => [{ isUnderConstruction: () => false }],
+  units: (type) => (type === UNIT.Port ? [{ isUnderConstruction: () => false }] : []),
 };
 assert.equal(
   await structureBehavior.prioritizeMaritimeInvasionDefense(),
   true,
-  "a completed Port keeps other structure spending suppressed",
+  "a completed Port reserves one construction slot until the first Warship starts",
 );
 assert.equal(structureBuildCalls.length, 0, "a completed Port does not trigger a second Port");
+
+structureBehavior.player = {
+  units: (type) => {
+    if (type === UNIT.Port) return [{ isUnderConstruction: () => false }];
+    if (type === UNIT.Warship) return [{ isUnderConstruction: () => true }];
+    return [];
+  },
+};
+assert.equal(
+  await structureBehavior.prioritizeMaritimeInvasionDefense(),
+  false,
+  "ordinary construction resumes once the first Warship is already being built",
+);
+
+structureBehavior.player = {
+  units: (type) => {
+    if (type === UNIT.Port) return [{ isUnderConstruction: () => true }];
+    if (type === UNIT.Warship) return [{ isUnderConstruction: () => false }];
+    return [];
+  },
+};
+assert.equal(
+  await structureBehavior.prioritizeMaritimeInvasionDefense(),
+  false,
+  "an existing Warship outranks an additional Port still under construction",
+);
+
+structureBehavior.player = { units: () => [] };
+structureBehavior.maybeSpawnStructure = async (...args) => {
+  structureBuildCalls.push(args);
+  return false;
+};
+assert.equal(
+  await structureBehavior.prioritizeMaritimeInvasionDefense(),
+  false,
+  "an affordable Port placement failure falls through to ordinary construction",
+);
+
+structureBehavior.spendableConstructionGold = () => 500_000n;
+assert.equal(
+  await structureBehavior.prioritizeMaritimeInvasionDefense(),
+  true,
+  "an unaffordable emergency Port reserves its gold instead of spending it elsewhere",
+);
+structureBehavior.spendableConstructionGold = () => 2_000_000n;
+
+structureSandbox.state.settings.features.warship = false;
+assert.equal(
+  await structureBehavior.prioritizeMaritimeInvasionDefense(),
+  false,
+  "a disabled Warship automation cannot reserve every ordinary construction slot",
+);
+
+const fullStructureLivenessBehavior = Object.create(structureSandbox.__StructureBehavior.prototype);
+fullStructureLivenessBehavior.player = {
+  gold: () => 2_000_000n,
+  units: () => [],
+};
+fullStructureLivenessBehavior.game = {
+  config: () => ({ isUnitDisabled: () => false }),
+};
+fullStructureLivenessBehavior.maybeUpgradeMissileDefenseSam = async () => false;
+fullStructureLivenessBehavior.hasPriorStructureForDefensePost = () => false;
+fullStructureLivenessBehavior.maybeEnsureHydrogenStructureCoverage = async () => false;
+fullStructureLivenessBehavior.maybeUpgradeHydrogenProtectionSam = async () => false;
+fullStructureLivenessBehavior.maybeUpgradeSiloForNukeDemand = async () => false;
+fullStructureLivenessBehavior.maybeSpawnHostileSiloSam = async () => false;
+fullStructureLivenessBehavior.maybeUpgradeSamForSiloParity = async () => false;
+fullStructureLivenessBehavior.samLevelParityGap = () => 0;
+fullStructureLivenessBehavior.isInPostSaveUpBlockedPhase = () => false;
+fullStructureLivenessBehavior.placementsCount = 0;
+let ordinaryStructurePlannerCalls = 0;
+fullStructureLivenessBehavior.doHandleStructures = async () => {
+  ordinaryStructurePlannerCalls++;
+  return true;
+};
+assert.equal(
+  await fullStructureLivenessBehavior.handleStructures(),
+  true,
+  "2MM gold with no SAM or Silo still reaches productive construction during an unusable maritime signal",
+);
+assert.equal(
+  ordinaryStructurePlannerCalls,
+  1,
+  "the maritime signal cannot starve the ordinary structure planner",
+);
+structureSandbox.state.settings.features.warship = true;
+
+structureSandbox.state.settings.warshipAutoSpawn = false;
+assert.equal(
+  await structureBehavior.prioritizeMaritimeInvasionDefense(),
+  false,
+  "disabled Warship auto-spawn cannot reserve ordinary construction",
+);
+structureSandbox.state.settings.warshipAutoSpawn = true;
+
+disabledStructureType = UNIT.Warship;
+assert.equal(
+  await structureBehavior.prioritizeMaritimeInvasionDefense(),
+  false,
+  "a game-disabled Warship cannot reserve ordinary construction",
+);
+disabledStructureType = null;
 
 invasionSignal = { active: false, troops: 0 };
 assert.equal(

@@ -190,7 +190,7 @@
       // A live transport aimed at our territory bypasses the ordinary 50% spawn
       // roll: the Port-first structure policy has already reserved the gold and
       // this phase must get the first available destroyer onto the water.
-      if (!maritimeEmergency && !this.random.chance(50)) {
+      if (!maritimeEmergency && !this.random.chance(2)) {
         return false;
       }
       const port = this.getInitialWarshipPort();
