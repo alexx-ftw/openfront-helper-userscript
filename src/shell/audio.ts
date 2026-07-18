@@ -9,6 +9,8 @@
 // .currentTime, .volume, .loop, play(), pause().
 
 let ctx: AudioContext | null = null;
+let pendingSpawnSpeech: string | null = null;
+let spawnSpeechActivated = false;
 
 function getCtx(): AudioContext {
   ctx ??= new AudioContext();
@@ -19,6 +21,7 @@ function installGestureResume(): void {
   const resume = () => {
     const context = getCtx();
     if (context.state === "suspended") void context.resume();
+    activateSpawnSpeech();
   };
   const opts = { capture: true, passive: true } as const;
   window.addEventListener("pointerdown", resume, opts);
@@ -126,6 +129,15 @@ interface SpawnSpeechSurface {
   speechSynthesis?: SpeechSynthesis;
 }
 
+function spawnSpeechSurface(): SpawnSpeechSurface | null {
+  const surface = window as unknown as SpawnSpeechSurface;
+  return typeof surface.SpeechSynthesisUtterance === "function" &&
+    surface.speechSynthesis &&
+    typeof surface.speechSynthesis.speak === "function"
+    ? surface
+    : null;
+}
+
 function preferredFemaleVoice(speech: SpeechSynthesis): SpeechSynthesisVoice | null {
   const voices = speech.getVoices();
   const feminineName =
@@ -133,12 +145,13 @@ function preferredFemaleVoice(speech: SpeechSynthesis): SpeechSynthesisVoice | n
   return voices.find((voice) => feminineName.test(voice.name)) ?? null;
 }
 
-/** Spawn-phase spoken prompts. Native speech keeps the userscript self-contained. */
-export function speakSpawnPrompt(text: string): void {
-  const surface = window as unknown as SpawnSpeechSurface;
-  const Utterance = surface.SpeechSynthesisUtterance;
-  const speech = surface.speechSynthesis;
-  if (typeof Utterance !== "function" || !speech || typeof speech.speak !== "function") return;
+function emitSpawnSpeech(text: string): boolean {
+  const surface = spawnSpeechSurface();
+  if (!surface?.SpeechSynthesisUtterance || !surface.speechSynthesis) return false;
+  const { speechSynthesis: speech, SpeechSynthesisUtterance: Utterance } = surface;
+  // Brave can leave speech paused after backgrounding the game. `resume()` is
+  // harmless while already running and makes the prompt survive that transition.
+  if (typeof speech.resume === "function") speech.resume();
   const utterance = new Utterance(text);
   const voice = preferredFemaleVoice(speech);
   if (voice) utterance.voice = voice;
@@ -146,7 +159,37 @@ export function speakSpawnPrompt(text: string): void {
   utterance.rate = 1;
   utterance.pitch = 1.12;
   utterance.volume = 1;
+  // A synthesis rejection can happen when a match was joined without a trusted
+  // browser gesture. Keep that exact prompt for the first subsequent gesture.
+  utterance.onerror = () => {
+    pendingSpawnSpeech = text;
+  };
   speech.speak(utterance);
+  return true;
+}
+
+function activateSpawnSpeech(): void {
+  spawnSpeechActivated = true;
+  const surface = spawnSpeechSurface();
+  if (!surface?.speechSynthesis) return;
+  const { speechSynthesis: speech } = surface;
+  if (typeof speech.resume === "function") speech.resume();
+  // Populate Brave's voice list during a trusted event; voice discovery often
+  // finishes after document start and must not be deferred until the cue tick.
+  speech.getVoices();
+  if (pendingSpawnSpeech === null) return;
+  const prompt = pendingSpawnSpeech;
+  pendingSpawnSpeech = null;
+  emitSpawnSpeech(prompt);
+}
+
+/** Spawn-phase spoken prompts. Native speech keeps the userscript self-contained. */
+export function speakSpawnPrompt(text: string): void {
+  if (!spawnSpeechActivated) {
+    pendingSpawnSpeech = text;
+    return;
+  }
+  if (!emitSpawnSpeech(text)) pendingSpawnSpeech = text;
 }
 
 export function installAudio(): typeof WebAudioElement {
