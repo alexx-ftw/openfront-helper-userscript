@@ -116,6 +116,11 @@
   // four seconds created 250ms+ opening stalls on dense maps, so retain the
   // coherent graph for twelve seconds instead.
   const EARLY_GAME_TRIBE_TOPOLOGY_CACHE_TICKS = 120;
+  // Rebuilding every tribe's food-race vector against every visible player is
+  // quadratic on crowded maps.  Keep one short snapshot only while an exact
+  // live-state signature proves that no owner, movement, troop, or attack
+  // signal has changed; any contested tribe therefore invalidates at once.
+  const EARLY_GAME_TRIBE_RISK_SNAPSHOT_CACHE_TICKS = 40;
   const EARLY_GAME_TRIBE_TOPOLOGY_MIN_SLICE_TILES = 128;
   const EARLY_GAME_TRIBE_TOPOLOGY_MAX_SLICE_TILES = 2048;
   const EARLY_GAME_TRIBE_TOPOLOGY_SLICE_MS = 4;
@@ -2741,6 +2746,20 @@
       competitorProfiles,
       foodRaceById = null,
     ) {
+      const tick = this.currentAttackDecisionTick();
+      const cached = this.earlyGameTribeNodesCache;
+      if (
+        cached?.competitorProfiles === competitorProfiles &&
+        tick >= cached.tick &&
+        tick - cached.tick <= EARLY_GAME_TRIBE_RISK_SNAPSHOT_CACHE_TICKS
+      ) {
+        if (foodRaceById) {
+          for (const [tribeId, race] of cached.foodRaceById) {
+            foodRaceById.set(tribeId, race);
+          }
+        }
+        return cached.nodes;
+      }
       const nodes = [];
       let sliceStartedAt = earlyGameTopologyNow();
       for (const tribe of otherPlayers) {
@@ -2755,6 +2774,12 @@
           sliceStartedAt = earlyGameTopologyNow();
         }
       }
+      this.earlyGameTribeNodesCache = {
+        tick,
+        competitorProfiles,
+        nodes,
+        foodRaceById: new Map(foodRaceById),
+      };
       return nodes;
     }
 
@@ -4063,11 +4088,85 @@
       };
     }
 
+    earlyGameCompetitorAttackSignature(other) {
+      const attacks = other?.outgoingAttacks?.() ?? [];
+      return attacks
+        .map((attack) => [
+          attack?.target?.()?.smallID?.(),
+          Math.max(0, Number(attack?.troops?.()) || 0),
+          attack?.retreating?.() === true ? 1 : 0,
+        ].join(":"))
+        .sort()
+        .join(",");
+    }
+
+    earlyGameCompetitorIdentitySignature(other, mySid) {
+      const sid = other?.smallID?.();
+      const isPlayer = other?.isPlayer?.() === true;
+      let friendly = 0;
+      if (sid === mySid || (isPlayer && this.player.isFriendly(other) === true)) {
+        friendly = 1;
+      }
+      return [
+        sid,
+        isPlayer ? 1 : 0,
+        other?.isAlive?.() === true ? 1 : 0,
+        other?.type?.(),
+        friendly,
+      ].join("|");
+    }
+
+    earlyGameCompetitorLocationSignature(other) {
+      const location = other?.nameLocation?.();
+      return [Number(location?.x), Number(location?.y)].join("|");
+    }
+
+    earlyGameCompetitorResourcesSignature(other) {
+      const type = other?.type?.();
+      // A tribe's passive production changes on almost every decision and is
+      // not evidence that it is racing this cluster. Its territory, movement
+      // and outgoing attacks remain in the signature; the latter changes as
+      // soon as it contests a capture. Nations/Humans retain troop precision
+      // because their mobile reserve is itself a strategic threat.
+      const troops = type === PlayerType.Bot
+        ? ""
+        : Math.max(0, Number(other?.troops?.()) || 0);
+      return [
+        Math.max(0, Number(other?.numTilesOwned?.()) || 0),
+        troops,
+      ].join("|");
+    }
+
+    earlyGameCompetitorSignatureRecord(other, mySid) {
+      return [
+        this.earlyGameCompetitorIdentitySignature(other, mySid),
+        this.earlyGameCompetitorLocationSignature(other),
+        this.earlyGameCompetitorResourcesSignature(other),
+        this.earlyGameCompetitorAttackSignature(other),
+      ].join("|");
+    }
+
+    earlyGameCompetitorProfilesSignature(players, mySid) {
+      return (players ?? [])
+        .map((other) => this.earlyGameCompetitorSignatureRecord(other, mySid))
+        .sort()
+        .join(";");
+    }
+
     // Keep a bounded, best-effort profile of how visible rivals are expanding.
     async getEarlyGameCompetitorProfiles(players, mySid) {
       const profiles = [];
       const seen = new Set();
       const tick = this.earlyGameCompetitorTick();
+      const signature = this.earlyGameCompetitorProfilesSignature(players, mySid);
+      const cached = this.earlyGameCompetitorProfilesCache;
+      if (
+        cached?.signature === signature &&
+        tick >= cached.tick &&
+        tick - cached.tick <= EARLY_GAME_TRIBE_RISK_SNAPSHOT_CACHE_TICKS
+      ) {
+        return cached.profiles;
+      }
       let sliceStartedAt = earlyGameTopologyNow();
       for (const other of players ?? []) {
         const profile = this.earlyGameCompetitorProfile(other, mySid, tick);
@@ -4087,6 +4186,7 @@
           sliceStartedAt = earlyGameTopologyNow();
         }
       }
+      this.earlyGameCompetitorProfilesCache = { tick, signature, profiles };
       return profiles;
     }
 

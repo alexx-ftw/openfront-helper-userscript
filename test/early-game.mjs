@@ -2701,6 +2701,102 @@ assert.equal(
   "publishing a preferred tribe cluster starts the initially dormant overlay scheduler",
 );
 const firstTopologyBorderFetches = topologyBorderFetches;
+const riskSnapshotBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+let riskSnapshotTick = 1;
+let riskSnapshotTroops = 20;
+const riskSnapshotType = targetSandbox.PlayerType.Nation;
+let riskProfileBuilds = 0;
+let riskNodeBuilds = 0;
+const riskSnapshotRival = {
+  smallID: () => 91,
+  isPlayer: () => true,
+  isAlive: () => true,
+  type: () => riskSnapshotType,
+  nameLocation: () => ({ x: 11, y: 12 }),
+  numTilesOwned: () => 4,
+  troops: () => riskSnapshotTroops,
+  outgoingAttacks: () => [],
+};
+riskSnapshotBehavior.player = { isFriendly: () => false };
+riskSnapshotBehavior.game = { ticks: () => riskSnapshotTick };
+riskSnapshotBehavior.earlyFoodMovement = new Map();
+riskSnapshotBehavior.earlyGameCompetitorProfile = (player) => {
+  riskProfileBuilds++;
+  return { sid: player.smallID() };
+};
+const initialRiskProfiles = await riskSnapshotBehavior.getEarlyGameCompetitorProfiles(
+  [riskSnapshotRival],
+  1,
+);
+riskSnapshotTick = 20;
+assert.strictEqual(
+  await riskSnapshotBehavior.getEarlyGameCompetitorProfiles([riskSnapshotRival], 1),
+  initialRiskProfiles,
+  "an unchanged live competitor snapshot is reused between early-game decisions",
+);
+assert.equal(riskProfileBuilds, 1);
+riskSnapshotTroops = 21;
+riskSnapshotTick = 21;
+await riskSnapshotBehavior.getEarlyGameCompetitorProfiles([riskSnapshotRival], 1);
+assert.equal(
+  riskProfileBuilds,
+  2,
+  "a troop change invalidates the risk snapshot before contested-cluster ranking",
+);
+riskSnapshotBehavior.createLightweightEarlyGameTribeNode = (tribe, _profiles, races) => {
+  riskNodeBuilds++;
+  races?.set(tribe.smallID(), { foodRaceValue: 0 });
+  return { id: tribe.smallID(), player: tribe };
+};
+const currentRiskProfiles = riskSnapshotBehavior.earlyGameCompetitorProfilesCache.profiles;
+const firstRiskRaces = new Map();
+await riskSnapshotBehavior.getIncrementalEarlyGameTribeNodes(
+  [riskSnapshotRival],
+  currentRiskProfiles,
+  firstRiskRaces,
+);
+riskSnapshotTick = 30;
+const reusedRiskRaces = new Map();
+await riskSnapshotBehavior.getIncrementalEarlyGameTribeNodes(
+  [riskSnapshotRival],
+  currentRiskProfiles,
+  reusedRiskRaces,
+);
+assert.equal(riskNodeBuilds, 1, "unchanged tribe food-race nodes reuse the same short snapshot");
+assert.equal(reusedRiskRaces.get(91).foodRaceValue, 0);
+const passiveTribeSnapshotBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+let passiveTribeTick = 1;
+let passiveTribeTroops = 20;
+let passiveTribeProfilesBuilt = 0;
+const passiveTribe = {
+  smallID: () => 92,
+  isPlayer: () => true,
+  isAlive: () => true,
+  type: () => targetSandbox.PlayerType.Bot,
+  nameLocation: () => ({ x: 11, y: 12 }),
+  numTilesOwned: () => 4,
+  troops: () => passiveTribeTroops,
+  outgoingAttacks: () => [],
+};
+passiveTribeSnapshotBehavior.player = { isFriendly: () => false };
+passiveTribeSnapshotBehavior.game = { ticks: () => passiveTribeTick };
+passiveTribeSnapshotBehavior.earlyFoodMovement = new Map();
+passiveTribeSnapshotBehavior.earlyGameCompetitorProfile = () => {
+  passiveTribeProfilesBuilt++;
+  return { sid: 92 };
+};
+const passiveTribeProfiles = await passiveTribeSnapshotBehavior.getEarlyGameCompetitorProfiles(
+  [passiveTribe],
+  1,
+);
+passiveTribeTroops = 21;
+passiveTribeTick = 2;
+assert.strictEqual(
+  await passiveTribeSnapshotBehavior.getEarlyGameCompetitorProfiles([passiveTribe], 1),
+  passiveTribeProfiles,
+  "passive tribe production alone does not rebuild every cluster race snapshot",
+);
+assert.equal(passiveTribeProfilesBuilt, 1);
 targetTick = 1;
 await targetBehavior.getEarlyGameTribeCandidates();
 assert.equal(
