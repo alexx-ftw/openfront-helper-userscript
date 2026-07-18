@@ -255,6 +255,87 @@ export class BundledOpponentBot {
       });
       return originalAssign.call(this.nationBot.warshipBehavior, plan, warships, state);
     };
+    const originalMaybeSpawnWarship = prototype.maybeSpawnWarship;
+    if (typeof originalMaybeSpawnWarship === "function") {
+      prototype.maybeSpawnWarship = async function () {
+        const event = this.__ofhHeadlessAdapter.warshipBuildTraceSnapshot(this);
+        this.__ofhHeadlessWarshipTrace = event;
+        const emitted = await originalMaybeSpawnWarship.call(this);
+        event.emitted = emitted;
+        this.__ofhHeadlessWarshipTrace = null;
+        this.__ofhHeadlessAdapter?.navalTrace.push(event);
+        return emitted;
+      };
+    }
+    const originalGetInitialWarshipPort = prototype.getInitialWarshipPort;
+    if (typeof originalGetInitialWarshipPort === "function") {
+      prototype.getInitialWarshipPort = function () {
+        const port = originalGetInitialWarshipPort.call(this);
+        if (this.__ofhHeadlessWarshipTrace) {
+          this.__ofhHeadlessWarshipTrace.port = port?.tile?.() ?? null;
+        }
+        return port;
+      };
+    }
+    const originalWarshipSpawnTile = prototype.warshipSpawnTile;
+    if (typeof originalWarshipSpawnTile === "function") {
+      prototype.warshipSpawnTile = function (...args) {
+        const tile = originalWarshipSpawnTile.apply(this, args);
+        if (this.__ofhHeadlessWarshipTrace) this.__ofhHeadlessWarshipTrace.tile = tile;
+        return tile;
+      };
+    }
+    const originalBuildableWarship = prototype.buildableWarship;
+    if (typeof originalBuildableWarship === "function") {
+      prototype.buildableWarship = async function (...args) {
+        const buildable = await originalBuildableWarship.apply(this, args);
+        if (this.__ofhHeadlessWarshipTrace) {
+          this.__ofhHeadlessWarshipTrace.buildable = buildable?.canBuild ?? null;
+        }
+        return buildable;
+      };
+    }
+    const originalTryEmitWarshipBuild = prototype.tryEmitWarshipBuild;
+    if (typeof originalTryEmitWarshipBuild === "function") {
+      prototype.tryEmitWarshipBuild = async function (...args) {
+        const emitted = await originalTryEmitWarshipBuild.apply(this, args);
+        if (this.__ofhHeadlessWarshipTrace) {
+          this.__ofhHeadlessWarshipTrace.menuEmitted = emitted;
+        }
+        return emitted;
+      };
+    }
+    this.nationBot.warshipBehavior.__ofhHeadlessAdapter = this;
+  }
+
+  warshipBuildTraceSnapshot(behavior) {
+    const player = behavior.player;
+    const smartState = behavior.ensureSmartState?.();
+    return {
+      phase: "warship-build",
+      tick: behavior.game.ticks(),
+      disabled: behavior.game.config().isUnitDisabled("Warship"),
+      ...this.warshipBuildTracePlayerSnapshot(player, behavior),
+      ...this.warshipBuildTraceStateSnapshot(behavior, smartState),
+    };
+  }
+
+  warshipBuildTracePlayerSnapshot(player, behavior) {
+    if (!player) return { gold: null, cost: null, ports: 0, ships: 0 };
+    return {
+      gold: player.gold(),
+      cost: behavior.cost("Warship"),
+      ports: player.units("Port").length,
+      ships: player.units("Warship").length,
+    };
+  }
+
+  warshipBuildTraceStateSnapshot(behavior, smartState) {
+    if (!smartState) return { pending: false, sameTick: false };
+    return {
+      pending: behavior.hasPendingWarshipBuild(smartState) === true,
+      sameTick: smartState.lastInvasionBuildTick === behavior.game.ticks(),
+    };
   }
 
   drainNavalTrace() {

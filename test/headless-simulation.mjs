@@ -114,6 +114,8 @@ assert.match(adapter, /kind: "land-defense"/);
 assert.match(adapter, /respondToIncomingAttack/);
 assert.match(adapter, /kind: "forced-retaliation-gate"/);
 assert.match(adapter, /attackBlocked: context\.attackBlocked/);
+assert.match(adapter, /phase: "warship-build"/);
+assert.match(adapter, /originalMaybeSpawnWarship/);
 assert.match(runner, /countIntents\(intents, runner\.game\.ticks\(\)\)/);
 assert.match(runner, /intervalTerraNulliusAttacks/);
 assert.match(runner, /cumulativeTerraNulliusAttacks/);
