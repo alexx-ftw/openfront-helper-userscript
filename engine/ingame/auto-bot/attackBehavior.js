@@ -1153,6 +1153,7 @@
       return Math.max(
         this.getEarlyGameProductionReserveTroops(),
         this.getEarlyGameLiveReserveTroops(),
+        this.getStrongestStrategicBorderOpponentTroops(),
       );
     }
 
@@ -1243,12 +1244,20 @@
     }
 
     getEarlyGameTargetReserveTroops(target) {
+      const strategicBorderReserve =
+        this.getStrongestStrategicBorderOpponentTroops();
       if (this.isProductionReserveTarget(target)) {
-        return this.getEarlyGameProductionReserveTroops();
+        return Math.max(
+          this.getEarlyGameProductionReserveTroops(),
+          strategicBorderReserve,
+        );
       }
-      return target?.isPlayer?.()
-        ? this.getEarlyGameLiveReserveTroops()
-        : this.getEarlyGameTerraNulliusReserveTroops();
+      return Math.max(
+        target?.isPlayer?.()
+          ? this.getEarlyGameLiveReserveTroops()
+          : this.getEarlyGameTerraNulliusReserveTroops(),
+        strategicBorderReserve,
+      );
     }
 
     getLandAttackTargetReserveTroops(target, radioactiveTerraNullius) {
@@ -1370,6 +1379,65 @@
       this.strongestBorderOpponentTroopsCacheTick = tick;
       this.strongestBorderOpponentTroopsCacheIncludeFriendly = includeFriendly;
       this.strongestBorderOpponentTroopsCache = strongest;
+      return strongest;
+    }
+
+    // A Nation/Human can assemble a decisive invasion from its border before
+    // it becomes an incoming attack. Keep enough troops to meet that known
+    // strategic army instead of exporting the defence into tribe captures.
+    // Tribes deliberately do not raise this floor: they are the early-game
+    // food source and their normal pressure is already handled by the capture
+    // and incoming-attack policies.
+    isStrategicBorderOpponent(player) {
+      const type = player?.type?.();
+      return type === PlayerType.Nation || type === PlayerType.Human;
+    }
+
+    calculateStrongestStrategicBorderOpponentTroops() {
+      if (!this.hasBorderOpponentApi()) {
+        throw new Error("strategic border troop data is unavailable");
+      }
+      const mySid = this.player.smallID();
+      if (mySid == null) throw new Error("own player id is unavailable");
+      const borderingIds = this.getBorderingPlayerIds(mySid);
+      const players = Array.from(this.game.players() ?? []);
+      const ownPlayerPresent = players.some(
+        (player) => player?.smallID?.() === mySid,
+      );
+      if (!ownPlayerPresent) {
+        throw new Error("own player is missing from the player snapshot");
+      }
+
+      let strongest = 0;
+      const seen = new Set();
+      for (const player of players) {
+        const playerSid = player?.smallID?.();
+        if (playerSid == null || !borderingIds.has(playerSid)) continue;
+        seen.add(playerSid);
+        if (!this.isStrategicBorderOpponent(player)) continue;
+        const troops = this.borderOpponentTroops(player, false);
+        if (troops != null) strongest = Math.max(strongest, troops);
+      }
+      for (const playerSid of borderingIds) {
+        if (!seen.has(playerSid)) {
+          throw new Error("border opponent is missing from the player snapshot");
+        }
+      }
+      return strongest;
+    }
+
+    getStrongestStrategicBorderOpponentTroops() {
+      // Older/client-minimal adapters can lack the complete border snapshot.
+      // Without authoritative geometry, do not invent a strategic threat; the
+      // ordinary production reserve remains in force.
+      if (!this.hasBorderOpponentApi()) return 0;
+      const tick = this.currentAttackDecisionTick();
+      if (this.strongestStrategicBorderOpponentTroopsCacheTick === tick) {
+        return this.strongestStrategicBorderOpponentTroopsCache;
+      }
+      const strongest = this.calculateStrongestStrategicBorderOpponentTroops();
+      this.strongestStrategicBorderOpponentTroopsCacheTick = tick;
+      this.strongestStrategicBorderOpponentTroopsCache = strongest;
       return strongest;
     }
 

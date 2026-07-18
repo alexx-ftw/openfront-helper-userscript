@@ -357,6 +357,55 @@ assert.equal(
   0,
   "a stronger bordering ally does not consume the TerraNullius attack budget",
 );
+const hostileStrategicBorder = {
+  smallID: () => 8,
+  isAlive: () => true,
+  type: () => sandbox.PlayerType.Nation,
+  troops: () => 70000,
+};
+const hostileTribeBorder = {
+  smallID: () => 9,
+  isAlive: () => true,
+  type: () => sandbox.PlayerType.Bot,
+  troops: () => 90000,
+};
+const strategicBorderMe = {
+  ...me,
+  isFriendly: () => false,
+};
+const strategicBorderGame = {
+  ticks: () => tick,
+  neighbors: () => [2, 3],
+  isLand: () => true,
+  hasOwner: () => true,
+  ownerID: (tile) => (tile === 2 ? 8 : 9),
+  players: () => [strategicBorderMe, hostileStrategicBorder, hostileTribeBorder],
+  config: () => ({ maxTroops: () => 100000 }),
+};
+const strategicBorderBehavior = new sandbox.AttackBehavior(
+  {},
+  strategicBorderGame,
+  strategicBorderMe,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+ownTroops = 100000;
+assert.equal(
+  strategicBorderBehavior.getStrongestStrategicBorderOpponentTroops(),
+  70000,
+  "only a bordering Nation/Human raises the proactive strategic defense reserve",
+);
+assert.equal(
+  strategicBorderBehavior.getEarlyGameTargetReserveTroops({
+    isPlayer: () => true,
+    type: () => sandbox.PlayerType.Bot,
+  }),
+  70000,
+  "tribe captures retain enough troops to meet the known bordering Nation force",
+);
 const expandingGame = {
   ticks: () => tick,
   players: () => [me],
