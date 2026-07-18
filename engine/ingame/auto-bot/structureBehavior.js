@@ -1192,17 +1192,20 @@
             Math.floor(this.player.numTilesOwned() / TILES_PER_CITY_EQUIVALENT),
           )
         : this.ownedLevels(UNIT.City);
-      // Ocean access is answered from our cached border. The exact full-map
-      // component reconstruction remains available for the inland-lake fallback.
-      const hasCoastalTiles = profileStructureSync(
-        profile,
-        "structures-context-shared-water",
-        () => shimHasSharedWater(this.game, this.player),
-      );
+      // Ocean access is answered from our cached border. An open-ocean port
+      // tile is also, by definition, shared water, so read that cheap cached
+      // result first. Calling hasSharedWater before it walks the complete live
+      // border a second time on every Auto-build decision. The exact
+      // shared-water reconstruction remains the fallback for inland lakes.
       const hasOceanPortTiles = profileStructureSync(
         profile,
         "structures-context-ocean-port",
         () => this.hasOceanPortTiles(),
+      );
+      const hasCoastalTiles = hasOceanPortTiles || profileStructureSync(
+        profile,
+        "structures-context-shared-water",
+        () => shimHasSharedWater(this.game, this.player),
       );
       this._hasCoastalTiles = hasCoastalTiles;
       this._hasOceanPortTiles = hasOceanPortTiles;

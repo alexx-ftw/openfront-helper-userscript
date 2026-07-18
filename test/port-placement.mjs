@@ -292,11 +292,15 @@ assert.equal(
   "an isolated inland lake remains unavailable",
 );
 
+let sharedWaterBooleanCalls = 0;
 let exactSharedWaterCalls = 0;
 const contextBehavior = Object.create(structureSandbox.__StructureBehavior.prototype);
 contextBehavior.game = {
   config: () => ({ isUnitDisabled: () => false }),
-  hasSharedWater: () => true,
+  hasSharedWater: () => {
+    sharedWaterBooleanCalls++;
+    return true;
+  },
   sharedWaterComponents: () => {
     exactSharedWaterCalls++;
     return new Set([-1]);
@@ -314,6 +318,11 @@ assert.equal(
   exactSharedWaterCalls,
   0,
   "structure context uses the boolean water contract instead of exact global labels",
+);
+assert.equal(
+  sharedWaterBooleanCalls,
+  0,
+  "an already cached ocean coast avoids rescanning the live border for shared water",
 );
 
 assert.ok(
