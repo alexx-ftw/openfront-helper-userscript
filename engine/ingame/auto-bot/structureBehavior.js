@@ -822,14 +822,16 @@
       const preemptiveHostileSiloRisk = this.shouldBuildHostileSiloSam();
       if (!placedSilo && !preemptiveHostileSiloRisk) return null;
 
-      // A real hostile Silo makes protective SAM placement the construction
-      // planner's hard top priority. Once the bot has nearly saved the real
-      // cost, reserve this slot instead of spending the SAM budget on economy
-      // or offense. A very poor nation must still be allowed to grow; otherwise
-      // this priority traps it below the SAM cost indefinitely.
+      // Try to preempt a soon-affordable hostile launcher, but only a Silo
+      // already placed on the board may reserve every construction slot. A
+      // forecast alone cannot freeze a poor one-City economy below the first
+      // SAM price; it still gets the normal economy action after the failed
+      // preemptive SAM attempt.
       if (this.shouldBuildSiloTriggeredSam() || preemptiveHostileSiloRisk) {
         if (await this.maybeSpawnHostileSiloSam()) return true;
-        return this.shouldReserveHostileSiloSamBudget() ? false : null;
+        return placedSilo && this.shouldReserveHostileSiloSamBudget()
+          ? false
+          : null;
       }
 
       // Building the first SAM is not enough once a hostile Silo is live: a

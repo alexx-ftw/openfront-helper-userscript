@@ -677,11 +677,11 @@ poorPreemptiveHostileGoldBehavior.hasPlacedSiloOnMap = () => false;
 poorPreemptiveHostileGoldBehavior.shouldBuildHostileSiloSam = () => true;
 poorPreemptiveHostileGoldBehavior.shouldBuildSiloTriggeredSam = () => false;
 poorPreemptiveHostileGoldBehavior.maybeSpawnHostileSiloSam = async () => false;
-poorPreemptiveHostileGoldBehavior.shouldReserveHostileSiloSamBudget = () => false;
+poorPreemptiveHostileGoldBehavior.shouldReserveHostileSiloSamBudget = () => true;
 assert.equal(
   await poorPreemptiveHostileGoldBehavior.handleHostileSiloSamMaximumPriority(),
   null,
-  "an unaffordable SAM threat does not starve a zero-income opening",
+  "an unaffordable preemptive SAM forecast does not starve an opening economy before a Silo exists",
 );
 hostileSiloMaximumPriorityBehavior.shouldBuildSiloTriggeredSam = () => false;
 hostileSiloMaximumPriorityBehavior.hydrogenSamProtectionPlan = () => ({
