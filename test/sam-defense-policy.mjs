@@ -37,6 +37,7 @@ const sandbox = {
   UNIT,
   Difficulty,
   GameMode: { Team: "Team" },
+  PlayerType: { Bot: "Bot", Human: "Human", Nation: "Nation", Tribe: "Tribe" },
   state,
   currentDifficulty: () => Difficulty.Impossible,
   isLegendaryDifficulty: (difficulty = Difficulty.Impossible) =>
@@ -307,6 +308,61 @@ sandbox.currentDifficulty = originalDifficultyForDefensePost;
 own.troops = originalOwnTroopsForDefensePost;
 own.incomingAttacks = originalOwnIncomingForDefensePost;
 delete behavior.isLandAttack;
+
+const preemptiveDefensePostBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+let preemptiveIncomingAttacks = [
+  {
+    troops: () => 150,
+    attacker: () => ({ type: () => sandbox.PlayerType.Nation }),
+  },
+];
+preemptiveDefensePostBehavior.player = {
+  troops: () => 1000,
+  incomingAttacks: () => preemptiveIncomingAttacks,
+};
+preemptiveDefensePostBehavior.game = {
+  config: () => ({ isUnitDisabled: () => false }),
+};
+preemptiveDefensePostBehavior.hasPriorStructureForDefensePost = () => true;
+preemptiveDefensePostBehavior.isLandAttack = () => true;
+preemptiveDefensePostBehavior.getConstructionCost = () => 50_000n;
+preemptiveDefensePostBehavior.defensiveConstructionPressure = () => null;
+const preemptivePostPressure = preemptiveDefensePostBehavior.preemptiveDefensePostPressure();
+assert.equal(
+  preemptivePostPressure?.type,
+  UNIT.DefensePost,
+  "a 15% Nation land attack reserves the next Defense Post before it becomes an active siege",
+);
+assert.equal(preemptivePostPressure?.cost, 50_000n);
+assert.equal(
+  preemptiveDefensePostBehavior.defensiveConstructionReserve(),
+  50_000n,
+  "the early post reserve is added to offensive-defense budgeting",
+);
+preemptiveDefensePostBehavior.economicConstructionPressure = () => null;
+preemptiveDefensePostBehavior.spendableConstructionGold = () => 1_000_000n;
+preemptiveDefensePostBehavior.getConstructionCost = () => 1_000_000n;
+assert.equal(
+  preemptiveDefensePostBehavior.shouldReserveEconomicGrowthForOffense(UNIT.MissileSilo),
+  true,
+  "a Silo cannot spend the margin needed for the imminent Defense Post",
+);
+assert.equal(
+  preemptiveDefensePostBehavior.shouldReserveEconomicGrowthForOffense(UNIT.City),
+  false,
+  "the preemptive Defense Post reserve never blocks productive City construction",
+);
+preemptiveIncomingAttacks = [
+  {
+    troops: () => 300,
+    attacker: () => ({ type: () => sandbox.PlayerType.Tribe }),
+  },
+];
+assert.equal(
+  preemptiveDefensePostBehavior.preemptiveDefensePostPressure(),
+  null,
+  "a much larger Tribe attack cannot freeze the opening economy's offensive budget",
+);
 
 const defensePostLivenessBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 defensePostLivenessBehavior.handleHostileSiloSamMaximumPriority = async () => null;

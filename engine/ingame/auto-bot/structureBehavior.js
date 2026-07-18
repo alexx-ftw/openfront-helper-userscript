@@ -237,6 +237,14 @@
   const UNDER_ATTACK_THREAT_RATIO = 0.35;
 
   /**
+   * A real Nation/Human land push becomes worth saving the next Defense Post
+   * for before it reaches the active-post threshold. This is intentionally
+   * lower than UNDER_ATTACK_THREAT_RATIO: construction needs time to finish,
+   * while a Tribe probe must never freeze the opening economy.
+   */
+  const PREEMPTIVE_DEFENSE_POST_THREAT_RATIO = 0.1;
+
+  /**
    * Do not repeat a failed hostile-Silo SAM placement probe more than once per
    * second of game time. The placement path can otherwise perform 25 sequential
    * async worker probes on every structure decision.
@@ -2322,8 +2330,8 @@
       if (type !== UNIT.MissileSilo || !state.settings.winFixes) return false;
 
       const economic = this.economicConstructionPressure();
-      const defensive = this.defensiveConstructionPressure();
-      const reserve = (economic?.cost ?? 0n) + (defensive?.cost ?? 0n);
+      const reserve =
+        (economic?.cost ?? 0n) + this.defensiveConstructionReserve();
       if (reserve === 0n) return false;
 
       let offensiveCost;
@@ -2357,6 +2365,53 @@
       if (!this.hasDefensiveSamPressure()) return null;
       const cost = this.safeConstructionCost(UNIT.SAMLauncher);
       return cost === null ? null : { type: UNIT.SAMLauncher, cost };
+    }
+
+    /**
+     * Reserve one Defense Post early enough for its construction time, but only
+     * against a meaningful land attack by a strategic player. This reserve is
+     * consumed exclusively by offensive Silo/nuke budget checks; productive
+     * buildings and SAMs retain access to the same gold.
+     */
+    preemptiveDefensePostPressure() {
+      if (
+        !state.settings.winFixes ||
+        !autoBotBuildAllowed(UNIT.DefensePost) ||
+        currentDifficulty() === Difficulty.Easy ||
+        !this.hasPriorStructureForDefensePost()
+      ) {
+        return null;
+      }
+      if (this.game.config().isUnitDisabled(UNIT.DefensePost)) return null;
+
+      const ourTroops = Number(this.player.troops() || 0);
+      if (ourTroops <= 0) return null;
+      const strategicLandAttacks = this.player
+        .incomingAttacks()
+        .filter((attack) => {
+          if (!this.isLandAttack(attack)) return false;
+          const attacker = attack.attacker?.();
+          const type = attacker?.type?.();
+          return type === PlayerType.Nation || type === PlayerType.Human;
+        });
+      const incomingTroops = strategicLandAttacks.reduce(
+        (sum, attack) => sum + Math.max(0, Number(attack.troops?.() || 0)),
+        0,
+      );
+      if (
+        incomingTroops / ourTroops < PREEMPTIVE_DEFENSE_POST_THREAT_RATIO
+      ) {
+        return null;
+      }
+      const cost = this.safeConstructionCost(UNIT.DefensePost);
+      return cost === null ? null : { type: UNIT.DefensePost, cost };
+    }
+
+    defensiveConstructionReserve() {
+      return (
+        (this.defensiveConstructionPressure()?.cost ?? 0n) +
+        (this.preemptiveDefensePostPressure()?.cost ?? 0n)
+      );
     }
 
     hasDefensiveSamPressure() {
@@ -2403,8 +2458,8 @@
       if (cost <= 0n) return false;
 
       const economic = this.economicConstructionPressure();
-      const defensive = this.defensiveConstructionPressure();
-      const reserve = (economic?.cost ?? 0n) + (defensive?.cost ?? 0n);
+      const reserve =
+        (economic?.cost ?? 0n) + this.defensiveConstructionReserve();
       return this.spendableConstructionGold() < cost + reserve;
     }
 
@@ -6624,8 +6679,8 @@
     nukeSiloUpgradeBudgetAvailable(availableGold, minimumCost) {
       if (availableGold < minimumCost) return false;
       const economic = this.economicConstructionPressure();
-      const defensive = this.defensiveConstructionPressure();
-      const reserve = (economic?.cost ?? 0n) + (defensive?.cost ?? 0n);
+      const reserve =
+        (economic?.cost ?? 0n) + this.defensiveConstructionReserve();
       return availableGold >= minimumCost + reserve;
     }
 
