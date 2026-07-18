@@ -1739,4 +1739,41 @@ assert.match(
   "the behavior receives the engine's impassability predicate through GameView",
 );
 
+const futureFoodScoreBehavior = Object.create(sandbox.AttackBehavior.prototype);
+futureFoodScoreBehavior.earlyGameCenterDistance = (left, right) =>
+  Math.abs(left.x - right.x) + Math.abs(left.y - right.y);
+const futureFoodCandidates = [
+  { id: "near", center: { x: 2, y: 0 } },
+  { id: "far", center: { x: 1000, y: 0 } },
+  { id: "other", center: { x: 4, y: 0 } },
+];
+const futureFoodScoreCandidates = [
+  { id: "near", center: { x: 0, y: 0 }, landBorder: true },
+  { id: "other", center: { x: 3, y: 0 }, landBorder: true },
+  { id: "inactive", center: { x: 1, y: 0 }, landBorder: false },
+];
+futureFoodScoreBehavior.enrichEarlyGameFutureFoodScores(
+  futureFoodScoreCandidates,
+  futureFoodCandidates,
+  new Map([
+    ["near", { memberIds: new Set(["near", "other", "far"]), score: 3 }],
+    ["other", { memberIds: new Set(["near", "other"]), score: 2 }],
+  ]),
+);
+assert.equal(
+  futureFoodScoreCandidates[0].futureFoodCount,
+  1,
+  "future-food scoring ignores the candidate itself and out-of-chain members",
+);
+assert.equal(futureFoodScoreCandidates[0].meanFutureFoodDistance, 4);
+assert.equal(
+  futureFoodScoreCandidates[0].futureFoodAccess,
+  (1 - 4 / 120) / 2,
+  "the allocation-free scoring pass retains the prior weighted-access result",
+);
+assert.equal(futureFoodScoreCandidates[0].tribeClusterAccess, 1);
+assert.equal(futureFoodScoreCandidates[1].tribeClusterAccess, 0.5);
+assert.equal(futureFoodScoreCandidates[2].futureFoodAccess, 0);
+assert.equal(futureFoodScoreCandidates[2].tribeClusterAccess, 0);
+
 process.stdout.write("attack intent accounting tests passed\n");

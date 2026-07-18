@@ -3784,22 +3784,33 @@
       }
     }
 
-    earlyGameFutureFoodDistances(
+    earlyGameFutureFoodStats(
       candidate,
       futureFoodCandidates,
       memberIds = null,
     ) {
-      return futureFoodCandidates
-        .filter(
-          (other) =>
-            other.id !== candidate.id &&
-            (memberIds === null || memberIds.has(other.id)),
-        )
-        .map((other) => this.earlyGameCenterDistance(candidate.center, other.center))
-        .filter(
-          (distance) =>
-            Number.isFinite(distance) && distance <= EARLY_GAME_TRIBE_CHAIN_RADIUS,
-        );
+      // This sits in the opening hot path. Avoid allocating three short-lived
+      // arrays for every ranked tribe while retaining the exact qualifying
+      // distance set and weighting used by the strategy.
+      let count = 0;
+      let totalDistance = 0;
+      let weightedAccess = 0;
+      for (const other of futureFoodCandidates) {
+        if (
+          other.id === candidate.id ||
+          (memberIds !== null && !memberIds.has(other.id))
+        ) {
+          continue;
+        }
+        const distance = this.earlyGameCenterDistance(candidate.center, other.center);
+        if (!Number.isFinite(distance) || distance > EARLY_GAME_TRIBE_CHAIN_RADIUS) {
+          continue;
+        }
+        count++;
+        totalDistance += distance;
+        weightedAccess += Math.max(0, 1 - distance / EARLY_GAME_TRIBE_CHAIN_RADIUS);
+      }
+      return { count, totalDistance, weightedAccess };
     }
 
     enrichEarlyGameFutureFoodScores(
@@ -3820,21 +3831,18 @@
           0,
           candidate.tribeClusterMemberIds.size - 1,
         );
-        const distances = this.earlyGameFutureFoodDistances(
+        const futureFood = this.earlyGameFutureFoodStats(
           candidate,
           futureFoodCandidates,
           candidate.tribeClusterMemberIds,
         );
-        candidate.futureFoodCount = distances.length;
+        candidate.futureFoodCount = futureFood.count;
         candidate.futureFoodTotal = futureFoodTotal;
-        candidate.meanFutureFoodDistance = distances.length
-          ? distances.reduce((sum, value) => sum + value, 0) / distances.length
+        candidate.meanFutureFoodDistance = futureFood.count
+          ? futureFood.totalDistance / futureFood.count
           : Infinity;
-        const weightedAccess = distances.reduce(
-          (sum, value) => sum + Math.max(0, 1 - value / EARLY_GAME_TRIBE_CHAIN_RADIUS),
-          0,
-        );
-        candidate.futureFoodAccess = futureFoodTotal > 0 ? weightedAccess / futureFoodTotal : 0;
+        candidate.futureFoodAccess =
+          futureFoodTotal > 0 ? futureFood.weightedAccess / futureFoodTotal : 0;
         candidate.tribeClusterSize = Math.max(0, (opportunity?.score || 1) - 1);
         maxClusterSize = Math.max(maxClusterSize, candidate.tribeClusterSize);
       }
