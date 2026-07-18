@@ -275,6 +275,37 @@ export class BundledOpponentBot {
       this.structureTrace.push({ kind: "spawn", tick, type, emitted, gold });
       return emitted;
     };
+    const originalHandleHostileSiloSam = behavior.handleHostileSiloSamMaximumPriority;
+    if (typeof originalHandleHostileSiloSam === "function") {
+      behavior.handleHostileSiloSamMaximumPriority = async () => {
+        const tick = this.game.ticks();
+        const silos = behavior.game?.units?.("Missile Silo") ?? [];
+        const owners = silos.slice(0, 12).map((silo) => {
+          const owner = silo?.owner?.();
+          return {
+            id: owner?.smallID?.() ?? null,
+            name: owner?.name?.() ?? null,
+            type: owner?.type?.() ?? null,
+            isPlayer: owner?.isPlayer?.() ?? null,
+          };
+        });
+        const placed = behavior.hasPlacedSiloOnMap?.() ?? null;
+        const requested = behavior.shouldBuildSiloTriggeredSam?.() ?? null;
+        const reserve = behavior.shouldReserveHostileSiloSamBudget?.() ?? null;
+        const result = await originalHandleHostileSiloSam.call(behavior);
+        this.structureTrace.push({
+          kind: "sam-gate",
+          tick,
+          silos: silos.length,
+          owners,
+          placed,
+          requested,
+          reserve,
+          result,
+        });
+        return result;
+      };
+    }
     const originalMaybeUpgradeStructure = behavior.maybeUpgradeStructure;
     if (typeof originalMaybeUpgradeStructure === "function") {
       behavior.maybeUpgradeStructure = async (structures, options) => {

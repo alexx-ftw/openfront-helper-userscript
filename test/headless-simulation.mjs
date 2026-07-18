@@ -107,6 +107,8 @@ assert.match(runner, /intervalBuildUnitTypes/);
 assert.match(runner, /cumulativeBuildUnitTypes/);
 assert.match(runner, /intent\.type !== "build_unit"/);
 assert.match(runner, /intervalBuildEvents/);
+assert.match(adapter, /kind: "sam-gate"/);
+assert.match(adapter, /handleHostileSiloSamMaximumPriority/);
 assert.match(runner, /countIntents\(intents, runner\.game\.ticks\(\)\)/);
 assert.match(runner, /intervalTerraNulliusAttacks/);
 assert.match(runner, /cumulativeTerraNulliusAttacks/);
