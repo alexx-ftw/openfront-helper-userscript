@@ -10,33 +10,43 @@ const sourcePath = path.join(root, "src/shell/audio.ts");
 const source = fs.readFileSync(sourcePath, "utf8");
 const transformed = await transform(source, { format: "cjs", loader: "ts", target: "es2022" });
 const listeners = new Map();
-const spoken = [];
-let resumed = 0;
-class FakeUtterance {
-  constructor(text) {
-    this.text = text;
-    this.onerror = null;
+const decodedByteLengths = [];
+const startedClips = [];
+class FakeAudioContext {
+  state = "running";
+  currentTime = 0;
+  destination = {};
+
+  async resume() {
+    this.state = "running";
+  }
+
+  async decodeAudioData(bytes) {
+    decodedByteLengths.push(bytes.byteLength);
+    return {};
+  }
+
+  createBufferSource() {
+    return {
+      connect: () => ({ connect: () => this.destination }),
+      start: () => startedClips.push(true),
+    };
+  }
+
+  createGain() {
+    return { gain: { value: 0 }, connect: () => this.destination };
   }
 }
-const speech = {
-  getVoices: () => [{ name: "Samantha", lang: "en-US" }],
-  resume: () => {
-    resumed++;
-  },
-  speak: (utterance) => spoken.push(utterance),
-};
 const window = {
   addEventListener: (name, listener) => listeners.set(name, listener),
-  SpeechSynthesisUtterance: FakeUtterance,
-  speechSynthesis: speech,
 };
 const module = { exports: {} };
 executeClassicScript(
   transformed.code,
   {
-    AudioContext: class {},
+    AudioContext: FakeAudioContext,
     Uint8Array,
-    atob: () => "",
+    atob,
     console,
     module,
     window,
@@ -47,15 +57,18 @@ const { installAudio, speakSpawnPrompt } = module.exports;
 
 installAudio();
 speakSpawnPrompt("PICK SPAWN");
-assert.equal(spoken.length, 0, "speech waits for a trusted gesture after automatic join");
+assert.equal(startedClips.length, 0, "voice waits for a trusted gesture after automatic join");
 listeners.get("pointerdown")();
-assert.equal(spoken.length, 1, "the queued spawn prompt speaks on the next trusted gesture");
-assert.equal(spoken[0].text, "PICK SPAWN");
-assert.equal(spoken[0].voice.name, "Samantha", "a female voice is preferred when present");
-assert.ok(resumed >= 2, "gesture activation and prompt emission both resume speech");
+await new Promise((resolve) => {
+  setTimeout(resolve, 0);
+});
+assert.equal(startedClips.length, 1, "the queued spawn prompt plays on the next trusted gesture");
+assert.ok(decodedByteLengths[0] > 1_000, "the bundled female-voice clip has real audio data");
 
 speakSpawnPrompt("SPAWN, SPAWN");
-assert.equal(spoken.length, 2, "subsequent prompt speaks immediately after activation");
-assert.equal(spoken[1].text, "SPAWN, SPAWN");
+await new Promise((resolve) => {
+  setTimeout(resolve, 0);
+});
+assert.equal(startedClips.length, 2, "subsequent voice prompt plays immediately after activation");
 
 process.stdout.write("spawn speech tests passed\n");

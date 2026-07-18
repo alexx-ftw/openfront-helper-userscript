@@ -2306,13 +2306,13 @@ minimumTerraNulliusBehavior.getEarlyGameSpendableTroops = () => 99000;
 const minimumTerraNulliusTarget = { isPlayer: () => false };
 assert.equal(
   minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(minimumTerraNulliusTarget),
-  3000,
-  "generic TerraNullius land attacks use at least 3% of the current army",
+  5000,
+  "generic TerraNullius land attacks use at least 5% of the current army",
 );
 assert.equal(
   minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(minimumTerraNulliusTarget, 2),
-  3000,
-  "generic expansion still uses 3% when a preferred frontier tile is known",
+  5000,
+  "generic expansion still uses 5% when a preferred frontier tile is known",
 );
 assert.equal(
   minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(minimumTerraNulliusTarget, null, 99000),
@@ -2331,8 +2331,8 @@ assert.equal(
     99000,
     0.6,
   ),
-  3000,
-  "the opening TerraNullius payload is adaptive while 60% remains only its ceiling",
+  5000,
+  "the opening TerraNullius payload keeps the 5% liveness minimum while 60% remains only its ceiling",
 );
 
 const radioactiveBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
@@ -2388,7 +2388,7 @@ assert.equal(
     { isPlayer: () => false },
     null,
     16000,
-    0.03,
+    0.05,
     false,
   ),
   0,
@@ -2399,7 +2399,7 @@ assert.ok(
     { isPlayer: () => false },
     null,
     16000,
-    0.03,
+    0.05,
     true,
   ) > 0,
   "Fallout expansion remains live after the ordinary opening commitment is exhausted",

@@ -21,7 +21,6 @@
   // A coordinated invasion needs construction retries at the defensive combat
   // cadence. Routine probes still retain the ordinary attack-rate cadence, so
   // they cannot crowd out economy or create a Defense Post for every scout.
-  const OVERWHELMING_INCOMING_ATTACK_RATIO = 2;
   const OVERWHELMING_DEFENSE_STRUCTURE_INTERVAL_TICKS = 3;
 
   class NationBot {
@@ -204,10 +203,13 @@
     }
 
     incomingDefenseStructureInterval() {
+      if (this.attackBehavior.hasOverwhelmingIncomingAttack?.() === true) {
+        return OVERWHELMING_DEFENSE_STRUCTURE_INTERVAL_TICKS;
+      }
       const pressure = Number(
         this.attackBehavior.incomingHostileAttackPressure?.(),
       );
-      return pressure >= OVERWHELMING_INCOMING_ATTACK_RATIO
+      return pressure >= 2
         ? OVERWHELMING_DEFENSE_STRUCTURE_INTERVAL_TICKS
         : this.attackRate;
     }

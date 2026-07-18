@@ -172,7 +172,11 @@ const enemyTeam = {
   isPlayer: () => true,
   isAlive: () => true,
   gold: () => 5_000_000n,
-  units: (type) => (type === UNIT.SAMLauncher ? [makeUnit(501, enemyTeamSamLevel)] : []),
+  units: (type) => {
+    if (type === UNIT.SAMLauncher) return [makeUnit(501, enemyTeamSamLevel)];
+    if (type === UNIT.MissileSilo) return [makeUnit(502, 1)];
+    return [];
+  },
 };
 const enemySilos = {
   smallID: () => 6,
@@ -348,8 +352,8 @@ const hostileSiloMaximumPriorityBehavior = Object.create(sandbox.__StructureBeha
 hostileSiloMaximumPriorityBehavior.game = {
   config: () => ({ isUnitDisabled: () => false }),
 };
-hostileSiloMaximumPriorityBehavior.hasBuiltHostileSiloThreat = () => true;
-hostileSiloMaximumPriorityBehavior.shouldBuildHostileSiloSam = () => true;
+hostileSiloMaximumPriorityBehavior.hasPlacedSiloOnMap = () => true;
+hostileSiloMaximumPriorityBehavior.shouldBuildSiloTriggeredSam = () => true;
 let maximumPrioritySamResult = false;
 let maximumPrioritySamAttempts = 0;
 let lowerPriorityConstructionCalls = 0;
@@ -380,11 +384,11 @@ assert.equal(
 );
 assert.equal(maximumPrioritySamAttempts, 2);
 assert.equal(lowerPriorityConstructionCalls, 0);
-hostileSiloMaximumPriorityBehavior.hasBuiltHostileSiloThreat = () => false;
+hostileSiloMaximumPriorityBehavior.hasPlacedSiloOnMap = () => false;
 assert.equal(
   await hostileSiloMaximumPriorityBehavior.handleHostileSiloSamMaximumPriority(),
   null,
-  "Enemy gold without a completed hostile Silo does not hard-reserve construction",
+  "Enemy gold without a placed hostile Silo does not hard-reserve construction",
 );
 assert.equal(maximumPrioritySamAttempts, 2);
 
@@ -437,6 +441,28 @@ assert.equal(
   "The hard SAM priority recognizes a completed hostile Silo",
 );
 const originalPlayersForSiloLevelSum = behavior.game.players;
+behavior.game.players = () => [own, enemySiloUnderConstruction];
+assert.equal(
+  behavior.hasBuiltHostileSiloThreat(),
+  false,
+  "An uncompleted hostile Silo has no usable missile capacity yet",
+);
+assert.equal(
+  behavior.hasPlacedSiloOnMap(),
+  true,
+  "The first hostile Silo construction immediately activates SAM priority",
+);
+behavior.game.players = () => [own, enemyTeam];
+assert.equal(
+  behavior.hasPlacedSiloOnMap(),
+  true,
+  "The first allied Silo also immediately activates our SAM priority",
+);
+assert.equal(
+  behavior.shouldBuildSiloTriggeredSam(),
+  true,
+  "An allied Silo makes an otherwise SAM-less bot request its first interceptor immediately",
+);
 behavior.game.players = () => [own, enemySingleLevelOneSilo];
 assert.equal(
   behavior.hostileSiloLevelSumAtLeast(),

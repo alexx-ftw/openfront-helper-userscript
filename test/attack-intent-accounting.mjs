@@ -26,7 +26,7 @@ const sandbox = {
   },
   currentDifficulty: () => "Impossible",
   EARLY_EXPAND_COMMIT: 0.6,
-  EARLY_EXPAND_FOLLOWUP_COMMIT: 0.03,
+  EARLY_EXPAND_FOLLOWUP_COMMIT: 0.05,
   EARLY_EXPAND_MINIMUM_MARGIN: 1.25,
   WORKER_TIMEOUT_MS: 100,
   performance: { now: () => 10000 },
@@ -399,22 +399,22 @@ assert.equal(
 );
 assert.equal(
   troopEmissions.at(-1),
-  750,
-  "direct TerraNullius expansion sends the adaptive 3% opening payload",
+  1250,
+  "direct TerraNullius expansion sends the adaptive 5% opening payload",
 );
 
 expandingBehavior.botAttackPendingIntentCommitments = [];
 ownTroops = 10000;
 assert.equal(
   expandingBehavior.getTerraNulliusAttackTroops(terraNullius),
-  300,
-  "the first 3% follow-up is affordable immediately after the 60% opening burst",
+  500,
+  "the first 5% follow-up is affordable immediately after the 60% opening burst",
 );
 ownTroops = 25000;
 assert.equal(
   expandingBehavior.getTerraNulliusAttackTroops(terraNullius),
-  750,
-  "an exhausted opening allowance continues adjacent TerraNullius expansion at 3%",
+  1250,
+  "an exhausted opening allowance continues adjacent TerraNullius expansion at 5%",
 );
 const continuedTerraNulliusEmissionCount = troopEmissions.length;
 assert.equal(
@@ -425,8 +425,8 @@ assert.equal(
 assert.equal(troopEmissions.length, continuedTerraNulliusEmissionCount + 1);
 assert.equal(
   troopEmissions.at(-1),
-  750,
-  "the continued TerraNullius intent emits 3% when it exceeds the one-tile cost",
+  1250,
+  "the continued TerraNullius intent emits 5% when it exceeds the one-tile cost",
 );
 
 const repeatedExpansionBehavior = new sandbox.AttackBehavior(
@@ -499,10 +499,10 @@ const drainedExpansionEmissionCount = troopEmissions.length;
 assert.equal(
   expandingBehavior.sendLandAttack(terraNullius),
   true,
-  "chained TerraNullius expansion keeps the derived 3% liveness allowance at the opening floor",
+  "chained TerraNullius expansion keeps the derived 5% liveness allowance at the opening floor",
 );
 assert.equal(troopEmissions.length, drainedExpansionEmissionCount + 1);
-assert.equal(troopEmissions.at(-1), 300);
+assert.equal(troopEmissions.at(-1), 500);
 ownTroops = 25000;
 
 const openingBehavior = new sandbox.AttackBehavior({}, expandingGame, me, 0.5, 0.3, 0.1, {}, {});
@@ -515,7 +515,7 @@ assert.equal(
 assert.equal(troopEmissions.length, openingEmissionCount + 1);
 assert.equal(
   troopEmissions.at(-1),
-  750,
+  1250,
   "the 60% opening fraction is a ceiling rather than a fixed payload",
 );
 
@@ -591,8 +591,8 @@ assert.equal(
     null,
     sandbox.EARLY_EXPAND_COMMIT,
   ),
-  750,
-  "an expensive opening tile receives its calculated loss plus the 25% margin",
+  1250,
+  "an expensive opening tile preserves the 5% minimum liveness allowance",
 );
 
 const scheduledBehavior = new sandbox.AttackBehavior({}, expandingGame, me, 0.5, 0.3, 0.1, {}, {});
@@ -748,8 +748,8 @@ assert.equal(
   "a sufficiently funded tribe assault is emitted",
 );
 assert.ok(
-  troopEmissions.at(-1) >= Math.ceil(tribeTarget.troops() * 1.8),
-  "a tribe assault meets the lean whole-troop conquest floor",
+  troopEmissions.at(-1) >= Math.ceil(tribeTarget.troops() * 2),
+  "a tribe assault meets the two-times whole-troop conquest floor",
 );
 assert.ok(
   ownTroops - troopEmissions.at(-1) >= tribeBehavior.getEarlyGameLiveReserveTroops(),
@@ -778,8 +778,8 @@ assert.equal(
 assert.equal(troopEmissions.length, botControlledEmissionCount + 1);
 assert.equal(
   troopEmissions.at(-1),
-  18000,
-  "controller type cannot bypass the 1.8x tribe conquest floor",
+  20000,
+  "controller type cannot bypass the 2x tribe conquest floor",
 );
 
 const fractionalTribeTarget = {
@@ -788,8 +788,8 @@ const fractionalTribeTarget = {
 };
 assert.equal(
   tribeBehavior.getTribeCaptureTroopFloor(fractionalTribeTarget),
-  18001,
-  "a fractional 1.8x tribe requirement rounds up to the minimum whole-troop conquest force",
+  20001,
+  "a fractional 2x tribe requirement rounds up to the minimum whole-troop conquest force",
 );
 
 const underfundedTribeBehavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
@@ -812,7 +812,7 @@ assert.equal(
   underfundedEmissionCount + 1,
   "the pending intent is not mistaken for a complete capture force",
 );
-assert.equal(troopEmissions.at(-1), 17000);
+assert.equal(troopEmissions.at(-1), 19000);
 sandbox.currentDifficulty = () => "Impossible";
 
 // Different hostile targets may be launched in the same decision. Pending
@@ -856,7 +856,7 @@ assert.equal(
 );
 assert.equal(
   parallelBehavior.getPendingOutboundAttackTroops(),
-  3600,
+  4000,
   "parallel tribal intents reserve each tribe's fully funded conquest force",
 );
 assert.equal(
@@ -881,8 +881,8 @@ assert.equal(parallelBehavior.getLiveOutboundAttackTroopsForTarget(parallelTribe
 parallelBehavior.botAttackTroopsSent = 0;
 assert.equal(
   parallelBehavior.calculateBotAttackTroops(parallelTribeA, 10000, {}, 3000),
-  4200,
-  "a growing tribe receives the missing top-up to the live 1.8x conquest floor",
+  5000,
+  "a growing tribe receives the missing top-up to the live 2x conquest floor",
 );
 
 parallelBehavior.botAttackPendingIntentCommitments = [
@@ -903,13 +903,13 @@ parallelTribeA.troops = () => 4500;
 parallelBehavior.botAttackTroopsSent = 0;
 assert.equal(
   parallelBehavior.calculateBotAttackTroops(parallelTribeA, 10000, {}, 3000),
-  4600,
+  5500,
   "tribe reinforcement includes a pending top-up but still fills a newly grown capture floor",
 );
 
 const fractionalPendingTribeTarget = {
   ...parallelTribeA,
-  troops: () => 59905,
+  troops: () => 53914.5,
 };
 const fractionalPendingTribeBehavior = new sandbox.AttackBehavior(
   {},
@@ -1020,7 +1020,7 @@ assert.equal(
 assert.equal(troopEmissions.length, reinforcementEmissionCount + 1);
 assert.equal(
   troopEmissions.at(-1),
-  4200,
+  5000,
   "an incomplete tribe attack receives only the missing reinforcement",
 );
 

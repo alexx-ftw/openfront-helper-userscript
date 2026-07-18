@@ -63,9 +63,33 @@ hostileAttackPressureBehavior.player.incomingAttacks = () => [
 ];
 assert.equal(
   hostileAttackPressureBehavior.incomingHostileAttackPressure(),
-  Infinity,
-  "an inbound attack against an exhausted force remains an overwhelming siege",
+  0,
+  "an exhausted force keeps the established fallback instead of applying a siege ratio",
 );
+
+const siegeHoldBehavior = Object.create(sandbox.AttackBehavior.prototype);
+let siegeCounterattacks = 0;
+sandbox.state.earlyGame = {};
+siegeHoldBehavior.findIncomingAttackPlayer = () => ({ smallID: () => 9 });
+siegeHoldBehavior.hasOverwhelmingIncomingAttack = () => true;
+siegeHoldBehavior.sendAttack = async () => {
+  siegeCounterattacks++;
+  return true;
+};
+assert.equal(
+  await siegeHoldBehavior.respondToIncomingAttack(),
+  false,
+  "an overwhelming siege holds troops instead of emitting a futile counterattack",
+);
+assert.equal(siegeCounterattacks, 0);
+assert.equal(sandbox.state.earlyGame.action, "defense-hold");
+siegeHoldBehavior.hasOverwhelmingIncomingAttack = () => false;
+assert.equal(
+  await siegeHoldBehavior.respondToIncomingAttack(),
+  true,
+  "ordinary incoming attacks preserve the responsive counterattack",
+);
+assert.equal(siegeCounterattacks, 1);
 
 const overlapping = sandbox.calculateDefensePostAttackProfile({
   frontTiles: [0, 10, 30, 31],

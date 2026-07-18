@@ -754,8 +754,13 @@
     async handleHostileSiloSamMaximumPriority() {
       if (!state.settings.winFixes) return null;
       if (this.game.config().isUnitDisabled(UNIT.SAMLauncher)) return null;
-      if (!this.hasBuiltHostileSiloThreat()) return null;
-      if (!this.shouldBuildHostileSiloSam()) return null;
+      // A Silo becomes a strategic threat as soon as its construction starts:
+      // waiting for it to finish wastes the only reliable SAM construction
+      // window.  The placement count intentionally includes structures under
+      // construction, while the later capacity/coverage planner still uses
+      // completed structures where their actual level matters.
+      if (!this.hasPlacedSiloOnMap()) return null;
+      if (!this.shouldBuildSiloTriggeredSam()) return null;
 
       // A real hostile Silo makes protective SAM placement the construction
       // planner's hard top priority. If placement is temporarily blocked by
@@ -1502,7 +1507,7 @@
     }
 
     async maybeSpawnHostileSiloSam() {
-      if (!this.shouldBuildHostileSiloSam()) return false;
+      if (!this.shouldBuildSiloTriggeredSam()) return false;
       const attemptTick = this.hostileSiloSamCurrentTick();
       if (this.hostileSiloSamRetryActive(attemptTick)) return false;
       if (this.hasOwnSamUnderConstruction()) return false;
@@ -1849,6 +1854,35 @@
       return summary !== null && summary.builtHostileSiloCount > 0;
     }
 
+    hasPlacedHostileSiloThreat() {
+      const summary = this.hostileMissileSiloCapacitySummary();
+      return summary !== null && summary.hostileSiloCount > 0;
+    }
+
+    // A silo placed by either an enemy or an ally is the immediate, global
+    // nuclear-defense trigger. Do not cache the result: a build event may
+    // arrive between two structure decisions in the same game tick.
+    hasPlacedSiloOnMap() {
+      if (!this.player || !this.game || typeof this.game.players !== "function") {
+        return false;
+      }
+      const mySid = this.readPlayerSmallId(this.player);
+      for (const other of this.game.players()) {
+        if (!this.isLiveOtherPlayer(other, mySid)) continue;
+        const metrics = this.playerUnitCapacitySummary(other, UNIT.MissileSilo);
+        if (metrics !== null && metrics.count > 0) return true;
+      }
+      return false;
+    }
+
+    isLiveOtherPlayer(other, mySid) {
+      if (!other || other === this.player) return false;
+      if (typeof other.isPlayer === "function" && !other.isPlayer()) return false;
+      const otherSid = this.readPlayerSmallId(other);
+      if (mySid !== null && otherSid === mySid) return false;
+      return !(typeof other.isAlive === "function" && !other.isAlive());
+    }
+
     // Gold alone opens the SAM-building gate, but it does not justify running
     // the full trajectory planner: until a hostile silo or missile exists the
     // forecast has no incoming routes to model. Keep this cheap signal separate
@@ -2079,6 +2113,16 @@
         ownSam.count === 0 &&
         (siloSummary.hostileSiloCount > 0 || threat.siloThreat === true)
       );
+    }
+
+    shouldBuildSiloTriggeredSam() {
+      if (!state.settings.winFixes) return false;
+      const ownSam = this.playerUnitCapacitySummary(
+        this.player,
+        UNIT.SAMLauncher,
+      );
+      if (ownSam === null || ownSam.count > 0) return false;
+      return this.hasPlacedSiloOnMap() || this.shouldBuildHostileSiloSam();
     }
 
     /**

@@ -134,8 +134,13 @@
   // Tribes have no strategic counterplay comparable to Nations. A small capture
   // margin lets the opening spread across many tribes in parallel instead of
   // parking four times their strength in one conquest.
-  const TRIBE_CAPTURE_TROOP_MULTIPLIER = 1.8;
+  const TRIBE_CAPTURE_TROOP_MULTIPLIER = 2;
   const PLAYER_CAPTURE_TROOP_MULTIPLIER = 4;
+  // Above this aggregate hostile-incoming / own-troop ratio, a token
+  // counterattack cannot materially change the battle but does weaken the
+  // defended front. Keep troops home and let the defensive construction lane
+  // use its accelerated siege cadence instead.
+  const OVERWHELMING_INCOMING_ATTACK_RATIO = 2;
   // Reserve the troop level where the production rate has its maximum temporal
   // acceleration. P(N) is troops per tick and N' = P(N), so acceleration is
   // dP/dt = P(N) * P'(N), not just the slope with respect to troop count.
@@ -1473,7 +1478,7 @@
       const followUpFraction =
         typeof EARLY_EXPAND_FOLLOWUP_COMMIT === "number"
           ? EARLY_EXPAND_FOLLOWUP_COMMIT
-          : 0.03;
+          : 0.05;
       const followUpTroops = Math.max(minimum, ownTroops * followUpFraction);
       if (available >= followUpTroops) {
         return { available, livenessFollowUp: false };
@@ -1500,7 +1505,7 @@
       const followUpFraction =
         typeof EARLY_EXPAND_FOLLOWUP_COMMIT === "number"
           ? EARLY_EXPAND_FOLLOWUP_COMMIT
-          : 0.03;
+          : 0.05;
       const configured = Number(commitFraction);
       if (commitFraction !== null && Number.isFinite(configured)) {
         const bounded = Math.min(1, Math.max(0, configured));
@@ -5659,7 +5664,14 @@
 
     // findIncomingAttackPlayer — AiAttackBehavior.
     incomingHostileAttacks() {
-      if (this.player === null) return [];
+      if (
+        this.player === null ||
+        this.player === undefined ||
+        typeof this.player.incomingAttacks !== "function" ||
+        typeof this.player.isFriendly !== "function"
+      ) {
+        return [];
+      }
       return this.player
         .incomingAttacks()
         .filter((attack) => !this.player.isFriendly(attack.attacker()));
@@ -5670,14 +5682,21 @@
     // coordinated attack from several Nations as one siege, rather than wait
     // for any one of them to cross an arbitrary per-attacker threshold.
     incomingHostileAttackPressure() {
-      if (this.player === null) return 0;
+      if (this.player === null || this.player === undefined) return 0;
       const ownTroops = Math.max(0, Number(this.player.troops?.()) || 0);
       const incomingTroops = this.incomingHostileAttacks().reduce(
         (total, attack) => total + Math.max(0, Number(attack.troops?.()) || 0),
         0,
       );
-      if (incomingTroops === 0) return 0;
-      return ownTroops > 0 ? incomingTroops / ownTroops : Infinity;
+      if (incomingTroops === 0 || ownTroops <= 0) return 0;
+      return incomingTroops / ownTroops;
+    }
+
+    hasOverwhelmingIncomingAttack() {
+      return (
+        this.incomingHostileAttackPressure() >=
+        OVERWHELMING_INCOMING_ATTACK_RATIO
+      );
     }
 
     findIncomingAttackPlayer() {
@@ -5709,6 +5728,10 @@
     async respondToIncomingAttack() {
       const attacker = this.findIncomingAttackPlayer();
       if (attacker === null) return null;
+      if (this.hasOverwhelmingIncomingAttack()) {
+        state.earlyGame.action = "defense-hold";
+        return false;
+      }
       const emitted = await this.sendAttack(attacker, true);
       state.earlyGame.action = emitted ? "retaliate" : "defense-hold";
       return emitted;
