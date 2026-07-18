@@ -57,6 +57,8 @@ assert.match(runner, /OFH_PROGRESS_FROM_TICK/);
 assert.match(runner, /OFH_SLOW_TICK_MS/);
 assert.match(runner, /OFH_STOP_WHEN_DEAD/);
 assert.match(runner, /OFH_PROFILE_BOT/);
+assert.match(runner, /OFH_TRACE_FILE/);
+assert.match(runner, /appendFileSync\(traceFile/);
 assert.match(runner, /OFH_LOG_INTENTS/);
 assert.match(runner, /OFH_LOG_NAVAL/);
 assert.match(runner, /OFH_LOG_STRUCTURES/);

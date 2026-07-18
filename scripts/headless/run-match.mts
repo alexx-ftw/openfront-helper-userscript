@@ -1,3 +1,4 @@
+import { appendFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
@@ -18,6 +19,15 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 const engineRoot = path.resolve(root, "../../openfront-engine");
 const seed = process.env.OFH_MATCH_SEED ?? `ofh-random-team-${Date.now()}`;
 const clientID = "ofh-auto-bot";
+const traceFile = process.env.OFH_TRACE_FILE;
+if (traceFile) {
+  writeFileSync(traceFile, "");
+  const originalWarn = console.warn.bind(console);
+  console.warn = (...args: unknown[]) => {
+    originalWarn(...args);
+    appendFileSync(traceFile, `${args.map(String).join(" ")}\n`);
+  };
+}
 const playlist = new MapPlaylist();
 let playlistConfig = await playlist.gameConfig("team");
 // A Team match with one team fails inside GameImpl before tick zero. Keep the
