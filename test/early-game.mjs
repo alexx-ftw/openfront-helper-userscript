@@ -1727,12 +1727,30 @@ await tribeEtaCacheBehavior.enrichEarlyGameTribeBoatEtas(
 assert.equal(tribeEtaRouteCalls, 1, "unchanged tribe coast reuses its recent route ETA");
 assert.equal(cachedStableSeaCandidate.boatEtaTicks, 12);
 assert.equal(cachedStableSeaCandidate.boatTargetTile, 10);
+const freshSnapshotSeaCandidate = makeStableSeaCandidate();
+stableTargetPlayer.borderTiles = () => new Set([10]);
+tribeEtaCacheBehavior.player.shoreBorderTiles = () => [1];
+await tribeEtaCacheBehavior.enrichEarlyGameTribeBoatEtas(
+  [freshSnapshotSeaCandidate],
+  new Map([[stableTargetPlayer, new Set([10])]]),
+);
+assert.equal(
+  tribeEtaRouteCalls,
+  1,
+  "equivalent fresh coast snapshots reuse the route ETA instead of repeating worker pathfinding",
+);
+tribeEtaCacheBehavior.player.shoreBorderTiles = () => [1, 2];
+await tribeEtaCacheBehavior.enrichEarlyGameTribeBoatEtas(
+  [makeStableSeaCandidate()],
+  new Map([[stableTargetPlayer, new Set([10])]]),
+);
+assert.equal(tribeEtaRouteCalls, 2, "a changed launch coast invalidates the cached route ETA");
 tribeEtaCacheTick += 61;
 await tribeEtaCacheBehavior.enrichEarlyGameTribeBoatEtas(
   [makeStableSeaCandidate()],
   new Map([[stableTargetPlayer, stableTargetBorder]]),
 );
-assert.equal(tribeEtaRouteCalls, 2, "the tribe route ETA is revalidated after its short TTL");
+assert.equal(tribeEtaRouteCalls, 3, "the tribe route ETA is revalidated after its short TTL");
 
 const ordinaryBoatBudgetBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 const ordinaryBoatProbeCalls = [];

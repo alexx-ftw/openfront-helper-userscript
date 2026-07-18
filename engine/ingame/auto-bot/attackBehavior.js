@@ -3396,18 +3396,23 @@
       const seaCandidates = candidates.filter((candidate) => !candidate.landBorder);
       const tick = this.currentAttackDecisionTick();
       const ownShores = this.getEarlyGameOwnShores();
-      const ownBorder = ownShores;
+      // PlayerView deliberately replaces border snapshot containers between
+      // decision ticks. A reference comparison therefore misses the useful
+      // route cache even when the actual launch coast is unchanged. Preserve
+      // exact invalidation by comparing the complete tile membership instead.
+      const ownBorderSignature = this.earlyGameBoatBorderSignature(ownShores);
       const uncachedCandidates = [];
       for (const candidate of seaCandidates) {
         const targetBorder = borderByTribe.get(candidate.player) || new Set();
+        const targetBorderSignature = this.earlyGameBoatBorderSignature(targetBorder);
         const cached = this.getCachedEarlyGameTribeBoatEta(
           candidate,
-          ownBorder,
-          targetBorder,
+          ownBorderSignature,
+          targetBorderSignature,
           tick,
         );
         if (cached === null) {
-          uncachedCandidates.push({ candidate, targetBorder });
+          uncachedCandidates.push({ candidate, targetBorder, targetBorderSignature });
           continue;
         }
         candidate.boatEtaTicks = cached.eta;
@@ -3424,10 +3429,11 @@
       // probe, but let one candidate's bounded probe group settle before
       // starting the next.
       const results = [];
-      for (const { candidate, targetBorder } of batch) {
+      for (const { candidate, targetBorder, targetBorderSignature } of batch) {
         results.push({
           candidate,
           targetBorder,
+          targetBorderSignature,
           boatEtaTicks: await this.estimateEarlyGameTribeBoatEta(
             targetBorder,
             candidate,
@@ -3436,12 +3442,12 @@
         });
         if (results.length < batch.length) await yieldEarlyGameTopologyWork();
       }
-      for (const { candidate, targetBorder, boatEtaTicks } of results) {
+      for (const { candidate, targetBorderSignature, boatEtaTicks } of results) {
         candidate.boatEtaTicks = boatEtaTicks;
         this.cacheEarlyGameTribeBoatEta(
           candidate,
-          ownBorder,
-          targetBorder,
+          ownBorderSignature,
+          targetBorderSignature,
           tick,
         );
       }
@@ -3451,13 +3457,26 @@
       return candidate?.id ?? candidate?.player?.smallID?.() ?? null;
     }
 
-    getCachedEarlyGameTribeBoatEta(candidate, ownBorder, targetBorder, tick) {
+    earlyGameBoatBorderSignature(border) {
+      return Array.from(border || [])
+        .map((tile) => Number(tile))
+        .filter(Number.isFinite)
+        .sort((left, right) => left - right)
+        .join(",");
+    }
+
+    getCachedEarlyGameTribeBoatEta(
+      candidate,
+      ownBorderSignature,
+      targetBorderSignature,
+      tick,
+    ) {
       const key = this.earlyGameTribeBoatEtaCacheKey(candidate);
       if (key === null) return null;
       const cached = this.earlyGameTribeBoatEtaCache?.get(key);
       if (
-        cached?.ownBorder !== ownBorder ||
-        cached.targetBorder !== targetBorder ||
+        cached?.ownBorderSignature !== ownBorderSignature ||
+        cached.targetBorderSignature !== targetBorderSignature ||
         tick < cached.tick ||
         tick - cached.tick > EARLY_TRIBE_BOAT_ETA_CACHE_TICKS
       ) {
@@ -3466,14 +3485,19 @@
       return cached;
     }
 
-    cacheEarlyGameTribeBoatEta(candidate, ownBorder, targetBorder, tick) {
+    cacheEarlyGameTribeBoatEta(
+      candidate,
+      ownBorderSignature,
+      targetBorderSignature,
+      tick,
+    ) {
       const key = this.earlyGameTribeBoatEtaCacheKey(candidate);
       if (key === null) return;
       const cache = this.earlyGameTribeBoatEtaCache || new Map();
       this.earlyGameTribeBoatEtaCache = cache;
       cache.set(key, {
-        ownBorder,
-        targetBorder,
+        ownBorderSignature,
+        targetBorderSignature,
         tick,
         eta: candidate.boatEtaTicks,
         targetTile: candidate.boatTargetTile ?? null,
