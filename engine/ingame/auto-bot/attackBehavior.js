@@ -2867,6 +2867,9 @@
     }
 
     earlyGameTribeBorderChanged(previous, current) {
+      // Border snapshots are immutable replacement values. Identity therefore
+      // proves no topology change without re-walking every tile on a TTL refresh.
+      if (previous === current) return false;
       if (previous?.size !== current?.size) return true;
       for (const tile of current || []) {
         if (!previous.has(tile)) return true;

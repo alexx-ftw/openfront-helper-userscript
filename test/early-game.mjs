@@ -3054,6 +3054,17 @@ assert.ok(
   "the tribe topology refreshes after its bounded cache window",
 );
 const yieldProbeNodes = [{ id: 101 }, { id: 102 }];
+const identicalTribeBorder = new Set(Array.from({ length: 1024 }, (_, index) => index));
+assert.equal(
+  targetBehavior.earlyGameTribeBorderChanged(identicalTribeBorder, identicalTribeBorder),
+  false,
+  "an identical immutable tribe-border snapshot avoids a full tile comparison",
+);
+assert.equal(
+  targetBehavior.earlyGameTribeBorderChanged(new Set([1, 2]), new Set([1, 2])),
+  false,
+  "distinct but equal tribe-border snapshots retain the content comparison",
+);
 const yieldProbeBorders = new Map([
   [101, new Set(Array.from({ length: 4096 }, (_, index) => 10_000 + index))],
   [102, new Set()],

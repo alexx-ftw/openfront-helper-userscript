@@ -7862,8 +7862,9 @@
         // The ordinary sampler is intentionally random for varied economy
         // placement, but a first anti-missile site has one clear strategic
         // purpose: sit in the heart of the most valuable compact group. Seed
-        // that deterministic group before the random fallback so its centre
-        // cannot disappear merely because it missed a 25-tile sample.
+        // the actual structure-centre anchors before the random fallback: a
+        // random 25-tile sample can otherwise entirely miss that compact core.
+        tiles = this.prependCriticalSamClusterAnchors(tiles, candidateLimit);
         tiles = this.prependCriticalSamClusterTiles(tiles, candidateLimit);
         tiles = this.uniqueOwnedStructureTiles(tiles);
       }
@@ -7903,6 +7904,35 @@
         .sort((left, right) => right.score - left.score || left.index - right.index)
         .slice(0, candidateLimit)
         .map((entry) => entry.tile);
+    }
+
+    prependCriticalSamClusterAnchors(tiles, candidateLimit) {
+      const config = this.game?.config?.();
+      const range = Number(config?.defaultSamRange?.());
+      if (!Number.isFinite(range) || range <= 0) return tiles;
+      const entries = this.samCriticalStructureEntries();
+      if (entries.length === 0) return tiles;
+      const rangeSquared = range * range;
+      const anchorLimit = Math.min(3, candidateLimit);
+      const anchors = entries
+        .map((entry, index) => ({
+          tile: entry.tile,
+          index,
+          score: this.samCriticalCoverageScoreForEntries(
+            entry.tile,
+            rangeSquared,
+            entries,
+          ),
+        }))
+        .sort((left, right) => right.score - left.score || left.index - right.index)
+        .slice(0, anchorLimit)
+        .map((entry) => entry.tile);
+      const seen = new Set();
+      return anchors.concat(tiles).filter((tile) => {
+        if (seen.has(tile)) return false;
+        seen.add(tile);
+        return true;
+      }).slice(0, candidateLimit);
     }
 
     prependActiveMissileRouteTiles(tiles, candidateLimit, context) {

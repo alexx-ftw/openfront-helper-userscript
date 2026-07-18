@@ -2305,6 +2305,11 @@ assert.deepEqual(
   [106, 900, 500],
   "a coverage-priority SAM probes the legal candidate nearest the weighted centre of the expensive building cluster first",
 );
+assert.deepEqual(
+  Array.from(criticalSamClusterBehavior.prependCriticalSamClusterAnchors([900, 500], 4)),
+  [104, 100, 108, 900],
+  "a coverage-priority SAM deterministically seeds legal probes at the expensive cluster centre instead of depending on a random territory sample",
+);
 criticalSamClusterBehavior.shouldPrioritizeHydrogenSamProtection = () => true;
 criticalSamClusterBehavior.externalSiloLevelSumTarget = () => 1;
 assert.strictEqual(
