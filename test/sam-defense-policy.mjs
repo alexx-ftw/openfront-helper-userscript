@@ -515,17 +515,17 @@ assert.equal(preemptiveHostileGoldSamCalls, 1);
 
 const preemptiveSamReserveBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 preemptiveSamReserveBehavior.safeConstructionCost = () => 1_500_000n;
-preemptiveSamReserveBehavior.spendableConstructionGold = () => 899_999n;
+preemptiveSamReserveBehavior.spendableConstructionGold = () => 374_999n;
 assert.equal(
   preemptiveSamReserveBehavior.shouldReserveHostileSiloSamBudget(),
   false,
   "A poor nation keeps productive construction available while it is far from its first SAM",
 );
-preemptiveSamReserveBehavior.spendableConstructionGold = () => 900_000n;
+preemptiveSamReserveBehavior.spendableConstructionGold = () => 375_000n;
 assert.equal(
   preemptiveSamReserveBehavior.shouldReserveHostileSiloSamBudget(),
   true,
-  "Once 60% of the first SAM is saved, hostile-Silo defense reserves the remaining budget",
+  "Once 25% of the first SAM is saved, hostile-Silo defense reserves the remaining budget",
 );
 
 const poorPreemptiveHostileGoldBehavior = Object.create(sandbox.__StructureBehavior.prototype);

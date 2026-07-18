@@ -210,12 +210,13 @@
   /**
    * A nation that has not yet built an economy cannot recover by saving every
    * coin from its first tiles for a SAM it is far from affording. Once it has
-   * 60% of the real first-SAM price, protect that nearly-complete purchase from
-   * ordinary construction; below that point productive growth remains the way
-   * to reach the defensive threshold in time.
+   * 25% of the real first-SAM price, protect that purchase from ordinary
+   * construction. A live external Silo has already won the construction-time
+   * race, so waiting until 60% repeatedly funded ships and economy instead of
+   * the first interceptor.
    */
-  const HOSTILE_SAM_SAVEUP_RESERVE_NUMERATOR = 3n;
-  const HOSTILE_SAM_SAVEUP_RESERVE_DENOMINATOR = 5n;
+  const HOSTILE_SAM_SAVEUP_RESERVE_NUMERATOR = 1n;
+  const HOSTILE_SAM_SAVEUP_RESERVE_DENOMINATOR = 4n;
 
   /** Structures that directly grow the nation's economy. */
   const ECONOMIC_STRUCTURE_TYPES = [UNIT.Port, UNIT.Factory, UNIT.City];
