@@ -486,6 +486,19 @@ assert.equal(
   true,
   "An allied Silo makes an otherwise SAM-less bot request its first interceptor immediately",
 );
+const originalEnemyTeamUnitsForExternalSilo = enemyTeam.units;
+enemyTeam.units = (type) => (type === UNIT.MissileSilo ? [makeUnit(503, 2)] : []);
+assert.equal(
+  behavior.externalSiloLevelSumTarget(),
+  2,
+  "An allied level-2 Silo contributes its real capacity to our SAM target",
+);
+assert.equal(
+  behavior.hasBuiltExternalSiloThreat(),
+  true,
+  "A completed allied Silo permits the mandatory defensive upgrade path",
+);
+enemyTeam.units = originalEnemyTeamUnitsForExternalSilo;
 behavior.game.players = () => [own, enemySingleLevelOneSilo];
 assert.equal(
   behavior.hostileSiloLevelSumAtLeast(),
@@ -1711,6 +1724,7 @@ const hydrogenProtectionBehavior = Object.create(sandbox.__StructureBehavior.pro
 hydrogenProtectionBehavior._hostileMissileLaunchObserved = true;
 const hydrogenSam = makeUnit(1101, 1);
 let hydrogenProtectionGold = 5_000_000n;
+let hydrogenThreatPlayers = [enemyTwoLevelOneSilos];
 hydrogenProtectionBehavior.player = {
   smallID: () => 1,
   gold: () => hydrogenProtectionGold,
@@ -1723,6 +1737,7 @@ hydrogenProtectionBehavior.player = {
 };
 hydrogenProtectionBehavior.game = {
   ticks: () => 1,
+  players: () => [hydrogenProtectionBehavior.player, ...hydrogenThreatPlayers],
   euclideanDistSquared: (left, right) => (Number(left) - Number(right)) ** 2,
   config: () => ({
     isUnitDisabled: () => false,
@@ -1740,6 +1755,17 @@ assert.equal(
   5,
   "Two Silo slots on one hostile player force the maximum SAM level",
 );
+const originalEnemyTeamUnitsForHydrogenPlan = enemyTeam.units;
+enemyTeam.units = (type) => (type === UNIT.MissileSilo ? [makeUnit(504, 2)] : []);
+hydrogenThreatPlayers = [enemyTeam];
+hydrogenProtectionBehavior.liveHostilePlayers = () => [];
+hydrogenProtectionBehavior._hydrogenSamProtectionTick = null;
+assert.equal(
+  hydrogenProtectionBehavior.hydrogenSamProtectionPlan().targetLevel,
+  5,
+  "An allied level-2 Silo also forces our SAM toward level five",
+);
+enemyTeam.units = originalEnemyTeamUnitsForHydrogenPlan;
 sentBuilds.length = 0;
 assert.equal(
   await hydrogenProtectionBehavior.maybeUpgradeHydrogenProtectionSam(),
@@ -1766,6 +1792,7 @@ assert.equal(sentBuilds.length, 1);
 hydrogenProtectionGold = 5_000_000n;
 hydrogenProtectionBehavior.cost = () => 1n;
 hydrogenProtectionBehavior.liveHostilePlayers = () => [enemySingleLevelOneSilo];
+hydrogenThreatPlayers = [enemySingleLevelOneSilo];
 hydrogenProtectionBehavior._hydrogenSamProtectionTick = null;
 assert.equal(
   hydrogenProtectionBehavior.hydrogenSamProtectionPlan().targetLevel,
@@ -1780,6 +1807,7 @@ assert.equal(
 );
 assert.equal(sentBuilds.length, 1, "The single-Silo H-bomb policy sends exactly one SAM upgrade");
 hydrogenProtectionBehavior.liveHostilePlayers = () => [enemySingleLevelTwoSilo];
+hydrogenThreatPlayers = [enemySingleLevelTwoSilo];
 hydrogenProtectionBehavior._hydrogenSamProtectionTick = null;
 assert.equal(
   hydrogenProtectionBehavior.hydrogenSamProtectionPlan().targetLevel,

@@ -1877,6 +1877,17 @@
       return summary !== null && summary.builtHostileSiloCount > 0;
     }
 
+    hasBuiltExternalSiloThreat() {
+      if (!this.player || !this.game || typeof this.game.players !== "function") {
+        return false;
+      }
+      const mySid = this.readPlayerSmallId(this.player);
+      return this.game.players().some(
+        (other) =>
+          this.isLiveOtherPlayer(other, mySid) && this.hasBuiltMissileSilo(other),
+      );
+    }
+
     hasPlacedHostileSiloThreat() {
       const summary = this.hostileMissileSiloCapacitySummary();
       return summary !== null && summary.hostileSiloCount > 0;
@@ -2862,6 +2873,24 @@
       return maximum;
     }
 
+    // A silo network belonging to any *other* live player changes our
+    // defensive requirement. Allies can become enemies, and their launcher
+    // capacity proves that a high-level SAM is affordable and strategically
+    // relevant on this board. Keep the target per player: unrelated level-one
+    // silos must not be added together into a fictitious single salvo.
+    externalSiloLevelSumTarget() {
+      if (!this.player || !this.game || typeof this.game.players !== "function") {
+        return this.hostileSiloLevelSumTarget();
+      }
+      const mySid = this.readPlayerSmallId(this.player);
+      let maximum = 0;
+      for (const other of this.game.players()) {
+        if (!this.isLiveOtherPlayer(other, mySid)) continue;
+        maximum = Math.max(maximum, this.hostileBuiltSiloLevelSum(other));
+      }
+      return maximum;
+    }
+
     hostileBuiltSiloLevelSum(enemy) {
       {
         if (enemy.isAlive && enemy.isAlive() === false) return 0;
@@ -2891,7 +2920,7 @@
         if (this.game.config().isUnitDisabled(UNIT.HydrogenBomb)) return false;
       }
       return (
-        this.hostileSiloLevelSumTarget() >=
+        this.externalSiloLevelSumTarget() >=
         HYDROGEN_SAM_SILO_LEVEL_SUM_THRESHOLD
       );
     }
@@ -2909,9 +2938,9 @@
         HYDROGEN_SAM_MAX_UPGRADE_LEVEL,
         Math.max(
           HYDROGEN_SAM_MINIMUM_READY_LEVEL,
-          this.hostileSiloLevelSumTarget() >= 2
+          this.externalSiloLevelSumTarget() >= 2
             ? HYDROGEN_SAM_MAX_UPGRADE_LEVEL
-            : this.hostileSiloLevelSumTarget(),
+            : this.externalSiloLevelSumTarget(),
         ),
       );
       const sams = (this.player.units(UNIT.SAMLauncher) || []).filter((sam) => {
@@ -6398,7 +6427,8 @@
       // or capacity upgrade before its first missile consumes that window.
       if (
         !this.hasObservedHostileMissileLaunch() &&
-        !this.hasBuiltHostileSiloThreat()
+        !this.hasBuiltHostileSiloThreat() &&
+        !this.hasBuiltExternalSiloThreat()
       ) {
         return false;
       }
