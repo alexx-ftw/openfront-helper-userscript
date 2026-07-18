@@ -7332,6 +7332,14 @@
           emergency,
         );
         if (localResult.handled) return localResult.buildable;
+        if (localResult.attemptedTiles?.size > 0) {
+          return this.probeRankedStructureTiles(
+            scored.filter(({ t }) => !localResult.attemptedTiles.has(t)),
+            type,
+            probe,
+            emergency,
+          );
+        }
       }
       return this.probeRankedStructureTiles(scored, type, probe, emergency);
     }
@@ -7365,7 +7373,12 @@
 
     samPlacementProtectsStructure(tile, protectedTiles) {
       if (protectedTiles === null) return true;
-      if (protectedTiles.size === 0) return false;
+      // A first SAM must still be placeable after an economy has been wiped
+      // out.  There is no expensive clump to centre on in that state, but an
+      // external Silo is still an immediate strategic threat; let the normal
+      // ranked legal-tile probe establish the defensive foothold instead of
+      // filtering every candidate out.
+      if (protectedTiles.size === 0) return true;
       const config = this.game.config();
       const range = Math.max(
         0,
@@ -8087,6 +8100,7 @@
 
     async probeCoveragePrioritySamTiles(scored, type, timeoutMs, emergency) {
       const snappedTiles = new Set();
+      const attemptedTiles = new Set();
       let attempts = 0;
       for (const { t } of scored) {
         const snappedTile = this.localLandStructureSpawnTile(t);
@@ -8097,13 +8111,19 @@
           continue;
         }
         attempts++;
+        attemptedTiles.add(t);
         const bu = await this.buildableFor(type, t, timeoutMs);
         if (this.isUsableStructureBuildable(bu, t, type)) {
           return { handled: true, buildable: bu };
         }
         if (attempts >= HOSTILE_SILO_SAM_AUTHORITATIVE_FALLBACK_LIMIT) break;
       }
-      return { handled: true, buildable: null };
+      // The local reconstruction is only an optimisation for the expensive
+      // cluster anchors.  It is not authoritative: an incomplete public
+      // snapshot, an occupied anchor, or three unlucky probes must not turn a
+      // mandatory first SAM into a permanent no-op.  Fall through to the
+      // normal bounded worker probes, which decide actual buildability.
+      return { handled: false, buildable: null, attemptedTiles };
     }
 
     async probeRankedStructureTiles(scored, type, probe, emergency) {

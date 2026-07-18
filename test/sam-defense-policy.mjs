@@ -148,6 +148,25 @@ assert.equal(
   1,
   "one immutable emergency snapshot evaluates each SAM tile once",
 );
+const coverageFallbackBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+coverageFallbackBehavior.localLandStructureSpawnTile = () => false;
+const coverageFallback = await coverageFallbackBehavior.probeCoveragePrioritySamTiles(
+  [{ t: 41 }, { t: 42 }, { t: 43 }],
+  UNIT.SAMLauncher,
+  20,
+  {},
+);
+assert.equal(
+  coverageFallback.handled,
+  false,
+  "failed central-cluster probes fall back to authoritative SAM placement probes",
+);
+const emptyClusterProtectionBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+assert.equal(
+  emptyClusterProtectionBehavior.samPlacementProtectsStructure(42, new Set()),
+  true,
+  "an empty current structure cluster does not suppress an urgent first SAM",
+);
 assert.equal(
   sandbox.legendaryMaxEnemySamCapacity([[3, 1], [2, 2, 2], []]),
   6,
@@ -1751,8 +1770,8 @@ assert.equal(
 );
 assert.equal(
   coverageProbeCount,
-  3,
-  "Coverage-priority SAM placement bounds authoritative snapshot-drift fallbacks",
+  24,
+  "Coverage-priority SAM placement falls through to the bounded authoritative probe set without reprobes",
 );
 assert.equal(
   coverageRequestedSampleCount,
