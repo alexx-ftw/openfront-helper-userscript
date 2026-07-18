@@ -155,6 +155,7 @@ const trackedMissileTypes = [
   UnitType.MIRV,
   UnitType.MIRVWarhead,
 ] as const;
+const PREEMPTIVE_SAM_SILO_GOLD = 1_000_000n;
 const countIntents = (intents: readonly { type: string }[]) => {
   for (const intent of intents) {
     cumulativeIntentTypes.set(intent.type, (cumulativeIntentTypes.get(intent.type) ?? 0) + 1);
@@ -338,12 +339,18 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
         return {
           name: other.name(),
           team: other.team(),
+          gold: Number(other.gold()),
           siloLevels: silos.map((silo) => silo.level()),
           siloCapacity: silos.reduce((total, silo) => total + Math.max(1, silo.level()), 0),
           samLevels: sams.map((sam) => sam.level()),
         };
       })
-      .filter((network) => network.siloLevels.length > 0 || network.samLevels.length > 0);
+      .filter(
+        (network) =>
+          network.gold >= Number(PREEMPTIVE_SAM_SILO_GOLD) ||
+          network.siloLevels.length > 0 ||
+          network.samLevels.length > 0,
+      );
     const activeMissiles = runner.game
       .units(...trackedMissileTypes)
       .filter((unit) => unit.isActive())

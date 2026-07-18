@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,11 +8,48 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const runner = fs.readFileSync(path.join(root, "scripts/headless/run-match.mts"), "utf8");
 const batch = fs.readFileSync(path.join(root, "scripts/headless/run-batch.mjs"), "utf8");
 const adapter = fs.readFileSync(path.join(root, "scripts/headless/opponent-adapter.js"), "utf8");
+const headlessModuleScope = JSON.parse(
+  fs.readFileSync(path.join(root, "scripts/headless/package.json"), "utf8"),
+);
 
 assert.match(runner, /playlist\.gameConfig\("team"\)/);
 assert.match(runner, /difficulty:\s*Difficulty\.Impossible/);
 assert.match(runner, /nations:\s*"default"/);
 assert.match(runner, /createMaxDifficultyOpponent/);
+assert.equal(
+  headlessModuleScope.type,
+  "module",
+  "The runner's JavaScript adapter must load as ESM under tsx",
+);
+
+const runnerLoad = spawnSync(
+  process.execPath,
+  [
+    path.join(root, "node_modules/tsx/dist/cli.mjs"),
+    "--tsconfig",
+    "openfront-engine/tsconfig.json",
+    "scripts/headless/run-match.mts",
+  ],
+  {
+    cwd: root,
+    env: {
+      ...process.env,
+      GAME_ENV: "dev",
+      OFH_MAX_TICKS: "0",
+    },
+    encoding: "utf8",
+  },
+);
+assert.equal(
+  runnerLoad.status,
+  2,
+  "A zero-tick runner exits with its documented no-winner status after loading",
+);
+assert.match(
+  `${runnerLoad.stdout}\n${runnerLoad.stderr}`,
+  /"phase":"result"/,
+  "The headless runner must execute through adapter import before simulations are trusted",
+);
 assert.match(runner, /OFH_GAME_MAP/);
 assert.match(runner, /OFH_PROGRESS_TICKS/);
 assert.match(runner, /OFH_PROGRESS_FROM_TICK/);
@@ -53,6 +91,7 @@ assert.match(runner, /unitDetails,/);
 assert.match(runner, /externalSiloNetworks,/);
 assert.match(runner, /siloCapacity/);
 assert.match(runner, /siloLevels/);
+assert.match(runner, /PREEMPTIVE_SAM_SILO_GOLD/);
 assert.match(runner, /activeMissiles,/);
 assert.match(runner, /phase:\s*"conquered"/);
 assert.match(runner, /productionReserve/);
