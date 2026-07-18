@@ -143,6 +143,9 @@ const stopWhenBotDies = process.env.OFH_STOP_WHEN_DEAD !== "0";
 const logIntents = process.env.OFH_LOG_INTENTS === "1";
 const logNaval = process.env.OFH_LOG_NAVAL === "1";
 const logStructures = process.env.OFH_LOG_STRUCTURES === "1";
+// Persisted traces must always retain the lightweight SAM lifecycle. Full
+// structure diagnostics remain opt-in because they are much noisier.
+const logSamLifecycle = logStructures || traceFile !== undefined;
 let turnNumber = 0;
 let emittedIntents = 0;
 let hasEverBeenAlive = me?.isAlive() === true;
@@ -293,7 +296,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   }
   const executionMs = performance.now() - executionStartedAt;
   const currentPlayer = runner.game.playerByClientID(clientID);
-  if (logStructures) {
+  if (logSamLifecycle) {
     const currentSamLevels = new Map(
       (currentPlayer?.units(UnitType.SAMLauncher) ?? []).map((sam) => [
         String(sam.id()),

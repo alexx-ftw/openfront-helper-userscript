@@ -59,6 +59,7 @@ assert.match(runner, /OFH_STOP_WHEN_DEAD/);
 assert.match(runner, /OFH_PROFILE_BOT/);
 assert.match(runner, /OFH_TRACE_FILE/);
 assert.match(runner, /appendFileSync\(traceFile/);
+assert.match(runner, /const logSamLifecycle = logStructures \|\| traceFile !== undefined/);
 assert.match(runner, /OFH_LOG_INTENTS/);
 assert.match(runner, /OFH_LOG_NAVAL/);
 assert.match(runner, /OFH_LOG_STRUCTURES/);
