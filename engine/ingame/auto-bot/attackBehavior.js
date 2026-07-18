@@ -3624,11 +3624,27 @@
     }
 
     earlyGameBoatBorderSignature(border) {
-      return Array.from(border || [])
+      const cacheable =
+        border !== null &&
+        border !== undefined &&
+        (typeof border === "object" || typeof border === "function");
+      let cache = null;
+      if (cacheable) {
+        cache = this.earlyGameBoatBorderSignatureCache;
+        if (cache === undefined) {
+          cache = new WeakMap();
+          this.earlyGameBoatBorderSignatureCache = cache;
+        }
+      }
+      const cached = cache?.get(border);
+      if (cached !== undefined) return cached;
+      const signature = Array.from(border || [])
         .map((tile) => Number(tile))
         .filter(Number.isFinite)
         .sort((left, right) => left - right)
         .join(",");
+      if (cache !== null) cache.set(border, signature);
+      return signature;
     }
 
     getCachedEarlyGameTribeBoatEta(

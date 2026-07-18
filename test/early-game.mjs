@@ -1753,6 +1753,32 @@ await tribeEtaCacheBehavior.enrichEarlyGameTribeBoatEtas(
 );
 assert.equal(tribeEtaRouteCalls, 3, "the tribe route ETA is revalidated after its short TTL");
 
+const borderSignatureBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+let borderSignatureIterations = 0;
+class CountingBorderSet extends Set {
+  [Symbol.iterator]() {
+    borderSignatureIterations++;
+    return super[Symbol.iterator]();
+  }
+}
+const retainedBorderSnapshot = new CountingBorderSet([30, 10, 20]);
+assert.equal(
+  borderSignatureBehavior.earlyGameBoatBorderSignature(retainedBorderSnapshot),
+  "10,20,30",
+);
+assert.equal(
+  borderSignatureBehavior.earlyGameBoatBorderSignature(retainedBorderSnapshot),
+  "10,20,30",
+  "the retained immutable border snapshot reuses its complete signature",
+);
+assert.equal(borderSignatureIterations, 1);
+assert.equal(
+  borderSignatureBehavior.earlyGameBoatBorderSignature(new CountingBorderSet([10, 20, 30])),
+  "10,20,30",
+  "a replacement snapshot keeps the exact signature comparison",
+);
+assert.equal(borderSignatureIterations, 2);
+
 const ordinaryBoatBudgetBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 const ordinaryBoatProbeCalls = [];
 const ordinaryBoatProbeResults = [null, null, 99];
