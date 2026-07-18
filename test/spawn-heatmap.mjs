@@ -78,6 +78,7 @@ function loadHarness() {
   return {
     computeExactSpawnTopSpotsForBot: sandbox.computeExactSpawnTopSpotsForBot,
     computeAsyncExactSpawnTopSpotsForBot: sandbox.computeAsyncExactSpawnTopSpotsForBot,
+    computeStaticCandidates: sandbox.computeStaticCandidates,
     computeDynamicScores: sandbox.computeDynamicScores,
     game,
     getIndexCreateCalls: () => indexCreateCalls,
@@ -130,6 +131,17 @@ assert.equal(
   harness.computeExactSpawnTopSpotsForBot(largeGame, null),
   null,
   "large maps must fall back from the exact selector",
+);
+
+const largeFallbackTerrain = new Uint8Array(1308 * 1754).fill(LAND);
+const largeFallbackCandidates = harness.computeStaticCandidates({
+  __src: { _map: { terrain: largeFallbackTerrain } },
+  height: () => 1754,
+  width: () => 1308,
+});
+assert.ok(
+  largeFallbackCandidates.length <= 80,
+  "continent-scale fallback sampling stays small enough for the first spawn decision",
 );
 assert.equal(
   harness.getIndexCreateCalls(),

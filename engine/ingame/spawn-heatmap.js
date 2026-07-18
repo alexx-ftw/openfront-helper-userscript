@@ -26,6 +26,13 @@ const SPAWN_HEATMAP_MAX_CELLS = 1200;
 // drawn. Exact bot ranking is still map-resolution, but large maps use this
 // deterministic visual path while the exact result is built incrementally.
 const SPAWN_HEATMAP_MAX_STATIC_CANDIDATES = SPAWN_HEATMAP_MAX_CELLS;
+// The static terrain sample is intentionally more expensive than the live
+// scorer. On continent-scale maps, 1,200 circular samples can monopolize the
+// first spawn decision for hundreds of milliseconds. A coarse, bounded grid
+// is enough to seed the immediate spawn; the exact ranker continues in idle
+// slices and takes over as soon as it is ready.
+const SPAWN_HEATMAP_LARGE_MAP_AREA = 750_000;
+const SPAWN_HEATMAP_LARGE_MAP_MAX_STATIC_CANDIDATES = 64;
 const SPAWN_HEATMAP_TOP_N = 5;
 const EXACT_SPAWN_CANDIDATE_POOL_SIZE = SPAWN_HEATMAP_TOP_N * 8;
 const SPAWN_TOP_SPOT_MIN_DISTANCE = 60;
@@ -424,9 +431,12 @@ function computeStaticCandidates(game) {
   const R = SPAWN_HEATMAP_ANALYSIS_R;
   const spanWidth = Math.max(1, W - 2 * R);
   const spanHeight = Math.max(1, H - 2 * R);
+  const candidateBudget = W * H > SPAWN_HEATMAP_LARGE_MAP_AREA
+    ? SPAWN_HEATMAP_LARGE_MAP_MAX_STATIC_CANDIDATES
+    : SPAWN_HEATMAP_MAX_STATIC_CANDIDATES;
   const boundedStep = Math.ceil(
     Math.sqrt(
-      (spanWidth * spanHeight) / SPAWN_HEATMAP_MAX_STATIC_CANDIDATES,
+      (spanWidth * spanHeight) / candidateBudget,
     ),
   );
   const step = Math.max(SPAWN_HEATMAP_GRID_STEP, boundedStep);
