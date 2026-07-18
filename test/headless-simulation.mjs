@@ -37,6 +37,7 @@ const runnerLoad = spawnSync(
       ...process.env,
       GAME_ENV: "dev",
       OFH_MAX_TICKS: "0",
+      OFH_STARTING_GOLD: "5000000",
     },
     encoding: "utf8",
   },
@@ -51,7 +52,15 @@ assert.match(
   /"phase":"result"/,
   "The headless runner must execute through adapter import before simulations are trusted",
 );
+assert.match(
+  `${runnerLoad.stdout}\n${runnerLoad.stderr}`,
+  /"startingGold":5000000/,
+  "The runner must pass the requested starting gold through to the engine configuration",
+);
 assert.match(runner, /OFH_GAME_MAP/);
+assert.match(runner, /OFH_STARTING_GOLD/);
+assert.match(runner, /non-negative safe integer/);
+assert.match(runner, /startingGold: config\.startingGold \?\? 0/);
 assert.match(runner, /OFH_PROGRESS_TICKS/);
 assert.match(runner, /OFH_PROGRESS_FROM_TICK/);
 assert.match(runner, /OFH_SLOW_TICK_MS/);

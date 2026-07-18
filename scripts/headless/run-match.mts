@@ -42,6 +42,16 @@ while (
 }
 const requestedTeams = process.env.OFH_PLAYER_TEAMS;
 const numericTeams = Number(requestedTeams);
+const requestedStartingGold = process.env.OFH_STARTING_GOLD;
+const numericStartingGold = Number(requestedStartingGold);
+if (
+  requestedStartingGold !== undefined &&
+  (!Number.isSafeInteger(numericStartingGold) || numericStartingGold < 0)
+) {
+  throw new Error(
+    `OFH_STARTING_GOLD must be a non-negative safe integer, got ${requestedStartingGold}`,
+  );
+}
 const fixedConfig = process.env.OFH_GAME_MAP
   ? {
       gameMap: process.env.OFH_GAME_MAP,
@@ -70,6 +80,7 @@ const config = {
     : {}),
   difficulty: Difficulty.Impossible,
   nations: "default" as const,
+  ...(requestedStartingGold === undefined ? {} : { startingGold: numericStartingGold }),
 };
 const gameStart = {
   gameID: seed,
@@ -128,6 +139,7 @@ console.warn(
     mode: config.gameMode,
     teams: config.playerTeams,
     difficulty: config.difficulty,
+    startingGold: config.startingGold ?? 0,
     nations: nations.length,
     tribes: config.bots,
     myTeam: me?.team() ?? null,
