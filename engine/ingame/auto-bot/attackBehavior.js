@@ -4413,7 +4413,9 @@
         ? ""
         : Math.max(0, Number(other?.troops?.()) || 0);
       return [
-        Math.max(0, Number(other?.numTilesOwned?.()) || 0),
+        type === PlayerType.Bot
+          ? ""
+          : Math.max(0, Number(other?.numTilesOwned?.()) || 0),
         troops,
       ].join("|");
     }
@@ -4447,6 +4449,7 @@
       const stableSignatures = [];
       const stableSignaturesBySid = new Map();
       for (const other of players ?? []) {
+        if (other?.smallID?.() === mySid) continue;
         const stableSignature = this.earlyGameCompetitorStableSignatureRecord(
           other,
           mySid,

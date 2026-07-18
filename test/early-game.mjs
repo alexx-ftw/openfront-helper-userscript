@@ -2995,6 +2995,71 @@ assert.equal(
   21,
   "a troop-only refresh still exposes the live rival troop total to food-race ranking",
 );
+const passiveTribeSignatureBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+let passiveTribeSignatureTick = 1;
+let ownSignatureTiles = 10;
+let cachedPassiveTribeTiles = 4;
+let passiveTribeProfileBuilds = 0;
+let passiveTribeMovementRefreshes = 0;
+const ownSignaturePlayer = {
+  smallID: () => 700,
+  isPlayer: () => true,
+  isAlive: () => true,
+  isFriendly: () => false,
+  type: () => targetSandbox.PlayerType.Human,
+  nameLocation: () => ({ x: 1, y: 1 }),
+  numTilesOwned: () => ownSignatureTiles,
+  troops: () => 100,
+  outgoingAttacks: () => [],
+};
+const passiveTribeSignaturePlayer = {
+  smallID: () => 701,
+  isPlayer: () => true,
+  isAlive: () => true,
+  type: () => targetSandbox.PlayerType.Bot,
+  nameLocation: () => ({ x: 2, y: 2 }),
+  numTilesOwned: () => cachedPassiveTribeTiles,
+  troops: () => 10,
+  outgoingAttacks: () => [],
+};
+passiveTribeSignatureBehavior.player = ownSignaturePlayer;
+passiveTribeSignatureBehavior.game = { ticks: () => passiveTribeSignatureTick };
+passiveTribeSignatureBehavior.earlyFoodMovement = new Map();
+passiveTribeSignatureBehavior.earlyGameCompetitorProfile = (other, mySid) => {
+  if (other.smallID() === mySid) return null;
+  passiveTribeProfileBuilds++;
+  return { sid: other.smallID() };
+};
+passiveTribeSignatureBehavior.earlyGameCompetitorMovement = (other) => {
+  passiveTribeMovementRefreshes++;
+  return { tiles: other.numTilesOwned() };
+};
+const passiveTribeSignatureProfiles =
+  await passiveTribeSignatureBehavior.getEarlyGameCompetitorProfiles(
+    [ownSignaturePlayer, passiveTribeSignaturePlayer],
+    700,
+  );
+ownSignatureTiles++;
+cachedPassiveTribeTiles++;
+passiveTribeSignatureTick = 2;
+assert.strictEqual(
+  await passiveTribeSignatureBehavior.getEarlyGameCompetitorProfiles(
+    [ownSignaturePlayer, passiveTribeSignaturePlayer],
+    700,
+  ),
+  passiveTribeSignatureProfiles,
+  "own and passive-tribe territory changes keep the competitor cache hot inside the risk TTL",
+);
+assert.equal(passiveTribeProfileBuilds, 1);
+passiveTribeSignatureTick = 50;
+const passiveTribeRefreshedProfiles =
+  await passiveTribeSignatureBehavior.getEarlyGameCompetitorProfiles(
+    [ownSignaturePlayer, passiveTribeSignaturePlayer],
+    700,
+  );
+assert.equal(passiveTribeProfileBuilds, 1, "TTL refresh reuses immutable tribe topology");
+assert.equal(passiveTribeMovementRefreshes, 1, "TTL refresh reads live passive tribe progress");
+assert.equal(passiveTribeRefreshedProfiles[0].tiles, 5);
 const perCompetitorTopologyBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 let perCompetitorTopologyTick = 1;
 let perCompetitorTopologyBuilds = 0;
@@ -3145,17 +3210,23 @@ assert.strictEqual(
 assert.equal(passiveTribeProfilesBuilt, 1);
 passiveTribeTiles = 5;
 passiveTribeTick = 3;
-const expandedPassiveTribeProfiles =
-  await passiveTribeSnapshotBehavior.getEarlyGameCompetitorProfiles([passiveTribe], 1);
-assert.notStrictEqual(
-  expandedPassiveTribeProfiles,
+assert.strictEqual(
+  await passiveTribeSnapshotBehavior.getEarlyGameCompetitorProfiles([passiveTribe], 1),
   passiveTribeProfiles,
-  "a territory change refreshes the live competitor progress snapshot",
+  "passive tribe territory keeps the shared competitor snapshot hot inside the risk TTL",
 );
 assert.equal(
   passiveTribeProfilesBuilt,
   1,
   "a territory change does not rebuild the immutable passive-tribe topology",
+);
+passiveTribeTick = 50;
+const expandedPassiveTribeProfiles =
+  await passiveTribeSnapshotBehavior.getEarlyGameCompetitorProfiles([passiveTribe], 1);
+assert.notStrictEqual(
+  expandedPassiveTribeProfiles,
+  passiveTribeProfiles,
+  "the risk TTL refreshes live passive-tribe progress after bounded reuse",
 );
 targetTick = 1;
 await targetBehavior.getEarlyGameTribeCandidates();
