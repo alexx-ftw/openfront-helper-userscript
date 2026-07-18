@@ -304,6 +304,14 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
         attackerType: attack.attacker().type(),
         troops: Math.round(attack.troops()),
       })) ?? [];
+    const incomingAttackTroops = incoming.reduce((total, attack) => total + attack.troops, 0);
+    const outgoing =
+      player?.outgoingAttacks().map((attack) => ({
+        target: attack.target()?.name?.() ?? "Unknown",
+        targetType: attack.target()?.type?.() ?? "Unknown",
+        troops: Math.round(attack.troops()),
+      })) ?? [];
+    const outgoingAttackTroops = outgoing.reduce((total, attack) => total + attack.troops, 0);
     const units = Object.fromEntries(
       trackedUnitTypes
         .map((type) => [type, player?.units(type).length ?? 0] as const)
@@ -394,7 +402,14 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
         gold: Number(player?.gold() ?? 0n),
         incomingAttacks: player?.incomingAttacks().length ?? 0,
         outgoingAttacks: player?.outgoingAttacks().length ?? 0,
+        incomingAttackTroops,
+        incomingAttackPressure:
+          player && player.troops() > 0
+            ? Number((incomingAttackTroops / player.troops()).toFixed(3))
+            : 0,
+        outgoingAttackTroops,
         incoming,
+        outgoing,
         units,
         unitDetails,
         externalSiloNetworks,
