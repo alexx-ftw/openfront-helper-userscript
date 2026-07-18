@@ -3095,6 +3095,7 @@ assert.equal(reusedRiskRaces.get(91).foodRaceValue, 0);
 const passiveTribeSnapshotBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 let passiveTribeTick = 1;
 let passiveTribeTroops = 20;
+let passiveTribeTiles = 4;
 let passiveTribeProfilesBuilt = 0;
 const passiveTribe = {
   smallID: () => 92,
@@ -3102,7 +3103,7 @@ const passiveTribe = {
   isAlive: () => true,
   type: () => targetSandbox.PlayerType.Bot,
   nameLocation: () => ({ x: 11, y: 12 }),
-  numTilesOwned: () => 4,
+  numTilesOwned: () => passiveTribeTiles,
   troops: () => passiveTribeTroops,
   outgoingAttacks: () => [],
 };
@@ -3141,6 +3142,20 @@ assert.strictEqual(
   "passive tribe production alone does not rebuild every cluster race snapshot",
 );
 assert.equal(passiveTribeProfilesBuilt, 1);
+passiveTribeTiles = 5;
+passiveTribeTick = 3;
+const expandedPassiveTribeProfiles =
+  await passiveTribeSnapshotBehavior.getEarlyGameCompetitorProfiles([passiveTribe], 1);
+assert.notStrictEqual(
+  expandedPassiveTribeProfiles,
+  passiveTribeProfiles,
+  "a territory change refreshes the live competitor progress snapshot",
+);
+assert.equal(
+  passiveTribeProfilesBuilt,
+  1,
+  "a territory change does not rebuild the immutable passive-tribe topology",
+);
 targetTick = 1;
 await targetBehavior.getEarlyGameTribeCandidates();
 assert.equal(

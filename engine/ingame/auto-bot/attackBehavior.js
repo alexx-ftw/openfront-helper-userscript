@@ -4400,10 +4400,11 @@
     earlyGameCompetitorResourcesSignature(other) {
       const type = other?.type?.();
       // A tribe's passive production changes on almost every decision and is
-      // not evidence that it is racing this cluster. Its territory, movement
-      // and outgoing attacks remain in the signature; the latter changes as
-      // soon as it contests a capture. Nations/Humans retain troop precision
-      // because their mobile reserve is itself a strategic threat.
+      // not evidence that it is racing this cluster. Territory is dynamic too:
+      // it is read by earlyGameCompetitorMovement on the resource refresh path
+      // to derive live progress, so it must not invalidate the immutable attack
+      // topology for every other competitor. Nations/Humans retain troop
+      // precision because their mobile reserve is itself a strategic threat.
       const troops = type === PlayerType.Bot
         ? ""
         : Math.max(0, Number(other?.troops?.()) || 0);
@@ -4424,9 +4425,6 @@
       return [
         this.earlyGameCompetitorIdentitySignature(other, mySid),
         this.earlyGameCompetitorLocationSignature(other),
-        // Territory changes affect movement progress even if the label has not
-        // moved, so they remain part of the stable topology signature.
-        Math.max(0, Number(other?.numTilesOwned?.()) || 0),
         this.earlyGameCompetitorAttackSignature(other),
       ].join("|");
     }
