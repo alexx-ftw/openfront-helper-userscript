@@ -4485,9 +4485,12 @@
     }
 
     earlyGameCompetitorStableSignatureRecord(other, mySid) {
+      const type = other?.type?.();
       return [
         this.earlyGameCompetitorIdentitySignature(other, mySid),
-        this.earlyGameCompetitorLocationSignature(other),
+        type === PlayerType.Bot
+          ? ""
+          : this.earlyGameCompetitorLocationSignature(other),
         this.earlyGameCompetitorAttackSignature(other),
       ].join("|");
     }

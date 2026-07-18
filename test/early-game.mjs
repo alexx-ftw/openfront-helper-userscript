@@ -3025,6 +3025,7 @@ const passiveTribeSignatureBehavior = Object.create(targetSandbox.AttackBehavior
 let passiveTribeSignatureTick = 1;
 let ownSignatureTiles = 10;
 let cachedPassiveTribeTiles = 4;
+let passiveTribeLocation = { x: 2, y: 2 };
 let passiveTribeProfileBuilds = 0;
 let passiveTribeMovementRefreshes = 0;
 const ownSignaturePlayer = {
@@ -3043,7 +3044,7 @@ const passiveTribeSignaturePlayer = {
   isPlayer: () => true,
   isAlive: () => true,
   type: () => targetSandbox.PlayerType.Bot,
-  nameLocation: () => ({ x: 2, y: 2 }),
+  nameLocation: () => passiveTribeLocation,
   numTilesOwned: () => cachedPassiveTribeTiles,
   troops: () => 10,
   outgoingAttacks: () => [],
@@ -3058,7 +3059,7 @@ passiveTribeSignatureBehavior.earlyGameCompetitorProfile = (other, mySid) => {
 };
 passiveTribeSignatureBehavior.earlyGameCompetitorMovement = (other) => {
   passiveTribeMovementRefreshes++;
-  return { tiles: other.numTilesOwned() };
+  return { tiles: other.numTilesOwned(), location: other.nameLocation() };
 };
 const passiveTribeSignatureProfiles =
   await passiveTribeSignatureBehavior.getEarlyGameCompetitorProfiles(
@@ -3078,6 +3079,7 @@ assert.strictEqual(
 );
 assert.equal(passiveTribeProfileBuilds, 1);
 passiveTribeSignatureTick = 50;
+passiveTribeLocation = { x: 9, y: 8 };
 const passiveTribeRefreshedProfiles =
   await passiveTribeSignatureBehavior.getEarlyGameCompetitorProfiles(
     [ownSignaturePlayer, passiveTribeSignaturePlayer],
@@ -3086,6 +3088,11 @@ const passiveTribeRefreshedProfiles =
 assert.equal(passiveTribeProfileBuilds, 1, "TTL refresh reuses immutable tribe topology");
 assert.equal(passiveTribeMovementRefreshes, 1, "TTL refresh reads live passive tribe progress");
 assert.equal(passiveTribeRefreshedProfiles[0].tiles, 5);
+assert.deepEqual(
+  passiveTribeRefreshedProfiles[0].location,
+  { x: 9, y: 8 },
+  "a passive tribe movement refreshes its live position without rebuilding attack topology",
+);
 const perCompetitorTopologyBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 let perCompetitorTopologyTick = 1;
 let perCompetitorTopologyBuilds = 0;
