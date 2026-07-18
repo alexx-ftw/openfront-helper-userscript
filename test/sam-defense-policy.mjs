@@ -360,6 +360,7 @@ hostileSiloMaximumPriorityBehavior.game = {
 };
 hostileSiloMaximumPriorityBehavior.hasPlacedSiloOnMap = () => true;
 hostileSiloMaximumPriorityBehavior.shouldBuildSiloTriggeredSam = () => true;
+hostileSiloMaximumPriorityBehavior.shouldReserveHostileSiloSamBudget = () => true;
 let maximumPrioritySamResult = false;
 let maximumPrioritySamAttempts = 0;
 let lowerPriorityConstructionCalls = 0;
@@ -409,6 +410,36 @@ assert.equal(
   "hostile silo funding starts our first SAM before the enemy launcher appears",
 );
 assert.equal(preemptiveHostileGoldSamCalls, 1);
+
+const preemptiveSamReserveBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+preemptiveSamReserveBehavior.safeConstructionCost = () => 1_500_000n;
+preemptiveSamReserveBehavior.spendableConstructionGold = () => 899_999n;
+assert.equal(
+  preemptiveSamReserveBehavior.shouldReserveHostileSiloSamBudget(),
+  false,
+  "A poor nation keeps productive construction available while it is far from its first SAM",
+);
+preemptiveSamReserveBehavior.spendableConstructionGold = () => 900_000n;
+assert.equal(
+  preemptiveSamReserveBehavior.shouldReserveHostileSiloSamBudget(),
+  true,
+  "Once 60% of the first SAM is saved, hostile-Silo defense reserves the remaining budget",
+);
+
+const poorPreemptiveHostileGoldBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+poorPreemptiveHostileGoldBehavior.game = {
+  config: () => ({ isUnitDisabled: () => false }),
+};
+poorPreemptiveHostileGoldBehavior.hasPlacedSiloOnMap = () => false;
+poorPreemptiveHostileGoldBehavior.shouldBuildHostileSiloSam = () => true;
+poorPreemptiveHostileGoldBehavior.shouldBuildSiloTriggeredSam = () => false;
+poorPreemptiveHostileGoldBehavior.maybeSpawnHostileSiloSam = async () => false;
+poorPreemptiveHostileGoldBehavior.shouldReserveHostileSiloSamBudget = () => false;
+assert.equal(
+  await poorPreemptiveHostileGoldBehavior.handleHostileSiloSamMaximumPriority(),
+  null,
+  "An unaffordable SAM threat does not starve an early economy before the reserve threshold",
+);
 hostileSiloMaximumPriorityBehavior.shouldBuildSiloTriggeredSam = () => false;
 hostileSiloMaximumPriorityBehavior.hydrogenSamProtectionPlan = () => ({
   currentLevel: 1,

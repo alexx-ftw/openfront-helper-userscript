@@ -206,6 +206,16 @@
    */
   const HOSTILE_SAM_TRIGGER_GOLD_THRESHOLD = HOSTILE_SILO_GOLD_THRESHOLD / 2n;
 
+  /**
+   * A nation that has not yet built an economy cannot recover by saving every
+   * coin from its first tiles for a SAM it is far from affording. Once it has
+   * 60% of the real first-SAM price, protect that nearly-complete purchase from
+   * ordinary construction; below that point productive growth remains the way
+   * to reach the defensive threshold in time.
+   */
+  const HOSTILE_SAM_SAVEUP_RESERVE_NUMERATOR = 3n;
+  const HOSTILE_SAM_SAVEUP_RESERVE_DENOMINATOR = 5n;
+
   /** Structures that directly grow the nation's economy. */
   const ECONOMIC_STRUCTURE_TYPES = [UNIT.Port, UNIT.Factory, UNIT.City];
 
@@ -782,11 +792,13 @@
       if (!placedSilo && !preemptiveHostileSiloRisk) return null;
 
       // A real hostile Silo makes protective SAM placement the construction
-      // planner's hard top priority. If placement is temporarily blocked by
-      // gold, retry cadence, or an unavailable legal probe, reserve this slot
-      // instead of spending the SAM budget on economy or offense.
+      // planner's hard top priority. Once the bot has nearly saved the real
+      // cost, reserve this slot instead of spending the SAM budget on economy
+      // or offense. A very poor nation must still be allowed to grow; otherwise
+      // this priority traps it below the SAM cost indefinitely.
       if (this.shouldBuildSiloTriggeredSam() || preemptiveHostileSiloRisk) {
-        return (await this.maybeSpawnHostileSiloSam()) === true;
+        if (await this.maybeSpawnHostileSiloSam()) return true;
+        return this.shouldReserveHostileSiloSamBudget() ? false : null;
       }
 
       // Building the first SAM is not enough once a hostile Silo is live: a
@@ -2186,6 +2198,16 @@
       // This is the budget available to ordinary construction and defensive
       // planning. A MIRV reserve is applied only by the offensive silo paths.
       return availableGold;
+    }
+
+    shouldReserveHostileSiloSamBudget() {
+      const cost = this.safeConstructionCost(UNIT.SAMLauncher);
+      if (cost === null || cost <= 0n) return true;
+      const gold = this.spendableConstructionGold();
+      return (
+        gold * HOSTILE_SAM_SAVEUP_RESERVE_DENOMINATOR >=
+        cost * HOSTILE_SAM_SAVEUP_RESERVE_NUMERATOR
+      );
     }
 
     availableGoldAfterReserve(type) {
