@@ -222,6 +222,44 @@ behavior.game = {
   }),
 };
 
+const initialSiloBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+let initialSiloSpawnType = null;
+let initialSiloSpawnOptions = null;
+initialSiloBehavior.game = {
+  config: () => ({ isUnitDisabled: () => false }),
+};
+initialSiloBehavior.ownedLevels = (type) => (type === UNIT.City ? 1 : 0);
+initialSiloBehavior.getConstructionCost = () => 1_000_000n;
+initialSiloBehavior.spendableConstructionGold = () => 5_000_000n;
+initialSiloBehavior.maybeSpawnStructure = async (type, options) => {
+  initialSiloSpawnType = type;
+  initialSiloSpawnOptions = options;
+  return true;
+};
+assert.equal(
+  await initialSiloBehavior.handleInitialMissileSilo(false),
+  true,
+  "an affordable first Silo is built without waiting for an enemy SAM network",
+);
+assert.equal(
+  initialSiloSpawnType,
+  UNIT.MissileSilo,
+  "the initial nuclear policy emits a Missile Silo rather than another economic structure",
+);
+assert.equal(
+  initialSiloSpawnOptions?.ignoreEconomicReserve,
+  true,
+  "the initial Silo bypasses only the ongoing economic reserve that would otherwise make its first-launch policy unreachable",
+);
+initialSiloSpawnType = null;
+initialSiloBehavior.ownedLevels = () => 0;
+assert.equal(
+  await initialSiloBehavior.handleInitialMissileSilo(false),
+  false,
+  "the initial Silo waits until the basic City economy exists",
+);
+assert.equal(initialSiloSpawnType, null);
+
 behavior.placementsCount = 0;
 assert.equal(
   behavior.hasPriorStructureForDefensePost(),

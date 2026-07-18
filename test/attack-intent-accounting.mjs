@@ -216,6 +216,57 @@ assert.equal(
   true,
   "available troops must reach the attack/donation strategy pipeline below the old ratio gates",
 );
+
+// The decision context already owns the exact nearby() snapshot used to rank
+// border targets. Reuse it through the later ordinary/fallback policies rather
+// than reconstructing the same neighbourhood several times in one tick.
+const decisionNearby = [{ id: "decision-nearby" }];
+let structureScanNearby = null;
+let strategyNearby = null;
+lowRatioBehavior.hasNeighboringBotWithStructures = (nearby) => {
+  structureScanNearby = nearby;
+  return false;
+};
+lowRatioBehavior.getAttackStrategies = (_friends, _enemies, nearby) => {
+  strategyNearby = nearby;
+  return [async () => false];
+};
+await lowRatioBehavior.attackBestTarget([], [{}], decisionNearby);
+assert.equal(
+  structureScanNearby,
+  decisionNearby,
+  "ordinary attack policies reuse the decision nearby snapshot for structure checks",
+);
+assert.equal(
+  strategyNearby,
+  decisionNearby,
+  "ordinary strategies reuse the decision nearby snapshot for tribe/boat targeting",
+);
+
+const fallbackBehavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
+fallbackBehavior.isBorderingNukedTerritory = () => false;
+let fallbackNearby = null;
+fallbackBehavior.attackBots = async (nearby) => {
+  fallbackNearby = nearby;
+  return false;
+};
+await fallbackBehavior.tryAttackFallbacks({
+  expandOn: true,
+  hasAccessibleFreeLand: true,
+  hasNonNukedTerraNullius: false,
+  borderingEnemies: [
+    {
+      isPlayer: () => true,
+      type: () => sandbox.PlayerType.Bot,
+    },
+  ],
+  nearby: decisionNearby,
+});
+assert.equal(
+  fallbackNearby,
+  decisionNearby,
+  "fallback tribe attacks reuse the decision nearby snapshot",
+);
 ownTroops = 100000;
 
 // Land attacks use the same calculated hard reserve. They must not inherit the

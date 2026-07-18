@@ -2068,7 +2068,7 @@
         context.expandOn &&
         state.settings.winFixes &&
         hasBotEnemy &&
-        (await this.attackBots())
+        (await this.attackBots(context.nearby))
       ) {
         state.earlyGame.action = "tribe";
         return true;
@@ -2097,6 +2097,7 @@
           this.attackBestTarget(
             context.borderingFriends,
             context.borderingEnemies,
+            context.nearby,
           ));
       }
     }
@@ -5282,7 +5283,7 @@
 
     // attackBestTarget is called with borderingFriends sorted by troops and
     // borderingEnemies sorted by Defense Post-aware attack difficulty.
-    async attackBestTarget(borderingFriends, borderingEnemies) {
+    async attackBestTarget(borderingFriends, borderingEnemies, nearby = null) {
       // The ratio checks below are useful descriptive strategy values, but they
       // are not a safe spending limit. maxTroops can jump when the bot builds
       // cities/factories, leaving a large absolute army below both ratios and
@@ -5306,14 +5307,15 @@
       // In games with high starting gold, nations will quickly build a lot of cities
       // This causes them to expand slowly (cities increase max troops), and bots will steal their structures
       // In this case: Attack bots before the ordinary strategy pipeline.
-      if (this.hasNeighboringBotWithStructures()) {
-        if (await this.attackBots()) return;
+      if (this.hasNeighboringBotWithStructures(nearby)) {
+        if (await this.attackBots(nearby)) return;
       }
 
       // Get attack strategies in priority order based on difficulty
       const strategies = this.getAttackStrategies(
         borderingFriends,
         borderingEnemies,
+        nearby,
       );
 
       for (const strategy of strategies) {
@@ -5348,7 +5350,7 @@
     // getAttackStrategies — AiAttackBehavior (private). The strategy predicates
     // become async (they reach sendAttack → the async boat probes). The four
     // difficulty-ordered arrays are VERBATIM from src.
-    getAttackStrategies(borderingFriends, borderingEnemies) {
+    getAttackStrategies(borderingFriends, borderingEnemies, nearby = null) {
       // src: `const { difficulty } = this.game.config().gameConfig();` → REPLICATED.
       const difficulty = currentDifficulty();
 
@@ -5361,7 +5363,7 @@
         return false;
       };
 
-      const bots = async () => await this.attackBots();
+      const bots = async () => await this.attackBots(nearby);
 
       const assist = async () => await this.assistAllies();
 
@@ -5488,9 +5490,8 @@
     }
 
     // hasNeighboringBotWithStructures — AiAttackBehavior (private).
-    hasNeighboringBotWithStructures() {
-      return this.player
-        .nearby()
+    hasNeighboringBotWithStructures(nearby = null) {
+      return (nearby || this.player.nearby())
         .some(
           (n) =>
             n.isPlayer() &&
@@ -5575,10 +5576,10 @@
     // consume the shared troop budget, so each new target gets the remainder.
     // Bots that own structures are prioritized as targets (they might have stolen our structures and they will delete them!).
     // attackBots — AiAttackBehavior (private, now async).
-    async attackBots() {
+    async attackBots(nearby = null) {
       const botsByKey = new Map();
       for (const candidate of [
-        ...this.player.nearby(),
+        ...(nearby || this.player.nearby()),
         ...this.getActiveOutboundTribeTargets(),
       ]) {
         if (

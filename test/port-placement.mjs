@@ -399,4 +399,34 @@ assert.deepEqual(
   "port candidate selection keeps the ocean shore",
 );
 
+let oceanBorderSnapshot = new Set([29]);
+let oceanTileClassificationCalls = 0;
+const originalOceanPortTile = oceanBehavior.isOceanPortTile.bind(oceanBehavior);
+oceanBehavior.player = {
+  ...oceanBehavior.player,
+  borderTiles: () => oceanBorderSnapshot,
+};
+oceanBehavior.isOceanPortTile = (tile) => {
+  oceanTileClassificationCalls++;
+  return originalOceanPortTile(tile);
+};
+assert.equal(oceanBehavior.hasOceanPortTiles(), true);
+assert.deepEqual(
+  Array.from(oceanBehavior.randCoastalTileArray(25)),
+  [29],
+  "sampling reuses the exact filtered ocean-border snapshot",
+);
+assert.equal(
+  oceanTileClassificationCalls,
+  1,
+  "one stable border snapshot is classified only once across port checks and sampling",
+);
+oceanBorderSnapshot = new Set();
+assert.equal(oceanBehavior.hasOceanPortTiles(), false);
+assert.equal(
+  oceanTileClassificationCalls,
+  1,
+  "a replacement border snapshot invalidates the cache without rescanning removed tiles",
+);
+
 process.stdout.write("port placement tests passed\n");

@@ -591,14 +591,10 @@
         return true;
       }
 
-      const legendaryMissileEmergency =
-        legendaryDifficulty && this.legendaryMissileDefenseUrgent();
-      const legendaryDefenseEmergency =
-        legendaryMissileEmergency ||
-        (legendaryDifficulty &&
-          state.settings.winFixes &&
-          this.hasObservedHostileMissileLaunch() &&
-          this.samLevelParityGap() > 0);
+      const {
+        missileEmergency: legendaryMissileEmergency,
+        defenseEmergency: legendaryDefenseEmergency,
+      } = this.legendaryDefenseEmergencies(legendaryDifficulty);
 
       const defensePostDecision = await profileStructureAsync(
         profile,
@@ -611,6 +607,10 @@
         await profileStructureAsync(profile, "structures-winfix-priorities", () =>
           this.handleWinFixStructurePriorities(legendaryDifficulty))
       ) {
+        return true;
+      }
+
+      if (await this.handleInitialSiloPriority(profile, legendaryDifficulty)) {
         return true;
       }
 
@@ -1122,6 +1122,24 @@
       );
     }
 
+    async handleInitialSiloPriority(profile, legendaryDifficulty) {
+      if (this.player === null || this.player === undefined) return false;
+      return profileStructureAsync(profile, "structures-initial-silo", () =>
+        this.handleInitialMissileSilo(legendaryDifficulty));
+    }
+
+    legendaryDefenseEmergencies(legendaryDifficulty) {
+      const missileEmergency =
+        legendaryDifficulty && this.legendaryMissileDefenseUrgent();
+      const defenseEmergency =
+        missileEmergency ||
+        (legendaryDifficulty &&
+          state.settings.winFixes &&
+          this.hasObservedHostileMissileLaunch() &&
+          this.samLevelParityGap() > 0);
+      return { missileEmergency, defenseEmergency };
+    }
+
     // doHandleStructures — NationStructureBehavior.ts:416 (now async).
     async doHandleStructures(profile = null) {
       const context = profileStructureSync(
@@ -1138,7 +1156,7 @@
       if (
         context.economyGrowthPriority &&
         (await profileStructureAsync(profile, "structures-ordinary-economy", () =>
-          this.maybePrioritizeEconomicGrowth(context)))
+          this.maybePrioritizeEconomicGrowth(context, profile)))
       ) {
         return true;
       }
@@ -1312,6 +1330,43 @@
       );
     }
 
+    async handleInitialMissileSilo(legendaryDifficulty = isLegendaryDifficulty()) {
+      // A first launcher is the prerequisite for every offensive nuclear path.
+      // The parity policy below deliberately reacts to an established enemy SAM
+      // network, but cannot create that first launcher when no such network is
+      // visible. Keep active-missile, hostile-silo and immediate-defense paths
+      // above this one, then establish one affordable silo independently of the
+      // ongoing economy-growth signal.
+      if (
+        !state.settings.winFixes ||
+        legendaryDifficulty ||
+        this.game.config().isUnitDisabled(UNIT.MissileSilo) ||
+        this.ownedLevels(UNIT.MissileSilo) > 0
+      ) {
+        return false;
+      }
+      const nukesEnabled =
+        !this.game.config().isUnitDisabled(UNIT.AtomBomb) ||
+        !this.game.config().isUnitDisabled(UNIT.HydrogenBomb) ||
+        !this.game.config().isUnitDisabled(UNIT.MIRV);
+      if (!nukesEnabled) return false;
+      if (
+        !this.game.config().isUnitDisabled(UNIT.City) &&
+        this.ownedLevels(UNIT.City) === 0
+      ) {
+        return false;
+      }
+      const siloCost = this.getConstructionCost(UNIT.MissileSilo);
+      if (this.spendableConstructionGold() < siloCost) return false;
+      // The first silo establishes the offensive capability itself.  The
+      // normal reserve gate intentionally defers additional offensive silos
+      // behind the next economic/SAM spend, but applying it here makes this
+      // policy unreachable whenever the economy has any pending demand.
+      return this.maybeSpawnStructure(UNIT.MissileSilo, {
+        ignoreEconomicReserve: true,
+      });
+    }
+
     async handleOrdinaryStructurePriorities(context) {
       const {
         citiesDisabled,
@@ -1373,7 +1428,7 @@
       hasCoastalTiles,
       hasOceanPortTiles,
       prioritizeCityForBorderThreat = false,
-    }) {
+    }, profile = null) {
       const buildOrder = prioritizeCityForBorderThreat
         ? CITY_FIRST_ECONOMIC_STRUCTURE_TYPES
         : ECONOMIC_STRUCTURE_TYPES;
@@ -1391,7 +1446,12 @@
         ) {
           continue;
         }
-        if (await this.maybeSpawnStructure(structureType)) return true;
+        if (
+          await profileStructureAsync(profile, `structures-economy-${structureType}`, () =>
+            this.maybeSpawnStructure(structureType))
+        ) {
+          return true;
+        }
       }
       return false;
     }
@@ -6077,7 +6137,10 @@
       ) {
         return false;
       }
-      return !this.shouldReserveEconomicGrowthForOffense(type);
+      return (
+        options.ignoreEconomicReserve === true ||
+        !this.shouldReserveEconomicGrowthForOffense(type)
+      );
     }
 
     async structureUpgradeBeforeSpawn(type, structures, options) {
@@ -7833,19 +7896,26 @@
       return false;
     }
 
-    hasOceanPortTiles() {
-      {
-        return Array.from(this.player.borderTiles()).some((tile) =>
-          this.isOceanPortTile(tile),
-        );
+    oceanPortBorderTiles() {
+      const borderTiles = this.player.borderTiles();
+      if (this._oceanPortBorderSnapshot === borderTiles) {
+        return this._oceanPortBorderTiles || [];
       }
+      const oceanPortTiles = [];
+      for (const tile of borderTiles) {
+        if (this.isOceanPortTile(tile)) oceanPortTiles.push(tile);
+      }
+      this._oceanPortBorderSnapshot = borderTiles;
+      this._oceanPortBorderTiles = oceanPortTiles;
+      return oceanPortTiles;
+    }
+
+    hasOceanPortTiles() {
+      return this.oceanPortBorderTiles().length > 0;
     }
 
     randCoastalTileArray(numTiles) {
-      const tiles = Array.from(this.player.borderTiles()).filter((tile) =>
-        this.isOceanPortTile(tile),
-      );
-      return Array.from(this.arraySampler(tiles, numTiles));
+      return Array.from(this.arraySampler(this.oceanPortBorderTiles(), numTiles));
     }
 
     // arraySampler — NationStructureBehavior.ts:854 (generator).
