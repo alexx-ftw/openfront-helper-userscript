@@ -153,7 +153,7 @@
   // Tribes have no strategic counterplay comparable to Nations. A small capture
   // margin lets the opening spread across many tribes in parallel instead of
   // parking four times their strength in one conquest.
-  const TRIBE_CAPTURE_TROOP_MULTIPLIER = 2;
+  const TRIBE_CAPTURE_TROOP_MULTIPLIER = 2.5;
   const PLAYER_CAPTURE_TROOP_MULTIPLIER = 4;
   // Once aggregate hostile incoming troops match our whole current army, a
   // counterattack removes the exact troops needed at home while still failing
