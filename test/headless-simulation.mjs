@@ -78,6 +78,7 @@ assert.match(runner, /OFH_LOG_NAVAL/);
 assert.match(runner, /OFH_LOG_STRUCTURES/);
 assert.match(runner, /phase:\s*"decision"/);
 assert.match(runner, /attackTargets/);
+assert.match(runner, /donationStrategicBorderPressure/);
 assert.match(runner, /targetTroops/);
 assert.match(runner, /pendingTroops/);
 assert.match(runner, /committedTroops/);

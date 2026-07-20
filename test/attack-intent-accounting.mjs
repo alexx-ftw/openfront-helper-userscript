@@ -1278,6 +1278,7 @@ const donor = {
   borderTiles: () => donorBorderTiles,
   incomingAttacks: () => donorIncomingAttacks,
   canDonateTroops: () => true,
+  isFriendly: () => false,
 };
 const needyTeammate = {
   troops: () => 8000,
@@ -1484,6 +1485,43 @@ assert.equal(
   35000,
   "the strongest allied border army controls the donation cap; remote armies do not",
 );
+
+const matchingStrategicBorderOpponent = {
+  ...makeBorderOpponent(17, 100000),
+  type: () => sandbox.PlayerType.Nation,
+};
+donationOwnerByTile.clear();
+donationOwnerByTile.set(2, matchingStrategicBorderOpponent.smallID());
+donationPlayers = [donor, needyTeammate, matchingStrategicBorderOpponent];
+const strategicBorderDonationBehavior = new sandbox.AttackBehavior(
+  { chance: () => true },
+  donationGame,
+  donor,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+const emissionsBeforeStrategicBorderDonation = troopEmissions.length;
+assert.equal(
+  strategicBorderDonationBehavior.donateTroops(),
+  false,
+  "a Nation/Human border army matching our force vetoes troop donations",
+);
+assert.equal(troopEmissions.length, emissionsBeforeStrategicBorderDonation);
+donationOwnerByTile.clear();
+donationOwnerByTile.set(2, weakBorderOpponent.smallID());
+donationOwnerByTile.set(3, strongBorderOpponent.smallID());
+donationOwnerByTile.set(4, alliedBorderOpponent.smallID());
+donationPlayers = [
+  donor,
+  needyTeammate,
+  weakBorderOpponent,
+  strongBorderOpponent,
+  alliedBorderOpponent,
+  remoteOpponent,
+];
 
 // If the client does not expose SendDonateTroopsIntentEvent, the wire fallback
 // must preserve the same recipient id and donation amount instead of dropping a

@@ -7867,6 +7867,18 @@
         ? this.getEarlyGameProductionReserveTroops()
         : maxTroops * this.reserveRatio;
       const currentTroops = Math.max(0, Number(this.player.troops()) || 0);
+      // A Nation/Human border opponent that already matches our entire army can
+      // begin a decisive land invasion immediately. Keeping merely half of its
+      // force (the later donation cap) turns a safe ally transfer into an
+      // irreversible frontier collapse before a Defense Post can finish.
+      const strongestStrategic = this.getStrongestStrategicBorderOpponentTroops();
+      if (strongestStrategic >= currentTroops) {
+        runtimeDebugLog("[Donate] skip: strongest border opponent matches our army", {
+          troops: Math.round(currentTroops),
+          strongestBorderOpponent: Math.round(strongestStrategic),
+        });
+        return null;
+      }
       const maxBorderDonation = Math.floor(currentTroops - strongest / 2);
       if (maxBorderDonation <= 0) {
         runtimeDebugLog("[Donate] skip: strongest border opponent leaves no safe reserve", {

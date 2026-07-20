@@ -355,6 +355,11 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
     const buildStrategicBorderPressure = intents.some((intent) => intent.type === "build_unit")
       ? strategicBorderPressureSnapshot()
       : null;
+    const donationStrategicBorderPressure = intents.some(
+      (intent) => intent.type === "donate_troops",
+    )
+      ? strategicBorderPressureSnapshot()
+      : null;
     console.warn(
       JSON.stringify({
         phase: "decision",
@@ -370,6 +375,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
           })) ?? [],
         attackTargets,
         buildStrategicBorderPressure,
+        donationStrategicBorderPressure,
         intents,
       }),
     );
