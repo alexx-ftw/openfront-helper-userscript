@@ -94,6 +94,8 @@ assert.match(adapter, /attackTargetSnapshot/);
 assert.match(adapter, /eventToIntent\(event, bot\.game, bot\.clientID\)/);
 assert.match(runner, /phase:\s*"naval-trace"/);
 assert.match(runner, /phase:\s*"slow_tick"/);
+assert.match(runner, /phase:\s*"first-incoming-land-attack"/);
+assert.match(runner, /phase:\s*"first-territory-loss"/);
 assert.match(runner, /phase:\s*"sam-lifecycle"/);
 assert.match(runner, /event:\s*"removed"/);
 assert.match(runner, /decisionMs/);

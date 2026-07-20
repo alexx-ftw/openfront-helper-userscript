@@ -163,6 +163,9 @@ let turnNumber = 0;
 let emittedIntents = 0;
 let hasEverBeenAlive = me?.isAlive() === true;
 let stopReason: "winner" | "max_ticks" | "bot_dead" | "engine_stop" = "max_ticks";
+let peakOwnedTiles = Math.max(0, me?.numTilesOwned() ?? 0);
+let firstIncomingLandAttackObserved = false;
+let firstTerritoryLossObserved = false;
 const cumulativeIntentTypes = new Map<string, number>();
 let intervalIntentTypes = new Map<string, number>();
 const cumulativeBuildUnitTypes = new Map<string, number>();
@@ -215,9 +218,10 @@ const strategicBorderPressureSnapshot = () => {
       if (!opponent) continue;
       const opponentType = playerField(opponent, "type");
       if (
-        opponentType !== PlayerType.Nation && opponentType !== PlayerType.Human ||
+        (opponentType !== PlayerType.Nation && opponentType !== PlayerType.Human) ||
         playerField(opponent, "team") === playerField(player, "team")
-      ) continue;
+      )
+        continue;
       opponents.set(String(playerField(opponent, "id")), {
         name: String(playerField(opponent, "name")),
         troops: Math.max(0, Number(playerField(opponent, "troops")) || 0),
@@ -231,7 +235,8 @@ const strategicBorderPressureSnapshot = () => {
     0,
   );
   const gold = player.gold();
-  const defensePostCost = runner.game.config()
+  const defensePostCost = runner.game
+    .config()
     .unitInfo(UnitType.DefensePost)
     .cost(runner.game, player);
   return {
@@ -347,9 +352,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
               : null,
         };
       });
-    const buildStrategicBorderPressure = intents.some(
-      (intent) => intent.type === "build_unit",
-    )
+    const buildStrategicBorderPressure = intents.some((intent) => intent.type === "build_unit")
       ? strategicBorderPressureSnapshot()
       : null;
     console.warn(
@@ -383,6 +386,50 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   }
   const executionMs = performance.now() - executionStartedAt;
   const currentPlayer = runner.game.playerByClientID(clientID);
+  if (currentPlayer) {
+    const incomingLandAttacks = currentPlayer
+      .incomingAttacks()
+      .filter((attack) => attack.sourceTile() === null);
+    if (!firstIncomingLandAttackObserved && incomingLandAttacks.length > 0) {
+      firstIncomingLandAttackObserved = true;
+      console.warn(
+        JSON.stringify({
+          phase: "first-incoming-land-attack",
+          tick: runner.game.ticks(),
+          tiles: currentPlayer.numTilesOwned(),
+          troops: Math.round(currentPlayer.troops()),
+          gold: String(currentPlayer.gold()),
+          attacks: incomingLandAttacks.map((attack) => ({
+            attacker: attack.attacker().name(),
+            attackerType: attack.attacker().type(),
+            troops: Math.round(attack.troops()),
+          })),
+          strategicBorderPressure: strategicBorderPressureSnapshot(),
+        }),
+      );
+    }
+    const tiles = currentPlayer.numTilesOwned();
+    if (!firstTerritoryLossObserved && tiles < peakOwnedTiles) {
+      firstTerritoryLossObserved = true;
+      console.warn(
+        JSON.stringify({
+          phase: "first-territory-loss",
+          tick: runner.game.ticks(),
+          peakTiles: peakOwnedTiles,
+          tiles,
+          troops: Math.round(currentPlayer.troops()),
+          gold: String(currentPlayer.gold()),
+          incomingLandAttacks: incomingLandAttacks.map((attack) => ({
+            attacker: attack.attacker().name(),
+            attackerType: attack.attacker().type(),
+            troops: Math.round(attack.troops()),
+          })),
+          strategicBorderPressure: strategicBorderPressureSnapshot(),
+        }),
+      );
+    }
+    peakOwnedTiles = Math.max(peakOwnedTiles, tiles);
+  }
   if (logSamLifecycle) {
     const currentSamLevels = new Map(
       (currentPlayer?.units(UnitType.SAMLauncher) ?? []).map((sam) => [
