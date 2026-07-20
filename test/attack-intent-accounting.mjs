@@ -573,6 +573,30 @@ assert.equal(
   "the 60% opening fraction is a ceiling rather than a fixed payload",
 );
 
+const openingHardCapBehavior = new sandbox.AttackBehavior(
+  {},
+  expandingGame,
+  me,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+openingHardCapBehavior.getTerraNulliusAttackTroops = () => ownTroops;
+const openingHardCapEmissionCount = troopEmissions.length;
+assert.equal(
+  await openingHardCapBehavior.forceSendAttack(terraNullius, 0.6),
+  true,
+  "the opening emitter remains available when its terrain calculator is aggressive",
+);
+assert.equal(troopEmissions.length, openingHardCapEmissionCount + 1);
+assert.equal(
+  troopEmissions.at(-1),
+  ownTroops * 0.6,
+  "the opening emitter hard-caps a malformed 100% TerraNullius payload at the protected budget",
+);
+
 const nationAttackFloorBehavior = Object.create(sandbox.AttackBehavior.prototype);
 nationAttackFloorBehavior.player = { troops: () => 100_000 };
 nationAttackFloorBehavior.getLiveOutboundAttackTroopsForTarget = () => 0;

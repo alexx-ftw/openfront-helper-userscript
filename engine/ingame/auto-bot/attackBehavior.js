@@ -7011,7 +7011,7 @@
           ? this.getEarlyGameTerraNulliusReserveTroops()
           : this.getEarlyGameTargetReserveTroops(target);
       const spendableTroops = this.getEarlyGameSpendableTroops(reserveTroops);
-      const troops =
+      const calculatedTroops =
         isTerraNullius && state.settings.winFixes
           ? this.getTerraNulliusAttackTroops(
               target,
@@ -7020,6 +7020,14 @@
               EARLY_EXPAND_COMMIT,
             )
           : Math.min(requestedTroops, spendableTroops);
+      // `forceSendAttack` is the opening entry point.  Keep its protected
+      // budget authoritative even if a later terrain/capture calculation is
+      // malformed or becomes more aggressive: no opening Terra Nullius event
+      // may cross the reserve or the caller's declared opening fraction.
+      const troops =
+        isTerraNullius && state.settings.winFixes
+          ? Math.min(calculatedTroops, requestedTroops, spendableTroops)
+          : calculatedTroops;
       if (!Number.isFinite(troops) || troops < 1) return false;
       const targetId = target.isPlayer() ? target.id() : null;
       if (
