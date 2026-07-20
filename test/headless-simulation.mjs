@@ -60,6 +60,59 @@ assert.match(
   /"startingGold":5000000/,
   "The runner must pass the requested starting gold through to the engine configuration",
 );
+const deterministicRunnerStart = () => {
+  const run = spawnSync(
+    process.execPath,
+    [
+      path.join(root, "node_modules/tsx/dist/cli.mjs"),
+      "--tsconfig",
+      "openfront-engine/tsconfig.json",
+      "scripts/headless/run-match.mts",
+    ],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        GAME_ENV: "dev",
+        OFH_MATCH_SEED: "headless-deterministic-playlist",
+        OFH_MAX_TICKS: "0",
+      },
+      encoding: "utf8",
+    },
+  );
+  assert.equal(run.status, 2);
+  const start = `${run.stdout}\n${run.stderr}`
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith('{"phase":"start"'));
+  assert.ok(start, "the zero-tick run must report its selected match configuration");
+  return JSON.parse(start);
+};
+const deterministicStartA = deterministicRunnerStart();
+const deterministicStartB = deterministicRunnerStart();
+assert.deepEqual(
+  {
+    map: deterministicStartA.map,
+    mapSize: deterministicStartA.mapSize,
+    mode: deterministicStartA.mode,
+    teams: deterministicStartA.teams,
+    difficulty: deterministicStartA.difficulty,
+    nations: deterministicStartA.nations,
+    tribes: deterministicStartA.tribes,
+    myTeam: deterministicStartA.myTeam,
+  },
+  {
+    map: deterministicStartB.map,
+    mapSize: deterministicStartB.mapSize,
+    mode: deterministicStartB.mode,
+    teams: deterministicStartB.teams,
+    difficulty: deterministicStartB.difficulty,
+    nations: deterministicStartB.nations,
+    tribes: deterministicStartB.tribes,
+    myTeam: deterministicStartB.myTeam,
+  },
+  "the same match seed must select the same headless Team configuration",
+);
 assert.match(runner, /OFH_GAME_MAP/);
 assert.match(runner, /OFH_STARTING_GOLD/);
 assert.match(runner, /non-negative safe integer/);

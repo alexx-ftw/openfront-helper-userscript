@@ -28,18 +28,55 @@ if (traceFile) {
     appendFileSync(traceFile, `${args.map(String).join(" ")}\n`);
   };
 }
-const playlist = new MapPlaylist();
-let playlistConfig = await playlist.gameConfig("team");
-// A Team match with one team fails inside GameImpl before tick zero. Keep the
-// random/default playlist semantics, but redraw incompatible entries so every
-// default simulation actually reaches the bot instead of consuming a run.
-while (
-  playlistConfig.playerTeams === HumansVsNations ||
-  !Number.isFinite(Number(playlistConfig.playerTeams)) ||
-  Number(playlistConfig.playerTeams) < 2
-) {
-  playlistConfig = await playlist.gameConfig("team");
+function headlessSeedState(value: string) {
+  let state = 2166136261;
+  for (let index = 0; index < value.length; index++) {
+    state ^= value.charCodeAt(index);
+    state = Math.imul(state, 16777619);
+  }
+  return state >>> 0;
 }
+
+function createHeadlessPlaylistRandom(value: string) {
+  let state = headlessSeedState(value) || 1;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let mixed = state;
+    mixed = Math.imul(mixed ^ (mixed >>> 15), mixed | 1);
+    mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
+    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+async function deterministicTeamPlaylistConfig(matchSeed: string) {
+  const originalRandom = Math.random;
+  const originalDateNow = Date.now;
+  Math.random = createHeadlessPlaylistRandom(`${matchSeed}:playlist`);
+  // MapPlaylist internally seeds its shuffle from Date.now().  Seed that
+  // constructor input as well as its direct Math.random choices so a matching
+  // OFH_MATCH_SEED yields the same generated playlist and team count.
+  Date.now = () => headlessSeedState(`${matchSeed}:playlist-clock`);
+  try {
+    const playlist = new MapPlaylist();
+    let playlistConfig = await playlist.gameConfig("team");
+    // A Team match with one team fails inside GameImpl before tick zero. Keep
+    // the playlist's normal redraw semantics, but make every draw derive from
+    // the match seed so reruns are comparable.
+    while (
+      playlistConfig.playerTeams === HumansVsNations ||
+      !Number.isFinite(Number(playlistConfig.playerTeams)) ||
+      Number(playlistConfig.playerTeams) < 2
+    ) {
+      playlistConfig = await playlist.gameConfig("team");
+    }
+    return playlistConfig;
+  } finally {
+    Math.random = originalRandom;
+    Date.now = originalDateNow;
+  }
+}
+
+const playlistConfig = await deterministicTeamPlaylistConfig(seed);
 const requestedTeams = process.env.OFH_PLAYER_TEAMS;
 const numericTeams = Number(requestedTeams);
 const requestedStartingGold = process.env.OFH_STARTING_GOLD;
