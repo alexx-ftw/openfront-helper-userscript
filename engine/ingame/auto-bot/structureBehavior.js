@@ -829,7 +829,9 @@
       // preemptive SAM attempt.
       if (this.shouldBuildSiloTriggeredSam() || preemptiveHostileSiloRisk) {
         if (await this.maybeSpawnHostileSiloSam()) return true;
-        return placedSilo && this.shouldReserveHostileSiloSamBudget()
+        return placedSilo &&
+            this.shouldReserveHostileSiloSamBudget() &&
+            !this.shouldYieldHostileSiloReserveToLandDefense()
           ? false
           : null;
       }
@@ -847,6 +849,15 @@
         return this.maybeUpgradePlannedSam(hydrogenPlan);
       }
       return null;
+    }
+
+    shouldYieldHostileSiloReserveToLandDefense() {
+      const threat = this.defensePostThreat(currentDifficulty());
+      return (
+        threat !== null &&
+        threat.landAttacks.some((attack) => this.isStrategicLandAttack(attack)) &&
+        this.canAffordDefensePost()
+      );
     }
 
     async handleImmediateStructureDefense(legendaryDifficulty) {
