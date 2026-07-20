@@ -1375,6 +1375,11 @@ const botParallelBehavior = new sandbox.AttackBehavior(
 botParallelBehavior.getEnemyDefensePostAttackProfile = () => ({});
 botParallelBehavior.attackIsTooWeakForDefensePosts = () => false;
 botParallelBehavior.applyEarlyGameRaceTroops = ({ baseTroops }) => baseTroops;
+botParallelBehavior.earlyGameTribeCandidatesRefresh = undefined;
+botParallelBehavior.earlyGameTribeCandidatesCache = [
+  { id: "parallel-a", tribeClusterSize: 1, tribeClusterAccess: 1 },
+  { id: "parallel-b", tribeClusterSize: 1, tribeClusterAccess: 1 },
+];
 outgoing.length = 0;
 tick = 21;
 const botParallelEmissionCount = troopEmissions.length;
@@ -1458,6 +1463,8 @@ const makeEarlyTribeCandidate = (id, player) => ({
   oceanDistance: 0,
   futureFoodCount: 1,
   futureFoodAccess: 0.5,
+  tribeClusterSize: 1,
+  tribeClusterAccess: 1,
   foodRaceValue: 0.1,
   encirclement: 0,
   blockValue: 0,
@@ -1548,6 +1555,11 @@ const throttledParallelBehavior = new sandbox.AttackBehavior(
   {},
 );
 throttledParallelBehavior.getEnemyDefensePostAttackProfile = () => ({});
+throttledParallelBehavior.earlyGameTribeCandidatesRefresh = undefined;
+throttledParallelBehavior.earlyGameTribeCandidatesCache = [
+  { id: "throttled-a", tribeClusterSize: 1, tribeClusterAccess: 1 },
+  { id: "throttled-b", tribeClusterSize: 1, tribeClusterAccess: 1 },
+];
 throttledParallelBehavior.sendAttack = async (...args) => {
   throttledParallelCalls.push(args);
   remainingIntentCapacity -= 1;

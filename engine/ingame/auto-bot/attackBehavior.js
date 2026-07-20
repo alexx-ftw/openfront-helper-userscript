@@ -2475,6 +2475,8 @@
       // `sendAttack`; reject a no-longer-actionable target before reserving an
       // intent at all.
       if (
+        !Number.isFinite(Number(candidate?.tribeClusterSize)) ||
+        !Number.isFinite(Number(candidate?.tribeClusterAccess)) ||
         target?.isAlive?.() === false ||
         (typeof target?.type === "function" && target.type() !== PlayerType.Bot) ||
         this.player.isFriendly?.(target) === true
@@ -6788,17 +6790,25 @@
         this.earlyGameTribeCandidatesRefresh !== null;
       const cachedTribeCandidates = this.earlyGameTribeCandidatesCache;
       const cachedClusterScoresIncomplete =
-        Array.isArray(cachedTribeCandidates) &&
+        !Array.isArray(cachedTribeCandidates) ||
         cachedTribeCandidates.some(
           (candidate) =>
             !Number.isFinite(Number(candidate?.tribeClusterSize)) ||
             !Number.isFinite(Number(candidate?.tribeClusterAccess)),
         );
-      return earlyGameRefreshPending || cachedClusterScoresIncomplete;
+      return (
+        this.earlyGameTribeCandidatesRefresh !== undefined &&
+        (earlyGameRefreshPending || cachedClusterScoresIncomplete)
+      );
     }
 
     getAttackableBots(nearby = null) {
       const botsByKey = new Map();
+      const activeTargetKeys = new Set(
+        this.getActiveOutboundTribeTargets().map((target) =>
+          this.getOutboundAttackTargetKey(target),
+        ),
+      );
       for (const candidate of [
         ...(nearby || this.player.nearby()),
         ...this.getActiveOutboundTribeTargets(),
@@ -6814,6 +6824,11 @@
       const bots = [...botsByKey.values()];
       const preferredClusterTargets =
         this.earlyGamePreferredClusterTargetKeys;
+      if (this.earlyGameTribeCandidatesRefresh !== undefined) {
+        return bots.filter((bot) =>
+          activeTargetKeys.has(this.getOutboundAttackTargetKey(bot)),
+        );
+      }
       return preferredClusterTargets?.size > 0
         ? bots.filter((bot) =>
           preferredClusterTargets.has(this.getOutboundAttackTargetKey(bot)),
