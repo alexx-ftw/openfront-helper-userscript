@@ -1142,10 +1142,13 @@
 
       const remainingOpeningCommitment =
         this.getRemainingTerraNulliusOpeningCommitment();
-      if (Number.isFinite(remainingOpeningCommitment)) {
+      if (
+        Number.isFinite(remainingOpeningCommitment) &&
+        remainingOpeningCommitment > 0
+      ) {
         const borderThreat = Math.max(
           0,
-          Number(this.getStrongestBorderOpponentTroops()) || 0,
+          Number(this.getKnownBorderOpponentTroops()) || 0,
         );
         const openingSafetyFloor =
           this.terraNulliusSafetyTroopHighWater * (1 - EARLY_EXPAND_COMMIT);
@@ -1192,7 +1195,7 @@
       );
       const borderThreat = Math.max(
         0,
-        Number(this.getStrongestBorderOpponentTroops()) || 0,
+        Number(this.getKnownBorderOpponentTroops()) || 0,
       );
       return Math.max(
         borderThreat,
@@ -1307,6 +1310,16 @@
           typeof game.ownerID === "function" &&
           typeof game.players === "function",
       );
+    }
+
+    // Lightweight clients and static harnesses can intentionally omit the
+    // complete border snapshot.  That is different from a malformed live
+    // snapshot: keep the strict reader for callers that require authoritative
+    // border data, while Terra Nullius uses its local safety floor when the
+    // optional threat signal is unavailable.
+    getKnownBorderOpponentTroops() {
+      if (!this.hasBorderOpponentApi()) return 0;
+      return this.getStrongestBorderOpponentTroops();
     }
 
     getBorderingPlayerIds(mySid) {
