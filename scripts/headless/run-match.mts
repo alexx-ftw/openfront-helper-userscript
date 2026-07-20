@@ -198,6 +198,10 @@ const trackedMissileTypes = [
   UnitType.MIRVWarhead,
 ] as const;
 const PREEMPTIVE_SAM_SILO_GOLD = 1_000_000n;
+const playerField = (player: unknown, field: string) => {
+  const value = (player as Record<string, unknown>)[field];
+  return typeof value === "function" ? value.call(player) : value;
+};
 const strategicBorderPressureSnapshot = () => {
   const player = runner.game.playerByClientID(clientID);
   if (!player) return null;
@@ -208,14 +212,15 @@ const strategicBorderPressureSnapshot = () => {
     let threatened = false;
     for (const neighbor of runner.game.neighbors(borderTile)) {
       const opponent = runner.game.playerBySmallID(runner.game.ownerID(neighbor));
+      if (!opponent) continue;
+      const opponentType = playerField(opponent, "type");
       if (
-        !opponent ||
-        opponent.type() !== PlayerType.Nation && opponent.type() !== PlayerType.Human ||
-        opponent.team() === player.team()
+        opponentType !== PlayerType.Nation && opponentType !== PlayerType.Human ||
+        playerField(opponent, "team") === playerField(player, "team")
       ) continue;
-      opponents.set(opponent.id(), {
-        name: opponent.name(),
-        troops: Math.max(0, Number(opponent.troops()) || 0),
+      opponents.set(String(playerField(opponent, "id")), {
+        name: String(playerField(opponent, "name")),
+        troops: Math.max(0, Number(playerField(opponent, "troops")) || 0),
       });
       threatened = true;
     }

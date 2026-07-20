@@ -112,6 +112,7 @@ assert.match(runner, /cumulativeBuildUnitTypes/);
 assert.match(runner, /intent\.type !== "build_unit"/);
 assert.match(runner, /intervalBuildEvents/);
 assert.match(runner, /strategicBorderPressureSnapshot/);
+assert.match(runner, /const playerField = \(player: unknown, field: string\)/);
 assert.match(runner, /hostileRatio/);
 assert.match(runner, /canAffordDefensePost/);
 assert.match(runner, /buildStrategicBorderPressure/);
