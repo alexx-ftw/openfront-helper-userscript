@@ -7938,6 +7938,7 @@
         recipientKey,
         this.currentAttackDecisionTick() + Math.max(0, cooldown),
       );
+      this.lastDonationDecisionTick = this.currentAttackDecisionTick();
       this.recordOutboundDonationIntent(troops);
       runtimeDebugLog(
         "[Donate] SENT",
@@ -7950,6 +7951,9 @@
     }
 
     donateTroops() {
+      if (this.lastDonationDecisionTick === this.currentAttackDecisionTick()) {
+        return false;
+      }
       this.logDonationDiagnostic();
       if (!this.donationBaseGatesAllow()) return false;
       const teammates = this.donationTeammates();

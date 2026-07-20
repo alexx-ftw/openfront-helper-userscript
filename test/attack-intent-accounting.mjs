@@ -1345,6 +1345,22 @@ assert.equal(
 );
 
 const emissionsAfterFirstDonation = troopEmissions.length;
+const secondNeedyTeammate = {
+  troops: () => 1,
+  smallID: () => 14,
+  id: () => "player-14",
+  isAlive: () => true,
+  incomingAttacks: () => [],
+  outgoingAttacks: () => [],
+};
+donationPlayers = [donor, secondNeedyTeammate];
+assert.equal(
+  donorBehavior.donateTroops(),
+  false,
+  "one decision tick cannot donate twice to different allies through separate strategy paths",
+);
+assert.equal(troopEmissions.length, emissionsAfterFirstDonation);
+donationPlayers = [donor, needyTeammate];
 assert.equal(
   donorBehavior.donateTroops(),
   false,

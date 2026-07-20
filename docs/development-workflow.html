@@ -51,6 +51,13 @@
       gameplay subsystem from initializing.
     </p>
 
+    <p>
+      A troop donation may be reachable through both the ordinary attack-strategy list and the
+      auxiliary policy pass. Record a successful donation at the decision tick in the shared attack
+      behavior and reject a second donation in that same tick, even when its recipient differs. Test
+      this directly because recipient cooldowns alone cannot prevent the duplicate path.
+    </p>
+
     <h2>OpenFront engine compatibility</h2>
 
     <p>
