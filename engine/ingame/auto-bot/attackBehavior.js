@@ -1563,12 +1563,18 @@
       bypassOpeningBudget = false,
     ) {
       const configured = Number(spendableTroops);
+      // A caller may supply a precomputed budget for radioactive free land,
+      // but it is only a preference, never permission to spend the defensive
+      // reserve.  Without this cap that route could pass the full army and
+      // drive the player to zero even though ordinary land expansion retained
+      // the Terra Nullius safety floor.
+      const protectedSpendable = this.getEarlyGameSpendableTroops(
+        this.getEarlyGameTerraNulliusReserveTroops(),
+      );
       const reserveSpendable =
         spendableTroops !== null && Number.isFinite(configured)
-          ? Math.max(0, configured)
-          : this.getEarlyGameSpendableTroops(
-              this.getEarlyGameTerraNulliusReserveTroops(),
-            );
+          ? Math.min(protectedSpendable, Math.max(0, configured))
+          : protectedSpendable;
       if (!state.settings.winFixes) return reserveSpendable;
       if (bypassOpeningBudget) return reserveSpendable;
       return Math.min(

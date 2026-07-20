@@ -434,6 +434,11 @@ assert.equal(
   ownTroops * 0.4,
   "TerraNullius retains the configured 40% opening safety reserve",
 );
+assert.equal(
+  expandingBehavior.getTerraNulliusAvailableTroops(ownTroops, true),
+  ownTroops * 0.6,
+  "a radioactive/free-land caller cannot replace the TerraNullius reserve with a full-army budget",
+);
 const terraNulliusEmissionCount = troopEmissions.length;
 assert.equal(
   expandingBehavior.sendLandAttack(terraNullius),
