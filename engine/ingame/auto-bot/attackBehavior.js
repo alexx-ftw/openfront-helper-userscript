@@ -114,13 +114,14 @@
   const ORDINARY_RANDOM_BOAT_RETRY_TICKS = 30;
   const EARLY_GAME_TRIBE_CHAIN_RADIUS = 120;
   // The profiled strategic cadence is 19 game ticks. Keep the complete graph
-  // through two decisions (rather than rebuilding it every other decision),
+  // through several decisions (rather than rebuilding it every other decision),
   // while a changed live tribe-id signature still invalidates it immediately.
   // Topology changes immediately when a tribe enters/leaves the membership
   // signature. Between those changes, refreshing full border adjacency every
-  // four seconds created 250ms+ opening stalls on dense maps, so retain the
-  // coherent graph for twelve seconds instead.
-  const EARLY_GAME_TRIBE_TOPOLOGY_CACHE_TICKS = 120;
+  // four seconds created 250ms+ opening stalls on dense maps. Membership
+  // changes still invalidate immediately, so retain the coherent graph for
+  // twenty-four seconds when its node set is stable.
+  const EARLY_GAME_TRIBE_TOPOLOGY_CACHE_TICKS = 240;
   // Rebuilding every tribe's food-race vector against every visible player is
   // quadratic on crowded maps.  Keep one short snapshot only while an exact
   // live-state signature proves that no owner, movement, troop, or attack
@@ -2846,6 +2847,14 @@
       );
     }
 
+    earlyGameLiveTribeSignature(otherPlayers) {
+      return (otherPlayers || [])
+        .filter((tribe) => this.isLightweightEarlyGameTribe(tribe))
+        .map((tribe) => String(tribe.smallID()))
+        .sort()
+        .join(",");
+    }
+
     lightweightEarlyGameFoodRace(
       tribe,
       tribeSid,
@@ -2870,6 +2879,7 @@
     ) {
       const tick = this.currentAttackDecisionTick();
       const cached = this.earlyGameTribeNodesCache;
+      const liveTribeSignature = this.earlyGameLiveTribeSignature(otherPlayers);
       const competitorCache = this.earlyGameCompetitorProfilesCache;
       const competitorStableSignature =
         competitorCache?.profiles === competitorProfiles
@@ -2880,7 +2890,7 @@
         competitorProfiles,
         competitorStableSignature,
         foodRaceById,
-        { tick, includeFoodRace },
+        { tick, includeFoodRace, liveTribeSignature },
       );
       if (reused !== null) return reused;
       const nodes = [];
@@ -2902,6 +2912,7 @@
         tick,
         competitorProfiles,
         competitorStableSignature,
+        liveTribeSignature,
         nodes,
         foodRaceById: new Map(foodRaceById),
         includeFoodRace,
@@ -2916,7 +2927,7 @@
       foodRaceById,
       options,
     ) {
-      const { tick, includeFoodRace } = options;
+      const { tick, includeFoodRace, liveTribeSignature } = options;
       const maximumAge = includeFoodRace
         ? EARLY_GAME_TRIBE_RISK_SNAPSHOT_CACHE_TICKS
         : EARLY_GAME_TRIBE_TOPOLOGY_CACHE_TICKS;
@@ -2924,6 +2935,7 @@
         !cached ||
         tick < cached.tick ||
         tick - cached.tick > maximumAge ||
+        cached.liveTribeSignature !== liveTribeSignature ||
         (includeFoodRace === true && cached.includeFoodRace === false)
       ) {
         return null;

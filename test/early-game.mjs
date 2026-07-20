@@ -3238,6 +3238,54 @@ assert.equal(
   1,
   "topology-only tribe nodes outlive the short food-race snapshot without reusing risk",
 );
+const liveMembershipBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+let liveMembershipTick = 1;
+let secondTribeAlive = true;
+const liveMembershipTribe = (sid, alive) => ({
+  smallID: () => sid,
+  isPlayer: () => true,
+  isAlive: () => alive(),
+  type: () => targetSandbox.PlayerType.Bot,
+});
+const liveMembershipFirst = liveMembershipTribe(201, () => true);
+const liveMembershipSecond = liveMembershipTribe(202, () => secondTribeAlive);
+let liveMembershipNodeBuilds = 0;
+liveMembershipBehavior.player = { isFriendly: () => false };
+liveMembershipBehavior.game = { ticks: () => liveMembershipTick };
+liveMembershipBehavior.createLightweightEarlyGameTribeNode = (tribe) => {
+  if (!liveMembershipBehavior.isLightweightEarlyGameTribe(tribe)) return null;
+  liveMembershipNodeBuilds++;
+  return { id: tribe.smallID(), player: tribe, captureRisk: 0 };
+};
+const liveMembershipProfiles = [];
+const liveMembershipFirstNodes = await liveMembershipBehavior.getIncrementalEarlyGameTribeNodes(
+  [liveMembershipFirst, liveMembershipSecond],
+  liveMembershipProfiles,
+  new Map(),
+  false,
+);
+assert.deepEqual(
+  Array.from(liveMembershipFirstNodes, (node) => node.id),
+  [201, 202],
+);
+liveMembershipTick = 2;
+secondTribeAlive = false;
+const liveMembershipRefreshedNodes = await liveMembershipBehavior.getIncrementalEarlyGameTribeNodes(
+  [liveMembershipFirst, liveMembershipSecond],
+  liveMembershipProfiles,
+  new Map(),
+  false,
+);
+assert.deepEqual(
+  Array.from(liveMembershipRefreshedNodes, (node) => node.id),
+  [201],
+  "a tribe capture invalidates the topology node cache before its extended TTL",
+);
+assert.equal(
+  liveMembershipNodeBuilds,
+  3,
+  "a live tribe-set change rebuilds the topology immediately instead of retaining a captured member",
+);
 const passiveTribeSnapshotBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 let passiveTribeTick = 1;
 let passiveTribeTroops = 20;
@@ -3322,11 +3370,11 @@ assert.equal(
   firstTopologyBorderFetches,
   "the complete topology remains reusable through two profiled strategic decisions",
 );
-targetTick = 121;
+targetTick = 241;
 await targetBehavior.getEarlyGameTribeCandidates();
 assert.ok(
   topologyBorderFetches > firstTopologyBorderFetches,
-  "the bounded topology cache refreshes after its twelve-second window",
+  "the bounded topology cache refreshes after its twenty-four-second window",
 );
 targetTick = 1;
 assert.equal(
