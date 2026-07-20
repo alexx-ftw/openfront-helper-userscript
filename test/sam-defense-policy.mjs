@@ -659,6 +659,62 @@ preemptiveBorderPostBehavior.game = {
 const preemptiveBorderThreat = preemptiveBorderPostBehavior.preemptiveBorderDefensePostThreat();
 assert.equal(preemptiveBorderThreat.allowed, 1);
 assert.deepEqual(Array.from(preemptiveBorderThreat.frontTiles), [10]);
+borderThreatTroops = 190;
+preemptiveBorderPostBehavior.player.borderTiles = () =>
+  Array.from({ length: 305 }, (_, index) => index * 2);
+let strategicBorderTopologyTick = 100;
+let strategicBorderNeighborScans = 0;
+preemptiveBorderPostBehavior.game.ticks = () => strategicBorderTopologyTick;
+preemptiveBorderPostBehavior.game.neighbors = (tile) => {
+  strategicBorderNeighborScans++;
+  return [tile + 1];
+};
+preemptiveBorderPostBehavior.game.ownerID = () => 2;
+const sustainedBorderThreat = preemptiveBorderPostBehavior.sustainedBorderDefensePostThreat();
+assert.equal(
+  sustainedBorderThreat.allowed,
+  3,
+  "a 1.9x Nation/Human army on a 305-tile front requests enough Posts to cover the front instead of treating one existing Post as sufficient",
+);
+const scansAfterInitialThreat = strategicBorderNeighborScans;
+borderThreatTroops = 160;
+assert.equal(
+  preemptiveBorderPostBehavior.sustainedBorderDefensePostThreat().allowed,
+  3,
+  "cached border topology keeps live hostile troops in the sustained-defense decision",
+);
+assert.equal(
+  strategicBorderNeighborScans,
+  scansAfterInitialThreat,
+  "a stable wide border is not rescanned again during the one-second topology cache window",
+);
+strategicBorderTopologyTick += 10;
+preemptiveBorderPostBehavior.sustainedBorderDefensePostThreat();
+assert.equal(
+  strategicBorderNeighborScans,
+  scansAfterInitialThreat * 2,
+  "the strategic border topology is refreshed after its bounded cache window",
+);
+preemptiveBorderPostBehavior.game.config = () => ({ isUnitDisabled: () => false });
+preemptiveBorderPostBehavior.hasPriorStructureForDefensePost = () => true;
+let sustainedThreatPassedToPlacement = null;
+preemptiveBorderPostBehavior.tryBuildDefensePost = async (threat) => {
+  sustainedThreatPassedToPlacement = threat;
+  return true;
+};
+assert.equal(
+  await preemptiveBorderPostBehavior.handleDefensePostPriority(false),
+  true,
+  "an established economy places a needed Defense Post before ordinary Port construction when its strategic front is overwhelming",
+);
+assert.deepEqual(
+  sustainedThreatPassedToPlacement,
+  sustainedBorderThreat,
+  "the priority passes the same wide-front threat data into the Defense Post placement path",
+);
+preemptiveBorderPostBehavior.player.borderTiles = () => [10, 20];
+preemptiveBorderPostBehavior.game.neighbors = (tile) => (tile === 10 ? [11] : [21]);
+preemptiveBorderPostBehavior.game.ownerID = (tile) => (tile === 11 ? 2 : null);
 borderThreatTroops = 49;
 assert.equal(
   preemptiveBorderPostBehavior.preemptiveBorderDefensePostThreat(),
@@ -713,6 +769,24 @@ assert.equal(maximumPrioritySamAttempts, 2);
 assert.equal(lowerPriorityConstructionCalls, 0);
 
 maximumPrioritySamResult = false;
+hostileSiloMaximumPriorityBehavior.hydrogenSamProtectionPlan = () => ({
+  currentLevel: 1,
+  targetLevel: 5,
+});
+let triggeredSamUpgradeAttempts = 0;
+hostileSiloMaximumPriorityBehavior.maybeUpgradePlannedSam = async (plan) => {
+  triggeredSamUpgradeAttempts++;
+  return plan.targetLevel === 5;
+};
+assert.equal(
+  await hostileSiloMaximumPriorityBehavior.handleStructures(),
+  true,
+  "a completed external Silo upgrades an existing SAM before the placement-reserve branch can strand it at level one",
+);
+assert.equal(triggeredSamUpgradeAttempts, 1);
+assert.equal(lowerPriorityConstructionCalls, 0);
+
+hostileSiloMaximumPriorityBehavior.hydrogenSamProtectionPlan = () => null;
 hostileSiloMaximumPriorityBehavior.shouldYieldHostileSiloReserveToLandDefense = () => true;
 assert.equal(
   await hostileSiloMaximumPriorityBehavior.handleHostileSiloSamMaximumPriority(),
@@ -791,7 +865,7 @@ assert.equal(
   null,
   "Enemy gold without a placed hostile Silo does not hard-reserve construction",
 );
-assert.equal(maximumPrioritySamAttempts, 3);
+assert.equal(maximumPrioritySamAttempts, 4);
 
 assert.equal(
   typeof behavior.enemySamCapacityParityTarget,
@@ -1152,6 +1226,27 @@ assert.deepEqual(
   [UNIT.City],
   "High-gold economic construction tries the city first and stops after a successful build",
 );
+const originalOwnedLevelsForOpeningPort = behavior.ownedLevels;
+const openingPortCalls = [];
+behavior.ownedLevels = (type) => (type === UNIT.City ? 1 : 0);
+behavior.maybeSpawnStructure = async (type) => {
+  openingPortCalls.push(type);
+  return type === UNIT.Port;
+};
+assert.equal(
+  await behavior.maybePrioritizeHighGoldEconomicConstruction({
+    config: { isUnitDisabled: () => false },
+    hasOceanPortTiles: true,
+  }),
+  true,
+  "A coastal nation with its first City gives the first Port the bounded placement probe",
+);
+assert.deepEqual(
+  openingPortCalls,
+  [UNIT.Port],
+  "The first ocean Port is attempted before City or Factory so their failed probes cannot starve it",
+);
+behavior.ownedLevels = originalOwnedLevelsForOpeningPort;
 behavior.getPerceivedCost = originalPerceivedCost;
 behavior.maybeSpawnStructure = originalMaybeSpawnStructure;
 own.gold = originalOwnGold;
@@ -2217,6 +2312,26 @@ assert.equal(
   "An affordable authoritative SAM upgrade is not rejected by the higher new-site price",
 );
 assert.equal(sentBuilds.length, 1);
+let unaffordableCachedUpgradeProbes = 0;
+hydrogenProtectionGold = 499_999n;
+hydrogenProtectionBehavior.buildableForUnits = async () => {
+  unaffordableCachedUpgradeProbes++;
+  return [{ type: UNIT.SAMLauncher, canUpgrade: true, cost: 500_000n }];
+};
+assert.equal(
+  await hydrogenProtectionBehavior.maybeUpgradePlannedSam({
+    sam: hydrogenSam,
+    currentLevel: 1,
+    targetLevel: 2,
+  }),
+  false,
+  "a known unaffordable authoritative SAM upgrade waits without another worker probe",
+);
+assert.equal(
+  unaffordableCachedUpgradeProbes,
+  0,
+  "the exact cached upgrade cost prevents repeated unaffordable SAM probes",
+);
 hydrogenProtectionGold = 5_000_000n;
 hydrogenProtectionBehavior.cost = () => 1n;
 hydrogenProtectionBehavior.liveHostilePlayers = () => [enemySingleLevelOneSilo];
@@ -2797,6 +2912,55 @@ assert.equal(
 );
 assert.equal(economicUpgradeCalls, 0, "A legal new City site performs no upgrade probe");
 assert.equal(sentBuilds.at(-1), newCityBuildable);
+
+const resumedEconomicScanBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+const resumedEconomicBuildable = { canBuild: 901, canUpgrade: false };
+let resumedRandomProbeCalls = 0;
+let resumedScanCalls = 0;
+resumedEconomicScanBehavior.structureSpawnEligible = () => true;
+resumedEconomicScanBehavior.getConstructionCost = () => 1n;
+resumedEconomicScanBehavior.availableGoldAfterReserve = () => 10n;
+resumedEconomicScanBehavior.player = { units: () => [] };
+resumedEconomicScanBehavior.hasStructureUnderConstruction = () => false;
+resumedEconomicScanBehavior._economicPlacementScans = new Map([
+  [String(UNIT.City), { context: { fingerprint: "unchanged" } }],
+]);
+resumedEconomicScanBehavior.economicPlacementFingerprint = () => "unchanged";
+resumedEconomicScanBehavior.structureSpawnTile = async () => {
+  resumedRandomProbeCalls++;
+  return null;
+};
+resumedEconomicScanBehavior.findEconomicPlacementOrExhaustion = async () => {
+  resumedScanCalls++;
+  return { status: "buildable", buildable: resumedEconomicBuildable };
+};
+assert.equal(
+  await resumedEconomicScanBehavior.maybeSpawnStructure(UNIT.City),
+  true,
+  "A pending unchanged economic scan resumes directly instead of repeating random worker probes",
+);
+assert.equal(resumedRandomProbeCalls, 0);
+assert.equal(resumedScanCalls, 1);
+assert.equal(sentBuilds.at(-1), resumedEconomicBuildable);
+
+resumedEconomicScanBehavior._economicPlacementScans.set(String(UNIT.City), {
+  context: { fingerprint: "stale" },
+});
+resumedEconomicScanBehavior.structureSpawnTile = async () => {
+  resumedRandomProbeCalls++;
+  return resumedEconomicBuildable;
+};
+assert.equal(
+  await resumedEconomicScanBehavior.maybeSpawnStructure(UNIT.City),
+  true,
+  "A changed economic snapshot discards the stale scan and samples current placement geometry",
+);
+assert.equal(resumedRandomProbeCalls, 1);
+assert.equal(
+  resumedEconomicScanBehavior._economicPlacementScans.has(String(UNIT.City)),
+  false,
+  "A stale scan cannot suppress placement after territory or structures changed",
+);
 
 const hybridCityBuildable = { canBuild: 789, canUpgrade: 1234 };
 assert.equal(
@@ -3885,8 +4049,8 @@ assert.equal(
 );
 assert.deepEqual(
   economicCandidateLimits,
-  [25],
-  "all economic placement attempts share the normal 25-candidate decision budget",
+  [12, 12],
+  "economic placement keeps the normal shared budget while capping each initial worker sample",
 );
 
 const samCoverageGuardBehavior = Object.create(sandbox.__StructureBehavior.prototype);
@@ -3981,5 +4145,85 @@ assert.equal(
   "a new SAM does not clump inside a friendly umbrella when it adds no coverage",
 );
 assert.equal(samNetworkScore(30), 0, "a distant SAM receives no friendly-network preference");
+
+const recoverySamEmergency = Object.create(sandbox.__StructureBehavior.prototype);
+recoverySamEmergency.tileInsideActiveHostileMissileImpact = (tile) => tile === 9;
+recoverySamEmergency.missileDefenseSnapshotIsCurrent = () => false;
+assert.equal(
+  recoverySamEmergency.structureEmergencySamTileAllowed(8, { recoverySam: true }),
+  true,
+  "a missing first SAM may rebuild outside a current blast even when the current salvo cannot be fully defended",
+);
+assert.equal(
+  recoverySamEmergency.structureEmergencySamTileAllowed(9, { recoverySam: true }),
+  false,
+  "first-SAM recovery still refuses the active hostile impact zone",
+);
+assert.equal(
+  recoverySamEmergency.structureEmergencySnapshotCurrent({ recoverySam: true }),
+  true,
+  "a changing unrelated missile fingerprint does not cancel safe first-SAM reconstruction",
+);
+assert.equal(
+  recoverySamEmergency.shouldRetryFirstSamWithSafeCandidates(
+    UNIT.SAMLauncher,
+    { recoverySam: true },
+    [{ t: 1 }],
+    [{ t: 1 }, { t: 2 }],
+  ),
+  true,
+  "a failed first-SAM core probe may fall back to another safe owned tile",
+);
+assert.equal(
+  recoverySamEmergency.shouldRetryFirstSamWithSafeCandidates(
+    UNIT.SAMLauncher,
+    { recoverySam: false },
+    [{ t: 1 }],
+    [{ t: 1 }, { t: 2 }],
+  ),
+  false,
+  "ordinary SAM placement retains the strict core-coverage filter",
+);
+const ordinaryStructurePacing = Object.create(sandbox.__StructureBehavior.prototype);
+let ordinaryStructureTick = 100;
+ordinaryStructurePacing.game = { ticks: () => ordinaryStructureTick };
+assert.equal(
+  ordinaryStructurePacing.shouldDeferOrdinaryStructureDecision(),
+  false,
+  "the first ordinary construction decision is immediately eligible",
+);
+ordinaryStructureTick = 116;
+assert.equal(
+  ordinaryStructurePacing.shouldDeferOrdinaryStructureDecision(),
+  true,
+  "a between-attack retry does not repeat the costly ordinary placement probes",
+);
+ordinaryStructureTick = 120;
+assert.equal(
+  ordinaryStructurePacing.shouldDeferOrdinaryStructureDecision(),
+  false,
+  "ordinary construction resumes after the bounded pacing interval",
+);
+
+const economicPlacementBudget = Object.create(sandbox.__StructureBehavior.prototype);
+economicPlacementBudget.economicPlacementBudgetLimit = (limit) => limit;
+economicPlacementBudget.consumeEconomicPlacementBudget = () => {};
+economicPlacementBudget.structureProbeOptions = () => ({
+  candidateLimit: 25,
+  probeLimit: 25,
+  probeTimeoutMs: 1,
+  parallelProbeCount: 1,
+});
+let economicCandidateLimit = 0;
+economicPlacementBudget.structureCandidateTiles = (_type, _options, limit) => {
+  economicCandidateLimit = limit;
+  return [];
+};
+assert.equal(await economicPlacementBudget.structureSpawnTile(UNIT.Factory), null);
+assert.equal(
+  economicCandidateLimit,
+  12,
+  "ordinary City/Factory/Port sampling reserves budget for the resumable exhaustive scan",
+);
 
 process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");

@@ -155,6 +155,13 @@
    */
   const STRUCTURE_PLACEMENT_CANDIDATE_LIMIT = 25;
 
+  // Economy construction used to spend the entire 25-probe budget on a random
+  // sample before the resumable exhaustive scan could run.  A healthy worker
+  // response therefore still caused a visible 150ms+ stall.  Keep the rest of
+  // the tick's budget for the existing deterministic scan, which resumes on
+  // later decisions and is the only path allowed to prove exhaustion.
+  const ECONOMIC_INITIAL_PLACEMENT_CANDIDATE_LIMIT = 12;
+
   /**
    * The mandatory hostile-silo SAM path can wake up as soon as an enemy reaches
    * the 1.5M-gold trigger. Preserve upstream's 25-candidate search, reconstruct
@@ -242,6 +249,28 @@
   // turn into a siege before the next construction cadence. One cheap Post on
   // that actual front is a preventive measure; tribes remain excluded.
   const PREEMPTIVE_BORDER_DEFENSE_POST_RATIO = 0.5;
+
+  // Once a Nation/Human border is already overwhelming us, a single Post is
+  // not meaningful across a very wide front. This is deliberately stricter
+  // than the opening guard above: it only applies after the economy exists
+  // and caps the number of extra Posts, so routine border contact cannot
+  // replace economic construction with a wall of Posts.
+  const SUSTAINED_BORDER_DEFENSE_POST_RATIO = 1.5;
+  const SUSTAINED_BORDER_TILES_PER_DEFENSE_POST = 100;
+  const MAX_SUSTAINED_BORDER_DEFENSE_POSTS = 3;
+  // A territorial border changes far less often than troop counts. Reusing its
+  // topology for one game second removes repeated full-front neighbour scans
+  // from emergency structure ticks while troop, alive and alliance state stay
+  // live on every call below.
+  const STRATEGIC_BORDER_TOPOLOGY_CACHE_TICKS = 10;
+  // The Nation execution loop asks for defensive structure work between the
+  // main attack decisions as well as on the main decision itself.  Those
+  // interstitial calls must keep missile/SAM/land-defense reactions live, but
+  // retrying a full ordinary economy placement (and its async buildables
+  // probes) every ~16 ticks creates visible Auto-build stalls without gaining
+  // a new construction opportunity.  A short, tick-based cooldown keeps the
+  // expensive ordinary lane bounded while never delaying the emergency lanes.
+  const ORDINARY_STRUCTURE_DECISION_INTERVAL_TICKS = 20;
 
   /**
    * Do not repeat a failed hostile-Silo SAM placement probe more than once per
@@ -492,6 +521,11 @@
       this._missileDefenseEvaluationTick = null;
       this._missileDefenseEvaluationContext = null;
       this._missileDefenseEvaluationCache = null;
+      // An authoritative BuildableUnit gives the exact next-upgrade price for
+      // a particular SAM level. Reuse that fact only to avoid re-probing while
+      // we remain below the known price; once affordable we always ask the
+      // worker again before acting.
+      this._plannedSamUpgradeCostCache = new Map();
     }
 
     // The auto-donate module owns the live transport/ownership scan because it
@@ -653,6 +687,10 @@
         return true;
       }
 
+      if (this.shouldDeferOrdinaryStructureDecision()) {
+        return false;
+      }
+
       // Legendary missile defense is an emergency exception to the ordinary
       // save-up phase so an interceptor upgrade/build can still matter.
       if (!legendaryDefenseEmergency && this.isInPostSaveUpBlockedPhase()) {
@@ -667,6 +705,21 @@
         this.placementsCount++;
       }
       return built;
+    }
+
+    shouldDeferOrdinaryStructureDecision() {
+      const tick = Number(this.game?.ticks?.());
+      if (!Number.isFinite(tick)) return false;
+      const previous = Number(this._lastOrdinaryStructureDecisionTick);
+      if (
+        Number.isFinite(previous) &&
+        tick >= previous &&
+        tick - previous < ORDINARY_STRUCTURE_DECISION_INTERVAL_TICKS
+      ) {
+        return true;
+      }
+      this._lastOrdinaryStructureDecisionTick = tick;
+      return false;
     }
 
     async handleActiveMissileSamMaximumPriority() {
@@ -822,36 +875,55 @@
       const preemptiveHostileSiloRisk = this.shouldBuildHostileSiloSam();
       if (!placedSilo && !preemptiveHostileSiloRisk) return null;
 
+      if (this.shouldBuildSiloTriggeredSam() || preemptiveHostileSiloRisk) {
+        return this.handleTriggeredHostileSiloSam(placedSilo);
+      }
+      return this.handleBuiltHostileSiloSamUpgrade();
+    }
+
+    async handleTriggeredHostileSiloSam(placedSilo) {
       // Try to preempt a soon-affordable hostile launcher, but only a Silo
       // already placed on the board may reserve every construction slot. A
       // forecast alone cannot freeze a poor one-City economy below the first
       // SAM price; it still gets the normal economy action after the failed
       // preemptive SAM attempt.
-      if (this.shouldBuildSiloTriggeredSam() || preemptiveHostileSiloRisk) {
-        if (await this.maybeSpawnHostileSiloSam()) return true;
+      if (await this.maybeSpawnHostileSiloSam()) return true;
+        // A first launcher may already be built while this trigger remains
+        // true.  Do not reserve the entire construction turn for another
+        // placement attempt before considering its required interceptor level:
+        // that made a completed external Silo strand our only SAM at level 1
+        // indefinitely.  An unaffordable upgrade still falls through to the
+        // same reserve below, so missile defense keeps its priority.
+      if (await this.maybeUpgradeHostileSiloSam()) return true;
         // Preserve the one-income-site bootstrap, then reserve every partial
         // fund for the first SAM. Spending repeatedly on cheaper structures
         // after a Silo appears resets the launcher runway indefinitely.
-        return placedSilo &&
-            this.shouldReserveHostileSiloSamBudget() &&
-            !this.shouldYieldHostileSiloReserveToLandDefense()
-          ? false
-          : null;
-      }
+      return this.shouldReserveTriggeredHostileSiloSamBudget(placedSilo)
+        ? false
+        : null;
+    }
 
+    async handleBuiltHostileSiloSamUpgrade() {
       // Building the first SAM is not enough once a hostile Silo is live: a
       // level-one launcher must immediately be upgraded to the minimum H-bomb
       // ready level. A failed/temporarily unaffordable upgrade reserves this
       // same top-priority slot rather than funding an unrelated structure.
+      return (await this.maybeUpgradeHostileSiloSam()) ? true : null;
+    }
+
+    async maybeUpgradeHostileSiloSam() {
       const hydrogenPlan = this.hydrogenSamProtectionPlan?.();
-      if (
-        hydrogenPlan !== null &&
-        hydrogenPlan !== undefined &&
-        hydrogenPlan.targetLevel > hydrogenPlan.currentLevel
-      ) {
-        return this.maybeUpgradePlannedSam(hydrogenPlan);
-      }
-      return null;
+      if (hydrogenPlan === null || hydrogenPlan === undefined) return false;
+      if (hydrogenPlan.targetLevel <= hydrogenPlan.currentLevel) return false;
+      return this.maybeUpgradePlannedSam(hydrogenPlan);
+    }
+
+    shouldReserveTriggeredHostileSiloSamBudget(placedSilo) {
+      return (
+        placedSilo &&
+        this.shouldReserveHostileSiloSamBudget() &&
+        !this.shouldYieldHostileSiloReserveToLandDefense()
+      );
     }
 
     shouldYieldHostileSiloReserveToLandDefense() {
@@ -884,18 +956,18 @@
       // exception: waiting for the first City leaves no construction window once
       // it attacks. Carry the same precomputed threat into the placement probe so
       // the border is not scanned twice in this decision.
-      const firstStructureThreat = hasPriorStructure
-        ? null
+      const borderThreat = hasPriorStructure
+        ? this.sustainedBorderDefensePostThreat()
         : this.preemptiveBorderDefensePostThreat();
-      if (!hasPriorStructure && firstStructureThreat === null) return null;
+      if (!hasPriorStructure && borderThreat === null) return null;
       if (this.game.config().isUnitDisabled(UNIT.DefensePost)) return null;
-      if (await this.tryBuildDefensePost(firstStructureThreat)) return true;
+      if (await this.tryBuildDefensePost(borderThreat)) return true;
 
       // Save the slot only while gold is the missing requirement. If the post
       // is affordable but no legal tile was found, continuing prevents
       // unrelated construction from starving forever.
       if (
-        (firstStructureThreat !== null || this.defensePostNeeded()) &&
+        (borderThreat !== null || this.defensePostNeeded()) &&
         !this.canAffordDefensePost()
       ) return false;
       return null;
@@ -1007,12 +1079,59 @@
     }
 
     preemptiveBorderDefensePostThreat() {
+      return this.strategicBorderDefensePostThreat(
+        PREEMPTIVE_BORDER_DEFENSE_POST_RATIO,
+        1,
+      );
+    }
+
+    sustainedBorderDefensePostThreat() {
+      return this.strategicBorderDefensePostThreat(
+        SUSTAINED_BORDER_DEFENSE_POST_RATIO,
+        MAX_SUSTAINED_BORDER_DEFENSE_POSTS,
+      );
+    }
+
+    strategicBorderDefensePostThreat(minimumRatio, maximumAllowed) {
       if (
         typeof this.game.ownerID !== "function" ||
         typeof this.game.playerBySmallID !== "function"
       ) return null;
       const ownTroops = Math.max(0, Number(this.player.troops?.()) || 0);
       if (ownTroops <= 0) return null;
+      const topology = this.strategicBorderDefenseTopology();
+      const opponents = topology.opponents;
+      const frontTiles = topology.frontTiles;
+      const liveOpponents = [...opponents.values()].filter((opponent) =>
+        this.isStrategicBorderDefenseOpponent(opponent));
+      const hostileTroops = liveOpponents.reduce(
+        (total, opponent) => total + Math.max(0, Number(opponent.troops?.()) || 0),
+        0,
+      );
+      if (hostileTroops / ownTroops < minimumRatio) {
+        return null;
+      }
+      if (frontTiles.length === 0) return null;
+      const allowed = maximumAllowed === 1
+        ? 1
+        : Math.min(
+          maximumAllowed,
+          Math.max(1, Math.ceil(frontTiles.length / SUSTAINED_BORDER_TILES_PER_DEFENSE_POST)),
+        );
+      return { allowed, frontTiles };
+    }
+
+    strategicBorderDefenseTopology() {
+      const tick = Number(this.game.ticks?.());
+      const cached = this._strategicBorderDefenseTopology;
+      if (
+        Number.isFinite(tick) &&
+        cached !== undefined &&
+        tick >= cached.tick &&
+        tick - cached.tick < STRATEGIC_BORDER_TOPOLOGY_CACHE_TICKS
+      ) {
+        return cached;
+      }
       const opponents = new Map();
       const frontTiles = [];
       for (const borderTile of this.player.borderTiles()) {
@@ -1025,14 +1144,9 @@
         }
         if (threatened) frontTiles.push(borderTile);
       }
-      const hostileTroops = [...opponents.values()].reduce(
-        (total, opponent) => total + Math.max(0, Number(opponent.troops?.()) || 0),
-        0,
-      );
-      if (hostileTroops / ownTroops < PREEMPTIVE_BORDER_DEFENSE_POST_RATIO) {
-        return null;
-      }
-      return frontTiles.length > 0 ? { allowed: 1, frontTiles } : null;
+      const topology = { tick, opponents, frontTiles };
+      if (Number.isFinite(tick)) this._strategicBorderDefenseTopology = topology;
+      return topology;
     }
 
     defensePostThreat(difficulty) {
@@ -1716,7 +1830,21 @@
       if (!state.settings.winFixes) return false;
 
       const availableGold = this.spendableConstructionGold();
-      const buildOrder = [UNIT.City, UNIT.Factory, UNIT.Port];
+      // A generic City → Factory → Port fallback can starve the first Port:
+      // every failed economic placement consumes from the one bounded probe
+      // budget for this decision, leaving no coastal probe by the time Port is
+      // reached.  Once the foundational first City exists, give a viable first
+      // ocean Port its probe before generic economy sites.  This redistributes
+      // the fixed budget rather than increasing it, so it preserves the
+      // anti-stutter bound while enabling the naval economy and warship paths.
+      const openingOceanPort =
+        hasOceanPortTiles === true &&
+        this.ownedLevels(UNIT.City) > 0 &&
+        this.ownedLevels(UNIT.Port) === 0 &&
+        !config.isUnitDisabled(UNIT.Port);
+      const buildOrder = openingOceanPort
+        ? [UNIT.Port, UNIT.City, UNIT.Factory]
+        : [UNIT.City, UNIT.Factory, UNIT.Port];
       for (const structureType of buildOrder) {
         if (config.isUnitDisabled(structureType)) continue;
         if (structureType === UNIT.Port && !hasOceanPortTiles) continue;
@@ -6531,21 +6659,43 @@
         if (upgradeDecision !== null) return upgradeDecision;
       }
 
+      const buildable = await this.structureSpawnBuildable(
+        type,
+        structures,
+        economicType,
+        options,
+      );
+      if (buildable === null) return false;
+      if (typeof buildable === "boolean") return buildable;
+      return this.emitStructureBuildable(type, buildable);
+    }
+
+    async structureSpawnBuildable(type, structures, economicType, options) {
       // RANK-THEN-PROBE: structureSpawnTile now returns the snapped BuildableUnit
       // (the first build-only descriptor down the value-ranked list) instead of
       // a bare TileRef, folding the src `player.canBuild(type, tile)` check into
       // the probe. src: tile = structureSpawnTile(type); if null → return;
       // canBuild = player.canBuild(type, tile); if false → return;
       // addExecution(ConstructionExecution).
-      let bu = await this.structureSpawnTile(type, options);
-      if (bu === null) {
-        if (!economicType) return false;
+      // A prior bounded sample may have missed a legal economic site.  In that
+      // case findEconomicPlacementOrExhaustion keeps an incremental exhaustive
+      // scan specifically so the bot can resume it later.  Re-running another
+      // 25 random worker probes first on every tick both delays that proof and
+      // creates visible Auto-build stalls.  Resume the unchanged scan directly;
+      // its fingerprint is invalidated below as soon as territory or structure
+      // geometry changes.
+      let buildable = null;
+      if (!economicType || !this.hasPendingEconomicPlacementScan(type)) {
+        buildable = await this.structureSpawnTile(type, options);
+      }
+      if (buildable === null) {
+        if (!economicType) return null;
         const placement = await this.findEconomicPlacementOrExhaustion(
           type,
           options,
         );
         if (placement.status === "buildable") {
-          bu = placement.buildable;
+          buildable = placement.buildable;
         } else if (placement.status === "no-space") {
           return this.maybeUpgradeStructure(structures, {
             economicSpaceExhausted: true,
@@ -6554,14 +6704,18 @@
           return false;
         }
       }
+      return buildable;
+    }
+
+    emitStructureBuildable(type, buildable) {
       const buildMenu = getBuildMenu();
       if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
         return false;
       }
       return this.emitStructureBuild(
         buildMenu,
-        bu,
-        bu.canBuild,
+        buildable,
+        buildable.canBuild,
         tr("🏗️ Build {type}", { type }),
       );
     }
@@ -6748,18 +6902,39 @@
     async maybeUpgradePlannedSam(plan) {
       // A built hostile Silo is enough evidence to complete a proven coverage
       // or capacity upgrade before its first missile consumes that window.
-      if (
-        !this.hasObservedHostileMissileLaunch() &&
-        !this.hasBuiltHostileSiloThreat() &&
-        !this.hasBuiltExternalSiloThreat()
-      ) {
-        return false;
-      }
-      if (!plan || plan.targetLevel <= plan.currentLevel) return false;
+      if (!this.plannedSamUpgradeEligible(plan)) return false;
 
       const availableGold = this.spendableConstructionGold();
-      const fallbackCost = this.cost(UNIT.SAMLauncher);
+      const cacheKey = this.plannedSamUpgradeCostCacheKey(plan);
+      const cachedCost = this._plannedSamUpgradeCostCache?.get(cacheKey);
+      if (cachedCost !== undefined && cachedCost > availableGold) return false;
 
+      const bu = await this.plannedSamUpgradeBuildable(plan);
+      if (bu === null) return false;
+      const cost = this.plannedSamUpgradeCost(bu, cacheKey);
+      if (cost > availableGold) return false;
+
+      return this.emitPlannedSamUpgrade(bu);
+    }
+
+    plannedSamUpgradeEligible(plan) {
+      return (
+        plan !== null &&
+        plan !== undefined &&
+        plan.targetLevel > plan.currentLevel &&
+        this.plannedSamUpgradeHasThreat()
+      );
+    }
+
+    plannedSamUpgradeHasThreat() {
+      return (
+        this.hasObservedHostileMissileLaunch() ||
+        this.hasBuiltHostileSiloThreat() ||
+        this.hasBuiltExternalSiloThreat()
+      );
+    }
+
+    async plannedSamUpgradeBuildable(plan) {
       const buildables = await this.buildableForUnits(
         [plan.sam],
         UNIT.SAMLauncher,
@@ -6768,22 +6943,25 @@
           timeoutMs: HOSTILE_SILO_SAM_PROBE_TIMEOUT_MS,
         },
       );
-      const bu = buildables[0];
-      if (bu === null || bu === undefined || bu.canUpgrade === false) {
-        return false;
-      }
+      const buildable = buildables[0];
+      return buildable?.canUpgrade === false ? null : buildable ?? null;
+    }
 
-      let cost = fallbackCost;
-      {
-        if (bu.cost !== undefined && bu.cost !== null) cost = BigInt(bu.cost);
+    plannedSamUpgradeCost(buildable, cacheKey) {
+      if (buildable.cost === undefined || buildable.cost === null) {
+        return this.cost(UNIT.SAMLauncher);
       }
-      if (cost > availableGold) return false;
+      const cost = BigInt(buildable.cost);
+      this.rememberPlannedSamUpgradeCost(cacheKey, cost);
+      return cost;
+    }
 
+    emitPlannedSamUpgrade(buildable) {
       const buildMenu = getBuildMenu();
       if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
         return false;
       }
-      if (!sendAutoBotBuildOrUpgrade(buildMenu, bu, undefined, this.game, this.player)) {
+      if (!sendAutoBotBuildOrUpgrade(buildMenu, buildable, undefined, this.game, this.player)) {
         return false;
       }
       state.stats.builds++;
@@ -6792,6 +6970,23 @@
         "build",
       );
       return true;
+    }
+
+    plannedSamUpgradeCostCacheKey(plan) {
+      const samID = plan?.sam?.id?.() ?? "unknown";
+      return `${samID}:${Number(plan?.currentLevel ?? 0)}:${this.ownedLevels(UNIT.SAMLauncher)}`;
+    }
+
+    rememberPlannedSamUpgradeCost(cacheKey, cost) {
+      if (!(this._plannedSamUpgradeCostCache instanceof Map)) {
+        this._plannedSamUpgradeCostCache = new Map();
+      }
+      // A nation owns very few SAMs. Bound the cache anyway so a long match
+      // with repeatedly destroyed/rebuilt launchers never accumulates history.
+      if (this._plannedSamUpgradeCostCache.size >= 32) {
+        this._plannedSamUpgradeCostCache.clear();
+      }
+      this._plannedSamUpgradeCostCache.set(cacheKey, cost);
     }
 
     /**
@@ -7337,7 +7532,10 @@
       const probe = this.structureProbeOptions(options);
       const economicType = ECONOMIC_STRUCTURE_TYPES.includes(type);
       const candidateLimit = economicType
-        ? this.economicPlacementBudgetLimit(probe.candidateLimit)
+        ? Math.min(
+            this.economicPlacementBudgetLimit(probe.candidateLimit),
+            ECONOMIC_INITIAL_PLACEMENT_CANDIDATE_LIMIT,
+          )
         : probe.candidateLimit;
       if (candidateLimit < 1) return null;
       const tiles = this.structureCandidateTiles(type, options, candidateLimit);
@@ -7347,6 +7545,26 @@
       if (valueFunction === null) return null;
       const compactness = this.structurePlacementCompactnessRanker(type);
       const emergency = this.structureMissileEmergency(type, options);
+      const { scored, safeScored } = this.rankStructureSpawnTiles(
+        type,
+        options,
+        tiles,
+        valueFunction,
+        compactness,
+      );
+      if (type === UNIT.SAMLauncher && options.prioritizeStructureCoverage) {
+        return this.probePriorityStructureCoverageSpawn(
+          type,
+          scored,
+          safeScored,
+          probe,
+          emergency,
+        );
+      }
+      return this.probeRankedStructureTiles(scored, type, probe, emergency);
+    }
+
+    rankStructureSpawnTiles(type, options, tiles, valueFunction, compactness) {
       const protectedSamTiles =
         type === UNIT.SAMLauncher && options.activeMissileDefense !== true
           ? this.samProtectableStructureTiles()
@@ -7373,24 +7591,55 @@
         scored = safeScored;
       }
       scored.sort((a, b) => this.compareStructurePlacementScores(a, b));
-      if (type === UNIT.SAMLauncher && options.prioritizeStructureCoverage) {
-        const localResult = await this.probeCoveragePrioritySamTiles(
-          scored,
-          type,
-          probe.probeTimeoutMs,
-          emergency,
-        );
-        if (localResult.handled) return localResult.buildable;
-        if (localResult.attemptedTiles?.size > 0) {
-          return this.probeRankedStructureTiles(
-            scored.filter(({ t }) => !localResult.attemptedTiles.has(t)),
-            type,
-            probe,
-            emergency,
-          );
-        }
+      return { scored, safeScored };
+    }
+
+    async probePriorityStructureCoverageSpawn(
+      type,
+      scored,
+      safeScored,
+      probe,
+      emergency,
+    ) {
+      const localResult = await this.probeCoveragePrioritySamTiles(
+        scored,
+        type,
+        probe.probeTimeoutMs,
+        emergency,
+      );
+      if (localResult.handled) return localResult.buildable;
+      const remaining = this.unattemptedPriorityStructureTiles(scored, localResult);
+      const strictBuildable = await this.probeRankedStructureTiles(
+        remaining,
+        type,
+        probe,
+        emergency,
+      );
+      if (strictBuildable !== null) return strictBuildable;
+      // Prefer the expensive core, but never turn a verified failure of every
+      // core-covering site into permanent missile helplessness. This only
+      // applies while replacing a missing first SAM; normal SAM placement
+      // remains strictly centred on protectable structures.
+      if (!this.shouldRetryFirstSamWithSafeCandidates(type, emergency, scored, safeScored)) {
+        return null;
       }
-      return this.probeRankedStructureTiles(scored, type, probe, emergency);
+      return this.probeRankedStructureTiles(safeScored, type, probe, emergency);
+    }
+
+    unattemptedPriorityStructureTiles(scored, localResult) {
+      const attemptedTiles = localResult.attemptedTiles;
+      if (!(attemptedTiles instanceof Set) || attemptedTiles.size === 0) {
+        return scored;
+      }
+      return scored.filter(({ t }) => !attemptedTiles.has(t));
+    }
+
+    shouldRetryFirstSamWithSafeCandidates(type, emergency, scored, safeScored) {
+      return (
+        type === UNIT.SAMLauncher &&
+        emergency?.recoverySam === true &&
+        safeScored.length > scored.length
+      );
     }
 
     shouldUseSafeSamReconstructionFallback(type, options, scored) {
@@ -7657,6 +7906,16 @@
       };
       this._economicPlacementScans.set(key, scan);
       return scan;
+    }
+
+    hasPendingEconomicPlacementScan(type) {
+      const scan = this._economicPlacementScans?.get(String(type));
+      if (scan === undefined) return false;
+      if (this.economicPlacementFingerprint(type) === scan.context.fingerprint) {
+        return true;
+      }
+      this.clearEconomicPlacementScan(type);
+      return false;
     }
 
     clearEconomicPlacementScan(type) {
@@ -8146,25 +8405,22 @@
     }
 
     structureMissileEmergency(type, options = {}) {
-      if (
-        !isLegendaryDifficulty() &&
-        options.activeMissileDefense !== true &&
-        this.missileDefenseSignalSnapshot()?.hasActiveHostileMissile !== true
-      ) {
+      if (!this.shouldInspectStructureMissileEmergency(options)) {
         return { active: false };
       }
       const tick = Number(this.game.ticks?.());
-      const context = options.missileDefenseContext || this.getMissileDefenseContext();
-      const evaluation = options.missileDefenseContext
-        ? this.legendaryDefenseEvaluation(context)
-        : this.getMissileDefenseEvaluation(context);
-      const uncoveredMirvDemands = this.uncoveredActiveMirvDemands(context);
-      const active =
-        (evaluation.hasThreats && !evaluation.fullyDefended) ||
-        uncoveredMirvDemands.length > 0;
+      const { context, evaluation, active } = this.structureMissileEmergencyState(options);
       return {
         active,
         samDefense: type === UNIT.SAMLauncher && active,
+        // A missing baseline SAM is still valuable after the current salvo is
+        // already impossible to stop.  Keep its construction safe from the
+        // actual blast, but do not require one level-one launcher to fully
+        // defend every in-flight missile before allowing reconstruction.
+        recoverySam:
+          type === UNIT.SAMLauncher &&
+          options.allowPreemptiveSam === true &&
+          this.ownSamCapacity() <= 0,
         incrementalSamDefense:
           type === UNIT.SAMLauncher && options.activeMissileDefense === true,
         tick,
@@ -8172,6 +8428,25 @@
         evaluation,
         stateKey: active ? this.missileDefenseStateFingerprint() : null,
       };
+    }
+
+    shouldInspectStructureMissileEmergency(options) {
+      return (
+        isLegendaryDifficulty() ||
+        options.activeMissileDefense === true ||
+        this.missileDefenseSignalSnapshot()?.hasActiveHostileMissile === true
+      );
+    }
+
+    structureMissileEmergencyState(options) {
+      const context = options.missileDefenseContext || this.getMissileDefenseContext();
+      const evaluation = options.missileDefenseContext
+        ? this.legendaryDefenseEvaluation(context)
+        : this.getMissileDefenseEvaluation(context);
+      const active =
+        (evaluation.hasThreats && !evaluation.fullyDefended) ||
+        this.uncoveredActiveMirvDemands(context).length > 0;
+      return { context, evaluation, active };
     }
 
     async probeCoveragePrioritySamTiles(scored, type, timeoutMs, emergency) {
@@ -8229,6 +8504,11 @@
     }
 
     structureEmergencySnapshotCurrent(emergency) {
+      // Missile objects legitimately advance while worker probes are in
+      // flight. A replacement first SAM is checked against the current blast
+      // at every candidate/final-build boundary, so it must not be discarded
+      // merely because an unrelated salvo changed the global fingerprint.
+      if (emergency.recoverySam === true) return true;
       return (
         !emergency.active ||
         this.missileDefenseSnapshotIsCurrent(emergency.tick, emergency.stateKey)
@@ -8252,6 +8532,9 @@
     }
 
     structureEmergencySamTileAllowed(tile, emergency) {
+      if (emergency.recoverySam === true) {
+        return !this.tileInsideActiveHostileMissileImpact(tile);
+      }
       if (emergency.incrementalSamDefense !== true) {
         return this.legendarySamConstructionSafeForTile(tile, emergency.context);
       }

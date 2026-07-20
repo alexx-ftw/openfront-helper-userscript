@@ -14,7 +14,7 @@
     "simulate:batch": "node scripts/headless/run-batch.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "RATCHET_DEFAULT_EXIT_ZERO=true eslint . --max-warnings=0 --format ratchet",
+    "lint": "RATCHET_DEFAULT_EXIT_ZERO=true eslint build.mjs engine scripts test --max-warnings=0 --format ratchet",
     "quality:dead-code": "knip --strict --include files,dependencies,unlisted,unresolved,exports,types,duplicates,catalog,cycles",
     "quality:dependencies": "depcruise --config dependency-cruiser.config.mjs src build.mjs scripts test",
     "quality:duplicates": "jscpd --config .jscpd.json .",
@@ -25,7 +25,7 @@
     "test": "node test/openfront-engine-compat.mjs && node test/headless-simulation.mjs && node test/smoke.mjs && node test/companion.mjs && node test/ingame-bootstrap.mjs && node test/ingame-section-bootstrap.mjs && node test/runtime-mutable-state.mjs && node test/intent-rate-limit.mjs && node test/auto-donate.mjs && node test/legendary.mjs && node test/sam-defense-policy.mjs && node test/nuke-economy-policy.mjs && node test/maritime-invasion-economy.mjs && node test/spawn-index.mjs && node test/spawn-heatmap.mjs && node test/performance-regressions.mjs && node test/frame-stall-regressions.mjs && node test/runtime-diagnostics.mjs && node test/spawn-entity-scoring.mjs && node test/spawn-objective.mjs && node test/game-start-notification.mjs && node test/spawn-voice.mjs && node test/spawn-speech.mjs && node test/early-game.mjs && node test/opening-economy-overlap.mjs && node test/attack-defense-post.mjs && node test/incoming-defense-escalation.mjs && node test/attack-intent-accounting.mjs && node test/port-placement.mjs && node test/nuke-suggestions.mjs && node test/silo-sam-tracker.mjs && node test/naval-interception.mjs && node test/naval-assignment-persistence.mjs"
   },
   "lint-staged": {
-    "*.{js,mjs,ts}": "eslint --max-warnings=0",
+    "*.{js,mjs,ts}": "eslint --no-warn-ignored --max-warnings=0",
     "*.{js,mjs,ts,json,md,html,css,yml,yaml}": "prettier --check --ignore-unknown"
   },
   "devDependencies": {

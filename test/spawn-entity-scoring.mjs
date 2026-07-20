@@ -138,8 +138,8 @@ assert.equal(speedSensitive[0].freeLandScore, 1);
 
 const clanOpenLandWidth = 600;
 const clanOpenLandHeight = 300;
-const clanOpenLandNearRef = 150 * clanOpenLandWidth + 149;
-const clanOpenLandFarRef = 150 * clanOpenLandWidth + 450;
+const clanOpenLandNearRef = 150 * clanOpenLandWidth + 240;
+const clanOpenLandFarRef = 150 * clanOpenLandWidth + 360;
 const me = makePlayer("HUMAN", 300, 150, 10, {
   displayName: "[FOX] Me",
 });
@@ -148,8 +148,8 @@ const clanOpenLand = loadScorer({
   width: clanOpenLandWidth,
   height: clanOpenLandHeight,
   candidates: [
-    { ref: clanOpenLandNearRef, x: 149, y: 150 },
-    { ref: clanOpenLandFarRef, x: 450, y: 150 },
+    { ref: clanOpenLandNearRef, x: 240, y: 150 },
+    { ref: clanOpenLandFarRef, x: 360, y: 150 },
   ],
   metrics: {
     [clanOpenLandNearRef]: {
@@ -172,8 +172,8 @@ const clanOpenLand = loadScorer({
 });
 assert.equal(
   clanOpenLand[0].x,
-  450,
-  "open free land must outrank same-clan proximity when other spawn dimensions tie",
+  360,
+  "open free land must outrank same-clan proximity within the team corridor",
 );
 assert.equal(clanOpenLand[0].freeLandScore, 1);
 
@@ -248,6 +248,36 @@ const enclosed = loadScorer({
 assert.equal(enclosed[0].x, 300, "spawn candidates outside the team polyhedron must be rejected");
 assert.equal(enclosed[0].teamPolyhedronScore, 1);
 
+const pairedTeamMe = makePlayer("HUMAN", 300, 150, 36);
+pairedTeamMe.isOnSameTeam = (player) => [37, 38].includes(player.smallID());
+const pairedTeamGeometry = loadScorer({
+  width: enclosedWidth,
+  height: 300,
+  candidates: [
+    { ref: 180 * enclosedWidth + 300, x: 300, y: 180 },
+    { ref: 150 * enclosedWidth + 520, x: 520, y: 150 },
+  ],
+  metrics: {
+    [180 * enclosedWidth + 300]: { frontierGain: 1, frontierSlots: 1, frontierValueGain: 1000 },
+    [150 * enclosedWidth + 520]: {
+      frontierGain: 100,
+      frontierSlots: 100,
+      frontierValueGain: 100000,
+    },
+  },
+  players: [
+    pairedTeamMe,
+    makePlayer("HUMAN", 160, 150, 37, { spawned: true }),
+    makePlayer("HUMAN", 440, 150, 38, { spawned: true }),
+  ],
+  me: pairedTeamMe,
+});
+assert.equal(
+  pairedTeamGeometry[0].x,
+  300,
+  "two teammate anchors must constrain spawning to their map-independent corridor",
+);
+
 const nationTeamMe = makePlayer("HUMAN", 300, 150, 40);
 nationTeamMe.isOnSameTeam = (player) => [41, 42, 43].includes(player.smallID());
 const nationTeamGeometry = loadScorer({
@@ -271,6 +301,34 @@ assert.equal(
   "spawn geometry includes already-spawned Nation teammates instead of placing us outside their hull",
 );
 assert.equal(nationTeamGeometry[0].teamPolyhedronScore, 1);
+
+const nationEnemySafetyMe = makePlayer("HUMAN", 300, 150, 44);
+nationEnemySafetyMe.isOnSameTeam = (player) => [45, 46, 47].includes(player.smallID());
+const nationEnemySafety = loadScorer({
+  width: enclosedWidth,
+  height: 300,
+  candidates: [
+    { ref: 150 * enclosedWidth + 260, x: 260, y: 150 },
+    { ref: 150 * enclosedWidth + 340, x: 340, y: 150 },
+  ],
+  metrics: {
+    [150 * enclosedWidth + 260]: { frontierGain: 50, frontierSlots: 50, frontierValueGain: 50000 },
+    [150 * enclosedWidth + 340]: { frontierGain: 50, frontierSlots: 50, frontierValueGain: 50000 },
+  },
+  players: [
+    nationEnemySafetyMe,
+    makePlayer("NATION", 180, 70, 45, { spawned: true }),
+    makePlayer("NATION", 420, 70, 46, { spawned: true }),
+    makePlayer("NATION", 300, 240, 47, { spawned: true }),
+    makePlayer("NATION", 260, 145, 48, { spawned: true }),
+  ],
+  me: nationEnemySafetyMe,
+});
+assert.equal(
+  nationEnemySafety[0].x,
+  340,
+  "an enemy Nation near an otherwise team-safe candidate must penalize its spawn safety",
+);
 
 const diverseWidth = 600;
 const diverse = loadScorer({

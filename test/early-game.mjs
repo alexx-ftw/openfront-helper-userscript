@@ -21,12 +21,48 @@ const nationExecutionSource = fs.readFileSync(
   path.join(repoRoot, "engine/ingame/auto-bot/nationExecution.js"),
   "utf8",
 );
+assert.match(
+  nationExecutionSource,
+  /this\.doSpawn\(topKey\)/,
+  "the already-ranked spawn candidate must be handed to the emit path",
+);
+assert.match(
+  nationExecutionSource,
+  /computeSpawnTopSpotsForBot\(this\.mg, this\.player, \{ initial: true \}\)/,
+  "the first automatic spawn must request the bounded initial ranker",
+);
+assert.match(
+  nationExecutionSource,
+  /this\.spawnTopKeyToValidTile\(topKey\) \?\? this\.pickSpawnCenter\(\)/,
+  "a reused spawn candidate must be revalidated and retain the full-selector fallback",
+);
+assert.match(
+  nationExecutionSource,
+  /!this\.mg\.inSpawnPhase\(\) \|\| this\.player\.hasSpawned\?\.\(\)/,
+  "a player with an accepted spawn must leave the global spawn loop instead of recomputing discarded moves",
+);
+assert.match(
+  attackSource,
+  /const hasLiveTribe = otherPlayers\.some\(\(player\) =>\s*this\.isLightweightEarlyGameTribe\(player\)\);[\s\S]{0,220}if \(!hasLiveTribe\) \{[\s\S]{0,120}return \[\];[\s\S]{0,140}const competitorProfiles/,
+  "a map without edible tribes must bypass expensive competitor and topology work",
+);
 const tribeClusterOverlaySource = fs.readFileSync(
   path.join(repoRoot, "engine/ingame/tribe-cluster-overlay.js"),
   "utf8",
 );
 const buildSource = fs.readFileSync(path.join(repoRoot, "build.mjs"), "utf8");
 const coreSource = fs.readFileSync(path.join(repoRoot, "engine/ingame/auto-bot/core.js"), "utf8");
+
+assert.doesNotMatch(
+  buildSource,
+  /@updateURL|@downloadURL/,
+  "the CUSTOM build must not auto-update from upstream main and silently replace custom bot behavior",
+);
+assert.match(
+  fs.readFileSync(path.join(repoRoot, "engine/ingame/spawn-heatmap.js"), "utf8"),
+  /SPAWN_HEATMAP_INITIAL_BOT_CANDIDATES = 64/,
+  "the initial spawn scorer must keep its terrain sample bounded",
+);
 
 assert.equal(typeof sandbox.createEarlyGameSnapshot, "function");
 assert.equal(typeof sandbox.chooseEarlyGameAction, "function");
@@ -138,7 +174,7 @@ const openingSandbox = {
     Legendary: "Legendary",
   },
   UNIT: { Port: "Port", Warship: "Warship" },
-  EARLY_EXPAND_COMMIT: 0.6,
+  EARLY_EXPAND_COMMIT: 0.1,
   currentDifficulty: () => "Impossible",
   simpleHash: () => 1,
   PseudoRandom: class {
@@ -229,6 +265,75 @@ const openingBot = new openingSandbox.NationBot(openingGame, {
   playerId: "opening-player",
   gameId: "opening-game",
 });
+const teamSpawnBot = Object.create(openingSandbox.NationBot.prototype);
+const teamSpawnPlayer = { smallID: () => 1, team: () => "Red" };
+const teamSpawnTeammates = [
+  { smallID: () => 2, team: () => "Red" },
+  { smallID: () => 3, team: () => "Red" },
+  { smallID: () => 4, team: () => "Red" },
+];
+teamSpawnBot.spawnExecAdded = false;
+teamSpawnBot.player = teamSpawnPlayer;
+teamSpawnBot.mg = { players: () => [teamSpawnPlayer, ...teamSpawnTeammates] };
+let teamSpawnAnchorCount = 0;
+openingSandbox.getTeamSpawnAnchorCount = () => teamSpawnAnchorCount;
+assert.equal(
+  teamSpawnBot.shouldAwaitInitialTeamSpawnGeometry(0),
+  true,
+  "a team bot must not emit its first spawn before the teammate roster is visible",
+);
+teamSpawnBot.player = { smallID: () => 1, team: () => null };
+assert.equal(
+  teamSpawnBot.shouldAwaitInitialTeamSpawnGeometry(0),
+  true,
+  "the pre-spawn team value can be null, so the discovery window must still prevent a blind spawn",
+);
+teamSpawnBot.player = teamSpawnPlayer;
+assert.equal(
+  teamSpawnBot.shouldAwaitInitialTeamSpawnGeometry(6),
+  true,
+  "a full team must wait until its committed teammate anchors are observable",
+);
+teamSpawnAnchorCount = 3;
+assert.equal(
+  teamSpawnBot.shouldAwaitInitialTeamSpawnGeometry(6),
+  false,
+  "once every teammate anchor exists the normal scored spawn path must proceed",
+);
+teamSpawnBot.mg = { players: () => [teamSpawnPlayer, ...teamSpawnTeammates.slice(0, 2)] };
+teamSpawnAnchorCount = 0;
+assert.equal(
+  teamSpawnBot.shouldAwaitInitialTeamSpawnGeometry(6),
+  true,
+  "two teammates must wait for their corridor anchors instead of spawning isolated",
+);
+teamSpawnAnchorCount = 2;
+assert.equal(
+  teamSpawnBot.shouldAwaitInitialTeamSpawnGeometry(6),
+  false,
+  "a two-teammate corridor proceeds once both anchors are observable",
+);
+const spawnReuseBot = Object.create(openingSandbox.NationBot.prototype);
+const spawnConstraints = { marker: "fresh" };
+spawnReuseBot.getSpawnConstraints = () => spawnConstraints;
+spawnReuseBot.snapToValidSpawn = (x, y, constraints) => {
+  assert.equal(
+    constraints,
+    spawnConstraints,
+    "the reused candidate must receive fresh constraints",
+  );
+  return `${x}:${y}`;
+};
+assert.equal(
+  spawnReuseBot.spawnTopKeyToValidTile("17,29"),
+  "17:29",
+  "the prior heatmap winner is reused through the legal spawn snap",
+);
+assert.equal(
+  spawnReuseBot.spawnTopKeyToValidTile("17,29,31"),
+  null,
+  "malformed cached spawn keys must fall back to a complete selector",
+);
 const tribeOnlyPendingBot = Object.create(openingSandbox.NationBot.prototype);
 tribeOnlyPendingBot.attackBehavior = {
   getPendingOutboundAttackTroops: () => 5000,
@@ -253,8 +358,8 @@ assert.equal(
 );
 assert.equal(
   openingFractions[0],
-  0.6,
-  "the first live TerraNullius burst uses the configured 60% commit",
+  0.1,
+  "the first live TerraNullius burst uses the configured 10% commit",
 );
 assert.equal(
   openingBot.openingExpansionFollowUpPending,
@@ -354,7 +459,7 @@ const CadenceNoopBehavior = class {
 const cadenceSandbox = {
   Difficulty: openingSandbox.Difficulty,
   UNIT: openingSandbox.UNIT,
-  EARLY_EXPAND_COMMIT: 0.6,
+  EARLY_EXPAND_COMMIT: 0.1,
   currentDifficulty: () => "Impossible",
   simpleHash: () => 1,
   PseudoRandom: class {
@@ -1467,7 +1572,7 @@ const targetSandbox = {
   },
   PlayerType: { Bot: "Bot", Human: "Human", Nation: "Nation" },
   state: { settings: { winFixes: true, features: { boat: true } }, earlyGame: {}, stats: {} },
-  EARLY_EXPAND_COMMIT: 0.6,
+  EARLY_EXPAND_COMMIT: 0.1,
   EARLY_EXPAND_FOLLOWUP_COMMIT: 0.1,
   withTimeout: (value) => Promise.resolve(value),
   WORKER_TIMEOUT_MS: 1000,

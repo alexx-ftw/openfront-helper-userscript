@@ -7,6 +7,24 @@ import { executeClassicScript } from "./helpers/classic-script.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const userscript = fs.readFileSync(path.join(root, "openfront-helper.user.js"), "utf8");
+const lifecycleSource = fs.readFileSync(
+  path.join(root, "engine/ingame/auto-bot/lifecycle.js"),
+  "utf8",
+);
+const autoBotEngineSource = fs.readFileSync(
+  path.join(root, "engine/ingame/auto-bot/engine.js"),
+  "utf8",
+);
+assert.match(
+  autoBotEngineSource,
+  /!meCore\.isPlayer\?\.\(\) && srcGame\.inSpawnPhase\?\.\(\) !== true/,
+  "the live auto-bot engine must enter NationBot's spawn handler before territory exists",
+);
+assert.match(
+  autoBotEngineSource,
+  /const seedKey = meCore\.smallID\?\.\(\) \?\? meCore\.id\?\.\(\)/,
+  "the bot lifetime key must remain stable when id() materializes after spawn",
+);
 const sectionStart = userscript.lastIndexOf(";(function(){\n");
 const sectionEnd = userscript.lastIndexOf("\n})();\n");
 assert.ok(
@@ -94,6 +112,21 @@ assert.equal(
 assert.ok(
   document.getElementById("openfront-helper-auto-bot-panel"),
   "the complete in-game section mounts the auto-bot panel",
+);
+assert.equal(
+  JSON.parse(storage.get("openfront-helper-autobot-v1")).enabled,
+  true,
+  "userscript bootstrap preserves the persisted Auto-Bot master toggle",
+);
+assert.doesNotMatch(
+  lifecycleSource,
+  /isPublicLobby\(game\)[\s\S]{0,160}setEnabled\(false\)/,
+  "public-lobby runtime blocking must not persistently disable the Auto-Bot",
+);
+assert.doesNotMatch(
+  lifecycleSource,
+  /tick watchdog[\s\S]{0,240}setEnabled\(false\)/,
+  "the slow-tick watchdog must not overwrite the persisted master toggle",
 );
 
 process.stdout.write("full in-game section bootstrap tests passed\n");

@@ -32,15 +32,27 @@
       performance.now() - state.tickStartedAt > 8000
     ) {
       console.warn("[AutoBot] tick watchdog: disabling slow bot tick");
-      setEnabled(false);
+      state.runtimePausedAfterSlowTick = true;
+      stopEngine();
       setStatus(tr("⏸️ Auto-bot paused after a slow tick"));
     }
 
     const game = getGame();
+    if (typeof refreshLiveUiFromGame === "function") {
+      refreshLiveUiFromGame(game);
+      renderStatus();
+    }
     // Hard safety: never let the engine run in a public lobby.
     if (game && state.settings.enabled && isPublicLobby(game)) {
-      setEnabled(false);
+      stopEngine();
       setStatus(tr("⛔ Public lobby — auto-disabled"));
+    } else if (
+      state.settings.enabled &&
+      !state.runtimePausedAfterSlowTick &&
+      state.tickTimer === null &&
+      !state.tickInFlight
+    ) {
+      startEngine();
     }
     // Keep the engine cadence matched to the current game speed.
     retuneEngine();
@@ -60,9 +72,13 @@
       1200,
     );
     runAutoBotWatcherSafely();
-    // Persisted enabled=true survives F5 — kick the engine so the tick timer
-    // actually starts (loadSettings only restores the flag, not the timer).
-    if (state.settings.enabled) setEnabled(true);
+    // Persisted enabled=true survives F5. Reapply the same value only when the
+    // current page is safe; this starts the engine without allowing a public
+    // lobby to rewrite the preference to false.
+    const game = getGame();
+    if (state.settings.enabled && (!game || !isPublicLobby(game))) {
+      setEnabled(true);
+    }
     runtimeDebugLog("[AutoBot] page bridge loaded (private-lobby training tool).");
     return true;
   }

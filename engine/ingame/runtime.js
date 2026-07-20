@@ -254,7 +254,6 @@ runtimeState.spawnHeatmapEnabled = false;
 runtimeState.spawnMarkersEnabled = false;
 // Anti-AFK: Web Worker keep-alive for background tabs.
 runtimeState.antiAfkEnabled = false;
-/* eslint-enable prefer-const */
 
 const goldTrackers = new Map();
 const incomingGoldTransfers = new Map();

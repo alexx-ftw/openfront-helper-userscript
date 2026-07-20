@@ -213,9 +213,11 @@
   // Throttles (ms) for non-combat work so we don't spam the worker / re-issue
   // intents every poll. Combat cadence is derived from attackRate below.
   const MAX_DEFENSE_RESERVE = 0.8; // never hold back more than this for defense
-  // Bound cumulative opening exposure without spending that entire allowance
-  // in one intent. Each free-land attack is sized from its tile cost below.
-  const EARLY_EXPAND_COMMIT = 0.6;
+  // Bound the complete opening exposure to the same 10% payload used by the
+  // free-land liveness lane.  A larger cumulative opening allowance lets
+  // repeated asynchronous Terra Nullius intents drain the whole army before
+  // the client has reflected the first command.
+  const EARLY_EXPAND_COMMIT = 0.1;
   const EARLY_EXPAND_FOLLOWUP_COMMIT = 0.1;
   const EARLY_EXPAND_MINIMUM_MARGIN = 1.25;
   const BUILD_THROTTLE_MS = 1800;

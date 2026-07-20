@@ -29,6 +29,15 @@
   // attack cadence before it can reinforce the threatened frontier.
   const SERIOUS_INCOMING_DEFENSE_RATIO = 1;
 
+  // The first automatic spawn used to be emitted before the game had exposed
+  // any teammate spawn intents. In a Teams lobby that fixes an isolated tile
+  // before the existing convex-hull guard can do its job. Wait through that
+  // brief discovery window, then require the hull when a full team can form
+  // one. Small teams retain the normal immediate path because no enclosed
+  // region exists for them.
+  const TEAM_SPAWN_DISCOVERY_TICKS = 6;
+  const TEAM_SPAWN_COORDINATION_TICKS = 18;
+
   class NationBot {
     constructor(game, opts) {
       this.mg = game;
@@ -87,13 +96,20 @@
     }
 
     hasPendingOpeningExpansionIntent() {
-      {
-        return (
-          typeof this.attackBehavior?.getPendingTerraNulliusAttackTroops ===
-            "function" &&
-          Number(this.attackBehavior.getPendingTerraNulliusAttackTroops()) > 0
-        );
+      if (
+        typeof this.attackBehavior?.getPendingTerraNulliusAttackTroops !== "function" ||
+        Number(this.attackBehavior.getPendingTerraNulliusAttackTroops()) <= 0
+      ) {
+        return false;
       }
+      // Free-land has no recipient ID, so its unconfirmed commands remain
+      // reserved until the engine acknowledges them.  Keep issuing bounded
+      // parallel opening commands while allocation remains, then wait for an
+      // acknowledgement before the continuous follow-up lane can spend again.
+      if (typeof this.attackBehavior?.getRemainingTerraNulliusOpeningCommitment === "function") {
+        return this.attackBehavior.getRemainingTerraNulliusOpeningCommitment() <= 0;
+      }
+      return true;
     }
 
     tickIsCurrent(tickGeneration) {
@@ -143,7 +159,14 @@
     }
 
     handleSpawnTick(ticks, profile) {
-      if (!this.mg.inSpawnPhase()) return false;
+      // A spawn intent is accepted once. Keeping the global spawn-phase loop
+      // alive after our own player has appeared only recomputes discarded move
+      // intents, delaying opening expansion and causing visible stutter.
+      if (!this.mg.inSpawnPhase() || this.player.hasSpawned?.()) return false;
+      if (this.shouldAwaitInitialTeamSpawnGeometry(ticks)) {
+        this.status = tr("Coordinating team spawn…");
+        return true;
+      }
       if (this.feat("spawn") &&
         (this.lastSpawnPickTick == null || ticks - this.lastSpawnPickTick >= 6)) {
         this.lastSpawnPickTick = ticks;
@@ -151,11 +174,31 @@
           this.currentSpawnTopKey());
         if (!this.spawnExecAdded || (topKey != null && topKey !== this.lastSpawnTopKey)) {
           this.lastSpawnTopKey = topKey;
-          autoBotProfileSyncPhase(profile, "spawn-emit", () => this.doSpawn());
+          autoBotProfileSyncPhase(profile, "spawn-emit", () => this.doSpawn(topKey));
         }
       }
       this.status = tr("Spawn phase…");
       return true;
+    }
+
+    shouldAwaitInitialTeamSpawnGeometry(ticks) {
+      if (this.spawnExecAdded) return false;
+      // The game may populate the roster only after the first decision tick.
+      // Our own team can still be null in that same window, so never emit a
+      // blind automatic spawn before the roster can be inspected.
+      if (ticks < TEAM_SPAWN_DISCOVERY_TICKS) return true;
+      if (this.player.team?.() == null) return false;
+      const teammates = this.mg.players().filter((other) =>
+        other.smallID?.() !== this.player.smallID?.() &&
+        other.team?.() === this.player.team?.());
+      // Wait just long enough for every teammate's committed spawn to be
+      // observable.  This includes a two-player anchor line, represented by
+      // the shared geometry helper as a bounded corridor rather than a fake
+      // map direction.  The cap keeps us from waiting indefinitely for a
+      // human teammate who never chooses a tile.
+      if (teammates.length < 2 || typeof getTeamSpawnAnchorCount !== "function") return false;
+      return ticks < TEAM_SPAWN_COORDINATION_TICKS &&
+        getTeamSpawnAnchorCount(this.mg, this.player) < teammates.length;
     }
 
     async initializeTick(ticks, profile, tickGeneration) {
@@ -372,7 +415,8 @@
         this.prepareEarlyGameMaritimeState(profile);
       }
       if (!(await this.runNavalTickPhases(me, profile, tickGeneration))) return;
-      if (me === null || this.handleSpawnTick(ticks, profile)) return;
+      if (me === null || autoBotProfileSyncPhase(profile, "spawn-gate", () =>
+        this.handleSpawnTick(ticks, profile))) return;
       if (this.handleEliminatedPlayer(me)) return;
       if (await this.initializeTick(ticks, profile, tickGeneration)) return;
       if (await this.handleIncomingDefense(ticks, profile, tickGeneration)) return;
@@ -459,7 +503,7 @@
         // completed in idle slices and the function returns its last result or
         // the bounded fallback while that job is still running.
         if (typeof computeSpawnTopSpotsForBot === "function") {
-          ts = computeSpawnTopSpotsForBot(this.mg, this.player);
+          ts = computeSpawnTopSpotsForBot(this.mg, this.player, { initial: true });
         }
         if ((!ts || ts.length === 0) && typeof getSpawnHeatmapTopSpots === "function") {
           ts = getSpawnHeatmapTopSpots();
@@ -468,8 +512,23 @@
       return ts && ts.length > 0 ? `${ts[0].x},${ts[0].y}` : null;
     }
 
-    doSpawn() {
-      const center = this.pickSpawnCenter();
+    spawnTopKeyToValidTile(topKey) {
+      if (typeof topKey !== "string") return null;
+      const [xText, yText, extra] = topKey.split(",");
+      if (extra !== undefined) return null;
+      const x = Number(xText);
+      const y = Number(yText);
+      if (!Number.isInteger(x) || !Number.isInteger(y)) return null;
+      const constraints = this.getSpawnConstraints();
+      return this.snapToValidSpawn(x, y, constraints);
+    }
+
+    doSpawn(topKey = null) {
+      // currentSpawnTopKey() has already paid for the dynamic ranking on this
+      // tick. Revalidate that candidate instead of computing the same ranking
+      // again; a changed/invalid tile deliberately falls through to the full
+      // selector below.
+      const center = this.spawnTopKeyToValidTile(topKey) ?? this.pickSpawnCenter();
       if (center == null) {
         this.status = tr("Spawn phase…");
         return;
@@ -480,7 +539,10 @@
       }
       const ctors = discoverCtors(getEventBus());
       if (ctors.spawn) {
-        emitIntent(ctors.spawn, center);
+        // A saturated client-side intent budget must not make the bot believe
+        // its spawn was accepted. Leaving this false preserves the retry path
+        // on the next allowed spawn-selection tick.
+        if (!emitIntent(ctors.spawn, center)) return;
         const moved = this.spawnExecAdded;
         this.spawnExecAdded = true;
         this.lastSpawnTile = center;
@@ -508,14 +570,14 @@
       const others = game.players().filter((player) =>
         player.smallID() !== this.player.smallID() && player.hasSpawned());
       // The heatmap's asynchronous exact ranker and its bounded fallback both
-      // select points inside this hull. Keep the final snap/search inside it
-      // too: an invalid scored point must not be repaired by moving outside
-      // the geometry formed by already-spawned teammates.
-      const teamPolyhedron = typeof getTeamSpawnPolyhedron === "function"
-        ? getTeamSpawnPolyhedron(game, this.player)
+      // select points in this shared region. Keep the final snap/search inside
+      // it too: an invalid scored point must not be repaired away from the
+      // geometry formed by teammates.
+      const teamRegion = typeof getTeamSpawnRegion === "function"
+        ? getTeamSpawnRegion(game, this.player)
         : null;
       return {
-        game, area, others, minDistance, teamPolyhedron,
+        game, area, others, minDistance, teamRegion,
         width: game.width(), height: game.height(),
       };
     }
@@ -530,11 +592,11 @@
     }
 
     isValidSpawnTile(tile, constraints) {
-      const { game, area, teamPolyhedron } = constraints;
+      const { game, area, teamRegion } = constraints;
       if (tile == null || !game.isLand(tile) || game.hasOwner(tile) || game.isBorder(tile)) return false;
       if (game.magnitude && game.magnitude(tile) === 31) return false;
-      if (teamPolyhedron && typeof isPointInsideTeamPolyhedron === "function") {
-        if (!isPointInsideTeamPolyhedron(game.x(tile), game.y(tile), teamPolyhedron)) return false;
+      if (teamRegion && typeof isPointInsideTeamSpawnRegion === "function") {
+        if (!isPointInsideTeamSpawnRegion(game.x(tile), game.y(tile), teamRegion)) return false;
       }
       if (area) {
         const x = game.x(tile);

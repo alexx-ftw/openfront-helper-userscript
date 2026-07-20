@@ -69,25 +69,45 @@
     }
   }
 
-  async function botTick() {
-    if (!state.settings.enabled || state.tickInFlight) return;
-
+  function botTickGameContext() {
     const srcGame = getGame();
     if (!srcGame) {
       setStatus(tr("Waiting to enter game…"));
-      return;
+      return null;
     }
     if (isPublicLobby(srcGame)) {
       setStatus(tr("⛔ Blocked in a public lobby"));
       refreshGateBanner();
-      return;
+      return null;
     }
-
     const meCore = srcGame.myPlayer?.();
-    if (!meCore || !meCore.isPlayer?.()) {
+    if (!meCore || (!meCore.isPlayer?.() && srcGame.inSpawnPhase?.() !== true)) {
       setStatus(tr("Waiting for player…"));
-      return;
+      return null;
     }
+    return { srcGame, meCore };
+  }
+
+  function ensureNationBot(srcGame, api, meCore) {
+    const seedKey = meCore.smallID?.() ?? meCore.id?.();
+    if ((!_bot || _botSeedKey !== seedKey) && typeof NationBot === "function") {
+      _bot = new NationBot(api.game, {
+        gameId: resolveGameId(srcGame),
+        playerId: String(seedKey),
+      });
+      _botSeedKey = seedKey;
+    }
+  }
+
+  async function botTick() {
+    if (!state.settings.enabled || state.tickInFlight) return;
+    const context = botTickGameContext();
+    // The local player has no owned territory until its spawn is accepted, so
+    // `isPlayer()` is false during precisely the phase where NationBot must
+    // emit that first spawn intent. Keep the eliminated-player guard after
+    // spawn, but let the spawn handler run against the pre-spawn player view.
+    if (!context) return;
+    const { srcGame, meCore } = context;
 
     const tickGeneration = state.tickGeneration;
     state.tickInFlight = true;
@@ -98,15 +118,12 @@
       updateSpeedFactor(srcGame);
       const api = ensureGameApi(srcGame);
 
-      // (Re)build the orchestrator when the player identity changes (new game).
-      const seedKey = meCore.id?.();
-      if ((!_bot || _botSeedKey !== seedKey) && typeof NationBot === "function") {
-        _bot = new NationBot(api.game, {
-          gameId: resolveGameId(srcGame),
-          playerId: String(seedKey),
-        });
-        _botSeedKey = seedKey;
-      }
+      // `id()` can be absent before spawn and appear only once the initial
+      // territory is materialized.  `smallID()` is already stable in that
+      // pre-spawn view, so prefer it for the bot lifetime key.  Otherwise the
+      // engine rebuilds NationBot immediately after its opening intent and
+      // loses the aggregate Terra Nullius opening reservation.
+      ensureNationBot(srcGame, api, meCore);
       autoBotProfileEndPhase(profile, "engine-setup", setupStartedAt);
 
       // Snapshot async data (me.borderTiles + profile) ONCE up front.
@@ -134,6 +151,22 @@
         fill: maxTroops > 0 ? troops / maxTroops : 0,
       };
     }
+  }
+
+  // The panel is also useful while the decision loop is paused, waiting on a
+  // worker, or explicitly disabled.  Keep its resource snapshot independent
+  // from botTick so gold/troops/tiles cannot freeze at the last bot decision.
+  function refreshLiveUiFromGame(srcGame) {
+    const me = srcGame?.myPlayer?.();
+    if (!me || me.isPlayer?.() !== true) return;
+    const maxTroops = Number(srcGame.config?.()?.maxTroops?.(me));
+    const troops = toNum(me.troops?.());
+    state.live = {
+      troops,
+      gold: toNum(me.gold?.()),
+      tiles: toNum(me.numTilesOwned?.()),
+      fill: Number.isFinite(maxTroops) && maxTroops > 0 ? troops / maxTroops : 0,
+    };
   }
 
   // How often botTick runs in REAL time. In win-fix mode this is also the combat
@@ -180,6 +213,7 @@
 
   function setEnabled(enabled) {
     state.settings.enabled = Boolean(enabled);
+    state.runtimePausedAfterSlowTick = false;
     saveSettings();
     if (state.settings.enabled) {
       setStatus(tr("Starting…"));

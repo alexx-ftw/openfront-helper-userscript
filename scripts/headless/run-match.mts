@@ -81,6 +81,16 @@ const requestedTeams = process.env.OFH_PLAYER_TEAMS;
 const numericTeams = Number(requestedTeams);
 const requestedStartingGold = process.env.OFH_STARTING_GOLD;
 const numericStartingGold = Number(requestedStartingGold);
+const requestedNations = process.env.OFH_NATIONS;
+const numericNations = Number(requestedNations);
+const forceNukesEnabled = process.env.OFH_NUKES === "1";
+const nuclearUnitTypes = new Set([
+  UnitType.MissileSilo,
+  UnitType.AtomBomb,
+  UnitType.HydrogenBomb,
+  UnitType.MIRV,
+  UnitType.SAMLauncher,
+]);
 if (
   requestedStartingGold !== undefined &&
   (!Number.isSafeInteger(numericStartingGold) || numericStartingGold < 0)
@@ -89,6 +99,22 @@ if (
     `OFH_STARTING_GOLD must be a non-negative safe integer, got ${requestedStartingGold}`,
   );
 }
+if (
+  requestedNations !== undefined &&
+  requestedNations !== "default" &&
+  requestedNations !== "disabled" &&
+  (!Number.isSafeInteger(numericNations) || numericNations < 1 || numericNations > 400)
+) {
+  throw new Error(
+    `OFH_NATIONS must be default, disabled, or an integer from 1 to 400, got ${requestedNations}`,
+  );
+}
+const configuredNations =
+  requestedNations === undefined ||
+  requestedNations === "default" ||
+  requestedNations === "disabled"
+    ? requestedNations ?? "default"
+    : numericNations;
 const fixedConfig = process.env.OFH_GAME_MAP
   ? {
       gameMap: process.env.OFH_GAME_MAP,
@@ -96,7 +122,12 @@ const fixedConfig = process.env.OFH_GAME_MAP
       gameMode: "Team",
       playerTeams:
         requestedTeams === undefined
-          ? playlistConfig.playerTeams
+          // Fixed-map smoke matches can have far fewer Nations than the
+          // unrelated random playlist used to supply defaults. Two teams
+          // guarantees the helper has a viable teammate instead of silently
+          // producing an unspawned no-op run; callers can still request an
+          // exact team count explicitly.
+          ? 2
           : Number.isFinite(numericTeams)
             ? numericTeams
             : requestedTeams,
@@ -116,8 +147,15 @@ const config = {
       }
     : {}),
   difficulty: Difficulty.Impossible,
-  nations: "default" as const,
+  nations: configuredNations,
   ...(requestedStartingGold === undefined ? {} : { startingGold: numericStartingGold }),
+  ...(forceNukesEnabled
+    ? {
+        disabledUnits: (playlistConfig.disabledUnits ?? []).filter(
+          (unit) => !nuclearUnitTypes.has(unit),
+        ),
+      }
+    : {}),
 };
 const gameStart = {
   gameID: seed,
@@ -190,19 +228,27 @@ const progressEveryTicks = Math.max(1, Number(process.env.OFH_PROGRESS_TICKS ?? 
 const progressFromTick = Math.max(0, Number(process.env.OFH_PROGRESS_FROM_TICK ?? 0));
 const slowTickThresholdMs = Math.max(1, Number(process.env.OFH_SLOW_TICK_MS ?? 250));
 const stopWhenBotDies = process.env.OFH_STOP_WHEN_DEAD !== "0";
+const spawnFailureGraceTicks = Math.max(
+  1,
+  Number(process.env.OFH_SPAWN_FAILURE_GRACE_TICKS ?? 700),
+);
 const logIntents = process.env.OFH_LOG_INTENTS === "1";
 const logNaval = process.env.OFH_LOG_NAVAL === "1";
 const logStructures = process.env.OFH_LOG_STRUCTURES === "1";
+const logSpawn = process.env.OFH_LOG_SPAWN === "1";
 // Persisted traces must always retain the lightweight SAM lifecycle. Full
 // structure diagnostics remain opt-in because they are much noisier.
 const logSamLifecycle = logStructures || traceFile !== undefined;
 let turnNumber = 0;
 let emittedIntents = 0;
 let hasEverBeenAlive = me?.isAlive() === true;
-let stopReason: "winner" | "max_ticks" | "bot_dead" | "engine_stop" = "max_ticks";
+let stopReason: "winner" | "max_ticks" | "bot_dead" | "engine_stop" | "spawn_failed" =
+  "max_ticks";
 let peakOwnedTiles = Math.max(0, me?.numTilesOwned() ?? 0);
 let firstIncomingLandAttackObserved = false;
 let firstTerritoryLossObserved = false;
+let spawnSnapshotLogged = false;
+let spawnMaterializedLogged = false;
 const cumulativeIntentTypes = new Map<string, number>();
 let intervalIntentTypes = new Map<string, number>();
 const cumulativeBuildUnitTypes = new Map<string, number>();
@@ -308,9 +354,16 @@ const countIntents = (
 };
 const sortedCounts = (counts: ReadonlyMap<string, number>) =>
   Object.fromEntries([...counts].sort(([left], [right]) => left.localeCompare(right)));
+const firstOwnedTile = (player: { tiles: () => Iterable<number> }) =>
+  player.tiles().values().next().value ?? null;
 while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fatalError === null) {
   const decisionStartedAt = performance.now();
   const intents = await bot.decide();
+  if (logSpawn) {
+    for (const entry of bot.drainSpawnTrace()) {
+      console.warn(JSON.stringify({ ...entry, phase: "spawn-selection-trace" }));
+    }
+  }
   if (logNaval) {
     for (const entry of bot.drainNavalTrace()) {
       console.warn(JSON.stringify({ ...entry, phase: "naval-trace", event: entry.phase }));
@@ -332,6 +385,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   if (logIntents && intents.length > 0) {
     const decisionPlayer = runner.game.playerByClientID(clientID);
     const decisionTick = runner.game.ticks();
+    const earlyGame = bot.harness.internals.state.earlyGame ?? {};
     for (const [targetID, commitment] of recentAttackIntentCommitments) {
       if (decisionTick - commitment.tick > RECENT_ATTACK_INTENT_COMMITMENT_TICKS) {
         recentAttackIntentCommitments.delete(targetID);
@@ -379,6 +433,14 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
           targetID: intent.targetID,
           targetName: snapshot?.name ?? target?.name() ?? "Terra Nullius",
           targetType: snapshot?.type ?? target?.type() ?? "Terra Nullius",
+          // The engine represents tribes with PlayerType.Bot.  Preserve the
+          // raw type above, but make a Tribe-only scenario unambiguous for
+          // offline auditors instead of making them mistake real captures for
+          // generic bot combat.
+          targetKind:
+            target?.type?.() === PlayerType.Bot && config.nations === "disabled"
+              ? "Tribe"
+              : snapshot?.type ?? target?.type() ?? "Terra Nullius",
           targetTroops: Math.round(snapshot?.troops ?? target?.troops() ?? 0),
           pendingTroops: Math.round(pendingTroops),
           recentCommittedTroops: Math.round(recentCommittedTroops),
@@ -410,6 +472,19 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
             attackerType: attack.attacker().type(),
             troops: Math.round(attack.troops()),
           })) ?? [],
+        terraNulliusOpeningCommittedTroops: Number(
+          bot.nationBot?.attackBehavior?.terraNulliusOpeningCommittedTroops ?? 0,
+        ),
+        tribeCluster: {
+          preferredSize: Number(earlyGame.preferredClusterSize ?? 0),
+          preferredMemberIDs: Array.isArray(earlyGame.preferredClusterMembers)
+            ? earlyGame.preferredClusterMembers.map((member: { id?: unknown }) => member.id)
+            : [],
+          rankedTarget: earlyGame.tribeTarget ?? null,
+          rankedCandidates: Array.isArray(earlyGame.actionableTribes)
+            ? earlyGame.actionableTribes.slice(0, 8)
+            : [],
+        },
         attackTargets,
         buildStrategicBorderPressure,
         donationStrategicBorderPressure,
@@ -429,6 +504,31 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   }
   const executionMs = performance.now() - executionStartedAt;
   const currentPlayer = runner.game.playerByClientID(clientID);
+  if (logSpawn && !spawnMaterializedLogged && currentPlayer?.numTilesOwned() > 0) {
+    spawnMaterializedLogged = true;
+    const describeSpawn = (player: typeof currentPlayer) => {
+      const tile = firstOwnedTile(player);
+      return {
+        name: player.name(),
+        type: player.type(),
+        team: player.team(),
+        tiles: player.numTilesOwned(),
+        x: tile === null ? null : runner.game.x(tile),
+        y: tile === null ? null : runner.game.y(tile),
+      };
+    };
+    console.warn(
+      JSON.stringify({
+        phase: "spawn-materialized",
+        tick: runner.game.ticks(),
+        self: describeSpawn(currentPlayer),
+        players: runner.game
+          .players()
+          .filter((player) => player.type() !== PlayerType.Bot)
+          .map(describeSpawn),
+      }),
+    );
+  }
   if (currentPlayer) {
     const incomingLandAttacks = currentPlayer
       .incomingAttacks()
@@ -524,6 +624,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
         alive: currentPlayer?.isAlive() ?? false,
         tiles: currentPlayer?.numTilesOwned() ?? 0,
         phases: profileBot ? bot.getPerformanceProfile().lastPhases : undefined,
+        spawnLifecycle: profileBot ? bot.getSpawnLifecycleSnapshot() : undefined,
       }),
     );
   }
@@ -531,8 +632,49 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
     stopReason = "bot_dead";
     break;
   }
+  const spawnLifecycle = bot.getSpawnLifecycleSnapshot();
+  if (
+    !hasEverBeenAlive &&
+    runner.game.ticks() >= spawnFailureGraceTicks &&
+    spawnLifecycle.inSpawnPhase === false
+  ) {
+    stopReason = "spawn_failed";
+    break;
+  }
   if (runner.game.ticks() >= progressFromTick && runner.game.ticks() % progressEveryTicks === 0) {
     const player = runner.game.playerByClientID(clientID);
+    if (logSpawn && !spawnSnapshotLogged && player?.numTilesOwned() > 0) {
+      spawnSnapshotLogged = true;
+      console.warn(
+        JSON.stringify({
+          phase: "spawn-team-snapshot",
+          tick: runner.game.ticks(),
+          self: (() => {
+            const tile = firstOwnedTile(player);
+            return {
+              name: player.name(),
+              team: player.team(),
+              tiles: player.numTilesOwned(),
+              x: tile === null ? null : runner.game.x(tile),
+              y: tile === null ? null : runner.game.y(tile),
+            };
+          })(),
+          players: runner.game
+            .players()
+            .filter((other) => other.type() === PlayerType.Nation)
+            .map((other) => {
+              const tile = firstOwnedTile(other);
+              return {
+                name: other.name(),
+                team: other.team(),
+                tiles: other.numTilesOwned(),
+                x: tile === null ? null : runner.game.x(tile),
+                y: tile === null ? null : runner.game.y(tile),
+              };
+            }),
+        }),
+      );
+    }
     const incoming =
       player?.incomingAttacks().map((attack) => ({
         attacker: attack.attacker().name(),
@@ -680,6 +822,19 @@ const finalMe = runner.game.playerByClientID(clientID);
 const won =
   winner !== null &&
   (winner === finalMe?.team() || (typeof winner !== "string" && winner.clientID() === clientID));
+const finalBotState = finalMe === null || finalMe === undefined
+  ? null
+  : {
+      tiles: finalMe.numTilesOwned(),
+      troops: finalMe.troops(),
+      maxTroops: runner.game.config().maxTroops(finalMe),
+      gold: Number(finalMe.gold()),
+      units: Object.fromEntries(
+        trackedUnitTypes
+          .map((type) => [type, finalMe.units(type).length] as const)
+          .filter(([, count]) => count > 0),
+      ),
+    };
 const players = runner.game
   .allPlayers()
   .filter((player) => player.type() !== PlayerType.Bot)
@@ -699,8 +854,10 @@ console.warn(
     winner: typeof winner === "string" ? winner : (winner?.name() ?? null),
     myTeam: finalMe?.team() ?? null,
     alive: finalMe?.isAlive() ?? false,
+    finalBotState,
     ticks: runner.game.ticks(),
     stopReason,
+    spawnLifecycle: bot.getSpawnLifecycleSnapshot(),
     performanceProfile: profileBot ? bot.getPerformanceProfile() : undefined,
     emittedIntents,
     cumulativeIntentTypes: sortedCounts(cumulativeIntentTypes),

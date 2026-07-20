@@ -109,6 +109,26 @@ assert.equal(
 );
 assert.equal(siegeCounterattacks, 1);
 
+const partialInterdictionBehavior = Object.create(sandbox.AttackBehavior.prototype);
+partialInterdictionBehavior.player = {
+  isFriendly: () => false,
+  incomingAttacks: () => [{ attacker: () => "Italy", troops: () => 481_214 }],
+};
+partialInterdictionBehavior.incomingHostileTroopsFrom = () => 481_214;
+partialInterdictionBehavior.getEarlyGameTargetReserveTroops = () => 600_000;
+partialInterdictionBehavior.getEarlyGameSpendableTroops = () => 117_127;
+assert.equal(
+  partialInterdictionBehavior.canFundIncomingCounterattack("Italy"),
+  true,
+  "a safe partial land counterattack interdicts the same portion of an in-flight invasion",
+);
+partialInterdictionBehavior.getEarlyGameSpendableTroops = () => 0;
+assert.equal(
+  partialInterdictionBehavior.canFundIncomingCounterattack("Italy"),
+  false,
+  "the bot never spends into its protected reserve merely to counterattack",
+);
+
 const overlapping = sandbox.calculateDefensePostAttackProfile({
   frontTiles: [0, 10, 30, 31],
   defensePosts: [{ tile: 0 }, { tile: 0 }],

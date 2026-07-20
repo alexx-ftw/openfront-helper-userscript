@@ -78,6 +78,7 @@ function loadHarness() {
   return {
     computeExactSpawnTopSpotsForBot: sandbox.computeExactSpawnTopSpotsForBot,
     computeAsyncExactSpawnTopSpotsForBot: sandbox.computeAsyncExactSpawnTopSpotsForBot,
+    computeSpawnTopSpotsForBot: sandbox.computeSpawnTopSpotsForBot,
     computeStaticCandidates: sandbox.computeStaticCandidates,
     computeDynamicScores: sandbox.computeDynamicScores,
     game,
@@ -149,6 +150,23 @@ assert.equal(
   "large maps must not allocate the exact map-wide candidate index",
 );
 
+const initialRetryGame = {
+  __src: { _map: { terrain: new Uint8Array(128 * 128).fill(LAND) } },
+  height: () => 128,
+  width: () => 128,
+};
+const initialRetryFirst = harness.computeSpawnTopSpotsForBot(initialRetryGame, null, {
+  initial: true,
+});
+const initialRetrySecond = harness.computeSpawnTopSpotsForBot(initialRetryGame, null, {
+  initial: true,
+});
+assert.equal(
+  initialRetrySecond,
+  initialRetryFirst,
+  "unchanged initial-spawn retries reuse the exact bounded ranking result",
+);
+
 const makePlayer = (type, x, y, id, { spawned = type === "HUMAN" } = {}) => ({
   type: () => type,
   isAlive: () => true,
@@ -158,6 +176,24 @@ const makePlayer = (type, x, y, id, { spawned = type === "HUMAN" } = {}) => ({
 });
 const fallbackMe = makePlayer("HUMAN", 0, 0, 99);
 fallbackMe.isOnSameTeam = () => false;
+const initialGeometryGame = {
+  __src: { _map: { terrain: new Uint8Array(128 * 128).fill(LAND) } },
+  height: () => 128,
+  width: () => 128,
+};
+harness.setPlayers([fallbackMe]);
+const initialGeometryFirst = harness.computeSpawnTopSpotsForBot(initialGeometryGame, fallbackMe, {
+  initial: true,
+});
+harness.setPlayers([fallbackMe, makePlayer("HUMAN", 6, 6, 100)]);
+const initialGeometryChanged = harness.computeSpawnTopSpotsForBot(initialGeometryGame, fallbackMe, {
+  initial: true,
+});
+assert.notEqual(
+  initialGeometryChanged,
+  initialGeometryFirst,
+  "a changed player geometry invalidates an initial-spawn retry ranking",
+);
 harness.setPlayers([
   fallbackMe,
   makePlayer("HUMAN", 90, 90, 1),
@@ -186,6 +222,21 @@ assert.equal(fallback.scores[0].objective.safetyScore, 1);
 assert.ok(
   fallback.scores[1].score > fallback.scores[0].score,
   "the robust fallback must override the legacy additive score in this regression",
+);
+
+harness.setPlayers([fallbackMe, makePlayer("NATION", 100, 100, 7, { spawned: true })]);
+const nationEnemyFallback = harness.computeDynamicScores(
+  { width: () => 600, height: () => 300 },
+  [
+    { x: 100, y: 100, staticScore: 1, freeLandScore: 1 },
+    { x: 400, y: 100, staticScore: 0.6, freeLandScore: 1 },
+  ],
+  fallbackMe,
+);
+assert.equal(
+  nationEnemyFallback.topSpots[0].x,
+  400,
+  "the fallback must penalize a nearby enemy Nation as a strategic spawn threat",
 );
 
 const geometryMe = makePlayer("HUMAN", 0, 0, 98);

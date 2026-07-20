@@ -1082,6 +1082,21 @@
     );
   }
 
+  function _autoFireUncoveredEnemyBuildings(game, buildings, impacts) {
+    var enemyBuildings = Array.isArray(buildings) ? buildings : [];
+    var knownImpacts = Array.isArray(impacts) ? impacts : [];
+    if (knownImpacts.length === 0) return enemyBuildings;
+    return enemyBuildings.filter(function(building) {
+      return !_isAutoFireTargetCovered(
+        game,
+        building?.tile,
+        null,
+        null,
+        knownImpacts,
+      );
+    });
+  }
+
   function _autoFireNukeImpacts(game, state) {
     var impacts = [];
     var units = _autoFireGetUnits(game, _AUTO_FIRE_NUKE_TYPES);
@@ -1281,8 +1296,13 @@
       context.game, candidate.tile, context.me, context.state, context.impacts,
     )) return null;
     context.enemyBuildings ??= _autoFireCollectEnemyBuildings(context.game, context.me);
+    var uncoveredBuildings = _autoFireUncoveredEnemyBuildings(
+      context.game,
+      context.enemyBuildings,
+      context.impacts,
+    );
     var impactTile = _chooseAutoFireImpactTile(
-      context.game, candidate.tile, context.me, context.enemyBuildings,
+      context.game, candidate.tile, context.me, uncoveredBuildings,
     );
     var key = String(impactTile);
     if (!Object.hasOwn(context.samInterceptions, key)) {

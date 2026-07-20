@@ -321,6 +321,37 @@ warshipBehavior.buildableWarship = async () => ({
   canBuild: 44,
 });
 
+const richAutoBot = Object.create(warshipSandbox.__WarshipBehavior.prototype);
+const richAutoBotPlayer = {
+  id: () => "auto-bot",
+  type: () => warshipSandbox.PlayerType.Human,
+  team: () => 7,
+  gold: () => 900000n,
+};
+richAutoBot.player = richAutoBotPlayer;
+richAutoBot.game = {
+  players: () => [
+    richAutoBotPlayer,
+    {
+      id: () => "human-teammate",
+      type: () => warshipSandbox.PlayerType.Human,
+      team: () => 7,
+      gold: () => 1000000n,
+    },
+    {
+      id: () => "nation-teammate",
+      type: () => warshipSandbox.PlayerType.Nation,
+      team: () => 7,
+      gold: () => 100000n,
+    },
+  ],
+};
+assert.equal(
+  richAutoBot.isRichPlayer(true),
+  true,
+  "the automated client remains eligible for rich-player naval defense while other Humans stay excluded",
+);
+
 assert.equal(
   await warshipBehavior.maybeSpawnWarship(),
   true,

@@ -25,7 +25,7 @@ const sandbox = {
     Legendary: "Legendary",
   },
   currentDifficulty: () => "Impossible",
-  EARLY_EXPAND_COMMIT: 0.6,
+  EARLY_EXPAND_COMMIT: 0.1,
   EARLY_EXPAND_FOLLOWUP_COMMIT: 0.1,
   EARLY_EXPAND_MINIMUM_MARGIN: 1.25,
   WORKER_TIMEOUT_MS: 100,
@@ -82,13 +82,169 @@ const game = {
   numTilesWithFallout: () => 0,
   config: () => ({ maxTroops: () => 100000 }),
 };
+const opportunisticRandomBoatBehavior = Object.create(sandbox.AttackBehavior.prototype);
+const opportunisticRandomBoatCalls = [];
+opportunisticRandomBoatBehavior.random = { randElement: () => "shore" };
+opportunisticRandomBoatBehavior.findRandomBoatTarget = async (...args) => {
+  opportunisticRandomBoatCalls.push(args);
+  return "destination";
+};
+opportunisticRandomBoatBehavior.boatTargetTaken = () => false;
+opportunisticRandomBoatBehavior.game = { hasOwner: () => false };
+const opportunisticRandomBoatTarget =
+  await opportunisticRandomBoatBehavior.randomOpportunisticBoatTarget(["shore"], true);
+assert.equal(
+  opportunisticRandomBoatTarget?.dst,
+  "destination",
+  "opportunistic random boats retain a valid discovered destination",
+);
+assert.equal(opportunisticRandomBoatTarget?.dstOwned, false);
+assert.equal(opportunisticRandomBoatTarget?.dstFallout, false);
+assert.equal(opportunisticRandomBoatTarget?.lowFillOk, false);
+assert.equal(opportunisticRandomBoatCalls.length, 1);
+assert.equal(opportunisticRandomBoatCalls[0][0], "shore");
+assert.equal(opportunisticRandomBoatCalls[0][1].length, 0);
+assert.equal(opportunisticRandomBoatCalls[0][2], true);
+assert.equal(opportunisticRandomBoatCalls[0][3], true);
+assert.equal(opportunisticRandomBoatCalls[0][4].maxProbes, 1);
+assert.equal(
+  opportunisticRandomBoatCalls[0][4].timeoutMs,
+  75,
+  "the low-priority opportunistic random stage limits itself to one short route probe",
+);
+const routeTimeoutBehavior = Object.create(sandbox.AttackBehavior.prototype);
+let routeTimeout = null;
+routeTimeoutBehavior.getBoatRouteEta = async (_tile, timeoutMs) => {
+  routeTimeout = timeoutMs;
+  return 1;
+};
+assert.equal(
+  await routeTimeoutBehavior.allowBoatExplorationRoute("destination", 75),
+  true,
+  "the route gate accepts an in-budget exploratory route",
+);
+assert.equal(
+  routeTimeout,
+  75,
+  "the route gate forwards the bounded worker timeout to ETA estimation",
+);
+
+const incrementalNearbyBoatBehavior = Object.create(sandbox.AttackBehavior.prototype);
+let nearbyScanTick = 500;
+let nearbyScanCalls = 0;
+incrementalNearbyBoatBehavior.random = { randElement: (values) => values[0] };
+incrementalNearbyBoatBehavior.player = {
+  smallID: () => 1,
+  troops: () => 100_000,
+};
+incrementalNearbyBoatBehavior.game = {
+  ticks: () => nearbyScanTick,
+  x: (tile) => Number(tile),
+  y: () => 0,
+  isValidCoord: () => true,
+  ref: (x) => x,
+  isLand: () => {
+    nearbyScanCalls++;
+    return false;
+  },
+};
+sandbox.state.settings = {
+  ...sandbox.state.settings,
+  islandScanRadius: 40,
+  islandScanStep: 1,
+  islandScanSamples: 1,
+  islandProbeMax: 4,
+};
+const firstNearbySlice = await incrementalNearbyBoatBehavior.scanNearbyTargets([0]);
+assert.equal(firstNearbySlice.pending, true);
+assert.equal(
+  nearbyScanCalls,
+  128,
+  "nearby boat discovery processes only its fixed cursor budget in one decision",
+);
+const secondNearbySlice = await incrementalNearbyBoatBehavior.scanNearbyTargets([0]);
+assert.equal(secondNearbySlice.pending, true);
+assert.equal(
+  nearbyScanCalls,
+  256,
+  "the next decision resumes the same nearby scan cursor instead of restarting the search",
+);
+nearbyScanTick += 301;
+await incrementalNearbyBoatBehavior.scanNearbyTargets([0]);
+assert.equal(
+  nearbyScanCalls,
+  384,
+  "an expired nearby scan session restarts with a bounded fresh slice",
+);
+const pendingNearbyStageBehavior = Object.create(sandbox.AttackBehavior.prototype);
+pendingNearbyStageBehavior.opportunisticBoatSearchStageName = "nearby";
+pendingNearbyStageBehavior.nearbyOpportunisticBoatTarget = async () => ({
+  dst: null,
+  scanCandidates: 0,
+  pending: true,
+});
+assert.equal(
+  (await pendingNearbyStageBehavior.findOpportunisticBoatTarget([], null)).pending,
+  true,
+  "a pending nearby cursor does not advance the opportunistic boat ladder before its ranking is complete",
+);
 const target = {
   isPlayer: () => true,
   smallID: () => 2,
   id: () => "tribe-2",
+  tribeClusterSize: 1,
+  tribeClusterAccess: 1,
 };
 
 const behavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
+
+// A Nation-only lobby has no tribe target.  The early tribe planner must
+// return before building a whole-map competitor/topology snapshot.
+const nationOnly = {
+  isPlayer: () => true,
+  isAlive: () => true,
+  type: () => sandbox.PlayerType.Nation,
+  smallID: () => 99,
+};
+me.isFriendly = () => false;
+game.players = () => [me, nationOnly];
+let nationOnlyCompetitorProfiles = 0;
+behavior.getEarlyGameCompetitorProfiles = async () => {
+  nationOnlyCompetitorProfiles++;
+  return [];
+};
+behavior.publishPreferredEarlyGameCluster = () => {};
+assert.equal(
+  (await behavior.getEarlyGameTribeCandidates()).length,
+  0,
+  "a Nation-only lobby has no early tribe candidates",
+);
+assert.equal(
+  nationOnlyCompetitorProfiles,
+  0,
+  "a Nation-only lobby bypasses expensive competitor and topology work",
+);
+
+// Candidate enrichment runs cooperatively.  The combat tick must use its
+// last completed snapshot instead of awaiting the next refresh.
+const asyncCandidateBehavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
+let resolveCandidateRefresh;
+asyncCandidateBehavior.getEarlyGameTribeCandidates = () =>
+  new Promise((resolve) => {
+    resolveCandidateRefresh = resolve;
+  });
+assert.equal(
+  (await asyncCandidateBehavior.getReadyEarlyGameTribeCandidates()).length,
+  0,
+  "the first cooperative tribe refresh cannot stall the combat tick",
+);
+resolveCandidateRefresh([target]);
+await Promise.resolve();
+assert.equal(
+  (await asyncCandidateBehavior.getReadyEarlyGameTribeCandidates())[0],
+  target,
+  "the next decision receives the completed tribe snapshot while another refresh runs",
+);
 
 behavior.botAttackPendingIntentCommitments = [
   { targetIsPlayer: true, targetKey: "2", troops: 1000 },
@@ -431,12 +587,12 @@ assert.ok(
 );
 assert.equal(
   expandingBehavior.getEarlyGameTerraNulliusReserveTroops(),
-  ownTroops * 0.4,
-  "TerraNullius retains the configured 40% opening safety reserve",
+  ownTroops * 0.9,
+  "TerraNullius retains the configured 90% opening safety reserve",
 );
 assert.equal(
   expandingBehavior.getTerraNulliusAvailableTroops(ownTroops, true),
-  ownTroops * 0.6,
+  ownTroops * 0.1,
   "a radioactive/free-land caller cannot replace the TerraNullius reserve with a full-army budget",
 );
 const terraNulliusEmissionCount = troopEmissions.length;
@@ -461,27 +617,29 @@ expandingBehavior.botAttackPendingIntentCommitments = [];
 ownTroops = 10000;
 assert.equal(
   expandingBehavior.getTerraNulliusAttackTroops(terraNullius),
-  1000,
-  "the first 10% follow-up is affordable immediately after the 60% opening burst",
+  0,
+  "the 10% opening never chains another intent after the army has fallen below its protected reserve",
 );
 ownTroops = 25000;
 assert.equal(
   expandingBehavior.getTerraNulliusAttackTroops(terraNullius),
-  2500,
-  "an exhausted opening allowance continues adjacent TerraNullius expansion at 10%",
+  0,
+  "an exhausted opening allowance cannot reopen through liveness during the opening window",
 );
 const continuedTerraNulliusEmissionCount = troopEmissions.length;
 assert.equal(
   expandingBehavior.sendLandAttack(terraNullius),
-  true,
-  "the live land emitter uses the TerraNullius liveness budget",
+  false,
+  "the live land emitter keeps the aggregate opening cap authoritative",
 );
-assert.equal(troopEmissions.length, continuedTerraNulliusEmissionCount + 1);
+assert.equal(troopEmissions.length, continuedTerraNulliusEmissionCount);
+tick = 510;
 assert.equal(
-  troopEmissions.at(-1),
+  expandingBehavior.getTerraNulliusAttackTroops(terraNullius),
   2500,
-  "the continued TerraNullius intent emits 10% when it exceeds the one-tile cost",
+  "after the bounded opening window, TerraNullius resumes with the safe 10% adaptive payload",
 );
+tick = 9;
 
 const repeatedExpansionBehavior = new sandbox.AttackBehavior(
   {},
@@ -504,21 +662,82 @@ assert.equal(
 );
 assert.equal(
   await repeatedExpansionBehavior.sendAttack(terraNullius),
-  true,
-  "a pending generic TerraNullius intent does not block parallel free-land expansion",
+  false,
+  "a pending generic TerraNullius intent blocks a second opening command before its troop debit is visible",
 );
 tick += 7;
 assert.equal(
   await repeatedExpansionBehavior.sendAttack(terraNullius),
-  true,
-  "TerraNullius expansion resumes after the previous intent grace window",
+  false,
+  "an unconfirmed opening command remains reserved after the ordinary intent grace window",
 );
 assert.equal(
   troopEmissions.length,
-  repeatedExpansionEmissionCount + 3,
-  "a reconciled prior intent cannot permanently block free-land expansion",
+  repeatedExpansionEmissionCount + 1,
+  "one unconfirmed opening command cannot produce an additional troop commitment",
 );
 tick -= 7;
+
+const unresolvedExpansionBehavior = new sandbox.AttackBehavior(
+  {},
+  expandingGame,
+  me,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+unresolvedExpansionBehavior.getEnemyDefensePostAttackProfile = () => ({});
+unresolvedExpansionBehavior.attackIsTooWeakForDefensePosts = () => false;
+unresolvedExpansionBehavior.applyEarlyGameRaceTroops = ({ baseTroops }) => baseTroops;
+ownTroops = 25000;
+const unresolvedExpansionEmissionCount = troopEmissions.length;
+for (let attempt = 0; attempt < 12; attempt += 1) {
+  await unresolvedExpansionBehavior.sendAttack(terraNullius);
+  tick += 7;
+}
+const unresolvedExpansionTroops = troopEmissions
+  .slice(unresolvedExpansionEmissionCount)
+  .reduce((total, troops) => total + troops, 0);
+assert.ok(
+  unresolvedExpansionTroops <= 2500,
+  `unconfirmed TerraNullius intents remain reserved, so repeated decisions cannot spend beyond the 10% opening budget (emitted ${unresolvedExpansionTroops})`,
+);
+assert.ok(
+  unresolvedExpansionTroops === 2500,
+  "the reservation leaves exactly one bounded 10% opening intent outstanding",
+);
+tick -= 84;
+
+const radioactiveExpansionBehavior = new sandbox.AttackBehavior(
+  {},
+  { ...expandingGame, hasFallout: () => true },
+  me,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+radioactiveExpansionBehavior.getEnemyDefensePostAttackProfile = () => ({});
+radioactiveExpansionBehavior.attackIsTooWeakForDefensePosts = () => false;
+radioactiveExpansionBehavior.applyEarlyGameRaceTroops = ({ baseTroops }) => baseTroops;
+const radioactiveExpansionEmissionCount = troopEmissions.length;
+for (let attempt = 0; attempt < 12; attempt += 1) {
+  radioactiveExpansionBehavior.sendLandAttack(terraNullius, {
+    radioactiveTerraNullius: true,
+  });
+  tick += 7;
+}
+const radioactiveExpansionTroops = troopEmissions
+  .slice(radioactiveExpansionEmissionCount)
+  .reduce((total, troops) => total + troops, 0);
+assert.ok(
+  radioactiveExpansionTroops <= 2500,
+  `radioactive TerraNullius cannot bypass the 10% opening cap (emitted ${radioactiveExpansionTroops})`,
+);
+tick -= 84;
 
 expandingBehavior.botAttackPendingIntentCommitments = [
   {
@@ -537,26 +756,24 @@ expandingBehavior.outboundIntentReconciledTick = null;
 const pendingTribeTerraNulliusEmissionCount = troopEmissions.length;
 assert.equal(
   await expandingBehavior.sendAttack(terraNullius),
-  true,
-  "a pending tribe intent cannot starve higher-priority adjacent TerraNullius",
+  false,
+  "a pending tribe intent cannot reopen an exhausted aggregate TerraNullius opening budget",
 );
-assert.equal(troopEmissions.length, pendingTribeTerraNulliusEmissionCount + 1);
+assert.equal(troopEmissions.length, pendingTribeTerraNulliusEmissionCount);
 expandingBehavior.botAttackPendingIntentCommitments = [];
 
 ownTroops = 10000;
-assert.equal(
-  expandingBehavior.getEarlyGameTerraNulliusReserveTroops(),
-  10000,
-  "TerraNullius keeps the original safety floor after the opening army shrinks",
+assert.ok(
+  expandingBehavior.getEarlyGameTerraNulliusReserveTroops() >= ownTroops,
+  "TerraNullius keeps the protected opening reserve after the army shrinks",
 );
 const drainedExpansionEmissionCount = troopEmissions.length;
 assert.equal(
   expandingBehavior.sendLandAttack(terraNullius),
-  true,
-  "chained TerraNullius expansion keeps the derived 10% liveness allowance at the opening floor",
+  false,
+  "chained TerraNullius expansion cannot bypass the protected opening reserve",
 );
-assert.equal(troopEmissions.length, drainedExpansionEmissionCount + 1);
-assert.equal(troopEmissions.at(-1), 1000);
+assert.equal(troopEmissions.length, drainedExpansionEmissionCount);
 ownTroops = 25000;
 
 const openingBehavior = new sandbox.AttackBehavior({}, expandingGame, me, 0.5, 0.3, 0.1, {}, {});
@@ -570,7 +787,7 @@ assert.equal(troopEmissions.length, openingEmissionCount + 1);
 assert.equal(
   troopEmissions.at(-1),
   2500,
-  "the 60% opening fraction is a ceiling rather than a fixed payload",
+  "the 10% opening fraction is a ceiling rather than a fixed payload",
 );
 
 const openingHardCapBehavior = new sandbox.AttackBehavior(
@@ -586,14 +803,14 @@ const openingHardCapBehavior = new sandbox.AttackBehavior(
 openingHardCapBehavior.getTerraNulliusAttackTroops = () => ownTroops;
 const openingHardCapEmissionCount = troopEmissions.length;
 assert.equal(
-  await openingHardCapBehavior.forceSendAttack(terraNullius, 0.6),
+  await openingHardCapBehavior.forceSendAttack(terraNullius, 0.1),
   true,
   "the opening emitter remains available when its terrain calculator is aggressive",
 );
 assert.equal(troopEmissions.length, openingHardCapEmissionCount + 1);
 assert.equal(
   troopEmissions.at(-1),
-  ownTroops * 0.6,
+  ownTroops * 0.1,
   "the opening emitter hard-caps a malformed 100% TerraNullius payload at the protected budget",
 );
 
@@ -700,14 +917,14 @@ counterattackBudgetBehavior.getEarlyGameTargetReserveTroops = () => 0;
 counterattackBudgetBehavior.getEarlyGameSpendableTroops = () => 119_999;
 assert.equal(
   counterattackBudgetBehavior.canFundIncomingCounterattack(incomingNation),
-  false,
-  "a counterattack below the attacker’s in-flight force is held instead of becoming a token attack",
+  true,
+  "a safe partial counterattack interdicts the same portion of the attacker’s in-flight force",
 );
 counterattackBudgetBehavior.getEarlyGameSpendableTroops = () => 120_000;
 assert.equal(
   counterattackBudgetBehavior.canFundIncomingCounterattack(incomingNation),
   true,
-  "a counterattack may proceed once its safe budget matches the attacker’s in-flight force",
+  "a full safe counterattack remains eligible against the attacker’s in-flight force",
 );
 
 const expensiveTileBehavior = new sandbox.AttackBehavior(
@@ -735,13 +952,13 @@ assert.equal(
 const scheduledBehavior = new sandbox.AttackBehavior({}, expandingGame, me, 0.5, 0.3, 0.1, {}, {});
 ownTroops = 25000;
 tick = 20;
-assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 15000);
+assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 2500);
 tick = 120;
-assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 15000);
+assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 2500);
 tick = 320;
-assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 15000);
+assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 2500);
 tick = 520;
-assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 15000);
+assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 2500);
 tick = 521;
 assert.equal(
   scheduledBehavior.getTerraNulliusOpeningCommitLimit(),
@@ -1104,6 +1321,38 @@ assert.equal(
 );
 outgoing.length = 0;
 
+const maritimeReinforcementBehavior = Object.create(sandbox.AttackBehavior.prototype);
+const maritimeIncompleteTribe = {
+  isAlive: () => true,
+  isPlayer: () => true,
+  type: () => sandbox.PlayerType.Bot,
+  troops: () => 500,
+};
+let maritimeReinforcementArgs = null;
+maritimeReinforcementBehavior.getActiveOutboundPlayerTargets = () => [maritimeIncompleteTribe];
+maritimeReinforcementBehavior.player = {
+  isFriendly: () => false,
+  sharesBorderWith: () => false,
+};
+maritimeReinforcementBehavior.getEnemyDefensePostAttackProfile = () => ({});
+maritimeReinforcementBehavior.getCommittedOutboundAttackTroopsForTarget = () => 100;
+maritimeReinforcementBehavior.getPlayerAttackPreferredTroopFloor = () => 1000;
+maritimeReinforcementBehavior.sendAttack = async (...args) => {
+  maritimeReinforcementArgs = args;
+  return true;
+};
+assert.equal(
+  await maritimeReinforcementBehavior.reinforceIncompleteOutboundPlayerAttack(),
+  true,
+  "an incomplete maritime Tribe attack is reinforced instead of being abandoned for lacking a land border",
+);
+assert.equal(maritimeReinforcementArgs?.[0], maritimeIncompleteTribe);
+assert.equal(
+  maritimeReinforcementArgs?.at(-1),
+  true,
+  "Tribe reinforcements retain the parallel-Tribe route so sendAttack can choose a transport",
+);
+
 const botParallelTargets = [parallelTribeA, parallelTribeB].map((target) => ({
   ...target,
   numTilesOwned: () => 1,
@@ -1188,6 +1437,20 @@ assert.equal(
 );
 assert.equal(clusterFilteredCalls[0][0].smallID(), parallelTribeA.smallID());
 
+botParallelBehavior.earlyGamePreferredClusterTargetKeys = null;
+botParallelBehavior.earlyGameTribeCandidatesRefresh = null;
+botParallelBehavior.earlyGameTribeCandidatesCache = [
+  { id: "stale-unscored-tribe", player: parallelTribeA },
+];
+clusterFilteredCalls.length = 0;
+assert.equal(
+  await botParallelBehavior.attackBots(),
+  false,
+  "the generic tribe fallback waits for a scored cluster cache instead of consuming an arbitrary stale tribe",
+);
+assert.equal(clusterFilteredCalls.length, 0);
+botParallelBehavior.earlyGameTribeCandidatesCache = null;
+
 const makeEarlyTribeCandidate = (id, player) => ({
   id,
   player,
@@ -1226,6 +1489,18 @@ assert.ok(
   earlyTribeCalls.every((args) => args[5] === true),
   "each early-game tribe capture opts into the bounded parallel path",
 );
+
+const staleTribeCandidate = makeEarlyTribeCandidate("stale", {
+  ...parallelTribeA,
+  isAlive: () => false,
+});
+earlyTribeCalls.length = 0;
+assert.equal(
+  await earlyTribeBatch.launchEarlyGameTribeCandidate(staleTribeCandidate, new Set()),
+  false,
+  "a tribe that died after the cooperative snapshot cannot receive an attack intent",
+);
+assert.equal(earlyTribeCalls.length, 0);
 
 earlyTribeCalls.length = 0;
 earlyTribeBatch.getEarlyGameTribeCandidates = async () => [

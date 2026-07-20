@@ -14,12 +14,22 @@ const headlessModuleScope = JSON.parse(
 
 assert.match(runner, /playlist\.gameConfig\("team"\)/);
 assert.match(runner, /Number\(playlistConfig\.playerTeams\) < 2/);
+assert.match(
+  runner,
+  /OFH_GAME_MAP[\s\S]*playerTeams:[\s\S]*\? 2/,
+  "a fixed-map Team simulation defaults to two teams so the helper is not assigned to an impossible solo team",
+);
 assert.match(runner, /difficulty:\s*Difficulty\.Impossible/);
-assert.match(runner, /nations:\s*"default"/);
+assert.match(runner, /nations:\s*configuredNations/);
 assert.match(runner, /createMaxDifficultyOpponent/);
 assert.match(adapter, /AUTO_BUILD_ENABLED = process\.env\.OFH_AUTOBUILD !== "0"/);
 assert.match(adapter, /build: AUTO_BUILD_ENABLED/);
 assert.match(adapter, /"SAM Launcher": AUTO_BUILD_ENABLED/);
+assert.match(
+  adapter,
+  /!player\.isPlayer\?\.\(\) && !this\.game\.inSpawnPhase\?\.\(\)/,
+  "the headless adapter must run the bot during spawn even before its territory materializes",
+);
 assert.equal(
   headlessModuleScope.type,
   "module",
@@ -115,12 +125,31 @@ assert.deepEqual(
 );
 assert.match(runner, /OFH_GAME_MAP/);
 assert.match(runner, /OFH_STARTING_GOLD/);
+assert.match(runner, /OFH_NATIONS/);
+assert.match(
+  runner,
+  /OFH_NATIONS must be default, disabled, or an integer from 1 to 400/,
+  "headless scenarios can independently control Nation pressure and Tribe density",
+);
+assert.match(runner, /OFH_NUKES === "1"/);
+assert.match(
+  runner,
+  /disabledUnits:[\s\S]*nuclearUnitTypes\.has/,
+  "a targeted headless match can enable the complete Silo/SAM/nuke path without changing ordinary defaults",
+);
 assert.match(runner, /non-negative safe integer/);
 assert.match(runner, /startingGold: config\.startingGold \?\? 0/);
 assert.match(runner, /OFH_PROGRESS_TICKS/);
 assert.match(runner, /OFH_PROGRESS_FROM_TICK/);
 assert.match(runner, /OFH_SLOW_TICK_MS/);
 assert.match(runner, /OFH_STOP_WHEN_DEAD/);
+assert.match(runner, /OFH_SPAWN_FAILURE_GRACE_TICKS/);
+assert.match(runner, /"spawn_failed"/);
+assert.match(
+  runner,
+  /!hasEverBeenAlive[\s\S]*spawnLifecycle\.inSpawnPhase === false/,
+  "a simulation which leaves spawn without territory must be classified as a spawn failure",
+);
 assert.match(runner, /OFH_PROFILE_BOT/);
 assert.match(runner, /autoBuild: bot\.features\.build === true/);
 assert.match(runner, /OFH_TRACE_FILE/);
@@ -129,8 +158,25 @@ assert.match(runner, /const logSamLifecycle = logStructures \|\| traceFile !== u
 assert.match(runner, /OFH_LOG_INTENTS/);
 assert.match(runner, /OFH_LOG_NAVAL/);
 assert.match(runner, /OFH_LOG_STRUCTURES/);
+assert.match(runner, /OFH_LOG_SPAWN/);
+assert.match(runner, /phase:\s*"spawn-selection-trace"/);
+assert.match(adapter, /kind: "spawn-gate"/);
+assert.match(adapter, /spawnEnabled: nationBot\.feat\?\.\("spawn"\) === true/);
+assert.match(adapter, /getIntentRateLimitSnapshot/);
+assert.match(
+  adapter,
+  /getSpawnTiles\(this\.game, tile, false\)[\s\S]*validSpawn\.length > 0/,
+  "the headless spawn gate must match SpawnExecution's partial-footprint semantics",
+);
+assert.match(runner, /phase:\s*"spawn-materialized"/);
 assert.match(runner, /phase:\s*"decision"/);
 assert.match(runner, /attackTargets/);
+assert.match(runner, /targetKind/);
+assert.match(
+  runner,
+  /PlayerType\.Bot && config\.nations === "disabled"/,
+  "Tribe-only simulations label captured engine Bots as Tribes for offline analysis",
+);
 assert.match(runner, /donationStrategicBorderPressure/);
 assert.match(runner, /targetTroops/);
 assert.match(runner, /pendingTroops/);
@@ -148,6 +194,10 @@ assert.match(adapter, /attackTargetSnapshot/);
 assert.match(adapter, /eventToIntent\(event, bot\.game, bot\.clientID\)/);
 assert.match(runner, /phase:\s*"naval-trace"/);
 assert.match(runner, /phase:\s*"slow_tick"/);
+assert.match(
+  runner,
+  /spawnLifecycle: profileBot \? bot\.getSpawnLifecycleSnapshot\(\) : undefined/,
+);
 assert.match(runner, /phase:\s*"first-incoming-land-attack"/);
 assert.match(runner, /phase:\s*"first-territory-loss"/);
 assert.match(runner, /phase:\s*"sam-lifecycle"/);
@@ -155,6 +205,9 @@ assert.match(runner, /event:\s*"removed"/);
 assert.match(runner, /decisionMs/);
 assert.match(runner, /executionMs/);
 assert.match(runner, /stopReason/);
+assert.match(runner, /finalBotState/);
+assert.match(runner, /maxTroops: runner\.game\.config\(\)\.maxTroops\(finalMe\)/);
+assert.match(runner, /spawnLifecycle: bot\.getSpawnLifecycleSnapshot\(\)/);
 assert.match(runner, /performanceProfile/);
 assert.match(
   runner,
@@ -173,6 +226,8 @@ assert.match(runner, /hostileRatio/);
 assert.match(runner, /canAffordDefensePost/);
 assert.match(runner, /buildStrategicBorderPressure/);
 assert.match(adapter, /kind: "sam-gate"/);
+assert.match(adapter, /kind: "ocean-port-availability"/);
+assert.match(adapter, /originalHasOceanPortTiles/);
 assert.match(adapter, /handleHostileSiloSamMaximumPriority/);
 assert.match(adapter, /kind: "defense-post-probe"/);
 assert.match(adapter, /kind: "land-defense"/);
@@ -209,7 +264,12 @@ assert.match(adapter, /defense-post-fallback/);
 assert.match(adapter, /defense-post-attempt/);
 assert.match(adapter, /beginAutoBotProfileTick/);
 assert.match(adapter, /drainStructureTrace/);
+assert.match(adapter, /enableSpawnTrace/);
+assert.match(adapter, /drainSpawnTrace/);
+assert.match(adapter, /hasSpawned: player\.hasSpawned\?\.\(\) === true/);
 assert.match(adapter, /getPerformanceProfile/);
+assert.match(adapter, /getSpawnLifecycleSnapshot/);
+assert.match(adapter, /awaitingTeamGeometry/);
 assert.match(adapter, /caller: new Error\(\)\.stack\?\.split\("\\n"\)\[2\]/);
 assert.match(
   adapter,

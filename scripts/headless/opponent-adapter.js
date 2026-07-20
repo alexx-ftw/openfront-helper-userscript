@@ -154,6 +154,7 @@ window.__OFH_realOpponentHarness = {
   discoverCtors,
   getEventBus,
   getBuildMenu,
+  getIntentRateLimitSnapshot,
   beginAutoBotProfileTick,
   finishAutoBotProfileTick,
   getAutoBotProfileSnapshot
@@ -211,6 +212,7 @@ export class BundledOpponentBot {
     this.intentBuffer = [];
     this.navalTrace = [];
     this.structureTrace = [];
+    this.spawnTrace = [];
     this.api = null;
     this.pageGame = null;
     this.nationBot = null;
@@ -231,6 +233,125 @@ export class BundledOpponentBot {
     });
     if (process.env.OFH_LOG_NAVAL === "1") this.enableNavalTrace();
     if (process.env.OFH_LOG_STRUCTURES === "1") this.enableStructureTrace();
+    if (process.env.OFH_LOG_SPAWN === "1") this.enableSpawnTrace();
+    if (process.env.OFH_LOG_ATTACK_HOTSPOTS === "1") this.enableAttackHotspotTrace();
+  }
+
+  enableAttackHotspotTrace() {
+    const behavior = this.nationBot?.attackBehavior;
+    if (!behavior || behavior.__ofhAttackHotspotTraceEnabled === true) return;
+    behavior.__ofhAttackHotspotTraceEnabled = true;
+    for (const name of [
+      "attackBestTarget",
+      "attackBots",
+      "assistAllies",
+      "maybeBetrayAndAttack",
+      "findNearestIslandEnemy",
+      "sendAttack",
+    ]) {
+      const original = behavior[name];
+      if (typeof original !== "function") continue;
+      behavior[name] = async (...args) => {
+        const startedAt = performance.now();
+        const result = await original.apply(behavior, args);
+        const ms = performance.now() - startedAt;
+        if (ms >= 15) {
+          this.structureTrace.push({
+            kind: "attack-hotspot",
+            tick: this.game.ticks(),
+            name,
+            ms,
+          });
+        }
+        return result;
+      };
+    }
+    for (const name of [
+      "findIncomingAttackPlayer",
+      "findTraitor",
+      "findVictim",
+      "findVeryWeakEnemy",
+      "isBorderingNukedTerritory",
+      "hasNeighboringBotWithStructures",
+      "hasNeedyTeamDonationTarget",
+    ]) {
+      const original = behavior[name];
+      if (typeof original !== "function") continue;
+      behavior[name] = (...args) => {
+        const startedAt = performance.now();
+        const result = original.apply(behavior, args);
+        const ms = performance.now() - startedAt;
+        if (ms >= 5) {
+          this.structureTrace.push({
+            kind: "attack-hotspot",
+            tick: this.game.ticks(),
+            name,
+            ms,
+          });
+        }
+        return result;
+      };
+    }
+  }
+
+  enableSpawnTrace() {
+    const nationBot = this.nationBot;
+    if (!nationBot || nationBot.__ofhSpawnTraceEnabled === true) return;
+    nationBot.__ofhSpawnTraceEnabled = true;
+    const originalHandleSpawnTick = nationBot.handleSpawnTick;
+    if (typeof originalHandleSpawnTick === "function") {
+      nationBot.handleSpawnTick = (...args) => {
+        const player = this.pageGame.myPlayer();
+        const result = originalHandleSpawnTick.apply(nationBot, args);
+        this.spawnTrace.push({
+          kind: "spawn-gate",
+          tick: this.game.ticks(),
+          handled: result === true,
+          inSpawnPhase: this.game.inSpawnPhase() === true,
+          playerIsPlayer: player?.isPlayer?.() === true,
+          hasSpawned: player?.hasSpawned?.() === true,
+          spawnExecAdded: nationBot.spawnExecAdded === true,
+          spawnEnabled: nationBot.feat?.("spawn") === true,
+          intentRateLimit: this.harness.internals.getIntentRateLimitSnapshot?.() ?? null,
+        });
+        return result;
+      };
+    }
+    const originalPickSpawnCenter = nationBot.pickSpawnCenter;
+    if (typeof originalPickSpawnCenter !== "function") return;
+    nationBot.pickSpawnCenter = (...args) => {
+      const ownTeam = this.pageGame.myPlayer()?.team?.() ?? null;
+      const players = this.pageGame
+        .players()
+        .filter((player) => {
+          const type = player.type?.();
+          return type === "HUMAN" || type === "NATION" || player.team?.() === ownTeam;
+        })
+        .map((player) => {
+          const location = player.nameLocation?.() ?? player.center?.();
+          return {
+            name: player.name?.() ?? null,
+            type: player.type?.() ?? null,
+            team: player.team?.() ?? null,
+            hasSpawned: player.hasSpawned?.() === true,
+            x: location?.x ?? null,
+            y: location?.y ?? null,
+          };
+        });
+      const tile = originalPickSpawnCenter.apply(nationBot, args);
+      this.spawnTrace.push({
+        tick: this.game.ticks(),
+        tile,
+        x: tile == null ? null : this.game.x(tile),
+        y: tile == null ? null : this.game.y(tile),
+        players,
+      });
+      return tile;
+    };
+  }
+
+  drainSpawnTrace() {
+    return this.spawnTrace.splice(0);
   }
 
   enableNavalTrace() {
@@ -351,29 +472,49 @@ export class BundledOpponentBot {
 
   structureSpawnTraceContext(behavior, type, options) {
     const rawGold = this.pageGame.myPlayer()?.gold?.();
-    const eligible =
-      typeof behavior.structureSpawnEligible === "function"
-        ? behavior.structureSpawnEligible(type, options)
-        : null;
-    const perceivedCost =
-      eligible === true && typeof behavior.constructionCostForOptions === "function"
-        ? String(behavior.constructionCostForOptions(type, options))
-        : null;
-    const availableGold =
-      eligible === true && typeof behavior.availableGoldAfterReserve === "function"
-        ? String(behavior.availableGoldAfterReserve(type))
-        : null;
+    const eligible = this.structureTraceEligibility(behavior, type, options);
     const structures = behavior.player?.units?.(type) ?? [];
     return {
       gold: rawGold === null || rawGold === undefined ? null : String(rawGold),
       eligible,
-      perceivedCost,
-      availableGold,
+      ...this.structureTraceCosts(behavior, type, options, eligible),
+      ...this.structureTraceSamContext(behavior, type),
       existing: structures.length,
       underConstruction: structures.some(
         (structure) => structure?.isUnderConstruction?.() === true,
       ),
     };
+  }
+
+  structureTraceEligibility(behavior, type, options) {
+    if (typeof behavior.structureSpawnEligible !== "function") return null;
+    return behavior.structureSpawnEligible(type, options);
+  }
+
+  structureTraceCosts(behavior, type, options, eligible) {
+    if (eligible !== true) return { perceivedCost: null, availableGold: null };
+    const perceivedCost =
+      typeof behavior.constructionCostForOptions === "function"
+        ? String(behavior.constructionCostForOptions(type, options))
+        : null;
+    const availableGold =
+      typeof behavior.availableGoldAfterReserve === "function"
+        ? String(behavior.availableGoldAfterReserve(type))
+        : null;
+    return { perceivedCost, availableGold };
+  }
+
+  structureTraceSamContext(behavior, type) {
+    if (type !== "SAM Launcher") {
+      return { ownSamCapacity: null, activeMissileZones: null };
+    }
+    const ownSamCapacity =
+      typeof behavior.ownSamCapacity === "function" ? behavior.ownSamCapacity() : null;
+    const activeMissileZones =
+      typeof behavior.activeHostileMissileImpactZones === "function"
+        ? behavior.activeHostileMissileImpactZones().length
+        : null;
+    return { ownSamCapacity, activeMissileZones };
   }
 
   traceStructurePlacementProbe(type, buildable) {
@@ -393,9 +534,19 @@ export class BundledOpponentBot {
   enableStructureTrace() {
     const behavior = this.nationBot?.structureBehavior;
     if (!behavior || behavior.__ofhStructureTraceEnabled === true) return;
+    behavior.__ofhStructureTraceEnabled = true;
+    this.enableStructureSpawnTrace(behavior);
+    this.enableStructurePortTrace(behavior);
+    this.enableStructurePlacementTrace(behavior);
+    this.enableStructureSamTrace(behavior);
+    this.enableStructureUpgradeTrace(behavior);
+    this.enableDefensePostTrace(behavior);
+    this.enableLandDefenseTrace();
+  }
+
+  enableStructureSpawnTrace(behavior) {
     const originalMaybeSpawnStructure = behavior.maybeSpawnStructure;
     if (typeof originalMaybeSpawnStructure !== "function") return;
-    behavior.__ofhStructureTraceEnabled = true;
     behavior.maybeSpawnStructure = async (type, options) => {
       const tick = this.game.ticks();
       const context = this.structureSpawnTraceContext(behavior, type, options);
@@ -403,6 +554,25 @@ export class BundledOpponentBot {
       this.structureTrace.push({ kind: "spawn", tick, type, emitted, ...context });
       return emitted;
     };
+  }
+
+  enableStructurePortTrace(behavior) {
+    const originalHasOceanPortTiles = behavior.hasOceanPortTiles;
+    if (typeof originalHasOceanPortTiles === "function") {
+      behavior.hasOceanPortTiles = (...args) => {
+        const available = originalHasOceanPortTiles.apply(behavior, args);
+        this.structureTrace.push({
+          kind: "ocean-port-availability",
+          tick: this.game.ticks(),
+          available,
+          ports: (behavior.player.units("Port") || []).length,
+        });
+        return available;
+      };
+    }
+  }
+
+  enableStructurePlacementTrace(behavior) {
     const originalStructureSpawnTile = behavior.structureSpawnTile;
     if (typeof originalStructureSpawnTile === "function") {
       behavior.structureSpawnTile = async (type, options) => {
@@ -418,6 +588,80 @@ export class BundledOpponentBot {
           this.traceStructurePlacementProbe(type, buildable);
         }
         return buildable;
+      };
+    }
+  }
+
+  enableStructureSamTrace(behavior) {
+    const originalStructureCandidateTiles = behavior.structureCandidateTiles;
+    if (typeof originalStructureCandidateTiles === "function") {
+      behavior.structureCandidateTiles = (type, options, candidateLimit) => {
+        const tiles = originalStructureCandidateTiles.call(behavior, type, options, candidateLimit);
+        if (type === "SAM Launcher") {
+          this.structureTrace.push({
+            kind: "sam-candidates",
+            tick: this.game.ticks(),
+            total: tiles.length,
+            owned: tiles.filter((tile) => behavior.game.ownerID(tile) === behavior.player.smallID())
+              .length,
+            impacted: tiles.filter((tile) => behavior.tileInsideActiveHostileMissileImpact(tile))
+              .length,
+            dangerous: tiles.filter((tile) => behavior.isDangerousStructureTile(tile, type)).length,
+            protectable: tiles.filter((tile) => {
+              const protectedTiles = behavior.samProtectableStructureTiles();
+              return behavior.samPlacementProtectsStructure(tile, protectedTiles);
+            }).length,
+          });
+        }
+        return tiles;
+      };
+    }
+    const originalBuildableFor = behavior.buildableFor;
+    if (typeof originalBuildableFor === "function") {
+      behavior.buildableFor = async (type, tile, timeoutMs) => {
+        const buildable = await originalBuildableFor.call(behavior, type, tile, timeoutMs);
+        if (type === "SAM Launcher") {
+          this.structureTrace.push({
+            kind: "sam-buildable",
+            tick: this.game.ticks(),
+            requestedTile: tile,
+            returnedTile: buildable?.tile ?? null,
+            canBuild: buildable?.canBuild ?? null,
+            canUpgrade: buildable?.canUpgrade ?? null,
+          });
+        }
+        return buildable;
+      };
+    }
+    const originalProbeCoveragePrioritySamTiles = behavior.probeCoveragePrioritySamTiles;
+    if (typeof originalProbeCoveragePrioritySamTiles === "function") {
+      behavior.probeCoveragePrioritySamTiles = async (...args) => {
+        const result = await originalProbeCoveragePrioritySamTiles.apply(behavior, args);
+        this.structureTrace.push({
+          kind: "sam-coverage-probe",
+          tick: this.game.ticks(),
+          candidates: args[0]?.length ?? null,
+          handled: result?.handled ?? null,
+          buildable: result?.buildable?.canBuild ?? null,
+          attempted: result?.attemptedTiles?.size ?? null,
+        });
+        return result;
+      };
+    }
+    const originalStructureMissileEmergency = behavior.structureMissileEmergency;
+    if (typeof originalStructureMissileEmergency === "function") {
+      behavior.structureMissileEmergency = (type, options) => {
+        const emergency = originalStructureMissileEmergency.call(behavior, type, options);
+        if (type === "SAM Launcher") {
+          this.structureTrace.push({
+            kind: "sam-emergency",
+            tick: this.game.ticks(),
+            active: emergency?.active ?? null,
+            recovery: emergency?.recoverySam ?? null,
+            incremental: emergency?.incrementalSamDefense ?? null,
+          });
+        }
+        return emergency;
       };
     }
     const originalHandleHostileSiloSam = behavior.handleHostileSiloSamMaximumPriority;
@@ -451,6 +695,9 @@ export class BundledOpponentBot {
         return result;
       };
     }
+  }
+
+  enableStructureUpgradeTrace(behavior) {
     const originalMaybeUpgradeStructure = behavior.maybeUpgradeStructure;
     if (typeof originalMaybeUpgradeStructure === "function") {
       behavior.maybeUpgradeStructure = async (structures, options) => {
@@ -489,6 +736,31 @@ export class BundledOpponentBot {
         return emitted;
       };
     }
+    const originalBuildableForUnits = behavior.buildableForUnits;
+    if (typeof originalBuildableForUnits === "function") {
+      behavior.buildableForUnits = async (units, type, options) => {
+        const result = await originalBuildableForUnits.call(behavior, units, type, options);
+        if (type === "SAM Launcher") {
+          this.structureTrace.push({
+            kind: "sam-upgrade-probe",
+            tick: this.game.ticks(),
+            requested: Array.isArray(units) ? units.length : null,
+            results: result.map((buildable) => ({
+              canBuild: buildable?.canBuild ?? null,
+              canUpgrade: buildable?.canUpgrade ?? null,
+              cost:
+                buildable?.cost === undefined || buildable?.cost === null
+                  ? null
+                  : String(buildable.cost),
+            })),
+          });
+        }
+        return result;
+      };
+    }
+  }
+
+  enableDefensePostTrace(behavior) {
     const originalDefensePostFallbackTiles = behavior.defensePostFallbackTiles;
     if (typeof originalDefensePostFallbackTiles === "function") {
       behavior.defensePostFallbackTiles = (...args) => {
@@ -523,7 +795,6 @@ export class BundledOpponentBot {
         return emitted;
       };
     }
-    this.enableLandDefenseTrace();
   }
 
   enableLandDefenseTrace() {
@@ -634,6 +905,7 @@ export class BundledOpponentBot {
     configureHardMode(harness.internals.state, this);
     if (process.env.OFH_LOG_NAVAL === "1") this.enableNavalTrace();
     if (process.env.OFH_LOG_STRUCTURES === "1") this.enableStructureTrace();
+    if (process.env.OFH_LOG_SPAWN === "1") this.enableSpawnTrace();
     if (harness.window.__OFH_realOpponentClock) {
       harness.window.__OFH_realOpponentClock.now = this.game.ticks() * 100;
     }
@@ -641,7 +913,12 @@ export class BundledOpponentBot {
     harness.current.buildMenu = createBuildMenu(this);
 
     const player = this.pageGame.myPlayer();
-    if (!player?.isPlayer?.()) return [];
+    // Before a spawn intent is applied the client view deliberately reports no
+    // active player.  The Nation bot owns the spawn decision itself, so
+    // suppressing its tick here turns every Team simulation into an inert
+    // pre-spawn loop.  Once the spawn phase has closed, retain the normal
+    // guard against acting for an eliminated/unmaterialized player.
+    if (!player || (!player.isPlayer?.() && !this.game.inSpawnPhase?.())) return [];
 
     const beginTickStart = profileStart();
     await this.api.beginTick(player);
@@ -660,6 +937,22 @@ export class BundledOpponentBot {
     return this.harness.internals.getAutoBotProfileSnapshot();
   }
 
+  getSpawnLifecycleSnapshot() {
+    const player = this.pageGame.myPlayer();
+    const nationBot = this.nationBot;
+    let awaitingTeamGeometry = false;
+    if (typeof nationBot.shouldAwaitInitialTeamSpawnGeometry === "function") {
+      awaitingTeamGeometry = nationBot.shouldAwaitInitialTeamSpawnGeometry(this.game.ticks());
+    }
+    return {
+      inSpawnPhase: this.game.inSpawnPhase() === true,
+      hasSpawned: player.hasSpawned() === true,
+      team: player.team(),
+      spawnExecAdded: nationBot.spawnExecAdded === true,
+      awaitingTeamGeometry,
+    };
+  }
+
   applyWinFixes(intents) {
     if (!this.winFixes) return intents;
     const player = this.game.playerByClientID(this.clientID);
@@ -674,8 +967,12 @@ export class BundledOpponentBot {
       return intents;
     }
     const tile = Number(spawnIntent.tile);
-    const validSpawn = getSpawnTiles(this.game, tile, true);
-    if (validSpawn) return intents;
+    // SpawnExecution accepts a selected centre when any tile in its local
+    // spawn footprint is legal.  Requiring every radius-4 tile to be legal
+    // rejects legitimate coastal/irregular terrain spawns and makes the
+    // harness silently erase an intent that the real game would execute.
+    const validSpawn = getSpawnTiles(this.game, tile, false);
+    if (validSpawn.length > 0) return intents;
     if (this.nationBot?.spawnExecAdded) this.nationBot.spawnExecAdded = false;
     return intents.filter((intent) => intent !== spawnIntent);
   }

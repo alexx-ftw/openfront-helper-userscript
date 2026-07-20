@@ -156,7 +156,6 @@ async function minifyLayer(code) {
 
 function metadataHeader(version) {
   const repo = "https://github.com/nguyenvancaokyfpt/openfront-helper-userscript";
-  const raw = `https://raw.githubusercontent.com/nguyenvancaokyfpt/openfront-helper-userscript/main/openfront-helper.user.js`;
   return `// ==UserScript==
 // @name         OpenFront Helper (userscript) (CUSTOM)
 // @namespace    openfront-helper
@@ -166,8 +165,6 @@ function metadataHeader(version) {
 // @license      AGPL-3.0-or-later
 // @homepageURL  ${repo}
 // @supportURL   ${repo}/issues
-// @updateURL    ${raw}
-// @downloadURL  ${raw}
 // @contributionURL https://greasyfork.org/en/scripts/581664-openfront-tactical-assistant
 // Credits: in-game overlays adapted from phil0010-gh/openfront-helper; several
 // helper/auto-bot features (spawn scoring/heatmap, advisor, threat intel, map

@@ -573,16 +573,13 @@
 
     // Check if current player is one of the 3 richest (We don't want poor nations to use their precious gold on this)
     // isRichPlayer — NationWarshipBehavior (private).
-    // DIVERGENCE: src filters out Human players (`p.type() === PlayerType.Human`)
-    // because the src Nation is type Nation and stays in the candidate pool. The bot,
-    // however, IS myPlayer() with type() === Human, so it filters ITSELF out and can
-    // never appear in topThree → isRichPlayer always returns false → the whole
-    // counterWarshipInfestation feature is effectively inert for the bot. This is the
-    // same "bot is Human, not Nation" class of divergence seen elsewhere; the port is
-    // faithful (filter kept verbatim) — only the bot's player-type makes it inert.
+    // The browser adapter represents the automated player as Human, while the
+    // upstream Nation remains in the candidate pool. Exclude other Humans as
+    // upstream does, but retain the current player so the rich-player gate can
+    // actually activate the counter-infestation defense.
     isRichPlayer(isTeamGame) {
       const players = this.game.players().filter((p) => {
-        if (p.type() === PlayerType.Human) return false;
+        if (p.type() === PlayerType.Human && p.id() !== this.player.id()) return false;
         // src: `p.team() === this.player.team()` — team is a team id, keep `===`.
         return isTeamGame ? p.team() === this.player.team() : true;
       });

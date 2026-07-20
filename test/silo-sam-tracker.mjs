@@ -21,7 +21,7 @@ executeClassicScript(NUKE_IMPACT_SOURCE, sandbox, {
   filename: "nuke-impact.js",
 });
 executeClassicScript(
-  `${TRACKER_SOURCE}\nglobalThis._autoFireBuiltSamInterceptionCapacity = _autoFireBuiltSamInterceptionCapacity;\nglobalThis._scanNukesToTile = _scanNukesToTile;`,
+  `${TRACKER_SOURCE}\nglobalThis._autoFireBuiltSamInterceptionCapacity = _autoFireBuiltSamInterceptionCapacity;\nglobalThis._autoFireUncoveredEnemyBuildings = _autoFireUncoveredEnemyBuildings;\nglobalThis._scanNukesToTile = _scanNukesToTile;`,
   sandbox,
   {
     filename: "silo-sam-tracker.js",
@@ -115,6 +115,53 @@ assert.equal(
   sandbox._chooseAutoFireImpactTile(game, 1, me),
   2,
   "auto-fire should move the atom impact onto the nearby building cluster",
+);
+
+const collateralCoordinates = new Map([
+  ["sam", { x: 0, y: 0 }],
+  ["old-house", { x: 40, y: 0 }],
+  ["old-factory", { x: 42, y: 0 }],
+  ["south-city", { x: 0, y: 40 }],
+]);
+const collateralTile = (x, y) => `${x},${y}`;
+const collateralPoint = (tile) => {
+  if (collateralCoordinates.has(tile)) return collateralCoordinates.get(tile);
+  const [x, y] = String(tile).split(",").map(Number);
+  return { x, y };
+};
+const collateralGame = {
+  ...game,
+  x: (tile) => collateralPoint(tile).x,
+  y: (tile) => collateralPoint(tile).y,
+  ref: collateralTile,
+  isValidCoord: () => true,
+  euclideanDistSquared: (left, right) => {
+    const from = collateralPoint(left);
+    const to = collateralPoint(right);
+    return (from.x - to.x) ** 2 + (from.y - to.y) ** 2;
+  },
+};
+const collateralBuildings = [
+  { key: "sam", tile: "sam" },
+  { key: "old-house", tile: "old-house" },
+  { key: "old-factory", tile: "old-factory" },
+  { key: "south-city", tile: "south-city" },
+];
+const alliedImpact = [{ targetTile: "old-house", radius: 30 }];
+const uncoveredCollateral = sandbox._autoFireUncoveredEnemyBuildings(
+  collateralGame,
+  collateralBuildings,
+  alliedImpact,
+);
+assert.deepEqual(
+  uncoveredCollateral.map((entry) => entry.key),
+  ["sam", "south-city"],
+  "collateral scoring excludes buildings already doomed by an in-flight allied missile",
+);
+assert.equal(
+  sandbox._chooseAutoFireImpactTile(collateralGame, "sam", me, uncoveredCollateral),
+  "0,20",
+  "auto-fire shifts the impact toward a different surviving city while still hitting the SAM",
 );
 
 const incomingAtom = {
