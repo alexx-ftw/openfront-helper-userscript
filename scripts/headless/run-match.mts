@@ -139,6 +139,7 @@ console.warn(
     mode: config.gameMode,
     teams: config.playerTeams,
     difficulty: config.difficulty,
+    autoBuild: bot.features.build === true,
     startingGold: config.startingGold ?? 0,
     nations: nations.length,
     tribes: config.bots,

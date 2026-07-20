@@ -7774,6 +7774,28 @@
         .map((entry) => entry.tile);
     }
 
+    nearestTileDistanceScorer(refs, excludeCandidate = false) {
+      const coordinates = [];
+      for (const ref of refs) {
+        const x = Number(this.game.x(ref));
+        const y = Number(this.game.y(ref));
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        coordinates.push({ ref, x, y });
+      }
+      return (tile) => {
+        const x = Number(this.game.x(tile));
+        const y = Number(this.game.y(tile));
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return Infinity;
+        let nearest = Infinity;
+        for (const coordinate of coordinates) {
+          if (excludeCandidate && coordinate.ref === tile) continue;
+          const distance = Math.abs(coordinate.x - x) + Math.abs(coordinate.y - y);
+          if (distance < nearest) nearest = distance;
+        }
+        return nearest;
+      };
+    }
+
     structurePlacementCompactnessRanker(type) {
       if (!state.settings.winFixes || type === UNIT.SAMLauncher) return null;
       let range;
@@ -8890,18 +8912,14 @@
     // portValue — NationStructureBehavior.ts:925.
     // NOTE: pure port-spacing; does NOT consume the water shim.
     portValue() {
-      const game = this.game;
       const otherTiles = new Set(this.player.units(UNIT.Port).map((u) => u.tile()));
+      const nearestOther = this.nearestTileDistanceScorer(otherTiles, true);
 
       return (tile) => {
         let w = 0;
 
         // Prefer to be as far as possible from other ports
-        const candidates = otherTiles.has(tile)
-          ? new Set([...otherTiles].filter((otherTile) => otherTile !== tile))
-          : otherTiles;
-        const closest = closestTile(game, candidates, tile);
-        const closestOtherDist = closest[1];
+        const closestOtherDist = nearestOther(tile);
         w += closestOtherDist;
 
         return w;
@@ -8915,6 +8933,8 @@
       const borderTiles = this.player.borderTiles();
       const otherTiles = new Set(player.units(UNIT.Factory).map((u) => u.tile()));
       const { borderSpacing, structureSpacing } = this.spacingConstants();
+      const nearestBorder = this.nearestTileDistanceScorer(borderTiles);
+      const nearestOther = this.nearestTileDistanceScorer(otherTiles, true);
       const stationRange = game.config().trainStationMaxRange();
       const stationRangeSquared = stationRange * stationRange;
       const difficulty = currentDifficulty();
@@ -8927,6 +8947,7 @@
 
       // Cross-type spacing: prefer to be away from cities.
       const cityTiles = new Set(player.units(UNIT.City).map((u) => u.tile()));
+      const nearestCity = this.nearestTileDistanceScorer(cityTiles);
 
       return (tile) => {
         let w = 0;
@@ -8935,25 +8956,19 @@
         w += game.magnitude(tile);
 
         // Prefer to be away from the border
-        const closest = closestTile(game, borderTiles, tile);
-        const closestBorderDist = closest[1];
+        const closestBorderDist = nearestBorder(tile);
         w += Math.min(closestBorderDist, borderSpacing);
 
         // Prefer to be away from other factories
-        const candidates = otherTiles.has(tile)
-          ? new Set([...otherTiles].filter((otherTile) => otherTile !== tile))
-          : otherTiles;
-        const closestOther = closestTwoTiles(game, candidates, [tile]);
-        if (closestOther !== null) {
-          const d = game.manhattanDist(closestOther.x, tile);
-          w += Math.min(d, stationRange);
+        const closestOtherDist = nearestOther(tile);
+        if (Number.isFinite(closestOtherDist)) {
+          w += Math.min(closestOtherDist, stationRange);
         }
 
         // Prefer to be away from cities (cross-type spacing)
-        const closestCity = closestTwoTiles(game, cityTiles, [tile]);
-        if (closestCity !== null) {
-          const d = game.manhattanDist(closestCity.x, tile);
-          w += Math.min(d, structureSpacing);
+        const closestCityDist = nearestCity(tile);
+        if (Number.isFinite(closestCityDist)) {
+          w += Math.min(closestCityDist, structureSpacing);
         }
 
         if (!useConnectionScore) {
@@ -9232,6 +9247,8 @@
       const borderTiles = player.borderTiles();
       const otherTiles = new Set(player.units(UNIT.City).map((u) => u.tile()));
       const { borderSpacing, structureSpacing } = this.spacingConstants();
+      const nearestBorder = this.nearestTileDistanceScorer(borderTiles);
+      const nearestOther = this.nearestTileDistanceScorer(otherTiles);
       const stationRange = game.config().trainStationMaxRange();
       const stationRangeSquared = stationRange * stationRange;
       const difficulty = currentDifficulty();
@@ -9246,30 +9263,25 @@
       const factoryTiles = new Set(
         player.units(UNIT.Factory).map((u) => u.tile()),
       );
+      const nearestFactory = this.nearestTileDistanceScorer(factoryTiles);
 
       return (tile) => {
         let w = 0;
 
         w += game.magnitude(tile);
 
-        const closest = closestTile(game, borderTiles, tile);
-        const closestBorderDist = closest[1];
+        const closestBorderDist = nearestBorder(tile);
         w += Math.min(closestBorderDist, borderSpacing);
 
-        const candidates = otherTiles.has(tile)
-          ? new Set([...otherTiles].filter((otherTile) => otherTile !== tile))
-          : otherTiles;
-        const closestOther = closestTwoTiles(game, candidates, [tile]);
-        if (closestOther !== null) {
-          const d = game.manhattanDist(closestOther.x, tile);
-          w += Math.min(d, structureSpacing);
+        const closestOtherDist = nearestOther(tile);
+        if (Number.isFinite(closestOtherDist)) {
+          w += Math.min(closestOtherDist, structureSpacing);
         }
 
         // Prefer to be away from factories (cross-type spacing)
-        const closestFactory = closestTwoTiles(game, factoryTiles, [tile]);
-        if (closestFactory !== null) {
-          const d = game.manhattanDist(closestFactory.x, tile);
-          w += Math.min(d, structureSpacing);
+        const closestFactoryDist = nearestFactory(tile);
+        if (Number.isFinite(closestFactoryDist)) {
+          w += Math.min(closestFactoryDist, structureSpacing);
         }
 
         if (!useConnectionScore) {
@@ -9423,6 +9435,9 @@
         this.samProtectableStructureTiles(),
         structureSpacing,
       );
+      const otherTiles = new Set(otherUnits.map((unit) => unit.tile()));
+      const nearestBorder = this.nearestTileDistanceScorer(borderTiles);
+      const nearestOther = this.nearestTileDistanceScorer(otherTiles, true);
 
       const useCoverageWeighting = isLegendaryDifficulty(difficulty)
         ? true
@@ -9441,19 +9456,12 @@
         w += game.magnitude(tile);
 
         // Prefer to be away from the border
-        const closestBorder = closestTwoTiles(game, borderTiles, [tile]);
-        if (closestBorder !== null) {
-          const d = game.manhattanDist(closestBorder.x, tile);
-          w += Math.min(d, borderSpacing);
-        }
+        w += Math.min(nearestBorder(tile), borderSpacing);
 
         // Prefer to be away from other structures of the same type
-        const otherTiles = new Set(otherUnits.map((u) => u.tile()));
-        otherTiles.delete(tile);
-        const closestOther = closestTwoTiles(game, otherTiles, [tile]);
-        if (closestOther !== null) {
-          const d = game.manhattanDist(closestOther.x, tile);
-          w += Math.min(d, structureSpacing);
+        const closestOtherDist = nearestOther(tile);
+        if (Number.isFinite(closestOtherDist)) {
+          w += Math.min(closestOtherDist, structureSpacing);
         }
 
         // Prefer to be in range of other structures (skip on easy difficulty)

@@ -61,6 +61,23 @@ executeClassicScript(
   { filename: "structureBehavior.js" },
 );
 
+const nearestDistanceBehavior = Object.create(structureSandbox.__StructureBehavior.prototype);
+nearestDistanceBehavior.game = {
+  x: (tile) => tile % 10,
+  y: (tile) => Math.floor(tile / 10),
+};
+const nearestDistance = nearestDistanceBehavior.nearestTileDistanceScorer(new Set([1, 34, 89]));
+assert.equal(nearestDistance(55), 3, "the cached placement geometry keeps Manhattan scores exact");
+const nearestOtherDistance = nearestDistanceBehavior.nearestTileDistanceScorer(
+  new Set([55, 34]),
+  true,
+);
+assert.equal(
+  nearestOtherDistance(55),
+  3,
+  "same-type placement spacing excludes only the candidate structure itself",
+);
+
 function makeScenario({
   ocean = false,
   allied = false,

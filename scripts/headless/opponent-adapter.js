@@ -13,6 +13,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BUNDLE_PATH =
   process.env.OFH_BUNDLE_PATH ?? path.resolve(__dirname, "../../openfront-helper.user.js");
 const STORAGE_KEY = "openfront-helper-autobot-v1";
+// Static simulation-only diagnostic switch.  The shipped userscript never reads
+// this environment variable.
+const AUTO_BUILD_ENABLED = process.env.OFH_AUTOBUILD !== "0";
 
 let loadedHarness = null;
 let bundledHarnessSource = null;
@@ -64,7 +67,7 @@ export function createBundledOpponentHarness(options = {}) {
     features: {
       spawn: true,
       expand: true,
-      build: true,
+      build: AUTO_BUILD_ENABLED,
       boat: true,
       nuke: true,
       warship: true,
@@ -73,12 +76,12 @@ export function createBundledOpponentHarness(options = {}) {
       betray: true,
     },
     buildStructures: {
-      City: true,
-      Factory: true,
-      Port: true,
-      "Defense Post": true,
-      "SAM Launcher": true,
-      "Missile Silo": true,
+      City: AUTO_BUILD_ENABLED,
+      Factory: AUTO_BUILD_ENABLED,
+      Port: AUTO_BUILD_ENABLED,
+      "Defense Post": AUTO_BUILD_ENABLED,
+      "SAM Launcher": AUTO_BUILD_ENABLED,
+      "Missile Silo": AUTO_BUILD_ENABLED,
     },
   };
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(disabledHardMode));
@@ -173,7 +176,7 @@ export function createMaxDifficultyOpponent(options = {}) {
     features: {
       spawn: true,
       expand: true,
-      build: true,
+      build: AUTO_BUILD_ENABLED,
       boat: true,
       nuke: true,
       warship: true,
@@ -182,12 +185,12 @@ export function createMaxDifficultyOpponent(options = {}) {
       betray: true,
     },
     buildStructures: {
-      City: true,
-      Factory: true,
-      Port: true,
-      "Defense Post": true,
-      "SAM Launcher": true,
-      "Missile Silo": true,
+      City: AUTO_BUILD_ENABLED,
+      Factory: AUTO_BUILD_ENABLED,
+      Port: AUTO_BUILD_ENABLED,
+      "Defense Post": AUTO_BUILD_ENABLED,
+      "SAM Launcher": AUTO_BUILD_ENABLED,
+      "Missile Silo": AUTO_BUILD_ENABLED,
     },
     ...options,
   });

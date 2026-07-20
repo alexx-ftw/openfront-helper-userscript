@@ -17,6 +17,9 @@ assert.match(runner, /Number\(playlistConfig\.playerTeams\) < 2/);
 assert.match(runner, /difficulty:\s*Difficulty\.Impossible/);
 assert.match(runner, /nations:\s*"default"/);
 assert.match(runner, /createMaxDifficultyOpponent/);
+assert.match(adapter, /AUTO_BUILD_ENABLED = process\.env\.OFH_AUTOBUILD !== "0"/);
+assert.match(adapter, /build: AUTO_BUILD_ENABLED/);
+assert.match(adapter, /"SAM Launcher": AUTO_BUILD_ENABLED/);
 assert.equal(
   headlessModuleScope.type,
   "module",
@@ -66,6 +69,7 @@ assert.match(runner, /OFH_PROGRESS_FROM_TICK/);
 assert.match(runner, /OFH_SLOW_TICK_MS/);
 assert.match(runner, /OFH_STOP_WHEN_DEAD/);
 assert.match(runner, /OFH_PROFILE_BOT/);
+assert.match(runner, /autoBuild: bot\.features\.build === true/);
 assert.match(runner, /OFH_TRACE_FILE/);
 assert.match(runner, /appendFileSync\(traceFile/);
 assert.match(runner, /const logSamLifecycle = logStructures \|\| traceFile !== undefined/);
