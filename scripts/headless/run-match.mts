@@ -167,7 +167,12 @@ const cumulativeIntentTypes = new Map<string, number>();
 let intervalIntentTypes = new Map<string, number>();
 const cumulativeBuildUnitTypes = new Map<string, number>();
 let intervalBuildUnitTypes = new Map<string, number>();
-let intervalBuildEvents: Array<{ tick: number; unit: string; tile: number | null }> = [];
+let intervalBuildEvents: Array<{
+  tick: number;
+  unit: string;
+  tile: number | null;
+  strategicBorderPressure: ReturnType<typeof strategicBorderPressureSnapshot>;
+}> = [];
 let cumulativeTerraNulliusAttacks = 0;
 let intervalTerraNulliusAttacks = 0;
 const observedSamLevels = new Map<string, number>();
@@ -193,6 +198,48 @@ const trackedMissileTypes = [
   UnitType.MIRVWarhead,
 ] as const;
 const PREEMPTIVE_SAM_SILO_GOLD = 1_000_000n;
+const strategicBorderPressureSnapshot = () => {
+  const player = runner.game.playerByClientID(clientID);
+  if (!player) return null;
+  const ownTroops = Math.max(0, Number(player.troops()) || 0);
+  const opponents = new Map<string, { name: string; troops: number }>();
+  let frontTiles = 0;
+  for (const borderTile of player.borderTiles()) {
+    let threatened = false;
+    for (const neighbor of runner.game.neighbors(borderTile)) {
+      const opponent = runner.game.playerBySmallID(runner.game.ownerID(neighbor));
+      if (
+        !opponent ||
+        opponent.type() !== PlayerType.Nation && opponent.type() !== PlayerType.Human ||
+        opponent.team() === player.team()
+      ) continue;
+      opponents.set(opponent.id(), {
+        name: opponent.name(),
+        troops: Math.max(0, Number(opponent.troops()) || 0),
+      });
+      threatened = true;
+    }
+    if (threatened) frontTiles += 1;
+  }
+  const hostileTroops = [...opponents.values()].reduce(
+    (total, opponent) => total + opponent.troops,
+    0,
+  );
+  const gold = player.gold();
+  const defensePostCost = runner.game.config()
+    .unitInfo(UnitType.DefensePost)
+    .cost(runner.game, player);
+  return {
+    ownTroops,
+    hostileTroops,
+    hostileRatio: ownTroops > 0 ? hostileTroops / ownTroops : null,
+    hostilePlayers: [...opponents.values()],
+    frontTiles,
+    gold: String(gold),
+    defensePostCost: String(defensePostCost),
+    canAffordDefensePost: gold >= defensePostCost,
+  };
+};
 const countIntents = (
   intents: readonly { type: string; unit?: unknown; tile?: unknown }[],
   tick: number,
@@ -208,6 +255,7 @@ const countIntents = (
       tick,
       unit: intent.unit,
       tile: Number.isFinite(tile) ? tile : null,
+      strategicBorderPressure: strategicBorderPressureSnapshot(),
     });
   }
 };
@@ -294,6 +342,11 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
               : null,
         };
       });
+    const buildStrategicBorderPressure = intents.some(
+      (intent) => intent.type === "build_unit",
+    )
+      ? strategicBorderPressureSnapshot()
+      : null;
     console.warn(
       JSON.stringify({
         phase: "decision",
@@ -308,6 +361,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
             troops: Math.round(attack.troops()),
           })) ?? [],
         attackTargets,
+        buildStrategicBorderPressure,
         intents,
       }),
     );

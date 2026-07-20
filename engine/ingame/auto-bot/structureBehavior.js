@@ -875,14 +875,26 @@
       // Active land defense comes before routine SAM coverage/parity and
       // offensive silo work. A concrete missile emergency still wins.
       if (legendaryMissileEmergency) return null;
-      if (!this.hasPriorStructureForDefensePost()) return null;
+      const hasPriorStructure = this.hasPriorStructureForDefensePost();
+      // Ordinary openings still establish their economy before a first Defense
+      // Post. A strategic Nation/Human already massed on our land border is the
+      // exception: waiting for the first City leaves no construction window once
+      // it attacks. Carry the same precomputed threat into the placement probe so
+      // the border is not scanned twice in this decision.
+      const firstStructureThreat = hasPriorStructure
+        ? null
+        : this.preemptiveBorderDefensePostThreat();
+      if (!hasPriorStructure && firstStructureThreat === null) return null;
       if (this.game.config().isUnitDisabled(UNIT.DefensePost)) return null;
-      if (await this.tryBuildDefensePost()) return true;
+      if (await this.tryBuildDefensePost(firstStructureThreat)) return true;
 
       // Save the slot only while gold is the missing requirement. If the post
       // is affordable but no legal tile was found, continuing prevents
       // unrelated construction from starving forever.
-      if (this.defensePostNeeded() && !this.canAffordDefensePost()) return false;
+      if (
+        (firstStructureThreat !== null || this.defensePostNeeded()) &&
+        !this.canAffordDefensePost()
+      ) return false;
       return null;
     }
 
@@ -927,7 +939,7 @@
     }
 
     // tryBuildDefensePost — NationStructureBehavior.ts:181 (now async).
-    async tryBuildDefensePost() {
+    async tryBuildDefensePost(precomputedThreat = null) {
       if (!autoBotBuildAllowed(UNIT.DefensePost)) return false; // user disallowed
       // src reads gameConfig().difficulty → REPLICATED difficulty.
       const difficulty = currentDifficulty();
@@ -935,7 +947,7 @@
       if (difficulty === Difficulty.Medium && !this.random.chance(2)) {
         return false;
       }
-      const threat = this.defensePostPlacementThreat(difficulty);
+      const threat = precomputedThreat || this.defensePostPlacementThreat(difficulty);
       if (threat === null) return false;
       const frontTiles = threat.frontTiles ||
         this.getAttackFrontTiles(threat.landAttacks);

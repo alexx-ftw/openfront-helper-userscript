@@ -385,9 +385,32 @@ own.silos = [];
 assert.equal(
   behavior.hasPriorStructureForDefensePost(),
   false,
-  "Defense Posts remain unavailable as the literal first structure",
+  "ordinary openings do not treat a Defense Post as their literal first structure",
 );
 own.silos = priorSilosForDefensePostGate;
+
+const firstStrategicDefensePostBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+firstStrategicDefensePostBehavior.hasPriorStructureForDefensePost = () => false;
+firstStrategicDefensePostBehavior.game = {
+  config: () => ({ isUnitDisabled: () => false }),
+};
+const firstStrategicThreat = { allowed: 1, frontTiles: [7] };
+firstStrategicDefensePostBehavior.preemptiveBorderDefensePostThreat = () => firstStrategicThreat;
+let firstStrategicThreatPassedToPlacement = null;
+firstStrategicDefensePostBehavior.tryBuildDefensePost = async (threat) => {
+  firstStrategicThreatPassedToPlacement = threat;
+  return true;
+};
+assert.equal(
+  await firstStrategicDefensePostBehavior.handleDefensePostPriority(false),
+  true,
+  "an affordable first Defense Post preempts an adjacent strategic land threat before a City can spend its gold",
+);
+assert.strictEqual(
+  firstStrategicThreatPassedToPlacement,
+  firstStrategicThreat,
+  "the first-structure emergency reuses its exact border threat for the placement probe",
+);
 
 const originalDifficultyForDefensePost = sandbox.currentDifficulty;
 const originalOwnTroopsForDefensePost = own.troops;
