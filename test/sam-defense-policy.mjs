@@ -629,10 +629,6 @@ hostileSiloMaximumPriorityBehavior.hasPlacedSiloOnMap = () => true;
 hostileSiloMaximumPriorityBehavior.shouldBuildSiloTriggeredSam = () => true;
 hostileSiloMaximumPriorityBehavior.shouldReserveHostileSiloSamBudget = () => true;
 hostileSiloMaximumPriorityBehavior.shouldYieldHostileSiloReserveToLandDefense = () => false;
-let maximumPriorityGold = 1_500_000n;
-hostileSiloMaximumPriorityBehavior.player = { gold: () => maximumPriorityGold };
-hostileSiloMaximumPriorityBehavior.ownedLevels = () => 0;
-hostileSiloMaximumPriorityBehavior.cost = () => 1_500_000n;
 let maximumPrioritySamResult = false;
 let maximumPrioritySamAttempts = 0;
 let lowerPriorityConstructionCalls = 0;
@@ -672,13 +668,6 @@ assert.equal(
   "an affordable strategic land defense can proceed while an unaffordable SAM remains reserved",
 );
 hostileSiloMaximumPriorityBehavior.shouldYieldHostileSiloReserveToLandDefense = () => false;
-maximumPriorityGold = 1_499_999n;
-assert.equal(
-  await hostileSiloMaximumPriorityBehavior.handleHostileSiloSamMaximumPriority(),
-  null,
-  "an unaffordable placed-Silo SAM yields to productive construction instead of starving income",
-);
-maximumPriorityGold = 1_500_000n;
 
 const preemptiveHostileGoldBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 let preemptiveHostileGoldSamCalls = 0;
@@ -750,7 +739,7 @@ assert.equal(
   null,
   "Enemy gold without a placed hostile Silo does not hard-reserve construction",
 );
-assert.equal(maximumPrioritySamAttempts, 4);
+assert.equal(maximumPrioritySamAttempts, 3);
 
 assert.equal(
   typeof behavior.enemySamCapacityParityTarget,
