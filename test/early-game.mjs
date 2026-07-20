@@ -1746,6 +1746,18 @@ await tribeEtaCacheBehavior.enrichEarlyGameTribeBoatEtas(
   new Map([[stableTargetPlayer, new Set([10])]]),
 );
 assert.equal(tribeEtaRouteCalls, 2, "a changed launch coast invalidates the cached route ETA");
+for (let index = 0; index < 4; index++) {
+  tribeEtaCacheTick += 30;
+  await tribeEtaCacheBehavior.enrichEarlyGameTribeBoatEtas(
+    [makeStableSeaCandidate()],
+    new Map([[stableTargetPlayer, new Set([10])]]),
+  );
+}
+assert.equal(
+  tribeEtaRouteCalls,
+  2,
+  "a continuously selected tribe keeps its exact route while both coasts remain unchanged",
+);
 tribeEtaCacheTick += 61;
 await tribeEtaCacheBehavior.enrichEarlyGameTribeBoatEtas(
   [makeStableSeaCandidate()],

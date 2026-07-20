@@ -97,9 +97,10 @@
   // that batch is cached, the next decision naturally advances to the
   // remaining cluster gateways without a multi-batch frame spike.
   const EARLY_TRIBE_BOAT_ETA_CANDIDATE_BUDGET = EARLY_TRIBE_BOAT_ETA_TARGETS;
-  // A stable coast does not need sixteen new pathfinder probes every strategic
-  // decision. Revalidate promptly, and invalidate immediately on either border
-  // snapshot changing so new ports/territory can still alter the route.
+  // A selected, stable coast does not need fresh pathfinder probes every
+  // strategic decision. Invalidate immediately on either border snapshot
+  // changing; only candidates that leave the selected maritime set for this
+  // whole window need a fresh route when they return.
   const EARLY_TRIBE_BOAT_ETA_CACHE_TICKS = 60;
   // An ocean probe performs two worker route queries. Spread failed destinations
   // across the strategic cadence instead of chaining four pathfinders in one
@@ -3708,10 +3709,14 @@
         cached?.ownBorderSignature !== ownBorderSignature ||
         cached.targetBorderSignature !== targetBorderSignature ||
         tick < cached.tick ||
-        tick - cached.tick > EARLY_TRIBE_BOAT_ETA_CACHE_TICKS
+        tick - cached.lastRelevantTick > EARLY_TRIBE_BOAT_ETA_CACHE_TICKS
       ) {
         return null;
       }
+      // The candidate is still selected in this decision. Preserve its exact
+      // route while both coasts stay identical, but force a revalidation if it
+      // leaves the selected set for the bounded freshness window.
+      cached.lastRelevantTick = tick;
       return cached;
     }
 
@@ -3729,12 +3734,13 @@
         ownBorderSignature,
         targetBorderSignature,
         tick,
+        lastRelevantTick: tick,
         eta: candidate.boatEtaTicks,
         targetTile: candidate.boatTargetTile ?? null,
       });
       if (cache.size <= EARLY_TRIBE_CANDIDATES * 4) return;
       for (const [cachedKey, cached] of cache) {
-        if (tick - cached.tick > EARLY_TRIBE_BOAT_ETA_CACHE_TICKS) {
+        if (tick - cached.lastRelevantTick > EARLY_TRIBE_BOAT_ETA_CACHE_TICKS) {
           cache.delete(cachedKey);
         }
       }
