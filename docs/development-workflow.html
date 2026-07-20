@@ -36,6 +36,21 @@
       states through explicit capability checks or result values rather than exceptions.
     </p>
 
+    <p>
+      When you add a target-strength floor, preserve the explicit empty-target path: a target that
+      reports zero or no troop count must keep the normal reserve-limited attack payload rather than
+      being converted into a zero-troop no-op. Cover both a positive-strength floor and the empty
+      target fallback in <code>test/attack-intent-accounting.mjs</code>.
+    </p>
+
+    <p>
+      Lobby bridge helpers must read configuration through the initialized
+      <code>lobbyState.settings</code> object, never through an undeclared free variable. A static
+      regression test must exercise the helper source whenever a lobby setting is forwarded to an
+      in-game helper, because that bridge runs during startup and can otherwise prevent every UI and
+      gameplay subsystem from initializing.
+    </p>
+
     <h2>OpenFront engine compatibility</h2>
 
     <p>

@@ -351,7 +351,7 @@ function syncAntiAfkHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SET_ANTI_AFK",
       payload: {
-        enabled: Boolean(settings.antiAfk),
+        enabled: Boolean(lobbyState.settings.antiAfk),
       },
     },
     "*",

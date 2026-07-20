@@ -9,6 +9,7 @@ const SOURCE = path.join(ROOT, "engine/ingame/runtime.js");
 const SHELL_SOURCE = path.join(ROOT, "src/shell/index.ts");
 const AUDIO_SOURCE = path.join(ROOT, "src/shell/audio.ts");
 const LOBBY_SOURCE = path.join(ROOT, "engine/lobby/auto-join.js");
+const LOBBY_CORE_SOURCE = path.join(ROOT, "engine/lobby/core.js");
 
 const sandbox = {
   console,
@@ -108,6 +109,18 @@ test("accepts a lobby-to-spawn transition without an auto-join pending record", 
     source,
     /if \(\(!pending && !startedFromLobby\) \|\| !lobbyState\.settings\.joinNotification\)/,
     "manual lobby entry can trigger the game-start notification",
+  );
+});
+
+test("syncs Anti-AFK through the initialized lobby settings state", () => {
+  const source = fs.readFileSync(LOBBY_CORE_SOURCE, "utf8");
+  const helper = source.match(/function syncAntiAfkHelper\(\) \{([\s\S]*?)\n\}/);
+
+  assert.ok(helper, "lobby core exposes the Anti-AFK bridge helper");
+  assert.match(
+    helper[1],
+    /enabled: Boolean\(lobbyState\.settings\.antiAfk\)/,
+    "the helper must not reference an undeclared settings variable during startup",
   );
 });
 

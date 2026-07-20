@@ -2693,10 +2693,7 @@ radioactiveBehavior.getEarlyGameSpendableTroops = (reserve) => 100000 - reserve;
 radioactiveBehavior.getTerraNulliusLivenessReserveTroops = () => 99000;
 const radioactiveLandContext = radioactiveBehavior.createLandAttackContext(
   { isPlayer: () => false },
-  null,
-  null,
-  true,
-  false,
+  { radioactiveTerraNullius: true },
 );
 assert.equal(
   radioactiveLandContext.targetTroops,

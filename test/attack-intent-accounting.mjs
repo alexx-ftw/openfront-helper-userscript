@@ -568,6 +568,44 @@ assert.equal(
   "the 60% opening fraction is a ceiling rather than a fixed payload",
 );
 
+const nationAttackFloorBehavior = Object.create(sandbox.AttackBehavior.prototype);
+nationAttackFloorBehavior.player = { troops: () => 100_000 };
+nationAttackFloorBehavior.getLiveOutboundAttackTroopsForTarget = () => 0;
+const nationAttackFloorTarget = {
+  isPlayer: () => true,
+  troops: () => 40_000,
+};
+const nationAttackFloorContext = {
+  target: nationAttackFloorTarget,
+  isTribeTarget: false,
+  isTerraNullius: false,
+  targetTroops: 20_000,
+  targetSpendableTroops: 70_000,
+  defenseProfile: { attackCostMultiplier: 1 },
+  force: false,
+  attackBlocked: false,
+};
+assert.equal(
+  nationAttackFloorBehavior.calculateRegularLandAttackTroops(nationAttackFloorContext),
+  0,
+  "a normal Nation attack below its 2x capture floor emits no retaliatory probe",
+);
+assert.equal(nationAttackFloorContext.attackBlocked, true);
+nationAttackFloorContext.targetSpendableTroops = 80_000;
+nationAttackFloorContext.attackBlocked = false;
+assert.equal(
+  nationAttackFloorBehavior.calculateRegularLandAttackTroops(nationAttackFloorContext),
+  80_000,
+  "an affordable Nation opening commits exactly the 2x capture floor",
+);
+nationAttackFloorContext.force = true;
+nationAttackFloorContext.targetSpendableTroops = 1;
+assert.equal(
+  nationAttackFloorBehavior.calculateRegularLandAttackTroops(nationAttackFloorContext),
+  80_000,
+  "a forced defensive counterattack retains the regular reserve-based payload",
+);
+
 const incomingNation = { type: () => "Nation", smallID: () => 8 };
 const openingDefenseBehavior = Object.create(sandbox.AttackBehavior.prototype);
 openingDefenseBehavior.reconcileOutboundAttackIntentCommitments = () => {};

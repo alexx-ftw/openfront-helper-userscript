@@ -7018,10 +7018,13 @@
       }
       return this.sendLandAttack(
         target,
-        minCommitFraction,
-        earlyGameCandidate,
-        options.radioactiveTerraNullius,
-        options.isParallelTribeAttack,
+        {
+          minCommitFraction,
+          earlyGameCandidate,
+          radioactiveTerraNullius: options.radioactiveTerraNullius,
+          parallelTribeAttack: options.isParallelTribeAttack,
+          force: options.force,
+        },
       );
     }
 
@@ -7033,9 +7036,10 @@
       }
       return this.sendLandAttack(
         options.target,
-        options.minCommitFraction,
-        null,
-        options.radioactiveTerraNullius,
+        {
+          minCommitFraction: options.minCommitFraction,
+          radioactiveTerraNullius: options.radioactiveTerraNullius,
+        },
       );
     }
 
@@ -7215,13 +7219,15 @@
     }
 
     // sendLandAttack — AiAttackBehavior (private). SYNC: no worker calls.
-    createLandAttackContext(
-      target,
-      minCommitFraction,
-      earlyGameCandidate,
-      radioactiveTerraNullius,
-      parallelTribeAttack,
-    ) {
+    createLandAttackContext(target, options = {}) {
+      const configuration = {
+        minCommitFraction: null,
+        earlyGameCandidate: null,
+        radioactiveTerraNullius: false,
+        parallelTribeAttack: false,
+        force: false,
+        ...options,
+      };
       const defenseProfile = this.getEnemyDefensePostAttackProfile(target);
       const isTribeTarget =
         target.isPlayer() && target.type() === PlayerType.Bot;
@@ -7237,7 +7243,7 @@
       const isTerraNullius = !target.isPlayer();
       const targetReserveTroops = this.getLandAttackTargetReserveTroops(
         target,
-        radioactiveTerraNullius,
+        configuration.radioactiveTerraNullius,
       );
       const targetTroops = state.settings.winFixes
         ? targetReserveTroops
@@ -7245,7 +7251,9 @@
       const targetSpendableTroops =
         this.getEarlyGameSpendableTroops(targetReserveTroops);
       const finalSpendableTroops =
-        isTerraNullius && state.settings.winFixes && !radioactiveTerraNullius
+        isTerraNullius &&
+        state.settings.winFixes &&
+        !configuration.radioactiveTerraNullius
           ? Math.max(
               targetSpendableTroops,
               this.getEarlyGameSpendableTroops(
@@ -7256,20 +7264,23 @@
       let terraNulliusCommitFraction = null;
       if (isTerraNullius && state.settings.winFixes) {
         const requested =
-          minCommitFraction === null ? Number.NaN : Number(minCommitFraction);
+          configuration.minCommitFraction === null
+            ? Number.NaN
+            : Number(configuration.minCommitFraction);
         terraNulliusCommitFraction = Number.isFinite(requested)
           ? requested
           : EARLY_EXPAND_COMMIT;
       }
       return {
         target,
-        earlyGameCandidate,
+        force: configuration.force,
+        earlyGameCandidate: configuration.earlyGameCandidate,
         defenseProfile,
         isTribeTarget,
         isTerraNullius,
-        radioactiveTerraNullius,
+        radioactiveTerraNullius: configuration.radioactiveTerraNullius,
         usesPendingIntentBudget:
-          parallelTribeAttack === true && isTribeTarget,
+          configuration.parallelTribeAttack === true && isTribeTarget,
         targetTroops,
         targetSpendableTroops,
         finalSpendableTroops,
@@ -7314,7 +7325,6 @@
       const existing = context.target.isPlayer()
         ? this.getLiveOutboundAttackTroopsForTarget(context.target)
         : 0;
-      if (existing <= 0) return troops;
       const defenseMultiplier = Math.max(
         1,
         Number(context.defenseProfile?.attackCostMultiplier || 1),
@@ -7324,6 +7334,18 @@
         2 *
         defenseMultiplier;
       const preferred = minimum * 2;
+      // A normal first strike against a Nation/Human must be a viable capture,
+      // not a small probe that immediately triggers retaliation. Defensive
+      // counterattacks deliberately retain their forced route, while tribes
+      // keep their own capture-floor calculation above.
+      if (this.shouldBlockInitialPlayerAttack(context, existing, minimum)) {
+        if (context.targetSpendableTroops < minimum) {
+          context.attackBlocked = true;
+          return 0;
+        }
+        return Math.min(context.targetSpendableTroops, minimum);
+      }
+      if (existing <= 0) return troops;
       if (existing + context.targetSpendableTroops < minimum) {
         context.attackBlocked = true;
         return 0;
@@ -7333,6 +7355,16 @@
         Math.max(0, preferred - existing),
       );
       return troops;
+    }
+
+    shouldBlockInitialPlayerAttack(context, existing, minimum) {
+      return (
+        existing <= 0 &&
+        context.target.isPlayer() &&
+        !context.isTribeTarget &&
+        context.force !== true &&
+        minimum > 0
+      );
     }
 
     calculateLandAttackTroops(context) {
@@ -7418,21 +7450,9 @@
       return true;
     }
 
-    sendLandAttack(
-      target,
-      minCommitFraction = null,
-      earlyGameCandidate = null,
-      radioactiveTerraNullius = false,
-      parallelTribeAttack = false,
-    ) {
+    sendLandAttack(target, options = {}) {
       this.reconcileOutboundAttackIntentCommitments();
-      const context = this.createLandAttackContext(
-        target,
-        minCommitFraction,
-        earlyGameCandidate,
-        radioactiveTerraNullius,
-        parallelTribeAttack,
-      );
+      const context = this.createLandAttackContext(target, options);
       let troops = this.calculateLandAttackTroops(context);
       if (
         context.attackBlocked ||
