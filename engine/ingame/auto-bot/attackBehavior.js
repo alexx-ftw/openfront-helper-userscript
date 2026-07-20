@@ -5727,7 +5727,8 @@
       );
       const sampledShores = [];
       for (let sample = 0; sample < sampleCount; sample++) {
-        sampledShores.push(this.random.randElement(shore));
+        const tile = this.random.randElement(shore);
+        sampledShores.push({ x: this.game.x(tile), y: this.game.y(tile) });
       }
       const offsets = this.nearbyBoatScanOffsets(context.radius, context.step);
       let offsetsSinceYield = 0;
@@ -5742,8 +5743,8 @@
           offset.dist > furthest.dist
         ) break;
         for (const sampledShore of sampledShores) {
-          const x = this.game.x(sampledShore) + offset.dx;
-          const y = this.game.y(sampledShore) + offset.dy;
+          const x = sampledShore.x + offset.dx;
+          const y = sampledShore.y + offset.dy;
           if (!this.game.isValidCoord(x, y)) continue;
           const record = this.nearbyBoatTargetRecord(
             this.game.ref(x, y),
