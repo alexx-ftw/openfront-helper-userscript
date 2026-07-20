@@ -829,11 +829,12 @@
       // preemptive SAM attempt.
       if (this.shouldBuildSiloTriggeredSam() || preemptiveHostileSiloRisk) {
         if (await this.maybeSpawnHostileSiloSam()) return true;
-        return placedSilo &&
-            this.shouldReserveHostileSiloSamBudget() &&
-            !this.shouldYieldHostileSiloReserveToLandDefense()
-          ? false
-          : null;
+        // A visible Silo makes the first SAM the next defensive goal, but it
+        // must not turn a partial fund into a permanent economic dead end.
+        // If the launcher is still unaffordable, allow the ordinary phase to
+        // add income; once affordable, keep reserving this slot so a placement
+        // or actuation failure cannot be masked by an unrelated spend.
+        return this.shouldHoldHostileSiloSamSlot(placedSilo) ? false : null;
       }
 
       // Building the first SAM is not enough once a hostile Silo is live: a
@@ -2377,6 +2378,23 @@
       // or Port established, do not spend even a small partial SAM fund on an
       // unrelated structure while an external nuclear threat exists.
       return ECONOMIC_STRUCTURE_TYPES.some((type) => this.ownedLevels(type) > 0);
+    }
+
+    canAffordHostileSiloSam() {
+      const options = this.hostileSiloSamPlacementOptions();
+      return (
+        this.availableGoldAfterReserve(UNIT.SAMLauncher) >=
+        this.constructionCostForOptions(UNIT.SAMLauncher, options)
+      );
+    }
+
+    shouldHoldHostileSiloSamSlot(placedSilo) {
+      return (
+        placedSilo &&
+        this.canAffordHostileSiloSam() &&
+        this.shouldReserveHostileSiloSamBudget() &&
+        !this.shouldYieldHostileSiloReserveToLandDefense()
+      );
     }
 
     availableGoldAfterReserve(type) {

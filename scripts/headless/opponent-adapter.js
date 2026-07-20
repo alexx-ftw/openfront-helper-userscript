@@ -349,6 +349,47 @@ export class BundledOpponentBot {
     );
   }
 
+  structureSpawnTraceContext(behavior, type, options) {
+    const rawGold = this.pageGame.myPlayer()?.gold?.();
+    const eligible =
+      typeof behavior.structureSpawnEligible === "function"
+        ? behavior.structureSpawnEligible(type, options)
+        : null;
+    const perceivedCost =
+      eligible === true && typeof behavior.constructionCostForOptions === "function"
+        ? String(behavior.constructionCostForOptions(type, options))
+        : null;
+    const availableGold =
+      eligible === true && typeof behavior.availableGoldAfterReserve === "function"
+        ? String(behavior.availableGoldAfterReserve(type))
+        : null;
+    const structures = behavior.player?.units?.(type) ?? [];
+    return {
+      gold: rawGold === null || rawGold === undefined ? null : String(rawGold),
+      eligible,
+      perceivedCost,
+      availableGold,
+      existing: structures.length,
+      underConstruction: structures.some(
+        (structure) => structure?.isUnderConstruction?.() === true,
+      ),
+    };
+  }
+
+  traceStructurePlacementProbe(type, buildable) {
+    const probe = {
+      tick: this.game.ticks(),
+      type,
+      eligible: buildable !== null && buildable !== undefined,
+      tile: buildable?.tile ?? null,
+    };
+    if (type === "Defense Post") {
+      this.structureTrace.push({ kind: "defense-post-probe", ...probe });
+    } else {
+      this.structureTrace.push({ kind: "placement-probe", ...probe });
+    }
+  }
+
   enableStructureTrace() {
     const behavior = this.nationBot?.structureBehavior;
     if (!behavior || behavior.__ofhStructureTraceEnabled === true) return;
@@ -357,23 +398,24 @@ export class BundledOpponentBot {
     behavior.__ofhStructureTraceEnabled = true;
     behavior.maybeSpawnStructure = async (type, options) => {
       const tick = this.game.ticks();
-      const rawGold = this.pageGame.myPlayer()?.gold?.();
-      const gold = rawGold === null || rawGold === undefined ? null : String(rawGold);
+      const context = this.structureSpawnTraceContext(behavior, type, options);
       const emitted = await originalMaybeSpawnStructure.call(behavior, type, options);
-      this.structureTrace.push({ kind: "spawn", tick, type, emitted, gold });
+      this.structureTrace.push({ kind: "spawn", tick, type, emitted, ...context });
       return emitted;
     };
     const originalStructureSpawnTile = behavior.structureSpawnTile;
     if (typeof originalStructureSpawnTile === "function") {
       behavior.structureSpawnTile = async (type, options) => {
         const buildable = await originalStructureSpawnTile.call(behavior, type, options);
-        if (type === "Defense Post") {
-          this.structureTrace.push({
-            kind: "defense-post-probe",
-            tick: this.game.ticks(),
-            eligible: buildable !== null && buildable !== undefined,
-            tile: buildable?.tile ?? null,
-          });
+        if (
+          type === "Defense Post" ||
+          type === "SAM Launcher" ||
+          type === "Missile Silo" ||
+          type === "City" ||
+          type === "Factory" ||
+          type === "Port"
+        ) {
+          this.traceStructurePlacementProbe(type, buildable);
         }
         return buildable;
       };
