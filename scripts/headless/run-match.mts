@@ -482,7 +482,23 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
             : [],
           rankedTarget: earlyGame.tribeTarget ?? null,
           rankedCandidates: Array.isArray(earlyGame.actionableTribes)
-            ? earlyGame.actionableTribes.slice(0, 8)
+            ? earlyGame.actionableTribes.slice(0, 8).map((candidate: Record<string, unknown>) => ({
+                id: candidate.id ?? null,
+                alive: candidate.alive === true,
+                friendly: candidate.friendly === true,
+                landBorder: candidate.landBorder === true,
+                boatCandidate: candidate.boatCandidate === true,
+                seaReachableWithin30Ticks: candidate.seaReachableWithin30Ticks === true,
+                boatEtaTicks: Number.isFinite(Number(candidate.boatEtaTicks))
+                  ? Number(candidate.boatEtaTicks)
+                  : null,
+                tribeClusterSize: Number.isFinite(Number(candidate.tribeClusterSize))
+                  ? Number(candidate.tribeClusterSize)
+                  : null,
+                tribeClusterAccess: Number.isFinite(Number(candidate.tribeClusterAccess))
+                  ? Number(candidate.tribeClusterAccess)
+                  : null,
+              }))
             : [],
         },
         attackTargets,
