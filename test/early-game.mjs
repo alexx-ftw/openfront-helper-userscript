@@ -3215,6 +3215,18 @@ assert.equal(
   0,
   "the refreshed competitor resources invalidate old food-race values",
 );
+riskSnapshotTick = 90;
+await riskSnapshotBehavior.getIncrementalEarlyGameTribeNodes(
+  [riskSnapshotRival],
+  refreshedRiskProfiles,
+  new Map(),
+  false,
+);
+assert.equal(
+  riskNodeBuilds,
+  1,
+  "topology-only tribe nodes outlive the short food-race snapshot without reusing risk",
+);
 const passiveTribeSnapshotBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 let passiveTribeTick = 1;
 let passiveTribeTroops = 20;

@@ -2873,7 +2873,7 @@
         competitorProfiles,
         competitorStableSignature,
         foodRaceById,
-        tick,
+        { tick, includeFoodRace },
       );
       if (reused !== null) return reused;
       const nodes = [];
@@ -2897,6 +2897,7 @@
         competitorStableSignature,
         nodes,
         foodRaceById: new Map(foodRaceById),
+        includeFoodRace,
       };
       return nodes;
     }
@@ -2906,12 +2907,17 @@
       competitorProfiles,
       competitorStableSignature,
       foodRaceById,
-      tick,
+      options,
     ) {
+      const { tick, includeFoodRace } = options;
+      const maximumAge = includeFoodRace
+        ? EARLY_GAME_TRIBE_RISK_SNAPSHOT_CACHE_TICKS
+        : EARLY_GAME_TRIBE_TOPOLOGY_CACHE_TICKS;
       if (
         !cached ||
         tick < cached.tick ||
-        tick - cached.tick > EARLY_GAME_TRIBE_RISK_SNAPSHOT_CACHE_TICKS
+        tick - cached.tick > maximumAge ||
+        (includeFoodRace === true && cached.includeFoodRace === false)
       ) {
         return null;
       }
@@ -2937,6 +2943,7 @@
       cached.tick = tick;
       cached.competitorProfiles = competitorProfiles;
       cached.foodRaceById = new Map();
+      cached.includeFoodRace = includeFoodRace;
       return cached.nodes;
     }
 
