@@ -101,6 +101,7 @@ assert.equal(
 assert.equal(siegeCounterattacks, 0);
 assert.equal(sandbox.state.earlyGame.action, "defense-hold");
 siegeHoldBehavior.hasOverwhelmingIncomingAttack = () => false;
+siegeHoldBehavior.canFundIncomingCounterattack = () => true;
 assert.equal(
   await siegeHoldBehavior.respondToIncomingAttack(),
   true,

@@ -2841,6 +2841,7 @@ priorityIncomingAttacks = [
     troops: () => 100,
   },
 ];
+priorityBehavior.canFundIncomingCounterattack = () => true;
 await priorityBehavior.maybeAttack();
 assert.deepEqual(
   priorityAttackTargets,
@@ -2848,6 +2849,7 @@ assert.deepEqual(
   "an incoming attacker blocks both offensive expansion lanes",
 );
 assert.equal(targetSandbox.state.earlyGame.action, "retaliate");
+delete priorityBehavior.canFundIncomingCounterattack;
 priorityIncomingAttacks = [];
 
 // A hostile border must not suppress the other expansion lanes. First verify

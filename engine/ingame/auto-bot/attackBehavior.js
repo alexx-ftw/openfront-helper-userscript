@@ -1048,7 +1048,9 @@
 
     getPendingOutboundAttackTroops() {
       this.reconcileOutboundAttackIntentCommitments();
-      return this.botAttackPendingIntentCommitments.reduce(
+      const pending = this.botAttackPendingIntentCommitments;
+      if (!Array.isArray(pending)) return 0;
+      return pending.reduce(
         (total, entry) => total + Math.max(0, Number(entry.troops) || 0),
         0,
       );
@@ -1056,7 +1058,9 @@
 
     getPendingTerraNulliusAttackTroops() {
       this.reconcileOutboundAttackIntentCommitments();
-      return this.botAttackPendingIntentCommitments
+      const pending = this.botAttackPendingIntentCommitments;
+      if (!Array.isArray(pending)) return 0;
+      return pending
         .filter((entry) => entry?.targetIsPlayer === false)
         .reduce(
           (total, entry) => total + Math.max(0, Number(entry.troops) || 0),
@@ -1091,7 +1095,9 @@
 
     getPendingOutboundDonationTroops() {
       this.reconcileOutboundDonationIntentCommitments();
-      return this.botPendingDonationIntentCommitments.reduce(
+      const pending = this.botPendingDonationIntentCommitments;
+      if (!Array.isArray(pending)) return 0;
+      return pending.reduce(
         (total, entry) => total + Math.max(0, Number(entry.troops) || 0),
         0,
       );
@@ -6460,6 +6466,24 @@
       );
     }
 
+    incomingHostileTroopsFrom(attacker) {
+      if (attacker === null || attacker === undefined) return 0;
+      return this.incomingHostileAttacks().reduce((total, attack) => {
+        if (attack.attacker?.() !== attacker) return total;
+        return total + Math.max(0, Number(attack.troops?.()) || 0);
+      }, 0);
+    }
+
+    // A token counterattack does not reduce an attack already in flight, while
+    // it does remove troops from the defending border. Only retaliate when the
+    // currently safe budget can at least match the force being countered.
+    canFundIncomingCounterattack(attacker) {
+      const incomingTroops = this.incomingHostileTroopsFrom(attacker);
+      if (incomingTroops < 1) return false;
+      const reserveTroops = this.getEarlyGameTargetReserveTroops(attacker);
+      return this.getEarlyGameSpendableTroops(reserveTroops) >= incomingTroops;
+    }
+
     findIncomingAttackPlayer() {
       let incomingAttacks = this.incomingHostileAttacks();
       // Faithful mode keeps the upstream Nation/Human policy. Win-fix mode must
@@ -6489,7 +6513,10 @@
     async respondToIncomingAttack() {
       const attacker = this.findIncomingAttackPlayer();
       if (attacker === null) return null;
-      if (this.hasOverwhelmingIncomingAttack()) {
+      if (
+        this.hasOverwhelmingIncomingAttack() ||
+        !this.canFundIncomingCounterattack(attacker)
+      ) {
         state.earlyGame.action = "defense-hold";
         return false;
       }

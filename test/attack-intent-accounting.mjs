@@ -610,6 +610,7 @@ const incomingNation = { type: () => "Nation", smallID: () => 8 };
 const openingDefenseBehavior = Object.create(sandbox.AttackBehavior.prototype);
 openingDefenseBehavior.reconcileOutboundAttackIntentCommitments = () => {};
 openingDefenseBehavior.findIncomingAttackPlayer = () => incomingNation;
+openingDefenseBehavior.canFundIncomingCounterattack = () => true;
 let openingDefenseTarget = null;
 openingDefenseBehavior.sendAttack = async (candidate, force) => {
   openingDefenseTarget = { candidate, force };
@@ -653,12 +654,32 @@ decisionDefenseBehavior.allianceBehavior = {};
 decisionDefenseBehavior.reconcileOutboundAttackIntentCommitments = () => {};
 decisionDefenseBehavior.createAttackDecisionContext = () => ({ expandOn: false });
 decisionDefenseBehavior.findIncomingAttackPlayer = () => incomingNation;
+decisionDefenseBehavior.canFundIncomingCounterattack = () => false;
 decisionDefenseBehavior.sendAttack = async () => false;
 decisionDefenseBehavior.tryImmediateAttackPriorities = async () => {
   throw new Error("failed defense must block offensive priorities");
 };
 await decisionDefenseBehavior.maybeAttack();
 assert.equal(sandbox.state.earlyGame.action, "defense-hold");
+
+const counterattackBudgetBehavior = Object.create(sandbox.AttackBehavior.prototype);
+counterattackBudgetBehavior.incomingHostileAttacks = () => [
+  { attacker: () => incomingNation, troops: () => 80_000 },
+  { attacker: () => incomingNation, troops: () => 40_000 },
+];
+counterattackBudgetBehavior.getEarlyGameTargetReserveTroops = () => 0;
+counterattackBudgetBehavior.getEarlyGameSpendableTroops = () => 119_999;
+assert.equal(
+  counterattackBudgetBehavior.canFundIncomingCounterattack(incomingNation),
+  false,
+  "a counterattack below the attacker’s in-flight force is held instead of becoming a token attack",
+);
+counterattackBudgetBehavior.getEarlyGameSpendableTroops = () => 120_000;
+assert.equal(
+  counterattackBudgetBehavior.canFundIncomingCounterattack(incomingNation),
+  true,
+  "a counterattack may proceed once its safe budget matches the attacker’s in-flight force",
+);
 
 const expensiveTileBehavior = new sandbox.AttackBehavior(
   {},
