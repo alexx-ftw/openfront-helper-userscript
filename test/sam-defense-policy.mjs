@@ -33,13 +33,14 @@ const state = {
   stats: { builds: 0 },
 };
 const sentBuilds = [];
+let testDifficulty = Difficulty.Impossible;
 const sandbox = {
   UNIT,
   Difficulty,
   GameMode: { Team: "Team" },
   PlayerType: { Bot: "Bot", Human: "Human", Nation: "Nation", Tribe: "Tribe" },
   state,
-  currentDifficulty: () => Difficulty.Impossible,
+  currentDifficulty: () => testDifficulty,
   isLegendaryDifficulty: (difficulty = Difficulty.Impossible) =>
     difficulty === Difficulty.Legendary,
   isAtLeastHardDifficulty: (difficulty) =>
@@ -71,6 +72,57 @@ executeClassicScript(
   sandbox,
   { filename: "sam-defense-policy.vm.js" },
 );
+
+const commercialRailBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+const commercialRailState = new Uint8Array(10_000);
+commercialRailState[1_012] = 1;
+commercialRailBehavior.game = {
+  x: (tile) => tile % 100,
+  y: (tile) => Math.floor(tile / 100),
+  ref: (x, y) => y * 100 + x,
+  isValidCoord: (x, y) => x >= 0 && x < 100 && y >= 0 && y < 100,
+  magnitude: () => 0,
+  railroadState: () => commercialRailState,
+  euclideanDistSquared: (left, right) => {
+    const dx = (left % 100) - (right % 100);
+    const dy = Math.floor(left / 100) - Math.floor(right / 100);
+    return dx * dx + dy * dy;
+  },
+  config: () => ({
+    trainStationMinRange: () => 1,
+    trainStationMaxRange: () => 100,
+    nukeMagnitudes: () => ({ outer: 50 }),
+  }),
+};
+commercialRailBehavior.player = {
+  borderTiles: () => [],
+  units: () => [],
+};
+commercialRailBehavior.spacingConstants = () => ({
+  borderSpacing: 0,
+  structureSpacing: 100,
+});
+commercialRailBehavior.nearestTileDistanceScorer = () => () => 0;
+commercialRailBehavior.getOrBuildReachableStations = () => [
+  { tile: 1_000, cluster: "existing-commercial-line", weight: 1 },
+];
+testDifficulty = Difficulty.Easy;
+const cityCommercialValue = commercialRailBehavior.cityValue();
+const portCommercialValue = commercialRailBehavior.portValue();
+assert.ok(
+  cityCommercialValue(1_010) > cityCommercialValue(5_000),
+  "Cities prefer a legal placement that snaps to a real existing commercial railroad even on Easy",
+);
+assert.ok(
+  portCommercialValue(1_010) > portCommercialValue(5_000),
+  "Ports prefer a legal placement that snaps to a real existing commercial railroad",
+);
+assert.equal(
+  commercialRailBehavior.existingRailSnapDistance(5_000),
+  null,
+  "a distant tile does not receive a fabricated rail-line preference",
+);
+testDifficulty = Difficulty.Impossible;
 
 assert.equal(
   typeof sandbox.legendaryMaxEnemySamCapacity,

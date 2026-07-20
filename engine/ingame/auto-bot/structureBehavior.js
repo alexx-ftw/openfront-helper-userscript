@@ -8935,11 +8935,19 @@
       out.push(tile);
     }
 
-    // portValue — NationStructureBehavior.ts:925.
-    // NOTE: pure port-spacing; does NOT consume the water shim.
+    // portValue — NationStructureBehavior.ts:925, enriched so productive
+    // stations extend an existing commercial rail line whenever that is legal.
+    // A Port placed within the engine's station snap radius splits the real
+    // railroad and immediately joins its cluster, which is strictly more useful
+    // than an otherwise equivalent isolated coastal Port.
     portValue() {
       const otherTiles = new Set(this.player.units(UNIT.Port).map((u) => u.tile()));
       const nearestOther = this.nearestTileDistanceScorer(otherTiles, true);
+      const { structureSpacing } = this.spacingConstants();
+      const config = this.game.config();
+      const reachableStations = this.getOrBuildReachableStations();
+      const minRangeSquared = config.trainStationMinRange() ** 2;
+      const stationRangeSquared = config.trainStationMaxRange() ** 2;
 
       return (tile) => {
         let w = 0;
@@ -8947,6 +8955,14 @@
         // Prefer to be as far as possible from other ports
         const closestOtherDist = nearestOther(tile);
         w += closestOtherDist;
+
+        w += this.commercialRailPlacementScore(
+          tile,
+          reachableStations,
+          minRangeSquared,
+          stationRangeSquared,
+          structureSpacing,
+        );
 
         return w;
       };
@@ -8997,20 +9013,70 @@
           w += Math.min(closestCityDist, structureSpacing);
         }
 
-        if (!useConnectionScore) {
-          return w;
-        }
-
-        w +=
-          this.computeConnectivityScore(
-            tile,
-            reachableStations,
-            minRangeSquared,
-            stationRangeSquared,
-          ) * structureSpacing;
+        w += this.commercialRailPlacementScore(
+          tile,
+          reachableStations,
+          minRangeSquared,
+          stationRangeSquared,
+          structureSpacing,
+        );
 
         return w;
       };
+    }
+
+    // Prefer a City or Port that connects to the existing trade network, and
+    // strongly prefer the engine's exact "snap to railroad" placement.  The
+    // latter is intentionally read from GameView's live railroadState rather
+    // than inferred from map direction or station geometry: RailNetworkImpl
+    // splits a real rail when a station is built within its fixed radius of 3.
+    // The local 7×7 search is bounded (49 reads per scored candidate) and runs
+    // only for the existing 25-candidate placement budget.
+    commercialRailPlacementScore(
+      tile,
+      reachableStations,
+      minRangeSquared,
+      stationRangeSquared,
+      structureSpacing,
+    ) {
+      const connectivity = this.computeConnectivityScore(
+        tile,
+        reachableStations,
+        minRangeSquared,
+        stationRangeSquared,
+      );
+      const snapDistance = this.existingRailSnapDistance(tile);
+      if (snapDistance === null) return connectivity * structureSpacing;
+
+      // Retain the connectivity contribution, then make a legal direct snap
+      // decisive over generic spacing.  The bounded closeness term only breaks
+      // ties between candidates that can all join the same active railway.
+      return (
+        connectivity * structureSpacing +
+        structureSpacing * (2 + Math.max(0, 3 - snapDistance) / 3)
+      );
+    }
+
+    existingRailSnapDistance(tile) {
+      const railState = this.readRailroadState(this.game);
+      if (!railState || railState.length === 0) return null;
+      const x = Number(this.game.x(tile));
+      const y = Number(this.game.y(tile));
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+
+      let nearestSquared = Infinity;
+      for (let dx = -3; dx <= 3; dx++) {
+        for (let dy = -3; dy <= 3; dy++) {
+          const distanceSquared = dx * dx + dy * dy;
+          if (distanceSquared > 9 || distanceSquared >= nearestSquared) continue;
+          const nx = x + dx;
+          const ny = y + dy;
+          if (!this.game.isValidCoord(nx, ny)) continue;
+          const railTile = this.game.ref(nx, ny);
+          if (railState[railTile] !== 0) nearestSquared = distanceSquared;
+        }
+      }
+      return Number.isFinite(nearestSquared) ? Math.sqrt(nearestSquared) : null;
     }
 
     // shouldUseConnectivityScore — NationStructureBehavior.ts:1018.
@@ -9277,12 +9343,10 @@
       const nearestOther = this.nearestTileDistanceScorer(otherTiles);
       const stationRange = game.config().trainStationMaxRange();
       const stationRangeSquared = stationRange * stationRange;
-      const difficulty = currentDifficulty();
-      const useConnectionScore = this.shouldUseConnectivityScore(difficulty);
-
-      const reachableStations = useConnectionScore
-        ? this.getOrBuildReachableStations()
-        : [];
+      // City placement is an economic decision, not a difficulty-dependent
+      // coin flip. Always value the commercial routes the new station can
+      // join; the normal placement and safety gates still decide legality.
+      const reachableStations = this.getOrBuildReachableStations();
       const minRangeSquared = game.config().trainStationMinRange() ** 2;
 
       // Cross-type spacing: prefer to be away from factories.
@@ -9310,17 +9374,13 @@
           w += Math.min(closestFactoryDist, structureSpacing);
         }
 
-        if (!useConnectionScore) {
-          return w;
-        }
-
-        w +=
-          this.computeConnectivityScore(
-            tile,
-            reachableStations,
-            minRangeSquared,
-            stationRangeSquared,
-          ) * structureSpacing;
+        w += this.commercialRailPlacementScore(
+          tile,
+          reachableStations,
+          minRangeSquared,
+          stationRangeSquared,
+          structureSpacing,
+        );
 
         return w;
       };
