@@ -14,6 +14,13 @@
 
 <ul>
   <li>
+    City and Factory placement must treat a border segment shared exclusively with friendly
+    teammates or allies as part of the safe team interior. Unowned, hostile, and mixed ally/hostile
+    border segments remain exposed. Safety against the exposed perimeter and real commercial-rail
+    connectivity must determine placement; proximity to the geometric center of a single player's
+    territory must not be used as a goal by itself.
+  </li>
+  <li>
     When the planner wants a City, Factory, or Port, it must attempt a new structure before an
     upgrade. A bounded placement miss, timeout, missing build descriptor, or other indeterminate
     result must not authorize an upgrade. After the normal bounded placement search fails, the
@@ -24,6 +31,17 @@
     scans, changed snapshots, unsafe-only sites, and failed authoritative probes remain
     indeterminate and do not permit an upgrade. A no-space proof must never keep one Auto-Bot tick
     alive while it traverses the map.
+  </li>
+</ul>
+
+<h2>SAM upgrade opportunity cost</h2>
+
+<ul>
+  <li>
+    A routine SAM level must be funded from surplus remaining after the next currently useful City,
+    Factory, or Port action. Economy strength is therefore determined from the live productive
+    opportunity and its real cost, not from a fixed gold, structure-count, or game-time threshold.
+    An upgrade proven necessary to intercept an already incoming missile may bypass this reserve.
   </li>
 </ul>
 

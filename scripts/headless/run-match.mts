@@ -113,7 +113,7 @@ const configuredNations =
   requestedNations === undefined ||
   requestedNations === "default" ||
   requestedNations === "disabled"
-    ? requestedNations ?? "default"
+    ? (requestedNations ?? "default")
     : numericNations;
 const fixedConfig = process.env.OFH_GAME_MAP
   ? {
@@ -122,12 +122,12 @@ const fixedConfig = process.env.OFH_GAME_MAP
       gameMode: "Team",
       playerTeams:
         requestedTeams === undefined
-          // Fixed-map smoke matches can have far fewer Nations than the
-          // unrelated random playlist used to supply defaults. Two teams
-          // guarantees the helper has a viable teammate instead of silently
-          // producing an unspawned no-op run; callers can still request an
-          // exact team count explicitly.
-          ? 2
+          ? // Fixed-map smoke matches can have far fewer Nations than the
+            // unrelated random playlist used to supply defaults. Two teams
+            // guarantees the helper has a viable teammate instead of silently
+            // producing an unspawned no-op run; callers can still request an
+            // exact team count explicitly.
+            2
           : Number.isFinite(numericTeams)
             ? numericTeams
             : requestedTeams,
@@ -176,6 +176,7 @@ const runner = await createGameRunner(
 const profileBot = process.env.OFH_PROFILE_BOT === "1";
 const bot = createMaxDifficultyOpponent({
   clientID,
+  difficulty: process.env.OFH_BOT_DIFFICULTY,
   name: "OFH Auto Bot",
   performanceProfiling: profileBot,
 });
@@ -214,6 +215,7 @@ console.warn(
     mode: config.gameMode,
     teams: config.playerTeams,
     difficulty: config.difficulty,
+    botDifficulty: process.env.OFH_BOT_DIFFICULTY ?? "Impossible",
     autoBuild: bot.features.build === true,
     startingGold: config.startingGold ?? 0,
     nations: nations.length,
@@ -242,8 +244,7 @@ const logSamLifecycle = logStructures || traceFile !== undefined;
 let turnNumber = 0;
 let emittedIntents = 0;
 let hasEverBeenAlive = me?.isAlive() === true;
-let stopReason: "winner" | "max_ticks" | "bot_dead" | "engine_stop" | "spawn_failed" =
-  "max_ticks";
+let stopReason: "winner" | "max_ticks" | "bot_dead" | "engine_stop" | "spawn_failed" = "max_ticks";
 let peakOwnedTiles = Math.max(0, me?.numTilesOwned() ?? 0);
 let firstIncomingLandAttackObserved = false;
 let firstTerritoryLossObserved = false;
@@ -440,7 +441,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
           targetKind:
             target?.type?.() === PlayerType.Bot && config.nations === "disabled"
               ? "Tribe"
-              : snapshot?.type ?? target?.type() ?? "Terra Nullius",
+              : (snapshot?.type ?? target?.type() ?? "Terra Nullius"),
           targetTroops: Math.round(snapshot?.troops ?? target?.troops() ?? 0),
           pendingTroops: Math.round(pendingTroops),
           recentCommittedTroops: Math.round(recentCommittedTroops),
@@ -838,19 +839,20 @@ const finalMe = runner.game.playerByClientID(clientID);
 const won =
   winner !== null &&
   (winner === finalMe?.team() || (typeof winner !== "string" && winner.clientID() === clientID));
-const finalBotState = finalMe === null || finalMe === undefined
-  ? null
-  : {
-      tiles: finalMe.numTilesOwned(),
-      troops: finalMe.troops(),
-      maxTroops: runner.game.config().maxTroops(finalMe),
-      gold: Number(finalMe.gold()),
-      units: Object.fromEntries(
-        trackedUnitTypes
-          .map((type) => [type, finalMe.units(type).length] as const)
-          .filter(([, count]) => count > 0),
-      ),
-    };
+const finalBotState =
+  finalMe === null || finalMe === undefined
+    ? null
+    : {
+        tiles: finalMe.numTilesOwned(),
+        troops: finalMe.troops(),
+        maxTroops: runner.game.config().maxTroops(finalMe),
+        gold: Number(finalMe.gold()),
+        units: Object.fromEntries(
+          trackedUnitTypes
+            .map((type) => [type, finalMe.units(type).length] as const)
+            .filter(([, count]) => count > 0),
+        ),
+      };
 const players = runner.game
   .allPlayers()
   .filter((player) => player.type() !== PlayerType.Bot)

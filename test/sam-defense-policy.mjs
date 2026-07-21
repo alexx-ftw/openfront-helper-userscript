@@ -122,6 +122,129 @@ assert.equal(
   null,
   "a distant tile does not receive a fabricated rail-line preference",
 );
+
+const teamInteriorBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+let teamInteriorTick = 100;
+const teamInteriorNeighbors = new Map([
+  [10, [11]],
+  [20, [21]],
+  [30, [31, 32]],
+]);
+const teamInteriorOwners = new Map([
+  [10, 1],
+  [11, 2],
+  [20, 1],
+  [21, 3],
+  [30, 1],
+  [31, 2],
+]);
+const teamInteriorFriendlyOwner = { smallID: () => 2 };
+const teamInteriorHostileOwner = { smallID: () => 3 };
+teamInteriorBehavior.game = {
+  ticks: () => teamInteriorTick,
+  neighbors: (tile) => teamInteriorNeighbors.get(tile) ?? [],
+  hasOwner: (tile) => teamInteriorOwners.has(tile),
+  ownerID: (tile) => teamInteriorOwners.get(tile),
+  playerBySmallID: (sid) => (sid === 2 ? teamInteriorFriendlyOwner : teamInteriorHostileOwner),
+  magnitude: () => 0,
+  config: () => ({
+    trainStationMinRange: () => 1,
+    trainStationMaxRange: () => 100,
+  }),
+};
+teamInteriorBehavior.player = {
+  smallID: () => 1,
+  borderTiles: () => [10, 20, 30],
+  isFriendly: (owner) => owner === teamInteriorFriendlyOwner,
+  isOnSameTeam: () => false,
+  units: () => [],
+};
+teamInteriorBehavior._economicExposureBorderTick = null;
+teamInteriorBehavior._economicExposureBorderTiles = null;
+teamInteriorBehavior.spacingConstants = () => ({
+  borderSpacing: 50,
+  structureSpacing: 100,
+});
+teamInteriorBehavior.getOrBuildReachableStations = () => [];
+teamInteriorBehavior.shouldUseConnectivityScore = () => false;
+teamInteriorBehavior.commercialRailPlacementScore = () => 0;
+
+assert.deepEqual(
+  [...teamInteriorBehavior.economicExposureBorderTiles()],
+  [20, 30],
+  "economic placement excludes an exclusively friendly team seam but keeps hostile and mixed/unowned borders exposed",
+);
+
+teamInteriorOwners.set(21, 2);
+assert.deepEqual(
+  [...teamInteriorBehavior.economicExposureBorderTiles()],
+  [20, 30],
+  "the economic exposure classification is reused within the same game tick",
+);
+teamInteriorTick++;
+assert.deepEqual(
+  [...teamInteriorBehavior.economicExposureBorderTiles()],
+  [30],
+  "the economic exposure classification refreshes on the next game tick",
+);
+
+const economicPlacementBorders = [];
+teamInteriorBehavior.nearestTileDistanceScorer = (tiles) => {
+  economicPlacementBorders.push([...tiles]);
+  return () => 0;
+};
+teamInteriorBehavior.factoryValue();
+teamInteriorBehavior.cityValue();
+assert.deepEqual(
+  economicPlacementBorders[0],
+  [30],
+  "Factory placement measures safety from the exposed perimeter rather than the friendly seam",
+);
+assert.deepEqual(
+  economicPlacementBorders[3],
+  [30],
+  "City placement measures safety from the exposed perimeter rather than the friendly seam",
+);
+
+const factoryRatioBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+let factoryLevels = 2;
+factoryRatioBehavior.game = {
+  config: () => ({ isUnitDisabled: () => false }),
+};
+factoryRatioBehavior.shouldReserveEconomicGrowthForOffense = () => false;
+factoryRatioBehavior.ownedLevels = (type) => (type === UNIT.Factory ? factoryLevels : 0);
+factoryRatioBehavior.missileSiloParityTarget = () => 0;
+factoryRatioBehavior._dominant = false;
+
+assert.equal(
+  factoryRatioBehavior.shouldBuildStructure(UNIT.Factory, 4, false),
+  true,
+  "the late-game economy fills the third Factory level at four City levels",
+);
+factoryLevels = 3;
+assert.equal(
+  factoryRatioBehavior.shouldBuildStructure(UNIT.Factory, 4, false),
+  false,
+  "the late-game economy stops at the upstream 4:3 City-to-Factory level ratio",
+);
+factoryLevels = 1;
+assert.equal(
+  factoryRatioBehavior.shouldBuildStructure(UNIT.Factory, 12, true),
+  true,
+  "a coastal economy retains the upstream Port-first Factory suppression before dominance",
+);
+factoryLevels = 2;
+assert.equal(
+  factoryRatioBehavior.shouldBuildStructure(UNIT.Factory, 12, true),
+  false,
+  "coastal Factory suppression does not overbuild before the rail payoff can matter",
+);
+factoryRatioBehavior._dominant = true;
+assert.equal(
+  factoryRatioBehavior.shouldBuildStructure(UNIT.Factory, 12, true),
+  true,
+  "a dominant coastal economy restores the full 4:3 ratio while trains can still pay back",
+);
 testDifficulty = Difficulty.Impossible;
 
 assert.equal(
@@ -892,6 +1015,33 @@ assert.equal(
   UNIT.Factory,
   "The next affordable productive structure remains visible to the policy",
 );
+const productiveSpend = behavior.economicConstructionPressure();
+assert.ok(productiveSpend?.cost > 0n);
+const originalSamEconomicPressure = behavior.economicConstructionPressureForSamUpgrade;
+behavior.economicConstructionPressureForSamUpgrade = () => productiveSpend;
+const originalOwnGoldForSamSurplus = own.gold;
+own.gold = () => 3_000_000n + productiveSpend.cost - 1n;
+assert.equal(
+  behavior.samUpgradeEconomyCanAbsorb(3_000_000n),
+  false,
+  "A routine 3M SAM level cannot consume gold needed by the next productive build",
+);
+own.gold = () => 3_000_000n + productiveSpend.cost;
+assert.equal(
+  behavior.samUpgradeEconomyCanAbsorb(3_000_000n),
+  true,
+  "A routine SAM level becomes eligible once true surplus pays for it and economic growth",
+);
+own.gold = () => 3_000_000n;
+assert.equal(
+  behavior.samUpgradeEconomyCanAbsorb(3_000_000n, {
+    activeMissileEmergency: true,
+  }),
+  true,
+  "An imminent trajectory remains the survival exception to the economic reserve",
+);
+own.gold = originalOwnGoldForSamSurplus;
+behavior.economicConstructionPressureForSamUpgrade = originalSamEconomicPressure;
 const originalOwnGoldForPressure = own.gold;
 own.gold = () => 1_000n;
 assert.equal(

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>General construction policy</title>
+  </head>
+  <body>
+    <h1>General construction policy</h1>
+
+    <p>
+      Construction is a portfolio-planning problem. A building must be valued by the change it
+      produces in the complete playable system, including the structures and actions it enables, the
+      assets it protects, the resources it consumes, and the time left for those effects to
+      influence victory. Fixed build orders and structure ratios are admissibility heuristics, not
+      the final objective.
+    </p>
+
+    <h2>Objective</h2>
+
+    <p>
+      Choose the first action of the feasible construction plan with the greatest expected
+      probability of winning. Compare complete post-plan states, not isolated buildings. Include a
+      wait action so saving gold, preserving a weapon reserve, or allowing an in-progress structure
+      to finish can beat immediate spending.
+    </p>
+
+    <h2>System roles</h2>
+
+    <ul>
+      <li>
+        A City is troop capacity and a potential commercial station. Its value depends on capacity
+        pressure, survival, and whether a Factory can connect it to useful trade.
+      </li>
+      <li>
+        A Factory is a rail activator and train source. Its value depends on connected City/Port
+        destinations, relationship-adjusted trade income, diminishing train throughput, survival,
+        and remaining payback time.
+      </li>
+      <li>
+        A Port is a commercial station and the access point for maritime expansion and defense. Its
+        value includes the Warships, trade routes, and overseas actions it makes possible.
+      </li>
+      <li>
+        A Defense Post changes the outcome and cost of land combat on a particular frontier. A Post
+        without a relevant land threat has no generic ratio value.
+      </li>
+      <li>
+        A SAM is interception capacity over a portfolio of protected assets and predicted missile
+        trajectories. Coverage, completion time, cooldown scheduling, and hostile launch capacity
+        determine its value.
+      </li>
+      <li>
+        A Missile Silo is launch capacity in the Silo-to-weapon-to-target chain. Its value depends
+        on weapon affordability, target value, hostile SAM penetration, salvo timing, and the
+        economic and defensive spending it displaces.
+      </li>
+      <li>
+        A Warship is maritime interception and route control enabled by a Port. Its value depends on
+        live transports, hostile naval capacity, trade exposure, and useful reachable water.
+      </li>
+    </ul>
+
+    <h2>Decision model</h2>
+
+    <ol>
+      <li>
+        Build one authoritative state containing territory and victory progress, gold and reserves,
+        troops and troop capacity, construction slots, structure levels and placement, rail
+        components and trade relationships, land and maritime threats, missile routes and cooldowns,
+        and legal build/upgrade descriptors.
+      </li>
+      <li>
+        Apply survival constraints first. A plan that cannot survive a preventable imminent missile,
+        land, or maritime loss is dominated by a feasible plan that can.
+      </li>
+      <li>
+        Enumerate legal build, upgrade, and wait actions. Expand complementary chains only when an
+        action changes a real dependency: Factory-to-trade-station, Port-to-Warship, Silo-to-weapon,
+        or SAM-to-protected-assets.
+      </li>
+      <li>
+        Advance every plan to the next material game event rather than an arbitrary fixed depth. A
+        material event is a construction completion, threat impact, weapon readiness, trade payoff,
+        loss of a required asset, or victory-threshold transition.
+      </li>
+      <li>
+        Rank resulting states lexicographically by survival, immediate win feasibility, expected win
+        probability, and only then resource efficiency. Execute only the first action and re-plan
+        from fresh state on the next construction decision.
+      </li>
+    </ol>
+
+    <h2>Validation</h2>
+
+    <p>
+      Candidate policies must be compared on identical seeds across inland, coastal, island, team,
+      free-for-all, high-threat, nuclear, naval, comeback, and closeout scenarios. The acceptance
+      metric is paired whole-game outcome, with survival, territory, troop production, gold
+      production, construction timing, and decision latency as diagnostic metrics. A candidate is
+      not better merely because one local structure count or resource total rises.
+    </p>
+
+    <h3>Reference experiment (2026-07-21)</h3>
+
+    <p>
+      A paired four-match Europe/Normal/team comparison used the same seeds, 50 Nations, 80 bots,
+      four player teams, five million starting gold, and a 30,000-tick limit. The ordinary
+      Impossible policy won two matches; the current Legendary per-building objective-vector policy
+      won none. Removing the late-game dominance exception for coastal Factory growth also produced
+      two wins, but made one shared winning seed finish 550 ticks later. These small samples do not
+      prove that the ordinary policy is globally optimal. They do falsify two tempting universal
+      claims: that a more elaborate independent score is automatically better, and that permanently
+      suppressing late coastal Factories is an improvement.
+    </p>
+
+    <p>
+      The current self-play checkpoint is not construction-policy evidence: its selected evaluation
+      contains no legal or executed build/upgrade candidates. It may become the value model only
+      after long-horizon training and runtime-adapter gates prove real construction actions across
+      the scenario suite.
+    </p>
+  </body>
+</html>

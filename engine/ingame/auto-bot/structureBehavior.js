@@ -498,6 +498,8 @@
       this._hostileSiloCapacitySnapshot = null;
       this._hasCoastalTiles = null;
       this._hasOceanPortTiles = null;
+      this._economicExposureBorderTick = null;
+      this._economicExposureBorderTiles = null;
       this._missileDefenseSignalTick = null;
       this._missileDefenseSignalCache = null;
       this._activeHostileMissileTick = null;
@@ -6913,8 +6915,39 @@
       if (bu === null) return false;
       const cost = this.plannedSamUpgradeCost(bu, cacheKey);
       if (cost > availableGold) return false;
+      if (!this.samUpgradeEconomyCanAbsorb(cost)) return false;
 
       return this.emitPlannedSamUpgrade(bu);
+    }
+
+    /**
+     * A speculative SAM level must be paid from true surplus, after the next
+     * currently useful economic action. This makes "the economy is strong
+     * enough" an opportunity-cost test instead of a fixed gold, City, or tick
+     * threshold. Active incoming missiles use the trajectory planner below and
+     * remain the survival exception.
+     */
+    samUpgradeEconomyCanAbsorb(cost, { activeMissileEmergency = false } = {}) {
+      if (activeMissileEmergency || !state.settings.winFixes) return true;
+      const upgradeCost = BigInt(cost ?? 0n);
+      if (upgradeCost <= 0n) return true;
+      const economic = this.economicConstructionPressureForSamUpgrade();
+      const economicCost = economic?.cost ?? 0n;
+      return this.spendableConstructionGold() >= upgradeCost + economicCost;
+    }
+
+    economicConstructionPressureForSamUpgrade() {
+      const hasCompleteUnitRecords = ECONOMIC_STRUCTURE_TYPES.every((type) =>
+        (this.player.units(type) || []).every(
+          (unit) =>
+            typeof unit?.isUnderConstruction === "function" &&
+            typeof unit?.level === "function",
+        ),
+      );
+      // Older clients and reduced adapters can omit the construction-state
+      // methods needed by the portfolio snapshot. Preserve legacy behavior
+      // when that evidence is absent.
+      return hasCompleteUnitRecords ? this.economicConstructionPressure() : null;
     }
 
     plannedSamUpgradeEligible(plan) {
@@ -7184,9 +7217,13 @@
         buildables,
         this.spendableConstructionGold(),
       );
-      candidates.sort((left, right) => this.compareSamParityUpgrades(left, right));
+      const economicallySafeCandidates = candidates.filter((candidate) =>
+        this.samUpgradeEconomyCanAbsorb(candidate.cost),
+      );
+      economicallySafeCandidates.sort((left, right) =>
+        this.compareSamParityUpgrades(left, right));
       return this.executeStructureUpgradeCandidate(
-        candidates[0],
+        economicallySafeCandidates[0],
         UNIT.SAMLauncher,
       );
     }
@@ -9255,7 +9292,7 @@
     factoryValue() {
       const game = this.game;
       const player = this.player;
-      const borderTiles = this.player.borderTiles();
+      const borderTiles = this.economicExposureBorderTiles();
       const otherTiles = new Set(player.units(UNIT.Factory).map((u) => u.tile()));
       const { borderSpacing, structureSpacing } = this.spacingConstants();
       const nearestBorder = this.nearestTileDistanceScorer(borderTiles);
@@ -9306,6 +9343,76 @@
 
         return w;
       };
+    }
+
+    /**
+     * Return only the part of our border that exposes an economic structure to
+     * unowned terrain or a non-friendly player. A seam shared exclusively with
+     * teammates/allies is part of the team's economic interior: penalizing it
+     * can push Cities and Factories away from the strongest commercial rail
+     * connection for no corresponding safety benefit.
+     *
+     * Mixed seams remain exposed. If a tile touches both an ally and an enemy,
+     * the hostile/unowned neighbor wins, so this cannot pull production onto a
+     * contested frontier. When the client cannot classify ownership reliably,
+     * preserve the conservative upstream behavior and keep the full border.
+     */
+    economicExposureBorderTiles() {
+      const borderTiles = this.player.borderTiles();
+      if (!state.settings.winFixes) return borderTiles;
+      if (!this.canClassifyEconomicBorder()) return borderTiles;
+
+      const tick = safeStructureGameTick(this.game);
+      if (
+        Number.isFinite(tick) &&
+        this._economicExposureBorderTick === tick &&
+        this._economicExposureBorderTiles !== null
+      ) {
+        return this._economicExposureBorderTiles;
+      }
+
+      const ownSid = this.player.smallID();
+      const exposed = borderTiles.filter((tile) =>
+        this.economicBorderTileIsExposed(tile, ownSid),
+      );
+
+      if (Number.isFinite(tick)) {
+        this._economicExposureBorderTick = tick;
+        this._economicExposureBorderTiles = exposed;
+      }
+      return exposed;
+    }
+
+    canClassifyEconomicBorder() {
+      return (
+        typeof this.game.neighbors === "function" &&
+        typeof this.game.hasOwner === "function" &&
+        typeof this.game.ownerID === "function" &&
+        typeof this.game.playerBySmallID === "function" &&
+        typeof this.player.smallID === "function"
+      );
+    }
+
+    economicBorderTileIsExposed(tile, ownSid) {
+      const externalOwners = (this.game.neighbors(tile) || [])
+        .map((neighbor) =>
+          this.game.hasOwner(neighbor) ? this.game.ownerID(neighbor) : null,
+        )
+        .filter((ownerSid) => ownerSid !== ownSid);
+      return (
+        externalOwners.length === 0 ||
+        externalOwners.some((ownerSid) => !this.economicBorderOwnerIsFriendly(ownerSid))
+      );
+    }
+
+    economicBorderOwnerIsFriendly(ownerSid) {
+      if (ownerSid === null) return false;
+      const owner = this.game.playerBySmallID(ownerSid);
+      return Boolean(
+        owner &&
+          (this.player.isFriendly?.(owner) === true ||
+            this.player.isOnSameTeam?.(owner) === true),
+      );
     }
 
     // Prefer a City or Port that connects to the existing trade network, and
@@ -9619,7 +9726,7 @@
     cityValue() {
       const game = this.game;
       const player = this.player;
-      const borderTiles = player.borderTiles();
+      const borderTiles = this.economicExposureBorderTiles();
       const otherTiles = new Set(player.units(UNIT.City).map((u) => u.tile()));
       const { borderSpacing, structureSpacing } = this.spacingConstants();
       const nearestBorder = this.nearestTileDistanceScorer(borderTiles);
