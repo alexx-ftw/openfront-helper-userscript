@@ -952,24 +952,20 @@
       // Active land defense comes before routine SAM coverage/parity and
       // offensive silo work. A concrete missile emergency still wins.
       if (legendaryMissileEmergency) return null;
-      const hasPriorStructure = this.hasPriorStructureForDefensePost();
-      // Ordinary openings still establish their economy before a first Defense
-      // Post. A strategic Nation/Human already massed on our land border is the
-      // exception: waiting for the first City leaves no construction window once
-      // it attacks. Carry the same precomputed threat into the placement probe so
-      // the border is not scanned twice in this decision.
-      const borderThreat = hasPriorStructure
-        ? this.sustainedBorderDefensePostThreat()
-        : this.preemptiveBorderDefensePostThreat();
-      if (!hasPriorStructure && borderThreat === null) return null;
+      // Border proximity and an opponent's total army are not an attack. Spending
+      // economic gold on that proxy produced preventive Posts while the frontier
+      // was quiet. Authorize a Post only from live incoming land attacks; the
+      // active threat object is reused for placement and coverage demand.
+      const difficulty = currentDifficulty();
+      const activeThreat = this.defensePostThreat(difficulty);
+      if (activeThreat === null) return null;
       if (this.game.config().isUnitDisabled(UNIT.DefensePost)) return null;
-      if (await this.tryBuildDefensePost(borderThreat)) return true;
+      if (await this.tryBuildDefensePost(activeThreat)) return true;
 
       // Save the slot only while gold is the missing requirement. If the post
       // is affordable but no legal tile was found, continuing prevents
       // unrelated construction from starving forever.
       if (
-        (borderThreat !== null || this.defensePostNeeded()) &&
         !this.canAffordDefensePost()
       ) return false;
       return null;
@@ -1024,7 +1020,7 @@
       if (difficulty === Difficulty.Medium && !this.random.chance(2)) {
         return false;
       }
-      const threat = precomputedThreat || this.defensePostPlacementThreat(difficulty);
+      const threat = precomputedThreat || this.defensePostThreat(difficulty);
       if (threat === null) return false;
       const frontTiles = threat.frontTiles ||
         this.getAttackFrontTiles(threat.landAttacks);
@@ -1084,9 +1080,7 @@
     }
 
     defensePostPlacementThreat(difficulty) {
-      const activeThreat = this.defensePostThreat(difficulty);
-      if (activeThreat !== null) return activeThreat;
-      return this.preemptiveBorderDefensePostThreat();
+      return this.defensePostThreat(difficulty);
     }
 
     isStrategicBorderDefenseOpponent(opponent) {
@@ -1171,11 +1165,11 @@
       // Land attacks only (src: sourceTile() === null). isLandAttack() uses the
       // exact source tile when present and reconstructs it through a shared
       // land border when the extension omits it.
-      const landAttacks = this.player
-        .incomingAttacks()
+      const landAttacks = (this.player.incomingAttacks?.() ?? [])
         .filter((attack) => this.isLandAttack(attack));
+      if (landAttacks.length === 0) return null;
       const ourTroops = this.player.troops();
-      if (landAttacks.length === 0 || ourTroops <= 0) return null;
+      if (ourTroops <= 0) return null;
       const incomingTroops = landAttacks.reduce(
         (sum, attack) => sum + attack.troops(),
         0,

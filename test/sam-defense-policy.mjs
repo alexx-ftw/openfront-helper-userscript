@@ -587,27 +587,25 @@ assert.deepEqual(
   "Defense Post placement covers the largest uncovered threatened front before secondary SAM-placement ties",
 );
 
-const firstStrategicDefensePostBehavior = Object.create(sandbox.__StructureBehavior.prototype);
-firstStrategicDefensePostBehavior.hasPriorStructureForDefensePost = () => false;
-firstStrategicDefensePostBehavior.game = {
+const quietBorderDefensePostBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+quietBorderDefensePostBehavior.game = {
   config: () => ({ isUnitDisabled: () => false }),
 };
-const firstStrategicThreat = { allowed: 1, frontTiles: [7] };
-firstStrategicDefensePostBehavior.preemptiveBorderDefensePostThreat = () => firstStrategicThreat;
-let firstStrategicThreatPassedToPlacement = null;
-firstStrategicDefensePostBehavior.tryBuildDefensePost = async (threat) => {
-  firstStrategicThreatPassedToPlacement = threat;
+quietBorderDefensePostBehavior.defensePostThreat = () => null;
+let quietBorderBuildAttempted = false;
+quietBorderDefensePostBehavior.tryBuildDefensePost = async () => {
+  quietBorderBuildAttempted = true;
   return true;
 };
 assert.equal(
-  await firstStrategicDefensePostBehavior.handleDefensePostPriority(false),
-  true,
-  "an affordable first Defense Post preempts an adjacent strategic land threat before a City can spend its gold",
+  await quietBorderDefensePostBehavior.handleDefensePostPriority(false),
+  null,
+  "a quiet border never diverts economic construction into a preventive Defense Post",
 );
-assert.strictEqual(
-  firstStrategicThreatPassedToPlacement,
-  firstStrategicThreat,
-  "the first-structure emergency reuses its exact border threat for the placement probe",
+assert.equal(
+  quietBorderBuildAttempted,
+  false,
+  "Defense Post placement is not probed without a live incoming land attack",
 );
 
 const originalDifficultyForDefensePost = sandbox.currentDifficulty;
@@ -707,6 +705,10 @@ defensePostLivenessBehavior.hasPriorStructureForDefensePost = () => true;
 defensePostLivenessBehavior.game = {
   config: () => ({ isUnitDisabled: () => false }),
 };
+defensePostLivenessBehavior.defensePostThreat = () => ({
+  allowed: 1,
+  landAttacks: [{}],
+});
 defensePostLivenessBehavior.tryBuildDefensePost = async () => false;
 defensePostLivenessBehavior.defensePostNeeded = () => true;
 defensePostLivenessBehavior.maybeEnsureHydrogenStructureCoverage = async () => false;
@@ -785,99 +787,6 @@ assert.deepEqual(
   defensePostProbeRounds,
   [[11], [22]],
   "the fallback probes only after the bounded front sample fails",
-);
-
-const preemptiveBorderPostBehavior = Object.create(sandbox.__StructureBehavior.prototype);
-let borderThreatTroops = 50;
-let borderThreatType = sandbox.PlayerType.Nation;
-const borderThreatOpponent = {
-  smallID: () => 2,
-  isPlayer: () => true,
-  isAlive: () => true,
-  type: () => borderThreatType,
-  troops: () => borderThreatTroops,
-};
-preemptiveBorderPostBehavior.player = {
-  troops: () => 100,
-  borderTiles: () => [10, 20],
-  isFriendly: () => false,
-};
-preemptiveBorderPostBehavior.game = {
-  neighbors: (tile) => (tile === 10 ? [11] : [21]),
-  ownerID: (tile) => (tile === 11 ? 2 : null),
-  playerBySmallID: (sid) => (sid === 2 ? borderThreatOpponent : null),
-};
-const preemptiveBorderThreat = preemptiveBorderPostBehavior.preemptiveBorderDefensePostThreat();
-assert.equal(preemptiveBorderThreat.allowed, 1);
-assert.deepEqual(Array.from(preemptiveBorderThreat.frontTiles), [10]);
-borderThreatTroops = 190;
-preemptiveBorderPostBehavior.player.borderTiles = () =>
-  Array.from({ length: 305 }, (_, index) => index * 2);
-let strategicBorderTopologyTick = 100;
-let strategicBorderNeighborScans = 0;
-preemptiveBorderPostBehavior.game.ticks = () => strategicBorderTopologyTick;
-preemptiveBorderPostBehavior.game.neighbors = (tile) => {
-  strategicBorderNeighborScans++;
-  return [tile + 1];
-};
-preemptiveBorderPostBehavior.game.ownerID = () => 2;
-const sustainedBorderThreat = preemptiveBorderPostBehavior.sustainedBorderDefensePostThreat();
-assert.equal(
-  sustainedBorderThreat.allowed,
-  3,
-  "a 1.9x Nation/Human army on a 305-tile front requests enough Posts to cover the front instead of treating one existing Post as sufficient",
-);
-const scansAfterInitialThreat = strategicBorderNeighborScans;
-borderThreatTroops = 160;
-assert.equal(
-  preemptiveBorderPostBehavior.sustainedBorderDefensePostThreat().allowed,
-  3,
-  "cached border topology keeps live hostile troops in the sustained-defense decision",
-);
-assert.equal(
-  strategicBorderNeighborScans,
-  scansAfterInitialThreat,
-  "a stable wide border is not rescanned again during the one-second topology cache window",
-);
-strategicBorderTopologyTick += 10;
-preemptiveBorderPostBehavior.sustainedBorderDefensePostThreat();
-assert.equal(
-  strategicBorderNeighborScans,
-  scansAfterInitialThreat * 2,
-  "the strategic border topology is refreshed after its bounded cache window",
-);
-preemptiveBorderPostBehavior.game.config = () => ({ isUnitDisabled: () => false });
-preemptiveBorderPostBehavior.hasPriorStructureForDefensePost = () => true;
-let sustainedThreatPassedToPlacement = null;
-preemptiveBorderPostBehavior.tryBuildDefensePost = async (threat) => {
-  sustainedThreatPassedToPlacement = threat;
-  return true;
-};
-assert.equal(
-  await preemptiveBorderPostBehavior.handleDefensePostPriority(false),
-  true,
-  "an established economy places a needed Defense Post before ordinary Port construction when its strategic front is overwhelming",
-);
-assert.deepEqual(
-  sustainedThreatPassedToPlacement,
-  sustainedBorderThreat,
-  "the priority passes the same wide-front threat data into the Defense Post placement path",
-);
-preemptiveBorderPostBehavior.player.borderTiles = () => [10, 20];
-preemptiveBorderPostBehavior.game.neighbors = (tile) => (tile === 10 ? [11] : [21]);
-preemptiveBorderPostBehavior.game.ownerID = (tile) => (tile === 11 ? 2 : null);
-borderThreatTroops = 49;
-assert.equal(
-  preemptiveBorderPostBehavior.preemptiveBorderDefensePostThreat(),
-  null,
-  "a weaker hostile border does not divert early expansion into a preventive Post",
-);
-borderThreatTroops = 100;
-borderThreatType = sandbox.PlayerType.Bot;
-assert.equal(
-  preemptiveBorderPostBehavior.preemptiveBorderDefensePostThreat(),
-  null,
-  "tribe borders never trigger the Nation/Human preventive Post policy",
 );
 
 const hostileSiloMaximumPriorityBehavior = Object.create(sandbox.__StructureBehavior.prototype);

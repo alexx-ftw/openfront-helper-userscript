@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "scenarios": [
+    {
+      "id": "inland-alps",
+      "role": "landlocked economy and land-front defense",
+      "environment": {
+        "OFH_GAME_MAP": "Alps",
+        "OFH_GAME_MAP_SIZE": "Small",
+        "OFH_PLAYER_TEAMS": "2",
+        "OFH_NATIONS": "8",
+        "OFH_BOTS": "120",
+        "OFH_STARTING_GOLD": "1000000"
+      }
+    },
+    {
+      "id": "mixed-europe",
+      "role": "mixed inland, coastal, allied-border, and contested-front economy",
+      "environment": {
+        "OFH_GAME_MAP": "Europe",
+        "OFH_GAME_MAP_SIZE": "Small",
+        "OFH_PLAYER_TEAMS": "2",
+        "OFH_NATIONS": "50",
+        "OFH_BOTS": "180",
+        "OFH_STARTING_GOLD": "1000000"
+      }
+    },
+    {
+      "id": "team-four-islands",
+      "role": "team-separated island economy and reinforcement logistics",
+      "environment": {
+        "OFH_GAME_MAP": "FourIslands",
+        "OFH_GAME_MAP_SIZE": "Small",
+        "OFH_PLAYER_TEAMS": "4",
+        "OFH_NATIONS": "4",
+        "OFH_BOTS": "120",
+        "OFH_STARTING_GOLD": "1000000"
+      }
+    },
+    {
+      "id": "naval-archipelago",
+      "role": "port, warship, and island production pressure",
+      "environment": {
+        "OFH_GAME_MAP": "ArchipelagoSea",
+        "OFH_GAME_MAP_SIZE": "Small",
+        "OFH_PLAYER_TEAMS": "2",
+        "OFH_NATIONS": "20",
+        "OFH_BOTS": "120",
+        "OFH_STARTING_GOLD": "1500000"
+      }
+    },
+    {
+      "id": "nuclear-baikal",
+      "role": "SAM and silo investment under explicit nuclear availability",
+      "environment": {
+        "OFH_GAME_MAP": "BaikalNukeWars",
+        "OFH_GAME_MAP_SIZE": "Small",
+        "OFH_PLAYER_TEAMS": "2",
+        "OFH_NATIONS": "disabled",
+        "OFH_BOTS": "160",
+        "OFH_STARTING_GOLD": "5000000",
+        "OFH_NUKES": "1"
+      }
+    }
+  ]
+}

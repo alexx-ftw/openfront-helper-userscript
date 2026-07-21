@@ -260,6 +260,14 @@ let intervalBuildEvents: Array<{
   tile: number | null;
   strategicBorderPressure: ReturnType<typeof strategicBorderPressureSnapshot>;
 }> = [];
+const cumulativeBuildEvents: Array<{
+  tick: number;
+  unit: string;
+  action: "build" | "upgrade";
+  tile: number | null;
+  portfolio: ReturnType<typeof constructionPortfolioSnapshot>;
+  strategicBorderPressure: ReturnType<typeof strategicBorderPressureSnapshot>;
+}> = [];
 let cumulativeTerraNulliusAttacks = 0;
 let intervalTerraNulliusAttacks = 0;
 const observedSamLevels = new Map<string, number>();
@@ -334,10 +342,34 @@ const strategicBorderPressureSnapshot = () => {
     canAffordDefensePost: gold >= defensePostCost,
   };
 };
+const constructionPortfolioSnapshot = () => {
+  const player = runner.game.playerByClientID(clientID);
+  if (!player) return null;
+  return {
+    gold: String(player.gold()),
+    troops: Math.round(player.troops()),
+    maxTroops: Math.round(runner.game.config().maxTroops(player)),
+    tiles: player.numTilesOwned(),
+    units: Object.fromEntries(
+      trackedUnitTypes.map((type) => {
+        const units = player.units(type);
+        return [
+          type,
+          {
+            count: units.length,
+            levels: units.map((unit) => unit.level()),
+            underConstruction: units.filter((unit) => unit.isUnderConstruction()).length,
+          },
+        ];
+      }),
+    ),
+  };
+};
 const countIntents = (
   intents: readonly { type: string; unit?: unknown; tile?: unknown }[],
   tick: number,
 ) => {
+  const portfolio = constructionPortfolioSnapshot();
   for (const intent of intents) {
     cumulativeIntentTypes.set(intent.type, (cumulativeIntentTypes.get(intent.type) ?? 0) + 1);
     intervalIntentTypes.set(intent.type, (intervalIntentTypes.get(intent.type) ?? 0) + 1);
@@ -345,11 +377,21 @@ const countIntents = (
     cumulativeBuildUnitTypes.set(intent.unit, (cumulativeBuildUnitTypes.get(intent.unit) ?? 0) + 1);
     intervalBuildUnitTypes.set(intent.unit, (intervalBuildUnitTypes.get(intent.unit) ?? 0) + 1);
     const tile = Number(intent.tile);
-    intervalBuildEvents.push({
+    const normalizedTile = Number.isFinite(tile) ? tile : null;
+    const event = {
       tick,
       unit: intent.unit,
-      tile: Number.isFinite(tile) ? tile : null,
+      action: normalizedTile === null ? "upgrade" as const : "build" as const,
+      tile: normalizedTile,
+      portfolio,
       strategicBorderPressure: strategicBorderPressureSnapshot(),
+    };
+    cumulativeBuildEvents.push(event);
+    intervalBuildEvents.push({
+      tick: event.tick,
+      unit: event.unit,
+      tile: event.tile,
+      strategicBorderPressure: event.strategicBorderPressure,
     });
   }
 };
@@ -879,6 +921,8 @@ console.warn(
     performanceProfile: profileBot ? bot.getPerformanceProfile() : undefined,
     emittedIntents,
     cumulativeIntentTypes: sortedCounts(cumulativeIntentTypes),
+    cumulativeBuildUnitTypes: sortedCounts(cumulativeBuildUnitTypes),
+    constructionEvents: cumulativeBuildEvents,
     runtimeMs: Math.round(performance.now() - startedAt),
     topPlayers: players.slice(0, 10),
   }),

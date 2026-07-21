@@ -7,9 +7,26 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const runner = fs.readFileSync(path.join(root, "scripts/headless/run-match.mts"), "utf8");
 const batch = fs.readFileSync(path.join(root, "scripts/headless/run-batch.mjs"), "utf8");
+const matrix = fs.readFileSync(
+  path.join(root, "scripts/headless/run-construction-matrix.mjs"),
+  "utf8",
+);
+const constructionScenarios = JSON.parse(
+  fs.readFileSync(path.join(root, "scripts/headless/construction-scenarios.json"), "utf8"),
+);
 const adapter = fs.readFileSync(path.join(root, "scripts/headless/opponent-adapter.js"), "utf8");
 const headlessModuleScope = JSON.parse(
   fs.readFileSync(path.join(root, "scripts/headless/package.json"), "utf8"),
+);
+const structureBehavior = fs.readFileSync(
+  path.join(root, "engine/ingame/auto-bot/structureBehavior.js"),
+  "utf8",
+);
+
+assert.match(
+  structureBehavior,
+  /const activeThreat = this\.defensePostThreat\(difficulty\);[\s\S]*if \(activeThreat === null\) return null;/,
+  "quiet borders cannot authorize preventive Defense Posts",
 );
 
 assert.match(runner, /playlist\.gameConfig\("team"\)/);
@@ -69,6 +86,22 @@ assert.match(
   `${runnerLoad.stdout}\n${runnerLoad.stderr}`,
   /"startingGold":5000000/,
   "The runner must pass the requested starting gold through to the engine configuration",
+);
+const zeroTickResultLine = `${runnerLoad.stdout}\n${runnerLoad.stderr}`
+  .split(/\r?\n/)
+  .map((line) => line.trim())
+  .find((line) => line.startsWith('{"phase":"result"'));
+assert.ok(zeroTickResultLine);
+const zeroTickResult = JSON.parse(zeroTickResultLine);
+assert.deepEqual(
+  zeroTickResult.cumulativeBuildUnitTypes,
+  {},
+  "the final result always exposes the complete per-unit construction count",
+);
+assert.deepEqual(
+  zeroTickResult.constructionEvents,
+  [],
+  "the final result always exposes the ordered construction portfolio timeline",
 );
 const deterministicRunnerStart = () => {
   const run = spawnSync(
@@ -218,6 +251,11 @@ assert.match(runner, /intervalIntentTypes/);
 assert.match(runner, /cumulativeIntentTypes/);
 assert.match(runner, /intervalBuildUnitTypes/);
 assert.match(runner, /cumulativeBuildUnitTypes/);
+assert.match(runner, /constructionPortfolioSnapshot/);
+assert.match(runner, /constructionEvents:\s*cumulativeBuildEvents/);
+assert.match(runner, /action:\s*normalizedTile === null \? "upgrade"/);
+assert.match(runner, /underConstruction:/);
+assert.match(runner, /levels:/);
 assert.match(runner, /intent\.type !== "build_unit"/);
 assert.match(runner, /intervalBuildEvents/);
 assert.match(runner, /strategicBorderPressureSnapshot/);
@@ -257,6 +295,31 @@ assert.match(runner, /pendingTroops/);
 assert.match(batch, /availableParallelism\(\)/);
 assert.match(batch, /spawn\(/);
 assert.match(batch, /OFH_SIM_WORKERS/);
+assert.match(batch, /OFH_SIM_OUTPUT_DIR/);
+assert.match(batch, /results\.json/);
+assert.match(batch, /JSON\.stringify\(\{ summary, results \}/);
+assert.match(batch, /batchSeed,/);
+assert.match(batch, /process\.env\.OFH_BUNDLE_PATH \?\?/);
+assert.match(matrix, /OFH_CONSTRUCTION_SCENARIOS/);
+assert.match(matrix, /OFH_CAMPAIGN_SEED/);
+assert.match(matrix, /OFH_SCENARIOS/);
+assert.match(matrix, /Unknown construction scenarios/);
+assert.match(matrix, /matrix\.json/);
+assert.deepEqual(
+  constructionScenarios.scenarios.map(({ id }) => id),
+  [
+    "inland-alps",
+    "mixed-europe",
+    "team-four-islands",
+    "naval-archipelago",
+    "nuclear-baikal",
+  ],
+);
+for (const scenario of constructionScenarios.scenarios) {
+  assert.equal(typeof scenario.role, "string");
+  assert.equal(typeof scenario.environment.OFH_GAME_MAP, "string");
+  assert.equal(scenario.environment.OFH_GAME_MAP_SIZE, "Small");
+}
 assert.match(adapter, /window\.__OFH_deadlineNow = hostDeadlineNow/);
 assert.match(adapter, /sam-upgrade-plan/);
 assert.match(adapter, /targetLevel: plan\?\.targetLevel/);

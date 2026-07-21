@@ -1,5 +1,5 @@
 import { createWriteStream } from "node:fs";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { availableParallelism, tmpdir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -14,7 +14,11 @@ const requestedWorkers = Number(process.env.OFH_SIM_WORKERS ?? logicalProcessors
 const workers = Math.max(1, Math.min(logicalProcessors, Math.floor(requestedWorkers)));
 const requestedMatches = Number(process.env.OFH_MATCHES ?? workers);
 const matches = Math.max(1, Math.floor(requestedMatches));
-const outputDirectory = await mkdtemp(path.join(tmpdir(), "ofh-headless-batch-"));
+const requestedOutputDirectory = process.env.OFH_SIM_OUTPUT_DIR;
+const outputDirectory = requestedOutputDirectory
+  ? path.resolve(projectRoot, requestedOutputDirectory)
+  : await mkdtemp(path.join(tmpdir(), "ofh-headless-batch-"));
+if (requestedOutputDirectory) await mkdir(outputDirectory, { recursive: true });
 const batchSeed = process.env.OFH_BATCH_SEED ?? `ofh-batch-${Date.now()}`;
 const results = new Array(matches);
 let nextMatch = 0;
@@ -46,7 +50,8 @@ function runMatch(index) {
         env: {
           ...process.env,
           GAME_ENV: "dev",
-          OFH_BUNDLE_PATH: path.join(projectRoot, "openfront-helper.user.js"),
+          OFH_BUNDLE_PATH:
+            process.env.OFH_BUNDLE_PATH ?? path.join(projectRoot, "openfront-helper.user.js"),
           OFH_MATCH_SEED: `${batchSeed}-${index}`,
         },
         stdio: ["ignore", "pipe", "pipe"],
@@ -88,6 +93,7 @@ const completed = results.filter((entry) => entry?.result);
 const wins = completed.filter((entry) => entry.result.won === true).length;
 const runtimeMs = completed.reduce((total, entry) => total + entry.result.runtimeMs, 0);
 const summary = {
+  batchSeed,
   matches,
   completed: completed.length,
   wins,
@@ -99,5 +105,10 @@ const summary = {
   logicalProcessors,
   outputDirectory,
 };
+await writeFile(
+  path.join(outputDirectory, "results.json"),
+  `${JSON.stringify({ summary, results }, null, 2)}\n`,
+  { flag: "wx" },
+);
 process.stdout.write(`${JSON.stringify(summary)}\n`);
 process.exitCode = completed.length === matches ? 0 : 1;
