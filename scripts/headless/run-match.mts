@@ -910,6 +910,7 @@ const players = runner.game
 console.warn(
   JSON.stringify({
     phase: "result",
+    seed,
     won,
     winner: typeof winner === "string" ? winner : (winner?.name() ?? null),
     myTeam: finalMe?.team() ?? null,

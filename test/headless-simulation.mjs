@@ -11,6 +11,10 @@ const matrix = fs.readFileSync(
   path.join(root, "scripts/headless/run-construction-matrix.mjs"),
   "utf8",
 );
+const comparison = fs.readFileSync(
+  path.join(root, "scripts/headless/run-construction-comparison.mjs"),
+  "utf8",
+);
 const constructionScenarios = JSON.parse(
   fs.readFileSync(path.join(root, "scripts/headless/construction-scenarios.json"), "utf8"),
 );
@@ -253,6 +257,7 @@ assert.match(runner, /intervalBuildUnitTypes/);
 assert.match(runner, /cumulativeBuildUnitTypes/);
 assert.match(runner, /constructionPortfolioSnapshot/);
 assert.match(runner, /constructionEvents:\s*cumulativeBuildEvents/);
+assert.match(runner, /phase: "result",\s*seed,/);
 assert.match(runner, /action:\s*normalizedTile === null \? "upgrade"/);
 assert.match(runner, /underConstruction:/);
 assert.match(runner, /levels:/);
@@ -305,6 +310,12 @@ assert.match(matrix, /OFH_CAMPAIGN_SEED/);
 assert.match(matrix, /OFH_SCENARIOS/);
 assert.match(matrix, /Unknown construction scenarios/);
 assert.match(matrix, /matrix\.json/);
+assert.match(comparison, /OFH_BASELINE_BUNDLE and OFH_CANDIDATE_BUNDLE are required/);
+assert.match(comparison, /OFH_COMPARISON_SEED/);
+assert.match(comparison, /baselineSeed/);
+assert.match(comparison, /candidateSeed/);
+assert.match(comparison, /Unpaired result count/);
+assert.match(comparison, /comparison\.json/);
 assert.deepEqual(
   constructionScenarios.scenarios.map(({ id }) => id),
   [
@@ -318,8 +329,17 @@ assert.deepEqual(
 for (const scenario of constructionScenarios.scenarios) {
   assert.equal(typeof scenario.role, "string");
   assert.equal(typeof scenario.environment.OFH_GAME_MAP, "string");
-  assert.equal(scenario.environment.OFH_GAME_MAP_SIZE, "Small");
 }
+assert.deepEqual(
+  constructionScenarios.scenarios.map(({ environment }) => environment.OFH_GAME_MAP),
+  ["Alps", "Europe", "Four Islands", "ArchipelagoSea", "Baikal Nuke Wars"],
+  "scenario maps use GameMapType values accepted by the production map loader",
+);
+assert.deepEqual(
+  constructionScenarios.scenarios.map(({ environment }) => environment.OFH_GAME_MAP_SIZE),
+  ["Small", "Small", "Normal", "Small", "Small"],
+  "Four Islands uses full-resolution spawn areas; the other scenarios use bounded Small maps",
+);
 assert.match(adapter, /window\.__OFH_deadlineNow = hostDeadlineNow/);
 assert.match(adapter, /sam-upgrade-plan/);
 assert.match(adapter, /targetLevel: plan\?\.targetLevel/);

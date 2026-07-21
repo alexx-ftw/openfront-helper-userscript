@@ -29,8 +29,8 @@
       "id": "team-four-islands",
       "role": "team-separated island economy and reinforcement logistics",
       "environment": {
-        "OFH_GAME_MAP": "FourIslands",
-        "OFH_GAME_MAP_SIZE": "Small",
+        "OFH_GAME_MAP": "Four Islands",
+        "OFH_GAME_MAP_SIZE": "Normal",
         "OFH_PLAYER_TEAMS": "4",
         "OFH_NATIONS": "4",
         "OFH_BOTS": "120",
@@ -53,7 +53,7 @@
       "id": "nuclear-baikal",
       "role": "SAM and silo investment under explicit nuclear availability",
       "environment": {
-        "OFH_GAME_MAP": "BaikalNukeWars",
+        "OFH_GAME_MAP": "Baikal Nuke Wars",
         "OFH_GAME_MAP_SIZE": "Small",
         "OFH_PLAYER_TEAMS": "2",
         "OFH_NATIONS": "disabled",
