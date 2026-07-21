@@ -154,7 +154,7 @@ teamInteriorBehavior.game = {
 };
 teamInteriorBehavior.player = {
   smallID: () => 1,
-  borderTiles: () => [10, 20, 30],
+  borderTiles: () => new Set([10, 20, 30]),
   isFriendly: (owner) => owner === teamInteriorFriendlyOwner,
   isOnSameTeam: () => false,
   units: () => [],
@@ -564,6 +564,29 @@ assert.equal(
 );
 own.silos = priorSilosForDefensePostGate;
 
+const defenseCoverageBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+defenseCoverageBehavior.game = {
+  config: () => ({ defensePostRange: () => 30 }),
+  euclideanDistSquared: (left, right) => (left - right) ** 2,
+};
+defenseCoverageBehavior.player = {
+  units: (type) =>
+    type === UNIT.DefensePost ? [{ tile: () => 0 }] : [],
+};
+defenseCoverageBehavior.rankStructureTilesBySamProtection = (tiles) => [
+  ...tiles,
+];
+assert.deepEqual(
+  defenseCoverageBehavior.uncoveredDefensePostFrontTiles([10, 40]),
+  [40],
+  "an active front tile already inside the engine's Defense Post effect radius does not buy duplicate coverage",
+);
+assert.deepEqual(
+  defenseCoverageBehavior.rankDefensePostTiles([10, 90, 45], [40, 60]),
+  [45, 10, 90],
+  "Defense Post placement covers the largest uncovered threatened front before secondary SAM-placement ties",
+);
+
 const firstStrategicDefensePostBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 firstStrategicDefensePostBehavior.hasPriorStructureForDefensePost = () => false;
 firstStrategicDefensePostBehavior.game = {
@@ -725,9 +748,14 @@ assert.equal(
 const defensePostFallbackBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 defensePostFallbackBehavior.player = {
   gold: () => 2_000_000n,
+  units: () => [],
 };
 defensePostFallbackBehavior.game = {
-  config: () => ({ isUnitDisabled: () => false }),
+  config: () => ({
+    isUnitDisabled: () => false,
+    defensePostRange: () => 30,
+  }),
+  euclideanDistSquared: (left, right) => (left - right) ** 2,
 };
 defensePostFallbackBehavior.defensePostThreat = () => ({
   allowed: 1,
@@ -740,12 +768,12 @@ defensePostFallbackBehavior.sampleTilesNearFront = () => [11];
 defensePostFallbackBehavior.rankStructureTilesBySamProtection = (tiles) => tiles;
 const defensePostProbeRounds = [];
 defensePostFallbackBehavior.buildFirstDefensePost = async (tiles) => {
-  defensePostProbeRounds.push(tiles);
+  defensePostProbeRounds.push([...tiles]);
   return tiles.includes(22);
 };
 defensePostFallbackBehavior.defensePostFallbackTiles = (front, sampled) => {
-  assert.deepEqual(front, [10]);
-  assert.deepEqual(sampled, [11]);
+  assert.deepEqual([...front], [10]);
+  assert.deepEqual([...sampled], [11]);
   return [22];
 };
 assert.equal(

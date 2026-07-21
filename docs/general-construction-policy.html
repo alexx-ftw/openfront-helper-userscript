@@ -41,8 +41,10 @@
         value includes the Warships, trade routes, and overseas actions it makes possible.
       </li>
       <li>
-        A Defense Post changes the outcome and cost of land combat on a particular frontier. A Post
-        without a relevant land threat has no generic ratio value.
+        A Defense Post changes the outcome and cost of land combat on a particular frontier. Its
+        engine bonus does not stack on a tile, so additional Posts are useful only when they cover
+        threatened front tiles outside existing coverage. A Post without a relevant land threat has
+        no generic ratio value.
       </li>
       <li>
         A SAM is interception capacity over a portfolio of protected assets and predicted missile
@@ -118,6 +120,17 @@
       contains no legal or executed build/upgrade candidates. It may become the value model only
       after long-horizon training and runtime-adapter gates prove real construction actions across
       the scenario suite.
+    </p>
+
+    <p>
+      A later paired low-gold experiment rejected reserving the next economic build before the first
+      Missile Silo: both variants won one of four matches, while the reserve delayed the shared win
+      by 710 ticks. A Defense Post experiment also showed why local mechanics and whole-game outcome
+      must be recorded separately. Unlimited threatened-front coverage preserved the same win rate
+      but produced mixed survival changes; it was narrowed to the existing threat-derived Post cap.
+      The accepted change only removes zero-marginal overlapping coverage and improves placement
+      within that unchanged cap. Its four-match win rate remained one of four, so it is a mechanics
+      correction rather than evidence of a globally stronger policy.
     </p>
   </body>
 </html>

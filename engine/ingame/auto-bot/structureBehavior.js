@@ -1028,12 +1028,8 @@
       if (threat === null) return false;
       const frontTiles = threat.frontTiles ||
         this.getAttackFrontTiles(threat.landAttacks);
-      if (
-        this.countDefensePostsNearFront(frontTiles, threat.allowed) >=
-        threat.allowed
-      ) {
-        return false;
-      }
+      const uncoveredFrontTiles = this.defensePostFrontDemand(threat, frontTiles);
+      if (uncoveredFrontTiles === null) return false;
       const cost = this.cost(UNIT.DefensePost);
       if (this.player.gold() < cost) return false;
 
@@ -1046,13 +1042,13 @@
       // candidate-generation distribution; only the in-sampler canBuild filter
       // moves to the probe phase (rank-then-probe).
       const sampledTiles = this.sampleTilesNearFront(
-        frontTiles,
+        uncoveredFrontTiles,
         25,
         UNIT.DefensePost,
       );
-      const tiles = this.rankStructureTilesBySamProtection(
+      const tiles = this.rankDefensePostTiles(
         sampledTiles,
-        UNIT.DefensePost,
+        uncoveredFrontTiles,
       );
       if (await this.buildFirstDefensePost(tiles)) return true;
 
@@ -1060,11 +1056,31 @@
       // rank-then-probe cannot do that synchronously, so 25 raw samples can all
       // be invalid even when an affordable, useful post exists nearby. Retry a
       // small deterministic owned-territory ring before giving up this defense.
-      const fallbackTiles = this.defensePostFallbackTiles(frontTiles, sampledTiles);
+      const fallbackTiles = this.defensePostFallbackTiles(
+        uncoveredFrontTiles,
+        sampledTiles,
+      );
       if (fallbackTiles.length === 0) return false;
       return this.buildFirstDefensePost(
-        this.rankStructureTilesBySamProtection(fallbackTiles, UNIT.DefensePost),
+        this.rankDefensePostTiles(fallbackTiles, uncoveredFrontTiles),
       );
+    }
+
+    defensePostFrontDemand(threat, frontTiles) {
+      if (Array.isArray(threat.landAttacks)) {
+        if (
+          this.countDefensePostsNearFront(frontTiles, threat.allowed) >=
+          threat.allowed
+        ) {
+          return null;
+        }
+        const uncovered = this.uncoveredDefensePostFrontTiles(frontTiles);
+        return uncovered.length > 0 ? uncovered : null;
+      }
+      return this.countDefensePostsNearFront(frontTiles, threat.allowed) <
+        threat.allowed
+        ? frontTiles
+        : null;
     }
 
     defensePostPlacementThreat(difficulty) {
@@ -1365,6 +1381,53 @@
         }
       }
       return count;
+    }
+
+    defensePostEffectRangeSquared() {
+      const configuredRange = Number(this.game.config().defensePostRange?.());
+      if (Number.isFinite(configuredRange) && configuredRange > 0) {
+        return configuredRange ** 2;
+      }
+      const { borderSpacing } = this.spacingConstants();
+      return (borderSpacing * 1.5) ** 2;
+    }
+
+    uncoveredDefensePostFrontTiles(frontTiles) {
+      const posts = typeof this.player.units === "function"
+        ? this.player.units(UNIT.DefensePost) || []
+        : [];
+      if (posts.length === 0) return [...frontTiles];
+      const rangeSquared = this.defensePostEffectRangeSquared();
+      return frontTiles.filter((frontTile) =>
+        posts.every(
+          (post) =>
+            this.game.euclideanDistSquared(post.tile(), frontTile) > rangeSquared,
+        ),
+      );
+    }
+
+    rankDefensePostTiles(tiles, uncoveredFrontTiles) {
+      const rangeSquared = this.defensePostEffectRangeSquared();
+      const coverageByTile = new Map(
+        tiles.map((tile) => [
+          tile,
+          uncoveredFrontTiles.reduce(
+            (total, frontTile) =>
+              total +
+              Number(
+                this.game.euclideanDistSquared(tile, frontTile) <= rangeSquared,
+              ),
+            0,
+          ),
+        ]),
+      );
+      return this.rankStructureTilesBySamProtection(
+        tiles,
+        UNIT.DefensePost,
+      ).sort(
+        (left, right) =>
+          (coverageByTile.get(right) ?? 0) - (coverageByTile.get(left) ?? 0),
+      );
     }
 
     // sampleTilesNearFront — NationStructureBehavior.ts:302.
@@ -9372,7 +9435,7 @@
       }
 
       const ownSid = this.player.smallID();
-      const exposed = borderTiles.filter((tile) =>
+      const exposed = Array.from(borderTiles).filter((tile) =>
         this.economicBorderTileIsExposed(tile, ownSid),
       );
 
