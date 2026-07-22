@@ -1176,8 +1176,12 @@
       // Land attacks only (src: sourceTile() === null). isLandAttack() uses the
       // exact source tile when present and reconstructs it through a shared
       // land border when the extension omits it.
-      const landAttacks = (this.player.incomingAttacks?.() ?? [])
-        .filter((attack) => this.isLandAttack(attack));
+      const landAttacks = (this.player.incomingAttacks?.() ?? []).filter(
+        (attack) =>
+          Number(attack?.troops?.()) > 0 &&
+          !attack?.retreating?.() &&
+          this.isLandAttack(attack),
+      );
       if (landAttacks.length === 0) return null;
       const ourTroops = this.player.troops();
       if (ourTroops <= 0) return null;

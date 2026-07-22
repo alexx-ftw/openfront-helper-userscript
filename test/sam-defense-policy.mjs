@@ -625,6 +625,18 @@ assert.equal(
 );
 own.incomingAttacks = () => [
   {
+    troops: () => 900,
+    retreating: () => true,
+    attacker: () => ({ type: () => sandbox.PlayerType.Nation }),
+  },
+];
+assert.equal(
+  behavior.defensePostNeeded(),
+  false,
+  "a retreating land army cannot trigger a Defense Post after the attack has been cancelled",
+);
+own.incomingAttacks = () => [
+  {
     troops: () => 150,
     attacker: () => ({ type: () => sandbox.PlayerType.Nation }),
   },
@@ -1012,9 +1024,7 @@ assert.equal(
 );
 own.gold = originalOwnGoldForSamSurplus;
 behavior.economicConstructionPressureForSamUpgrade = originalSamEconomicPressure;
-const deterministicLegendaryUpgrade = Object.create(
-  sandbox.__StructureBehavior.prototype,
-);
+const deterministicLegendaryUpgrade = Object.create(sandbox.__StructureBehavior.prototype);
 deterministicLegendaryUpgrade.random = {
   chance: () => true,
   nextInt: () => 2,
