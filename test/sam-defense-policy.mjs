@@ -570,12 +570,9 @@ defenseCoverageBehavior.game = {
   euclideanDistSquared: (left, right) => (left - right) ** 2,
 };
 defenseCoverageBehavior.player = {
-  units: (type) =>
-    type === UNIT.DefensePost ? [{ tile: () => 0 }] : [],
+  units: (type) => (type === UNIT.DefensePost ? [{ tile: () => 0 }] : []),
 };
-defenseCoverageBehavior.rankStructureTilesBySamProtection = (tiles) => [
-  ...tiles,
-];
+defenseCoverageBehavior.rankStructureTilesBySamProtection = (tiles) => [...tiles];
 assert.deepEqual(
   defenseCoverageBehavior.uncoveredDefensePostFrontTiles([10, 40]),
   [40],
@@ -771,22 +768,29 @@ defensePostFallbackBehavior.rankStructureTilesBySamProtection = (tiles) => tiles
 const defensePostProbeRounds = [];
 defensePostFallbackBehavior.buildFirstDefensePost = async (tiles) => {
   defensePostProbeRounds.push([...tiles]);
-  return tiles.includes(22);
-};
-defensePostFallbackBehavior.defensePostFallbackTiles = (front, sampled) => {
-  assert.deepEqual([...front], [10]);
-  assert.deepEqual([...sampled], [11]);
-  return [22];
+  return false;
 };
 assert.equal(
   await defensePostFallbackBehavior.tryBuildDefensePost(),
-  true,
-  "an affordable live Defense Post retries deterministic nearby territory after the random sample is unbuildable",
+  false,
+  "an unbuildable depth-safe sample does not fall back onto the exposed border",
 );
 assert.deepEqual(
   defensePostProbeRounds,
-  [[11], [22]],
-  "the fallback probes only after the bounded front sample fails",
+  [[11]],
+  "the Defense Post probes only the bounded depth-safe sample",
+);
+
+const defensePostDepthRankBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+defensePostDepthRankBehavior.game = {
+  config: () => ({ defensePostRange: () => 30 }),
+  euclideanDistSquared: (left, right) => (left - right) ** 2,
+};
+defensePostDepthRankBehavior.rankStructureTilesBySamProtection = (tiles) => [...tiles];
+assert.deepEqual(
+  defensePostDepthRankBehavior.rankDefensePostTiles([11, 20], [0]),
+  [20, 11],
+  "equal-coverage Defense Post candidates prefer the deeper survivable tile",
 );
 
 const hostileSiloMaximumPriorityBehavior = Object.create(sandbox.__StructureBehavior.prototype);
@@ -977,17 +981,14 @@ assert.equal(
 );
 own.gold = originalOwnGoldForSamSurplus;
 behavior.economicConstructionPressureForSamUpgrade = originalSamEconomicPressure;
-const genericSamUpgradeBehavior = Object.create(
-  sandbox.__StructureBehavior.prototype,
-);
+const genericSamUpgradeBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 const genericSamStructure = { type: () => UNIT.SAMLauncher };
 genericSamUpgradeBehavior.getTotalStructureDensity = () => 1;
 genericSamUpgradeBehavior.findBestStructureToUpgrade = async () => ({
   structure: genericSamStructure,
   bu: { canUpgrade: true, cost: 3_000_000n },
 });
-genericSamUpgradeBehavior.buildableCostOrFallback = (buildable) =>
-  BigInt(buildable.cost);
+genericSamUpgradeBehavior.buildableCostOrFallback = (buildable) => BigInt(buildable.cost);
 genericSamUpgradeBehavior.safeStructureCost = () => 3_000_000n;
 genericSamUpgradeBehavior.samUpgradeEconomyCanAbsorb = () => false;
 assert.equal(
@@ -2883,8 +2884,7 @@ behavior.buildableFor = async () => {
     cost: 1_000_000n,
   };
 };
-const parityEconomicReserve =
-  behavior.economicConstructionPressureForSamUpgrade()?.cost ?? 0n;
+const parityEconomicReserve = behavior.economicConstructionPressureForSamUpgrade()?.cost ?? 0n;
 own.gold = () => 1_000_000n + parityEconomicReserve;
 assert.equal(
   await behavior.maybeUpgradeSamForSiloParity(),
@@ -3424,8 +3424,7 @@ behavior._activeHostileMissileCache = null;
 const originalEmergencyUpgradeGold = own.gold;
 const originalEmergencyUpgradeCost = behavior.cost;
 const originalEmergencyUpgradeBuildableFor = behavior.buildableFor;
-const originalEmergencyEconomicPressure =
-  behavior.economicConstructionPressureForSamUpgrade;
+const originalEmergencyEconomicPressure = behavior.economicConstructionPressureForSamUpgrade;
 reactiveSam.level = () => 4;
 own.gold = () => 3_000_000n;
 behavior.economicConstructionPressureForSamUpgrade = () => ({
@@ -3460,8 +3459,7 @@ reactiveSam.level = () => 1;
 own.gold = originalEmergencyUpgradeGold;
 behavior.cost = originalEmergencyUpgradeCost;
 behavior.buildableFor = originalEmergencyUpgradeBuildableFor;
-behavior.economicConstructionPressureForSamUpgrade =
-  originalEmergencyEconomicPressure;
+behavior.economicConstructionPressureForSamUpgrade = originalEmergencyEconomicPressure;
 behavior._missileDefenseSignalTick = null;
 
 let forecastTickSeen = null;

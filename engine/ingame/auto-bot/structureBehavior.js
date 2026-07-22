@@ -188,11 +188,6 @@
   const STRUCTURE_PROBE_TIMEOUT_MS =
     typeof WORKER_TIMEOUT_MS === "number" ? WORKER_TIMEOUT_MS : 2500;
 
-  /** A failed random front sample gets one bounded deterministic retry. */
-  const DEFENSE_POST_FALLBACK_CANDIDATE_LIMIT = 48;
-  const DEFENSE_POST_FALLBACK_FRONT_ANCHORS = 8;
-  const DEFENSE_POST_FALLBACK_MAX_DEPTH = 4;
-
   /** Estimated number of tiles per city equivalent, used when cities are disabled */
   const TILES_PER_CITY_EQUIVALENT = 2000;
 
@@ -1046,20 +1041,7 @@
         sampledTiles,
         uncoveredFrontTiles,
       );
-      if (await this.buildFirstDefensePost(tiles)) return true;
-
-      // The core sampler filters canBuild while sampling. Our client-side
-      // rank-then-probe cannot do that synchronously, so 25 raw samples can all
-      // be invalid even when an affordable, useful post exists nearby. Retry a
-      // small deterministic owned-territory ring before giving up this defense.
-      const fallbackTiles = this.defensePostFallbackTiles(
-        uncoveredFrontTiles,
-        sampledTiles,
-      );
-      if (fallbackTiles.length === 0) return false;
-      return this.buildFirstDefensePost(
-        this.rankDefensePostTiles(fallbackTiles, uncoveredFrontTiles),
-      );
+      return this.buildFirstDefensePost(tiles);
     }
 
     defensePostFrontDemand(threat, frontTiles) {
@@ -1234,60 +1216,6 @@
       return false;
     }
 
-    defensePostFallbackTiles(frontTiles, sampledTiles = []) {
-      const excluded = new Set(sampledTiles);
-      const candidates = [];
-      const seen = new Set();
-      for (const anchor of this.defensePostFallbackAnchors(frontTiles)) {
-        if (this.appendDefensePostFallbackCandidates(anchor, excluded, seen, candidates)) {
-          break;
-        }
-      }
-      return candidates;
-    }
-
-    defensePostFallbackAnchors(frontTiles) {
-      const ordered = Array.from(new Set(frontTiles)).sort(
-        (left, right) => Number(left) - Number(right),
-      );
-      const count = Math.min(DEFENSE_POST_FALLBACK_FRONT_ANCHORS, ordered.length);
-      return Array.from(
-        { length: count },
-        (_, index) => ordered[Math.floor((index * ordered.length) / count)],
-      );
-    }
-
-    appendDefensePostFallbackCandidates(anchor, excluded, seen, candidates) {
-      const game = this.game;
-      const mySid = this.player.smallID();
-      const queue = [{ tile: anchor, depth: 0 }];
-      seen.add(anchor);
-      for (let cursor = 0; cursor < queue.length; cursor++) {
-        const { tile, depth } = queue[cursor];
-        if (!excluded.has(tile)) candidates.push(tile);
-        if (candidates.length >= DEFENSE_POST_FALLBACK_CANDIDATE_LIMIT) {
-          return true;
-        }
-        if (depth >= DEFENSE_POST_FALLBACK_MAX_DEPTH) continue;
-        for (const neighbor of game.neighbors(tile)) {
-          if (!this.isOwnedUnseenDefensePostFallbackTile(neighbor, mySid, seen)) {
-            continue;
-          }
-          seen.add(neighbor);
-          queue.push({ tile: neighbor, depth: depth + 1 });
-        }
-      }
-      return false;
-    }
-
-    isOwnedUnseenDefensePostFallbackTile(tile, mySid, seen) {
-      return (
-        !seen.has(tile) &&
-        this.game.hasOwner(tile) &&
-        this.game.ownerID(tile) === mySid
-      );
-    }
-
     // defensePostNeeded — NationStructureBehavior.ts:229.
     defensePostNeeded() {
       const difficulty = currentDifficulty();
@@ -1402,25 +1330,30 @@
 
     rankDefensePostTiles(tiles, uncoveredFrontTiles) {
       const rangeSquared = this.defensePostEffectRangeSquared();
-      const coverageByTile = new Map(
-        tiles.map((tile) => [
-          tile,
-          uncoveredFrontTiles.reduce(
-            (total, frontTile) =>
-              total +
-              Number(
-                this.game.euclideanDistSquared(tile, frontTile) <= rangeSquared,
-              ),
-            0,
-          ),
-        ]),
+      const placementByTile = new Map(
+        tiles.map((tile) => {
+          let coverage = 0;
+          let closestFrontDistanceSquared = Infinity;
+          for (const frontTile of uncoveredFrontTiles) {
+            const distanceSquared = this.game.euclideanDistSquared(tile, frontTile);
+            if (distanceSquared <= rangeSquared) coverage++;
+            closestFrontDistanceSquared = Math.min(
+              closestFrontDistanceSquared,
+              distanceSquared,
+            );
+          }
+          return [tile, { coverage, closestFrontDistanceSquared }];
+        }),
       );
       return this.rankStructureTilesBySamProtection(
         tiles,
         UNIT.DefensePost,
       ).sort(
         (left, right) =>
-          (coverageByTile.get(right) ?? 0) - (coverageByTile.get(left) ?? 0),
+          (placementByTile.get(right)?.coverage ?? 0) -
+            (placementByTile.get(left)?.coverage ?? 0) ||
+          (placementByTile.get(right)?.closestFrontDistanceSquared ?? 0) -
+            (placementByTile.get(left)?.closestFrontDistanceSquared ?? 0),
       );
     }
 
@@ -1446,9 +1379,10 @@
       };
       const result = this.sampleOwnedFrontTiles(context, 6, true);
 
-      if (result.length > 0) return result;
-      // Fallback: relax border-depth constraint (territory too small for depth ring)
-      return this.sampleOwnedFrontTiles(context, 4, false);
+      // A shallow fallback puts the unfinished Post directly on the collapsing
+      // border. If no candidate has the required territorial depth, there is no
+      // survivable placement in this decision and ordinary construction stays live.
+      return result;
     }
 
     defensePostFrontAnchors(frontTiles, borderSpacing) {
