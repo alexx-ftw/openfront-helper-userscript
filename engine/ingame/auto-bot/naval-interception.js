@@ -169,7 +169,8 @@
 
   function compareNavalCandidates(a, b) {
     return (
-      a.marginTicks - b.marginTicks ||
+      a.landingTick - b.landingTick ||
+      b.marginTicks - a.marginTicks ||
       a.interceptTick - b.interceptTick ||
       String(a.invasionId).localeCompare(String(b.invasionId)) ||
       String(a.shipId).localeCompare(String(b.shipId))
@@ -180,7 +181,7 @@
     if (a.length !== b.length) return a.length - b.length;
     const marginA = a.reduce((sum, item) => sum + item.marginTicks, 0);
     const marginB = b.reduce((sum, item) => sum + item.marginTicks, 0);
-    if (marginA !== marginB) return marginB - marginA;
+    if (marginA !== marginB) return marginA - marginB;
     const lastA = a.reduce((max, item) => Math.max(max, item.interceptTick), 0);
     const lastB = b.reduce((max, item) => Math.max(max, item.interceptTick), 0);
     return lastB - lastA;

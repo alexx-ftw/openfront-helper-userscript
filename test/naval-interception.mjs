@@ -228,4 +228,43 @@ const twoShips = planNavalInterceptions({
 assert.deepEqual(twoShips.uncoveredIds, []);
 assert.equal(twoShips.assignments.length, 2);
 
+const marginPath = Array.from({ length: 13 }, (_, index) => tile(index + 1, 0));
+const safestExactAssignment = planNavalInterceptions({
+  ships: [
+    { id: "early-interceptor", tile: tile(4, 0) },
+    { id: "late-interceptor", tile: tile(8, 0) },
+  ],
+  invasions: [{ id: "margin-invasion", path: marginPath }],
+  route,
+  distance,
+  boatSpeed: 1,
+  warshipSpeed: 1,
+  attackRange: 0,
+});
+assert.equal(
+  safestExactAssignment.assignments[0].shipId,
+  "early-interceptor",
+  "the exact planner chooses the interceptor with the largest safety margin",
+);
+assert.equal(safestExactAssignment.assignments[0].marginTicks, 10);
+
+const safestGreedyAssignment = planNavalInterceptions({
+  ships: [4, 6, 8, 10].map((x, index) => ({
+    id: `greedy-interceptor-${index}`,
+    tile: tile(x, 0),
+  })),
+  invasions: [{ id: "greedy-margin-invasion", path: marginPath }],
+  route,
+  distance,
+  boatSpeed: 1,
+  warshipSpeed: 1,
+  attackRange: 0,
+});
+assert.equal(
+  safestGreedyAssignment.assignments[0].shipId,
+  "greedy-interceptor-0",
+  "the large-fleet planner handles the earliest landing first with its safest interceptor",
+);
+assert.equal(safestGreedyAssignment.assignments[0].marginTicks, 10);
+
 process.stdout.write("naval interception tests passed\n");
