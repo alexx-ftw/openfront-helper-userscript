@@ -9726,16 +9726,19 @@
         const width = game.width();
         const height = game.height();
         const total = width * height;
-        // Lazily flood-fill rail tiles into components, on demand from each
-        // station seed, memoizing labels so the total work is O(rail tiles).
-        const railLabel = new Int32Array(total).fill(-1); // -1 = unlabeled rail/none
+        // Lazily flood-fill only rail components touched by reachable stations.
+        // A full-map Int32Array fill here ran on every construction decision and
+        // produced visible pauses on large maps even when the railway itself was
+        // tiny. Sparse labels keep the same O(visited rail tiles) traversal while
+        // removing the O(map tiles) allocation/fill from Auto-build's hot path.
+        const railLabel = new Map();
         let nextRailId = 0;
 
         const labelFrom = (seed) => {
           // seed is a rail tile with no label yet; BFS its component.
           const id = nextRailId++;
           const queue = [seed];
-          railLabel[seed] = id;
+          railLabel.set(seed, id);
           let head = 0;
           while (head < queue.length) {
             const cur = queue[head++];
@@ -9744,9 +9747,9 @@
                 n >= 0 &&
                 n < total &&
                 railState[n] !== 0 &&
-                railLabel[n] === -1
+                !railLabel.has(n)
               ) {
-                railLabel[n] = id;
+                railLabel.set(n, id);
                 queue.push(n);
               }
             }
@@ -9759,13 +9762,13 @@
         const railIdAt = (tile) => {
           if (tile < 0 || tile >= total) return null;
           if (railState[tile] !== 0) {
-            if (railLabel[tile] === -1) labelFrom(tile);
-            return railLabel[tile];
+            if (!railLabel.has(tile)) labelFrom(tile);
+            return railLabel.get(tile);
           }
           for (const n of game.neighbors(tile)) {
             if (n >= 0 && n < total && railState[n] !== 0) {
-              if (railLabel[n] === -1) labelFrom(n);
-              return railLabel[n];
+              if (!railLabel.has(n)) labelFrom(n);
+              return railLabel.get(n);
             }
           }
           return null;

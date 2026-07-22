@@ -123,6 +123,35 @@ assert.equal(
   "a distant tile does not receive a fabricated rail-line preference",
 );
 
+const sparseRailBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+const sparseRailState = new Uint8Array(2_000_000);
+for (const tile of [100, 101, 102, 1_000_000]) sparseRailState[tile] = 1;
+sparseRailBehavior.game = {
+  width: () => 2000,
+  height: () => 1000,
+  neighbors: (tile) => {
+    if (tile === 100) return [101];
+    if (tile === 101) return [100, 102];
+    if (tile === 102) return [101];
+    return [];
+  },
+};
+assert.deepEqual(
+  Array.from(
+    sparseRailBehavior.assignRailClusters(
+      [{ tile: 100 }, { tile: 102 }, { tile: 1_000_000 }, { tile: 1_500_000 }],
+      sparseRailState,
+    ),
+  ),
+  ["rail#0", "rail#0", "rail#1", null],
+  "sparse rail labels preserve connected, disconnected, and isolated station clusters",
+);
+assert.doesNotMatch(
+  read("engine/ingame/auto-bot/structureBehavior.js"),
+  /new Int32Array\(total\)\.fill\(-1\)/,
+  "rail scoring must not clear a map-sized label array on every Auto-build decision",
+);
+
 const teamInteriorBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 let teamInteriorTick = 100;
 const teamInteriorNeighbors = new Map([
