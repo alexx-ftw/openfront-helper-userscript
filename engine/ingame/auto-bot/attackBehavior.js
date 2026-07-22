@@ -1058,7 +1058,7 @@
       if (entry.targetIsPlayer === false && entry.attackType === "land") return true;
       const createdTick = Number(entry.createdTick);
       const age = tick - (Number.isFinite(createdTick) ? createdTick : tick);
-      return age <= BOT_OUTBOUND_INTENT_GRACE_TICKS;
+      return age < BOT_OUTBOUND_INTENT_GRACE_TICKS;
     }
 
     reconcileOutboundAttackEntry(entry, context, tick) {
@@ -1129,7 +1129,7 @@
       const lastIntentTick = Number(this.lastTerraNulliusAttackIntentTick);
       return (
         Number.isFinite(lastIntentTick) &&
-        this.currentAttackDecisionTick() - lastIntentTick <=
+        this.currentAttackDecisionTick() - lastIntentTick <
           BOT_OUTBOUND_INTENT_GRACE_TICKS
       );
     }
@@ -1155,7 +1155,7 @@
         const createdTick = Number(entry.createdTick);
         const age =
           tick - (Number.isFinite(createdTick) ? createdTick : tick);
-        return age <= BOT_OUTBOUND_INTENT_GRACE_TICKS;
+        return age < BOT_OUTBOUND_INTENT_GRACE_TICKS;
       });
     }
 

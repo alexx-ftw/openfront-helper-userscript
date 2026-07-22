@@ -344,6 +344,14 @@ assert.equal(
   80005,
   "a pending donation is deducted before another attack or donation",
 );
+tick += sandbox.BOT_OUTBOUND_INTENT_GRACE_TICKS;
+assert.equal(
+  behavior.getPendingOutboundDonationTroops(),
+  0,
+  "a donation reservation expires on the exact grace boundary",
+);
+tick -= sandbox.BOT_OUTBOUND_INTENT_GRACE_TICKS;
+behavior.recordOutboundDonationIntent(10000);
 
 // A high maxTroops value must not make the attack strategy wait forever. The
 // hard reserve is still protected, but the old reserve/trigger ratio gates would
@@ -613,6 +621,13 @@ assert.equal(
   true,
   "the opening ledger bridges the intent-to-visible-attack snapshot gap",
 );
+tick += sandbox.BOT_OUTBOUND_INTENT_GRACE_TICKS;
+assert.equal(
+  expandingBehavior.hasRecentTerraNulliusAttackIntent(),
+  false,
+  "the recent free-land marker expires on the exact grace boundary",
+);
+tick -= sandbox.BOT_OUTBOUND_INTENT_GRACE_TICKS;
 assert.equal(
   troopEmissions.at(-1),
   2500,
@@ -1152,11 +1167,11 @@ assert.equal(
   failedBoatBehavior.emitBoat("failed-destination", 1, "⛵ failed boat", humanTarget),
   true,
 );
-tick += sandbox.BOT_OUTBOUND_INTENT_GRACE_TICKS + 1;
+tick += sandbox.BOT_OUTBOUND_INTENT_GRACE_TICKS;
 assert.equal(
   failedBoatBehavior.emitBoat("failed-destination", 1, "⛵ retried boat", humanTarget),
   true,
-  "an intent that never creates a transport releases its destination after the grace window",
+  "an intent that never creates a transport releases its destination on the grace boundary",
 );
 ownTroops = 100000;
 const parallelBoatBehavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
