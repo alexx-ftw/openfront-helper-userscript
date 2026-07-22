@@ -826,6 +826,49 @@ function rankLegendaryConstructionCandidates(candidates, options = {}) {
     .sort(compareLegendaryCandidates);
 }
 
+function rankLegendaryConstructionActions(candidates, options = {}) {
+  const gold = legendaryBigInt(options.gold ?? 0n);
+  const reserve = legendaryBigInt(options.reserve ?? 0n);
+  const available = gold > reserve ? gold - reserve : 0n;
+  const eligible = candidates
+    .filter((candidate) => candidate && candidate.legal !== false)
+    .slice()
+    .sort(compareLegendaryCandidates);
+  const affordable = eligible.filter(
+    (candidate) =>
+      candidate.affordable !== false && legendaryBigInt(candidate.cost) <= available,
+  );
+  const bestFuture = eligible.find(
+    (candidate) => legendaryBigInt(candidate.cost) > available,
+  );
+
+  if (!bestFuture) return affordable;
+  const shortfall = legendaryBigInt(bestFuture.cost) - available;
+  const bestNow = affordable[0] ?? null;
+  // Waiting is an actual portfolio action.  It wins only when the preferred
+  // future asset dominates every affordable one and buying the best immediate
+  // alternative would consume at least the entire funding gap.  In that case
+  // spending now necessarily delays the dominating action by more gold than is
+  // currently missing; no income-rate guess or arbitrary ratio is required.
+  if (
+    bestNow === null ||
+    (compareLegendaryCandidates(bestFuture, bestNow) < 0 &&
+      shortfall <= legendaryBigInt(bestNow.cost))
+  ) {
+    return [
+      {
+        action: "wait",
+        type: "Wait",
+        targetType: bestFuture.type,
+        shortfall,
+        cost: 0n,
+      },
+      ...affordable,
+    ];
+  }
+  return affordable;
+}
+
 function chooseLegendaryConstructionCandidate(candidates, options = {}) {
   return rankLegendaryConstructionCandidates(candidates, options)[0] ?? null;
 }

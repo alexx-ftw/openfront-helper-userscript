@@ -18,6 +18,11 @@ assert.equal(
   "Legendary planner exposes its candidate ranking function",
 );
 assert.equal(
+  typeof plannerSandbox.rankLegendaryConstructionActions,
+  "function",
+  "Legendary planner exposes build and wait actions through one portfolio rank",
+);
+assert.equal(
   typeof plannerSandbox.legendaryAllyPowerScore,
   "function",
   "Legendary exposes the ally-power normalizer used by placement",
@@ -126,6 +131,36 @@ assert.deepEqual(
   ["SAM Launcher", "City", "Port", "Gold Factory"],
   "Legendary balances gold and troops first; missile defense is secondary",
 );
+
+const waitForDominatingCity = plannerSandbox.rankLegendaryConstructionActions(
+  [
+    { type: "Factory", cost: 300n, gold: 1, troops: 1, defense: 1 },
+    { type: "City", cost: 1_000n, gold: 3, troops: 5, defense: 1 },
+  ],
+  { gold: 800n },
+);
+assert.equal(waitForDominatingCity[0].action, "wait");
+assert.equal(waitForDominatingCity[0].targetType, "City");
+assert.equal(waitForDominatingCity[0].shortfall, 200n);
+
+const buildWithoutMaterialDelay = plannerSandbox.rankLegendaryConstructionActions(
+  [
+    { type: "Factory", cost: 100n, gold: 1, troops: 1, defense: 1 },
+    { type: "City", cost: 1_000n, gold: 3, troops: 5, defense: 1 },
+  ],
+  { gold: 800n },
+);
+assert.equal(
+  buildWithoutMaterialDelay[0].type,
+  "Factory",
+  "an immediate asset remains preferred when its whole cost is smaller than the funding gap",
+);
+
+const waitWhenNothingIsAffordable = plannerSandbox.rankLegendaryConstructionActions(
+  [{ type: "City", cost: 1_000n, gold: 3, troops: 5, defense: 1 }],
+  { gold: 800n },
+);
+assert.equal(waitWhenNothingIsAffordable[0].action, "wait");
 
 assert.equal(
   plannerSandbox.chooseLegendaryConstructionCandidate(
@@ -464,7 +499,7 @@ assert.match(
   /LEGENDARY_EXACT_SCHEDULE_NODE_LIMIT/,
 );
 const structureSource = read("engine/ingame/auto-bot/structureBehavior.js");
-assert.match(structureSource, /rankLegendaryConstructionCandidates/);
+assert.match(structureSource, /rankLegendaryConstructionActions/);
 assert.match(structureSource, /legendaryAllySupportPlacementScore/);
 assert.match(structureSource, /legendaryTeamCenterPlacementScore/);
 assert.match(structureSource, /LEGENDARY_SAM_IMPACT_MARGIN_TICKS/);

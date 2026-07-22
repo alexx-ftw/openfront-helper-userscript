@@ -1996,32 +1996,40 @@
         missileSilosEnabled,
         nukesEnabled,
       });
-      const ranked = rankLegendaryConstructionCandidates(candidates, {
-        gold: this.player.gold(),
-        // The MIRV war chest is only an offensive goal. Productive and
-        // defensive candidates must remain rankable while the bot saves it.
-        reserve: 0n,
-      });
-
-      const rankedGroups = economyGrowthPriority
-        ? [
-            ranked.filter((candidate) =>
-              ECONOMIC_STRUCTURE_TYPES.includes(candidate.type),
-            ),
-            ranked.filter(
-              (candidate) => !ECONOMIC_STRUCTURE_TYPES.includes(candidate.type),
-            ),
-          ]
-        : [ranked];
-
-      for (const group of rankedGroups) {
-        for (const candidate of group) {
+      const actionGroups = this.legendaryConstructionActionGroups(
+        candidates,
+        economyGrowthPriority,
+      );
+      for (const actions of actionGroups) {
+        for (const candidate of actions) {
+          if (candidate.action === "wait") return false;
           if (await this.maybeSpawnStructure(candidate.type)) {
             return true;
           }
         }
       }
       return false;
+    }
+
+    legendaryConstructionActionGroups(candidates, economyGrowthPriority) {
+      const candidateGroups = economyGrowthPriority
+        ? [
+            candidates.filter((candidate) =>
+              ECONOMIC_STRUCTURE_TYPES.includes(candidate.type),
+            ),
+            candidates.filter(
+              (candidate) => !ECONOMIC_STRUCTURE_TYPES.includes(candidate.type),
+            ),
+          ]
+        : [candidates];
+      return candidateGroups.map((group) =>
+        rankLegendaryConstructionActions(group, {
+          gold: this.player.gold(),
+          // The MIRV war chest is only an offensive goal. Productive and
+          // defensive candidates must remain rankable while the bot saves it.
+          reserve: 0n,
+        }),
+      );
     }
 
     legendaryReserveGold() {
