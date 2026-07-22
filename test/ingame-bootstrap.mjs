@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { executeClassicScript } from "./helpers/classic-script.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const lobbyCoreSource = fs.readFileSync(path.resolve(__dirname, "../engine/lobby/core.js"), "utf8");
 const lifecycleSource = fs.readFileSync(
   path.resolve(__dirname, "../engine/ingame/auto-bot/lifecycle.js"),
   "utf8",
@@ -12,6 +13,12 @@ const lifecycleSource = fs.readFileSync(
 const bootstrapSource = lifecycleSource.split(
   "// ============================================================================\n// Atom-bomb batch macro",
 )[0];
+
+assert.match(
+  lobbyCoreSource,
+  /function syncCompanionHelper\(\)[\s\S]*?lobbyState\.settings\.showCompanionPanel[\s\S]*?lobbyState\.settings\.companionEnabled/,
+  "the lobby bridge must forward Companion settings through initialized lobbyState.settings",
+);
 
 let domReadyListener = null;
 let intervalCallback = null;

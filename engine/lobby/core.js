@@ -113,8 +113,8 @@ function syncCompanionHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SET_COMPANION",
       payload: {
-        panel: Boolean(settings.showCompanionPanel),
-        enabled: Boolean(settings.companionEnabled),
+        panel: Boolean(lobbyState.settings.showCompanionPanel),
+        enabled: Boolean(lobbyState.settings.companionEnabled),
       },
     },
     "*",
