@@ -468,6 +468,7 @@
     async _retaliateBuildAsync(tile, enemy, reason) {
       {
         if (this.hasPendingWarshipBuild()) return;
+        if (this.shouldDeferWarshipBuild(false)) return;
         const bu = await this.buildableWarship(tile);
         if (bu === null || bu === undefined || bu.canBuild === false) {
           this.maybeMoveWarship(tile);

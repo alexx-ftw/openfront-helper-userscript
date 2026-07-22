@@ -321,9 +321,10 @@ warshipBehavior.buildableWarship = async () => ({
   canBuild: 44,
 });
 let firstSamReserveActive = true;
+let offensiveReserveActive = true;
 warshipBehavior.structureBehavior = {
   shouldDeferWarshipForFirstSam: () => firstSamReserveActive,
-  shouldDeferOffensiveWarship: () => false,
+  shouldDeferOffensiveWarship: () => offensiveReserveActive,
 };
 
 const richAutoBot = Object.create(warshipSandbox.__WarshipBehavior.prototype);
@@ -366,6 +367,13 @@ assert.equal(randomChanceCalls, 0, "the nuclear reserve stops the Warship before
 assert.equal(warshipBuilds.length, 0, "the reserved SAM gold is not exported into a Warship");
 
 firstSamReserveActive = false;
+await warshipBehavior._retaliateBuildAsync(56, {}, "trade");
+assert.equal(
+  warshipBuilds.length,
+  0,
+  "routine retaliation cannot consume gold reserved for the construction portfolio",
+);
+offensiveReserveActive = false;
 assert.equal(
   await warshipBehavior.maybeSpawnWarship(),
   true,
