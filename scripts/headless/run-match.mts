@@ -381,7 +381,7 @@ const countIntents = (
     const event = {
       tick,
       unit: intent.unit,
-      action: normalizedTile === null ? "upgrade" as const : "build" as const,
+      action: normalizedTile === null ? ("upgrade" as const) : ("build" as const),
       tile: normalizedTile,
       portfolio,
       strategicBorderPressure: strategicBorderPressureSnapshot(),
@@ -519,6 +519,23 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
           bot.nationBot?.attackBehavior?.terraNulliusOpeningCommittedTroops ?? 0,
         ),
         tribeCluster: {
+          plannerRefreshStage: bot.nationBot?.attackBehavior?.earlyGameTribeRefreshStage ?? null,
+          plannerRefreshPending:
+            bot.nationBot?.attackBehavior?.earlyGameTribeCandidatesRefresh != null,
+          plannerCandidateCount: Array.isArray(
+            bot.nationBot?.attackBehavior?.earlyGameTribeCandidatesCache,
+          )
+            ? bot.nationBot.attackBehavior.earlyGameTribeCandidatesCache.length
+            : 0,
+          plannerScoredCount: Array.isArray(
+            bot.nationBot?.attackBehavior?.earlyGameTribeCandidatesCache,
+          )
+            ? bot.nationBot.attackBehavior.earlyGameTribeCandidatesCache.filter(
+                (candidate: Record<string, unknown>) =>
+                  Number.isFinite(Number(candidate.tribeClusterSize)) &&
+                  Number.isFinite(Number(candidate.tribeClusterAccess)),
+              ).length
+            : 0,
           preferredSize: Number(earlyGame.preferredClusterSize ?? 0),
           preferredMemberIDs: Array.isArray(earlyGame.preferredClusterMembers)
             ? earlyGame.preferredClusterMembers.map((member: { id?: unknown }) => member.id)
@@ -561,6 +578,13 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
     stopReason = "engine_stop";
     break;
   }
+  // The live client receives each game tick from a worker task, so cooperative
+  // `setTimeout(0)` slices run between ticks. A tight async loop otherwise
+  // advances only through microtasks and starves those timers until the whole
+  // simulation ends, leaving tribe topology and route refreshes permanently
+  // pending. Yield one host task per simulated tick while retaining max-speed
+  // execution and deterministic game state.
+  await new Promise<void>((resolve) => setImmediate(resolve));
   const executionMs = performance.now() - executionStartedAt;
   const currentPlayer = runner.game.playerByClientID(clientID);
   if (logSpawn && !spawnMaterializedLogged && currentPlayer?.numTilesOwned() > 0) {

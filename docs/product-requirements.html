@@ -343,6 +343,12 @@
 
 <ul>
   <li>
+    Max-speed headless matches must yield one host task between simulated ticks so cooperative
+    timers used by topology, route, and scoring work advance with the same scheduling boundary as
+    live worker ticks. A tight microtask-only loop must not make a healthy planner appear
+    permanently pending or suppress scored tribe attacks.
+  </li>
+  <li>
     When a test receives objects from a <code>node:vm</code> sandbox, you should assert their scalar
     fields or normalize them before deep comparison. Objects from separate VM realms can fail strict
     deep equality even when their visible properties are identical.

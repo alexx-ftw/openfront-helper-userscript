@@ -258,7 +258,7 @@ assert.match(runner, /cumulativeBuildUnitTypes/);
 assert.match(runner, /constructionPortfolioSnapshot/);
 assert.match(runner, /constructionEvents:\s*cumulativeBuildEvents/);
 assert.match(runner, /phase: "result",\s*seed,/);
-assert.match(runner, /action:\s*normalizedTile === null \? "upgrade"/);
+assert.match(runner, /action:\s*normalizedTile === null \? \("upgrade" as const\)/);
 assert.match(runner, /underConstruction:/);
 assert.match(runner, /levels:/);
 assert.match(runner, /intent\.type !== "build_unit"/);
@@ -333,14 +333,7 @@ for (const scenario of constructionScenarios.scenarios) {
 }
 assert.deepEqual(
   constructionScenarios.scenarios.map(({ environment }) => environment.OFH_GAME_MAP),
-  [
-    "Alps",
-    "Europe",
-    "Four Islands",
-    "ArchipelagoSea",
-    "Baikal Nuke Wars",
-    "Europe",
-  ],
+  ["Alps", "Europe", "Four Islands", "ArchipelagoSea", "Baikal Nuke Wars", "Europe"],
   "scenario maps use GameMapType values accepted by the production map loader",
 );
 assert.deepEqual(
@@ -377,6 +370,18 @@ assert.match(
   /return intents\.filter\(\(intent\) => intent\?\.type !== "spawn"\)/,
   "post-opening spawn intents must be rejected before reaching SpawnExecution",
 );
+assert.match(
+  runner,
+  /await new Promise<void>\(\(resolve\) => setImmediate\(resolve\)\)/,
+  "the max-speed runner must yield a host task so cooperative bot timers can advance",
+);
+assert.match(
+  runner,
+  /plannerRefreshStage:/,
+  "match telemetry must distinguish a pending tribe refresh from a completed scored cache",
+);
+assert.match(runner, /plannerRefreshPending:/);
+assert.match(runner, /plannerScoredCount:/);
 assert.match(
   fs.readFileSync(path.join(root, "engine/ingame/auto-bot/attackBehavior.js"), "utf8"),
   /attack-context/,

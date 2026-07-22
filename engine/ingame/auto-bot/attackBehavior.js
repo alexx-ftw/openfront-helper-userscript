@@ -4213,11 +4213,13 @@
         this.publishPreferredEarlyGameCluster([], new Map());
         return [];
       }
+      this.earlyGameTribeRefreshStage = "competitors";
       const competitorProfiles = await profileAttackAsync(
         profile,
         "tribes-competitor-profiles",
         () => this.getEarlyGameCompetitorProfiles(otherPlayers, mySid),
       );
+      this.earlyGameTribeRefreshStage = "sampling";
       const {
         nearbyTribes,
         topologyBordersById,
@@ -4235,6 +4237,7 @@
               profile,
             ),
         );
+      this.earlyGameTribeRefreshStage = "candidates";
       if (nearbyTribes.length === 0) {
         const liveTribeIds = new Set(
           otherPlayers
@@ -4307,6 +4310,7 @@
 
       await profileAttackAsync(profile, "tribes-boat-etas", () =>
         this.enrichEarlyGameTribeBoatEtas(candidates, borderByTribe));
+      this.earlyGameTribeRefreshStage = "scoring";
       this.normalizeEarlyGameCaptureEfficiencies(candidates);
       const futureFoodById = profileAttackSync(
         profile,
@@ -4349,6 +4353,7 @@
         this.publishPreferredEarlyGameCluster(candidates, futureFoodById),
       );
 
+      this.earlyGameTribeRefreshStage = "complete";
       return candidates;
     }
 
