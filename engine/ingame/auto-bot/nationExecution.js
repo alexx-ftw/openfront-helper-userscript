@@ -112,6 +112,14 @@
       return true;
     }
 
+    hasActiveOpeningExpansionAttack() {
+      return (
+        (typeof this.attackBehavior?.getLiveTerraNulliusAttackTroops === "function" &&
+          Number(this.attackBehavior.getLiveTerraNulliusAttackTroops()) > 0) ||
+        this.attackBehavior?.hasRecentTerraNulliusAttackIntent?.() === true
+      );
+    }
+
     tickIsCurrent(tickGeneration) {
       return tickGeneration == null ||
         (state.settings.enabled && state.tickGeneration === tickGeneration);
@@ -266,6 +274,7 @@
         const followUpPending =
           allocationStillAvailable ||
           this.hasPendingOpeningExpansionIntent() ||
+          this.hasActiveOpeningExpansionAttack() ||
           continued === true;
         this.openingExpansionFollowUpPending = followUpPending;
         if (!followUpPending) return false;

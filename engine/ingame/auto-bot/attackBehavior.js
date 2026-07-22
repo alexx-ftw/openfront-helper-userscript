@@ -933,6 +933,7 @@
       if (!targetIsPlayer) {
         this.terraNulliusOpeningCommittedTroops =
           (Number(this.terraNulliusOpeningCommittedTroops) || 0) + amount;
+        this.lastTerraNulliusAttackIntentTick = this.currentAttackDecisionTick();
       }
       const targetKey = targetIsPlayer
         ? this.getOutboundAttackTargetKey(target)
@@ -1112,6 +1113,24 @@
         );
     }
 
+    getLiveTerraNulliusAttackTroops() {
+      return this.getOutboundAttackSnapshot()
+        .filter((entry) => entry.targetIsPlayer === false)
+        .reduce(
+          (total, entry) => total + Math.max(0, Number(entry.troops) || 0),
+          0,
+        );
+    }
+
+    hasRecentTerraNulliusAttackIntent() {
+      const lastIntentTick = Number(this.lastTerraNulliusAttackIntentTick);
+      return (
+        Number.isFinite(lastIntentTick) &&
+        this.currentAttackDecisionTick() - lastIntentTick <=
+          BOT_OUTBOUND_INTENT_GRACE_TICKS
+      );
+    }
+
     recordOutboundDonationIntent(troops) {
       const amount = Math.max(0, Number(troops) || 0);
       if (amount <= 0) return;
@@ -1223,7 +1242,11 @@
       }
 
       const elapsed = Math.max(0, tick - this.terraNulliusOpeningStartTick);
-      if (elapsed > 500) {
+      const openingWaveFinished =
+        this.terraNulliusOpeningCommittedTroops > 0 &&
+        this.getPendingTerraNulliusAttackTroops() <= 0 &&
+        this.getLiveTerraNulliusAttackTroops() <= 0;
+      if (openingWaveFinished || elapsed > 500) {
         return Number.POSITIVE_INFINITY;
       }
       return Math.max(0, this.terraNulliusOpeningTroops * EARLY_EXPAND_OPENING_LIMIT);

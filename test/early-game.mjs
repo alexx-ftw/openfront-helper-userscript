@@ -450,6 +450,26 @@ assert.equal(
   "an inaccessible free-land frontier yields immediately to the full strategic planner",
 );
 assert.equal(closedFrontBot.openingExpansionFollowUpPending, false);
+const movingFrontBot = Object.create(openingSandbox.NationBot.prototype);
+movingFrontBot.openingLandBurstPending = false;
+movingFrontBot.openingExpansionFollowUpPending = true;
+movingFrontBot.feat = () => true;
+movingFrontBot.maybeBuildOpeningCity = async () => true;
+movingFrontBot.openingAllocationRemaining = () => 1200;
+movingFrontBot.hasPendingOpeningExpansionIntent = () => false;
+movingFrontBot.tickIsCurrent = () => true;
+movingFrontBot.attackBehavior = {
+  continueOpeningExpansion: async () => false,
+  hasLandBorderWithTerraNullius: () => false,
+  getLiveTerraNulliusAttackTroops: () => 0,
+  hasRecentTerraNulliusAttackIntent: () => true,
+};
+assert.equal(
+  await movingFrontBot.handleOpeningExpansion(5, null, undefined),
+  true,
+  "a recently emitted opening wave keeps the fast lane alive across the acknowledgement gap",
+);
+assert.equal(movingFrontBot.openingExpansionFollowUpPending, true);
 openingIncomingAttack = true;
 await openingBot.tick(5);
 assert.equal(openingDefenseResponses, 1);

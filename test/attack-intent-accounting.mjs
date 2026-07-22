@@ -609,6 +609,11 @@ assert.equal(
   "a free-land attack uses the client protocol's explicit null target",
 );
 assert.equal(
+  expandingBehavior.hasRecentTerraNulliusAttackIntent(),
+  true,
+  "the opening ledger bridges the intent-to-visible-attack snapshot gap",
+);
+assert.equal(
   troopEmissions.at(-1),
   2500,
   "direct TerraNullius expansion sends the adaptive 10% opening payload",
@@ -623,6 +628,7 @@ assert.equal(
 );
 ownTroops = 25000;
 expandingBehavior.terraNulliusOpeningCommittedTroops = ownTroops * 0.4;
+expandingBehavior.getLiveTerraNulliusAttackTroops = () => 2500;
 assert.equal(
   expandingBehavior.getTerraNulliusAttackTroops(terraNullius),
   0,
@@ -991,6 +997,20 @@ tick = 320;
 assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 10000);
 tick = 520;
 assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 10000);
+scheduledBehavior.terraNulliusOpeningCommittedTroops = 8777;
+scheduledBehavior.getPendingTerraNulliusAttackTroops = () => 0;
+scheduledBehavior.getLiveTerraNulliusAttackTroops = () => 0;
+assert.equal(
+  scheduledBehavior.getTerraNulliusOpeningCommitLimit(),
+  Number.POSITIVE_INFINITY,
+  "a completed opening wave immediately hands expansion to the adaptive reserve",
+);
+scheduledBehavior.getLiveTerraNulliusAttackTroops = () => 1200;
+assert.equal(
+  scheduledBehavior.getTerraNulliusOpeningCommitLimit(),
+  10000,
+  "a visible opening attack keeps the aggregate opening cap authoritative",
+);
 tick = 521;
 assert.equal(
   scheduledBehavior.getTerraNulliusOpeningCommitLimit(),
