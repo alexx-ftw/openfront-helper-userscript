@@ -212,6 +212,11 @@ assert.match(runner, /OFH_LOG_INTENTS/);
 assert.match(runner, /OFH_LOG_NAVAL/);
 assert.match(runner, /OFH_LOG_STRUCTURES/);
 assert.match(runner, /OFH_LOG_SPAWN/);
+assert.match(
+  runner,
+  /process\.stderr\.write\(`\$\{JSON\.stringify\(finalResult\)\}\\n`, \(\) => \{[\s\S]*process\.exit\(won \? 0 : 2\)/,
+  "a terminal match result must flush before the child exits, even if the engine retains live handles",
+);
 assert.match(runner, /phase:\s*"spawn-selection-trace"/);
 assert.match(adapter, /kind:\s*"spawn-ranking"/);
 assert.match(adapter, /topSpots:\s*Array\.isArray\(topSpots\)/);

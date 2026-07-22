@@ -1020,8 +1020,7 @@ const players = runner.game
   }))
   .sort((left, right) => right.tiles - left.tiles);
 
-console.warn(
-  JSON.stringify({
+const finalResult = {
     phase: "result",
     seed,
     won,
@@ -1050,8 +1049,13 @@ console.warn(
       maximumTerritoryShare: Number(maximumTerritoryShare.toFixed(4)),
     },
     runtimeMs: Math.round(performance.now() - startedAt),
-    topPlayers: players.slice(0, 10),
-  }),
-);
+  topPlayers: players.slice(0, 10),
+};
 
-process.exitCode = won ? 0 : 2;
+// The engine may retain timers or sockets after a terminal game result.  The
+// batch contract is a completed result line followed by child termination, so
+// flush that line before exiting rather than relying on the event loop to
+// become idle.
+process.stderr.write(`${JSON.stringify(finalResult)}\n`, () => {
+  process.exit(won ? 0 : 2);
+});
