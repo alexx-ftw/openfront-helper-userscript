@@ -853,7 +853,7 @@ function rankLegendaryConstructionActions(candidates, options = {}) {
   if (
     bestNow === null ||
     (compareLegendaryCandidates(bestFuture, bestNow) < 0 &&
-      shortfall <= legendaryBigInt(bestNow.cost))
+      shortfall * 2n <= legendaryBigInt(bestNow.cost))
   ) {
     return [
       {

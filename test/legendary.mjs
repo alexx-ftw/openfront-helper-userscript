@@ -134,7 +134,7 @@ assert.deepEqual(
 
 const waitForDominatingCity = plannerSandbox.rankLegendaryConstructionActions(
   [
-    { type: "Factory", cost: 300n, gold: 1, troops: 1, defense: 1 },
+    { type: "Factory", cost: 500n, gold: 1, troops: 1, defense: 1 },
     { type: "City", cost: 1_000n, gold: 3, troops: 5, defense: 1 },
   ],
   { gold: 800n },
