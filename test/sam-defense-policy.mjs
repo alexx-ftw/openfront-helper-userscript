@@ -971,20 +971,36 @@ assert.equal(
 );
 own.gold = () => 3_000_000n;
 assert.equal(
-  behavior.samUpgradeEconomyCanAbsorb(3_000_000n, {
-    activeMissileEmergency: true,
-  }),
-  true,
-  "An imminent trajectory remains the survival exception to the economic reserve",
+  behavior.samUpgradeEconomyCanAbsorb(3_000_000n),
+  false,
+  "Missile urgency cannot relabel the economy's 3M principal as SAM-upgrade surplus",
 );
 own.gold = originalOwnGoldForSamSurplus;
 behavior.economicConstructionPressureForSamUpgrade = originalSamEconomicPressure;
+const genericSamUpgradeBehavior = Object.create(
+  sandbox.__StructureBehavior.prototype,
+);
+const genericSamStructure = { type: () => UNIT.SAMLauncher };
+genericSamUpgradeBehavior.getTotalStructureDensity = () => 1;
+genericSamUpgradeBehavior.findBestStructureToUpgrade = async () => ({
+  structure: genericSamStructure,
+  bu: { canUpgrade: true, cost: 3_000_000n },
+});
+genericSamUpgradeBehavior.buildableCostOrFallback = (buildable) =>
+  BigInt(buildable.cost);
+genericSamUpgradeBehavior.safeStructureCost = () => 3_000_000n;
+genericSamUpgradeBehavior.samUpgradeEconomyCanAbsorb = () => false;
+assert.equal(
+  await genericSamUpgradeBehavior.maybeUpgradeStructure([genericSamStructure]),
+  false,
+  "The generic density-upgrade path cannot bypass the SAM economic-surplus gate",
+);
 const originalOwnGoldForPressure = own.gold;
 own.gold = () => 1_000n;
 assert.equal(
-  behavior.economicConstructionPressure(),
-  null,
-  "The economy pressure clears when no productive structure is affordable",
+  behavior.economicConstructionPressure()?.type,
+  UNIT.Factory,
+  "Saving toward the next productive structure remains economic pressure before it is affordable",
 );
 own.gold = originalOwnGoldForPressure;
 assert.equal(
@@ -2867,10 +2883,13 @@ behavior.buildableFor = async () => {
     cost: 1_000_000n,
   };
 };
+const parityEconomicReserve =
+  behavior.economicConstructionPressureForSamUpgrade()?.cost ?? 0n;
+own.gold = () => 1_000_000n + parityEconomicReserve;
 assert.equal(
   await behavior.maybeUpgradeSamForSiloParity(),
   true,
-  "SAM parity upgrades when the authoritative upgrade price is affordable even if a new SAM is not",
+  "SAM parity upgrades only when the authoritative price and next economic action are both funded",
 );
 assert.equal(
   sentBuilds.length,
@@ -3405,8 +3424,14 @@ behavior._activeHostileMissileCache = null;
 const originalEmergencyUpgradeGold = own.gold;
 const originalEmergencyUpgradeCost = behavior.cost;
 const originalEmergencyUpgradeBuildableFor = behavior.buildableFor;
+const originalEmergencyEconomicPressure =
+  behavior.economicConstructionPressureForSamUpgrade;
 reactiveSam.level = () => 4;
 own.gold = () => 3_000_000n;
+behavior.economicConstructionPressureForSamUpgrade = () => ({
+  type: UNIT.Factory,
+  cost: 1_000_000n,
+});
 behavior.cost = () => 5_000_000n;
 behavior.buildableFor = async () => ({
   type: UNIT.SAMLauncher,
@@ -3416,8 +3441,15 @@ behavior.buildableFor = async () => ({
 sentBuilds.length = 0;
 assert.equal(
   await behavior.maybeUpgradeMissileDefenseSam(),
+  false,
+  "An incoming H-bomb cannot consume the 3M still needed for economic growth",
+);
+assert.equal(sentBuilds.length, 0);
+own.gold = () => 4_000_000n;
+assert.equal(
+  await behavior.maybeUpgradeMissileDefenseSam(),
   true,
-  "An incoming H-bomb upgrades a level-4 SAM at the authoritative 3M price even when the planner formula says 5M",
+  "An incoming H-bomb upgrades at the authoritative 3M price after the economic reserve is funded",
 );
 assert.equal(
   sentBuilds.length,
@@ -3428,6 +3460,8 @@ reactiveSam.level = () => 1;
 own.gold = originalEmergencyUpgradeGold;
 behavior.cost = originalEmergencyUpgradeCost;
 behavior.buildableFor = originalEmergencyUpgradeBuildableFor;
+behavior.economicConstructionPressureForSamUpgrade =
+  originalEmergencyEconomicPressure;
 behavior._missileDefenseSignalTick = null;
 
 let forecastTickSeen = null;

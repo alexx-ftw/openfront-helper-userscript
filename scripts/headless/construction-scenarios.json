@@ -61,6 +61,19 @@
         "OFH_STARTING_GOLD": "5000000",
         "OFH_NUKES": "1"
       }
+    },
+    {
+      "id": "nuclear-europe-rich",
+      "role": "SAM, silo, and economic opportunity cost with funded hostile Nations",
+      "environment": {
+        "OFH_GAME_MAP": "Europe",
+        "OFH_GAME_MAP_SIZE": "Small",
+        "OFH_PLAYER_TEAMS": "2",
+        "OFH_NATIONS": "50",
+        "OFH_BOTS": "80",
+        "OFH_STARTING_GOLD": "25000000",
+        "OFH_NUKES": "1"
+      }
     }
   ]
 }

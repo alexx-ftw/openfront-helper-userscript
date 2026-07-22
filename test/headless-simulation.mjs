@@ -324,6 +324,7 @@ assert.deepEqual(
     "team-four-islands",
     "naval-archipelago",
     "nuclear-baikal",
+    "nuclear-europe-rich",
   ],
 );
 for (const scenario of constructionScenarios.scenarios) {
@@ -332,12 +333,19 @@ for (const scenario of constructionScenarios.scenarios) {
 }
 assert.deepEqual(
   constructionScenarios.scenarios.map(({ environment }) => environment.OFH_GAME_MAP),
-  ["Alps", "Europe", "Four Islands", "ArchipelagoSea", "Baikal Nuke Wars"],
+  [
+    "Alps",
+    "Europe",
+    "Four Islands",
+    "ArchipelagoSea",
+    "Baikal Nuke Wars",
+    "Europe",
+  ],
   "scenario maps use GameMapType values accepted by the production map loader",
 );
 assert.deepEqual(
   constructionScenarios.scenarios.map(({ environment }) => environment.OFH_GAME_MAP_SIZE),
-  ["Small", "Small", "Normal", "Small", "Small"],
+  ["Small", "Small", "Normal", "Small", "Small", "Small"],
   "Four Islands uses full-resolution spawn areas; the other scenarios use bounded Small maps",
 );
 assert.match(adapter, /window\.__OFH_deadlineNow = hostDeadlineNow/);

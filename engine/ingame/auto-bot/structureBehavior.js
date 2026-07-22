@@ -2610,8 +2610,6 @@
     economicConstructionPressure() {
       if (!state.settings.winFixes) return null;
 
-      const availableGold = this.spendableConstructionGold();
-
       const config = this.game.config();
       const citiesDisabled = config.isUnitDisabled(UNIT.City);
       const cityCount = citiesDisabled
@@ -2637,7 +2635,10 @@
         ) continue;
         const cost = this.safeConstructionCost(type);
         if (cost === null) continue;
-        if (cost <= availableGold) return { type, cost };
+        // Saving toward an eligible economic structure is itself productive
+        // pressure. Requiring it to be affordable first would let a 3M SAM
+        // level consume the exact gold that was accumulating for it.
+        return { type, cost };
       }
       return null;
     }
@@ -6938,6 +6939,13 @@
       }
       const result = await this.findBestStructureToUpgrade(structures);
       if (result !== null) {
+        if (type === UNIT.SAMLauncher) {
+          const cost = this.buildableCostOrFallback(
+            result.bu,
+            this.safeStructureCost(UNIT.SAMLauncher),
+          );
+          if (!this.samUpgradeEconomyCanAbsorb(cost)) return false;
+        }
         // src: addExecution(new UpgradeStructureExecution(player, unit.id())).
         // Client: sendBuildOrUpgrade(bu) where bu.canUpgrade !== false. We already
         // probed the BuildableUnit in findBestStructureToUpgrade, so reuse it.
@@ -6981,11 +6989,11 @@
      * A speculative SAM level must be paid from true surplus, after the next
      * currently useful economic action. This makes "the economy is strong
      * enough" an opportunity-cost test instead of a fixed gold, City, or tick
-     * threshold. Active incoming missiles use the trajectory planner below and
-     * remain the survival exception.
+     * threshold. Threat urgency decides which useful SAM receives the level;
+     * it does not redefine 3M of economic principal as surplus.
      */
-    samUpgradeEconomyCanAbsorb(cost, { activeMissileEmergency = false } = {}) {
-      if (activeMissileEmergency || !state.settings.winFixes) return true;
+    samUpgradeEconomyCanAbsorb(cost) {
+      if (!state.settings.winFixes) return true;
       const upgradeCost = BigInt(cost ?? 0n);
       if (upgradeCost <= 0n) return true;
       const economic = this.economicConstructionPressureForSamUpgrade();
@@ -7361,8 +7369,11 @@
         ? this.legendaryDefenseEvaluation(context)
         : this.getMissileDefenseEvaluation(context);
       if (!currentEvaluation.hasThreats || currentEvaluation.fullyDefended) return false;
+      const economicallySafeCandidates = upgradeCandidates.filter((candidate) =>
+        this.samUpgradeEconomyCanAbsorb(candidate.cost));
+      if (economicallySafeCandidates.length === 0) return false;
       const candidates = this.rankMissileDefenseSamUpgrades(
-        upgradeCandidates,
+        economicallySafeCandidates,
         context,
         currentEvaluation,
       );
