@@ -93,6 +93,23 @@
     });
   }
 
+  function isRetreatingIncomingAttack(attack) {
+    if (!attack) return false;
+    const retreating =
+      typeof attack.retreating === "function"
+        ? attack.retreating()
+        : attack.retreating;
+    return retreating === true;
+  }
+
+  function removeInactiveEnemyIntentWarnings(activeHostileAttackers) {
+    for (const [key, warning] of _enemyIntentWarnings) {
+      if (!activeHostileAttackers.has(warning.attackerID)) {
+        _enemyIntentWarnings.delete(key);
+      }
+    }
+  }
+
   function enemyIntentPollTick() {
     if (!runtimeState.enemyIntentEnabled) return;
     const context = enemyIntentRead("context", () => getOpenFrontGameContext(), null);
@@ -106,24 +123,23 @@
     );
     if (!atks) return;
     const now = performance.now();
-    // Clear stale warnings first.
-    for (const [key, warning] of _enemyIntentWarnings) {
-      if (now - warning.atMs > ENEMY_INTENT_TTL_MS) {
-        _enemyIntentWarnings.delete(key);
-      }
-    }
+    const activeHostileAttackers = new Set();
+    pruneEnemyIntentWarnings(now);
     for (let i = 0; i < atks.length; i += 1) {
       const a = atks[i];
-      if (!a || a.retreating) continue;
+      if (!a || isRetreatingIncomingAttack(a)) continue;
       const attackerID = a.attackerID;
       if (attackerID == null) continue;
       if (isFriendlyIncomingAttacker(context.game, me, attackerID)) continue;
+      activeHostileAttackers.add(attackerID);
       updateIncomingAttackWarning(a, now);
     }
+    // The current poll is authoritative. Resolved, withdrawn, and newly
+    // friendly attacks must stop warning immediately rather than after 15s.
+    removeInactiveEnemyIntentWarnings(activeHostileAttackers);
   }
 
-  function pruneEnemyIntentWarnings() {
-    const now = performance.now();
+  function pruneEnemyIntentWarnings(now = performance.now()) {
     for (const [key, warning] of _enemyIntentWarnings) {
       if (now - warning.atMs > ENEMY_INTENT_TTL_MS) {
         _enemyIntentWarnings.delete(key);
