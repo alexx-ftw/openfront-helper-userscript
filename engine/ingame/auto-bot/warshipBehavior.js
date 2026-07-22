@@ -1216,8 +1216,13 @@
       }
       const ports = this.player
         .units(UNIT.Port)
-        .slice()
-        .sort((a, b) => this.game.manhattanDist(a.tile(), path[0]) - this.game.manhattanDist(b.tile(), path[0]));
+        .map((port, index) => ({
+          port,
+          index,
+          distance: this.game.manhattanDist(port.tile(), path[0]),
+        }))
+        .sort((left, right) => left.distance - right.distance || left.index - right.index)
+        .map(({ port }) => port);
       for (const port of ports) {
         const spawn = this.warshipSpawnTile(port.tile(), 250);
         if (spawn !== null && !candidates.includes(spawn)) candidates.push(spawn);

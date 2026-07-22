@@ -415,6 +415,42 @@ assert.match(
   "warship retaliation must use the bounded linear selector instead of sorting the fleet",
 );
 
+const interceptionPortBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
+let interceptionPortDistanceCalls = 0;
+const interceptionPorts = Array.from({ length: 64 }, (_, index) => ({
+  id: () => `port-${index}`,
+  tile: () => index * 3,
+}));
+interceptionPortBehavior.player = { units: () => interceptionPorts };
+interceptionPortBehavior.game = {
+  manhattanDist: (left, right) => {
+    interceptionPortDistanceCalls++;
+    return Math.abs(left - right);
+  },
+};
+interceptionPortBehavior.warshipSpawnTile = (tile) => tile + 1_000;
+const interceptionCandidates = interceptionPortBehavior.interceptionBuildCandidates({
+  path: [100, 140, 180, 220],
+});
+assert.deepEqual(
+  Array.from(interceptionCandidates),
+  [
+    100,
+    140,
+    180,
+    ...interceptionPorts
+      .map((port, index) => ({ port, index, distance: Math.abs(port.tile() - 100) }))
+      .sort((left, right) => left.distance - right.distance || left.index - right.index)
+      .map(({ port }) => port.tile() + 1_000),
+  ],
+  "interception candidates preserve path points then ports ordered by distance to the landing approach",
+);
+assert.equal(
+  interceptionPortDistanceCalls,
+  interceptionPorts.length,
+  "interception port ranking computes each distance once instead of during sort comparisons",
+);
+
 assert.doesNotMatch(
   read("engine/ingame/auto-bot/warshipBehavior.js"),
   /planNavalInterceptions\(\{[\s\S]{0,500}route: \(from, to\) => this\.waterRoute\(from, to\)/,
