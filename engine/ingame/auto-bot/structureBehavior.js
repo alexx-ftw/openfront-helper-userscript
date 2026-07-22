@@ -302,6 +302,11 @@
    * of the incoming-to-own-troop ratio.
    */
   const DEFENSE_POST_RATIO_PER_POST = 0.4;
+  // Once a strategic invasion already matches our entire field army, releasing
+  // an affordable failed Post budget into an unrelated structure can decide the
+  // battle before the next placement retry.
+  const DEFENSE_POST_HARD_RESERVE_THREAT_RATIO = 1;
+  const DEFENSE_POST_FAILED_RETRY_TICKS = 10;
 
   // NOTE: the OCEAN sentinel (-1) used by sharedWaterComponents now lives in
   // gameApi's water reconstruction (SHARED_OCEAN_SENTINEL); structureBehavior only
@@ -955,15 +960,39 @@
       const activeThreat = this.defensePostThreat(difficulty);
       if (activeThreat === null) return null;
       if (this.game.config().isUnitDisabled(UNIT.DefensePost)) return null;
+      const hardReserve = this.shouldHardReserveFailedDefensePost(activeThreat);
+      if (hardReserve && this.shouldDeferHardDefensePostRetry()) return false;
       if (await this.tryBuildDefensePost(activeThreat)) return true;
 
       // Save the slot only while gold is the missing requirement. If the post
-      // is affordable but no legal tile was found, continuing prevents
-      // unrelated construction from starving forever.
+      // is affordable but no legal tile was found, a mild attack may continue
+      // into productive construction. An army-sized Nation/Human invasion keeps
+      // the hard reserve so a Port or other unrelated build cannot consume the
+      // next bounded placement retry.
       if (
-        !this.canAffordDefensePost()
+        !this.canAffordDefensePost() || hardReserve
       ) return false;
       return null;
+    }
+
+    shouldHardReserveFailedDefensePost(threat) {
+      return (
+        Number(threat?.ratio) >= DEFENSE_POST_HARD_RESERVE_THREAT_RATIO &&
+        threat.landAttacks.some((attack) => this.isStrategicLandAttack(attack))
+      );
+    }
+
+    shouldDeferHardDefensePostRetry() {
+      const tick = Number(this.game.ticks?.());
+      if (!Number.isFinite(tick)) return false;
+      const lastFailure = Number(this._lastHardDefensePostPlacementFailureTick);
+      if (
+        Number.isFinite(lastFailure) &&
+        tick >= lastFailure &&
+        tick - lastFailure < DEFENSE_POST_FAILED_RETRY_TICKS
+      ) return true;
+      this._lastHardDefensePostPlacementFailureTick = tick;
+      return false;
     }
 
     async handleWinFixStructurePriorities(legendaryDifficulty) {
@@ -1167,7 +1196,7 @@
         difficulty === Difficulty.Medium
           ? 1
           : Math.ceil(ratio / DEFENSE_POST_RATIO_PER_POST);
-      return { allowed, landAttacks };
+      return { allowed, incomingTroops, landAttacks, ratio };
     }
 
     async buildFirstDefensePost(tiles) {

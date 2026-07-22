@@ -62,6 +62,15 @@
     available, and equally useful candidates must prefer the one farthest behind the threatened
     front so the structure has the greatest chance to finish before the territory is captured.
   </li>
+  <li>
+    If an incoming Nation or Human land army matches or exceeds our current troops, an affordable
+    failed Defense Post placement must retain its construction budget for a bounded retry. It must
+    not release that gold to a Port or unrelated structure while the overwhelming invasion remains
+    live. The hard reserve remains active continuously, but an unchanged failed placement search
+    must retry at most once per game second to avoid repeated full candidate probes and main-thread
+    stutter. Failed placement under a smaller attack may still release the slot so ordinary economy
+    cannot be starved indefinitely.
+  </li>
 </ul>
 
 <h2>Auto-fire collateral accounting</h2>

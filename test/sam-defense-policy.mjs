@@ -695,15 +695,18 @@ assert.equal(
 );
 
 const defensePostLivenessBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+let defensePostLivenessTick = 100;
 defensePostLivenessBehavior.handleHostileSiloSamMaximumPriority = async () => null;
 defensePostLivenessBehavior.prioritizeMaritimeInvasionDefense = async () => false;
 defensePostLivenessBehavior.maybeUpgradeMissileDefenseSam = async () => false;
 defensePostLivenessBehavior.hasPriorStructureForDefensePost = () => true;
 defensePostLivenessBehavior.game = {
+  ticks: () => defensePostLivenessTick,
   config: () => ({ isUnitDisabled: () => false }),
 };
 defensePostLivenessBehavior.defensePostThreat = () => ({
   allowed: 1,
+  ratio: 0.5,
   landAttacks: [{}],
 });
 defensePostLivenessBehavior.tryBuildDefensePost = async () => false;
@@ -731,6 +734,34 @@ assert.equal(
   productiveConstructionCalls,
   1,
   "The ordinary construction planner runs after an affordable Defense Post placement failure",
+);
+defensePostLivenessBehavior.defensePostThreat = () => ({
+  allowed: 4,
+  ratio: 1.25,
+  landAttacks: [{ attacker: () => ({ type: () => sandbox.PlayerType.Nation }) }],
+});
+assert.equal(
+  await defensePostLivenessBehavior.handleStructures(),
+  false,
+  "an affordable failed Post keeps its hard reserve during an army-sized strategic invasion",
+);
+assert.equal(
+  productiveConstructionCalls,
+  1,
+  "an unrelated Port or economy build cannot consume the overwhelming-invasion reserve",
+);
+const overwhelmingPlacementAttempts = [];
+defensePostLivenessBehavior.tryBuildDefensePost = async () => {
+  overwhelmingPlacementAttempts.push(defensePostLivenessTick);
+  return false;
+};
+for (defensePostLivenessTick = 101; defensePostLivenessTick <= 120; defensePostLivenessTick++) {
+  assert.equal(await defensePostLivenessBehavior.handleStructures(), false);
+}
+assert.deepEqual(
+  overwhelmingPlacementAttempts,
+  [110, 120],
+  "a hard reserve stays live every tick while the expensive placement probe retries once per second",
 );
 defensePostLivenessBehavior.canAffordDefensePost = () => false;
 assert.equal(
