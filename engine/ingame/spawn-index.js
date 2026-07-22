@@ -157,7 +157,10 @@
         this.size,
         this.frontierOffsets.length,
       );
-      this.frontierValueGain = new Uint32Array(this.size);
+      this.frontierValueGain = createSpawnCountBuffer(
+        this.size,
+        this.frontierOffsets.length * FRONTIER_VALUE_SCALE,
+      );
       this.frontierSlots = createSpawnCountBuffer(
         this.size,
         this.frontierOffsets.length,

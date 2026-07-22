@@ -248,6 +248,11 @@ test("counter storage follows the exact spawn geometry range", () => {
       `${field} should use one byte for the default spawn geometry`,
     );
   }
+  assert.equal(
+    compact.frontierValueGain.BYTES_PER_ELEMENT,
+    2,
+    "the default weighted frontier range fits exactly in two bytes",
+  );
 
   const wide = api.create({
     width: 25,
@@ -259,6 +264,17 @@ test("counter storage follows the exact spawn geometry range", () => {
     wide.spawnGain.BYTES_PER_ELEMENT,
     2,
     "larger custom spawn disks must widen counters instead of overflowing",
+  );
+  const veryWide = api.create({
+    width: 45,
+    height: 45,
+    terrain: makeTerrain(45, 45, LAND),
+    spawnRadius: 20,
+  });
+  assert.equal(
+    veryWide.frontierValueGain.BYTES_PER_ELEMENT,
+    4,
+    "large weighted frontiers must retain 32-bit storage",
   );
   wide.buildAll();
   assert.ok(wide.getCandidate(ref(25, 12, 12), { mode: "explicit" }).spawnGain > 255);
