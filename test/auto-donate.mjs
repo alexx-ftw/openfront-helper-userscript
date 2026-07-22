@@ -18,7 +18,7 @@ function makePlayer({
   incomingAttacks,
   outgoingAttacks = [],
 }) {
-  return {
+  const player = {
     id: () => id,
     smallID: () => id,
     displayName: () => name,
@@ -26,11 +26,12 @@ function makePlayer({
     gold: () => gold,
     isAlive: () => true,
     friendly,
-    isFriendly: () => friendly,
+    isFriendly: () => player.friendly,
     incomingAttacks: () => incomingAttacks ?? (inCombat ? [{}] : []),
     outgoingAttacks: () => outgoingAttacks,
     sharesBorder: border,
   };
+  return player;
 }
 
 function makeTransport({
@@ -59,6 +60,7 @@ const DONATION_DEFAULTS = {
   supportsUnitApi: true,
   beingAttacked: false,
   attackDuringBorderLookup: false,
+  allyTurnsHostileDuringBorderLookup: false,
   incomingTransports: [],
   autoDonateTroops: true,
   autoDonateGold: false,
@@ -85,6 +87,7 @@ async function runDonation(options = {}) {
     supportsUnitApi,
     beingAttacked,
     attackDuringBorderLookup,
+    allyTurnsHostileDuringBorderLookup,
     incomingTransports,
     autoDonateTroops,
     autoDonateGold,
@@ -102,6 +105,7 @@ async function runDonation(options = {}) {
   const packets = [];
   let currentlyBeingAttacked = beingAttacked;
   let now = 5000;
+  let borderLookupHook = () => {};
   const me = {
     id: () => 1,
     smallID: () => 1,
@@ -115,6 +119,7 @@ async function runDonation(options = {}) {
   if (supportsBorderApi) {
     me.borderTiles = async () => {
       if (attackDuringBorderLookup) currentlyBeingAttacked = true;
+      borderLookupHook();
       return { borderTiles: new Set([1]) };
     };
   }
@@ -130,6 +135,11 @@ async function runDonation(options = {}) {
     incomingAttacks: allyIncomingAttacks,
     outgoingAttacks: allyOutgoingAttacks,
   });
+  if (allyTurnsHostileDuringBorderLookup) {
+    borderLookupHook = () => {
+      ally.friendly = false;
+    };
+  }
   const players = [me, ally, ...opponents];
   const borderingPlayers = [
     ...(friendlyBorder ? [ally] : []),
@@ -210,6 +220,15 @@ assert.deepEqual(
   hostileNamedRecipient,
   [],
   "a configured name cannot receive troops or gold after becoming hostile",
+);
+
+const relationshipChangesDuringLookup = await runDonation({
+  allyTurnsHostileDuringBorderLookup: true,
+});
+assert.deepEqual(
+  relationshipChangesDuringLookup,
+  [],
+  "troops are not sent when the selected ally becomes hostile during the border lookup",
 );
 
 const disabledGoldDonation = await runDonation({

@@ -483,7 +483,9 @@
     if (currentTroops <= maxTroops * keepPct / 100) return null;
     const targets = findAutoDonateTargetPlayers(game, me, targetNames, true, "troops");
     const recipient = findNeediestAutoDonateTarget(targets, game);
-    return recipient ? { game, me, recipient, keepPct, donatePct, maxTroops } : null;
+    return recipient
+      ? { game, me, recipient, targetNames, keepPct, donatePct, maxTroops }
+      : null;
   }
 
   function getSafeAutoDonateTroops(plan, borderOpponentTroops) {
@@ -503,9 +505,15 @@
   }
 
   function sendAutoDonateTroops(plan, amount) {
+    if (!isEligibleAutoDonateTarget(
+      plan.game,
+      plan.recipient,
+      plan.me,
+      plan.targetNames,
+      { combatOnly: true, donationKind: "troops" },
+    )) return false;
     const recipient = getAutoDonateRecipientId(plan.recipient);
     if (recipient == null || amount <= 0) return false;
-    if (!autoDonationRecipientIsReady(plan.recipient)) return false;
     sendGamePacket({ type: "donate_troops", recipient, troops: amount });
     markAutoDonationRecipient(plan.recipient);
     runtimeDebugLog(
