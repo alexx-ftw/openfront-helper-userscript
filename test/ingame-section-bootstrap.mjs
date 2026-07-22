@@ -22,8 +22,8 @@ assert.match(
 );
 assert.match(
   autoBotEngineSource,
-  /const seedKey = meCore\.smallID\?\.\(\) \?\? meCore\.id\?\.\(\)/,
-  "the bot lifetime key must remain stable when id() materializes after spawn",
+  /const seedKey = meCore\.clientID\?\.\(\) \?\? meCore\.smallID\?\.\(\) \?\? meCore\.id\?\.\(\)/,
+  "the client identity keeps the bot lifetime stable while territory IDs materialize after spawn",
 );
 const sectionStart = userscript.lastIndexOf(";(function(){\n");
 const sectionEnd = userscript.lastIndexOf("\n})();\n");

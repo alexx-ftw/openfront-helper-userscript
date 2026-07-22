@@ -175,6 +175,7 @@ const openingSandbox = {
   },
   UNIT: { Port: "Port", Warship: "Warship" },
   EARLY_EXPAND_COMMIT: 0.1,
+  EARLY_EXPAND_OPENING_LIMIT: 0.4,
   currentDifficulty: () => "Impossible",
   simpleHash: () => 1,
   PseudoRandom: class {
@@ -460,6 +461,7 @@ const cadenceSandbox = {
   Difficulty: openingSandbox.Difficulty,
   UNIT: openingSandbox.UNIT,
   EARLY_EXPAND_COMMIT: 0.1,
+  EARLY_EXPAND_OPENING_LIMIT: 0.4,
   currentDifficulty: () => "Impossible",
   simpleHash: () => 1,
   PseudoRandom: class {
@@ -1573,6 +1575,7 @@ const targetSandbox = {
   PlayerType: { Bot: "Bot", Human: "Human", Nation: "Nation" },
   state: { settings: { winFixes: true, features: { boat: true } }, earlyGame: {}, stats: {} },
   EARLY_EXPAND_COMMIT: 0.1,
+  EARLY_EXPAND_OPENING_LIMIT: 0.4,
   EARLY_EXPAND_FOLLOWUP_COMMIT: 0.1,
   withTimeout: (value) => Promise.resolve(value),
   WORKER_TIMEOUT_MS: 1000,

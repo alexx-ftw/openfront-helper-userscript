@@ -1194,11 +1194,10 @@
           Number(this.getKnownBorderOpponentTroops()) || 0,
         );
         const openingSafetyFloor =
-          this.terraNulliusSafetyTroopHighWater * (1 - EARLY_EXPAND_COMMIT);
+          this.terraNulliusSafetyTroopHighWater * (1 - EARLY_EXPAND_OPENING_LIMIT);
         return Math.min(
           ownTroops,
           Math.max(
-            ownTroops - remainingOpeningCommitment,
             openingSafetyFloor,
             borderThreat,
           ),
@@ -1227,7 +1226,7 @@
       if (elapsed > 500) {
         return Number.POSITIVE_INFINITY;
       }
-      return Math.max(0, this.terraNulliusOpeningTroops * EARLY_EXPAND_COMMIT);
+      return Math.max(0, this.terraNulliusOpeningTroops * EARLY_EXPAND_OPENING_LIMIT);
     }
 
     getTerraNulliusLivenessReserveTroops() {
@@ -1242,9 +1241,7 @@
       );
       return Math.max(
         borderThreat,
-        this.terraNulliusSafetyTroopHighWater *
-          (1 - EARLY_EXPAND_COMMIT) *
-          (1 - EARLY_EXPAND_FOLLOWUP_COMMIT),
+        this.terraNulliusSafetyTroopHighWater * (1 - EARLY_EXPAND_OPENING_LIMIT),
       );
     }
 
@@ -2389,6 +2386,12 @@
       const defense = await this.respondToIncomingAttack();
       if (defense !== null) return false;
       if (await this.reinforceIncompleteOutboundPlayerAttack()) return true;
+      if (this.getRemainingTerraNulliusOpeningCommitment() > 0) {
+        return this.forceSendAttack(
+          this.game.terraNullius(),
+          EARLY_EXPAND_COMMIT,
+        );
+      }
       if (!this.hasLandBorderWithTerraNullius()) return false;
       return this.sendLandAttack(this.game.terraNullius());
     }
@@ -2468,19 +2471,23 @@
       return true;
     }
 
+    earlyGameTribeCandidateIsLiveAndScored(candidate, target) {
+      return (
+        Number.isFinite(Number(candidate?.tribeClusterSize)) &&
+        Number.isFinite(Number(candidate?.tribeClusterAccess)) &&
+        target?.isAlive?.() !== false &&
+        (typeof target?.type !== "function" || target.type() === PlayerType.Bot) &&
+        this.player.isFriendly?.(target) !== true
+      );
+    }
+
     async launchEarlyGameTribeCandidate(candidate, selectedTargetKeys) {
       const target = candidate?.player;
       // A cooperative snapshot can complete after another player has already
       // eaten or allied the tribe.  Troop payloads are recalculated in
       // `sendAttack`; reject a no-longer-actionable target before reserving an
       // intent at all.
-      if (
-        !Number.isFinite(Number(candidate?.tribeClusterSize)) ||
-        !Number.isFinite(Number(candidate?.tribeClusterAccess)) ||
-        target?.isAlive?.() === false ||
-        (typeof target?.type === "function" && target.type() !== PlayerType.Bot) ||
-        this.player.isFriendly?.(target) === true
-      ) {
+      if (!this.earlyGameTribeCandidateIsLiveAndScored(candidate, target)) {
         return false;
       }
       const targetKey = this.getOutboundAttackTargetKey(candidate.player);

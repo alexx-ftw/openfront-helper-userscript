@@ -218,17 +218,24 @@
       return true;
     }
 
-    async handleOpeningExpansion(ticks, profile, tickGeneration) {
+    openingExpansionIsActive() {
       const pending = this.openingLandBurstPending || this.openingExpansionFollowUpPending;
-      if (!pending || !state.settings.winFixes || !(this.feat("expand") || this.feat("boat"))) {
-        return false;
-      }
+      return pending && state.settings.winFixes && (this.feat("expand") || this.feat("boat"));
+    }
+
+    openingAllocationRemaining() {
+      return this.attackBehavior.getRemainingTerraNulliusOpeningCommitment?.() ?? 0;
+    }
+
+    async handleOpeningExpansion(ticks, profile, tickGeneration) {
+      if (!this.openingExpansionIsActive()) return false;
       // The opening troop chain can remain pending for many engine ticks.
       // Do not make that movement-only period postpone the foundational City
       // until the ordinary cadence finally resumes: one City compounds troop
       // and gold production, whereas Ports, Factories and upgrades can wait.
       if (!(await this.maybeBuildOpeningCity(ticks, profile, tickGeneration))) return true;
-      if (this.hasPendingOpeningExpansionIntent()) {
+      const openingAllocationRemaining = this.openingAllocationRemaining();
+      if (this.hasPendingOpeningExpansionIntent() && openingAllocationRemaining <= 0) {
         this.lastSeenTick = ticks;
         return true;
       }
@@ -242,8 +249,11 @@
           () => this.attackBehavior.continueOpeningExpansion(),
         );
         if (!this.tickIsCurrent(tickGeneration)) return true;
+        const allocationStillAvailable = this.openingAllocationRemaining() > 0;
         const followUpPending =
-          this.hasPendingOpeningExpansionIntent() || continued === true;
+          allocationStillAvailable ||
+          this.hasPendingOpeningExpansionIntent() ||
+          continued === true;
         this.openingExpansionFollowUpPending = followUpPending;
         if (!followUpPending) return false;
       }

@@ -317,6 +317,27 @@ export class BundledOpponentBot {
         return result;
       };
     }
+    const originalHandleOpeningExpansion = nationBot.handleOpeningExpansion;
+    if (typeof originalHandleOpeningExpansion === "function") {
+      nationBot.handleOpeningExpansion = async (...args) => {
+        const attackBehavior = nationBot.attackBehavior;
+        const before = {
+          landBurst: nationBot.openingLandBurstPending === true,
+          followUp: nationBot.openingExpansionFollowUpPending === true,
+          remaining: attackBehavior?.getRemainingTerraNulliusOpeningCommitment?.() ?? null,
+          pending: attackBehavior?.getPendingTerraNulliusAttackTroops?.() ?? null,
+        };
+        const handled = await originalHandleOpeningExpansion.apply(nationBot, args);
+        this.spawnTrace.push({
+          kind: "opening-expansion-gate",
+          tick: this.game.ticks(),
+          handled: handled === true,
+          before,
+          followUpAfter: nationBot.openingExpansionFollowUpPending === true,
+        });
+        return handled;
+      };
+    }
     const originalPickSpawnCenter = nationBot.pickSpawnCenter;
     if (typeof originalPickSpawnCenter !== "function") return;
     nationBot.pickSpawnCenter = (...args) => {

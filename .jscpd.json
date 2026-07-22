@@ -9,6 +9,7 @@
   "output": "jscpd-report",
   "ignore": [
     "**/node_modules/**",
+    "**/.tmp-*/**",
     "**/openfront-engine/**",
     "**/openfront-helper.user.js",
     "**/jscpd-report/**",

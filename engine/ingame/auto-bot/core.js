@@ -218,6 +218,9 @@
   // repeated asynchronous Terra Nullius intents drain the whole army before
   // the client has reflected the first command.
   const EARLY_EXPAND_COMMIT = 0.1;
+  // Spend the opening reserve in several 10% frontier captures, rather than
+  // allowing one tiny command to stall the entire snowball window.
+  const EARLY_EXPAND_OPENING_LIMIT = 0.4;
   const EARLY_EXPAND_FOLLOWUP_COMMIT = 0.1;
   const EARLY_EXPAND_MINIMUM_MARGIN = 1.25;
   const BUILD_THROTTLE_MS = 1800;

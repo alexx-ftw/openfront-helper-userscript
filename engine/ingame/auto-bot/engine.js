@@ -89,7 +89,7 @@
   }
 
   function ensureNationBot(srcGame, api, meCore) {
-    const seedKey = meCore.smallID?.() ?? meCore.id?.();
+    const seedKey = meCore.clientID?.() ?? meCore.smallID?.() ?? meCore.id?.();
     if ((!_bot || _botSeedKey !== seedKey) && typeof NationBot === "function") {
       _bot = new NationBot(api.game, {
         gameId: resolveGameId(srcGame),
@@ -118,9 +118,9 @@
       updateSpeedFactor(srcGame);
       const api = ensureGameApi(srcGame);
 
-      // `id()` can be absent before spawn and appear only once the initial
-      // territory is materialized.  `smallID()` is already stable in that
-      // pre-spawn view, so prefer it for the bot lifetime key.  Otherwise the
+      // Territory-backed IDs can appear or change when the initial spawn is
+      // materialized. `clientID()` identifies the local participant across
+      // both views, so prefer it for the bot lifetime key. Otherwise the
       // engine rebuilds NationBot immediately after its opening intent and
       // loses the aggregate Terra Nullius opening reservation.
       ensureNationBot(srcGame, api, meCore);

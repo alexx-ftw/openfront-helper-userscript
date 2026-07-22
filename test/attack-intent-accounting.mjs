@@ -26,6 +26,7 @@ const sandbox = {
   },
   currentDifficulty: () => "Impossible",
   EARLY_EXPAND_COMMIT: 0.1,
+  EARLY_EXPAND_OPENING_LIMIT: 0.4,
   EARLY_EXPAND_FOLLOWUP_COMMIT: 0.1,
   EARLY_EXPAND_MINIMUM_MARGIN: 1.25,
   WORKER_TIMEOUT_MS: 100,
@@ -587,12 +588,12 @@ assert.ok(
 );
 assert.equal(
   expandingBehavior.getEarlyGameTerraNulliusReserveTroops(),
-  ownTroops * 0.9,
-  "TerraNullius retains the configured 90% opening safety reserve",
+  ownTroops * 0.6,
+  "TerraNullius retains the configured 60% opening safety reserve",
 );
 assert.equal(
   expandingBehavior.getTerraNulliusAvailableTroops(ownTroops, true),
-  ownTroops * 0.1,
+  ownTroops * 0.4,
   "a radioactive/free-land caller cannot replace the TerraNullius reserve with a full-army budget",
 );
 const terraNulliusEmissionCount = troopEmissions.length;
@@ -621,6 +622,7 @@ assert.equal(
   "the 10% opening never chains another intent after the army has fallen below its protected reserve",
 );
 ownTroops = 25000;
+expandingBehavior.terraNulliusOpeningCommittedTroops = ownTroops * 0.4;
 assert.equal(
   expandingBehavior.getTerraNulliusAttackTroops(terraNullius),
   0,
@@ -662,19 +664,19 @@ assert.equal(
 );
 assert.equal(
   await repeatedExpansionBehavior.sendAttack(terraNullius),
-  false,
-  "a pending generic TerraNullius intent blocks a second opening command before its troop debit is visible",
+  true,
+  "the opening burst may emit another reserve-bounded TerraNullius command before the first troop debit is visible",
 );
 tick += 7;
 assert.equal(
   await repeatedExpansionBehavior.sendAttack(terraNullius),
-  false,
-  "an unconfirmed opening command remains reserved after the ordinary intent grace window",
+  true,
+  "pending commands do not double-count against the remaining reserve-bounded opening allowance",
 );
 assert.equal(
   troopEmissions.length,
-  repeatedExpansionEmissionCount + 1,
-  "one unconfirmed opening command cannot produce an additional troop commitment",
+  repeatedExpansionEmissionCount + 3,
+  "the reserve-bounded opening burst can commit a third frontier capture",
 );
 tick -= 7;
 
@@ -701,12 +703,12 @@ const unresolvedExpansionTroops = troopEmissions
   .slice(unresolvedExpansionEmissionCount)
   .reduce((total, troops) => total + troops, 0);
 assert.ok(
-  unresolvedExpansionTroops <= 2500,
-  `unconfirmed TerraNullius intents remain reserved, so repeated decisions cannot spend beyond the 10% opening budget (emitted ${unresolvedExpansionTroops})`,
+  unresolvedExpansionTroops <= 10000,
+  `unconfirmed TerraNullius intents remain reserved, so repeated decisions cannot spend beyond the 40% opening budget (emitted ${unresolvedExpansionTroops})`,
 );
 assert.ok(
-  unresolvedExpansionTroops === 2500,
-  "the reservation leaves exactly one bounded 10% opening intent outstanding",
+  unresolvedExpansionTroops >= 5000,
+  "the opening burst can reserve multiple 10% frontier captures without crossing its aggregate cap",
 );
 tick -= 84;
 
@@ -952,13 +954,13 @@ assert.equal(
 const scheduledBehavior = new sandbox.AttackBehavior({}, expandingGame, me, 0.5, 0.3, 0.1, {}, {});
 ownTroops = 25000;
 tick = 20;
-assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 2500);
+assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 10000);
 tick = 120;
-assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 2500);
+assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 10000);
 tick = 320;
-assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 2500);
+assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 10000);
 tick = 520;
-assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 2500);
+assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 10000);
 tick = 521;
 assert.equal(
   scheduledBehavior.getTerraNulliusOpeningCommitLimit(),
