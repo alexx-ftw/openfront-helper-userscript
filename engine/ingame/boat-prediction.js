@@ -414,7 +414,18 @@
   }
 
   function isBoatRetreating(unit) {
-    { return unit.retreating?.() === true; }
+    const transportState =
+      typeof unit?.transportShipState === "function"
+        ? unit.transportShipState()
+        : unit?.transportShipState;
+    if (transportState?.isRetreating === true) return true;
+
+    // Older/raw adapters may still expose the AttackUpdate-shaped flag.
+    const retreating =
+      typeof unit?.retreating === "function"
+        ? unit.retreating()
+        : unit?.retreating;
+    return retreating === true;
   }
 
   function getBoatLandingLabel(relation, targeting) {
