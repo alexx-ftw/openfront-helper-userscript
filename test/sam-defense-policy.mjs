@@ -1203,6 +1203,11 @@ assert.equal(
   true,
   "The first hostile Silo construction immediately activates SAM priority",
 );
+assert.equal(
+  behavior.externalSiloLevelSumTarget(),
+  1,
+  "A hostile Silo under construction immediately contributes preventive SAM capacity",
+);
 behavior.game.players = () => [own, enemyTeam];
 assert.equal(
   behavior.hasPlacedSiloOnMap(),
@@ -2649,6 +2654,21 @@ assert.equal(
   5,
   "One level-2 hostile Silo also forces the maximum SAM level",
 );
+hydrogenProtectionBehavior._hostileMissileLaunchObserved = false;
+hydrogenProtectionBehavior.liveHostilePlayers = () => [];
+hydrogenThreatPlayers = [enemySiloUnderConstruction];
+assert.equal(
+  hydrogenProtectionBehavior.hydrogenSamProtectionPlan().targetLevel,
+  5,
+  "A newly placed external Silo starts the level-five SAM plan before the Silo completes",
+);
+sentBuilds.length = 0;
+assert.equal(
+  await hydrogenProtectionBehavior.maybeUpgradeHydrogenProtectionSam(),
+  true,
+  "A placed external Silo authorizes the preventive SAM upgrade while both build timers still run",
+);
+assert.equal(sentBuilds.length, 1);
 
 const firstSiloCoverageBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 firstSiloCoverageBehavior._hostileMissileLaunchObserved = true;

@@ -3247,11 +3247,12 @@
       return maximum;
     }
 
-    // A silo network belonging to any *other* live player changes our
-    // defensive requirement. Allies can become enemies, and their launcher
-    // capacity proves that a high-level SAM is affordable and strategically
-    // relevant on this board. Keep the target per player: unrelated level-one
-    // silos must not be added together into a fictitious single salvo.
+    // A placed silo network belonging to any *other* live player changes our
+    // defensive requirement immediately, without waiting for construction to
+    // finish. A Silo completes faster than a SAM, so treating only operational
+    // launchers as the upgrade trigger forfeits the preventive window. Allies
+    // can become enemies as well. Keep the target per player: unrelated
+    // level-one silos must not be added into a fictitious single salvo.
     externalSiloLevelSumTarget() {
       if (!this.player || !this.game || typeof this.game.players !== "function") {
         return this.hostileSiloLevelSumTarget();
@@ -3260,7 +3261,11 @@
       let maximum = 0;
       for (const other of this.game.players()) {
         if (!this.isLiveOtherPlayer(other, mySid)) continue;
-        maximum = Math.max(maximum, this.hostileBuiltSiloLevelSum(other));
+        const capacity = this.playerUnitCapacitySummary(
+          other,
+          UNIT.MissileSilo,
+        )?.capacity ?? 0;
+        maximum = Math.max(maximum, capacity);
       }
       return maximum;
     }
@@ -3285,7 +3290,9 @@
       return this.hostileSiloLevelSumTarget() >= threshold;
     }
 
-    shouldPrioritizeHydrogenSamProtection() {
+    shouldPrioritizeHydrogenSamProtection(
+      externalSiloLevelSum = this.externalSiloLevelSumTarget(),
+    ) {
       if (!state.settings.winFixes || !autoBotBuildAllowed(UNIT.SAMLauncher)) {
         return false;
       }
@@ -3293,10 +3300,7 @@
         if (this.game.config().isUnitDisabled(UNIT.SAMLauncher)) return false;
         if (this.game.config().isUnitDisabled(UNIT.HydrogenBomb)) return false;
       }
-      return (
-        this.externalSiloLevelSumTarget() >=
-        HYDROGEN_SAM_SILO_LEVEL_SUM_THRESHOLD
-      );
+      return externalSiloLevelSum >= HYDROGEN_SAM_SILO_LEVEL_SUM_THRESHOLD;
     }
 
     /**
@@ -3306,15 +3310,18 @@
      * and avoids scanning every structure during each construction tick.
      */
     hydrogenSamProtectionPlan() {
-      if (!this.shouldPrioritizeHydrogenSamProtection()) return null;
+      const externalSiloLevelSum = this.externalSiloLevelSumTarget();
+      if (!this.shouldPrioritizeHydrogenSamProtection(externalSiloLevelSum)) {
+        return null;
+      }
 
       const targetLevel = Math.min(
         HYDROGEN_SAM_MAX_UPGRADE_LEVEL,
         Math.max(
           HYDROGEN_SAM_MINIMUM_READY_LEVEL,
-          this.externalSiloLevelSumTarget() >= 2
+          externalSiloLevelSum >= 2
             ? HYDROGEN_SAM_MAX_UPGRADE_LEVEL
-            : this.externalSiloLevelSumTarget(),
+            : externalSiloLevelSum,
         ),
       );
       const sams = (this.player.units(UNIT.SAMLauncher) || []).filter((sam) => {
@@ -6942,7 +6949,8 @@
       return (
         this.hasObservedHostileMissileLaunch() ||
         this.hasBuiltHostileSiloThreat() ||
-        this.hasBuiltExternalSiloThreat()
+        this.hasBuiltExternalSiloThreat() ||
+        this.hasPlacedSiloOnMap()
       );
     }
 
