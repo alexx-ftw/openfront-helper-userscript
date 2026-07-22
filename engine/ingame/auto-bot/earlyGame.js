@@ -570,21 +570,44 @@
     return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : 0;
   }
 
+  function nonnegativeAllianceForce(value) {
+    return Math.max(0, Number(value) || 0);
+  }
+
+  function hasAllianceForceAdvantage(ownForce, otherForce, ratio) {
+    return ownForce > 0 && ownForce >= Math.max(1, otherForce) * ratio;
+  }
+
   function isMuchWeakerAllianceTarget({
     ownTroops = 0,
     ownOutgoingTroops = 0,
     otherTroops = 0,
     otherOutgoingTroops = 0,
     advantageRatio = 4,
+    immediateAdvantageRatio = 6,
   } = {}) {
+    const ownImmediate = nonnegativeAllianceForce(ownTroops);
+    const otherImmediate = nonnegativeAllianceForce(otherTroops);
     const ownTotal =
-      Math.max(0, Number(ownTroops) || 0) +
-      Math.max(0, Number(ownOutgoingTroops) || 0);
+      ownImmediate + nonnegativeAllianceForce(ownOutgoingTroops);
     const otherTotal =
-      Math.max(0, Number(otherTroops) || 0) +
-      Math.max(0, Number(otherOutgoingTroops) || 0);
+      otherImmediate + nonnegativeAllianceForce(otherOutgoingTroops);
     const ratio = Math.max(1, Number(advantageRatio) || 4);
-    return ownTotal > 0 && ownTotal >= Math.max(1, otherTotal) * ratio;
+    const immediateRatio = Math.max(
+      ratio,
+      Number(immediateAdvantageRatio) || 6,
+    );
+    const dominatesTotal = hasAllianceForceAdvantage(
+      ownTotal,
+      otherTotal,
+      ratio,
+    );
+    const dominatesExposedFront = hasAllianceForceAdvantage(
+      ownImmediate,
+      otherImmediate,
+      immediateRatio,
+    );
+    return dominatesTotal || dominatesExposedFront;
   }
 
   // Group tribes by transitive reachability: A may lead to B, which leads to C,

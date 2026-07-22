@@ -122,6 +122,24 @@ assert.equal(
   true,
   "a bordering ally with one quarter of our total force is a conquest target",
 );
+assert.equal(
+  sandbox.isMuchWeakerAllianceTarget({
+    ownTroops: 60_000,
+    otherTroops: 8_000,
+    otherOutgoingTroops: 100_000,
+  }),
+  true,
+  "an ally whose nominal army is committed elsewhere remains vulnerable at a six-to-one frontier disadvantage",
+);
+assert.equal(
+  sandbox.isMuchWeakerAllianceTarget({
+    ownTroops: 40_000,
+    otherTroops: 8_000,
+    otherOutgoingTroops: 100_000,
+  }),
+  false,
+  "an ally's deployed army is not ignored without a decisive immediate frontier advantage",
+);
 assert.match(
   nationExecutionSource,
   /const openingAttackSent = await [\s\S]{0,300}forceSendAttack/,
