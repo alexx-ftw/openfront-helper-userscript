@@ -357,6 +357,13 @@
     );
   }
 
+  function createMaritimeDistanceBuffer(total, distanceLimit) {
+    const maximumEncodedDistance = distanceLimit + 1;
+    if (maximumEncodedDistance <= 0xff) return new Uint8Array(total);
+    if (maximumEncodedDistance <= 0xffff) return new Uint16Array(total);
+    return new Uint32Array(total);
+  }
+
   function createMaritimeDistanceIndexBuilder({
     width,
     height,
@@ -387,7 +394,7 @@
     // Zero is the native unvisited sentinel; reachable distances are stored as
     // distance+1. This avoids synchronously filling a map-sized array before
     // the cooperative builder gets its first chance to yield.
-    const distances = new Uint32Array(total);
+    const distances = createMaritimeDistanceBuffer(total, distanceLimit);
     return {
       width: mapWidth,
       height: mapHeight,

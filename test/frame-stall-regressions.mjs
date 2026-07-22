@@ -82,6 +82,11 @@ const maritimeOptions = {
   isMaritimeShore: (tile) => tile === 127,
 };
 const incrementalMaritimeBuilder = sandbox.createMaritimeDistanceIndexBuilder(maritimeOptions);
+assert.equal(
+  incrementalMaritimeBuilder.distances.BYTES_PER_ELEMENT,
+  1,
+  "the normal 80-tile maritime horizon must use one byte per map tile",
+);
 let maritimeYieldChecks = 0;
 assert.equal(
   sandbox.advanceMaritimeDistanceIndexBuilder(incrementalMaritimeBuilder, {
@@ -154,5 +159,16 @@ assert.deepEqual(
   Array.from({ length: 2048 }, (_, tile) => tile),
   "growing the maritime distance queue must preserve BFS seed order",
 );
+
+const mediumDistanceBuilder = sandbox.createMaritimeDistanceIndexBuilder({
+  ...maritimeOptions,
+  maxDistance: 300,
+});
+assert.equal(mediumDistanceBuilder.distances.BYTES_PER_ELEMENT, 2);
+const largeDistanceBuilder = sandbox.createMaritimeDistanceIndexBuilder({
+  ...maritimeOptions,
+  maxDistance: 70_000,
+});
+assert.equal(largeDistanceBuilder.distances.BYTES_PER_ELEMENT, 4);
 
 console.warn("frame-stall regression tests passed");
