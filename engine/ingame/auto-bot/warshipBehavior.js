@@ -808,6 +808,13 @@
     }
 
     tryEmitWarshipBuild(bu, tile, action, purpose) {
+      // Every Warship construction path converges here, including retaliation,
+      // infestation counters and emergency interceptors.  Those paths used to
+      // bypass maybeSpawnWarship's first-SAM reserve and could repeatedly spend
+      // the launcher fund after an external Silo was already visible.
+      if (this.shouldDeferWarshipForFirstSam(this.cost(UNIT.Warship))) {
+        return false;
+      }
       const smartState = this.ensureSmartState();
       if (this.hasPendingWarshipBuild(smartState)) return false;
       const buildMenu = getBuildMenu();

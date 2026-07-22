@@ -923,17 +923,7 @@
     shouldReserveTriggeredHostileSiloSamBudget(placedSilo) {
       return (
         placedSilo &&
-        this.shouldReserveHostileSiloSamBudget() &&
-        !this.shouldYieldHostileSiloReserveToLandDefense()
-      );
-    }
-
-    shouldYieldHostileSiloReserveToLandDefense() {
-      const threat = this.defensePostThreat(currentDifficulty());
-      return (
-        threat !== null &&
-        threat.landAttacks.some((attack) => this.isStrategicLandAttack(attack)) &&
-        this.canAffordDefensePost()
+        this.shouldReserveHostileSiloSamBudget()
       );
     }
 

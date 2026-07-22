@@ -365,6 +365,17 @@ assert.equal(
 );
 assert.equal(randomChanceCalls, 0, "the nuclear reserve stops the Warship before its random roll");
 assert.equal(warshipBuilds.length, 0, "the reserved SAM gold is not exported into a Warship");
+assert.equal(
+  warshipBehavior.tryEmitWarshipBuild(
+    { type: UNIT.Warship, canBuild: 44 },
+    55,
+    "counter",
+    "counter",
+  ),
+  false,
+  "the common emitter blocks counter, retaliation, and interceptor paths while the first SAM reserve is active",
+);
+assert.equal(warshipBuilds.length, 0, "no direct Warship path can bypass the first-SAM reserve");
 
 firstSamReserveActive = false;
 await warshipBehavior._retaliateBuildAsync(56, {}, "trade");
