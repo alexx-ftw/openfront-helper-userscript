@@ -285,4 +285,35 @@ assert.ok(
   "The trajectory scan terminates after a bounded number of distance checks",
 );
 
+let resolveNukeProbe;
+let nukeBuilds = 0;
+let nukeTargetStillAttackable = true;
+const staleNukeTarget = {
+  smallID: () => 8,
+  type: () => "Human",
+};
+const staleNukePlayer = {
+  buildables: () =>
+    new Promise((resolve) => {
+      resolveNukeProbe = resolve;
+    }),
+  gold: () => 10n,
+  isOnSameTeam: () => false,
+};
+const staleNukeBehavior = Object.create(sandbox.__NukeBehavior.prototype);
+staleNukeBehavior.game = { ticks: () => 500 };
+staleNukeBehavior.player = staleNukePlayer;
+staleNukeBehavior.attackBehavior = {
+  shouldAttack: () => nukeTargetStillAttackable,
+};
+sandbox.sendAutoBotBuildOrUpgrade = () => {
+  nukeBuilds += 1;
+  return true;
+};
+const pendingStaleNuke = staleNukeBehavior.sendNuke(12, UNIT.AtomBomb, staleNukeTarget);
+nukeTargetStillAttackable = false;
+resolveNukeProbe([{ type: UNIT.AtomBomb, cost: 1n, canBuild: true }]);
+await pendingStaleNuke;
+assert.equal(nukeBuilds, 0, "a target that becomes invalid during the worker probe is not nuked");
+
 process.stdout.write("nuke economy policy tests passed\n");

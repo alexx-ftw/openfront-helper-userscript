@@ -1091,6 +1091,10 @@
         : null;
       if (bu === null || bu === undefined) return;
       if (!(bu.canBuild !== false && this.player.gold() >= bu.cost)) return;
+      // The worker probe yields long enough for diplomacy or the target's state
+      // to change. Re-run the complete attack policy immediately before
+      // actuation so a stale candidate cannot launch after becoming invalid.
+      if (!this.isValidNukeTarget(targetPlayer)) return;
 
       const buildMenu = getBuildMenu();
       if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") return;
