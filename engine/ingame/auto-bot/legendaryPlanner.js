@@ -167,15 +167,7 @@ function legendaryConstructionObjectiveVector(type, context = {}) {
   switch (type) {
     case "City":
       vector = {
-        // Rail income has diminishing marginal destinations, but a City never
-        // becomes economically valueless: it remains a potential station and
-        // permanently expands troop capacity. Letting this axis fall below the
-        // Factory floor caused max-min ranking to overproduce Factories after
-        // only a few connected Cities.
-        gold: Math.max(
-          base.gold / 3,
-          (base.gold * cityRailConnection) / (1 + connectedCities),
-        ),
+        gold: (base.gold * cityRailConnection) / (1 + connectedCities),
         troops: base.troops,
         defense: base.defense,
       };
