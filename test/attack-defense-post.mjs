@@ -51,6 +51,15 @@ assert.equal(
   5,
   "coordinated hostile attacks are aggregated for siege-defense escalation",
 );
+hostileAttackPressureBehavior.player.incomingAttacks = () => [
+  { attacker: () => ({}), troops: () => 100_000, retreating: () => false },
+  { attacker: () => ({}), troops: () => 900_000, retreating: () => true },
+];
+assert.equal(
+  hostileAttackPressureBehavior.incomingHostileAttackPressure(),
+  0.2,
+  "a cancelled retreating wave cannot keep the bot in an artificial overwhelming siege",
+);
 hostileAttackPressureBehavior.player.incomingAttacks = () => [];
 assert.equal(
   hostileAttackPressureBehavior.incomingHostileAttackPressure(),

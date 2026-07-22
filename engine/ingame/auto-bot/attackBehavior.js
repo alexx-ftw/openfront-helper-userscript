@@ -6845,7 +6845,11 @@
       }
       return this.player
         .incomingAttacks()
-        .filter((attack) => !this.player.isFriendly(attack.attacker()));
+        .filter(
+          (attack) =>
+            attack?.retreating?.() !== true &&
+            !this.player.isFriendly(attack.attacker()),
+        );
     }
 
     // Aggregate pressure is deliberately separate from the single strongest
