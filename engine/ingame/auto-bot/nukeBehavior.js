@@ -795,10 +795,19 @@
 
     // ── isUnderHeavyAttack — NationNukeBehavior.ts:477 ────────────────────────
     isUnderHeavyAttack() {
-      // Get the total incoming attack troops
+      // Only live pressure justifies bypassing the normal nuke economy. The
+      // client can briefly retain a cancelled wave in incomingAttacks(), and
+      // different adapters expose `retreating` as either an accessor or a
+      // plain boolean. Counting that stale force makes the bot go all-in on
+      // nukes after the danger has already ended.
       const incomingAttacks = this.player.incomingAttacks();
       let totalIncomingTroops = 0;
       for (const attack of incomingAttacks) {
+        const retreating =
+          typeof attack?.retreating === "function"
+            ? attack.retreating()
+            : attack?.retreating;
+        if (retreating === true) continue;
         totalIncomingTroops += attack.troops();
       }
 

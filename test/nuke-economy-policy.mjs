@@ -111,6 +111,30 @@ assert.equal(
   "The nuke behavior remains compatible when no structure policy is wired",
 );
 
+delete behavior.isUnderHeavyAttack;
+behavior.player = {
+  troops: () => 100,
+  incomingAttacks: () => [
+    { troops: () => 80, retreating: () => false },
+    { troops: () => 900, retreating: () => true },
+    { troops: () => 700, retreating: true },
+  ],
+};
+assert.equal(
+  behavior.isUnderHeavyAttack(),
+  false,
+  "cancelled method and boolean waves cannot trigger emergency nuke spending",
+);
+behavior.player.incomingAttacks = () => [
+  { troops: () => 60, retreating: () => false },
+  { troops: () => 40, retreating: false },
+];
+assert.equal(
+  behavior.isUnderHeavyAttack(),
+  true,
+  "simultaneous live waves still aggregate into genuine heavy pressure",
+);
+
 let distanceChecks = 0;
 behavior.game = {
   config: () => ({ defaultNukeTargetableRange: () => 2 }),
