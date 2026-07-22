@@ -574,6 +574,18 @@
     return Math.max(0, Number(value) || 0);
   }
 
+  function activeAllianceOutgoingTroops(player) {
+    const attacks = player?.outgoingAttacks?.();
+    if (!Array.isArray(attacks)) return 0;
+    return attacks.reduce(
+      (total, attack) =>
+        attack?.retreating?.() === true
+          ? total
+          : total + nonnegativeAllianceForce(attack?.troops?.()),
+      0,
+    );
+  }
+
   function hasAllianceForceAdvantage(ownForce, otherForce, ratio) {
     return ownForce > 0 && ownForce >= Math.max(1, otherForce) * ratio;
   }

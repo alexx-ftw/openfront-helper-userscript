@@ -13,6 +13,10 @@ const attackSource = fs.readFileSync(
   path.join(repoRoot, "engine/ingame/auto-bot/attackBehavior.js"),
   "utf8",
 );
+const allianceSource = fs.readFileSync(
+  path.join(repoRoot, "engine/ingame/auto-bot/allianceBehavior.js"),
+  "utf8",
+);
 const gameApiSource = fs.readFileSync(
   path.join(repoRoot, "engine/ingame/auto-bot/gameApi.js"),
   "utf8",
@@ -108,6 +112,23 @@ assert.equal(typeof sandbox.calculateEarlyGameContinuationValue, "function");
 assert.equal(typeof sandbox.calculateEarlyGameFoodRaceValue, "function");
 assert.equal(typeof sandbox.calculateEarlyGameRaceTroops, "function");
 assert.equal(typeof sandbox.isMuchWeakerAllianceTarget, "function");
+assert.equal(typeof sandbox.activeAllianceOutgoingTroops, "function");
+assert.equal(
+  sandbox.activeAllianceOutgoingTroops({
+    outgoingAttacks: () => [
+      { troops: () => 30_000, retreating: () => false },
+      { troops: () => 90_000, retreating: () => true },
+      { troops: () => 20_000 },
+    ],
+  }),
+  50_000,
+  "alliance strength counts active deployed troops but excludes retreating waves",
+);
+assert.match(
+  allianceSource,
+  /isDominatedAllianceTarget[\s\S]{0,500}activeAllianceOutgoingTroops\(player\)[\s\S]{0,200}activeAllianceOutgoingTroops\(otherPlayer\)/,
+  "betrayal strength uses the active-deployment helper for both sides",
+);
 assert.equal(sandbox.isBoatExplorationEta(0), true);
 assert.equal(sandbox.isBoatExplorationEta(1200), true);
 assert.equal(sandbox.isBoatExplorationEta(1201), false);

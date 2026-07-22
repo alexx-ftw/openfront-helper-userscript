@@ -164,12 +164,8 @@
     const protectedEasyHuman =
       difficulty === Difficulty.Easy && otherPlayer.type() === PlayerType.Human;
     if (protectedEasyHuman) return false;
-    const ownOutgoingTroops = player
-      .outgoingAttacks()
-      .reduce((sum, attack) => sum + attack.troops(), 0);
-    const otherOutgoingTroops = otherPlayer
-      .outgoingAttacks()
-      .reduce((sum, attack) => sum + attack.troops(), 0);
+    const ownOutgoingTroops = activeAllianceOutgoingTroops(player);
+    const otherOutgoingTroops = activeAllianceOutgoingTroops(otherPlayer);
     return isMuchWeakerAllianceTarget({
       ownTroops: player.troops(),
       ownOutgoingTroops,
@@ -270,6 +266,24 @@
       }
     }
 
+    handleAllianceExtensionEvent(event) {
+      const type = Number(event?.type);
+      if (!RENEW_TYPES.has(type)) return;
+      if (_allianceBehaviorActioned.has(event)) return;
+      const buttons = Array.isArray(event.buttons) ? event.buttons : [];
+      if (buttons.length === 0) return;
+      const human = this.resolveEventPlayer(event);
+      if (!human?.isPlayer?.()) return;
+      if (
+        typeof companionAllianceVeto === "function" &&
+        companionAllianceVeto(human)
+      ) {
+        return;
+      }
+      if (!this.getAllianceDecision(human, true)) return;
+      this.renewAllianceEvent(event, human, buttons);
+    }
+
     handleAllianceExtensionRequests() {
       if (this.game.config().disableAlliances()) return;
 
@@ -289,17 +303,8 @@
       // getAllianceDecision(other, true) gate exactly as src does — NOT the old
       // alliance.js renewal heuristic.
       for (const ev of collectAllianceEvents()) {
-        const t = Number(ev?.type);
-        if (!RENEW_TYPES.has(t)) continue;
-        if (_allianceBehaviorActioned.has(ev)) continue;
-        const buttons = Array.isArray(ev.buttons) ? ev.buttons : [];
-        if (buttons.length === 0) continue;
-
         // human = alliance.other(this.player): resolve the renewal event's focusID
         // (the other player's smallID) to a wrapped gameApi player.
-        const human = this.resolveEventPlayer(ev);
-        if (!human || !human.isPlayer || !human.isPlayer()) continue;
-
         // DIVERGENCE: Companion mode only allies with the boss — also vetoes
         // renewing an alliance already held with a non-boss player (formed
         // before companion mode was enabled, or before the boss was resolved).
@@ -307,16 +312,10 @@
         // precedes it in this function), so when the veto fires it skips that
         // call's RNG draws entirely — same placement rationale as the
         // handleAllianceRequests() guard above.
-        if (typeof companionAllianceVeto === "function" && companionAllianceVeto(human)) {
-          continue;
-        }
-
-        if (!this.getAllianceDecision(human, true)) continue;
-
         // src: this.game.addExecution(new AllianceExtensionExecution(this.player,
         //   human.id())). Client equivalent: click the renew button, whose action()
         //   emits SendAllianceExtensionIntentEvent(other) — the same intent.
-        this.renewAllianceEvent(ev, human, buttons);
+        this.handleAllianceExtensionEvent(ev);
       }
     }
 
@@ -787,12 +786,8 @@
       const troopRange = troopPercentRangeByDifficulty[difficulty];
       const tileRange = tilePercentRangeByDifficulty[difficulty];
 
-      const playerOutgoingTroops = this.player
-        .outgoingAttacks()
-        .reduce((sum, attack) => sum + attack.troops(), 0);
-      const otherOutgoingTroops = otherPlayer
-        .outgoingAttacks()
-        .reduce((sum, attack) => sum + attack.troops(), 0);
+      const playerOutgoingTroops = activeAllianceOutgoingTroops(this.player);
+      const otherOutgoingTroops = activeAllianceOutgoingTroops(otherPlayer);
       const playerTotalTroops = this.player.troops() + playerOutgoingTroops;
       const otherTotalTroops = otherPlayer.troops() + otherOutgoingTroops;
 
@@ -814,9 +809,7 @@
     shouldBetrayWeakHardPlayer(otherPlayer, difficulty) {
       if (difficulty === Difficulty.Easy || difficulty === Difficulty.Medium) return false;
       const maxTroops = this.game.config().maxTroops(otherPlayer);
-      const outgoingTroops = otherPlayer
-        .outgoingAttacks()
-        .reduce((sum, attack) => sum + attack.troops(), 0);
+      const outgoingTroops = activeAllianceOutgoingTroops(otherPlayer);
       return (
         otherPlayer.troops() + outgoingTroops < maxTroops * 0.2 &&
         otherPlayer.troops() < this.player.troops()
