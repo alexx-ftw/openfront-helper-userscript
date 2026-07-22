@@ -148,6 +148,20 @@ assert.ok(
   connectedCity.gold > saturatedCity.gold,
   "City gold contribution has diminishing returns on a connected rail network",
 );
+assert.equal(
+  saturatedCity.gold,
+  1,
+  "A mature rail network cannot erase the City's station and troop-capacity floor",
+);
+const matureCityChoice = plannerSandbox.rankLegendaryConstructionCandidates([
+  { type: "Factory", cost: 1n, ...plannerSandbox.legendaryConstructionObjectiveVector("Factory") },
+  { type: "City", cost: 1n, ...saturatedCity },
+], { gold: 2n });
+assert.equal(
+  matureCityChoice[0].type,
+  "City",
+  "Once weak-axis value ties, permanent troop capacity beats another Factory",
+);
 
 const silo = plannerSandbox.legendaryConstructionObjectiveVector("Missile Silo", {
   targetPressure: 2,
