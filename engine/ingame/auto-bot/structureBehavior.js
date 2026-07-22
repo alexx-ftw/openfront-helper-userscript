@@ -490,6 +490,9 @@
       this._activeHostileMissileCache = null;
       this._hostileMissileImpactZonesTick = null;
       this._hostileMissileImpactZonesCache = null;
+      this._friendlySamUnitsTick = null;
+      this._friendlySamUnitsPlayerSid = null;
+      this._friendlySamUnitsCache = null;
       // SAM spending stays locked until this nation has observed an actual
       // hostile missile in flight. Once opened, the gate remains open for the
       // rest of the match even after that first missile resolves.
@@ -3844,6 +3847,14 @@
 
     legendaryFriendlySamUnits() {
       const mySid = this.player.smallID();
+      const tick = safeStructureGameTick(this.game);
+      if (
+        Number.isFinite(tick) &&
+        this._friendlySamUnitsTick === tick &&
+        this._friendlySamUnitsPlayerSid === mySid
+      ) {
+        return this._friendlySamUnitsCache;
+      }
       const sams = [];
       const seen = new Set();
       const add = (sam) => {
@@ -3877,6 +3888,11 @@
             for (const sam of participant.units(UNIT.SAMLauncher)) add(sam);
           }
         }
+      }
+      if (Number.isFinite(tick)) {
+        this._friendlySamUnitsTick = tick;
+        this._friendlySamUnitsPlayerSid = mySid;
+        this._friendlySamUnitsCache = sams;
       }
       return sams;
     }

@@ -4661,4 +4661,44 @@ assert.equal(
   "enemy target pressure scans each hostile unit roster once instead of six times",
 );
 
+const friendlySamSnapshot = Object.create(sandbox.__StructureBehavior.prototype);
+let friendlySamTick = 50;
+let globalSamReads = 0;
+const ownSamOwner = { smallID: () => 7 };
+const ownSam = {
+  id: () => "sam-1",
+  isUnderConstruction: () => false,
+  owner: () => ownSamOwner,
+};
+friendlySamSnapshot.player = {
+  smallID: () => 7,
+  isFriendly: () => false,
+  isOnSameTeam: () => false,
+  units: () => [],
+};
+friendlySamSnapshot.game = {
+  ticks: () => friendlySamTick,
+  units: (...types) => {
+    globalSamReads++;
+    assert.deepEqual(types, [UNIT.SAMLauncher]);
+    return [ownSam];
+  },
+  players: () => [],
+};
+const firstFriendlySams = friendlySamSnapshot.legendaryFriendlySamUnits();
+const repeatedFriendlySams = friendlySamSnapshot.legendaryFriendlySamUnits();
+assert.strictEqual(
+  repeatedFriendlySams,
+  firstFriendlySams,
+  "all SAM consumers share one friendly launcher snapshot during a game tick",
+);
+assert.equal(globalSamReads, 1, "friendly SAM ownership and dedupe run once per tick");
+friendlySamTick++;
+assert.notStrictEqual(
+  friendlySamSnapshot.legendaryFriendlySamUnits(),
+  firstFriendlySams,
+  "a new game tick invalidates the friendly SAM snapshot",
+);
+assert.equal(globalSamReads, 2);
+
 process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");
