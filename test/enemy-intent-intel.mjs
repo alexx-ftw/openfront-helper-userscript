@@ -10,6 +10,7 @@ const SOURCE = fs.readFileSync(path.join(ROOT, "engine/ingame/enemy-intent-intel
 let incomingAttacks = [];
 let tickListener = null;
 let now = 1000;
+let playerLookups = 0;
 const attacker = {
   smallID: () => 2,
   clientID: () => 999,
@@ -21,7 +22,10 @@ const me = {
 };
 const game = {
   myPlayer: () => me,
-  playerBySmallID: (id) => resolvedPlayers.get(id) ?? null,
+  playerBySmallID: (id) => {
+    playerLookups++;
+    return resolvedPlayers.get(id) ?? null;
+  },
 };
 const resolvedPlayers = new Map([[2, attacker]]);
 const sandbox = {
@@ -46,6 +50,7 @@ incomingAttacks = [
   { attackerID: 2, troops: 300, retreating: false },
   { attackerID: 2, troops: 200, retreating: false },
 ];
+playerLookups = 0;
 tickListener();
 assert.equal(sandbox.getEnemyIntentWarnings().length, 1);
 assert.equal(
@@ -57,6 +62,11 @@ assert.equal(
   sandbox.getEnemyIntentWarnings()[0].troops,
   500,
   "simultaneous active waves from one attacker are summed",
+);
+assert.equal(
+  playerLookups,
+  2,
+  "simultaneous waves reuse one diplomacy lookup before resolving the warning label",
 );
 
 incomingAttacks = [{ attackerID: 2, troops: 75, retreating: false }];

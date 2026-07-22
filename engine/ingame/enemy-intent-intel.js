@@ -74,11 +74,14 @@
   // Poll incomingAttacks() every 250ms (same cadence as the helper tick) and
   // update warnings. This replaces the fragile WebSocket hook with the same
   // data the game already exposes.
-  function isFriendlyIncomingAttacker(game, me, attackerID) {
-    return enemyIntentRead("friendly-attacker", () => {
+  function isFriendlyIncomingAttacker(game, me, attackerID, cache = null) {
+    if (cache?.has(attackerID)) return cache.get(attackerID);
+    const friendly = enemyIntentRead("friendly-attacker", () => {
       const attacker = game.playerBySmallID ? game.playerBySmallID(attackerID) : null;
       return Boolean(attacker && me.isFriendly && me.isFriendly(attacker));
     }, false);
+    cache?.set(attackerID, friendly);
+    return friendly;
   }
 
   function updateIncomingAttackWarning(attack, now) {
@@ -136,13 +139,14 @@
     if (!atks) return;
     const now = performance.now();
     const activeHostileAttackers = new Map();
+    const friendlyAttackers = new Map();
     pruneEnemyIntentWarnings(now);
     for (let i = 0; i < atks.length; i += 1) {
       const a = atks[i];
       if (!a || isRetreatingIncomingAttack(a)) continue;
       const attackerID = a.attackerID;
       if (attackerID == null) continue;
-      if (isFriendlyIncomingAttacker(context.game, me, attackerID)) continue;
+      if (isFriendlyIncomingAttacker(context.game, me, attackerID, friendlyAttackers)) continue;
       const troops = Math.max(0, Number(a.troops) || 0);
       activeHostileAttackers.set(
         attackerID,
