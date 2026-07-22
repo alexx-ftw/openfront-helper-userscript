@@ -4623,4 +4623,42 @@ assert.equal(
   "ordinary City/Factory/Port sampling reserves budget for the resumable exhaustive scan",
 );
 
+const enemyPressureBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+let enemyUnitSnapshotCalls = 0;
+const pressureUnits = [
+  UNIT.MissileSilo,
+  UNIT.Warship,
+  UNIT.SAMLauncher,
+  UNIT.City,
+  UNIT.Factory,
+  UNIT.Port,
+].map((type) => ({ type: () => type }));
+const pressureEnemy = {
+  gold: () => 1_000,
+  units: (...types) => {
+    enemyUnitSnapshotCalls++;
+    assert.deepEqual(
+      types,
+      [UNIT.MissileSilo, UNIT.Warship, UNIT.SAMLauncher, UNIT.City, UNIT.Factory, UNIT.Port],
+      "enemy pressure requests one combined strategic-unit snapshot",
+    );
+    return pressureUnits;
+  },
+};
+enemyPressureBehavior.player = { gold: () => 1_000 };
+enemyPressureBehavior.game = {
+  config: () => ({ maxTroops: () => 10_000 }),
+};
+enemyPressureBehavior.legendaryHostilePlayers = () => [pressureEnemy];
+assert.equal(
+  enemyPressureBehavior.legendaryEnemyTargetPressure(),
+  1.75,
+  "combined unit collection preserves the exact strategic-pressure score",
+);
+assert.equal(
+  enemyUnitSnapshotCalls,
+  1,
+  "enemy target pressure scans each hostile unit roster once instead of six times",
+);
+
 process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");

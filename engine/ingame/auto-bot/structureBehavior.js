@@ -3693,20 +3693,17 @@
       let strongestTarget = 0.25;
 
       for (const enemy of enemies) {
+        const unitCounts = this.legendaryEnemyTargetUnitCounts(enemy);
         const targetValue = (() => {
           const goldRatio = Number(enemy.gold()) / Math.max(1, ownGold);
           const troopRatio =
             this.game.config().maxTroops(enemy) / ownMaxTroops;
           const attackCapacity =
-            enemy.units(UNIT.MissileSilo).length +
-            enemy.units(UNIT.Warship).length / 2;
+            unitCounts[UNIT.MissileSilo] + unitCounts[UNIT.Warship] / 2;
           const defenseCapacity =
-            enemy.units(UNIT.SAMLauncher).length +
-            enemy.units(UNIT.Warship).length / 2;
+            unitCounts[UNIT.SAMLauncher] + unitCounts[UNIT.Warship] / 2;
           const structureCapacity =
-            enemy.units(UNIT.City).length +
-            enemy.units(UNIT.Factory).length +
-            enemy.units(UNIT.Port).length;
+            unitCounts[UNIT.City] + unitCounts[UNIT.Factory] + unitCounts[UNIT.Port];
           return Math.max(
             goldRatio,
             troopRatio,
@@ -3721,6 +3718,23 @@
         );
       }
       return strongestTarget;
+    }
+
+    legendaryEnemyTargetUnitCounts(enemy) {
+      const types = [
+        UNIT.MissileSilo,
+        UNIT.Warship,
+        UNIT.SAMLauncher,
+        UNIT.City,
+        UNIT.Factory,
+        UNIT.Port,
+      ];
+      const counts = Object.fromEntries(types.map((type) => [type, 0]));
+      for (const unit of enemy.units(...types) || []) {
+        const type = unit.type?.();
+        if (Object.hasOwn(counts, type)) counts[type]++;
+      }
+      return counts;
     }
 
     legendaryPortSurvivability(ports, enemyWarships) {
