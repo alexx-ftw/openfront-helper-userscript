@@ -259,8 +259,10 @@ let peakOwnedTiles = Math.max(0, me?.numTilesOwned() ?? 0);
 const MEANINGFUL_TRAJECTORY_TILES = 1_000;
 const COMEBACK_DRAWDOWN_RATIO = 0.5;
 const COMEBACK_RECOVERY_RATIO = 0.8;
+const CLOSEOUT_MIN_TILES = 5_000;
 const CLOSEOUT_SHARE = 0.5;
 const CLOSEOUT_LEAD_RATIO = 2;
+const CLOSEOUT_SUSTAIN_TICKS = 500;
 let deepestDrawdownRatio = 1;
 let drawdownPeakTiles = peakOwnedTiles;
 let drawdownTroughTiles = peakOwnedTiles;
@@ -269,6 +271,7 @@ let comebackRecovered = false;
 let comebackTick: number | null = null;
 let closeoutReached = false;
 let closeoutTick: number | null = null;
+let closeoutCandidateTick: number | null = null;
 let maximumTerritoryShare = 0;
 let firstIncomingLandAttackObserved = false;
 let firstTerritoryLossObserved = false;
@@ -465,11 +468,17 @@ const updateStrategicTrajectory = () => {
       .filter(([side]) => side !== ownSide)
       .map(([, value]) => value),
   );
-  if (
-    !closeoutReached &&
+  const hasCloseoutControl =
+    territoryBySide.size >= 2 &&
+    ownTiles >= CLOSEOUT_MIN_TILES &&
     territoryShare >= CLOSEOUT_SHARE &&
-    (strongestOpponent === 0 || ownTiles / strongestOpponent >= CLOSEOUT_LEAD_RATIO)
-  ) {
+    strongestOpponent > 0 &&
+    ownTiles / strongestOpponent >= CLOSEOUT_LEAD_RATIO;
+  if (!hasCloseoutControl) {
+    closeoutCandidateTick = null;
+  } else if (closeoutCandidateTick === null) {
+    closeoutCandidateTick = tick;
+  } else if (!closeoutReached && tick - closeoutCandidateTick >= CLOSEOUT_SUSTAIN_TICKS) {
     closeoutReached = true;
     closeoutTick = tick;
   }
