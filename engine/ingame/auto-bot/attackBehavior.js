@@ -7103,20 +7103,39 @@
       return true;
     }
 
+    canAssistFriendlyPlayer(ally, alliancesDisabled) {
+      if (ally.smallID() === this.player.smallID()) return false;
+      if (ally.isAlive?.() === false) return false;
+      if (this.player.isFriendly(ally) !== true) return false;
+      if (ally.targets().length === 0) return false;
+      const isTeammate = this.player.isOnSameTeam?.(ally) === true;
+      // Permanent teammates remain cooperative even in matches where
+      // breakable alliances are disabled. Explicit allies retain the
+      // original relation gate and cannot exist when alliances are disabled.
+      if (!isTeammate && (
+        alliancesDisabled ||
+        this.player.relation(ally) < Relation.Friendly
+      )) {
+        this.emojiBehavior.sendEmoji(ally, EMOJI_ASSIST_RELATION_TOO_LOW);
+        return false;
+      }
+      return true;
+    }
+
+    async assistFriendlyPlayer(ally) {
+      for (const target of ally.targets()) {
+        if (await this.assistAllyTarget(ally, target)) return true;
+      }
+      return false;
+    }
+
     async assistAllies() {
       if (this.emojiBehavior === undefined) throw new Error("not initialized");
 
-      if (this.game.config().disableAlliances()) return false;
-
-      for (const ally of this.player.allies()) {
-        if (ally.targets().length === 0) continue;
-        if (this.player.relation(ally) < Relation.Friendly) {
-          this.emojiBehavior.sendEmoji(ally, EMOJI_ASSIST_RELATION_TOO_LOW);
-          continue;
-        }
-        for (const target of ally.targets()) {
-          if (await this.assistAllyTarget(ally, target)) return true;
-        }
+      const alliancesDisabled = this.game.config().disableAlliances();
+      for (const ally of this.game.players()) {
+        if (!this.canAssistFriendlyPlayer(ally, alliancesDisabled)) continue;
+        if (await this.assistFriendlyPlayer(ally)) return true;
       }
       return false;
     }

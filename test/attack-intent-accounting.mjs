@@ -17,6 +17,8 @@ const sandbox = {
   UNIT,
   GameMode: { Team: "Team" },
   PlayerType: { Bot: "Bot", Human: "Human", Nation: "Nation" },
+  Relation: { Friendly: 1 },
+  EMOJI_ASSIST_ACCEPT: "assist-accept",
   Difficulty: {
     Easy: "Easy",
     Medium: "Medium",
@@ -2513,5 +2515,40 @@ assert.equal(futureFoodScoreCandidates[0].tribeClusterAccess, 1);
 assert.equal(futureFoodScoreCandidates[1].tribeClusterAccess, 0.5);
 assert.equal(futureFoodScoreCandidates[2].futureFoodAccess, 0);
 assert.equal(futureFoodScoreCandidates[2].tribeClusterAccess, 0);
+
+const teammateAssistBehavior = Object.create(sandbox.AttackBehavior.prototype);
+const teammateAssistTarget = {
+  isPlayer: () => true,
+  smallID: () => 3,
+};
+const teammate = {
+  smallID: () => 2,
+  isAlive: () => true,
+  targets: () => [teammateAssistTarget],
+};
+const teammateAssistMe = {
+  smallID: () => 1,
+  isFriendly: (other) => other === teammate,
+  isOnSameTeam: (other) => other === teammate,
+  relation: () => -100,
+  updateRelation: () => {},
+};
+const assistedTargets = [];
+teammateAssistBehavior.player = teammateAssistMe;
+teammateAssistBehavior.game = {
+  config: () => ({ disableAlliances: () => true }),
+  players: () => [teammateAssistMe, teammate],
+};
+teammateAssistBehavior.emojiBehavior = { sendEmoji: () => {} };
+teammateAssistBehavior.sendAttack = async (target) => {
+  assistedTargets.push(target);
+  return true;
+};
+assert.equal(
+  await teammateAssistBehavior.assistAllies(),
+  true,
+  "a permanent teammate's marked enemy is assisted even when alliances are disabled",
+);
+assert.deepEqual(assistedTargets, [teammateAssistTarget]);
 
 process.stdout.write("attack intent accounting tests passed\n");
