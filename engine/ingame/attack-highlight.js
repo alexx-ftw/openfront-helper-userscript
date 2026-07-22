@@ -6,6 +6,14 @@
 
   let _attackHighlightScan = null; // { myLoc, attackers:[{loc, troops}], total }
 
+  function attackHighlightIsRetreating(attack) {
+    const retreating =
+      typeof attack?.retreating === "function"
+        ? attack.retreating()
+        : attack?.retreating;
+    return retreating === true;
+  }
+
   function scanAttackHighlight(game) {
     const me = game.myPlayer ? game.myPlayer() : null;
     if (!me) {
@@ -29,11 +37,10 @@
     let total = 0;
     for (let i = 0; i < atks.length; i += 1) {
       const a = atks[i];
-      if (!a || a.retreating) {
+      if (!a || attackHighlightIsRetreating(a)) {
         continue;
       }
       const troops = Number(a.troops) || 0;
-      total += troops;
       const sid = a.attackerID;
       byAttacker.set(sid, (byAttacker.get(sid) || 0) + troops);
     }
@@ -52,6 +59,7 @@
           return;
         }
       }
+      total += troops;
       let loc;
       {
         loc = attacker.nameLocation ? attacker.nameLocation() : null;
