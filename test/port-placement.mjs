@@ -258,6 +258,11 @@ assert.deepEqual(
   [...zeroAllocationScenario.handle.game.sharedWaterComponents(zeroAllocationMe)],
   [0],
 );
+assert.doesNotMatch(
+  GAME_API_SOURCE,
+  /new Int32Array\(total\)\.fill\(-2\)/,
+  "shared-water preparation must not synchronously fill a map-sized label array",
+);
 assert.equal(
   zeroAllocationScenario.neighborArrayCalls(),
   0,

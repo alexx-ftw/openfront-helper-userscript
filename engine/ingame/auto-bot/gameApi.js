@@ -657,7 +657,7 @@
     //   different component here. This is strictly better than the old bounded
     //   400-tile BFS, which could not see large lakes or assign stable ids.
     //
-    //   _waterLabels[tile] : component id (>= 0) for every water tile, -2 for
+    //   _waterLabels[tile] : component id + 1 for every labeled water tile, 0 for
     //   land/unlabeled. Component ids are dense (0..N-1). OCEAN_SENTINEL (-1) is
     //   reserved for the "touches ocean" marker in shared sets and NEVER used as
     //   a real component id, so shared.has(comp) is collision-free.
@@ -685,8 +685,8 @@
 
     function visitWaterComponentNeighbor(neighbor, id, labels, queue, coast) {
       if (src.isWater(neighbor)) {
-        if (labels[neighbor] !== -2) return;
-        labels[neighbor] = id;
+        if (labels[neighbor] !== 0) return;
+        labels[neighbor] = id + 1;
         queue.push(neighbor);
         return;
       }
@@ -699,7 +699,10 @@
       const h = src.height();
       const total = w * h;
       _waterLabelBuilder = {
-        labels: new Int32Array(total).fill(-2),
+        // Typed arrays are zero-initialized by the runtime. Encoding component
+        // ids as id+1 removes the synchronous full-map fill that previously
+        // preceded the cooperative slices and could stall Auto-build.
+        labels: new Uint32Array(total),
         compIsOcean: [],
         compCoast: [],
         nextId: 0,
@@ -767,11 +770,11 @@
         }
         const tile = builder.scanTile++;
         steps++;
-        if (!src.isWater(tile) || builder.labels[tile] !== -2) continue;
+        if (!src.isWater(tile) || builder.labels[tile] !== 0) continue;
         builder.componentId = builder.nextId++;
         builder.componentOcean = false;
         builder.componentCoast = new Set();
-        builder.labels[tile] = builder.componentId;
+        builder.labels[tile] = builder.componentId + 1;
         builder.queue.push(tile);
       }
       return false;
@@ -787,8 +790,8 @@
         return null;
       }
       if (tile < 0 || tile >= _waterLabels.length) return null;
-      const id = _waterLabels[tile];
-      return id >= 0 ? id : null;
+      const encoded = _waterLabels[tile];
+      return encoded > 0 ? encoded - 1 : null;
     }
 
     // OCEAN sentinel — core SharedWaterCache.OCEAN_SENTINEL.
@@ -847,8 +850,8 @@
             hasOcean = true;
             return;
           }
-          const component = _waterLabels[neighbor];
-          if (component >= 0) lakes.add(component);
+          const encoded = _waterLabels[neighbor];
+          if (encoded > 0) lakes.add(encoded - 1);
         });
       }
       return { hasOcean, lakes };
