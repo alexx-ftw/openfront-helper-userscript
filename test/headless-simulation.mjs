@@ -337,6 +337,9 @@ assert.match(comparison, /OFH_COMPARISON_SEED/);
 assert.match(comparison, /baselineSeed/);
 assert.match(comparison, /candidateSeed/);
 assert.match(comparison, /Unpaired result count/);
+assert.match(comparison, /comebackRecoveries/);
+assert.match(comparison, /closeouts/);
+assert.match(comparison, /averageDeepestDrawdownRatio/);
 assert.match(comparison, /comparison\.json/);
 assert.deepEqual(
   constructionScenarios.scenarios.map(({ id }) => id),

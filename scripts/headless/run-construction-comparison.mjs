@@ -54,31 +54,34 @@ const finalTiles = (result) => result?.finalBotState?.tiles ?? 0;
 const finalGold = (result) => Number(result?.finalBotState?.gold ?? 0);
 const buildCount = (result, unit) => result?.cumulativeBuildUnitTypes?.[unit] ?? 0;
 const survived = (result) => finalTiles(result) > 0;
+const recoveredComeback = (result) => result?.strategicTrajectory?.comebackRecovered === true;
+const reachedCloseout = (result) => result?.strategicTrajectory?.closeoutReached === true;
+const deepestDrawdown = (result) => Number(result?.strategicTrajectory?.deepestDrawdownRatio ?? 1);
 const aggregate = (games) => {
   const sum = (value) => games.reduce((total, game) => total + value(game), 0);
   const count = games.length;
   return {
     matches: count,
-    wins: sum((game) => game?.won === true ? 1 : 0),
-    survived: sum((game) => survived(game) ? 1 : 0),
+    wins: sum((game) => (game?.won === true ? 1 : 0)),
+    survived: sum((game) => (survived(game) ? 1 : 0)),
+    comebackRecoveries: sum((game) => (recoveredComeback(game) ? 1 : 0)),
+    closeouts: sum((game) => (reachedCloseout(game) ? 1 : 0)),
+    averageDeepestDrawdownRatio:
+      count === 0 ? null : Number((sum((game) => deepestDrawdown(game)) / count).toFixed(4)),
     averageTiles: count === 0 ? null : Math.round(sum(finalTiles) / count),
     averageGold: count === 0 ? null : Math.round(sum(finalGold) / count),
-    averageRuntimeMs:
-      count === 0 ? null : Math.round(sum((game) => game?.runtimeMs ?? 0) / count),
+    averageRuntimeMs: count === 0 ? null : Math.round(sum((game) => game?.runtimeMs ?? 0) / count),
     builds: Object.fromEntries(
-      ["City", "Factory", "Port", "Defense Post", "SAM Launcher", "Missile Silo", "Warship"]
-        .map((unit) => [unit, sum((game) => buildCount(game, unit))]),
+      ["City", "Factory", "Port", "Defense Post", "SAM Launcher", "Missile Silo", "Warship"].map(
+        (unit) => [unit, sum((game) => buildCount(game, unit))],
+      ),
     ),
   };
 };
 const numericDelta = (candidateValue, baselineValue) =>
-  candidateValue === null || baselineValue === null
-    ? null
-    : candidateValue - baselineValue;
+  candidateValue === null || baselineValue === null ? null : candidateValue - baselineValue;
 
-const baselineByScenario = new Map(
-  baseline.results.map((entry) => [entry.scenario.id, entry]),
-);
+const baselineByScenario = new Map(baseline.results.map((entry) => [entry.scenario.id, entry]));
 const scenarios = candidate.results.map((candidateEntry) => {
   const baselineEntry = baselineByScenario.get(candidateEntry.scenario.id);
   if (!baselineEntry) {
@@ -98,6 +101,13 @@ const scenarios = candidate.results.map((candidateEntry) => {
       delta: {
         won: Number(candidateGame?.won === true) - Number(baselineGame?.won === true),
         survived: Number(survived(candidateGame)) - Number(survived(baselineGame)),
+        comebackRecovered:
+          Number(recoveredComeback(candidateGame)) - Number(recoveredComeback(baselineGame)),
+        closeoutReached:
+          Number(reachedCloseout(candidateGame)) - Number(reachedCloseout(baselineGame)),
+        deepestDrawdownRatio: Number(
+          (deepestDrawdown(candidateGame) - deepestDrawdown(baselineGame)).toFixed(4),
+        ),
         tiles: finalTiles(candidateGame) - finalTiles(baselineGame),
         gold: finalGold(candidateGame) - finalGold(baselineGame),
         defensePosts:
@@ -115,14 +125,15 @@ const scenarios = candidate.results.map((candidateEntry) => {
     delta: {
       wins: candidateAggregate.wins - baselineAggregate.wins,
       survived: candidateAggregate.survived - baselineAggregate.survived,
-      averageTiles: numericDelta(
-        candidateAggregate.averageTiles,
-        baselineAggregate.averageTiles,
+      comebackRecoveries:
+        candidateAggregate.comebackRecoveries - baselineAggregate.comebackRecoveries,
+      closeouts: candidateAggregate.closeouts - baselineAggregate.closeouts,
+      averageDeepestDrawdownRatio: numericDelta(
+        candidateAggregate.averageDeepestDrawdownRatio,
+        baselineAggregate.averageDeepestDrawdownRatio,
       ),
-      averageGold: numericDelta(
-        candidateAggregate.averageGold,
-        baselineAggregate.averageGold,
-      ),
+      averageTiles: numericDelta(candidateAggregate.averageTiles, baselineAggregate.averageTiles),
+      averageGold: numericDelta(candidateAggregate.averageGold, baselineAggregate.averageGold),
       averageRuntimeMs: numericDelta(
         candidateAggregate.averageRuntimeMs,
         baselineAggregate.averageRuntimeMs,
