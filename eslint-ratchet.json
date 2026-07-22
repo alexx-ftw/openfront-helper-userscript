@@ -9,32 +9,6 @@
       "error": 1
     }
   },
-  "engine/ingame/companion/engine.js": {
-    "no-restricted-syntax": {
-      "warning": 0,
-      "error": 25
-    },
-    "no-useless-assignment": {
-      "warning": 0,
-      "error": 9
-    },
-    "max-statements": {
-      "warning": 0,
-      "error": 1
-    },
-    "complexity": {
-      "warning": 0,
-      "error": 1
-    },
-    "sonarjs/cognitive-complexity": {
-      "warning": 0,
-      "error": 1
-    },
-    "sonarjs/no-ignored-exceptions": {
-      "warning": 0,
-      "error": 1
-    }
-  },
   "engine/ingame/companion/panel.js": {
     "no-restricted-syntax": {
       "warning": 0,

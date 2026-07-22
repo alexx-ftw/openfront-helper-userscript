@@ -447,5 +447,10 @@ assert.doesNotMatch(
   /\bcatch\b|\.catch\s*\(/,
   "companion core must let storage and game-surface failures propagate",
 );
+assert.doesNotMatch(
+  fs.readFileSync(path.join(root, "engine/ingame/companion/engine.js"), "utf8"),
+  /\bcatch\b|\.catch\s*\(/,
+  "companion engine must let queued, tick, and UI failures propagate",
+);
 
 process.stdout.write("headless simulation contract tests passed\n");

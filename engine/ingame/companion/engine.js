@@ -17,18 +17,15 @@
   const COMPANION_LOG_LIMIT = 100;
   // Server rejects any donation to a recipient within donateCooldown (100 ticks =
   // 10s) of the previous one, TROOPS AND GOLD SHARE this window (PlayerImpl
-  // sentDonations). Rather than guess that window on the wall clock, we read the
-  // server's own canDonateGold/canDonateTroops truth through a background actions()
-  // cache — see COMPANION_ACTIONS_REFRESH_MS below and companionApplyBossActions.
+  // sentDonations). So both go through one shared "donateAny" gap; 11s = server
+  // 10s + 1s margin for tick granularity + latency.
+  const COMPANION_DONATE_MIN_GAP_MS = 11000;
   const COMPANION_DONATE_GOLD_COOLDOWN_MS = 30000;
   const COMPANION_FACTORY_COOLDOWN_MS = 5000;
   const COMPANION_RENEW_COOLDOWN_MS = 5000;
   const COMPANION_SPAWN_TICK_MS = 300;
   const COMPANION_ACTIONS_REFRESH_MS = 1000;
   const COMPANION_ACTIONS_TIMEOUT_MS = 1500;
-  // How long to wait for the server to reflect an optimistic donate before we
-  // assume it never landed (socket drop / dropped from a full queue / rejected)
-  // and resync — the server donate cooldown is 10s, so 12s leaves a 2s margin.
   const COMPANION_DONATE_CONFIRM_TIMEOUT_MS = 12000;
 
   // ---------------------------------------------------------------------------
@@ -62,11 +59,7 @@
     if (now - companionState.lastSendAt < COMPANION_MIN_SEND_GAP_MS) return 0;
     const item = companionState.queue.shift();
     companionState.lastSendAt = now;
-    try {
-      item.fn();
-    } catch (error) {
-      companionLog(`⚠ ${item.label}: ${error && error.message ? error.message : error}`);
-    }
+    item.fn();
     return 1;
   }
 
@@ -110,18 +103,73 @@
     companionState.cooldowns[key] = now;
   }
 
+  // The server is authoritative for the shared gold/troop donation cooldown.
+  // Keep an optimistic local hold until the server acknowledges it, preventing
+  // two queue entries from spending the same server-side donation window.
+  function companionApplyBossActions(serverGold, serverTroops) {
+    const gold = Boolean(serverGold);
+    const troops = Boolean(serverTroops);
+    if (!companionState.bossDonateConfirmed) {
+      if (!gold || !troops) {
+        companionState.bossDonateConfirmed = true;
+      } else if (
+        Date.now() - (companionState.donateUnconfirmedSince || 0) >
+        COMPANION_DONATE_CONFIRM_TIMEOUT_MS
+      ) {
+        companionState.bossDonateConfirmed = true;
+      } else {
+        return;
+      }
+    }
+    companionState.bossCanDonateGold = gold;
+    companionState.bossCanDonateTroops = troops;
+  }
+
+  function companionMarkDonated() {
+    companionState.bossCanDonateGold = false;
+    companionState.bossCanDonateTroops = false;
+    companionState.bossDonateConfirmed = false;
+    companionState.donateUnconfirmedSince = Date.now();
+  }
+
+  function companionRefreshBossActions(game, me, boss) {
+    const now = Date.now();
+    if (companionState.actionsInFlight) return;
+    if (now - (companionState.lastActionsAt || 0) < COMPANION_ACTIONS_REFRESH_MS) return;
+    if (!me || typeof me.actions !== "function") return;
+    if (!boss || typeof boss.nameLocation !== "function") return;
+    if (!game || typeof game.ref !== "function") return;
+    const location = boss.nameLocation();
+    if (!location) return;
+    const bossTile = game.ref(location.x, location.y);
+    if (bossTile === null || bossTile === undefined) return;
+    const result = me.actions(bossTile, null);
+    const pending = typeof withTimeout === "function"
+      ? withTimeout(result, COMPANION_ACTIONS_TIMEOUT_MS, null)
+      : Promise.resolve(result);
+    companionState.actionsInFlight = true;
+    companionState.lastActionsAt = now;
+    Promise.resolve(pending)
+      .then(function (actions) {
+        if (!actions || !actions.interaction) return;
+        companionApplyBossActions(
+          actions.interaction.canDonateGold,
+          actions.interaction.canDonateTroops,
+        );
+      })
+      .finally(function () {
+        companionState.actionsInFlight = false;
+      });
+  }
+
   // ---------------------------------------------------------------------------
   // Game access
   // ---------------------------------------------------------------------------
 
   function companionGame() {
-    try {
-      if (typeof getOpenFrontGameContext === "function") {
-        const ctx = getOpenFrontGameContext();
-        if (ctx && ctx.game) return ctx.game;
-      }
-    } catch (_error) {
-      /* fall through */
+    if (typeof getOpenFrontGameContext === "function") {
+      const ctx = getOpenFrontGameContext();
+      if (ctx && ctx.game) return ctx.game;
     }
     return null;
   }
@@ -129,11 +177,7 @@
   // GameView does not expose isCatchingUp() on every build, so this is a guarded
   // probe rather than a direct call.
   function companionIsCatchingUp(game) {
-    try {
-      return typeof game.isCatchingUp === "function" && game.isCatchingUp() === true;
-    } catch (_error) {
-      return false;
-    }
+    return typeof game.isCatchingUp === "function" && game.isCatchingUp() === true;
   }
 
   // Resolve the boss and cache its smallID for the hooks (which run on the
@@ -142,93 +186,8 @@
     const res = companionResolveBoss(game, companionSettings().bossName);
     companionState.bossStatus = res.status;
     companionState.bossSmallID = null;
-    if (res.boss) {
-      try {
-        companionState.bossSmallID = res.boss.smallID();
-      } catch (_error) {
-        companionState.bossSmallID = null;
-      }
-    }
+    if (res.boss) companionState.bossSmallID = res.boss.smallID();
     return res.boss;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Boss canDonate cache
-  // ---------------------------------------------------------------------------
-
-  // The server's donate cooldown is not exposed on the client, but
-  // PlayerView.actions(bossTile).interaction carries canDonateGold/canDonateTroops
-  // (the same server truth that greys out the game's donate buttons). actions() is
-  // async, so we refresh a cache in the background and read the cache in the tick.
-
-  // Apply a fresh actions() result through the round-trip confirm gate. After we
-  // send a donation the server still reports canDonate=true until it processes our
-  // intent; `bossDonateConfirmed` stays false until we've seen it flip to false at
-  // least once, so a refresh that lands early cannot pull the flags back to true.
-  function companionApplyBossActions(serverGold, serverTroops) {
-    const g = Boolean(serverGold);
-    const t = Boolean(serverTroops);
-    if (!companionState.bossDonateConfirmed) {
-      if (!g || !t) {
-        companionState.bossDonateConfirmed = true;
-      } else if (
-        Date.now() - (companionState.donateUnconfirmedSince || 0)
-          > COMPANION_DONATE_CONFIRM_TIMEOUT_MS
-      ) {
-        // Self-heal: waited past the server cooldown and it still shows both
-        // donates available — our optimistic donate never reached the server.
-        // Resync instead of staying stuck (no gold AND no troops) all match.
-        companionState.bossDonateConfirmed = true;
-      } else {
-        return; // server hasn't reflected our donation yet — keep the false cache
-      }
-    }
-    companionState.bossCanDonateGold = g;
-    companionState.bossCanDonateTroops = t;
-  }
-
-  // Optimistic: a donation blocks BOTH gold and troops to the boss for the server
-  // cooldown. Reflect it immediately so we don't fire twice before the refresh
-  // catches up, and drop confirm so an early refresh can't undo it.
-  function companionMarkDonated() {
-    companionState.bossCanDonateGold = false;
-    companionState.bossCanDonateTroops = false;
-    companionState.bossDonateConfirmed = false;
-    companionState.donateUnconfirmedSince = Date.now();
-  }
-
-  // Fire a throttled background actions() fetch for the boss and feed the result
-  // through companionApplyBossActions. Never throws into the tick.
-  function companionRefreshBossActions(game, me, boss) {
-    const now = Date.now();
-    if (companionState.actionsInFlight) return;
-    if (now - (companionState.lastActionsAt || 0) < COMPANION_ACTIONS_REFRESH_MS) return;
-    if (!me || typeof me.actions !== "function") return;
-    let bossTile = null;
-    try {
-      const loc = boss && typeof boss.nameLocation === "function" ? boss.nameLocation() : null;
-      if (loc && game && typeof game.ref === "function") bossTile = game.ref(loc.x, loc.y);
-    } catch (_error) {
-      bossTile = null;
-    }
-    if (bossTile == null) return;
-    companionState.actionsInFlight = true;
-    companionState.lastActionsAt = now;
-    try {
-      const raw = me.actions(bossTile, null);
-      const p = typeof withTimeout === "function"
-        ? withTimeout(raw, COMPANION_ACTIONS_TIMEOUT_MS, null)
-        : Promise.resolve(raw);
-      Promise.resolve(p).then(function (a) {
-        if (a && a.interaction) {
-          companionApplyBossActions(a.interaction.canDonateGold, a.interaction.canDonateTroops);
-        }
-      }).catch(function () {}).finally(function () {
-        companionState.actionsInFlight = false;
-      });
-    } catch (_error) {
-      companionState.actionsInFlight = false;
-    }
   }
 
   // ---------------------------------------------------------------------------
@@ -246,12 +205,7 @@
   //
   // Called from setCompanionEnabled, the panel's Mode change, and pause/resume.
   function companionSyncAutobot() {
-    let bridge = null;
-    try {
-      bridge = window.__OFH_autobot || null;
-    } catch (_error) {
-      bridge = null;
-    }
+    const bridge = window.__OFH_autobot || null;
     if (!bridge || typeof bridge.set !== "function") return;
 
     const s = companionSettings();
@@ -259,26 +213,13 @@
       companionState.enabled && (s.mode === "passive" || companionState.paused);
 
     if (suppress && !companionState.autobotSuppressed) {
-      let wasOn = false;
-      try {
-        wasOn = typeof bridge.get === "function" && Boolean(bridge.get().enabled);
-      } catch (_error) {
-        wasOn = false;
-      }
+      const wasOn = typeof bridge.get === "function" && Boolean(bridge.get().enabled);
       companionState.autobotWasEnabled = wasOn;
       companionState.autobotSuppressed = true;
-      try {
-        bridge.set({ enabled: false });
-      } catch (_error) {
-        /* ignore */
-      }
+      bridge.set({ enabled: false });
     } else if (!suppress && companionState.autobotSuppressed) {
       companionState.autobotSuppressed = false;
-      try {
-        bridge.set({ enabled: companionState.autobotWasEnabled });
-      } catch (_error) {
-        /* ignore */
-      }
+      bridge.set({ enabled: companionState.autobotWasEnabled });
     }
   }
 
@@ -324,11 +265,7 @@
   // relinquish/re-conquer loop.
   function companionSpawnSettled(me) {
     if (me && typeof me.hasSpawned === "function") {
-      try {
-        return me.hasSpawned() === true;
-      } catch (_error) {
-        /* fall through */
-      }
+      return me.hasSpawned() === true;
     }
     return companionState.lastSpawnTile != null;
   }
@@ -336,29 +273,15 @@
   // Ensure the auto-bot's own spawn logic is active, without writing to
   // localStorage on every tick — only set what is not already set.
   function companionForceAutobotSpawn() {
-    let bridge = null;
-    try {
-      bridge = window.__OFH_autobot || null;
-    } catch (_error) {
-      bridge = null;
-    }
+    const bridge = window.__OFH_autobot || null;
     if (!bridge || typeof bridge.set !== "function") return;
-    let cur = null;
-    try {
-      cur = typeof bridge.get === "function" ? bridge.get() : null;
-    } catch (_error) {
-      cur = null;
-    }
+    const cur = typeof bridge.get === "function" ? bridge.get() : null;
     const patch = {};
     const spawnOn = cur && cur.features && cur.features.spawn === true;
     if (!spawnOn) patch.features = { spawn: true };
     if (!cur || cur.smartSpawn !== true) patch.smartSpawn = true;
     if (patch.features || "smartSpawn" in patch) {
-      try {
-        bridge.set(patch);
-      } catch (_error) {
-        /* ignore */
-      }
+      bridge.set(patch);
     }
   }
 
@@ -381,12 +304,7 @@
     if (!g) return null;
     const boss = companionRefreshBoss(g);
     if (!boss) return null;
-    let me = null;
-    try {
-      me = g.myPlayer ? g.myPlayer() : null;
-    } catch (_error) {
-      me = null;
-    }
+    const me = g.myPlayer ? g.myPlayer() : null;
 
     // Same anti-oscillation rule as the passive branch. Our own territory turns
     // the tile we just took into `hasOwner`, so re-picking on every call walks
@@ -422,209 +340,171 @@
     if (s.mode !== "active" || !s.autoAlliance) return false;
     if (companionState.bossSmallID == null) return false;
     if (!other || typeof other.smallID !== "function") return true;
-    try {
-      return other.smallID() !== companionState.bossSmallID;
-    } catch (_error) {
-      return true;
-    }
+    return other.smallID() !== companionState.bossSmallID;
   }
 
   // ---------------------------------------------------------------------------
   // Tick
   // ---------------------------------------------------------------------------
 
-  function companionTick() {
-    if (!companionState.enabled) return;
-    const now = Date.now();
-    // Always drain, even while paused — the queue only ever holds work that was
-    // already approved when it was enqueued.
-    companionDrainQueue(now);
+  function companionQueueEmojiCommands(settings, me, ctx) {
+    if (!settings.emojiControl) return;
+    const commands = companionCollectCommands(
+      ctx.boss,
+      me.smallID(),
+      companionBindings(),
+      companionState.seenEmoji,
+    );
+    for (const actionId of commands) {
+      companionEnqueue(actionId, function () {
+        const ok = companionRunAction(actionId, ctx);
+        companionLog((ok ? "✅ " : "❌ ") + actionId);
+      });
+    }
+  }
 
+  function companionQueueAllianceRenewal(me, boss, now) {
+    if (!companionIsAlliedWithBoss(me, boss)) return;
+    if (!companionCooldownReady("renew", COMPANION_RENEW_COOLDOWN_MS, now)) return;
+    if (!companionAllianceNeedsRenew(me, boss)) return;
+    companionMarkCooldown("renew", now);
+    companionEnqueue("renew", function () {
+      if (companionRenewAlliance(boss)) companionLog("🔁 Renew alliance with boss");
+    });
+  }
+
+  function companionHandleSpawn(game, me, boss, settings) {
+    if (typeof game.inSpawnPhase !== "function" || !game.inSpawnPhase()) return false;
+    if (settings.mode !== "passive" || !settings.autoSpawn) return true;
+    const bossSpawn = boss.state ? boss.state.spawnTile : null;
+    if (companionSpawnSettled(me) && bossSpawn === companionState.lastBossSpawnTile) return true;
+    companionState.lastBossSpawnTile = bossSpawn;
+    const tile = companionPickSpawnTile(
+      game,
+      me,
+      boss,
+      settings.spawnMinRadius,
+      settings.spawnMaxRadius,
+    );
+    if (tile == null || tile === companionState.lastSpawnTile) return true;
+    companionState.lastSpawnTile = tile;
+    companionEnqueue("spawn", function () {
+      if (companionSpawnAt(tile)) companionLog("🏁 Spawned near boss");
+    });
+    return true;
+  }
+
+  function companionQueueAllianceRequest(settings, me, boss, now) {
+    if (!settings.autoAlliance || companionIsAlliedWithBoss(me, boss)) return;
+    const asked = boss.state && boss.state.outgoingAllianceRequests
+      ? boss.state.outgoingAllianceRequests : [];
+    const myId = me.id();
+    if (!myId || asked.indexOf(myId) === -1) return;
+    if (!companionCooldownReady("alliance", 5000, now)) return;
+    companionMarkCooldown("alliance", now);
+    companionEnqueue("alliance", function () {
+      if (companionRequestAlliance(boss)) companionLog("🤝 Alliance with boss");
+    });
+  }
+
+  function companionQueueTroopDonation(settings, ctx, allied, now) {
+    if (!settings.autoTroops || !allied) return;
+    if (!companionState.bossCanDonateTroops) return;
+    if (!companionCooldownReady("donateAny", COMPANION_DONATE_MIN_GAP_MS, now)) return;
+    if (!companionBossNeedsTroops(ctx.game, ctx.boss, settings.troopNeedPct)) return;
+    companionMarkCooldown("donateAny", now);
+    companionMarkDonated();
+    companionEnqueue("donateTroops", function () {
+      if (companionDonateTroops(ctx.me, ctx.boss, settings.troopSendPct)) {
+        companionLog("🎖 Troops → boss");
+      }
+    });
+  }
+
+  function companionQueueFactory(settings, game, me, factoryLevel, now) {
+    if (settings.mode !== "passive" || !settings.autoFactory) return;
+    if (factoryLevel >= settings.maxFactoryLevel) return;
+    if (!companionCooldownReady("factory", COMPANION_FACTORY_COOLDOWN_MS, now)) return;
+    companionMarkCooldown("factory", now);
+    companionEnqueue("factory", function () {
+      if (companionBuildOrUpgradeFactory(game, me)) companionLog("🏭 Factory");
+    });
+  }
+
+  function companionGoldDonationAmount(settings, me, factoryLevel) {
+    const goldNow = Number(me.gold());
+    if (factoryLevel >= settings.maxFactoryLevel) {
+      return { amount: companionPercentAmount(goldNow, settings.goldIdlePct), goldNow: goldNow };
+    }
+    const gainedGold = Math.max(0, goldNow - companionState.lastGoldSnapshot);
+    return {
+      amount: companionPercentAmount(gainedGold, settings.goldBuildingPct),
+      goldNow: goldNow,
+    };
+  }
+
+  function companionQueueGoldDonation(settings, ctx, allied, factoryLevel, now) {
+    if (!settings.autoGold || !allied) return;
+    if (!companionState.bossCanDonateGold) return;
+    const buildsFactory = settings.mode === "passive" && settings.autoFactory;
+    const belowCap = factoryLevel < settings.maxFactoryLevel;
+    if (buildsFactory && belowCap && factoryLevel <= companionState.goldAtFactoryLevel) return;
+    if (!companionCooldownReady("donateAny", COMPANION_DONATE_MIN_GAP_MS, now)) return;
+    if (!companionCooldownReady("donateGold", COMPANION_DONATE_GOLD_COOLDOWN_MS, now)) return;
+    const donation = companionGoldDonationAmount(settings, ctx.me, factoryLevel);
+    if (donation.amount <= 0) return;
+    companionMarkCooldown("donateAny", now);
+    companionMarkCooldown("donateGold", now);
+    companionState.lastGoldSnapshot = belowCap ? donation.goldNow : 0;
+    if (buildsFactory && belowCap) companionState.goldAtFactoryLevel = factoryLevel;
+    companionMarkDonated();
+    companionEnqueue("donateGold", function () {
+      const recipient = ctx.boss.id();
+      if (!recipient) return;
+      if (companionSend({ type: "donate_gold", recipient: recipient, gold: donation.amount })) {
+        companionLog("💰 Gold → boss");
+      }
+    });
+  }
+
+  function companionPrepareTickGame() {
     const game = companionGame();
-    if (!game) return;
-    if (companionIsCatchingUp(game)) return;
-
-    // New match → drop everything that only made sense in the previous one.
+    if (!game || companionIsCatchingUp(game)) return null;
     const gameRef = game.__src || game;
     if (companionState.lastGameRef !== gameRef) {
       companionState.lastGameRef = gameRef;
       companionResetRunState();
       companionLog("▶ new match");
     }
+    return game;
+  }
 
-    let me = null;
-    try {
-      me = game.myPlayer ? game.myPlayer() : null;
-    } catch (_error) {
-      me = null;
-    }
+  function companionTick() {
+    if (!companionState.enabled) return;
+    const now = Date.now();
+    companionDrainQueue(now);
+    const game = companionPrepareTickGame();
+    if (!game) return;
+    const me = game.myPlayer ? game.myPlayer() : null;
     if (!me) return;
-
     const boss = companionRefreshBoss(game);
     if (!boss) return;
-
-    const s = companionSettings();
+    const settings = companionSettings();
     const ctx = { game: game, me: me, boss: boss };
-
-    // 1. Emoji commands — these bypass thresholds and cooldowns because they are
-    //    an explicit request from the player, but still go through the queue.
-    if (s.emojiControl) {
-      const cmds = companionCollectCommands(
-        boss,
-        (function () { try { return me.smallID(); } catch (_e) { return null; } })(),
-        companionBindings(),
-        companionState.seenEmoji,
-      );
-      for (const actionId of cmds) {
-        companionEnqueue(actionId, function () {
-          const ok = companionRunAction(actionId, ctx);
-          companionLog((ok ? "✅ " : "❌ ") + actionId);
-        });
-      }
-    }
-
-    // Renew the alliance with the boss before it expires — keeps donations
-    // flowing (canDonate* need isFriendly). Runs even while paused, because
-    // holding the alliance is maintenance, not an intervention; and in both
-    // modes. Throttled so we don't spam the extension window before the boss
-    // confirms. allianceExtension is not a donation, so no donate min-gap.
-    if (companionIsAlliedWithBoss(me, boss)
-        && companionCooldownReady("renew", COMPANION_RENEW_COOLDOWN_MS, now)
-        && companionAllianceNeedsRenew(me, boss)) {
-      companionMarkCooldown("renew", now);
-      companionEnqueue("renew", function () {
-        if (companionRenewAlliance(boss)) companionLog("🔁 Renew alliance with boss");
-      });
-    }
-
+    companionQueueEmojiCommands(settings, me, ctx);
+    companionQueueAllianceRenewal(me, boss, now);
     if (companionState.paused) return;
-
-    // 2. Spawn phase — Passive mode only; Active mode goes through the auto-bot
-    //    hook so the two can never fight over the same decision.
-    let inSpawn = false;
-    try {
-      inSpawn = typeof game.inSpawnPhase === "function" && game.inSpawnPhase();
-    } catch (_error) {
-      inSpawn = false;
-    }
-    if (inSpawn) {
-      if (s.mode === "passive" && s.autoSpawn) {
-        const bossSpawn = boss.state ? boss.state.spawnTile : null;
-        // Re-pick only before we have landed, or when the boss itself moves. Without
-        // this the bot oscillates: our own territory makes the tile we just took
-        // `hasOwner`, the picker moves one tile over, SpawnExecution relinquishes
-        // everything and re-conquers there, which frees the first tile again — a
-        // two-step cycle a one-step "same tile as last time" check cannot see.
-        // Measured at 28 relocations across a single spawn phase before this guard.
-        // Same settled-check the Active-mode hook uses (companionSpawnCenter) — the
-        // two paths must never drift apart again.
-        if (!companionSpawnSettled(me) || bossSpawn !== companionState.lastBossSpawnTile) {
-          companionState.lastBossSpawnTile = bossSpawn;
-          const tile = companionPickSpawnTile(
-            game, me, boss, s.spawnMinRadius, s.spawnMaxRadius,
-          );
-          if (tile != null && tile !== companionState.lastSpawnTile) {
-            companionState.lastSpawnTile = tile;
-            companionEnqueue("spawn", function () {
-              if (companionSpawnAt(tile)) companionLog("🏁 Spawned near boss");
-            });
-          }
-        }
-      }
-      return;
-    }
-
-    // 3. Alliance — only ever with the boss.
-    if (s.autoAlliance && !companionIsAlliedWithBoss(me, boss)) {
-      let asked = [];
-      try {
-        asked = boss.state && boss.state.outgoingAllianceRequests
-          ? boss.state.outgoingAllianceRequests : [];
-      } catch (_error) {
-        asked = [];
-      }
-      let myId = null;
-      try { myId = me.id(); } catch (_error) { myId = null; }
-      if (myId && asked.indexOf(myId) !== -1
-          && companionCooldownReady("alliance", 5000, now)) {
-        companionMarkCooldown("alliance", now);
-        companionEnqueue("alliance", function () {
-          if (companionRequestAlliance(boss)) companionLog("🤝 Alliance with boss");
-        });
-      }
-    }
-
+    if (companionHandleSpawn(game, me, boss, settings)) return;
+    companionQueueAllianceRequest(settings, me, boss, now);
     const allied = companionIsAlliedWithBoss(me, boss);
-
-    // Keep the "can I donate to the boss right now?" cache fresh (background,
-    // async). We read the cache below instead of guessing a wall-clock cooldown.
-    if (allied && (s.autoTroops || s.autoGold)) {
+    if (allied && (settings.autoTroops || settings.autoGold)) {
       companionRefreshBossActions(game, me, boss);
     }
-
-    // factoryLevel feeds the gold gate, which now runs BEFORE troops.
     const factoryLevel = companionFactoryLevel(game, me);
     companionState.factoryLevel = factoryLevel;
-
-    // 4. Donate GOLD first. Gold has its own 30s throttle so it only claims a slot
-    //    occasionally; running it before troops keeps troops (which wants a slot
-    //    almost every cooldown) from starving it. companionMarkDonated then makes
-    //    troops yield the same tick. Gated on the real canDonate flag + interleave.
-    const companionBuildsFactory = s.mode === "passive" && s.autoFactory;
-    let goldInterleaveOk = true;
-    if (companionBuildsFactory && factoryLevel < s.maxFactoryLevel) {
-      goldInterleaveOk = factoryLevel > companionState.goldAtFactoryLevel;
-    }
-    if (companionState.bossCanDonateGold && s.autoGold && allied && goldInterleaveOk
-        && companionCooldownReady("donateGold", COMPANION_DONATE_GOLD_COOLDOWN_MS, now)) {
-      let goldNow = 0;
-      try { goldNow = Number(me.gold()); } catch (_error) { goldNow = 0; }
-      const building = factoryLevel < s.maxFactoryLevel;
-      let amountSource = goldNow;
-      let pct = s.goldIdlePct;
-      if (building) {
-        amountSource = Math.max(0, goldNow - companionState.lastGoldSnapshot);
-        pct = s.goldBuildingPct;
-      }
-      const amount = companionPercentAmount(amountSource, pct);
-      if (amount > 0) {
-        companionMarkCooldown("donateGold", now);
-        companionState.lastGoldSnapshot = building ? goldNow : 0;
-        if (companionBuildsFactory && factoryLevel < s.maxFactoryLevel) {
-          companionState.goldAtFactoryLevel = factoryLevel;
-        }
-        companionMarkDonated();
-        companionEnqueue("donateGold", function () {
-          const recipient = (function () {
-            try { return boss.id(); } catch (_e) { return null; }
-          })();
-          if (!recipient) return;
-          if (companionSend({ type: "donate_gold", recipient: recipient, gold: amount })) {
-            companionLog("💰 Gold → boss");
-          }
-        });
-      }
-    }
-
-    // 5. Donate TROOPS when the boss is low — unless gold just took the slot
-    //    (companionMarkDonated cleared bossCanDonateTroops).
-    if (companionState.bossCanDonateTroops && s.autoTroops && allied
-        && companionBossNeedsTroops(game, boss, s.troopNeedPct)) {
-      companionMarkDonated();
-      companionEnqueue("donateTroops", function () {
-        if (companionDonateTroops(me, boss, s.troopSendPct)) companionLog("🎖 Troops → boss");
-      });
-    }
-
-    // 6. Factory — build one, then upgrade toward the cap. Passive only; in Active
-    //    mode the auto-bot's structureBehavior handles it.
-    if (s.mode === "passive" && s.autoFactory && factoryLevel < s.maxFactoryLevel
-        && companionCooldownReady("factory", COMPANION_FACTORY_COOLDOWN_MS, now)) {
-      companionMarkCooldown("factory", now);
-      companionEnqueue("factory", function () {
-        if (companionBuildOrUpgradeFactory(game, me)) companionLog("🏭 Factory");
-      });
-    }
+    companionQueueGoldDonation(settings, ctx, allied, factoryLevel, now);
+    companionQueueTroopDonation(settings, ctx, allied, now);
+    companionQueueFactory(settings, game, me, factoryLevel, now);
   }
 
   // ---------------------------------------------------------------------------
@@ -674,38 +554,28 @@
       : "off";
     if (sig === companionState.uiSignature) return;
     companionState.uiSignature = sig;
-    try {
-      if (typeof companionSyncBanner === "function") companionSyncBanner();
-    } catch (_error) {
-      /* ignore */
+    if (typeof companionSyncBanner === "function") companionSyncBanner();
+    const panelEl = document.getElementById(COMPANION_PANEL_ID);
+    if (panelEl && typeof panelEl.contains === "function"
+        && panelEl.contains(document.activeElement)) {
+      // Still refresh the fixed chrome (dot colour), just not the body the user
+      // may be typing into.
+      if (typeof companionUpdateChrome === "function") companionUpdateChrome(panelEl);
+      return;
     }
-    try {
-      const panelEl = document.getElementById(COMPANION_PANEL_ID);
-      if (panelEl && typeof panelEl.contains === "function"
-          && panelEl.contains(document.activeElement)) {
-        // Still refresh the fixed chrome (dot colour), just not the body the user
-        // may be typing into.
-        if (typeof companionUpdateChrome === "function") companionUpdateChrome(panelEl);
-        return;
-      }
-      if (typeof companionBuildPanel === "function") companionBuildPanel();
-    } catch (_error) {
-      /* ignore */
-    }
+    if (typeof companionBuildPanel === "function") companionBuildPanel();
   }
 
   function companionTickThrottled() {
     const now = Date.now();
     let period = Number(companionSettings().tickMs) || 2000;
-    // In the spawn phase, follow the boss fast — a 2s cadence misses quick boss
-    // re-clicks before the phase ends and the bot lands somewhere stale.
-    try {
-      const g = companionGame();
-      if (g && typeof g.inSpawnPhase === "function" && g.inSpawnPhase()) {
-        period = Math.min(period, COMPANION_SPAWN_TICK_MS);
-      }
-    } catch (_error) {
-      /* keep the normal period */
+    const game = companionGame();
+    if (
+      game &&
+      typeof game.inSpawnPhase === "function" &&
+      game.inSpawnPhase()
+    ) {
+      period = Math.min(period, COMPANION_SPAWN_TICK_MS);
     }
     if (now - (companionState.lastTickAt || 0) < period) {
       // Still drain the queue at full rate so a burst of commands is not stuck
@@ -715,11 +585,7 @@
       return;
     }
     companionState.lastTickAt = now;
-    try {
-      companionTick();
-    } catch (error) {
-      companionLog(`⚠ tick: ${error && error.message ? error.message : error}`);
-    }
+    companionTick();
     companionSyncUi();
   }
 
@@ -764,9 +630,7 @@
       queued: companionState.queue.length,
       factoryLevel: companionState.factoryLevel,
       gameFound: Boolean(game),
-      humans: companionHumanPlayers(game).map(function (p) {
-        try { return p.name(); } catch (_e) { return "?"; }
-      }),
+      humans: companionHumanPlayers(game).map(function (p) { return p.name(); }),
       bindings: companionBindings(),
       lastSendFailedAt: companionState.lastSendFailedAt,
       logLines: companionState.log.length,

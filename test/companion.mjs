@@ -1119,7 +1119,7 @@ const ENG = [
   assert.deepEqual(ran, ["a", "b"]);
   assert.equal(m.companionDrainQueue(20000), 0, "queue empty");
 
-  // A throwing action must not wedge the queue.
+  // A throwing action propagates, while the already-shifted queue remains usable.
   m.companionState.queue.length = 0;
   m.companionState.lastSendAt = 0;
   m.companionEnqueue("boom", () => {
@@ -1129,9 +1129,9 @@ const ENG = [
     ran.push("after");
     return true;
   });
-  assert.equal(m.companionDrainQueue(30000), 1);
+  assert.throws(() => m.companionDrainQueue(30000), /nope/, "action failures must propagate");
   assert.equal(m.companionDrainQueue(30400), 1);
-  assert.deepEqual(ran, ["a", "b", "after"], "queue survived the throw");
+  assert.deepEqual(ran, ["a", "b", "after"], "queue remains usable after a propagated failure");
 
   // Cooldowns.
   m.companionState.cooldowns = {};
