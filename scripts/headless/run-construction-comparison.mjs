@@ -52,7 +52,6 @@ const candidate = JSON.parse(
 
 const finalTiles = (result) => result?.finalBotState?.tiles ?? 0;
 const finalGold = (result) => Number(result?.finalBotState?.gold ?? 0);
-const buildCount = (result, unit) => result?.cumulativeBuildUnitTypes?.[unit] ?? 0;
 const constructionActionCount = (result, action, unit = null) =>
   (result?.constructionEvents ?? []).filter(
     (event) => event.action === action && (unit === null || event.unit === unit),
@@ -81,7 +80,7 @@ const aggregate = (games) => {
     },
     builds: Object.fromEntries(
       ["City", "Factory", "Port", "Defense Post", "SAM Launcher", "Missile Silo", "Warship"].map(
-        (unit) => [unit, sum((game) => buildCount(game, unit))],
+        (unit) => [unit, sum((game) => constructionActionCount(game, "build", unit))],
       ),
     ),
     upgrades: Object.fromEntries(
@@ -125,7 +124,8 @@ const scenarios = candidate.results.map((candidateEntry) => {
         tiles: finalTiles(candidateGame) - finalTiles(baselineGame),
         gold: finalGold(candidateGame) - finalGold(baselineGame),
         defensePosts:
-          buildCount(candidateGame, "Defense Post") - buildCount(baselineGame, "Defense Post"),
+          constructionActionCount(candidateGame, "build", "Defense Post") -
+          constructionActionCount(baselineGame, "build", "Defense Post"),
         upgrades:
           constructionActionCount(candidateGame, "upgrade") -
           constructionActionCount(baselineGame, "upgrade"),
