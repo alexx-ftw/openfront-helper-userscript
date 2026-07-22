@@ -1511,8 +1511,11 @@ maritimeReinforcementBehavior.player = {
   isFriendly: () => false,
   sharesBorderWith: () => false,
 };
+maritimeReinforcementBehavior.outboundPlayerAttackCommitments = () => ({
+  targetsByKey: new Map([["maritime", maritimeIncompleteTribe]]),
+  committedByKey: new Map([["maritime", 100]]),
+});
 maritimeReinforcementBehavior.getEnemyDefensePostAttackProfile = () => ({});
-maritimeReinforcementBehavior.getCommittedOutboundAttackTroopsForTarget = () => 100;
 maritimeReinforcementBehavior.getPlayerAttackPreferredTroopFloor = () => 1000;
 maritimeReinforcementBehavior.sendAttack = async (...args) => {
   maritimeReinforcementArgs = args;
@@ -1542,13 +1545,17 @@ const nearlyCaptured = {
   type: () => sandbox.PlayerType.Bot,
 };
 prioritizedReinforcementBehavior.player = { isFriendly: () => false };
-prioritizedReinforcementBehavior.getActiveOutboundPlayerTargets = () => [
-  distantFromCapture,
-  nearlyCaptured,
-];
+prioritizedReinforcementBehavior.outboundPlayerAttackCommitments = () => ({
+  targetsByKey: new Map([
+    ["distant", distantFromCapture],
+    ["near", nearlyCaptured],
+  ]),
+  committedByKey: new Map([
+    ["distant", 100],
+    ["near", 900],
+  ]),
+});
 prioritizedReinforcementBehavior.getEnemyDefensePostAttackProfile = () => ({});
-prioritizedReinforcementBehavior.getCommittedOutboundAttackTroopsForTarget = (target) =>
-  target === nearlyCaptured ? 900 : 100;
 prioritizedReinforcementBehavior.getPlayerAttackPreferredTroopFloor = () => 1000;
 let prioritizedReinforcementTarget = null;
 prioritizedReinforcementBehavior.sendAttack = async (target) => {
@@ -1563,6 +1570,55 @@ assert.strictEqual(
   prioritizedReinforcementTarget,
   nearlyCaptured,
   "reinforcement closes the conquest nearest its capture floor before funding a distant front",
+);
+
+const commitmentSnapshotBehavior = Object.create(sandbox.AttackBehavior.prototype);
+let commitmentOutgoingReads = 0;
+let commitmentReconciliations = 0;
+const commitmentTribeA = {
+  id: () => "commitment-a",
+  smallID: () => 51,
+  isPlayer: () => true,
+};
+const commitmentTribeB = {
+  id: () => "commitment-b",
+  smallID: () => 52,
+  isPlayer: () => true,
+};
+commitmentSnapshotBehavior.player = {
+  isFriendly: () => false,
+  outgoingAttacks: () => {
+    commitmentOutgoingReads++;
+    return [
+      { retreating: () => false, target: () => commitmentTribeA, troops: () => 100 },
+      { retreating: () => false, target: () => commitmentTribeB, troops: () => 900 },
+    ];
+  },
+};
+commitmentSnapshotBehavior.game = { ticks: () => 80 };
+commitmentSnapshotBehavior.botAttackPendingIntentCommitments = [
+  { targetIsPlayer: true, targetKey: "51", troops: 200 },
+];
+commitmentSnapshotBehavior.reconcileOutboundAttackIntentCommitments = () => {
+  commitmentReconciliations++;
+};
+commitmentSnapshotBehavior.getEnemyDefensePostAttackProfile = () => ({});
+commitmentSnapshotBehavior.getPlayerAttackPreferredTroopFloor = () => 1000;
+const commitmentPlans = commitmentSnapshotBehavior.incompleteOutboundPlayerAttackPlans();
+assert.deepEqual(
+  Array.from(commitmentPlans, (plan) => plan.target.smallID()),
+  [52, 51],
+  "one commitment snapshot preserves nearest-to-capture reinforcement priority",
+);
+assert.equal(
+  commitmentOutgoingReads,
+  1,
+  "all incomplete targets share one outgoing-attack snapshot",
+);
+assert.equal(
+  commitmentReconciliations,
+  1,
+  "all incomplete targets share one pending-intent reconciliation",
 );
 
 const botParallelTargets = [parallelTribeA, parallelTribeB].map((target) => ({

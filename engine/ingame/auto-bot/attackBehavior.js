@@ -802,7 +802,7 @@
       this.reconcileOutboundAttackIntentCommitments();
       const targetKeys = new Set();
 
-      for (const entry of this.botAttackPendingIntentCommitments) {
+      for (const entry of this.botAttackPendingIntentCommitments || []) {
         if (!entry?.targetIsPlayer || entry.targetKey == null) continue;
         targetKeys.add(String(entry.targetKey));
       }
@@ -8293,14 +8293,41 @@
       );
     }
 
+    outboundPlayerAttackCommitments() {
+      this.reconcileOutboundAttackIntentCommitments(
+        this.currentAttackDecisionTick(),
+        true,
+      );
+      const targetsByKey = new Map();
+      const committedByKey = new Map();
+      for (const entry of this.getOutboundAttackSnapshot()) {
+        if (!entry.targetIsPlayer || entry.targetKey == null) continue;
+        targetsByKey.set(entry.targetKey, entry.target);
+        committedByKey.set(
+          entry.targetKey,
+          (committedByKey.get(entry.targetKey) || 0) + entry.troops,
+        );
+      }
+      for (const entry of this.botAttackPendingIntentCommitments || []) {
+        if (!entry?.targetIsPlayer || entry.targetKey == null) continue;
+        committedByKey.set(
+          entry.targetKey,
+          (committedByKey.get(entry.targetKey) || 0) +
+            Math.max(0, Number(entry.troops) || 0),
+        );
+      }
+      return { targetsByKey, committedByKey };
+    }
+
     incompleteOutboundPlayerAttackPlans() {
       const plans = [];
       let index = 0;
-      for (const target of this.getActiveOutboundPlayerTargets()) {
+      const { targetsByKey, committedByKey } = this.outboundPlayerAttackCommitments();
+      for (const [targetKey, target] of targetsByKey) {
         if (target.isAlive?.() === false) continue;
         if (this.player.isFriendly(target) === true) continue;
         const profile = this.getEnemyDefensePostAttackProfile(target);
-        const committed = this.getCommittedOutboundAttackTroopsForTarget(target);
+        const committed = committedByKey.get(targetKey) || 0;
         const floor = this.getPlayerAttackPreferredTroopFloor(target, profile);
         if (committed >= floor) continue;
         plans.push({
