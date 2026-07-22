@@ -1378,6 +1378,22 @@ assert.ok(
   boundedClusterSample.some((candidate) => candidate.id === 99),
   "a gateway into a large tribe cluster survives the bounded eight-target sample",
 );
+const samplingCandidates = Array.from({ length: 32 }, (_, index) => ({
+  id: (index * 11) % 17,
+  clusterSize: (index * 7) % 9,
+  opportunity: (index * 13) % 19,
+}));
+assert.deepEqual(
+  Array.from(
+    sandbox.rankEarlyGameTribeSamplingCandidates(samplingCandidates, 8),
+    (candidate) => candidate.id,
+  ),
+  Array.from(
+    sandbox.rankEarlyGameTribeSamplingCandidates(samplingCandidates).slice(0, 8),
+    (candidate) => candidate.id,
+  ),
+  "bounded tribe sampling preserves the exact full-ranking prefix",
+);
 
 const passiveRace = sandbox.calculateEarlyGameFoodRaceValue({
   competitorProgress: 0.1,

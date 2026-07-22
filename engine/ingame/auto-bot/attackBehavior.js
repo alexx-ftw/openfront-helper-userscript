@@ -3448,7 +3448,11 @@
       }
     }
 
-    rankEarlyGameSamplingTribes(tribes, clusterOpportunities) {
+    rankEarlyGameSamplingTribes(
+      tribes,
+      clusterOpportunities,
+      limit = Infinity,
+    ) {
       return rankEarlyGameTribeSamplingCandidates(
         tribes.map((tribe) => ({
           player: tribe,
@@ -3459,6 +3463,7 @@
             Math.max(1, Number(tribe.numTilesOwned?.()) || 1) /
             Math.max(1, Number(tribe.troops?.()) || 1),
         })),
+        limit,
       ).map((candidate) => candidate.player);
     }
 
@@ -3550,9 +3555,14 @@
           this.rankEarlyGameSamplingTribes(
             bordering,
             clusterOpportunities,
+            EARLY_TRIBE_CANDIDATES,
           )
             .concat(
-              this.rankEarlyGameSamplingTribes(other, clusterOpportunities),
+              this.rankEarlyGameSamplingTribes(
+                other,
+                clusterOpportunities,
+                EARLY_TRIBE_CANDIDATES,
+              ),
             )
             .slice(0, EARLY_TRIBE_CANDIDATES),
       );

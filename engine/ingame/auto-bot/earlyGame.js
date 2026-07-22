@@ -981,25 +981,48 @@
   // Cluster size is deliberately the first key: otherwise eight locally cheap
   // decoys can remove the only gateway toward a much larger food chain before
   // the full strategic ranker gets a chance to evaluate it.
-  function rankEarlyGameTribeSamplingCandidates(candidates) {
+  function compareEarlyGameTribeSamplingEntries(left, right) {
+    const clusterDifference =
+      (Number(right.candidate.clusterSize) || 1) -
+      (Number(left.candidate.clusterSize) || 1);
+    if (clusterDifference !== 0) return clusterDifference;
+    const opportunityDifference =
+      (Number(right.candidate.opportunity) || 0) -
+      (Number(left.candidate.opportunity) || 0);
+    if (opportunityDifference !== 0) return opportunityDifference;
+    const idDifference =
+      (Number(left.candidate.id) || 0) -
+      (Number(right.candidate.id) || 0);
+    return idDifference || left.index - right.index;
+  }
+
+  function rankEarlyGameTribeSamplingCandidates(candidates, limit = Infinity) {
     if (!Array.isArray(candidates)) return [];
-    return candidates
-      .map((candidate, index) => ({ candidate, index }))
-      .sort((left, right) => {
-        const clusterDifference =
-          (Number(right.candidate.clusterSize) || 1) -
-          (Number(left.candidate.clusterSize) || 1);
-        if (clusterDifference !== 0) return clusterDifference;
-        const opportunityDifference =
-          (Number(right.candidate.opportunity) || 0) -
-          (Number(left.candidate.opportunity) || 0);
-        if (opportunityDifference !== 0) return opportunityDifference;
-        const idDifference =
-          (Number(left.candidate.id) || 0) -
-          (Number(right.candidate.id) || 0);
-        return idDifference || left.index - right.index;
-      })
-      .map(({ candidate }) => candidate);
+    const boundedLimit = Number.isFinite(limit)
+      ? Math.max(0, Math.floor(limit))
+      : Infinity;
+    if (boundedLimit === 0) return [];
+    if (boundedLimit === Infinity) {
+      return candidates
+        .map((candidate, index) => ({ candidate, index }))
+        .sort(compareEarlyGameTribeSamplingEntries)
+        .map(({ candidate }) => candidate);
+    }
+    const ranked = [];
+    for (let index = 0; index < candidates.length; index++) {
+      const entry = { candidate: candidates[index], index };
+      let insertionIndex = ranked.length;
+      while (
+        insertionIndex > 0 &&
+        compareEarlyGameTribeSamplingEntries(entry, ranked[insertionIndex - 1]) < 0
+      ) {
+        insertionIndex -= 1;
+      }
+      if (insertionIndex >= boundedLimit) continue;
+      ranked.splice(insertionIndex, 0, entry);
+      if (ranked.length > boundedLimit) ranked.pop();
+    }
+    return ranked.map(({ candidate }) => candidate);
   }
 
   function isEarlyGameTribeTarget(target) {
