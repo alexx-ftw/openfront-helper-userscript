@@ -195,8 +195,8 @@ assert.equal(
     impacts: [{ targetTile: "30,0", radius: 30, remainingTicks: 10 }],
     ownFlightTicks: 20,
   }),
-  true,
-  "an earlier missile whose blast edge reaches the target suppresses a redundant shot",
+  false,
+  "a missile exactly on the blast edge does not suppress a shot at a surviving structure",
 );
 assert.equal(
   sandbox._chooseAutoFireImpactTile(collateralGame, "sam", me, uncoveredCollateral),

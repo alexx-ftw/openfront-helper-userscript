@@ -451,9 +451,11 @@
     if (!missile || missile.isActive?.() === false) return false;
     const owner = missile.owner?.();
     if (!owner || owner.smallID?.() === mySid) return false;
-    {
-      return !(player.isFriendly(owner) || player.isOnSameTeam(owner));
-    }
+    return !(player.isFriendly(owner) || player.isOnSameTeam(owner));
+  }
+
+  function isActiveStructureMissileThreat(missile) {
+    return Boolean(missile && missile.isActive?.() !== false);
   }
 
   class StructureBehavior {
@@ -2316,17 +2318,19 @@
       );
       if (!Array.isArray(missiles)) return cache([]);
 
-      const mySid = this.player.smallID();
       const zones = [];
       for (const missile of missiles) {
-        const zone = this.hostileMissileImpactZone(missile, config, mySid);
+        const zone = this.hostileMissileImpactZone(missile, config);
         if (zone !== null) zones.push(zone);
       }
       return cache(zones);
     }
 
-    hostileMissileImpactZone(missile, config, mySid) {
-      if (!isHostileActiveMissile(this.player, missile, mySid)) return null;
+    hostileMissileImpactZone(missile, config) {
+      // NukeExecution deletes every structure inside the blast regardless of
+      // owner or alliance. Own and allied missiles are therefore placement
+      // hazards too, even though only hostile missiles drive SAM strategy.
+      if (!isActiveStructureMissileThreat(missile)) return null;
       const targetTile = missile.targetTile?.();
       const type = missile.type?.();
       // The MIRV carrier separates into independently targeted warheads and
@@ -2345,7 +2349,7 @@
       if (typeof this.game?.euclideanDistSquared !== "function") return false;
       for (const zone of this.activeHostileMissileImpactZones()) {
         if (
-          this.game.euclideanDistSquared(tile, zone.targetTile) <=
+          this.game.euclideanDistSquared(tile, zone.targetTile) <
           zone.radiusSquared
         ) {
           return true;

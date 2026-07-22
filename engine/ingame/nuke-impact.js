@@ -152,12 +152,12 @@ var NUKE_BUILDING_IMPACT_LOCAL_STEPS = [1, 2, 4];
       for (var bucketY = minY; bucketY <= maxY; bucketY++) {
         var nearby = bucketData.buckets.get(`${bucketX}:${bucketY}`) || [];
         for (var entry of nearby) {
-          if (nukeImpactDistanceSquared(context, candidate, entry.tile) <= context.radiusSquared) hits++;
+          if (nukeImpactDistanceSquared(context, candidate, entry.tile) < context.radiusSquared) hits++;
         }
       }
     }
     for (var fallback of bucketData.fallbackEntries) {
-      if (nukeImpactDistanceSquared(context, candidate, fallback?.tile) <= context.radiusSquared) hits++;
+      if (nukeImpactDistanceSquared(context, candidate, fallback?.tile) < context.radiusSquared) hits++;
     }
     return hits;
   }
@@ -167,7 +167,7 @@ var NUKE_BUILDING_IMPACT_LOCAL_STEPS = [1, 2, 4];
     if (bucketHits !== null) return bucketHits;
     return context.entries.reduce(
       (hits, entry) =>
-        hits + Number(nukeImpactDistanceSquared(context, candidate, entry?.tile) <= context.radiusSquared),
+        hits + Number(nukeImpactDistanceSquared(context, candidate, entry?.tile) < context.radiusSquared),
       0,
     );
   }
@@ -175,7 +175,7 @@ var NUKE_BUILDING_IMPACT_LOCAL_STEPS = [1, 2, 4];
   function chooseBestNukeImpactCandidate(context, bucketData) {
     var best = { tile: context.primaryTile, hits: -1 };
     for (var candidate of context.candidates) {
-      if (nukeImpactDistanceSquared(context, candidate, context.primaryTile) > context.radiusSquared) continue;
+      if (nukeImpactDistanceSquared(context, candidate, context.primaryTile) >= context.radiusSquared) continue;
       var hits = countNukeImpactHits(context, candidate, bucketData);
       if (hits > best.hits) best = { tile: candidate, hits };
     }
@@ -208,7 +208,7 @@ var NUKE_BUILDING_IMPACT_LOCAL_STEPS = [1, 2, 4];
     };
     addNukeImpactCandidate(context, primaryTile);
     for (var entry of entries) {
-      if (nukeImpactDistanceSquared(context, entry?.tile, primaryTile) <= context.radiusSquared) {
+      if (nukeImpactDistanceSquared(context, entry?.tile, primaryTile) < context.radiusSquared) {
         addNukeImpactCandidate(context, entry?.tile);
       }
     }

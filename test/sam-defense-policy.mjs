@@ -2470,15 +2470,20 @@ missileImpactOwner = ownMissileOwner;
 impactTick++;
 assert.equal(
   missileImpactProbe.isDangerousStructureTile(105, UNIT.Factory),
-  false,
-  "Our own in-flight missile does not suppress construction",
+  true,
+  "Our own in-flight missile suppresses construction inside its ownership-agnostic blast",
 );
 missileImpactOwner = alliedMissileOwner;
 impactTick++;
 assert.equal(
   missileImpactProbe.isDangerousStructureTile(105, UNIT.Factory),
+  true,
+  "An allied in-flight missile suppresses construction inside its ownership-agnostic blast",
+);
+assert.equal(
+  missileImpactProbe.isDangerousStructureTile(110, UNIT.Factory),
   false,
-  "An allied in-flight missile does not suppress construction",
+  "A structure exactly on the outer radius survives the engine's strict deletion boundary",
 );
 missileImpactOwner = missileOwner;
 impactProbeCalls = 0;

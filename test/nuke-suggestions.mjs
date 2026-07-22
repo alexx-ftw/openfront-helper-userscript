@@ -64,8 +64,8 @@ assert.equal(
     3,
     true,
   ),
-  3,
-  "blast optimization counts structures exactly on the engine's inclusive radius boundary",
+  1,
+  "blast optimization follows the engine's strict structure-deletion radius boundary",
 );
 
 const buildingImpactCandidate = { tile: 1, totalScore: 10 };
