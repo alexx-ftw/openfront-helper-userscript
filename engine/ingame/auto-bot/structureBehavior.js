@@ -2513,24 +2513,43 @@
       return this.getPerceivedCost(type);
     }
 
-    economicConstructionPressure() {
+    economicStructurePortfolio() {
+      const portfolio = new Map();
+      for (const type of ECONOMIC_STRUCTURE_TYPES) {
+        portfolio.set(type, this.player.units(type) || []);
+      }
+      return portfolio;
+    }
+
+    economicStructureLevelTotal(units) {
+      let total = 0;
+      for (const unit of units) {
+        total += this.unitUnderConstruction(unit) ? 1 : unit.level();
+      }
+      return total;
+    }
+
+    economicConstructionPressure(portfolio = null) {
       if (!state.settings.winFixes) return null;
 
       const config = this.game.config();
       const citiesDisabled = config.isUnitDisabled(UNIT.City);
+      const cityUnits = portfolio?.get(UNIT.City);
       const cityCount = citiesDisabled
         ? Math.max(
             1,
             Math.floor(this.player.numTilesOwned() / TILES_PER_CITY_EQUIVALENT),
           )
-        : this.ownedLevels(UNIT.City);
+        : cityUnits === undefined
+          ? this.ownedLevels(UNIT.City)
+          : this.economicStructureLevelTotal(cityUnits);
       const hasCoastalTiles = this._hasCoastalTiles === true;
       const hasOceanPortTiles = this._hasOceanPortTiles === true;
       const candidates = [UNIT.Port, UNIT.Factory, UNIT.City];
 
       for (const type of candidates) {
         if (config.isUnitDisabled(type) || !autoBotBuildAllowed(type)) continue;
-        const units = this.player.units(type) || [];
+        const units = portfolio?.get(type) ?? this.player.units(type) ?? [];
         if (units.some((unit) => this.unitUnderConstruction(unit))) continue;
         if (
           !this.economicCandidateEligible(type, units, {
@@ -6980,8 +6999,9 @@
     }
 
     economicConstructionPressureForSamUpgrade() {
+      const portfolio = this.economicStructurePortfolio();
       const hasCompleteUnitRecords = ECONOMIC_STRUCTURE_TYPES.every((type) =>
-        (this.player.units(type) || []).every(
+        portfolio.get(type).every(
           (unit) =>
             typeof unit?.isUnderConstruction === "function" &&
             typeof unit?.level === "function",
@@ -6990,7 +7010,7 @@
       // Older clients and reduced adapters can omit the construction-state
       // methods needed by the portfolio snapshot. Preserve legacy behavior
       // when that evidence is absent.
-      return hasCompleteUnitRecords ? this.economicConstructionPressure() : null;
+      return hasCompleteUnitRecords ? this.economicConstructionPressure(portfolio) : null;
     }
 
     plannedSamUpgradeEligible(plan) {

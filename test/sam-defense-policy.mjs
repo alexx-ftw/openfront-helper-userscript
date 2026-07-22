@@ -4749,4 +4749,38 @@ assert.notStrictEqual(
 );
 assert.equal(ownedSamReads, 2);
 
+const economicPortfolioBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+const economicRosterReads = new Map();
+const economicUnit = {
+  isUnderConstruction: () => false,
+  level: () => 1,
+};
+economicPortfolioBehavior.player = {
+  units: (type) => {
+    economicRosterReads.set(type, (economicRosterReads.get(type) || 0) + 1);
+    return [economicUnit];
+  },
+};
+economicPortfolioBehavior.game = {
+  config: () => ({ isUnitDisabled: () => false }),
+};
+economicPortfolioBehavior.economicCandidateEligible = (type) => type === UNIT.Factory;
+economicPortfolioBehavior.safeConstructionCost = () => 10n;
+const economicReserve = economicPortfolioBehavior.economicConstructionPressureForSamUpgrade();
+assert.equal(
+  economicReserve?.type,
+  UNIT.Factory,
+  "SAM upgrade economy reserve preserves the same next productive structure",
+);
+assert.equal(economicReserve?.cost, 10n);
+assert.deepEqual(
+  [...economicRosterReads.entries()].sort(),
+  [
+    [UNIT.City, 1],
+    [UNIT.Factory, 1],
+    [UNIT.Port, 1],
+  ].sort(),
+  "SAM upgrade economy reserve reads each economic roster once instead of rescanning it",
+);
+
 process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");
