@@ -205,8 +205,15 @@ assert.equal(
   "an allied nuke aimed at valid tile zero prevents a duplicate overlapping launch",
 );
 
-const mirvEnemy = { id: () => "enemy-2", smallID: () => 2 };
+const mirvEnemy = {
+  id: () => "enemy-2",
+  smallID: () => 2,
+  isPlayer: () => true,
+  type: () => "Human",
+};
 const mirvPlayer = {
+  smallID: () => 1,
+  isFriendly: () => false,
   buildables: async () => [{ type: UNIT.MIRV, cost: 1n, canBuild: true }],
   gold: () => 1n,
 };
@@ -265,6 +272,34 @@ assert.deepEqual(
   relationAwareMirv.getValidMirvTargetPlayers(),
   [hostileMirvTarget],
   "MIRV strategy excludes active allies as well as permanent teammates",
+);
+
+let mirvTargetFriendly = false;
+const staleMirvTarget = {
+  id: () => "stale-mirv-target",
+  smallID: () => 4,
+  isPlayer: () => true,
+  type: () => "Human",
+};
+const staleMirvPlayer = {
+  smallID: () => 1,
+  isFriendly: () => mirvTargetFriendly,
+  buildables: async () => [{ type: UNIT.MIRV, cost: 1n, canBuild: true }],
+  gold: () => 1n,
+};
+const staleMirvBehavior = new sandbox.__MirvBehavior({}, { ticks: () => 124 }, staleMirvPlayer, {
+  maybeSendAttackEmoji() {},
+  sendEmoji() {},
+});
+staleMirvBehavior.calculateTerritoryCenter = async () => 7;
+mirvBuildTile = null;
+const pendingStaleMirv = staleMirvBehavior.maybeSendMIRV(staleMirvTarget);
+mirvTargetFriendly = true;
+await pendingStaleMirv;
+assert.equal(
+  mirvBuildTile,
+  null,
+  "a MIRV target that becomes friendly during async planning is not launched upon",
 );
 
 let distanceChecks = 0;

@@ -368,17 +368,19 @@
     }
 
     // ── MIRV Helper Methods ──────────────────────────────────────────────────
+    isValidMirvTargetPlayer(target) {
+      if (this.player === null) throw new Error("not initialized");
+      return (
+        target.smallID() !== this.player.smallID() &&
+        target.isPlayer() &&
+        target.type() !== PlayerType.Bot &&
+        !this.player.isFriendly(target)
+      );
+    }
+
     getValidMirvTargetPlayers() {
       if (this.player === null) throw new Error("not initialized");
-
-      return this.game.players().filter((p) => {
-        return (
-          p.smallID() !== this.player.smallID() &&
-          p.isPlayer() &&
-          p.type() !== PlayerType.Bot &&
-          !this.player.isFriendly(p)
-        );
-      });
+      return this.game.players().filter((p) => this.isValidMirvTargetPlayer(p));
     }
 
     isInboundMIRVFrom(attacker) {
@@ -423,28 +425,30 @@
         ? buildables.find((b) => b.type === UNIT.MIRV)
         : null;
       if (bu === null || bu === undefined) return;
-
-      if (bu.canBuild !== false && this.player.gold() >= bu.cost) {
-        const buildMenu = getBuildMenu();
-        if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") return;
-        if (!sendAutoBotBuildOrUpgrade(buildMenu, bu, centerTile, this.game, this.player)) return;
-        this.recordMirvHit(enemy);
-        // WIN-FIX (NOT in src): remember this crater centre so the attack behaviour
-        // pours amphibious landings into the freshly-MIRV'd (weakened) nation. We
-        // reuse the centerTile the MIRV already computed — no extra worker read.
-        if (state.settings.winFixes) {
-          if (!Array.isArray(state.recentMirvHits)) state.recentMirvHits = [];
-          state.recentMirvHits.push({
-            sid: enemy.smallID(),
-            tile: centerTile,
-            at: this.game.ticks(),
-          });
-        }
-        state.stats.nukes++;
-        setLastAction(tr("☢️ MIRV"), "nuke");
-        this.emojiBehavior.sendEmoji(AllPlayers, EMOJI_NUKE);
-        respondToMIRV(this.game, this.random, enemy);
+      if (bu.canBuild === false || this.player.gold() < bu.cost) return;
+      // Both the territory-center and buildability reads yield to the worker.
+      // Revalidate diplomacy at actuation time so a newly friendly player
+      // cannot receive a MIRV selected from stale state.
+      if (!this.isValidMirvTargetPlayer(enemy)) return;
+      const buildMenu = getBuildMenu();
+      if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") return;
+      if (!sendAutoBotBuildOrUpgrade(buildMenu, bu, centerTile, this.game, this.player)) return;
+      this.recordMirvHit(enemy);
+      // WIN-FIX (NOT in src): remember this crater centre so the attack behaviour
+      // pours amphibious landings into the freshly-MIRV'd (weakened) nation. We
+      // reuse the centerTile the MIRV already computed — no extra worker read.
+      if (state.settings.winFixes) {
+        if (!Array.isArray(state.recentMirvHits)) state.recentMirvHits = [];
+        state.recentMirvHits.push({
+          sid: enemy.smallID(),
+          tile: centerTile,
+          at: this.game.ticks(),
+        });
       }
+      state.stats.nukes++;
+      setLastAction(tr("☢️ MIRV"), "nuke");
+      this.emojiBehavior.sendEmoji(AllPlayers, EMOJI_NUKE);
+      respondToMIRV(this.game, this.random, enemy);
     }
 
     countCities(p) {
