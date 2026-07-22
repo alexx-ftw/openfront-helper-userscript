@@ -194,7 +194,23 @@
     {
       if (typeof unit?.isActive === "function" && !unit.isActive()) return false;
       if (unit?.isActive === false) return false;
-      return typeof unit?.retreating !== "function" || !unit.retreating();
+      // UnitView exposes naval withdrawal through transportShipState(), not
+      // AttackUpdate.retreating(). A retreating transport can remain active
+      // while sailing home, so isActive() alone would keep a cancelled landing
+      // in the maritime reserve and unnecessarily freeze allied donations.
+      const transportState =
+        typeof unit?.transportShipState === "function"
+          ? unit.transportShipState()
+          : unit?.transportShipState;
+      if (transportState?.isRetreating === true) return false;
+
+      // Retain compatibility with raw/older adapters that surfaced the attack
+      // flag directly on the unit.
+      const retreating =
+        typeof unit?.retreating === "function"
+          ? unit.retreating()
+          : unit?.retreating;
+      return retreating !== true;
     }
   }
 

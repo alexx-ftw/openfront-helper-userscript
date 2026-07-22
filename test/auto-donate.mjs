@@ -42,7 +42,7 @@ function makeTransport({
 }) {
   return {
     isActive: () => active,
-    retreating: () => retreating,
+    transportShipState: () => ({ isRetreating: retreating }),
     targetTile: () => targetTile,
     owner: () => owner,
     troops: () => troops,
@@ -304,6 +304,22 @@ assert.equal(
   maritimeInvasion.packets.length,
   0,
   "all troop donations stop while an enemy maritime invasion is inbound",
+);
+
+const cancelledMaritimeInvasion = await runDonation({
+  opponents: [maritimeEnemy],
+  incomingTransports: [makeTransport({ owner: maritimeEnemy, troops: 700, retreating: true })],
+  returnDetails: true,
+});
+assert.equal(
+  cancelledMaritimeInvasion.maritime?.active,
+  false,
+  "a retreating transport no longer reserves troops for a cancelled landing",
+);
+assert.equal(
+  cancelledMaritimeInvasion.packets.length,
+  1,
+  "a cancelled maritime landing no longer blocks a safe allied donation",
 );
 
 const maritimeGoldInvasion = await runDonation({
