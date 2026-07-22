@@ -126,14 +126,33 @@ for (let attempt = 0; attempt < 2; attempt++) {
   );
   assert.equal(pendingMaritimeBuilder.seedCursor, 0);
 }
-const pendingMaritimeIndex = sandbox.advanceMaritimeDistanceIndexBuilder(
-  pendingMaritimeBuilder,
-);
+const pendingMaritimeIndex = sandbox.advanceMaritimeDistanceIndexBuilder(pendingMaritimeBuilder);
 assert.equal(sandbox.lookupMaritimeDistanceIndex(pendingMaritimeIndex, [0]), 0);
 assert.doesNotMatch(
   source,
   /distances\.fill\(-1\)/,
   "maritime preparation must not synchronously fill a map-sized distance array",
+);
+assert.doesNotMatch(
+  source,
+  /queue:\s*new Int32Array\(total\)/,
+  "maritime preparation must not synchronously allocate a map-sized queue",
+);
+
+const growingMaritimeBuilder = sandbox.createMaritimeDistanceIndexBuilder({
+  width: 2048,
+  height: 1,
+  forEachNeighbor: () => {},
+  isLand: () => true,
+  isMaritimeShore: () => true,
+});
+assert.equal(growingMaritimeBuilder.queue.length, 1024);
+assert.ok(sandbox.advanceMaritimeDistanceIndexBuilder(growingMaritimeBuilder));
+assert.equal(growingMaritimeBuilder.queue.length, 2048);
+assert.deepEqual(
+  [...growingMaritimeBuilder.queue.subarray(0, 2048)],
+  Array.from({ length: 2048 }, (_, tile) => tile),
+  "growing the maritime distance queue must preserve BFS seed order",
 );
 
 console.warn("frame-stall regression tests passed");

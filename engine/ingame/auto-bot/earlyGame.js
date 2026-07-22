@@ -398,7 +398,7 @@
       isLand,
       isMaritimeShore,
       distances,
-      queue: new Int32Array(total),
+      queue: new Int32Array(Math.min(total, 1024)),
       seedCursor: 0,
       head: 0,
       tail: 0,
@@ -406,6 +406,17 @@
       done: false,
       index: null,
     };
+  }
+
+  function ensureMaritimeDistanceQueueCapacity(builder, requiredLength) {
+    if (requiredLength <= builder.queue.length) return;
+    let nextLength = Math.max(1, builder.queue.length);
+    while (nextLength < requiredLength) {
+      nextLength = Math.min(builder.total, nextLength * 2);
+    }
+    const expanded = new Int32Array(nextLength);
+    expanded.set(builder.queue.subarray(0, builder.tail));
+    builder.queue = expanded;
   }
 
   function seedMaritimeDistanceIndexStep(builder) {
@@ -417,6 +428,7 @@
     builder.seedCursor++;
     if (maritime) {
       builder.distances[tile] = 1;
+      ensureMaritimeDistanceQueueCapacity(builder, builder.tail + 1);
       builder.queue[builder.tail++] = tile;
     }
     if (builder.seedCursor >= builder.total) builder.phase = "expand";
@@ -434,6 +446,7 @@
       return;
     }
     builder.distances[next] = nextDistance + 1;
+    ensureMaritimeDistanceQueueCapacity(builder, builder.tail + 1);
     builder.queue[builder.tail++] = next;
   }
 
