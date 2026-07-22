@@ -161,6 +161,27 @@ assert.equal(
   "nuclear targeting supports a permanent teammate's marked enemy",
 );
 
+behavior.player = {
+  smallID: () => 1,
+  isFriendly: () => true,
+};
+behavior.game = {
+  units: () => [
+    {
+      owner: () => ({ smallID: () => 2 }),
+      targetTile: () => 0,
+      type: () => UNIT.AtomBomb,
+    },
+  ],
+  config: () => ({ nukeMagnitudes: () => ({ inner: 10 }) }),
+  euclideanDistSquared: (left, right) => (left - right) ** 2,
+};
+assert.equal(
+  behavior.isTeammateAlreadyNukingThisSpot(0, UNIT.AtomBomb),
+  true,
+  "an allied nuke aimed at valid tile zero prevents a duplicate overlapping launch",
+);
+
 let distanceChecks = 0;
 behavior.game = {
   config: () => ({ defaultNukeTargetableRange: () => 2 }),

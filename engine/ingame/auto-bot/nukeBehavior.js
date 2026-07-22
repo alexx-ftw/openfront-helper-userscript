@@ -857,7 +857,7 @@
 
         // Get the target tile of the teammate's nuke
         const targetTile = nuke.targetTile();
-        if (!targetTile) continue;
+        if (targetTile === null || targetTile === undefined) continue;
 
         // Get the blast radius of the teammate's nuke
         const teammateInnerRadius = this.game
