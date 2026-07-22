@@ -4141,13 +4141,15 @@
 
     publishPreferredEarlyGameCluster(candidates, futureFoodById) {
       if (!state.earlyGame) return;
-      const preferred = candidates
-        .filter(isEarlyGameTribeActionable)
-        .sort(
-          (left, right) =>
-            (Number(right.tribeClusterSize) || 0) -
-            (Number(left.tribeClusterSize) || 0),
-        )[0];
+      let preferred = null;
+      let preferredClusterSize = -Infinity;
+      for (const candidate of candidates) {
+        if (!isEarlyGameTribeActionable(candidate)) continue;
+        const clusterSize = Number(candidate.tribeClusterSize) || 0;
+        if (preferred !== null && clusterSize <= preferredClusterSize) continue;
+        preferred = candidate;
+        preferredClusterSize = clusterSize;
+      }
       const ids = preferred?.tribeClusterMemberIds || new Set();
       const centers = [...ids]
         .map((id) => futureFoodById.get(id)?.center)

@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE = path.join(ROOT, "engine/ingame/shared-utils.js");
 const WARSHIP_BEHAVIOR_SOURCE = path.join(ROOT, "engine/ingame/auto-bot/warshipBehavior.js");
+const ATTACK_BEHAVIOR_SOURCE = path.join(ROOT, "engine/ingame/auto-bot/attackBehavior.js");
 
 const warshipBehaviorSource = fs.readFileSync(WARSHIP_BEHAVIOR_SOURCE, "utf8");
 const safeWaypointSource = warshipBehaviorSource.match(
@@ -22,6 +23,22 @@ assert.match(
   safeWaypointSource,
   /queueHead\s*<\s*queue\.length/,
   "safe-waypoint BFS must consume its queue through a constant-time cursor",
+);
+
+const attackBehaviorSource = fs.readFileSync(ATTACK_BEHAVIOR_SOURCE, "utf8");
+const clusterPublisherSource = attackBehaviorSource.match(
+  /publishPreferredEarlyGameCluster\(candidates, futureFoodById\) \{([\s\S]*?)\n {4}\}/,
+)?.[1];
+assert.ok(clusterPublisherSource, "early-game cluster publication must remain inspectable");
+assert.doesNotMatch(
+  clusterPublisherSource,
+  /\.sort\s*\(/,
+  "publishing one preferred tribe cluster must not sort every candidate",
+);
+assert.match(
+  clusterPublisherSource,
+  /for \(const candidate of candidates\)/,
+  "preferred tribe cluster selection must remain a single linear scan",
 );
 
 const sandbox = {
