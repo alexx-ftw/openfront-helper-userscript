@@ -128,7 +128,7 @@
   const HYDROGEN_SAM_SILO_LEVEL_SUM_THRESHOLD = 1;
 
   // A completed external Silo can turn its first launch into an H-bomb before
-  // a low-level launcher has time to catch up. Once that capability exists,
+  // a low-level launcher has time to reach parity. Once that capability exists,
   // finish the best protective SAM to the top of the current upgrade ladder
   // before discretionary economy or offense spending.
   const HYDROGEN_SAM_MINIMUM_READY_LEVEL = 5;

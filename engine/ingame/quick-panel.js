@@ -296,7 +296,7 @@
       el.style.setProperty("background", bg, "important");
       el.style.setProperty("border-color", border, "important");
     }
-    // Keep running periodically to catch newly created panels (lazy init).
+    // Keep running periodically to theme newly created panels (lazy init).
     if (!_panelThemeTimer) {
       _panelThemeTimer = setInterval(function() {
         _applyThemeToAllPanels();

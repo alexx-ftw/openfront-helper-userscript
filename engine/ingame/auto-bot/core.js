@@ -337,10 +337,9 @@
   function loadSettings() {
     // PERSISTED_KEYS is declared LOCALLY (not module-level) ON PURPOSE: `state.settings
     // = loadSettings()` runs BEFORE a module-level `const` further down would be
-    // initialised, so referencing it there hit the temporal dead zone → this whole
-    // function threw → the catch below swallowed it → EVERY persisted setting (pos,
-    // enabled, difficulty, …) was silently lost and bare DEFAULTS were used. Declaring
-    // it here initialises it exactly when it is needed.
+    // initialised, so referencing it there hit the temporal dead zone and prevented
+    // EVERY persisted setting (pos, enabled, difficulty, …) from loading. Declaring it
+    // here initialises it exactly when it is needed, while failures remain visible.
     // Only these USER-FACING keys are restored from localStorage; every other DEFAULT
     // (tuning: boat/donate/mirv fractions, throttles…) always comes from the code, so an
     // old saved tuning value cannot mask the current defaults.

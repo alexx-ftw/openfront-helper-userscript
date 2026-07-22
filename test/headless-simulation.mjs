@@ -463,4 +463,27 @@ assert.doesNotMatch(
   "companion command collection must not hide identity or message failures",
 );
 
+function productionJavaScriptFiles(directory) {
+  const files = [];
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const fullPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...productionJavaScriptFiles(fullPath));
+    else if (/\.(?:js|mjs|mts)$/.test(entry.name)) files.push(fullPath);
+  }
+  return files;
+}
+
+const productionSources = [
+  path.join(root, "build.mjs"),
+  ...productionJavaScriptFiles(path.join(root, "engine")),
+  ...productionJavaScriptFiles(path.join(root, "scripts")),
+];
+for (const sourcePath of productionSources) {
+  assert.doesNotMatch(
+    fs.readFileSync(sourcePath, "utf8"),
+    /\bcatch\b|\.catch\s*\(/,
+    `${path.relative(root, sourcePath)} must let failures propagate`,
+  );
+}
+
 process.stdout.write("headless simulation contract tests passed\n");
