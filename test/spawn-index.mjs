@@ -228,6 +228,42 @@ test("incremental building covers every tile on arbitrary map dimensions", () =>
   assert.equal(index.stats().candidateCount, width * height);
 });
 
+test("counter storage follows the exact spawn geometry range", () => {
+  const compact = api.create({
+    width: 5,
+    height: 5,
+    terrain: makeTerrain(5, 5, LAND),
+  });
+  for (const field of [
+    "spawnGain",
+    "plainsGain",
+    "invalidCount",
+    "frontierGain",
+    "frontierPlainsGain",
+    "frontierSlots",
+  ]) {
+    assert.equal(
+      compact[field].BYTES_PER_ELEMENT,
+      1,
+      `${field} should use one byte for the default spawn geometry`,
+    );
+  }
+
+  const wide = api.create({
+    width: 25,
+    height: 25,
+    terrain: makeTerrain(25, 25, LAND),
+    spawnRadius: 10,
+  });
+  assert.equal(
+    wide.spawnGain.BYTES_PER_ELEMENT,
+    2,
+    "larger custom spawn disks must widen counters instead of overflowing",
+  );
+  wide.buildAll();
+  assert.ok(wide.getCandidate(ref(25, 12, 12), { mode: "explicit" }).spawnGain > 255);
+});
+
 test("enemy pressure is a monotonic safety penalty", () => {
   assert.equal(api.safePressureScore(0), 1);
   assert.equal(api.safePressureScore(2) < api.safePressureScore(1), true);

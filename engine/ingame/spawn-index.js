@@ -132,6 +132,12 @@
     return blocked;
   }
 
+  function createSpawnCountBuffer(size, maximumValue) {
+    if (maximumValue <= 0xff) return new Uint8Array(size);
+    if (maximumValue <= 0xffff) return new Uint16Array(size);
+    return new Uint32Array(size);
+  }
+
   class SpawnCandidateIndex {
     constructor(options = {}) {
       const configuration = createSpawnIndexConfiguration(options);
@@ -140,13 +146,22 @@
 
       this.diskOffsets = buildSpawnDiskOffsets(this.spawnRadius);
       this.frontierOffsets = buildSpawnFrontierOffsets(this.diskOffsets);
-      this.spawnGain = new Uint16Array(this.size);
-      this.plainsGain = new Uint16Array(this.size);
-      this.invalidCount = new Uint16Array(this.size);
-      this.frontierGain = new Uint16Array(this.size);
-      this.frontierPlainsGain = new Uint16Array(this.size);
+      this.spawnGain = createSpawnCountBuffer(this.size, this.diskOffsets.length);
+      this.plainsGain = createSpawnCountBuffer(this.size, this.diskOffsets.length);
+      this.invalidCount = createSpawnCountBuffer(this.size, this.diskOffsets.length);
+      this.frontierGain = createSpawnCountBuffer(
+        this.size,
+        this.frontierOffsets.length,
+      );
+      this.frontierPlainsGain = createSpawnCountBuffer(
+        this.size,
+        this.frontierOffsets.length,
+      );
       this.frontierValueGain = new Uint32Array(this.size);
-      this.frontierSlots = new Uint16Array(this.size);
+      this.frontierSlots = createSpawnCountBuffer(
+        this.size,
+        this.frontierOffsets.length,
+      );
       this._buildCursor = 0;
       this.ready = false;
       this.version = 0;
