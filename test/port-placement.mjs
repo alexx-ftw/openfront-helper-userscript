@@ -9,6 +9,10 @@ const GAME_API_SOURCE = fs.readFileSync(
   path.join(ROOT, "engine/ingame/auto-bot/gameApi.js"),
   "utf8",
 );
+const PORT_UTIL_SOURCE = fs.readFileSync(
+  path.join(ROOT, "engine/ingame/auto-bot/portutil.js"),
+  "utf8",
+);
 const STRUCTURE_SOURCE = fs.readFileSync(
   path.join(ROOT, "engine/ingame/auto-bot/structureBehavior.js"),
   "utf8",
@@ -33,6 +37,61 @@ const Difficulty = {
   Impossible: "Impossible",
   Legendary: "Legendary",
 };
+
+const portUtilSandbox = { state: { settings: {} } };
+executeClassicScript(
+  `${PORT_UTIL_SOURCE}\nglobalThis.__closestTwoTiles = closestTwoTiles;`,
+  portUtilSandbox,
+  { filename: "portutil.js" },
+);
+const verticalGeometry = {
+  x: (tile) => tile % 10,
+  y: (tile) => Math.floor(tile / 10),
+};
+const verticalClosest = portUtilSandbox.__closestTwoTiles(verticalGeometry, [0, 10], [20, 30]);
+assert.equal(
+  `${verticalClosest.x}:${verticalClosest.y}`,
+  "10:20",
+  "vertical coasts use the true Manhattan closest pair instead of skipping equal-x tiles",
+);
+assert.equal(
+  Math.abs(verticalGeometry.x(verticalClosest.x) - verticalGeometry.x(verticalClosest.y)) +
+    Math.abs(verticalGeometry.y(verticalClosest.x) - verticalGeometry.y(verticalClosest.y)),
+  1,
+  "the selected vertical-shore pair preserves the one-tile naval gap",
+);
+for (let scenario = 0; scenario < 24; scenario++) {
+  const left = Array.from(
+    { length: 18 },
+    (_, index) => ((index * 17 + scenario * 11) % 37) * 100 + ((index * 7 + scenario) % 31),
+  );
+  const right = Array.from(
+    { length: 15 },
+    (_, index) =>
+      ((index * 13 + scenario * 5 + 3) % 37) * 100 + ((index * 19 + scenario * 2 + 1) % 31),
+  );
+  const exact = portUtilSandbox.__closestTwoTiles(
+    { x: (tile) => Math.floor(tile / 100), y: (tile) => tile % 100 },
+    left,
+    right,
+  );
+  const exactDistance =
+    Math.abs(Math.floor(exact.x / 100) - Math.floor(exact.y / 100)) +
+    Math.abs((exact.x % 100) - (exact.y % 100));
+  const bruteDistance = Math.min(
+    ...left.flatMap((a) =>
+      right.map(
+        (b) =>
+          Math.abs(Math.floor(a / 100) - Math.floor(b / 100)) + Math.abs((a % 100) - (b % 100)),
+      ),
+    ),
+  );
+  assert.equal(
+    exactDistance,
+    bruteDistance,
+    `spatial shore index matches brute-force Manhattan distance in scenario ${scenario}`,
+  );
+}
 const structureSandbox = {
   UNIT,
   Difficulty,

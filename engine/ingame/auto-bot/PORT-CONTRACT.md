@@ -6,6 +6,11 @@ This is the single source of truth for porting `src/core/execution/.../Nation*Be
 strategy order, and call order. Do NOT summarize, simplify, "improve", or add
 heuristics. The ONLY changes allowed are the mechanical API substitutions below.
 
+One shared-helper correctness exception is documented in `portutil.js`:
+`closestTwoTiles` replaces the upstream inexact equal-X two-pointer sweep with
+an exact Manhattan spatial index. This preserves the intended API while avoiding
+wrong shore pairs on vertical coastlines.
+
 ## File shape
 
 - Plain classic script, no `import`/`export`. Start with a top comment then

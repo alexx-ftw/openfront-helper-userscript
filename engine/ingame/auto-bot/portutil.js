@@ -1,7 +1,7 @@
 // Auto-Bot — port utilities: a faithful JS reimplementation of the src/core
 // helpers the Nation AI behaviors depend on, so the ported behaviors can call
-// them with identical semantics. NO custom logic lives here — every function is
-// a 1:1 translation of a named src function (citation in each block).
+// them with identical semantics except for documented correctness fixes. Every
+// helper names its src counterpart; intentional divergences explain the defect.
 //
 // Loaded after context/sensing, before gameApi and the behaviors.
 // Classic-script shared-global scope (no IIFE): top-level names are visible to
@@ -184,38 +184,99 @@
     return [minRef, minDistance];
   }
 
-  // closestTwoTiles — src/core/execution/Util.ts:176 → { x, y } | null
+  function closestTileIndexMinimum(value, left, right) {
+    return Math.min(value, left ?? Infinity, right ?? Infinity);
+  }
+
+  function closestTileIndexMaximum(value, left, right) {
+    return Math.max(value, left ?? -Infinity, right ?? -Infinity);
+  }
+
+  function closestTileIndexBounds(point, left, right) {
+    return {
+      minX: closestTileIndexMinimum(point.x, left?.minX, right?.minX),
+      maxX: closestTileIndexMaximum(point.x, left?.maxX, right?.maxX),
+      minY: closestTileIndexMinimum(point.y, left?.minY, right?.minY),
+      maxY: closestTileIndexMaximum(point.y, left?.maxY, right?.maxY),
+    };
+  }
+
+  function buildClosestTileIndex(points, depth = 0) {
+    if (points.length === 0) return null;
+    const axis = depth % 2 === 0 ? "x" : "y";
+    points.sort((a, b) => a[axis] - b[axis] || a.order - b.order);
+    const middle = Math.floor(points.length / 2);
+    const point = points[middle];
+    const left = buildClosestTileIndex(points.slice(0, middle), depth + 1);
+    const right = buildClosestTileIndex(points.slice(middle + 1), depth + 1);
+    return { ...point, left, right, ...closestTileIndexBounds(point, left, right) };
+  }
+
+  function closestTileIndexAxisDistance(value, minimum, maximum) {
+    if (value < minimum) return minimum - value;
+    if (value > maximum) return value - maximum;
+    return 0;
+  }
+
+  function closestTileIndexLowerBound(index, x, y) {
+    const dx = closestTileIndexAxisDistance(x, index.minX, index.maxX);
+    const dy = closestTileIndexAxisDistance(y, index.minY, index.maxY);
+    return dx + dy;
+  }
+
+  function queryClosestTileIndex(index, x, y, best) {
+    if (index === null) return best;
+    const distance = Math.abs(index.x - x) + Math.abs(index.y - y);
+    let nextBest =
+      distance < best.distance ||
+      (distance === best.distance && index.order < best.order)
+        ? { tile: index.tile, distance, order: index.order }
+        : best;
+    const leftBound = index.left
+      ? closestTileIndexLowerBound(index.left, x, y)
+      : Infinity;
+    const rightBound = index.right
+      ? closestTileIndexLowerBound(index.right, x, y)
+      : Infinity;
+    const first = leftBound <= rightBound ? index.left : index.right;
+    const second = leftBound <= rightBound ? index.right : index.left;
+    if (first && closestTileIndexLowerBound(first, x, y) <= nextBest.distance) {
+      nextBest = queryClosestTileIndex(first, x, y, nextBest);
+    }
+    if (second && closestTileIndexLowerBound(second, x, y) <= nextBest.distance) {
+      nextBest = queryClosestTileIndex(second, x, y, nextBest);
+    }
+    return nextBest;
+  }
+
+  // closestTwoTiles — exact Manhattan closest pair. The upstream two-pointer
+  // x sweep skips valid pairs whenever several coast tiles share an x value
+  // (two adjacent vertical shores can be reported twice as far apart). A
+  // balanced spatial index keeps the result exact without an O(x*y) scan.
   function closestTwoTiles(gm, x, y) {
-    const xSorted = Array.from(x).sort((a, b) => gm.x(a) - gm.x(b));
-    const ySorted = Array.from(y).sort((a, b) => gm.x(a) - gm.x(b));
-    if (xSorted.length === 0 || ySorted.length === 0) return null;
-
-    let i = 0;
-    let j = 0;
-    let minDistance = Infinity;
-    let result = { x: xSorted[0], y: ySorted[0] };
-
-    while (i < xSorted.length && j < ySorted.length) {
-      const currentX = xSorted[i];
-      const currentY = ySorted[j];
-      const distance =
-        Math.abs(gm.x(currentX) - gm.x(currentY)) +
-        Math.abs(gm.y(currentX) - gm.y(currentY));
-      if (distance < minDistance) {
-        minDistance = distance;
-        result = { x: currentX, y: currentY };
-      }
-      if (i === xSorted.length - 1) {
-        j++;
-      } else if (j === ySorted.length - 1) {
-        i++;
-      } else if (gm.x(currentX) < gm.x(currentY)) {
-        i++;
-      } else {
-        j++;
+    const xTiles = Array.from(x);
+    const yTiles = Array.from(y);
+    if (xTiles.length === 0 || yTiles.length === 0) return null;
+    const indexedTiles = xTiles.map((tile, order) => ({
+      tile,
+      order,
+      x: gm.x(tile),
+      y: gm.y(tile),
+    }));
+    const index = buildClosestTileIndex(indexedTiles);
+    let best = { tile: xTiles[0], distance: Infinity, order: Infinity };
+    let bestY = yTiles[0];
+    for (const tile of yTiles) {
+      const candidate = queryClosestTileIndex(index, gm.x(tile), gm.y(tile), best);
+      if (
+        candidate.distance < best.distance ||
+        (candidate.distance === best.distance && candidate.order < best.order)
+      ) {
+        best = candidate;
+        bestY = tile;
       }
     }
-    return result;
+    return { x: best.tile, y: bestY };
   }
 
   // calculateBoundingBox — src/core/Util.ts:128 → { min:{x,y}, max:{x,y} }
