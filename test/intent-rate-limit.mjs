@@ -160,7 +160,7 @@ assert.equal(
   "a second build cannot spend gold already committed by another bot phase",
 );
 assert.equal(purchases.length, 1, "only the affordable construction reaches the build menu");
-constructionTick += 7;
+constructionTick += 6;
 assert.equal(
   construction.api.sendAutoBotBuildOrUpgrade(
     constructionMenu,
@@ -170,5 +170,5 @@ assert.equal(
     constructionPlayer,
   ),
   true,
-  "the reservation expires after the client intent grace window",
+  "the reservation expires on the exact client intent grace boundary",
 );

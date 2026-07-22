@@ -99,7 +99,7 @@
     const tick = autoBotBuildTick(game);
     const playerId = autoBotBuildPlayerId(player);
     autoBotBuildReservations = autoBotBuildReservations.filter(
-      (reservation) => reservation.expiresAt >= tick,
+      (reservation) => reservation.expiresAt > tick,
     );
     const reserved = autoBotBuildReservations.reduce(
       (total, reservation) =>
