@@ -69,9 +69,11 @@
 
   function _sosSendAllySalvo(game, me, nowMs) {
     if (_sosLastSalvoAt > 0 && nowMs - _sosLastSalvoAt < SOS_RESEND_MS) return;
+    const allies = _sosGetAllies(game, me);
+    if (allies.length === 0) return;
     _sosLastSalvoAt = nowMs;
     const sosEmojiNum = emojiId(SOS_EMOJI);
-    for (const ally of _sosGetAllies(game, me)) {
+    for (const ally of allies) {
       enqueueSignal("emoji", ally, [ally, sosEmojiNum]);
     }
   }

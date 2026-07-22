@@ -71,4 +71,26 @@ incomingAttacks = [{ attackerID: 2, retreating: () => true }];
 tickListener();
 assert.equal(signals.length, 0, "a withdrawing attack does not summon allies or mark the attacker");
 
+sandbox.setSosDefenseEnabled(false);
+sandbox.setSosDefenseEnabled(true);
+signals.length = 0;
+incomingAttacks = [{ attackerID: 2, retreating: false }];
+players.length = 0;
+players.push(me, attacker);
+tickListener();
+assert.equal(
+  signals.filter(([kind]) => kind === "emoji").length,
+  0,
+  "an SOS with no recipient emits no emoji",
+);
+
+now += 250;
+players.push(ally);
+tickListener();
+assert.equal(
+  signals.filter(([kind]) => kind === "emoji").length,
+  1,
+  "a newly available ally receives SOS immediately because an empty salvo consumes no cooldown",
+);
+
 process.stdout.write("SOS defense tests passed\n");
