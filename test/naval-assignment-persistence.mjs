@@ -63,6 +63,41 @@ assert.deepEqual(
 );
 assert.equal(dispatches, 0, "a retained interception emits no duplicate move");
 
+const concurrentBuildBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
+concurrentBuildBehavior.game = { ticks: () => 200 };
+const builtForInvasions = [];
+concurrentBuildBehavior.buildInterceptorForInvasion = async (invasion) => {
+  builtForInvasions.push(invasion.id);
+  return true;
+};
+const concurrentBuildState = {
+  pendingInvasionBuilds: new Set(["urgent-pending"]),
+  invasionBuildAttemptAt: new Map([["recently-tried", 990]]),
+  lastInvasionBuildTick: -1,
+};
+await concurrentBuildBehavior.buildUncoveredInterceptor(
+  {
+    uncoveredIds: ["urgent-pending", "recently-tried", "next-eligible"],
+  },
+  [
+    { id: "urgent-pending", path: [0, 1] },
+    { id: "recently-tried", path: [0, 1, 2] },
+    { id: "next-eligible", path: [0, 1, 2, 3] },
+  ],
+  concurrentBuildState,
+  { now: 1000, throttle: 20, boatSpeed: 1, warshipSpeed: 1, attackRange: 1 },
+);
+assert.deepEqual(
+  builtForInvasions,
+  ["next-eligible"],
+  "a pending or throttled invasion cannot block the next uncovered eligible target",
+);
+assert.equal(
+  concurrentBuildState.lastInvasionBuildTick,
+  200,
+  "the fallback eligible interceptor records the shared build tick",
+);
+
 behavior.reconcileNavalInterceptorAssignments([ship], new Set(["invasion-2"]), assignmentState);
 assert.equal(assignmentState.invasionAssignments.size, 0, "a vanished invasion releases its ship");
 const sequentialPlan = {

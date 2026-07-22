@@ -1313,14 +1313,30 @@
       return newlyAssignedInvasionIds;
     }
 
+    selectUncoveredInvasionForBuild(plan, invasions, smartState, timing) {
+      const uncovered = new Set(plan.uncoveredIds);
+      let target = null;
+      for (const invasion of invasions) {
+        if (!uncovered.has(invasion.id)) continue;
+        if (smartState.pendingInvasionBuilds.has(invasion.id)) continue;
+        const lastAttempt =
+          smartState.invasionBuildAttemptAt.get(invasion.id) ?? -Infinity;
+        if (timing.now - lastAttempt < timing.throttle) continue;
+        if (target !== null && target.path.length <= invasion.path.length) continue;
+        target = invasion;
+      }
+      return target;
+    }
+
     async buildUncoveredInterceptor(plan, invasions, smartState, timing) {
       if (plan.uncoveredIds.length === 0 || state.settings.warshipAutoSpawn === false) return;
-      const target = invasions
-        .filter((invasion) => plan.uncoveredIds.includes(invasion.id))
-        .sort((a, b) => a.path.length - b.path.length)[0];
-      if (!target || smartState.pendingInvasionBuilds.has(target.id)) return;
-      const lastAttempt = smartState.invasionBuildAttemptAt.get(target.id) ?? -Infinity;
-      if (timing.now - lastAttempt < timing.throttle) return;
+      const target = this.selectUncoveredInvasionForBuild(
+        plan,
+        invasions,
+        smartState,
+        timing,
+      );
+      if (target === null) return;
       smartState.invasionBuildAttemptAt.set(target.id, timing.now);
       smartState.pendingInvasionBuilds.add(target.id);
       try {
