@@ -135,6 +135,32 @@ assert.equal(
   "simultaneous live waves still aggregate into genuine heavy pressure",
 );
 
+const teammateTarget = { smallID: () => 73 };
+const teammate = {
+  smallID: () => 2,
+  isAlive: () => true,
+  targets: () => [teammateTarget],
+};
+const deadTeammate = {
+  smallID: () => 3,
+  isAlive: () => false,
+  targets: () => [{ smallID: () => 74 }],
+};
+const me = {
+  smallID: () => 1,
+  isFriendly: (other) => other === teammate,
+  // Engine Player.allies() deliberately omits permanent teammates.
+  allies: () => [],
+  targets: () => [],
+};
+behavior.player = me;
+behavior.game = { players: () => [me, deadTeammate, teammate] };
+assert.equal(
+  behavior.findAllyNukeTarget(),
+  teammateTarget,
+  "nuclear targeting supports a permanent teammate's marked enemy",
+);
+
 let distanceChecks = 0;
 behavior.game = {
   config: () => ({ defaultNukeTargetableRange: () => 2 }),

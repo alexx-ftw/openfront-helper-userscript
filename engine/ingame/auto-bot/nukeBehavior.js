@@ -513,8 +513,13 @@
     }
 
     findAllyNukeTarget() {
-      for (const ally of this.player.allies()) {
-        if (this.player.relation(ally) < Relation.Friendly) continue;
+      // Player.allies() contains only explicit, breakable alliances and omits
+      // permanent teammates. Nuclear coordination must use the engine's
+      // canonical friendly relation so team pings receive the same support.
+      for (const ally of this.game.players()) {
+        if (ally.smallID() === this.player.smallID()) continue;
+        if (ally.isAlive?.() === false) continue;
+        if (this.player.isFriendly(ally) !== true) continue;
         const target = ally.targets().find((candidate) =>
           candidate.smallID() !== this.player.smallID() &&
           !this.player.isFriendly(candidate));
