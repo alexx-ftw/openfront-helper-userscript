@@ -23,21 +23,30 @@
     }
   }
 
-  function resolveAttackerName(clientId) {
+  function enemyIntentPlayerName(player, fallback) {
+    if (!player) return fallback;
+    if (typeof getPlayerDisplayName === "function") {
+      const displayName = getPlayerDisplayName(player);
+      if (displayName) return displayName;
+    }
+    const name = typeof player.name === "function" ? player.name() : player.name;
+    return name || fallback;
+  }
+
+  function resolveAttackerName(attackerID) {
     const context = enemyIntentRead("context", () => getOpenFrontGameContext(), null);
-    if (!context?.game) return `p${clientId}`;
+    const fallback = `p${attackerID}`;
+    if (!context?.game) return fallback;
+    const direct = context.game.playerBySmallID?.(Number(attackerID));
+    if (direct) return enemyIntentPlayerName(direct, fallback);
     const players = getCachedPlayerViews(context.game);
     for (let i = 0; i < players.length; i += 1) {
       const p = players[i];
-      const name = enemyIntentRead("attacker-name", () => {
-        if (p.clientID && p.clientID() === clientId) {
-          return getPlayerDisplayName ? getPlayerDisplayName(p) : p.name && p.name() || `p${clientId}`;
-        }
-        return null;
-      }, null);
-      if (name) return name;
+      if (getPlayerSmallId(p, Number.NaN) === Number(attackerID)) {
+        return enemyIntentPlayerName(p, fallback);
+      }
     }
-    return `p${clientId}`;
+    return fallback;
   }
 
   function installEnemyIntentHook() {

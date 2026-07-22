@@ -10,7 +10,11 @@ const SOURCE = fs.readFileSync(path.join(ROOT, "engine/ingame/enemy-intent-intel
 let incomingAttacks = [];
 let tickListener = null;
 let now = 1000;
-const attacker = { smallID: () => 2 };
+const attacker = {
+  smallID: () => 2,
+  clientID: () => 999,
+  displayName: () => "Nemesis",
+};
 const me = {
   incomingAttacks: () => incomingAttacks,
   isFriendly: () => false,
@@ -24,6 +28,8 @@ const sandbox = {
   performance: { now: () => now },
   getOpenFrontGameContext: () => ({ game }),
   getCachedPlayerViews: () => [],
+  getPlayerSmallId: (player, fallback) => player?.smallID?.() ?? fallback,
+  getPlayerDisplayName: (player) => player.displayName(),
   registerHelperTickListener: (listener) => {
     tickListener = listener;
   },
@@ -41,6 +47,11 @@ incomingAttacks = [
 ];
 tickListener();
 assert.equal(sandbox.getEnemyIntentWarnings().length, 1);
+assert.equal(
+  sandbox.getEnemyIntentWarnings()[0].attackerName,
+  "Nemesis",
+  "AttackUpdate attackerID resolves through player smallID, not unrelated clientID",
+);
 assert.equal(
   sandbox.getEnemyIntentWarnings()[0].troops,
   500,
