@@ -256,9 +256,15 @@
         String(a.shipId).localeCompare(String(b.shipId)),
     );
     const covered = new Set(assignments.map((assignment) => assignment.invasionId));
+    const assignmentsByShip = new Map(
+      context.ships.map((ship) => [ship.id, []]),
+    );
+    for (const assignment of assignments) {
+      assignmentsByShip.get(assignment.shipId)?.push(assignment);
+    }
     const shipPlans = context.ships.map((ship) => ({
       shipId: ship.id,
-      assignments: assignments.filter((assignment) => assignment.shipId === ship.id),
+      assignments: assignmentsByShip.get(ship.id) ?? [],
     }));
 
     return {

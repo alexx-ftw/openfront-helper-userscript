@@ -227,6 +227,24 @@ const twoShips = planNavalInterceptions({
 });
 assert.deepEqual(twoShips.uncoveredIds, []);
 assert.equal(twoShips.assignments.length, 2);
+assert.equal(
+  JSON.stringify(
+    twoShips.shipPlans.map((plan) => ({
+      shipId: plan.shipId,
+      invasionIds: plan.assignments.map((assignment) => assignment.invasionId),
+    })),
+  ),
+  JSON.stringify([
+    { shipId: "destroyer-left", invasionIds: ["left"] },
+    { shipId: "destroyer-right", invasionIds: ["right"] },
+  ]),
+  "the linear assignment index preserves per-ship plan order and ownership",
+);
+assert.doesNotMatch(
+  source,
+  /assignments:\s*assignments\.filter/,
+  "ship plans must not rescan every assignment once per ship",
+);
 
 const marginPath = Array.from({ length: 13 }, (_, index) => tile(index + 1, 0));
 const safestExactAssignment = planNavalInterceptions({
