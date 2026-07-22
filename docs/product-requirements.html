@@ -188,6 +188,18 @@
   </li>
 </ul>
 
+<h2>Diplomacy intent priority</h2>
+
+<ul>
+  <li>
+    Combat decisions must run before routine embargo maintenance. A large hostile roster must be
+    drained through a bounded embargo quota across later decisions, stopping before the shared
+    client intent budget is exhausted and preserving capacity for defense, construction, combat, or
+    donations. Routine diplomacy must not knowingly emit intents that the local rate limiter will
+    reject.
+  </li>
+</ul>
+
 <h2>Incoming-attack priority</h2>
 
 <ul>

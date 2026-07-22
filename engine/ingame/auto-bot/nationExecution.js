@@ -37,6 +37,10 @@
   // region exists for them.
   const TEAM_SPAWN_DISCOVERY_TICKS = 6;
   const TEAM_SPAWN_COORDINATION_TICKS = 18;
+  // Diplomacy is eventually consistent and substantially lower priority than
+  // combat. Drain a large hostile roster gradually instead of spending the
+  // entire per-second intent bucket (and retrying every rejected target).
+  const EMBARGO_INTENTS_PER_DECISION = 2;
 
   class NationBot {
     constructor(game, opts) {
@@ -412,12 +416,12 @@
         const warship = this.feat("warship") && state.settings.warshipAutoSpawn !== false;
         if (!(await this.runOptionalAsyncPhase(warship, profile, "warship-build",
           () => this.warshipBehavior.maybeSpawnWarship(), tickGeneration))) return;
+        if (!(await this.runOptionalAsyncPhase(this.feat("expand") || this.feat("boat"),
+          profile, "attack", () => this.attackBehavior.maybeAttack(profile), tickGeneration))) return;
         if (this.feat("embargo")) {
           autoBotProfileSyncPhase(profile, "embargo", () =>
             this.handleEmbargoesToHostileNations());
         }
-        if (!(await this.runOptionalAsyncPhase(this.feat("expand") || this.feat("boat"),
-          profile, "attack", () => this.attackBehavior.maybeAttack(profile), tickGeneration))) return;
         if (!(await this.runOptionalAsyncPhase(warship, profile, "warship-counter",
           () => this.warshipBehavior.counterWarshipInfestation(), tickGeneration))) return;
         await this.runOptionalAsyncPhase(this.feat("nuke"), profile, "nuke",
@@ -812,19 +816,19 @@
       const sameTeam = player.isOnSameTeam(other);
       const embargoed = player.hasEmbargoAgainst(other);
       if (forceTeamEmbargo && other.type() !== PlayerType.Bot && !sameTeam) {
-        if (!embargoed) this.addEmbargo(other, false);
-        return;
+        return !embargoed && this.addEmbargo(other, false);
       }
       const relation = player.relation(other);
       if (relation <= Relation.Hostile && !embargoed && !sameTeam) {
-        this.addEmbargo(other, false);
+        return this.addEmbargo(other, false);
       } else if (relation >= Relation.Neutral && embargoed &&
         !isAtLeastHardDifficulty(difficulty)) {
-        this.stopEmbargo(other);
+        return this.stopEmbargo(other);
       } else if (relation >= Relation.Friendly && embargoed &&
         ![Difficulty.Impossible, Difficulty.Legendary].includes(difficulty)) {
-        this.stopEmbargo(other);
+        return this.stopEmbargo(other);
       }
+      return false;
     }
 
     handleEmbargoesToHostileNations() {
@@ -834,16 +838,31 @@
       const difficulty = currentDifficulty();
       const forceTeamEmbargo = isAtLeastHardDifficulty(difficulty) &&
         this.mg.config().gameConfig().gameMode === GameMode.Team;
-      others.forEach((other) =>
-        this.handleEmbargoForPlayer(other, player, difficulty, forceTeamEmbargo));
+      let emitted = 0;
+      for (const other of others) {
+        if (emitted >= EMBARGO_INTENTS_PER_DECISION) break;
+        const budget = typeof getIntentRateLimitSnapshot === "function"
+          ? getIntentRateLimitSnapshot()
+          : null;
+        // Keep one token available for defense, construction, or another
+        // strategic producer later in the same decision chain.
+        if (budget && (budget.secondTokens <= 1 || budget.minuteTokens <= 1)) break;
+        if (this.handleEmbargoForPlayer(other, player, difficulty, forceTeamEmbargo)) {
+          emitted += 1;
+        }
+      }
     }
 
     addEmbargo(other, _temporary) {
       const ctors = discoverCtors(getEventBus());
-      if (ctors.embargo) emitIntent(ctors.embargo, other.__src ?? other, "start");
+      return Boolean(
+        ctors.embargo && emitIntent(ctors.embargo, other.__src ?? other, "start"),
+      );
     }
     stopEmbargo(other) {
       const ctors = discoverCtors(getEventBus());
-      if (ctors.embargo) emitIntent(ctors.embargo, other.__src ?? other, "stop");
+      return Boolean(
+        ctors.embargo && emitIntent(ctors.embargo, other.__src ?? other, "stop"),
+      );
     }
   }

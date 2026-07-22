@@ -21,6 +21,24 @@ const nationExecutionSource = fs.readFileSync(
   path.join(repoRoot, "engine/ingame/auto-bot/nationExecution.js"),
   "utf8",
 );
+const decisionAttackIndex = nationExecutionSource.indexOf(
+  'profile, "attack", () => this.attackBehavior.maybeAttack(profile)',
+);
+const decisionEmbargoIndex = nationExecutionSource.indexOf('profile, "embargo", () =>');
+assert.ok(
+  decisionAttackIndex >= 0 && decisionAttackIndex < decisionEmbargoIndex,
+  "combat must run before low-priority embargo batching",
+);
+assert.match(
+  nationExecutionSource,
+  /EMBARGO_INTENTS_PER_DECISION = 2/,
+  "a large hostile roster must be drained through a bounded diplomacy quota",
+);
+assert.match(
+  nationExecutionSource,
+  /budget\.secondTokens <= 1 \|\| budget\.minuteTokens <= 1/,
+  "embargo batching must preserve a strategic intent token without probing a rejected emit",
+);
 assert.match(
   nationExecutionSource,
   /this\.doSpawn\(topKey\)/,
@@ -525,10 +543,15 @@ const CadenceNoopBehavior = class {
 };
 const cadenceSandbox = {
   Difficulty: openingSandbox.Difficulty,
+  GameMode: { Team: "Team" },
+  PlayerType: { Bot: "BOT", Nation: "NATION" },
+  Relation: { Hostile: -1, Neutral: 0, Friendly: 1 },
   UNIT: openingSandbox.UNIT,
   EARLY_EXPAND_COMMIT: 0.1,
   EARLY_EXPAND_OPENING_LIMIT: 0.4,
   currentDifficulty: () => "Impossible",
+  getIntentRateLimitSnapshot: () => ({ secondTokens: 10, minuteTokens: 150 }),
+  isAtLeastHardDifficulty: () => true,
   simpleHash: () => 1,
   PseudoRandom: class {
     nextInt(min) {
@@ -619,6 +642,43 @@ assert.equal(
   cadenceCalls.length,
   1,
   "win-fix combat uses the scaled attackRate cadence instead of every poll",
+);
+
+const embargoTargets = Array.from({ length: 12 }, (_, index) => ({
+  id: () => `embargo-${index}`,
+  type: () => "NATION",
+  hasEmbargoAgainst: () => false,
+  isOnSameTeam: () => false,
+  relation: () => -1,
+}));
+const embargoPlayer = {
+  hasEmbargoAgainst: () => false,
+  id: () => "self",
+  isOnSameTeam: () => false,
+  relation: () => -1,
+};
+const emittedEmbargoes = [];
+cadenceBot.player = embargoPlayer;
+cadenceBot.mg = {
+  players: () => [embargoPlayer, ...embargoTargets],
+  config: () => ({ gameConfig: () => ({ gameMode: "Team" }) }),
+};
+cadenceBot.addEmbargo = (other) => {
+  emittedEmbargoes.push(other.id());
+  return true;
+};
+cadenceBot.handleEmbargoesToHostileNations();
+assert.deepEqual(
+  emittedEmbargoes,
+  ["embargo-0", "embargo-1"],
+  "one diplomacy cycle emits only its bounded quota from a large hostile roster",
+);
+cadenceSandbox.getIntentRateLimitSnapshot = () => ({ secondTokens: 1, minuteTokens: 150 });
+cadenceBot.handleEmbargoesToHostileNations();
+assert.equal(
+  emittedEmbargoes.length,
+  2,
+  "diplomacy stops before consuming the last shared strategic intent token",
 );
 
 assert.equal(sandbox.isEarlyGameBoatEta(300), true);
