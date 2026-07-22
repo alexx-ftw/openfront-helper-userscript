@@ -284,23 +284,36 @@
     }
   }
 
-  function isEligibleAutoDonateTarget(player, me, targetNames, combatOnly) {
+  function canAutoDonateToPlayer(me, player, donationKind) {
+    if (!hasAutoDonateFriendlyRelation(me, player)) return false;
+    const capability = donationKind === "gold" ? "canDonateGold" : "canDonateTroops";
+    return typeof me?.[capability] !== "function" || me[capability](player) === true;
+  }
+
+  function isEligibleAutoDonateTarget(player, me, targetNames, combatOnly, donationKind) {
     {
       if (!player?.isAlive?.()) return false;
       const myId = getAutoDonatePlayerId(me);
       const playerId = getAutoDonatePlayerId(player);
       if (myId !== null && playerId !== null && myId === playerId) return false;
       if (!matchesAutoDonatePlayer(player, targetNames)) return false;
+      if (!canAutoDonateToPlayer(me, player, donationKind)) return false;
       return !combatOnly || isAutoDonateTargetInCombat(player);
     }
   }
 
-  function findAutoDonateTargetPlayers(game, me, targetNames, combatOnly = false) {
+  function findAutoDonateTargetPlayers(
+    game,
+    me,
+    targetNames,
+    combatOnly = false,
+    donationKind = "troops",
+  ) {
     if (!game || !me || targetNames.length === 0) return [];
     const players = getAutoDonatePlayerViews(game);
     if (!players) return [];
     return players.filter((player) =>
-      isEligibleAutoDonateTarget(player, me, targetNames, combatOnly));
+      isEligibleAutoDonateTarget(player, me, targetNames, combatOnly, donationKind));
   }
 
   async function getAutoDonatePlayerBorderTiles(player) {
@@ -394,6 +407,11 @@
     }
   }
 
+  function gameAllowsGoldDonation(game) {
+    const config = game?.config?.();
+    return typeof config?.donateGold !== "function" || config.donateGold() !== false;
+  }
+
   function getAutoDonateMaxTroops(game, player) {
     {
       const maxTroops = Number(game?.config?.().maxTroops?.(player));
@@ -443,7 +461,7 @@
     const maxTroops = getAutoDonateMaxTroops(game, me);
     const currentTroops = Number(me.troops?.() ?? 0);
     if (currentTroops <= maxTroops * keepPct / 100) return null;
-    const targets = findAutoDonateTargetPlayers(game, me, targetNames, true);
+    const targets = findAutoDonateTargetPlayers(game, me, targetNames, true, "troops");
     const recipient = findNeediestAutoDonateTarget(targets, game);
     return recipient ? { game, me, recipient, keepPct, donatePct, maxTroops } : null;
   }
@@ -511,6 +529,7 @@
     const game = context.game;
     const me = getAutoDonateLivingPlayer(game);
     if (!me) return null;
+    if (!gameAllowsGoldDonation(game)) return null;
     if (!hasNoAutoDonateMaritimeThreat(game, me)) return null;
     const targetNames = parseAutoDonateTargets(autoDonateCfg("autoDonateGoldTargets", ""));
     if (targetNames.length === 0) return null;
@@ -520,7 +539,7 @@
     const donatePct = Number(autoDonateCfg("autoDonateGoldPercentage", 25)) || 25;
     const amount = Math.floor(currentGold * donatePct / 100);
     if (amount <= 0) return null;
-    const targets = findAutoDonateTargetPlayers(game, me, targetNames);
+    const targets = findAutoDonateTargetPlayers(game, me, targetNames, false, "gold");
     const recipient = findPoorestAutoDonateTarget(targets);
     return recipient ? { recipient, amount } : null;
   }

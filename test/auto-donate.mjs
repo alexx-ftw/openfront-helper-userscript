@@ -53,6 +53,7 @@ const DONATION_DEFAULTS = {
   opponents: [],
   friendlyBorder: false,
   allyTroops: 50,
+  allyFriendly: true,
   supportsBorderApi: true,
   supportsUnitApi: true,
   beingAttacked: false,
@@ -60,6 +61,7 @@ const DONATION_DEFAULTS = {
   incomingTransports: [],
   autoDonateTroops: true,
   autoDonateGold: false,
+  donateGoldAllowed: true,
   gold: 0,
   allyGold: 0,
   goldThreshold: 1000,
@@ -74,6 +76,7 @@ async function runDonation(options = {}) {
     opponents,
     friendlyBorder,
     allyTroops,
+    allyFriendly,
     supportsBorderApi,
     supportsUnitApi,
     beingAttacked,
@@ -81,6 +84,7 @@ async function runDonation(options = {}) {
     incomingTransports,
     autoDonateTroops,
     autoDonateGold,
+    donateGoldAllowed,
     gold,
     allyGold,
     goldThreshold,
@@ -113,7 +117,7 @@ async function runDonation(options = {}) {
     name: "ally",
     troops: allyTroops,
     gold: allyGold,
-    friendly: true,
+    friendly: allyFriendly,
     border: friendlyBorder,
     inCombat: true,
     incomingAttacks: allyIncomingAttacks,
@@ -140,6 +144,7 @@ async function runDonation(options = {}) {
     },
     config: () => ({
       donateTroops: () => true,
+      donateGold: () => donateGoldAllowed,
       maxTroops: () => 1000,
     }),
   };
@@ -184,6 +189,26 @@ const strongestBorderCap = await runDonation({
     makePlayer({ id: 4, name: "border-weak", troops: 600, friendly: false, border: true }),
   ],
 });
+
+const hostileNamedRecipient = await runDonation({
+  allyFriendly: false,
+  autoDonateTroops: true,
+  autoDonateGold: true,
+  gold: 5000,
+});
+assert.deepEqual(
+  hostileNamedRecipient,
+  [],
+  "a configured name cannot receive troops or gold after becoming hostile",
+);
+
+const disabledGoldDonation = await runDonation({
+  autoDonateTroops: false,
+  autoDonateGold: true,
+  donateGoldAllowed: false,
+  gold: 5000,
+});
+assert.deepEqual(disabledGoldDonation, [], "gold donation respects the live game configuration");
 
 const retreatingOnlyCombat = await runDonation({
   allyIncomingAttacks: [{ retreating: () => true }],
