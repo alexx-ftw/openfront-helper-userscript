@@ -8222,7 +8222,11 @@
         });
         return null;
       }
-      const maxBorderDonation = Math.floor(currentTroops - strongest / 2);
+      // Ordinary border armies (including allies) retain the existing half-army
+      // congestion reserve. A hostile Nation/Human is different: donating must
+      // never turn a locally superior army into an immediately inferior one.
+      const borderReserve = Math.max(strongest / 2, strongestStrategic);
+      const maxBorderDonation = Math.floor(currentTroops - borderReserve);
       if (maxBorderDonation <= 0) {
         runtimeDebugLog("[Donate] skip: strongest border opponent leaves no safe reserve", {
           troops: Math.round(currentTroops),

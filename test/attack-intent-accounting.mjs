@@ -1849,6 +1849,71 @@ assert.equal(
   "a Nation/Human border army matching our force vetoes troop donations",
 );
 assert.equal(troopEmissions.length, emissionsBeforeStrategicBorderDonation);
+
+// Regression from a headless match: being barely stronger than a bordering
+// Nation must cap the donation at the exact surplus, not preserve only half of
+// the Nation and export the rest of the defensive army.
+donorTroops = 1367642;
+const nearMatchingStrategicBorderOpponent = {
+  ...makeBorderOpponent(18, 1365189),
+  type: () => sandbox.PlayerType.Nation,
+};
+donationOwnerByTile.clear();
+donationOwnerByTile.set(2, nearMatchingStrategicBorderOpponent.smallID());
+donationPlayers = [donor, needyTeammate, nearMatchingStrategicBorderOpponent];
+const nearMatchingStrategicDonationBehavior = new sandbox.AttackBehavior(
+  { chance: () => true },
+  donationGame,
+  donor,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+const emissionsBeforeNearMatchingDonation = troopEmissions.length;
+assert.equal(
+  nearMatchingStrategicDonationBehavior.donateTroops(),
+  false,
+  "a negligible safe surplus is not large enough to justify a donation",
+);
+assert.equal(
+  troopEmissions.length,
+  emissionsBeforeNearMatchingDonation,
+  "the donation that would expose the frontier is not emitted",
+);
+
+donorTroops = 1229612;
+const closeStrategicBorderOpponent = {
+  ...makeBorderOpponent(19, 1174271),
+  type: () => sandbox.PlayerType.Nation,
+};
+donationOwnerByTile.clear();
+donationOwnerByTile.set(2, closeStrategicBorderOpponent.smallID());
+donationPlayers = [donor, needyTeammate, closeStrategicBorderOpponent];
+const closeStrategicDonationBehavior = new sandbox.AttackBehavior(
+  { chance: () => true },
+  donationGame,
+  donor,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+assert.equal(closeStrategicDonationBehavior.donateTroops(), true);
+assert.equal(
+  troopEmissions.at(-1),
+  55341,
+  "the donation is capped at the exact surplus over the strategic border army",
+);
+assert.equal(
+  donorTroops - troopEmissions.at(-1),
+  closeStrategicBorderOpponent.troops(),
+  "the complete strategic border army remains available after donating",
+);
+
+donorTroops = 100000;
 donationOwnerByTile.clear();
 donationOwnerByTile.set(2, weakBorderOpponent.smallID());
 donationOwnerByTile.set(3, strongBorderOpponent.smallID());
