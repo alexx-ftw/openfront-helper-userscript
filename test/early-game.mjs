@@ -3031,6 +3031,7 @@ let priorityIncomingAttacks = [];
 const priorityPlayer = {
   smallID: () => 1,
   type: () => targetSandbox.PlayerType.Human,
+  troops: () => 1_000,
   hasSpawned: () => true,
   borderTiles: () => new Set([1]),
   nearby: () => [priorityTribe, priorityEnemy],

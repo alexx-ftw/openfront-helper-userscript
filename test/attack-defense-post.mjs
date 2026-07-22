@@ -89,8 +89,13 @@ hostileAttackPressureBehavior.player.incomingAttacks = () => [
 ];
 assert.equal(
   hostileAttackPressureBehavior.incomingHostileAttackPressure(),
-  0,
-  "an exhausted force keeps the established fallback instead of applying a siege ratio",
+  Number.POSITIVE_INFINITY,
+  "an exhausted force reports maximum siege pressure instead of hiding the invasion",
+);
+assert.equal(
+  hostileAttackPressureBehavior.hasOverwhelmingIncomingAttack(),
+  true,
+  "an active invasion against zero defenders keeps the whole remaining budget reserved",
 );
 
 const siegeHoldBehavior = Object.create(sandbox.AttackBehavior.prototype);

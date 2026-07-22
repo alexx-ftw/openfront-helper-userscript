@@ -6863,7 +6863,13 @@
         (total, attack) => total + Math.max(0, Number(attack.troops?.()) || 0),
         0,
       );
-      if (incomingTroops === 0 || ownTroops <= 0) return 0;
+      if (incomingTroops === 0) return 0;
+      // Zero defenders is not zero pressure.  Returning zero here hid the
+      // most urgent possible siege from both the attack hold and the faster
+      // incoming-defense construction cadence.  Infinity preserves the ratio
+      // contract without inventing a denominator and is handled by the
+      // existing threshold comparisons.
+      if (ownTroops <= 0) return Number.POSITIVE_INFINITY;
       return incomingTroops / ownTroops;
     }
 
