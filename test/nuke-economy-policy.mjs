@@ -241,6 +241,32 @@ assert.equal(
   "an inbound MIRV aimed at owned tile zero is recognized as a threat",
 );
 
+const alliedMirvTarget = {
+  smallID: () => 2,
+  isPlayer: () => true,
+  type: () => "Human",
+};
+const hostileMirvTarget = {
+  smallID: () => 3,
+  isPlayer: () => true,
+  type: () => "Human",
+};
+const relationAwareMirvPlayer = {
+  smallID: () => 1,
+  isFriendly: (player) => player === alliedMirvTarget,
+};
+const relationAwareMirv = new sandbox.__MirvBehavior(
+  {},
+  { players: () => [relationAwareMirvPlayer, alliedMirvTarget, hostileMirvTarget] },
+  relationAwareMirvPlayer,
+  {},
+);
+assert.deepEqual(
+  relationAwareMirv.getValidMirvTargetPlayers(),
+  [hostileMirvTarget],
+  "MIRV strategy excludes active allies as well as permanent teammates",
+);
+
 let distanceChecks = 0;
 behavior.game = {
   config: () => ({ defaultNukeTargetableRange: () => 2 }),

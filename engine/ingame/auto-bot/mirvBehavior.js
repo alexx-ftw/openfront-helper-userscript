@@ -376,7 +376,7 @@
           p.smallID() !== this.player.smallID() &&
           p.isPlayer() &&
           p.type() !== PlayerType.Bot &&
-          !this.player.isOnSameTeam(p)
+          !this.player.isFriendly(p)
         );
       });
     }
