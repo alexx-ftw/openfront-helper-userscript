@@ -1315,9 +1315,33 @@
       );
     }
 
-    getLandAttackTargetReserveTroops(target, radioactiveTerraNullius) {
+    getIncomingCounterattackReserveTroops() {
+      // A land counterattack cancels the matching hostile force in flight.
+      // Reserving the complete army of an unrelated border rival therefore
+      // double-counts danger and can reduce every defensive response to zero.
+      // Keep the production optimum (plus pending commitments in the shared
+      // spendable calculator); the aggregate-overwhelming gate separately
+      // prevents futile responses when the live siege already matches us.
+      return this.getEarlyGameProductionReserveTroops();
+    }
+
+    getIncomingCounterattackTroops(target, force = false) {
+      if (force !== true || target?.isPlayer?.() !== true) return 0;
+      return this.incomingHostileTroopsFrom(target);
+    }
+
+    getLandAttackTargetReserveTroops(
+      target,
+      radioactiveTerraNullius,
+      force = false,
+    ) {
       if (!target.isPlayer() && radioactiveTerraNullius) {
         return this.getRadioactiveTerraNulliusReserveTroops();
+      }
+      if (
+        this.getIncomingCounterattackTroops(target, force) > 0
+      ) {
+        return this.getIncomingCounterattackReserveTroops();
       }
       return this.getEarlyGameTargetReserveTroops(target);
     }
@@ -6738,7 +6762,7 @@
     canFundIncomingCounterattack(attacker) {
       const incomingTroops = this.incomingHostileTroopsFrom(attacker);
       if (incomingTroops < 1) return false;
-      const reserveTroops = this.getEarlyGameTargetReserveTroops(attacker);
+      const reserveTroops = this.getIncomingCounterattackReserveTroops();
       return this.getEarlyGameSpendableTroops(reserveTroops) >= 1;
     }
 
@@ -7614,6 +7638,7 @@
       const targetReserveTroops = this.getLandAttackTargetReserveTroops(
         target,
         configuration.radioactiveTerraNullius,
+        configuration.force,
       );
       const targetTroops = state.settings.winFixes
         ? targetReserveTroops
@@ -7657,6 +7682,10 @@
         terraNulliusCommitFraction,
         botAttackTroopsSentBefore: this.botAttackTroopsSent,
         requiredTribeAttackTroops: null,
+        incomingCounterattackTroops: this.getIncomingCounterattackTroops(
+          target,
+          configuration.force,
+        ),
         attackBlocked: false,
       };
     }
@@ -7738,6 +7767,12 @@
     }
 
     calculateLandAttackTroops(context) {
+      if (context.force === true && context.incomingCounterattackTroops > 0) {
+        return Math.min(
+          context.finalSpendableTroops,
+          context.incomingCounterattackTroops,
+        );
+      }
       // Target type, not our own controller type, defines the conquest policy.
       // The client exposes auto-controlled Nations as Bot in some modes; letting
       // that representation fall through to the generic retaliation formula

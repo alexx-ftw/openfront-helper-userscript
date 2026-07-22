@@ -848,10 +848,12 @@ assert.equal(
 );
 nationAttackFloorContext.force = true;
 nationAttackFloorContext.targetSpendableTroops = 1;
+nationAttackFloorContext.finalSpendableTroops = 70_000;
+nationAttackFloorContext.incomingCounterattackTroops = 30_000;
 assert.equal(
-  nationAttackFloorBehavior.calculateRegularLandAttackTroops(nationAttackFloorContext),
-  80_000,
-  "a forced defensive counterattack retains the regular reserve-based payload",
+  nationAttackFloorBehavior.calculateLandAttackTroops(nationAttackFloorContext),
+  30_000,
+  "a forced defensive counterattack is capped to the matching incoming force",
 );
 
 const incomingNation = { type: () => "Nation", smallID: () => 8 };
@@ -915,7 +917,7 @@ counterattackBudgetBehavior.incomingHostileAttacks = () => [
   { attacker: () => incomingNation, troops: () => 80_000 },
   { attacker: () => incomingNation, troops: () => 40_000 },
 ];
-counterattackBudgetBehavior.getEarlyGameTargetReserveTroops = () => 0;
+counterattackBudgetBehavior.getIncomingCounterattackReserveTroops = () => 0;
 counterattackBudgetBehavior.getEarlyGameSpendableTroops = () => 119_999;
 assert.equal(
   counterattackBudgetBehavior.canFundIncomingCounterattack(incomingNation),
@@ -927,6 +929,34 @@ assert.equal(
   counterattackBudgetBehavior.canFundIncomingCounterattack(incomingNation),
   true,
   "a full safe counterattack remains eligible against the attacker’s in-flight force",
+);
+
+const thirdPartyReserveBehavior = Object.create(sandbox.AttackBehavior.prototype);
+thirdPartyReserveBehavior.getEarlyGameProductionReserveTroops = () => 82_863;
+thirdPartyReserveBehavior.getStrongestStrategicBorderOpponentTroops = () => 938_816;
+thirdPartyReserveBehavior.incomingHostileTroopsFrom = () => 120_000;
+thirdPartyReserveBehavior.getEarlyGameSpendableTroops = (reserve) => Math.max(0, 487_420 - reserve);
+assert.equal(
+  thirdPartyReserveBehavior.getEarlyGameTargetReserveTroops(incomingNation),
+  938_816,
+  "ordinary offense still respects the strongest strategic border opponent",
+);
+assert.equal(
+  thirdPartyReserveBehavior.canFundIncomingCounterattack(incomingNation),
+  true,
+  "an unrelated stronger neighbour cannot suppress a safe partial interdiction",
+);
+
+const tribeInterdictionContext = {
+  force: true,
+  isTribeTarget: true,
+  finalSpendableTroops: 45_000,
+  incomingCounterattackTroops: 70_000,
+};
+assert.equal(
+  thirdPartyReserveBehavior.calculateLandAttackTroops(tribeInterdictionContext),
+  45_000,
+  "tribe retaliation uses the same safe-surplus cap instead of a conquest payload",
 );
 
 const expensiveTileBehavior = new sandbox.AttackBehavior(

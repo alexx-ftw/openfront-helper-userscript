@@ -115,7 +115,7 @@ partialInterdictionBehavior.player = {
   incomingAttacks: () => [{ attacker: () => "Italy", troops: () => 481_214 }],
 };
 partialInterdictionBehavior.incomingHostileTroopsFrom = () => 481_214;
-partialInterdictionBehavior.getEarlyGameTargetReserveTroops = () => 600_000;
+partialInterdictionBehavior.getIncomingCounterattackReserveTroops = () => 82_863;
 partialInterdictionBehavior.getEarlyGameSpendableTroops = () => 117_127;
 assert.equal(
   partialInterdictionBehavior.canFundIncomingCounterattack("Italy"),
