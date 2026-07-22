@@ -55,6 +55,18 @@
   // be retried on the next throttled planner pass, whereas one full A* freezes
   // the entire combat tick and prevents every defensive response.
   const NAVAL_INTERCEPTION_ROUTE_MAX_EXPANSIONS = 256;
+  // Dense A* needs three Int32 buffers (12 bytes per map tile). On very large
+  // maps their first allocation is a visible frame spike; the existing sparse
+  // route state is exact and scales with the route search instead of map area.
+  const NAVAL_DENSE_ROUTE_MAX_TILES = 262_144;
+
+  function canUseDenseWaterRouteBuffers(total) {
+    return (
+      Number.isSafeInteger(total) &&
+      total > 0 &&
+      total <= NAVAL_DENSE_ROUTE_MAX_TILES
+    );
+  }
 
   function getWarshipRuntimeHost() {
     if (typeof window !== "undefined") return window;
@@ -909,8 +921,7 @@
       if (
         Number.isInteger(start) &&
         Number.isInteger(goal) &&
-        Number.isSafeInteger(total) &&
-        total > 0 &&
+        canUseDenseWaterRouteBuffers(total) &&
         start >= 0 &&
         start < total &&
         goal >= 0 &&

@@ -139,6 +139,27 @@ assert.strictEqual(
 );
 assert.equal(firstDenseScratch.generation, 2);
 
+const largeMapRouteBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
+largeMapRouteBehavior.game = {
+  width: () => 2_000_000,
+  height: () => 1,
+  isWater: () => true,
+  manhattanDist: (left, right) => Math.abs(left - right),
+  forEachNeighbor: (tile, visit) => {
+    if (tile === 0) visit(1);
+  },
+};
+assert.equal(
+  [...largeMapRouteBehavior.waterRoute(0, 1)].join(","),
+  "0,1",
+  "large-map sparse A* must preserve the exact water route",
+);
+assert.equal(
+  largeMapRouteBehavior._denseWaterRouteScratch,
+  undefined,
+  "large-map water routing must not synchronously reserve three map-sized buffers",
+);
+
 const fallbackRouteBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
 fallbackRouteBehavior.game = {
   isWater: () => true,
