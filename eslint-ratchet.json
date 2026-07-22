@@ -9,32 +9,6 @@
       "error": 1
     }
   },
-  "engine/ingame/companion/core.js": {
-    "sonarjs/no-inverted-boolean-check": {
-      "warning": 0,
-      "error": 1
-    },
-    "complexity": {
-      "warning": 0,
-      "error": 1
-    },
-    "sonarjs/cognitive-complexity": {
-      "warning": 0,
-      "error": 3
-    },
-    "max-depth": {
-      "warning": 0,
-      "error": 3
-    },
-    "no-restricted-syntax": {
-      "warning": 0,
-      "error": 8
-    },
-    "no-useless-assignment": {
-      "warning": 0,
-      "error": 1
-    }
-  },
   "engine/ingame/companion/engine.js": {
     "no-restricted-syntax": {
       "warning": 0,
@@ -69,36 +43,6 @@
     "sonarjs/no-nested-conditional": {
       "warning": 0,
       "error": 4
-    }
-  },
-  "test/companion.mjs": {
-    "sonarjs/no-unenclosed-multiline-block": {
-      "warning": 0,
-      "error": 1
-    },
-    "sonarjs/code-eval": {
-      "warning": 0,
-      "error": 2
-    },
-    "sonarjs/no-unused-collection": {
-      "warning": 0,
-      "error": 3
-    },
-    "no-unused-vars": {
-      "warning": 0,
-      "error": 1
-    },
-    "sonarjs/no-unused-vars": {
-      "warning": 0,
-      "error": 1
-    },
-    "sonarjs/no-dead-store": {
-      "warning": 0,
-      "error": 1
-    },
-    "no-console": {
-      "warning": 0,
-      "error": 1
     }
   }
 }
