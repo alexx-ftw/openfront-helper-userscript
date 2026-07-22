@@ -1223,6 +1223,26 @@
         );
       }
 
+      // Once the first bounded wave has cleared, keep the rest of the short
+      // opening window tied to the army's live acceleration/defense floor.
+      // The capacity-derived production peak can still be above our current
+      // army at this point; using it here serializes free-land captures until
+      // that future capacity is filled and lets nearby Nations close the map.
+      const openingElapsed = Number.isFinite(this.terraNulliusOpeningStartTick)
+        ? this.currentAttackDecisionTick() - this.terraNulliusOpeningStartTick
+        : Number.POSITIVE_INFINITY;
+      if (
+        this.terraNulliusOpeningCommittedTroops > 0 &&
+        openingElapsed >= 0 &&
+        openingElapsed <= 500
+      ) {
+        return Math.max(
+          this.getEarlyGameLiveReserveTroops(),
+          this.getKnownBorderOpponentTroops(),
+          this.getStrongestStrategicBorderOpponentTroops(),
+        );
+      }
+
       // After the opening budget expires, TerraNullius expansion must never
       // cross the troop-production peak. The live reserve can raise this floor
       // further when border pressure warrants it.

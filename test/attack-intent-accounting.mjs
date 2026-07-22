@@ -1003,7 +1003,22 @@ scheduledBehavior.getLiveTerraNulliusAttackTroops = () => 0;
 assert.equal(
   scheduledBehavior.getTerraNulliusOpeningCommitLimit(),
   Number.POSITIVE_INFINITY,
-  "a completed opening wave immediately hands expansion to the adaptive reserve",
+  "a completed opening wave immediately unlocks the opening liveness reserve",
+);
+ownTroops = 74364;
+scheduledBehavior.getEarlyGameLiveReserveTroops = () => 18047;
+scheduledBehavior.getEarlyGameProductionReserveTroops = () => 73900;
+scheduledBehavior.getKnownBorderOpponentTroops = () => 0;
+scheduledBehavior.getStrongestStrategicBorderOpponentTroops = () => 0;
+assert.equal(
+  scheduledBehavior.getEarlyGameTerraNulliusReserveTroops(),
+  18047,
+  "the cleared opening wave uses the live reserve instead of waiting for future troop capacity",
+);
+assert.equal(
+  scheduledBehavior.getTerraNulliusAttackTroops(terraNullius),
+  7437,
+  "the opening liveness window can immediately emit another 10% free-land capture",
 );
 scheduledBehavior.getLiveTerraNulliusAttackTroops = () => 1200;
 assert.equal(
@@ -1017,6 +1032,12 @@ assert.equal(
   Number.POSITIVE_INFINITY,
   "after opening tick 500, the adaptive production/threat reserve takes over",
 );
+assert.equal(
+  scheduledBehavior.getEarlyGameTerraNulliusReserveTroops(),
+  73900,
+  "after the bounded opening window TerraNullius returns to the production reserve",
+);
+ownTroops = 25000;
 tick = 9;
 
 // emitBoat is the final synchronous boundary after the route/launch await. It
