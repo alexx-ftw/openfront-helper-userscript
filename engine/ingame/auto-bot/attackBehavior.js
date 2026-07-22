@@ -8213,22 +8213,40 @@
       );
     }
 
-    async reinforceIncompleteOutboundPlayerAttack() {
+    incompleteOutboundPlayerAttackPlans() {
+      const plans = [];
+      let index = 0;
       for (const target of this.getActiveOutboundPlayerTargets()) {
         if (target.isAlive?.() === false) continue;
         if (this.player.isFriendly(target) === true) continue;
+        const profile = this.getEnemyDefensePostAttackProfile(target);
+        const committed = this.getCommittedOutboundAttackTroopsForTarget(target);
+        const floor = this.getPlayerAttackPreferredTroopFloor(target, profile);
+        if (committed >= floor) continue;
+        plans.push({
+          target,
+          committed,
+          floor,
+          missing: Math.max(0, floor - committed),
+          completion: floor > 0 ? committed / floor : 1,
+          index: index++,
+        });
+      }
+      plans.sort(
+        (left, right) =>
+          right.completion - left.completion ||
+          left.missing - right.missing ||
+          left.index - right.index,
+      );
+      return plans;
+    }
+
+    async reinforceIncompleteOutboundPlayerAttack() {
+      for (const { target } of this.incompleteOutboundPlayerAttackPlans()) {
         // An incomplete transport attack is still an unfinished conquest.  Do
         // not require a land border here: sendAttack chooses the same land or
         // boat route that the original attack used, so a distant Tribe/Nation
         // can receive the missing capture payload instead of being abandoned.
-        const profile = this.getEnemyDefensePostAttackProfile(target);
-        const committed = this.getCommittedOutboundAttackTroopsForTarget(target);
-        if (
-          committed >=
-          this.getPlayerAttackPreferredTroopFloor(target, profile)
-        ) {
-          continue;
-        }
         if (
           await this.sendAttack(
             target,

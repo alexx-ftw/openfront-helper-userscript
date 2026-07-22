@@ -1484,6 +1484,41 @@ assert.equal(
   "Tribe reinforcements retain the parallel-Tribe route so sendAttack can choose a transport",
 );
 
+const prioritizedReinforcementBehavior = Object.create(sandbox.AttackBehavior.prototype);
+const distantFromCapture = {
+  isAlive: () => true,
+  isPlayer: () => true,
+  type: () => sandbox.PlayerType.Bot,
+};
+const nearlyCaptured = {
+  isAlive: () => true,
+  isPlayer: () => true,
+  type: () => sandbox.PlayerType.Bot,
+};
+prioritizedReinforcementBehavior.player = { isFriendly: () => false };
+prioritizedReinforcementBehavior.getActiveOutboundPlayerTargets = () => [
+  distantFromCapture,
+  nearlyCaptured,
+];
+prioritizedReinforcementBehavior.getEnemyDefensePostAttackProfile = () => ({});
+prioritizedReinforcementBehavior.getCommittedOutboundAttackTroopsForTarget = (target) =>
+  target === nearlyCaptured ? 900 : 100;
+prioritizedReinforcementBehavior.getPlayerAttackPreferredTroopFloor = () => 1000;
+let prioritizedReinforcementTarget = null;
+prioritizedReinforcementBehavior.sendAttack = async (target) => {
+  prioritizedReinforcementTarget = target;
+  return true;
+};
+assert.equal(
+  await prioritizedReinforcementBehavior.reinforceIncompleteOutboundPlayerAttack(),
+  true,
+);
+assert.strictEqual(
+  prioritizedReinforcementTarget,
+  nearlyCaptured,
+  "reinforcement closes the conquest nearest its capture floor before funding a distant front",
+);
+
 const botParallelTargets = [parallelTribeA, parallelTribeB].map((target) => ({
   ...target,
   numTilesOwned: () => 1,
