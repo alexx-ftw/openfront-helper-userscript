@@ -693,6 +693,20 @@
       if (coast !== null && src.isLand(neighbor)) coast.add(neighbor);
     }
 
+    function createWaterLabelBuffer(total, maximumEncodedId = 0xff) {
+      if (maximumEncodedId <= 0xff) return new Uint8Array(total);
+      if (maximumEncodedId <= 0xffff) return new Uint16Array(total);
+      return new Uint32Array(total);
+    }
+
+    function ensureWaterLabelCapacity(builder, encodedId) {
+      const maximumStored = (2 ** (builder.labels.BYTES_PER_ELEMENT * 8)) - 1;
+      if (encodedId <= maximumStored) return;
+      const expanded = createWaterLabelBuffer(builder.labels.length, encodedId);
+      expanded.set(builder.labels);
+      builder.labels = expanded;
+    }
+
     function startWaterLabelBuilder() {
       if (_waterLabelBuilder !== null || _waterLabels !== null) return;
       const w = src.width();
@@ -702,7 +716,7 @@
         // Typed arrays are zero-initialized by the runtime. Encoding component
         // ids as id+1 removes the synchronous full-map fill that previously
         // preceded the cooperative slices and could stall Auto-build.
-        labels: new Uint32Array(total),
+        labels: createWaterLabelBuffer(total),
         compIsOcean: [],
         compCoast: [],
         nextId: 0,
@@ -772,6 +786,7 @@
         steps++;
         if (!src.isWater(tile) || builder.labels[tile] !== 0) continue;
         builder.componentId = builder.nextId++;
+        ensureWaterLabelCapacity(builder, builder.componentId + 1);
         builder.componentOcean = false;
         builder.componentCoast = new Set();
         builder.labels[tile] = builder.componentId + 1;

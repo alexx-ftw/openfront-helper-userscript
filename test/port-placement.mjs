@@ -78,6 +78,24 @@ assert.equal(
   "same-type placement spacing excludes only the candidate structure itself",
 );
 
+function createScenarioLake(width, height, lakeTiles) {
+  if (lakeTiles !== null) return new Set(lakeTiles);
+  const lake = new Set();
+  for (let y = 3; y <= 5; y += 1) {
+    for (let x = 3; x <= 5; x += 1) lake.add(y * width + x);
+  }
+  return lake;
+}
+
+function createScenarioCoast(width, height, fullHeightOffset, shortMapTile) {
+  if (height < 6) return new Set([Math.min(width - 1, shortMapTile)]);
+  return new Set([
+    3 * width + fullHeightOffset,
+    4 * width + fullHeightOffset,
+    5 * width + fullHeightOffset,
+  ]);
+}
+
 function makeScenario({
   ocean = false,
   allied = false,
@@ -85,11 +103,9 @@ function makeScenario({
   zeroAllocationNeighbors = false,
   width = 9,
   height = 9,
+  lakeTiles = null,
 } = {}) {
-  const lake = new Set();
-  for (let y = 3; y <= 5; y += 1) {
-    for (let x = 3; x <= 5; x += 1) lake.add(y * width + x);
-  }
+  const lake = createScenarioLake(width, height, lakeTiles);
   const cardinalNeighbors = (tile) => {
     const x = tile % width;
     const y = Math.floor(tile / width);
@@ -109,8 +125,8 @@ function makeScenario({
   for (let tile = 0; tile < width * height; tile += 1) {
     if (!lake.has(tile)) land.add(tile);
   }
-  const meCoast = new Set([3 * width + 2, 4 * width + 2, 5 * width + 2]);
-  const otherCoast = new Set([3 * width + 6, 4 * width + 6, 5 * width + 6]);
+  const meCoast = createScenarioCoast(width, height, 2, 1);
+  const otherCoast = createScenarioCoast(width, height, 6, 3);
   const ownerByTile = new Map([
     ...Array.from(meCoast, (tile) => [tile, 1]),
     ...Array.from(otherCoast, (tile) => [tile, 2]),
@@ -267,6 +283,22 @@ assert.equal(
   zeroAllocationScenario.neighborArrayCalls(),
   0,
   "shared-water labeling and coast scans prefer zero-allocation neighbor iteration",
+);
+const fragmentedWaterTiles = Array.from({ length: 300 }, (_, index) => index * 2);
+const fragmentedWaterScenario = makeScenario({
+  width: 600,
+  height: 1,
+  lakeTiles: fragmentedWaterTiles,
+  zeroAllocationNeighbors: true,
+});
+await fragmentedWaterScenario.handle.beginTick(fragmentedWaterScenario.me);
+assert.equal(fragmentedWaterScenario.handle.game.getWaterComponent(0), 0);
+assert.equal(fragmentedWaterScenario.handle.game.getWaterComponent(508), 254);
+assert.equal(fragmentedWaterScenario.handle.game.getWaterComponent(510), 255);
+assert.equal(
+  fragmentedWaterScenario.handle.game.getWaterComponent(598),
+  299,
+  "water labels must widen without truncating component ids beyond one byte",
 );
 const oceanCoastScenario = makeScenario({ ocean: true });
 const oceanCoastMe = await oceanCoastScenario.handle.beginTick(oceanCoastScenario.me);
