@@ -158,6 +158,38 @@ assert.deepEqual(
   ["sam", "south-city"],
   "collateral scoring excludes buildings already doomed by an in-flight allied missile",
 );
+assert.deepEqual(
+  sandbox
+    ._autoFireUncoveredEnemyBuildings(
+      collateralGame,
+      collateralBuildings,
+      [{ targetTile: "old-house", radius: 30, remainingTicks: 100 }],
+      20,
+    )
+    .map((entry) => entry.key),
+  ["sam", "old-house", "old-factory", "south-city"],
+  "a slower allied missile does not hide collateral that our atom reaches first",
+);
+assert.deepEqual(
+  sandbox
+    ._autoFireUncoveredEnemyBuildings(
+      collateralGame,
+      collateralBuildings,
+      [{ targetTile: "old-house", radius: 30, remainingTicks: 10 }],
+      20,
+    )
+    .map((entry) => entry.key),
+  ["sam", "south-city"],
+  "an allied missile arriving first still removes its doomed collateral",
+);
+assert.equal(
+  sandbox._isAutoFireTargetCovered(collateralGame, "sam", me, null, {
+    impacts: [{ targetTile: "sam", radius: 30, remainingTicks: 100 }],
+    ownFlightTicks: 20,
+  }),
+  false,
+  "a late allied impact cannot suppress our faster shot at a newly placed SAM",
+);
 assert.equal(
   sandbox._chooseAutoFireImpactTile(collateralGame, "sam", me, uncoveredCollateral),
   "0,20",

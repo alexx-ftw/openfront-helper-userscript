@@ -1082,7 +1082,12 @@
     );
   }
 
-  function _autoFireUncoveredEnemyBuildings(game, buildings, impacts) {
+  function _autoFireUncoveredEnemyBuildings(
+    game,
+    buildings,
+    impacts,
+    ownFlightTicks = Infinity,
+  ) {
     var enemyBuildings = Array.isArray(buildings) ? buildings : [];
     var knownImpacts = Array.isArray(impacts) ? impacts : [];
     if (knownImpacts.length === 0) return enemyBuildings;
@@ -1092,7 +1097,7 @@
         building?.tile,
         null,
         null,
-        knownImpacts,
+        { impacts: knownImpacts, ownFlightTicks },
       );
     });
   }
@@ -1124,7 +1129,23 @@
       var targetTile = typeof unit.targetTile === "function" ? unit.targetTile() : unit.targetTile;
       if (targetTile == null) return null;
       var type = typeof unit.type === "function" ? unit.type() : unit.type;
-      return { targetTile, radius: _autoFireNukeRadius(game, type) };
+      var unitTile = typeof unit.tile === "function" ? unit.tile() : unit.tile;
+      var remainingTicks = null;
+      if (
+        unitTile != null &&
+        typeof computeNukeRemainingTicks === "function"
+      ) {
+        remainingTicks = computeNukeRemainingTicks(
+          game,
+          unitTile,
+          targetTile,
+        );
+      }
+      return {
+        targetTile,
+        radius: _autoFireNukeRadius(game, type),
+        remainingTicks,
+      };
     }
   }
 
@@ -1141,12 +1162,35 @@
   // already puts the target inside its blast radius. Ownership is intentionally
   // not filtered: an incoming missile still destroys the enemy building, and the
   // auto-fire should not spend another salvo on a demolition already guaranteed.
-  function _isAutoFireTargetCovered(game, primaryTile, me, state, impacts) {
+  function _autoFireImpactArrivesNoLater(impact, ownFlightTicks) {
+    if (!Number.isFinite(ownFlightTicks)) return true;
+    var remainingTicks = Number(impact?.remainingTicks);
+    return !Number.isFinite(remainingTicks) || remainingTicks <= ownFlightTicks;
+  }
+
+  function _isAutoFireTargetCovered(
+    game,
+    primaryTile,
+    me,
+    state,
+    impactContext,
+  ) {
     if (primaryTile === null || primaryTile === void 0) return false;
-    var knownImpacts = Array.isArray(impacts)
-      ? impacts
-      : _autoFireNukeImpacts(game, state);
+    var knownImpacts;
+    if (Array.isArray(impactContext)) {
+      knownImpacts = impactContext;
+    } else if (Array.isArray(impactContext?.impacts)) {
+      knownImpacts = impactContext.impacts;
+    } else {
+      knownImpacts = _autoFireNukeImpacts(game, state);
+    }
+    var ownFlightTicks = Array.isArray(impactContext)
+      ? Infinity
+      : impactContext?.ownFlightTicks ?? Infinity;
     for (let i = 0; i < knownImpacts.length; i++) {
+      if (!_autoFireImpactArrivesNoLater(knownImpacts[i], ownFlightTicks)) {
+        continue;
+      }
       var radius = knownImpacts[i].radius;
       if (
         _euclideanDistSq(game, primaryTile, knownImpacts[i].targetTile) <
@@ -1292,14 +1336,25 @@
 
   function _autoFireCandidateImpact(context, candidate) {
     context.impacts ??= _autoFireNukeImpacts(context.game, context.state);
+    var ownFlightEstimate =
+      window.__OFH_atomBatch.estimateFlightTicks?.(candidate.tile);
+    var ownFlightTicks = ownFlightEstimate == null
+      ? Infinity
+      : Number(ownFlightEstimate);
+    if (!Number.isFinite(ownFlightTicks)) ownFlightTicks = Infinity;
     if (_isAutoFireTargetCovered(
-      context.game, candidate.tile, context.me, context.state, context.impacts,
+      context.game,
+      candidate.tile,
+      context.me,
+      context.state,
+      { impacts: context.impacts, ownFlightTicks },
     )) return null;
     context.enemyBuildings ??= _autoFireCollectEnemyBuildings(context.game, context.me);
     var uncoveredBuildings = _autoFireUncoveredEnemyBuildings(
       context.game,
       context.enemyBuildings,
       context.impacts,
+      ownFlightTicks,
     );
     var impactTile = _chooseAutoFireImpactTile(
       context.game, candidate.tile, context.me, uncoveredBuildings,
