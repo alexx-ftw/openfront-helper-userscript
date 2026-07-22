@@ -158,6 +158,7 @@ window.__OFH_realOpponentHarness = {
   beginAutoBotProfileTick,
   finishAutoBotProfileTick,
   getAutoBotProfileSnapshot
+  ,computeSpawnTopSpotsForBot
 };
 `;
   return rawSource.slice(0, exportIndex) + exportHook + rawSource.slice(exportIndex);
@@ -336,6 +337,24 @@ export class BundledOpponentBot {
           followUpAfter: nationBot.openingExpansionFollowUpPending === true,
         });
         return handled;
+      };
+    }
+    const originalCurrentSpawnTopKey = nationBot.currentSpawnTopKey;
+    if (typeof originalCurrentSpawnTopKey === "function") {
+      nationBot.currentSpawnTopKey = (...args) => {
+        const selectedKey = originalCurrentSpawnTopKey.apply(nationBot, args);
+        const topSpots = this.harness.internals.computeSpawnTopSpotsForBot?.(
+          this.pageGame,
+          this.pageGame.myPlayer(),
+          { initial: true },
+        );
+        this.spawnTrace.push({
+          kind: "spawn-ranking",
+          tick: this.game.ticks(),
+          selectedKey,
+          topSpots: Array.isArray(topSpots) ? topSpots.slice(0, 5) : [],
+        });
+        return selectedKey;
       };
     }
     const originalPickSpawnCenter = nationBot.pickSpawnCenter;

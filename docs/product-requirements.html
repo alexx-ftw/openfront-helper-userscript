@@ -93,6 +93,12 @@
     location-specific behavior. Improve the general spawn-selection objective across maps; do not
     hard-code the pictured map, coordinate, grid cell, or nearby territories.
   </li>
+  <li>
+    In team games, the bounded initial candidate budget must be sampled inside the geometry formed
+    by committed teammate spawns before ranking. Sampling the whole map and discarding exterior
+    points afterward must not collapse a valid team region to a single candidate. The selected
+    position and every reported alternative must remain inside that geometry.
+  </li>
 </ul>
 
 <h2>Tribe capture reinforcement</h2>

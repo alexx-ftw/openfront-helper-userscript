@@ -428,14 +428,30 @@ function createStaticSpawnCandidate(options) {
   return { x, y, staticScore, freeLandScore: landDensity };
 }
 
-function computeStaticCandidatesWithBudget(game, candidateBudget) {
+function spawnCandidateRegionBounds(region, W, H, radius) {
+  if (!region) return { minX: radius, maxX: W - radius, minY: radius, maxY: H - radius };
+  const points = region.polygon ?? [region.corridor?.start, region.corridor?.end].filter(Boolean);
+  if (points.length === 0) {
+    return { minX: radius, maxX: W - radius, minY: radius, maxY: H - radius };
+  }
+  const padding = region.corridor?.halfWidth ?? 0;
+  return {
+    minX: Math.max(radius, Math.floor(Math.min(...points.map((point) => point.x)) - padding)),
+    maxX: Math.min(W - radius, Math.ceil(Math.max(...points.map((point) => point.x)) + padding)),
+    minY: Math.max(radius, Math.floor(Math.min(...points.map((point) => point.y)) - padding)),
+    maxY: Math.min(H - radius, Math.ceil(Math.max(...points.map((point) => point.y)) + padding)),
+  };
+}
+
+function computeStaticCandidatesWithBudget(game, candidateBudget, teamRegion = null) {
   const td = getSpawnTerrain(game);
   if (!td) return [];
   const { terrain, W, H } = td;
 
   const R = SPAWN_HEATMAP_ANALYSIS_R;
-  const spanWidth = Math.max(1, W - 2 * R);
-  const spanHeight = Math.max(1, H - 2 * R);
+  const bounds = spawnCandidateRegionBounds(teamRegion, W, H, R);
+  const spanWidth = Math.max(1, bounds.maxX - bounds.minX);
+  const spanHeight = Math.max(1, bounds.maxY - bounds.minY);
   const boundedStep = Math.ceil(
     Math.sqrt(
       (spanWidth * spanHeight) / candidateBudget,
@@ -444,8 +460,9 @@ function computeStaticCandidatesWithBudget(game, candidateBudget) {
   const step = Math.max(SPAWN_HEATMAP_GRID_STEP, boundedStep);
   const candidates = [];
 
-  for (let cy = R; cy < H - R; cy += step) {
-    for (let cx = R; cx < W - R; cx += step) {
+  for (let cy = bounds.minY; cy < bounds.maxY; cy += step) {
+    for (let cx = bounds.minX; cx < bounds.maxX; cx += step) {
+      if (teamRegion && !isPointInsideTeamSpawnRegion(cx, cy, teamRegion)) continue;
       // Skip water grid centers immediately — avoids the neighbourhood scan
       // for the majority of cells (ocean), the biggest single speedup.
       if (!isPassableLandByte(terrain[cy * W + cx])) continue;
@@ -944,7 +961,10 @@ function diverseSpawnTopSpots(candidates) {
     const tooClose = topSpots.some((spot) =>
       Math.abs(candidate.x - spot.x) + Math.abs(candidate.y - spot.y) < SPAWN_TOP_SPOT_MIN_DISTANCE,
     );
-    if (!tooClose) topSpots.push({ x: candidate.x, y: candidate.y });
+    // Preserve the score breakdown for diagnostics and headless match traces.
+    // Rendering and spawn actuation still consume only x/y, so this adds
+    // observability without changing candidate order or the selected tile.
+    if (!tooClose) topSpots.push({ ...candidate });
   }
   return topSpots;
 }
@@ -1642,7 +1662,14 @@ function computeInitialSpawnTopSpotsForBot(game, me) {
   const signature = initialBotSpawnSignature(game, me);
   const cached = cachedInitialBotSpawnTopSpots(src, terrain, signature);
   if (cached !== undefined) return cached;
-  const candidates = computeStaticCandidatesWithBudget(game, SPAWN_HEATMAP_INITIAL_BOT_CANDIDATES);
+  const objectiveApi = getSpawnObjectiveApi();
+  const groups = collectSpawnPlayerGroups(game, me, objectiveApi);
+  const teamRegion = buildTeamSpawnRegion(groups.teamSpawns);
+  const candidates = computeStaticCandidatesWithBudget(
+    game,
+    SPAWN_HEATMAP_INITIAL_BOT_CANDIDATES,
+    teamRegion,
+  );
   if (!candidates.length) return null;
   const spots = computeDynamicScores(game, candidates, me)?.topSpots;
   return rememberInitialBotSpawnTopSpots(src, terrain, signature, spots?.length > 0 ? spots : null);

@@ -80,7 +80,10 @@ function loadHarness() {
     computeAsyncExactSpawnTopSpotsForBot: sandbox.computeAsyncExactSpawnTopSpotsForBot,
     computeSpawnTopSpotsForBot: sandbox.computeSpawnTopSpotsForBot,
     computeStaticCandidates: sandbox.computeStaticCandidates,
+    computeStaticCandidatesWithBudget: sandbox.computeStaticCandidatesWithBudget,
     computeDynamicScores: sandbox.computeDynamicScores,
+    buildTeamSpawnRegion: sandbox.buildTeamSpawnRegion,
+    isPointInsideTeamSpawnRegion: sandbox.isPointInsideTeamSpawnRegion,
     game,
     getIndexCreateCalls: () => indexCreateCalls,
     layer: overlayLayer,
@@ -261,6 +264,37 @@ assert.equal(
   "the fast fallback rejects a richer position outside the Nation-team hull",
 );
 assert.equal(geometryFallback.scores.length, 1);
+
+const regionTerrain = new Uint8Array(600 * 300).fill(LAND);
+const regionGame = {
+  __src: { _map: { terrain: regionTerrain } },
+  height: () => 300,
+  width: () => 600,
+};
+const teamRegion = harness.buildTeamSpawnRegion([
+  { x: 80, y: 80 },
+  { x: 180, y: 80 },
+  { x: 130, y: 180 },
+]);
+const globalBudget = harness.computeStaticCandidatesWithBudget(regionGame, 64);
+const globalInside = globalBudget.filter((candidate) =>
+  harness.isPointInsideTeamSpawnRegion(candidate.x, candidate.y, teamRegion),
+);
+const regionBudget = harness.computeStaticCandidatesWithBudget(regionGame, 64, teamRegion);
+assert.ok(
+  regionBudget.length > globalInside.length,
+  "the initial budget is spent inside team geometry instead of being discarded by a later filter",
+);
+assert.ok(
+  regionBudget.every((candidate) =>
+    harness.isPointInsideTeamSpawnRegion(candidate.x, candidate.y, teamRegion),
+  ),
+  "geometry-focused sampling never creates an exterior candidate",
+);
+assert.ok(
+  Number.isFinite(geometryFallback.topSpots[0].score),
+  "top spawn spots preserve their score breakdown for headless diagnostics",
+);
 
 // The live exact selector must schedule its first range asynchronously. This
 // protects the spawn phase from reintroducing a synchronous full-map pass when

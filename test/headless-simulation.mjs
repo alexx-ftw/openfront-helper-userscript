@@ -197,6 +197,8 @@ assert.match(runner, /OFH_LOG_NAVAL/);
 assert.match(runner, /OFH_LOG_STRUCTURES/);
 assert.match(runner, /OFH_LOG_SPAWN/);
 assert.match(runner, /phase:\s*"spawn-selection-trace"/);
+assert.match(adapter, /kind:\s*"spawn-ranking"/);
+assert.match(adapter, /topSpots:\s*Array\.isArray\(topSpots\)/);
 assert.match(adapter, /kind: "spawn-gate"/);
 assert.match(adapter, /spawnEnabled: nationBot\.feat\?\.\("spawn"\) === true/);
 assert.match(adapter, /getIntentRateLimitSnapshot/);
