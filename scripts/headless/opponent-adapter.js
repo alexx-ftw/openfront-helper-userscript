@@ -52,8 +52,15 @@ export function createBundledOpponentHarness(options = {}) {
   }
   const clock = { now: 0 };
   window.__OFH_realOpponentClock = clock;
-  const hostDeadlineNow = globalThis.performance.now.bind(globalThis.performance);
-  window.__OFH_deadlineNow = hostDeadlineNow;
+  // Policy comparisons must not let host load decide how many topology/BFS
+  // batches finish before a deadline. Advance a synthetic deadline clock by a
+  // fixed quantum on every probe: work remains bounded, while identical seeds
+  // consume identical slices on fast and slow runs.
+  let deterministicDeadlineMs = 0;
+  window.__OFH_deadlineNow = () => {
+    deterministicDeadlineMs += 0.25;
+    return deterministicDeadlineMs;
+  };
   window.Date.now = () => clock.now;
   Object.defineProperty(window.performance, "now", {
     configurable: true,

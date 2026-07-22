@@ -910,14 +910,21 @@
       // level-one launcher must immediately be upgraded to the minimum H-bomb
       // ready level. A failed/temporarily unaffordable upgrade reserves this
       // same top-priority slot rather than funding an unrelated structure.
-      return (await this.maybeUpgradeHostileSiloSam()) ? true : null;
+      const hydrogenPlan = this.hydrogenSamProtectionPlan?.();
+      if (hydrogenPlan === null || hydrogenPlan === undefined) return null;
+      if (hydrogenPlan.targetLevel <= hydrogenPlan.currentLevel) return null;
+      return (await this.maybeUpgradePlannedSam(hydrogenPlan, {
+        maximumNuclearPriority: true,
+      })) ? true : false;
     }
 
     async maybeUpgradeHostileSiloSam() {
       const hydrogenPlan = this.hydrogenSamProtectionPlan?.();
       if (hydrogenPlan === null || hydrogenPlan === undefined) return false;
       if (hydrogenPlan.targetLevel <= hydrogenPlan.currentLevel) return false;
-      return this.maybeUpgradePlannedSam(hydrogenPlan);
+      return this.maybeUpgradePlannedSam(hydrogenPlan, {
+        maximumNuclearPriority: true,
+      });
     }
 
     shouldReserveTriggeredHostileSiloSamBudget(placedSilo) {
@@ -1249,7 +1256,27 @@
     }
 
     isActiveIncomingAttack(attack) {
-      return Number(attack?.troops?.()) > 0 && !attack?.retreating?.();
+      if (Number(attack?.troops?.()) <= 0 || attack?.retreating?.()) return false;
+
+      // incomingAttacks() can briefly retain a wire snapshot after its target
+      // or attacker has changed state.  A positive troop count alone is not a
+      // current hostile attack: stale/dead/friendly/misdirected entries must not
+      // authorize an economic Defense Post.
+      return this.attackTargetsUs(attack) && this.attackHasLiveHostileAttacker(attack);
+    }
+
+    attackTargetsUs(attack) {
+      const targetID = attack?.target?.()?.smallID?.();
+      const ourID = this.player?.smallID?.();
+      if (targetID === null || targetID === undefined) return true;
+      if (ourID === null || ourID === undefined) return true;
+      return targetID === ourID;
+    }
+
+    attackHasLiveHostileAttacker(attack) {
+      const attacker = attack?.attacker?.();
+      if (attacker?.isAlive?.() === false) return false;
+      return !attacker || this.player?.isFriendly?.(attacker) !== true;
     }
 
     canAffordDefensePost() {
@@ -6946,7 +6973,7 @@
       return false;
     }
 
-    async maybeUpgradePlannedSam(plan) {
+    async maybeUpgradePlannedSam(plan, options = {}) {
       // A built hostile Silo is enough evidence to complete a proven coverage
       // or capacity upgrade before its first missile consumes that window.
       if (!this.plannedSamUpgradeEligible(plan)) return false;
@@ -6960,7 +6987,10 @@
       if (bu === null) return false;
       const cost = this.plannedSamUpgradeCost(bu, cacheKey);
       if (cost > availableGold) return false;
-      if (!this.samUpgradeEconomyCanAbsorb(cost)) return false;
+      if (
+        options.maximumNuclearPriority !== true &&
+        !this.samUpgradeEconomyCanAbsorb(cost)
+      ) return false;
 
       return this.emitPlannedSamUpgrade(bu);
     }

@@ -701,6 +701,54 @@ assert.equal(
   null,
   "a cancelled land attack cannot retain a preventive Defense Post reserve",
 );
+preemptiveDefensePostBehavior.player.smallID = () => 7;
+preemptiveDefensePostBehavior.player.isFriendly = (attacker) => attacker?.friendly === true;
+preemptiveIncomingAttacks = [
+  {
+    troops: () => 900,
+    target: () => ({ smallID: () => 9 }),
+    attacker: () => ({
+      type: () => sandbox.PlayerType.Nation,
+      isAlive: () => true,
+    }),
+  },
+];
+assert.equal(
+  preemptiveDefensePostBehavior.preemptiveDefensePostPressure(),
+  null,
+  "an attack snapshot aimed at another player cannot authorize our Defense Post",
+);
+preemptiveIncomingAttacks = [
+  {
+    troops: () => 900,
+    target: () => ({ smallID: () => 7 }),
+    attacker: () => ({
+      type: () => sandbox.PlayerType.Nation,
+      isAlive: () => false,
+    }),
+  },
+];
+assert.equal(
+  preemptiveDefensePostBehavior.preemptiveDefensePostPressure(),
+  null,
+  "a dead attacker's stale snapshot cannot authorize a Defense Post",
+);
+preemptiveIncomingAttacks = [
+  {
+    troops: () => 900,
+    target: () => ({ smallID: () => 7 }),
+    attacker: () => ({
+      type: () => sandbox.PlayerType.Human,
+      isAlive: () => true,
+      friendly: true,
+    }),
+  },
+];
+assert.equal(
+  preemptiveDefensePostBehavior.preemptiveDefensePostPressure(),
+  null,
+  "a now-friendly attack snapshot cannot authorize a Defense Post",
+);
 assert.equal(
   preemptiveDefensePostBehavior.shouldReserveEconomicGrowthForOffense(UNIT.City),
   false,
@@ -910,6 +958,19 @@ assert.equal(
   false,
   "a visible external Silo keeps the first-SAM fund reserved even during simultaneous land pressure",
 );
+
+hostileSiloMaximumPriorityBehavior.shouldBuildSiloTriggeredSam = () => false;
+hostileSiloMaximumPriorityBehavior.hydrogenSamProtectionPlan = () => ({
+  currentLevel: 1,
+  targetLevel: 5,
+});
+hostileSiloMaximumPriorityBehavior.maybeUpgradePlannedSam = async () => false;
+assert.equal(
+  await hostileSiloMaximumPriorityBehavior.handleBuiltHostileSiloSamUpgrade(),
+  false,
+  "an unaffordable level-five SAM upgrade reserves the construction slot instead of funding economy",
+);
+assert.equal(lowerPriorityConstructionCalls, 0);
 
 const preemptiveHostileGoldBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 let preemptiveHostileGoldSamCalls = 0;
@@ -2494,6 +2555,22 @@ assert.equal(
   "An affordable authoritative SAM upgrade is not rejected by the higher new-site price",
 );
 assert.equal(sentBuilds.length, 1);
+hydrogenProtectionBehavior.economicConstructionPressureForSamUpgrade = () => ({
+  type: UNIT.City,
+  cost: 1_000_000n,
+});
+hydrogenProtectionGold = 500_000n;
+sentBuilds.length = 0;
+assert.equal(
+  await hydrogenProtectionBehavior.maybeUpgradePlannedSam(
+    { sam: hydrogenSam, currentLevel: 1, targetLevel: 5 },
+    { maximumNuclearPriority: true },
+  ),
+  true,
+  "a maximum-priority external-Silo upgrade spends affordable gold without preserving an unrelated economy purchase",
+);
+assert.equal(sentBuilds.length, 1);
+delete hydrogenProtectionBehavior.economicConstructionPressureForSamUpgrade;
 let unaffordableCachedUpgradeProbes = 0;
 hydrogenProtectionGold = 499_999n;
 hydrogenProtectionBehavior.buildableForUnits = async () => {

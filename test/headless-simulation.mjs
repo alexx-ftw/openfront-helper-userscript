@@ -377,7 +377,12 @@ assert.deepEqual(
   ["Small", "Small", "Small", "Normal", "Small", "Small", "Small"],
   "Four Islands uses full-resolution spawn areas; the other scenarios use bounded Small maps",
 );
-assert.match(adapter, /window\.__OFH_deadlineNow = hostDeadlineNow/);
+assert.match(adapter, /deterministicDeadlineMs \+= 0\.25/);
+assert.doesNotMatch(
+  adapter,
+  /window\.__OFH_deadlineNow = hostDeadlineNow/,
+  "headless policy decisions cannot depend on host wall-clock load",
+);
 assert.match(adapter, /sam-upgrade-plan/);
 assert.match(adapter, /targetLevel: plan\?\.targetLevel/);
 assert.match(adapter, /defense-post-fallback/);
