@@ -21,8 +21,9 @@ const me = {
 };
 const game = {
   myPlayer: () => me,
-  playerBySmallID: (id) => (id === 2 ? attacker : null),
+  playerBySmallID: (id) => resolvedPlayers.get(id) ?? null,
 };
+const resolvedPlayers = new Map([[2, attacker]]);
 const sandbox = {
   runtimeState: { enemyIntentEnabled: false },
   performance: { now: () => now },
@@ -92,6 +93,23 @@ assert.equal(
   sandbox.getEnemyIntentWarnings().length,
   0,
   "a resolved attack disappears on the first authoritative empty poll",
+);
+
+incomingAttacks = [{ attackerID: 5, troops: 250, retreating: false }];
+now += 250;
+tickListener();
+assert.equal(sandbox.getEnemyIntentWarnings()[0].attackerName, "p5");
+
+resolvedPlayers.set(5, {
+  smallID: () => 5,
+  displayName: () => "Late Enemy",
+});
+now += 250;
+tickListener();
+assert.equal(
+  sandbox.getEnemyIntentWarnings()[0].attackerName,
+  "Late Enemy",
+  "a fallback attacker label refreshes when the player view becomes available",
 );
 
 process.stdout.write("enemy intent intelligence tests passed\n");

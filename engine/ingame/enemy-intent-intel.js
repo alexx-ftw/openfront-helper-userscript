@@ -89,6 +89,9 @@
     if (existing) {
       existing.troops = troops;
       existing.atMs = now;
+      if (existing.attackerName === `p${attackerID}`) {
+        existing.attackerName = resolveAttackerName(attackerID);
+      }
       return;
     }
     _enemyIntentWarnings.set(key, {
