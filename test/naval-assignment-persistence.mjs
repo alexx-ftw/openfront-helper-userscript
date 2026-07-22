@@ -401,6 +401,19 @@ assert.equal(
   patrolShips.length * 2,
   "patrol selection computes one voyage and one target distance per ship without sorting",
 );
+patrolDistanceCalls = 0;
+const retaliationPatrol = patrolSelectionBehavior.selectClosestIdleWarship(100, null, 0, 0);
+assert.equal(retaliationPatrol.warship.id(), "patrol-33");
+assert.equal(
+  patrolDistanceCalls,
+  patrolShips.length * 2,
+  "retaliation selection reuses the same linear nearest-idle scan without assignment state",
+);
+assert.match(
+  read("engine/ingame/auto-bot/warshipBehavior.js"),
+  /maybeMoveWarship\(tile\)[\s\S]{0,300}selectClosestIdleWarship\(tile, null, 0, 0\)/,
+  "warship retaliation must use the bounded linear selector instead of sorting the fleet",
+);
 
 assert.doesNotMatch(
   read("engine/ingame/auto-bot/warshipBehavior.js"),

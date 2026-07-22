@@ -513,22 +513,7 @@
     maybeMoveWarship(tile) {
       // Make sure we are targeting water
       if (this.game.isWater(tile)) {
-        const warship = this.player
-          .units(UNIT.Warship)
-          .filter((p) => {
-            const patrolTile = p.warshipState().patrolTile;
-            return (
-              patrolTile !== undefined &&
-              // Dont send ships which are already traveling
-              this.game.manhattanDist(p.tile(), patrolTile) < 130
-            );
-          })
-          .sort((a, b) => {
-            // Sort by distance (closest first)
-            const distA = this.game.manhattanDist(a.tile(), tile);
-            const distB = this.game.manhattanDist(b.tile(), tile);
-            return distA - distB;
-          })[0];
+        const warship = this.selectClosestIdleWarship(tile, null, 0, 0)?.warship;
 
         if (warship) {
           // src: warship.updateWarshipState({ patrolTile: tile });
@@ -1588,11 +1573,11 @@
       let best = null;
       let bestDistance = Infinity;
       for (const warship of this.player.units(UNIT.Warship)) {
-        if (s.invasionAssignments?.has(warship.id())) continue;
+        if (s?.invasionAssignments?.has(warship.id())) continue;
         const patrolTile = warship.warshipState().patrolTile;
         if (patrolTile === undefined) continue;
         if (this.game.manhattanDist(warship.tile(), patrolTile) >= 130) continue;
-        const last = s.cooldown.get(warship.id());
+        const last = s?.cooldown?.get(warship.id());
         if (last !== undefined && tick - last < cooldownTicks) continue;
         const distance = this.game.manhattanDist(warship.tile(), tile);
         // Strict comparison preserves the stable-sort tie: the first eligible
