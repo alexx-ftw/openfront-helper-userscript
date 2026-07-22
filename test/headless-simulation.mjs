@@ -452,5 +452,15 @@ assert.doesNotMatch(
   /\bcatch\b|\.catch\s*\(/,
   "companion engine must let queued, tick, and UI failures propagate",
 );
+assert.doesNotMatch(
+  fs.readFileSync(path.join(root, "engine/ingame/companion/panel.js"), "utf8"),
+  /\bcatch\b|\.catch\s*\(/,
+  "companion panel must let translation, event, and rendering failures propagate",
+);
+assert.doesNotMatch(
+  fs.readFileSync(path.join(root, "engine/ingame/companion/commands.js"), "utf8"),
+  /\bcatch\b|\.catch\s*\(/,
+  "companion command collection must not hide identity or message failures",
+);
 
 process.stdout.write("headless simulation contract tests passed\n");

@@ -11,9 +11,7 @@
 "use strict";
 
   function companionTr(key, params) {
-    try {
-      if (typeof tr === "function") return tr(key, params);
-    } catch (_error) { /* fall through */ }
+    if (typeof tr === "function") return tr(key, params);
     return key;
   }
 
@@ -159,13 +157,17 @@
     return ` <span class="ohcp-tip" title="${companionEsc(companionTr(text))}">?</span>`;
   }
 
+  function companionBossStatusText(status) {
+    if (status === "found") return companionTr("Boss found");
+    if (status === "missing") return companionTr("Boss not found");
+    if (status === "self") return companionTr("This tab is the boss");
+    return companionTr("No boss set");
+  }
+
   function companionRenderControl() {
     const s = companionSettings();
     const st = companionState.bossStatus;
-    const statusText = st === "found" ? companionTr("Boss found")
-      : st === "missing" ? companionTr("Boss not found")
-      : st === "self" ? companionTr("This tab is the boss")
-      : companionTr("No boss set");
+    const statusText = companionBossStatusText(st);
 
     const core = [
       `<div class="ohcp-row"><span class="ohcp-label">${companionEsc(companionTr("Companion mode"))}</span>
@@ -227,8 +229,11 @@ style="width:34px">${companionEsc(emoji)}</button>
 
   function companionRenderLog() {
     const sockOk = typeof isSocketConnected === "function" ? isSocketConnected() : null;
+    let socketText = "?";
+    if (sockOk === true) socketText = "OK";
+    else if (sockOk === false) socketText = companionTr("disconnected");
     const head = `<div class="ohcp-row"><span class="ohcp-label">${companionEsc(companionTr("Socket"))}</span>
-<span class="${sockOk === false ? "ohcp-warn" : ""}">${companionEsc(sockOk === null ? "?" : sockOk ? "OK" : companionTr("disconnected"))}</span></div>`;
+<span class="${sockOk === false ? "ohcp-warn" : ""}">${companionEsc(socketText)}</span></div>`;
     const fail = companionState.lastSendFailedAt
       ? `<div class="ohcp-row ohcp-warn">${companionEsc(companionTr("Last send failed"))}: ${
           new Date(companionState.lastSendFailedAt).toLocaleTimeString()}</div>`
@@ -291,11 +296,9 @@ style="width:34px">${companionEsc(emoji)}</button>
         close.addEventListener("click", function () {
           companionPatchSettings({ hidden: true });
           panel.remove();
-          try {
-            window.dispatchEvent(new CustomEvent("ofh-quick-panel-setting", {
-              detail: { key: "showCompanionPanel", value: false },
-            }));
-          } catch (_error) { /* ignore */ }
+          window.dispatchEvent(new CustomEvent("ofh-quick-panel-setting", {
+            detail: { key: "showCompanionPanel", value: false },
+          }));
         });
       }
     }
@@ -340,9 +343,9 @@ style="width:34px">${companionEsc(emoji)}</button>
     const bodyEl = panel.querySelector(".ohcp-body");
     if (!bodyEl) return;
     const tab = (companionSettings().activeTab) || "control";
-    bodyEl.innerHTML = tab === "emoji" ? companionRenderEmoji()
-      : tab === "log" ? companionRenderLog()
-      : companionRenderControl();
+    if (tab === "emoji") bodyEl.innerHTML = companionRenderEmoji();
+    else if (tab === "log") bodyEl.innerHTML = companionRenderLog();
+    else bodyEl.innerHTML = companionRenderControl();
     companionBindBodyEvents(panel);
   }
 
@@ -352,11 +355,9 @@ style="width:34px">${companionEsc(emoji)}</button>
       enabled.addEventListener("click", function () {
         const next = !companionState.enabled;
         setCompanionEnabled(next);
-        try {
-          window.dispatchEvent(new CustomEvent("ofh-quick-panel-setting", {
-            detail: { key: "companionEnabled", value: next },
-          }));
-        } catch (_error) { /* ignore */ }
+        window.dispatchEvent(new CustomEvent("ofh-quick-panel-setting", {
+          detail: { key: "companionEnabled", value: next },
+        }));
         companionRenderBody(panel);
         companionUpdateChrome(panel);
       });
@@ -424,7 +425,7 @@ style="width:34px">${companionEsc(emoji)}</button>
         const game = typeof getOpenFrontGameContext === "function"
           ? (getOpenFrontGameContext() || {}).game : null;
         const names = companionHumanPlayers(game).map(function (p) {
-          try { return p.name(); } catch (_e) { return null; }
+          return p.name();
         }).filter(Boolean);
         if (names.length === 0) {
           companionLog(companionTr("No human players found"));
@@ -538,14 +539,6 @@ style="${grid ? "" : "width:100%;text-align:left;"}margin:1px">${companionEsc(it
   }
 
   function companionRefreshPanel() {
-    try {
-      companionBuildPanel();
-    } catch (error) {
-      console.warn("[Companion] panel render failed:", error);
-    }
-    try {
-      companionSyncBanner();
-    } catch (error) {
-      console.warn("[Companion] banner render failed:", error);
-    }
+    companionBuildPanel();
+    companionSyncBanner();
   }

@@ -63,41 +63,52 @@
     return `${msg.senderID}:${msg.recipientID}:${msg.message}:${msg.createdAt}`;
   }
 
+  function companionEmojiActionLookup(bindings) {
+    const byEmoji = {};
+    for (const id of COMPANION_ACTION_IDS) {
+      const emoji = bindings && bindings[id];
+      if (typeof emoji === "string" && emoji !== "") byEmoji[emoji] = id;
+    }
+    return byEmoji;
+  }
+
+  function companionMessageTargetsBot(message, mySmallID) {
+    return message.recipientID === "AllPlayers"
+      || Number(message.recipientID) === Number(mySmallID);
+  }
+
+  function companionRecordEmojiMessage(message, seen) {
+    const key = companionEmojiKey(message);
+    if (seen.indexOf(key) !== -1) return false;
+    seen.push(key);
+    if (seen.length > COMPANION_SEEN_LIMIT) {
+      seen.splice(0, seen.length - COMPANION_SEEN_LIMIT);
+    }
+    return true;
+  }
+
   // Commands the boss has issued to THIS bot since the last call.
   // Mutates `seen` (the caller owns it, normally companionState.seenEmoji).
   function companionCollectCommands(boss, mySmallID, bindings, seen) {
     const out = [];
     // Our own smallID must be known. Without this guard Number(null) === 0, which
     // is TerraNullius's sentinel smallID — an unresolved caller would start
-    // matching messages addressed to nobody. The engine's caller derives this
-    // inside a try/catch that yields null on failure, so the null path is real.
+    // matching messages addressed to nobody. Keep the null path explicit for
+    // callers that have not resolved their own player identity yet.
     if (mySmallID == null) return out;
     if (!boss || !boss.state) return out;
     const feed = boss.state.outgoingEmojis;
     if (!Array.isArray(feed) || feed.length === 0) return out;
 
-    // emoji → actionId, so an unbound emoji costs one lookup instead of a scan.
-    const byEmoji = {};
-    for (const id of COMPANION_ACTION_IDS) {
-      const e = bindings && bindings[id];
-      if (typeof e === "string" && e !== "") byEmoji[e] = id;
-    }
+    const byEmoji = companionEmojiActionLookup(bindings);
 
     for (const msg of feed) {
       if (!msg || typeof msg !== "object") continue;
       if (typeof msg.message !== "string") continue;
-      // Addressed to me, or broadcast to every bot at once.
-      const mine =
-        msg.recipientID === "AllPlayers" || Number(msg.recipientID) === Number(mySmallID);
-      if (!mine) continue;
+      if (!companionMessageTargetsBot(msg, mySmallID)) continue;
       const actionId = byEmoji[msg.message];
       if (!actionId) continue;
-      const key = companionEmojiKey(msg);
-      if (seen.indexOf(key) !== -1) continue;
-      seen.push(key);
-      if (seen.length > COMPANION_SEEN_LIMIT) {
-        seen.splice(0, seen.length - COMPANION_SEEN_LIMIT);
-      }
+      if (!companionRecordEmojiMessage(msg, seen)) continue;
       out.push(actionId);
     }
     return out;
