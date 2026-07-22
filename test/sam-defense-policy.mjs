@@ -2544,6 +2544,27 @@ assert.equal(
   "a Warship remains available once its cost and the SAM replacement reserve are covered",
 );
 
+nukeSamLiquidityBehavior.player.units = () => [];
+nukeSamLiquidityBehavior.spendableConstructionGold = () => 1_061_290n;
+assert.equal(
+  nukeSamLiquidityBehavior.shouldDeferWarshipForFirstSam(500_000n),
+  true,
+  "a visible Silo reserves the complete first-SAM cost from an emergency Warship",
+);
+nukeSamLiquidityBehavior.spendableConstructionGold = () => 2_000_000n;
+assert.equal(
+  nukeSamLiquidityBehavior.shouldDeferWarshipForFirstSam(500_000n),
+  false,
+  "the emergency Warship is affordable once both it and the first SAM are funded",
+);
+nukeSamLiquidityBehavior.player.units = (type) =>
+  type === UNIT.SAMLauncher ? [makeUnit(1162, 1, { underConstruction: true })] : [];
+assert.equal(
+  nukeSamLiquidityBehavior.shouldDeferWarshipForFirstSam(500_000n),
+  false,
+  "a first SAM already under construction releases the maritime emergency path",
+);
+
 let coverageSamLevel = 1;
 const structureCoverageSam = {
   id: () => 1201,

@@ -320,6 +320,11 @@ warshipBehavior.buildableWarship = async () => ({
   type: UNIT.Warship,
   canBuild: 44,
 });
+let firstSamReserveActive = true;
+warshipBehavior.structureBehavior = {
+  shouldDeferWarshipForFirstSam: () => firstSamReserveActive,
+  shouldDeferOffensiveWarship: () => false,
+};
 
 const richAutoBot = Object.create(warshipSandbox.__WarshipBehavior.prototype);
 const richAutoBotPlayer = {
@@ -352,6 +357,15 @@ assert.equal(
   "the automated client remains eligible for rich-player naval defense while other Humans stay excluded",
 );
 
+assert.equal(
+  await warshipBehavior.maybeSpawnWarship(),
+  false,
+  "a maritime emergency cannot spend the hard reserve for the first SAM",
+);
+assert.equal(randomChanceCalls, 0, "the nuclear reserve stops the Warship before its random roll");
+assert.equal(warshipBuilds.length, 0, "the reserved SAM gold is not exported into a Warship");
+
+firstSamReserveActive = false;
 assert.equal(
   await warshipBehavior.maybeSpawnWarship(),
   true,

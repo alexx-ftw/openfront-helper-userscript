@@ -187,10 +187,7 @@
       }
       const maritimeEmergency =
         this.incomingMaritimeInvasionSignal()?.active === true;
-      if (
-        !maritimeEmergency &&
-        this.shouldDeferWarshipForDefense(this.cost(UNIT.Warship))
-      ) {
+      if (this.shouldDeferWarshipBuild(maritimeEmergency)) {
         return false;
       }
       // A live transport aimed at our territory bypasses the ordinary 50% spawn
@@ -227,6 +224,19 @@
     shouldDeferWarshipForDefense(warshipCost) {
       return (
         this.structureBehavior?.shouldDeferOffensiveWarship?.(warshipCost) ===
+        true
+      );
+    }
+
+    shouldDeferWarshipBuild(maritimeEmergency) {
+      const cost = this.cost(UNIT.Warship);
+      if (this.shouldDeferWarshipForFirstSam(cost)) return true;
+      return !maritimeEmergency && this.shouldDeferWarshipForDefense(cost);
+    }
+
+    shouldDeferWarshipForFirstSam(warshipCost) {
+      return (
+        this.structureBehavior?.shouldDeferWarshipForFirstSam?.(warshipCost) ===
         true
       );
     }

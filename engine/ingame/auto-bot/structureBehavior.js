@@ -2770,6 +2770,19 @@
       return this.spendableConstructionGold() < cost + reserve;
     }
 
+    shouldDeferWarshipForFirstSam(warshipCost = 0n) {
+      if (!state.settings.winFixes || !this.hasPlacedSiloOnMap()) return false;
+      const sams = this.player.units(UNIT.SAMLauncher) || [];
+      // Once the first launcher exists, including while it is being built, the
+      // maritime emergency may respond normally. Until then, a visible Silo's
+      // hard reserve cannot be bypassed by the emergency Warship path.
+      if (sams.length > 0) return false;
+      const samCost = this.safeConstructionCost(UNIT.SAMLauncher);
+      if (samCost === null) return true;
+      const cost = BigInt(warshipCost || 0n);
+      return this.spendableConstructionGold() < samCost + cost;
+    }
+
     // WIN-FIX: a hostile border with a larger troop ceiling makes economic
     // growth the safer response; the caller passes the cached snapshot so the
     // high-starting-gold and normal build gates share one border scan.
