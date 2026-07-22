@@ -69,6 +69,8 @@ const DONATION_DEFAULTS = {
   allyIncomingAttacks: undefined,
   allyOutgoingAttacks: [],
   ownIncomingAttacks: undefined,
+  tickCount: 1,
+  tickAdvanceMs: 0,
 };
 
 async function runDonation(options = {}) {
@@ -92,9 +94,12 @@ async function runDonation(options = {}) {
     allyIncomingAttacks,
     allyOutgoingAttacks,
     ownIncomingAttacks,
+    tickCount,
+    tickAdvanceMs,
   } = { ...DONATION_DEFAULTS, ...options };
   const packets = [];
   let currentlyBeingAttacked = beingAttacked;
+  let now = 5000;
   const me = {
     id: () => 1,
     smallID: () => 1,
@@ -168,12 +173,15 @@ async function runDonation(options = {}) {
     sendGamePacket: (packet) => packets.push(packet),
     getPlayerDisplayName: (player) => player.displayName(),
     runtimeDebugLog() {},
-    Date: { now: () => 5000 },
+    Date: { now: () => now },
     console: { log() {}, error() {} },
   };
 
   executeClassicScript(SOURCE, sandbox, { filename: "auto-donate.js" });
-  await sandbox.window.__OFH_tickAutoDonate();
+  for (let tickIndex = 0; tickIndex < tickCount; tickIndex++) {
+    await sandbox.window.__OFH_tickAutoDonate();
+    now += tickAdvanceMs;
+  }
   if (returnDetails) {
     return {
       packets,
@@ -209,6 +217,37 @@ const disabledGoldDonation = await runDonation({
   gold: 5000,
 });
 assert.deepEqual(disabledGoldDonation, [], "gold donation respects the live game configuration");
+
+const prematureRepeatDonation = await runDonation({
+  tickCount: 2,
+  tickAdvanceMs: 3001,
+});
+assert.equal(
+  prematureRepeatDonation.length,
+  1,
+  "the engine's ten-second per-recipient donation cooldown blocks a three-second retry",
+);
+
+const readyRepeatDonation = await runDonation({
+  tickCount: 2,
+  tickAdvanceMs: 10000,
+});
+assert.equal(
+  readyRepeatDonation.length,
+  2,
+  "the same recipient becomes eligible again when the engine cooldown expires",
+);
+
+const combatTroopsBeforeGold = await runDonation({
+  autoDonateTroops: true,
+  autoDonateGold: true,
+  gold: 5000,
+});
+assert.deepEqual(
+  combatTroopsBeforeGold.map((packet) => packet.type),
+  ["donate_troops"],
+  "combat troops claim the shared recipient cooldown before an optional gold transfer",
+);
 
 const retreatingOnlyCombat = await runDonation({
   allyIncomingAttacks: [{ retreating: () => true }],

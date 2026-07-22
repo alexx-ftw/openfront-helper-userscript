@@ -11,18 +11,27 @@
 //
 // Target matching: comma-separated player names (case-insensitive, includes clan tags).
 
-  var lastAutoDonateTroopsMs = 0;
-  var lastAutoDonateGoldMs = 0;
   var autoDonateTroopDonationInFlight = false;
+  var lastAutoDonationByRecipientMs = new Map();
 
   function setTroopDonationInFlight(value) {
     autoDonateTroopDonationInFlight = value;
   }
 
-  function markTroopDonationNow() {
-    lastAutoDonateTroopsMs = Date.now();
+  function autoDonationRecipientIsReady(player, now = Date.now()) {
+    const recipient = getAutoDonateRecipientId(player);
+    if (recipient == null) return false;
+    const lastDonation = lastAutoDonationByRecipientMs.get(recipient);
+    return lastDonation === undefined || now - lastDonation >= DONATE_COOLDOWN_MS;
   }
-  var DONATE_COOLDOWN_MS = 3000;
+
+  function markAutoDonationRecipient(player, now = Date.now()) {
+    const recipient = getAutoDonateRecipientId(player);
+    if (recipient != null) lastAutoDonationByRecipientMs.set(recipient, now);
+  }
+
+  // Engine Config.donateCooldown() is 100 ticks at 10 ticks/second.
+  var DONATE_COOLDOWN_MS = 10000;
 
   function autoDonateCfg(key, fallback) {
     {
@@ -298,6 +307,7 @@
       if (myId !== null && playerId !== null && myId === playerId) return false;
       if (!matchesAutoDonatePlayer(player, targetNames)) return false;
       if (!canAutoDonateToPlayer(me, player, donationKind)) return false;
+      if (!autoDonationRecipientIsReady(player)) return false;
       return !combatOnly || isAutoDonateTargetInCombat(player);
     }
   }
@@ -483,8 +493,9 @@
   function sendAutoDonateTroops(plan, amount) {
     const recipient = getAutoDonateRecipientId(plan.recipient);
     if (recipient == null || amount <= 0) return false;
+    if (!autoDonationRecipientIsReady(plan.recipient)) return false;
     sendGamePacket({ type: "donate_troops", recipient, troops: amount });
-    markTroopDonationNow();
+    markAutoDonationRecipient(plan.recipient);
     runtimeDebugLog(
       "[AutoDonate] troops", amount, "→", getAutoDonatePlayerName(plan.recipient),
     );
@@ -495,7 +506,6 @@
 
   async function tickAutoDonateTroops() {
     if (autoDonateTroopDonationInFlight) return;
-    if (Date.now() - lastAutoDonateTroopsMs < DONATE_COOLDOWN_MS) return;
     const plan = createTroopDonationPlan();
     if (!plan) return;
     setTroopDonationInFlight(true);
@@ -545,15 +555,18 @@
   }
 
   function tickAutoDonateGold() {
+    // Troops are the combat-critical transfer. Let their asynchronous border
+    // reserve check finish before gold competes for the recipient cooldown.
+    if (autoDonateTroopDonationInFlight) return;
     const now = Date.now();
-    if (now - lastAutoDonateGoldMs < DONATE_COOLDOWN_MS) return;
     const plan = createGoldDonationPlan();
     if (!plan) return;
     const recipient = getAutoDonateRecipientId(plan.recipient);
     if (recipient == null) return;
+    if (!autoDonationRecipientIsReady(plan.recipient, now)) return;
     {
       sendGamePacket({ type: "donate_gold", recipient, gold: plan.amount });
-      lastAutoDonateGoldMs = now;
+      markAutoDonationRecipient(plan.recipient, now);
       runtimeDebugLog(
         "[AutoDonate] gold", formatAutoDonateGold(plan.amount),
         "→", getAutoDonatePlayerName(plan.recipient),
