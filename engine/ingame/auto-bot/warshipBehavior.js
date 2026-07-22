@@ -441,9 +441,14 @@
     // RNG *ordering* is explicitly not a faithfulness requirement (portutil
     // PseudoRandom note), so deferring the actuation off the RNG draw is fine.
     maybeRetaliateWithWarship(tile, enemy, reason) {
-      // Don't retaliate against ourselves (e.g. own nuke destroyed own ship)
-      // src: `enemy === this.player` (identity) → smallID compare.
-      if (enemy.smallID() === this.player.smallID()) {
+      // Ownership changes are observed after the capture, so diplomacy may
+      // already have changed by the time this tracker processes the ship.
+      // Never turn a stale capture observation into an attack on a teammate or
+      // ally. isFriendly() is the canonical union of both relationships.
+      if (
+        enemy.smallID() === this.player.smallID() ||
+        this.player.isFriendly?.(enemy) === true
+      ) {
         return;
       }
 
@@ -479,9 +484,14 @@
     // This promise is deliberately allowed to reject so integration failures remain visible.
     async _retaliateBuildAsync(tile, enemy, reason) {
       {
+        if (this.player.isFriendly?.(enemy) === true) return;
         if (this.hasPendingWarshipBuild()) return;
         if (this.shouldDeferWarshipBuild(false)) return;
         const bu = await this.buildableWarship(tile);
+        // The buildability probe yields to the client. Revalidate diplomacy at
+        // actuation time so an alliance formed while it was pending cannot
+        // receive a warship build or a relation penalty from stale evidence.
+        if (this.player.isFriendly?.(enemy) === true) return;
         if (bu === null || bu === undefined || bu.canBuild === false) {
           this.maybeMoveWarship(tile);
           return;

@@ -111,6 +111,57 @@ assert.equal(
   "a landing whose target is no longer ours is released immediately",
 );
 
+const friendlyCaptor = { smallID: () => 2 };
+const friendlyRetaliationBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
+let retaliationScheduled = 0;
+friendlyRetaliationBehavior.player = {
+  smallID: () => 1,
+  isFriendly: () => true,
+};
+friendlyRetaliationBehavior._retaliateBuildAsync = () => {
+  retaliationScheduled++;
+};
+friendlyRetaliationBehavior.maybeRetaliateWithWarship(77, friendlyCaptor, "trade");
+assert.equal(
+  retaliationScheduled,
+  0,
+  "a stale trade capture cannot schedule retaliation against a teammate or ally",
+);
+
+const deferredRetaliationBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
+let captorIsFriendly = false;
+let resolveBuildProbe;
+const buildProbeGate = new Promise((resolve) => {
+  resolveBuildProbe = resolve;
+});
+let retaliationBuilds = 0;
+deferredRetaliationBehavior.player = {
+  isFriendly: () => captorIsFriendly,
+};
+deferredRetaliationBehavior.hasPendingWarshipBuild = () => false;
+deferredRetaliationBehavior.shouldDeferWarshipBuild = () => false;
+deferredRetaliationBehavior.buildableWarship = async () => {
+  await buildProbeGate;
+  return { canBuild: true };
+};
+deferredRetaliationBehavior.tryEmitWarshipBuild = () => {
+  retaliationBuilds++;
+  return true;
+};
+const pendingRetaliation = deferredRetaliationBehavior._retaliateBuildAsync(
+  77,
+  friendlyCaptor,
+  "trade",
+);
+captorIsFriendly = true;
+resolveBuildProbe();
+await pendingRetaliation;
+assert.equal(
+  retaliationBuilds,
+  0,
+  "retaliation revalidates diplomacy after its asynchronous buildability probe",
+);
+
 const concurrentBuildBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
 concurrentBuildBehavior.game = { ticks: () => 200 };
 const builtForInvasions = [];
