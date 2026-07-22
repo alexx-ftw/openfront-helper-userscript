@@ -62,12 +62,18 @@
     return false;
   }
 
+  function isAutoDonateCombatAttackActive(attack) {
+    if (!attack) return false;
+    if (typeof attack.retreating === "function") return attack.retreating() !== true;
+    return attack.retreating !== true;
+  }
+
   function isAutoDonateTargetInCombat(player) {
-    {
-      var incoming = typeof player.incomingAttacks === "function" ? player.incomingAttacks() : [];
-      var outgoing = typeof player.outgoingAttacks === "function" ? player.outgoingAttacks() : [];
-      return (incoming && incoming.length > 0) || (outgoing && outgoing.length > 0);
-    }
+    var incoming = typeof player.incomingAttacks === "function" ? player.incomingAttacks() : [];
+    var outgoing = typeof player.outgoingAttacks === "function" ? player.outgoingAttacks() : [];
+    return [incoming, outgoing].some(
+      (attacks) => Array.isArray(attacks) && attacks.some(isAutoDonateCombatAttackActive),
+    );
   }
 
   // Return null when the live player view cannot tell us whether an attack is

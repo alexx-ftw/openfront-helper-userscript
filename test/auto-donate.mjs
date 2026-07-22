@@ -7,7 +7,17 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE = fs.readFileSync(path.join(ROOT, "engine/ingame/auto-donate.js"), "utf8");
 
-function makePlayer({ id, name, troops, gold = 0, friendly, border = false, inCombat = false }) {
+function makePlayer({
+  id,
+  name,
+  troops,
+  gold = 0,
+  friendly,
+  border = false,
+  inCombat = false,
+  incomingAttacks,
+  outgoingAttacks = [],
+}) {
   return {
     id: () => id,
     smallID: () => id,
@@ -17,8 +27,8 @@ function makePlayer({ id, name, troops, gold = 0, friendly, border = false, inCo
     isAlive: () => true,
     friendly,
     isFriendly: () => friendly,
-    incomingAttacks: () => (inCombat ? [{}] : []),
-    outgoingAttacks: () => [],
+    incomingAttacks: () => incomingAttacks ?? (inCombat ? [{}] : []),
+    outgoingAttacks: () => outgoingAttacks,
     sharesBorder: border,
   };
 }
@@ -54,6 +64,8 @@ const DONATION_DEFAULTS = {
   allyGold: 0,
   goldThreshold: 1000,
   returnDetails: false,
+  allyIncomingAttacks: undefined,
+  allyOutgoingAttacks: [],
 };
 
 async function runDonation(options = {}) {
@@ -72,6 +84,8 @@ async function runDonation(options = {}) {
     allyGold,
     goldThreshold,
     returnDetails,
+    allyIncomingAttacks,
+    allyOutgoingAttacks,
   } = { ...DONATION_DEFAULTS, ...options };
   const packets = [];
   let currentlyBeingAttacked = beingAttacked;
@@ -100,6 +114,8 @@ async function runDonation(options = {}) {
     friendly: true,
     border: friendlyBorder,
     inCombat: true,
+    incomingAttacks: allyIncomingAttacks,
+    outgoingAttacks: allyOutgoingAttacks,
   });
   const players = [me, ally, ...opponents];
   const borderingPlayers = [
@@ -166,6 +182,26 @@ const strongestBorderCap = await runDonation({
     makePlayer({ id: 4, name: "border-weak", troops: 600, friendly: false, border: true }),
   ],
 });
+
+const retreatingOnlyCombat = await runDonation({
+  allyIncomingAttacks: [{ retreating: () => true }],
+  allyOutgoingAttacks: [{ retreating: () => true }],
+});
+assert.equal(
+  retreatingOnlyCombat.length,
+  0,
+  "retreating attacks do not make an ally eligible for combat-only troop donations",
+);
+
+const activeOutgoingCombat = await runDonation({
+  allyIncomingAttacks: [{ retreating: () => true }],
+  allyOutgoingAttacks: [{ retreating: () => true }, { retreating: () => false }],
+});
+assert.equal(
+  activeOutgoingCombat.length,
+  1,
+  "one active outgoing attack still makes an ally eligible for combat-only troop donations",
+);
 assert.equal(
   strongestBorderCap[0]?.troops,
   499,
