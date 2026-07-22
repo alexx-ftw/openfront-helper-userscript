@@ -159,10 +159,16 @@
     }
 
     handleSpawnTick(ticks, profile) {
-      // A spawn intent is accepted once. Keeping the global spawn-phase loop
-      // alive after our own player has appeared only recomputes discarded move
-      // intents, delaying opening expansion and causing visible stutter.
-      if (!this.mg.inSpawnPhase() || this.player.hasSpawned?.()) return false;
+      if (!this.mg.inSpawnPhase()) return false;
+      // An accepted personal spawn does not mean land attacks are executable:
+      // the match remains globally frozen until the spawn phase closes.  Do
+      // not initialize the opening burst in that interval, otherwise its
+      // commands become long-lived pending commitments and the real first
+      // playable seconds inherit an already-stalled expansion chain.
+      if (this.player.hasSpawned?.()) {
+        this.status = tr("Waiting for match start…");
+        return true;
+      }
       if (this.shouldAwaitInitialTeamSpawnGeometry(ticks)) {
         this.status = tr("Coordinating team spawn…");
         return true;
@@ -227,6 +233,11 @@
       return this.attackBehavior.getRemainingTerraNulliusOpeningCommitment?.() ?? 0;
     }
 
+    openingTerraNulliusIsAccessible() {
+      const check = this.attackBehavior?.hasLandBorderWithTerraNullius;
+      return typeof check !== "function" || check.call(this.attackBehavior) === true;
+    }
+
     async handleOpeningExpansion(ticks, profile, tickGeneration) {
       if (!this.openingExpansionIsActive()) return false;
       // The opening troop chain can remain pending for many engine ticks.
@@ -249,7 +260,9 @@
           () => this.attackBehavior.continueOpeningExpansion(),
         );
         if (!this.tickIsCurrent(tickGeneration)) return true;
-        const allocationStillAvailable = this.openingAllocationRemaining() > 0;
+        const allocationStillAvailable =
+          this.openingAllocationRemaining() > 0 &&
+          this.openingTerraNulliusIsAccessible();
         const followUpPending =
           allocationStillAvailable ||
           this.hasPendingOpeningExpansionIntent() ||

@@ -38,8 +38,8 @@ assert.match(
 );
 assert.match(
   nationExecutionSource,
-  /!this\.mg\.inSpawnPhase\(\) \|\| this\.player\.hasSpawned\?\.\(\)/,
-  "a player with an accepted spawn must leave the global spawn loop instead of recomputing discarded moves",
+  /if \(!this\.mg\.inSpawnPhase\(\)\) return false;[\s\S]{0,400}if \(this\.player\.hasSpawned\?\.\(\)\) \{[\s\S]{0,160}return true;/,
+  "an accepted personal spawn must wait for the global spawn phase to close before initializing attacks",
 );
 assert.match(
   attackSource,
@@ -266,6 +266,34 @@ const openingBot = new openingSandbox.NationBot(openingGame, {
   playerId: "opening-player",
   gameId: "opening-game",
 });
+let delayedOpeningSpawnPhase = true;
+const delayedOpeningBot = new openingSandbox.NationBot(
+  {
+    ...openingGame,
+    inSpawnPhase: () => delayedOpeningSpawnPhase,
+  },
+  {
+    playerId: "delayed-opening-player",
+    gameId: "delayed-opening-game",
+  },
+);
+const delayedOpeningCallCount = openingCalls.length;
+await delayedOpeningBot.tick(0);
+assert.equal(
+  openingCalls.length,
+  delayedOpeningCallCount,
+  "an accepted spawn cannot consume the opening Terra Nullius burst while the match is globally frozen",
+);
+assert.equal(delayedOpeningBot.behaviorsInitialized, false);
+delayedOpeningSpawnPhase = false;
+await delayedOpeningBot.tick(1);
+assert.equal(
+  openingCalls.length,
+  delayedOpeningCallCount + 1,
+  "the first playable tick initializes and emits the protected opening burst immediately",
+);
+openingCalls.splice(delayedOpeningCallCount);
+openingFractions.splice(delayedOpeningCallCount);
 const teamSpawnBot = Object.create(openingSandbox.NationBot.prototype);
 const teamSpawnPlayer = { smallID: () => 1, team: () => "Red" };
 const teamSpawnTeammates = [
@@ -404,6 +432,24 @@ assert.equal(
   0,
   "fast TerraNullius follow-ups never invoke the full strategic planner",
 );
+const closedFrontBot = Object.create(openingSandbox.NationBot.prototype);
+closedFrontBot.openingLandBurstPending = false;
+closedFrontBot.openingExpansionFollowUpPending = true;
+closedFrontBot.feat = () => true;
+closedFrontBot.maybeBuildOpeningCity = async () => true;
+closedFrontBot.openingAllocationRemaining = () => 1200;
+closedFrontBot.hasPendingOpeningExpansionIntent = () => false;
+closedFrontBot.tickIsCurrent = () => true;
+closedFrontBot.attackBehavior = {
+  continueOpeningExpansion: async () => false,
+  hasLandBorderWithTerraNullius: () => false,
+};
+assert.equal(
+  await closedFrontBot.handleOpeningExpansion(5, null, undefined),
+  false,
+  "an inaccessible free-land frontier yields immediately to the full strategic planner",
+);
+assert.equal(closedFrontBot.openingExpansionFollowUpPending, false);
 openingIncomingAttack = true;
 await openingBot.tick(5);
 assert.equal(openingDefenseResponses, 1);
