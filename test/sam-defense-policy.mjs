@@ -689,6 +689,18 @@ assert.equal(
   true,
   "a Silo cannot spend the margin needed for the imminent Defense Post",
 );
+preemptiveIncomingAttacks = [
+  {
+    troops: () => 900,
+    retreating: () => true,
+    attacker: () => ({ type: () => sandbox.PlayerType.Nation }),
+  },
+];
+assert.equal(
+  preemptiveDefensePostBehavior.preemptiveDefensePostPressure(),
+  null,
+  "a cancelled land attack cannot retain a preventive Defense Post reserve",
+);
 assert.equal(
   preemptiveDefensePostBehavior.shouldReserveEconomicGrowthForOffense(UNIT.City),
   false,

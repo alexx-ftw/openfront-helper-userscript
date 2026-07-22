@@ -1177,10 +1177,7 @@
       // exact source tile when present and reconstructs it through a shared
       // land border when the extension omits it.
       const landAttacks = (this.player.incomingAttacks?.() ?? []).filter(
-        (attack) =>
-          Number(attack?.troops?.()) > 0 &&
-          !attack?.retreating?.() &&
-          this.isLandAttack(attack),
+        (attack) => this.isActiveIncomingAttack(attack) && this.isLandAttack(attack),
       );
       if (landAttacks.length === 0) return null;
       const ourTroops = this.player.troops();
@@ -1259,6 +1256,10 @@
     isStrategicLandAttack(attack) {
       const type = attack.attacker?.()?.type?.();
       return type === PlayerType.Nation || type === PlayerType.Human;
+    }
+
+    isActiveIncomingAttack(attack) {
+      return Number(attack?.troops?.()) > 0 && !attack?.retreating?.();
     }
 
     canAffordDefensePost() {
@@ -2715,6 +2716,7 @@
       const strategicLandAttacks = this.player
         .incomingAttacks()
         .filter((attack) => {
+          if (!this.isActiveIncomingAttack(attack)) return false;
           if (!this.isLandAttack(attack)) return false;
           return this.isStrategicLandAttack(attack);
         });
