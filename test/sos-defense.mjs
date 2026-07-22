@@ -29,10 +29,14 @@ const players = [me, attacker, ally];
 const signals = [];
 let tickListener = null;
 let now = 1000;
+let playerViewReads = 0;
 const sandbox = {
   performance: { now: () => now },
   getOpenFrontGameContext: () => ({ game }),
-  getCachedPlayerViews: () => players,
+  getCachedPlayerViews: () => {
+    playerViewReads++;
+    return players;
+  },
   getPlayerSmallId: (player, fallback) => player?.smallID?.() ?? fallback,
   isNationBotPlayer: () => false,
   emojiId: () => 7,
@@ -51,6 +55,7 @@ incomingAttacks = [
   { attackerID: 2, retreating: false },
   { attackerID: 2, retreating: false },
 ];
+playerViewReads = 0;
 tickListener();
 assert.equal(
   signals.filter(([kind]) => kind === "emoji").length,
@@ -61,6 +66,11 @@ assert.equal(
   signals.filter(([kind]) => kind === "target").length,
   1,
   "multiple waves from one attacker produce one target signal",
+);
+assert.equal(
+  playerViewReads,
+  1,
+  "one SOS pass shares its player snapshot between attacker lookup and ally alerts",
 );
 
 sandbox.setSosDefenseEnabled(false);

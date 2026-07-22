@@ -12,8 +12,7 @@
   let _sosLastSalvoAt = 0;
   const _sosLastTargetAt = new Map(); // attacker smallID -> ms
 
-  function _sosResolvePlayerBySmallId(game, smallId) {
-    const players = getCachedPlayerViews(game);
+  function _sosResolvePlayerBySmallId(players, smallId) {
     for (const p of players) {
       if (getPlayerSmallId(p, Number.NaN) === smallId) return p;
     }
@@ -28,9 +27,10 @@
     return retreating === true;
   }
 
-  function _sosGetHostileAttackers(game, me) {
+  function _sosGetHostileAttackers(game, me, players = null) {
     const out = [];
     const seen = new Set();
+    let playerViews = players;
     let attacks;
     {
       attacks = me.incomingAttacks?.() || [];
@@ -41,21 +41,22 @@
       const attackerId = Number(atk?.attackerID);
       if (!Number.isFinite(attackerId) || seen.has(attackerId)) continue;
       seen.add(attackerId);
-      const attacker = _sosResolvePlayerBySmallId(game, attackerId);
+      if (playerViews === null) playerViews = getCachedPlayerViews(game);
+      const attacker = _sosResolvePlayerBySmallId(playerViews, attackerId);
       if (!attacker) continue;
       {
         if (me.isFriendly?.(attacker)) continue; // ignore allied "attacks"
       }
       out.push(attacker);
     }
-    return out;
+    return { hostiles: out, players: playerViews };
   }
 
-  function _sosGetAllies(game, me) {
-    const players = getCachedPlayerViews(game);
+  function _sosGetAllies(game, me, players = null) {
+    const playerViews = players ?? getCachedPlayerViews(game);
     const allies = [];
     const mySid = getPlayerSmallId(me, Number.NaN);
-    for (const p of players) {
+    for (const p of playerViews) {
       const sid = getPlayerSmallId(p, Number.NaN);
       if (!Number.isFinite(sid) || sid === mySid) continue;
       if (!p?.isAlive?.()) continue;
@@ -67,9 +68,9 @@
     return allies;
   }
 
-  function _sosSendAllySalvo(game, me, nowMs) {
+  function _sosSendAllySalvo(game, me, nowMs, players = null) {
     if (_sosLastSalvoAt > 0 && nowMs - _sosLastSalvoAt < SOS_RESEND_MS) return;
-    const allies = _sosGetAllies(game, me);
+    const allies = _sosGetAllies(game, me, players);
     if (allies.length === 0) return;
     _sosLastSalvoAt = nowMs;
     const sosEmojiNum = emojiId(SOS_EMOJI);
@@ -107,11 +108,11 @@
     const me = game.myPlayer?.();
     if (!me || !me.isAlive?.()) return;
 
-    const hostiles = _sosGetHostileAttackers(game, me);
+    const { hostiles, players } = _sosGetHostileAttackers(game, me);
     if (hostiles.length === 0) return;
 
     const nowMs = performance.now();
-    _sosSendAllySalvo(game, me, nowMs);
+    _sosSendAllySalvo(game, me, nowMs, players);
 
     // 2) Mark each hostile attacker — throttled per-target.
     for (const attacker of hostiles) {
