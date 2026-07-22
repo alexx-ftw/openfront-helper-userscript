@@ -126,6 +126,14 @@ for (let attempt = 0; attempt < 2; attempt++) {
   );
   assert.equal(pendingMaritimeBuilder.seedCursor, 0);
 }
-assert.equal(sandbox.advanceMaritimeDistanceIndexBuilder(pendingMaritimeBuilder).distances[0], 0);
+const pendingMaritimeIndex = sandbox.advanceMaritimeDistanceIndexBuilder(
+  pendingMaritimeBuilder,
+);
+assert.equal(sandbox.lookupMaritimeDistanceIndex(pendingMaritimeIndex, [0]), 0);
+assert.doesNotMatch(
+  source,
+  /distances\.fill\(-1\)/,
+  "maritime preparation must not synchronously fill a map-sized distance array",
+);
 
 console.warn("frame-stall regression tests passed");

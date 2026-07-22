@@ -384,8 +384,10 @@
     ) {
       return null;
     }
-    const distances = new Int32Array(total);
-    distances.fill(-1);
+    // Zero is the native unvisited sentinel; reachable distances are stored as
+    // distance+1. This avoids synchronously filling a map-sized array before
+    // the cooperative builder gets its first chance to yield.
+    const distances = new Uint32Array(total);
     return {
       width: mapWidth,
       height: mapHeight,
@@ -414,7 +416,7 @@
     if (maritime === null) return false;
     builder.seedCursor++;
     if (maritime) {
-      builder.distances[tile] = 0;
+      builder.distances[tile] = 1;
       builder.queue[builder.tail++] = tile;
     }
     if (builder.seedCursor >= builder.total) builder.phase = "expand";
@@ -427,11 +429,11 @@
       next < 0 ||
       next >= builder.total ||
       !builder.isLand(next) ||
-      builder.distances[next] !== -1
+      builder.distances[next] !== 0
     ) {
       return;
     }
-    builder.distances[next] = nextDistance;
+    builder.distances[next] = nextDistance + 1;
     builder.queue[builder.tail++] = next;
   }
 
@@ -446,7 +448,7 @@
       return;
     }
     const current = builder.queue[builder.head++];
-    const currentDistance = builder.distances[current];
+    const currentDistance = builder.distances[current] - 1;
     if (currentDistance >= builder.distanceLimit) return;
     const nextDistance = currentDistance + 1;
     if (typeof builder.forEachNeighbor === "function") {
@@ -535,8 +537,10 @@
       ) {
         continue;
       }
-      const distance = index.distances[tile];
-      if (distance >= 0 && distance < best) best = distance;
+      const encoded = index.distances[tile];
+      if (encoded === 0) continue;
+      const distance = encoded - 1;
+      if (distance < best) best = distance;
     }
     return best;
   }
