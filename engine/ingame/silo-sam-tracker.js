@@ -1795,7 +1795,7 @@
     if (id === null || _knownSiloIds[id]) return false;
     _knownSiloIds[id] = true;
     var isBuilding = typeof silo.isUnderConstruction === "function" ? silo.isUnderConstruction() : true;
-    return isBuilding && !_isAlly(silo, me, game);
+    return isBuilding && _autoFireOwnerIsHostile(_autoFireUnitOwner(silo, game), me);
   }
 
   function _playSiloAlertIfReady(foundNew, audioEnabled) {

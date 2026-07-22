@@ -21,7 +21,7 @@ executeClassicScript(NUKE_IMPACT_SOURCE, sandbox, {
   filename: "nuke-impact.js",
 });
 executeClassicScript(
-  `${TRACKER_SOURCE}\nglobalThis._autoFireBuiltSamInterceptionCapacity = _autoFireBuiltSamInterceptionCapacity;\nglobalThis._autoFireUncoveredEnemyBuildings = _autoFireUncoveredEnemyBuildings;\nglobalThis._scanNukesToTile = _scanNukesToTile;`,
+  `${TRACKER_SOURCE}\nglobalThis._autoFireBuiltSamInterceptionCapacity = _autoFireBuiltSamInterceptionCapacity;\nglobalThis._autoFireUncoveredEnemyBuildings = _autoFireUncoveredEnemyBuildings;\nglobalThis._scanNukesToTile = _scanNukesToTile;\nglobalThis._isNewHostileBuildingSilo = _isNewHostileBuildingSilo;`,
   sandbox,
   {
     filename: "silo-sam-tracker.js",
@@ -85,6 +85,44 @@ const enemy = {
   isFriendly: () => false,
   isOnSameTeam: () => false,
 };
+
+const alertMe = {
+  smallID: () => 10,
+  team: () => "blue",
+  isAlliedWith: () => false,
+  isFriendly: () => false,
+  isOnSameTeam: (other) => other?.team?.() === "blue",
+};
+const alertSilo = (id, owner) => ({
+  id: () => id,
+  owner: () => owner,
+  isUnderConstruction: () => true,
+});
+const alertTeammate = {
+  smallID: () => 11,
+  team: () => "blue",
+  isFriendly: () => false,
+};
+const alertEnemy = {
+  smallID: () => 12,
+  team: () => "red",
+  isFriendly: () => false,
+};
+assert.equal(
+  sandbox._isNewHostileBuildingSilo(alertSilo("own-alert-silo", alertMe), alertMe, {}),
+  false,
+  "placing our own Silo never triggers the hostile construction alert",
+);
+assert.equal(
+  sandbox._isNewHostileBuildingSilo(alertSilo("team-alert-silo", alertTeammate), alertMe, {}),
+  false,
+  "a permanent teammate's Silo never triggers the hostile construction alert",
+);
+assert.equal(
+  sandbox._isNewHostileBuildingSilo(alertSilo("enemy-alert-silo", alertEnemy), alertMe, {}),
+  true,
+  "a newly building enemy Silo still triggers the hostile construction alert",
+);
 
 const building = (id, type, tile) => ({
   id: () => id,
