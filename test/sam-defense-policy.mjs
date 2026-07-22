@@ -75,13 +75,17 @@ executeClassicScript(
 const commercialRailBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 const commercialRailState = new Uint8Array(10_000);
 commercialRailState[1_012] = 1;
+let commercialRailStateReads = 0;
 commercialRailBehavior.game = {
   x: (tile) => tile % 100,
   y: (tile) => Math.floor(tile / 100),
   ref: (x, y) => y * 100 + x,
   isValidCoord: (x, y) => x >= 0 && x < 100 && y >= 0 && y < 100,
   magnitude: () => 0,
-  railroadState: () => commercialRailState,
+  railroadState: () => {
+    commercialRailStateReads++;
+    return commercialRailState;
+  },
   euclideanDistSquared: (left, right) => {
     const dx = (left % 100) - (right % 100);
     const dy = Math.floor(left / 100) - Math.floor(right / 100);
@@ -120,6 +124,11 @@ assert.equal(
   commercialRailBehavior.existingRailSnapDistance(5_000),
   null,
   "a distant tile does not receive a fabricated rail-line preference",
+);
+assert.equal(
+  commercialRailStateReads,
+  3,
+  "each economic scorer snapshots railroad state once instead of rereading it for every candidate",
 );
 
 const sparseRailBehavior = Object.create(sandbox.__StructureBehavior.prototype);

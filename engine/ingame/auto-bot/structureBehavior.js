@@ -9267,6 +9267,7 @@
       const { structureSpacing } = this.spacingConstants();
       const config = this.game.config();
       const reachableStations = this.getOrBuildReachableStations();
+      const railState = this.readRailroadState(this.game);
       const minRangeSquared = config.trainStationMinRange() ** 2;
       const stationRangeSquared = config.trainStationMaxRange() ** 2;
 
@@ -9282,7 +9283,7 @@
           reachableStations,
           minRangeSquared,
           stationRangeSquared,
-          structureSpacing,
+          { structureSpacing, railState },
         );
 
         return w;
@@ -9302,6 +9303,7 @@
       const stationRangeSquared = stationRange * stationRange;
       const difficulty = currentDifficulty();
       const useConnectionScore = this.shouldUseConnectivityScore(difficulty);
+      const railState = this.readRailroadState(game);
 
       const reachableStations = useConnectionScore
         ? this.getOrBuildReachableStations()
@@ -9339,7 +9341,7 @@
           reachableStations,
           minRangeSquared,
           stationRangeSquared,
-          structureSpacing,
+          { structureSpacing, railState },
         );
 
         return w;
@@ -9428,15 +9430,17 @@
       reachableStations,
       minRangeSquared,
       stationRangeSquared,
-      structureSpacing,
+      options,
     ) {
+      const structureSpacing = Number(options?.structureSpacing ?? options);
+      const railState = options?.railState ?? this.readRailroadState(this.game);
       const connectivity = this.computeConnectivityScore(
         tile,
         reachableStations,
         minRangeSquared,
         stationRangeSquared,
       );
-      const snapDistance = this.existingRailSnapDistance(tile);
+      const snapDistance = this.existingRailSnapDistance(tile, railState);
       if (snapDistance === null) return connectivity * structureSpacing;
 
       // Retain the connectivity contribution, then make a legal direct snap
@@ -9448,8 +9452,10 @@
       );
     }
 
-    existingRailSnapDistance(tile) {
-      const railState = this.readRailroadState(this.game);
+    existingRailSnapDistance(
+      tile,
+      railState = this.readRailroadState(this.game),
+    ) {
       if (!railState || railState.length === 0) return null;
       const x = Number(this.game.x(tile));
       const y = Number(this.game.y(tile));
@@ -9741,6 +9747,7 @@
       // coin flip. Always value the commercial routes the new station can
       // join; the normal placement and safety gates still decide legality.
       const reachableStations = this.getOrBuildReachableStations();
+      const railState = this.readRailroadState(game);
       const minRangeSquared = game.config().trainStationMinRange() ** 2;
 
       // Cross-type spacing: prefer to be away from factories.
@@ -9773,7 +9780,7 @@
           reachableStations,
           minRangeSquared,
           stationRangeSquared,
-          structureSpacing,
+          { structureSpacing, railState },
         );
 
         return w;
