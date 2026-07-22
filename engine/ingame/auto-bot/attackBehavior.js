@@ -4086,10 +4086,33 @@
       }
     }
 
+    earlyGameFutureFoodDistance(candidate, other, distanceCache = null) {
+      const cachedDistances = distanceCache?.get(candidate.id);
+      if (cachedDistances?.has(other.id)) return cachedDistances.get(other.id);
+
+      const distance = this.earlyGameCenterDistance(candidate.center, other.center);
+      if (distanceCache === null) return distance;
+
+      let candidateDistances = distanceCache.get(candidate.id);
+      if (candidateDistances === undefined) {
+        candidateDistances = new Map();
+        distanceCache.set(candidate.id, candidateDistances);
+      }
+      candidateDistances.set(other.id, distance);
+      let otherDistances = distanceCache.get(other.id);
+      if (otherDistances === undefined) {
+        otherDistances = new Map();
+        distanceCache.set(other.id, otherDistances);
+      }
+      otherDistances.set(candidate.id, distance);
+      return distance;
+    }
+
     earlyGameFutureFoodStats(
       candidate,
       futureFoodCandidates,
       memberIds = null,
+      distanceCache = null,
     ) {
       // This sits in the opening hot path. Avoid allocating three short-lived
       // arrays for every ranked tribe while retaining the exact qualifying
@@ -4104,7 +4127,11 @@
         ) {
           continue;
         }
-        const distance = this.earlyGameCenterDistance(candidate.center, other.center);
+        const distance = this.earlyGameFutureFoodDistance(
+          candidate,
+          other,
+          distanceCache,
+        );
         if (!Number.isFinite(distance) || distance > EARLY_GAME_TRIBE_CHAIN_RADIUS) {
           continue;
         }
@@ -4121,6 +4148,7 @@
       clusterOpportunities,
     ) {
       let maxClusterSize = 0;
+      const distanceCache = new Map();
       for (const candidate of candidates) {
         if (!isEarlyGameTribeActionable(candidate)) {
           candidate.futureFoodAccess = 0;
@@ -4137,6 +4165,7 @@
           candidate,
           futureFoodCandidates,
           candidate.tribeClusterMemberIds,
+          distanceCache,
         );
         candidate.futureFoodCount = futureFood.count;
         candidate.futureFoodTotal = futureFoodTotal;

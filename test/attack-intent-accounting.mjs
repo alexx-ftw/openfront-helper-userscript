@@ -2488,8 +2488,11 @@ assert.match(
 );
 
 const futureFoodScoreBehavior = Object.create(sandbox.AttackBehavior.prototype);
-futureFoodScoreBehavior.earlyGameCenterDistance = (left, right) =>
-  Math.abs(left.x - right.x) + Math.abs(left.y - right.y);
+let futureFoodDistanceCalls = 0;
+futureFoodScoreBehavior.earlyGameCenterDistance = (left, right) => {
+  futureFoodDistanceCalls++;
+  return Math.abs(left.x - right.x) + Math.abs(left.y - right.y);
+};
 const futureFoodCandidates = [
   { id: "near", center: { x: 2, y: 0 } },
   { id: "far", center: { x: 1000, y: 0 } },
@@ -2523,6 +2526,11 @@ assert.equal(futureFoodScoreCandidates[0].tribeClusterAccess, 1);
 assert.equal(futureFoodScoreCandidates[1].tribeClusterAccess, 0.5);
 assert.equal(futureFoodScoreCandidates[2].futureFoodAccess, 0);
 assert.equal(futureFoodScoreCandidates[2].tribeClusterAccess, 0);
+assert.equal(
+  futureFoodDistanceCalls,
+  2,
+  "future-food scoring reuses symmetric tribe distances within one cluster pass",
+);
 
 const tribeRankingBehavior = Object.create(sandbox.AttackBehavior.prototype);
 const tribeStructureReads = new Map();
