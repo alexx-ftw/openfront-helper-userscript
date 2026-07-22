@@ -7351,6 +7351,35 @@
       );
     }
 
+    tribeAttackIsAuthorized(options) {
+      const target = options.target;
+      if (
+        !state.settings.winFixes ||
+        target?.isPlayer?.() !== true ||
+        target.type?.() !== PlayerType.Bot
+      ) {
+        return true;
+      }
+      // Retaliation must remain available even when the attacker is represented
+      // as a Bot, and an existing conquest must always be reinforced from its
+      // live target rather than waiting for a fresh topology snapshot.
+      if (options.force === true) return true;
+      if (
+        this.getLiveOutboundAttackTroopsForTarget(target) > 0 ||
+        this.getPendingOutboundAttackTroopsForTarget(target) > 0
+      ) {
+        return true;
+      }
+      // Every new tribe conquest is admitted only by the scored cluster
+      // planner. Generic very-weak/victim/assist/fallback strategies also
+      // converge on sendAttack, so enforcing the contract here prevents any
+      // later policy from silently reopening an unscored attack path.
+      return this.earlyGameTribeCandidateIsLiveAndScored(
+        options.earlyGameCandidate,
+        target,
+      );
+    }
+
     async sendAttackAgainstPlayer(options) {
       const { target, minCommitFraction, earlyGameCandidate } = options;
       if (!this.player.sharesBorderWith(target)) {
@@ -7389,6 +7418,7 @@
       const options = this.normalizeSendAttackArgs(args);
       const { target, force } = options;
       if (!force && !this.shouldAttack(target)) return false;
+      if (!this.tribeAttackIsAuthorized(options)) return false;
       options.isParallelTribeAttack =
         options.parallelTribeAttack === true &&
         target?.isPlayer?.() === true &&

@@ -1199,9 +1199,31 @@ outgoing.length = 0;
 ownTroops = 100000;
 tick = 20;
 const parallelEmissionCount = troopEmissions.length;
-assert.equal(await parallelBehavior.sendAttack(parallelTribeA), true);
+const scoredParallelCandidate = (player) => ({
+  player,
+  tribeClusterSize: 2,
+  tribeClusterAccess: 1,
+});
 assert.equal(
-  await parallelBehavior.sendAttack(parallelTribeB),
+  await parallelBehavior.sendAttack(
+    parallelTribeA,
+    false,
+    null,
+    scoredParallelCandidate(parallelTribeA),
+    false,
+    true,
+  ),
+  true,
+);
+assert.equal(
+  await parallelBehavior.sendAttack(
+    parallelTribeB,
+    false,
+    null,
+    scoredParallelCandidate(parallelTribeB),
+    false,
+    true,
+  ),
   true,
   "a pending intent against one tribe does not block another hostile target",
 );
@@ -1385,11 +1407,11 @@ botParallelBehavior.earlyGameTribeCandidatesCache = [
 outgoing.length = 0;
 tick = 21;
 const botParallelEmissionCount = troopEmissions.length;
-assert.equal(await botParallelBehavior.attackBots(), true);
+assert.equal(await botParallelBehavior.attackBots(), false);
 assert.equal(
   troopEmissions.length,
-  botParallelEmissionCount + 2,
-  "the general tribe attack pass also emits multiple captures",
+  botParallelEmissionCount,
+  "the generic tribe pass cannot start captures without scored cluster candidates",
 );
 
 botParallelBehavior.botAttackPendingIntentCommitments = [];
