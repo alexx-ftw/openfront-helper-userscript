@@ -2978,10 +2978,23 @@ assert.deepEqual(
 );
 criticalSamClusterBehavior.shouldPrioritizeHydrogenSamProtection = () => true;
 criticalSamClusterBehavior.externalSiloLevelSumTarget = () => 1;
+let criticalStructureSnapshotReads = 0;
+const readCriticalStructureEntries = criticalSamClusterBehavior.samCriticalStructureEntries.bind(
+  criticalSamClusterBehavior,
+);
+criticalSamClusterBehavior.samCriticalStructureEntries = () => {
+  criticalStructureSnapshotReads++;
+  return readCriticalStructureEntries();
+};
 assert.strictEqual(
   criticalSamClusterBehavior.hydrogenSamProtectionPlan().sam,
   centralClusterSam,
   "level-five escalation upgrades the SAM covering the expensive core before an isolated higher-level launcher",
+);
+assert.equal(
+  criticalStructureSnapshotReads,
+  1,
+  "level-five SAM ranking snapshots critical structures once instead of once per sort comparison",
 );
 
 const originalGetPerceivedCost = behavior.getPerceivedCost;

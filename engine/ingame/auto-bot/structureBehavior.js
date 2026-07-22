@@ -3341,6 +3341,8 @@
         return null;
       }
 
+      const criticalEntries = this.samCriticalStructureEntries();
+      const targetRangeSquared = this.samRangeSquared(this.game.config(), targetLevel);
       const candidates = [];
       for (const sam of sams) {
         const currentLevel = Math.max(1, Math.floor(Number(sam.level?.() ?? 1)));
@@ -3348,7 +3350,15 @@
           Number.isFinite(currentLevel) &&
           currentLevel < HYDROGEN_SAM_MAX_UPGRADE_LEVEL
         ) {
-          candidates.push({ sam, currentLevel });
+          candidates.push({
+            sam,
+            currentLevel,
+            protectionScore: this.samCriticalCoverageScoreForEntries(
+              sam.tile(),
+              targetRangeSquared,
+              criticalEntries,
+            ),
+          });
         }
       }
       if (candidates.length === 0) return null;
@@ -3359,9 +3369,7 @@
       // choosing the numerically highest level could otherwise keep improving
       // an isolated coastal SAM while the economic core stays at level one.
       candidates.sort((left, right) => {
-        const protectionDifference =
-          this.samCriticalCoverageScore(right.sam, targetLevel) -
-          this.samCriticalCoverageScore(left.sam, targetLevel);
+        const protectionDifference = right.protectionScore - left.protectionScore;
         if (protectionDifference !== 0) return protectionDifference;
         return right.currentLevel - left.currentLevel;
       });
