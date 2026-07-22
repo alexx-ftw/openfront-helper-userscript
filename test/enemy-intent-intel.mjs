@@ -35,9 +35,26 @@ executeClassicScript(SOURCE, sandbox, { filename: "enemy-intent-intel.js" });
 sandbox.setEnemyIntentEnabled(true);
 assert.equal(typeof tickListener, "function");
 
-incomingAttacks = [{ attackerID: 2, troops: 500, retreating: false }];
+incomingAttacks = [
+  { attackerID: 2, troops: 300, retreating: false },
+  { attackerID: 2, troops: 200, retreating: false },
+];
 tickListener();
 assert.equal(sandbox.getEnemyIntentWarnings().length, 1);
+assert.equal(
+  sandbox.getEnemyIntentWarnings()[0].troops,
+  500,
+  "simultaneous active waves from one attacker are summed",
+);
+
+incomingAttacks = [{ attackerID: 2, troops: 75, retreating: false }];
+now += 250;
+tickListener();
+assert.equal(
+  sandbox.getEnemyIntentWarnings()[0].troops,
+  75,
+  "the warning follows the live remaining force instead of retaining its historical maximum",
+);
 
 incomingAttacks = [{ attackerID: 2, troops: 500, retreating: true }];
 now += 250;

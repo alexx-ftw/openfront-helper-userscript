@@ -78,7 +78,7 @@
     const existing = _enemyIntentWarnings.get(key);
     const troops = Math.max(0, Number(attack.troops) || 0);
     if (existing) {
-      existing.troops = Math.max(existing.troops, troops);
+      existing.troops = troops;
       existing.atMs = now;
       return;
     }
@@ -123,7 +123,7 @@
     );
     if (!atks) return;
     const now = performance.now();
-    const activeHostileAttackers = new Set();
+    const activeHostileAttackers = new Map();
     pruneEnemyIntentWarnings(now);
     for (let i = 0; i < atks.length; i += 1) {
       const a = atks[i];
@@ -131,8 +131,14 @@
       const attackerID = a.attackerID;
       if (attackerID == null) continue;
       if (isFriendlyIncomingAttacker(context.game, me, attackerID)) continue;
-      activeHostileAttackers.add(attackerID);
-      updateIncomingAttackWarning(a, now);
+      const troops = Math.max(0, Number(a.troops) || 0);
+      activeHostileAttackers.set(
+        attackerID,
+        (activeHostileAttackers.get(attackerID) || 0) + troops,
+      );
+    }
+    for (const [attackerID, troops] of activeHostileAttackers) {
+      updateIncomingAttackWarning({ attackerID, troops }, now);
     }
     // The current poll is authoritative. Resolved, withdrawn, and newly
     // friendly attacks must stop warning immediately rather than after 15s.
