@@ -604,6 +604,13 @@
       .map(({ candidate }) => candidate);
   }
 
+  function hasActiveDonationAttack(attacks) {
+    return (
+      Array.isArray(attacks) &&
+      attacks.some((attack) => attack?.retreating?.() !== true)
+    );
+  }
+
   function recordOptionalAttackSnapshotFailure(error) {
     state.optionalAttackSnapshotFailures =
       (Number(state.optionalAttackSnapshotFailures) || 0) + 1;
@@ -8314,7 +8321,7 @@
     donationHasIncomingAttack() {
       {
         if (typeof this.player?.incomingAttacks !== "function") return false;
-        return this.player.incomingAttacks().length > 0;
+        return hasActiveDonationAttack(this.player.incomingAttacks());
       }
     }
 
@@ -8383,8 +8390,8 @@
         .filter((player) => {
           if (state.settings.winFixes) return true;
           return (
-            player.incomingAttacks().length > 0 ||
-            player.outgoingAttacks().length > 0
+            hasActiveDonationAttack(player.incomingAttacks()) ||
+            hasActiveDonationAttack(player.outgoingAttacks())
           );
         })
         .map((teammate) => {
@@ -8407,8 +8414,9 @@
       const nextEligibleTick =
         this.botDonationNextEligibleTickByRecipient.get(recipientKey) ?? 0;
       if (this.currentAttackDecisionTick() < nextEligibleTick) return null;
-      const underAttack = teammate.incomingAttacks().length > 0;
-      const frontline = underAttack || teammate.outgoingAttacks().length > 0;
+      const underAttack = hasActiveDonationAttack(teammate.incomingAttacks());
+      const frontline =
+        underAttack || hasActiveDonationAttack(teammate.outgoingAttacks());
       return {
         entry,
         frontline,

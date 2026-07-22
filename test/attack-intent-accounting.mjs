@@ -1942,6 +1942,12 @@ assert.equal(
   "being under attack is an absolute donation veto",
 );
 assert.equal(troopEmissions.length, emissionsBeforeAttackedDonation);
+donorIncomingAttacks = [{ troops: () => 1, retreating: () => true }];
+assert.equal(
+  donorBehavior.donationHasIncomingAttack(),
+  false,
+  "a retreating attack no longer vetoes donations after the threat is cancelled",
+);
 donorIncomingAttacks = [];
 
 // An actively attacked ally outranks a needier rear ally. Immediate danger is
@@ -1972,6 +1978,25 @@ const urgentDonationBehavior = new sandbox.AttackBehavior(
   0.1,
   {},
   {},
+);
+const retiredCombatCandidate = urgentDonationBehavior.donationCandidate(
+  {
+    teammate: {
+      ...attackedTeammate,
+      smallID: () => 18,
+      id: () => "player-18",
+      incomingAttacks: () => [{ retreating: () => true }],
+      outgoingAttacks: () => [{ retreating: () => true }],
+    },
+    troopPercentage: 0.5,
+  },
+  0.8,
+);
+assert.equal(retiredCombatCandidate.underAttack, false);
+assert.equal(
+  retiredCombatCandidate.frontline,
+  false,
+  "cancelled incoming and outgoing waves do not create false frontline donation urgency",
 );
 assert.equal(urgentDonationBehavior.donateTroops(), true);
 assert.equal(
