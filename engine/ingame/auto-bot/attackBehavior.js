@@ -6900,17 +6900,24 @@
           (attack) => attack.attacker().type() !== PlayerType.Bot,
         );
       }
-      let largestAttack = 0;
-      let largestAttacker;
+      const pressureByAttacker = new Map();
       for (const attack of incomingAttacks) {
-        if (attack.troops() <= largestAttack) continue;
-        largestAttack = attack.troops();
-        largestAttacker = attack.attacker();
+        const attacker = attack.attacker?.();
+        if (!attacker) continue;
+        const key = this.getOutboundAttackTargetKey(attacker) ?? attacker;
+        const current = pressureByAttacker.get(key) ?? {
+          attacker,
+          troops: 0,
+        };
+        current.troops += Math.max(0, Number(attack.troops?.()) || 0);
+        pressureByAttacker.set(key, current);
       }
-      if (largestAttacker !== undefined) {
-        return largestAttacker;
+      let largest = null;
+      for (const pressure of pressureByAttacker.values()) {
+        if (largest !== null && pressure.troops <= largest.troops) continue;
+        largest = pressure;
       }
-      return null;
+      return largest?.attacker ?? null;
     }
 
     // A detected threat owns the attack decision even when the defensive

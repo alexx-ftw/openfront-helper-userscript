@@ -904,6 +904,27 @@ assert.equal(
   "win-fix defense includes incoming tribe attacks against controlled Humans/Nations",
 );
 
+const coordinatedAttacker = {
+  isPlayer: () => true,
+  smallID: () => 72,
+};
+const singleWaveAttacker = {
+  isPlayer: () => true,
+  smallID: () => 73,
+};
+const coordinatedDefenseBehavior = Object.create(sandbox.AttackBehavior.prototype);
+coordinatedDefenseBehavior.player = { type: () => sandbox.PlayerType.Human };
+coordinatedDefenseBehavior.incomingHostileAttacks = () => [
+  { attacker: () => coordinatedAttacker, troops: () => 60_000 },
+  { attacker: () => singleWaveAttacker, troops: () => 100_000 },
+  { attacker: () => coordinatedAttacker, troops: () => 60_000 },
+];
+assert.strictEqual(
+  coordinatedDefenseBehavior.findIncomingAttackPlayer(),
+  coordinatedAttacker,
+  "defense counters the largest aggregate attacker instead of the largest individual wave",
+);
+
 const decisionDefenseBehavior = Object.create(sandbox.AttackBehavior.prototype);
 decisionDefenseBehavior.player = {};
 decisionDefenseBehavior.allianceBehavior = {};
