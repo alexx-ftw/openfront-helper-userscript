@@ -107,6 +107,22 @@ assert.deepEqual(
   [],
   "the final result always exposes the ordered construction portfolio timeline",
 );
+assert.deepEqual(
+  zeroTickResult.strategicTrajectory,
+  {
+    peakTiles: 0,
+    deepestDrawdownRatio: 1,
+    drawdownPeakTiles: 0,
+    drawdownTroughTiles: 0,
+    drawdownTick: null,
+    comebackRecovered: false,
+    comebackTick: null,
+    closeoutReached: false,
+    closeoutTick: null,
+    maximumTerritoryShare: 0,
+  },
+  "the final result always exposes explicit comeback and closeout evidence",
+);
 const deterministicRunnerStart = () => {
   const run = spawnSync(
     process.execPath,
@@ -259,6 +275,10 @@ assert.match(runner, /intervalBuildUnitTypes/);
 assert.match(runner, /cumulativeBuildUnitTypes/);
 assert.match(runner, /constructionPortfolioSnapshot/);
 assert.match(runner, /constructionEvents:\s*cumulativeBuildEvents/);
+assert.match(runner, /strategicTrajectory:\s*\{/);
+assert.match(runner, /deepestDrawdownRatio/);
+assert.match(runner, /comebackRecovered/);
+assert.match(runner, /closeoutReached/);
 assert.match(runner, /phase: "result",\s*seed,/);
 assert.match(runner, /action:\s*normalizedTile === null \? \("upgrade" as const\)/);
 assert.match(runner, /underConstruction:/);

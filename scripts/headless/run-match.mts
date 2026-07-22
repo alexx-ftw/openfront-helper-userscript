@@ -256,6 +256,20 @@ let emittedIntents = 0;
 let hasEverBeenAlive = me?.isAlive() === true;
 let stopReason: "winner" | "max_ticks" | "bot_dead" | "engine_stop" | "spawn_failed" = "max_ticks";
 let peakOwnedTiles = Math.max(0, me?.numTilesOwned() ?? 0);
+const MEANINGFUL_TRAJECTORY_TILES = 1_000;
+const COMEBACK_DRAWDOWN_RATIO = 0.5;
+const COMEBACK_RECOVERY_RATIO = 0.8;
+const CLOSEOUT_SHARE = 0.5;
+const CLOSEOUT_LEAD_RATIO = 2;
+let deepestDrawdownRatio = 1;
+let drawdownPeakTiles = peakOwnedTiles;
+let drawdownTroughTiles = peakOwnedTiles;
+let drawdownTick: number | null = null;
+let comebackRecovered = false;
+let comebackTick: number | null = null;
+let closeoutReached = false;
+let closeoutTick: number | null = null;
+let maximumTerritoryShare = 0;
 let firstIncomingLandAttackObserved = false;
 let firstTerritoryLossObserved = false;
 let spawnSnapshotLogged = false;
@@ -409,6 +423,57 @@ const sortedCounts = (counts: ReadonlyMap<string, number>) =>
   Object.fromEntries([...counts].sort(([left], [right]) => left.localeCompare(right)));
 const firstOwnedTile = (player: { tiles: () => Iterable<number> }) =>
   player.tiles().values().next().value ?? null;
+const updateStrategicTrajectory = () => {
+  const player = runner.game.playerByClientID(clientID);
+  if (!player?.isAlive()) return;
+  const tick = runner.game.ticks();
+  const tiles = Math.max(0, player.numTilesOwned());
+  if (peakOwnedTiles >= MEANINGFUL_TRAJECTORY_TILES && peakOwnedTiles > 0) {
+    const ratio = tiles / peakOwnedTiles;
+    if (ratio < deepestDrawdownRatio) {
+      deepestDrawdownRatio = ratio;
+      drawdownPeakTiles = peakOwnedTiles;
+      drawdownTroughTiles = tiles;
+      drawdownTick = tick;
+    }
+  }
+  if (
+    !comebackRecovered &&
+    deepestDrawdownRatio <= COMEBACK_DRAWDOWN_RATIO &&
+    drawdownPeakTiles >= MEANINGFUL_TRAJECTORY_TILES &&
+    tiles >= Math.ceil(drawdownPeakTiles * COMEBACK_RECOVERY_RATIO)
+  ) {
+    comebackRecovered = true;
+    comebackTick = tick;
+  }
+
+  if (tick % 100 !== 0) return;
+  const territoryBySide = new Map<unknown, number>();
+  for (const other of runner.game.allPlayers()) {
+    if (other.type() === PlayerType.Bot || !other.isAlive()) continue;
+    const side = config.gameMode === GameMode.Team ? other.team() : other.clientID();
+    territoryBySide.set(side, (territoryBySide.get(side) ?? 0) + other.numTilesOwned());
+  }
+  const ownSide = config.gameMode === GameMode.Team ? player.team() : player.clientID();
+  const ownTiles = territoryBySide.get(ownSide) ?? 0;
+  const totalTiles = [...territoryBySide.values()].reduce((sum, value) => sum + value, 0);
+  const territoryShare = totalTiles > 0 ? ownTiles / totalTiles : 0;
+  maximumTerritoryShare = Math.max(maximumTerritoryShare, territoryShare);
+  const strongestOpponent = Math.max(
+    0,
+    ...[...territoryBySide.entries()]
+      .filter(([side]) => side !== ownSide)
+      .map(([, value]) => value),
+  );
+  if (
+    !closeoutReached &&
+    territoryShare >= CLOSEOUT_SHARE &&
+    (strongestOpponent === 0 || ownTiles / strongestOpponent >= CLOSEOUT_LEAD_RATIO)
+  ) {
+    closeoutReached = true;
+    closeoutTick = tick;
+  }
+};
 while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fatalError === null) {
   const decisionStartedAt = performance.now();
   const intents = await bot.decide();
@@ -597,6 +662,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   await new Promise<void>((resolve) => setImmediate(resolve));
   const executionMs = performance.now() - executionStartedAt;
   const currentPlayer = runner.game.playerByClientID(clientID);
+  updateStrategicTrajectory();
   if (logSpawn && !spawnMaterializedLogged && currentPlayer?.numTilesOwned() > 0) {
     spawnMaterializedLogged = true;
     const describeSpawn = (player: typeof currentPlayer) => {
@@ -958,6 +1024,18 @@ console.warn(
     cumulativeIntentTypes: sortedCounts(cumulativeIntentTypes),
     cumulativeBuildUnitTypes: sortedCounts(cumulativeBuildUnitTypes),
     constructionEvents: cumulativeBuildEvents,
+    strategicTrajectory: {
+      peakTiles: peakOwnedTiles,
+      deepestDrawdownRatio: Number(deepestDrawdownRatio.toFixed(4)),
+      drawdownPeakTiles,
+      drawdownTroughTiles,
+      drawdownTick,
+      comebackRecovered,
+      comebackTick,
+      closeoutReached,
+      closeoutTick,
+      maximumTerritoryShare: Number(maximumTerritoryShare.toFixed(4)),
+    },
     runtimeMs: Math.round(performance.now() - startedAt),
     topPlayers: players.slice(0, 10),
   }),
