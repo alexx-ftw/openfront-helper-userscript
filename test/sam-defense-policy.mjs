@@ -64,11 +64,10 @@ const sandbox = {
   console,
 };
 sandbox.globalThis = sandbox;
+const structureBehaviorSource = read("engine/ingame/auto-bot/structureBehavior.js");
 
 executeClassicScript(
-  `${read("engine/ingame/auto-bot/legendaryPlanner.js")}\n${read(
-    "engine/ingame/auto-bot/structureBehavior.js",
-  )}\nglobalThis.__StructureBehavior = StructureBehavior;`,
+  `${read("engine/ingame/auto-bot/legendaryPlanner.js")}\n${structureBehaviorSource}\nglobalThis.__StructureBehavior = StructureBehavior;`,
   sandbox,
   { filename: "sam-defense-policy.vm.js" },
 );
@@ -632,6 +631,11 @@ assert.equal(
   quietBorderBuildAttempted,
   false,
   "Defense Post placement is not probed without a live incoming land attack",
+);
+assert.doesNotMatch(
+  structureBehaviorSource,
+  /(?:preemptive|sustained)BorderDefensePostThreat|strategicBorderDefenseTopology/,
+  "dead border-only Defense Post policy cannot be reconnected to bypass the live-attack gate",
 );
 
 const originalDifficultyForDefensePost = sandbox.currentDifficulty;

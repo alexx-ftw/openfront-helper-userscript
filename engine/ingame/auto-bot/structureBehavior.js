@@ -240,24 +240,6 @@
    * while a Tribe probe must never freeze the opening economy.
    */
   const PREEMPTIVE_DEFENSE_POST_THREAT_RATIO = 0.1;
-  // A hostile Nation/Human sharing land with at least half our current army can
-  // turn into a siege before the next construction cadence. One cheap Post on
-  // that actual front is a preventive measure; tribes remain excluded.
-  const PREEMPTIVE_BORDER_DEFENSE_POST_RATIO = 0.5;
-
-  // Once a Nation/Human border is already overwhelming us, a single Post is
-  // not meaningful across a very wide front. This is deliberately stricter
-  // than the opening guard above: it only applies after the economy exists
-  // and caps the number of extra Posts, so routine border contact cannot
-  // replace economic construction with a wall of Posts.
-  const SUSTAINED_BORDER_DEFENSE_POST_RATIO = 1.5;
-  const SUSTAINED_BORDER_TILES_PER_DEFENSE_POST = 100;
-  const MAX_SUSTAINED_BORDER_DEFENSE_POSTS = 3;
-  // A territorial border changes far less often than troop counts. Reusing its
-  // topology for one game second removes repeated full-front neighbour scans
-  // from emergency structure ticks while troop, alive and alliance state stay
-  // live on every call below.
-  const STRATEGIC_BORDER_TOPOLOGY_CACHE_TICKS = 10;
   // The Nation execution loop asks for defensive structure work between the
   // main attack decisions as well as on the main decision itself.  Those
   // interstitial calls must keep missile/SAM/land-defense reactions live, but
@@ -1089,84 +1071,6 @@
 
     defensePostPlacementThreat(difficulty) {
       return this.defensePostThreat(difficulty);
-    }
-
-    isStrategicBorderDefenseOpponent(opponent) {
-      if (!opponent?.isPlayer?.() || opponent.isAlive?.() === false) return false;
-      if (this.player.isFriendly(opponent) === true) return false;
-      return opponent.type?.() === PlayerType.Nation ||
-        opponent.type?.() === PlayerType.Human;
-    }
-
-    preemptiveBorderDefensePostThreat() {
-      return this.strategicBorderDefensePostThreat(
-        PREEMPTIVE_BORDER_DEFENSE_POST_RATIO,
-        1,
-      );
-    }
-
-    sustainedBorderDefensePostThreat() {
-      return this.strategicBorderDefensePostThreat(
-        SUSTAINED_BORDER_DEFENSE_POST_RATIO,
-        MAX_SUSTAINED_BORDER_DEFENSE_POSTS,
-      );
-    }
-
-    strategicBorderDefensePostThreat(minimumRatio, maximumAllowed) {
-      if (
-        typeof this.game.ownerID !== "function" ||
-        typeof this.game.playerBySmallID !== "function"
-      ) return null;
-      const ownTroops = Math.max(0, Number(this.player.troops?.()) || 0);
-      if (ownTroops <= 0) return null;
-      const topology = this.strategicBorderDefenseTopology();
-      const opponents = topology.opponents;
-      const frontTiles = topology.frontTiles;
-      const liveOpponents = [...opponents.values()].filter((opponent) =>
-        this.isStrategicBorderDefenseOpponent(opponent));
-      const hostileTroops = liveOpponents.reduce(
-        (total, opponent) => total + Math.max(0, Number(opponent.troops?.()) || 0),
-        0,
-      );
-      if (hostileTroops / ownTroops < minimumRatio) {
-        return null;
-      }
-      if (frontTiles.length === 0) return null;
-      const allowed = maximumAllowed === 1
-        ? 1
-        : Math.min(
-          maximumAllowed,
-          Math.max(1, Math.ceil(frontTiles.length / SUSTAINED_BORDER_TILES_PER_DEFENSE_POST)),
-        );
-      return { allowed, frontTiles };
-    }
-
-    strategicBorderDefenseTopology() {
-      const tick = Number(this.game.ticks?.());
-      const cached = this._strategicBorderDefenseTopology;
-      if (
-        Number.isFinite(tick) &&
-        cached !== undefined &&
-        tick >= cached.tick &&
-        tick - cached.tick < STRATEGIC_BORDER_TOPOLOGY_CACHE_TICKS
-      ) {
-        return cached;
-      }
-      const opponents = new Map();
-      const frontTiles = [];
-      for (const borderTile of this.player.borderTiles()) {
-        let threatened = false;
-        for (const neighbor of this.game.neighbors(borderTile) || []) {
-          const opponent = this.game.playerBySmallID(this.game.ownerID(neighbor));
-          if (!this.isStrategicBorderDefenseOpponent(opponent)) continue;
-          opponents.set(opponent.smallID(), opponent);
-          threatened = true;
-        }
-        if (threatened) frontTiles.push(borderTile);
-      }
-      const topology = { tick, opponents, frontTiles };
-      if (Number.isFinite(tick)) this._strategicBorderDefenseTopology = topology;
-      return topology;
     }
 
     defensePostThreat(difficulty) {
