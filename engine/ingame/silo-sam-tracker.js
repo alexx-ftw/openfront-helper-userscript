@@ -1193,7 +1193,7 @@
       }
       var radius = knownImpacts[i].radius;
       if (
-        _euclideanDistSq(game, primaryTile, knownImpacts[i].targetTile) <
+        _euclideanDistSq(game, primaryTile, knownImpacts[i].targetTile) <=
         radius * radius
       ) {
         return true;

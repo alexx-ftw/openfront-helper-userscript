@@ -56,6 +56,18 @@ const game = {
   manhattanDist: (a, b) => Math.abs(a - b),
 };
 
+assert.equal(
+  sandbox.chooseMaxNukeBuildingImpactTile(
+    game,
+    0,
+    [{ tile: 0 }, { tile: 3 }, { tile: 6 }],
+    3,
+    true,
+  ),
+  3,
+  "blast optimization counts structures exactly on the engine's inclusive radius boundary",
+);
+
 const buildingImpactCandidate = { tile: 1, totalScore: 10 };
 const buildingImpactStructures = [{ tile: 1 }, { tile: 2 }, { tile: 3 }];
 const buildingImpactCoords = new Map([

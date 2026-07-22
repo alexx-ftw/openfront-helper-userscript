@@ -191,6 +191,14 @@ assert.equal(
   "a late allied impact cannot suppress our faster shot at a newly placed SAM",
 );
 assert.equal(
+  sandbox._isAutoFireTargetCovered(collateralGame, "sam", me, null, {
+    impacts: [{ targetTile: "30,0", radius: 30, remainingTicks: 10 }],
+    ownFlightTicks: 20,
+  }),
+  true,
+  "an earlier missile whose blast edge reaches the target suppresses a redundant shot",
+);
+assert.equal(
   sandbox._chooseAutoFireImpactTile(collateralGame, "sam", me, uncoveredCollateral),
   "0,20",
   "auto-fire shifts the impact toward a different surviving city while still hitting the SAM",
