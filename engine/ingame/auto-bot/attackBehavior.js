@@ -174,6 +174,7 @@
   // parking four times their strength in one conquest.
   const TRIBE_CAPTURE_TROOP_MULTIPLIER = 2.5;
   const PLAYER_CAPTURE_TROOP_MULTIPLIER = 4;
+  const EXPANSION_BREAKOUT_CONFIRM_DECISIONS = 2;
   // Once aggregate hostile incoming troops match our whole current army, a
   // counterattack removes the exact troops needed at home while still failing
   // to cover the simultaneous invasion. Keep that projected defense budget
@@ -705,6 +706,8 @@
       this.terraNulliusOpeningStartTick = null;
       this.terraNulliusOpeningTroops = 0;
       this.terraNulliusOpeningCommittedTroops = 0;
+      this.expansionBreakoutEmptyDecisions = 0;
+      this.expansionBreakoutActive = false;
       this.strongestBorderOpponentTroopsCacheTick = null;
       this.strongestBorderOpponentTroopsCacheIncludeFriendly = null;
       this.strongestBorderOpponentTroopsCache = null;
@@ -2406,6 +2409,7 @@
         this.reconcileOutboundAttackIntentCommitments());
       const context = profileAttackSync(profile, "attack-context", () =>
         this.createAttackDecisionContext());
+      this.updateExpansionBreakoutState(context);
       let acted = false;
       if (state.settings.winFixes) {
         const defense = await profileAttackAsync(
@@ -5443,6 +5447,50 @@
       return owner ? owner.isPlayer?.() !== true : !this.game.hasOwner?.(tile);
     }
 
+    hasExpansionBreakoutCoast() {
+      const hasCoastalApi =
+        typeof this.player?.shoreBorderTiles === "function" ||
+        (typeof this.player?.borderTiles === "function" &&
+          typeof this.game?.isShore === "function");
+      return hasCoastalApi && this.getEarlyGameOwnShores().length > 0;
+    }
+
+    expansionBreakoutOpportunity(context) {
+      const early = state.earlyGame || {};
+      const plannerIsExhausted =
+        Array.isArray(this.earlyGameTribeCandidatesCache) &&
+        this.earlyGameTribeCandidatesCache.length === 0;
+      const expansionStatus =
+        typeof getAutoDonateExpansionStatus === "function"
+          ? getAutoDonateExpansionStatus(early)
+          : { active: false };
+      const noLandEnemy =
+        Array.isArray(context?.borderingEnemies) &&
+        context.borderingEnemies.length === 0;
+      const hasBreakoutRoute =
+        !noLandEnemy || this.hasExpansionBreakoutCoast();
+      return (
+        early.postSpawn === true &&
+        plannerIsExhausted &&
+        expansionStatus.active !== true &&
+        hasBreakoutRoute
+      );
+    }
+
+    updateExpansionBreakoutState(context) {
+      if (this.expansionBreakoutOpportunity(context)) {
+        this.expansionBreakoutEmptyDecisions =
+          (Number(this.expansionBreakoutEmptyDecisions) || 0) + 1;
+      } else {
+        this.expansionBreakoutEmptyDecisions = 0;
+      }
+      this.expansionBreakoutActive =
+        state.settings.winFixes === true &&
+        this.expansionBreakoutEmptyDecisions >=
+          EXPANSION_BREAKOUT_CONFIRM_DECISIONS;
+      return this.expansionBreakoutActive;
+    }
+
     randomBoatTroops(isTerraNullius) {
       if (!state.settings.winFixes) return this.player.troops() / 5;
       if (isTerraNullius) {
@@ -7661,6 +7709,23 @@
     }
 
     // sendLandAttack — AiAttackBehavior (private). SYNC: no worker calls.
+    getLandAttackSpendableTroops(target, targetReserveTroops, isTribeTarget) {
+      const ordinary = this.getEarlyGameSpendableTroops(targetReserveTroops);
+      if (
+        this.expansionBreakoutActive !== true ||
+        !target.isPlayer() ||
+        isTribeTarget
+      ) {
+        return ordinary;
+      }
+      return Math.max(
+        ordinary,
+        this.getEarlyGameSpendableTroops(
+          this.getTerraNulliusLivenessReserveTroops(),
+        ),
+      );
+    }
+
     createLandAttackContext(target, options = {}) {
       const configuration = {
         minCommitFraction: null,
@@ -7691,8 +7756,11 @@
       const targetTroops = state.settings.winFixes
         ? targetReserveTroops
         : this.game.config().maxTroops(this.player) * reserveRatio;
-      const targetSpendableTroops =
-        this.getEarlyGameSpendableTroops(targetReserveTroops);
+      const targetSpendableTroops = this.getLandAttackSpendableTroops(
+        target,
+        targetReserveTroops,
+        isTribeTarget,
+      );
       const finalSpendableTroops =
         isTerraNullius &&
         state.settings.winFixes &&
@@ -8222,6 +8290,7 @@
 
     donationBaseGatesAllow() {
       if (!state.settings.features.donate) return false;
+      if (this.expansionBreakoutActive === true) return false;
       if (this.donationHasIncomingAttack()) return false;
       if (this.donationHasMaritimeInvasion()) return false;
       const expansionStatus =

@@ -1044,6 +1044,42 @@ tick = 9;
 // must reapply the same target-specific reserve instead of falling back to the
 // lower acceleration reserve when the troop snapshot changed during the await.
 const boatBudgetBehavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
+const breakoutBehavior = Object.create(sandbox.AttackBehavior.prototype);
+breakoutBehavior.earlyGameTribeCandidatesCache = [];
+breakoutBehavior.getEarlyGameOwnShores = () => [1];
+breakoutBehavior.player = {
+  troops: () => 800000,
+  isFriendly: () => false,
+  borderTiles: () => new Set([1]),
+  shoreBorderTiles: () => [1],
+};
+breakoutBehavior.getEarlyGameSpendableTroops = () => 300000;
+breakoutBehavior.getEarlyGameTargetReserveTroops = () => 400000;
+sandbox.state.earlyGame = {
+  active: true,
+  postSpawn: true,
+  hasFreeLand: false,
+  actionableTribes: [],
+};
+assert.equal(
+  breakoutBehavior.updateExpansionBreakoutState({ borderingEnemies: [] }),
+  false,
+  "one empty planner decision does not mistake a refresh handoff for encirclement",
+);
+assert.equal(
+  breakoutBehavior.updateExpansionBreakoutState({ borderingEnemies: [] }),
+  true,
+  "two completed empty planner decisions activate maritime breakout",
+);
+breakoutBehavior.expansionBreakoutActive = true;
+breakoutBehavior.getEarlyGameSpendableTroops = (reserve) => (reserve === 150000 ? 650000 : 300000);
+breakoutBehavior.getTerraNulliusLivenessReserveTroops = () => 150000;
+assert.equal(
+  breakoutBehavior.getLandAttackSpendableTroops({ isPlayer: () => true }, 500000, false),
+  650000,
+  "a landed breakout may spend surplus down to the live reserve",
+);
+sandbox.state.earlyGame = {};
 ownTroops = 80000;
 assert.equal(
   boatBudgetBehavior.emitBoat("boat-destination", 50000, "⛵ test boat", humanTarget),
@@ -2089,6 +2125,23 @@ assertDonationPausedDuringExpansion(
     actionableTribes: [{ landBorder: false, boatEtaTicks: 30 }],
   },
   "a reachable sea tribe pauses the complete donation path",
+);
+sandbox.state.settings.pauseDonateDuringExpansion = false;
+const breakoutDonationBehavior = new sandbox.AttackBehavior(
+  { chance: () => true },
+  donationGame,
+  donor,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+breakoutDonationBehavior.expansionBreakoutActive = true;
+assert.equal(
+  breakoutDonationBehavior.donateTroops(),
+  false,
+  "maritime breakout reserves troops instead of donating the beachhead budget",
 );
 sandbox.state.earlyGame = { active: false, hasFreeLand: false, actionableTribes: [] };
 sandbox.state.settings.pauseDonateDuringExpansion = false;
