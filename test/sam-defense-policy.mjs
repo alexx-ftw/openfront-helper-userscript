@@ -1012,6 +1012,34 @@ assert.equal(
 );
 own.gold = originalOwnGoldForSamSurplus;
 behavior.economicConstructionPressureForSamUpgrade = originalSamEconomicPressure;
+const deterministicLegendaryUpgrade = Object.create(
+  sandbox.__StructureBehavior.prototype,
+);
+deterministicLegendaryUpgrade.random = {
+  chance: () => true,
+  nextInt: () => 2,
+};
+testDifficulty = Difficulty.Legendary;
+assert.equal(
+  deterministicLegendaryUpgrade.selectScoredStructureUpgrade([
+    { structure: "best", score: 20 },
+    { structure: "second", score: 10 },
+    { structure: "third", score: 5 },
+  ]),
+  "best",
+  "Legendary never discards a proven best upgrade for random variety",
+);
+testDifficulty = Difficulty.Impossible;
+assert.equal(
+  deterministicLegendaryUpgrade.selectScoredStructureUpgrade([
+    { structure: "best", score: 20 },
+    { structure: "second", score: 10 },
+    { structure: "third", score: 5 },
+  ]),
+  "third",
+  "faithful Easy-Impossible modes preserve Nation upgrade variety",
+);
+
 const genericSamUpgradeBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 const genericSamStructure = { type: () => UNIT.SAMLauncher };
 genericSamUpgradeBehavior.getTotalStructureDensity = () => 1;

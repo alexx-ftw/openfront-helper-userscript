@@ -7598,6 +7598,12 @@
 
     selectScoredStructureUpgrade(scored) {
       if (scored.length === 0) return null;
+      // Legendary has already paid to probe and score every legal upgrade.
+      // Choosing a lower-ranked structure for variety is strictly dominated:
+      // the type, price and added level are identical, while the sorted winner
+      // has at least as much SAM protection. Preserve Nation randomness only
+      // for the faithful Easy–Impossible modes.
+      if (isLegendaryDifficulty(currentDifficulty())) return scored[0].structure;
       // 50% of the time, pick the second or third best for variety.
       if (scored.length >= 2 && this.random.chance(2)) {
         const pickIndex =
