@@ -7082,6 +7082,11 @@
      * structure so a Hydrogen Bomb aimed at any of them has an interceptor.
      */
     async maybeEnsureHydrogenStructureCoverage() {
+      // Coverage is recomputed from completed geometry. Wait for an already
+      // committed SAM to finish before proving that another physical launcher
+      // is necessary; otherwise adjacent construction ticks can buy duplicate
+      // level-one launchers for the same post-impact structure cluster.
+      if (this.hasOwnSamUnderConstruction()) return false;
       const plan = this.hydrogenStructureCoveragePlan();
       if (!plan) return false;
       if (plan.needsNewSam) {

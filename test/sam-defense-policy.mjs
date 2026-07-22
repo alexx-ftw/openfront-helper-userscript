@@ -2591,6 +2591,24 @@ assert.deepEqual(
   "Pre-launch coverage SAMs use the literal affordable cost instead of a save-up multiplier",
 );
 
+const pendingCoverageSamBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+let pendingCoveragePlanCalls = 0;
+pendingCoverageSamBehavior.hasOwnSamUnderConstruction = () => true;
+pendingCoverageSamBehavior.hydrogenStructureCoveragePlan = () => {
+  pendingCoveragePlanCalls++;
+  return { needsNewSam: true };
+};
+assert.equal(
+  await pendingCoverageSamBehavior.maybeEnsureHydrogenStructureCoverage(),
+  false,
+  "a pending SAM blocks a duplicate preemptive coverage launcher",
+);
+assert.equal(
+  pendingCoveragePlanCalls,
+  0,
+  "coverage geometry is reassessed only after the pending SAM materializes",
+);
+
 const nukeSamLiquidityBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 nukeSamLiquidityBehavior.player = {
   units: (type) => (type === UNIT.SAMLauncher ? [makeUnit(1160, 1)] : []),
