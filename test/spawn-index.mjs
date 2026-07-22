@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE = path.join(ROOT, "engine/ingame/spawn-index.js");
+const source = fs.readFileSync(SOURCE, "utf8");
 
 function loadApi() {
   const sandbox = {
@@ -19,12 +20,22 @@ function loadApi() {
     Int32Array,
   };
   sandbox.globalThis = sandbox;
-  executeClassicScript(fs.readFileSync(SOURCE, "utf8"), sandbox, { filename: SOURCE });
+  executeClassicScript(source, sandbox, { filename: SOURCE });
   assert.ok(sandbox.__OFHSpawnIndex, "spawn index API must be exposed for the engine");
   return sandbox.__OFHSpawnIndex;
 }
 
 const api = loadApi();
+assert.doesNotMatch(
+  source,
+  /_terrainValid/,
+  "spawn index construction must not allocate and synchronously populate a duplicate validity map",
+);
+assert.doesNotMatch(
+  source,
+  /Uint8Array\.from\(terrain\.slice/,
+  "spawn terrain snapshots must not create an intermediate full-map copy",
+);
 const LAND = 1 << 7;
 const IMPASSABLE_LAND = LAND | 31;
 

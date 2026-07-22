@@ -102,7 +102,7 @@
       width,
       height,
       size,
-      terrain: Uint8Array.from(terrain.slice(0, size)),
+      terrain: copySpawnTerrain(terrain, size),
       spawnRadius: Number.isFinite(options.spawnRadius)
         ? Math.max(0, Number(options.spawnRadius))
         : DEFAULT_SPAWN_RADIUS,
@@ -110,6 +110,16 @@
         ? Number(options.impassableMagnitude) & SPAWN_MAGNITUDE_MASK
         : DEFAULT_IMPASSABLE_MAGNITUDE,
     };
+  }
+
+  function copySpawnTerrain(terrain, size) {
+    const snapshot = new Uint8Array(size);
+    if (typeof terrain.subarray === "function") {
+      snapshot.set(terrain.subarray(0, size));
+      return snapshot;
+    }
+    for (let ref = 0; ref < size; ref += 1) snapshot[ref] = terrain[ref];
+    return snapshot;
   }
 
   function createSpawnBlockedBuffer(options, size) {
@@ -130,7 +140,6 @@
 
       this.diskOffsets = buildSpawnDiskOffsets(this.spawnRadius);
       this.frontierOffsets = buildSpawnFrontierOffsets(this.diskOffsets);
-      this._terrainValid = new Uint8Array(this.size);
       this.spawnGain = new Uint16Array(this.size);
       this.plainsGain = new Uint16Array(this.size);
       this.invalidCount = new Uint16Array(this.size);
@@ -142,14 +151,6 @@
       this.ready = false;
       this.version = 0;
 
-      for (let ref = 0; ref < this.size; ref += 1) {
-        this._terrainValid[ref] = isValidTerrainByte(
-          this.terrain[ref],
-          this.impassableMagnitude,
-        )
-          ? 1
-          : 0;
-      }
     }
 
     _isValidRef(ref) {
@@ -157,7 +158,10 @@
     }
 
     _cellValid(ref) {
-      return this._terrainValid[ref] !== 0 && this.blocked[ref] === 0;
+      return (
+        this.blocked[ref] === 0 &&
+        isValidTerrainByte(this.terrain[ref], this.impassableMagnitude)
+      );
     }
 
     _forEachAffectedCenter(tileRef, callback) {
@@ -340,9 +344,6 @@
         ? terrainExpansionValue(previousByte, this.impassableMagnitude)
         : 0;
       this.terrain[ref] = nextByte;
-      this._terrainValid[ref] = isValidTerrainByte(nextByte, this.impassableMagnitude)
-        ? 1
-        : 0;
       const newValid = this._cellValid(ref);
       const newPlains = newValid && isPlainsTerrainByte(nextByte, this.impassableMagnitude);
       const newExpansionValue = newValid
@@ -419,7 +420,7 @@
 
     getCandidate(ref, options = {}) {
       if (!this.ready || !this._isValidRef(ref)) return null;
-      if (!this._terrainValid[ref] || this.blocked[ref]) return null;
+      if (!this._cellValid(ref)) return null;
       const mode = options.mode === "random" ? "random" : "explicit";
       if (mode === "random" && this.invalidCount[ref] !== 0) return null;
       if (mode === "explicit" && this.spawnGain[ref] === 0) return null;
@@ -441,7 +442,7 @@
     }
 
     _candidateRangeAllowed(ref, mode, isCenterAllowed) {
-      if (!this._terrainValid[ref] || this.blocked[ref]) return false;
+      if (!this._cellValid(ref)) return false;
       if (mode === "random" && this.invalidCount[ref] !== 0) return false;
       if (mode === "explicit" && this.spawnGain[ref] === 0) return false;
       if (!isCenterAllowed) return true;
