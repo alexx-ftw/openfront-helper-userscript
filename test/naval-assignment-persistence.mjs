@@ -63,6 +63,49 @@ assert.deepEqual(
 );
 assert.equal(dispatches, 0, "a retained interception emits no duplicate move");
 
+const trackedThreatBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
+let landingOwner = 1;
+let transportAllied = false;
+trackedThreatBehavior.player = { smallID: () => 1 };
+trackedThreatBehavior.game = { ownerID: () => landingOwner };
+trackedThreatBehavior.trackedIncomingTransportShips = new Set(["transport-1"]);
+trackedThreatBehavior.dealtWithTransportShip = new Set(["transport-1"]);
+const trackedTransport = {
+  isActive: () => true,
+  targetTile: () => 99,
+  transportShipState: () => ({ isRetreating: false }),
+  owner: () => ({
+    smallID: () => 2,
+    isAlliedWith: () => transportAllied,
+  }),
+};
+assert.equal(
+  trackedThreatBehavior.isIncomingHostileTransport(trackedTransport),
+  true,
+  "an active hostile transport aimed at our current tile is tracked",
+);
+transportAllied = true;
+assert.equal(
+  trackedThreatBehavior.processTrackedIncomingTransport("transport-1", trackedTransport),
+  false,
+  "a newly allied transport cannot actuate a stale interception",
+);
+assert.equal(
+  trackedThreatBehavior.trackedIncomingTransportShips.size,
+  0,
+  "a newly allied transport is released from the tracked threat set",
+);
+transportAllied = false;
+landingOwner = 2;
+trackedThreatBehavior.trackedIncomingTransportShips.add("transport-1");
+trackedThreatBehavior.dealtWithTransportShip.add("transport-1");
+trackedThreatBehavior.processTrackedIncomingTransport("transport-1", trackedTransport);
+assert.equal(
+  trackedThreatBehavior.trackedIncomingTransportShips.size,
+  0,
+  "a landing whose target is no longer ours is released immediately",
+);
+
 const concurrentBuildBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
 concurrentBuildBehavior.game = { ticks: () => 200 };
 const builtForInvasions = [];

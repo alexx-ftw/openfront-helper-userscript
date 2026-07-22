@@ -370,11 +370,10 @@
 
     // trackIncomingTransportsAndRetaliate — NationWarshipBehavior (private).
     isIncomingHostileTransport(transport) {
-      const target = transport.targetTile();
-      if (!target || !transport.isActive()) return false;
-      if (transport.transportShipState()?.isRetreating) return false;
-      if (this.game.ownerID(target) !== this.player?.smallID()) return false;
-      return transport.owner().smallID() !== this.player?.smallID();
+      return this.isHostileIncomingTransport(
+        transport,
+        this.player?.smallID?.(),
+      );
     }
 
     removeTrackedIncomingTransport(id) {
@@ -393,19 +392,20 @@
     }
 
     processTrackedIncomingTransport(transportId, transport) {
-      const target = transport?.targetTile?.();
-      const invalid = !transport?.isActive?.() || target == null ||
-        transport.transportShipState?.()?.isRetreating;
-      if (invalid) {
+      // Revalidate the complete threat, not merely the unit lifecycle. The
+      // landing tile can change owner and diplomacy can change after the ship
+      // entered the tracked set; neither transition should retain or actuate a
+      // stale interception.
+      if (!transport || !this.isIncomingHostileTransport(transport)) {
         this.removeTrackedIncomingTransport(transportId);
         return false;
       }
+      const target = transport.targetTile();
       if (this.dealtWithTransportShip.has(transportId)) return false;
       if (this.game.manhattanDist(transport.tile(), target) < 20) {
         this.dealtWithTransportShip.add(transportId);
         return false;
       }
-      if (transport.owner().isAlliedWith(this.player)) return false;
       if (this.hasWarshipDefendingTarget(target)) {
         this.dealtWithTransportShip.add(transportId);
         return false;
