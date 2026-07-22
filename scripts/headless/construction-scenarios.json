@@ -26,6 +26,18 @@
       }
     },
     {
+      "id": "ffa-europe-low-gold",
+      "role": "free-for-all survival and economic sequencing from a constrained treasury",
+      "environment": {
+        "OFH_GAME_MAP": "Europe",
+        "OFH_GAME_MAP_SIZE": "Small",
+        "OFH_GAME_MODE": "ffa",
+        "OFH_NATIONS": "50",
+        "OFH_BOTS": "180",
+        "OFH_STARTING_GOLD": "250000"
+      }
+    },
+    {
       "id": "team-four-islands",
       "role": "team-separated island economy and reinforcement logistics",
       "environment": {

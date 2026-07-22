@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   Difficulty,
+  GameMode,
   HumansVsNations,
   PlayerType,
   UnitType,
@@ -79,6 +80,7 @@ async function deterministicTeamPlaylistConfig(matchSeed: string) {
 const playlistConfig = await deterministicTeamPlaylistConfig(seed);
 const requestedTeams = process.env.OFH_PLAYER_TEAMS;
 const numericTeams = Number(requestedTeams);
+const requestedGameMode = (process.env.OFH_GAME_MODE ?? "team").trim().toLowerCase();
 const requestedStartingGold = process.env.OFH_STARTING_GOLD;
 const numericStartingGold = Number(requestedStartingGold);
 const requestedNations = process.env.OFH_NATIONS;
@@ -91,6 +93,10 @@ const nuclearUnitTypes = new Set([
   UnitType.MIRV,
   UnitType.SAMLauncher,
 ]);
+if (requestedGameMode !== "team" && requestedGameMode !== "ffa") {
+  throw new Error(`OFH_GAME_MODE must be team or ffa, got ${process.env.OFH_GAME_MODE}`);
+}
+const fixedGameMode = requestedGameMode === "ffa" ? GameMode.FFA : GameMode.Team;
 if (
   requestedStartingGold !== undefined &&
   (!Number.isSafeInteger(numericStartingGold) || numericStartingGold < 0)
@@ -119,18 +125,22 @@ const fixedConfig = process.env.OFH_GAME_MAP
   ? {
       gameMap: process.env.OFH_GAME_MAP,
       gameMapSize: process.env.OFH_GAME_MAP_SIZE ?? playlistConfig.gameMapSize,
-      gameMode: "Team",
-      playerTeams:
-        requestedTeams === undefined
-          ? // Fixed-map smoke matches can have far fewer Nations than the
-            // unrelated random playlist used to supply defaults. Two teams
-            // guarantees the helper has a viable teammate instead of silently
-            // producing an unspawned no-op run; callers can still request an
-            // exact team count explicitly.
-            2
-          : Number.isFinite(numericTeams)
-            ? numericTeams
-            : requestedTeams,
+      gameMode: fixedGameMode,
+      ...(fixedGameMode === GameMode.Team
+        ? {
+            playerTeams:
+              requestedTeams === undefined
+                ? // Fixed-map smoke matches can have far fewer Nations than the
+                  // unrelated random playlist used to supply defaults. Two teams
+                  // guarantees the helper has a viable teammate instead of silently
+                  // producing an unspawned no-op run; callers can still request an
+                  // exact team count explicitly.
+                  2
+                : Number.isFinite(numericTeams)
+                  ? numericTeams
+                  : requestedTeams,
+          }
+        : {}),
       bots: Number(process.env.OFH_BOTS ?? playlistConfig.bots),
     }
   : {};
