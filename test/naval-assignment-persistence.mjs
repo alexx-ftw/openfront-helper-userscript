@@ -240,6 +240,34 @@ assert.deepEqual(
   "short interceptor routes remain exact",
 );
 
+const patrolSelectionBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
+let patrolDistanceCalls = 0;
+const patrolShips = Array.from({ length: 64 }, (_, index) => ({
+  id: () => `patrol-${index}`,
+  tile: () => index * 3,
+  warshipState: () => ({ patrolTile: index * 3 }),
+}));
+patrolSelectionBehavior.player = { units: () => patrolShips };
+patrolSelectionBehavior.game = {
+  manhattanDist: (left, right) => {
+    patrolDistanceCalls++;
+    return Math.abs(left - right);
+  },
+};
+const closestPatrol = patrolSelectionBehavior.selectClosestIdleWarship(
+  100,
+  { invasionAssignments: new Map(), cooldown: new Map() },
+  500,
+  60,
+);
+assert.equal(closestPatrol.warship.id(), "patrol-33");
+assert.equal(closestPatrol.distance, 1);
+assert.equal(
+  patrolDistanceCalls,
+  patrolShips.length * 2,
+  "patrol selection computes one voyage and one target distance per ship without sorting",
+);
+
 assert.doesNotMatch(
   read("engine/ingame/auto-bot/warshipBehavior.js"),
   /planNavalInterceptions\(\{[\s\S]{0,500}route: \(from, to\) => this\.waterRoute\(from, to\)/,

@@ -1551,31 +1551,38 @@
     // if it's within the interception distance cap (else leave it; the faithful build
     // path covers threats no existing ship can reach). Sets a per-warship cooldown so a
     // tiny pool doesn't oscillate between threats. Returns true if a ship was tasked.
+    selectClosestIdleWarship(tile, s, tick, cooldownTicks) {
+      let best = null;
+      let bestDistance = Infinity;
+      for (const warship of this.player.units(UNIT.Warship)) {
+        if (s.invasionAssignments?.has(warship.id())) continue;
+        const patrolTile = warship.warshipState().patrolTile;
+        if (patrolTile === undefined) continue;
+        if (this.game.manhattanDist(warship.tile(), patrolTile) >= 130) continue;
+        const last = s.cooldown.get(warship.id());
+        if (last !== undefined && tick - last < cooldownTicks) continue;
+        const distance = this.game.manhattanDist(warship.tile(), tile);
+        // Strict comparison preserves the stable-sort tie: the first eligible
+        // ship in the player's unit order wins equal-distance ties.
+        if (distance >= bestDistance) continue;
+        best = warship;
+        bestDistance = distance;
+      }
+      return best === null ? null : { warship: best, distance: bestDistance };
+    }
+
     moveBestWarshipTo(tile, kind, s, tick) {
       if (!this.game.isWater(tile)) return false;
       const maxDist = state.settings.warshipMoveMaxDist || 160;
       const cooldownTicks = state.settings.warshipMoveCooldownTicks || 60;
-      const idle = this.player.units(UNIT.Warship).filter((w) => {
-        {
-          // An assigned interceptor owns its route until the invasion plan is
-          // refreshed or its predicted landing tick has passed.
-          if (s.invasionAssignments?.has(w.id())) return false;
-          const ps = w.warshipState().patrolTile;
-          if (ps === undefined) return false;
-          if (this.game.manhattanDist(w.tile(), ps) >= 130) return false; // mid-voyage
-          const last = s.cooldown.get(w.id());
-          if (last !== undefined && tick - last < cooldownTicks) return false; // just tasked
-          return true;
-        }
-      });
-      if (idle.length === 0) return false;
-      idle.sort(
-        (a, b) =>
-          this.game.manhattanDist(a.tile(), tile) -
-          this.game.manhattanDist(b.tile(), tile),
+      const selected = this.selectClosestIdleWarship(
+        tile,
+        s,
+        tick,
+        cooldownTicks,
       );
-      const w = idle[0];
-      if (this.game.manhattanDist(w.tile(), tile) > maxDist) return false; // too far
+      if (selected === null || selected.distance > maxDist) return false;
+      const w = selected.warship;
       const ctors = discoverCtors(getEventBus());
       if (!ctors.moveWarship) return false;
       emitIntent(ctors.moveWarship, [w.id()], tile);
