@@ -1573,13 +1573,8 @@
         return true;
       }
       if (isLegendaryDifficulty(context.difficulty)) {
-        // Paired six-scenario evaluation found the fixed Legendary objective
-        // vector dominated by the ordinary portfolio in five scenario classes:
-        // it over-produced Factories while displacing Cities, Ports, and Silos.
-        // Legendary keeps the trajectory-aware defense phases above, but uses
-        // the empirically stronger economic selector here.
-        return profileStructureAsync(profile, "structures-legendary-portfolio", () =>
-          this.handleOrdinaryStructurePriorities(context));
+        return profileStructureAsync(profile, "structures-ordinary-legendary", () =>
+          this.doHandleLegendaryStructures(context));
       }
       return profileStructureAsync(profile, "structures-ordinary-policy", () =>
         this.handleOrdinaryStructurePriorities(context));
