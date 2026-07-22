@@ -299,14 +299,24 @@
     return typeof me?.[capability] !== "function" || me[capability](player) === true;
   }
 
-  function isEligibleAutoDonateTarget(player, me, targetNames, combatOnly, donationKind) {
+  function getAutoDonateTroopCapacity(game, player) {
+    const troops = Number(player?.troops?.());
+    const maxTroops = Number(game?.config?.().maxTroops?.(player));
+    if (!Number.isFinite(troops) || !Number.isFinite(maxTroops) || maxTroops <= 0) return null;
+    return Math.max(0, Math.floor(maxTroops - troops));
+  }
+
+  function isEligibleAutoDonateTarget(game, player, me, targetNames, policy) {
     {
+      const { combatOnly, donationKind } = policy;
       if (!player?.isAlive?.()) return false;
       const myId = getAutoDonatePlayerId(me);
       const playerId = getAutoDonatePlayerId(player);
       if (myId !== null && playerId !== null && myId === playerId) return false;
       if (!matchesAutoDonatePlayer(player, targetNames)) return false;
       if (!canAutoDonateToPlayer(me, player, donationKind)) return false;
+      if (donationKind === "troops" && getAutoDonateTroopCapacity(game, player) === 0)
+        return false;
       if (!autoDonationRecipientIsReady(player)) return false;
       return !combatOnly || isAutoDonateTargetInCombat(player);
     }
@@ -323,7 +333,7 @@
     const players = getAutoDonatePlayerViews(game);
     if (!players) return [];
     return players.filter((player) =>
-      isEligibleAutoDonateTarget(player, me, targetNames, combatOnly, donationKind));
+      isEligibleAutoDonateTarget(game, player, me, targetNames, { combatOnly, donationKind }));
   }
 
   async function getAutoDonatePlayerBorderTiles(player) {
@@ -487,7 +497,9 @@
     const requested = Math.floor(currentTroops * plan.donatePct / 100);
     const keepLimit = Math.floor(currentTroops - keepAmount);
     const borderLimit = Math.floor(currentTroops - borderOpponentTroops / 2);
-    return Math.max(0, Math.min(requested, keepLimit, borderLimit));
+    const recipientCapacity = getAutoDonateTroopCapacity(plan.game, plan.recipient);
+    const capacityLimit = recipientCapacity === null ? requested : recipientCapacity;
+    return Math.max(0, Math.min(requested, keepLimit, borderLimit, capacityLimit));
   }
 
   function sendAutoDonateTroops(plan, amount) {

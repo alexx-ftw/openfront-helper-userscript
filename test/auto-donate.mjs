@@ -53,6 +53,7 @@ const DONATION_DEFAULTS = {
   opponents: [],
   friendlyBorder: false,
   allyTroops: 50,
+  allyMaxTroops: 1000,
   allyFriendly: true,
   supportsBorderApi: true,
   supportsUnitApi: true,
@@ -78,6 +79,7 @@ async function runDonation(options = {}) {
     opponents,
     friendlyBorder,
     allyTroops,
+    allyMaxTroops,
     allyFriendly,
     supportsBorderApi,
     supportsUnitApi,
@@ -150,7 +152,7 @@ async function runDonation(options = {}) {
     config: () => ({
       donateTroops: () => true,
       donateGold: () => donateGoldAllowed,
-      maxTroops: () => 1000,
+      maxTroops: (player) => (player === ally ? allyMaxTroops : 1000),
     }),
   };
   if (supportsUnitApi) {
@@ -249,6 +251,26 @@ assert.deepEqual(
   "combat troops claim the shared recipient cooldown before an optional gold transfer",
 );
 
+const fullCombatAlly = await runDonation({
+  allyTroops: 1000,
+  allyMaxTroops: 1000,
+});
+assert.deepEqual(
+  fullCombatAlly,
+  [],
+  "a full combat ally is not selected for a troop donation the engine would discard",
+);
+
+const nearlyFullCombatAlly = await runDonation({
+  allyTroops: 950,
+  allyMaxTroops: 1000,
+});
+assert.equal(
+  nearlyFullCombatAlly[0]?.troops,
+  50,
+  "troop donations are capped to the recipient's remaining capacity",
+);
+
 const retreatingOnlyCombat = await runDonation({
   allyIncomingAttacks: [{ retreating: () => true }],
   allyOutgoingAttacks: [{ retreating: () => true }],
@@ -289,6 +311,7 @@ assert.equal(nonBorderStrongest[0]?.troops, 580, "non-border enemies do not lowe
 const friendlyBorder = await runDonation({
   friendlyBorder: true,
   allyTroops: 1200,
+  allyMaxTroops: 2000,
   opponents: [],
 });
 assert.equal(friendlyBorder[0]?.troops, 400, "allied border players still determine the reserve");
