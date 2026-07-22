@@ -53,6 +53,10 @@ const candidate = JSON.parse(
 const finalTiles = (result) => result?.finalBotState?.tiles ?? 0;
 const finalGold = (result) => Number(result?.finalBotState?.gold ?? 0);
 const buildCount = (result, unit) => result?.cumulativeBuildUnitTypes?.[unit] ?? 0;
+const constructionActionCount = (result, action, unit = null) =>
+  (result?.constructionEvents ?? []).filter(
+    (event) => event.action === action && (unit === null || event.unit === unit),
+  ).length;
 const survived = (result) => finalTiles(result) > 0;
 const recoveredComeback = (result) => result?.strategicTrajectory?.comebackRecovered === true;
 const reachedCloseout = (result) => result?.strategicTrajectory?.closeoutReached === true;
@@ -71,10 +75,20 @@ const aggregate = (games) => {
     averageTiles: count === 0 ? null : Math.round(sum(finalTiles) / count),
     averageGold: count === 0 ? null : Math.round(sum(finalGold) / count),
     averageRuntimeMs: count === 0 ? null : Math.round(sum((game) => game?.runtimeMs ?? 0) / count),
+    constructionActions: {
+      builds: sum((game) => constructionActionCount(game, "build")),
+      upgrades: sum((game) => constructionActionCount(game, "upgrade")),
+    },
     builds: Object.fromEntries(
       ["City", "Factory", "Port", "Defense Post", "SAM Launcher", "Missile Silo", "Warship"].map(
         (unit) => [unit, sum((game) => buildCount(game, unit))],
       ),
+    ),
+    upgrades: Object.fromEntries(
+      ["City", "Factory", "Port", "Defense Post", "SAM Launcher", "Missile Silo"].map((unit) => [
+        unit,
+        sum((game) => constructionActionCount(game, "upgrade", unit)),
+      ]),
     ),
   };
 };
@@ -112,6 +126,9 @@ const scenarios = candidate.results.map((candidateEntry) => {
         gold: finalGold(candidateGame) - finalGold(baselineGame),
         defensePosts:
           buildCount(candidateGame, "Defense Post") - buildCount(baselineGame, "Defense Post"),
+        upgrades:
+          constructionActionCount(candidateGame, "upgrade") -
+          constructionActionCount(baselineGame, "upgrade"),
       },
     };
   });
@@ -138,10 +155,24 @@ const scenarios = candidate.results.map((candidateEntry) => {
         candidateAggregate.averageRuntimeMs,
         baselineAggregate.averageRuntimeMs,
       ),
+      constructionActions: {
+        builds:
+          candidateAggregate.constructionActions.builds -
+          baselineAggregate.constructionActions.builds,
+        upgrades:
+          candidateAggregate.constructionActions.upgrades -
+          baselineAggregate.constructionActions.upgrades,
+      },
       builds: Object.fromEntries(
         Object.keys(candidateAggregate.builds).map((unit) => [
           unit,
           candidateAggregate.builds[unit] - baselineAggregate.builds[unit],
+        ]),
+      ),
+      upgrades: Object.fromEntries(
+        Object.keys(candidateAggregate.upgrades).map((unit) => [
+          unit,
+          candidateAggregate.upgrades[unit] - baselineAggregate.upgrades[unit],
         ]),
       ),
     },

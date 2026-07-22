@@ -280,7 +280,8 @@ assert.match(runner, /deepestDrawdownRatio/);
 assert.match(runner, /comebackRecovered/);
 assert.match(runner, /closeoutReached/);
 assert.match(runner, /phase: "result",\s*seed,/);
-assert.match(runner, /action:\s*normalizedTile === null \? \("upgrade" as const\)/);
+assert.match(runner, /intent\.type !== "upgrade_structure"/);
+assert.match(runner, /action:\s*intent\.type === "upgrade_structure"/);
 assert.match(runner, /underConstruction:/);
 assert.match(runner, /levels:/);
 assert.match(runner, /intent\.type !== "build_unit"/);
@@ -340,6 +341,9 @@ assert.match(comparison, /Unpaired result count/);
 assert.match(comparison, /comebackRecoveries/);
 assert.match(comparison, /closeouts/);
 assert.match(comparison, /averageDeepestDrawdownRatio/);
+assert.match(comparison, /constructionActionCount/);
+assert.match(comparison, /constructionActions/);
+assert.match(comparison, /candidateAggregate\.upgrades/);
 assert.match(comparison, /comparison\.json/);
 assert.deepEqual(
   constructionScenarios.scenarios.map(({ id }) => id),

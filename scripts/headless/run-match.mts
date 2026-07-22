@@ -393,22 +393,26 @@ const constructionPortfolioSnapshot = () => {
   };
 };
 const countIntents = (
-  intents: readonly { type: string; unit?: unknown; tile?: unknown }[],
+  intents: readonly { type: string; unit?: unknown; tile?: unknown; unitId?: unknown }[],
   tick: number,
 ) => {
   const portfolio = constructionPortfolioSnapshot();
   for (const intent of intents) {
     cumulativeIntentTypes.set(intent.type, (cumulativeIntentTypes.get(intent.type) ?? 0) + 1);
     intervalIntentTypes.set(intent.type, (intervalIntentTypes.get(intent.type) ?? 0) + 1);
-    if (intent.type !== "build_unit" || typeof intent.unit !== "string") continue;
+    if (
+      (intent.type !== "build_unit" && intent.type !== "upgrade_structure") ||
+      typeof intent.unit !== "string"
+    )
+      continue;
     cumulativeBuildUnitTypes.set(intent.unit, (cumulativeBuildUnitTypes.get(intent.unit) ?? 0) + 1);
     intervalBuildUnitTypes.set(intent.unit, (intervalBuildUnitTypes.get(intent.unit) ?? 0) + 1);
-    const tile = Number(intent.tile);
+    const tile = intent.type === "build_unit" ? Number(intent.tile) : Number.NaN;
     const normalizedTile = Number.isFinite(tile) ? tile : null;
     const event = {
       tick,
       unit: intent.unit,
-      action: normalizedTile === null ? ("upgrade" as const) : ("build" as const),
+      action: intent.type === "upgrade_structure" ? ("upgrade" as const) : ("build" as const),
       tile: normalizedTile,
       portfolio,
       strategicBorderPressure: strategicBorderPressureSnapshot(),
