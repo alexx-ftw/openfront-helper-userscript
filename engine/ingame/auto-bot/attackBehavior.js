@@ -2637,8 +2637,21 @@
       const total = width * height;
       if (!Number.isSafeInteger(total) || total <= 0) return false;
       this.earlyGameMaritimeWaterState = new Uint8Array(total);
-      this.earlyGameMaritimeWaterQueue = new Int32Array(total);
+      this.earlyGameMaritimeWaterQueue = new Int32Array(Math.min(total, 1024));
       return true;
+    }
+
+    ensureDenseEarlyGameMaritimeWaterQueueCapacity(requiredLength) {
+      const queue = this.earlyGameMaritimeWaterQueue;
+      if (requiredLength <= queue.length) return;
+      const maximumLength = this.earlyGameMaritimeWaterState.length;
+      let nextLength = Math.max(1, queue.length);
+      while (nextLength < requiredLength) {
+        nextLength = Math.min(maximumLength, nextLength * 2);
+      }
+      const expanded = new Int32Array(nextLength);
+      expanded.set(queue.subarray(0, this.earlyGameMaritimeWaterQueueTail));
+      this.earlyGameMaritimeWaterQueue = expanded;
     }
 
     enqueueDenseEarlyGameWaterNeighbor(next) {
@@ -2651,6 +2664,9 @@
       }
       if (state[next] !== 0 || !this.game.isWater(next)) return;
       state[next] = 3;
+      this.ensureDenseEarlyGameMaritimeWaterQueueCapacity(
+        this.earlyGameMaritimeWaterQueueTail + 1,
+      );
       this.earlyGameMaritimeWaterQueue[this.earlyGameMaritimeWaterQueueTail++] = next;
     }
 

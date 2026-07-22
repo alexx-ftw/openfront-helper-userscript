@@ -4091,6 +4091,40 @@ assert.equal(
   0,
   "valid map dimensions avoid the allocation-heavy Set fallback",
 );
+const growingQueueBehavior = new targetSandbox.AttackBehavior(
+  {},
+  {
+    width: () => 2048,
+    height: () => 1,
+    isWater: () => true,
+  },
+  {},
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+assert.equal(growingQueueBehavior.ensureDenseEarlyGameMaritimeWaterState(), true);
+assert.equal(
+  growingQueueBehavior.earlyGameMaritimeWaterQueue.length,
+  1024,
+  "maritime classification must not reserve a map-sized queue before traversal",
+);
+for (let tile = 0; tile < 1025; tile++) {
+  growingQueueBehavior.enqueueDenseEarlyGameWaterNeighbor(tile);
+}
+assert.equal(growingQueueBehavior.earlyGameMaritimeWaterQueue.length, 2048);
+assert.deepEqual(
+  [...growingQueueBehavior.earlyGameMaritimeWaterQueue.subarray(0, 1025)],
+  Array.from({ length: 1025 }, (_, tile) => tile),
+  "growing the dense maritime queue must preserve every pending BFS tile",
+);
+assert.doesNotMatch(
+  attackSource,
+  /earlyGameMaritimeWaterQueue\s*=\s*new Int32Array\(total\)/,
+  "maritime classification must not synchronously allocate a map-sized queue",
+);
 const slicedMaritimeBehavior = new targetSandbox.AttackBehavior(
   {},
   maritimeGame,
