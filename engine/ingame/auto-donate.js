@@ -80,13 +80,13 @@
   // incoming. Troop donation fails closed in that case.
   function isAutoDonatePlayerBeingAttacked(player) {
     if (!player || typeof player.incomingAttacks !== "function") return null;
-    {
-      var incoming = player.incomingAttacks();
-      if (!incoming) return false;
-      if (typeof incoming.length === "number") return incoming.length > 0;
-      if (typeof incoming.size === "number") return incoming.size > 0;
-      return null;
+    var incoming = player.incomingAttacks();
+    if (!incoming) return false;
+    if (Array.isArray(incoming)) return incoming.some(isAutoDonateCombatAttackActive);
+    if (typeof incoming[Symbol.iterator] === "function") {
+      return Array.from(incoming).some(isAutoDonateCombatAttackActive);
     }
+    return null;
   }
 
   function getAutoDonatePlayerId(player) {

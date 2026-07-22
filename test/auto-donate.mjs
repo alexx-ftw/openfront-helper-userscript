@@ -66,6 +66,7 @@ const DONATION_DEFAULTS = {
   returnDetails: false,
   allyIncomingAttacks: undefined,
   allyOutgoingAttacks: [],
+  ownIncomingAttacks: undefined,
 };
 
 async function runDonation(options = {}) {
@@ -86,6 +87,7 @@ async function runDonation(options = {}) {
     returnDetails,
     allyIncomingAttacks,
     allyOutgoingAttacks,
+    ownIncomingAttacks,
   } = { ...DONATION_DEFAULTS, ...options };
   const packets = [];
   let currentlyBeingAttacked = beingAttacked;
@@ -96,7 +98,7 @@ async function runDonation(options = {}) {
     gold: () => gold,
     isAlive: () => true,
     isFriendly: (player) => Boolean(player.friendly),
-    incomingAttacks: () => (currentlyBeingAttacked ? [{}] : []),
+    incomingAttacks: () => ownIncomingAttacks ?? (currentlyBeingAttacked ? [{}] : []),
     outgoingAttacks: () => [],
   };
   if (supportsBorderApi) {
@@ -240,6 +242,24 @@ assert.ok(
 
 const beingAttacked = await runDonation({ beingAttacked: true });
 assert.equal(beingAttacked.length, 0, "donation is skipped while being attacked");
+
+const ownRetreatingAttack = await runDonation({
+  ownIncomingAttacks: [{ retreating: () => true }],
+});
+assert.equal(
+  ownRetreatingAttack.length,
+  1,
+  "an incoming retreat no longer blocks an otherwise safe allied donation",
+);
+
+const ownMixedIncomingAttacks = await runDonation({
+  ownIncomingAttacks: [{ retreating: () => true }, { retreating: () => false }],
+});
+assert.equal(
+  ownMixedIncomingAttacks.length,
+  0,
+  "one active incoming attack still blocks allied donations",
+);
 
 const sharedIncomingAttackGate = await runDonation({
   beingAttacked: true,
