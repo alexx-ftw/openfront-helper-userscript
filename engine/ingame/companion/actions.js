@@ -12,12 +12,7 @@
   // sendGamePacket lives in the shared engine scope (ws-hook.js), NOT on window.
   function companionSend(intent) {
     if (typeof sendGamePacket !== "function") return false;
-    let ok = false;
-    try {
-      ok = sendGamePacket(intent) === true;
-    } catch (_error) {
-      ok = false;
-    }
+    const ok = sendGamePacket(intent) === true;
     if (ok) {
       companionState.lastSendAt = Date.now();
     } else {
@@ -27,11 +22,7 @@
   }
 
   function companionPlayerId(p) {
-    try {
-      return p && typeof p.id === "function" ? p.id() : null;
-    } catch (_error) {
-      return null;
-    }
+    return p && typeof p.id === "function" ? p.id() : null;
   }
 
   // ---------------------------------------------------------------------------
@@ -41,12 +32,7 @@
   function companionDonateGold(me, boss, pct) {
     const recipient = companionPlayerId(boss);
     if (!recipient || !me || typeof me.gold !== "function") return false;
-    let gold;
-    try {
-      gold = me.gold();
-    } catch (_error) {
-      return false;
-    }
+    const gold = me.gold();
     const amount = companionPercentAmount(gold, pct);
     if (amount <= 0) return false;
     return companionSend({ type: "donate_gold", recipient: recipient, gold: amount });
@@ -55,12 +41,7 @@
   function companionDonateTroops(me, boss, pct) {
     const recipient = companionPlayerId(boss);
     if (!recipient || !me || typeof me.troops !== "function") return false;
-    let troops;
-    try {
-      troops = me.troops();
-    } catch (_error) {
-      return false;
-    }
+    const troops = me.troops();
     const amount = companionPercentAmount(troops, pct);
     if (amount <= 0) return false;
     return companionSend({ type: "donate_troops", recipient: recipient, troops: amount });
@@ -95,36 +76,18 @@
   // Troops are stored ×10 on both sides of this ratio, so it needs no scaling.
   function companionBossNeedsTroops(game, boss, needPct) {
     if (!game || !boss || typeof boss.troops !== "function") return false;
-    let max = 0;
-    try {
-      const cfg = typeof game.config === "function" ? game.config() : null;
-      max = cfg && typeof cfg.maxTroops === "function" ? Number(cfg.maxTroops(boss)) : 0;
-    } catch (_error) {
-      return false;
-    }
+    const cfg = typeof game.config === "function" ? game.config() : null;
+    const max = cfg && typeof cfg.maxTroops === "function" ? Number(cfg.maxTroops(boss)) : 0;
     if (!Number.isFinite(max) || max <= 0) return false;
-    let cur = 0;
-    try {
-      cur = Number(boss.troops());
-    } catch (_error) {
-      return false;
-    }
+    const cur = Number(boss.troops());
     if (!Number.isFinite(cur)) return false;
     return cur / max <= Number(needPct) / 100;
   }
 
   function companionIsAlliedWithBoss(me, boss) {
     if (!me || !boss) return false;
-    try {
-      if (typeof me.isOnSameTeam === "function" && me.isOnSameTeam(boss)) return true;
-    } catch (_error) {
-      /* fall through */
-    }
-    try {
-      if (typeof me.isAlliedWith === "function" && me.isAlliedWith(boss)) return true;
-    } catch (_error) {
-      /* fall through */
-    }
+    if (typeof me.isOnSameTeam === "function" && me.isOnSameTeam(boss)) return true;
+    if (typeof me.isAlliedWith === "function" && me.isAlliedWith(boss)) return true;
     return false;
   }
 
@@ -134,19 +97,9 @@
   // extends. Reads me.alliances() defensively (may be absent on some builds).
   function companionAllianceNeedsRenew(me, boss) {
     if (!me || !boss || typeof me.alliances !== "function") return false;
-    let bossId = null;
-    try {
-      bossId = typeof boss.id === "function" ? boss.id() : null;
-    } catch (_error) {
-      return false;
-    }
+    const bossId = typeof boss.id === "function" ? boss.id() : null;
     if (bossId == null) return false;
-    let alliances = null;
-    try {
-      alliances = me.alliances();
-    } catch (_error) {
-      return false;
-    }
+    const alliances = me.alliances();
     if (!Array.isArray(alliances)) return false;
     for (const a of alliances) {
       if (a && a.other === bossId && a.hasExtensionRequest === true) return true;
@@ -165,6 +118,16 @@
   // arithmetic that only lands correctly when the map width is a power of ten.
   // Here the ring is enumerated properly and every candidate is validated against
   // the same rules the game enforces, nearest-first so the bot hugs the boss.
+  function companionValidSpawnCandidate(game, x, y) {
+    if (!game.isValidCoord(x, y)) return null;
+    const tile = game.ref(x, y);
+    if (tile == null) return null;
+    if (typeof game.isLand === "function" && !game.isLand(tile)) return null;
+    if (typeof game.hasOwner === "function" && game.hasOwner(tile)) return null;
+    if (typeof game.isBorder === "function" && game.isBorder(tile)) return null;
+    return tile;
+  }
+
   function companionPickSpawnTile(game, me, boss, minR, maxR) {
     if (!game || !boss || !boss.state) return null;
     const bossTile = boss.state.spawnTile;
@@ -180,12 +143,7 @@
       return null;
     }
 
-    let width = 0;
-    try {
-      width = Number(game.width());
-    } catch (_error) {
-      return null;
-    }
+    const width = Number(game.width());
     if (!Number.isFinite(width) || width <= 0) return null;
 
     const origin = companionTileToXY(bossTile, width);
@@ -194,17 +152,8 @@
     for (const off of offsets) {
       const x = origin.x + off.dx;
       const y = origin.y + off.dy;
-      try {
-        if (!game.isValidCoord(x, y)) continue;
-        const tile = game.ref(x, y);
-        if (tile == null) continue;
-        if (typeof game.isLand === "function" && !game.isLand(tile)) continue;
-        if (typeof game.hasOwner === "function" && game.hasOwner(tile)) continue;
-        if (typeof game.isBorder === "function" && game.isBorder(tile)) continue;
-        return tile;
-      } catch (_error) {
-        /* skip this candidate */
-      }
+      const candidate = companionValidSpawnCandidate(game, x, y);
+      if (candidate !== null) return candidate;
     }
     return null;
   }
@@ -224,32 +173,18 @@
 
   function companionOwnedUnits(game, me, unitType) {
     if (!game || !me || typeof game.units !== "function") return [];
-    let mySmall;
-    try {
-      mySmall = me.smallID ? me.smallID() : null;
-    } catch (_error) {
-      return [];
-    }
+    const mySmall = me.smallID ? me.smallID() : null;
     if (mySmall == null) return [];
-    let units;
-    try {
-      units = game.units(unitType) || [];
-    } catch (_error) {
-      return [];
-    }
+    const units = game.units(unitType) || [];
     // The for..of below sits outside the try above, so a non-iterable here would
     // throw straight out of every caller. GameView.units() always returns an
     // array today; this keeps that from being load-bearing.
     if (!Array.isArray(units)) return [];
     const out = [];
     for (const u of units) {
-      try {
-        const owner = u && typeof u.owner === "function" ? u.owner() : null;
-        if (owner && typeof owner.smallID === "function" && owner.smallID() === mySmall) {
-          out.push(u);
-        }
-      } catch (_error) {
-        /* skip */
+      const owner = u && typeof u.owner === "function" ? u.owner() : null;
+      if (owner && typeof owner.smallID === "function" && owner.smallID() === mySmall) {
+        out.push(u);
       }
     }
     return out;
@@ -267,12 +202,8 @@
     const units = companionOwnedUnits(game, me, "Factory");
     let best = 0;
     for (const u of units) {
-      try {
-        const lvl = typeof u.level === "function" ? Number(u.level()) : 1;
-        if (Number.isFinite(lvl) && lvl > best) best = lvl;
-      } catch (_error) {
-        if (best < 1) best = 1; // it exists, so it is at least level 1
-      }
+      const lvl = typeof u.level === "function" ? Number(u.level()) : 1;
+      if (Number.isFinite(lvl) && lvl > best) best = lvl;
     }
     return best;
   }
@@ -280,11 +211,7 @@
   function companionFirstFactoryId(game, me) {
     const units = companionOwnedUnits(game, me, "Factory");
     if (units.length === 0) return null;
-    try {
-      return units[0].id();
-    } catch (_error) {
-      return null;
-    }
+    return typeof units[0].id === "function" ? units[0].id() : null;
   }
 
   // Build the first factory at our own spawn tile; after that, upgrade the one we
@@ -319,12 +246,8 @@
       const a = attacks[i];
       if (!a || a.retreating) continue;
       if (a.targetID == null) continue;
-      try {
-        const target = game.playerBySmallID ? game.playerBySmallID(Number(a.targetID)) : null;
-        if (target && typeof target.id === "function") return target.id();
-      } catch (_error) {
-        /* try the next one */
-      }
+      const target = game.playerBySmallID ? game.playerBySmallID(Number(a.targetID)) : null;
+      if (target && typeof target.id === "function") return target.id();
     }
     return null;
   }
@@ -332,12 +255,7 @@
   function companionAttackBossTarget(game, me, boss, pct) {
     const targetID = companionBossTargetId(game, boss);
     if (!targetID || !me || typeof me.troops !== "function") return false;
-    let troops;
-    try {
-      troops = me.troops();
-    } catch (_error) {
-      return false;
-    }
+    const troops = me.troops();
     const amount = companionPercentAmount(troops, pct);
     if (amount <= 0) return false;
     return companionSend({ type: "attack", targetID: targetID, troops: amount });
