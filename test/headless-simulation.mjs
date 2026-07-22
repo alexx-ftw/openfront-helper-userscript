@@ -32,6 +32,11 @@ assert.match(
   /const activeThreat = this\.defensePostThreat\(difficulty\);[\s\S]*if \(activeThreat === null\) return null;/,
   "quiet borders cannot authorize preventive Defense Posts",
 );
+assert.match(
+  structureBehavior,
+  /structures-legendary-portfolio[\s\S]*handleOrdinaryStructurePriorities\(context\)/,
+  "Legendary keeps its advanced defense phases but uses the non-dominated ordinary economic portfolio",
+);
 
 assert.match(runner, /playlist\.gameConfig\("team"\)/);
 assert.match(runner, /Number\(playlistConfig\.playerTeams\) < 2/);
