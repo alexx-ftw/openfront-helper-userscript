@@ -3335,12 +3335,29 @@ assert.equal(
     hasOceanPortTiles: true,
   }),
   true,
-  "The first ordinary economic action builds a City before any coastal Port",
+  "A foundational ordinary economic action builds a City before any coastal Port",
 );
 assert.deepEqual(
   foundationalCityAttempts,
   [UNIT.City],
   "A zero-City opening never reaches Port/Factory priority before its City attempt",
+);
+foundationalCityAttempts.length = 0;
+assert.equal(
+  await foundationalCityBehavior.handleOrdinaryStructurePriorities({
+    citiesDisabled: false,
+    cityCount: 1,
+    config: { isUnitDisabled: () => false },
+    hasCoastalTiles: true,
+    hasOceanPortTiles: true,
+  }),
+  true,
+  "The second foundational City also precedes ordinary Port and Factory demand",
+);
+assert.deepEqual(
+  foundationalCityAttempts,
+  [UNIT.City],
+  "A one-City opening completes its two-City floor before testing other ordinary structures",
 );
 
 const exhaustiveEconomyBehavior = Object.create(sandbox.__StructureBehavior.prototype);

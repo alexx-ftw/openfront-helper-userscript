@@ -1773,10 +1773,10 @@
       // Without a City, Ports and their Warship follow-up add little durable
       // troop/economic capacity and can starve the foundational growth needed
       // to survive a fast Nation opening. Urgent missile and land-defense
-      // paths run before this ordinary phase; here the first City is absolute.
+      // paths run before this ordinary phase; here the first two Cities are absolute.
       if (
         !citiesDisabled &&
-        cityCount === 0 &&
+        cityCount < 2 &&
         (await this.maybeSpawnStructure(UNIT.City))
       ) {
         return true;
@@ -6371,7 +6371,7 @@
 
       if (!citiesDisabled) {
         this.addLegendaryConstructionCandidate(candidateContext, UNIT.City, {
-          mandatory: cityCount === 0 ? 1 : 0,
+          mandatory: cityCount < 2 ? 1 : 0,
           safety: 0,
           strategic: strategicState.railNeed > 1.25 ? 1 : 0,
           deficit: Math.max(0, Math.ceil(strategicState.railNeed - 1)),
