@@ -4714,4 +4714,39 @@ assert.notStrictEqual(
 );
 assert.equal(globalSamReads, 2);
 
+const ownedSamSnapshot = Object.create(sandbox.__StructureBehavior.prototype);
+let ownedSamTick = 75;
+let ownedSamReads = 0;
+const pendingOwnedSam = {
+  id: () => "sam-pending",
+  isUnderConstruction: () => true,
+};
+ownedSamSnapshot.player = {
+  units: (...types) => {
+    ownedSamReads++;
+    assert.deepEqual(types, [UNIT.SAMLauncher]);
+    return [ownSam, pendingOwnedSam];
+  },
+};
+ownedSamSnapshot.game = { ticks: () => ownedSamTick };
+const firstOwnedSams = ownedSamSnapshot.ownedSamUnits();
+assert.strictEqual(
+  ownedSamSnapshot.ownedSamUnits(),
+  firstOwnedSams,
+  "all own-SAM consumers share one raw launcher snapshot during a game tick",
+);
+assert.deepEqual(
+  firstOwnedSams,
+  [ownSam, pendingOwnedSam],
+  "the own-SAM snapshot retains pending launchers for first-SAM reserve decisions",
+);
+assert.equal(ownedSamReads, 1, "own-SAM snapshot avoids duplicate roster scans in one tick");
+ownedSamTick++;
+assert.notStrictEqual(
+  ownedSamSnapshot.ownedSamUnits(),
+  firstOwnedSams,
+  "a new game tick refreshes the own-SAM roster",
+);
+assert.equal(ownedSamReads, 2);
+
 process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");

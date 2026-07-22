@@ -493,6 +493,8 @@
       this._friendlySamUnitsTick = null;
       this._friendlySamUnitsPlayerSid = null;
       this._friendlySamUnitsCache = null;
+      this._ownedSamUnitsTick = null;
+      this._ownedSamUnitsCache = null;
       // SAM spending stays locked until this nation has observed an actual
       // hostile missile in flight. Once opened, the gate remains open for the
       // rest of the match even after that first missile resolves.
@@ -2668,9 +2670,22 @@
       );
     }
 
+    ownedSamUnits() {
+      const tick = safeStructureGameTick(this.game);
+      if (Number.isFinite(tick) && this._ownedSamUnitsTick === tick) {
+        return this._ownedSamUnitsCache;
+      }
+      const sams = this.player.units(UNIT.SAMLauncher) || [];
+      if (Number.isFinite(tick)) {
+        this._ownedSamUnitsTick = tick;
+        this._ownedSamUnitsCache = sams;
+      }
+      return sams;
+    }
+
     singleSamHostileSiloReplacementReserve() {
       if (!state.settings.winFixes || !this.hasPlacedSiloOnMap()) return 0n;
-      const sams = this.player.units(UNIT.SAMLauncher) || [];
+      const sams = this.ownedSamUnits();
       if (sams.length > 1) return 0n;
       return this.safeConstructionCost(UNIT.SAMLauncher) ?? 0n;
     }
@@ -2705,7 +2720,7 @@
     activeMissileNeedsFirstSam() {
       {
         const signal = this.missileDefenseSignalSnapshot();
-        const sams = this.player.units(UNIT.SAMLauncher) || [];
+        const sams = this.ownedSamUnits();
         return signal?.hasActiveHostileMissile === true && sams.length === 0;
       }
     }
@@ -2743,7 +2758,7 @@
 
     shouldDeferWarshipForFirstSam(warshipCost = 0n) {
       if (!state.settings.winFixes || !this.hasPlacedSiloOnMap()) return false;
-      const sams = this.player.units(UNIT.SAMLauncher) || [];
+      const sams = this.ownedSamUnits();
       // Once the first launcher exists, including while it is being built, the
       // maritime emergency may respond normally. Until then, a visible Silo's
       // hard reserve cannot be bypassed by the emergency Warship path.
