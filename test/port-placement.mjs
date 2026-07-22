@@ -87,7 +87,8 @@ function createScenarioLake(width, height, lakeTiles) {
   return lake;
 }
 
-function createScenarioCoast(width, height, fullHeightOffset, shortMapTile) {
+function createScenarioCoast(width, height, fullHeightOffset, shortMapTile, overrideTiles) {
+  if (overrideTiles !== null) return new Set(overrideTiles);
   if (height < 6) return new Set([Math.min(width - 1, shortMapTile)]);
   return new Set([
     3 * width + fullHeightOffset,
@@ -104,6 +105,8 @@ function makeScenario({
   width = 9,
   height = 9,
   lakeTiles = null,
+  meCoastTiles = null,
+  otherCoastTiles = null,
 } = {}) {
   const lake = createScenarioLake(width, height, lakeTiles);
   const cardinalNeighbors = (tile) => {
@@ -125,8 +128,8 @@ function makeScenario({
   for (let tile = 0; tile < width * height; tile += 1) {
     if (!lake.has(tile)) land.add(tile);
   }
-  const meCoast = createScenarioCoast(width, height, 2, 1);
-  const otherCoast = createScenarioCoast(width, height, 6, 3);
+  const meCoast = createScenarioCoast(width, height, 2, 1, meCoastTiles);
+  const otherCoast = createScenarioCoast(width, height, 6, 3, otherCoastTiles);
   const ownerByTile = new Map([
     ...Array.from(meCoast, (tile) => [tile, 1]),
     ...Array.from(otherCoast, (tile) => [tile, 2]),
@@ -279,6 +282,16 @@ assert.doesNotMatch(
   /new Int32Array\(total\)\.fill\(-2\)/,
   "shared-water preparation must not synchronously fill a map-sized label array",
 );
+assert.match(
+  GAME_API_SOURCE,
+  /queue:\s*new Int32Array\(Math\.min\(total, 1024\)\)/,
+  "shared-water preparation must grow a compact typed queue on demand",
+);
+assert.doesNotMatch(
+  GAME_API_SOURCE,
+  /builder\.queue\s*=\s*\[\]/,
+  "water components must reuse their typed traversal queue",
+);
 assert.equal(
   zeroAllocationScenario.neighborArrayCalls(),
   0,
@@ -299,6 +312,22 @@ assert.equal(
   fragmentedWaterScenario.handle.game.getWaterComponent(598),
   299,
   "water labels must widen without truncating component ids beyond one byte",
+);
+const largeLakeScenario = makeScenario({
+  width: 2050,
+  height: 1,
+  lakeTiles: Array.from({ length: 2049 }, (_, index) => index + 1),
+  meCoastTiles: [0],
+  otherCoastTiles: [],
+  zeroAllocationNeighbors: true,
+});
+await largeLakeScenario.handle.beginTick(largeLakeScenario.me);
+await largeLakeScenario.handle.beginTick(largeLakeScenario.me);
+await largeLakeScenario.handle.beginTick(largeLakeScenario.me);
+assert.equal(
+  largeLakeScenario.handle.game.getWaterComponent(2049),
+  0,
+  "growing the typed traversal queue must preserve a component larger than its initial capacity",
 );
 const oceanCoastScenario = makeScenario({ ocean: true });
 const oceanCoastMe = await oceanCoastScenario.handle.beginTick(oceanCoastScenario.me);

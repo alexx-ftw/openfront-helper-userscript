@@ -683,11 +683,28 @@
       for (const neighbor of src.neighbors(tile)) visit(neighbor);
     }
 
-    function visitWaterComponentNeighbor(neighbor, id, labels, queue, coast) {
+    function ensureWaterLabelQueueCapacity(builder, requiredLength) {
+      if (requiredLength <= builder.queue.length) return;
+      let nextLength = Math.max(1, builder.queue.length);
+      while (nextLength < requiredLength) {
+        nextLength = Math.min(builder.labels.length, nextLength * 2);
+      }
+      const expanded = new Int32Array(nextLength);
+      expanded.set(builder.queue.subarray(0, builder.queueTail));
+      builder.queue = expanded;
+    }
+
+    function enqueueWaterLabelTile(builder, tile) {
+      ensureWaterLabelQueueCapacity(builder, builder.queueTail + 1);
+      builder.queue[builder.queueTail++] = tile;
+    }
+
+    function visitWaterComponentNeighbor(neighbor, id, builder, coast) {
+      const labels = builder.labels;
       if (src.isWater(neighbor)) {
         if (labels[neighbor] !== 0) return;
         labels[neighbor] = id + 1;
-        queue.push(neighbor);
+        enqueueWaterLabelTile(builder, neighbor);
         return;
       }
       if (coast !== null && src.isLand(neighbor)) coast.add(neighbor);
@@ -721,8 +738,9 @@
         compCoast: [],
         nextId: 0,
         scanTile: 0,
-        queue: [],
+        queue: new Int32Array(Math.min(total, 1024)),
         queueHead: 0,
+        queueTail: 0,
         componentId: null,
         componentOcean: false,
         componentCoast: null,
@@ -737,8 +755,8 @@
       builder.compCoast[id] = builder.componentOcean
         ? null
         : Array.from(builder.componentCoast);
-      builder.queue = [];
       builder.queueHead = 0;
+      builder.queueTail = 0;
       builder.componentId = null;
       builder.componentCoast = null;
     }
@@ -757,7 +775,7 @@
       let steps = 0;
       while (steps < maxSteps) {
         if (builder.componentId !== null) {
-          if (builder.queueHead >= builder.queue.length) {
+          if (builder.queueHead >= builder.queueTail) {
             finishWaterLabelComponent(builder);
             continue;
           }
@@ -770,8 +788,7 @@
             visitWaterComponentNeighbor(
               neighbor,
               builder.componentId,
-              builder.labels,
-              builder.queue,
+              builder,
               builder.componentCoast,
             ),
           );
@@ -790,7 +807,7 @@
         builder.componentOcean = false;
         builder.componentCoast = new Set();
         builder.labels[tile] = builder.componentId + 1;
-        builder.queue.push(tile);
+        enqueueWaterLabelTile(builder, tile);
       }
       return false;
     }
