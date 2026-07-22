@@ -223,12 +223,16 @@ const CORE = ["engine/ingame/companion/core.js"];
 }
 
 {
-  // A corrupt blob must never throw — it would kill every later engine feature.
+  // A corrupt blob is an integration failure and must remain visible at source.
   store.clear();
   const m0 = loadCompanion(CORE, ["COMPANION_STORAGE_KEY"]);
   store.set(m0.COMPANION_STORAGE_KEY, "{not json");
   const m = loadCompanion(CORE, ["companionSettings"]);
-  assert.equal(m.companionSettings().mode, "passive", "corrupt blob → defaults");
+  assert.throws(
+    () => m.companionSettings(),
+    SyntaxError,
+    "corrupt settings propagate instead of silently resetting",
+  );
 }
 
 {

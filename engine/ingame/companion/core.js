@@ -7,9 +7,8 @@
 // `COMPANION_` prefix to stay unique.
 //
 // NOTHING in this file may run at load time. Settings are initialised lazily via
-// companionSettings(); that keeps a corrupt localStorage blob from throwing
-// during concatenation (which would kill every feature after it in the same
-// try/catch IIFE) and lets test/companion.mjs load the file in plain Node.
+// companionSettings(), so integration failures surface when the feature is used
+// instead of aborting concatenation, and test/companion.mjs can load it in Node.
 
 "use strict";
 
@@ -72,7 +71,7 @@
   function companionRingOffsets(minR, maxR) {
     const lo = Number(minR) || 0;
     const hi = Number(maxR) || 0;
-    if (!(hi >= lo) || hi <= 0) return [];
+    if (hi < lo || hi <= 0) return [];
     if (_companionRingCache && _companionRingCache.lo === lo && _companionRingCache.hi === hi) {
       return _companionRingCache.out;
     }
@@ -147,6 +146,20 @@
     spawnStrategy: ["boss", "auto"],
   };
 
+  function companionCoerceCollapsedSections(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    const out = {};
+    for (const sec of ["support", "economy", "advanced"]) {
+      if (sec in value) out[sec] = Boolean(value[sec]);
+    }
+    return out;
+  }
+
+  function companionCoerceObjectSetting(value) {
+    if (value === null) return null;
+    return value && typeof value === "object" ? value : undefined;
+  }
+
   // Sanitised value, or undefined when the input is unusable.
   function companionCoerceSetting(key, value) {
     const range = COMPANION_NUMBER_RANGES[key];
@@ -158,18 +171,8 @@
     const allowed = COMPANION_ENUMS[key];
     if (allowed) return allowed.indexOf(value) === -1 ? undefined : value;
     if (key === "bossName") return typeof value === "string" ? value.trim() : undefined;
-    if (key === "collapsedSections") {
-      if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-      const out = {};
-      for (const sec of ["support", "economy", "advanced"]) {
-        if (sec in value) out[sec] = Boolean(value[sec]);
-      }
-      return out;
-    }
-    if (key === "emojiBindings" || key === "pos") {
-      if (value === null) return null;
-      return value && typeof value === "object" ? value : undefined;
-    }
+    if (key === "collapsedSections") return companionCoerceCollapsedSections(value);
+    if (key === "emojiBindings" || key === "pos") return companionCoerceObjectSetting(value);
     // Every remaining key in COMPANION_DEFAULTS is a boolean flag.
     return Boolean(value);
   }
@@ -205,35 +208,30 @@
     donateUnconfirmedSince: 0,
   };
 
+  function companionApplyStoredSetting(settings, key, value) {
+    if (key === "collapsedSections") {
+      settings.collapsedSections = Object.assign({}, settings.collapsedSections, value);
+      return;
+    }
+    settings[key] = value;
+  }
+
+  function companionApplyStoredSettings(settings, parsed) {
+    if (!parsed || typeof parsed !== "object") return;
+    for (const key of COMPANION_PERSISTED_KEYS) {
+      if (parsed[key] === undefined) continue;
+      const value = companionCoerceSetting(key, parsed[key]);
+      if (value === undefined) continue;
+      companionApplyStoredSetting(settings, key, value);
+    }
+  }
+
   function companionLoadSettings() {
     const s = JSON.parse(JSON.stringify(COMPANION_DEFAULTS));
-    try {
-      const raw = window.localStorage.getItem(COMPANION_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        // Explicit shape check: JSON.parse("null") returns null, and indexing it
-        // would throw. The catch below would swallow that, but only by accident —
-        // and a later refactor that narrows the try block would turn it into a
-        // load-time throw, which kills every engine feature concatenated after us.
-        if (parsed && typeof parsed === "object") {
-          for (const k of COMPANION_PERSISTED_KEYS) {
-            if (parsed[k] === undefined) continue;
-            // Same gate as companionPatchSettings: a blob written by an older
-            // build (or hand-edited) cannot inject an out-of-range value.
-            const v = companionCoerceSetting(k, parsed[k]);
-            if (v === undefined) continue;
-            // collapsedSections merges onto the defaults too — a stored blob
-            // missing a section key must keep that section's default, not drop it.
-            if (k === "collapsedSections") {
-              s.collapsedSections = Object.assign({}, s.collapsedSections, v);
-            } else {
-              s[k] = v;
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.warn("[Companion] failed to load settings:", error);
+    const raw = window.localStorage.getItem(COMPANION_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      companionApplyStoredSettings(s, parsed);
     }
     return s;
   }
@@ -247,14 +245,10 @@
   }
 
   function companionSaveSettings() {
-    try {
-      window.localStorage.setItem(
-        COMPANION_STORAGE_KEY,
-        JSON.stringify(companionSettings()),
-      );
-    } catch (error) {
-      console.warn("[Companion] failed to save settings:", error);
-    }
+    window.localStorage.setItem(
+      COMPANION_STORAGE_KEY,
+      JSON.stringify(companionSettings()),
+    );
   }
 
   function companionPatchSettings(patch) {
@@ -279,29 +273,17 @@
   // ---------------------------------------------------------------------------
 
   function companionPlayerType(p) {
-    try {
-      return String(p.type ? p.type() : "");
-    } catch (_error) {
-      return "";
-    }
+    return String(p.type ? p.type() : "");
   }
 
   // Live human players, for the panel's boss picker.
   function companionHumanPlayers(game) {
     if (!game || typeof game.players !== "function") return [];
-    try {
-      return game.players().filter(function (p) {
-        if (!p || typeof p.name !== "function") return false;
-        if (companionPlayerType(p) !== "HUMAN") return false;
-        try {
-          return p.isAlive ? p.isAlive() !== false : true;
-        } catch (_error) {
-          return true;
-        }
-      });
-    } catch (_error) {
-      return [];
-    }
+    return game.players().filter(function (p) {
+      if (!p || typeof p.name !== "function") return false;
+      if (companionPlayerType(p) !== "HUMAN") return false;
+      return p.isAlive ? p.isAlive() !== false : true;
+    });
   }
 
   // Resolve the configured boss name against the live game.
@@ -319,30 +301,17 @@
       return { status: "missing", boss: null };
     }
 
-    let me = null;
-    try {
-      me = game.myPlayer ? game.myPlayer() : null;
-    } catch (_error) {
-      me = null;
-    }
+    const me = game.myPlayer ? game.myPlayer() : null;
     if (me && typeof me.name === "function") {
-      try {
-        if (String(me.name()).trim().toLowerCase() === wanted) {
-          return { status: "self", boss: null };
-        }
-      } catch (_error) {
-        /* fall through */
+      if (String(me.name()).trim().toLowerCase() === wanted) {
+        return { status: "self", boss: null };
       }
     }
 
     const candidates = companionHumanPlayers(game);
     for (const p of candidates) {
-      try {
-        if (String(p.name()).trim().toLowerCase() === wanted) {
-          return { status: "found", boss: p };
-        }
-      } catch (_error) {
-        /* skip */
+      if (String(p.name()).trim().toLowerCase() === wanted) {
+        return { status: "found", boss: p };
       }
     }
     return { status: "missing", boss: null };
