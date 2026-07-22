@@ -7030,14 +7030,22 @@
           )
         );
       };
-      return bots.slice().sort((a, b) => {
-        const aHasStructures = ownsStructures(a);
-        const bHasStructures = ownsStructures(b);
-        if (aHasStructures !== bHasStructures) {
-          return aHasStructures ? -1 : 1;
-        }
-        return attackDifficultyDensity(a) - attackDifficultyDensity(b);
-      });
+      return bots
+        .map((bot, index) => ({
+          bot,
+          index,
+          hasStructures: ownsStructures(bot),
+          difficultyDensity: attackDifficultyDensity(bot),
+        }))
+        .sort((left, right) => {
+          if (left.hasStructures !== right.hasStructures) {
+            return left.hasStructures ? -1 : 1;
+          }
+          return (
+            left.difficultyDensity - right.difficultyDensity || left.index - right.index
+          );
+        })
+        .map(({ bot }) => bot);
     }
 
     getBotsNeedingAttackReinforcement(nearby = null) {

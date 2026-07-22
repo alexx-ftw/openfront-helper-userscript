@@ -10,7 +10,15 @@ const earlyGameSource = fs.readFileSync(earlyGamePath, "utf8");
 const sourcePath = path.join(repoRoot, "engine/ingame/auto-bot/attackBehavior.js");
 const source = fs.readFileSync(sourcePath, "utf8");
 
-const UNIT = { TransportShip: "Transport" };
+const UNIT = {
+  TransportShip: "Transport",
+  City: "City",
+  DefensePost: "Defense Post",
+  SAMLauncher: "SAM Launcher",
+  MissileSilo: "Missile Silo",
+  Port: "Port",
+  Factory: "Factory",
+};
 const troopEmissions = [];
 const attackRecipients = [];
 const sandbox = {
@@ -2515,6 +2523,53 @@ assert.equal(futureFoodScoreCandidates[0].tribeClusterAccess, 1);
 assert.equal(futureFoodScoreCandidates[1].tribeClusterAccess, 0.5);
 assert.equal(futureFoodScoreCandidates[2].futureFoodAccess, 0);
 assert.equal(futureFoodScoreCandidates[2].tribeClusterAccess, 0);
+
+const tribeRankingBehavior = Object.create(sandbox.AttackBehavior.prototype);
+const tribeStructureReads = new Map();
+const tribeProfileReads = new Map();
+tribeRankingBehavior.getEnemyDefensePostAttackProfile = (bot) => {
+  tribeProfileReads.set(bot.rankKey, (tribeProfileReads.get(bot.rankKey) || 0) + 1);
+  return { attackCostMultiplier: 1, speedMultiplier: 1 };
+};
+const rankedTribes = Array.from({ length: 64 }, (_, index) => ({
+  rankKey: index,
+  troops: () => 1000 - index,
+  numTilesOwned: () => index + 1,
+  units: () => {
+    tribeStructureReads.set(index, (tribeStructureReads.get(index) || 0) + 1);
+    return index % 3 === 0 ? [{ type: () => "City" }] : [];
+  },
+}));
+const rankedTribeKeys = Array.from(tribeRankingBehavior.rankBotsForAttack(rankedTribes)).map(
+  (bot) => bot.rankKey,
+);
+const expectedTribeKeys = rankedTribes
+  .slice()
+  .sort((left, right) => {
+    const leftHasStructures = left.rankKey % 3 === 0;
+    const rightHasStructures = right.rankKey % 3 === 0;
+    if (leftHasStructures !== rightHasStructures) return leftHasStructures ? -1 : 1;
+    return (
+      left.troops() / left.numTilesOwned() - right.troops() / right.numTilesOwned() ||
+      left.rankKey - right.rankKey
+    );
+  })
+  .map((bot) => bot.rankKey);
+assert.deepEqual(
+  rankedTribeKeys,
+  expectedTribeKeys,
+  "tribe ranking preserves structure-first and effective-difficulty order",
+);
+assert.equal(
+  [...tribeStructureReads.values()].reduce((sum, count) => sum + count, 0),
+  rankedTribes.length,
+  "tribe ranking reads each candidate structure roster once instead of from sort comparisons",
+);
+assert.equal(
+  [...tribeProfileReads.values()].reduce((sum, count) => sum + count, 0),
+  rankedTribes.length,
+  "tribe ranking computes each defense profile once instead of from sort comparisons",
+);
 
 const teammateAssistBehavior = Object.create(sandbox.AttackBehavior.prototype);
 const teammateAssistTarget = {

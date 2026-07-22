@@ -2535,14 +2535,17 @@
       const config = this.game.config();
       const citiesDisabled = config.isUnitDisabled(UNIT.City);
       const cityUnits = portfolio?.get(UNIT.City);
-      const cityCount = citiesDisabled
-        ? Math.max(
-            1,
-            Math.floor(this.player.numTilesOwned() / TILES_PER_CITY_EQUIVALENT),
-          )
-        : cityUnits === undefined
-          ? this.ownedLevels(UNIT.City)
-          : this.economicStructureLevelTotal(cityUnits);
+      let cityCount;
+      if (citiesDisabled) {
+        cityCount = Math.max(
+          1,
+          Math.floor(this.player.numTilesOwned() / TILES_PER_CITY_EQUIVALENT),
+        );
+      } else if (cityUnits === undefined) {
+        cityCount = this.ownedLevels(UNIT.City);
+      } else {
+        cityCount = this.economicStructureLevelTotal(cityUnits);
+      }
       const hasCoastalTiles = this._hasCoastalTiles === true;
       const hasOceanPortTiles = this._hasOceanPortTiles === true;
       const candidates = [UNIT.Port, UNIT.Factory, UNIT.City];
