@@ -65,8 +65,11 @@ assert.equal(dispatches, 0, "a retained interception emits no duplicate move");
 
 const trackedThreatBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
 let landingOwner = 1;
-let transportAllied = false;
-trackedThreatBehavior.player = { smallID: () => 1 };
+let transportFriendly = false;
+trackedThreatBehavior.player = {
+  smallID: () => 1,
+  isFriendly: () => transportFriendly,
+};
 trackedThreatBehavior.game = { ownerID: () => landingOwner };
 trackedThreatBehavior.trackedIncomingTransportShips = new Set(["transport-1"]);
 trackedThreatBehavior.dealtWithTransportShip = new Set(["transport-1"]);
@@ -76,7 +79,9 @@ const trackedTransport = {
   transportShipState: () => ({ isRetreating: false }),
   owner: () => ({
     smallID: () => 2,
-    isAlliedWith: () => transportAllied,
+    // Deliberately false: a permanent teammate is friendly without being a
+    // breakable alliance partner.
+    isAlliedWith: () => false,
   }),
 };
 assert.equal(
@@ -84,18 +89,18 @@ assert.equal(
   true,
   "an active hostile transport aimed at our current tile is tracked",
 );
-transportAllied = true;
+transportFriendly = true;
 assert.equal(
   trackedThreatBehavior.processTrackedIncomingTransport("transport-1", trackedTransport),
   false,
-  "a newly allied transport cannot actuate a stale interception",
+  "a teammate transport cannot actuate a stale interception",
 );
 assert.equal(
   trackedThreatBehavior.trackedIncomingTransportShips.size,
   0,
-  "a newly allied transport is released from the tracked threat set",
+  "a teammate transport is released from the tracked threat set",
 );
-transportAllied = false;
+transportFriendly = false;
 landingOwner = 2;
 trackedThreatBehavior.trackedIncomingTransportShips.add("transport-1");
 trackedThreatBehavior.dealtWithTransportShip.add("transport-1");

@@ -1168,7 +1168,14 @@
       if (target == null || transport.transportShipState?.()?.isRetreating) return false;
       if (this.game.ownerID(target) !== mySid) return false;
       const owner = transport.owner();
-      return Boolean(owner && owner.smallID() !== mySid && !owner.isAlliedWith(this.player));
+      // isAlliedWith() excludes permanent teammates. isFriendly() is the
+      // engine's canonical union of same-team and alliance relations, so only
+      // its negation may authorize an interception.
+      return Boolean(
+        owner &&
+        owner.smallID() !== mySid &&
+        this.player.isFriendly?.(owner) !== true
+      );
     }
 
     incomingNavalTransports() {
