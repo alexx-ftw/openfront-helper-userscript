@@ -1935,13 +1935,14 @@
       const myComponent = game.getWaterComponent(start);
       const MAX_DEPTH = 30;
       const queue = [{ tile: start, depth: 0 }];
+      let queueHead = 0;
       const visited = new Set();
       visited.add(start);
       let bestTile = start;
       let bestScore = -Infinity;
 
-      while (queue.length > 0) {
-        const { tile, depth } = queue.shift();
+      while (queueHead < queue.length) {
+        const { tile, depth } = queue[queueHead++];
         let dEnemy = Infinity;
         for (const ew of enemies) {
           const d = game.manhattanDist(tile, ew.tile());

@@ -6,6 +6,23 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE = path.join(ROOT, "engine/ingame/shared-utils.js");
+const WARSHIP_BEHAVIOR_SOURCE = path.join(ROOT, "engine/ingame/auto-bot/warshipBehavior.js");
+
+const warshipBehaviorSource = fs.readFileSync(WARSHIP_BEHAVIOR_SOURCE, "utf8");
+const safeWaypointSource = warshipBehaviorSource.match(
+  /findSafeWaypoint\(start, baseTarget, enemies\) \{([\s\S]*?)\n {4}\}/,
+)?.[1];
+assert.ok(safeWaypointSource, "safe-waypoint traversal must remain inspectable");
+assert.doesNotMatch(
+  safeWaypointSource,
+  /\.shift\s*\(/,
+  "safe-waypoint BFS must not repeatedly shift its traversal queue",
+);
+assert.match(
+  safeWaypointSource,
+  /queueHead\s*<\s*queue\.length/,
+  "safe-waypoint BFS must consume its queue through a constant-time cursor",
+);
 
 const sandbox = {
   Array,
