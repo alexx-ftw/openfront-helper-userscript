@@ -9,6 +9,10 @@ const source = fs.readFileSync(
   path.join(repoRoot, "engine/ingame/auto-bot/nukeBehavior.js"),
   "utf8",
 );
+const mirvSource = fs.readFileSync(
+  path.join(repoRoot, "engine/ingame/auto-bot/mirvBehavior.js"),
+  "utf8",
+);
 
 const UNIT = {
   City: "City",
@@ -36,7 +40,7 @@ const sandbox = {
   },
   GameMode: { Team: "Team" },
   PlayerType: { Bot: "Bot" },
-  state: { settings: { winFixes: true } },
+  state: { settings: { winFixes: true }, stats: { nukes: 0 }, recentMirvHits: [] },
   currentDifficulty: () => "Impossible",
   isAtLeastHardDifficulty: () => true,
   console,
@@ -45,6 +49,25 @@ sandbox.globalThis = sandbox;
 
 executeClassicScript(`${source}\nglobalThis.__NukeBehavior = NukeBehavior;`, sandbox, {
   filename: "nuke-economy-policy.vm.js",
+});
+
+let mirvBuildTile = null;
+Object.assign(sandbox, {
+  AllPlayers: {},
+  EMOJI_NUKE: [],
+  WORKER_TIMEOUT_MS: 1000,
+  withTimeout: async (promise) => promise,
+  getBuildMenu: () => ({ sendBuildOrUpgrade() {} }),
+  sendAutoBotBuildOrUpgrade: (_menu, _buildable, tile) => {
+    mirvBuildTile = tile;
+    return true;
+  },
+  setLastAction() {},
+  tr: (value) => value,
+  respondToMIRV() {},
+});
+executeClassicScript(`${mirvSource}\nglobalThis.__MirvBehavior = MirvBehavior;`, sandbox, {
+  filename: "mirv-economy-policy.vm.js",
 });
 
 const behavior = Object.create(sandbox.__NukeBehavior.prototype);
@@ -180,6 +203,42 @@ assert.equal(
   behavior.isTeammateAlreadyNukingThisSpot(0, UNIT.AtomBomb),
   true,
   "an allied nuke aimed at valid tile zero prevents a duplicate overlapping launch",
+);
+
+const mirvEnemy = { id: () => "enemy-2", smallID: () => 2 };
+const mirvPlayer = {
+  buildables: async () => [{ type: UNIT.MIRV, cost: 1n, canBuild: true }],
+  gold: () => 1n,
+};
+const mirvBehavior = new sandbox.__MirvBehavior({}, { ticks: () => 123 }, mirvPlayer, {
+  maybeSendAttackEmoji() {},
+  sendEmoji() {},
+});
+mirvBehavior.calculateTerritoryCenter = async () => 0;
+await mirvBehavior.maybeSendMIRV(mirvEnemy);
+assert.equal(mirvBuildTile, 0, "a valid territory centre at tile zero still launches the MIRV");
+assert.equal(
+  sandbox.state.recentMirvHits.at(-1)?.tile,
+  0,
+  "the tile-zero MIRV impact is retained for the follow-up invasion",
+);
+
+mirvPlayer.smallID = () => 1;
+const inboundTileZero = new sandbox.__MirvBehavior(
+  {},
+  {
+    hasOwner: () => true,
+    owner: () => ({ isPlayer: () => true, smallID: () => 1 }),
+  },
+  mirvPlayer,
+  {},
+);
+assert.equal(
+  inboundTileZero.isInboundMIRVFrom({
+    units: () => [{ targetTile: () => 0 }],
+  }),
+  true,
+  "an inbound MIRV aimed at owned tile zero is recognized as a threat",
 );
 
 let distanceChecks = 0;

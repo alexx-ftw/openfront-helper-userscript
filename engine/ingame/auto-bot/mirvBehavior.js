@@ -386,7 +386,7 @@
       const enemyMirvs = attacker.units(UNIT.MIRV);
       for (const mirv of enemyMirvs) {
         const dst = mirv.targetTile();
-        if (!dst) continue;
+        if (dst === null || dst === undefined) continue;
         if (!this.game.hasOwner(dst)) continue;
         const owner = this.game.owner(dst);
         if (owner && owner.isPlayer && owner.isPlayer() && owner.smallID() === this.player.smallID()) {
@@ -403,9 +403,9 @@
       this.emojiBehavior.maybeSendAttackEmoji(enemy);
 
       const centerTile = await this.calculateTerritoryCenter(enemy);
-      // src gates `if (centerTile && canBuild)` — a TRUTHY check, so TileRef 0 is
-      // skipped too. Mirror that (not `=== null`) for strict 1:1 faithfulness.
-      if (!centerTile) return;
+      // TileRef zero is a valid map coordinate. Upstream's truthy gate drops it,
+      // which can suppress both an outbound MIRV and inbound-MIRV detection.
+      if (centerTile === null || centerTile === undefined) return;
 
       // Affordability/actuation via the buildables probe + build menu (the client
       // has no synchronous canBuild / addExecution). Find the MIRV BuildableUnit,
