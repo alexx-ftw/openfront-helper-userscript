@@ -20,16 +20,27 @@
     return null;
   }
 
+  function _sosAttackIsRetreating(attack) {
+    const retreating =
+      typeof attack?.retreating === "function"
+        ? attack.retreating()
+        : attack?.retreating;
+    return retreating === true;
+  }
+
   function _sosGetHostileAttackers(game, me) {
     const out = [];
+    const seen = new Set();
     let attacks;
     {
       attacks = me.incomingAttacks?.() || [];
     }
     for (const atk of attacks) {
+      if (_sosAttackIsRetreating(atk)) continue;
       // Client AttackUpdate is a plain object: { troops, attackerID, targetID, ... }.
       const attackerId = Number(atk?.attackerID);
-      if (!Number.isFinite(attackerId)) continue;
+      if (!Number.isFinite(attackerId) || seen.has(attackerId)) continue;
+      seen.add(attackerId);
       const attacker = _sosResolvePlayerBySmallId(game, attackerId);
       if (!attacker) continue;
       {
@@ -57,7 +68,7 @@
   }
 
   function _sosSendAllySalvo(game, me, nowMs) {
-    if (nowMs - _sosLastSalvoAt < SOS_RESEND_MS) return;
+    if (_sosLastSalvoAt > 0 && nowMs - _sosLastSalvoAt < SOS_RESEND_MS) return;
     _sosLastSalvoAt = nowMs;
     const sosEmojiNum = emojiId(SOS_EMOJI);
     for (const ally of _sosGetAllies(game, me)) {
