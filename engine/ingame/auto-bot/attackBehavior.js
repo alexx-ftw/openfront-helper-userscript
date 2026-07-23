@@ -2348,14 +2348,20 @@
     }
 
     runDonationPolicy(profile = null) {
-      if (state.settings.winFixes && state.settings.features.donate) {
-        const now = performance.now();
-        const throttle = state.settings.donateThrottleMs || 3000;
-        const donated = profileAttackSync(profile, "attack-auxiliary-donate", () =>
-          now - (state.lastDonateMs || 0) > throttle && this.donateTroops());
-        if (donated) {
-          state.lastDonateMs = now;
-        }
+      if (!state.settings.features.donate) {
+        this.setDonationStatus("Donate: disabled");
+        return;
+      }
+      const now = performance.now();
+      const throttle = state.settings.donateThrottleMs || 3000;
+      if (now - (state.lastDonateMs || 0) <= throttle) {
+        this.setDonationStatus("Donate: cooldown");
+        return;
+      }
+      const donated = profileAttackSync(profile, "attack-auxiliary-donate", () =>
+        this.donateTroops());
+      if (donated) {
+        state.lastDonateMs = now;
       }
     }
 
@@ -8417,6 +8423,10 @@
       }
     }
 
+    setDonationStatus(reason) {
+      state.donationStatus = reason;
+    }
+
     donationHasIncomingAttack() {
       {
         if (typeof this.player?.incomingAttacks !== "function") return false;
@@ -8458,10 +8468,22 @@
     }
 
     donationBaseGatesAllow() {
-      if (!state.settings.features.donate) return false;
-      if (this.expansionBreakoutActive === true) return false;
-      if (this.donationHasIncomingAttack()) return false;
-      if (this.donationHasMaritimeInvasion()) return false;
+      if (!state.settings.features.donate) {
+        this.setDonationStatus("Donate: disabled");
+        return false;
+      }
+      if (this.expansionBreakoutActive === true) {
+        this.setDonationStatus("Donate: maritime breakout reserve");
+        return false;
+      }
+      if (this.donationHasIncomingAttack()) {
+        this.setDonationStatus("Donate: defending incoming attack");
+        return false;
+      }
+      if (this.donationHasMaritimeInvasion()) {
+        this.setDonationStatus("Donate: defending maritime invasion");
+        return false;
+      }
       const expansionStatus =
         typeof getAutoDonateExpansionStatus === "function"
           ? getAutoDonateExpansionStatus(state.earlyGame)
@@ -8470,16 +8492,26 @@
         state.settings.pauseDonateDuringExpansion === true &&
         expansionStatus.active === true
       ) {
+        this.setDonationStatus("Donate: opening expansion reserve");
         return false;
       }
       const config = this.game.config();
-      if (config.gameConfig().gameMode !== GameMode.Team) return false;
-      if (config.donateTroops() === false) return false;
+      if (config.gameConfig().gameMode !== GameMode.Team) {
+        this.setDonationStatus("Donate: not a Team game");
+        return false;
+      }
+      if (config.donateTroops() === false) {
+        this.setDonationStatus("Donate: lobby disables donations");
+        return false;
+      }
       if (this.game.getWinner()) {
+        this.setDonationStatus("Donate: game finished");
         runtimeDebugLog("[Donate] skip: game already has a winner");
         return false;
       }
-      return this.donationDifficultyAllows();
+      const allowed = this.donationDifficultyAllows();
+      if (!allowed) this.setDonationStatus("Donate: difficulty cadence");
+      return allowed;
     }
 
     donationTeammates() {
@@ -8554,6 +8586,7 @@
     donationAmount() {
       const strongest = this.getStrongestBorderOpponentTroops(true);
       if (strongest === null) {
+        this.setDonationStatus("Donate: border data unavailable");
         runtimeDebugLog("[Donate] skip: border reserve data unavailable");
         return null;
       }
@@ -8568,6 +8601,7 @@
       // irreversible frontier collapse before a Defense Post can finish.
       const strongestStrategic = this.getStrongestStrategicBorderOpponentTroops();
       if (strongestStrategic >= currentTroops) {
+        this.setDonationStatus("Donate: hostile border reserve");
         runtimeDebugLog("[Donate] skip: strongest border opponent matches our army", {
           troops: Math.round(currentTroops),
           strongestBorderOpponent: Math.round(strongestStrategic),
@@ -8580,6 +8614,7 @@
       const borderReserve = Math.max(strongest / 2, strongestStrategic);
       const maxBorderDonation = Math.floor(currentTroops - borderReserve);
       if (maxBorderDonation <= 0) {
+        this.setDonationStatus("Donate: border reserve");
         runtimeDebugLog("[Donate] skip: strongest border opponent leaves no safe reserve", {
           troops: Math.round(currentTroops),
           strongestBorderOpponent: Math.round(strongest),
@@ -8602,6 +8637,7 @@
           )
         : 1;
       if (donationTroops >= minExcess) return donationTroops;
+      this.setDonationStatus("Donate: no troop surplus");
       runtimeDebugLog("[Donate] skip: not enough above the keep line", {
         troops: Math.round(this.player.troops()),
         keep: Math.round(troopsToKeep),
@@ -8637,6 +8673,7 @@
         }
       }
       if (!emitted) {
+        this.setDonationStatus("Donate: intent unavailable or rate-limited");
         runtimeDebugLog("[Donate] emit failed", {
           ctor: Boolean(ctors.donateTroops),
           directFallback: typeof sendGamePacket === "function",
@@ -8651,6 +8688,7 @@
       );
       this.lastDonationDecisionTick = this.currentAttackDecisionTick();
       this.recordOutboundDonationIntent(troops);
+      this.setDonationStatus("Donate: sent");
       runtimeDebugLog(
         "[Donate] SENT",
         Math.round(troops),
@@ -8663,17 +8701,20 @@
 
     donateTroops() {
       if (this.lastDonationDecisionTick === this.currentAttackDecisionTick()) {
+        this.setDonationStatus("Donate: decision cooldown");
         return false;
       }
       this.logDonationDiagnostic();
       if (!this.donationBaseGatesAllow()) return false;
       const teammates = this.donationTeammates();
       if (teammates.length === 0) {
+        this.setDonationStatus("Donate: no living teammates");
         runtimeDebugLog("[Donate] skip: no same-team players found");
         return false;
       }
       const selectedTeammate = this.selectDonationTeammate(teammates);
       if (selectedTeammate === null) {
+        this.setDonationStatus("Donate: no eligible needy teammate");
         runtimeDebugLog(
           "[Donate] skip: no teammate below the need threshold (all allies healthy)",
         );

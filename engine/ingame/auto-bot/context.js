@@ -366,6 +366,7 @@
       speedFactor: Math.round((state.speed?.factor ?? 1) * 100) / 100,
       ...getPlayerDiagnostics(me),
       botStatus: getBotDiagnosticStatus(),
+      donationStatus: diagnosticValue(state.donationStatus, "unknown"),
       earlyGame: getEarlyGameDiagnostic(state.earlyGame),
       eventsDisplayEvents: getEventsDisplayDiagnostic(),
     };

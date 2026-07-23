@@ -291,6 +291,7 @@
     // arrives, so we can't translate here).
     status: "",
     lastAction: "—",
+    donationStatus: "Donate: awaiting decision",
     stats: { spawns: 0, attacks: 0, builds: 0, nukes: 0 },
     live: { troops: 0, gold: 0, tiles: 0, fill: 0 },
     // Snapshot of the current post-spawn expansion window. The route fields stay

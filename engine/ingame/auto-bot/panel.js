@@ -308,6 +308,7 @@
         <div class="ab-status ${state.settings.statusOpen ? "open" : ""}" data-role="status-wrap">
           <div class="ab-st-line" data-role="status">—</div>
           <div class="ab-st-line" data-role="profiling">—</div>
+          <div class="ab-st-line" data-role="donate-status">—</div>
           <div class="ab-st-act" data-role="lastaction">—</div>
           <div class="ab-stats">
             <div class="ab-stat"><b data-role="s-troops">0</b><span>${tr("Troops")}</span></div>
@@ -859,6 +860,7 @@
       if (el) el.textContent = text;
     };
     set("status", state.status);
+    set("donate-status", state.donationStatus || "Donate: awaiting decision");
     set(
       "profiling",
       typeof formatAutoBotProfileStatus === "function"
