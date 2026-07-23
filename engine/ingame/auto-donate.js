@@ -259,12 +259,15 @@
       units = Array.from(rawUnits || []);
     }
 
-    const inspections = units.filter(Boolean)
-      .map((unit) => inspectAutoDonateTransport(game, me, myId, unit));
-    if (inspections.some((result) => result.unknown)) return null;
-    const incoming = inspections.filter((result) => result.incoming);
-    if (incoming.some((result) => result.unknownTroops)) return { active: true, troops: null };
-    const incomingTroops = incoming.reduce((sum, result) => sum + Math.max(0, result.troops), 0);
+    let incomingTroops = 0;
+    for (const unit of units) {
+      if (!unit) continue;
+      const inspection = inspectAutoDonateTransport(game, me, myId, unit);
+      if (inspection.unknown) return null;
+      if (!inspection.incoming) continue;
+      if (inspection.unknownTroops) return { active: true, troops: null };
+      incomingTroops += Math.max(0, inspection.troops);
+    }
     return {
       active: incomingTroops > 0,
       troops: incomingTroops,
