@@ -62,6 +62,9 @@
       : AUTO_DONATE_EXPANSION_MAX_TICKS;
     const inactive = { active: false, reason: null, maxTicks: limit };
     if (!earlyGame || earlyGame.active !== true) return inactive;
+    // This is an opening reservation, not a permanent ban on supporting allies
+    // whenever the map still contains free land or a tribe.
+    if (Number(earlyGame.openingElapsedTicks) > limit) return inactive;
 
     if (earlyGame.hasFreeLand === true) {
       return { active: true, reason: "free-land", maxTicks: limit };
@@ -1071,6 +1074,9 @@
     const hasFreeLand = input.hasFreeLand === true;
     const hasTribeTarget = actionableTribes.length > 0;
     const postSpawn = input.postSpawn === true;
+    const openingElapsedTicks = Number.isFinite(Number(input.openingElapsedTicks))
+      ? Math.max(0, Number(input.openingElapsedTicks))
+      : 0;
 
     return {
       active: postSpawn && (hasFreeLand || hasTribeTarget),
@@ -1078,6 +1084,7 @@
       hasFreeLand,
       hasTribeTarget,
       actionableTribes,
+      openingElapsedTicks,
       boatRouteAvailable: input.boatRouteAvailable === true,
     };
   }

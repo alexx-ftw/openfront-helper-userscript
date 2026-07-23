@@ -2156,6 +2156,15 @@
 
     publishAttackEarlyGameSnapshot(context) {
       const { hasAccessibleFreeLand, hasAccessibleTerraNullius } = context;
+      const previous = state.earlyGame || {};
+      const currentTick =
+        typeof this.game.ticks === "function"
+          ? Number(this.game.ticks()) || 0
+          : Number(previous.openingStartedAtTick) || 0;
+      const openingStartedAtTick =
+        previous.postSpawn === true && Number.isFinite(previous.openingStartedAtTick)
+          ? previous.openingStartedAtTick
+          : currentTick;
       const snapshot = createEarlyGameSnapshot({
         postSpawn: this.game.inSpawnPhase() === false && this.player.hasSpawned(),
         // Fallout is a late-game expansion target, not part of the opening
@@ -2164,12 +2173,13 @@
         // donations indefinitely.
         hasFreeLand: hasAccessibleFreeLand,
         tribes: this.earlyGameTribeTargets(context.borderingEnemies, context.border),
+        openingElapsedTicks: currentTick - openingStartedAtTick,
         boatRouteAvailable: this.game.hasTransportRouteEstimator === true,
       });
-      const previous = state.earlyGame || {};
       state.earlyGame = {
         ...previous,
         ...snapshot,
+        openingStartedAtTick,
         action: chooseEarlyGameAction({
           landTarget: hasAccessibleTerraNullius,
           tribeTarget: snapshot.hasTribeTarget,

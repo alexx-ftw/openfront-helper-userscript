@@ -739,6 +739,16 @@ assertExpansionStatus(
 assertExpansionStatus(
   {
     active: true,
+    hasFreeLand: true,
+    actionableTribes: [],
+    openingElapsedTicks: 31,
+  },
+  { active: false, reason: null, maxTicks: 30 },
+  "free land cannot pause donations beyond the bounded opening window",
+);
+assertExpansionStatus(
+  {
+    active: true,
     hasFreeLand: false,
     actionableTribes: [{ landBorder: true }],
   },
