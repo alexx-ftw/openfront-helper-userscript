@@ -5543,6 +5543,11 @@
 
     expansionBreakoutOpportunity(context) {
       const early = state.earlyGame || {};
+      const openingReserveTicks =
+        typeof AUTO_DONATE_OPENING_RESERVE_TICKS === "number"
+          ? AUTO_DONATE_OPENING_RESERVE_TICKS
+          : 300;
+      if (Number(early.openingElapsedTicks) > openingReserveTicks) return false;
       const plannerIsExhausted =
         Array.isArray(this.earlyGameTribeCandidatesCache) &&
         this.earlyGameTribeCandidatesCache.length === 0;

@@ -1170,6 +1170,30 @@ assert.equal(
   false,
   "a false breakout cannot become a permanent donation veto",
 );
+const expiredBreakoutBehavior = Object.create(sandbox.AttackBehavior.prototype);
+expiredBreakoutBehavior.earlyGameTribeCandidatesCache = [];
+expiredBreakoutBehavior.getEarlyGameOwnShores = () => [1];
+expiredBreakoutBehavior.player = {
+  borderTiles: () => new Set([1]),
+  shoreBorderTiles: () => [1],
+};
+sandbox.state.earlyGame = {
+  active: false,
+  postSpawn: true,
+  hasFreeLand: false,
+  actionableTribes: [],
+  openingElapsedTicks: 301,
+};
+assert.equal(
+  expiredBreakoutBehavior.updateExpansionBreakoutState({ borderingEnemies: [] }),
+  false,
+  "the maritime breakout reserve expires with the opening phase",
+);
+assert.equal(
+  expiredBreakoutBehavior.updateExpansionBreakoutState({ borderingEnemies: [] }),
+  false,
+  "an expired breakout cannot become a permanent donation veto",
+);
 breakoutBehavior.expansionBreakoutActive = true;
 breakoutBehavior.getEarlyGameSpendableTroops = (reserve) => (reserve === 150000 ? 650000 : 300000);
 breakoutBehavior.getTerraNulliusLivenessReserveTroops = () => 150000;
