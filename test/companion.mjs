@@ -8,6 +8,7 @@
 import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
+import { compileFunction } from "node:vm";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -39,7 +40,12 @@ function makeFakeDom() {
       },
       setAttribute(k, v) { if (k === "id") { node.id = v; byId[v] = node; } },
       getAttribute() { return null; },
-      appendChild(child) { child.parentNode = node; node._children.push(child); if (child.id) byId[child.id] = child; return child; },
+      appendChild(child) {
+        child.parentNode = node;
+        node._children.push(child);
+        if (child.id) byId[child.id] = child;
+        return child;
+      },
       remove() { if (node.parentNode) node.parentNode._children = node.parentNode._children.filter((c) => c !== node); },
       addEventListener() {},
       set innerHTML(v) { node._html = v; node._children = []; },
@@ -87,13 +93,12 @@ function loadCompanion(files, names, stubs) {
   const { document: documentStub, ...restStubs } = stubs || {};
   const stubEntries = Object.entries(restStubs);
   const stubNames = stubEntries.map(([k]) => k);
-  const factory = new Function(
+  const factory = compileFunction(`${src}\nreturn { ${names.join(", ")} };`, [
     "window",
     "localStorage",
     "document",
     ...stubNames,
-    `${src}\nreturn { ${names.join(", ")} };`,
-  );
+  ]);
   return factory(
     fakeWindow,
     fakeLocalStorage,
@@ -1157,16 +1162,12 @@ const ENG = [
   // The brief's other blocks cover the queue, the cooldowns and the hooks — but
   // companionTick itself could be deleted outright and they would all still pass.
   // This block pins the loop that decides when a packet goes on the wire.
-  const sent = [];
   let fakeGame = null;
   const m = loadCompanion(
     ENG,
     ["companionTick", "companionState", "companionPatchSettings", "companionResetRunState"],
     {
-      sendGamePacket: (o) => {
-        sent.push(o);
-        return true;
-      },
+      sendGamePacket: () => true,
       registerHelperTickListener: () => {},
       getOpenFrontGameContext: () => (fakeGame ? { game: fakeGame } : null),
     },
@@ -1364,12 +1365,10 @@ const ENG = [
 
 // ---- pause is a real stop, and survives a new match --------------------------
 {
-  const autobotCalls = [];
   let autobotEnabled = false;
   fakeWindow.__OFH_autobot = {
     get: () => ({ enabled: autobotEnabled }),
     set: (p) => {
-      autobotCalls.push(p);
       if ("enabled" in p) autobotEnabled = p.enabled;
     },
   };
@@ -1455,7 +1454,6 @@ const ENG = [
   // -- pause/resume must not switch on an auto-bot the user turned off ---------
   m.companionState.enabled = true;
   m.companionState.paused = false;
-  autobotCalls.length = 0;
   autobotEnabled = false; // the user had it OFF
   m.companionRunAction("pause", {});
   m.companionRunAction("resume", {});
@@ -2085,10 +2083,11 @@ const ENG = [
 // ---- public bridge set({mode}) re-syncs the auto-bot ------------------------
 {
   let autobotEnabled = true;
-  const calls = [];
   fakeWindow.__OFH_autobot = {
     get: () => ({ enabled: autobotEnabled }),
-    set: (p) => { calls.push(p); if ("enabled" in p) autobotEnabled = p.enabled; },
+    set: (p) => {
+      if ("enabled" in p) autobotEnabled = p.enabled;
+    },
   };
   const m = loadCompanion(ENG, ["companionState"],
     { sendGamePacket: () => true, registerHelperTickListener: () => {} });
@@ -2096,7 +2095,6 @@ const ENG = [
   // Enable companion in active mode first (no suppression yet).
   m.companionState.enabled = true;
   autobotEnabled = true;
-  calls.length = 0;
 
   // Scripting the public bridge to switch to passive must stop the auto-bot,
   // just like the panel's Mode dropdown does.
@@ -2118,7 +2116,6 @@ const ENG = [
   // set it. The tick queues work; we assert on the QUEUE (labels), not on sends,
   // so the 300ms drain gap never hides anything.
   function makeDonateModule() {
-    const W = 100;
     const boss = {
       name: () => "Boss", smallID: () => 1, id: () => "p1",
       type: () => "HUMAN", isAlive: () => true,
@@ -2342,7 +2339,7 @@ const ENG = [
   };
   const me = {
     name: () => "Me", smallID: () => 2, id: () => "p2",
-    actions: (tile) => {
+    actions: (_tile) => {
       actionsCalls++;
       return Promise.resolve({ interaction: { canDonateGold: serverGold, canDonateTroops: serverTroops } });
     },
@@ -2405,7 +2402,9 @@ const ENG = [
   serverGold = true; serverTroops = false;
   m.companionRefreshBossActions(game, me, boss);
   assert.equal(m.companionState.actionsInFlight, true, "refresh marks in-flight");
-  await new Promise((r) => setTimeout(r, 0));
+  await new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
   assert.equal(m.companionState.bossCanDonateGold, true, "refresh applied server gold=true");
   assert.equal(m.companionState.bossCanDonateTroops, false, "refresh applied server troops=false");
   assert.equal(m.companionState.actionsInFlight, false, "refresh cleared in-flight");
@@ -2579,4 +2578,4 @@ const ENG = [
   assert.equal(m.companionState.lastTickAt, before2, "outside spawn → 400ms skipped (tickMs)");
 }
 
-console.log("COMPANION OK — pure helpers behave");
+process.stdout.write("COMPANION OK — pure helpers behave\n");
