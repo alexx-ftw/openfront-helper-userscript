@@ -12,11 +12,13 @@
   let _sosLastSalvoAt = 0;
   const _sosLastTargetAt = new Map(); // attacker smallID -> ms
 
-  function _sosResolvePlayerBySmallId(players, smallId) {
+  function _sosPlayersBySmallId(players) {
+    const bySmallId = new Map();
     for (const p of players) {
-      if (getPlayerSmallId(p, Number.NaN) === smallId) return p;
+      const smallId = getPlayerSmallId(p, Number.NaN);
+      if (Number.isFinite(smallId)) bySmallId.set(smallId, p);
     }
-    return null;
+    return bySmallId;
   }
 
   function _sosAttackIsRetreating(attack) {
@@ -31,6 +33,7 @@
     const out = [];
     const seen = new Set();
     let playerViews = players;
+    let playersBySmallId = null;
     let attacks;
     {
       attacks = me.incomingAttacks?.() || [];
@@ -42,7 +45,10 @@
       if (!Number.isFinite(attackerId) || seen.has(attackerId)) continue;
       seen.add(attackerId);
       if (playerViews === null) playerViews = getCachedPlayerViews(game);
-      const attacker = _sosResolvePlayerBySmallId(playerViews, attackerId);
+      if (playersBySmallId === null) {
+        playersBySmallId = _sosPlayersBySmallId(playerViews);
+      }
+      const attacker = playersBySmallId.get(attackerId) || null;
       if (!attacker) continue;
       {
         if (me.isFriendly?.(attacker)) continue; // ignore allied "attacks"

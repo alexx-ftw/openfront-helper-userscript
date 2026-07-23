@@ -17,6 +17,11 @@ const ally = {
   smallID: () => 3,
   isAlive: () => true,
 };
+const secondAttacker = {
+  id: () => "attacker-2-id",
+  smallID: () => 4,
+  isAlive: () => true,
+};
 let incomingAttacks = [];
 const me = {
   smallID: () => 1,
@@ -25,7 +30,7 @@ const me = {
   incomingAttacks: () => incomingAttacks,
 };
 const game = { myPlayer: () => me };
-const players = [me, attacker, ally];
+const players = [me, attacker, secondAttacker, ally];
 const signals = [];
 let tickListener = null;
 let now = 1000;
@@ -71,6 +76,21 @@ assert.equal(
   playerViewReads,
   1,
   "one SOS pass shares its player snapshot between attacker lookup and ally alerts",
+);
+
+sandbox.setSosDefenseEnabled(false);
+sandbox.setSosDefenseEnabled(true);
+signals.length = 0;
+now += 250;
+incomingAttacks = [
+  { attackerID: 2, retreating: false },
+  { attackerID: 4, retreating: false },
+];
+tickListener();
+assert.equal(
+  signals.filter(([kind]) => kind === "target").length,
+  2,
+  "multiple attackers are each marked from the shared participant index",
 );
 
 sandbox.setSosDefenseEnabled(false);
