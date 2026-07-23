@@ -440,10 +440,16 @@
   }
 
   function findNeediestAutoDonateTarget(targets, game) {
-    return targets.map((player) => ({
-      player,
-      percentage: getAutoDonateTroopPercentage(player, game),
-    })).sort((a, b) => a.percentage - b.percentage)[0]?.player ?? null;
+    let neediest = null;
+    let lowestPercentage = Infinity;
+    for (const player of targets) {
+      const percentage = getAutoDonateTroopPercentage(player, game);
+      if (percentage < lowestPercentage) {
+        neediest = player;
+        lowestPercentage = percentage;
+      }
+    }
+    return neediest;
   }
 
   function getAutoDonateRecipientId(player) {
@@ -548,8 +554,16 @@
   }
 
   function findPoorestAutoDonateTarget(targets) {
-    return targets.map((player) => ({ player, gold: getAutoDonatePlayerGold(player) }))
-      .sort((a, b) => a.gold - b.gold)[0]?.player ?? null;
+    let poorest = null;
+    let lowestGold = Infinity;
+    for (const player of targets) {
+      const gold = getAutoDonatePlayerGold(player);
+      if (gold < lowestGold) {
+        poorest = player;
+        lowestGold = gold;
+      }
+    }
+    return poorest;
   }
 
   function createGoldDonationPlan() {

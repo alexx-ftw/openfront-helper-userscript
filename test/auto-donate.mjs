@@ -189,7 +189,11 @@ async function runDonation(options = {}) {
     console: { log() {}, error() {} },
   };
 
-  executeClassicScript(SOURCE, sandbox, { filename: "auto-donate.js" });
+  executeClassicScript(
+    `${SOURCE}\nglobalThis.__autoDonateSelectors = { findNeediestAutoDonateTarget, findPoorestAutoDonateTarget };`,
+    sandbox,
+    { filename: "auto-donate.js" },
+  );
   for (let tickIndex = 0; tickIndex < tickCount; tickIndex++) {
     await sandbox.window.__OFH_tickAutoDonate();
     now += tickAdvanceMs;
@@ -198,6 +202,8 @@ async function runDonation(options = {}) {
     return {
       packets,
       maritime: sandbox.window.__OFH_getIncomingMaritimeInvasion(game, me),
+      selectors: sandbox.__autoDonateSelectors,
+      game,
     };
   }
   return packets;
@@ -238,6 +244,26 @@ const disabledGoldDonation = await runDonation({
   gold: 5000,
 });
 assert.deepEqual(disabledGoldDonation, [], "gold donation respects the live game configuration");
+
+const donationSelectorHarness = await runDonation({ returnDetails: true });
+const equalTroopRecipients = [
+  { troops: () => 250, gold: () => 500 },
+  { troops: () => 250, gold: () => 100 },
+  { troops: () => 600, gold: () => 50 },
+];
+assert.strictEqual(
+  donationSelectorHarness.selectors.findNeediestAutoDonateTarget(
+    equalTroopRecipients,
+    donationSelectorHarness.game,
+  ),
+  equalTroopRecipients[0],
+  "linear troop recipient selection preserves the first recipient on an equal percentage",
+);
+assert.strictEqual(
+  donationSelectorHarness.selectors.findPoorestAutoDonateTarget(equalTroopRecipients),
+  equalTroopRecipients[2],
+  "linear gold recipient selection preserves the poorest eligible recipient",
+);
 
 const prematureRepeatDonation = await runDonation({
   tickCount: 2,
