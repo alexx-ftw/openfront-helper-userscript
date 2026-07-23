@@ -25,6 +25,9 @@
   // Keep the opening expansion force available when a local land opportunity or
   // a quickly reachable tribe is still actionable.
   const AUTO_DONATE_EXPANSION_MAX_TICKS = 30;
+  // A local sea route must be quick, but the initial land/tribe expansion phase
+  // itself lasts long enough for its first wave to settle (30 game seconds).
+  const AUTO_DONATE_OPENING_RESERVE_TICKS = 300;
   // Keep maritime targeting local to the opening frontier. This is the same
   // bounded radius used by the former open-ocean search; a distant coast must
   // not outrank an urgent nearby attack merely because it is finite.
@@ -64,7 +67,9 @@
     if (!earlyGame || earlyGame.active !== true) return inactive;
     // This is an opening reservation, not a permanent ban on supporting allies
     // whenever the map still contains free land or a tribe.
-    if (Number(earlyGame.openingElapsedTicks) > limit) return inactive;
+    if (Number(earlyGame.openingElapsedTicks) > AUTO_DONATE_OPENING_RESERVE_TICKS) {
+      return inactive;
+    }
 
     if (earlyGame.hasFreeLand === true) {
       return { active: true, reason: "free-land", maxTicks: limit };

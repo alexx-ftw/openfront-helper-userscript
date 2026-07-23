@@ -743,6 +743,16 @@ assertExpansionStatus(
     actionableTribes: [],
     openingElapsedTicks: 31,
   },
+  { active: true, reason: "free-land", maxTicks: 30 },
+  "free land keeps the opening reserve beyond the local sea-route threshold",
+);
+assertExpansionStatus(
+  {
+    active: true,
+    hasFreeLand: true,
+    actionableTribes: [],
+    openingElapsedTicks: 301,
+  },
   { active: false, reason: null, maxTicks: 30 },
   "free land cannot pause donations beyond the bounded opening window",
 );
