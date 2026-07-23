@@ -1137,6 +1137,29 @@ assert.equal(
   true,
   "two completed empty planner decisions activate maritime breakout",
 );
+const falseBreakoutBehavior = Object.create(sandbox.AttackBehavior.prototype);
+falseBreakoutBehavior.earlyGameTribeCandidatesCache = [];
+falseBreakoutBehavior.getEarlyGameOwnShores = () => [];
+falseBreakoutBehavior.player = {
+  borderTiles: () => new Set([1]),
+};
+sandbox.state.earlyGame = {
+  active: false,
+  postSpawn: true,
+  hasFreeLand: false,
+  actionableTribes: [],
+  openingElapsedTicks: 31,
+};
+assert.equal(
+  falseBreakoutBehavior.updateExpansionBreakoutState({ borderingEnemies: [{}] }),
+  false,
+  "a land-border enemy without a coast is not a maritime breakout",
+);
+assert.equal(
+  falseBreakoutBehavior.updateExpansionBreakoutState({ borderingEnemies: [{}] }),
+  false,
+  "a false breakout cannot become a permanent donation veto",
+);
 breakoutBehavior.expansionBreakoutActive = true;
 breakoutBehavior.getEarlyGameSpendableTroops = (reserve) => (reserve === 150000 ? 650000 : 300000);
 breakoutBehavior.getTerraNulliusLivenessReserveTroops = () => 150000;

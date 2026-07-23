@@ -5551,7 +5551,7 @@
         Array.isArray(context?.borderingEnemies) &&
         context.borderingEnemies.length === 0;
       const hasBreakoutRoute =
-        !noLandEnemy || this.hasExpansionBreakoutCoast();
+        noLandEnemy && this.hasExpansionBreakoutCoast();
       return (
         early.postSpawn === true &&
         plannerIsExhausted &&
