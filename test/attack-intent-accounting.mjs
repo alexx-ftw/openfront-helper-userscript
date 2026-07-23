@@ -2328,6 +2328,25 @@ assert.equal(
 sandbox.state.earlyGame = { active: false, hasFreeLand: false, actionableTribes: [] };
 sandbox.state.settings.pauseDonateDuringExpansion = false;
 
+const maritimeDonationGateBehavior = Object.create(sandbox.AttackBehavior.prototype);
+maritimeDonationGateBehavior.game = donationGame;
+maritimeDonationGateBehavior.player = donor;
+sandbox.window = {
+  __OFH_getIncomingMaritimeInvasion: () => null,
+};
+assert.equal(
+  maritimeDonationGateBehavior.donationHasMaritimeInvasion(),
+  false,
+  "no maritime invasion signal does not permanently veto donations",
+);
+sandbox.window.__OFH_getIncomingMaritimeInvasion = () => ({ active: true });
+assert.equal(
+  maritimeDonationGateBehavior.donationHasMaritimeInvasion(),
+  true,
+  "an active maritime invasion still vetoes donations",
+);
+delete sandbox.window;
+
 sandbox.state.settings.winFixes = false;
 const nonWinFixHumanBehavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
 nonWinFixHumanBehavior.getEnemyDefensePostAttackProfile = () => ({});

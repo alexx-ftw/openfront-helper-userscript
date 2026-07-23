@@ -8439,7 +8439,7 @@
           this.game,
           this.player,
         );
-        return !invasion || invasion.active === true;
+        return invasion?.active === true;
       }
     }
 
