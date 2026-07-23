@@ -143,7 +143,7 @@
   const MIRV_CARRIER_TARGET_RADIUS = 1500;
 
   /** Ratio per city used for the first missile silo so nations start nuking earlier */
-  const FIRST_MISSILE_SILO_RATIO = 0.4;
+  const FIRST_MISSILE_SILO_RATIO = 0.2;
 
   /** If we have more than this many structures per tiles, prefer upgrading over building */
   const UPGRADE_DENSITY_THRESHOLD = 1 / 1500;

@@ -4788,5 +4788,10 @@ assert.match(
   /const SAM_RATIO_BY_DIFFICULTY = \{\s*\[Difficulty\.Easy\]: 0,\s*\[Difficulty\.Medium\]: 0,\s*\[Difficulty\.Hard\]: 0,\s*\[Difficulty\.Impossible\]: 0,\s*\[Difficulty\.Legendary\]: 0,/,
   "routine difficulty-based SAM quotas stay disabled; threat and capacity paths own SAM demand",
 );
+assert.match(
+  structureBehaviorSource,
+  /const FIRST_MISSILE_SILO_RATIO = 0\.2;/,
+  "the first Silo uses the same demonstrated City ratio as follow-on offensive Silos",
+);
 
 process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");
