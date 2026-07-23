@@ -2341,7 +2341,6 @@
         await profileAttackAsync(profile, "attack-auxiliary-boat", () =>
           this.maybeOpportunisticBoat(profile));
       }
-      this.runDonationPolicy(profile);
       if (context.allianceOn && state.settings.winFixes) {
         profileAttackSync(profile, "attack-auxiliary-alliance", () =>
           this.allianceBehavior.reachOutToFarNations());
@@ -2440,6 +2439,9 @@
         );
         if (defense !== null) return;
       }
+      // Donate before offensive intents. The client has a shared intent budget;
+      // leaving this after expansion can starve a safe donation every tick.
+      this.runDonationPolicy(profile);
       // A successful TerraNullius probe must not suppress the cluster planner.
       // These expansion lanes have independent intent accounting and the shared
       // rate limiter already caps total emissions, so let the tribe pass use any
@@ -2456,12 +2458,7 @@
       ) {
         acted = true;
       }
-      if (acted) {
-        // Donation has its own conservative gates and rate limit. Do not hide
-        // it behind the always-busy expansion/attack pipeline.
-        this.runDonationPolicy(profile);
-        return;
-      }
+      if (acted) return;
       await profileAttackAsync(profile, "attack-auxiliary", () =>
         this.runAuxiliaryAttackPolicies(context, profile));
       if (

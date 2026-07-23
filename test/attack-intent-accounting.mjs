@@ -966,22 +966,32 @@ assert.equal(sandbox.state.earlyGame.action, "defense-hold");
 
 const donationAfterPriorityBehavior = Object.create(sandbox.AttackBehavior.prototype);
 let donationPolicyRuns = 0;
+const donationPriorityOrder = [];
 donationAfterPriorityBehavior.player = {};
 donationAfterPriorityBehavior.allianceBehavior = {};
 donationAfterPriorityBehavior.reconcileOutboundAttackIntentCommitments = () => {};
 donationAfterPriorityBehavior.createAttackDecisionContext = () => ({ expandOn: true });
 donationAfterPriorityBehavior.updateExpansionBreakoutState = () => {};
 donationAfterPriorityBehavior.respondToIncomingAttack = async () => null;
-donationAfterPriorityBehavior.tryImmediateAttackPriorities = async () => true;
+donationAfterPriorityBehavior.tryImmediateAttackPriorities = async () => {
+  donationPriorityOrder.push("attack");
+  return true;
+};
 donationAfterPriorityBehavior.tryEarlyAttackPolicies = async () => false;
 donationAfterPriorityBehavior.runDonationPolicy = () => {
   donationPolicyRuns++;
+  donationPriorityOrder.push("donate");
 };
 await donationAfterPriorityBehavior.maybeAttack();
 assert.equal(
   donationPolicyRuns,
   1,
   "a priority attack does not skip the independent Auto-Bot donation evaluation",
+);
+assert.deepEqual(
+  donationPriorityOrder,
+  ["donate", "attack"],
+  "a safe donation reserves an intent before aggressive expansion can exhaust the shared budget",
 );
 
 const counterattackBudgetBehavior = Object.create(sandbox.AttackBehavior.prototype);
