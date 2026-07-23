@@ -70,11 +70,11 @@
 
   /** SAM launcher ratio per city, keyed by difficulty */
   const SAM_RATIO_BY_DIFFICULTY = {
-    [Difficulty.Easy]: 0.15,
-    [Difficulty.Medium]: 0.2,
-    [Difficulty.Hard]: 0.25,
-    [Difficulty.Impossible]: 0.3,
-    [Difficulty.Legendary]: 0.35,
+    [Difficulty.Easy]: 0,
+    [Difficulty.Medium]: 0,
+    [Difficulty.Hard]: 0,
+    [Difficulty.Impossible]: 0,
+    [Difficulty.Legendary]: 0,
   };
 
   /**

@@ -4783,4 +4783,10 @@ assert.deepEqual(
   "SAM upgrade economy reserve reads each economic roster once instead of rescanning it",
 );
 
+assert.match(
+  structureBehaviorSource,
+  /const SAM_RATIO_BY_DIFFICULTY = \{\s*\[Difficulty\.Easy\]: 0,\s*\[Difficulty\.Medium\]: 0,\s*\[Difficulty\.Hard\]: 0,\s*\[Difficulty\.Impossible\]: 0,\s*\[Difficulty\.Legendary\]: 0,/,
+  "routine difficulty-based SAM quotas stay disabled; threat and capacity paths own SAM demand",
+);
+
 process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");
