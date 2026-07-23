@@ -85,8 +85,8 @@
     companionState.bossSmallID = null;
     companionState.bossStatus = "idle";
     companionState.lastSendFailedAt = 0;
-    companionState.bossCanDonateGold = false;
-    companionState.bossCanDonateTroops = false;
+    companionState.bossCanDonateGold = null;
+    companionState.bossCanDonateTroops = null;
     companionState.actionsInFlight = false;
     companionState.lastActionsAt = 0;
     companionState.bossDonateConfirmed = true;
@@ -409,7 +409,10 @@
 
   function companionQueueTroopDonation(settings, ctx, allied, now) {
     if (!settings.autoTroops || !allied) return;
-    if (!companionState.bossCanDonateTroops) return;
+    // A missing/failed actions() query is unknown, not a server refusal. Keep
+    // the established client cooldown as the fallback, while respecting an
+    // explicit false as soon as the server provides one.
+    if (companionState.bossCanDonateTroops === false) return;
     if (!companionCooldownReady("donateAny", COMPANION_DONATE_MIN_GAP_MS, now)) return;
     if (!companionBossNeedsTroops(ctx.game, ctx.boss, settings.troopNeedPct)) return;
     companionMarkCooldown("donateAny", now);
@@ -445,7 +448,7 @@
 
   function companionQueueGoldDonation(settings, ctx, allied, factoryLevel, now) {
     if (!settings.autoGold || !allied) return;
-    if (!companionState.bossCanDonateGold) return;
+    if (companionState.bossCanDonateGold === false) return;
     const buildsFactory = settings.mode === "passive" && settings.autoFactory;
     const belowCap = factoryLevel < settings.maxFactoryLevel;
     if (buildsFactory && belowCap && factoryLevel <= companionState.goldAtFactoryLevel) return;

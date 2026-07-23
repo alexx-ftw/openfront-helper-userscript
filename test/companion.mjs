@@ -29,35 +29,73 @@ function makeFakeDom() {
   const byId = {};
   function el(tag) {
     const node = {
-      tagName: tag, id: "", className: "", _children: [], _html: "",
-      style: {}, dataset: {}, parentNode: null,
+      tagName: tag,
+      id: "",
+      className: "",
+      _children: [],
+      _html: "",
+      style: {},
+      dataset: {},
+      parentNode: null,
       classList: {
         _set: new Set(),
-        add(c) { this._set.add(c); node.className = [...this._set].join(" "); },
-        remove(c) { this._set.delete(c); node.className = [...this._set].join(" "); },
-        toggle(c, on) { on ? this.add(c) : this.remove(c); },
-        contains(c) { return this._set.has(c); },
+        add(c) {
+          this._set.add(c);
+          node.className = [...this._set].join(" ");
+        },
+        remove(c) {
+          this._set.delete(c);
+          node.className = [...this._set].join(" ");
+        },
+        toggle(c, on) {
+          on ? this.add(c) : this.remove(c);
+        },
+        contains(c) {
+          return this._set.has(c);
+        },
       },
-      setAttribute(k, v) { if (k === "id") { node.id = v; byId[v] = node; } },
-      getAttribute() { return null; },
+      setAttribute(k, v) {
+        if (k === "id") {
+          node.id = v;
+          byId[v] = node;
+        }
+      },
+      getAttribute() {
+        return null;
+      },
       appendChild(child) {
         child.parentNode = node;
         node._children.push(child);
         if (child.id) byId[child.id] = child;
         return child;
       },
-      remove() { if (node.parentNode) node.parentNode._children = node.parentNode._children.filter((c) => c !== node); },
+      remove() {
+        if (node.parentNode)
+          node.parentNode._children = node.parentNode._children.filter((c) => c !== node);
+      },
       addEventListener() {},
-      set innerHTML(v) { node._html = v; node._children = []; },
-      get innerHTML() { return node._html; },
-      set textContent(v) { node._html = String(v); },
-      querySelector(sel) { return node._find(sel); },
-      querySelectorAll() { return []; },
+      set innerHTML(v) {
+        node._html = v;
+        node._children = [];
+      },
+      get innerHTML() {
+        return node._html;
+      },
+      set textContent(v) {
+        node._html = String(v);
+      },
+      querySelector(sel) {
+        return node._find(sel);
+      },
+      querySelectorAll() {
+        return [];
+      },
       _find(sel) {
         // Only supports ".class" — enough for .ohcp-head / .ohcp-body / .ohcp-tabs.
         const cls = sel.replace(/^\./, "");
-        const has = (c) => ((c.className || "").split(/\s+/).indexOf(cls) !== -1)
-          || (c.classList && c.classList.contains(cls));
+        const has = (c) =>
+          (c.className || "").split(/\s+/).indexOf(cls) !== -1 ||
+          (c.classList && c.classList.contains(cls));
         const walk = (n) => {
           for (const c of n._children) {
             if (has(c)) return c;
@@ -72,7 +110,8 @@ function makeFakeDom() {
     return node;
   }
   const doc = {
-    body: el("body"), head: el("head"),
+    body: el("body"),
+    head: el("head"),
     createElement: (t) => el(t),
     getElementById: (id) => byId[id] || null,
   };
@@ -1757,8 +1796,11 @@ const ENG = [
 {
   store.clear();
   const m = loadCompanion(CORE, [
-    "COMPANION_DEFAULTS", "companionSettings", "companionPatchSettings",
-    "companionCoerceSetting", "companionState",
+    "COMPANION_DEFAULTS",
+    "companionSettings",
+    "companionPatchSettings",
+    "companionCoerceSetting",
+    "companionState",
   ]);
 
   // Defaults.
@@ -1790,12 +1832,21 @@ const ENG = [
     { economy: false, advanced: true },
     "values coerce to real booleans",
   );
-  assert.equal(m.companionCoerceSetting("collapsedSections", "nope"), undefined,
-    "a non-object is rejected");
-  assert.equal(m.companionCoerceSetting("collapsedSections", [1, 2]), undefined,
-    "an array is rejected");
-  assert.equal(m.companionCoerceSetting("collapsedSections", null), undefined,
-    "null is rejected (there is always a default object)");
+  assert.equal(
+    m.companionCoerceSetting("collapsedSections", "nope"),
+    undefined,
+    "a non-object is rejected",
+  );
+  assert.equal(
+    m.companionCoerceSetting("collapsedSections", [1, 2]),
+    undefined,
+    "an array is rejected",
+  );
+  assert.equal(
+    m.companionCoerceSetting("collapsedSections", null),
+    undefined,
+    "null is rejected (there is always a default object)",
+  );
 
   // Patch merges section flags rather than replacing the whole object, so
   // toggling one accordion does not wipe the others.
@@ -1834,15 +1885,20 @@ const ENG = [
 // ---- companionSyncAutobot: passive suppresses the auto-bot, active restores --
 {
   const calls = [];
-  let autobotEnabled = true;               // the user's own auto-bot setting
+  let autobotEnabled = true; // the user's own auto-bot setting
   fakeWindow.__OFH_autobot = {
     get: () => ({ enabled: autobotEnabled }),
-    set: (p) => { calls.push(p); if ("enabled" in p) autobotEnabled = p.enabled; },
+    set: (p) => {
+      calls.push(p);
+      if ("enabled" in p) autobotEnabled = p.enabled;
+    },
   };
 
-  const m = loadCompanion(ENG,
+  const m = loadCompanion(
+    ENG,
     ["companionSyncAutobot", "companionState", "companionPatchSettings"],
-    { sendGamePacket: () => true, registerHelperTickListener: () => {} });
+    { sendGamePacket: () => true, registerHelperTickListener: () => {} },
+  );
 
   // Companion off → never touches the auto-bot.
   calls.length = 0;
@@ -1929,25 +1985,43 @@ const ENG = [
 
   const W = 100;
   const boss = {
-    name: () => "Boss", smallID: () => 1, id: () => "p1",
-    type: () => "HUMAN", isAlive: () => true, state: { spawnTile: 40 * W + 20 },
+    name: () => "Boss",
+    smallID: () => 1,
+    id: () => "p1",
+    type: () => "HUMAN",
+    isAlive: () => true,
+    state: { spawnTile: 40 * W + 20 },
   };
   const game = {
-    width: () => W, height: () => W,
+    width: () => W,
+    height: () => W,
     isValidCoord: (x, y) => x >= 0 && y >= 0 && x < W && y < W,
     ref: (x, y) => y * W + x,
-    isLand: () => true, hasOwner: () => false, isBorder: () => false,
-    players: () => [boss, { name: () => "Me", smallID: () => 2, id: () => "p2",
-      type: () => "HUMAN", isAlive: () => true }],
+    isLand: () => true,
+    hasOwner: () => false,
+    isBorder: () => false,
+    players: () => [
+      boss,
+      {
+        name: () => "Me",
+        smallID: () => 2,
+        id: () => "p2",
+        type: () => "HUMAN",
+        isAlive: () => true,
+      },
+    ],
     myPlayer: () => ({ name: () => "Me", smallID: () => 2, id: () => "p2" }),
   };
 
-  const m = loadCompanion(ENG,
+  const m = loadCompanion(
+    ENG,
     ["companionSpawnCenter", "companionState", "companionPatchSettings"],
     {
-      sendGamePacket: () => true, registerHelperTickListener: () => {},
+      sendGamePacket: () => true,
+      registerHelperTickListener: () => {},
       getOpenFrontGameContext: () => ({ game: game }),
-    });
+    },
+  );
 
   m.companionPatchSettings({ bossName: "Boss", mode: "active" });
   m.companionState.enabled = true;
@@ -1967,8 +2041,11 @@ const ENG = [
   features = { spawn: false };
   smartSpawn = false;
   calls.length = 0;
-  assert.equal(m.companionSpawnCenter(game, null), null,
-    "auto strategy hands the decision to the auto-bot");
+  assert.equal(
+    m.companionSpawnCenter(game, null),
+    null,
+    "auto strategy hands the decision to the auto-bot",
+  );
   assert.equal(features.spawn, true, "forced features.spawn on");
   assert.equal(smartSpawn, true, "forced smartSpawn on");
 
@@ -1986,16 +2063,25 @@ const ENG = [
   let dragCalls = 0;
   let dragHead = null;
   const m = loadCompanion(
-    ["engine/ingame/companion/core.js", "engine/ingame/companion/commands.js",
-     "engine/ingame/companion/engine.js", "engine/ingame/companion/panel.js"],
+    [
+      "engine/ingame/companion/core.js",
+      "engine/ingame/companion/commands.js",
+      "engine/ingame/companion/engine.js",
+      "engine/ingame/companion/panel.js",
+    ],
     ["companionBuildPanel", "companionRenderBody", "companionState", "companionPatchSettings"],
     {
       document: doc,
-      sendGamePacket: () => true, registerHelperTickListener: () => {},
-      makeGoldStatPanelDraggable: (panel, head) => { dragCalls++; dragHead = head; },
+      sendGamePacket: () => true,
+      registerHelperTickListener: () => {},
+      makeGoldStatPanelDraggable: (panel, head) => {
+        dragCalls++;
+        dragHead = head;
+      },
       applyStoredGoldStatPanelPosition: () => {},
       isSocketConnected: () => true,
-    });
+    },
+  );
 
   m.companionState.enabled = true;
   m.companionPatchSettings({ bossName: "Boss" });
@@ -2021,8 +2107,10 @@ const ENG = [
 // ---- compact panel: accordion sections + Active-mode spawn dropdown ---------
 {
   const PANEL = [
-    "engine/ingame/companion/core.js", "engine/ingame/companion/commands.js",
-    "engine/ingame/companion/engine.js", "engine/ingame/companion/panel.js",
+    "engine/ingame/companion/core.js",
+    "engine/ingame/companion/commands.js",
+    "engine/ingame/companion/engine.js",
+    "engine/ingame/companion/panel.js",
   ];
 
   // Passive mode: three accordion sections, no spawn-strategy dropdown.
@@ -2033,10 +2121,13 @@ const ENG = [
     ["companionBuildPanel", "companionState", "companionPatchSettings"],
     {
       document: doc1,
-      sendGamePacket: () => true, registerHelperTickListener: () => {},
-      makeGoldStatPanelDraggable: () => {}, applyStoredGoldStatPanelPosition: () => {},
+      sendGamePacket: () => true,
+      registerHelperTickListener: () => {},
+      makeGoldStatPanelDraggable: () => {},
+      applyStoredGoldStatPanelPosition: () => {},
       isSocketConnected: () => true,
-    });
+    },
+  );
 
   m1.companionState.enabled = true;
   m1.companionPatchSettings({ bossName: "Boss", mode: "passive" });
@@ -2063,10 +2154,13 @@ const ENG = [
     ["companionBuildPanel", "companionState", "companionPatchSettings"],
     {
       document: doc2,
-      sendGamePacket: () => true, registerHelperTickListener: () => {},
-      makeGoldStatPanelDraggable: () => {}, applyStoredGoldStatPanelPosition: () => {},
+      sendGamePacket: () => true,
+      registerHelperTickListener: () => {},
+      makeGoldStatPanelDraggable: () => {},
+      applyStoredGoldStatPanelPosition: () => {},
       isSocketConnected: () => true,
-    });
+    },
+  );
 
   m2.companionState.enabled = true;
   m2.companionPatchSettings({ bossName: "Boss", mode: "active" });
@@ -2089,8 +2183,10 @@ const ENG = [
       if ("enabled" in p) autobotEnabled = p.enabled;
     },
   };
-  const m = loadCompanion(ENG, ["companionState"],
-    { sendGamePacket: () => true, registerHelperTickListener: () => {} });
+  const m = loadCompanion(ENG, ["companionState"], {
+    sendGamePacket: () => true,
+    registerHelperTickListener: () => {},
+  });
 
   // Enable companion in active mode first (no suppression yet).
   m.companionState.enabled = true;
@@ -2117,30 +2213,39 @@ const ENG = [
   // so the 300ms drain gap never hides anything.
   function makeDonateModule() {
     const boss = {
-      name: () => "Boss", smallID: () => 1, id: () => "p1",
-      type: () => "HUMAN", isAlive: () => true,
-      troops: () => 1000,                       // 10% of max → needs troops
+      name: () => "Boss",
+      smallID: () => 1,
+      id: () => "p1",
+      type: () => "HUMAN",
+      isAlive: () => true,
+      troops: () => 1000, // 10% of max → needs troops
       state: { outgoingEmojis: [], outgoingAllianceRequests: [], spawnTile: 500 },
     };
     const me = {
-      name: () => "Me", smallID: () => 2, id: () => "p2",
-      type: () => "HUMAN", isAlive: () => true,
-      troops: () => 5000, gold: () => 0n,
-      isOnSameTeam: () => true, isAlliedWith: () => true,
+      name: () => "Me",
+      smallID: () => 2,
+      id: () => "p2",
+      type: () => "HUMAN",
+      isAlive: () => true,
+      troops: () => 5000,
+      gold: () => 0n,
+      isOnSameTeam: () => true,
+      isAlliedWith: () => true,
       state: { spawnTile: 777 },
     };
     const game = {
-      players: () => [boss, me], myPlayer: () => me,
+      players: () => [boss, me],
+      myPlayer: () => me,
       config: () => ({ maxTroops: () => 10000 }),
-      units: () => [],                          // companionFactoryLevel reads this; we override level below
-      inSpawnPhase: () => false, ticks: () => 1,
+      units: () => [], // companionFactoryLevel reads this; we override level below
+      inSpawnPhase: () => false,
+      ticks: () => 1,
     };
-    const m = loadCompanion(ENG,
-      ["companionTick", "companionState", "companionPatchSettings"],
-      {
-        sendGamePacket: () => true, registerHelperTickListener: () => {},
-        getOpenFrontGameContext: () => ({ game: game }),
-      });
+    const m = loadCompanion(ENG, ["companionTick", "companionState", "companionPatchSettings"], {
+      sendGamePacket: () => true,
+      registerHelperTickListener: () => {},
+      getOpenFrontGameContext: () => ({ game: game }),
+    });
     m._game = game;
     // Establish the game reference up front: companionTick's own "new match"
     // detection (lastGameRef !== gameRef) calls companionResetRunState() on
@@ -2154,10 +2259,11 @@ const ENG = [
     // read is used for gold — but the tick recomputes it. So units() must return
     // a factory at the desired level. Provide a settable level:
     let level = 0;
-    m._setLevel = (v) => { level = v; };
-    game.units = () => (level > 0
-      ? [{ id: () => 7, level: () => level, owner: () => ({ smallID: () => 2 }) }]
-      : []);
+    m._setLevel = (v) => {
+      level = v;
+    };
+    game.units = () =>
+      level > 0 ? [{ id: () => 7, level: () => level, owner: () => ({ smallID: () => 2 }) }] : [];
     // Gold accumulates in the real game; the "building%" branch donates the gold
     // GAINED since the last donation, so a constant mock would read 0 gained right
     // after the first donation and block gold on amount, not on the interleave
@@ -2165,7 +2271,9 @@ const ENG = [
     // gate is the only thing that can block.
     let goldPool = 1000000n;
     me.gold = () => goldPool;
-    m._addGold = (n) => { goldPool += BigInt(n); };
+    m._addGold = (n) => {
+      goldPool += BigInt(n);
+    };
     m._boss = boss;
     // Donate now gates on the real canDonate cache; default it to "allowed" so
     // the interleave/throttle sub-cases below exercise their own gate, not this.
@@ -2181,8 +2289,11 @@ const ENG = [
   {
     const m = makeDonateModule();
     m.companionPatchSettings({
-      bossName: "Boss", mode: "passive",
-      autoTroops: true, autoGold: true, autoFactory: false,  // autoFactory off → interleave inert
+      bossName: "Boss",
+      mode: "passive",
+      autoTroops: true,
+      autoGold: true,
+      autoFactory: false, // autoFactory off → interleave inert
     });
     m.companionState.enabled = true;
     m._setLevel(3);
@@ -2196,11 +2307,28 @@ const ENG = [
     m.companionTick();
     assert.deepEqual(labels(m), [], "canDonate false → nothing donates");
 
+    // An unavailable action query is not a server denial. The companion used to
+    // disable donations forever because the cache began as false and a missing
+    // actions() response never updated it. Unknown must retain the legacy
+    // client-side cooldown path; only an explicit server false blocks sending.
+    m.companionState.queue.length = 0;
+    m.companionState.cooldowns = {};
+    m.companionState.bossCanDonateTroops = null;
+    m.companionState.bossCanDonateGold = false;
+    m.companionPatchSettings({ autoGold: false, autoFactory: false });
+    m.companionTick();
+    assert.deepEqual(
+      labels(m),
+      ["donateTroops"],
+      "unknown canDonate availability still lets a needy boss receive troops",
+    );
+
     // Both allowed, boss needs troops, gold throttle ready: GOLD wins the slot
     // (runs first), and the optimistic clear makes troops yield the same tick.
     m.companionState.bossCanDonateGold = true;
     m.companionState.bossCanDonateTroops = true;
     m.companionState.bossDonateConfirmed = true;
+    m.companionPatchSettings({ autoGold: true, autoFactory: false });
     m._addGold(1000000);
     m.companionState.queue.length = 0;
     m.companionState.cooldowns = {};
@@ -2208,7 +2336,11 @@ const ENG = [
     assert.deepEqual(labels(m), ["donateGold"], "gold takes the slot, troops yields");
     // Optimistic: both flags cleared, confirm dropped.
     assert.equal(m.companionState.bossCanDonateGold, false, "gold flag cleared after donate");
-    assert.equal(m.companionState.bossCanDonateTroops, false, "troops flag cleared too (shared cooldown)");
+    assert.equal(
+      m.companionState.bossCanDonateTroops,
+      false,
+      "troops flag cleared too (shared cooldown)",
+    );
     assert.equal(m.companionState.bossDonateConfirmed, false, "confirm dropped");
 
     // Next tick: gold on its 30s throttle now, troops flag is false (optimistic)
@@ -2222,28 +2354,34 @@ const ENG = [
     m.companionState.bossCanDonateTroops = true;
     m.companionState.bossDonateConfirmed = true;
     m._addGold(1000000);
-    m.companionState.cooldowns = {};      // gold throttle ready
-    m._boss.troops = () => 9000;          // 90% → not needy
+    m.companionState.cooldowns = {}; // gold throttle ready
+    m._boss.troops = () => 9000; // 90% → not needy
     m.companionState.queue.length = 0;
     m.companionTick();
     assert.deepEqual(labels(m), ["donateGold"], "boss not needy → gold flows alone");
-    m._boss.troops = () => 1000;          // restore for later
+    m._boss.troops = () => 1000; // restore for later
   }
 
   // -- problem 1: no gold while building the first factory -------------------
   {
     const m = makeDonateModule();
     m.companionPatchSettings({
-      bossName: "Boss", mode: "passive",
-      autoTroops: false, autoGold: true, autoFactory: true,
+      bossName: "Boss",
+      mode: "passive",
+      autoTroops: false,
+      autoGold: true,
+      autoFactory: true,
     });
     m.companionState.enabled = true;
-    m._setLevel(0);                              // no factory yet
+    m._setLevel(0); // no factory yet
     m.companionState.queue.length = 0;
-    m.companionState.cooldowns = {};             // everything ready
+    m.companionState.cooldowns = {}; // everything ready
     m.companionTick();
-    assert.equal(labels(m).indexOf("donateGold"), -1,
-      "factoryLevel 0 + autoFactory → no gold (save for the first factory)");
+    assert.equal(
+      labels(m).indexOf("donateGold"),
+      -1,
+      "factoryLevel 0 + autoFactory → no gold (save for the first factory)",
+    );
     // factory itself SHOULD be queued (passive builds it)
     assert.ok(labels(m).indexOf("factory") !== -1, "but the factory build is queued");
   }
@@ -2252,8 +2390,11 @@ const ENG = [
   {
     const m = makeDonateModule();
     m.companionPatchSettings({
-      bossName: "Boss", mode: "passive",
-      autoTroops: false, autoGold: true, autoFactory: true,
+      bossName: "Boss",
+      mode: "passive",
+      autoTroops: false,
+      autoGold: true,
+      autoFactory: true,
     });
     m.companionState.enabled = true;
 
@@ -2272,7 +2413,7 @@ const ENG = [
     m.companionState.bossCanDonateGold = true;
     m.companionState.bossDonateConfirmed = true;
     m.companionState.queue.length = 0;
-    m.companionState.cooldowns = {};             // cooldowns ready, but interleave blocks
+    m.companionState.cooldowns = {}; // cooldowns ready, but interleave blocks
     m.companionTick();
     assert.equal(labels(m).indexOf("donateGold"), -1, "same level → gold blocked (interleave)");
 
@@ -2292,27 +2433,36 @@ const ENG = [
   {
     const m = makeDonateModule();
     m.companionPatchSettings({
-      bossName: "Boss", mode: "active",          // auto-bot builds, companion does not
-      autoTroops: false, autoGold: true, autoFactory: true,
+      bossName: "Boss",
+      mode: "active", // auto-bot builds, companion does not
+      autoTroops: false,
+      autoGold: true,
+      autoFactory: true,
     });
     m.companionState.enabled = true;
-    m._setLevel(0);                              // even at level 0
+    m._setLevel(0); // even at level 0
     m.companionState.queue.length = 0;
     m.companionState.cooldowns = {};
     m.companionTick();
-    assert.ok(labels(m).indexOf("donateGold") !== -1,
-      "active mode → interleave gate does not apply, gold flows");
+    assert.ok(
+      labels(m).indexOf("donateGold") !== -1,
+      "active mode → interleave gate does not apply, gold flows",
+    );
   }
 
   // -- at cap: interleave does NOT apply, gold flows even if the mark is stale -
   {
     const m = makeDonateModule();
     m.companionPatchSettings({
-      bossName: "Boss", mode: "passive",
-      autoTroops: false, autoGold: true, autoFactory: true, maxFactoryLevel: 3,
+      bossName: "Boss",
+      mode: "passive",
+      autoTroops: false,
+      autoGold: true,
+      autoFactory: true,
+      maxFactoryLevel: 3,
     });
     m.companionState.enabled = true;
-    m._setLevel(3);                              // factoryLevel === maxFactoryLevel → at cap
+    m._setLevel(3); // factoryLevel === maxFactoryLevel → at cap
     // Establish the game reference so the first tick does NOT reset goldAtFactoryLevel.
     m.companionState.lastGameRef = m._game;
     // Poison the interleave mark: if the gate were (wrongly) still applied at cap,
@@ -2321,8 +2471,10 @@ const ENG = [
     m.companionState.queue.length = 0;
     m.companionState.cooldowns = {};
     m.companionTick();
-    assert.ok(labels(m).indexOf("donateGold") !== -1,
-      "at cap → interleave gate inert, idle gold flows");
+    assert.ok(
+      labels(m).indexOf("donateGold") !== -1,
+      "at cap → interleave gate inert, idle gold flows",
+    );
     // And it should NOT try to build a factory at the cap.
     assert.equal(labels(m).indexOf("factory"), -1, "no factory build at the cap");
   }
@@ -2330,26 +2482,42 @@ const ENG = [
 
 // ---- boss canDonate cache: background refresh + round-trip confirm ----------
 {
-  let serverGold = true, serverTroops = true;
+  let serverGold = true,
+    serverTroops = true;
   let actionsCalls = 0;
   const boss = {
-    name: () => "Boss", smallID: () => 1, id: () => "p1",
-    type: () => "HUMAN", isAlive: () => true,
+    name: () => "Boss",
+    smallID: () => 1,
+    id: () => "p1",
+    type: () => "HUMAN",
+    isAlive: () => true,
     nameLocation: () => ({ x: 20, y: 40, size: 8 }),
   };
   const me = {
-    name: () => "Me", smallID: () => 2, id: () => "p2",
+    name: () => "Me",
+    smallID: () => 2,
+    id: () => "p2",
     actions: (_tile) => {
       actionsCalls++;
-      return Promise.resolve({ interaction: { canDonateGold: serverGold, canDonateTroops: serverTroops } });
+      return Promise.resolve({
+        interaction: { canDonateGold: serverGold, canDonateTroops: serverTroops },
+      });
     },
   };
   const game = { ref: (x, y) => y * 100 + x, myPlayer: () => me };
 
-  const m = loadCompanion(ENG,
-    ["companionRefreshBossActions", "companionApplyBossActions", "companionMarkDonated",
-     "companionState", "COMPANION_ACTIONS_REFRESH_MS", "COMPANION_DONATE_CONFIRM_TIMEOUT_MS"],
-    { sendGamePacket: () => true, registerHelperTickListener: () => {} });
+  const m = loadCompanion(
+    ENG,
+    [
+      "companionRefreshBossActions",
+      "companionApplyBossActions",
+      "companionMarkDonated",
+      "companionState",
+      "COMPANION_ACTIONS_REFRESH_MS",
+      "COMPANION_DONATE_CONFIRM_TIMEOUT_MS",
+    ],
+    { sendGamePacket: () => true, registerHelperTickListener: () => {} },
+  );
 
   // companionApplyBossActions: the round-trip confirm state machine (pure, sync).
   m.companionState.bossDonateConfirmed = true;
@@ -2360,16 +2528,20 @@ const ENG = [
   assert.equal(m.companionState.bossCanDonateGold, false, "donate clears cache");
   assert.equal(m.companionState.bossDonateConfirmed, false, "and drops confirm");
 
-  m.companionApplyBossActions(true, true);   // server hasn't processed our donate yet
+  m.companionApplyBossActions(true, true); // server hasn't processed our donate yet
   assert.equal(m.companionState.bossCanDonateGold, false, "unconfirmed + server true → stay false");
   assert.equal(m.companionState.bossDonateConfirmed, false, "still not confirmed");
 
-  m.companionApplyBossActions(false, false);  // server now reflects our donate (cooldown)
+  m.companionApplyBossActions(false, false); // server now reflects our donate (cooldown)
   assert.equal(m.companionState.bossDonateConfirmed, true, "server false → confirmed");
   assert.equal(m.companionState.bossCanDonateGold, false, "and cache follows server (false)");
 
-  m.companionApplyBossActions(true, true);   // cooldown elapsed
-  assert.equal(m.companionState.bossCanDonateGold, true, "confirmed + server true → cache true again");
+  m.companionApplyBossActions(true, true); // cooldown elapsed
+  assert.equal(
+    m.companionState.bossCanDonateGold,
+    true,
+    "confirmed + server true → cache true again",
+  );
 
   // Self-heal: an optimistic donate that never reached the server (socket drop,
   // dropped from a full queue, rejected) leaves the server reporting both true
@@ -2380,17 +2552,23 @@ const ENG = [
   assert.equal(m.COMPANION_DONATE_CONFIRM_TIMEOUT_MS, 12000, "self-heal window is 12s");
   m.companionMarkDonated();
   assert.equal(m.companionState.bossDonateConfirmed, false, "self-heal: starts unconfirmed");
-  m.companionState.donateUnconfirmedSince = Date.now() - 2000;   // only 2s elapsed
+  m.companionState.donateUnconfirmedSince = Date.now() - 2000; // only 2s elapsed
   m.companionApplyBossActions(true, true);
-  assert.equal(m.companionState.bossCanDonateGold, false,
-    "self-heal: within timeout stays optimistic false");
+  assert.equal(
+    m.companionState.bossCanDonateGold,
+    false,
+    "self-heal: within timeout stays optimistic false",
+  );
   assert.equal(m.companionState.bossDonateConfirmed, false, "self-heal: still unconfirmed early");
 
   m.companionState.donateUnconfirmedSince =
-    Date.now() - (m.COMPANION_DONATE_CONFIRM_TIMEOUT_MS + 1000);   // past the timeout
+    Date.now() - (m.COMPANION_DONATE_CONFIRM_TIMEOUT_MS + 1000); // past the timeout
   m.companionApplyBossActions(true, true);
-  assert.equal(m.companionState.bossDonateConfirmed, true,
-    "self-heal: past the confirm timeout with server true/true → re-confirm");
+  assert.equal(
+    m.companionState.bossDonateConfirmed,
+    true,
+    "self-heal: past the confirm timeout with server true/true → re-confirm",
+  );
   assert.equal(m.companionState.bossCanDonateGold, true, "self-heal: cache resyncs to server");
 
   // Background refresh: fetches actions(), applies through the confirm gate.
@@ -2399,7 +2577,8 @@ const ENG = [
   m.companionState.bossCanDonateGold = false;
   m.companionState.bossCanDonateTroops = false;
   m.companionState.bossDonateConfirmed = true;
-  serverGold = true; serverTroops = false;
+  serverGold = true;
+  serverTroops = false;
   m.companionRefreshBossActions(game, me, boss);
   assert.equal(m.companionState.actionsInFlight, true, "refresh marks in-flight");
   await new Promise((resolve) => {
@@ -2424,33 +2603,54 @@ const ENG = [
 
 // ---- companionResetRunState zeroes goldAtFactoryLevel -----------------------
 {
-  const m = loadCompanion(ENG,
-    ["companionResetRunState", "companionState"],
-    { sendGamePacket: () => true, registerHelperTickListener: () => {} });
+  const m = loadCompanion(ENG, ["companionResetRunState", "companionState"], {
+    sendGamePacket: () => true,
+    registerHelperTickListener: () => {},
+  });
   m.companionState.goldAtFactoryLevel = 7;
   m.companionResetRunState();
-  assert.equal(m.companionState.goldAtFactoryLevel, 0,
-    "a new match resets the gold/factory interleave mark");
+  assert.equal(
+    m.companionState.goldAtFactoryLevel,
+    0,
+    "a new match resets the gold/factory interleave mark",
+  );
 
   m.companionState.bossCanDonateGold = true;
   m.companionState.bossDonateConfirmed = false;
   m.companionState.actionsInFlight = true;
   m.companionState.donateUnconfirmedSince = 12345;
   m.companionResetRunState();
-  assert.equal(m.companionState.bossCanDonateGold, false, "reset clears canDonate cache");
+  assert.equal(
+    m.companionState.bossCanDonateGold,
+    null,
+    "reset leaves canDonate availability unknown until the server answers",
+  );
   assert.equal(m.companionState.bossDonateConfirmed, true, "reset restores confirmed default");
   assert.equal(m.companionState.actionsInFlight, false, "reset clears in-flight");
-  assert.equal(m.companionState.donateUnconfirmedSince, 0, "reset clears the unconfirmed timestamp");
+  assert.equal(
+    m.companionState.donateUnconfirmedSince,
+    0,
+    "reset clears the unconfirmed timestamp",
+  );
 }
 
 // ---- alliance renew: send extension when the boss alliance is expiring ------
 {
   const sent = [];
   const m = loadCompanion(
-    ["engine/ingame/companion/core.js", "engine/ingame/companion/commands.js",
-     "engine/ingame/companion/actions.js"],
+    [
+      "engine/ingame/companion/core.js",
+      "engine/ingame/companion/commands.js",
+      "engine/ingame/companion/actions.js",
+    ],
     ["companionRenewAlliance", "companionAllianceNeedsRenew"],
-    { sendGamePacket: (o) => { sent.push(o); return true; } });
+    {
+      sendGamePacket: (o) => {
+        sent.push(o);
+        return true;
+      },
+    },
+  );
 
   const boss = { id: () => "p1", smallID: () => 1 };
 
@@ -2464,17 +2664,20 @@ const ENG = [
   // the extension window (hasExtensionRequest).
   const mkMe = (alliances) => ({ alliances: () => alliances });
   assert.equal(
-    m.companionAllianceNeedsRenew(
-      mkMe([{ id: 1, other: "p1", hasExtensionRequest: true }]), boss),
-    true, "boss alliance expiring → needs renew");
+    m.companionAllianceNeedsRenew(mkMe([{ id: 1, other: "p1", hasExtensionRequest: true }]), boss),
+    true,
+    "boss alliance expiring → needs renew",
+  );
   assert.equal(
-    m.companionAllianceNeedsRenew(
-      mkMe([{ id: 1, other: "p1", hasExtensionRequest: false }]), boss),
-    false, "boss alliance not expiring → no renew");
+    m.companionAllianceNeedsRenew(mkMe([{ id: 1, other: "p1", hasExtensionRequest: false }]), boss),
+    false,
+    "boss alliance not expiring → no renew",
+  );
   assert.equal(
-    m.companionAllianceNeedsRenew(
-      mkMe([{ id: 2, other: "p9", hasExtensionRequest: true }]), boss),
-    false, "some OTHER alliance expiring → not our concern");
+    m.companionAllianceNeedsRenew(mkMe([{ id: 2, other: "p9", hasExtensionRequest: true }]), boss),
+    false,
+    "some OTHER alliance expiring → not our concern",
+  );
   assert.equal(m.companionAllianceNeedsRenew(mkMe([]), boss), false, "no alliances → false");
   // Never throws on a broken me / missing alliances().
   assert.equal(m.companionAllianceNeedsRenew({}, boss), false, "no alliances() → false, no throw");
@@ -2485,34 +2688,49 @@ const ENG = [
 // ---- alliance renew is queued from the tick, throttled, even while paused ---
 {
   const boss = {
-    name: () => "Boss", smallID: () => 1, id: () => "p1",
-    type: () => "HUMAN", isAlive: () => true, troops: () => 9000,
+    name: () => "Boss",
+    smallID: () => 1,
+    id: () => "p1",
+    type: () => "HUMAN",
+    isAlive: () => true,
+    troops: () => 9000,
     state: { outgoingEmojis: [], outgoingAllianceRequests: [], spawnTile: 500 },
   };
   const me = {
-    name: () => "Me", smallID: () => 2, id: () => "p2",
-    type: () => "HUMAN", isAlive: () => true,
-    troops: () => 5000, gold: () => 0n,
-    isOnSameTeam: () => true, isAlliedWith: () => true,
+    name: () => "Me",
+    smallID: () => 2,
+    id: () => "p2",
+    type: () => "HUMAN",
+    isAlive: () => true,
+    troops: () => 5000,
+    gold: () => 0n,
+    isOnSameTeam: () => true,
+    isAlliedWith: () => true,
     alliances: () => [{ id: 1, other: "p1", hasExtensionRequest: true }],
     state: { spawnTile: 777 },
   };
   const game = {
-    players: () => [boss, me], myPlayer: () => me,
+    players: () => [boss, me],
+    myPlayer: () => me,
     config: () => ({ maxTroops: () => 10000 }),
-    units: () => [], inSpawnPhase: () => false, ticks: () => 1,
+    units: () => [],
+    inSpawnPhase: () => false,
+    ticks: () => 1,
   };
-  const m = loadCompanion(ENG,
-    ["companionTick", "companionState", "companionPatchSettings"],
-    {
-      sendGamePacket: () => true, registerHelperTickListener: () => {},
-      getOpenFrontGameContext: () => ({ game: game }),
-    });
+  const m = loadCompanion(ENG, ["companionTick", "companionState", "companionPatchSettings"], {
+    sendGamePacket: () => true,
+    registerHelperTickListener: () => {},
+    getOpenFrontGameContext: () => ({ game: game }),
+  });
   const labels = () => m.companionState.queue.map((q) => q.label).sort();
 
   m.companionPatchSettings({
-    bossName: "Boss", mode: "passive",
-    autoTroops: false, autoGold: false, autoFactory: false, autoAlliance: false,
+    bossName: "Boss",
+    mode: "passive",
+    autoTroops: false,
+    autoGold: false,
+    autoFactory: false,
+    autoAlliance: false,
   });
   m.companionState.enabled = true;
 
@@ -2548,16 +2766,23 @@ const ENG = [
   let inSpawn = true;
   const game = {
     inSpawnPhase: () => inSpawn,
-    myPlayer: () => null,   // tick bails early after the cadence gate; fine
+    myPlayer: () => null, // tick bails early after the cadence gate; fine
     __src: {},
   };
-  const m = loadCompanion(ENG,
-    ["companionTickThrottled", "companionState", "companionPatchSettings",
-     "COMPANION_SPAWN_TICK_MS"],
+  const m = loadCompanion(
+    ENG,
+    [
+      "companionTickThrottled",
+      "companionState",
+      "companionPatchSettings",
+      "COMPANION_SPAWN_TICK_MS",
+    ],
     {
-      sendGamePacket: () => true, registerHelperTickListener: () => {},
+      sendGamePacket: () => true,
+      registerHelperTickListener: () => {},
       getOpenFrontGameContext: () => ({ game: game }),
-    });
+    },
+  );
   m.companionPatchSettings({ bossName: "Boss", tickMs: 2000 });
   m.companionState.enabled = true;
 
