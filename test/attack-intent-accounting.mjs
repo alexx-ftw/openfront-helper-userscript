@@ -964,6 +964,26 @@ decisionDefenseBehavior.tryImmediateAttackPriorities = async () => {
 await decisionDefenseBehavior.maybeAttack();
 assert.equal(sandbox.state.earlyGame.action, "defense-hold");
 
+const donationAfterPriorityBehavior = Object.create(sandbox.AttackBehavior.prototype);
+let donationPolicyRuns = 0;
+donationAfterPriorityBehavior.player = {};
+donationAfterPriorityBehavior.allianceBehavior = {};
+donationAfterPriorityBehavior.reconcileOutboundAttackIntentCommitments = () => {};
+donationAfterPriorityBehavior.createAttackDecisionContext = () => ({ expandOn: true });
+donationAfterPriorityBehavior.updateExpansionBreakoutState = () => {};
+donationAfterPriorityBehavior.respondToIncomingAttack = async () => null;
+donationAfterPriorityBehavior.tryImmediateAttackPriorities = async () => true;
+donationAfterPriorityBehavior.tryEarlyAttackPolicies = async () => false;
+donationAfterPriorityBehavior.runDonationPolicy = () => {
+  donationPolicyRuns++;
+};
+await donationAfterPriorityBehavior.maybeAttack();
+assert.equal(
+  donationPolicyRuns,
+  1,
+  "a priority attack does not skip the independent Auto-Bot donation evaluation",
+);
+
 const counterattackBudgetBehavior = Object.create(sandbox.AttackBehavior.prototype);
 counterattackBudgetBehavior.incomingHostileAttacks = () => [
   { attacker: () => incomingNation, troops: () => 80_000 },

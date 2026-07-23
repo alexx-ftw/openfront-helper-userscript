@@ -2331,6 +2331,14 @@
         await profileAttackAsync(profile, "attack-auxiliary-boat", () =>
           this.maybeOpportunisticBoat(profile));
       }
+      this.runDonationPolicy(profile);
+      if (context.allianceOn && state.settings.winFixes) {
+        profileAttackSync(profile, "attack-auxiliary-alliance", () =>
+          this.allianceBehavior.reachOutToFarNations());
+      }
+    }
+
+    runDonationPolicy(profile = null) {
       if (state.settings.winFixes && state.settings.features.donate) {
         const now = performance.now();
         const throttle = state.settings.donateThrottleMs || 3000;
@@ -2339,10 +2347,6 @@
         if (donated) {
           state.lastDonateMs = now;
         }
-      }
-      if (context.allianceOn && state.settings.winFixes) {
-        profileAttackSync(profile, "attack-auxiliary-alliance", () =>
-          this.allianceBehavior.reachOutToFarNations());
       }
     }
 
@@ -2442,7 +2446,12 @@
       ) {
         acted = true;
       }
-      if (acted) return;
+      if (acted) {
+        // Donation has its own conservative gates and rate limit. Do not hide
+        // it behind the always-busy expansion/attack pipeline.
+        this.runDonationPolicy(profile);
+        return;
+      }
       await profileAttackAsync(profile, "attack-auxiliary", () =>
         this.runAuxiliaryAttackPolicies(context, profile));
       if (
