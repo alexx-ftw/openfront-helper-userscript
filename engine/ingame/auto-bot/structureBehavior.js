@@ -9381,13 +9381,17 @@
       const nearestOther = this.nearestTileDistanceScorer(otherTiles, true);
       const stationRange = game.config().trainStationMaxRange();
       const stationRangeSquared = stationRange * stationRange;
-      const difficulty = currentDifficulty();
-      const useConnectionScore = this.shouldUseConnectivityScore(difficulty);
+      // Preserve the legacy random draw so existing seed streams do not shift
+      // on tiers that already use connectivity. Its result is intentionally
+      // ignored: a Factory must always score reachable trade destinations.
+      this.shouldUseConnectivityScore(currentDifficulty());
       const railState = this.readRailroadState(game);
 
-      const reachableStations = useConnectionScore
-        ? this.getOrBuildReachableStations()
-        : [];
+      // Factories are the train source. Unlike a cosmetic placement preference,
+      // knowing whether one can reach a City or Port directly determines whether
+      // its trains can generate trade gold at all, so this must apply on every
+      // difficulty rather than being randomized for the easier tiers.
+      const reachableStations = this.getOrBuildReachableStations();
       const minRangeSquared = game.config().trainStationMinRange() ** 2;
 
       // Cross-type spacing: prefer to be away from cities.

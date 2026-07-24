@@ -106,12 +106,14 @@ commercialRailBehavior.spacingConstants = () => ({
   structureSpacing: 100,
 });
 commercialRailBehavior.nearestTileDistanceScorer = () => () => 0;
+commercialRailBehavior.random = { nextInt: () => 0 };
 commercialRailBehavior.getOrBuildReachableStations = () => [
   { tile: 1_000, cluster: "existing-commercial-line", weight: 1 },
 ];
 testDifficulty = Difficulty.Easy;
 const cityCommercialValue = commercialRailBehavior.cityValue();
 const portCommercialValue = commercialRailBehavior.portValue();
+const factoryCommercialValue = commercialRailBehavior.factoryValue();
 assert.ok(
   cityCommercialValue(1_010) > cityCommercialValue(5_000),
   "Cities prefer a legal placement that snaps to a real existing commercial railroad even on Easy",
@@ -120,6 +122,10 @@ assert.ok(
   portCommercialValue(1_010) > portCommercialValue(5_000),
   "Ports prefer a legal placement that snaps to a real existing commercial railroad",
 );
+assert.ok(
+  factoryCommercialValue(1_050) > factoryCommercialValue(9_999),
+  "Factories always prefer a reachable commercial destination, including on Easy",
+);
 assert.equal(
   commercialRailBehavior.existingRailSnapDistance(5_000),
   null,
@@ -127,7 +133,7 @@ assert.equal(
 );
 assert.equal(
   commercialRailStateReads,
-  3,
+  4,
   "each economic scorer snapshots railroad state once instead of rereading it for every candidate",
 );
 
