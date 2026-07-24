@@ -215,13 +215,17 @@
   const HOSTILE_SAM_TRIGGER_GOLD_THRESHOLD = HOSTILE_SILO_GOLD_THRESHOLD / 2n;
 
   /** Structures that directly grow the nation's economy. */
-  const ECONOMIC_STRUCTURE_TYPES = [UNIT.Port, UNIT.Factory, UNIT.City];
+  // A City is the first paying destination; once it exists, build the train
+  // source before adding another destination Port. This starts a profitable
+  // loop sooner and avoids spending the first productive slot on a station
+  // that cannot generate train gold by itself.
+  const ECONOMIC_STRUCTURE_TYPES = [UNIT.Factory, UNIT.Port, UNIT.City];
 
   /** Border troop-capacity pressure puts the City before the other economy sites. */
   const CITY_FIRST_ECONOMIC_STRUCTURE_TYPES = [
     UNIT.City,
-    UNIT.Port,
     UNIT.Factory,
+    UNIT.Port,
   ];
 
   /** Length in ticks of each on/off phase after the team-mode save-up target is first reached */

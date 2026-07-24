@@ -1494,8 +1494,8 @@ assert.equal(
 );
 assert.deepEqual(
   economicAttemptOrder,
-  [UNIT.Port, UNIT.Factory],
-  "Economic priority attempts port and factory before falling through",
+  [UNIT.Factory],
+  "Economic priority attempts the train-producing Factory before a Port",
 );
 behavior.shouldBuildStructure = originalShouldBuildStructure;
 behavior.maybeSpawnStructure = originalMaybeSpawnStructure;
