@@ -18,6 +18,7 @@ const SPAWN_HEATMAP_ANALYSIS_R = 30;
 const SPAWN_HEATMAP_TRIBE_R = 140;
 const SPAWN_HEATMAP_TRIBE_REACH_BASE_R = 80;
 const SPAWN_HEATMAP_TRIBE_REACH_BONUS_R = 160;
+const SPAWN_HEATMAP_TRIBE_CLUSTER_R = 80;
 const SPAWN_HEATMAP_NATION_R = 120;
 const SPAWN_HEATMAP_PLAYER_R = 150;
 const SPAWN_HEATMAP_CELL = 14;
@@ -649,6 +650,12 @@ function tribeReachForCandidate(index, x, y, freeLandScore, tribeCount) {
   };
 }
 
+function tribeClusterScoreForCandidate(index, x, y, tribeCount) {
+  if (tribeCount <= 0) return 1;
+  const count = index ? index.countWithin(x, y, SPAWN_HEATMAP_TRIBE_CLUSTER_R) : 0;
+  return count / Math.max(1, tribeCount);
+}
+
 function combineSpawnEntityScore(
   tribeScore,
   nationScore,
@@ -903,6 +910,9 @@ function evaluateDynamicSpawnCandidate(candidate, context) {
   const tribeReach = tribeReachForCandidate(
     context.tribeProximity, x, y, freeLandScore, context.entities.tribeLocs.length,
   );
+  const tribeClusterScore = tribeClusterScoreForCandidate(
+    context.tribeProximity, x, y, context.entities.tribeLocs.length,
+  );
   const tribeScore = context.tribeProximity
     ? context.tribeProximity.score(x, y, SPAWN_HEATMAP_TRIBE_R) : 0;
   const nationScore = context.nationProximity ? context.nationProximity.score(x, y) : 0;
@@ -918,16 +928,17 @@ function evaluateDynamicSpawnCandidate(candidate, context) {
     context.entities.tribeLocs.length, context.entities.nationLocs.length,
   );
   const score = candidate.staticScore +
-    tribeReach.score * SPAWN_W.tribe + tribeScore * SPAWN_W.tribe * 0.15 +
+    tribeReach.score * SPAWN_W.tribe + tribeClusterScore * SPAWN_W.tribe * 0.2 +
+    tribeScore * SPAWN_W.tribe * 0.15 +
     nationScore * SPAWN_W.nation + playerDistScore * SPAWN_W.player +
     enemyPressureScore * SPAWN_W.enemyPressure + team.additive;
   const objective = evaluateFallbackSpawnObjective(context, {
     freeLandScore, playerDistScore, enemyPressureScore, teamScore: team.teamScore,
-    tribeScore, nationScore, tribeReach, resourceScore, clanScore,
+    tribeScore, nationScore, tribeReach, tribeClusterScore, resourceScore, clanScore,
   });
   return { x, y, score, freeLandScore, tribeScore, tribeReachCount: tribeReach.count,
     tribeReachScore: tribeReach.score, tribeReachRadius: tribeReach.radius,
-    nationScore, resourceScore, clanScore, objective };
+    tribeClusterScore, nationScore, resourceScore, clanScore, objective };
 }
 
 function evaluateFallbackSpawnObjective(context, values) {
@@ -939,6 +950,7 @@ function evaluateFallbackSpawnObjective(context, values) {
     tribeScore: context.entities.tribeLocs.length > 0 ? values.tribeScore : 1,
     nationScore: context.entities.nationLocs.length > 0 ? values.nationScore : 1,
     tribeReachScore: values.tribeReach.score, tribeReachCount: values.tribeReach.count,
+    tribeClusterScore: values.tribeClusterScore,
     freeLandScore: values.freeLandScore, resourceScore: values.resourceScore,
     clanScore: values.clanScore,
   });
@@ -1265,6 +1277,9 @@ function rankExactSpawnCandidate(context, args) {
   const tribeReach = tribeReachForCandidate(
     context.tribeProximity, x, y, freeLandScore, context.points.tribeLocs.length,
   );
+  const tribeClusterScore = tribeClusterScoreForCandidate(
+    context.tribeProximity, x, y, context.points.tribeLocs.length,
+  );
   const tribeScore = context.tribeProximity
     ? context.tribeProximity.score(x, y, SPAWN_HEATMAP_TRIBE_R) : 0;
   const nationScore = context.nationProximity ? context.nationProximity.score(x, y) : 0;
@@ -1281,7 +1296,8 @@ function rankExactSpawnCandidate(context, args) {
     ? 0 : Math.max(0, 1 - clanDistance / SPAWN_HEATMAP_TEAM_ATTRACT_R);
   const team = exactTeamCandidateScores(context, x, y);
   const score = clusterScore * SPAWN_W.land + plainsScore * SPAWN_W.plains +
-    tribeReach.score * SPAWN_W.tribe + tribeScore * SPAWN_W.tribe * 0.15 +
+    tribeReach.score * SPAWN_W.tribe + tribeClusterScore * SPAWN_W.tribe * 0.2 +
+    tribeScore * SPAWN_W.tribe * 0.15 +
     nationScore * SPAWN_W.nation + playerScore * SPAWN_W.player +
     edgeScore * SPAWN_W.edge + pressureScore * SPAWN_W.enemyPressure +
     team.score + clanScore * SPAWN_W.clan;
@@ -1290,12 +1306,13 @@ function rankExactSpawnCandidate(context, args) {
   );
   const objective = evaluateExactSpawnObjective(context, {
     clusterScore, frontierCoverage, playerScore, pressureScore, edgeScore,
-    teamScore: team.robust, tribeScore, nationScore, tribeReach, freeLandScore,
+    teamScore: team.robust, tribeScore, nationScore, tribeReach, tribeClusterScore, freeLandScore,
     resourceScore, clanScore,
   });
   insertExactSpawnCandidate(context.best, {
     ref: tile, x, y, score, spawnGain, frontierGain, frontierValueGain, freeLandScore,
     tribeScore, tribeReachCount: tribeReach.count, tribeReachScore: tribeReach.score,
+    tribeClusterScore,
     tribeReachRadius: tribeReach.radius, nationScore, resourceScore, clanScore,
     teamPolyhedronScore: context.teamPolyhedron ? 1 : 0, objective,
   });
@@ -1311,6 +1328,7 @@ function evaluateExactSpawnObjective(context, values) {
     tribeScore: context.points.tribeLocs.length > 0 ? values.tribeScore : 1,
     nationScore: context.points.nationLocs.length > 0 ? values.nationScore : 1,
     tribeReachScore: values.tribeReach.score, tribeReachCount: values.tribeReach.count,
+    tribeClusterScore: values.tribeClusterScore,
     freeLandScore: values.freeLandScore, resourceScore: values.resourceScore,
     clanScore: values.clanScore, teamPolyhedronScore: context.teamPolyhedron ? 1 : 0,
   });

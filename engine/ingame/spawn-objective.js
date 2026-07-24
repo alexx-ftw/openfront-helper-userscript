@@ -94,6 +94,7 @@
     const tribeReachCount = Number.isFinite(Number(candidate.tribeReachCount))
       ? Math.max(0, Number(candidate.tribeReachCount))
       : 0;
+    const tribeClusterScore = clampScore(candidate.tribeClusterScore, 1);
     const freeLandScore = clampScore(candidate.freeLandScore, 1);
     const resourceScore = clampScore(candidate.resourceScore, 1);
     const clanScore = clampScore(candidate.clanScore);
@@ -107,6 +108,7 @@
       nationScore,
       tribeReachScore,
       tribeReachCount,
+      tribeClusterScore,
       freeLandScore,
       resourceScore,
       clanScore,
@@ -128,7 +130,7 @@
     const insideTeamPolyhedron =
       leftObjective.teamPolyhedronScore === 1 && rightObjective.teamPolyhedronScore === 1;
     const dimensions = insideTeamPolyhedron
-      ? "freeLandScore expansionScore tribeReachCount tribeReachScore resourceScore robustFloor safetyScore tribeScore nationScore startScore teamScore clanScore".split(" ")
+      ? "freeLandScore expansionScore tribeClusterScore tribeReachCount tribeReachScore resourceScore robustFloor safetyScore tribeScore nationScore startScore teamScore clanScore".split(" ")
       : "robustFloor safetyScore expansionScore tribeReachScore tribeReachCount freeLandScore resourceScore tribeScore nationScore startScore teamScore clanScore".split(" ");
     for (const dimension of dimensions) {
       if (leftObjective[dimension] !== rightObjective[dimension]) {

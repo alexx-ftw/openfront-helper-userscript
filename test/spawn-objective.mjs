@@ -162,6 +162,36 @@ test("tribe and nation opportunity is part of the robust spawn objective", () =>
   assert.equal(ranked[0].objective.resourceScore, 0.8);
 });
 
+test("inside-team spawn ranking prefers the densest tribe cluster", () => {
+  const ranked = api.rankModelCandidates([
+    {
+      id: "broad-reach",
+      freeLandScore: 0.8,
+      expansionScore: 0.8,
+      safetyScore: 0.8,
+      teamScore: 1,
+      teamPolyhedronScore: 1,
+      tribeClusterScore: 0.2,
+      tribeReachCount: 5,
+      tribeReachScore: 0.8,
+      resourceScore: 0.8,
+    },
+    {
+      id: "dense-cluster",
+      freeLandScore: 0.8,
+      expansionScore: 0.8,
+      safetyScore: 0.8,
+      teamScore: 1,
+      teamPolyhedronScore: 1,
+      tribeClusterScore: 0.9,
+      tribeReachCount: 4,
+      tribeReachScore: 0.8,
+      resourceScore: 0.8,
+    },
+  ]);
+  assert.equal(ranked[0].id, "dense-cluster");
+});
+
 test("allied support beats an isolated richer frontier", () => {
   const ranked = api.rankModelCandidates([
     {
