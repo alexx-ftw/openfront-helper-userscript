@@ -1542,6 +1542,25 @@ assert.deepEqual(
   [UNIT.Port],
   "The first ocean Port is attempted before City or Factory so their failed probes cannot starve it",
 );
+behavior.ownedLevels = () => 1;
+const establishedEconomyCalls = [];
+behavior.maybeSpawnStructure = async (type) => {
+  establishedEconomyCalls.push(type);
+  return type === UNIT.Factory;
+};
+assert.equal(
+  await behavior.maybePrioritizeHighGoldEconomicConstruction({
+    config: { isUnitDisabled: () => false },
+    hasOceanPortTiles: true,
+  }),
+  true,
+  "An established economy opens the next train-producing Factory first",
+);
+assert.deepEqual(
+  establishedEconomyCalls,
+  [UNIT.Factory],
+  "High-gold fallback prioritizes Factory before surplus Port or City",
+);
 behavior.ownedLevels = originalOwnedLevelsForOpeningPort;
 behavior.getPerceivedCost = originalPerceivedCost;
 behavior.maybeSpawnStructure = originalMaybeSpawnStructure;

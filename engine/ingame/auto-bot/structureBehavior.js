@@ -1801,9 +1801,15 @@
         this.ownedLevels(UNIT.City) > 0 &&
         this.ownedLevels(UNIT.Port) === 0 &&
         !config.isUnitDisabled(UNIT.Port);
-      const buildOrder = openingOceanPort
-        ? [UNIT.Port, UNIT.City, UNIT.Factory]
-        : [UNIT.City, UNIT.Factory, UNIT.Port];
+      const hasFoundationalCity = this.ownedLevels(UNIT.City) > 0;
+      let buildOrder;
+      if (openingOceanPort) {
+        buildOrder = [UNIT.Port, UNIT.Factory, UNIT.City];
+      } else if (hasFoundationalCity) {
+        buildOrder = [UNIT.Factory, UNIT.Port, UNIT.City];
+      } else {
+        buildOrder = [UNIT.City, UNIT.Factory, UNIT.Port];
+      }
       for (const structureType of buildOrder) {
         if (config.isUnitDisabled(structureType)) continue;
         if (structureType === UNIT.Port && !hasOceanPortTiles) continue;
