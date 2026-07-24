@@ -48,6 +48,7 @@ const SPAWN_HEATMAP_TEAM_MIN_GAP = 30;
 const SPAWN_HEATMAP_TEAM_IDEAL_MAX = 90;
 const SPAWN_HEATMAP_TEAM_OVERLAP_MAX = 0.4;
 const SPAWN_HEATMAP_TEAM_CENTROID_R = 260;
+const SPAWN_TEAM_INTERIOR_MARGIN = 12;
 
 // The exact selector keeps ten map-sized typed arrays plus transient terrain
 // and occupancy copies. Keep its optional peak allocation below 32 MiB; larger maps
@@ -806,7 +807,23 @@ function buildTeamSpawnRegion(points) {
 
 function isPointInsideTeamSpawnRegion(x, y, region) {
   if (!region) return true;
-  if (region.polygon) return isPointInsideTeamPolyhedron(x, y, region.polygon);
+  if (region.polygon) {
+    if (!isPointInsideTeamPolyhedron(x, y, region.polygon)) return false;
+    // Being technically inside the hull is not enough: candidates on or just
+    // inside a teammate's frontier are vulnerable and do not satisfy the
+    // intended team-interior spawn. Require a small inset from every hull edge.
+    for (let index = 0; index < region.polygon.length; index += 1) {
+      const start = region.polygon[index];
+      const end = region.polygon[(index + 1) % region.polygon.length];
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const length = Math.hypot(dx, dy);
+      if (length <= 0) continue;
+      const distance = Math.abs(dx * (y - start.y) - dy * (x - start.x)) / length;
+      if (distance < SPAWN_TEAM_INTERIOR_MARGIN) return false;
+    }
+    return true;
+  }
   const corridor = region.corridor;
   if (!corridor || corridor.lengthSquared <= 0) return true;
   const dx = corridor.end.x - corridor.start.x;
