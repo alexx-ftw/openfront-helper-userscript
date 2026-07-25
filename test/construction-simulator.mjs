@@ -3,7 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { executeClassicScript } from "./helpers/classic-script.mjs";
-import { createConstructionSimulator } from "./helpers/construction-simulator.mjs";
+import {
+  createConstructionSimulator,
+  simulateRailTransitRevenue,
+} from "./helpers/construction-simulator.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const structureSource = fs.readFileSync(
@@ -115,6 +118,46 @@ assert.deepEqual(
   curveCities,
   [17, 35, 18, 27, 19],
   "City attempts select endpoints and direct rail segments before a rail curve",
+);
+
+const railJunction = new Map([
+  ["factory-west", ["junction"]],
+  ["factory-south", ["junction"]],
+  ["junction", ["factory-west", "factory-south", "city-east", "city-north"]],
+  ["city-east", ["junction"]],
+  ["city-north", ["junction"]],
+]);
+const railBranch = new Map([
+  ["factory-west", ["branch"]],
+  ["factory-south", ["junction"]],
+  ["branch", ["factory-west", "junction"]],
+  ["junction", ["factory-south", "branch", "city-east", "city-north"]],
+  ["city-east", ["junction"]],
+  ["city-north", ["junction"]],
+]);
+const stationTypes = new Map([
+  ["factory-west", "Factory"],
+  ["factory-south", "Factory"],
+  ["city-east", "City"],
+  ["city-north", "City"],
+]);
+const junctionRevenue = simulateRailTransitRevenue({
+  adjacency: railJunction,
+  stationTypes,
+  factoryIds: ["factory-west", "factory-south"],
+  destinationIds: ["city-east", "city-north"],
+  candidateId: "junction",
+});
+const branchRevenue = simulateRailTransitRevenue({
+  adjacency: railBranch,
+  stationTypes,
+  factoryIds: ["factory-west", "factory-south"],
+  destinationIds: ["city-east", "city-north"],
+  candidateId: "branch",
+});
+assert.ok(
+  junctionRevenue.revenueByStation.get("junction") > branchRevenue.revenueByStation.get("branch"),
+  "a City at a transit junction earns from more Factory-to-destination routes than a branch City",
 );
 
 process.stdout.write("construction simulator tests passed\n");
