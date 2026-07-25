@@ -38,4 +38,19 @@ const gameRunner = readFileSync(resolve(engineDirectory, "src/core/GameRunner.ts
 assert.match(gameRunner, /export async function createGameRunner/u);
 assert.match(gameRunner, /export class GameRunner/u);
 
+const configSource = readFileSync(
+  resolve(engineDirectory, "src/core/configuration/Config.ts"),
+  "utf8",
+);
+assert.match(configSource, /nukeSpeed\(unitType: UnitType\)/u);
+const gameApiSource = readFileSync(
+  resolve(repositoryRoot, "engine/ingame/auto-bot/gameApi.js"),
+  "utf8",
+);
+assert.match(
+  gameApiSource,
+  /prop === "defaultNukeSpeed"[\s\S]*?t\.nukeSpeed\(UNIT\.AtomBomb\)/u,
+  "the userscript config adapter preserves the legacy trajectory-speed contract after engine migration",
+);
+
 console.warn(`OpenFront engine compatibility passed at ${gitlink.split(" ")[1]}`);

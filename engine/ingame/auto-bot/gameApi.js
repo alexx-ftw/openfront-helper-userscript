@@ -632,6 +632,17 @@
       _configProxy = new Proxy(sc, {
         get(t, prop) {
           if (prop === "maxTroops") return (p) => sc.maxTroops(unwrap(p));
+          // OpenFront renamed the legacy defaultNukeSpeed accessor to the
+          // per-warhead nukeSpeed(unitType) API. Keep the port contract stable
+          // for the trajectory, SAM, and missile planners while always asking
+          // the current engine for the Atom-bomb speed.
+          if (
+            prop === "defaultNukeSpeed" &&
+            typeof t.defaultNukeSpeed !== "function" &&
+            typeof t.nukeSpeed === "function"
+          ) {
+            return () => t.nukeSpeed(UNIT.AtomBomb);
+          }
           const v = t[prop];
           return typeof v === "function" ? v.bind(t) : v;
         },

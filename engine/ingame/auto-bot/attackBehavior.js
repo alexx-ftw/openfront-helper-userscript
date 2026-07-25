@@ -135,6 +135,12 @@
   // changes still invalidate immediately, so retain the coherent graph for
   // twenty-four seconds when its node set is stable.
   const EARLY_GAME_TRIBE_TOPOLOGY_CACHE_TICKS = 240;
+  // A completed planner pass can legitimately find no reachable tribe even
+  // while distant tribes remain alive. Repeating that whole-map scan on every
+  // strategic cadence creates avoidable frame spikes without producing an
+  // attack. Keep a short negative result, but bypass it immediately when the
+  // cheap border snapshot sees a newly actionable tribe.
+  const EARLY_GAME_TRIBE_EMPTY_RETRY_TICKS = 120;
   // Rebuilding every tribe's food-race vector against every visible player is
   // quadratic on crowded maps.  Keep one short snapshot only while an exact
   // live-state signature proves that no owner, movement, troop, or attack
@@ -745,6 +751,7 @@
       // one and still revalidate live target troops immediately before send.
       this.earlyGameTribeCandidatesCache = null;
       this.earlyGameTribeCandidatesRefresh = null;
+      this.earlyGameTribeEmptyRetryAtTick = 0;
       this.earlyGameTribeBoatEtaCache = new Map();
       // Opportunistic boat selection proves a route before returning a target,
       // then emission checks that identical target again. Keep the authoritative
@@ -4285,12 +4292,24 @@
         return this.getEarlyGameTribeCandidates(profile);
       }
       const cached = this.earlyGameTribeCandidatesCache;
-      if (this.earlyGameTribeCandidatesRefresh === null) {
+      const currentTick = this.currentAttackDecisionTick();
+      const cachedEmpty = Array.isArray(cached) && cached.length === 0;
+      const directlyActionableTribe = state.earlyGame?.hasTribeTarget === true;
+      const emptyRetryAtTick = Number(this.earlyGameTribeEmptyRetryAtTick) || 0;
+      const shouldRefresh =
+        !cachedEmpty ||
+        directlyActionableTribe ||
+        currentTick >= emptyRetryAtTick;
+      if (this.earlyGameTribeCandidatesRefresh === null && shouldRefresh) {
         const refresh = this.getEarlyGameTribeCandidates(profile);
         this.earlyGameTribeCandidatesRefresh = refresh;
         refresh.then((candidates) => {
           if (this.earlyGameTribeCandidatesRefresh !== refresh) return;
           this.earlyGameTribeCandidatesCache = candidates;
+          this.earlyGameTribeEmptyRetryAtTick =
+            Array.isArray(candidates) && candidates.length === 0
+              ? this.currentAttackDecisionTick() + EARLY_GAME_TRIBE_EMPTY_RETRY_TICKS
+              : 0;
           this.earlyGameTribeCandidatesRefresh = null;
         });
       }

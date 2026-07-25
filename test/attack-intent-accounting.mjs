@@ -257,6 +257,45 @@ assert.equal(
   "the next decision receives the completed tribe snapshot while another refresh runs",
 );
 
+// A completed scan with no reachable tribe is a negative result, not a reason
+// to rebuild the whole strategic topology every combat cadence. A newly
+// bordering tribe remains an immediate escape hatch from that short backoff.
+const emptyCandidateBehavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
+let emptyRefreshStarts = 0;
+let resolveEmptyRefresh;
+emptyCandidateBehavior.getEarlyGameTribeCandidates = () => {
+  emptyRefreshStarts++;
+  return new Promise((resolve) => {
+    resolveEmptyRefresh = resolve;
+  });
+};
+tick = 100;
+sandbox.state.earlyGame = { hasTribeTarget: false };
+assert.equal(
+  (await emptyCandidateBehavior.getReadyEarlyGameTribeCandidates()).length,
+  0,
+  "the first empty planner refresh remains asynchronous",
+);
+resolveEmptyRefresh([]);
+await Promise.resolve();
+tick = 101;
+assert.equal(
+  (await emptyCandidateBehavior.getReadyEarlyGameTribeCandidates()).length,
+  0,
+  "a recent empty result reuses its negative cache instead of restarting topology work",
+);
+assert.equal(emptyRefreshStarts, 1);
+sandbox.state.earlyGame = { hasTribeTarget: true };
+assert.equal(
+  (await emptyCandidateBehavior.getReadyEarlyGameTribeCandidates()).length,
+  0,
+  "a directly actionable tribe may trigger a refresh before the empty-cache retry tick",
+);
+assert.equal(emptyRefreshStarts, 2, "a new bordering tribe bypasses the negative-cache backoff");
+resolveEmptyRefresh([target]);
+await Promise.resolve();
+sandbox.state.earlyGame = {};
+
 behavior.botAttackPendingIntentCommitments = [
   { targetIsPlayer: true, targetKey: "2", troops: 1000 },
 ];
