@@ -43,6 +43,13 @@ behavior.player = simulator.player;
 behavior.prependSamCoveredTiles = (tiles) => tiles;
 sandbox.randTerritoryTileArray = simulator.randomTerritoryTiles;
 
+assert.deepEqual(
+  Array.from(behavior.structureCandidateTiles(sandbox.UNIT.City, {}, 2)),
+  [20, 50],
+  "City evaluation contains rail anchors rather than random territory while owned rail exists",
+);
+behavior._commercialRailCityAnchorOffset = 0;
+
 const builtCities = [];
 for (let attempt = 0; attempt < 4; attempt++) {
   const candidates = behavior.structureCandidateTiles(sandbox.UNIT.City, {}, 2);
