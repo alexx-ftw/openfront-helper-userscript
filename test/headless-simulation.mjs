@@ -223,6 +223,12 @@ assert.match(runner, /appendFileSync\(traceFile/);
 assert.match(runner, /const logSamLifecycle = logStructures \|\| traceFile !== undefined/);
 assert.match(runner, /OFH_LOG_INTENTS/);
 assert.match(runner, /OFH_LOG_NAVAL/);
+assert.match(runner, /OFH_INJECT_OWN_PORT/);
+assert.match(
+  runner,
+  /me\.buildUnit\(UnitType\.Port, coastTile, \{\}\)[\s\S]{0,500}own-port-injected/,
+  "the naval fixture must materialize an own coastal Port through the engine",
+);
 assert.match(
   adapter,
   /maritimeEmergency,/,

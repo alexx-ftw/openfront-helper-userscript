@@ -87,6 +87,10 @@ const numericStartingGold = Number(requestedStartingGold);
 const requestedNations = process.env.OFH_NATIONS;
 const numericNations = Number(requestedNations);
 const forceNukesEnabled = process.env.OFH_NUKES === "1";
+// Test-only maritime fixture. Materialize a completed own Port once a spawned
+// nation owns a coast so Warship policy can be exercised independently of the
+// economy's preceding Port timing.
+const injectOwnPort = process.env.OFH_INJECT_OWN_PORT === "1";
 // Test-only pressure fixture. This never reaches the userscript: it lets
 // missile-defense policy face an incoming hostile warhead deterministically.
 const injectHostileAtom = process.env.OFH_INJECT_HOSTILE_ATOM === "1";
@@ -463,6 +467,21 @@ const sortedCounts = (counts: ReadonlyMap<string, number>) =>
   Object.fromEntries([...counts].sort(([left], [right]) => left.localeCompare(right)));
 const firstOwnedTile = (player: { tiles: () => Iterable<number> }) =>
   player.tiles().values().next().value ?? null;
+let ownPortInjected = false;
+const injectOwnPortIfReady = () => {
+  if (ownPortInjected || !injectOwnPort || !me?.isAlive()) return;
+  const coastTile = [...me.tiles()].find(
+    (tile) =>
+      runner.game.isLand(tile) &&
+      runner.game.neighbors(tile).some((next) => runner.game.isWater(next)),
+  );
+  if (coastTile === undefined) return;
+  me.buildUnit(UnitType.Port, coastTile, {});
+  ownPortInjected = true;
+  console.warn(
+    JSON.stringify({ phase: "own-port-injected", tick: runner.game.ticks(), coastTile }),
+  );
+};
 let hostileMissileInjected = false;
 let hostileMissileInjectionTick: number | null = null;
 let hostileMissileTargetCityID: number | null = null;
@@ -613,6 +632,7 @@ const updateStrategicTrajectory = () => {
   }
 };
 while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fatalError === null) {
+  injectOwnPortIfReady();
   injectHostileAtomIfReady();
   const decisionStartedAt = performance.now();
   const intents = await bot.decide();
