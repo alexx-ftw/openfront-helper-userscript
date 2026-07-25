@@ -8,7 +8,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OBJECTIVE_SOURCE = path.join(ROOT, "engine/ingame/spawn-objective.js");
 const HEATMAP_SOURCE = path.join(ROOT, "engine/ingame/spawn-heatmap.js");
 const LAND = 1 << 7;
-function makePlayer(type, x, y, id, { displayName = null, spawned = false } = {}) {
+function makePlayer(type, x, y, id, { displayName = null, spawned = false, team = null } = {}) {
   return {
     __src: displayName ? { static: { displayName } } : {},
     type: () => type,
@@ -18,6 +18,7 @@ function makePlayer(type, x, y, id, { displayName = null, spawned = false } = {}
     clientID: () => `client-${id}`,
     hasSpawned: () => spawned,
     displayName: () => displayName,
+    team: () => team,
   };
 }
 
@@ -247,6 +248,40 @@ const enclosed = loadScorer({
 });
 assert.equal(enclosed[0].x, 300, "spawn candidates outside the team polyhedron must be rejected");
 assert.equal(enclosed[0].teamPolyhedronScore, 1);
+
+const relationLagMe = makePlayer("HUMAN", 300, 150, 50, { team: "Green" });
+// The spawn-phase relation view is temporarily stale even though the lobby's
+// team ids are already authoritative.
+relationLagMe.isOnSameTeam = () => false;
+const relationLagGeometry = loadScorer({
+  width: enclosedWidth,
+  height: 300,
+  candidates: [
+    { ref: 150 * enclosedWidth + 300, x: 300, y: 150 },
+    { ref: 150 * enclosedWidth + 500, x: 500, y: 150 },
+  ],
+  metrics: {
+    [150 * enclosedWidth + 300]: { frontierGain: 20, frontierSlots: 20, frontierValueGain: 20000 },
+    [150 * enclosedWidth + 500]: {
+      frontierGain: 100,
+      frontierSlots: 100,
+      frontierValueGain: 100000,
+    },
+  },
+  players: [
+    relationLagMe,
+    makePlayer("HUMAN", 200, 80, 51, { spawned: true, team: "Green" }),
+    makePlayer("HUMAN", 400, 80, 52, { spawned: true, team: "Green" }),
+    makePlayer("HUMAN", 300, 240, 53, { spawned: true, team: "Green" }),
+  ],
+  me: relationLagMe,
+});
+assert.equal(
+  relationLagGeometry[0].x,
+  300,
+  "stable team ids keep the spawn inside the own-team hull while relations are delayed",
+);
+assert.equal(relationLagGeometry[0].teamPolyhedronScore, 1);
 
 const pairedTeamMe = makePlayer("HUMAN", 300, 150, 36);
 pairedTeamMe.isOnSameTeam = (player) => [37, 38].includes(player.smallID());

@@ -338,7 +338,8 @@ let _spawnHeatmapWasInSpawnPhase = false;
 // Player spawn positions tracked from WebSocket spawn intents.
 // Map: clientID -> {x, y}. Populated by observeSpawnIntents().
 const _spawnPlayerPositions = new Map();
-// Teammate clientIDs — refreshed each scan from getPlayerRelationToMyPlayer.
+// Teammate clientIDs — refreshed from the authoritative team relation, with
+// the stable team id as a spawn-phase fallback while player relations settle.
 const _spawnTeammateClientIds = new Set();
 
 // ── Spawn intent tracking (from enemy-intent-intel WebSocket hook) ──────
@@ -685,11 +686,9 @@ function refreshTeammateClientIds(game, me) {
   for (let i = 0; i < players.length; i += 1) {
     const p = players[i];
     if (!p || !p.isAlive || !p.isAlive()) continue;
-    {
-      if (me.isOnSameTeam && me.isOnSameTeam(p)) {
-        const cid = p.clientID ? p.clientID() : null;
-        if (cid != null) _spawnTeammateClientIds.add(cid);
-      }
+    if (spawnPlayersAreTeammates(me, p)) {
+      const cid = p.clientID ? p.clientID() : null;
+      if (cid != null) _spawnTeammateClientIds.add(cid);
     }
   }
 }
@@ -874,9 +873,14 @@ function spawnPlayersShareClan(player, context) {
 }
 
 function spawnPlayersAreTeammates(me, player) {
-  {
-    return Boolean(me?.isOnSameTeam?.(player));
-  }
+  if (me?.isOnSameTeam?.(player) === true) return true;
+  // During spawn selection the relation view can lag behind the lobby team
+  // assignment. The team id is already authoritative then; without this
+  // fallback a whole Green/Red/Blue hull is classified as enemies and the bot
+  // may select an exterior point between hostile teams.
+  const ownTeam = me?.team?.();
+  const otherTeam = player?.team?.();
+  return ownTeam != null && otherTeam != null && ownTeam === otherTeam;
 }
 
 function collectSpawnPlayerGroups(game, me, objectiveApi) {

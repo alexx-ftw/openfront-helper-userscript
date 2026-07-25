@@ -10,6 +10,17 @@ const earlyGameSource = fs.readFileSync(earlyGamePath, "utf8");
 const sourcePath = path.join(repoRoot, "engine/ingame/auto-bot/attackBehavior.js");
 const source = fs.readFileSync(sourcePath, "utf8");
 
+assert.match(
+  source,
+  /EARLY_GAME_MARITIME_SLICE_INTERVAL_TICKS\s*=\s*4/,
+  "maritime index preparation is explicitly throttled between attack-relevant ticks",
+);
+assert.match(
+  source,
+  /tick - lastSliceTick < EARLY_GAME_MARITIME_SLICE_INTERVAL_TICKS/,
+  "the maritime slice throttle guards the expensive cooperative advance",
+);
+
 const UNIT = {
   TransportShip: "Transport",
   City: "City",

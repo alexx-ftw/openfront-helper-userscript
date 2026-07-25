@@ -160,6 +160,11 @@
   const EARLY_GAME_TRIBE_NODE_SLICE_MS = 4;
   const EARLY_GAME_MARITIME_SLICE_WORK = 20_000;
   const EARLY_GAME_MARITIME_SLICE_MS = 4;
+  // Maritime distance is only consumed by the attack cadence, so processing it
+  // every game tick needlessly steals time from rendering/engine execution.
+  // Keep the cooperative index warm without spending four milliseconds on each
+  // intervening tick.
+  const EARLY_GAME_MARITIME_SLICE_INTERVAL_TICKS = 4;
   // The game's troop growth is (10 + troops^0.73 / 4) * (1 - troops / max).
   // Keep the formula constants here so the reserve follows the real production
   // curve instead of relying on its approximate 42% peak ratio.
@@ -742,6 +747,7 @@
       this.earlyGameMaritimeSliceWorkRemaining = Infinity;
       this.earlyGameMaritimeSliceDeadline = Infinity;
       this.earlyGameMaritimeSliceDeadlineProbe = 0;
+      this.earlyGameMaritimeLastSliceTick = -Infinity;
       this.opportunisticBoatSurgeTickByTile = new Map();
       this.earlyGamePreferredClusterTargetKeys = new Set();
       this.resetEarlyGameTribeTopologyCache();
@@ -2912,6 +2918,16 @@
         this.earlyGameMaritimeIndex = null;
         return;
       }
+      const tick = Number(this.game.ticks?.());
+      const lastSliceTick = Number(this.earlyGameMaritimeLastSliceTick);
+      if (
+        Number.isFinite(tick) &&
+        Number.isFinite(lastSliceTick) &&
+        tick - lastSliceTick < EARLY_GAME_MARITIME_SLICE_INTERVAL_TICKS
+      ) {
+        return;
+      }
+      if (Number.isFinite(tick)) this.earlyGameMaritimeLastSliceTick = tick;
       profileAttackSync(profile, "tribes-maritime-index-prep", () => {
         this.earlyGameMaritimeSliceWorkRemaining =
           EARLY_GAME_MARITIME_SLICE_WORK;
