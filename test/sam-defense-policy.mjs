@@ -163,6 +163,35 @@ assert.deepEqual(
   "Factory trade scoring excludes other Factories because they do not pay train gold",
 );
 
+const alliedDestinationBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+const alliedStation = station(200, "ally-city");
+const alliedTradeOwner = {
+  isPlayer: () => true,
+  type: () => "Human",
+  id: () => 2,
+  hasEmbargoAgainst: () => false,
+  units: (...types) => (types.includes(sandbox.UNIT.City) ? [alliedStation] : []),
+};
+alliedDestinationBehavior.player = {
+  id: () => 1,
+  hasEmbargoAgainst: () => false,
+  isAlliedWith: () => true,
+  isOnSameTeam: () => false,
+  units: (...types) => (types.includes(sandbox.UNIT.City) ? [station(100, "self-city")] : []),
+  nearby: () => [alliedTradeOwner],
+};
+alliedDestinationBehavior.trainGoldBase = (relation) =>
+  relation === "ally" ? 35_000 : 10_000;
+const alliedDestinations = Array.from(
+  alliedDestinationBehavior.collectReachableStations([sandbox.UNIT.City, sandbox.UNIT.Port]),
+);
+assert.equal(alliedDestinations.length, 2);
+assert.ok(
+  alliedDestinations.find((entry) => entry.tile === 200).weight >
+    alliedDestinations.find((entry) => entry.tile === 100).weight,
+  "a tradeable allied City is the higher-value Factory destination",
+);
+
 const sparseRailBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 const sparseRailState = new Uint8Array(2_000_000);
 for (const tile of [100, 101, 102, 1_000_000]) sparseRailState[tile] = 1;
