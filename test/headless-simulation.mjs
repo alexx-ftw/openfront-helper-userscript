@@ -233,6 +233,9 @@ assert.match(
 assert.match(runner, /phase:\s*"spawn-selection-trace"/);
 assert.match(adapter, /kind:\s*"spawn-ranking"/);
 assert.match(adapter, /topSpots:\s*Array\.isArray\(topSpots\)/);
+assert.match(adapter, /teamAnchors:\s*Array\.isArray\(spawnPoints\?\.teamSpawns\)/);
+assert.match(adapter, /selectedInsideTeamRegion/);
+assert.match(adapter, /isPointInsideTeamSpawnRegion/);
 assert.match(adapter, /kind: "spawn-gate"/);
 assert.match(adapter, /spawnEnabled: nationBot\.feat\?\.\("spawn"\) === true/);
 assert.match(adapter, /getIntentRateLimitSnapshot/);

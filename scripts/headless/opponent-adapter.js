@@ -166,6 +166,9 @@ window.__OFH_realOpponentHarness = {
   finishAutoBotProfileTick,
   getAutoBotProfileSnapshot
   ,computeSpawnTopSpotsForBot
+  ,collectExactSpawnPoints
+  ,getTeamSpawnRegion
+  ,isPointInsideTeamSpawnRegion
 };
 `;
   return rawSource.slice(0, exportIndex) + exportHook + rawSource.slice(exportIndex);
@@ -203,6 +206,55 @@ export function createMaxDifficultyOpponent(options = {}) {
     },
     ...options,
   });
+}
+
+function parseSpawnCoordinates(selectedKey) {
+  if (typeof selectedKey !== "string") return null;
+  const [xRaw, yRaw] = selectedKey.split(",");
+  const x = Number(xRaw);
+  const y = Number(yRaw);
+  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+}
+
+function serializeTeamSpawnRegion(teamRegion) {
+  if (teamRegion?.polygon) {
+    return {
+      kind: "polygon",
+      polygon: teamRegion.polygon.map(({ x, y }) => ({ x, y })),
+      corridor: null,
+    };
+  }
+  if (teamRegion?.corridor) {
+    return {
+      kind: "corridor",
+      polygon: [],
+      corridor: {
+        start: teamRegion.corridor.start,
+        end: teamRegion.corridor.end,
+        halfWidth: teamRegion.corridor.halfWidth,
+      },
+    };
+  }
+  return { kind: "none", polygon: [], corridor: null };
+}
+
+function createSpawnGeometryCertificate(internals, pageGame, selectedKey) {
+  const player = pageGame.myPlayer();
+  const spawnPoints = internals.collectExactSpawnPoints?.(pageGame, player);
+  const teamRegion = internals.getTeamSpawnRegion?.(pageGame, player);
+  const selected = parseSpawnCoordinates(selectedKey);
+  let selectedInsideTeamRegion = null;
+  if (selected && teamRegion) {
+    selectedInsideTeamRegion =
+      internals.isPointInsideTeamSpawnRegion?.(selected.x, selected.y, teamRegion) === true;
+  }
+  return {
+    teamAnchors: Array.isArray(spawnPoints?.teamSpawns)
+      ? spawnPoints.teamSpawns.map(({ x, y }) => ({ x, y }))
+      : [],
+    teamRegion: serializeTeamSpawnRegion(teamRegion),
+    selectedInsideTeamRegion,
+  };
 }
 
 export class BundledOpponentBot {
@@ -350,6 +402,11 @@ export class BundledOpponentBot {
     if (typeof originalCurrentSpawnTopKey === "function") {
       nationBot.currentSpawnTopKey = (...args) => {
         const selectedKey = originalCurrentSpawnTopKey.apply(nationBot, args);
+        const geometry = createSpawnGeometryCertificate(
+          this.harness.internals,
+          this.pageGame,
+          selectedKey,
+        );
         const topSpots = this.harness.internals.computeSpawnTopSpotsForBot?.(
           this.pageGame,
           this.pageGame.myPlayer(),
@@ -359,6 +416,7 @@ export class BundledOpponentBot {
           kind: "spawn-ranking",
           tick: this.game.ticks(),
           selectedKey,
+          ...geometry,
           topSpots: Array.isArray(topSpots) ? topSpots.slice(0, 5) : [],
         });
         return selectedKey;
