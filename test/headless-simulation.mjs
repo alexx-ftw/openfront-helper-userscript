@@ -350,6 +350,7 @@ assert.match(runner, /activeMissiles,/);
 assert.match(runner, /OFH_INJECT_HOSTILE_ATOM/);
 assert.match(runner, /OFH_INJECT_HOSTILE_ATOM_AT_TICK/);
 assert.match(runner, /hostile-missile-injected/);
+assert.match(runner, /hostile-missile-resolved/);
 assert.match(runner, /new NukeExecution\(UnitType\.AtomBomb/);
 assert.match(runner, /hostile-missile-injection-missed/);
 assert.match(runner, /phase:\s*"conquered"/);

@@ -465,14 +465,24 @@ const firstOwnedTile = (player: { tiles: () => Iterable<number> }) =>
   player.tiles().values().next().value ?? null;
 let hostileMissileInjected = false;
 let hostileMissileInjectionTick: number | null = null;
+let hostileMissileTargetCityID: number | null = null;
+let hostileMissileTargetTile: number | null = null;
+let hostileMissileAttacker: string | null = null;
+let hostileMissileSource: number | null = null;
+let hostileMissileID: number | null = null;
+let hostileMissileTargetedBySam = false;
+let hostileMissileResolution: "intercepted" | "impact" | null = null;
+let hostileMissileResolvedTick: number | null = null;
+let hostileMissileSeen = false;
+let hostileMissileResolved = false;
 const injectHostileAtomIfReady = () => {
   if (hostileMissileInjected || !injectHostileAtom || !me?.isAlive()) return;
   if (runner.game.ticks() < hostileAtomNotBeforeTick) return;
   if (runner.game.isSpawnImmunityActive()) return;
-  const target = me
+  const targetCity = me
     .units(UnitType.City)
-    .find((city) => city.isActive() && !city.isUnderConstruction())
-    ?.tile();
+    .find((city) => city.isActive() && !city.isUnderConstruction());
+  const target = targetCity?.tile();
   if (target === undefined) return;
   const hostile = runner.game
     .players()
@@ -492,6 +502,10 @@ const injectHostileAtomIfReady = () => {
   runner.game.addExecution(new NukeExecution(UnitType.AtomBomb, hostile, target, source));
   hostileMissileInjected = true;
   hostileMissileInjectionTick = runner.game.ticks();
+  hostileMissileTargetCityID = targetCity.id();
+  hostileMissileTargetTile = target;
+  hostileMissileAttacker = hostile.name();
+  hostileMissileSource = source;
   console.warn(
     JSON.stringify({
       phase: "hostile-missile-injected",
@@ -502,6 +516,42 @@ const injectHostileAtomIfReady = () => {
       target,
       targetOwner: me.name(),
       targetOwnerTeam: me.team(),
+    }),
+  );
+};
+const observeHostileMissileFixture = () => {
+  if (!hostileMissileInjected || hostileMissileResolved) return;
+  const active = runner.game
+    .units(UnitType.AtomBomb)
+    .find(
+      (unit) =>
+        unit.owner().name() !== me?.name() && unit.targetTile() === hostileMissileTargetTile,
+    );
+  if (active) {
+    hostileMissileSeen = true;
+    hostileMissileID = active.id();
+    hostileMissileTargetedBySam ||= active.targetedBySAM();
+    return;
+  }
+  if (!hostileMissileSeen) return;
+  hostileMissileResolved = true;
+  hostileMissileResolvedTick = runner.game.ticks();
+  const targetSurvived = me
+    ?.units(UnitType.City)
+    .some((city) => city.id() === hostileMissileTargetCityID);
+  hostileMissileResolution = targetSurvived ? "intercepted" : "impact";
+  console.warn(
+    JSON.stringify({
+      phase: "hostile-missile-resolved",
+      tick: hostileMissileResolvedTick,
+      outcome: hostileMissileResolution,
+      missileID: hostileMissileID,
+      attacker: hostileMissileAttacker,
+      source: hostileMissileSource,
+      targetTile: hostileMissileTargetTile,
+      targetCityID: hostileMissileTargetCityID,
+      targetSurvived,
+      targetedBySam: hostileMissileTargetedBySam,
     }),
   );
 };
@@ -686,8 +736,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
           plannerRefreshStage: bot.nationBot?.attackBehavior?.earlyGameTribeRefreshStage ?? null,
           plannerRefreshPending:
             bot.nationBot?.attackBehavior?.earlyGameTribeCandidatesRefresh != null,
-          plannerRefreshStarts:
-            bot.nationBot?.attackBehavior?.earlyGameTribeRefreshStartCount ?? 0,
+          plannerRefreshStarts: bot.nationBot?.attackBehavior?.earlyGameTribeRefreshStartCount ?? 0,
           plannerEmptyCacheHits:
             bot.nationBot?.attackBehavior?.earlyGameTribeEmptyCacheHitCount ?? 0,
           plannerEmptyRetryAtTick:
@@ -748,6 +797,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
     stopReason = "engine_stop";
     break;
   }
+  observeHostileMissileFixture();
   // The live client receives each game tick from a worker task, so cooperative
   // `setTimeout(0)` slices run between ticks. A tight async loop otherwise
   // advances only through microtasks and starves those timers until the whole
@@ -1114,41 +1164,45 @@ if (injectHostileAtom && !hostileMissileInjected) {
 }
 
 const finalResult = {
-    phase: "result",
-    seed,
-    won,
-    winner: typeof winner === "string" ? winner : (winner?.name() ?? null),
-    myTeam: finalMe?.team() ?? null,
-    alive: finalMe?.isAlive() ?? false,
-    finalBotState,
-    ticks: runner.game.ticks(),
-    stopReason,
-    spawnLifecycle: bot.getSpawnLifecycleSnapshot(),
-    performanceProfile: profileBot ? bot.getPerformanceProfile() : undefined,
-    emittedIntents,
-    hostileMissileFixture: injectHostileAtom
-      ? {
-          injected: hostileMissileInjected,
-          injectedTick: hostileMissileInjectionTick,
-          notBeforeTick: hostileAtomNotBeforeTick,
-        }
-      : undefined,
-    cumulativeIntentTypes: sortedCounts(cumulativeIntentTypes),
-    cumulativeBuildUnitTypes: sortedCounts(cumulativeBuildUnitTypes),
-    constructionEvents: cumulativeBuildEvents,
-    strategicTrajectory: {
-      peakTiles: peakOwnedTiles,
-      deepestDrawdownRatio: Number(deepestDrawdownRatio.toFixed(4)),
-      drawdownPeakTiles,
-      drawdownTroughTiles,
-      drawdownTick,
-      comebackRecovered,
-      comebackTick,
-      closeoutReached,
-      closeoutTick,
-      maximumTerritoryShare: Number(maximumTerritoryShare.toFixed(4)),
-    },
-    runtimeMs: Math.round(performance.now() - startedAt),
+  phase: "result",
+  seed,
+  won,
+  winner: typeof winner === "string" ? winner : (winner?.name() ?? null),
+  myTeam: finalMe?.team() ?? null,
+  alive: finalMe?.isAlive() ?? false,
+  finalBotState,
+  ticks: runner.game.ticks(),
+  stopReason,
+  spawnLifecycle: bot.getSpawnLifecycleSnapshot(),
+  performanceProfile: profileBot ? bot.getPerformanceProfile() : undefined,
+  emittedIntents,
+  hostileMissileFixture: injectHostileAtom
+    ? {
+        injected: hostileMissileInjected,
+        injectedTick: hostileMissileInjectionTick,
+        notBeforeTick: hostileAtomNotBeforeTick,
+        missileID: hostileMissileID,
+        resolved: hostileMissileResolved,
+        resolvedTick: hostileMissileResolvedTick,
+        outcome: hostileMissileResolution,
+      }
+    : undefined,
+  cumulativeIntentTypes: sortedCounts(cumulativeIntentTypes),
+  cumulativeBuildUnitTypes: sortedCounts(cumulativeBuildUnitTypes),
+  constructionEvents: cumulativeBuildEvents,
+  strategicTrajectory: {
+    peakTiles: peakOwnedTiles,
+    deepestDrawdownRatio: Number(deepestDrawdownRatio.toFixed(4)),
+    drawdownPeakTiles,
+    drawdownTroughTiles,
+    drawdownTick,
+    comebackRecovered,
+    comebackTick,
+    closeoutReached,
+    closeoutTick,
+    maximumTerritoryShare: Number(maximumTerritoryShare.toFixed(4)),
+  },
+  runtimeMs: Math.round(performance.now() - startedAt),
   topPlayers: players.slice(0, 10),
 };
 
