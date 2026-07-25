@@ -224,6 +224,12 @@ assert.match(runner, /const logSamLifecycle = logStructures \|\| traceFile !== u
 assert.match(runner, /OFH_LOG_INTENTS/);
 assert.match(runner, /OFH_LOG_NAVAL/);
 assert.match(runner, /OFH_INJECT_OWN_PORT/);
+assert.match(runner, /OFH_INJECT_HOSTILE_TRANSPORT/);
+assert.match(
+  runner,
+  /new TransportShipExecution\(hostile, target, troops\)/,
+  "the maritime emergency fixture must use the engine transport execution",
+);
 assert.match(
   runner,
   /me\.buildUnit\(UnitType\.Port, coastTile, \{\}\)[\s\S]{0,500}own-port-injected/,

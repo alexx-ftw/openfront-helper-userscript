@@ -12,6 +12,7 @@ import {
 } from "../../openfront-engine/src/core/game/Game.ts";
 import { createGameRunner } from "../../openfront-engine/src/core/GameRunner.ts";
 import { NukeExecution } from "../../openfront-engine/src/core/execution/NukeExecution.ts";
+import { TransportShipExecution } from "../../openfront-engine/src/core/execution/TransportShipExecution.ts";
 import type { StampedIntent, Turn } from "../../openfront-engine/src/core/Schemas.ts";
 import { MapPlaylist } from "../../openfront-engine/src/server/MapPlaylist.ts";
 import { NodeGameMapLoader } from "../../openfront-engine/tests/perf/fullgame/NodeGameMapLoader.ts";
@@ -91,6 +92,8 @@ const forceNukesEnabled = process.env.OFH_NUKES === "1";
 // nation owns a coast so Warship policy can be exercised independently of the
 // economy's preceding Port timing.
 const injectOwnPort = process.env.OFH_INJECT_OWN_PORT === "1";
+const injectHostileTransport = process.env.OFH_INJECT_HOSTILE_TRANSPORT === "1";
+const hostileTransportNotBeforeTick = Number(process.env.OFH_INJECT_HOSTILE_TRANSPORT_AT_TICK ?? 0);
 // Test-only pressure fixture. This never reaches the userscript: it lets
 // missile-defense policy face an incoming hostile warhead deterministically.
 const injectHostileAtom = process.env.OFH_INJECT_HOSTILE_ATOM === "1";
@@ -112,6 +115,9 @@ if (!Number.isSafeInteger(hostileAtomNotBeforeTick) || hostileAtomNotBeforeTick 
   throw new Error(
     `OFH_INJECT_HOSTILE_ATOM_AT_TICK must be a non-negative safe integer, got ${process.env.OFH_INJECT_HOSTILE_ATOM_AT_TICK}`,
   );
+}
+if (!Number.isSafeInteger(hostileTransportNotBeforeTick) || hostileTransportNotBeforeTick < 0) {
+  throw new Error("OFH_INJECT_HOSTILE_TRANSPORT_AT_TICK must be a non-negative safe integer");
 }
 const fixedGameMode = requestedGameMode === "ffa" ? GameMode.FFA : GameMode.Team;
 if (
@@ -468,6 +474,7 @@ const sortedCounts = (counts: ReadonlyMap<string, number>) =>
 const firstOwnedTile = (player: { tiles: () => Iterable<number> }) =>
   player.tiles().values().next().value ?? null;
 let ownPortInjected = false;
+let hostileTransportInjected = false;
 const injectOwnPortIfReady = () => {
   if (ownPortInjected || !injectOwnPort || !me?.isAlive()) return;
   const coastTile = [...me.tiles()].find(
@@ -480,6 +487,37 @@ const injectOwnPortIfReady = () => {
   ownPortInjected = true;
   console.warn(
     JSON.stringify({ phase: "own-port-injected", tick: runner.game.ticks(), coastTile }),
+  );
+};
+const injectHostileTransportIfReady = () => {
+  if (hostileTransportInjected || !injectHostileTransport || !me?.isAlive()) return;
+  if (runner.game.ticks() < hostileTransportNotBeforeTick) return;
+  const target = firstOwnedTile(me);
+  const hostile = runner.game
+    .allPlayers()
+    .find(
+      (player) =>
+        player.isAlive() && player.team() !== me.team() && player.type() !== PlayerType.Bot,
+    );
+  if (target == null || !hostile) return;
+  const coastTile = [...hostile.tiles()].find(
+    (tile) =>
+      runner.game.isLand(tile) &&
+      runner.game.neighbors(tile).some((next) => runner.game.isWater(next)),
+  );
+  if (coastTile === undefined) return;
+  hostile.buildUnit(UnitType.Port, coastTile, {});
+  const troops = Math.max(1, Math.min(100, hostile.troops()));
+  runner.game.addExecution(new TransportShipExecution(hostile, target, troops));
+  hostileTransportInjected = true;
+  console.warn(
+    JSON.stringify({
+      phase: "hostile-transport-injected",
+      tick: runner.game.ticks(),
+      target,
+      coastTile,
+      troops,
+    }),
   );
 };
 let hostileMissileInjected = false;
@@ -633,6 +671,7 @@ const updateStrategicTrajectory = () => {
 };
 while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fatalError === null) {
   injectOwnPortIfReady();
+  injectHostileTransportIfReady();
   injectHostileAtomIfReady();
   const decisionStartedAt = performance.now();
   const intents = await bot.decide();
