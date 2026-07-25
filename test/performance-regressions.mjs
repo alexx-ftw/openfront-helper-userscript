@@ -539,4 +539,52 @@ assert.equal(
   "disabling the round logger must unregister its helper tick listener",
 );
 
+const heatmapSource = fs.readFileSync(path.join(ROOT, "engine/ingame/heatmaps.js"), "utf8");
+const heatmapSandbox = {
+  Float32Array,
+  Map,
+  Math,
+  Number,
+  Set,
+  WeakMap,
+  globalThis: null,
+};
+heatmapSandbox.globalThis = heatmapSandbox;
+executeClassicScript(
+  `${heatmapSource}
+globalThis.__heatmapLifecycle = {
+  releaseHeatmapWebGlRenderer,
+  seed(canvas, renderer) {
+    heatmapWebGlRenderers.set(canvas, renderer);
+    heatmapVertexBuffers.set(canvas, new Float32Array(16));
+  },
+  has(canvas) {
+    return heatmapWebGlRenderers.has(canvas) || heatmapVertexBuffers.has(canvas);
+  },
+};`,
+  heatmapSandbox,
+  { filename: path.join(ROOT, "engine/ingame/heatmaps.js") },
+);
+let lostHeatmapContexts = 0;
+const heatmapCanvas = {};
+heatmapSandbox.__heatmapLifecycle.seed(heatmapCanvas, {
+  gl: {
+    getExtension(name) {
+      assert.equal(name, "WEBGL_lose_context");
+      return { loseContext: () => (lostHeatmapContexts += 1) };
+    },
+  },
+});
+heatmapSandbox.__heatmapLifecycle.releaseHeatmapWebGlRenderer(heatmapCanvas);
+assert.equal(
+  lostHeatmapContexts,
+  1,
+  "removing a heatmap must release its WebGL context instead of risking eviction of the game map",
+);
+assert.equal(
+  heatmapSandbox.__heatmapLifecycle.has(heatmapCanvas),
+  false,
+  "released heatmap canvases must leave no renderer or vertex-buffer cache entry",
+);
+
 process.stdout.write("performance regression tests passed\n");

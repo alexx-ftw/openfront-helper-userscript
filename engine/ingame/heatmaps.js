@@ -619,6 +619,23 @@
     return renderer;
   }
 
+  function releaseHeatmapWebGlRenderer(canvas) {
+    if (!canvas) return;
+    const renderer = heatmapWebGlRenderers.get(canvas);
+    if (renderer) {
+      renderer.gl.getExtension("WEBGL_lose_context")?.loseContext();
+      heatmapWebGlRenderers.delete(canvas);
+    }
+    heatmapVertexBuffers.delete(canvas);
+  }
+
+  function removeHeatmapContainer(containerId, canvasClass) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    releaseHeatmapWebGlRenderer(container.querySelector(`.${canvasClass}`));
+    container.remove();
+  }
+
   function clearHeatmapCanvas(canvas) {
     const renderer = getHeatmapWebGlRenderer(canvas);
     if (renderer && !renderer.gl.isContextLost?.()) {
@@ -959,7 +976,7 @@
         incomingGoldTransfers.clear();
         runtimeState.lastProcessedIncomingGoldTransferTick = null;
       }
-      document.getElementById(ECONOMY_HEATMAP_CONTAINER_ID)?.remove();
+      removeHeatmapContainer(ECONOMY_HEATMAP_CONTAINER_ID, ECONOMY_HEATMAP_CANVAS_CLASS);
       return;
     }
 
@@ -978,7 +995,10 @@
       runtimeState.exportPartnerHeatmapAnimationFrame = null;
       runtimeState.lastExportPartnerHeatmapDrawAt = 0;
       resetExportPartnerHeatmapSourceCache();
-      document.getElementById(EXPORT_PARTNER_HEATMAP_CONTAINER_ID)?.remove();
+      removeHeatmapContainer(
+        EXPORT_PARTNER_HEATMAP_CONTAINER_ID,
+        EXPORT_PARTNER_HEATMAP_CANVAS_CLASS,
+      );
       if (!runtimeState.tradeBalancesEnabled && !runtimeState.economyHeatmapEnabled) {
         tradeBalanceTrackers.clear();
         exportPartnerSourceTrackers.clear();

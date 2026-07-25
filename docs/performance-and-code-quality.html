@@ -54,5 +54,12 @@
       reconstruction must not independently reclassify the complete border with
       <code>isShore</code> during the same snapshot window.
     </p>
+
+    <p>
+      Full-screen helper canvases that acquire a WebGL context must explicitly release that context
+      before their canvas is removed. Removing the DOM node alone can retain the GPU context until
+      garbage collection and repeated overlay toggles can force the browser to evict the game's
+      older map context.
+    </p>
   </body>
 </html>
