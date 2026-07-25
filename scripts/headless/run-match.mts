@@ -271,6 +271,7 @@ const logIntents = process.env.OFH_LOG_INTENTS === "1";
 const logNaval = process.env.OFH_LOG_NAVAL === "1";
 const logStructures = process.env.OFH_LOG_STRUCTURES === "1";
 const logSpawn = process.env.OFH_LOG_SPAWN === "1";
+const logAttackHotspots = process.env.OFH_LOG_ATTACK_HOTSPOTS === "1";
 // Persisted traces must always retain the lightweight SAM lifecycle. Full
 // structure diagnostics remain opt-in because they are much noisier.
 const logSamLifecycle = logStructures || traceFile !== undefined;
@@ -555,6 +556,10 @@ const injectHostileAtomIfReady = () => {
   if (source === null) return;
   // The silo is fixture setup, not an AI shortcut. NukeExecution still
   // performs the engine's ordinary trajectory, launch and SAM rules.
+  // Nations do not receive the Human infinite-gold rule. Fund the fixture
+  // attacker explicitly or NukeExecution correctly aborts at canBuild() and
+  // leaves no threat for the bot's missile-defense policy to observe.
+  hostile.addGold(100_000_000n);
   hostile.buildUnit(UnitType.MissileSilo, source, {});
   runner.game.addExecution(new NukeExecution(UnitType.AtomBomb, hostile, target, source));
   hostileMissileInjected = true;
@@ -683,6 +688,11 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   if (logNaval) {
     for (const entry of bot.drainNavalTrace()) {
       console.warn(JSON.stringify({ ...entry, phase: "naval-trace", event: entry.phase }));
+    }
+  }
+  if (logAttackHotspots) {
+    for (const entry of bot.drainAttackHotspotTrace()) {
+      console.warn(JSON.stringify({ ...entry, phase: "attack-hotspot-trace" }));
     }
   }
   if (logStructures) {
@@ -1241,6 +1251,7 @@ const finalResult = {
         injectedTick: hostileMissileInjectionTick,
         notBeforeTick: hostileAtomNotBeforeTick,
         missileID: hostileMissileID,
+        seen: hostileMissileSeen,
         resolved: hostileMissileResolved,
         resolvedTick: hostileMissileResolvedTick,
         outcome: hostileMissileResolution,
@@ -1270,5 +1281,8 @@ const finalResult = {
 // flush that line before exiting rather than relying on the event loop to
 // become idle.
 process.stderr.write(`${JSON.stringify(finalResult)}\n`, () => {
-  process.exit(won && (!injectHostileAtom || hostileMissileInjected) ? 0 : 2);
+  const hostileMissileFixtureComplete =
+    !injectHostileAtom ||
+    (hostileMissileInjected && hostileMissileSeen && hostileMissileResolved);
+  process.exit(won && hostileMissileFixtureComplete ? 0 : 2);
 });

@@ -278,6 +278,7 @@ export class BundledOpponentBot {
     this.navalTrace = [];
     this.structureTrace = [];
     this.spawnTrace = [];
+    this.attackHotspotTrace = [];
     this.api = null;
     this.pageGame = null;
     this.nationBot = null;
@@ -321,7 +322,7 @@ export class BundledOpponentBot {
         const result = await original.apply(behavior, args);
         const ms = performance.now() - startedAt;
         if (ms >= 15) {
-          this.structureTrace.push({
+          this.attackHotspotTrace.push({
             kind: "attack-hotspot",
             tick: this.game.ticks(),
             name,
@@ -347,7 +348,7 @@ export class BundledOpponentBot {
         const result = original.apply(behavior, args);
         const ms = performance.now() - startedAt;
         if (ms >= 5) {
-          this.structureTrace.push({
+          this.attackHotspotTrace.push({
             kind: "attack-hotspot",
             tick: this.game.ticks(),
             name,
@@ -357,6 +358,10 @@ export class BundledOpponentBot {
         return result;
       };
     }
+  }
+
+  drainAttackHotspotTrace() {
+    return this.attackHotspotTrace.splice(0);
   }
 
   enableSpawnTrace() {

@@ -223,6 +223,8 @@ assert.match(runner, /appendFileSync\(traceFile/);
 assert.match(runner, /const logSamLifecycle = logStructures \|\| traceFile !== undefined/);
 assert.match(runner, /OFH_LOG_INTENTS/);
 assert.match(runner, /OFH_LOG_NAVAL/);
+assert.match(runner, /OFH_LOG_ATTACK_HOTSPOTS/);
+assert.match(runner, /phase: "attack-hotspot-trace"/);
 assert.match(runner, /OFH_INJECT_OWN_PORT/);
 assert.match(runner, /OFH_INJECT_HOSTILE_TRANSPORT/);
 assert.match(
@@ -255,8 +257,8 @@ assert.match(runner, /OFH_LOG_STRUCTURES/);
 assert.match(runner, /OFH_LOG_SPAWN/);
 assert.match(
   runner,
-  /process\.stderr\.write\(`\$\{JSON\.stringify\(finalResult\)\}\\n`, \(\) => \{[\s\S]*process\.exit\(won && \(!injectHostileAtom \|\| hostileMissileInjected\) \? 0 : 2\)/,
-  "a terminal match result must flush before the child exits, even if the engine retains live handles",
+  /process\.stderr\.write\(`\$\{JSON\.stringify\(finalResult\)\}\\n`, \(\) => \{[\s\S]*hostileMissileFixtureComplete[\s\S]*process\.exit\(won && hostileMissileFixtureComplete \? 0 : 2\)/,
+  "a terminal match result must flush before exiting, and a hostile-missile fixture must complete its observable lifecycle",
 );
 assert.match(runner, /phase:\s*"spawn-selection-trace"/);
 assert.match(adapter, /kind:\s*"spawn-ranking"/);
@@ -380,6 +382,9 @@ assert.match(runner, /OFH_INJECT_HOSTILE_ATOM_AT_TICK/);
 assert.match(runner, /hostile-missile-injected/);
 assert.match(runner, /hostile-missile-resolved/);
 assert.match(runner, /new NukeExecution\(UnitType\.AtomBomb/);
+assert.match(runner, /hostile\.addGold\(100_000_000n\)/);
+assert.match(runner, /hostileMissileSeen/);
+assert.match(runner, /hostileMissileFixtureComplete/);
 assert.match(runner, /hostile-missile-injection-missed/);
 assert.match(runner, /phase:\s*"conquered"/);
 assert.match(runner, /productionReserve/);
@@ -464,6 +469,8 @@ assert.match(adapter, /enableSpawnTrace/);
 assert.match(adapter, /drainSpawnTrace/);
 assert.match(adapter, /hasSpawned: player\.hasSpawned\?\.\(\) === true/);
 assert.match(adapter, /getPerformanceProfile/);
+assert.match(adapter, /attackHotspotTrace/);
+assert.match(adapter, /drainAttackHotspotTrace/);
 assert.match(adapter, /getSpawnLifecycleSnapshot/);
 assert.match(adapter, /awaitingTeamGeometry/);
 assert.match(adapter, /caller: new Error\(\)\.stack\?\.split\("\\n"\)\[2\]/);

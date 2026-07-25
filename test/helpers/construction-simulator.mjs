@@ -13,6 +13,12 @@ export function createConstructionSimulator({
 
   return {
     game: {
+      width: () => width,
+      height: () => height,
+      x: (tile) => tile % width,
+      y: (tile) => Math.floor(tile / width),
+      ref: (x, y) => y * width + x,
+      isValidCoord: (x, y) => x >= 0 && x < width && y >= 0 && y < height,
       ownerID: (tile) => (owned.has(tile) ? ownerId : 0),
       railroadState: () => railroadState,
     },

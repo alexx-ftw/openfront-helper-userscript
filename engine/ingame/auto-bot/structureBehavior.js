@@ -8360,10 +8360,12 @@
     // A City placed within three tiles of a live railway becomes a station and
     // splits that route. Random territory samples can miss every such site on
     // a large nation, even when the map visibly contains several rail hubs.
-    // Seed a rotating, evenly distributed subset of our real rail tiles first;
-    // buildability still decides whether the exact rail tile or a normal sample
-    // is legal. Keep the original random draw before this enrichment so the
-    // existing deterministic stream is unchanged.
+    // Visit junctions first, then endpoints, direct routes, and turns. This
+    // gives the strongest commercial links first while still rotating through
+    // every owned rail tile so long direct routes receive stations too.
+    // Buildability remains the final authority over the exact tile. Keep the
+    // original random draw before this enrichment so its deterministic stream
+    // is unchanged.
     prependCommercialRailCityTiles(tiles, candidateLimit) {
       const railState = this.readRailroadState(this.game);
       const mySid = this.player?.smallID?.();
@@ -8382,15 +8384,77 @@
       }
       if (railTiles.length === 0) return tiles;
 
+      const prioritizedRailTiles = this.commercialRailCityAnchorTiles(railTiles, railState);
+
       const seedCount = Math.max(1, Math.ceil(candidateLimit / 2));
-      const offset = Number(this._commercialRailCityAnchorOffset ?? 0) % railTiles.length;
-      const stride = Math.max(1, Math.floor(railTiles.length / seedCount));
+      const offset =
+        Number(this._commercialRailCityAnchorOffset ?? 0) % prioritizedRailTiles.length;
+      const stride = Math.max(1, Math.floor(prioritizedRailTiles.length / seedCount));
       const railAnchors = [];
       for (let index = 0; index < seedCount; index++) {
-        railAnchors.push(railTiles[(offset + index * stride) % railTiles.length]);
+        railAnchors.push(
+          prioritizedRailTiles[(offset + index * stride) % prioritizedRailTiles.length],
+        );
       }
-      this._commercialRailCityAnchorOffset = (offset + 1) % railTiles.length;
+      this._commercialRailCityAnchorOffset = (offset + 1) % prioritizedRailTiles.length;
       return Array.from(new Set(railAnchors.concat(tiles))).slice(0, candidateLimit);
+    }
+
+    commercialRailCityAnchorTiles(railTiles, railState) {
+      const game = this.game;
+      if (
+        typeof game?.width !== "function" ||
+        typeof game?.height !== "function" ||
+        typeof game?.x !== "function" ||
+        typeof game?.y !== "function" ||
+        typeof game?.ref !== "function" ||
+        typeof game?.isValidCoord !== "function"
+      ) {
+        return railTiles;
+      }
+      const prioritizedRailTiles = [];
+      for (const tile of railTiles) {
+        const shape = this.commercialRailTileConnectionShape(tile, railState);
+        prioritizedRailTiles.push({
+          tile,
+          priority: this.commercialRailCityAnchorPriority(shape),
+        });
+      }
+      prioritizedRailTiles.sort(
+        (left, right) => left.priority - right.priority || left.tile - right.tile,
+      );
+      return prioritizedRailTiles.map(({ tile }) => tile);
+    }
+
+    commercialRailTileConnectionShape(tile, railState) {
+      const game = this.game;
+      const x = game.x(tile);
+      const y = game.y(tile);
+      const shape = { degree: 0, horizontal: 0, vertical: 0 };
+      for (const [dx, dy] of [
+        [-1, 0],
+        [1, 0],
+        [0, -1],
+        [0, 1],
+      ]) {
+        const neighborX = x + dx;
+        const neighborY = y + dy;
+        if (!game.isValidCoord(neighborX, neighborY)) continue;
+        const neighbor = game.ref(neighborX, neighborY);
+        if (railState[neighbor] === 0) continue;
+        shape.degree += 1;
+        if (dx !== 0) shape.horizontal += 1;
+        else shape.vertical += 1;
+      }
+      return shape;
+    }
+
+    commercialRailCityAnchorPriority({ degree, horizontal, vertical }) {
+      if (degree >= 3) return 0;
+      if (degree === 1) return 1;
+      if (degree === 2 && (horizontal === 2 || vertical === 2)) return 2;
+      if (degree === 2 && horizontal === 1 && vertical === 1) return 3;
+      return 4;
     }
 
     prependCriticalSamClusterTiles(tiles, candidateLimit) {

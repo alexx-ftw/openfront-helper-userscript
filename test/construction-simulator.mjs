@@ -54,4 +54,60 @@ assert.deepEqual(
   "successive City attempts cover every owned railroad anchor before random territory",
 );
 
+const topologySimulator = createConstructionSimulator({
+  width: 8,
+  height: 8,
+  ownerId: 7,
+  // A horizontal line branches down at 19.  The significant City anchors are
+  // its two ends, the junction, and the end of the branch; 18, 20 and 27 are
+  // merely straight-through rail tiles.
+  ownedTiles: [17, 18, 19, 20, 21, 27, 35, 4, 5],
+  railTiles: [17, 18, 19, 20, 21, 27, 35],
+  randomTiles: [4, 5],
+});
+const topologyBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+topologyBehavior.game = topologySimulator.game;
+topologyBehavior.player = topologySimulator.player;
+topologyBehavior.prependSamCoveredTiles = (tiles) => tiles;
+sandbox.randTerritoryTileArray = topologySimulator.randomTerritoryTiles;
+
+const topologyCities = [];
+for (let attempt = 0; attempt < 4; attempt++) {
+  const candidates = topologyBehavior.structureCandidateTiles(sandbox.UNIT.City, {}, 2);
+  topologyCities.push(topologySimulator.attemptCity(candidates));
+}
+assert.deepEqual(
+  topologyCities,
+  [19, 17, 21, 35],
+  "City attempts select the railway junction before endpoints, straight rail, or random territory",
+);
+
+const curveSimulator = createConstructionSimulator({
+  width: 8,
+  height: 8,
+  ownerId: 7,
+  // 17--18--19 turns down to 27--35.  Tile 18 is a direct segment and 19 is
+  // a curve: neither should displace either endpoint, and the direct segment
+  // should be selected before the curve.
+  ownedTiles: [17, 18, 19, 27, 35, 4, 5],
+  railTiles: [17, 18, 19, 27, 35],
+  randomTiles: [4, 5],
+});
+const curveBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+curveBehavior.game = curveSimulator.game;
+curveBehavior.player = curveSimulator.player;
+curveBehavior.prependSamCoveredTiles = (tiles) => tiles;
+sandbox.randTerritoryTileArray = curveSimulator.randomTerritoryTiles;
+
+const curveCities = [];
+for (let attempt = 0; attempt < 5; attempt++) {
+  const candidates = curveBehavior.structureCandidateTiles(sandbox.UNIT.City, {}, 2);
+  curveCities.push(curveSimulator.attemptCity(candidates));
+}
+assert.deepEqual(
+  curveCities,
+  [17, 35, 18, 27, 19],
+  "City attempts select endpoints and direct rail segments before a rail curve",
+);
+
 process.stdout.write("construction simulator tests passed\n");
