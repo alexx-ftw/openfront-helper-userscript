@@ -55,6 +55,11 @@ assert.match(
 );
 assert.match(
   nationExecutionSource,
+  /ticks - this\.lastSpawnPickTick >= 15/,
+  "team spawn selection must be progressively re-ranked every fifteen ticks",
+);
+assert.match(
+  nationExecutionSource,
   /this\.spawnTopKeyToValidTile\(topKey\) \?\? this\.pickSpawnCenter\(\)/,
   "a reused spawn candidate must be revalidated and retain the full-selector fallback",
 );
@@ -377,8 +382,8 @@ assert.equal(
 teamSpawnBot.player = teamSpawnPlayer;
 assert.equal(
   teamSpawnBot.shouldAwaitInitialTeamSpawnGeometry(6),
-  true,
-  "a full team must wait until its committed teammate anchors are observable",
+  false,
+  "a full team must begin progressive spawn selection after the discovery window",
 );
 teamSpawnAnchorCount = 3;
 assert.equal(
@@ -390,8 +395,8 @@ teamSpawnBot.mg = { players: () => [teamSpawnPlayer, ...teamSpawnTeammates.slice
 teamSpawnAnchorCount = 0;
 assert.equal(
   teamSpawnBot.shouldAwaitInitialTeamSpawnGeometry(6),
-  true,
-  "two teammates must wait for their corridor anchors instead of spawning isolated",
+  false,
+  "two teammates must begin progressive selection before their corridor anchors arrive",
 );
 teamSpawnAnchorCount = 2;
 assert.equal(

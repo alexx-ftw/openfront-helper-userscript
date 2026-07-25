@@ -130,6 +130,10 @@ A faithful 1:1 port of the game's built-in Nation AI (`NationExecution`). Reads 
 
 Enable and configure it live in-game from the **Auto Bot** popup tab. A status log inside the panel shows every decision the bot makes in real time. Run `window.__autoBotDiag()` in the browser console to verify the bot is wired correctly.
 
+In team matches, automatic spawn chooses an initial legal tile after the brief roster-discovery
+window, then re-ranks every 15 ticks. As teammates commit their positions, later spawn intents
+move into their shared hull (or the bounded corridor for two anchors) while the spawn phase remains open.
+
 **Behavior modules** (each can be toggled individually):
 
 | Module          | What it does                                   |
@@ -209,6 +213,7 @@ sum. If we have no eligible SAM yet, the bot prioritizes constructing one.
 A "slave" tab that serves a named "boss" account via emoji commands — for players running two accounts side by side. Enable it from the Quick Panel's **Companion** section; a floating panel lets you set the boss's account name (with a live-status dot and a picker listing current human players), then configure what the tab does for the boss: accept its alliance requests, donate troops/gold once its troops or your surplus cross a threshold, keep a factory built up to a configurable level, spawn near it inside a ring radius, and attack whatever it is currently attacking.
 
 Two modes:
+
 - **Passive** — the tab still plays its own game (manually or via the auto-bot with Companion support off) but performs the boss-support actions above.
 - **Active** — the tab hands spawn placement and alliance decisions to the auto-bot, constrained to the boss's ring and the boss's alliance only.
 

@@ -29,14 +29,11 @@
   // attack cadence before it can reinforce the threatened frontier.
   const SERIOUS_INCOMING_DEFENSE_RATIO = 1;
 
-  // The first automatic spawn used to be emitted before the game had exposed
-  // any teammate spawn intents. In a Teams lobby that fixes an isolated tile
-  // before the existing convex-hull guard can do its job. Wait through that
-  // brief discovery window, then require the hull when a full team can form
-  // one. Small teams retain the normal immediate path because no enclosed
-  // region exists for them.
+  // The first automatic spawn must not run before the game exposes its roster.
+  // After that brief discovery window, periodic re-ranking adopts teammate
+  // geometry as anchors arrive, without sacrificing the opening to a full
+  // team-wide wait.
   const TEAM_SPAWN_DISCOVERY_TICKS = 6;
-  const TEAM_SPAWN_COORDINATION_TICKS = 18;
   // Diplomacy is eventually consistent and substantially lower priority than
   // combat. Drain a large hostile roster gradually instead of spending the
   // entire per-second intent bucket (and retrying every rejected target).
@@ -186,7 +183,7 @@
         return true;
       }
       if (this.feat("spawn") &&
-        (this.lastSpawnPickTick == null || ticks - this.lastSpawnPickTick >= 6)) {
+        (this.lastSpawnPickTick == null || ticks - this.lastSpawnPickTick >= 15)) {
         this.lastSpawnPickTick = ticks;
         const topKey = autoBotProfileSyncPhase(profile, "spawn-selection", () =>
           this.currentSpawnTopKey());
@@ -206,17 +203,11 @@
       // blind automatic spawn before the roster can be inspected.
       if (ticks < TEAM_SPAWN_DISCOVERY_TICKS) return true;
       if (this.player.team?.() == null) return false;
-      const teammates = this.mg.players().filter((other) =>
-        other.smallID?.() !== this.player.smallID?.() &&
-        other.team?.() === this.player.team?.());
-      // Wait just long enough for every teammate's committed spawn to be
-      // observable.  This includes a two-player anchor line, represented by
-      // the shared geometry helper as a bounded corridor rather than a fake
-      // map direction.  The cap keeps us from waiting indefinitely for a
-      // human teammate who never chooses a tile.
-      if (teammates.length < 2 || typeof getTeamSpawnAnchorCount !== "function") return false;
-      return ticks < TEAM_SPAWN_COORDINATION_TICKS &&
-        getTeamSpawnAnchorCount(this.mg, this.player) < teammates.length;
+      // Start with the best presently legal tile once the roster is visible.
+      // Spawn intents remain movable during this phase, so each scheduled
+      // re-rank can pull us into the team hull/corridor as teammates commit
+      // their anchors; waiting for every human would lose too much opening.
+      return false;
     }
 
     async initializeTick(ticks, profile, tickGeneration) {
