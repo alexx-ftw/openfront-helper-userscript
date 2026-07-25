@@ -227,7 +227,7 @@ assert.match(runner, /OFH_LOG_STRUCTURES/);
 assert.match(runner, /OFH_LOG_SPAWN/);
 assert.match(
   runner,
-  /process\.stderr\.write\(`\$\{JSON\.stringify\(finalResult\)\}\\n`, \(\) => \{[\s\S]*process\.exit\(won \? 0 : 2\)/,
+  /process\.stderr\.write\(`\$\{JSON\.stringify\(finalResult\)\}\\n`, \(\) => \{[\s\S]*process\.exit\(won && \(!injectHostileAtom \|\| hostileMissileInjected\) \? 0 : 2\)/,
   "a terminal match result must flush before the child exits, even if the engine retains live handles",
 );
 assert.match(runner, /phase:\s*"spawn-selection-trace"/);
@@ -347,6 +347,11 @@ assert.match(runner, /PREEMPTIVE_SAM_SILO_GOLD/);
 assert.match(runner, /incomingAttackPressure/);
 assert.match(runner, /outgoingAttackTroops/);
 assert.match(runner, /activeMissiles,/);
+assert.match(runner, /OFH_INJECT_HOSTILE_ATOM/);
+assert.match(runner, /OFH_INJECT_HOSTILE_ATOM_AT_TICK/);
+assert.match(runner, /hostile-missile-injected/);
+assert.match(runner, /new NukeExecution\(UnitType\.AtomBomb/);
+assert.match(runner, /hostile-missile-injection-missed/);
 assert.match(runner, /phase:\s*"conquered"/);
 assert.match(runner, /productionReserve/);
 assert.match(runner, /liveReserve/);

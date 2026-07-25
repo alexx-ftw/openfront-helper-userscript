@@ -31,5 +31,14 @@
       keeps performance and behavior comparisons on the same engine configuration instead of relying
       on another random playlist draw.
     </p>
+    <p>
+      Missile-defense experiments can set <code>OFH_NUKES=1</code> and
+      <code>OFH_INJECT_HOSTILE_ATOM=1</code>. The latter is a headless-only fixture: once spawn
+      immunity ends and the Auto-Bot has an active City, it creates a hostile Silo and launches an
+      Atom Bomb through the engine's normal trajectory and interception rules. The trace records
+      <code>hostile-missile-injected</code>, or fails the fixture explicitly when its prerequisites
+      never occur. Set <code>OFH_INJECT_HOSTILE_ATOM_AT_TICK</code> to defer the launch while
+      preserving the same seed and target. It is not included in the delivered userscript.
+    </p>
   </body>
 </html>

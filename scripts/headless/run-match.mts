@@ -11,6 +11,7 @@ import {
   UnitType,
 } from "../../openfront-engine/src/core/game/Game.ts";
 import { createGameRunner } from "../../openfront-engine/src/core/GameRunner.ts";
+import { NukeExecution } from "../../openfront-engine/src/core/execution/NukeExecution.ts";
 import type { StampedIntent, Turn } from "../../openfront-engine/src/core/Schemas.ts";
 import { MapPlaylist } from "../../openfront-engine/src/server/MapPlaylist.ts";
 import { NodeGameMapLoader } from "../../openfront-engine/tests/perf/fullgame/NodeGameMapLoader.ts";
@@ -86,6 +87,10 @@ const numericStartingGold = Number(requestedStartingGold);
 const requestedNations = process.env.OFH_NATIONS;
 const numericNations = Number(requestedNations);
 const forceNukesEnabled = process.env.OFH_NUKES === "1";
+// Test-only pressure fixture. This never reaches the userscript: it lets
+// missile-defense policy face an incoming hostile warhead deterministically.
+const injectHostileAtom = process.env.OFH_INJECT_HOSTILE_ATOM === "1";
+const hostileAtomNotBeforeTick = Number(process.env.OFH_INJECT_HOSTILE_ATOM_AT_TICK ?? 0);
 const nuclearUnitTypes = new Set([
   UnitType.MissileSilo,
   UnitType.AtomBomb,
@@ -95,6 +100,14 @@ const nuclearUnitTypes = new Set([
 ]);
 if (requestedGameMode !== "team" && requestedGameMode !== "ffa") {
   throw new Error(`OFH_GAME_MODE must be team or ffa, got ${process.env.OFH_GAME_MODE}`);
+}
+if (injectHostileAtom && !forceNukesEnabled) {
+  throw new Error("OFH_INJECT_HOSTILE_ATOM=1 requires OFH_NUKES=1");
+}
+if (!Number.isSafeInteger(hostileAtomNotBeforeTick) || hostileAtomNotBeforeTick < 0) {
+  throw new Error(
+    `OFH_INJECT_HOSTILE_ATOM_AT_TICK must be a non-negative safe integer, got ${process.env.OFH_INJECT_HOSTILE_ATOM_AT_TICK}`,
+  );
 }
 const fixedGameMode = requestedGameMode === "ffa" ? GameMode.FFA : GameMode.Team;
 if (
@@ -450,6 +463,48 @@ const sortedCounts = (counts: ReadonlyMap<string, number>) =>
   Object.fromEntries([...counts].sort(([left], [right]) => left.localeCompare(right)));
 const firstOwnedTile = (player: { tiles: () => Iterable<number> }) =>
   player.tiles().values().next().value ?? null;
+let hostileMissileInjected = false;
+let hostileMissileInjectionTick: number | null = null;
+const injectHostileAtomIfReady = () => {
+  if (hostileMissileInjected || !injectHostileAtom || !me?.isAlive()) return;
+  if (runner.game.ticks() < hostileAtomNotBeforeTick) return;
+  if (runner.game.isSpawnImmunityActive()) return;
+  const target = me
+    .units(UnitType.City)
+    .find((city) => city.isActive() && !city.isUnderConstruction())
+    ?.tile();
+  if (target === undefined) return;
+  const hostile = runner.game
+    .players()
+    .find(
+      (player) =>
+        player.isAlive() &&
+        player.clientID() !== clientID &&
+        player.team() !== me.team() &&
+        player.numTilesOwned() > 0,
+    );
+  if (!hostile) return;
+  const source = firstOwnedTile(hostile);
+  if (source === null) return;
+  // The silo is fixture setup, not an AI shortcut. NukeExecution still
+  // performs the engine's ordinary trajectory, launch and SAM rules.
+  hostile.buildUnit(UnitType.MissileSilo, source, {});
+  runner.game.addExecution(new NukeExecution(UnitType.AtomBomb, hostile, target, source));
+  hostileMissileInjected = true;
+  hostileMissileInjectionTick = runner.game.ticks();
+  console.warn(
+    JSON.stringify({
+      phase: "hostile-missile-injected",
+      tick: hostileMissileInjectionTick,
+      attacker: hostile.name(),
+      attackerTeam: hostile.team(),
+      source,
+      target,
+      targetOwner: me.name(),
+      targetOwnerTeam: me.team(),
+    }),
+  );
+};
 const updateStrategicTrajectory = () => {
   const player = runner.game.playerByClientID(clientID);
   if (!player?.isAlive()) return;
@@ -508,6 +563,7 @@ const updateStrategicTrajectory = () => {
   }
 };
 while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fatalError === null) {
+  injectHostileAtomIfReady();
   const decisionStartedAt = performance.now();
   const intents = await bot.decide();
   if (logSpawn) {
@@ -1047,6 +1103,16 @@ const players = runner.game
   }))
   .sort((left, right) => right.tiles - left.tiles);
 
+if (injectHostileAtom && !hostileMissileInjected) {
+  console.warn(
+    JSON.stringify({
+      phase: "hostile-missile-injection-missed",
+      tick: runner.game.ticks(),
+      reason: "no-active-own-city-or-hostile-territory-after-spawn-immunity",
+    }),
+  );
+}
+
 const finalResult = {
     phase: "result",
     seed,
@@ -1060,6 +1126,13 @@ const finalResult = {
     spawnLifecycle: bot.getSpawnLifecycleSnapshot(),
     performanceProfile: profileBot ? bot.getPerformanceProfile() : undefined,
     emittedIntents,
+    hostileMissileFixture: injectHostileAtom
+      ? {
+          injected: hostileMissileInjected,
+          injectedTick: hostileMissileInjectionTick,
+          notBeforeTick: hostileAtomNotBeforeTick,
+        }
+      : undefined,
     cumulativeIntentTypes: sortedCounts(cumulativeIntentTypes),
     cumulativeBuildUnitTypes: sortedCounts(cumulativeBuildUnitTypes),
     constructionEvents: cumulativeBuildEvents,
@@ -1084,5 +1157,5 @@ const finalResult = {
 // flush that line before exiting rather than relying on the event loop to
 // become idle.
 process.stderr.write(`${JSON.stringify(finalResult)}\n`, () => {
-  process.exit(won ? 0 : 2);
+  process.exit(won && (!injectHostileAtom || hostileMissileInjected) ? 0 : 2);
 });
