@@ -192,6 +192,36 @@ test("inside-team spawn ranking prefers the densest tribe cluster", () => {
   assert.equal(ranked[0].id, "dense-cluster");
 });
 
+test("inside-team tribe density outranks a modest free-land advantage", () => {
+  const ranked = api.rankModelCandidates([
+    {
+      id: "more-open-land",
+      freeLandScore: 0.95,
+      expansionScore: 0.95,
+      safetyScore: 0.8,
+      teamScore: 1,
+      teamPolyhedronScore: 1,
+      tribeClusterScore: 0.2,
+      tribeReachCount: 5,
+      tribeReachScore: 0.8,
+      resourceScore: 0.8,
+    },
+    {
+      id: "dense-tribe-core",
+      freeLandScore: 0.8,
+      expansionScore: 0.8,
+      safetyScore: 0.8,
+      teamScore: 1,
+      teamPolyhedronScore: 1,
+      tribeClusterScore: 0.9,
+      tribeReachCount: 4,
+      tribeReachScore: 0.8,
+      resourceScore: 0.8,
+    },
+  ]);
+  assert.equal(ranked[0].id, "dense-tribe-core");
+});
+
 test("allied support beats an isolated richer frontier", () => {
   const ranked = api.rankModelCandidates([
     {

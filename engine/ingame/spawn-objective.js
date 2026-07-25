@@ -130,7 +130,7 @@
     const insideTeamPolyhedron =
       leftObjective.teamPolyhedronScore === 1 && rightObjective.teamPolyhedronScore === 1;
     const dimensions = insideTeamPolyhedron
-      ? "freeLandScore expansionScore tribeClusterScore tribeReachCount tribeReachScore resourceScore robustFloor safetyScore tribeScore nationScore startScore teamScore clanScore".split(" ")
+      ? "tribeClusterScore tribeReachCount tribeReachScore freeLandScore expansionScore resourceScore robustFloor safetyScore tribeScore nationScore startScore teamScore clanScore".split(" ")
       : "robustFloor safetyScore expansionScore tribeReachScore tribeReachCount freeLandScore resourceScore tribeScore nationScore startScore teamScore clanScore".split(" ");
     for (const dimension of dimensions) {
       if (leftObjective[dimension] !== rightObjective[dimension]) {
