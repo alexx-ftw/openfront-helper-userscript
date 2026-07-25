@@ -7938,7 +7938,7 @@
   ) {
       const { context } = scan;
       let visited = 0;
-      let bestAnchor = null;
+      let bestTile = null;
       let bestValue = -Infinity;
       while (
         scan.index < context.borderTiles.length &&
@@ -7957,9 +7957,9 @@
         scan.hasGeometricSpace = true;
         if (candidate.value <= bestValue) continue;
         bestValue = candidate.value;
-        bestAnchor = anchor;
+        bestTile = candidate.tile;
       }
-      if (bestAnchor !== null) return { status: "candidate", tile: bestAnchor, visited };
+      if (bestTile !== null) return { status: "candidate", tile: bestTile, visited };
       if (scan.index < context.borderTiles.length) return { status: "pending", visited };
       return scan.hasGeometricSpace
         ? { status: "indeterminate", visited }
@@ -7975,11 +7975,12 @@
       }
       snappedSites.add(snapped);
       if (this.isDangerousStructureTile(snapped, type)) {
-        return { status: "candidate", value: -Infinity };
+        return { status: "candidate", tile: snapped, value: -Infinity };
       }
       const value = Number(context.valueFunction(anchor));
       return {
         status: "candidate",
+        tile: snapped,
         value: Number.isFinite(value) ? value : -Infinity,
       };
     }
@@ -9507,7 +9508,7 @@
       // knowing whether one can reach a City or Port directly determines whether
       // its trains can generate trade gold at all, so this must apply on every
       // difficulty rather than being randomized for the easier tiers.
-      const reachableStations = this.getOrBuildReachableStations();
+      const reachableStations = this.getOrBuildFactoryTradeDestinations();
       const minRangeSquared = game.config().trainStationMinRange() ** 2;
 
       // Cross-type spacing: prefer to be away from cities.
@@ -9710,6 +9711,13 @@
       return this.reachableStationsCache;
     }
 
+    // A Factory supplies trains; only a City or Port can be the paying end of
+    // that train. Keep other factories in the spacing penalty, but never let a
+    // nearby factory masquerade as a new commercial destination.
+    getOrBuildFactoryTradeDestinations() {
+      return this.buildReachableStations([UNIT.City, UNIT.Port]);
+    }
+
     // trainGoldBase — the game's Config.trainGold value WITHOUT its final
     // goldMultiplierFor(player) factor. We deliberately drop that factor:
     //   1) it is IDENTICAL for every relation, so it CANCELS OUT in the normalized
@@ -9750,9 +9758,9 @@
     //     components; each station's cluster is the rail component at/adjacent to
     //     its tile (null when no rail touches it → isolated). EXACT.
     //   - HARNESS: railroadState() null → proximity union-find. APPROXIMATE.
-    buildReachableStations() {
+    buildReachableStations(types = [UNIT.City, UNIT.Port, UNIT.Factory]) {
       const game = this.game;
-      const stationed = this.collectReachableStations();
+      const stationed = this.collectReachableStations(types);
 
       if (stationed.length === 0) return [];
 
@@ -9764,12 +9772,12 @@
       return this.proximityStationClusters(game, stationed);
     }
 
-    collectReachableStations() {
+    collectReachableStations(types = [UNIT.City, UNIT.Port, UNIT.Factory]) {
       const player = this.player;
       const maxTradeGold = Math.max(Number(this.trainGoldBase("ally", 0)), 1);
       const stationed = [];
       const append = (owner, weight) => {
-        for (const unit of owner.units(UNIT.City, UNIT.Port, UNIT.Factory)) {
+        for (const unit of owner.units(...types)) {
           if (unit.hasTrainStation()) {
             stationed.push({ tile: unit.tile(), weight, key: unit.id() });
           }

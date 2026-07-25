@@ -110,6 +110,9 @@ commercialRailBehavior.random = { nextInt: () => 0 };
 commercialRailBehavior.getOrBuildReachableStations = () => [
   { tile: 1_000, cluster: "existing-commercial-line", weight: 1 },
 ];
+commercialRailBehavior.getOrBuildFactoryTradeDestinations = () => [
+  { tile: 1_000, cluster: "existing-commercial-line", weight: 1 },
+];
 testDifficulty = Difficulty.Easy;
 const cityCommercialValue = commercialRailBehavior.cityValue();
 const portCommercialValue = commercialRailBehavior.portValue();
@@ -135,6 +138,29 @@ assert.equal(
   commercialRailStateReads,
   4,
   "each economic scorer snapshots railroad state once instead of rereading it for every candidate",
+);
+
+const factoryDestinationBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+const station = (tile, id) => ({ hasTrainStation: () => true, tile: () => tile, id: () => id });
+factoryDestinationBehavior.player = {
+  units: (...types) => {
+    const units = [];
+    if (types.includes(sandbox.UNIT.City)) units.push(station(100, "city"));
+    if (types.includes(sandbox.UNIT.Factory)) units.push(station(101, "factory"));
+    return units;
+  },
+  nearby: () => [],
+};
+factoryDestinationBehavior.trainGoldBase = (relation) =>
+  relation === "ally" ? 35_000 : 10_000;
+assert.deepEqual(
+  Array.from(
+    factoryDestinationBehavior
+      .collectReachableStations([sandbox.UNIT.City, sandbox.UNIT.Port])
+      .map((entry) => entry.tile),
+  ),
+  [100],
+  "Factory trade scoring excludes other Factories because they do not pay train gold",
 );
 
 const sparseRailBehavior = Object.create(sandbox.__StructureBehavior.prototype);
@@ -209,6 +235,7 @@ teamInteriorBehavior.spacingConstants = () => ({
   structureSpacing: 100,
 });
 teamInteriorBehavior.getOrBuildReachableStations = () => [];
+teamInteriorBehavior.getOrBuildFactoryTradeDestinations = () => [];
 teamInteriorBehavior.shouldUseConnectivityScore = () => false;
 teamInteriorBehavior.commercialRailPlacementScore = () => 0;
 
@@ -3529,8 +3556,8 @@ const portSpaceResult = portSpaceBehavior.scanAllEconomicPortSpace(UNIT.Port, po
 assert.equal(portSpaceResult.status, "candidate");
 assert.equal(
   portSpaceResult.tile,
-  "ocean-shore",
-  "An open-ocean Port site proves that new-build space remains",
+  "snapped-port",
+  "The exhaustive Port scan probes the locally legal snapped site, not its occupied shore anchor",
 );
 portSpaceBehavior.isOceanPortTile = () => false;
 assert.equal(
