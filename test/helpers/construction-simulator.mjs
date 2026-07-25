@@ -43,7 +43,9 @@ export function simulateRailTransitRevenue({
   factoryIds,
   destinationIds,
   candidateId,
-  goldForTradeStop = (stopIndex) => 1 / (stopIndex + 1),
+  // Config.trainGold("self", citiesVisited): the first ten paying stops have
+  // no distance penalty, then each additional stop costs 5k down to 5k.
+  goldForTradeStop = (stopIndex) => Math.max(5_000, 10_000 - Math.max(0, stopIndex - 9) * 5_000),
 }) {
   const types = new Map(stationTypes);
   if (candidateId !== null && candidateId !== undefined) types.set(candidateId, "City");
