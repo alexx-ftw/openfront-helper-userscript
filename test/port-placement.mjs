@@ -137,6 +137,23 @@ assert.equal(
   "same-type placement spacing excludes only the candidate structure itself",
 );
 
+const commercialRailCityCandidates = Object.create(structureSandbox.__StructureBehavior.prototype);
+const commercialRailState = new Uint8Array(64);
+commercialRailState[37] = 1;
+commercialRailCityCandidates.game = {
+  ownerID: (tile) => (tile === 37 ? 7 : 0),
+  railroadState: () => commercialRailState,
+};
+commercialRailCityCandidates.player = { smallID: () => 7 };
+commercialRailCityCandidates.prependSamCoveredTiles = (tiles) => tiles;
+structureSandbox.randTerritoryTileArray = () => [4, 5, 6];
+const cityCandidatesOnRail = commercialRailCityCandidates.structureCandidateTiles(UNIT.City, {}, 3);
+assert.equal(
+  cityCandidatesOnRail[0],
+  37,
+  "City placement probes an owned live railroad before unrelated random territory samples",
+);
+
 function createScenarioLake(width, height, lakeTiles) {
   if (lakeTiles !== null) return new Set(lakeTiles);
   const lake = new Set();

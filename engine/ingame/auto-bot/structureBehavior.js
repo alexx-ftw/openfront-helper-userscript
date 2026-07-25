@@ -8327,6 +8327,9 @@
               this.player,
               candidateLimit,
             );
+      if (type === UNIT.City) {
+        tiles = this.prependCommercialRailCityTiles(tiles, candidateLimit);
+      }
       if (type === UNIT.SAMLauncher && options.prioritizeStructureCoverage) {
         if (options.activeMissileDefense === true) {
           tiles = this.prependActiveMissileRouteTiles(
@@ -8352,6 +8355,42 @@
         tiles = this.prependSamCoveredTiles(tiles, candidateLimit);
       }
       return tiles;
+    }
+
+    // A City placed within three tiles of a live railway becomes a station and
+    // splits that route. Random territory samples can miss every such site on
+    // a large nation, even when the map visibly contains several rail hubs.
+    // Seed a rotating, evenly distributed subset of our real rail tiles first;
+    // buildability still decides whether the exact rail tile or a normal sample
+    // is legal. Keep the original random draw before this enrichment so the
+    // existing deterministic stream is unchanged.
+    prependCommercialRailCityTiles(tiles, candidateLimit) {
+      const railState = this.readRailroadState(this.game);
+      const mySid = this.player?.smallID?.();
+      if (
+        !railState ||
+        railState.length === 0 ||
+        !Number.isFinite(Number(mySid)) ||
+        typeof this.game?.ownerID !== "function"
+      ) {
+        return tiles;
+      }
+      const railTiles = [];
+      for (let tile = 0; tile < railState.length; tile++) {
+        if (railState[tile] === 0 || this.game.ownerID(tile) !== mySid) continue;
+        railTiles.push(tile);
+      }
+      if (railTiles.length === 0) return tiles;
+
+      const seedCount = Math.max(1, Math.ceil(candidateLimit / 2));
+      const offset = Number(this._commercialRailCityAnchorOffset ?? 0) % railTiles.length;
+      const stride = Math.max(1, Math.floor(railTiles.length / seedCount));
+      const railAnchors = [];
+      for (let index = 0; index < seedCount; index++) {
+        railAnchors.push(railTiles[(offset + index * stride) % railTiles.length]);
+      }
+      this._commercialRailCityAnchorOffset = (offset + 1) % railTiles.length;
+      return Array.from(new Set(railAnchors.concat(tiles))).slice(0, candidateLimit);
     }
 
     prependCriticalSamClusterTiles(tiles, candidateLimit) {
