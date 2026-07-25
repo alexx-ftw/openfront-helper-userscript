@@ -610,6 +610,12 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
           plannerRefreshStage: bot.nationBot?.attackBehavior?.earlyGameTribeRefreshStage ?? null,
           plannerRefreshPending:
             bot.nationBot?.attackBehavior?.earlyGameTribeCandidatesRefresh != null,
+          plannerRefreshStarts:
+            bot.nationBot?.attackBehavior?.earlyGameTribeRefreshStartCount ?? 0,
+          plannerEmptyCacheHits:
+            bot.nationBot?.attackBehavior?.earlyGameTribeEmptyCacheHitCount ?? 0,
+          plannerEmptyRetryAtTick:
+            bot.nationBot?.attackBehavior?.earlyGameTribeEmptyRetryAtTick ?? 0,
           plannerCandidateCount: Array.isArray(
             bot.nationBot?.attackBehavior?.earlyGameTribeCandidatesCache,
           )

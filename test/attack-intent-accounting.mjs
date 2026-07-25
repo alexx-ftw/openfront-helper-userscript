@@ -285,6 +285,11 @@ assert.equal(
   "a recent empty result reuses its negative cache instead of restarting topology work",
 );
 assert.equal(emptyRefreshStarts, 1);
+assert.equal(
+  emptyCandidateBehavior.earlyGameTribeEmptyCacheHitCount,
+  1,
+  "the negative-cache diagnostic records the skipped expensive planner refresh",
+);
 sandbox.state.earlyGame = { hasTribeTarget: true };
 assert.equal(
   (await emptyCandidateBehavior.getReadyEarlyGameTribeCandidates()).length,
@@ -292,6 +297,11 @@ assert.equal(
   "a directly actionable tribe may trigger a refresh before the empty-cache retry tick",
 );
 assert.equal(emptyRefreshStarts, 2, "a new bordering tribe bypasses the negative-cache backoff");
+assert.equal(
+  emptyCandidateBehavior.earlyGameTribeRefreshStartCount,
+  2,
+  "planner telemetry counts each launched refresh independently of cache hits",
+);
 resolveEmptyRefresh([target]);
 await Promise.resolve();
 sandbox.state.earlyGame = {};

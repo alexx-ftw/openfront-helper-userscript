@@ -251,6 +251,9 @@ assert.match(
   "Tribe-only simulations label captured engine Bots as Tribes for offline analysis",
 );
 assert.match(runner, /donationStrategicBorderPressure/);
+assert.match(runner, /plannerRefreshStarts/);
+assert.match(runner, /plannerEmptyCacheHits/);
+assert.match(runner, /plannerEmptyRetryAtTick/);
 assert.match(runner, /targetTroops/);
 assert.match(runner, /pendingTroops/);
 assert.match(runner, /committedTroops/);

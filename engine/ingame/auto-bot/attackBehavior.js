@@ -752,6 +752,8 @@
       this.earlyGameTribeCandidatesCache = null;
       this.earlyGameTribeCandidatesRefresh = null;
       this.earlyGameTribeEmptyRetryAtTick = 0;
+      this.earlyGameTribeEmptyCacheHitCount = 0;
+      this.earlyGameTribeRefreshStartCount = 0;
       this.earlyGameTribeBoatEtaCache = new Map();
       // Opportunistic boat selection proves a route before returning a target,
       // then emission checks that identical target again. Keep the authoritative
@@ -4301,6 +4303,7 @@
         directlyActionableTribe ||
         currentTick >= emptyRetryAtTick;
       if (this.earlyGameTribeCandidatesRefresh === null && shouldRefresh) {
+        this.earlyGameTribeRefreshStartCount++;
         const refresh = this.getEarlyGameTribeCandidates(profile);
         this.earlyGameTribeCandidatesRefresh = refresh;
         refresh.then((candidates) => {
@@ -4312,6 +4315,11 @@
               : 0;
           this.earlyGameTribeCandidatesRefresh = null;
         });
+      } else if (
+        this.earlyGameTribeCandidatesRefresh === null &&
+        cachedEmpty
+      ) {
+        this.earlyGameTribeEmptyCacheHitCount++;
       }
       // A stale topology snapshot has tribe identities but not the enriched
       // cluster scores.  Attacking from it bypasses the very cluster-routing
