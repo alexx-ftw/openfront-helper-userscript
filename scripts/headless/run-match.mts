@@ -319,6 +319,26 @@ const trackedMissileTypes = [
   UnitType.MIRV,
   UnitType.MIRVWarhead,
 ] as const;
+const slowTickEngineSnapshot = () => {
+  const players = runner.game.players();
+  const unitCount = (types: readonly UnitType[]) =>
+    Object.fromEntries(
+      types.map((type) => [
+        type,
+        players.reduce((total, player) => total + player.units(type).length, 0),
+      ]),
+    );
+  return {
+    players: players.length,
+    alivePlayers: players.filter((player) => player.isAlive()).length,
+    activeLandAttacks: players.reduce(
+      (total, player) => total + player.outgoingAttacks().length,
+      0,
+    ),
+    structures: unitCount(trackedUnitTypes),
+    missiles: unitCount(trackedMissileTypes),
+  };
+};
 const PREEMPTIVE_SAM_SILO_GOLD = 1_000_000n;
 const playerField = (player: unknown, field: string) => {
   const value = (player as Record<string, unknown>)[field];
@@ -801,6 +821,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
         intents: intents.length,
         alive: currentPlayer?.isAlive() ?? false,
         tiles: currentPlayer?.numTilesOwned() ?? 0,
+        engineState: slowTickEngineSnapshot(),
         phases: profileBot ? bot.getPerformanceProfile().lastPhases : undefined,
         spawnLifecycle: profileBot ? bot.getSpawnLifecycleSnapshot() : undefined,
       }),

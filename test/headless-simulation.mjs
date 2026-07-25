@@ -280,6 +280,13 @@ assert.match(runner, /phase:\s*"sam-lifecycle"/);
 assert.match(runner, /event:\s*"removed"/);
 assert.match(runner, /decisionMs/);
 assert.match(runner, /executionMs/);
+assert.match(
+  runner,
+  /engineState:\s*slowTickEngineSnapshot\(\)/,
+  "slow-tick telemetry includes a static engine-state snapshot for causal profiling",
+);
+assert.match(runner, /activeLandAttacks:/);
+assert.match(runner, /missiles:\s*unitCount\(trackedMissileTypes\)/);
 assert.match(runner, /stopReason/);
 assert.match(runner, /finalBotState/);
 assert.match(runner, /maxTroops: runner\.game\.config\(\)\.maxTroops\(finalMe\)/);
