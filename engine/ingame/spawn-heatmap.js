@@ -830,7 +830,13 @@ function isPointInsideTeamSpawnRegion(x, y, region) {
   const dy = corridor.end.y - corridor.start.y;
   const projected = ((x - corridor.start.x) * dx + (y - corridor.start.y) * dy) /
     corridor.lengthSquared;
-  if (projected < 0 || projected > 1) return false;
+  // A two-player team has no polygon edge to inset. Reserve the same margin
+  // at both corridor endpoints so a candidate beside either ally is not
+  // mistaken for the team interior. Short corridors retain a central segment.
+  const corridorLength = Math.sqrt(corridor.lengthSquared);
+  const endpointMargin = Math.min(SPAWN_TEAM_INTERIOR_MARGIN, corridorLength * 0.25);
+  const inset = endpointMargin / corridorLength;
+  if (projected < inset || projected > 1 - inset) return false;
   const nearestX = corridor.start.x + projected * dx;
   const nearestY = corridor.start.y + projected * dy;
   return Math.hypot(x - nearestX, y - nearestY) <= corridor.halfWidth;

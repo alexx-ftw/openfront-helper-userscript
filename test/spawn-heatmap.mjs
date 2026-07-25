@@ -276,6 +276,25 @@ const teamRegion = harness.buildTeamSpawnRegion([
   { x: 180, y: 80 },
   { x: 130, y: 180 },
 ]);
+const corridorRegion = harness.buildTeamSpawnRegion([
+  { x: 100, y: 100 },
+  { x: 500, y: 100 },
+]);
+assert.equal(
+  harness.isPointInsideTeamSpawnRegion(100, 100, corridorRegion),
+  false,
+  "a two-ally corridor must not treat an ally endpoint as a team-interior spawn",
+);
+assert.equal(
+  harness.isPointInsideTeamSpawnRegion(111, 100, corridorRegion),
+  false,
+  "a two-ally corridor keeps the same inset from its endpoint as a hull keeps from its edge",
+);
+assert.equal(
+  harness.isPointInsideTeamSpawnRegion(300, 100, corridorRegion),
+  true,
+  "a two-ally corridor retains its central interior for legal spawns",
+);
 const globalBudget = harness.computeStaticCandidatesWithBudget(regionGame, 64);
 const globalInside = globalBudget.filter((candidate) =>
   harness.isPointInsideTeamSpawnRegion(candidate.x, candidate.y, teamRegion),
