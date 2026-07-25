@@ -57,6 +57,19 @@ assert.equal(
   "The runner's JavaScript adapter must load as ESM under tsx",
 );
 
+const constructionTickBudgets = constructionScenarios.scenarios.map((scenario) =>
+  Number(scenario.environment.OFH_MAX_TICKS),
+);
+assert.ok(
+  constructionTickBudgets.every((budget) => Number.isInteger(budget) && budget > 0),
+  "every construction scenario must cap simulation work with a positive tick budget",
+);
+assert.equal(
+  new Set(constructionTickBudgets).size,
+  1,
+  "paired construction scenarios must use one shared tick horizon",
+);
+
 const runnerLoad = spawnSync(
   process.execPath,
   [
@@ -379,8 +392,8 @@ assert.deepEqual(
 );
 assert.deepEqual(
   constructionScenarios.scenarios.map(({ environment }) => environment.OFH_GAME_MAP_SIZE),
-  ["Small", "Small", "Small", "Normal", "Small", "Small", "Small"],
-  "Four Islands uses full-resolution spawn areas; the other scenarios use bounded Small maps",
+  ["Normal", "Small", "Small", "Normal", "Normal", "Small", "Small"],
+  "fixed-map scenarios retain the map resolution required by their configured Nations and tribe coordinates",
 );
 assert.match(adapter, /deterministicDeadlineMs \+= 0\.25/);
 assert.doesNotMatch(

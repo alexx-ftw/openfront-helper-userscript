@@ -10,7 +10,8 @@
         "OFH_PLAYER_TEAMS": "2",
         "OFH_NATIONS": "8",
         "OFH_BOTS": "120",
-        "OFH_STARTING_GOLD": "1000000"
+        "OFH_STARTING_GOLD": "1000000",
+        "OFH_MAX_TICKS": "1200"
       }
     },
     {
@@ -22,7 +23,8 @@
         "OFH_PLAYER_TEAMS": "2",
         "OFH_NATIONS": "50",
         "OFH_BOTS": "180",
-        "OFH_STARTING_GOLD": "1000000"
+        "OFH_STARTING_GOLD": "1000000",
+        "OFH_MAX_TICKS": "1200"
       }
     },
     {
@@ -34,7 +36,8 @@
         "OFH_GAME_MODE": "ffa",
         "OFH_NATIONS": "50",
         "OFH_BOTS": "180",
-        "OFH_STARTING_GOLD": "250000"
+        "OFH_STARTING_GOLD": "250000",
+        "OFH_MAX_TICKS": "1200"
       }
     },
     {
@@ -46,7 +49,8 @@
         "OFH_PLAYER_TEAMS": "4",
         "OFH_NATIONS": "4",
         "OFH_BOTS": "120",
-        "OFH_STARTING_GOLD": "1000000"
+        "OFH_STARTING_GOLD": "1000000",
+        "OFH_MAX_TICKS": "1200"
       }
     },
     {
@@ -58,7 +62,8 @@
         "OFH_PLAYER_TEAMS": "2",
         "OFH_NATIONS": "20",
         "OFH_BOTS": "120",
-        "OFH_STARTING_GOLD": "1500000"
+        "OFH_STARTING_GOLD": "1500000",
+        "OFH_MAX_TICKS": "1200"
       }
     },
     {
@@ -71,7 +76,8 @@
         "OFH_NATIONS": "disabled",
         "OFH_BOTS": "160",
         "OFH_STARTING_GOLD": "5000000",
-        "OFH_NUKES": "1"
+        "OFH_NUKES": "1",
+        "OFH_MAX_TICKS": "1200"
       }
     },
     {
@@ -84,7 +90,8 @@
         "OFH_NATIONS": "50",
         "OFH_BOTS": "80",
         "OFH_STARTING_GOLD": "25000000",
-        "OFH_NUKES": "1"
+        "OFH_NUKES": "1",
+        "OFH_MAX_TICKS": "1200"
       }
     }
   ]
