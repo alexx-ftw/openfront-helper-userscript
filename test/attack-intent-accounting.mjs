@@ -257,6 +257,46 @@ assert.equal(
   "the next decision receives the completed tribe snapshot while another refresh runs",
 );
 
+// A cached topology snapshot can outlive a tribe that another player captured.
+// It must disappear immediately from both the attack candidates and the visual
+// opening state while the replacement snapshot is prepared.
+const staleCandidateBehavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
+staleCandidateBehavior.getEarlyGameTribeCandidates = () => new Promise(() => {});
+staleCandidateBehavior.earlyGameTribeCandidatesCache = [
+  {
+    player: {
+      isAlive: () => false,
+      type: () => sandbox.PlayerType.Bot,
+      smallID: () => 44,
+    },
+    tribeClusterSize: 5,
+    tribeClusterAccess: 1,
+  },
+];
+sandbox.state.earlyGame = {
+  active: true,
+  hasFreeLand: false,
+  hasTribeTarget: true,
+  actionableTribes: [{ id: 44 }],
+  tribeTarget: { id: 44 },
+};
+assert.deepEqual(
+  await staleCandidateBehavior.getReadyEarlyGameTribeCandidates(),
+  [],
+  "a captured tribe is not reused from the stale scored snapshot",
+);
+assert.equal(
+  sandbox.state.earlyGame.hasTribeTarget,
+  false,
+  "removing the last stale tribe clears the actionable opening target",
+);
+assert.equal(
+  sandbox.state.earlyGame.tribeTarget,
+  null,
+  "the cluster overlay cannot keep pointing at a captured tribe",
+);
+assert.deepEqual(sandbox.state.earlyGame.actionableTribes, []);
+
 // A completed scan with no reachable tribe is a negative result, not a reason
 // to rebuild the whole strategic topology every combat cadence. A newly
 // bordering tribe remains an immediate escape hatch from that short backoff.

@@ -2562,9 +2562,12 @@
       const targets = ranked.map((candidate) => this.earlyGameTribeDiagnostic(candidate));
       state.earlyGame.actionableTribes = targets;
       state.earlyGame.tribeTarget = targets[0] || null;
-      if (targets.length === 0) return;
+      state.earlyGame.hasTribeTarget = targets.length > 0;
+      if (targets.length === 0) {
+        if (state.earlyGame.hasFreeLand !== true) state.earlyGame.active = false;
+        return;
+      }
       state.earlyGame.active = true;
-      state.earlyGame.hasTribeTarget = true;
     }
 
     prepareExistingTribeAttack(candidate, selectedTargetKeys, targetKey) {
@@ -4287,22 +4290,40 @@
     // becoming a visible game stall.  `sendAttack` independently reads the
     // target's current troops and ownership, so an outdated candidate cannot
     // commit an insufficient capture payload.
-    async getReadyEarlyGameTribeCandidates(profile = null) {
-      // Lightweight test/compatibility behavior instances can expose the
-      // complete candidate provider without the persistent cache fields.
-      if (this.earlyGameTribeCandidatesRefresh === undefined) {
-        return this.getEarlyGameTribeCandidates(profile);
-      }
-      const cached = this.earlyGameTribeCandidatesCache;
-      const currentTick = this.currentAttackDecisionTick();
-      const cachedEmpty = Array.isArray(cached) && cached.length === 0;
-      const directlyActionableTribe = state.earlyGame?.hasTribeTarget === true;
-      const emptyRetryAtTick = Number(this.earlyGameTribeEmptyRetryAtTick) || 0;
-      const shouldRefresh =
+    liveEarlyGameTribeSnapshot(cached) {
+      if (!Array.isArray(cached)) return cached;
+      return cached.filter(
+        (candidate) =>
+          !candidate?.player ||
+          this.earlyGameTribeCandidateIsLiveAndScored(candidate, candidate.player),
+      );
+    }
+
+    earlyGameTribeSnapshotNeedsRefresh(cachedEmpty) {
+      return (
         !cachedEmpty ||
-        directlyActionableTribe ||
-        currentTick >= emptyRetryAtTick;
-      if (this.earlyGameTribeCandidatesRefresh === null && shouldRefresh) {
+        state.earlyGame?.hasTribeTarget === true ||
+        this.currentAttackDecisionTick() >=
+          (Number(this.earlyGameTribeEmptyRetryAtTick) || 0)
+      );
+    }
+
+    earlyGameTribeSnapshotIsScored(candidates) {
+      return (
+        Array.isArray(candidates) &&
+        !candidates.some(
+          (candidate) =>
+            !Number.isFinite(Number(candidate?.tribeClusterSize)) ||
+            !Number.isFinite(Number(candidate?.tribeClusterAccess)),
+        )
+      );
+    }
+
+    refreshReadyEarlyGameTribeCandidates(profile, cachedEmpty) {
+      if (
+        this.earlyGameTribeCandidatesRefresh === null &&
+        this.earlyGameTribeSnapshotNeedsRefresh(cachedEmpty)
+      ) {
         this.earlyGameTribeRefreshStartCount++;
         const refresh = this.getEarlyGameTribeCandidates(profile);
         this.earlyGameTribeCandidatesRefresh = refresh;
@@ -4315,25 +4336,43 @@
               : 0;
           this.earlyGameTribeCandidatesRefresh = null;
         });
-      } else if (
-        this.earlyGameTribeCandidatesRefresh === null &&
-        cachedEmpty
-      ) {
+        return;
+      }
+      if (this.earlyGameTribeCandidatesRefresh === null && cachedEmpty) {
         this.earlyGameTribeEmptyCacheHitCount++;
       }
+    }
+
+    async getReadyEarlyGameTribeCandidates(profile = null) {
+      // Lightweight test/compatibility behavior instances can expose the
+      // complete candidate provider without the persistent cache fields.
+      if (this.earlyGameTribeCandidatesRefresh === undefined) {
+        return this.getEarlyGameTribeCandidates(profile);
+      }
+      const cached = this.earlyGameTribeCandidatesCache;
+      // The topology snapshot is deliberately reusable while a new one is
+      // prepared, but tribes can be captured between the two decisions.  Do
+      // not keep dead/allied entries visible as an attractive cluster or let
+      // them keep the opening marked as tribe-actionable.  A new refresh still
+      // runs from the original non-empty snapshot, so this is not a negative
+      // cache and cannot delay a newly available tribe.
+      const readyCached = this.liveEarlyGameTribeSnapshot(cached);
+      if (
+        Array.isArray(cached) &&
+        Array.isArray(readyCached) &&
+        readyCached.length !== cached.length
+      ) {
+        this.publishEarlyGameTribeDiagnostics(readyCached);
+      }
+      const cachedEmpty = Array.isArray(cached) && cached.length === 0;
+      this.refreshReadyEarlyGameTribeCandidates(profile, cachedEmpty);
       // A stale topology snapshot has tribe identities but not the enriched
       // cluster scores.  Attacking from it bypasses the very cluster-routing
       // policy the opening relies on.  Wait for the completed snapshot; the
       // independent Terra Nullius lane remains live while it is prepared.
-      if (
-        !Array.isArray(cached) ||
-        cached.some((candidate) =>
-          !Number.isFinite(Number(candidate?.tribeClusterSize)) ||
-          !Number.isFinite(Number(candidate?.tribeClusterAccess)))
-      ) {
-        return [];
-      }
-      return cached;
+      return this.earlyGameTribeSnapshotIsScored(readyCached)
+        ? readyCached
+        : [];
     }
 
     async getEarlyGameTribeCandidates(profile = null) {
