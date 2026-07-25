@@ -308,9 +308,8 @@ assert.equal(
 );
 assert.deepEqual(sandbox.state.earlyGame.actionableTribes, []);
 
-// A completed scan with no reachable tribe is a negative result, not a reason
-// to rebuild the whole strategic topology every combat cadence. A newly
-// bordering tribe remains an immediate escape hatch from that short backoff.
+// A completed empty scan must not delay a newly reachable tribe until an
+// artificial retry window expires. In-flight planner work still coalesces.
 const emptyCandidateBehavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
 let emptyRefreshStarts = 0;
 let resolveEmptyRefresh;
@@ -333,25 +332,23 @@ tick = 101;
 assert.equal(
   (await emptyCandidateBehavior.getReadyEarlyGameTribeCandidates()).length,
   0,
-  "a recent empty result reuses its negative cache instead of restarting topology work",
+  "an empty result immediately starts the next planner refresh",
 );
-assert.equal(emptyRefreshStarts, 1);
 assert.equal(
-  emptyCandidateBehavior.earlyGameTribeEmptyCacheHitCount,
-  1,
-  "the negative-cache diagnostic records the skipped expensive planner refresh",
+  emptyRefreshStarts,
+  2,
+  "an empty planner result cannot impose an artificial retry delay",
 );
 sandbox.state.earlyGame = { hasTribeTarget: true };
 assert.equal(
   (await emptyCandidateBehavior.getReadyEarlyGameTribeCandidates()).length,
   0,
-  "a directly actionable tribe may trigger a refresh before the empty-cache retry tick",
+  "an in-flight refresh remains coalesced when a tribe becomes actionable",
 );
-assert.equal(emptyRefreshStarts, 2, "a new bordering tribe bypasses the negative-cache backoff");
 assert.equal(
   emptyCandidateBehavior.earlyGameTribeRefreshStartCount,
   2,
-  "planner telemetry counts each launched refresh independently of cache hits",
+  "planner telemetry counts each launched refresh independently",
 );
 resolveEmptyRefresh([target]);
 await Promise.resolve();

@@ -490,11 +490,23 @@ export class BundledOpponentBot {
       prototype.maybeSpawnWarship = async function () {
         const event = adapter.warshipBuildTraceSnapshot(this);
         this.__ofhHeadlessWarshipTrace = event;
-        const emitted = await originalMaybeSpawnWarship.call(this);
-        event.emitted = emitted;
-        this.__ofhHeadlessWarshipTrace = null;
-        adapter.navalTrace.push(event);
-        return emitted;
+        const originalChance = this.random?.chance;
+        if (typeof originalChance === "function") {
+          this.random.chance = function (odds) {
+            const result = originalChance.call(this, odds);
+            if (odds === 2 && event.warshipRoll === undefined) event.warshipRoll = result;
+            return result;
+          };
+        }
+        try {
+          const emitted = await originalMaybeSpawnWarship.call(this);
+          Object.assign(event, { emitted });
+          return emitted;
+        } finally {
+          if (typeof originalChance === "function") this.random.chance = originalChance;
+          this.__ofhHeadlessWarshipTrace = null;
+          adapter.navalTrace.push(event);
+        }
       };
     }
     const originalGetInitialWarshipPort = prototype.getInitialWarshipPort;
@@ -540,10 +552,15 @@ export class BundledOpponentBot {
   warshipBuildTraceSnapshot(behavior) {
     const player = behavior.player;
     const smartState = behavior.ensureSmartState?.();
+    const cost = behavior.cost("Warship");
+    const maritimeEmergency = behavior.incomingMaritimeInvasionSignal?.()?.active === true;
     return {
       phase: "warship-build",
       tick: behavior.game.ticks(),
       disabled: behavior.game.config().isUnitDisabled("Warship"),
+      maritimeEmergency,
+      deferFirstSam: behavior.shouldDeferWarshipForFirstSam?.(cost) === true,
+      deferOffensive: !maritimeEmergency && behavior.shouldDeferWarshipForDefense?.(cost) === true,
       ...this.warshipBuildTracePlayerSnapshot(player, behavior),
       ...this.warshipBuildTraceStateSnapshot(behavior, smartState),
     };

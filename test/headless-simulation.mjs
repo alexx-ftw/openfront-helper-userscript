@@ -223,6 +223,22 @@ assert.match(runner, /appendFileSync\(traceFile/);
 assert.match(runner, /const logSamLifecycle = logStructures \|\| traceFile !== undefined/);
 assert.match(runner, /OFH_LOG_INTENTS/);
 assert.match(runner, /OFH_LOG_NAVAL/);
+assert.match(
+  adapter,
+  /maritimeEmergency,/,
+  "naval traces must expose whether a maritime emergency bypass is active",
+);
+assert.match(adapter, /deferFirstSam:/, "naval traces must expose the first-SAM reserve decision");
+assert.match(
+  adapter,
+  /deferOffensive:/,
+  "naval traces must expose the reserve decisions that precede a warship build",
+);
+assert.match(
+  adapter,
+  /warshipRoll[\s\S]{0,500}random\.chance/,
+  "naval traces must record the ordinary initial-warship random roll",
+);
 assert.match(runner, /OFH_LOG_STRUCTURES/);
 assert.match(runner, /OFH_LOG_SPAWN/);
 assert.match(

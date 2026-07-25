@@ -174,15 +174,12 @@
     handleSpawnTick(ticks, profile) {
       if (!this.mg.inSpawnPhase()) return false;
       // An accepted personal spawn does not mean land attacks are executable:
-      // the match remains globally frozen until the spawn phase closes.  Do
-      // not initialize the opening burst in that interval, otherwise its
-      // commands become long-lived pending commitments and the real first
-      // playable seconds inherit an already-stalled expansion chain.
-      if (this.player.hasSpawned?.()) {
-        this.status = tr("Waiting for match start…");
-        return true;
-      }
-      if (this.shouldAwaitInitialTeamSpawnGeometry(ticks)) {
+      // the match remains globally frozen until the spawn phase closes. Keep
+      // reranking while it is open, though: SpawnExecution accepts a later
+      // location, so newly-arrived teammate anchors must still move us toward
+      // the team centroid.
+      const hasSpawned = this.player.hasSpawned?.() === true;
+      if (!hasSpawned && this.shouldAwaitInitialTeamSpawnGeometry(ticks)) {
         this.status = tr("Coordinating team spawn…");
         return true;
       }
@@ -197,7 +194,7 @@
           autoBotProfileSyncPhase(profile, "spawn-emit", () => this.doSpawn(topKey));
         }
       }
-      this.status = tr("Spawn phase…");
+      this.status = hasSpawned ? tr("Waiting for match start…") : tr("Spawn phase…");
       return true;
     }
 

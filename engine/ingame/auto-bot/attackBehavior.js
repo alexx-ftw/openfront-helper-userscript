@@ -135,12 +135,6 @@
   // changes still invalidate immediately, so retain the coherent graph for
   // twenty-four seconds when its node set is stable.
   const EARLY_GAME_TRIBE_TOPOLOGY_CACHE_TICKS = 240;
-  // A completed planner pass can legitimately find no reachable tribe even
-  // while distant tribes remain alive. Repeating that whole-map scan on every
-  // strategic cadence creates avoidable frame spikes without producing an
-  // attack. Keep a short negative result, but bypass it immediately when the
-  // cheap border snapshot sees a newly actionable tribe.
-  const EARLY_GAME_TRIBE_EMPTY_RETRY_TICKS = 120;
   // Rebuilding every tribe's food-race vector against every visible player is
   // quadratic on crowded maps.  Keep one short snapshot only while an exact
   // live-state signature proves that no owner, movement, troop, or attack
@@ -757,8 +751,6 @@
       // one and still revalidate live target troops immediately before send.
       this.earlyGameTribeCandidatesCache = null;
       this.earlyGameTribeCandidatesRefresh = null;
-      this.earlyGameTribeEmptyRetryAtTick = 0;
-      this.earlyGameTribeEmptyCacheHitCount = 0;
       this.earlyGameTribeRefreshStartCount = 0;
       this.earlyGameTribeBoatEtaCache = new Map();
       // Opportunistic boat selection proves a route before returning a target,
@@ -4315,13 +4307,12 @@
       );
     }
 
-    earlyGameTribeSnapshotNeedsRefresh(cachedEmpty) {
-      return (
-        !cachedEmpty ||
-        state.earlyGame?.hasTribeTarget === true ||
-        this.currentAttackDecisionTick() >=
-          (Number(this.earlyGameTribeEmptyRetryAtTick) || 0)
-      );
+    earlyGameTribeSnapshotNeedsRefresh() {
+      // Do not keep a negative planner result as an artificial capture delay.
+      // A tribe can become reachable between strategic decisions without
+      // changing the coarse early-game snapshot; refresh the empty result on
+      // the next decision while the in-flight promise still coalesces work.
+      return true;
     }
 
     earlyGameTribeSnapshotIsScored(candidates) {
@@ -4338,7 +4329,7 @@
     refreshReadyEarlyGameTribeCandidates(profile, cachedEmpty) {
       if (
         this.earlyGameTribeCandidatesRefresh === null &&
-        this.earlyGameTribeSnapshotNeedsRefresh(cachedEmpty)
+        this.earlyGameTribeSnapshotNeedsRefresh()
       ) {
         this.earlyGameTribeRefreshStartCount++;
         const refresh = this.getEarlyGameTribeCandidates(profile);
@@ -4346,16 +4337,8 @@
         refresh.then((candidates) => {
           if (this.earlyGameTribeCandidatesRefresh !== refresh) return;
           this.earlyGameTribeCandidatesCache = candidates;
-          this.earlyGameTribeEmptyRetryAtTick =
-            Array.isArray(candidates) && candidates.length === 0
-              ? this.currentAttackDecisionTick() + EARLY_GAME_TRIBE_EMPTY_RETRY_TICKS
-              : 0;
           this.earlyGameTribeCandidatesRefresh = null;
         });
-        return;
-      }
-      if (this.earlyGameTribeCandidatesRefresh === null && cachedEmpty) {
-        this.earlyGameTribeEmptyCacheHitCount++;
       }
     }
 

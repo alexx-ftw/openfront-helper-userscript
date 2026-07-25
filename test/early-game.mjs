@@ -85,7 +85,12 @@ assert.match(
 );
 assert.match(
   nationExecutionSource,
-  /if \(!this\.mg\.inSpawnPhase\(\)\) return false;[\s\S]{0,400}if \(this\.player\.hasSpawned\?\.\(\)\) \{[\s\S]{0,160}return true;/,
+  /const hasSpawned = this\.player\.hasSpawned\?\.\(\) === true;[\s\S]{0,600}if \(!hasSpawned && this\.shouldAwaitInitialTeamSpawnGeometry\(ticks\)\)/,
+  "an accepted spawn must continue through global-spawn reranks instead of returning early",
+);
+assert.match(
+  nationExecutionSource,
+  /if \(!this\.mg\.inSpawnPhase\(\)\) return false;[\s\S]{0,400}const hasSpawned = this\.player\.hasSpawned\?\.\(\) === true;[\s\S]{0,900}return true;/,
   "an accepted personal spawn must wait for the global spawn phase to close before initializing attacks",
 );
 assert.match(
