@@ -443,6 +443,12 @@ assert.deepEqual(
   "fixed-map scenarios retain the map resolution required by their configured Nations and tribe coordinates",
 );
 assert.match(adapter, /deterministicDeadlineMs \+= 0\.25/);
+assert.match(adapter, /window\.__OFH_profileNow = \(\) => performance\.now\(\) - profileStartedAt/);
+assert.match(
+  adapter,
+  /Keep the two clocks independent/,
+  "profiling uses an independent clock and cannot consume strategic slice budget",
+);
 assert.doesNotMatch(
   adapter,
   /window\.__OFH_deadlineNow = hostDeadlineNow/,

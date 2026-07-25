@@ -77,7 +77,7 @@ assert.doesNotThrow(() => JSON.stringify(snapshot), "CDP snapshots must be seria
 let profileNow = 0;
 const profileSandbox = {
   state: { settings: { performanceProfiling: true } },
-  window: { __OFH_deadlineNow: () => profileNow },
+  window: { __OFH_profileNow: () => profileNow },
   performance: { now: () => profileNow },
   Math,
   Number,

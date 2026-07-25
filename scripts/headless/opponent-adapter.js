@@ -52,6 +52,11 @@ export function createBundledOpponentHarness(options = {}) {
   }
   const clock = { now: 0 };
   window.__OFH_realOpponentClock = clock;
+  // Profiling needs elapsed wall time, while strategic cooperative slices use
+  // the deterministic clock below. Keep the two clocks independent so enabling
+  // diagnostics cannot alter which strategy slices fit before their deadline.
+  const profileStartedAt = performance.now();
+  window.__OFH_profileNow = () => performance.now() - profileStartedAt;
   // Policy comparisons must not let host load decide how many topology/BFS
   // batches finish before a deadline. Advance a synthetic deadline clock by a
   // fixed quantum on every probe: work remains bounded, while identical seeds

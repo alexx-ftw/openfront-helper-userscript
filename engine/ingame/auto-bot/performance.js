@@ -35,11 +35,16 @@
   }
 
   function autoBotProfileNow() {
+    // The headless harness supplies a wall-clock diagnostic source that is
+    // deliberately separate from its deterministic cooperative-work clock.
+    // Profiling must never advance a deadline that strategy code consults:
+    // doing so would make merely observing a phase change which search slices
+    // the bot completes.
     if (
       typeof window !== "undefined" &&
-      typeof window.__OFH_deadlineNow === "function"
+      typeof window.__OFH_profileNow === "function"
     ) {
-      return Number(window.__OFH_deadlineNow());
+      return Number(window.__OFH_profileNow());
     }
     return performance.now();
   }
