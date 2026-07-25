@@ -15,6 +15,19 @@
       }
     },
     {
+      "id": "inland-alps-rich-team",
+      "role": "high-gold team economy: City branch versus duplicate Factory",
+      "environment": {
+        "OFH_GAME_MAP": "Alps",
+        "OFH_GAME_MAP_SIZE": "Normal",
+        "OFH_PLAYER_TEAMS": "2",
+        "OFH_NATIONS": "8",
+        "OFH_BOTS": "120",
+        "OFH_STARTING_GOLD": "5000000",
+        "OFH_MAX_TICKS": "1200"
+      }
+    },
+    {
       "id": "mixed-europe",
       "role": "mixed inland, coastal, allied-border, and contested-front economy",
       "environment": {

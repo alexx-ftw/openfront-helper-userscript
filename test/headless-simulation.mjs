@@ -419,6 +419,7 @@ assert.deepEqual(
   constructionScenarios.scenarios.map(({ id }) => id),
   [
     "inland-alps",
+    "inland-alps-rich-team",
     "mixed-europe",
     "ffa-europe-low-gold",
     "team-four-islands",
@@ -439,12 +440,21 @@ assert.equal(
 );
 assert.deepEqual(
   constructionScenarios.scenarios.map(({ environment }) => environment.OFH_GAME_MAP),
-  ["Alps", "Europe", "Europe", "Four Islands", "ArchipelagoSea", "Baikal Nuke Wars", "Europe"],
+  [
+    "Alps",
+    "Alps",
+    "Europe",
+    "Europe",
+    "Four Islands",
+    "ArchipelagoSea",
+    "Baikal Nuke Wars",
+    "Europe",
+  ],
   "scenario maps use GameMapType values accepted by the production map loader",
 );
 assert.deepEqual(
   constructionScenarios.scenarios.map(({ environment }) => environment.OFH_GAME_MAP_SIZE),
-  ["Normal", "Small", "Small", "Normal", "Normal", "Small", "Small"],
+  ["Normal", "Normal", "Small", "Small", "Normal", "Normal", "Small", "Small"],
   "fixed-map scenarios retain the map resolution required by their configured Nations and tribe coordinates",
 );
 assert.match(adapter, /deterministicDeadlineMs \+= 0\.25/);

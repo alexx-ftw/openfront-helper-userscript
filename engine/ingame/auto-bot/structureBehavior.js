@@ -215,10 +215,11 @@
   const HOSTILE_SAM_TRIGGER_GOLD_THRESHOLD = HOSTILE_SILO_GOLD_THRESHOLD / 2n;
 
   /** Structures that directly grow the nation's economy. */
-  // A City at a railway anchor opens a new destination and trade branch. Give
-  // it the first economic slot; a nearby duplicate Factory cannot add a route
-  // until there is another destination to serve.
-  const ECONOMIC_STRUCTURE_TYPES = [UNIT.City, UNIT.Factory, UNIT.Port];
+  // A City is the first paying destination; once it exists, build the train
+  // source before adding another destination Port. This starts a profitable
+  // loop sooner and avoids spending the first productive slot on a station
+  // that cannot generate train gold by itself.
+  const ECONOMIC_STRUCTURE_TYPES = [UNIT.Factory, UNIT.Port, UNIT.City];
 
   /** Border troop-capacity pressure puts the City before the other economy sites. */
   const CITY_FIRST_ECONOMIC_STRUCTURE_TYPES = [
@@ -1805,7 +1806,7 @@
       if (openingOceanPort) {
         buildOrder = [UNIT.Port, UNIT.Factory, UNIT.City];
       } else if (hasFoundationalCity) {
-        buildOrder = [UNIT.City, UNIT.Factory, UNIT.Port];
+        buildOrder = [UNIT.Factory, UNIT.Port, UNIT.City];
       } else {
         buildOrder = [UNIT.City, UNIT.Factory, UNIT.Port];
       }

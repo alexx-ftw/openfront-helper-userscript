@@ -1554,12 +1554,12 @@ assert.equal(
     hasOceanPortTiles: true,
   }),
   true,
-  "An established economy tries a new City branch before another Factory",
+  "An established economy opens the next train-producing Factory first",
 );
 assert.deepEqual(
   establishedEconomyCalls,
-  [UNIT.City, UNIT.Factory],
-  "High-gold fallback only tries a Factory after the City branch cannot be built",
+  [UNIT.Factory],
+  "High-gold fallback prioritizes Factory before surplus Port or City",
 );
 behavior.ownedLevels = originalOwnedLevelsForOpeningPort;
 behavior.getPerceivedCost = originalPerceivedCost;
