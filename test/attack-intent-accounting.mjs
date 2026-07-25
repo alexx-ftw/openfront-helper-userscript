@@ -2141,6 +2141,29 @@ assert.equal(
   false,
   "cancelled incoming and outgoing waves do not create false frontline donation urgency",
 );
+const attackingCombatCandidate = urgentDonationBehavior.donationCandidate(
+  {
+    teammate: {
+      ...attackedTeammate,
+      smallID: () => 19,
+      id: () => "player-19",
+      incomingAttacks: () => [],
+      outgoingAttacks: () => [{ troops: () => 20000 }],
+    },
+    troopPercentage: 0.5,
+  },
+  0.8,
+);
+assert.equal(
+  attackingCombatCandidate.underAttack,
+  false,
+  "an offensive ally is not mislabeled as being under attack",
+);
+assert.equal(
+  attackingCombatCandidate.frontline,
+  true,
+  "an ally with a live outgoing attack receives combat donation urgency over rear allies",
+);
 assert.equal(urgentDonationBehavior.donateTroops(), true);
 assert.equal(
   donationRecipients.at(-1),
