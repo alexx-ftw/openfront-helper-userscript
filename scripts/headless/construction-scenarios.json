@@ -6,7 +6,7 @@
       "role": "landlocked economy and land-front defense",
       "environment": {
         "OFH_GAME_MAP": "Alps",
-        "OFH_GAME_MAP_SIZE": "Small",
+        "OFH_GAME_MAP_SIZE": "Normal",
         "OFH_PLAYER_TEAMS": "2",
         "OFH_NATIONS": "8",
         "OFH_BOTS": "120",
@@ -54,7 +54,7 @@
       "role": "port, warship, and island production pressure",
       "environment": {
         "OFH_GAME_MAP": "ArchipelagoSea",
-        "OFH_GAME_MAP_SIZE": "Small",
+        "OFH_GAME_MAP_SIZE": "Normal",
         "OFH_PLAYER_TEAMS": "2",
         "OFH_NATIONS": "20",
         "OFH_BOTS": "120",
