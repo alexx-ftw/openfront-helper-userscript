@@ -52,6 +52,10 @@
       this.lastSpawnTile = null; // last emitted spawn tile (to re-emit on change)
       this.lastSpawnTopKey = null; // "x,y" of the #1 spot we last committed to
       this.lastSpawnPickTick = null; // throttle re-evaluation during spawn phase
+      // Spread simultaneous team bots across a five-tick window without
+      // consuming the faithful Nation RNG sequence used by combat behavior.
+      this.spawnPickJitterTicks =
+        (simpleHash(`${opts?.playerId ?? ""}:${opts?.gameId ?? ""}`) % 5) - 2;
       this.status = "";
       this.lastSeenTick = -1;
       this.lastProcessedGameTick = null;
@@ -183,7 +187,8 @@
         return true;
       }
       if (this.feat("spawn") &&
-        (this.lastSpawnPickTick == null || ticks - this.lastSpawnPickTick >= 15)) {
+        (this.lastSpawnPickTick == null ||
+          ticks - this.lastSpawnPickTick >= 15 + this.spawnPickJitterTicks)) {
         this.lastSpawnPickTick = ticks;
         const topKey = autoBotProfileSyncPhase(profile, "spawn-selection", () =>
           this.currentSpawnTopKey());
@@ -524,6 +529,10 @@
     // heatmap topSpots and its bounded fallback scorer.
     currentSpawnTopKey() {
       if (!state.settings.smartSpawn) return null;
+      const teamCentroidTile = this.getTeamSpawnCentroidTile(this.getSpawnConstraints());
+      if (teamCentroidTile != null) {
+        return `${this.mg.x(teamCentroidTile)},${this.mg.y(teamCentroidTile)}`;
+      }
       let ts = null;
       {
         // The live entry point is non-blocking: exact map-resolution ranking is
@@ -682,6 +691,24 @@
       return null;
     }
 
+    getTeamSpawnCentroidTile(constraints) {
+      if (typeof collectExactSpawnPoints !== "function") return null;
+      const teamSpawns = collectExactSpawnPoints(this.mg, this.player)?.teamSpawns;
+      if (!Array.isArray(teamSpawns) || teamSpawns.length === 0) return null;
+      let sumX = 0;
+      let sumY = 0;
+      for (const point of teamSpawns) {
+        if (!Number.isFinite(point?.x) || !Number.isFinite(point?.y)) return null;
+        sumX += point.x;
+        sumY += point.y;
+      }
+      return this.snapToValidSpawn(
+        Math.round(sumX / teamSpawns.length),
+        Math.round(sumY / teamSpawns.length),
+        constraints,
+      );
+    }
+
     getRandomSpawnCoordinate(limit, start = 0) {
       return this.random.nextInt(start, start + limit);
     }
@@ -718,6 +745,8 @@
       const constraints = this.getSpawnConstraints();
       const useSmart = state.settings.smartSpawn;
       if (useSmart) {
+        const teamCentroidTile = this.getTeamSpawnCentroidTile(constraints);
+        if (teamCentroidTile != null) return teamCentroidTile;
         const rankedTile = this.getRankedSpawnTile(constraints);
         if (rankedTile != null) return rankedTile;
       }

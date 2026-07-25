@@ -60,6 +60,26 @@ assert.match(
 );
 assert.match(
   nationExecutionSource,
+  /spawnPickJitterTicks[\s\S]{0,180}simpleHash\(`\$\{opts\?\.playerId \?\? ""\}:\$\{opts\?\.gameId \?\? ""\}`\) % 5\) - 2/,
+  "spawn selection must use a deterministic plus-or-minus two tick jitter",
+);
+assert.match(
+  nationExecutionSource,
+  /ticks - this\.lastSpawnPickTick >= 15 \+ this\.spawnPickJitterTicks/,
+  "the progressive spawn cadence must apply the per-bot jitter",
+);
+assert.match(
+  nationExecutionSource,
+  /getTeamSpawnCentroidTile\(constraints\)[\s\S]{0,700}collectExactSpawnPoints\(this\.mg, this\.player\)[\s\S]{0,500}Math\.round\(sumX \/ teamSpawns\.length\)/,
+  "team spawns must target the geometric centroid of the known allied anchors",
+);
+assert.match(
+  nationExecutionSource,
+  /const teamCentroidTile = this\.getTeamSpawnCentroidTile\(constraints\);[\s\S]{0,160}if \(teamCentroidTile != null\) return teamCentroidTile;/,
+  "the legal team centroid must take precedence over the heatmap ranking",
+);
+assert.match(
+  nationExecutionSource,
   /this\.spawnTopKeyToValidTile\(topKey\) \?\? this\.pickSpawnCenter\(\)/,
   "a reused spawn candidate must be revalidated and retain the full-selector fallback",
 );
