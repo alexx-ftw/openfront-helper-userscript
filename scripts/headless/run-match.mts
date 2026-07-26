@@ -11,7 +11,9 @@ import {
   UnitType,
 } from "../../openfront-engine/src/core/game/Game.ts";
 import { createGameRunner } from "../../openfront-engine/src/core/GameRunner.ts";
+import { FactoryExecution } from "../../openfront-engine/src/core/execution/FactoryExecution.ts";
 import { NukeExecution } from "../../openfront-engine/src/core/execution/NukeExecution.ts";
+import { TrainExecution } from "../../openfront-engine/src/core/execution/TrainExecution.ts";
 import { TransportShipExecution } from "../../openfront-engine/src/core/execution/TransportShipExecution.ts";
 import type { StampedIntent, Turn } from "../../openfront-engine/src/core/Schemas.ts";
 import { MapPlaylist } from "../../openfront-engine/src/server/MapPlaylist.ts";
@@ -98,6 +100,10 @@ const hostileTransportNotBeforeTick = Number(process.env.OFH_INJECT_HOSTILE_TRAN
 // missile-defense policy face an incoming hostile warhead deterministically.
 const injectHostileAtom = process.env.OFH_INJECT_HOSTILE_ATOM === "1";
 const hostileAtomNotBeforeTick = Number(process.env.OFH_INJECT_HOSTILE_ATOM_AT_TICK ?? 0);
+// Test-only economy fixture. It creates a completed Factory → City → City
+// line through the engine and emits the observed train stops; it never reaches
+// the userscript's build policy.
+const injectRailEconomy = process.env.OFH_INJECT_RAIL_ECONOMY === "1";
 const nuclearUnitTypes = new Set([
   UnitType.MissileSilo,
   UnitType.AtomBomb,
@@ -476,6 +482,83 @@ const firstOwnedTile = (player: { tiles: () => Iterable<number> }) =>
   player.tiles().values().next().value ?? null;
 let ownPortInjected = false;
 let hostileTransportInjected = false;
+let railEconomyFixture: {
+  factory: ReturnType<NonNullable<typeof me>["buildUnit"]>;
+  firstCity: ReturnType<NonNullable<typeof me>["buildUnit"]>;
+  lastCity: ReturnType<NonNullable<typeof me>["buildUnit"]>;
+  train: TrainExecution | null;
+  trainStartedAt: number | null;
+} | null = null;
+let railEconomyFixtureReported = false;
+let railEconomyFixtureNextAttemptTick = 0;
+const ownedRailFixtureStations = (player: NonNullable<typeof me>) => {
+  const owned = [...player.tiles()];
+  const maxSamples = 96;
+  const stride = Math.max(1, Math.ceil(owned.length / maxSamples));
+  const samples = owned.filter((_tile, index) => index % stride === 0).slice(0, maxSamples);
+  const minRangeSquared = 15 ** 2;
+  const stationRangeSquared = 110 ** 2;
+  for (const factory of samples) {
+    for (const lastCity of samples) {
+      const endpointsDistance = runner.game.euclideanDistSquared(factory, lastCity);
+      if (endpointsDistance <= stationRangeSquared) continue;
+      for (const firstCity of samples) {
+        const firstDistance = runner.game.euclideanDistSquared(factory, firstCity);
+        const lastDistance = runner.game.euclideanDistSquared(firstCity, lastCity);
+        if (
+          firstDistance >= minRangeSquared &&
+          firstDistance <= stationRangeSquared &&
+          lastDistance >= minRangeSquared &&
+          lastDistance <= stationRangeSquared
+        ) {
+          return { factory, firstCity, lastCity };
+        }
+      }
+    }
+  }
+  return null;
+};
+const injectRailEconomyIfReady = () => {
+  if (railEconomyFixture !== null || !injectRailEconomy || !me?.isAlive()) return;
+  if (runner.game.ticks() < railEconomyFixtureNextAttemptTick) return;
+  railEconomyFixtureNextAttemptTick = runner.game.ticks() + 100;
+  const stations = ownedRailFixtureStations(me);
+  if (stations === null) return;
+  me.addGold(100_000_000n);
+  const factory = me.buildUnit(UnitType.Factory, stations.factory, {});
+  const firstCity = me.buildUnit(UnitType.City, stations.firstCity, {});
+  const lastCity = me.buildUnit(UnitType.City, stations.lastCity, {});
+  runner.game.addExecution(new FactoryExecution(factory));
+  railEconomyFixture = { factory, firstCity, lastCity, train: null, trainStartedAt: null };
+  console.warn(
+    JSON.stringify({ phase: "rail-economy-fixture-injected", tick: runner.game.ticks(), stations }),
+  );
+};
+const observeRailEconomyFixture = () => {
+  if (railEconomyFixture === null || !me?.isAlive()) return;
+  if (railEconomyFixture.train === null) {
+    const manager = runner.game.railNetwork().stationManager();
+    const source = manager.findStation(railEconomyFixture.factory);
+    const destination = manager.findStation(railEconomyFixture.lastCity);
+    if (source === null || destination === null) return;
+    const train = new TrainExecution(runner.game.railNetwork(), me, source, destination, 0);
+    runner.game.addExecution(train);
+    railEconomyFixture.train = train;
+    railEconomyFixture.trainStartedAt = runner.game.ticks();
+    return;
+  }
+  if (railEconomyFixtureReported || railEconomyFixture.train.isActive()) return;
+  railEconomyFixtureReported = true;
+  console.warn(
+    JSON.stringify({
+      phase: "rail-economy-fixture-resolved",
+      tick: runner.game.ticks(),
+      startedAt: railEconomyFixture.trainStartedAt,
+      paidStops: railEconomyFixture.train.tradeStopsVisited(),
+      expectedMinimumPaidStops: 2,
+    }),
+  );
+};
 const injectOwnPortIfReady = () => {
   if (ownPortInjected || !injectOwnPort || !me?.isAlive()) return;
   const coastTile = [...me.tiles()].find(
@@ -678,6 +761,8 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   injectOwnPortIfReady();
   injectHostileTransportIfReady();
   injectHostileAtomIfReady();
+  injectRailEconomyIfReady();
+  observeRailEconomyFixture();
   const decisionStartedAt = performance.now();
   const intents = await bot.decide();
   if (logSpawn) {
@@ -1282,7 +1367,6 @@ const finalResult = {
 // become idle.
 process.stderr.write(`${JSON.stringify(finalResult)}\n`, () => {
   const hostileMissileFixtureComplete =
-    !injectHostileAtom ||
-    (hostileMissileInjected && hostileMissileSeen && hostileMissileResolved);
+    !injectHostileAtom || (hostileMissileInjected && hostileMissileSeen && hostileMissileResolved);
   process.exit(won && hostileMissileFixtureComplete ? 0 : 2);
 });

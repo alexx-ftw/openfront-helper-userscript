@@ -7697,13 +7697,23 @@
         type === UNIT.SAMLauncher && options.activeMissileDefense !== true
           ? this.samProtectableStructureTiles()
           : null;
-      const safeScored = tiles
+      let safeScored = tiles
         .map((t) => ({
           t,
           v: valueFunction(t),
           compactness: compactness?.(t) ?? null,
         }))
         .filter(({ t }) => !this.isDangerousStructureTile(t, type));
+      // A Factory only earns when it can send trains to a City or Port.  When
+      // at least one safe candidate reaches a paid destination that every
+      // existing Factory misses, suppress the candidates that merely duplicate
+      // an already-served commercial pocket.  This keeps ordinary spacing as
+      // the tie-breaker, but prevents a nearby duplicate Factory from beating
+      // an expansion that actually opens a new route.
+      if (type === UNIT.Factory && safeScored.length > 1) {
+        const novel = this.novelFactoryTradeCandidates(safeScored);
+        if (novel.length > 0) safeScored = novel;
+      }
       let scored = safeScored.filter(
         ({ t }) =>
           protectedSamTiles === null ||
@@ -9716,6 +9726,30 @@
     // nearby factory masquerade as a new commercial destination.
     getOrBuildFactoryTradeDestinations() {
       return this.buildReachableStations([UNIT.City, UNIT.Port]);
+    }
+
+    novelFactoryTradeCandidates(candidates) {
+      if (typeof this.player?.units !== "function") return candidates;
+      const destinations = this.getOrBuildFactoryTradeDestinations();
+      const factories = this.player.units(UNIT.Factory);
+      if (destinations.length === 0 || factories.length === 0) return candidates;
+      const minRangeSquared = this.game.config().trainStationMinRange() ** 2;
+      const stationRangeSquared = this.game.config().trainStationMaxRange() ** 2;
+      return candidates.filter(({ t }) =>
+        destinations.some(({ tile }) => {
+          const candidateDistance = this.game.euclideanDistSquared(t, tile);
+          if (
+            candidateDistance < minRangeSquared ||
+            candidateDistance > stationRangeSquared
+          ) {
+            return false;
+          }
+          return !factories.some((factory) => {
+            const distance = this.game.euclideanDistSquared(factory.tile(), tile);
+            return distance >= minRangeSquared && distance <= stationRangeSquared;
+          });
+        }),
+      );
     }
 
     // trainGoldBase — the game's Config.trainGold value WITHOUT its final

@@ -227,6 +227,17 @@ assert.match(runner, /OFH_LOG_ATTACK_HOTSPOTS/);
 assert.match(runner, /phase: "attack-hotspot-trace"/);
 assert.match(runner, /OFH_INJECT_OWN_PORT/);
 assert.match(runner, /OFH_INJECT_HOSTILE_TRANSPORT/);
+assert.match(runner, /OFH_INJECT_RAIL_ECONOMY/);
+assert.match(
+  runner,
+  /new FactoryExecution\(factory\)[\s\S]*rail-economy-fixture-injected/,
+  "the rail-economy fixture must register a real Factory station through the engine",
+);
+assert.match(
+  runner,
+  /new TrainExecution\(runner\.game\.railNetwork\(\), me, source, destination, 0\)[\s\S]*paidStops/,
+  "the rail-economy fixture must observe an engine TrainExecution and report paid stops",
+);
 assert.match(
   runner,
   /new TransportShipExecution\(hostile, target, troops\)/,
