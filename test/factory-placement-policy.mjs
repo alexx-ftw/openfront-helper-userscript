@@ -56,5 +56,17 @@ behavior.getOrBuildFactoryTradeDestinations = () => [{ tile: 60, cluster: null, 
 assert.deepEqual(
   behavior.novelFactoryTradeCandidates([{ t: 20 }, { t: 100 }]).map(({ t }) => t),
   [],
-  "when every candidate would duplicate the only paid route, report no novel route so the ranker can retain its normal fallback",
+  "when every candidate would duplicate the only paid route, report no novel route",
+);
+assert.equal(
+  behavior.onlyDuplicateFactoryTradeCandidates([{ t: 20 }, { t: 100 }]),
+  true,
+  "when every safe Factory candidate duplicates existing paid routes, decline Factory construction so City/Port can be considered",
+);
+
+behavior.player = { units: (type) => (type === UNIT.Factory ? [] : []) };
+assert.equal(
+  behavior.onlyDuplicateFactoryTradeCandidates([{ t: 20 }]),
+  false,
+  "the first Factory remains legal when no Factory exists yet",
 );

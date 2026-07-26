@@ -7695,6 +7695,19 @@
     rankStructureSpawnTiles(type, options, tiles, valueFunction, compactness) {
       const protectedSamTiles =
         type === UNIT.SAMLauncher && options.activeMissileDefense !== true
+      // Do not spend gold on a Factory that can only duplicate routes an
+      // existing Factory already serves.  Returning null lets the normal
+      // construction order consider City/Port instead, which can create the
+      // next paying endpoint.  Keep the fallback when no Factory or no paid
+      // endpoint exists yet: those are the cases where a first Factory still
+      // has to be allowed.
+      if (
+        type === UNIT.Factory &&
+        safeScored.length > 0 &&
+        this.onlyDuplicateFactoryTradeCandidates(safeScored)
+      ) {
+        return null;
+      }
           ? this.samProtectableStructureTiles()
           : null;
       let safeScored = tiles
@@ -9763,6 +9776,19 @@
     //      avoids passing our player into the game's gold path at all.
     //   Mirrors Config.ts:trainGold exactly: baseGold by relation, −5k per city past
     //   the first 10, floored at 5k.
+    onlyDuplicateFactoryTradeCandidates(candidates) {
+      if (candidates.length === 0 || typeof this.player?.units !== "function") {
+        return false;
+      }
+      const destinations = this.getOrBuildFactoryTradeDestinations();
+      const factories = this.player.units(UNIT.Factory);
+      return (
+        destinations.length > 0 &&
+        factories.length > 0 &&
+        this.novelFactoryTradeCandidates(candidates).length === 0
+      );
+    }
+
     trainGoldBase(rel, citiesVisited) {
       const visited = Math.max(0, (citiesVisited || 0) - 9);
       let baseGold;
