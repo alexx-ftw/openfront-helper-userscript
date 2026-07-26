@@ -171,4 +171,50 @@ assert.ok(
   "a City at a rail junction adds paid transit stops whereas a duplicate Factory there adds none",
 );
 
+const alliedTradeLine = new Map([
+  ["factory", ["self-city", "ally-port"]],
+  ["self-city", ["factory"]],
+  ["ally-port", ["factory"]],
+]);
+const selfTradeRevenue = simulateRailTransitRevenue({
+  adjacency: alliedTradeLine,
+  stationTypes: new Map([
+    ["factory", "Factory"],
+    ["self-city", "City"],
+  ]),
+  factoryIds: ["factory"],
+  destinationIds: ["self-city"],
+  candidateId: null,
+});
+const teamTradeRevenue = simulateRailTransitRevenue({
+  adjacency: alliedTradeLine,
+  stationTypes: new Map([
+    ["factory", "Factory"],
+    ["ally-port", "Port"],
+  ]),
+  factoryIds: ["factory"],
+  destinationIds: ["ally-port"],
+  candidateId: null,
+  stationRelations: new Map([["ally-port", "team"]]),
+});
+const alliedTradeRevenue = simulateRailTransitRevenue({
+  adjacency: alliedTradeLine,
+  stationTypes: new Map([
+    ["factory", "Factory"],
+    ["ally-port", "Port"],
+  ]),
+  factoryIds: ["factory"],
+  destinationIds: ["ally-port"],
+  candidateId: null,
+  stationRelations: new Map([["ally-port", "ally"]]),
+});
+assert.equal(selfTradeRevenue.totalRevenue, 10_000);
+assert.equal(teamTradeRevenue.totalRevenue, 25_000);
+assert.equal(alliedTradeRevenue.totalRevenue, 35_000);
+assert.ok(
+  alliedTradeRevenue.totalRevenue > teamTradeRevenue.totalRevenue &&
+    teamTradeRevenue.totalRevenue > selfTradeRevenue.totalRevenue,
+  "an allied commercial destination is more valuable than team and self destinations",
+);
+
 process.stdout.write("construction simulator tests passed\n");

@@ -43,9 +43,14 @@ export function simulateRailTransitRevenue({
   factoryIds,
   destinationIds,
   candidateId,
+  stationRelations = new Map(),
   // Config.trainGold("self", citiesVisited): the first ten paying stops have
   // no distance penalty, then each additional stop costs 5k down to 5k.
-  goldForTradeStop = (stopIndex) => Math.max(5_000, 10_000 - Math.max(0, stopIndex - 9) * 5_000),
+  goldForTradeStop = (stopIndex, relation = "self") => {
+    const baseGold =
+      { self: 10_000, team: 25_000, other: 25_000, ally: 35_000 }[relation] ?? 25_000;
+    return Math.max(5_000, baseGold - Math.max(0, stopIndex - 9) * 5_000);
+  },
 }) {
   const types = new Map(stationTypes);
   if (candidateId !== null && candidateId !== undefined) types.set(candidateId, "City");
@@ -55,19 +60,31 @@ export function simulateRailTransitRevenue({
     for (const destination of destinationIds) {
       const path = shortestStationPath(adjacency, factory, destination);
       if (path === null) continue;
-      totalRevenue += collectRouteTransitRevenue(path, types, goldForTradeStop, revenueByStation);
+      totalRevenue += collectRouteTransitRevenue(
+        path,
+        types,
+        goldForTradeStop,
+        stationRelations,
+        revenueByStation,
+      );
     }
   }
   return { totalRevenue, revenueByStation };
 }
 
-function collectRouteTransitRevenue(path, stationTypes, goldForTradeStop, revenueByStation) {
+function collectRouteTransitRevenue(
+  path,
+  stationTypes,
+  goldForTradeStop,
+  stationRelations,
+  revenueByStation,
+) {
   let totalRevenue = 0;
   let tradeStopsVisited = 0;
   for (const station of path.slice(1)) {
     const type = stationTypes.get(station);
     if (type !== "City" && type !== "Port") continue;
-    const revenue = goldForTradeStop(tradeStopsVisited);
+    const revenue = goldForTradeStop(tradeStopsVisited, stationRelations.get(station) ?? "self");
     totalRevenue += revenue;
     revenueByStation.set(station, (revenueByStation.get(station) ?? 0) + revenue);
     tradeStopsVisited += 1;
