@@ -55,18 +55,24 @@ export function simulateRailTransitRevenue({
     for (const destination of destinationIds) {
       const path = shortestStationPath(adjacency, factory, destination);
       if (path === null) continue;
-      let tradeStopsVisited = 0;
-      for (const station of path.slice(1)) {
-        const type = types.get(station);
-        if (type !== "City" && type !== "Port") continue;
-        const revenue = goldForTradeStop(tradeStopsVisited);
-        totalRevenue += revenue;
-        revenueByStation.set(station, (revenueByStation.get(station) ?? 0) + revenue);
-        tradeStopsVisited += 1;
-      }
+      totalRevenue += collectRouteTransitRevenue(path, types, goldForTradeStop, revenueByStation);
     }
   }
   return { totalRevenue, revenueByStation };
+}
+
+function collectRouteTransitRevenue(path, stationTypes, goldForTradeStop, revenueByStation) {
+  let totalRevenue = 0;
+  let tradeStopsVisited = 0;
+  for (const station of path.slice(1)) {
+    const type = stationTypes.get(station);
+    if (type !== "City" && type !== "Port") continue;
+    const revenue = goldForTradeStop(tradeStopsVisited);
+    totalRevenue += revenue;
+    revenueByStation.set(station, (revenueByStation.get(station) ?? 0) + revenue);
+    tradeStopsVisited += 1;
+  }
+  return totalRevenue;
 }
 
 function shortestStationPath(adjacency, source, destination) {

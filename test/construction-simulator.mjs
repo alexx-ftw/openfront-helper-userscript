@@ -141,6 +141,13 @@ const stationTypes = new Map([
   ["city-east", "City"],
   ["city-north", "City"],
 ]);
+const duplicateFactoryAtJunction = simulateRailTransitRevenue({
+  adjacency: railJunction,
+  stationTypes: new Map([...stationTypes, ["junction", "Factory"]]),
+  factoryIds: ["factory-west", "factory-south"],
+  destinationIds: ["city-east", "city-north"],
+  candidateId: null,
+});
 const junctionRevenue = simulateRailTransitRevenue({
   adjacency: railJunction,
   stationTypes,
@@ -158,6 +165,10 @@ const branchRevenue = simulateRailTransitRevenue({
 assert.ok(
   junctionRevenue.revenueByStation.get("junction") > branchRevenue.revenueByStation.get("branch"),
   "a City at a transit junction earns from more Factory-to-destination routes than a branch City",
+);
+assert.ok(
+  junctionRevenue.totalRevenue > duplicateFactoryAtJunction.totalRevenue,
+  "a City at a rail junction adds paid transit stops whereas a duplicate Factory there adds none",
 );
 
 process.stdout.write("construction simulator tests passed\n");
