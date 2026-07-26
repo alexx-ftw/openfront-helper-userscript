@@ -70,8 +70,8 @@ assert.match(
 );
 assert.match(
   nationExecutionSource,
-  /getTeamSpawnCentroidTile\(constraints\)[\s\S]{0,700}collectExactSpawnPoints\(this\.mg, this\.player\)[\s\S]{0,500}Math\.round\(sumX \/ teamSpawns\.length\)/,
-  "team spawns must target the geometric centroid of the known allied anchors",
+  /getTeamSpawnCentroidTile\(constraints\)[\s\S]{0,700}collectExactSpawnPoints\(this\.mg, this\.player\)[\s\S]{0,500}filterTeamSpawnGeometryOutliers\(rawTeamSpawns\)[\s\S]{0,500}Math\.round\(sumX \/ teamSpawns\.length\)/,
+  "team spawns must target the centroid of the non-outlier allied anchors",
 );
 assert.match(
   nationExecutionSource,
@@ -1962,6 +1962,11 @@ assert.deepEqual(
   ],
   "attacked allies outrank every other tier and closer allies win within each urgency tier",
 );
+assert.match(
+  attackSource,
+  /donateNeedThreshold \?\? 1/,
+  "an ally below 100% troops is eligible by default; explicit settings may still narrow the threshold",
+);
 targetSandbox.__OFHSpawnObjective = {
   getPlayerClanTag: (player) => player?.tag ?? null,
   sameClanTag: (left, right) =>
@@ -1978,6 +1983,59 @@ const targetBehavior = new targetSandbox.AttackBehavior(
   0.1,
   {},
   {},
+);
+
+const donationSelectionBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+donationSelectionBehavior.player = {
+  smallID: () => 1,
+  canDonateTroops: () => true,
+};
+donationSelectionBehavior.botDonationNextEligibleTickByRecipient = new Map();
+donationSelectionBehavior.currentAttackDecisionTick = () => 100;
+donationSelectionBehavior.teamDonationDistance = () => 0;
+const passiveDonationAlly = {
+  id: () => "passive",
+  smallID: () => 2,
+  isAlive: () => true,
+  incomingAttacks: () => [],
+  outgoingAttacks: () => [],
+};
+const attackingDonationAlly = {
+  ...passiveDonationAlly,
+  id: () => "attacking",
+  smallID: () => 3,
+  outgoingAttacks: () => [{ retreating: () => false }],
+};
+assert.equal(
+  donationSelectionBehavior.donationCandidate(
+    { teammate: passiveDonationAlly, troopPercentage: 0.1 },
+    0.8,
+  )?.frontline,
+  false,
+  "a needy but passive ally remains eligible behind coordinated combat",
+);
+assert.equal(
+  donationSelectionBehavior.donationCandidate(
+    { teammate: attackingDonationAlly, troopPercentage: 0.1 },
+    0.8,
+  )?.frontline,
+  true,
+  "an ally with an active outgoing attack remains a coordinated donation target",
+);
+assert.ok(
+  donationSelectionBehavior.donationCandidate(
+    { teammate: passiveDonationAlly, troopPercentage: 0.9 },
+    1,
+  ),
+  "a passive ally at 90% troops is eligible under the default full-capacity threshold",
+);
+assert.equal(
+  donationSelectionBehavior.donationCandidate(
+    { teammate: passiveDonationAlly, troopPercentage: 1 },
+    1,
+  ),
+  null,
+  "a fully supplied ally is not eligible for a donation",
 );
 
 const sharedShoreBehavior = Object.create(targetSandbox.AttackBehavior.prototype);

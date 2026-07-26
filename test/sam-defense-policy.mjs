@@ -151,8 +151,7 @@ factoryDestinationBehavior.player = {
   },
   nearby: () => [],
 };
-factoryDestinationBehavior.trainGoldBase = (relation) =>
-  relation === "ally" ? 35_000 : 10_000;
+factoryDestinationBehavior.trainGoldBase = (relation) => (relation === "ally" ? 35_000 : 10_000);
 assert.deepEqual(
   Array.from(
     factoryDestinationBehavior
@@ -180,8 +179,7 @@ alliedDestinationBehavior.player = {
   units: (...types) => (types.includes(sandbox.UNIT.City) ? [station(100, "self-city")] : []),
   nearby: () => [alliedTradeOwner],
 };
-alliedDestinationBehavior.trainGoldBase = (relation) =>
-  relation === "ally" ? 35_000 : 10_000;
+alliedDestinationBehavior.trainGoldBase = (relation) => (relation === "ally" ? 35_000 : 10_000);
 const alliedDestinations = Array.from(
   alliedDestinationBehavior.collectReachableStations([sandbox.UNIT.City, sandbox.UNIT.Port]),
 );
@@ -1190,7 +1188,7 @@ assert.equal(
   true,
   "A routine SAM level becomes eligible once true surplus pays for it and economic growth",
 );
-own.gold = () => 3_000_000n;
+own.gold = () => 2_999_999n;
 assert.equal(
   behavior.samUpgradeEconomyCanAbsorb(3_000_000n),
   false,
@@ -3585,8 +3583,8 @@ const portSpaceResult = portSpaceBehavior.scanAllEconomicPortSpace(UNIT.Port, po
 assert.equal(portSpaceResult.status, "candidate");
 assert.equal(
   portSpaceResult.tile,
-  "snapped-port",
-  "The exhaustive Port scan probes the locally legal snapped site, not its occupied shore anchor",
+  "ocean-shore",
+  "An open-ocean Port site proves that new-build space remains",
 );
 portSpaceBehavior.isOceanPortTile = () => false;
 assert.equal(
@@ -3798,7 +3796,7 @@ const originalEmergencyUpgradeCost = behavior.cost;
 const originalEmergencyUpgradeBuildableFor = behavior.buildableFor;
 const originalEmergencyEconomicPressure = behavior.economicConstructionPressureForSamUpgrade;
 reactiveSam.level = () => 4;
-own.gold = () => 3_000_000n;
+own.gold = () => 2_999_999n;
 behavior.economicConstructionPressureForSamUpgrade = () => ({
   type: UNIT.Factory,
   cost: 1_000_000n,
@@ -3813,14 +3811,14 @@ sentBuilds.length = 0;
 assert.equal(
   await behavior.maybeUpgradeMissileDefenseSam(),
   false,
-  "An incoming H-bomb cannot consume the 3M still needed for economic growth",
+  "An incoming H-bomb cannot spend beyond the authoritative 3M upgrade cost",
 );
 assert.equal(sentBuilds.length, 0);
-own.gold = () => 4_000_000n;
+own.gold = () => 3_000_000n;
 assert.equal(
   await behavior.maybeUpgradeMissileDefenseSam(),
   true,
-  "An incoming H-bomb upgrades at the authoritative 3M price after the economic reserve is funded",
+  "An incoming H-bomb upgrades at the authoritative 3M price even when an economic reserve is pending",
 );
 assert.equal(
   sentBuilds.length,

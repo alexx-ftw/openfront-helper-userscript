@@ -2236,7 +2236,7 @@ assert.equal(retiredCombatCandidate.underAttack, false);
 assert.equal(
   retiredCombatCandidate.frontline,
   false,
-  "cancelled incoming and outgoing waves do not create false frontline donation urgency",
+  "cancelled incoming and outgoing waves remain eligible behind live frontline allies",
 );
 const attackingCombatCandidate = urgentDonationBehavior.donationCandidate(
   {

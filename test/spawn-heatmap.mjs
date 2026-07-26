@@ -82,6 +82,7 @@ function loadHarness() {
     computeStaticCandidates: sandbox.computeStaticCandidates,
     computeStaticCandidatesWithBudget: sandbox.computeStaticCandidatesWithBudget,
     computeDynamicScores: sandbox.computeDynamicScores,
+    filterTeamSpawnGeometryOutliers: sandbox.filterTeamSpawnGeometryOutliers,
     buildTeamSpawnRegion: sandbox.buildTeamSpawnRegion,
     isPointInsideTeamSpawnRegion: sandbox.isPointInsideTeamSpawnRegion,
     game,
@@ -102,6 +103,39 @@ function loadHarness() {
 }
 
 const harness = loadHarness();
+assert.equal(
+  JSON.stringify(
+    harness
+      .filterTeamSpawnGeometryOutliers([
+        { x: 100, y: 100 },
+        { x: 130, y: 100 },
+        { x: 115, y: 125 },
+        { x: 700, y: 700 },
+      ])
+      .map((point) => [point.x, point.y]),
+  ),
+  JSON.stringify([
+    [100, 100],
+    [130, 100],
+    [115, 125],
+  ]),
+  "a spatially isolated teammate must not distort the team geometry",
+);
+assert.equal(
+  JSON.stringify(
+    harness
+      .filterTeamSpawnGeometryOutliers([
+        { x: 100, y: 100 },
+        { x: 500, y: 100 },
+      ])
+      .map((point) => [point.x, point.y]),
+  ),
+  JSON.stringify([
+    [100, 100],
+    [500, 100],
+  ]),
+  "two anchors remain an ambiguous but valid team corridor",
+);
 assert.ok(harness.layer, "spawn overlay must register a layer");
 harness.setSpawnMarkersEnabled(true);
 assert.equal(harness.layer.isEnabled(), true);

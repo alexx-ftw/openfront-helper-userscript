@@ -98,6 +98,46 @@ assert.equal(
   "an active invasion against zero defenders keeps the whole remaining budget reserved",
 );
 
+const cachedIncomingBehavior = Object.create(sandbox.AttackBehavior.prototype);
+let cachedIncomingReads = 0;
+const cachedAttacker = { id: () => 7, type: () => sandbox.PlayerType.Bot };
+cachedIncomingBehavior.game = { ticks: () => 451 };
+cachedIncomingBehavior.player = {
+  troops: () => 500,
+  isFriendly: () => false,
+  type: () => sandbox.PlayerType.Bot,
+  incomingAttacks: () => {
+    cachedIncomingReads++;
+    return [
+      { attacker: () => cachedAttacker, troops: () => 300, retreating: () => false },
+      { attacker: () => cachedAttacker, troops: () => 100, retreating: () => false },
+    ];
+  },
+};
+cachedIncomingBehavior.getOutboundAttackTargetKey = (player) => player.id();
+cachedIncomingBehavior.getIncomingCounterattackReserveTroops = () => 0;
+cachedIncomingBehavior.getEarlyGameSpendableTroops = () => 1_000;
+let cachedCounterattackTarget = null;
+cachedIncomingBehavior.sendAttack = async (target) => {
+  cachedCounterattackTarget = target;
+  return true;
+};
+sandbox.state.earlyGame = {};
+assert.equal(
+  await cachedIncomingBehavior.respondToIncomingAttack(),
+  true,
+  "a cached hostile-attack snapshot preserves the defensive counterattack",
+);
+assert.equal(cachedCounterattackTarget, cachedAttacker);
+assert.equal(
+  cachedIncomingReads,
+  1,
+  "target selection, pressure, and counterattack sizing share one hostile-attack snapshot per tick",
+);
+cachedIncomingBehavior.game.ticks = () => 452;
+cachedIncomingBehavior.incomingHostileAttacks();
+assert.equal(cachedIncomingReads, 2, "the next tick refreshes the hostile-attack snapshot");
+
 const siegeHoldBehavior = Object.create(sandbox.AttackBehavior.prototype);
 let siegeCounterattacks = 0;
 sandbox.state.earlyGame = {};

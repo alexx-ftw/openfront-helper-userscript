@@ -728,8 +728,34 @@ function uniqueTeamSpawnPoints(points) {
   return unique;
 }
 
-function buildLargestTeamPolyhedron(points) {
+// Team assignment can contain a player who spawned far away from the actual
+// group. A convex hull/centroid treats that one point as an extreme vertex and
+// sends every remaining teammate out of their local formation. Keep the dense
+// component: an anchor is an outlier only when its nearest teammate is far
+// beyond the median nearest-neighbour distance. Two anchors are inherently
+// ambiguous, so they are always preserved as a corridor.
+function filterTeamSpawnGeometryOutliers(points) {
   const unique = uniqueTeamSpawnPoints(points);
+  if (unique.length < 3) return unique;
+  const nearestDistances = unique.map((point, index) => {
+    let nearest = Infinity;
+    for (let otherIndex = 0; otherIndex < unique.length; otherIndex += 1) {
+      if (otherIndex === index) continue;
+      const other = unique[otherIndex];
+      nearest = Math.min(nearest, Math.hypot(point.x - other.x, point.y - other.y));
+    }
+    return nearest;
+  });
+  const sorted = [...nearestDistances].sort((left, right) => left - right);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  if (!Number.isFinite(median) || median <= 0) return unique;
+  const threshold = median * 2.5;
+  const filtered = unique.filter((_, index) => nearestDistances[index] <= threshold);
+  return filtered.length >= 2 ? filtered : unique;
+}
+
+function buildLargestTeamPolyhedron(points) {
+  const unique = filterTeamSpawnGeometryOutliers(points);
   if (unique.length < 3) return null;
   unique.sort((left, right) => left.x - right.x || left.y - right.y);
 
@@ -774,7 +800,7 @@ function isPointInsideTeamPolyhedron(x, y, polygon) {
 // from wandering far away on very large maps while retaining enough width for
 // legal terrain around a coastal or mountainous team line.
 function buildTeamSpawnRegion(points) {
-  const unique = uniqueTeamSpawnPoints(points);
+  const unique = filterTeamSpawnGeometryOutliers(points);
   const polygon = buildLargestTeamPolyhedron(unique);
   if (polygon) return { polygon, corridor: null };
   if (unique.length < 2) return null;
@@ -897,11 +923,12 @@ function collectSpawnPlayerGroups(game, me, objectiveApi) {
 }
 
 function spawnCentroid(points) {
-  if (points.length === 0) return { x: 0, y: 0 };
-  const total = points.reduce(
+  const geometryPoints = filterTeamSpawnGeometryOutliers(points);
+  if (geometryPoints.length === 0) return { x: 0, y: 0 };
+  const total = geometryPoints.reduce(
     (sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }), { x: 0, y: 0 },
   );
-  return { x: total.x / points.length, y: total.y / points.length };
+  return { x: total.x / geometryPoints.length, y: total.y / geometryPoints.length };
 }
 
 function nearestSpawnDistance(points, x, y) {
@@ -1175,7 +1202,7 @@ function getTeamSpawnRegion(game, me) {
 }
 
 function getTeamSpawnAnchorCount(game, me) {
-  return uniqueTeamSpawnPoints(collectExactSpawnPoints(game, me).teamSpawns).length;
+  return filterTeamSpawnGeometryOutliers(collectExactSpawnPoints(game, me).teamSpawns).length;
 }
 
 function insertExactSpawnCandidate(best, candidate) {

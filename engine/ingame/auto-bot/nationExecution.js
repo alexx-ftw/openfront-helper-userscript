@@ -301,6 +301,23 @@
       return String(attacker?.id?.() ?? "hostile");
     }
 
+    incomingDefenseThreatKey(fallbackAttacker) {
+      const attacks = this.attackBehavior.incomingHostileAttacks?.();
+      if (!Array.isArray(attacks) || attacks.length === 0) {
+        return this.incomingDefenseKey(fallbackAttacker);
+      }
+      const attackers = new Set();
+      for (const attack of attacks) {
+        const attacker = attack?.attacker?.();
+        if (attacker !== null && attacker !== undefined) {
+          attackers.add(this.incomingDefenseKey(attacker));
+        }
+      }
+      return attackers.size > 0
+        ? [...attackers].sort().join("|")
+        : this.incomingDefenseKey(fallbackAttacker);
+    }
+
     incomingDefenseStructureInterval() {
       if (this.attackBehavior.hasOverwhelmingIncomingAttack?.() === true) {
         return OVERWHELMING_DEFENSE_STRUCTURE_INTERVAL_TICKS;
@@ -320,9 +337,12 @@
         this.incomingDefenseTargetKey = null;
         return false;
       }
-      const targetKey = this.incomingDefenseKey(attacker);
-      const newThreat = targetKey !== this.incomingDefenseTargetKey;
-      this.incomingDefenseTargetKey = targetKey;
+      // The strongest attacker can alternate every tick in a coordinated
+      // siege.  Keep that leader for the counterattack, but only restart the
+      // defensive lanes when the hostile set itself changes.
+      const threatKey = this.incomingDefenseThreatKey(attacker);
+      const newThreat = threatKey !== this.incomingDefenseTargetKey;
+      this.incomingDefenseTargetKey = threatKey;
       this.openingLandBurstPending = false;
       this.openingExpansionFollowUpPending = false;
       const retryDue = newThreat || ticks - this.lastIncomingDefenseAttemptTick >= 3;
@@ -690,7 +710,10 @@
 
     getTeamSpawnCentroidTile(constraints) {
       if (typeof collectExactSpawnPoints !== "function") return null;
-      const teamSpawns = collectExactSpawnPoints(this.mg, this.player)?.teamSpawns;
+      const rawTeamSpawns = collectExactSpawnPoints(this.mg, this.player)?.teamSpawns;
+      const teamSpawns = typeof filterTeamSpawnGeometryOutliers === "function"
+        ? filterTeamSpawnGeometryOutliers(rawTeamSpawns)
+        : rawTeamSpawns;
       if (!Array.isArray(teamSpawns) || teamSpawns.length === 0) return null;
       let sumX = 0;
       let sumY = 0;

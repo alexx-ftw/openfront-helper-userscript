@@ -126,6 +126,10 @@
   // across dozens of candidates and caused visible main-thread stalls.
   const NUKE_SUGGESTION_MAX_BUILDING_IMPACT_OPTIMIZATIONS = 16;
   const NUKE_SUGGESTION_TILE_INFO_CACHE_MS = 2500;
+  // A full ownership scan is O(map area). Keep every slice below a frame so a
+  // hover over an enemy never turns a large map into a single long task.
+  const NUKE_SUGGESTION_TILE_SCAN_SLICE_MS = 6;
+  const NUKE_SUGGESTION_TILE_SCAN_YIELD_INTERVAL = 256;
   const NUKE_SUGGESTION_SIGNATURE_CHECK_MS = 250;
   let nukeSuggestionFrameCounter = 2;
   const nukeSuggestionWorldQueryArg = { x: 0, y: 0 };
@@ -849,22 +853,57 @@
     ].join(":");
   }
 
-  function runTileScan(game, scan) {
+  function createTileScanBuilder(game, scan) {
     const { targetId, myPlayerId, allySmallIds, width, height } = scan;
-    const tiles = [];
-    const buckets = new Map();
-    const selfBuckets = new Map();
-    const allyBuckets = new Map();
-    const otherPlayerBuckets = new Map();
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    let sumX = 0;
-    let sumY = 0;
+    return {
+      game,
+      targetId,
+      myPlayerId,
+      allySmallIds,
+      width,
+      height,
+      totalTiles: width * height,
+      nextTile: 0,
+      tiles: [],
+      buckets: new Map(),
+      selfBuckets: new Map(),
+      allyBuckets: new Map(),
+      otherPlayerBuckets: new Map(),
+      minX: Infinity,
+      minY: Infinity,
+      maxX: -Infinity,
+      maxY: -Infinity,
+      sumX: 0,
+      sumY: 0,
+    };
+  }
 
-    const totalTiles = width * height;
-    for (let tile = 0; tile < totalTiles; tile++) {
+  function finishTileScan(builder) {
+    if (builder.tiles.length === 0) return null;
+    return {
+      tiles: builder.tiles,
+      buckets: builder.buckets,
+      selfBuckets: builder.selfBuckets,
+      allyBuckets: builder.allyBuckets,
+      otherPlayerBuckets: builder.otherPlayerBuckets,
+      adjacentHostileSamsCache: null,
+      bbox: {
+        minX: builder.minX,
+        minY: builder.minY,
+        maxX: builder.maxX,
+        maxY: builder.maxY,
+      },
+      centroid: {
+        x: builder.sumX / builder.tiles.length,
+        y: builder.sumY / builder.tiles.length,
+      },
+    };
+  }
+
+  function advanceTileScan(builder, deadline = Infinity) {
+    const { game, targetId, myPlayerId, allySmallIds } = builder;
+    while (builder.nextTile < builder.totalTiles) {
+      const tile = builder.nextTile++;
       let ownerId;
       {
         ownerId = game.ownerID(tile);
@@ -874,48 +913,32 @@
       const point = { tile, x, y, ownerId };
 
       if (ownerId === myPlayerId) {
-        addNukeSuggestionPointToBucket(selfBuckets, point);
-        continue;
-      }
-      if (allySmallIds?.has(ownerId)) {
-        addNukeSuggestionPointToBucket(allyBuckets, point);
-        continue;
-      }
-      if (ownerId !== targetId) {
+        addNukeSuggestionPointToBucket(builder.selfBuckets, point);
+      } else if (allySmallIds?.has(ownerId)) {
+        addNukeSuggestionPointToBucket(builder.allyBuckets, point);
+      } else if (ownerId !== targetId) {
         if (ownerId > 0) {
-          addNukeSuggestionPointToBucket(otherPlayerBuckets, point);
+          addNukeSuggestionPointToBucket(builder.otherPlayerBuckets, point);
         }
-        continue;
+      } else {
+        builder.tiles.push(point);
+        builder.minX = Math.min(builder.minX, x);
+        builder.minY = Math.min(builder.minY, y);
+        builder.maxX = Math.max(builder.maxX, x);
+        builder.maxY = Math.max(builder.maxY, y);
+        builder.sumX += x;
+        builder.sumY += y;
+        addNukeSuggestionPointToBucket(builder.buckets, point);
       }
-
-      tiles.push(point);
-      minX = Math.min(minX, x);
-      minY = Math.min(minY, y);
-      maxX = Math.max(maxX, x);
-      maxY = Math.max(maxY, y);
-      sumX += x;
-      sumY += y;
-
-      addNukeSuggestionPointToBucket(buckets, point);
+      if (
+        builder.nextTile < builder.totalTiles &&
+        builder.nextTile % NUKE_SUGGESTION_TILE_SCAN_YIELD_INTERVAL === 0 &&
+        performance.now() >= deadline
+      ) {
+        return null;
+      }
     }
-
-    if (tiles.length === 0) {
-      return null;
-    }
-
-    return {
-      tiles,
-      buckets,
-      selfBuckets,
-      allyBuckets,
-      otherPlayerBuckets,
-      adjacentHostileSamsCache: null,
-      bbox: { minX, minY, maxX, maxY },
-      centroid: {
-        x: sumX / tiles.length,
-        y: sumY / tiles.length,
-      },
-    };
+    return finishTileScan(builder);
   }
 
   function collectTargetTileInfo(game, targetPlayer, myPlayer, allySmallIds) {
@@ -969,9 +992,17 @@
 
   function scheduleTargetTileInfoScan(game, cacheKey, scan) {
     runtimeState.nukeSuggestionTileComputeKey = cacheKey;
-    setTimeout(() => {
+    const builder = createTileScanBuilder(game, scan);
+    const runSlice = () => {
       if (runtimeState.nukeSuggestionTileComputeKey !== cacheKey) return;
-      const tileInfo = runTileScan(game, scan);
+      const tileInfo = advanceTileScan(
+        builder,
+        performance.now() + NUKE_SUGGESTION_TILE_SCAN_SLICE_MS,
+      );
+      if (tileInfo === null && builder.nextTile < builder.totalTiles) {
+        setTimeout(runSlice, 0);
+        return;
+      }
       if (runtimeState.nukeSuggestionTileComputeKey !== cacheKey) return;
       runtimeState.nukeSuggestionTileComputeKey = null;
       nukeSuggestionTileInfoCache = {
@@ -981,7 +1012,8 @@
       };
       runtimeState.lastNukeSuggestionSignatureCheckAt = 0;
       runtimeState.lastNukeSuggestionSignature = "";
-    }, 0);
+    };
+    setTimeout(runSlice, 0);
   }
 
   function getTileFromXY(game, x, y) {
@@ -2643,6 +2675,15 @@
   }
 
   function clearNukeSuggestionState(container = null) {
+    const hasState =
+      runtimeState.currentNukeSuggestionResults.length > 0 ||
+      runtimeState.lastNukeSuggestionSignature !== "" ||
+      runtimeState.lastNukeSuggestionComputedAt !== 0 ||
+      runtimeState.lastNukeSuggestionSignatureCheckAt !== 0 ||
+      nukeSuggestionTileInfoCache !== null ||
+      runtimeState.nukeSuggestionTileComputeKey !== null ||
+      nukeSuggestionDomCache.size > 0;
+    if (!hasState) return;
     runtimeState.currentNukeSuggestionResults = [];
     runtimeState.lastNukeSuggestionSignature = "";
     runtimeState.lastNukeSuggestionComputedAt = 0;
@@ -2650,7 +2691,7 @@
     nukeSuggestionTileInfoCache = null;
     runtimeState.nukeSuggestionTileComputeKey = null;
     nukeSuggestionDomCache.clear();
-    container?.replaceChildren();
+    if (container?.childElementCount) container.replaceChildren();
   }
 
   function isAutoNukeRadialTarget(params) {

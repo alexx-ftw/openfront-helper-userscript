@@ -1665,6 +1665,11 @@
       ) {
         return false;
       }
+      // On an open-ocean start, spending the entire opening bank on a peaceful
+      // first silo leaves neither the Port nor its first Warship affordable.
+      // Nuclear emergencies already returned from higher-priority paths; this
+      // applies only to the speculative offensive launcher.
+      if (this.shouldDeferInitialSiloForNavalOpening()) return false;
       const siloCost = this.getConstructionCost(UNIT.MissileSilo);
       if (this.spendableConstructionGold() < siloCost) return false;
       // The first silo establishes the offensive capability itself.  The
@@ -1674,6 +1679,19 @@
       return this.maybeSpawnStructure(UNIT.MissileSilo, {
         ignoreEconomicReserve: true,
       });
+    }
+
+    shouldDeferInitialSiloForNavalOpening() {
+      const config = this.game?.config?.();
+      if (!config || !this.maritimeDefenseConstructionEnabled(config)) return false;
+      if (this.hasObservedHostileMissileLaunch() || this.hasBuiltHostileSiloThreat()) {
+        return false;
+      }
+      if (!this.hasOceanPortTiles()) return false;
+      const ports = this.player?.units?.(UNIT.Port) || [];
+      if (!ports.some((port) => port?.isUnderConstruction?.() === false)) return true;
+      const warships = this.player?.units?.(UNIT.Warship) || [];
+      return warships.length === 0;
     }
 
     async handleOrdinaryStructurePriorities(context) {
@@ -7386,11 +7404,8 @@
         ? this.legendaryDefenseEvaluation(context)
         : this.getMissileDefenseEvaluation(context);
       if (!currentEvaluation.hasThreats || currentEvaluation.fullyDefended) return false;
-      const economicallySafeCandidates = upgradeCandidates.filter((candidate) =>
-        this.samUpgradeEconomyCanAbsorb(candidate.cost));
-      if (economicallySafeCandidates.length === 0) return false;
       const candidates = this.rankMissileDefenseSamUpgrades(
-        economicallySafeCandidates,
+        upgradeCandidates,
         context,
         currentEvaluation,
       );
@@ -7680,6 +7695,19 @@
         valueFunction,
         compactness,
       );
+      // Do not spend gold on a Factory that can only duplicate routes an
+      // existing Factory already serves.  Returning null lets the normal
+      // construction order consider City/Port instead, which can create the
+      // next paying endpoint.  Keep the fallback when no Factory or no paid
+      // endpoint exists yet: those are the cases where a first Factory still
+      // has to be allowed.
+      if (
+        type === UNIT.Factory &&
+        safeScored.length > 0 &&
+        this.onlyDuplicateFactoryTradeCandidates(safeScored)
+      ) {
+        return null;
+      }
       if (type === UNIT.SAMLauncher && options.prioritizeStructureCoverage) {
         return this.probePriorityStructureCoverageSpawn(
           type,
@@ -7695,19 +7723,6 @@
     rankStructureSpawnTiles(type, options, tiles, valueFunction, compactness) {
       const protectedSamTiles =
         type === UNIT.SAMLauncher && options.activeMissileDefense !== true
-      // Do not spend gold on a Factory that can only duplicate routes an
-      // existing Factory already serves.  Returning null lets the normal
-      // construction order consider City/Port instead, which can create the
-      // next paying endpoint.  Keep the fallback when no Factory or no paid
-      // endpoint exists yet: those are the cases where a first Factory still
-      // has to be allowed.
-      if (
-        type === UNIT.Factory &&
-        safeScored.length > 0 &&
-        this.onlyDuplicateFactoryTradeCandidates(safeScored)
-      ) {
-        return null;
-      }
           ? this.samProtectableStructureTiles()
           : null;
       let safeScored = tiles
@@ -7961,7 +7976,7 @@
   ) {
       const { context } = scan;
       let visited = 0;
-      let bestTile = null;
+      let bestAnchor = null;
       let bestValue = -Infinity;
       while (
         scan.index < context.borderTiles.length &&
@@ -7980,9 +7995,9 @@
         scan.hasGeometricSpace = true;
         if (candidate.value <= bestValue) continue;
         bestValue = candidate.value;
-        bestTile = candidate.tile;
+        bestAnchor = anchor;
       }
-      if (bestTile !== null) return { status: "candidate", tile: bestTile, visited };
+      if (bestAnchor !== null) return { status: "candidate", tile: bestAnchor, visited };
       if (scan.index < context.borderTiles.length) return { status: "pending", visited };
       return scan.hasGeometricSpace
         ? { status: "indeterminate", visited }
@@ -7998,12 +8013,11 @@
       }
       snappedSites.add(snapped);
       if (this.isDangerousStructureTile(snapped, type)) {
-        return { status: "candidate", tile: snapped, value: -Infinity };
+        return { status: "candidate", value: -Infinity };
       }
       const value = Number(context.valueFunction(anchor));
       return {
         status: "candidate",
-        tile: snapped,
         value: Number.isFinite(value) ? value : -Infinity,
       };
     }
@@ -9765,17 +9779,6 @@
       );
     }
 
-    // trainGoldBase — the game's Config.trainGold value WITHOUT its final
-    // goldMultiplierFor(player) factor. We deliberately drop that factor:
-    //   1) it is IDENTICAL for every relation, so it CANCELS OUT in the normalized
-    //      station weights below (everything is divided by the "ally" gold), and
-    //   2) on hosts that enable the `goldMultiplier` host-cheat (common on private /
-    //      self-hosted servers), the game's goldMultiplierFor() calls
-    //      player.isLobbyCreator() — which our wrapped player object does NOT expose →
-    //      a TypeError that was crashing the ENTIRE bot tick. Replicating the base here
-    //      avoids passing our player into the game's gold path at all.
-    //   Mirrors Config.ts:trainGold exactly: baseGold by relation, −5k per city past
-    //   the first 10, floored at 5k.
     onlyDuplicateFactoryTradeCandidates(candidates) {
       if (candidates.length === 0 || typeof this.player?.units !== "function") {
         return false;
@@ -9789,6 +9792,17 @@
       );
     }
 
+    // trainGoldBase — the game's Config.trainGold value WITHOUT its final
+    // goldMultiplierFor(player) factor. We deliberately drop that factor:
+    //   1) it is IDENTICAL for every relation, so it CANCELS OUT in the normalized
+    //      station weights below (everything is divided by the "ally" gold), and
+    //   2) on hosts that enable the `goldMultiplier` host-cheat (common on private /
+    //      self-hosted servers), the game's goldMultiplierFor() calls
+    //      player.isLobbyCreator() — which our wrapped player object does NOT expose →
+    //      a TypeError that was crashing the ENTIRE bot tick. Replicating the base here
+    //      avoids passing our player into the game's gold path at all.
+    //   Mirrors Config.ts:trainGold exactly: baseGold by relation, −5k per city past
+    //   the first 10, floored at 5k.
     trainGoldBase(rel, citiesVisited) {
       const visited = Math.max(0, (citiesVisited || 0) - 9);
       let baseGold;

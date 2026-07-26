@@ -6760,7 +6760,10 @@
         return false;
       }
 
-      const needThreshold = state.settings.donateNeedThreshold ?? 0.8;
+      // A teammate below full capacity is spending troops somewhere.  Keep
+      // them eligible by default so the tactical ranking below can prioritize
+      // defenders and active attackers over a depleted rear ally.
+      const needThreshold = state.settings.donateNeedThreshold ?? 1;
       return this.game.players().some((teammate) => {
         if (
           !this.player.isOnSameTeam(teammate) ||
@@ -6971,13 +6974,31 @@
       ) {
         return [];
       }
-      return this.player
+      // A single defensive decision consults this collection to select the
+      // attacker, measure aggregate pressure, and size the counterattack.
+      // gameApi wraps every attack on access, so reuse the exact same snapshot
+      // for this tick instead of materializing it up to three times.  Never
+      // carry it to the next tick: incoming attacks are safety-critical.
+      const tick = Number(this.game?.ticks?.());
+      if (
+        Number.isFinite(tick) &&
+        this._incomingHostileAttacksTick === tick &&
+        Array.isArray(this._incomingHostileAttacksSnapshot)
+      ) {
+        return this._incomingHostileAttacksSnapshot;
+      }
+      const attacks = this.player
         .incomingAttacks()
         .filter(
           (attack) =>
             attack?.retreating?.() !== true &&
             !this.player.isFriendly(attack.attacker()),
         );
+      if (Number.isFinite(tick)) {
+        this._incomingHostileAttacksTick = tick;
+        this._incomingHostileAttacksSnapshot = attacks;
+      }
+      return attacks;
     }
 
     // Aggregate pressure is deliberately separate from the single strongest
@@ -8616,8 +8637,11 @@
         this.botDonationNextEligibleTickByRecipient.get(recipientKey) ?? 0;
       if (this.currentAttackDecisionTick() < nextEligibleTick) return null;
       const underAttack = hasActiveDonationAttack(teammate.incomingAttacks());
-      const frontline =
-        underAttack || hasActiveDonationAttack(teammate.outgoingAttacks());
+      const outgoing = hasActiveDonationAttack(teammate.outgoingAttacks());
+      // An active fight ranks first, but a depleted rear ally can still be
+      // spending troops on expansion, transit, or a just-completed action
+      // not yet visible in AttackView. Keep that valid lower-priority path.
+      const frontline = underAttack || outgoing;
       return {
         entry,
         frontline,
@@ -8632,7 +8656,7 @@
 
     selectDonationTeammate(teammates) {
       const needThreshold = state.settings.winFixes
-        ? state.settings.donateNeedThreshold ?? 0.8
+        ? state.settings.donateNeedThreshold ?? 1
         : 1;
       const needy = teammates
         .map((entry) => this.donationCandidate(entry, needThreshold))
