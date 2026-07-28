@@ -325,4 +325,38 @@ try {
   }
 }
 
+let trajectoryOptions = null;
+const trajectorySandbox = {
+  registerMapOverlayLayer: () => {},
+  UniversalPathFinding: {
+    Parabola: (_game, options) => {
+      trajectoryOptions = options;
+      return { findPath: (from, to) => [from, to] };
+    },
+  },
+};
+executeClassicScript(
+  `${fs.readFileSync(
+    path.join(ROOT, "engine/ingame/nuke-trajectory.js"),
+    "utf8",
+  )}\nglobalThis.computeNukeTrajectoryPath = computeNukeTrajectoryPath;`,
+  trajectorySandbox,
+  { filename: "nuke-trajectory.vm.js" },
+);
+assert.deepEqual(
+  trajectorySandbox.computeNukeTrajectoryPath(
+    { config: () => ({ defaultNukeSpeed: () => 12 }) },
+    10,
+    20,
+  ),
+  [10, 20],
+  "the trajectory overlay computes a path without an undeclared direction variable",
+);
+assert.equal(
+  trajectoryOptions.directionUp,
+  true,
+  "the trajectory overlay defaults to the standard upward arc",
+);
+assert.equal(trajectoryOptions.increment, 12, "the overlay uses the live nuke speed");
+
 process.stdout.write("nuke suggestion construction tests passed\n");

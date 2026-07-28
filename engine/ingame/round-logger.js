@@ -42,6 +42,19 @@
       typeof nested === "bigint" ? String(nested) : nested));
   }
 
+  function roundLogSerializeRejection(reason) {
+    if ((typeof reason !== "object" && typeof reason !== "function") || reason === null) {
+      return roundLogClone(reason);
+    }
+    const error = {};
+    for (const field of ["name", "message", "stack"]) {
+      if (typeof reason[field] === "string" && reason[field].length > 0) {
+        error[field] = reason[field];
+      }
+    }
+    return Object.keys(error).length > 0 ? error : roundLogClone(reason);
+  }
+
   function roundLogEntry() {
     return {
       gameId: _roundLogGameId,
@@ -250,7 +263,7 @@
         lineno: event.lineno, colno: event.colno, error: event.error?.stack || String(event.error || "") });
     });
     window.addEventListener("unhandledrejection", (event) => {
-      roundLogRecord("unhandled_rejection", { reason: event.reason?.stack || roundLogClone(event.reason) });
+      roundLogRecord("unhandled_rejection", { reason: roundLogSerializeRejection(event.reason) });
     });
     window.addEventListener("pagehide", () => {
       if (_roundLogGameId) roundLogFinishMatch("pagehide");

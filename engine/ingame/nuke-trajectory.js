@@ -26,7 +26,7 @@
     return "rgba(248, 113, 113, 0.85)";
   }
 
-  function computeNukeTrajectoryPath(game, fromTile, toTile) {
+  function computeNukeTrajectoryPath(game, fromTile, toTile, directionUp = true) {
     {
       if (
         typeof UniversalPathFinding === "undefined" ||
@@ -42,7 +42,7 @@
       const pf = UniversalPathFinding.Parabola(game, {
         increment: speed,
         distanceBasedHeight: true,
-        directionUp: directionUp,
+        directionUp: directionUp !== false,
       });
       const path = pf.findPath(fromTile, toTile);
       return Array.isArray(path) ? path : null;

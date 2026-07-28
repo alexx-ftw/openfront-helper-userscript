@@ -365,7 +365,8 @@
     }
 
     isValidNukeTarget(target) {
-      if (target === null || target.type() === PlayerType.Bot) return false;
+      if (target === null || target.isAlive?.() === false) return false;
+      if (target.smallID?.() === this.player.smallID?.()) return false;
       if (this.player.isOnSameTeam(target)) return false;
       return this.attackBehavior.shouldAttack(target) !== false;
     }
@@ -529,12 +530,15 @@
     }
 
     findHostileNukeTarget() {
-      const myMaxTroops = this.game.config().maxTroops(this.player);
       for (const relation of this.player.allRelationsSorted()) {
         if (relation.relation !== Relation.Hostile) continue;
         const other = relation.player;
         if (this.player.isFriendly(other)) continue;
-        if (myMaxTroops >= this.game.config().maxTroops(other) * 2) continue;
+        // A hostile is still a legitimate nuclear target when we have grown
+        // larger.  The old 2x-capacity veto made a winning nation unable to
+        // auto-nuke any weaker enemy in a multi-player game, even with ready
+        // silos and a positive target score.  Resource, trajectory and target
+        // scoring gates below still decide whether firing is worthwhile.
         return other;
       }
       return null;

@@ -39,6 +39,7 @@ const sandbox = {
     Legendary: "Legendary",
   },
   GameMode: { Team: "Team" },
+  Relation: { Hostile: "Hostile" },
   PlayerType: { Bot: "Bot" },
   state: { settings: { winFixes: true }, stats: { nukes: 0 }, recentMirvHits: [] },
   currentDifficulty: () => "Impossible",
@@ -81,6 +82,39 @@ behavior.structureBehavior = {
 };
 behavior.attackBehavior = { findIncomingAttackPlayer: () => null };
 behavior.isUnderHeavyAttack = () => false;
+
+const nukeSelf = {
+  smallID: () => 1,
+  isOnSameTeam: () => false,
+  isFriendly: () => false,
+  allRelationsSorted: () => [],
+};
+const weakerHostileNation = {
+  smallID: () => 2,
+  isAlive: () => true,
+  type: () => sandbox.PlayerType.Bot,
+};
+const hostileTargetBehavior = Object.create(sandbox.__NukeBehavior.prototype);
+hostileTargetBehavior.player = {
+  ...nukeSelf,
+  allRelationsSorted: () => [
+    { relation: "Hostile", player: weakerHostileNation },
+  ],
+};
+hostileTargetBehavior.game = {
+  config: () => ({ maxTroops: (player) => (player === nukeSelf ? 200 : 50) }),
+};
+hostileTargetBehavior.attackBehavior = { shouldAttack: () => true };
+assert.equal(
+  hostileTargetBehavior.findHostileNukeTarget(),
+  weakerHostileNation,
+  "a weaker hostile nation remains a valid automatic nuclear target",
+);
+assert.equal(
+  hostileTargetBehavior.isValidNukeTarget(weakerHostileNation),
+  true,
+  "a hostile Bot-type opponent is eligible when the normal attack policy allows it",
+);
 
 assert.equal(
   behavior.shouldDeferNukeForEconomy(target, 5_000_000n),
