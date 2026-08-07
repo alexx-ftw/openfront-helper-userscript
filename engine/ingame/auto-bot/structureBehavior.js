@@ -4915,6 +4915,7 @@
       if (structures.length === 0) return 0;
       let protectedValue = 0;
       const totalValue = Math.max(1, Number(context.totalValue || 0));
+      const structureValues = context.structureValues;
       for (const structure of structures) {
         if (
           this.legendaryCandidateProtectsStructure(
@@ -4924,7 +4925,9 @@
             context.threats,
           )
         ) {
-          protectedValue += this.legendaryCriticalStructureValue(structure);
+          protectedValue +=
+            structureValues?.get(structure) ??
+            this.legendaryCriticalStructureValue(structure);
         }
       }
       const spacing = this.spacingConstants().structureSpacing;
@@ -5362,6 +5365,10 @@
         targetTile,
         radius,
         context.structures,
+        {
+          structureValues: context.structureValues,
+          structureTiles: context.structureTiles,
+        },
       );
       const targetsOwnedTerritory = this.activeMissileTargetsOwnedTerritory(
         targetTile,
@@ -5416,16 +5423,25 @@
       exposure.targetsOwnedTerritory = true;
     }
 
-    legendaryActiveMissileExposure(targetTile, radius, structures) {
+    legendaryActiveMissileExposure(
+      targetTile,
+      radius,
+      structures,
+      { structureValues = null, structureTiles = null } = {},
+    ) {
       const radiusSquared = radius * radius;
       let value = 0;
       let count = 0;
       for (const structure of structures) {
+        const structureTile = structureTiles?.has(structure)
+          ? structureTiles.get(structure)
+          : structure.tile();
         if (
-          this.game.euclideanDistSquared(targetTile, structure.tile()) >
-          radiusSquared
+          this.game.euclideanDistSquared(targetTile, structureTile) > radiusSquared
         ) continue;
-        value += this.legendaryCriticalStructureValue(structure);
+        value +=
+          structureValues?.get(structure) ??
+          this.legendaryCriticalStructureValue(structure);
         count++;
       }
       return { value, count, radiusSquared };
@@ -5805,8 +5821,11 @@
       enemySilos,
       radius,
       totalValue,
+      { structureValues = null, structureTiles = null } = {},
     ) {
       const radiusSquared = Math.max(0, Number(radius) || 0) ** 2;
+      const valueOf = (unit) =>
+        structureValues?.get(unit) ?? this.legendaryCriticalStructureValue(unit);
       const entries = (structures || [])
         .map((target) =>
           this.legendaryMissileTargetEntry(
@@ -5814,6 +5833,7 @@
             structures,
             radiusSquared,
             totalValue,
+            { valueOf, structureTiles },
           ),
         )
         .filter((entry) => entry !== null);
@@ -5832,8 +5852,7 @@
         .slice()
         .sort(
           (left, right) =>
-            this.legendaryCriticalStructureValue(right.target) -
-              this.legendaryCriticalStructureValue(left.target) ||
+            valueOf(right.target) - valueOf(left.target) ||
             right.exposedValue - left.exposedValue,
         );
       return this.legendarySelectMissileTargets(
@@ -5845,19 +5864,30 @@
       );
     }
 
-    legendaryMissileTargetEntry(target, structures, radiusSquared, totalValue) {
-      const targetTile = target?.tile?.();
+    legendaryMissileTargetEntry(
+      target,
+      structures,
+      radiusSquared,
+      totalValue,
+      {
+        valueOf = (unit) => this.legendaryCriticalStructureValue(unit),
+        structureTiles = null,
+      } = {},
+    ) {
+      const tileOf = (unit) => structureTiles?.get(unit) ?? unit?.tile?.();
+      const targetTile = tileOf(target);
       if (targetTile === null || targetTile === undefined) return null;
-      let exposedValue = this.legendaryCriticalStructureValue(target);
+      let exposedValue = valueOf(target);
       let exposedStructures = 1;
       for (const other of structures || []) {
         if (other === target) continue;
         {
+          const otherTile = tileOf(other);
           if (
-            this.game.euclideanDistSquared(targetTile, other.tile()) <=
+            this.game.euclideanDistSquared(targetTile, otherTile) <=
             radiusSquared
           ) {
-            exposedValue += this.legendaryCriticalStructureValue(other);
+            exposedValue += valueOf(other);
             exposedStructures++;
           }
         }
@@ -5943,6 +5973,8 @@
         atomRadius,
         hydrogenRadius,
         structures,
+        structureValues,
+        structureTiles,
         totalValue,
         priorityStructures,
       } = base;
@@ -5968,6 +6000,8 @@
           atomRadius,
           hydrogenRadius,
           samProfiles,
+          structureValues,
+          structureTiles,
         },
       );
       threats.push(...activeMissiles);
@@ -5987,6 +6021,8 @@
         ...strongest,
         threats,
         structures,
+        structureValues,
+        structureTiles,
         priorityStructures,
         totalValue,
         atomCost,
@@ -6050,12 +6086,20 @@
         .sort((left, right) => right.value - left.value)
         .slice(0, LEGENDARY_MAX_MISSILE_TARGETS);
       const priorityUnits = priorityStructures.map((entry) => entry.unit);
+      const structureValues = new Map(
+        valuedStructures.map(({ unit, value }) => [unit, value]),
+      );
+      const structureTiles = new Map(
+        structures.map((unit) => [unit, unit?.tile?.()]),
+      );
       return {
         atomCost,
         hydrogenCost,
         atomRadius,
         hydrogenRadius,
         structures,
+        structureValues,
+        structureTiles,
         totalValue,
         priorityStructures: priorityUnits,
       };
@@ -6076,6 +6120,10 @@
         enemySilos,
         radius,
         base.totalValue,
+        {
+          structureValues: base.structureValues,
+          structureTiles: base.structureTiles,
+        },
       );
       let bestTarget = null;
       for (const target of targets) {
@@ -6264,12 +6312,19 @@
       const radiusSquared = radius * radius;
       let value = candidateValue;
       let count = 1;
+      const structureValues = context.structureValues;
+      const structureTiles = context.structureTiles;
       for (const structure of
         context.priorityStructures || context.structures || []) {
+        const structureTile = structureTiles?.has(structure)
+          ? structureTiles.get(structure)
+          : structure.tile();
         if (
-          this.game.euclideanDistSquared(tile, structure.tile()) > radiusSquared
+          this.game.euclideanDistSquared(tile, structureTile) > radiusSquared
         ) continue;
-        value += this.legendaryCriticalStructureValue(structure);
+        value +=
+          structureValues?.get(structure) ??
+          this.legendaryCriticalStructureValue(structure);
         count++;
       }
       const totalValue = context.totalValue + candidateValue;
