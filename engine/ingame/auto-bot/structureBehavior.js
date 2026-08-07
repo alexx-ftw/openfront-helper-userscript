@@ -3103,14 +3103,25 @@
       if (!placement || placement.allies.length === 0) return 0;
       const spacing = this.spacingConstants().structureSpacing;
       const samConfig = this.safeGameConfig();
-      const supportScores = placement.allies.map((ally) =>
-        this.legendarySingleAllySupportScore(tile, ally, placement, samConfig),
-      );
-
-      supportScores.sort((a, b) => b - a);
+      let strongest = 0;
+      let secondStrongest = 0;
+      for (const ally of placement.allies) {
+        const supportScore = this.legendarySingleAllySupportScore(
+          tile,
+          ally,
+          placement,
+          samConfig,
+        );
+        if (supportScore > strongest) {
+          secondStrongest = strongest;
+          strongest = supportScore;
+        } else if (supportScore > secondStrongest) {
+          secondStrongest = supportScore;
+        }
+      }
       const combined = Math.min(
         5,
-        (supportScores[0] || 0) + 0.35 * (supportScores[1] || 0),
+        strongest + 0.35 * secondStrongest,
       );
       return spacing * combined;
     }
@@ -4046,48 +4057,53 @@
             (!silo.isActive || silo.isActive() !== false)
           );
         }
-      })
-        .map((silo) => ({
-          silo,
-          distance: this.game.manhattanDist(silo.tile(), targetTile),
-          flightTicks: this.legendaryNukeFlightTime(
-            silo.tile(),
-            targetTile,
-          ),
-          slots: this.legendarySiloSlotAvailability(silo),
-        }));
+        })
+        .map((silo) => {
+          const tile = silo.tile();
+          return {
+            silo,
+            id: Number(silo.id?.() ?? 0),
+            distance: this.game.manhattanDist(tile, targetTile),
+            flightTicks: this.legendaryNukeFlightTime(tile, targetTile),
+            slots: this.legendarySiloSlotAvailability(silo),
+          };
+        });
       const launches = [];
       const cooldown = this.legendarySiloCooldownTicks();
       let nextLaunchTick = 0;
       const total = Math.max(0, Math.floor(Number(shotCount) || 0));
 
+      const closestAvailableEntry = (launchTick) => {
+        let selected = null;
+        for (const entry of entries) {
+          // Slots stay sorted after every assignment, so the first slot is
+          // enough to decide whether this silo can launch at this tick.
+          if (entry.slots.length === 0 || entry.slots[0] > launchTick) continue;
+          if (
+            selected === null ||
+            entry.distance < selected.distance ||
+            (entry.distance === selected.distance && entry.id < selected.id)
+          ) {
+            selected = entry;
+          }
+        }
+        return selected;
+      };
+
       for (let index = 0; index < total; index++) {
         let launchTick = nextLaunchTick;
-        let available = entries.filter((entry) =>
-          entry.slots.some((tick) => tick <= launchTick),
-        );
-        if (available.length === 0) {
-          const nextReadyTick = Math.min(
-            ...entries.flatMap((entry) => entry.slots),
-          );
+        let selected = closestAvailableEntry(launchTick);
+        if (selected === null) {
+          let nextReadyTick = Infinity;
+          for (const entry of entries) {
+            nextReadyTick = Math.min(nextReadyTick, entry.slots[0] ?? Infinity);
+          }
           if (!Number.isFinite(nextReadyTick)) break;
           launchTick = Math.max(launchTick, nextReadyTick);
-          available = entries.filter((entry) =>
-            entry.slots.some((tick) => tick <= launchTick),
-          );
+          selected = closestAvailableEntry(launchTick);
         }
-        if (available.length === 0) break;
-        available.sort(
-          (left, right) =>
-            left.distance - right.distance ||
-            Number(left.silo.id?.() ?? 0) - Number(right.silo.id?.() ?? 0),
-        );
-        const selected = available[0];
-        const slotIndex = selected.slots.findIndex(
-          (tick) => tick <= launchTick,
-        );
-        if (slotIndex < 0) break;
-        selected.slots[slotIndex] = launchTick + cooldown;
+        if (selected === null) break;
+        selected.slots[0] = launchTick + cooldown;
         selected.slots.sort((left, right) => left - right);
         launches.push({
           silo: selected.silo,
@@ -6021,18 +6037,19 @@
         UNIT.Port,
         UNIT.MissileSilo,
       );
-      const totalValue = structures.reduce(
-        (total, unit) => total + this.legendaryCriticalStructureValue(unit),
+      const valuedStructures = structures.map((unit) => ({
+        unit,
+        value: this.legendaryCriticalStructureValue(unit),
+      }));
+      const totalValue = valuedStructures.reduce(
+        (total, entry) => total + entry.value,
         0,
       );
-      const priorityStructures = structures
+      const priorityStructures = valuedStructures
         .slice()
-        .sort(
-          (left, right) =>
-            this.legendaryCriticalStructureValue(right) -
-            this.legendaryCriticalStructureValue(left),
-        )
+        .sort((left, right) => right.value - left.value)
         .slice(0, LEGENDARY_MAX_MISSILE_TARGETS);
+      const priorityUnits = priorityStructures.map((entry) => entry.unit);
       return {
         atomCost,
         hydrogenCost,
@@ -6040,7 +6057,7 @@
         hydrogenRadius,
         structures,
         totalValue,
-        priorityStructures,
+        priorityStructures: priorityUnits,
       };
     }
 
@@ -9183,6 +9200,10 @@
       const spacing = this.spacingConstants().structureSpacing;
       const allyPlacementContext = this.legendaryAllyPlacementContext();
       const teamCenterContext = this.legendaryTeamCenterPlacementContext();
+      const samCoverageContext =
+        type === UNIT.SAMLauncher
+          ? this.legendarySamCoveragePlacementContext()
+          : null;
 
       return (tile) => {
         const base = baseValue(tile);
@@ -9223,7 +9244,11 @@
           // SAMs are not a production axis. Their placement is judged by how
           // much uncovered production they protect and by whether they sit on
           // feasible enemy missile trajectories.
-          value += this.legendarySamCoveragePlacementScore(tile, missileContext);
+          value += this.legendarySamCoveragePlacementScore(
+            tile,
+            missileContext,
+            samCoverageContext,
+          );
           if (missileContext.critical) value += spacing * 2;
         }
 
@@ -9245,14 +9270,10 @@
       }
     }
 
-    legendarySamCoveragePlacementScore(tile, missileContext = null) {
-      let score = 0;
-      let range;
-      {
-        range = Number(this.game.config().defaultSamRange());
-      }
-      if (range <= 0) return 0;
-      const rangeSquared = range * range;
+    legendarySamCoveragePlacementContext() {
+      const config = this.game.config();
+      const range = Number(config.defaultSamRange());
+      if (range <= 0) return null;
       const existingSams = this.legendaryFriendlySamUnits();
       const structures = this.player.units(
         UNIT.City,
@@ -9260,25 +9281,58 @@
         UNIT.Port,
         UNIT.MissileSilo,
       );
-      for (const structure of structures) {
+      const existingSamCoverage = existingSams.map((sam) => {
+        const samRange = Number(config.samRange(sam.level()));
+        return {
+          tile: sam.tile(),
+          rangeSquared: samRange * samRange,
+        };
+      });
+      // Existing SAM coverage does not depend on the candidate tile. Resolve
+      // it once per placement decision so every candidate is evaluated only
+      // against structures that still need defensive coverage.
+      const uncoveredStructures = structures
+        .map((structure) => ({ structure, tile: structure.tile() }))
+        .filter(
+          ({ tile: structureTile }) =>
+            !existingSamCoverage.some(
+              ({ tile: samTile, rangeSquared: samRangeSquared }) =>
+                this.game.euclideanDistSquared(structureTile, samTile) <=
+                samRangeSquared,
+            ),
+        );
+      const criticalValueCache = new Map();
+      return {
+        rangeSquared: range * range,
+        uncoveredStructures,
+        criticalValueCache,
+        spacing: this.spacingConstants().structureSpacing,
+      };
+    }
+
+    legendarySamCoveragePlacementScore(
+      tile,
+      missileContext = null,
+      coverageContext = null,
+    ) {
+      const coverage =
+        coverageContext || this.legendarySamCoveragePlacementContext();
+      if (coverage === null) return 0;
+      let score = 0;
+      const { rangeSquared, uncoveredStructures, criticalValueCache, spacing } =
+        coverage;
+      for (const { structure, tile: structureTile } of uncoveredStructures) {
         if (
-          this.game.euclideanDistSquared(tile, structure.tile()) >
-          rangeSquared
+          this.game.euclideanDistSquared(tile, structureTile) > rangeSquared
         ) {
           continue;
         }
-        const alreadyCovered = existingSams.some((sam) => {
-          const samRange = Number(this.game.config().samRange(sam.level()));
-          return (
-            this.game.euclideanDistSquared(structure.tile(), sam.tile()) <=
-            samRange * samRange
-          );
-        });
-        if (!alreadyCovered) {
-          score +=
-            this.spacingConstants().structureSpacing *
-            this.legendaryCriticalStructureValue(structure);
+        let criticalValue = criticalValueCache.get(structure);
+        if (criticalValue === undefined) {
+          criticalValue = this.legendaryCriticalStructureValue(structure);
+          criticalValueCache.set(structure, criticalValue);
         }
+        score += spacing * criticalValue;
       }
       return (
         score +

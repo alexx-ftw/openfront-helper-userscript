@@ -345,6 +345,10 @@ relative signal among troops, treasury, and gold production, with extra value fo
 nearby/high-level friendly SAMs. The own border segment closest to the geometric
 center of the team is preferred when other constraints are comparable.
 
+The SAM placement scorer builds the existing-coverage snapshot once for the
+candidate set and reuses it across all candidate tiles, so mature boards do
+not repeat the same structure-versus-SAM geometry scan for every probe.
+
 SAM placement and upgrades are trajectory-aware. The planner reads enemy silo
 levels and available slots, enemy gold (Atom versus Hydrogen affordability),
 `nukeMagnitudes`, `defaultNukeSpeed`, `UniversalPathFinding.Parabola`, active
