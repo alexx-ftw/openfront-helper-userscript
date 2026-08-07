@@ -4931,6 +4931,7 @@
       let protectedValue = 0;
       const totalValue = Math.max(1, Number(context.totalValue || 0));
       const structureValues = context.structureValues;
+      const impactContext = this.legendarySamImpactMarginContext(context);
       for (const structure of structures) {
         if (
           this.legendaryCandidateProtectsStructure(
@@ -4938,6 +4939,7 @@
             level,
             structure,
             context.threats,
+            impactContext,
           )
         ) {
           protectedValue +=
@@ -4949,19 +4951,123 @@
       return spacing * Math.min(4, (protectedValue / totalValue) * 4);
     }
 
-    legendaryCandidateProtectsStructure(tile, level, structure, threats) {
+    legendarySamImpactMarginContext(context) {
+      if (context.samImpactMarginContext) {
+        return context.samImpactMarginContext;
+      }
+      const structures = Array.isArray(context.structures)
+        ? context.priorityStructures || context.structures
+        : [];
+      const structureTiles = context.structureTiles;
+      const completionTick = this.legendaryConstructionDuration(
+        UNIT.SAMLauncher,
+      );
+      const routesByThreat = new Map();
+      for (const threat of context.threats || []) {
+        routesByThreat.set(
+          threat,
+          this.legendarySamImpactRoutesForThreat(
+            threat,
+            structures,
+            structureTiles,
+            completionTick,
+          ),
+        );
+      }
+      const impactContext = { completionTick, routesByThreat };
+      context.samImpactMarginContext = impactContext;
+      return impactContext;
+    }
+
+    legendarySamImpactRoutesForThreat(
+      threat,
+      structures,
+      structureTiles,
+      completionTick,
+    ) {
+      const routesByStructure = new Map();
+      if (threat.targetTile === null || threat.targetTile === undefined) {
+        return routesByStructure;
+      }
+      const sources = this.legendaryThreatSources(threat);
+      for (const structure of structures) {
+        const structureTile =
+          structureTiles?.get(structure) ?? structure.tile();
+        if (structureTile === null || structureTile === undefined) {
+          routesByStructure.set(structure, []);
+          continue;
+        }
+        routesByStructure.set(
+          structure,
+          this.legendarySamImpactRoutesForStructure(
+            sources,
+            structureTile,
+            completionTick,
+          ),
+        );
+      }
+      return routesByStructure;
+    }
+
+    legendarySamImpactRoutesForStructure(sources, structureTile, completionTick) {
+      const routes = [];
+      for (const source of sources) {
+        const fromTile =
+          typeof source.tile === "function" ? source.tile() : source;
+        if (fromTile === null || fromTile === undefined) continue;
+        const impactTick = this.legendaryNukeFlightTime(
+          fromTile,
+          structureTile,
+        );
+        if (
+          impactTick - completionTick < LEGENDARY_SAM_IMPACT_MARGIN_TICKS
+        ) {
+          continue;
+        }
+        routes.push({
+          path: this.legendaryNukeFlightPath(fromTile, structureTile),
+          fromTile,
+          targetTile: structureTile,
+          launchOffset: 0,
+          impactTick,
+        });
+      }
+      return routes;
+    }
+
+    legendaryCandidateProtectsStructure(tile, level, structure, threats, impactContext = null) {
       return threats.some((threat) =>
         this.legendaryCandidateProtectsStructureFromThreat(
           tile,
           level,
           structure,
           threat,
+          impactContext,
         ),
       );
     }
 
-    legendaryCandidateProtectsStructureFromThreat(tile, level, structure, threat) {
+    legendaryCandidateProtectsStructureFromThreat(
+      tile,
+      level,
+      structure,
+      threat,
+      impactContext = null,
+    ) {
       if (threat.targetTile === null || threat.targetTile === undefined) return false;
+      const preparedRoutes = impactContext?.routesByThreat
+        ?.get(threat)
+        ?.get(structure);
+      if (preparedRoutes) {
+        return preparedRoutes.some((route) =>
+          this.legendarySamRouteProtectsTile(
+            tile,
+            level,
+            route,
+            impactContext.completionTick,
+          ),
+        );
+      }
       const structureTile = structure.tile();
       const completionTick = this.legendaryConstructionDuration(UNIT.SAMLauncher);
       for (const source of this.legendaryThreatSources(threat)) {
@@ -4986,6 +5092,12 @@
         }
       }
       return false;
+    }
+
+    legendarySamRouteProtectsTile(tile, level, route, completionTick) {
+      return this.legendarySamPathInterceptTicks(tile, route, level).some(
+        (tick) => tick >= completionTick && tick <= route.impactTick,
+      );
     }
 
     legendaryMissileSalvoPlan(

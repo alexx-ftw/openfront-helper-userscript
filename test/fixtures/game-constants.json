@@ -7390,6 +7390,46 @@
     "initializerPreview": "new Set([\n    MessageType.NUKE_INBOUND,\n    MessageType.HYDROGEN_BOMB_INBOUND,\n    MessageType.MIRV_INBOUND,\n    MessageType.NUKE_DETONATED,\n    MessageType.NAVAL_INVASION_INBOUND,\n    MessageType.ATTACK_REQUEST,\n    MessageType.ALLIANCE..."
   },
   {
+    "id": "openfront-engine/src/client/hud/layers/GameRightSidebar.ts:LAST_MINUTE_SECONDS#1",
+    "file": "openfront-engine/src/client/hud/layers/GameRightSidebar.ts",
+    "name": "LAST_MINUTE_SECONDS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "39fa9ec190eee7b6f4dff1100d6343e10918d044c75eac8f9e9a2596173f80c9",
+    "initializerLength": 2,
+    "initializerPreview": "60"
+  },
+  {
+    "id": "openfront-engine/src/client/hud/layers/GameRightSidebar.ts:FLASH_TIMER_SECONDS#1",
+    "file": "openfront-engine/src/client/hud/layers/GameRightSidebar.ts",
+    "name": "FLASH_TIMER_SECONDS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "624b60c58c9d8bfb6ff1886c2fd605d2adeb6ea4da576068201b6c6958ce93f4",
+    "initializerLength": 2,
+    "initializerPreview": "30"
+  },
+  {
+    "id": "openfront-engine/src/client/hud/layers/GameRightSidebar.ts:FLASH_SIDEBAR_SECONDS#1",
+    "file": "openfront-engine/src/client/hud/layers/GameRightSidebar.ts",
+    "name": "FLASH_SIDEBAR_SECONDS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
+    "initializerLength": 2,
+    "initializerPreview": "10"
+  },
+  {
+    "id": "openfront-engine/src/client/hud/layers/GameRightSidebar.ts:ONE_MINUTE_WARNING_DURATION_MS#1",
+    "file": "openfront-engine/src/client/hud/layers/GameRightSidebar.ts",
+    "name": "ONE_MINUTE_WARNING_DURATION_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "b090147020e033534635010c4f7eb6fc270d44e5df67ea9e744a8087df9ca106",
+    "initializerLength": 4,
+    "initializerPreview": "4000"
+  },
+  {
     "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:NAME_SCALE_MIN#1",
     "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
     "name": "NAME_SCALE_MIN",
