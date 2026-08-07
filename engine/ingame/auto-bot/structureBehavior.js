@@ -4254,6 +4254,34 @@
       return indexes;
     }
 
+    legendaryTrajectoryTargetableBounds(path, targetableIndexes) {
+      if (
+        !Array.isArray(targetableIndexes) ||
+        targetableIndexes.length === 0 ||
+        typeof this.game.x !== "function" ||
+        typeof this.game.y !== "function"
+      ) {
+        return null;
+      }
+      const bounds = {
+        minX: Infinity,
+        maxX: -Infinity,
+        minY: Infinity,
+        maxY: -Infinity,
+      };
+      for (const index of targetableIndexes) {
+        const tile = path[index];
+        const x = Number(this.game.x(tile));
+        const y = Number(this.game.y(tile));
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+        bounds.minX = Math.min(bounds.minX, x);
+        bounds.maxX = Math.max(bounds.maxX, x);
+        bounds.minY = Math.min(bounds.minY, y);
+        bounds.maxY = Math.max(bounds.maxY, y);
+      }
+      return bounds;
+    }
+
     legendarySamPathCoverageIndex(
       samOrTile,
       path,
@@ -4419,6 +4447,26 @@
       );
     }
 
+    legendarySamRouteOutsideTargetableBounds(route, samTile, range) {
+      const bounds = route?.targetableBounds;
+      if (
+        !bounds ||
+        typeof this.game.x !== "function" ||
+        typeof this.game.y !== "function"
+      ) {
+        return false;
+      }
+      const samX = Number(this.game.x(samTile));
+      const samY = Number(this.game.y(samTile));
+      if (!Number.isFinite(samX) || !Number.isFinite(samY)) return false;
+      return (
+        samX < bounds.minX - range ||
+        samX > bounds.maxX + range ||
+        samY < bounds.minY - range ||
+        samY > bounds.maxY + range
+      );
+    }
+
     legendarySamRouteHasIntercept(
       samOrTile,
       levelOverride,
@@ -4445,6 +4493,9 @@
       if (profile === null) return false;
       const { samTile, range } = profile;
       if (range <= 0) return false;
+      if (this.legendarySamRouteOutsideTargetableBounds(route, samTile, range)) {
+        return false;
+      }
       const rangeSquared = range * range;
       for (const index of targetableIndexes) {
         const tick = launchOffset + index;
@@ -5144,12 +5195,17 @@
           continue;
         }
         const path = this.legendaryNukeFlightPath(fromTile, structureTile);
+        const targetableIndexes = this.legendaryTrajectoryTargetableIndexes(
+          path,
+          fromTile,
+          structureTile,
+        );
         routes.push({
           path,
-          targetableIndexes: this.legendaryTrajectoryTargetableIndexes(
+          targetableIndexes,
+          targetableBounds: this.legendaryTrajectoryTargetableBounds(
             path,
-            fromTile,
-            structureTile,
+            targetableIndexes,
           ),
           fromTile,
           targetTile: structureTile,

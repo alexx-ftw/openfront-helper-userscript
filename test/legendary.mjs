@@ -554,6 +554,7 @@ assert.match(structureSource, /targetableIndexes/);
 assert.match(structureSource, /coverageProfile/);
 assert.match(structureSource, /legendarySamRouteHasIntercept/);
 assert.match(structureSource, /legendarySamRouteHasTemporalOverlap/);
+assert.match(structureSource, /targetableBounds/);
 assert.match(structureSource, /increaseLevel\(\)/);
 assert.match(structureSource, /targetLevel/);
 assert.match(structureSource, /SiloCooldown/);
@@ -561,5 +562,58 @@ assert.match(structureSource, /legendaryEnemyMissileLaunchPlan/);
 assert.match(structureSource, /forecastComplete/);
 assert.match(structureSource, /legendaryThreatDefensePlan/);
 assert.match(read("engine/ingame/auto-bot/gameApi.js"), /motionPlans/);
+
+const structureSandbox = {
+  Difficulty: { Impossible: "Impossible" },
+  GameMode: { Team: "Team" },
+  UNIT: {},
+  currentDifficulty: () => "Impossible",
+  getBuildMenu: () => ({ sendBuildOrUpgrade() {} }),
+  isAtLeastHardDifficulty: () => true,
+  isLegendaryDifficulty: () => false,
+  state: { settings: { winFixes: true } },
+  withTimeout: async (promise) => promise,
+  WORKER_TIMEOUT_MS: 1,
+};
+structureSandbox.globalThis = structureSandbox;
+executeClassicScript(
+  `${structureSource}\nglobalThis.StructureBehavior = StructureBehavior;`,
+  structureSandbox,
+  { filename: "structureBehavior.js" },
+);
+const routeBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+let routeDistanceReads = 0;
+routeBehavior.game = {
+  x: (tile) => tile,
+  y: () => 0,
+  euclideanDistSquared: (left, right) => {
+    routeDistanceReads++;
+    return (left - right) ** 2;
+  },
+};
+const routePath = Array.from({ length: 10 }, (_, index) => index);
+const routeTargetableIndexes = routePath.map((_, index) => index);
+const routeBounds = routeBehavior.legendaryTrajectoryTargetableBounds(
+  routePath,
+  routeTargetableIndexes,
+);
+assert.deepEqual({ ...routeBounds }, { minX: 0, maxX: 9, minY: 0, maxY: 0 });
+const route = {
+  path: routePath,
+  targetableIndexes: routeTargetableIndexes,
+  targetableBounds: routeBounds,
+  launchOffset: 0,
+  impactTick: 9,
+};
+assert.equal(
+  routeBehavior.legendarySamRouteHasIntercept(1000, 1, route, 0, { samTile: 1000, range: 5 }),
+  false,
+);
+assert.equal(routeDistanceReads, 0, "SAM bounding boxes skip distance reads for remote routes");
+assert.equal(
+  routeBehavior.legendarySamRouteHasIntercept(5, 1, route, 0, { samTile: 5, range: 1 }),
+  true,
+  "SAM route short-circuit still accepts a reachable intercept",
+);
 
 process.stdout.write("LEGENDARY TESTS OK\n");
