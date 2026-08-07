@@ -555,6 +555,7 @@ assert.match(structureSource, /coverageProfile/);
 assert.match(structureSource, /legendarySamRouteHasIntercept/);
 assert.match(structureSource, /legendarySamRouteHasTemporalOverlap/);
 assert.match(structureSource, /targetableBounds/);
+assert.match(structureSource, /missileTargetEntriesCache/);
 assert.match(structureSource, /increaseLevel\(\)/);
 assert.match(structureSource, /targetLevel/);
 assert.match(structureSource, /SiloCooldown/);
@@ -614,6 +615,39 @@ assert.equal(
   routeBehavior.legendarySamRouteHasIntercept(5, 1, route, 0, { samTile: 5, range: 1 }),
   true,
   "SAM route short-circuit still accepts a reachable intercept",
+);
+let targetEntryBuilds = 0;
+routeBehavior.legendaryMissileTargetEntry = (target) => {
+  targetEntryBuilds++;
+  return {
+    target,
+    tile: target,
+    exposedValue: 1,
+    exposedStructures: 1,
+    exposure: 1,
+  };
+};
+const targetEntryCache = new Map();
+const targetStructures = [1, 2, 3];
+const firstTargetEntries = routeBehavior.legendaryMissileTargetCandidates(
+  targetStructures,
+  [],
+  10,
+  3,
+  { entryCache: targetEntryCache },
+);
+const secondTargetEntries = routeBehavior.legendaryMissileTargetCandidates(
+  targetStructures,
+  [],
+  10,
+  3,
+  { entryCache: targetEntryCache },
+);
+assert.equal(targetEntryBuilds, targetStructures.length);
+assert.equal(
+  firstTargetEntries,
+  secondTargetEntries,
+  "missile target geometry is reused for repeated threats with the same radius",
 );
 
 process.stdout.write("LEGENDARY TESTS OK\n");

@@ -6146,22 +6146,30 @@
       enemySilos,
       radius,
       totalValue,
-      { structureValues = null, structureTiles = null } = {},
+      {
+        structureValues = null,
+        structureTiles = null,
+        entryCache = null,
+      } = {},
     ) {
       const radiusSquared = Math.max(0, Number(radius) || 0) ** 2;
       const valueOf = (unit) =>
         structureValues?.get(unit) ?? this.legendaryCriticalStructureValue(unit);
-      const entries = (structures || [])
-        .map((target) =>
-          this.legendaryMissileTargetEntry(
-            target,
-            structures,
-            radiusSquared,
-            totalValue,
-            { valueOf, structureTiles },
-          ),
-        )
-        .filter((entry) => entry !== null);
+      let entries = entryCache?.get(radiusSquared);
+      if (entries === undefined) {
+        entries = (structures || [])
+          .map((target) =>
+            this.legendaryMissileTargetEntry(
+              target,
+              structures,
+              radiusSquared,
+              totalValue,
+              { valueOf, structureTiles },
+            ),
+          )
+          .filter((entry) => entry !== null);
+        entryCache?.set(radiusSquared, entries);
+      }
 
       const limit = Math.min(LEGENDARY_MAX_MISSILE_TARGETS, entries.length);
       if (entries.length <= limit) return entries;
@@ -6420,6 +6428,7 @@
       const structureTiles = new Map(
         structures.map((unit) => [unit, unit?.tile?.()]),
       );
+      const missileTargetEntriesCache = new Map();
       const launchMetadataCache = new Map();
       return {
         atomCost,
@@ -6429,6 +6438,7 @@
         structures,
         structureValues,
         structureTiles,
+        missileTargetEntriesCache,
         launchMetadataCache,
         totalValue,
         priorityStructures: priorityUnits,
@@ -6453,6 +6463,7 @@
         {
           structureValues: base.structureValues,
           structureTiles: base.structureTiles,
+          entryCache: base.missileTargetEntriesCache,
         },
       );
       let bestTarget = null;
