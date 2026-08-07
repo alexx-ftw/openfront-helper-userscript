@@ -453,6 +453,38 @@ assert.equal(
   "The exact fallback is observable in the schedule result",
 );
 
+const equivalentReadySlotRoutes = [
+  {
+    impactTick: 10,
+    samOptions: [
+      { samIndex: 0, interceptTicks: [0] },
+      { samIndex: 1, interceptTicks: [0] },
+    ],
+  },
+  ...Array.from({ length: 4 }, (_, index) => ({
+    impactTick: 20 + index * 10,
+    samOptions: [{ samIndex: 1, interceptTicks: [10 + index * 10] }],
+  })),
+];
+const equivalentReadySlotSchedule = plannerSandbox.legendaryMissileDefenseSchedule({
+  routes: equivalentReadySlotRoutes,
+  samProfiles: [
+    { id: "sam-a", availableTicks: [0] },
+    { id: "sam-b", availableTicks: [0, 0, 0] },
+  ],
+  samCooldownTicks: 90,
+  marginTicks: 5,
+});
+assert.equal(
+  equivalentReadySlotSchedule.scheduleMethod,
+  "exact-impossible",
+  "Legendary preserves an explicit proof that an overloaded schedule is impossible",
+);
+assert.ok(
+  equivalentReadySlotSchedule.exactSearchNodes < 10,
+  "exact search collapses equivalent ready-slot branches instead of revisiting them",
+);
+
 const constructionTooLate = plannerSandbox.legendaryMissileDefenseSchedule({
   routes: [
     { weapon: "AtomBomb", impactTick: 304, samOptions: [{ samIndex: 0, interceptTicks: [300] }] },

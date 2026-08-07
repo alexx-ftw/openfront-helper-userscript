@@ -364,6 +364,7 @@ five ticks before the first impact and the resulting schedule defends the whole
 salvo; otherwise it does not invest in the threatened construction path.
 The emergency path bypasses the ordinary structure cooldown and team save-up
 block so a viable defense action is not delayed. Short assignment conflicts use
-bounded exact backtracking; if the search budget is exhausted, Legendary treats
-the result as inconclusive/unsafe rather than assuming a greedy miss proves
-impossibility.
+bounded exact backtracking; the search uses binary intercept lookup, copies only
+the SAM state changed by a branch, and removes equivalent ready-slot branches.
+If the search budget is exhausted, Legendary treats the result as
+inconclusive/unsafe rather than assuming a greedy miss proves impossibility.

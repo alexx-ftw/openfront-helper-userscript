@@ -548,18 +548,39 @@ function buildLegendaryFutureSamUse(routes, profileCount) {
   return futureUseByRoute;
 }
 
+function firstLegendaryInterceptTick(interceptTicks, minimumTick, maximumTick) {
+  let low = 0;
+  let high = interceptTicks.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (interceptTicks[middle] < minimumTick) low = middle + 1;
+    else high = middle;
+  }
+  const tick = interceptTicks[low];
+  return tick !== undefined && tick <= maximumTick ? tick : undefined;
+}
+
 function collectLegendaryFeasibleAssignments(context, routeIndex, slots, fireTicks) {
   const route = context.routes[routeIndex];
   const feasible = [];
+  const equivalentAssignments = new Set();
   for (const option of route.samOptions) {
     const profile = context.profiles[option.samIndex];
     for (let slotIndex = 0; slotIndex < slots[option.samIndex].length; slotIndex++) {
       const availableAt = slots[option.samIndex][slotIndex];
       const launcherAvailableAt = Math.max(availableAt, fireTicks[option.samIndex] ?? 0);
-      const interceptTick = option.interceptTicks.find(
-        (tick) => tick >= launcherAvailableAt && tick <= route.impactTick,
+      const interceptTick = firstLegendaryInterceptTick(
+        option.interceptTicks,
+        launcherAvailableAt,
+        route.impactTick,
       );
       if (interceptTick === undefined) continue;
+      // Slots with the same availability produce the same next state. Keep
+      // one representative so a levelled SAM with several ready slots does
+      // not make exact search revisit equivalent branches.
+      const equivalentKey = `${option.samIndex}|${availableAt}|${interceptTick}`;
+      if (equivalentAssignments.has(equivalentKey)) continue;
+      equivalentAssignments.add(equivalentKey);
       feasible.push({
         samIndex: option.samIndex,
         slotIndex,
@@ -628,7 +649,10 @@ function searchLegendaryExactSchedule(state, routeIndex, slots, fireTicks) {
   if (state.memo.has(key)) return null;
   const feasible = collectLegendaryFeasibleAssignments(state.context, routeIndex, slots, fireTicks);
   for (const candidate of feasible) {
-    const nextSlots = slots.map((profileSlots) => profileSlots.slice());
+    // Only the selected SAM changes. Copying every profile for every branch
+    // made the bounded fallback scale with the whole friendly SAM roster.
+    const nextSlots = slots.slice();
+    nextSlots[candidate.samIndex] = slots[candidate.samIndex].slice();
     const nextFireTicks = fireTicks.slice();
     applyLegendarySamAssignment(nextSlots, nextFireTicks, candidate);
     state.chosen[routeIndex] = candidate;
