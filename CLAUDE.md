@@ -13,12 +13,13 @@ npm install
 npm run build        # → openfront-helper.user.js (minified)   — the committed artifact
 npm run build:raw    # unminified build (readable engine + console.log); OFH_DEBUG=1 also triggers raw
 npm run check        # tsc --noEmit  (type-checks src/**/*.ts ONLY — engine JS is not type-checked)
+npm run check:constants # contract-check every uppercase game constant in engine/ and openfront-engine/src/
 npm run check:i18n   # audit which locale keys are missing vs. engine t()/tr() usage
 npm test             # node test/smoke.mjs — builds the shell IIFE in a mocked DOM and asserts the shims wire up
 npm run format       # prettier --write (engine/ and locales/ are prettier-ignored on purpose)
 ```
 
-There is no test runner/framework and no single-test command — `npm test` is one Node smoke script. The auto-bot has its own in-browser smoke check: run `window.__autoBotDiag()` in the page console; a full object back means the bot wiring is intact.
+There is no test runner/framework and no single-test command — `npm test` is the full Node contract and behavior suite. The auto-bot has its own in-browser smoke check: run `window.__autoBotDiag()` in the page console; a full object back means the bot wiring is intact.
 
 **The build output `openfront-helper.user.js` is committed to the repo** (see `.gitignore`). After changing any source, rebuild and commit the regenerated file along with your changes — the published userscript is this file, not the sources.
 

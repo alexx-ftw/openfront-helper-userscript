@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import "./game-constants.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const engineDirectory = resolve(repositoryRoot, "openfront-engine");

@@ -37,6 +37,15 @@
     </p>
 
     <p>
+      Game constants use an exhaustive AST-backed contract. Run
+      <code>npm run check:constants</code> after changing a semantic uppercase constant in
+      <code>engine/</code> or <code>openfront-engine/src/</code>; update the reviewed contract with
+      <code>node scripts/game-constants.mjs --write</code> only when the value change is
+      intentional. The contract is checked against the pinned upstream gitlink, alongside the
+      existing compatibility check.
+    </p>
+
+    <p>
       When you add a target-strength floor, preserve the explicit empty-target path: a target that
       reports zero or no troop count must keep the normal reserve-limited attack payload rather than
       being converted into a zero-troop no-op. Cover both a positive-strength floor and the empty

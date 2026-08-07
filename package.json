@@ -7,6 +7,7 @@
     "build": "node build.mjs",
     "build:raw": "node build.mjs --raw",
     "check": "tsc -p tsconfig.json --noEmit",
+    "check:constants": "node test/game-constants.mjs",
     "check:i18n": "node scripts/audit-i18n.mjs",
     "engine:update": "node scripts/update-openfront-engine.mjs",
     "probe:runtime": "node scripts/probe-runtime.mjs",
