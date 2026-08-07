@@ -1,4 +1,13 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import vm from "node:vm";
+
+const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
+export function readRepositoryFile(relativePath) {
+  return fs.readFileSync(path.join(REPOSITORY_ROOT, relativePath), "utf8");
+}
 
 export function executeClassicScript(source, sandbox, options = {}) {
   if (typeof source !== "string") throw new TypeError("Classic-script source must be text");

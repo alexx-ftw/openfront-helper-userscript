@@ -9,14 +9,12 @@ const projectRoot = path.resolve(directory, "../..");
 const batchRunner = path.join(directory, "run-batch.mjs");
 const configPath = path.resolve(
   projectRoot,
-  process.env.OFH_CONSTRUCTION_SCENARIOS ??
-    "scripts/headless/construction-scenarios.json",
+  process.env.OFH_CONSTRUCTION_SCENARIOS ?? "scripts/headless/construction-scenarios.json",
 );
 const campaignSeed = process.env.OFH_CAMPAIGN_SEED ?? "construction-policy-v1";
 const outputRoot = path.resolve(
   projectRoot,
-  process.env.OFH_MATRIX_OUTPUT_DIR ??
-    path.join(".artifacts", "construction-matrix", campaignSeed),
+  process.env.OFH_MATRIX_OUTPUT_DIR ?? path.join(".artifacts", "construction-matrix", campaignSeed),
 );
 const scenarioFilter = new Set(
   (process.env.OFH_SCENARIOS ?? "")
@@ -62,9 +60,7 @@ function runScenario(scenario) {
     });
     child.on("close", (code, signal) => {
       const resultPath = path.join(outputDirectory, "results.json");
-      const result = existsSync(resultPath)
-        ? JSON.parse(readFileSync(resultPath, "utf8"))
-        : null;
+      const result = existsSync(resultPath) ? JSON.parse(readFileSync(resultPath, "utf8")) : null;
       resolve({
         scenario,
         outputDirectory,

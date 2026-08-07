@@ -96,8 +96,8 @@ function createIcon(): void {
     const dx = e.clientX - startX;
     const dy = e.clientY - startY;
     if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
-    icon.style.left = `${clamp(originLeft + dx, 0, innerWidth - size)}px`;
-    icon.style.top = `${clamp(originTop + dy, 0, innerHeight - size)}px`;
+    icon.style.left = String(clamp(originLeft + dx, 0, innerWidth - size)) + "px";
+    icon.style.top = String(clamp(originTop + dy, 0, innerHeight - size)) + "px";
     window.dispatchEvent(new CustomEvent("ofh-reposition-quick-panel"));
   });
 
@@ -111,7 +111,6 @@ function createIcon(): void {
     if (moved) {
       const r = icon.getBoundingClientRect();
       writePos({ left: r.left, top: r.top });
-      try { localStorage.removeItem("openfront-helper-quick-panel-pos"); } catch { /* ignore */ }
     } else {
       // Toggle Quick Panel with animation (instead of popup)
       window.dispatchEvent(new CustomEvent("ofh-toggle-quick-panel"));

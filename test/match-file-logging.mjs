@@ -50,8 +50,16 @@ assert.equal(snapshot.history.length, 1, "a completed match remains available in
 assert.equal(snapshot.current.events[0].cat, "match_start", "the next match starts a fresh file");
 const rejectionEvent = snapshot.current.events.find((event) => event.cat === "unhandled_rejection");
 assert.equal(rejectionEvent.reason.name, "Error", "rejection logs preserve the error type");
-assert.equal(rejectionEvent.reason.message, rejection.message, "rejection logs preserve the error message");
-assert.match(rejectionEvent.reason.stack, /trajectory fixture failed/, "rejection logs preserve the stack");
+assert.equal(
+  rejectionEvent.reason.message,
+  rejection.message,
+  "rejection logs preserve the error message",
+);
+assert.match(
+  rejectionEvent.reason.stack,
+  /trajectory fixture failed/,
+  "rejection logs preserve the stack",
+);
 assert.doesNotMatch(
   source,
   /localStorage\.(?:getItem|setItem)/,
