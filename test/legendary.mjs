@@ -552,6 +552,8 @@ assert.match(structureSource, /enemySiloLevels/);
 assert.match(structureSource, /samImpactMarginContext/);
 assert.match(structureSource, /targetableIndexes/);
 assert.match(structureSource, /coverageProfile/);
+assert.match(structureSource, /legendarySamRouteHasIntercept/);
+assert.match(structureSource, /legendarySamRouteHasTemporalOverlap/);
 assert.match(structureSource, /increaseLevel\(\)/);
 assert.match(structureSource, /targetLevel/);
 assert.match(structureSource, /SiloCooldown/);

@@ -4407,6 +4407,59 @@
       );
     }
 
+    legendarySamRouteHasTemporalOverlap(route, completionTick) {
+      const targetableIndexes = route?.targetableIndexes;
+      if (!Array.isArray(targetableIndexes) || targetableIndexes.length === 0) {
+        return false;
+      }
+      const launchOffset = Math.max(0, Number(route.launchOffset) || 0);
+      return (
+        launchOffset + targetableIndexes.at(-1) >= completionTick &&
+        launchOffset + targetableIndexes[0] <= route.impactTick
+      );
+    }
+
+    legendarySamRouteHasIntercept(
+      samOrTile,
+      levelOverride,
+      route,
+      completionTick,
+      coverageProfile = null,
+    ) {
+      if (!Array.isArray(route?.targetableIndexes)) {
+        return this.legendarySamPathInterceptTicksForRoute(
+          samOrTile,
+          route,
+          levelOverride,
+          coverageProfile,
+        ).some((tick) => tick >= completionTick && tick <= route.impactTick);
+      }
+      const targetableIndexes = route.targetableIndexes;
+      if (!this.legendarySamRouteHasTemporalOverlap(route, completionTick)) {
+        return false;
+      }
+      const launchOffset = Math.max(0, Number(route.launchOffset) || 0);
+      const profile =
+        coverageProfile ??
+        this.legendarySamCoverageProfile(samOrTile, levelOverride);
+      if (profile === null) return false;
+      const { samTile, range } = profile;
+      if (range <= 0) return false;
+      const rangeSquared = range * range;
+      for (const index of targetableIndexes) {
+        const tick = launchOffset + index;
+        if (tick < completionTick) continue;
+        if (tick > route.impactTick) break;
+        if (
+          this.game.euclideanDistSquared(route.path[index], samTile) <=
+          rangeSquared
+        ) {
+          return true;
+        }
+      }
+      return false;
+    }
+
     legendaryBuildMissileRoute(route, samProfiles, coverageIndexCache = null) {
       const {
         fromTile,
@@ -5180,12 +5233,13 @@
       completionTick,
       coverageProfile = null,
     ) {
-      return this.legendarySamPathInterceptTicksForRoute(
+      return this.legendarySamRouteHasIntercept(
         tile,
-        route,
         level,
+        route,
+        completionTick,
         coverageProfile,
-      ).some((tick) => tick >= completionTick && tick <= route.impactTick);
+      );
     }
 
     legendaryMissileSalvoPlan(
