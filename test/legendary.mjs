@@ -547,6 +547,7 @@ assert.match(structureSource, /legendaryTileInsideUninterceptedBlast/);
 assert.match(structureSource, /legendarySamCoveragePlacementContext/);
 assert.match(structureSource, /structureValues/);
 assert.match(structureSource, /structureTiles/);
+assert.match(structureSource, /launchMetadataCache/);
 assert.match(structureSource, /increaseLevel\(\)/);
 assert.match(structureSource, /targetLevel/);
 assert.match(structureSource, /SiloCooldown/);

@@ -4047,7 +4047,12 @@
     // continues one launch per simulation tick so chained enemy intents remain
     // difficult for the SAM scheduler rather than being collapsed into one
     // aggregate capacity number.
-    legendaryEnemyMissileLaunchPlan(enemySilos, targetTile, shotCount) {
+    legendaryEnemyMissileLaunchPlan(
+      enemySilos,
+      targetTile,
+      shotCount,
+      { siloMetadataCache = null } = {},
+    ) {
       const entries = (Array.isArray(enemySilos) ? enemySilos : [])
         .filter((silo) => {
         {
@@ -4059,13 +4064,23 @@
         }
         })
         .map((silo) => {
-          const tile = silo.tile();
+          const cached = siloMetadataCache?.get(silo);
+          const tile = cached?.tile ?? silo.tile();
+          const id = cached?.id ?? Number(silo.id?.() ?? 0);
+          const slots = cached?.slots?.slice() ?? this.legendarySiloSlotAvailability(silo);
+          if (siloMetadataCache && !cached) {
+            siloMetadataCache.set(silo, {
+              tile,
+              id,
+              slots: slots.slice(),
+            });
+          }
           return {
             silo,
-            id: Number(silo.id?.() ?? 0),
+            id,
             distance: this.game.manhattanDist(tile, targetTile),
             flightTicks: this.legendaryNukeFlightTime(tile, targetTile),
-            slots: this.legendarySiloSlotAvailability(silo),
+            slots,
           };
         });
       const launches = [];
@@ -5975,6 +5990,7 @@
         structures,
         structureValues,
         structureTiles,
+        launchMetadataCache,
         totalValue,
         priorityStructures,
       } = base;
@@ -6002,6 +6018,7 @@
           samProfiles,
           structureValues,
           structureTiles,
+          launchMetadataCache,
         },
       );
       threats.push(...activeMissiles);
@@ -6023,6 +6040,7 @@
         structures,
         structureValues,
         structureTiles,
+        launchMetadataCache,
         priorityStructures,
         totalValue,
         atomCost,
@@ -6092,6 +6110,7 @@
       const structureTiles = new Map(
         structures.map((unit) => [unit, unit?.tile?.()]),
       );
+      const launchMetadataCache = new Map();
       return {
         atomCost,
         hydrogenCost,
@@ -6100,6 +6119,7 @@
         structures,
         structureValues,
         structureTiles,
+        launchMetadataCache,
         totalValue,
         priorityStructures: priorityUnits,
       };
@@ -6263,7 +6283,7 @@
         threat,
         context,
       );
-      const shotPlan = this.legendaryCandidateShotPlan(tile, threat);
+      const shotPlan = this.legendaryCandidateShotPlan(tile, threat, context);
       if (shotPlan === null) return 0;
       const interceptionCapacity = (threat.enemySilos || []).reduce(
         (total, silo) =>
@@ -6331,7 +6351,7 @@
       return { value, count, ratio: Math.min(1, value / Math.max(1, totalValue)) };
     }
 
-    legendaryCandidateShotPlan(tile, threat) {
+    legendaryCandidateShotPlan(tile, threat, context = null) {
       const sourcePlan = threat.salvoPlan || {};
       const atomCount = Array.isArray(sourcePlan.atomArrivalTicks)
         ? sourcePlan.atomArrivalTicks.length
