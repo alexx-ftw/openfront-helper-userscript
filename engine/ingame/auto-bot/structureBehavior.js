@@ -6150,6 +6150,7 @@
         structureValues = null,
         structureTiles = null,
         entryCache = null,
+        orderingCache = null,
       } = {},
     ) {
       const radiusSquared = Math.max(0, Number(radius) || 0) ** 2;
@@ -6174,24 +6175,29 @@
       const limit = Math.min(LEGENDARY_MAX_MISSILE_TARGETS, entries.length);
       if (entries.length <= limit) return entries;
 
-      const byExposure = entries
-        .slice()
-        .sort(
-          (left, right) =>
-            right.exposedValue - left.exposedValue ||
-            right.exposedStructures - left.exposedStructures,
-        );
-      const byValue = entries
-        .slice()
-        .sort(
-          (left, right) =>
-            valueOf(right.target) - valueOf(left.target) ||
-            right.exposedValue - left.exposedValue,
-        );
+      let orderings = orderingCache?.get(radiusSquared);
+      if (orderings === undefined) {
+        const byExposure = entries
+          .slice()
+          .sort(
+            (left, right) =>
+              right.exposedValue - left.exposedValue ||
+              right.exposedStructures - left.exposedStructures,
+          );
+        const byValue = entries
+          .slice()
+          .sort(
+            (left, right) =>
+              valueOf(right.target) - valueOf(left.target) ||
+              right.exposedValue - left.exposedValue,
+          );
+        orderings = { byExposure, byValue };
+        orderingCache?.set(radiusSquared, orderings);
+      }
       return this.legendarySelectMissileTargets(
         entries,
-        byExposure,
-        byValue,
+        orderings.byExposure,
+        orderings.byValue,
         enemySilos,
         limit,
       );
@@ -6429,6 +6435,7 @@
         structures.map((unit) => [unit, unit?.tile?.()]),
       );
       const missileTargetEntriesCache = new Map();
+      const missileTargetOrderingCache = new Map();
       const launchMetadataCache = new Map();
       return {
         atomCost,
@@ -6439,6 +6446,7 @@
         structureValues,
         structureTiles,
         missileTargetEntriesCache,
+        missileTargetOrderingCache,
         launchMetadataCache,
         totalValue,
         priorityStructures: priorityUnits,
@@ -6464,6 +6472,7 @@
           structureValues: base.structureValues,
           structureTiles: base.structureTiles,
           entryCache: base.missileTargetEntriesCache,
+          orderingCache: base.missileTargetOrderingCache,
         },
       );
       let bestTarget = null;

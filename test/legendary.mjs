@@ -556,6 +556,7 @@ assert.match(structureSource, /legendarySamRouteHasIntercept/);
 assert.match(structureSource, /legendarySamRouteHasTemporalOverlap/);
 assert.match(structureSource, /targetableBounds/);
 assert.match(structureSource, /missileTargetEntriesCache/);
+assert.match(structureSource, /missileTargetOrderingCache/);
 assert.match(structureSource, /increaseLevel\(\)/);
 assert.match(structureSource, /targetLevel/);
 assert.match(structureSource, /SiloCooldown/);
