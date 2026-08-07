@@ -4361,6 +4361,7 @@
       samOrTile,
       route,
       levelOverride = null,
+      coverageProfile = null,
     ) {
       if (!Array.isArray(route?.targetableIndexes)) {
         return this.legendarySamPathCoverageIndices(
@@ -4371,10 +4372,9 @@
           levelOverride,
         );
       }
-      const profile = this.legendarySamCoverageProfile(
-        samOrTile,
-        levelOverride,
-      );
+      const profile =
+        coverageProfile ??
+        this.legendarySamCoverageProfile(samOrTile, levelOverride);
       if (profile === null) return [];
       const { samTile, range } = profile;
       if (range <= 0) return [];
@@ -4395,11 +4395,13 @@
       samOrTile,
       route,
       levelOverride = null,
+      coverageProfile = null,
     ) {
       return this.legendarySamPathCoverageIndicesForRoute(
         samOrTile,
         route,
         levelOverride,
+        coverageProfile,
       ).map(
         (index) => Math.max(0, Number(route.launchOffset) || 0) + index,
       );
@@ -4990,6 +4992,12 @@
       const totalValue = Math.max(1, Number(context.totalValue || 0));
       const structureValues = context.structureValues;
       const impactContext = this.legendarySamImpactMarginContext(context);
+      const coverageProfile = this.legendarySamCoverageProfile(tile, level);
+      if (coverageProfile === null) return 0;
+      const candidateImpactContext = {
+        ...impactContext,
+        coverageProfile,
+      };
       for (const structure of structures) {
         if (
           this.legendaryCandidateProtectsStructure(
@@ -4997,7 +5005,7 @@
             level,
             structure,
             context.threats,
-            impactContext,
+            candidateImpactContext,
           )
         ) {
           protectedValue +=
@@ -5099,7 +5107,13 @@
       return routes;
     }
 
-    legendaryCandidateProtectsStructure(tile, level, structure, threats, impactContext = null) {
+    legendaryCandidateProtectsStructure(
+      tile,
+      level,
+      structure,
+      threats,
+      impactContext = null,
+    ) {
       return threats.some((threat) =>
         this.legendaryCandidateProtectsStructureFromThreat(
           tile,
@@ -5129,6 +5143,7 @@
             level,
             route,
             impactContext.completionTick,
+            impactContext.coverageProfile,
           ),
         );
       }
@@ -5158,11 +5173,18 @@
       return false;
     }
 
-    legendarySamRouteProtectsTile(tile, level, route, completionTick) {
+    legendarySamRouteProtectsTile(
+      tile,
+      level,
+      route,
+      completionTick,
+      coverageProfile = null,
+    ) {
       return this.legendarySamPathInterceptTicksForRoute(
         tile,
         route,
         level,
+        coverageProfile,
       ).some((tick) => tick >= completionTick && tick <= route.impactTick);
     }
 
