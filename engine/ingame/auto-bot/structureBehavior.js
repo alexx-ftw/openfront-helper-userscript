@@ -6231,6 +6231,7 @@
           Boolean(best.critical) && !salvoPlan.schedule?.fullyDefended,
         enemy,
         enemySilos,
+        enemySiloLevels,
         enemyGold,
         targetTile: target.tile,
         salvoPlan,
@@ -6302,9 +6303,9 @@
         completionTick: 0,
       });
       const risk = legendaryMissileThreatScore({
-        enemySilos: (threat.enemySilos || []).map((unit) => ({
-          level: unit.level(),
-        })),
+        enemySilos:
+          threat.enemySiloLevels ||
+          (threat.enemySilos || []).map((unit) => ({ level: unit.level() })),
         enemyGold: threat.enemyGold,
         atomCost: context.atomCost,
         hydrogenCost: context.hydrogenCost,
@@ -6368,6 +6369,9 @@
         threat.enemySilos || [],
         tile,
         Math.max(1, atomCount + hydrogenCount, routeCount),
+        {
+          siloMetadataCache: context?.launchMetadataCache || null,
+        },
       );
       if (launches.length === 0) return null;
       const hasHydrogen =

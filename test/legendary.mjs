@@ -548,6 +548,7 @@ assert.match(structureSource, /legendarySamCoveragePlacementContext/);
 assert.match(structureSource, /structureValues/);
 assert.match(structureSource, /structureTiles/);
 assert.match(structureSource, /launchMetadataCache/);
+assert.match(structureSource, /enemySiloLevels/);
 assert.match(structureSource, /increaseLevel\(\)/);
 assert.match(structureSource, /targetLevel/);
 assert.match(structureSource, /SiloCooldown/);
