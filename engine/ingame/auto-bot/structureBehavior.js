@@ -4244,6 +4244,16 @@
       }
     }
 
+    legendaryTrajectoryTargetableIndexes(path, fromTile, targetTile) {
+      const indexes = [];
+      for (let index = 0; index < path.length; index++) {
+        if (this.legendaryTrajectoryTileTargetable(path[index], fromTile, targetTile)) {
+          indexes.push(index);
+        }
+      }
+      return indexes;
+    }
+
     legendarySamPathCoverageIndex(
       samOrTile,
       path,
@@ -4341,6 +4351,54 @@
         route.path,
         route.fromTile,
         route.targetTile,
+        levelOverride,
+      ).map(
+        (index) => Math.max(0, Number(route.launchOffset) || 0) + index,
+      );
+    }
+
+    legendarySamPathCoverageIndicesForRoute(
+      samOrTile,
+      route,
+      levelOverride = null,
+    ) {
+      if (!Array.isArray(route?.targetableIndexes)) {
+        return this.legendarySamPathCoverageIndices(
+          samOrTile,
+          route?.path,
+          route?.fromTile,
+          route?.targetTile,
+          levelOverride,
+        );
+      }
+      const profile = this.legendarySamCoverageProfile(
+        samOrTile,
+        levelOverride,
+      );
+      if (profile === null) return [];
+      const { samTile, range } = profile;
+      if (range <= 0) return [];
+      const rangeSquared = range * range;
+      const indexes = [];
+      for (const index of route.targetableIndexes) {
+        if (
+          this.game.euclideanDistSquared(route.path[index], samTile) <=
+          rangeSquared
+        ) {
+          indexes.push(index);
+        }
+      }
+      return indexes;
+    }
+
+    legendarySamPathInterceptTicksForRoute(
+      samOrTile,
+      route,
+      levelOverride = null,
+    ) {
+      return this.legendarySamPathCoverageIndicesForRoute(
+        samOrTile,
+        route,
         levelOverride,
       ).map(
         (index) => Math.max(0, Number(route.launchOffset) || 0) + index,
@@ -5024,8 +5082,14 @@
         ) {
           continue;
         }
+        const path = this.legendaryNukeFlightPath(fromTile, structureTile);
         routes.push({
-          path: this.legendaryNukeFlightPath(fromTile, structureTile),
+          path,
+          targetableIndexes: this.legendaryTrajectoryTargetableIndexes(
+            path,
+            fromTile,
+            structureTile,
+          ),
           fromTile,
           targetTile: structureTile,
           launchOffset: 0,
@@ -5095,9 +5159,11 @@
     }
 
     legendarySamRouteProtectsTile(tile, level, route, completionTick) {
-      return this.legendarySamPathInterceptTicks(tile, route, level).some(
-        (tick) => tick >= completionTick && tick <= route.impactTick,
-      );
+      return this.legendarySamPathInterceptTicksForRoute(
+        tile,
+        route,
+        level,
+      ).some((tick) => tick >= completionTick && tick <= route.impactTick);
     }
 
     legendaryMissileSalvoPlan(
