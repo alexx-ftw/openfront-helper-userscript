@@ -499,6 +499,31 @@ assert.equal(
 delete targetSilos.map;
 delete targetSourceMetrics.map;
 
+const resourceSilos = Array.from({ length: 16 }, (_, index) => ({
+  isUnderConstruction: () => index === 3,
+  isActive: index === 5 ? () => false : undefined,
+  level: () => index + 1,
+}));
+const resourceSiloFilter = resourceSilos.filter;
+let resourceSiloFilterCalls = 0;
+resourceSilos.filter = (...args) => {
+  resourceSiloFilterCalls++;
+  return resourceSiloFilter.apply(resourceSilos, args);
+};
+const resourceBehavior = Object.create(sandbox.StructureBehavior.prototype);
+const resources = resourceBehavior.legendaryEnemyMissileResources({
+  gold: () => 100,
+  units: () => resourceSilos,
+});
+delete resourceSilos.filter;
+assert.equal(resources.enemySilos.length, 14);
+assert.equal(resources.enemySiloLevels.length, 14);
+assert.equal(
+  resourceSiloFilterCalls,
+  0,
+  "enemy missile resources filter silos and snapshot levels in one pass",
+);
+
 let samReadyFilterReads = 0;
 const samAvailableTicks = [0, 0, 90];
 const samReadyFilter = samAvailableTicks.filter;

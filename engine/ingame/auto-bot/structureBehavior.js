@@ -6966,16 +6966,18 @@
     legendaryEnemyMissileResources(enemy) {
       {
         const enemyGold = BigInt(enemy.gold());
-        const enemySilos = enemy
-          .units(UNIT.MissileSilo)
-          .filter(
-            (silo) =>
-              !silo.isUnderConstruction() &&
-              (!silo.isActive || silo.isActive() !== false),
-          );
-        const enemySiloLevels = enemySilos.map((silo) => ({
-          level: silo.level(),
-        }));
+        const enemySilos = [];
+        const enemySiloLevels = [];
+        for (const silo of enemy.units(UNIT.MissileSilo)) {
+          if (
+            silo.isUnderConstruction() ||
+            (silo.isActive && silo.isActive() === false)
+          ) {
+            continue;
+          }
+          enemySilos.push(silo);
+          enemySiloLevels.push({ level: silo.level() });
+        }
         return { enemyGold, enemySilos, enemySiloLevels };
       }
     }
