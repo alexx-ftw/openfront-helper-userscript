@@ -9970,15 +9970,35 @@
       };
     }
 
+    legendaryTrainStationRanges() {
+      const config = this.game.config();
+      if (
+        config === this._legendaryTrainStationRangesConfig &&
+        this._legendaryTrainStationRangesCache !== undefined
+      ) {
+        return this._legendaryTrainStationRangesCache;
+      }
+      const minRange = config.trainStationMinRange();
+      const maxRange = config.trainStationMaxRange();
+      const ranges = {
+        minRangeSquared: minRange ** 2,
+        maxRangeSquared: maxRange ** 2,
+        maxRange,
+      };
+      this._legendaryTrainStationRangesConfig = config;
+      this._legendaryTrainStationRangesCache = ranges;
+      return ranges;
+    }
+
     legendaryRailConnectivityPlacementScore(tile) {
       {
-        const config = this.game.config();
+        const ranges = this.legendaryTrainStationRanges();
         const stations = this.getOrBuildReachableStations();
         const score = this.computeConnectivityScore(
           tile,
           stations,
-          config.trainStationMinRange() ** 2,
-          config.trainStationMaxRange() ** 2,
+          ranges.minRangeSquared,
+          ranges.maxRangeSquared,
         );
         return score * this.spacingConstants().structureSpacing;
       }

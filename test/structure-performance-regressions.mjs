@@ -377,6 +377,43 @@ assert.equal(
   "team-center candidate scoring reuses the radius stored in its context",
 );
 
+let stationMinReads = 0;
+let stationMaxReads = 0;
+const stationConfig = {
+  trainStationMinRange: () => {
+    stationMinReads++;
+    return 2;
+  },
+  trainStationMaxRange: () => {
+    stationMaxReads++;
+    return 10;
+  },
+};
+let activeStationConfig = stationConfig;
+const railBehavior = Object.create(sandbox.StructureBehavior.prototype);
+railBehavior.game = { config: () => activeStationConfig };
+railBehavior.spacingConstants = () => ({ structureSpacing: 2 });
+railBehavior.getOrBuildReachableStations = () => [{ tile: 1, cluster: null, weight: 1 }];
+railBehavior.computeConnectivityScore = () => 1;
+for (let candidate = 0; candidate < 64; candidate++) {
+  assert.equal(railBehavior.legendaryRailConnectivityPlacementScore(candidate), 2);
+}
+assert.equal(stationMinReads, 1);
+assert.equal(stationMaxReads, 1);
+activeStationConfig = {
+  trainStationMinRange: () => {
+    stationMinReads++;
+    return 3;
+  },
+  trainStationMaxRange: () => {
+    stationMaxReads++;
+    return 12;
+  },
+};
+railBehavior.legendaryRailConnectivityPlacementScore(0);
+assert.equal(stationMinReads, 2);
+assert.equal(stationMaxReads, 2);
+
 process.stdout.write(
   `structure performance regression tests passed (Factory cache ${factoryCacheDurationMs.toFixed(1)}ms; fingerprints ${fingerprintDurationMs.toFixed(1)}ms; SAM coverage ${coverageDurationMs.toFixed(1)}ms; launches ${launchDurationMs.toFixed(1)}ms; ally support ${supportDurationMs.toFixed(1)}ms)\n`,
 );
