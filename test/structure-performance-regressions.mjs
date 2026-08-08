@@ -596,6 +596,50 @@ assert.equal(
   "group defense summaries aggregate missile counters in one pass",
 );
 
+const impactContext = { completionTick: 10, routesByThreat: new Map() };
+const coverageProfile = { rangeSquared: 100 };
+const impactStructure = {};
+let receivedImpactContext;
+let receivedCoverageProfile;
+const impactScoreBehavior = Object.create(sandbox.StructureBehavior.prototype);
+impactScoreBehavior.legendarySamImpactMarginContext = () => impactContext;
+impactScoreBehavior.legendarySamCoverageProfile = () => coverageProfile;
+impactScoreBehavior.legendaryCandidateProtectsStructure = (
+  _tile,
+  _level,
+  _structure,
+  _threats,
+  receivedContext,
+) => {
+  receivedImpactContext = receivedContext;
+  receivedCoverageProfile = receivedContext.coverageProfile;
+  return false;
+};
+impactScoreBehavior.spacingConstants = () => ({ structureSpacing: 1 });
+const impactScore = impactScoreBehavior.legendarySamImpactMarginScore(0, {
+  threats: [{}],
+  structures: [impactStructure],
+  priorityStructures: [impactStructure],
+  totalValue: 1,
+  structureValues: new Map([[impactStructure, 1]]),
+});
+assert.equal(impactScore, 0);
+assert.equal(
+  receivedImpactContext,
+  impactContext,
+  "SAM impact scoring reuses the prepared impact context without cloning it",
+);
+assert.equal(
+  receivedCoverageProfile,
+  coverageProfile,
+  "SAM impact scoring exposes the candidate coverage profile through the shared context",
+);
+assert.equal(
+  impactContext.coverageProfile,
+  undefined,
+  "SAM impact scoring restores the shared context after each candidate",
+);
+
 let routeCoverageArrayCalls = 0;
 const capacityRouteBehavior = Object.create(sandbox.StructureBehavior.prototype);
 capacityRouteBehavior.game = {

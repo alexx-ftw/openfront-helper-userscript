@@ -5491,24 +5491,26 @@
         rangeOverride,
       );
       if (coverageProfile === null) return 0;
-      const candidateImpactContext = {
-        ...impactContext,
-        coverageProfile,
-      };
-      for (const structure of structures) {
-        if (
-          this.legendaryCandidateProtectsStructure(
-            tile,
-            level,
-            structure,
-            context.threats,
-            candidateImpactContext,
-          )
-        ) {
-          protectedValue +=
-            structureValues?.get(structure) ??
-            this.legendaryCriticalStructureValue(structure);
+      const previousCoverageProfile = impactContext.coverageProfile;
+      impactContext.coverageProfile = coverageProfile;
+      try {
+        for (const structure of structures) {
+          if (
+            this.legendaryCandidateProtectsStructure(
+              tile,
+              level,
+              structure,
+              context.threats,
+              impactContext,
+            )
+          ) {
+            protectedValue +=
+              structureValues?.get(structure) ??
+              this.legendaryCriticalStructureValue(structure);
+          }
         }
+      } finally {
+        impactContext.coverageProfile = previousCoverageProfile;
       }
       const spacing = this.spacingConstants().structureSpacing;
       return spacing * Math.min(4, (protectedValue / totalValue) * 4);
