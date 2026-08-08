@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { executeClassicScript, readRepositoryFile } from "./helpers/classic-script.mjs";
 
+const plannerSource = readRepositoryFile("engine/ingame/auto-bot/legendaryPlanner.js");
 const source = readRepositoryFile("engine/ingame/auto-bot/structureBehavior.js");
 const UNIT = {
   City: "City",
@@ -32,9 +33,116 @@ const sandbox = {
   WORKER_TIMEOUT_MS: 1,
 };
 sandbox.globalThis = sandbox;
-executeClassicScript(`${source}\nglobalThis.StructureBehavior = StructureBehavior;`, sandbox, {
-  filename: "structureBehavior.js",
+executeClassicScript(
+  `${plannerSource}\n${source}\nglobalThis.StructureBehavior = StructureBehavior;`,
+  sandbox,
+  { filename: "structureBehavior.js" },
+);
+
+const priorityBehavior = Object.create(sandbox.StructureBehavior.prototype);
+const prioritySpawnedStructures = [];
+priorityBehavior.player = { gold: () => 800n };
+priorityBehavior.maybeUpgradeLegendarySam = async () => false;
+priorityBehavior.ownSamCapacity = () => 1;
+priorityBehavior.maybeSpawnHostileSiloSam = async () => false;
+priorityBehavior.legendaryMissileDefenseUrgent = () => false;
+priorityBehavior.legendaryConstructionCandidates = () => [
+  {
+    type: UNIT.City,
+    cost: 1_000n,
+    mandatory: 0,
+    safety: 0,
+    strategic: 4,
+    deficit: 3,
+    efficiency: 3,
+    gold: 5,
+    troops: 5,
+    defense: 1,
+  },
+  {
+    type: UNIT.SAMLauncher,
+    cost: 500n,
+    mandatory: 1,
+    safety: 5,
+    strategic: 1,
+    deficit: 2,
+    efficiency: 2,
+    gold: 1,
+    troops: 1,
+    defense: 5,
+  },
+];
+priorityBehavior.maybeSpawnStructure = async (type) => {
+  prioritySpawnedStructures.push(type);
+  return true;
+};
+const priorityHandled = await priorityBehavior.doHandleLegendaryStructures({
+  config: {},
+  citiesDisabled: false,
+  cityCount: 2,
+  hasCoastalTiles: true,
+  hasOceanPortTiles: true,
+  missileSilosEnabled: true,
+  nukesEnabled: true,
+  economyGrowthPriority: true,
 });
+assert.equal(
+  priorityHandled,
+  true,
+  "an affordable defensive structure remains actionable while Legendary waits for a preferred economic asset",
+);
+assert.deepEqual(
+  prioritySpawnedStructures,
+  [UNIT.SAMLauncher],
+  "an economic wait does not starve an affordable SAM action",
+);
+prioritySpawnedStructures.length = 0;
+priorityBehavior.legendaryConstructionCandidates = () => [
+  {
+    type: UNIT.City,
+    cost: 1_000n,
+    mandatory: 0,
+    safety: 0,
+    strategic: 4,
+    deficit: 3,
+    efficiency: 3,
+    gold: 5,
+    troops: 5,
+    defense: 1,
+  },
+  {
+    type: UNIT.Factory,
+    cost: 500n,
+    mandatory: 0,
+    safety: 0,
+    strategic: 1,
+    deficit: 1,
+    efficiency: 1,
+    gold: 1,
+    troops: 1,
+    defense: 1,
+  },
+];
+const ordinaryWaitHandled = await priorityBehavior.doHandleLegendaryStructures({
+  config: {},
+  citiesDisabled: false,
+  cityCount: 2,
+  hasCoastalTiles: true,
+  hasOceanPortTiles: true,
+  missileSilosEnabled: true,
+  nukesEnabled: true,
+  economyGrowthPriority: true,
+});
+assert.equal(
+  ordinaryWaitHandled,
+  false,
+  "Legendary still waits when the deferred economic asset has no safety override",
+);
+assert.deepEqual(
+  prioritySpawnedStructures,
+  [],
+  "a normal economic wait does not spend on a lower-ranked economic action",
+);
 
 const factoryBehavior = Object.create(sandbox.StructureBehavior.prototype);
 factoryBehavior.factoryTradeDestinationsCache = null;

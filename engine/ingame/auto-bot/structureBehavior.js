@@ -1961,10 +1961,58 @@
         candidates,
         economyGrowthPriority,
       );
-      for (const actions of actionGroups) {
-        for (const candidate of actions) {
-          if (candidate.action === "wait") return false;
-          if (await this.maybeSpawnStructure(candidate.type)) {
+      for (let groupIndex = 0; groupIndex < actionGroups.length; groupIndex++) {
+        const result = await this.legendaryConstructionActionGroupResult(
+          actionGroups[groupIndex],
+          actionGroups,
+          groupIndex,
+        );
+        if (result === "built") return true;
+        if (result === "wait") return false;
+      }
+      return false;
+    }
+
+    async legendaryConstructionActionGroupResult(
+      actions,
+      actionGroups,
+      groupIndex,
+    ) {
+      for (const candidate of actions) {
+        if (candidate.action === "wait") {
+          return this.legendaryWaitYieldsToSafetyAction(
+            actionGroups,
+            groupIndex,
+          )
+            ? "skip"
+            : "wait";
+        }
+        if (await this.maybeSpawnStructure(candidate.type)) return "built";
+      }
+      return "skip";
+    }
+
+    legendaryWaitYieldsToSafetyAction(actionGroups, currentGroupIndex) {
+      const gold = legendaryBigInt(this.player.gold());
+      for (
+        let groupIndex = currentGroupIndex + 1;
+        groupIndex < actionGroups.length;
+        groupIndex++
+      ) {
+        for (const candidate of actionGroups[groupIndex]) {
+          if (
+            !candidate ||
+            candidate.action === "wait" ||
+            candidate.legal === false ||
+            candidate.affordable === false ||
+            legendaryBigInt(candidate.cost) > gold
+          ) {
+            continue;
+          }
+          if (
+            Number(candidate.mandatory ?? 0) > 0 ||
+            Number(candidate.safety ?? 0) > 0
+          ) {
             return true;
           }
         }
