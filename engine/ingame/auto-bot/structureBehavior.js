@@ -4246,29 +4246,31 @@
       };
     }
 
+    legendaryEligibleEnemyMissileSilo(silo) {
+      return Boolean(
+        silo &&
+        !silo.isUnderConstruction?.() &&
+        (!silo.isActive || silo.isActive() !== false),
+      );
+    }
+
     legendaryEnemyMissileLaunchPlan(
       enemySilos,
       targetTile,
       shotCount,
       { siloMetadataCache = null } = {},
     ) {
-      const entries = (Array.isArray(enemySilos) ? enemySilos : [])
-        .filter((silo) => {
-        {
-          return (
-            silo &&
-            !silo.isUnderConstruction?.() &&
-            (!silo.isActive || silo.isActive() !== false)
-          );
-        }
-        })
-        .map((silo) =>
+      const entries = [];
+      for (const silo of Array.isArray(enemySilos) ? enemySilos : []) {
+        if (!this.legendaryEligibleEnemyMissileSilo(silo)) continue;
+        entries.push(
           this.legendaryEnemyMissileLaunchEntry(
             silo,
             targetTile,
             siloMetadataCache,
           ),
         );
+      }
       const launches = [];
       const cooldown = this.legendarySiloCooldownTicks();
       let nextLaunchTick = 0;
@@ -6969,12 +6971,7 @@
         const enemySilos = [];
         const enemySiloLevels = [];
         for (const silo of enemy.units(UNIT.MissileSilo)) {
-          if (
-            silo.isUnderConstruction() ||
-            (silo.isActive && silo.isActive() === false)
-          ) {
-            continue;
-          }
+          if (!this.legendaryEligibleEnemyMissileSilo(silo)) continue;
           enemySilos.push(silo);
           enemySiloLevels.push({ level: silo.level() });
         }

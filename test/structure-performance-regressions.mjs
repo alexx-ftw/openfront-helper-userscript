@@ -273,6 +273,12 @@ const launchBehavior = Object.create(sandbox.StructureBehavior.prototype);
 launchBehavior.game = {
   manhattanDist: () => 1,
 };
+const launchSiloFilter = launchSilos.filter;
+let launchSiloFilterCalls = 0;
+launchSilos.filter = (...args) => {
+  launchSiloFilterCalls++;
+  return launchSiloFilter.apply(launchSilos, args);
+};
 let launchFlightTimeReads = 0;
 launchBehavior.legendaryNukeFlightTime = () => {
   launchFlightTimeReads++;
@@ -294,6 +300,11 @@ assert.equal(
   launchSilos.length,
   "launch planning reads each silo ID once before assigning the salvo",
 );
+assert.equal(
+  launchSiloFilterCalls,
+  0,
+  "launch planning builds valid silo entries without an intermediate filter",
+);
 assert.ok(launchDurationMs < 50, `96 launch assignments took ${launchDurationMs.toFixed(1)}ms`);
 launchFlightTimeReads = 0;
 launchBehavior.legendaryEnemyMissileLaunchPlan(launchSilos, 0, 1);
@@ -302,6 +313,7 @@ assert.equal(
   1,
   "a one-shot salvo computes flight time only for its selected silo",
 );
+delete launchSilos.filter;
 
 launchTileReads = 0;
 launchIdReads = 0;
