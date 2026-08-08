@@ -690,8 +690,10 @@ assert.equal(
   "salvo routes reuse ready SAM slots already represented by their options",
 );
 let sourceFallbackCalls = 0;
-routeBehavior.legendarySamInterceptionCapacity = () => {
+let sourceFallbackProfiles;
+routeBehavior.legendarySamInterceptionCapacity = (...args) => {
   sourceFallbackCalls++;
+  sourceFallbackProfiles = args[3];
   return 99;
 };
 const sourceMetrics = routeBehavior.legendarySalvoSourceMetrics(
@@ -710,6 +712,11 @@ assert.deepEqual(
   "source metrics reuse route capacity and retain the geometry fallback",
 );
 assert.equal(sourceFallbackCalls, 1);
+assert.equal(
+  sourceFallbackProfiles,
+  sourceProfiles,
+  "source metrics pass prepared SAM profiles to the geometry fallback",
+);
 
 let candidatePlanBuilds = 0;
 routeBehavior.legendaryEnemyMissileLaunchPlan = () => {

@@ -5684,7 +5684,12 @@
             this.legendaryNukeFlightTime(fromTile, targetTile),
           interceptionCapacity:
             routeCapacity ??
-            this.legendarySamInterceptionCapacity(fromTile, targetTile),
+            this.legendarySamInterceptionCapacity(
+              fromTile,
+              targetTile,
+              null,
+              samProfiles,
+            ),
         };
       });
     }
