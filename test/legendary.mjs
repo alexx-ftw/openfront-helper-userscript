@@ -783,4 +783,42 @@ const allySupport = routeBehavior.legendaryAllySamSupport(
 assert.ok(allySupport > 0, "precomputed ally SAM profiles still provide support");
 assert.equal(allySamRangeReads, 1);
 
+const placementContextBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+const placementContextConfig = {
+  trainStationMaxRange: () => 10,
+  samRange: () => 10,
+};
+let placementMetricReads = 0;
+let placementAllyReads = 0;
+placementContextBehavior.game = { ticks: () => 12 };
+placementContextBehavior.player = {};
+placementContextBehavior.safeGameConfig = () => placementContextConfig;
+placementContextBehavior.legendaryProductionMetrics = () => {
+  placementMetricReads++;
+  return { troops: 0, gold: 0n, goldProduction: 0, tiles: [], samUnits: [] };
+};
+placementContextBehavior.legendaryFriendlyPlayers = () => {
+  placementAllyReads++;
+  return [];
+};
+const firstPlacementContext = placementContextBehavior.legendaryAllyPlacementContext();
+const secondPlacementContext = placementContextBehavior.legendaryAllyPlacementContext();
+assert.equal(firstPlacementContext, secondPlacementContext);
+assert.equal(placementMetricReads, 1, "ally placement context is reused within a tick");
+assert.equal(placementAllyReads, 1);
+
+const teamContextBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+let teamParticipantReads = 0;
+teamContextBehavior.game = { ticks: () => 12 };
+teamContextBehavior.player = {};
+teamContextBehavior.legendaryFriendlyPlayers = () => [];
+teamContextBehavior.legendaryParticipantCenterPoints = () => {
+  teamParticipantReads++;
+  return [];
+};
+const firstTeamContext = teamContextBehavior.legendaryTeamCenterPlacementContext();
+const secondTeamContext = teamContextBehavior.legendaryTeamCenterPlacementContext();
+assert.equal(firstTeamContext, secondTeamContext);
+assert.equal(teamParticipantReads, 1, "team center context is reused within a tick");
+
 process.stdout.write("LEGENDARY TESTS OK\n");

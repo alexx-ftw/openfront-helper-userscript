@@ -2973,6 +2973,13 @@
     }
 
     legendaryAllyPlacementContext() {
+      const tick = safeStructureGameTick(this.game);
+      if (
+        Number.isFinite(tick) &&
+        this._legendaryAllyPlacementContextTick === tick
+      ) {
+        return this._legendaryAllyPlacementContextCache;
+      }
       const own = this.legendaryProductionMetrics(this.player);
       const config = this.safeGameConfig();
       const supportRadius = Math.max(
@@ -3005,17 +3012,35 @@
           }),
         });
       }
-      return { own, allies, supportRadius, samConfig: config };
+      const context = { own, allies, supportRadius, samConfig: config };
+      if (Number.isFinite(tick)) {
+        this._legendaryAllyPlacementContextTick = tick;
+        this._legendaryAllyPlacementContextCache = context;
+      }
+      return context;
     }
 
     legendaryTeamCenterPlacementContext() {
+      const tick = safeStructureGameTick(this.game);
+      if (
+        Number.isFinite(tick) &&
+        this._legendaryTeamCenterPlacementContextTick === tick
+      ) {
+        return this._legendaryTeamCenterPlacementContextCache;
+      }
       const participants = [this.player, ...this.legendaryFriendlyPlayers()];
       const points = [];
       for (const participant of participants) {
         points.push(...this.legendaryParticipantCenterPoints(participant));
       }
 
-      if (points.length === 0) return null;
+      if (points.length === 0) {
+        if (Number.isFinite(tick)) {
+          this._legendaryTeamCenterPlacementContextTick = tick;
+          this._legendaryTeamCenterPlacementContextCache = null;
+        }
+        return null;
+      }
       const center = points.reduce(
         (sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }),
         { x: 0, y: 0 },
@@ -3026,13 +3051,18 @@
       const centerTile = this.legendaryCenterTile(center);
       const nearest = this.nearestOwnBorderToPoint(center);
 
-      return {
+      const context = {
         x: center.x,
         y: center.y,
         tile: centerTile,
         nearestBorder: nearest.tile,
         nearestBorderDistanceSquared: nearest.distanceSquared,
       };
+      if (Number.isFinite(tick)) {
+        this._legendaryTeamCenterPlacementContextTick = tick;
+        this._legendaryTeamCenterPlacementContextCache = context;
+      }
+      return context;
     }
 
     legendaryParticipantCenterPoints(participant) {
