@@ -7004,15 +7004,14 @@
           siloMetadataCache: base.launchMetadataCache,
         },
       );
-      const sourceMetrics = new Map(
-        (salvoPlan.sourceMetrics || []).map((source) => [source.silo, source]),
-      );
+      const sourceMetrics = salvoPlan.sourceMetrics || [];
       const enemySiloLevels =
         cachedEnemySiloLevels ??
         enemySilos.map((unit) => ({ level: unit.level() }));
       let best = null;
-      for (const silo of enemySilos) {
-        const source = sourceMetrics.get(silo);
+      for (let index = 0; index < enemySilos.length; index++) {
+        const silo = enemySilos[index];
+        const source = sourceMetrics[index];
         const flightTimeTicks =
           source?.flightTimeTicks ??
           this.legendaryNukeFlightTime(silo.tile(), target.tile);

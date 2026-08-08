@@ -453,9 +453,16 @@ targetSilos.map = (...args) => {
   targetSiloMapCalls++;
   return targetSiloMap.apply(targetSilos, args);
 };
+const targetSourceMetrics = [];
+const targetSourceMetricsMap = targetSourceMetrics.map;
+let targetSourceMetricsMapCalls = 0;
+targetSourceMetrics.map = (...args) => {
+  targetSourceMetricsMapCalls++;
+  return targetSourceMetricsMap.apply(targetSourceMetrics, args);
+};
 const targetScoreBehavior = Object.create(sandbox.StructureBehavior.prototype);
 targetScoreBehavior.legendaryMissileSalvoPlan = () => ({
-  sourceMetrics: [],
+  sourceMetrics: targetSourceMetrics,
   readyShots: 1,
   risk: { score: 0 },
   schedule: { fullyDefended: true },
@@ -484,6 +491,13 @@ assert.equal(
   0,
   "enemy missile target scoring reuses silo levels across candidate targets",
 );
+assert.equal(
+  targetSourceMetricsMapCalls,
+  0,
+  "enemy missile target scoring reuses ordered source metrics without mapping them",
+);
+delete targetSilos.map;
+delete targetSourceMetrics.map;
 
 let samReadyFilterReads = 0;
 const samAvailableTicks = [0, 0, 90];
