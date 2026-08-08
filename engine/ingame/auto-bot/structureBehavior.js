@@ -10249,8 +10249,15 @@
         UNIT.Port,
         UNIT.MissileSilo,
       );
+      const samRangeByLevel = new Map();
+      const samRangeForLevel = (level) => {
+        if (!samRangeByLevel.has(level)) {
+          samRangeByLevel.set(level, Number(config.samRange(level)));
+        }
+        return samRangeByLevel.get(level);
+      };
       const existingSamCoverage = existingSams.map((sam) => {
-        const samRange = Number(config.samRange(sam.level()));
+        const samRange = samRangeForLevel(sam.level());
         return {
           tile: sam.tile(),
           rangeSquared: samRange * samRange,
@@ -10272,7 +10279,7 @@
       const criticalValueCache = new Map();
       return {
         rangeSquared: range * range,
-        candidateSamRange: Number(config.samRange(1)),
+        candidateSamRange: samRangeForLevel(1),
         uncoveredStructures,
         criticalValueCache,
         spacing: this.spacingConstants().structureSpacing,

@@ -139,15 +139,22 @@ assert.equal(
 
 let coverageDistanceReads = 0;
 let coverageValueReads = 0;
+let coverageSamRangeReads = 0;
 const coverageStructures = Array.from({ length: 5000 }, () => ({
   tile: () => 0,
 }));
-const coverageSam = { tile: () => 0, level: () => 1 };
+const coverageSams = Array.from({ length: 128 }, (_, index) => ({
+  tile: () => 0,
+  level: () => (index % 2) + 1,
+}));
 const coverageBehavior = Object.create(sandbox.StructureBehavior.prototype);
 coverageBehavior.game = {
   config: () => ({
     defaultSamRange: () => 10,
-    samRange: () => 10,
+    samRange: () => {
+      coverageSamRangeReads++;
+      return 10;
+    },
   }),
   euclideanDistSquared: () => {
     coverageDistanceReads++;
@@ -155,7 +162,7 @@ coverageBehavior.game = {
   },
 };
 coverageBehavior.player = { units: () => coverageStructures };
-coverageBehavior.legendaryFriendlySamUnits = () => [coverageSam];
+coverageBehavior.legendaryFriendlySamUnits = () => coverageSams;
 coverageBehavior.spacingConstants = () => ({ structureSpacing: 1 });
 coverageBehavior.legendaryCriticalStructureValue = () => {
   coverageValueReads++;
@@ -191,6 +198,11 @@ assert.equal(
   coverageDistanceReads,
   coverageStructures.length,
   "repeated SAM candidates reuse the existing-SAM coverage snapshot",
+);
+assert.equal(
+  coverageSamRangeReads,
+  2,
+  "SAM coverage contexts resolve each configured SAM range once per level",
 );
 assert.equal(
   coverageValueReads,
