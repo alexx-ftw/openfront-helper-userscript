@@ -6027,23 +6027,34 @@
     }
 
     uncoveredActiveMirvDemands(context) {
+      const samProfiles = Array.isArray(context?.samProfiles)
+        ? context.samProfiles
+        : null;
       return (context?.mirvDemands || []).filter(
-        (demand) => !this.activeMirvDemandCovered(demand),
+        (demand) => !this.activeMirvDemandCovered(demand, samProfiles),
       );
     }
 
-    activeMirvDemandCovered(demand) {
-      return this.legendaryFriendlySamUnits().some(
-        (sam) =>
-          this.legendarySamSlotAvailability(sam).some(
-            (tick) =>
-              this.samTileCoversMirvDemand(
-                sam.tile(),
-                demand,
-                tick,
-              ),
-          ),
-      );
+    activeMirvDemandCovered(demand, samProfiles = null) {
+      const sams = Array.isArray(samProfiles)
+        ? samProfiles
+        : this.legendaryFriendlySamUnits();
+      return sams.some((sam) => {
+        const samTile =
+          typeof sam.tile === "function" ? sam.tile() : sam.tile;
+        if (samTile === null || samTile === undefined) return false;
+        let availableTicks;
+        if (Array.isArray(samProfiles)) {
+          availableTicks = Array.isArray(sam.availableTicks)
+            ? sam.availableTicks
+            : [];
+        } else {
+          availableTicks = this.legendarySamSlotAvailability(sam);
+        }
+        return availableTicks.some((tick) =>
+          this.samTileCoversMirvDemand(samTile, demand, tick),
+        );
+      });
     }
 
     samTileCoversMirvDemand(tile, demand, completionTick = 0) {

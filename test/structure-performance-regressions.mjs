@@ -444,6 +444,26 @@ assert.equal(
   "nearest missile target selection snapshots the silo tile once per search",
 );
 
+let mirvSlotReads = 0;
+const mirvBehavior = Object.create(sandbox.StructureBehavior.prototype);
+const mirvSam = { tile: () => 7 };
+mirvBehavior.legendaryFriendlySamUnits = () => [mirvSam];
+mirvBehavior.legendarySamSlotAvailability = () => {
+  mirvSlotReads++;
+  return [0];
+};
+mirvBehavior.samTileCoversMirvDemand = (tile) => tile === 7;
+const mirvContext = {
+  samProfiles: [{ tile: 7, availableTicks: [0], readySlots: 1 }],
+  mirvDemands: [{ targetTile: 7, deadlineTick: 10 }],
+};
+assert.equal(mirvBehavior.uncoveredActiveMirvDemands(mirvContext).length, 0);
+assert.equal(
+  mirvSlotReads,
+  0,
+  "active MIRV demand checks reuse SAM profiles from the defense snapshot",
+);
+
 let contextValueReads = 0;
 const contextBehavior = Object.create(sandbox.StructureBehavior.prototype);
 contextBehavior.game = {
