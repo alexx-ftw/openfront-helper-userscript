@@ -1172,14 +1172,23 @@ assert.equal(
 );
 
 let contextValueReads = 0;
+let contextStructureSnapshotReads = 0;
+let contextTick = 40;
 const contextBehavior = Object.create(sandbox.StructureBehavior.prototype);
-contextBehavior.game = {
-  config: () => ({
-    isUnitDisabled: () => false,
-    nukeMagnitudes: () => ({ outer: 10 }),
-  }),
+const contextConfig = {
+  isUnitDisabled: () => false,
+  nukeMagnitudes: () => ({ outer: 10 }),
 };
-contextBehavior.player = { units: () => coverageStructures };
+contextBehavior.game = {
+  ticks: () => contextTick,
+  config: () => contextConfig,
+};
+contextBehavior.player = {
+  units: () => {
+    contextStructureSnapshotReads++;
+    return coverageStructures;
+  },
+};
 contextBehavior.cost = () => 1n;
 coverageStructures[0].priority = 3;
 coverageStructures[1].priority = 9;
@@ -1194,6 +1203,7 @@ coverageStructures.map = (...args) => {
   return Array.prototype.map.apply(coverageStructures, args);
 };
 const placementBaseContext = contextBehavior.legendaryMissilePlacementBaseContext();
+const cachedPlacementBaseContext = contextBehavior.legendaryMissilePlacementBaseContext();
 delete coverageStructures.map;
 assert.equal(
   placementBaseContext.priorityStructures.length,
@@ -1204,6 +1214,12 @@ assert.equal(
   coverageStructures.length,
   "missile context values each structure once before total and priority ranking",
 );
+assert.equal(
+  contextStructureSnapshotReads,
+  1,
+  "missile placement base context reuses one structure snapshot within a tick",
+);
+assert.equal(cachedPlacementBaseContext, placementBaseContext);
 assert.equal(
   contextStructureMapCalls,
   0,
@@ -1217,6 +1233,14 @@ assert.equal(
 assert.equal(placementBaseContext.priorityStructures[0], coverageStructures[1]);
 assert.equal(placementBaseContext.priorityStructures[1], coverageStructures[2]);
 assert.equal(placementBaseContext.priorityStructures[2], coverageStructures[0]);
+contextTick++;
+const refreshedPlacementBaseContext = contextBehavior.legendaryMissilePlacementBaseContext();
+assert.notEqual(refreshedPlacementBaseContext, placementBaseContext);
+assert.equal(
+  contextStructureSnapshotReads,
+  2,
+  "a new game tick refreshes the missile placement base context",
+);
 
 const targetSelectionBehavior = Object.create(sandbox.StructureBehavior.prototype);
 const exposureTarget = { target: "exposure" };

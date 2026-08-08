@@ -7135,8 +7135,36 @@
       };
     }
 
+    legendaryMissilePlacementBaseContextCacheHit(game, config, tick) {
+      if (!Number.isFinite(tick)) return null;
+      if (
+        this._legendaryMissilePlacementBaseContextTick !== tick ||
+        this._legendaryMissilePlacementBaseContextGame !== game ||
+        this._legendaryMissilePlacementBaseContextConfig !== config
+      ) {
+        return null;
+      }
+      return this._legendaryMissilePlacementBaseContextCache ?? null;
+    }
+
+    rememberLegendaryMissilePlacementBaseContext(game, config, tick, context) {
+      if (!Number.isFinite(tick)) return;
+      this._legendaryMissilePlacementBaseContextTick = tick;
+      this._legendaryMissilePlacementBaseContextGame = game;
+      this._legendaryMissilePlacementBaseContextConfig = config;
+      this._legendaryMissilePlacementBaseContextCache = context;
+    }
+
     legendaryMissilePlacementBaseContext() {
-      const config = this.game.config();
+      const game = this.game;
+      const config = game.config();
+      const tick = safeStructureGameTick(game);
+      const cached = this.legendaryMissilePlacementBaseContextCacheHit(
+        game,
+        config,
+        tick,
+      );
+      if (cached !== null) return cached;
       const atomCost = config.isUnitDisabled(UNIT.AtomBomb)
         ? 0n
         : this.cost(UNIT.AtomBomb);
@@ -7192,7 +7220,7 @@
       const launchMetadataCache = new Map();
       const candidateShotPlanCache = new Map();
       const interceptionCapacityCache = new Map();
-      return {
+      const context = {
         atomCost,
         hydrogenCost,
         atomRadius,
@@ -7208,6 +7236,13 @@
         totalValue,
         priorityStructures: priorityUnits,
       };
+      this.rememberLegendaryMissilePlacementBaseContext(
+        game,
+        config,
+        tick,
+        context,
+      );
+      return context;
     }
 
     legendaryEnemyMissileThreat(enemy, base, samProfiles) {
