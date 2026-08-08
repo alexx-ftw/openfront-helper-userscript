@@ -1063,6 +1063,47 @@ const nextTickMotion = activeMotionBehavior.legendaryActiveMissileMotion(activeN
 assert.notEqual(nextTickMotion, activeMotion);
 assert.equal(activePathSliceCalls, 2, "active-missile motion refreshes on the next tick");
 
+let exposureDistanceReads = 0;
+const exposureStructures = [{ id: 1 }, { id: 2 }, { id: 3 }];
+const exposureStructureTiles = new Map(
+  exposureStructures.map((structure, index) => [structure, index]),
+);
+const exposureStructureValues = new Map(exposureStructures.map((structure) => [structure, 1]));
+const activeExposureBehavior = Object.create(sandbox.StructureBehavior.prototype);
+activeExposureBehavior.game = {
+  euclideanDistSquared: (left, right) => {
+    exposureDistanceReads++;
+    return (left - right) ** 2;
+  },
+};
+const activeExposureCache = activeExposureBehavior.activeMissileExposureCache({});
+const firstExposure = activeExposureBehavior.legendaryActiveMissileExposure(
+  1,
+  10,
+  exposureStructures,
+  {
+    structureValues: exposureStructureValues,
+    structureTiles: exposureStructureTiles,
+    exposureCache: activeExposureCache,
+  },
+);
+const cachedExposure = activeExposureBehavior.legendaryActiveMissileExposure(
+  1,
+  10,
+  exposureStructures,
+  {
+    structureValues: exposureStructureValues,
+    structureTiles: exposureStructureTiles,
+    exposureCache: activeExposureCache,
+  },
+);
+assert.deepEqual(cachedExposure, firstExposure);
+assert.equal(
+  exposureDistanceReads,
+  exposureStructures.length,
+  "active missile exposure reuses same-target geometry within one context",
+);
+
 let groupArrayMethodReads = 0;
 const groupedMissiles = [
   { id: "r1", impactTick: 10, marginTicks: 5, intercepted: true },

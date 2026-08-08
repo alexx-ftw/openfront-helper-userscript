@@ -6284,6 +6284,7 @@
         {
           structureValues: context.structureValues,
           structureTiles: context.structureTiles,
+          exposureCache: this.activeMissileExposureCache(context),
         },
       );
       const targetsOwnedTerritory = this.activeMissileTargetsOwnedTerritory(
@@ -6339,12 +6340,50 @@
       exposure.targetsOwnedTerritory = true;
     }
 
+    activeMissileExposureCache(context) {
+      if (
+        !context ||
+        (typeof context !== "object" && typeof context !== "function")
+      ) {
+        return null;
+      }
+      if (!(context._legendaryActiveMissileExposureCache instanceof Map)) {
+        context._legendaryActiveMissileExposureCache = new Map();
+      }
+      return context._legendaryActiveMissileExposureCache;
+    }
+
+    activeMissileExposureCacheHit(cache, targetTile, radius) {
+      if (!(cache instanceof Map)) return null;
+      return cache.get(targetTile)?.get(radius) ?? null;
+    }
+
+    rememberActiveMissileExposure(cache, targetTile, radius, exposure) {
+      if (!(cache instanceof Map)) return;
+      let targetCache = cache.get(targetTile);
+      if (!(targetCache instanceof Map)) {
+        targetCache = new Map();
+        cache.set(targetTile, targetCache);
+      }
+      targetCache.set(radius, exposure);
+    }
+
     legendaryActiveMissileExposure(
       targetTile,
       radius,
       structures,
-      { structureValues = null, structureTiles = null } = {},
+      {
+        structureValues = null,
+        structureTiles = null,
+        exposureCache = null,
+      } = {},
     ) {
+      const cached = this.activeMissileExposureCacheHit(
+        exposureCache,
+        targetTile,
+        radius,
+      );
+      if (cached !== null) return cached;
       const radiusSquared = radius * radius;
       let value = 0;
       let count = 0;
@@ -6360,7 +6399,14 @@
           this.legendaryCriticalStructureValue(structure);
         count++;
       }
-      return { value, count, radiusSquared };
+      const exposure = { value, count, radiusSquared };
+      this.rememberActiveMissileExposure(
+        exposureCache,
+        targetTile,
+        radius,
+        exposure,
+      );
+      return exposure;
     }
 
     legendaryScoredActiveMissileThreat(input) {
