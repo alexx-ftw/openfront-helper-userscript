@@ -6925,7 +6925,7 @@
     legendaryEnemyMissileThreat(enemy, base, samProfiles) {
       const resources = this.legendaryEnemyMissileResources(enemy);
       if (resources === null || resources.enemySilos.length === 0) return null;
-      const { enemyGold, enemySilos } = resources;
+      const { enemyGold, enemySilos, enemySiloLevels } = resources;
       const canHydrogen =
         base.hydrogenCost > 0n && enemyGold >= base.hydrogenCost;
       const canAtom = base.atomCost > 0n && enemyGold >= base.atomCost;
@@ -6950,6 +6950,7 @@
           enemy,
           enemyGold,
           enemySilos,
+          enemySiloLevels,
           weapon,
           target,
           base,
@@ -6972,13 +6973,24 @@
               !silo.isUnderConstruction() &&
               (!silo.isActive || silo.isActive() !== false),
           );
-        return { enemyGold, enemySilos };
+        const enemySiloLevels = enemySilos.map((silo) => ({
+          level: silo.level(),
+        }));
+        return { enemyGold, enemySilos, enemySiloLevels };
       }
     }
 
     legendaryScoredEnemyMissileTarget(input) {
-      const { enemy, enemyGold, enemySilos, weapon, target, base, samProfiles } =
-        input;
+      const {
+        enemy,
+        enemyGold,
+        enemySilos,
+        enemySiloLevels: cachedEnemySiloLevels,
+        weapon,
+        target,
+        base,
+        samProfiles,
+      } = input;
       const salvoPlan = this.legendaryMissileSalvoPlan(
         {
           enemySilos,
@@ -6995,7 +7007,9 @@
       const sourceMetrics = new Map(
         (salvoPlan.sourceMetrics || []).map((source) => [source.silo, source]),
       );
-      const enemySiloLevels = enemySilos.map((unit) => ({ level: unit.level() }));
+      const enemySiloLevels =
+        cachedEnemySiloLevels ??
+        enemySilos.map((unit) => ({ level: unit.level() }));
       let best = null;
       for (const silo of enemySilos) {
         const source = sourceMetrics.get(silo);

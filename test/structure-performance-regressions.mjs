@@ -439,6 +439,52 @@ assert.equal(
   "salvo source metrics reuse cached silo tiles across target candidates",
 );
 
+sandbox.legendaryMissileThreatScore = () => ({ score: 1, critical: false });
+const targetSilos = Array.from({ length: 8 }, (_, index) => ({
+  tile: () => index,
+  level: () => index + 1,
+}));
+const targetSiloLevels = Array.from({ length: targetSilos.length }, () => ({
+  level: 1,
+}));
+const targetSiloMap = targetSilos.map;
+let targetSiloMapCalls = 0;
+targetSilos.map = (...args) => {
+  targetSiloMapCalls++;
+  return targetSiloMap.apply(targetSilos, args);
+};
+const targetScoreBehavior = Object.create(sandbox.StructureBehavior.prototype);
+targetScoreBehavior.legendaryMissileSalvoPlan = () => ({
+  sourceMetrics: [],
+  readyShots: 1,
+  risk: { score: 0 },
+  schedule: { fullyDefended: true },
+});
+targetScoreBehavior.legendaryNukeFlightTime = () => 10;
+targetScoreBehavior.legendarySamInterceptionCapacity = () => 1;
+const scoredTarget = targetScoreBehavior.legendaryScoredEnemyMissileTarget({
+  enemy: {},
+  enemyGold: 100n,
+  enemySilos: targetSilos,
+  enemySiloLevels: targetSiloLevels,
+  weapon: UNIT.AtomBomb,
+  target: { tile: 0, exposure: 1, exposedStructures: 1 },
+  base: {
+    atomCost: 1n,
+    hydrogenCost: 1n,
+    atomRadius: 10,
+    hydrogenRadius: 20,
+    launchMetadataCache: new Map(),
+  },
+  samProfiles: [],
+});
+assert.equal(scoredTarget.enemySiloLevels, targetSiloLevels);
+assert.equal(
+  targetSiloMapCalls,
+  0,
+  "enemy missile target scoring reuses silo levels across candidate targets",
+);
+
 let samReadyFilterReads = 0;
 const samAvailableTicks = [0, 0, 90];
 const samReadyFilter = samAvailableTicks.filter;
