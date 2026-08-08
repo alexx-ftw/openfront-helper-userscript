@@ -7159,10 +7159,15 @@
         samProfiles: [],
         completionTick: 0,
       });
+      let enemySiloLevels = threat.enemySiloLevels;
+      if (!enemySiloLevels) {
+        enemySiloLevels = [];
+        for (const unit of threat.enemySilos || []) {
+          enemySiloLevels.push({ level: unit.level() });
+        }
+      }
       const risk = legendaryMissileThreatScore({
-        enemySilos:
-          threat.enemySiloLevels ||
-          (threat.enemySilos || []).map((unit) => ({ level: unit.level() })),
+        enemySilos: enemySiloLevels,
         enemyGold: threat.enemyGold,
         atomCost: context.atomCost,
         hydrogenCost: context.hydrogenCost,

@@ -531,6 +531,34 @@ assert.equal(
   0,
   "prospective missile risk sums cached SAM capacity without reducing every silo",
 );
+const fallbackSilos = [{ level: () => 1 }, { level: () => 2 }];
+const fallbackSiloMap = fallbackSilos.map;
+let fallbackSiloMapCalls = 0;
+fallbackSilos.map = (...args) => {
+  fallbackSiloMapCalls++;
+  return fallbackSiloMap.apply(fallbackSilos, args);
+};
+prospectiveBehavior.legendaryProspectivePlacementRisk(
+  0,
+  1,
+  {
+    enemySilos: fallbackSilos,
+    enemyGold: 100,
+    weapon: UNIT.AtomBomb,
+  },
+  {
+    atomCost: 1n,
+    hydrogenCost: 1n,
+    atomRadius: 10,
+    hydrogenRadius: 20,
+  },
+);
+delete fallbackSilos.map;
+assert.equal(
+  fallbackSiloMapCalls,
+  0,
+  "prospective missile risk snapshots fallback silo levels without mapping",
+);
 const targetSilos = Array.from({ length: 8 }, (_, index) => ({
   tile: () => index,
   level: () => index + 1,
