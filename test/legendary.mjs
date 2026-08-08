@@ -671,4 +671,41 @@ assert.equal(
 assert.equal(targetableIndexBuilds, 1);
 assert.equal(interceptionCoverageCalls, 1);
 
+const sourceSilo = { tile: () => 11 };
+const fallbackSilo = { tile: () => 12 };
+const sourceProfiles = [{ availableTicks: [0, 90] }, { availableTicks: [0] }];
+const sourceRoute = {
+  silo: sourceSilo,
+  samOptions: [
+    { samIndex: 0, interceptTicks: [1] },
+    { samIndex: 1, interceptTicks: [2] },
+  ],
+};
+assert.equal(
+  routeBehavior.legendarySalvoRouteInterceptionCapacity(sourceRoute, sourceProfiles),
+  2,
+  "salvo routes reuse ready SAM slots already represented by their options",
+);
+let sourceFallbackCalls = 0;
+routeBehavior.legendarySamInterceptionCapacity = () => {
+  sourceFallbackCalls++;
+  return 99;
+};
+const sourceMetrics = routeBehavior.legendarySalvoSourceMetrics(
+  [sourceSilo, fallbackSilo],
+  9,
+  new Map([
+    [sourceSilo, 10],
+    [fallbackSilo, 11],
+  ]),
+  [sourceRoute],
+  sourceProfiles,
+);
+assert.deepEqual(
+  sourceMetrics.map(({ interceptionCapacity }) => interceptionCapacity),
+  [2, 99],
+  "source metrics reuse route capacity and retain the geometry fallback",
+);
+assert.equal(sourceFallbackCalls, 1);
+
 process.stdout.write("LEGENDARY TESTS OK\n");

@@ -8055,9 +8055,9 @@
     "name": "COLORS",
     "declarationKind": "const",
     "initializerKind": "ObjectLiteralExpression",
-    "initializerHash": "d367d810267e7affdb673c6528686238ffb5bd632d149c56512e44a371f929be",
-    "initializerLength": 621,
-    "initializerPreview": "{\n    build: \"#e6c74a\",\n    building: \"#1e3a5f\",\n    boat: \"#2a82c9\",\n    ally: \"#4ade80\",\n    breakAlly: \"#dc2626\",\n    breakAllyNoDebuff: \"#d97706\",\n    delete: \"#ef4444\",\n    info: \"#475569\",\n    target: \"#ef4444\",\n    attack: \"#ef444..."
+    "initializerHash": "8afd95a6cbf6c74a926781cde57a799ec5cdb498cd731a19bbbc04ee9e72eb94",
+    "initializerLength": 646,
+    "initializerPreview": "{\n    build: \"#e6c74a\",\n    building: \"#1e3a5f\",\n    boat: \"#2a82c9\",\n    disabled: \"#94a3b8\",\n    ally: \"#4ade80\",\n    breakAlly: \"#dc2626\",\n    breakAllyNoDebuff: \"#d97706\",\n    delete: \"#ef4444\",\n    info: \"#475569\",\n    target: \"#ef4..."
   },
   {
     "id": "openfront-engine/src/client/hud/layers/RadialMenuElements.ts:Slot.Info#1",
@@ -11880,6 +11880,16 @@
     "initializerPreview": "\"Normal\""
   },
   {
+    "id": "openfront-engine/src/core/game/Game.ts:MAX_UPGRADE_AMOUNT#1",
+    "file": "openfront-engine/src/core/game/Game.ts",
+    "name": "MAX_UPGRADE_AMOUNT",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "1a6562590ef19d1045d06c4055742d38288e9e6dcd71ccde5cee80f1d5a774eb",
+    "initializerLength": 2,
+    "initializerPreview": "50"
+  },
+  {
     "id": "openfront-engine/src/core/game/Game.ts:UnitType.TransportShip#1",
     "file": "openfront-engine/src/core/game/Game.ts",
     "name": "UnitType.TransportShip",
@@ -12188,6 +12198,26 @@
     "initializerHash": "fb863a53938a0b52e2ac349317af8ae895c7a31faedf15c371497cc246b094c7",
     "initializerLength": 8,
     "initializerPreview": "\"NATION\""
+  },
+  {
+    "id": "openfront-engine/src/core/game/Game.ts:NUKE_BULK_STEPS#1",
+    "file": "openfront-engine/src/core/game/Game.ts",
+    "name": "NUKE_BULK_STEPS",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "cb34dd62337c2ce5a30adb10aa5545d7bc4424496e228bb2bcc21541308bc1ff",
+    "initializerLength": 6,
+    "initializerPreview": "[2, 5]"
+  },
+  {
+    "id": "openfront-engine/src/core/game/Game.ts:STRUCTURE_BULK_STEPS#1",
+    "file": "openfront-engine/src/core/game/Game.ts",
+    "name": "STRUCTURE_BULK_STEPS",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "624b5d2d0ebabfff228322c1924a697d19bf192a80c303fdb88750fd81c95694",
+    "initializerLength": 7,
+    "initializerPreview": "[5, 10]"
   },
   {
     "id": "openfront-engine/src/core/game/Game.ts:MessageType.ATTACK_FAILED#1",

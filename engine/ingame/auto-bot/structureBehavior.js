@@ -5362,6 +5362,8 @@
         enemySilos,
         targetTile,
         launchFlightTimes,
+        routes,
+        samProfiles,
       );
       const interceptionCapacity = sourceMetrics.reduce(
         (total, source) => total + source.interceptionCapacity,
@@ -5507,7 +5509,7 @@
         coverageCacheBySilo.set(launch.silo, coverageIndexCache);
       }
       const weapon = isHydrogen ? UNIT.HydrogenBomb : UNIT.AtomBomb;
-      return this.legendaryBuildMissileRoute(
+      const route = this.legendaryBuildMissileRoute(
         {
           fromTile: launch.silo.tile(),
           targetTile,
@@ -5522,21 +5524,59 @@
         samProfiles,
         coverageIndexCache,
       );
+      route.silo = launch.silo;
+      return route;
     }
 
-    legendarySalvoSourceMetrics(enemySilos, targetTile, launchFlightTimes) {
+    legendarySalvoRouteInterceptionCapacity(route, samProfiles) {
+      if (
+        !route ||
+        !Array.isArray(route.samOptions) ||
+        !Array.isArray(samProfiles) ||
+        samProfiles.length === 0
+      ) {
+        return null;
+      }
+      let capacity = 0;
+      for (const option of route.samOptions) {
+        const availableTicks = samProfiles[option.samIndex]?.availableTicks;
+        if (!Array.isArray(availableTicks)) continue;
+        capacity += availableTicks.filter((tick) => tick <= 0).length;
+      }
+      return capacity;
+    }
+
+    legendarySalvoSourceMetrics(
+      enemySilos,
+      targetTile,
+      launchFlightTimes,
+      routes = null,
+      samProfiles = null,
+    ) {
+      const routesBySilo = new Map();
+      if (Array.isArray(routes)) {
+        for (const route of routes) {
+          const silo = route?.silo;
+          if (silo && !routesBySilo.has(silo)) {
+            routesBySilo.set(silo, route);
+          }
+        }
+      }
       return enemySilos.map((silo) => {
         const fromTile = silo.tile();
+        const routeCapacity = this.legendarySalvoRouteInterceptionCapacity(
+          routesBySilo.get(silo),
+          samProfiles,
+        );
         return {
           silo,
           fromTile,
           flightTimeTicks:
             launchFlightTimes.get(silo) ??
             this.legendaryNukeFlightTime(fromTile, targetTile),
-          interceptionCapacity: this.legendarySamInterceptionCapacity(
-            fromTile,
-            targetTile,
-          ),
+          interceptionCapacity:
+            routeCapacity ??
+            this.legendarySamInterceptionCapacity(fromTile, targetTile),
         };
       });
     }
