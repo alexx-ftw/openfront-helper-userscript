@@ -541,6 +541,49 @@ const activeMotion = activeMotionBehavior.legendaryActiveMissileMotion({ id: () 
 assert.equal(activeMotion.path, activePathSlice);
 assert.equal(activeMotion.impactTick, 2);
 
+let groupArrayMethodReads = 0;
+const groupedMissiles = [
+  { id: "r1", impactTick: 10, marginTicks: 5, intercepted: true },
+  { id: "r2", impactTick: 20, marginTicks: 7, intercepted: false },
+];
+const selectedGroupedMissiles = groupedMissiles.slice();
+const selectedMap = selectedGroupedMissiles.map;
+const selectedFilter = selectedGroupedMissiles.filter;
+selectedGroupedMissiles.map = (...args) => {
+  groupArrayMethodReads++;
+  return selectedMap.apply(selectedGroupedMissiles, args);
+};
+selectedGroupedMissiles.filter = (...args) => {
+  groupArrayMethodReads++;
+  return selectedFilter.apply(selectedGroupedMissiles, args);
+};
+groupedMissiles.filter = () => {
+  groupArrayMethodReads++;
+  return selectedGroupedMissiles;
+};
+const groupScheduleBehavior = Object.create(sandbox.StructureBehavior.prototype);
+const groupSchedule = groupScheduleBehavior.legendaryGroupDefenseSchedule(
+  {
+    routeIds: new Set(["r1", "r2"]),
+    forecastComplete: true,
+    threat: {},
+  },
+  {
+    completionTick: 0,
+    missiles: groupedMissiles,
+  },
+);
+assert.equal(groupSchedule.firstImpactTick, 10);
+assert.equal(groupSchedule.minimumInterceptMarginTicks, 5);
+assert.equal(groupSchedule.interceptedCount, 1);
+assert.equal(groupSchedule.uninterceptedCount, 1);
+assert.equal(groupSchedule.fullyDefended, false);
+assert.equal(
+  groupArrayMethodReads,
+  0,
+  "group defense summaries aggregate missile counters in one pass",
+);
+
 let routeCoverageArrayCalls = 0;
 const capacityRouteBehavior = Object.create(sandbox.StructureBehavior.prototype);
 capacityRouteBehavior.game = {

@@ -5237,12 +5237,22 @@
     }
 
     legendaryGroupDefenseSchedule(group, globalSchedule) {
-      const missiles = globalSchedule.missiles.filter((missile) =>
-        group.routeIds.has(String(missile.id)),
-      );
-      const firstImpactTick = missiles.length
-        ? Math.min(...missiles.map((missile) => missile.impactTick))
-        : Infinity;
+      const missiles = [];
+      let firstImpactTick = Infinity;
+      let minimumInterceptMarginTicks = Infinity;
+      let interceptedCount = 0;
+      let uninterceptedCount = 0;
+      for (const missile of globalSchedule.missiles) {
+        if (!group.routeIds.has(String(missile.id))) continue;
+        missiles.push(missile);
+        firstImpactTick = Math.min(firstImpactTick, missile.impactTick);
+        minimumInterceptMarginTicks = Math.min(
+          minimumInterceptMarginTicks,
+          missile.marginTicks,
+        );
+        if (missile.intercepted) interceptedCount++;
+        else uninterceptedCount++;
+      }
       const completionTick = globalSchedule.completionTick;
       const completionMarginTicks = Number.isFinite(firstImpactTick)
         ? Math.max(0, firstImpactTick - completionTick)
@@ -5255,15 +5265,11 @@
         completionMarginSatisfied:
           Number.isFinite(firstImpactTick) &&
           completionMarginTicks >= LEGENDARY_SAM_IMPACT_MARGIN_TICKS,
-        fullyDefended:
-          group.forecastComplete &&
-          missiles.every((missile) => missile.intercepted),
-        interceptedCount: missiles.filter((missile) => missile.intercepted)
-          .length,
-        uninterceptedCount: missiles.filter((missile) => !missile.intercepted)
-          .length,
+        fullyDefended: group.forecastComplete && uninterceptedCount === 0,
+        interceptedCount,
+        uninterceptedCount,
         minimumInterceptMarginTicks: missiles.length
-          ? Math.min(...missiles.map((missile) => missile.marginTicks))
+          ? minimumInterceptMarginTicks
           : Infinity,
         threat: group.threat,
       };
