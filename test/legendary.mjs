@@ -946,5 +946,20 @@ assert.equal(
   "SAM capacity can use the prepared profile snapshot",
 );
 assert.equal(rawSamReads, 0, "prepared SAM capacity avoids rereading raw units");
+let minimumCapacityProfiles;
+profileCapacityBehavior.legendarySamInterceptionCapacity = (...args) => {
+  minimumCapacityProfiles = args[3];
+  return 1;
+};
+const minimumCapacitySnapshot = {
+  threats: [{ targetTile: 2, enemySilos: [0] }],
+  samProfiles: [{ tile: 0, level: 1, range: 10, availableTicks: [0] }],
+};
+assert.equal(
+  profileCapacityBehavior.legendaryMinimumSamInterceptionCapacity(minimumCapacitySnapshot),
+  1,
+  "minimum SAM capacity reuses the missile snapshot profiles",
+);
+assert.equal(minimumCapacityProfiles, minimumCapacitySnapshot.samProfiles);
 
 process.stdout.write("LEGENDARY TESTS OK\n");

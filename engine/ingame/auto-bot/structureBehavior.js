@@ -5158,6 +5158,10 @@
 
     legendaryMinimumSamInterceptionCapacity(context, levelOverrides = null) {
       if (!context || !Array.isArray(context.threats)) return 0;
+      const samProfilesOverride = this.legendarySamCapacityProfiles(
+        context,
+        levelOverrides,
+      );
       let minimum = Infinity;
       let routeCount = 0;
       for (const threat of context.threats) {
@@ -5175,11 +5179,17 @@
               fromTile,
               targetTile,
               levelOverrides,
+              samProfilesOverride,
             ),
           );
         }
       }
       return routeCount > 0 && Number.isFinite(minimum) ? minimum : 0;
+    }
+
+    legendarySamCapacityProfiles(context, levelOverrides) {
+      if (this.hasLegendaryLevelOverrides(levelOverrides)) return null;
+      return Array.isArray(context?.samProfiles) ? context.samProfiles : null;
     }
 
     legendaryThreatSources(threat) {
