@@ -6676,9 +6676,10 @@
     nearestLegendaryMissileTarget(silo, entries) {
       let nearest = null;
       let nearestDistance = Infinity;
+      const siloTile = silo.tile();
       for (const entry of entries) {
         {
-          const distance = this.game.manhattanDist(silo.tile(), entry.tile);
+          const distance = this.game.manhattanDist(siloTile, entry.tile);
           if (distance >= nearestDistance) continue;
           nearest = entry;
           nearestDistance = distance;

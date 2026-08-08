@@ -424,6 +424,26 @@ assert.equal(
   "salvo route capacity reuses cached ready SAM slots instead of filtering each route",
 );
 
+let nearestSiloTileReads = 0;
+const nearestBehavior = Object.create(sandbox.StructureBehavior.prototype);
+nearestBehavior.game = { manhattanDist: (left, right) => Math.abs(left - right) };
+const nearestSilo = {
+  tile: () => {
+    nearestSiloTileReads++;
+    return 0;
+  },
+};
+const nearestEntries = Array.from({ length: 256 }, (_, index) => ({
+  tile: index + 1,
+}));
+const nearestEntry = nearestBehavior.nearestLegendaryMissileTarget(nearestSilo, nearestEntries);
+assert.equal(nearestEntry.tile, 1);
+assert.equal(
+  nearestSiloTileReads,
+  1,
+  "nearest missile target selection snapshots the silo tile once per search",
+);
+
 let contextValueReads = 0;
 const contextBehavior = Object.create(sandbox.StructureBehavior.prototype);
 contextBehavior.game = {
