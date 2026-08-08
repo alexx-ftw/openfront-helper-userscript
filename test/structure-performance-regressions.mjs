@@ -1149,6 +1149,33 @@ assert.equal(
   "level-overridden SAM profiles bypass the base profile cache",
 );
 
+let activeCapacityReads = 0;
+const activeCapacityBehavior = Object.create(sandbox.StructureBehavior.prototype);
+activeCapacityBehavior.legendarySamInterceptionCapacity = () => {
+  activeCapacityReads++;
+  return 2;
+};
+const activeCapacityCache = activeCapacityBehavior.activeMissileExposureCache({});
+const activeCapacityContext = {
+  interceptionCapacityCache: activeCapacityCache,
+  samProfiles: [],
+};
+assert.equal(
+  activeCapacityBehavior.legendaryCachedSamInterceptionCapacity(7, 9, activeCapacityContext),
+  2,
+);
+assert.equal(
+  activeCapacityBehavior.legendaryCachedSamInterceptionCapacity(7, 9, activeCapacityContext),
+  2,
+);
+assert.equal(
+  activeCapacityReads,
+  1,
+  "active missile capacity reuses same source-target geometry within one context",
+);
+activeCapacityBehavior.legendaryCachedSamInterceptionCapacity(7, 10, activeCapacityContext);
+assert.equal(activeCapacityReads, 2, "a different target gets an independent capacity");
+
 let groupArrayMethodReads = 0;
 const groupedMissiles = [
   { id: "r1", impactTick: 10, marginTicks: 5, intercepted: true },

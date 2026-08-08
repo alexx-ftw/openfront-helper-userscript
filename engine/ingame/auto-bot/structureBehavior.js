@@ -6462,12 +6462,13 @@
       const flightTimeTicks =
         motion?.impactTick ??
         this.legendaryNukeFlightTime(input.fromTile, input.targetTile);
-      const interceptionCapacity = this.legendarySamInterceptionCapacity(
-        input.fromTile,
-        input.targetTile,
-        null,
-        input.samProfiles,
-      );
+      const interceptionCapacity =
+        this.legendaryCachedSamInterceptionCapacity(
+          input.fromTile,
+          input.targetTile,
+          input.context,
+          input.samProfiles,
+        );
       const nukeId =
         typeof input.nuke.id === "function" ? input.nuke.id() : "active-missile";
       const route = this.legendaryBuildMissileRoute(
@@ -7569,14 +7570,27 @@
       return risk.score;
     }
 
-    legendaryCachedSamInterceptionCapacity(silo, targetTile, context = null) {
+    legendaryCachedSamInterceptionCapacity(
+      silo,
+      targetTile,
+      context = null,
+      samProfilesOverride = null,
+    ) {
+      const samProfiles = samProfilesOverride ?? context?.samProfiles;
       const cache = context?.interceptionCapacityCache;
       if (
         !cache ||
         typeof cache.get !== "function" ||
         typeof cache.set !== "function"
       ) {
-        return this.legendarySamInterceptionCapacity(silo.tile(), targetTile);
+        const fromTile =
+          typeof silo?.tile === "function" ? silo.tile() : silo;
+        return this.legendarySamInterceptionCapacity(
+          fromTile,
+          targetTile,
+          null,
+          samProfiles,
+        );
       }
       let byTarget = cache.get(silo);
       if (!byTarget) {
@@ -7584,11 +7598,13 @@
         cache.set(silo, byTarget);
       }
       if (byTarget.has(targetTile)) return byTarget.get(targetTile);
+      const fromTile =
+        typeof silo?.tile === "function" ? silo.tile() : silo;
       const capacity = this.legendarySamInterceptionCapacity(
-        silo.tile(),
+        fromTile,
         targetTile,
         null,
-        context?.samProfiles,
+        samProfiles,
       );
       byTarget.set(targetTile, capacity);
       return capacity;
