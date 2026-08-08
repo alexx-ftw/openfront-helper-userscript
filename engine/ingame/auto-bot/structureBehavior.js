@@ -6186,13 +6186,31 @@
       }
     }
 
+    activeMirvDemandResultCache(context) {
+      if (
+        !context ||
+        (typeof context !== "object" && typeof context !== "function")
+      ) {
+        return null;
+      }
+      if (!(this._activeMirvDemandResultCache instanceof WeakMap)) {
+        this._activeMirvDemandResultCache = new WeakMap();
+      }
+      return this._activeMirvDemandResultCache;
+    }
+
     uncoveredActiveMirvDemands(context) {
+      const cache = this.activeMirvDemandResultCache(context);
+      const cached = cache?.get(context);
+      if (cached !== undefined) return cached;
       const samProfiles = Array.isArray(context?.samProfiles)
         ? context.samProfiles
         : null;
-      return (context?.mirvDemands || []).filter(
+      const uncovered = (context?.mirvDemands || []).filter(
         (demand) => !this.activeMirvDemandCovered(demand, samProfiles),
       );
+      cache?.set(context, uncovered);
+      return uncovered;
     }
 
     activeMirvDemandCovered(demand, samProfiles = null) {

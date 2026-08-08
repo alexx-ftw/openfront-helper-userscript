@@ -909,12 +909,26 @@ const mirvContext = {
   samProfiles: [{ tile: 7, availableTicks: [0], readySlots: 1 }],
   mirvDemands: [{ targetTile: 7, deadlineTick: 10 }],
 };
+let mirvCoverageChecks = 0;
+mirvBehavior.activeMirvDemandCovered = () => {
+  mirvCoverageChecks++;
+  return true;
+};
+assert.equal(mirvBehavior.uncoveredActiveMirvDemands(mirvContext).length, 0);
 assert.equal(mirvBehavior.uncoveredActiveMirvDemands(mirvContext).length, 0);
 assert.equal(
   mirvSlotReads,
   0,
   "active MIRV demand checks reuse SAM profiles from the defense snapshot",
 );
+assert.equal(
+  mirvCoverageChecks,
+  1,
+  "repeated active MIRV coverage checks reuse the same context result",
+);
+const otherMirvContext = { ...mirvContext };
+assert.equal(mirvBehavior.uncoveredActiveMirvDemands(otherMirvContext).length, 0);
+assert.equal(mirvCoverageChecks, 2, "different MIRV contexts are evaluated independently");
 
 let mirvStructureSnapshotReads = 0;
 const mirvProtectedStructures = [{ tile: () => 10, id: () => 11 }];
