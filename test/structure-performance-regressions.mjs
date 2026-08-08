@@ -960,14 +960,36 @@ assert.equal(
 const activeMotionBehavior = Object.create(sandbox.StructureBehavior.prototype);
 const activePlanPath = [0, 1, 2, 3];
 const activePathSlice = [2, 3];
-activePlanPath.slice = () => activePathSlice;
-activeMotionBehavior.game = {
-  ticks: () => 2,
-  motionPlans: () => new Map([["nuke-1", { path: activePlanPath, startTick: 0, ticksPerStep: 1 }]]),
+let activePathSliceCalls = 0;
+let activeMotionTick = 2;
+activePlanPath.slice = () => {
+  activePathSliceCalls++;
+  return activePathSlice;
 };
-const activeMotion = activeMotionBehavior.legendaryActiveMissileMotion({ id: () => "nuke-1" }, 0);
+const activePlan = {
+  path: activePlanPath,
+  startTick: 0,
+  ticksPerStep: 1,
+};
+activeMotionBehavior.game = {
+  ticks: () => activeMotionTick,
+  motionPlans: () => new Map([["nuke-1", activePlan]]),
+};
+const activeNuke = { id: () => "nuke-1" };
+const activeMotion = activeMotionBehavior.legendaryActiveMissileMotion(activeNuke, 0);
+const cachedActiveMotion = activeMotionBehavior.legendaryActiveMissileMotion(activeNuke, 0);
 assert.equal(activeMotion.path, activePathSlice);
 assert.equal(activeMotion.impactTick, 2);
+assert.equal(cachedActiveMotion, activeMotion);
+assert.equal(
+  activePathSliceCalls,
+  1,
+  "repeated active-missile motion reads reuse the sliced path within one tick",
+);
+activeMotionTick = 3;
+const nextTickMotion = activeMotionBehavior.legendaryActiveMissileMotion(activeNuke, 0);
+assert.notEqual(nextTickMotion, activeMotion);
+assert.equal(activePathSliceCalls, 2, "active-missile motion refreshes on the next tick");
 
 let groupArrayMethodReads = 0;
 const groupedMissiles = [

@@ -4940,6 +4940,35 @@
       return rebuilt;
     }
 
+    legendaryActiveMissileMotionCache(nuke) {
+      if (
+        !(
+          (typeof nuke === "object" && nuke !== null) ||
+          typeof nuke === "function"
+        )
+      ) {
+        return null;
+      }
+      if (!(this._legendaryActiveMissileMotionCache instanceof WeakMap)) {
+        this._legendaryActiveMissileMotionCache = new WeakMap();
+      }
+      return this._legendaryActiveMissileMotionCache;
+    }
+
+    legendaryActiveMissileMotionCacheHit(nuke, plan, now, fromTile) {
+      const cache = this.legendaryActiveMissileMotionCache(nuke);
+      const cached = cache?.get(nuke);
+      if (
+        cached?.plan !== plan ||
+        cached.path !== plan.path ||
+        cached.tick !== now ||
+        cached.fromTile !== fromTile
+      ) {
+        return null;
+      }
+      return cached.motion;
+    }
+
     // The client keeps exact server motion plans for active nukes. Prefer that
     // path over rebuilding a new parabola from the nuke's current tile: the
     // latter loses the original launch arc and can move a near-impact window
@@ -4949,6 +4978,13 @@
         const plan = this.legendaryActiveMotionPlan(nuke);
         if (!plan || !plan.path || plan.path.length === 0) return null;
         const now = Number(this.game.ticks?.() ?? 0);
+        const cachedMotion = this.legendaryActiveMissileMotionCacheHit(
+          nuke,
+          plan,
+          now,
+          fromTile,
+        );
+        if (cachedMotion !== null) return cachedMotion;
         const startTick = Number(plan.startTick ?? now);
         const ticksPerStep = Math.max(1, Number(plan.ticksPerStep ?? 1));
         const rawIndex =
@@ -4961,11 +4997,19 @@
         );
         const path = plan.path.slice(index);
         if (path.length === 0) return null;
-        return {
+        const motion = {
           fromTile: plan.path[0] ?? fromTile,
           path,
           impactTick: Math.max(1, path.length),
         };
+        this.legendaryActiveMissileMotionCache(nuke)?.set(nuke, {
+          plan,
+          path: plan.path,
+          tick: now,
+          fromTile,
+          motion,
+        });
+        return motion;
       }
     }
 
