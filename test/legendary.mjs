@@ -857,6 +857,26 @@ assert.equal(
   1,
   "coverage scoring reuses the range across structure and SAM loops",
 );
+const flightSpeedBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+let flightSpeedReads = 0;
+const flightSpeedConfig = {
+  defaultNukeSpeed: () => {
+    flightSpeedReads++;
+    return 10;
+  },
+};
+flightSpeedBehavior.game = {
+  config: () => flightSpeedConfig,
+  euclideanDistSquared: () => 1,
+  x: (tile) => tile,
+  y: () => 0,
+  isValidCoord: () => true,
+  ref: (x) => x,
+};
+flightSpeedBehavior.legendaryNukeFlightPath(0, 1);
+flightSpeedBehavior.legendaryNukeFlightPath(0, 1);
+flightSpeedBehavior.legendaryNukeFlightTime(0, 1);
+assert.equal(flightSpeedReads, 1, "cached missile trajectories reuse the configured nuke speed");
 
 const placementContextBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
 const placementContextConfig = {

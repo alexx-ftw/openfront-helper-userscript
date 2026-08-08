@@ -1,0 +1,316 @@
+import assert from "node:assert/strict";
+import { executeClassicScript, readRepositoryFile } from "./helpers/classic-script.mjs";
+
+const source = readRepositoryFile("engine/ingame/auto-bot/structureBehavior.js");
+const UNIT = {
+  City: "City",
+  Port: "Port",
+  Factory: "Factory",
+  SAMLauncher: "SAM Launcher",
+  MissileSilo: "Missile Silo",
+  DefensePost: "Defense Post",
+};
+const sandbox = {
+  Difficulty: { Impossible: "Impossible" },
+  GameMode: { Team: "Team" },
+  UNIT,
+  currentDifficulty: () => "Impossible",
+  getBuildMenu: () => ({ sendBuildOrUpgrade() {} }),
+  isAtLeastHardDifficulty: () => true,
+  isLegendaryDifficulty: () => false,
+  state: { settings: { winFixes: true } },
+  withTimeout: async (promise) => promise,
+  WORKER_TIMEOUT_MS: 1,
+};
+sandbox.globalThis = sandbox;
+executeClassicScript(`${source}\nglobalThis.StructureBehavior = StructureBehavior;`, sandbox, {
+  filename: "structureBehavior.js",
+});
+
+const factoryBehavior = Object.create(sandbox.StructureBehavior.prototype);
+factoryBehavior.factoryTradeDestinationsCache = null;
+let destinationCollections = 0;
+let destinationClusterings = 0;
+factoryBehavior.collectFactoryTradeDestinations = () => {
+  destinationCollections++;
+  return [{ tile: 1, weight: 1, key: "city" }];
+};
+factoryBehavior.proximityStationClusters = (_game, destinations) => {
+  destinationClusterings++;
+  return destinations;
+};
+const factoryCacheStartedAt = performance.now();
+for (let candidate = 0; candidate < 256; candidate++) {
+  factoryBehavior.getOrBuildFactoryTradeDestinations();
+}
+const factoryCacheDurationMs = performance.now() - factoryCacheStartedAt;
+assert.equal(
+  destinationCollections,
+  1,
+  "all Factory candidates in one construction decision reuse one destination snapshot",
+);
+assert.equal(destinationClusterings, 1);
+
+let tick = 100;
+let globalStructureReads = 0;
+let structureRecordReads = 0;
+const structures = Array.from({ length: 12000 }, (_, index) => ({
+  type: () => {
+    structureRecordReads++;
+    return index % 2 === 0 ? UNIT.City : UNIT.Factory;
+  },
+  id: () => {
+    structureRecordReads++;
+    return index;
+  },
+  tile: () => {
+    structureRecordReads++;
+    return index + 1;
+  },
+  level: () => {
+    structureRecordReads++;
+    return 1;
+  },
+  isUnderConstruction: () => {
+    structureRecordReads++;
+    return false;
+  },
+}));
+const fingerprintBehavior = Object.create(sandbox.StructureBehavior.prototype);
+let borderIterations = 0;
+const borderSnapshot = {
+  size: 4,
+  [Symbol.iterator]: () => {
+    borderIterations++;
+    return [4, 3, 2, 1][Symbol.iterator]();
+  },
+};
+fingerprintBehavior.game = {
+  ticks: () => tick,
+  config: () => ({ structureMinDist: () => 12 }),
+  units: () => {
+    globalStructureReads++;
+    return structures;
+  },
+};
+fingerprintBehavior.player = {
+  smallID: () => 1,
+  numTilesOwned: () => 50000,
+  borderTiles: () => borderSnapshot,
+};
+const fingerprintStartedAt = performance.now();
+for (let call = 0; call < 64; call++) {
+  fingerprintBehavior.economicPlacementFingerprint(UNIT.Factory);
+}
+const fingerprintDurationMs = performance.now() - fingerprintStartedAt;
+assert.equal(
+  globalStructureReads,
+  1,
+  "same-tick economic scan validation sorts the global structure snapshot once",
+);
+assert.equal(
+  structureRecordReads,
+  0,
+  "economic scan validation uses the aggregate structure count instead of serializing every structure",
+);
+assert.equal(
+  borderIterations,
+  0,
+  "economic scan validation reads the border cardinality without sorting every border tile",
+);
+assert.ok(
+  fingerprintDurationMs < 50,
+  `64 late-game fingerprint checks took ${fingerprintDurationMs.toFixed(1)}ms`,
+);
+tick++;
+fingerprintBehavior.economicPlacementFingerprint(UNIT.Factory);
+assert.equal(
+  globalStructureReads,
+  2,
+  "a new game tick refreshes the economic placement fingerprint",
+);
+
+let coverageDistanceReads = 0;
+let coverageValueReads = 0;
+const coverageStructures = Array.from({ length: 5000 }, () => ({
+  tile: () => 0,
+}));
+const coverageSam = { tile: () => 0, level: () => 1 };
+const coverageBehavior = Object.create(sandbox.StructureBehavior.prototype);
+coverageBehavior.game = {
+  config: () => ({
+    defaultSamRange: () => 10,
+    samRange: () => 10,
+  }),
+  euclideanDistSquared: () => {
+    coverageDistanceReads++;
+    return 0;
+  },
+};
+coverageBehavior.player = { units: () => coverageStructures };
+coverageBehavior.legendaryFriendlySamUnits = () => [coverageSam];
+coverageBehavior.spacingConstants = () => ({ structureSpacing: 1 });
+coverageBehavior.legendaryCriticalStructureValue = () => {
+  coverageValueReads++;
+  return 1;
+};
+coverageBehavior.legendarySamImpactMarginScore = () => 0;
+coverageBehavior.structureSpawnTileValue = () => () => 0;
+coverageBehavior.getMissileDefenseContext = () => ({ critical: false });
+coverageBehavior.legendaryMissilePlacementRisk = () => 0;
+coverageBehavior.legendaryAllyPlacementContext = () => null;
+coverageBehavior.legendaryTeamCenterPlacementContext = () => null;
+let coverageContextBuilds = 0;
+let coverageContext = null;
+const buildCoverageContext =
+  coverageBehavior.legendarySamCoveragePlacementContext.bind(coverageBehavior);
+coverageBehavior.legendarySamCoveragePlacementContext = () => {
+  coverageContextBuilds++;
+  coverageContext = buildCoverageContext();
+  return coverageContext;
+};
+const samPlacementValue = coverageBehavior.legendaryStructureSpawnTileValue(UNIT.SAMLauncher);
+const coverageStartedAt = performance.now();
+for (let candidate = 0; candidate < 64; candidate++) {
+  samPlacementValue(candidate);
+}
+const coverageDurationMs = performance.now() - coverageStartedAt;
+assert.equal(
+  coverageContext.uncoveredStructures.length,
+  0,
+  "the placement context removes structures already covered by existing SAMs",
+);
+assert.equal(
+  coverageDistanceReads,
+  coverageStructures.length,
+  "repeated SAM candidates reuse the existing-SAM coverage snapshot",
+);
+assert.equal(
+  coverageValueReads,
+  0,
+  "covered structures do not trigger repeated critical-value reads",
+);
+assert.equal(
+  coverageContextBuilds,
+  1,
+  "the real SAM placement scorer builds one coverage context for all candidates",
+);
+assert.ok(
+  coverageDurationMs < 50,
+  `64 SAM coverage candidates took ${coverageDurationMs.toFixed(1)}ms`,
+);
+
+let launchTileReads = 0;
+let launchIdReads = 0;
+const launchSilos = Array.from({ length: 32 }, (_, index) => ({
+  isUnderConstruction: () => false,
+  tile: () => {
+    launchTileReads++;
+    return index;
+  },
+  id: () => {
+    launchIdReads++;
+    return index;
+  },
+}));
+const launchBehavior = Object.create(sandbox.StructureBehavior.prototype);
+launchBehavior.game = {
+  manhattanDist: () => 1,
+};
+launchBehavior.legendaryNukeFlightTime = () => 10;
+launchBehavior.legendarySiloSlotAvailability = () => [0, 90, 180];
+launchBehavior.legendarySiloCooldownTicks = () => 90;
+const launchStartedAt = performance.now();
+const launches = launchBehavior.legendaryEnemyMissileLaunchPlan(launchSilos, 0, 96);
+const launchDurationMs = performance.now() - launchStartedAt;
+assert.equal(launches.length, 96, "the optimized planner retains all launch opportunities");
+assert.equal(
+  launchTileReads,
+  launchSilos.length,
+  "launch planning reads each silo tile once before assigning the salvo",
+);
+assert.equal(
+  launchIdReads,
+  launchSilos.length,
+  "launch planning reads each silo ID once before assigning the salvo",
+);
+assert.ok(launchDurationMs < 50, `96 launch assignments took ${launchDurationMs.toFixed(1)}ms`);
+
+let contextValueReads = 0;
+const contextBehavior = Object.create(sandbox.StructureBehavior.prototype);
+contextBehavior.game = {
+  config: () => ({
+    isUnitDisabled: () => false,
+    nukeMagnitudes: () => ({ outer: 10 }),
+  }),
+};
+contextBehavior.player = { units: () => coverageStructures };
+contextBehavior.cost = () => 1n;
+contextBehavior.legendaryCriticalStructureValue = () => {
+  contextValueReads++;
+  return 1;
+};
+const placementBaseContext = contextBehavior.legendaryMissilePlacementBaseContext();
+assert.equal(
+  placementBaseContext.priorityStructures.length,
+  Math.min(16, coverageStructures.length),
+);
+assert.equal(
+  contextValueReads,
+  coverageStructures.length,
+  "missile context values each structure once before total and priority ranking",
+);
+
+const supportBehavior = Object.create(sandbox.StructureBehavior.prototype);
+const supportAllies = Array.from({ length: 4000 }, () => ({}));
+supportBehavior.spacingConstants = () => ({ structureSpacing: 1 });
+supportBehavior.safeGameConfig = () => ({ samRange: () => 10 });
+supportBehavior.legendarySingleAllySupportScore = () => 1;
+const supportStartedAt = performance.now();
+let supportScore = 0;
+for (let candidate = 0; candidate < 64; candidate++) {
+  supportScore = supportBehavior.legendaryAllySupportPlacementScore(candidate, UNIT.City, {
+    allies: supportAllies,
+    supportRadius: 10,
+  });
+}
+const supportDurationMs = performance.now() - supportStartedAt;
+assert.equal(
+  supportScore,
+  1.35,
+  "linear ally support selection retains the strongest-two support formula",
+);
+assert.ok(
+  supportDurationMs < 50,
+  `64 ally-support candidate scores took ${supportDurationMs.toFixed(1)}ms`,
+);
+
+let networkDistanceReads = 0;
+const networkBehavior = Object.create(sandbox.StructureBehavior.prototype);
+networkBehavior.game = {
+  config: () => ({ samRange: (level) => Number(level) * 10 }),
+  euclideanDistSquared: (left, right) => {
+    networkDistanceReads++;
+    if ([1000, 2000].includes(left) && [10, 20, 30].includes(right)) {
+      return 200;
+    }
+    return 0;
+  },
+};
+networkBehavior.legendaryFriendlySamUnits = () => [
+  { tile: () => 1000, level: () => 1 },
+  { tile: () => 2000, level: () => 1 },
+];
+const networkScore = networkBehavior.friendlyUsefulSamPlacementScore(new Set([10, 20, 30]), 8);
+for (let candidate = 0; candidate < 64; candidate++) {
+  networkScore(candidate);
+}
+assert.equal(
+  networkDistanceReads,
+  262,
+  "friendly SAM placement precomputes SAM-to-structure distances once per anchor",
+);
+
+process.stdout.write(
+  `structure performance regression tests passed (Factory cache ${factoryCacheDurationMs.toFixed(1)}ms; fingerprints ${fingerprintDurationMs.toFixed(1)}ms; SAM coverage ${coverageDurationMs.toFixed(1)}ms; launches ${launchDurationMs.toFixed(1)}ms; ally support ${supportDurationMs.toFixed(1)}ms)\n`,
+);

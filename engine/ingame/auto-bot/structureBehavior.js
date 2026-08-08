@@ -3914,8 +3914,22 @@
       return (baseValue ?? 1) * Math.max(1, Number(unit.level() || 1));
     }
 
+    legendaryNukeSpeed() {
+      const config = this.game.config();
+      if (
+        config === this._legendaryNukeSpeedConfig &&
+        Number.isFinite(this._legendaryNukeSpeedCache)
+      ) {
+        return this._legendaryNukeSpeedCache;
+      }
+      const speed = Math.max(1, Number(config.defaultNukeSpeed()));
+      this._legendaryNukeSpeedConfig = config;
+      this._legendaryNukeSpeedCache = speed;
+      return speed;
+    }
+
     legendaryNukeFlightPath(fromTile, targetTile) {
-      const speed = Math.max(1, Number(this.game.config().defaultNukeSpeed()));
+      const speed = this.legendaryNukeSpeed();
 
       // The map and nuke speed are stable for the lifetime of a game, while a
       // single defense forecast asks for the same source/target parabola from
@@ -3975,7 +3989,7 @@
     legendaryNukeFlightTime(fromTile, targetTile) {
       const path = this.legendaryNukeFlightPath(fromTile, targetTile);
       if (path.length > 2) return path.length;
-      const speed = Math.max(1, Number(this.game.config().defaultNukeSpeed()));
+      const speed = this.legendaryNukeSpeed();
       return Math.max(
         1,
         Math.ceil(
@@ -11033,20 +11047,12 @@
         .filter((anchor) => anchor.currentRange > 0 && anchor.upgradedRange > 0);
       if (anchors.length === 0) return () => 0;
       const candidateRangeSquared = candidateRange * candidateRange;
-
-      return (tile) => {
-        let best = 0;
-        for (const anchor of anchors) {
+      const anchorProfiles = anchors
+        .map((anchor) => {
           const anchorRangeSquared = anchor.currentRange * anchor.currentRange;
           const upgradedRangeSquared = anchor.upgradedRange * anchor.upgradedRange;
-          const anchorDistanceSquared = this.game.euclideanDistSquared(
-            tile,
-            anchor.tile,
-          );
-          if (anchorDistanceSquared > upgradedRangeSquared) continue;
-
           let anchorProtectsAsset = false;
-          let candidateAddsCoverage = false;
+          const uncoveredStructureTiles = [];
           for (const structureTile of protectedTiles) {
             const anchorDistance = this.game.euclideanDistSquared(
               anchor.tile,
@@ -11055,15 +11061,40 @@
             if (anchorDistance <= upgradedRangeSquared) {
               anchorProtectsAsset = true;
             }
-            if (
-              this.game.euclideanDistSquared(tile, structureTile) <=
-                candidateRangeSquared &&
-              anchorDistance > anchorRangeSquared
-            ) {
-              candidateAddsCoverage = true;
+            if (anchorDistance > anchorRangeSquared) {
+              uncoveredStructureTiles.push(structureTile);
             }
           }
-          if (!anchorProtectsAsset || !candidateAddsCoverage) continue;
+          if (!anchorProtectsAsset || uncoveredStructureTiles.length === 0) {
+            return null;
+          }
+          return {
+            ...anchor,
+            anchorRangeSquared,
+            upgradedRangeSquared,
+            uncoveredStructureTiles,
+          };
+        })
+        .filter((anchor) => anchor !== null);
+      if (anchorProfiles.length === 0) return () => 0;
+
+      return (tile) => {
+        let best = 0;
+        for (const anchor of anchorProfiles) {
+          const anchorDistanceSquared = this.game.euclideanDistSquared(
+            tile,
+            anchor.tile,
+          );
+          if (anchorDistanceSquared > anchor.upgradedRangeSquared) continue;
+
+          let candidateAddsCoverage = false;
+          for (const structureTile of anchor.uncoveredStructureTiles) {
+            if (this.game.euclideanDistSquared(tile, structureTile) <= candidateRangeSquared) {
+              candidateAddsCoverage = true;
+              break;
+            }
+          }
+          if (!candidateAddsCoverage) continue;
           const proximity = Math.max(
             0,
             1 - Math.sqrt(anchorDistanceSquared) / anchor.upgradedRange,
