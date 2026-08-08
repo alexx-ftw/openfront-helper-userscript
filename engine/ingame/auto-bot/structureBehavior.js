@@ -7301,22 +7301,36 @@
       }
       const hasHydrogen =
         threat.weapon === UNIT.HydrogenBomb || hydrogenCount > 0;
-      const atomArrivalTicks = launches
-        .slice(0, hasHydrogen ? -1 : launches.length)
-        .map((launch) => launch.impactTick);
-      const hydrogenArrivalTick = hasHydrogen
-        ? launches.at(-1).impactTick
-        : null;
+      const launchTiming = this.legendaryCandidateLaunchTimingSummary(
+        launches,
+        hasHydrogen,
+      );
       const shotPlan = {
         sourcePlan,
-        atomArrivalTicks,
-        hydrogenArrivalTick,
-        nearestFlightTime: Math.min(
-          ...launches.map((launch) => launch.flightTicks ?? launch.impactTick),
-        ),
+        ...launchTiming,
       };
       this.rememberLegendaryCandidateShotPlan(tile, threat, context, shotPlan);
       return shotPlan;
+    }
+
+    legendaryCandidateLaunchTimingSummary(launches, hasHydrogen) {
+      const atomArrivalTicks = [];
+      let nearestFlightTime = Infinity;
+      for (let index = 0; index < launches.length; index++) {
+        const launch = launches[index];
+        const flightTime = launch.flightTicks ?? launch.impactTick;
+        nearestFlightTime = Math.min(nearestFlightTime, flightTime);
+        if (!hasHydrogen || index < launches.length - 1) {
+          atomArrivalTicks.push(launch.impactTick);
+        }
+      }
+      return {
+        atomArrivalTicks,
+        hydrogenArrivalTick: hasHydrogen
+          ? launches.at(-1).impactTick
+          : null,
+        nearestFlightTime,
+      };
     }
 
     legendaryConstructionState({ cityCount, hasCoastalTiles }) {

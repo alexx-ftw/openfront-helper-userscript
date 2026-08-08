@@ -719,9 +719,31 @@ assert.equal(
 );
 
 let candidatePlanBuilds = 0;
+const candidateLaunches = [
+  { flightTicks: 10, impactTick: 10 },
+  { flightTicks: 20, impactTick: 20 },
+];
+let candidateLaunchSliceCalls = 0;
+let candidateLaunchMapCalls = 0;
+const candidateLaunchSlice = candidateLaunches.slice;
+const candidateLaunchMap = candidateLaunches.map;
+candidateLaunches.map = (...args) => {
+  candidateLaunchMapCalls++;
+  return candidateLaunchMap.apply(candidateLaunches, args);
+};
+candidateLaunches.slice = (...args) => {
+  candidateLaunchSliceCalls++;
+  const sliced = candidateLaunchSlice.apply(candidateLaunches, args);
+  const slicedMap = sliced.map;
+  sliced.map = (...mapArgs) => {
+    candidateLaunchMapCalls++;
+    return slicedMap.apply(sliced, mapArgs);
+  };
+  return sliced;
+};
 routeBehavior.legendaryEnemyMissileLaunchPlan = () => {
   candidatePlanBuilds++;
-  return [{ flightTicks: 10, impactTick: 10 }];
+  return candidateLaunches;
 };
 const candidateThreat = {
   enemySilos: [sourceSilo],
@@ -744,11 +766,38 @@ const secondCandidatePlan = routeBehavior.legendaryCandidateShotPlan(
   candidateContext,
 );
 assert.equal(firstCandidatePlan, secondCandidatePlan);
+assert.deepEqual([...firstCandidatePlan.atomArrivalTicks], [10, 20]);
+assert.equal(firstCandidatePlan.nearestFlightTime, 10);
 assert.equal(
   candidatePlanBuilds,
   1,
   "candidate launch plans are reused for repeated placement scoring",
 );
+assert.equal(candidateLaunchSliceCalls, 0);
+assert.equal(candidateLaunchMapCalls, 0);
+const hydrogenCandidatePlan = routeBehavior.legendaryCandidateShotPlan(
+  8,
+  {
+    enemySilos: [sourceSilo],
+    salvoPlan: {
+      atomArrivalTicks: [],
+      hydrogenArrivalTick: 20,
+      routes: [],
+    },
+    weapon: "HydrogenBomb",
+  },
+  {
+    launchMetadataCache: new Map(),
+    candidateShotPlanCache: new Map(),
+    interceptionCapacityCache: new Map(),
+  },
+);
+assert.deepEqual([...hydrogenCandidatePlan.atomArrivalTicks], [10]);
+assert.equal(hydrogenCandidatePlan.hydrogenArrivalTick, 20);
+assert.equal(candidateLaunchSliceCalls, 0);
+assert.equal(candidateLaunchMapCalls, 0);
+delete candidateLaunches.map;
+delete candidateLaunches.slice;
 let candidateCapacityBuilds = 0;
 routeBehavior.legendarySamInterceptionCapacity = () => {
   candidateCapacityBuilds++;
