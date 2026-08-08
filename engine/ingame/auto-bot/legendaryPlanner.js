@@ -739,9 +739,9 @@ function legendaryMissileDefenseSchedule({
   };
 }
 
-// An emergency defense action is useful before it solves the whole salvo. A
-// large enemy silo stockpile can require several SAM upgrades in sequence, so
-// rejecting every intermediate improvement would deadlock the upgrade loop.
+// An emergency defense action is useful before it solves the whole salvo. The
+// schedule metrics must still improve, otherwise a capacity increase that does
+// not affect any active missile only burns the economy reserve.
 function legendaryFiniteValueImproves(currentValue, nextValue) {
   const current = Number(currentValue);
   const next = Number(nextValue);
@@ -770,10 +770,6 @@ function legendaryDefenseActionImproves(
     currentEvaluation.uninterceptedCount,
     nextEvaluation.uninterceptedCount,
   )) {
-    return true;
-  }
-
-  if (Number(nextCapacity) > Number(currentCapacity)) {
     return true;
   }
 

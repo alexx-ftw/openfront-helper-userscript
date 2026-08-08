@@ -385,6 +385,18 @@ assert.equal(
   false,
   "Legendary must not repeat a SAM upgrade that adds no defensive value",
 );
+const capacityOnlyCurrent = {
+  hasThreats: true,
+  fullyDefended: false,
+  uninterceptedCount: 1,
+  minimumInterceptMarginTicks: 0,
+};
+const capacityOnlyNext = { ...capacityOnlyCurrent };
+assert.equal(
+  plannerSandbox.legendaryDefenseActionImproves(capacityOnlyCurrent, capacityOnlyNext, 1, 2),
+  false,
+  "Legendary must not buy capacity that leaves the active missile schedule unchanged",
+);
 
 const upgradedSlotStillReloading = plannerSandbox.legendaryMissileDefenseSchedule({
   routes: [
