@@ -4169,10 +4169,74 @@
     }
 
     legendarySiloReadyShotCount(silo, siloMetadataCache = null) {
-      const slots =
-        siloMetadataCache?.get(silo)?.slots ??
-        this.legendarySiloSlotAvailability(silo);
+      const metadata = siloMetadataCache?.get(silo);
+      const slots = metadata?.slots ?? this.legendarySiloSlotAvailability(silo);
+      return this.legendaryReadyShotCountFromSlots(slots, metadata?.readyShots);
+    }
+
+    legendaryReadyShotCountFromSlots(slots, cachedReadyShots) {
+      const normalizedReadyShots = Number(cachedReadyShots);
+      if (Number.isFinite(normalizedReadyShots)) {
+        return Math.max(0, Math.floor(normalizedReadyShots));
+      }
       return slots.filter((tick) => tick <= 0).length;
+    }
+
+    legendaryRememberSiloMetadata({
+      siloMetadataCache,
+      silo,
+      cached,
+      tile,
+      id,
+      slots,
+      readyShots,
+    }) {
+      if (!siloMetadataCache) return;
+      if (!cached) {
+        siloMetadataCache.set(silo, {
+          tile,
+          id,
+          slots: slots.slice(),
+          readyShots,
+        });
+        return;
+      }
+      if (!Number.isFinite(Number(cached.readyShots))) {
+        cached.readyShots = readyShots;
+      }
+    }
+
+    legendaryEnemyMissileLaunchEntry(
+      silo,
+      targetTile,
+      siloMetadataCache = null,
+    ) {
+      const cached = siloMetadataCache?.get(silo);
+      const tile = cached?.tile ?? silo.tile();
+      const id = cached?.id ?? Number(silo.id?.() ?? 0);
+      const slots =
+        cached?.slots?.slice() ?? this.legendarySiloSlotAvailability(silo);
+      const readyShots = this.legendaryReadyShotCountFromSlots(
+        slots,
+        cached?.readyShots,
+      );
+      this.legendaryRememberSiloMetadata({
+        siloMetadataCache,
+        silo,
+        cached,
+        tile,
+        id,
+        slots,
+        readyShots,
+      });
+      return {
+        silo,
+        tile,
+        id,
+        distance: this.game.manhattanDist(tile, targetTile),
+        flightTicks: null,
+        slots,
+      };
     }
 
     legendaryEnemyMissileLaunchPlan(
@@ -4191,27 +4255,13 @@
           );
         }
         })
-        .map((silo) => {
-          const cached = siloMetadataCache?.get(silo);
-          const tile = cached?.tile ?? silo.tile();
-          const id = cached?.id ?? Number(silo.id?.() ?? 0);
-          const slots = cached?.slots?.slice() ?? this.legendarySiloSlotAvailability(silo);
-          if (siloMetadataCache && !cached) {
-            siloMetadataCache.set(silo, {
-              tile,
-              id,
-              slots: slots.slice(),
-            });
-          }
-          return {
+        .map((silo) =>
+          this.legendaryEnemyMissileLaunchEntry(
             silo,
-            tile,
-            id,
-            distance: this.game.manhattanDist(tile, targetTile),
-            flightTicks: null,
-            slots,
-          };
-        });
+            targetTile,
+            siloMetadataCache,
+          ),
+        );
       const launches = [];
       const cooldown = this.legendarySiloCooldownTicks();
       let nextLaunchTick = 0;

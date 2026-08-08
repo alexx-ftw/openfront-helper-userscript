@@ -356,6 +356,25 @@ assert.equal(
   launchSilos.length,
   "salvo planning reuses the per-context silo slot snapshot for ready-shot counts",
 );
+assert.equal(
+  siloMetadataCache.get(launchSilos[0]).readyShots,
+  1,
+  "silo metadata snapshots retain the ready-shot count",
+);
+let readySlotFilterReads = 0;
+const cachedReadySlots = [0, 90, 180];
+const cachedReadyFilter = cachedReadySlots.filter;
+cachedReadySlots.filter = (...args) => {
+  readySlotFilterReads++;
+  return cachedReadyFilter.apply(cachedReadySlots, args);
+};
+const readyShotCache = new Map([[launchSilos[0], { slots: cachedReadySlots, readyShots: 1 }]]);
+assert.equal(metadataBehavior.legendarySiloReadyShotCount(launchSilos[0], readyShotCache), 1);
+assert.equal(
+  readySlotFilterReads,
+  0,
+  "ready-shot reads reuse the cached count instead of filtering cached slots",
+);
 
 let sourceTileReads = 0;
 const sourceSilos = Array.from({ length: 32 }, (_, index) => ({
