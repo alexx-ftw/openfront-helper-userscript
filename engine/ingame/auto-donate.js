@@ -18,11 +18,15 @@
     autoDonateTroopDonationInFlight = value;
   }
 
-  function autoDonationRecipientIsReady(player, now = Date.now()) {
+  function autoDonationRecipientIsReady(player, now = Date.now(), game = null) {
     const recipient = getAutoDonateRecipientId(player);
     if (recipient == null) return false;
     const lastDonation = lastAutoDonationByRecipientMs.get(recipient);
-    return lastDonation === undefined || now - lastDonation >= DONATE_COOLDOWN_MS;
+    const cooldownMs =
+      typeof ofhGameDonationCooldownMs === "function"
+        ? ofhGameDonationCooldownMs(game, DONATE_COOLDOWN_MS)
+        : DONATE_COOLDOWN_MS;
+    return lastDonation === undefined || now - lastDonation >= cooldownMs;
   }
 
   function markAutoDonationRecipient(player, now = Date.now()) {
@@ -320,7 +324,7 @@
       if (!canAutoDonateToPlayer(me, player, donationKind)) return false;
       if (donationKind === "troops" && getAutoDonateTroopCapacity(game, player) === 0)
         return false;
-      if (!autoDonationRecipientIsReady(player)) return false;
+      if (!autoDonationRecipientIsReady(player, Date.now(), game)) return false;
       return !combatOnly || isAutoDonateTargetInCombat(player);
     }
   }
@@ -588,7 +592,7 @@
     if (amount <= 0) return null;
     const targets = findAutoDonateTargetPlayers(game, me, targetNames, false, "gold");
     const recipient = findPoorestAutoDonateTarget(targets);
-    return recipient ? { recipient, amount } : null;
+    return recipient ? { game, recipient, amount } : null;
   }
 
   function tickAutoDonateGold() {
@@ -600,7 +604,7 @@
     if (!plan) return;
     const recipient = getAutoDonateRecipientId(plan.recipient);
     if (recipient == null) return;
-    if (!autoDonationRecipientIsReady(plan.recipient, now)) return;
+    if (!autoDonationRecipientIsReady(plan.recipient, now, plan.game)) return;
     {
       sendGamePacket({ type: "donate_gold", recipient, gold: plan.amount });
       markAutoDonationRecipient(plan.recipient, now);

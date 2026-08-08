@@ -245,6 +245,21 @@ const disabledGoldDonation = await runDonation({
 });
 assert.deepEqual(disabledGoldDonation, [], "gold donation respects the live game configuration");
 
+const validGoldOnlyDonation = await runDonation({
+  autoDonateTroops: false,
+  autoDonateGold: true,
+  gold: 5000,
+  goldThreshold: 1000,
+});
+assert.equal(validGoldOnlyDonation.length, 1);
+assert.equal(validGoldOnlyDonation[0]?.type, "donate_gold");
+assert.equal(validGoldOnlyDonation[0]?.recipient, 2);
+assert.equal(
+  validGoldOnlyDonation[0]?.gold,
+  4000,
+  "a valid gold-only donation passes the live game into the cooldown gate",
+);
+
 const donationSelectorHarness = await runDonation({ returnDetails: true });
 const equalTroopRecipients = [
   { troops: () => 250, gold: () => 500 },
