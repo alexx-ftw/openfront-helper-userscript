@@ -405,6 +405,25 @@ assert.equal(
   "salvo source metrics reuse cached silo tiles across target candidates",
 );
 
+let samReadyFilterReads = 0;
+const samAvailableTicks = [0, 0, 90];
+const samReadyFilter = samAvailableTicks.filter;
+samAvailableTicks.filter = (...args) => {
+  samReadyFilterReads++;
+  return samReadyFilter.apply(samAvailableTicks, args);
+};
+const samCapacityBehavior = Object.create(sandbox.StructureBehavior.prototype);
+const samRoute = { samOptions: [{ samIndex: 0 }] };
+const samCapacity = samCapacityBehavior.legendarySalvoRouteInterceptionCapacity(samRoute, [
+  { availableTicks: samAvailableTicks, readySlots: 2 },
+]);
+assert.equal(samCapacity, 2);
+assert.equal(
+  samReadyFilterReads,
+  0,
+  "salvo route capacity reuses cached ready SAM slots instead of filtering each route",
+);
+
 let contextValueReads = 0;
 const contextBehavior = Object.create(sandbox.StructureBehavior.prototype);
 contextBehavior.game = {

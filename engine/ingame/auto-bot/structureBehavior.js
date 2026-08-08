@@ -4177,7 +4177,10 @@
     legendaryReadyShotCountFromSlots(slots, cachedReadyShots) {
       const normalizedReadyShots = Number(cachedReadyShots);
       if (Number.isFinite(normalizedReadyShots)) {
-        return Math.max(0, Math.floor(normalizedReadyShots));
+        return Math.min(
+          slots.length,
+          Math.max(0, Math.floor(normalizedReadyShots)),
+        );
       }
       return slots.filter((tick) => tick <= 0).length;
     }
@@ -4390,12 +4393,14 @@
         // profile.level expands the trajectory range immediately, while
         // slot availability keeps the newly added missile in SAMCooldown.
         const level = Math.max(1, Number(override ?? sam.level() ?? 1));
+        const availableTicks = this.legendarySamSlotAvailability(sam, override);
         profiles.push({
           id,
           tile: sam.tile(),
           level,
           range: this.legendarySamRange(level),
-          availableTicks: this.legendarySamSlotAvailability(sam, override),
+          availableTicks,
+          readySlots: this.legendaryReadyShotCountFromSlots(availableTicks),
           cooldownTicks: this.legendarySamCooldownTicks(),
         });
       }
@@ -4412,6 +4417,7 @@
           level,
           range: this.legendarySamRange(level),
           availableTicks,
+          readySlots: this.legendaryReadyShotCountFromSlots(availableTicks),
           cooldownTicks: this.legendarySamCooldownTicks(),
         });
       }
@@ -5323,8 +5329,15 @@
           !preparedProfiles && levelOverrides && levelOverrides.has(sam.id())
             ? levelOverrides.get(sam.id())
             : null;
+        let availableTicks = [];
+        if (Array.isArray(sam.availableTicks)) {
+          availableTicks = sam.availableTicks;
+        }
         const readySlots = preparedProfiles
-          ? (sam.availableTicks || []).filter((tick) => tick <= 0).length
+          ? this.legendaryReadyShotCountFromSlots(
+              availableTicks,
+              sam.readySlots,
+            )
           : this.legendarySamReadySlots(sam, override);
         if (readySlots <= 0) continue;
         const coverageIndexes = this.legendarySamPathCoverageIndicesForRoute(
@@ -5854,9 +5867,13 @@
       }
       let capacity = 0;
       for (const option of route.samOptions) {
-        const availableTicks = samProfiles[option.samIndex]?.availableTicks;
+        const profile = samProfiles[option.samIndex];
+        const availableTicks = profile?.availableTicks;
         if (!Array.isArray(availableTicks)) continue;
-        capacity += availableTicks.filter((tick) => tick <= 0).length;
+        capacity += this.legendaryReadyShotCountFromSlots(
+          availableTicks,
+          profile.readySlots,
+        );
       }
       return capacity;
     }
