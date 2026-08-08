@@ -770,7 +770,10 @@ assert.equal(
 
 let allySamRangeReads = 0;
 const allySamProfiles = routeBehavior.legendaryAllySupportSamProfiles(
-  [{ level: () => 2, tile: () => 4 }],
+  [
+    { level: () => 2, tile: () => 4 },
+    { level: () => 2, tile: () => 5 },
+  ],
   {
     samRange: () => {
       allySamRangeReads++;

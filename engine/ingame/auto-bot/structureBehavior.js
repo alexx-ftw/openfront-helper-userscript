@@ -3178,12 +3178,18 @@
 
     legendaryAllySupportSamProfiles(samUnits, config) {
       if (!config || typeof config.samRange !== "function") return [];
+      const rangeByLevel = new Map();
       return (samUnits || []).map((sam) => {
         const level = Math.max(1, Number(sam.level?.() || 1));
+        let range = rangeByLevel.get(level);
+        if (range === undefined) {
+          range = Number(config.samRange(level));
+          rangeByLevel.set(level, range);
+        }
         return {
           tile: sam.tile?.(),
           level,
-          range: Number(config.samRange(level)),
+          range,
         };
       });
     }
