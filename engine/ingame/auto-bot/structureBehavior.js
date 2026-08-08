@@ -4070,6 +4070,21 @@
       return normalizedCooldown;
     }
 
+    legendarySamRange(level) {
+      const config = this.game.config();
+      const normalizedLevel = Math.max(1, Number(level) || 1);
+      if (config !== this._legendarySamRangeConfig) {
+        this._legendarySamRangeConfig = config;
+        this._legendarySamRangeCache = new Map();
+      }
+      if (this._legendarySamRangeCache.has(normalizedLevel)) {
+        return this._legendarySamRangeCache.get(normalizedLevel);
+      }
+      const range = Number(config.samRange(normalizedLevel));
+      this._legendarySamRangeCache.set(normalizedLevel, range);
+      return range;
+    }
+
     // Returns the relative tick at which each enemy silo slot can launch.
     // The engine reloads only the queue front once per execution tick, so
     // already-expired entries are spaced by one tick instead of all becoming
@@ -4277,7 +4292,7 @@
           id,
           tile: sam.tile(),
           level,
-          range: Number(this.game.config().samRange(level)),
+          range: this.legendarySamRange(level),
           availableTicks: this.legendarySamSlotAvailability(sam, override),
           cooldownTicks: this.legendarySamCooldownTicks(),
         });
@@ -4293,7 +4308,7 @@
           id: extraSam.id ?? "legendary-candidate-sam",
           tile: extraSam.tile,
           level,
-          range: Number(this.game.config().samRange(level)),
+          range: this.legendarySamRange(level),
           availableTicks,
           cooldownTicks: this.legendarySamCooldownTicks(),
         });
@@ -4459,7 +4474,7 @@
       ) {
         return cachedRange;
       }
-      return Number(this.game.config().samRange(level));
+      return this.legendarySamRange(level);
     }
 
     legendarySamPathInterceptTicks(samOrTile, route, levelOverride = null) {

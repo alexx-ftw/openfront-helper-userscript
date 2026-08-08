@@ -964,12 +964,16 @@ assert.equal(
 
 const samCooldownBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
 let samCooldownReads = 0;
+let samRangeReads = 0;
 const samCooldownConfig = {
   SAMCooldown: () => {
     samCooldownReads++;
     return 90;
   },
-  samRange: () => 10,
+  samRange: () => {
+    samRangeReads++;
+    return 10;
+  },
 };
 samCooldownBehavior.game = { config: () => samCooldownConfig };
 samCooldownBehavior.legendaryFriendlySamUnits = () => [
@@ -984,6 +988,17 @@ assert.equal(
   1,
   "SAM profile construction reuses the cooldown from the same game configuration",
 );
+assert.equal(samRangeReads, 1, "SAM profile construction reuses the range for equal SAM levels");
+const replacementSamConfig = {
+  SAMCooldown: () => 90,
+  samRange: () => {
+    samRangeReads++;
+    return 20;
+  },
+};
+samCooldownBehavior.game = { config: () => replacementSamConfig };
+assert.equal(samCooldownBehavior.legendarySamRange(1), 20);
+assert.equal(samRangeReads, 2, "a new game configuration invalidates the SAM range cache");
 
 const siloCooldownBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
 let siloCooldownReads = 0;
