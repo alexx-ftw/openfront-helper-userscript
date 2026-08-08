@@ -573,6 +573,8 @@ const structureSandbox = {
   getBuildMenu: () => ({ sendBuildOrUpgrade() {} }),
   isAtLeastHardDifficulty: () => true,
   isLegendaryDifficulty: () => false,
+  legendaryPlacementProximityScore: (distance, radius) =>
+    Math.max(0, 1 - distance / Math.max(1, radius)),
   state: { settings: { winFixes: true } },
   withTimeout: async (promise) => promise,
   WORKER_TIMEOUT_MS: 1,
@@ -757,5 +759,28 @@ assert.equal(
   1,
   "candidate SAM capacity is reused for repeated placement scoring",
 );
+
+let allySamRangeReads = 0;
+const allySamProfiles = routeBehavior.legendaryAllySupportSamProfiles(
+  [{ level: () => 2, tile: () => 4 }],
+  {
+    samRange: () => {
+      allySamRangeReads++;
+      return 10;
+    },
+  },
+);
+assert.equal(allySamRangeReads, 1);
+const allySupport = routeBehavior.legendaryAllySamSupport(
+  5,
+  { samProfiles: allySamProfiles },
+  {
+    samRange: () => {
+      throw new Error("precomputed SAM profiles should be reused");
+    },
+  },
+);
+assert.ok(allySupport > 0, "precomputed ally SAM profiles still provide support");
+assert.equal(allySamRangeReads, 1);
 
 process.stdout.write("LEGENDARY TESTS OK\n");

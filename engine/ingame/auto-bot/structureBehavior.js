@@ -2974,9 +2974,10 @@
 
     legendaryAllyPlacementContext() {
       const own = this.legendaryProductionMetrics(this.player);
+      const config = this.safeGameConfig();
       const supportRadius = Math.max(
         1,
-        Number(this.game.config().trainStationMaxRange()),
+        Number(config.trainStationMaxRange()),
       );
 
       const allies = [];
@@ -2989,6 +2990,10 @@
         allies.push({
           player: ally,
           ...metrics,
+          samProfiles: this.legendaryAllySupportSamProfiles(
+            metrics.samUnits,
+            config,
+          ),
           location,
           power: legendaryAllyPowerScore({
             allyTroops: metrics.troops,
@@ -3000,7 +3005,7 @@
           }),
         });
       }
-      return { own, allies, supportRadius };
+      return { own, allies, supportRadius, samConfig: config };
     }
 
     legendaryTeamCenterPlacementContext() {
@@ -3102,7 +3107,7 @@
       const placement = context || this.legendaryAllyPlacementContext();
       if (!placement || placement.allies.length === 0) return 0;
       const spacing = this.spacingConstants().structureSpacing;
-      const samConfig = this.safeGameConfig();
+      const samConfig = placement.samConfig || this.safeGameConfig();
       let strongest = 0;
       let secondStrongest = 0;
       for (const ally of placement.allies) {
@@ -3141,6 +3146,18 @@
       return ally.power * proximity + samSupport;
     }
 
+    legendaryAllySupportSamProfiles(samUnits, config) {
+      if (!config || typeof config.samRange !== "function") return [];
+      return (samUnits || []).map((sam) => {
+        const level = Math.max(1, Number(sam.level?.() || 1));
+        return {
+          tile: sam.tile?.(),
+          level,
+          range: Number(config.samRange(level)),
+        };
+      });
+    }
+
     legendaryAllyDistance(tile, ally) {
       let nearestSquared = Infinity;
       for (const allyTile of ally.tiles) {
@@ -3162,12 +3179,15 @@
     legendaryAllySamSupport(tile, ally, config) {
       if (!config) return 0;
       let support = 0;
-      for (const sam of ally.samUnits) {
-        const level = Math.max(1, Number(sam.level() || 1));
-        const range = Number(config.samRange(level));
+      const samProfiles = Array.isArray(ally.samProfiles)
+        ? ally.samProfiles
+        : this.legendaryAllySupportSamProfiles(ally.samUnits, config);
+      for (const sam of samProfiles) {
+        const level = Math.max(1, Number(sam.level || 1));
+        const range = Number(sam.range);
         if (range <= 0) continue;
         const distance = Math.sqrt(
-          this.game.euclideanDistSquared(tile, sam.tile()),
+          this.game.euclideanDistSquared(tile, sam.tile),
         );
         if (distance > range) continue;
         support = Math.max(
