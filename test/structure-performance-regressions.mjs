@@ -472,13 +472,17 @@ targetSourceMetrics.map = (...args) => {
   targetSourceMetricsMapCalls++;
   return targetSourceMetricsMap.apply(targetSourceMetrics, args);
 };
+let targetReadyShotsOverride;
 const targetScoreBehavior = Object.create(sandbox.StructureBehavior.prototype);
-targetScoreBehavior.legendaryMissileSalvoPlan = () => ({
-  sourceMetrics: targetSourceMetrics,
-  readyShots: 1,
-  risk: { score: 0 },
-  schedule: { fullyDefended: true },
-});
+targetScoreBehavior.legendaryMissileSalvoPlan = (_input, options = {}) => {
+  targetReadyShotsOverride = options.readyShotsOverride;
+  return {
+    sourceMetrics: targetSourceMetrics,
+    readyShots: 1,
+    risk: { score: 0 },
+    schedule: { fullyDefended: true },
+  };
+};
 targetScoreBehavior.legendaryNukeFlightTime = () => 10;
 targetScoreBehavior.legendarySamInterceptionCapacity = () => 1;
 const scoredTarget = targetScoreBehavior.legendaryScoredEnemyMissileTarget({
@@ -486,6 +490,7 @@ const scoredTarget = targetScoreBehavior.legendaryScoredEnemyMissileTarget({
   enemyGold: 100n,
   enemySilos: targetSilos,
   enemySiloLevels: targetSiloLevels,
+  enemyReadyShots: 7,
   weapon: UNIT.AtomBomb,
   target: { tile: 0, exposure: 1, exposedStructures: 1 },
   base: {
@@ -508,8 +513,50 @@ assert.equal(
   0,
   "enemy missile target scoring reuses ordered source metrics without mapping them",
 );
+assert.equal(
+  targetReadyShotsOverride,
+  7,
+  "enemy missile target scoring passes the cached ready-shot total to salvo planning",
+);
 delete targetSilos.map;
 delete targetSourceMetrics.map;
+
+const readyOverrideSilos = [{}, {}];
+const readyOverrideReduce = readyOverrideSilos.reduce;
+let readyOverrideReduceCalls = 0;
+readyOverrideSilos.reduce = (...args) => {
+  readyOverrideReduceCalls++;
+  return readyOverrideReduce.apply(readyOverrideSilos, args);
+};
+const readyOverrideBehavior = Object.create(sandbox.StructureBehavior.prototype);
+readyOverrideBehavior.legendaryEnemyMissileLaunchPlan = () => [
+  { silo: readyOverrideSilos[0], flightTicks: 10, impactTick: 10 },
+];
+readyOverrideBehavior.legendarySalvoRoutes = () => ({
+  atomArrivalTicks: [],
+  hydrogenArrivalTick: null,
+  routes: [],
+});
+readyOverrideBehavior.legendarySalvoSourceMetrics = () => [];
+readyOverrideBehavior.legendarySamCooldownTicks = () => 90;
+readyOverrideBehavior.finalizeLegendarySalvoRisk = () => ({ fullyDefended: true });
+const readyOverridePlan = readyOverrideBehavior.legendaryMissileSalvoPlan(
+  {
+    enemySilos: readyOverrideSilos,
+    enemyGold: 1n,
+    targetTile: 0,
+    atomCost: 1n,
+    hydrogenCost: 0n,
+  },
+  { samProfilesOverride: [], readyShotsOverride: 2 },
+);
+delete readyOverrideSilos.reduce;
+assert.equal(readyOverridePlan.readyShots, 2);
+assert.equal(
+  readyOverrideReduceCalls,
+  0,
+  "salvo planning reuses a ready-shot override without reducing every silo",
+);
 
 const resourceSilos = Array.from({ length: 16 }, (_, index) => ({
   isUnderConstruction: () => index === 3,

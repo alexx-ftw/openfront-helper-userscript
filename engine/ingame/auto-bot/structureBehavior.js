@@ -4174,6 +4174,21 @@
       return this.legendaryReadyShotCountFromSlots(slots, metadata?.readyShots);
     }
 
+    legendaryReadyShotTotal(
+      silos,
+      siloMetadataCache = null,
+      readyShotsOverride = null,
+    ) {
+      if (readyShotsOverride !== null && readyShotsOverride !== undefined) {
+        return readyShotsOverride;
+      }
+      let total = 0;
+      for (const silo of silos || []) {
+        total += this.legendarySiloReadyShotCount(silo, siloMetadataCache);
+      }
+      return total;
+    }
+
     legendaryReadyShotCountFromSlots(slots, cachedReadyShots) {
       const normalizedReadyShots = Number(cachedReadyShots);
       if (Number.isFinite(normalizedReadyShots)) {
@@ -5703,6 +5718,7 @@
         actionCompletionTick = 0,
         samProfilesOverride = null,
         siloMetadataCache = null,
+        readyShotsOverride,
       } = {},
     ) {
       if (
@@ -5732,11 +5748,10 @@
         desiredShotCount,
         { siloMetadataCache },
       );
-      const readyShots = enemySilos.reduce(
-        (total, silo) =>
-          total +
-          this.legendarySiloReadyShotCount(silo, siloMetadataCache),
-        0,
+      const readyShots = this.legendaryReadyShotTotal(
+        enemySilos,
+        siloMetadataCache,
+        readyShotsOverride,
       );
       const routePlan = this.legendarySalvoRoutes({
         launches,
@@ -6928,6 +6943,10 @@
       const resources = this.legendaryEnemyMissileResources(enemy);
       if (resources === null || resources.enemySilos.length === 0) return null;
       const { enemyGold, enemySilos, enemySiloLevels } = resources;
+      const enemyReadyShots = this.legendaryReadyShotTotal(
+        enemySilos,
+        base.launchMetadataCache,
+      );
       const canHydrogen =
         base.hydrogenCost > 0n && enemyGold >= base.hydrogenCost;
       const canAtom = base.atomCost > 0n && enemyGold >= base.atomCost;
@@ -6953,6 +6972,7 @@
           enemyGold,
           enemySilos,
           enemySiloLevels,
+          enemyReadyShots,
           weapon,
           target,
           base,
@@ -6985,6 +7005,7 @@
         enemyGold,
         enemySilos,
         enemySiloLevels: cachedEnemySiloLevels,
+        enemyReadyShots,
         weapon,
         target,
         base,
@@ -7001,6 +7022,7 @@
         {
           samProfilesOverride: samProfiles,
           siloMetadataCache: base.launchMetadataCache,
+          readyShotsOverride: enemyReadyShots,
         },
       );
       const sourceMetrics = salvoPlan.sourceMetrics || [];
