@@ -6778,14 +6778,16 @@
       this.appendUniqueMissileTargets(
         selected,
         selectedEntries,
-        byExposure.slice(0, exposureCount),
+        byExposure,
         limit,
+        exposureCount,
       );
       this.appendUniqueMissileTargets(
         selected,
         selectedEntries,
-        byValue.slice(0, valueCount),
+        byValue,
         limit,
+        valueCount,
       );
       const nearest = [];
       for (const silo of enemySilos || []) {
@@ -6807,8 +6809,16 @@
       return selected;
     }
 
-    appendUniqueMissileTargets(selected, seen, candidates, limit) {
-      for (const entry of candidates) {
+    appendUniqueMissileTargets(
+      selected,
+      seen,
+      candidates,
+      limit,
+      candidateLimit = candidates.length,
+    ) {
+      const count = Math.min(candidates.length, candidateLimit);
+      for (let index = 0; index < count; index++) {
+        const entry = candidates[index];
         if (selected.length >= limit) return;
         if (seen.has(entry)) continue;
         seen.add(entry);

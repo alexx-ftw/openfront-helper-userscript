@@ -703,6 +703,32 @@ assert.deepEqual(
   [...orderingCache.get(100).byValue.map(({ target }) => target.id)],
   Array.from({ length: 16 }, (_, index) => index),
 );
+const orderedByExposure = orderingCache.get(100).byExposure;
+const orderedByValue = orderingCache.get(100).byValue;
+const orderedByExposureSlice = orderedByExposure.slice;
+const orderedByValueSlice = orderedByValue.slice;
+let orderingSelectionSliceCalls = 0;
+orderedByExposure.slice = (...args) => {
+  orderingSelectionSliceCalls++;
+  return orderedByExposureSlice.apply(orderedByExposure, args);
+};
+orderedByValue.slice = (...args) => {
+  orderingSelectionSliceCalls++;
+  return orderedByValueSlice.apply(orderedByValue, args);
+};
+assert.equal(
+  routeBehavior.legendarySelectMissileTargets(
+    orderingEntries,
+    orderedByExposure,
+    orderedByValue,
+    [],
+    16,
+  ).length,
+  16,
+);
+assert.equal(orderingSelectionSliceCalls, 0);
+delete orderedByExposure.slice;
+delete orderedByValue.slice;
 assert.equal(orderingEntrySliceCalls, 0);
 assert.equal(orderingEntrySortCalls, 0);
 delete orderingEntries.slice;
