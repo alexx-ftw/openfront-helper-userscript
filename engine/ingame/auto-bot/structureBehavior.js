@@ -10935,11 +10935,23 @@
         }
       })
         .filter((sam) => sam !== null && Number.isFinite(sam.rangeSquared));
+      const scoredStructureEntries = structureEntries.map((entry) => {
+        const alreadyCovered = existingSamProfiles.some((sam) => {
+          return (
+            game.euclideanDistSquared(entry.tile, sam.tile) <=
+            sam.rangeSquared
+          );
+        });
+        return {
+          ...entry,
+          uncoveredWeight: alreadyCovered ? 0 : entry.weight,
+        };
+      });
       return (tile) => {
         let totalCoverage = 0;
         let newCoverage = 0;
         let centeredCoverage = 0;
-        for (const entry of structureEntries) {
+        for (const entry of scoredStructureEntries) {
           const structureTile = entry.tile;
           let distanceSquared;
           {
@@ -10949,15 +10961,7 @@
           totalCoverage += entry.weight;
           centeredCoverage += entry.weight * Math.max(0, 1 - distanceSquared / rangeSquared);
 
-          const alreadyCovered = existingSamProfiles.some((sam) => {
-            {
-              return (
-                game.euclideanDistSquared(structureTile, sam.tile) <=
-                sam.rangeSquared
-              );
-            }
-          });
-          if (!alreadyCovered) newCoverage += entry.weight;
+          newCoverage += entry.uncoveredWeight;
         }
 
         return totalCoverage * (totalWeight + 1) + newCoverage + centeredCoverage;

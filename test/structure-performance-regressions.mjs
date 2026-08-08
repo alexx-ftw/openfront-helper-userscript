@@ -414,6 +414,43 @@ railBehavior.legendaryRailConnectivityPlacementScore(0);
 assert.equal(stationMinReads, 2);
 assert.equal(stationMaxReads, 2);
 
+let threatCoverageDistanceReads = 0;
+const threatStructures = Array.from({ length: 32 }, (_, index) => ({
+  tile: () => ({ kind: "structure", index }),
+  type: () => UNIT.City,
+  level: () => 1,
+}));
+const threatSams = Array.from({ length: 2 }, (_, index) => ({
+  tile: () => ({ kind: "sam", index }),
+  level: () => 1,
+  isUnderConstruction: () => false,
+}));
+const threatBehavior = Object.create(sandbox.StructureBehavior.prototype);
+threatBehavior.game = {
+  config: () => ({
+    defaultSamRange: () => 100,
+    samRange: () => 10,
+  }),
+  euclideanDistSquared: (left, right) => {
+    threatCoverageDistanceReads++;
+    if (left?.kind === "structure" && right?.kind === "sam") return 10000;
+    return 0;
+  },
+};
+threatBehavior.player = {
+  units: (...types) => (types.includes(UNIT.SAMLauncher) ? threatSams : threatStructures),
+};
+threatBehavior.samCriticalStructureWeight = () => 1;
+const threatScore = threatBehavior.threatSamLauncherValue();
+for (let candidate = 0; candidate < 64; candidate++) {
+  threatScore(candidate);
+}
+assert.equal(
+  threatCoverageDistanceReads,
+  2112,
+  "SAM threat scoring precomputes existing coverage before evaluating candidates",
+);
+
 process.stdout.write(
   `structure performance regression tests passed (Factory cache ${factoryCacheDurationMs.toFixed(1)}ms; fingerprints ${fingerprintDurationMs.toFixed(1)}ms; SAM coverage ${coverageDurationMs.toFixed(1)}ms; launches ${launchDurationMs.toFixed(1)}ms; ally support ${supportDurationMs.toFixed(1)}ms)\n`,
 );
