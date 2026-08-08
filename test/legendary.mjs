@@ -794,6 +794,34 @@ const allySupport = routeBehavior.legendaryAllySamSupport(
 assert.ok(allySupport > 0, "precomputed ally SAM profiles still provide support");
 assert.equal(allySamRangeReads, 1);
 
+const defenseGapRangeBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+let defenseGapRangeReads = 0;
+const defenseGapRangeConfig = {
+  samRange: () => {
+    defenseGapRangeReads++;
+    return 10;
+  },
+};
+defenseGapRangeBehavior.game = {
+  config: () => defenseGapRangeConfig,
+  euclideanDistSquared: () => 0,
+};
+defenseGapRangeBehavior.legendaryFriendlySamUnits = () => [
+  { level: () => 1, tile: () => 1 },
+  { level: () => 1, tile: () => 2 },
+];
+assert.equal(
+  defenseGapRangeBehavior.legendaryDefenseGap([{ tile: () => 3 }, { tile: () => 4 }], 0),
+  0.5,
+);
+assert.equal(defenseGapRangeReads, 1, "defense-gap scoring reuses the range for equal SAM levels");
+defenseGapRangeBehavior.player = { units: () => [] };
+assert.equal(
+  defenseGapRangeBehavior.legendaryPortSurvivability([{ tile: () => 5 }, { tile: () => 6 }], 0),
+  1,
+);
+assert.equal(defenseGapRangeReads, 1, "port survivability reuses the range for equal SAM levels");
+
 const placementContextBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
 const placementContextConfig = {
   trainStationMaxRange: () => 10,

@@ -3803,7 +3803,7 @@
       let uncovered = 0;
       let samRange;
       {
-        samRange = (sam) => this.game.config().samRange(sam.level());
+        samRange = (sam) => this.legendarySamRange(sam.level());
       }
 
       for (const structure of protectableStructures) {
@@ -3886,7 +3886,7 @@
       const sams = this.legendaryFriendlySamUnits();
       for (const port of ports) {
         const safe = sams.some((sam) => {
-          const range = Number(this.game.config().samRange(sam.level()));
+          const range = this.legendarySamRange(sam.level());
           return (
             range > 0 &&
             this.game.euclideanDistSquared(port.tile(), sam.tile()) <=
