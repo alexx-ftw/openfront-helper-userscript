@@ -4643,6 +4643,73 @@
       return false;
     }
 
+    legendaryMissileRouteCoverageRoute(
+      path,
+      fromTile,
+      targetTile,
+      launchOffset,
+      targetableIndexesOverride,
+    ) {
+      return {
+        path,
+        fromTile,
+        targetTile,
+        launchOffset,
+        targetableIndexes: Array.isArray(targetableIndexesOverride)
+          ? targetableIndexesOverride
+          : this.legendaryTrajectoryTargetableIndexes(
+              path,
+              fromTile,
+              targetTile,
+            ),
+      };
+    }
+
+    legendaryMissileRouteCoverageIndexes(profile, samIndex, state) {
+      let coverageIndexes = state.coverageIndexCache?.get(samIndex);
+      if (coverageIndexes) return coverageIndexes;
+      if (state.coverageRoute === null) {
+        state.coverageRoute = this.legendaryMissileRouteCoverageRoute(
+          state.path,
+          state.fromTile,
+          state.targetTile,
+          state.launchOffset,
+          state.targetableIndexesOverride,
+        );
+      }
+      coverageIndexes = this.legendarySamPathCoverageIndicesForRoute(
+        profile,
+        state.coverageRoute,
+        profile.level,
+      );
+      state.coverageIndexCache?.set(samIndex, coverageIndexes);
+      return coverageIndexes;
+    }
+
+    legendaryMissileRouteSamOptions(samProfiles, state) {
+      state.coverageRoute = null;
+      const samOptions = [];
+      for (let samIndex = 0; samIndex < samProfiles.length; samIndex++) {
+        const profile = samProfiles[samIndex];
+        const coverageIndexes = this.legendaryMissileRouteCoverageIndexes(
+          profile,
+          samIndex,
+          state,
+        );
+        const interceptTicks = coverageIndexes.map(
+          (index) => Math.max(0, Number(state.launchOffset) || 0) + index,
+        );
+        if (interceptTicks.length > 0) {
+          samOptions.push({ samIndex, interceptTicks });
+        }
+      }
+      return {
+        samOptions,
+        targetableIndexes:
+          state.coverageRoute?.targetableIndexes ?? state.targetableIndexesOverride,
+      };
+    }
+
     legendaryBuildMissileRoute(route, samProfiles, coverageIndexCache = null) {
       const {
         fromTile,
@@ -4652,32 +4719,23 @@
         weapon = null,
         id = null,
         path: pathOverride = null,
+        targetableIndexes: targetableIndexesOverride = null,
       } = route;
       const path =
         Array.isArray(pathOverride) && pathOverride.length > 0
           ? pathOverride
           : this.legendaryNukeFlightPath(fromTile, targetTile);
-      const samOptions = [];
-      for (let samIndex = 0; samIndex < samProfiles.length; samIndex++) {
-        const profile = samProfiles[samIndex];
-        let coverageIndexes = coverageIndexCache?.get(samIndex);
-        if (!coverageIndexes) {
-          coverageIndexes = this.legendarySamPathCoverageIndices(
-            profile,
-            path,
-            fromTile,
-            targetTile,
-            profile.level,
-          );
-          coverageIndexCache?.set(samIndex, coverageIndexes);
-        }
-        const interceptTicks = coverageIndexes.map(
-          (index) => Math.max(0, Number(launchOffset) || 0) + index,
-        );
-        if (interceptTicks.length > 0) {
-          samOptions.push({ samIndex, interceptTicks });
-        }
-      }
+      const routeOptions = this.legendaryMissileRouteSamOptions(
+        samProfiles,
+        {
+          path,
+          fromTile,
+          targetTile,
+          launchOffset,
+          targetableIndexesOverride,
+          coverageIndexCache,
+        },
+      );
       return {
         id: id ?? `${String(weapon ?? "missile")}:${String(impactTick)}`,
         weapon,
@@ -4689,7 +4747,8 @@
         // evaluations change only interceptor profiles; they must not run the
         // parabola pathfinder again for every candidate SAM.
         path,
-        samOptions,
+        targetableIndexes: routeOptions.targetableIndexes,
+        samOptions: routeOptions.samOptions,
       };
     }
 

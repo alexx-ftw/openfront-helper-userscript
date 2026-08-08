@@ -202,6 +202,43 @@ assert.ok(
   `64 SAM coverage candidates took ${coverageDurationMs.toFixed(1)}ms`,
 );
 
+let routeTargetableRangeReads = 0;
+const routePath = Array.from({ length: 96 }, (_, index) => ({
+  kind: "path",
+  index,
+}));
+const routeProfiles = Array.from({ length: 8 }, (_, index) => ({
+  id: `sam-${index}`,
+  tile: { kind: "sam", index },
+  level: 1,
+}));
+const routeBehavior = Object.create(sandbox.StructureBehavior.prototype);
+routeBehavior.game = {
+  config: () => ({
+    defaultNukeTargetableRange: () => {
+      routeTargetableRangeReads++;
+      return 10;
+    },
+  }),
+  euclideanDistSquared: () => 0,
+};
+routeBehavior.legendarySamRange = () => 10;
+const builtRoute = routeBehavior.legendaryBuildMissileRoute(
+  {
+    fromTile: { kind: "source" },
+    targetTile: { kind: "target" },
+    impactTick: 120,
+    path: routePath,
+  },
+  routeProfiles,
+);
+assert.equal(
+  routeTargetableRangeReads,
+  96,
+  "missile route construction resolves targetability once before checking every SAM profile",
+);
+assert.equal(builtRoute.samOptions.length, routeProfiles.length);
+
 let launchTileReads = 0;
 let launchIdReads = 0;
 const launchSilos = Array.from({ length: 32 }, (_, index) => ({
