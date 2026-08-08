@@ -6653,20 +6653,20 @@
 
       let orderings = orderingCache?.get(radiusSquared);
       if (orderings === undefined) {
-        const byExposure = entries
-          .slice()
-          .sort(
-            (left, right) =>
-              right.exposedValue - left.exposedValue ||
-              right.exposedStructures - left.exposedStructures,
-          );
-        const byValue = entries
-          .slice()
-          .sort(
-            (left, right) =>
-              valueOf(right.target) - valueOf(left.target) ||
-              right.exposedValue - left.exposedValue,
-          );
+        const byExposure = this.legendaryTopMissileTargets(
+          entries,
+          limit,
+          (left, right) =>
+            right.exposedValue - left.exposedValue ||
+            right.exposedStructures - left.exposedStructures,
+        );
+        const byValue = this.legendaryTopMissileTargets(
+          entries,
+          limit,
+          (left, right) =>
+            valueOf(right.target) - valueOf(left.target) ||
+            right.exposedValue - left.exposedValue,
+        );
         orderings = { byExposure, byValue };
         orderingCache?.set(radiusSquared, orderings);
       }
@@ -6677,6 +6677,24 @@
         enemySilos,
         limit,
       );
+    }
+
+    legendaryTopMissileTargets(entries, limit, compare) {
+      if (limit <= 0) return [];
+      const top = [];
+      for (const entry of entries) {
+        let insertionIndex = 0;
+        while (
+          insertionIndex < top.length &&
+          compare(top[insertionIndex], entry) <= 0
+        ) {
+          insertionIndex++;
+        }
+        if (insertionIndex >= limit) continue;
+        top.splice(insertionIndex, 0, entry);
+        if (top.length > limit) top.pop();
+      }
+      return top;
     }
 
     legendaryMissileTargetEntries(

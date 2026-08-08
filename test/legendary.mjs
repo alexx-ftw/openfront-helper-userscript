@@ -669,6 +669,44 @@ assert.equal(
 delete targetStructures.map;
 assert.equal(targetStructureMapCalls, 0);
 assert.equal(targetEntryFilterCalls, 0);
+const orderingEntries = Array.from({ length: 20 }, (_, index) => ({
+  target: { id: index },
+  tile: index,
+  exposedValue: index,
+  exposedStructures: 1,
+  exposure: 1,
+}));
+const orderingValues = new Map(orderingEntries.map(({ target }, index) => [target, 19 - index]));
+const orderingEntrySlice = orderingEntries.slice;
+const orderingEntrySort = orderingEntries.sort;
+let orderingEntrySliceCalls = 0;
+let orderingEntrySortCalls = 0;
+orderingEntries.slice = (...args) => {
+  orderingEntrySliceCalls++;
+  return orderingEntrySlice.apply(orderingEntries, args);
+};
+orderingEntries.sort = (...args) => {
+  orderingEntrySortCalls++;
+  return orderingEntrySort.apply(orderingEntries, args);
+};
+const orderingCache = new Map();
+routeBehavior.legendaryMissileTargetCandidates([], [], 10, 1, {
+  structureValues: orderingValues,
+  entryCache: new Map([[100, orderingEntries]]),
+  orderingCache,
+});
+assert.deepEqual(
+  [...orderingCache.get(100).byExposure.map(({ target }) => target.id)],
+  Array.from({ length: 16 }, (_, index) => 19 - index),
+);
+assert.deepEqual(
+  [...orderingCache.get(100).byValue.map(({ target }) => target.id)],
+  Array.from({ length: 16 }, (_, index) => index),
+);
+assert.equal(orderingEntrySliceCalls, 0);
+assert.equal(orderingEntrySortCalls, 0);
+delete orderingEntries.slice;
+delete orderingEntries.sort;
 let targetableIndexBuilds = 0;
 let interceptionCoverageChecks = 0;
 routeBehavior.legendaryNukeFlightPath = () => routePath;
