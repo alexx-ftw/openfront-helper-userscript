@@ -282,6 +282,42 @@ assert.ok(
   `64 SAM coverage candidates took ${coverageDurationMs.toFixed(1)}ms`,
 );
 
+let placementBaseValueReads = 0;
+let placementRiskReads = 0;
+const placementValueBehavior = Object.create(sandbox.StructureBehavior.prototype);
+placementValueBehavior.game = {};
+placementValueBehavior.spacingConstants = () => ({ structureSpacing: 10 });
+placementValueBehavior.structureSpawnTileValue = () => () => {
+  placementBaseValueReads++;
+  return 100;
+};
+placementValueBehavior.getMissileDefenseContext = () => ({ critical: false });
+placementValueBehavior.legendaryMissilePlacementRisk = () => {
+  placementRiskReads++;
+  return 0.25;
+};
+placementValueBehavior.legendaryAllyPlacementContext = () => null;
+placementValueBehavior.legendaryTeamCenterPlacementContext = () => null;
+placementValueBehavior.legendaryAllySupportPlacementScore = () => 0;
+placementValueBehavior.legendaryTeamCenterPlacementScore = () => 0;
+const factoryPlacementValue = placementValueBehavior.legendaryStructureSpawnTileValue(UNIT.Factory);
+for (let candidate = 0; candidate < 64; candidate++) {
+  factoryPlacementValue("repeated-tile");
+}
+assert.equal(
+  placementBaseValueReads,
+  1,
+  "repeated Legendary placement probes reuse the base tile value",
+);
+assert.equal(
+  placementRiskReads,
+  1,
+  "repeated Legendary placement probes reuse the missile risk value",
+);
+factoryPlacementValue("new-tile");
+assert.equal(placementBaseValueReads, 2, "a new tile gets its own Legendary placement score");
+assert.equal(placementRiskReads, 2, "a new tile gets its own missile risk evaluation");
+
 const indexedTargetStructures = Array.from({ length: 400 }, (_, index) => ({
   tile: () => ({
     x: (index % 20) * 10,

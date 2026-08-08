@@ -10685,8 +10685,12 @@
         type === UNIT.SAMLauncher
           ? this.legendarySamCoveragePlacementContext()
           : null;
+      const placementScoreCache = new Map();
 
       return (tile) => {
+        if (placementScoreCache.has(tile)) {
+          return placementScoreCache.get(tile);
+        }
         const base = baseValue(tile);
         const missileRisk = Math.min(
           1,
@@ -10733,6 +10737,7 @@
           if (missileContext.critical) value += spacing * 2;
         }
 
+        placementScoreCache.set(tile, value);
         return value;
       };
     }
