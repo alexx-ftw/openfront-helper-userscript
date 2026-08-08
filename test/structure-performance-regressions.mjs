@@ -18,6 +18,8 @@ const sandbox = {
   getBuildMenu: () => ({ sendBuildOrUpgrade() {} }),
   isAtLeastHardDifficulty: () => true,
   isLegendaryDifficulty: () => false,
+  legendaryPlacementProximityScore: (distance, radius) =>
+    Math.max(0, 1 - distance / Math.max(1, radius)),
   state: { settings: { winFixes: true } },
   withTimeout: async (promise) => promise,
   WORKER_TIMEOUT_MS: 1,
@@ -344,6 +346,35 @@ assert.equal(
   spacingMagnitudeReads,
   2,
   "replacing the game config invalidates the spacing constants cache",
+);
+
+let teamRangeReads = 0;
+const teamBehavior = Object.create(sandbox.StructureBehavior.prototype);
+teamBehavior.spacingConstants = () => ({ structureSpacing: 8 });
+teamBehavior.game = {
+  x: (tile) => tile,
+  y: () => 0,
+  euclideanDistSquared: (left, right) => (left - right) ** 2,
+  config: () => ({
+    trainStationMaxRange: () => {
+      teamRangeReads++;
+      return 10;
+    },
+  }),
+};
+const teamCenterContext = {
+  x: 0,
+  y: 0,
+  nearestBorder: 0,
+  radius: 10,
+};
+for (let candidate = 0; candidate < 64; candidate++) {
+  teamBehavior.legendaryTeamCenterPlacementScore(candidate, teamCenterContext);
+}
+assert.equal(
+  teamRangeReads,
+  0,
+  "team-center candidate scoring reuses the radius stored in its context",
 );
 
 process.stdout.write(

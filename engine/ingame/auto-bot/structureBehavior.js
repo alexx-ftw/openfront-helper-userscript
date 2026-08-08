@@ -3050,6 +3050,10 @@
 
       const centerTile = this.legendaryCenterTile(center);
       const nearest = this.nearestOwnBorderToPoint(center);
+      const radius = Math.max(
+        this.spacingConstants().structureSpacing,
+        Number(this.game.config().trainStationMaxRange()),
+      );
 
       const context = {
         x: center.x,
@@ -3057,6 +3061,7 @@
         tile: centerTile,
         nearestBorder: nearest.tile,
         nearestBorderDistanceSquared: nearest.distanceSquared,
+        radius,
       };
       if (Number.isFinite(tick)) {
         this._legendaryTeamCenterPlacementContextTick = tick;
@@ -3253,7 +3258,10 @@
       }
       let radius = spacing;
       {
-        radius = Math.max(radius, Number(this.game.config().trainStationMaxRange()));
+        radius = Math.max(
+          radius,
+          Number(center.radius ?? this.game.config().trainStationMaxRange()),
+        );
       }
       const centerScore = legendaryPlacementProximityScore(centerDistance, radius);
       const borderScore = Number.isFinite(borderDistance)
