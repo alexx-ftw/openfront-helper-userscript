@@ -5109,6 +5109,7 @@
       fromTile,
       targetTile,
       levelOverrides = null,
+      samProfilesOverride = null,
     ) {
       const path = this.legendaryNukeFlightPath(fromTile, targetTile);
       const targetableIndexes = this.legendaryTrajectoryTargetableIndexes(
@@ -5117,14 +5118,20 @@
         targetTile,
       );
       const route = { path, targetableIndexes };
-      const sams = this.legendaryFriendlySamUnits();
+      const preparedProfiles =
+        levelOverrides === null && Array.isArray(samProfilesOverride)
+          ? samProfilesOverride
+          : null;
+      const sams = preparedProfiles || this.legendaryFriendlySamUnits();
       let capacity = 0;
       for (const sam of sams) {
         const override =
-          levelOverrides && levelOverrides.has(sam.id())
+          !preparedProfiles && levelOverrides && levelOverrides.has(sam.id())
             ? levelOverrides.get(sam.id())
             : null;
-        const readySlots = this.legendarySamReadySlots(sam, override);
+        const readySlots = preparedProfiles
+          ? (sam.availableTicks || []).filter((tick) => tick <= 0).length
+          : this.legendarySamReadySlots(sam, override);
         if (readySlots <= 0) continue;
         const coverageIndexes = this.legendarySamPathCoverageIndicesForRoute(
           sam,
@@ -6828,6 +6835,8 @@
       const capacity = this.legendarySamInterceptionCapacity(
         silo.tile(),
         targetTile,
+        null,
+        context?.samProfiles,
       );
       byTarget.set(targetTile, capacity);
       return capacity;

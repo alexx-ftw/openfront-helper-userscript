@@ -920,4 +920,24 @@ assert.equal(cachedProfileRange.samTile, 7);
 assert.equal(cachedProfileRange.range, 10, "SAM route profiles retain their precomputed range");
 assert.equal(profileRangeReads, 0, "precomputed SAM ranges avoid config reads");
 
+const profileCapacityBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+let rawSamReads = 0;
+profileCapacityBehavior.game = { euclideanDistSquared: (left, right) => (left - right) ** 2 };
+profileCapacityBehavior.legendaryNukeFlightPath = () => [0, 1, 2];
+profileCapacityBehavior.legendaryTrajectoryTargetableIndexes = () => [0, 1, 2];
+profileCapacityBehavior.legendaryFriendlySamUnits = () => {
+  rawSamReads++;
+  return [];
+};
+profileCapacityBehavior.legendarySamPathCoverageIndicesForRoute = (profile) =>
+  profile.range === 10 ? [0] : [];
+assert.equal(
+  profileCapacityBehavior.legendarySamInterceptionCapacity(0, 2, null, [
+    { tile: 0, level: 1, range: 10, availableTicks: [0] },
+  ]),
+  1,
+  "SAM capacity can use the prepared profile snapshot",
+);
+assert.equal(rawSamReads, 0, "prepared SAM capacity avoids rereading raw units");
+
 process.stdout.write("LEGENDARY TESTS OK\n");
