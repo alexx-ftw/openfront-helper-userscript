@@ -5019,6 +5019,12 @@
       levelOverrides = null,
     ) {
       const path = this.legendaryNukeFlightPath(fromTile, targetTile);
+      const targetableIndexes = this.legendaryTrajectoryTargetableIndexes(
+        path,
+        fromTile,
+        targetTile,
+      );
+      const route = { path, targetableIndexes };
       const sams = this.legendaryFriendlySamUnits();
       let capacity = 0;
       for (const sam of sams) {
@@ -5026,17 +5032,14 @@
           levelOverrides && levelOverrides.has(sam.id())
             ? levelOverrides.get(sam.id())
             : null;
-        if (
-          this.legendarySamPathCoverageIndex(
-            sam,
-            path,
-            fromTile,
-            targetTile,
-            override,
-          ) >= 0
-        ) {
-          capacity += this.legendarySamReadySlots(sam, override);
-        }
+        const readySlots = this.legendarySamReadySlots(sam, override);
+        if (readySlots <= 0) continue;
+        const coverageIndexes = this.legendarySamPathCoverageIndicesForRoute(
+          sam,
+          route,
+          override,
+        );
+        if (coverageIndexes.length > 0) capacity += readySlots;
       }
       return capacity;
     }

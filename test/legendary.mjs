@@ -650,5 +650,25 @@ assert.equal(
   secondTargetEntries,
   "missile target geometry is reused for repeated threats with the same radius",
 );
+let targetableIndexBuilds = 0;
+let interceptionCoverageCalls = 0;
+routeBehavior.legendaryNukeFlightPath = () => routePath;
+routeBehavior.legendaryTrajectoryTargetableIndexes = () => {
+  targetableIndexBuilds++;
+  return routeTargetableIndexes;
+};
+routeBehavior.legendaryFriendlySamUnits = () => [{ id: () => "sam" }];
+routeBehavior.legendarySamReadySlots = () => 1;
+routeBehavior.legendarySamPathCoverageIndicesForRoute = () => {
+  interceptionCoverageCalls++;
+  return [0];
+};
+assert.equal(
+  routeBehavior.legendarySamInterceptionCapacity(0, 9),
+  1,
+  "SAM capacity still counts one ready interceptor on a covered route",
+);
+assert.equal(targetableIndexBuilds, 1);
+assert.equal(interceptionCoverageCalls, 1);
 
 process.stdout.write("LEGENDARY TESTS OK\n");
