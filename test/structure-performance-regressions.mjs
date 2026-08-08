@@ -376,6 +376,31 @@ assert.equal(
 );
 assert.equal(builtRoute.samOptions.length, routeProfiles.length);
 
+let interceptMapCalls = 0;
+const coverageIndexes = [2, 5];
+const originalCoverageIndexesMap = coverageIndexes.map;
+coverageIndexes.map = (...args) => {
+  interceptMapCalls++;
+  return originalCoverageIndexesMap.apply(coverageIndexes, args);
+};
+const interceptBehavior = Object.create(sandbox.StructureBehavior.prototype);
+interceptBehavior.legendarySamPathCoverageIndices = () => coverageIndexes;
+const interceptTicks = interceptBehavior.legendarySamPathInterceptTicks(
+  { tile: () => 1 },
+  {
+    path: [1, 2, 3, 4, 5, 6],
+    fromTile: 1,
+    targetTile: 6,
+    launchOffset: 7,
+  },
+);
+assert.deepEqual(Array.from(interceptTicks), [9, 12]);
+assert.equal(
+  interceptMapCalls,
+  0,
+  "SAM intercept tick conversion avoids a mapped copy of coverage indexes",
+);
+
 let launchTileReads = 0;
 let launchIdReads = 0;
 const launchSilos = Array.from({ length: 32 }, (_, index) => ({

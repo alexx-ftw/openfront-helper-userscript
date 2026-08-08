@@ -4628,15 +4628,25 @@
     }
 
     legendarySamPathInterceptTicks(samOrTile, route, levelOverride = null) {
-      return this.legendarySamPathCoverageIndices(
-        samOrTile,
-        route.path,
-        route.fromTile,
-        route.targetTile,
-        levelOverride,
-      ).map(
-        (index) => Math.max(0, Number(route.launchOffset) || 0) + index,
+      return this.legendaryInterceptTicksFromIndexes(
+        this.legendarySamPathCoverageIndices(
+          samOrTile,
+          route.path,
+          route.fromTile,
+          route.targetTile,
+          levelOverride,
+        ),
+        route.launchOffset,
       );
+    }
+
+    legendaryInterceptTicksFromIndexes(indexes, launchOffset) {
+      const offset = Math.max(0, Number(launchOffset) || 0);
+      const ticks = new Array(indexes.length);
+      for (let index = 0; index < indexes.length; index++) {
+        if (index in indexes) ticks[index] = offset + indexes[index];
+      }
+      return ticks;
     }
 
     legendarySamPathCoverageIndicesForRoute(
@@ -4713,13 +4723,14 @@
       levelOverride = null,
       coverageProfile = null,
     ) {
-      return this.legendarySamPathCoverageIndicesForRoute(
-        samOrTile,
-        route,
-        levelOverride,
-        coverageProfile,
-      ).map(
-        (index) => Math.max(0, Number(route.launchOffset) || 0) + index,
+      return this.legendaryInterceptTicksFromIndexes(
+        this.legendarySamPathCoverageIndicesForRoute(
+          samOrTile,
+          route,
+          levelOverride,
+          coverageProfile,
+        ),
+        route.launchOffset,
       );
     }
 
@@ -4852,8 +4863,9 @@
           samIndex,
           state,
         );
-        const interceptTicks = coverageIndexes.map(
-          (index) => Math.max(0, Number(state.launchOffset) || 0) + index,
+        const interceptTicks = this.legendaryInterceptTicksFromIndexes(
+          coverageIndexes,
+          state.launchOffset,
         );
         if (interceptTicks.length > 0) {
           samOptions.push({ samIndex, interceptTicks });
