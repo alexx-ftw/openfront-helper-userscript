@@ -876,6 +876,39 @@ assert.equal(placementBaseContext.priorityStructures[0], coverageStructures[1]);
 assert.equal(placementBaseContext.priorityStructures[1], coverageStructures[2]);
 assert.equal(placementBaseContext.priorityStructures[2], coverageStructures[0]);
 
+const targetSelectionBehavior = Object.create(sandbox.StructureBehavior.prototype);
+const exposureTarget = { target: "exposure" };
+const valueTarget = { target: "value" };
+const nearestTarget = { target: "nearest" };
+targetSelectionBehavior.nearestLegendaryMissileTarget = (silo) =>
+  silo.nearest ? nearestTarget : null;
+const selectionSilos = [{ nearest: true }, { nearest: false }];
+let selectionMapCalls = 0;
+let selectionFilterCalls = 0;
+selectionSilos.map = (...args) => {
+  selectionMapCalls++;
+  const mapped = Array.prototype.map.apply(selectionSilos, args);
+  const originalFilter = mapped.filter;
+  mapped.filter = (...filterArgs) => {
+    selectionFilterCalls++;
+    return originalFilter.apply(mapped, filterArgs);
+  };
+  return mapped;
+};
+const selectedTargets = targetSelectionBehavior.legendarySelectMissileTargets(
+  [exposureTarget, valueTarget],
+  [exposureTarget],
+  [valueTarget],
+  selectionSilos,
+  3,
+);
+delete selectionSilos.map;
+assert.equal(selectionMapCalls, 0);
+assert.equal(selectionFilterCalls, 0);
+assert.equal(selectedTargets[0], exposureTarget);
+assert.equal(selectedTargets[1], valueTarget);
+assert.equal(selectedTargets[2], nearestTarget);
+
 const supportBehavior = Object.create(sandbox.StructureBehavior.prototype);
 const supportAllies = Array.from({ length: 4000 }, () => ({}));
 supportBehavior.spacingConstants = () => ({ structureSpacing: 1 });

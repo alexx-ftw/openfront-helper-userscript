@@ -6741,9 +6741,11 @@
         byValue.slice(0, valueCount),
         limit,
       );
-      const nearest = (enemySilos || [])
-        .map((silo) => this.nearestLegendaryMissileTarget(silo, entries))
-        .filter((entry) => entry !== null);
+      const nearest = [];
+      for (const silo of enemySilos || []) {
+        const entry = this.nearestLegendaryMissileTarget(silo, entries);
+        if (entry !== null) nearest.push(entry);
+      }
       this.appendUniqueMissileTargets(
         selected,
         selectedEntries,
