@@ -460,6 +460,12 @@ const sourceMetricsBehavior = Object.create(sandbox.StructureBehavior.prototype)
 sourceMetricsBehavior.legendarySalvoRouteInterceptionCapacity = () => null;
 sourceMetricsBehavior.legendaryNukeFlightTime = () => 10;
 sourceMetricsBehavior.legendarySamInterceptionCapacity = () => 1;
+const sourceSilosMap = sourceSilos.map;
+let sourceMetricsMapCalls = 0;
+sourceSilos.map = (...args) => {
+  sourceMetricsMapCalls++;
+  return sourceSilosMap.apply(sourceSilos, args);
+};
 const sourceMetrics = sourceMetricsBehavior.legendarySalvoSourceMetrics({
   enemySilos: sourceSilos,
   targetTile: 0,
@@ -473,6 +479,12 @@ assert.equal(
   sourceTileReads,
   0,
   "salvo source metrics reuse cached silo tiles across target candidates",
+);
+delete sourceSilos.map;
+assert.equal(
+  sourceMetricsMapCalls,
+  0,
+  "salvo source metrics fill per-silo metrics without a mapped copy",
 );
 
 sandbox.legendaryMissileThreatScore = () => ({ score: 1, critical: false });

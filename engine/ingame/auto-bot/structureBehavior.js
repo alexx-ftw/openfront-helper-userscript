@@ -5979,13 +5979,14 @@
           }
         }
       }
-      return enemySilos.map((silo) => {
+      const metrics = enemySilos.slice(0, 0);
+      for (const silo of enemySilos) {
         const fromTile = siloMetadataCache?.get(silo)?.tile ?? silo.tile();
         const routeCapacity = this.legendarySalvoRouteInterceptionCapacity(
           routesBySilo.get(silo),
           samProfiles,
         );
-        return {
+        metrics.push({
           silo,
           fromTile,
           flightTimeTicks:
@@ -5999,8 +6000,9 @@
               null,
               samProfiles,
             ),
-        };
-      });
+        });
+      }
+      return metrics;
     }
 
     legendaryActiveMissileThreats(context) {
