@@ -931,7 +931,20 @@ assert.equal(mirvBehavior.uncoveredActiveMirvDemands(otherMirvContext).length, 0
 assert.equal(mirvCoverageChecks, 2, "different MIRV contexts are evaluated independently");
 
 let mirvStructureSnapshotReads = 0;
-const mirvProtectedStructures = [{ tile: () => 10, id: () => 11 }];
+let mirvStructureTileReads = 0;
+let mirvStructureIdReads = 0;
+const mirvProtectedStructures = [
+  {
+    tile: () => {
+      mirvStructureTileReads++;
+      return 10;
+    },
+    id: () => {
+      mirvStructureIdReads++;
+      return 11;
+    },
+  },
+];
 const mirvOwner = { smallID: () => 2 };
 const mirvCarriers = Array.from({ length: 3 }, (_, index) => ({
   isActive: () => true,
@@ -961,6 +974,16 @@ assert.equal(
   mirvStructureSnapshotReads,
   1,
   "MIRV demand generation reuses one protected-structure snapshot for all carriers",
+);
+assert.equal(
+  mirvStructureTileReads,
+  1,
+  "MIRV demand generation snapshots each protected structure tile once",
+);
+assert.equal(
+  mirvStructureIdReads,
+  1,
+  "MIRV demand generation snapshots each protected structure id once",
 );
 
 let directSamFilterReads = 0;

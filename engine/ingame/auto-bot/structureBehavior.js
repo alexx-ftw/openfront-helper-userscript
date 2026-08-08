@@ -6103,6 +6103,7 @@
           UNIT.Port,
           UNIT.MissileSilo,
         ) || [];
+      let protectedStructureSnapshots = null;
       for (const missile of this.game.units(UNIT.MIRV, UNIT.MIRVWarhead) || []) {
         if (!isHostileActiveMissile(this.player, missile, mySid)) continue;
         const targetTile = missile.targetTile?.();
@@ -6115,12 +6116,16 @@
           targetTile,
         );
         if (missile.type?.() === UNIT.MIRV) {
+          protectedStructureSnapshots = this.mirvProtectedStructureSnapshots(
+            protectedStructureSnapshots,
+            protectedStructures,
+          );
           this.appendMirvCarrierSiteDemands(
             demands,
             missile,
             targetTile,
             deadlineTick,
-            protectedStructures,
+            protectedStructureSnapshots,
           );
           continue;
         }
@@ -6140,6 +6145,21 @@
       return demands;
     }
 
+    mirvProtectedStructureSnapshots(snapshots, structures) {
+      return snapshots ?? this.snapshotMirvProtectedStructures(structures);
+    }
+
+    snapshotMirvProtectedStructures(structures) {
+      const snapshots = [];
+      for (const structure of structures || []) {
+        snapshots.push({
+          tile: structure.tile?.(),
+          id: structure.id?.(),
+        });
+      }
+      return snapshots;
+    }
+
     activeMirvDeadlineTick(missile, fromTile, targetTile) {
       const motion = this.legendaryActiveMissileMotion(missile, fromTile);
       return Math.max(
@@ -6156,20 +6176,21 @@
       missile,
       carrierTargetTile,
       deadlineTick,
-      protectedStructures = null,
+      protectedStructureSnapshots = null,
     ) {
       const radiusSquared = MIRV_CARRIER_TARGET_RADIUS ** 2;
-      const structures =
-        protectedStructures ??
-        this.player.units(
-          UNIT.City,
-          UNIT.Factory,
-          UNIT.Port,
-          UNIT.MissileSilo,
-        ) ??
-        [];
-      for (const structure of structures || []) {
-        const structureTile = structure.tile?.();
+      const snapshots =
+        protectedStructureSnapshots ??
+        this.snapshotMirvProtectedStructures(
+          this.player.units(
+            UNIT.City,
+            UNIT.Factory,
+            UNIT.Port,
+            UNIT.MissileSilo,
+          ) ?? [],
+        );
+      for (const snapshot of snapshots) {
+        const structureTile = snapshot.tile;
         if (structureTile === null || structureTile === undefined) continue;
         if (
           this.game.euclideanDistSquared(carrierTargetTile, structureTile) >
@@ -6181,7 +6202,7 @@
           targetTile: structureTile,
           deadlineTick,
           carrierPreparation: true,
-          protectedStructureId: structure.id?.(),
+          protectedStructureId: snapshot.id,
         });
       }
     }
