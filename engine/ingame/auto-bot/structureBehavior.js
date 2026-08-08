@@ -4120,7 +4120,7 @@
     legendarySiloSlotAvailability(silo) {
       if (!silo || silo.isUnderConstruction?.()) return [];
       const level = this.normalizedStructureLevel(silo.level?.());
-      const queue = this.structureMissileQueue(silo, level).map(Number);
+      const queue = this.structureMissileQueue(silo, level);
       const now = Number(this.game.ticks?.() ?? 0);
       const cooldown = this.legendarySiloCooldownTicks();
       const slots = Array(Math.max(0, level - queue.length)).fill(0);

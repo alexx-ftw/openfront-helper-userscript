@@ -376,6 +376,28 @@ assert.equal(
   "ready-shot reads reuse the cached count instead of filtering cached slots",
 );
 
+let siloQueueMapReads = 0;
+const siloQueue = [0, 90, 180];
+const siloQueueMap = siloQueue.map;
+siloQueue.map = (...args) => {
+  siloQueueMapReads++;
+  return siloQueueMap.apply(siloQueue, args);
+};
+const siloAvailabilityBehavior = Object.create(sandbox.StructureBehavior.prototype);
+siloAvailabilityBehavior.game = { ticks: () => 0 };
+siloAvailabilityBehavior.structureMissileQueue = () => siloQueue;
+siloAvailabilityBehavior.legendarySiloCooldownTicks = () => 90;
+const siloAvailability = siloAvailabilityBehavior.legendarySiloSlotAvailability({
+  isUnderConstruction: () => false,
+  level: () => 3,
+});
+assert.equal(siloAvailability.length, 3);
+assert.equal(
+  siloQueueMapReads,
+  0,
+  "Silo slot availability converts queue entries in place without a mapped copy",
+);
+
 let sourceTileReads = 0;
 const sourceSilos = Array.from({ length: 32 }, (_, index) => ({
   tile: () => {
