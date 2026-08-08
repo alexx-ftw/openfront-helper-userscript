@@ -4930,7 +4930,7 @@
           0,
           Math.min(plan.path.length - 1, rawIndex),
         );
-        const path = Array.from(plan.path.slice(index));
+        const path = plan.path.slice(index);
         if (path.length === 0) return null;
         return {
           fromTile: plan.path[0] ?? fromTile,

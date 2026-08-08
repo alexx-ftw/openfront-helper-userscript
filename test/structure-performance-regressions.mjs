@@ -529,6 +529,18 @@ assert.equal(
   "trajectory targetability reads the configured nuke range once per path scan",
 );
 
+const activeMotionBehavior = Object.create(sandbox.StructureBehavior.prototype);
+const activePlanPath = [0, 1, 2, 3];
+const activePathSlice = [2, 3];
+activePlanPath.slice = () => activePathSlice;
+activeMotionBehavior.game = {
+  ticks: () => 2,
+  motionPlans: () => new Map([["nuke-1", { path: activePlanPath, startTick: 0, ticksPerStep: 1 }]]),
+};
+const activeMotion = activeMotionBehavior.legendaryActiveMissileMotion({ id: () => "nuke-1" }, 0);
+assert.equal(activeMotion.path, activePathSlice);
+assert.equal(activeMotion.impactTick, 2);
+
 let routeCoverageArrayCalls = 0;
 const capacityRouteBehavior = Object.create(sandbox.StructureBehavior.prototype);
 capacityRouteBehavior.game = {
