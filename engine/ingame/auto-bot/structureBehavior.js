@@ -6879,25 +6879,26 @@
         UNIT.Port,
         UNIT.MissileSilo,
       );
-      const valuedStructures = structures.map((unit) => ({
-        unit,
-        value: this.legendaryCriticalStructureValue(unit),
-      }));
-      const totalValue = valuedStructures.reduce(
-        (total, entry) => total + entry.value,
-        0,
+      const valuedStructures = [];
+      const structureValues = new Map();
+      const structureTiles = new Map();
+      let totalValue = 0;
+      for (const unit of structures) {
+        const value = this.legendaryCriticalStructureValue(unit);
+        valuedStructures.push({ unit, value });
+        totalValue += value;
+        structureValues.set(unit, value);
+        structureTiles.set(unit, unit?.tile?.());
+      }
+      valuedStructures.sort((left, right) => right.value - left.value);
+      const priorityUnits = [];
+      const priorityLimit = Math.min(
+        LEGENDARY_MAX_MISSILE_TARGETS,
+        valuedStructures.length,
       );
-      const priorityStructures = valuedStructures
-        .slice()
-        .sort((left, right) => right.value - left.value)
-        .slice(0, LEGENDARY_MAX_MISSILE_TARGETS);
-      const priorityUnits = priorityStructures.map((entry) => entry.unit);
-      const structureValues = new Map(
-        valuedStructures.map(({ unit, value }) => [unit, value]),
-      );
-      const structureTiles = new Map(
-        structures.map((unit) => [unit, unit?.tile?.()]),
-      );
+      for (let index = 0; index < priorityLimit; index++) {
+        priorityUnits.push(valuedStructures[index].unit);
+      }
       const missileTargetEntriesCache = new Map();
       const missileTargetOrderingCache = new Map();
       const launchMetadataCache = new Map();

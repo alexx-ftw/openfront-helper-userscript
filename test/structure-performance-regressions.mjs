@@ -675,7 +675,13 @@ contextBehavior.legendaryCriticalStructureValue = () => {
   contextValueReads++;
   return 1;
 };
+let contextStructureMapCalls = 0;
+coverageStructures.map = (...args) => {
+  contextStructureMapCalls++;
+  return Array.prototype.map.apply(coverageStructures, args);
+};
 const placementBaseContext = contextBehavior.legendaryMissilePlacementBaseContext();
+delete coverageStructures.map;
 assert.equal(
   placementBaseContext.priorityStructures.length,
   Math.min(16, coverageStructures.length),
@@ -684,6 +690,11 @@ assert.equal(
   contextValueReads,
   coverageStructures.length,
   "missile context values each structure once before total and priority ranking",
+);
+assert.equal(
+  contextStructureMapCalls,
+  0,
+  "missile placement base context fills structure indexes without map allocations",
 );
 
 const supportBehavior = Object.create(sandbox.StructureBehavior.prototype);
