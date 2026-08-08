@@ -4635,6 +4635,40 @@
       return indexes;
     }
 
+    legendarySamPathHasCoverageForRoute(
+      samOrTile,
+      route,
+      levelOverride = null,
+      coverageProfile = null,
+    ) {
+      if (!Array.isArray(route?.targetableIndexes)) {
+        return (
+          this.legendarySamPathCoverageIndicesForRoute(
+            samOrTile,
+            route,
+            levelOverride,
+            coverageProfile,
+          ).length > 0
+        );
+      }
+      const profile =
+        coverageProfile ??
+        this.legendarySamCoverageProfile(samOrTile, levelOverride);
+      if (profile === null) return false;
+      const { samTile, range } = profile;
+      if (range <= 0) return false;
+      const rangeSquared = range * range;
+      for (const index of route.targetableIndexes) {
+        if (
+          this.game.euclideanDistSquared(route.path[index], samTile) <=
+          rangeSquared
+        ) {
+          return true;
+        }
+      }
+      return false;
+    }
+
     legendarySamPathInterceptTicksForRoute(
       samOrTile,
       route,
@@ -5344,12 +5378,12 @@
             )
           : this.legendarySamReadySlots(sam, override);
         if (readySlots <= 0) continue;
-        const coverageIndexes = this.legendarySamPathCoverageIndicesForRoute(
+        const hasCoverage = this.legendarySamPathHasCoverageForRoute(
           sam,
           route,
           override,
         );
-        if (coverageIndexes.length > 0) capacity += readySlots;
+        if (hasCoverage) capacity += readySlots;
       }
       return capacity;
     }

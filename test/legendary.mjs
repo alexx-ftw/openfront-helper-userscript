@@ -654,7 +654,7 @@ assert.equal(
   "missile target geometry is reused for repeated threats with the same radius",
 );
 let targetableIndexBuilds = 0;
-let interceptionCoverageCalls = 0;
+let interceptionCoverageChecks = 0;
 routeBehavior.legendaryNukeFlightPath = () => routePath;
 routeBehavior.legendaryTrajectoryTargetableIndexes = () => {
   targetableIndexBuilds++;
@@ -662,9 +662,9 @@ routeBehavior.legendaryTrajectoryTargetableIndexes = () => {
 };
 routeBehavior.legendaryFriendlySamUnits = () => [{ id: () => "sam" }];
 routeBehavior.legendarySamReadySlots = () => 1;
-routeBehavior.legendarySamPathCoverageIndicesForRoute = () => {
-  interceptionCoverageCalls++;
-  return [0];
+routeBehavior.legendarySamPathHasCoverageForRoute = () => {
+  interceptionCoverageChecks++;
+  return true;
 };
 assert.equal(
   routeBehavior.legendarySamInterceptionCapacity(0, 9),
@@ -672,7 +672,7 @@ assert.equal(
   "SAM capacity still counts one ready interceptor on a covered route",
 );
 assert.equal(targetableIndexBuilds, 1);
-assert.equal(interceptionCoverageCalls, 1);
+assert.equal(interceptionCoverageChecks, 1);
 
 const sourceSilo = { tile: () => 11 };
 const fallbackSilo = { tile: () => 12 };

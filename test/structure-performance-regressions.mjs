@@ -483,6 +483,27 @@ assert.equal(
   "SAM ready-slot fallback counts availability without allocating a filtered array",
 );
 
+let routeCoverageArrayCalls = 0;
+const capacityRouteBehavior = Object.create(sandbox.StructureBehavior.prototype);
+capacityRouteBehavior.game = {
+  euclideanDistSquared: (left, right) => Math.abs(left - right),
+};
+capacityRouteBehavior.legendaryNukeFlightPath = () => [0, 1, 2];
+capacityRouteBehavior.legendaryTrajectoryTargetableIndexes = () => [0, 1, 2];
+capacityRouteBehavior.legendarySamPathCoverageIndicesForRoute = () => {
+  routeCoverageArrayCalls++;
+  return [1];
+};
+const routeCapacity = capacityRouteBehavior.legendarySamInterceptionCapacity(0, 2, null, [
+  { tile: 0, range: 10, availableTicks: [0], readySlots: 1 },
+]);
+assert.equal(routeCapacity, 1);
+assert.equal(
+  routeCoverageArrayCalls,
+  0,
+  "SAM capacity checks route coverage without allocating all coverage indexes",
+);
+
 let contextValueReads = 0;
 const contextBehavior = Object.create(sandbox.StructureBehavior.prototype);
 contextBehavior.game = {
