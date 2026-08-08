@@ -821,4 +821,27 @@ const secondTeamContext = teamContextBehavior.legendaryTeamCenterPlacementContex
 assert.equal(firstTeamContext, secondTeamContext);
 assert.equal(teamParticipantReads, 1, "team center context is reused within a tick");
 
+const defenseProfileBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+const cachedDefenseProfiles = [{ id: "cached-sam" }];
+let defenseProfileBuilds = 0;
+defenseProfileBehavior.legendaryFriendlySamProfiles = () => {
+  defenseProfileBuilds++;
+  return [{ id: "fresh-sam" }];
+};
+assert.equal(
+  defenseProfileBehavior.legendaryDefenseSamProfiles({ samProfiles: cachedDefenseProfiles }, {}),
+  cachedDefenseProfiles,
+  "normal defense evaluations reuse profiles from the missile snapshot",
+);
+assert.equal(defenseProfileBuilds, 0);
+assert.equal(
+  defenseProfileBehavior.legendaryDefenseSamProfiles(
+    { samProfiles: cachedDefenseProfiles },
+    { levelOverrides: new Map([["sam", 2]]) },
+  )[0].id,
+  "fresh-sam",
+  "hypothetical SAM levels rebuild profiles instead of reusing the snapshot",
+);
+assert.equal(defenseProfileBuilds, 1);
+
 process.stdout.write("LEGENDARY TESTS OK\n");

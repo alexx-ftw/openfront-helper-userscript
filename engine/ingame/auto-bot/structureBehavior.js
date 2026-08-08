@@ -4826,10 +4826,7 @@
       if (!context || !Array.isArray(context.threats)) {
         return this.emptyLegendaryDefenseEvaluation();
       }
-      const samProfiles = this.legendaryFriendlySamProfiles(
-        options.levelOverrides ?? null,
-        options.extraSam ?? null,
-      );
+      const samProfiles = this.legendaryDefenseSamProfiles(context, options);
       const { routes, groups } = this.legendaryDefenseRouteGroups(
         context.threats,
         options,
@@ -4872,6 +4869,19 @@
         schedules,
         globalSchedule,
       };
+    }
+
+    legendaryDefenseSamProfiles(context, options = {}) {
+      if (
+        this.hasLegendaryLevelOverrides(options.levelOverrides) ||
+        options.extraSam
+      ) {
+        return this.legendaryFriendlySamProfiles(
+          options.levelOverrides ?? null,
+          options.extraSam ?? null,
+        );
+      }
+      return context.samProfiles || this.legendaryFriendlySamProfiles();
     }
 
     emptyLegendaryDefenseEvaluation() {
@@ -6454,6 +6464,7 @@
       return {
         ...strongest,
         threats,
+        samProfiles,
         structures,
         structureValues,
         structureTiles,
@@ -6485,6 +6496,7 @@
       return {
         ...strongest,
         threats: activeMissiles,
+        samProfiles,
         ...base,
         activeMissiles,
       };
