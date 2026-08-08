@@ -239,8 +239,8 @@ const builtRoute = routeBehavior.legendaryBuildMissileRoute(
 );
 assert.equal(
   routeTargetableRangeReads,
-  96,
-  "missile route construction resolves targetability once before checking every SAM profile",
+  1,
+  "missile route construction resolves targetability once per route path",
 );
 assert.equal(builtRoute.samOptions.length, routeProfiles.length);
 
@@ -481,6 +481,30 @@ assert.equal(
   directSamFilterReads,
   0,
   "SAM ready-slot fallback counts availability without allocating a filtered array",
+);
+
+let targetableRangeReads = 0;
+const targetableBehavior = Object.create(sandbox.StructureBehavior.prototype);
+targetableBehavior.game = {
+  config: () => ({
+    defaultNukeTargetableRange: () => {
+      targetableRangeReads++;
+      return 1;
+    },
+  }),
+  euclideanDistSquared: (left, right) => (left - right) ** 2,
+};
+const targetablePath = Array.from({ length: 256 }, (_, index) => index);
+const targetableIndexes = targetableBehavior.legendaryTrajectoryTargetableIndexes(
+  targetablePath,
+  0,
+  255,
+);
+assert.deepEqual(Array.from(targetableIndexes), [0, 1, 254, 255]);
+assert.equal(
+  targetableRangeReads,
+  1,
+  "trajectory targetability reads the configured nuke range once per path scan",
 );
 
 let routeCoverageArrayCalls = 0;

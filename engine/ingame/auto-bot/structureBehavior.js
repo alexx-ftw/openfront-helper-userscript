@@ -4428,24 +4428,37 @@
       return profiles;
     }
 
-    legendaryTrajectoryTileTargetable(pathTile, fromTile, targetTile) {
-      {
-        const targetableRange = Number(
-          this.game.config().defaultNukeTargetableRange(),
-        );
-        if (targetableRange <= 0) return true;
-        const rangeSquared = targetableRange * targetableRange;
-        return (
-          this.game.euclideanDistSquared(pathTile, fromTile) <= rangeSquared ||
-          this.game.euclideanDistSquared(pathTile, targetTile) <= rangeSquared
-        );
-      }
+    legendaryTrajectoryTargetableRange() {
+      return Number(this.game.config().defaultNukeTargetableRange());
+    }
+
+    legendaryTrajectoryTileTargetable(
+      pathTile,
+      fromTile,
+      targetTile,
+      targetableRange = null,
+    ) {
+      const range = targetableRange ?? this.legendaryTrajectoryTargetableRange();
+      if (range <= 0) return true;
+      const rangeSquared = range * range;
+      return (
+        this.game.euclideanDistSquared(pathTile, fromTile) <= rangeSquared ||
+        this.game.euclideanDistSquared(pathTile, targetTile) <= rangeSquared
+      );
     }
 
     legendaryTrajectoryTargetableIndexes(path, fromTile, targetTile) {
+      const targetableRange = this.legendaryTrajectoryTargetableRange();
       const indexes = [];
       for (let index = 0; index < path.length; index++) {
-        if (this.legendaryTrajectoryTileTargetable(path[index], fromTile, targetTile)) {
+        if (
+          this.legendaryTrajectoryTileTargetable(
+            path[index],
+            fromTile,
+            targetTile,
+            targetableRange,
+          )
+        ) {
           indexes.push(index);
         }
       }
@@ -4540,10 +4553,18 @@
       const { samTile, range } = profile;
       if (range <= 0) return [];
       const rangeSquared = range * range;
+      const targetableRange = this.legendaryTrajectoryTargetableRange();
       const indexes = [];
       for (let index = 0; index < path.length; index++) {
         const pathTile = path[index];
-        if (!this.legendaryTrajectoryTileTargetable(pathTile, fromTile, targetTile)) {
+        if (
+          !this.legendaryTrajectoryTileTargetable(
+            pathTile,
+            fromTile,
+            targetTile,
+            targetableRange,
+          )
+        ) {
           continue;
         }
         if (
