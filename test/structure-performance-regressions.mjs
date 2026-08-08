@@ -1029,6 +1029,44 @@ assert.equal(
   "trajectory targetability reads the configured nuke range once per path scan",
 );
 
+let cachedTargetableScanCalls = 0;
+let cachedTargetableConfig = {
+  defaultNukeTargetableRange: () => 1,
+};
+const cachedTargetableBehavior = Object.create(sandbox.StructureBehavior.prototype);
+cachedTargetableBehavior.game = {
+  config: () => cachedTargetableConfig,
+  euclideanDistSquared: (left, right) => (left - right) ** 2,
+};
+const originalTargetableIndexes = cachedTargetableBehavior.legendaryTrajectoryTargetableIndexes;
+cachedTargetableBehavior.legendaryTrajectoryTargetableIndexes = (...args) => {
+  cachedTargetableScanCalls++;
+  return originalTargetableIndexes.apply(cachedTargetableBehavior, args);
+};
+const cachedTargetablePath = [0, 5, 10, 15];
+const firstCachedTargetableIndexes =
+  cachedTargetableBehavior.legendaryCachedTrajectoryTargetableIndexes(cachedTargetablePath, 0, 15);
+const secondCachedTargetableIndexes =
+  cachedTargetableBehavior.legendaryCachedTrajectoryTargetableIndexes(cachedTargetablePath, 0, 15);
+assert.deepEqual(Array.from(firstCachedTargetableIndexes), [0, 3]);
+assert.equal(secondCachedTargetableIndexes, firstCachedTargetableIndexes);
+assert.equal(
+  cachedTargetableScanCalls,
+  1,
+  "repeated targetability reads reuse the same path/config snapshot",
+);
+cachedTargetableConfig = {
+  defaultNukeTargetableRange: () => 6,
+};
+const refreshedCachedTargetableIndexes =
+  cachedTargetableBehavior.legendaryCachedTrajectoryTargetableIndexes(cachedTargetablePath, 0, 15);
+assert.deepEqual(Array.from(refreshedCachedTargetableIndexes), [0, 1, 2, 3]);
+assert.equal(
+  cachedTargetableScanCalls,
+  2,
+  "a new game configuration invalidates cached trajectory targetability",
+);
+
 const activeMotionBehavior = Object.create(sandbox.StructureBehavior.prototype);
 const activePlanPath = [0, 1, 2, 3];
 const activePathSlice = [2, 3];

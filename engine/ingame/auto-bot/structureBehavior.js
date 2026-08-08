@@ -4497,6 +4497,63 @@
       return Number(this.game.config().defaultNukeTargetableRange());
     }
 
+    legendaryTrajectoryTargetableIndexesCache() {
+      const game = this.game;
+      if (!game) return null;
+      if (
+        game !== this._legendaryTrajectoryTargetableCacheGame ||
+        !(this._legendaryTrajectoryTargetableCache instanceof WeakMap)
+      ) {
+        this._legendaryTrajectoryTargetableCacheGame = game;
+        this._legendaryTrajectoryTargetableCache = new WeakMap();
+      }
+      return this._legendaryTrajectoryTargetableCache;
+    }
+
+    legendaryCachedTrajectoryTargetableIndexes(
+      path,
+      fromTile,
+      targetTile,
+    ) {
+      if (!Array.isArray(path)) {
+        return this.legendaryTrajectoryTargetableIndexes(
+          path,
+          fromTile,
+          targetTile,
+        );
+      }
+      if (typeof this.game?.config !== "function") {
+        return this.legendaryTrajectoryTargetableIndexes(
+          path,
+          fromTile,
+          targetTile,
+        );
+      }
+      const targetableRange = this.legendaryTrajectoryTargetableRange();
+      const cache = this.legendaryTrajectoryTargetableIndexesCache();
+      const cached = cache?.get(path);
+      if (
+        cached?.fromTile === fromTile &&
+        cached?.targetTile === targetTile &&
+        cached.targetableRange === targetableRange
+      ) {
+        return cached.indexes;
+      }
+      const indexes = this.legendaryTrajectoryTargetableIndexes(
+        path,
+        fromTile,
+        targetTile,
+        targetableRange,
+      );
+      cache?.set(path, {
+        fromTile,
+        targetTile,
+        targetableRange,
+        indexes,
+      });
+      return indexes;
+    }
+
     legendaryTrajectoryTileTargetable(
       pathTile,
       fromTile,
@@ -4512,8 +4569,14 @@
       );
     }
 
-    legendaryTrajectoryTargetableIndexes(path, fromTile, targetTile) {
-      const targetableRange = this.legendaryTrajectoryTargetableRange();
+    legendaryTrajectoryTargetableIndexes(
+      path,
+      fromTile,
+      targetTile,
+      targetableRangeOverride = null,
+    ) {
+      const targetableRange =
+        targetableRangeOverride ?? this.legendaryTrajectoryTargetableRange();
       const indexes = [];
       for (let index = 0; index < path.length; index++) {
         if (
@@ -4872,7 +4935,7 @@
         launchOffset,
         targetableIndexes: Array.isArray(targetableIndexesOverride)
           ? targetableIndexesOverride
-          : this.legendaryTrajectoryTargetableIndexes(
+          : this.legendaryCachedTrajectoryTargetableIndexes(
               path,
               fromTile,
               targetTile,
@@ -5498,7 +5561,7 @@
       samProfilesOverride = null,
     ) {
       const path = this.legendaryNukeFlightPath(fromTile, targetTile);
-      const targetableIndexes = this.legendaryTrajectoryTargetableIndexes(
+      const targetableIndexes = this.legendaryCachedTrajectoryTargetableIndexes(
         path,
         fromTile,
         targetTile,
@@ -5711,7 +5774,7 @@
           continue;
         }
         const path = this.legendaryNukeFlightPath(fromTile, structureTile);
-        const targetableIndexes = this.legendaryTrajectoryTargetableIndexes(
+        const targetableIndexes = this.legendaryCachedTrajectoryTargetableIndexes(
           path,
           fromTile,
           structureTile,
