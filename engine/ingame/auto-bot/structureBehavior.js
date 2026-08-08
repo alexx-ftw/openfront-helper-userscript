@@ -4254,10 +4254,12 @@
         // The override is deliberately passed to both sides of the model:
         // profile.level expands the trajectory range immediately, while
         // slot availability keeps the newly added missile in SAMCooldown.
+        const level = Math.max(1, Number(override ?? sam.level() ?? 1));
         profiles.push({
           id,
           tile: sam.tile(),
-          level: Math.max(1, Number(override ?? sam.level() ?? 1)),
+          level,
+          range: Number(this.game.config().samRange(level)),
           availableTicks: this.legendarySamSlotAvailability(sam, override),
           cooldownTicks: this.legendarySamCooldownTicks(),
         });
@@ -4273,6 +4275,7 @@
           id: extraSam.id ?? "legendary-candidate-sam",
           tile: extraSam.tile,
           level,
+          range: Number(this.game.config().samRange(level)),
           availableTicks,
           cooldownTicks: this.legendarySamCooldownTicks(),
         });
@@ -4418,12 +4421,27 @@
       if (typeof samOrTile.level === "function") rawLevel = samOrTile.level();
       const level = Math.max(1, Number(levelOverride ?? rawLevel));
       {
-        const range =
-          rangeOverride === null
-            ? Number(this.game.config().samRange(level))
-            : Number(rangeOverride);
+        const range = this.legendarySamProfileRange(
+          samOrTile,
+          rawLevel,
+          level,
+          rangeOverride,
+        );
         return range > 0 ? { samTile, range } : null;
       }
+    }
+
+    legendarySamProfileRange(samOrTile, rawLevel, level, rangeOverride) {
+      if (rangeOverride !== null) return Number(rangeOverride);
+      const cachedRange = Number(samOrTile.range);
+      if (
+        typeof samOrTile.level !== "function" &&
+        Number.isFinite(cachedRange) &&
+        level === Math.max(1, Number(rawLevel))
+      ) {
+        return cachedRange;
+      }
+      return Number(this.game.config().samRange(level));
     }
 
     legendarySamPathInterceptTicks(samOrTile, route, levelOverride = null) {

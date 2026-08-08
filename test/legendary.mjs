@@ -902,4 +902,22 @@ assert.equal(
   "SAM candidate scoring reuses the level-one range from its placement context",
 );
 
+const profileRangeBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+let profileRangeReads = 0;
+profileRangeBehavior.game = {
+  config: () => ({
+    samRange: () => {
+      profileRangeReads++;
+      return 99;
+    },
+  }),
+};
+const cachedProfileRange = profileRangeBehavior.legendarySamCoverageProfile(
+  { tile: 7, level: 2, range: 10 },
+  2,
+);
+assert.equal(cachedProfileRange.samTile, 7);
+assert.equal(cachedProfileRange.range, 10, "SAM route profiles retain their precomputed range");
+assert.equal(profileRangeReads, 0, "precomputed SAM ranges avoid config reads");
+
 process.stdout.write("LEGENDARY TESTS OK\n");
