@@ -6096,6 +6096,13 @@
     activeMirvDefenseDemands() {
       const demands = [];
       const mySid = this.player.smallID();
+      const protectedStructures =
+        this.player.units(
+          UNIT.City,
+          UNIT.Factory,
+          UNIT.Port,
+          UNIT.MissileSilo,
+        ) || [];
       for (const missile of this.game.units(UNIT.MIRV, UNIT.MIRVWarhead) || []) {
         if (!isHostileActiveMissile(this.player, missile, mySid)) continue;
         const targetTile = missile.targetTile?.();
@@ -6113,6 +6120,7 @@
             missile,
             targetTile,
             deadlineTick,
+            protectedStructures,
           );
           continue;
         }
@@ -6148,14 +6156,18 @@
       missile,
       carrierTargetTile,
       deadlineTick,
+      protectedStructures = null,
     ) {
       const radiusSquared = MIRV_CARRIER_TARGET_RADIUS ** 2;
-      const structures = this.player.units(
-        UNIT.City,
-        UNIT.Factory,
-        UNIT.Port,
-        UNIT.MissileSilo,
-      );
+      const structures =
+        protectedStructures ??
+        this.player.units(
+          UNIT.City,
+          UNIT.Factory,
+          UNIT.Port,
+          UNIT.MissileSilo,
+        ) ??
+        [];
       for (const structure of structures || []) {
         const structureTile = structure.tile?.();
         if (structureTile === null || structureTile === undefined) continue;

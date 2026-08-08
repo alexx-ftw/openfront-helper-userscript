@@ -18,6 +18,8 @@ const sandbox = {
   getBuildMenu: () => ({ sendBuildOrUpgrade() {} }),
   isAtLeastHardDifficulty: () => true,
   isLegendaryDifficulty: () => false,
+  playersArePermanentTeammates: (player, other) =>
+    Boolean(player?.isFriendly?.(other) || player?.isOnSameTeam?.(other)),
   legendaryPlacementProximityScore: (distance, radius) =>
     Math.max(0, 1 - distance / Math.max(1, radius)),
   legendaryMissileDefenseSchedule: () => ({
@@ -912,6 +914,39 @@ assert.equal(
   mirvSlotReads,
   0,
   "active MIRV demand checks reuse SAM profiles from the defense snapshot",
+);
+
+let mirvStructureSnapshotReads = 0;
+const mirvProtectedStructures = [{ tile: () => 10, id: () => 11 }];
+const mirvOwner = { smallID: () => 2 };
+const mirvCarriers = Array.from({ length: 3 }, (_, index) => ({
+  isActive: () => true,
+  owner: () => mirvOwner,
+  type: () => UNIT.MIRV,
+  targetTile: () => 20 + index,
+  tile: () => 30 + index,
+}));
+const mirvScanBehavior = Object.create(sandbox.StructureBehavior.prototype);
+mirvScanBehavior.player = {
+  smallID: () => 1,
+  isFriendly: () => false,
+  isOnSameTeam: () => false,
+  units: () => {
+    mirvStructureSnapshotReads++;
+    return mirvProtectedStructures;
+  },
+};
+mirvScanBehavior.game = {
+  units: () => mirvCarriers,
+  euclideanDistSquared: () => 0,
+};
+mirvScanBehavior.activeMirvDeadlineTick = () => 10;
+const mirvDemands = mirvScanBehavior.activeMirvDefenseDemands();
+assert.equal(mirvDemands.length, mirvCarriers.length);
+assert.equal(
+  mirvStructureSnapshotReads,
+  1,
+  "MIRV demand generation reuses one protected-structure snapshot for all carriers",
 );
 
 let directSamFilterReads = 0;
