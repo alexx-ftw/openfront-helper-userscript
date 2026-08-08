@@ -137,6 +137,43 @@ assert.equal(
   "a new game tick refreshes the economic placement fingerprint",
 );
 
+let missileQueueMapCalls = 0;
+const missileTimerQueue = [];
+missileTimerQueue[0] = 1;
+missileTimerQueue[2] = 3;
+const originalMissileTimerQueueMap = missileTimerQueue.map;
+missileTimerQueue.map = (...args) => {
+  missileQueueMapCalls++;
+  return originalMissileTimerQueueMap.apply(missileTimerQueue, args);
+};
+const fingerprintSilo = {
+  id: () => 901,
+  tile: () => 902,
+  level: () => 1,
+  isUnderConstruction: () => false,
+  isActive: () => true,
+  missileTimerQueue: () => missileTimerQueue,
+};
+const missileFingerprintBehavior = Object.create(sandbox.StructureBehavior.prototype);
+missileFingerprintBehavior.cost = () => 1n;
+missileFingerprintBehavior.player = {
+  smallID: () => 1,
+  units: (type) => (type === UNIT.MissileSilo ? [fingerprintSilo] : []),
+  isFriendly: () => false,
+  isOnSameTeam: () => false,
+};
+missileFingerprintBehavior.game = {
+  players: () => [missileFingerprintBehavior.player],
+  units: () => [],
+};
+const missileStateKey = missileFingerprintBehavior.missileDefenseStateFingerprint();
+assert.match(missileStateKey, /901:902:1:0:true:1,,3/);
+assert.equal(
+  missileQueueMapCalls,
+  0,
+  "missile defense fingerprints serialize timer queues without allocating through map",
+);
+
 let coverageDistanceReads = 0;
 let coverageValueReads = 0;
 let coverageSamRangeReads = 0;

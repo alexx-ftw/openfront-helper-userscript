@@ -6368,6 +6368,14 @@
           return value === null || value === undefined ? fallback : value;
         }
       };
+      const stringifySequence = (values) => {
+        let result = "";
+        for (let index = 0; index < values.length; index++) {
+          if (index > 0) result += ",";
+          if (index in values) result += String(values[index]);
+        }
+        return result;
+      };
       const unitFingerprint = (unit) => {
         const id = read(() => unit.id?.(), "");
         const tile = read(() => unit.tile?.(), "");
@@ -6380,13 +6388,13 @@
         const queue = read(
           () => {
             const raw = unit.missileTimerQueue?.();
-            return Array.isArray(raw) ? raw.map(String).join(",") : "";
+            return Array.isArray(raw) ? stringifySequence(raw) : "";
           },
           "",
         );
-        return [id, tile, level, underConstruction, active, queue]
-          .map(String)
-          .join(":");
+        return `${String(id)}:${String(tile)}:${String(level)}:${String(
+          underConstruction,
+        )}:${String(active)}:${queue}`;
       };
       const collectUnits = (label, owner, types) => {
         const fingerprints = [];
@@ -6473,16 +6481,13 @@
         for (const missile of activeMissiles) {
           if (!missile) continue;
           missileFingerprints.push(
-            [
-              read(() => missile.id?.(), ""),
+            `${String(read(() => missile.id?.(), ""))}:${String(
               read(() => missile.type?.(), ""),
+            )}:${String(
               read(() => missile.owner?.()?.smallID?.(), ""),
-              read(() => missile.tile?.(), ""),
+            )}:${String(read(() => missile.tile?.(), ""))}:${String(
               read(() => missile.targetTile?.(), ""),
-              read(() => missile.isActive?.(), ""),
-            ]
-              .map(String)
-              .join(":"),
+            )}:${String(read(() => missile.isActive?.(), ""))}`,
           );
         }
       }
