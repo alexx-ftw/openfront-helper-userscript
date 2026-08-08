@@ -488,6 +488,49 @@ assert.equal(
 );
 
 sandbox.legendaryMissileThreatScore = () => ({ score: 1, critical: false });
+sandbox.legendaryMissileSalvoRisk = () => ({ score: 0, fullyDefended: true });
+const prospectiveSilos = [{}, {}];
+const prospectiveSiloReduce = prospectiveSilos.reduce;
+let prospectiveSiloReduceCalls = 0;
+prospectiveSilos.reduce = (...args) => {
+  prospectiveSiloReduceCalls++;
+  return prospectiveSiloReduce.apply(prospectiveSilos, args);
+};
+const prospectiveBehavior = Object.create(sandbox.StructureBehavior.prototype);
+prospectiveBehavior.legendaryCandidateMissileExposure = () => ({
+  ratio: 1,
+  count: 1,
+});
+prospectiveBehavior.legendaryCandidateShotPlan = () => ({
+  atomArrivalTicks: [10],
+  hydrogenArrivalTick: null,
+  nearestFlightTime: 10,
+  sourcePlan: { readyShots: 1 },
+});
+prospectiveBehavior.legendaryCachedSamInterceptionCapacity = () => 1;
+prospectiveBehavior.legendarySamCooldownTicks = () => 90;
+prospectiveBehavior.legendaryProspectivePlacementRisk(
+  0,
+  1,
+  {
+    enemySilos: prospectiveSilos,
+    enemySiloLevels: [{ level: 1 }, { level: 2 }],
+    enemyGold: 100,
+    weapon: UNIT.AtomBomb,
+  },
+  {
+    atomCost: 1n,
+    hydrogenCost: 1n,
+    atomRadius: 10,
+    hydrogenRadius: 20,
+  },
+);
+delete prospectiveSilos.reduce;
+assert.equal(
+  prospectiveSiloReduceCalls,
+  0,
+  "prospective missile risk sums cached SAM capacity without reducing every silo",
+);
 const targetSilos = Array.from({ length: 8 }, (_, index) => ({
   tile: () => index,
   level: () => index + 1,

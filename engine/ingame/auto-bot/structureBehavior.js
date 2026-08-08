@@ -7140,16 +7140,14 @@
       );
       const shotPlan = this.legendaryCandidateShotPlan(tile, threat, context);
       if (shotPlan === null) return 0;
-      const interceptionCapacity = (threat.enemySilos || []).reduce(
-        (total, silo) =>
-          total +
-          this.legendaryCachedSamInterceptionCapacity(
-            silo,
-            tile,
-            context,
-          ),
-        0,
-      );
+      let interceptionCapacity = 0;
+      for (const silo of threat.enemySilos || []) {
+        interceptionCapacity += this.legendaryCachedSamInterceptionCapacity(
+          silo,
+          tile,
+          context,
+        );
+      }
       const salvoRisk = legendaryMissileSalvoRisk({
         atomArrivalTicks: shotPlan.atomArrivalTicks,
         hydrogenArrivalTick: shotPlan.hydrogenArrivalTick,
