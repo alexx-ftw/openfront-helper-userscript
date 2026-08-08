@@ -487,6 +487,50 @@ assert.equal(
   "salvo source metrics fill per-silo metrics without a mapped copy",
 );
 
+const salvoSourceMetrics = [{ interceptionCapacity: 2 }, { interceptionCapacity: 3 }];
+const salvoSourceMetricsReduce = salvoSourceMetrics.reduce;
+let salvoSourceMetricsReduceCalls = 0;
+salvoSourceMetrics.reduce = (...args) => {
+  salvoSourceMetricsReduceCalls++;
+  return salvoSourceMetricsReduce.apply(salvoSourceMetrics, args);
+};
+const salvoCapacityBehavior = Object.create(sandbox.StructureBehavior.prototype);
+salvoCapacityBehavior.legendaryFriendlySamProfiles = () => [];
+salvoCapacityBehavior.legendaryMissileSalvoBudget = () => ({
+  canHydrogen: false,
+  atomCount: 1,
+  forecastComplete: true,
+});
+salvoCapacityBehavior.legendaryEnemyMissileLaunchPlan = () => [
+  { silo: sourceSilos[0], flightTicks: 10, impactTick: 10 },
+];
+salvoCapacityBehavior.legendaryReadyShotTotal = () => 1;
+salvoCapacityBehavior.legendarySalvoRoutes = () => ({
+  atomArrivalTicks: [10],
+  hydrogenArrivalTick: null,
+  routes: [],
+});
+salvoCapacityBehavior.legendarySalvoSourceMetrics = () => salvoSourceMetrics;
+salvoCapacityBehavior.legendarySamCooldownTicks = () => 90;
+salvoCapacityBehavior.finalizeLegendarySalvoRisk = (_schedule, input) => ({
+  fullyDefended: true,
+  interceptionCapacity: input.interceptionCapacity,
+});
+const salvoCapacityPlan = salvoCapacityBehavior.legendaryMissileSalvoPlan({
+  enemySilos: sourceSilos,
+  enemyGold: 1n,
+  targetTile: 0,
+  atomCost: 1n,
+  hydrogenCost: 0n,
+});
+assert.equal(salvoCapacityPlan.interceptionCapacity, 5);
+delete salvoSourceMetrics.reduce;
+assert.equal(
+  salvoSourceMetricsReduceCalls,
+  0,
+  "salvo planning sums source interception capacity without reducing the metrics array",
+);
+
 sandbox.legendaryMissileThreatScore = () => ({ score: 1, critical: false });
 sandbox.legendaryMissileSalvoRisk = () => ({ score: 0, fullyDefended: true });
 const prospectiveSilos = [{}, {}];

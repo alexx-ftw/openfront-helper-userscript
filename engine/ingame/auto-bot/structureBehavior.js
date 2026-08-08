@@ -5775,10 +5775,8 @@
         samProfiles,
         siloMetadataCache,
       });
-      const interceptionCapacity = sourceMetrics.reduce(
-        (total, source) => total + source.interceptionCapacity,
-        0,
-      );
+      const interceptionCapacity =
+        this.legendarySalvoSourceInterceptionCapacity(sourceMetrics);
       const samCooldownTicks = this.legendarySamCooldownTicks();
       const schedule = legendaryMissileDefenseSchedule({
         routes,
@@ -5812,6 +5810,14 @@
         sourceMetrics,
         samProfiles,
       };
+    }
+
+    legendarySalvoSourceInterceptionCapacity(sourceMetrics) {
+      let interceptionCapacity = 0;
+      for (const source of sourceMetrics) {
+        interceptionCapacity += source.interceptionCapacity;
+      }
+      return interceptionCapacity;
     }
 
     finalizeLegendarySalvoRisk(schedule, riskInput) {
