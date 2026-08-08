@@ -708,4 +708,54 @@ assert.deepEqual(
 );
 assert.equal(sourceFallbackCalls, 1);
 
+let candidatePlanBuilds = 0;
+routeBehavior.legendaryEnemyMissileLaunchPlan = () => {
+  candidatePlanBuilds++;
+  return [{ flightTicks: 10, impactTick: 10 }];
+};
+const candidateThreat = {
+  enemySilos: [sourceSilo],
+  salvoPlan: { atomArrivalTicks: [10], hydrogenArrivalTick: null, routes: [] },
+  weapon: "AtomBomb",
+};
+const candidateContext = {
+  launchMetadataCache: new Map(),
+  candidateShotPlanCache: new Map(),
+  interceptionCapacityCache: new Map(),
+};
+const firstCandidatePlan = routeBehavior.legendaryCandidateShotPlan(
+  7,
+  candidateThreat,
+  candidateContext,
+);
+const secondCandidatePlan = routeBehavior.legendaryCandidateShotPlan(
+  7,
+  candidateThreat,
+  candidateContext,
+);
+assert.equal(firstCandidatePlan, secondCandidatePlan);
+assert.equal(
+  candidatePlanBuilds,
+  1,
+  "candidate launch plans are reused for repeated placement scoring",
+);
+let candidateCapacityBuilds = 0;
+routeBehavior.legendarySamInterceptionCapacity = () => {
+  candidateCapacityBuilds++;
+  return 3;
+};
+assert.equal(
+  routeBehavior.legendaryCachedSamInterceptionCapacity(sourceSilo, 7, candidateContext),
+  3,
+);
+assert.equal(
+  routeBehavior.legendaryCachedSamInterceptionCapacity(sourceSilo, 7, candidateContext),
+  3,
+);
+assert.equal(
+  candidateCapacityBuilds,
+  1,
+  "candidate SAM capacity is reused for repeated placement scoring",
+);
+
 process.stdout.write("LEGENDARY TESTS OK\n");

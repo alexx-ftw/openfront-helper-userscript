@@ -6480,6 +6480,8 @@
       const missileTargetEntriesCache = new Map();
       const missileTargetOrderingCache = new Map();
       const launchMetadataCache = new Map();
+      const candidateShotPlanCache = new Map();
+      const interceptionCapacityCache = new Map();
       return {
         atomCost,
         hydrogenCost,
@@ -6491,6 +6493,8 @@
         missileTargetEntriesCache,
         missileTargetOrderingCache,
         launchMetadataCache,
+        candidateShotPlanCache,
+        interceptionCapacityCache,
         totalValue,
         priorityStructures: priorityUnits,
       };
@@ -6661,7 +6665,12 @@
       if (shotPlan === null) return 0;
       const interceptionCapacity = (threat.enemySilos || []).reduce(
         (total, silo) =>
-          total + this.legendarySamInterceptionCapacity(silo.tile(), tile),
+          total +
+          this.legendaryCachedSamInterceptionCapacity(
+            silo,
+            tile,
+            context,
+          ),
         0,
       );
       const salvoRisk = legendaryMissileSalvoRisk({
@@ -6698,6 +6707,29 @@
       return risk.score;
     }
 
+    legendaryCachedSamInterceptionCapacity(silo, targetTile, context = null) {
+      const cache = context?.interceptionCapacityCache;
+      if (
+        !cache ||
+        typeof cache.get !== "function" ||
+        typeof cache.set !== "function"
+      ) {
+        return this.legendarySamInterceptionCapacity(silo.tile(), targetTile);
+      }
+      let byTarget = cache.get(silo);
+      if (!byTarget) {
+        byTarget = new Map();
+        cache.set(silo, byTarget);
+      }
+      if (byTarget.has(targetTile)) return byTarget.get(targetTile);
+      const capacity = this.legendarySamInterceptionCapacity(
+        silo.tile(),
+        targetTile,
+      );
+      byTarget.set(targetTile, capacity);
+      return capacity;
+    }
+
     legendaryCandidateMissileExposure(tile, candidateValue, threat, context) {
       const radius =
         threat.weapon === UNIT.HydrogenBomb
@@ -6725,7 +6757,42 @@
       return { value, count, ratio: Math.min(1, value / Math.max(1, totalValue)) };
     }
 
+    legendaryCachedCandidateShotPlan(tile, threat, context) {
+      const cache = context?.candidateShotPlanCache;
+      if (!cache || typeof cache.get !== "function") {
+        return { hit: false, plan: null };
+      }
+      const byTarget = cache.get(threat);
+      if (!byTarget || !byTarget.has(tile)) {
+        return { hit: false, plan: null };
+      }
+      return { hit: true, plan: byTarget.get(tile) };
+    }
+
+    rememberLegendaryCandidateShotPlan(tile, threat, context, plan) {
+      const cache = context?.candidateShotPlanCache;
+      if (
+        !cache ||
+        typeof cache.get !== "function" ||
+        typeof cache.set !== "function"
+      ) {
+        return;
+      }
+      let byTarget = cache.get(threat);
+      if (!byTarget) {
+        byTarget = new Map();
+        cache.set(threat, byTarget);
+      }
+      byTarget.set(tile, plan);
+    }
+
     legendaryCandidateShotPlan(tile, threat, context = null) {
+      const cached = this.legendaryCachedCandidateShotPlan(
+        tile,
+        threat,
+        context,
+      );
+      if (cached.hit) return cached.plan;
       const sourcePlan = threat.salvoPlan || {};
       const atomCount = Array.isArray(sourcePlan.atomArrivalTicks)
         ? sourcePlan.atomArrivalTicks.length
@@ -6746,7 +6813,10 @@
           siloMetadataCache: context?.launchMetadataCache || null,
         },
       );
-      if (launches.length === 0) return null;
+      if (launches.length === 0) {
+        this.rememberLegendaryCandidateShotPlan(tile, threat, context, null);
+        return null;
+      }
       const hasHydrogen =
         threat.weapon === UNIT.HydrogenBomb || hydrogenCount > 0;
       const atomArrivalTicks = launches
@@ -6755,7 +6825,7 @@
       const hydrogenArrivalTick = hasHydrogen
         ? launches.at(-1).impactTick
         : null;
-      return {
+      const shotPlan = {
         sourcePlan,
         atomArrivalTicks,
         hydrogenArrivalTick,
@@ -6763,6 +6833,8 @@
           ...launches.map((launch) => launch.flightTicks ?? launch.impactTick),
         ),
       };
+      this.rememberLegendaryCandidateShotPlan(tile, threat, context, shotPlan);
+      return shotPlan;
     }
 
     legendaryConstructionState({ cityCount, hasCoastalTiles }) {
