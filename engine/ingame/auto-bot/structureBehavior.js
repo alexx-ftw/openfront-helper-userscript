@@ -5620,13 +5620,14 @@
           launchFlightTimes.set(launch.silo, launch.flightTicks);
         }
       }
-      const sourceMetrics = this.legendarySalvoSourceMetrics(
+      const sourceMetrics = this.legendarySalvoSourceMetrics({
         enemySilos,
         targetTile,
         launchFlightTimes,
         routes,
         samProfiles,
-      );
+        siloMetadataCache,
+      });
       const interceptionCapacity = sourceMetrics.reduce(
         (total, source) => total + source.interceptionCapacity,
         0,
@@ -5810,13 +5811,14 @@
       return capacity;
     }
 
-    legendarySalvoSourceMetrics(
+    legendarySalvoSourceMetrics({
       enemySilos,
       targetTile,
       launchFlightTimes,
       routes = null,
       samProfiles = null,
-    ) {
+      siloMetadataCache = null,
+    }) {
       const routesBySilo = new Map();
       if (Array.isArray(routes)) {
         for (const route of routes) {
@@ -5827,7 +5829,7 @@
         }
       }
       return enemySilos.map((silo) => {
-        const fromTile = silo.tile();
+        const fromTile = siloMetadataCache?.get(silo)?.tile ?? silo.tile();
         const routeCapacity = this.legendarySalvoRouteInterceptionCapacity(
           routesBySilo.get(silo),
           samProfiles,

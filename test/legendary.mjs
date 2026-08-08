@@ -696,16 +696,16 @@ routeBehavior.legendarySamInterceptionCapacity = (...args) => {
   sourceFallbackProfiles = args[3];
   return 99;
 };
-const sourceMetrics = routeBehavior.legendarySalvoSourceMetrics(
-  [sourceSilo, fallbackSilo],
-  9,
-  new Map([
+const sourceMetrics = routeBehavior.legendarySalvoSourceMetrics({
+  enemySilos: [sourceSilo, fallbackSilo],
+  targetTile: 9,
+  launchFlightTimes: new Map([
     [sourceSilo, 10],
     [fallbackSilo, 11],
   ]),
-  [sourceRoute],
-  sourceProfiles,
-);
+  routes: [sourceRoute],
+  samProfiles: sourceProfiles,
+});
 assert.deepEqual(
   sourceMetrics.map(({ interceptionCapacity }) => interceptionCapacity),
   [2, 99],

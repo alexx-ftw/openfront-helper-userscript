@@ -357,6 +357,35 @@ assert.equal(
   "salvo planning reuses the per-context silo slot snapshot for ready-shot counts",
 );
 
+let sourceTileReads = 0;
+const sourceSilos = Array.from({ length: 32 }, (_, index) => ({
+  tile: () => {
+    sourceTileReads++;
+    return index;
+  },
+}));
+const sourceMetadataCache = new Map(
+  sourceSilos.map((silo, index) => [silo, { tile: index, id: index, slots: [0] }]),
+);
+const sourceMetricsBehavior = Object.create(sandbox.StructureBehavior.prototype);
+sourceMetricsBehavior.legendarySalvoRouteInterceptionCapacity = () => null;
+sourceMetricsBehavior.legendaryNukeFlightTime = () => 10;
+sourceMetricsBehavior.legendarySamInterceptionCapacity = () => 1;
+const sourceMetrics = sourceMetricsBehavior.legendarySalvoSourceMetrics({
+  enemySilos: sourceSilos,
+  targetTile: 0,
+  launchFlightTimes: new Map(),
+  routes: null,
+  samProfiles: [],
+  siloMetadataCache: sourceMetadataCache,
+});
+assert.equal(sourceMetrics.length, sourceSilos.length);
+assert.equal(
+  sourceTileReads,
+  0,
+  "salvo source metrics reuse cached silo tiles across target candidates",
+);
+
 let contextValueReads = 0;
 const contextBehavior = Object.create(sandbox.StructureBehavior.prototype);
 contextBehavior.game = {
