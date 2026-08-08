@@ -4402,9 +4402,57 @@
       return 0;
     }
 
+    legendaryFriendlySamProfilesCacheHit(tick, config, samUnits) {
+      if (
+        !Number.isFinite(tick) ||
+        this._legendaryFriendlySamProfilesTick !== tick ||
+        this._legendaryFriendlySamProfilesConfig !== config ||
+        this._legendaryFriendlySamProfilesUnits !== samUnits
+      ) {
+        return null;
+      }
+      return this._legendaryFriendlySamProfilesCache ?? null;
+    }
+
+    rememberLegendaryFriendlySamProfiles(tick, config, samUnits, profiles) {
+      if (!Number.isFinite(tick)) return;
+      this._legendaryFriendlySamProfilesTick = tick;
+      this._legendaryFriendlySamProfilesConfig = config;
+      this._legendaryFriendlySamProfilesUnits = samUnits;
+      this._legendaryFriendlySamProfilesCache = profiles;
+    }
+
     legendaryFriendlySamProfiles(levelOverrides = null, extraSam = null) {
+      const cacheable = levelOverrides === null && extraSam === null;
+      const tick = safeStructureGameTick(this.game);
+      const samUnits = this.legendaryFriendlySamUnits();
+      const config =
+        cacheable && Number.isFinite(tick) ? this.game.config() : null;
+      const cached = this.legendaryFriendlySamProfilesCacheHit(
+        tick,
+        config,
+        samUnits,
+      );
+      if (cacheable && cached !== null) return cached;
+      const profiles = this.buildLegendaryFriendlySamProfiles(
+        samUnits,
+        levelOverrides,
+        extraSam,
+      );
+      if (cacheable) {
+        this.rememberLegendaryFriendlySamProfiles(
+          tick,
+          config,
+          samUnits,
+          profiles,
+        );
+      }
+      return profiles;
+    }
+
+    buildLegendaryFriendlySamProfiles(samUnits, levelOverrides, extraSam) {
       const profiles = [];
-      for (const sam of this.legendaryFriendlySamUnits()) {
+      for (const sam of samUnits) {
         const id = sam.id();
         const override =
           levelOverrides && levelOverrides.has(id)

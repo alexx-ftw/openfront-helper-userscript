@@ -1104,6 +1104,51 @@ assert.equal(
   "active missile exposure reuses same-target geometry within one context",
 );
 
+let profileTick = 20;
+let profileSlotReads = 0;
+const profileConfig = {};
+const profileSams = Array.from({ length: 8 }, (_, index) => ({
+  id: () => `sam-${index}`,
+  tile: () => index,
+  level: () => 1,
+}));
+const profileBehavior = Object.create(sandbox.StructureBehavior.prototype);
+profileBehavior.game = {
+  ticks: () => profileTick,
+  config: () => profileConfig,
+};
+profileBehavior.legendaryFriendlySamUnits = () => profileSams;
+profileBehavior.legendarySamSlotAvailability = () => {
+  profileSlotReads++;
+  return [0];
+};
+profileBehavior.legendarySamRange = () => 10;
+profileBehavior.legendarySamCooldownTicks = () => 90;
+const firstSamProfiles = profileBehavior.legendaryFriendlySamProfiles();
+for (let call = 0; call < 64; call++) {
+  assert.equal(profileBehavior.legendaryFriendlySamProfiles(), firstSamProfiles);
+}
+assert.equal(
+  profileSlotReads,
+  profileSams.length,
+  "base SAM profiles reuse slot availability within one tick",
+);
+profileTick++;
+profileBehavior.legendaryFriendlySamProfiles();
+assert.equal(
+  profileSlotReads,
+  profileSams.length * 2,
+  "a new game tick refreshes base SAM profiles",
+);
+const overriddenSamProfiles = profileBehavior.legendaryFriendlySamProfiles(new Map([["sam-0", 2]]));
+assert.notEqual(overriddenSamProfiles, firstSamProfiles);
+assert.equal(overriddenSamProfiles[0].level, 2);
+assert.equal(
+  profileSlotReads,
+  profileSams.length * 3,
+  "level-overridden SAM profiles bypass the base profile cache",
+);
+
 let groupArrayMethodReads = 0;
 const groupedMissiles = [
   { id: "r1", impactTick: 10, marginTicks: 5, intercepted: true },
