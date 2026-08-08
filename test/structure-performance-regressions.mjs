@@ -311,6 +311,41 @@ assert.equal(
   "friendly SAM placement precomputes SAM-to-structure distances once per anchor",
 );
 
+let spacingMagnitudeReads = 0;
+const spacingConfig = {
+  nukeMagnitudes: () => {
+    spacingMagnitudeReads++;
+    return { outer: 7 };
+  },
+};
+let activeSpacingConfig = spacingConfig;
+const spacingBehavior = Object.create(sandbox.StructureBehavior.prototype);
+spacingBehavior.game = { config: () => activeSpacingConfig };
+for (let call = 0; call < 64; call++) {
+  const spacing = spacingBehavior.spacingConstants();
+  assert.equal(spacing.borderSpacing, 7);
+  assert.equal(spacing.structureSpacing, 14);
+}
+assert.equal(
+  spacingMagnitudeReads,
+  1,
+  "Legendary candidate scorers reuse spacing constants within one game config",
+);
+activeSpacingConfig = {
+  nukeMagnitudes: () => {
+    spacingMagnitudeReads++;
+    return { outer: 9 };
+  },
+};
+const replacementSpacing = spacingBehavior.spacingConstants();
+assert.equal(replacementSpacing.borderSpacing, 9);
+assert.equal(replacementSpacing.structureSpacing, 18);
+assert.equal(
+  spacingMagnitudeReads,
+  2,
+  "replacing the game config invalidates the spacing constants cache",
+);
+
 process.stdout.write(
   `structure performance regression tests passed (Factory cache ${factoryCacheDurationMs.toFixed(1)}ms; fingerprints ${fingerprintDurationMs.toFixed(1)}ms; SAM coverage ${coverageDurationMs.toFixed(1)}ms; launches ${launchDurationMs.toFixed(1)}ms; ally support ${supportDurationMs.toFixed(1)}ms)\n`,
 );

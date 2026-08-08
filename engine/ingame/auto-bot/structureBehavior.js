@@ -11126,9 +11126,17 @@
 
     // spacingConstants — NationStructureBehavior.ts:1323.
     spacingConstants() {
-      const borderSpacing = this.game
-        .config()
-        .nukeMagnitudes(UNIT.AtomBomb).outer;
-      return { borderSpacing, structureSpacing: borderSpacing * 2 };
+      const config = this.game.config();
+      if (
+        config === this._spacingConstantsConfig &&
+        this._spacingConstantsCache !== undefined
+      ) {
+        return this._spacingConstantsCache;
+      }
+      const borderSpacing = config.nukeMagnitudes(UNIT.AtomBomb).outer;
+      const spacing = { borderSpacing, structureSpacing: borderSpacing * 2 };
+      this._spacingConstantsConfig = config;
+      this._spacingConstantsCache = spacing;
+      return spacing;
     }
   }
