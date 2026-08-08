@@ -575,6 +575,7 @@ const structureSandbox = {
   isLegendaryDifficulty: () => false,
   legendaryPlacementProximityScore: (distance, radius) =>
     Math.max(0, 1 - distance / Math.max(1, radius)),
+  legendaryMissileDefenseSchedule: plannerSandbox.legendaryMissileDefenseSchedule,
   state: { settings: { winFixes: true } },
   withTimeout: async (promise) => promise,
   WORKER_TIMEOUT_MS: 1,
@@ -843,5 +844,18 @@ assert.equal(
   "hypothetical SAM levels rebuild profiles instead of reusing the snapshot",
 );
 assert.equal(defenseProfileBuilds, 1);
+
+const defenseEvaluationBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+defenseEvaluationBehavior.game = { config: () => ({ SAMCooldown: () => 90 }) };
+const defenseSnapshot = { threats: [], samProfiles: [] };
+const firstDefenseEvaluation =
+  defenseEvaluationBehavior.legendaryDefenseEvaluation(defenseSnapshot);
+const secondDefenseEvaluation =
+  defenseEvaluationBehavior.legendaryDefenseEvaluation(defenseSnapshot);
+assert.equal(
+  secondDefenseEvaluation,
+  firstDefenseEvaluation,
+  "normal defense evaluations are reused for the same missile snapshot",
+);
 
 process.stdout.write("LEGENDARY TESTS OK\n");

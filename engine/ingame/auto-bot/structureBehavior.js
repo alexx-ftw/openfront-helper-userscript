@@ -4826,6 +4826,13 @@
       if (!context || !Array.isArray(context.threats)) {
         return this.emptyLegendaryDefenseEvaluation();
       }
+      const cacheable =
+        !this.hasLegendaryLevelOverrides(options.levelOverrides) &&
+        !options.extraSam &&
+        Number(options.completionTick ?? 0) === 0;
+      if (cacheable && context._legendaryDefenseEvaluationCache) {
+        return context._legendaryDefenseEvaluationCache;
+      }
       const samProfiles = this.legendaryDefenseSamProfiles(context, options);
       const { routes, groups } = this.legendaryDefenseRouteGroups(
         context.threats,
@@ -4847,7 +4854,7 @@
         this.legendaryGroupDefenseSchedule(group, globalSchedule),
       );
       if (schedules.length === 0) {
-        return {
+        const evaluation = {
           hasThreats: false,
           fullyDefended: true,
           completionMarginTicks: Infinity,
@@ -4857,8 +4864,10 @@
           schedules,
           globalSchedule,
         };
+        if (cacheable) context._legendaryDefenseEvaluationCache = evaluation;
+        return evaluation;
       }
-      return {
+      const evaluation = {
         hasThreats: true,
         fullyDefended: globalSchedule.fullyDefended,
         completionMarginTicks: globalSchedule.completionMarginTicks,
@@ -4869,6 +4878,8 @@
         schedules,
         globalSchedule,
       };
+      if (cacheable) context._legendaryDefenseEvaluationCache = evaluation;
+      return evaluation;
     }
 
     legendaryDefenseSamProfiles(context, options = {}) {
