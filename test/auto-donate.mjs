@@ -74,6 +74,7 @@ const DONATION_DEFAULTS = {
   ownIncomingAttacks: undefined,
   tickCount: 1,
   tickAdvanceMs: 0,
+  sendPacketResult: true,
 };
 
 async function runDonation(options = {}) {
@@ -101,8 +102,10 @@ async function runDonation(options = {}) {
     ownIncomingAttacks,
     tickCount,
     tickAdvanceMs,
+    sendPacketResult,
   } = { ...DONATION_DEFAULTS, ...options };
   const packets = [];
+  let sendAttempts = 0;
   let currentlyBeingAttacked = beingAttacked;
   let now = 5000;
   let borderLookupHook = () => {};
@@ -182,7 +185,12 @@ async function runDonation(options = {}) {
       autoDonateGoldTargets: "ally",
     },
     getOpenFrontGameContext: () => ({ game }),
-    sendGamePacket: (packet) => packets.push(packet),
+    sendGamePacket: (packet) => {
+      sendAttempts++;
+      if (!sendPacketResult) return false;
+      packets.push(packet);
+      return true;
+    },
     getPlayerDisplayName: (player) => player.displayName(),
     runtimeDebugLog() {},
     Date: { now: () => now },
@@ -201,6 +209,7 @@ async function runDonation(options = {}) {
   if (returnDetails) {
     return {
       packets,
+      sendAttempts,
       maritime: sandbox.window.__OFH_getIncomingMaritimeInvasion(game, me),
       selectors: sandbox.__autoDonateSelectors,
       game,
@@ -258,6 +267,38 @@ assert.equal(
   validGoldOnlyDonation[0]?.gold,
   4000,
   "a valid gold-only donation passes the live game into the cooldown gate",
+);
+
+const failedGoldDonation = await runDonation({
+  autoDonateTroops: false,
+  autoDonateGold: true,
+  gold: 5000,
+  goldThreshold: 1000,
+  sendPacketResult: false,
+  tickCount: 2,
+  tickAdvanceMs: 3000,
+  returnDetails: true,
+});
+assert.equal(failedGoldDonation.packets.length, 0);
+assert.equal(
+  failedGoldDonation.sendAttempts,
+  2,
+  "a rejected gold donation remains eligible for a later retry",
+);
+
+const failedTroopDonation = await runDonation({
+  autoDonateTroops: true,
+  autoDonateGold: false,
+  sendPacketResult: false,
+  tickCount: 2,
+  tickAdvanceMs: 3000,
+  returnDetails: true,
+});
+assert.equal(failedTroopDonation.packets.length, 0);
+assert.equal(
+  failedTroopDonation.sendAttempts,
+  2,
+  "a rejected troop donation remains eligible for a later retry",
 );
 
 const donationSelectorHarness = await runDonation({ returnDetails: true });

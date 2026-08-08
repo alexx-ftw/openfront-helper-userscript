@@ -527,7 +527,13 @@
     )) return false;
     const recipient = getAutoDonateRecipientId(plan.recipient);
     if (recipient == null || amount <= 0) return false;
-    sendGamePacket({ type: "donate_troops", recipient, troops: amount });
+    const emitted =
+      typeof sendGamePacket === "function" &&
+      sendGamePacket({ type: "donate_troops", recipient, troops: amount }) === true;
+    if (!emitted) {
+      runtimeDebugLog("[AutoDonate] troop send rejected", recipient);
+      return false;
+    }
     markAutoDonationRecipient(plan.recipient);
     runtimeDebugLog(
       "[AutoDonate] troops", amount, "→", getAutoDonatePlayerName(plan.recipient),
@@ -605,14 +611,18 @@
     const recipient = getAutoDonateRecipientId(plan.recipient);
     if (recipient == null) return;
     if (!autoDonationRecipientIsReady(plan.recipient, now, plan.game)) return;
-    {
-      sendGamePacket({ type: "donate_gold", recipient, gold: plan.amount });
-      markAutoDonationRecipient(plan.recipient, now);
-      runtimeDebugLog(
-        "[AutoDonate] gold", formatAutoDonateGold(plan.amount),
-        "→", getAutoDonatePlayerName(plan.recipient),
-      );
+    const emitted =
+      typeof sendGamePacket === "function" &&
+      sendGamePacket({ type: "donate_gold", recipient, gold: plan.amount }) === true;
+    if (!emitted) {
+      runtimeDebugLog("[AutoDonate] gold send rejected", recipient);
+      return;
     }
+    markAutoDonationRecipient(plan.recipient, now);
+    runtimeDebugLog(
+      "[AutoDonate] gold", formatAutoDonateGold(plan.amount),
+      "→", getAutoDonatePlayerName(plan.recipient),
+    );
   }
 
   // ---- Global tick entry point ----
