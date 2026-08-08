@@ -633,6 +633,19 @@ routeBehavior.legendaryMissileTargetEntry = (target) => {
 };
 const targetEntryCache = new Map();
 const targetStructures = [1, 2, 3];
+const targetStructureMap = targetStructures.map;
+let targetStructureMapCalls = 0;
+let targetEntryFilterCalls = 0;
+targetStructures.map = (...args) => {
+  targetStructureMapCalls++;
+  const mapped = targetStructureMap.apply(targetStructures, args);
+  const originalFilter = mapped.filter;
+  mapped.filter = (...filterArgs) => {
+    targetEntryFilterCalls++;
+    return originalFilter.apply(mapped, filterArgs);
+  };
+  return mapped;
+};
 const firstTargetEntries = routeBehavior.legendaryMissileTargetCandidates(
   targetStructures,
   [],
@@ -653,6 +666,9 @@ assert.equal(
   secondTargetEntries,
   "missile target geometry is reused for repeated threats with the same radius",
 );
+delete targetStructures.map;
+assert.equal(targetStructureMapCalls, 0);
+assert.equal(targetEntryFilterCalls, 0);
 let targetableIndexBuilds = 0;
 let interceptionCoverageChecks = 0;
 routeBehavior.legendaryNukeFlightPath = () => routePath;

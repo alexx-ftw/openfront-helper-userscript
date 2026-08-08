@@ -6638,17 +6638,13 @@
         structureValues?.get(unit) ?? this.legendaryCriticalStructureValue(unit);
       let entries = entryCache?.get(radiusSquared);
       if (entries === undefined) {
-        entries = (structures || [])
-          .map((target) =>
-            this.legendaryMissileTargetEntry(
-              target,
-              structures,
-              radiusSquared,
-              totalValue,
-              { valueOf, structureTiles },
-            ),
-          )
-          .filter((entry) => entry !== null);
+        entries = this.legendaryMissileTargetEntries(
+          structures,
+          radiusSquared,
+          totalValue,
+          valueOf,
+          structureTiles,
+        );
         entryCache?.set(radiusSquared, entries);
       }
 
@@ -6681,6 +6677,30 @@
         enemySilos,
         limit,
       );
+    }
+
+    legendaryMissileTargetEntries(
+      structures,
+      radiusSquared,
+      totalValue,
+      valueOf,
+      structureTiles,
+    ) {
+      const structureList = structures || [];
+      const entries = Array.isArray(structureList)
+        ? structureList.slice(0, 0)
+        : [];
+      for (const target of structureList) {
+        const entry = this.legendaryMissileTargetEntry(
+          target,
+          structures,
+          radiusSquared,
+          totalValue,
+          { valueOf, structureTiles },
+        );
+        if (entry !== null) entries.push(entry);
+      }
+      return entries;
     }
 
     legendaryMissileTargetEntry(
