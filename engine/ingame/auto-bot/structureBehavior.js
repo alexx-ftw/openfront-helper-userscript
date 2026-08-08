@@ -4039,10 +4039,19 @@
     }
 
     legendarySamCooldownTicks() {
-      {
-        const cooldown = Number(this.game.config().SAMCooldown());
-        return Number.isFinite(cooldown) && cooldown > 0 ? cooldown : 90;
+      const config = this.game.config();
+      if (
+        config === this._legendarySamCooldownConfig &&
+        Number.isFinite(this._legendarySamCooldownCache)
+      ) {
+        return this._legendarySamCooldownCache;
       }
+      const cooldown = Number(config.SAMCooldown());
+      const normalizedCooldown =
+        Number.isFinite(cooldown) && cooldown > 0 ? cooldown : 90;
+      this._legendarySamCooldownConfig = config;
+      this._legendarySamCooldownCache = normalizedCooldown;
+      return normalizedCooldown;
     }
 
     legendarySiloCooldownTicks() {

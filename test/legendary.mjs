@@ -962,6 +962,29 @@ assert.equal(
   "active missile scoring passes prepared SAM profiles to capacity ranking",
 );
 
+const samCooldownBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+let samCooldownReads = 0;
+const samCooldownConfig = {
+  SAMCooldown: () => {
+    samCooldownReads++;
+    return 90;
+  },
+  samRange: () => 10,
+};
+samCooldownBehavior.game = { config: () => samCooldownConfig };
+samCooldownBehavior.legendaryFriendlySamUnits = () => [
+  { id: () => "sam-a", tile: () => 1, level: () => 1 },
+  { id: () => "sam-b", tile: () => 2, level: () => 1 },
+];
+samCooldownBehavior.legendarySamSlotAvailability = () => [0];
+const samCooldownProfiles = samCooldownBehavior.legendaryFriendlySamProfiles();
+assert.equal(samCooldownProfiles.length, 2);
+assert.equal(
+  samCooldownReads,
+  1,
+  "SAM profile construction reuses the cooldown from the same game configuration",
+);
+
 const profileCapacityBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
 let rawSamReads = 0;
 profileCapacityBehavior.game = { euclideanDistSquared: (left, right) => (left - right) ** 2 };
