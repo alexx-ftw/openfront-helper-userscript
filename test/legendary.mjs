@@ -822,6 +822,42 @@ assert.equal(
 );
 assert.equal(defenseGapRangeReads, 1, "port survivability reuses the range for equal SAM levels");
 
+const repeatedSamRangeBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+let repeatedSamRangeReads = 0;
+const repeatedSamRangeConfig = {
+  samRange: () => {
+    repeatedSamRangeReads++;
+    return 10;
+  },
+};
+const repeatedSamUnits = [
+  { level: () => 1, tile: () => 1 },
+  { level: () => 1, tile: () => 2 },
+];
+repeatedSamRangeBehavior.game = {
+  config: () => repeatedSamRangeConfig,
+  euclideanDistSquared: () => 0,
+};
+repeatedSamRangeBehavior.player = { units: () => repeatedSamUnits };
+const repeatedSamCoverage = repeatedSamRangeBehavior.existingSamStructureCoverage([
+  { tile: 3 },
+  { tile: 4 },
+]);
+assert.equal(repeatedSamCoverage.get(3), 2);
+assert.equal(
+  repeatedSamRangeBehavior.siloSamProtectionScore({ tile: () => 5 }, repeatedSamUnits),
+  2,
+);
+assert.equal(
+  repeatedSamRangeBehavior.structureSamProtectionScore({ tile: () => 6 }, repeatedSamUnits),
+  20,
+);
+assert.equal(
+  repeatedSamRangeReads,
+  1,
+  "coverage scoring reuses the range across structure and SAM loops",
+);
+
 const placementContextBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
 const placementContextConfig = {
   trainStationMaxRange: () => 10,

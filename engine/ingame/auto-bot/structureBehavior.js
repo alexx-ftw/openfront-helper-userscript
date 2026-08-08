@@ -7988,7 +7988,7 @@
       for (const sam of sams) {
         {
           if (sam.isUnderConstruction && sam.isUnderConstruction()) continue;
-          const range = Number(this.game.config().samRange(sam.level()));
+          const range = this.legendarySamRange(sam.level());
           const distance = this.game.euclideanDistSquared(silo.tile(), sam.tile());
           if (distance <= range * range) protection += Number(sam.level());
         }
@@ -8336,7 +8336,7 @@
     structureSamProtectionScore(structure, samLaunchers) {
       let score = 0;
       for (const sam of samLaunchers) {
-          const samRange = this.game.config().samRange(sam.level());
+          const samRange = this.legendarySamRange(sam.level());
           const samRangeSquared = samRange * samRange;
           const distSquared = this.game.euclideanDistSquared(
             structure.tile(),
@@ -11081,7 +11081,7 @@
       for (const entry of protectEntries) {
         let coverageScore = 0;
         for (const sam of existingSams) {
-          const samRange = game.config().samRange(sam.level());
+          const samRange = this.legendarySamRange(sam.level());
           const distanceSquared = game.euclideanDistSquared(
             entry.tile,
             sam.tile(),
