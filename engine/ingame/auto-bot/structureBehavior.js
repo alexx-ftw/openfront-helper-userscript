@@ -4061,9 +4061,9 @@
 
     legendarySamReadySlots(sam, levelOverride = null) {
       if (!sam || sam.isUnderConstruction()) return 0;
-      return this.legendarySamSlotAvailability(sam, levelOverride).filter(
-        (tick) => tick <= 0,
-      ).length;
+      return this.legendaryReadyShotCountFromSlots(
+        this.legendarySamSlotAvailability(sam, levelOverride),
+      );
     }
 
     legendarySamCooldownTicks() {
@@ -4182,7 +4182,11 @@
           Math.max(0, Math.floor(normalizedReadyShots)),
         );
       }
-      return slots.filter((tick) => tick <= 0).length;
+      let readyShots = 0;
+      for (const tick of slots) {
+        if (tick <= 0) readyShots++;
+      }
+      return readyShots;
     }
 
     legendaryRememberSiloMetadata({

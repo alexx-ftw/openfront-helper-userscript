@@ -464,6 +464,25 @@ assert.equal(
   "active MIRV demand checks reuse SAM profiles from the defense snapshot",
 );
 
+let directSamFilterReads = 0;
+const directSamBehavior = Object.create(sandbox.StructureBehavior.prototype);
+const directSam = {
+  isUnderConstruction: () => false,
+};
+const directSamSlots = [0, 90];
+const directSamFilter = directSamSlots.filter;
+directSamSlots.filter = (...args) => {
+  directSamFilterReads++;
+  return directSamFilter.apply(directSamSlots, args);
+};
+directSamBehavior.legendarySamSlotAvailability = () => directSamSlots;
+assert.equal(directSamBehavior.legendarySamReadySlots(directSam), 1);
+assert.equal(
+  directSamFilterReads,
+  0,
+  "SAM ready-slot fallback counts availability without allocating a filtered array",
+);
+
 let contextValueReads = 0;
 const contextBehavior = Object.create(sandbox.StructureBehavior.prototype);
 contextBehavior.game = {
