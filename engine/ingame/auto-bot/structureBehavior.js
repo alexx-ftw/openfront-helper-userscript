@@ -4055,10 +4055,19 @@
     }
 
     legendarySiloCooldownTicks() {
-      {
-        const cooldown = Number(this.game.config().SiloCooldown());
-        return Number.isFinite(cooldown) && cooldown > 0 ? cooldown : 90;
+      const config = this.game.config();
+      if (
+        config === this._legendarySiloCooldownConfig &&
+        Number.isFinite(this._legendarySiloCooldownCache)
+      ) {
+        return this._legendarySiloCooldownCache;
       }
+      const cooldown = Number(config.SiloCooldown());
+      const normalizedCooldown =
+        Number.isFinite(cooldown) && cooldown > 0 ? cooldown : 90;
+      this._legendarySiloCooldownConfig = config;
+      this._legendarySiloCooldownCache = normalizedCooldown;
+      return normalizedCooldown;
     }
 
     // Returns the relative tick at which each enemy silo slot can launch.

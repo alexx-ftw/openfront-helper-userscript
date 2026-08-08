@@ -985,6 +985,32 @@ assert.equal(
   "SAM profile construction reuses the cooldown from the same game configuration",
 );
 
+const siloCooldownBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+let siloCooldownReads = 0;
+const siloCooldownConfig = {
+  SiloCooldown: () => {
+    siloCooldownReads++;
+    return 90;
+  },
+};
+siloCooldownBehavior.game = { config: () => siloCooldownConfig };
+assert.equal(siloCooldownBehavior.legendarySiloCooldownTicks(), 90);
+assert.equal(siloCooldownBehavior.legendarySiloCooldownTicks(), 90);
+assert.equal(
+  siloCooldownReads,
+  1,
+  "silo availability reuses the cooldown from the same game configuration",
+);
+const replacementSiloConfig = {
+  SiloCooldown: () => {
+    siloCooldownReads++;
+    return 45;
+  },
+};
+siloCooldownBehavior.game = { config: () => replacementSiloConfig };
+assert.equal(siloCooldownBehavior.legendarySiloCooldownTicks(), 45);
+assert.equal(siloCooldownReads, 2, "a new game configuration invalidates the silo cache");
+
 const profileCapacityBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
 let rawSamReads = 0;
 profileCapacityBehavior.game = { euclideanDistSquared: (left, right) => (left - right) ** 2 };
