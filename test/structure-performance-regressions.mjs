@@ -275,6 +275,30 @@ assert.equal(
 );
 assert.ok(launchDurationMs < 50, `96 launch assignments took ${launchDurationMs.toFixed(1)}ms`);
 
+launchTileReads = 0;
+launchIdReads = 0;
+const salvoRouteBehavior = Object.create(sandbox.StructureBehavior.prototype);
+salvoRouteBehavior.legendaryNukeFlightPath = (fromTile, targetTile) => [fromTile, targetTile];
+salvoRouteBehavior.legendaryBuildMissileRoute = (route) => route;
+const salvoRoutes = salvoRouteBehavior.legendarySalvoRoutes({
+  launches,
+  targetTile: 0,
+  canHydrogen: false,
+  atomCount: launches.length,
+  samProfiles: [],
+});
+assert.equal(salvoRoutes.routes.length, launches.length);
+assert.equal(
+  launchTileReads,
+  0,
+  "salvo route construction reuses launch source tiles instead of rereading each silo per shot",
+);
+assert.equal(
+  launchIdReads,
+  0,
+  "salvo route construction reuses launch silo IDs instead of rereading each silo per shot",
+);
+
 let contextValueReads = 0;
 const contextBehavior = Object.create(sandbox.StructureBehavior.prototype);
 contextBehavior.game = {

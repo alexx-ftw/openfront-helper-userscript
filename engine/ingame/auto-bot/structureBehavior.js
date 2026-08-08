@@ -4188,6 +4188,7 @@
           }
           return {
             silo,
+            tile,
             id,
             distance: this.game.manhattanDist(tile, targetTile),
             flightTicks: this.legendaryNukeFlightTime(tile, targetTile),
@@ -4233,6 +4234,8 @@
         selected.slots.sort((left, right) => left - right);
         launches.push({
           silo: selected.silo,
+          fromTile: selected.tile,
+          siloId: selected.id,
           launchTick,
           flightTicks: selected.flightTicks,
           impactTick: launchTick + selected.flightTicks,
@@ -5736,9 +5739,11 @@
       pathBySilo,
       coverageCacheBySilo,
     }) {
+      const fromTile = launch.fromTile ?? launch.silo.tile();
+      const siloId = launch.siloId ?? launch.silo.id?.() ?? index;
       let path = pathBySilo.get(launch.silo);
       if (!path) {
-        path = this.legendaryNukeFlightPath(launch.silo.tile(), targetTile);
+        path = this.legendaryNukeFlightPath(fromTile, targetTile);
         pathBySilo.set(launch.silo, path);
       }
       let coverageIndexCache = coverageCacheBySilo.get(launch.silo);
@@ -5749,13 +5754,13 @@
       const weapon = isHydrogen ? UNIT.HydrogenBomb : UNIT.AtomBomb;
       const route = this.legendaryBuildMissileRoute(
         {
-          fromTile: launch.silo.tile(),
+          fromTile,
           targetTile,
           impactTick: launch.impactTick,
           launchOffset: launch.launchTick,
           weapon,
           id: `${isHydrogen ? "hydrogen" : "atom"}:${String(
-            launch.silo.id?.() ?? index,
+            siloId,
           )}:${String(index)}`,
           path,
         },
