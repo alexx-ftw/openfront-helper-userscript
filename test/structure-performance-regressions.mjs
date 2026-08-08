@@ -174,6 +174,18 @@ coverageBehavior.getMissileDefenseContext = () => ({ critical: false });
 coverageBehavior.legendaryMissilePlacementRisk = () => 0;
 coverageBehavior.legendaryAllyPlacementContext = () => null;
 coverageBehavior.legendaryTeamCenterPlacementContext = () => null;
+const coverageStructureMap = coverageStructures.map;
+let coverageStructureMapCalls = 0;
+coverageStructures.map = (...args) => {
+  coverageStructureMapCalls++;
+  return coverageStructureMap.apply(coverageStructures, args);
+};
+const coverageSamMap = coverageSams.map;
+let coverageSamMapCalls = 0;
+coverageSams.map = (...args) => {
+  coverageSamMapCalls++;
+  return coverageSamMap.apply(coverageSams, args);
+};
 let coverageContextBuilds = 0;
 let coverageContext = null;
 const buildCoverageContext =
@@ -188,6 +200,8 @@ const coverageStartedAt = performance.now();
 for (let candidate = 0; candidate < 64; candidate++) {
   samPlacementValue(candidate);
 }
+delete coverageStructures.map;
+delete coverageSams.map;
 const coverageDurationMs = performance.now() - coverageStartedAt;
 assert.equal(
   coverageContext.uncoveredStructures.length,
@@ -203,6 +217,16 @@ assert.equal(
   coverageSamRangeReads,
   2,
   "SAM coverage contexts resolve each configured SAM range once per level",
+);
+assert.equal(
+  coverageStructureMapCalls,
+  0,
+  "SAM coverage contexts snapshot structures without a mapped copy",
+);
+assert.equal(
+  coverageSamMapCalls,
+  0,
+  "SAM coverage contexts snapshot existing SAMs without a mapped copy",
 );
 assert.equal(
   coverageValueReads,

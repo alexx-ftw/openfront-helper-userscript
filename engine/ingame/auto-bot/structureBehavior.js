@@ -10293,26 +10293,37 @@
         }
         return samRangeByLevel.get(level);
       };
-      const existingSamCoverage = existingSams.map((sam) => {
+      const existingSamCoverage = [];
+      for (const sam of existingSams) {
         const samRange = samRangeForLevel(sam.level());
-        return {
+        existingSamCoverage.push({
           tile: sam.tile(),
           rangeSquared: samRange * samRange,
-        };
-      });
+        });
+      }
       // Existing SAM coverage does not depend on the candidate tile. Resolve
       // it once per placement decision so every candidate is evaluated only
       // against structures that still need defensive coverage.
-      const uncoveredStructures = structures
-        .map((structure) => ({ structure, tile: structure.tile() }))
-        .filter(
-          ({ tile: structureTile }) =>
-            !existingSamCoverage.some(
-              ({ tile: samTile, rangeSquared: samRangeSquared }) =>
-                this.game.euclideanDistSquared(structureTile, samTile) <=
-                samRangeSquared,
-            ),
-        );
+      const uncoveredStructures = [];
+      for (const structure of structures) {
+        const structureTile = structure.tile();
+        let covered = false;
+        for (const {
+          tile: samTile,
+          rangeSquared: samRangeSquared,
+        } of existingSamCoverage) {
+          if (
+            this.game.euclideanDistSquared(structureTile, samTile) <=
+            samRangeSquared
+          ) {
+            covered = true;
+            break;
+          }
+        }
+        if (!covered) {
+          uncoveredStructures.push({ structure, tile: structureTile });
+        }
+      }
       const criticalValueCache = new Map();
       return {
         rangeSquared: range * range,
