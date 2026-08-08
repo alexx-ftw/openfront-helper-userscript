@@ -6896,25 +6896,39 @@
         UNIT.Port,
         UNIT.MissileSilo,
       );
-      const valuedStructures = [];
       const structureValues = new Map();
       const structureTiles = new Map();
+      const priorityEntries = [];
+      const priorityLimit = Math.min(
+        LEGENDARY_MAX_MISSILE_TARGETS,
+        structures.length,
+      );
       let totalValue = 0;
       for (const unit of structures) {
         const value = this.legendaryCriticalStructureValue(unit);
-        valuedStructures.push({ unit, value });
         totalValue += value;
         structureValues.set(unit, value);
         structureTiles.set(unit, unit?.tile?.());
+        if (
+          priorityLimit > 0 &&
+          (priorityEntries.length < priorityLimit ||
+            value > priorityEntries[priorityEntries.length - 1].value)
+        ) {
+          const entry = { unit, value };
+          let insertionIndex = priorityEntries.length;
+          while (
+            insertionIndex > 0 &&
+            priorityEntries[insertionIndex - 1].value < value
+          ) {
+            insertionIndex--;
+          }
+          priorityEntries.splice(insertionIndex, 0, entry);
+          if (priorityEntries.length > priorityLimit) priorityEntries.pop();
+        }
       }
-      valuedStructures.sort((left, right) => right.value - left.value);
       const priorityUnits = [];
-      const priorityLimit = Math.min(
-        LEGENDARY_MAX_MISSILE_TARGETS,
-        valuedStructures.length,
-      );
-      for (let index = 0; index < priorityLimit; index++) {
-        priorityUnits.push(valuedStructures[index].unit);
+      for (const entry of priorityEntries) {
+        priorityUnits.push(entry.unit);
       }
       const missileTargetEntriesCache = new Map();
       const missileTargetOrderingCache = new Map();

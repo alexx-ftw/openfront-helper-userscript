@@ -839,9 +839,12 @@ contextBehavior.game = {
 };
 contextBehavior.player = { units: () => coverageStructures };
 contextBehavior.cost = () => 1n;
-contextBehavior.legendaryCriticalStructureValue = () => {
+coverageStructures[0].priority = 3;
+coverageStructures[1].priority = 9;
+coverageStructures[2].priority = 6;
+contextBehavior.legendaryCriticalStructureValue = (unit) => {
   contextValueReads++;
-  return 1;
+  return unit.priority ?? 1;
 };
 let contextStructureMapCalls = 0;
 coverageStructures.map = (...args) => {
@@ -864,6 +867,14 @@ assert.equal(
   0,
   "missile placement base context fills structure indexes without map allocations",
 );
+assert.equal(
+  source.includes("valuedStructures.sort("),
+  false,
+  "missile placement base context selects priorities without sorting every structure",
+);
+assert.equal(placementBaseContext.priorityStructures[0], coverageStructures[1]);
+assert.equal(placementBaseContext.priorityStructures[1], coverageStructures[2]);
+assert.equal(placementBaseContext.priorityStructures[2], coverageStructures[0]);
 
 const supportBehavior = Object.create(sandbox.StructureBehavior.prototype);
 const supportAllies = Array.from({ length: 4000 }, () => ({}));
