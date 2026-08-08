@@ -5946,6 +5946,8 @@
       const interceptionCapacity = this.legendarySamInterceptionCapacity(
         input.fromTile,
         input.targetTile,
+        null,
+        input.samProfiles,
       );
       const nukeId =
         typeof input.nuke.id === "function" ? input.nuke.id() : "active-missile";

@@ -927,6 +927,41 @@ assert.equal(cachedProfileRange.samTile, 7);
 assert.equal(cachedProfileRange.range, 10, "SAM route profiles retain their precomputed range");
 assert.equal(profileRangeReads, 0, "precomputed SAM ranges avoid config reads");
 
+const activeThreatCapacityBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+const activeThreatSamProfiles = [{ id: "active-sam", availableTicks: [0] }];
+let activeThreatCapacityArgs;
+activeThreatCapacityBehavior.legendaryActiveMissileMotion = () => ({
+  impactTick: 12,
+  fromTile: 0,
+  path: [0, 1],
+});
+activeThreatCapacityBehavior.legendarySamInterceptionCapacity = (...args) => {
+  activeThreatCapacityArgs = args;
+  return 1;
+};
+activeThreatCapacityBehavior.legendaryBuildMissileRoute = (route, profiles) => {
+  assert.equal(profiles, activeThreatSamProfiles);
+  return route;
+};
+activeThreatCapacityBehavior.legendaryActiveMissileThreatResult = ({ interceptionCapacity }) => ({
+  interceptionCapacity,
+});
+structureSandbox.legendaryMissileSalvoRisk = () => ({});
+activeThreatCapacityBehavior.legendaryScoredActiveMissileThreat({
+  nuke: { id: () => "active-nuke" },
+  fromTile: 0,
+  targetTile: 1,
+  type: "AtomBomb",
+  exposure: { value: 1, count: 1, radiusSquared: 1 },
+  context: {},
+  samProfiles: activeThreatSamProfiles,
+});
+assert.equal(
+  activeThreatCapacityArgs[3],
+  activeThreatSamProfiles,
+  "active missile scoring passes prepared SAM profiles to capacity ranking",
+);
+
 const profileCapacityBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
 let rawSamReads = 0;
 profileCapacityBehavior.game = { euclideanDistSquared: (left, right) => (left - right) ** 2 };
