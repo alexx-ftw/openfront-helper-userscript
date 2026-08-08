@@ -4158,6 +4158,16 @@
     // continues one launch per simulation tick so chained enemy intents remain
     // difficult for the SAM scheduler rather than being collapsed into one
     // aggregate capacity number.
+    legendaryLaunchEntryFlightTicks(entry, targetTile) {
+      if (entry.flightTicks === null) {
+        entry.flightTicks = this.legendaryNukeFlightTime(
+          entry.tile,
+          targetTile,
+        );
+      }
+      return entry.flightTicks;
+    }
+
     legendaryEnemyMissileLaunchPlan(
       enemySilos,
       targetTile,
@@ -4191,7 +4201,7 @@
             tile,
             id,
             distance: this.game.manhattanDist(tile, targetTile),
-            flightTicks: this.legendaryNukeFlightTime(tile, targetTile),
+            flightTicks: null,
             slots,
           };
         });
@@ -4232,13 +4242,17 @@
         if (selected === null) break;
         selected.slots[0] = launchTick + cooldown;
         selected.slots.sort((left, right) => left - right);
+        const flightTicks = this.legendaryLaunchEntryFlightTicks(
+          selected,
+          targetTile,
+        );
         launches.push({
           silo: selected.silo,
           fromTile: selected.tile,
           siloId: selected.id,
           launchTick,
-          flightTicks: selected.flightTicks,
-          impactTick: launchTick + selected.flightTicks,
+          flightTicks,
+          impactTick: launchTick + flightTicks,
         });
         nextLaunchTick = launchTick + 1;
       }

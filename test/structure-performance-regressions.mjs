@@ -256,7 +256,11 @@ const launchBehavior = Object.create(sandbox.StructureBehavior.prototype);
 launchBehavior.game = {
   manhattanDist: () => 1,
 };
-launchBehavior.legendaryNukeFlightTime = () => 10;
+let launchFlightTimeReads = 0;
+launchBehavior.legendaryNukeFlightTime = () => {
+  launchFlightTimeReads++;
+  return 10;
+};
 launchBehavior.legendarySiloSlotAvailability = () => [0, 90, 180];
 launchBehavior.legendarySiloCooldownTicks = () => 90;
 const launchStartedAt = performance.now();
@@ -274,6 +278,13 @@ assert.equal(
   "launch planning reads each silo ID once before assigning the salvo",
 );
 assert.ok(launchDurationMs < 50, `96 launch assignments took ${launchDurationMs.toFixed(1)}ms`);
+launchFlightTimeReads = 0;
+launchBehavior.legendaryEnemyMissileLaunchPlan(launchSilos, 0, 1);
+assert.equal(
+  launchFlightTimeReads,
+  1,
+  "a one-shot salvo computes flight time only for its selected silo",
+);
 
 launchTileReads = 0;
 launchIdReads = 0;
