@@ -243,6 +243,65 @@ assert.ok(
   `64 SAM coverage candidates took ${coverageDurationMs.toFixed(1)}ms`,
 );
 
+const indexedTargetStructures = Array.from({ length: 400 }, (_, index) => ({
+  tile: () => ({
+    x: (index % 20) * 10,
+    y: Math.floor(index / 20) * 10,
+  }),
+}));
+const indexedTargetTiles = new Map(indexedTargetStructures.map((unit) => [unit, unit.tile()]));
+let indexedTargetDistanceReads = 0;
+const indexedTargetBehavior = Object.create(sandbox.StructureBehavior.prototype);
+indexedTargetBehavior.game = {
+  x: (tile) => tile.x,
+  y: (tile) => tile.y,
+  euclideanDistSquared: (left, right) => {
+    indexedTargetDistanceReads++;
+    return (left.x - right.x) ** 2 + (left.y - right.y) ** 2;
+  },
+};
+const indexedTargetEntries = indexedTargetBehavior.legendaryMissileTargetEntries(
+  indexedTargetStructures,
+  100,
+  indexedTargetStructures.length,
+  () => 1,
+  indexedTargetTiles,
+);
+let fallbackTargetDistanceReads = 0;
+const fallbackTargetBehavior = Object.create(sandbox.StructureBehavior.prototype);
+fallbackTargetBehavior.game = {
+  euclideanDistSquared: (left, right) => {
+    fallbackTargetDistanceReads++;
+    return (left.x - right.x) ** 2 + (left.y - right.y) ** 2;
+  },
+};
+const fallbackTargetEntries = fallbackTargetBehavior.legendaryMissileTargetEntries(
+  indexedTargetStructures,
+  100,
+  indexedTargetStructures.length,
+  () => 1,
+  indexedTargetTiles,
+);
+assert.equal(indexedTargetEntries.length, fallbackTargetEntries.length);
+for (let index = 0; index < indexedTargetEntries.length; index++) {
+  assert.deepEqual(
+    {
+      tile: indexedTargetEntries[index].tile,
+      exposedValue: indexedTargetEntries[index].exposedValue,
+      exposedStructures: indexedTargetEntries[index].exposedStructures,
+    },
+    {
+      tile: fallbackTargetEntries[index].tile,
+      exposedValue: fallbackTargetEntries[index].exposedValue,
+      exposedStructures: fallbackTargetEntries[index].exposedStructures,
+    },
+  );
+}
+assert.ok(
+  indexedTargetDistanceReads < fallbackTargetDistanceReads / 10,
+  `spatial target indexing reduced distance reads from ${fallbackTargetDistanceReads} to ${indexedTargetDistanceReads}`,
+);
+
 let routeTargetableRangeReads = 0;
 const routePath = Array.from({ length: 96 }, (_, index) => ({
   kind: "path",

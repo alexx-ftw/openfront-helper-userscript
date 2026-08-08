@@ -6714,17 +6714,102 @@
       const entries = Array.isArray(structureList)
         ? structureList.slice(0, 0)
         : [];
+      const spatialIndex = this.legendaryMissileTargetSpatialIndex(
+        structureList,
+        structureTiles,
+        radiusSquared,
+      );
       for (const target of structureList) {
+        let spatialCandidates = null;
+        if (spatialIndex) {
+          const targetTile =
+            structureTiles?.get(target) ?? target?.tile?.();
+          spatialCandidates =
+            targetTile === null || targetTile === undefined
+              ? []
+              : this.legendaryMissileTargetSpatialCandidates(
+                  spatialIndex,
+                  targetTile,
+                );
+        }
         const entry = this.legendaryMissileTargetEntry(
           target,
           structures,
           radiusSquared,
           totalValue,
-          { valueOf, structureTiles },
+          { valueOf, structureTiles, spatialCandidates },
         );
         if (entry !== null) entries.push(entry);
       }
       return entries;
+    }
+
+    legendaryMissileTargetSpatialIndex(
+      structures,
+      structureTiles,
+      radiusSquared,
+    ) {
+      const game = this.game;
+      if (
+        typeof game?.x !== "function" ||
+        typeof game?.y !== "function"
+      ) {
+        return null;
+      }
+      const radius = Math.sqrt(radiusSquared);
+      if (!Number.isFinite(radius)) return null;
+      const cellSize = Math.max(1, radius);
+      const buckets = new Map();
+      const index = { buckets, cellSize };
+      for (const unit of structures) {
+        if (
+          !this.legendaryAddMissileTargetSpatialUnit(
+            index,
+            unit,
+            structureTiles,
+          )
+        ) {
+          return null;
+        }
+      }
+      return index;
+    }
+
+    legendaryAddMissileTargetSpatialUnit(index, unit, structureTiles) {
+      const tile = structureTiles?.get(unit) ?? unit?.tile?.();
+      if (tile === null || tile === undefined) return false;
+      const x = Number(this.game.x(tile));
+      const y = Number(this.game.y(tile));
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+      const key = `${Math.floor(x / index.cellSize)},${Math.floor(
+        y / index.cellSize,
+      )}`;
+      let bucket = index.buckets.get(key);
+      if (!bucket) {
+        bucket = [];
+        index.buckets.set(key, bucket);
+      }
+      bucket.push(unit);
+      return true;
+    }
+
+    legendaryMissileTargetSpatialCandidates(index, tile) {
+      const x = Number(this.game.x(tile));
+      const y = Number(this.game.y(tile));
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return [];
+      const cellX = Math.floor(x / index.cellSize);
+      const cellY = Math.floor(y / index.cellSize);
+      const candidates = [];
+      for (let offsetX = -1; offsetX <= 1; offsetX++) {
+        for (let offsetY = -1; offsetY <= 1; offsetY++) {
+          const bucket = index.buckets.get(
+            `${cellX + offsetX},${cellY + offsetY}`,
+          );
+          if (!bucket) continue;
+          candidates.push(...bucket);
+        }
+      }
+      return candidates;
     }
 
     legendaryMissileTargetEntry(
@@ -6735,6 +6820,7 @@
       {
         valueOf = (unit) => this.legendaryCriticalStructureValue(unit),
         structureTiles = null,
+        spatialCandidates = null,
       } = {},
     ) {
       const tileOf = (unit) => structureTiles?.get(unit) ?? unit?.tile?.();
@@ -6742,7 +6828,8 @@
       if (targetTile === null || targetTile === undefined) return null;
       let exposedValue = valueOf(target);
       let exposedStructures = 1;
-      for (const other of structures || []) {
+      const candidates = spatialCandidates ?? structures ?? [];
+      for (const other of candidates) {
         if (other === target) continue;
         {
           const otherTile = tileOf(other);
