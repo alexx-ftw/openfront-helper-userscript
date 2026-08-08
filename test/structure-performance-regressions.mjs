@@ -20,6 +20,11 @@ const sandbox = {
   isLegendaryDifficulty: () => false,
   legendaryPlacementProximityScore: (distance, radius) =>
     Math.max(0, 1 - distance / Math.max(1, radius)),
+  legendaryMissileDefenseSchedule: () => ({
+    fullyDefended: true,
+    forecastComplete: true,
+    missiles: [],
+  }),
   state: { settings: { winFixes: true } },
   withTimeout: async (promise) => promise,
   WORKER_TIMEOUT_MS: 1,
@@ -308,6 +313,48 @@ assert.equal(
   launchIdReads,
   0,
   "salvo route construction reuses launch silo IDs instead of rereading each silo per shot",
+);
+
+let metadataSlotReads = 0;
+const metadataBehavior = Object.create(sandbox.StructureBehavior.prototype);
+metadataBehavior.game = { manhattanDist: () => 1 };
+metadataBehavior.legendarySiloSlotAvailability = () => {
+  metadataSlotReads++;
+  return [0, 90, 180];
+};
+metadataBehavior.legendarySiloCooldownTicks = () => 90;
+metadataBehavior.legendaryNukeFlightTime = () => 10;
+metadataBehavior.legendaryMissileSalvoBudget = () => ({
+  canHydrogen: false,
+  atomCount: 1,
+  forecastComplete: true,
+});
+metadataBehavior.legendarySalvoRoutes = () => ({
+  atomArrivalTicks: [10],
+  hydrogenArrivalTick: null,
+  routes: [],
+});
+metadataBehavior.legendarySalvoSourceMetrics = () => [];
+metadataBehavior.legendarySamCooldownTicks = () => 90;
+metadataBehavior.finalizeLegendarySalvoRisk = () => ({});
+const siloMetadataCache = new Map();
+metadataBehavior.legendaryMissileSalvoPlan(
+  {
+    enemySilos: launchSilos,
+    enemyGold: 1n,
+    targetTile: 0,
+    atomCost: 1n,
+    hydrogenCost: 2n,
+  },
+  {
+    samProfilesOverride: [],
+    siloMetadataCache,
+  },
+);
+assert.equal(
+  metadataSlotReads,
+  launchSilos.length,
+  "salvo planning reuses the per-context silo slot snapshot for ready-shot counts",
 );
 
 let contextValueReads = 0;

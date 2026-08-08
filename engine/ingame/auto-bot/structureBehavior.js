@@ -4168,6 +4168,13 @@
       return entry.flightTicks;
     }
 
+    legendarySiloReadyShotCount(silo, siloMetadataCache = null) {
+      const slots =
+        siloMetadataCache?.get(silo)?.slots ??
+        this.legendarySiloSlotAvailability(silo);
+      return slots.filter((tick) => tick <= 0).length;
+    }
+
     legendaryEnemyMissileLaunchPlan(
       enemySilos,
       targetTile,
@@ -5563,6 +5570,7 @@
         extraSam = null,
         actionCompletionTick = 0,
         samProfilesOverride = null,
+        siloMetadataCache = null,
       } = {},
     ) {
       if (
@@ -5590,13 +5598,12 @@
         enemySilos,
         targetTile,
         desiredShotCount,
+        { siloMetadataCache },
       );
       const readyShots = enemySilos.reduce(
         (total, silo) =>
           total +
-          this.legendarySiloSlotAvailability(silo).filter(
-            (tick) => tick <= 0,
-          ).length,
+          this.legendarySiloReadyShotCount(silo, siloMetadataCache),
         0,
       );
       const routePlan = this.legendarySalvoRoutes({
@@ -6831,7 +6838,10 @@
           atomCost: base.atomCost,
           hydrogenCost: base.hydrogenCost,
         },
-        { samProfilesOverride: samProfiles },
+        {
+          samProfilesOverride: samProfiles,
+          siloMetadataCache: base.launchMetadataCache,
+        },
       );
       const sourceMetrics = new Map(
         (salvoPlan.sourceMetrics || []).map((source) => [source.silo, source]),
