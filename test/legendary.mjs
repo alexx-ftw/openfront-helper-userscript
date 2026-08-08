@@ -858,4 +858,48 @@ assert.equal(
   "normal defense evaluations are reused for the same missile snapshot",
 );
 
+const samRangeCacheBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+let candidateSamRangeReads = 0;
+const samRangeCacheConfig = {
+  defaultSamRange: () => 10,
+  samRange: () => {
+    candidateSamRangeReads++;
+    return 10;
+  },
+};
+samRangeCacheBehavior.game = {
+  config: () => samRangeCacheConfig,
+  euclideanDistSquared: () => 0,
+};
+samRangeCacheBehavior.player = { units: () => [] };
+samRangeCacheBehavior.legendaryFriendlySamUnits = () => [];
+samRangeCacheBehavior.spacingConstants = () => ({ structureSpacing: 1 });
+samRangeCacheBehavior.legendarySamImpactMarginContext = () => ({
+  completionTick: 0,
+  routesByThreat: new Map(),
+});
+samRangeCacheBehavior.legendaryCandidateProtectsStructure = () => false;
+const samCoverageSnapshot = samRangeCacheBehavior.legendarySamCoveragePlacementContext();
+const samMissileSnapshot = {
+  threats: [{}],
+  structures: [{ tile: () => 1 }],
+  totalValue: 1,
+  structureValues: new Map(),
+};
+samRangeCacheBehavior.legendarySamCoveragePlacementScore(
+  1,
+  samMissileSnapshot,
+  samCoverageSnapshot,
+);
+samRangeCacheBehavior.legendarySamCoveragePlacementScore(
+  2,
+  samMissileSnapshot,
+  samCoverageSnapshot,
+);
+assert.equal(
+  candidateSamRangeReads,
+  1,
+  "SAM candidate scoring reuses the level-one range from its placement context",
+);
+
 process.stdout.write("LEGENDARY TESTS OK\n");

@@ -4407,7 +4407,7 @@
       return indexes;
     }
 
-    legendarySamCoverageProfile(samOrTile, levelOverride) {
+    legendarySamCoverageProfile(samOrTile, levelOverride, rangeOverride = null) {
       if (samOrTile === null || samOrTile === undefined) return null;
       const samTile =
         typeof samOrTile.tile === "function"
@@ -4418,7 +4418,10 @@
       if (typeof samOrTile.level === "function") rawLevel = samOrTile.level();
       const level = Math.max(1, Number(levelOverride ?? rawLevel));
       {
-        const range = Number(this.game.config().samRange(level));
+        const range =
+          rangeOverride === null
+            ? Number(this.game.config().samRange(level))
+            : Number(rangeOverride);
         return range > 0 ? { samTile, range } : null;
       }
     }
@@ -5160,7 +5163,12 @@
       return [threat.nuke.tile()];
     }
 
-    legendarySamImpactMarginScore(tile, context, level = 1) {
+    legendarySamImpactMarginScore(
+      tile,
+      context,
+      level = 1,
+      rangeOverride = null,
+    ) {
       if (!context || !Array.isArray(context.threats)) return 0;
       const structures = Array.isArray(context.structures)
         ? context.priorityStructures || context.structures
@@ -5170,7 +5178,11 @@
       const totalValue = Math.max(1, Number(context.totalValue || 0));
       const structureValues = context.structureValues;
       const impactContext = this.legendarySamImpactMarginContext(context);
-      const coverageProfile = this.legendarySamCoverageProfile(tile, level);
+      const coverageProfile = this.legendarySamCoverageProfile(
+        tile,
+        level,
+        rangeOverride,
+      );
       if (coverageProfile === null) return 0;
       const candidateImpactContext = {
         ...impactContext,
@@ -9901,6 +9913,7 @@
       const criticalValueCache = new Map();
       return {
         rangeSquared: range * range,
+        candidateSamRange: Number(config.samRange(1)),
         uncoveredStructures,
         criticalValueCache,
         spacing: this.spacingConstants().structureSpacing,
@@ -9916,8 +9929,13 @@
         coverageContext || this.legendarySamCoveragePlacementContext();
       if (coverage === null) return 0;
       let score = 0;
-      const { rangeSquared, uncoveredStructures, criticalValueCache, spacing } =
-        coverage;
+      const {
+        rangeSquared,
+        candidateSamRange,
+        uncoveredStructures,
+        criticalValueCache,
+        spacing,
+      } = coverage;
       for (const { structure, tile: structureTile } of uncoveredStructures) {
         if (
           this.game.euclideanDistSquared(tile, structureTile) > rangeSquared
@@ -9937,6 +9955,7 @@
           tile,
           missileContext || this.getMissileDefenseContext(),
           1,
+          candidateSamRange,
         )
       );
     }
