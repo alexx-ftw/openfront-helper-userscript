@@ -253,9 +253,9 @@ with no HTTP server, port, or resident watcher. After each build it detects the 
 SHA-256 fingerprint and hot-restarts only the Auto-Bot layer; the OpenFront tab, match,
 and connection stay open.
 
-1. Open `brave://extensions`, enable **Developer mode**, open Tampermonkey's details,
-   enable **Allow access to file URLs**, and give it site access on all sites if Brave
-   requires it.
+1. Open `brave://extensions/?id=dhdgffkkebhmkfjojejmpbldmpobfkfo`. In Tampermonkey's
+   details, enable **Allow access to file URLs** and set **Site access** to **On all
+   sites**. Chromium requires both permissions for local-file userscripts.
 2. Run `npm run build` once to create the full userscript, Auto-Bot layer, and build
    fingerprint.
 3. Create a new Tampermonkey script and paste in
@@ -264,6 +264,10 @@ and connection stay open.
 5. Run `npm run build` after changing the source. Within about one second the current bot
    tick finishes, the old bot lifecycle is disposed, and the new Auto-Bot build starts in
    the same tab and match.
+
+If Brave blocks a local read or a build is temporarily incomplete, the loader displays a
+notice in the lower-right corner and retries the full initial userscript on the next poll.
+The notice disappears as soon as the bot is loaded successfully.
 
 The hot path applies Auto-Bot logic changes without reloading the game. Changes to the
 shell, lobby automation, or non-bot overlays still require a normal page reload.

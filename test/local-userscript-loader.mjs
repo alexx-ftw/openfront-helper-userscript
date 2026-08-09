@@ -67,10 +67,12 @@ const evaluatedBuilds = [];
 const hotReloads = [];
 const initialBuildId = "a".repeat(64);
 const unsafeWindow = {
-  eval: (source) => evaluatedBuilds.push(source),
-  __OFH_HOT_RELOAD_AUTOBOT__: (source, buildId) => {
-    hotReloads.push({ source, buildId });
-    return true;
+  eval: (source) => {
+    evaluatedBuilds.push(source);
+    unsafeWindow.__OFH_HOT_RELOAD_AUTOBOT__ = (autoBotSource, buildId) => {
+      hotReloads.push({ source: autoBotSource, buildId });
+      return true;
+    };
   },
 };
 const loaderSandbox = {
@@ -90,24 +92,73 @@ requests[0].onload({
   responseText: `globalThis.__OFH_LOCAL_BUILD_ID__ = "${initialBuildId}";`,
 });
 assert.equal(requests.length, 2, "startup reads the full local userscript after its fingerprint");
-await requests[1].onload({ responseText: "// initial full userscript build" });
+requests[1].ontimeout({ error: "timeout" });
+poll();
+requests[2].onload({
+  responseText: `globalThis.__OFH_LOCAL_BUILD_ID__ = "${initialBuildId}";`,
+});
+assert.equal(
+  requests[3].url,
+  pathToFileURL(buildPath).href,
+  "a failed initial read retries the full userscript instead of trying an unusable hot reload",
+);
+await requests[3].onload({ responseText: "// initial full userscript build" });
 assert.deepEqual(evaluatedBuilds, ["// initial full userscript build"]);
 poll();
-assert.equal(requests.length, 3);
-requests[2].onload({
+assert.equal(requests.length, 5);
+requests[4].onload({
   responseText: `globalThis.__OFH_LOCAL_BUILD_ID__ = "${initialBuildId}";`,
 });
 assert.equal(hotReloads.length, 0, "an unchanged build does not restart the bot");
 poll();
-requests[3].onload({
+requests[5].onload({
   responseText: `globalThis.__OFH_LOCAL_BUILD_ID__ = "${"b".repeat(64)}";`,
 });
-assert.equal(requests.length, 5, "a changed fingerprint fetches the new bot layer");
-await requests[4].onload({ responseText: "// freshly built bot layer" });
+assert.equal(requests.length, 7, "a changed fingerprint fetches the new bot layer");
+await requests[6].onload({ responseText: "// freshly built bot layer" });
 assert.deepEqual(
   hotReloads,
   [{ source: "// freshly built bot layer", buildId: "b".repeat(64) }],
   "a new local build hot-restarts the bot without reloading the game",
+);
+
+const failedRequests = [];
+let failedPoll = null;
+let rejectedBuildEvaluations = 0;
+const failedUnsafeWindow = {
+  eval: () => {
+    rejectedBuildEvaluations += 1;
+  },
+};
+const failedLoaderSandbox = {
+  GM_xmlhttpRequest: (request) => failedRequests.push(request),
+  unsafeWindow: failedUnsafeWindow,
+  window: {
+    setInterval: (callback) => {
+      failedPoll = callback;
+    },
+  },
+};
+failedLoaderSandbox.globalThis = failedLoaderSandbox;
+executeClassicScript(loaderSource, failedLoaderSandbox, {
+  filename: "failed-local-loader.user.js",
+});
+failedRequests[0].onload({
+  status: 0,
+  responseText: `globalThis.__OFH_LOCAL_BUILD_ID__ = "${initialBuildId}";`,
+});
+failedRequests[1].onload({ status: 403, responseText: "permission denied" });
+await Promise.resolve();
+assert.equal(
+  rejectedBuildEvaluations,
+  0,
+  "a rejected local-file response is never evaluated as a userscript",
+);
+failedPoll();
+assert.equal(
+  failedRequests.length,
+  3,
+  "a rejected local-file response releases the loader so its next poll can retry",
 );
 
 process.stdout.write("serverless auto-reloading userscript loader tests passed\n");
