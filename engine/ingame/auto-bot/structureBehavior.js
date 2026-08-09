@@ -524,7 +524,7 @@
       this._missileDefenseContextTick = null;
       this._missileDefenseContextKey = null;
       this._missileDefenseContextCache = null;
-      this._missileDefenseStateProbeCache = null;
+      this._missileDefenseStateRepresentationCache = null;
       this._missileDefenseStateKeyCache = null;
       this._missileDefenseEvaluationTick = null;
       this._missileDefenseEvaluationContext = null;
@@ -7018,82 +7018,149 @@
       return preferred > 0n ? preferred : 1n;
     }
 
-    missileDefenseProbeRead(fn, fallback = "") {
-      const value = fn();
-      return value === null || value === undefined ? fallback : value;
+    missileDefenseStateTaggedValue(value) {
+      if (value === undefined) return ["undefined"];
+      if (value === null) return ["null"];
+      if (Array.isArray(value)) {
+        const slots = [];
+        for (let index = 0; index < value.length; index++) {
+          slots.push(
+            index in value
+              ? this.missileDefenseStateTaggedValue(value[index])
+              : ["hole"],
+          );
+        }
+        return ["array", value.length, slots];
+      }
+      if (typeof value === "bigint") return ["bigint", value.toString()];
+      if (typeof value === "number") {
+        if (Number.isNaN(value)) return ["number", "NaN"];
+        if (Object.is(value, -0)) return ["number", "-0"];
+        return ["number", String(value)];
+      }
+      return [typeof value, value];
     }
 
-    missileDefenseProbeUnitState(unit) {
-      const queue = this.missileDefenseProbeRead(
-        () => unit.missileTimerQueue?.(),
-        null,
-      );
+    missileDefenseStateRecordKey(fields) {
+      const taggedFields = [];
+      for (const field of fields) {
+        taggedFields.push(this.missileDefenseStateTaggedValue(field));
+      }
+      return JSON.stringify(["record", taggedFields]);
+    }
+
+    addMissileDefenseStateRecord(representation, fields) {
+      const key = this.missileDefenseStateRecordKey(fields);
+      representation.set(key, (representation.get(key) ?? 0) + 1);
+    }
+
+    missileDefenseUnitStateFields(unit) {
       return [
-        this.missileDefenseProbeRead(() => unit.id?.()),
-        this.missileDefenseProbeRead(() => unit.tile?.()),
-        this.missileDefenseProbeRead(() => unit.level?.()),
-        this.missileDefenseProbeRead(
-          () => (unit.isUnderConstruction?.() ? 1 : 0),
-          0,
-        ),
-        this.missileDefenseProbeRead(() => unit.isActive?.()),
-        Array.isArray(queue) ? queue.join(",") : "",
-      ].join(":");
+        unit.id?.(),
+        unit.tile?.(),
+        unit.level?.(),
+        unit.isUnderConstruction?.(),
+        unit.isActive?.(),
+        unit.missileTimerQueue?.(),
+      ];
     }
 
-    appendMissileDefenseProbeUnits(parts, label, owner, types) {
+    appendMissileDefenseStateUnits(representation, label, owner, types) {
       for (const type of types) {
         const units =
-          typeof owner?.units === "function" ? owner.units(type) : [];
-        parts.push(`${label}:${String(type)}:${String(units?.length ?? 0)}`);
+          typeof owner?.units === "function" ? owner.units(type) : null;
+        this.addMissileDefenseStateRecord(representation, [
+          "unit-collection",
+          label,
+          type,
+          Array.isArray(units),
+          Array.isArray(units) ? units.length : null,
+        ]);
         if (!Array.isArray(units)) continue;
         for (const unit of units) {
-          if (unit) parts.push(this.missileDefenseProbeUnitState(unit));
+          if (!unit) continue;
+          this.addMissileDefenseStateRecord(representation, [
+            "unit",
+            label,
+            type,
+            ...this.missileDefenseUnitStateFields(unit),
+          ]);
         }
       }
     }
 
-    missileDefenseProbeEnemyCapacity(enemy, atomCost, hydrogenCost) {
-      const gold = BigInt(this.missileDefenseProbeRead(() => enemy.gold(), 0));
-      const canHydrogen = hydrogenCost > 0n && gold >= hydrogenCost;
-      const atomBudget = canHydrogen ? gold - hydrogenCost : gold;
-      const affordableAtoms = atomCost > 0n ? atomBudget / atomCost : 0n;
-      return `${canHydrogen ? 1 : 0}:${affordableAtoms.toString()}`;
+    missileDefenseEffectiveCosts() {
+      const config = this.game?.config?.();
+      const atomDisabled = config?.isUnitDisabled?.(UNIT.AtomBomb) === true;
+      const hydrogenDisabled =
+        config?.isUnitDisabled?.(UNIT.HydrogenBomb) === true;
+      const rawAtomCost =
+        typeof this.cost === "function" ? BigInt(this.cost(UNIT.AtomBomb)) : 0n;
+      const rawHydrogenCost =
+        typeof this.cost === "function"
+          ? BigInt(this.cost(UNIT.HydrogenBomb))
+          : 0n;
+      return {
+        atomDisabled,
+        hydrogenDisabled,
+        rawAtomCost,
+        rawHydrogenCost,
+        atomCost: atomDisabled ? 0n : rawAtomCost,
+        hydrogenCost: hydrogenDisabled ? 0n : rawHydrogenCost,
+      };
     }
 
-    appendMissileDefenseProbePlayers(parts, players, mySid, atomCost, hydrogenCost) {
+    missileDefenseEnemyGoldState(enemy, costs) {
+      const rawGold = enemy.gold?.() ?? 0n;
+      const gold = BigInt(rawGold);
+      if (costs.atomCost <= 0n && costs.hydrogenCost <= 0n) {
+        return ["raw", rawGold];
+      }
+      const canHydrogen =
+        costs.hydrogenCost > 0n && gold >= costs.hydrogenCost;
+      const atomBudget = canHydrogen ? gold - costs.hydrogenCost : gold;
+      const affordableAtoms =
+        costs.atomCost > 0n ? atomBudget / costs.atomCost : 0n;
+      return ["capacity", canHydrogen, affordableAtoms];
+    }
+
+    appendMissileDefenseStatePlayers(representation, players, mySid, costs) {
       if (!Array.isArray(players)) return;
       for (const other of players) {
-        const sid = this.missileDefenseProbeRead(() => other?.smallID());
-        if (!other || String(sid) === String(mySid)) continue;
+        if (!other) continue;
+        const sid = other.smallID?.();
+        if (String(sid) === String(mySid)) continue;
         const friendly =
           this.player.isFriendly(other) || this.player.isOnSameTeam(other);
+        this.addMissileDefenseStateRecord(representation, [
+          "player",
+          sid,
+          friendly,
+        ]);
         if (friendly) {
-          this.appendMissileDefenseProbeUnits(
-            parts,
-            `friendly-${String(sid)}-sams`,
+          this.appendMissileDefenseStateUnits(
+            representation,
+            ["friendly-sams", sid],
             other,
             [UNIT.SAMLauncher],
           );
           continue;
         }
-        parts.push(
-          `enemy=${String(sid)}:capacity=${this.missileDefenseProbeEnemyCapacity(
-            other,
-            atomCost,
-            hydrogenCost,
-          )}`,
-        );
-        this.appendMissileDefenseProbeUnits(
-          parts,
-          `enemy-${String(sid)}-silos`,
+        this.addMissileDefenseStateRecord(representation, [
+          "enemy-gold",
+          sid,
+          this.missileDefenseEnemyGoldState(other, costs),
+        ]);
+        this.appendMissileDefenseStateUnits(
+          representation,
+          ["enemy-silos", sid],
           other,
           [UNIT.MissileSilo],
         );
       }
     }
 
-    appendMissileDefenseProbeMissiles(parts) {
+    appendMissileDefenseStateMissiles(representation) {
       const activeMissiles =
         typeof this.game?.units === "function"
           ? this.game.units(
@@ -7102,206 +7169,91 @@
               UNIT.MIRV,
               UNIT.MIRVWarhead,
             )
-          : [];
+          : null;
+      this.addMissileDefenseStateRecord(representation, [
+        "missile-collection",
+        Array.isArray(activeMissiles),
+        Array.isArray(activeMissiles) ? activeMissiles.length : null,
+      ]);
       if (!Array.isArray(activeMissiles)) return;
       for (const missile of activeMissiles) {
         if (!missile) continue;
-        parts.push(
-          `missile:${String(this.missileDefenseProbeRead(() => missile.id?.()))}:${String(
-            this.missileDefenseProbeRead(() => missile.type?.()),
-          )}:${String(
-            this.missileDefenseProbeRead(() => missile.owner?.()?.smallID?.()),
-          )}:${String(this.missileDefenseProbeRead(() => missile.tile?.()))}:${String(
-            this.missileDefenseProbeRead(() => missile.targetTile?.()),
-          )}:${String(this.missileDefenseProbeRead(() => missile.isActive?.()))}`,
-        );
+        this.addMissileDefenseStateRecord(representation, [
+          "missile",
+          missile.id?.(),
+          missile.type?.(),
+          missile.owner?.()?.smallID?.(),
+          missile.tile?.(),
+          missile.targetTile?.(),
+          missile.isActive?.(),
+        ]);
       }
+    }
+
+    missileDefenseStateRepresentation() {
+      const representation = new Map();
+      const costs = this.missileDefenseEffectiveCosts();
+      this.addMissileDefenseStateRecord(representation, [
+        "cost",
+        UNIT.AtomBomb,
+        costs.atomDisabled,
+        costs.rawAtomCost,
+        costs.atomCost,
+      ]);
+      this.addMissileDefenseStateRecord(representation, [
+        "cost",
+        UNIT.HydrogenBomb,
+        costs.hydrogenDisabled,
+        costs.rawHydrogenCost,
+        costs.hydrogenCost,
+      ]);
+      this.appendMissileDefenseStateUnits(
+        representation,
+        "own-structures",
+        this.player,
+        [UNIT.City, UNIT.Factory, UNIT.Port, UNIT.MissileSilo],
+      );
+      this.appendMissileDefenseStateUnits(
+        representation,
+        "own-sams",
+        this.player,
+        [UNIT.SAMLauncher],
+      );
+      const mySid = this.player.smallID?.();
+      this.addMissileDefenseStateRecord(representation, ["self", mySid]);
+      const players = this.game?.players?.();
+      this.appendMissileDefenseStatePlayers(
+        representation,
+        players,
+        mySid,
+        costs,
+      );
+      this.appendMissileDefenseStateMissiles(representation);
+      return representation;
     }
 
     missileDefenseStateProbe() {
-      const parts = [];
-      let atomCost = 0n;
-      let hydrogenCost = 0n;
-      if (typeof this.cost === "function") {
-        atomCost = BigInt(this.cost(UNIT.AtomBomb));
-        hydrogenCost = BigInt(this.cost(UNIT.HydrogenBomb));
-      }
-      this.appendMissileDefenseProbeUnits(parts, "own-structures", this.player, [
-        UNIT.City,
-        UNIT.Factory,
-        UNIT.Port,
-        UNIT.MissileSilo,
-      ]);
-      this.appendMissileDefenseProbeUnits(parts, "own-sams", this.player, [
-        UNIT.SAMLauncher,
-      ]);
-      const mySid = this.missileDefenseProbeRead(() => this.player.smallID());
-      const players =
-        typeof this.game?.players === "function" ? this.game.players() : [];
-      this.appendMissileDefenseProbePlayers(
-        parts,
-        players,
-        mySid,
-        atomCost,
-        hydrogenCost,
-      );
-      this.appendMissileDefenseProbeMissiles(parts);
-      return parts.join("|");
+      return this.missileDefenseStateRepresentation();
     }
 
-    missileDefenseStateFingerprint() {
-      const parts = [];
-      const read = (fn, fallback = "") => {
-        {
-          const value = fn();
-          return value === null || value === undefined ? fallback : value;
-        }
-      };
-      const stringifySequence = (values) => {
-        let result = "";
-        for (let index = 0; index < values.length; index++) {
-          if (index > 0) result += ",";
-          if (index in values) result += String(values[index]);
-        }
-        return result;
-      };
-      const unitFingerprint = (unit) => {
-        const id = read(() => unit.id?.(), "");
-        const tile = read(() => unit.tile?.(), "");
-        const level = read(() => unit.level?.(), "");
-        const underConstruction = read(
-          () => (unit.isUnderConstruction?.() ? 1 : 0),
-          0,
-        );
-        const active = read(() => unit.isActive?.(), "");
-        const queue = read(
-          () => {
-            const raw = unit.missileTimerQueue?.();
-            return Array.isArray(raw) ? stringifySequence(raw) : "";
-          },
-          "",
-        );
-        return `${String(id)}:${String(tile)}:${String(level)}:${String(
-          underConstruction,
-        )}:${String(active)}:${queue}`;
-      };
-      const collectUnits = (label, owner, types) => {
-        const fingerprints = [];
-        for (const type of types) {
-          const units = typeof owner?.units === "function" ? owner.units(type) : [];
-          if (!Array.isArray(units)) continue;
-          for (const unit of units) {
-            if (unit) fingerprints.push(`${String(type)}=${unitFingerprint(unit)}`);
-          }
-        }
-        fingerprints.sort();
-        parts.push(`${label}[${fingerprints.join(",")}]`);
-      };
-
-      let atomCost = 0n;
-      let hydrogenCost = 0n;
-      {
-        atomCost = BigInt(this.cost(UNIT.AtomBomb));
-      }{
-        hydrogenCost = BigInt(this.cost(UNIT.HydrogenBomb));
+    missileDefenseStateRepresentationsEqual(left, right) {
+      if (left === right) return true;
+      if (!(left instanceof Map) || !(right instanceof Map)) return false;
+      if (left.size !== right.size) return false;
+      for (const [key, count] of left) {
+        if (right.get(key) !== count) return false;
       }
-
-      // The trajectory planner only changes its threat model when an enemy can
-      // afford a different shot sequence. Including the exact gold balance here
-      // made the three-tick context bucket ineffective because gold changes on
-      // every simulation tick. Keep the hydrogen reservation and affordable atom
-      // count, which are the two values used by legendaryMissileSalvoPlan().
-      const enemyGoldCapacityFingerprint = (enemy) => {
-        const rawGold = read(() => enemy.gold(), "");
-        {
-          const gold = BigInt(rawGold);
-          if (atomCost <= 0n && hydrogenCost <= 0n) {
-            return `raw=${String(rawGold)}`;
-          }
-          const canHydrogen = hydrogenCost > 0n && gold >= hydrogenCost;
-          const atomBudget = canHydrogen ? gold - hydrogenCost : gold;
-          const affordableAtoms =
-            atomCost > 0n ? atomBudget / atomCost : 0n;
-          return `${canHydrogen ? 1 : 0}:${affordableAtoms.toString()}`;
-        }
-      };
-
-      const mySid = read(() => this.player.smallID(), "");
-      collectUnits("own-structures", this.player, [
-        UNIT.City,
-        UNIT.Factory,
-        UNIT.Port,
-        UNIT.MissileSilo,
-      ]);
-      collectUnits("own-sams", this.player, [UNIT.SAMLauncher]);
-
-      const { hostilePlayers, friendlyPlayers } = this.partitionFingerprintPlayers(
-        read(() => this.game.players(), []),
-        mySid,
-        read,
-      );
-      friendlyPlayers.sort((left, right) =>
-        String(read(() => left.smallID(), "")).localeCompare(
-          String(read(() => right.smallID(), "")),
-        ),
-      );
-      for (const ally of friendlyPlayers) {
-        const sid = read(() => ally.smallID(), "");
-        collectUnits(`friendly-${String(sid)}-sams`, ally, [UNIT.SAMLauncher]);
-      }
-      hostilePlayers.sort((left, right) =>
-        String(read(() => left.smallID(), "")).localeCompare(
-          String(read(() => right.smallID(), "")),
-        ),
-      );
-      for (const enemy of hostilePlayers) {
-        const sid = read(() => enemy.smallID(), "");
-        parts.push(
-          `enemy=${String(sid)}:capacity=${enemyGoldCapacityFingerprint(enemy)}`,
-        );
-        collectUnits(`enemy-${String(sid)}-silos`, enemy, [UNIT.MissileSilo]);
-      }
-
-      const activeMissiles = typeof this.game?.units === "function"
-        ? this.game.units(
-            UNIT.AtomBomb,
-            UNIT.HydrogenBomb,
-            UNIT.MIRV,
-            UNIT.MIRVWarhead,
-          )
-        : [];
-      const missileFingerprints = [];
-      if (Array.isArray(activeMissiles)) {
-        for (const missile of activeMissiles) {
-          if (!missile) continue;
-          missileFingerprints.push(
-            `${String(read(() => missile.id?.(), ""))}:${String(
-              read(() => missile.type?.(), ""),
-            )}:${String(
-              read(() => missile.owner?.()?.smallID?.(), ""),
-            )}:${String(read(() => missile.tile?.(), ""))}:${String(
-              read(() => missile.targetTile?.(), ""),
-            )}:${String(read(() => missile.isActive?.(), ""))}`,
-          );
-        }
-      }
-      missileFingerprints.sort();
-      parts.push(`active-missiles[${missileFingerprints.join(",")}]`);
-      return parts.join("|");
+      return true;
     }
 
-    partitionFingerprintPlayers(players, mySid, read) {
-      const hostilePlayers = [];
-      const friendlyPlayers = [];
-      for (const other of players) {
-        if (!other) continue;
-        const sid = read(() => other.smallID(), "");
-        if (String(sid) === String(mySid)) continue;
-        const friendly =
-          this.player.isFriendly(other) || this.player.isOnSameTeam(other);
-        (friendly ? friendlyPlayers : hostilePlayers).push(other);
-      }
-      return { hostilePlayers, friendlyPlayers };
+    missileDefenseStateFingerprint(representation = null) {
+      const state =
+        representation instanceof Map
+          ? representation
+          : this.missileDefenseStateRepresentation();
+      const entries = Array.from(state.entries());
+      entries.sort((left, right) => left[0].localeCompare(right[0]));
+      return JSON.stringify(entries);
     }
 
     missileDefenseSnapshotIsCurrent(expectedTick, expectedStateKey) {
@@ -7382,7 +7334,7 @@
     getMissileDefenseContext() {
       const tick = safeStructureGameTick(this.game);
       const signal = this.missileDefenseSignalSnapshot();
-      const stateProbe =
+      const stateRepresentation =
         signal === null ||
         (signal.hasBuiltHostileSilo !== true &&
           signal.hasActiveHostileMissile !== true)
@@ -7391,9 +7343,9 @@
       const identity = this.missileDefenseContextIdentity(
         tick,
         signal,
-        stateProbe,
+        stateRepresentation,
       );
-      const { cacheKey, missileSignal } = identity;
+      const { cacheKey, missileSignal, stateChanged } = identity;
       if (
         cacheKey !== null &&
         this._missileDefenseContextKey === cacheKey &&
@@ -7401,6 +7353,8 @@
       ) {
         return this._missileDefenseContextCache;
       }
+
+      if (stateChanged) this.invalidateLegendaryMissilePlacementBaseContext();
 
       const context = missileSignal === false
         ? this.legendaryEmptyMissileDefenseContext()
@@ -7413,7 +7367,7 @@
       return context;
     }
 
-    missileDefenseContextIdentity(tick, signal, stateProbe = null) {
+    missileDefenseContextIdentity(tick, signal, stateRepresentation = null) {
       const activeMissile = signal?.hasActiveHostileMissile === true;
       const missileSignal =
         signal === null
@@ -7428,24 +7382,37 @@
           : Math.floor(tick / LEGENDARY_MISSILE_DEFENSE_CONTEXT_BUCKET_TICKS);
       }
       let stateKey = "unknown-missile-signal";
+      let stateChanged = false;
       if (missileSignal === false) stateKey = "no-missile-signal";
       else if (signal !== null) {
         if (
-          stateProbe !== null &&
-          this._missileDefenseStateProbeCache === stateProbe &&
+          stateRepresentation !== null &&
+          this.missileDefenseStateRepresentationsEqual(
+            this._missileDefenseStateRepresentationCache,
+            stateRepresentation,
+          ) &&
           this._missileDefenseStateKeyCache !== null
         ) {
           stateKey = this._missileDefenseStateKeyCache;
         } else {
-          stateKey = this.missileDefenseStateFingerprint();
-          this._missileDefenseStateProbeCache = stateProbe;
+          stateKey = this.missileDefenseStateFingerprint(stateRepresentation);
+          stateChanged = true;
+          this._missileDefenseStateRepresentationCache = stateRepresentation;
           this._missileDefenseStateKeyCache = stateKey;
         }
       }
       return {
         missileSignal,
         cacheKey: Number.isFinite(cacheTick) ? `${cacheTick}|${stateKey}` : null,
+        stateChanged,
       };
+    }
+
+    invalidateLegendaryMissilePlacementBaseContext() {
+      this._legendaryMissilePlacementBaseContextTick = null;
+      this._legendaryMissilePlacementBaseContextGame = null;
+      this._legendaryMissilePlacementBaseContextConfig = null;
+      this._legendaryMissilePlacementBaseContextCache = null;
     }
 
     legendaryMissileTargetCandidates(

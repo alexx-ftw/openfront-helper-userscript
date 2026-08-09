@@ -10,6 +10,10 @@ const UNIT = {
   SAMLauncher: "SAM Launcher",
   MissileSilo: "Missile Silo",
   DefensePost: "Defense Post",
+  AtomBomb: "Atom Bomb",
+  HydrogenBomb: "Hydrogen Bomb",
+  MIRV: "MIRV",
+  MIRVWarhead: "MIRV Warhead",
 };
 const sandbox = {
   Difficulty: { Impossible: "Impossible" },
@@ -362,7 +366,13 @@ missileFingerprintBehavior.game = {
   units: () => [],
 };
 const missileStateKey = missileFingerprintBehavior.missileDefenseStateFingerprint();
-assert.match(missileStateKey, /901:902:1:0:true:1,,3/);
+missileTimerQueue[1] = undefined;
+assert.notEqual(
+  missileFingerprintBehavior.missileDefenseStateFingerprint(),
+  missileStateKey,
+  "missile-defense state distinguishes a sparse queue hole from explicit undefined",
+);
+delete missileTimerQueue[1];
 assert.equal(
   missileQueueMapCalls,
   0,
@@ -1158,32 +1168,128 @@ assert.equal(
 
 let repeatedContextFingerprintCalls = 0;
 let repeatedContextForecastCalls = 0;
+let repeatedContextBaseGenerations = 0;
+const repeatedContextObservedBaseGenerations = [];
+let repeatedContextMissileTarget = 700;
+let repeatedContextSiloUnderConstruction = false;
+let repeatedContextAtomCost = 0n;
+const repeatedContextQueue = [];
+repeatedContextQueue[0] = 10;
+repeatedContextQueue[2] = 30;
+const repeatedContextOwnSilo = {
+  id: () => 101,
+  tile: () => 102,
+  level: () => 2,
+  isUnderConstruction: () => repeatedContextSiloUnderConstruction,
+  isActive: () => true,
+  missileTimerQueue: () => repeatedContextQueue,
+};
+const repeatedContextEnemySilo = {
+  id: () => 201,
+  tile: () => 202,
+  level: () => 1,
+  isUnderConstruction: () => false,
+  isActive: () => true,
+  missileTimerQueue: () => [],
+};
+const repeatedContextEnemy = {
+  smallID: () => 2,
+  gold: () => 0n,
+  units: (type) => (type === UNIT.MissileSilo ? [repeatedContextEnemySilo] : []),
+};
+const repeatedContextPlayer = {
+  smallID: () => 1,
+  isFriendly: () => false,
+  isOnSameTeam: () => false,
+  units: (...types) => (types.includes(UNIT.MissileSilo) ? [repeatedContextOwnSilo] : []),
+};
+const repeatedContextMissile = {
+  id: () => 301,
+  type: () => UNIT.AtomBomb,
+  owner: () => repeatedContextEnemy,
+  tile: () => 302,
+  targetTile: () => repeatedContextMissileTarget,
+  isActive: () => true,
+};
+const repeatedContextConfig = {
+  isUnitDisabled: () => false,
+};
 const repeatedContextBehavior = Object.create(sandbox.StructureBehavior.prototype);
-repeatedContextBehavior.game = { ticks: () => 100 };
-repeatedContextBehavior.missileDefenseSignalSnapshot = () => ({
-  hasBuiltHostileSilo: true,
-  hasActiveHostileMissile: false,
-});
-repeatedContextBehavior.missileDefenseStateProbe = () => "unchanged-defense-probe";
-repeatedContextBehavior.missileDefenseStateFingerprint = () => {
+repeatedContextBehavior.player = repeatedContextPlayer;
+repeatedContextBehavior.game = {
+  ticks: () => 100,
+  players: () => [repeatedContextPlayer, repeatedContextEnemy],
+  units: (...types) => (types.includes(UNIT.AtomBomb) ? [repeatedContextMissile] : []),
+  config: () => repeatedContextConfig,
+};
+repeatedContextBehavior.cost = (type) => (type === UNIT.AtomBomb ? repeatedContextAtomCost : 0n);
+const productionMissileDefenseFingerprint = repeatedContextBehavior.missileDefenseStateFingerprint;
+repeatedContextBehavior.missileDefenseStateFingerprint = function (...args) {
   repeatedContextFingerprintCalls++;
-  return "unchanged-defense-state";
+  return productionMissileDefenseFingerprint.apply(this, args);
 };
-repeatedContextBehavior.legendaryMissilePlacementContext = () => {
-  repeatedContextForecastCalls++;
-  return { threats: [] };
+repeatedContextBehavior.legendaryMissilePlacementContext = function () {
+  let base = this.legendaryMissilePlacementBaseContextCacheHit(
+    this.game,
+    repeatedContextConfig,
+    100,
+  );
+  if (base === null) {
+    base = { generation: ++repeatedContextBaseGenerations };
+    this.rememberLegendaryMissilePlacementBaseContext(this.game, repeatedContextConfig, 100, base);
+  }
+  repeatedContextObservedBaseGenerations.push(base.generation);
+  return {
+    generation: ++repeatedContextForecastCalls,
+    baseGeneration: base.generation,
+    missileTarget: repeatedContextMissileTarget,
+    siloUnderConstruction: repeatedContextSiloUnderConstruction,
+    queueHasExplicitUndefined: 1 in repeatedContextQueue,
+    atomCost: repeatedContextAtomCost,
+  };
 };
-repeatedContextBehavior.legendaryEmptyMissileDefenseContext = () => ({
-  threats: [],
-});
-repeatedContextBehavior.getMissileDefenseContext();
-repeatedContextBehavior.getMissileDefenseContext();
+let repeatedContext = repeatedContextBehavior.getMissileDefenseContext();
+assert.equal(repeatedContext.generation, 1);
+assert.strictEqual(repeatedContextBehavior.getMissileDefenseContext(), repeatedContext);
 assert.equal(
   repeatedContextFingerprintCalls,
   1,
   "unchanged same-decision missile-defense cache hits do not recompute the full state fingerprint",
 );
 assert.equal(repeatedContextForecastCalls, 1);
+const refreshAfterMutation = (mutate) => {
+  mutate();
+  const next = repeatedContextBehavior.getMissileDefenseContext();
+  const refreshed = next !== repeatedContext;
+  repeatedContext = next;
+  return refreshed;
+};
+const repeatedContextMutationResults = [
+  refreshAfterMutation(() => {
+    repeatedContextMissileTarget = 701;
+  }),
+  refreshAfterMutation(() => {
+    repeatedContextSiloUnderConstruction = true;
+  }),
+  refreshAfterMutation(() => {
+    repeatedContextQueue[1] = undefined;
+  }),
+  refreshAfterMutation(() => {
+    repeatedContextAtomCost = 1n;
+  }),
+];
+assert.deepEqual(
+  repeatedContextMutationResults,
+  [true, true, true, true],
+  "missile, build, sparse-queue, and cost mutations each invalidate the cached context",
+);
+assert.equal(repeatedContextFingerprintCalls, 5);
+assert.equal(repeatedContextForecastCalls, 5);
+assert.deepEqual(
+  repeatedContextObservedBaseGenerations,
+  [1, 2, 3, 4, 5],
+  "same-tick mutations cannot reuse the placement planner's stale base context",
+);
 
 const otherMirvContext = { ...mirvContext };
 assert.equal(mirvBehavior.uncoveredActiveMirvDemands(otherMirvContext).length, 0);
