@@ -83,17 +83,42 @@
     return true;
   }
 
+  function handleAutoBotDomContentLoaded() {
+    window.__openfrontAutoBotLoadPending = false;
+    startAutoBotLifecycle();
+  }
+
   function scheduleAutoBotLifecycle() {
     if (startAutoBotLifecycle() || window.__openfrontAutoBotLoadPending) return;
     window.__openfrontAutoBotLoadPending = true;
     document.addEventListener(
       "DOMContentLoaded",
-      () => {
-        window.__openfrontAutoBotLoadPending = false;
-        startAutoBotLifecycle();
-      },
+      handleAutoBotDomContentLoaded,
       { once: true },
     );
+  }
+
+  async function disposeAutoBotForHotReload() {
+    state.settings.enabled = false;
+    stopEngine();
+    const deadline = performance.now() + 8000;
+    while (state.tickInFlight && performance.now() < deadline) {
+      await new Promise((resolve) => {
+        window.setTimeout(resolve, 25);
+      });
+    }
+    if (window.__openfrontAutoBotWatcherTimer != null) {
+      window.clearInterval(window.__openfrontAutoBotWatcherTimer);
+      window.__openfrontAutoBotWatcherTimer = null;
+    }
+    if (window.__openfrontAutoBotLoadPending) {
+      document.removeEventListener("DOMContentLoaded", handleAutoBotDomContentLoaded);
+      window.__openfrontAutoBotLoadPending = false;
+    }
+    window.__openfrontAutoBotLoaded = false;
+    document.getElementById(PANEL_ID)?.remove();
+    document.getElementById(STYLE_ID)?.remove();
+    document.querySelectorAll(".ab-feat-tip").forEach((tip) => tip.remove());
   }
 
   scheduleAutoBotLifecycle();
@@ -1753,4 +1778,5 @@ window.__OFH_autobot = {
     if (typeof retuneEngine === "function") retuneEngine();
     if (typeof buildPanel === "function") buildPanel();
   },
+  disposeForHotReload: disposeAutoBotForHotReload,
 };

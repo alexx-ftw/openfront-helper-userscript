@@ -248,21 +248,29 @@ npm test            # Node smoke test
 ### Local build with Brave + Tampermonkey
 
 The repository includes `openfront-helper-loader.user.js`, a small launcher that
-Tampermonkey keeps installed. It uses a local-file `@require` to execute
-`openfront-helper.user.js` directly from this checkout, with no HTTP server, port, or
-resident watcher.
+Tampermonkey keeps installed. It reads the generated files directly from this checkout,
+with no HTTP server, port, or resident watcher. After each build it detects the new
+SHA-256 fingerprint and hot-restarts only the Auto-Bot layer; the OpenFront tab, match,
+and connection stay open.
 
 1. Open `brave://extensions`, enable **Developer mode**, open Tampermonkey's details,
    enable **Allow access to file URLs**, and give it site access on all sites if Brave
    requires it.
-2. Create a new Tampermonkey script and paste in
-   `openfront-helper-loader.user.js` (or import that file from Tampermonkey).
-3. Run `npm run build` after changing the source.
-4. Reload `https://openfront.io/`; Tampermonkey executes the newly generated local build.
+2. Run `npm run build` once to create the full userscript, Auto-Bot layer, and build
+   fingerprint.
+3. Create a new Tampermonkey script and paste in
+   `openfront-helper-loader.user.js` (or import that file from Tampermonkey), then save it.
+4. Open `https://openfront.io/` once so the loader starts.
+5. Run `npm run build` after changing the source. Within about one second the current bot
+   tick finishes, the old bot lifecycle is disposed, and the new Auto-Bot build starts in
+   the same tab and match.
 
-The checked-in loader points at
-`/home/eros/Desktop/openfront-helper-userscript/openfront-helper.user.js`. If the checkout
-moves, update its `@require file://...` line once and save the loader again in Tampermonkey.
+The hot path applies Auto-Bot logic changes without reloading the game. Changes to the
+shell, lobby automation, or non-bot overlays still require a normal page reload.
+
+The checked-in loader points at `/home/eros/Desktop/openfront-helper-userscript`. If the
+checkout moves, update its three `file://` constants once and save the loader again in
+Tampermonkey.
 
 ### Live runtime diagnostics
 
