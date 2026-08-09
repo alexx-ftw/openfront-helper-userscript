@@ -2842,6 +2842,105 @@ sandbox.discoverCtors = () => ({
 });
 delete sandbox.sendGamePacket;
 
+// The fallback donation strategy is a separate Legendary entry point from the
+// proactive policy. It must still honor the same real-time throttle after the
+// proactive path has already sent a donation in this window.
+sandbox.state.settings.donateThrottleMs = 1200;
+sandbox.state.lastDonateMs = 0;
+sandbox.performance.now = () => 20000;
+sandbox.state.earlyGame = {};
+const throttledDonationTeammate = {
+  troops: () => 8000,
+  smallID: () => 42,
+  id: () => "player-42",
+  isAlive: () => true,
+  incomingAttacks: () => [],
+  outgoingAttacks: () => [],
+};
+donor.isOnSameTeam = (player) => [11, 42].includes(player?.smallID?.());
+donationPlayers = [
+  donor,
+  throttledDonationTeammate,
+  weakBorderOpponent,
+  strongBorderOpponent,
+  alliedBorderOpponent,
+  remoteOpponent,
+];
+const throttledDonationGame = {
+  ...donationGame,
+  config: () => ({
+    ...donationGame.config(),
+    donateCooldown: () => 0,
+  }),
+};
+const throttledDonationBehavior = new sandbox.AttackBehavior(
+  { chance: () => true },
+  throttledDonationGame,
+  donor,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+assert.equal(
+  throttledDonationBehavior.runDonationPolicy(),
+  undefined,
+  "the proactive donation policy evaluates without exposing an async result",
+);
+const emissionsAfterProactiveDonation = troopEmissions.length;
+tick += 1;
+const fallbackDonationStrategy = throttledDonationBehavior.getAttackStrategies([], [], []).at(-1);
+assert.equal(
+  await fallbackDonationStrategy(),
+  false,
+  "the Legendary fallback donation entry point honors the global donation throttle",
+);
+assert.equal(troopEmissions.length, emissionsAfterProactiveDonation);
+sandbox.state.settings.donateThrottleMs = undefined;
+
+// The ordinary active-Tribe fallback must carry the same exact reinforcement
+// plan as the dedicated reconciliation lane. Without it, a maritime target
+// with an existing capture intent regresses to the ordinary 1% boat probe.
+const activeMaritimeFallbackBehavior = new sandbox.AttackBehavior(
+  {},
+  maritimeGame,
+  maritimePlayer,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+activeMaritimeFallbackBehavior.getEnemyDefensePostAttackProfile = () => ({
+  attackCostMultiplier: 1,
+});
+activeMaritimeFallbackBehavior.attackIsTooWeakForDefensePosts = () => false;
+activeMaritimeFallbackBehavior.applyEarlyGameRaceTroops = ({ baseTroops }) => baseTroops;
+activeMaritimeFallbackBehavior.allowEarlyGameBoat = async () => true;
+activeMaritimeFallbackBehavior.earlyGameTribeCandidatesRefresh = undefined;
+activeMaritimeFallbackBehavior.getBotsNeedingAttackReinforcement = () => [maritimeActiveTarget];
+outgoing.length = 0;
+outgoing.push({
+  id: () => "maritime-active-fallback-attack",
+  retreating: () => false,
+  target: () => maritimeActiveTarget,
+  troops: () => 8_000,
+});
+tick += 1;
+const activeMaritimeFallbackEmissionCount = troopEmissions.length;
+assert.equal(
+  await activeMaritimeFallbackBehavior.attackBots(),
+  true,
+  "the ordinary Tribe fallback revisits an active maritime capture",
+);
+assert.equal(troopEmissions.length, activeMaritimeFallbackEmissionCount + 1);
+assert.equal(
+  troopEmissions.at(-1),
+  12_000,
+  "the active maritime Tribe fallback emits the exact missing capture force instead of a 1% probe",
+);
+
 const assertDonationPausedDuringExpansion = (earlyGame, message) => {
   sandbox.state.settings.pauseDonateDuringExpansion = true;
   sandbox.state.earlyGame = earlyGame;

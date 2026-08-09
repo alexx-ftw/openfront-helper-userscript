@@ -194,6 +194,37 @@ assert.equal(
   "defensive troop accounting follows the attacker id across refreshed wrappers",
 );
 
+const staleZeroForceAttack = {
+  attacker: () => validIncomingAttacker,
+  target: () => currentDefender,
+  troops: () => 0,
+  retreating: () => false,
+};
+const staleNegativeForceAttack = {
+  attacker: () => validIncomingAttacker,
+  target: () => currentDefender,
+  troops: () => -50,
+  retreating: () => false,
+};
+const staleForceBehavior = Object.create(sandbox.AttackBehavior.prototype);
+staleForceBehavior.game = { ticks: () => 701 };
+staleForceBehavior.player = {
+  smallID: () => currentDefender.smallID(),
+  type: () => sandbox.PlayerType.Bot,
+  isFriendly: () => false,
+  incomingAttacks: () => [staleZeroForceAttack, staleNegativeForceAttack],
+};
+assert.deepEqual(
+  staleForceBehavior.incomingHostileAttacks(),
+  [],
+  "zero- and negative-force incoming snapshots are discarded before they can reserve defense",
+);
+assert.equal(
+  staleForceBehavior.findIncomingAttackPlayer(),
+  null,
+  "stale zero-force attacks cannot suppress offensive or donation decisions",
+);
+
 const siegeHoldBehavior = Object.create(sandbox.AttackBehavior.prototype);
 let siegeCounterattacks = 0;
 sandbox.state.earlyGame = {};

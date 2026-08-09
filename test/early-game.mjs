@@ -2077,7 +2077,7 @@ const attackingDonationAlly = {
   ...passiveDonationAlly,
   id: () => "attacking",
   smallID: () => 3,
-  outgoingAttacks: () => [{ retreating: () => false }],
+  outgoingAttacks: () => [{ retreating: () => false, troops: () => 1 }],
 };
 assert.equal(
   donationSelectionBehavior.donationCandidate(
@@ -4252,6 +4252,8 @@ const maritimeConquestTarget = {
   borderTiles: () => new Set([2]),
   isPlayer: () => true,
   type: () => targetSandbox.PlayerType.Bot,
+  smallID: () => 2,
+  id: () => "tribe-2",
 };
 assert.equal(
   await maritimeConquestBehavior.sendBoatAttack(maritimeConquestTarget, {
@@ -4289,6 +4291,96 @@ assert.deepEqual(
   ["tribe", "maritime-probe"],
   "a maritime tribe conquest reserves its destination before parallel free-land probes",
 );
+
+let terraBoatOwner = false;
+let terraBoatEmissions = 0;
+const terraBoatTile = 77;
+const terraBoatBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+terraBoatBehavior.canSendNearbyTerraNulliusBoat = () => true;
+terraBoatBehavior.nearbyTerraNulliusBoatCandidates = () => [terraBoatTile];
+terraBoatBehavior.player = {
+  bestTransportShipSpawn: async () => {
+    terraBoatOwner = true;
+    return true;
+  },
+};
+terraBoatBehavior.game = {
+  isLand: () => true,
+  hasOwner: () => terraBoatOwner,
+  isImpassable: () => false,
+};
+terraBoatBehavior.allowEarlyGameBoat = async () => true;
+terraBoatBehavior.nearbyTerraNulliusBoatTroops = () => 100;
+terraBoatBehavior.emitNearbyTerraNulliusBoat = () => {
+  terraBoatEmissions++;
+  return true;
+};
+assert.equal(
+  await terraBoatBehavior.sendBoatAttackToNearbyTerraNullius(),
+  false,
+  "a Terra Nullius tile claimed during spawn selection is rejected before boat emission",
+);
+assert.equal(terraBoatEmissions, 0);
+
+// Boat target state can change while border/spawn worker calls are awaited.
+// The final emission must revalidate the same hostile logical owner.
+let boatTargetAlive = true;
+let boatTargetFriendly = false;
+let boatTargetOwner = 2;
+let boatTargetSpawnCalls = 0;
+let boatTargetEmissions = 0;
+const boatValidityTarget = {
+  isPlayer: () => true,
+  isAlive: () => boatTargetAlive,
+  type: () => targetSandbox.PlayerType.Nation,
+  smallID: () => 2,
+  id: () => "nation-2",
+  borderTiles: () => new Set([20]),
+};
+const boatValidityBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+boatValidityBehavior.player = {
+  type: () => targetSandbox.PlayerType.Human,
+  troops: () => 10_000,
+  borderTiles: () => new Set([10]),
+  isFriendly: () => boatTargetFriendly,
+  bestTransportShipSpawn: async () => {
+    boatTargetSpawnCalls++;
+    boatTargetAlive = false;
+    return true;
+  },
+};
+boatValidityBehavior.game = {
+  config: () => ({ isUnitDisabled: () => false, maxTroops: () => 10_000 }),
+  ensureBorderTiles: async () => {},
+  isShore: () => true,
+  ownerID: () => boatTargetOwner,
+  owner: () => boatValidityTarget,
+};
+boatValidityBehavior.getBoatAttackTroopsForSend = () => 100;
+boatValidityBehavior.allowEarlyGameBoat = async () => true;
+boatValidityBehavior.emitBoat = () => {
+  boatTargetEmissions++;
+  return true;
+};
+targetSandbox.closestTwoTiles = () => ({ x: 10, y: 20 });
+assert.equal(
+  await boatValidityBehavior.sendBoatAttack(boatValidityTarget),
+  false,
+  "a target that dies during spawn selection is rejected before boat emission",
+);
+assert.equal(boatTargetSpawnCalls, 1);
+assert.equal(boatTargetEmissions, 0);
+
+boatTargetAlive = true;
+boatTargetFriendly = false;
+boatTargetOwner = 99;
+boatValidityBehavior.player.bestTransportShipSpawn = async () => true;
+assert.equal(
+  await boatValidityBehavior.sendBoatAttack(boatValidityTarget),
+  false,
+  "a target whose shore changes owner during spawn selection is rejected before boat emission",
+);
+assert.equal(boatTargetEmissions, 0);
 
 // Integration probe: ocean-connected water and a river that exits through the
 // map edge count as maritime; an isolated inland lake does not.

@@ -612,7 +612,11 @@
   function hasActiveDonationAttack(attacks) {
     return (
       Array.isArray(attacks) &&
-      attacks.some((attack) => attack?.retreating?.() !== true)
+      attacks.some((attack) => {
+        if (attack?.retreating?.() === true) return false;
+        const troops = Number(attack?.troops?.());
+        return Number.isFinite(troops) && troops > 0;
+      })
     );
   }
 
@@ -882,6 +886,28 @@
         this.getLiveOutboundAttackTroopsForTarget(target) +
         this.getPendingOutboundAttackTroopsForTarget(target)
       );
+    }
+
+    activeTribeReinforcementPlan(target) {
+      if (
+        target?.isPlayer?.() !== true ||
+        target.type?.() !== PlayerType.Bot
+      ) {
+        return null;
+      }
+      const targetKey = this.getOutboundAttackTargetKey(target);
+      if (targetKey == null) return null;
+      const committed = this.getCommittedOutboundAttackTroopsForTarget(target);
+      if (committed < 1) return null;
+      const floor = this.getTribeCaptureTroopFloor(
+        target,
+        this.getEnemyDefensePostAttackProfile(target),
+      );
+      if (committed >= floor) return null;
+      return {
+        targetKey,
+        missing: Math.max(0, floor - committed),
+      };
     }
 
     getActiveOutboundPlayerTargets() {
@@ -2606,17 +2632,22 @@
         this.setDonationStatus("Donate: disabled");
         return;
       }
+      profileAttackSync(profile, "attack-auxiliary-donate", () =>
+        this.donateTroops());
+    }
+
+    donationThrottleAllows() {
+      const configuredThrottle = Number(state.settings.donateThrottleMs);
+      // Core settings always provide this value. Keep isolated classic-script
+      // loads permissive when they intentionally omit the optional setting.
+      if (!Number.isFinite(configuredThrottle)) return true;
       const now = performance.now();
-      const throttle = state.settings.donateThrottleMs || 3000;
+      const throttle = Math.max(0, configuredThrottle);
       if (now - (state.lastDonateMs || 0) <= throttle) {
         this.setDonationStatus("Donate: cooldown");
-        return;
+        return false;
       }
-      const donated = profileAttackSync(profile, "attack-auxiliary-donate", () =>
-        this.donateTroops());
-      if (donated) {
-        state.lastDonateMs = now;
-      }
+      return true;
     }
 
     async tryAttackFallbacks(context) {
@@ -2873,6 +2904,9 @@
       if (!this.prepareExistingTribeAttack(candidate, selectedTargetKeys, targetKey)) {
         return false;
       }
+      const reinforcementPlan = selectedTargetKeys.has(targetKey)
+        ? this.activeTribeReinforcementPlan(candidate.player)
+        : null;
       {
         const launched = await this.sendAttack(
           candidate.player,
@@ -2881,6 +2915,7 @@
           candidate,
           false,
           true,
+          reinforcementPlan,
         );
         if (launched) selectedTargetKeys.add(targetKey);
         return launched;
@@ -7293,6 +7328,8 @@
       const attacker = attack?.attacker?.();
       if (!attacker || attacker.isAlive?.() === false) return false;
       if (!this.incomingAttackTargetsUs(attack)) return false;
+      const troops = Number(attack?.troops?.());
+      if (!Number.isFinite(troops) || troops <= 0) return false;
       return (
         attack?.retreating?.() !== true &&
         this.player.isFriendly(attacker) !== true
@@ -7532,7 +7569,18 @@
       let launchedAttacks = 0;
       for (const bot of reducedBots) {
         if (!hasAttackIntentRateCapacity()) break;
-        if (await this.sendAttack(bot, false, null, null, false, true)) {
+        const reinforcementPlan = this.activeTribeReinforcementPlan(bot);
+        if (
+          await this.sendAttack(
+            bot,
+            false,
+            null,
+            null,
+            false,
+            true,
+            reinforcementPlan,
+          )
+        ) {
           launchedAttacks++;
         }
       }
@@ -8103,6 +8151,17 @@
       );
     }
 
+    attachActiveTribeReinforcementPlan(options, target) {
+      if (
+        options.reinforcementPlan === null &&
+        target?.isPlayer?.() === true &&
+        target.type?.() === PlayerType.Bot
+      ) {
+        options.reinforcementPlan = this.activeTribeReinforcementPlan(target);
+      }
+      return options;
+    }
+
     // sendAttack — AiAttackBehavior (now async via sendBoatAttack/
     // sendBoatAttackToNearbyTerraNullius; sendLandAttack stays sync).
     async sendAttack(...args) {
@@ -8114,6 +8173,7 @@
         options.parallelTribeAttack === true &&
         target?.isPlayer?.() === true &&
         target.type?.() === PlayerType.Bot;
+      this.attachActiveTribeReinforcementPlan(options, target);
       if (
         this.sendAttackIsPendingDuplicate(
           target,
@@ -8247,6 +8307,7 @@
           false,
         );
         if (spawn === false || !(await this.allowEarlyGameBoat(tile))) continue;
+        if (!this.isAttackableTerraNulliusTile(tile)) continue;
         const troops = this.nearbyTerraNulliusBoatTroops(
           radioactiveTerraNullius,
         );
@@ -8637,8 +8698,12 @@
         return false;
       }
 
+      const targetKey = this.getOutboundAttackTargetKey(target);
+      if (!this.boatPlayerTargetStillValid(target, targetKey)) return false;
+
       // Ensure the target's border snapshot before reading it synchronously.
       await this.game.ensureBorderTiles(target);
+      if (!this.boatPlayerTargetStillValid(target, targetKey)) return false;
 
       const closest = closestTwoTiles(
         this.game,
@@ -8659,6 +8724,9 @@
         false,
       );
       if (spawn === false) {
+        return false;
+      }
+      if (!this.boatPlayerTargetStillValid(target, targetKey, destination)) {
         return false;
       }
 
@@ -8683,6 +8751,45 @@
         "⛵ Boat attack",
         target,
         reinforcementPlan !== null,
+      );
+    }
+
+    boatPlayerTargetIdentityStillValid(target, targetKey) {
+      if (
+        targetKey == null ||
+        this.getOutboundAttackTargetKey(target) !== targetKey ||
+        this.player.isFriendly?.(target) === true
+      ) {
+        return false;
+      }
+      return target?.isPlayer?.() === true && target.isAlive?.() !== false;
+    }
+
+    boatDestinationStillOwnedByTarget(target, targetKey, destination) {
+      if (
+        typeof this.game.ownerID !== "function" ||
+        typeof target.smallID !== "function"
+      ) {
+        return true;
+      }
+      const ownerId = this.game.ownerID(destination);
+      if (ownerId == null || String(ownerId) !== String(target.smallID())) {
+        return false;
+      }
+      const owner = this.game.playerBySmallID?.(ownerId);
+      return (
+        owner?.isPlayer?.() !== true ||
+        this.getOutboundAttackTargetKey(owner) === targetKey
+      );
+    }
+
+    boatPlayerTargetStillValid(target, targetKey, destination = null) {
+      if (!this.boatPlayerTargetIdentityStillValid(target, targetKey)) {
+        return false;
+      }
+      return (
+        destination == null ||
+        this.boatDestinationStillOwnedByTarget(target, targetKey, destination)
       );
     }
 
@@ -9232,6 +9339,7 @@
         this.setDonationStatus("Donate: decision cooldown");
         return false;
       }
+      if (!this.donationThrottleAllows()) return false;
       this.logDonationDiagnostic();
       if (!this.donationBaseGatesAllow()) return false;
       const teammates = this.donationTeammates();
@@ -9250,7 +9358,9 @@
       }
       const troops = this.donationAmount();
       if (troops === null) return false;
-      return this.emitDonationTroops(selectedTeammate, troops);
+      const emitted = this.emitDonationTroops(selectedTeammate, troops);
+      if (emitted) state.lastDonateMs = performance.now();
+      return emitted;
     }
 
     teamDonationDistance(teammate) {
