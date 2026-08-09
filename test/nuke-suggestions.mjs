@@ -24,6 +24,8 @@ const sandbox = {
   getUnitLevel: (unit) => Number(unit?.level?.() || 1),
   requestAnimationFrame: () => 0,
   cancelAnimationFrame: () => {},
+  autoNukeOriginalRootSubMenus: new Map(),
+  autoNukeOriginalAttackSubMenus: new Map(),
   UniversalPathFinding: {
     Parabola: () => ({
       findPath: () => [0, 1, 2, 3, 4],
@@ -358,5 +360,71 @@ assert.equal(
   "the trajectory overlay defaults to the standard upward arc",
 );
 assert.equal(trajectoryOptions.increment, 12, "the overlay uses the live nuke speed");
+
+const originalNukeSuggestionDocument = sandbox.document;
+const originalNukeSuggestionWindow = sandbox.window;
+const originalGetPlayerSmallId = sandbox.getPlayerSmallId;
+const originalRootSubMenu = () => [];
+const radialRootMenu = { subMenu: originalRootSubMenu };
+const radialMenuElement = { radialMenu: { rootMenu: radialRootMenu } };
+const contextMenuListeners = new Map();
+sandbox.runtimeState = {
+  autoNukeEnabled: false,
+  autoNukePatchTimeout: null,
+};
+sandbox.document = {
+  addEventListener: (type, listener) => contextMenuListeners.set(type, listener),
+  removeEventListener: (type) => contextMenuListeners.delete(type),
+  getElementById: () => null,
+  querySelector: (selector) => (selector === "main-radial-menu" ? radialMenuElement : null),
+};
+sandbox.window = {
+  addEventListener: () => {},
+  removeEventListener: () => {},
+  clearTimeout,
+  setTimeout,
+};
+sandbox.getPlayerSmallId = (player) => player.smallID();
+const radialMe = {
+  isAlive: () => true,
+  isFriendly: () => false,
+  isPlayer: () => true,
+  smallID: () => 1,
+};
+const radialEnemy = {
+  isAlive: () => true,
+  isFriendly: () => false,
+  isPlayer: () => true,
+  smallID: () => 2,
+};
+try {
+  sandbox.setAutoNukeEnabled(true, false);
+  assert.notEqual(
+    radialRootMenu.subMenu,
+    originalRootSubMenu,
+    "enabling Auto Nukes immediately patches the enemy right-click menu",
+  );
+  const enemyMenuItems = radialRootMenu.subMenu({
+    game: { myPlayer: () => radialMe },
+    myPlayer: radialMe,
+    selected: radialEnemy,
+  });
+  assert.equal(
+    enemyMenuItems.filter((item) => item.id?.startsWith("openfront-helper-auto-nuke-root-")).length,
+    4,
+    "the enemy right-click menu exposes every Auto Nukes action",
+  );
+  sandbox.setAutoNukeEnabled(false, false);
+  assert.equal(
+    radialRootMenu.subMenu,
+    originalRootSubMenu,
+    "disabling Auto Nukes restores the original right-click menu",
+  );
+} finally {
+  sandbox.setAutoNukeEnabled(false, false);
+  sandbox.document = originalNukeSuggestionDocument;
+  sandbox.window = originalNukeSuggestionWindow;
+  sandbox.getPlayerSmallId = originalGetPlayerSmallId;
+}
 
 process.stdout.write("nuke suggestion construction tests passed\n");

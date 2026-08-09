@@ -7203,6 +7203,7 @@
     }
 
     installAutoNukeContextMenu();
+    syncAutoNukeRadialMenuPatch();
   }
 
   function syncNukeSuggestions() {
