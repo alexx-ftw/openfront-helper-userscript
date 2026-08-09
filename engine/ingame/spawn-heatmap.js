@@ -1593,9 +1593,15 @@ function computeAsyncExactSpawnTopSpotsForBot(game, me) {
 
 // ── Main scan (called by scheduler every 250ms) ────────────────────────
 
+function spawnHeatmapSelectionIsActive(game) {
+  if (!(game.inSpawnPhase && game.inSpawnPhase())) return false;
+  const me = game.myPlayer ? game.myPlayer() : null;
+  return me?.hasSpawned?.() !== true;
+}
+
 function scanSpawnHeatmap(game) {
-  const inSpawnPhase = Boolean(game.inSpawnPhase && game.inSpawnPhase());
-  if (_spawnHeatmapWasInSpawnPhase && !inSpawnPhase) {
+  const selectionIsActive = spawnHeatmapSelectionIsActive(game);
+  if (_spawnHeatmapWasInSpawnPhase && !selectionIsActive) {
     _spawnHeatmapData = null;
     _spawnStaticCandidates = null;
     _spawnStaticGameRef = null;
@@ -1608,8 +1614,8 @@ function scanSpawnHeatmap(game) {
     _spawnHeatmapWasInSpawnPhase = false;
     return;
   }
-  _spawnHeatmapWasInSpawnPhase = inSpawnPhase;
-  if (!inSpawnPhase) {
+  _spawnHeatmapWasInSpawnPhase = selectionIsActive;
+  if (!selectionIsActive) {
     _spawnHeatmapData = null;
     return;
   }

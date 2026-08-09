@@ -87,6 +87,7 @@ function loadHarness() {
     isPointInsideTeamSpawnRegion: sandbox.isPointInsideTeamSpawnRegion,
     game,
     getIndexCreateCalls: () => indexCreateCalls,
+    getTopSpots: sandbox.getSpawnHeatmapTopSpots,
     layer: overlayLayer,
     setSpawnPhase: (value) => {
       spawnPhase = value;
@@ -147,6 +148,24 @@ assert.equal(
   harness.getIndexCreateCalls(),
   0,
   "spawn markers must not allocate the exact map-wide candidate index",
+);
+let localPlayerHasSpawned = false;
+const visibleSpawnGame = {
+  __src: { _map: { terrain: new Uint8Array(64 * 64).fill(LAND) } },
+  height: () => 64,
+  inSpawnPhase: () => true,
+  myPlayer: () => ({ hasSpawned: () => localPlayerHasSpawned }),
+  width: () => 64,
+};
+harness.layer.scan(visibleSpawnGame);
+assert.ok(harness.getTopSpots()?.length > 0, "spawn markers have visible data before spawning");
+
+localPlayerHasSpawned = true;
+harness.layer.scan(visibleSpawnGame);
+assert.equal(
+  harness.getTopSpots(),
+  null,
+  "spawn markers disappear once the local player has spawned even while the lobby phase remains open",
 );
 
 harness.setSpawnPhase(false);
