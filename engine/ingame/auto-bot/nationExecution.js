@@ -786,12 +786,16 @@
       const step = Math.max(1, Math.ceil(Math.sqrt((spanWidth * spanHeight) / 1000)));
       const columns = Math.floor((bounds.maxX - bounds.minX) / step) + 1;
       const rows = Math.floor((bounds.maxY - bounds.minY) / step) + 1;
-      const candidateCount = Math.min(1000, columns * rows);
+      const latticeCount = columns * rows;
+      const candidateCount = Math.min(1000, latticeCount);
       let bestTile = null;
       let bestScore = -Infinity;
-      for (let index = 0; index < candidateCount; index += 1) {
-        const x = bounds.minX + (index % columns) * step;
-        const y = bounds.minY + Math.floor(index / columns) * step;
+      for (let probe = 0; probe < candidateCount; probe += 1) {
+        const latticeIndex = candidateCount === 1
+          ? 0
+          : Math.floor((probe * (latticeCount - 1)) / (candidateCount - 1));
+        const x = bounds.minX + (latticeIndex % columns) * step;
+        const y = bounds.minY + Math.floor(latticeIndex / columns) * step;
         if (!game.isValidCoord(x, y)) continue;
         const tile = game.ref(x, y);
         if (!this.isValidSpawnTile(tile, constraints)) continue;

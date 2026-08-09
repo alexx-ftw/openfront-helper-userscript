@@ -508,6 +508,62 @@ assert.equal(
   50 * 100 + 49,
   "when random samples miss a corridor, the bounded team-region fallback must choose the first equally scored legal tile",
 );
+
+const largeCorridorWidth = 5000;
+const largeCorridorRegion = {
+  polygon: null,
+  corridor: {
+    start: { x: 0, y: 10 },
+    end: { x: 4999, y: 10 },
+    lengthSquared: 4999 ** 2,
+    halfWidth: 0,
+  },
+};
+const largeCorridorLegalTile = 10 * largeCorridorWidth + 4500;
+const largeCorridorProbes = [];
+const largeCorridorGame = {
+  isValidCoord: (x, y) => x >= 0 && x < largeCorridorWidth && y >= 0 && y < 20,
+  ref: (x, y) => y * largeCorridorWidth + x,
+  x: (tile) => tile % largeCorridorWidth,
+  y: (tile) => Math.floor(tile / largeCorridorWidth),
+  isLand: (tile) => {
+    largeCorridorProbes.push(tile);
+    return tile === largeCorridorLegalTile;
+  },
+  hasOwner: () => false,
+  isBorder: () => false,
+  magnitude: () => 0,
+};
+openingSandbox.isPointInsideTeamSpawnRegion = (x, y, region) =>
+  region === largeCorridorRegion && x >= 20 && x <= 4980 && y === 10;
+sampledSpawnBot.scoreSpawnTile = () => 1;
+assert.equal(
+  sampledSpawnBot.pickTeamRegionFallbackTile(
+    {
+      game: largeCorridorGame,
+      area: null,
+      others: [],
+      width: largeCorridorWidth,
+      height: 20,
+      teamRegion: largeCorridorRegion,
+    },
+    true,
+  ),
+  largeCorridorLegalTile,
+  "a large corridor must distribute its bounded probes beyond the old row-major prefix",
+);
+assert.equal(largeCorridorProbes.length, 1000, "the fallback must retain its strict probe cap");
+assert.equal(
+  new Set(largeCorridorProbes).size,
+  largeCorridorProbes.length,
+  "distributed fallback probes must not waste budget on duplicate lattice cells",
+);
+assert.equal(largeCorridorProbes[0], 10 * largeCorridorWidth);
+assert.equal(
+  largeCorridorProbes.at(-1),
+  10 * largeCorridorWidth + 4998,
+  "the distributed probe set must include the final lattice cell",
+);
 const tribeOnlyPendingBot = Object.create(openingSandbox.NationBot.prototype);
 tribeOnlyPendingBot.attackBehavior = {
   getPendingOutboundAttackTroops: () => 5000,
