@@ -1999,6 +1999,65 @@ const targetBehavior = new targetSandbox.AttackBehavior(
   {},
 );
 
+// An incomplete Tribe/Nation conquest may consume one bounded reinforcement
+// slot, but it must not make the TerraNullius liveness lane wait for a later
+// decision or emit more than one free-land intent in this decision.
+const livenessTerraNulliusTarget = { isPlayer: () => false };
+const incompleteConquestOrder = [];
+const incompleteConquestBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+incompleteConquestBehavior.game = {
+  terraNullius: () => livenessTerraNulliusTarget,
+};
+incompleteConquestBehavior.reinforceIncompleteOutboundPlayerAttack = async () => {
+  incompleteConquestOrder.push("reinforce");
+  return true;
+};
+incompleteConquestBehavior.sendAttack = async (target) => {
+  incompleteConquestOrder.push(target);
+  return true;
+};
+assert.equal(
+  await incompleteConquestBehavior.tryImmediateAttackPriorities({
+    expandOn: true,
+    hasAccessibleTerraNullius: true,
+    hasAccessibleRadioactiveLand: false,
+    borderingPlayers: [],
+  }),
+  true,
+  "a successful bounded conquest reinforcement keeps the immediate priority lane live",
+);
+assert.deepEqual(
+  incompleteConquestOrder,
+  ["reinforce", livenessTerraNulliusTarget],
+  "an incomplete conquest reinforcement does not pause an available TerraNullius intent",
+);
+
+const openingLivenessOrder = [];
+const openingLivenessBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+openingLivenessBehavior.reconcileOutboundAttackIntentCommitments = () =>
+  openingLivenessOrder.push("reconcile");
+openingLivenessBehavior.respondToIncomingAttack = async () => null;
+openingLivenessBehavior.reinforceIncompleteOutboundPlayerAttack = async () => {
+  openingLivenessOrder.push("reinforce");
+  return true;
+};
+openingLivenessBehavior.getRemainingTerraNulliusOpeningCommitment = () => 100;
+openingLivenessBehavior.forceSendAttack = () => {
+  openingLivenessOrder.push("terra");
+  return true;
+};
+openingLivenessBehavior.game = { terraNullius: () => livenessTerraNulliusTarget };
+assert.equal(
+  await openingLivenessBehavior.continueOpeningExpansion(),
+  true,
+  "the fast TerraNullius lane remains active after a bounded conquest reinforcement",
+);
+assert.deepEqual(
+  openingLivenessOrder,
+  ["reconcile", "reinforce", "terra"],
+  "the fast lane reconciles once, reinforces once, then emits one TerraNullius intent",
+);
+
 const donationSelectionBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 donationSelectionBehavior.player = {
   smallID: () => 1,

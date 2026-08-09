@@ -1388,4 +1388,113 @@ assert.equal(
 );
 assert.equal(minimumCapacityProfiles, minimumCapacitySnapshot.samProfiles);
 
+const mirvDedupSandbox = {
+  UNIT: {
+    MissileSilo: "Missile Silo",
+    MIRV: "MIRV",
+    MIRVWarhead: "MIRV Warhead",
+  },
+  Difficulty: { Impossible: "Impossible" },
+  PlayerType: { Bot: "Bot" },
+  AllPlayers: {},
+  EMOJI_NUKE: [],
+  WORKER_TIMEOUT_MS: 1,
+  currentDifficulty: () => "Impossible",
+  state: { settings: { winFixes: false }, stats: { nukes: 0 } },
+  withTimeout: async (promise) => promise,
+  setLastAction() {},
+  tr: (value) => value,
+  respondToMIRV() {},
+  getBuildMenu: () => ({ sendBuildOrUpgrade() {} }),
+};
+mirvDedupSandbox.globalThis = mirvDedupSandbox;
+executeClassicScript(read("engine/ingame/shared-utils.js"), mirvDedupSandbox, {
+  filename: "shared-utils-mirv-dedup.js",
+});
+executeClassicScript(
+  `${read("engine/ingame/auto-bot/mirvBehavior.js")}\nglobalThis.__MirvBehavior = MirvBehavior;`,
+  mirvDedupSandbox,
+  { filename: "mirv-dedup.js" },
+);
+
+const mirvDedupUnit = (owner, type, targetTile) => ({
+  isActive: () => true,
+  owner: () => owner,
+  type: () => type,
+  targetTile: () => targetTile,
+});
+const permanentMirvTeammate = {
+  smallID: () => 2,
+  team: () => "blue",
+};
+const breakableMirvAlly = {
+  smallID: () => 3,
+  team: () => null,
+};
+const mirvTarget = {
+  id: () => "mirv-target",
+  smallID: () => 4,
+  isPlayer: () => true,
+  type: () => "Human",
+  team: () => null,
+};
+let activeMirvUnits = [];
+let emittedMirvBuilds = 0;
+const mirvDedupPlayer = {
+  smallID: () => 1,
+  team: () => "blue",
+  isFriendly: (other) => other === breakableMirvAlly,
+  units: (type) =>
+    type === mirvDedupSandbox.UNIT.MissileSilo
+      ? [
+          {
+            isActive: () => true,
+            isUnderConstruction: () => false,
+            level: () => 1,
+            missileTimerQueue: () => [],
+          },
+        ]
+      : [],
+  buildables: async () => [{ type: mirvDedupSandbox.UNIT.MIRV, cost: 1n, canBuild: true }],
+  gold: () => 1n,
+};
+const mirvDedupGame = {
+  ticks: () => 100,
+  players: () => [mirvDedupPlayer, permanentMirvTeammate, breakableMirvAlly, mirvTarget],
+  units: (...types) => activeMirvUnits.filter((unit) => types.includes(unit.type())),
+  config: () => ({ nukeMagnitudes: () => ({ inner: 12 }) }),
+  euclideanDistSquared: (left, right) => (left - right) ** 2,
+};
+mirvDedupSandbox.sendAutoBotBuildOrUpgrade = () => {
+  emittedMirvBuilds++;
+  return true;
+};
+const mirvDedupBehavior = new mirvDedupSandbox.__MirvBehavior(
+  { chance: () => false },
+  mirvDedupGame,
+  mirvDedupPlayer,
+  { maybeSendAttackEmoji() {}, sendEmoji() {} },
+);
+mirvDedupBehavior.calculateTerritoryCenter = async () => 100;
+
+for (const activeType of [mirvDedupSandbox.UNIT.MIRV, mirvDedupSandbox.UNIT.MIRVWarhead]) {
+  activeMirvUnits = [mirvDedupUnit(permanentMirvTeammate, activeType, 108)];
+  emittedMirvBuilds = 0;
+  assert.equal(
+    await mirvDedupBehavior.maybeSendMIRV(mirvTarget),
+    false,
+    `a permanent teammate's active ${activeType} suppresses an overlapping MIRV launch`,
+  );
+  assert.equal(emittedMirvBuilds, 0);
+}
+
+activeMirvUnits = [mirvDedupUnit(breakableMirvAlly, mirvDedupSandbox.UNIT.MIRV, 108)];
+emittedMirvBuilds = 0;
+assert.equal(
+  await mirvDedupBehavior.maybeSendMIRV(mirvTarget),
+  true,
+  "a breakable ally's active MIRV does not suppress an overlapping launch",
+);
+assert.equal(emittedMirvBuilds, 1);
+
 process.stdout.write("LEGENDARY TESTS OK\n");

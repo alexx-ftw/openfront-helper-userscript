@@ -348,6 +348,87 @@ assert.equal(
 );
 testDifficulty = Difficulty.Impossible;
 
+for (const type of [UNIT.MIRV, UNIT.MIRVWarhead]) {
+  let targetTile = 200;
+  const missile = {
+    id: () => 700,
+    type: () => type,
+    owner: () => ({ smallID: () => 2 }),
+    tile: () => 100,
+    targetTile: () => targetTile,
+    isActive: () => true,
+  };
+  const fingerprintBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+  fingerprintBehavior.cost = () => 1n;
+  fingerprintBehavior.player = {
+    smallID: () => 1,
+    units: () => [],
+    isFriendly: () => false,
+    isOnSameTeam: () => false,
+  };
+  fingerprintBehavior.game = {
+    players: () => [fingerprintBehavior.player],
+    units: (...types) => (types.includes(type) ? [missile] : []),
+  };
+  const before = fingerprintBehavior.missileDefenseStateFingerprint();
+  targetTile = 201;
+  assert.notEqual(
+    fingerprintBehavior.missileDefenseStateFingerprint(),
+    before,
+    `${type} trajectory changes invalidate the missile-defense fingerprint`,
+  );
+}
+
+const affordableUpgradeDespiteExpensiveNewBuildBehavior = Object.create(
+  sandbox.__StructureBehavior.prototype,
+);
+const affordableSamUpgrade = {
+  id: () => 1_201,
+  type: () => UNIT.SAMLauncher,
+  tile: () => 1_201,
+  level: () => 1,
+  isUnderConstruction: () => false,
+};
+const authoritativeSamUpgrade = {
+  canBuild: false,
+  canUpgrade: true,
+  cost: 500_000n,
+};
+let expensiveNewBuildProbes = 0;
+affordableUpgradeDespiteExpensiveNewBuildBehavior.structureSpawnEligible = () => true;
+affordableUpgradeDespiteExpensiveNewBuildBehavior.getConstructionCost = () => 3_000_000n;
+affordableUpgradeDespiteExpensiveNewBuildBehavior.availableGoldAfterReserve = () => 500_000n;
+affordableUpgradeDespiteExpensiveNewBuildBehavior.spendableConstructionGold = () => 500_000n;
+affordableUpgradeDespiteExpensiveNewBuildBehavior.economicConstructionPressureForSamUpgrade = () =>
+  null;
+affordableUpgradeDespiteExpensiveNewBuildBehavior.player = {
+  units: () => [affordableSamUpgrade],
+};
+affordableUpgradeDespiteExpensiveNewBuildBehavior.game = {
+  config: () => ({
+    unitInfo: () => ({ upgradable: true }),
+  }),
+};
+affordableUpgradeDespiteExpensiveNewBuildBehavior.getTotalStructureDensity = () => 1;
+affordableUpgradeDespiteExpensiveNewBuildBehavior.findBestStructureToUpgrade = async () => ({
+  structure: affordableSamUpgrade,
+  bu: authoritativeSamUpgrade,
+});
+affordableUpgradeDespiteExpensiveNewBuildBehavior.tileInsideActiveHostileMissileImpact = () =>
+  false;
+affordableUpgradeDespiteExpensiveNewBuildBehavior.structureSpawnTile = async () => {
+  expensiveNewBuildProbes++;
+  return { canBuild: 1_202, canUpgrade: false };
+};
+sentBuilds.length = 0;
+assert.equal(
+  await affordableUpgradeDespiteExpensiveNewBuildBehavior.maybeSpawnStructure(UNIT.SAMLauncher),
+  true,
+  "an affordable authoritative upgrade is not rejected by an unaffordable new-SAM cost",
+);
+assert.equal(expensiveNewBuildProbes, 0, "the successful upgrade does not probe a new site");
+assert.equal(sentBuilds.at(-1), authoritativeSamUpgrade);
+
 assert.equal(
   typeof sandbox.legendaryMaxEnemySamCapacity,
   "function",

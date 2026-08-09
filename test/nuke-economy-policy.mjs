@@ -200,17 +200,20 @@ assert.equal(
 const teammateTarget = { smallID: () => 73 };
 const teammate = {
   smallID: () => 2,
+  team: () => "blue",
   isAlive: () => true,
   targets: () => [teammateTarget],
 };
 const deadTeammate = {
   smallID: () => 3,
+  team: () => "blue",
   isAlive: () => false,
   targets: () => [{ smallID: () => 74 }],
 };
 const me = {
   smallID: () => 1,
-  isFriendly: (other) => other === teammate,
+  team: () => "blue",
+  isFriendly: (other) => other?.smallID?.() === 2 || other?.smallID?.() === 4,
   // Engine Player.allies() deliberately omits permanent teammates.
   allies: () => [],
   targets: () => [],
@@ -221,6 +224,20 @@ assert.equal(
   behavior.findAllyNukeTarget(),
   teammateTarget,
   "nuclear targeting supports a permanent teammate's marked enemy",
+);
+
+const breakableAllyTarget = { smallID: () => 75 };
+const breakableAlly = {
+  smallID: () => 4,
+  team: () => null,
+  isAlive: () => true,
+  targets: () => [breakableAllyTarget],
+};
+behavior.game = { players: () => [me, breakableAlly, teammate] };
+assert.equal(
+  behavior.findAllyNukeTarget(),
+  teammateTarget,
+  "a breakable diplomatic ally is not treated as a permanent nuclear ally",
 );
 
 const diplomaticNukeOwner = {
@@ -266,6 +283,55 @@ assert.equal(
   "a permanent teammate's nuke prevents a duplicate overlapping launch",
 );
 
+const breakableSamOwner = {
+  smallID: () => 4,
+  team: () => null,
+};
+const permanentSamOwner = {
+  smallID: () => 5,
+  team: () => "blue",
+};
+const samUnit = (owner, id) => ({
+  owner: () => owner,
+  id: () => id,
+  level: () => 1,
+});
+const breakableSam = samUnit(breakableSamOwner, "breakable-sam");
+const permanentSam = samUnit(permanentSamOwner, "team-sam");
+const samRangeGame = {
+  config: () => ({
+    samRange: () => 10,
+    maxSamRange: () => 10,
+  }),
+  nearbyUnits: () => [{ unit: breakableSam, distSquared: 1 }],
+};
+behavior.player = me;
+behavior.game = samRangeGame;
+assert.equal(
+  behavior.isHostileSamIntercept({ unit: breakableSam, distSquared: 1 }, new Set()),
+  true,
+  "a breakable diplomatic ally's SAM can intercept a nuclear trajectory",
+);
+assert.deepEqual(
+  Array.from(behavior.findEnemySamsCoveringTile(0), (sam) => sam.id()),
+  ["breakable-sam"],
+  "hostile-SAM search includes a breakable diplomatic ally's SAM",
+);
+behavior.game = {
+  ...samRangeGame,
+  nearbyUnits: () => [{ unit: permanentSam, distSquared: 1 }],
+};
+assert.equal(
+  behavior.isHostileSamIntercept({ unit: permanentSam, distSquared: 1 }, new Set()),
+  false,
+  "a permanent teammate's SAM cannot intercept our nuclear trajectory",
+);
+assert.deepEqual(
+  Array.from(behavior.findEnemySamsCoveringTile(0), (sam) => sam.id()),
+  [],
+  "hostile-SAM search excludes a permanent teammate's SAM",
+);
+
 const mirvEnemy = {
   id: () => "enemy-2",
   smallID: () => 2,
@@ -286,10 +352,19 @@ const mirvPlayer = {
   buildables: async () => [{ type: UNIT.MIRV, cost: 1n, canBuild: true }],
   gold: () => 1n,
 };
-const mirvBehavior = new sandbox.__MirvBehavior({}, { ticks: () => 123 }, mirvPlayer, {
-  maybeSendAttackEmoji() {},
-  sendEmoji() {},
-});
+const mirvBehavior = new sandbox.__MirvBehavior(
+  {},
+  {
+    ticks: () => 123,
+    units: () => [],
+    config: () => ({ nukeMagnitudes: () => ({ inner: 10 }) }),
+  },
+  mirvPlayer,
+  {
+    maybeSendAttackEmoji() {},
+    sendEmoji() {},
+  },
+);
 mirvBehavior.calculateTerritoryCenter = async () => 0;
 await mirvBehavior.maybeSendMIRV(mirvEnemy);
 assert.equal(mirvBuildTile, 0, "a valid territory centre at tile zero still launches the MIRV");
@@ -364,10 +439,19 @@ const staleMirvPlayer = {
   buildables: async () => [{ type: UNIT.MIRV, cost: 1n, canBuild: true }],
   gold: () => 1n,
 };
-const staleMirvBehavior = new sandbox.__MirvBehavior({}, { ticks: () => 124 }, staleMirvPlayer, {
-  maybeSendAttackEmoji() {},
-  sendEmoji() {},
-});
+const staleMirvBehavior = new sandbox.__MirvBehavior(
+  {},
+  {
+    ticks: () => 124,
+    units: () => [],
+    config: () => ({ nukeMagnitudes: () => ({ inner: 10 }) }),
+  },
+  staleMirvPlayer,
+  {
+    maybeSendAttackEmoji() {},
+    sendEmoji() {},
+  },
+);
 staleMirvBehavior.calculateTerritoryCenter = async () => 7;
 mirvBuildTile = null;
 const pendingStaleMirv = staleMirvBehavior.maybeSendMIRV(staleMirvTarget);
@@ -544,7 +628,11 @@ const mirvActuationPlayer = {
 };
 const mirvActuationBehavior = new sandbox.__MirvBehavior(
   { chance: () => false },
-  { ticks: () => 700 },
+  {
+    ticks: () => 700,
+    units: () => [],
+    config: () => ({ nukeMagnitudes: () => ({ inner: 10 }) }),
+  },
   mirvActuationPlayer,
   { maybeSendAttackEmoji() {}, sendEmoji() {} },
 );
@@ -563,7 +651,11 @@ const exhaustedMirvBehavior = new sandbox.__MirvBehavior(
   { chance: () => false },
   {
     ticks: () => 701,
-    config: () => ({ isUnitDisabled: () => false }),
+    units: () => [],
+    config: () => ({
+      isUnitDisabled: () => false,
+      nukeMagnitudes: () => ({ inner: 10 }),
+    }),
   },
   exhaustedMirvPlayer,
   { maybeSendAttackEmoji() {}, sendEmoji() {} },
@@ -601,6 +693,7 @@ const rejectedProbeBehavior = new sandbox.__MirvBehavior(
   { chance: () => false },
   {
     ticks: () => 702,
+    units: () => [],
     config: () => ({ gameConfig: () => ({ gameMode: "FFA" }) }),
   },
   rejectedProbePlayer,
@@ -622,7 +715,11 @@ assert.equal(
 
 const firstEligibleRejectedBehavior = new sandbox.__MirvBehavior(
   { chance: () => false },
-  { ticks: () => 703 },
+  {
+    ticks: () => 703,
+    units: () => [],
+    config: () => ({ gameConfig: () => ({ gameMode: "FFA" }) }),
+  },
   rejectedProbePlayer,
   { maybeSendAttackEmoji() {}, sendEmoji() {} },
 );

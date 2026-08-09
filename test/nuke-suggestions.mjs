@@ -6,6 +6,10 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const NUKE_IMPACT_SOURCE = fs.readFileSync(path.join(ROOT, "engine/ingame/nuke-impact.js"), "utf8");
+const SHARED_UTILS_SOURCE = fs.readFileSync(
+  path.join(ROOT, "engine/ingame/shared-utils.js"),
+  "utf8",
+);
 const NUKE_SUGGESTIONS_SOURCE = fs.readFileSync(
   path.join(ROOT, "engine/ingame/nuke-suggestions.js"),
   "utf8",
@@ -33,12 +37,81 @@ const sandbox = {
   },
 };
 sandbox.globalThis = sandbox;
+executeClassicScript(SHARED_UTILS_SOURCE, sandbox, {
+  filename: "shared-utils.js",
+});
 executeClassicScript(NUKE_IMPACT_SOURCE, sandbox, {
   filename: "nuke-impact.js",
 });
 executeClassicScript(NUKE_SUGGESTIONS_SOURCE, sandbox, {
   filename: "nuke-suggestions.js",
 });
+executeClassicScript(
+  "globalThis.__isEnemyNukeSuggestionTarget = isEnemyNukeSuggestionTarget;" +
+    "globalThis.__isNukeSuggestionSamOwnerHostileToLauncher = isNukeSuggestionSamOwnerHostileToLauncher;" +
+    "globalThis.__collectAllHostileSams = collectAllHostileSams;" +
+    "globalThis.__collectAlliedPlayerSmallIds = collectAlliedPlayerSmallIds;",
+  sandbox,
+  { filename: "nuke-suggestions-test-exports.js" },
+);
+
+const suggestionMe = {
+  isPlayer: () => true,
+  isAlive: () => true,
+  smallID: () => 1,
+  team: () => "blue",
+  isFriendly: () => true,
+  isAlliedWith: () => true,
+  allies: () => [],
+};
+const breakableSuggestionAlly = {
+  isPlayer: () => true,
+  isAlive: () => true,
+  smallID: () => 2,
+  team: () => null,
+  isFriendly: () => true,
+  isAlliedWith: () => true,
+  units: () => [],
+};
+const permanentSuggestionTeammate = {
+  isPlayer: () => true,
+  isAlive: () => true,
+  smallID: () => 3,
+  team: () => "blue",
+  isFriendly: () => true,
+  isAlliedWith: () => false,
+  units: () => [],
+};
+const suggestionGame = {
+  myPlayer: () => suggestionMe,
+  playerViews: () => [suggestionMe, breakableSuggestionAlly, permanentSuggestionTeammate],
+  units: () => [],
+};
+assert.equal(
+  sandbox.__isEnemyNukeSuggestionTarget(suggestionGame, breakableSuggestionAlly),
+  true,
+  "nuke suggestions treat a breakable diplomatic ally as an enemy target",
+);
+assert.equal(
+  sandbox.__isEnemyNukeSuggestionTarget(suggestionGame, permanentSuggestionTeammate),
+  false,
+  "nuke suggestions do not treat a permanent teammate as an enemy target",
+);
+assert.equal(
+  sandbox.__isNukeSuggestionSamOwnerHostileToLauncher(suggestionMe, breakableSuggestionAlly),
+  true,
+  "nuke suggestions search a breakable diplomatic ally's SAM as hostile",
+);
+assert.equal(
+  sandbox.__isNukeSuggestionSamOwnerHostileToLauncher(suggestionMe, permanentSuggestionTeammate),
+  false,
+  "nuke suggestions exclude a permanent teammate's SAM from hostile search",
+);
+assert.deepEqual(
+  Array.from(sandbox.__collectAlliedPlayerSmallIds(suggestionGame, suggestionMe)),
+  [3],
+  "nuke collateral protection includes only permanent teammates",
+);
 
 const game = {
   ticks: () => 0,

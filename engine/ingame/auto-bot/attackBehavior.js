@@ -2507,10 +2507,11 @@
 
     async tryImmediateAttackPriorities(context) {
       if (!context.expandOn || !state.settings.winFixes) return false;
-      // Finish conquests already in flight before opening another front. Free
-      // land is persistent; an underfunded tribe attack decays while the tribe
-      // keeps producing troops and must not be starved by Terra Nullius.
-      if (await this.reinforceIncompleteOutboundPlayerAttack()) return true;
+      // Reconcile at most one conquest reinforcement before opening another
+      // front. Free land is persistent; an underfunded tribe attack decays
+      // while the tribe keeps producing troops, but it must not pause Terra
+      // Nullius liveness.
+      const reinforced = await this.reinforceIncompleteOutboundPlayerAttack();
       if (context.hasAccessibleTerraNullius) {
         const expanded = await this.sendAttack(
           this.game.terraNullius(),
@@ -2521,6 +2522,7 @@
         );
         if (expanded) return true;
       }
+      if (reinforced) return true;
       const sleeping = this.disconnectedBorderingPlayers(context.borderingPlayers);
       if (sleeping.length === 0) return false;
       runtimeDebugLog(
@@ -2731,22 +2733,25 @@
     }
 
     // Opening Terra Nullius liveness runs more frequently than the strategic
-    // attack cadence. Keep this path deliberately small: finish an active
-    // conquest first, then emit one adjacent free-land intent without rebuilding
-    // tribe topology, race scores, maritime ETAs, or overlay diagnostics.
+    // attack cadence. Keep this path deliberately small: reconcile at most one
+    // active conquest, then emit one adjacent free-land intent without
+    // rebuilding tribe topology, race scores, maritime ETAs, or overlay
+    // diagnostics.
     async continueOpeningExpansion() {
       this.reconcileOutboundAttackIntentCommitments();
       const defense = await this.respondToIncomingAttack();
       if (defense !== null) return false;
-      if (await this.reinforceIncompleteOutboundPlayerAttack()) return true;
+      const reinforced = await this.reinforceIncompleteOutboundPlayerAttack();
+      let expanded = false;
       if (this.getRemainingTerraNulliusOpeningCommitment() > 0) {
-        return this.forceSendAttack(
+        expanded = this.forceSendAttack(
           this.game.terraNullius(),
           EARLY_EXPAND_COMMIT,
         );
+      } else if (this.hasLandBorderWithTerraNullius()) {
+        expanded = this.sendLandAttack(this.game.terraNullius());
       }
-      if (!this.hasLandBorderWithTerraNullius()) return false;
-      return this.sendLandAttack(this.game.terraNullius());
+      return reinforced || expanded;
     }
 
     // Rank and eat several tribes during Early Game. This is a win-fix policy

@@ -7074,7 +7074,12 @@
       }
 
       const activeMissiles = typeof this.game?.units === "function"
-        ? this.game.units(UNIT.AtomBomb, UNIT.HydrogenBomb)
+        ? this.game.units(
+            UNIT.AtomBomb,
+            UNIT.HydrogenBomb,
+            UNIT.MIRV,
+            UNIT.MIRVWarhead,
+          )
         : [];
       const missileFingerprints = [];
       if (Array.isArray(activeMissiles)) {
@@ -8548,13 +8553,6 @@
     // maybeSpawnStructure — NationStructureBehavior.ts:585 (now async).
     async maybeSpawnStructure(type, options = {}) {
       if (!this.structureSpawnEligible(type, options)) return false;
-      const perceivedCost = this.constructionCostForOptions(type, options);
-      // Keep the MIRV war chest scoped to offensive silo construction. Cities,
-      // factories, ports and SAMs must still spend normal available gold.
-      const availableGold = this.availableGoldAfterReserve(type);
-      if (availableGold < perceivedCost) {
-        return false;
-      }
 
       const structures = this.player.units(type);
       const economicType = ECONOMIC_STRUCTURE_TYPES.includes(type);
@@ -8568,6 +8566,9 @@
         return false;
       }
 
+      // An authoritative upgrade can cost less than a new structure of the
+      // same type. Give that decision its chance before applying the new-build
+      // affordability gate.
       if (!economicType) {
         const upgradeDecision = await this.structureUpgradeBeforeSpawn(
           type,
@@ -8575,6 +8576,14 @@
           options,
         );
         if (upgradeDecision !== null) return upgradeDecision;
+      }
+
+      const perceivedCost = this.constructionCostForOptions(type, options);
+      // Keep the MIRV war chest scoped to offensive silo construction. Cities,
+      // factories, ports and SAMs must still spend normal available gold.
+      const availableGold = this.availableGoldAfterReserve(type);
+      if (availableGold < perceivedCost) {
+        return false;
       }
 
       const buildable = await this.structureSpawnBuildable(

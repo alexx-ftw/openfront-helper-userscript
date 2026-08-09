@@ -499,9 +499,7 @@
       return false;
     }
 
-    {
-      return !myPlayer.isFriendly?.(player) && !player.isFriendly?.(myPlayer);
-    }
+    return !playersArePermanentTeammates(myPlayer, player);
   }
 
   function getPlayerBySmallIdSafe(game, smallId) {
@@ -750,7 +748,7 @@
             return false;
           }
           const owner = unit.owner?.();
-          return owner?.isPlayer?.() && myPlayer?.isOnSameTeam?.(owner);
+          return owner?.isPlayer?.() && playersArePermanentTeammates(myPlayer, owner);
         })
         .map((unit) => ({
           tile: getUnitTile(unit),
@@ -782,9 +780,7 @@
   function isDistinctAlliedPlayer(myPlayer, player) {
     if (!player?.isPlayer?.()) return false;
     if (getPlayerSmallId(player) === getPlayerSmallId(myPlayer)) return false;
-    return (
-      myPlayer?.isAlliedWith?.(player) || player?.isAlliedWith?.(myPlayer) || false
-    );
+    return playersArePermanentTeammates(myPlayer, player);
   }
 
   function collectAlliedStructures(game, allySmallIds) {
@@ -819,9 +815,7 @@
     const myPlayer = game?.myPlayer?.();
     if (!isDistinctAlivePlayer(myPlayer, targetPlayer)) return false;
 
-    {
-      return !myPlayer.isFriendly?.(targetPlayer) && !targetPlayer.isFriendly?.(myPlayer);
-    }
+    return !playersArePermanentTeammates(myPlayer, targetPlayer);
   }
 
   function isDistinctAlivePlayer(myPlayer, targetPlayer) {
@@ -1506,7 +1500,7 @@
     }
 
     const owner = getOwnerAtTile(game, tile);
-    if (owner?.isPlayer?.() && isTeamGame(game) && myPlayer?.isOnSameTeam?.(owner)) {
+    if (owner?.isPlayer?.() && playersArePermanentTeammates(myPlayer, owner)) {
       return false;
     }
 

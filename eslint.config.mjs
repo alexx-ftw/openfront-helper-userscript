@@ -43,6 +43,8 @@ export default tseslint.config(
       "node_modules/**",
       "openfront-engine/**",
       "openfront-helper.user.js",
+      "openfront-helper.autobot.js",
+      "openfront-helper.build-id.js",
       "coverage/**",
       "jscpd-report/**",
       "dist/**",

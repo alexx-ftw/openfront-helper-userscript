@@ -371,7 +371,7 @@
     isValidNukeTarget(target) {
       if (target === null || target.isAlive?.() === false) return false;
       if (target.smallID?.() === this.player.smallID?.()) return false;
-      if (this.player.isOnSameTeam(target)) return false;
+      if (playersArePermanentTeammates(this.player, target)) return false;
       return this.attackBehavior.shouldAttack(target) !== false;
     }
 
@@ -514,21 +514,21 @@
       const crown = this.game.players().slice()
         .sort((a, b) => b.numTilesOwned() - a.numTilesOwned())[0];
       if (!crown || crown.smallID() === this.player.smallID()) return null;
-      if (this.player.isFriendly(crown)) return null;
+      if (playersArePermanentTeammates(this.player, crown)) return null;
       return crown.numTilesOwned() / availableTiles > 0.5 ? crown : null;
     }
 
     findAllyNukeTarget() {
       // Player.allies() contains only explicit, breakable alliances and omits
-      // permanent teammates. Nuclear coordination must use the engine's
-      // canonical friendly relation so team pings receive the same support.
+      // permanent teammates. Nuclear coordination treats only permanent teams
+      // as allied ownership.
       for (const ally of this.game.players()) {
         if (ally.smallID() === this.player.smallID()) continue;
         if (ally.isAlive?.() === false) continue;
-        if (this.player.isFriendly(ally) !== true) continue;
+        if (!playersArePermanentTeammates(this.player, ally)) continue;
         const target = ally.targets().find((candidate) =>
           candidate.smallID() !== this.player.smallID() &&
-          !this.player.isFriendly(candidate));
+          !playersArePermanentTeammates(this.player, candidate));
         if (target) return target;
       }
       return null;
@@ -538,7 +538,7 @@
       for (const relation of this.player.allRelationsSorted()) {
         if (relation.relation !== Relation.Hostile) continue;
         const other = relation.player;
-        if (this.player.isFriendly(other)) continue;
+        if (playersArePermanentTeammates(this.player, other)) continue;
         // A hostile is still a legitimate nuclear target when we have grown
         // larger.  The old 2x-capacity veto made a winning nation unable to
         // auto-nuke any weaker enemy in a multi-player game, even with ready
@@ -608,7 +608,7 @@
       for (const other of this.game.players()) {
         if (other.smallID() === this.player.smallID()) continue;
         if (other.type() === PlayerType.Bot) continue;
-        if (this.player.isFriendly(other)) continue;
+        if (playersArePermanentTeammates(this.player, other)) continue;
         const tilesOwned = other.numTilesOwned();
         if (tilesOwned === 0) continue;
         const structures = other.units(...NUKE_STRUCTURES_TYPES);
@@ -650,7 +650,7 @@
         sortedByTiles.length >= 2
       ) {
         const secondPlace = sortedByTiles[1];
-        if (!this.player.isFriendly(secondPlace)) {
+        if (!playersArePermanentTeammates(this.player, secondPlace)) {
           return secondPlace;
         }
       }
@@ -658,7 +658,7 @@
       // Don't target ourselves or allies
       if (
         firstPlace.smallID() === this.player.smallID() ||
-        this.player.isFriendly(firstPlace)
+        playersArePermanentTeammates(this.player, firstPlace)
       ) {
         return null;
       }
@@ -729,7 +729,7 @@
 
       // Filter out friendly players
       const validTargets = targetTeamPlayers.filter(
-        (p) => !this.player.isFriendly(p),
+        (p) => !playersArePermanentTeammates(this.player, p),
       );
 
       if (validTargets.length === 0) {
@@ -910,7 +910,7 @@
     isHostileSamIntercept(sam, excludedSamIds) {
       const owner = sam.unit.owner();
       const ownSam = owner?.smallID?.() === this.player.smallID();
-      if (ownSam || this.player.isFriendly(owner)) return false;
+      if (ownSam || playersArePermanentTeammates(this.player, owner)) return false;
       if (excludedSamIds?.has(sam.unit.id())) return false;
       const rangeSquared = this.game.config().samRange(sam.unit.level()) ** 2;
       return sam.distSquared <= rangeSquared;
@@ -970,7 +970,7 @@
         (!(owner && owner.isPlayer && owner.isPlayer()) ||
           (this.game.config().gameConfig().gameMode === GameMode.Team &&
             owner.isPlayer() &&
-            !this.player.isFriendly(owner)))
+            !playersArePermanentTeammates(this.player, owner)))
       ) {
         return true;
       }
@@ -1399,7 +1399,7 @@
         const owner = sam.unit.owner();
         if (
           (owner && owner.smallID && owner.smallID() === this.player.smallID()) ||
-          this.player.isFriendly(owner)
+          playersArePermanentTeammates(this.player, owner)
         ) {
           continue;
         }

@@ -62,9 +62,7 @@
     if (!myPlayer || !unit) return false;
     var owner = _safeOwner(unit, game);
     if (!owner) return false;
-    {
-      return myPlayer.isAlliedWith ? myPlayer.isAlliedWith(owner) : false;
-    }
+    return playersArePermanentTeammates(myPlayer, owner);
   }
 
   function _getTileCoords(game, unit) {
@@ -787,10 +785,7 @@
   function _autoFireOwnerIsHostile(owner, me) {
     if (!owner || !me) return false;
     return !_autoFireSafeRelation(() => owner.smallID?.() === me.smallID?.()) &&
-      !_autoFireSafeRelation(() => me.isAlliedWith?.(owner)) &&
-      !_autoFireSafeRelation(() => me.isFriendly?.(owner)) &&
-      !_autoFireSafeRelation(() => me.isOnSameTeam?.(owner)) &&
-      !_autoFireSafeRelation(() => owner.isFriendly?.(me));
+      !playersArePermanentTeammates(me, owner);
   }
 
   function _autoFireSafeRelation(read) {
@@ -1458,8 +1453,7 @@
     if (!owner) return false;
     if (!me) return true;
     if (_sameTrackerPlayer(me, owner)) return false;
-    return showAll || (!_autoFireSafeRelation(() => me.isAlliedWith?.(owner)) &&
-      !_sameTrackerTeam(me, owner));
+    return showAll || !playersArePermanentTeammates(me, owner);
   }
 
   function _samPanelItem(game, me, sam, currentTick) {

@@ -6,6 +6,10 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const NUKE_IMPACT_SOURCE = fs.readFileSync(path.join(ROOT, "engine/ingame/nuke-impact.js"), "utf8");
+const SHARED_UTILS_SOURCE = fs.readFileSync(
+  path.join(ROOT, "engine/ingame/shared-utils.js"),
+  "utf8",
+);
 const TRACKER_SOURCE = fs.readFileSync(
   path.join(ROOT, "engine/ingame/silo-sam-tracker.js"),
   "utf8",
@@ -17,11 +21,14 @@ const sandbox = {
   window: {},
 };
 sandbox.globalThis = sandbox;
+executeClassicScript(SHARED_UTILS_SOURCE, sandbox, {
+  filename: "shared-utils.js",
+});
 executeClassicScript(NUKE_IMPACT_SOURCE, sandbox, {
   filename: "nuke-impact.js",
 });
 executeClassicScript(
-  `${TRACKER_SOURCE}\nglobalThis._autoFireBuiltSamInterceptionCapacity = _autoFireBuiltSamInterceptionCapacity;\nglobalThis._autoFireUncoveredEnemyBuildings = _autoFireUncoveredEnemyBuildings;\nglobalThis._scanNukesToTile = _scanNukesToTile;\nglobalThis._isNewHostileBuildingSilo = _isNewHostileBuildingSilo;`,
+  `${TRACKER_SOURCE}\nglobalThis._autoFireBuiltSamInterceptionCapacity = _autoFireBuiltSamInterceptionCapacity;\nglobalThis._autoFireUncoveredEnemyBuildings = _autoFireUncoveredEnemyBuildings;\nglobalThis._autoFireCollectEnemyBuildings = _autoFireCollectEnemyBuildings;\nglobalThis._scanNukesToTile = _scanNukesToTile;\nglobalThis._isNewHostileBuildingSilo = _isNewHostileBuildingSilo;`,
   sandbox,
   {
     filename: "silo-sam-tracker.js",
@@ -85,6 +92,51 @@ const enemy = {
   isFriendly: () => false,
   isOnSameTeam: () => false,
 };
+
+const autoFireMe = {
+  smallID: () => 1,
+  team: () => "blue",
+  isAlliedWith: () => true,
+  isFriendly: () => true,
+  isOnSameTeam: () => false,
+};
+const breakableAutoFireOwner = {
+  smallID: () => 2,
+  team: () => null,
+  isAlliedWith: () => true,
+  isFriendly: () => true,
+  isOnSameTeam: () => false,
+};
+const permanentAutoFireOwner = {
+  smallID: () => 3,
+  team: () => "blue",
+  isAlliedWith: () => false,
+  isFriendly: () => true,
+  isOnSameTeam: () => true,
+};
+const autoFireBuilding = (id, owner) => ({
+  id: () => id,
+  tile: () => id,
+  owner: () => owner,
+  state: {},
+});
+const autoFireGame = {
+  units: (...types) =>
+    types.includes("City")
+      ? [
+          autoFireBuilding("breakable-city", breakableAutoFireOwner),
+          autoFireBuilding("team-city", permanentAutoFireOwner),
+        ]
+      : [],
+};
+assert.deepEqual(
+  Array.from(
+    sandbox._autoFireCollectEnemyBuildings(autoFireGame, autoFireMe),
+    (entry) => entry.key,
+  ),
+  ["breakable-city"],
+  "auto-fire targets a breakable diplomatic ally's building but excludes a permanent teammate's building",
+);
 
 const alertMe = {
   smallID: () => 10,

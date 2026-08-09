@@ -413,6 +413,23 @@
       return false;
     }
 
+    isPermanentTeammateAlreadyMirvingThisSpot(tile) {
+      if (this.player === null) throw new Error("not initialized");
+      const activeMirvs = this.game.units?.(UNIT.MIRV, UNIT.MIRVWarhead);
+      const warheadInnerRadius = this.game.config?.().nukeMagnitudes?.(UNIT.MIRVWarhead)?.inner;
+      const overlapRadiusSquared = (warheadInnerRadius * 2) ** 2;
+
+      return (Array.isArray(activeMirvs) ? activeMirvs : []).some((mirv) => {
+        if (!mirv || mirv.isActive?.() === false) return false;
+        const owner = mirv.owner?.();
+        if (!owner || owner.smallID?.() === this.player.smallID()) return false;
+        if (!playersArePermanentTeammates(this.player, owner)) return false;
+        const targetTile = mirv.targetTile?.();
+        if (targetTile === null || targetTile === undefined) return false;
+        return this.game.euclideanDistSquared(tile, targetTile) <= overlapRadiusSquared;
+      });
+    }
+
     // ── MIRV Execution Methods (now async) ───────────────────────────────────
     async maybeSendMIRV(enemy) {
       if (this.player === null) throw new Error("not initialized");
@@ -424,6 +441,7 @@
       // TileRef zero is a valid map coordinate. Upstream's truthy gate drops it,
       // which can suppress both an outbound MIRV and inbound-MIRV detection.
       if (centerTile === null || centerTile === undefined) return false;
+      if (this.isPermanentTeammateAlreadyMirvingThisSpot(centerTile)) return false;
 
       if (!(await this.emitMIRVBuildIntent(enemy, centerTile))) return false;
 
