@@ -459,6 +459,55 @@ assert.equal(
   null,
   "malformed cached spawn keys must fall back to a complete selector",
 );
+
+const sampledSpawnBot = Object.create(openingSandbox.NationBot.prototype);
+const teamRegionForFallback = {
+  polygon: null,
+  corridor: {
+    start: { x: 20, y: 50 },
+    end: { x: 80, y: 50 },
+    lengthSquared: 3600,
+    halfWidth: 2,
+  },
+};
+const sampledSpawnGame = {
+  width: () => 100,
+  height: () => 100,
+  isValidCoord: (x, y) => x >= 0 && x < 100 && y >= 0 && y < 100,
+  ref: (x, y) => y * 100 + x,
+  x: (tile) => tile % 100,
+  y: (tile) => Math.floor(tile / 100),
+  isLand: (tile) => {
+    const x = tile % 100;
+    const y = Math.floor(tile / 100);
+    return (x === 5 && y === 5) || (y === 50 && (x === 49 || x === 51));
+  },
+  hasOwner: () => false,
+  isBorder: () => false,
+  magnitude: () => 0,
+};
+sampledSpawnBot.getRandomSpawnCoordinate = () => 5;
+sampledSpawnBot.scoreSpawnTile = () => 1;
+openingSandbox.isPointInsideTeamSpawnRegion = (x, y, region) => {
+  const corridor = region.corridor;
+  return x >= 40 && x <= 60 && y >= 49 && y <= 51 && corridor != null;
+};
+const sampledSpawnTile = sampledSpawnBot.pickSampledSpawnTile(
+  {
+    game: sampledSpawnGame,
+    area: null,
+    others: [],
+    width: 100,
+    height: 100,
+    teamRegion: teamRegionForFallback,
+  },
+  true,
+);
+assert.equal(
+  sampledSpawnTile,
+  50 * 100 + 49,
+  "when random samples miss a corridor, the bounded team-region fallback must choose the first equally scored legal tile",
+);
 const tribeOnlyPendingBot = Object.create(openingSandbox.NationBot.prototype);
 tribeOnlyPendingBot.attackBehavior = {
   getPendingOutboundAttackTroops: () => 5000,

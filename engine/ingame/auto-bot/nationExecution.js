@@ -751,8 +751,61 @@
       return this.random.nextInt(start, start + limit);
     }
 
-    pickSampledSpawnTile(constraints, useSmart) {
+    getTeamSpawnFallbackBounds(constraints) {
+      const { area, teamRegion, width, height } = constraints;
+      if (!teamRegion) return null;
+      const points = teamRegion.polygon ?? [
+        teamRegion.corridor?.start,
+        teamRegion.corridor?.end,
+      ].filter(Boolean);
+      if (points.length === 0) return null;
+      const padding = Number(teamRegion.corridor?.halfWidth) || 0;
+      let minX = Math.floor(Math.min(...points.map((point) => point.x)) - padding);
+      let maxX = Math.ceil(Math.max(...points.map((point) => point.x)) + padding);
+      let minY = Math.floor(Math.min(...points.map((point) => point.y)) - padding);
+      let maxY = Math.ceil(Math.max(...points.map((point) => point.y)) + padding);
+      minX = Math.max(0, minX);
+      maxX = Math.min(width - 1, maxX);
+      minY = Math.max(0, minY);
+      maxY = Math.min(height - 1, maxY);
+      if (area) {
+        minX = Math.max(minX, area.x);
+        maxX = Math.min(maxX, area.x + area.width - 1);
+        minY = Math.max(minY, area.y);
+        maxY = Math.min(maxY, area.y + area.height - 1);
+      }
+      return minX <= maxX && minY <= maxY ? { minX, maxX, minY, maxY } : null;
+    }
+
+    pickTeamRegionFallbackTile(constraints, useSmart) {
       const { game, area, others, width, height } = constraints;
+      const bounds = this.getTeamSpawnFallbackBounds(constraints);
+      if (!bounds) return null;
+      const spanWidth = bounds.maxX - bounds.minX + 1;
+      const spanHeight = bounds.maxY - bounds.minY + 1;
+      const step = Math.max(1, Math.ceil(Math.sqrt((spanWidth * spanHeight) / 1000)));
+      const columns = Math.floor((bounds.maxX - bounds.minX) / step) + 1;
+      const rows = Math.floor((bounds.maxY - bounds.minY) / step) + 1;
+      const candidateCount = Math.min(1000, columns * rows);
+      let bestTile = null;
+      let bestScore = -Infinity;
+      for (let index = 0; index < candidateCount; index += 1) {
+        const x = bounds.minX + (index % columns) * step;
+        const y = bounds.minY + Math.floor(index / columns) * step;
+        if (!game.isValidCoord(x, y)) continue;
+        const tile = game.ref(x, y);
+        if (!this.isValidSpawnTile(tile, constraints)) continue;
+        if (!useSmart) return tile;
+        const score = this.scoreSpawnTile(tile, others, width, height, area);
+        if (score <= bestScore) continue;
+        bestScore = score;
+        bestTile = tile;
+      }
+      return bestTile;
+    }
+
+    pickSampledSpawnTile(constraints, useSmart) {
+      const { game, area, others, teamRegion, width, height } = constraints;
       let bestTile = null;
       let bestScore = -Infinity;
       for (let tries = 0; tries < 1000; tries += 1) {
@@ -771,7 +824,8 @@
         bestScore = score;
         bestTile = tile;
       }
-      return bestTile;
+      if (bestTile != null || !teamRegion) return bestTile;
+      return this.pickTeamRegionFallbackTile(constraints, useSmart);
     }
 
     pickSpawnCenter() {
