@@ -263,6 +263,46 @@ assert.ok(
 );
 assert.ok(naturalResult.cumulativeIntentTypes.attack > 0);
 
+const anchoredTeamRuntime = runHeadlessScenario({
+  OFH_MATCH_SEED: "legendary-anchor-a-20260809",
+  OFH_GAME_MAP: "Alps",
+  OFH_GAME_MAP_SIZE: "Small",
+  OFH_GAME_MODE: "team",
+  OFH_PLAYER_TEAMS: "2",
+  OFH_BOTS: "0",
+  OFH_NATIONS: "10",
+  OFH_MAX_TICKS: "80",
+  OFH_STOP_WHEN_DEAD: "0",
+  OFH_LOG_SPAWN: "1",
+});
+assert.equal(
+  anchoredTeamRuntime.run.status,
+  2,
+  "the bounded team-anchor scenario reaches max ticks",
+);
+const anchoredTeamRanking = anchoredTeamRuntime.records.find(
+  (record) =>
+    record.kind === "spawn-ranking" &&
+    record.teamAnchors?.length >= 3 &&
+    record.teamRegion?.kind === "polygon",
+);
+assert.ok(anchoredTeamRanking, "the real simulator exposes a polygon-ranked Team spawn");
+assert.equal(anchoredTeamRanking.selectedInsideTeamRegion, true);
+assert.ok(anchoredTeamRanking.topSpots?.length > 1, "the simulator retains ranked alternatives");
+assert.equal(
+  anchoredTeamRanking.selectedKey,
+  `${anchoredTeamRanking.topSpots[0].x},${anchoredTeamRanking.topSpots[0].y}`,
+  "the emitted selection trace uses the robust number-one candidate",
+);
+assert.ok(
+  anchoredTeamRanking.topSpots.every(
+    (candidate) =>
+      candidate.objective?.teamPolyhedronScore === 1 &&
+      Number.isFinite(candidate.objective?.teamInteriorScore),
+  ),
+  "fallback candidates inside a real Team polygon retain team geometry in their objective",
+);
+
 const naturalNuclearRuntime = runHeadlessScenario({
   OFH_MATCH_SEED: "legendary-nuclear-natural-20260809",
   OFH_GAME_MAP: "Baikal Nuke Wars",

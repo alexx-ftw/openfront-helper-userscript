@@ -345,6 +345,15 @@ assert.equal(
   "the fast fallback rejects a richer position outside the Nation-team hull",
 );
 assert.equal(geometryFallback.scores.length, 1);
+assert.equal(
+  geometryFallback.topSpots[0].objective.teamPolyhedronScore,
+  1,
+  "the fallback objective recognizes candidates inside a real team polyhedron",
+);
+assert.ok(
+  geometryFallback.topSpots[0].objective.teamInteriorScore > 0,
+  "the fallback objective retains interior depth for team-position ranking",
+);
 
 const regionTerrain = new Uint8Array(600 * 300).fill(LAND);
 const regionGame = {
@@ -433,6 +442,34 @@ assert.ok(
       candidate.y < rectangularTeamArea.y + rectangularTeamArea.height,
   ),
   "exact-ranked alternatives remain inside the configured rectangular team area",
+);
+
+const initialTeamHarness = loadHarness();
+const cornerTeamArea = { x: 30, y: 30, width: 90, height: 90 };
+const initialTeamGame = {
+  __src: {
+    _map: { terrain: new Uint8Array(400 * 400).fill(LAND) },
+    teamSpawnArea: (team) => (team === 7 ? cornerTeamArea : null),
+  },
+  config: () => ({ minDistanceBetweenPlayers: () => 30 }),
+  height: () => 400,
+  width: () => 400,
+};
+const initialTeamSpots = initialTeamHarness.computeSpawnTopSpotsForBot(
+  initialTeamGame,
+  exactTeamMe,
+  { initial: true },
+);
+assert.ok(initialTeamSpots?.length > 0, "initial team ranking returns bounded alternatives");
+assert.ok(
+  initialTeamSpots.every(
+    (candidate) =>
+      candidate.x >= cornerTeamArea.x &&
+      candidate.x < cornerTeamArea.x + cornerTeamArea.width &&
+      candidate.y >= cornerTeamArea.y &&
+      candidate.y < cornerTeamArea.y + cornerTeamArea.height,
+  ),
+  "initial bounded ranking spends its candidate budget inside the engine-assigned team area",
 );
 
 // The live exact selector must schedule its first range asynchronously. This

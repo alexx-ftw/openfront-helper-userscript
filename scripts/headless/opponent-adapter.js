@@ -243,11 +243,34 @@ function serializeTeamSpawnRegion(teamRegion) {
   return { kind: "none", polygon: [], corridor: null };
 }
 
+function assignedSpawnArea(pageGame, player) {
+  const team = player?.team?.() ?? null;
+  const gameSource = pageGame?.__src ?? pageGame;
+  if (team === null || typeof gameSource?.teamSpawnArea !== "function") return null;
+  return gameSource.teamSpawnArea(team) ?? null;
+}
+
+function pointInsideAssignedSpawnArea(point, area) {
+  if (!point || !area) return null;
+  return (
+    point.x >= area.x &&
+    point.x < area.x + area.width &&
+    point.y >= area.y &&
+    point.y < area.y + area.height
+  );
+}
+
+function serializeAssignedSpawnArea(area) {
+  if (!area) return null;
+  return { x: area.x, y: area.y, width: area.width, height: area.height };
+}
+
 function createSpawnGeometryCertificate(internals, pageGame, selectedKey) {
   const player = pageGame.myPlayer();
   const spawnPoints = internals.collectExactSpawnPoints?.(pageGame, player);
   const teamRegion = internals.getTeamSpawnRegion?.(pageGame, player);
   const selected = parseSpawnCoordinates(selectedKey);
+  const assignedArea = assignedSpawnArea(pageGame, player);
   let selectedInsideTeamRegion = null;
   if (selected && teamRegion) {
     selectedInsideTeamRegion =
@@ -259,6 +282,8 @@ function createSpawnGeometryCertificate(internals, pageGame, selectedKey) {
       : [],
     teamRegion: serializeTeamSpawnRegion(teamRegion),
     selectedInsideTeamRegion,
+    assignedArea: serializeAssignedSpawnArea(assignedArea),
+    selectedInsideAssignedArea: pointInsideAssignedSpawnArea(selected, assignedArea),
   };
 }
 

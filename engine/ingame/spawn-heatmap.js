@@ -446,13 +446,32 @@ function spawnCandidateRegionBounds(region, W, H, radius) {
   };
 }
 
-function computeStaticCandidatesWithBudget(game, candidateBudget, teamRegion = null) {
+function computeStaticCandidatesWithBudget(
+  game,
+  candidateBudget,
+  teamRegion = null,
+  assignedArea = null,
+) {
   const td = getSpawnTerrain(game);
   if (!td) return [];
   const { terrain, W, H } = td;
 
   const R = SPAWN_HEATMAP_ANALYSIS_R;
-  const bounds = spawnCandidateRegionBounds(teamRegion, W, H, R);
+  const regionBounds = spawnCandidateRegionBounds(teamRegion, W, H, R);
+  const bounds = assignedArea
+    ? {
+        minX: Math.max(regionBounds.minX, Math.ceil(assignedArea.x)),
+        maxX: Math.min(
+          regionBounds.maxX,
+          Math.ceil(assignedArea.x + assignedArea.width),
+        ),
+        minY: Math.max(regionBounds.minY, Math.ceil(assignedArea.y)),
+        maxY: Math.min(
+          regionBounds.maxY,
+          Math.ceil(assignedArea.y + assignedArea.height),
+        ),
+      }
+    : regionBounds;
   const spanWidth = Math.max(1, bounds.maxX - bounds.minX);
   const spanHeight = Math.max(1, bounds.maxY - bounds.minY);
   const boundedStep = Math.ceil(
@@ -1001,6 +1020,12 @@ function evaluateDynamicSpawnCandidate(candidate, context) {
     ? Math.min(1, enemyDistance / SPAWN_HEATMAP_PLAYER_R) : 1;
   const enemyPressureScore = 1 / (1 + Math.max(0, spawnEnemyPressure(context.enemySpawns, x, y)));
   const team = dynamicTeamScores(context, x, y);
+  const teamInteriorScore = teamPolyhedronInteriorScore(
+    x,
+    y,
+    context.teamPolyhedron,
+    context.teamCentroid,
+  );
   const clanScore = context.clanProximityScore && context.clanSpawns.length > 0
     ? context.clanProximityScore(x, y, context.clanSpawns, SPAWN_HEATMAP_TEAM_ATTRACT_R) : 0;
   const resourceScore = combineSpawnEntityScore(
@@ -1015,10 +1040,13 @@ function evaluateDynamicSpawnCandidate(candidate, context) {
   const objective = evaluateFallbackSpawnObjective(context, {
     freeLandScore, playerDistScore, enemyPressureScore, teamScore: team.teamScore,
     tribeScore, nationScore, tribeReach, tribeClusterScore, resourceScore, clanScore,
+    teamInteriorScore,
   });
   return { x, y, score, freeLandScore, tribeScore, tribeReachCount: tribeReach.count,
     tribeReachScore: tribeReach.score, tribeReachRadius: tribeReach.radius,
-    tribeClusterScore, nationScore, resourceScore, clanScore, objective };
+    tribeClusterScore, nationScore, resourceScore, clanScore,
+    teamPolyhedronScore: context.teamPolyhedron ? 1 : 0,
+    teamInteriorScore, objective };
 }
 
 function evaluateFallbackSpawnObjective(context, values) {
@@ -1033,6 +1061,8 @@ function evaluateFallbackSpawnObjective(context, values) {
     tribeClusterScore: values.tribeClusterScore,
     freeLandScore: values.freeLandScore, resourceScore: values.resourceScore,
     clanScore: values.clanScore,
+    teamPolyhedronScore: context.teamPolyhedron ? 1 : 0,
+    teamInteriorScore: values.teamInteriorScore,
   });
 }
 
@@ -1777,10 +1807,12 @@ function computeInitialSpawnTopSpotsForBot(game, me) {
   const objectiveApi = getSpawnObjectiveApi();
   const groups = collectSpawnPlayerGroups(game, me, objectiveApi);
   const teamRegion = buildTeamSpawnRegion(groups.teamSpawns);
+  const assignedArea = getSpawnAreaForGame(game, me);
   const candidates = computeStaticCandidatesWithBudget(
     game,
     SPAWN_HEATMAP_INITIAL_BOT_CANDIDATES,
     teamRegion,
+    assignedArea,
   );
   if (!candidates.length) return null;
   const spots = computeDynamicScores(game, candidates, me)?.topSpots;
