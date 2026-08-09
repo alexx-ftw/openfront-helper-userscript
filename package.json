@@ -6,6 +6,7 @@
   "scripts": {
     "build": "node build.mjs",
     "build:raw": "node build.mjs --raw",
+    "dev:userscript": "node scripts/dev-userscript.mjs",
     "test:local-userscript": "node test/local-userscript-loader.mjs",
     "check": "tsc -p tsconfig.json --noEmit",
     "check:constants": "node test/game-constants.mjs",

@@ -1,48 +1,104 @@
 // ==UserScript==
-// @name         OpenFront Helper (local loader migration)
+// @name         OpenFront Helper — cargador local
 // @namespace    openfront-helper-local
-// @version      2.0.0
-// @description  Points Brave users to the serverless unpacked-extension local loader.
+// @version      3.0.0
+// @description  Recarga en caliente el Auto-Bot local sin refrescar OpenFront.
 // @author       nguyenvancaokyfpt (https://github.com/nguyenvancaokyfpt)
 // @homepageURL  https://github.com/nguyenvancaokyfpt/openfront-helper-userscript
 // @supportURL   https://github.com/nguyenvancaokyfpt/openfront-helper-userscript/issues
 // @match        https://openfront.io/*
 // @run-at       document-start
-// @grant        none
+// @inject-into  page
+// @grant        GM_xmlhttpRequest
+// @grant        unsafeWindow
+// @connect      127.0.0.1
 // @noframes
 // ==/UserScript==
 
-(() => {
-  const NOTICE_ID = "openfront-helper-local-loader-notice";
+/* global GM_xmlhttpRequest, unsafeWindow */
 
-  function showMigrationNotice() {
-    if (window.__OFH_LOCAL_EXTENSION_VERSION__) return;
-    const root = document.documentElement || document.body;
-    if (!root) {
-      window.setTimeout(showMigrationNotice, 50);
-      return;
-    }
-    const notice = document.getElementById(NOTICE_ID) || document.createElement("div");
-    notice.id = NOTICE_ID;
-    notice.textContent =
-      "OpenFront Helper — este loader de Tampermonkey ya no puede leer builds locales en Brave. " +
-      "Desactívalo y, en brave://extensions, usa Cargar descomprimida con la carpeta " +
-      "/home/eros/Desktop/openfront-helper-userscript.";
-    Object.assign(notice.style, {
-      position: "fixed",
-      zIndex: "2147483647",
-      right: "12px",
-      bottom: "12px",
-      maxWidth: "480px",
-      padding: "12px 14px",
-      border: "1px solid #f59e0b",
-      borderRadius: "8px",
-      background: "#1f2937",
-      color: "#fff",
-      font: "13px/1.4 system-ui, sans-serif",
+(() => {
+  const SERVER_ROOT = "http://127.0.0.1:17373";
+  const BUILD_ID_PATH = "/openfront-helper.build-id.js";
+  const FULL_BUILD_PATH = "/openfront-helper.user.js";
+  const AUTO_BOT_PATH = "/openfront-helper.autobot.js";
+  const BUILD_ID_PATTERN = /__OFH_LOCAL_BUILD_ID__\s*=\s*["']([a-f0-9]{64})["']/u;
+  const POLL_INTERVAL_MS = 1000;
+  let activeBuildId = String(unsafeWindow.__OFH_LOCAL_BUILD_ID__ || "");
+  let requestInFlight = false;
+  let warned = false;
+
+  function requestLocalFile(filePath) {
+    return new Promise((resolve, reject) => {
+      const url = `${SERVER_ROOT}${filePath}?time=${Date.now()}`;
+      GM_xmlhttpRequest({
+        method: "GET",
+        url,
+        headers: { "Cache-Control": "no-cache" },
+        timeout: 5000,
+        onload(response) {
+          if (response.status !== 200 || !String(response.responseText || "").trim()) {
+            reject(new Error(`${filePath}: HTTP ${response.status}`));
+            return;
+          }
+          resolve(String(response.responseText));
+        },
+        onerror() {
+          reject(new Error("servidor local no disponible"));
+        },
+        ontimeout() {
+          reject(new Error("servidor local no respondió a tiempo"));
+        },
+        onabort() {
+          reject(new Error("lectura local cancelada"));
+        },
+      });
     });
-    if (!notice.parentNode) root.append(notice);
   }
 
-  window.setTimeout(showMigrationNotice, 1500);
+  async function applyBuild(buildId) {
+    const hotReload = unsafeWindow.__OFH_HOT_RELOAD_AUTOBOT__;
+    if (activeBuildId && typeof hotReload === "function") {
+      const source = await requestLocalFile(AUTO_BOT_PATH);
+      if (!(await hotReload(source, buildId))) throw new Error("el Auto-Bot rechazó el hot reload");
+    } else {
+      const source = await requestLocalFile(FULL_BUILD_PATH);
+      unsafeWindow.eval(`${source}\n//# sourceURL=openfront-helper.user.js`);
+      if (typeof unsafeWindow.__OFH_HOT_RELOAD_AUTOBOT__ !== "function") {
+        throw new Error("el build completo no expuso el puente de hot reload");
+      }
+    }
+    // The same in-flight guard also serializes the page-visible fingerprint update.
+    // eslint-disable-next-line require-atomic-updates
+    unsafeWindow.__OFH_LOCAL_BUILD_ID__ = buildId;
+    // The in-flight guard serializes fingerprint reads and build application.
+    // eslint-disable-next-line require-atomic-updates
+    activeBuildId = buildId;
+    warned = false;
+  }
+
+  async function checkForNewBuild() {
+    const fingerprint = await requestLocalFile(BUILD_ID_PATH);
+    const buildId = BUILD_ID_PATTERN.exec(fingerprint)?.[1];
+    if (!buildId) throw new Error("fingerprint local inválido");
+    if (buildId !== activeBuildId) await applyBuild(buildId);
+  }
+
+  function poll() {
+    if (requestInFlight) return;
+    requestInFlight = true;
+    checkForNewBuild()
+      .then(undefined, (error) => {
+        if (!warned) {
+          console.warn(`[OpenFront Helper hot reload] ${error?.message || String(error)}`);
+          warned = true;
+        }
+      })
+      .then(() => {
+        requestInFlight = false;
+      });
+  }
+
+  window.setInterval(poll, POLL_INTERVAL_MS);
+  poll();
 })();

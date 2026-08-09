@@ -241,30 +241,29 @@ The Settings tab has a searchable language picker. Every language falls back to 
 npm install
 npm run build       # → openfront-helper.user.js  (minified, the committed artifact)
 npm run build:raw   # unminified + console.log debugging
+npm run dev:userscript # watcher + loopback server for Tampermonkey hot reload
 npm run check       # TypeScript type-check (src/ only)
 npm test            # Node smoke test
 ```
 
-### Local build with Brave
+### Local build with Brave + official Tampermonkey
 
-Brave does not expose the File System Access picker and blocks runtime `file://` reads from
-Tampermonkey. For serverless local development, load this repository itself as an unpacked
-extension. Its two small loader scripts read the generated extension resources every second,
-detect the Auto-Bot SHA-256 fingerprint, and hot-restart only that layer. There is no HTTP
-server, port, file picker, or resident watcher.
+The repository includes `openfront-helper-loader.user.js`, a launcher for the official
+Tampermonkey extension. It polls a loopback-only development server for the generated SHA-256
+fingerprint and hot-restarts only the changed Auto-Bot layer. OpenFront, the match, and its
+network connection remain open.
 
-1. Run `npm run build` once to create the full userscript, Auto-Bot layer, and fingerprint.
-2. Disable the old **OpenFront Helper (local build loader)** Tampermonkey script and any other
+1. Run `npm run dev:userscript` and leave that process running. It binds only to
+   `127.0.0.1:17373`, builds once, and rebuilds automatically when local sources change.
+2. Install or update `openfront-helper-loader.user.js` in Tampermonkey and disable any other
    OpenFront Helper copy that would execute at the same time.
-3. Open `brave://extensions`, enable **Developer mode**, click **Load unpacked**, and select this
-   repository directory: `/home/eros/Desktop/openfront-helper-userscript`.
-4. Reload OpenFront once. The extension loads the complete current build at `document-start`.
-5. After source changes, run `npm run build`. Within about one second the current bot lifecycle
-   is disposed and the new Auto-Bot build starts in the same tab and match.
+3. Reload OpenFront once to start loader v3. Future Auto-Bot builds apply within about one second
+   without refreshing the page or game.
 
-Auto-Bot-only changes hot-reload without reloading the game. Shell, lobby, overlay, manifest,
-or loader changes still require reloading the extension and then the page. If the checkout moves,
-remove the unpacked extension and load it again from its new directory.
+The loader downloads only the small fingerprint while idle. It fetches the full userscript on
+initial startup and the smaller Auto-Bot artifact after a changed fingerprint. Shell, lobby, or
+non-bot overlay changes still require a normal page reload because only the Auto-Bot lifecycle is
+safe to replace during an active match.
 
 ### Live runtime diagnostics
 
