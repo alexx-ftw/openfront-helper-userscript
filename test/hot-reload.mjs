@@ -19,6 +19,115 @@ function extractHotReloadBridge(source) {
   return match[1];
 }
 
+async function captureRejection(promise) {
+  return promise.then(
+    () => {
+      throw new Error("expected hot reload to reject");
+    },
+    (error) => error,
+  );
+}
+
+function makeHotReloadBridgeHarness({
+  candidateActivation = () => true,
+  candidateCleanup = () => true,
+  previousActivation = () => true,
+} = {}) {
+  const events = [];
+  const counts = {
+    previousDisposals: 0,
+    previousActivations: 0,
+    candidateActivations: 0,
+    candidateDisposals: 0,
+  };
+  const snapshots = {};
+  let cleanupOptions = null;
+  const previousAtomDisposer = () => {};
+  const previous = {
+    disposeForHotReload: async () => {
+      counts.previousDisposals += 1;
+      events.push("previous:dispose");
+      return true;
+    },
+    activateForHotReload: async () => {
+      counts.previousActivations += 1;
+      events.push("previous:activate");
+      snapshots.previousActivation = {
+        runtime: sandbox.window.__OFH_autobot,
+        buildId: sandbox.window.__OFH_LOCAL_BUILD_ID__,
+        atomDisposer: sandbox.window.__OFH_disposeAtomMacroForHotReload,
+        activationPending: sandbox.window.__openfrontAutoBotActivationPending,
+        staging: sandbox.window.__OFH_HOT_RELOAD_IN_PROGRESS__,
+        candidateAtomMacro: sandbox.window.__OFH_HOT_RELOAD_CANDIDATE_ATOM_MACRO__,
+      };
+      return previousActivation();
+    },
+  };
+  const candidate = {
+    disposeForHotReload: async (options) => {
+      counts.candidateDisposals += 1;
+      events.push("candidate:cleanup");
+      cleanupOptions = options;
+      return candidateCleanup();
+    },
+    activateForHotReload: async () => {
+      counts.candidateActivations += 1;
+      events.push("candidate:activate");
+      return candidateActivation();
+    },
+  };
+  const sandbox = {
+    window: {
+      __OFH_autobot: previous,
+      __OFH_LOCAL_BUILD_ID__: "previous-build",
+      __OFH_disposeAtomMacroForHotReload: previousAtomDisposer,
+      __openfrontAutoBotActivationPending: "previous-pending",
+      __testCandidateRuntime: candidate,
+    },
+  };
+  vm.createContext(sandbox);
+  // eslint-disable-next-line sonarjs/code-eval
+  vm.runInContext(extractHotReloadBridge(buildSource), sandbox);
+
+  return {
+    candidate,
+    counts,
+    events,
+    previous,
+    previousAtomDisposer,
+    reload() {
+      return sandbox.window.__OFH_HOT_RELOAD_AUTOBOT__(
+        "window.__OFH_autobot = window.__testCandidateRuntime;\n" +
+          "window.__OFH_HOT_RELOAD_CANDIDATE_ATOM_MACRO__ = { staged: true };",
+        "candidate-build",
+      );
+    },
+    sandbox,
+    snapshots,
+    get cleanupOptions() {
+      return cleanupOptions;
+    },
+  };
+}
+
+function assertRestoredTerminalState(harness) {
+  assert.equal(harness.sandbox.window.__OFH_autobot, harness.previous);
+  assert.equal(harness.sandbox.window.__OFH_LOCAL_BUILD_ID__, "previous-build");
+  assert.equal(
+    harness.sandbox.window.__OFH_disposeAtomMacroForHotReload,
+    harness.previousAtomDisposer,
+  );
+  assert.equal(harness.sandbox.window.__openfrontAutoBotActivationPending, "previous-pending");
+  assert.equal(harness.sandbox.window.__OFH_HOT_RELOAD_IN_PROGRESS__, false);
+  assert.equal(harness.sandbox.window.__OFH_HOT_RELOAD_CANDIDATE_ATOM_MACRO__, undefined);
+}
+
+function assertAggregateFailure(error, primaryError, secondaryError) {
+  assert.equal(error.name, "AggregateError");
+  assert.equal(error.cause, primaryError, "candidate activation remains the causal error");
+  assert.deepEqual(Array.from(error.errors), [primaryError, secondaryError]);
+}
+
 async function testInvalidEvalKeepsPreviousRuntime() {
   let disposed = 0;
   const previous = {
@@ -72,57 +181,152 @@ async function testInvalidEvalKeepsPreviousRuntime() {
   assert.equal(sandbox.window.__OFH_LOCAL_BUILD_ID__, "d".repeat(64));
 }
 
-async function testActivationFailureReactivatesDisposedPreviousRuntime() {
-  let previousDisposed = 0;
-  let previousActivated = 0;
-  const previous = {
-    disposeForHotReload: async () => {
-      previousDisposed += 1;
+async function testActivationFailureRollsBackInOrderExactlyOnce() {
+  const activationError = new Error("candidate activation failed");
+  const harness = makeHotReloadBridgeHarness({
+    candidateActivation: () => {
+      throw activationError;
     },
-    activateForHotReload: async () => {
-      previousActivated += 1;
-      return true;
-    },
-  };
-  const previousAtomDisposer = () => {};
-  const sandbox = {
-    window: {
-      __OFH_autobot: previous,
-      __OFH_LOCAL_BUILD_ID__: "previous-build",
-      __OFH_disposeAtomMacroForHotReload: previousAtomDisposer,
-      __OFH_candidateDisposed: 0,
-      __OFH_candidateActivated: 0,
-    },
-  };
-  vm.createContext(sandbox);
-  // eslint-disable-next-line sonarjs/code-eval
-  vm.runInContext(extractHotReloadBridge(buildSource), sandbox);
+  });
 
-  await assert.rejects(
-    sandbox.window.__OFH_HOT_RELOAD_AUTOBOT__(
-      "window.__OFH_autobot = {\n" +
-        "  disposeForHotReload: async () => { window.__OFH_candidateDisposed += 1; },\n" +
-        "  activateForHotReload: async () => {\n" +
-        "    window.__OFH_candidateActivated += 1;\n" +
-        "    throw new Error('candidate activation failed');\n" +
-        "  },\n" +
-        "};",
-      "candidate-build",
-    ),
-    /candidate activation failed/u,
-  );
+  const error = await captureRejection(harness.reload());
 
-  assert.equal(previousDisposed, 1, "the previous runtime is disposed once");
-  assert.equal(previousActivated, 1, "the previous runtime is reactivated once");
-  assert.equal(sandbox.window.__OFH_candidateActivated, 1);
-  assert.equal(
-    sandbox.window.__OFH_candidateDisposed,
-    1,
-    "the failed candidate is cleaned up once",
-  );
-  assert.equal(sandbox.window.__OFH_autobot, previous, "the previous runtime identity is restored");
-  assert.equal(sandbox.window.__OFH_LOCAL_BUILD_ID__, "previous-build");
-  assert.equal(sandbox.window.__OFH_disposeAtomMacroForHotReload, previousAtomDisposer);
+  assert.equal(error, activationError);
+  assert.deepEqual(harness.events, [
+    "previous:dispose",
+    "candidate:activate",
+    "candidate:cleanup",
+    "previous:activate",
+  ]);
+  assert.deepEqual(harness.counts, {
+    previousDisposals: 1,
+    previousActivations: 1,
+    candidateActivations: 1,
+    candidateDisposals: 1,
+  });
+  assert.equal(harness.cleanupOptions.skipAtomMacroCleanup, true);
+  assertRestoredTerminalState(harness);
+  assert.deepEqual(harness.snapshots.previousActivation, {
+    runtime: harness.previous,
+    buildId: "previous-build",
+    atomDisposer: harness.previousAtomDisposer,
+    activationPending: "previous-pending",
+    staging: false,
+    candidateAtomMacro: undefined,
+  });
+}
+
+async function testRejectedCandidateCleanupRestoresWithoutReactivation() {
+  const activationError = new Error("candidate activation failed");
+  const cleanupError = new Error("candidate cleanup rejected");
+  const harness = makeHotReloadBridgeHarness({
+    candidateActivation: () => {
+      throw activationError;
+    },
+    candidateCleanup: () => {
+      throw cleanupError;
+    },
+  });
+
+  const error = await captureRejection(harness.reload());
+
+  assertAggregateFailure(error, activationError, cleanupError);
+  assert.deepEqual(harness.events, ["previous:dispose", "candidate:activate", "candidate:cleanup"]);
+  assert.equal(harness.counts.previousActivations, 0);
+  assertRestoredTerminalState(harness);
+}
+
+async function testFalseCandidateCleanupWithholdsPreviousReactivation() {
+  const activationError = new Error("candidate activation failed");
+  const harness = makeHotReloadBridgeHarness({
+    candidateActivation: () => {
+      throw activationError;
+    },
+    candidateCleanup: () => false,
+  });
+
+  const error = await captureRejection(harness.reload());
+
+  assert.equal(error.name, "AggregateError");
+  assert.equal(error.cause, activationError);
+  assert.equal(Array.from(error.errors)[0], activationError);
+  assert.match(Array.from(error.errors)[1].message, /candidato.*cerrarse limpiamente/u);
+  assert.deepEqual(harness.events, ["previous:dispose", "candidate:activate", "candidate:cleanup"]);
+  assert.equal(harness.counts.previousActivations, 0);
+  assertRestoredTerminalState(harness);
+}
+
+async function testRejectedPreviousReactivationPreservesActivationFailure() {
+  const activationError = new Error("candidate activation failed");
+  const rollbackError = new Error("previous reactivation rejected");
+  const harness = makeHotReloadBridgeHarness({
+    candidateActivation: () => {
+      throw activationError;
+    },
+    previousActivation: () => {
+      throw rollbackError;
+    },
+  });
+
+  const error = await captureRejection(harness.reload());
+
+  assertAggregateFailure(error, activationError, rollbackError);
+  assert.deepEqual(harness.events, [
+    "previous:dispose",
+    "candidate:activate",
+    "candidate:cleanup",
+    "previous:activate",
+  ]);
+  assert.deepEqual(harness.counts, {
+    previousDisposals: 1,
+    previousActivations: 1,
+    candidateActivations: 1,
+    candidateDisposals: 1,
+  });
+  assertRestoredTerminalState(harness);
+}
+
+async function testFalsePreviousReactivationPreservesActivationFailure() {
+  const activationError = new Error("candidate activation failed");
+  const harness = makeHotReloadBridgeHarness({
+    candidateActivation: () => {
+      throw activationError;
+    },
+    previousActivation: () => false,
+  });
+
+  const error = await captureRejection(harness.reload());
+
+  assert.equal(error.name, "AggregateError");
+  assert.equal(error.cause, activationError);
+  assert.equal(Array.from(error.errors)[0], activationError);
+  assert.match(Array.from(error.errors)[1].message, /runtime anterior.*reactivarse/u);
+  assert.deepEqual(harness.events, [
+    "previous:dispose",
+    "candidate:activate",
+    "candidate:cleanup",
+    "previous:activate",
+  ]);
+  assert.equal(harness.counts.previousActivations, 1);
+  assertRestoredTerminalState(harness);
+}
+
+async function testSuccessfulActivationHasNoCleanupOrRollback() {
+  const harness = makeHotReloadBridgeHarness();
+
+  assert.equal(await harness.reload(), true);
+
+  assert.deepEqual(harness.events, ["previous:dispose", "candidate:activate"]);
+  assert.deepEqual(harness.counts, {
+    previousDisposals: 1,
+    previousActivations: 0,
+    candidateActivations: 1,
+    candidateDisposals: 0,
+  });
+  assert.equal(harness.sandbox.window.__OFH_autobot, harness.candidate);
+  assert.equal(harness.sandbox.window.__OFH_LOCAL_BUILD_ID__, "candidate-build");
+  assert.equal(harness.sandbox.window.__OFH_HOT_RELOAD_IN_PROGRESS__, false);
+  assert.equal(harness.sandbox.window.__OFH_HOT_RELOAD_CANDIDATE_ATOM_MACRO__, undefined);
 }
 
 function makeLifecycleSandbox() {
@@ -271,6 +475,53 @@ async function testLifecycleDisposesAtomMacroAndClosesStalledTick() {
   assert.equal(harness.timers.size, 0, "the lifecycle watcher is stopped");
 }
 
+async function testLifecycleStagesAndActivatesAtomMacroOnce() {
+  const harness = makeLifecycleSandbox();
+  harness.state.settings.enabled = false;
+  harness.state.tickInFlight = false;
+  harness.sandbox.window.__OFH_HOT_RELOAD_IN_PROGRESS__ = true;
+  executeClassicScript(lifecycleSource, harness.sandbox, {
+    filename: "auto-bot-lifecycle-staged-hot-reload.js",
+  });
+
+  const runtime = harness.sandbox.window.__OFH_autobot;
+  assert.equal(harness.sandbox.window.__ofhAtomMacroInstalled, undefined);
+  assert.equal(typeof harness.sandbox.window.__OFH_HOT_RELOAD_CANDIDATE_ATOM_MACRO__, "object");
+  assert.equal(harness.listeners.size, 0);
+  assert.equal(harness.timers.size, 0);
+
+  harness.sandbox.window.__OFH_HOT_RELOAD_IN_PROGRESS__ = false;
+  assert.equal(runtime.activateForHotReload(), true);
+
+  assert.equal(harness.sandbox.window.__ofhAtomMacroInstalled, true);
+  assert.equal(harness.sandbox.window.__OFH_HOT_RELOAD_CANDIDATE_ATOM_MACRO__, undefined);
+  assert.equal(typeof harness.sandbox.window.__OFH_disposeAtomMacroForHotReload, "function");
+  assert.ok(harness.listeners.has("window:keydown"));
+  assert.equal(harness.timers.size, 1, "the lifecycle watcher starts once");
+
+  assert.equal(await runtime.disposeForHotReload(), true);
+  assert.equal(harness.listeners.size, 0);
+  assert.equal(harness.timers.size, 0);
+}
+
+async function testBridgeFaultInjectionRegressions() {
+  const cases = [
+    ["normal rollback ordering", testActivationFailureRollsBackInOrderExactlyOnce],
+    ["rejected candidate cleanup", testRejectedCandidateCleanupRestoresWithoutReactivation],
+    ["false candidate cleanup", testFalseCandidateCleanupWithholdsPreviousReactivation],
+    ["rejected previous reactivation", testRejectedPreviousReactivationPreservesActivationFailure],
+    ["false previous reactivation", testFalsePreviousReactivationPreservesActivationFailure],
+    ["successful activation counters", testSuccessfulActivationHasNoCleanupOrRollback],
+  ];
+  const results = await Promise.allSettled(cases.map(([, run]) => run()));
+  const failures = results.flatMap((result, index) =>
+    result.status === "rejected" ? [new Error(cases[index][0], { cause: result.reason })] : [],
+  );
+  if (failures.length > 0) {
+    throw new AggregateError(failures, "hot-reload bridge regression cases failed");
+  }
+}
+
 async function testBuildPublishesThreeArtifactsAtomically() {
   assert.match(buildSource, /export async function publishBuildArtifacts/u);
   const { publishBuildArtifacts } = await import("../build.mjs");
@@ -308,7 +559,8 @@ async function testBuildPublishesThreeArtifactsAtomically() {
 }
 
 await testInvalidEvalKeepsPreviousRuntime();
-await testActivationFailureReactivatesDisposedPreviousRuntime();
+await testBridgeFaultInjectionRegressions();
 await testLifecycleDisposesAtomMacroAndClosesStalledTick();
+await testLifecycleStagesAndActivatesAtomMacroOnce();
 await testBuildPublishesThreeArtifactsAtomically();
 process.stdout.write("hot-reload transactional tests passed\n");

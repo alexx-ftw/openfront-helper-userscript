@@ -138,6 +138,13 @@ window.__OFH_HOT_RELOAD_AUTOBOT__ = function(source, buildId) {
     window.__OFH_HOT_RELOAD_IN_PROGRESS__ = false;
     delete window.__OFH_HOT_RELOAD_CANDIDATE_ATOM_MACRO__;
   };
+  const settle = (operation) =>
+    Promise.resolve()
+      .then(operation)
+      .then(
+        (value) => ({ ok: true, value }),
+        (error) => ({ ok: false, error }),
+      );
   window.__OFH_HOT_RELOAD_IN_PROGRESS__ = true;
   return Promise.resolve()
     .then(async () => {
@@ -170,10 +177,23 @@ window.__OFH_HOT_RELOAD_AUTOBOT__ = function(source, buildId) {
         return result;
       },
       async (error) => {
+        const rollbackFailures = [];
+        let candidateQuiescent = true;
         if (!committed && candidate && candidate !== previous) {
           const candidateOwnsAtom =
             window.__OFH_disposeAtomMacroForHotReload !== previousAtomDisposer;
-          await candidate.disposeForHotReload?.({ skipAtomMacroCleanup: !candidateOwnsAtom });
+          const cleanup = await settle(() =>
+            candidate.disposeForHotReload?.({ skipAtomMacroCleanup: !candidateOwnsAtom }),
+          );
+          if (!cleanup.ok) {
+            candidateQuiescent = false;
+            rollbackFailures.push(cleanup.error);
+          } else if (cleanup.value === false) {
+            candidateQuiescent = false;
+            rollbackFailures.push(
+              new Error("el candidato de Auto-Bot no pudo cerrarse limpiamente"),
+            );
+          }
         }
         if (!committed) {
           window["__OFH_autobot"] = previous;
@@ -181,9 +201,25 @@ window.__OFH_HOT_RELOAD_AUTOBOT__ = function(source, buildId) {
           window.__OFH_disposeAtomMacroForHotReload = previousAtomDisposer;
           window.__openfrontAutoBotActivationPending = previousActivationPending;
           finishStaging();
-          if (previousDisposed) await previous.activateForHotReload();
+          if (previousDisposed && candidateQuiescent) {
+            const rollback = await settle(() => previous.activateForHotReload());
+            if (!rollback.ok) {
+              rollbackFailures.push(rollback.error);
+            } else if (rollback.value === false) {
+              rollbackFailures.push(
+                new Error("el runtime anterior no pudo reactivarse"),
+              );
+            }
+          }
         }
         finishStaging();
+        if (rollbackFailures.length > 0) {
+          throw new AggregateError(
+            [error, ...rollbackFailures],
+            "falló la activación del candidato de Auto-Bot y su rollback",
+            { cause: error },
+          );
+        }
         throw error;
       },
     );
