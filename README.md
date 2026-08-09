@@ -241,27 +241,28 @@ The Settings tab has a searchable language picker. Every language falls back to 
 npm install
 npm run build       # → openfront-helper.user.js  (minified, the committed artifact)
 npm run build:raw   # unminified + console.log debugging
-npm run dev:userscript # local server + rebuild watcher for the Tampermonkey loader
 npm run check       # TypeScript type-check (src/ only)
 npm test            # Node smoke test
 ```
 
 ### Local build with Brave + Tampermonkey
 
-The repository includes `openfront-helper-loader.user.js`, a small launcher/loader
-that Tampermonkey keeps installed. It downloads the current `openfront-helper.user.js`
-from a loopback server on each OpenFront page load, so rebuilding the source does not
-require reinstalling the userscript.
+The repository includes `openfront-helper-loader.user.js`, a small launcher that
+Tampermonkey keeps installed. It uses a local-file `@require` to execute
+`openfront-helper.user.js` directly from this checkout, with no HTTP server, port, or
+resident watcher.
 
-1. Run `npm run dev:userscript` in this repository and leave it running.
+1. Open `brave://extensions`, enable **Developer mode**, open Tampermonkey's details,
+   enable **Allow access to file URLs**, and give it site access on all sites if Brave
+   requires it.
 2. Create a new Tampermonkey script and paste in
-   `openfront-helper-loader.user.js` (or open that file and use Tampermonkey's install flow).
-3. Reload `https://openfront.io/` after a source change. The watcher rebuilds the served
-   bundle automatically; the next page load fetches that build.
+   `openfront-helper-loader.user.js` (or import that file from Tampermonkey).
+3. Run `npm run build` after changing the source.
+4. Reload `https://openfront.io/`; Tampermonkey executes the newly generated local build.
 
-The loader uses `http://127.0.0.1:17373/openfront-helper.user.js`. Keep the development
-server bound to loopback; do not expose it on a LAN interface. If the server is stopped,
-the loader logs a warning and does not fall back to a different build.
+The checked-in loader points at
+`/home/eros/Desktop/openfront-helper-userscript/openfront-helper.user.js`. If the checkout
+moves, update its `@require file://...` line once and save the loader again in Tampermonkey.
 
 ### Live runtime diagnostics
 
