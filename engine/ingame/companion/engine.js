@@ -86,7 +86,6 @@
     companionState.bossStatus = "idle";
     companionState.lastSendFailedAt = 0;
     companionState.bossCanDonateGold = null;
-    companionState.bossCanDonateTroops = null;
     companionState.actionsInFlight = false;
     companionState.lastActionsAt = 0;
     companionState.bossDonateConfirmed = true;
@@ -103,14 +102,15 @@
     companionState.cooldowns[key] = now;
   }
 
-  // The server is authoritative for the shared gold/troop donation cooldown.
+  // The server is authoritative for the shared donation cooldown exposed by
+  // canDonateGold. The troop capability is lobby-dependent and must not gate
+  // Companion troop support.
   // Keep an optimistic local hold until the server acknowledges it, preventing
   // two queue entries from spending the same server-side donation window.
-  function companionApplyBossActions(serverGold, serverTroops) {
+  function companionApplyBossActions(serverGold) {
     const gold = Boolean(serverGold);
-    const troops = Boolean(serverTroops);
     if (!companionState.bossDonateConfirmed) {
-      if (!gold || !troops) {
+      if (!gold) {
         companionState.bossDonateConfirmed = true;
       } else if (
         Date.now() - (companionState.donateUnconfirmedSince || 0) >
@@ -122,12 +122,10 @@
       }
     }
     companionState.bossCanDonateGold = gold;
-    companionState.bossCanDonateTroops = troops;
   }
 
   function companionMarkDonated() {
     companionState.bossCanDonateGold = false;
-    companionState.bossCanDonateTroops = false;
     companionState.bossDonateConfirmed = false;
     companionState.donateUnconfirmedSince = Date.now();
   }
@@ -152,10 +150,7 @@
     Promise.resolve(pending)
       .then(function (actions) {
         if (!actions || !actions.interaction) return;
-        companionApplyBossActions(
-          actions.interaction.canDonateGold,
-          actions.interaction.canDonateTroops,
-        );
+        companionApplyBossActions(actions.interaction.canDonateGold);
       })
       .finally(function () {
         companionState.actionsInFlight = false;
@@ -409,10 +404,6 @@
 
   function companionQueueTroopDonation(settings, ctx, allied, now) {
     if (!settings.autoTroops || !allied) return;
-    // A missing/failed actions() query is unknown, not a server refusal. Keep
-    // the established client cooldown as the fallback, while respecting an
-    // explicit false as soon as the server provides one.
-    if (companionState.bossCanDonateTroops === false) return;
     if (!companionCooldownReady("donateAny", COMPANION_DONATE_MIN_GAP_MS, now)) return;
     if (!companionBossNeedsTroops(ctx.game, ctx.boss, settings.troopNeedPct)) return;
     companionMarkCooldown("donateAny", now);

@@ -1273,7 +1273,6 @@ const ENG = [
   // as a new match and companionResetRunState() clears the flag right back to
   // false before the donate section ever sees it.
   m.companionState.lastGameRef = fakeGame;
-  m.companionState.bossCanDonateTroops = true;
   m.companionState.enabled = true;
   tick();
   assert.deepEqual(
@@ -2278,7 +2277,6 @@ const ENG = [
     // Donate now gates on the real canDonate cache; default it to "allowed" so
     // the interleave/throttle sub-cases below exercise their own gate, not this.
     m.companionState.bossCanDonateGold = true;
-    m.companionState.bossCanDonateTroops = true;
     m.companionState.bossDonateConfirmed = true;
     return m;
   }
@@ -2298,22 +2296,26 @@ const ENG = [
     m.companionState.enabled = true;
     m._setLevel(3);
 
-    // Server says we cannot donate right now → nothing queues, even though the
-    // boss needs troops and gold is off cooldown.
+    // Troop donations are never suppressed by the lobby-derived interaction
+    // capability. Gold still follows its real shared-cooldown capability.
     m.companionState.bossCanDonateGold = false;
+    // Simulate stale state retained by a running pre-update Companion runtime.
     m.companionState.bossCanDonateTroops = false;
     m.companionState.queue.length = 0;
     m.companionState.cooldowns = {};
     m.companionTick();
-    assert.deepEqual(labels(m), [], "canDonate false → nothing donates");
+    assert.deepEqual(
+      labels(m),
+      ["donateTroops"],
+      "canDonateTroops=false does not disable Companion troop donations",
+    );
 
     // An unavailable action query is not a server denial. The companion used to
     // disable donations forever because the cache began as false and a missing
     // actions() response never updated it. Unknown must retain the legacy
-    // client-side cooldown path; only an explicit server false blocks sending.
+    // client-side cooldown path; troop support no longer uses that capability.
     m.companionState.queue.length = 0;
     m.companionState.cooldowns = {};
-    m.companionState.bossCanDonateTroops = null;
     m.companionState.bossCanDonateGold = false;
     m.companionPatchSettings({ autoGold: false, autoFactory: false });
     m.companionTick();
@@ -2326,7 +2328,6 @@ const ENG = [
     // Both allowed, boss needs troops, gold throttle ready: GOLD wins the slot
     // (runs first), and the optimistic clear makes troops yield the same tick.
     m.companionState.bossCanDonateGold = true;
-    m.companionState.bossCanDonateTroops = true;
     m.companionState.bossDonateConfirmed = true;
     m.companionPatchSettings({ autoGold: true, autoFactory: false });
     m._addGold(1000000);
@@ -2336,22 +2337,16 @@ const ENG = [
     assert.deepEqual(labels(m), ["donateGold"], "gold takes the slot, troops yields");
     // Optimistic: both flags cleared, confirm dropped.
     assert.equal(m.companionState.bossCanDonateGold, false, "gold flag cleared after donate");
-    assert.equal(
-      m.companionState.bossCanDonateTroops,
-      false,
-      "troops flag cleared too (shared cooldown)",
-    );
     assert.equal(m.companionState.bossDonateConfirmed, false, "confirm dropped");
 
-    // Next tick: gold on its 30s throttle now, troops flag is false (optimistic)
-    // → nothing until the background refresh restores the flags.
+    // Next tick: the shared donateAny cooldown prevents an immediate troop
+    // retry while gold is also on its 30s throttle.
     m.companionState.queue.length = 0;
     m.companionTick();
-    assert.deepEqual(labels(m), [], "flags false → nothing donates next tick");
+    assert.deepEqual(labels(m), [], "shared cooldown blocks the next-tick retry");
 
     // Boss no longer needs troops, gold throttle ready, gold allowed → gold only.
     m.companionState.bossCanDonateGold = true;
-    m.companionState.bossCanDonateTroops = true;
     m.companionState.bossDonateConfirmed = true;
     m._addGold(1000000);
     m.companionState.cooldowns = {}; // gold throttle ready
@@ -2521,22 +2516,22 @@ const ENG = [
 
   // companionApplyBossActions: the round-trip confirm state machine (pure, sync).
   m.companionState.bossDonateConfirmed = true;
-  m.companionApplyBossActions(true, true);
+  m.companionApplyBossActions(true);
   assert.equal(m.companionState.bossCanDonateGold, true, "confirmed + server true → cache true");
 
   m.companionMarkDonated();
   assert.equal(m.companionState.bossCanDonateGold, false, "donate clears cache");
   assert.equal(m.companionState.bossDonateConfirmed, false, "and drops confirm");
 
-  m.companionApplyBossActions(true, true); // server hasn't processed our donate yet
+  m.companionApplyBossActions(true); // server hasn't processed our donate yet
   assert.equal(m.companionState.bossCanDonateGold, false, "unconfirmed + server true → stay false");
   assert.equal(m.companionState.bossDonateConfirmed, false, "still not confirmed");
 
-  m.companionApplyBossActions(false, false); // server now reflects our donate (cooldown)
+  m.companionApplyBossActions(false); // server now reflects our donate (cooldown)
   assert.equal(m.companionState.bossDonateConfirmed, true, "server false → confirmed");
   assert.equal(m.companionState.bossCanDonateGold, false, "and cache follows server (false)");
 
-  m.companionApplyBossActions(true, true); // cooldown elapsed
+  m.companionApplyBossActions(true); // cooldown elapsed
   assert.equal(
     m.companionState.bossCanDonateGold,
     true,
@@ -2553,7 +2548,7 @@ const ENG = [
   m.companionMarkDonated();
   assert.equal(m.companionState.bossDonateConfirmed, false, "self-heal: starts unconfirmed");
   m.companionState.donateUnconfirmedSince = Date.now() - 2000; // only 2s elapsed
-  m.companionApplyBossActions(true, true);
+  m.companionApplyBossActions(true);
   assert.equal(
     m.companionState.bossCanDonateGold,
     false,
@@ -2563,7 +2558,7 @@ const ENG = [
 
   m.companionState.donateUnconfirmedSince =
     Date.now() - (m.COMPANION_DONATE_CONFIRM_TIMEOUT_MS + 1000); // past the timeout
-  m.companionApplyBossActions(true, true);
+  m.companionApplyBossActions(true);
   assert.equal(
     m.companionState.bossDonateConfirmed,
     true,
@@ -2575,7 +2570,6 @@ const ENG = [
   m.companionState.lastActionsAt = 0;
   m.companionState.actionsInFlight = false;
   m.companionState.bossCanDonateGold = false;
-  m.companionState.bossCanDonateTroops = false;
   m.companionState.bossDonateConfirmed = true;
   serverGold = true;
   serverTroops = false;
@@ -2585,7 +2579,6 @@ const ENG = [
     setTimeout(resolve, 0);
   });
   assert.equal(m.companionState.bossCanDonateGold, true, "refresh applied server gold=true");
-  assert.equal(m.companionState.bossCanDonateTroops, false, "refresh applied server troops=false");
   assert.equal(m.companionState.actionsInFlight, false, "refresh cleared in-flight");
 
   // Throttle: a second call within the refresh window is skipped.

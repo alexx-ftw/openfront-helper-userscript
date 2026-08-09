@@ -891,7 +891,8 @@
     activeTribeReinforcementPlan(target) {
       if (
         target?.isPlayer?.() !== true ||
-        target.type?.() !== PlayerType.Bot
+        target.type?.() !== PlayerType.Bot ||
+        this.player.sharesBorderWith?.(target) === true
       ) {
         return null;
       }
@@ -7081,8 +7082,7 @@
       if (
         !state.settings.features.donate ||
         !state.settings.winFixes ||
-        this.game.config().gameConfig().gameMode !== GameMode.Team ||
-        this.game.config().donateTroops() === false
+        this.game.config().gameConfig().gameMode !== GameMode.Team
       ) {
         return false;
       }
@@ -8205,6 +8205,33 @@
       );
     }
 
+    // A transport probe is resolved by the engine against the selected tile's
+    // current owner and a reachable shore.  Unlike a land AttackExecution
+    // probe, an unowned impassable tile can therefore still identify a valid
+    // Terra Nullius boat target.  Keep only freshness checks here: the engine
+    // remains authoritative for the eventual landing shore.
+    isFreshTerraNulliusBoatTarget(tile) {
+      if (
+        typeof this.game.isValidRef === "function" &&
+        !this.game.isValidRef(tile)
+      ) {
+        return false;
+      }
+      if (
+        typeof this.game.isValidCoord === "function" &&
+        typeof this.game.x === "function" &&
+        typeof this.game.y === "function" &&
+        !this.game.isValidCoord(this.game.x(tile), this.game.y(tile))
+      ) {
+        return false;
+      }
+      return (
+        this.game.isLand(tile) &&
+        this.game.isWater?.(tile) !== true &&
+        !this.game.hasOwner(tile)
+      );
+    }
+
     // Scans shore border tiles (every 10th) for unowned land within 5 water tiles
     // in each cardinal direction, then sends a transport ship to the first match.
     // sendBoatAttackToNearbyTerraNullius — AiAttackBehavior (private, now async).
@@ -8307,7 +8334,7 @@
           false,
         );
         if (spawn === false || !(await this.allowEarlyGameBoat(tile))) continue;
-        if (!this.isAttackableTerraNulliusTile(tile)) continue;
+        if (!this.isFreshTerraNulliusBoatTarget(tile)) continue;
         const troops = this.nearbyTerraNulliusBoatTroops(
           radioactiveTerraNullius,
         );
@@ -9043,15 +9070,13 @@
       return false;
     }
 
-    // donateTroops — AiAttackBehavior (private). No worker calls in src; the only
-    // async-shaped read (canDonateTroops) is core-only — see DIVERGENCE below.
+    // donateTroops — AiAttackBehavior (private). No worker calls in src.
     // Kept sync (returns a plain boolean) — the strategy wrapper `donate` awaits it.
     logDonationDiagnostic() {
       {
         const now = performance.now();
         if (now - (state._donDiagAt || 0) <= 5000) return;
         state._donDiagAt = now;
-        const config = this.game.config();
         const teammates = this.game.players().filter(
           (player) =>
             this.player.isOnSameTeam(player) &&
@@ -9064,9 +9089,7 @@
               featureOn: Boolean(state.settings.features.donate),
               winFixes: Boolean(state.settings.winFixes),
               replicatedDifficulty: String(currentDifficulty()),
-              gameType: String(config.gameConfig().gameType),
-              gameMode: String(config.gameConfig().gameMode),
-              donateAllowedByLobby: config.donateTroops(),
+              gameMode: String(this.game.config().gameConfig().gameMode),
               aliveTeammates: teammates.length,
               myTroops: Math.round(this.player.troops()),
             }),
@@ -9151,10 +9174,6 @@
         this.setDonationStatus("Donate: not a Team game");
         return false;
       }
-      if (config.donateTroops() === false) {
-        this.setDonationStatus("Donate: lobby disables donations");
-        return false;
-      }
       if (this.game.getWinner()) {
         this.setDonationStatus("Donate: game finished");
         runtimeDebugLog("[Donate] skip: game already has a winner");
@@ -9191,7 +9210,6 @@
       if (!teammate.isAlive()) return null;
       if (teammate.smallID() === this.player.smallID()) return null;
       if (entry.troopPercentage >= needThreshold) return null;
-      if (this.player.canDonateTroops?.(teammate) === false) return null;
       const recipientKey = this.donationRecipientId(teammate);
       const nextEligibleTick =
         this.botDonationNextEligibleTickByRecipient.get(recipientKey) ?? 0;

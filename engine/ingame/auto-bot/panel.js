@@ -60,7 +60,7 @@
       #${PANEL_ID} .ab-body { padding: 9px 10px 10px; }
       #${PANEL_ID}.ab-collapsed .ab-body { display: none; }
       #${PANEL_ID}.ab-collapsed .ab-tabs { display: none; }
-      #${PANEL_ID} .ab-gate-dot {
+      #${PANEL_ID} .ab-runtime-dot {
         width: 8px; height: 8px; border-radius: 50%; flex: none; cursor: help;
         background: currentColor; box-shadow: 0 0 6px currentColor;
       }
@@ -271,7 +271,7 @@
   function panelHeaderMarkup() {
     return `
       <div class="ab-head">
-        <div class="ab-gate-dot" data-role="gate-dot" style="color:#fbbf24;" title="${tr("Checking lobby…")}"></div>
+        <div class="ab-runtime-dot" data-role="runtime-dot" style="color:#fbbf24;" title="${tr("Waiting to enter game…")}"></div>
         <span class="ab-title">Auto-Bot</span>
         <div class="ab-switch ${state.settings.enabled ? "on" : ""}" data-role="switch" title="${tr("Toggle on/off")}"></div>
         <div class="ab-head-btns">
@@ -494,30 +494,30 @@
     // Popover helper — reuse .ab-feat-tip for any element that needs a rich tooltip.
     // Clean up old popovers from previous panel builds.
     document.querySelectorAll(".ab-feat-tip").forEach(function(t) { t.remove(); });
-    var gateTip = null;
+    var runtimeTip = null;
     function _showPopover(el, html) {
-      if (!gateTip) {
-        gateTip = document.createElement("div");
-        gateTip.className = "ab-feat-tip";
-        document.body.appendChild(gateTip);
+      if (!runtimeTip) {
+        runtimeTip = document.createElement("div");
+        runtimeTip.className = "ab-feat-tip";
+        document.body.appendChild(runtimeTip);
       }
-      gateTip.innerHTML = html;
+      runtimeTip.innerHTML = html;
       var r = el.getBoundingClientRect();
-      gateTip.style.left = (r.left + r.width / 2) + "px";
-      gateTip.style.top = (r.top - 6) + "px";
-      gateTip.classList.add("show");
+      runtimeTip.style.left = (r.left + r.width / 2) + "px";
+      runtimeTip.style.top = (r.top - 6) + "px";
+      runtimeTip.classList.add("show");
     }
     function _hidePopover() {
-      if (gateTip) gateTip.classList.remove("show");
+      if (runtimeTip) runtimeTip.classList.remove("show");
     }
 
-    // Gate dot — show popover on hover.
-    var gateDot = panel.querySelector('[data-role="gate-dot"]');
-    if (gateDot) {
-      gateDot.addEventListener("mouseenter", function() {
-        _showPopover(gateDot, "<b>" + tr("Lobby status") + "</b><br>" + (gateDot.title || ""));
+    // Runtime dot — show current game readiness on hover.
+    var runtimeDot = panel.querySelector('[data-role="runtime-dot"]');
+    if (runtimeDot) {
+      runtimeDot.addEventListener("mouseenter", function() {
+        _showPopover(runtimeDot, runtimeDot.title || "");
       });
-      gateDot.addEventListener("mouseleave", _hidePopover);
+      runtimeDot.addEventListener("mouseleave", _hidePopover);
     }
 
     // Tab buttons — show popover on hover.
@@ -820,10 +820,10 @@
     }
   }
 
-  function refreshGateBanner() {
+  function refreshRuntimeStatus() {
     const panel = document.getElementById(PANEL_ID);
     if (!panel) return;
-    const dot = panel.querySelector('[data-role="gate-dot"]');
+    const dot = panel.querySelector('[data-role="runtime-dot"]');
     if (!dot) return;
     const game = getGame();
     if (!game) {

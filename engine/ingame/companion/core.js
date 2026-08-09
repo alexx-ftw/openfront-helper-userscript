@@ -203,7 +203,6 @@
     // null means the optional actions() permission query has not replied yet.
     // Only false is an authoritative server denial.
     bossCanDonateGold: null,
-    bossCanDonateTroops: null,
     actionsInFlight: false,
     lastActionsAt: 0,
     bossDonateConfirmed: true,

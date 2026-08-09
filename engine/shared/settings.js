@@ -81,7 +81,6 @@
     sosDefense: true,
     selectiveTradePolicyEnabled: false,
     autoCancelDeniedTradesAvailable: true,
-    cheatsAvailable: true,
     showNukePrediction: true,
     showNukeTrajectory: true,
     showNukeSuggestions: false,

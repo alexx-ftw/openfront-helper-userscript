@@ -20,11 +20,6 @@
     Impossible: "Impossible",
     Legendary: "Legendary",
   };
-  const GameType = {
-    Singleplayer: "Singleplayer",
-    Public: "Public",
-    Private: "Private",
-  };
   const GameMode = { FFA: "Free For All", Team: "Team" };
   const PlayerType = { Bot: "BOT", Human: "HUMAN", Nation: "NATION" };
   // TerrainType is a NUMERIC enum in src.

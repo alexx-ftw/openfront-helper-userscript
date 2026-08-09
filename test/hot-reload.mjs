@@ -411,7 +411,7 @@ function makeLifecycleSandbox() {
     PANEL_ID: "openfront-helper-auto-bot-panel",
     STYLE_ID: "openfront-helper-auto-bot-styles",
     buildPanel() {},
-    refreshGateBanner() {},
+    refreshRuntimeStatus() {},
     setStatus() {},
     tr: (value) => value,
     renderStatus() {},
@@ -466,9 +466,22 @@ async function testLifecycleDisposesAtomMacroAndClosesStalledTick() {
   harness.advanceToTimeout();
   const result = await disposing;
 
-  assert.equal(result, false, "a tick beyond the timeout closes the old runtime");
+  assert.equal(
+    result,
+    true,
+    "a stale-generation tick cannot prevent the replacement runtime from activating",
+  );
+  assert.equal(
+    harness.state.tickGeneration,
+    1,
+    "teardown invalidates the stalled tick before allowing replacement activation",
+  );
   assert.equal(harness.state.runtimePausedAfterSlowTick, true);
-  assert.equal(harness.state.settings.enabled, false);
+  assert.equal(
+    harness.state.settings.enabled,
+    true,
+    "hot reload teardown preserves the user's enabled preference",
+  );
   assert.equal(harness.sandbox.window.__ofhAtomMacroInstalled, false);
   assert.equal(harness.sandbox.window.__OFH_atomBatch, undefined);
   assert.equal(harness.listeners.size, 0, "Atom Macro listeners are removed transactionally");

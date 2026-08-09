@@ -53,7 +53,6 @@ const lobbyState = {
   hasCustomNotificationSound: false,
   customNotificationSoundData: null,
   selectiveTradePolicyAvailable: false,
-  cheatsAvailable: false,
 };
 // "Keep searching after joining": searching is paused whenever we're "occupied"
 // (in the public-lobby waiting modal OR in an active game) and resumes when we
@@ -554,7 +553,7 @@ function syncNukeSuggestionsHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SHOW_NUKE_SUGGESTIONS",
       payload: {
-        enabled: Boolean(lobbyState.settings.showNukeSuggestions && lobbyState.cheatsAvailable),
+        enabled: Boolean(lobbyState.settings.showNukeSuggestions),
       },
     },
     "*",
@@ -567,7 +566,7 @@ function syncAutoNukeHelper() {
       source: BRIDGE_SOURCE_EXTENSION,
       type: "SET_AUTO_NUKE",
       payload: {
-        enabled: Boolean(lobbyState.settings.autoNuke && lobbyState.cheatsAvailable),
+        enabled: Boolean(lobbyState.settings.autoNuke),
         includeAllies: Boolean(lobbyState.settings.autoNukeIncludeAllies),
       },
     },
@@ -752,27 +751,6 @@ function updateAutoCancelDeniedTradesAvailability(available) {
   syncFloatingAutoJoinPanel();
 }
 
-function updateCheatsAvailability(available) {
-  // Force-enabled for multiplayer testing — nuke suggestion / auto nuke gate
-  // on this flag, and public lobbies report cheats unavailable.
-  // Original: const nextAvailable = Boolean(available);
-  const nextAvailable = true;
-  const availabilityChanged =
-    nextAvailable !== lobbyState.cheatsAvailable ||
-    nextAvailable !== Boolean(lobbyState.settings.cheatsAvailable);
-
-  lobbyState.cheatsAvailable = nextAvailable;
-
-  if (availabilityChanged) {
-    saveSettings({
-      ...lobbyState.settings,
-      cheatsAvailable: nextAvailable,
-    });
-  }
-
-  syncHelpers();
-}
-
 function syncHelpers() {
   syncBotNationMarkers();
   syncGoldPerMinuteHelper();
@@ -824,17 +802,6 @@ async function loadSettings() {
   lobbyState.settings = normalizeSettings(stored[STORAGE_KEY]);
   await loadContentTranslations();
   lobbyState.selectiveTradePolicyAvailable = Boolean(lobbyState.settings.autoCancelDeniedTradesAvailable);
-  // Match updateCheatsAvailability override so cold-start UI sees cheats on.
-  lobbyState.cheatsAvailable = true;
-  console.warn("[openfront-helper] cheats override active");
-  // Persist so the popup-ui (which reads lobbyState.settings.cheatsAvailable from
-  // chrome.storage) sees the override even before the page-bridge sends its
-  // first CHEATS_AVAILABILITY message.
-  if (lobbyState.settings.cheatsAvailable !== true) {
-    lobbyState.settings.cheatsAvailable = true;
-    chrome.storage.local
-      .set({ [STORAGE_KEY]: lobbyState.settings });
-  }
   lastProcessedSelectiveTradePolicyRequestAt =
     lobbyState.settings.applySelectiveTradePolicyRequestAt;
   syncHelpers();

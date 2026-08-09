@@ -77,102 +77,6 @@
     });
   }
 
-  function getGameConfig(game) {
-    {
-      const value = game?.config;
-      const config = typeof value === "function" ? value.call(game) : value;
-      return isObject(config) ? config : null;
-    }
-  }
-
-  function getAliveHumanPlayers(game) {
-    return Array.from(game?.playerViews?.() || []).filter(
-      (player) => player?.isAlive?.() && isHumanPlayer(player),
-    );
-  }
-
-  function hasTruthyFlag(target, keys) {
-    return keys.some((key) => Boolean(target?.[key]));
-  }
-
-  function hasStringFieldMatching(target, keys, includeTokens, excludeTokens = []) {
-    for (const key of keys) {
-      const rawValue = target?.[key];
-      if (typeof rawValue !== "string") {
-        continue;
-      }
-      const value = rawValue.trim().toLowerCase();
-      if (!value) {
-        continue;
-      }
-      if (excludeTokens.some((token) => value.includes(token))) {
-        continue;
-      }
-      if (includeTokens.some((token) => value.includes(token))) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  function isCustomGame(game) {
-    const config = getGameConfig(game);
-    if (!config) {
-      return false;
-    }
-
-    if (
-      hasTruthyFlag(config, [
-        "isCustom",
-        "customGame",
-        "customLobby",
-        "isPrivate",
-        "privateGame",
-        "privateLobby",
-      ])
-    ) {
-      return true;
-    }
-
-    return hasStringFieldMatching(
-      config,
-      [
-        "gameType",
-        "lobbyType",
-        "matchType",
-        "source",
-        "queueType",
-        "visibility",
-      ],
-      ["custom", "private", "friend"],
-      ["public", "ranked", "matchmaking"],
-    );
-  }
-
-  function isSoloGame(game) {
-    return getAliveHumanPlayers(game).length <= 1;
-  }
-
-  function isCheatsAvailable(game) {
-    if (!game) {
-      return false;
-    }
-
-    return isSoloGame(game) || isCustomGame(game);
-  }
-
-  function reportCheatsAvailability(game = null) {
-    const available = isCheatsAvailable(game);
-    if (available === runtimeState.lastReportedCheatsAvailability) {
-      return;
-    }
-
-    runtimeState.lastReportedCheatsAvailability = available;
-    postToExtension("CHEATS_AVAILABILITY", {
-      available,
-    });
-  }
-
   function isHumanPlayer(player) {
     {
       const playerType = player?.type?.() ?? player?.data?.playerType;
@@ -513,9 +417,4 @@
   function refreshSelectiveTradePolicyAvailability() {
     const context = getOpenFrontGameContext();
     reportSelectiveTradePolicyAvailability(context?.game ?? null);
-  }
-
-  function refreshCheatsAvailability() {
-    const context = getOpenFrontGameContext();
-    reportCheatsAvailability(context?.game ?? null);
   }

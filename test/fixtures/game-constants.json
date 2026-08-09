@@ -1675,8 +1675,8 @@
     "name": "AUTO_BOT_PANEL_CSS",
     "declarationKind": "const",
     "initializerKind": "TemplateExpression",
-    "initializerHash": "c5b9db5de79ceffb2e23e7d621f6d1b0ef62fa9022ad0dfb4f7a189c31e24345",
-    "initializerLength": 13045,
+    "initializerHash": "44527804a0e8685f85c47886043c3c3a3b767cfa39da6f97b150d678bcf127bb",
+    "initializerLength": 13048,
     "initializerPreview": "`\n      #${PANEL_ID} {\n        --ab-accent: var(--oh-accent, #60a5fa);\n        --ab-border: var(--oh-panel-border, rgba(148, 163, 184, 0.34));\n        --ab-surface: rgba(255, 255, 255, 0.05);\n        --ab-surface-2: rgba(255, 255, 255, 0..."
   },
   {
@@ -5385,8 +5385,8 @@
     "name": "DEFAULT_TRANSLATIONS",
     "declarationKind": "const",
     "initializerKind": "ObjectLiteralExpression",
-    "initializerHash": "50a4acd719512c804063e38aead6a9b9892b494d80dc91481f6b48f78e1ecceb",
-    "initializerLength": 20539,
+    "initializerHash": "06d57ddb237b0db7c91aba8ac775529c80b38b3f8f1e8d40bdce7cd7e4f7a17e",
+    "initializerLength": 20497,
     "initializerPreview": "{\n    languageCode: \"en\",\n    languageName: \"English\",\n    settings: \"Settings\",\n    openSettings: \"Open settings\",\n    github: \"GitHub\",\n    openGitHubRepository: \"Open GitHub repository\",\n    openFrontReloadTitle: \"Reload OpenFront?\",\n..."
   },
   {
@@ -5475,8 +5475,8 @@
     "name": "DEFAULT_SETTINGS",
     "declarationKind": "const",
     "initializerKind": "ObjectLiteralExpression",
-    "initializerHash": "54ed70578e4326bdc1e03edcaea3dc45b9c1e83e9324d1b74a1d972b1bafe4d5",
-    "initializerLength": 4919,
+    "initializerHash": "44555a912e3c94a09c44a0e1b88b2b96c293fcbc3e461f3dd78758fa623772bc",
+    "initializerLength": 4892,
     "initializerPreview": "{\n    language: \"en\",\n    enabled: false,\n    searchStartedAt: null,\n    joinNotification: true,\n    minLobbySize: null,\n    minTeamSize: 5,\n    maxTeamSize: null,\n    minTeamCount: null,\n    maxTeamCount: 5,\n    keepAutoJoinAfterMatch: ..."
   },
   {

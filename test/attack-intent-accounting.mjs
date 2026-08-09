@@ -1893,6 +1893,11 @@ outgoing.push({
 });
 parallelTribeA.troops = () => 4000;
 assert.equal(parallelBehavior.getLiveOutboundAttackTroopsForTarget(parallelTribeA), 3000);
+assert.equal(
+  parallelBehavior.activeTribeReinforcementPlan(parallelTribeA),
+  null,
+  "land-border tribes stay on the normal reserve-aware attack path instead of the maritime reinforcement override",
+);
 parallelBehavior.botAttackTroopsSent = 0;
 assert.equal(
   parallelBehavior.calculateBotAttackTroops(parallelTribeA, 20000, {}, 3000),
@@ -2564,10 +2569,10 @@ assert.equal(
     {},
     {},
   ).donateTroops(),
-  false,
-  "the core donation eligibility gate prevents invalid intents",
+  true,
+  "lobby donation capability does not suppress the bot's troop intent",
 );
-assert.equal(troopEmissions.length, emissionsBeforeIneligibleDonation);
+assert.equal(troopEmissions.length, emissionsBeforeIneligibleDonation + 1);
 donor.canDonateTroops = () => true;
 
 const emissionsBeforeAttackedDonation = troopEmissions.length;
@@ -3259,6 +3264,66 @@ assert.equal(
   true,
   "a passable fallout neighbor remains eligible for the radioactive expansion policy",
 );
+
+const terraNulliusBoatProbeTile = 500;
+const terraNulliusBoatProbeState = {
+  land: true,
+  owner: false,
+  water: false,
+  valid: true,
+};
+const terraNulliusBoatProbeGame = {
+  isLand: (tile) => tile === terraNulliusBoatProbeTile && terraNulliusBoatProbeState.land,
+  hasOwner: (tile) => tile === terraNulliusBoatProbeTile && terraNulliusBoatProbeState.owner,
+  isWater: (tile) => tile === terraNulliusBoatProbeTile && terraNulliusBoatProbeState.water,
+  isValidRef: (tile) => tile === terraNulliusBoatProbeTile && terraNulliusBoatProbeState.valid,
+};
+const terraNulliusBoatProbeBehavior = Object.create(sandbox.AttackBehavior.prototype);
+terraNulliusBoatProbeBehavior.game = terraNulliusBoatProbeGame;
+terraNulliusBoatProbeBehavior.canSendNearbyTerraNulliusBoat = () => true;
+terraNulliusBoatProbeBehavior.nearbyTerraNulliusBoatCandidates = () => [terraNulliusBoatProbeTile];
+terraNulliusBoatProbeBehavior.player = {
+  bestTransportShipSpawn: async () => "reachable-source",
+};
+terraNulliusBoatProbeBehavior.allowEarlyGameBoat = async () => true;
+terraNulliusBoatProbeBehavior.nearbyTerraNulliusBoatTroops = () => 100;
+const terraNulliusBoatEmissions = [];
+terraNulliusBoatProbeBehavior.emitNearbyTerraNulliusBoat = (tile, troops) => {
+  terraNulliusBoatEmissions.push({ tile, troops });
+  return true;
+};
+assert.equal(
+  await terraNulliusBoatProbeBehavior.sendBoatAttackToNearbyTerraNullius(),
+  true,
+  "an unowned impassable Terra Nullius tile remains a valid boat probe after the route await",
+);
+assert.deepEqual(terraNulliusBoatEmissions, [{ tile: terraNulliusBoatProbeTile, troops: 100 }]);
+
+for (const staleState of [
+  { name: "owned", owner: true, water: false, land: true, valid: true },
+  { name: "water", owner: false, water: true, land: false, valid: true },
+  { name: "invalid", owner: false, water: false, land: true, valid: false },
+]) {
+  terraNulliusBoatProbeState.owner = false;
+  terraNulliusBoatProbeState.water = false;
+  terraNulliusBoatProbeState.land = true;
+  terraNulliusBoatProbeState.valid = true;
+  terraNulliusBoatEmissions.length = 0;
+  terraNulliusBoatProbeBehavior.player.bestTransportShipSpawn = async () => {
+    terraNulliusBoatProbeState.owner = staleState.owner;
+    terraNulliusBoatProbeState.water = staleState.water;
+    terraNulliusBoatProbeState.land = staleState.land;
+    terraNulliusBoatProbeState.valid = staleState.valid;
+    return "reachable-source";
+  };
+  assert.equal(
+    await terraNulliusBoatProbeBehavior.sendBoatAttackToNearbyTerraNullius(),
+    false,
+    `a Terra Nullius boat probe does not emit when the selected ${staleState.name} tile becomes stale after await`,
+  );
+  assert.deepEqual(terraNulliusBoatEmissions, []);
+}
+
 assert.match(
   fs.readFileSync(path.join(repoRoot, "engine/ingame/auto-bot/gameApi.js"), "utf8"),
   /isImpassable:/,

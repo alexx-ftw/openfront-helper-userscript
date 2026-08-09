@@ -279,7 +279,6 @@ runtimeState.selectiveTradePolicyNeedsEmbargoSync = false;
 runtimeState.selectiveTradePolicyMyPlayerId = null;
 runtimeState.lastSelectiveTradePolicyRequestAt = null;
 runtimeState.lastReportedSelectiveTradePolicyAvailability = null;
-runtimeState.lastReportedCheatsAvailability = null;
 runtimeState.lastOpenFrontGameContext = null;
 
 // Game-time alert: one-shot center-screen notice at a configurable match time.

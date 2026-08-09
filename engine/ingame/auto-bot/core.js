@@ -27,8 +27,7 @@
 
   // ---- defaults, mirroring NationExecution Impossible ranges ----
   const DEFAULTS = {
-    enabled: true, // auto-bot ON by default; the runtime gate still blocks
-    // execution in public lobbies without changing this persisted preference.
+    enabled: true,
     // Which difficulty of the in-game Nation AI to faithfully replicate. The bot
     // ports the four faithful difficulty branches plus the adaptive Legendary
     // construction planner; this selects which strategy drives the bot. Default

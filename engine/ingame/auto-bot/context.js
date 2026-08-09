@@ -355,7 +355,6 @@
     const me = game?.myPlayer?.();
     const diag = {
       game: Boolean(game),
-      gameType: game ? gameType(game) : null,
       inSpawnPhase: callDiagnosticMethod(game, "inSpawnPhase"),
       myPlayer: Boolean(me),
       hasSpawned: callDiagnosticMethod(me, "hasSpawned"),

@@ -1015,14 +1015,9 @@ export function renderAutoBot(body: HTMLElement): void {
   const cfg = ab.get();
 
   body.append(
-    switchRow(
-      "Auto-bot enabled",
-      "Run the auto-bot (private-lobby training tool).",
-      cfg.enabled,
-      (v) => {
-        ab.set({ enabled: v });
-      },
-    ),
+    switchRow("Auto-bot enabled", "Run the auto-bot in the current game.", cfg.enabled, (v) => {
+      ab.set({ enabled: v });
+    }),
   );
   body.append(
     switchRow(

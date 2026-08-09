@@ -302,8 +302,8 @@
 
   function canAutoDonateToPlayer(me, player, donationKind) {
     if (!hasAutoDonateFriendlyRelation(me, player)) return false;
-    const capability = donationKind === "gold" ? "canDonateGold" : "canDonateTroops";
-    return typeof me?.[capability] !== "function" || me[capability](player) === true;
+    if (donationKind !== "gold") return true;
+    return typeof me?.canDonateGold !== "function" || me.canDonateGold(player) === true;
   }
 
   function getAutoDonateTroopCapacity(game, player) {
@@ -427,13 +427,6 @@
     return player?.isAlive?.() ? player : null;
   }
 
-  function gameAllowsTroopDonation(game) {
-    {
-      const config = game?.config?.();
-      return typeof config?.donateTroops !== "function" || config.donateTroops() !== false;
-    }
-  }
-
   function gameAllowsGoldDonation(game) {
     const config = game?.config?.();
     return typeof config?.donateGold !== "function" || config.donateGold() !== false;
@@ -485,7 +478,7 @@
     const game = context.game;
     const me = getAutoDonateLivingPlayer(game);
     if (!me || isAutoDonatePlayerBeingAttacked(me) !== false) return null;
-    if (!hasNoAutoDonateMaritimeThreat(game, me) || !gameAllowsTroopDonation(game)) return null;
+    if (!hasNoAutoDonateMaritimeThreat(game, me)) return null;
     const targetNames = parseAutoDonateTargets(autoDonateCfg("autoDonateTargets", ""));
     if (targetNames.length === 0) return null;
     const configuredKeep = Number(autoDonateCfg("autoDonateKeepPct", 42));

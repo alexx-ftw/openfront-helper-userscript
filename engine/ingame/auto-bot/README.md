@@ -6,10 +6,6 @@ warships, alliances) by reading the client-side `GameView`/`PlayerView` and
 emitting the same intents the UI emits. Strategy mirrors the in-game "Nation"
 bot (see `src/core/execution/NationExecution.ts` and friends in the game repo).
 
-> **Lobby scope:** Auto-Bot applies the same execution path in every lobby type.
-> There is no Public-specific detection, gate, restriction, or persisted-state
-> override.
-
 ## Early Game policy
 
 The Early Game snapshot starts after spawn selection while there is still free
@@ -316,7 +312,7 @@ named `tr` (not `t`) because `t` is used everywhere as a `TileRef` variable.
 ## Smoke test
 
 After reloading the extension, run `window.__autoBotDiag()` in the page console.
-It touches `state`, the lobby gate, constructor discovery and many helpers across
+It touches `state`, runtime readiness, constructor discovery and many helpers across
 modules — if it returns a full object, the wiring is intact.
 
 ## Legendary construction mode

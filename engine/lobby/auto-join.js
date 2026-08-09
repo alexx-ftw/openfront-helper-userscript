@@ -1765,13 +1765,7 @@ function handleBridgeMessage(event) {
 
   if (data.type === "SELECTIVE_TRADE_POLICY_AVAILABILITY") {
     updateAutoCancelDeniedTradesAvailability(data.payload?.available);
-    return;
   }
-
-  if (data.type === "CHEATS_AVAILABILITY") {
-    updateCheatsAvailability(data.payload?.available);
-  }
-
 }
 
 async function handleStorageChange(changes, areaName) {
@@ -1788,7 +1782,6 @@ async function handleStorageChange(changes, areaName) {
     document.getElementById(FLOATING_AUTOJOIN_PANEL_ID)?.remove();
   }
   lobbyState.selectiveTradePolicyAvailable = Boolean(lobbyState.settings.autoCancelDeniedTradesAvailable);
-  lobbyState.cheatsAvailable = Boolean(lobbyState.settings.cheatsAvailable);
   syncHelpers();
   syncFloatingHelpersPanel();
   syncFloatingAutoJoinPanel();

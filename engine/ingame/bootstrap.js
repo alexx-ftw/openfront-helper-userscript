@@ -152,11 +152,9 @@
 
   window.setInterval(() => {
     refreshSelectiveTradePolicyAvailability();
-    refreshCheatsAvailability();
     { if (typeof window.__OFH_updateSiloSamTracker === "function") window.__OFH_updateSiloSamTracker(); }{ if (typeof window.__OFH_tickAutoDonate === "function") window.__OFH_tickAutoDonate(); }
   }, 1000);
   refreshSelectiveTradePolicyAvailability();
-  refreshCheatsAvailability();
 
   // Rebuild all visible panels so static text (set once during creation) picks
   // up the new tr() translations after a language change. Each panel setter

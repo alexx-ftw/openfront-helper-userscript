@@ -407,10 +407,6 @@
         isFriendly: (o) => core.isFriendly(unwrap(o)),
         isAlliedWith: (o) => core.isAlliedWith(unwrap(o)),
         isOnSameTeam: (o) => core.isOnSameTeam(unwrap(o)),
-        canDonateTroops: (o) =>
-          typeof core.canDonateTroops === "function"
-            ? core.canDonateTroops(unwrap(o))
-            : true,
         isRequestingAllianceWith: (o) =>
           core.isRequestingAllianceWith
             ? core.isRequestingAllianceWith(unwrap(o))

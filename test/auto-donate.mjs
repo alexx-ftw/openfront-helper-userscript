@@ -64,6 +64,8 @@ const DONATION_DEFAULTS = {
   incomingTransports: [],
   autoDonateTroops: true,
   autoDonateGold: false,
+  donateTroopsAllowed: true,
+  troopDonationCapability: true,
   donateGoldAllowed: true,
   gold: 0,
   allyGold: 0,
@@ -93,6 +95,8 @@ async function runDonation(options = {}) {
     incomingTransports,
     autoDonateTroops,
     autoDonateGold,
+    donateTroopsAllowed,
+    troopDonationCapability,
     donateGoldAllowed,
     gold,
     allyGold,
@@ -119,6 +123,7 @@ async function runDonation(options = {}) {
     gold: () => gold,
     isAlive: () => true,
     isFriendly: (player) => Boolean(player.friendly),
+    canDonateTroops: () => troopDonationCapability,
     incomingAttacks: () => ownIncomingAttacks ?? (currentlyBeingAttacked ? [{}] : []),
     outgoingAttacks: () => [],
   };
@@ -166,7 +171,7 @@ async function runDonation(options = {}) {
       throw new Error("owner() should not be needed when ownerID() is available");
     },
     config: () => ({
-      donateTroops: () => true,
+      donateTroops: () => donateTroopsAllowed,
       donateGold: () => donateGoldAllowed,
       maxTroops: (player) => (player === ally ? allyMaxTroops : 1000),
     }),
@@ -275,6 +280,16 @@ assert.equal(
   validGoldOnlyDonation[0]?.gold,
   4000,
   "a valid gold-only donation passes the live game into the cooldown gate",
+);
+
+const publicLobbyTroopDonation = await runDonation({
+  donateTroopsAllowed: false,
+  troopDonationCapability: false,
+});
+assert.equal(
+  publicLobbyTroopDonation[0]?.type,
+  "donate_troops",
+  "troop donation ignores public-lobby capability/configuration gates",
 );
 
 const failedGoldDonation = await runDonation({

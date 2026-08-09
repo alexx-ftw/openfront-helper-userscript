@@ -267,7 +267,6 @@
     "🛡️ Defending…": "🛡️ Defending…",
     "build-menu not found": "build-menu not found",
     "Waiting for border data (borderTiles)…": "Waiting for border data (borderTiles)…",
-    "Checking lobby…": "Checking lobby…",
     "Private lobby": "Private lobby",
     "Singleplayer": "Singleplayer",
     "🚢 Deploy warship": "🚢 Deploy warship",

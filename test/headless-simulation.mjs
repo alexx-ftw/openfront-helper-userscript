@@ -189,6 +189,113 @@ assert.deepEqual(
   },
   "the same match seed must select the same headless Team configuration",
 );
+
+function runHeadlessScenario(environment) {
+  const run = spawnSync(
+    process.execPath,
+    [
+      path.join(root, "node_modules/tsx/dist/cli.mjs"),
+      "--tsconfig",
+      "openfront-engine/tsconfig.json",
+      "scripts/headless/run-match.mts",
+    ],
+    {
+      cwd: root,
+      env: { ...process.env, GAME_ENV: "dev", ...environment },
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+    },
+  );
+  const output = `${run.stdout}\n${run.stderr}`;
+  const records = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("{"))
+    .map((line) => JSON.parse(line));
+  return { run, records };
+}
+
+const naturalRuntime = runHeadlessScenario({
+  OFH_MATCH_SEED: "legendary-adapter-natural-20260809",
+  OFH_GAME_MAP: "Alps",
+  OFH_GAME_MAP_SIZE: "Small",
+  OFH_GAME_MODE: "team",
+  OFH_PLAYER_TEAMS: "2",
+  OFH_BOTS: "10",
+  OFH_NATIONS: "disabled",
+  OFH_MAX_TICKS: "1800",
+  OFH_STOP_WHEN_DEAD: "0",
+  OFH_LOG_SPAWN: "1",
+  OFH_LOG_INTENTS: "1",
+});
+assert.equal(naturalRuntime.run.status, 2, "the bounded natural scenario must finish at max ticks");
+const naturalResult = naturalRuntime.records.find((record) => record.phase === "result");
+const naturalSpawn = naturalRuntime.records.find((record) => record.phase === "spawn-materialized");
+const naturalSpawnRanking = naturalRuntime.records.find(
+  (record) => record.kind === "spawn-ranking" && record.phase === "spawn-selection-trace",
+);
+const naturalDecisions = naturalRuntime.records.filter((record) => record.phase === "decision");
+assert.ok(naturalResult, "the natural scenario must expose a terminal engine result");
+assert.equal(naturalResult.spawnLifecycle.hasSpawned, true);
+assert.ok(
+  naturalResult.finalBotState.tiles > 0,
+  "the real SpawnExecution must materialize territory",
+);
+assert.ok(naturalSpawn?.self?.tiles > 0, "spawn telemetry must report engine-owned territory");
+assert.equal(typeof naturalSpawnRanking?.selectedKey, "string");
+assert.ok(
+  naturalDecisions.some((decision) =>
+    decision.intents?.some((intent) => intent.type === "spawn" && Number.isFinite(intent.tile)),
+  ),
+  "the real adapter must emit a finite spawn intent before materialization",
+);
+const naturalAttackDecision = naturalDecisions.find((decision) =>
+  decision.intents?.some(
+    (intent) => intent.type === "attack" && Number.isFinite(intent.troops) && intent.troops > 0,
+  ),
+);
+assert.ok(naturalAttackDecision, "the real adapter must emit a positive-troop combat intent");
+assert.ok(
+  naturalAttackDecision.intents?.some(
+    (intent) => intent.type === "attack" && intent.attackTargetSnapshot,
+  ) && naturalAttackDecision.attackTargets?.some((target) => target.committedTroops > 0),
+  "combat telemetry must retain the authoritative target snapshot and committed troops",
+);
+assert.ok(naturalResult.cumulativeIntentTypes.attack > 0);
+
+const naturalNuclearRuntime = runHeadlessScenario({
+  OFH_MATCH_SEED: "legendary-nuclear-natural-20260809",
+  OFH_GAME_MAP: "Baikal Nuke Wars",
+  OFH_GAME_MAP_SIZE: "Small",
+  OFH_GAME_MODE: "team",
+  OFH_PLAYER_TEAMS: "2",
+  OFH_BOTS: "20",
+  OFH_NATIONS: "disabled",
+  OFH_NUKES: "1",
+  OFH_STARTING_GOLD: "5000000",
+  OFH_MAX_TICKS: "3500",
+  OFH_STOP_WHEN_DEAD: "0",
+  OFH_PROGRESS_TICKS: "3500",
+});
+assert.equal(
+  naturalNuclearRuntime.run.status,
+  2,
+  "the bounded natural nuclear scenario must finish at max ticks",
+);
+const naturalNuclearResult = naturalNuclearRuntime.records.find(
+  (record) => record.phase === "result",
+);
+const naturalNuclearProgress = naturalNuclearRuntime.records.find(
+  (record) => record.phase === "progress" && record.tick === 3500,
+);
+assert.ok(naturalNuclearResult);
+assert.ok(naturalNuclearResult.cumulativeBuildUnitTypes["Missile Silo"] > 0);
+assert.ok(Array.isArray(naturalNuclearProgress?.activeMissiles));
+assert.ok(
+  naturalNuclearProgress.units["Missile Silo"] > 0,
+  "nuclear-enabled simulation must expose the real Silo state through engine progress",
+);
+
 assert.match(runner, /OFH_GAME_MAP/);
 assert.match(runner, /OFH_STARTING_GOLD/);
 assert.match(runner, /OFH_NATIONS/);

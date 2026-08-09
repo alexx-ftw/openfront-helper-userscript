@@ -47,7 +47,7 @@ geometric center, and trajectory-aware SAM coverage.
 ## Enums & unit constants (portutil.js / gameApi.js / core.js — already global)
 
 - `UNIT.City|Port|Factory|SAMLauncher|MissileSilo|DefensePost|TransportShip|TradeShip|Warship|AtomBomb|HydrogenBomb|MIRV|MIRVWarhead` (string UnitType values). Replace `UnitType.City` → `UNIT.City`, etc.
-- `Difficulty`, `GameMode` (`.FFA`/`.Team`), `GameType`, `PlayerType` (`.Bot`/`.Human`/`.Nation`), `TerrainType` (portutil).
+- `Difficulty`, `GameMode` (`.FFA`/`.Team`), `PlayerType` (`.Bot`/`.Human`/`.Nation`), `TerrainType` (portutil).
 - `Relation` (`.Hostile`=0/`.Distrustful`=1/`.Neutral`=2/`.Friendly`=3) (gameApi).
 
 ## gameApi surface (what `game` and `player` expose)
@@ -140,7 +140,7 @@ considerMIRV/maybeSpawnWarship/counterWarshipInfestation/maybeSendNuke). Wrap ea
 4. **profile** — already snapshotted into the relation overlay each tick; just use
    `player.relation(...)`. Do NOT call profile() yourself.
 5. **actions** — `await player.actions(tile, units)` → `PlayerActions` (`{canAttack,
-   buildableUnits, interaction:{canSendAllianceRequest, canBreakAlliance, canDonateTroops,
+   buildableUnits, interaction:{canSendAllianceRequest, canBreakAlliance,
    canDonateGold, sharedBorder, …}}`) — may be null under the harness; guard and fall back
    to local checks (`sharesBorderWith`, relation, etc.).
 

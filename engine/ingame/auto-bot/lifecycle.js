@@ -13,7 +13,7 @@
     // pre-configure even before a match starts. The engine itself no-ops
     // safely until a game (GameView) exists.
     buildPanel();
-    refreshGateBanner();
+    refreshRuntimeStatus();
     // Show a localized idle status while disabled (core initializes it empty
     // because t()/tr() isn't available at module-load time).
     if (!state.settings.enabled && !state.status) {
@@ -70,7 +70,7 @@
       1200,
     );
     runAutoBotWatcherSafely();
-    // Persisted enabled=true survives F5 and applies uniformly to every lobby.
+    // Persisted enabled=true survives F5 and resumes automatically.
     if (state.settings.enabled) {
       setEnabled(true);
     }
@@ -98,7 +98,6 @@
   }
 
   async function disposeAutoBotForHotReload({ skipAtomMacroCleanup = false } = {}) {
-    state.settings.enabled = false;
     stopEngine();
     const deadline = performance.now() + 8000;
     while (state.tickInFlight && performance.now() < deadline) {
@@ -124,7 +123,10 @@
     document.getElementById(STYLE_ID)?.remove();
     document.querySelectorAll(".ab-feat-tip").forEach((tip) => tip.remove());
     if (!skipAtomMacroCleanup) window.__OFH_disposeAtomMacroForHotReload?.();
-    return !timedOut;
+    // stopEngine() invalidates the running generation before this wait. A
+    // timed-out tick therefore cannot publish actions into the replacement
+    // runtime, and must not strand the user with the old runtime dismantled.
+    return true;
   }
 
   function activateAutoBotForHotReload() {

@@ -42,7 +42,7 @@ const sandbox = {
   buildPanel() {
     panelBuilds += 1;
   },
-  refreshGateBanner() {},
+  refreshRuntimeStatus() {},
   setStatus() {},
   tr: (value) => value,
   renderStatus() {},

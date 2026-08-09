@@ -128,7 +128,7 @@ Toggle each overlay independently from the **Helpers** tab. All panels are dragg
 
 ### Auto-Bot
 
-A faithful 1:1 port of the game's built-in Nation AI (`NationExecution`). Reads the live `GameView`/`PlayerView` client objects and emits the same intents as a human player. It uses the same execution path in every lobby type.
+A faithful 1:1 port of the game's built-in Nation AI (`NationExecution`). Reads the live `GameView`/`PlayerView` client objects and emits the same intents as a human player.
 
 Enable and configure it live in-game from the **Auto Bot** popup tab. A status log inside the panel shows every decision the bot makes in real time. Run `window.__autoBotDiag()` in the browser console to verify the bot is wired correctly.
 
