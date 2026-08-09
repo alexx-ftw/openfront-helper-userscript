@@ -72,6 +72,59 @@ async function testInvalidEvalKeepsPreviousRuntime() {
   assert.equal(sandbox.window.__OFH_LOCAL_BUILD_ID__, "d".repeat(64));
 }
 
+async function testActivationFailureReactivatesDisposedPreviousRuntime() {
+  let previousDisposed = 0;
+  let previousActivated = 0;
+  const previous = {
+    disposeForHotReload: async () => {
+      previousDisposed += 1;
+    },
+    activateForHotReload: async () => {
+      previousActivated += 1;
+      return true;
+    },
+  };
+  const previousAtomDisposer = () => {};
+  const sandbox = {
+    window: {
+      __OFH_autobot: previous,
+      __OFH_LOCAL_BUILD_ID__: "previous-build",
+      __OFH_disposeAtomMacroForHotReload: previousAtomDisposer,
+      __OFH_candidateDisposed: 0,
+      __OFH_candidateActivated: 0,
+    },
+  };
+  vm.createContext(sandbox);
+  // eslint-disable-next-line sonarjs/code-eval
+  vm.runInContext(extractHotReloadBridge(buildSource), sandbox);
+
+  await assert.rejects(
+    sandbox.window.__OFH_HOT_RELOAD_AUTOBOT__(
+      "window.__OFH_autobot = {\n" +
+        "  disposeForHotReload: async () => { window.__OFH_candidateDisposed += 1; },\n" +
+        "  activateForHotReload: async () => {\n" +
+        "    window.__OFH_candidateActivated += 1;\n" +
+        "    throw new Error('candidate activation failed');\n" +
+        "  },\n" +
+        "};",
+      "candidate-build",
+    ),
+    /candidate activation failed/u,
+  );
+
+  assert.equal(previousDisposed, 1, "the previous runtime is disposed once");
+  assert.equal(previousActivated, 1, "the previous runtime is reactivated once");
+  assert.equal(sandbox.window.__OFH_candidateActivated, 1);
+  assert.equal(
+    sandbox.window.__OFH_candidateDisposed,
+    1,
+    "the failed candidate is cleaned up once",
+  );
+  assert.equal(sandbox.window.__OFH_autobot, previous, "the previous runtime identity is restored");
+  assert.equal(sandbox.window.__OFH_LOCAL_BUILD_ID__, "previous-build");
+  assert.equal(sandbox.window.__OFH_disposeAtomMacroForHotReload, previousAtomDisposer);
+}
+
 function makeLifecycleSandbox() {
   const listeners = new Map();
   const timers = new Set();
@@ -255,6 +308,7 @@ async function testBuildPublishesThreeArtifactsAtomically() {
 }
 
 await testInvalidEvalKeepsPreviousRuntime();
+await testActivationFailureReactivatesDisposedPreviousRuntime();
 await testLifecycleDisposesAtomMacroAndClosesStalledTick();
 await testBuildPublishesThreeArtifactsAtomically();
 process.stdout.write("hot-reload transactional tests passed\n");

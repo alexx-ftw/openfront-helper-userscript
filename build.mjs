@@ -132,6 +132,7 @@ window.__OFH_HOT_RELOAD_AUTOBOT__ = function(source, buildId) {
   const previousAtomDisposer = window.__OFH_disposeAtomMacroForHotReload;
   const previousActivationPending = window.__openfrontAutoBotActivationPending;
   let candidate = null;
+  let previousDisposed = false;
   let committed = false;
   const finishStaging = () => {
     window.__OFH_HOT_RELOAD_IN_PROGRESS__ = false;
@@ -154,6 +155,7 @@ window.__OFH_HOT_RELOAD_AUTOBOT__ = function(source, buildId) {
       if (disposed === false) {
         throw new Error("el runtime anterior no pudo cerrarse limpiamente");
       }
+      previousDisposed = true;
       window.__OFH_HOT_RELOAD_IN_PROGRESS__ = false;
       if (!(await candidate.activateForHotReload())) {
         throw new Error("el candidato de Auto-Bot no pudo activarse");
@@ -178,6 +180,8 @@ window.__OFH_HOT_RELOAD_AUTOBOT__ = function(source, buildId) {
           window.__OFH_LOCAL_BUILD_ID__ = previousBuildId;
           window.__OFH_disposeAtomMacroForHotReload = previousAtomDisposer;
           window.__openfrontAutoBotActivationPending = previousActivationPending;
+          finishStaging();
+          if (previousDisposed) await previous.activateForHotReload();
         }
         finishStaging();
         throw error;
