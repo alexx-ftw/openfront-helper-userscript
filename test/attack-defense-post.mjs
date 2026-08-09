@@ -225,6 +225,43 @@ assert.equal(
   "stale zero-force attacks cannot suppress offensive or donation decisions",
 );
 
+const staleDonationAttackSnapshots = [
+  { troops: () => 0, retreating: () => false },
+  { troops: () => -50, retreating: () => false },
+];
+const staleDonationBehavior = Object.create(sandbox.AttackBehavior.prototype);
+staleDonationBehavior.player = {
+  smallID: () => currentDefender.smallID(),
+  canDonateTroops: () => true,
+  incomingAttacks: () => staleDonationAttackSnapshots,
+};
+staleDonationBehavior.botDonationNextEligibleTickByRecipient = new Map();
+staleDonationBehavior.currentAttackDecisionTick = () => 701;
+staleDonationBehavior.teamDonationDistance = () => 1;
+assert.equal(
+  staleDonationBehavior.donationHasIncomingAttack(),
+  false,
+  "zero- and negative-force incoming donation snapshots do not block the donor",
+);
+const staleDonationRecipient = {
+  id: () => "player-42",
+  smallID: () => 42,
+  isAlive: () => true,
+  incomingAttacks: () => staleDonationAttackSnapshots,
+  outgoingAttacks: () => staleDonationAttackSnapshots,
+};
+const staleDonationCandidate = staleDonationBehavior.donationCandidate(
+  { teammate: staleDonationRecipient, troopPercentage: 0.1 },
+  1,
+);
+assert.notEqual(
+  staleDonationCandidate,
+  null,
+  "zero- and negative-force incoming/outgoing snapshots leave the recipient donation-eligible",
+);
+assert.equal(staleDonationCandidate.underAttack, false);
+assert.equal(staleDonationCandidate.frontline, false);
+
 const siegeHoldBehavior = Object.create(sandbox.AttackBehavior.prototype);
 let siegeCounterattacks = 0;
 sandbox.state.earlyGame = {};

@@ -2042,6 +2042,9 @@ const maritimePlayer = {
 const maritimeGame = {
   ...game,
   owner: () => maritimeActiveTarget,
+  ownerID: () => maritimeActiveTarget.smallID(),
+  playerBySmallID: (smallID) =>
+    smallID === maritimeActiveTarget.smallID() ? maritimeActiveTarget : null,
   isShore: (tile) => tile === 1 || tile === 101,
   ensureBorderTiles: async () => {},
   config: () => ({
@@ -2883,12 +2886,23 @@ const throttledDonationBehavior = new sandbox.AttackBehavior(
   {},
   {},
 );
+const emissionsBeforeProactiveDonation = troopEmissions.length;
 assert.equal(
   throttledDonationBehavior.runDonationPolicy(),
   undefined,
   "the proactive donation policy evaluates without exposing an async result",
 );
 const emissionsAfterProactiveDonation = troopEmissions.length;
+assert.equal(
+  emissionsAfterProactiveDonation,
+  emissionsBeforeProactiveDonation + 1,
+  "the proactive path emits before the fallback throttle is exercised",
+);
+assert.equal(
+  sandbox.state.lastDonateMs,
+  20000,
+  "a successful proactive donation records the shared throttle timestamp",
+);
 tick += 1;
 const fallbackDonationStrategy = throttledDonationBehavior.getAttackStrategies([], [], []).at(-1);
 assert.equal(

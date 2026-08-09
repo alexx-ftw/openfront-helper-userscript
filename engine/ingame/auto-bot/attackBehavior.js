@@ -8744,7 +8744,15 @@
       this.maybeSendBoatAttackEmoji(target);
 
       // src: game.addExecution(new TransportShipExecution(player, closest.y, troops)).
-      if (!(await this.allowEarlyGameBoat(destination))) return false;
+      if (
+        !(await this.allowAndRevalidateBoatPlayerTarget(
+          target,
+          targetKey,
+          destination,
+        ))
+      ) {
+        return false;
+      }
       return this.emitBoat(
         destination,
         troops,
@@ -8752,6 +8760,11 @@
         target,
         reinforcementPlan !== null,
       );
+    }
+
+    async allowAndRevalidateBoatPlayerTarget(target, targetKey, destination) {
+      if (!(await this.allowEarlyGameBoat(destination))) return false;
+      return this.boatPlayerTargetStillValid(target, targetKey, destination);
     }
 
     boatPlayerTargetIdentityStillValid(target, targetKey) {
@@ -8768,17 +8781,23 @@
     boatDestinationStillOwnedByTarget(target, targetKey, destination) {
       if (
         typeof this.game.ownerID !== "function" ||
+        typeof this.game.playerBySmallID !== "function" ||
         typeof target.smallID !== "function"
       ) {
-        return true;
-      }
-      const ownerId = this.game.ownerID(destination);
-      if (ownerId == null || String(ownerId) !== String(target.smallID())) {
         return false;
       }
-      const owner = this.game.playerBySmallID?.(ownerId);
+      const ownerId = this.game.ownerID(destination);
+      const targetSmallId = target.smallID();
+      if (
+        ownerId == null ||
+        targetSmallId == null ||
+        String(ownerId) !== String(targetSmallId)
+      ) {
+        return false;
+      }
+      const owner = this.game.playerBySmallID(ownerId);
       return (
-        owner?.isPlayer?.() !== true ||
+        owner?.isPlayer?.() === true &&
         this.getOutboundAttackTargetKey(owner) === targetKey
       );
     }

@@ -4229,6 +4229,9 @@ maritimeConquestBehavior.game = {
   }),
   ensureBorderTiles: async () => new Set([2]),
   isShore: () => true,
+  ownerID: () => 2,
+  playerBySmallID: (smallID) =>
+    smallID === maritimeConquestTarget.smallID() ? maritimeConquestTarget : null,
 };
 maritimeConquestBehavior.reconcileOutboundAttackIntentCommitments = () => {};
 maritimeConquestBehavior.getEnemyDefensePostAttackProfile = () => ({});
@@ -4355,6 +4358,8 @@ boatValidityBehavior.game = {
   isShore: () => true,
   ownerID: () => boatTargetOwner,
   owner: () => boatValidityTarget,
+  playerBySmallID: (smallID) =>
+    smallID === boatValidityTarget.smallID() ? boatValidityTarget : null,
 };
 boatValidityBehavior.getBoatAttackTroopsForSend = () => 100;
 boatValidityBehavior.allowEarlyGameBoat = async () => true;
@@ -4373,8 +4378,65 @@ assert.equal(boatTargetEmissions, 0);
 
 boatTargetAlive = true;
 boatTargetFriendly = false;
-boatTargetOwner = 99;
+boatTargetOwner = 2;
 boatValidityBehavior.player.bestTransportShipSpawn = async () => true;
+boatValidityBehavior.allowEarlyGameBoat = async () => {
+  boatTargetAlive = false;
+  boatTargetFriendly = true;
+  boatTargetOwner = 99;
+  return true;
+};
+assert.equal(
+  await boatValidityBehavior.sendBoatAttack(boatValidityTarget),
+  false,
+  "a player boat revalidates target and destination state changed during the final policy await",
+);
+assert.equal(boatTargetEmissions, 0);
+
+boatTargetAlive = true;
+boatTargetFriendly = false;
+boatTargetOwner = 2;
+boatValidityBehavior.allowEarlyGameBoat = async () => true;
+boatValidityBehavior.game.ownerID = undefined;
+assert.equal(
+  await boatValidityBehavior.sendBoatAttack(boatValidityTarget),
+  false,
+  "a player boat rejects a destination when its live owner identity cannot be proven",
+);
+assert.equal(boatTargetEmissions, 0);
+
+boatValidityBehavior.game.ownerID = () => boatTargetOwner;
+const missingSmallIdTarget = {
+  ...boatValidityTarget,
+  smallID: undefined,
+};
+boatValidityBehavior.game.playerBySmallID = () => missingSmallIdTarget;
+assert.equal(
+  await boatValidityBehavior.sendBoatAttack(missingSmallIdTarget),
+  false,
+  "a player boat rejects a target whose live small-id identity is missing",
+);
+assert.equal(boatTargetEmissions, 0);
+
+const malformedSmallIdTarget = {
+  ...boatValidityTarget,
+  smallID: () => undefined,
+};
+boatValidityBehavior.game.ownerID = () => undefined;
+boatValidityBehavior.game.playerBySmallID = () => malformedSmallIdTarget;
+assert.equal(
+  await boatValidityBehavior.sendBoatAttack(malformedSmallIdTarget),
+  false,
+  "a player boat rejects malformed owner and target identity values",
+);
+assert.equal(boatTargetEmissions, 0);
+
+boatTargetAlive = true;
+boatTargetFriendly = false;
+boatTargetOwner = 99;
+boatValidityBehavior.game.ownerID = () => boatTargetOwner;
+boatValidityBehavior.game.playerBySmallID = (smallID) =>
+  smallID === boatValidityTarget.smallID() ? boatValidityTarget : null;
 assert.equal(
   await boatValidityBehavior.sendBoatAttack(boatValidityTarget),
   false,
