@@ -55,6 +55,7 @@
   // be retried on the next throttled planner pass, whereas one full A* freezes
   // the entire combat tick and prevents every defensive response.
   const NAVAL_INTERCEPTION_ROUTE_MAX_EXPANSIONS = 256;
+  const navalInterceptionBuildCandidateLimit = 12;
   // Dense A* needs three Int32 buffers (12 bytes per map tile). On very large
   // maps their first allocation is a visible frame spike; the existing sparse
   // route state is exact and scales with the route search instead of map area.
@@ -1157,6 +1158,12 @@
         : null;
     }
 
+    movementOrderIssuedThisTick(id, smartState, tick) {
+      const assignment = smartState.invasionAssignments.get(id);
+      if (assignment?.assignedAtTick === tick) return true;
+      return smartState.cooldown.get(id) === tick;
+    }
+
     isHostileIncomingTransport(transport, mySid) {
       if (!transport.isActive()) return false;
       const target = transport.targetTile();
@@ -1183,8 +1190,10 @@
     incomingNavalInvasions(s, transports = null) {
       const mySid = this.player.smallID();
       const nextCache = new Map();
+      const currentTransports = transports ?? this.game.units(UNIT.TransportShip);
+      this.pruneInvasionRouteBuilders(s, currentTransports, mySid);
       const invasions = [];
-      for (const transport of transports ?? this.game.units(UNIT.TransportShip)) {
+      for (const transport of currentTransports) {
         {
           const invasion = this.createIncomingNavalInvasion(transport, s, nextCache, mySid);
           if (invasion) invasions.push(invasion);
@@ -1192,6 +1201,19 @@
       }
       s.invasionRouteCache = nextCache;
       return invasions;
+    }
+
+    pruneInvasionRouteBuilders(state, transports, mySid) {
+      const liveBuilderKeys = new Set();
+      for (const transport of transports) {
+        if (!this.isHostileIncomingTransport(transport, mySid)) continue;
+        const goal = this.waterTargetTile(transport.targetTile());
+        if (goal === null) continue;
+        liveBuilderKeys.add(`${transport.id()}:${goal}`);
+      }
+      for (const key of state.invasionRouteBuilders.keys()) {
+        if (!liveBuilderKeys.has(key)) state.invasionRouteBuilders.delete(key);
+      }
     }
 
     dispatchInterceptor(warship, tile, s, tick) {
@@ -1210,9 +1232,19 @@
       const path = invasion.path;
       const indexes = new Set([0, Math.max(0, Math.floor((path.length - 2) / 2)), path.length - 2]);
       const candidates = [];
+      const seen = new Set();
+      const addCandidate = (tile) => {
+        if (
+          tile === undefined ||
+          tile === null ||
+          seen.has(tile) ||
+          candidates.length >= navalInterceptionBuildCandidateLimit
+        ) return;
+        seen.add(tile);
+        candidates.push(tile);
+      };
       for (const index of indexes) {
-        const tile = path[index];
-        if (tile !== undefined && !candidates.includes(tile)) candidates.push(tile);
+        addCandidate(path[index]);
       }
       const ports = this.player
         .units(UNIT.Port)
@@ -1223,9 +1255,30 @@
         }))
         .sort((left, right) => left.distance - right.distance || left.index - right.index)
         .map(({ port }) => port);
-      for (const port of ports) {
-        const spawn = this.warshipSpawnTile(port.tile(), 250);
-        if (spawn !== null && !candidates.includes(spawn)) candidates.push(spawn);
+      const portBudget = Math.max(0, navalInterceptionBuildCandidateLimit - candidates.length);
+      const selectedPortIndexes = new Set();
+      const nearestPortCount = Math.min(3, portBudget, ports.length);
+      for (let index = 0; index < nearestPortCount; index++) selectedPortIndexes.add(index);
+      const spreadPortCount = Math.min(
+        portBudget - nearestPortCount,
+        Math.max(0, ports.length - nearestPortCount),
+      );
+      for (let slot = 0; slot < spreadPortCount; slot++) {
+        const index = spreadPortCount === 1
+          ? ports.length - 1
+          : nearestPortCount + Math.round(
+            (slot * (ports.length - nearestPortCount - 1)) / (spreadPortCount - 1),
+          );
+        selectedPortIndexes.add(index);
+      }
+      for (const index of selectedPortIndexes) {
+        addCandidate(this.warshipSpawnTile(ports[index].tile(), 250));
+      }
+      if (candidates.length < navalInterceptionBuildCandidateLimit) {
+        for (const port of ports) {
+          if (candidates.length >= navalInterceptionBuildCandidateLimit) break;
+          addCandidate(this.warshipSpawnTile(port.tile(), 250));
+        }
       }
       return candidates;
     }
@@ -1812,6 +1865,7 @@
     }
 
     dodgeWarshipFromNukes(ship, zones, coverEta, smartState, tick) {
+      if (this.movementOrderIssuedThisTick(ship.id(), smartState, tick)) return;
       const tile = ship.tile();
       const x = this.game.x(tile);
       const y = this.game.y(tile);
@@ -2084,7 +2138,8 @@
       const id = warship.id();
       const tick = this.game.ticks();
       const assignment = smartState.invasionAssignments.get(id);
-      if (assignment && tick < assignment.landingTick) return;
+      if (assignment && tick < assignment.absoluteLandingTick) return;
+      if (this.movementOrderIssuedThisTick(id, smartState, tick)) return;
       const cooldownTick = smartState.cooldown.get(id);
       if (cooldownTick !== undefined && tick - cooldownTick < 3) return;
       const warshipState = warship.warshipState();

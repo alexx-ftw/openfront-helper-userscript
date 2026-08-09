@@ -226,6 +226,181 @@ assert.equal(dispatches, 1);
 assert.equal(assignmentState.invasionAssignments.get("warship-1").absoluteInterceptTick, 105);
 assert.equal(assignmentState.invasionAssignments.get("warship-1").absoluteLandingTick, 120);
 
+const candidateBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
+const candidatePorts = Array.from({ length: 500 }, (_, index) => ({
+  tile: () => `port-${index}`,
+}));
+candidateBehavior.player = { units: () => candidatePorts };
+candidateBehavior.game = {
+  manhattanDist: (left, right) => (left === right ? 0 : 1),
+};
+candidateBehavior.warshipSpawnTile = (portTile) => {
+  const index = Number(String(portTile).slice("port-".length));
+  return index % 2 === 0 ? `spawn-${index / 2}` : `spawn-${Math.floor(index / 2)}`;
+};
+const boundedBuildCandidates = candidateBehavior.interceptionBuildCandidates({
+  path: ["landing", "early", "midpoint", "before-landing"],
+});
+assert.ok(
+  boundedBuildCandidates.length <= 12,
+  "a large port roster must not create an unbounded serial interception probe set",
+);
+assert.equal(
+  boundedBuildCandidates.length,
+  new Set(boundedBuildCandidates).size,
+  "interception build candidates must be deduplicated before probing",
+);
+assert.deepEqual(
+  Array.from(boundedBuildCandidates).slice(0, 3),
+  ["landing", "early", "midpoint"],
+  "interception candidates retain the invasion timing anchors",
+);
+assert.ok(
+  boundedBuildCandidates.includes("spawn-0") &&
+    boundedBuildCandidates.some((candidate) => candidate.startsWith("spawn-")),
+  "interception candidates retain nearest and geographically diverse port spawns",
+);
+
+const routeBuilderLifecycleBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
+routeBuilderLifecycleBehavior.isHostileIncomingTransport = () => true;
+routeBuilderLifecycleBehavior.waterTargetTile = (target) => target;
+routeBuilderLifecycleBehavior.createIncomingNavalInvasion = (transport, state, nextCache) => {
+  const key = `${transport.id()}:${transport.targetTile()}`;
+  nextCache.set(key, [transport.tile(), transport.targetTile()]);
+  return { id: transport.id(), path: [transport.tile(), transport.targetTile()] };
+};
+const routeBuilderState = {
+  invasionRouteBuilders: new Map([
+    ["transport-live:20", { transportId: "transport-live", goal: 20 }],
+    ["transport-gone:40", { transportId: "transport-gone", goal: 40 }],
+    ["transport-live:30", { transportId: "transport-live", goal: 30 }],
+  ]),
+  invasionRouteCache: new Map(),
+};
+const retargetedTransport = {
+  id: () => "transport-live",
+  tile: () => 10,
+  targetTile: () => 30,
+};
+routeBuilderLifecycleBehavior.player = { smallID: () => 1 };
+const liveInvasions = routeBuilderLifecycleBehavior.incomingNavalInvasions(routeBuilderState, [
+  retargetedTransport,
+]);
+assert.equal(liveInvasions.length, 1);
+assert.equal(liveInvasions[0].id, "transport-live");
+assert.deepEqual(
+  [...routeBuilderState.invasionRouteBuilders.keys()],
+  ["transport-live:30"],
+  "route builders are pruned when a transport disappears or changes destination",
+);
+
+let combatTick = 100;
+let combatMoves = 0;
+const combatBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
+combatBehavior.game = { ticks: () => combatTick };
+combatBehavior.moveWarship = () => {
+  combatMoves++;
+  return true;
+};
+const combatShip = {
+  id: () => "warship-combat",
+  tile: () => 10,
+  health: () => 10,
+  maxHealth: () => 100,
+  warshipState: () => ({ patrolTile: 10 }),
+};
+const combatState = {
+  invasionAssignments: new Map([
+    ["warship-combat", { landingTick: 20, absoluteLandingTick: 120, assignedAtTick: 80 }],
+  ]),
+  cooldown: new Map(),
+};
+const combatContext = {
+  smartState: combatState,
+  friendlyPorts: [],
+  enemyWarships: [],
+  myWarships: [combatShip],
+  enemyTradeShips: [],
+  maxHp: 100,
+  retreatPct: 0.5,
+  baseTarget: 20,
+  huntTrade: false,
+};
+combatBehavior.handleWarshipCombat(combatShip, combatContext);
+assert.equal(combatMoves, 0, "combat retains an interception until its absolute landing tick");
+combatTick = 120;
+combatBehavior.handleWarshipCombat(combatShip, combatContext);
+assert.equal(combatMoves, 1, "combat resumes when the absolute landing tick is reached");
+
+let sameTickOrders = 0;
+const sameTickBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
+sameTickBehavior.game = { ticks: () => 300 };
+sameTickBehavior.moveWarship = () => {
+  sameTickOrders++;
+  return true;
+};
+const sameTickShip = {
+  id: () => "warship-same-tick",
+  tile: () => 10,
+  health: () => 10,
+  maxHealth: () => 100,
+  warshipState: () => ({ patrolTile: undefined }),
+};
+const sameTickState = {
+  invasionAssignments: new Map(),
+  cooldown: new Map(),
+};
+sameTickBehavior.assignNavalInterceptors(
+  {
+    assignments: [
+      {
+        shipId: "warship-same-tick",
+        invasionId: "invasion-same-tick",
+        interceptTile: 20,
+        interceptTick: 5,
+        landingTick: 0,
+      },
+    ],
+  },
+  [sameTickShip],
+  sameTickState,
+);
+assert.equal(sameTickOrders, 1, "the interception assignment emits one movement order");
+
+sandbox.discoverCtors = () => ({ moveWarship: {} });
+sandbox.getEventBus = () => ({});
+sandbox.emitIntent = () => {
+  sameTickOrders++;
+};
+sameTickBehavior.findNukeEscapeTile = () => ({ tile: 30, eta: 10 });
+sameTickBehavior.game.x = () => 0;
+sameTickBehavior.game.y = () => 0;
+sameTickBehavior.dodgeWarshipFromNukes(
+  sameTickShip,
+  [{ tx: 0, ty: 0, r2: 1 }],
+  () => 0,
+  sameTickState,
+  300,
+);
+assert.equal(
+  sameTickOrders,
+  1,
+  "nuke dodge cannot issue a second movement order in the assignment tick",
+);
+
+sameTickState.cooldown.clear();
+sameTickBehavior.handleWarshipCombat(sameTickShip, {
+  ...combatContext,
+  smartState: sameTickState,
+  myWarships: [sameTickShip],
+  baseTarget: 40,
+});
+assert.equal(
+  sameTickOrders,
+  1,
+  "combat cannot issue a second movement order in the assignment tick",
+);
+
 const stableBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
 stableBehavior.game = behavior.game;
 stableBehavior.player = { smallID: () => 1 };
@@ -433,17 +608,19 @@ const interceptionCandidates = interceptionPortBehavior.interceptionBuildCandida
   path: [100, 140, 180, 220],
 });
 assert.deepEqual(
-  Array.from(interceptionCandidates),
-  [
-    100,
-    140,
-    180,
-    ...interceptionPorts
-      .map((port, index) => ({ port, index, distance: Math.abs(port.tile() - 100) }))
-      .sort((left, right) => left.distance - right.distance || left.index - right.index)
-      .map(({ port }) => port.tile() + 1_000),
-  ],
-  "interception candidates preserve path points then ports ordered by distance to the landing approach",
+  Array.from(interceptionCandidates).slice(0, 3),
+  [100, 140, 180],
+  "interception candidates preserve path points before port candidates",
+);
+assert.equal(interceptionCandidates.length, 12);
+assert.equal(
+  interceptionCandidates.length,
+  new Set(interceptionCandidates).size,
+  "interception candidates remain unique after port sampling",
+);
+assert.ok(
+  interceptionCandidates.includes(1_099) && interceptionCandidates.includes(1_000),
+  "interception candidates retain the nearest port and a distant port sample",
 );
 assert.equal(
   interceptionPortDistanceCalls,
