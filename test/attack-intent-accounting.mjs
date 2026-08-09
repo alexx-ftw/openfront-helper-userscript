@@ -220,6 +220,30 @@ const target = {
 
 const behavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
 
+const makeBorderWrapper = (smallID, troops) => ({
+  isPlayer: () => true,
+  smallID: () => smallID,
+  troops: () => troops,
+});
+const borderingIdentityBehavior = Object.create(sandbox.AttackBehavior.prototype);
+borderingIdentityBehavior.game = {
+  ownerID: (tile) => (tile === 3 ? 8 : 7),
+  playerBySmallID: (smallID) =>
+    smallID === 7 ? makeBorderWrapper(7, 2_000) : makeBorderWrapper(8, 1_000),
+};
+borderingIdentityBehavior.player = {
+  sharesBorderWith: () => true,
+};
+const borderingWrappers = borderingIdentityBehavior.borderingPlayersFrom(
+  [1, 2, 3],
+  [makeBorderWrapper(7, 2_000), makeBorderWrapper(9, 500)],
+);
+assert.deepEqual(
+  Array.from(borderingWrappers, (player) => Number(player.smallID())),
+  [9, 8, 7],
+  "border target discovery deduplicates fresh player wrappers by smallID",
+);
+
 // A Nation-only lobby has no tribe target.  The early tribe planner must
 // return before building a whole-map competitor/topology snapshot.
 const nationOnly = {
@@ -1574,6 +1598,39 @@ assert.deepEqual(
   ["21", "22"],
   "active tribal targets are tracked independently",
 );
+
+const targetScopedDebitBehavior = new sandbox.AttackBehavior(
+  {},
+  game,
+  parallelMe,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+outgoing.length = 0;
+ownTroops = 100000;
+tick = 30;
+targetScopedDebitBehavior.recordOutboundAttackIntent(parallelTribeA, 4000);
+targetScopedDebitBehavior.recordOutboundAttackIntent(parallelTribeB, 6000);
+outgoing.push({
+  id: () => "materialized-tribe-b",
+  retreating: () => false,
+  target: () => parallelTribeB,
+  troops: () => 6000,
+});
+ownTroops = 94000;
+tick = 31;
+assert.equal(
+  targetScopedDebitBehavior.getPendingOutboundAttackTroops(),
+  4000,
+  "a troop debit materialized for one target cannot release another target's reservation",
+);
+
+outgoing.length = 0;
+ownTroops = 100000;
+tick = 20;
 
 outgoing.push({
   id: () => "growing-tribe-attack",

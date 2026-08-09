@@ -1093,7 +1093,9 @@
       if (amount <= 0) return false;
       let applied = this.reconcileOutboundTransport(entry, context, amount);
       if (!applied) applied = this.reconcileOutboundVisibleAttack(entry, context, amount);
-      if (!applied) applied = this.outboundTroopDropApplies(entry, context, amount);
+      if (!applied && entry.targetIsPlayer === false) {
+        applied = this.outboundTroopDropApplies(entry, context, amount);
+      }
       return this.outboundEntryRemainsPending(entry, tick, applied);
     }
 
@@ -2141,18 +2143,20 @@
     }
 
     borderingPlayersFrom(border, nearby) {
-      const players = new Set(
-        border
-          .map((tile) => this.game.playerBySmallID(this.game.ownerID(tile)))
-          .filter((owner) => owner?.isPlayer?.()),
-      );
-      for (const neighbor of nearby) {
-        if (!neighbor.isPlayer() || players.has(neighbor)) continue;
-        {
-          if (this.player.sharesBorderWith(neighbor) === true) players.add(neighbor);
-        }
+      const players = new Map();
+      const addPlayer = (player) => {
+        if (!player?.isPlayer?.()) return;
+        const smallID = player.smallID?.();
+        const key = smallID === undefined || smallID === null ? player : smallID;
+        if (!players.has(key)) players.set(key, player);
+      };
+      for (const tile of border) {
+        addPlayer(this.game.playerBySmallID(this.game.ownerID(tile)));
       }
-      return [...players].sort((left, right) => left.troops() - right.troops());
+      for (const neighbor of nearby) {
+        if (this.player.sharesBorderWith(neighbor) === true) addPlayer(neighbor);
+      }
+      return [...players.values()].sort((left, right) => left.troops() - right.troops());
     }
 
     earlyGameTribeTargets(enemies, border) {
