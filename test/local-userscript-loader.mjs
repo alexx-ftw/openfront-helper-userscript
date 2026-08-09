@@ -14,7 +14,7 @@ const serverPath = path.join(repoRoot, "scripts", "dev-userscript.mjs");
 const loaderSource = fs.readFileSync(loaderPath, "utf8");
 const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
 
-assert.match(loaderSource, /@version\s+1\.4\.0/);
+assert.match(loaderSource, /@version\s+1\.4\.1/);
 assert.match(loaderSource, /@match\s+https:\/\/openfront\.io\/\*/);
 assert.match(loaderSource, /@run-at\s+document-start/);
 assert.match(loaderSource, /@grant\s+unsafeWindow/);
@@ -178,12 +178,12 @@ function createLoaderSandbox({ directory, stored = true }) {
   const errors = [];
   let poll = null;
   let pickerCalls = 0;
+  const showDirectoryPicker = () => {
+    pickerCalls++;
+    return Promise.resolve(directory);
+  };
   const unsafeWindow = {
     indexedDB: database.api,
-    showDirectoryPicker: () => {
-      pickerCalls++;
-      return Promise.resolve(directory);
-    },
     eval: (source) => {
       evaluatedBuilds.push(source);
       unsafeWindow.__OFH_HOT_RELOAD_AUTOBOT__ = (sourceCode, buildId) => {
@@ -197,6 +197,7 @@ function createLoaderSandbox({ directory, stored = true }) {
     document: rendered.document,
     unsafeWindow,
     window: {
+      showDirectoryPicker,
       setInterval: (callback) => {
         poll = callback;
       },

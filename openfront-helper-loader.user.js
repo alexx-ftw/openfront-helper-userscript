@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenFront Helper (local build loader)
 // @namespace    openfront-helper-local
-// @version      1.4.0
+// @version      1.4.1
 // @description  Runs and hot-reloads this checkout's current OpenFront Helper bot directly from disk.
 // @author       nguyenvancaokyfpt (https://github.com/nguyenvancaokyfpt)
 // @homepageURL  https://github.com/nguyenvancaokyfpt/openfront-helper-userscript
@@ -185,10 +185,16 @@ function ofhRequestStoredPermission(handle) {
 }
 
 function ofhPickDirectory() {
-  if (typeof unsafeWindow.showDirectoryPicker !== "function") {
+  let pickerWindow = null;
+  if (typeof window.showDirectoryPicker === "function") {
+    pickerWindow = window;
+  } else if (typeof unsafeWindow.showDirectoryPicker === "function") {
+    pickerWindow = unsafeWindow;
+  }
+  if (!pickerWindow) {
     return Promise.reject(new Error("Brave no expone showDirectoryPicker"));
   }
-  return unsafeWindow.showDirectoryPicker({
+  return pickerWindow.showDirectoryPicker({
     id: "openfront-helper-local-build",
     mode: "read",
     startIn: "desktop",
