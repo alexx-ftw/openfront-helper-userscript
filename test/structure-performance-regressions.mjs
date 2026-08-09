@@ -1166,7 +1166,7 @@ const targetableIndexes = targetableBehavior.legendaryTrajectoryTargetableIndexe
   0,
   255,
 );
-assert.deepEqual(Array.from(targetableIndexes), [0, 1, 254, 255]);
+assert.deepEqual(Array.from(targetableIndexes), [0, 255]);
 assert.equal(
   targetableRangeReads,
   1,

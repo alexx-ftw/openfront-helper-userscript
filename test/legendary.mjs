@@ -302,9 +302,44 @@ const sameTickOverload = plannerSandbox.legendaryMissileDefenseSchedule({
 });
 assert.equal(
   sameTickOverload.uninterceptedCount,
-  1,
-  "A single SAM cannot launch two interceptor missiles in the same engine tick",
+  0,
+  "A levelled SAM can spend multiple ready missile slots in the same engine tick",
 );
+assert.equal(sameTickOverload.fullyDefended, true);
+
+const impactTickIsTooLate = plannerSandbox.legendaryMissileDefenseSchedule({
+  routes: [
+    { weapon: "AtomBomb", impactTick: 20, samOptions: [{ samIndex: 0, interceptTicks: [20] }] },
+  ],
+  samProfiles: [{ id: "sam-a", availableTicks: [0] }],
+  samCooldownTicks: 90,
+  marginTicks: 5,
+});
+assert.equal(
+  impactTickIsTooLate.uninterceptedCount,
+  1,
+  "an interceptor cannot destroy a nuke on its final impact tick",
+);
+
+const flightAwareInterception = plannerSandbox.legendaryMissileDefenseSchedule({
+  routes: [
+    {
+      weapon: "AtomBomb",
+      impactTick: 20,
+      samOptions: [{ samIndex: 0, interceptTicks: [5], interceptionTicks: [10] }],
+    },
+  ],
+  samProfiles: [{ id: "sam-a", availableTicks: [5] }],
+  samCooldownTicks: 90,
+  marginTicks: 5,
+});
+assert.equal(flightAwareInterception.missiles[0].samFireTick, 5);
+assert.equal(
+  flightAwareInterception.missiles[0].interceptTick,
+  10,
+  "the schedule distinguishes SAM launch time from the later missile collision",
+);
+assert.equal(flightAwareInterception.missiles[0].marginTicks, 10);
 
 const reloadTooSlow = plannerSandbox.legendaryMissileDefenseSchedule({
   routes: [

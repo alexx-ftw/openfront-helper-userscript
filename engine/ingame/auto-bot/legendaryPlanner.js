@@ -486,7 +486,7 @@ function normalizeLegendarySamProfiles(samProfiles, cooldown) {
         .filter((tick) => Number.isFinite(tick) && tick >= 0)
         .sort((a, b) => a - b),
       cooldownTicks: Math.max(1, legendaryScoreValue(profile?.cooldownTicks ?? cooldown)),
-      fireIntervalTicks: Math.max(1, legendaryScoreValue(profile?.fireIntervalTicks ?? 1)),
+      fireIntervalTicks: Math.max(0, legendaryScoreValue(profile?.fireIntervalTicks ?? 0)),
     };
   });
 }
@@ -497,11 +497,33 @@ function normalizeLegendarySamOption(option, impactTick, profileCount) {
   const rawTicks = Array.isArray(option?.interceptTicks)
     ? option.interceptTicks
     : [option?.interceptTick];
-  const interceptTicks = rawTicks
-    .map(legendaryScoreValue)
-    .filter((tick) => Number.isFinite(tick) && tick >= 0 && tick <= impactTick)
-    .sort((a, b) => a - b);
-  return interceptTicks.length ? { samIndex, interceptTicks } : null;
+  const rawInterceptionTicks = Array.isArray(option?.interceptionTicks)
+    ? option.interceptionTicks
+    : rawTicks;
+  const opportunities = rawTicks
+    .map((tick, index) => ({
+      fireTick: legendaryScoreValue(tick),
+      interceptTick: legendaryScoreValue(rawInterceptionTicks[index] ?? tick),
+    }))
+    .filter(
+      ({ fireTick, interceptTick }) =>
+        Number.isFinite(fireTick) &&
+        fireTick >= 0 &&
+        Number.isFinite(interceptTick) &&
+        interceptTick >= fireTick &&
+        interceptTick < impactTick,
+    )
+    .sort(
+      (left, right) =>
+        left.fireTick - right.fireTick || left.interceptTick - right.interceptTick,
+    );
+  return opportunities.length
+    ? {
+        samIndex,
+        interceptTicks: opportunities.map(({ fireTick }) => fireTick),
+        interceptionTicks: opportunities.map(({ interceptTick }) => interceptTick),
+      }
+    : null;
 }
 
 function normalizeLegendaryMissileRoute(route, routeIndex, profileCount) {
@@ -548,7 +570,8 @@ function buildLegendaryFutureSamUse(routes, profileCount) {
   return futureUseByRoute;
 }
 
-function firstLegendaryInterceptTick(interceptTicks, minimumTick, maximumTick) {
+function firstLegendaryInterceptOpportunity(option, minimumTick, maximumTick) {
+  const interceptTicks = option.interceptTicks;
   let low = 0;
   let high = interceptTicks.length;
   while (low < high) {
@@ -556,8 +579,12 @@ function firstLegendaryInterceptTick(interceptTicks, minimumTick, maximumTick) {
     if (interceptTicks[middle] < minimumTick) low = middle + 1;
     else high = middle;
   }
-  const tick = interceptTicks[low];
-  return tick !== undefined && tick <= maximumTick ? tick : undefined;
+  const fireTick = interceptTicks[low];
+  if (fireTick === undefined || fireTick > maximumTick) return undefined;
+  return {
+    fireTick,
+    interceptTick: option.interceptionTicks[low] ?? fireTick,
+  };
 }
 
 function collectLegendaryFeasibleAssignments(context, routeIndex, slots, fireTicks) {
@@ -569,23 +596,24 @@ function collectLegendaryFeasibleAssignments(context, routeIndex, slots, fireTic
     for (let slotIndex = 0; slotIndex < slots[option.samIndex].length; slotIndex++) {
       const availableAt = slots[option.samIndex][slotIndex];
       const launcherAvailableAt = Math.max(availableAt, fireTicks[option.samIndex] ?? 0);
-      const interceptTick = firstLegendaryInterceptTick(
-        option.interceptTicks,
+      const opportunity = firstLegendaryInterceptOpportunity(
+        option,
         launcherAvailableAt,
         route.impactTick,
       );
-      if (interceptTick === undefined) continue;
+      if (opportunity === undefined) continue;
       // Slots with the same availability produce the same next state. Keep
       // one representative so a levelled SAM with several ready slots does
       // not make exact search revisit equivalent branches.
-      const equivalentKey = `${option.samIndex}|${availableAt}|${interceptTick}`;
+      const equivalentKey = `${option.samIndex}|${availableAt}|${opportunity.fireTick}`;
       if (equivalentAssignments.has(equivalentKey)) continue;
       equivalentAssignments.add(equivalentKey);
       feasible.push({
         samIndex: option.samIndex,
         slotIndex,
         availableAt,
-        interceptTick,
+        fireTick: opportunity.fireTick,
+        interceptTick: opportunity.interceptTick,
         futureUse: context.futureUse[routeIndex][option.samIndex] ?? 0,
         cooldownTicks: profile.cooldownTicks,
         fireIntervalTicks: profile.fireIntervalTicks,
@@ -595,6 +623,7 @@ function collectLegendaryFeasibleAssignments(context, routeIndex, slots, fireTic
   return feasible.sort(
     (left, right) =>
       left.futureUse - right.futureUse ||
+      left.fireTick - right.fireTick ||
       left.interceptTick - right.interceptTick ||
       left.availableAt - right.availableAt ||
       left.samIndex - right.samIndex ||
@@ -604,9 +633,9 @@ function collectLegendaryFeasibleAssignments(context, routeIndex, slots, fireTic
 
 function applyLegendarySamAssignment(slots, fireTicks, assignment) {
   slots[assignment.samIndex][assignment.slotIndex] =
-    assignment.interceptTick + assignment.cooldownTicks;
+    assignment.fireTick + assignment.cooldownTicks;
   slots[assignment.samIndex].sort((left, right) => left - right);
-  fireTicks[assignment.samIndex] = assignment.interceptTick + assignment.fireIntervalTicks;
+  fireTicks[assignment.samIndex] = assignment.fireTick + assignment.fireIntervalTicks;
 }
 
 function legendaryScheduledMissile(route, assignment) {
@@ -617,6 +646,7 @@ function legendaryScheduledMissile(route, assignment) {
     ...route,
     intercepted: true,
     interceptTick: assignment.interceptTick,
+    samFireTick: assignment.fireTick,
     marginTicks: Math.max(0, route.impactTick - assignment.interceptTick),
     samIndex: assignment.samIndex,
   };

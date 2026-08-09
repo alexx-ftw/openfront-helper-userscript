@@ -3962,6 +3962,67 @@ assert.equal(
   "Repeated missile path requests do not rerun the parabola pathfinder",
 );
 
+const simultaneousSiloBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+simultaneousSiloBehavior.game = {
+  ticks: () => 100,
+  manhattanDist: (left, right) => Math.abs(Number(left) - Number(right)),
+  config: () => ({ SiloCooldown: () => 90 }),
+};
+simultaneousSiloBehavior.legendaryNukeFlightTime = () => 10;
+const simultaneousLaunches = simultaneousSiloBehavior.legendaryEnemyMissileLaunchPlan(
+  [makeUnit(1, 1), makeUnit(2, 1)],
+  9,
+  2,
+);
+assert.deepEqual(
+  Array.from(simultaneousLaunches, (launch) => launch.launchTick),
+  [0, 0],
+  "independent ready Silos can launch on the same tick",
+);
+
+const cooldownBoundarySam = {
+  ...makeUnit(3, 1),
+  missileTimerQueue: () => [10],
+};
+simultaneousSiloBehavior.legendarySamCooldownTicks = () => 90;
+assert.deepEqual(
+  Array.from(simultaneousSiloBehavior.legendarySamSlotAvailability(cooldownBoundarySam)),
+  [0],
+  "a SAM slot is ready on the exact tick its cooldown expires",
+);
+
+simultaneousSiloBehavior.legendaryTrajectoryTargetableRange = () => 5;
+simultaneousSiloBehavior.game.euclideanDistSquared = () => 25;
+assert.equal(
+  simultaneousSiloBehavior.legendaryTrajectoryTileTargetable(2, 1, 3),
+  false,
+  "the exact targetable-radius boundary remains untargetable like NukeExecution",
+);
+
+simultaneousSiloBehavior.game.config = () => ({
+  SiloCooldown: () => 90,
+  defaultSamMissileSpeed: () => 2,
+});
+simultaneousSiloBehavior.game.euclideanDistSquared = () => 0;
+simultaneousSiloBehavior.game.manhattanDist = () => 4;
+const flightAwareOptions = simultaneousSiloBehavior.legendaryMissileRouteSamOptions(
+  [{ tile: 0, range: 100, level: 1, availableTicks: [0] }],
+  {
+    path: [1, 2, 3, 4],
+    fromTile: 1,
+    targetTile: 4,
+    launchOffset: 10,
+    targetableIndexesOverride: [2],
+    coverageIndexCache: new Map(),
+  },
+);
+assert.deepEqual(Array.from(flightAwareOptions.samOptions[0].interceptTicks), [10]);
+assert.deepEqual(
+  Array.from(flightAwareOptions.samOptions[0].interceptionTicks),
+  [12],
+  "SAM defense subtracts interceptor flight time from the nuke collision opportunity",
+);
+
 const metricBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 const metricSilos = [makeUnit(701, 1), makeUnit(702, 1)];
 let metricFlightCalls = 0;

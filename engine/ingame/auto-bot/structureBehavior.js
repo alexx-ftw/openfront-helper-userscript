@@ -4202,10 +4202,9 @@
 
     // Mirrors PlayerImpl.nukeSpawn's repeated closest-eligible-silo selection
     // over a future launch sequence. It consumes current ready slots first,
-    // waits for the real SiloCooldown when every slot is queued, and then
-    // continues one launch per simulation tick so chained enemy intents remain
-    // difficult for the SAM scheduler rather than being collapsed into one
-    // aggregate capacity number.
+    // waits for the real SiloCooldown when every slot is queued, and allows
+    // independent ready slots to launch on the same simulation tick. Reusing a
+    // consumed slot still waits for the full cooldown.
     legendaryLaunchEntryFlightTicks(entry, targetTile) {
       if (entry.flightTicks === null) {
         entry.flightTicks = this.legendaryNukeFlightTime(
@@ -4383,7 +4382,7 @@
           flightTicks,
           impactTick: launchTick + flightTicks,
         });
-        nextLaunchTick = launchTick + 1;
+        nextLaunchTick = launchTick;
       }
       return launches;
     }
@@ -4418,11 +4417,11 @@
         const ticksLeft = Number.isFinite(firedAt)
           ? cooldown - (now - firedAt)
           : Infinity;
-        // SAMLauncherExecution reloads one expired queue entry during its
-        // tick. Keep one conservative tick when the snapshot is at the edge.
+        // SAMLauncherExecution reloads one expired queue entry before target
+        // selection and can spend it during that same tick.
         slots.push(
           Number.isFinite(ticksLeft)
-            ? Math.max(1, Math.ceil(ticksLeft) + 1)
+            ? Math.max(0, Math.ceil(ticksLeft))
             : Infinity,
         );
       }
@@ -4612,8 +4611,8 @@
       if (range <= 0) return true;
       const rangeSquared = range * range;
       return (
-        this.game.euclideanDistSquared(pathTile, fromTile) <= rangeSquared ||
-        this.game.euclideanDistSquared(pathTile, targetTile) <= rangeSquared
+        this.game.euclideanDistSquared(pathTile, fromTile) < rangeSquared ||
+        this.game.euclideanDistSquared(pathTile, targetTile) < rangeSquared
       );
     }
 
@@ -4806,6 +4805,42 @@
         if (index in indexes) ticks[index] = offset + indexes[index];
       }
       return ticks;
+    }
+
+    legendarySamMissileSpeed() {
+      const speed = Number(this.game.config().defaultSamMissileSpeed?.());
+      return Number.isFinite(speed) && speed > 0 ? speed : 2;
+    }
+
+    legendarySamInterceptionOpportunities(profile, coverageIndexes, state) {
+      const fireTicks = [];
+      const interceptionTicks = [];
+      const seenFireTicks = new Set();
+      const launchOffset = Math.max(0, Number(state.launchOffset) || 0);
+      const speed = this.legendarySamMissileSpeed();
+      const lastInterceptableIndex = state.path.length - 2;
+      for (const index of coverageIndexes) {
+        if (index < 0 || index > lastInterceptableIndex) continue;
+        const interceptionTick = launchOffset + index;
+        const distance =
+          typeof this.game.manhattanDist === "function"
+            ? this.game.manhattanDist(profile.tile, state.path[index])
+            : Math.sqrt(
+                this.game.euclideanDistSquared(
+                  profile.tile,
+                  state.path[index],
+                ),
+              );
+        const travelTicks = Math.ceil(
+          distance / speed,
+        );
+        const fireTick = interceptionTick - travelTicks;
+        if (fireTick < launchOffset || seenFireTicks.has(fireTick)) continue;
+        seenFireTicks.add(fireTick);
+        fireTicks.push(fireTick);
+        interceptionTicks.push(interceptionTick);
+      }
+      return { fireTicks, interceptionTicks };
     }
 
     legendarySamPathCoverageIndicesForRoute(
@@ -5022,12 +5057,17 @@
           samIndex,
           state,
         );
-        const interceptTicks = this.legendaryInterceptTicksFromIndexes(
+        const opportunities = this.legendarySamInterceptionOpportunities(
+          profile,
           coverageIndexes,
-          state.launchOffset,
+          state,
         );
-        if (interceptTicks.length > 0) {
-          samOptions.push({ samIndex, interceptTicks });
+        if (opportunities.fireTicks.length > 0) {
+          samOptions.push({
+            samIndex,
+            interceptTicks: opportunities.fireTicks,
+            interceptionTicks: opportunities.interceptionTicks,
+          });
         }
       }
       return {
