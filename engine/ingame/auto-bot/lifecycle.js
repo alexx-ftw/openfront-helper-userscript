@@ -129,8 +129,13 @@
     return true;
   }
 
-  function activateAutoBotForHotReload() {
+  function activateAutoBotForHotReload(options = {}) {
     if (window.__OFH_HOT_RELOAD_IN_PROGRESS__) return false;
+    if (typeof options.enabled === "boolean") {
+      state.settings.enabled = options.enabled;
+      state.runtimePausedAfterSlowTick = false;
+      saveSettings();
+    }
     const atomMacro = window.__OFH_HOT_RELOAD_CANDIDATE_ATOM_MACRO__;
     if (atomMacro) {
       delete window.__OFH_HOT_RELOAD_CANDIDATE_ATOM_MACRO__;

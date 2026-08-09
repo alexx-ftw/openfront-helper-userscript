@@ -127,6 +127,11 @@ const HOT_RELOAD_BRIDGE = `
 window.__OFH_HOT_RELOAD_AUTOBOT__ = function(source, buildId) {
   const previous = window.__OFH_autobot;
   if (typeof previous?.disposeForHotReload !== "function") return false;
+  const previousSettings = typeof previous.get === "function" ? previous.get() : null;
+  const activationOptions =
+    typeof previousSettings?.enabled === "boolean"
+      ? { enabled: previousSettings.enabled }
+      : {};
   const candidateSource = String(source);
   const previousBuildId = window.__OFH_LOCAL_BUILD_ID__;
   const previousAtomDisposer = window.__OFH_disposeAtomMacroForHotReload;
@@ -164,7 +169,7 @@ window.__OFH_HOT_RELOAD_AUTOBOT__ = function(source, buildId) {
       }
       previousDisposed = true;
       window.__OFH_HOT_RELOAD_IN_PROGRESS__ = false;
-      if (!(await candidate.activateForHotReload())) {
+      if (!(await candidate.activateForHotReload(activationOptions))) {
         throw new Error("el candidato de Auto-Bot no pudo activarse");
       }
       window.__OFH_LOCAL_BUILD_ID__ = String(buildId);
@@ -202,7 +207,9 @@ window.__OFH_HOT_RELOAD_AUTOBOT__ = function(source, buildId) {
           window.__openfrontAutoBotActivationPending = previousActivationPending;
           finishStaging();
           if (previousDisposed && candidateQuiescent) {
-            const rollback = await settle(() => previous.activateForHotReload());
+            const rollback = await settle(() =>
+              previous.activateForHotReload(activationOptions),
+            );
             if (!rollback.ok) {
               rollbackFailures.push(rollback.error);
             } else if (rollback.value === false) {

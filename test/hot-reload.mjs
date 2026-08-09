@@ -31,6 +31,7 @@ async function captureRejection(promise) {
 function makeHotReloadBridgeHarness({
   candidateActivation = () => true,
   candidateCleanup = () => true,
+  previousEnabled = true,
   previousActivation = () => true,
 } = {}) {
   const events = [];
@@ -44,14 +45,16 @@ function makeHotReloadBridgeHarness({
   let cleanupOptions = null;
   const previousAtomDisposer = () => {};
   const previous = {
+    get: () => ({ enabled: previousEnabled }),
     disposeForHotReload: async () => {
       counts.previousDisposals += 1;
       events.push("previous:dispose");
       return true;
     },
-    activateForHotReload: async () => {
+    activateForHotReload: async (options) => {
       counts.previousActivations += 1;
       events.push("previous:activate");
+      snapshots.previousActivationOptions = options;
       snapshots.previousActivation = {
         runtime: sandbox.window.__OFH_autobot,
         buildId: sandbox.window.__OFH_LOCAL_BUILD_ID__,
@@ -60,7 +63,7 @@ function makeHotReloadBridgeHarness({
         staging: sandbox.window.__OFH_HOT_RELOAD_IN_PROGRESS__,
         candidateAtomMacro: sandbox.window.__OFH_HOT_RELOAD_CANDIDATE_ATOM_MACRO__,
       };
-      return previousActivation();
+      return previousActivation(options);
     },
   };
   const candidate = {
@@ -70,10 +73,11 @@ function makeHotReloadBridgeHarness({
       cleanupOptions = options;
       return candidateCleanup();
     },
-    activateForHotReload: async () => {
+    activateForHotReload: async (options) => {
       counts.candidateActivations += 1;
       events.push("candidate:activate");
-      return candidateActivation();
+      snapshots.candidateActivationOptions = options;
+      return candidateActivation(options);
     },
   };
   const sandbox = {
@@ -327,6 +331,22 @@ async function testSuccessfulActivationHasNoCleanupOrRollback() {
   assert.equal(harness.sandbox.window.__OFH_LOCAL_BUILD_ID__, "candidate-build");
   assert.equal(harness.sandbox.window.__OFH_HOT_RELOAD_IN_PROGRESS__, false);
   assert.equal(harness.sandbox.window.__OFH_HOT_RELOAD_CANDIDATE_ATOM_MACRO__, undefined);
+  assert.equal(
+    harness.snapshots.candidateActivationOptions?.enabled,
+    true,
+    "the replacement runtime inherits the live enabled state",
+  );
+}
+
+async function testSuccessfulActivationPreservesDisabledState() {
+  const harness = makeHotReloadBridgeHarness({ previousEnabled: false });
+
+  assert.equal(await harness.reload(), true);
+  assert.equal(
+    harness.snapshots.candidateActivationOptions?.enabled,
+    false,
+    "hot reload must not enable a bot that was disabled",
+  );
 }
 
 function makeLifecycleSandbox() {
@@ -421,7 +441,12 @@ function makeLifecycleSandbox() {
     setEnabled() {},
     saveSettings() {},
     runtimeDebugLog() {},
+    startEngine() {
+      if (state.tickTimer !== null) return;
+      state.tickTimer = window.setInterval(() => {}, 200);
+    },
     stopEngine() {
+      if (state.tickTimer !== null) window.clearInterval(state.tickTimer);
       state.tickTimer = null;
       state.tickGeneration += 1;
     },
@@ -517,6 +542,25 @@ async function testLifecycleStagesAndActivatesAtomMacroOnce() {
   assert.equal(harness.timers.size, 0);
 }
 
+async function testLifecycleAppliesTransferredEnabledStateBeforeStarting() {
+  const harness = makeLifecycleSandbox();
+  harness.state.settings.enabled = false;
+  harness.state.tickInFlight = false;
+  harness.sandbox.window.__OFH_HOT_RELOAD_IN_PROGRESS__ = true;
+  executeClassicScript(lifecycleSource, harness.sandbox, {
+    filename: "auto-bot-lifecycle-enabled-transfer.js",
+  });
+
+  harness.sandbox.window.__OFH_HOT_RELOAD_IN_PROGRESS__ = false;
+  const runtime = harness.sandbox.window.__OFH_autobot;
+  assert.equal(runtime.activateForHotReload({ enabled: true }), true);
+  assert.equal(
+    harness.state.settings.enabled,
+    true,
+    "the candidate applies the live master-toggle value instead of stale storage",
+  );
+}
+
 async function testBridgeFaultInjectionRegressions() {
   const cases = [
     ["normal rollback ordering", testActivationFailureRollsBackInOrderExactlyOnce],
@@ -525,6 +569,7 @@ async function testBridgeFaultInjectionRegressions() {
     ["rejected previous reactivation", testRejectedPreviousReactivationPreservesActivationFailure],
     ["false previous reactivation", testFalsePreviousReactivationPreservesActivationFailure],
     ["successful activation counters", testSuccessfulActivationHasNoCleanupOrRollback],
+    ["successful disabled-state transfer", testSuccessfulActivationPreservesDisabledState],
   ];
   const results = await Promise.allSettled(cases.map(([, run]) => run()));
   const failures = results.flatMap((result, index) =>
@@ -575,5 +620,6 @@ await testInvalidEvalKeepsPreviousRuntime();
 await testBridgeFaultInjectionRegressions();
 await testLifecycleDisposesAtomMacroAndClosesStalledTick();
 await testLifecycleStagesAndActivatesAtomMacroOnce();
+await testLifecycleAppliesTransferredEnabledStateBeforeStarting();
 await testBuildPublishesThreeArtifactsAtomically();
 process.stdout.write("hot-reload transactional tests passed\n");
