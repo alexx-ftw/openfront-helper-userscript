@@ -667,6 +667,7 @@ movingFrontBot.tickIsCurrent = () => true;
 movingFrontBot.attackBehavior = {
   continueOpeningExpansion: async () => false,
   hasLandBorderWithTerraNullius: () => false,
+  getRemainingTerraNulliusOpeningCommitment: () => 1200,
   getLiveTerraNulliusAttackTroops: () => 0,
   hasRecentTerraNulliusAttackIntent: () => true,
 };
@@ -676,6 +677,50 @@ assert.equal(
   "a recently emitted opening wave keeps the fast lane alive across the acknowledgement gap",
 );
 assert.equal(movingFrontBot.openingExpansionFollowUpPending, true);
+const expiredOpeningBot = Object.create(openingSandbox.NationBot.prototype);
+expiredOpeningBot.openingLandBurstPending = false;
+expiredOpeningBot.openingExpansionFollowUpPending = true;
+expiredOpeningBot.feat = () => true;
+expiredOpeningBot.maybeBuildOpeningCity = async () => true;
+expiredOpeningBot.hasPendingOpeningExpansionIntent = () => false;
+expiredOpeningBot.hasActiveOpeningExpansionAttack = () => true;
+expiredOpeningBot.tickIsCurrent = () => true;
+expiredOpeningBot.attackBehavior = {
+  getRemainingTerraNulliusOpeningCommitment: () => Number.POSITIVE_INFINITY,
+  continueOpeningExpansion: async () => false,
+  hasLandBorderWithTerraNullius: () => true,
+};
+assert.equal(
+  expiredOpeningBot.openingAllocationRemaining(),
+  0,
+  "an expired non-finite opening allowance is not actionable opening budget",
+);
+assert.equal(
+  await expiredOpeningBot.handleOpeningExpansion(5, null, undefined),
+  false,
+  "the expired opening window yields to the full strategic planner even while its last wave moves",
+);
+assert.equal(expiredOpeningBot.openingExpansionFollowUpPending, false);
+const nonActionableOpeningBot = Object.create(openingSandbox.NationBot.prototype);
+nonActionableOpeningBot.openingLandBurstPending = false;
+nonActionableOpeningBot.openingExpansionFollowUpPending = true;
+nonActionableOpeningBot.feat = () => true;
+nonActionableOpeningBot.maybeBuildOpeningCity = async () => true;
+nonActionableOpeningBot.hasPendingOpeningExpansionIntent = () => false;
+nonActionableOpeningBot.hasActiveOpeningExpansionAttack = () => false;
+nonActionableOpeningBot.tickIsCurrent = () => true;
+nonActionableOpeningBot.attackBehavior = {
+  getRemainingTerraNulliusOpeningCommitment: () => 119,
+  getActionableRemainingTerraNulliusOpeningCommitment: () => 0,
+  continueOpeningExpansion: async () => false,
+  hasLandBorderWithTerraNullius: () => true,
+};
+assert.equal(
+  await nonActionableOpeningBot.handleOpeningExpansion(5, null, undefined),
+  false,
+  "a finite but unspendable opening remainder yields to the full planner",
+);
+assert.equal(nonActionableOpeningBot.openingExpansionFollowUpPending, false);
 openingIncomingAttack = true;
 await openingBot.tick(5);
 assert.equal(openingDefenseResponses, 1);
@@ -2147,6 +2192,7 @@ openingLivenessBehavior.reinforceIncompleteOutboundPlayerAttack = async () => {
   return true;
 };
 openingLivenessBehavior.getRemainingTerraNulliusOpeningCommitment = () => 100;
+openingLivenessBehavior.getActionableRemainingTerraNulliusOpeningCommitment = () => 100;
 openingLivenessBehavior.forceSendAttack = () => {
   openingLivenessOrder.push("terra");
   return true;
@@ -2161,6 +2207,26 @@ assert.deepEqual(
   openingLivenessOrder,
   ["reconcile", "reinforce", "terra"],
   "the fast lane reconciles once, reinforces once, then emits one TerraNullius intent",
+);
+
+const expiredOpeningLivenessBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+expiredOpeningLivenessBehavior.reconcileOutboundAttackIntentCommitments = () => {};
+expiredOpeningLivenessBehavior.respondToIncomingAttack = async () => null;
+expiredOpeningLivenessBehavior.reinforceIncompleteOutboundPlayerAttack = async () => false;
+expiredOpeningLivenessBehavior.getRemainingTerraNulliusOpeningCommitment = () =>
+  Number.POSITIVE_INFINITY;
+expiredOpeningLivenessBehavior.forceSendAttack = () => {
+  throw new Error("an expired opening window must not force another opening attack");
+};
+expiredOpeningLivenessBehavior.hasLandBorderWithTerraNullius = () => true;
+expiredOpeningLivenessBehavior.sendLandAttack = () => {
+  throw new Error("continuous expansion belongs to the full planner after opening expiry");
+};
+expiredOpeningLivenessBehavior.game = { terraNullius: () => livenessTerraNulliusTarget };
+assert.equal(
+  await expiredOpeningLivenessBehavior.continueOpeningExpansion(),
+  false,
+  "the fast opening lane closes when the bounded allowance becomes non-finite",
 );
 
 const donationSelectionBehavior = Object.create(targetSandbox.AttackBehavior.prototype);

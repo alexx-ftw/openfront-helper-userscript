@@ -1366,6 +1366,15 @@
       );
     }
 
+    getActionableRemainingTerraNulliusOpeningCommitment() {
+      const remaining = this.getRemainingTerraNulliusOpeningCommitment();
+      if (!Number.isFinite(remaining) || remaining <= 0) return 0;
+      const minimum = this.getTerraNulliusMinimumTroops();
+      const available = this.getTerraNulliusAvailableTroops();
+      if (remaining < minimum || available < minimum) return 0;
+      return Math.min(remaining, available);
+    }
+
     getEarlyGameMaximumTroops(ownTroops = this.player?.troops?.() || 0) {
       const observedTroops = Math.max(0, Number(ownTroops) || 0);
       if (observedTroops <= 0) return 0;
@@ -2030,7 +2039,11 @@
       // a fresh 10% intent every tick and cumulatively spend its whole army.
       // Once the bounded opening window has elapsed, the ordinary adaptive
       // reserve below controls continuous free-land expansion.
-      if (Number.isFinite(this.getTerraNulliusOpeningCommitLimit())) return 0;
+      if (Number.isFinite(this.getTerraNulliusOpeningCommitLimit())) {
+        return available >= minimum
+          ? { available, livenessFollowUp: false }
+          : 0;
+      }
       // The opening allowance has been fully committed but the client has not
       // yet confirmed any of those commands.  A liveness retry here would be a
       // second, unbounded spending path around the opening cap.
@@ -2771,11 +2784,14 @@
     // diagnostics.
     async continueOpeningExpansion() {
       this.reconcileOutboundAttackIntentCommitments();
+      const remainingOpeningCommitment =
+        this.getRemainingTerraNulliusOpeningCommitment();
+      if (!Number.isFinite(remainingOpeningCommitment)) return false;
       const defense = await this.respondToIncomingAttack();
       if (defense !== null) return false;
       const reinforced = await this.reinforceIncompleteOutboundPlayerAttack();
       let expanded = false;
-      if (this.getRemainingTerraNulliusOpeningCommitment() > 0) {
+      if (this.getActionableRemainingTerraNulliusOpeningCommitment() > 0) {
         expanded = this.forceSendAttack(
           this.game.terraNullius(),
           EARLY_EXPAND_COMMIT,

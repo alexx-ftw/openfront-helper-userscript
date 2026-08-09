@@ -236,7 +236,19 @@
     }
 
     openingAllocationRemaining() {
-      return this.attackBehavior.getRemainingTerraNulliusOpeningCommitment?.() ?? 0;
+      const actionable =
+        this.attackBehavior.getActionableRemainingTerraNulliusOpeningCommitment;
+      const remaining =
+        typeof actionable === "function"
+          ? actionable.call(this.attackBehavior)
+          : this.attackBehavior.getRemainingTerraNulliusOpeningCommitment?.() ?? 0;
+      return Number.isFinite(remaining) ? Math.max(0, remaining) : 0;
+    }
+
+    openingAllocationIsBounded() {
+      return Number.isFinite(
+        this.attackBehavior.getRemainingTerraNulliusOpeningCommitment?.(),
+      );
     }
 
     openingTerraNulliusIsAccessible() {
@@ -272,7 +284,8 @@
         const followUpPending =
           allocationStillAvailable ||
           this.hasPendingOpeningExpansionIntent() ||
-          this.hasActiveOpeningExpansionAttack() ||
+          (this.openingAllocationIsBounded() &&
+            this.hasActiveOpeningExpansionAttack()) ||
           continued === true;
         this.openingExpansionFollowUpPending = followUpPending;
         if (!followUpPending) return false;

@@ -878,6 +878,48 @@ assert.equal(
   2500,
   "direct TerraNullius expansion sends the adaptive 10% opening payload",
 );
+const getTerraNulliusOpeningCommitLimit =
+  expandingBehavior.getTerraNulliusOpeningCommitLimit.bind(expandingBehavior);
+expandingBehavior.getTerraNulliusOpeningCommitLimit = () => 10000;
+const finalOpeningTail = expandingBehavior.getTerraNulliusFollowUpBudget(1222.7, 120, null);
+assert.equal(
+  finalOpeningTail?.available,
+  1222.7,
+  "a finite opening remainder above the exact tile cost remains actionable",
+);
+assert.equal(
+  finalOpeningTail?.livenessFollowUp,
+  false,
+  "the final opening tail stays inside the aggregate opening allowance",
+);
+assert.equal(
+  expandingBehavior.getTerraNulliusFollowUpBudget(119, 120, null),
+  0,
+  "an opening remainder below the exact tile cost cannot emit an invalid attack",
+);
+const openingActionabilityBehavior = Object.create(sandbox.AttackBehavior.prototype);
+openingActionabilityBehavior.getRemainingTerraNulliusOpeningCommitment = () => 119;
+openingActionabilityBehavior.getTerraNulliusMinimumTroops = () => 120;
+openingActionabilityBehavior.getTerraNulliusAvailableTroops = () => 119;
+assert.equal(
+  openingActionabilityBehavior.getActionableRemainingTerraNulliusOpeningCommitment(),
+  0,
+  "a positive remainder below the exact tile cost is not actionable opening budget",
+);
+openingActionabilityBehavior.getRemainingTerraNulliusOpeningCommitment = () => 1222.7;
+openingActionabilityBehavior.getTerraNulliusAvailableTroops = () => 1222.7;
+assert.equal(
+  openingActionabilityBehavior.getActionableRemainingTerraNulliusOpeningCommitment(),
+  1222.7,
+  "a reserve-safe final tail remains actionable opening budget",
+);
+openingActionabilityBehavior.getTerraNulliusAvailableTroops = () => 100;
+assert.equal(
+  openingActionabilityBehavior.getActionableRemainingTerraNulliusOpeningCommitment(),
+  0,
+  "a temporarily reserve-blocked remainder yields to the full planner",
+);
+expandingBehavior.getTerraNulliusOpeningCommitLimit = getTerraNulliusOpeningCommitLimit;
 
 expandingBehavior.botAttackPendingIntentCommitments = [];
 ownTroops = 10000;

@@ -235,6 +235,9 @@ const naturalSpawnRanking = naturalRuntime.records.find(
   (record) => record.kind === "spawn-ranking" && record.phase === "spawn-selection-trace",
 );
 const naturalDecisions = naturalRuntime.records.filter((record) => record.phase === "decision");
+const naturalOpeningGates = naturalRuntime.records.filter(
+  (record) => record.kind === "opening-expansion-gate",
+);
 assert.ok(naturalResult, "the natural scenario must expose a terminal engine result");
 assert.equal(naturalResult.spawnLifecycle.hasSpawned, true);
 assert.ok(
@@ -262,6 +265,41 @@ assert.ok(
   "combat telemetry must retain the authoritative target snapshot and committed troops",
 );
 assert.ok(naturalResult.cumulativeIntentTypes.attack > 0);
+let longestUnchangedActionableOpeningRemainder = 0;
+let currentUnchangedActionableOpeningRemainder = 0;
+let previousOpeningRemainder = null;
+for (const gate of naturalOpeningGates) {
+  const remaining = gate.before?.remaining;
+  const actionableRemainder =
+    Number.isFinite(remaining) && remaining > 0 && Number(gate.before?.pending) === 0;
+  if (actionableRemainder && remaining === previousOpeningRemainder) {
+    currentUnchangedActionableOpeningRemainder += 1;
+  } else {
+    currentUnchangedActionableOpeningRemainder = actionableRemainder ? 1 : 0;
+  }
+  previousOpeningRemainder = actionableRemainder ? remaining : null;
+  longestUnchangedActionableOpeningRemainder = Math.max(
+    longestUnchangedActionableOpeningRemainder,
+    currentUnchangedActionableOpeningRemainder,
+  );
+}
+assert.ok(
+  longestUnchangedActionableOpeningRemainder <= 8,
+  `the real opening must spend an actionable finite tail instead of freezing it for ${longestUnchangedActionableOpeningRemainder} ticks`,
+);
+const firstExpiredOpeningGate = naturalOpeningGates.findIndex(
+  (gate) => gate.before?.remaining === null,
+);
+assert.ok(firstExpiredOpeningGate >= 0, "the real trace must reach the end of its bounded opening");
+let expiredOpeningGateHoldTicks = 0;
+for (const gate of naturalOpeningGates.slice(firstExpiredOpeningGate)) {
+  if (gate.followUpAfter !== true) break;
+  expiredOpeningGateHoldTicks += 1;
+}
+assert.ok(
+  expiredOpeningGateHoldTicks <= 8,
+  `an expired opening allowance must return control to the full planner instead of holding it for ${expiredOpeningGateHoldTicks} ticks`,
+);
 
 const anchoredTeamRuntime = runHeadlessScenario({
   OFH_MATCH_SEED: "legendary-anchor-a-20260809",
