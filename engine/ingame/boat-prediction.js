@@ -289,7 +289,7 @@
     {
       const plan = getBoatMotionPlan(game, transport);
       if (!plan?.path?.length) return null;
-      const endTick = plan.startTick + plan.path.length * plan.ticksPerStep;
+      const endTick = plan.startTick + (plan.path.length - 1) * plan.ticksPerStep;
       const remainingTicks = endTick - Number(game?.ticks?.());
       const msPerTick = Number(game?.config?.()?.msPerTick?.()) || 100;
       return Math.max(0, remainingTicks * msPerTick);

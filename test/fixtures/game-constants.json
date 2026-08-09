@@ -5385,8 +5385,8 @@
     "name": "DEFAULT_TRANSLATIONS",
     "declarationKind": "const",
     "initializerKind": "ObjectLiteralExpression",
-    "initializerHash": "2b451a74092773d938e79c819d2d2231797f5943330da8d20af7355044874b2b",
-    "initializerLength": 20743,
+    "initializerHash": "50a4acd719512c804063e38aead6a9b9892b494d80dc91481f6b48f78e1ecceb",
+    "initializerLength": 20539,
     "initializerPreview": "{\n    languageCode: \"en\",\n    languageName: \"English\",\n    settings: \"Settings\",\n    openSettings: \"Open settings\",\n    github: \"GitHub\",\n    openGitHubRepository: \"Open GitHub repository\",\n    openFrontReloadTitle: \"Reload OpenFront?\",\n..."
   },
   {

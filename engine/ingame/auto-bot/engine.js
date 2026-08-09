@@ -75,11 +75,6 @@
       setStatus(tr("Waiting to enter game…"));
       return null;
     }
-    if (isPublicLobby(srcGame)) {
-      setStatus(tr("⛔ Blocked in a public lobby"));
-      refreshGateBanner();
-      return null;
-    }
     const meCore = srcGame.myPlayer?.();
     if (!meCore || (!meCore.isPlayer?.() && srcGame.inSpawnPhase?.() !== true)) {
       setStatus(tr("Waiting for player…"));

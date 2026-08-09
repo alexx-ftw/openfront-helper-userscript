@@ -831,18 +831,8 @@
       dot.title = tr("Waiting to enter game…");
       return;
     }
-    const type = gameType(game);
-    if (type) {
-      dot.style.color = "#4ade80";
-      let label;
-      if (type === "Singleplayer") label = tr("Singleplayer");
-      else if (type === "Public") label = tr("Public lobby");
-      else label = tr("Private lobby");
-      dot.title = label;
-    } else {
-      dot.style.color = "#fbbf24";
-      dot.title = tr("Waiting to enter game…");
-    }
+    dot.style.color = "#4ade80";
+    dot.title = tr("Ready");
   }
 
   function fmt(n) {

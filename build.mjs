@@ -124,14 +124,65 @@ const INGAME_FILES = [
 
 const AUTO_BOT_FILES = INGAME_FILES.filter((file) => file.includes("/auto-bot/"));
 const HOT_RELOAD_BRIDGE = `
-window.__OFH_HOT_RELOAD_AUTOBOT__ = async function(source, buildId) {
-  const current = window.__OFH_autobot;
-  if (typeof current?.disposeForHotReload !== "function") return false;
-  await current.disposeForHotReload();
-  eval(String(source));
-  if (typeof window.__OFH_autobot?.disposeForHotReload !== "function") return false;
-  window.__OFH_LOCAL_BUILD_ID__ = String(buildId);
-  return true;
+window.__OFH_HOT_RELOAD_AUTOBOT__ = function(source, buildId) {
+  const previous = window.__OFH_autobot;
+  if (typeof previous?.disposeForHotReload !== "function") return false;
+  const candidateSource = String(source);
+  const previousBuildId = window.__OFH_LOCAL_BUILD_ID__;
+  const previousAtomDisposer = window.__OFH_disposeAtomMacroForHotReload;
+  const previousActivationPending = window.__openfrontAutoBotActivationPending;
+  let candidate = null;
+  let committed = false;
+  const finishStaging = () => {
+    window.__OFH_HOT_RELOAD_IN_PROGRESS__ = false;
+    delete window.__OFH_HOT_RELOAD_CANDIDATE_ATOM_MACRO__;
+  };
+  window.__OFH_HOT_RELOAD_IN_PROGRESS__ = true;
+  return Promise.resolve()
+    .then(async () => {
+      // Compile before staging so a syntax error cannot touch the live runtime.
+      Function(candidateSource);
+      eval(candidateSource);
+      candidate = window.__OFH_autobot;
+      if (
+        typeof candidate?.disposeForHotReload !== "function" ||
+        typeof candidate?.activateForHotReload !== "function"
+      ) {
+        throw new Error("el candidato de Auto-Bot no expuso el contrato de hot reload");
+      }
+      const disposed = await previous.disposeForHotReload();
+      if (disposed === false) {
+        throw new Error("el runtime anterior no pudo cerrarse limpiamente");
+      }
+      window.__OFH_HOT_RELOAD_IN_PROGRESS__ = false;
+      if (!(await candidate.activateForHotReload())) {
+        throw new Error("el candidato de Auto-Bot no pudo activarse");
+      }
+      window.__OFH_LOCAL_BUILD_ID__ = String(buildId);
+      committed = true;
+      return true;
+    })
+    .then(
+      (result) => {
+        finishStaging();
+        return result;
+      },
+      async (error) => {
+        if (!committed && candidate && candidate !== previous) {
+          const candidateOwnsAtom =
+            window.__OFH_disposeAtomMacroForHotReload !== previousAtomDisposer;
+          await candidate.disposeForHotReload?.({ skipAtomMacroCleanup: !candidateOwnsAtom });
+        }
+        if (!committed) {
+          window["__OFH_autobot"] = previous;
+          window.__OFH_LOCAL_BUILD_ID__ = previousBuildId;
+          window.__OFH_disposeAtomMacroForHotReload = previousAtomDisposer;
+          window.__openfrontAutoBotActivationPending = previousActivationPending;
+        }
+        finishStaging();
+        throw error;
+      },
+    );
 };
 `;
 
@@ -168,13 +219,64 @@ async function minifyLayer(code) {
   return r.code;
 }
 
+export async function publishBuildArtifacts(outputDir, { full, autoBot, buildId }) {
+  const stagingDir = fs.mkdtempSync(path.join(outputDir, ".ofh-build-"));
+  const files = [
+    ["openfront-helper.user.js", full],
+    ["openfront-helper.autobot.js", autoBot],
+    ["openfront-helper.build-id.js", buildId],
+  ];
+  const originals = new Set();
+  const publish = Promise.resolve().then(() => {
+    for (const [name, contents] of files) {
+      const stagingPath = path.join(stagingDir, name);
+      fs.writeFileSync(stagingPath, contents, "utf8");
+      const fd = fs.openSync(stagingPath, "r");
+      try {
+        fs.fsyncSync(fd);
+      } finally {
+        fs.closeSync(fd);
+      }
+      const destination = path.join(outputDir, name);
+      if (fs.existsSync(destination)) {
+        fs.copyFileSync(destination, path.join(stagingDir, `${name}.previous`));
+        originals.add(name);
+      }
+    }
+    // Each replacement is atomic, and the fingerprint is last: the loader can
+    // never observe a new build id before both source artifacts are complete.
+    for (const [name] of files) {
+      fs.renameSync(path.join(stagingDir, name), path.join(outputDir, name));
+    }
+  });
+  return publish
+    .then(undefined, (error) => {
+      // A failed replacement must not leave a new source paired with an old
+      // fingerprint. Restore the exact prior set where one existed.
+      for (const [name] of [...files].reverse()) {
+        const destination = path.join(outputDir, name);
+        const previous = path.join(stagingDir, `${name}.previous`);
+        if (originals.has(name)) {
+          if (fs.existsSync(destination)) fs.unlinkSync(destination);
+          fs.renameSync(previous, destination);
+        } else if (fs.existsSync(destination)) {
+          fs.unlinkSync(destination);
+        }
+      }
+      throw error;
+    })
+    .finally(() => {
+      fs.rmSync(stagingDir, { recursive: true, force: true });
+    });
+}
+
 function metadataHeader(version) {
   const repo = "https://github.com/nguyenvancaokyfpt/openfront-helper-userscript";
   return `// ==UserScript==
 // @name         OpenFront Helper (userscript) (CUSTOM)
 // @namespace    openfront-helper
 // @version      ${version}
-// @description  Auto-join lobbies + in-game helper overlays and a private-lobby auto-bot for OpenFront.io. Standalone userscript build with a multi-language UI.
+// @description  Auto-join lobbies + in-game helper overlays and an auto-bot for OpenFront.io. Standalone userscript build with a multi-language UI.
 // @author       nguyenvancaokyfpt (https://github.com/nguyenvancaokyfpt)
 // @license      AGPL-3.0-or-later
 // @homepageURL  ${repo}
@@ -252,18 +354,16 @@ async function main() {
 
   const outPath = path.resolve(__dirname, "openfront-helper.user.js");
   const autoBotPath = path.resolve(__dirname, "openfront-helper.autobot.js");
-  const buildIdPath = path.resolve(__dirname, "openfront-helper.build-id.js");
-  fs.writeFileSync(outPath, out, "utf8");
-  fs.writeFileSync(autoBotPath, autoBotOut, "utf8");
   // The loader can safely replace only the Auto-Bot lifecycle without reloading
   // the game. Fingerprint that exact layer so an unrelated shell/overlay edit is
   // never reported as hot-applied while its old code remains live.
   const buildId = createHash("sha256").update(autoBotOut).digest("hex");
-  fs.writeFileSync(
-    buildIdPath,
-    `// Generated by npm run build.\nglobalThis.__OFH_LOCAL_BUILD_ID__ = "${buildId}";\n`,
-    "utf8",
-  );
+  const buildIdSource = `// Generated by npm run build.\nglobalThis.__OFH_LOCAL_BUILD_ID__ = "${buildId}";\n`;
+  await publishBuildArtifacts(__dirname, {
+    full: out,
+    autoBot: autoBotOut,
+    buildId: buildIdSource,
+  });
   const kb = (Buffer.byteLength(out, "utf8") / 1024).toFixed(0);
   logBuild(`[build] wrote ${outPath} (${kb} KB)`);
   logBuild(`[build] wrote ${autoBotPath} for hot reload`);
@@ -284,4 +384,5 @@ async function main() {
   }
 }
 
-main();
+const invokedPath = process.argv[1] && path.resolve(process.argv[1]);
+if (invokedPath === fileURLToPath(import.meta.url)) main();

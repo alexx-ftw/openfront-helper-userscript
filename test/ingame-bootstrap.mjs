@@ -47,7 +47,6 @@ const sandbox = {
   tr: (value) => value,
   renderStatus() {},
   getGame: () => null,
-  isPublicLobby: () => false,
   retuneEngine() {},
   setEnabled() {
     engineStarts += 1;

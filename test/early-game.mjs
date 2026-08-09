@@ -2163,6 +2163,40 @@ await cachedShoreBehavior.enrichEarlyGameTribeBoatEtas(
 );
 assert.equal(cachedShoreReads, 1, "tribe boat ETA enrichment reuses the API's cached shore subset");
 
+const staleGatewayTarget = {
+  isPlayer: () => true,
+  isAlive: () => true,
+  type: () => targetSandbox.PlayerType.Bot,
+  smallID: () => 88,
+  borderTiles: () => new Set([11]),
+};
+const staleGatewayCandidate = {
+  id: 88,
+  player: staleGatewayTarget,
+  landBorder: false,
+  boatEtaTicks: 12,
+  boatTargetTile: 10,
+  tribeClusterSize: 3,
+  tribeClusterAccess: 1,
+  boatOwnBorderSignature: "1",
+  boatTargetBorderSignature: "10",
+};
+const staleGatewayRefreshBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+staleGatewayRefreshBehavior.player = {
+  isFriendly: () => false,
+  shoreBorderTiles: () => [1],
+};
+staleGatewayRefreshBehavior.game = { ticks: () => 100 };
+staleGatewayRefreshBehavior.earlyGameTribeCandidatesCache = [staleGatewayCandidate];
+staleGatewayRefreshBehavior.earlyGameTribeCandidatesRefresh = new Promise(() => {});
+assert.deepEqual(
+  (await staleGatewayRefreshBehavior.getReadyEarlyGameTribeCandidates()).map(
+    (candidate) => candidate.id,
+  ),
+  [],
+  "a cached maritime gateway whose coast changed is rejected while the scored cluster refresh is pending",
+);
+
 const tribeEtaCacheBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 let tribeEtaCacheTick = 100;
 let tribeEtaRouteCalls = 0;
@@ -2198,6 +2232,8 @@ await tribeEtaCacheBehavior.enrichEarlyGameTribeBoatEtas(
 assert.equal(tribeEtaRouteCalls, 1, "unchanged tribe coast reuses its recent route ETA");
 assert.equal(cachedStableSeaCandidate.boatEtaTicks, 12);
 assert.equal(cachedStableSeaCandidate.boatTargetTile, 10);
+assert.equal(cachedStableSeaCandidate.boatOwnBorderSignature, "1");
+assert.equal(cachedStableSeaCandidate.boatTargetBorderSignature, "10");
 const freshSnapshotSeaCandidate = makeStableSeaCandidate();
 stableTargetPlayer.borderTiles = () => new Set([10]);
 tribeEtaCacheBehavior.player.shoreBorderTiles = () => [1];
@@ -3309,6 +3345,7 @@ priorityAttackTargets.length = 0;
 priorityIncomingAttacks = [
   {
     attacker: () => priorityEnemy,
+    target: () => priorityPlayer,
     troops: () => 100,
   },
 ];

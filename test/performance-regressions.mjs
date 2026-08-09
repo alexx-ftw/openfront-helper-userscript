@@ -587,4 +587,190 @@ assert.equal(
   "released heatmap canvases must leave no renderer or vertex-buffer cache entry",
 );
 
+const overlaySchedulerSource = fs.readFileSync(
+  path.join(ROOT, "engine/ingame/map-overlay-scheduler.js"),
+  "utf8",
+);
+let overlayNow = 1001;
+let overlayCameraX = 0;
+let nextOverlayHandle = 1;
+let removedOverlayCanvases = 0;
+let overlayDraws = 0;
+let overlayScans = 0;
+const overlayAnimationFrames = new Map();
+const overlayWakeTimers = new Map();
+const overlayContext = {
+  setTransform() {},
+  clearRect() {},
+};
+const overlayCanvas = {
+  id: "",
+  isConnected: false,
+  style: {},
+  setAttribute() {},
+  getContext() {
+    return overlayContext;
+  },
+  remove() {
+    this.isConnected = false;
+    removedOverlayCanvases += 1;
+  },
+};
+const overlayGame = {};
+const overlayTransform = {
+  scale: 1,
+  worldToScreenCoordinates(point) {
+    return { x: point.x + overlayCameraX, y: point.y };
+  },
+};
+const overlaySandbox = {
+  document: {
+    body: {
+      appendChild(canvas) {
+        canvas.isConnected = true;
+      },
+    },
+    documentElement: null,
+    getElementById() {
+      return overlayCanvas.isConnected ? overlayCanvas : null;
+    },
+    createElement() {
+      return overlayCanvas;
+    },
+  },
+  localStorage: { getItem: () => null },
+  performance: { now: () => overlayNow },
+  window: { innerWidth: 1280, innerHeight: 720 },
+  requestAnimationFrame(callback) {
+    const handle = nextOverlayHandle++;
+    overlayAnimationFrames.set(handle, callback);
+    return handle;
+  },
+  setTimeout(callback, delay) {
+    const handle = nextOverlayHandle++;
+    overlayWakeTimers.set(handle, { callback, delay });
+    return handle;
+  },
+  clearTimeout(handle) {
+    overlayWakeTimers.delete(handle);
+  },
+  getOpenFrontGameContext: () => ({ game: overlayGame, transform: overlayTransform }),
+  globalThis: null,
+};
+overlaySandbox.globalThis = overlaySandbox;
+executeClassicScript(
+  `${overlaySchedulerSource}
+globalThis.__overlayScheduler = {
+  registerMapOverlayLayer,
+  markMapOverlayDirty,
+  requestMapOverlayLoop,
+};`,
+  overlaySandbox,
+  { filename: path.join(ROOT, "engine/ingame/map-overlay-scheduler.js") },
+);
+
+let overlayEnabled = true;
+let overlayAnimated = false;
+const staticOverlayLayer = {
+  id: "observable-static-layer",
+  scanIntervalMs: 1000,
+  isEnabled: () => overlayEnabled,
+  scan() {
+    overlayScans += 1;
+  },
+  draw() {
+    overlayDraws += 1;
+  },
+  animated: () => overlayAnimated,
+};
+overlaySandbox.__overlayScheduler.registerMapOverlayLayer(staticOverlayLayer);
+overlaySandbox.__overlayScheduler.requestMapOverlayLoop();
+assert.equal(
+  overlayAnimationFrames.size,
+  1,
+  "an enabled layer must start with one animation frame",
+);
+
+const runNextOverlayFrame = () => {
+  const [handle, callback] = overlayAnimationFrames.entries().next().value;
+  overlayAnimationFrames.delete(handle);
+  callback();
+};
+const runNextOverlayWake = () => {
+  const [handle, timer] = overlayWakeTimers.entries().next().value;
+  overlayWakeTimers.delete(handle);
+  timer.callback();
+};
+
+runNextOverlayFrame();
+assert.equal(overlayDraws, 1, "the first frame must draw the enabled layer");
+assert.equal(overlayScans, 1, "the first frame must perform the layer scan");
+assert.equal(
+  overlayAnimationFrames.size,
+  0,
+  "a clean static layer must stop requesting animation frames",
+);
+assert.equal(
+  overlayWakeTimers.size,
+  1,
+  "a clean static layer must retain a camera/update wake timer",
+);
+
+overlayNow = 1251;
+overlayCameraX = 17;
+runNextOverlayWake();
+assert.equal(overlayAnimationFrames.size, 1, "a camera poll must wake one render frame");
+runNextOverlayFrame();
+assert.equal(overlayDraws, 2, "a camera change must redraw the static layer");
+assert.equal(overlayAnimationFrames.size, 0, "the layer must sleep again after the camera redraw");
+assert.equal(overlayWakeTimers.size, 1, "camera redraw must preserve future update detection");
+
+overlayNow = 2251;
+runNextOverlayWake();
+runNextOverlayFrame();
+assert.equal(overlayScans, 2, "a sleeping layer must still receive its throttled data update");
+assert.equal(overlayDraws, 3, "a throttled data update must redraw the layer");
+
+overlayNow = 2300;
+overlaySandbox.__overlayScheduler.markMapOverlayDirty();
+assert.equal(overlayWakeTimers.size, 0, "an update must cancel the sleeping wake timer");
+assert.equal(overlayAnimationFrames.size, 1, "an update must wake the scheduler immediately");
+runNextOverlayFrame();
+assert.equal(overlayDraws, 4, "an update must redraw without waiting for the poll");
+
+overlayAnimated = true;
+runNextOverlayWake();
+runNextOverlayFrame();
+assert.equal(
+  overlayAnimationFrames.size,
+  1,
+  "an animated layer must keep the animation frame loop active",
+);
+overlayAnimated = false;
+runNextOverlayFrame();
+assert.equal(
+  overlayAnimationFrames.size,
+  0,
+  "an animation becoming idle must allow the loop to sleep",
+);
+assert.equal(
+  overlayWakeTimers.size,
+  1,
+  "an idle animation must restore the camera/update wake timer",
+);
+
+overlayEnabled = false;
+overlaySandbox.__overlayScheduler.requestMapOverlayLoop();
+assert.equal(overlayWakeTimers.size, 0, "disabling the last layer must cancel its wake timer");
+assert.equal(
+  removedOverlayCanvases,
+  1,
+  "disabling the last layer must tear down the canvas while asleep",
+);
+overlayEnabled = true;
+overlaySandbox.__overlayScheduler.requestMapOverlayLoop();
+assert.equal(overlayAnimationFrames.size, 1, "re-enabling a layer must restart the scheduler");
+runNextOverlayFrame();
+assert.equal(overlayDraws, 6, "a restarted layer must draw again");
+
 process.stdout.write("performance regression tests passed\n");

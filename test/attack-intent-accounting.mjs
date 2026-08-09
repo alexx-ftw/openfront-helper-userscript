@@ -1154,9 +1154,16 @@ assert.equal(
 const incomingTribe = { type: () => "Bot", smallID: () => 9 };
 const incomingTribeBehavior = Object.create(sandbox.AttackBehavior.prototype);
 incomingTribeBehavior.player = {
+  smallID: () => 10,
   type: () => "Human",
   isFriendly: () => false,
-  incomingAttacks: () => [{ attacker: () => incomingTribe, troops: () => 4000 }],
+  incomingAttacks: () => [
+    {
+      attacker: () => incomingTribe,
+      target: () => incomingTribeBehavior.player,
+      troops: () => 4000,
+    },
+  ],
 };
 assert.equal(
   incomingTribeBehavior.findIncomingAttackPlayer(),

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import CDP from "chrome-remote-interface";
+import { pathToFileURL } from "node:url";
 
 function usage() {
   return `OpenFront helper runtime probe
@@ -63,17 +64,22 @@ function parseArgs(argv) {
   return options;
 }
 
-async function findTarget(options) {
+export async function findTarget(options, listTargets = CDP.List) {
   const failures = [];
   for (const port of options.ports) {
-    {
-      const targets = await CDP.List({ host: options.host, port });
-      const target = targets.find(
-        (candidate) => candidate.type === "page" && candidate.url.includes(options.url),
-      );
-      if (target) return { port, target };
-      failures.push(`${port}: no page URL containing ${JSON.stringify(options.url)}`);
+    const probe = await listTargets({ host: options.host, port }).then(
+      (targets) => ({ targets }),
+      (error) => ({ error }),
+    );
+    if (probe.error) {
+      failures.push(`${port}: ${probe.error.message || String(probe.error)}`);
+      continue;
     }
+    const target = probe.targets.find(
+      (candidate) => candidate.type === "page" && candidate.url.includes(options.url),
+    );
+    if (target) return { port, target };
+    failures.push(`${port}: no page URL containing ${JSON.stringify(options.url)}`);
   }
   throw new Error(`No matching Chromium target found (${failures.join("; ")})`);
 }
@@ -136,4 +142,4 @@ async function main() {
   }
 }
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

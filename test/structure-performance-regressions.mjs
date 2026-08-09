@@ -39,6 +39,44 @@ executeClassicScript(
   { filename: "structureBehavior.js" },
 );
 
+const incompleteAttackBehavior = Object.create(sandbox.StructureBehavior.prototype);
+const ownTarget = { smallID: () => 7 };
+const hostileAttacker = { isAlive: () => true, smallID: () => 11 };
+incompleteAttackBehavior.player = {
+  smallID: () => 7,
+  isFriendly: () => false,
+};
+assert.equal(
+  incompleteAttackBehavior.isActiveIncomingAttack({
+    troops: () => 100,
+    retreating: () => false,
+    attacker: () => undefined,
+    target: () => ownTarget,
+  }),
+  false,
+  "an incoming attack without an attacker fails closed",
+);
+assert.equal(
+  incompleteAttackBehavior.isActiveIncomingAttack({
+    troops: () => 100,
+    retreating: () => false,
+    attacker: () => hostileAttacker,
+    target: () => undefined,
+  }),
+  false,
+  "an incoming attack without a target fails closed",
+);
+assert.equal(
+  incompleteAttackBehavior.isActiveIncomingAttack({
+    troops: () => 100,
+    retreating: () => false,
+    attacker: () => hostileAttacker,
+    target: () => ownTarget,
+  }),
+  true,
+  "an incoming attack with a live hostile attacker and our target remains active",
+);
+
 const priorityBehavior = Object.create(sandbox.StructureBehavior.prototype);
 const prioritySpawnedStructures = [];
 priorityBehavior.player = { gold: () => 800n };
@@ -245,6 +283,53 @@ assert.equal(
   globalStructureReads,
   2,
   "a new game tick refreshes the economic placement fingerprint",
+);
+
+let mutableBorderTick = 200;
+let mutableBorderIterations = 0;
+const mutableBorder = new Set([11, 22, 33]);
+const mutableBorderIterator = mutableBorder[Symbol.iterator].bind(mutableBorder);
+mutableBorder[Symbol.iterator] = function* () {
+  mutableBorderIterations++;
+  yield* mutableBorderIterator();
+};
+const mutableFingerprintBehavior = Object.create(sandbox.StructureBehavior.prototype);
+mutableFingerprintBehavior.game = {
+  ticks: () => mutableBorderTick,
+  config: () => ({ structureMinDist: () => 12 }),
+  units: () => [],
+};
+mutableFingerprintBehavior.player = {
+  smallID: () => 1,
+  numTilesOwned: () => 50000,
+  borderTiles: () => mutableBorder,
+};
+const initialMutableBorderFingerprint = mutableFingerprintBehavior.economicPlacementFingerprint(
+  UNIT.Factory,
+);
+for (let call = 0; call < 64; call++) {
+  mutableFingerprintBehavior.economicPlacementFingerprint(UNIT.Factory);
+}
+assert.equal(
+  mutableBorderIterations,
+  1,
+  "same-tick mutable-border fingerprint checks reuse one geometry scan",
+);
+mutableBorder.delete(33);
+mutableBorder.add(44);
+mutableBorderTick++;
+const updatedMutableBorderFingerprint = mutableFingerprintBehavior.economicPlacementFingerprint(
+  UNIT.Factory,
+);
+assert.notEqual(
+  updatedMutableBorderFingerprint,
+  initialMutableBorderFingerprint,
+  "a same Set with changed border geometry invalidates its economic fingerprint",
+);
+assert.equal(
+  mutableBorderIterations,
+  2,
+  "a new tick performs one bounded geometry scan for the reused border Set",
 );
 
 let missileQueueMapCalls = 0;

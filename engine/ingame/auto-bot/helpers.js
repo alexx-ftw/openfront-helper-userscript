@@ -1,21 +1,15 @@
-// Auto-Bot — lobby gate (gameType/isPublicLobby) and small shared helpers
+// Auto-Bot — game metadata and small shared helpers
 // (clamp, toNum, scaled/game-speed, safeName, withTimeout, …).
 
 "use strict";
 
   // =========================================================================
-  // Lobby gate
+  // Game metadata
   // =========================================================================
   function gameType(game) {
     {
       return game?.config?.().gameConfig?.().gameType ?? null;
     }
-  }
-
-  function isPublicLobby(_game) {
-    // Gate intentionally disabled for testing in multiplayer/online lobbies.
-    // Original behavior: return gameType(game) === "Public";
-    return false;
   }
 
   // =========================================================================

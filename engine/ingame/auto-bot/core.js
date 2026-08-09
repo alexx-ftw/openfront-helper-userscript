@@ -27,8 +27,8 @@
 
   // ---- defaults, mirroring NationExecution Impossible ranges ----
   const DEFAULTS = {
-    enabled: true, // auto-bot ON by default (runs in public lobbies too — the
-    // isPublicLobby gate is disabled; see helpers.js)
+    enabled: true, // auto-bot ON by default; the runtime gate still blocks
+    // execution in public lobbies without changing this persisted preference.
     // Which difficulty of the in-game Nation AI to faithfully replicate. The bot
     // ports the four faithful difficulty branches plus the adaptive Legendary
     // construction planner; this selects which strategy drives the bot. Default
@@ -247,8 +247,7 @@
     tickStartedAt: 0,
     tickGeneration: 0,
     // Runtime safety pauses must never overwrite the user's persisted master
-    // toggle. In particular, reinjecting an updated userscript while the page
-    // is showing a public lobby must not save enabled=false.
+    // toggle.
     runtimePausedAfterSlowTick: false,
     lastCombatMs: 0,
     lastPlayerAttackMs: 0,

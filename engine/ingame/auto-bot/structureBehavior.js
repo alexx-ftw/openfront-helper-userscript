@@ -480,6 +480,7 @@
       this.factoryTradeDestinationsCache = null;
       this._economicPlacementFingerprintTick = null;
       this._economicPlacementFingerprints = new Map();
+      this._economicPlacementSnapshotGeometryCache = new WeakMap();
       this._sharedWaterComponents = null;
       this.placementsCount = 0;
       this._hasHighStartingGold = null;
@@ -1193,17 +1194,26 @@
     }
 
     attackTargetsUs(attack) {
-      const targetID = attack?.target?.()?.smallID?.();
+      const target = attack?.target?.();
+      const targetID = target?.smallID?.();
       const ourID = this.player?.smallID?.();
-      if (targetID === null || targetID === undefined) return true;
-      if (ourID === null || ourID === undefined) return true;
+      if (
+        !target ||
+        targetID === null ||
+        targetID === undefined ||
+        ourID === null ||
+        ourID === undefined
+      ) {
+        return false;
+      }
       return targetID === ourID;
     }
 
     attackHasLiveHostileAttacker(attack) {
       const attacker = attack?.attacker?.();
+      if (!attacker) return false;
       if (attacker?.isAlive?.() === false) return false;
-      return !attacker || this.player?.isFriendly?.(attacker) !== true;
+      return this.player?.isFriendly?.(attacker) !== true;
     }
 
     canAffordDefensePost() {
@@ -10203,7 +10213,49 @@
         id = nextEconomicPlacementSnapshotId++;
         ECONOMIC_PLACEMENT_SNAPSHOT_IDS.set(snapshot, id);
       }
-      return id;
+      const geometry = this.economicPlacementSnapshotGeometry(snapshot);
+      return geometry === null ? id : `${id}:${geometry}`;
+    }
+
+    economicPlacementSnapshotGeometry(snapshot) {
+      if (snapshot === null || snapshot === undefined) return null;
+      const kind = typeof snapshot;
+      if (kind !== "object" && kind !== "function") return null;
+
+      const tick = safeStructureGameTick(this.game);
+      let geometryCache = this._economicPlacementSnapshotGeometryCache;
+      if (
+        !geometryCache ||
+        typeof geometryCache.get !== "function" ||
+        typeof geometryCache.set !== "function"
+      ) {
+        geometryCache = new WeakMap();
+        this._economicPlacementSnapshotGeometryCache = geometryCache;
+      }
+      const cached = geometryCache.get(snapshot);
+      if (cached?.tick === tick) return cached.fingerprint;
+
+      const tag = Object.prototype.toString.call(snapshot);
+      if (tag !== "[object Set]" && !Array.isArray(snapshot)) return null;
+
+      let hash = 2166136261;
+      let count = 0;
+      for (const tile of snapshot) {
+        count++;
+        const encoded = String(tile);
+        for (let index = 0; index < encoded.length; index++) {
+          hash = Math.imul(hash ^ encoded.charCodeAt(index), 16777619);
+        }
+        hash = Math.imul(hash ^ 0xff, 16777619);
+      }
+      const fingerprint = `${count}:${hash >>> 0}`;
+      if (Number.isFinite(tick)) {
+        geometryCache.set(snapshot, {
+          tick,
+          fingerprint,
+        });
+      }
+      return fingerprint;
     }
 
     compareStructurePlacementScores(left, right) {

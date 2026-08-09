@@ -6,13 +6,9 @@ warships, alliances) by reading the client-side `GameView`/`PlayerView` and
 emitting the same intents the UI emits. Strategy mirrors the in-game "Nation"
 bot (see `src/core/execution/NationExecution.ts` and friends in the game repo).
 
-> **Lobby scope:** the `isPublicLobby` gate in `helpers.js` is **disabled**, so
-> the engine runs in **public lobbies too** (not just Private / Singleplayer).
-> Feature-level public restrictions ported from the src AI Nation have also been
-> lifted where they don't apply to a human-played bot — e.g. auto-donate now runs
-> in public **Team** lobbies (the server allows troop donation there), gated only
-> by the real `config().donateTroops()` rule. To re-lock to private only, restore
-> `isPublicLobby` in `helpers.js`.
+> **Lobby scope:** Auto-Bot applies the same execution path in every lobby type.
+> There is no Public-specific detection, gate, restriction, or persisted-state
+> override.
 
 ## Early Game policy
 
@@ -288,7 +284,7 @@ others; cross-module state is shared through object references (`state`,
 | 1 | `core.js` | `UNIT`, the shared `state` object, tuning constants, settings load/save. Loaded **first** — its `state` initializer runs `loadSettings()` at load time. |
 | 2 | `i18n.js` | `tr(key, params)` translation + `setAutoBotI18n(lang, bundle)`. Loaded right after core so every later module can call `tr()`. |
 | 3 | `context.js` | Game/UI handle discovery, intent-constructor discovery, `emitIntent`, `window.__autoBotDiag()`. |
-| 4 | `helpers.js` | Lobby gate (`gameType`/`isPublicLobby`) and small shared helpers (`clamp`, `toNum`, game-speed `scaled`, `safeName`, `withTimeout`, …). |
+| 4 | `helpers.js` | Game metadata and small shared helpers (`clamp`, `toNum`, game-speed `scaled`, `safeName`, `withTimeout`, …). |
 | 5 | `sensing.js` | Reading game state: border tiles, ocean-adjacency, border analysis, bounding boxes. |
 | 6 | `spawn.js` | Spawn phase. |
 | 7 | `combat.js` | Expand / conquer: land targeting, retaliation, bot attacks, hostility, embargo, donate, boat landings. |

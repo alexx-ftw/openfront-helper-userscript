@@ -120,11 +120,6 @@ assert.equal(
 );
 assert.doesNotMatch(
   lifecycleSource,
-  /isPublicLobby\(game\)[\s\S]{0,160}setEnabled\(false\)/,
-  "public-lobby runtime blocking must not persistently disable the Auto-Bot",
-);
-assert.doesNotMatch(
-  lifecycleSource,
   /tick watchdog[\s\S]{0,240}setEnabled\(false\)/,
   "the slow-tick watchdog must not overwrite the persisted master toggle",
 );

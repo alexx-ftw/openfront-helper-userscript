@@ -63,6 +63,51 @@ assert.deepEqual(
 );
 assert.equal(dispatches, 0, "a retained interception emits no duplicate move");
 
+const motionPlanBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
+let fallbackRouteCalls = 0;
+motionPlanBehavior.isHostileIncomingTransport = () => true;
+motionPlanBehavior.game = {
+  ticks: () => 0,
+  motionPlans: () =>
+    new Map([
+      [
+        "transport-coastal",
+        {
+          startTick: 0,
+          ticksPerStep: 1,
+          path: [10, 11, 99],
+        },
+      ],
+    ]),
+  isWater: (tile) => tile !== 99,
+  neighbors: (tile) => (tile === 99 ? [98] : []),
+};
+motionPlanBehavior.incrementalTransportRoute = () => {
+  fallbackRouteCalls++;
+  return [10, 98];
+};
+const coastalTransport = {
+  id: () => "transport-coastal",
+  tile: () => 10,
+  targetTile: () => 99,
+};
+const coastalInvasion = motionPlanBehavior.createIncomingNavalInvasion(
+  coastalTransport,
+  { invasionRouteCache: new Map(), invasionRouteBuilders: new Map() },
+  new Map(),
+  1,
+);
+assert.deepEqual(
+  Array.from(coastalInvasion.path),
+  [10, 11, 99],
+  "the transport motion plan is used when it reaches the coastal target tile",
+);
+assert.equal(
+  fallbackRouteCalls,
+  0,
+  "coastal motion-plan interception does not invoke the water fallback",
+);
+
 const trackedThreatBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
 let landingOwner = 1;
 let transportFriendly = false;
@@ -109,6 +154,29 @@ assert.equal(
   trackedThreatBehavior.trackedIncomingTransportShips.size,
   0,
   "a landing whose target is no longer ours is released immediately",
+);
+
+const unknownTransportLossBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
+let inventedDestructorRetaliations = 0;
+unknownTransportLossBehavior.player = { units: () => [] };
+unknownTransportLossBehavior.game = {
+  config: () => ({ isUnitDisabled: () => false }),
+  units: () => [
+    {
+      id: () => "transport-without-attribution",
+      isActive: () => false,
+    },
+  ],
+};
+unknownTransportLossBehavior.trackedTransportShips = new Set(["transport-without-attribution"]);
+unknownTransportLossBehavior.maybeRetaliateWithWarship = () => {
+  inventedDestructorRetaliations++;
+};
+unknownTransportLossBehavior.trackTransportShipsAndRetaliate();
+assert.equal(
+  inventedDestructorRetaliations,
+  0,
+  "an inactive transport without engine destruction attribution cannot invent a destructor",
 );
 
 const friendlyCaptor = { smallID: () => 2 };

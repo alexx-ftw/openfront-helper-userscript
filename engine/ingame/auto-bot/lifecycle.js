@@ -42,11 +42,7 @@
       refreshLiveUiFromGame(game);
       renderStatus();
     }
-    // Hard safety: never let the engine run in a public lobby.
-    if (game && state.settings.enabled && isPublicLobby(game)) {
-      stopEngine();
-      setStatus(tr("⛔ Public lobby — auto-disabled"));
-    } else if (
+    if (
       state.settings.enabled &&
       !state.runtimePausedAfterSlowTick &&
       state.tickTimer === null &&
@@ -65,21 +61,20 @@
   }
 
   function startAutoBotLifecycle() {
-    if (window.__openfrontAutoBotLoaded || !document.body) return false;
+    if (window.__OFH_HOT_RELOAD_IN_PROGRESS__ || window.__openfrontAutoBotLoaded || !document.body) {
+      return false;
+    }
     window.__openfrontAutoBotLoaded = true;
     window.__openfrontAutoBotWatcherTimer = window.setInterval(
       runAutoBotWatcherSafely,
       1200,
     );
     runAutoBotWatcherSafely();
-    // Persisted enabled=true survives F5. Reapply the same value only when the
-    // current page is safe; this starts the engine without allowing a public
-    // lobby to rewrite the preference to false.
-    const game = getGame();
-    if (state.settings.enabled && (!game || !isPublicLobby(game))) {
+    // Persisted enabled=true survives F5 and applies uniformly to every lobby.
+    if (state.settings.enabled) {
       setEnabled(true);
     }
-    runtimeDebugLog("[AutoBot] page bridge loaded (private-lobby training tool).");
+    runtimeDebugLog("[AutoBot] page bridge loaded.");
     return true;
   }
 
@@ -89,6 +84,10 @@
   }
 
   function scheduleAutoBotLifecycle() {
+    if (window.__OFH_HOT_RELOAD_IN_PROGRESS__) {
+      window.__openfrontAutoBotActivationPending = true;
+      return;
+    }
     if (startAutoBotLifecycle() || window.__openfrontAutoBotLoadPending) return;
     window.__openfrontAutoBotLoadPending = true;
     document.addEventListener(
@@ -98,7 +97,7 @@
     );
   }
 
-  async function disposeAutoBotForHotReload() {
+  async function disposeAutoBotForHotReload({ skipAtomMacroCleanup = false } = {}) {
     state.settings.enabled = false;
     stopEngine();
     const deadline = performance.now() + 8000;
@@ -106,6 +105,11 @@
       await new Promise((resolve) => {
         window.setTimeout(resolve, 25);
       });
+    }
+    const timedOut = Boolean(state.tickInFlight);
+    if (timedOut) {
+      state.runtimePausedAfterSlowTick = true;
+      console.warn("[AutoBot] hot reload closed after a stalled tick");
     }
     if (window.__openfrontAutoBotWatcherTimer != null) {
       window.clearInterval(window.__openfrontAutoBotWatcherTimer);
@@ -119,6 +123,21 @@
     document.getElementById(PANEL_ID)?.remove();
     document.getElementById(STYLE_ID)?.remove();
     document.querySelectorAll(".ab-feat-tip").forEach((tip) => tip.remove());
+    if (!skipAtomMacroCleanup) window.__OFH_disposeAtomMacroForHotReload?.();
+    return !timedOut;
+  }
+
+  function activateAutoBotForHotReload() {
+    if (window.__OFH_HOT_RELOAD_IN_PROGRESS__) return false;
+    const atomMacro = window.__OFH_HOT_RELOAD_CANDIDATE_ATOM_MACRO__;
+    if (atomMacro) {
+      delete window.__OFH_HOT_RELOAD_CANDIDATE_ATOM_MACRO__;
+      atomMacro.activate();
+      window.__OFH_disposeAtomMacroForHotReload = atomMacro.dispose;
+    }
+    window.__openfrontAutoBotActivationPending = false;
+    scheduleAutoBotLifecycle();
+    return true;
   }
 
   scheduleAutoBotLifecycle();
@@ -152,7 +171,7 @@
   // Page-level idempotency guard: the same code also lives at the end of
   // lifecycle.js (so a plain F5 loads it without an extension reload). Whichever
   // copy runs first installs; the other no-ops.
-  if (window.__ofhAtomMacroInstalled) {
+  if (window.__ofhAtomMacroInstalled && !window.__OFH_HOT_RELOAD_IN_PROGRESS__) {
     runtimeDebugLog("[AtomMacro] already installed in this page → skip duplicate");
     return;
   }
@@ -185,6 +204,7 @@
   let atomPressY = 0;
   let atomLastMouseX = 0;
   let atomLastMouseY = 0;
+  let atomBatchApi = null;
 
   // ── game-context access (mirrors boat-macro.js) ────────────────────────────
   function atomRadialElement() {
@@ -858,6 +878,30 @@
     atomSwallowUntil = 0; // never let the swallow window leak onto later real clicks
     hideAtomRings();
     hideAtomBanner();
+  }
+
+  function disposeAtomMacroForHotReload() {
+    if (atomUsingNativeOverlay) atomClearGhost(atomAimCtx);
+    stopAtomAiming();
+    atomFireCancel = true;
+    if (!atomMacroInstalled) return;
+    window.removeEventListener("keydown", handleAtomKeyDown, true);
+    window.removeEventListener("keyup", handleAtomKeyUp, true);
+    document.removeEventListener("mousemove", handleAtomMouseMove, { passive: true });
+    window.removeEventListener("pointerdown", handleAtomPointerDown, true);
+    window.removeEventListener("pointerup", handleAtomPointerUp, true);
+    window.removeEventListener("click", handleAtomClick, true);
+    hideAtomDialog();
+    hideAtomRings();
+    hideAtomBanner();
+    document.getElementById(ATOM_MACRO_STYLE_ID)?.remove();
+    document.getElementById(ATOM_RANGE_STYLE_ID)?.remove();
+    document.getElementById(ATOM_MACRO_DIALOG_ID)?.remove();
+    document.getElementById(ATOM_MACRO_BANNER_ID)?.remove();
+    document.getElementById(ATOM_RANGE_CONTAINER_ID)?.remove();
+    if (window.__OFH_atomBatch === atomBatchApi) delete window.__OFH_atomBatch;
+    atomMacroInstalled = false;
+    window.__ofhAtomMacroInstalled = false;
   }
 
   // ── the quantity / validation dialog ───────────────────────────────────────
@@ -1614,7 +1658,7 @@
   }
 
   {
-    window.__OFH_atomBatch = {
+    atomBatchApi = {
       SAFE_GAP_MS: ATOM_SAFE_GAP_MS,
       get() {
         const c = atomLoadCfg();
@@ -1718,10 +1762,23 @@
         return computeNukeRemainingTicks(ctx.game, src, tile);
       },
     };
-  }{
-    installAtomMacro();
-    window.__ofhAtomMacroInstalled = true;
-    runtimeDebugLog("[AtomMacro] installed (point mouse + press '\\' → dialog)");
+
+    const activateAtomMacro = () => {
+      window.__OFH_atomBatch = atomBatchApi;
+      window.__OFH_disposeAtomMacroForHotReload = disposeAtomMacroForHotReload;
+      installAtomMacro();
+      window.__ofhAtomMacroInstalled = true;
+      runtimeDebugLog("[AtomMacro] installed (point mouse + press '\\' → dialog)");
+    };
+
+    if (window.__OFH_HOT_RELOAD_IN_PROGRESS__) {
+      window.__OFH_HOT_RELOAD_CANDIDATE_ATOM_MACRO__ = {
+        activate: activateAtomMacro,
+        dispose: disposeAtomMacroForHotReload,
+      };
+    } else {
+      activateAtomMacro();
+    }
   }
 })();
 
@@ -1782,4 +1839,5 @@ window.__OFH_autobot = {
     if (typeof buildPanel === "function") buildPanel();
   },
   disposeForHotReload: disposeAutoBotForHotReload,
+  activateForHotReload: activateAutoBotForHotReload,
 };

@@ -828,14 +828,14 @@ const originalOwnTroopsForDefensePost = own.troops;
 const originalOwnIncomingForDefensePost = own.incomingAttacks;
 sandbox.currentDifficulty = () => Difficulty.Legendary;
 own.troops = () => 1000;
-own.incomingAttacks = () => [{ troops: () => 400 }];
+own.incomingAttacks = () => [{ troops: () => 400, target: () => own, attacker: () => enemyA }];
 behavior.isLandAttack = () => true;
 assert.equal(
   behavior.defensePostNeeded(),
   true,
   "Legendary treats a meaningful 40% land assault as requiring a Defense Post",
 );
-own.incomingAttacks = () => [{ troops: () => 300 }];
+own.incomingAttacks = () => [{ troops: () => 300, target: () => own, attacker: () => enemyA }];
 assert.equal(
   behavior.defensePostNeeded(),
   false,
@@ -845,6 +845,7 @@ own.incomingAttacks = () => [
   {
     troops: () => 900,
     retreating: () => true,
+    target: () => own,
     attacker: () => ({ type: () => sandbox.PlayerType.Nation }),
   },
 ];
@@ -856,6 +857,7 @@ assert.equal(
 own.incomingAttacks = () => [
   {
     troops: () => 150,
+    target: () => own,
     attacker: () => ({ type: () => sandbox.PlayerType.Nation }),
   },
 ];
@@ -873,10 +875,12 @@ const preemptiveDefensePostBehavior = Object.create(sandbox.__StructureBehavior.
 let preemptiveIncomingAttacks = [
   {
     troops: () => 150,
+    target: () => ({ smallID: () => 7 }),
     attacker: () => ({ type: () => sandbox.PlayerType.Nation }),
   },
 ];
 preemptiveDefensePostBehavior.player = {
+  smallID: () => 7,
   troops: () => 1000,
   incomingAttacks: () => preemptiveIncomingAttacks,
 };
@@ -911,6 +915,7 @@ preemptiveIncomingAttacks = [
   {
     troops: () => 900,
     retreating: () => true,
+    target: () => ({ smallID: () => 7 }),
     attacker: () => ({ type: () => sandbox.PlayerType.Nation }),
   },
 ];
@@ -975,6 +980,7 @@ assert.equal(
 preemptiveIncomingAttacks = [
   {
     troops: () => 300,
+    target: () => ({ smallID: () => 7 }),
     attacker: () => ({ type: () => sandbox.PlayerType.Tribe }),
   },
 ];

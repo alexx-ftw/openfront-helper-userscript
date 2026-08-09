@@ -1144,13 +1144,17 @@
       if (!this.isHostileIncomingTransport(transport, mySid)) return null;
       const target = transport.targetTile();
       const current = transport.tile();
+      if (current == null || target == null) return null;
+      const motionPath = this.transportMotionPath(transport, target);
+      if (motionPath !== null) {
+        return { id: transport.id(), path: motionPath };
+      }
       const goal = this.waterTargetTile(target);
-      if (current == null || goal === null) return null;
+      if (goal === null) return null;
       const key = `${transport.id()}:${current}:${goal}`;
       let path = state.invasionRouteCache.get(key);
       if (path === undefined) {
-        path = this.transportMotionPath(transport, goal) ??
-          this.incrementalTransportRoute(transport, current, goal, state);
+        path = this.incrementalTransportRoute(transport, current, goal, state);
       }
       nextCache.set(key, path);
       return Array.isArray(path) && path.length >= 2

@@ -2836,9 +2836,27 @@
       return (
         Number.isFinite(Number(candidate?.tribeClusterSize)) &&
         Number.isFinite(Number(candidate?.tribeClusterAccess)) &&
+        this.earlyGameTribeGatewayIsCurrent(candidate, target) &&
         target?.isAlive?.() !== false &&
         (typeof target?.type !== "function" || target.type() === PlayerType.Bot) &&
         this.player.isFriendly?.(target) !== true
+      );
+    }
+
+    earlyGameTribeGatewayIsCurrent(candidate, target) {
+      if (candidate?.landBorder === true || candidate?.boatTargetTile == null) {
+        return true;
+      }
+      const ownBorderSignature = this.earlyGameBoatBorderSignature(
+        this.getEarlyGameOwnShores(),
+      );
+      const targetBorder = target?.borderTiles?.();
+      if (targetBorder == null) return false;
+      return (
+        candidate.boatOwnBorderSignature === ownBorderSignature &&
+        candidate.boatTargetBorderSignature ===
+          this.earlyGameBoatBorderSignature(targetBorder) &&
+        targetBorder.has(candidate.boatTargetTile)
       );
     }
 
@@ -4153,6 +4171,8 @@
         }
         candidate.boatEtaTicks = cached.eta;
         candidate.boatTargetTile = cached.targetTile;
+        candidate.boatOwnBorderSignature = ownBorderSignature;
+        candidate.boatTargetBorderSignature = targetBorderSignature;
       }
       const batch = uncachedCandidates.slice(
         0,
@@ -4180,6 +4200,8 @@
       }
       for (const { candidate, targetBorderSignature, boatEtaTicks } of results) {
         candidate.boatEtaTicks = boatEtaTicks;
+        candidate.boatOwnBorderSignature = ownBorderSignature;
+        candidate.boatTargetBorderSignature = targetBorderSignature;
         this.cacheEarlyGameTribeBoatEta(
           candidate,
           ownBorderSignature,
@@ -7257,18 +7279,40 @@
       ) {
         return this._incomingHostileAttacksSnapshot;
       }
-      const attacks = this.player
-        .incomingAttacks()
-        .filter(
-          (attack) =>
-            attack?.retreating?.() !== true &&
-            !this.player.isFriendly(attack.attacker()),
-        );
+      const attacks = this.player.incomingAttacks().filter((attack) =>
+        this.isIncomingHostileAttack(attack),
+      );
       if (Number.isFinite(tick)) {
         this._incomingHostileAttacksTick = tick;
         this._incomingHostileAttacksSnapshot = attacks;
       }
       return attacks;
+    }
+
+    isIncomingHostileAttack(attack) {
+      const attacker = attack?.attacker?.();
+      if (!attacker || attacker.isAlive?.() === false) return false;
+      if (!this.incomingAttackTargetsUs(attack)) return false;
+      return (
+        attack?.retreating?.() !== true &&
+        this.player.isFriendly(attacker) !== true
+      );
+    }
+
+    incomingAttackTargetsUs(attack) {
+      const target = attack?.target?.();
+      const targetKey = target?.smallID?.();
+      const ownKey = this.player.smallID?.();
+      if (
+        !target ||
+        targetKey === null ||
+        targetKey === undefined ||
+        ownKey === null ||
+        ownKey === undefined
+      ) {
+        return false;
+      }
+      return targetKey === ownKey;
     }
 
     // Aggregate pressure is deliberately separate from the single strongest
@@ -7301,8 +7345,19 @@
 
     incomingHostileTroopsFrom(attacker) {
       if (attacker === null || attacker === undefined) return 0;
+      const attackerKey = this.getOutboundAttackTargetKey(attacker);
       return this.incomingHostileAttacks().reduce((total, attack) => {
-        if (attack.attacker?.() !== attacker) return total;
+        const incomingAttacker = attack.attacker?.();
+        if (!incomingAttacker) return total;
+        const incomingAttackerKey = this.getOutboundAttackTargetKey(incomingAttacker);
+        if (
+          attackerKey === null ||
+          incomingAttackerKey === null
+            ? incomingAttacker !== attacker
+            : incomingAttackerKey !== attackerKey
+        ) {
+          return total;
+        }
         return total + Math.max(0, Number(attack.troops?.()) || 0);
       }, 0);
     }
@@ -7326,7 +7381,7 @@
       // and troops as attacks from Nations and Humans.
       if (!state.settings.winFixes && this.player.type() !== PlayerType.Bot) {
         incomingAttacks = incomingAttacks.filter(
-          (attack) => attack.attacker().type() !== PlayerType.Bot,
+          (attack) => attack.attacker?.()?.type?.() !== PlayerType.Bot,
         );
       }
       const pressureByAttacker = new Map();

@@ -16,8 +16,9 @@
 <ul>
   <li>
     Updating or reinjecting the userscript must preserve the user's persisted Auto-Bot master
-    toggle. Runtime safety stops, including public-lobby blocking and the slow-tick watchdog, may
-    stop the engine but must not save <code>enabled=false</code> as though the user disabled it.
+    toggle. Runtime safety stops such as the slow-tick watchdog may stop the engine but must not
+    save <code>enabled=false</code> as though the user disabled it. Lobby type must not change
+    Auto-Bot eligibility or execution behavior.
   </li>
 </ul>
 

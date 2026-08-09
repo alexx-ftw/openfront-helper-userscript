@@ -11,8 +11,10 @@
 // A layer is: { id, isEnabled(): bool, scanIntervalMs?, scan?(game, transform, now),
 //               draw(ctx, game, transform, now) }
 // scan() runs on a throttle (default 250ms) for expensive proxy reads; draw()
-// runs every frame from the layer's own cache. The loop auto-stops when no layer
-// is enabled and tears the canvas down.
+// runs every frame from the layer's own cache. After a clean static draw, the
+// scheduler sleeps on a low-frequency wake timer for camera, scan, and update
+// detection; animated layers retain the rAF loop. It tears the canvas down when
+// no layer is enabled.
 
   const MAP_OVERLAY_CANVAS_ID = "openfront-helper-map-overlay-canvas";
   const MAP_OVERLAY_DEFAULT_SCAN_MS = 250;
@@ -20,6 +22,7 @@
   let _mapOverlayCanvas = null;
   let _mapOverlayCtx = null;
   let _mapOverlayFrame = null;
+  let _mapOverlayWakeTimer = null;
   let _mapOverlayCssW = 0;
   let _mapOverlayCssH = 0;
   // Low-lag mode: skip 2 of every 3 animation frames (throttle rAF to ~20fps).
@@ -73,9 +76,10 @@
     _mapOverlayLayers.push(layer);
   }
 
-  // Mark the overlay dirty so the next frame redraws. Called on enable/disable.
+  // Mark the overlay dirty so the next frame redraws. Also wakes a sleeping loop.
   function markMapOverlayDirty() {
     _mapOverlayDirty = true;
+    wakeMapOverlayLoop();
   }
 
   function anyMapOverlayLayerEnabled() {
@@ -220,7 +224,7 @@
   function renderMapOverlayFrame(ctx, context) {
     if (!context?.game || !context?.transform) {
       clearLostMapOverlayContext(ctx);
-      return;
+      return false;
     }
     if (!_mapOverlayHadContext) {
       _mapOverlayHadContext = true;
@@ -234,12 +238,47 @@
       _mapOverlayDirty = true;
     }
     if (_mapOverlayDirty || anyAnimated) drawMapOverlayLayers(ctx, context, now);
+    return anyAnimated;
+  }
+
+  function clearMapOverlayWakeTimer() {
+    if (_mapOverlayWakeTimer === null) return;
+    clearTimeout(_mapOverlayWakeTimer);
+    _mapOverlayWakeTimer = null;
+  }
+
+  function scheduleMapOverlayWake() {
+    if (_mapOverlayWakeTimer !== null || _mapOverlayFrame !== null) return;
+    if (!anyMapOverlayLayerEnabled()) return;
+    // Sleeping still polls at the transform-cache cadence so camera movement,
+    // throttled scans, and an animation becoming active are all detected without
+    // keeping a requestAnimationFrame loop alive for a static clean canvas.
+    _mapOverlayWakeTimer = setTimeout(() => {
+      _mapOverlayWakeTimer = null;
+      if (!anyMapOverlayLayerEnabled()) {
+        teardownMapOverlayCanvas();
+        return;
+      }
+      if (_mapOverlayFrame === null) {
+        _mapOverlayFrame = requestAnimationFrame(_mapOverlayTick);
+      }
+    }, MAP_OVERLAY_TRANSFORM_CACHE_MS);
+  }
+
+  function wakeMapOverlayLoop() {
+    clearMapOverlayWakeTimer();
+    if (_mapOverlayFrame !== null) return;
+    if (anyMapOverlayLayerEnabled()) {
+      _mapOverlayFrame = requestAnimationFrame(_mapOverlayTick);
+      return;
+    }
+    teardownMapOverlayCanvas();
   }
 
   function _mapOverlayTick() {
+    _mapOverlayFrame = null;
     if (!anyMapOverlayLayerEnabled()) {
       teardownMapOverlayCanvas();
-      _mapOverlayFrame = null;
       return;
     }
 
@@ -255,18 +294,20 @@
 
     ensureMapOverlayCanvas();
     const ctx = _mapOverlayCtx;
-    if (ctx) renderMapOverlayFrame(ctx, getMapOverlayContext());
-
-    _mapOverlayFrame = requestAnimationFrame(_mapOverlayTick);
+    const anyAnimated = ctx ? renderMapOverlayFrame(ctx, getMapOverlayContext()) : false;
+    if (_mapOverlayFrame !== null) return;
+    if (anyAnimated) {
+      _mapOverlayFrame = requestAnimationFrame(_mapOverlayTick);
+    } else {
+      scheduleMapOverlayWake();
+    }
   }
 
-  // Call after enabling/disabling any layer. Starts the shared loop if something
-  // is now on; the loop stops itself on the next frame when everything is off.
+  // Call after enabling/disabling any layer. Starts or wakes the shared loop if
+  // something is now on; disabled layers tear down immediately when it is idle.
   function requestMapOverlayLoop() {
     _mapOverlayDirty = true; // an enable/disable happened → force one redraw
-    if (_mapOverlayFrame === null && anyMapOverlayLayerEnabled()) {
-      _mapOverlayFrame = requestAnimationFrame(_mapOverlayTick);
-    }
+    wakeMapOverlayLoop();
   }
 
   // ---- Shared drawing helpers (keep every layer visually consistent) ----
