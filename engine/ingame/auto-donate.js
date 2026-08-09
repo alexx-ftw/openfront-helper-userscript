@@ -509,9 +509,15 @@
     if (!maritime || maritime.active) return 0;
     const keepAmount = plan.maxTroops * plan.keepPct / 100;
     if (currentTroops <= keepAmount) return 0;
+    const sharedReservations = globalThis.__OFH_TROOP_DONATION_RESERVATIONS__;
+    const pendingTroops = Math.max(
+      0,
+      Number(sharedReservations?.getPendingTroops?.()) || 0,
+    );
+    const unreservedTroops = Math.max(0, currentTroops - pendingTroops);
     const requested = Math.floor(currentTroops * plan.donatePct / 100);
-    const keepLimit = Math.floor(currentTroops - keepAmount);
-    const borderLimit = Math.floor(currentTroops - borderOpponentTroops / 2);
+    const keepLimit = Math.floor(unreservedTroops - keepAmount);
+    const borderLimit = Math.floor(unreservedTroops - borderOpponentTroops / 2);
     const recipientCapacity = getAutoDonateTroopCapacity(plan.game, plan.recipient);
     const capacityLimit = recipientCapacity === null ? requested : recipientCapacity;
     return Math.max(0, Math.min(requested, keepLimit, borderLimit, capacityLimit));
@@ -534,6 +540,7 @@
       runtimeDebugLog("[AutoDonate] troop send rejected", recipient);
       return false;
     }
+    globalThis.__OFH_TROOP_DONATION_RESERVATIONS__?.record?.(amount);
     markAutoDonationRecipient(plan.recipient);
     runtimeDebugLog(
       "[AutoDonate] troops", amount, "→", getAutoDonatePlayerName(plan.recipient),

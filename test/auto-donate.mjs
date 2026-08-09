@@ -75,6 +75,7 @@ const DONATION_DEFAULTS = {
   tickCount: 1,
   tickAdvanceMs: 0,
   sendPacketResult: true,
+  pendingTroopDonation: 0,
 };
 
 async function runDonation(options = {}) {
@@ -103,8 +104,10 @@ async function runDonation(options = {}) {
     tickCount,
     tickAdvanceMs,
     sendPacketResult,
+    pendingTroopDonation,
   } = { ...DONATION_DEFAULTS, ...options };
   const packets = [];
+  const sharedDonationRecords = [];
   let sendAttempts = 0;
   let currentlyBeingAttacked = beingAttacked;
   let now = 5000;
@@ -195,6 +198,10 @@ async function runDonation(options = {}) {
     runtimeDebugLog() {},
     Date: { now: () => now },
     console: { log() {}, error() {} },
+    __OFH_TROOP_DONATION_RESERVATIONS__: {
+      getPendingTroops: () => pendingTroopDonation,
+      record: (troops) => sharedDonationRecords.push(troops),
+    },
   };
 
   executeClassicScript(
@@ -212,6 +219,7 @@ async function runDonation(options = {}) {
       sendAttempts,
       maritime: sandbox.window.__OFH_getIncomingMaritimeInvasion(game, me),
       selectors: sandbox.__autoDonateSelectors,
+      sharedDonationRecords,
       game,
     };
   }
@@ -299,6 +307,26 @@ assert.equal(
   failedTroopDonation.sendAttempts,
   2,
   "a rejected troop donation remains eligible for a later retry",
+);
+assert.deepEqual(
+  failedTroopDonation.sharedDonationRecords,
+  [],
+  "a rejected standalone donation does not reserve troops in the shared bot ledger",
+);
+
+const sharedPendingDonation = await runDonation({
+  pendingTroopDonation: 400,
+  returnDetails: true,
+});
+assert.equal(
+  sharedPendingDonation.packets[0]?.troops,
+  180,
+  "standalone auto-donate cannot spend troops already reserved by the bot donation path",
+);
+assert.deepEqual(
+  sharedPendingDonation.sharedDonationRecords,
+  [180],
+  "an accepted standalone donation is reserved for subsequent bot decisions",
 );
 
 const donationSelectorHarness = await runDonation({ returnDetails: true });

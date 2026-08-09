@@ -707,6 +707,19 @@
       this.botPendingDonationIntentCommitments = [];
       this.outboundDonationIntentReconciledTick = null;
       this.botDonationNextEligibleTickByRecipient = new Map();
+      this.publishTroopDonationReservationApi();
+    }
+
+    publishTroopDonationReservationApi() {
+      const behavior = this;
+      globalThis.__OFH_TROOP_DONATION_RESERVATIONS__ = {
+        getPendingTroops() {
+          return behavior.getPendingOutboundDonationTroops();
+        },
+        record(troops) {
+          behavior.recordOutboundDonationIntent(troops);
+        },
+      };
     }
 
     initializeEarlyGameAttackState() {
