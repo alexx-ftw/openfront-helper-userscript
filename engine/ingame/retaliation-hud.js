@@ -227,7 +227,12 @@
     if (!isActiveRetaliationNuke(unit)) return false;
     const owner = getRetaliationOwner(unit);
     if (!owner) return false;
-    { if (me.isFriendly?.(owner)) return false; }
+    if (
+      getPlayerSmallId(me, NaN) === getPlayerSmallId(owner, NaN) ||
+      playersArePermanentTeammates(me, owner)
+    ) {
+      return false;
+    }
     const targetTile = unit.targetTile?.();
     if (targetTile === undefined) return false;
     {

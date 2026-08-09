@@ -253,28 +253,28 @@ with no HTTP server, port, or resident watcher. After each build it detects the 
 SHA-256 fingerprint and hot-restarts only the Auto-Bot layer; the OpenFront tab, match,
 and connection stay open.
 
-1. Open `brave://extensions/?id=dhdgffkkebhmkfjojejmpbldmpobfkfo`. In Tampermonkey's
-   details, enable **Allow access to file URLs** and set **Site access** to **On all
-   sites**. Chromium requires both permissions for local-file userscripts.
-2. Run `npm run build` once to create the full userscript, Auto-Bot layer, and build
+1. Run `npm run build` once to create the full userscript, Auto-Bot layer, and build
    fingerprint.
-3. Create a new Tampermonkey script and paste in
+2. Create a new Tampermonkey script and paste in
    `openfront-helper-loader.user.js` (or import that file from Tampermonkey), then save it.
-4. Open `https://openfront.io/` once so the loader starts.
-5. Run `npm run build` after changing the source. Within about one second the current bot
+3. Open `https://openfront.io/` and click **Conectar build local** in the loader notice.
+   Select this repository's `openfront-helper-userscript` directory. Brave grants read-only
+   access and the loader stores the directory handle in OpenFront's IndexedDB; it does not use
+   `file://` requests or require Tampermonkey's file-URL permission. Brave may occasionally ask
+   you to renew that permission after a browser restart or long background session.
+4. Run `npm run build` after changing the source. Within about one second the current bot
    tick finishes, the old bot lifecycle is disposed, and the new Auto-Bot build starts in
    the same tab and match.
 
-If Brave blocks a local read or a build is temporarily incomplete, the loader displays a
-notice in the lower-right corner and retries the full initial userscript on the next poll.
-The notice disappears as soon as the bot is loaded successfully.
+If the saved directory permission expires, the loader displays **Conectar build local** again.
+Click it to renew access. A missing or temporarily incomplete build produces a stage-specific
+notice and is retried on the next poll. The notice disappears as soon as the bot loads.
 
 The hot path applies Auto-Bot logic changes without reloading the game. Changes to the
 shell, lobby automation, or non-bot overlays still require a normal page reload.
 
-The checked-in loader points at `/home/eros/Desktop/openfront-helper-userscript`. If the
-checkout moves, update its three `file://` constants once and save the loader again in
-Tampermonkey.
+If the checkout moves, click **Conectar build local** and select the new directory; the installed
+loader does not contain a machine-specific path.
 
 ### Live runtime diagnostics
 

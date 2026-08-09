@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { executeClassicScript } from "./helpers/classic-script.mjs";
 import {
   createConstructionSimulator,
+  expectedRailIncomePerTick,
   simulateRailTransitRevenue,
 } from "./helpers/construction-simulator.mjs";
 
@@ -215,6 +216,92 @@ assert.ok(
   alliedTradeRevenue.totalRevenue > teamTradeRevenue.totalRevenue &&
     teamTradeRevenue.totalRevenue > selfTradeRevenue.totalRevenue,
   "an allied commercial destination is more valuable than team and self destinations",
+);
+
+// A new Factory is not automatically the best next economic spend.  Two
+// existing sources travelling through a City-sized rail intersection to two
+// destinations create four paid transit opportunities.  That can exceed a
+// Factory which only opens one isolated allied route, even though that route
+// has the higher per-stop ally value.
+const transitNetwork = new Map([
+  ["factory-west", ["junction"]],
+  ["factory-south", ["junction"]],
+  ["junction", ["factory-west", "factory-south", "city-east", "port-north"]],
+  ["city-east", ["junction"]],
+  ["port-north", ["junction"]],
+]);
+const transitBaseline = simulateRailTransitRevenue({
+  adjacency: transitNetwork,
+  stationTypes: new Map([
+    ["factory-west", "Factory"],
+    ["factory-south", "Factory"],
+    ["city-east", "City"],
+    ["port-north", "Port"],
+  ]),
+  factoryIds: ["factory-west", "factory-south"],
+  destinationIds: ["city-east", "port-north"],
+});
+const transitCity = simulateRailTransitRevenue({
+  adjacency: transitNetwork,
+  stationTypes: new Map([
+    ["factory-west", "Factory"],
+    ["factory-south", "Factory"],
+    ["city-east", "City"],
+    ["port-north", "Port"],
+  ]),
+  factoryIds: ["factory-west", "factory-south"],
+  destinationIds: ["city-east", "port-north"],
+  candidateId: "junction",
+});
+const isolatedFactory = simulateRailTransitRevenue({
+  adjacency: new Map([
+    ["factory-candidate", ["ally-port"]],
+    ["ally-port", ["factory-candidate"]],
+  ]),
+  stationTypes: new Map([
+    ["factory-candidate", "Factory"],
+    ["ally-port", "Port"],
+  ]),
+  factoryIds: ["factory-candidate"],
+  destinationIds: ["ally-port"],
+  stationRelations: new Map([["ally-port", "ally"]]),
+});
+assert.ok(
+  transitCity.totalRevenue - transitBaseline.totalRevenue > isolatedFactory.totalRevenue,
+  "a City that becomes the transit intersection for several existing trains outranks a Factory that opens only one allied route",
+);
+
+const expectedTransitIncome = expectedRailIncomePerTick({
+  adjacency: transitNetwork,
+  stationTypes: new Map([
+    ["factory-west", "Factory"],
+    ["factory-south", "Factory"],
+    ["city-east", "City"],
+    ["port-north", "Port"],
+  ]),
+  stationOwners: new Map([
+    ["factory-west", "self"],
+    ["factory-south", "self"],
+    ["city-east", "self"],
+    ["port-north", "ally"],
+  ]),
+  factoryLevels: new Map([
+    ["factory-west", 1],
+    ["factory-south", 1],
+  ]),
+  candidate: { id: "junction", type: "City", owner: "self", level: 1 },
+});
+assert.ok(
+  Math.abs(
+    expectedTransitIncome.revenueByStation.get("junction") -
+      expectedTransitIncome.totalSpawnProbability * 10_000,
+  ) < 1e-9,
+  "expected-income simulation prices a junction City on every train route",
+);
+assert.ok(
+  expectedTransitIncome.revenueByStation.get("port-north") >
+    expectedTransitIncome.revenueByStation.get("city-east"),
+  "expected-income simulation preserves the higher allied stop payout",
 );
 
 process.stdout.write("construction simulator tests passed\n");

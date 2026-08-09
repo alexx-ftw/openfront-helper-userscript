@@ -85,6 +85,7 @@
   // exact cursor/order but spread that work across the next decision.
   const BOAT_NEARBY_SCAN_OFFSETS_PER_DECISION = 128;
   const BOAT_NEARBY_SCAN_SESSION_MAX_TICKS = 300;
+  const SAME_CLAN_NUKE_LANDING_GRACE_TICKS = 2;
   // One opportunistic decision must not serially monopolize the worker with
   // every boat strategy. Each stage retains its normal ranked candidates, but
   // the stage itself advances only after its bounded probe batch is exhausted.
@@ -174,10 +175,9 @@
   const ATTACK_FALLOUT_DEFENSE_BASE = 5;
   const ATTACK_FALLOUT_DEFENSE_RATIO_SLOPE = 2;
   const ATTACK_FALLOUT_RESERVE_RATIO = 0.42;
-  // Tribes have no strategic counterplay comparable to Nations. A small capture
-  // margin lets the opening spread across many tribes in parallel instead of
-  // parking four times their strength in one conquest.
-  const TRIBE_CAPTURE_TROOP_MULTIPLIER = 2.5;
+  // A live tribe capture must clear the same robust four-times-strength floor
+  // used by the wider conquest policy before the engine can consume the tribe.
+  const TRIBE_CAPTURE_TROOP_MULTIPLIER = 4;
   const PLAYER_CAPTURE_TROOP_MULTIPLIER = 4;
   const EXPANSION_BREAKOUT_CONFIRM_DECISIONS = 2;
   // Once aggregate hostile incoming troops match our whole current army, a
@@ -687,6 +687,7 @@
       });
       this.initializeAttackIntentState();
       this.initializeEarlyGameAttackState();
+      this.initializeSameClanNukeTerrainState();
       this.initializeDefensePostAttackState();
     }
 
@@ -776,6 +777,15 @@
       // reachable before another opening decision. Keep this instance-local so
       // a fresh game never inherits a stale water-path result.
       this.earlyOceanProbeRetryTicks = new Map();
+    }
+
+    initializeSameClanNukeTerrainState() {
+      this.sameClanNukedTerrain = new Set();
+      this.capturedSameClanNukes = new Set();
+      this.threateningSameClanNukes = new Set();
+      this.sameClanNukeCancelledAttackIds = new Set();
+      this.sameClanNukeLandingGraceUntilTick = -Infinity;
+      this.sameClanNukeTerrainCaptureTick = null;
     }
 
     initializeDefensePostAttackState() {
@@ -977,6 +987,7 @@
       );
       this.botAttackPendingIntentCommitments.push({
         targetIsPlayer,
+        target: targetIsPlayer ? target : null,
         targetKey,
         attackType,
         destination,
@@ -1617,9 +1628,226 @@
       );
     }
 
+    sameClanPlayerSmallIds() {
+      const clanApi = globalThis.__OFHSpawnObjective;
+      if (
+        typeof clanApi?.getPlayerClanTag !== "function" ||
+        typeof clanApi?.sameClanTag !== "function"
+      ) {
+        return new Set();
+      }
+      const myClanTag = clanApi.getPlayerClanTag(this.player);
+      if (myClanTag === null) return new Set();
+      const mySmallId = this.player.smallID();
+      const result = new Set();
+      for (const candidate of this.game.players?.() ?? []) {
+        const candidateSmallId = candidate?.smallID?.();
+        if (
+          candidateSmallId === undefined ||
+          candidateSmallId === mySmallId ||
+          !clanApi.sameClanTag(
+            myClanTag,
+            clanApi.getPlayerClanTag(candidate),
+          )
+        ) {
+          continue;
+        }
+        result.add(candidateSmallId);
+      }
+      return result;
+    }
+
+    activeNukesForClanTerrainCapture() {
+      if (typeof this.game?.units !== "function") return [];
+      return this.game.units(
+        UNIT.AtomBomb,
+        UNIT.HydrogenBomb,
+        UNIT.MIRVWarhead,
+      );
+    }
+
+    sameClanNukeCaptureKey(unit) {
+      const id = unit?.id?.();
+      if (id !== undefined && id !== null) return String(id);
+      const target = unit?.targetTile?.();
+      return target === undefined ? null : `${unit?.type?.()}:${target}`;
+    }
+
+    sameClanNukeGeometryApiIsAvailable() {
+      return Boolean(
+        typeof this.game?.x === "function" &&
+        typeof this.game?.y === "function" &&
+        typeof this.game?.ref === "function" &&
+        typeof this.game?.ownerID === "function",
+      );
+    }
+
+    sameClanNukeBlastGeometry(unit) {
+      if (!this.sameClanNukeGeometryApiIsAvailable()) return null;
+      const target = unit?.targetTile?.();
+      if (target === undefined) return null;
+      const magnitude = this.game.config()?.nukeMagnitudes?.(unit?.type?.());
+      const radius = Math.ceil(Number(magnitude?.outer));
+      if (!Number.isFinite(radius) || radius < 0) return null;
+      const centerX = Number(this.game.x(target));
+      const centerY = Number(this.game.y(target));
+      if (!Number.isFinite(centerX) || !Number.isFinite(centerY)) return null;
+      return { centerX, centerY, radius, radiusSquared: radius * radius };
+    }
+
+    captureSameClanNukeBlastTiles(geometry, clanSmallIds) {
+      const { centerX, centerY, radius, radiusSquared } = geometry;
+      let foundSameClanTerrain = false;
+      const blastTiles = [];
+      for (let y = centerY - radius; y <= centerY + radius; y++) {
+        for (let x = centerX - radius; x <= centerX + radius; x++) {
+          if (
+            (x - centerX) ** 2 + (y - centerY) ** 2 > radiusSquared ||
+            this.game.isValidCoord?.(x, y) === false
+          ) {
+            continue;
+          }
+          const tile = this.game.ref(x, y);
+          blastTiles.push(tile);
+          if (clanSmallIds.has(this.game.ownerID(tile))) {
+            foundSameClanTerrain = true;
+          }
+        }
+      }
+      if (foundSameClanTerrain) {
+        for (const tile of blastTiles) this.sameClanNukedTerrain.add(tile);
+      }
+      return foundSameClanTerrain;
+    }
+
+    captureSameClanNukeBlast(unit, clanSmallIds) {
+      const geometry = this.sameClanNukeBlastGeometry(unit);
+      if (geometry === null) return false;
+      return this.captureSameClanNukeBlastTiles(geometry, clanSmallIds);
+    }
+
+    captureSameClanNukeUnit(unit, clanSmallIds, activeKeys) {
+      const key = this.sameClanNukeCaptureKey(unit);
+      if (key === null) return;
+      activeKeys.add(key);
+      if (clanSmallIds.size === 0 || this.capturedSameClanNukes.has(key)) {
+        return;
+      }
+      if (this.captureSameClanNukeBlast(unit, clanSmallIds)) {
+        this.threateningSameClanNukes.add(key);
+        this.capturedSameClanNukes.add(key);
+      }
+    }
+
+    pruneInactiveSameClanNukeThreats(activeKeys) {
+      let removedThreat = false;
+      for (const key of this.threateningSameClanNukes) {
+        if (!activeKeys.has(key)) {
+          this.threateningSameClanNukes.delete(key);
+          removedThreat = true;
+        }
+      }
+      if (removedThreat) {
+        this.sameClanNukeLandingGraceUntilTick =
+          this.currentAttackDecisionTick() +
+          SAME_CLAN_NUKE_LANDING_GRACE_TICKS;
+      }
+    }
+
+    pruneClearedSameClanNukedTerrain() {
+      if (
+        this.threateningSameClanNukes.size > 0 ||
+        this.currentAttackDecisionTick() <=
+          this.sameClanNukeLandingGraceUntilTick
+      ) {
+        return;
+      }
+      for (const tile of this.sameClanNukedTerrain) {
+        if (!this.game?.hasFallout?.(tile)) {
+          this.sameClanNukedTerrain.delete(tile);
+        }
+      }
+    }
+
+    captureSameClanNukeTerrain() {
+      const captureTick = this.currentAttackDecisionTick();
+      if (this.sameClanNukeTerrainCaptureTick === captureTick) return;
+      this.sameClanNukeTerrainCaptureTick = captureTick;
+      this.sameClanNukedTerrain ??= new Set();
+      this.capturedSameClanNukes ??= new Set();
+      this.threateningSameClanNukes ??= new Set();
+      this.sameClanNukeLandingGraceUntilTick ??= -Infinity;
+      const clanSmallIds = this.sameClanPlayerSmallIds();
+      const activeKeys = new Set();
+      for (const unit of this.activeNukesForClanTerrainCapture()) {
+        this.captureSameClanNukeUnit(unit, clanSmallIds, activeKeys);
+      }
+      this.pruneInactiveSameClanNukeThreats(activeKeys);
+      this.pruneClearedSameClanNukedTerrain();
+    }
+
+    hasSameClanNukeTerrainHazard() {
+      return Boolean(
+        this.threateningSameClanNukes?.size > 0 ||
+        this.sameClanNukedTerrain?.size > 0,
+      );
+    }
+
+    terraNulliusAttackNeedsSameClanSafetyCancellation(attack, attackId) {
+      return Boolean(
+        attackId !== undefined &&
+        attackId !== null &&
+        attack?.retreating?.() !== true &&
+        attack?.target?.()?.isPlayer?.() !== true &&
+        !this.sameClanNukeCancelledAttackIds.has(attackId),
+      );
+    }
+
+    cancelTerraNulliusAttackForSameClanSafety(attack) {
+      const attackId = attack?.id?.();
+      if (!this.terraNulliusAttackNeedsSameClanSafetyCancellation(attack, attackId)) {
+        return false;
+      }
+      const eventBus = getEventBus();
+      const cancelAttack = discoverCtors(eventBus).cancelAttack;
+      if (typeof cancelAttack !== "function" || typeof eventBus?.emit !== "function") {
+        return false;
+      }
+      eventBus.emit(new cancelAttack(attackId));
+      this.sameClanNukeCancelledAttackIds.add(attackId);
+      return true;
+    }
+
+    enforceSameClanNukeTerrainSafety() {
+      this.sameClanNukeCancelledAttackIds ??= new Set();
+      this.captureSameClanNukeTerrain();
+      const outgoing = this.player?.outgoingAttacks?.() ?? [];
+      const liveIds = new Set(outgoing.map((attack) => attack?.id?.()));
+      for (const attackId of this.sameClanNukeCancelledAttackIds) {
+        if (!liveIds.has(attackId)) {
+          this.sameClanNukeCancelledAttackIds.delete(attackId);
+        }
+      }
+      if (!this.hasSameClanNukeTerrainHazard()) return false;
+      let cancelled = false;
+      for (const attack of outgoing) {
+        cancelled =
+          this.cancelTerraNulliusAttackForSameClanSafety(attack) || cancelled;
+      }
+      return cancelled;
+    }
+
+    isProtectedSameClanNukedTerrain(tile) {
+      return Boolean(
+        this.sameClanNukedTerrain?.has(tile) &&
+        this.game?.hasFallout?.(tile),
+      );
+    }
+
     terraNulliusTileIsEligible(tile, requireUnowned) {
       if (typeof this.game?.isLand === "function" && !this.game.isLand(tile)) return false;
       if (requireUnowned && this.game.hasOwner(tile)) return false;
+      if (this.isProtectedSameClanNukedTerrain(tile)) return false;
       return !(
         typeof this.game?.magnitude === "function" &&
         Number(this.game.magnitude(tile)) >= 31
@@ -2455,6 +2683,7 @@
       if (this.player === null || this.allianceBehavior === undefined) {
         throw new Error("not initialized");
       }
+      this.enforceSameClanNukeTerrainSafety();
       profileAttackSync(profile, "attack-intent-reconcile", () =>
         this.reconcileOutboundAttackIntentCommitments());
       const context = profileAttackSync(profile, "attack-context", () =>
@@ -6522,12 +6751,30 @@
       );
     }
 
+    getSafeBoatTroops(requestedTroops, targetReserve, requireExactTroops) {
+      const spendableTroops = this.getEarlyGameSpendableTroops(targetReserve);
+      if (requireExactTroops && spendableTroops < requestedTroops) return 0;
+      return Math.min(requestedTroops, spendableTroops);
+    }
+
     // emitBoat — fire a TransportShipExecution at dst carrying `troops`.
-    emitBoat(dst, troops, label, reserveTarget = null) {
+    canEmitBoatToDestination(dst) {
+      this.captureSameClanNukeTerrain();
+      return Boolean(
+        state.settings.features?.boat &&
+        !this.isProtectedSameClanNukedTerrain(dst),
+      );
+    }
+
+    emitBoat(
+      dst,
+      troops,
+      label,
+      reserveTarget = null,
+      requireExactTroops = false,
+    ) {
       // Final chokepoint for the "boat" feature toggle: never fire when off.
-      if (!(state.settings.features && state.settings.features.boat)) {
-        return false;
-      }
+      if (!this.canEmitBoatToDestination(dst)) return false;
       if (this.boatDestinationReserved(dst)) return false;
       const requestedTroops = Number(troops);
       if (!Number.isFinite(requestedTroops) || requestedTroops < 1) {
@@ -6540,9 +6787,10 @@
       const targetReserve = reserveTarget
         ? this.getEarlyGameTargetReserveTroops(reserveTarget)
         : this.getEarlyGameLiveReserveTroops();
-      const safeTroops = Math.min(
+      const safeTroops = this.getSafeBoatTroops(
         requestedTroops,
-        this.getEarlyGameSpendableTroops(targetReserve),
+        targetReserve,
+        requireExactTroops,
       );
       if (!Number.isFinite(safeTroops) || safeTroops < 1) {
         return false;
@@ -7666,6 +7914,7 @@
       // Client: emitIntent(ctors.attack, target.id()|null, troops). In win-fix
       // mode a TerraNullius opening uses the calculated one-tile loss plus a
       // margin, while the configured opening fraction remains only a ceiling.
+      this.captureSameClanNukeTerrain();
       this.reconcileOutboundAttackIntentCommitments();
       const ctors = discoverCtors(getEventBus());
       const isTerraNullius = target?.isPlayer?.() !== true;
@@ -7676,7 +7925,13 @@
     }
 
     canForceAttackTarget(target) {
-      return target?.isPlayer?.() === true || this.hasLandBorderWithTerraNullius();
+      return (
+        target?.isPlayer?.() === true ||
+        (
+          this.hasLandBorderWithTerraNullius() &&
+          !this.hasSameClanNukeTerrainHazard()
+        )
+      );
     }
 
     // sendAttack — AiAttackBehavior (now async via sendBoatAttack/
@@ -7689,6 +7944,7 @@
         earlyGameCandidate = null,
         radioactiveTerraNullius = false,
         parallelTribeAttack = false,
+        reinforcementPlan = null,
       ] = args;
       return {
         target,
@@ -7697,13 +7953,20 @@
         earlyGameCandidate,
         radioactiveTerraNullius,
         parallelTribeAttack,
+        reinforcementPlan,
       };
     }
 
-    sendAttackIsPendingDuplicate(target, force, isParallelTribeAttack) {
+    sendAttackIsPendingDuplicate(
+      target,
+      force,
+      isParallelTribeAttack,
+      reinforcementPlan,
+    ) {
       return Boolean(
         state.settings.winFixes &&
           !force &&
+          reinforcementPlan === null &&
           !isParallelTribeAttack &&
           this.hasPendingOutboundAttackForTarget(target),
       );
@@ -7739,9 +8002,18 @@
     }
 
     async sendAttackAgainstPlayer(options) {
-      const { target, minCommitFraction, earlyGameCandidate } = options;
+      const {
+        target,
+        minCommitFraction,
+        earlyGameCandidate,
+        reinforcementPlan,
+      } = options;
       if (!this.player.sharesBorderWith(target)) {
-        return this.sendBoatAttack(target, earlyGameCandidate);
+        return this.sendBoatAttack(
+          target,
+          earlyGameCandidate,
+          reinforcementPlan,
+        );
       }
       return this.sendLandAttack(
         target,
@@ -7751,6 +8023,7 @@
           radioactiveTerraNullius: options.radioactiveTerraNullius,
           parallelTribeAttack: options.isParallelTribeAttack,
           force: options.force,
+          reinforcementPlan,
         },
       );
     }
@@ -7781,7 +8054,14 @@
         options.parallelTribeAttack === true &&
         target?.isPlayer?.() === true &&
         target.type?.() === PlayerType.Bot;
-      if (this.sendAttackIsPendingDuplicate(target, force, options.isParallelTribeAttack)) {
+      if (
+        this.sendAttackIsPendingDuplicate(
+          target,
+          force,
+          options.isParallelTribeAttack,
+          options.reinforcementPlan,
+        )
+      ) {
         return false;
       }
       return target.isPlayer()
@@ -7971,6 +8251,7 @@
         radioactiveTerraNullius: false,
         parallelTribeAttack: false,
         force: false,
+        reinforcementPlan: null,
         ...options,
       };
       const defenseProfile = this.getEnemyDefensePostAttackProfile(target);
@@ -8036,6 +8317,7 @@
         terraNulliusCommitFraction,
         botAttackTroopsSentBefore: this.botAttackTroopsSent,
         requiredTribeAttackTroops: null,
+        reinforcementPlan: configuration.reinforcementPlan,
         incomingCounterattackTroops: this.getIncomingCounterattackTroops(
           target,
           configuration.force,
@@ -8121,6 +8403,15 @@
     }
 
     calculateLandAttackTroops(context) {
+      if (context.reinforcementPlan != null) {
+        const troops = this.getReinforcementPlanTroops(
+          context.target,
+          context.reinforcementPlan,
+          context.finalSpendableTroops,
+        );
+        if (troops < 1) context.attackBlocked = true;
+        return troops;
+      }
       if (context.force === true && context.incomingCounterattackTroops > 0) {
         return Math.min(
           context.finalSpendableTroops,
@@ -8144,6 +8435,7 @@
     }
 
     adjustLandAttackTroops(context, troops) {
+      if (context.reinforcementPlan != null) return troops;
       // Tribe payloads are already the exact Defense Post-aware capture floor.
       // Do not inflate them afterward and consume another target's budget.
       if (context.requiredTribeAttackTroops !== null) return troops;
@@ -8210,6 +8502,13 @@
     }
 
     sendLandAttack(target, options = {}) {
+      this.captureSameClanNukeTerrain();
+      if (
+        target?.isPlayer?.() !== true &&
+        this.hasSameClanNukeTerrainHazard()
+      ) {
+        return false;
+      }
       this.reconcileOutboundAttackIntentCommitments();
       const context = this.createLandAttackContext(target, options);
       let troops = this.calculateLandAttackTroops(context);
@@ -8263,7 +8562,11 @@
       this.emojiBehavior.maybeSendAttackEmoji(target);
     }
 
-    async sendBoatAttack(target, earlyGameCandidate = null) {
+    async sendBoatAttack(
+      target,
+      earlyGameCandidate = null,
+      reinforcementPlan = null,
+    ) {
       this.reconcileOutboundAttackIntentCommitments();
       // Honour the panel's "boat" feature toggle (faithful boat attacks must obey
       // it too, not just the win-fix landings).
@@ -8299,33 +8602,11 @@
         return false;
       }
 
-      // USER (winFixes): EVERY boat is a cheap 1% probe — never a 20% dump (troops/5),
-      // and not the bot-scaled calculateBotAttackTroops either. This means the bot now
-      // HARASSES across water instead of conquering it by boat; land expansion and the
-      // opportunistic 1% landings are unaffected. (winFixes off → exact faithful troops.)
-      let troops = this.boatAttackTroops(target, earlyGameCandidate);
-
-      // A race signal may increase a valid conquest force, but it must never
-      // turn an unaffordable zero into a sub-minimum maritime attack.
-      if (troops < 1) return false;
-      troops = this.applyEarlyGameRaceTroops({
+      const troops = this.getBoatAttackTroopsForSend(
         target,
-        baseTroops: troops,
-        reserveTroops:
-          this.game.config().maxTroops(this.player) *
-          this.effectiveReserveRatio(),
         earlyGameCandidate,
-      });
-
-      // Race pressure may raise a probe after its initial budget calculation.
-      // Reapply the target-specific reserve at the final emission boundary so a
-      // human/nation boat cannot spend below the production peak and no boat can
-      // bypass pending-intent accounting.
-      const boatSpendableTroops = this.getEarlyGameSpendableTroops(
-        this.getEarlyGameTargetReserveTroops(target),
+        reinforcementPlan,
       );
-      troops = Math.min(troops, boatSpendableTroops);
-
       if (troops < 1) {
         return false;
       }
@@ -8336,7 +8617,48 @@
 
       // src: game.addExecution(new TransportShipExecution(player, closest.y, troops)).
       if (!(await this.allowEarlyGameBoat(destination))) return false;
-      return this.emitBoat(destination, troops, "⛵ Boat attack", target);
+      return this.emitBoat(
+        destination,
+        troops,
+        "⛵ Boat attack",
+        target,
+        reinforcementPlan !== null,
+      );
+    }
+
+    getBoatAttackTroopsForSend(target, earlyGameCandidate, reinforcementPlan) {
+      // USER (winFixes): EVERY ordinary boat is a cheap 1% probe. An active
+      // conquest reinforcement is the narrow exception: it carries the exact
+      // missing amount from the shared plan so maritime and land routes honor
+      // the same floor.
+      let troops =
+        reinforcementPlan === null
+          ? this.boatAttackTroops(target, earlyGameCandidate)
+          : this.getReinforcementPlanTroops(
+              target,
+              reinforcementPlan,
+              this.getEarlyGameSpendableTroops(
+                this.getEarlyGameTargetReserveTroops(target),
+              ),
+            );
+      if (troops < 1) return 0;
+      if (reinforcementPlan === null) {
+        troops = this.applyEarlyGameRaceTroops({
+          target,
+          baseTroops: troops,
+          reserveTroops:
+            this.game.config().maxTroops(this.player) *
+            this.effectiveReserveRatio(),
+          earlyGameCandidate,
+        });
+      }
+
+      // Reapply the target-specific reserve at the final emission boundary.
+      const spendableTroops = this.getEarlyGameSpendableTroops(
+        this.getEarlyGameTargetReserveTroops(target),
+      );
+      if (reinforcementPlan !== null && troops > spendableTroops) return 0;
+      return Math.min(troops, spendableTroops);
     }
 
     applyEarlyGameRaceTroops({
@@ -8392,6 +8714,24 @@
       return troops;
     }
 
+    getReinforcementPlanTroops(target, reinforcementPlan, spendableTroops) {
+      if (reinforcementPlan === null) return null;
+      const targetKey = this.getOutboundAttackTargetKey(target);
+      if (
+        reinforcementPlan.targetKey == null ||
+        targetKey == null ||
+        String(reinforcementPlan.targetKey) !== targetKey
+      ) {
+        return 0;
+      }
+      const missing = Math.max(
+        0,
+        Math.ceil(Number(reinforcementPlan.missing) || 0),
+      );
+      const available = Math.max(0, Math.floor(Number(spendableTroops) || 0));
+      return missing >= 1 && missing <= available ? missing : 0;
+    }
+
     getTribeCaptureTroopFloor(target, defensePostProfile = null) {
       const defenseMultiplier = Math.max(
         1,
@@ -8423,6 +8763,17 @@
       );
     }
 
+    getPendingOutboundPlayerTarget(entry) {
+      if (!entry?.targetIsPlayer || entry.targetKey == null) return null;
+      const target = entry.target;
+      if (target?.isPlayer?.() !== true || target.isAlive?.() === false) {
+        return null;
+      }
+      const targetKey = this.getOutboundAttackTargetKey(target);
+      if (targetKey == null || targetKey !== String(entry.targetKey)) return null;
+      return { target, targetKey };
+    }
+
     outboundPlayerAttackCommitments() {
       this.reconcileOutboundAttackIntentCommitments(
         this.currentAttackDecisionTick(),
@@ -8439,10 +8790,13 @@
         );
       }
       for (const entry of this.botAttackPendingIntentCommitments || []) {
-        if (!entry?.targetIsPlayer || entry.targetKey == null) continue;
+        const pendingTarget = this.getPendingOutboundPlayerTarget(entry);
+        if (pendingTarget === null) continue;
+        const { target, targetKey } = pendingTarget;
+        if (!targetsByKey.has(targetKey)) targetsByKey.set(targetKey, target);
         committedByKey.set(
-          entry.targetKey,
-          (committedByKey.get(entry.targetKey) || 0) +
+          targetKey,
+          (committedByKey.get(targetKey) || 0) +
             Math.max(0, Number(entry.troops) || 0),
         );
       }
@@ -8462,6 +8816,7 @@
         if (committed >= floor) continue;
         plans.push({
           target,
+          targetKey,
           committed,
           floor,
           missing: Math.max(0, floor - committed),
@@ -8479,7 +8834,8 @@
     }
 
     async reinforceIncompleteOutboundPlayerAttack() {
-      for (const { target } of this.incompleteOutboundPlayerAttackPlans()) {
+      for (const plan of this.incompleteOutboundPlayerAttackPlans()) {
+        const { target } = plan;
         // An incomplete transport attack is still an unfinished conquest.  Do
         // not require a land border here: sendAttack chooses the same land or
         // boat route that the original attack used, so a distant Tribe/Nation
@@ -8492,6 +8848,7 @@
             null,
             false,
             target.type?.() === PlayerType.Bot,
+            plan,
           )
         ) {
           return true;

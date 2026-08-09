@@ -116,6 +116,96 @@ globalThis.__OFH_RUNTIME_EVENTS__ = runtimeEvents;
 // assigning to another file's lexical binding.
 const runtimeState = Object.create(null);
 
+// Small compatibility layer for values that belong to the game rather than to
+// helper policy. The client and the auto-bot adapter expose the same Config
+// object, but older clients used a few different access paths. Keeping the
+// compatibility reads here makes every fallback auditable in one place.
+function ofhGameConfig(game) {
+  return typeof game?.config === "function" ? game.config() : null;
+}
+
+function ofhGameConfigNumber(game, method, fallback, ...args) {
+  const config = ofhGameConfig(game);
+  const value = Number(config?.[method]?.(...args));
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function ofhGameUnitInfo(game, type) {
+  const sources = [
+    game && typeof game.unitInfo === "function" ? game : null,
+    ofhGameConfig(game),
+  ];
+  for (const source of sources) {
+    const info = source?.unitInfo?.(type);
+    if (info) return info;
+  }
+  return null;
+}
+
+function ofhGameUnitCost(game, player, type, fallback) {
+  const value = Number(ofhGameUnitInfo(game, type)?.cost?.(game, player));
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function ofhGameConstructionDuration(game, type, fallback) {
+  const raw = ofhGameUnitInfo(game, type)?.constructionDuration;
+  const value = Number(typeof raw === "function" ? raw() : raw);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function ofhGameNukeMagnitude(game, type, fallback) {
+  const config = ofhGameConfig(game);
+  const magnitude = config?.nukeMagnitudes?.(type);
+  const inner = Number(magnitude?.inner);
+  const outer = Number(magnitude?.outer);
+  if (Number.isFinite(inner) && Number.isFinite(outer) && outer > 0) {
+    return { inner, outer };
+  }
+  return fallback;
+}
+
+function ofhGameNukeSpeed(game, type = "Atom Bomb", fallback = 10) {
+  const config = ofhGameConfig(game);
+  const specific = Number(config?.nukeSpeed?.(type));
+  if (Number.isFinite(specific) && specific > 0) return specific;
+  const defaultSpeed = Number(config?.defaultNukeSpeed?.());
+  return Number.isFinite(defaultSpeed) && defaultSpeed > 0 ? defaultSpeed : fallback;
+}
+
+function ofhGameCooldownTicks(game, type, fallback = 90) {
+  const method = type === "SAM Launcher" ? "SAMCooldown" : "SiloCooldown";
+  return ofhGameConfigNumber(game, method, fallback);
+}
+
+function ofhGameDonationCooldownMs(game, fallback = 10000) {
+  const ticks = ofhGameConfigNumber(game, "donateCooldown", fallback / 100);
+  const msPerTick = ofhGameMsPerTick(game, 100);
+  return ticks * msPerTick;
+}
+
+function ofhGameMsPerTick(game, fallback = 100) {
+  return ofhGameConfigNumber(game, "msPerTick", fallback);
+}
+
+function ofhGameNukeTargetableRange(game, fallback = 150) {
+  return ofhGameConfigNumber(game, "defaultNukeTargetableRange", fallback);
+}
+
+function ofhGameSamMissileSpeed(game, fallback = 12) {
+  return ofhGameConfigNumber(game, "defaultSamMissileSpeed", fallback);
+}
+
+function ofhGameSamRange(game, level, fallback = 70) {
+  const config = ofhGameConfig(game);
+  const range = Number(config?.samRange?.(level));
+  if (Number.isFinite(range) && range > 0) return range;
+  return ofhGameConfigNumber(game, "defaultSamRange", fallback);
+}
+
+function ofhGameMaxSamRange(game, fallback = 150) {
+  return ofhGameConfigNumber(game, "maxSamRange", fallback);
+}
+
 runtimeState.botMarkersEnabled = false;
 runtimeState.botMarkerAnimationFrame = null;
 runtimeState.allyMarkersEnabled = false;

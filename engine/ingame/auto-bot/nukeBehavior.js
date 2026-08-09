@@ -355,6 +355,10 @@
       // Per-tick cost memo (see cost()): keyed by unit type, invalidated per tick.
       this._costCacheTick = -1;
       this._costCache = new Map();
+      // The client intent has no NukeExecution.waitTicks field. Preserve the
+      // engine salvo timing by emitting delayed build intents on their exact
+      // future game ticks instead of collapsing every bomb onto this tick.
+      this._pendingNukeLaunches = [];
     }
 
     canConsiderNukes(silos) {
@@ -428,6 +432,7 @@
 
     // ── maybeSendNuke — NationNukeBehavior.ts:58 (now async) ──────────────────
     async maybeSendNuke() {
+      if (this.hasPendingNukeLaunches()) return;
       const silos = this.player.units(UNIT.MissileSilo);
       if (!this.canConsiderNukes(silos)) return;
       const target = this.findBestNukeTarget();
@@ -854,7 +859,7 @@
           (nukeOwner &&
             nukeOwner.smallID &&
             nukeOwner.smallID() === this.player.smallID()) ||
-          !this.player.isFriendly(nukeOwner)
+          !playersArePermanentTeammates(this.player, nukeOwner)
         ) {
           continue;
         }
@@ -1069,45 +1074,86 @@
     }
 
     // ── sendNuke — NationNukeBehavior.ts:750 (now async; addExecution → build menu)
-    // DIVERGENCE G1: the src NukeExecution accepts a `waitTicks` stagger so the
-    // saturation salvo's bombs arrive spread across the SAM cooldown window. That
-    // stagger is NOT expressible through the client build-menu intent (it fires the
-    // nuke immediately, no per-bomb delay), so we DROP waitTicks — all salvo bombs
-    // are fired with no stagger. The salvo SIZE / target / silo-pick order is still
-    // faithful; only the arrival spread is lost. We keep the `waitTicks` parameter
-    // for signature parity but never act on it.
+    // DIVERGENCE G1: the client build intent cannot carry NukeExecution's
+    // `waitTicks`. Delayed salvo entries are therefore retained locally and the
+    // same intent is emitted on its due game tick by processPendingNukeLaunches.
+    // This preserves arrival staggering without blocking the bot or depending
+    // on real-time timers, which would drift when game speed changes.
     async sendNuke(tile, nukeType, targetPlayer, waitTicks = 0) {
-      const tick = this.game.ticks();
-
-      // Affordability + actuation via the buildables probe + build menu. Probe the
-      // nuke BuildableUnit at the target tile, confirm canBuild and gold (BigInt),
-      // then fire through the build menu aimed at the target tile.
-      let buildables;
-      {
-        buildables = await withTimeout(
-          this.player.buildables(tile, [nukeType]),
-          WORKER_TIMEOUT_MS,
-          null,
+      const delay = Math.max(0, Math.ceil(Number(waitTicks) || 0));
+      if (delay > 0) {
+        return this.queueDelayedNukeLaunch(
+          tile,
+          nukeType,
+          targetPlayer,
+          delay,
         );
       }
-      const bu = Array.isArray(buildables)
-        ? buildables.find((b) => b.type === nukeType)
-        : null;
-      if (bu === null || bu === undefined) return;
-      if (!(bu.canBuild !== false && this.player.gold() >= bu.cost)) return;
+      const buildable = await this.probeNukeBuildable(tile, nukeType);
+      if (!this.nukeBuildableCanLaunch(buildable)) return false;
       // The worker probe yields long enough for diplomacy or the target's state
       // to change. Re-run the complete attack policy immediately before
       // actuation so a stale candidate cannot launch after becoming invalid.
-      if (!this.isValidNukeTarget(targetPlayer)) return;
+      if (!this.isValidNukeTarget(targetPlayer)) return false;
+      if (!this.emitNukeBuildable(buildable, tile)) return false;
+      await this.rememberSuccessfulNukeLaunch(tile, nukeType, targetPlayer);
+      return true;
+    }
 
+    queueDelayedNukeLaunch(tile, nukeType, targetPlayer, delay) {
+      if (!this.isValidNukeTarget(targetPlayer)) return false;
+      this._pendingNukeLaunches.push({
+        dueTick: Number(this.game.ticks()) + delay,
+        tile,
+        nukeType,
+        targetPlayer,
+      });
+      return true;
+    }
+
+    async probeNukeBuildable(tile, nukeType) {
+      const buildables = await withTimeout(
+        this.player.buildables(tile, [nukeType]),
+        WORKER_TIMEOUT_MS,
+        null,
+      );
+      return Array.isArray(buildables)
+        ? buildables.find((buildable) => buildable.type === nukeType) ?? null
+        : null;
+    }
+
+    nukeBuildableCanLaunch(buildable) {
+      return Boolean(
+        buildable &&
+        buildable.canBuild !== false &&
+        this.player.gold() >= buildable.cost,
+      );
+    }
+
+    emitNukeBuildable(buildable, tile) {
       const buildMenu = getBuildMenu();
-      if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") return;
-      if (!sendAutoBotBuildOrUpgrade(buildMenu, bu, tile, this.game, this.player)) return;
+      if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") return false;
+      return sendAutoBotBuildOrUpgrade(
+        buildMenu,
+        buildable,
+        tile,
+        this.game,
+        this.player,
+      );
+    }
 
+    async rememberSuccessfulNukeLaunch(tile, nukeType, targetPlayer) {
       // Mirror src state updates only AFTER a successful fire (src does these
       // unconditionally because addExecution can't "fail"; on the client the build
       // can be rejected, so we gate them on the successful probe+emit above).
-      this.recentlySentNukes.push([tick, tile, nukeType]);
+      this.recentlySentNukes.push([this.game.ticks(), tile, nukeType]);
+      await this.updateNukePerceivedCost(nukeType);
+      state.stats.nukes++;
+      setLastAction(tr("☢️ Launch") + " " + nukeType, "nuke");
+      this.emojiBehavior.maybeSendEmoji(targetPlayer, EMOJI_NUKE);
+    }
+
+    async updateNukePerceivedCost(nukeType) {
       if (nukeType === UNIT.AtomBomb) {
         this.atomBombsLaunched++;
         // Increase perceived cost by 50% each time to simulate saving up for a MIRV
@@ -1126,12 +1172,43 @@
         this.hydrogenBombPerceivedCost =
           (this.hydrogenBombPerceivedCost * 125n) / 100n;
       }
+    }
 
-      // LOGGING (light) — on a nuke fire.
-      state.stats.nukes++;
-      setLastAction(tr("☢️ Launch") + " " + nukeType, "nuke");
+    hasPendingNukeLaunches() {
+      return this._pendingNukeLaunches.length > 0;
+    }
 
-      this.emojiBehavior.maybeSendEmoji(targetPlayer, EMOJI_NUKE);
+    async processPendingNukeLaunches() {
+      if (!this.hasPendingNukeLaunches()) return false;
+      const now = Number(this.game.ticks());
+      const remaining = [];
+      let launched = false;
+      for (const pending of this._pendingNukeLaunches) {
+        if (pending.dueTick > now) {
+          remaining.push(pending);
+          continue;
+        }
+        if (!this.isValidNukeTarget(pending.targetPlayer)) continue;
+        const sent = await this.sendNuke(
+          pending.tile,
+          pending.nukeType,
+          pending.targetPlayer,
+        );
+        if (sent) {
+          launched = true;
+        } else {
+          pending.dueTick = now + 1;
+          remaining.push(pending);
+        }
+      }
+      this._pendingNukeLaunches = remaining;
+      if (
+        remaining.length === 0 &&
+        state.nukeWantSlots?.pendingLaunches === true
+      ) {
+        state.nukeWantSlots = null;
+      }
+      return launched;
     }
 
     /**
@@ -1252,10 +1329,33 @@
     async fireSamSalvo(plan, nukeTarget, atomCost) {
       const salvo = this.getSamSalvo(plan);
       if (this.player.gold() < atomCost * BigInt(salvo.bombsToFire)) return false;
-      for (let i = 0; i < salvo.bombsToFire; i++) {
-        await this.sendNuke(plan.targetTile, UNIT.AtomBomb, nukeTarget, salvo.waits[i]);
+      if (state.nukeWantSlots === null || state.nukeWantSlots === undefined) {
+        const unblockedSiloIds = (plan.siloEntries || [])
+          .filter((entry) => !entry.interceptable)
+          .map((entry) => this.getSiloIdOrNull(entry))
+          .filter((id) => id !== null);
+        state.nukeWantSlots = {
+          need: Number(plan.totalBombs ?? salvo.bombsToFire),
+          at: this.game.ticks(),
+          targetTile: plan.targetTile,
+          unblockedSiloIds,
+          pendingLaunches: false,
+        };
       }
-      state.nukeWantSlots = null;
+      for (let i = 0; i < salvo.bombsToFire; i++) {
+        const sent = await this.sendNuke(
+          plan.targetTile,
+          UNIT.AtomBomb,
+          nukeTarget,
+          salvo.waits[i],
+        );
+        if (!sent) return false;
+      }
+      if (this.hasPendingNukeLaunches()) {
+        state.nukeWantSlots.pendingLaunches = true;
+      } else {
+        state.nukeWantSlots = null;
+      }
       return true;
     }
 

@@ -64,9 +64,34 @@ assert.equal(
   "when every safe Factory candidate duplicates existing paid routes, decline Factory construction so City/Port can be considered",
 );
 
-behavior.player = { units: (type) => (type === UNIT.Factory ? [] : []) };
+behavior.player = { units: () => [] };
 assert.equal(
   behavior.onlyDuplicateFactoryTradeCandidates([{ t: 20 }]),
   false,
   "the first Factory remains legal when no Factory exists yet",
+);
+
+const selfCity = { id: () => 1, tile: () => 40, hasTrainStation: () => false };
+const alliedPort = { id: () => 2, tile: () => 80, hasTrainStation: () => false };
+const hostileCity = { id: () => 3, tile: () => 120, hasTrainStation: () => false };
+const alliedPlayer = { units: () => [alliedPort] };
+const hostilePlayer = { units: () => [hostileCity] };
+behavior.player = {
+  units: () => [selfCity],
+  nearby: () => [alliedPlayer, hostilePlayer],
+  isAlliedWith: (player) => player === alliedPlayer,
+  isOnSameTeam: () => false,
+};
+behavior.isTradeableStationNeighbor = (player) => player === alliedPlayer;
+behavior.trainGoldBase = (relation) => ({ self: 10_000, ally: 35_000 })[relation] ?? 25_000;
+assert.deepEqual(
+  Array.from(behavior.collectFactoryTradeDestinations(), ({ tile, weight }) => ({
+    tile: Number(tile),
+    weight: Number(weight),
+  })),
+  [
+    { tile: 40, weight: 10_000 / 35_000 },
+    { tile: 80, weight: 1 },
+  ],
+  "Factory scoring includes unstationed own and allied City/Port destinations that the new Factory will promote",
 );

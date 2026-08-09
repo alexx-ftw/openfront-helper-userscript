@@ -15,8 +15,9 @@
   // and the client sim can run slower than real time (network jitter / early game),
   // so a wall-clock 5s can elapse before 50 game ticks do — releasing an emoji the
   // game then silently rejects while we've already dequeued it (lost forever). A
-  // few ticks of margin ("du di") over the game's own values guarantees acceptance.
-  const SIGNAL_COOLDOWN_TICKS = { emoji: 55, target: 160 };
+  // Keep a small local safety margin, but read the authoritative base cooldown
+  // from Config so a game balance change does not silently drop intents.
+  const signalCooldownMarginTicks = { emoji: 5, target: 10 };
 
   const _signalQueue = [];
   const _signalLastSentByKey = new Map(); // `${kind}:${recipientKey}` -> game tick
@@ -57,10 +58,21 @@
     }
   }
 
+  function _signalCooldownTicks(kind) {
+    const fallback = kind === "emoji" ? 50 : 150;
+    const method = kind === "emoji" ? "emojiMessageCooldown" : "targetCooldown";
+    const game = getOpenFrontGameContext()?.game;
+    const configured =
+      typeof ofhGameConfigNumber === "function"
+        ? ofhGameConfigNumber(game, method, fallback)
+        : fallback;
+    return configured + (signalCooldownMarginTicks[kind] || 0);
+  }
+
   function _signalItemBlocked(item, constructors, currentTick) {
     if (!_signalCtorFor(item.kind, constructors)) return true;
     const key = item.kind + ":" + _signalRecipientKey(item.recipient);
-    const cooldownTicks = SIGNAL_COOLDOWN_TICKS[item.kind] || 0;
+    const cooldownTicks = _signalCooldownTicks(item.kind);
     const lastTick = _signalLastSentByKey.get(key);
     if (lastTick === undefined) return false;
     const elapsedTicks = currentTick - lastTick;

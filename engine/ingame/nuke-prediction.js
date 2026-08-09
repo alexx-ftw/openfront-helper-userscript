@@ -102,9 +102,10 @@
   function getNukePredictionRelation(game, unit) {
     const owner = unit?.owner?.();
     const relation = getPlayerRelationToMyPlayer(game, owner);
-    return relation === "enemy" || relation === "ally" || relation === "self"
-      ? relation
-      : null;
+    if (relation === "self" || relation === "enemy") return relation;
+    if (relation !== "ally") return null;
+
+    return playersArePermanentTeammates(getPlayerView(game), owner) ? "ally" : "enemy";
   }
 
   function getNukePredictionColors(relation) {
@@ -149,15 +150,20 @@
   }
 
   function getNukeLandingRadius(game, unit) {
-    {
-      const magnitude = game?.config?.().nukeMagnitudes?.(unit.type());
-      const radius = Number(magnitude?.outer ?? magnitude?.inner);
-      if (Number.isFinite(radius) && radius > 0) {
-        return radius;
-      }
+    const type = unit?.type?.();
+    let fallback;
+    if (type === "Hydrogen Bomb") {
+      fallback = { inner: 80, outer: 100 };
+    } else if (type === "MIRV Warhead") {
+      fallback = { inner: 12, outer: 18 };
+    } else {
+      fallback = { inner: 12, outer: 30 };
     }
-
-    return unit?.type?.() === "Hydrogen Bomb" ? 160 : 70;
+    const magnitude =
+      typeof ofhGameNukeMagnitude === "function"
+        ? ofhGameNukeMagnitude(game, type, fallback)
+        : fallback;
+    return Number(magnitude?.outer ?? magnitude?.inner) || fallback.outer;
   }
 
   function getNukeLandingScreenRadius(transform, screenPos, worldRadius) {
@@ -221,7 +227,13 @@
   function computeNukeRemainingTicks(game, fromTile, toTile) {
     {
       if (!canComputeNukeRemainingTicks(fromTile, toTile)) return null;
-      const speed = game.config?.().defaultNukeSpeed?.() ?? 8;
+      let speed;
+      if (typeof ofhGameNukeSpeed === "function") {
+        speed = ofhGameNukeSpeed(game, "Atom Bomb", 10);
+      } else {
+        const configured = Number(game?.config?.().defaultNukeSpeed?.());
+        speed = Number.isFinite(configured) && configured > 0 ? configured : 10;
+      }
       const pf = UniversalPathFinding.Parabola(game, {
         increment: speed,
         distanceBasedHeight: true,
@@ -242,7 +254,7 @@
         const by = game.y(path[i - 1]);
         arc += Math.hypot(ax - bx, ay - by);
       }
-      return Math.floor(arc / (speed > 0 ? speed : 8)) + 1;
+      return Math.floor(arc / (speed > 0 ? speed : 10)) + 1;
     }
   }
 
@@ -261,7 +273,11 @@
     }
     if (flight === undefined) return null;
     const etaTicks = flight.remainTicks - (nowTicks - flight.firstTick);
-    return Math.round(Math.max(0, etaTicks / 10) * 10) / 10;
+    const msPerTick =
+      typeof ofhGameMsPerTick === "function"
+        ? ofhGameMsPerTick(game, 100)
+        : Number(game?.config?.().msPerTick?.()) || 100;
+    return Math.round(Math.max(0, (etaTicks * msPerTick) / 1000) * 10) / 10;
   }
 
   function mergeNukeScanLanding(existing, relation, worldRadius, eta) {

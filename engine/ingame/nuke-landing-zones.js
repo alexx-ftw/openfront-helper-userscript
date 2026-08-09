@@ -118,15 +118,17 @@
   }
 
   function getNukeLandingRadius(game, unit) {
-    {
-      const magnitude = game?.config?.().nukeMagnitudes?.(unit.type());
-      const radius = Number(magnitude?.outer ?? magnitude?.inner);
-      if (Number.isFinite(radius) && radius > 0) {
-        return radius;
-      }
+    const type = unit?.type?.();
+    let fallback;
+    if (type === "Hydrogen Bomb") {
+      fallback = { inner: 80, outer: 100 };
+    } else if (type === "MIRV Warhead") {
+      fallback = { inner: 12, outer: 18 };
+    } else {
+      fallback = { inner: 12, outer: 30 };
     }
-
-    return unit?.type?.() === "Hydrogen Bomb" ? 160 : 70;
+    const magnitude = game?.config?.().nukeMagnitudes?.(type) ?? fallback;
+    return Number(magnitude?.outer ?? magnitude?.inner) || fallback.outer;
   }
 
   function getNukeLandingScreenRadius(transform, screenPos, worldRadius) {

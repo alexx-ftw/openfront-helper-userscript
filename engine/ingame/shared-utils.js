@@ -72,6 +72,11 @@ function getPlayerTeamName(player) {
   }
 }
 
+function playersArePermanentTeammates(first, second) {
+  const firstTeam = getPlayerTeamName(first);
+  return firstTeam !== null && firstTeam === getPlayerTeamName(second);
+}
+
 // Color resolution for teams and individual players.
 //
 // v0.32 moved the game's theme out of core into a client-side ThemeProvider that

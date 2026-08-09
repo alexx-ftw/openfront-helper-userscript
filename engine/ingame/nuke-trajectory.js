@@ -34,11 +34,13 @@
       ) {
         return null;
       }
-      const speed =
-        (game.config &&
-          game.config().defaultNukeSpeed &&
-          game.config().defaultNukeSpeed()) ||
-        8;
+      let speed;
+      if (typeof ofhGameNukeSpeed === "function") {
+        speed = ofhGameNukeSpeed(game, "Atom Bomb", 10);
+      } else {
+        const configured = Number(game?.config?.().defaultNukeSpeed?.());
+        speed = Number.isFinite(configured) && configured > 0 ? configured : 10;
+      }
       const pf = UniversalPathFinding.Parabola(game, {
         increment: speed,
         distanceBasedHeight: true,

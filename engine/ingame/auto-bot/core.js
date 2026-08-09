@@ -13,7 +13,7 @@
     MissileSilo: "Missile Silo",
     DefensePost: "Defense Post",
     TransportShip: "Transport",
-    TradeShip: "Trade",
+    TradeShip: "Trade Ship",
     Warship: "Warship",
     AtomBomb: "Atom Bomb",
     HydrogenBomb: "Hydrogen Bomb",

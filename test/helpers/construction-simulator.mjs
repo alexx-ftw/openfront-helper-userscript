@@ -1,3 +1,10 @@
+// Config.trainGold("self", citiesVisited): the first ten paying stops have
+// no distance penalty, then each additional stop costs 5k down to 5k.
+const defaultGoldForTradeStop = (stopIndex, relation = "self") => {
+  const baseGold = { self: 10_000, team: 25_000, other: 25_000, ally: 35_000 }[relation] ?? 25_000;
+  return Math.max(5_000, baseGold - Math.max(0, stopIndex - 9) * 5_000);
+};
+
 export function createConstructionSimulator({
   width,
   height,
@@ -44,13 +51,7 @@ export function simulateRailTransitRevenue({
   destinationIds,
   candidateId,
   stationRelations = new Map(),
-  // Config.trainGold("self", citiesVisited): the first ten paying stops have
-  // no distance penalty, then each additional stop costs 5k down to 5k.
-  goldForTradeStop = (stopIndex, relation = "self") => {
-    const baseGold =
-      { self: 10_000, team: 25_000, other: 25_000, ally: 35_000 }[relation] ?? 25_000;
-    return Math.max(5_000, baseGold - Math.max(0, stopIndex - 9) * 5_000);
-  },
+  goldForTradeStop = defaultGoldForTradeStop,
 }) {
   const types = new Map(stationTypes);
   if (candidateId !== null && candidateId !== undefined) types.set(candidateId, "City");
@@ -60,31 +61,96 @@ export function simulateRailTransitRevenue({
     for (const destination of destinationIds) {
       const path = shortestStationPath(adjacency, factory, destination);
       if (path === null) continue;
-      totalRevenue += collectRouteTransitRevenue(
-        path,
-        types,
-        goldForTradeStop,
+      totalRevenue += collectRouteTransitRevenue(path, types, goldForTradeStop, {
         stationRelations,
         revenueByStation,
-      );
+      });
     }
   }
   return { totalRevenue, revenueByStation };
+}
+
+// Deterministic expected-value model of the live TrainStationExecution loop.
+// Each Factory independently attempts to spawn a train, observes the ten-tick
+// post-spawn cooldown, and chooses uniformly among tradeable Cities and Ports
+// in its connected rail cluster.
+export function expectedRailIncomePerTick({
+  adjacency,
+  stationTypes,
+  stationOwners = new Map(),
+  factoryLevels = new Map(),
+  candidate = null,
+  goldForTradeStop = defaultGoldForTradeStop,
+}) {
+  const types = new Map(stationTypes);
+  const owners = new Map(stationOwners);
+  const levels = new Map(factoryLevels);
+  if (candidate) {
+    types.set(candidate.id, candidate.type);
+    owners.set(candidate.id, candidate.owner ?? "self");
+    if (candidate.type === "Factory") levels.set(candidate.id, candidate.level ?? 1);
+  }
+
+  const revenueByStation = new Map();
+  let totalIncomePerTick = 0;
+  let totalSpawnProbability = 0;
+  const factoryCount = Array.from(types.values()).filter((type) => type === "Factory").length;
+  const spawnRate = (factoryCount + 10) * 15;
+
+  for (const [factory, level] of levels) {
+    if (types.get(factory) !== "Factory" || level <= 0) continue;
+    const reachable = reachableStations(adjacency, factory);
+    const destinations = Array.from(reachable).filter((station) => {
+      const type = types.get(station);
+      return station !== factory && (type === "City" || type === "Port");
+    });
+    if (destinations.length === 0) continue;
+
+    const attemptProbability = 1 - (1 - 1 / spawnRate) ** level;
+    const spawnProbability = attemptProbability / (1 + 9 * attemptProbability);
+    totalSpawnProbability += spawnProbability;
+    const destinationProbability = spawnProbability / destinations.length;
+    for (const destination of destinations) {
+      const path = shortestStationPath(adjacency, factory, destination);
+      if (path === null) continue;
+      const routeRevenue = collectRouteTransitRevenue(path, types, goldForTradeStop, {
+        stationRelations: owners,
+        revenueByStation,
+        routeProbability: destinationProbability,
+      });
+      totalIncomePerTick += routeRevenue;
+    }
+  }
+  return { totalIncomePerTick, totalSpawnProbability, revenueByStation };
+}
+
+function reachableStations(adjacency, source) {
+  const reachable = new Set([source]);
+  const queue = [source];
+  for (let index = 0; index < queue.length; index += 1) {
+    for (const neighbor of adjacency.get(queue[index]) ?? []) {
+      if (reachable.has(neighbor)) continue;
+      reachable.add(neighbor);
+      queue.push(neighbor);
+    }
+  }
+  return reachable;
 }
 
 function collectRouteTransitRevenue(
   path,
   stationTypes,
   goldForTradeStop,
-  stationRelations,
-  revenueByStation,
+  { stationRelations, revenueByStation, routeProbability = 1 },
 ) {
   let totalRevenue = 0;
   let tradeStopsVisited = 0;
   for (const station of path.slice(1)) {
     const type = stationTypes.get(station);
     if (type !== "City" && type !== "Port") continue;
-    const revenue = goldForTradeStop(tradeStopsVisited, stationRelations.get(station) ?? "self");
+    const revenue =
+      goldForTradeStop(tradeStopsVisited, stationRelations.get(station) ?? "self") *
+      routeProbability;
     totalRevenue += revenue;
     revenueByStation.set(station, (revenueByStation.get(station) ?? 0) + revenue);
     tradeStopsVisited += 1;

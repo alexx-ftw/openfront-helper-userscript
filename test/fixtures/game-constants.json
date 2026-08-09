@@ -475,9 +475,9 @@
     "name": "TRIBE_CAPTURE_TROOP_MULTIPLIER",
     "declarationKind": "const",
     "initializerKind": "FirstLiteralToken",
-    "initializerHash": "b8736b999909049671d0ea075a42b308a5fbe2df1854899123fe09eb0ee9de61",
-    "initializerLength": 3,
-    "initializerPreview": "2.5"
+    "initializerHash": "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
+    "initializerLength": 1,
+    "initializerPreview": "4"
   },
   {
     "id": "engine/ingame/auto-bot/attackBehavior.js:PLAYER_CAPTURE_TROOP_MULTIPLIER#1",
@@ -625,9 +625,9 @@
     "name": "UNIT",
     "declarationKind": "const",
     "initializerKind": "ObjectLiteralExpression",
-    "initializerHash": "f1ddf7d39da14b2743d4f80209811b1ba9f0e8d3016f8cf2e1184d3e8ca11342",
-    "initializerLength": 355,
-    "initializerPreview": "{\n    City: \"City\",\n    Port: \"Port\",\n    Factory: \"Factory\",\n    SAMLauncher: \"SAM Launcher\",\n    MissileSilo: \"Missile Silo\",\n    DefensePost: \"Defense Post\",\n    TransportShip: \"Transport\",\n    TradeShip: \"Trade\",\n    Warship: \"Warshi..."
+    "initializerHash": "6667353170e481a90ea727547027d512cfb1b3eb31acdfedec1c3b2b2ef6103c",
+    "initializerLength": 360,
+    "initializerPreview": "{\n    City: \"City\",\n    Port: \"Port\",\n    Factory: \"Factory\",\n    SAMLauncher: \"SAM Launcher\",\n    MissileSilo: \"Missile Silo\",\n    DefensePost: \"Defense Post\",\n    TransportShip: \"Transport\",\n    TradeShip: \"Trade Ship\",\n    Warship: \"W..."
   },
   {
     "id": "engine/ingame/auto-bot/core.js:PANEL_ID#1",
@@ -2040,6 +2040,16 @@
     "initializerPreview": "5"
   },
   {
+    "id": "engine/ingame/auto-bot/structureBehavior.js:LEGENDARY_MAX_NUKE_FLIGHT_TICKS#1",
+    "file": "engine/ingame/auto-bot/structureBehavior.js",
+    "name": "LEGENDARY_MAX_NUKE_FLIGHT_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "3bb78535cc9555ff19fe3556aaa41c78a0a45c64d49ba2bc564507648a8e77a1",
+    "initializerLength": 6,
+    "initializerPreview": "100000"
+  },
+  {
     "id": "engine/ingame/auto-bot/structureBehavior.js:LEGENDARY_MAX_FORECAST_MISSILES#1",
     "file": "engine/ingame/auto-bot/structureBehavior.js",
     "name": "LEGENDARY_MAX_FORECAST_MISSILES",
@@ -2100,6 +2110,16 @@
     "initializerPreview": "10"
   },
   {
+    "id": "engine/ingame/auto-bot/structureBehavior.js:ECONOMIC_PLACEMENT_PROBE_RETRY_TICKS#1",
+    "file": "engine/ingame/auto-bot/structureBehavior.js",
+    "name": "ECONOMIC_PLACEMENT_PROBE_RETRY_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "Identifier",
+    "initializerHash": "bcadd0814447ab5c95baa8210e0ead501536540739a9d4ce2e2f2f80a6a8b25e",
+    "initializerLength": 31,
+    "initializerPreview": "DEFENSE_POST_FAILED_RETRY_TICKS"
+  },
+  {
     "id": "engine/ingame/auto-bot/structureBehavior.js:STRUCTURES_TYPES#1",
     "file": "engine/ingame/auto-bot/structureBehavior.js",
     "name": "STRUCTURES_TYPES",
@@ -2108,6 +2128,16 @@
     "initializerHash": "f6bfdec3a1c5e432bc9ad59ef4a943deff3a2885bd16c563a772bce8d8c0c2d3",
     "initializerLength": 117,
     "initializerPreview": "[\n    UNIT.City,\n    UNIT.DefensePost,\n    UNIT.SAMLauncher,\n    UNIT.MissileSilo,\n    UNIT.Port,\n    UNIT.Factory,\n]"
+  },
+  {
+    "id": "engine/ingame/auto-bot/structureBehavior.js:ECONOMIC_PLACEMENT_SNAPSHOT_IDS#1",
+    "file": "engine/ingame/auto-bot/structureBehavior.js",
+    "name": "ECONOMIC_PLACEMENT_SNAPSHOT_IDS",
+    "declarationKind": "const",
+    "initializerKind": "NewExpression",
+    "initializerHash": "55b98b5f96686f116755c421a6b1e61df60375c426fc98eb3cdcb22b653d5feb",
+    "initializerLength": 13,
+    "initializerPreview": "new WeakMap()"
   },
   {
     "id": "engine/ingame/auto-bot/warshipBehavior.js:WARSHIP_BUILD_INTENT_GRACE_TICKS#1",
@@ -4388,16 +4418,6 @@
     "initializerHash": "26d228663f13a88592a12d16cf9587caab0388b262d6d9f126ed62f9333aca94",
     "initializerLength": 3,
     "initializerPreview": "400"
-  },
-  {
-    "id": "engine/ingame/signal-scheduler.js:SIGNAL_COOLDOWN_TICKS#1",
-    "file": "engine/ingame/signal-scheduler.js",
-    "name": "SIGNAL_COOLDOWN_TICKS",
-    "declarationKind": "const",
-    "initializerKind": "ObjectLiteralExpression",
-    "initializerHash": "ab443b7e8155dd74abd290fd2404bbe692fcaee374e22165fe1332d3abddb935",
-    "initializerLength": 26,
-    "initializerPreview": "{ emoji: 55, target: 160 }"
   },
   {
     "id": "engine/ingame/silo-sam-tracker.js:SILO_PANEL_ID#1",

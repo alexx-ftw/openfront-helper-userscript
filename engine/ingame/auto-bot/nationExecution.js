@@ -208,7 +208,8 @@
       // Start with the best presently legal tile once the roster is visible.
       // Spawn intents remain movable during this phase, so each scheduled
       // re-rank can pull us into the team hull/corridor as teammates commit
-      // their anchors; waiting for every human would lose too much opening.
+      // their robust team objective as teammates commit their anchors; waiting
+      // for every human would lose too much opening.
       return false;
     }
 
@@ -416,6 +417,18 @@
       return this.tickIsCurrent(tickGeneration);
     }
 
+    async processPendingNukeSalvo(profile, tickGeneration) {
+      if (
+        !this.feat("nuke") ||
+        this.nukeBehavior.hasPendingNukeLaunches?.() !== true
+      ) {
+        return true;
+      }
+      await autoBotProfileAsyncPhase(profile, "nuke-salvo", () =>
+        this.nukeBehavior.processPendingNukeLaunches());
+      return this.tickIsCurrent(tickGeneration);
+    }
+
     async runDecisionChain(profile, tickGeneration) {
       this.status = tr("Thinking…");
       {
@@ -452,6 +465,13 @@
       this.attackBehavior.prepareEarlyGameMaritimeIndexSlice?.(profile);
     }
 
+    prepareInitializedTickState(me, profile) {
+      if (!this.behaviorsInitialized || !me?.isAlive()) return;
+      this.structureBehavior.observeHostileMissileLaunch?.();
+      this.enforceSameClanNukeTerrainSafety();
+      this.prepareEarlyGameMaritimeState(profile);
+    }
+
     async tick(ticks, profile, tickGeneration) {
       if (!this.tickIsCurrent(tickGeneration)) return;
       this.player = this.mg.myPlayer();
@@ -459,15 +479,13 @@
       const me = this.player;
       if (this.isDuplicateGameTick(ticks)) return;
       this.lastProcessedGameTick = ticks;
-      if (this.behaviorsInitialized && me?.isAlive()) {
-        this.structureBehavior.observeHostileMissileLaunch?.();
-        this.prepareEarlyGameMaritimeState(profile);
-      }
+      this.prepareInitializedTickState(me, profile);
       if (!(await this.runNavalTickPhases(me, profile, tickGeneration))) return;
       if (me === null || autoBotProfileSyncPhase(profile, "spawn-gate", () =>
         this.handleSpawnTick(ticks, profile))) return;
       if (this.handleEliminatedPlayer(me)) return;
       if (await this.initializeTick(ticks, profile, tickGeneration)) return;
+      if (!(await this.processPendingNukeSalvo(profile, tickGeneration))) return;
       if (await this.handleIncomingDefense(ticks, profile, tickGeneration)) return;
       if (await this.handleOpeningExpansion(ticks, profile, tickGeneration)) return;
       const crossings = this.getTickCrossings(ticks);
@@ -476,6 +494,10 @@
         return;
       }
       await this.runDecisionChain(profile, tickGeneration);
+    }
+
+    enforceSameClanNukeTerrainSafety() {
+      this.attackBehavior.enforceSameClanNukeTerrainSafety?.();
     }
 
     refreshBehaviorPlayerReferences() {
@@ -546,10 +568,6 @@
     // heatmap topSpots and its bounded fallback scorer.
     currentSpawnTopKey() {
       if (!state.settings.smartSpawn) return null;
-      const teamCentroidTile = this.getTeamSpawnCentroidTile(this.getSpawnConstraints());
-      if (teamCentroidTile != null) {
-        return `${this.mg.x(teamCentroidTile)},${this.mg.y(teamCentroidTile)}`;
-      }
       let ts = null;
       {
         // The live entry point is non-blocking: exact map-resolution ranking is

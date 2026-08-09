@@ -1054,9 +1054,9 @@ const mirvContext = {
   mirvDemands: [{ targetTile: 7, deadlineTick: 10 }],
 };
 let mirvCoverageChecks = 0;
-mirvBehavior.activeMirvDemandCovered = () => {
+mirvBehavior.activeMirvCoveredDemandKeys = (demands) => {
   mirvCoverageChecks++;
-  return true;
+  return new Set(demands);
 };
 assert.equal(mirvBehavior.uncoveredActiveMirvDemands(mirvContext).length, 0);
 assert.equal(mirvBehavior.uncoveredActiveMirvDemands(mirvContext).length, 0);

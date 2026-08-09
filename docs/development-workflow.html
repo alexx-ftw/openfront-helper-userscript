@@ -90,5 +90,14 @@
       tools exclude the upstream source; compatibility is enforced by
       <code>test/openfront-engine-compat.mjs</code> instead.
     </p>
+
+    <p>
+      Game-dependent helper rules have a separate parity contract. Run
+      <code>npm run check:runtime-parity</code> after changing nuke costs, blast radii or speeds,
+      construction durations, cooldowns, unit types, or map ids. The check reads the pinned
+      OpenFront configuration and map manifest, verifies runtime reads and reviewed fallbacks, and
+      keeps local helper tuning (for example SAM policy ratios) outside the official game constant
+      contract.
+    </p>
   </body>
 </html>

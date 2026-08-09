@@ -133,7 +133,7 @@
     return ADV_ECO_STATES[ADV_ECO_STATES.length - 1];
   }
 
-  function advTimeToPush(currentTroops, maxTroops) {
+  function advTimeToPush(game, currentTroops, maxTroops) {
     const target = 0.45 * maxTroops;
     if (currentTroops >= target) return null;
     let troops = currentTroops;
@@ -144,7 +144,11 @@
       troops += growth;
       ticks += 1;
     }
-    return troops >= target ? Math.round(ticks / 10) : null;
+    const msPerTick =
+      typeof ofhGameMsPerTick === "function"
+        ? ofhGameMsPerTick(game, 100)
+        : Number(game?.config?.().msPerTick?.()) || 100;
+    return troops >= target ? Math.round((ticks * msPerTick) / 1000) : null;
   }
 
   // ── Self troop-economy (Tactical evaluateTroopEconomy, self-only slice) ──
@@ -181,7 +185,7 @@
     );
 
     // ETA to a 0.45*max push window by summing growthRate per tick (10 ticks/s).
-    const timeToPushSec = advTimeToPush(currentTroops, maxTroops);
+    const timeToPushSec = advTimeToPush(game, currentTroops, maxTroops);
 
     return {
       currentTroops,
@@ -221,9 +225,17 @@
     );
     const directAttackRatio = directAttackTroops / myTroops;
 
+    const atomCost =
+      typeof ofhGameUnitCost === "function"
+        ? ofhGameUnitCost(game, player, "Atom Bomb", ADV_ATOM_COST)
+        : ADV_ATOM_COST;
+    const hydrogenCost =
+      typeof ofhGameUnitCost === "function"
+        ? ofhGameUnitCost(game, player, "Hydrogen Bomb", ADV_HYDROGEN_COST)
+        : ADV_HYDROGEN_COST;
     let nukePotential = 0;
-    if (gold >= ADV_HYDROGEN_COST) nukePotential = 2;
-    else if (gold >= ADV_ATOM_COST) nukePotential = 1;
+    if (gold >= hydrogenCost) nukePotential = 2;
+    else if (gold >= atomCost) nukePotential = 1;
     const buildingNuke = Boolean(nukeBuilders &&
       player.smallID &&
       nukeBuilders.has(player.smallID()));

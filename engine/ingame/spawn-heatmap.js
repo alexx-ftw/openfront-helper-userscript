@@ -794,6 +794,32 @@ function isPointInsideTeamPolyhedron(x, y, polygon) {
   return true;
 }
 
+function distanceToTeamPolyhedronEdge(x, y, polygon) {
+  if (!polygon || polygon.length < 3) return 0;
+  let nearest = Infinity;
+  for (let index = 0; index < polygon.length; index += 1) {
+    const start = polygon[index];
+    const end = polygon[(index + 1) % polygon.length];
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const lengthSquared = dx * dx + dy * dy;
+    const projected = lengthSquared === 0
+      ? 0
+      : Math.max(0, Math.min(1, ((x - start.x) * dx + (y - start.y) * dy) / lengthSquared));
+    const edgeX = start.x + projected * dx;
+    const edgeY = start.y + projected * dy;
+    nearest = Math.min(nearest, Math.hypot(x - edgeX, y - edgeY));
+  }
+  return Number.isFinite(nearest) ? nearest : 0;
+}
+
+function teamPolyhedronInteriorScore(x, y, polygon, centroid) {
+  if (!polygon || !centroid) return 0;
+  const centroidDepth = distanceToTeamPolyhedronEdge(centroid.x, centroid.y, polygon);
+  if (centroidDepth <= 0) return 0;
+  return Math.max(0, Math.min(1, distanceToTeamPolyhedronEdge(x, y, polygon) / centroidDepth));
+}
+
 // Two teammates define a line rather than an area.  Treat that line as a
 // bounded corridor: it keeps the spawn between its allies without requiring a
 // directional rule or a map-specific coordinate.  The cap prevents the bot
@@ -1267,7 +1293,7 @@ function createExactSpawnRankingContext(game, index, points, options, incrementa
   const H = game.height ? game.height() : index.height;
   return {
     game, index, points, options, incremental, W, H,
-    area: getSpawnAreaForGame(game),
+    area: getSpawnAreaForGame(game, options?.me),
     minDist: exactSpawnMinimumDistance(game),
     tribeProximity: buildSpawnProximityIndex(
       points.tribeLocs, W, H,
@@ -1349,6 +1375,9 @@ function rankExactSpawnCandidate(context, args) {
   const clanScore = clanDistance === Infinity
     ? 0 : Math.max(0, 1 - clanDistance / SPAWN_HEATMAP_TEAM_ATTRACT_R);
   const team = exactTeamCandidateScores(context, x, y);
+  const teamInteriorScore = teamPolyhedronInteriorScore(
+    x, y, context.teamPolyhedron, context.teamCentroid,
+  );
   const score = clusterScore * SPAWN_W.land + plainsScore * SPAWN_W.plains +
     tribeReach.score * SPAWN_W.tribe + tribeClusterScore * SPAWN_W.tribe * 0.2 +
     tribeScore * SPAWN_W.tribe * 0.15 +
@@ -1361,7 +1390,7 @@ function rankExactSpawnCandidate(context, args) {
   const objective = evaluateExactSpawnObjective(context, {
     clusterScore, frontierCoverage, playerScore, pressureScore, edgeScore,
     teamScore: team.robust, tribeScore, nationScore, tribeReach, tribeClusterScore, freeLandScore,
-    resourceScore, clanScore,
+    resourceScore, clanScore, teamInteriorScore,
   });
   insertExactSpawnCandidate(context.best, {
     ref: tile, x, y, score, spawnGain, frontierGain, frontierValueGain, freeLandScore,
@@ -1369,6 +1398,7 @@ function rankExactSpawnCandidate(context, args) {
     tribeClusterScore,
     tribeReachRadius: tribeReach.radius, nationScore, resourceScore, clanScore,
     teamPolyhedronScore: context.teamPolyhedron ? 1 : 0, objective,
+    teamInteriorScore,
   });
 }
 
@@ -1385,6 +1415,7 @@ function evaluateExactSpawnObjective(context, values) {
     tribeClusterScore: values.tribeClusterScore,
     freeLandScore: values.freeLandScore, resourceScore: values.resourceScore,
     clanScore: values.clanScore, teamPolyhedronScore: context.teamPolyhedron ? 1 : 0,
+    teamInteriorScore: values.teamInteriorScore,
   });
 }
 
@@ -1439,7 +1470,10 @@ function computeExactSpawnTopSpotsForBot(game, me, options = null) {
   const cached = readCachedExactSpawnResult(game, index, points, incremental);
   if (cached !== undefined) return cached;
 
-  const context = createExactSpawnRankingContext(game, index, points, options, incremental);
+  const contextOptions = options ? { ...options, me } : { me };
+  const context = createExactSpawnRankingContext(
+    game, index, points, contextOptions, incremental,
+  );
 
   iterateExactSpawnCandidates(context, exactCandidateIterationOptions(context));
 

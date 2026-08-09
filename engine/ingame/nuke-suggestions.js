@@ -241,21 +241,22 @@
   }
 
   function getNukeSuggestionMagnitude(game, unitType) {
-    {
-      const magnitude = game?.config?.().nukeMagnitudes?.(unitType);
-      const inner = Number(magnitude?.inner);
-      const outer = Number(magnitude?.outer);
-      if (Number.isFinite(inner) && Number.isFinite(outer) && outer > 0) {
-        return {
-          inner: Math.max(0, inner),
-          outer,
-        };
-      }
+    let fallback;
+    if (unitType === "Hydrogen Bomb") {
+      fallback = { inner: 80, outer: 100 };
+    } else if (unitType === "MIRV Warhead") {
+      fallback = { inner: 12, outer: 18 };
+    } else {
+      fallback = { inner: 12, outer: 30 };
     }
-
-    return unitType === "Hydrogen Bomb"
-      ? { inner: 80, outer: 100 }
-      : { inner: 12, outer: 30 };
+    const magnitude =
+      typeof ofhGameNukeMagnitude === "function"
+        ? ofhGameNukeMagnitude(game, unitType, fallback)
+        : game?.config?.().nukeMagnitudes?.(unitType) ?? fallback;
+    return {
+      inner: Math.max(0, Number(magnitude?.inner) || fallback.inner),
+      outer: Number(magnitude?.outer) || fallback.outer,
+    };
   }
 
   function isNukeSuggestionTypeEnabled(game, unitType) {
@@ -265,6 +266,14 @@
   }
 
   function getNukeSuggestionUnitCost(game, player, unitType) {
+    if (typeof ofhGameUnitCost === "function") {
+      return ofhGameUnitCost(
+        game,
+        player,
+        unitType,
+        NUKE_SUGGESTION_FALLBACK_COSTS[unitType] ?? Infinity,
+      );
+    }
     const readCost = (unitInfo) => {
       const numericCost = Number(unitInfo?.(unitType)?.cost?.(game, player));
       return Number.isFinite(numericCost) && numericCost >= 0
@@ -397,7 +406,13 @@
       }
     }
 
-    return AUTO_NUKE_SAM_CONSTRUCTION_TICKS;
+    return typeof ofhGameConstructionDuration === "function"
+      ? ofhGameConstructionDuration(
+          game,
+          "SAM Launcher",
+          AUTO_NUKE_SAM_CONSTRUCTION_TICKS,
+        )
+      : AUTO_NUKE_SAM_CONSTRUCTION_TICKS;
   }
 
   function getNukeSuggestionConstructionStartTick(sam) {
@@ -1807,31 +1822,35 @@
   }
 
   function getDefaultNukeSpeed(game) {
-    {
-      const speed = Number(game?.config?.().defaultNukeSpeed?.());
-      return Number.isFinite(speed) && speed > 0 ? speed : 6;
+    if (typeof ofhGameNukeSpeed === "function") {
+      return ofhGameNukeSpeed(game, "Atom Bomb", 10);
     }
+    const speed = Number(game?.config?.().defaultNukeSpeed?.());
+    return Number.isFinite(speed) && speed > 0 ? speed : 10;
   }
 
   function getDefaultNukeTargetableRange(game) {
-    {
-      const range = Number(game?.config?.().defaultNukeTargetableRange?.());
-      return Number.isFinite(range) && range > 0 ? range : 150;
+    if (typeof ofhGameNukeTargetableRange === "function") {
+      return ofhGameNukeTargetableRange(game, 150);
     }
+    const range = Number(game?.config?.().defaultNukeTargetableRange?.());
+    return Number.isFinite(range) && range > 0 ? range : 150;
   }
 
   function getDefaultSamMissileSpeed(game) {
-    {
-      const speed = Number(game?.config?.().defaultSamMissileSpeed?.());
-      return Number.isFinite(speed) && speed > 0 ? speed : 12;
+    if (typeof ofhGameSamMissileSpeed === "function") {
+      return ofhGameSamMissileSpeed(game, 12);
     }
+    const speed = Number(game?.config?.().defaultSamMissileSpeed?.());
+    return Number.isFinite(speed) && speed > 0 ? speed : 12;
   }
 
   function getSamCooldown(game) {
-    {
-      const cooldown = Number(game?.config?.().SAMCooldown?.());
-      return Number.isFinite(cooldown) && cooldown > 0 ? cooldown : 120;
+    if (typeof ofhGameCooldownTicks === "function") {
+      return ofhGameCooldownTicks(game, "SAM Launcher", 90);
     }
+    const cooldown = Number(game?.config?.().SAMCooldown?.());
+    return Number.isFinite(cooldown) && cooldown > 0 ? cooldown : 90;
   }
 
   function getMissileAvailabilityTick(game, unit, cooldown) {
@@ -1897,18 +1916,20 @@
   }
 
   function getSamRange(game, sam, sams = null) {
-    {
-      const rangeLevel = sams ? getStackedSamLevel(sams, sam) : getUnitLevel(sam);
-      const range = Number(game?.config?.().samRange?.(rangeLevel));
-      return Number.isFinite(range) && range > 0 ? range : 70;
+    const rangeLevel = sams ? getStackedSamLevel(sams, sam) : getUnitLevel(sam);
+    if (typeof ofhGameSamRange === "function") {
+      return ofhGameSamRange(game, rangeLevel, 70);
     }
+    const range = Number(game?.config?.().samRange?.(rangeLevel));
+    return Number.isFinite(range) && range > 0 ? range : 70;
   }
 
   function getMaxSamRange(game) {
-    {
-      const range = Number(game?.config?.().maxSamRange?.());
-      return Number.isFinite(range) && range > 0 ? range : 150;
+    if (typeof ofhGameMaxSamRange === "function") {
+      return ofhGameMaxSamRange(game, 150);
     }
+    const range = Number(game?.config?.().maxSamRange?.());
+    return Number.isFinite(range) && range > 0 ? range : 150;
   }
 
   function clampNukeSuggestionValue(value, min, max) {

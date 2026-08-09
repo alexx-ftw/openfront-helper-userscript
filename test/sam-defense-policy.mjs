@@ -67,7 +67,11 @@ sandbox.globalThis = sandbox;
 const structureBehaviorSource = read("engine/ingame/auto-bot/structureBehavior.js");
 
 executeClassicScript(
-  `${read("engine/ingame/auto-bot/legendaryPlanner.js")}\n${structureBehaviorSource}\nglobalThis.__StructureBehavior = StructureBehavior;`,
+  `${read("engine/ingame/shared-utils.js")}
+${read("engine/ingame/auto-bot/legendaryPlanner.js")}
+${structureBehaviorSource}
+globalThis.__StructureBehavior = StructureBehavior;
+globalThis.__isHostileActiveMissile = isHostileActiveMissile;`,
   sandbox,
   { filename: "sam-defense-policy.vm.js" },
 );
@@ -509,6 +513,7 @@ const makeUnit = (id, level, { underConstruction = false } = {}) => ({
 
 const own = {
   smallID: () => 1,
+  team: () => "blue",
   isPlayer: () => true,
   isAlive: () => true,
   isFriendly: () => false,
@@ -545,6 +550,7 @@ const enemyC = {
 let enemyTeamSamLevel = 12;
 const enemyTeam = {
   smallID: () => 5,
+  team: () => "blue",
   isPlayer: () => true,
   isAlive: () => true,
   gold: () => 5_000_000n,
@@ -607,6 +613,35 @@ behavior.game = {
     samRange: (level) => 50 * Number(level || 1),
   }),
 };
+
+const breakableAlly = {
+  smallID: () => 10,
+  team: () => null,
+  isPlayer: () => true,
+  isAlive: () => true,
+  gold: () => 5_000_000n,
+  units: (type) => (type === UNIT.MissileSilo ? [makeUnit(1_001, 1)] : []),
+};
+const diplomaticNuclearThreatBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+diplomaticNuclearThreatBehavior.player = {
+  ...own,
+  team: () => null,
+  isFriendly: (other) => other === breakableAlly,
+  isOnSameTeam: () => false,
+};
+diplomaticNuclearThreatBehavior.game = {
+  players: () => [diplomaticNuclearThreatBehavior.player, breakableAlly],
+};
+assert.deepEqual(
+  Array.from(diplomaticNuclearThreatBehavior.legendaryNuclearHostilePlayers()),
+  [breakableAlly],
+  "a breakable diplomatic ally remains hostile to Legendary nuclear planning",
+);
+assert.equal(
+  diplomaticNuclearThreatBehavior.hasPlacedSiloOnMap(),
+  true,
+  "a breakable diplomatic ally's Silo remains a nuclear-defense trigger",
+);
 
 const initialSiloBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 let initialSiloSpawnType = null;
@@ -1003,6 +1038,7 @@ hostileSiloMaximumPriorityBehavior.game = {
   config: () => ({ isUnitDisabled: () => false }),
 };
 hostileSiloMaximumPriorityBehavior.hasPlacedSiloOnMap = () => true;
+hostileSiloMaximumPriorityBehavior.hasBuiltHostileSiloThreat = () => true;
 hostileSiloMaximumPriorityBehavior.shouldBuildSiloTriggeredSam = () => true;
 hostileSiloMaximumPriorityBehavior.shouldReserveHostileSiloSamBudget = () => true;
 let maximumPrioritySamResult = false;
@@ -1120,6 +1156,23 @@ assert.equal(
   await poorPreemptiveHostileGoldBehavior.handleHostileSiloSamMaximumPriority(),
   null,
   "an unaffordable preemptive SAM forecast does not starve an opening economy before a Silo exists",
+);
+
+const pendingSiloPriorityBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+pendingSiloPriorityBehavior.game = {
+  config: () => ({ isUnitDisabled: () => false }),
+};
+pendingSiloPriorityBehavior.hasPlacedSiloOnMap = () => true;
+pendingSiloPriorityBehavior.hasBuiltHostileSiloThreat = () => false;
+pendingSiloPriorityBehavior.shouldBuildHostileSiloSam = () => false;
+pendingSiloPriorityBehavior.shouldBuildSiloTriggeredSam = () => true;
+pendingSiloPriorityBehavior.maybeSpawnHostileSiloSam = async () => false;
+pendingSiloPriorityBehavior.hydrogenSamProtectionPlan = () => null;
+pendingSiloPriorityBehavior.shouldReserveHostileSiloSamBudget = () => true;
+assert.equal(
+  await pendingSiloPriorityBehavior.handleHostileSiloSamMaximumPriority(),
+  null,
+  "an enemy Silo under construction permits anticipatory SAM attempts without hard-reserving the whole economy",
 );
 hostileSiloMaximumPriorityBehavior.shouldBuildSiloTriggeredSam = () => false;
 hostileSiloMaximumPriorityBehavior.hydrogenSamProtectionPlan = () => ({
@@ -1280,25 +1333,25 @@ assert.equal(
 behavior.game.players = () => [own, enemyTeam];
 assert.equal(
   behavior.hasPlacedSiloOnMap(),
-  true,
-  "The first allied Silo also immediately activates our SAM priority",
+  false,
+  "A permanent teammate's Silo does not activate our SAM priority",
 );
 assert.equal(
   behavior.shouldBuildSiloTriggeredSam(),
-  true,
-  "An allied Silo makes an otherwise SAM-less bot request its first interceptor immediately",
+  false,
+  "A permanent teammate's Silo does not request an unnecessary interceptor",
 );
 const originalEnemyTeamUnitsForExternalSilo = enemyTeam.units;
 enemyTeam.units = (type) => (type === UNIT.MissileSilo ? [makeUnit(503, 2)] : []);
 assert.equal(
   behavior.externalSiloLevelSumTarget(),
-  2,
-  "An allied level-2 Silo contributes its real capacity to our SAM target",
+  0,
+  "A permanent teammate's level-2 Silo contributes no hostile SAM target capacity",
 );
 assert.equal(
   behavior.hasBuiltExternalSiloThreat(),
-  true,
-  "A completed allied Silo permits the mandatory defensive upgrade path",
+  false,
+  "A completed permanent-teammate Silo does not permit the hostile upgrade path",
 );
 enemyTeam.units = originalEnemyTeamUnitsForExternalSilo;
 behavior.game.players = () => [own, enemySingleLevelOneSilo];
@@ -1522,11 +1575,18 @@ own.isFriendly = (other) => other === enemySilos;
 enemySilos.gold = () => 2_000_000n;
 assert.equal(
   behavior.hasHostileReachedSiloGoldThreshold(),
-  false,
-  "A friendly player with 2M gold does not open the hostile silo-gold gate",
+  true,
+  "A breakable diplomatic ally with 2M gold remains a nuclear Silo threat",
 );
 own.isFriendly = originalOwnIsFriendly;
 enemySilos.gold = originalEnemySilosGold;
+behavior.game.players = () => [own, enemyTeam];
+assert.equal(
+  behavior.hasHostileReachedSiloGoldThreshold(),
+  false,
+  "A permanent teammate's gold does not open the hostile Silo gate",
+);
+behavior.game.players = originalPlayersForSiloGoldThreshold;
 const originalShouldBuildStructure = behavior.shouldBuildStructure;
 const originalMaybeSpawnStructure = behavior.maybeSpawnStructure;
 const economicAttemptOrder = [];
@@ -2493,8 +2553,27 @@ const missileImpactProbe = Object.create(sandbox.__StructureBehavior.prototype);
 missileImpactProbe.player = {
   smallID: () => 1,
   isFriendly: (owner) => owner === alliedMissileOwner,
-  isOnSameTeam: (owner) => owner === alliedMissileOwner,
+  isOnSameTeam: () => false,
 };
+assert.equal(
+  sandbox.__isHostileActiveMissile(
+    missileImpactProbe.player,
+    { owner: () => alliedMissileOwner, isActive: () => true },
+    1,
+  ),
+  true,
+  "a diplomatic ally's active missile remains a hostile defense threat",
+);
+const teamMissileOwner = { smallID: () => 4, team: () => "blue" };
+assert.equal(
+  sandbox.__isHostileActiveMissile(
+    { smallID: () => 1, team: () => "blue" },
+    { owner: () => teamMissileOwner, isActive: () => true },
+    1,
+  ),
+  false,
+  "a permanent teammate's active missile is not a hostile defense threat",
+);
 missileImpactProbe.game = {
   ticks: () => impactTick,
   units: () => [hostileAtom],
@@ -2561,8 +2640,8 @@ assert.equal(
 );
 assert.equal(
   missileImpactProbe.isDangerousStructureTile(110, UNIT.Factory),
-  false,
-  "A structure exactly on the outer radius survives the engine's strict deletion boundary",
+  true,
+  "A structure exactly on the inclusive outer blast radius is unsafe like NukeExecution",
 );
 missileImpactOwner = missileOwner;
 impactProbeCalls = 0;
@@ -2624,6 +2703,7 @@ let hydrogenProtectionGold = 5_000_000n;
 let hydrogenThreatPlayers = [enemyTwoLevelOneSilos];
 hydrogenProtectionBehavior.player = {
   smallID: () => 1,
+  team: () => "blue",
   gold: () => hydrogenProtectionGold,
   borderTiles: () => new Set([0, 10]),
   units: (type) => {
@@ -2641,7 +2721,7 @@ hydrogenProtectionBehavior.game = {
     samRange: (level) => level * 6,
   }),
 };
-hydrogenProtectionBehavior.liveHostilePlayers = () => [enemyTwoLevelOneSilos];
+hydrogenProtectionBehavior.liveNuclearHostilePlayers = () => [enemyTwoLevelOneSilos];
 hydrogenProtectionBehavior.legendaryReserveGold = () => 0n;
 hydrogenProtectionBehavior.cost = () => 1n;
 hydrogenProtectionBehavior.buildableForUnits = async () => [
@@ -2655,21 +2735,21 @@ assert.equal(
 const originalEnemyTeamUnitsForHydrogenPlan = enemyTeam.units;
 enemyTeam.units = (type) => (type === UNIT.MissileSilo ? [makeUnit(504, 2)] : []);
 hydrogenThreatPlayers = [enemyTeam];
-hydrogenProtectionBehavior.liveHostilePlayers = () => [];
+hydrogenProtectionBehavior.liveNuclearHostilePlayers = () => [];
 hydrogenProtectionBehavior._hydrogenSamProtectionTick = null;
 assert.equal(
-  hydrogenProtectionBehavior.hydrogenSamProtectionPlan().targetLevel,
-  5,
-  "An allied level-2 Silo also forces our SAM toward level five",
+  hydrogenProtectionBehavior.hydrogenSamProtectionPlan(),
+  null,
+  "A permanent teammate's level-2 Silo does not force a hostile SAM plan",
 );
 enemyTeam.units = originalEnemyTeamUnitsForHydrogenPlan;
 sentBuilds.length = 0;
 assert.equal(
   await hydrogenProtectionBehavior.maybeUpgradeHydrogenProtectionSam(),
-  true,
-  "H-bomb coverage emits the required SAM upgrade",
+  false,
+  "Permanent-teammate Silos do not emit an unnecessary SAM upgrade",
 );
-assert.equal(sentBuilds.length, 1, "H-bomb coverage emits one SAM upgrade action");
+assert.equal(sentBuilds.length, 0, "Permanent-teammate Silos emit no SAM action");
 hydrogenProtectionGold = 1_000_000n;
 hydrogenProtectionBehavior.cost = () => 3_000_000n;
 hydrogenProtectionBehavior.buildableForUnits = async () => [
@@ -2724,7 +2804,7 @@ assert.equal(
 );
 hydrogenProtectionGold = 5_000_000n;
 hydrogenProtectionBehavior.cost = () => 1n;
-hydrogenProtectionBehavior.liveHostilePlayers = () => [enemySingleLevelOneSilo];
+hydrogenProtectionBehavior.liveNuclearHostilePlayers = () => [enemySingleLevelOneSilo];
 hydrogenThreatPlayers = [enemySingleLevelOneSilo];
 hydrogenProtectionBehavior._hydrogenSamProtectionTick = null;
 assert.equal(
@@ -2739,7 +2819,7 @@ assert.equal(
   "The H-bomb policy upgrades a level-1 SAM before the hostile player can spend 5M on a launch",
 );
 assert.equal(sentBuilds.length, 1, "The single-Silo H-bomb policy sends exactly one SAM upgrade");
-hydrogenProtectionBehavior.liveHostilePlayers = () => [enemySingleLevelTwoSilo];
+hydrogenProtectionBehavior.liveNuclearHostilePlayers = () => [enemySingleLevelTwoSilo];
 hydrogenThreatPlayers = [enemySingleLevelTwoSilo];
 hydrogenProtectionBehavior._hydrogenSamProtectionTick = null;
 assert.equal(
@@ -2748,7 +2828,7 @@ assert.equal(
   "One level-2 hostile Silo also forces the maximum SAM level",
 );
 hydrogenProtectionBehavior._hostileMissileLaunchObserved = false;
-hydrogenProtectionBehavior.liveHostilePlayers = () => [];
+hydrogenProtectionBehavior.liveNuclearHostilePlayers = () => [];
 hydrogenThreatPlayers = [enemySiloUnderConstruction];
 assert.equal(
   hydrogenProtectionBehavior.hydrogenSamProtectionPlan().targetLevel,
@@ -2782,7 +2862,7 @@ firstSiloCoverageBehavior.game = {
     samRange: (level) => level * 6,
   }),
 };
-firstSiloCoverageBehavior.liveHostilePlayers = () => [enemySingleLevelOneSilo];
+firstSiloCoverageBehavior.liveNuclearHostilePlayers = () => [enemySingleLevelOneSilo];
 firstSiloCoverageBehavior.legendaryReserveGold = () => 0n;
 assert.equal(
   firstSiloCoverageBehavior.hydrogenStructureCoveragePlan()?.needsNewSam,
@@ -2834,6 +2914,7 @@ nukeSamLiquidityBehavior.player = {
   units: (type) => (type === UNIT.SAMLauncher ? [makeUnit(1160, 1)] : []),
 };
 nukeSamLiquidityBehavior.hasPlacedSiloOnMap = () => true;
+nukeSamLiquidityBehavior.hasBuiltHostileSiloThreat = () => true;
 nukeSamLiquidityBehavior.safeConstructionCost = () => 1_500_000n;
 assert.equal(
   nukeSamLiquidityBehavior.singleSamHostileSiloReplacementReserve(),
@@ -2868,7 +2949,7 @@ nukeSamLiquidityBehavior.spendableConstructionGold = () => 1_061_290n;
 assert.equal(
   nukeSamLiquidityBehavior.shouldDeferWarshipForFirstSam(500_000n),
   true,
-  "a visible Silo reserves the complete first-SAM cost from an emergency Warship",
+  "a completed hostile Silo reserves the complete first-SAM cost from an emergency Warship",
 );
 nukeSamLiquidityBehavior.spendableConstructionGold = () => 2_000_000n;
 assert.equal(
@@ -2882,6 +2963,19 @@ assert.equal(
   nukeSamLiquidityBehavior.shouldDeferWarshipForFirstSam(500_000n),
   false,
   "a first SAM already under construction releases the maritime emergency path",
+);
+nukeSamLiquidityBehavior.player.units = () => [];
+nukeSamLiquidityBehavior.hasBuiltHostileSiloThreat = () => false;
+nukeSamLiquidityBehavior.spendableConstructionGold = () => 1_061_290n;
+assert.equal(
+  nukeSamLiquidityBehavior.singleSamHostileSiloReplacementReserve(),
+  0n,
+  "an enemy Silo still under construction creates no hard replacement reserve",
+);
+assert.equal(
+  nukeSamLiquidityBehavior.shouldDeferWarshipForFirstSam(500_000n),
+  false,
+  "an enemy Silo still under construction permits anticipatory SAM planning without blocking an emergency Warship",
 );
 
 let coverageSamLevel = 1;
@@ -2916,7 +3010,7 @@ structureCoverageBehavior.game = {
     samRange: (level) => level * 6,
   }),
 };
-structureCoverageBehavior.liveHostilePlayers = () => [enemyTwoLevelOneSilos];
+structureCoverageBehavior.liveNuclearHostilePlayers = () => [enemyTwoLevelOneSilos];
 structureCoverageBehavior.cost = () => 1n;
 structureCoverageBehavior.legendaryReserveGold = () => 0n;
 structureCoverageBehavior.buildableForUnits = async () => [
@@ -2997,7 +3091,7 @@ jointCoverageBehavior.game = {
     samRange: (level) => level * 6,
   }),
 };
-jointCoverageBehavior.liveHostilePlayers = () => [enemyTwoLevelOneSilos];
+jointCoverageBehavior.liveNuclearHostilePlayers = () => [enemyTwoLevelOneSilos];
 assert.equal(
   jointCoverageBehavior.computeHydrogenStructureCoveragePlan(),
   null,
@@ -3372,6 +3466,83 @@ assert.equal(
 assert.equal(economicUpgradeCalls, 0, "A legal new City site performs no upgrade probe");
 assert.equal(sentBuilds.at(-1), newCityBuildable);
 
+for (const type of [UNIT.Factory, UNIT.Port]) {
+  const legalNewBuildBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+  let upgradeProbeCount = 0;
+  const legalBuildable = { canBuild: `${type}-new-site`, canUpgrade: false };
+  legalNewBuildBehavior.structureSpawnEligible = () => true;
+  legalNewBuildBehavior.getConstructionCost = () => 1n;
+  legalNewBuildBehavior.availableGoldAfterReserve = () => 10n;
+  legalNewBuildBehavior.player = {
+    units: () => [existingEconomicStructure],
+  };
+  legalNewBuildBehavior.hasStructureUnderConstruction = () => false;
+  legalNewBuildBehavior.structureSpawnTile = async () => legalBuildable;
+  legalNewBuildBehavior.structureUpgradeBeforeSpawn = async () => {
+    upgradeProbeCount++;
+    return true;
+  };
+  legalNewBuildBehavior.maybeUpgradeStructure = async () => {
+    upgradeProbeCount++;
+    return true;
+  };
+  assert.equal(
+    await legalNewBuildBehavior.maybeSpawnStructure(type),
+    true,
+    `${type} uses a legal new site before considering an upgrade`,
+  );
+  assert.equal(upgradeProbeCount, 0, `A legal new ${type} site performs no upgrade probe`);
+  assert.equal(sentBuilds.at(-1), legalBuildable);
+}
+
+for (const type of [UNIT.City, UNIT.Factory, UNIT.Port]) {
+  const legendaryLegalBuildBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+  let upgradeProbeCount = 0;
+  const legalBuildable = { canBuild: `${type}-legendary-site`, canUpgrade: false };
+  legendaryLegalBuildBehavior.player = {
+    gold: () => 10n,
+    units: () => [existingEconomicStructure],
+  };
+  legendaryLegalBuildBehavior.maybeUpgradeLegendarySam = async () => false;
+  legendaryLegalBuildBehavior.ownSamCapacity = () => 1;
+  legendaryLegalBuildBehavior.legendaryMissileDefenseUrgent = () => false;
+  legendaryLegalBuildBehavior.legendaryConstructionCandidates = () => [{ type }];
+  legendaryLegalBuildBehavior.legendaryConstructionActionGroups = () => [[{ type }]];
+  legendaryLegalBuildBehavior.structureSpawnEligible = () => true;
+  legendaryLegalBuildBehavior.getConstructionCost = () => 1n;
+  legendaryLegalBuildBehavior.availableGoldAfterReserve = () => 10n;
+  legendaryLegalBuildBehavior.hasStructureUnderConstruction = () => false;
+  legendaryLegalBuildBehavior.structureSpawnTile = async () => legalBuildable;
+  legendaryLegalBuildBehavior.structureUpgradeBeforeSpawn = async () => {
+    upgradeProbeCount++;
+    return true;
+  };
+  legendaryLegalBuildBehavior.maybeUpgradeStructure = async () => {
+    upgradeProbeCount++;
+    return true;
+  };
+  assert.equal(
+    await legendaryLegalBuildBehavior.doHandleLegendaryStructures({
+      config: { isUnitDisabled: () => false },
+      citiesDisabled: false,
+      cityCount: 2,
+      hasCoastalTiles: true,
+      hasOceanPortTiles: true,
+      missileSilosEnabled: true,
+      nukesEnabled: true,
+      economyGrowthPriority: true,
+    }),
+    true,
+    `Legendary dispatches a legal new ${type} site`,
+  );
+  assert.equal(
+    upgradeProbeCount,
+    0,
+    `Legendary legal new ${type} placement performs no upgrade probe`,
+  );
+  assert.equal(sentBuilds.at(-1), legalBuildable);
+}
+
 const resumedEconomicScanBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 const resumedEconomicBuildable = { canBuild: 901, canUpgrade: false };
 let resumedRandomProbeCalls = 0;
@@ -3644,6 +3815,114 @@ assert.equal(
   "A territory or structure snapshot change invalidates a completed no-space proof",
 );
 
+const topologyFingerprintBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+let topologyFingerprintTick = 1;
+let landTopologyBorder = new Set([1, 2]);
+let portTopologyOceanShore = [1];
+const topologyFingerprintStructures = [];
+topologyFingerprintBehavior.game = {
+  ticks: () => topologyFingerprintTick,
+  units: () => topologyFingerprintStructures,
+  config: () => ({ structureMinDist: () => 2 }),
+};
+topologyFingerprintBehavior.player = {
+  smallID: () => 1,
+  numTilesOwned: () => 2,
+  borderTiles: () => landTopologyBorder,
+  oceanShoreBorderTiles: () => portTopologyOceanShore,
+};
+const landTopologyFingerprint = topologyFingerprintBehavior.economicPlacementFingerprint(UNIT.City);
+topologyFingerprintBehavior._economicPlacementScans = new Map([
+  [String(UNIT.City), { context: { fingerprint: landTopologyFingerprint } }],
+]);
+landTopologyBorder = new Set([3, 4]);
+topologyFingerprintTick++;
+assert.equal(
+  topologyFingerprintBehavior.hasPendingEconomicPlacementScan(UNIT.City),
+  false,
+  "Equal-count land topology changes invalidate a resumable City scan",
+);
+
+const portTopologyFingerprint = topologyFingerprintBehavior.economicPlacementFingerprint(UNIT.Port);
+topologyFingerprintBehavior._economicPlacementScans.set(String(UNIT.Port), {
+  context: { fingerprint: portTopologyFingerprint },
+});
+portTopologyOceanShore = [5];
+topologyFingerprintTick++;
+assert.equal(
+  topologyFingerprintBehavior.hasPendingEconomicPlacementScan(UNIT.Port),
+  false,
+  "Equal-count open-ocean topology changes invalidate a resumable Port scan",
+);
+
+const failedBestCandidateBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+const failedCandidateTick = 100;
+const failedBestCandidateScan = {
+  context: { bounds: { minX: 0, maxX: 1, minY: 0, maxY: 0 }, fingerprint: "two-sites" },
+  x: 0,
+  y: 0,
+  index: 0,
+  hasGeometricSpace: false,
+  snappedSites: new Set(),
+};
+const failedCandidateProbes = [];
+let failedCandidateUpgradeCalls = 0;
+failedBestCandidateBehavior.economicPlacementScanState = () => failedBestCandidateScan;
+failedBestCandidateBehavior.game = { ticks: () => failedCandidateTick };
+failedBestCandidateBehavior.economicPlacementBudgetLimit = () => 25;
+failedBestCandidateBehavior.consumeEconomicPlacementBudget = () => {};
+failedBestCandidateBehavior.economicLandTileCandidate = (_type, _context, x) => ({
+  tile: x,
+  value: x,
+});
+failedBestCandidateBehavior.structureProbeOptions = () => ({ probeTimeoutMs: 1 });
+failedBestCandidateBehavior.buildableFor = async (_type, tile) => {
+  failedCandidateProbes.push(tile);
+  return null;
+};
+failedBestCandidateBehavior.isUsableStructureBuildable = () => false;
+failedBestCandidateBehavior.economicPlacementFingerprint = () => "two-sites";
+failedBestCandidateBehavior.structureSpawnEligible = () => true;
+failedBestCandidateBehavior.getConstructionCost = () => 1n;
+failedBestCandidateBehavior.availableGoldAfterReserve = () => 10n;
+failedBestCandidateBehavior.player = { units: () => [existingEconomicStructure] };
+failedBestCandidateBehavior.hasStructureUnderConstruction = () => false;
+failedBestCandidateBehavior.structureSpawnTile = async () => null;
+failedBestCandidateBehavior.maybeUpgradeStructure = async () => {
+  failedCandidateUpgradeCalls++;
+  return true;
+};
+assert.equal(
+  await failedBestCandidateBehavior.maybeSpawnStructure(UNIT.City),
+  false,
+  "A failed authoritative best-site probe remains indeterminate",
+);
+assert.equal(
+  await failedBestCandidateBehavior.maybeSpawnStructure(UNIT.City),
+  false,
+  "The next decision advances to the next geometric candidate",
+);
+assert.deepEqual(
+  failedCandidateProbes,
+  [1, 0],
+  "A failed best candidate is excluded while the next candidate is probed",
+);
+assert.equal(
+  await failedBestCandidateBehavior.maybeSpawnStructure(UNIT.City),
+  false,
+  "Backoff keeps failed candidates from being reprobed in the same decision window",
+);
+assert.deepEqual(
+  failedCandidateProbes,
+  [1, 0],
+  "Backoff bounds authoritative retries after every candidate is indeterminate",
+);
+assert.equal(
+  failedCandidateUpgradeCalls,
+  0,
+  "A failed authoritative probe never authorizes an economic upgrade",
+);
+
 const boundedEconomyScanBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 let boundedOwnerChecks = 0;
 const boundedEconomyContext = {
@@ -3758,15 +4037,18 @@ const tickSource =
   nationExecutionSource.match(
     /async tick\(ticks, profile, tickGeneration\) \{([\s\S]*?)\n {4}\}/,
   )?.[1] ?? "";
-const launchObserverIndex = tickSource.indexOf(
-  "this.structureBehavior.observeHostileMissileLaunch?.();",
-);
+const launchObserverIndex = tickSource.indexOf("this.prepareInitializedTickState(me, profile);");
 const cadenceGateIndex = tickSource.indexOf("this.getTickCrossings(ticks)");
 const launchObserverCallCount =
   nationExecutionSource.split("this.structureBehavior.observeHostileMissileLaunch?.();").length - 1;
 assert.ok(
   launchObserverIndex >= 0 && launchObserverIndex < cadenceGateIndex,
   "Hostile launches are observed every authoritative tick before slower behavior cadence gates",
+);
+assert.match(
+  nationExecutionSource,
+  /prepareInitializedTickState\(me, profile\)[\s\S]{0,260}this\.structureBehavior\.observeHostileMissileLaunch\?\.\(\);/,
+  "the bounded per-tick preparation helper retains hostile missile observation",
 );
 assert.equal(
   launchObserverCallCount,
@@ -3989,6 +4271,16 @@ assert.deepEqual(
   Array.from(simultaneousSiloBehavior.legendarySamSlotAvailability(cooldownBoundarySam)),
   [0],
   "a SAM slot is ready on the exact tick its cooldown expires",
+);
+
+const twoExpiredCooldownSlotsSam = {
+  ...makeUnit(4, 2),
+  missileTimerQueue: () => [10, 10],
+};
+assert.deepEqual(
+  Array.from(simultaneousSiloBehavior.legendarySamSlotAvailability(twoExpiredCooldownSlotsSam)),
+  [0, 1],
+  "a level-2 SAM reloads only one expired queue-front missile per engine tick",
 );
 
 simultaneousSiloBehavior.legendaryTrajectoryTargetableRange = () => 5;
@@ -4417,10 +4709,17 @@ const mirvImpactZone = behavior.hostileMissileImpactZone(
 );
 assert.equal(
   requestedMirvBlastType,
-  null,
-  "A MIRV carrier never requests an unsupported direct-blast magnitude",
+  UNIT.MIRVWarhead,
+  "A MIRV carrier derives construction safety from the supported warhead magnitude",
 );
-assert.equal(mirvImpactZone, null, "Only separated MIRV warheads create exact impact zones");
+assert.deepEqual(
+  { ...mirvImpactZone },
+  {
+    targetTile: 777,
+    radiusSquared: (1500 + 18) ** 2,
+  },
+  "An active MIRV reserves its full potential warhead field from doomed construction",
+);
 const originalMirvPlayerUnits = own.units;
 const originalMirvDistance = behavior.game.euclideanDistSquared;
 own.units = (...types) =>
@@ -4454,6 +4753,49 @@ assert.equal(
   "A MIRV SAM slot ready one tick inside the safety boundary is not coverage",
 );
 behavior.game.manhattanDist = originalMirvManhattanDistance;
+
+const mirvTimingBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+mirvTimingBehavior.game = { manhattanDist: () => 49 };
+mirvTimingBehavior.legendarySamCooldownTicks = () => 90;
+mirvTimingBehavior.legendaryMirvDemandRoute = (_demand, _profiles, routeId) => ({
+  id: routeId,
+  impactTick: 5,
+  samOptions: [{ samIndex: 0, interceptTicks: [] }],
+});
+const flightLimitedMirvDemand = { missile: {}, targetTile: 999, deadlineTick: 5 };
+const flightLimitedMirvProfiles = [
+  {
+    tile: 20,
+    range: 50,
+    availableTicks: [0],
+    cooldownTicks: 90,
+  },
+];
+assert.equal(
+  mirvTimingBehavior.activeMirvDemandCovered(flightLimitedMirvDemand, flightLimitedMirvProfiles),
+  false,
+  "MIRV defense rejects nearby geometry when no interceptor can reach the trajectory in time",
+);
+const secondFlightLimitedMirvDemand = {
+  missile: {},
+  targetTile: 1000,
+  deadlineTick: 5,
+};
+mirvTimingBehavior.legendaryMirvDemandRoute = (demand, _profiles, routeId) => ({
+  id: routeId,
+  demand,
+  impactTick: 5,
+  samOptions: [{ samIndex: 0, interceptTicks: [1] }],
+});
+const sharedSlotMirvContext = {
+  samProfiles: flightLimitedMirvProfiles,
+  mirvDemands: [flightLimitedMirvDemand, secondFlightLimitedMirvDemand],
+};
+assert.equal(
+  mirvTimingBehavior.uncoveredActiveMirvDemands(sharedSlotMirvContext).length,
+  1,
+  "two MIRV threats cannot both consume the same single ready SAM slot",
+);
 own.units = originalMirvPlayerUnits;
 behavior.game.euclideanDistSquared = originalMirvDistance;
 behavior.game.units = originalThreatGameUnits;
@@ -4734,6 +5076,7 @@ assert.equal(samNetworkScore(30), 0, "a distant SAM receives no friendly-network
 
 const recoverySamEmergency = Object.create(sandbox.__StructureBehavior.prototype);
 recoverySamEmergency.tileInsideActiveHostileMissileImpact = (tile) => tile === 9;
+recoverySamEmergency.activeMissileSamConstructionImproves = () => true;
 recoverySamEmergency.missileDefenseSnapshotIsCurrent = () => false;
 assert.equal(
   recoverySamEmergency.structureEmergencySamTileAllowed(8, { recoverySam: true }),
@@ -4746,10 +5089,55 @@ assert.equal(
   "first-SAM recovery still refuses the active hostile impact zone",
 );
 assert.equal(
+  recoverySamEmergency.structureEmergencySamTileAllowed(9, {
+    incrementalSamDefense: true,
+    context: {},
+    evaluation: {},
+  }),
+  false,
+  "an incremental SAM is never approved inside the active blast even when it improves interception",
+);
+assert.equal(
   recoverySamEmergency.structureEmergencySnapshotCurrent({ recoverySam: true }),
   true,
   "a changing unrelated missile fingerprint does not cancel safe first-SAM reconstruction",
 );
+
+const blastUpgradeBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+const blastSam = { id: () => 9, tile: () => 9, level: () => 1 };
+blastUpgradeBehavior.plannedSamUpgradeEligible = () => true;
+blastUpgradeBehavior.spendableConstructionGold = () => 10n;
+blastUpgradeBehavior.plannedSamUpgradeCostCacheKey = () => "blast-sam";
+blastUpgradeBehavior._plannedSamUpgradeCostCache = new Map();
+blastUpgradeBehavior.plannedSamUpgradeBuildable = async () => ({
+  canUpgrade: true,
+  cost: 1n,
+});
+blastUpgradeBehavior.plannedSamUpgradeCost = () => 1n;
+blastUpgradeBehavior.samUpgradeEconomyCanAbsorb = () => true;
+blastUpgradeBehavior.tileInsideActiveHostileMissileImpact = (tile) => tile === 9;
+blastUpgradeBehavior.game = {};
+blastUpgradeBehavior.player = {};
+sentBuilds.length = 0;
+assert.equal(
+  await blastUpgradeBehavior.maybeUpgradePlannedSam({
+    sam: blastSam,
+    currentLevel: 1,
+    targetLevel: 2,
+  }),
+  false,
+  "a planned SAM upgrade rechecks the active blast at its final actuation boundary",
+);
+assert.equal(sentBuilds.length, 0);
+assert.equal(
+  blastUpgradeBehavior.executeStructureUpgradeCandidate(
+    { sam: blastSam, bu: { canUpgrade: true } },
+    UNIT.SAMLauncher,
+  ),
+  false,
+  "reactive and parity SAM upgrades cannot execute inside the active blast",
+);
+assert.equal(sentBuilds.length, 0);
 assert.equal(
   recoverySamEmergency.shouldRetryFirstSamWithSafeCandidates(
     UNIT.SAMLauncher,

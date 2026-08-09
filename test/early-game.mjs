@@ -73,10 +73,14 @@ assert.match(
   /getTeamSpawnCentroidTile\(constraints\)[\s\S]{0,700}collectExactSpawnPoints\(this\.mg, this\.player\)[\s\S]{0,500}filterTeamSpawnGeometryOutliers\(rawTeamSpawns\)[\s\S]{0,500}Math\.round\(sumX \/ teamSpawns\.length\)/,
   "team spawns must target the centroid of the non-outlier allied anchors",
 );
-assert.match(
-  nationExecutionSource,
-  /const teamCentroidTile = this\.getTeamSpawnCentroidTile\(constraints\);[\s\S]{0,160}if \(teamCentroidTile != null\) return teamCentroidTile;/,
-  "the legal team centroid must take precedence over the heatmap ranking",
+const currentSpawnTopKeySource = nationExecutionSource.slice(
+  nationExecutionSource.indexOf("    currentSpawnTopKey() {"),
+  nationExecutionSource.indexOf("    spawnTopKeyToValidTile("),
+);
+assert.doesNotMatch(
+  currentSpawnTopKeySource,
+  /getTeamSpawnCentroidTile/,
+  "the team centroid must feed the robust spawn objective instead of bypassing exact ranking",
 );
 assert.match(
   nationExecutionSource,
@@ -241,6 +245,7 @@ const openingCalls = [];
 const openingFractions = [];
 let openingFollowUps = 0;
 let openingFullPlans = 0;
+let openingNukeSafetyTicks = 0;
 let openingIncomingAttack = false;
 let openingDefenseResponses = 0;
 let openingDefenseStructures = 0;
@@ -328,6 +333,10 @@ const openingSandbox = {
 
     maybeAttack() {
       openingFullPlans += 1;
+    }
+
+    enforceSameClanNukeTerrainSafety() {
+      openingNukeSafetyTicks += 1;
     }
   },
 };
@@ -506,6 +515,11 @@ assert.equal(
   openingFollowUps,
   1,
   "the chained follow-up still waits for its preceding expansion intent",
+);
+assert.equal(
+  openingNukeSafetyTicks,
+  3,
+  "same-clan nuke terrain safety runs on every live tick after behavior initialization",
 );
 openingBot.attackBehavior.pending = 0;
 await openingBot.tick(4);

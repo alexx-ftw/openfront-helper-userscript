@@ -14,6 +14,7 @@ function loadHarness() {
   let indexCreateCalls = 0;
   let exactIndexMode = false;
   let exactRangeCalls = 0;
+  let exactCandidates = [];
   let spawnPhase = true;
   let players = [];
   const terrain = new Uint8Array(64).fill(LAND);
@@ -44,16 +45,37 @@ function loadHarness() {
       create() {
         indexCreateCalls += 1;
         if (exactIndexMode) {
-          return {
+          const index = {
             ready: true,
             size: 64,
             width: 8,
             height: 8,
             version: 0,
-            forEachCandidateRange() {
+            forEachCandidateRange(options = {}) {
               exactRangeCalls += 1;
+              for (const candidate of exactCandidates) {
+                if (
+                  options.isCenterAllowed &&
+                  !options.isCenterAllowed(candidate.ref, candidate.x, candidate.y)
+                )
+                  continue;
+                options.onCandidate(
+                  candidate.ref,
+                  candidate.x,
+                  candidate.y,
+                  candidate.spawnGain,
+                  candidate.invalidCount,
+                  candidate.plainsGain,
+                  candidate.frontierGain,
+                  candidate.frontierPlainsGain,
+                  candidate.frontierValueGain,
+                  candidate.frontierSlots,
+                );
+              }
             },
           };
+          index.forEachCandidate = (options) => index.forEachCandidateRange(options);
+          return index;
         }
         return { ready: false };
       },
@@ -99,7 +121,13 @@ function loadHarness() {
     enableExactIndex: () => {
       exactIndexMode = true;
     },
+    setExactCandidates: (value) => {
+      exactCandidates = value;
+    },
     getExactRangeCalls: () => exactRangeCalls,
+    resetExactRangeCalls: () => {
+      exactRangeCalls = 0;
+    },
   };
 }
 
@@ -368,6 +396,45 @@ assert.ok(
   "top spawn spots preserve their score breakdown for headless diagnostics",
 );
 
+const rectangularTeamArea = { x: 150, y: 150, width: 140, height: 140 };
+const exactTeamGame = {
+  __src: {
+    _map: { terrain: new Uint8Array(400 * 400).fill(LAND) },
+    teamSpawnArea: (team) => (team === 7 ? rectangularTeamArea : null),
+  },
+  config: () => ({ minDistanceBetweenPlayers: () => 30 }),
+  height: () => 400,
+  width: () => 400,
+};
+const exactTeamMe = {
+  smallID: () => 99,
+  team: () => 7,
+  type: () => "HUMAN",
+};
+harness.enableExactIndex();
+harness.setExactCandidates([
+  { ref: 1, x: 180, y: 180, spawnGain: 1, invalidCount: 900 },
+  { ref: 2, x: 260, y: 180, spawnGain: 1, invalidCount: 900 },
+  { ref: 3, x: 180, y: 260, spawnGain: 1, invalidCount: 900 },
+  { ref: 4, x: 260, y: 260, spawnGain: 1, invalidCount: 900 },
+  { ref: 5, x: 80, y: 80, spawnGain: 900, invalidCount: 0 },
+  { ref: 6, x: 320, y: 80, spawnGain: 900, invalidCount: 0 },
+  { ref: 7, x: 80, y: 320, spawnGain: 900, invalidCount: 0 },
+  { ref: 8, x: 320, y: 320, spawnGain: 900, invalidCount: 0 },
+]);
+const exactTeamAlternatives = harness.computeExactSpawnTopSpotsForBot(exactTeamGame, exactTeamMe);
+assert.ok(exactTeamAlternatives.length > 1, "exact ranking returns multiple alternatives");
+assert.ok(
+  exactTeamAlternatives.every(
+    (candidate) =>
+      candidate.x >= rectangularTeamArea.x &&
+      candidate.x < rectangularTeamArea.x + rectangularTeamArea.width &&
+      candidate.y >= rectangularTeamArea.y &&
+      candidate.y < rectangularTeamArea.y + rectangularTeamArea.height,
+  ),
+  "exact-ranked alternatives remain inside the configured rectangular team area",
+);
+
 // The live exact selector must schedule its first range asynchronously. This
 // protects the spawn phase from reintroducing a synchronous full-map pass when
 // a ready index is available.
@@ -377,6 +444,7 @@ const asyncGame = {
   height: () => 8,
   width: () => 8,
 };
+harness.resetExactRangeCalls();
 assert.equal(
   harness.computeAsyncExactSpawnTopSpotsForBot(asyncGame, null),
   null,

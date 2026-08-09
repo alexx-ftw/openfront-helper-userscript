@@ -294,7 +294,9 @@
       const won = atomTeamHasWon(game, myPlayer);
       const cfg = game.config && game.config();
       const maxRange =
-        cfg && cfg.maxSamRange ? Number(cfg.maxSamRange()) : 200;
+        typeof ofhGameMaxSamRange === "function"
+          ? ofhGameMaxSamRange(game, 150)
+          : 150;
       const nearby = game.nearbyUnits
         ? game.nearbyUnits(tile, maxRange, SAM_UNIT)
         : [];
@@ -356,7 +358,9 @@
 
       const cfg = game.config && game.config();
       const speed =
-        cfg && cfg.defaultNukeSpeed ? Number(cfg.defaultNukeSpeed()) : 8;
+        typeof ofhGameNukeSpeed === "function"
+          ? ofhGameNukeSpeed(game, "Atom Bomb", 10)
+          : 10;
       const pathFinder = UniversalPathFinding.Parabola(game, {
         increment: speed,
         distanceBasedHeight: true, // Atom/Hydrogen bombs use distance-based height
@@ -370,10 +374,13 @@
       const trajectory = pathFinder.findPath(src, tile) || [];
       if (trajectory.length === 0) return atomCoveringSams(game, myPlayer, tile);
 
-      const maxRange = cfg && cfg.maxSamRange ? Number(cfg.maxSamRange()) : 200;
+      const maxRange =
+        typeof ofhGameMaxSamRange === "function"
+          ? ofhGameMaxSamRange(game, 150)
+          : 150;
       const tRange =
-        cfg && cfg.defaultNukeTargetableRange
-          ? Number(cfg.defaultNukeTargetableRange())
+        typeof ofhGameNukeTargetableRange === "function"
+          ? ofhGameNukeTargetableRange(game, 150)
           : 150;
       const tRangeSq = tRange * tRange;
 
@@ -459,14 +466,10 @@
     // Salvo). The recommendation reflects the live per-spam/delay cadence via gapMs.
     const sams = atomCoveringSamsAlongPath(game, myPlayer, tile, rocketDirectionUp);
     const intercept = sams.reduce((sum, s) => sum + s.level, 0);
-    let cooldownTicks = 90;
-    {
-      const c =
-        game.config && game.config().SAMCooldown
-          ? Number(game.config().SAMCooldown())
-          : 90;
-      if (Number.isFinite(c) && c > 0) cooldownTicks = c;
-    }
+    const cooldownTicks =
+      typeof ofhGameCooldownTicks === "function"
+        ? ofhGameCooldownTicks(game, "SAM Launcher", 90)
+        : 90;
     const gap = Number.isFinite(gapMs) && gapMs > 0 ? gapMs : ATOM_SAFE_GAP_MS;
     const plan = atomReloadAwareSalvo(intercept, gap, cooldownTicks);
     // Also test the FASTEST safe cadence: if even that can't overwhelm them, no rate

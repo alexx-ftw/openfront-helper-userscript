@@ -1,5 +1,16 @@
 <h1>Product requirements</h1>
 
+<h2>Nuke ownership and defense</h2>
+
+<ul>
+  <li>
+    All nuclear prediction, retaliation, defensive interception, and duplicate-launch logic must
+    classify only the user's own missiles as self-owned and missiles from permanent teammates as
+    allied. A missile owned by any other player remains hostile, even while a breakable diplomatic
+    alliance with that player is active.
+  </li>
+</ul>
+
 <h2>Auto-Bot update persistence</h2>
 
 <ul>
@@ -31,6 +42,13 @@
     scans, changed snapshots, unsafe-only sites, and failed authoritative probes remain
     indeterminate and do not permit an upgrade. A no-space proof must never keep one Auto-Bot tick
     alive while it traverses the map.
+  </li>
+  <li>
+    Mature-game construction decisions must not rebuild identical global topology for every
+    placement candidate. Factory trade destinations are shared across one construction decision, and
+    an economic scan fingerprint may inspect only aggregate structure and border counts once per
+    game tick. Authoritative buildability probes remain the final legality check when a
+    count-preserving topology change makes an incremental scan snapshot stale.
   </li>
 </ul>
 
@@ -358,6 +376,16 @@
     Land and coastal attacks into Fallout may continue while leaving at least 42% of the player's
     current maximum troop capacity uncommitted. The radioactive reserve must remain isolated from
     ordinary Terra Nullius and player-attack reserves.
+  </li>
+  <li>
+    Fallout that belonged to another player with the same clan tag before impact is protected: the
+    bot must neither expand into it by land nor target it with a boat. Because impact erases tile
+    ownership and a clanmate can gain territory while a missile is in flight, the bot must
+    re-evaluate an unclassified blast every tick. Once any blast overlaps clan territory, its
+    complete outer-radius crater is quarantined until all fallout there clears. Since a generic
+    Terra Nullius land attack can expand beyond its initial frontier, every such attack must be
+    withheld during that quarantine and any already-active Terra Nullius attack must be cancelled
+    before impact. Exact boat destinations inside the quarantined crater are also blocked.
   </li>
 </ul>
 

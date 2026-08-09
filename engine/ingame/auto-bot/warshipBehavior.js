@@ -1689,7 +1689,10 @@
     computeNukeRemainingTicks(fromTile, toTile) {
       {
         if (!this.canComputeNukePath(fromTile, toTile)) return null;
-        const speed = this.game.config?.().defaultNukeSpeed?.() ?? 8;
+        const speed =
+          typeof ofhGameNukeSpeed === "function"
+            ? ofhGameNukeSpeed(this.game, "Atom Bomb", 10)
+            : 10;
         const pf = UniversalPathFinding.Parabola(this.game, {
           increment: speed,
           distanceBasedHeight: true,
@@ -1706,7 +1709,7 @@
           const by = this.game.y(path[i - 1]);
           arc += Math.hypot(ax - bx, ay - by);
         }
-        return Math.floor(arc / (speed > 0 ? speed : 8)) + 1;
+        return Math.floor(arc / (speed > 0 ? speed : 10)) + 1;
       }
     }
 
@@ -1733,12 +1736,15 @@
         );
         if (remainTicks === null) {
           {
-            const speed = this.game.config?.().defaultNukeSpeed?.() ?? 8;
+            const speed =
+              typeof ofhGameNukeSpeed === "function"
+                ? ofhGameNukeSpeed(this.game, "Atom Bomb", 10)
+                : 10;
             const d2 = this.game.euclideanDistSquared(
               nuke.tile(),
               nuke.targetTile(),
             );
-            remainTicks = Math.floor(Math.sqrt(d2) / (speed > 0 ? speed : 8)) + 1;
+            remainTicks = Math.floor(Math.sqrt(d2) / (speed > 0 ? speed : 10)) + 1;
           }
         }
         anchor = { firstTick: nowTick, remainTicks };
@@ -1750,12 +1756,20 @@
     // Outer blast radius (tile units) of a nuke, with the same fallback the overlay
     // (nuke-prediction.js) uses when nukeMagnitudes is unavailable.
     nukeOuterRadius(nuke) {
-      {
-        const mag = this.game.config().nukeMagnitudes(nuke.type());
-        const outer = Number(mag?.outer ?? mag?.inner);
-        if (Number.isFinite(outer) && outer > 0) return outer;
+      const type = nuke.type?.();
+      let fallback;
+      if (type === UNIT.HydrogenBomb) {
+        fallback = { inner: 80, outer: 100 };
+      } else if (type === UNIT.MIRVWarhead) {
+        fallback = { inner: 12, outer: 18 };
+      } else {
+        fallback = { inner: 12, outer: 30 };
       }
-      return nuke.type && nuke.type() === UNIT.HydrogenBomb ? 160 : 70;
+      const magnitude =
+        typeof ofhGameNukeMagnitude === "function"
+          ? ofhGameNukeMagnitude(this.game, type, fallback)
+          : fallback;
+      return Number(magnitude?.outer ?? magnitude?.inner) || fallback.outer;
     }
 
     // Find a water tile MAXIMIZING coverEta for a ship at (sx,sy): coverEta = the
@@ -1954,7 +1968,7 @@
     warshipBattleConstants() {
       const config = typeof this.game.config === "function" ? this.game.config() : null;
       const range = typeof config?.warshipTargettingRange === "function"
-        ? config.warshipTargettingRange() : 8;
+        ? config.warshipTargettingRange() : 130;
       const shell = typeof config?.unitInfo === "function" ? config.unitInfo("Shell") : null;
       const attackRate = typeof config?.warshipShellAttackRate === "function"
         ? config.warshipShellAttackRate() : 20;

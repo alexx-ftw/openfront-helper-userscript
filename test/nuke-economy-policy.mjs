@@ -13,6 +13,10 @@ const mirvSource = fs.readFileSync(
   path.join(repoRoot, "engine/ingame/auto-bot/mirvBehavior.js"),
   "utf8",
 );
+const sharedUtilsSource = fs.readFileSync(
+  path.join(repoRoot, "engine/ingame/shared-utils.js"),
+  "utf8",
+);
 
 const UNIT = {
   City: "City",
@@ -48,6 +52,9 @@ const sandbox = {
 };
 sandbox.globalThis = sandbox;
 
+executeClassicScript(sharedUtilsSource, sandbox, {
+  filename: "shared-utils.vm.js",
+});
 executeClassicScript(`${source}\nglobalThis.__NukeBehavior = NukeBehavior;`, sandbox, {
   filename: "nuke-economy-policy.vm.js",
 });
@@ -97,9 +104,7 @@ const weakerHostileNation = {
 const hostileTargetBehavior = Object.create(sandbox.__NukeBehavior.prototype);
 hostileTargetBehavior.player = {
   ...nukeSelf,
-  allRelationsSorted: () => [
-    { relation: "Hostile", player: weakerHostileNation },
-  ],
+  allRelationsSorted: () => [{ relation: "Hostile", player: weakerHostileNation }],
 };
 hostileTargetBehavior.game = {
   config: () => ({ maxTroops: (player) => (player === nukeSelf ? 200 : 50) }),
@@ -218,14 +223,23 @@ assert.equal(
   "nuclear targeting supports a permanent teammate's marked enemy",
 );
 
+const diplomaticNukeOwner = {
+  smallID: () => 2,
+  team: () => null,
+};
+const teamNukeOwner = {
+  smallID: () => 3,
+  team: () => "blue",
+};
 behavior.player = {
   smallID: () => 1,
   isFriendly: () => true,
+  team: () => null,
 };
 behavior.game = {
   units: () => [
     {
-      owner: () => ({ smallID: () => 2 }),
+      owner: () => diplomaticNukeOwner,
       targetTile: () => 0,
       type: () => UNIT.AtomBomb,
     },
@@ -235,8 +249,21 @@ behavior.game = {
 };
 assert.equal(
   behavior.isTeammateAlreadyNukingThisSpot(0, UNIT.AtomBomb),
+  false,
+  "a diplomatic ally's nuke does not suppress our overlapping launch",
+);
+behavior.player.team = () => "blue";
+behavior.game.units = () => [
+  {
+    owner: () => teamNukeOwner,
+    targetTile: () => 0,
+    type: () => UNIT.AtomBomb,
+  },
+];
+assert.equal(
+  behavior.isTeammateAlreadyNukingThisSpot(0, UNIT.AtomBomb),
   true,
-  "an allied nuke aimed at valid tile zero prevents a duplicate overlapping launch",
+  "a permanent teammate's nuke prevents a duplicate overlapping launch",
 );
 
 const mirvEnemy = {
@@ -248,6 +275,14 @@ const mirvEnemy = {
 const mirvPlayer = {
   smallID: () => 1,
   isFriendly: () => false,
+  units: () => [
+    {
+      isActive: () => true,
+      isUnderConstruction: () => false,
+      level: () => 1,
+      missileTimerQueue: () => [],
+    },
+  ],
   buildables: async () => [{ type: UNIT.MIRV, cost: 1n, canBuild: true }],
   gold: () => 1n,
 };
@@ -318,6 +353,14 @@ const staleMirvTarget = {
 const staleMirvPlayer = {
   smallID: () => 1,
   isFriendly: () => mirvTargetFriendly,
+  units: () => [
+    {
+      isActive: () => true,
+      isUnderConstruction: () => false,
+      level: () => 1,
+      missileTimerQueue: () => [],
+    },
+  ],
   buildables: async () => [{ type: UNIT.MIRV, cost: 1n, canBuild: true }],
   gold: () => 1n,
 };
@@ -384,5 +427,219 @@ nukeTargetStillAttackable = false;
 resolveNukeProbe([{ type: UNIT.AtomBomb, cost: 1n, canBuild: true }]);
 await pendingStaleNuke;
 assert.equal(nukeBuilds, 0, "a target that becomes invalid during the worker probe is not nuked");
+
+const partialSalvoBehavior = Object.create(sandbox.__NukeBehavior.prototype);
+partialSalvoBehavior.player = { gold: () => 10n };
+partialSalvoBehavior.getSamSalvo = () => ({
+  bombsToFire: 2,
+  waits: [0, 7],
+});
+let partialLaunchAttempt = 0;
+partialSalvoBehavior.sendNuke = async () => ++partialLaunchAttempt === 1;
+const retainedReservation = {
+  need: 2,
+  at: 500,
+  targetTile: 12,
+  unblockedSiloIds: ["silo-1"],
+};
+sandbox.state.nukeWantSlots = retainedReservation;
+assert.equal(
+  await partialSalvoBehavior.fireSamSalvo({ targetTile: 12 }, staleNukeTarget, 1n),
+  false,
+  "a partially rejected SAM-overwhelm salvo reports failure",
+);
+assert.strictEqual(
+  sandbox.state.nukeWantSlots,
+  retainedReservation,
+  "a partial salvo keeps its silo-capacity reservation for retry or upgrade",
+);
+
+let scheduledTick = 600;
+const scheduledBuilds = [];
+sandbox.sendAutoBotBuildOrUpgrade = (_menu, buildable, tile) => {
+  scheduledBuilds.push({ tick: scheduledTick, type: buildable.type, tile });
+  return true;
+};
+const scheduledPlayer = {
+  smallID: () => 1,
+  isOnSameTeam: () => false,
+  buildables: async () => [{ type: UNIT.AtomBomb, cost: 1n, canBuild: true, canUpgrade: false }],
+  gold: () => 10n,
+};
+const scheduledTarget = {
+  smallID: () => 2,
+  isAlive: () => true,
+};
+const scheduledSalvoBehavior = new sandbox.__NukeBehavior(
+  { chance: () => false },
+  { ticks: () => scheduledTick },
+  scheduledPlayer,
+  { shouldAttack: () => true },
+  { maybeSendEmoji() {} },
+);
+scheduledSalvoBehavior.cost = async () => 1n;
+scheduledSalvoBehavior.getSamSalvo = () => ({
+  bombsToFire: 2,
+  waits: [0, 7],
+});
+const scheduledPlan = {
+  targetTile: 20,
+  totalBombs: 2,
+  coveringSamIds: new Set(["enemy-sam"]),
+  siloEntries: [{ silo: { id: () => "silo-1" }, interceptable: false }],
+};
+sandbox.state.nukeWantSlots = null;
+assert.equal(
+  await scheduledSalvoBehavior.fireSamSalvo(scheduledPlan, scheduledTarget, 1n),
+  true,
+  "a valid staggered salvo is accepted as one pending launch plan",
+);
+assert.deepEqual(
+  scheduledBuilds,
+  [{ tick: 600, type: UNIT.AtomBomb, tile: 20 }],
+  "only the zero-wait bomb launches on the planning tick",
+);
+assert.equal(
+  sandbox.state.nukeWantSlots?.pendingLaunches,
+  true,
+  "the silo reservation remains active until every delayed bomb is emitted",
+);
+scheduledTick = 607;
+assert.equal(
+  await scheduledSalvoBehavior.processPendingNukeLaunches(),
+  true,
+  "the delayed salvo bomb launches when its exact game tick becomes due",
+);
+assert.deepEqual(scheduledBuilds, [
+  { tick: 600, type: UNIT.AtomBomb, tile: 20 },
+  { tick: 607, type: UNIT.AtomBomb, tile: 20 },
+]);
+assert.equal(sandbox.state.nukeWantSlots, null);
+
+const mirvStateReserve = 987n;
+const readyMirvSilo = {
+  isActive: () => true,
+  isUnderConstruction: () => false,
+  level: () => 1,
+  missileTimerQueue: () => [],
+};
+const exhaustedMirvSilo = {
+  isActive: () => true,
+  isUnderConstruction: () => false,
+  level: () => 1,
+  missileTimerQueue: () => [123],
+};
+const mirvActuationTarget = {
+  id: () => "mirv-actuation-target",
+  smallID: () => 9,
+  isPlayer: () => true,
+  type: () => "Human",
+};
+const mirvActuationPlayer = {
+  smallID: () => 1,
+  isFriendly: () => false,
+  units: () => [readyMirvSilo],
+  buildables: async () => [{ type: UNIT.MIRV, cost: 1n, canBuild: true }],
+  gold: () => 1n,
+};
+const mirvActuationBehavior = new sandbox.__MirvBehavior(
+  { chance: () => false },
+  { ticks: () => 700 },
+  mirvActuationPlayer,
+  { maybeSendAttackEmoji() {}, sendEmoji() {} },
+);
+mirvActuationBehavior.calculateTerritoryCenter = async () => 11;
+assert.equal(
+  await mirvActuationBehavior.maybeSendMIRV(mirvActuationTarget),
+  true,
+  "a successful MIRV build intent reports success",
+);
+
+const exhaustedMirvPlayer = {
+  ...mirvActuationPlayer,
+  units: () => [exhaustedMirvSilo],
+};
+const exhaustedMirvBehavior = new sandbox.__MirvBehavior(
+  { chance: () => false },
+  {
+    ticks: () => 701,
+    config: () => ({ isUnitDisabled: () => false }),
+  },
+  exhaustedMirvPlayer,
+  { maybeSendAttackEmoji() {}, sendEmoji() {} },
+);
+sandbox.state.nukeReserveGold = mirvStateReserve;
+assert.equal(
+  await exhaustedMirvBehavior.considerMIRV(),
+  false,
+  "an exhausted Silo does not claim that MIRV consideration succeeded",
+);
+assert.equal(
+  sandbox.state.nukeReserveGold,
+  mirvStateReserve,
+  "an exhausted Silo preserves the MIRV reserve state",
+);
+
+exhaustedMirvBehavior.teamHasWon = () => true;
+sandbox.state.nukeReserveGold = mirvStateReserve;
+assert.equal(
+  await exhaustedMirvBehavior.considerWinFixMIRV(1n),
+  false,
+  "a secured team victory does not need a ready MIRV slot",
+);
+assert.equal(
+  sandbox.state.nukeReserveGold,
+  0n,
+  "a secured team victory releases the MIRV reserve even while every Silo reloads",
+);
+
+const rejectedProbePlayer = {
+  ...mirvActuationPlayer,
+  buildables: async () => [{ type: UNIT.MIRV, cost: 1n, canBuild: false }],
+};
+const rejectedProbeBehavior = new sandbox.__MirvBehavior(
+  { chance: () => false },
+  {
+    ticks: () => 702,
+    config: () => ({ gameConfig: () => ({ gameMode: "FFA" }) }),
+  },
+  rejectedProbePlayer,
+  { maybeSendAttackEmoji() {}, sendEmoji() {} },
+);
+rejectedProbeBehavior.calculateTerritoryCenter = async () => 12;
+rejectedProbeBehavior.selectWinFixMirvTarget = () => mirvActuationTarget;
+sandbox.state.nukeReserveGold = mirvStateReserve;
+assert.equal(
+  await rejectedProbeBehavior.considerWinFixMIRV(1n),
+  false,
+  "a rejected MIRV probe does not claim that the win-fix launch succeeded",
+);
+assert.equal(
+  sandbox.state.nukeReserveGold,
+  mirvStateReserve,
+  "a rejected MIRV probe preserves the win-fix MIRV reserve state",
+);
+
+const firstEligibleRejectedBehavior = new sandbox.__MirvBehavior(
+  { chance: () => false },
+  { ticks: () => 703 },
+  rejectedProbePlayer,
+  { maybeSendAttackEmoji() {}, sendEmoji() {} },
+);
+firstEligibleRejectedBehavior.calculateTerritoryCenter = async () => 13;
+firstEligibleRejectedBehavior.selectCounterMirvTarget = () => mirvActuationTarget;
+firstEligibleRejectedBehavior.selectVictoryDenialTarget = () => null;
+firstEligibleRejectedBehavior.selectSteamrollStopTarget = () => null;
+sandbox.state.nukeReserveGold = mirvStateReserve;
+assert.equal(
+  await firstEligibleRejectedBehavior.sendFirstEligibleMIRV(),
+  false,
+  "the first eligible MIRV path reports false when its probe is rejected",
+);
+assert.equal(
+  sandbox.state.nukeReserveGold,
+  mirvStateReserve,
+  "a rejected first-eligible MIRV probe preserves decision state",
+);
 
 process.stdout.write("nuke economy policy tests passed\n");

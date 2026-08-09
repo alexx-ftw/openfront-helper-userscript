@@ -6,5 +6,7 @@ locales/
 
 # Build output + deps
 openfront-helper.user.js
+openfront-helper.autobot.js
+openfront-helper.build-id.js
 node_modules/
 openfront-engine/

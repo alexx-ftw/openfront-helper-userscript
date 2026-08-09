@@ -142,14 +142,16 @@
         state.nukeReserveGold = 0n;
         return false;
       }
+      if (!this.hasReadyMIRVSlot()) return false;
       const target = this.selectWinFixMirvTarget(mirvCost);
       if (!target || this.wasRecentlyMirved(target)) {
         state.nukeReserveGold = 0n;
         return null;
       }
       if (this.player.gold() >= mirvCost) {
+        const launched = await this.maybeSendMIRV(target);
+        if (!launched) return false;
         state.nukeReserveGold = 0n;
-        await this.maybeSendMIRV(target);
         return true;
       }
       const earlyTicks = state.settings.mirvEarlyGameTicks ?? 6000;
@@ -158,6 +160,7 @@
     }
 
     async sendFirstEligibleMIRV() {
+      if (!this.hasReadyMIRVSlot()) return false;
       const selectors = [
         () => this.selectCounterMirvTarget(),
         () => this.selectVictoryDenialTarget(),
@@ -166,8 +169,7 @@
       for (const selectTarget of selectors) {
         const target = selectTarget();
         if (!target || this.wasRecentlyMirved(target)) continue;
-        await this.maybeSendMIRV(target);
-        return true;
+        return this.maybeSendMIRV(target);
       }
       return false;
     }
@@ -177,7 +179,7 @@
       if (this.game.config().isUnitDisabled(UNIT.MIRV)) {
         return false;
       }
-      if (this.player.units(UNIT.MissileSilo).length === 0) {
+      if (!this.hasReadyMIRVSlot()) {
         return false;
       }
       // gold is BigInt; cost() is the live MIRV price (BigInt).
@@ -368,6 +370,19 @@
     }
 
     // ── MIRV Helper Methods ──────────────────────────────────────────────────
+    hasReadyMIRVSlot() {
+      if (this.player === null) throw new Error("not initialized");
+      const silos = this.player.units(UNIT.MissileSilo);
+      return (Array.isArray(silos) ? silos : []).some((silo) => {
+        if (!silo || silo.isActive?.() === false || silo.isUnderConstruction?.()) {
+          return false;
+        }
+        const level = Number(silo.level?.());
+        const queue = silo.missileTimerQueue?.();
+        return Number.isFinite(level) && level > 0 && Array.isArray(queue) && queue.length < level;
+      });
+    }
+
     isValidMirvTargetPlayer(target) {
       if (this.player === null) throw new Error("not initialized");
       return (
@@ -401,38 +416,17 @@
     // ── MIRV Execution Methods (now async) ───────────────────────────────────
     async maybeSendMIRV(enemy) {
       if (this.player === null) throw new Error("not initialized");
+      if (!this.hasReadyMIRVSlot()) return false;
 
       this.emojiBehavior.maybeSendAttackEmoji(enemy);
 
       const centerTile = await this.calculateTerritoryCenter(enemy);
       // TileRef zero is a valid map coordinate. Upstream's truthy gate drops it,
       // which can suppress both an outbound MIRV and inbound-MIRV detection.
-      if (centerTile === null || centerTile === undefined) return;
+      if (centerTile === null || centerTile === undefined) return false;
 
-      // Affordability/actuation via the buildables probe + build menu (the client
-      // has no synchronous canBuild / addExecution). Find the MIRV BuildableUnit,
-      // check it's buildable AND affordable (gold is BigInt — keep bigint math),
-      // then fire through the build menu aimed at the territory centre.
-      let buildables;
-      {
-        buildables = await withTimeout(
-          this.player.buildables(centerTile, [UNIT.MIRV]),
-          WORKER_TIMEOUT_MS,
-          null,
-        );
-      }
-      const bu = Array.isArray(buildables)
-        ? buildables.find((b) => b.type === UNIT.MIRV)
-        : null;
-      if (bu === null || bu === undefined) return;
-      if (bu.canBuild === false || this.player.gold() < bu.cost) return;
-      // Both the territory-center and buildability reads yield to the worker.
-      // Revalidate diplomacy at actuation time so a newly friendly player
-      // cannot receive a MIRV selected from stale state.
-      if (!this.isValidMirvTargetPlayer(enemy)) return;
-      const buildMenu = getBuildMenu();
-      if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") return;
-      if (!sendAutoBotBuildOrUpgrade(buildMenu, bu, centerTile, this.game, this.player)) return;
+      if (!(await this.emitMIRVBuildIntent(enemy, centerTile))) return false;
+
       this.recordMirvHit(enemy);
       // WIN-FIX (NOT in src): remember this crater centre so the attack behaviour
       // pours amphibious landings into the freshly-MIRV'd (weakened) nation. We
@@ -449,6 +443,42 @@
       setLastAction(tr("☢️ MIRV"), "nuke");
       this.emojiBehavior.sendEmoji(AllPlayers, EMOJI_NUKE);
       respondToMIRV(this.game, this.random, enemy);
+      return true;
+    }
+
+    async emitMIRVBuildIntent(enemy, centerTile) {
+      // Affordability/actuation via the buildables probe + build menu (the client
+      // has no synchronous canBuild / addExecution). Find the MIRV BuildableUnit,
+      // check it's buildable AND affordable (gold is BigInt — keep bigint math),
+      // then fire through the build menu aimed at the territory centre.
+      let buildables;
+      {
+        buildables = await withTimeout(
+          this.player.buildables(centerTile, [UNIT.MIRV]),
+          WORKER_TIMEOUT_MS,
+          null,
+        );
+      }
+      const bu = Array.isArray(buildables)
+        ? buildables.find((b) => b.type === UNIT.MIRV)
+        : null;
+      if (bu === null || bu === undefined) return false;
+      if (
+        bu.canBuild === false ||
+        bu.canBuild === null ||
+        bu.canBuild === undefined ||
+        this.player.gold() < bu.cost
+      ) return false;
+      // Both the territory-center and buildability reads yield to the worker.
+      // Revalidate diplomacy at actuation time so a newly friendly player
+      // cannot receive a MIRV selected from stale state.
+      if (!this.isValidMirvTargetPlayer(enemy)) return false;
+      const buildMenu = getBuildMenu();
+      if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") return false;
+      if (!sendAutoBotBuildOrUpgrade(buildMenu, bu, centerTile, this.game, this.player)) {
+        return false;
+      }
+      return true;
     }
 
     countCities(p) {

@@ -24,6 +24,7 @@ function createSandbox() {
   const sandbox = {
     Date: { now: () => now },
     Math,
+    Map,
     Number,
     Object,
     String,
@@ -36,12 +37,13 @@ function createSandbox() {
   };
   sandbox.globalThis = sandbox;
   executeClassicScript(
-    `${RATE_LIMIT_SOURCE}\n${CONTEXT_SOURCE}\nglobalThis.__intentTest = { emitIntent, getIntentRateLimitSnapshot, hasIntentRateLimitCapacity, sendAutoBotBuildOrUpgrade };`,
+    `${RATE_LIMIT_SOURCE}\n${CONTEXT_SOURCE}\nglobalThis.__intentTest = { emitIntent, discoverCtors, getIntentRateLimitSnapshot, hasIntentRateLimitCapacity, sendAutoBotBuildOrUpgrade };`,
     sandbox,
     { filename: path.join(ROOT, "engine/ingame/intent-rate-limit.js") },
   );
   return {
     api: sandbox.__intentTest,
+    eventBus,
     emitted,
     setNow: (value) => {
       now = value;
@@ -54,6 +56,20 @@ class TestIntent {
     this.args = args;
   }
 }
+
+class TestCancelAttackIntent {
+  constructor(attackID) {
+    this.attackID = attackID;
+  }
+}
+
+const cancellationDiscovery = createSandbox();
+cancellationDiscovery.eventBus.listeners = new Map([[TestCancelAttackIntent, new Set()]]);
+assert.equal(
+  cancellationDiscovery.api.discoverCtors(cancellationDiscovery.eventBus).cancelAttack,
+  TestCancelAttackIntent,
+  "the runtime constructor probe discovers CancelAttackIntentEvent by attackID shape",
+);
 
 const perSecond = createSandbox();
 for (let i = 0; i < 10; i += 1) {

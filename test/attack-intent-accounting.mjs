@@ -23,6 +23,9 @@ assert.match(
 
 const UNIT = {
   TransportShip: "Transport",
+  AtomBomb: "Atom Bomb",
+  HydrogenBomb: "Hydrogen Bomb",
+  MIRVWarhead: "MIRV Warhead",
   City: "City",
   DefensePost: "Defense Post",
   SAMLauncher: "SAM Launcher",
@@ -32,6 +35,15 @@ const UNIT = {
 };
 const troopEmissions = [];
 const attackRecipients = [];
+const cancelledAttackIds = [];
+class CancelAttackIntent {
+  constructor(attackID) {
+    this.attackID = attackID;
+  }
+}
+const eventBus = {
+  emit: (event) => cancelledAttackIds.push(event.attackID),
+};
 const sandbox = {
   UNIT,
   GameMode: { Team: "Team" },
@@ -56,8 +68,9 @@ const sandbox = {
     attack: "attack",
     boat: "boat",
     donateTroops: "donateTroops",
+    cancelAttack: CancelAttackIntent,
   }),
-  getEventBus: () => null,
+  getEventBus: () => eventBus,
   emitIntent: (_ctor, recipient, troops) => {
     attackRecipients.push(recipient);
     troopEmissions.push(troops);
@@ -67,12 +80,20 @@ const sandbox = {
   captureRuntimeException: () => {},
   runtimeDebugLog: () => {},
   withTimeout: async (promise) => promise,
+  closestTwoTiles: () => ({ x: 1, y: 101 }),
   calculateBoundingBoxCenter: () => ({ x: 0, y: 0 }),
   tr: (value) => value,
   state: {
     settings: { winFixes: true, features: { donate: true, boat: true } },
     stats: {},
     earlyGame: {},
+  },
+  __OFHSpawnObjective: {
+    getPlayerClanTag: (player) => player.clanTag?.() ?? null,
+    sameClanTag: (left, right) =>
+      typeof left === "string" &&
+      typeof right === "string" &&
+      left.toUpperCase() === right.toUpperCase(),
   },
 };
 
@@ -619,6 +640,99 @@ assert.equal(
 // TerraNullius is the opening expansion lane. Commit decisively while retaining
 // the hostile-border safety reserve.
 const terraNullius = { isPlayer: () => false, id: () => "TerraNullius" };
+const clanMate = {
+  smallID: () => 2,
+  clanTag: () => "ESP",
+};
+const outsider = {
+  smallID: () => 3,
+  clanTag: () => "ABC",
+};
+const clanMe = {
+  ...me,
+  clanTag: () => "esp",
+};
+const clanNuke = {
+  id: () => "clan-crater-nuke",
+  type: () => UNIT.AtomBomb,
+  targetTile: () => 101,
+};
+const clanNukeGame = {
+  ticks: () => tick,
+  width: () => 4,
+  height: () => 4,
+  x: (tile) => Number(tile) % 100,
+  y: (tile) => Math.floor(Number(tile) / 100),
+  ref: (x, y) => y * 100 + x,
+  isValidCoord: (x, y) => x >= 0 && x < 4 && y >= 0 && y < 4,
+  players: () => [clanMe, clanMate, outsider],
+  units: () => [clanNuke],
+  ownerID: (tile) => {
+    if (tile === 102) return 2;
+    if (tile === 201) return 3;
+    return null;
+  },
+  neighbors: () => [201],
+  isLand: () => true,
+  hasOwner: () => false,
+  hasFallout: (tile) => tile === 102 || tile === 201,
+  magnitude: () => 8,
+  config: () => ({
+    maxTroops: () => 100000,
+    nukeMagnitudes: () => ({ outer: 2 }),
+    attackLogic: () => ({ attackerTroopLoss: 2 }),
+  }),
+};
+const clanNukeBehavior = new sandbox.AttackBehavior(
+  {},
+  clanNukeGame,
+  clanMe,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+clanNukeBehavior.getEnemyDefensePostAttackProfile = () => ({});
+clanNukeBehavior.attackIsTooWeakForDefensePosts = () => false;
+clanNukeBehavior.applyEarlyGameRaceTroops = ({ baseTroops }) => baseTroops;
+clanNukeBehavior.captureSameClanNukeTerrain();
+assert.equal(
+  clanNukeBehavior.terraNulliusTileIsEligible(102, true),
+  false,
+  "fallout that belonged to a same-clan player is excluded from expansion",
+);
+assert.equal(
+  clanNukeBehavior.terraNulliusTileIsEligible(201, true),
+  false,
+  "a mixed crater is quarantined because expansion can cross into clan terrain",
+);
+const protectedClanEmissionCount = troopEmissions.length;
+assert.equal(
+  clanNukeBehavior.sendLandAttack(terraNullius),
+  false,
+  "a generic TerraNullius attack is withheld even when protected clan fallout is not yet on the frontier",
+);
+assert.equal(troopEmissions.length, protectedClanEmissionCount);
+assert.equal(
+  clanNukeBehavior.emitBoat(102, 1000, "protected clan crater"),
+  false,
+  "boats cannot land on protected same-clan fallout",
+);
+assert.equal(troopEmissions.length, protectedClanEmissionCount);
+outgoing.push({
+  id: () => "active-terra-nullius-attack",
+  target: () => terraNullius,
+  retreating: () => false,
+});
+clanNukeBehavior.enforceSameClanNukeTerrainSafety();
+assert.deepEqual(
+  cancelledAttackIds,
+  ["active-terra-nullius-attack"],
+  "an already-active TerraNullius attack is cancelled before it can enter protected clan fallout",
+);
+outgoing.length = 0;
+
 const strongAlly = {
   smallID: () => 7,
   isAlive: () => true,
@@ -1455,12 +1569,24 @@ assert.equal(
   "a sufficiently funded tribe assault is emitted",
 );
 assert.ok(
-  troopEmissions.at(-1) >= Math.ceil(tribeTarget.troops() * 2.5),
-  "a tribe assault meets the 2.5-times whole-troop conquest floor",
+  troopEmissions.at(-1) >= Math.ceil(tribeTarget.troops() * 4),
+  "a tribe assault meets the four-times whole-troop conquest floor",
 );
 assert.ok(
   ownTroops - troopEmissions.at(-1) >= tribeBehavior.getEarlyGameLiveReserveTroops(),
   "a completed tribe assault still respects the acceleration reserve",
+);
+assert.equal(
+  tribeBehavior.getTribeCaptureTroopFloor(tribeTarget),
+  40000,
+  "a live tribe capture requires four times the current tribe strength",
+);
+assert.equal(
+  tribeBehavior.getTribeCaptureTroopFloor(tribeTarget, {
+    attackCostMultiplier: 1.5,
+  }),
+  60000,
+  "the tribe floor includes the target-specific Defense Post attack cost",
 );
 
 const botControlledTribeBehavior = new sandbox.AttackBehavior(
@@ -1485,8 +1611,8 @@ assert.equal(
 assert.equal(troopEmissions.length, botControlledEmissionCount + 1);
 assert.equal(
   troopEmissions.at(-1),
-  25000,
-  "controller type cannot bypass the 2.5x tribe conquest floor",
+  40000,
+  "controller type cannot bypass the 4x tribe conquest floor",
 );
 
 const fractionalTribeTarget = {
@@ -1495,8 +1621,8 @@ const fractionalTribeTarget = {
 };
 assert.equal(
   tribeBehavior.getTribeCaptureTroopFloor(fractionalTribeTarget),
-  25001,
-  "a fractional 2.5x tribe requirement rounds up to the minimum whole-troop conquest force",
+  40001,
+  "a fractional 4x tribe requirement rounds up to the minimum whole-troop conquest force",
 );
 
 const underfundedTribeBehavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
@@ -1519,7 +1645,7 @@ assert.equal(
   underfundedEmissionCount + 1,
   "the pending intent is not mistaken for a complete capture force",
 );
-assert.equal(troopEmissions.at(-1), 24000);
+assert.equal(troopEmissions.at(-1), 39000);
 sandbox.currentDifficulty = () => "Impossible";
 
 // Different hostile targets may be launched in the same decision. Pending
@@ -1585,7 +1711,7 @@ assert.equal(
 );
 assert.equal(
   parallelBehavior.getPendingOutboundAttackTroops(),
-  5000,
+  8000,
   "parallel tribal intents reserve each tribe's fully funded conquest force",
 );
 assert.equal(
@@ -1628,6 +1754,126 @@ assert.equal(
   "a troop debit materialized for one target cannot release another target's reservation",
 );
 
+// An accepted player attack can remain absent from outgoingAttacks during the
+// local intent grace window. Its pending commitment must still identify the
+// target so a later target-strength increase receives only the missing force.
+let pendingPlayerTargetTroops = 1000;
+const pendingPlayerTarget = {
+  ...tribeTarget,
+  id: () => "pending-player-target",
+  smallID: () => 61,
+  type: () => sandbox.PlayerType.Human,
+  troops: () => pendingPlayerTargetTroops,
+};
+const pendingPlayerBehavior = new sandbox.AttackBehavior(
+  {},
+  game,
+  parallelMe,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+pendingPlayerBehavior.getEnemyDefensePostAttackProfile = () => ({});
+pendingPlayerBehavior.attackIsTooWeakForDefensePosts = () => false;
+pendingPlayerBehavior.applyEarlyGameRaceTroops = ({ baseTroops }) => baseTroops;
+pendingPlayerBehavior.shouldAttack = () => true;
+outgoing.length = 0;
+ownTroops = 100000;
+tick = 40;
+const pendingPlayerCandidate = {
+  player: pendingPlayerTarget,
+  tribeClusterSize: 1,
+  tribeClusterAccess: 1,
+};
+assert.equal(
+  await pendingPlayerBehavior.sendAttack(
+    pendingPlayerTarget,
+    false,
+    null,
+    pendingPlayerCandidate,
+    false,
+    true,
+  ),
+  true,
+  "an accepted player attack is recorded before the engine exposes it",
+);
+assert.equal(outgoing.length, 0, "the regression keeps the engine snapshot empty");
+assert.strictEqual(
+  pendingPlayerBehavior.outboundPlayerAttackCommitments().targetsByKey.get("61"),
+  pendingPlayerTarget,
+  "a pending player intent still identifies its target",
+);
+pendingPlayerTargetTroops = 2000;
+tick = 41;
+const pendingPlayerReinforcementCount = troopEmissions.length;
+assert.equal(
+  await pendingPlayerBehavior.reinforceIncompleteOutboundPlayerAttack(),
+  true,
+  "a target-specific reinforcement is emitted while the original attack is not visible",
+);
+assert.equal(troopEmissions.length, pendingPlayerReinforcementCount + 1);
+assert.equal(
+  troopEmissions.at(-1),
+  6000,
+  "the pending player intent receives only the missing amount for the stronger target",
+);
+outgoing.push({
+  id: () => "pending-player-attack-1",
+  retreating: () => false,
+  target: () => pendingPlayerTarget,
+  troops: () => 4000,
+});
+tick = 42;
+assert.equal(
+  pendingPlayerBehavior.getPendingOutboundAttackTroops(),
+  6000,
+  "the visible first attack does not release the still-unseen reinforcement intent",
+);
+outgoing.push({
+  id: () => "pending-player-attack-2",
+  retreating: () => false,
+  target: () => pendingPlayerTarget,
+  troops: () => 6000,
+});
+tick = 43;
+assert.equal(
+  pendingPlayerBehavior.getPendingOutboundAttackTroops(),
+  0,
+  "matching engine attacks settle each accepted intent exactly once",
+);
+assert.equal(
+  pendingPlayerBehavior.outboundPlayerAttackCommitments().committedByKey.get("61"),
+  10000,
+  "visible attack troops are not double-counted with settled local intents",
+);
+
+pendingPlayerBehavior.botAttackPendingIntentCommitments = [
+  {
+    targetIsPlayer: true,
+    targetKey: "62",
+    troops: 1000,
+    target: {
+      isPlayer: () => true,
+      isAlive: () => false,
+      smallID: () => 62,
+    },
+  },
+  { targetIsPlayer: true, targetKey: "63", troops: 1000, target: {} },
+];
+pendingPlayerBehavior.outboundIntentReconciledTick = null;
+assert.equal(
+  pendingPlayerBehavior.outboundPlayerAttackCommitments().targetsByKey.has("62"),
+  false,
+  "a stale target cannot re-enter reinforcement planning",
+);
+assert.equal(
+  pendingPlayerBehavior.outboundPlayerAttackCommitments().targetsByKey.has("63"),
+  false,
+  "an invalid target reference cannot create a reinforcement plan",
+);
+
 outgoing.length = 0;
 ownTroops = 100000;
 tick = 20;
@@ -1642,9 +1888,9 @@ parallelTribeA.troops = () => 4000;
 assert.equal(parallelBehavior.getLiveOutboundAttackTroopsForTarget(parallelTribeA), 3000);
 parallelBehavior.botAttackTroopsSent = 0;
 assert.equal(
-  parallelBehavior.calculateBotAttackTroops(parallelTribeA, 10000, {}, 3000),
-  7000,
-  "a growing tribe receives the missing top-up to the live 2.5x conquest floor",
+  parallelBehavior.calculateBotAttackTroops(parallelTribeA, 20000, {}, 3000),
+  13000,
+  "a growing tribe receives only the missing top-up to the live 4x conquest floor",
 );
 
 parallelBehavior.botAttackPendingIntentCommitments = [
@@ -1664,9 +1910,9 @@ parallelBehavior.outboundIntentReconciledTick = tick;
 parallelTribeA.troops = () => 4500;
 parallelBehavior.botAttackTroopsSent = 0;
 assert.equal(
-  parallelBehavior.calculateBotAttackTroops(parallelTribeA, 10000, {}, 3000),
-  7750,
-  "tribe reinforcement includes a pending top-up but still fills a newly grown capture floor",
+  parallelBehavior.calculateBotAttackTroops(parallelTribeA, 20000, {}, 3000),
+  14500,
+  "tribe reinforcement includes a pending top-up but still fills a newly grown 4x capture floor",
 );
 
 const fractionalPendingTribeTarget = {
@@ -1686,12 +1932,12 @@ const fractionalPendingTribeBehavior = new sandbox.AttackBehavior(
 fractionalPendingTribeBehavior.getLiveOutboundAttackTroopsForTarget = () => 0;
 fractionalPendingTribeBehavior.getPendingOutboundAttackTroopsForTarget = () => 945.408;
 assert.equal(
-  fractionalPendingTribeBehavior.calculateBotAttackTroops(fractionalPendingTribeTarget, 133842),
-  133842,
+  fractionalPendingTribeBehavior.calculateBotAttackTroops(fractionalPendingTribeTarget, 214713),
+  214713,
   "a fractional pending force rounds the remaining whole-troop conquest payload up",
 );
 assert.equal(
-  fractionalPendingTribeBehavior.calculateBotAttackTroops(fractionalPendingTribeTarget, 133841),
+  fractionalPendingTribeBehavior.calculateBotAttackTroops(fractionalPendingTribeTarget, 214712),
   0,
   "a tribe capture is deferred rather than emitting one troop below its conquest floor",
 );
@@ -1759,10 +2005,93 @@ assert.equal(
 );
 assert.equal(maritimeReinforcementArgs?.[0], maritimeIncompleteTribe);
 assert.equal(
-  maritimeReinforcementArgs?.at(-1),
+  maritimeReinforcementArgs?.[5],
   true,
   "Tribe reinforcements retain the parallel-Tribe route so sendAttack can choose a transport",
 );
+
+// A maritime reinforcement must carry the plan's exact missing force through
+// sendAttack.  The generic boat path intentionally emits a cheap probe, which
+// is wrong once an active conquest has a target-specific capture floor.
+const maritimeActiveTargetTroops = 5_000;
+const maritimeActiveTarget = {
+  isAlive: () => true,
+  isPlayer: () => true,
+  type: () => sandbox.PlayerType.Bot,
+  smallID: () => 64,
+  id: () => "maritime-active-target",
+  troops: () => maritimeActiveTargetTroops,
+  borderTiles: () => new Set([101]),
+  units: () => [],
+};
+const maritimePlayer = {
+  ...parallelMe,
+  borderTiles: () => new Set([1]),
+  units: () => [],
+  unitCount: () => 0,
+  sharesBorderWith: () => false,
+  bestTransportShipSpawn: async () => "spawn",
+};
+const maritimeGame = {
+  ...game,
+  owner: () => maritimeActiveTarget,
+  isShore: (tile) => tile === 1 || tile === 101,
+  ensureBorderTiles: async () => {},
+  config: () => ({
+    maxTroops: () => 100_000,
+    isUnitDisabled: () => false,
+    boatMaxNumber: () => 10,
+  }),
+};
+const maritimeExactBehavior = new sandbox.AttackBehavior(
+  {},
+  maritimeGame,
+  maritimePlayer,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+maritimeExactBehavior.getEnemyDefensePostAttackProfile = () => ({
+  attackCostMultiplier: 1,
+});
+maritimeExactBehavior.attackIsTooWeakForDefensePosts = () => false;
+maritimeExactBehavior.applyEarlyGameRaceTroops = ({ baseTroops }) => baseTroops;
+maritimeExactBehavior.allowEarlyGameBoat = async () => true;
+outgoing.length = 0;
+outgoing.push({
+  id: () => "maritime-active-attack",
+  retreating: () => false,
+  target: () => maritimeActiveTarget,
+  troops: () => 8_000,
+});
+ownTroops = 100_000;
+tick = 60;
+const maritimeExactEmissionCount = troopEmissions.length;
+assert.equal(
+  await maritimeExactBehavior.reinforceIncompleteOutboundPlayerAttack(),
+  true,
+  "an active maritime conquest emits its target-specific reinforcement",
+);
+assert.equal(troopEmissions.length, maritimeExactEmissionCount + 1);
+assert.equal(
+  troopEmissions.at(-1),
+  12_000,
+  "the transport carries exactly the missing amount to reach the grown 4x floor",
+);
+assert.ok(
+  ownTroops - troopEmissions.at(-1) >= maritimeExactBehavior.getEarlyGameLiveReserveTroops(),
+  "the exact maritime reinforcement remains above the live reserve",
+);
+const maritimeNoDuplicateEmissionCount = troopEmissions.length;
+tick += 1;
+assert.equal(
+  await maritimeExactBehavior.reinforceIncompleteOutboundPlayerAttack(),
+  false,
+  "a completed maritime reinforcement is not emitted again",
+);
+assert.equal(troopEmissions.length, maritimeNoDuplicateEmissionCount);
 
 const prioritizedReinforcementBehavior = Object.create(sandbox.AttackBehavior.prototype);
 const distantFromCapture = {
@@ -1910,13 +2239,13 @@ assert.equal(
 assert.equal(troopEmissions.length, reinforcementEmissionCount + 1);
 assert.equal(
   troopEmissions.at(-1),
-  7000,
+  13000,
   "an incomplete tribe attack receives only the missing reinforcement",
 );
 
 botParallelBehavior.botAttackPendingIntentCommitments = [];
 botParallelBehavior.outboundIntentReconciledTick = null;
-outgoing[0].troops = () => 10000;
+outgoing[0].troops = () => 16000;
 tick = 23;
 assert.equal(
   await botParallelBehavior.attackBots(),

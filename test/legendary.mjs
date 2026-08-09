@@ -623,10 +623,23 @@ const structureSandbox = {
   legendaryPlacementProximityScore: (distance, radius) =>
     Math.max(0, 1 - distance / Math.max(1, radius)),
   legendaryMissileDefenseSchedule: plannerSandbox.legendaryMissileDefenseSchedule,
+  UniversalPathFinding: null,
   state: { settings: { winFixes: true } },
   withTimeout: async (promise) => promise,
   WORKER_TIMEOUT_MS: 1,
 };
+const nukePathSandbox = {
+  UNIT: {},
+  within: (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value)),
+  globalThis: null,
+};
+nukePathSandbox.globalThis = nukePathSandbox;
+executeClassicScript(
+  `${read("engine/ingame/auto-bot/nukeBehavior.js")}\nglobalThis.__UniversalPathFinding = UniversalPathFinding;`,
+  nukePathSandbox,
+  { filename: "nukeBehavior-pathfinder.js" },
+);
+structureSandbox.UniversalPathFinding = nukePathSandbox.__UniversalPathFinding;
 structureSandbox.globalThis = structureSandbox;
 executeClassicScript(
   `${structureSource}\nglobalThis.StructureBehavior = StructureBehavior;`,
@@ -638,6 +651,14 @@ let routeDistanceReads = 0;
 routeBehavior.game = {
   x: (tile) => tile,
   y: () => 0,
+  height: () => 1_000,
+  ref: (x) => Math.floor(x),
+  config: () => ({
+    defaultSamMissileSpeed: () => 2,
+    defaultNukeTargetableRange: () => 5,
+    defaultNukeSpeed: () => 10,
+  }),
+  manhattanDist: (left, right) => Math.abs(left - right),
   euclideanDistSquared: (left, right) => {
     routeDistanceReads++;
     return (left - right) ** 2;
@@ -666,6 +687,22 @@ assert.equal(
   routeBehavior.legendarySamRouteHasIntercept(5, 1, route, 0, { samTile: 5, range: 1 }),
   true,
   "SAM route short-circuit still accepts a reachable intercept",
+);
+const flightLimitedPath = [0, 1, 2, 3, 4, 5];
+const flightLimitedRoute = {
+  path: flightLimitedPath,
+  targetableIndexes: [4],
+  targetableBounds: routeBehavior.legendaryTrajectoryTargetableBounds(flightLimitedPath, [4]),
+  launchOffset: 0,
+  impactTick: 5,
+};
+assert.equal(
+  routeBehavior.legendarySamRouteHasIntercept(20, 1, flightLimitedRoute, 0, {
+    samTile: 20,
+    range: 17,
+  }),
+  false,
+  "route protection rejects geometric coverage when the interceptor cannot arrive in time",
 );
 let targetEntryBuilds = 0;
 routeBehavior.legendaryMissileTargetEntry = (target) => {
@@ -1046,6 +1083,7 @@ flightSpeedBehavior.game = {
   euclideanDistSquared: () => 1,
   x: (tile) => tile,
   y: () => 0,
+  height: () => 1_000,
   isValidCoord: () => true,
   ref: (x) => x,
 };
@@ -1053,6 +1091,32 @@ flightSpeedBehavior.legendaryNukeFlightPath(0, 1);
 flightSpeedBehavior.legendaryNukeFlightPath(0, 1);
 flightSpeedBehavior.legendaryNukeFlightTime(0, 1);
 assert.equal(flightSpeedReads, 1, "cached missile trajectories reuse the configured nuke speed");
+const pinnedFlightPathFinder = structureSandbox.UniversalPathFinding.Parabola(
+  flightSpeedBehavior.game,
+  { increment: 10, distanceBasedHeight: true, directionUp: true },
+);
+const pinnedMotionPlan = [];
+let pinnedFlightTicks = 0;
+while (true) {
+  const result = pinnedFlightPathFinder.next(0, 500, 10);
+  pinnedFlightTicks++;
+  if (result.status === "Complete") break;
+  pinnedMotionPlan.push(result.node);
+}
+const sampledFlightPath = flightSpeedBehavior.legendaryNukeFlightPath(0, 500);
+assert.ok(
+  pinnedMotionPlan.length > 0 && sampledFlightPath.length > 0,
+  "the Legendary regression route has both a sampled trajectory and an authoritative motion plan",
+);
+assert.ok(
+  pinnedFlightTicks > sampledFlightPath.length,
+  "the pinned motion plan needs multiple ticks across at least one sampled trajectory segment",
+);
+assert.equal(
+  flightSpeedBehavior.legendaryNukeFlightTime(0, 500),
+  pinnedFlightTicks,
+  "Legendary prospective flight ticks match the pinned NukeExecution motion plan",
+);
 
 const placementContextBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
 const placementContextConfig = {

@@ -21,15 +21,13 @@
   let _buildTimerScan = [];
 
   function getConstructionDuration(game, type) {
-    {
-      const info = game.config && game.config().unitInfo
-        ? game.config().unitInfo(type)
-        : null;
-      if (info && Number.isFinite(info.constructionDuration) && info.constructionDuration > 0) {
-        return info.constructionDuration;
-      }
-    }
-    return BUILD_TIMER_DEFAULT_DURATION[type] || 100;
+    return typeof ofhGameConstructionDuration === "function"
+      ? ofhGameConstructionDuration(
+          game,
+          type,
+          BUILD_TIMER_DEFAULT_DURATION[type] || 100,
+        )
+      : BUILD_TIMER_DEFAULT_DURATION[type] || 100;
   }
 
   function getBuildTimerUnits(game) {
@@ -74,7 +72,13 @@
     const firstSeen = _buildTimerConstructionSeen.get(base.id);
     const duration = getConstructionDuration(game, base.type);
     const remaining = Math.max(0, duration - (ticks - firstSeen));
-    const seconds = Math.round(remaining / 10);
+    const seconds = Math.round(
+      (remaining *
+        (typeof ofhGameMsPerTick === "function"
+          ? ofhGameMsPerTick(game, 100)
+          : 100)) /
+        1000,
+    );
     return {
       ...base,
       label: seconds > 0 ? `🏗 ${seconds}s` : tr("Building"),
@@ -82,18 +86,28 @@
     };
   }
 
-  function getCompletedTimerEntry(unit, base, ticks) {
+  function getCompletedTimerEntry(game, unit, base, ticks) {
     _buildTimerConstructionSeen.delete(base.id);
     const queue = getBuildTimerQueue(unit);
     const level = getBuildTimerLevel(unit);
     if (!Array.isArray(queue) || queue.length < level) {
       return { ...base, label: "✓", state: "ready" };
     }
-    const remaining = BUILD_TIMER_COOLDOWN_TICKS - (ticks - queue[0]);
+    const cooldown =
+      typeof ofhGameCooldownTicks === "function"
+        ? ofhGameCooldownTicks(game, base.type, BUILD_TIMER_COOLDOWN_TICKS)
+        : BUILD_TIMER_COOLDOWN_TICKS;
+    const remaining = cooldown - (ticks - queue[0]);
     if (remaining <= 0) return { ...base, label: "✓", state: "ready" };
     return {
       ...base,
-      label: `⟳ ${Math.round(remaining / 10)}s`,
+      label: `⟳ ${Math.round(
+        (remaining *
+          (typeof ofhGameMsPerTick === "function"
+            ? ofhGameMsPerTick(game, 100)
+            : 100)) /
+          1000,
+      )}s`,
       state: "cooldown",
     };
   }
@@ -110,7 +124,7 @@
       seenIds.add(base.id);
       const entry = unit.isUnderConstruction?.()
         ? getConstructionTimerEntry(game, base, ticks)
-        : getCompletedTimerEntry(unit, base, ticks);
+        : getCompletedTimerEntry(game, unit, base, ticks);
       out.push(entry);
     }
 

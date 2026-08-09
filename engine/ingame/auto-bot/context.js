@@ -136,6 +136,7 @@
     bus: null,
     spawn: null,
     attack: null,
+    cancelAttack: null,
     boat: null,
     moveWarship: null,
     embargo: null,
@@ -156,6 +157,14 @@
   }
 
   const INTENT_CTOR_PROBES = [
+    {
+      key: "cancelAttack",
+      args: ["§attack"],
+      matches: (event) =>
+        event?.attackID === "§attack" &&
+        event.targetID === undefined &&
+        event.troops === undefined,
+    },
     {
       key: "moveWarship",
       args: [[7, 8], 99],
@@ -241,6 +250,7 @@
     if (
       _ctors.bus === eventBus &&
       _ctors.attack &&
+      _ctors.cancelAttack &&
       _ctors.spawn &&
       _ctors.boat &&
       _ctors.moveWarship &&

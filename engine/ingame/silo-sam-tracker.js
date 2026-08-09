@@ -211,9 +211,11 @@
   }
 
   function _sampleNukeBezier(spec) {
-    var config = typeof spec.game.config === "function" ? spec.game.config() : null;
-    var speed = config?.defaultNukeSpeed ? Number(config.defaultNukeSpeed()) : 8;
-    var increment = Number.isFinite(speed) && speed > 0 ? speed : 8;
+    var speed =
+      typeof ofhGameNukeSpeed === "function"
+        ? ofhGameNukeSpeed(spec.game, "Atom Bomb", 10)
+        : 10;
+    var increment = Number.isFinite(speed) && speed > 0 ? speed : 10;
     var points = [spec.start];
     var previous = spec.start;
     var cumulative = 0;
@@ -537,15 +539,29 @@
     return leftTeam != null && rightTeam != null && leftTeam === rightTeam;
   }
 
+  function _autoFireMsPerTick(game) {
+    if (typeof ofhGameMsPerTick === "function") return ofhGameMsPerTick(game, 100);
+    var configured = Number(game?.config?.().msPerTick?.());
+    return Number.isFinite(configured) && configured > 0 ? configured : 100;
+  }
+
+  function _autoFireUnitConstructionTicks(game, type, fallback) {
+    var info = null;
+    if (typeof game?.unitInfo === "function") info = game.unitInfo(type);
+    if (!info) info = game?.config?.().unitInfo?.(type);
+    var duration = _autoFireConstructionDuration(info);
+    if (duration !== null) return duration;
+    return typeof ofhGameConstructionDuration === "function"
+      ? ofhGameConstructionDuration(game, type, fallback)
+      : fallback;
+  }
+
   function _siloConstructionTimeLabel(game, unit, currentTick, isBuilding) {
     if (!isBuilding) return "";
-    var buildTicks = 100;
-    {
-      var duration = game.unitInfo?.("Missile Silo")?.constructionDuration;
-      if (duration != null) buildTicks = duration;
-    }
+    var buildTicks = _autoFireUnitConstructionTicks(game, "Missile Silo", 100);
     var startTick = unit.state?.constructionStartTick;
-    return startTick == null ? "" : (Math.max(0, buildTicks - (currentTick - startTick)) / 10).toFixed(1) + "s";
+    var remaining = Math.max(0, buildTicks - (currentTick - startTick));
+    return startTick == null ? "" : ((remaining * _autoFireMsPerTick(game)) / 1000).toFixed(1) + "s";
   }
 
   function _siloPanelItem(game, me, unit, currentTick) {
@@ -690,7 +706,10 @@
       if (!entry) return null;
       return {
         count: entry.count,
-        etaSec: entry.minEta === Infinity ? null : entry.minEta / 10,
+        etaSec:
+          entry.minEta === Infinity
+            ? null
+            : (entry.minEta * _autoFireMsPerTick(game)) / 1000,
       };
     }
   }
@@ -781,14 +800,21 @@
   }
 
   function _autoFireNukeRadius(game, type) {
-    var fallback = type === "Hydrogen Bomb" ? 100 : 30;
-    {
-      var cfg = game && typeof game.config === "function" ? game.config() : null;
-      var magnitude = cfg && typeof cfg.nukeMagnitudes === "function" ? cfg.nukeMagnitudes(type) : null;
-      var radius = Number(magnitude && (magnitude.outer !== void 0 ? magnitude.outer : magnitude.inner));
-      if (Number.isFinite(radius) && radius > 0) return radius;
+    var fallback;
+    if (type === "Hydrogen Bomb") {
+      fallback = { inner: 80, outer: 100 };
+    } else if (type === "MIRV Warhead") {
+      fallback = { inner: 12, outer: 18 };
+    } else {
+      fallback = { inner: 12, outer: 30 };
     }
-    return fallback;
+    var magnitude;
+    if (typeof ofhGameNukeMagnitude === "function") {
+      magnitude = ofhGameNukeMagnitude(game, type, fallback);
+    } else {
+      magnitude = game?.config?.().nukeMagnitudes?.(type) ?? fallback;
+    }
+    return Number(magnitude && (magnitude.outer ?? magnitude.inner)) || fallback.outer;
   }
 
   function _autoFireGetUnits(game, types) {
@@ -838,13 +864,12 @@
         typeof UniversalPathFinding !== "undefined" &&
         UniversalPathFinding.Parabola
       ) {
-        var cfg = typeof game.config === "function" ? game.config() : null;
         var speed =
-          cfg && typeof cfg.defaultNukeSpeed === "function"
-            ? Number(cfg.defaultNukeSpeed())
-            : 8;
+          typeof ofhGameNukeSpeed === "function"
+            ? ofhGameNukeSpeed(game, "Atom Bomb", 10)
+            : 10;
         var path = UniversalPathFinding.Parabola(game, {
-          increment: Number.isFinite(speed) && speed > 0 ? speed : 8,
+          increment: Number.isFinite(speed) && speed > 0 ? speed : 10,
           distanceBasedHeight: true,
           directionUp: directionUp !== false,
         }).findPath(fromTile, targetTile);
@@ -892,7 +917,9 @@
       var duration = _autoFireConstructionDuration(info);
       if (duration !== null) return duration;
     }
-    return 300;
+    return typeof ofhGameConstructionDuration === "function"
+      ? ofhGameConstructionDuration(game, "SAM Launcher", 300)
+      : 300;
   }
 
   function _autoFireConstructionDuration(info) {
@@ -901,7 +928,7 @@
       var raw = typeof info.constructionDuration === "function"
         ? info.constructionDuration() : info.constructionDuration;
       var duration = Number(raw);
-      return Number.isFinite(duration) && duration > 0 ? duration : null;
+      return Number.isFinite(duration) && duration >= 0 ? duration : null;
     }
   }
 
@@ -964,10 +991,15 @@
     if (sourceTile == null) return null;
     var trajectory = _autoFireNukePath(game, sourceTile, targetTile, directionUp);
     if (!Array.isArray(trajectory) || trajectory.length === 0) return null;
-    var config = typeof game.config === "function" ? game.config() : null;
-    var nukeSpeed = _autoFirePositiveConfig(config, "defaultNukeSpeed", 8);
-    var samSpeed = _autoFirePositiveConfig(config, "defaultSamMissileSpeed", 12);
-    var targetableRange = _autoFirePositiveConfig(config, "defaultNukeTargetableRange", Infinity);
+    var nukeSpeed = typeof ofhGameNukeSpeed === "function"
+      ? ofhGameNukeSpeed(game, "Atom Bomb", 10)
+      : 10;
+    var samSpeed = typeof ofhGameSamMissileSpeed === "function"
+      ? ofhGameSamMissileSpeed(game, 12)
+      : 12;
+    var targetableRange = typeof ofhGameNukeTargetableRange === "function"
+      ? ofhGameNukeTargetableRange(game, 150)
+      : 150;
     var targetableRangeSquared = Number.isFinite(targetableRange) && targetableRange > 0
       ? targetableRange * targetableRange : Infinity;
     var arrivalTicks = _autoFirePathArrivalTicks(game, trajectory, nukeSpeed);
@@ -1313,8 +1345,13 @@
     if (!context.opts.raceConstruction) return true;
     var buildTicks = context.opts.defaultBuildTicks;
     {
-      var duration = context.game.unitInfo?.(context.opts.unitInfoName)?.constructionDuration;
-      if (duration != null) buildTicks = duration;
+      if (typeof ofhGameConstructionDuration === "function") {
+        buildTicks = ofhGameConstructionDuration(
+          context.game,
+          context.opts.unitInfoName,
+          buildTicks,
+        );
+      }
     }
     var startTick = unit.state?.constructionStartTick;
     if (startTick == null) return false;
@@ -1445,9 +1482,10 @@
 
   function _samConstructionTimeLabel(game, sam, currentTick, isBuilding) {
     if (!isBuilding) return "";
-    var ticks = _autoFireConstructionDuration(game.unitInfo?.("SAM Launcher")) ?? 300;
+    var ticks = _autoFireUnitConstructionTicks(game, "SAM Launcher", 300);
     var startTick = sam.state?.constructionStartTick;
-    return startTick == null ? "" : (Math.max(0, ticks - (currentTick - startTick)) / 10).toFixed(1) + "s";
+    var remaining = Math.max(0, ticks - (currentTick - startTick));
+    return startTick == null ? "" : ((remaining * _autoFireMsPerTick(game)) / 1000).toFixed(1) + "s";
   }
 
   function _handleSamNukeClick(event, item) {
