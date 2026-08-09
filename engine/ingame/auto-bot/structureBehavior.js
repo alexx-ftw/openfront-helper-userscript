@@ -524,6 +524,8 @@
       this._missileDefenseContextTick = null;
       this._missileDefenseContextKey = null;
       this._missileDefenseContextCache = null;
+      this._missileDefenseStateProbeCache = null;
+      this._missileDefenseStateKeyCache = null;
       this._missileDefenseEvaluationTick = null;
       this._missileDefenseEvaluationContext = null;
       this._missileDefenseEvaluationCache = null;
@@ -2344,12 +2346,6 @@
         typeof this.game?.ticks === "function"
           ? Number(this.game.ticks())
           : null;
-      if (
-        Number.isFinite(signalTick) &&
-        this._missileDefenseSignalTick === signalTick
-      ) {
-        return this._missileDefenseSignalCache;
-      }
       const cacheSignal = (signal) => {
         if (Number.isFinite(signalTick)) {
           this._missileDefenseSignalTick = signalTick;
@@ -2363,7 +2359,7 @@
       const hasBuiltHostileSilo = hostile.some((other) =>
         this.hasBuiltMissileSilo(other),
       );
-      const hasActiveHostileMissile = this.activeHostileMissileSnapshot();
+      const hasActiveHostileMissile = this.activeHostileMissileSnapshot(true);
       if (hasActiveHostileMissile === null) {
         return cacheSignal({
           hasBuiltHostileSilo,
@@ -2394,9 +2390,10 @@
       return true;
     }
 
-    activeHostileMissileSnapshot() {
+    activeHostileMissileSnapshot(forceRefresh = false) {
       const tick = safeStructureGameTick(this.game);
       if (
+        !forceRefresh &&
         Number.isFinite(tick) &&
         this._activeHostileMissileTick === tick
       ) {
@@ -4934,8 +4931,8 @@
       const launchOffset = Math.max(0, Number(state.launchOffset) || 0);
       const speed = this.legendarySamMissileSpeed();
       const lastInterceptableIndex = state.path.length - 2;
-      for (const index of coverageIndexes) {
-        if (index < 0 || index > lastInterceptableIndex) continue;
+      const addOpportunity = (index) => {
+        if (index < 0 || index > lastInterceptableIndex) return;
         const interceptionTick = launchOffset + index;
         const distance =
           typeof this.game.manhattanDist === "function"
@@ -4950,10 +4947,31 @@
           distance / speed,
         );
         const fireTick = interceptionTick - travelTicks;
-        if (fireTick < launchOffset || seenFireTicks.has(fireTick)) continue;
+        if (fireTick < launchOffset || seenFireTicks.has(fireTick)) return;
         seenFireTicks.add(fireTick);
         fireTicks.push(fireTick);
         interceptionTicks.push(interceptionTick);
+      };
+      for (const index of coverageIndexes) {
+        addOpportunity(index);
+      }
+
+      // SAMLauncherExecution cannot intercept on the detonation tick. When
+      // the terminal explosion tile itself is targetable and in SAM range,
+      // the engine makes one final attempt against the preceding in-flight
+      // tile, even when that tile is outside the SAM's geometric range.
+      const finalIndex = state.path.length - 1;
+      const penultimateIndex = finalIndex - 1;
+      const targetableIndexes =
+        state.targetableIndexes ??
+        state.coverageRoute?.targetableIndexes ??
+        state.targetableIndexesOverride;
+      if (
+        coverageIndexes.includes(finalIndex) &&
+        Array.isArray(targetableIndexes) &&
+        targetableIndexes.includes(penultimateIndex)
+      ) {
+        addOpportunity(penultimateIndex);
       }
       return { fireTicks, interceptionTicks };
     }
@@ -6425,12 +6443,12 @@
             protectedStructureSnapshots,
             protectedStructures,
           );
-          this.appendMirvCarrierSiteDemands(
+          this.appendMirvDefenseDemands(
             demands,
             missile,
             targetTile,
             deadlineTick,
-            protectedStructureSnapshots,
+            { protectedStructureSnapshots, mySid },
           );
           continue;
         }
@@ -6448,6 +6466,36 @@
         }
       }
       return demands;
+    }
+
+    appendMirvDefenseDemands(
+      demands,
+      missile,
+      targetTile,
+      deadlineTick,
+      { protectedStructureSnapshots, mySid },
+    ) {
+      const demandCount = demands.length;
+      this.appendMirvCarrierSiteDemands(
+        demands,
+        missile,
+        targetTile,
+        deadlineTick,
+        protectedStructureSnapshots,
+      );
+      if (
+        demands.length === demandCount &&
+        this.activeMissileTargetsOwnedTerritory(targetTile, mySid)
+      ) {
+        demands.push({
+          missile,
+          type: UNIT.MIRV,
+          targetTile,
+          deadlineTick,
+          carrierPreparation: true,
+          exactDestination: true,
+        });
+      }
     }
 
     mirvProtectedStructureSnapshots(snapshots, structures) {
@@ -6970,6 +7018,137 @@
       return preferred > 0n ? preferred : 1n;
     }
 
+    missileDefenseProbeRead(fn, fallback = "") {
+      const value = fn();
+      return value === null || value === undefined ? fallback : value;
+    }
+
+    missileDefenseProbeUnitState(unit) {
+      const queue = this.missileDefenseProbeRead(
+        () => unit.missileTimerQueue?.(),
+        null,
+      );
+      return [
+        this.missileDefenseProbeRead(() => unit.id?.()),
+        this.missileDefenseProbeRead(() => unit.tile?.()),
+        this.missileDefenseProbeRead(() => unit.level?.()),
+        this.missileDefenseProbeRead(
+          () => (unit.isUnderConstruction?.() ? 1 : 0),
+          0,
+        ),
+        this.missileDefenseProbeRead(() => unit.isActive?.()),
+        Array.isArray(queue) ? queue.join(",") : "",
+      ].join(":");
+    }
+
+    appendMissileDefenseProbeUnits(parts, label, owner, types) {
+      for (const type of types) {
+        const units =
+          typeof owner?.units === "function" ? owner.units(type) : [];
+        parts.push(`${label}:${String(type)}:${String(units?.length ?? 0)}`);
+        if (!Array.isArray(units)) continue;
+        for (const unit of units) {
+          if (unit) parts.push(this.missileDefenseProbeUnitState(unit));
+        }
+      }
+    }
+
+    missileDefenseProbeEnemyCapacity(enemy, atomCost, hydrogenCost) {
+      const gold = BigInt(this.missileDefenseProbeRead(() => enemy.gold(), 0));
+      const canHydrogen = hydrogenCost > 0n && gold >= hydrogenCost;
+      const atomBudget = canHydrogen ? gold - hydrogenCost : gold;
+      const affordableAtoms = atomCost > 0n ? atomBudget / atomCost : 0n;
+      return `${canHydrogen ? 1 : 0}:${affordableAtoms.toString()}`;
+    }
+
+    appendMissileDefenseProbePlayers(parts, players, mySid, atomCost, hydrogenCost) {
+      if (!Array.isArray(players)) return;
+      for (const other of players) {
+        const sid = this.missileDefenseProbeRead(() => other?.smallID());
+        if (!other || String(sid) === String(mySid)) continue;
+        const friendly =
+          this.player.isFriendly(other) || this.player.isOnSameTeam(other);
+        if (friendly) {
+          this.appendMissileDefenseProbeUnits(
+            parts,
+            `friendly-${String(sid)}-sams`,
+            other,
+            [UNIT.SAMLauncher],
+          );
+          continue;
+        }
+        parts.push(
+          `enemy=${String(sid)}:capacity=${this.missileDefenseProbeEnemyCapacity(
+            other,
+            atomCost,
+            hydrogenCost,
+          )}`,
+        );
+        this.appendMissileDefenseProbeUnits(
+          parts,
+          `enemy-${String(sid)}-silos`,
+          other,
+          [UNIT.MissileSilo],
+        );
+      }
+    }
+
+    appendMissileDefenseProbeMissiles(parts) {
+      const activeMissiles =
+        typeof this.game?.units === "function"
+          ? this.game.units(
+              UNIT.AtomBomb,
+              UNIT.HydrogenBomb,
+              UNIT.MIRV,
+              UNIT.MIRVWarhead,
+            )
+          : [];
+      if (!Array.isArray(activeMissiles)) return;
+      for (const missile of activeMissiles) {
+        if (!missile) continue;
+        parts.push(
+          `missile:${String(this.missileDefenseProbeRead(() => missile.id?.()))}:${String(
+            this.missileDefenseProbeRead(() => missile.type?.()),
+          )}:${String(
+            this.missileDefenseProbeRead(() => missile.owner?.()?.smallID?.()),
+          )}:${String(this.missileDefenseProbeRead(() => missile.tile?.()))}:${String(
+            this.missileDefenseProbeRead(() => missile.targetTile?.()),
+          )}:${String(this.missileDefenseProbeRead(() => missile.isActive?.()))}`,
+        );
+      }
+    }
+
+    missileDefenseStateProbe() {
+      const parts = [];
+      let atomCost = 0n;
+      let hydrogenCost = 0n;
+      if (typeof this.cost === "function") {
+        atomCost = BigInt(this.cost(UNIT.AtomBomb));
+        hydrogenCost = BigInt(this.cost(UNIT.HydrogenBomb));
+      }
+      this.appendMissileDefenseProbeUnits(parts, "own-structures", this.player, [
+        UNIT.City,
+        UNIT.Factory,
+        UNIT.Port,
+        UNIT.MissileSilo,
+      ]);
+      this.appendMissileDefenseProbeUnits(parts, "own-sams", this.player, [
+        UNIT.SAMLauncher,
+      ]);
+      const mySid = this.missileDefenseProbeRead(() => this.player.smallID());
+      const players =
+        typeof this.game?.players === "function" ? this.game.players() : [];
+      this.appendMissileDefenseProbePlayers(
+        parts,
+        players,
+        mySid,
+        atomCost,
+        hydrogenCost,
+      );
+      this.appendMissileDefenseProbeMissiles(parts);
+      return parts.join("|");
+    }
+
     missileDefenseStateFingerprint() {
       const parts = [];
       const read = (fn, fallback = "") => {
@@ -7203,7 +7382,17 @@
     getMissileDefenseContext() {
       const tick = safeStructureGameTick(this.game);
       const signal = this.missileDefenseSignalSnapshot();
-      const identity = this.missileDefenseContextIdentity(tick, signal);
+      const stateProbe =
+        signal === null ||
+        (signal.hasBuiltHostileSilo !== true &&
+          signal.hasActiveHostileMissile !== true)
+          ? null
+          : this.missileDefenseStateProbe();
+      const identity = this.missileDefenseContextIdentity(
+        tick,
+        signal,
+        stateProbe,
+      );
       const { cacheKey, missileSignal } = identity;
       if (
         cacheKey !== null &&
@@ -7224,7 +7413,7 @@
       return context;
     }
 
-    missileDefenseContextIdentity(tick, signal) {
+    missileDefenseContextIdentity(tick, signal, stateProbe = null) {
       const activeMissile = signal?.hasActiveHostileMissile === true;
       const missileSignal =
         signal === null
@@ -7240,7 +7429,19 @@
       }
       let stateKey = "unknown-missile-signal";
       if (missileSignal === false) stateKey = "no-missile-signal";
-      else if (signal !== null) stateKey = this.missileDefenseStateFingerprint();
+      else if (signal !== null) {
+        if (
+          stateProbe !== null &&
+          this._missileDefenseStateProbeCache === stateProbe &&
+          this._missileDefenseStateKeyCache !== null
+        ) {
+          stateKey = this._missileDefenseStateKeyCache;
+        } else {
+          stateKey = this.missileDefenseStateFingerprint();
+          this._missileDefenseStateProbeCache = stateProbe;
+          this._missileDefenseStateKeyCache = stateKey;
+        }
+      }
       return {
         missileSignal,
         cacheKey: Number.isFinite(cacheTick) ? `${cacheTick}|${stateKey}` : null,

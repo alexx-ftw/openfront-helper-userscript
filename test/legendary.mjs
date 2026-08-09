@@ -688,6 +688,20 @@ assert.equal(
   true,
   "SAM route short-circuit still accepts a reachable intercept",
 );
+const terminalFallbackRoute = {
+  path: [0, 10, 20],
+  targetableIndexes: [1, 2],
+  launchOffset: 0,
+  impactTick: 2,
+};
+assert.deepEqual(
+  Array.from(
+    routeBehavior.legendarySamInterceptionOpportunities({ tile: 10 }, [2], terminalFallbackRoute)
+      .fireTicks,
+  ),
+  [1],
+  "a SAM in range of a targetable terminal explosion can fire at the penultimate route tile",
+);
 const flightLimitedPath = [0, 1, 2, 3, 4, 5];
 const flightLimitedRoute = {
   path: flightLimitedPath,

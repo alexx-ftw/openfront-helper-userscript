@@ -4826,6 +4826,75 @@ assert.equal(
   true,
   "Carrier preparation remains distinct from exact separated-warhead destinations",
 );
+
+const territoryOnlyMirvBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+const territoryOnlyMirvOwner = { smallID: () => 2 };
+territoryOnlyMirvBehavior.player = {
+  smallID: () => 1,
+  isFriendly: () => false,
+  isOnSameTeam: () => false,
+  units: () => [],
+};
+territoryOnlyMirvBehavior.game = {
+  units: () => [
+    {
+      isActive: () => true,
+      owner: () => territoryOnlyMirvOwner,
+      type: () => UNIT.MIRV,
+      tile: () => 700,
+      targetTile: () => 777,
+    },
+  ],
+  ownerID: () => 1,
+};
+territoryOnlyMirvBehavior.activeMirvDeadlineTick = () => 20;
+const territoryOnlyMirvDemands = territoryOnlyMirvBehavior.activeMirvDefenseDemands();
+assert.equal(
+  territoryOnlyMirvDemands.length,
+  1,
+  "an active hostile MIRV aimed at owned territory creates a defense demand without economic structures",
+);
+assert.equal(
+  territoryOnlyMirvDemands[0].targetTile,
+  777,
+  "the structure-free MIRV demand uses the owned territorial destination",
+);
+
+const sameTickSiloSignalBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+const sameTickEnemySilos = [];
+const sameTickEnemy = {
+  isPlayer: () => true,
+  isAlive: () => true,
+  smallID: () => 2,
+  isFriendly: () => false,
+  isOnSameTeam: () => false,
+  units: (type) => (type === UNIT.MissileSilo ? sameTickEnemySilos : []),
+};
+sameTickSiloSignalBehavior.player = {
+  smallID: () => 1,
+  isFriendly: () => false,
+  isOnSameTeam: () => false,
+};
+sameTickSiloSignalBehavior.game = {
+  ticks: () => 900,
+  players: () => [sameTickSiloSignalBehavior.player, sameTickEnemy],
+  units: () => [],
+};
+assert.equal(
+  sameTickSiloSignalBehavior.missileDefenseSignalSnapshot()?.hasBuiltHostileSilo,
+  false,
+  "a hostile Silo absent at the first same-tick read does not signal yet",
+);
+sameTickEnemySilos.push({
+  isUnderConstruction: () => false,
+  isActive: () => true,
+  level: () => 1,
+});
+assert.equal(
+  sameTickSiloSignalBehavior.missileDefenseSignalSnapshot()?.hasBuiltHostileSilo,
+  true,
+  "a hostile Silo built later in the same tick is visible to the signal snapshot",
+);
 const originalMirvManhattanDistance = behavior.game.manhattanDist;
 behavior.game.manhattanDist = () => 49;
 const mirvDeadlineBoundary = { targetTile: 120, deadlineTick: 100 };

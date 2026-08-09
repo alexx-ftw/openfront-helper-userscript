@@ -1155,6 +1155,36 @@ assert.equal(
   1,
   "repeated active MIRV coverage checks reuse the same context result",
 );
+
+let repeatedContextFingerprintCalls = 0;
+let repeatedContextForecastCalls = 0;
+const repeatedContextBehavior = Object.create(sandbox.StructureBehavior.prototype);
+repeatedContextBehavior.game = { ticks: () => 100 };
+repeatedContextBehavior.missileDefenseSignalSnapshot = () => ({
+  hasBuiltHostileSilo: true,
+  hasActiveHostileMissile: false,
+});
+repeatedContextBehavior.missileDefenseStateProbe = () => "unchanged-defense-probe";
+repeatedContextBehavior.missileDefenseStateFingerprint = () => {
+  repeatedContextFingerprintCalls++;
+  return "unchanged-defense-state";
+};
+repeatedContextBehavior.legendaryMissilePlacementContext = () => {
+  repeatedContextForecastCalls++;
+  return { threats: [] };
+};
+repeatedContextBehavior.legendaryEmptyMissileDefenseContext = () => ({
+  threats: [],
+});
+repeatedContextBehavior.getMissileDefenseContext();
+repeatedContextBehavior.getMissileDefenseContext();
+assert.equal(
+  repeatedContextFingerprintCalls,
+  1,
+  "unchanged same-decision missile-defense cache hits do not recompute the full state fingerprint",
+);
+assert.equal(repeatedContextForecastCalls, 1);
+
 const otherMirvContext = { ...mirvContext };
 assert.equal(mirvBehavior.uncoveredActiveMirvDemands(otherMirvContext).length, 0);
 assert.equal(mirvCoverageChecks, 2, "different MIRV contexts are evaluated independently");
