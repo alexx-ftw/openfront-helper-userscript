@@ -1,275 +1,180 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import vm from "node:vm";
 import { fileURLToPath } from "node:url";
-import { executeClassicScript } from "./helpers/classic-script.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const loaderPath = path.join(repoRoot, "openfront-helper-loader.user.js");
-const buildPath = path.join(repoRoot, "openfront-helper.user.js");
-const autoBotBuildPath = path.join(repoRoot, "openfront-helper.autobot.js");
-const buildIdPath = path.join(repoRoot, "openfront-helper.build-id.js");
-const serverPath = path.join(repoRoot, "scripts", "dev-userscript.mjs");
-const loaderSource = fs.readFileSync(loaderPath, "utf8");
-const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
+const manifestPath = path.join(repoRoot, "manifest.json");
+const mainLoaderPath = path.join(repoRoot, "openfront-helper-local-main.js");
+const pollerPath = path.join(repoRoot, "openfront-helper-local-poller.js");
+const migrationLoaderPath = path.join(repoRoot, "openfront-helper-loader.user.js");
 
-assert.match(loaderSource, /@version\s+1\.4\.1/);
-assert.match(loaderSource, /@match\s+https:\/\/openfront\.io\/\*/);
-assert.match(loaderSource, /@run-at\s+document-start/);
-assert.match(loaderSource, /@grant\s+unsafeWindow/);
-assert.doesNotMatch(loaderSource, /GM_xmlhttpRequest|file:\/\//);
-assert.match(loaderSource, /showDirectoryPicker/);
-assert.match(loaderSource, /indexedDB/);
-assert.match(loaderSource, /getFileHandle/);
-for (const fileName of [
-  path.basename(buildIdPath),
-  path.basename(buildPath),
-  path.basename(autoBotBuildPath),
-]) {
-  assert.match(loaderSource, new RegExp(fileName.replaceAll(".", "\\.")));
-}
-assert.doesNotMatch(loaderSource, /location\.reload\(\)/);
-assert.doesNotMatch(loaderSource, /https?:\/\/(?:localhost|127\.0\.0\.1)/);
-assert.equal(fs.existsSync(serverPath), false, "the local loader needs no resident HTTP server");
-assert.equal(Object.hasOwn(packageJson.scripts, "dev:userscript"), false);
-assert.equal(fs.existsSync(buildPath), true);
-assert.equal(fs.existsSync(autoBotBuildPath), true);
-assert.equal(fs.existsSync(buildIdPath), true);
-assert.match(fs.readFileSync(buildPath, "utf8"), /__OFH_HOT_RELOAD_AUTOBOT__/);
-assert.match(fs.readFileSync(autoBotBuildPath, "utf8"), /disposeForHotReload/);
-const buildHash = createHash("sha256").update(fs.readFileSync(autoBotBuildPath)).digest("hex");
-assert.match(
-  fs.readFileSync(buildIdPath, "utf8"),
-  new RegExp(`__OFH_LOCAL_BUILD_ID__\\s*=\\s*["']${buildHash}["']`),
+const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+assert.equal(manifest.manifest_version, 3);
+assert.equal(manifest.version, "1.0.0");
+assert.deepEqual(manifest.host_permissions, ["https://openfront.io/*"]);
+assert.equal(manifest.background, undefined, "the local loader needs no resident service worker");
+assert.deepEqual(
+  manifest.content_scripts.map(({ js, world }) => ({ js, world })),
+  [
+    { js: ["openfront-helper-local-main.js"], world: "MAIN" },
+    { js: ["openfront-helper-local-poller.js"], world: "ISOLATED" },
+  ],
 );
 
-async function settlePromises(rounds = 5) {
-  for (let round = 0; round < rounds; round++) {
-    await new Promise((resolve) => {
-      setImmediate(resolve);
-    });
-  }
+const mainSource = fs.readFileSync(mainLoaderPath, "utf8");
+const pollerSource = fs.readFileSync(pollerPath, "utf8");
+const migrationLoaderSource = fs.readFileSync(migrationLoaderPath, "utf8");
+for (const source of [mainSource, pollerSource, migrationLoaderSource]) {
+  assert.doesNotMatch(source, /file:\/\/|127\.0\.0\.1|localhost|showDirectoryPicker/);
+}
+assert.match(migrationLoaderSource, /@version\s+2\.0\.0/u);
+assert.match(migrationLoaderSource, /Cargar descomprimida/u);
+
+function createEventWindow() {
+  const target = new EventTarget();
+  target.window = target;
+  return target;
 }
 
-function createDocument() {
-  const byId = new Map();
-  const register = (node) => {
-    if (node?.id) byId.set(node.id, node);
-    for (const child of node?.children || []) register(child);
-  };
-  const node = (tagName = "div") => ({
-    tagName,
-    style: {},
-    children: [],
-    parentNode: null,
-    textContent: "",
-    append(...children) {
-      for (const child of children) {
-        child.parentNode = this;
-        this.children.push(child);
-        register(child);
-      }
-    },
-    replaceChildren(...children) {
-      this.children = [];
-      this.textContent = children.map((child) => child.textContent || "").join("");
-      this.append(...children);
-    },
-    remove() {
-      if (this.id) byId.delete(this.id);
-      this.parentNode = null;
-    },
-    addEventListener(type, callback) {
-      if (type === "click") this.click = callback;
-    },
+async function settlePromises() {
+  await new Promise((resolve) => {
+    setImmediate(resolve);
   });
-  const root = node("html");
-  return {
-    document: {
-      documentElement: root,
-      body: null,
-      createElement: node,
-      createTextNode: (text) => ({ textContent: String(text), children: [], parentNode: null }),
-      getElementById: (id) => byId.get(id) || null,
-    },
-    getById: (id) => byId.get(id) || null,
-  };
-}
-
-function scheduleIndexedRequest(request, transaction, result) {
-  Promise.resolve().then(() => {
-    request.result = result;
-    request.onsuccess?.();
-    Promise.resolve().then(() => transaction.oncomplete?.());
+  await new Promise((resolve) => {
+    setImmediate(resolve);
   });
 }
 
-function createIndexedDatabase(initialHandle) {
-  const state = { storedHandle: initialHandle };
-  let storeCreated = false;
-  const database = {
-    objectStoreNames: { contains: () => storeCreated },
-    createObjectStore: () => {
-      storeCreated = true;
-    },
-    close() {},
-    transaction: () => {
-      const transaction = {
-        error: null,
-        objectStore: () => ({
-          get: () => {
-            const request = {};
-            scheduleIndexedRequest(request, transaction, state.storedHandle);
-            return request;
-          },
-          put: (handle) => {
-            const request = {};
-            state.storedHandle = handle;
-            scheduleIndexedRequest(request, transaction, handle);
-            return request;
-          },
-        }),
-      };
-      return transaction;
-    },
-  };
-  return {
-    api: {
-      open: () => {
-        const request = { result: database };
-        Promise.resolve().then(() => {
-          if (!storeCreated) request.onupgradeneeded?.();
-          request.onsuccess?.();
-        });
-        return request;
-      },
-    },
-    storedHandle: () => state.storedHandle,
-  };
-}
-
-function createDirectory(files, permission = "granted") {
-  let currentPermission = permission;
-  return {
-    queryPermission: () => Promise.resolve(currentPermission),
-    requestPermission: () => {
-      currentPermission = "granted";
-      return Promise.resolve(currentPermission);
-    },
-    getFileHandle: (fileName) => {
-      if (!Object.hasOwn(files, fileName)) {
-        const error = new Error(`${fileName} missing`);
-        error.name = "NotFoundError";
-        return Promise.reject(error);
-      }
-      return Promise.resolve({
-        getFile: () => Promise.resolve({ text: () => Promise.resolve(files[fileName]) }),
-      });
-    },
-  };
-}
-
-function createLoaderSandbox({ directory, stored = true }) {
-  const rendered = createDocument();
-  const database = createIndexedDatabase(stored ? directory : undefined);
-  const evaluatedBuilds = [];
-  const hotReloads = [];
-  const errors = [];
-  let poll = null;
-  let pickerCalls = 0;
-  const showDirectoryPicker = () => {
-    pickerCalls++;
-    return Promise.resolve(directory);
-  };
-  const unsafeWindow = {
-    indexedDB: database.api,
-    eval: (source) => {
-      evaluatedBuilds.push(source);
-      unsafeWindow.__OFH_HOT_RELOAD_AUTOBOT__ = (sourceCode, buildId) => {
-        hotReloads.push({ source: sourceCode, buildId });
-        return true;
-      };
-    },
-  };
-  const sandbox = {
-    console: { error: (...parts) => errors.push(parts.join(" ")) },
-    document: rendered.document,
-    unsafeWindow,
-    window: {
-      showDirectoryPicker,
-      setInterval: (callback) => {
-        poll = callback;
-      },
-      setTimeout: (callback) => callback(),
-    },
-  };
-  sandbox.globalThis = sandbox;
-  executeClassicScript(loaderSource, sandbox, { filename: "local-loader.user.js" });
-  return {
-    database,
-    errors,
-    evaluatedBuilds,
-    getById: rendered.getById,
-    hotReloads,
-    pickerCalls: () => pickerCalls,
-    poll: () => poll,
-  };
-}
-
-const initialBuildId = "a".repeat(64);
-const nextBuildId = "b".repeat(64);
-const files = {
-  [path.basename(buildIdPath)]: `globalThis.__OFH_LOCAL_BUILD_ID__ = "${initialBuildId}";`,
-  [path.basename(buildPath)]: "// initial full userscript build",
-  [path.basename(autoBotBuildPath)]: "// freshly built bot layer",
+const mainWindow = createEventWindow();
+const mainResults = [];
+mainWindow.addEventListener("openfront-helper-local-result", (event) => {
+  mainResults.push(event.detail);
+});
+const mainSandbox = {
+  CustomEvent,
+  console,
+  window: mainWindow,
 };
-const persistedDirectory = createDirectory(files);
-const persisted = createLoaderSandbox({ directory: persistedDirectory });
-await settlePromises();
-assert.deepEqual(
-  persisted.evaluatedBuilds,
-  ["// initial full userscript build"],
-  `errors=${persisted.errors.join(" | ")} connect=${Boolean(
-    persisted.getById("openfront-helper-local-loader-connect"),
-  )}`,
-);
-assert.equal(typeof persisted.poll(), "function");
-persisted.poll()();
-await settlePromises();
-assert.equal(persisted.hotReloads.length, 0, "an unchanged build does not restart the bot");
-files[path.basename(buildIdPath)] = `globalThis.__OFH_LOCAL_BUILD_ID__ = "${nextBuildId}";`;
-persisted.poll()();
-await settlePromises();
-assert.deepEqual(
-  persisted.hotReloads,
-  [{ source: "// freshly built bot layer", buildId: nextBuildId }],
-  "a new local build hot-restarts the bot without reloading the game",
-);
+vm.createContext(mainSandbox);
+// The test executes the real loader artifact inside a controlled VM realm.
+// eslint-disable-next-line sonarjs/code-eval
+new vm.Script(mainSource, { filename: "openfront-helper-local-main.js" }).runInContext(mainSandbox);
+assert.equal(mainWindow.__OFH_LOCAL_EXTENSION_VERSION__, "1.0.0");
 
-const promptedFiles = {
-  ...files,
-  [path.basename(buildIdPath)]: `globalThis.__OFH_LOCAL_BUILD_ID__ = "${initialBuildId}";`,
+mainWindow.dispatchEvent(
+  new CustomEvent("openfront-helper-local-source", {
+    detail: {
+      buildId: "a".repeat(64),
+      mode: "initial",
+      requestId: "initial-1",
+      source:
+        "window.__OFH_TEST_INITIAL__ = 1; window.__OFH_HOT_RELOAD_AUTOBOT__ = async () => true;",
+    },
+  }),
+);
+await settlePromises();
+assert.equal(mainWindow.__OFH_TEST_INITIAL__, 1, "the initial local build runs in MAIN world");
+assert.deepEqual(JSON.parse(JSON.stringify(mainResults.at(-1))), {
+  buildId: "a".repeat(64),
+  ok: true,
+  requestId: "initial-1",
+});
+
+let hotReloadCall = null;
+mainWindow.__OFH_HOT_RELOAD_AUTOBOT__ = async (source, buildId) => {
+  hotReloadCall = { buildId, source };
+  return true;
 };
-const promptedDirectory = createDirectory(promptedFiles);
-const prompted = createLoaderSandbox({ directory: promptedDirectory, stored: false });
+mainWindow.dispatchEvent(
+  new CustomEvent("openfront-helper-local-source", {
+    detail: {
+      buildId: "b".repeat(64),
+      mode: "hot",
+      requestId: "hot-1",
+      source: "// changed Auto-Bot layer",
+    },
+  }),
+);
 await settlePromises();
-const connectButton = prompted.getById("openfront-helper-local-loader-connect");
-assert.equal(typeof connectButton?.click, "function", "a first run offers a directory picker");
-connectButton.click();
-await settlePromises();
-assert.equal(prompted.pickerCalls(), 1);
-assert.strictEqual(prompted.database.storedHandle(), promptedDirectory);
-assert.deepEqual(prompted.evaluatedBuilds, ["// initial full userscript build"]);
+assert.deepEqual(hotReloadCall, {
+  buildId: "b".repeat(64),
+  source: "// changed Auto-Bot layer",
+});
+assert.deepEqual(JSON.parse(JSON.stringify(mainResults.at(-1))), {
+  buildId: "b".repeat(64),
+  ok: true,
+  requestId: "hot-1",
+});
 
-const permissionDirectory = createDirectory(promptedFiles, "prompt");
-const permissionPrompt = createLoaderSandbox({ directory: permissionDirectory });
+const pollerWindow = createEventWindow();
+const sourceRequests = [];
+let intervalCallback = null;
+let currentBuildId = "c".repeat(64);
+pollerWindow.setInterval = (callback) => {
+  intervalCallback = callback;
+};
+pollerWindow.setTimeout = setTimeout;
+pollerWindow.clearTimeout = clearTimeout;
+pollerWindow.addEventListener("openfront-helper-local-source", (event) => {
+  sourceRequests.push(event.detail);
+  pollerWindow.dispatchEvent(
+    new CustomEvent("openfront-helper-local-result", {
+      detail: {
+        buildId: event.detail.buildId,
+        ok: true,
+        requestId: event.detail.requestId,
+      },
+    }),
+  );
+});
+const fetchCalls = [];
+const pollerSandbox = {
+  CustomEvent,
+  URL,
+  crypto,
+  console,
+  fetch: async (url, options) => {
+    fetchCalls.push({ options, url: String(url) });
+    const fileName = String(url).split("/").at(-1).split("?")[0];
+    let body = "// changed local Auto-Bot";
+    if (fileName === "openfront-helper.build-id.js") {
+      body = `globalThis.__OFH_LOCAL_BUILD_ID__ = "${currentBuildId}";`;
+    } else if (fileName === "openfront-helper.user.js") {
+      body = "// full local build";
+    }
+    return { ok: true, text: async () => body };
+  },
+  chrome: {
+    runtime: {
+      getURL: (fileName) => `chrome-extension://test/${fileName}`,
+    },
+  },
+  window: pollerWindow,
+};
+vm.createContext(pollerSandbox);
+// The test executes the real poller artifact inside a controlled VM realm.
+// eslint-disable-next-line sonarjs/code-eval
+new vm.Script(pollerSource, { filename: "openfront-helper-local-poller.js" }).runInContext(
+  pollerSandbox,
+);
 await settlePromises();
-const permissionButton = permissionPrompt.getById("openfront-helper-local-loader-connect");
-assert.equal(typeof permissionButton?.click, "function", "a restored handle can renew permission");
-permissionButton.click();
-await settlePromises();
-assert.equal(permissionPrompt.pickerCalls(), 0, "permission renewal reuses the stored directory");
-assert.deepEqual(permissionPrompt.evaluatedBuilds, ["// initial full userscript build"]);
+assert.equal(typeof intervalCallback, "function");
+assert.equal(sourceRequests.length, 1);
+assert.equal(sourceRequests[0].mode, "initial");
+assert.equal(sourceRequests[0].source, "// full local build");
 
-process.stdout.write("serverless File System Access hot-reload loader tests passed\n");
+await intervalCallback();
+await settlePromises();
+assert.equal(sourceRequests.length, 1, "an unchanged build is not reinjected");
+
+currentBuildId = "d".repeat(64);
+await intervalCallback();
+await settlePromises();
+assert.equal(sourceRequests.length, 2);
+assert.equal(sourceRequests[1].mode, "hot");
+assert.equal(sourceRequests[1].source, "// changed local Auto-Bot");
+assert.ok(fetchCalls.every(({ options }) => options.cache === "no-store"));
+
+process.stdout.write("serverless Brave extension hot-reload loader tests passed\n");
