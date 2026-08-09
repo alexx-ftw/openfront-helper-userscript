@@ -3564,6 +3564,42 @@ assert.equal(
   "Only a complete territory scan with no geometrically legal tile authorizes an upgrade",
 );
 
+const resumableEconomicBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+const resumableEconomicScan = {
+  context: {
+    bounds: { minX: 0, maxX: 39, minY: 0, maxY: 0 },
+    fingerprint: "stable-economic-scan",
+  },
+  x: 0,
+  y: 0,
+  index: 0,
+  hasGeometricSpace: false,
+  snappedSites: new Set(),
+};
+resumableEconomicBehavior.economicPlacementScanState = () => resumableEconomicScan;
+resumableEconomicBehavior.economicPlacementBudgetLimit = () => 25;
+resumableEconomicBehavior.consumeEconomicPlacementBudget = () => {};
+resumableEconomicBehavior.economicLandTileCandidate = (type, context, x) => {
+  if (x === 1) return { tile: 1, value: 1 };
+  if (x === 30) return { tile: 30, value: 100 };
+  return null;
+};
+resumableEconomicBehavior.structureProbeOptions = () => ({ probeTimeoutMs: 2500 });
+resumableEconomicBehavior.buildableFor = async (type, tile) => ({ type, canBuild: tile });
+resumableEconomicBehavior.isUsableStructureBuildable = () => true;
+resumableEconomicBehavior.economicPlacementFingerprint = () => "stable-economic-scan";
+resumableEconomicBehavior.clearEconomicPlacementScan = () => {};
+assert.equal(
+  (await resumableEconomicBehavior.findEconomicPlacementOrExhaustion(UNIT.City)).status,
+  "indeterminate",
+  "a legal site in the first bounded slice does not commit before the ranking is complete",
+);
+assert.equal(
+  (await resumableEconomicBehavior.findEconomicPlacementOrExhaustion(UNIT.City)).buildable.canBuild,
+  30,
+  "a later higher-value site wins across resumable economic placement slices",
+);
+
 const portSpaceBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 portSpaceBehavior.isOceanPortTile = (tile) => tile === "ocean-shore";
 portSpaceBehavior.localLandStructureSpawnTile = (tile) =>

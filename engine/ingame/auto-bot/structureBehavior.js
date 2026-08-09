@@ -9462,8 +9462,6 @@
   ) {
       const { context } = scan;
       let visited = 0;
-      let bestTile = null;
-      let bestValue = -Infinity;
       while (
         scan.y <= context.bounds.maxY &&
         visited < limit
@@ -9475,13 +9473,15 @@
         const candidate = this.economicLandTileCandidate(type, context, x, y);
         if (candidate === null) continue;
         scan.hasGeometricSpace = true;
-        if (candidate.value <= bestValue) continue;
-        bestValue = candidate.value;
-        bestTile = candidate.tile;
+        if (candidate.value <= scan.bestValue) continue;
+        scan.bestValue = candidate.value;
+        scan.bestTile = candidate.tile;
       }
 
-      if (bestTile !== null) return { status: "candidate", tile: bestTile, visited };
       if (scan.y <= context.bounds.maxY) return { status: "pending", visited };
+      if (scan.bestTile !== null && scan.bestTile !== undefined) {
+        return { status: "candidate", tile: scan.bestTile, visited };
+      }
       return scan.hasGeometricSpace
         ? { status: "indeterminate", visited }
         : { status: "no-space", visited };
@@ -9522,8 +9522,6 @@
   ) {
       const { context } = scan;
       let visited = 0;
-      let bestAnchor = null;
-      let bestValue = -Infinity;
       while (
         scan.index < context.borderTiles.length &&
         visited < limit
@@ -9539,12 +9537,14 @@
         if (candidate.status === "indeterminate") return { ...candidate, visited };
         if (candidate.status !== "candidate") continue;
         scan.hasGeometricSpace = true;
-        if (candidate.value <= bestValue) continue;
-        bestValue = candidate.value;
-        bestAnchor = anchor;
+        if (candidate.value <= scan.bestValue) continue;
+        scan.bestValue = candidate.value;
+        scan.bestTile = anchor;
       }
-      if (bestAnchor !== null) return { status: "candidate", tile: bestAnchor, visited };
       if (scan.index < context.borderTiles.length) return { status: "pending", visited };
+      if (scan.bestTile !== null && scan.bestTile !== undefined) {
+        return { status: "candidate", tile: scan.bestTile, visited };
+      }
       return scan.hasGeometricSpace
         ? { status: "indeterminate", visited }
         : { status: "no-space", visited };
@@ -9614,6 +9614,8 @@
         y: context.bounds.minY,
         index: 0,
         hasGeometricSpace: false,
+        bestTile: null,
+        bestValue: -Infinity,
         snappedSites: new Set(),
       };
       this._economicPlacementScans.set(key, scan);
