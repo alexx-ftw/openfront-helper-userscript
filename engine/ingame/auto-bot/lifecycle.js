@@ -5,6 +5,16 @@
 
 "use strict";
 
+  const stagedPreviousAutoBotSettings =
+    window.__OFH_HOT_RELOAD_IN_PROGRESS__ &&
+    typeof window.__OFH_autobot?.get === "function"
+      ? window.__OFH_autobot.get()
+      : null;
+  const stagedPreviousAutoBotEnabled =
+    typeof stagedPreviousAutoBotSettings?.enabled === "boolean"
+      ? stagedPreviousAutoBotSettings.enabled
+      : undefined;
+
   // =========================================================================
   // Lifecycle watcher — show panel only inside a game, stop bot when it ends
   // =========================================================================
@@ -131,8 +141,10 @@
 
   function activateAutoBotForHotReload(options = {}) {
     if (window.__OFH_HOT_RELOAD_IN_PROGRESS__) return false;
-    if (typeof options.enabled === "boolean") {
-      state.settings.enabled = options.enabled;
+    const inheritedEnabled =
+      typeof options.enabled === "boolean" ? options.enabled : stagedPreviousAutoBotEnabled;
+    if (typeof inheritedEnabled === "boolean") {
+      state.settings.enabled = inheritedEnabled;
       state.runtimePausedAfterSlowTick = false;
       saveSettings();
     }

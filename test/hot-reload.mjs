@@ -561,6 +561,33 @@ async function testLifecycleAppliesTransferredEnabledStateBeforeStarting() {
   );
 }
 
+async function testLifecycleRecoversEnabledStateFromAStaleBridge() {
+  const harness = makeLifecycleSandbox();
+  harness.state.settings.enabled = false;
+  harness.state.tickInFlight = false;
+  harness.sandbox.window.__OFH_autobot = {
+    get: () => ({ enabled: true }),
+  };
+  harness.sandbox.window.__OFH_HOT_RELOAD_IN_PROGRESS__ = true;
+  executeClassicScript(lifecycleSource, harness.sandbox, {
+    filename: "auto-bot-lifecycle-stale-bridge.js",
+  });
+
+  harness.sandbox.window.__OFH_HOT_RELOAD_IN_PROGRESS__ = false;
+  const runtime = harness.sandbox.window.__OFH_autobot;
+  assert.equal(runtime.activateForHotReload(), true);
+  assert.equal(
+    harness.state.settings.enabled,
+    true,
+    "a candidate recovers the live toggle when an already-loaded bridge passes no options",
+  );
+  assert.notEqual(
+    harness.state.tickTimer,
+    null,
+    "the replacement engine is actually running after the compatibility handoff",
+  );
+}
+
 async function testBridgeFaultInjectionRegressions() {
   const cases = [
     ["normal rollback ordering", testActivationFailureRollsBackInOrderExactlyOnce],
@@ -621,5 +648,6 @@ await testBridgeFaultInjectionRegressions();
 await testLifecycleDisposesAtomMacroAndClosesStalledTick();
 await testLifecycleStagesAndActivatesAtomMacroOnce();
 await testLifecycleAppliesTransferredEnabledStateBeforeStarting();
+await testLifecycleRecoversEnabledStateFromAStaleBridge();
 await testBuildPublishesThreeArtifactsAtomically();
 process.stdout.write("hot-reload transactional tests passed\n");
