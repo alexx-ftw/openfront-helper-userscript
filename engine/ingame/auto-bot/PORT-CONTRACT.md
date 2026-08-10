@@ -314,6 +314,14 @@ because the client wrapper cannot observe `UnitGrid` insertion order. A retained
 assignment is released when the live Warship `targetUnit()` is another Transport,
 allowing the build/retry path to service the still-uncovered invasion.
 
+`MoveWarshipExecution` only stores the requested patrol anchor; the engine later
+chooses an actual patrol `targetTile`. A dispatched interception is therefore an
+unconfirmed deduplication reservation. It may suppress ordinary Warship combat
+only after live `targetUnit()` matches the assigned Transport. If that match has
+not happened three ticks after the planned intercept tick, the reservation is
+released for replanning; confirmed assignments retain their original absolute
+landing deadline.
+
 ### Custom enemy Defense Post-aware attacks
 
 Every player-target attack path rechecks `player.canAttackPlayer(target, false)`

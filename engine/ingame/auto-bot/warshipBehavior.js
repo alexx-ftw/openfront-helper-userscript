@@ -55,6 +55,10 @@
   // be retried on the next throttled planner pass, whereas one full A* freezes
   // the entire combat tick and prevents every defensive response.
   const NAVAL_INTERCEPTION_ROUTE_MAX_EXPANSIONS = 256;
+  // MoveWarship sets only a patrol anchor. Give the engine a short grace after
+  // the planned intercept tick to acquire the assigned transport; otherwise
+  // release the reservation so planning and ordinary combat can resume.
+  const NAVAL_INTERCEPT_CONFIRMATION_GRACE_TICKS = 3;
   const navalInterceptionBuildCandidateLimit = 12;
   // Dense A* needs three Int32 buffers (12 bytes per map tile). On very large
   // maps their first allocation is a visible frame spike; the existing sparse
@@ -1380,23 +1384,46 @@
       });
     }
 
+    navalAssignmentTargetsTransport(warship, invasionId) {
+      const actualTarget = warship?.targetUnit?.();
+      if (actualTarget?.type?.() !== UNIT.TransportShip) return null;
+      return actualTarget.id?.() === invasionId;
+    }
+
+    navalAssignmentConfirmationExpired(assignment, tick) {
+      if (assignment.confirmed === true) return false;
+      const interceptTick = Number(assignment.absoluteInterceptTick);
+      return Number.isFinite(interceptTick) &&
+        tick > interceptTick + NAVAL_INTERCEPT_CONFIRMATION_GRACE_TICKS;
+    }
+
+    shouldReleaseNavalAssignment(warship, assignment, liveInvasionIds, tick) {
+      if (!warship || !liveInvasionIds.has(assignment.invasionId)) return true;
+      if (this.navalAssignmentTargetsTransport(warship, assignment.invasionId) === false) {
+        return true;
+      }
+      return this.navalAssignmentConfirmationExpired(assignment, tick);
+    }
+
+    confirmNavalAssignment(warship, assignment, tick) {
+      if (assignment.confirmed === true) return;
+      if (this.navalAssignmentTargetsTransport(warship, assignment.invasionId) !== true) return;
+      assignment.confirmed = true;
+      assignment.confirmedAtTick = tick;
+      assignment.absoluteLandingTick = assignment.plannedAbsoluteLandingTick;
+    }
+
     reconcileNavalInterceptorAssignments(warships, liveInvasionIds, state) {
       const warshipsById = new Map(warships.map((warship) => [warship.id(), warship]));
       const assignedInvasionIds = new Set();
+      const tick = this.game.ticks();
       for (const [shipId, assignment] of state.invasionAssignments) {
         const warship = warshipsById.get(shipId);
-        const actualTarget = warship?.targetUnit?.();
-        const targetingAnotherTransport =
-          actualTarget?.type?.() === UNIT.TransportShip &&
-          actualTarget.id?.() !== assignment.invasionId;
-        if (
-          !warship ||
-          !liveInvasionIds.has(assignment.invasionId) ||
-          targetingAnotherTransport
-        ) {
+        if (this.shouldReleaseNavalAssignment(warship, assignment, liveInvasionIds, tick)) {
           state.invasionAssignments.delete(shipId);
           continue;
         }
+        this.confirmNavalAssignment(warship, assignment, tick);
         assignedInvasionIds.add(assignment.invasionId);
       }
       return assignedInvasionIds;
@@ -1412,9 +1439,10 @@
         if (!this.dispatchInterceptor(warship, assignment.interceptTile, state, this.game.ticks())) continue;
         state.invasionAssignments.set(assignment.shipId, {
           ...assignment,
+          confirmed: false,
           assignedAtTick: this.game.ticks(),
           absoluteInterceptTick: this.game.ticks() + assignment.interceptTick,
-          absoluteLandingTick: this.game.ticks() + assignment.landingTick,
+          plannedAbsoluteLandingTick: this.game.ticks() + assignment.landingTick,
         });
         newlyAssignedInvasionIds.add(assignment.invasionId);
       }
@@ -2212,18 +2240,25 @@
       return huntTrade ? this.nearestUnitTile(warship, enemyTradeShips) : null;
     }
 
+    warshipCombatBlocked(warship, assignment, smartState, friendlyPorts, tick) {
+      const id = warship.id();
+      if (assignment?.confirmed === true && tick < assignment.absoluteLandingTick) return true;
+      if (this.movementOrderIssuedThisTick(id, smartState, tick)) return true;
+      const cooldownTick = smartState.cooldown.get(id);
+      if (cooldownTick !== undefined && tick - cooldownTick < 3) return true;
+      const warshipState = warship.warshipState();
+      return (warshipState?.state === "retreating" || warshipState?.state === "docked") &&
+        friendlyPorts.length > 0;
+    }
+
     handleWarshipCombat(warship, context) {
       const { smartState, friendlyPorts, enemyWarships, myWarships, enemyTradeShips,
         maxHp, retreatPct, baseTarget, huntTrade } = context;
       const id = warship.id();
       const tick = this.game.ticks();
       const assignment = smartState.invasionAssignments.get(id);
-      if (assignment && tick < assignment.absoluteLandingTick) return;
-      if (this.movementOrderIssuedThisTick(id, smartState, tick)) return;
-      const cooldownTick = smartState.cooldown.get(id);
-      if (cooldownTick !== undefined && tick - cooldownTick < 3) return;
+      if (this.warshipCombatBlocked(warship, assignment, smartState, friendlyPorts, tick)) return;
       const warshipState = warship.warshipState();
-      if ((warshipState?.state === "retreating" || warshipState?.state === "docked") && friendlyPorts.length > 0) return;
       const shipMaxHp = typeof warship.maxHealth === "function" ? warship.maxHealth() : maxHp;
       const nearbyEnemies = this.nearbyCombatEnemies(warship, enemyWarships);
       const wantsToEvade = this.warshipWantsToEvade(

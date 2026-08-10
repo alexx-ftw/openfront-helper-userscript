@@ -5,6 +5,7 @@ import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 
 import { WarshipExecution } from "../openfront-engine/src/core/execution/WarshipExecution";
+import { MoveWarshipExecution } from "../openfront-engine/src/core/execution/MoveWarshipExecution";
 import { PlayerInfo, PlayerType, UnitType } from "../openfront-engine/src/core/game/Game";
 import { setup } from "../openfront-engine/tests/util/Setup";
 
@@ -85,5 +86,30 @@ const plan = planNavalInterceptions({
 
 assert.deepEqual(plan.coveredIds, [nearTransport.id()]);
 assert.deepEqual(plan.uncoveredIds, [farTransport.id()]);
+
+const patrolGame = await setup(
+  "half_land_half_ocean",
+  { infiniteGold: true, instantBuild: true },
+  [new PlayerInfo("patrol", PlayerType.Human, null, "patrol")],
+  engineTestsUtil,
+);
+const patrolPlayer = patrolGame.player("patrol");
+const patrolStart = patrolGame.ref(8, 2);
+const requestedAnchor = patrolGame.ref(8, 8);
+const patrolWarship = patrolPlayer.buildUnit(UnitType.Warship, patrolStart, {
+  patrolTile: patrolStart,
+});
+patrolGame.addExecution(
+  new MoveWarshipExecution(patrolPlayer, [patrolWarship.id()], requestedAnchor),
+);
+patrolGame.addExecution(new WarshipExecution(patrolWarship));
+patrolGame.executeNextTick();
+
+assert.equal(patrolWarship.warshipState().patrolTile, requestedAnchor);
+assert.notEqual(
+  patrolWarship.targetTile(),
+  requestedAnchor,
+  "MoveWarshipExecution sets a patrol anchor while WarshipExecution chooses the actual movement target",
+);
 
 console.log("warship target-selection engine fixture passed");

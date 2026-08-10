@@ -348,7 +348,49 @@ assert.deepEqual(
 );
 assert.equal(dispatches, 1);
 assert.equal(assignmentState.invasionAssignments.get("warship-1").absoluteInterceptTick, 105);
+assert.equal(
+  assignmentState.invasionAssignments.get("warship-1").absoluteLandingTick,
+  undefined,
+  "a patrol-anchor order cannot claim a guaranteed landing-time interception before engine target confirmation",
+);
+assert.equal(assignmentState.invasionAssignments.get("warship-1").plannedAbsoluteLandingTick, 120);
+const confirmingShip = {
+  ...ship,
+  targetUnit: () => ({ id: () => "invasion-2", type: () => UNIT.TransportShip }),
+};
+behavior.reconcileNavalInterceptorAssignments(
+  [confirmingShip],
+  new Set(["invasion-2"]),
+  assignmentState,
+);
+assert.equal(assignmentState.invasionAssignments.get("warship-1").confirmed, true);
 assert.equal(assignmentState.invasionAssignments.get("warship-1").absoluteLandingTick, 120);
+
+const expiredReservationState = {
+  invasionAssignments: new Map([
+    [
+      "warship-1",
+      {
+        confirmed: false,
+        invasionId: "invasion-2",
+        absoluteInterceptTick: 105,
+        plannedAbsoluteLandingTick: 120,
+      },
+    ],
+  ]),
+};
+const expirationBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
+expirationBehavior.game = { ticks: () => 109 };
+expirationBehavior.reconcileNavalInterceptorAssignments(
+  [ship],
+  new Set(["invasion-2"]),
+  expiredReservationState,
+);
+assert.equal(
+  expiredReservationState.invasionAssignments.size,
+  0,
+  "an unconfirmed patrol reservation expires after the planned intercept grace window",
+);
 
 const candidateBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
 const candidatePorts = Array.from({ length: 500 }, (_, index) => ({
@@ -435,7 +477,10 @@ const combatShip = {
 };
 const combatState = {
   invasionAssignments: new Map([
-    ["warship-combat", { landingTick: 20, absoluteLandingTick: 120, assignedAtTick: 80 }],
+    [
+      "warship-combat",
+      { confirmed: true, landingTick: 20, absoluteLandingTick: 120, assignedAtTick: 80 },
+    ],
   ]),
   cooldown: new Map(),
 };
