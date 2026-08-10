@@ -296,10 +296,13 @@ assert.equal(
 // last completed snapshot instead of awaiting the next refresh.
 const asyncCandidateBehavior = new sandbox.AttackBehavior({}, game, me, 0.5, 0.3, 0.1, {}, {});
 let resolveCandidateRefresh;
-asyncCandidateBehavior.getEarlyGameTribeCandidates = () =>
-  new Promise((resolve) => {
+let candidateRefreshStarts = 0;
+asyncCandidateBehavior.getEarlyGameTribeCandidates = () => {
+  candidateRefreshStarts++;
+  return new Promise((resolve) => {
     resolveCandidateRefresh = resolve;
   });
+};
 assert.equal(
   (await asyncCandidateBehavior.getReadyEarlyGameTribeCandidates()).length,
   0,
@@ -310,7 +313,69 @@ await Promise.resolve();
 assert.equal(
   (await asyncCandidateBehavior.getReadyEarlyGameTribeCandidates())[0],
   target,
-  "the next decision receives the completed tribe snapshot while another refresh runs",
+  "the next decision receives the completed tribe snapshot",
+);
+assert.equal(
+  candidateRefreshStarts,
+  1,
+  "a non-empty scored tribe snapshot is reused instead of relaunching the planner every decision",
+);
+
+let plannerCacheTick = 200;
+const tribeA = {
+  isAlive: () => true,
+  isPlayer: () => true,
+  smallID: () => 20,
+  type: () => sandbox.PlayerType.Bot,
+};
+const tribeB = {
+  isAlive: () => true,
+  isPlayer: () => true,
+  smallID: () => 21,
+  type: () => sandbox.PlayerType.Bot,
+};
+let livePlannerTribes = [tribeA];
+const plannerCacheBehavior = new sandbox.AttackBehavior(
+  {},
+  {
+    players: () => livePlannerTribes,
+    ticks: () => plannerCacheTick,
+  },
+  { isFriendly: () => false },
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+let plannerCacheRefreshStarts = 0;
+const scoredTribeA = {
+  player: tribeA,
+  tribeClusterAccess: 1,
+  tribeClusterSize: 1,
+};
+plannerCacheBehavior.getEarlyGameTribeCandidates = async () => {
+  plannerCacheRefreshStarts++;
+  return [scoredTribeA];
+};
+assert.equal((await plannerCacheBehavior.getReadyEarlyGameTribeCandidates()).length, 0);
+await Promise.resolve();
+assert.equal((await plannerCacheBehavior.getReadyEarlyGameTribeCandidates())[0], scoredTribeA);
+assert.equal(plannerCacheRefreshStarts, 1);
+livePlannerTribes = [tribeA, tribeB];
+await plannerCacheBehavior.getReadyEarlyGameTribeCandidates();
+assert.equal(
+  plannerCacheRefreshStarts,
+  2,
+  "a changed live hostile-tribe signature invalidates the scored planner snapshot immediately",
+);
+await Promise.resolve();
+plannerCacheTick += 41;
+await plannerCacheBehavior.getReadyEarlyGameTribeCandidates();
+assert.equal(
+  plannerCacheRefreshStarts,
+  3,
+  "the scored planner snapshot refreshes after the bounded risk window expires",
 );
 
 // A cached topology snapshot can outlive a tribe that another player captured.

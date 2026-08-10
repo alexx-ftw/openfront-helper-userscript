@@ -769,6 +769,8 @@
       // one and still revalidate live target troops immediately before send.
       this.earlyGameTribeCandidatesCache = null;
       this.earlyGameTribeCandidatesRefresh = null;
+      this.earlyGameTribeCandidatesCacheTick = null;
+      this.earlyGameTribeCandidatesCacheSignature = null;
       this.earlyGameTribeRefreshStartCount = 0;
       this.earlyGameTribeBoatEtaCache = new Map();
       // Opportunistic boat selection proves a route before returning a target,
@@ -4632,12 +4634,27 @@
       );
     }
 
-    earlyGameTribeSnapshotNeedsRefresh() {
+    earlyGameTribeCandidateCacheContext() {
+      return {
+        tick: Number(this.game.ticks?.()) || 0,
+        signature: this.earlyGameLiveTribeSignature(this.game.players?.() || []),
+      };
+    }
+
+    earlyGameTribeSnapshotNeedsRefresh(cachedEmpty, context) {
       // Do not keep a negative planner result as an artificial capture delay.
       // A tribe can become reachable between strategic decisions without
       // changing the coarse early-game snapshot; refresh the empty result on
       // the next decision while the in-flight promise still coalesces work.
-      return true;
+      if (cachedEmpty) return true;
+      const cachedTick = Number(this.earlyGameTribeCandidatesCacheTick);
+      return (
+        this.earlyGameTribeCandidatesCacheSignature === null ||
+        !Number.isFinite(cachedTick) ||
+        context.tick < cachedTick ||
+        context.tick - cachedTick > EARLY_GAME_TRIBE_RISK_SNAPSHOT_CACHE_TICKS ||
+        context.signature !== this.earlyGameTribeCandidatesCacheSignature
+      );
     }
 
     earlyGameTribeSnapshotIsScored(candidates) {
@@ -4652,16 +4669,25 @@
     }
 
     refreshReadyEarlyGameTribeCandidates(profile, cachedEmpty) {
+      const refreshContext = this.earlyGameTribeCandidateCacheContext();
       if (
         this.earlyGameTribeCandidatesRefresh === null &&
-        this.earlyGameTribeSnapshotNeedsRefresh()
+        this.earlyGameTribeSnapshotNeedsRefresh(cachedEmpty, refreshContext)
       ) {
         this.earlyGameTribeRefreshStartCount++;
         const refresh = this.getEarlyGameTribeCandidates(profile);
         this.earlyGameTribeCandidatesRefresh = refresh;
         refresh.then((candidates) => {
           if (this.earlyGameTribeCandidatesRefresh !== refresh) return;
-          this.earlyGameTribeCandidatesCache = candidates;
+          const completedContext = this.earlyGameTribeCandidateCacheContext();
+          const membershipIsCurrent = completedContext.signature === refreshContext.signature;
+          this.earlyGameTribeCandidatesCache = membershipIsCurrent ? candidates : null;
+          this.earlyGameTribeCandidatesCacheTick = membershipIsCurrent
+            ? completedContext.tick
+            : null;
+          this.earlyGameTribeCandidatesCacheSignature = membershipIsCurrent
+            ? completedContext.signature
+            : null;
           this.earlyGameTribeCandidatesRefresh = null;
         });
       }

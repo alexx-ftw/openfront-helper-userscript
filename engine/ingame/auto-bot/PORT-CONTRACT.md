@@ -248,6 +248,13 @@ direct attack is fully urgent while a progressing vector toward the candidate
 still raises urgency. Continuation is the mean remaining proximity to reachable
 tribes, without hand-tuned count/distance weights.
 
+A completed, non-empty scored tribe snapshot is reused for the same bounded
+40-tick risk window as its food-race inputs. A changed live hostile-tribe ID
+signature invalidates it immediately, and a refresh whose membership changes
+before completion is discarded. Empty snapshots continue to retry on the next
+strategic decision so newly reachable tribes are not hidden behind a negative
+cache.
+
 When that race is real, the selected tribe attack may commit more troops than the
 normal bot-target amount. The increase is capped by the same reserve floor used by
 land attacks; boat attacks use the same bounded reserve-aware helper after their
