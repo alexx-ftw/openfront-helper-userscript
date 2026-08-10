@@ -12,6 +12,10 @@ const lifecycleSource = fs.readFileSync(
   path.join(repoRoot, "engine/ingame/auto-bot/lifecycle.js"),
   "utf8",
 );
+const autoBotBuildSource = fs.readFileSync(
+  path.join(repoRoot, "openfront-helper.autobot.js"),
+  "utf8",
+);
 
 function extractHotReloadBridge(source) {
   const match = source.match(/const HOT_RELOAD_BRIDGE = `([\s\S]*?)`;/u);
@@ -663,6 +667,14 @@ async function testBuildPublishesThreeArtifactsAtomically() {
   fs.rmSync(outputDir, { recursive: true, force: true });
 }
 
+function testAutoBotArtifactRefreshesTheHotReloadBridge() {
+  assert.match(
+    autoBotBuildSource,
+    /__OFH_HOT_RELOAD_AUTOBOT__/u,
+    "the hot-reloaded artifact must upgrade the page bridge without a tab reload",
+  );
+}
+
 await testInvalidEvalKeepsPreviousRuntime();
 await testBridgeFaultInjectionRegressions();
 await testLifecycleDisposesAtomMacroAndClosesStalledTick();
@@ -670,5 +682,6 @@ await testLifecycleStagesAndActivatesAtomMacroOnce();
 await testLifecycleAppliesTransferredEnabledStateBeforeStarting();
 await testLifecycleRecoversEnabledStateFromAStaleBridge();
 await testLifecycleRestartsEnabledEngineBehindStaleLoadedFlag();
+testAutoBotArtifactRefreshesTheHotReloadBridge();
 await testBuildPublishesThreeArtifactsAtomically();
 process.stdout.write("hot-reload transactional tests passed\n");

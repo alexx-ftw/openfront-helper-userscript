@@ -391,7 +391,11 @@ async function main() {
     HOT_RELOAD_BRIDGE;
 
   logBuild(RAW ? "[build] minify OFF (raw/debug build)…" : "[build] minifying…");
-  const autoBotOut = await minifyLayer(autoBot);
+  // Ship the bridge with the replaceable layer as well as the full userscript.
+  // Otherwise an already-open tab keeps running whichever bridge implementation
+  // it loaded initially, so lifecycle fixes in later local builds never take
+  // effect until the user reloads the game tab.
+  const autoBotOut = await minifyLayer(autoBot + HOT_RELOAD_BRIDGE);
   const out =
     metadataHeader(version) +
     assetsLiteral +
