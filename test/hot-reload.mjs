@@ -35,6 +35,7 @@ async function captureRejection(promise) {
 function makeHotReloadBridgeHarness({
   candidateActivation = () => true,
   candidateCleanup = () => true,
+  candidateSet = null,
   previousEnabled = true,
   previousActivation = () => true,
 } = {}) {
@@ -84,6 +85,12 @@ function makeHotReloadBridgeHarness({
       return candidateActivation(options);
     },
   };
+  if (typeof candidateSet === "function") {
+    candidate.set = (patch) => {
+      events.push("candidate:set");
+      candidateSet(patch);
+    };
+  }
   const sandbox = {
     window: {
       __OFH_autobot: previous,
@@ -351,6 +358,23 @@ async function testSuccessfulActivationPreservesDisabledState() {
     false,
     "hot reload must not enable a bot that was disabled",
   );
+}
+
+async function testSuccessfulActivationReassertsTransferredEnabledState() {
+  let replacementEnabled = false;
+  const harness = makeHotReloadBridgeHarness({
+    candidateSet: (patch) => {
+      replacementEnabled = Boolean(patch.enabled);
+    },
+  });
+
+  assert.equal(await harness.reload(), true);
+  assert.equal(
+    replacementEnabled,
+    true,
+    "the bridge restarts the replacement through its public API before reporting success",
+  );
+  assert.deepEqual(harness.events, ["previous:dispose", "candidate:activate", "candidate:set"]);
 }
 
 function makeLifecycleSandbox() {
@@ -621,6 +645,10 @@ async function testBridgeFaultInjectionRegressions() {
     ["false previous reactivation", testFalsePreviousReactivationPreservesActivationFailure],
     ["successful activation counters", testSuccessfulActivationHasNoCleanupOrRollback],
     ["successful disabled-state transfer", testSuccessfulActivationPreservesDisabledState],
+    [
+      "successful enabled-state reassertion",
+      testSuccessfulActivationReassertsTransferredEnabledState,
+    ],
   ];
   const results = await Promise.allSettled(cases.map(([, run]) => run()));
   const failures = results.flatMap((result, index) =>

@@ -172,6 +172,12 @@ window.__OFH_HOT_RELOAD_AUTOBOT__ = function(source, buildId) {
       if (!(await candidate.activateForHotReload(activationOptions))) {
         throw new Error("el candidato de Auto-Bot no pudo activarse");
       }
+      // Reassert the transferred master toggle through the replacement's public
+      // API before committing. This starts its engine and refreshes its panel even
+      // when lifecycle activation inherited the value but left either one idle.
+      if (typeof activationOptions.enabled === "boolean" && typeof candidate.set === "function") {
+        candidate.set({ enabled: activationOptions.enabled });
+      }
       window.__OFH_LOCAL_BUILD_ID__ = String(buildId);
       committed = true;
       return true;
