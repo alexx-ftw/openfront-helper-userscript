@@ -17,6 +17,7 @@ function makePlayer({
   inCombat = false,
   incomingAttacks,
   outgoingAttacks = [],
+  type = "Bot",
 }) {
   const player = {
     id: () => id,
@@ -29,6 +30,7 @@ function makePlayer({
     isFriendly: () => player.friendly,
     incomingAttacks: () => incomingAttacks ?? (inCombat ? [{}] : []),
     outgoingAttacks: () => outgoingAttacks,
+    type: () => type,
     sharesBorder: border,
   };
   return player;
@@ -237,6 +239,25 @@ const strongestBorderCap = await runDonation({
     makePlayer({ id: 4, name: "border-weak", troops: 600, friendly: false, border: true }),
   ],
 });
+
+const hostileNationBorderCap = await runDonation({
+  opponents: [
+    makePlayer({
+      id: 5,
+      name: "hostile-nation",
+      troops: 800,
+      friendly: false,
+      border: true,
+      type: "Nation",
+    }),
+  ],
+});
+assert.equal(
+  hostileNationBorderCap[0]?.troops,
+  200,
+  "a hostile bordering Nation retains its complete army instead of the ordinary half-army reserve",
+);
+assert.ok(1000 - hostileNationBorderCap[0].troops >= 800);
 
 const hostileNamedRecipient = await runDonation({
   allyFriendly: false,

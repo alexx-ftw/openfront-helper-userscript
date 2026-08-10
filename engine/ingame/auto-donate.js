@@ -373,27 +373,40 @@
     return ids;
   }
 
-  function getAutoDonateBorderOpponentTroops(players, borderingIds, myId) {
+  function getAutoDonateLiveBorderPlayerProfile(player, me) {
+    if (typeof player.isAlive !== "function" || typeof player.troops !== "function") return null;
+    if (!player.isAlive()) return { troops: 0, strategicTroops: 0 };
+    const troops = Number(player.troops());
+    if (!Number.isFinite(troops)) return null;
+    if (typeof me.isFriendly !== "function" || typeof player.type !== "function") return null;
+    const type = player.type();
+    const strategic = !me.isFriendly(player) && (type === "Nation" || type === "Human");
+    return { troops, strategicTroops: strategic ? troops : 0 };
+  }
+
+  function buildAutoDonateBorderOpponentProfile(players, borderingIds, me, myId) {
     if (!players.some((player) => getAutoDonatePlayerId(player) === myId)) return null;
     const seen = new Set();
     let strongest = 0;
+    let strongestStrategic = 0;
     for (const player of players) {
       const playerId = getAutoDonatePlayerId(player);
       if (playerId === null || !borderingIds.has(playerId)) continue;
       seen.add(playerId);
-      if (typeof player.isAlive !== "function" || typeof player.troops !== "function") return null;
-      if (!player.isAlive()) continue;
-      const troops = Number(player.troops());
-      if (!Number.isFinite(troops)) return null;
-      strongest = Math.max(strongest, troops);
+      const profile = getAutoDonateLiveBorderPlayerProfile(player, me);
+      if (profile === null) return null;
+      strongest = Math.max(strongest, profile.troops);
+      strongestStrategic = Math.max(strongestStrategic, profile.strategicTroops);
     }
-    return [...borderingIds].every((id) => seen.has(id)) ? strongest : null;
+    return [...borderingIds].every((id) => seen.has(id))
+      ? { strongest, strongestStrategic }
+      : null;
   }
 
   // Return null when the live game does not expose enough map/border data to
   // enforce the reserve. The troop donation then fails closed. Alliances do not
   // remove a bordering owner from this reserve calculation.
-  async function getAutoDonateStrongestBorderOpponentTroops(game, me) {
+  async function getAutoDonateBorderOpponentProfile(game, me) {
     if (!hasAutoDonateBorderApi(game, me)) return null;
     {
       const borderTiles = await getAutoDonatePlayerBorderTiles(me);
@@ -404,7 +417,7 @@
       if (!borderingPlayerIds) return null;
       const players = getAutoDonatePlayerViews(game);
       if (!players) return null;
-      return getAutoDonateBorderOpponentTroops(players, borderingPlayerIds, mySid);
+      return buildAutoDonateBorderOpponentProfile(players, borderingPlayerIds, me, mySid);
     }
   }
 
@@ -494,7 +507,7 @@
       : null;
   }
 
-  function getSafeAutoDonateTroops(plan, borderOpponentTroops) {
+  function getSafeAutoDonateTroops(plan, borderProfile) {
     const currentTroops = Number(plan.me.troops?.() ?? 0);
     if (!Number.isFinite(currentTroops)) return 0;
     if (isAutoDonatePlayerBeingAttacked(plan.me) !== false) return 0;
@@ -510,7 +523,11 @@
     const unreservedTroops = Math.max(0, currentTroops - pendingTroops);
     const requested = Math.floor(currentTroops * plan.donatePct / 100);
     const keepLimit = Math.floor(unreservedTroops - keepAmount);
-    const borderLimit = Math.floor(unreservedTroops - borderOpponentTroops / 2);
+    const borderReserve = Math.max(
+      borderProfile.strongest / 2,
+      borderProfile.strongestStrategic,
+    );
+    const borderLimit = Math.floor(unreservedTroops - borderReserve);
     const recipientCapacity = getAutoDonateTroopCapacity(plan.game, plan.recipient);
     const capacityLimit = recipientCapacity === null ? requested : recipientCapacity;
     return Math.max(0, Math.min(requested, keepLimit, borderLimit, capacityLimit));
@@ -549,9 +566,9 @@
     if (!plan) return;
     setTroopDonationInFlight(true);
     try {
-      const borderTroops = await getAutoDonateStrongestBorderOpponentTroops(plan.game, plan.me);
-      if (borderTroops !== null) {
-        sendAutoDonateTroops(plan, getSafeAutoDonateTroops(plan, borderTroops));
+      const borderProfile = await getAutoDonateBorderOpponentProfile(plan.game, plan.me);
+      if (borderProfile !== null) {
+        sendAutoDonateTroops(plan, getSafeAutoDonateTroops(plan, borderProfile));
       }
     } finally {
       setTroopDonationInFlight(false);

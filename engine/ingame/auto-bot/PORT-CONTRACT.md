@@ -375,9 +375,11 @@ donation ordering is unchanged.
 Both modes apply the same client-side border reserve before emitting the donation:
 scan `player.borderTiles()`, inspect adjacent owned land through `neighbors()` and
 `ownerID()`, and retain at least half of the largest live non-self bordering
-player's troops. An alliance does not remove that player from the reserve
-calculation. Missing border/player-snapshot data blocks the donation for that
-tick.
+player's troops. A hostile Nation or Human instead reserves its complete army,
+so exporting a surplus cannot turn local superiority into inferiority. An
+alliance does not remove a player from the ordinary half-army congestion reserve.
+Missing border, relation, type, or player-snapshot data blocks the donation for
+that tick.
 
 The selected recipient's authoritative `config.maxTroops(recipient)` headroom
 also caps the emitted amount. `DonateTroopsExecution` applies this same cap in
