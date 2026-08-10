@@ -2435,12 +2435,12 @@
     }
 
     earlyGameTribeTargets(enemies, border) {
+      const borderOwnerIDs = new Set();
+      for (const tile of border) borderOwnerIDs.add(this.game.ownerID(tile));
       return enemies
         .filter((enemy) => enemy.isPlayer() && enemy.type() === PlayerType.Bot)
         .map((enemy) => {
-          const landBorder = border.some(
-            (tile) => this.game.ownerID(tile) === enemy.smallID(),
-          );
+          const landBorder = borderOwnerIDs.has(enemy.smallID());
           return {
             id: enemy.smallID(),
             alive: enemy.isAlive(),

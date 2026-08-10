@@ -2183,6 +2183,40 @@ const targetBehavior = new targetSandbox.AttackBehavior(
   {},
 );
 
+const borderScanEnemies = Array.from({ length: 8 }, (_, index) => {
+  const smallID = index + 1;
+  return {
+    isAlive: () => true,
+    isPlayer: () => true,
+    smallID: () => smallID,
+    type: () => targetSandbox.PlayerType.Bot,
+  };
+});
+const borderScanTiles = Array.from({ length: 4096 }, (_, tile) => tile);
+let borderOwnerReads = 0;
+const borderScanBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+borderScanBehavior.game = {
+  ownerID: (tile) => {
+    borderOwnerReads++;
+    return tile === borderScanTiles.at(-1) ? 8 : 99;
+  },
+};
+borderScanBehavior.player = { isFriendly: () => false };
+const borderScanTargets = borderScanBehavior.earlyGameTribeTargets(
+  borderScanEnemies,
+  borderScanTiles,
+);
+assert.deepEqual(
+  borderScanTargets.map((target) => target.landBorder),
+  [false, false, false, false, false, false, false, true],
+  "tribe border classification preserves every target result",
+);
+assert.equal(
+  borderOwnerReads,
+  borderScanTiles.length,
+  "tribe border classification reads each frontier owner only once",
+);
+
 // An incomplete Tribe/Nation conquest may consume one bounded reinforcement
 // slot, but it must not make the TerraNullius liveness lane wait for a later
 // decision or emit more than one free-land intent in this decision.
