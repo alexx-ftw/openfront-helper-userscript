@@ -90,6 +90,30 @@ behavior.structureBehavior = {
 behavior.attackBehavior = { findIncomingAttackPlayer: () => null };
 behavior.isUnderHeavyAttack = () => false;
 
+const legendaryHydroSpecialist = Object.create(sandbox.__NukeBehavior.prototype);
+legendaryHydroSpecialist.game = {
+  config: () => ({ isUnitDisabled: () => false }),
+};
+legendaryHydroSpecialist.player = { gold: () => 1_000_000n };
+legendaryHydroSpecialist.isHydroNation = true;
+legendaryHydroSpecialist.isUnderHeavyAttack = () => false;
+legendaryHydroSpecialist.getPerceivedNukeCost = async (type) =>
+  type === UNIT.HydrogenBomb ? 5_000_000n : 750_000n;
+sandbox.currentDifficulty = () => sandbox.Difficulty.Legendary;
+const legendaryFallbackNuke = await legendaryHydroSpecialist.selectAffordableNuke();
+assert.equal(legendaryFallbackNuke?.type, UNIT.AtomBomb);
+assert.equal(
+  legendaryFallbackNuke?.cost,
+  750_000n,
+  "Legendary uses an affordable Atom instead of leaving a ready Silo idle while saving for Hydrogen",
+);
+sandbox.currentDifficulty = () => sandbox.Difficulty.Impossible;
+assert.equal(
+  await legendaryHydroSpecialist.selectAffordableNuke(),
+  null,
+  "the faithful non-Legendary hydro specialization remains unchanged",
+);
+
 const nukeSelf = {
   smallID: () => 1,
   isOnSameTeam: () => false,

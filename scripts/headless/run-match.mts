@@ -1328,6 +1328,7 @@ const finalResult = {
   ticks: runner.game.ticks(),
   stopReason,
   spawnLifecycle: bot.getSpawnLifecycleSnapshot(),
+  nuclearStrategy: bot.getNuclearStrategySnapshot(),
   performanceProfile: profileBot ? bot.getPerformanceProfile() : undefined,
   emittedIntents,
   hostileMissileFixture: injectHostileAtom

@@ -1068,6 +1068,9 @@ export class BundledOpponentBot {
     if (harness.window.__OFH_realOpponentClock) {
       harness.window.__OFH_realOpponentClock.now = this.game.ticks() * 100;
     }
+    if (process.env.OFH_FORCE_HYDRO_NATION === "1" && this.nationBot.nukeBehavior) {
+      this.nationBot.nukeBehavior.isHydroNation = true;
+    }
     this.intentBuffer = [];
     harness.current.buildMenu = createBuildMenu(this);
 
@@ -1094,6 +1097,17 @@ export class BundledOpponentBot {
 
   getPerformanceProfile() {
     return this.harness.internals.getAutoBotProfileSnapshot();
+  }
+
+  getNuclearStrategySnapshot() {
+    const behavior = this.nationBot?.nukeBehavior;
+    if (!behavior) return null;
+    return {
+      isHydroNation: behavior.isHydroNation === true,
+      atomBombsLaunched: Number(behavior.atomBombsLaunched || 0),
+      hydrogenBombsLaunched: Number(behavior.hydrogenBombsLaunched || 0),
+      pendingLaunches: Number(behavior._pendingNukeLaunches?.length || 0),
+    };
   }
 
   getSpawnLifecycleSnapshot() {

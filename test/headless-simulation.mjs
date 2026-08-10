@@ -342,14 +342,16 @@ assert.ok(
 );
 
 const naturalNuclearRuntime = runHeadlessScenario({
-  OFH_MATCH_SEED: "legendary-nuclear-natural-20260809",
-  OFH_GAME_MAP: "Baikal Nuke Wars",
+  OFH_MATCH_SEED: "legendary-nuclear-hydro-fallback-20260810",
+  OFH_GAME_MAP: "Alps",
   OFH_GAME_MAP_SIZE: "Small",
   OFH_GAME_MODE: "team",
   OFH_PLAYER_TEAMS: "2",
-  OFH_BOTS: "20",
-  OFH_NATIONS: "disabled",
+  OFH_BOTS: "0",
+  OFH_NATIONS: "10",
   OFH_NUKES: "1",
+  OFH_BOT_DIFFICULTY: "Legendary",
+  OFH_FORCE_HYDRO_NATION: "1",
   OFH_STARTING_GOLD: "5000000",
   OFH_MAX_TICKS: "3500",
   OFH_STOP_WHEN_DEAD: "0",
@@ -368,6 +370,12 @@ const naturalNuclearProgress = naturalNuclearRuntime.records.find(
 );
 assert.ok(naturalNuclearResult);
 assert.ok(naturalNuclearResult.cumulativeBuildUnitTypes["Missile Silo"] > 0);
+assert.ok(
+  naturalNuclearResult.cumulativeBuildUnitTypes["Atom Bomb"] > 0,
+  "a Legendary hydro specialist must use an affordable Atom instead of leaving its Silo idle",
+);
+assert.equal(naturalNuclearResult.nuclearStrategy?.isHydroNation, true);
+assert.ok(naturalNuclearResult.nuclearStrategy?.atomBombsLaunched > 0);
 assert.ok(Array.isArray(naturalNuclearProgress?.activeMissiles));
 assert.ok(
   naturalNuclearProgress.units["Missile Silo"] > 0,
@@ -383,6 +391,9 @@ assert.match(
   "headless scenarios can independently control Nation pressure and Tribe density",
 );
 assert.match(runner, /OFH_NUKES === "1"/);
+assert.match(adapter, /OFH_FORCE_HYDRO_NATION === "1"/);
+assert.match(runner, /nuclearStrategy: bot\.getNuclearStrategySnapshot\(\)/);
+assert.match(adapter, /getNuclearStrategySnapshot\(\)/);
 assert.match(
   runner,
   /disabledUnits:[\s\S]*nuclearUnitTypes\.has/,

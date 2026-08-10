@@ -382,8 +382,10 @@
       if (!config.isUnitDisabled(UNIT.HydrogenBomb) && this.player.gold() >= hydroCost) {
         return { type: UNIT.HydrogenBomb, cost: hydroCost };
       }
+      const legendaryAtomFallback = state.settings.winFixes === true &&
+        currentDifficulty() === Difficulty.Legendary;
       const atomAllowed = !config.isUnitDisabled(UNIT.AtomBomb) &&
-        (!this.isHydroNation || this.isUnderHeavyAttack());
+        (!this.isHydroNation || this.isUnderHeavyAttack() || legendaryAtomFallback);
       if (atomAllowed && this.player.gold() >= atomCost) {
         return { type: UNIT.AtomBomb, cost: atomCost };
       }
