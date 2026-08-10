@@ -304,6 +304,12 @@ allowing the build/retry path to service the still-uncovered invasion.
 
 ### Custom enemy Defense Post-aware attacks
 
+Every player-target attack path rechecks `player.canAttackPlayer(target, false)`
+before reserving troops or emitting an intent. This mirrors `AttackExecution`'s
+authoritative immunity/friendliness gate and also applies to forced retaliation;
+`force` may bypass strategic target selection but cannot make an engine-invalid
+attack legal. Terra Nullius remains outside this player-only gate.
+
 When `state.settings.winFixes` is enabled, land-attack target ranking and troop
 commitment include the enemy Defense Post coverage of the current attack front.
 The policy mirrors `Config.attackLogic`: one active, completed enemy post within

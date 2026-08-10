@@ -1774,6 +1774,50 @@ assert.deepEqual(
   "active tribal targets are tracked independently",
 );
 
+const immuneHumanTarget = {
+  ...tribeTarget,
+  id: () => "immune-human-target",
+  smallID: () => 60,
+  type: () => sandbox.PlayerType.Human,
+  troops: () => 1000,
+};
+const immunityChecks = [];
+const immuneHumanBehavior = new sandbox.AttackBehavior(
+  {},
+  game,
+  {
+    ...parallelMe,
+    canAttackPlayer: (target, treatAFKFriendly) => {
+      immunityChecks.push({ target, treatAFKFriendly });
+      return false;
+    },
+  },
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+immuneHumanBehavior.getEnemyDefensePostAttackProfile = () => ({});
+immuneHumanBehavior.attackIsTooWeakForDefensePosts = () => false;
+immuneHumanBehavior.applyEarlyGameRaceTroops = ({ baseTroops }) => baseTroops;
+outgoing.length = 0;
+ownTroops = 100000;
+tick = 35;
+const immuneHumanEmissionCount = troopEmissions.length;
+assert.equal(
+  await immuneHumanBehavior.sendAttack(immuneHumanTarget, true),
+  false,
+  "even a forced attack is rejected while the engine reports human spawn immunity",
+);
+assert.deepEqual(immunityChecks, [{ target: immuneHumanTarget, treatAFKFriendly: false }]);
+assert.equal(
+  troopEmissions.length,
+  immuneHumanEmissionCount,
+  "a spawn-immune target consumes no troops or attack intent capacity",
+);
+assert.equal(immuneHumanBehavior.getPendingOutboundAttackTroops(), 0);
+
 const targetScopedDebitBehavior = new sandbox.AttackBehavior(
   {},
   game,

@@ -8180,9 +8180,16 @@
 
     // sendAttack — AiAttackBehavior (now async via sendBoatAttack/
     // sendBoatAttackToNearbyTerraNullius; sendLandAttack stays sync).
+    canAttackPlayerNow(target) {
+      if (target?.isPlayer?.() !== true) return true;
+      if (typeof this.player?.canAttackPlayer !== "function") return true;
+      return this.player.canAttackPlayer(target, false) === true;
+    }
+
     async sendAttack(...args) {
       const options = this.normalizeSendAttackArgs(args);
       const { target, force } = options;
+      if (!this.canAttackPlayerNow(target)) return false;
       if (!force && !this.shouldAttack(target)) return false;
       if (!this.tribeAttackIsAuthorized(options)) return false;
       options.isParallelTribeAttack =
