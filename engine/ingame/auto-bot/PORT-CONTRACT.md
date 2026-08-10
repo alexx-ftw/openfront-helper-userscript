@@ -379,6 +379,12 @@ player's troops. An alliance does not remove that player from the reserve
 calculation. Missing border/player-snapshot data blocks the donation for that
 tick.
 
+The selected recipient's authoritative `config.maxTroops(recipient)` headroom
+also caps the emitted amount. `DonateTroopsExecution` applies this same cap in
+the engine; mirroring it before emission prevents the local outbound-intent
+ledger from reserving troops that can never leave the donor, so attack and
+defense budgets remain accurate during the intent-to-snapshot gap.
+
 ### Border-pressure construction priority
 
 When `winFixes` is enabled, `StructureBehavior` compares the bot's

@@ -9304,7 +9304,15 @@
       return selected.entry.teammate;
     }
 
-    donationAmount() {
+    donationRecipientHeadroom(teammate) {
+      if (!teammate) return Number.POSITIVE_INFINITY;
+      const maxTroops = Number(this.game.config().maxTroops(teammate));
+      const currentTroops = Math.max(0, Number(teammate.troops?.()) || 0);
+      if (!Number.isFinite(maxTroops)) return Number.POSITIVE_INFINITY;
+      return Math.max(0, maxTroops - currentTroops);
+    }
+
+    donationAmount(teammate = null) {
       const strongest = this.getStrongestBorderOpponentTroops(true);
       if (strongest === null) {
         this.setDonationStatus("Donate: border data unavailable");
@@ -9346,6 +9354,7 @@
         Math.max(0, currentTroops - troopsToKeep),
         this.getEarlyGameSpendableTroops(troopsToKeep),
         maxBorderDonation,
+        this.donationRecipientHeadroom(teammate),
       );
       const minExcess = state.settings.winFixes
         ? Math.max(
@@ -9442,7 +9451,7 @@
         );
         return false;
       }
-      const troops = this.donationAmount();
+      const troops = this.donationAmount(selectedTeammate);
       if (troops === null) return false;
       const emitted = this.emitDonationTroops(selectedTeammate, troops);
       if (emitted) state.lastDonateMs = performance.now();

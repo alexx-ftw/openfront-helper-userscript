@@ -2630,7 +2630,11 @@ const donationGame = {
   ownerID: (tile) => donationOwnerByTile.get(tile),
   getWinner: () => null,
   config: () => ({
-    maxTroops: (player) => (player?.smallID?.() === 14 ? 130000 : 100000),
+    maxTroops: (player) => {
+      if (player?.smallID?.() === 14) return 130000;
+      if (player?.smallID?.() === 15) return 30000;
+      return 100000;
+    },
     gameConfig: () => ({ gameMode: "Team" }),
     donateTroops: () => true,
     donateCooldown: () => 100,
@@ -2668,6 +2672,16 @@ assert.equal(
   "a remote needy teammate keeps the donation strategy reachable",
 );
 donorBehavior.getEarlyGameSpendableTroops = donorSpendableTroops;
+
+const capacityLimitedTeammate = {
+  troops: () => 8000,
+  smallID: () => 15,
+};
+assert.equal(
+  donorBehavior.donationAmount(capacityLimitedTeammate),
+  22000,
+  "the requested and locally reserved donation cannot exceed the recipient's authoritative troop headroom",
+);
 
 assert.equal(donorBehavior.donateTroops(), true);
 assert.equal(
