@@ -15,7 +15,7 @@ const loaderPath = path.join(repoRoot, "openfront-helper-loader.user.js");
 const loaderSource = fs.readFileSync(loaderPath, "utf8");
 const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
 
-assert.match(loaderSource, /@version\s+3\.0\.0/u);
+assert.match(loaderSource, /@version\s+3\.0\.1/u);
 assert.match(loaderSource, /@match\s+https:\/\/openfront\.io\/\*/u);
 assert.match(loaderSource, /@grant\s+GM_xmlhttpRequest/u);
 assert.match(loaderSource, /@grant\s+unsafeWindow/u);
@@ -34,12 +34,29 @@ const buildIds = ["a".repeat(64), "a".repeat(64), "b".repeat(64)];
 const requests = [];
 const evaluatedBuilds = [];
 const hotReloads = [];
+const autoBotSets = [];
+let autoBotEnabled = true;
 let intervalCallback = null;
 const unsafeWindow = {
   eval: (source) => {
     evaluatedBuilds.push(source);
+    unsafeWindow.__OFH_autobot = {
+      get: () => ({ enabled: autoBotEnabled }),
+      set: (patch) => {
+        autoBotSets.push(patch);
+        if ("enabled" in patch) autoBotEnabled = Boolean(patch.enabled);
+      },
+    };
     unsafeWindow.__OFH_HOT_RELOAD_AUTOBOT__ = async (autoBotSource, buildId) => {
       hotReloads.push({ buildId, source: autoBotSource });
+      autoBotEnabled = false;
+      unsafeWindow.__OFH_autobot = {
+        get: () => ({ enabled: autoBotEnabled }),
+        set: (patch) => {
+          autoBotSets.push(patch);
+          if ("enabled" in patch) autoBotEnabled = Boolean(patch.enabled);
+        },
+      };
       return true;
     };
   },
@@ -99,6 +116,13 @@ await settlePromises();
 assert.deepEqual(hotReloads, [
   { buildId: "b".repeat(64), source: "// changed Auto-Bot from loopback" },
 ]);
+assert.equal(
+  autoBotEnabled,
+  true,
+  "the loader restarts an Auto-Bot that was running before reload",
+);
+assert.equal(autoBotSets.length, 1);
+assert.equal(autoBotSets[0]?.enabled, true);
 assert.equal(unsafeWindow.__OFH_LOCAL_BUILD_ID__, "b".repeat(64));
 assert.ok(requests.every((url) => url.startsWith("http://127.0.0.1:17373/")));
 

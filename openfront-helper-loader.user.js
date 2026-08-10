@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenFront Helper — cargador local
 // @namespace    openfront-helper-local
-// @version      3.0.0
+// @version      3.0.1
 // @description  Recarga en caliente el Auto-Bot local sin refrescar OpenFront.
 // @author       nguyenvancaokyfpt (https://github.com/nguyenvancaokyfpt)
 // @homepageURL  https://github.com/nguyenvancaokyfpt/openfront-helper-userscript
@@ -59,8 +59,17 @@
   async function applyBuild(buildId) {
     const hotReload = unsafeWindow.__OFH_HOT_RELOAD_AUTOBOT__;
     if (activeBuildId && typeof hotReload === "function") {
+      const previousSettings = unsafeWindow.__OFH_autobot?.get?.();
+      const previousEnabled =
+        typeof previousSettings?.enabled === "boolean" ? previousSettings.enabled : undefined;
       const source = await requestLocalFile(AUTO_BOT_PATH);
       if (!(await hotReload(source, buildId))) throw new Error("el Auto-Bot rechazó el hot reload");
+      // Reapply through the replacement runtime's public API. Besides preserving
+      // the toggle, set({ enabled: true }) restarts its engine timer if lifecycle
+      // activation inherited the setting but did not leave the engine running.
+      if (typeof previousEnabled === "boolean") {
+        unsafeWindow.__OFH_autobot?.set?.({ enabled: previousEnabled });
+      }
     } else {
       const source = await requestLocalFile(FULL_BUILD_PATH);
       unsafeWindow.eval(`${source}\n//# sourceURL=openfront-helper.user.js`);

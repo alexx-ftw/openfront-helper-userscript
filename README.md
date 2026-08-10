@@ -258,7 +258,8 @@ network connection remain open.
 2. Install or update `openfront-helper-loader.user.js` in Tampermonkey and disable any other
    OpenFront Helper copy that would execute at the same time.
 3. Reload OpenFront once to start loader v3. Future Auto-Bot builds apply within about one second
-   without refreshing the page or game.
+   without refreshing the page or game. Loader v3.0.1 also reapplies the previous master-toggle
+   state through the replacement runtime, so an Auto-Bot that was running restarts automatically.
 
 The loader downloads only the small fingerprint while idle. It fetches the full userscript on
 initial startup and the smaller Auto-Bot artifact after a changed fingerprint. Shell, lobby, or
