@@ -4423,6 +4423,16 @@
       );
     }
 
+    legendaryEffectiveSiloLaunchTick(entry, nominalLaunchTick) {
+      if (entry.lastNominalLaunchTick === nominalLaunchTick) {
+        entry.sameTickLaunchCount++;
+      } else {
+        entry.lastNominalLaunchTick = nominalLaunchTick;
+        entry.sameTickLaunchCount = 0;
+      }
+      return nominalLaunchTick + entry.sameTickLaunchCount;
+    }
+
     legendaryEnemyMissileLaunchPlan(
       enemySilos,
       targetTile,
@@ -4477,6 +4487,10 @@
         if (selected === null) break;
         selected.slots[0] = launchTick + cooldown;
         selected.slots.sort((left, right) => left - right);
+        const effectiveLaunchTick = this.legendaryEffectiveSiloLaunchTick(
+          selected,
+          launchTick,
+        );
         const flightTicks = this.legendaryLaunchEntryFlightTicks(
           selected,
           targetTile,
@@ -4485,9 +4499,10 @@
           silo: selected.silo,
           fromTile: selected.tile,
           siloId: selected.id,
-          launchTick,
+          launchTick: effectiveLaunchTick,
+          nominalLaunchTick: launchTick,
           flightTicks,
-          impactTick: launchTick + flightTicks,
+          impactTick: effectiveLaunchTick + flightTicks,
         });
         nextLaunchTick = launchTick;
       }

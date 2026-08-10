@@ -1,6 +1,6 @@
 {
   "name": "openfront-userscript",
-  "version": "1.12.25",
+  "version": "1.12.26",
   "private": true,
   "description": "Standalone userscript build of the OpenFront helper (auto-join + in-game overlays + auto-bot).",
   "scripts": {
@@ -27,7 +27,7 @@
     "quality:global": "npm run lint && npm run check && npm run check:build-parity && npm run quality:dead-code && npm run quality:dependencies && npm run quality:duplicates",
     "quality:strict": "npm run format:check && npm run lint && npm run quality:global",
     "prepare": "husky",
-    "pretest": "tsx --tsconfig openfront-engine/tsconfig.json test/sam-launcher-claim-fixture.mts && tsx --tsconfig openfront-engine/tsconfig.json test/warship-target-selection-fixture.mts && tsx --tsconfig openfront-engine/tsconfig.json test/attack-spawn-immunity-fixture.mts && tsx --tsconfig openfront-engine/tsconfig.json test/spawn-relocation-fixture.mts && tsx --tsconfig openfront-engine/tsconfig.json test/donation-headroom-fixture.mts",
+    "pretest": "tsx --tsconfig openfront-engine/tsconfig.json test/sam-launcher-claim-fixture.mts && tsx --tsconfig openfront-engine/tsconfig.json test/nuke-launch-stagger-fixture.mts && tsx --tsconfig openfront-engine/tsconfig.json test/warship-target-selection-fixture.mts && tsx --tsconfig openfront-engine/tsconfig.json test/attack-spawn-immunity-fixture.mts && tsx --tsconfig openfront-engine/tsconfig.json test/spawn-relocation-fixture.mts && tsx --tsconfig openfront-engine/tsconfig.json test/donation-headroom-fixture.mts",
     "test": "node test/openfront-engine-compat.mjs && node test/headless-simulation.mjs && node test/smoke.mjs && node test/companion.mjs && node test/ingame-bootstrap.mjs && node test/ingame-section-bootstrap.mjs && node test/runtime-mutable-state.mjs && node test/intent-rate-limit.mjs && node test/auto-donate.mjs && node test/enemy-intent-intel.mjs && node test/attack-highlight.mjs && node test/boat-prediction.mjs && node test/sos-defense.mjs && node test/legendary.mjs && node test/sam-defense-policy.mjs && node test/nuke-economy-policy.mjs && node test/nuke-prediction-relation.mjs && node test/same-clan-nuke-terrain-safety.mjs && node test/maritime-invasion-economy.mjs && node test/spawn-index.mjs && node test/spawn-heatmap.mjs && node test/performance-regressions.mjs && node test/structure-performance-regressions.mjs && node test/frame-stall-regressions.mjs && node test/match-file-logging.mjs && node test/runtime-diagnostics.mjs && node test/spawn-entity-scoring.mjs && node test/spawn-objective.mjs && node test/game-start-notification.mjs && node test/spawn-voice.mjs && node test/spawn-speech.mjs && node test/early-game.mjs && node test/opening-economy-overlap.mjs && node test/attack-defense-post.mjs && node test/incoming-defense-escalation.mjs && node test/attack-intent-accounting.mjs && node test/port-placement.mjs && node test/factory-placement-policy.mjs && node test/construction-simulator.mjs && node test/nuke-suggestions.mjs && node test/nuke-suggestion-scan-budget.mjs && node test/initial-silo-naval-gate.mjs && node test/silo-sam-tracker.mjs && node test/naval-interception.mjs && node test/naval-assignment-persistence.mjs && node test/public-lobby-unrestricted.mjs && node test/hot-reload.mjs && node test/probe-runtime.mjs && node test/build-parity.mjs"
   },
   "lint-staged": {

@@ -173,10 +173,11 @@ ready/reloading slots cannot stop the complete incoming salvo. An upgrade's
 new range applies immediately, but its added missile slot starts a full
 `SAMCooldown` reload, so it is not treated as instantly available.
 The salvo forecast also advances enemy silo queues through `SiloCooldown`,
-reserves gold for a possible Hydrogen finisher, and schedules all simultaneous
-threat routes against one shared SAM inventory. Assignment conflicts use a
-bounded exact fallback; an exhausted search is treated as unsafe, never as proof
-that a greedy miss is impossible to defend.
+mirrors the engine's one-tick staggering when multiple ready slots from the same
+silo launch together, reserves gold for a possible Hydrogen finisher, and
+schedules all simultaneous threat routes against one shared SAM inventory.
+Assignment conflicts use a bounded exact fallback; an exhausted search is
+treated as unsafe, never as proof that a greedy miss is impossible to defend.
 
 With `winFixes` enabled, construction uses a three-way reserve policy: urgent
 missile defense is handled first, the next affordable City/Port/Factory keeps

@@ -702,6 +702,31 @@ assert.equal(
 );
 delete launchSilos.filter;
 
+const stackedLaunchBehavior = Object.create(sandbox.StructureBehavior.prototype);
+stackedLaunchBehavior.game = { manhattanDist: () => 0 };
+stackedLaunchBehavior.legendarySiloSlotAvailability = () => [0, 0];
+stackedLaunchBehavior.legendarySiloCooldownTicks = () => 90;
+stackedLaunchBehavior.legendaryLaunchEntryFlightTicks = () => 10;
+const stackedSilo = {
+  isUnderConstruction: () => false,
+  tile: () => 0,
+  id: () => 1,
+};
+const stackedLaunches = stackedLaunchBehavior.legendaryEnemyMissileLaunchPlan([stackedSilo], 0, 2);
+assert.deepEqual(
+  Array.from(stackedLaunches, ({ impactTick }) => impactTick),
+  [10, 11],
+  "same-silo same-tick launches match NukeExecution's one-tick staggering",
+);
+assert.deepEqual(
+  Array.from(stackedLaunches, ({ launchTick }) => launchTick),
+  [0, 1],
+);
+assert.deepEqual(
+  Array.from(stackedLaunches, ({ nominalLaunchTick }) => nominalLaunchTick),
+  [0, 0],
+);
+
 launchTileReads = 0;
 launchIdReads = 0;
 const salvoRouteBehavior = Object.create(sandbox.StructureBehavior.prototype);
