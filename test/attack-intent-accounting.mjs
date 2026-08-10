@@ -1736,6 +1736,29 @@ assert.equal(
   "same-tick tribe floor checks reuse the bounded engine-loss scan",
 );
 
+const mixedTerrainCaptureBehavior = Object.create(sandbox.AttackBehavior.prototype);
+mixedTerrainCaptureBehavior.player = me;
+const mixedTribeAdjacency = new Map([
+  [101, [102]],
+  [102, [101]],
+]);
+mixedTerrainCaptureBehavior.game = {
+  config: () => ({
+    attackLogic: (_game, _troops, _attacker, _target, tile) => ({
+      attackerTroopLoss: tile === 102 ? 25 : 1,
+    }),
+  }),
+  ticks: () => 2,
+  ownerID: (tile) => ([101, 102].includes(tile) ? 4 : 0),
+  neighbors: (tile) => mixedTribeAdjacency.get(tile) ?? [],
+};
+mixedTerrainCaptureBehavior.getEnemyDefensePostFrontTiles = () => [101];
+assert.equal(
+  mixedTerrainCaptureBehavior.getTribeCaptureTroopFloor(terrainHeavyTribe),
+  2500,
+  "a cheap frontier cannot hide expensive terrain inside the same tribe",
+);
+
 const botControlledTribeBehavior = new sandbox.AttackBehavior(
   {},
   game,

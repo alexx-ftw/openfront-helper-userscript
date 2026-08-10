@@ -570,6 +570,16 @@
     "initializerPreview": "512"
   },
   {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:TRIBE_CAPTURE_MAX_TERRITORY_TILES#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "TRIBE_CAPTURE_MAX_TERRITORY_TILES",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "8b926d75599a618e21f1341318e66517be26e18cc7496783d2b59758c1333be8",
+    "initializerLength": 4,
+    "initializerPreview": "4096"
+  },
+  {
     "id": "engine/ingame/auto-bot/attackBehavior.js:EARLY_GAME_MARITIME_INDEX_CACHE#1",
     "file": "engine/ingame/auto-bot/attackBehavior.js",
     "name": "EARLY_GAME_MARITIME_INDEX_CACHE",

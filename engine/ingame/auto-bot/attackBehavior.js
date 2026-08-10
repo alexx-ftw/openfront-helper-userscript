@@ -200,6 +200,7 @@
   const ENEMY_DEFENSE_POST_SPEED_BONUS = 3;
   const ENEMY_DEFENSE_POST_MAX_SCAN_POSTS = 256;
   const ENEMY_DEFENSE_POST_MAX_FRONT_TILES = 512;
+  const TRIBE_CAPTURE_MAX_TERRITORY_TILES = 4096;
   // Terrain is shared by all Nation behaviors for the same game. Keep the
   // reverse maritime field per map instead of rebuilding it for every bot.
   const EARLY_GAME_MARITIME_INDEX_CACHE = new WeakMap();
@@ -9007,9 +9008,9 @@
       return this.tribeCaptureFloorCache;
     }
 
-    worstTribeFrontTileLoss(target, baselineTroops, attackLogic, frontTiles) {
+    worstTribeTileLoss(target, baselineTroops, attackLogic, tiles) {
       let worstPerTileLoss = 0;
-      for (const tile of frontTiles.slice(0, ENEMY_DEFENSE_POST_MAX_FRONT_TILES)) {
+      for (const tile of tiles.slice(0, TRIBE_CAPTURE_MAX_TERRITORY_TILES)) {
         const result = attackLogic(
           this.game,
           baselineTroops,
@@ -9023,6 +9024,30 @@
       return worstPerTileLoss;
     }
 
+    tribeCaptureTerrainTiles(target, frontTiles, targetTiles) {
+      if (
+        typeof this.game?.neighbors !== "function" ||
+        typeof this.game?.ownerID !== "function"
+      ) return frontTiles;
+      const targetSid = target?.smallID?.();
+      if (targetSid == null) return frontTiles;
+      const limit = Math.min(
+        TRIBE_CAPTURE_MAX_TERRITORY_TILES,
+        Math.max(frontTiles.length, targetTiles),
+      );
+      const tiles = frontTiles.slice(0, limit);
+      const seen = new Set(tiles);
+      for (let head = 0; head < tiles.length && tiles.length < limit; head++) {
+        for (const neighbor of this.game.neighbors(tiles[head]) ?? []) {
+          if (seen.has(neighbor) || this.game.ownerID(neighbor) !== targetSid) continue;
+          seen.add(neighbor);
+          tiles.push(neighbor);
+          if (tiles.length >= limit) break;
+        }
+      }
+      return tiles;
+    }
+
     tribeTerrainCaptureInputs(target) {
       if (target?.type?.() !== PlayerType.Bot) return null;
       const targetTiles = Math.max(
@@ -9032,13 +9057,15 @@
       const attackLogic = this.game?.config?.()?.attackLogic;
       if (targetTiles === 0 || typeof attackLogic !== "function") return null;
       const frontTiles = this.getEnemyDefensePostFrontTiles?.(target) ?? [];
-      return frontTiles.length === 0 ? null : { attackLogic, frontTiles, targetTiles };
+      if (frontTiles.length === 0) return null;
+      const terrainTiles = this.tribeCaptureTerrainTiles(target, frontTiles, targetTiles);
+      return { attackLogic, targetTiles, terrainTiles };
     }
 
     getTribeTerrainCaptureTroopFloor(target, baselineTroops) {
       const inputs = this.tribeTerrainCaptureInputs(target);
       if (!inputs) return 0;
-      const { attackLogic, frontTiles, targetTiles } = inputs;
+      const { attackLogic, targetTiles, terrainTiles } = inputs;
 
       const floorCache = this.currentTribeCaptureFloorCache();
       const targetKey = this.getOutboundAttackTargetKey(target) ?? target;
@@ -9046,11 +9073,11 @@
       const cached = floorCache.get(cacheKey);
       if (cached !== undefined) return cached;
 
-      const worstPerTileLoss = this.worstTribeFrontTileLoss(
+      const worstPerTileLoss = this.worstTribeTileLoss(
         target,
         baselineTroops,
         attackLogic,
-        frontTiles,
+        terrainTiles,
       );
       const terrainFloor = Math.ceil(worstPerTileLoss * targetTiles);
       floorCache.set(cacheKey, terrainFloor);
