@@ -262,6 +262,16 @@
         hasTrainStation: m("hasTrainStation", false),
         missileTimerQueue: m("missileTimerQueue", []),
         targetTile: m("targetTile", undefined),
+        targetUnit: () => {
+          if (typeof u.targetUnit === "function") return wrapUnit(u.targetUnit());
+          const targetID =
+            typeof u.targetUnitId === "function" ? u.targetUnitId() : undefined;
+          return wrapUnit(
+            targetID === undefined || typeof src.unit !== "function"
+              ? undefined
+              : src.unit(targetID),
+          );
+        },
         patrolTile: m("patrolTile", undefined),
         warshipState: m("warshipState", undefined),
         transportShipState: m("transportShipState", undefined),
@@ -405,6 +415,10 @@
         alliances: () => (core.alliances ? core.alliances() : []),
 
         isFriendly: (o) => core.isFriendly(unwrap(o)),
+        canAttackPlayer: (o, treatAFKFriendly = true) =>
+          core.canAttackPlayer
+            ? core.canAttackPlayer(unwrap(o), treatAFKFriendly)
+            : !core.isFriendly(unwrap(o)),
         isAlliedWith: (o) => core.isAlliedWith(unwrap(o)),
         isOnSameTeam: (o) => core.isOnSameTeam(unwrap(o)),
         isRequestingAllianceWith: (o) =>

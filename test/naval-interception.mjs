@@ -240,6 +240,75 @@ assert.equal(
   ]),
   "the linear assignment index preserves per-ship plan order and ownership",
 );
+
+const engineTargetConflict = planNavalInterceptions({
+  ships: [
+    { id: "engine-selector-left", tile: tile(0, 0) },
+    { id: "engine-selector-right", tile: tile(50, 0) },
+  ],
+  invasions: [
+    {
+      id: "near-transport",
+      path: [tile(60, 0), tile(61, 0), tile(62, 0)],
+    },
+    {
+      id: "far-transport",
+      path: [tile(130, 0), tile(131, 0), tile(132, 0)],
+    },
+  ],
+  route,
+  distance,
+  targetDistanceSquared: (from, to) => distance(from, to) ** 2,
+  boatSpeed: 1,
+  warshipSpeed: 1,
+  attackRange: 130,
+});
+assert.deepEqual(
+  engineTargetConflict.coveredIds,
+  ["near-transport"],
+  "the planner only covers a transport the engine would actually select from the intercept tile",
+);
+assert.deepEqual(
+  engineTargetConflict.uncoveredIds,
+  ["far-transport"],
+  "a duplicate nearest-target conflict remains uncovered for the build/retry path",
+);
+const ambiguousEngineTie = planNavalInterceptions({
+  ships: [{ id: "tie-interceptor", tile: tile(50, 0) }],
+  invasions: [
+    { id: "tie-left", path: [tile(40, 0), tile(39, 0)] },
+    { id: "tie-right", path: [tile(60, 0), tile(61, 0)] },
+  ],
+  route,
+  distance,
+  targetDistanceSquared: (from, to) => distance(from, to) ** 2,
+  boatSpeed: 1,
+  warshipSpeed: 1,
+  attackRange: 130,
+});
+assert.deepEqual(
+  ambiguousEngineTie.coveredIds,
+  [],
+  "an encounter-order tie is not claimed as covered without authoritative grid order",
+);
+assert.deepEqual(ambiguousEngineTie.uncoveredIds, ["tie-left", "tie-right"]);
+const singlePassingDistractor = planNavalInterceptions({
+  ships: [{ id: "distracted-interceptor", tile: tile(0, 0) }],
+  invasions: [{ id: "incoming-far", path: [tile(80, 0), tile(81, 0)] }],
+  targetInvasions: [{ id: "passing-near", path: [tile(20, 0), tile(19, 0)] }],
+  route,
+  distance,
+  targetDistanceSquared: (from, to) => distance(from, to) ** 2,
+  boatSpeed: 1,
+  warshipSpeed: 1,
+  attackRange: 130,
+});
+assert.deepEqual(
+  singlePassingDistractor.coveredIds,
+  [],
+  "a single non-incoming transport can invalidate an otherwise feasible interception",
+);
+assert.deepEqual(singlePassingDistractor.uncoveredIds, ["incoming-far"]);
 assert.doesNotMatch(
   source,
   /assignments:\s*assignments\.filter/,

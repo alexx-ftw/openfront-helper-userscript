@@ -63,6 +63,62 @@ assert.deepEqual(
 );
 assert.equal(dispatches, 0, "a retained interception emits no duplicate move");
 
+const distractedAssignmentState = {
+  invasionAssignments: new Map([["warship-1", retained]]),
+};
+const distractedShip = {
+  ...ship,
+  targetUnit: () => ({
+    id: () => "different-transport",
+    type: () => UNIT.TransportShip,
+  }),
+};
+assert.deepEqual(
+  [
+    ...behavior.reconcileNavalInterceptorAssignments(
+      [distractedShip],
+      new Set(["invasion-1", "different-transport"]),
+      distractedAssignmentState,
+    ),
+  ],
+  [],
+  "a planner reservation is released when the engine is targeting another transport",
+);
+assert.equal(
+  distractedAssignmentState.invasionAssignments.size,
+  0,
+  "a false coverage claim cannot survive the authoritative engine target",
+);
+
+const targetPoolBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
+const hostileOwner = { smallID: () => 2 };
+const friendlyOwner = { smallID: () => 3 };
+const transport = (id, owner, overrides = {}) => ({
+  id: () => id,
+  owner: () => owner,
+  isActive: () => true,
+  isUnderConstruction: () => false,
+  ...overrides,
+});
+const passingHostileTransport = transport("passing-hostile", hostileOwner);
+targetPoolBehavior.player = {
+  smallID: () => 1,
+  canAttackPlayer: (owner) => owner === hostileOwner,
+};
+targetPoolBehavior.game = {
+  units: () => [
+    passingHostileTransport,
+    transport("friendly", friendlyOwner),
+    transport("inactive", hostileOwner, { isActive: () => false }),
+    transport("building", hostileOwner, { isUnderConstruction: () => true }),
+  ],
+};
+assert.deepEqual(
+  targetPoolBehavior.engineTargetableTransports().map((candidate) => candidate.id()),
+  ["passing-hostile"],
+  "the predictor includes attackable enemy transports even when they are not incoming invasions",
+);
+
 const motionPlanBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
 let fallbackRouteCalls = 0;
 motionPlanBehavior.isHostileIncomingTransport = () => true;

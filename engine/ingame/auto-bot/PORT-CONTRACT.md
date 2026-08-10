@@ -102,7 +102,9 @@ same accessors.)
 ### Unit objects (from units()/game.units())
 `type()`, `tile()`, `level()`, `id()`, `owner()` (wrapped), `isActive()`,
 `isUnderConstruction()`, `isInCombat()`, `hasTrainStation()`, `missileTimerQueue()`,
-`targetTile()`, `patrolTile()`, `warshipState()`, `transportShipState()`, `health()`.
+`targetTile()`, `targetUnit()`, `patrolTile()`, `warshipState()`,
+`transportShipState()`, `health()`. Wrapped players also expose
+`canAttackPlayer(other, treatAFKFriendly)` for engine-exact target eligibility.
 
 ## Async boundaries (the ONLY place control flow differs from src)
 
@@ -289,6 +291,16 @@ affordable `Warship` buildable. The route-aware invasion planner is invoked from
 `NationExecution` before ordinary ship tracking. If the detector or Port
 placement contract is unavailable, the bot fails closed for the emergency path
 and preserves the ordinary policy where a Port cannot exist.
+
+Interception coverage must mirror `WarshipExecution` rather than treating a
+`moveWarship` patrol order as a transport reservation. Candidate intercept tiles
+use the engine's squared Euclidean target range and consider every active,
+completed, attackable enemy Transport, including ships not aimed at our land.
+The planned invasion is covered only when it is the unique nearest Transport at
+the predicted interception tick; encounter-order distance ties remain uncovered
+because the client wrapper cannot observe `UnitGrid` insertion order. A retained
+assignment is released when the live Warship `targetUnit()` is another Transport,
+allowing the build/retry path to service the still-uncovered invasion.
 
 ### Custom enemy Defense Post-aware attacks
 

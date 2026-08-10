@@ -1191,6 +1191,41 @@
         .filter((transport) => this.isHostileIncomingTransport(transport, mySid));
     }
 
+    isEngineTargetableTransport(transport) {
+      if (!transport?.isActive?.() || transport.isUnderConstruction?.()) return false;
+      const owner = transport.owner?.();
+      if (!owner || owner.smallID?.() === this.player.smallID()) return false;
+      if (typeof this.player.canAttackPlayer === "function") {
+        return this.player.canAttackPlayer(owner, true);
+      }
+      return this.player.isFriendly?.(owner) !== true;
+    }
+
+    engineTargetableTransports() {
+      return this.game
+        .units(UNIT.TransportShip)
+        .filter((transport) => this.isEngineTargetableTransport(transport));
+    }
+
+    engineTargetInvasion(transport) {
+      const current = transport.tile?.();
+      if (current == null) return null;
+      const target = transport.targetTile?.();
+      const motionPath = target == null ? null : this.transportMotionPath(transport, target);
+      const path =
+        Array.isArray(motionPath) && motionPath.length > 0
+          ? motionPath.slice()
+          : [current];
+      if (path.length === 1) path.push(path[0]);
+      return { id: transport.id(), path };
+    }
+
+    engineTargetInvasions(transports) {
+      return transports
+        .map((transport) => this.engineTargetInvasion(transport))
+        .filter((invasion) => invasion !== null);
+    }
+
     incomingNavalInvasions(s, transports = null) {
       const mySid = this.player.smallID();
       const nextCache = new Map();
@@ -1346,10 +1381,19 @@
     }
 
     reconcileNavalInterceptorAssignments(warships, liveInvasionIds, state) {
-      const liveShipIds = new Set(warships.map((warship) => warship.id()));
+      const warshipsById = new Map(warships.map((warship) => [warship.id(), warship]));
       const assignedInvasionIds = new Set();
       for (const [shipId, assignment] of state.invasionAssignments) {
-        if (!liveShipIds.has(shipId) || !liveInvasionIds.has(assignment.invasionId)) {
+        const warship = warshipsById.get(shipId);
+        const actualTarget = warship?.targetUnit?.();
+        const targetingAnotherTransport =
+          actualTarget?.type?.() === UNIT.TransportShip &&
+          actualTarget.id?.() !== assignment.invasionId;
+        if (
+          !warship ||
+          !liveInvasionIds.has(assignment.invasionId) ||
+          targetingAnotherTransport
+        ) {
           state.invasionAssignments.delete(shipId);
           continue;
         }
@@ -1506,6 +1550,10 @@
       s.lastInvasionPlanMs = now;
 
       const transports = this.incomingNavalTransports();
+      const targetableTransports =
+        typeof this.game.units === "function"
+          ? this.engineTargetableTransports()
+          : transports;
       if (transports.length === 0) {
         s.invasionPlan = null;
         s.invasionAssignments.clear();
@@ -1532,7 +1580,19 @@
       const availableWarships = warships.filter(
         (warship) => !s.invasionAssignments.has(warship.id()),
       );
-      const invasions = this.incomingNavalInvasions(s, unassignedTransports);
+      const incomingInvasions = this.incomingNavalInvasions(s, transports);
+      const incomingInvasionsById = new Map(
+        incomingInvasions.map((invasion) => [invasion.id, invasion]),
+      );
+      const targetInvasions = this.engineTargetInvasions(targetableTransports).map(
+        (invasion) => incomingInvasionsById.get(invasion.id) ?? invasion,
+      );
+      const unassignedInvasionIds = new Set(
+        unassignedTransports.map((transport) => transport.id()),
+      );
+      const invasions = incomingInvasions.filter((invasion) =>
+        unassignedInvasionIds.has(invasion.id),
+      );
       if (invasions.length === 0) return;
       const boatSpeed = this.movementSpeed(null, UNIT.TransportShip);
       const warshipSpeed = this.movementSpeed(null, UNIT.Warship);
@@ -1540,8 +1600,10 @@
       const plan = planNavalInterceptions({
         ships: availableWarships.map((warship) => ({ id: warship.id(), tile: warship.tile() })),
         invasions,
+        targetInvasions,
         route: (from, to) => this.interceptionRoute(from, to),
         distance: (from, to) => this.waterDistance(from, to),
+        targetDistanceSquared: (from, to) => this.game.euclideanDistSquared(from, to),
         boatSpeed,
         warshipSpeed,
         attackRange,

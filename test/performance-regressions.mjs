@@ -99,7 +99,14 @@ let playerListCalls = 0;
 let borderNeighborCalls = 0;
 let oceanShoreCalls = 0;
 const rawUnit = {
+  id: () => 1,
   type: () => "Warship",
+  owner: () => playerCore,
+  targetUnitId: () => 2,
+};
+const rawTargetUnit = {
+  id: () => 2,
+  type: () => "Transport",
   owner: () => playerCore,
 };
 const playerCore = {
@@ -124,6 +131,7 @@ const gameApiSource = {
     globalUnitCalls += 1;
     return [rawUnit];
   },
+  unit: (id) => (id === 2 ? rawTargetUnit : undefined),
   width: () => 1,
   height: () => 1,
   neighbors: () => {
@@ -194,6 +202,11 @@ assert.deepEqual(
 );
 const firstGlobalUnits = gameApi.units("Warship");
 const secondGlobalUnits = gameApi.units("Warship");
+assert.equal(
+  firstGlobalUnits[0].targetUnit()?.id(),
+  2,
+  "UnitView targetUnitId resolves through GameView.unit for live naval reconciliation",
+);
 assert.strictEqual(
   secondGlobalUnits,
   firstGlobalUnits,

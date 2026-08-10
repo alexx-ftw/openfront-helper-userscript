@@ -24,12 +24,9 @@
     return Number.isFinite(number) && number >= 0 ? number : fallback;
   }
 
-  function createNavalInterceptionContext(options) {
-    const ships = Array.isArray(options.ships)
-      ? options.ships.filter((ship) => ship && ship.id !== undefined && ship.tile !== undefined)
-      : [];
-    const invasions = Array.isArray(options.invasions)
-      ? options.invasions.filter(
+  function validNavalInvasions(value) {
+    return Array.isArray(value)
+      ? value.filter(
           (invasion) =>
             invasion &&
             invasion.id !== undefined &&
@@ -37,11 +34,28 @@
             invasion.path.length > 1,
         )
       : [];
+  }
+
+  function createNavalInterceptionContext(options) {
+    const ships = Array.isArray(options.ships)
+      ? options.ships.filter((ship) => ship && ship.id !== undefined && ship.tile !== undefined)
+      : [];
+    const invasions = validNavalInvasions(options.invasions);
+    const targetInvasions = Array.isArray(options.targetInvasions)
+      ? validNavalInvasions(options.targetInvasions)
+      : invasions;
+    const distance = typeof options.distance === "function" ? options.distance : () => Infinity;
+    const targetDistanceSquared =
+      typeof options.targetDistanceSquared === "function"
+        ? options.targetDistanceSquared
+        : (from, to) => Number(distance(from, to)) ** 2;
     return {
       ships,
       invasions,
+      targetInvasions,
       route: typeof options.route === "function" ? options.route : () => null,
-      distance: typeof options.distance === "function" ? options.distance : () => Infinity,
+      distance,
+      targetDistanceSquared,
       boatSpeed: positiveNavalNumber(options.boatSpeed, NAVAL_INTERCEPTION_DEFAULT_SPEED),
       warshipSpeed: positiveNavalNumber(options.warshipSpeed, NAVAL_INTERCEPTION_DEFAULT_SPEED),
       attackRange: nonNegativeNavalNumber(options.attackRange, NAVAL_INTERCEPTION_DEFAULT_RANGE),
@@ -54,6 +68,35 @@
       routeCache: new Map(),
       candidateCache: new Map(),
     };
+  }
+
+  function navalInvasionTileAtTick(context, invasion, tick) {
+    const pathIndex = Math.min(
+      invasion.path.length - 1,
+      Math.max(0, Math.floor(tick * context.boatSpeed)),
+    );
+    return invasion.path[pathIndex];
+  }
+
+  function selectedNavalTargetAtTick(context, shipTile, tick) {
+    const rangeSquared = context.attackRange ** 2;
+    let selected = null;
+    let selectedDistanceSquared = Infinity;
+    let ambiguous = false;
+    for (const invasion of context.targetInvasions) {
+      const targetTile = navalInvasionTileAtTick(context, invasion, tick);
+      const distanceSquared = Number(context.targetDistanceSquared(shipTile, targetTile));
+      if (!Number.isFinite(distanceSquared) || distanceSquared > rangeSquared) continue;
+      if (selected !== null && distanceSquared > selectedDistanceSquared) continue;
+      if (selected !== null && distanceSquared === selectedDistanceSquared) {
+        ambiguous = true;
+        continue;
+      }
+      selected = invasion;
+      selectedDistanceSquared = distanceSquared;
+      ambiguous = false;
+    }
+    return ambiguous ? null : selected;
   }
 
   function getCachedNavalRoute(context, from, to) {
@@ -69,11 +112,7 @@
   }
 
   function navalInterceptionAtTick(context, ship, invasion, tick, timing) {
-    const pathIndex = Math.min(
-      invasion.path.length - 1,
-      Math.max(0, Math.floor(tick * context.boatSpeed)),
-    );
-    const boatTile = invasion.path[pathIndex];
+    const boatTile = navalInvasionTileAtTick(context, invasion, tick);
     const maxTravelSteps = Math.floor(
       (tick - timing.startTick) * context.warshipSpeed,
     );
@@ -83,7 +122,7 @@
     // paying for full-resolution water A*; feasible probes still use the exact
     // route below, so the selected intercept tick and tile remain unchanged.
     if (
-      context.distance(ship.tile, boatTile) >
+      Math.sqrt(Math.max(0, Number(context.targetDistanceSquared(ship.tile, boatTile)))) >
       maxTravelSteps + context.attackRange
     ) {
       return null;
@@ -96,8 +135,15 @@
     );
     for (let index = maxReachableIndex; index >= 0; index--) {
       const inRange =
-        Number(context.distance(waterRoute[index], boatTile)) <= context.attackRange;
+        Number(context.targetDistanceSquared(waterRoute[index], boatTile)) <=
+        context.attackRange ** 2;
       if (!inRange) continue;
+      if (
+        timing.requireTargetMatch !== false &&
+        selectedNavalTargetAtTick(context, waterRoute[index], tick)?.id !== invasion.id
+      ) {
+        continue;
+      }
       return {
         shipId: ship.id,
         invasionId: invasion.id,
@@ -128,6 +174,47 @@
       }
       return null;
     }
+    const hasSingleMatchingTarget =
+      context.targetInvasions.length === 1 &&
+      context.targetInvasions[0].id === invasion.id;
+    if (!hasSingleMatchingTarget) {
+      const geometric = searchFirstGeometricNavalInterception(
+        context,
+        ship,
+        invasion,
+        startTick,
+        arrival,
+      );
+      if (geometric === null) return null;
+      for (let tick = geometric.interceptTick; tick < arrival; tick++) {
+        const candidate = navalInterceptionAtTick(
+          context,
+          ship,
+          invasion,
+          tick,
+          timing,
+        );
+        if (candidate !== null) return candidate;
+      }
+      return null;
+    }
+    return searchFirstGeometricNavalInterception(
+      context,
+      ship,
+      invasion,
+      startTick,
+      arrival,
+    );
+  }
+
+  function searchFirstGeometricNavalInterception(
+    context,
+    ship,
+    invasion,
+    startTick,
+    arrival,
+  ) {
+    const timing = { startTick, arrival, requireTargetMatch: false };
     let first = startTick;
     let last = arrival - 1;
     let best = null;
