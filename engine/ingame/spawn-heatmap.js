@@ -196,18 +196,33 @@ function rawSpawnMapState(game, size) {
   }
 }
 
+function spawnPlayerSmallId(player) {
+  const id = Number(player?.smallID?.());
+  return Number.isFinite(id) ? id : null;
+}
+
+function spawnTileOwnedByPlayer(game, tile, player) {
+  const playerId = spawnPlayerSmallId(player);
+  return playerId != null && typeof game.ownerID === "function" && game.ownerID(tile) === playerId;
+}
+
 function getSpawnBlockedSnapshot(game, size) {
   const blocked = new Uint8Array(size);
   const state = rawSpawnMapState(game, size);
+  const playerId = spawnPlayerSmallId(game.myPlayer?.());
   if (state) {
-    for (let ref = 0; ref < size; ref += 1) blocked[ref] = state[ref] & 0x0fff ? 1 : 0;
+    for (let ref = 0; ref < size; ref += 1) {
+      const ownerId = state[ref] & 0x0fff;
+      blocked[ref] = ownerId !== 0 && ownerId !== playerId ? 1 : 0;
+    }
     return blocked;
   }
 
   if (typeof game.hasOwner !== "function") return blocked;
   for (let ref = 0; ref < size; ref += 1) {
     {
-      blocked[ref] = game.hasOwner(ref) ? 1 : 0;
+      blocked[ref] = game.hasOwner(ref) && !spawnTileOwnedByPlayer(game, ref, game.myPlayer?.())
+        ? 1 : 0;
     }
   }
   return blocked;
@@ -1522,7 +1537,9 @@ function exactSpawnCenterAllowed(context, tile, x, y) {
   if (area && (x < area.x || x >= area.x + area.width || y < area.y || y >= area.y + area.height)) return false;
   if (teamRegion && !isPointInsideTeamSpawnRegion(x, y, teamRegion)) return false;
   {
-    if (game.hasOwner?.(tile) || game.isBorder?.(tile)) return false;
+    const occupiedByOther = game.hasOwner?.(tile) &&
+      !spawnTileOwnedByPlayer(game, tile, context.options?.me);
+    if (occupiedByOther || game.isBorder?.(tile)) return false;
   }
   return nearestSpawnDistance(points.enemySpawns, x, y) >= minDist &&
     nearestSpawnDistance(points.teamSpawns, x, y) >= minDist;

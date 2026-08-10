@@ -102,6 +102,35 @@ assert.match(
   /if \(!this\.mg\.inSpawnPhase\(\)\) return false;[\s\S]{0,500}const hasSpawned = this\.player\.hasSpawned\?\.\(\) === true;[\s\S]{0,1800}return true;/,
   "an accepted personal spawn must wait for the global spawn phase to close before initializing attacks",
 );
+const nationSandbox = {
+  Difficulty: {},
+  PseudoRandom: class {},
+  simpleHash: () => 0,
+};
+executeClassicScript(
+  `${nationExecutionSource}\nglobalThis.__TestNationBot = NationBot;`,
+  nationSandbox,
+  { filename: "nationExecution-spawn-relocation.js" },
+);
+const relocationBot = Object.create(nationSandbox.__TestNationBot.prototype);
+relocationBot.player = { smallID: () => 7 };
+const relocationConstraints = {
+  area: null,
+  game: {
+    hasOwner: () => true,
+    isBorder: () => false,
+    isLand: () => true,
+    magnitude: () => 0,
+    ownerID: () => 7,
+  },
+  others: [],
+  teamRegion: null,
+};
+assert.equal(
+  relocationBot.isValidSpawnTile(123, relocationConstraints),
+  true,
+  "a spawned bot may relocate onto its own tile because SpawnExecution relinquishes self-owned territory first",
+);
 assert.match(
   attackSource,
   /const hasLiveTribe = otherPlayers\.some\(\(player\) =>\s*this\.isLightweightEarlyGameTribe\(player\)\);[\s\S]{0,220}if \(!hasLiveTribe\) \{[\s\S]{0,120}return \[\];[\s\S]{0,140}const competitorProfiles/,

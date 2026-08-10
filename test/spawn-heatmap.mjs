@@ -141,6 +141,7 @@ function loadHarness() {
       exactCandidates = value;
     },
     getExactRangeCalls: () => exactRangeCalls,
+    getSpawnBlockedSnapshot: sandbox.getSpawnBlockedSnapshot,
     refreshSpawnCandidateTerrain: sandbox.__OFHRefreshSpawnCandidateTerrain,
     resetExactRangeCalls: () => {
       exactRangeCalls = 0;
@@ -491,6 +492,46 @@ assert.ok(
       candidate.y < cornerTeamArea.y + cornerTeamArea.height,
   ),
   "initial bounded ranking spends its candidate budget inside the engine-assigned team area",
+);
+
+const relocationHarness = loadHarness();
+const relocationMe = { smallID: () => 7 };
+const relocationState = new Uint16Array(64);
+relocationState[18] = 7;
+relocationState[19] = 8;
+const relocationGame = {
+  __src: { _map: { state: relocationState, terrain: new Uint8Array(64).fill(LAND) } },
+  config: () => ({ minDistanceBetweenPlayers: () => 0 }),
+  hasOwner: (tile) => relocationState[tile] !== 0,
+  height: () => 8,
+  myPlayer: () => relocationMe,
+  ownerID: (tile) => relocationState[tile],
+  width: () => 8,
+};
+assert.deepEqual(
+  Array.from(relocationHarness.getSpawnBlockedSnapshot(relocationGame, 64).slice(18, 20)),
+  [0, 1],
+  "exact spawn occupancy keeps self-owned relocation tiles available while blocking enemies",
+);
+relocationHarness.enableExactIndex();
+relocationHarness.setExactCandidates([
+  {
+    ref: 18,
+    x: 2,
+    y: 2,
+    spawnGain: 100,
+    invalidCount: 0,
+    plainsGain: 100,
+    frontierGain: 20,
+    frontierPlainsGain: 20,
+    frontierValueGain: 20000,
+    frontierSlots: 20,
+  },
+]);
+assert.equal(
+  relocationHarness.computeExactSpawnTopSpotsForBot(relocationGame, relocationMe)?.[0]?.ref,
+  18,
+  "exact ranking may select a self-owned center that SpawnExecution can relocate onto",
 );
 
 // The live exact selector must schedule its first range asynchronously. This

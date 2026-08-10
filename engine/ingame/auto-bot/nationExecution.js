@@ -687,7 +687,17 @@
 
     isValidSpawnTile(tile, constraints) {
       const { game, area, teamRegion } = constraints;
-      if (tile == null || !game.isLand(tile) || game.hasOwner(tile) || game.isBorder(tile)) return false;
+      // SpawnExecution relinquishes this player's existing territory before it
+      // validates a moved spawn. Self-owned centers are therefore legal during
+      // the global spawn phase; only another player's ownership blocks them.
+      if (
+        tile == null ||
+        !game.isLand(tile) ||
+        this.spawnTileOccupiedByOtherPlayer(tile, game) ||
+        game.isBorder(tile)
+      ) {
+        return false;
+      }
       if (game.magnitude && game.magnitude(tile) === 31) return false;
       if (teamRegion && typeof isPointInsideTeamSpawnRegion === "function") {
         if (!isPointInsideTeamSpawnRegion(game.x(tile), game.y(tile), teamRegion)) return false;
@@ -700,6 +710,12 @@
         }
       }
       return !this.isSpawnTooClose(tile, constraints);
+    }
+
+    spawnTileOccupiedByOtherPlayer(tile, game) {
+      if (!game.hasOwner(tile)) return false;
+      if (typeof game.ownerID !== "function") return true;
+      return game.ownerID(tile) !== this.player.smallID?.();
     }
 
     findValidSpawnOnRing(sx, sy, radius, constraints) {

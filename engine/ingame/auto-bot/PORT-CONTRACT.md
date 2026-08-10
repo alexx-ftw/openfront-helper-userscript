@@ -340,6 +340,13 @@ for the bot's smart-spawn selector. The exact path estimates its typed-array
 peak and falls back to the visual scorer when the estimate exceeds 32 MiB, so a
 large map cannot turn spawn observation into a tab-wide allocation.
 
+During the global spawn phase, a client-sourced `SpawnExecution` may move an
+already materialized spawn: the engine relinquishes that player's territory
+before validating the new center. Exact occupancy snapshots, center filtering,
+and final actuation therefore treat the current player's tiles as available but
+continue to reject every other owner. This keeps progressive team-geometry
+reranking legal and avoids an expensive radial fallback onto the unchanged tile.
+
 ### Custom team donation clan priority
 
 With `winFixes` enabled, the existing team-only troop donation keeps its needy
