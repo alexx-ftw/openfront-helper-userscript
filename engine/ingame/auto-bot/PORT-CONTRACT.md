@@ -322,6 +322,10 @@ not happened three ticks after the planned intercept tick, the reservation is
 released for replanning; confirmed assignments retain their original absolute
 landing deadline.
 
+Replanning also preserves each supplied Warship state's earliest-free `time`.
+A ship still executing a retained interception cannot be reset to tick zero and
+used to claim a second Transport that lands before the first assignment releases it.
+
 ### Custom enemy Defense Post-aware attacks
 
 Every player-target attack path rechecks `player.canAttackPlayer(target, false)`

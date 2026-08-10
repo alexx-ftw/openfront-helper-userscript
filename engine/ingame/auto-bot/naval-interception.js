@@ -329,7 +329,11 @@
 
   function planNavalInterceptions(options = {}) {
     const context = createNavalInterceptionContext(options);
-    const initialStates = context.ships.map((ship) => ({ id: ship.id, tile: ship.tile, time: 0 }));
+    const initialStates = context.ships.map((ship) => ({
+      id: ship.id,
+      tile: ship.tile,
+      time: Math.max(0, Math.floor(Number(ship.time) || 0)),
+    }));
     const canSearchExactly =
       context.invasions.length <= NAVAL_INTERCEPTION_EXACT_INVASION_LIMIT &&
       context.ships.length <= NAVAL_INTERCEPTION_EXACT_SHIP_LIMIT;

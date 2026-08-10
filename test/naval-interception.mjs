@@ -84,6 +84,27 @@ const speedSensitive = planNavalInterceptions({
 assert.equal(speedSensitive.assignments[0].interceptTick, 2);
 assert.equal(speedSensitive.assignments[0].marginTicks, 1);
 
+const delayedPersistentShip = planNavalInterceptions({
+  ships: [{ id: "delayed-destroyer", tile: tile(0, 0), time: 3 }],
+  invasions: [
+    {
+      id: "landing-before-destroyer-is-free",
+      path: [tile(4, 0), tile(5, 0), tile(6, 0), tile(7, 0)],
+    },
+  ],
+  route,
+  distance,
+  boatSpeed: 1,
+  warshipSpeed: 2,
+  attackRange: 2,
+});
+assert.deepEqual(
+  delayedPersistentShip.coveredIds,
+  [],
+  "a persistent warship cannot restart at tick zero while its prior assignment is active",
+);
+assert.deepEqual(delayedPersistentShip.uncoveredIds, ["landing-before-destroyer-is-free"]);
+
 let lowerBoundRouteCalls = 0;
 const lowerBoundRejected = planNavalInterceptions({
   ships: [{ id: "lower-bound-destroyer", tile: tile(0, 0) }],

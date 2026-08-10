@@ -87,6 +87,22 @@ const plan = planNavalInterceptions({
 assert.deepEqual(plan.coveredIds, [nearTransport.id()]);
 assert.deepEqual(plan.uncoveredIds, [farTransport.id()]);
 
+const delayedPlan = planNavalInterceptions({
+  ships: [{ id: leftWarship.id(), tile: leftTile, time: 1 }],
+  invasions: [{ id: nearTransport.id(), path: [nearTile, nearTile] }],
+  route: (from: number) => [from],
+  distance: (from: number, to: number) => Math.sqrt(game.euclideanDistSquared(from, to)),
+  targetDistanceSquared: (from: number, to: number) => game.euclideanDistSquared(from, to),
+  boatSpeed: 1,
+  warshipSpeed: 1,
+  attackRange: game.config().warshipTargettingRange(),
+});
+assert.deepEqual(
+  delayedPlan.uncoveredIds,
+  [nearTransport.id()],
+  "the planner preserves a real warship's busy tick instead of restarting its timeline",
+);
+
 const patrolGame = await setup(
   "half_land_half_ocean",
   { infiniteGold: true, instantBuild: true },
