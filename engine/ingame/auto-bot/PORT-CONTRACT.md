@@ -347,6 +347,15 @@ are skipped when the available commitment is below the Defense Post-aware
 minimum. Boat probes keep their existing cheap-probe behavior. With `winFixes`
 disabled, the faithful attack selection and troop calculation remain unchanged.
 
+Legendary tribe captures retain the four-times-strength minimum, but that ratio
+is no longer treated as sufficient by itself. The bot evaluates the live
+`Config.attackLogic` attacker loss on at most 512 current frontier tiles and
+multiplies the worst result by the tribe's live territory size. The larger of
+that terrain/Defense-Post/fallout cost and the ratio floor is required before an
+all-or-nothing tribe attack is emitted. The bounded scan is cached per target and
+game tick so repeated candidate, commitment, and reinforcement checks reuse one
+engine-cost snapshot.
+
 ### Custom spawn-phase resource safety
 
 The spawn markers and visual heatmap use only their bounded coarse scorer. They

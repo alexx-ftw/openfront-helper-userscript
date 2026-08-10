@@ -1703,6 +1703,39 @@ assert.equal(
   "the tribe floor includes the target-specific Defense Post attack cost",
 );
 
+const terrainHeavyTribe = {
+  isPlayer: () => true,
+  type: () => "Bot",
+  id: () => "terrain-heavy-tribe",
+  smallID: () => 4,
+  troops: () => 100,
+  numTilesOwned: () => 100,
+};
+const terrainCaptureBehavior = Object.create(sandbox.AttackBehavior.prototype);
+terrainCaptureBehavior.player = me;
+let terrainAttackLogicCalls = 0;
+terrainCaptureBehavior.game = {
+  config: () => ({
+    attackLogic: () => {
+      terrainAttackLogicCalls++;
+      return { attackerTroopLoss: 25 };
+    },
+  }),
+  ticks: () => 1,
+};
+terrainCaptureBehavior.getEnemyDefensePostFrontTiles = () => [101, 102];
+assert.equal(
+  terrainCaptureBehavior.getTribeCaptureTroopFloor(terrainHeavyTribe),
+  2500,
+  "a large terrain-expensive tribe is funded for per-tile engine losses",
+);
+assert.equal(terrainCaptureBehavior.getTribeCaptureTroopFloor(terrainHeavyTribe), 2500);
+assert.equal(
+  terrainAttackLogicCalls,
+  2,
+  "same-tick tribe floor checks reuse the bounded engine-loss scan",
+);
+
 const botControlledTribeBehavior = new sandbox.AttackBehavior(
   {},
   game,

@@ -2174,6 +2174,10 @@
 
     scanEnemyDefensePostFrontTiles(targetSid) {
       const front = [];
+      const requiredGameMethods = ["neighbors", "isLand", "ownerID"];
+      if (requiredGameMethods.some((method) => typeof this.game?.[method] !== "function")) {
+        return front;
+      }
       for (const borderTile of this.player.borderTiles?.() ?? []) {
         for (const neighbor of this.game.neighbors(borderTile) ?? []) {
           if (!this.game.isLand(neighbor)) continue;
@@ -8994,6 +8998,65 @@
       return missing >= 1 && missing <= available ? missing : 0;
     }
 
+    currentTribeCaptureFloorCache() {
+      const tick = this.currentAttackDecisionTick();
+      if (this.tribeCaptureFloorCacheTick !== tick) {
+        this.tribeCaptureFloorCacheTick = tick;
+        this.tribeCaptureFloorCache = new Map();
+      }
+      return this.tribeCaptureFloorCache;
+    }
+
+    worstTribeFrontTileLoss(target, baselineTroops, attackLogic, frontTiles) {
+      let worstPerTileLoss = 0;
+      for (const tile of frontTiles.slice(0, ENEMY_DEFENSE_POST_MAX_FRONT_TILES)) {
+        const result = attackLogic(
+          this.game,
+          baselineTroops,
+          this.player,
+          target,
+          tile,
+        );
+        const loss = Number(result?.attackerTroopLoss);
+        if (Number.isFinite(loss)) worstPerTileLoss = Math.max(worstPerTileLoss, loss);
+      }
+      return worstPerTileLoss;
+    }
+
+    tribeTerrainCaptureInputs(target) {
+      if (target?.type?.() !== PlayerType.Bot) return null;
+      const targetTiles = Math.max(
+        0,
+        Math.floor(Number(target?.numTilesOwned?.()) || 0),
+      );
+      const attackLogic = this.game?.config?.()?.attackLogic;
+      if (targetTiles === 0 || typeof attackLogic !== "function") return null;
+      const frontTiles = this.getEnemyDefensePostFrontTiles?.(target) ?? [];
+      return frontTiles.length === 0 ? null : { attackLogic, frontTiles, targetTiles };
+    }
+
+    getTribeTerrainCaptureTroopFloor(target, baselineTroops) {
+      const inputs = this.tribeTerrainCaptureInputs(target);
+      if (!inputs) return 0;
+      const { attackLogic, frontTiles, targetTiles } = inputs;
+
+      const floorCache = this.currentTribeCaptureFloorCache();
+      const targetKey = this.getOutboundAttackTargetKey(target) ?? target;
+      const cacheKey = `${String(targetKey)}:${targetTiles}:${baselineTroops}`;
+      const cached = floorCache.get(cacheKey);
+      if (cached !== undefined) return cached;
+
+      const worstPerTileLoss = this.worstTribeFrontTileLoss(
+        target,
+        baselineTroops,
+        attackLogic,
+        frontTiles,
+      );
+      const terrainFloor = Math.ceil(worstPerTileLoss * targetTiles);
+      floorCache.set(cacheKey, terrainFloor);
+      return terrainFloor;
+    }
+
     getTribeCaptureTroopFloor(target, defensePostProfile = null) {
       const defenseMultiplier = Math.max(
         1,
@@ -9006,10 +9069,14 @@
       // Attack intents are whole troops. Round the required conquest force up,
       // never down: a fractional tribe/Defense-Post result truncated by the
       // engine can leave a tribe alive by one troop and strand the opening expansion.
-      return Math.ceil(
+      const ratioFloor = Math.ceil(
         Math.max(0, Number(target?.troops?.()) || 0) *
           captureMultiplier *
           defenseMultiplier,
+      );
+      return Math.max(
+        ratioFloor,
+        this.getTribeTerrainCaptureTroopFloor(target, ratioFloor),
       );
     }
 
