@@ -588,6 +588,26 @@ async function testLifecycleRecoversEnabledStateFromAStaleBridge() {
   );
 }
 
+async function testLifecycleRestartsEnabledEngineBehindStaleLoadedFlag() {
+  const harness = makeLifecycleSandbox();
+  harness.state.settings.enabled = false;
+  harness.state.tickInFlight = false;
+  harness.sandbox.window.__OFH_HOT_RELOAD_IN_PROGRESS__ = true;
+  executeClassicScript(lifecycleSource, harness.sandbox, {
+    filename: "auto-bot-lifecycle-stale-loaded-flag.js",
+  });
+
+  harness.sandbox.window.__OFH_HOT_RELOAD_IN_PROGRESS__ = false;
+  harness.sandbox.window.__openfrontAutoBotLoaded = true;
+  const runtime = harness.sandbox.window.__OFH_autobot;
+  assert.equal(runtime.activateForHotReload({ enabled: true }), true);
+  assert.notEqual(
+    harness.state.tickTimer,
+    null,
+    "a successful enabled activation must leave the replacement engine running",
+  );
+}
+
 async function testBridgeFaultInjectionRegressions() {
   const cases = [
     ["normal rollback ordering", testActivationFailureRollsBackInOrderExactlyOnce],
@@ -649,5 +669,6 @@ await testLifecycleDisposesAtomMacroAndClosesStalledTick();
 await testLifecycleStagesAndActivatesAtomMacroOnce();
 await testLifecycleAppliesTransferredEnabledStateBeforeStarting();
 await testLifecycleRecoversEnabledStateFromAStaleBridge();
+await testLifecycleRestartsEnabledEngineBehindStaleLoadedFlag();
 await testBuildPublishesThreeArtifactsAtomically();
 process.stdout.write("hot-reload transactional tests passed\n");

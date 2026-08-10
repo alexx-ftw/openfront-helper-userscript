@@ -156,6 +156,12 @@
     }
     window.__openfrontAutoBotActivationPending = false;
     scheduleAutoBotLifecycle();
+    // A stale lifecycle marker from the runtime being replaced can make the
+    // scheduler return without creating a watcher or engine timer. Hot-reload
+    // activation must not report success while an enabled replacement is idle.
+    if (state.settings.enabled && state.tickTimer === null && !state.tickInFlight) {
+      startEngine();
+    }
     return true;
   }
 

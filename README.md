@@ -259,7 +259,8 @@ network connection remain open.
    OpenFront Helper copy that would execute at the same time.
 3. Reload OpenFront once to start loader v3. Future Auto-Bot builds apply within about one second
    without refreshing the page or game. Loader v3.0.1 also reapplies the previous master-toggle
-   state through the replacement runtime, so an Auto-Bot that was running restarts automatically.
+   state through the replacement runtime. Auto-Bot v1.12.25 additionally verifies the enabled
+   replacement has restarted its engine, even if a stale lifecycle marker survives the handoff.
 
 The loader downloads only the small fingerprint while idle. It fetches the full userscript on
 initial startup and the smaller Auto-Bot artifact after a changed fingerprint. Shell, lobby, or
