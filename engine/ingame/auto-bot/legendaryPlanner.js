@@ -720,10 +720,19 @@ function resolveLegendaryMissileSchedule(context, greedyMissiles) {
   }
   const exact = runLegendaryExactSchedule(context);
   if (exact.assignments) {
-    const missiles = context.routes.map((route, index) =>
-      legendaryScheduledMissile(route, exact.assignments[index]),
-    );
-    return { missiles, fullyDefended: true, method: "backtracking", nodes: exact.nodes };
+    // The engine does not accept an explicit missile-to-SAM assignment. Each
+    // launcher independently picks and immediately claims its preferred target
+    // in execution order. Therefore a defense that succeeds only by moving a
+    // flexible missile onto a different SAM is theoretical: the live launchers
+    // can make the original greedy claim and leave the constrained missile
+    // uncovered. Keep the observable greedy schedule and fail closed until the
+    // engine's autonomous claim order itself proves the alternate matching.
+    return {
+      missiles: greedyMissiles,
+      fullyDefended: false,
+      method: "engine-order-inconclusive",
+      nodes: exact.nodes,
+    };
   }
   const method = exact.exhausted ? "inconclusive" : "exact-impossible";
   return { missiles: greedyMissiles, fullyDefended: false, method, nodes: exact.nodes };

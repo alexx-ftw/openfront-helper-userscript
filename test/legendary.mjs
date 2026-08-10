@@ -491,13 +491,18 @@ const alternateAssignment = plannerSandbox.legendaryMissileDefenseSchedule({
 });
 assert.equal(
   alternateAssignment.fullyDefended,
-  true,
-  "The planner backtracks when the first valid SAM assignment would consume a constrained slot",
+  false,
+  "A theoretical alternate SAM matching cannot prove defense under the engine's autonomous claim order",
 );
 assert.equal(
   alternateAssignment.scheduleMethod,
-  "backtracking",
-  "The exact fallback is observable in the schedule result",
+  "engine-order-inconclusive",
+  "The planner exposes when only an unenforceable alternate assignment covers the salvo",
+);
+assert.equal(
+  alternateAssignment.uninterceptedCount,
+  1,
+  "The observable greedy schedule retains the missile that may penetrate in the real engine",
 );
 
 const equivalentReadySlotRoutes = [
