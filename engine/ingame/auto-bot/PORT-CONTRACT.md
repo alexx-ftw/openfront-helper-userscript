@@ -471,6 +471,12 @@ construction cadence. Active-missile and Hydrogen coverage results are cached
 per authoritative tick so multiple policy consumers cannot repeat work that
 scales with the late-game building count.
 
+Once Legendary's missile forecast declares a new SAM urgent, affordability uses
+the authoritative next-build cost rather than the faithful perceived-cost
+multiplier. In particular, one existing level-one launcher makes the engine's
+second-SAM price 3,000,000; the planner must not reject that legal defense as a
+3,900,000 perceived spend before probing its placement.
+
 The inverse parity guard is also enforced: when a hostile player's projected
 missile-silo level sum exceeds the highest built SAM level on our side, at least
 one own SAM is upgraded toward that level before normal construction. If no own

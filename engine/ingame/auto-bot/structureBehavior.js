@@ -1970,7 +1970,11 @@
       // spend on a City/Factory/Port/Silo in a zone that the model already
       // predicts will be hit before the emergency defense can come online.
       if (this.legendaryMissileDefenseUrgent()) {
-        if (await this.maybeSpawnStructure(UNIT.SAMLauncher)) return true;
+        if (
+          await this.maybeSpawnStructure(UNIT.SAMLauncher, {
+            useActualCost: true,
+          })
+        ) return true;
       }
 
       const candidates = this.legendaryConstructionCandidates({

@@ -3582,6 +3582,27 @@ for (const type of [UNIT.Factory, UNIT.Port]) {
   assert.equal(sentBuilds.at(-1), legalBuildable);
 }
 
+const urgentLegendarySamCostBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+urgentLegendarySamCostBehavior.maybeUpgradeLegendarySam = async () => false;
+urgentLegendarySamCostBehavior.ownSamCapacity = () => 1;
+urgentLegendarySamCostBehavior.legendaryMissileDefenseUrgent = () => true;
+let urgentLegendarySamOptions = null;
+urgentLegendarySamCostBehavior.maybeSpawnStructure = async (type, options) => {
+  assert.equal(type, UNIT.SAMLauncher);
+  urgentLegendarySamOptions = options;
+  return true;
+};
+assert.equal(
+  await urgentLegendarySamCostBehavior.doHandleLegendaryStructures({}),
+  true,
+  "Legendary handles an urgent missile-defense construction before ordinary candidates",
+);
+assert.equal(
+  urgentLegendarySamOptions?.useActualCost,
+  true,
+  "Legendary urgent SAM construction uses the authoritative engine cost",
+);
+
 for (const type of [UNIT.City, UNIT.Factory, UNIT.Port]) {
   const legendaryLegalBuildBehavior = Object.create(sandbox.__StructureBehavior.prototype);
   let upgradeProbeCount = 0;

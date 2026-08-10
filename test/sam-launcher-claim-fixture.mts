@@ -8,7 +8,7 @@ import { setup } from "../openfront-engine/tests/util/Setup";
 const engineTestsUtil = fileURLToPath(new URL("../openfront-engine/tests/util/", import.meta.url));
 const game = await setup(
   "big_plains",
-  { infiniteGold: true, instantBuild: true },
+  { infiniteGold: false, instantBuild: true },
   [],
   engineTestsUtil,
 );
@@ -19,11 +19,22 @@ game.addPlayer(new PlayerInfo("attacker", PlayerType.Human, null, "attacker"));
 const defender = game.player("defender");
 const attacker = game.player("attacker");
 
+assert.equal(
+  game.unitInfo(UnitType.SAMLauncher).cost(game, defender),
+  1_500_000n,
+  "the first SAM uses the engine's authoritative base cost",
+);
+
 // Execution order matters: SAM-B can reach both missiles and claims first.
 // This is the live-engine counterpart of Legendary's engine-order-conflict
 // schedule: a flexible launcher can consume a shared target before the
 // constrained launcher runs, leaving the exclusive target uncovered.
 const samB = defender.buildUnit(UnitType.SAMLauncher, game.ref(50, 1), {});
+assert.equal(
+  game.unitInfo(UnitType.SAMLauncher).cost(game, defender),
+  3_000_000n,
+  "the second SAM costs 3M in the live engine rather than the bot's perceived 3.9M",
+);
 const samA = defender.buildUnit(UnitType.SAMLauncher, game.ref(1, 1), {});
 game.addExecution(new SAMLauncherExecution(defender, null, samB));
 game.addExecution(new SAMLauncherExecution(defender, null, samA));
