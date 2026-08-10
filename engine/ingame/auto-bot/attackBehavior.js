@@ -9063,15 +9063,21 @@
     }
 
     getTribeTerrainCaptureTroopFloor(target, baselineTroops) {
-      const inputs = this.tribeTerrainCaptureInputs(target);
-      if (!inputs) return 0;
-      const { attackLogic, targetTiles, terrainTiles } = inputs;
-
+      if (target?.type?.() !== PlayerType.Bot) return 0;
+      const targetTiles = Math.max(
+        0,
+        Math.floor(Number(target?.numTilesOwned?.()) || 0),
+      );
+      if (targetTiles === 0) return 0;
       const floorCache = this.currentTribeCaptureFloorCache();
       const targetKey = this.getOutboundAttackTargetKey(target) ?? target;
       const cacheKey = `${String(targetKey)}:${targetTiles}:${baselineTroops}`;
       const cached = floorCache.get(cacheKey);
       if (cached !== undefined) return cached;
+
+      const inputs = this.tribeTerrainCaptureInputs(target);
+      if (!inputs) return 0;
+      const { attackLogic, terrainTiles } = inputs;
 
       const worstPerTileLoss = this.worstTribeTileLoss(
         target,

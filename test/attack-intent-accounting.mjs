@@ -1736,6 +1736,43 @@ assert.equal(
   "same-tick tribe floor checks reuse the bounded engine-loss scan",
 );
 
+const cachedTerritoryTribe = {
+  isPlayer: () => true,
+  type: () => sandbox.PlayerType.Bot,
+  id: () => "cached-territory-tribe",
+  smallID: () => 5,
+  troops: () => 1,
+  numTilesOwned: () => 4,
+};
+const cachedTerritoryBehavior = Object.create(sandbox.AttackBehavior.prototype);
+cachedTerritoryBehavior.player = me;
+let cachedTerritoryNeighborCalls = 0;
+const cachedTerritoryAdjacency = new Map([
+  [201, [202]],
+  [202, [201, 203]],
+  [203, [202, 204]],
+  [204, [203]],
+]);
+cachedTerritoryBehavior.game = {
+  config: () => ({
+    attackLogic: () => ({ attackerTroopLoss: 25 }),
+  }),
+  ticks: () => 3,
+  ownerID: (tile) => (cachedTerritoryAdjacency.has(tile) ? 5 : 0),
+  neighbors: (tile) => {
+    cachedTerritoryNeighborCalls++;
+    return cachedTerritoryAdjacency.get(tile) ?? [];
+  },
+};
+cachedTerritoryBehavior.getEnemyDefensePostFrontTiles = () => [201];
+assert.equal(cachedTerritoryBehavior.getTribeCaptureTroopFloor(cachedTerritoryTribe), 100);
+assert.equal(cachedTerritoryBehavior.getTribeCaptureTroopFloor(cachedTerritoryTribe), 100);
+assert.equal(
+  cachedTerritoryNeighborCalls,
+  3,
+  "same-tick tribe floor checks traverse the target territory only once",
+);
+
 const mixedTerrainCaptureBehavior = Object.create(sandbox.AttackBehavior.prototype);
 mixedTerrainCaptureBehavior.player = me;
 const mixedTribeAdjacency = new Map([
