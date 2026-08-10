@@ -22,7 +22,16 @@ function makePlayer(type, x, y, id, { displayName = null, spawned = false, team 
   };
 }
 
-function loadScorer({ players, width, height, candidates, metrics = {}, me = null }) {
+function loadScorer({
+  players,
+  width,
+  height,
+  candidates,
+  metrics = {},
+  me = null,
+  landComponents = null,
+  landComponentsReady = true,
+}) {
   const terrain = new Uint8Array(width * height).fill(LAND);
   const metricValue = (candidateRef, key, fallback) => metrics[candidateRef]?.[key] ?? fallback;
   const sandbox = {
@@ -51,8 +60,12 @@ function loadScorer({ players, width, height, candidates, metrics = {}, me = nul
       FRONTIER_VALUE_SCALE: 1000,
       create() {
         return {
+          landComponentsReady,
           ready: true,
           version: 0,
+          landComponentAt(candidateRef) {
+            return landComponents?.[candidateRef] ?? (landComponentsReady ? 1 : 0);
+          },
           forEachCandidate({ isCenterAllowed, onCandidate }) {
             for (const candidate of candidates) {
               if (!isCenterAllowed(candidate.ref, candidate.x, candidate.y)) continue;
@@ -112,6 +125,48 @@ const tribeCount = loadScorer({
     makePlayer("BOT", 400, 50, 4),
   ],
 });
+
+const connectedWidth = 100;
+const connectedCandidate = { ref: 10 * connectedWidth + 10, x: 10, y: 10 };
+const connectedTribe = makePlayer("BOT", 15, 10, 91);
+const crossWaterTribe = makePlayer("BOT", 20, 10, 92);
+const connectedComponents = {
+  [connectedCandidate.ref]: 1,
+  [10 * connectedWidth + 15]: 1,
+  [10 * connectedWidth + 20]: 2,
+};
+const componentFiltered = loadScorer({
+  width: connectedWidth,
+  height: 30,
+  candidates: [connectedCandidate],
+  players: [connectedTribe, crossWaterTribe],
+  landComponents: connectedComponents,
+  landComponentsReady: true,
+});
+assert.equal(componentFiltered[0].tribeReachCount, 1);
+assert.equal(
+  componentFiltered[0].tribeGeometricReachCount,
+  2,
+  "diagnostics retain the nearby tribe excluded by land connectivity",
+);
+assert.equal(componentFiltered[0].landConnectivityReady, true);
+
+const geometricFallback = loadScorer({
+  width: connectedWidth,
+  height: 30,
+  candidates: [connectedCandidate],
+  players: [connectedTribe, crossWaterTribe],
+  landComponents: connectedComponents,
+  landComponentsReady: false,
+});
+assert.equal(
+  geometricFallback[0].tribeReachCount,
+  0,
+  "pending connectivity must not reward tribes that may be separated by water",
+);
+assert.equal(geometricFallback[0].tribeGeometricReachCount, 2);
+assert.equal(geometricFallback[0].tribeReachScore, 0);
+assert.equal(geometricFallback[0].landConnectivityReady, false);
 assert.equal(tribeCount[0].x, 100, "the best spawn should reach the most tribes");
 assert.equal(tribeCount[0].tribeReachCount, 3);
 assert.equal(tribeCount[0].tribeReachScore, 0.75);

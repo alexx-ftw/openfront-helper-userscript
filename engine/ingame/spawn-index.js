@@ -167,6 +167,16 @@
       );
       this._buildCursor = 0;
       this.ready = false;
+      this.landComponentByRef = new Int32Array(this.size);
+      this._landComponentQueue = new Int32Array(this.size);
+      this._landComponentBuildPhase = "scan";
+      this._landComponentClearCursor = 0;
+      this._landComponentScanCursor = 0;
+      this._landComponentQueueHead = 0;
+      this._landComponentQueueTail = 0;
+      this._landComponentCurrent = 0;
+      this._landComponentNext = 1;
+      this.landComponentsReady = false;
       this.version = 0;
 
     }
@@ -180,6 +190,102 @@
         this.blocked[ref] === 0 &&
         isValidTerrainByte(this.terrain[ref], this.impassableMagnitude)
       );
+    }
+
+    _landCellPassable(ref) {
+      return isValidTerrainByte(this.terrain[ref], this.impassableMagnitude);
+    }
+
+    _invalidateLandComponents() {
+      this.landComponentsReady = false;
+      this._landComponentBuildPhase = "clear";
+      this._landComponentClearCursor = 0;
+      this._landComponentScanCursor = 0;
+      this._landComponentQueueHead = 0;
+      this._landComponentQueueTail = 0;
+      this._landComponentCurrent = 0;
+      this._landComponentNext = 1;
+    }
+
+    _enqueueLandComponentRef(ref, component) {
+      this.landComponentByRef[ref] = component;
+      this._landComponentQueue[this._landComponentQueueTail] = ref;
+      this._landComponentQueueTail += 1;
+    }
+
+    _visitLandComponentNeighbor(ref, component) {
+      if (
+        ref < 0 ||
+        ref >= this.size ||
+        this.landComponentByRef[ref] !== 0 ||
+        !this._landCellPassable(ref)
+      ) {
+        return;
+      }
+      this._enqueueLandComponentRef(ref, component);
+    }
+
+    _expandLandComponentRef(ref) {
+      const x = ref % this.width;
+      const component = this._landComponentCurrent;
+      if (x > 0) this._visitLandComponentNeighbor(ref - 1, component);
+      if (x + 1 < this.width) this._visitLandComponentNeighbor(ref + 1, component);
+      if (ref >= this.width) this._visitLandComponentNeighbor(ref - this.width, component);
+      if (ref + this.width < this.size) {
+        this._visitLandComponentNeighbor(ref + this.width, component);
+      }
+    }
+
+    buildLandComponentsSlice(maxSteps = 256) {
+      if (this.landComponentsReady) return { done: true, processed: 0 };
+      const amount = Math.max(1, Math.floor(Number(maxSteps) || 1));
+      let processed = 0;
+      while (processed < amount && !this.landComponentsReady) {
+        if (this._landComponentBuildPhase === "clear") {
+          this.landComponentByRef[this._landComponentClearCursor] = 0;
+          this._landComponentClearCursor += 1;
+          processed += 1;
+          if (this._landComponentClearCursor >= this.size) {
+            this._landComponentBuildPhase = "scan";
+          }
+          continue;
+        }
+
+        if (this._landComponentQueueHead < this._landComponentQueueTail) {
+          const ref = this._landComponentQueue[this._landComponentQueueHead];
+          this._landComponentQueueHead += 1;
+          this._expandLandComponentRef(ref);
+          processed += 1;
+          continue;
+        }
+
+        if (this._landComponentScanCursor >= this.size) {
+          this.landComponentsReady = true;
+          this.version += 1;
+          break;
+        }
+
+        const ref = this._landComponentScanCursor;
+        this._landComponentScanCursor += 1;
+        processed += 1;
+        if (!this._landCellPassable(ref) || this.landComponentByRef[ref] !== 0) continue;
+        this._landComponentCurrent = this._landComponentNext;
+        this._landComponentNext += 1;
+        this._landComponentQueueHead = 0;
+        this._landComponentQueueTail = 0;
+        this._enqueueLandComponentRef(ref, this._landComponentCurrent);
+      }
+      return { done: this.landComponentsReady, processed };
+    }
+
+    landComponentAt(ref) {
+      if (!this.landComponentsReady || !this._isValidRef(ref)) return 0;
+      return this.landComponentByRef[ref];
+    }
+
+    sameLandComponent(leftRef, rightRef) {
+      const left = this.landComponentAt(leftRef);
+      return left > 0 && left === this.landComponentAt(rightRef);
     }
 
     _forEachAffectedCenter(tileRef, callback) {
@@ -332,7 +438,14 @@
     // requestIdleCallback and yield between slices; tests and adapters may use
     // buildAll() when a synchronous snapshot is acceptable.
     buildSlice(maxCenters = 256) {
-      if (this.ready) return { done: true, processed: 0 };
+      const landProgress = this.buildLandComponentsSlice(maxCenters);
+      if (this.ready) {
+        return {
+          done: this.landComponentsReady,
+          processed: 0,
+          landProcessed: landProgress.processed,
+        };
+      }
       const amount = Math.max(1, Math.floor(Number(maxCenters) || 1));
       const end = Math.min(this.size, this._buildCursor + amount);
       const start = this._buildCursor;
@@ -343,11 +456,15 @@
         this.ready = true;
         this.version += 1;
       }
-      return { done: this.ready, processed: end - start };
+      return {
+        done: this.ready && this.landComponentsReady,
+        processed: end - start,
+        landProcessed: landProgress.processed,
+      };
     }
 
     buildAll() {
-      while (!this.ready) this.buildSlice(this.size);
+      while (!this.ready || !this.landComponentsReady) this.buildSlice(this.size);
       return this;
     }
 
@@ -357,12 +474,14 @@
       const previousByte = this.terrain[ref];
       if (previousByte === nextByte) return false;
       const oldValid = this._cellValid(ref);
+      const oldLandPassable = this._landCellPassable(ref);
       const oldPlains = oldValid && isPlainsTerrainByte(previousByte, this.impassableMagnitude);
       const oldExpansionValue = oldValid
         ? terrainExpansionValue(previousByte, this.impassableMagnitude)
         : 0;
       this.terrain[ref] = nextByte;
       const newValid = this._cellValid(ref);
+      const newLandPassable = this._landCellPassable(ref);
       const newPlains = newValid && isPlainsTerrainByte(nextByte, this.impassableMagnitude);
       const newExpansionValue = newValid
         ? terrainExpansionValue(nextByte, this.impassableMagnitude)
@@ -375,6 +494,7 @@
         oldExpansionValue,
         newExpansionValue,
       });
+      if (oldLandPassable !== newLandPassable) this._invalidateLandComponents();
       this.version += 1;
       return true;
     }
@@ -518,6 +638,12 @@
         height: this.height,
         size: this.size,
         ready: this.ready,
+        landComponentsReady: this.landComponentsReady,
+        landComponentBuildPhase: this._landComponentBuildPhase,
+        landComponentClearCursor: this._landComponentClearCursor,
+        landComponentScanCursor: this._landComponentScanCursor,
+        landComponentQueueHead: this._landComponentQueueHead,
+        landComponentQueueTail: this._landComponentQueueTail,
         builtCenters: this._buildCursor,
         candidateCount,
         diskSize: this.diskOffsets.length,

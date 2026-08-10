@@ -53,8 +53,11 @@ const SPAWN_TEAM_INTERIOR_MARGIN = 12;
 // The exact selector keeps ten map-sized typed arrays plus transient terrain
 // and occupancy copies. Keep its optional peak allocation below 32 MiB; larger maps
 // use the already bounded visual scorer instead of risking a tab-wide OOM.
-const SPAWN_INDEX_ESTIMATED_BYTES_PER_CELL = 24;
+const SPAWN_INDEX_ESTIMATED_BYTES_PER_CELL = 32;
 const SPAWN_INDEX_MEMORY_BUDGET_BYTES = 32 * 1024 * 1024;
+const SPAWN_INDEX_BUILD_SLICE_MAX_MS = 4;
+const SPAWN_INDEX_BUILD_SLICE_MAX_CALLS = 8;
+const SPAWN_LAND_CONNECTIVITY_SLICE_TILES = 32_768;
 
 // Weights for the visual/fallback base score. The exact bot selector uses the
 // replay-free robust objective below; clan cohesion is only a late tie-break.
@@ -211,18 +214,43 @@ function getSpawnBlockedSnapshot(game, size) {
 }
 
 function scheduleSpawnCandidateBuild(index) {
-  if (!index || index.ready || _spawnCandidateBuildScheduled) return;
+  const complete = index?.ready && index.landComponentsReady !== false;
+  if (!index || complete || _spawnCandidateBuildScheduled) return;
   _spawnCandidateBuildScheduled = true;
 
   const run = (deadline) => {
     _spawnCandidateBuildScheduled = false;
     if (index !== _spawnCandidateIndex) return;
+    const startedAt = performance.now();
+    let calls = 0;
     if (deadline && typeof deadline.timeRemaining === "function") {
-      while (!index.ready && deadline.timeRemaining() > 0) index.buildSlice();
+      while (
+        (!index.ready || index.landComponentsReady === false) &&
+        deadline.timeRemaining() > 0 &&
+        calls < SPAWN_INDEX_BUILD_SLICE_MAX_CALLS &&
+        performance.now() - startedAt < SPAWN_INDEX_BUILD_SLICE_MAX_MS
+      ) {
+        if (
+          index.landComponentsReady === false &&
+          typeof index.buildLandComponentsSlice === "function"
+        ) {
+          index.buildLandComponentsSlice(SPAWN_LAND_CONNECTIVITY_SLICE_TILES);
+        }
+        index.buildSlice();
+        calls += 1;
+      }
     } else {
+      if (
+        index.landComponentsReady === false &&
+        typeof index.buildLandComponentsSlice === "function"
+      ) {
+        index.buildLandComponentsSlice(SPAWN_LAND_CONNECTIVITY_SLICE_TILES);
+      }
       index.buildSlice();
     }
-    if (!index.ready) scheduleSpawnCandidateBuild(index);
+    if (!index.ready || index.landComponentsReady === false) {
+      scheduleSpawnCandidateBuild(index);
+    }
   };
 
   {
@@ -273,9 +301,37 @@ function ensureSpawnCandidateIndex(game) {
     });
     _spawnCandidateIndexSrcRef = src;
     _spawnCandidateIndexTerrainRef = td.terrain;
-    scheduleSpawnCandidateBuild(_spawnCandidateIndex);
+  }
+  scheduleSpawnCandidateBuild(_spawnCandidateIndex);
+  return _spawnCandidateIndex;
+}
+
+function existingSpawnCandidateIndex(game) {
+  if (!_spawnCandidateIndex) return null;
+  const td = getSpawnTerrain(game);
+  const src = (game && game.__src) || game;
+  if (
+    _spawnCandidateIndexSrcRef !== src ||
+    _spawnCandidateIndexTerrainRef !== td?.terrain
+  ) {
+    return null;
   }
   return _spawnCandidateIndex;
+}
+
+function prepareSpawnCandidateConnectivity(game) {
+  const index = ensureSpawnCandidateIndex(game);
+  if (!index) return null;
+  return index.landComponentsReady === true;
+}
+
+function getSpawnCandidateConnectivitySnapshot() {
+  if (!_spawnCandidateIndex) return { supported: false, scheduled: false };
+  return {
+    supported: true,
+    scheduled: _spawnCandidateBuildScheduled,
+    ..._spawnCandidateIndex.stats(),
+  };
 }
 
 function resetSpawnCandidateIndex() {
@@ -294,11 +350,45 @@ function resetSpawnCandidateIndex() {
   _asyncExactSpawnResult = null;
 }
 
+function invalidateSpawnTerrainRankingCaches() {
+  _spawnHeatmapData = null;
+  _spawnStaticCandidates = null;
+  _spawnStaticGameRef = null;
+  _spawnStaticTerrainRef = null;
+  _spawnStaticWidth = 0;
+  _spawnStaticHeight = 0;
+  _botTopSpotsTick = -1;
+  _botTopSpotsGameRef = null;
+  _botTopSpotsTerrainRef = null;
+  _botTopSpotsResult = null;
+  _initialBotTopSpotsGameRef = null;
+  _initialBotTopSpotsTerrainRef = null;
+  _initialBotTopSpotsSignature = null;
+  _initialBotTopSpotsIndexVersion = -1;
+  _initialBotTopSpotsResult = null;
+  _exactSpawnCacheSrcRef = null;
+  _exactSpawnCacheIndexVersion = -1;
+  _exactSpawnCacheSignature = "";
+  _exactSpawnCacheResult = null;
+  _asyncExactSpawnJob = null;
+  _asyncExactSpawnResultSrcRef = null;
+  _asyncExactSpawnResultIndexVersion = -1;
+  _asyncExactSpawnResultSignature = "";
+  _asyncExactSpawnResult = null;
+}
+
 function refreshSpawnCandidateTerrain(game, refs = null) {
   const index = ensureSpawnCandidateIndex(game);
   const td = getSpawnTerrain(game);
   if (!index || !td || typeof index.syncTerrain !== "function") return 0;
-  if (td.raw) return index.syncTerrain(td.terrain, refs);
+  if (td.raw) {
+    const changed = index.syncTerrain(td.terrain, refs);
+    if (changed > 0) {
+      invalidateSpawnTerrainRankingCaches();
+      scheduleSpawnCandidateBuild(index);
+    }
+    return changed;
+  }
 
   const readByte = (ref) => {
     {
@@ -309,7 +399,12 @@ function refreshSpawnCandidateTerrain(game, refs = null) {
       return byte;
     }
   };
-  return index.syncTerrain(readByte, refs);
+  const changed = index.syncTerrain(readByte, refs);
+  if (changed > 0) {
+    invalidateSpawnTerrainRankingCaches();
+    scheduleSpawnCandidateBuild(index);
+  }
+  return changed;
 }
 
 function getSpawnAreaForGame(game, me) {
@@ -590,7 +685,13 @@ function visitNearbySpawnPoints(index, x, y, visitor) {
   }
 }
 
-function buildSpawnProximityIndex(points, width, height, maxRadius) {
+function buildSpawnProximityIndex(
+  points,
+  width,
+  height,
+  maxRadius,
+  landComponentForPoint = null,
+) {
   if (!Array.isArray(points) || points.length === 0 || maxRadius <= 0) return null;
   const cellSize = Math.max(1, Number(maxRadius));
   const columns = Math.max(1, Math.ceil(Math.max(1, Number(width) || 1) / cellSize));
@@ -603,28 +704,36 @@ function buildSpawnProximityIndex(points, width, height, maxRadius) {
     const row = Math.max(0, Math.min(rows - 1, Math.floor(point.y / cellSize)));
     const bucketIndex = row * columns + column;
     if (!buckets[bucketIndex]) buckets[bucketIndex] = [];
-    buckets[bucketIndex].push(point);
+    buckets[bucketIndex].push({
+      ...point,
+      landComponent:
+        typeof landComponentForPoint === "function"
+          ? Number(landComponentForPoint(point)) || 0
+          : 0,
+    });
   }
 
   const index = { cellSize, columns, rows, buckets };
   return {
-    nearestDistance(x, y) {
+    nearestDistance(x, y, landComponent = 0) {
       if (!Number.isFinite(x) || !Number.isFinite(y)) return Infinity;
       let nearest = maxRadius;
       visitNearbySpawnPoints(index, x, y, (point) => {
+        if (landComponent > 0 && point.landComponent !== landComponent) return;
         nearest = Math.min(nearest, Math.abs(point.x - x) + Math.abs(point.y - y));
       });
       return nearest;
     },
-    score(x, y, radius = maxRadius) {
-      const nearest = this.nearestDistance(x, y);
+    score(x, y, radius = maxRadius, landComponent = 0) {
+      const nearest = this.nearestDistance(x, y, landComponent);
       if (!Number.isFinite(nearest) || nearest >= radius) return 0;
       return Math.max(0, 1 - nearest / radius);
     },
-    countWithin(x, y, radius) {
+    countWithin(x, y, radius, landComponent = 0) {
       if (!Number.isFinite(x) || !Number.isFinite(y) || radius <= 0) return 0;
       let count = 0;
       visitNearbySpawnPoints(index, x, y, (point) => {
+        if (landComponent > 0 && point.landComponent !== landComponent) return;
         const distance = Math.abs(point.x - x) + Math.abs(point.y - y);
         if (distance <= radius) count += 1;
       });
@@ -637,6 +746,16 @@ function clampSpawnScore(value, fallback = 0) {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
   return Math.max(0, Math.min(1, number));
+}
+
+function spawnLandComponentAt(index, x, y, width) {
+  if (index?.landComponentsReady !== true || typeof index.landComponentAt !== "function") {
+    return 0;
+  }
+  const column = Math.floor(Number(x));
+  const row = Math.floor(Number(y));
+  if (!Number.isFinite(column) || !Number.isFinite(row) || column < 0 || row < 0) return 0;
+  return Number(index.landComponentAt(row * width + column)) || 0;
 }
 
 function calculateSpawnFreeLandScore(
@@ -656,24 +775,46 @@ function calculateSpawnFreeLandScore(
   return clampSpawnScore(safeCluster * 0.35 + frontierShare * 0.4 + valueShare * 0.25);
 }
 
-function tribeReachForCandidate(index, x, y, freeLandScore, tribeCount) {
+function tribeReachForCandidate(
+  index,
+  x,
+  y,
+  options = {},
+) {
+  const freeLandScore = options.freeLandScore;
+  const tribeCount = options.tribeCount;
+  const landComponent = options.landComponent ?? 0;
   if (tribeCount <= 0) {
-    return { count: 0, score: 1, radius: SPAWN_HEATMAP_TRIBE_REACH_BASE_R };
+    return {
+      count: 0,
+      geometricCount: 0,
+      score: 1,
+      radius: SPAWN_HEATMAP_TRIBE_REACH_BASE_R,
+    };
   }
   const radius =
     SPAWN_HEATMAP_TRIBE_REACH_BASE_R +
     clampSpawnScore(freeLandScore) * SPAWN_HEATMAP_TRIBE_REACH_BONUS_R;
-  const count = index ? index.countWithin(x, y, radius) : 0;
+  const geometricCount = index ? index.countWithin(x, y, radius) : 0;
+  // Fail closed until connectivity is authoritative. A geometric fallback
+  // would reward a tribe on a nearby island as if it were reachable by land.
+  const count = index && landComponent > 0
+    ? index.countWithin(x, y, radius, landComponent)
+    : 0;
   return {
     count,
+    geometricCount,
     score: count / Math.max(1, tribeCount),
     radius,
   };
 }
 
-function tribeClusterScoreForCandidate(index, x, y, tribeCount) {
+function tribeClusterScoreForCandidate(index, x, y, tribeCount, landComponent = 0) {
   if (tribeCount <= 0) return 1;
-  const count = index ? index.countWithin(x, y, SPAWN_HEATMAP_TRIBE_CLUSTER_R) : 0;
+  if (landComponent <= 0) return 0;
+  const count = index
+    ? index.countWithin(x, y, SPAWN_HEATMAP_TRIBE_CLUSTER_R, landComponent)
+    : 0;
   return count / Math.max(1, tribeCount);
 }
 
@@ -1005,15 +1146,32 @@ function dynamicTeamScores(context, x, y) {
 
 function evaluateDynamicSpawnCandidate(candidate, context) {
   const { x, y } = candidate;
+  const landComponent = spawnLandComponentAt(
+    context.candidateIndex,
+    x,
+    y,
+    context.W,
+  );
   const freeLandScore = clampSpawnScore(candidate.freeLandScore);
   const tribeReach = tribeReachForCandidate(
-    context.tribeProximity, x, y, freeLandScore, context.entities.tribeLocs.length,
+    context.tribeProximity,
+    x,
+    y,
+    {
+      freeLandScore,
+      tribeCount: context.entities.tribeLocs.length,
+      landComponent,
+    },
   );
   const tribeClusterScore = tribeClusterScoreForCandidate(
-    context.tribeProximity, x, y, context.entities.tribeLocs.length,
+    context.tribeProximity,
+    x,
+    y,
+    context.entities.tribeLocs.length,
+    landComponent,
   );
-  const tribeScore = context.tribeProximity
-    ? context.tribeProximity.score(x, y, SPAWN_HEATMAP_TRIBE_R) : 0;
+  const tribeScore = context.tribeProximity && landComponent > 0
+    ? context.tribeProximity.score(x, y, SPAWN_HEATMAP_TRIBE_R, landComponent) : 0;
   const nationScore = context.nationProximity ? context.nationProximity.score(x, y) : 0;
   const enemyDistance = nearestSpawnDistance(context.enemySpawns, x, y);
   const playerDistScore = Number.isFinite(enemyDistance)
@@ -1043,8 +1201,10 @@ function evaluateDynamicSpawnCandidate(candidate, context) {
     teamInteriorScore,
   });
   return { x, y, score, freeLandScore, tribeScore, tribeReachCount: tribeReach.count,
+    tribeGeometricReachCount: tribeReach.geometricCount,
     tribeReachScore: tribeReach.score, tribeReachRadius: tribeReach.radius,
     tribeClusterScore, nationScore, resourceScore, clanScore,
+    landConnectivityReady: context.candidateIndex?.landComponentsReady === true,
     teamPolyhedronScore: context.teamPolyhedron ? 1 : 0,
     teamInteriorScore, objective };
 }
@@ -1097,11 +1257,19 @@ function computeDynamicScores(game, staticCandidates, me) {
   const objectiveApi = getSpawnObjectiveApi();
   const groups = collectSpawnPlayerGroups(game, me, objectiveApi);
   const entities = collectSpawnEntityLocations(game);
+  // The visual overlay is deliberately allocation-free with respect to the
+  // map-sized exact index. Reuse land connectivity when the bot has already
+  // built it, but never create that index merely to draw spawn markers.
+  const candidateIndex = existingSpawnCandidateIndex(game);
+  const landComponentForPoint = candidateIndex?.landComponentsReady === true
+    ? (point) => spawnLandComponentAt(candidateIndex, point.x, point.y, W)
+    : null;
   const tribeProximity = buildSpawnProximityIndex(
     entities.tribeLocs,
     W,
     H,
     SPAWN_HEATMAP_TRIBE_REACH_BASE_R + SPAWN_HEATMAP_TRIBE_REACH_BONUS_R,
+    landComponentForPoint,
   );
   const nationProximity = buildSpawnProximityIndex(
     entities.nationLocs,
@@ -1111,7 +1279,13 @@ function computeDynamicScores(game, staticCandidates, me) {
   );
 
   const context = {
-    ...groups, entities, tribeProximity, nationProximity, objectiveApi,
+    ...groups,
+    entities,
+    tribeProximity,
+    nationProximity,
+    objectiveApi,
+    candidateIndex,
+    W,
     clanProximityScore: typeof objectiveApi?.clanProximityScore === "function"
       ? objectiveApi.clanProximityScore : null,
     teamCentroid: spawnCentroid(groups.teamSpawns),
@@ -1321,6 +1495,9 @@ function exactSpawnMinimumDistance(game) {
 function createExactSpawnRankingContext(game, index, points, options, incremental) {
   const W = game.width ? game.width() : index.width;
   const H = game.height ? game.height() : index.height;
+  const landComponentForPoint = index.landComponentsReady === true
+    ? (point) => spawnLandComponentAt(index, point.x, point.y, W)
+    : null;
   return {
     game, index, points, options, incremental, W, H,
     area: getSpawnAreaForGame(game, options?.me),
@@ -1328,6 +1505,7 @@ function createExactSpawnRankingContext(game, index, points, options, incrementa
     tribeProximity: buildSpawnProximityIndex(
       points.tribeLocs, W, H,
       SPAWN_HEATMAP_TRIBE_REACH_BASE_R + SPAWN_HEATMAP_TRIBE_REACH_BONUS_R,
+      landComponentForPoint,
     ),
     nationProximity: buildSpawnProximityIndex(points.nationLocs, W, H, SPAWN_HEATMAP_NATION_R),
     best: Array.isArray(options?.best) ? options.best : [],
@@ -1384,14 +1562,26 @@ function rankExactSpawnCandidate(context, args) {
   const freeLandScore = calculateSpawnFreeLandScore(
     clusterScore, frontierGain, frontierSlots, frontierValueGain, context.frontierValueScale,
   );
+  const landComponent = spawnLandComponentAt(context.index, x, y, context.W);
   const tribeReach = tribeReachForCandidate(
-    context.tribeProximity, x, y, freeLandScore, context.points.tribeLocs.length,
+    context.tribeProximity,
+    x,
+    y,
+    {
+      freeLandScore,
+      tribeCount: context.points.tribeLocs.length,
+      landComponent,
+    },
   );
   const tribeClusterScore = tribeClusterScoreForCandidate(
-    context.tribeProximity, x, y, context.points.tribeLocs.length,
+    context.tribeProximity,
+    x,
+    y,
+    context.points.tribeLocs.length,
+    landComponent,
   );
-  const tribeScore = context.tribeProximity
-    ? context.tribeProximity.score(x, y, SPAWN_HEATMAP_TRIBE_R) : 0;
+  const tribeScore = context.tribeProximity && landComponent > 0
+    ? context.tribeProximity.score(x, y, SPAWN_HEATMAP_TRIBE_R, landComponent) : 0;
   const nationScore = context.nationProximity ? context.nationProximity.score(x, y) : 0;
   const resourceScore = combineSpawnEntityScore(
     tribeScore, nationScore, tribeReach.score,
@@ -1425,9 +1615,11 @@ function rankExactSpawnCandidate(context, args) {
   insertExactSpawnCandidate(context.best, {
     ref: tile, x, y, score, spawnGain, frontierGain, frontierValueGain, freeLandScore,
     tribeScore, tribeReachCount: tribeReach.count, tribeReachScore: tribeReach.score,
+    tribeGeometricReachCount: tribeReach.geometricCount,
     tribeClusterScore,
     tribeReachRadius: tribeReach.radius, nationScore, resourceScore, clanScore,
     teamPolyhedronScore: context.teamPolyhedron ? 1 : 0, objective,
+    landConnectivityReady: context.index.landComponentsReady === true,
     teamInteriorScore,
   });
 }
@@ -1652,6 +1844,9 @@ function computeAsyncExactSpawnTopSpotsForBot(game, me) {
 {
   if (typeof globalThis === "object") {
     globalThis.__OFHRefreshSpawnCandidateTerrain = refreshSpawnCandidateTerrain;
+    globalThis.__OFHPrepareSpawnCandidateConnectivity = prepareSpawnCandidateConnectivity;
+    globalThis.__OFHSpawnCandidateConnectivitySnapshot =
+      getSpawnCandidateConnectivitySnapshot;
   }
 }
 
@@ -1751,6 +1946,7 @@ let _botTopSpotsResult = null;
 let _initialBotTopSpotsGameRef = null;
 let _initialBotTopSpotsTerrainRef = null;
 let _initialBotTopSpotsSignature = null;
+let _initialBotTopSpotsIndexVersion = -1;
 let _initialBotTopSpotsResult = null;
 function currentSpawnTick(game) {
   {
@@ -1777,18 +1973,20 @@ function initialBotSpawnSignature(game, me) {
   return exactSpawnSignature(collectExactSpawnPoints(game, me));
 }
 
-function cachedInitialBotSpawnTopSpots(src, terrain, signature) {
+function cachedInitialBotSpawnTopSpots(src, terrain, signature, indexVersion) {
   const matches =
     _initialBotTopSpotsGameRef === src &&
     _initialBotTopSpotsTerrainRef === terrain &&
-    _initialBotTopSpotsSignature === signature;
+    _initialBotTopSpotsSignature === signature &&
+    _initialBotTopSpotsIndexVersion === indexVersion;
   return matches ? _initialBotTopSpotsResult : undefined;
 }
 
-function rememberInitialBotSpawnTopSpots(src, terrain, signature, result) {
+function rememberInitialBotSpawnTopSpots(src, terrain, signature, indexVersion, result) {
   _initialBotTopSpotsGameRef = src;
   _initialBotTopSpotsTerrainRef = terrain;
   _initialBotTopSpotsSignature = signature;
+  _initialBotTopSpotsIndexVersion = indexVersion;
   _initialBotTopSpotsResult = result;
   return result;
 }
@@ -1802,7 +2000,8 @@ function computeInitialSpawnTopSpotsForBot(game, me) {
   const src = (game && game.__src) || game;
   const terrain = getSpawnTerrain(game)?.terrain ?? null;
   const signature = initialBotSpawnSignature(game, me);
-  const cached = cachedInitialBotSpawnTopSpots(src, terrain, signature);
+  const indexVersion = existingSpawnCandidateIndex(game)?.version ?? -1;
+  const cached = cachedInitialBotSpawnTopSpots(src, terrain, signature, indexVersion);
   if (cached !== undefined) return cached;
   const objectiveApi = getSpawnObjectiveApi();
   const groups = collectSpawnPlayerGroups(game, me, objectiveApi);
@@ -1816,7 +2015,13 @@ function computeInitialSpawnTopSpotsForBot(game, me) {
   );
   if (!candidates.length) return null;
   const spots = computeDynamicScores(game, candidates, me)?.topSpots;
-  return rememberInitialBotSpawnTopSpots(src, terrain, signature, spots?.length > 0 ? spots : null);
+  return rememberInitialBotSpawnTopSpots(
+    src,
+    terrain,
+    signature,
+    indexVersion,
+    spots?.length > 0 ? spots : null,
+  );
 }
 
 function computeRegularSpawnTopSpotsForBot(game, me) {
@@ -1928,6 +2133,7 @@ function _resetSpawnHeatmapCaches() {
     _initialBotTopSpotsGameRef = null;
     _initialBotTopSpotsTerrainRef = null;
     _initialBotTopSpotsSignature = null;
+    _initialBotTopSpotsIndexVersion = -1;
     _initialBotTopSpotsResult = null;
     _spawnPlayerPositions.clear();
     _spawnIntentVersion += 1;

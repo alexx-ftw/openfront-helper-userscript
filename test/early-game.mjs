@@ -55,6 +55,11 @@ assert.match(
 );
 assert.match(
   nationExecutionSource,
+  /prepareSpawnCandidateConnectivity\(this\.mg\)[\s\S]{0,500}connectivityReady === false[\s\S]{0,200}SPAWN_CONNECTIVITY_WAIT_TICKS/,
+  "the bot must warm land connectivity during team discovery and briefly defer an unsafe geometric spawn",
+);
+assert.match(
+  nationExecutionSource,
   /ticks - this\.lastSpawnPickTick >= 15/,
   "team spawn selection must be progressively re-ranked every fifteen ticks",
 );
@@ -89,12 +94,12 @@ assert.match(
 );
 assert.match(
   nationExecutionSource,
-  /const hasSpawned = this\.player\.hasSpawned\?\.\(\) === true;[\s\S]{0,600}if \(!hasSpawned && this\.shouldAwaitInitialTeamSpawnGeometry\(ticks\)\)/,
+  /const hasSpawned = this\.player\.hasSpawned\?\.\(\) === true;[\s\S]{0,1200}if \(!hasSpawned &&[\s\S]{0,200}this\.shouldAwaitInitialTeamSpawnGeometry\(ticks\)/,
   "an accepted spawn must continue through global-spawn reranks instead of returning early",
 );
 assert.match(
   nationExecutionSource,
-  /if \(!this\.mg\.inSpawnPhase\(\)\) return false;[\s\S]{0,400}const hasSpawned = this\.player\.hasSpawned\?\.\(\) === true;[\s\S]{0,900}return true;/,
+  /if \(!this\.mg\.inSpawnPhase\(\)\) return false;[\s\S]{0,500}const hasSpawned = this\.player\.hasSpawned\?\.\(\) === true;[\s\S]{0,1800}return true;/,
   "an accepted personal spawn must wait for the global spawn phase to close before initializing attacks",
 );
 assert.match(

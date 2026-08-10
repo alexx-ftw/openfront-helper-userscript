@@ -228,6 +228,74 @@ test("incremental building covers every tile on arbitrary map dimensions", () =>
   assert.equal(index.stats().candidateCount, width * height);
 });
 
+test("land connectivity builds cooperatively and invalidates on topology changes", () => {
+  const width = 7;
+  const height = 3;
+  const terrain = makeTerrain(width, height, LAND);
+  for (let y = 0; y < height; y += 1) terrain[ref(width, 3, y)] = 0;
+  const index = api.create({ width, height, terrain });
+  let slices = 0;
+  while (!index.landComponentsReady) {
+    const progress = index.buildLandComponentsSlice(1);
+    assert.ok(progress.processed <= 1, "one connectivity slice respects its explicit budget");
+    slices += 1;
+  }
+
+  const left = ref(width, 1, 1);
+  const leftNeighbor = ref(width, 2, 1);
+  const right = ref(width, 5, 1);
+  assert.ok(slices > 1, "component construction yields across multiple slices");
+  assert.equal(index.sameLandComponent(left, leftNeighbor), true);
+  assert.equal(index.sameLandComponent(left, right), false);
+  assert.ok(index.landComponentAt(left) > 0);
+
+  index.updateTerrain(ref(width, 3, 1), LAND);
+  assert.equal(index.landComponentsReady, false, "a passability change invalidates connectivity");
+  while (!index.landComponentsReady) index.buildLandComponentsSlice(1);
+  assert.equal(index.sameLandComponent(left, right), true, "the rebuilt bridge joins both islands");
+});
+
+test("land connectivity is cardinal and survives passable magnitude updates", () => {
+  const width = 2;
+  const terrain = makeTerrain(width, 2, 0);
+  const topLeft = ref(width, 0, 0);
+  const bottomRight = ref(width, 1, 1);
+  terrain[topLeft] = LAND;
+  terrain[bottomRight] = LAND;
+  const index = api.create({ width, height: 2, terrain }).buildAll();
+
+  assert.equal(
+    index.sameLandComponent(topLeft, bottomRight),
+    false,
+    "diagonally touching land must remain in separate components",
+  );
+  const version = index.version;
+  index.updateTerrain(topLeft, LAND | 12);
+  assert.equal(index.landComponentsReady, true, "a passable magnitude change keeps connectivity");
+  assert.equal(index.version, version + 1, "the candidate metrics still record the terrain update");
+});
+
+test("a topology update restarts an in-progress connectivity build", () => {
+  const width = 8;
+  const index = api.create({
+    width,
+    height: 4,
+    terrain: makeTerrain(width, 4, LAND),
+  });
+  index.buildLandComponentsSlice(3);
+  index.updateTerrain(ref(width, 4, 1), 0);
+  assert.equal(index.landComponentsReady, false);
+
+  let processed = 0;
+  while (!index.landComponentsReady) {
+    const progress = index.buildLandComponentsSlice(2);
+    assert.ok(progress.processed <= 2);
+    processed += progress.processed;
+  }
+  assert.ok(processed >= width * 4, "rebuild clears stale partial labels before rescanning");
+  assert.equal(index.landComponentAt(ref(width, 4, 1)), 0);
+});
+
 test("counter storage follows the exact spawn geometry range", () => {
   const compact = api.create({
     width: 5,

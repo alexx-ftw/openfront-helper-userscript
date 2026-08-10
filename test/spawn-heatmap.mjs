@@ -14,6 +14,7 @@ function loadHarness() {
   let indexCreateCalls = 0;
   let exactIndexMode = false;
   let exactRangeCalls = 0;
+  let timeoutCalls = 0;
   let exactCandidates = [];
   let spawnPhase = true;
   let players = [];
@@ -39,18 +40,32 @@ function loadHarness() {
       spawnHeatmapEnabled: false,
       spawnMarkersEnabled: false,
     },
-    setTimeout: () => 0,
+    setTimeout: () => {
+      timeoutCalls += 1;
+      return timeoutCalls;
+    },
     window: { innerHeight: 600, innerWidth: 800 },
     __OFHSpawnIndex: {
       create() {
         indexCreateCalls += 1;
         if (exactIndexMode) {
           const index = {
+            landComponentsReady: true,
             ready: true,
             size: 64,
             width: 8,
             height: 8,
             version: 0,
+            buildSlice() {
+              this.landComponentsReady = true;
+              this.version += 1;
+              return { done: true, processed: 0, landProcessed: 1 };
+            },
+            syncTerrain() {
+              this.landComponentsReady = false;
+              this.version += 1;
+              return 1;
+            },
             forEachCandidateRange(options = {}) {
               exactRangeCalls += 1;
               for (const candidate of exactCandidates) {
@@ -109,6 +124,7 @@ function loadHarness() {
     isPointInsideTeamSpawnRegion: sandbox.isPointInsideTeamSpawnRegion,
     game,
     getIndexCreateCalls: () => indexCreateCalls,
+    getTimeoutCalls: () => timeoutCalls,
     getTopSpots: sandbox.getSpawnHeatmapTopSpots,
     layer: overlayLayer,
     setSpawnPhase: (value) => {
@@ -125,6 +141,7 @@ function loadHarness() {
       exactCandidates = value;
     },
     getExactRangeCalls: () => exactRangeCalls,
+    refreshSpawnCandidateTerrain: sandbox.__OFHRefreshSpawnCandidateTerrain,
     resetExactRangeCalls: () => {
       exactRangeCalls = 0;
     },
@@ -298,15 +315,12 @@ const fallback = harness.computeDynamicScores(
 assert.equal(
   fallback.topSpots[0].x,
   400,
-  "fallback selection must prefer an uncrowded reachable tribe cluster over richer local terrain",
+  "fallback safety ranking remains deterministic while tribe connectivity is pending",
 );
 assert.equal(fallback.topSpots[0].y, 100);
-assert.equal(fallback.scores[0].tribeReachCount, 3);
+assert.equal(fallback.scores[0].tribeReachCount, 0);
+assert.equal(fallback.scores[0].tribeGeometricReachCount, 3);
 assert.equal(fallback.scores[0].objective.safetyScore, 1);
-assert.ok(
-  fallback.scores[1].score > fallback.scores[0].score,
-  "the robust fallback must override the legacy additive score in this regression",
-);
 
 harness.setPlayers([fallbackMe, makePlayer("NATION", 100, 100, 7, { spawned: true })]);
 const nationEnemyFallback = harness.computeDynamicScores(
@@ -442,6 +456,13 @@ assert.ok(
       candidate.y < rectangularTeamArea.y + rectangularTeamArea.height,
   ),
   "exact-ranked alternatives remain inside the configured rectangular team area",
+);
+const timersBeforeTopologyRefresh = harness.getTimeoutCalls();
+assert.equal(harness.refreshSpawnCandidateTerrain(exactTeamGame, [0]), 1);
+assert.equal(
+  harness.getTimeoutCalls(),
+  timersBeforeTopologyRefresh + 1,
+  "terrain invalidation must reschedule cooperative connectivity construction",
 );
 
 const initialTeamHarness = loadHarness();

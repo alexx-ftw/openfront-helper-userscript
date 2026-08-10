@@ -34,6 +34,7 @@
   // geometry as anchors arrive, without sacrificing the opening to a full
   // team-wide wait.
   const TEAM_SPAWN_DISCOVERY_TICKS = 6;
+  const SPAWN_CONNECTIVITY_WAIT_TICKS = 90;
   // Diplomacy is eventually consistent and substantially lower priority than
   // combat. Drain a large hostile roster gradually instead of spending the
   // entire per-second intent bucket (and retrying every rejected target).
@@ -179,7 +180,9 @@
       // location, so newly-arrived teammate anchors must still move us toward
       // the team centroid.
       const hasSpawned = this.player.hasSpawned?.() === true;
-      if (!hasSpawned && this.shouldAwaitInitialTeamSpawnGeometry(ticks)) {
+      const awaitingConnectivity = !hasSpawned && this.shouldAwaitSpawnConnectivity(ticks);
+      if (!hasSpawned &&
+        (this.shouldAwaitInitialTeamSpawnGeometry(ticks) || awaitingConnectivity)) {
         this.status = tr("Coordinating team spawn…");
         return true;
       }
@@ -196,6 +199,13 @@
       }
       this.status = hasSpawned ? tr("Waiting for match start…") : tr("Spawn phase…");
       return true;
+    }
+
+    shouldAwaitSpawnConnectivity(ticks) {
+      if (!this.feat("spawn") ||
+        typeof prepareSpawnCandidateConnectivity !== "function") return false;
+      const connectivityReady = prepareSpawnCandidateConnectivity(this.mg);
+      return connectivityReady === false && ticks < SPAWN_CONNECTIVITY_WAIT_TICKS;
     }
 
     shouldAwaitInitialTeamSpawnGeometry(ticks) {

@@ -174,6 +174,7 @@ window.__OFH_realOpponentHarness = {
   ,collectExactSpawnPoints
   ,getTeamSpawnRegion
   ,isPointInsideTeamSpawnRegion
+  ,getSpawnCandidateConnectivitySnapshot
 };
 `;
   return rawSource.slice(0, exportIndex) + exportHook + rawSource.slice(exportIndex);
@@ -284,6 +285,7 @@ function createSpawnGeometryCertificate(internals, pageGame, selectedKey) {
     selectedInsideTeamRegion,
     assignedArea: serializeAssignedSpawnArea(assignedArea),
     selectedInsideAssignedArea: pointInsideAssignedSpawnArea(selected, assignedArea),
+    connectivity: internals.getSpawnCandidateConnectivitySnapshot?.() ?? null,
   };
 }
 

@@ -1520,6 +1520,16 @@
     "initializerPreview": "6"
   },
   {
+    "id": "engine/ingame/auto-bot/nationExecution.js:SPAWN_CONNECTIVITY_WAIT_TICKS#1",
+    "file": "engine/ingame/auto-bot/nationExecution.js",
+    "name": "SPAWN_CONNECTIVITY_WAIT_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "69f59c273b6e669ac32a6dd5e1b2cb63333d8b004f9696447aee2d422ce63763",
+    "initializerLength": 2,
+    "initializerPreview": "90"
+  },
+  {
     "id": "engine/ingame/auto-bot/nationExecution.js:EMBARGO_INTENTS_PER_DECISION#1",
     "file": "engine/ingame/auto-bot/nationExecution.js",
     "name": "EMBARGO_INTENTS_PER_DECISION",
@@ -4745,9 +4755,9 @@
     "name": "SPAWN_INDEX_ESTIMATED_BYTES_PER_CELL",
     "declarationKind": "const",
     "initializerKind": "FirstLiteralToken",
-    "initializerHash": "c2356069e9d1e79ca924378153cfbbfb4d4416b1f99d41a2940bfdb66c5319db",
+    "initializerHash": "e29c9c180c6279b0b02abd6a1801c7c04082cf486ec027aa13515e4f3884bb6b",
     "initializerLength": 2,
-    "initializerPreview": "24"
+    "initializerPreview": "32"
   },
   {
     "id": "engine/ingame/spawn-heatmap.js:SPAWN_INDEX_MEMORY_BUDGET_BYTES#1",
@@ -4758,6 +4768,36 @@
     "initializerHash": "77ec478c823faf8faada89fd607beba7ea8ead1145e034b485db0e6940273ec9",
     "initializerLength": 16,
     "initializerPreview": "32 * 1024 * 1024"
+  },
+  {
+    "id": "engine/ingame/spawn-heatmap.js:SPAWN_INDEX_BUILD_SLICE_MAX_MS#1",
+    "file": "engine/ingame/spawn-heatmap.js",
+    "name": "SPAWN_INDEX_BUILD_SLICE_MAX_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
+    "initializerLength": 1,
+    "initializerPreview": "4"
+  },
+  {
+    "id": "engine/ingame/spawn-heatmap.js:SPAWN_INDEX_BUILD_SLICE_MAX_CALLS#1",
+    "file": "engine/ingame/spawn-heatmap.js",
+    "name": "SPAWN_INDEX_BUILD_SLICE_MAX_CALLS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "2c624232cdd221771294dfbb310aca000a0df6ac8b66b696d90ef06fdefb64a3",
+    "initializerLength": 1,
+    "initializerPreview": "8"
+  },
+  {
+    "id": "engine/ingame/spawn-heatmap.js:SPAWN_LAND_CONNECTIVITY_SLICE_TILES#1",
+    "file": "engine/ingame/spawn-heatmap.js",
+    "name": "SPAWN_LAND_CONNECTIVITY_SLICE_TILES",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d196d59bf4f8f8d25291f2f0bc606158638bea3fcb582b52481df2063480af60",
+    "initializerLength": 5,
+    "initializerPreview": "32768"
   },
   {
     "id": "engine/ingame/spawn-heatmap.js:SPAWN_W#1",

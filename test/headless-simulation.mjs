@@ -309,7 +309,7 @@ const anchoredTeamRuntime = runHeadlessScenario({
   OFH_PLAYER_TEAMS: "2",
   OFH_BOTS: "0",
   OFH_NATIONS: "10",
-  OFH_MAX_TICKS: "80",
+  OFH_MAX_TICKS: "140",
   OFH_STOP_WHEN_DEAD: "0",
   OFH_LOG_SPAWN: "1",
 });
