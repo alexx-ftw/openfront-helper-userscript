@@ -5171,6 +5171,18 @@
       return coverageIndexes;
     }
 
+    legendarySamTargetClaimScore(profile, state) {
+      const distance = this.game.manhattanDist(profile.tile, state.targetTile);
+      const typeBonus = state.weapon === UNIT.HydrogenBomb ? 70_001 : 0;
+      const distanceBonus = Math.max(0, 200_000 - distance * 1_000);
+      const timeToExplode = Math.max(
+        1,
+        Number(state.impactTick) - Number(state.launchOffset || 0),
+      );
+      const urgencyBonus = Math.max(0, 10_000 - timeToExplode * 100);
+      return typeBonus + distanceBonus + urgencyBonus;
+    }
+
     legendaryMissileRouteSamOptions(samProfiles, state) {
       state.coverageRoute = null;
       const samOptions = [];
@@ -5191,6 +5203,7 @@
             samIndex,
             interceptTicks: opportunities.fireTicks,
             interceptionTicks: opportunities.interceptionTicks,
+            claimScore: this.legendarySamTargetClaimScore(profile, state),
           });
         }
       }
@@ -5223,6 +5236,8 @@
           fromTile,
           targetTile,
           launchOffset,
+          weapon,
+          impactTick,
           targetableIndexesOverride,
           coverageIndexCache,
         },

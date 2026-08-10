@@ -522,6 +522,9 @@ function normalizeLegendarySamOption(option, impactTick, profileCount) {
         samIndex,
         interceptTicks: opportunities.map(({ fireTick }) => fireTick),
         interceptionTicks: opportunities.map(({ interceptTick }) => interceptTick),
+        claimScore: Number.isFinite(Number(option?.claimScore))
+          ? Number(option.claimScore)
+          : null,
       }
     : null;
 }
@@ -617,6 +620,7 @@ function collectLegendaryFeasibleAssignments(context, routeIndex, slots, fireTic
         futureUse: context.futureUse[routeIndex][option.samIndex] ?? 0,
         cooldownTicks: profile.cooldownTicks,
         fireIntervalTicks: profile.fireIntervalTicks,
+        claimScore: option.claimScore,
       });
     }
   }
@@ -649,6 +653,7 @@ function legendaryScheduledMissile(route, assignment) {
     samFireTick: assignment.fireTick,
     marginTicks: Math.max(0, route.impactTick - assignment.interceptTick),
     samIndex: assignment.samIndex,
+    claimScore: assignment.claimScore,
   };
 }
 
@@ -710,9 +715,68 @@ function runLegendaryExactSchedule(context) {
   return { assignments, nodes: state.nodes, exhausted: state.exhausted };
 }
 
+function legendaryCompetingClaimDisplacesRoute(
+  context,
+  missiles,
+  routeIndex,
+  otherIndex,
+) {
+  if (otherIndex === routeIndex) return false;
+  const assigned = missiles[routeIndex];
+  const otherAssigned = missiles[otherIndex];
+  if (!otherAssigned.intercepted || otherAssigned.samIndex === assigned.samIndex) return false;
+  if (assigned.samIndex >= otherAssigned.samIndex) return false;
+  const otherRoute = context.routes[otherIndex];
+  const option = otherRoute.samOptions.find(
+    (candidate) => candidate.samIndex === assigned.samIndex,
+  );
+  if (!option || !Number.isFinite(option.claimScore)) return false;
+  const opportunity = firstLegendaryInterceptOpportunity(
+    option,
+    assigned.samFireTick,
+    otherRoute.impactTick,
+  );
+  return Boolean(
+    opportunity &&
+    opportunity.fireTick <= assigned.samFireTick + 1 &&
+    option.claimScore >= assigned.claimScore,
+  );
+}
+
+function legendaryRouteHasEngineClaimConflict(context, missiles, routeIndex) {
+  const assigned = missiles[routeIndex];
+  if (!assigned.intercepted || !Number.isFinite(assigned.claimScore)) return false;
+  return context.routes.some((_, otherIndex) =>
+    legendaryCompetingClaimDisplacesRoute(
+      context,
+      missiles,
+      routeIndex,
+      otherIndex,
+    ));
+}
+
+function legendaryEngineClaimConflictIndex(context, missiles) {
+  return missiles.findIndex((_, routeIndex) =>
+    legendaryRouteHasEngineClaimConflict(context, missiles, routeIndex));
+}
+
 function resolveLegendaryMissileSchedule(context, greedyMissiles) {
   const fullyDefended = greedyMissiles.every((missile) => missile.intercepted);
   if (fullyDefended) {
+    const conflictIndex = legendaryEngineClaimConflictIndex(context, greedyMissiles);
+    if (conflictIndex >= 0) {
+      const missiles = greedyMissiles.slice();
+      missiles[conflictIndex] = legendaryScheduledMissile(
+        context.routes[conflictIndex],
+        null,
+      );
+      return {
+        missiles,
+        fullyDefended: false,
+        method: "engine-order-conflict",
+        nodes: 0,
+      };
+    }
     return { missiles: greedyMissiles, fullyDefended: true, method: "greedy", nodes: 0 };
   }
   if (context.routes.length === 0 || context.routes.length > LEGENDARY_EXACT_SCHEDULE_ROUTE_LIMIT) {

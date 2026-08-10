@@ -599,6 +599,7 @@ routeBehavior.game = {
     },
   }),
   euclideanDistSquared: () => 0,
+  manhattanDist: () => 1,
 };
 routeBehavior.legendarySamRange = () => 10;
 const builtRoute = routeBehavior.legendaryBuildMissileRoute(

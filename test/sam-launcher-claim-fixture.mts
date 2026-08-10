@@ -20,6 +20,9 @@ const defender = game.player("defender");
 const attacker = game.player("attacker");
 
 // Execution order matters: SAM-B can reach both missiles and claims first.
+// This is the live-engine counterpart of Legendary's engine-order-conflict
+// schedule: a flexible launcher can consume a shared target before the
+// constrained launcher runs, leaving the exclusive target uncovered.
 const samB = defender.buildUnit(UnitType.SAMLauncher, game.ref(50, 1), {});
 const samA = defender.buildUnit(UnitType.SAMLauncher, game.ref(1, 1), {});
 game.addExecution(new SAMLauncherExecution(defender, null, samB));

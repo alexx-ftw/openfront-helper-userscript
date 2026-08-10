@@ -408,6 +408,14 @@ adaptive path. Existing queued SAM slots and the `SAMCooldown` of a newly added
 level remain part of the forecast; an upgrade is not treated as an instantly
 ready free interceptor.
 
+The shared schedule also mirrors `SAMTargetingSystem` claim priority per
+launcher: Hydrogen bonus, distance to the missile target, urgency, and launcher
+execution order. A greedy full matching is rejected as `engine-order-conflict`
+when an earlier flexible SAM would autonomously claim a higher-priority shared
+missile before the constrained launcher runs, leaving the flexible SAM's
+exclusive missile uncovered. The engine-backed claim-order fixture protects
+this distinction from a merely theoretical reassignment.
+
 The custom build policy also keeps missile-launch capacity at least equal to the
 strongest hostile SAM network: for each hostile player it sums SAM levels, takes
 the maximum of those per-player sums, and requires our missile silo level sum to

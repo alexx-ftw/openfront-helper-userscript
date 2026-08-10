@@ -505,6 +505,66 @@ assert.equal(
   "The observable greedy schedule retains the missile that may penetrate in the real engine",
 );
 
+const engineClaimOrderConflict = plannerSandbox.legendaryMissileDefenseSchedule({
+  routes: [
+    {
+      id: "exclusive",
+      weapon: "AtomBomb",
+      impactTick: 20,
+      samOptions: [{ samIndex: 0, interceptTicks: [0], claimScore: 100 }],
+    },
+    {
+      id: "shared-higher-priority",
+      weapon: "AtomBomb",
+      impactTick: 20,
+      samOptions: [
+        { samIndex: 0, interceptTicks: [0], claimScore: 200 },
+        { samIndex: 1, interceptTicks: [0], claimScore: 150 },
+      ],
+    },
+  ],
+  samProfiles: [
+    { id: "sam-flexible", availableTicks: [0] },
+    { id: "sam-shared-only", availableTicks: [0] },
+  ],
+  samCooldownTicks: 90,
+  marginTicks: 5,
+});
+assert.equal(
+  engineClaimOrderConflict.fullyDefended,
+  false,
+  "a theoretical full matching is unsafe when engine target priority makes the flexible SAM claim the shared missile",
+);
+assert.equal(engineClaimOrderConflict.scheduleMethod, "engine-order-conflict");
+assert.equal(engineClaimOrderConflict.uninterceptedCount, 1);
+
+const safeEngineClaimOrder = plannerSandbox.legendaryMissileDefenseSchedule({
+  routes: [
+    {
+      id: "exclusive-late-sam",
+      impactTick: 20,
+      samOptions: [{ samIndex: 1, interceptTicks: [0], claimScore: 100 }],
+    },
+    {
+      id: "shared-claimed-first",
+      impactTick: 20,
+      samOptions: [
+        { samIndex: 0, interceptTicks: [0], claimScore: 150 },
+        { samIndex: 1, interceptTicks: [0], claimScore: 200 },
+      ],
+    },
+  ],
+  samProfiles: [
+    { id: "sam-shared-first", availableTicks: [0] },
+    { id: "sam-flexible-later", availableTicks: [0] },
+  ],
+});
+assert.equal(
+  safeEngineClaimOrder.fullyDefended,
+  true,
+  "an earlier shared-only SAM claims its target before the later flexible launcher runs",
+);
+
 const equivalentReadySlotRoutes = [
   {
     impactTick: 10,
@@ -669,6 +729,42 @@ routeBehavior.game = {
     return (left - right) ** 2;
   },
 };
+structureSandbox.UNIT.HydrogenBomb = "HydrogenBomb";
+const atomClaimScore = routeBehavior.legendarySamTargetClaimScore(
+  { tile: 50 },
+  { targetTile: 55, weapon: "AtomBomb", impactTick: 20, launchOffset: 0 },
+);
+assert.equal(atomClaimScore, 203000);
+assert.equal(
+  routeBehavior.legendarySamTargetClaimScore(
+    { tile: 50 },
+    { targetTile: 55, weapon: "HydrogenBomb", impactTick: 20, launchOffset: 0 },
+  ) - atomClaimScore,
+  70001,
+  "Legendary reproduces the engine's Hydrogen target-priority bonus",
+);
+const claimOptionBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+claimOptionBehavior.game = routeBehavior.game;
+claimOptionBehavior.legendaryMissileRouteCoverageIndexes = () => [0];
+claimOptionBehavior.legendarySamInterceptionOpportunities = () => ({
+  fireTicks: [0],
+  interceptionTicks: [1],
+});
+const scoredRouteOptions = claimOptionBehavior.legendaryMissileRouteSamOptions(
+  [{ tile: 50, level: 1 }],
+  {
+    coverageRoute: null,
+    targetTile: 55,
+    weapon: "AtomBomb",
+    impactTick: 20,
+    launchOffset: 0,
+  },
+);
+assert.equal(
+  scoredRouteOptions.samOptions[0].claimScore,
+  atomClaimScore,
+  "every live route option carries the same per-SAM target score used by the engine-order validator",
+);
 const routePath = Array.from({ length: 10 }, (_, index) => index);
 const routeTargetableIndexes = routePath.map((_, index) => index);
 const routeBounds = routeBehavior.legendaryTrajectoryTargetableBounds(
