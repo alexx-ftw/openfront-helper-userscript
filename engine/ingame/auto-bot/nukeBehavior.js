@@ -918,6 +918,61 @@
       return sam.distSquared <= rangeSquared;
     }
 
+    isTrajectoryIndexTargetable(index, untargetable) {
+      return !(
+        untargetable.start !== -1 &&
+        untargetable.end !== -1 &&
+        index >= untargetable.start &&
+        index < untargetable.end
+      );
+    }
+
+    canSamReachTrajectoryIndex(sam, trajectory, index) {
+      const speed = Number(this.game.config().defaultSamMissileSpeed());
+      if (!Number.isFinite(speed) || speed <= 0) return false;
+      const distance = Number(
+        this.game.manhattanDist(sam.unit.tile(), trajectory[index]),
+      );
+      if (!Number.isFinite(distance) || distance < 0) return false;
+      return Math.ceil(distance / speed) <= index;
+    }
+
+    hasReachableSamAtTrajectoryIndex(
+      coverageTile,
+      trajectory,
+      interceptionIndex,
+      excludedSamIds,
+    ) {
+      const nearbySams = this.game.nearbyUnits(
+        coverageTile,
+        this.game.config().maxSamRange(),
+        UNIT.SAMLauncher,
+      );
+      for (const sam of nearbySams) {
+        if (
+          this.isHostileSamIntercept(sam, excludedSamIds) &&
+          this.canSamReachTrajectoryIndex(sam, trajectory, interceptionIndex)
+        ) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    hasFinalExplosionSamInterception(trajectory, untargetable, excludedSamIds) {
+      const finalIndex = trajectory.length - 1;
+      const penultimateIndex = finalIndex - 1;
+      if (penultimateIndex < 0) return false;
+      if (!this.isTrajectoryIndexTargetable(finalIndex, untargetable)) return false;
+      if (!this.isTrajectoryIndexTargetable(penultimateIndex, untargetable)) return false;
+      return this.hasReachableSamAtTrajectoryIndex(
+        trajectory[finalIndex],
+        trajectory,
+        penultimateIndex,
+        excludedSamIds,
+      );
+    }
+
     // ── isTrajectoryInterceptableBySam — NationNukeBehavior.ts:547 ────────────
     // mirroring NukeTrajectoryPreviewLayer.ts logic a bit
     isTrajectoryInterceptableBySam(spawnTile, targetTile, excludedSamIds) {
@@ -932,22 +987,32 @@
         trajectory, spawnTile, targetTile,
       );
 
-      for (let i = 0; i < trajectory.length; i++) {
-        const inUntargetableRange = untargetable.start !== -1 &&
-          untargetable.end !== -1 && i >= untargetable.start && i < untargetable.end;
-        if (inUntargetableRange) continue;
-        const tile = trajectory[i];
-        const nearbySams = this.game.nearbyUnits(
-          tile,
-          this.game.config().maxSamRange(),
-          UNIT.SAMLauncher,
-        );
-        for (const sam of nearbySams) {
-          if (this.isHostileSamIntercept(sam, excludedSamIds)) return true;
+      // NukeExecution advances before SAMMissileExecution, so the explosion
+      // tick itself cannot be intercepted. Mirror SAMTargetingSystem's
+      // flight-time test for every earlier targetable trajectory tile.
+      const lastInterceptableIndex = trajectory.length - 2;
+      for (let i = 0; i <= lastInterceptableIndex; i++) {
+        if (!this.isTrajectoryIndexTargetable(i, untargetable)) continue;
+        if (
+          this.hasReachableSamAtTrajectoryIndex(
+            trajectory[i],
+            trajectory,
+            i,
+            excludedSamIds,
+          )
+        ) {
+          return true;
         }
       }
 
-      return false;
+      // If the detonation tile is covered, the engine makes one final attempt
+      // against the preceding in-flight tile, even when that tile lies outside
+      // the SAM's geometric range.
+      return this.hasFinalExplosionSamInterception(
+        trajectory,
+        untargetable,
+        excludedSamIds,
+      );
     }
 
     // ── isValidNukeTile — NationNukeBehavior.ts:630 ───────────────────────────

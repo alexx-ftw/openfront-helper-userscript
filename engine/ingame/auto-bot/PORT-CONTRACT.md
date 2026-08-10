@@ -377,6 +377,14 @@ The first missile silo is exempt from the nuclear weapon gold reserve because
 that reserve cannot be used until a launcher exists. Once one silo is built, the
 reserve again applies to additional silo construction and upgrades.
 
+Offensive Atom/Hydrogen route scoring mirrors `SAMTargetingSystem` timing, not
+only geometric coverage. The detonation tick is never interceptable; for every
+earlier targetable trajectory tile, SAM travel time is the ceiling of Manhattan
+distance divided by `defaultSamMissileSpeed()`, and it must be no greater than
+the missile's remaining flight ticks. When only the detonation tile lies inside
+the SAM radius, the engine's final attempt against the penultimate in-flight tile
+is retained. This timing-aware result also feeds SAM-overwhelm salvo capacity.
+
 An urgent land-attack Defense Post is evaluated after a concrete incoming-missile
 SAM upgrade but before routine SAM coverage/parity and offensive silo work. A
 meaningful attack starts at 35% of the current army on every non-Easy difficulty;

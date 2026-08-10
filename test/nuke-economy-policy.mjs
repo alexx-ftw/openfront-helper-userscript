@@ -55,9 +55,13 @@ sandbox.globalThis = sandbox;
 executeClassicScript(sharedUtilsSource, sandbox, {
   filename: "shared-utils.vm.js",
 });
-executeClassicScript(`${source}\nglobalThis.__NukeBehavior = NukeBehavior;`, sandbox, {
-  filename: "nuke-economy-policy.vm.js",
-});
+executeClassicScript(
+  `${source}\nglobalThis.__NukeBehavior = NukeBehavior; globalThis.__UniversalPathFinding = UniversalPathFinding;`,
+  sandbox,
+  {
+    filename: "nuke-economy-policy.vm.js",
+  },
+);
 
 let mirvBuildTile = null;
 Object.assign(sandbox, {
@@ -503,6 +507,45 @@ assert.deepEqual(
 assert.ok(
   distanceChecks <= 22,
   "The trajectory scan terminates after a bounded number of distance checks",
+);
+
+const timingAwareSam = {
+  id: () => "timing-sam",
+  level: () => 1,
+  tile: () => 10,
+  owner: () => ({ smallID: () => 2 }),
+};
+const timingTrajectory = [0, 6, 7];
+let timingSamSpeed = 2;
+sandbox.__UniversalPathFinding.Parabola = () => ({
+  findPath: () => timingTrajectory,
+});
+behavior.player = { smallID: () => 1 };
+behavior.game = {
+  config: () => ({
+    defaultNukeSpeed: () => 10,
+    defaultNukeTargetableRange: () => 100,
+    defaultSamMissileSpeed: () => timingSamSpeed,
+    maxSamRange: () => 5,
+    samRange: () => 5,
+  }),
+  euclideanDistSquared: (left, right) => (left - right) ** 2,
+  manhattanDist: (left, right) => Math.abs(left - right),
+  nearbyUnits: (tile) => {
+    const distSquared = (tile - timingAwareSam.tile()) ** 2;
+    return distSquared <= 25 ? [{ unit: timingAwareSam, distSquared }] : [];
+  },
+};
+assert.equal(
+  behavior.isTrajectoryInterceptableBySam(0, 7),
+  false,
+  "a SAM in geometric range cannot intercept when its missile arrives after the final in-flight tick",
+);
+timingSamSpeed = 4;
+assert.equal(
+  behavior.isTrajectoryInterceptableBySam(0, 7),
+  true,
+  "a SAM remains able to intercept when its missile reaches the in-flight tile on the exact same tick",
 );
 
 let resolveNukeProbe;

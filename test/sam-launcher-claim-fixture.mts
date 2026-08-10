@@ -55,4 +55,39 @@ assert.equal(missileA.isActive(), false);
 assert.equal(missileA.wasDestroyedByEnemy(), true);
 assert.equal(missileB.isActive(), true);
 
+const timingGame = await setup(
+  "big_plains",
+  { infiniteGold: true, instantBuild: true },
+  [
+    new PlayerInfo("timing-defender", PlayerType.Human, null, "timing-defender"),
+    new PlayerInfo("timing-attacker", PlayerType.Human, null, "timing-attacker"),
+  ],
+  engineTestsUtil,
+);
+timingGame.config().defaultSamMissileSpeed = () => 2;
+timingGame.config().samRange = () => 5;
+timingGame.config().maxSamRange = () => 5;
+
+const timingDefender = timingGame.player("timing-defender");
+const timingAttacker = timingGame.player("timing-attacker");
+const timingSam = timingDefender.buildUnit(UnitType.SAMLauncher, timingGame.ref(10, 1), {});
+timingGame.addExecution(new SAMLauncherExecution(timingDefender, null, timingSam));
+const lateNuke = timingAttacker.buildUnit(UnitType.AtomBomb, timingGame.ref(0, 1), {
+  targetTile: timingGame.ref(7, 1),
+  trajectory: [0, 6, 7].map((x) => ({
+    tile: timingGame.ref(x, 1),
+    targetable: true,
+  })),
+});
+
+timingGame.executeNextTick();
+timingGame.executeNextTick();
+
+assert.deepEqual(
+  timingSam.missileTimerQueue(),
+  [],
+  "the engine does not launch a SAM that cannot reach the final in-flight tile in time",
+);
+assert.equal(lateNuke.targetedBySAM(), false);
+
 console.log("SAM launcher claim-order fixture passed");
