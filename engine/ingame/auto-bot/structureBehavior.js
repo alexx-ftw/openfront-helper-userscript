@@ -10661,14 +10661,8 @@
       ) {
         return tiles;
       }
-      const railTiles = [];
-      for (let tile = 0; tile < railState.length; tile++) {
-        if (railState[tile] === 0 || this.game.ownerID(tile) !== mySid) continue;
-        railTiles.push(tile);
-      }
-      if (railTiles.length === 0) return tiles;
-
-      const prioritizedRailTiles = this.commercialRailCityAnchorTiles(railTiles, railState);
+      const prioritizedRailTiles = this.commercialRailCityAnchorTilesForTick(railState, mySid);
+      if (prioritizedRailTiles.length === 0) return tiles;
 
       // Do not let a generic territory sample compete with a known railway
       // anchor. The City scorer may legitimately choose between *rail* sites,
@@ -10685,6 +10679,37 @@
       }
       this._commercialRailCityAnchorOffset = (offset + 1) % prioritizedRailTiles.length;
       return Array.from(new Set(railAnchors.concat(tiles))).slice(0, candidateLimit);
+    }
+
+    commercialRailCityAnchorTilesForTick(railState, mySid) {
+      const tick =
+        typeof this.game?.ticks === "function" ? Number(this.game.ticks()) : Number.NaN;
+      const cache = this._commercialRailCityAnchorCache;
+      if (
+        Number.isFinite(tick) &&
+        cache?.tick === tick &&
+        cache.railState === railState &&
+        cache.mySid === mySid
+      ) {
+        return cache.tiles;
+      }
+
+      const railTiles = [];
+      for (let tile = 0; tile < railState.length; tile++) {
+        if (railState[tile] === 0 || this.game.ownerID(tile) !== mySid) continue;
+        railTiles.push(tile);
+      }
+      const prioritizedRailTiles =
+        railTiles.length === 0 ? [] : this.commercialRailCityAnchorTiles(railTiles, railState);
+      if (Number.isFinite(tick)) {
+        this._commercialRailCityAnchorCache = {
+          tick,
+          railState,
+          mySid,
+          tiles: prioritizedRailTiles,
+        };
+      }
+      return prioritizedRailTiles;
     }
 
     commercialRailCityAnchorTiles(railTiles, railState) {

@@ -1979,6 +1979,47 @@ assert.equal(
   "SAM threat scoring precomputes existing coverage before evaluating candidates",
 );
 
+const railSnapshotValues = new Array(4096).fill(0);
+for (const tile of [17, 18, 19, 20, 21, 27, 35]) railSnapshotValues[tile] = 1;
+let railSnapshotReads = 0;
+const railSnapshot = new Proxy(railSnapshotValues, {
+  get(target, property, receiver) {
+    if (typeof property === "string" && /^\d+$/.test(property)) {
+      railSnapshotReads++;
+    }
+    return Reflect.get(target, property, receiver);
+  },
+});
+const cachedRailBehavior = Object.create(sandbox.StructureBehavior.prototype);
+cachedRailBehavior.player = { smallID: () => 7 };
+let railGameTick = 100;
+cachedRailBehavior.game = {
+  ticks: () => railGameTick,
+  width: () => 64,
+  height: () => 64,
+  x: (tile) => tile % 64,
+  y: (tile) => Math.floor(tile / 64),
+  ref: (x, y) => y * 64 + x,
+  isValidCoord: (x, y) => x >= 0 && x < 64 && y >= 0 && y < 64,
+  ownerID: (tile) => (railSnapshotValues[tile] === 1 ? 7 : 0),
+  railroadState: () => railSnapshot,
+};
+cachedRailBehavior.prependCommercialRailCityTiles([], 2);
+const firstRailSnapshotReads = railSnapshotReads;
+assert.ok(firstRailSnapshotReads >= railSnapshot.length);
+cachedRailBehavior.prependCommercialRailCityTiles([], 2);
+assert.equal(
+  railSnapshotReads,
+  firstRailSnapshotReads,
+  "repeated City placement in one game tick reuses the ranked railroad snapshot",
+);
+railGameTick += 1;
+cachedRailBehavior.prependCommercialRailCityTiles([], 2);
+assert.ok(
+  railSnapshotReads > firstRailSnapshotReads,
+  "a later game tick invalidates the ranked railroad snapshot",
+);
+
 process.stdout.write(
   `structure performance regression tests passed (Factory cache ${factoryCacheDurationMs.toFixed(1)}ms; fingerprints ${fingerprintDurationMs.toFixed(1)}ms; SAM coverage ${coverageDurationMs.toFixed(1)}ms; launches ${launchDurationMs.toFixed(1)}ms; ally support ${supportDurationMs.toFixed(1)}ms)\n`,
 );

@@ -44,6 +44,11 @@ an exceptional land assault. The Legendary placement scorer also uses engine rai
 connectivity, friendly ally power/proximity, the own border nearest the team's
 geometric center, and trajectory-aware SAM coverage.
 
+Commercial City placement ranks owned railway anchors at most once per authoritative
+game tick. The cache is keyed by tick, railroad snapshot identity, and owner; it never
+survives into a later tick, while the anchor offset still rotates on every placement
+request so repeated City attempts keep exploring different legal station sites.
+
 ## Enums & unit constants (portutil.js / gameApi.js / core.js — already global)
 
 - `UNIT.City|Port|Factory|SAMLauncher|MissileSilo|DefensePost|TransportShip|TradeShip|Warship|AtomBomb|HydrogenBomb|MIRV|MIRVWarhead` (string UnitType values). Replace `UnitType.City` → `UNIT.City`, etc.
