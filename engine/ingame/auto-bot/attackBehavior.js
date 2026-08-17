@@ -2934,11 +2934,12 @@
           "attack-defense",
           () => this.respondToIncomingAttack(),
         );
-        // A containment siege must not consume the whole decision: the
-        // response above is already capped, and skipping every expansion and
-        // boat lane for the duration of the war is how a boxed-in bot stops
-        // growing and loses the map on the other borders.
-        if (defense !== null && this.incomingDefenseContainmentMode() !== true) {
+        // A mirrorable or contained siege must not consume the whole
+        // decision: the response above is already bounded, and skipping
+        // every expansion and boat lane for the duration of the war is how
+        // a boxed-in bot stops growing and loses the map on other borders.
+        // Only an overwhelming aggregate invasion reserves everything.
+        if (defense !== null && !this.siegePermitsGrowthLanes()) {
           return;
         }
       }
@@ -2985,7 +2986,7 @@
         this.getRemainingTerraNulliusOpeningCommitment();
       if (!Number.isFinite(remainingOpeningCommitment)) return false;
       const defense = await this.respondToIncomingAttack();
-      if (defense !== null) return false;
+      if (defense !== null && !this.siegePermitsGrowthLanes()) return false;
       const reinforced = await this.reinforceIncompleteOutboundPlayerAttack();
       let expanded = false;
       if (this.getActionableRemainingTerraNulliusOpeningCommitment() > 0) {
@@ -7943,6 +7944,13 @@
       const emitted = await this.sendAttack(attacker, true);
       state.earlyGame.action = emitted ? "retaliate" : "defense-hold";
       return emitted;
+    }
+
+    // Growth lanes keep running under a siege the defense lane can answer
+    // (mirrors, capped interdiction). Only an aggregate invasion at or beyond
+    // our whole army reserves every remaining troop-second for defense.
+    siegePermitsGrowthLanes() {
+      return !this.hasOverwhelmingIncomingAttack();
     }
 
     // Sort neighboring bots by density (troops / tiles) and attack several of

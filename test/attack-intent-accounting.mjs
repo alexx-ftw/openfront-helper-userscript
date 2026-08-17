@@ -1235,28 +1235,54 @@ const openingDefenseBehavior = Object.create(sandbox.AttackBehavior.prototype);
 openingDefenseBehavior.reconcileOutboundAttackIntentCommitments = () => {};
 openingDefenseBehavior.findIncomingAttackPlayer = () => incomingNation;
 openingDefenseBehavior.canFundIncomingCounterattack = () => true;
+openingDefenseBehavior.hasOverwhelmingIncomingAttack = () => true;
 let openingDefenseTarget = null;
 openingDefenseBehavior.sendAttack = async (candidate, force) => {
   openingDefenseTarget = { candidate, force };
   return true;
 };
 openingDefenseBehavior.reinforceIncompleteOutboundPlayerAttack = async () => {
-  throw new Error("opening defense must precede conquest reinforcement");
+  throw new Error("an overwhelming opening defense must precede conquest reinforcement");
 };
 openingDefenseBehavior.hasLandBorderWithTerraNullius = () => {
-  throw new Error("opening defense must precede TerraNullius expansion");
+  throw new Error("an overwhelming opening defense must precede TerraNullius expansion");
 };
 assert.equal(
   await openingDefenseBehavior.continueOpeningExpansion(),
   false,
-  "an incoming attack terminates the opening expansion fast lane",
+  "an overwhelming incoming attack terminates the opening expansion fast lane",
 );
-assert.deepEqual(openingDefenseTarget, { candidate: incomingNation, force: true });
+assert.equal(
+  openingDefenseTarget,
+  null,
+  "an overwhelming siege holds every troop instead of mirroring the wave",
+);
+
+// A mirrorable peer siege is answered first, then the bounded growth lanes
+// keep running: freezing every expansion behind a winnable defense is how a
+// boxed-in bot donates the map on its other borders.
+openingDefenseBehavior.hasOverwhelmingIncomingAttack = () => false;
+let peerSiegeReinforcements = 0;
+let peerSiegeExpanded = false;
+openingDefenseBehavior.reinforceIncompleteOutboundPlayerAttack = async () => {
+  peerSiegeReinforcements += 1;
+  return true;
+};
+openingDefenseBehavior.hasLandBorderWithTerraNullius = () => false;
+openingDefenseBehavior.forceSendAttack = () => false;
+assert.equal(
+  await openingDefenseBehavior.continueOpeningExpansion(),
+  true,
+  "a mirrorable peer siege still runs its bounded conquest lanes after the defense response",
+);
+assert.equal(peerSiegeReinforcements, 1);
+assert.equal(peerSiegeExpanded, false);
 openingDefenseBehavior.sendAttack = async () => false;
+openingDefenseBehavior.reinforceIncompleteOutboundPlayerAttack = async () => false;
 assert.equal(
   await openingDefenseBehavior.continueOpeningExpansion(),
   false,
-  "failed defense still blocks offensive opening spending",
+  "failed defense with no expansion frontier still spends nothing offensive",
 );
 
 const incomingTribe = { type: () => "Bot", smallID: () => 9 };
@@ -1307,9 +1333,10 @@ decisionDefenseBehavior.reconcileOutboundAttackIntentCommitments = () => {};
 decisionDefenseBehavior.createAttackDecisionContext = () => ({ expandOn: false });
 decisionDefenseBehavior.findIncomingAttackPlayer = () => incomingNation;
 decisionDefenseBehavior.canFundIncomingCounterattack = () => false;
+decisionDefenseBehavior.hasOverwhelmingIncomingAttack = () => true;
 decisionDefenseBehavior.sendAttack = async () => false;
 decisionDefenseBehavior.tryImmediateAttackPriorities = async () => {
-  throw new Error("failed defense must block offensive priorities");
+  throw new Error("failed defense under an overwhelming siege must block offensive priorities");
 };
 await decisionDefenseBehavior.maybeAttack();
 assert.equal(sandbox.state.earlyGame.action, "defense-hold");

@@ -48,7 +48,7 @@ assert.match(adapter, /build: AUTO_BUILD_ENABLED/);
 assert.match(adapter, /"SAM Launcher": AUTO_BUILD_ENABLED/);
 assert.match(
   adapter,
-  /!player\.isPlayer\?\.\(\) && !this\.game\.inSpawnPhase\?\.\(\)/,
+  /player\.isPlayer\?\.\(\) \|\| this\.game\.inSpawnPhase\?\.\(\)/,
   "the headless adapter must run the bot during spawn even before its territory materializes",
 );
 assert.equal(
@@ -381,6 +381,67 @@ assert.ok(
   naturalNuclearProgress.units["Missile Silo"] > 0,
   "nuclear-enabled simulation must expose the real Silo state through engine progress",
 );
+
+// Legendary FFA survival policy: the economy must win the early gold race
+// (foundational City before preemptive Defense Posts), sieges must not freeze
+// expansion lanes, and the whole nuclear build-out must stay inside the shared
+// intent budget without a single local rejection.
+const legendaryFfaRuntime = runHeadlessScenario({
+  OFH_MATCH_SEED: "legendary-ffa-survival-policy-20260817",
+  OFH_GAME_MAP: "Alps",
+  OFH_GAME_MAP_SIZE: "Small",
+  OFH_GAME_MODE: "ffa",
+  OFH_BOTS: "25",
+  OFH_NATIONS: "8",
+  OFH_NUKES: "1",
+  OFH_BOT_DIFFICULTY: "Legendary",
+  OFH_MAX_TICKS: "2600",
+  OFH_LOG_INTENTS: "1",
+  OFH_ASSERT_INTENT_BUDGET: "1",
+});
+const legendaryFfaResult = legendaryFfaRuntime.records.find(
+  (record) => record.phase === "result",
+);
+assert.ok(legendaryFfaResult, "the Legendary FFA scenario must emit a result");
+assert.equal(
+  legendaryFfaResult.intentBudget?.rejected,
+  0,
+  "the full Legendary decision load must never trip the local intent limiter",
+);
+assert.ok(
+  (legendaryFfaResult.cumulativeBuildUnitTypes.City ?? 0) +
+    (legendaryFfaResult.constructionEvents ?? []).filter(
+      (event) => event.unit === "City",
+    ).length >
+    0,
+  "the foundational City must win the early gold race over preemptive Defense Posts",
+);
+const legendaryFfaDecisions = legendaryFfaRuntime.records.filter(
+  (record) => record.phase === "decision",
+);
+const firstSiegeDecision = legendaryFfaDecisions.find(
+  (decision) => (decision.incoming ?? []).length > 0,
+);
+if (firstSiegeDecision) {
+  const siegeProgress = legendaryFfaRuntime.records
+    .filter((record) => record.phase === "progress")
+    .filter(
+      (record) =>
+        record.tick >= firstSiegeDecision.tick - 100 &&
+        record.tick <= firstSiegeDecision.tick + 200,
+    )
+    .sort((left, right) => left.tick - right.tick);
+  const preSiege = siegeProgress.find(
+    (record) => record.tick <= firstSiegeDecision.tick,
+  );
+  const postSiege = [...siegeProgress]
+    .reverse()
+    .find((record) => record.tick >= firstSiegeDecision.tick + 100);
+  assert.ok(
+    !preSiege || !postSiege || postSiege.tiles >= preSiege.tiles * 0.8,
+    "a mirrorable Legendary siege must be answered without a passive territory collapse",
+  );
+}
 
 assert.match(runner, /OFH_GAME_MAP/);
 assert.match(runner, /OFH_STARTING_GOLD/);

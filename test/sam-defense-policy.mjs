@@ -1031,6 +1031,20 @@ const hugeBorderBot = {
 };
 const strategicBorderBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 strategicBorderBehavior.player = strategicBorderMe;
+// The foundational City must win the early gold race: before any City exists
+// the quiet strategic frontier must NOT divert construction into posts.
+assert.equal(
+  strategicBorderBehavior.defensePostThreat(Difficulty.Impossible),
+  null,
+  "a pre-City economy never buys preemptive Defense Posts",
+);
+strategicBorderMe.units = (type) => {
+  if (type === UNIT.DefensePost) return strategicBorderPosts;
+  if (type === UNIT.City) {
+    return [{ id: () => 7, isUnderConstruction: () => false }];
+  }
+  return [];
+};
 strategicBorderBehavior.game = {
   ticks: () => strategicBorderTick,
   players: () => {

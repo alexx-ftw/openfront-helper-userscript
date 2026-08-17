@@ -1222,19 +1222,12 @@
     computeStrategicBorderDefensePostThreat(difficulty) {
       const ourTroops = Math.max(0, Number(this.player?.troops?.() || 0));
       if (ourTroops <= 0) return null;
-      const opponents = this.liveHostilePlayers();
-      if (!Array.isArray(opponents)) return null;
-      const borderingOwnerIds = this.borderingLandOwnerIds();
-      if (
-        borderingOwnerIds === null &&
-        typeof this.player?.sharesBorderWith !== "function"
-      ) {
-        return null;
-      }
-      const strongest = this.strongestStrategicBorderOpponent(
-        opponents,
-        borderingOwnerIds,
-      );
+      // A preemptive post must never eat the foundational City's gold: the
+      // first City raises maxTroops for the whole defense, while a pre-war
+      // post only makes one stretch of border expensive. Live attacks keep
+      // their unconditional Defense Post authorization.
+      if (!this.hasBuiltCityForPreemptiveDefense()) return null;
+      const strongest = this.strongestQuietStrategicBorderOpponent();
       if (strongest === null) return null;
       if (strongest.troops < STRATEGIC_DEFENSE_POST_TROOP_RATIO * ourTroops) {
         return null;
@@ -1252,6 +1245,28 @@
         ratio: strongest.troops / ourTroops,
         strategicBorder: true,
       };
+    }
+
+    hasBuiltCityForPreemptiveDefense() {
+      return (this.player?.units?.(UNIT.City) || []).some(
+        (city) => city.isUnderConstruction?.() !== true,
+      );
+    }
+
+    strongestQuietStrategicBorderOpponent() {
+      const opponents = this.liveHostilePlayers();
+      if (!Array.isArray(opponents)) return null;
+      const borderingOwnerIds = this.borderingLandOwnerIds();
+      if (
+        borderingOwnerIds === null &&
+        typeof this.player?.sharesBorderWith !== "function"
+      ) {
+        return null;
+      }
+      return this.strongestStrategicBorderOpponent(
+        opponents,
+        borderingOwnerIds,
+      );
     }
 
     strongestStrategicBorderOpponent(opponents, borderingOwnerIds) {

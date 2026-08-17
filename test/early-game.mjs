@@ -2069,8 +2069,8 @@ assert.match(attackSource, /EARLY_EXPAND_COMMIT/);
 assert.match(attackSource, /attackEarlyGameTribe/);
 assert.match(
   attackSource,
-  /const defense = await this\.respondToIncomingAttack\(\);[\s\S]*?defense !== null\) return/,
-  "active hostile attacks own the decision before any offensive expansion lane",
+  /const defense = await this\.respondToIncomingAttack\(\);[\s\S]*?defense !== null && !this\.siegePermitsGrowthLanes\(\)\) return/,
+  "an overwhelming hostile attack owns the whole decision before any offensive expansion lane",
 );
 assert.match(
   attackSource,
@@ -3797,8 +3797,9 @@ priorityBehavior.sendAttack = async (target, ...args) => {
   return true;
 };
 
-// A live hostile attack owns the decision. Even if other intents look
-// affordable, they must not consume the force reserved for defense.
+// A live hostile attack owns the FIRST decision slot. Even if other intents
+// look affordable, the defense response is emitted before any expansion, and
+// a mirrorable siege leaves the growth lanes running after it.
 priorityAttackTargets.length = 0;
 priorityIncomingAttacks = [
   {
@@ -3810,11 +3811,14 @@ priorityIncomingAttacks = [
 priorityBehavior.canFundIncomingCounterattack = () => true;
 await priorityBehavior.maybeAttack();
 assert.deepEqual(
-  priorityAttackTargets,
+  priorityAttackTargets.slice(0, 1),
   [priorityEnemy],
-  "an incoming attacker blocks both offensive expansion lanes",
+  "the incoming attacker is answered before any offensive expansion lane",
 );
-assert.equal(targetSandbox.state.earlyGame.action, "retaliate");
+assert.ok(
+  priorityAttackTargets.length > 1,
+  "a mirrorable siege keeps the expansion lanes running after the defense response",
+);
 delete priorityBehavior.canFundIncomingCounterattack;
 priorityIncomingAttacks = [];
 
