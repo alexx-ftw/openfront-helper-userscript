@@ -280,6 +280,46 @@
     "initializerPreview": "30"
   },
   {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:EARLY_EXPAND_FRONTIER_COMMIT_SCALE_MIN#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "EARLY_EXPAND_FRONTIER_COMMIT_SCALE_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "ce5d3aa79ae56155078af52e8fac68eb2d0a78489f82bc26c1e1bbc667ba9fde",
+    "initializerLength": 4,
+    "initializerPreview": "0.75"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:EARLY_EXPAND_FRONTIER_COMMIT_SCALE_MAX#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "EARLY_EXPAND_FRONTIER_COMMIT_SCALE_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "004a9e0878ff83e6b91f50d50dad439d2065c6cbb0d20f1f328b2fd75e085d6a",
+    "initializerLength": 4,
+    "initializerPreview": "1.25"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:EARLY_EXPAND_FRONTIER_SHARE_BASELINE#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "EARLY_EXPAND_FRONTIER_SHARE_BASELINE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d2cbad71ff333de67d07ec676e352ab7f38248eb69c942950157220607c55e84",
+    "initializerLength": 3,
+    "initializerPreview": "0.5"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:EARLY_EXPAND_FRONTIER_SIGNAL_MAX_AGE_TICKS#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "EARLY_EXPAND_FRONTIER_SIGNAL_MAX_AGE_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "1a6562590ef19d1045d06c4055742d38288e9e6dcd71ccde5cee80f1d5a774eb",
+    "initializerLength": 2,
+    "initializerPreview": "50"
+  },
+  {
     "id": "engine/ingame/auto-bot/attackBehavior.js:EARLY_GAME_TRIBE_CHAIN_RADIUS#1",
     "file": "engine/ingame/auto-bot/attackBehavior.js",
     "name": "EARLY_GAME_TRIBE_CHAIN_RADIUS",
@@ -508,6 +548,146 @@
     "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
     "initializerLength": 1,
     "initializerPreview": "1"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:COUNTERATTACK_SUPERIOR_ATTACKER_TROOP_RATIO#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "COUNTERATTACK_SUPERIOR_ATTACKER_TROOP_RATIO",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "004a9e0878ff83e6b91f50d50dad439d2065c6cbb0d20f1f328b2fd75e085d6a",
+    "initializerLength": 4,
+    "initializerPreview": "1.25"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:COUNTERATTACK_MULTIFRONT_PRESSURE_RATIO#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "COUNTERATTACK_MULTIFRONT_PRESSURE_RATIO",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "ce5d3aa79ae56155078af52e8fac68eb2d0a78489f82bc26c1e1bbc667ba9fde",
+    "initializerLength": 4,
+    "initializerPreview": "0.75"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:COUNTERATTACK_FRONT_STRENGTH_RATIO#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "COUNTERATTACK_FRONT_STRENGTH_RATIO",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d2cbad71ff333de67d07ec676e352ab7f38248eb69c942950157220607c55e84",
+    "initializerLength": 3,
+    "initializerPreview": "0.5"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:COUNTERATTACK_FRONT_MIN_SHARE#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "COUNTERATTACK_FRONT_MIN_SHARE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "0bf56cc40e84014dc3401457a1bcb79a256e56c97cbf693f155b78bf815fd106",
+    "initializerLength": 4,
+    "initializerPreview": "0.34"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:PROACTIVE_WAR_ARMY_FRACTION#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "PROACTIVE_WAR_ARMY_FRACTION",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "a976726b1d1bda3e1f271287f3aa7229ca3204ff8bf9cb2b581c610b9c811bef",
+    "initializerLength": 4,
+    "initializerPreview": "0.35"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:COUNTERATTACK_ATTRITION_WINDOW_TICKS#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "COUNTERATTACK_ATTRITION_WINDOW_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "bdc5d8a48c23897906b09a9a3680bd2e9c8b3121edbda36f949800f0959c8d55",
+    "initializerLength": 3,
+    "initializerPreview": "900"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:COUNTERATTACK_ATTRITION_WINDOW_TROOP_CAP#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "COUNTERATTACK_ATTRITION_WINDOW_TROOP_CAP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d2cbad71ff333de67d07ec676e352ab7f38248eb69c942950157220607c55e84",
+    "initializerLength": 3,
+    "initializerPreview": "0.5"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:COUNTERATTACK_INTERDICT_WAVE_FRACTION#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "COUNTERATTACK_INTERDICT_WAVE_FRACTION",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "b4af4e0d40391d3a00179d935c63b7e15ba8cd3dfa29f218dedc270bd3eb3e79",
+    "initializerLength": 3,
+    "initializerPreview": "0.6"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:COUNTERATTACK_INTERDICT_SPENDABLE_FRACTION#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "COUNTERATTACK_INTERDICT_SPENDABLE_FRACTION",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "a976726b1d1bda3e1f271287f3aa7229ca3204ff8bf9cb2b581c610b9c811bef",
+    "initializerLength": 4,
+    "initializerPreview": "0.35"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:COUNTERATTACK_INTERDICT_MINIMUM_TROOPS#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "COUNTERATTACK_INTERDICT_MINIMUM_TROOPS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "1e472b39b105d349bcd069c4a711b44a2fffb8e274714bb07ecfff69a9a7f67b",
+    "initializerLength": 3,
+    "initializerPreview": "250"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:TN_STRATEGIC_RESERVE_FRACTION#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "TN_STRATEGIC_RESERVE_FRACTION",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d2cbad71ff333de67d07ec676e352ab7f38248eb69c942950157220607c55e84",
+    "initializerLength": 3,
+    "initializerPreview": "0.5"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:LEGENDARY_TN_COMMIT_FRACTION#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "LEGENDARY_TN_COMMIT_FRACTION",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "221764976efe04132774d96b0253cc31434c5261737469324f222621baf34b20",
+    "initializerLength": 3,
+    "initializerPreview": "0.3"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:OPPORTUNISTIC_BOAT_SURGE_REGION_COOLDOWN_TICKS#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "OPPORTUNISTIC_BOAT_SURGE_REGION_COOLDOWN_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "284b7e6d788f363f910f7beb1910473e23ce9d6c871f1ce0f31f22a982d48ad4",
+    "initializerLength": 3,
+    "initializerPreview": "600"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:OPPORTUNISTIC_BOAT_SURGE_REGION_SIZE#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "OPPORTUNISTIC_BOAT_SURGE_REGION_SIZE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "39fa9ec190eee7b6f4dff1100d6343e10918d044c75eac8f9e9a2596173f80c9",
+    "initializerLength": 2,
+    "initializerPreview": "60"
   },
   {
     "id": "engine/ingame/auto-bot/attackBehavior.js:BOT_OUTBOUND_INTENT_GRACE_TICKS#1",
@@ -760,6 +940,16 @@
     "initializerPreview": "1.25"
   },
   {
+    "id": "engine/ingame/auto-bot/core.js:EARLY_EXPAND_OPENING_REBASE_RATIO#1",
+    "file": "engine/ingame/auto-bot/core.js",
+    "name": "EARLY_EXPAND_OPENING_REBASE_RATIO",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "004a9e0878ff83e6b91f50d50dad439d2065c6cbb0d20f1f328b2fd75e085d6a",
+    "initializerLength": 4,
+    "initializerPreview": "1.25"
+  },
+  {
     "id": "engine/ingame/auto-bot/core.js:BUILD_THROTTLE_MS#1",
     "file": "engine/ingame/auto-bot/core.js",
     "name": "BUILD_THROTTLE_MS",
@@ -958,6 +1148,16 @@
     "initializerHash": "48449a14a4ff7d79bb7a1b6f3d488eba397c36ef25634c111b49baf362511afc",
     "initializerLength": 2,
     "initializerPreview": "80"
+  },
+  {
+    "id": "engine/ingame/auto-bot/earlyGame.js:EARLY_GAME_TRIBE_VALUE_SATURATION_TILES#1",
+    "file": "engine/ingame/auto-bot/earlyGame.js",
+    "name": "EARLY_GAME_TRIBE_VALUE_SATURATION_TILES",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "624b60c58c9d8bfb6ff1886c2fd605d2adeb6ea4da576068201b6c6958ce93f4",
+    "initializerLength": 2,
+    "initializerPreview": "30"
   },
   {
     "id": "engine/ingame/auto-bot/emojiBehavior.js:EMOJI_ASSIST_ACCEPT#1",
@@ -1500,6 +1700,16 @@
     "initializerPreview": "300"
   },
   {
+    "id": "engine/ingame/auto-bot/mirvBehavior.js:MIRV_AIM_STRUCTURE_WEIGHTS#1",
+    "file": "engine/ingame/auto-bot/mirvBehavior.js",
+    "name": "MIRV_AIM_STRUCTURE_WEIGHTS",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "b00e4cbd5a4778fed3ecb6145988dba541af2bc2b87817562dff4a0bdbf76131",
+    "initializerLength": 120,
+    "initializerPreview": "[\n    [UNIT.MissileSilo, 3],\n    [UNIT.City, 2],\n    [UNIT.Port, 2],\n    [UNIT.Factory, 1],\n    [UNIT.SAMLauncher, 1],\n]"
+  },
+  {
     "id": "engine/ingame/auto-bot/nationExecution.js:OVERWHELMING_DEFENSE_STRUCTURE_INTERVAL_TICKS#1",
     "file": "engine/ingame/auto-bot/nationExecution.js",
     "name": "OVERWHELMING_DEFENSE_STRUCTURE_INTERVAL_TICKS",
@@ -1560,6 +1770,16 @@
     "initializerPreview": "12"
   },
   {
+    "id": "engine/ingame/auto-bot/nationExecution.js:R#2",
+    "file": "engine/ingame/auto-bot/nationExecution.js",
+    "name": "R",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b51d431df5d7f141cbececcf79edf3dd861c3b4069f0b11661a3eefacbba918",
+    "initializerLength": 2,
+    "initializerPreview": "12"
+  },
+  {
     "id": "engine/ingame/auto-bot/naval-interception.js:NAVAL_INTERCEPTION_DEFAULT_SPEED#1",
     "file": "engine/ingame/auto-bot/naval-interception.js",
     "name": "NAVAL_INTERCEPTION_DEFAULT_SPEED",
@@ -1610,6 +1830,26 @@
     "initializerPreview": "4096"
   },
   {
+    "id": "engine/ingame/auto-bot/naval-interception.js:NAVAL_INTERCEPTION_THREAT_BUCKET_TICKS#1",
+    "file": "engine/ingame/auto-bot/naval-interception.js",
+    "name": "NAVAL_INTERCEPTION_THREAT_BUCKET_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
+    "initializerLength": 2,
+    "initializerPreview": "10"
+  },
+  {
+    "id": "engine/ingame/auto-bot/naval-interception.js:NAVAL_INTERCEPTION_DEFAULT_THREAT#1",
+    "file": "engine/ingame/auto-bot/naval-interception.js",
+    "name": "NAVAL_INTERCEPTION_DEFAULT_THREAT",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
     "id": "engine/ingame/auto-bot/nukeBehavior.js:MAX_NATION_SILO_UPGRADE_LEVEL#1",
     "file": "engine/ingame/auto-bot/nukeBehavior.js",
     "name": "MAX_NATION_SILO_UPGRADE_LEVEL",
@@ -1638,6 +1878,56 @@
     "initializerHash": "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d",
     "initializerLength": 1,
     "initializerPreview": "5"
+  },
+  {
+    "id": "engine/ingame/auto-bot/nukeBehavior.js:FRIENDLY_FIRE_INNER_PENALTY#1",
+    "file": "engine/ingame/auto-bot/nukeBehavior.js",
+    "name": "FRIENDLY_FIRE_INNER_PENALTY",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce",
+    "initializerLength": 1,
+    "initializerPreview": "3"
+  },
+  {
+    "id": "engine/ingame/auto-bot/nukeBehavior.js:FRIENDLY_FIRE_OUTER_PENALTY#1",
+    "file": "engine/ingame/auto-bot/nukeBehavior.js",
+    "name": "FRIENDLY_FIRE_OUTER_PENALTY",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "engine/ingame/auto-bot/nukeBehavior.js:MIRV_CAPABLE_GOLD_THRESHOLD#1",
+    "file": "engine/ingame/auto-bot/nukeBehavior.js",
+    "name": "MIRV_CAPABLE_GOLD_THRESHOLD",
+    "declarationKind": "const",
+    "initializerKind": "BigIntLiteral",
+    "initializerHash": "ee08e612fe84cd8d8f32284fb9d916f8bb7c13bc9b676b15852dc866eb6f2666",
+    "initializerLength": 9,
+    "initializerPreview": "25000000n"
+  },
+  {
+    "id": "engine/ingame/auto-bot/nukeBehavior.js:MIRV_CAPABLE_SILO_PRIORITY_MULTIPLIER#1",
+    "file": "engine/ingame/auto-bot/nukeBehavior.js",
+    "name": "MIRV_CAPABLE_SILO_PRIORITY_MULTIPLIER",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce",
+    "initializerLength": 1,
+    "initializerPreview": "3"
+  },
+  {
+    "id": "engine/ingame/auto-bot/nukeBehavior.js:PENDING_NUKE_LAUNCHES_PER_TICK#1",
+    "file": "engine/ingame/auto-bot/nukeBehavior.js",
+    "name": "PENDING_NUKE_LAUNCHES_PER_TICK",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce",
+    "initializerLength": 1,
+    "initializerPreview": "3"
   },
   {
     "id": "engine/ingame/auto-bot/nukeBehavior.js:NUKE_STRUCTURES_TYPES#1",
@@ -2030,6 +2320,26 @@
     "initializerPreview": "0.1"
   },
   {
+    "id": "engine/ingame/auto-bot/structureBehavior.js:STRATEGIC_DEFENSE_POST_TROOP_RATIO#1",
+    "file": "engine/ingame/auto-bot/structureBehavior.js",
+    "name": "STRATEGIC_DEFENSE_POST_TROOP_RATIO",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "engine/ingame/auto-bot/structureBehavior.js:PREEMPTIVE_DEFENSE_POST_MAX_POSTS#1",
+    "file": "engine/ingame/auto-bot/structureBehavior.js",
+    "name": "PREEMPTIVE_DEFENSE_POST_MAX_POSTS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35",
+    "initializerLength": 1,
+    "initializerPreview": "2"
+  },
+  {
     "id": "engine/ingame/auto-bot/structureBehavior.js:ORDINARY_STRUCTURE_DECISION_INTERVAL_TICKS#1",
     "file": "engine/ingame/auto-bot/structureBehavior.js",
     "name": "ORDINARY_STRUCTURE_DECISION_INTERVAL_TICKS",
@@ -2078,6 +2388,16 @@
     "initializerHash": "7b1a278f5abe8e9da907fc9c29dfd432d60dc76e17b0fabab659d2a508bc65c4",
     "initializerLength": 2,
     "initializerPreview": "96"
+  },
+  {
+    "id": "engine/ingame/auto-bot/structureBehavior.js:LEGENDARY_SALVO_WINDOW_TICKS#1",
+    "file": "engine/ingame/auto-bot/structureBehavior.js",
+    "name": "LEGENDARY_SALVO_WINDOW_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "69f59c273b6e669ac32a6dd5e1b2cb63333d8b004f9696447aee2d422ce63763",
+    "initializerLength": 2,
+    "initializerPreview": "90"
   },
   {
     "id": "engine/ingame/auto-bot/structureBehavior.js:LEGENDARY_MAX_MISSILE_TARGETS#1",
@@ -2208,6 +2528,86 @@
     "initializerHash": "54faea9b3eeffce2a5ea906fdd1232a52a55d57d993e5406a572b9a9ea2827d8",
     "initializerLength": 6,
     "initializerPreview": "262144"
+  },
+  {
+    "id": "engine/ingame/auto-bot/warshipBehavior.js:WARSHIP_MOVE_RETARGET_RADIUS#1",
+    "file": "engine/ingame/auto-bot/warshipBehavior.js",
+    "name": "WARSHIP_MOVE_RETARGET_RADIUS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "2c624232cdd221771294dfbb310aca000a0df6ac8b66b696d90ef06fdefb64a3",
+    "initializerLength": 1,
+    "initializerPreview": "8"
+  },
+  {
+    "id": "engine/ingame/auto-bot/warshipBehavior.js:WARSHIP_MOVE_RETARGET_TICKS#1",
+    "file": "engine/ingame/auto-bot/warshipBehavior.js",
+    "name": "WARSHIP_MOVE_RETARGET_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "624b60c58c9d8bfb6ff1886c2fd605d2adeb6ea4da576068201b6c6958ce93f4",
+    "initializerLength": 2,
+    "initializerPreview": "30"
+  },
+  {
+    "id": "engine/ingame/auto-bot/warshipBehavior.js:WARSHIP_COMBAT_PASS_MOVE_CAP#1",
+    "file": "engine/ingame/auto-bot/warshipBehavior.js",
+    "name": "WARSHIP_COMBAT_PASS_MOVE_CAP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35",
+    "initializerLength": 1,
+    "initializerPreview": "2"
+  },
+  {
+    "id": "engine/ingame/auto-bot/warshipBehavior.js:WARSHIP_MOVE_SECOND_TOKEN_RESERVE#1",
+    "file": "engine/ingame/auto-bot/warshipBehavior.js",
+    "name": "WARSHIP_MOVE_SECOND_TOKEN_RESERVE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35",
+    "initializerLength": 1,
+    "initializerPreview": "2"
+  },
+  {
+    "id": "engine/ingame/auto-bot/warshipBehavior.js:WARSHIP_MOVE_MINUTE_TOKEN_RESERVE#1",
+    "file": "engine/ingame/auto-bot/warshipBehavior.js",
+    "name": "WARSHIP_MOVE_MINUTE_TOKEN_RESERVE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d59eced1ded07f84c145592f65bdf854358e009c5cd705f5215bf18697fed103",
+    "initializerLength": 2,
+    "initializerPreview": "40"
+  },
+  {
+    "id": "engine/ingame/auto-bot/warshipBehavior.js:WARSHIP_DODGE_COOLDOWN_TICKS#1",
+    "file": "engine/ingame/auto-bot/warshipBehavior.js",
+    "name": "WARSHIP_DODGE_COOLDOWN_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
+    "initializerLength": 2,
+    "initializerPreview": "10"
+  },
+  {
+    "id": "engine/ingame/auto-bot/warshipBehavior.js:WARSHIP_DODGE_SECOND_TOKEN_RESERVE#1",
+    "file": "engine/ingame/auto-bot/warshipBehavior.js",
+    "name": "WARSHIP_DODGE_SECOND_TOKEN_RESERVE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "engine/ingame/auto-bot/warshipBehavior.js:WARSHIP_DODGE_MINUTE_TOKEN_RESERVE#1",
+    "file": "engine/ingame/auto-bot/warshipBehavior.js",
+    "name": "WARSHIP_DODGE_MINUTE_TOKEN_RESERVE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
+    "initializerLength": 2,
+    "initializerPreview": "10"
   },
   {
     "id": "engine/ingame/auto-bot/warshipBehavior.js:MAX_DEPTH#1",
@@ -2818,6 +3218,26 @@
     "initializerHash": "d55d01d0341ed0ba2cd99b322e8c5b609254f47d10c7cd12b99b4922effeba44",
     "initializerLength": 5,
     "initializerPreview": "60000"
+  },
+  {
+    "id": "engine/ingame/intent-rate-limit.js:OFH_SECOND_WINDOW_SPEND_CAP#1",
+    "file": "engine/ingame/intent-rate-limit.js",
+    "name": "OFH_SECOND_WINDOW_SPEND_CAP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "19581e27de7ced00ff1ce50b2047e7a567c76b1cbaebabe5ef03f7c3017bb5b7",
+    "initializerLength": 1,
+    "initializerPreview": "9"
+  },
+  {
+    "id": "engine/ingame/intent-rate-limit.js:OFH_MINUTE_WINDOW_SPEND_CAP#1",
+    "file": "engine/ingame/intent-rate-limit.js",
+    "name": "OFH_MINUTE_WINDOW_SPEND_CAP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "dbae772db29058a88f9bd830e957c695347c41b6162a7eb9a9ea13def34be56b",
+    "initializerLength": 3,
+    "initializerPreview": "140"
   },
   {
     "id": "engine/ingame/map-overlay-scheduler.js:MAP_OVERLAY_CANVAS_ID#1",
@@ -4710,6 +5130,36 @@
     "initializerPreview": "220"
   },
   {
+    "id": "engine/ingame/spawn-heatmap.js:SPAWN_ENEMY_PRESSURE_WEIGHT_MIN#1",
+    "file": "engine/ingame/spawn-heatmap.js",
+    "name": "SPAWN_ENEMY_PRESSURE_WEIGHT_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "engine/ingame/spawn-heatmap.js:SPAWN_ENEMY_PRESSURE_WEIGHT_MAX#1",
+    "file": "engine/ingame/spawn-heatmap.js",
+    "name": "SPAWN_ENEMY_PRESSURE_WEIGHT_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "b8736b999909049671d0ea075a42b308a5fbe2df1854899123fe09eb0ee9de61",
+    "initializerLength": 3,
+    "initializerPreview": "2.5"
+  },
+  {
+    "id": "engine/ingame/spawn-heatmap.js:SPAWN_ENEMY_PRESSURE_WEIGHT_TROOP_SCALE#1",
+    "file": "engine/ingame/spawn-heatmap.js",
+    "name": "SPAWN_ENEMY_PRESSURE_WEIGHT_TROOP_SCALE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "876c9b16254e157d1eb645390dcfae6f29b9d3cd394e73a91de8ee5d0e67ee43",
+    "initializerLength": 5,
+    "initializerPreview": "20000"
+  },
+  {
     "id": "engine/ingame/spawn-heatmap.js:SPAWN_HEATMAP_TEAM_ATTRACT_R#1",
     "file": "engine/ingame/spawn-heatmap.js",
     "name": "SPAWN_HEATMAP_TEAM_ATTRACT_R",
@@ -4770,6 +5220,46 @@
     "initializerPreview": "12"
   },
   {
+    "id": "engine/ingame/spawn-heatmap.js:SPAWN_COASTAL_SAMPLE_R#1",
+    "file": "engine/ingame/spawn-heatmap.js",
+    "name": "SPAWN_COASTAL_SAMPLE_R",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
+    "initializerLength": 2,
+    "initializerPreview": "10"
+  },
+  {
+    "id": "engine/ingame/spawn-heatmap.js:SPAWN_COASTAL_WATER_MIN_SHARE#1",
+    "file": "engine/ingame/spawn-heatmap.js",
+    "name": "SPAWN_COASTAL_WATER_MIN_SHARE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "7932a07a8cbc0885919d30c43799f0247ef96badbc79ba5427e6306232508c78",
+    "initializerLength": 4,
+    "initializerPreview": "0.15"
+  },
+  {
+    "id": "engine/ingame/spawn-heatmap.js:SPAWN_COASTAL_WATER_PEAK_SHARE#1",
+    "file": "engine/ingame/spawn-heatmap.js",
+    "name": "SPAWN_COASTAL_WATER_PEAK_SHARE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "221764976efe04132774d96b0253cc31434c5261737469324f222621baf34b20",
+    "initializerLength": 3,
+    "initializerPreview": "0.3"
+  },
+  {
+    "id": "engine/ingame/spawn-heatmap.js:SPAWN_COASTAL_WATER_MAX_SHARE#1",
+    "file": "engine/ingame/spawn-heatmap.js",
+    "name": "SPAWN_COASTAL_WATER_MAX_SHARE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "bffb16d6fe1445f051b3cff3025340011b817b391ffc04dcd77d1452efa10c25",
+    "initializerLength": 4,
+    "initializerPreview": "0.45"
+  },
+  {
     "id": "engine/ingame/spawn-heatmap.js:SPAWN_INDEX_ESTIMATED_BYTES_PER_CELL#1",
     "file": "engine/ingame/spawn-heatmap.js",
     "name": "SPAWN_INDEX_ESTIMATED_BYTES_PER_CELL",
@@ -4825,9 +5315,9 @@
     "name": "SPAWN_W",
     "declarationKind": "const",
     "initializerKind": "ObjectLiteralExpression",
-    "initializerHash": "eddf56eb20a0a37360bf5056aae27be08d2a397cef5d186fa9ec54fe7d3ff106",
-    "initializerLength": 185,
-    "initializerPreview": "{\n    land: 0.25,\n    plains: 0.2,\n    tribe: 0.25,\n    nation: 0.25,\n    player: 0.25,\n    edge: 0.05,\n    team: 0.2,\n    clan: 0.25,\n    teamCentroid: 0.08,\n    enemyPressure: 0.12,\n}"
+    "initializerHash": "6059e57b0cc6e1b14ca422b31400bc80bb12bfb5eabc3963fe903ff0177b9f92",
+    "initializerLength": 203,
+    "initializerPreview": "{\n    land: 0.25,\n    plains: 0.2,\n    tribe: 0.25,\n    nation: 0.25,\n    player: 0.25,\n    edge: 0.05,\n    team: 0.2,\n    clan: 0.25,\n    teamCentroid: 0.08,\n    enemyPressure: 0.12,\n    coastal: 0.1,\n}"
   },
   {
     "id": "engine/ingame/spawn-heatmap.js:SPAWN_IS_LAND_BIT#1",
@@ -4848,6 +5338,16 @@
     "initializerHash": "eb1e33e8a81b697b75855af6bfcdbcbf7cbbde9f94962ceaec1ed8af21f5a50f",
     "initializerLength": 2,
     "initializerPreview": "31"
+  },
+  {
+    "id": "engine/ingame/spawn-heatmap.js:SPAWN_COASTAL_SAMPLE_OFFSETS#1",
+    "file": "engine/ingame/spawn-heatmap.js",
+    "name": "SPAWN_COASTAL_SAMPLE_OFFSETS",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "initializerLength": 2,
+    "initializerPreview": "[]"
   },
   {
     "id": "engine/ingame/spawn-heatmap.js:R#1",

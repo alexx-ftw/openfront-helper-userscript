@@ -149,6 +149,17 @@
   const UPGRADE_DENSITY_THRESHOLD = 1 / 1500;
 
   /**
+   * Fraction of maxTroops at or above which troop production has effectively
+   * stalled (the engine's growth rate scales with the remaining headroom).
+   * Every further troop-second near the ceiling is lost unless the cap itself
+   * grows, so this signal makes City build/upgrade spending prioritary.
+   */
+  const TROOP_CAP_PRESSURE_RATIO = 0.9;
+
+  /** Bound the per-level City upgrade cost history like the SAM upgrade cache. */
+  const CITY_UPGRADE_COST_CACHE_LIMIT = 32;
+
+  /**
    * Maximum raw tiles sampled and ranked for one structure, matching upstream.
    * Coverage-priority SAM placement resolves legality locally so this remains
    * a bounded CPU search rather than 25 worker requests.
@@ -244,6 +255,21 @@
    * while a Tribe probe must never freeze the opening economy.
    */
   const PREEMPTIVE_DEFENSE_POST_THREAT_RATIO = 0.1;
+
+  /**
+   * A bordering Nation/Human opponent whose standing troop count reaches this
+   * fraction of our own troops makes the shared frontier a strategic threat
+   * even before any attack is launched: the first dogpile wave would land long
+   * before a Post's long construction could finish.
+   */
+  const STRATEGIC_DEFENSE_POST_TROOP_RATIO = 1;
+
+  /**
+   * Concurrent Defense Posts the strategic border rule may authorize without a
+   * live attack. Live-attack authorization keeps its own ratio-derived budget
+   * and is never clamped by this cap.
+   */
+  const PREEMPTIVE_DEFENSE_POST_MAX_POSTS = 2;
   // The Nation execution loop asks for defensive structure work between the
   // main attack decisions as well as on the main decision itself.  Those
   // interstitial calls must keep missile/SAM/land-defense reactions live, but
@@ -274,6 +300,13 @@
    * cap is marked incomplete and therefore cannot be accepted as defended.
    */
   const LEGENDARY_MAX_FORECAST_MISSILES = 96;
+
+  /**
+   * The opening salvo window over which an enemy's silo reload cadence is
+   * evaluated. A chain of atoms followed by a hydrogen finisher fits well
+   * inside this window, so it bounds how many times a slot can contribute.
+   */
+  const LEGENDARY_SALVO_WINDOW_TICKS = 90;
 
   /**
    * A missile planner only needs representative high-value/clustered targets.
@@ -474,7 +507,10 @@
       this.random = random;
       this.game = game;
       this.player = player;
+      this.initializeStructureCaches();
+    }
 
+    initializeStructureCaches() {
       // src private fields (NationStructureBehavior.ts:126-135).
       this.reachableStationsCache = null;
       this.factoryTradeDestinationsCache = null;
@@ -491,6 +527,23 @@
       this._hostilePlayersSnapshot = null;
       this._borderingHostileMaxTroopAdvantageTick = null;
       this._borderingHostileMaxTroopAdvantage = null;
+      // Troop-cap pressure snapshot (one boolean per game tick) plus the
+      // City-upgrade candidate probe it authorizes: one bounded unit probe per
+      // tick with a per-level authoritative cost cache in between.
+      this._troopCapPressureTick = null;
+      this._troopCapPressure = null;
+      this._legendaryCityUpgradeProbeTick = null;
+      this._legendaryCityUpgradeProbe = null;
+      this._legendaryCityUpgradeCostCache = new Map();
+      this.initializeThreatSnapshotCaches();
+      this.initializeMissileDefenseCaches();
+    }
+
+    initializeThreatSnapshotCaches() {
+      // One strategic-border Defense Post authorization snapshot ({ tick,
+      // threat }) per game tick; the hostile-player and border scans it builds
+      // on are shared with the other construction gates.
+      this._strategicBorderDefensePostThreatSnapshot = null;
       this._hostileThreatSnapshotTick = null;
       this._hostileThreatSnapshot = null;
       this._hostileSiloCapacitySnapshotTick = null;
@@ -499,6 +552,9 @@
       this._hasOceanPortTiles = null;
       this._economicExposureBorderTick = null;
       this._economicExposureBorderTiles = null;
+    }
+
+    initializeMissileDefenseCaches() {
       this._missileDefenseSignalTick = null;
       this._missileDefenseSignalCache = null;
       this._activeHostileMissileTick = null;
@@ -957,10 +1013,11 @@
       // Active land defense comes before routine SAM coverage/parity and
       // offensive silo work. A concrete missile emergency still wins.
       if (legendaryMissileEmergency) return null;
-      // Border proximity and an opponent's total army are not an attack. Spending
-      // economic gold on that proxy produced preventive Posts while the frontier
-      // was quiet. Authorize a Post only from live incoming land attacks; the
-      // active threat object is reused for placement and coverage demand.
+      // Live incoming land attacks remain the primary authorization with their
+      // ratio-derived budget; the capped strategic-border rule inside
+      // defensePostThreat adds the quiet dogpile pre-condition (a bordering
+      // army-sized Nation/Human) without opening the live-attack ratio gates.
+      // The active threat object is reused for placement and coverage demand.
       const difficulty = currentDifficulty();
       const activeThreat = this.defensePostThreat(difficulty);
       if (activeThreat === null) return null;
@@ -1106,7 +1163,13 @@
       const landAttacks = (this.player.incomingAttacks?.() ?? []).filter(
         (attack) => this.isActiveIncomingAttack(attack) && this.isLandAttack(attack),
       );
-      if (landAttacks.length === 0) return null;
+      if (landAttacks.length === 0) {
+        // PREEMPTIVE: with no live attack, a bordering army-sized Nation/Human
+        // neighbour still authorizes a small capped Post budget — waiting for
+        // the first incoming wave is what left quiet frontiers with zero Posts
+        // once the multi-nation dogpile actually started.
+        return this.strategicBorderDefensePostThreat(difficulty);
+      }
       const ourTroops = this.player.troops();
       if (ourTroops <= 0) return null;
       const incomingTroops = landAttacks.reduce(
@@ -1125,6 +1188,124 @@
           ? 1
           : Math.ceil(ratio / DEFENSE_POST_RATIO_PER_POST);
       return { allowed, incomingTroops, landAttacks, ratio };
+    }
+
+    // A frontier shared with a much stronger Nation/Human neighbour is the
+    // pre-condition of every multi-nation dogpile. By the time the invasion
+    // is a live incoming attack, a Post's long construction cannot finish
+    // ahead of it, so the quiet border itself authorizes a capped preemptive
+    // budget. The per-tick snapshot reuses the cached hostile-player list and
+    // one border scan instead of rescanning the frontier per caller, and the
+    // rule never applies on Easy, where Posts are never built at all.
+    strategicBorderDefensePostThreat(difficulty) {
+      if (difficulty === Difficulty.Easy) return null;
+      const rawTick = safeStructureGameTick(this.game);
+      const snapshotTick = Number.isFinite(rawTick) ? rawTick : null;
+      const snapshot = this._strategicBorderDefensePostThreatSnapshot;
+      if (
+        snapshot?.tick === snapshotTick &&
+        snapshot.difficulty === difficulty
+      ) {
+        return snapshot.threat;
+      }
+      const threat = this.computeStrategicBorderDefensePostThreat(difficulty);
+      if (snapshotTick !== null) {
+        this._strategicBorderDefensePostThreatSnapshot = {
+          difficulty,
+          tick: snapshotTick,
+          threat,
+        };
+      }
+      return threat;
+    }
+
+    computeStrategicBorderDefensePostThreat(difficulty) {
+      const ourTroops = Math.max(0, Number(this.player?.troops?.() || 0));
+      if (ourTroops <= 0) return null;
+      const opponents = this.liveHostilePlayers();
+      if (!Array.isArray(opponents)) return null;
+      const borderingOwnerIds = this.borderingLandOwnerIds();
+      if (
+        borderingOwnerIds === null &&
+        typeof this.player?.sharesBorderWith !== "function"
+      ) {
+        return null;
+      }
+      const strongest = this.strongestStrategicBorderOpponent(
+        opponents,
+        borderingOwnerIds,
+      );
+      if (strongest === null) return null;
+      if (strongest.troops < STRATEGIC_DEFENSE_POST_TROOP_RATIO * ourTroops) {
+        return null;
+      }
+      const frontTiles = this.getOpponentFrontTiles(strongest.opponentSid);
+      if (frontTiles.length === 0) return null;
+      return {
+        allowed:
+          difficulty === Difficulty.Medium
+            ? 1
+            : PREEMPTIVE_DEFENSE_POST_MAX_POSTS,
+        frontTiles,
+        incomingTroops: 0,
+        landAttacks: [],
+        ratio: strongest.troops / ourTroops,
+        strategicBorder: true,
+      };
+    }
+
+    strongestStrategicBorderOpponent(opponents, borderingOwnerIds) {
+      let strongest = null;
+      for (const opponent of opponents) {
+        if (!this.isStrategicBorderOpponent(opponent)) continue;
+        const opponentSid = this.readPlayerSmallId(opponent);
+        if (opponentSid === null || opponentSid === undefined) continue;
+        const bordersUs =
+          borderingOwnerIds !== null
+            ? borderingOwnerIds.has(opponentSid)
+            : this.safeSharesBorder(opponent);
+        if (!bordersUs) continue;
+        const troops = Math.max(0, Number(opponent?.troops?.() || 0));
+        if (strongest === null || troops > strongest.troops) {
+          strongest = { opponentSid, troops };
+        }
+      }
+      return strongest;
+    }
+
+    // Nation/Human neighbours can assemble and commit a decisive invasion;
+    // Bots and Tribes stay the early-game food source and must not freeze the
+    // opening economy behind a preventive Post.
+    isStrategicBorderOpponent(opponent) {
+      const type = opponent?.type?.();
+      return type === PlayerType.Nation || type === PlayerType.Human;
+    }
+
+    // Frontier tiles shared with one specific opponent — the same
+    // owner-identity scan getAttackFrontTiles runs for live attackers. The
+    // preemptive front contains ONLY the strong neighbour's tiles, so the
+    // existing uncovered-front sampler and coverage ranker in
+    // tryBuildDefensePost already aim every candidate at that frontier
+    // (bounded samples, no separate proximity pass).
+    getOpponentFrontTiles(opponentSid) {
+      if (typeof this.player?.borderTiles !== "function") return [];
+      if (typeof this.game?.neighbors !== "function") return [];
+      if (typeof this.game?.hasOwner !== "function") return [];
+      if (typeof this.game?.ownerID !== "function") return [];
+
+      const frontTiles = [];
+      outer: for (const borderTile of this.player.borderTiles()) {
+        for (const neighbor of this.game.neighbors(borderTile)) {
+          const ownerSid = this.game.hasOwner(neighbor)
+            ? this.game.ownerID(neighbor)
+            : null;
+          if (ownerSid === opponentSid) {
+            frontTiles.push(borderTile);
+            continue outer;
+          }
+        }
+      }
+      return frontTiles;
     }
 
     async buildFirstDefensePost(tiles) {
@@ -1739,6 +1920,18 @@
       ) {
         return true;
       }
+      // Troop-cap pressure stalls all further production growth: only a City
+      // raises the maxTroops ceiling. Give that build its probe before the
+      // ratio-driven Port/Factory/SAM/Silo order can spend the same gold. The
+      // urgent missile and land-defense paths have already returned earlier in
+      // handleStructures, so this cannot delay an active-defense response.
+      if (
+        !citiesDisabled &&
+        this.troopCapPressure() &&
+        (await this.maybeSpawnStructure(UNIT.City))
+      ) {
+        return true;
+      }
       // Build order for non-city structures (priority order)
       const buildOrder = [
         UNIT.Port,
@@ -1793,21 +1986,22 @@
       hasOceanPortTiles,
       prioritizeCityForBorderThreat = false,
     }, profile = null) {
-      const buildOrder = prioritizeCityForBorderThreat
+      // Troop-cap pressure is the strongest City-first signal: production has
+      // stalled at the maxTroops ceiling and only a City (or City level)
+      // restarts it, so the cap-relief City leads the economic order.
+      const capPressure = this.troopCapPressure();
+      const buildOrder = prioritizeCityForBorderThreat || capPressure
         ? CITY_FIRST_ECONOMIC_STRUCTURE_TYPES
         : ECONOMIC_STRUCTURE_TYPES;
       for (const structureType of buildOrder) {
-        if (config.isUnitDisabled(structureType)) continue;
-        if (structureType === UNIT.Port && !hasOceanPortTiles) continue;
-
-        // A first city is the baseline economic action even though the normal
-        // ratio target is zero until cityCount has been established.
-        const firstCity =
-          structureType === UNIT.City && !citiesDisabled && cityCount === 0;
-        if (
-          !firstCity &&
-          !this.shouldBuildStructure(structureType, cityCount, hasCoastalTiles)
-        ) {
+        if (!this.economicStructureTypeEligible(structureType, {
+          config,
+          citiesDisabled,
+          cityCount,
+          hasCoastalTiles,
+          hasOceanPortTiles,
+          capPressure,
+        })) {
           continue;
         }
         if (
@@ -1818,6 +2012,32 @@
         }
       }
       return false;
+    }
+
+    economicStructureTypeEligible(
+      structureType,
+      {
+        config,
+        citiesDisabled,
+        cityCount,
+        hasCoastalTiles,
+        hasOceanPortTiles,
+        capPressure,
+      },
+    ) {
+      if (config.isUnitDisabled(structureType)) return false;
+      if (structureType === UNIT.Port && !hasOceanPortTiles) return false;
+
+      // A first city is the baseline economic action even though the normal
+      // ratio target is zero until cityCount has been established.
+      const firstCity =
+        structureType === UNIT.City && !citiesDisabled && cityCount === 0;
+      // Under cap pressure an additional City is the productive action even
+      // though City has no ratio entry at all.
+      const capReliefCity =
+        structureType === UNIT.City && !citiesDisabled && capPressure;
+      if (firstCity || capReliefCity) return true;
+      return this.shouldBuildStructure(structureType, cityCount, hasCoastalTiles);
     }
 
     /**
@@ -1977,6 +2197,13 @@
         ) return true;
       }
 
+      // Cap relief needs the authoritative City upgrade price before the
+      // candidate set is built. The probe is tick-cached and its per-level
+      // cost cache keeps repeated decisions off the worker.
+      if (this.troopCapPressure()) {
+        await this.refreshLegendaryCityUpgradeCandidate();
+      }
+
       const candidates = this.legendaryConstructionCandidates({
         config,
         citiesDisabled,
@@ -2015,6 +2242,15 @@
           )
             ? "skip"
             : "wait";
+        }
+        // A cap-relief City upgrade uses its own authoritative actuation probe;
+        // its failure falls through to the next ranked action (e.g. a new
+        // City) instead of aborting the whole group.
+        if (candidate.action === "upgrade") {
+          if (await this.maybeUpgradeLegendaryCityCapacity(candidate)) {
+            return "built";
+          }
+          continue;
         }
         if (await this.maybeSpawnStructure(candidate.type)) return "built";
       }
@@ -2411,7 +2647,7 @@
         return value;
       };
       if (typeof this.game?.units !== "function") return cache(null);
-      const activeMissiles = this.game.units(
+      const activeMissiles = this.missileFamilyUnitsSnapshot(
           UNIT.AtomBomb,
           UNIT.HydrogenBomb,
           UNIT.MIRV,
@@ -2445,7 +2681,7 @@
       if (!config || typeof config.nukeMagnitudes !== "function") {
         return cache([]);
       }
-      const missiles = this.game.units(
+      const missiles = this.missileFamilyUnitsSnapshot(
         UNIT.AtomBomb,
         UNIT.HydrogenBomb,
         UNIT.MIRV,
@@ -2950,6 +3186,45 @@
     // The capacity comparison deliberately uses maxTroops, not current troops:
     // current armies fluctuate every tick while the construction response is
     // meant to close a structural force-generation gap.
+    // WIN-FIX: troops at (or near) the maxTroops ceiling mean production has
+    // stalled — the engine's troop growth scales with the remaining headroom,
+    // so every further troop-second near the cap is lost. Only City builds and
+    // City upgrades raise the ceiling (each city level adds cityTroopIncrease
+    // troops), so this signal makes idle treasury flow into cap growth first.
+    // One boolean snapshot per game tick, like the border-advantage snapshot.
+    troopCapPressure() {
+      const rawTick = safeStructureGameTick(this.game);
+      const snapshotTick = Number.isFinite(rawTick) ? rawTick : null;
+
+      if (
+        snapshotTick !== null &&
+        this._troopCapPressureTick === snapshotTick &&
+        typeof this._troopCapPressure === "boolean"
+      ) {
+        return this._troopCapPressure;
+      }
+
+      const pressure = this.computeTroopCapPressure();
+
+      if (snapshotTick !== null) {
+        this._troopCapPressureTick = snapshotTick;
+        this._troopCapPressure = pressure;
+      }
+      return pressure;
+    }
+
+    computeTroopCapPressure() {
+      if (!state.settings.winFixes) return false;
+      const config = this.game?.config?.();
+      if (!config || typeof config.maxTroops !== "function") return false;
+      const maxTroops = this.safeMaxTroops(config, this.player);
+      if (maxTroops <= 0) return false;
+      if (typeof this.player?.troops !== "function") return false;
+      const troops = Number(this.player.troops());
+      if (!Number.isFinite(troops) || troops <= 0) return false;
+      return troops >= maxTroops * TROOP_CAP_PRESSURE_RATIO;
+    }
+
     hasBorderingHostileMaxTroopAdvantage() {
       const rawTick = safeStructureGameTick(this.game);
       const snapshotTick = Number.isFinite(rawTick) ? rawTick : null;
@@ -6148,10 +6423,21 @@
       const samProfiles =
         samProfilesOverride ||
         this.legendaryFriendlySamProfiles(levelOverrides, extraSam);
+      // Gold is necessary but not sufficient: an enemy can only launch as many
+      // atoms in the opening salvo window as their silos have ready/reloadable
+      // slots. Without this ceiling, one rich enemy with a single level-1 silo
+      // is modeled as a hundred-missile chain and forces a chronic SAM
+      // over-build. Sum the live silo levels (max simultaneous slots) and the
+      // ready-shot count, then let the larger bound the salvo size.
+      const siloCapacityCeiling = this.legendaryEnemySiloSalvoCeiling(
+        enemySilos,
+        siloMetadataCache,
+      );
       const budget = this.legendaryMissileSalvoBudget(
         enemyGold,
         atomCost,
         hydrogenCost,
+        { siloCapacityCeiling },
       );
       const { canHydrogen, atomCount, forecastComplete } = budget;
       const desiredShotCount = atomCount + (canHydrogen ? 1 : 0);
@@ -6269,15 +6555,37 @@
       };
     }
 
-    legendaryMissileSalvoBudget(enemyGold, atomCost, hydrogenCost) {
+    legendaryMissileSalvoBudget(
+      enemyGold,
+      atomCost,
+      hydrogenCost,
+      { siloCapacityCeiling = null } = {},
+    ) {
       const canHydrogen = hydrogenCost > 0n && enemyGold >= hydrogenCost;
       const atomBudgetGold = canHydrogen ? enemyGold - hydrogenCost : enemyGold;
       const affordable = Number(atomCost > 0n ? atomBudgetGold / atomCost : 0n);
+      // A silo can only hold one queued launch per level slot, and each slot
+      // reloads on a fixed cooldown. An enemy with a single level-1 silo
+      // therefore cannot empty a million-gold treasury into one opening salvo,
+      // regardless of how much they could afford in principle. Bound the atom
+      // count by the live silo capacity so the defense model neither over-builds
+      // SAMs against an impossible phalanx nor under-defends a genuine multi-silo
+      // strike. The ceiling is advisory: when unknown (null/undefined), gold
+      // still governs. Note Number(null) === 0, so the explicit null/undefined
+      // guard is required to avoid treating "unknown" as "zero capacity".
+      const ceiling =
+        siloCapacityCeiling === null || siloCapacityCeiling === undefined
+          ? NaN
+          : Number(siloCapacityCeiling);
+      const boundedBySilos =
+        Number.isFinite(ceiling) && ceiling >= 0
+          ? Math.min(affordable, Math.floor(ceiling))
+          : affordable;
       const forecastComplete =
-        Number.isSafeInteger(affordable) &&
-        affordable <= LEGENDARY_MAX_FORECAST_MISSILES;
-      const safeAffordable = Number.isSafeInteger(affordable)
-        ? affordable
+        Number.isSafeInteger(boundedBySilos) &&
+        boundedBySilos <= LEGENDARY_MAX_FORECAST_MISSILES;
+      const safeAffordable = Number.isSafeInteger(boundedBySilos)
+        ? boundedBySilos
         : LEGENDARY_MAX_FORECAST_MISSILES;
       const atomCount = Math.max(
         0,
@@ -6285,6 +6593,75 @@
       );
       return { canHydrogen, atomCount, forecastComplete };
     }
+
+    // Conservative upper bound on the atoms an enemy can put into one salvo
+    // before the first hydrogen finisher would land. A silo holds one queued
+    // launch per level slot and each slot reloads on a fixed cooldown, so the
+    // realistic opening chain is bounded by the total silo level (every slot
+    // loaded once) plus one full reload over the salvo window. Ready-shot data
+    // from the shared metadata cache is used when already present, but this
+    // helper never reaches into the live game (no tile/distance/ticks reads) so
+    // it stays cheap and side-effect-free even when the budget runs inside a
+    // partially-stubbed test harness.
+    legendaryEnemySiloSalvoCeiling(enemySilos, siloMetadataCache = null) {
+      const silos = Array.isArray(enemySilos) ? enemySilos : [];
+      if (silos.length === 0) return 0;
+      const { totalLevels, cachedReadyShots, haveCachedReadyShots } =
+        this.legendaryEnemySiloCapacityAccumulation(silos, siloMetadataCache);
+      // One full reload cycle over the salvo window is the most an opponent can
+      // add beyond the slots that are already loaded. Counting the loaded slots
+      // plus their one-cooldown reload captures the chain-then-finisher pattern
+      // without modeling gold we already bounded separately. The cooldown read
+      // touches the live game config; when that is unavailable (an early-tick
+      // view or a partially-stubbed harness), fall back to the steady-state
+      // level ceiling rather than throwing — gold still bounds the atom count.
+      const cooldownTicks = this.legendarySiloCooldownTicksOrFallback();
+      if (cooldownTicks === null) {
+        return Math.max(totalLevels, cachedReadyShots);
+      }
+      const windowTicks = Math.max(cooldownTicks, LEGENDARY_SALVO_WINDOW_TICKS);
+      const reloads = Math.max(1, Math.floor(windowTicks / cooldownTicks));
+      const reloadCeiling = totalLevels * reloads;
+      // Prefer the live ready-shot count when the cache already materialized it
+      // (it sees current reload progress); otherwise fall back to the level sum
+      // as a conservative steady-state ceiling.
+      return haveCachedReadyShots
+        ? Math.max(cachedReadyShots, reloadCeiling)
+        : Math.max(totalLevels, reloadCeiling);
+    }
+
+    // Accumulate total silo level and any cached ready-shot count across the
+    // eligible enemy silos. Extracted from legendaryEnemySiloSalvoCeiling to
+    // keep both functions under the complexity ceiling.
+    legendaryEnemySiloCapacityAccumulation(silos, siloMetadataCache) {
+      let totalLevels = 0;
+      let cachedReadyShots = 0;
+      let haveCachedReadyShots = false;
+      for (const silo of silos) {
+        if (!this.legendaryEligibleEnemyMissileSilo(silo)) continue;
+        const level = this.normalizedStructureLevel(silo.level?.());
+        if (Number.isFinite(level) && level > 0) totalLevels += Math.floor(level);
+        const cached = siloMetadataCache?.get(silo);
+        if (!cached) continue;
+        const ready = this.legendaryReadyShotCountFromSlots(
+          cached.slots ?? [],
+          cached.readyShots,
+        );
+        if (!Number.isFinite(ready)) continue;
+        cachedReadyShots += Math.max(0, Math.floor(ready));
+        haveCachedReadyShots = true;
+      }
+      return { totalLevels, cachedReadyShots, haveCachedReadyShots };
+    }
+
+    // Read the silo cooldown only when the live game config is available; the
+    // placement path must not throw on an early-tick view or a partially-stubbed
+    // harness. Returns null when the cooldown cannot be resolved safely.
+    legendarySiloCooldownTicksOrFallback() {
+      const game = this.game;
+      return game?.config ? Math.max(1, this.legendarySiloCooldownTicks()) : null;
+    }
+
 
     legendarySalvoRoutes({
       launches,
@@ -6424,11 +6801,41 @@
       return metrics;
     }
 
+    // Shared per-tick snapshot of the missile unit families. The overlay
+    // prediction layers re-read the same families every tick, so ride their
+    // cache when present; sandboxes without the global fall back to a direct
+    // read with identical semantics.
+    missileFamilyUnitsSnapshot(...types) {
+      if (typeof getCachedGameUnits === "function") {
+        return getCachedGameUnits(this.game, ...types);
+      }
+      return this.game.units(...types);
+    }
+
+    // Client-side approximation of the engine's global numMirvsLaunched
+    // counter: every MIRV unit id we have SEEN in flight represents one
+    // market-wide launch that raised the price by 15M. MIRVs fly for hundreds
+    // of ticks, so a per-decision snapshot catches essentially all of them;
+    // the set is retained for the behavior's lifetime because ids never
+    // repeat. Never reads the live map beyond the shared snapshot.
+    observedGlobalMirvLaunchCount() {
+      if (this._observedMirvUnitIds === null ||
+          this._observedMirvUnitIds === undefined) {
+        this._observedMirvUnitIds = new Set();
+      }
+      if (typeof this.game?.units !== "function") return this._observedMirvUnitIds.size;
+      for (const mirv of this.missileFamilyUnitsSnapshot(UNIT.MIRV)) {
+        const id = typeof mirv?.id === "function" ? mirv.id() : mirv?.id;
+        if (id !== null && id !== undefined) this._observedMirvUnitIds.add(id);
+      }
+      return this._observedMirvUnitIds.size;
+    }
+
     legendaryActiveMissileThreats(context) {
       const threats = [];
       let activeNukes;
       {
-        activeNukes = this.game.units(
+        activeNukes = this.missileFamilyUnitsSnapshot(
           UNIT.AtomBomb,
           UNIT.HydrogenBomb,
         );
@@ -6461,7 +6868,11 @@
           UNIT.MissileSilo,
         ) || [];
       let protectedStructureSnapshots = null;
-      for (const missile of this.game.units(UNIT.MIRV, UNIT.MIRVWarhead) || []) {
+      const activeMissiles = this.missileFamilyUnitsSnapshot(
+        UNIT.MIRV,
+        UNIT.MIRVWarhead,
+      );
+      for (const missile of activeMissiles) {
         if (!isHostileActiveMissile(this.player, missile, mySid)) continue;
         const targetTile = missile.targetTile?.();
         if (targetTile === null || targetTile === undefined) continue;
@@ -7197,7 +7608,7 @@
     appendMissileDefenseStateMissiles(representation) {
       const activeMissiles =
         typeof this.game?.units === "function"
-          ? this.game.units(
+          ? this.missileFamilyUnitsSnapshot(
               UNIT.AtomBomb,
               UNIT.HydrogenBomb,
               UNIT.MIRV,
@@ -8406,6 +8817,147 @@
       return Math.max(0.25, 1 - Math.min(0.75, costShare * 0.75));
     }
 
+    // The cheapest currently-known City upgrade under troop-cap pressure. The
+    // authoritative upgrade cost comes from the buildable-unit probe (never the
+    // count-scaled new-structure formula); the per-level cost cache keeps the
+    // worker probes bounded to actual level transitions.
+    legendaryCityUpgradeCandidateInfo() {
+      return this._legendaryCityUpgradeProbe ?? null;
+    }
+
+    async refreshLegendaryCityUpgradeCandidate() {
+      const tick = safeStructureGameTick(this.game);
+      if (
+        tick !== null &&
+        this._legendaryCityUpgradeProbeTick === tick &&
+        this._legendaryCityUpgradeProbe !== undefined
+      ) {
+        return;
+      }
+      const info = await this.probeLegendaryCityUpgradeCandidate();
+      if (tick !== null) {
+        this._legendaryCityUpgradeProbeTick = tick;
+        this._legendaryCityUpgradeProbe = info;
+      }
+    }
+
+    builtCityUpgradeTargets() {
+      const cities = this.player?.units?.(UNIT.City);
+      if (!Array.isArray(cities)) return [];
+      return cities.filter(
+        (city) =>
+          city?.isUnderConstruction?.() !== true &&
+          city?.isActive?.() !== false &&
+          typeof city?.id === "function" &&
+          typeof city?.level === "function",
+      );
+    }
+
+    async probeLegendaryCityUpgradeCandidate() {
+      const cities = this.builtCityUpgradeTargets().slice(
+        0,
+        STRUCTURE_PLACEMENT_CANDIDATE_LIMIT,
+      );
+      if (cities.length === 0) return null;
+      const priced = [];
+      const pending = [];
+      for (const city of cities) {
+        const cachedCost = this._legendaryCityUpgradeCostCache.get(
+          this.cityUpgradeCostCacheKey(city),
+        );
+        if (cachedCost === undefined) pending.push(city);
+        else priced.push({ city, cost: cachedCost });
+      }
+      if (pending.length > 0) {
+        await this.pricePendingCityUpgrades(pending, priced);
+      }
+      let best = null;
+      for (const { city, cost } of priced) {
+        if (cost <= 0n) continue;
+        if (best === null || cost < best.cost) {
+          best = { structureId: city.id(), cost };
+        }
+      }
+      return best;
+    }
+
+    async pricePendingCityUpgrades(pending, priced) {
+      const buildables = await this.buildableForUnits(pending, UNIT.City, {
+        concurrency: STRUCTURE_PROBE_CONCURRENCY,
+        timeoutMs: STRUCTURE_PROBE_TIMEOUT_MS,
+      });
+      for (let index = 0; index < pending.length; index++) {
+        const cost = this.legendaryCityUpgradeBuildableCost(buildables[index]);
+        this.rememberLegendaryCityUpgradeCost(
+          this.cityUpgradeCostCacheKey(pending[index]),
+          cost,
+        );
+        priced.push({ city: pending[index], cost });
+      }
+    }
+
+    // Zero means "no authoritative price" and the candidate is skipped rather
+    // than guessed at.
+    legendaryCityUpgradeBuildableCost(buildable) {
+      if (buildable?.canUpgrade === false) return 0n;
+      if (buildable?.cost === undefined || buildable?.cost === null) return 0n;
+      return BigInt(buildable.cost);
+    }
+
+    cityUpgradeCostCacheKey(city) {
+      const level = Math.max(1, Math.floor(Number(city?.level?.() ?? 1)));
+      return `${String(city?.id?.())}:${level}`;
+    }
+
+    rememberLegendaryCityUpgradeCost(cacheKey, cost) {
+      if (this._legendaryCityUpgradeCostCache.size >= CITY_UPGRADE_COST_CACHE_LIMIT) {
+        this._legendaryCityUpgradeCostCache.clear();
+      }
+      this._legendaryCityUpgradeCostCache.set(cacheKey, cost);
+    }
+
+    // Actuation for the Legendary cap-relief City upgrade candidate. Re-probes
+    // the exact city so the emitted upgrade pays the authoritative live price;
+    // a level change, destruction, or lost affordability just falls through to
+    // the next ranked action.
+    async maybeUpgradeLegendaryCityCapacity(candidate) {
+      if (!this.troopCapPressure()) return false;
+      const city = this.builtCityUpgradeTargets().find(
+        (target) => target.id() === candidate?.upgradeStructureId,
+      );
+      if (!city) return false;
+      const buildables = await this.buildableForUnits([city], UNIT.City, {
+        concurrency: 1,
+        timeoutMs: STRUCTURE_PROBE_TIMEOUT_MS,
+      });
+      const buildable = buildables[0];
+      if (!buildable || buildable.canUpgrade === false) return false;
+      this.rememberLiveCityUpgradeCost(city, buildable);
+      const cost = this.buildableCostOrFallback(
+        buildable,
+        legendaryBigInt(candidate.cost),
+      );
+      if (cost > this.spendableConstructionGold()) return false;
+      const buildMenu = getBuildMenu();
+      if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
+        return false;
+      }
+      if (!sendAutoBotBuildOrUpgrade(buildMenu, buildable, undefined, this.game, this.player)) {
+        return false;
+      }
+      state.stats.builds++;
+      setLastAction(tr("⬆️ Upgrade {type}", { type: UNIT.City }), "build");
+      return true;
+    }
+
+    rememberLiveCityUpgradeCost(city, buildable) {
+      if (buildable.cost === undefined || buildable.cost === null) return;
+      this.rememberLegendaryCityUpgradeCost(
+        this.cityUpgradeCostCacheKey(city),
+        BigInt(buildable.cost),
+      );
+    }
+
     legendaryConstructionCandidates({
       config,
       citiesDisabled,
@@ -8436,16 +8988,17 @@
         strategicState,
         typeOrder,
       };
+      // Troops at the cap lose every further troop-second of production. A
+      // City build or upgrade is the only ranked action that raises maxTroops,
+      // so it carries the `capacity` priority while the pressure holds.
+      const capPressure = this.troopCapPressure();
 
-      if (!citiesDisabled) {
-        this.addLegendaryConstructionCandidate(candidateContext, UNIT.City, {
-          mandatory: cityCount < 2 ? 1 : 0,
-          safety: 0,
-          strategic: strategicState.railNeed > 1.25 ? 1 : 0,
-          deficit: Math.max(0, Math.ceil(strategicState.railNeed - 1)),
-          efficiency: 1,
-        });
-      }
+      this.addLegendaryCityCandidates(candidateContext, {
+        citiesDisabled,
+        cityCount,
+        capPressure,
+        strategicState,
+      });
 
       const ratios = getStructureRatios(Difficulty.Legendary);
       const ratioContext = {
@@ -8465,15 +9018,7 @@
         mandatory:
           (strategicState.missileThreat.critical ? 1 : 0) +
           (strategicState.samLevelParityGap > 0 ? 1 : 0),
-        safety: Math.max(
-          strategicState.samLevelParityGap,
-          strategicState.missileThreat.critical
-            ? Math.max(
-                strategicState.defenseGap,
-                strategicState.missileThreat.score,
-              )
-            : strategicState.missileThreat.score,
-        ),
+        safety: this.legendarySamCandidateSafety(strategicState),
         strategic: strategicState.missileThreat.score > 0 ? 2 : 0,
       });
       this.addLegendaryRatioCandidate(ratioContext, UNIT.MissileSilo, {
@@ -8481,6 +9026,43 @@
       });
 
       return candidates;
+    }
+
+    addLegendaryCityCandidates(
+      candidateContext,
+      { citiesDisabled, cityCount, capPressure, strategicState },
+    ) {
+      if (citiesDisabled) return;
+      this.addLegendaryConstructionCandidate(candidateContext, UNIT.City, {
+        mandatory: cityCount < 2 ? 1 : 0,
+        safety: 0,
+        capacity: capPressure ? 1 : 0,
+        strategic: strategicState.railNeed > 1.25 ? 1 : 0,
+        deficit: Math.max(0, Math.ceil(strategicState.railNeed - 1)),
+        efficiency: 1,
+      });
+      const cityUpgrade = capPressure
+        ? this.legendaryCityUpgradeCandidateInfo()
+        : null;
+      if (cityUpgrade === null) return;
+      this.addLegendaryConstructionCandidate(candidateContext, UNIT.City, {
+        action: "upgrade",
+        upgradeStructureId: cityUpgrade.structureId,
+        upgradeCost: cityUpgrade.cost,
+        mandatory: 0,
+        safety: 0,
+        capacity: 1,
+        strategic: 0,
+        deficit: 1,
+        efficiency: 1,
+      });
+    }
+
+    legendarySamCandidateSafety(strategicState) {
+      const missileSafety = strategicState.missileThreat.critical
+        ? Math.max(strategicState.defenseGap, strategicState.missileThreat.score)
+        : strategicState.missileThreat.score;
+      return Math.max(strategicState.samLevelParityGap, missileSafety);
     }
 
     addLegendaryConstructionCandidate(context, type, values = {}) {
@@ -8492,7 +9074,12 @@
       const missileType = type === UNIT.SAMLauncher || type === UNIT.MissileSilo;
       if (!context.nukesEnabled && missileType) return;
       if (type === UNIT.SAMLauncher && !context.missileSilosEnabled) return;
-      const cost = this.getPerceivedCost(type);
+      // An upgrade candidate carries the authoritative probe cost: upgrading an
+      // existing City must never be pre-rejected (or pre-priced) with the
+      // count-scaled formula for constructing another new structure.
+      const cost = values.upgradeCost !== undefined
+        ? legendaryBigInt(values.upgradeCost)
+        : this.getPerceivedCost(type);
       const objective = legendaryConstructionObjectiveVector(type, {
         ...context.strategicState,
         costFactor: this.legendaryCostFactor(cost),
@@ -8746,13 +9333,19 @@
           return 750_000n;
         case UNIT.HydrogenBomb:
           return 5_000_000n;
-        case UNIT.MIRV:
-          // DIVERGENCE: src = 25M + numMirvsLaunched()*15M; numMirvsLaunched is
-          // core-only (game.stats() is not on the client GameView). We use the
-          // base 25M (no MIRVs launched assumed) — same approach as
-          // mirvBehavior.js, but synchronous here (getSaveUpTarget is sync), so
-          // we can't probe buildables for the live value.
-          return 25_000_000n;
+        case UNIT.MIRV: {
+          // DIVERGENCE: src = 25M + numMirvsLaunched()*15M; numMirvsLaunched
+          // is core-only (game.stats() is not on the client GameView) and the
+          // counter is GLOBAL — every player's launch raises the price. We
+          // approximate it by counting MIRV units we have OBSERVED in flight
+          // (a launch is only invisible if the whole flight happened between
+          // our worker snapshots), so the save-up target tracks the escalation
+          // instead of assuming a permanently fresh 25M market. The
+          // mirvBehavior probe still pays the authoritative live price at
+          // actuation.
+          const observed = this.observedGlobalMirvLaunchCount();
+          return 25_000_000n + BigInt(observed) * 15_000_000n;
+        }
         case UNIT.Warship: {
           const n = this.ownedLevels(UNIT.Warship);
           return BigInt(Math.min(1_000_000, (n + 1) * 250_000));
@@ -10462,6 +11055,18 @@
 
     compareStructurePlacementScores(left, right) {
       if (left.compactness !== null && right.compactness !== null) {
+        // Blast separation outranks umbrella clustering for the missile
+        // structures: shared SAM coverage is worthless when one hydrogen
+        // connects on both tiles at once. Other types never set the field.
+        const blastDifference =
+          (left.compactness.missileBlastColocationPenalty ?? 0) -
+          (right.compactness.missileBlastColocationPenalty ?? 0);
+        if (blastDifference !== 0) return blastDifference;
+        const samCoverageDifference = this.compareSamCoverageExpansion(
+          left.compactness,
+          right.compactness,
+        );
+        if (samCoverageDifference !== 0) return samCoverageDifference;
         const samProtectionDifference = this.compareSamProtectionScores(
           left.compactness,
           right.compactness,
@@ -10473,6 +11078,22 @@
         if (sharedCoverageDifference !== 0) return sharedCoverageDifference;
       }
       return right.v - left.v;
+    }
+
+    // SAM placement compares the incremental umbrella before the shared
+    // economic-protection axes; other types never set these fields.
+    compareSamCoverageExpansion(left, right) {
+      if (
+        left.samIncrementalCoverage === undefined &&
+        right.samIncrementalCoverage === undefined
+      ) {
+        return 0;
+      }
+      const incrementalDifference =
+        (right.samIncrementalCoverage ?? 0) -
+        (left.samIncrementalCoverage ?? 0);
+      if (incrementalDifference !== 0) return incrementalDifference;
+      return (left.samDuplicateCoverage ?? 0) - (right.samDuplicateCoverage ?? 0);
     }
 
     compareSamProtectionScores(left, right) {
@@ -10528,7 +11149,10 @@
     }
 
     structurePlacementCompactnessRanker(type) {
-      if (!state.settings.winFixes || type === UNIT.SAMLauncher) return null;
+      if (!state.settings.winFixes) return null;
+      // A launcher's own placement is ranked by the umbrella it would ADD, not
+      // by the economic clustering axes below.
+      if (type === UNIT.SAMLauncher) return this.samPlacementCoverageRanker();
       let range;
       {
         range = Number(this.game.config().defaultSamRange());
@@ -10552,6 +11176,7 @@
         range: Number(config.samRange(sam.level())),
       }));
       const maxRange = Number(this.game.config().maxSamRange?.());
+      const blastColocation = this.missileBlastColocationProfile(type);
       return (tile) => {
         let existingSamCoverage = 0;
         let upgradeSamCoverage = 0;
@@ -10594,7 +11219,141 @@
                 : 0),
             0,
           ),
+          missileBlastColocationPenalty:
+            blastColocation === null ? 0 : blastColocation(tile),
         };
+      };
+    }
+
+    // SAM candidates are ranked by how much protectable infrastructure a
+    // launcher on this tile would ADD. Counting only the structures outside
+    // every existing friendly SAM's current range stops a second launcher from
+    // stacking on the clump the first one already defends and sends it to the
+    // exposed flank instead. The duplicate count breaks ties toward the least
+    // redundant coverage circle. The generic SAM-protection axes stay neutral
+    // (a launcher does not benefit from standing inside another SAM's range).
+    samPlacementCoverageRanker() {
+      const config = this.game.config?.();
+      const fallbackRange = Number(config?.defaultSamRange?.() ?? 0);
+      if (!Number.isFinite(fallbackRange) || fallbackRange <= 0) return null;
+      if (typeof this.player?.units !== "function") return null;
+      const configSamRange = Number(config.samRange?.(1));
+      const range =
+        Number.isFinite(configSamRange) && configSamRange > 0
+          ? configSamRange
+          : fallbackRange;
+      const rangeSquared = range * range;
+      const protectableTiles = this.samPlayerProtectableStructureTiles(
+        this.player,
+      );
+      const existingSams = this.legendaryFriendlySamUnits().map((sam) => {
+        const samRange = Number(config.samRange(sam.level()));
+        const normalized =
+          Number.isFinite(samRange) && samRange > 0 ? samRange : fallbackRange;
+        return { tile: sam.tile(), rangeSquared: normalized * normalized };
+      });
+      const blastColocation = this.missileBlastColocationProfile(
+        UNIT.SAMLauncher,
+      );
+      return (tile) => {
+        let samIncrementalCoverage = 0;
+        let samDuplicateCoverage = 0;
+        for (const structureTile of protectableTiles) {
+          if (
+            this.game.euclideanDistSquared(tile, structureTile) > rangeSquared
+          ) {
+            continue;
+          }
+          let alreadyCovered = false;
+          for (const sam of existingSams) {
+            if (
+              this.game.euclideanDistSquared(structureTile, sam.tile) <=
+              sam.rangeSquared
+            ) {
+              alreadyCovered = true;
+              break;
+            }
+          }
+          if (alreadyCovered) samDuplicateCoverage++;
+          else samIncrementalCoverage++;
+        }
+        return {
+          existingSamCoverage: 0,
+          upgradeSamCoverage: 0,
+          currentSamDistanceSquared: Number.POSITIVE_INFINITY,
+          samDistanceSquared: Number.POSITIVE_INFINITY,
+          sharedSamCoverage: 0,
+          samIncrementalCoverage,
+          samDuplicateCoverage,
+          missileBlastColocationPenalty:
+            blastColocation === null ? 0 : blastColocation(tile),
+        };
+      };
+    }
+
+    // A hydrogen blast's inner radius (80 tiles by default) erases every
+    // missile structure clustered inside it. Once a hostile has actually
+    // launched, prefer sites where one leaking warhead cannot take out two of
+    // our expensive silo/SAM tiles. The penalty fades linearly to zero at the
+    // blast edge, so "inside the SAM umbrella but outside one blast footprint"
+    // still beats both a clustered tile and an undefended far corner. Returns
+    // null when the threat is inactive or no profile can be built, leaving
+    // placement identical to the pre-threat ordering.
+    // A hydrogen blast destroys every STRUCTURE inside its outer radius (100
+    // tiles by default — engine NukeExecution deletes units strictly within
+    // `outer`, the inner radius only bounds terrain fallout), so two missile
+    // structures closer than that can be erased by one leaking warhead. Once a
+    // hostile has actually launched, prefer sites where a single hit cannot
+    // take out both of our expensive silo/SAM tiles. The penalty fades
+    // linearly to zero at the blast edge, so "inside the SAM umbrella but
+    // outside one blast footprint" (a level-5 SAM reaches ~102 tiles, just
+    // past the hydrogen outer radius) still beats both a clustered tile and an
+    // undefended far corner. Returns null when the threat is inactive or no
+    // profile can be built, leaving placement identical to the pre-threat
+    // ordering.
+    missileBlastColocationProfile(type) {
+      if (type !== UNIT.MissileSilo && type !== UNIT.SAMLauncher) return null;
+      if (!this.hasObservedHostileMissileLaunch()) return null;
+      const blastRadius = this.hydrogenBlastRadiusOrNull();
+      if (blastRadius === null) return null;
+      const existingTiles = this.ownMissileStructureTiles();
+      if (existingTiles.length === 0) return null;
+      return this.nearestMissileBlastPenaltyScorer(existingTiles, blastRadius);
+    }
+
+    hydrogenBlastRadiusOrNull() {
+      const config = this.game.config?.();
+      if (!config || typeof config.nukeMagnitudes !== "function") return null;
+      const magnitude = config.nukeMagnitudes(UNIT.HydrogenBomb);
+      const outerRadius = Number(magnitude?.outer);
+      return Number.isFinite(outerRadius) && outerRadius > 0 ? outerRadius : null;
+    }
+
+    ownMissileStructureTiles() {
+      const tiles = [];
+      for (const unitType of [UNIT.MissileSilo, UNIT.SAMLauncher]) {
+        for (const structure of this.player.units(unitType) || []) {
+          if (structure?.isUnderConstruction?.()) continue;
+          const tile = structure?.tile?.();
+          if (tile !== null && tile !== undefined) tiles.push(tile);
+        }
+      }
+      return tiles;
+    }
+
+    nearestMissileBlastPenaltyScorer(existingTiles, innerRadius) {
+      const innerRadiusSquared = innerRadius * innerRadius;
+      return (tile) => {
+        let nearestSquared = Number.POSITIVE_INFINITY;
+        for (const existingTile of existingTiles) {
+          const distanceSquared = this.game.euclideanDistSquared(
+            tile,
+            existingTile,
+          );
+          if (distanceSquared < nearestSquared) nearestSquared = distanceSquared;
+        }
+        if (nearestSquared > innerRadiusSquared) return 0;
+        return 1 - Math.sqrt(nearestSquared) / innerRadius;
       };
     }
 
@@ -11495,6 +12254,10 @@
         type === UNIT.SAMLauncher
           ? this.legendarySamCoveragePlacementContext()
           : null;
+      // The hostile-center snapshot is reused across every candidate tile so
+      // the offensive-reach term does not rescan the player roster per tile.
+      const siloReachContext =
+        type === UNIT.MissileSilo ? this.legendarySiloReachContext() : null;
       const placementScoreCache = new Map();
 
       return (tile) => {
@@ -11519,6 +12282,19 @@
           value += this.legendaryRailConnectivityPlacementScore(tile);
         }
 
+        // City placement parity with Port: the construction priority vector
+        // already values cities by cityRailConnection and connectedCities (see
+        // legendaryConstructionObjectiveVector), but the engine's cityValue only
+        // scores the single commercial route via commercialRailPlacementScore.
+        // Rewarding tiles that reach multiple distinct rail clusters — the same
+        // multi-cluster connectivity bonus Port enjoys — keeps tile selection
+        // aligned with the priority that picked the type. A City that joins an
+        // existing rail network is worth more than an isolated one even when
+        // both score equally on elevation and border spacing.
+        if (type === UNIT.City) {
+          value += this.legendaryRailConnectivityPlacementScore(tile);
+        }
+
         if (
           type === UNIT.City ||
           type === UNIT.Factory ||
@@ -11532,6 +12308,21 @@
           value += this.legendaryTeamCenterPlacementScore(
             tile,
             teamCenterContext,
+          );
+        }
+
+        // A Silo's defensive umbrella (samCoverageBonus) already dominates
+        // placement. Among tiles that are equally defended, prefer one that
+        // reaches a hostile center with a shorter flight: less warning time,
+        // less SAM reload window, and a wider choice of impact points. The
+        // bonus is deliberately small relative to the SAM-coverage base so it
+        // only breaks ties between well-defended candidates, never pulling a
+        // silo out of its own SAM umbrella.
+        if (type === UNIT.MissileSilo && siloReachContext !== null) {
+          value += this.legendarySiloOffensiveReachScore(
+            tile,
+            siloReachContext,
+            spacing,
           );
         }
 
@@ -11584,6 +12375,72 @@
         );
         return score * this.spacingConstants().structureSpacing;
       }
+    }
+
+    // Snapshot of hostile player territory centres, reused across every silo
+    // candidate tile in one placement decision. A silo that can reach a hostile
+    // center with a shorter flight gives the opponent less reaction time and a
+    // narrower SAM-reload window, so distance to the nearest hostile center is
+    // a clean offensive signal. The snapshot is cached per tick so the per-tile
+    // scorer never rescans the roster.
+    legendarySiloReachContext() {
+      const tick = this.game.ticks();
+      if (
+        this._legendarySiloReachTick === tick &&
+        this._legendarySiloReachContext !== undefined
+      ) {
+        return this._legendarySiloReachContext;
+      }
+      this._legendarySiloReachTick = tick;
+      // liveNuclearHostilePlayers is a pure roster read against the cached
+      // hostile snapshot; guard defensively against a missing roster method
+      // (an early-tick view) by falling back to an empty list rather than
+      // throwing inside the placement path. Production code must not swallow
+      // exceptions (the headless-simulation contract requires failures to
+      // propagate), so guard on the method presence instead.
+      const hostile =
+        typeof this.liveNuclearHostilePlayers === "function"
+          ? this.liveNuclearHostilePlayers() ?? []
+          : [];
+      const centers = [];
+      for (const enemy of hostile) {
+        const location = enemy?.nameLocation?.();
+        if (!location) continue;
+        const x = Number(location.x);
+        const y = Number(location.y);
+        if (Number.isFinite(x) && Number.isFinite(y)) {
+          centers.push({ x, y });
+        }
+      }
+      // The reference distance normalizes the bonus so a candidate on the
+      // frontier (close to a hostile center) earns most of the bonus while one
+      // deep in the rear (far from every hostile) earns little. Use a generous
+      // reference so the term stays a tie-breaker, not a dominant axis.
+      const context = { centers, referenceDistance: 120 };
+      this._legendarySiloReachContext = context;
+      return context;
+    }
+
+    legendarySiloOffensiveReachScore(tile, context, spacing) {
+      if (!context || context.centers.length === 0) return 0;
+      const tx = this.game.x(tile);
+      const ty = this.game.y(tile);
+      let nearestSquared = Infinity;
+      for (const { x, y } of context.centers) {
+        const dx = tx - x;
+        const dy = ty - y;
+        const distSquared = dx * dx + dy * dy;
+        if (distSquared < nearestSquared) nearestSquared = distSquared;
+      }
+      if (!Number.isFinite(nearestSquared)) return 0;
+      const distance = Math.sqrt(nearestSquared);
+      const reference = Math.max(1, Number(context.referenceDistance) || 1);
+      // Linear falloff: at distance 0 the candidate earns the full spacing
+      // bonus; at the reference distance (and beyond) it earns nothing. The
+      // bonus is capped at one spacing unit so it cannot pull a silo out of
+      // its defensive SAM umbrella (the samCoverageBonus base is ≥50000).
+      const ratio = Math.min(1, Math.max(0, 1 - distance / reference));
+      return ratio * spacing;
     }
 
     legendarySamCoveragePlacementContext() {
@@ -11661,6 +12518,15 @@
         criticalValueCache,
         spacing,
       } = coverage;
+      // Track the positions this candidate covers so we can reward genuine
+      // geographic spread. Two critical structures far apart represent two
+      // independent targets an opponent could choose between; a tight clump is
+      // one blast zone that a single SAM already covers completely. Without a
+      // spread signal, every candidate that happens to sit near one dense
+      // cluster ties, and the tie-break ignores that a different candidate
+      // might shield a second, otherwise-uncovered cluster.
+      const coveredTiles = [];
+      let coveredCritical = 0;
       for (const { structure, tile: structureTile } of uncoveredStructures) {
         if (
           this.game.euclideanDistSquared(tile, structureTile) > rangeSquared
@@ -11673,6 +12539,20 @@
           criticalValueCache.set(structure, criticalValue);
         }
         score += spacing * criticalValue;
+        coveredTiles.push(structureTile);
+        if (criticalValue > 0) coveredCritical++;
+      }
+      // Diversity bonus: when a candidate covers two or more critical
+      // structures that are spatially separated, it is strictly more valuable
+      // than one whose covered structures cluster within a single blast
+      // radius. Reward the spread so a candidate shielding two distinct
+      // production sites outranks one double-counting the same cluster.
+      if (coveredCritical >= 2) {
+        score += this.legendarySamCoverageSpreadBonus(
+          tile,
+          coveredTiles,
+          spacing,
+        );
       }
       return (
         score +
@@ -11683,6 +12563,37 @@
           candidateSamRange,
         )
       );
+    }
+
+    // Diversity bonus for a SAM candidate that shields several critical
+    // structures at once. The bonus grows with the pairwise spread of the
+    // covered tiles relative to the candidate SAM's range, so a candidate
+    // whose covered structures sit at opposite edges of its envelope earns
+    // more than one whose covered structures huddle near the centre (the
+    // latter is a single cluster any repositioned SAM could still reach).
+    // The bonus is bounded by one spacing unit so it can break ties between
+    // otherwise-equivalent candidates without overriding raw coverage count.
+    legendarySamCoverageSpreadBonus(tile, coveredTiles, spacing) {
+      if (!Array.isArray(coveredTiles) || coveredTiles.length < 2) return 0;
+      const game = this.game;
+      let maxPairwiseSquared = 0;
+      for (let i = 0; i < coveredTiles.length; i++) {
+        for (let j = i + 1; j < coveredTiles.length; j++) {
+          const distSquared = game.euclideanDistSquared(
+            coveredTiles[i],
+            coveredTiles[j],
+          );
+          if (distSquared > maxPairwiseSquared) maxPairwiseSquared = distSquared;
+        }
+      }
+      if (maxPairwiseSquared <= 0) return 0;
+      const maxPairwise = Math.sqrt(maxPairwiseSquared);
+      const range = Math.max(1, Number(game.config?.()?.defaultSamRange?.() ?? 0));
+      // Normalize spread against the SAM range: a pair separated by the full
+      // range diameter earns the whole bonus; a pair separated by less than a
+      // quarter of the range is treated as a clump and earns nothing.
+      const spreadRatio = Math.min(1, Math.max(0, (maxPairwise / range - 0.25) / 0.75));
+      return spreadRatio * spacing;
     }
 
     // missileSiloValue — NationStructureBehavior.ts:892.

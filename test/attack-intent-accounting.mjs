@@ -62,6 +62,7 @@ const sandbox = {
   EARLY_EXPAND_OPENING_LIMIT: 0.4,
   EARLY_EXPAND_FOLLOWUP_COMMIT: 0.1,
   EARLY_EXPAND_MINIMUM_MARGIN: 1.25,
+  EARLY_EXPAND_OPENING_REBASE_RATIO: 1.25,
   WORKER_TIMEOUT_MS: 100,
   performance: { now: () => 10000 },
   discoverCtors: () => ({
@@ -1422,6 +1423,32 @@ tick = 320;
 assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 10000);
 tick = 520;
 assert.equal(scheduledBehavior.getTerraNulliusOpeningCommitLimit(), 10000);
+// A snowballing opening re-bases the snapshot: when the field army grows past
+// the EARLY_EXPAND_OPENING_REBASE_RATIO threshold, the cumulative ceiling
+// tracks the new larger army instead of throttling to the spawn-time value.
+// Below the threshold the cap is unchanged.
+ownTroops = 30000;
+assert.equal(
+  scheduledBehavior.getTerraNulliusOpeningCommitLimit(),
+  10000,
+  "army growth below the rebase ratio keeps the original opening cap",
+);
+ownTroops = 32000;
+assert.equal(
+  scheduledBehavior.getTerraNulliusOpeningCommitLimit(),
+  32000 * sandbox.EARLY_EXPAND_OPENING_LIMIT,
+  "army growth past the rebase ratio lifts the opening cap with the snowball",
+);
+// Drop back near the rebased snapshot: no churn from noise-scale changes.
+ownTroops = 32100;
+assert.equal(
+  scheduledBehavior.getTerraNulliusOpeningCommitLimit(),
+  32000 * sandbox.EARLY_EXPAND_OPENING_LIMIT,
+  "small army changes after a rebase do not churn the cap",
+);
+// Restore the original army for the subsequent completed-wave assertions.
+ownTroops = 25000;
+tick = 20;
 scheduledBehavior.terraNulliusOpeningCommittedTroops = 8777;
 scheduledBehavior.getPendingTerraNulliusAttackTroops = () => 0;
 scheduledBehavior.getLiveTerraNulliusAttackTroops = () => 0;
@@ -1446,9 +1473,14 @@ assert.equal(
   "the opening liveness window can immediately emit another 10% free-land capture",
 );
 scheduledBehavior.getLiveTerraNulliusAttackTroops = () => 1200;
+// The opening cap rebases when the field army snowballs (a 25% growth
+// triggers a rebase to the new army size), so a much larger army lifts the
+// cumulative ceiling instead of throttling expansion to the spawn-time
+// snapshot. The cap stays finite and authoritative — it just grows with the
+// army. 74364 troops rebased the snapshot, so the cap is 74364 * 0.4.
 assert.equal(
   scheduledBehavior.getTerraNulliusOpeningCommitLimit(),
-  10000,
+  74364 * sandbox.EARLY_EXPAND_OPENING_LIMIT,
   "a visible opening attack keeps the aggregate opening cap authoritative",
 );
 tick = 521;

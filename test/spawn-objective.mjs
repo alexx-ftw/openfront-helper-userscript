@@ -346,4 +346,41 @@ test("inside the team polyhedron, terra nullius and reachable tribes lead the ob
   assert.equal(ranked[0].id, "open-interior");
 });
 
+test("free land substitutes for tribes so empty expansible regions outrank crowded tribe-rich ones", () => {
+  const ranked = api.rankModelCandidates([
+    {
+      id: "tribe-rich-crowded",
+      startScore: 0.8,
+      expansionScore: 0.8,
+      safetyScore: 0.8,
+      teamScore: 0.8,
+      freeLandScore: 0.2,
+      resourceScore: 0.9,
+      tribeScore: 1,
+      tribeReachScore: 0.9,
+      tribeReachCount: 3,
+    },
+    {
+      id: "empty-expansible",
+      startScore: 0.8,
+      expansionScore: 0.8,
+      safetyScore: 0.9,
+      teamScore: 0.8,
+      freeLandScore: 1,
+      resourceScore: 0.05,
+      tribeScore: 0,
+      tribeReachScore: 0,
+      tribeReachCount: 0,
+    },
+  ]);
+
+  assert.equal(ranked[0].id, "empty-expansible");
+  assert.equal(
+    ranked[0].objective.resourceScore,
+    0.6,
+    "an empty region keeps a 0.6 resource floor from its free land alone",
+  );
+  assert.equal(ranked[0].objective.robustFloor, 0.6);
+});
+
 process.stdout.write("spawn-objective tests passed\n");

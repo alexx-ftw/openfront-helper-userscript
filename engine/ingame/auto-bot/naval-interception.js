@@ -13,6 +13,17 @@
   const NAVAL_INTERCEPTION_EXACT_INVASION_LIMIT = 6;
   const NAVAL_INTERCEPTION_EXACT_SHIP_LIMIT = 3;
   const NAVAL_INTERCEPTION_DEFAULT_SEARCH_BUDGET = 4096;
+  // When two invasions land within this many ticks of each other, the
+  // higher-threat one is preferred even if it lands slightly later. The band
+  // is wide enough to group a near-simultaneous two-pronged landing but narrow
+  // enough that a genuinely earlier invasion with its own intercept window is
+  // still served first. One second at the default 100ms tick covers the
+  // chain-landing pattern opponents use to split a defense.
+  const NAVAL_INTERCEPTION_THREAT_BUCKET_TICKS = 10;
+  // Invasions without an explicit threat are normalized to this value so the
+  // threat term is a pure tie-breaker and never overrides the landing-time
+  // ordering for equally-threatening invasions.
+  const NAVAL_INTERCEPTION_DEFAULT_THREAT = 1;
 
   function positiveNavalNumber(value, fallback) {
     const number = Number(value);
@@ -34,6 +45,19 @@
             invasion.path.length > 1,
         )
       : [];
+  }
+
+  // An invasion's threat is the transported troop count when the caller
+  // supplies it (the live transport exposes `.troops()`), otherwise the
+  // neutral default so the term stays a pure tie-breaker. Threat is read from
+  // the invasion object the caller built, so this planner never reaches into
+  // the game wrapper and remains deterministic in tests.
+  function navalInvasionThreat(invasion) {
+    const raw = invasion?.threat;
+    const number = Number(raw);
+    return Number.isFinite(number) && number > 0
+      ? number
+      : NAVAL_INTERCEPTION_DEFAULT_THREAT;
   }
 
   function createNavalInterceptionContext(options) {
@@ -151,6 +175,7 @@
         interceptTile: waterRoute[index],
         landingTick: timing.arrival,
         marginTicks: timing.arrival - tick,
+        threat: navalInvasionThreat(invasion),
       };
     }
     return null;
@@ -255,6 +280,25 @@
   }
 
   function compareNavalCandidates(a, b) {
+    // Two invasions whose landings fall in the same short window are a
+    // coordinated split-landing: the opponent expects the defense to chase the
+    // earlier one and let the heavier follow-up through. Within that window,
+    // prefer the higher-threat invasion so a lone interceptor commits to the
+    // heavier landing when it cannot cover both. Outside the window, the
+    // earlier landing keeps strict priority — its intercept window may be the
+    // only one and must not be starved by a later, heavier invasion.
+    const landingDelta = Math.abs(a.landingTick - b.landingTick);
+    if (landingDelta <= NAVAL_INTERCEPTION_THREAT_BUCKET_TICKS) {
+      const threatDiff = navalInvasionThreat(b) - navalInvasionThreat(a);
+      if (threatDiff !== 0) return threatDiff < 0 ? -1 : 1;
+      return (
+        a.landingTick - b.landingTick ||
+        b.marginTicks - a.marginTicks ||
+        a.interceptTick - b.interceptTick ||
+        String(a.invasionId).localeCompare(String(b.invasionId)) ||
+        String(a.shipId).localeCompare(String(b.shipId))
+      );
+    }
     return (
       a.landingTick - b.landingTick ||
       b.marginTicks - a.marginTicks ||

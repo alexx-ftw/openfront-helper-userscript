@@ -177,6 +177,7 @@ assert.equal(typeof sandbox.chooseTribeClusterMarkerCenter, "function");
 assert.equal(typeof sandbox.rankEarlyGameTribeSamplingCandidates, "function");
 assert.equal(typeof sandbox.isEarlyGameTribeActionable, "function");
 assert.equal(typeof sandbox.calculateEarlyGameContinuationValue, "function");
+assert.equal(typeof sandbox.calculateEarlyGameTribeValue, "function");
 assert.equal(typeof sandbox.calculateEarlyGameFoodRaceValue, "function");
 assert.equal(typeof sandbox.calculateEarlyGameRaceTroops, "function");
 assert.equal(typeof sandbox.isMuchWeakerAllianceTarget, "function");
@@ -302,6 +303,7 @@ const openingSandbox = {
   UNIT: { Port: "Port", Warship: "Warship" },
   EARLY_EXPAND_COMMIT: 0.1,
   EARLY_EXPAND_OPENING_LIMIT: 0.4,
+  EARLY_EXPAND_OPENING_REBASE_RATIO: 1.25,
   currentDifficulty: () => "Impossible",
   simpleHash: () => 1,
   PseudoRandom: class {
@@ -542,6 +544,67 @@ assert.equal(
   50 * 100 + 49,
   "when random samples miss a corridor, the bounded team-region fallback must choose the first equally scored legal tile",
 );
+
+// Spawn scoring now values coastal access and terrain defensibility. Verify
+// each new helper is monotone in its signal, then confirm scoreSpawnTile at a
+// fixed tile strictly increases when the coastal signal rises (holding land
+// density and defensibility fixed by carving an ocean far enough from the tile
+// that its 12-radius land fraction is unchanged).
+{
+  const spawnScoreBot = Object.create(openingSandbox.NationBot.prototype);
+  const W = 100;
+  const H = 100;
+  // All land by default.
+  const waterSet = new Set();
+  const magnitudeByTile = new Array(W * H).fill(10);
+  const coastalGame = {
+    width: () => W,
+    height: () => H,
+    isValidCoord: (x, y) => x >= 0 && x < W && y >= 0 && y < H,
+    ref: (x, y) => y * W + x,
+    x: (tile) => tile % W,
+    y: (tile) => Math.floor(tile / W),
+    isLand: (tile) => !waterSet.has(tile),
+    hasOwner: () => false,
+    isBorder: () => false,
+    magnitude: (tile) => magnitudeByTile[tile] ?? 10,
+  };
+  spawnScoreBot.mg = coastalGame;
+
+  // Baseline: all-land all-plains. Coastal access and defensibility are zero.
+  const baselineCoastal = spawnScoreBot.getSpawnCoastalAccess(50, 50);
+  const baselineDefense = spawnScoreBot.getSpawnDefensibility(50, 50);
+  assert.equal(baselineCoastal, 0, "an all-land neighbourhood has zero coastal access");
+  assert.equal(baselineDefense, 0, "plains-magnitude surroundings produce zero defensibility");
+
+  // Carve an ocean pocket at the edge of the 12-radius neighbourhood of (50,50)
+  // — far enough that it does not change the tile's land density much, close
+  // enough to register as coastal access. Place water at x in [37,39], y=50.
+  for (let x = 37; x <= 39; x++) waterSet.add(50 * W + x);
+  const raisedCoastal = spawnScoreBot.getSpawnCoastalAccess(50, 50);
+  assert.ok(
+    raisedCoastal > baselineCoastal,
+    `a candidate near an ocean pocket has higher coastal access (raised ${raisedCoastal} > baseline ${baselineCoastal})`,
+  );
+
+  // Raise the mountain ring around (50,50): defensibility climbs above zero.
+  for (let dy = -14; dy <= 14; dy++) {
+    for (let dx = -14; dx <= 14; dx++) {
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 10 || dist > 14) continue;
+      const nx = 50 + dx;
+      const ny = 50 + dy;
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      if (waterSet.has(ny * W + nx)) continue;
+      magnitudeByTile[ny * W + nx] = 30;
+    }
+  }
+  const raisedDefense = spawnScoreBot.getSpawnDefensibility(50, 50);
+  assert.ok(
+    raisedDefense > baselineDefense,
+    `a mountainous surrounding ring raises defensibility (raised ${raisedDefense} > baseline ${baselineDefense})`,
+  );
+}
 
 const largeCorridorWidth = 5000;
 const largeCorridorRegion = {
@@ -1529,6 +1592,60 @@ assert.equal(
   clusterOverLocalTemptationRank[0].id,
   "costly-gateway-to-large-cluster",
   "a large tribe cluster outranks an attractive local dead end",
+);
+
+// Tribe value: land (and the cities/structures riding it) that survives the
+// conquest keeps producing, so an equally cheap larger prize must win both
+// inside the utility average and as its explicit sort-key tie-break.
+const tribeValueRank = sandbox.rankEarlyGameTribeCandidates([
+  {
+    id: "three-tile-snack",
+    landBorder: true,
+    captureEfficiency: 0.5,
+    targetTiles: 3,
+  },
+  {
+    id: "city-territory",
+    landBorder: true,
+    captureEfficiency: 0.5,
+    targetTiles: 30,
+  },
+]);
+assert.equal(
+  tribeValueRank[0].id,
+  "city-territory",
+  "a tribe holding real territory outranks an equally cheap three-tile snack",
+);
+const tribeValueTieRank = sandbox.rankEarlyGameTribeCandidates([
+  {
+    id: "cheap-small",
+    landBorder: true,
+    captureEfficiency: 0.75,
+    targetTiles: 15,
+  },
+  {
+    id: "pricier-prize",
+    landBorder: true,
+    captureEfficiency: 0.25,
+    targetTiles: 30,
+  },
+]);
+assert.equal(
+  tribeValueTieRank[0].id,
+  "pricier-prize",
+  "an explicit utility tie resolves toward the tribe holding more territory",
+);
+assert.equal(
+  sandbox.calculateEarlyGameTribeValue({ targetTiles: 3 }),
+  0.1,
+  "tribe value normalizes held tiles against its saturation point",
+);
+assert.equal(sandbox.calculateEarlyGameTribeValue({}), 0);
+assert.equal(sandbox.calculateEarlyGameTribeValue({ targetTiles: 300 }), 1);
+assert.equal(
+  sandbox.calculateEarlyGameTribeUtility({ id: "unactionable", targetTiles: 30 }),
+  -Infinity,
+  "the extra utility denominator share never rescues a non-actionable candidate",
 );
 
 assert.deepEqual(
@@ -3406,6 +3523,108 @@ assert.equal(
   10000,
   "the opening TerraNullius payload keeps the 10% liveness minimum while 60% remains only its ceiling",
 );
+
+// Frontier-adaptive Terra Nullius pacing: the per-intent commit scales with
+// the share of the attack frontier that is clean free land. An unavailable
+// measurement must reproduce the flat-fraction payload exactly, an abundant
+// frontier may lift it to the bounded 1.25x scale, and a scarce or contested
+// frontier holds troops back without ever undercutting the minimum margin.
+const adaptiveFrontierBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+let adaptiveFrontierLoss = 16;
+adaptiveFrontierBehavior.player = {
+  troops: () => 100000,
+  type: () => targetSandbox.PlayerType.Human,
+  borderTiles: () => new Set([1]),
+};
+adaptiveFrontierBehavior.game = {
+  neighbors: (tile) => (tile === 1 ? [2, 3] : []),
+  isLand: () => true,
+  hasOwner: () => false,
+  magnitude: () => 8,
+  hasFallout: () => false,
+  config: () => ({
+    attackLogic: () => ({ attackerTroopLoss: adaptiveFrontierLoss }),
+  }),
+};
+adaptiveFrontierBehavior.getEarlyGameTerraNulliusReserveTroops = () => 1000;
+adaptiveFrontierBehavior.getEarlyGameSpendableTroops = () => 99000;
+const adaptiveFrontierTarget = { isPlayer: () => false };
+const publishAdaptiveFrontierSignal = (attackableTiles, frontierTiles) => {
+  targetSandbox.state.earlyGame.terraNulliusFrontier = {
+    attackableTiles,
+    frontierTiles,
+    tick: 0,
+  };
+};
+delete targetSandbox.state.earlyGame.terraNulliusFrontier;
+assert.equal(
+  adaptiveFrontierBehavior.getTerraNulliusAttackTroops(adaptiveFrontierTarget),
+  10000,
+  "without a frontier measurement the committed troops stay exactly the flat 10% payload",
+);
+publishAdaptiveFrontierSignal(8, 8);
+assert.equal(
+  adaptiveFrontierBehavior.getTerraNulliusAttackTroops(adaptiveFrontierTarget),
+  12500,
+  "an uncontested free-land frontier lifts the per-intent commit to the bounded 1.25x scale",
+);
+assert.ok(
+  adaptiveFrontierBehavior.getTerraNulliusAttackTroops(adaptiveFrontierTarget) <= 100000 * 0.125,
+  "the scaled-up commit never crosses the 1.25x per-intent ceiling",
+);
+assert.ok(
+  adaptiveFrontierBehavior.getTerraNulliusAttackTroops(adaptiveFrontierTarget) <=
+    100000 * targetSandbox.EARLY_EXPAND_OPENING_LIMIT,
+  "the scaled-up commit never crosses the aggregate opening cap",
+);
+publishAdaptiveFrontierSignal(1, 8);
+assert.equal(
+  adaptiveFrontierBehavior.getTerraNulliusAttackTroops(adaptiveFrontierTarget),
+  7500,
+  "a scarce or contested frontier keeps a heavier share of the army home",
+);
+adaptiveFrontierLoss = 9000;
+assert.equal(
+  adaptiveFrontierBehavior.getTerraNulliusAttackTroops(adaptiveFrontierTarget),
+  9000,
+  "the scaled-down commit still never drops below the minimum first-tile path",
+);
+adaptiveFrontierLoss = 16;
+publishAdaptiveFrontierSignal(8, 8);
+adaptiveFrontierBehavior.game.ticks = () => 600;
+assert.equal(
+  adaptiveFrontierBehavior.getTerraNulliusAttackTroops(adaptiveFrontierTarget),
+  10000,
+  "a frontier measurement older than the freshness window reverts to the flat fraction",
+);
+publishAdaptiveFrontierSignal(8, 8);
+targetSandbox.state.earlyGame.terraNulliusFrontier.tick = 600;
+assert.equal(
+  adaptiveFrontierBehavior.getTerraNulliusAttackTroops(adaptiveFrontierTarget),
+  12500,
+  "a fresh frontier measurement on the current tick restores the adaptive pacing",
+);
+// A live hostile land attack is the contested frontier: even an all-free-land
+// frontier must not lift the commit above the flat baseline while the siege
+// runs; the down-scaling for scarce land still applies on top.
+adaptiveFrontierBehavior.incomingHostileAttacks = () => [
+  { attacker: { smallID: () => 42 }, troops: () => 5000 },
+];
+assert.equal(
+  adaptiveFrontierBehavior.getTerraNulliusAttackTroops(adaptiveFrontierTarget),
+  10000,
+  "an active hostile land attack clamps the accelerator to the flat fraction",
+);
+publishAdaptiveFrontierSignal(1, 8);
+targetSandbox.state.earlyGame.terraNulliusFrontier.tick = 600;
+assert.equal(
+  adaptiveFrontierBehavior.getTerraNulliusAttackTroops(adaptiveFrontierTarget),
+  7500,
+  "under a live attack the scarce-frontier down-scaling still applies",
+);
+delete adaptiveFrontierBehavior.incomingHostileAttacks;
+delete targetSandbox.state.earlyGame.terraNulliusFrontier;
+delete adaptiveFrontierBehavior.game.ticks;
 
 const radioactiveBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
 let radioactiveTiles = 0;

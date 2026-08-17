@@ -35,6 +35,19 @@
   // 30 seconds at 10 ticks/second
   const MIRV_COOLDOWN_TICKS = 300;
 
+  // Aim weighting for the target's structure core. The warhead field spans a
+  // huge radius around the aim point, so a bounding-box centre over empty
+  // terrain wastes most of it; silos and cities are the prizes worth the
+  // 25M+ price tag, ports/factories ride along, and SAMs simply deny the
+  // opponent their interceptor umbrella.
+  const MIRV_AIM_STRUCTURE_WEIGHTS = [
+    [UNIT.MissileSilo, 3],
+    [UNIT.City, 2],
+    [UNIT.Port, 2],
+    [UNIT.Factory, 1],
+    [UNIT.SAMLauncher, 1],
+  ];
+
   class MirvBehavior {
     constructor(random, game, player, emojiBehavior) {
       this.random = random;
@@ -553,6 +566,26 @@
       if (arr.length === 0) return null;
 
       const bounds = this.calculateBorderBounds(arr);
+      // Prefer the target's structure core over the geometric centre: the
+      // warhead field is wide enough that empty terrain at the bbox middle
+      // wastes it, while the weighted structure centroid drops it on the
+      // silos/cities that justify the price. Clamped into the border bounds
+      // and owner-verified like the geometric centre below; any miss falls
+      // through to the original behaviour.
+      const structureCore = this.mirvStructureCoreTile(target, bounds);
+      if (structureCore !== null) {
+        if (
+          this.game.hasOwner(structureCore) &&
+          this.game.ownerID(structureCore) === target.smallID()
+        ) {
+          return structureCore;
+        }
+        return this.findClosestBorderTile(
+          arr,
+          this.game.x(structureCore),
+          this.game.y(structureCore),
+        );
+      }
       const centerX = Math.floor((bounds.minX + bounds.maxX) / 2);
       const centerY = Math.floor((bounds.minY + bounds.maxY) / 2);
       const centerTile = this.game.ref(centerX, centerY);
@@ -566,6 +599,36 @@
       }
 
       return this.findClosestBorderTile(arr, centerX, centerY);
+    }
+
+    // Weighted centroid of the target's high-value structures, clamped into
+    // the territory's border bounds. Returns null when nothing is observable
+    // (stub targets, empty unit snapshots) so the geometric centre is used.
+    mirvStructureCoreTile(target, bounds) {
+      if (typeof target?.units !== "function") return null;
+      let weightedX = 0;
+      let weightedY = 0;
+      let totalWeight = 0;
+      for (const [type, weight] of MIRV_AIM_STRUCTURE_WEIGHTS) {
+        const units = target.units(type);
+        for (const unit of Array.isArray(units) ? units : []) {
+          const tile = unit?.tile?.();
+          if (tile === null || tile === undefined) continue;
+          weightedX += this.game.x(tile) * weight;
+          weightedY += this.game.y(tile) * weight;
+          totalWeight += weight;
+        }
+      }
+      if (totalWeight <= 0) return null;
+      const clampedX = Math.min(
+        bounds.maxX,
+        Math.max(bounds.minX, Math.round(weightedX / totalWeight)),
+      );
+      const clampedY = Math.min(
+        bounds.maxY,
+        Math.max(bounds.minY, Math.round(weightedY / totalWeight)),
+      );
+      return this.game.ref(clampedX, clampedY);
     }
 
     // cost — src reads unitInfo(type).cost(game, player). The MIRV cost fn calls

@@ -463,7 +463,14 @@ assert.deepEqual(
 let combatTick = 100;
 let combatMoves = 0;
 const combatBehavior = Object.create(sandbox.__WarshipBehavior.prototype);
-combatBehavior.game = { ticks: () => combatTick };
+combatBehavior.game = {
+  ticks: () => combatTick,
+  manhattanDist: (a, b) => Math.abs(Number(a) - Number(b)),
+  forEachNeighbor: (tile, visit) => {
+    visit(Number(tile) + 1);
+  },
+  isWater: () => true,
+};
 combatBehavior.moveWarship = () => {
   combatMoves++;
   return true;
@@ -486,13 +493,12 @@ const combatState = {
 };
 const combatContext = {
   smartState: combatState,
-  friendlyPorts: [],
+  friendlyPorts: [{ tile: () => 20, isActive: () => true, isUnderConstruction: () => false }],
   enemyWarships: [],
   myWarships: [combatShip],
   enemyTradeShips: [],
   maxHp: 100,
   retreatPct: 0.5,
-  baseTarget: 20,
   huntTrade: false,
 };
 combatBehavior.handleWarshipCombat(combatShip, combatContext);
@@ -562,7 +568,6 @@ sameTickBehavior.handleWarshipCombat(sameTickShip, {
   ...combatContext,
   smartState: sameTickState,
   myWarships: [sameTickShip],
-  baseTarget: 40,
 });
 assert.equal(
   sameTickOrders,

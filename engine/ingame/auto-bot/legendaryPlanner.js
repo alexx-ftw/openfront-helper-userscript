@@ -4,12 +4,23 @@
 // construction intents with an equal-weight max-min objective over gold and
 // troops. Missile defense is a safety constraint/tie-breaker, not a third
 // production axis; during an un-defended missile salvo it becomes a hard
-// construction gate. The existing structure behavior still owns buildability,
-// cost formulas, upgrades, and rank-then-probe placement.
+// construction gate. Troop-cap pressure (an army at its maxTroops ceiling)
+// contributes a `capacity` priority: the cheapest cap relief — a City build or
+// City upgrade — then outranks non-defense intents so idle treasury is
+// converted into troop-capacity growth instead of cheaper balanced assets.
+// The existing structure behavior still owns buildability, cost formulas,
+// upgrades, and rank-then-probe placement.
 
 "use strict";
 
-const LEGENDARY_PRIORITY_FIELDS = ["mandatory", "safety"];
+// Priority fields are compared before any production axis. `mandatory` and
+// `safety` remain the defense-critical gates: an urgent interceptor or Defense
+// Post always outranks everything else. `capacity` is the troop-cap relief
+// priority: while the army sits at its maxTroops ceiling every further
+// troop-second of production is lost, so an affordable City build/upgrade —
+// the only action that raises the ceiling — outranks non-defense candidates
+// (Port/Factory/Silo) that would otherwise win the production balance.
+const LEGENDARY_PRIORITY_FIELDS = ["mandatory", "safety", "capacity"];
 const LEGENDARY_PRIMARY_FIELDS = ["gold", "troops"];
 const LEGENDARY_OBJECTIVE_FIELDS = [...LEGENDARY_PRIMARY_FIELDS, "defense"];
 const LEGENDARY_TIE_FIELDS = ["strategic", "deficit", "efficiency"];

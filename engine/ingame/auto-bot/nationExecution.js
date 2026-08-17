@@ -495,6 +495,25 @@
       this.prepareEarlyGameMaritimeState(profile);
     }
 
+    // A materially superior siege runs capped interdiction instead of a full
+    // mirror. Freezing every growth lane behind that defense is how a boxed-in
+    // bot donates the map while defending one border, so the attack lane keeps
+    // expanding during the war. Structures stay owned by the incoming-defense
+    // lane to avoid same-tick double construction.
+    async runContainmentGrowth(ticks, profile, tickGeneration) {
+      if (this.attackBehavior.incomingDefenseContainmentMode?.() !== true) return;
+      if (await this.handleOpeningExpansion(ticks, profile, tickGeneration)) return;
+      const crossings = this.getTickCrossings(ticks);
+      if (!crossings.attack) return;
+      await this.runOptionalAsyncPhase(
+        this.feat("expand") || this.feat("boat"),
+        profile,
+        "containment-attack",
+        () => this.attackBehavior.maybeAttack(profile),
+        tickGeneration,
+      );
+    }
+
     async tick(ticks, profile, tickGeneration) {
       if (!this.tickIsCurrent(tickGeneration)) return;
       this.player = this.mg.myPlayer();
@@ -509,7 +528,10 @@
       if (this.handleEliminatedPlayer(me)) return;
       if (await this.initializeTick(ticks, profile, tickGeneration)) return;
       if (!(await this.processPendingNukeSalvo(profile, tickGeneration))) return;
-      if (await this.handleIncomingDefense(ticks, profile, tickGeneration)) return;
+      if (await this.handleIncomingDefense(ticks, profile, tickGeneration)) {
+        await this.runContainmentGrowth(ticks, profile, tickGeneration);
+        return;
+      }
       if (await this.handleOpeningExpansion(ticks, profile, tickGeneration)) return;
       const crossings = this.getTickCrossings(ticks);
       if (!crossings.attack) {
@@ -890,8 +912,10 @@
 
     // DIVERGENCE: spawn scoring (Tactical spawn-scoring port). Scores a candidate
     // tile by: land density in a 12-radius neighbourhood, distance from the
-    // nearest enemy nameLocation (farther = better), and edge avoidance (centre
-    // of map preferred). Team mode adds a pull toward the team spawn area centre.
+    // nearest enemy nameLocation (farther = better), edge avoidance (centre of
+    // map preferred), coastal/ocean access (unlocks Ports/trade/warships), and
+    // surrounding terrain defensibility (high-magnitude rings are harder to
+    // attack across). Team mode adds a pull toward the team spawn area centre.
     getSpawnLandDensity(tx, ty) {
       const g = this.mg;
       const R = 12;
@@ -920,6 +944,66 @@
       return minEnemyDist;
     }
 
+    // Coastal access signal for spawn scoring. A start on or near the coast
+    // can build a Port, unlock trade gold, and project warships — a landlocked
+    // inland start has none of those. The signal is the fraction of the
+    // 12-radius neighbourhood that is water (ocean), so a tile on an open
+    // seaboard scores higher than one at the centre of a large continent.
+    getSpawnCoastalAccess(tx, ty) {
+      const g = this.mg;
+      const R = 12;
+      let water = 0;
+      let total = 0;
+      for (let dy = -R; dy <= R; dy++) {
+        for (let dx = -R; dx <= R; dx++) {
+          const nx = tx + dx;
+          const ny = ty + dy;
+          if (!g.isValidCoord(nx, ny)) continue;
+          total++;
+          if (!g.isLand(g.ref(nx, ny))) water++;
+        }
+      }
+      // A small water fraction rewards a coast; a huge fraction penalizes a
+      // tiny island with little land to expand into. Peak around 25-40% water.
+      const ratio = total > 0 ? water / total : 0;
+      if (ratio <= 0) return 0;
+      if (ratio <= 0.35) return ratio / 0.35;
+      return Math.max(0, 1 - (ratio - 0.35) / 0.4);
+    }
+
+    // Defensibility signal for spawn scoring. A start whose surrounding ring is
+    // higher-magnitude terrain (mountains/rough) is naturally harder to attack
+    // across and easier to hold. The signal is the average magnitude of the
+    // land tiles in the 10-14 radius band, normalized against the map's typical
+    // plains baseline. Pure-plains surroundings score ~0; mountainous rings
+    // score toward 1.
+    getSpawnDefensibility(tx, ty) {
+      const g = this.mg;
+      if (typeof g.magnitude !== "function") return 0;
+      const innerR = 10;
+      const outerR = 14;
+      let total = 0;
+      let count = 0;
+      for (let dy = -outerR; dy <= outerR; dy++) {
+        for (let dx = -outerR; dx <= outerR; dx++) {
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < innerR || dist > outerR) continue;
+          const nx = tx + dx;
+          const ny = ty + dy;
+          if (!g.isValidCoord(nx, ny)) continue;
+          const tile = g.ref(nx, ny);
+          if (!g.isLand(tile)) continue;
+          total += Number(g.magnitude(tile) ?? 0);
+          count++;
+        }
+      }
+      if (count === 0) return 0;
+      const avg = total / count;
+      // Magnitude ~10 is plains; ~30+ is mountainous. Normalize so plains
+      // contributes ~0 and mountains contribute toward 1.
+      return Math.max(0, Math.min(1, (avg - 10) / 20));
+    }
+
     scoreSpawnTile(tile, others, W, H, area = null) {
       const g = this.mg;
       const tx = g.x(tile);
@@ -930,6 +1014,17 @@
       // Edge avoidance: prefer tiles away from map edges.
       const edgeDist = Math.min(tx, ty, W - 1 - tx, H - 1 - ty);
       score += Math.min(1, edgeDist / 30) * 20;
+
+      // Coastal access: a spawn with ocean nearby unlocks Ports, trade, and
+      // warships. Weighted below land density and safety but above the team
+      // pull so it breaks ties between otherwise-equivalent inland/coastal
+      // starts in favour of the coast.
+      score += this.getSpawnCoastalAccess(tx, ty) * 15;
+
+      // Defensibility: higher-magnitude surrounding terrain makes a start
+      // harder to overrun. A modest tie-breaker that never overrides the core
+      // land/safety/edge signals.
+      score += this.getSpawnDefensibility(tx, ty) * 10;
 
       // Team area pull: bonus for being near the team spawn area centre.
       if (area) {

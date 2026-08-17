@@ -126,6 +126,27 @@
   // the ordinary random fallback when the worker is saturated.
   const OPPORTUNISTIC_RANDOM_BOAT_PROBE_TIMEOUT_MS = 75;
   const ORDINARY_RANDOM_BOAT_RETRY_TICKS = 30;
+  // Frontier-adaptive Terra Nullius pacing (win-fix). The flat per-intent
+  // opening fraction spends the same payload whether three free tiles or the
+  // whole rim of the map borders us. Scale the effective commit fraction by
+  // the share of our attack frontier that is clean free land, measured by the
+  // same border scan that built the current decision: a mostly-free,
+  // uncontested frontier grabs faster before rivals arrive, while a scarce or
+  // contested frontier keeps more troops home. The up-scale is deliberately
+  // modest: paired headless batches showed a 1.5 ceiling thinned the opening
+  // defense enough to lose long sieges, so acceleration stays bounded at 1.25
+  // while down-scaling remains free to reach the floor. The multiplier only
+  // scales the fraction inputs — the opening limit, per-intent ceiling and
+  // minimum margin stay authoritative, and a missing measurement keeps it at
+  // exactly one so stub and test payloads stay bit-identical.
+  const EARLY_EXPAND_FRONTIER_COMMIT_SCALE_MIN = 0.75;
+  const EARLY_EXPAND_FRONTIER_COMMIT_SCALE_MAX = 1.25;
+  // A frontier that is half free land is the neutral pacing point; the live
+  // share is divided by this baseline before clamping to the scale bounds.
+  const EARLY_EXPAND_FRONTIER_SHARE_BASELINE = 0.5;
+  // The fast opening lane runs between full decisions. Never pace a commit on
+  // a frontier measurement older than this many ticks (≈5 s at 10 ticks/s).
+  const EARLY_EXPAND_FRONTIER_SIGNAL_MAX_AGE_TICKS = 50;
   const EARLY_GAME_TRIBE_CHAIN_RADIUS = 120;
   // The profiled strategic cadence is 19 game ticks. Keep the complete graph
   // through several decisions (rather than rebuilding it every other decision),
@@ -185,6 +206,52 @@
   // to cover the simultaneous invasion. Keep that projected defense budget
   // home and let the defensive construction lane use its accelerated cadence.
   const OVERWHELMING_INCOMING_ATTACK_RATIO = 1;
+  // The engine cancels opposing in-flight land troops one-to-one, so a full
+  // mirror counterattack is an even trade against a peer. Against a materially
+  // stronger nation the mirror repeats every few decision ticks and donates
+  // the whole army to an attrition race we cannot win. A superior attacker is
+  // therefore answered with bounded partial interdiction plus a per-war
+  // commitment cap, while troop density at home keeps the captured tiles
+  // expensive.
+  const COUNTERATTACK_SUPERIOR_ATTACKER_TROOP_RATIO = 1.25;
+  // A coordinated siege from several peers is as unwinnable as one stronger
+  // attacker: every mirrored troop cancels one wave while the other fronts
+  // capture land unopposed.
+  const COUNTERATTACK_MULTIFRONT_PRESSURE_RATIO = 0.75;
+  // One mirrored wave must not consume the army a second strong front needs.
+  // A border opponent at half our strength can turn an uncommitted stretch of
+  // the border into a new front at any tick, so the mirror share shrinks with
+  // the number of such opponents.
+  const COUNTERATTACK_FRONT_STRENGTH_RATIO = 0.5;
+  const COUNTERATTACK_FRONT_MIN_SHARE = 0.34;
+  // A war of choice must stay a quick meal. Committing the two-times capture
+  // floor against a large target parks most of the army in one invasion while
+  // every other strong neighbor watches — the classic dogpile invitation.
+  // First strikes and reinforcements against Nation/Human targets are capped
+  // at this share of the total army; anything hungrier waits for growth.
+  const PROACTIVE_WAR_ARMY_FRACTION = 0.35;
+  const COUNTERATTACK_ATTRITION_WINDOW_TICKS = 900;
+  const COUNTERATTACK_ATTRITION_WINDOW_TROOP_CAP = 0.5;
+  const COUNTERATTACK_INTERDICT_WAVE_FRACTION = 0.6;
+  const COUNTERATTACK_INTERDICT_SPENDABLE_FRACTION = 0.35;
+  const COUNTERATTACK_INTERDICT_MINIMUM_TROOPS = 250;
+  // A Terra Nullius wave returns its survivors when the free border is
+  // exhausted, and land defense draws from the shared troop pool rather than
+  // from a garrisoned share. Reserving the ENTIRE army of the strongest
+  // strategic border nation therefore just freezes expansion while that
+  // neighbor keeps snowballing. Hold a fraction of it instead; live sieges
+  // are owned by the incoming-defense lane, not by this reserve.
+  const TN_STRATEGIC_RESERVE_FRACTION = 0.5;
+  // Sustained free-land growth for the adaptive tier. The opening lane's 10%
+  // slices serialize expansion while nations re-send half-army waves; Terra
+  // Nullius survivors return when the border is exhausted, so a larger
+  // continuous commit is nearly free growth.
+  const LEGENDARY_TN_COMMIT_FRACTION = 0.3;
+  // A surge must pay for itself: repeated giant landings into the same
+  // contested region while our tiles do not grow only donate the
+  // expeditionary force to the defender. One failed region per cooldown.
+  const OPPORTUNISTIC_BOAT_SURGE_REGION_COOLDOWN_TICKS = 600;
+  const OPPORTUNISTIC_BOAT_SURGE_REGION_SIZE = 60;
   // Reserve the troop level where the production rate has its maximum temporal
   // acceleration. P(N) is troops per tick and N' = P(N), so acceleration is
   // dP/dt = P(N) * P'(N), not just the slope with respect to troop count.
@@ -571,43 +638,47 @@
     if (!Array.isArray(candidates)) return [];
     return candidates
       .map((candidate, index) => ({ candidate, index }))
-      .sort((left, right) => {
-        const leftUnderAttack = left.candidate.underAttack === true ? 1 : 0;
-        const rightUnderAttack = right.candidate.underAttack === true ? 1 : 0;
-        if (leftUnderAttack !== rightUnderAttack) {
-          return rightUnderAttack - leftUnderAttack;
-        }
-
-        const leftFrontline = left.candidate.frontline === true ? 1 : 0;
-        const rightFrontline = right.candidate.frontline === true ? 1 : 0;
-        if (leftFrontline !== rightFrontline) {
-          return rightFrontline - leftFrontline;
-        }
-
-        const leftDistance = Number(left.candidate.distance);
-        const rightDistance = Number(right.candidate.distance);
-        const normalizedLeftDistance = Number.isFinite(leftDistance)
-          ? leftDistance
-          : Number.POSITIVE_INFINITY;
-        const normalizedRightDistance = Number.isFinite(rightDistance)
-          ? rightDistance
-          : Number.POSITIVE_INFINITY;
-        if (normalizedLeftDistance !== normalizedRightDistance) {
-          return normalizedLeftDistance - normalizedRightDistance;
-        }
-
-        const leftPercentage = Number(left.candidate.troopPercentage);
-        const rightPercentage = Number(right.candidate.troopPercentage);
-        if (leftPercentage !== rightPercentage) {
-          return leftPercentage - rightPercentage;
-        }
-
-        const leftClan = left.candidate.sameClan === true ? 1 : 0;
-        const rightClan = right.candidate.sameClan === true ? 1 : 0;
-        if (leftClan !== rightClan) return rightClan - leftClan;
-        return left.index - right.index;
-      })
+      .sort(compareTeamDonationCandidates)
       .map(({ candidate }) => candidate);
+  }
+
+  // Comparator for the donation ranker. Order: under-attack first, then
+  // frontline, then nearest, then neediest (lowest troop %), then highest
+  // outgoing commitment (offensive value tie-breaker), then same-clan, then
+  // stable input order. Each axis is a pure tie-breaker for the one above it.
+  function compareTeamDonationCandidates(left, right) {
+    const axes = [
+      booleanDonationAxis(left, right, "underAttack"),
+      booleanDonationAxis(left, right, "frontline"),
+      numericDonationAxis(left, right, "distance", Number.POSITIVE_INFINITY, { ascending: true }),
+      numericDonationAxis(left, right, "troopPercentage", 0, { ascending: true }),
+      numericDonationAxis(left, right, "outgoingTroops", 0),
+      booleanDonationAxis(left, right, "sameClan"),
+    ];
+    for (const result of axes) {
+      if (result !== 0) return result;
+    }
+    return left.index - right.index;
+  }
+
+  // Boolean axis comparison: a true value ranks above false. Returns 0 when
+  // both candidates match.
+  function booleanDonationAxis(left, right, field) {
+    const leftValue = left.candidate[field] === true ? 1 : 0;
+    const rightValue = right.candidate[field] === true ? 1 : 0;
+    return rightValue - leftValue;
+  }
+
+  // Numeric axis comparison. By default larger values rank first (descending);
+  // pass { ascending: true } for the need axis where smaller is better.
+  function numericDonationAxis(left, right, field, fallback, { ascending = false } = {}) {
+    const leftRaw = Number(left.candidate[field]);
+    const rightRaw = Number(right.candidate[field]);
+    const leftValue = Number.isFinite(leftRaw) ? leftRaw : fallback;
+    const rightValue = Number.isFinite(rightRaw) ? rightRaw : fallback;
+    if (leftValue === rightValue) return 0;
+    const sign = ascending ? 1 : -1;
+    return sign * (leftValue - rightValue);
   }
 
   function hasActiveDonationAttack(attacks) {
@@ -619,6 +690,21 @@
         return Number.isFinite(troops) && troops > 0;
       })
     );
+  }
+
+  // Sum of non-retreating outgoing attack troops. Used as the donation
+  // ranker's offensive-value tie-breaker: an ally already pushing troops into
+  // the enemy converts a donation into direct pressure, so more outgoing
+  // commitment is a stronger force-multiplier.
+  function activeOutgoingDonationTroops(attacks) {
+    if (!Array.isArray(attacks)) return 0;
+    let total = 0;
+    for (const attack of attacks) {
+      if (attack?.retreating?.() === true) continue;
+      const troops = Number(attack?.troops?.());
+      if (Number.isFinite(troops) && troops > 0) total += troops;
+    }
+    return total;
   }
 
   function recordOptionalAttackSnapshotFailure(error) {
@@ -694,6 +780,7 @@
       this.initializeEarlyGameAttackState();
       this.initializeSameClanNukeTerrainState();
       this.initializeDefensePostAttackState();
+      this.initializeIncomingCounterattackWarState();
     }
 
     initializeAttackBehaviorConfiguration({
@@ -714,6 +801,10 @@
       this.outboundDonationIntentReconciledTick = null;
       this.botDonationNextEligibleTickByRecipient = new Map();
       this.publishTroopDonationReservationApi();
+    }
+
+    initializeIncomingCounterattackWarState() {
+      this.incomingCounterattackWars = new Map();
     }
 
     publishTroopDonationReservationApi() {
@@ -1266,6 +1357,13 @@
       return reserve;
     }
 
+    getTerraNulliusStrategicBorderReserveTroops() {
+      return (
+        Math.max(0, Number(this.getStrongestStrategicBorderOpponentTroops?.()) || 0) *
+        TN_STRATEGIC_RESERVE_FRACTION
+      );
+    }
+
     getEarlyGameTerraNulliusReserveTroops() {
       const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
       if (ownTroops <= 0) return 0;
@@ -1311,8 +1409,8 @@
       ) {
         return Math.max(
           this.getEarlyGameLiveReserveTroops(),
-          this.getKnownBorderOpponentTroops(),
-          this.getStrongestStrategicBorderOpponentTroops(),
+          this.getKnownBorderOpponentTroops() * TN_STRATEGIC_RESERVE_FRACTION,
+          this.getTerraNulliusStrategicBorderReserveTroops(),
         );
       }
 
@@ -1322,7 +1420,7 @@
       return Math.max(
         this.getEarlyGameProductionReserveTroops(),
         this.getEarlyGameLiveReserveTroops(),
-        this.getStrongestStrategicBorderOpponentTroops(),
+        this.getTerraNulliusStrategicBorderReserveTroops(),
       );
     }
 
@@ -1331,6 +1429,24 @@
       const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
       if (!Number.isFinite(this.terraNulliusOpeningStartTick)) {
         this.terraNulliusOpeningStartTick = tick;
+        this.terraNulliusOpeningTroops = ownTroops;
+      }
+
+      // Re-base the opening ceiling when the army has grown substantially
+      // since the snapshot was taken. A fast City or a captured tribe can
+      // double the field army well inside the 500-tick opening window; a fixed
+      // ceiling captured at spawn would then throttle expansion to the original
+      // 40% of a much smaller army, leaving the new production idle. Re-basing
+      // at a 25% growth threshold lets a snowballing opening spend its larger
+      // army on free land while preserving the cumulative safety floor against
+      // a drain. The committed total carries over so the rebase never grants a
+      // sudden burst of "free" headroom — only the unused remainder grows.
+      const openingTroops = Number(this.terraNulliusOpeningTroops) || 0;
+      if (
+        ownTroops > openingTroops &&
+        openingTroops > 0 &&
+        ownTroops >= openingTroops * EARLY_EXPAND_OPENING_REBASE_RATIO
+      ) {
         this.terraNulliusOpeningTroops = ownTroops;
       }
 
@@ -1351,10 +1467,9 @@
         this.terraNulliusSafetyTroopHighWater,
         ownTroops,
       );
-      const borderThreat = Math.max(
-        0,
-        Number(this.getKnownBorderOpponentTroops()) || 0,
-      );
+      const borderThreat =
+        Math.max(0, Number(this.getKnownBorderOpponentTroops()) || 0) *
+        TN_STRATEGIC_RESERVE_FRACTION;
       return Math.max(
         borderThreat,
         this.terraNulliusSafetyTroopHighWater * (1 - EARLY_EXPAND_OPENING_LIMIT),
@@ -2061,6 +2176,47 @@
       };
     }
 
+    // Scale the per-intent Terra Nullius commit by how much of the current
+    // attack frontier is clean free land. The share comes from the frontier
+    // snapshot published by this decision's context; when no measurement is
+    // available (tests, stubs, stale signal), the neutral multiplier keeps the
+    // committed troops exactly what the flat fraction produced. The value is
+    // deterministic and clamped to [COMMIT_SCALE_MIN, COMMIT_SCALE_MAX].
+    getTerraNulliusFrontierCommitMultiplier() {
+      const frontier = state.earlyGame?.terraNulliusFrontier;
+      const attackableTiles = Number(frontier?.attackableTiles);
+      const frontierTiles = Number(frontier?.frontierTiles);
+      if (
+        !Number.isInteger(attackableTiles) ||
+        attackableTiles < 0 ||
+        !Number.isInteger(frontierTiles) ||
+        frontierTiles <= 0
+      ) {
+        return 1;
+      }
+      const measuredTick = Number(frontier.tick);
+      if (!Number.isFinite(measuredTick)) return 1;
+      const ageTicks = this.currentAttackDecisionTick() - measuredTick;
+      if (ageTicks > EARLY_EXPAND_FRONTIER_SIGNAL_MAX_AGE_TICKS) return 1;
+      const freeLandShare = attackableTiles / frontierTiles;
+      const frontierMultiplier = Math.min(
+        EARLY_EXPAND_FRONTIER_COMMIT_SCALE_MAX,
+        Math.max(
+          EARLY_EXPAND_FRONTIER_COMMIT_SCALE_MIN,
+          freeLandShare / EARLY_EXPAND_FRONTIER_SHARE_BASELINE,
+        ),
+      );
+      // An active hostile land attack is the contested-frontier case from the
+      // pacing spec: free land may still dominate the frontier, but those
+      // troops belong to the defense first. Never let the accelerator raise
+      // the commit above the flat baseline while a siege is live;
+      // scarce-land down-scaling below 1 still applies.
+      if (this.incomingHostileAttacks().length > 0) {
+        return Math.min(frontierMultiplier, 1);
+      }
+      return frontierMultiplier;
+    }
+
     getTerraNulliusCommittedTroops(
       available,
       minimum,
@@ -2073,6 +2229,11 @@
         typeof EARLY_EXPAND_FOLLOWUP_COMMIT === "number"
           ? EARLY_EXPAND_FOLLOWUP_COMMIT
           : 0.1;
+      // The frontier multiplier only scales the adaptive/follow-up fraction
+      // inputs. The available budget (which already embeds the opening limit
+      // and reserves), the per-intent ceiling and the minimum margin below
+      // still bound the result, so a hot frontier can never outspend a cap.
+      const frontierMultiplier = this.getTerraNulliusFrontierCommitMultiplier();
       const configured = Number(commitFraction);
       if (commitFraction !== null && Number.isFinite(configured)) {
         const bounded = Math.min(1, Math.max(0, configured));
@@ -2081,15 +2242,24 @@
             ? EARLY_EXPAND_MINIMUM_MARGIN
             : 1.25;
         const adaptiveTroops = Math.ceil(
-          Math.max(minimum * minimumMargin, ownTroops * followUpFraction),
+          Math.max(
+            minimum * minimumMargin,
+            ownTroops * followUpFraction * frontierMultiplier,
+          ),
         );
-        const perIntentCeiling = Math.max(minimum, ownTroops * bounded);
+        const perIntentCeiling = Math.max(
+          minimum,
+          ownTroops * bounded * frontierMultiplier,
+        );
         return Math.min(available, adaptiveTroops, perIntentCeiling);
       }
       if (adaptivePayload) {
         return Math.min(
           available,
-          Math.max(minimum, Math.ceil(ownTroops * followUpFraction)),
+          Math.max(
+            minimum,
+            Math.ceil(ownTroops * followUpFraction * frontierMultiplier),
+          ),
         );
       }
       return livenessFollowUp
@@ -2478,6 +2648,14 @@
       state.earlyGame = {
         ...previous,
         ...snapshot,
+        // Frontier measurement for the adaptive Terra Nullius commit pacing:
+        // clean attackable free-land tiles against the full attack frontier,
+        // both taken from this decision's single border scan.
+        terraNulliusFrontier: {
+          attackableTiles: context.accessibleFreeLandTiles,
+          frontierTiles: context.frontierTileCount,
+          tick: currentTick,
+        },
         openingStartedAtTick,
         action: chooseEarlyGameAction({
           landTarget: hasAccessibleTerraNullius,
@@ -2498,14 +2676,18 @@
     createAttackDecisionContext() {
       const border = this.attackBorderTiles();
       const nearby = this.player.nearby();
-      const hasAccessibleFreeLand = border.some(
-        (tile) =>
-          this.isAttackableTerraNulliusTile(tile) && !this.game.hasFallout(tile),
-      );
-      const hasAccessibleRadioactiveLand = border.some(
-        (tile) =>
-          this.isAttackableTerraNulliusTile(tile) && this.game.hasFallout(tile),
-      );
+      // One pass over the already-enumerated frontier feeds both accessibility
+      // flags and the frontier-adaptive Terra Nullius pacing signal — no new
+      // map scan, just a count where the old scans only asked "any?".
+      let accessibleFreeLandTiles = 0;
+      let accessibleRadioactiveLandTiles = 0;
+      for (const tile of border) {
+        if (!this.isAttackableTerraNulliusTile(tile)) continue;
+        if (this.game.hasFallout(tile)) accessibleRadioactiveLandTiles++;
+        else accessibleFreeLandTiles++;
+      }
+      const hasAccessibleFreeLand = accessibleFreeLandTiles > 0;
+      const hasAccessibleRadioactiveLand = accessibleRadioactiveLandTiles > 0;
       const hasAccessibleTerraNullius =
         hasAccessibleFreeLand || hasAccessibleRadioactiveLand;
       this.cacheEnemyDefensePostFrontTiles(border);
@@ -2528,6 +2710,8 @@
         hasAccessibleFreeLand,
         hasAccessibleRadioactiveLand,
         hasAccessibleTerraNullius,
+        accessibleFreeLandTiles,
+        frontierTileCount: border.length,
         hasNonNukedTerraNullius:
           hasAccessibleFreeLand || nearby.some((player) => !player.isPlayer()),
         hasMaritimeTerraNullius:
@@ -2750,7 +2934,13 @@
           "attack-defense",
           () => this.respondToIncomingAttack(),
         );
-        if (defense !== null) return;
+        // A containment siege must not consume the whole decision: the
+        // response above is already capped, and skipping every expansion and
+        // boat lane for the duration of the war is how a boxed-in bot stops
+        // growing and loses the map on the other borders.
+        if (defense !== null && this.incomingDefenseContainmentMode() !== true) {
+          return;
+        }
       }
       // Donate before offensive intents. The client has a shared intent budget;
       // leaving this after expansion can starve a safe donation every tick.
@@ -2801,7 +2991,7 @@
       if (this.getActionableRemainingTerraNulliusOpeningCommitment() > 0) {
         expanded = this.forceSendAttack(
           this.game.terraNullius(),
-          EARLY_EXPAND_COMMIT,
+          this.effectiveTerraNulliusCommitFraction(),
         );
       } else if (this.hasLandBorderWithTerraNullius()) {
         expanded = this.sendLandAttack(this.game.terraNullius());
@@ -2828,6 +3018,7 @@
         utility: Number(calculateEarlyGameTribeUtility(candidate).toFixed(3)),
         routeEfficiency: Number(calculateEarlyGameRouteEfficiency(candidate).toFixed(3)),
         captureEfficiency: Number(finiteEarlyGameSignal(captureEfficiency).toFixed(3)),
+        tribeValue: Number(calculateEarlyGameTribeValue(candidate).toFixed(3)),
         targetTiles: Number(candidate.targetTiles) || 0,
         estimatedCaptureCost: Math.round(Number(candidate.estimatedCaptureCost)) || 0,
         maritimeDistance: Number.isFinite(candidate.maritimeDistance)
@@ -6143,10 +6334,79 @@
       return surgeHistory.has(tile);
     }
 
-    async tryOpportunisticBoatSurge(context) {
+    // Difficulty-scaled Terra Nullius commit. Faithful tiers keep the
+    // upstream opening fraction; the adaptive Legendary tier sustains a
+    // larger continuous wave because free-land survivors return to the pool.
+    effectiveTerraNulliusCommitFraction() {
+      const difficulty =
+        typeof currentDifficulty === "function" ? currentDifficulty() : null;
+      return difficulty === "Legendary"
+        ? Math.max(EARLY_EXPAND_COMMIT, LEGENDARY_TN_COMMIT_FRACTION)
+        : EARLY_EXPAND_COMMIT;
+    }
+
+    regionKeyForBoatSurge(tile) {
+      const x = Number(this.game?.x?.(tile)) || 0;
+      const y = Number(this.game?.y?.(tile)) || 0;
+      return `${Math.round(x / OPPORTUNISTIC_BOAT_SURGE_REGION_SIZE)}:${Math.round(y / OPPORTUNISTIC_BOAT_SURGE_REGION_SIZE)}`;
+    }
+
+    countOwnedTilesInSurgeRegion(regionKey) {
+      const game = this.game;
+      if (
+        !game ||
+        typeof game.ref !== "function" ||
+        typeof game.ownerID !== "function"
+      ) {
+        return -1;
+      }
+      const [bucketX, bucketY] = regionKey.split(":").map(Number);
+      const size = OPPORTUNISTIC_BOAT_SURGE_REGION_SIZE;
+      const myID = this.player?.smallID?.();
+      if (myID == null) return -1;
+      let owned = 0;
+      for (let dx = 0; dx < size; dx += 1) {
+        for (let dy = 0; dy < size; dy += 1) {
+          const x = bucketX * size + dx;
+          const y = bucketY * size + dy;
+          if (!game.isValidCoord?.(x, y)) continue;
+          if (game.ownerID(game.ref(x, y)) === myID) owned += 1;
+        }
+      }
+      return owned;
+    }
+
+    // Regional surge ledger: a fresh giant surge into a bucket is allowed
+    // only while that region keeps producing net tile growth, or after the
+    // cooldown forgets the failure.
+    opportunisticBoatSurgeRegionAllowed(tile) {
+      const key = this.regionKeyForBoatSurge(tile);
+      const ledger =
+        this.opportunisticBoatSurgeRegions ||
+        (this.opportunisticBoatSurgeRegions = new Map());
+      const entry = ledger.get(key);
+      if (!entry) return true;
+      const tick = Math.max(0, Number(this.game?.ticks?.()) || 0);
+      if (tick - entry.tick >= OPPORTUNISTIC_BOAT_SURGE_REGION_COOLDOWN_TICKS) {
+        ledger.delete(key);
+        return true;
+      }
+      const owned = this.countOwnedTilesInSurgeRegion(key);
+      return owned < 0 || owned > entry.owned;
+    }
+
+    recordOpportunisticBoatSurgeRegion(tile) {
+      const key = this.regionKeyForBoatSurge(tile);
+      this.opportunisticBoatSurgeRegions ||= new Map();
+      this.opportunisticBoatSurgeRegions.set(key, {
+        tick: Math.max(0, Number(this.game?.ticks?.()) || 0),
+        owned: this.countOwnedTilesInSurgeRegion(key),
+      });
+    }
+
+    opportunisticBoatSurgeCandidate(context, windowTicks) {
       const beachhead = state.beachhead;
-      const windowTicks = state.settings.mirvBoatWindowTicks || 150;
-      if (!beachhead || beachhead.tile == null) return false;
+      if (!beachhead || beachhead.tile == null) return null;
       const currentTick = this.game.ticks();
       if (
         this.recentOpportunisticBoatSurge(
@@ -6155,12 +6415,23 @@
           windowTicks,
         )
       ) {
-        return false;
+        return null;
       }
-      if (beachhead.surged === true) return false;
-      if (context.fill < context.surplusFill) return false;
-      if (currentTick - (beachhead.at || 0) >= windowTicks) return false;
-      if (!this.landingSucceeded(beachhead.tile)) return false;
+      if (beachhead.surged === true) return null;
+      if (context.fill < context.surplusFill) return null;
+      if (currentTick - (beachhead.at || 0) >= windowTicks) return null;
+      if (!this.landingSucceeded(beachhead.tile)) return null;
+      if (!this.opportunisticBoatSurgeRegionAllowed(beachhead.tile)) {
+        return null;
+      }
+      return beachhead;
+    }
+
+    async tryOpportunisticBoatSurge(context) {
+      const windowTicks = state.settings.mirvBoatWindowTicks || 150;
+      const beachhead = this.opportunisticBoatSurgeCandidate(context, windowTicks);
+      if (beachhead === null) return false;
+      const currentTick = this.game.ticks();
       const spawn = await withTimeout(
         this.player.bestTransportShipSpawn(beachhead.tile),
         WORKER_TIMEOUT_MS,
@@ -6177,6 +6448,7 @@
       state.lastOppBoatMs = context.nowMs;
       beachhead.surged = true;
       this.opportunisticBoatSurgeTickByTile.set(beachhead.tile, currentTick);
+      this.recordOpportunisticBoatSurgeRegion(beachhead.tile);
       return true;
     }
 
@@ -7458,6 +7730,173 @@
       return this.getEarlyGameSpendableTroops(reserveTroops) >= 1;
     }
 
+    // Attacker strength is judged on the total army, not the in-flight wave:
+    // a twenty-times-stronger nation can keep every single wave below parity
+    // while still grinding us down. An attacker whose strength cannot be read
+    // keeps the parity mirror so lightweight harnesses stay on the old path.
+    incomingAttackerTroopRatio(attacker) {
+      const ownTroops = Math.max(1, Number(this.player?.troops?.()) || 0);
+      const attackerTroops = Math.max(0, Number(attacker?.troops?.()) || 0);
+      if (attackerTroops <= 0) return 1;
+      return attackerTroops / ownTroops;
+    }
+
+    incomingCounterattackWarKey(attacker) {
+      return this.getOutboundAttackTargetKey(attacker) ?? "attacker";
+    }
+
+    // Rolling per-war ledger of forced-counterattack troops committed against
+    // one attacker. The cap is a share of the strongest army we held during
+    // the window, so a war that starts while we are small does not unlock
+    // unlimited dumping after mid-war growth.
+    getIncomingCounterattackWarLedger(attacker) {
+      const tick = Math.max(0, Number(this.game?.ticks?.()) || 0);
+      const key = this.incomingCounterattackWarKey(attacker);
+      for (const [staleKey, ledger] of this.incomingCounterattackWars) {
+        if (tick - ledger.windowStartTick > COUNTERATTACK_ATTRITION_WINDOW_TICKS) {
+          this.incomingCounterattackWars.delete(staleKey);
+        }
+      }
+      const ownTroops = Math.max(1, Number(this.player?.troops?.()) || 0);
+      const existing = this.incomingCounterattackWars.get(key);
+      if (existing) {
+        existing.peakTroops = Math.max(existing.peakTroops, ownTroops);
+        return existing;
+      }
+      const fresh = {
+        windowStartTick: tick,
+        committed: 0,
+        peakTroops: ownTroops,
+      };
+      this.incomingCounterattackWars.set(key, fresh);
+      return fresh;
+    }
+
+    recordIncomingCounterattackCommitment(attacker, troops) {
+      if (troops <= 0) return;
+      const ledger = this.getIncomingCounterattackWarLedger(attacker);
+      ledger.committed += troops;
+    }
+
+    incomingCounterattackMultifrontPressure() {
+      const ownTroops = Math.max(1, Number(this.player?.troops?.()) || 0);
+      const troopsByAttacker = new Map();
+      for (const attack of this.incomingHostileAttacks()) {
+        const incomingAttacker = attack.attacker?.();
+        if (!incomingAttacker) continue;
+        const key = this.getOutboundAttackTargetKey(incomingAttacker) ?? incomingAttacker;
+        troopsByAttacker.set(
+          key,
+          (troopsByAttacker.get(key) ?? 0) +
+            Math.max(0, Number(attack.troops?.()) || 0),
+        );
+      }
+      if (troopsByAttacker.size < 2) return 0;
+      return (
+        [...troopsByAttacker.values()].reduce(
+          (total, troops) => total + troops,
+          0,
+        ) / ownTroops
+      );
+    }
+
+    incomingCounterattackWarIsContainment(attacker) {
+      if (
+        this.incomingAttackerTroopRatio(attacker) >
+        COUNTERATTACK_SUPERIOR_ATTACKER_TROOP_RATIO
+      ) {
+        return true;
+      }
+      return (
+        this.incomingCounterattackMultifrontPressure() >=
+        COUNTERATTACK_MULTIFRONT_PRESSURE_RATIO
+      );
+    }
+
+    countStrongStrategicBorderOpponents(minTroops) {
+      if (!this.hasBorderOpponentApi()) return 0;
+      const tick = this.currentAttackDecisionTick();
+      const cacheKey = `${tick}:${Math.round(minTroops)}`;
+      if (this.strongBorderOpponentCountCacheKey === cacheKey) {
+        return this.strongBorderOpponentCountCache;
+      }
+      const mySid = this.player.smallID();
+      const borderingIds = this.getBorderingPlayerIds(mySid);
+      let count = 0;
+      for (const player of this.game.players() ?? []) {
+        const playerSid = player?.smallID?.();
+        if (playerSid == null || !borderingIds.has(playerSid)) continue;
+        if (!this.isStrategicBorderOpponent(player)) continue;
+        const troops = this.borderOpponentTroops(player, false);
+        if (troops != null && troops >= minTroops) count += 1;
+      }
+      this.strongBorderOpponentCountCacheKey = cacheKey;
+      this.strongBorderOpponentCountCache = count;
+      return count;
+    }
+
+    // Cap a peer-mirror counterattack so a single front cannot consume the
+    // army another strong border opponent can attack at any moment. With one
+    // strong front the historical full mirror is unchanged.
+    incomingCounterattackMirrorFrontCap(context) {
+      if (!this.hasBorderOpponentApi()) return context.finalSpendableTroops;
+      const ownTroops = Math.max(1, Number(this.player?.troops?.()) || 0);
+      const strongFronts = this.countStrongStrategicBorderOpponents(
+        ownTroops * COUNTERATTACK_FRONT_STRENGTH_RATIO,
+      );
+      if (strongFronts <= 1) return context.finalSpendableTroops;
+      const share = Math.max(
+        COUNTERATTACK_FRONT_MIN_SHARE,
+        1 / strongFronts,
+      );
+      return Math.max(1, Math.floor(context.finalSpendableTroops * share));
+    }
+
+    // Attrition-aware payload for forced counterattacks. A lone peer attacker
+    // gets the historical one-to-one mirror. A materially stronger attacker,
+    // or a coordinated multi-front siege where mirror trades feed the second
+    // front, receives bounded partial interdiction under a per-war cap; once
+    // the cap is exhausted the lane holds so the defensive density and
+    // construction lanes do the work instead.
+    calculateIncomingCounterattackTroops(context) {
+      const mirror = Math.min(
+        context.finalSpendableTroops,
+        context.incomingCounterattackTroops,
+      );
+      if (!this.incomingCounterattackWarIsContainment(context.target)) {
+        return Math.min(mirror, this.incomingCounterattackMirrorFrontCap(context));
+      }
+      const ledger = this.getIncomingCounterattackWarLedger(context.target);
+      const cap = Math.max(
+        1,
+        ledger.peakTroops * COUNTERATTACK_ATTRITION_WINDOW_TROOP_CAP,
+      );
+      const remaining = Math.max(0, cap - ledger.committed);
+      const interdiction = Math.min(
+        context.incomingCounterattackTroops *
+          COUNTERATTACK_INTERDICT_WAVE_FRACTION,
+        context.finalSpendableTroops *
+          COUNTERATTACK_INTERDICT_SPENDABLE_FRACTION,
+        remaining,
+      );
+      if (interdiction < COUNTERATTACK_INTERDICT_MINIMUM_TROOPS) {
+        context.attackBlocked = true;
+        return 0;
+      }
+      return Math.floor(interdiction);
+    }
+
+    // True while the strongest incoming attacker materially outclasses us,
+    // or a coordinated multi-front siege makes mirror trades unwinnable even
+    // against individual peers. The decision loop uses this to keep expansion
+    // lanes running during such a siege instead of freezing every growth
+    // action behind the defense lane.
+    incomingDefenseContainmentMode() {
+      const attacker = this.findIncomingAttackPlayer();
+      if (attacker === null) return false;
+      return this.incomingCounterattackWarIsContainment(attacker);
+    }
+
     findIncomingAttackPlayer() {
       let incomingAttacks = this.incomingHostileAttacks();
       // Faithful mode keeps the upstream Nation/Human policy. Win-fix mode must
@@ -8501,7 +8940,7 @@
             : Number(configuration.minCommitFraction);
         terraNulliusCommitFraction = Number.isFinite(requested)
           ? requested
-          : EARLY_EXPAND_COMMIT;
+          : this.effectiveTerraNulliusCommitFraction();
       }
       return {
         target,
@@ -8546,6 +8985,58 @@
       return troops;
     }
 
+    // True when a non-forced Nation/Human strike would commit more than the
+    // proactive-war appetite allows. Empty targets (minimum 0) never trip
+    // this gate and keep the reserve-limited payload.
+    proactiveWarExceedsAppetite(context, committedTroops) {
+      if (committedTroops <= 0) return false;
+      const cap = this.proactiveWarArmyCommitmentCap(context);
+      return cap !== null && committedTroops > cap;
+    }
+
+    // Ceiling on total troops one war of choice may park in a single
+    // invasion. Null when the appetite does not apply (forced defensive
+    // routes, tribes, non-FFA, win-fixes off, or no readable game config).
+    proactiveWarArmyCommitmentCap(context) {
+      if (
+        context.force === true ||
+        !context.target.isPlayer() ||
+        context.isTribeTarget ||
+        !state.settings.winFixes
+      ) {
+        return null;
+      }
+      const config = this.game?.config?.();
+      if (typeof config?.gameConfig !== "function") return null;
+      if (!this.isFFA()) return null;
+      const ownTroops = Math.max(1, Number(this.player?.troops?.()) || 0);
+      return ownTroops * PROACTIVE_WAR_ARMY_FRACTION;
+    }
+
+    // Reinforcement top-up for an ongoing war of choice, bounded by the
+    // same appetite ceiling as the initial strike.
+    calculateReinforcementLandAttackTroops(
+      context,
+      existing,
+      minimum,
+      preferred,
+    ) {
+      const warAppetiteCap = this.proactiveWarArmyCommitmentCap(context);
+      if (existing + context.targetSpendableTroops < minimum) {
+        context.attackBlocked = true;
+        return 0;
+      }
+      if (warAppetiteCap !== null && existing >= warAppetiteCap) {
+        context.attackBlocked = true;
+        return 0;
+      }
+      const appetiteBounded =
+        warAppetiteCap === null
+          ? Math.max(0, preferred - existing)
+          : Math.min(Math.max(0, preferred - existing), warAppetiteCap - existing);
+      return Math.min(context.targetSpendableTroops, appetiteBounded);
+    }
+
     calculateRegularLandAttackTroops(context) {
       if (context.isTerraNullius && state.settings.winFixes) {
         return this.getTerraNulliusAttackTroops(
@@ -8558,7 +9049,7 @@
           context.radioactiveTerraNullius,
         );
       }
-      let troops = this.player.troops() - context.targetTroops;
+      const troops = this.player.troops() - context.targetTroops;
       const existing = context.target.isPlayer()
         ? this.getLiveOutboundAttackTroopsForTarget(context.target)
         : 0;
@@ -8576,22 +9067,22 @@
       // counterattacks deliberately retain their forced route, while tribes
       // keep their own capture-floor calculation above.
       if (this.shouldBlockInitialPlayerAttack(context, existing, minimum)) {
-        if (context.targetSpendableTroops < minimum) {
+        if (
+          context.targetSpendableTroops < minimum ||
+          this.proactiveWarExceedsAppetite(context, minimum)
+        ) {
           context.attackBlocked = true;
           return 0;
         }
         return Math.min(context.targetSpendableTroops, minimum);
       }
       if (existing <= 0) return troops;
-      if (existing + context.targetSpendableTroops < minimum) {
-        context.attackBlocked = true;
-        return 0;
-      }
-      troops = Math.min(
-        context.targetSpendableTroops,
-        Math.max(0, preferred - existing),
+      return this.calculateReinforcementLandAttackTroops(
+        context,
+        existing,
+        minimum,
+        preferred,
       );
-      return troops;
     }
 
     shouldBlockInitialPlayerAttack(context, existing, minimum) {
@@ -8615,10 +9106,7 @@
         return troops;
       }
       if (context.force === true && context.incomingCounterattackTroops > 0) {
-        return Math.min(
-          context.finalSpendableTroops,
-          context.incomingCounterattackTroops,
-        );
+        return this.calculateIncomingCounterattackTroops(context);
       }
       // Target type, not our own controller type, defines the conquest policy.
       // The client exposes auto-controlled Nations as Bot in some modes; letting
@@ -8697,6 +9185,9 @@
       }
       state.stats.attacks++;
       setLastAction(tr("⚔️ Attack"), "combat");
+      if (context.force === true && context.incomingCounterattackTroops > 0) {
+        this.recordIncomingCounterattackCommitment(context.target, troops);
+      }
       this.recordOutboundAttackIntent(context.target, troops, {
         attackType: "land",
       });
@@ -9364,7 +9855,12 @@
         this.botDonationNextEligibleTickByRecipient.get(recipientKey) ?? 0;
       if (this.currentAttackDecisionTick() < nextEligibleTick) return null;
       const underAttack = hasActiveDonationAttack(teammate.incomingAttacks());
-      const outgoing = hasActiveDonationAttack(teammate.outgoingAttacks());
+      const outgoingAttacks = teammate.outgoingAttacks();
+      const outgoing = hasActiveDonationAttack(outgoingAttacks);
+      // Quantify the recipient's offensive commitment so the ranker can prefer
+      // an ally actively pushing the enemy over a passive rear ally when both
+      // are equally needy and close.
+      const outgoingTroops = activeOutgoingDonationTroops(outgoingAttacks);
       // An active fight ranks first, but a depleted rear ally can still be
       // spending troops on expansion, transit, or a just-completed action
       // not yet visible in AttackView. Keep that valid lower-priority path.
@@ -9378,6 +9874,7 @@
           state.settings.winFixes &&
           playersShareClanTag(this.player, teammate),
         troopPercentage: entry.troopPercentage,
+        outgoingTroops,
       };
     }
 

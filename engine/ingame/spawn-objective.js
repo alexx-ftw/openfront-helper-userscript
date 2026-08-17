@@ -7,6 +7,11 @@
 // A rich isolated start is not robust: enemies can surround it before teammates
 // can connect. Clan proximity remains a late tie-break, while team proximity is
 // part of the survival floor whenever spawned allies are known.
+//
+// Reachable free land substitutes for tribes in the resource dimension: a huge
+// Terra Nullius region is itself an expansion resource, so an empty-but-
+// expansible start must not floor the objective at zero while tribe-rich,
+// surrounded interiors win by default.
 
 (function installSpawnObjective(root) {
   const CLAN_TAG_PATTERN = /^\[([a-zA-Z0-9]{2,5})\] /;
@@ -96,7 +101,13 @@
       : 0;
     const tribeClusterScore = clampScore(candidate.tribeClusterScore, 1);
     const freeLandScore = clampScore(candidate.freeLandScore, 1);
-    const resourceScore = clampScore(candidate.resourceScore, 1);
+    // Terra Nullius substitutes for tribes: free land is the expansion
+    // resource an empty region offers, so it lifts the resource floor
+    // instead of letting tribe-rich crowded spots win by default.
+    const resourceScore = Math.max(
+      clampScore(candidate.resourceScore, 1),
+      freeLandScore * 0.6,
+    );
     const clanScore = clampScore(candidate.clanScore);
     const teamPolyhedronScore = clampScore(candidate.teamPolyhedronScore);
     const teamInteriorScore = clampScore(candidate.teamInteriorScore);

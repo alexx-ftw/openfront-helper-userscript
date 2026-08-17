@@ -65,6 +65,26 @@
   // route state is exact and scales with the route search instead of map area.
   const NAVAL_DENSE_ROUTE_MAX_TILES = 262_144;
 
+  // ── Warship move-intent pacing ──────────────────────────────────────────────
+  // MoveWarship consumes the SHARED client intent budget (10/s, 150/min — the
+  // same tokens as attacks, builds and donations). Unpaced micromanagement
+  // starves those producers and trips the limiter, so combat moves are gated
+  // three ways: a target must change by more than the hysteresis radius
+  // before a ship is re-tasked, each combat pass may emit at most a couple of
+  // moves, and a reserve of the token budget is left for non-warship
+  // producers at all times.
+  const WARSHIP_MOVE_RETARGET_RADIUS = 8;
+  const WARSHIP_MOVE_RETARGET_TICKS = 30;
+  const WARSHIP_COMBAT_PASS_MOVE_CAP = 2;
+  const WARSHIP_MOVE_SECOND_TOKEN_RESERVE = 2;
+  const WARSHIP_MOVE_MINUTE_TOKEN_RESERVE = 40;
+  // Nuke dodging is survival-critical and gets a shorter leash than ordinary
+  // micro: a small cooldown against per-tick escape churn (the best tile
+  // drifts with the incoming zones) and a thinner budget reserve.
+  const WARSHIP_DODGE_COOLDOWN_TICKS = 10;
+  const WARSHIP_DODGE_SECOND_TOKEN_RESERVE = 1;
+  const WARSHIP_DODGE_MINUTE_TOKEN_RESERVE = 10;
+
   function canUseDenseWaterRouteBuffers(total) {
     return (
       Number.isSafeInteger(total) &&
@@ -523,6 +543,9 @@
         if (warship) {
           // src: warship.updateWarshipState({ patrolTile: tile });
           // Client: MoveWarshipIntentEvent([unitId], tile).
+          // A patrol anchor is the lowest-priority intent a warship emits;
+          // never let it take a token that attacks, builds or dodges need.
+          if (!this.warshipMoveBudgetAvailable()) return;
           const ctors = discoverCtors(getEventBus());
           if (ctors.moveWarship) {
             emitIntent(ctors.moveWarship, [warship.id()], tile);
@@ -1149,9 +1172,16 @@
       const target = transport.targetTile();
       const current = transport.tile();
       if (current == null || target == null) return null;
+      // Surface the transported troop count so the interception planner can
+      // weight a heavier landing ahead of a lighter one when a lone warship can
+      // only cover one of two near-simultaneous invasions. The transport exposes
+      // its payload via `troops()`; fall back to the neutral default when the
+      // client does not surface it (older builds / replays), so behavior is
+      // unchanged when the signal is absent.
+      const threat = this.transportThreat(transport);
       const motionPath = this.transportMotionPath(transport, target);
       if (motionPath !== null) {
-        return { id: transport.id(), path: motionPath };
+        return { id: transport.id(), path: motionPath, threat };
       }
       const goal = this.waterTargetTile(target);
       if (goal === null) return null;
@@ -1162,8 +1192,15 @@
       }
       nextCache.set(key, path);
       return Array.isArray(path) && path.length >= 2
-        ? { id: transport.id(), path }
+        ? { id: transport.id(), path, threat }
         : null;
+    }
+
+    transportThreat(transport) {
+      const troops =
+        typeof transport.troops === "function" ? transport.troops() : null;
+      const number = Number(troops);
+      return Number.isFinite(number) && number > 0 ? number : null;
     }
 
     movementOrderIssuedThisTick(id, smartState, tick) {
@@ -1983,11 +2020,45 @@
       if (!best || best.eta <= shipEta) return;
       const patrolTile = ship.warshipState().patrolTile;
       if (patrolTile !== undefined && coverEta(this.game.x(patrolTile), this.game.y(patrolTile)) >= best.eta) return;
+      // A trapped ship re-evaluates its escape every game tick and the best
+      // tile drifts with the incoming zones; unpaced, one ship under a MIRV
+      // spends a move intent per tick and saturates the shared budget.
+      // Survival still outranks ordinary micro: the cooldown is short and
+      // the budget reserve thinner than the combat gate's, and a genuinely
+      // different escape tile bypasses the cooldown entirely.
+      const id = ship.id();
+      if (this.warshipDodgeRecentlyRetasked(smartState, id, best.tile, tick)) return;
+      if (!this.warshipDodgeBudgetAvailable()) return;
       const ctors = discoverCtors(getEventBus());
       if (!ctors.moveWarship) return;
-      emitIntent(ctors.moveWarship, [ship.id()], best.tile);
-      smartState.cooldown.set(ship.id(), tick);
-      setLastAction(tr("🚢 Dodge nuke"), "naval");
+      const sent = emitIntent(ctors.moveWarship, [ship.id()], best.tile);
+      if (sent) {
+        if (!smartState.lastDodgeMoves) smartState.lastDodgeMoves = new Map();
+        smartState.lastDodgeMoves.set(id, { tile: best.tile, tick });
+      }
+      smartState.cooldown.set(id, tick);
+      if (sent) setLastAction(tr("🚢 Dodge nuke"), "naval");
+    }
+
+    warshipDodgeRecentlyRetasked(smartState, id, tile, tick) {
+      const last = smartState.lastDodgeMoves?.get(id);
+      if (!last) return false;
+      if (tick - last.tick >= WARSHIP_DODGE_COOLDOWN_TICKS) return false;
+      return this.game.manhattanDist(tile, last.tile) <= WARSHIP_MOVE_RETARGET_RADIUS;
+    }
+
+    // Dodge moves are survival-critical, so they may spend the budget down
+    // further than ordinary micromanagement — but not to zero, which would
+    // starve attacks and spawns while the ship is already committed to its
+    // last escape order.
+    warshipDodgeBudgetAvailable() {
+      if (typeof getIntentRateLimitSnapshot !== "function") return true;
+      const snapshot = getIntentRateLimitSnapshot();
+      if (!snapshot || typeof snapshot !== "object") return true;
+      return (
+        snapshot.secondTokens > WARSHIP_DODGE_SECOND_TOKEN_RESERVE &&
+        snapshot.minuteTokens > WARSHIP_DODGE_MINUTE_TOKEN_RESERVE
+      );
     }
 
     dodgeNukes() {
@@ -2041,9 +2112,13 @@
     simulateBattle(friendlies, enemies, maxHp, focalTile) {
       if (enemies.length === 0) return { win: true, survivalPct: 100 };
       if (friendlies.length === 0) return { win: false, survivalPct: 0 };
-      const { range, damagePerTick } = this.warshipBattleConstants();
-      const friendlyState = this.createBattleFleet(friendlies, focalTile, range);
-      const enemyState = this.createBattleFleet(enemies, focalTile, range);
+      const { range, damagePerTick, veterancyBonusPercent } = this.warshipBattleConstants();
+      const friendlyState = this.createBattleFleet(
+        friendlies, focalTile, range, veterancyBonusPercent,
+      );
+      const enemyState = this.createBattleFleet(
+        enemies, focalTile, range, veterancyBonusPercent,
+      );
 
       let ticks = 0;
       while (ticks < 1000) {
@@ -2066,21 +2141,48 @@
       const shell = typeof config?.unitInfo === "function" ? config.unitInfo("Shell") : null;
       const attackRate = typeof config?.warshipShellAttackRate === "function"
         ? config.warshipShellAttackRate() : 20;
-      return { range, damagePerTick: ((shell?.damage || 250) * 2.625) / Math.max(1, attackRate) };
+      const veterancyBonusPercent =
+        typeof config?.warshipVeterancyShellDamageBonus === "function"
+          ? config.warshipVeterancyShellDamageBonus() : 20;
+      return {
+        range,
+        damagePerTick: ((shell?.damage || 250) * 2.625) / Math.max(1, attackRate),
+        veterancyBonusPercent,
+      };
     }
 
-    createBattleFleet(units, focalTile, range) {
+    // Veteran warships hit harder: the engine scales every shell by the firing
+    // hull's veterancy times warshipVeterancyShellDamageBonus (20%/point by
+    // default), and maxHealth already carries the veterancy adjustment. A
+    // simulation that counts hulls 1:1 reads a small veteran fleet as beatable
+    // and sends a green fleet to the bottom.
+    battleFleetUnitPower(unit, veterancyBonusPercent) {
+      const veterancy = typeof unit.veterancy === "function"
+        ? Number(unit.veterancy()) : 0;
+      if (!Number.isFinite(veterancy) || veterancy <= 0) return 1;
+      const bonus = Number(veterancyBonusPercent);
+      const scale = Number.isFinite(bonus) && bonus > 0 ? bonus : 20;
+      return 1 + veterancy * (scale / 100);
+    }
+
+    createBattleFleet(units, focalTile, range, veterancyBonusPercent) {
       return units.map((unit) => {
         const distance = focalTile ? this.game.manhattanDist(focalTile, unit.tile()) : range;
-        return { hp: unit.health(), engageTick: Math.max(0, distance - range) };
+        return {
+          hp: unit.health(),
+          power: this.battleFleetUnitPower(unit, veterancyBonusPercent),
+          engageTick: Math.max(0, distance - range),
+        };
       });
     }
 
     battleFleetSummary(fleet, tick) {
       const alive = fleet.filter((unit) => unit.hp > 0.01);
+      const active = alive.filter((unit) => unit.engageTick <= tick);
       return {
         alive: alive.length,
-        active: alive.filter((unit) => unit.engageTick <= tick),
+        active,
+        activePower: active.reduce((sum, unit) => sum + unit.power, 0),
         nextEngage: alive.reduce((next, unit) => Math.min(next, unit.engageTick), Infinity),
       };
     }
@@ -2102,8 +2204,8 @@
         return next > tick && next !== Infinity ? next : null;
       }
       if (friendlies.active.length === 0 || enemies.active.length === 0) return null;
-      this.applyBattleDamage(enemies.active, friendlies.active.length * damagePerTick);
-      this.applyBattleDamage(friendlies.active, enemies.active.length * damagePerTick);
+      this.applyBattleDamage(enemies.active, friendlies.activePower * damagePerTick);
+      this.applyBattleDamage(friendlies.active, enemies.activePower * damagePerTick);
       return null;
     }
 
@@ -2195,6 +2297,18 @@
       return target ?? nearest.tile();
     }
 
+    // Each ship retreats to ITS nearest friendly port. The old fleet-wide
+    // anchor (nearest port to myWarships[0]) sent every wounded hull on the
+    // map to one dock; and when no port existed the retreat target was null,
+    // so wounded ships simply fought to the death. Fall back to a safe
+    // waypoint so a portless, wounded fleet still breaks contact.
+    combatRetreatTarget(warship, friendlyPorts, nearbyEnemies) {
+      const port = this.combatBaseTarget(warship, friendlyPorts);
+      if (port !== null) return port;
+      if (nearbyEnemies.length === 0) return null;
+      return this.findSafeWaypoint(warship.tile(), null, nearbyEnemies);
+    }
+
     nearbyCombatEnemies(warship, enemies) {
       return enemies.filter(
         (enemy) => this.game.manhattanDist(warship.tile(), enemy.tile()) <= 30,
@@ -2213,17 +2327,24 @@
       return !result.win || result.survivalPct < 15;
     }
 
-    nearestUnitTile(warship, units) {
-      if (units.length === 0) return null;
-      return units.reduce((nearest, unit) =>
+    // A trade hunter sails blindly to the prey tile; evasion only simulates
+    // enemies within 30 of the hunter's CURRENT tile, so an anchored escort
+    // near the prey baits the hunter into a fleet it never evaluated. Refuse
+    // the chase when a hostile warship already shadows the prey.
+    tradeHuntTarget(warship, enemyTradeShips, enemyWarships) {
+      if (enemyTradeShips.length === 0) return null;
+      const prey = enemyTradeShips.reduce((nearest, unit) =>
         this.game.manhattanDist(warship.tile(), unit.tile()) <
         this.game.manhattanDist(warship.tile(), nearest.tile()) ? unit : nearest,
-      ).tile();
+      );
+      const defended = enemyWarships.some((enemy) =>
+        this.game.manhattanDist(enemy.tile(), prey.tile()) <= 30);
+      return defended ? null : prey.tile();
     }
 
     combatTarget(options) {
-      const { warship, nearbyEnemies, enemyTradeShips, baseTarget, wantsToEvade,
-        retreatThreshold, huntTrade } = options;
+      const { warship, nearbyEnemies, enemyTradeShips, enemyWarships, baseTarget,
+        wantsToEvade, retreatThreshold, huntTrade, primaryTargetId } = options;
       if (warship.health() < retreatThreshold) {
         return wantsToEvade && nearbyEnemies.length > 0
           ? this.findSafeWaypoint(warship.tile(), baseTarget, nearbyEnemies)
@@ -2233,11 +2354,80 @@
         return this.findSafeWaypoint(warship.tile(), baseTarget, nearbyEnemies);
       }
       if (!wantsToEvade && nearbyEnemies.length > 0) {
+        // Fleet focus-fire: when the combat pass nominated a primary target
+        // and this ship can reach it, concentrate fire there instead of each
+        // ship independently picking its own lowest-HP enemy. N ships that
+        // would otherwise split across N enemies now delete one target per
+        // pass, which is strictly better when arrivals are staggered.
+        if (primaryTargetId !== undefined && primaryTargetId !== null) {
+          const focus = nearbyEnemies.find((enemy) =>
+            this.unitIdMatches(enemy, primaryTargetId));
+          if (focus) return focus.tile();
+        }
         return nearbyEnemies.reduce((weakest, enemy) =>
           enemy.health() < weakest.health() ? enemy : weakest,
         ).tile();
       }
-      return huntTrade ? this.nearestUnitTile(warship, enemyTradeShips) : null;
+      return huntTrade
+        ? this.tradeHuntTarget(warship, enemyTradeShips, enemyWarships)
+        : null;
+    }
+
+    unitIdMatches(unit, id) {
+      if (!unit || id === undefined || id === null) return false;
+      const unitId = typeof unit.id === "function" ? unit.id() : unit.id;
+      return unitId === id;
+    }
+
+    // Pick one fleet-wide primary target per combat pass so the fleet
+    // concentrates fire. The primary is the enemy warship the largest number
+    // of my warships can reach (most "votes"), tie-broken by lowest HP so a
+    // near-dead target is finished first. Returns the enemy unit's id or null.
+    chooseFleetFocusTarget(myWarships, enemyWarships) {
+      if (enemyWarships.length === 0 || myWarships.length === 0) return null;
+      const reach = new Map();
+      for (const enemy of enemyWarships) {
+        const entry = this.fleetFocusEnemyEntry(enemy, myWarships);
+        if (entry === null) continue;
+        const prior = reach.get(entry.id);
+        if (!prior || entry.votes > prior.votes ||
+          (entry.votes === prior.votes && entry.hp < prior.hp)) {
+          reach.set(entry.id, { votes: entry.votes, hp: entry.hp });
+        }
+      }
+      if (reach.size === 0) return null;
+      return this.bestFleetFocusId(reach);
+    }
+
+    // One enemy's focus-candidacy: how many of my warships can reach it (votes)
+    // and its current HP, normalized to Infinity when unavailable. Returns null
+    // when the enemy has no tile or no reachable warship.
+    fleetFocusEnemyEntry(enemy, myWarships) {
+      const enemyTile = enemy.tile();
+      if (enemyTile === null || enemyTile === undefined) return null;
+      let votes = 0;
+      for (const warship of myWarships) {
+        if (this.game.manhattanDist(warship.tile(), enemyTile) <= 30) votes++;
+      }
+      if (votes === 0) return null;
+      const id = typeof enemy.id === "function" ? enemy.id() : enemy.id;
+      const hpRaw = Number(enemy.health?.() ?? Infinity);
+      return { id, votes, hp: Number.isFinite(hpRaw) ? hpRaw : Infinity };
+    }
+
+    // Pick the focus id with the most votes, tie-broken by lowest HP.
+    bestFleetFocusId(reach) {
+      let bestId = null;
+      let best = null;
+      for (const [id, info] of reach) {
+        if (best === null ||
+          info.votes > best.votes ||
+          (info.votes === best.votes && info.hp < best.hp)) {
+          best = info;
+          bestId = id;
+        }
+      }
+      return bestId;
     }
 
     warshipCombatBlocked(warship, assignment, smartState, friendlyPorts, tick) {
@@ -2253,7 +2443,7 @@
 
     handleWarshipCombat(warship, context) {
       const { smartState, friendlyPorts, enemyWarships, myWarships, enemyTradeShips,
-        maxHp, retreatPct, baseTarget, huntTrade } = context;
+        maxHp, retreatPct, huntTrade, primaryTargetId } = context;
       const id = warship.id();
       const tick = this.game.ticks();
       const assignment = smartState.invasionAssignments.get(id);
@@ -2265,12 +2455,53 @@
         warship, nearbyEnemies, myWarships, shipMaxHp, retreatPct,
       );
       const target = this.combatTarget({
-        warship, nearbyEnemies, enemyTradeShips, baseTarget, wantsToEvade,
-        retreatThreshold: shipMaxHp * retreatPct, huntTrade,
+        warship, nearbyEnemies, enemyTradeShips, enemyWarships,
+        baseTarget: this.combatRetreatTarget(warship, friendlyPorts, nearbyEnemies),
+        wantsToEvade,
+        retreatThreshold: shipMaxHp * retreatPct, huntTrade, primaryTargetId,
       });
       if (target === null || warshipState?.patrolTile === target) return;
-      this.moveWarship(warship, target);
+      // Micromanagement pacing (see the WARSHIP_MOVE_* constants): an
+      // unchanged-enough target keeps the standing order, the pass move cap
+      // spreads retasking across passes, and a slice of the shared intent
+      // budget is always reserved for attacks, builds and donations.
+      if (this.warshipMoveTargetUnchanged(smartState, id, target, tick)) return;
+      if ((context.movesIssued || 0) >= WARSHIP_COMBAT_PASS_MOVE_CAP) return;
+      if (!this.warshipMoveBudgetAvailable()) return;
+      if (this.moveWarship(warship, target)) {
+        this.rememberWarshipMoveTarget(smartState, id, target, tick);
+        context.movesIssued = (context.movesIssued || 0) + 1;
+      }
       smartState.cooldown.set(id, tick);
+    }
+
+    // True while the newly computed target is close enough to the last order
+    // we actually emitted for this ship: re-sending a near-identical anchor
+    // every combat pass (evade waypoints and prey drift by a few tiles per
+    // pass) is what flooded the shared intent budget.
+    warshipMoveTargetUnchanged(smartState, id, target, tick) {
+      const last = smartState.lastMoveTargets?.get(id);
+      if (!last) return false;
+      if (tick - last.tick >= WARSHIP_MOVE_RETARGET_TICKS) return false;
+      return this.game.manhattanDist(target, last.tile) <= WARSHIP_MOVE_RETARGET_RADIUS;
+    }
+
+    rememberWarshipMoveTarget(smartState, id, target, tick) {
+      if (!smartState.lastMoveTargets) smartState.lastMoveTargets = new Map();
+      smartState.lastMoveTargets.set(id, { tile: target, tick });
+    }
+
+    // Non-consuming budget gate for warship moves: keep a reserve of the
+    // shared tokens for non-warship producers instead of spending the budget
+    // down to the last token. Sandboxes without the limiter allow moves.
+    warshipMoveBudgetAvailable() {
+      if (typeof getIntentRateLimitSnapshot !== "function") return true;
+      const snapshot = getIntentRateLimitSnapshot();
+      if (!snapshot || typeof snapshot !== "object") return true;
+      return (
+        snapshot.secondTokens > WARSHIP_MOVE_SECOND_TOKEN_RESERVE &&
+        snapshot.minuteTokens > WARSHIP_MOVE_MINUTE_TOKEN_RESERVE
+      );
     }
 
     canRunSmartWarshipCombat() {
@@ -2312,10 +2543,14 @@
         "enemyCombatTradeShips",
       ) : [];
       const friendlyPorts = this.friendlyCombatPorts(me);
-      const baseTarget = this.combatBaseTarget(myWarships[0], friendlyPorts);
+      // Nominate one fleet-wide focus target for this pass so the fleet
+      // concentrates fire. Recomputed every pass: a destroyed or retreating
+      // primary naturally drops out, and the next-most-reachable enemy takes
+      // over. (Retreat anchors are per ship — see combatRetreatTarget.)
+      const primaryTargetId = this.chooseFleetFocusTarget(myWarships, enemyWarships);
       const context = {
         smartState: s, friendlyPorts, enemyWarships, myWarships, enemyTradeShips,
-        maxHp, retreatPct, baseTarget, huntTrade,
+        maxHp, retreatPct, huntTrade, primaryTargetId,
       };
 
       for (const warship of myWarships) {

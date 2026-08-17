@@ -990,6 +990,211 @@ assert.equal(
   "a much larger Tribe attack cannot freeze the opening economy's offensive budget",
 );
 
+// ── Preemptive strategic-border Defense Post authorization ───────────────────
+// A frontier shared with an army-sized Nation/Human must authorize Posts
+// BEFORE the dogpile starts, capped at two concurrent Posts, while weaker
+// neighbors and live-attack budgets keep their original behavior.
+let strategicBorderTick = 5_000;
+let strategicBorderPlayersReads = 0;
+let strategicBorderPosts = [];
+const strategicBorderMe = {
+  smallID: () => 21,
+  isPlayer: () => true,
+  isAlive: () => true,
+  isFriendly: () => false,
+  isOnSameTeam: () => false,
+  troops: () => 100_000,
+  incomingAttacks: () => [],
+  borderTiles: () => new Set([101, 901, 111]),
+  units: (type) => (type === UNIT.DefensePost ? strategicBorderPosts : []),
+};
+const strongBorderNation = {
+  smallID: () => 22,
+  isPlayer: () => true,
+  isAlive: () => true,
+  type: () => sandbox.PlayerType.Nation,
+  troops: () => 250_000,
+};
+const weakBorderNation = {
+  smallID: () => 23,
+  isPlayer: () => true,
+  isAlive: () => true,
+  type: () => sandbox.PlayerType.Nation,
+  troops: () => 40_000,
+};
+const hugeBorderBot = {
+  smallID: () => 24,
+  isPlayer: () => true,
+  isAlive: () => true,
+  type: () => sandbox.PlayerType.Bot,
+  troops: () => 900_000,
+};
+const strategicBorderBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+strategicBorderBehavior.player = strategicBorderMe;
+strategicBorderBehavior.game = {
+  ticks: () => strategicBorderTick,
+  players: () => {
+    strategicBorderPlayersReads++;
+    return [strategicBorderMe, strongBorderNation, weakBorderNation, hugeBorderBot];
+  },
+  config: () => ({
+    isUnitDisabled: () => false,
+    defensePostRange: () => 30,
+  }),
+  neighbors: (tile) => ({ 101: [102], 901: [902], 111: [112] })[tile] ?? [],
+  isLand: () => true,
+  hasOwner: (tile) => tile === 102 || tile === 902 || tile === 112,
+  ownerID: (tile) => ({ 102: 22, 902: 22, 112: 23 })[tile] ?? null,
+  euclideanDistSquared: (left, right) => (left - right) ** 2,
+};
+strategicBorderBehavior.spacingConstants = () => ({
+  borderSpacing: 30,
+  structureSpacing: 60,
+});
+
+const strategicThreat =
+  strategicBorderBehavior.defensePostThreat(Difficulty.Impossible);
+assert.equal(
+  strategicThreat?.strategicBorder,
+  true,
+  "a bordering army-sized Nation with no attack at all is a strategic Defense Post threat",
+);
+assert.equal(
+  strategicThreat?.allowed,
+  2,
+  "the quiet strategic frontier authorizes two preemptive Defense Posts",
+);
+assert.deepEqual(
+  Array.from(strategicThreat?.landAttacks ?? []),
+  [],
+  "the preemptive authorization carries no live attacks",
+);
+assert.deepEqual(
+  Array.from(strategicThreat?.frontTiles ?? []),
+  [101, 901],
+  "preemptive placement targets only the frontier tiles shared with the strong neighbor",
+);
+assert.notEqual(
+  strategicBorderBehavior.defensePostFrontDemand(
+    strategicThreat,
+    strategicThreat.frontTiles,
+  ),
+  null,
+  "with no Posts built the preemptive budget is live",
+);
+strategicBorderPosts = [{ tile: () => 101 }];
+assert.notEqual(
+  strategicBorderBehavior.defensePostFrontDemand(
+    strategicThreat,
+    strategicThreat.frontTiles,
+  ),
+  null,
+  "the second preemptive Post stays authorized while one frontier half is uncovered",
+);
+strategicBorderPosts = [{ tile: () => 101 }, { tile: () => 901 }];
+assert.equal(
+  strategicBorderBehavior.defensePostFrontDemand(
+    strategicThreat,
+    strategicThreat.frontTiles,
+  ),
+  null,
+  "a third Post is never authorized once two already hold the strategic frontier",
+);
+strategicBorderPosts = [];
+
+strategicBorderTick++;
+assert.equal(
+  strategicBorderBehavior.defensePostThreat(Difficulty.Medium)?.allowed,
+  1,
+  "Medium keeps its single-Post cap under the strategic border rule",
+);
+assert.equal(
+  strategicBorderBehavior.defensePostThreat(Difficulty.Easy),
+  null,
+  "Easy never authorizes Defense Posts, preemptive or not",
+);
+
+const originalStrongNationTroops = strongBorderNation.troops;
+strongBorderNation.troops = () => 40_000;
+strategicBorderTick++;
+assert.equal(
+  strategicBorderBehavior.defensePostThreat(Difficulty.Impossible),
+  null,
+  "a weaker bordering Nation authorizes no preventive Post even while a huge Bot shares the border",
+);
+strongBorderNation.troops = originalStrongNationTroops;
+
+strategicBorderTick++;
+strategicBorderPlayersReads = 0;
+strategicBorderBehavior.defensePostThreat(Difficulty.Impossible);
+strategicBorderBehavior.defensePostThreat(Difficulty.Impossible);
+assert.equal(
+  strategicBorderPlayersReads,
+  1,
+  "the preemptive authorization reuses one strategic border snapshot per game tick",
+);
+
+let preemptivePriorityThreat = null;
+strategicBorderBehavior.tryBuildDefensePost = async (threat) => {
+  preemptivePriorityThreat = threat;
+  return true;
+};
+strategicBorderTick++;
+assert.equal(
+  await strategicBorderBehavior.handleDefensePostPriority(false),
+  true,
+  "the quiet strategic frontier takes construction priority for its preemptive Post",
+);
+assert.equal(preemptivePriorityThreat?.strategicBorder, true);
+strongBorderNation.troops = () => 40_000;
+strategicBorderTick++;
+let weakQuietBorderBuildAttempted = false;
+strategicBorderBehavior.tryBuildDefensePost = async () => {
+  weakQuietBorderBuildAttempted = true;
+  return true;
+};
+assert.equal(
+  await strategicBorderBehavior.handleDefensePostPriority(false),
+  null,
+  "a weaker quiet border leaves ordinary construction in charge",
+);
+assert.equal(
+  weakQuietBorderBuildAttempted,
+  false,
+  "no Defense Post placement is probed for a weaker quiet border",
+);
+strongBorderNation.troops = originalStrongNationTroops;
+
+strategicBorderBehavior.isLandAttack = () => true;
+strategicBorderMe.incomingAttacks = () => [
+  {
+    troops: () => 120_000,
+    target: () => strategicBorderMe,
+    attacker: () => strongBorderNation,
+  },
+];
+strategicBorderTick++;
+const liveAttackThreat =
+  strategicBorderBehavior.defensePostThreat(Difficulty.Impossible);
+assert.equal(
+  liveAttackThreat?.strategicBorder,
+  undefined,
+  "a live attack keeps the original authorization shape",
+);
+assert.equal(
+  liveAttackThreat?.allowed,
+  3,
+  "a 1.2x live land push keeps its ratio-derived three-Post budget unclamped by the preemptive cap",
+);
+assert.equal(
+  liveAttackThreat?.frontTiles,
+  undefined,
+  "live-attack placement still derives its front from the attackers, not the strong neighbor",
+);
+assert.equal(liveAttackThreat?.landAttacks.length, 1);
+strategicBorderMe.incomingAttacks = () => [];
+delete strategicBorderBehavior.isLandAttack;
+
 const defensePostLivenessBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 let defensePostLivenessTick = 100;
 defensePostLivenessBehavior.handleHostileSiloSamMaximumPriority = async () => null;
@@ -4188,6 +4393,10 @@ assert.equal(
 enemySilos.gold = originalEnemySilosGoldForCapacityTest;
 
 behavior.game.units = () => [];
+// The missile-family reads ride the shared per-tick unit snapshot: bumping the
+// tick alongside the stub swap keeps the snapshot read fresh (same game +
+// same tick must observe one unit list).
+forecastTick += 1;
 behavior._missileDefenseSignalTick = null;
 behavior._activeHostileMissileTick = null;
 behavior._activeHostileMissileCache = null;
@@ -4213,6 +4422,7 @@ const activeHostileMissile = {
   owner: () => enemySilos,
 };
 behavior.game.units = () => [activeHostileMissile];
+forecastTick += 1;
 behavior._missileDefenseSignalTick = null;
 behavior._activeHostileMissileTick = null;
 behavior._activeHostileMissileCache = null;
@@ -4782,17 +4992,26 @@ behavior.game.ownerID = originalThreatOwnerId;
 behavior.legendaryScoredActiveMissileThreat = originalScoredActiveMissileThreat;
 
 const originalThreatGameUnits = behavior.game.units;
+const originalThreatGameTicks = behavior.game.ticks;
 let enumeratedActiveMissileTypes = [];
+// The missile-family reads ride the shared per-tick unit snapshot: same game
+// object + same tick must observe the same unit list. Swapping the units stub
+// mid-tick therefore advances the tick so each enumeration below is a fresh
+// (recordable) snapshot read instead of a stale cache hit.
+let threatGameUnitsTick = 9_001;
+behavior.game.ticks = () => threatGameUnitsTick;
 behavior.game.units = (...types) => {
   enumeratedActiveMissileTypes = types;
   return [];
 };
+threatGameUnitsTick += 1;
 behavior.legendaryActiveMissileThreats({ samProfiles: [] });
 assert.deepEqual(
   Array.from(enumeratedActiveMissileTypes),
   [UNIT.AtomBomb, UNIT.HydrogenBomb],
   "Generic trajectory interception enumerates only Atom and Hydrogen bombs",
 );
+threatGameUnitsTick += 1;
 behavior.activeMirvDefenseDemands();
 assert.deepEqual(
   Array.from(enumeratedActiveMissileTypes),
@@ -4976,6 +5195,7 @@ assert.equal(
 own.units = originalMirvPlayerUnits;
 behavior.game.euclideanDistSquared = originalMirvDistance;
 behavior.game.units = originalThreatGameUnits;
+behavior.game.ticks = originalThreatGameTicks;
 
 const originalConstructionDuration = behavior.legendaryConstructionDuration;
 const originalPendingEvaluation = behavior.legendaryDefenseEvaluation;

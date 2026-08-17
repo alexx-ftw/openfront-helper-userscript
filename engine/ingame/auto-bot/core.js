@@ -222,6 +222,13 @@
   const EARLY_EXPAND_OPENING_LIMIT = 0.4;
   const EARLY_EXPAND_FOLLOWUP_COMMIT = 0.1;
   const EARLY_EXPAND_MINIMUM_MARGIN = 1.25;
+  // Re-base the opening ceiling when the field army has grown by at least this
+  // ratio since the snapshot was taken. A snowballing opening (a quick City or
+  // a captured tribe) should be allowed to spend its larger army on free land
+  // rather than being throttled to 40% of the much smaller spawn-time army.
+  // 1.25 means a 25% growth triggers a rebase; smaller and the ceiling churns
+  // on noise, larger and a genuine snowball is starved.
+  const EARLY_EXPAND_OPENING_REBASE_RATIO = 1.25;
   const BUILD_THROTTLE_MS = 1800;
   const NUKE_THROTTLE_MS = 6000;
   // MIRV (late-game super-weapon vs a too-strong enemy): per-target cooldown + the

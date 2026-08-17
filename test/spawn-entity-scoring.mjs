@@ -31,8 +31,9 @@ function loadScorer({
   me = null,
   landComponents = null,
   landComponentsReady = true,
+  terrain = null,
 }) {
-  const terrain = new Uint8Array(width * height).fill(LAND);
+  const mapTerrain = terrain ?? new Uint8Array(width * height).fill(LAND);
   const metricValue = (candidateRef, key, fallback) => metrics[candidateRef]?.[key] ?? fallback;
   const sandbox = {
     Array,
@@ -96,7 +97,7 @@ function loadScorer({
   });
 
   const game = {
-    __src: { _map: { terrain } },
+    __src: { _map: { terrain: mapTerrain } },
     config: () => ({ minDistanceBetweenPlayers: () => 30 }),
     hasOwner: () => false,
     height: () => height,
@@ -418,6 +419,115 @@ assert.equal(
   nationEnemySafety[0].x,
   340,
   "an enemy Nation near an otherwise team-safe candidate must penalize its spawn safety",
+);
+
+// Terra nullius must substitute for tribes in the resource floor: the tribe
+// sits inside the crowded, surrounded candidate, yet the empty expansible
+// region has to win the exact ranking.
+const terraNulliusWidth = 600;
+const terraNulliusMe = makePlayer("HUMAN", 300, 150, 60);
+terraNulliusMe.isOnSameTeam = () => false;
+const crowdedRef = 150 * terraNulliusWidth + 150;
+const emptyRef = 150 * terraNulliusWidth + 450;
+const terraNullius = loadScorer({
+  width: terraNulliusWidth,
+  height: 300,
+  candidates: [
+    { ref: crowdedRef, x: 150, y: 150 },
+    { ref: emptyRef, x: 450, y: 150 },
+  ],
+  metrics: {
+    [crowdedRef]: {
+      spawnGain: 100,
+      invalidCount: 900,
+      frontierGain: 0,
+      frontierSlots: 0,
+      frontierValueGain: 0,
+    },
+  },
+  players: [terraNulliusMe, makePlayer("BOT", 150, 150, 61)],
+  me: terraNulliusMe,
+});
+assert.equal(
+  terraNullius[0].x,
+  450,
+  "an empty expansible region must outrank a tribe-rich surrounded interior",
+);
+assert.equal(
+  terraNullius[0].objective.resourceScore,
+  0.6,
+  "free land alone keeps the resource floor at 0.6 when no tribe is reachable",
+);
+
+// Nation avoidance holds a 30% share of the combined entity score. The two
+// candidates share identical tribal opportunity (one equidistant tribe), so
+// only the nation blend separates their resource scores.
+const nationBlendWidth = 600;
+const nationBlendMe = makePlayer("HUMAN", 300, 150, 70);
+nationBlendMe.isOnSameTeam = () => false;
+const nearNationRef = 150 * nationBlendWidth + 150;
+const farNationRef = 150 * nationBlendWidth + 450;
+const nationBlend = loadScorer({
+  width: nationBlendWidth,
+  height: 300,
+  candidates: [
+    { ref: nearNationRef, x: 150, y: 150 },
+    { ref: farNationRef, x: 450, y: 150 },
+  ],
+  players: [nationBlendMe, makePlayer("BOT", 300, 150, 71), makePlayer("NATION", 150, 180, 72)],
+  me: nationBlendMe,
+});
+const nearNation = nationBlend.find((candidate) => candidate.x === 150);
+const farNation = nationBlend.find((candidate) => candidate.x === 450);
+assert.equal(
+  nearNation.resourceScore,
+  0.85 * 0.7 + 0.75 * 0.3,
+  "nation proximity contributes a full 30% of the tribe-target blend",
+);
+assert.equal(
+  farNation.resourceScore,
+  0.85 * 0.7,
+  "an identical tribal opportunity far from the nation capital keeps only the 70% tribe share",
+);
+
+// Coastal access: candidates share identical metrics and map-edge symmetry,
+// so their exact scores differ only by the SPAWN_W-scaled coastal term. The
+// water columns put the second candidate's bounded radius-10 sample at ~32%
+// water, while the open-ocean disk past 45% earns nothing.
+const coastalWidth = 600;
+const coastalTerrain = new Uint8Array(coastalWidth * 300).fill(LAND);
+for (let y = 0; y < 300; y += 1) {
+  for (let x = 353; x <= 359; x += 1) coastalTerrain[y * coastalWidth + x] = 0;
+}
+for (let y = 140; y <= 160; y += 1) {
+  for (let x = 440; x <= 460; x += 1) {
+    if (x !== 450 || y !== 150) coastalTerrain[y * coastalWidth + x] = 0;
+  }
+}
+const coastal = loadScorer({
+  width: coastalWidth,
+  height: 300,
+  candidates: [
+    { ref: 150 * coastalWidth + 250, x: 250, y: 150 },
+    { ref: 150 * coastalWidth + 349, x: 349, y: 150 },
+    { ref: 150 * coastalWidth + 450, x: 450, y: 150 },
+  ],
+  terrain: coastalTerrain,
+  players: [],
+});
+const landlocked = coastal.find((candidate) => candidate.x === 250);
+const sheltered = coastal.find((candidate) => candidate.x === 349);
+const openOcean = coastal.find((candidate) => candidate.x === 450);
+assert.equal(landlocked.coastalScore, 0, "a purely landlocked candidate earns no coastal bonus");
+assert.ok(sheltered.coastalScore > 0.8, "a ~30% water share earns close to the full coastal bonus");
+assert.equal(
+  openOcean.coastalScore,
+  0,
+  "an open-ocean water share beyond the 45% band edge earns no coastal bonus",
+);
+assert.ok(
+  Math.abs(sheltered.score - landlocked.score - sheltered.coastalScore * 0.1) < 1e-9,
+  "the coastal term adds exactly its SPAWN_W-scaled weight to the exact score",
 );
 
 const diverseWidth = 600;

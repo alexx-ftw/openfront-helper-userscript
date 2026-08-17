@@ -43,12 +43,26 @@ const SPAWN_HEATMAP_TOP_N = 5;
 const EXACT_SPAWN_CANDIDATE_POOL_SIZE = SPAWN_HEATMAP_TOP_N * 8;
 const SPAWN_TOP_SPOT_MIN_DISTANCE = 60;
 const SPAWN_HEATMAP_ENEMY_PRESSURE_R = 220;
+// Strength weighting for the exact (bot-only) enemy-pressure axes: a spawned
+// rival's live troop count scales how hard its proximity presses on spawn
+// safety. Freshly spawned players sit at the neutral 1.0 weight and the cap
+// keeps one runaway giant from dominating the whole safety floor. The visual
+// heatmap never attaches weights, so the overlay semantics stay unchanged.
+const SPAWN_ENEMY_PRESSURE_WEIGHT_MIN = 1;
+const SPAWN_ENEMY_PRESSURE_WEIGHT_MAX = 2.5;
+const SPAWN_ENEMY_PRESSURE_WEIGHT_TROOP_SCALE = 20_000;
 const SPAWN_HEATMAP_TEAM_ATTRACT_R = 110;
 const SPAWN_HEATMAP_TEAM_MIN_GAP = 30;
 const SPAWN_HEATMAP_TEAM_IDEAL_MAX = 90;
 const SPAWN_HEATMAP_TEAM_OVERLAP_MAX = 0.4;
 const SPAWN_HEATMAP_TEAM_CENTROID_R = 260;
 const SPAWN_TEAM_INTERIOR_MARGIN = 12;
+// Coastal-access sampling for the exact selector: bounded radius-10 water
+// share with a rewarded 15-45% band peaking at ~30%.
+const SPAWN_COASTAL_SAMPLE_R = 10;
+const SPAWN_COASTAL_WATER_MIN_SHARE = 0.15;
+const SPAWN_COASTAL_WATER_PEAK_SHARE = 0.3;
+const SPAWN_COASTAL_WATER_MAX_SHARE = 0.45;
 
 // The exact selector keeps ten map-sized typed arrays plus transient terrain
 // and occupancy copies. Keep its optional peak allocation below 32 MiB; larger maps
@@ -74,6 +88,9 @@ const SPAWN_W = {
   clan: 0.25,
   teamCentroid: 0.08,
   enemyPressure: 0.12,
+  // Exact selector's coastal-access term: rewards a modest share of nearby
+  // water (boats/ports) without surrendering the spawn footprint to ocean.
+  coastal: 0.1,
 };
 
 // ── Raw terrain access (THE anti-lag fix) ──────────────────────────────
@@ -527,6 +544,45 @@ function sampleStaticSpawnTerrain(options) {
   return { landCount, plainsCount, totalChecked };
 }
 
+// Bounded per-candidate water share for the exact scorer's coastal term.
+// The every-other-tile radius-10 lattice is precomputed once, so sampling a
+// candidate stays a fixed ~80-byte read instead of a nested rescan.
+const SPAWN_COASTAL_SAMPLE_OFFSETS = [];
+for (let dy = -SPAWN_COASTAL_SAMPLE_R; dy <= SPAWN_COASTAL_SAMPLE_R; dy += 2) {
+  for (let dx = -SPAWN_COASTAL_SAMPLE_R; dx <= SPAWN_COASTAL_SAMPLE_R; dx += 2) {
+    if (dx * dx + dy * dy <= SPAWN_COASTAL_SAMPLE_R * SPAWN_COASTAL_SAMPLE_R) {
+      SPAWN_COASTAL_SAMPLE_OFFSETS.push([dx, dy]);
+    }
+  }
+}
+
+// Out-of-map lattice points count as non-water, so map-edge candidates keep a
+// conservative share instead of mistaking the void for extra coastline.
+function sampleCoastalWaterShare(terrain, W, H, cx, cy) {
+  if (!terrain) return 0;
+  let water = 0;
+  for (let index = 0; index < SPAWN_COASTAL_SAMPLE_OFFSETS.length; index += 1) {
+    const [dx, dy] = SPAWN_COASTAL_SAMPLE_OFFSETS[index];
+    const x = cx + dx;
+    const y = cy + dy;
+    if (x < 0 || x >= W || y < 0 || y >= H) continue;
+    if (!isLandByte(terrain[y * W + x])) water += 1;
+  }
+  return water / SPAWN_COASTAL_SAMPLE_OFFSETS.length;
+}
+
+// Tent over the rewarded water band: 1 at the ~30% peak, linearly fading to 0
+// at the 15%/45% edges. Purely landlocked and open-ocean disks both score 0.
+function coastalAccessScore(waterShare) {
+  if (waterShare < SPAWN_COASTAL_WATER_MIN_SHARE || waterShare > SPAWN_COASTAL_WATER_MAX_SHARE) {
+    return 0;
+  }
+  const deviation = waterShare < SPAWN_COASTAL_WATER_PEAK_SHARE
+    ? SPAWN_COASTAL_WATER_PEAK_SHARE - waterShare
+    : waterShare - SPAWN_COASTAL_WATER_PEAK_SHARE;
+  return 1 - deviation / (SPAWN_COASTAL_WATER_PEAK_SHARE - SPAWN_COASTAL_WATER_MIN_SHARE);
+}
+
 function createStaticSpawnCandidate(options) {
   const { W, H, cx: x, cy: y } = options;
   const sample = sampleStaticSpawnTerrain(options);
@@ -842,10 +898,12 @@ function combineSpawnEntityScore(
 ) {
   if (tribeCount > 0) {
     // Count of reachable tribes is the primary objective. Nearest-tribe
-    // proximity breaks close counts; nation proximity is only secondary.
+    // proximity breaks close counts; nation proximity stays secondary but
+    // weighs a full 30% because spawning beside an established nation
+    // capital is how bot openings die, however rich the tribal interior is.
     const tribeTargetScore = tribeReachScore * 0.85 + tribeScore * 0.15;
     return nationCount > 0
-      ? tribeTargetScore * 0.85 + nationScore * 0.15
+      ? tribeTargetScore * 0.7 + nationScore * 0.3
       : tribeTargetScore;
   }
   if (nationCount > 0) return nationScore;
@@ -1139,11 +1197,35 @@ function nearestSpawnDistance(points, x, y) {
   );
 }
 
+function spawnEnemyPressureWeight(player) {
+  const troops = Number(player?.troops?.());
+  if (!Number.isFinite(troops) || troops <= 0) return SPAWN_ENEMY_PRESSURE_WEIGHT_MIN;
+  return Math.min(
+    SPAWN_ENEMY_PRESSURE_WEIGHT_MAX,
+    SPAWN_ENEMY_PRESSURE_WEIGHT_MIN + troops / SPAWN_ENEMY_PRESSURE_WEIGHT_TROOP_SCALE,
+  );
+}
+
+// Exact-ranking variant of nearestSpawnDistance: a stronger enemy counts as
+// proportionally CLOSER (its distance is divided by its weight), so the
+// safety floor demands more distance from it. Points without an attached
+// weight (visual path, pending spawn intents) make this bit-identical to
+// nearestSpawnDistance.
+function weightedNearestSpawnDistance(points, x, y) {
+  return points.reduce((nearest, point) => {
+    const weight = point.weight ?? 1;
+    return Math.min(
+      nearest,
+      (Math.abs(point.x - x) + Math.abs(point.y - y)) / weight,
+    );
+  }, Infinity);
+}
+
 function spawnEnemyPressure(points, x, y) {
   return points.reduce((pressure, point) => {
     const distance = Math.abs(point.x - x) + Math.abs(point.y - y);
-    return distance < SPAWN_HEATMAP_ENEMY_PRESSURE_R
-      ? pressure + 1 - distance / SPAWN_HEATMAP_ENEMY_PRESSURE_R : pressure;
+    if (distance >= SPAWN_HEATMAP_ENEMY_PRESSURE_R) return pressure;
+    return pressure + (point.weight ?? 1) * (1 - distance / SPAWN_HEATMAP_ENEMY_PRESSURE_R);
   }, 0);
 }
 
@@ -1366,8 +1448,17 @@ function collectExactHumanLocation(player, context) {
   context.liveKeys.add(key);
   const point = { x: location.x, y: location.y };
   if (spawnPlayersShareClan(player, context)) context.clanSpawns.push(point);
-  const target = teammate ? context.teamSpawns : context.enemySpawns;
-  target.push(point);
+  if (teammate) {
+    context.teamSpawns.push(point);
+  } else {
+    // Bot-only strength signal: enemy proximity weighs by the rival's live
+    // army, so exact ranking avoids settling beside someone who can already
+    // overrun the opening. The visual scorer collects its own unweighted
+    // points, and pending spawn intents have no live view, so both stay at
+    // the neutral weight.
+    point.weight = spawnEnemyPressureWeight(player);
+    context.enemySpawns.push(point);
+  }
 }
 
 function pendingSpawnPoint(game, entry) {
@@ -1396,9 +1487,18 @@ function collectPendingExactSpawnPoints(game, context) {
 }
 
 function exactSpawnSignature(context) {
+  // Enemy weights derive from live troop counts, so they must participate in
+  // the signature: without them a grown rival would keep serving a ranking
+  // computed while it was still small.
+  const enemySignature = (point) => {
+    const coordinate = `${point.x},${point.y}`;
+    return point.weight != null
+      ? `${coordinate}:${point.weight.toFixed(3)}`
+      : coordinate;
+  };
   return [
     String(_spawnIntentVersion), context.myClanTag || "",
-    context.enemySpawns.map((point) => `${point.x},${point.y}`).join(";"),
+    context.enemySpawns.map(enemySignature).join(";"),
     context.teamSpawns.map((point) => `${point.x},${point.y}`).join(";"),
     context.clanSpawns.map((point) => `${point.x},${point.y}`).join(";"),
     context.tribeLocs.map((point) => `${point.x},${point.y}`).sort().join(";"),
@@ -1515,6 +1615,9 @@ function createExactSpawnRankingContext(game, index, points, options, incrementa
     : null;
   return {
     game, index, points, options, incremental, W, H,
+    // Raw terrain for the bounded coastal sample; the cached spawn terrain is
+    // already resolved by ensureSpawnCandidateIndex before this context runs.
+    terrain: getSpawnTerrain(game)?.terrain ?? null,
     area: getSpawnAreaForGame(game, options?.me),
     minDist: exactSpawnMinimumDistance(game),
     tribeProximity: buildSpawnProximityIndex(
@@ -1605,7 +1708,7 @@ function rankExactSpawnCandidate(context, args) {
     context.points.tribeLocs.length, context.points.nationLocs.length,
   );
   const playerScore = Math.min(1,
-    nearestSpawnDistance(context.points.enemySpawns, x, y) / SPAWN_HEATMAP_PLAYER_R,
+    weightedNearestSpawnDistance(context.points.enemySpawns, x, y) / SPAWN_HEATMAP_PLAYER_R,
   );
   const pressureScore = 1 / (1 + spawnEnemyPressure(context.points.enemySpawns, x, y));
   const clanDistance = nearestSpawnDistance(context.points.clanSpawns, x, y);
@@ -1615,11 +1718,15 @@ function rankExactSpawnCandidate(context, args) {
   const teamInteriorScore = teamPolyhedronInteriorScore(
     x, y, context.teamPolyhedron, context.teamCentroid,
   );
+  const coastalScore = coastalAccessScore(
+    sampleCoastalWaterShare(context.terrain, context.W, context.H, x, y),
+  );
   const score = clusterScore * SPAWN_W.land + plainsScore * SPAWN_W.plains +
     tribeReach.score * SPAWN_W.tribe + tribeClusterScore * SPAWN_W.tribe * 0.2 +
     tribeScore * SPAWN_W.tribe * 0.15 +
     nationScore * SPAWN_W.nation + playerScore * SPAWN_W.player +
     edgeScore * SPAWN_W.edge + pressureScore * SPAWN_W.enemyPressure +
+    coastalScore * SPAWN_W.coastal +
     team.score + clanScore * SPAWN_W.clan;
   const frontierCoverage = exactFrontierCoverage(
     frontierSlots, frontierValueGain, context.frontierValueScale, freeLandScore, clusterScore,
@@ -1633,7 +1740,7 @@ function rankExactSpawnCandidate(context, args) {
     ref: tile, x, y, score, spawnGain, frontierGain, frontierValueGain, freeLandScore,
     tribeScore, tribeReachCount: tribeReach.count, tribeReachScore: tribeReach.score,
     tribeGeometricReachCount: tribeReach.geometricCount,
-    tribeClusterScore,
+    tribeClusterScore, coastalScore,
     tribeReachRadius: tribeReach.radius, nationScore, resourceScore, clanScore,
     teamPolyhedronScore: context.teamPolyhedron ? 1 : 0, objective,
     landConnectivityReady: context.index.landComponentsReady === true,

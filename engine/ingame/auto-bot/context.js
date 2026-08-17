@@ -108,6 +108,18 @@
     );
     const gold = player?.gold?.();
     if (typeof gold !== "bigint" || gold - reserved < cost) return false;
+    // The build menu emits straight onto the EventBus, bypassing emitIntent's
+    // consuming gate — but the server's ClientMsgRateLimiter still counts
+    // these. Acquire the shared client token here so construction bursts (a
+    // structure pass every few ticks under siege, a staggered
+    // SAM-overwhelm salvo coming due) are paced locally and cleanly retried
+    // by their callers instead of silently dropped server-side.
+    if (
+      typeof tryAcquireIntentRateLimit === "function" &&
+      !tryAcquireIntentRateLimit()
+    ) {
+      return false;
+    }
     buildMenu.sendBuildOrUpgrade(buildable, tile);
     autoBotBuildReservations.push({
       playerId,

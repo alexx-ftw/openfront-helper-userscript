@@ -1329,6 +1329,10 @@ const finalResult = {
   stopReason,
   spawnLifecycle: bot.getSpawnLifecycleSnapshot(),
   nuclearStrategy: bot.getNuclearStrategySnapshot(),
+  intentBudget: bot.getIntentBudgetSnapshot() ?? undefined,
+  intentBudgetViolated:
+    process.env.OFH_ASSERT_INTENT_BUDGET === "1" &&
+    (bot.getIntentBudgetSnapshot()?.rejected ?? 0) > 0,
   performanceProfile: profileBot ? bot.getPerformanceProfile() : undefined,
   emittedIntents,
   hostileMissileFixture: injectHostileAtom
@@ -1369,5 +1373,8 @@ const finalResult = {
 process.stderr.write(`${JSON.stringify(finalResult)}\n`, () => {
   const hostileMissileFixtureComplete =
     !injectHostileAtom || (hostileMissileInjected && hostileMissileSeen && hostileMissileResolved);
-  process.exit(won && hostileMissileFixtureComplete ? 0 : 2);
+  const intentBudgetClean =
+    process.env.OFH_ASSERT_INTENT_BUDGET !== "1" ||
+    (bot.getIntentBudgetSnapshot()?.rejected ?? 0) === 0;
+  process.exit(won && hostileMissileFixtureComplete && intentBudgetClean ? 0 : 2);
 });

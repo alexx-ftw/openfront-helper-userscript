@@ -32,6 +32,12 @@
   // bounded radius used by the former open-ocean search; a distant coast must
   // not outrank an urgent nearby attack merely because it is finite.
   const EARLY_GAME_MAX_MARITIME_DISTANCE = 80;
+  // A tribe holding real territory — and whatever cities/structures stand on
+  // it — keeps producing after the conquest, while a three-tile tribe is a
+  // snack. `targetTiles` is already gathered for every full candidate by the
+  // border snapshot, so the value costs no extra scan; saturate it so a huge
+  // tribe cannot outweigh feasibility dimensions.
+  const EARLY_GAME_TRIBE_VALUE_SATURATION_TILES = 30;
 
   function isEarlyGameBoatEta(etaTicks) {
     return (
@@ -908,9 +914,22 @@
       : coastalSignal;
   }
 
+  // Normalize a tribe's held territory to [0, 1] against a modest saturation
+  // point. Tile count is the cheap proxy for the prize on offer: larger land
+  // and the cities/structures riding on it compound the conquest's payoff.
+  function calculateEarlyGameTribeValue(candidate = {}) {
+    const targetTiles = Number(candidate.targetTiles);
+    if (!Number.isFinite(targetTiles) || targetTiles <= 0) return 0;
+    return finiteEarlyGameSignal(
+      targetTiles / EARLY_GAME_TRIBE_VALUE_SATURATION_TILES,
+    );
+  }
+
   // Strategic dimensions use the same [0, 1] scale. Continuation receives two
   // shares because opening a large tribe chain is the primary expansion goal;
-  // hard feasibility remains separate so an invalid route can never compensate.
+  // tribe value earns one share so a real prize outranks an equally cheap
+  // three-tile snack without ever outweighing hard feasibility, which remains
+  // separate so an invalid route can never compensate.
   function calculateEarlyGameTribeUtility(candidate = {}) {
     if (!isEarlyGameTribeActionable(candidate)) return -Infinity;
     const routeEfficiency = calculateEarlyGameRouteEfficiency(candidate);
@@ -934,6 +953,7 @@
       finiteEarlyGameSignal(candidate.blockValue),
     );
     const continuation = calculateEarlyGameContinuationValue(candidate);
+    const tribeValue = calculateEarlyGameTribeValue(candidate);
     const maritimeOpportunity =
       calculateEarlyGameMaritimeOpportunity(candidate);
     return (
@@ -942,15 +962,18 @@
       raceUrgency +
       territorialControl +
       continuation * 2 +
+      tribeValue +
       maritimeOpportunity
-    ) / 7;
+    ) / 8;
   }
 
   // Preserve irreversible/race urgency first, then choose the direction with
   // the largest connected tribe cluster. Utility decides among equivalent
-  // cluster opportunities. Keeping cluster value only inside the averaged
-  // utility allowed several attractive local signals to overwhelm the actual
-  // opening objective: reaching the largest chain of edible tribes.
+  // cluster opportunities, with the raw tribe prize as the next tie-break —
+  // two equal-utility gateways resolve toward the one holding more territory.
+  // Keeping cluster value only inside the averaged utility allowed several
+  // attractive local signals to overwhelm the actual opening objective:
+  // reaching the largest chain of edible tribes.
   function earlyGameTribeSortKey(candidate = {}) {
     const distance = Number(candidate.distance);
     const urgentGatewayOrRace = Math.max(
@@ -966,6 +989,7 @@
       finiteEarlyGameSignal(candidate.tribeClusterAccess),
       calculateEarlyGameContinuationValue(candidate),
       calculateEarlyGameTribeUtility(candidate),
+      calculateEarlyGameTribeValue(candidate),
       finiteEarlyGameSignal(candidate.captureEfficiency),
       calculateEarlyGameRouteEfficiency(candidate),
       candidate.landBorder === true ? 1 : 0,

@@ -1080,7 +1080,7 @@ export class BundledOpponentBot {
     // suppressing its tick here turns every Team simulation into an inert
     // pre-spawn loop.  Once the spawn phase has closed, retain the normal
     // guard against acting for an eliminated/unmaterialized player.
-    if (!player || (!player.isPlayer?.() && !this.game.inSpawnPhase?.())) return [];
+    if (this.shouldSkipBotTick(player)) return [];
 
     const beginTickStart = profileStart();
     await this.api.beginTick(player);
@@ -1095,8 +1095,54 @@ export class BundledOpponentBot {
     return sanitizeIntents(this.applyWinFixes(this.intentBuffer));
   }
 
+  // A silent skip of the bot tick froze every decision lane in matches where
+  // the engine player was still alive; surface that state so the stall is
+  // diagnosable from the trace instead of looking like a passive loss.
+  shouldSkipBotTick(player) {
+    if (player && (player.isPlayer?.() || this.game.inSpawnPhase?.())) {
+      return false;
+    }
+    const enginePlayer = this.findEnginePlayer();
+    if (enginePlayer?.isAlive?.()) {
+      this.warnDecideSkipWhileAlive(player, enginePlayer);
+    }
+    return true;
+  }
+
+  findEnginePlayer() {
+    return this.game
+      .players?.()
+      ?.find?.((candidate) => candidate.clientID?.() === this.clientID);
+  }
+
+  warnDecideSkipWhileAlive(player, enginePlayer) {
+    console.warn(
+      JSON.stringify({
+        kind: "decide-skip-while-alive",
+        tick: this.game.ticks(),
+        clientPlayerNull: !player,
+        clientIsPlayer: player ? player.isPlayer?.() : null,
+        engineTiles: enginePlayer.numTilesOwned?.() ?? null,
+        engineTroops: enginePlayer.troops?.() ?? null,
+      }),
+    );
+  }
+
   getPerformanceProfile() {
     return this.harness.internals.getAutoBotProfileSnapshot();
+  }
+
+  // The bundle's shared client intent budget (10/s, 150/min). `rejected`
+  // counts intents the local limiter refused — i.e. the bot actually tripped
+  // its own rate limit and dropped work. Build-menu sends acquire the same
+  // tokens, so this covers every bot producer.
+  getIntentBudgetSnapshot() {
+    const snapshot = this.harness.internals.getIntentRateLimitSnapshot?.();
+    if (!snapshot) return null;
+    return {
+      accepted: Number(snapshot.accepted || 0),
+      rejected: Number(snapshot.rejected || 0),
+    };
   }
 
   getNuclearStrategySnapshot() {

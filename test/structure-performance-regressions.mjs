@@ -2046,6 +2046,35 @@ assert.ok(
   "a later game tick invalidates the ranked railroad snapshot",
 );
 
+// ── Missile-family unit reads ride the shared per-tick snapshot ──────────────
+// The active-missile threat paths used to issue fresh game.units() calls per
+// consumer; the overlay prediction layers already re-read the same families
+// every tick. Source-level guard: every direct missile-family enumeration in
+// StructureBehavior must go through missileFamilyUnitsSnapshot (which rides
+// getCachedGameUnits when present and falls back to a direct read), so no new
+// call site can silently reintroduce per-consumer worker snapshots.
+{
+  const snapshotDefinition = source.match(
+    /missileFamilyUnitsSnapshot\(\.\.\.types\) \{\s*if \(typeof getCachedGameUnits === "function"\) \{\s*return getCachedGameUnits\(this\.game, \.\.\.types\);\s*\}\s*return this\.game\.units\(\.\.\.types\);/,
+  );
+  assert.ok(
+    snapshotDefinition !== null,
+    "missileFamilyUnitsSnapshot keeps the shared-cache read with direct fallback",
+  );
+  const callSiteCount = (source.match(/missileFamilyUnitsSnapshot\(/g) ?? []).length;
+  assert.ok(
+    callSiteCount >= 4,
+    `the missile-family snapshot helper is used by every enumeration site (found ${callSiteCount})`,
+  );
+  // No remaining direct missile-family enumeration outside the helper.
+  const directMissileEnumerations = source.match(/this\.game\.units\(\s*UNIT\.AtomBomb/g);
+  assert.equal(
+    directMissileEnumerations === null ? 0 : directMissileEnumerations.length,
+    0,
+    "no call site enumerates AtomBomb-family units directly anymore",
+  );
+}
+
 process.stdout.write(
   `structure performance regression tests passed (Factory cache ${factoryCacheDurationMs.toFixed(1)}ms; fingerprints ${fingerprintDurationMs.toFixed(1)}ms; SAM coverage ${coverageDurationMs.toFixed(1)}ms; launches ${launchDurationMs.toFixed(1)}ms; ally support ${supportDurationMs.toFixed(1)}ms)\n`,
 );

@@ -72,30 +72,36 @@ assert.equal(
 );
 
 const perSecond = createSandbox();
-for (let i = 0; i < 10; i += 1) {
+for (let i = 0; i < 9; i += 1) {
   assert.equal(
     perSecond.api.emitIntent(TestIntent, i),
     true,
-    "the first ten intents in a burst should be emitted locally",
+    "the first nine intents in a burst are emitted locally",
   );
 }
 assert.equal(
-  perSecond.api.emitIntent(TestIntent, 10),
+  perSecond.api.emitIntent(TestIntent, 9),
   false,
-  "the eleventh immediate intent must be held locally",
+  "the tenth immediate intent is held back for the server's per-second window cap",
 );
-assert.equal(perSecond.emitted.length, 10);
+assert.equal(perSecond.emitted.length, 9);
 perSecond.setNow(99);
 assert.equal(
-  perSecond.api.emitIntent(TestIntent, 11),
+  perSecond.api.emitIntent(TestIntent, 10),
   false,
   "less than one tenth of a second must not refill a full token",
 );
-perSecond.setNow(100);
+perSecond.setNow(500);
+assert.equal(
+  perSecond.api.emitIntent(TestIntent, 11),
+  false,
+  "mid-window drip-refilled tokens stay unusable inside the same second window (server parity)",
+);
+perSecond.setNow(1000);
 assert.equal(
   perSecond.api.emitIntent(TestIntent, 12),
   true,
-  "one tenth of a second should refill one per-second token",
+  "the next second window admits new intents",
 );
 
 const perMinute = createSandbox();
@@ -104,27 +110,33 @@ for (let i = 0; i < 300; i += 1) {
   perMinute.setNow(i * 200);
   if (perMinute.api.emitIntent(TestIntent, i)) accepted += 1;
 }
-assert.equal(accepted, 299, "the 150/minute bucket must apply after the initial burst and refill");
+assert.equal(accepted, 140, "the per-minute window cap applies across the whole anchored minute");
 assert.equal(
   perMinute.api.emitIntent(TestIntent, 300),
   false,
-  "the minute bucket must reject before one token refills",
+  "the minute window cap must hold until the window rolls over",
 );
 assert.equal(
   perMinute.api.hasIntentRateLimitCapacity(),
   false,
   "a depleted bucket must be observable without consuming another rejection",
 );
-perMinute.setNow(60000);
+perMinute.setNow(59900);
 assert.equal(
   perMinute.api.emitIntent(TestIntent, 301),
+  false,
+  "drip-refilled minute tokens stay unusable inside the same minute window",
+);
+perMinute.setNow(60000);
+assert.equal(
+  perMinute.api.emitIntent(TestIntent, 302),
   true,
-  "the minute bucket should refill continuously rather than impose a fixed cooldown",
+  "the next minute window admits new intents",
 );
 assert.equal(
   perMinute.api.hasIntentRateLimitCapacity(),
-  false,
-  "one refilled token is consumed by the next emitted intent",
+  true,
+  "a freshly rolled window leaves observable capacity for the next producers",
 );
 
 const snapshot = perMinute.api.getIntentRateLimitSnapshot();

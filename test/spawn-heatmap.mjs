@@ -278,6 +278,7 @@ const makePlayer = (type, x, y, id, { spawned = type === "HUMAN" } = {}) => ({
 });
 const fallbackMe = makePlayer("HUMAN", 0, 0, 99);
 fallbackMe.isOnSameTeam = () => false;
+
 const initialGeometryGame = {
   __src: { _map: { terrain: new Uint8Array(128 * 128).fill(LAND) } },
   height: () => 128,
@@ -322,6 +323,12 @@ assert.equal(fallback.topSpots[0].y, 100);
 assert.equal(fallback.scores[0].tribeReachCount, 0);
 assert.equal(fallback.scores[0].tribeGeometricReachCount, 3);
 assert.equal(fallback.scores[0].objective.safetyScore, 1);
+const fallbackEmptySide = fallback.scores.find((candidate) => candidate.x === 100);
+assert.equal(
+  fallbackEmptySide.objective.resourceScore,
+  0.6,
+  "the fallback objective lets free land substitute for absent tribes in the resource floor",
+);
 
 harness.setPlayers([fallbackMe, makePlayer("NATION", 100, 100, 7, { spawned: true })]);
 const nationEnemyFallback = harness.computeDynamicScores(
@@ -465,6 +472,62 @@ assert.equal(
   timersBeforeTopologyRefresh + 1,
   "terrain invalidation must reschedule cooperative connectivity construction",
 );
+
+// Exact-ranking enemy strength weighting: two metrically identical candidates
+// sit symmetrically between two spawned enemies. Without a live army on
+// either enemy the tie resolves by ref order; once one rival has grown a real
+// army, its proximity must press proportionally harder and flip the ranking
+// away from it. The weight also participates in the exact-result signature,
+// so the grown-rival ranking cannot be served from the stale cache.
+{
+  const weightingMe = makePlayer("HUMAN", 32, 32, 98);
+  weightingMe.isOnSameTeam = () => false;
+  const weakEnemyNearLeft = makePlayer("HUMAN", 9, 62, 21);
+  const enemyNearRight = makePlayer("HUMAN", 54, 62, 22);
+  const weightingGame = {
+    __src: { _map: { terrain: new Uint8Array(64 * 64).fill(LAND) } },
+    config: () => ({ minDistanceBetweenPlayers: () => 30 }),
+    height: () => 64,
+    inSpawnPhase: () => true,
+    width: () => 64,
+  };
+  const candidateMetrics = (ref, x, y) => ({
+    ref,
+    x,
+    y,
+    spawnGain: 500,
+    invalidCount: 0,
+    plainsGain: 400,
+    frontierGain: 60,
+    frontierPlainsGain: 40,
+    frontierValueGain: 5000,
+    frontierSlots: 10,
+  });
+  // Left candidate carries the higher ref so the unweighted symmetric tie
+  // resolves toward the right one by ref order.
+  harness.enableExactIndex();
+  harness.setExactCandidates([candidateMetrics(301, 9, 32), candidateMetrics(300, 54, 32)]);
+  harness.setPlayers([weightingMe, weakEnemyNearLeft, enemyNearRight]);
+  const unweighted = harness.computeExactSpawnTopSpotsForBot(weightingGame, weightingMe);
+  assert.equal(
+    unweighted?.[0]?.ref,
+    300,
+    "equal-strength enemies leave the symmetric tie to ref order",
+  );
+  const strongEnemyNearRight = makePlayer("HUMAN", 54, 62, 22);
+  strongEnemyNearRight.troops = () => 40_000;
+  harness.setPlayers([weightingMe, weakEnemyNearLeft, strongEnemyNearRight]);
+  const weighted = harness.computeExactSpawnTopSpotsForBot(weightingGame, weightingMe);
+  assert.equal(
+    weighted?.[0]?.ref,
+    301,
+    "a grown enemy army presses harder on spawn safety and flips the ranking away from it",
+  );
+  assert.ok(
+    weighted?.[0]?.objective?.safetyScore !== undefined,
+    "the weighted safety feeds the shared objective contract unchanged",
+  );
+}
 
 const initialTeamHarness = loadHarness();
 const cornerTeamArea = { x: 30, y: 30, width: 90, height: 90 };

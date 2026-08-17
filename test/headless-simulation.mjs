@@ -464,8 +464,8 @@ assert.match(runner, /OFH_LOG_STRUCTURES/);
 assert.match(runner, /OFH_LOG_SPAWN/);
 assert.match(
   runner,
-  /process\.stderr\.write\(`\$\{JSON\.stringify\(finalResult\)\}\\n`, \(\) => \{[\s\S]*hostileMissileFixtureComplete[\s\S]*process\.exit\(won && hostileMissileFixtureComplete \? 0 : 2\)/,
-  "a terminal match result must flush before exiting, and a hostile-missile fixture must complete its observable lifecycle",
+  /process\.stderr\.write\(`\$\{JSON\.stringify\(finalResult\)\}\\n`, \(\) => \{[\s\S]*hostileMissileFixtureComplete[\s\S]*intentBudgetClean[\s\S]*process\.exit\(won && hostileMissileFixtureComplete && intentBudgetClean \? 0 : 2\)/,
+  "a terminal match result must flush before exiting, a hostile-missile fixture must complete its observable lifecycle, and the intent-budget assertion must gate the exit code",
 );
 assert.match(runner, /phase:\s*"spawn-selection-trace"/);
 assert.match(adapter, /kind:\s*"spawn-ranking"/);

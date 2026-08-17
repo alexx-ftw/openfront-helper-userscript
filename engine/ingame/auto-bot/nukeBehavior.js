@@ -60,6 +60,27 @@
   /** Minimum sum of structure levels a player needs to qualify as a high-density nuke target. */
   const MIN_LEVEL_SUM_FOR_HIGH_DENSITY_NUKE = 5;
 
+  /**
+   * Friendly-fire penalty multipliers for nukeTileScore: a candidate tile whose
+   * INNER blast radius covers an own/permanent-teammate structure destroys it
+   * outright (heavy penalty — the replacement costs the same gold as whatever
+   * enemy value the tile offers), while an OUTER-radius clip only damages the
+   * surrounding land (milder penalty). Per-structure base values live in
+   * friendlyFireStructureValue (MissileSilo heaviest).
+   */
+  const FRIENDLY_FIRE_INNER_PENALTY = 3;
+  const FRIENDLY_FIRE_OUTER_PENALTY = 1;
+  // Counterforce (see mirvCapableSiloPriority): a silo whose owner can afford
+  // a MIRV scores as several ordinary silos. The threshold is the engine's
+  // base MIRV price (the live quote escalates globally per launch and needs
+  // an async probe this sync scorer cannot await).
+  const MIRV_CAPABLE_GOLD_THRESHOLD = 25_000_000n;
+  const MIRV_CAPABLE_SILO_PRIORITY_MULTIPLIER = 3;
+  // Per-tick cap on delayed nuke launches (see processPendingNukeLaunches):
+  // spreads same-tick salvo sends across ticks so the shared intent window
+  // cannot clip a salvo's tail and stretch its arrival window.
+  const PENDING_NUKE_LAUNCHES_PER_TICK = 3;
+
   // Structures group — src/core/game/Game.ts:374 (Structures.types). Defined
   // module-local under a unique name (no `Structures` global exists in the bundle)
   // so `nukeTarget.units(...NUKE_STRUCTURES_TYPES)` mirrors `units(...Structures.types)`.
@@ -355,6 +376,15 @@
       // Per-tick cost memo (see cost()): keyed by unit type, invalidated per tick.
       this._costCacheTick = -1;
       this._costCache = new Map();
+      // Monotonic id for each SAM-overwhelm salvo (see fireSamSalvo): delayed
+      // entries carry their salvo's id so processPendingNukeLaunches can
+      // re-validate and abort the WHOLE remaining salvo mid-flight.
+      this._nextSalvoId = 0;
+      // Per-decision snapshot of own + permanent-teammate structures for the
+      // friendly-fire blast penalty (see nukeTileScore). nukeTileScore runs once
+      // per candidate tile; the snapshot is rebuilt once per game tick.
+      this._friendlyNukeStructureTick = -1;
+      this._friendlyNukeStructures = [];
       // The client intent has no NukeExecution.waitTicks field. Preserve the
       // engine salvo timing by emitting delayed build intents on their exact
       // future game ticks instead of collapsing every bomb onto this tick.
@@ -1046,6 +1076,127 @@
     }
 
     // ── nukeTileScore — NationNukeBehavior.ts:650 ─────────────────────────────
+    /**
+     * Level-weighted value of a friendly (own or permanent-teammate) structure
+     * for the friendly-fire blast penalty. MissileSilo is the heaviest (it is
+     * our nuclear strike capability and the most expensive to rebuild); SAMs
+     * and Cities follow; Ports/Factories mirror their enemy scoring value.
+     * DefensePosts are excluded — they are cheap, spammable border screens and
+     * penalizing them would veto every legitimate border tile.
+     */
+    friendlyFireStructureValue(unit) {
+      const level = unit.level();
+      switch (unit.type()) {
+        case UNIT.MissileSilo:
+          return 50_000 * level;
+        case UNIT.SAMLauncher:
+          return 40_000 * level;
+        case UNIT.City:
+          return 25_000 * level;
+        case UNIT.Port:
+          return 15_000 * level;
+        case UNIT.Factory:
+          return 15_000 * level;
+        default:
+          return 0;
+      }
+    }
+
+    /**
+     * Live enumeration behind the friendly-fire snapshot: our own structures
+     * plus those of permanent teammates only — nuclear coordination already
+     * treats their land and structures as ours (see findAllyNukeTarget); a
+     * breakable diplomatic ally's structures carry no such guarantee.
+     */
+    collectFriendlyNukeStructureUnits() {
+      const units = [];
+      if (typeof this.player?.units === "function") {
+        units.push(...this.player.units(...NUKE_STRUCTURES_TYPES));
+      }
+      if (typeof this.game?.players === "function") {
+        for (const other of this.game.players()) {
+          if (!other || other.smallID?.() === this.player?.smallID?.()) continue;
+          if (!playersArePermanentTeammates(this.player, other)) continue;
+          if (typeof other?.units !== "function") continue;
+          units.push(...other.units(...NUKE_STRUCTURES_TYPES));
+        }
+      }
+      return units;
+    }
+
+    /**
+     * Per-decision snapshot of friendly structure tiles for the friendly-fire
+     * penalty. nukeTileScore runs once per candidate tile; without this memo a
+     * sweep would re-enumerate own + teammate units for every tile. Memoized by
+     * game tick (a candidate sweep never spans ticks — collectNukeCandidates
+     * completes within one decision) and stored as pre-resolved {tile, value}
+     * pairs so the per-tile penalty stays a pure distance check.
+     */
+    friendlyNukeStructures() {
+      const tick = Number(this.game.ticks());
+      if (
+        this._friendlyNukeStructureTick !== tick ||
+        !Array.isArray(this._friendlyNukeStructures)
+      ) {
+        this._friendlyNukeStructures = this.collectFriendlyNukeStructureUnits()
+          .map((unit) => ({
+            tile: unit.tile(),
+            value: this.friendlyFireStructureValue(unit),
+          }))
+          .filter((entry) => entry.value > 0);
+        this._friendlyNukeStructureTick = tick;
+      }
+      return this._friendlyNukeStructures;
+    }
+
+    /**
+     * Penalty for a candidate tile whose blast radii would also hit friendly
+     * structures: the inner radius destroys them outright (heavy multiplier),
+     * an outer-radius-only clip is damaged but survivable (mild multiplier).
+     * Sized so a friendly MissileSilo or City cluster inside the inner radius
+     * flips the tile negative against any realistic enemy value.
+     */
+    friendlyFirePenalty(tile, magnitude) {
+      const friendlyStructures = this.friendlyNukeStructures();
+      if (friendlyStructures.length === 0) return 0;
+      const innerDist = euclDistFN(tile, magnitude.inner, false);
+      const outerDist = euclDistFN(tile, magnitude.outer, false);
+      let innerValue = 0;
+      let outerValue = 0;
+      for (const entry of friendlyStructures) {
+        if (innerDist(this.game, entry.tile)) {
+          innerValue += entry.value;
+        } else if (outerDist(this.game, entry.tile)) {
+          outerValue += entry.value;
+        }
+      }
+      return (
+        innerValue * FRIENDLY_FIRE_INNER_PENALTY +
+        outerValue * FRIENDLY_FIRE_OUTER_PENALTY
+      );
+    }
+
+    /**
+     * Counterforce weighting for enemy MissileSilo tiles: a silo owned by an
+     * enemy who can already pay for a MIRV is a loaded gun — destroying it
+     * denies a 25M+ saturation strike that would erase our structure core,
+     * and (since the engine escalates the MIRV price globally per launch)
+     * keeps the market cheaper for us. Gold alone does not prove intent to
+     * launch, so the multiplier is bounded; the threshold is the base price
+     * because the live escalated quote is only reachable through an async
+     * probe while this scorer runs synchronously. Returns 1 for every other
+     * owner shape (own silos never reach this scorer; stubs lack owner/gold).
+     */
+    mirvCapableSiloPriority(unit) {
+      const owner = unit?.owner?.();
+      if (!owner) return 1;
+      const gold = owner.gold?.();
+      if (typeof gold !== "bigint" || gold < MIRV_CAPABLE_GOLD_THRESHOLD) {
+        return 1;
+      }
+      return MIRV_CAPABLE_SILO_PRIORITY_MULTIPLIER;
+    }
+
     nukeTileScore(tile, silos, targets, nukeType) {
       const magnitude = this.game.config().nukeMagnitudes(nukeType);
       const dist = euclDistFN(tile, magnitude.outer, false);
@@ -1059,7 +1210,7 @@
             case UNIT.DefensePost:
               return 5_000 * level;
             case UNIT.MissileSilo:
-              return 50_000 * level;
+              return 50_000 * level * this.mirvCapableSiloPriority(unit);
             case UNIT.Port:
               return 15_000 * level;
             case UNIT.Factory:
@@ -1137,6 +1288,11 @@
         .map((_) => 1_000_000)
         .reduce((prev, cur) => prev + cur, 0);
 
+      // Don't blast our own (or a permanent teammate's) structures: the src
+      // scorer only rewards enemy value, so without this a border/hydro tile
+      // that also erases our silo/SAM/city cluster can win the sweep.
+      tileValue -= this.friendlyFirePenalty(tile, magnitude);
+
       return tileValue;
     }
 
@@ -1146,7 +1302,7 @@
     // same intent is emitted on its due game tick by processPendingNukeLaunches.
     // This preserves arrival staggering without blocking the bot or depending
     // on real-time timers, which would drift when game speed changes.
-    async sendNuke(tile, nukeType, targetPlayer, waitTicks = 0) {
+    async sendNuke(tile, nukeType, targetPlayer, waitTicks = 0, salvo = null) {
       const delay = Math.max(0, Math.ceil(Number(waitTicks) || 0));
       if (delay > 0) {
         return this.queueDelayedNukeLaunch(
@@ -1154,6 +1310,7 @@
           nukeType,
           targetPlayer,
           delay,
+          salvo,
         );
       }
       const buildable = await this.probeNukeBuildable(tile, nukeType);
@@ -1167,13 +1324,18 @@
       return true;
     }
 
-    queueDelayedNukeLaunch(tile, nukeType, targetPlayer, delay) {
+    queueDelayedNukeLaunch(tile, nukeType, targetPlayer, delay, salvo = null) {
       if (!this.isValidNukeTarget(targetPlayer)) return false;
       this._pendingNukeLaunches.push({
         dueTick: Number(this.game.ticks()) + delay,
         tile,
         nukeType,
         targetPlayer,
+        // Null for ordinary waitTicks launches (behavior unchanged); fireSamSalvo
+        // attaches its plan metadata so the salvo can be re-validated before
+        // each due bomb fires (see samSalvoStillViable).
+        salvo:
+          salvo === null || salvo === undefined ? null : { ...salvo },
       });
       return true;
     }
@@ -1248,34 +1410,137 @@
     async processPendingNukeLaunches() {
       if (!this.hasPendingNukeLaunches()) return false;
       const now = Number(this.game.ticks());
+      // Before firing a due SAM-overwhelm bomb, re-validate the whole salvo
+      // against the live enemy SAM layout (see samSalvoStillViable): a salvo
+      // that can no longer penetrate — or whose target SAM is already rubble —
+      // drops its entire remaining chain (due + future entries) instead of
+      // wasting gold one intercepted atom at a time.
+      const abortedSalvoIds = this.getAbortedSalvoIds(now);
       const remaining = [];
       let launched = false;
+      let sendsThisTick = 0;
       for (const pending of this._pendingNukeLaunches) {
+        if (pending.salvo && abortedSalvoIds.has(pending.salvo.salvoId)) {
+          continue;
+        }
         if (pending.dueTick > now) {
           remaining.push(pending);
           continue;
         }
-        if (!this.isValidNukeTarget(pending.targetPlayer)) continue;
-        const sent = await this.sendNuke(
-          pending.tile,
-          pending.nukeType,
-          pending.targetPlayer,
-        );
-        if (sent) {
+        const outcome = await this.firePendingNukeLaunch(pending, sendsThisTick);
+        if (outcome === "fired") {
           launched = true;
-        } else {
+          sendsThisTick += 1;
+        } else if (outcome === "retry") {
           pending.dueTick = now + 1;
           remaining.push(pending);
         }
       }
-      this._pendingNukeLaunches = remaining;
+      const kept =
+        abortedSalvoIds.size > 0
+          ? remaining.filter(
+              (pending) =>
+                !pending.salvo || !abortedSalvoIds.has(pending.salvo.salvoId),
+            )
+          : remaining;
+      this._pendingNukeLaunches = kept;
       if (
-        remaining.length === 0 &&
+        kept.length === 0 &&
         state.nukeWantSlots?.pendingLaunches === true
       ) {
         state.nukeWantSlots = null;
       }
       return launched;
+    }
+
+    /**
+     * Fires one due delayed launch, subject to the per-tick send budget.
+     * Returns "fired", "retry" (re-queued for the next tick), or "drop".
+     * Staggered arrivals need several bombs due on the SAME tick (the salvo's
+     * filler indexes all wait zero); firing them at once would monopolize the
+     * shared intent window and clip the tail launches — stretching the
+     * arrival window past the SAM reload and breaking penetration. Spreading
+     * the sends across ticks preserves relative arrival order via the
+     * next-tick retry, and the salvo's built-in margin absorbs the shift.
+     */
+    async firePendingNukeLaunch(pending, sendsThisTick) {
+      if (!this.isValidNukeTarget(pending.targetPlayer)) return "drop";
+      if (sendsThisTick >= PENDING_NUKE_LAUNCHES_PER_TICK) return "retry";
+      const sent = await this.sendNuke(
+        pending.tile,
+        pending.nukeType,
+        pending.targetPlayer,
+      );
+      return sent ? "fired" : "retry";
+    }
+
+    /**
+     * Salvos (by id) that must be aborted before this pass fires anything:
+     * only salvos with at least one due entry are re-validated, and each is
+     * checked once against its full remaining chain (due + future entries —
+     * exactly the bombs the plan can still bring to bear within the window).
+     */
+    getAbortedSalvoIds(now) {
+      const dueSalvoIds = new Set();
+      for (const pending of this._pendingNukeLaunches) {
+        if (pending.salvo && pending.dueTick <= now) {
+          dueSalvoIds.add(pending.salvo.salvoId);
+        }
+      }
+      if (dueSalvoIds.size === 0) return dueSalvoIds;
+      const abortedSalvoIds = new Set();
+      for (const salvoId of dueSalvoIds) {
+        const entries = this._pendingNukeLaunches.filter(
+          (pending) => pending.salvo && pending.salvo.salvoId === salvoId,
+        );
+        if (!this.samSalvoStillViable(entries[0], entries.length)) {
+          abortedSalvoIds.add(salvoId);
+        }
+      }
+      return abortedSalvoIds;
+    }
+
+    /**
+     * Mid-flight re-validation for a SAM-overwhelm salvo (see fireSamSalvo).
+     * The salvo was sized against the enemy SAM layout at planning time; before
+     * each due bomb fires, re-check that it can still achieve its purpose:
+     *   (a) penetration — the enemy SAM levels NOW covering the plan tile must
+     *       still be beatable by the bombs the salvo has left (sum of levels +
+     *       1), otherwise every further atom is intercepted gold (the enemy may
+     *       have built/upgraded a covering SAM after planning);
+     *   (b) overkill — if the original target SAM is already destroyed AND no
+     *       enemy SAM covers the tile anymore, the remaining bombs would land
+     *       on ~zero-value rubble.
+     * `remainingInSalvo` is the salvo's pending entry count (due + future).
+     * Reuses findEnemySamsCoveringTile, which is already restricted to hostile
+     * (non-own, non-permanent-teammate) SAMs.
+     */
+    samSalvoStillViable(pending, remainingInSalvo) {
+      // Stubs/older call sites may lack the nearby-unit index; without it the
+      // salvo cannot be re-validated, so keep the faithful fire-anyway path.
+      if (typeof this.game?.nearbyUnits !== "function") return true;
+      const salvo = pending.salvo;
+      const coveringSams = this.findEnemySamsCoveringTile(salvo.targetTile);
+      const coveringLevel = coveringSams.reduce(
+        (sum, sam) => sum + sam.level(),
+        0,
+      );
+      if (coveringLevel + 1 > remainingInSalvo) return false;
+      const targetSamId = salvo.targetSamId;
+      if (
+        (targetSamId !== null && targetSamId !== undefined) &&
+        coveringLevel === 0
+      ) {
+        const targetSams =
+          typeof pending.targetPlayer?.units === "function"
+            ? pending.targetPlayer.units(UNIT.SAMLauncher)
+            : [];
+        const targetSamExists =
+          coveringSams.some((sam) => String(sam.id()) === String(targetSamId)) ||
+          targetSams.some((unit) => String(unit.id()) === String(targetSamId));
+        if (!targetSamExists) return false;
+      }
+      return true;
     }
 
     /**
@@ -1335,7 +1600,11 @@
       const targetTile = targetSam.tile();
       const coveringSams = this.findEnemySamsCoveringTile(targetTile);
       const coveringSamIds = new Set(coveringSams.map((sam) => sam.id()));
-      const bombsNeeded = coveringSams.reduce((sum, sam) => sum + sam.level(), 0) + 1;
+      const coveringSamLevels = coveringSams.reduce(
+        (sum, sam) => sum + sam.level(),
+        0,
+      );
+      const bombsNeeded = coveringSamLevels + 1;
       const totalBombs = bombsNeeded + Math.floor(bombsNeeded / 5);
       const siloEntries = this.getAvailableSiloEntries(silos, targetTile, coveringSamIds);
       const launchSequence = this.createSamLaunchSequence(siloEntries);
@@ -1345,7 +1614,8 @@
       const maxSpread = Math.floor(this.game.config().SAMCooldown() / 2);
       const window = this.findSamArrivalWindow(unblocked, maxSpread);
       return {
-        targetTile, coveringSamIds, totalBombs, siloEntries,
+        targetTile, coveringSamIds, coveringSamLevels, targetSamId: targetSam.id(),
+        totalBombs, siloEntries,
         launchSequence, maxSpread, window,
         capacityMissing: unblocked.length < totalBombs || window.length < totalBombs,
       };
@@ -1409,12 +1679,24 @@
           pendingLaunches: false,
         };
       }
+      // Plan metadata carried by every delayed entry of this salvo so
+      // processPendingNukeLaunches can re-validate the enemy SAM layout
+      // mid-flight (see samSalvoStillViable). plannedCoveringLevel records the
+      // hostile SAM level sum the bomb count was sized against at planning time.
+      this._nextSalvoId = (this._nextSalvoId || 0) + 1;
+      const salvoPlan = {
+        salvoId: this._nextSalvoId,
+        plannedCoveringLevel: Number(plan.coveringSamLevels ?? 0),
+        targetTile: plan.targetTile,
+        targetSamId: plan.targetSamId ?? null,
+      };
       for (let i = 0; i < salvo.bombsToFire; i++) {
         const sent = await this.sendNuke(
           plan.targetTile,
           UNIT.AtomBomb,
           nukeTarget,
           salvo.waits[i],
+          salvoPlan,
         );
         if (!sent) return false;
       }
