@@ -1263,7 +1263,6 @@ assert.equal(
 // boxed-in bot donates the map on its other borders.
 openingDefenseBehavior.hasOverwhelmingIncomingAttack = () => false;
 let peerSiegeReinforcements = 0;
-let peerSiegeExpanded = false;
 openingDefenseBehavior.reinforceIncompleteOutboundPlayerAttack = async () => {
   peerSiegeReinforcements += 1;
   return true;
@@ -1276,7 +1275,6 @@ assert.equal(
   "a mirrorable peer siege still runs its bounded conquest lanes after the defense response",
 );
 assert.equal(peerSiegeReinforcements, 1);
-assert.equal(peerSiegeExpanded, false);
 openingDefenseBehavior.sendAttack = async () => false;
 openingDefenseBehavior.reinforceIncompleteOutboundPlayerAttack = async () => false;
 assert.equal(
@@ -1392,13 +1390,13 @@ assert.equal(
 
 const thirdPartyReserveBehavior = Object.create(sandbox.AttackBehavior.prototype);
 thirdPartyReserveBehavior.getEarlyGameProductionReserveTroops = () => 82_863;
-thirdPartyReserveBehavior.getStrongestStrategicBorderOpponentTroops = () => 938_816;
+thirdPartyReserveBehavior.getStrongestStrategicBorderOpponentTroopsExcluding = () => 938_816;
 thirdPartyReserveBehavior.incomingHostileTroopsFrom = () => 120_000;
 thirdPartyReserveBehavior.getEarlyGameSpendableTroops = (reserve) => Math.max(0, 487_420 - reserve);
 assert.equal(
   thirdPartyReserveBehavior.getEarlyGameTargetReserveTroops(incomingNation),
   938_816,
-  "ordinary offense still respects the strongest strategic border opponent",
+  "ordinary offense still respects the strongest OTHER strategic border opponent",
 );
 assert.equal(
   thirdPartyReserveBehavior.canFundIncomingCounterattack(incomingNation),
@@ -2089,6 +2087,9 @@ pendingPlayerBehavior.getEnemyDefensePostAttackProfile = () => ({});
 pendingPlayerBehavior.attackIsTooWeakForDefensePosts = () => false;
 pendingPlayerBehavior.applyEarlyGameRaceTroops = ({ baseTroops }) => baseTroops;
 pendingPlayerBehavior.shouldAttack = () => true;
+// This block verifies pending-intent bookkeeping, not war-appetite policy;
+// take the dominance ceiling out of the arithmetic.
+pendingPlayerBehavior.proactiveWarArmyCommitmentCap = () => null;
 outgoing.length = 0;
 ownTroops = 100000;
 tick = 40;
@@ -2126,8 +2127,8 @@ assert.equal(
 assert.equal(troopEmissions.length, pendingPlayerReinforcementCount + 1);
 assert.equal(
   troopEmissions.at(-1),
-  6000,
-  "the pending player intent receives only the missing amount for the stronger target",
+  4000,
+  "after the snack blitz already committed the preferred force, the reinforcement tops up only the remainder toward the new preferred total",
 );
 outgoing.push({
   id: () => "pending-player-attack-1",
@@ -2138,7 +2139,7 @@ outgoing.push({
 tick = 42;
 assert.equal(
   pendingPlayerBehavior.getPendingOutboundAttackTroops(),
-  6000,
+  4000,
   "the visible first attack does not release the still-unseen reinforcement intent",
 );
 outgoing.push({

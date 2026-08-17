@@ -600,6 +600,16 @@
     "initializerPreview": "0.35"
   },
   {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:PROACTIVE_WAR_SNACK_FRACTION#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "PROACTIVE_WAR_SNACK_FRACTION",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "a30a043314fa89294fa2c1c989a01fbb5329e5c085a5c5a8d27317656de24ae0",
+    "initializerLength": 4,
+    "initializerPreview": "0.25"
+  },
+  {
     "id": "engine/ingame/auto-bot/attackBehavior.js:COUNTERATTACK_ATTRITION_WINDOW_TICKS#1",
     "file": "engine/ingame/auto-bot/attackBehavior.js",
     "name": "COUNTERATTACK_ATTRITION_WINDOW_TICKS",
@@ -625,9 +635,9 @@
     "name": "COUNTERATTACK_INTERDICT_WAVE_FRACTION",
     "declarationKind": "const",
     "initializerKind": "FirstLiteralToken",
-    "initializerHash": "b4af4e0d40391d3a00179d935c63b7e15ba8cd3dfa29f218dedc270bd3eb3e79",
-    "initializerLength": 3,
-    "initializerPreview": "0.6"
+    "initializerHash": "1e181f0934d441445f03ff51c972ef44275b830c10a80401e53b27bf5baf327a",
+    "initializerLength": 4,
+    "initializerPreview": "0.85"
   },
   {
     "id": "engine/ingame/auto-bot/attackBehavior.js:COUNTERATTACK_INTERDICT_SPENDABLE_FRACTION#1",
@@ -635,9 +645,9 @@
     "name": "COUNTERATTACK_INTERDICT_SPENDABLE_FRACTION",
     "declarationKind": "const",
     "initializerKind": "FirstLiteralToken",
-    "initializerHash": "a976726b1d1bda3e1f271287f3aa7229ca3204ff8bf9cb2b581c610b9c811bef",
-    "initializerLength": 4,
-    "initializerPreview": "0.35"
+    "initializerHash": "d2cbad71ff333de67d07ec676e352ab7f38248eb69c942950157220607c55e84",
+    "initializerLength": 3,
+    "initializerPreview": "0.5"
   },
   {
     "id": "engine/ingame/auto-bot/attackBehavior.js:COUNTERATTACK_INTERDICT_MINIMUM_TROOPS#1",
@@ -648,6 +658,16 @@
     "initializerHash": "1e472b39b105d349bcd069c4a711b44a2fffb8e274714bb07ecfff69a9a7f67b",
     "initializerLength": 3,
     "initializerPreview": "250"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:COUNTERATTACK_SURVIVAL_TILE_FLOOR#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "COUNTERATTACK_SURVIVAL_TILE_FLOOR",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "a176eeb31e601c3877c87c2843a2f584968975269e369d5c86788b4c2f92d2a2",
+    "initializerLength": 4,
+    "initializerPreview": "3000"
   },
   {
     "id": "engine/ingame/auto-bot/attackBehavior.js:TN_STRATEGIC_RESERVE_FRACTION#1",
@@ -665,9 +685,9 @@
     "name": "LEGENDARY_TN_COMMIT_FRACTION",
     "declarationKind": "const",
     "initializerKind": "FirstLiteralToken",
-    "initializerHash": "221764976efe04132774d96b0253cc31434c5261737469324f222621baf34b20",
+    "initializerHash": "d2cbad71ff333de67d07ec676e352ab7f38248eb69c942950157220607c55e84",
     "initializerLength": 3,
-    "initializerPreview": "0.3"
+    "initializerPreview": "0.5"
   },
   {
     "id": "engine/ingame/auto-bot/attackBehavior.js:OPPORTUNISTIC_BOAT_SURGE_REGION_COOLDOWN_TICKS#1",

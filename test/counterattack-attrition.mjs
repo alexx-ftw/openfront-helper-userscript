@@ -111,7 +111,7 @@ function contextFor(behavior, attacker, { wave, spendable }) {
   });
   assert.equal(
     behavior.calculateIncomingCounterattackTroops(context),
-    52_500,
+    75_000,
     "a superior attacker is interdicted with a bounded share of spendable troops",
   );
   assert.equal(context.attackBlocked, false);
@@ -123,8 +123,8 @@ function contextFor(behavior, attacker, { wave, spendable }) {
   });
   assert.equal(
     behavior.calculateIncomingCounterattackTroops(smallWave),
-    12_000,
-    "interdiction never exceeds three-fifths of the hostile wave",
+    17_000,
+    "interdiction never exceeds six-sevenths of the hostile wave",
   );
 }
 
@@ -172,7 +172,7 @@ function contextFor(behavior, attacker, { wave, spendable }) {
   });
   assert.equal(
     behavior.calculateIncomingCounterattackTroops(context),
-    52_500,
+    75_000,
     "a stale attrition window is forgotten so a renewed war can defend again",
   );
 }
@@ -207,6 +207,26 @@ function contextFor(behavior, attacker, { wave, spendable }) {
     false,
     "no incoming attacker means no containment mode",
   );
+}
+
+// 7. A small homeland cannot trade space for time: containment returns to
+//    the full mirror while the territory is tiny.
+{
+  const { behavior, attacker } = makeBehavior({
+    ownTroops: 200_000,
+    attackerTroops: 4_000_000,
+  });
+  behavior.player.numTilesOwned = () => 1_500;
+  const context = contextFor(behavior, attacker, {
+    wave: 100_000,
+    spendable: 150_000,
+  });
+  assert.equal(
+    behavior.calculateIncomingCounterattackTroops(context),
+    100_000,
+    "a small homeland mirrors the full hostile wave even against a stronger attacker",
+  );
+  assert.equal(context.attackBlocked, false);
 }
 
 process.stdout.write("counterattack attrition tests passed\n");

@@ -230,11 +230,19 @@
   // First strikes and reinforcements against Nation/Human targets are capped
   // at this share of the total army; anything hungrier waits for growth.
   const PROACTIVE_WAR_ARMY_FRACTION = 0.35;
+  // A capture floor at or below this share of the army is a snack war: it
+  // finishes fast enough that opportunistic neighbors cannot join in time.
+  const PROACTIVE_WAR_SNACK_FRACTION = 0.25;
   const COUNTERATTACK_ATTRITION_WINDOW_TICKS = 900;
   const COUNTERATTACK_ATTRITION_WINDOW_TROOP_CAP = 0.5;
-  const COUNTERATTACK_INTERDICT_WAVE_FRACTION = 0.6;
-  const COUNTERATTACK_INTERDICT_SPENDABLE_FRACTION = 0.35;
+  const COUNTERATTACK_INTERDICT_WAVE_FRACTION = 0.85;
+  const COUNTERATTACK_INTERDICT_SPENDABLE_FRACTION = 0.5;
   const COUNTERATTACK_INTERDICT_MINIMUM_TROOPS = 250;
+  // Below this territory size every tile is a double loss: the land itself
+  // and the troops that die with it. A small nation cannot trade space for
+  // time, so superior-attacker containment returns to full mirroring while
+  // the homeland is this small.
+  const COUNTERATTACK_SURVIVAL_TILE_FLOOR = 3000;
   // A Terra Nullius wave returns its survivors when the free border is
   // exhausted, and land defense draws from the shared troop pool rather than
   // from a garrisoned share. Reserving the ENTIRE army of the strongest
@@ -246,7 +254,7 @@
   // slices serialize expansion while nations re-send half-army waves; Terra
   // Nullius survivors return when the border is exhausted, so a larger
   // continuous commit is nearly free growth.
-  const LEGENDARY_TN_COMMIT_FRACTION = 0.3;
+  const LEGENDARY_TN_COMMIT_FRACTION = 0.5;
   // A surge must pay for itself: repeated giant landings into the same
   // contested region while our tiles do not grow only donate the
   // expeditionary force to the defender. One failed region per cooldown.
@@ -1539,8 +1547,11 @@
     }
 
     getEarlyGameTargetReserveTroops(target) {
+      // The war target's own army is priced into the capture minimum and the
+      // appetite ceiling; reserving it a second time as "another strong
+      // border" double-counts the same threat and starves every payload.
       const strategicBorderReserve =
-        this.getStrongestStrategicBorderOpponentTroops();
+        this.getStrongestStrategicBorderOpponentTroopsExcluding(target);
       if (this.isProductionReserveTarget(target)) {
         return Math.max(
           this.getEarlyGameProductionReserveTroops(),
@@ -1553,6 +1564,30 @@
           : this.getEarlyGameTerraNulliusReserveTroops(),
         strategicBorderReserve,
       );
+    }
+
+    getStrongestStrategicBorderOpponentTroopsExcluding(target) {
+      if (!this.hasBorderOpponentApi()) return 0;
+      const tick = this.currentAttackDecisionTick();
+      const excludedKey = this.getOutboundAttackTargetKey(target);
+      const cacheKey = `${tick}:${excludedKey ?? "none"}`;
+      if (this.excludedStrategicBorderReserveCacheKey === cacheKey) {
+        return this.excludedStrategicBorderReserveCache;
+      }
+      const mySid = this.player.smallID();
+      const borderingIds = this.getBorderingPlayerIds(mySid);
+      let strongest = 0;
+      for (const player of this.game.players() ?? []) {
+        const playerSid = player?.smallID?.();
+        if (playerSid == null || !borderingIds.has(playerSid)) continue;
+        if (!this.isStrategicBorderOpponent(player)) continue;
+        if (excludedKey !== null && String(playerSid) === excludedKey) continue;
+        const troops = this.borderOpponentTroops(player, false);
+        if (troops != null) strongest = Math.max(strongest, troops);
+      }
+      this.excludedStrategicBorderReserveCacheKey = cacheKey;
+      this.excludedStrategicBorderReserveCache = strongest;
+      return strongest;
     }
 
     getIncomingCounterattackReserveTroops() {
@@ -7779,6 +7814,14 @@
       ledger.committed += troops;
     }
 
+    counterattackSurvivalFloorActive() {
+      const tiles = Math.max(
+        0,
+        Number(this.player?.numTilesOwned?.()) || 0,
+      );
+      return tiles > 0 && tiles < COUNTERATTACK_SURVIVAL_TILE_FLOOR;
+    }
+
     incomingCounterattackMultifrontPressure() {
       const ownTroops = Math.max(1, Number(this.player?.troops?.()) || 0);
       const troopsByAttacker = new Map();
@@ -7858,14 +7901,20 @@
     // or a coordinated multi-front siege where mirror trades feed the second
     // front, receives bounded partial interdiction under a per-war cap; once
     // the cap is exhausted the lane holds so the defensive density and
-    // construction lanes do the work instead.
+    // construction lanes do the work instead. A small homeland always keeps
+    // the full mirror: it has no space to trade.
     calculateIncomingCounterattackTroops(context) {
       const mirror = Math.min(
         context.finalSpendableTroops,
         context.incomingCounterattackTroops,
       );
-      if (!this.incomingCounterattackWarIsContainment(context.target)) {
-        return Math.min(mirror, this.incomingCounterattackMirrorFrontCap(context));
+      if (
+        !this.incomingCounterattackWarIsContainment(context.target) ||
+        this.counterattackSurvivalFloorActive()
+      ) {
+        return this.counterattackSurvivalFloorActive()
+          ? mirror
+          : Math.min(mirror, this.incomingCounterattackMirrorFrontCap(context));
       }
       const ledger = this.getIncomingCounterattackWarLedger(context.target);
       const cap = Math.max(
@@ -8993,11 +9042,23 @@
       return troops;
     }
 
+    // A target whose capture floor is a quarter of our army or less is a
+    // snack: the war ends before an opportunistic third power can react, so
+    // the neighborhood-dominance appetite does not apply to it.
+    proactiveWarIsSmallTarget(context, committedTroops) {
+      if (committedTroops <= 0) return false;
+      const ownTroops = Math.max(1, Number(this.player?.troops?.()) || 0);
+      return committedTroops <= ownTroops * PROACTIVE_WAR_SNACK_FRACTION;
+    }
+
     // True when a non-forced Nation/Human strike would commit more than the
     // proactive-war appetite allows. Empty targets (minimum 0) never trip
     // this gate and keep the reserve-limited payload.
     proactiveWarExceedsAppetite(context, committedTroops) {
       if (committedTroops <= 0) return false;
+      if (this.proactiveWarIsSmallTarget(context, committedTroops)) {
+        return false;
+      }
       const cap = this.proactiveWarArmyCommitmentCap(context);
       return cap !== null && committedTroops > cap;
     }
@@ -9026,20 +9087,24 @@
         1,
         Number(this.getStrongestStrategicBorderOpponentTroops?.()) || 0,
       );
-      const dominance = ownTroops / strongestBorder;
-      const fraction =
-        dominance >= 3
-          ? 0.6
-          : dominance >= 2
-            ? 0.5
-            : PROACTIVE_WAR_ARMY_FRACTION;
-      return ownTroops * fraction;
+      return ownTroops * this.proactiveWarDominanceFraction(ownTroops / strongestBorder);
+    }
+
+    // 35% while any neighbour can still field our whole army, rising to 50%
+    // and 60% as we outmuscle the strongest border.
+    proactiveWarDominanceFraction(dominance) {
+      if (dominance >= 3) return 0.6;
+      if (dominance >= 2) return 0.5;
+      return PROACTIVE_WAR_ARMY_FRACTION;
     }
 
     // A first strike may use the preferred (4x) payload instead of the 2x
-    // minimum when we clearly outmuscle the neighborhood: blitzing removes
-    // the front before opportunists can join the war.
-    proactiveWarPrefersBlitz(context) {
+    // minimum when we clearly outmuscle the neighborhood or the target is a
+    // snack: blitzing removes the front before opportunists can join.
+    proactiveWarPrefersBlitz(context, committedTroops) {
+      if (this.proactiveWarIsSmallTarget(context, committedTroops)) {
+        return true;
+      }
       const cap = this.proactiveWarArmyCommitmentCap(context);
       if (cap === null) return false;
       return cap >= this.player.troops() * 0.5;
@@ -9110,7 +9175,7 @@
         // minimum captures too slowly, the war drags, and every opportunist
         // neighbor joins against a target that is visibly at war.
         const dominancePreferred =
-          this.proactiveWarPrefersBlitz(context) ? preferred : minimum;
+          this.proactiveWarPrefersBlitz(context, minimum) ? preferred : minimum;
         return Math.min(
           context.targetSpendableTroops,
           Math.max(minimum, dominancePreferred),
