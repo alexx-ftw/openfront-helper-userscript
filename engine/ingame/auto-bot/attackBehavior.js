@@ -9005,6 +9005,10 @@
     // Ceiling on total troops one war of choice may park in a single
     // invasion. Null when the appetite does not apply (forced defensive
     // routes, tribes, non-FFA, win-fixes off, or no readable game config).
+    // The fraction grows with dominance: while neighbours can still field
+    // our whole army a war must stay a quick meal, but once we outmuscle the
+    // strongest border several times over, removing a front permanently is
+    // worth committing most of the field army.
     proactiveWarArmyCommitmentCap(context) {
       if (
         context.force === true ||
@@ -9018,7 +9022,27 @@
       if (typeof config?.gameConfig !== "function") return null;
       if (!this.isFFA()) return null;
       const ownTroops = Math.max(1, Number(this.player?.troops?.()) || 0);
-      return ownTroops * PROACTIVE_WAR_ARMY_FRACTION;
+      const strongestBorder = Math.max(
+        1,
+        Number(this.getStrongestStrategicBorderOpponentTroops?.()) || 0,
+      );
+      const dominance = ownTroops / strongestBorder;
+      const fraction =
+        dominance >= 3
+          ? 0.6
+          : dominance >= 2
+            ? 0.5
+            : PROACTIVE_WAR_ARMY_FRACTION;
+      return ownTroops * fraction;
+    }
+
+    // A first strike may use the preferred (4x) payload instead of the 2x
+    // minimum when we clearly outmuscle the neighborhood: blitzing removes
+    // the front before opportunists can join the war.
+    proactiveWarPrefersBlitz(context) {
+      const cap = this.proactiveWarArmyCommitmentCap(context);
+      if (cap === null) return false;
+      return cap >= this.player.troops() * 0.5;
     }
 
     // Reinforcement top-up for an ongoing war of choice, bounded by the
@@ -9082,7 +9106,15 @@
           context.attackBlocked = true;
           return 0;
         }
-        return Math.min(context.targetSpendableTroops, minimum);
+        // A dominant first strike uses the full preferred payload: a 2x
+        // minimum captures too slowly, the war drags, and every opportunist
+        // neighbor joins against a target that is visibly at war.
+        const dominancePreferred =
+          this.proactiveWarPrefersBlitz(context) ? preferred : minimum;
+        return Math.min(
+          context.targetSpendableTroops,
+          Math.max(minimum, dominancePreferred),
+        );
       }
       if (existing <= 0) return troops;
       return this.calculateReinforcementLandAttackTroops(

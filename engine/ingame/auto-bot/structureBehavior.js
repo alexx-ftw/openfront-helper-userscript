@@ -82,8 +82,17 @@
    * Cities are always prioritized and built first.
    */
   function getStructureRatios(difficulty) {
+    // Ports print money: one mid-range trade ship returns most of a Port's
+    // price, and the nuclear kit (Silo 1M + Atom 750k) is unreachable on the
+    // flat 1k/s base income. The adaptive tier therefore tracks coast
+    // opportunity more aggressively than the faithful build.
+    const portRatioPerCity =
+      difficulty === Difficulty.Legendary ? 1.25 : 0.75;
     return {
-      [UNIT.Port]: { ratioPerCity: 0.75, perceivedCostIncreasePerOwned: 1 },
+      [UNIT.Port]: {
+        ratioPerCity: portRatioPerCity,
+        perceivedCostIncreasePerOwned: 1,
+      },
       [UNIT.Factory]: {
         ratioPerCity: 0.75,
         perceivedCostIncreasePerOwned: 1,
@@ -324,6 +333,12 @@
    * of the incoming-to-own-troop ratio.
    */
   const DEFENSE_POST_RATIO_PER_POST = 0.4;
+  // Posts multiply one border's tile cost; Cities raise the troop ceiling for
+  // the WHOLE defense. An unbounded live-attack post budget drained treasury
+  // every ~50s of a multi-nation dogpile and kept the second City permanently
+  // unaffordable — the army cap then lost the attrition war the posts were
+  // meant to survive.
+  const DEFENSE_POST_MAX_CONCURRENT = 3;
   // Once a strategic invasion already matches our entire field army, releasing
   // an affordable failed Post budget into an unrelated structure can decide the
   // battle before the next placement retry.
@@ -1186,7 +1201,10 @@
       const allowed =
         difficulty === Difficulty.Medium
           ? 1
-          : Math.ceil(ratio / DEFENSE_POST_RATIO_PER_POST);
+          : Math.min(
+              DEFENSE_POST_MAX_CONCURRENT,
+              Math.ceil(ratio / DEFENSE_POST_RATIO_PER_POST),
+            );
       return { allowed, incomingTroops, landAttacks, ratio };
     }
 
