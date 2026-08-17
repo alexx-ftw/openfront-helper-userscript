@@ -1435,9 +1435,9 @@
     "name": "LEGENDARY_PRIORITY_FIELDS",
     "declarationKind": "const",
     "initializerKind": "ArrayLiteralExpression",
-    "initializerHash": "a024d137ba3e1206d2f39ff35ab669f1bde3d2df9bb99f37be9f0a5c57c73d5c",
-    "initializerLength": 23,
-    "initializerPreview": "[\"mandatory\", \"safety\"]"
+    "initializerHash": "1b5d9b8778976c09f5511751bda683ec9eb67d60493d89d8894860c67640519a",
+    "initializerLength": 35,
+    "initializerPreview": "[\"mandatory\", \"safety\", \"capacity\"]"
   },
   {
     "id": "engine/ingame/auto-bot/legendaryPlanner.js:LEGENDARY_PRIMARY_FIELDS#1",
@@ -2138,6 +2138,26 @@
     "initializerHash": "2c062480c9a37ba84427955c71b5ae82b6acc4b1629335df63c4fd88926e8c73",
     "initializerLength": 8,
     "initializerPreview": "1 / 1500"
+  },
+  {
+    "id": "engine/ingame/auto-bot/structureBehavior.js:TROOP_CAP_PRESSURE_RATIO#1",
+    "file": "engine/ingame/auto-bot/structureBehavior.js",
+    "name": "TROOP_CAP_PRESSURE_RATIO",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "8139b33952401b3ee0e2ca84651cb9a1d7f66d442bf908f9cf1f53ea746e5801",
+    "initializerLength": 3,
+    "initializerPreview": "0.9"
+  },
+  {
+    "id": "engine/ingame/auto-bot/structureBehavior.js:CITY_UPGRADE_COST_CACHE_LIMIT#1",
+    "file": "engine/ingame/auto-bot/structureBehavior.js",
+    "name": "CITY_UPGRADE_COST_CACHE_LIMIT",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "e29c9c180c6279b0b02abd6a1801c7c04082cf486ec027aa13515e4f3884bb6b",
+    "initializerLength": 2,
+    "initializerPreview": "32"
   },
   {
     "id": "engine/ingame/auto-bot/structureBehavior.js:STRUCTURE_PLACEMENT_CANDIDATE_LIMIT#1",
@@ -6490,6 +6510,16 @@
     "initializerPreview": "0.03"
   },
   {
+    "id": "openfront-engine/src/client/UserSettingModal.ts:ALLOWED_SHARED_MODIFIERS#1",
+    "file": "openfront-engine/src/client/UserSettingModal.ts",
+    "name": "ALLOWED_SHARED_MODIFIERS",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "95d34f5484a31294436e1804be08446ce18a36efeaae8beb9cdf237381aa4014",
+    "initializerLength": 143,
+    "initializerPreview": "[\n    { actions: [\"emojiMenuModifier\", \"altKey\"], keyPrefix: \"Alt\" },\n    { actions: [\"boxSelectWarships\", \"shiftKey\"], keyPrefix: \"Shift\" },\n]"
+  },
+  {
     "id": "openfront-engine/src/client/Utils.ts:TUTORIAL_VIDEO_URL#1",
     "file": "openfront-engine/src/client/Utils.ts",
     "name": "TUTORIAL_VIDEO_URL",
@@ -6560,14 +6590,14 @@
     "initializerPreview": "{\n    [UT_ATOM_BOMB]: \"atom\",\n    [UT_HYDROGEN_BOMB]: \"hydro\",\n    [UT_MIRV_WARHEAD]: \"mirvWarhead\",\n}"
   },
   {
-    "id": "openfront-engine/src/client/components/CosmeticContainer.ts:STYLE_ID#1",
-    "file": "openfront-engine/src/client/components/CosmeticContainer.ts",
-    "name": "STYLE_ID",
+    "id": "openfront-engine/src/client/components/CosmeticCard.ts:COSMETIC_CARD_STYLE_ID#1",
+    "file": "openfront-engine/src/client/components/CosmeticCard.ts",
+    "name": "COSMETIC_CARD_STYLE_ID",
     "declarationKind": "const",
     "initializerKind": "StringLiteral",
-    "initializerHash": "f1e3b4122054f67d9e707be3009a37a5b69af34218b6d8ca97789b28855f6a73",
-    "initializerLength": 27,
-    "initializerPreview": "\"cosmetic-container-styles\""
+    "initializerHash": "a148931188eecf5b23d8cf7a9eef2a892bd030da870ea1998a0aa6e23c5be3cd",
+    "initializerLength": 22,
+    "initializerPreview": "\"cosmetic-card-styles\""
   },
   {
     "id": "openfront-engine/src/client/components/CustomCurrencyCard.ts:MIN_PLUTONIUM#1",
@@ -6868,6 +6898,16 @@
     "initializerHash": "4dd54631d5171c73df7d67f35ada67b15c00eb61eaa5d770eab09acfc8cdcf96",
     "initializerLength": 83,
     "initializerPreview": "\"text-xs uppercase font-bold tracking-wider leading-tight break-words hyphens-auto\""
+  },
+  {
+    "id": "openfront-engine/src/client/components/MobileNavBar.ts:MOBILE_ITEM#1",
+    "file": "openfront-engine/src/client/components/MobileNavBar.ts",
+    "name": "MOBILE_ITEM",
+    "declarationKind": "const",
+    "initializerKind": "BinaryExpression",
+    "initializerHash": "f58fe500cb0268fe0fc30c6b4e0c383444b0bd8bcf9913d39937d35071589788",
+    "initializerLength": 447,
+    "initializerPreview": "\"nav-menu-item block w-full text-left font-bold uppercase tracking-[0.05em] \" +\n    \"text-white/70 transition-all duration-200 cursor-pointer \" +\n    \"hover:text-blue-600 hover:translate-x-2.5 \" +\n    \"hover:drop-shadow-[0_0_20px_rgba(37..."
   },
   {
     "id": "openfront-engine/src/client/components/NavNotificationsController.ts:HELP_SEEN_KEY#1",
@@ -9250,6 +9290,16 @@
     "initializerPreview": "20"
   },
   {
+    "id": "openfront-engine/src/client/render/gl/passes/CrosshairPass.ts:QUAD_VERTS#1",
+    "file": "openfront-engine/src/client/render/gl/passes/CrosshairPass.ts",
+    "name": "QUAD_VERTS",
+    "declarationKind": "const",
+    "initializerKind": "NewExpression",
+    "initializerHash": "ab788d7381cd8da86df7d7fa6eae2ddc564b69f9fc050fb6bd13114f0e6c2c16",
+    "initializerLength": 54,
+    "initializerPreview": "new Float32Array([0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 1])"
+  },
+  {
     "id": "openfront-engine/src/client/render/gl/passes/DefenseCoveragePass.ts:FLOATS_PER_INSTANCE#1",
     "file": "openfront-engine/src/client/render/gl/passes/DefenseCoveragePass.ts",
     "name": "FLOATS_PER_INSTANCE",
@@ -10730,6 +10780,16 @@
     "initializerPreview": "hexToRgb(renderDefaults.terrain.oceanColor)!"
   },
   {
+    "id": "openfront-engine/src/client/render/gl/utils/ColorUtils.ts:BACKGROUND_BASE#1",
+    "file": "openfront-engine/src/client/render/gl/utils/ColorUtils.ts",
+    "name": "BACKGROUND_BASE",
+    "declarationKind": "const",
+    "initializerKind": "NonNullExpression",
+    "initializerHash": "458f20d9b9f44a9adf38b26d518b635af64fef0778dca1c4f1278457161f405f",
+    "initializerLength": 49,
+    "initializerPreview": "hexToRgb(renderDefaults.terrain.backgroundColor)!"
+  },
+  {
     "id": "openfront-engine/src/client/render/gl/utils/NukeTrajectory.ts:PARABOLA_MIN_HEIGHT#1",
     "file": "openfront-engine/src/client/render/gl/utils/NukeTrajectory.ts",
     "name": "PARABOLA_MIN_HEIGHT",
@@ -11150,6 +11210,36 @@
     "initializerPreview": "8"
   },
   {
+    "id": "openfront-engine/src/client/utilities/DisableSafariPinchZoom.ts:DOUBLE_TAP_WINDOW_MS#1",
+    "file": "openfront-engine/src/client/utilities/DisableSafariPinchZoom.ts",
+    "name": "DOUBLE_TAP_WINDOW_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "deeeb5df3f2cee6bf4e597a8a3a878a6ce49b932b9e90b416922d4499f54fae6",
+    "initializerLength": 3,
+    "initializerPreview": "350"
+  },
+  {
+    "id": "openfront-engine/src/client/utilities/DisableSafariPinchZoom.ts:DOUBLE_TAP_RADIUS_PX#1",
+    "file": "openfront-engine/src/client/utilities/DisableSafariPinchZoom.ts",
+    "name": "DOUBLE_TAP_RADIUS_PX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "624b60c58c9d8bfb6ff1886c2fd605d2adeb6ea4da576068201b6c6958ce93f4",
+    "initializerLength": 2,
+    "initializerPreview": "30"
+  },
+  {
+    "id": "openfront-engine/src/client/utilities/DisableSafariPinchZoom.ts:INTERACTIVE_TARGET_SELECTOR#1",
+    "file": "openfront-engine/src/client/utilities/DisableSafariPinchZoom.ts",
+    "name": "INTERACTIVE_TARGET_SELECTOR",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "ded43f0f2925901a4de721fbe2fc1f17588ed869ed394a7159587e9fa940fab9",
+    "initializerLength": 94,
+    "initializerPreview": "\"a[href], button, input, label, select, summary, textarea, [contenteditable], [role='button']\""
+  },
+  {
     "id": "openfront-engine/src/client/utilities/ReplaySpeedMultiplier.ts:ReplaySpeedMultiplier.slow#1",
     "file": "openfront-engine/src/client/utilities/ReplaySpeedMultiplier.ts",
     "name": "ReplaySpeedMultiplier.slow",
@@ -11338,6 +11428,16 @@
     "initializerHash": "e43d77616884b84d556dfa149e969ee6aa7570f4f93df2d8a45e264e0120d954",
     "initializerLength": 13,
     "initializerPreview": "5 * 60 * 1000"
+  },
+  {
+    "id": "openfront-engine/src/core/Schemas.ts:FEATURED_LOBBY_AUTO_START_MS#1",
+    "file": "openfront-engine/src/core/Schemas.ts",
+    "name": "FEATURED_LOBBY_AUTO_START_MS",
+    "declarationKind": "const",
+    "initializerKind": "BinaryExpression",
+    "initializerHash": "d2ae9bc2a436de4605400b0596c82a70c2c359606011950ffdf3237c04b7ab6a",
+    "initializerLength": 14,
+    "initializerPreview": "10 * 60 * 1000"
   },
   {
     "id": "openfront-engine/src/core/Schemas.ts:LogSeverity.Debug#1",
@@ -11680,6 +11780,16 @@
     "initializerPreview": "new RegExp(`[^${CLAN_TAG_CHARS}]`, \"g\")"
   },
   {
+    "id": "openfront-engine/src/core/Util.ts:LOBBY_LABEL_MAX#1",
+    "file": "openfront-engine/src/core/Util.ts",
+    "name": "LOBBY_LABEL_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "98010bd9270f9b100b6214a21754fd33bdc8d41b2bc9f9dd16ff54d3c34ffd71",
+    "initializerLength": 2,
+    "initializerPreview": "48"
+  },
+  {
     "id": "openfront-engine/src/core/configuration/Config.ts:GameEnv.Dev#1",
     "file": "openfront-engine/src/core/configuration/Config.ts",
     "name": "GameEnv.Dev",
@@ -11798,6 +11908,16 @@
     "initializerHash": "40510175845988f13f6162ed8526f0b09f73384467fa855e1e79b44a56562a58",
     "initializerLength": 4,
     "initializerPreview": "1000"
+  },
+  {
+    "id": "openfront-engine/src/core/execution/SpawnExecution.ts:RELAX_MIN_DIST_AT#1",
+    "file": "openfront-engine/src/core/execution/SpawnExecution.ts",
+    "name": "RELAX_MIN_DIST_AT",
+    "declarationKind": "static readonly",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "64d095f2fecfdeb907dae5403b10966c4ae755b7598aa078cb932e345bd0b5d0",
+    "initializerLength": 3,
+    "initializerPreview": "750"
   },
   {
     "id": "openfront-engine/src/core/execution/WinCheckExecution.ts:HARD_TIME_LIMIT_SECONDS#1",
@@ -14990,6 +15110,16 @@
     "initializerPreview": "{\n    player: PLAYER_STATS_COLUMNS_KEY,\n    team: TEAM_STATS_COLUMNS_KEY,\n}"
   },
   {
+    "id": "openfront-engine/src/core/game/UserSettings.ts:PER_PLAYER_KEYS#1",
+    "file": "openfront-engine/src/core/game/UserSettings.ts",
+    "name": "PER_PLAYER_KEYS",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "0593ceb88bbd181212544499a0e399545fc118811b175eade280f82ef27db0fa",
+    "initializerLength": 66,
+    "initializerPreview": "[\n    PATTERN_KEY,\n    FLAG_KEY,\n    CROWN_KEY,\n    EFFECTS_KEY,\n]"
+  },
+  {
     "id": "openfront-engine/src/core/game/WaterManager.ts:WATER_GRAPH_REBUILD_INTERVAL#1",
     "file": "openfront-engine/src/core/game/WaterManager.ts",
     "name": "WATER_GRAPH_REBUILD_INTERVAL",
@@ -15008,6 +15138,36 @@
     "initializerHash": "81b8a03f97e8787c53fe1a86bda042b6f0de9b0ec9c09357e107c99ba4d6948a",
     "initializerLength": 2,
     "initializerPreview": "62"
+  },
+  {
+    "id": "openfront-engine/src/core/game/WaterManager.ts:TERRAIN_LAND_MASK#1",
+    "file": "openfront-engine/src/core/game/WaterManager.ts",
+    "name": "TERRAIN_LAND_MASK",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d41c1e812186a1d9d4ba8a6aefe210f78b90b2852ba02e852f27167db36a527f",
+    "initializerLength": 4,
+    "initializerPreview": "0x80"
+  },
+  {
+    "id": "openfront-engine/src/core/game/WaterManager.ts:TERRAIN_MAG_MASK#1",
+    "file": "openfront-engine/src/core/game/WaterManager.ts",
+    "name": "TERRAIN_MAG_MASK",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "922783559b2a7bbad9720fdfd9cc6b5419c1ce5fcf5dd43bf35ef8c0bfb06ec0",
+    "initializerLength": 4,
+    "initializerPreview": "0x1f"
+  },
+  {
+    "id": "openfront-engine/src/core/game/WaterManager.ts:IMPASSABLE_MAG#1",
+    "file": "openfront-engine/src/core/game/WaterManager.ts",
+    "name": "IMPASSABLE_MAG",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "eb1e33e8a81b697b75855af6bfcdbcbf7cbbde9f94962ceaec1ed8af21f5a50f",
+    "initializerLength": 2,
+    "initializerPreview": "31"
   },
   {
     "id": "openfront-engine/src/core/pathfinding/PathFinder.Parabola.ts:PARABOLA_MIN_HEIGHT#1",
@@ -15310,36 +15470,6 @@
     "initializerPreview": "3"
   },
   {
-    "id": "openfront-engine/src/core/utilities/Line.ts:T#1",
-    "file": "openfront-engine/src/core/utilities/Line.ts",
-    "name": "T",
-    "declarationKind": "const",
-    "initializerKind": "BinaryExpression",
-    "initializerHash": "496a9bd6032d9569906ae647c30dc8ab4754795156106fd3ccc059247dc2c65c",
-    "initializerLength": 5,
-    "initializerPreview": "1 - t"
-  },
-  {
-    "id": "openfront-engine/src/core/utilities/Line.ts:TT#1",
-    "file": "openfront-engine/src/core/utilities/Line.ts",
-    "name": "TT",
-    "declarationKind": "const",
-    "initializerKind": "BinaryExpression",
-    "initializerHash": "ad557d902bbc46ff3a5bf0dfc84eec47b88a2f8281a3ae4942e4b4d8954ed6a2",
-    "initializerLength": 5,
-    "initializerPreview": "T * T"
-  },
-  {
-    "id": "openfront-engine/src/core/utilities/Line.ts:TTT#1",
-    "file": "openfront-engine/src/core/utilities/Line.ts",
-    "name": "TTT",
-    "declarationKind": "const",
-    "initializerKind": "BinaryExpression",
-    "initializerHash": "683e00c390ad674681f678915a3c35f090070ed1d6b43315e7aa781b95480b5a",
-    "initializerLength": 6,
-    "initializerPreview": "TT * T"
-  },
-  {
     "id": "openfront-engine/src/core/validations/username.ts:MIN_USERNAME_LENGTH#1",
     "file": "openfront-engine/src/core/validations/username.ts",
     "name": "MIN_USERNAME_LENGTH",
@@ -15408,6 +15538,26 @@
     "initializerHash": "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
     "initializerLength": 1,
     "initializerPreview": "4"
+  },
+  {
+    "id": "openfront-engine/src/server/AdminBotRoutes.ts:MAX_TEAMS#1",
+    "file": "openfront-engine/src/server/AdminBotRoutes.ts",
+    "name": "MAX_TEAMS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "27badc983df1780b60c2b3fa9d3a19a00e46aac798451f0febdca52920faaddf",
+    "initializerLength": 3,
+    "initializerPreview": "200"
+  },
+  {
+    "id": "openfront-engine/src/server/AdminBotRoutes.ts:MAX_TEAM_MEMBERS#1",
+    "file": "openfront-engine/src/server/AdminBotRoutes.ts",
+    "name": "MAX_TEAM_MEMBERS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "1a6562590ef19d1045d06c4055742d38288e9e6dcd71ccde5cee80f1d5a774eb",
+    "initializerLength": 2,
+    "initializerPreview": "50"
   },
   {
     "id": "openfront-engine/src/server/ClientMsgRateLimiter.ts:INTENTS_PER_SECOND#1",
@@ -15565,9 +15715,9 @@
     "name": "SPECIAL_ONLY_MAPS",
     "declarationKind": "const",
     "initializerKind": "NewExpression",
-    "initializerHash": "eec12d5775af9d1f182eed1f9e0248f1d0ef1c84ffae6164f1098322884445a8",
-    "initializerLength": 50,
-    "initializerPreview": "new Set<GameMapType>([GameMapType.ArchipelagoSea])"
+    "initializerHash": "73becaa7269ac265d46ce872644fe1d10d5b3b51a62a317e4e44053375344aa5",
+    "initializerLength": 78,
+    "initializerPreview": "new Set<GameMapType>([\n    GameMapType.ArchipelagoSea,\n    GameMapType.Sol,\n])"
   },
   {
     "id": "openfront-engine/src/server/MapPlaylist.ts:MAX_PLAYER_COUNT#1",
