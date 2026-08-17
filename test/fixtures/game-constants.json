@@ -2450,6 +2450,16 @@
     "initializerPreview": "0.4"
   },
   {
+    "id": "engine/ingame/auto-bot/structureBehavior.js:DEFENSE_POST_MAX_CONCURRENT#1",
+    "file": "engine/ingame/auto-bot/structureBehavior.js",
+    "name": "DEFENSE_POST_MAX_CONCURRENT",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce",
+    "initializerLength": 1,
+    "initializerPreview": "3"
+  },
+  {
     "id": "engine/ingame/auto-bot/structureBehavior.js:DEFENSE_POST_HARD_RESERVE_THREAT_RATIO#1",
     "file": "engine/ingame/auto-bot/structureBehavior.js",
     "name": "DEFENSE_POST_HARD_RESERVE_THREAT_RATIO",
