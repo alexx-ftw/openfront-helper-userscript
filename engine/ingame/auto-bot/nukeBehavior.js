@@ -492,6 +492,19 @@
      */
     shouldDeferNukeForEconomy(nukeTarget, nukeCost) {
       if (this.hasActiveMaritimeInvasion()) return true;
+      // A Hydro Legendary nation with a live SAM has already paid for the
+      // defensive prerequisite. Once an Atom is affordable, withholding it
+      // behind the next 1.5M SAM reserve leaves the Silo permanently idle and
+      // makes the nuclear economy unreachable; the friendly-fire scorer still
+      // protects our own structures below.
+      if (
+        this.isHydroNation === true &&
+        currentDifficulty() === Difficulty.Legendary &&
+        this.player.units(UNIT.SAMLauncher).length > 0 &&
+        this.player.gold() >= BigInt(nukeCost || 0n)
+      ) {
+        return false;
+      }
       const policy = this.structureBehavior?.shouldDeferOffensiveNuke;
       if (typeof policy !== "function") return false;
       {
@@ -619,7 +632,36 @@
         return teamTarget;
       }
 
+      // Legendary fallback: an affordable silo must not remain idle merely
+      // because the ordinary relation/crown ladder found no target. Select the
+      // densest enemy structure owner, but never a permanent teammate or our
+      // own player; nukeTileScore still rejects friendly-fire geometry.
+      if (difficulty === Difficulty.Legendary) {
+        return this.findLegendaryStructureTarget();
+      }
       return null;
+    }
+
+    findLegendaryStructureTarget() {
+      let best = null;
+      let bestScore = 0;
+      for (const other of this.game.players()) {
+        if (other.smallID() === this.player.smallID()) continue;
+        if (other.isAlive?.() === false) continue;
+        if (playersArePermanentTeammates(this.player, other)) continue;
+        if (this.attackBehavior.shouldAttack(other) === false) continue;
+        const structures = other.units(...NUKE_STRUCTURES_TYPES);
+        const levelSum = structures.reduce(
+          (total, structure) => total + Number(structure.level?.() || 1),
+          0,
+        );
+        const density = levelSum / Math.max(1, other.numTilesOwned?.() || 1);
+        if (levelSum > 0 && density > bestScore) {
+          best = other;
+          bestScore = density;
+        }
+      }
+      return best;
     }
 
     // ── isRichestNation — NationNukeBehavior.ts:262 ───────────────────────────

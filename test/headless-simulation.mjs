@@ -215,6 +215,68 @@ function runHeadlessScenario(environment) {
   return { run, records };
 }
 
+const profileScenarios = [
+  {
+    name: "none",
+    environment: {
+      OFH_NO_MODIFIERS: "1",
+      OFH_GAME_MAP: "Alps",
+      OFH_GAME_MAP_SIZE: "Normal",
+      OFH_GAME_MODE: "team",
+      OFH_PLAYER_TEAMS: "2",
+      OFH_BOTS: "4",
+      OFH_NATIONS: "disabled",
+      OFH_MAX_TICKS: "10",
+    },
+    expected: { profile: "none", startingGold: 0, spawnImmunityDuration: 50 },
+  },
+  {
+    name: "5MM",
+    environment: {
+      OFH_5MM: "1",
+      OFH_GAME_MAP: "Alps",
+      OFH_GAME_MAP_SIZE: "Normal",
+      OFH_GAME_MODE: "team",
+      OFH_PLAYER_TEAMS: "2",
+      OFH_BOTS: "4",
+      OFH_NATIONS: "disabled",
+      OFH_MAX_TICKS: "10",
+    },
+    expected: { profile: "5MM", startingGold: 5_000_000, spawnImmunityDuration: 450 },
+  },
+  {
+    name: "temporary-pvp-immunity",
+    environment: {
+      OFH_TEMP_PVP_IMMUNITY: "1",
+      OFH_GAME_MAP: "Alps",
+      OFH_GAME_MAP_SIZE: "Normal",
+      OFH_GAME_MODE: "team",
+      OFH_PLAYER_TEAMS: "2",
+      OFH_BOTS: "4",
+      OFH_NATIONS: "disabled",
+      OFH_MAX_TICKS: "10",
+    },
+    expected: { profile: "temporary-pvp-immunity", startingGold: 0, spawnImmunityDuration: 2_400 },
+  },
+];
+for (const scenario of profileScenarios) {
+  const runtime = runHeadlessScenario(scenario.environment);
+  const start = runtime.records.find((record) => record.phase === "start");
+  assert.ok(start, `${scenario.name} profile must emit start telemetry`);
+  assert.equal(start.profile, scenario.expected.profile);
+  assert.equal(start.startingGold, scenario.expected.startingGold);
+  assert.equal(start.spawnImmunityDuration, scenario.expected.spawnImmunityDuration);
+  let expectedModifiers;
+  if (scenario.expected.profile === "none") {
+    expectedModifiers = {};
+  } else if (scenario.expected.profile === "5MM") {
+    expectedModifiers = { startingGold: 5_000_000 };
+  } else {
+    expectedModifiers = { isPeaceTime: true };
+  }
+  assert.deepEqual(start.publicGameModifiers, expectedModifiers);
+}
+
 const naturalRuntime = runHeadlessScenario({
   OFH_MATCH_SEED: "legendary-adapter-natural-20260809",
   OFH_GAME_MAP: "Alps",
@@ -381,6 +443,23 @@ assert.ok(
   naturalNuclearProgress.units["Missile Silo"] > 0,
   "nuclear-enabled simulation must expose the real Silo state through engine progress",
 );
+
+const goalShape = naturalNuclearResult.goalRequirements;
+assert.ok(goalShape && typeof goalShape === "object");
+for (const field of [
+  "tradeCaptured",
+  "transportBoatsDestroyed",
+  "warshipsDestroyed",
+  "maxWarshipVeterancy",
+  "nukedStructureGold",
+  "ownStructuresNuked",
+  "seaInvasionObserved",
+  "goldEarned",
+  "bestRivalGoldEarned",
+  "bestEconomy",
+]) {
+  assert.ok(field in goalShape, `goal telemetry must expose ${field}`);
+}
 
 // Legendary FFA survival policy: the economy must win the early gold race
 // (foundational City before preemptive Defense Posts), sieges must not freeze

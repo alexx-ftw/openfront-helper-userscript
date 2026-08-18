@@ -732,7 +732,10 @@
       const hostileSiloSamDecision = await profileStructureAsync(
         profile,
         "structures-hostile-silo-sam",
-        () => this.handleHostileSiloSamMaximumPriority(),
+        () =>
+          legendaryDifficulty && !this.hasBuiltMissileSilo(this.player)
+            ? null
+            : this.handleHostileSiloSamMaximumPriority(),
       );
       if (hostileSiloSamDecision !== null) return hostileSiloSamDecision;
 
@@ -1698,6 +1701,13 @@
         return true;
       }
       if (
+        isLegendaryDifficulty(context.difficulty) &&
+        context.hasOceanPortTiles
+      ) {
+        return profileStructureAsync(profile, "structures-ordinary-legendary", () =>
+          this.doHandleLegendaryStructures(context));
+      }
+      if (
         context.economyGrowthPriority &&
         (await profileStructureAsync(profile, "structures-ordinary-economy", () =>
           this.maybePrioritizeEconomicGrowth(context, profile)))
@@ -1709,10 +1719,6 @@
           this.handleMissileSiloParity(context))
       ) {
         return true;
-      }
-      if (isLegendaryDifficulty(context.difficulty)) {
-        return profileStructureAsync(profile, "structures-ordinary-legendary", () =>
-          this.doHandleLegendaryStructures(context));
       }
       return profileStructureAsync(profile, "structures-ordinary-policy", () =>
         this.handleOrdinaryStructurePriorities(context));
@@ -1843,7 +1849,12 @@
     }
 
     crowdedOpeningStructure(context) {
-      if (isLegendaryDifficulty(context.difficulty)) return null;
+      // The adaptive Legendary tier opens Port-first too when coastal and
+      // crowded: its whole naval economy (trade income, warship spawns,
+      // captures) hangs off that first Port.
+      if (isLegendaryDifficulty(context.difficulty) && !state.settings.winFixes) {
+        return null;
+      }
       if (context.citiesDisabled) return null;
       const cityPriorityAvailable =
         context.prioritizeCityForBorderThreat &&
@@ -1908,7 +1919,12 @@
       // first silo leaves neither the Port nor its first Warship affordable.
       // Nuclear emergencies already returned from higher-priority paths; this
       // applies only to the speculative offensive launcher.
-      if (this.shouldDeferInitialSiloForNavalOpening()) return false;
+      if (
+        this.shouldDeferInitialSiloForNavalOpening() &&
+        !this.legendaryArsenalNavalOpeningReady()
+      ) {
+        return false;
+      }
       const siloCost = this.getConstructionCost(UNIT.MissileSilo);
       if (this.spendableConstructionGold() < siloCost) return false;
       // The first silo establishes the offensive capability itself.  The
@@ -1918,6 +1934,16 @@
       return this.maybeSpawnStructure(UNIT.MissileSilo, {
         ignoreEconomicReserve: true,
       });
+    }
+
+    legendaryArsenalNavalOpeningReady() {
+      if (!isLegendaryDifficulty()) return false;
+      const ports = this.player?.units?.(UNIT.Port) || [];
+      const hasCompletedPort = ports.some(
+        (port) => port?.isUnderConstruction?.() === false,
+      );
+      if (!hasCompletedPort) return false;
+      return this.ownedLevels(UNIT.City) >= 2;
     }
 
     shouldDeferInitialSiloForNavalOpening() {
@@ -2197,6 +2223,77 @@
     // Legendary deliberately chooses among all currently relevant structures
     // instead of following the faithful Nation priority list. Placement, cost,
     // upgrade, and buildability checks remain in maybeSpawnStructure().
+    async maybeOpenLegendaryNavalEconomy({
+      config,
+      citiesDisabled,
+      cityCount,
+      hasOceanPortTiles,
+    }) {
+      if (
+        citiesDisabled ||
+        !hasOceanPortTiles ||
+        cityCount < 1 ||
+        config?.isUnitDisabled?.(UNIT.Port) === true
+      ) {
+        return false;
+      }
+      const ports = this.player?.units?.(UNIT.Port) || [];
+      const completedPort = ports.some(
+        (port) => port.isUnderConstruction?.() !== true,
+      );
+      if (completedPort || ports.length > 0) return false;
+      return this.maybeSpawnStructure(UNIT.Port);
+    }
+
+    async maybeOpenLegendaryArsenal({
+      config,
+      cityCount,
+      hasOceanPortTiles,
+      missileSilosEnabled,
+      nukesEnabled,
+    }) {
+      if (
+        cityCount < 2 ||
+        !hasOceanPortTiles ||
+        !missileSilosEnabled ||
+        !nukesEnabled ||
+        config?.isUnitDisabled?.(UNIT.MissileSilo) === true
+      ) {
+        return false;
+      }
+      const silos = this.player?.units?.(UNIT.MissileSilo) || [];
+      if (silos.length === 0) {
+        return this.maybeOpenLegendaryFirstSilo();
+      }
+      return this.maybeOpenLegendaryBaselineSam(config);
+    }
+
+    maybeOpenLegendaryFirstSilo() {
+      const siloCost = this.safeConstructionCost(UNIT.MissileSilo) ?? 0n;
+      if (this.spendableConstructionGold() < siloCost) return false;
+      return this.maybeSpawnStructure(UNIT.MissileSilo, {
+        useActualCost: true,
+        ignoreEconomicReserve: true,
+        prioritizeStructureCoverage: true,
+      });
+    }
+
+    maybeOpenLegendaryBaselineSam(config) {
+      const sams = this.player?.units?.(UNIT.SAMLauncher) || [];
+      if (
+        sams.length === 0 &&
+        config?.isUnitDisabled?.(UNIT.SAMLauncher) !== true &&
+        this.hasObservedHostileMissileLaunch()
+      ) {
+        return this.maybeSpawnStructure(UNIT.SAMLauncher, {
+          allowPreemptiveSam: true,
+          useActualCost: true,
+          prioritizeStructureCoverage: true,
+        });
+      }
+      return false;
+    }
+
     async doHandleLegendaryStructures({
       config,
       citiesDisabled,
@@ -2207,6 +2304,24 @@
       nukesEnabled,
       economyGrowthPriority,
     }) {
+      // The naval economy opening: the first Port unlocks trade income, the
+      // warship spawn path, and every capture mechanic the adaptive tier
+      // depends on. Buy it right after the foundational City instead of
+      // behind ratio targets that only re-open after further Cities.
+      if (await this.maybeOpenLegendaryNavalEconomy({ config, citiesDisabled, cityCount, hasOceanPortTiles })) {
+        return true;
+      }
+      if (
+        await this.maybeOpenLegendaryArsenal({
+          config,
+          cityCount,
+          hasOceanPortTiles,
+          missileSilosEnabled,
+          nukesEnabled,
+        })
+      ) {
+        return true;
+      }
       // A missile attack inside the five-tick safety window takes precedence over
       // economic construction: upgrade the SAM that actually covers the most
       // exposed trajectory before spending the same gold on a new structure.

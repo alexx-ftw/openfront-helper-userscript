@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   Difficulty,
+  GameMapSize,
   GameMode,
   HumansVsNations,
   PlayerType,
@@ -19,11 +20,84 @@ import type { StampedIntent, Turn } from "../../openfront-engine/src/core/Schema
 import { MapPlaylist } from "../../openfront-engine/src/server/MapPlaylist.ts";
 import { NodeGameMapLoader } from "../../openfront-engine/tests/perf/fullgame/NodeGameMapLoader.ts";
 import { createMaxDifficultyOpponent } from "./opponent-adapter.js";
+import { UnitImpl } from "../../openfront-engine/src/core/game/UnitImpl.ts";
+import { PlayerImpl } from "../../openfront-engine/src/core/game/PlayerImpl.ts";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const engineRoot = path.resolve(root, "../../openfront-engine");
 const seed = process.env.OFH_MATCH_SEED ?? `ofh-random-team-${Date.now()}`;
 const clientID = "ofh-auto-bot";
+
+// ── Per-game goal instrumentation ────────────────────────────────────────────
+// Tracks the four in-game achievement requirements for the validation games:
+// captured trade vessels, destroyed enemy warships, the gold value of enemy
+// structures destroyed by our nukes, and the highest own-warship veterancy.
+// Captures and warship kills come from the engine's authoritative stats; the
+// nuked value is priced at destruction time (the cost curve counts the
+// victim's owned units, so it must be read before the counts change).
+const nukeVulnerableStructureTypes = new Set<UnitType>([
+  UnitType.City,
+  UnitType.Port,
+  UnitType.Factory,
+  UnitType.DefensePost,
+  UnitType.SAMLauncher,
+  UnitType.MissileSilo,
+]);
+let nukeDetonatingOwner: import("../../openfront-engine/src/core/game/Game.ts").Player | null =
+  null;
+let nukedStructureGold = 0n;
+let ownStructuresNuked = 0;
+const goldEarnedById = new Map<string, bigint>();
+const originalNukeDetonate = NukeExecution.prototype.detonate;
+NukeExecution.prototype.detonate = function (
+  this: NukeExecution & { player: import("../../openfront-engine/src/core/game/Game.ts").Player },
+) {
+  const previous = nukeDetonatingOwner;
+  nukeDetonatingOwner = this.player;
+  originalNukeDetonate.call(this);
+  nukeDetonatingOwner = previous;
+};
+const originalUnitDelete = UnitImpl.prototype.delete;
+UnitImpl.prototype.delete = function (
+  this: UnitImpl,
+  displayMessage?: boolean,
+  destroyer?: import("../../openfront-engine/src/core/game/Game.ts").Player,
+) {
+  if (nukeDetonatingOwner !== null && nukeVulnerableStructureTypes.has(this.type())) {
+    if (
+      destroyer === nukeDetonatingOwner &&
+      destroyer?.clientID?.() === clientID
+    ) {
+      nukedStructureGold += this.mg
+        .unitInfo(this.type())
+        .cost(this.mg, this.owner());
+    }
+    if (this.owner()?.clientID?.() === clientID) {
+      ownStructuresNuked += 1;
+    }
+  }
+  return originalUnitDelete.call(this, displayMessage, destroyer);
+};
+
+// Cumulative gold earned per player: every income path (base income, trade
+// arrivals, conquest transfers) flows through PlayerImpl.addGold, so a
+// prototype wrap gives the "best economy" comparison without touching the
+// engine's logic.
+const originalAddGold = PlayerImpl.prototype.addGold;
+PlayerImpl.prototype.addGold = function (
+  this: import("../../openfront-engine/src/core/game/Game.ts").Player,
+  toAdd: bigint,
+  tile?: unknown,
+) {
+  // Nations and bots carry no clientID, so the accumulator is keyed by the
+  // engine player id to keep every economy comparable.
+  const playerKey = String(this.id?.() ?? "");
+  if (playerKey !== "" && toAdd > 0n) {
+    goldEarnedById.set(playerKey, (goldEarnedById.get(playerKey) ?? 0n) + toAdd);
+  }
+  return originalAddGold.call(this, toAdd as never, tile as never);
+};
+
 const traceFile = process.env.OFH_TRACE_FILE;
 if (traceFile) {
   writeFileSync(traceFile, "");
@@ -86,7 +160,12 @@ const requestedTeams = process.env.OFH_PLAYER_TEAMS;
 const numericTeams = Number(requestedTeams);
 const requestedGameMode = (process.env.OFH_GAME_MODE ?? "team").trim().toLowerCase();
 const requestedStartingGold = process.env.OFH_STARTING_GOLD;
-const numericStartingGold = Number(requestedStartingGold);
+const forceFiveMM = process.env.OFH_5MM === "1";
+const noModifiers = process.env.OFH_NO_MODIFIERS === "1";
+const temporaryPvpImmunity = process.env.OFH_TEMP_PVP_IMMUNITY === "1";
+const effectiveStartingGold = forceFiveMM ? "5000000" : requestedStartingGold;
+const numericRequestedStartingGold = Number(requestedStartingGold);
+const numericStartingGold = Number(effectiveStartingGold);
 const requestedNations = process.env.OFH_NATIONS;
 const numericNations = Number(requestedNations);
 const forceNukesEnabled = process.env.OFH_NUKES === "1";
@@ -113,6 +192,12 @@ const nuclearUnitTypes = new Set([
 ]);
 if (requestedGameMode !== "team" && requestedGameMode !== "ffa") {
   throw new Error(`OFH_GAME_MODE must be team or ffa, got ${process.env.OFH_GAME_MODE}`);
+}
+if (Number(forceFiveMM) + Number(noModifiers) + Number(temporaryPvpImmunity) > 1) {
+  throw new Error("OFH_5MM, OFH_NO_MODIFIERS, and OFH_TEMP_PVP_IMMUNITY are mutually exclusive");
+}
+if (forceFiveMM && requestedStartingGold !== undefined && numericRequestedStartingGold !== 5_000_000) {
+  throw new Error("OFH_5MM cannot be combined with a different OFH_STARTING_GOLD value");
 }
 if (injectHostileAtom && !forceNukesEnabled) {
   throw new Error("OFH_INJECT_HOSTILE_ATOM=1 requires OFH_NUKES=1");
@@ -145,11 +230,11 @@ if (
   );
 }
 const configuredNations =
-  requestedNations === undefined ||
-  requestedNations === "default" ||
-  requestedNations === "disabled"
-    ? (requestedNations ?? "default")
-    : numericNations;
+  requestedNations === undefined
+    ? playlistConfig.nations
+    : requestedNations === "default" || requestedNations === "disabled"
+      ? requestedNations
+      : numericNations;
 const fixedConfig = process.env.OFH_GAME_MAP
   ? {
       gameMap: process.env.OFH_GAME_MAP,
@@ -175,6 +260,17 @@ const fixedConfig = process.env.OFH_GAME_MAP
   : {};
 const config = {
   ...playlistConfig,
+  ...(noModifiers
+    ? {
+        gameMapSize: GameMapSize.Normal,
+        publicGameModifiers: {},
+        startingGold: undefined,
+        goldMultiplier: undefined,
+        randomSpawn: false,
+        spawnImmunityDuration: 50,
+        bots: Number(process.env.OFH_BOTS ?? 400),
+      }
+    : {}),
   ...fixedConfig,
   ...(process.env.OFH_FIXED_WARSHIP === "1"
     ? {
@@ -187,7 +283,42 @@ const config = {
     : {}),
   difficulty: Difficulty.Impossible,
   nations: configuredNations,
-  ...(requestedStartingGold === undefined ? {} : { startingGold: numericStartingGold }),
+  ...(noModifiers
+    ? {
+        gameMapSize: GameMapSize.Normal,
+        publicGameModifiers: {},
+        goldMultiplier: undefined,
+        startingGold: undefined,
+        randomSpawn: false,
+        spawnImmunityDuration: 50,
+        bots: Number(process.env.OFH_BOTS ?? 400),
+        disabledUnits: [],
+      }
+    : {}),
+  ...(forceFiveMM
+    ? {
+        gameMapSize: GameMapSize.Normal,
+        publicGameModifiers: { startingGold: 5_000_000 },
+        startingGold: 5_000_000,
+        spawnImmunityDuration: 450,
+        bots: Number(process.env.OFH_BOTS ?? 400),
+      }
+    : {}),
+  ...(temporaryPvpImmunity
+    ? {
+        gameMapSize: GameMapSize.Normal,
+        publicGameModifiers: { isPeaceTime: true },
+        startingGold: undefined,
+        goldMultiplier: undefined,
+        spawnImmunityDuration: 2_400,
+        bots: Number(process.env.OFH_BOTS ?? 400),
+      }
+    : {}),
+  ...(!forceFiveMM && !noModifiers && requestedStartingGold === undefined
+    ? {}
+    : !forceFiveMM && !noModifiers
+      ? { startingGold: numericStartingGold }
+      : {}),
   ...(forceNukesEnabled
     ? {
         disabledUnits: (playlistConfig.disabledUnits ?? []).filter(
@@ -226,6 +357,7 @@ const initialPlayers = runner.game
   .filter((player) => player.type() !== PlayerType.Bot);
 const nations = initialPlayers.filter((player) => player.type() === PlayerType.Nation);
 const me = runner.game.playerByClientID(clientID);
+let seaInvasionObserved = false;
 const originalConquerPlayer = runner.game.conquerPlayer.bind(runner.game);
 runner.game.conquerPlayer = (conqueror, conquered) => {
   if (conquered.clientID() === clientID) {
@@ -257,6 +389,9 @@ console.warn(
     botDifficulty: process.env.OFH_BOT_DIFFICULTY ?? "Impossible",
     autoBuild: bot.features.build === true,
     startingGold: config.startingGold ?? 0,
+    publicGameModifiers: config.publicGameModifiers ?? {},
+    spawnImmunityDuration: config.spawnImmunityDuration ?? null,
+    profile: forceFiveMM ? "5MM" : temporaryPvpImmunity ? "temporary-pvp-immunity" : noModifiers ? "none" : "playlist",
     nations: nations.length,
     tribes: config.bots,
     myTeam: me?.team() ?? null,
@@ -961,6 +1096,18 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   await new Promise<void>((resolve) => setImmediate(resolve));
   const executionMs = performance.now() - executionStartedAt;
   const currentPlayer = runner.game.playerByClientID(clientID);
+  const enemyTransports = runner.game
+    .units(UnitType.TransportShip)
+    .filter((ship) => ship.owner()?.team?.() !== currentPlayer?.team?.());
+  if (
+    currentPlayer &&
+    enemyTransports.some((ship) => {
+      const targetTile = ship.targetTile?.();
+      return targetTile !== undefined && runner.game.ownerID(targetTile) === currentPlayer.smallID();
+    })
+  ) {
+    seaInvasionObserved = true;
+  }
   updateStrategicTrajectory();
   if (logSpawn && !spawnMaterializedLogged && currentPlayer?.numTilesOwned() > 0) {
     spawnMaterializedLogged = true;
@@ -1232,6 +1379,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
         tiles: player?.numTilesOwned() ?? 0,
         troops: player?.troops() ?? 0,
         maxTroops: player ? runner.game.config().maxTroops(player) : 0,
+        tradeShipsAlive: runner.game.units(UnitType.TradeShip).length,
         productionReserve,
         liveReserve,
         pendingTroops,
@@ -1317,6 +1465,49 @@ if (injectHostileAtom && !hostileMissileInjected) {
   );
 }
 
+function goalRequirementsSnapshot() {
+  const me = runner.game.playerByClientID(clientID);
+  const stats = me ? runner.game.stats().getPlayerStats(me) : null;
+  const warshipVeterancy = me
+    ? Math.max(
+        0,
+        ...me
+          .units(UnitType.Warship)
+          .map((unit) =>
+            Number(
+              typeof unit.veterancy === "function"
+                ? unit.veterancy()
+                : unit.veterancy ?? 0,
+            ),
+          ),
+      )
+    : 0;
+  const myGoldEarned = me ? (goldEarnedById.get(String(me.id())) ?? 0n) : 0n;
+  let bestRivalGoldEarned = 0n;
+  let bestRivalName: string | null = null;
+  for (const player of runner.game.players()) {
+    if (player.clientID?.() === clientID) continue;
+    const rivalGold = goldEarnedById.get(String(player.id())) ?? 0n;
+    if (rivalGold > bestRivalGoldEarned) {
+      bestRivalGoldEarned = rivalGold;
+      bestRivalName = player.name();
+    }
+  }
+  return {
+    tradeCaptured: Number(stats?.boats?.trade?.[2] ?? 0n),
+    transportBoatsDestroyed: Number(stats?.boats?.trans?.[3] ?? 0n),
+    warshipsDestroyed: Number(stats?.units?.wshp?.[1] ?? 0n),
+    maxWarshipVeterancy: warshipVeterancy,
+    nukedStructureGold: nukedStructureGold.toString(),
+    ownStructuresNuked,
+    seaInvasionObserved,
+    goldEarned: myGoldEarned.toString(),
+    bestRivalGoldEarned: bestRivalGoldEarned.toString(),
+    bestRivalName,
+    bestEconomy: myGoldEarned > bestRivalGoldEarned,
+  };
+}
+
 const finalResult = {
   phase: "result",
   seed,
@@ -1327,6 +1518,7 @@ const finalResult = {
   finalBotState,
   ticks: runner.game.ticks(),
   stopReason,
+  goalRequirements: goalRequirementsSnapshot(),
   spawnLifecycle: bot.getSpawnLifecycleSnapshot(),
   nuclearStrategy: bot.getNuclearStrategySnapshot(),
   intentBudget: bot.getIntentBudgetSnapshot() ?? undefined,

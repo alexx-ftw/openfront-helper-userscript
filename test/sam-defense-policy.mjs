@@ -2239,8 +2239,8 @@ assert.equal(
 );
 assert.deepEqual(
   legendaryPostSamAttempts,
-  [UNIT.City],
-  "Legendary lets productive construction proceed between bounded hostile-Silo SAM retries",
+  [UNIT.Port],
+  "Legendary opens the naval economy between bounded hostile-Silo SAM retries",
 );
 behavior.maybeUpgradeLegendarySam = originalReservedSlotMaybeUpgradeLegendarySam;
 behavior.maybeUpgradeHydrogenProtectionSam = originalReservedSlotMaybeUpgradeHydrogenProtectionSam;

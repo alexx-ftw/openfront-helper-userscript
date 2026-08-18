@@ -85,6 +85,10 @@ const priorityBehavior = Object.create(sandbox.StructureBehavior.prototype);
 const prioritySpawnedStructures = [];
 priorityBehavior.player = { gold: () => 800n };
 priorityBehavior.maybeUpgradeLegendarySam = async () => false;
+// The naval/arsenal openings need a richer player/config surface than this
+// stub provides; this block pins the wait-vs-SAM candidate ranking only.
+priorityBehavior.maybeOpenLegendaryNavalEconomy = async () => false;
+priorityBehavior.maybeOpenLegendaryArsenal = async () => false;
 priorityBehavior.ownSamCapacity = () => 1;
 priorityBehavior.maybeSpawnHostileSiloSam = async () => false;
 priorityBehavior.legendaryMissileDefenseUrgent = () => false;

@@ -255,7 +255,53 @@
           "initial",
         );
       }
-      return false;
+      return this.maybeSpawnRaidingWarship(smartState);
+    }
+
+    // Legendary raiding fleet: with hostile trade traffic on the water and a
+    // completed Port, keep building warships toward a bounded fleet. Captures
+    // fund the nuclear economy and 25 of them promote a ship to veterancy 3.
+    legendaryArsenalReserve() {
+      if (!this.raidingTierActive()) return 0n;
+      const structures = this.player.units(UNIT.MissileSilo) || [];
+      if (structures.length > 0) return 0n;
+      const cities = this.player.units(UNIT.City) || [];
+      const ports = this.player.units(UNIT.Port) || [];
+      if (cities.length < 2 || ports.length === 0) return 0n;
+      return 1_000_000n;
+    }
+
+    async maybeSpawnRaidingWarship(smartState) {
+      if (smartState.lastInvasionBuildTick === this.game.ticks()) return false;
+      if (this.hasPendingWarshipBuild(smartState)) return false;
+      if (!this.raidingTierActive()) return false;
+      const ports = this.player.units(UNIT.Port).filter(isCompletedWarshipPort);
+      if (ports.length === 0) return false;
+      const fleet = this.player.units(UNIT.Warship).length;
+      const traffic = this.game.units(UNIT.TradeShip).length;
+      const fleetCap = Math.max(2, Math.min(8, 2 + Math.floor(traffic / 40)));
+      if (fleet >= fleetCap) return false;
+      const warshipCost = this.cost(UNIT.Warship);
+      const arsenalReserve = this.legendaryArsenalReserve();
+      if (
+        fleet > 0 &&
+        this.player.gold() < warshipCost + warshipCost / 2n + arsenalReserve
+      ) {
+        return false;
+      }
+      const port = this.random.randElement(ports);
+      const targetTile = this.warshipSpawnTile(port.tile(), 250);
+      if (targetTile === null) return false;
+      const bu = await this.buildableWarship(targetTile);
+      if (bu === null || bu === undefined || bu.canBuild === false) {
+        return false;
+      }
+      return this.tryEmitWarshipBuild(
+        bu,
+        targetTile,
+        tr("🏴‍☠️ Raid fleet"),
+        "raiding",
+      );
     }
 
     shouldDeferWarshipForDefense(warshipCost) {
@@ -811,6 +857,8 @@
         pendingInvasionBuilds: new Set(),
         invasionBuildAttemptAt: new Map(),
         pendingWarshipBuild: null,
+        raidFlagshipId: null,
+        raidAnchorSource: null,
       };
       return this.smartState;
     }
@@ -1715,8 +1763,265 @@
       // handled by protectAgainstNavalInvasions(), which has to preserve the
       // boat's future path and firing-range margin instead of using one point.
       const threats = this.patrolThreats(s);
-      if (threats.length === 0) return;
-      this.servicePatrolThreats(threats, s, tick);
+      if (threats.length > 0) {
+        this.servicePatrolThreats(threats, s, tick);
+      }
+      this.serviceCommerceRaids(s, tick);
+    }
+
+    // ── COMMERCE RAIDING (Legendary win-fix) ─────────────────────────────────
+    // Trade captures fund the whole naval-nuclear economy and veterancy: a
+    // warship parked in deep water between two hostile ports auto-captures
+    // every trade ship that passes within its patrol range (the engine's own
+    // hunting), and 25 captures alone promote one ship to veterancy level 3.
+    // Anchors must stay far enough from shore that transit ships lose their
+    // 20-tick pirate immunity before they cross the patrol circle.
+
+    raidingTierActive() {
+      return (
+        state.settings.winFixes === true &&
+        typeof currentDifficulty === "function" &&
+        currentDifficulty() === "Legendary"
+      );
+    }
+
+    hostileRaidPorts() {
+      const ports = [];
+      for (const unit of this.game.units(UNIT.Port)) {
+        if (unit.type() !== UNIT.Port) continue;
+        if (unit.isUnderConstruction?.() === true) continue;
+        const owner = unit.owner?.();
+        if (!owner || !owner.isPlayer?.()) continue;
+        if (owner === this.player) continue;
+        if (this.player.isFriendly?.(owner) === true) continue;
+        ports.push(unit);
+        if (ports.length >= 48) break;
+      }
+      return ports;
+    }
+
+    openWaterTileNear(x, y) {
+      // Land within ~25 tiles voids the pirate-immunity trick and invites
+      // shore-based retaliation; sample rays at three radii in 16 directions.
+      const hasNearbyLand = (tx, ty) => {
+        for (const radius of [8, 16, 25]) {
+          for (let dir = 0; dir < 16; dir += 1) {
+            const angle = (dir / 16) * Math.PI * 2;
+            const sx = Math.round(tx + Math.cos(angle) * radius);
+            const sy = Math.round(ty + Math.sin(angle) * radius);
+            if (!this.game.isValidCoord(sx, sy)) return true;
+            if (this.game.isLand(this.game.ref(sx, sy))) return true;
+          }
+        }
+        return false;
+      };
+      for (let ring = 0; ring <= 40; ring += 4) {
+        for (let dir = 0; dir < 8; dir += 1) {
+          const angle = (dir / 8) * Math.PI * 2;
+          const tx = Math.round(x + Math.cos(angle) * ring);
+          const ty = Math.round(y + Math.sin(angle) * ring);
+          if (!this.game.isValidCoord(tx, ty)) continue;
+          const tile = this.game.ref(tx, ty);
+          if (!this.game.isWater(tile)) continue;
+          if (hasNearbyLand(tx, ty)) continue;
+          return tile;
+        }
+      }
+      return null;
+    }
+
+    commerceRaidAnchors(s, tick) {
+      if (s.raidAnchorsTick === tick) return s.raidAnchors ?? [];
+      const refreshDue =
+        s.raidAnchors === undefined ||
+        tick - (s.raidAnchorsAtTick ?? -Infinity) >= 300;
+      if (!refreshDue) return s.raidAnchors ?? [];
+      s.raidAnchorsAtTick = tick;
+      const anchors = this.raidingTierActive()
+        ? this.computeCommerceRaidAnchors()
+        : [];
+      s.raidAnchors = anchors;
+      s.raidAnchorsTick = tick;
+      return anchors;
+    }
+
+    nearestOpenWaterTile(x, y) {
+      for (let radius = 0; radius <= 80; radius += 4) {
+        for (let direction = 0; direction < 16; direction += 1) {
+          const angle = (direction / 16) * Math.PI * 2;
+          const tx = Math.round(x + Math.cos(angle) * radius);
+          const ty = Math.round(y + Math.sin(angle) * radius);
+          if (!this.game.isValidCoord(tx, ty)) continue;
+          const tile = this.game.ref(tx, ty);
+          if (this.game.isWater(tile)) return tile;
+        }
+      }
+      return null;
+    }
+
+    liveTradeRaidAnchors() {
+      const anchors = [];
+      for (const tradeShip of this.game.units(UNIT.TradeShip) || []) {
+        const tile = tradeShip.tile?.();
+        if (tile == null) continue;
+        const x = this.game.x(tile);
+        const y = this.game.y(tile);
+        const anchor = this.openWaterTileNear(x, y) ?? this.nearestOpenWaterTile(x, y);
+        if (anchor == null) continue;
+        if (anchors.some((existing) => this.game.manhattanDist(existing, anchor) < 35)) {
+          continue;
+        }
+        anchors.push(anchor);
+        if (anchors.length >= 3) break;
+      }
+      return anchors;
+    }
+
+    nearestHostileRaidNeighbor(port, ports, used) {
+      const px = this.game.x(port.tile());
+      const py = this.game.y(port.tile());
+      let neighbor = null;
+      let neighborDistance = Infinity;
+      for (const other of ports) {
+        if (other === port || used.has(other)) continue;
+        if (other.owner?.() === port.owner?.()) continue;
+        const distance =
+          Math.abs(this.game.x(other.tile()) - px) +
+          Math.abs(this.game.y(other.tile()) - py);
+        if (distance < neighborDistance) {
+          neighbor = other;
+          neighborDistance = distance;
+        }
+      }
+      return neighbor;
+    }
+
+    computeCommerceRaidAnchors() {
+      const liveTraffic = this.liveTradeRaidAnchors();
+      if (liveTraffic.length > 0) return liveTraffic;
+      const ports = this.hostileRaidPorts().sort(
+        (left, right) => (right.level?.() ?? 1) - (left.level?.() ?? 1),
+      );
+      const anchors = [];
+      const used = new Set();
+      for (const port of ports.slice(0, 6)) {
+        if (anchors.length >= 3) break;
+        const neighbor = this.nearestHostileRaidNeighbor(port, ports, used);
+        const midX = neighbor
+          ? Math.round((this.game.x(port.tile()) + this.game.x(neighbor.tile())) / 2)
+          : this.game.x(port.tile());
+        const midY = neighbor
+          ? Math.round((this.game.y(port.tile()) + this.game.y(neighbor.tile())) / 2)
+          : this.game.y(port.tile());
+        const anchor = this.openWaterTileNear(midX, midY);
+        if (anchor === null) continue;
+        used.add(port);
+        if (neighbor) used.add(neighbor);
+        anchors.push(anchor);
+      }
+      return anchors;
+    }
+
+    countRaidStationedShips(anchors) {
+      const shipsPerAnchor = new Map(anchors.map((tile) => [tile, 0]));
+      for (const warship of this.player.units(UNIT.Warship)) {
+        const patrolTile = warship.warshipState().patrolTile;
+        if (patrolTile === undefined) continue;
+        for (const anchor of anchors) {
+          if (this.game.manhattanDist(patrolTile, anchor) < 40) {
+            shipsPerAnchor.set(anchor, (shipsPerAnchor.get(anchor) ?? 0) + 1);
+            break;
+          }
+        }
+      }
+      return shipsPerAnchor;
+    }
+
+    collectIdleRaidShips(s, tick, shipsPerAnchor) {
+      const idleShips = [];
+      const flagshipId = this.selectRaidFlagshipId(s);
+      for (const warship of this.player.units(UNIT.Warship)) {
+        if (s.invasionAssignments?.has(warship.id())) continue;
+        // Once a ship reaches veterancy 3 it is the protected flagship. Before
+        // that, keep one selected flagship assigned to the busiest raid lane so
+        // trade captures and warship kills accumulate on one hull.
+        if (flagshipId !== null && String(warship.id()) !== flagshipId) continue;
+        const last = s.cooldown?.get(warship.id());
+        if (last !== undefined && tick - last < 60) continue;
+        const patrolTile = warship.warshipState().patrolTile;
+        if (
+          patrolTile !== undefined &&
+          [...shipsPerAnchor.entries()].some(
+            ([anchor, count]) =>
+              count > 0 && this.game.manhattanDist(patrolTile, anchor) < 40,
+          )
+        ) {
+          continue;
+        }
+        idleShips.push(warship);
+      }
+      return idleShips;
+    }
+
+    selectRaidFlagshipId(s) {
+      const ships = this.player.units(UNIT.Warship);
+      if (ships.length === 0) return null;
+      const veteran = ships.find(
+        (ship) => Number(ship.veterancy?.() ?? ship.veterancy ?? 0) >= 3,
+      );
+      if (veteran) {
+        s.raidFlagshipId = String(veteran.id());
+        return s.raidFlagshipId;
+      }
+      if (s.raidFlagshipId !== null) {
+        const stillOwned = ships.some((ship) => String(ship.id()) === s.raidFlagshipId);
+        if (stillOwned) return s.raidFlagshipId;
+      }
+      const selected = ships
+        .slice()
+        .sort((left, right) => Number(right.veterancy?.() ?? right.veterancy ?? 0) - Number(left.veterancy?.() ?? left.veterancy ?? 0))[0];
+      s.raidFlagshipId = selected ? String(selected.id()) : null;
+      return s.raidFlagshipId;
+    }
+
+    leastMannedRaidAnchor(shipsPerAnchor) {
+      let target = null;
+      let targetCount = Infinity;
+      for (const [anchor, count] of shipsPerAnchor) {
+        if (count < targetCount) {
+          target = anchor;
+          targetCount = count;
+        }
+      }
+      return { target, targetCount };
+    }
+
+    serviceCommerceRaids(s, tick) {
+      if (!this.raidingTierActive()) return;
+      // Never retask an interceptor into commerce duty while an enemy
+      // transport is live. The invasion planner runs first, but a same-tick
+      // raid move would overwrite its patrol anchor and let the landing reach
+      // our coast.
+      if (this.incomingNavalTransports().length > 0) return;
+      const anchors = this.commerceRaidAnchors(s, tick);
+      if (anchors.length === 0) return;
+      const ctors = discoverCtors(getEventBus());
+      if (!ctors.moveWarship) return;
+      const shipsPerAnchor = this.countRaidStationedShips(anchors);
+      const idleShips = this.collectIdleRaidShips(s, tick, shipsPerAnchor);
+      if (idleShips.length === 0) return;
+      let movesThisPass = 0;
+      for (const warship of idleShips) {
+        if (movesThisPass >= WARSHIP_COMBAT_PASS_MOVE_CAP) break;
+        if (!this.warshipMoveBudgetAvailable()) break;
+        const { target, targetCount } = this.leastMannedRaidAnchor(shipsPerAnchor);
+        if (target === null || targetCount >= 3) break;
+        emitIntent(ctors.moveWarship, [warship.id()], target);
+        shipsPerAnchor.set(target, targetCount + 1);
+        s.cooldown.set(warship.id(), tick);
+        movesThisPass += 1;
+        setLastAction(tr("🏴‍☠️ Commerce raid"), "naval");
+      }
     }
 
     // findLossZone — centroid of a CLUSTER of recent open-water losses (≥ min within a
@@ -1790,9 +2095,10 @@
       );
       if (selected === null || selected.distance > maxDist) return false;
       const w = selected.warship;
+      if (!this.warshipMoveBudgetAvailable()) return false;
       const ctors = discoverCtors(getEventBus());
       if (!ctors.moveWarship) return false;
-      emitIntent(ctors.moveWarship, [w.id()], tile);
+      if (!emitIntent(ctors.moveWarship, [w.id()], tile)) return false;
       s.cooldown.set(w.id(), tick);
       setLastAction(tr("🚢 Patrol → {k}", { k: kind }), "naval");
       runtimeDebugLog(
@@ -2028,6 +2334,7 @@
       // different escape tile bypasses the cooldown entirely.
       const id = ship.id();
       if (this.warshipDodgeRecentlyRetasked(smartState, id, best.tile, tick)) return;
+      if (!this.warshipDodgeBudgetAvailable()) return;
       if (!this.warshipDodgeBudgetAvailable()) return;
       const ctors = discoverCtors(getEventBus());
       if (!ctors.moveWarship) return;
