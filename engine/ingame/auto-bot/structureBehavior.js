@@ -3356,9 +3356,14 @@
       }
       if (cost <= 0n) return false;
 
-      const economic = this.economicConstructionPressure();
-      const reserve =
-        (economic?.cost ?? 0n) + this.offensiveNukeDefenseReserve();
+      // While the Atom war chest is active, the economic share of this gold
+      // was already withheld from construction budgets — counting it again
+      // here would defer the very launch the chest is funding. The defensive
+      // reserve still applies unchanged.
+      const economic = this.legendaryAtomWarChest() > 0n
+        ? 0n
+        : (this.economicConstructionPressure()?.cost ?? 0n);
+      const reserve = economic + this.offensiveNukeDefenseReserve();
       return this.spendableConstructionGold() < cost + reserve;
     }
 
