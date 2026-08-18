@@ -2463,11 +2463,13 @@
     }
 
     // Once a Silo is live the nuclear strategy is part of the economy: an
-    // idle launcher that can never afford its first Atom is gold the enemy
-    // never has to fear. Reserve the first Atom's price ahead of ordinary
-    // economic construction so the war chest actually accumulates.
-    legendaryFirstAtomWarChest() {
-      if (state.nukeFirstLaunchDone === true) return 0n;
+    // idle launcher that can never afford its next Atom is gold the enemy
+    // never has to fear. Reserve the next Atom's price ahead of ordinary
+    // economic construction so the war chest actually accumulates. The
+    // reserve recurs after every launch — the ≥5MM destroyed-value goal is
+    // a sustained bombardment, not one shot — but only while a hostile
+    // player still owns nuke-eligible structures to spend it on.
+    legendaryAtomWarChest() {
       if (
         !state.settings.winFixes ||
         !isLegendaryDifficulty() ||
@@ -2480,7 +2482,45 @@
         (silo) => silo?.isUnderConstruction?.() !== true,
       );
       if (silos.length === 0) return 0n;
+      if (
+        state.nukeFirstLaunchDone === true &&
+        !this.legendaryNukeStructureTargetExists()
+      ) {
+        return 0n;
+      }
       return this.safeConstructionCost(UNIT.AtomBomb) ?? 0n;
+    }
+
+    // A live hostile (never a permanent teammate) owning any structure the
+    // nuke scorer values. Bounded by the player list; structure unit reads
+    // are the same per-tick cached views the rest of the planner uses.
+    legendaryNukeStructureTargetExists() {
+      const mySid = this.player?.smallID?.();
+      if (mySid == null) return false;
+      for (const other of this.game.players() ?? []) {
+        if (this.legendaryNukeStructureTargetCandidate(other, mySid)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    legendaryNukeStructureTargetCandidate(other, mySid) {
+      if (!other?.isPlayer?.()) return false;
+      if (other.smallID?.() === mySid) return false;
+      if (other.isAlive?.() === false) return false;
+      if (playersArePermanentTeammates(this.player, other)) return false;
+      const structureTypes = [
+        UNIT.City,
+        UNIT.DefensePost,
+        UNIT.MissileSilo,
+        UNIT.Port,
+        UNIT.Factory,
+        UNIT.SAMLauncher,
+      ];
+      return structureTypes.some(
+        (type) => (other.units?.(type) || []).length > 0,
+      );
     }
 
     legendaryMissileDefenseUrgent() {
@@ -3027,7 +3067,7 @@
       // in the same tick, so an unreserved surplus would always be spent
       // first). Defensive builds keep the full budget.
       if (ECONOMIC_STRUCTURE_TYPES.includes(type)) {
-        const warChest = this.legendaryFirstAtomWarChest();
+        const warChest = this.legendaryAtomWarChest();
         if (warChest > 0n && availableGold > warChest) {
           availableGold -= warChest;
         } else if (warChest > 0n) {
