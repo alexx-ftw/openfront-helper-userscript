@@ -433,6 +433,13 @@
       const duplicateTeamNuke = this.game.config().gameConfig().gameMode === GameMode.Team &&
         difficulty !== Difficulty.Easy && this.isTeammateAlreadyNukingThisSpot(tile, type);
       if (duplicateTeamNuke) return false;
+      // Legendary saturation divergence: refusing every SAM-covered
+      // trajectory stalls the bombardment once a rival fields launchers —
+      // the requirement is destroyed value THROUGH defenses, so an
+      // interceptable path stays scorable and the war chest funds the
+      // follow-up. The trajectory check still orders candidates below
+      // clear ones via the wave cost in maybeDestroyEnemySam territory.
+      if (difficulty === Difficulty.Legendary) return true;
       return !isAtLeastHardDifficulty(difficulty) ||
         !this.isTrajectoryInterceptableBySam(spawnTile, tile);
     }
@@ -860,6 +867,20 @@
       if (
         isAtLeastHardDifficulty(difficulty) &&
         this.isUnderHeavyAttack()
+      ) {
+        return await this.cost(type);
+      }
+
+      // Legendary divergence: the perceived-cost escalation models "save up
+      // for a MIRV" and prices a sustained bombardment out of its own war
+      // chest (750k real price escalates past 3.8M after four launches while
+      // the treasury peaks near 2.6M — measured on Baikal). The adaptive
+      // tier funds repeat strikes from the recurring chest, so affordability
+      // tracks the real price and the MIRV discipline stays with the
+      // faithful tiers.
+      if (
+        state.settings.winFixes === true &&
+        difficulty === Difficulty.Legendary
       ) {
         return await this.cost(type);
       }
@@ -1319,6 +1340,15 @@
       tileValue = Math.max(baseTileValue * 0.2, tileValue - distancePenalty); // Keep at least 20% of structure value
 
       // Don't target near recent targets
+      // Legendary divergence: the adaptive tier's nuclear strategy is a
+      // sustained bombardment funded by the recurring war chest. The faithful
+      // 1M penalty made one strike poison its own cluster until the 600-tick
+      // memory expired, capping throughput at roughly one launch per window;
+      // a lighter penalty keeps re-strikes on damaged-but-valuable clusters
+      // scorable while still preferring fresh ground.
+      const recentPenalty = currentDifficulty() === Difficulty.Legendary
+        ? 250_000
+        : 1_000_000;
       tileValue -= this.recentlySentNukes
         .filter(([_tick, recentTile, recentNukeType]) => {
           const recentInnerRadius = this.game
@@ -1327,7 +1357,7 @@
           const distSquared = this.game.euclideanDistSquared(tile, recentTile);
           return distSquared <= recentInnerRadius * recentInnerRadius;
         })
-        .map((_) => 1_000_000)
+        .map((_) => recentPenalty)
         .reduce((prev, cur) => prev + cur, 0);
 
       // Don't blast our own (or a permanent teammate's) structures: the src

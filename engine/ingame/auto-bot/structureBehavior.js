@@ -1702,7 +1702,11 @@
       }
       if (
         isLegendaryDifficulty(context.difficulty) &&
-        context.hasOceanPortTiles
+        // Shared-water lakes (Baikal) carry the same naval/nuclear economy
+        // as oceans; only truly landlocked maps fall through to the
+        // faithful order. The hydro fixture map (Alps) has no shared water
+        // and keeps its dedicated nuclear path.
+        (context.hasOceanPortTiles || context.hasCoastalTiles)
       ) {
         return profileStructureAsync(profile, "structures-ordinary-legendary", () =>
           this.doHandleLegendaryStructures(context));
