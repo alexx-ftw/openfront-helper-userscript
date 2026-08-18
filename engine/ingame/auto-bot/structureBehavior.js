@@ -2030,9 +2030,55 @@
       return false;
     }
 
+    // A shore border tile with any water neighbor can host a Port — the
+    // engine only needs coast, and the ocean/shared-water classifications
+    // are helper policy that misclassifies enclosed lakes like Baikal.
+    // Legendary uses the raw shore fact so lake maps run the full trade
+    // economy; faithful tiers keep their classification.
+    hasAnyShoreBorderTile() {
+      const borderTiles = this.player?.borderTiles?.();
+      if (!borderTiles) return false;
+      for (const tile of borderTiles) {
+        if (this.isShoreBorderTile(tile)) return true;
+      }
+      return false;
+    }
+
+    isShoreBorderTile(tile) {
+      const game = this.game;
+      if (
+        game == null ||
+        typeof game.isShore !== "function" ||
+        typeof game.isWater !== "function" ||
+        typeof game.neighbors !== "function"
+      ) {
+        return false;
+      }
+      if (!game.isShore(tile)) return false;
+      for (const neighbor of game.neighbors(tile) || []) {
+        if (game.isWater(neighbor)) return true;
+      }
+      return false;
+    }
+
+    legendaryPortCapable(hasOceanPortTiles, hasCoastalTiles) {
+      return (
+        hasOceanPortTiles === true ||
+        hasCoastalTiles === true ||
+        this.hasAnyShoreBorderTile()
+      );
+    }
+
     structureTypeAvailable(structureType, context) {
       if (context.config.isUnitDisabled(structureType)) return false;
-      if (structureType === UNIT.Port && !context.hasOceanPortTiles) return false;
+      // Shared-water lakes carry the same trade economy as oceans — Baikal
+      // ports pay and attract exactly the same trade traffic.
+      if (
+        structureType === UNIT.Port &&
+        !this.legendaryPortCapable(context.hasOceanPortTiles, context.hasCoastalTiles)
+      ) {
+        return false;
+      }
       const missileDefenseType =
         structureType === UNIT.MissileSilo || structureType === UNIT.SAMLauncher;
       if (!context.nukesEnabled && missileDefenseType) return false;
@@ -2231,13 +2277,14 @@
       config,
       citiesDisabled,
       cityCount,
+      hasCoastalTiles,
       hasOceanPortTiles,
     }) {
       if (
         citiesDisabled ||
-        !hasOceanPortTiles ||
         cityCount < 1 ||
-        config?.isUnitDisabled?.(UNIT.Port) === true
+        config?.isUnitDisabled?.(UNIT.Port) === true ||
+        !this.legendaryPortCapable(hasOceanPortTiles, hasCoastalTiles)
       ) {
         return false;
       }
@@ -2312,7 +2359,7 @@
       // warship spawn path, and every capture mechanic the adaptive tier
       // depends on. Buy it right after the foundational City instead of
       // behind ratio targets that only re-open after further Cities.
-      if (await this.maybeOpenLegendaryNavalEconomy({ config, citiesDisabled, cityCount, hasOceanPortTiles })) {
+      if (await this.maybeOpenLegendaryNavalEconomy({ config, citiesDisabled, cityCount, hasCoastalTiles, hasOceanPortTiles })) {
         return true;
       }
       if (
@@ -3069,7 +3116,11 @@
       // The first-Atom war chest claims economic gold ahead of ordinary
       // growth once a Silo is live (the nuke lane decides after structures
       // in the same tick, so an unreserved surplus would always be spent
-      // first). Defensive builds keep the full budget.
+      // first). Defensive builds keep the full budget, and Ports are exempt
+      // too: on water maps they ARE the nuclear economy's fuel — trade
+      // arrivals and captured vessels fund the bombardment, so starving
+      // port growth to save 750k slower is strictly counterproductive.
+      if (type === UNIT.Port) return availableGold;
       if (ECONOMIC_STRUCTURE_TYPES.includes(type)) {
         const warChest = this.legendaryAtomWarChest();
         if (warChest > 0n && availableGold > warChest) {
@@ -9019,7 +9070,13 @@
         connectedCities: rail.connectedCities,
         cityRailConnection: rail.cityRailConnection,
         railNeed: rail.railNeed,
-        tradeNeed: hasCoastalTiles ? rail.tradeNeed : 0.25,
+        // Misclassified enclosed lakes (Baikal) read hasCoastalTiles=false;
+        // a shore-capable map still trades, so the floor only applies to
+        // genuinely waterless starts.
+        tradeNeed:
+          hasCoastalTiles || this.hasAnyShoreBorderTile()
+            ? rail.tradeNeed
+            : 0.25,
         destroyerNeed: Math.min(
           2.5,
           Math.max(0.25, 1 + (enemyWarships - this.player.units(UNIT.Warship).length) / 5),
@@ -9213,6 +9270,7 @@
       const candidateContext = {
         candidates,
         config,
+        hasCoastalTiles,
         hasOceanPortTiles,
         missileSilosEnabled,
         nukesEnabled,
@@ -9301,7 +9359,12 @@
       if (type === UNIT.SAMLauncher && !this.hasObservedHostileMissileLaunch()) {
         return;
       }
-      if (type === UNIT.Port && !context.hasOceanPortTiles) return;
+      if (
+        type === UNIT.Port &&
+        !this.legendaryPortCapable(context.hasOceanPortTiles, context.hasCoastalTiles)
+      ) {
+        return;
+      }
       const missileType = type === UNIT.SAMLauncher || type === UNIT.MissileSilo;
       if (!context.nukesEnabled && missileType) return;
       if (type === UNIT.SAMLauncher && !context.missileSilosEnabled) return;
@@ -11628,7 +11691,7 @@
     structureCandidateTiles(type, options, candidateLimit) {
       let tiles =
         type === UNIT.Port
-          ? this.randCoastalTileArray(candidateLimit)
+          ? this.portCandidateTiles(candidateLimit)
           : randTerritoryTileArray(
               this.random,
               this.game,
@@ -12428,6 +12491,42 @@
 
     hasOceanPortTiles() {
       return this.oceanPortBorderTiles().length > 0;
+    }
+
+    // Port placement sampler: ocean-classified shore tiles when they exist,
+    // otherwise any shore border tile. Enclosed lakes (Baikal) have zero
+    // ocean tiles under the client classification, which capped lake maps
+    // at a single emergency Port regardless of candidate gating.
+    portCandidateTiles(candidateLimit) {
+      const oceanTiles = this.randCoastalTileArray(candidateLimit);
+      if (oceanTiles.length > 0) return oceanTiles;
+      return this.shoreBorderTileArray(candidateLimit);
+    }
+
+    shoreBorderTileArray(limit) {
+      const borderTiles = this.player?.borderTiles?.();
+      if (!borderTiles) return [];
+      const shoreTiles = [];
+      for (const tile of borderTiles) {
+        if (this.isShoreBorderTile(tile)) {
+          shoreTiles.push(tile);
+          if (shoreTiles.length >= limit * 4) break;
+        }
+      }
+      return this.arraySample(shoreTiles, limit);
+    }
+
+    arraySample(source, limit) {
+      if (source.length <= limit) return source;
+      const sampled = [];
+      const used = new Set();
+      while (sampled.length < limit) {
+        const index = this.random.nextInt(0, source.length);
+        if (used.has(index)) continue;
+        used.add(index);
+        sampled.push(source[index]);
+      }
+      return sampled;
     }
 
     randCoastalTileArray(numTiles) {
