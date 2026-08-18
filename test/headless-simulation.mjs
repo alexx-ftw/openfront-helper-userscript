@@ -448,7 +448,8 @@ const goalShape = naturalNuclearResult.goalRequirements;
 assert.ok(goalShape && typeof goalShape === "object");
 for (const field of [
   "tradeCaptured",
-  "transportBoatsDestroyed",
+  "enemyTransportBoatsDestroyed",
+  "ownTransportBoatsLost",
   "warshipsDestroyed",
   "maxWarshipVeterancy",
   "nukedStructureGold",

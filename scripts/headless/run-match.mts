@@ -47,6 +47,7 @@ let nukeDetonatingOwner: import("../../openfront-engine/src/core/game/Game.ts").
   null;
 let nukedStructureGold = 0n;
 let ownStructuresNuked = 0;
+let ownTransportBoatsLost = 0;
 const goldEarnedById = new Map<string, bigint>();
 const originalNukeDetonate = NukeExecution.prototype.detonate;
 NukeExecution.prototype.detonate = function (
@@ -75,6 +76,17 @@ UnitImpl.prototype.delete = function (
     if (this.owner()?.clientID?.() === clientID) {
       ownStructuresNuked += 1;
     }
+  }
+  // Engine stats attribute transport destruction to the DESTROYER
+  // (boatDestroyTroops(destroyer, ...)), so our own losses are only visible
+  // at the deletion site: an own transport removed by an enemy in any way
+  // (warship shell, nuke blast, capture-side delete) is a lost boat.
+  if (
+    this.type() === UnitType.TransportShip &&
+    destroyer !== undefined &&
+    this.owner()?.clientID?.() === clientID
+  ) {
+    ownTransportBoatsLost += 1;
   }
   return originalUnitDelete.call(this, displayMessage, destroyer);
 };
@@ -1096,15 +1108,20 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   await new Promise<void>((resolve) => setImmediate(resolve));
   const executionMs = performance.now() - executionStartedAt;
   const currentPlayer = runner.game.playerByClientID(clientID);
-  const enemyTransports = runner.game
-    .units(UnitType.TransportShip)
-    .filter((ship) => ship.owner()?.team?.() !== currentPlayer?.team?.());
+  // A sea invasion is an enemy boat that actually LANDS: the engine converts
+  // a completed transport into an AttackExecution whose source tile is the
+  // landing site (core attacks always carry it; land attacks have none).
+  // Transports our navy kills mid-crossing never produce that attack, so an
+  // interception success is not miscounted as an invasion.
   if (
     currentPlayer &&
-    enemyTransports.some((ship) => {
-      const targetTile = ship.targetTile?.();
-      return targetTile !== undefined && runner.game.ownerID(targetTile) === currentPlayer.smallID();
-    })
+    currentPlayer
+      .incomingAttacks()
+      .some(
+        (attack) =>
+          attack.attacker?.()?.team?.() !== currentPlayer.team() &&
+          attack.sourceTile?.() != null,
+      )
   ) {
     seaInvasionObserved = true;
   }
@@ -1495,7 +1512,8 @@ function goalRequirementsSnapshot() {
   }
   return {
     tradeCaptured: Number(stats?.boats?.trade?.[2] ?? 0n),
-    transportBoatsDestroyed: Number(stats?.boats?.trans?.[3] ?? 0n),
+    enemyTransportBoatsDestroyed: Number(stats?.boats?.trans?.[3] ?? 0n),
+    ownTransportBoatsLost,
     warshipsDestroyed: Number(stats?.units?.wshp?.[1] ?? 0n),
     maxWarshipVeterancy: warshipVeterancy,
     nukedStructureGold: nukedStructureGold.toString(),

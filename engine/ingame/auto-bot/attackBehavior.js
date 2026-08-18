@@ -279,6 +279,13 @@
   // Terrain is shared by all Nation behaviors for the same game. Keep the
   // reverse maritime field per map instead of rebuilding it for every bot.
   const EARLY_GAME_MARITIME_INDEX_CACHE = new WeakMap();
+  // Enemy warships target transports above everything else and close at twice
+  // the boat's speed. A transport launched into that hunting radius is a sunk
+  // requirement ("no exploration/landing boats destroyed"), so the final boat
+  // chokepoint refuses any destination inside it. Checking each enemy warship's
+  // live tile against the destination approximates the whole-route exposure:
+  // warships near the spawn coast are also near the early route segments.
+  const BOAT_WARSHIP_DANGER_RADIUS = 110;
 
   function getAutoDonateExpansionTickLimit() {
     return typeof AUTO_DONATE_EXPANSION_MAX_TICKS === "number"
@@ -7175,6 +7182,21 @@
       return Math.min(requestedTroops, spendableTroops);
     }
 
+    // All attack types share the same hard reserve budget, including boats
+    // whose caller may have calculated a larger surge from a stale snapshot.
+    // A TerraNullius target has its own soft reserve ceiling; do not silently
+    // replace it with the live production reserve at this final boundary.
+    resolveBoatTroops(requestedTroops, reserveTarget, requireExactTroops) {
+      const targetReserve = reserveTarget
+        ? this.getEarlyGameTargetReserveTroops(reserveTarget)
+        : this.getEarlyGameLiveReserveTroops();
+      return this.getSafeBoatTroops(
+        requestedTroops,
+        targetReserve,
+        requireExactTroops,
+      );
+    }
+
     // emitBoat — fire a TransportShipExecution at dst carrying `troops`.
     canEmitBoatToDestination(dst) {
       this.captureSameClanNukeTerrain();
@@ -7182,6 +7204,44 @@
         state.settings.features?.boat &&
         !this.isProtectedSameClanNukedTerrain(dst),
       );
+    }
+
+    // Legendary win-fix: refuse boat launches whose destination sits inside an
+    // enemy warship's hunting radius. Transports are the engine's top-priority
+    // warship target; the "no landing boats destroyed" requirement makes a
+    // refused launch strictly better than a sunk one. Friendly warships do not
+    // protect a transport — the engine resolves warship-vs-transport combat
+    // regardless of escorts unless the escort kills the hunter first.
+    boatLaunchWarshipDangerGateActive() {
+      return (
+        state.settings.winFixes === true &&
+        typeof currentDifficulty === "function" &&
+        currentDifficulty() === "Legendary" &&
+        typeof this.game?.units === "function" &&
+        typeof this.game.manhattanDist === "function"
+      );
+    }
+
+    hostileWarshipNearDestination(dst) {
+      for (const warship of this.game.units(UNIT.Warship) || []) {
+        if (warship?.isActive?.() === false) continue;
+        const owner = warship?.owner?.();
+        if (!owner?.isPlayer?.()) continue;
+        if (owner === this.player) continue;
+        if (this.player.isFriendly?.(owner) === true) continue;
+        if (
+          this.game.manhattanDist(warship.tile(), dst) <=
+          BOAT_WARSHIP_DANGER_RADIUS
+        ) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    boatLaunchWarshipDanger(dst) {
+      if (!this.boatLaunchWarshipDangerGateActive()) return false;
+      return this.hostileWarshipNearDestination(dst);
     }
 
     emitBoat(
@@ -7193,21 +7253,15 @@
     ) {
       // Final chokepoint for the "boat" feature toggle: never fire when off.
       if (!this.canEmitBoatToDestination(dst)) return false;
+      if (this.boatLaunchWarshipDanger(dst)) return false;
       if (this.boatDestinationReserved(dst)) return false;
       const requestedTroops = Number(troops);
       if (!Number.isFinite(requestedTroops) || requestedTroops < 1) {
         return false;
       }
-      // All attack types share the same hard reserve budget, including boats
-      // whose caller may have calculated a larger surge from a stale snapshot.
-      // A TerraNullius target has its own soft reserve ceiling; do not silently
-      // replace it with the live production reserve at this final boundary.
-      const targetReserve = reserveTarget
-        ? this.getEarlyGameTargetReserveTroops(reserveTarget)
-        : this.getEarlyGameLiveReserveTroops();
-      const safeTroops = this.getSafeBoatTroops(
+      const safeTroops = this.resolveBoatTroops(
         requestedTroops,
-        targetReserve,
+        reserveTarget,
         requireExactTroops,
       );
       if (!Number.isFinite(safeTroops) || safeTroops < 1) {
