@@ -1419,6 +1419,9 @@
       // can be rejected, so we gate them on the successful probe+emit above).
       this.recentlySentNukes.push([this.game.ticks(), tile, nukeType]);
       await this.updateNukePerceivedCost(nukeType);
+      // Releases the structure planner's first-Atom war chest: the reserve
+      // exists only so the launcher's first shot can actually be funded.
+      state.nukeFirstLaunchDone = true;
       state.stats.nukes++;
       setLastAction(tr("☢️ Launch") + " " + nukeType, "nuke");
       this.emojiBehavior.maybeSendEmoji(targetPlayer, EMOJI_NUKE);

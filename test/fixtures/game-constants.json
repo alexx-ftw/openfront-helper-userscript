@@ -790,6 +790,16 @@
     "initializerPreview": "new WeakMap()"
   },
   {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:BOAT_WARSHIP_DANGER_RADIUS#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "BOAT_WARSHIP_DANGER_RADIUS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "9bdb2af6799204a299c603994b8e400e4b1fd625efdb74066cc869fee42c9df3",
+    "initializerLength": 3,
+    "initializerPreview": "110"
+  },
+  {
     "id": "engine/ingame/auto-bot/attackBehavior.js:TIMEOUT#1",
     "file": "engine/ingame/auto-bot/attackBehavior.js",
     "name": "TIMEOUT",

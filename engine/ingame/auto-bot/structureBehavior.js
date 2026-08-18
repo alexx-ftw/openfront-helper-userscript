@@ -2462,6 +2462,27 @@
       }
     }
 
+    // Once a Silo is live the nuclear strategy is part of the economy: an
+    // idle launcher that can never afford its first Atom is gold the enemy
+    // never has to fear. Reserve the first Atom's price ahead of ordinary
+    // economic construction so the war chest actually accumulates.
+    legendaryFirstAtomWarChest() {
+      if (state.nukeFirstLaunchDone === true) return 0n;
+      if (
+        !state.settings.winFixes ||
+        !isLegendaryDifficulty() ||
+        this.game.config().isUnitDisabled(UNIT.AtomBomb) ||
+        this.game.config().isUnitDisabled(UNIT.MissileSilo)
+      ) {
+        return 0n;
+      }
+      const silos = (this.player?.units?.(UNIT.MissileSilo) || []).filter(
+        (silo) => silo?.isUnderConstruction?.() !== true,
+      );
+      if (silos.length === 0) return 0n;
+      return this.safeConstructionCost(UNIT.AtomBomb) ?? 0n;
+    }
+
     legendaryMissileDefenseUrgent() {
       if (this.hasMissileDefenseSignal() === false) return false;
       const context = this.getMissileDefenseContext();
@@ -2999,6 +3020,19 @@
       let availableGold;
       {
         availableGold = BigInt(this.player.gold() || 0n);
+      }
+
+      // The first-Atom war chest claims economic gold ahead of ordinary
+      // growth once a Silo is live (the nuke lane decides after structures
+      // in the same tick, so an unreserved surplus would always be spent
+      // first). Defensive builds keep the full budget.
+      if (ECONOMIC_STRUCTURE_TYPES.includes(type)) {
+        const warChest = this.legendaryFirstAtomWarChest();
+        if (warChest > 0n && availableGold > warChest) {
+          availableGold -= warChest;
+        } else if (warChest > 0n) {
+          return 0n;
+        }
       }
 
       if (type !== UNIT.MissileSilo) return availableGold;
