@@ -9380,9 +9380,15 @@
       // An upgrade candidate carries the authoritative probe cost: upgrading an
       // existing City must never be pre-rejected (or pre-priced) with the
       // count-scaled formula for constructing another new structure.
+      // Productive candidates likewise carry their real next-build price
+      // (getConstructionCost already does this under win-fixes): the
+      // perceived-cost save-up multiplier priced a second Port at 1M after
+      // one Port + two Factories, so the planner's Wait action dominated at
+      // every post-Atom-drain treasury level and the fleet economy never
+      // got funded (measured on Baikal: candidates present, groups all Wait).
       const cost = values.upgradeCost !== undefined
         ? legendaryBigInt(values.upgradeCost)
-        : this.getPerceivedCost(type);
+        : this.getConstructionCost(type);
       const objective = legendaryConstructionObjectiveVector(type, {
         ...context.strategicState,
         costFactor: this.legendaryCostFactor(cost),

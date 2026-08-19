@@ -701,6 +701,48 @@ export class BundledOpponentBot {
     this.enableStructureUpgradeTrace(behavior);
     this.enableDefensePostTrace(behavior);
     this.enableLandDefenseTrace();
+    this.enableLegendaryCandidateTrace(behavior);
+  }
+
+  // Candidate-level view of the Legendary planner: logs the generated
+  // candidate list and the grouped action order each decision so a missing
+  // structure (e.g. a second Port on a lake map) is distinguishable from a
+  // present-but-losing one straight from the OFH_LOG_STRUCTURES trace.
+  enableLegendaryCandidateTrace(behavior) {
+    const originalCandidates = behavior.legendaryConstructionCandidates;
+    if (typeof originalCandidates === "function") {
+      behavior.legendaryConstructionCandidates = (...args) => {
+        const candidates = originalCandidates.apply(behavior, args);
+        this.structureTrace.push({
+          kind: "legendary-candidates",
+          tick: this.game.ticks(),
+          candidates: (candidates || []).map((candidate) => ({
+            type: candidate?.type ?? null,
+            action: candidate?.action ?? "build",
+            cost: String(candidate?.cost ?? "0"),
+            mandatory: candidate?.mandatory ?? 0,
+            safety: candidate?.safety ?? 0,
+            strategic: candidate?.strategic ?? 0,
+            deficit: candidate?.deficit ?? 0,
+          })),
+        });
+        return candidates;
+      };
+    }
+    const originalGroups = behavior.legendaryConstructionActionGroups;
+    if (typeof originalGroups === "function") {
+      behavior.legendaryConstructionActionGroups = (...args) => {
+        const groups = originalGroups.apply(behavior, args);
+        this.structureTrace.push({
+          kind: "legendary-action-groups",
+          tick: this.game.ticks(),
+          groups: (groups || []).map((group) =>
+            (group || []).map((candidate) => candidate?.type ?? null),
+          ),
+        });
+        return groups;
+      };
+    }
   }
 
   enableStructureSpawnTrace(behavior) {
