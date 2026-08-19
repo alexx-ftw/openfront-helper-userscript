@@ -113,6 +113,9 @@
 
   /** Factory ratio multiplier when the nation has coastal tiles */
   const FACTORY_COASTAL_RATIO_MULTIPLIER = 0.33;
+  // Two early Ports fund trade income and the warship fleet while the
+  // shared Port/Factory price ladder still prices them at 125-250k.
+  const LEGENDARY_MIN_OPEN_PORTS = 2;
 
   /** Maximum number of missile silos a nation will build */
   const MAX_MISSILE_SILOS = 3;
@@ -9470,6 +9473,18 @@
         !this._dominant
       ) {
         ratio *= FACTORY_COASTAL_RATIO_MULTIPLIER;
+      }
+      // Ports and Factories share one 2^n price ladder, so every Factory
+      // bought before the second Port doubles the cost of funding the
+      // naval economy. On shore-capable maps, hold the Factory candidate
+      // back until two Ports exist while they still cost 125-250k.
+      if (
+        type === UNIT.Factory &&
+        !context.config.isUnitDisabled(UNIT.Port) &&
+        this.ownedLevels(UNIT.Port) < LEGENDARY_MIN_OPEN_PORTS &&
+        this.legendaryPortCapable(context.hasOceanPortTiles, context.hasCoastalTiles)
+      ) {
+        return null;
       }
       if (
         type === UNIT.MissileSilo &&

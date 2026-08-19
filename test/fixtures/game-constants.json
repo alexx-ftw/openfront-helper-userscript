@@ -2080,6 +2080,16 @@
     "initializerPreview": "0.33"
   },
   {
+    "id": "engine/ingame/auto-bot/structureBehavior.js:LEGENDARY_MIN_OPEN_PORTS#1",
+    "file": "engine/ingame/auto-bot/structureBehavior.js",
+    "name": "LEGENDARY_MIN_OPEN_PORTS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35",
+    "initializerLength": 1,
+    "initializerPreview": "2"
+  },
+  {
     "id": "engine/ingame/auto-bot/structureBehavior.js:MAX_MISSILE_SILOS#1",
     "file": "engine/ingame/auto-bot/structureBehavior.js",
     "name": "MAX_MISSILE_SILOS",
