@@ -150,6 +150,11 @@
 
   /** OpenFront's SAM upgrade ladder currently tops out at level five. */
   const HYDROGEN_SAM_MAX_UPGRADE_LEVEL = 5;
+  // Intermediate interceptor readiness for the port-funded adaptive tier:
+  // level two SAM range already covers most atom trajectories at a fraction
+  // of the level-five climb, so the first earmarked upgrade lands inside the
+  // game horizon instead of starving the bombardment.
+  const LEGENDARY_PORT_FUNDED_SAM_READY_LEVEL = 2;
 
   /** MirvExecution scatters candidate destinations across this map radius. */
   const MIRV_CARRIER_TARGET_RADIUS = 1500;
@@ -4153,10 +4158,19 @@
         return null;
       }
 
+      // Level five is the faithful ready line, but an intermediate level
+      // two already lifts SAM range onto most atom trajectories and costs a
+      // fraction of the climb. With the port trade stream earmarked for
+      // interceptor levels, the adaptive tier steps to two first and keeps
+      // climbing from income instead of starving the bombardment.
+      const readyFloor =
+        isLegendaryDifficulty() && this.legendaryPortIncomeFundsSamUpgrades()
+          ? LEGENDARY_PORT_FUNDED_SAM_READY_LEVEL
+          : HYDROGEN_SAM_MINIMUM_READY_LEVEL;
       const targetLevel = Math.min(
         HYDROGEN_SAM_MAX_UPGRADE_LEVEL,
         Math.max(
-          HYDROGEN_SAM_MINIMUM_READY_LEVEL,
+          readyFloor,
           externalSiloLevelSum >= 2
             ? HYDROGEN_SAM_MAX_UPGRADE_LEVEL
             : externalSiloLevelSum,
@@ -10056,7 +10070,25 @@
       if (upgradeCost <= 0n) return true;
       const economic = this.economicConstructionPressureForSamUpgrade();
       const economicCost = economic?.cost ?? 0n;
+      // Port-income earmark: two or more completed Ports run a compounding
+      // trade stream that pays for the next interceptor level on its own
+      // schedule. Demanding the full economic principal on top of the
+      // upgrade price from that treasury starves missile defense through the
+      // exact window hostile atoms exploit (four nuked buildings on Baikal),
+      // so a port-funded economy may draw the upgrade against the economic
+      // share it is actively earning.
+      if (this.legendaryPortIncomeFundsSamUpgrades()) {
+        return this.spendableConstructionGold() >= upgradeCost;
+      }
       return this.spendableConstructionGold() >= upgradeCost + economicCost;
+    }
+
+    legendaryPortIncomeFundsSamUpgrades() {
+      if (!isLegendaryDifficulty()) return false;
+      const ports = (this.player?.units?.(UNIT.Port) || []).filter(
+        (port) => port?.isUnderConstruction?.() !== true,
+      );
+      return ports.length >= LEGENDARY_MIN_OPEN_PORTS;
     }
 
     economicConstructionPressureForSamUpgrade() {

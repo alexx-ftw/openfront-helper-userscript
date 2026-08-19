@@ -2150,6 +2150,16 @@
     "initializerPreview": "5"
   },
   {
+    "id": "engine/ingame/auto-bot/structureBehavior.js:LEGENDARY_PORT_FUNDED_SAM_READY_LEVEL#1",
+    "file": "engine/ingame/auto-bot/structureBehavior.js",
+    "name": "LEGENDARY_PORT_FUNDED_SAM_READY_LEVEL",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35",
+    "initializerLength": 1,
+    "initializerPreview": "2"
+  },
+  {
     "id": "engine/ingame/auto-bot/structureBehavior.js:MIRV_CARRIER_TARGET_RADIUS#1",
     "file": "engine/ingame/auto-bot/structureBehavior.js",
     "name": "MIRV_CARRIER_TARGET_RADIUS",
