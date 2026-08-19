@@ -286,6 +286,13 @@
   // live tile against the destination approximates the whole-route exposure:
   // warships near the spawn coast are also near the early route segments.
   const BOAT_WARSHIP_DANGER_RADIUS = 110;
+  // Crowded lakes stack many hunters in a small theatre: a transport crossing
+  // Baikal meets successive warship patrol circles, so the destination check
+  // alone underestimates exposure. When hostile warships saturate the water,
+  // widen the exclusion ring instead of refusing every launch (the fleet
+  // economy still needs crossings).
+  const BOAT_WARSHIP_CROWDED_THRESHOLD = 12;
+  const BOAT_WARSHIP_CROWDED_DANGER_RADIUS = 170;
 
   function getAutoDonateExpansionTickLimit() {
     return typeof AUTO_DONATE_EXPANSION_MAX_TICKS === "number"
@@ -7222,7 +7229,7 @@
       );
     }
 
-    hostileWarshipNearDestination(dst) {
+    hostileWarshipNearDestination(dst, dangerRadius) {
       for (const warship of this.game.units(UNIT.Warship) || []) {
         if (warship?.isActive?.() === false) continue;
         const owner = warship?.owner?.();
@@ -7230,8 +7237,7 @@
         if (owner === this.player) continue;
         if (this.player.isFriendly?.(owner) === true) continue;
         if (
-          this.game.manhattanDist(warship.tile(), dst) <=
-          BOAT_WARSHIP_DANGER_RADIUS
+          this.game.manhattanDist(warship.tile(), dst) <= dangerRadius
         ) {
           return true;
         }
@@ -7239,9 +7245,31 @@
       return false;
     }
 
+    hostileWarshipCount() {
+      let count = 0;
+      for (const warship of this.game.units(UNIT.Warship) || []) {
+        if (warship?.isActive?.() === false) continue;
+        const owner = warship?.owner?.();
+        if (!owner?.isPlayer?.()) continue;
+        if (owner === this.player) continue;
+        if (this.player.isFriendly?.(owner) === true) continue;
+        count += 1;
+      }
+      return count;
+    }
+
+    boatWarshipDangerRadius() {
+      return this.hostileWarshipCount() >= BOAT_WARSHIP_CROWDED_THRESHOLD
+        ? BOAT_WARSHIP_CROWDED_DANGER_RADIUS
+        : BOAT_WARSHIP_DANGER_RADIUS;
+    }
+
     boatLaunchWarshipDanger(dst) {
       if (!this.boatLaunchWarshipDangerGateActive()) return false;
-      return this.hostileWarshipNearDestination(dst);
+      return this.hostileWarshipNearDestination(
+        dst,
+        this.boatWarshipDangerRadius(),
+      );
     }
 
     emitBoat(

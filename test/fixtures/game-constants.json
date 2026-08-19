@@ -800,6 +800,26 @@
     "initializerPreview": "110"
   },
   {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:BOAT_WARSHIP_CROWDED_THRESHOLD#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "BOAT_WARSHIP_CROWDED_THRESHOLD",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b51d431df5d7f141cbececcf79edf3dd861c3b4069f0b11661a3eefacbba918",
+    "initializerLength": 2,
+    "initializerPreview": "12"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:BOAT_WARSHIP_CROWDED_DANGER_RADIUS#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "BOAT_WARSHIP_CROWDED_DANGER_RADIUS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "734d0759cdb4e0d0a35e4fd73749aee287e4fdcc8648b71a8d6ed591b7d4cb3f",
+    "initializerLength": 3,
+    "initializerPreview": "170"
+  },
+  {
     "id": "engine/ingame/auto-bot/attackBehavior.js:TIMEOUT#1",
     "file": "engine/ingame/auto-bot/attackBehavior.js",
     "name": "TIMEOUT",
