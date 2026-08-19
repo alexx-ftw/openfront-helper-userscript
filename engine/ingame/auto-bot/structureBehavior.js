@@ -1705,8 +1705,13 @@
         // Shared-water lakes (Baikal) carry the same naval/nuclear economy
         // as oceans; only truly landlocked maps fall through to the
         // faithful order. The hydro fixture map (Alps) has no shared water
-        // and keeps its dedicated nuclear path.
-        (context.hasOceanPortTiles || context.hasCoastalTiles)
+        // and keeps its dedicated nuclear path. The raw shore fact catches
+        // lakes the client classification marks as neither ocean nor
+        // shared-water, which otherwise never reach the Legendary planner
+        // at all.
+        (context.hasOceanPortTiles ||
+          context.hasCoastalTiles ||
+          this.hasAnyShoreBorderTile())
       ) {
         return profileStructureAsync(profile, "structures-ordinary-legendary", () =>
           this.doHandleLegendaryStructures(context));
@@ -9070,12 +9075,16 @@
         connectedCities: rail.connectedCities,
         cityRailConnection: rail.cityRailConnection,
         railNeed: rail.railNeed,
-        // Misclassified enclosed lakes (Baikal) read hasCoastalTiles=false;
-        // a shore-capable map still trades, so the floor only applies to
-        // genuinely waterless starts.
+        // Misclassified enclosed lakes (Baikal) read hasCoastalTiles=false and
+        // see few rail-reachable trade stations, dropping tradeNeed to its
+        // floor — which caps Port's objective below City and leaves the map
+        // at one Port with no fleet economy. A shore-capable map trades by
+        // definition, so hold tradeNeed at the strategic threshold
+        // (tradeNeed > 1.25 is what flips the Port candidate's strategic
+        // bit) instead of the waterless floor.
         tradeNeed:
           hasCoastalTiles || this.hasAnyShoreBorderTile()
-            ? rail.tradeNeed
+            ? Math.max(1.3, rail.tradeNeed)
             : 0.25,
         destroyerNeed: Math.min(
           2.5,
