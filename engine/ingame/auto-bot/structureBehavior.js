@@ -172,6 +172,12 @@
    * grows, so this signal makes City build/upgrade spending prioritary.
    */
   const TROOP_CAP_PRESSURE_RATIO = 0.9;
+  // Density floor for the adaptive tier: below ~25 troops per tile a wave
+  // captures land faster than losses accumulate, so City spending resumes
+  // regardless of the cap ratio. Ignored on tiny territories where spawn
+  // blobs and probes dominate the ratio.
+  const LEGENDARY_DENSITY_FLOOR_TROOPS_PER_TILE = 25;
+  const LEGENDARY_DENSITY_FLOOR_MIN_TILES = 4000;
 
   /** Bound the per-level City upgrade cost history like the SAM upgrade cache. */
   const CITY_UPGRADE_COST_CACHE_LIMIT = 32;
@@ -3532,7 +3538,24 @@
       if (typeof this.player?.troops !== "function") return false;
       const troops = Number(this.player.troops());
       if (!Number.isFinite(troops) || troops <= 0) return false;
-      return troops >= maxTroops * TROOP_CAP_PRESSURE_RATIO;
+      if (troops >= maxTroops * TROOP_CAP_PRESSURE_RATIO) return true;
+      return this.legendaryThinDensityPressure(troops);
+    }
+
+    // Density floor: territory growing faster than the army is the paper
+    // tiger that dies to one concentrated wave (Baikal FFA held 163k tiles
+    // at ~18 troops per tile, then lost 130k of them to a 478k wave). When
+    // troops per tile fall below the defensive floor, City spending must
+    // resume even far from the troop cap, because each City adds a quarter
+    // million to the ceiling production refills toward.
+    legendaryThinDensityPressure(troops) {
+      if (!isLegendaryDifficulty()) return false;
+      const tiles = Math.max(
+        1,
+        Number(this.player?.numTilesOwned?.()) || 0,
+      );
+      if (tiles < LEGENDARY_DENSITY_FLOOR_MIN_TILES) return false;
+      return troops / tiles < LEGENDARY_DENSITY_FLOOR_TROOPS_PER_TILE;
     }
 
     hasBorderingHostileMaxTroopAdvantage() {

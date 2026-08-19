@@ -2220,6 +2220,26 @@
     "initializerPreview": "0.9"
   },
   {
+    "id": "engine/ingame/auto-bot/structureBehavior.js:LEGENDARY_DENSITY_FLOOR_TROOPS_PER_TILE#1",
+    "file": "engine/ingame/auto-bot/structureBehavior.js",
+    "name": "LEGENDARY_DENSITY_FLOOR_TROOPS_PER_TILE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "b7a56873cd771f2c446d369b649430b65a756ba278ff97ec81bb6f55b2e73569",
+    "initializerLength": 2,
+    "initializerPreview": "25"
+  },
+  {
+    "id": "engine/ingame/auto-bot/structureBehavior.js:LEGENDARY_DENSITY_FLOOR_MIN_TILES#1",
+    "file": "engine/ingame/auto-bot/structureBehavior.js",
+    "name": "LEGENDARY_DENSITY_FLOOR_MIN_TILES",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "b090147020e033534635010c4f7eb6fc270d44e5df67ea9e744a8087df9ca106",
+    "initializerLength": 4,
+    "initializerPreview": "4000"
+  },
+  {
     "id": "engine/ingame/auto-bot/structureBehavior.js:CITY_UPGRADE_COST_CACHE_LIMIT#1",
     "file": "engine/ingame/auto-bot/structureBehavior.js",
     "name": "CITY_UPGRADE_COST_CACHE_LIMIT",
