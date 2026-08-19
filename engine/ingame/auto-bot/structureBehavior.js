@@ -9648,7 +9648,23 @@
     }
 
     // shouldBuildStructure — NationStructureBehavior.ts:540.
+    thinDensityBlocksStructure(type) {
+      return (
+        this.troopCapPressure() &&
+        type !== UNIT.City &&
+        type !== UNIT.DefensePost
+      );
+    }
+
     shouldBuildStructure(type, cityCount, hasCoastalTiles) {
+      return this.shouldBuildStructureAfterDensity(
+        type,
+        cityCount,
+        hasCoastalTiles,
+      );
+    }
+
+    shouldBuildStructureAfterDensity(type, cityCount, hasCoastalTiles) {
       if (this.shouldReserveEconomicGrowthForOffense(type)) {
         return false;
       }

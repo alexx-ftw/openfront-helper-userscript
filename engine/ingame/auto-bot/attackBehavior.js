@@ -7904,6 +7904,31 @@
       return tiles > 0 && tiles < COUNTERATTACK_SURVIVAL_TILE_FLOOR;
     }
 
+    incomingCounterattackAggregateTroops() {
+      return this.incomingHostileAttacks().reduce(
+        (total, attack) => total + Math.max(0, Number(attack.troops?.()) || 0),
+        0,
+      );
+    }
+
+    incomingCounterattackAttackerCount() {
+      const attackers = new Set();
+      for (const attack of this.incomingHostileAttacks()) {
+        const attacker = attack.attacker?.();
+        if (attacker) {
+          attackers.add(this.getOutboundAttackTargetKey(attacker) ?? attacker);
+        }
+      }
+      return attackers.size;
+    }
+
+    incomingCounterattackAllocatedAggregate() {
+      const ledgers = this.incomingCounterattackWars ?? new Map();
+      let allocated = 0;
+      for (const ledger of ledgers.values()) allocated += Math.max(0, ledger.committed);
+      return allocated;
+    }
+
     incomingCounterattackMultifrontPressure() {
       const ownTroops = Math.max(1, Number(this.player?.troops?.()) || 0);
       const troopsByAttacker = new Map();
