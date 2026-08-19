@@ -9474,16 +9474,7 @@
       ) {
         ratio *= FACTORY_COASTAL_RATIO_MULTIPLIER;
       }
-      // Ports and Factories share one 2^n price ladder, so every Factory
-      // bought before the second Port doubles the cost of funding the
-      // naval economy. On shore-capable maps, hold the Factory candidate
-      // back until two Ports exist while they still cost 125-250k.
-      if (
-        type === UNIT.Factory &&
-        !context.config.isUnitDisabled(UNIT.Port) &&
-        this.ownedLevels(UNIT.Port) < LEGENDARY_MIN_OPEN_PORTS &&
-        this.legendaryPortCapable(context.hasOceanPortTiles, context.hasCoastalTiles)
-      ) {
+      if (this.legendaryNavalFrontLoadSuppressed(context, type, owned)) {
         return null;
       }
       if (
@@ -9493,6 +9484,48 @@
       ) return null;
       if (type === UNIT.MissileSilo && owned === 0) return FIRST_MISSILE_SILO_RATIO;
       return ratio;
+    }
+
+    // Naval front-loading runs only when missile defense is satisfied (no
+    // visible hostile nuclear threat, or the first interceptor exists):
+    //  - Ports and Factories share one 2^n price ladder, so every Factory
+    //    bought before the second Port doubles the cost of funding the
+    //    naval economy. Hold the Factory candidate back until two Ports
+    //    exist while they still cost 125-250k.
+    //  - Symmetrically, Ports beyond the opening floor are a fleet luxury;
+    //    while a hostile silo or live missile exists with no interceptor,
+    //    the next water structure must wait for the SAM baseline instead
+    //    of doubling its own ladder (four nuked buildings on Baikal
+    //    otherwise).
+    legendaryNavalFrontLoadSuppressed(context, type, owned) {
+      if (context.config.isUnitDisabled(UNIT.Port)) return false;
+      if (type === UNIT.Factory) {
+        return (
+          this.ownedLevels(UNIT.Port) < LEGENDARY_MIN_OPEN_PORTS &&
+          this.legendaryPortCapable(
+            context.hasOceanPortTiles,
+            context.hasCoastalTiles,
+          ) &&
+          this.legendaryMissileDefenseSatisfiedForNavalEconomy()
+        );
+      }
+      if (type === UNIT.Port) {
+        return (
+          owned >= LEGENDARY_MIN_OPEN_PORTS &&
+          !this.legendaryMissileDefenseSatisfiedForNavalEconomy()
+        );
+      }
+      return false;
+    }
+
+    // True when no hostile nuclear threat is visible, or when the first
+    // interceptor already exists. Naval front-loading (Factory hold-back
+    // and Ports beyond the opening floor) may run only under this state.
+    legendaryMissileDefenseSatisfiedForNavalEconomy() {
+      const threat =
+        this.hasObservedHostileMissileLaunch() || this.hasBuiltHostileSiloThreat();
+      if (!threat) return true;
+      return this.ownSamCapacity() > 0;
     }
 
     // hasHighStartingGold — NationStructureBehavior.ts:521.
