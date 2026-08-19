@@ -458,6 +458,10 @@ for (const field of [
   "goldEarned",
   "bestRivalGoldEarned",
   "bestEconomy",
+  "firstHostileNukeTick",
+  "firstReadySamTick",
+  "samReadyBeforeFirstHostileNuke",
+  "landLeaderAt120Seconds",
 ]) {
   assert.ok(field in goalShape, `goal telemetry must expose ${field}`);
 }

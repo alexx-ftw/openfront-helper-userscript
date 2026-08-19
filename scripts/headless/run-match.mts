@@ -452,6 +452,9 @@ let closeoutCandidateTick: number | null = null;
 let maximumTerritoryShare = 0;
 let firstIncomingLandAttackObserved = false;
 let firstTerritoryLossObserved = false;
+let firstHostileNukeTick: number | null = null;
+let firstReadySamTick: number | null = null;
+let landLeaderAt120Seconds: { name: string; type: string; tiles: number; share: number } | null = null;
 let spawnSnapshotLogged = false;
 let spawnMaterializedLogged = false;
 const cumulativeIntentTypes = new Map<string, number>();
@@ -1108,6 +1111,33 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   await new Promise<void>((resolve) => setImmediate(resolve));
   const executionMs = performance.now() - executionStartedAt;
   const currentPlayer = runner.game.playerByClientID(clientID);
+  if (currentPlayer && runner.game.ticks() >= 1200 && landLeaderAt120Seconds === null) {
+    const landPlayers = runner.game.players()
+      .filter((player) => player.isAlive() && player.numTilesOwned() > 0)
+      .sort((left, right) => right.numTilesOwned() - left.numTilesOwned());
+    const leader = landPlayers[0];
+    if (leader) {
+      const totalLand = Math.max(1, runner.game.numLandTiles() - runner.game.numTilesWithFallout());
+      landLeaderAt120Seconds = {
+        name: leader.name(),
+        type: String(leader.type()),
+        tiles: leader.numTilesOwned(),
+        share: leader.numTilesOwned() / totalLand,
+      };
+    }
+  }
+  const activeHostileMissile = runner.game.units(UnitType.AtomBomb, UnitType.HydrogenBomb, UnitType.MIRV, UnitType.MIRVWarhead)
+    .find((missile) => missile.owner()?.team?.() !== currentPlayer?.team?.());
+  if (activeHostileMissile && firstHostileNukeTick === null) {
+    firstHostileNukeTick = runner.game.ticks();
+  }
+  if (
+    currentPlayer &&
+    firstReadySamTick === null &&
+    currentPlayer.units(UnitType.SAMLauncher).some((sam) => sam.isActive() && !sam.isUnderConstruction())
+  ) {
+    firstReadySamTick = runner.game.ticks();
+  }
   // A sea invasion is an enemy boat that actually LANDS: the engine converts
   // a completed transport into an AttackExecution whose source tile is the
   // landing site (core attacks always carry it; land attacks have none).
@@ -1519,6 +1549,12 @@ function goalRequirementsSnapshot() {
     nukedStructureGold: nukedStructureGold.toString(),
     ownStructuresNuked,
     seaInvasionObserved,
+    firstHostileNukeTick,
+    firstReadySamTick,
+    samReadyBeforeFirstHostileNuke:
+      firstHostileNukeTick === null ||
+      (firstReadySamTick !== null && firstReadySamTick < firstHostileNukeTick),
+    landLeaderAt120Seconds,
     goldEarned: myGoldEarned.toString(),
     bestRivalGoldEarned: bestRivalGoldEarned.toString(),
     bestRivalName,
