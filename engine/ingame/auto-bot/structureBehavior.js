@@ -2342,7 +2342,12 @@
       if (
         sams.length === 0 &&
         config?.isUnitDisabled?.(UNIT.SAMLauncher) !== true &&
-        this.hasObservedHostileMissileLaunch()
+        // A hostile silo is the trigger, not the first observed launch:
+        // waiting for a missile to fly means the 300-tick SAM construction
+        // starts only after buildings have already been lost (measured on
+        // Baikal — four structures nuked before the baseline completed).
+        (this.hasObservedHostileMissileLaunch() ||
+          this.hasBuiltHostileSiloThreat())
       ) {
         return this.maybeSpawnStructure(UNIT.SAMLauncher, {
           allowPreemptiveSam: true,
@@ -2541,6 +2546,16 @@
         (silo) => silo?.isUnderConstruction?.() !== true,
       );
       if (silos.length === 0) return 0n;
+      // The baseline interceptor outranks the bombardment: holding the Atom
+      // price while a hostile silo exists with no SAM of our own keeps the
+      // treasury below the 1.5M launcher price through the exact window the
+      // first strike lands (four nuked buildings on Baikal otherwise).
+      if (
+        this.ownSamCapacity() <= 0 &&
+        this.hasBuiltHostileSiloThreat()
+      ) {
+        return 0n;
+      }
       if (
         state.nukeFirstLaunchDone === true &&
         !this.legendaryNukeStructureTargetExists()
