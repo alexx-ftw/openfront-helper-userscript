@@ -36,7 +36,6 @@ const sandbox = {
   state: {
     settings: { enabled: true },
     tickInFlight: false,
-    tickStartedAt: 0,
     status: "",
   },
   buildPanel() {

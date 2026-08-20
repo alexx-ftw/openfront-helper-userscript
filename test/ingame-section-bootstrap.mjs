@@ -7,10 +7,6 @@ import { executeClassicScript } from "./helpers/classic-script.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const userscript = fs.readFileSync(path.join(root, "openfront-helper.user.js"), "utf8");
-const lifecycleSource = fs.readFileSync(
-  path.join(root, "engine/ingame/auto-bot/lifecycle.js"),
-  "utf8",
-);
 const autoBotEngineSource = fs.readFileSync(
   path.join(root, "engine/ingame/auto-bot/engine.js"),
   "utf8",
@@ -118,10 +114,4 @@ assert.equal(
   true,
   "userscript bootstrap preserves the persisted Auto-Bot master toggle",
 );
-assert.doesNotMatch(
-  lifecycleSource,
-  /tick watchdog[\s\S]{0,240}setEnabled\(false\)/,
-  "the slow-tick watchdog must not overwrite the persisted master toggle",
-);
-
 process.stdout.write("full in-game section bootstrap tests passed\n");

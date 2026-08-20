@@ -31,22 +31,6 @@
     }
     renderStatus();
 
-    // Watchdog: if a tick has been "in flight" too long (a worker call hung
-    // despite the per-call timeouts, or an unexpected throw skipped finally),
-    // stop the bot fail-closed. Clearing only the flag would let the interval
-    // start a second full tick while the original async chain was still alive,
-    // duplicating worker traffic and action intents.
-    if (
-      state.settings.enabled &&
-      state.tickInFlight &&
-      performance.now() - state.tickStartedAt > 8000
-    ) {
-      console.warn("[AutoBot] tick watchdog: disabling slow bot tick");
-      state.runtimePausedAfterSlowTick = true;
-      stopEngine();
-      setStatus(tr("⏸️ Auto-bot paused after a slow tick"));
-    }
-
     const game = getGame();
     if (typeof refreshLiveUiFromGame === "function") {
       refreshLiveUiFromGame(game);
@@ -54,7 +38,6 @@
     }
     if (
       state.settings.enabled &&
-      !state.runtimePausedAfterSlowTick &&
       state.tickTimer === null &&
       !state.tickInFlight
     ) {
@@ -117,8 +100,7 @@
     }
     const timedOut = Boolean(state.tickInFlight);
     if (timedOut) {
-      state.runtimePausedAfterSlowTick = true;
-      console.warn("[AutoBot] hot reload closed after a stalled tick");
+      console.warn("[AutoBot] hot reload closed while a tick was still in flight");
     }
     if (window.__openfrontAutoBotWatcherTimer != null) {
       window.clearInterval(window.__openfrontAutoBotWatcherTimer);
@@ -145,7 +127,6 @@
       typeof options.enabled === "boolean" ? options.enabled : stagedPreviousAutoBotEnabled;
     if (typeof inheritedEnabled === "boolean") {
       state.settings.enabled = inheritedEnabled;
-      state.runtimePausedAfterSlowTick = false;
       saveSettings();
     }
     const atomMacro = window.__OFH_HOT_RELOAD_CANDIDATE_ATOM_MACRO__;

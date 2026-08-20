@@ -250,11 +250,7 @@
     tickTimer: null,
     tickIntervalMs: 0,
     tickInFlight: false,
-    tickStartedAt: 0,
     tickGeneration: 0,
-    // Runtime safety pauses must never overwrite the user's persisted master
-    // toggle.
-    runtimePausedAfterSlowTick: false,
     lastCombatMs: 0,
     lastPlayerAttackMs: 0,
     lastRetaliateMs: 0,

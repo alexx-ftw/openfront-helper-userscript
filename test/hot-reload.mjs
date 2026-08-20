@@ -444,9 +444,7 @@ function makeLifecycleSandbox() {
     settings: { enabled: true },
     tickTimer: null,
     tickInFlight: true,
-    tickStartedAt: 0,
     tickGeneration: 0,
-    runtimePausedAfterSlowTick: false,
     status: "",
   };
   const sandbox = {
@@ -504,7 +502,7 @@ function makeLifecycleSandbox() {
   };
 }
 
-async function testLifecycleDisposesAtomMacroAndClosesStalledTick() {
+async function testLifecycleDisposesAtomMacroAndClosesInFlightTick() {
   const harness = makeLifecycleSandbox();
   executeClassicScript(lifecycleSource, harness.sandbox, {
     filename: "auto-bot-lifecycle-hot-reload.js",
@@ -527,9 +525,8 @@ async function testLifecycleDisposesAtomMacroAndClosesStalledTick() {
   assert.equal(
     harness.state.tickGeneration,
     1,
-    "teardown invalidates the stalled tick before allowing replacement activation",
+    "teardown invalidates the in-flight tick before allowing replacement activation",
   );
-  assert.equal(harness.state.runtimePausedAfterSlowTick, true);
   assert.equal(
     harness.state.settings.enabled,
     true,
@@ -705,7 +702,7 @@ function testAutoBotArtifactRefreshesTheHotReloadBridge() {
 
 await testInvalidEvalKeepsPreviousRuntime();
 await testBridgeFaultInjectionRegressions();
-await testLifecycleDisposesAtomMacroAndClosesStalledTick();
+await testLifecycleDisposesAtomMacroAndClosesInFlightTick();
 await testLifecycleStagesAndActivatesAtomMacroOnce();
 await testLifecycleAppliesTransferredEnabledStateBeforeStarting();
 await testLifecycleRecoversEnabledStateFromAStaleBridge();

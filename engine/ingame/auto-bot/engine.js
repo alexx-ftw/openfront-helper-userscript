@@ -106,7 +106,6 @@
 
     const tickGeneration = state.tickGeneration;
     state.tickInFlight = true;
-    state.tickStartedAt = performance.now();
     const profile = beginAutoBotProfileTick();
     try {
       const setupStartedAt = autoBotProfileStartPhase(profile);
@@ -208,7 +207,6 @@
 
   function setEnabled(enabled) {
     state.settings.enabled = Boolean(enabled);
-    state.runtimePausedAfterSlowTick = false;
     saveSettings();
     if (state.settings.enabled) {
       setStatus(tr("Starting…"));
