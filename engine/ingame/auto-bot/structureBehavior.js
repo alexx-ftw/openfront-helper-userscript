@@ -2365,6 +2365,11 @@
     }
 
     maybeOpenLegendaryFirstSilo() {
+      // The first launcher is speculative offense; when a hostile silo has
+      // appeared and no interceptor exists, its 1M price is exactly the
+      // chest the baseline SAM needs (measured ofh-n-b1: silo bought at
+      // 4919 delayed the SAM 602 ticks past the first strike).
+      if (this.legendarySamBaselineChestActive()) return false;
       const siloCost = this.safeConstructionCost(UNIT.MissileSilo) ?? 0n;
       if (this.spendableConstructionGold() < siloCost) return false;
       return this.maybeSpawnStructure(UNIT.MissileSilo, {
@@ -2801,6 +2806,34 @@
     ownSamCapacity() {
       return this.playerUnitCapacitySummary(this.player, UNIT.SAMLauncher)
         ?.capacity ?? 0;
+    }
+
+    // A hostile silo (built or under construction) starts the interceptor
+    // race: a first SAM needs 1.5M and 300 construction ticks, so an economy
+    // that keeps spending that treasury on Cities/Ports/Factories meets the
+    // first hostile nuke uncovered (Baikal Team ofh-n-b1: first strike 5452,
+    // SAM ready 6054 because gold never crossed 1.5M until then). While the
+    // baseline is missing, freeze economic candidates so the chest fills;
+    // the SAM emergency lane then spends it directly.
+    legendarySamBaselineChestActive() {
+      if (!isLegendaryDifficulty()) return false;
+      const ownSam = this.playerUnitCapacitySummary(
+        this.player,
+        UNIT.SAMLauncher,
+      );
+      if (ownSam === null || ownSam.count > 0) return false;
+      if (!this.shouldBuildHostileSiloSam()) return false;
+      const gold = legendaryBigInt(this.player?.gold?.() || 0n);
+      return gold < this.cost(UNIT.SAMLauncher);
+    }
+
+    legendarySamChestBlocksType(type) {
+      if (!this.legendarySamBaselineChestActive()) return false;
+      if (ECONOMIC_STRUCTURE_TYPES.includes(type)) return true;
+      // Our own first silo costs the same 1M that the interceptor needs;
+      // measured on ofh-n-b1 it consumed the chest at tick 4919 and the SAM
+      // only became ready 602 ticks after the first hostile strike.
+      return type === UNIT.MissileSilo || type === UNIT.Warship;
     }
 
     hostileMissileSiloCapacitySummary() {
@@ -9446,6 +9479,7 @@
 
     addLegendaryConstructionCandidate(context, type, values = {}) {
       if (context.config.isUnitDisabled(type) || !autoBotBuildAllowed(type)) return;
+      if (this.legendarySamChestBlocksType(type)) return;
       if (type === UNIT.SAMLauncher && !this.hasObservedHostileMissileLaunch()) {
         return;
       }
