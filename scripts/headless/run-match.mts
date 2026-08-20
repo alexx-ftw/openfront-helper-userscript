@@ -1126,15 +1126,28 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
       };
     }
   }
-  const activeHostileMissile = runner.game.units(UnitType.AtomBomb, UnitType.HydrogenBomb, UnitType.MIRV, UnitType.MIRVWarhead)
-    .find((missile) => missile.owner()?.team?.() !== currentPlayer?.team?.());
+  const activeHostileMissile = runner.game
+    .units(UnitType.AtomBomb, UnitType.HydrogenBomb, UnitType.MIRV, UnitType.MIRVWarhead)
+    .find((missile) => {
+      const owner = missile.owner?.();
+      if (!owner || !currentPlayer) return false;
+      if (owner.smallID?.() === currentPlayer.smallID?.()) return false;
+      // FFA players all have null teams; identity is the hostility test there.
+      // In Team mode, a non-null matching team is permanently allied and must
+      // not make SAM readiness fail on a teammate's missile.
+      const ownerTeam = owner.team?.();
+      const currentTeam = currentPlayer.team?.();
+      return ownerTeam == null || currentTeam == null || ownerTeam !== currentTeam;
+    });
   if (activeHostileMissile && firstHostileNukeTick === null) {
     firstHostileNukeTick = runner.game.ticks();
   }
   if (
     currentPlayer &&
     firstReadySamTick === null &&
-    currentPlayer.units(UnitType.SAMLauncher).some((sam) => sam.isActive() && !sam.isUnderConstruction())
+    currentPlayer
+      .units(UnitType.SAMLauncher)
+      .some((sam) => sam.isActive() && !sam.isUnderConstruction())
   ) {
     firstReadySamTick = runner.game.ticks();
   }
