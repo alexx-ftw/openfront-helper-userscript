@@ -701,9 +701,10 @@
       // select points in this shared region. Keep the final snap/search inside
       // it too: an invalid scored point must not be repaired away from the
       // geometry formed by teammates.
-      const teamRegion = typeof getTeamSpawnRegion === "function"
-        ? getTeamSpawnRegion(game, this.player)
-        : null;
+      let teamRegion = null;
+      if (!area && typeof getTeamSpawnRegion === "function") {
+        teamRegion = getTeamSpawnRegion(game, this.player);
+      }
       return {
         game, area, others, minDistance, teamRegion,
         width: game.width(), height: game.height(),

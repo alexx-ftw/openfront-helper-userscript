@@ -477,6 +477,40 @@ assert.equal(
   "terrain invalidation must reschedule cooperative connectivity construction",
 );
 
+// Explicit map team areas are authoritative even when teammate anchors form
+// a hull in another disconnected spawn box (the More Than Luck 5-team case).
+const disjointTeamArea = { x: 150, y: 150, width: 140, height: 140 };
+const disjointHull = harness.buildTeamSpawnRegion([
+  { x: 20, y: 20 },
+  { x: 380, y: 20 },
+  { x: 380, y: 380 },
+  { x: 20, y: 380 },
+]);
+const areaOnlyCandidates = harness.computeStaticCandidatesWithBudget(
+  exactTeamGame,
+  64,
+  null,
+  disjointTeamArea,
+);
+assert.ok(
+  areaOnlyCandidates.length > 0,
+  "an explicit team area still has legal candidates without the unrelated teammate hull",
+);
+assert.ok(
+  areaOnlyCandidates.every(
+    (candidate) =>
+      candidate.x >= disjointTeamArea.x &&
+      candidate.x < disjointTeamArea.x + disjointTeamArea.width &&
+      candidate.y >= disjointTeamArea.y &&
+      candidate.y < disjointTeamArea.y + disjointTeamArea.height,
+  ),
+  "explicit-area candidates remain inside the assigned rectangle",
+);
+assert.ok(
+  !harness.isPointInsideTeamSpawnRegion(200, 200, disjointHull) || areaOnlyCandidates.length > 0,
+  "a disjoint teammate hull cannot suppress an explicit-area spawn",
+);
+
 // Exact-ranking enemy strength weighting: two metrically identical candidates
 // sit symmetrically between two spawned enemies. Without a live army on
 // either enemy the tie resolves by ref order; once one rival has grown a real

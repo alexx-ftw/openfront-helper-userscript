@@ -650,7 +650,15 @@ function computeStaticCandidatesWithBudget(
 
   for (let cy = bounds.minY; cy < bounds.maxY; cy += step) {
     for (let cx = bounds.minX; cx < bounds.maxX; cx += step) {
-      if (teamRegion && !isPointInsideTeamSpawnRegion(cx, cy, teamRegion)) continue;
+      // An explicit map teamSpawnArea is authoritative. Teammate anchors can
+      // arrive from neighboring/previous geometry and form a hull that does
+      // not intersect the assigned rectangle (More Than Luck 5-team trace:
+      // valid 250x250 area, empty candidate intersection, spawn_failed).
+      if (
+        teamRegion &&
+        !assignedArea &&
+        !isPointInsideTeamSpawnRegion(cx, cy, teamRegion)
+      ) continue;
       // Skip water grid centers immediately — avoids the neighbourhood scan
       // for the majority of cells (ocean), the biggest single speedup.
       if (!isPassableLandByte(terrain[cy * W + cx])) continue;
@@ -2156,8 +2164,13 @@ function computeInitialSpawnTopSpotsForBot(game, me) {
   if (cached !== undefined) return cached;
   const objectiveApi = getSpawnObjectiveApi();
   const groups = collectSpawnPlayerGroups(game, me, objectiveApi);
-  const teamRegion = buildTeamSpawnRegion(groups.teamSpawns);
   const assignedArea = getSpawnAreaForGame(game, me);
+  // An explicit map teamSpawnArea is authoritative; do not intersect it with
+  // one convex hull built from teammates scattered across disconnected team
+  // boxes (More Than Luck 5-team spawn failure).
+  const teamRegion = assignedArea
+    ? null
+    : buildTeamSpawnRegion(groups.teamSpawns);
   const candidates = computeStaticCandidatesWithBudget(
     game,
     SPAWN_HEATMAP_INITIAL_BOT_CANDIDATES,
