@@ -228,6 +228,11 @@
   // the number of such opponents.
   const COUNTERATTACK_FRONT_STRENGTH_RATIO = 0.5;
   const COUNTERATTACK_FRONT_MIN_SHARE = 0.34;
+  // Legendary FFA's thin-homeland exception removes only the latent-front
+  // cap; the production reserve, pending commitments, incoming-wave ceiling,
+  // containment policy, and intent limiter remain authoritative.
+  const COUNTERATTACK_FFA_DENSITY_MIN_TILES = 4_000;
+  const COUNTERATTACK_FFA_DENSITY_MAX_TROOPS_PER_TILE = 25;
   // A war of choice must stay a quick meal. Committing the two-times capture
   // floor against a large target parks most of the army in one invasion while
   // every other strong neighbor watches — the classic dogpile invitation.
@@ -8097,6 +8102,9 @@
     incomingCounterattackMirrorFrontCap(context) {
       if (!this.hasBorderOpponentApi()) return context.finalSpendableTroops;
       const ownTroops = Math.max(1, Number(this.player?.troops?.()) || 0);
+      if (this.ffaThinSingleStrategicSiegeNeedsFullSpendable(context, ownTroops)) {
+        return context.finalSpendableTroops;
+      }
       const strongFronts = this.countStrongStrategicBorderOpponents(
         ownTroops * COUNTERATTACK_FRONT_STRENGTH_RATIO,
       );
@@ -8106,6 +8114,28 @@
         1 / strongFronts,
       );
       return Math.max(1, Math.floor(context.finalSpendableTroops * share));
+    }
+
+    ffaThinSingleStrategicSiegeNeedsFullSpendable(context, ownTroops) {
+      if (
+        !this.isFFA() ||
+        currentDifficulty() !== Difficulty.Legendary ||
+        !this.isStrategicBorderOpponent(context.target) ||
+        this.incomingCounterattackWarIsContainment(context.target) ||
+        this.incomingCounterattackAttackerCount() !== 1 ||
+        context.incomingCounterattackTroops <
+          ownTroops * COUNTERATTACK_MULTIFRONT_PRESSURE_RATIO
+      ) {
+        return false;
+      }
+      const ownTiles = Math.max(
+        1,
+        Number(this.player?.numTilesOwned?.()) || 0,
+      );
+      return (
+        ownTiles >= COUNTERATTACK_FFA_DENSITY_MIN_TILES &&
+        ownTroops / ownTiles < COUNTERATTACK_FFA_DENSITY_MAX_TROOPS_PER_TILE
+      );
     }
 
     // Attrition-aware payload for forced counterattacks. A lone peer attacker

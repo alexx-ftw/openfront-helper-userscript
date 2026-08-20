@@ -26,12 +26,14 @@ const sandbox = {
   UNIT: {},
   Difficulty,
   PlayerType: { Bot: "Bot", Human: "Human", Nation: "Nation" },
+  GameMode: { FFA: "FFA", Team: "Team" },
   currentDifficulty: () => Difficulty.Legendary,
   state: { settings: { winFixes: true }, stats: {} },
 };
 executeClassicScript(`${source}\nglobalThis.AttackBehavior = AttackBehavior;`, sandbox, {
   filename: sourcePath,
 });
+const { PlayerType } = sandbox;
 assert.equal(typeof sandbox.AttackBehavior, "function");
 
 let nowTick = 1_000;
@@ -40,17 +42,22 @@ function makeBehavior({ ownTroops, attackerTroops }) {
   behavior.initializeIncomingCounterattackWarState();
   behavior.game = {
     ticks: () => nowTick,
-    config: () => ({ maxTroops: () => ownTroops }),
+    config: () => ({
+      maxTroops: () => ownTroops,
+      gameConfig: () => ({ gameMode: "FFA" }),
+    }),
   };
   behavior.player = {
     smallID: () => 1,
     troops: () => ownTroops,
     isFriendly: () => false,
     incomingAttacks: () => [],
+    numTilesOwned: () => 10_000,
   };
   const attacker = {
     isPlayer: () => true,
     smallID: () => 7,
+    type: () => PlayerType.Nation,
     troops: () => attackerTroops,
   };
   return { behavior, attacker };
@@ -131,7 +138,60 @@ function contextFor(behavior, attacker, { wave, spendable }) {
   );
 }
 
-// 4. The per-war attrition cap turns further mirrors into a defense hold.
+// 4. Thin Legendary FFA bypasses only the latent-front cap for one strategic
+// attacker, while Team, dense FFA, and multi-attacker cases stay capped.
+{
+  const { behavior, attacker } = makeBehavior({
+    ownTroops: 300_000,
+    attackerTroops: 400_000,
+  });
+  behavior.hasBorderOpponentApi = () => true;
+  behavior.countStrongStrategicBorderOpponents = () => 2;
+  behavior.incomingCounterattackWarIsContainment = () => false;
+  behavior.incomingCounterattackAttackerCount = () => 1;
+  behavior.canEraseIncomingWave = () => false;
+  behavior.player.troops = () => 200_000;
+  const context = contextFor(behavior, attacker, {
+    wave: 240_000,
+    spendable: 200_000,
+  });
+  assert.equal(
+    behavior.incomingCounterattackMirrorFrontCap(context),
+    200_000,
+    "thin Legendary FFA uses all reserve-preserving spendable troops against one strategic siege",
+  );
+  assert.equal(
+    behavior.calculateIncomingCounterattackTroops(context),
+    200_000,
+    "the FFA exception reaches the actual counterattack payload",
+  );
+
+  behavior.isFFA = () => false;
+  assert.equal(
+    behavior.incomingCounterattackMirrorFrontCap(context),
+    100_000,
+    "Team retains the two-front latent-border cap",
+  );
+
+  behavior.isFFA = () => true;
+  behavior.player.numTilesOwned = () => 10_000;
+  behavior.player.troops = () => 300_000;
+  assert.equal(
+    behavior.incomingCounterattackMirrorFrontCap(context),
+    100_000,
+    "dense FFA retains the latent-border cap",
+  );
+
+  behavior.player.troops = () => 200_000;
+  behavior.incomingCounterattackAttackerCount = () => 2;
+  assert.equal(
+    behavior.incomingCounterattackMirrorFrontCap(context),
+    100_000,
+    "multiple active attackers retain the latent-border cap",
+  );
+}
+
+// 5. The per-war attrition cap turns further mirrors into a defense hold.
 {
   const { behavior, attacker } = makeBehavior({
     ownTroops: 200_000,
