@@ -3276,6 +3276,24 @@
           reinforcementPlan,
         );
         if (launched) selectedTargetKeys.add(targetKey);
+        else if (typeof runtimeDebugLog === "function") {
+          // Four parameter-level changes measured byte-identical because the
+          // binding rejection lives inside sendAttack. Log the per-candidate
+          // context so the failing gate (probe, boat window, or troop
+          // safety) is visible in diagnostics instead of inferred.
+          runtimeDebugLog(
+            "[EarlyGame] tribe launch rejected",
+            {
+              id: candidate.id,
+              landBorder: candidate.landBorder === true,
+              boatEtaTicks: Number.isFinite(Number(candidate.boatEtaTicks))
+                ? candidate.boatEtaTicks
+                : null,
+              targetTroops: Math.max(0, Number(target?.troops?.()) || 0),
+              ownTroops: Math.max(0, Number(this.player?.troops?.()) || 0),
+            },
+          );
+        }
         return launched;
       }
     }
