@@ -9771,13 +9771,29 @@
       ) {
         return false;
       }
-      return this.emitBoat(
+      const emitted = this.emitBoat(
         destination,
         troops,
         "⛵ Boat attack",
         target,
         reinforcementPlan !== null,
       );
+      this.recordBoatBeachhead(destination, emitted);
+      return emitted;
+    }
+
+    recordBoatBeachhead(destination, emitted) {
+      if (emitted && state.settings.winFixes === true) {
+        // Ordinary overseas probes used to have no beachhead state, so the
+        // existing 25% surge lane never followed a successful player landing.
+        // Record the same lifecycle shape as opportunistic landings; the next
+        // decision promotes a landed probe without adding an unbounded intent.
+        state.beachhead = {
+          tile: destination,
+          at: typeof this.game?.ticks === "function" ? this.game.ticks() : 0,
+          surged: false,
+        };
+      }
     }
 
     async allowAndRevalidateBoatPlayerTarget(target, targetKey, destination) {

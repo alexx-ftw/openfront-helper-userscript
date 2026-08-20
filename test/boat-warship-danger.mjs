@@ -112,11 +112,7 @@ const me = { isFriendly: () => false };
     ]),
     player: me,
   });
-  assert.equal(
-    ordinary.boatLaunchWarshipDanger(600),
-    false,
-    "the danger gate is Legendary-only",
-  );
+  assert.equal(ordinary.boatLaunchWarshipDanger(600), false, "the danger gate is Legendary-only");
 
   const noUnits = makeBehavior({
     difficulty: Difficulty.Legendary,
@@ -151,6 +147,26 @@ const me = { isFriendly: () => false };
     false,
     "emitBoat refuses a destination inside the hostile hunting radius",
   );
+}
+
+// 5. Ordinary player-boat probes register a beachhead so the existing
+// reserve-gated surge lane can promote a successful landing.
+{
+  const behavior = makeBehavior({
+    difficulty: Difficulty.Legendary,
+    game: gameWithWarships([]),
+    player: { isFriendly: () => false },
+  });
+  sandbox.state.beachhead = null;
+  behavior.game.ticks = () => 321;
+  behavior.recordBoatBeachhead(600, true);
+  assert.equal(sandbox.state.beachhead.tile, 600);
+  assert.equal(sandbox.state.beachhead.at, 321);
+  assert.equal(sandbox.state.beachhead.surged, false);
+  behavior.recordBoatBeachhead(700, false);
+  assert.equal(sandbox.state.beachhead.tile, 600);
+  assert.equal(sandbox.state.beachhead.at, 321);
+  assert.equal(sandbox.state.beachhead.surged, false);
 }
 
 process.stdout.write("boat warship danger tests passed\n");
