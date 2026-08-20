@@ -255,6 +255,10 @@
   // Nullius survivors return when the border is exhausted, so a larger
   // continuous commit is nearly free growth.
   const LEGENDARY_TN_COMMIT_FRACTION = 0.5;
+  // Inside the early-expansion window the per-intent commit approaches the
+  // engine nations' near-full-army waves: free-land survivors return when the
+  // border is exhausted, so the extra exposure is the cheapest land we buy.
+  const LEGENDARY_EARLY_TN_COMMIT_FRACTION = 0.8;
   // Early-expansion window for the adaptive tier. Engine nations re-send
   // near-full-army waves into free land with no reserves; to lead by land at
   // the two-minute mark the opening caps must loosen before this tick and
@@ -1413,10 +1417,17 @@
         Number.isFinite(remainingOpeningCommitment) &&
         remainingOpeningCommitment > 0
       ) {
+        // During the adaptive tier's early-expansion window the FULL army of
+        // the strongest border nation clamps free-land spending to a crawl
+        // while engine nations re-send near-full-army waves; halve the threat
+        // hold so the two-minute land-leader race stays winnable.
+        const borderThreatScale = this.legendaryEarlyExpansionActive()
+          ? LEGENDARY_EARLY_TN_RESERVE_SCALE
+          : 1;
         const borderThreat = Math.max(
           0,
           Number(this.getKnownBorderOpponentTroops()) || 0,
-        );
+        ) * borderThreatScale;
         const openingSafetyFloor =
           this.terraNulliusSafetyTroopHighWater * (1 - EARLY_EXPAND_OPENING_LIMIT);
         return Math.min(
@@ -6420,9 +6431,11 @@
     effectiveTerraNulliusCommitFraction() {
       const difficulty =
         typeof currentDifficulty === "function" ? currentDifficulty() : null;
-      return difficulty === "Legendary"
-        ? Math.max(EARLY_EXPAND_COMMIT, LEGENDARY_TN_COMMIT_FRACTION)
-        : EARLY_EXPAND_COMMIT;
+      if (difficulty !== "Legendary") return EARLY_EXPAND_COMMIT;
+      const fraction = this.legendaryEarlyExpansionActive()
+        ? LEGENDARY_EARLY_TN_COMMIT_FRACTION
+        : LEGENDARY_TN_COMMIT_FRACTION;
+      return Math.max(EARLY_EXPAND_COMMIT, fraction);
     }
 
     // True during the adaptive tier's early-expansion window (the two-minute

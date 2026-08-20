@@ -690,6 +690,16 @@
     "initializerPreview": "0.5"
   },
   {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:LEGENDARY_EARLY_TN_COMMIT_FRACTION#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "LEGENDARY_EARLY_TN_COMMIT_FRACTION",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "1e9d7c27c8bbc8ddf0055c93e064a62fa995d177fee28cc8fa949bc8a4db06f4",
+    "initializerLength": 3,
+    "initializerPreview": "0.8"
+  },
+  {
     "id": "engine/ingame/auto-bot/attackBehavior.js:LEGENDARY_EARLY_EXPANSION_WINDOW_TICKS#1",
     "file": "engine/ingame/auto-bot/attackBehavior.js",
     "name": "LEGENDARY_EARLY_EXPANSION_WINDOW_TICKS",
