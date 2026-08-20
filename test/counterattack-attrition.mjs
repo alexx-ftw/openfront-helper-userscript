@@ -38,7 +38,10 @@ let nowTick = 1_000;
 function makeBehavior({ ownTroops, attackerTroops }) {
   const behavior = Object.create(sandbox.AttackBehavior.prototype);
   behavior.initializeIncomingCounterattackWarState();
-  behavior.game = { ticks: () => nowTick };
+  behavior.game = {
+    ticks: () => nowTick,
+    config: () => ({ maxTroops: () => ownTroops }),
+  };
   behavior.player = {
     smallID: () => 1,
     troops: () => ownTroops,
