@@ -2570,6 +2570,16 @@
     // ── SMART WARSHIP COMBAT (Blon-inspired — winFix DIVERGENCE) ─────────────
     // Combines retreat-by-HP, battle simulation, safe waypoint, and trade hunting.
     // Runs AFTER smartWarshipPatrol, gated by winFixes + features.warship.
+    canWarshipHuntOwner(owner) {
+      if (!owner?.isPlayer?.()) return false;
+      if (owner === this.player) return false;
+      if (this.player.isFriendly?.(owner) === true) return false;
+      if (typeof this.player.canAttackPlayer === "function") {
+        return this.player.canAttackPlayer(owner, true) === true;
+      }
+      return true;
+    }
+
     collectCombatUnits(type, predicate, label) {
       const units = [];
       for (const unit of this.game.units(type) || []) {
@@ -2865,7 +2875,10 @@
       );
       const enemyTradeShips = huntTrade ? this.collectCombatUnits(
         UNIT.TradeShip,
-        (unit) => unit.owner()?.smallID() !== mySid && unit.isActive() && !unit.isFriendly(me),
+        (unit) =>
+          unit.owner()?.smallID() !== mySid &&
+          unit.isActive() &&
+          this.canWarshipHuntOwner(unit.owner()),
         "enemyCombatTradeShips",
       ) : [];
       const friendlyPorts = this.friendlyCombatPorts(me);

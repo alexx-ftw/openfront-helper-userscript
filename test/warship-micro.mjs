@@ -135,6 +135,26 @@ const makeGame = (overrides = {}) => ({
   );
 }
 
+// ── Trade-owner attackability ────────────────────────────────────────────────
+{
+  const behavior = Object.create(sandbox.__WarshipBehavior.prototype);
+  const me = {
+    isFriendly: () => false,
+    canAttackPlayer: (owner) => owner.attackable === true,
+  };
+  behavior.player = me;
+  assert.equal(
+    behavior.canWarshipHuntOwner({ isPlayer: () => true, attackable: false }),
+    false,
+    "a diplomatically unattackable trade owner is not a hunt target",
+  );
+  assert.equal(
+    behavior.canWarshipHuntOwner({ isPlayer: () => true, attackable: true }),
+    true,
+    "an attackable trade owner remains a hunt target",
+  );
+}
+
 // ── Trade-hunt leash ────────────────────────────────────────────────────────
 {
   const behavior = Object.create(sandbox.__WarshipBehavior.prototype);
