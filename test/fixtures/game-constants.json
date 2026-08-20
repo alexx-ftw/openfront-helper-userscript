@@ -690,6 +690,46 @@
     "initializerPreview": "0.5"
   },
   {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:LEGENDARY_EARLY_EXPANSION_WINDOW_TICKS#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "LEGENDARY_EARLY_EXPANSION_WINDOW_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "15197cf7214b58e67cae565e573ffd9aa44bcb81f8ee5d7185dfe8da0a16ef43",
+    "initializerLength": 4,
+    "initializerPreview": "1200"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:LEGENDARY_OPENING_COMMIT_LIMIT#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "LEGENDARY_OPENING_COMMIT_LIMIT",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4942870d7312d707982f792e63180e31f72925b998dec46f7ce23db6f16e2d3b",
+    "initializerLength": 4,
+    "initializerPreview": "0.65"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:LEGENDARY_OPENING_REBASE_RATIO#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "LEGENDARY_OPENING_REBASE_RATIO",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "b05e244762b1e472be89a93800cc3ee326743cecb55984bf12813addb8de66d0",
+    "initializerLength": 3,
+    "initializerPreview": "1.1"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:LEGENDARY_EARLY_TN_RESERVE_SCALE#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "LEGENDARY_EARLY_TN_RESERVE_SCALE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d2cbad71ff333de67d07ec676e352ab7f38248eb69c942950157220607c55e84",
+    "initializerLength": 3,
+    "initializerPreview": "0.5"
+  },
+  {
     "id": "engine/ingame/auto-bot/attackBehavior.js:OPPORTUNISTIC_BOAT_SURGE_REGION_COOLDOWN_TICKS#1",
     "file": "engine/ingame/auto-bot/attackBehavior.js",
     "name": "OPPORTUNISTIC_BOAT_SURGE_REGION_COOLDOWN_TICKS",
@@ -1808,6 +1848,26 @@
     "initializerHash": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35",
     "initializerLength": 1,
     "initializerPreview": "2"
+  },
+  {
+    "id": "engine/ingame/auto-bot/nationExecution.js:LEGENDARY_OPENING_WINDOW_TICKS#1",
+    "file": "engine/ingame/auto-bot/nationExecution.js",
+    "name": "LEGENDARY_OPENING_WINDOW_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "15197cf7214b58e67cae565e573ffd9aa44bcb81f8ee5d7185dfe8da0a16ef43",
+    "initializerLength": 4,
+    "initializerPreview": "1200"
+  },
+  {
+    "id": "engine/ingame/auto-bot/nationExecution.js:LEGENDARY_OPENING_CADENCE_SCALE#1",
+    "file": "engine/ingame/auto-bot/nationExecution.js",
+    "name": "LEGENDARY_OPENING_CADENCE_SCALE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "b4af4e0d40391d3a00179d935c63b7e15ba8cd3dfa29f218dedc270bd3eb3e79",
+    "initializerLength": 3,
+    "initializerPreview": "0.6"
   },
   {
     "id": "engine/ingame/auto-bot/nationExecution.js:R#1",

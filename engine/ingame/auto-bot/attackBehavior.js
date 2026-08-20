@@ -255,6 +255,14 @@
   // Nullius survivors return when the border is exhausted, so a larger
   // continuous commit is nearly free growth.
   const LEGENDARY_TN_COMMIT_FRACTION = 0.5;
+  // Early-expansion window for the adaptive tier. Engine nations re-send
+  // near-full-army waves into free land with no reserves; to lead by land at
+  // the two-minute mark the opening caps must loosen before this tick and
+  // retighten afterwards so long sieges keep their defensive floors.
+  const LEGENDARY_EARLY_EXPANSION_WINDOW_TICKS = 1200;
+  const LEGENDARY_OPENING_COMMIT_LIMIT = 0.65;
+  const LEGENDARY_OPENING_REBASE_RATIO = 1.1;
+  const LEGENDARY_EARLY_TN_RESERVE_SCALE = 0.5;
   // A surge must pay for itself: repeated giant landings into the same
   // contested region while our tiles do not grow only donate the
   // expeditionary force to the defender. One failed region per cooldown.
@@ -1380,9 +1388,13 @@
     }
 
     getTerraNulliusStrategicBorderReserveTroops() {
+      const scale = this.legendaryEarlyExpansionActive()
+        ? LEGENDARY_EARLY_TN_RESERVE_SCALE
+        : 1;
       return (
         Math.max(0, Number(this.getStrongestStrategicBorderOpponentTroops?.()) || 0) *
-        TN_STRATEGIC_RESERVE_FRACTION
+        TN_STRATEGIC_RESERVE_FRACTION *
+        scale
       );
     }
 
@@ -1446,6 +1458,16 @@
       );
     }
 
+    getTerraNulliusOpeningRebaseRatio() {
+      if (this.legendaryEarlyExpansionActive()) {
+        return LEGENDARY_OPENING_REBASE_RATIO;
+      }
+      if (typeof EARLY_EXPAND_OPENING_REBASE_RATIO === "number") {
+        return EARLY_EXPAND_OPENING_REBASE_RATIO;
+      }
+      return 1.25;
+    }
+
     getTerraNulliusOpeningCommitLimit() {
       const tick = this.currentAttackDecisionTick();
       const ownTroops = Math.max(0, Number(this.player?.troops?.() || 0));
@@ -1467,7 +1489,8 @@
       if (
         ownTroops > openingTroops &&
         openingTroops > 0 &&
-        ownTroops >= openingTroops * EARLY_EXPAND_OPENING_REBASE_RATIO
+        ownTroops >=
+          openingTroops * this.getTerraNulliusOpeningRebaseRatio()
       ) {
         this.terraNulliusOpeningTroops = ownTroops;
       }
@@ -1480,7 +1503,10 @@
       if (openingWaveFinished || elapsed > 500) {
         return Number.POSITIVE_INFINITY;
       }
-      return Math.max(0, this.terraNulliusOpeningTroops * EARLY_EXPAND_OPENING_LIMIT);
+      const openingLimit = this.legendaryEarlyExpansionActive()
+        ? LEGENDARY_OPENING_COMMIT_LIMIT
+        : EARLY_EXPAND_OPENING_LIMIT;
+      return Math.max(0, this.terraNulliusOpeningTroops * openingLimit);
     }
 
     getTerraNulliusLivenessReserveTroops() {
@@ -1611,6 +1637,10 @@
       // Keep the production optimum (plus pending commitments in the shared
       // spendable calculator); the aggregate-overwhelming gate separately
       // prevents futile responses when the live siege already matches us.
+      // Measured dead end (2026-08-19, Baikal FFA seed ofh-baikal-ffa-diagnostic-
+      // 20260820): shrinking this reserve for "lethal" waves (>=0.5x army)
+      // bleeds the growth nucleus into 1:1 mirror trades and accelerated the
+      // collapse (deaths 4780 -> 3720/3678). Do not retry reserve invasion.
       return this.getEarlyGameProductionReserveTroops();
     }
 
@@ -6395,6 +6425,21 @@
         : EARLY_EXPAND_COMMIT;
     }
 
+    // True during the adaptive tier's early-expansion window (the two-minute
+    // land-leader race). Opening caps loosen and the strategic border reserve
+    // shrinks only inside this window; afterwards every historical defensive
+    // floor applies unchanged.
+    legendaryEarlyExpansionActive() {
+      const difficulty =
+        typeof currentDifficulty === "function" ? currentDifficulty() : null;
+      if (difficulty !== "Legendary") return false;
+      const tick = this.currentAttackDecisionTick();
+      return (
+        Number.isFinite(tick) &&
+        tick <= LEGENDARY_EARLY_EXPANSION_WINDOW_TICKS
+      );
+    }
+
     regionKeyForBoatSurge(tile) {
       const x = Number(this.game?.x?.(tile)) || 0;
       const y = Number(this.game?.y?.(tile)) || 0;
@@ -8015,6 +8060,11 @@
         context.finalSpendableTroops,
         context.incomingCounterattackTroops,
       );
+      // If the live wave is fully erasable while the production reserve stays
+      // intact, erase it now. The old containment fraction was designed for
+      // attackers who outmuscle us; it misfires when we hold 3x the wave and
+      // lets the remaining 40% keep eating tiles (the Baikal FFA trace).
+      if (this.canEraseIncomingWave(context)) return mirror;
       if (
         !this.incomingCounterattackWarIsContainment(context.target) ||
         this.counterattackSurvivalFloorActive()
@@ -8041,6 +8091,14 @@
         return 0;
       }
       return Math.floor(interdiction);
+    }
+
+    canEraseIncomingWave(context) {
+      const aggregate = this.incomingCounterattackAggregateTroops();
+      if (aggregate <= 0 || this.incomingCounterattackAttackerCount() === 0) return false;
+      const reserve = this.getIncomingCounterattackReserveTroops();
+      const spendable = this.getEarlyGameSpendableTroops(reserve);
+      return spendable >= aggregate;
     }
 
     // True while the strongest incoming attacker materially outclasses us,

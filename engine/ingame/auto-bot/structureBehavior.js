@@ -1262,6 +1262,16 @@
       // post only makes one stretch of border expensive. Live attacks keep
       // their unconditional Defense Post authorization.
       if (!this.hasBuiltCityForPreemptiveDefense()) return null;
+      // Adaptive tier: a quiet-border Post must be pure surplus. Six
+      // zero-threat Posts drained ~500k gold on Baikal while the next City
+      // rung (the maxTroops raise the whole defense needs) stayed unfunded;
+      // live-attack Posts keep their unconditional authorization.
+      if (
+        difficulty === Difficulty.Legendary &&
+        !this.legendaryQuietPostGoldAboveEconomyRung()
+      ) {
+        return null;
+      }
       const strongest = this.strongestQuietStrategicBorderOpponent();
       if (strongest === null) return null;
       if (strongest.troops < STRATEGIC_DEFENSE_POST_TROOP_RATIO * ourTroops) {
@@ -1286,6 +1296,22 @@
       return (this.player?.units?.(UNIT.City) || []).some(
         (city) => city.isUnderConstruction?.() !== true,
       );
+    }
+
+    // True when the treasury can fund a quiet-border Defense Post AND still
+    // cover the cheapest next economic structure (City/Port/Factory). Keeps
+    // preemptive Posts from eating the economy ladder's rung.
+    legendaryQuietPostGoldAboveEconomyRung() {
+      const gold = legendaryBigInt(this.player?.gold?.() || 0n);
+      const postCost = legendaryBigInt(this.getConstructionCost(UNIT.DefensePost));
+      let economyCost = this.getConstructionCost(UNIT.City);
+      for (const type of [UNIT.Port, UNIT.Factory]) {
+        if (autoBotBuildAllowed(type)) {
+          const typeCost = legendaryBigInt(this.getConstructionCost(type));
+          if (typeCost < economyCost) economyCost = typeCost;
+        }
+      }
+      return gold >= postCost + economyCost;
     }
 
     strongestQuietStrategicBorderOpponent() {

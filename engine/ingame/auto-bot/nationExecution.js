@@ -39,6 +39,12 @@
   // combat. Drain a large hostile roster gradually instead of spending the
   // entire per-second intent bucket (and retrying every rejected target).
   const EMBARGO_INTENTS_PER_DECISION = 2;
+  // Early-expansion window for the adaptive tier: engine nations re-send
+  // near-full-army waves into free land on every cadence crossing, so the
+  // two-minute land-leader race needs a faster decision cadence early. The
+  // window is time-boxed; afterwards the historical cadence scale applies.
+  const LEGENDARY_OPENING_WINDOW_TICKS = 1200;
+  const LEGENDARY_OPENING_CADENCE_SCALE = 0.6;
 
   class NationBot {
     constructor(game, opts) {
@@ -395,7 +401,13 @@
       const from = this.lastSeenTick < 0 ? ticks : this.lastSeenTick + 1;
       this.lastSeenTick = ticks;
       let attackRate = this.attackRate;
-      const scale = Number(state.settings.combatCadenceScale ?? 0.6);
+      let scale = Number(state.settings.combatCadenceScale ?? 0.6);
+      if (
+        currentDifficulty() === Difficulty.Legendary &&
+        ticks <= LEGENDARY_OPENING_WINDOW_TICKS
+      ) {
+        scale *= LEGENDARY_OPENING_CADENCE_SCALE;
+      }
       if (state.settings.winFixes && Number.isFinite(scale) && scale > 0 && scale !== 1) {
         attackRate = Math.max(1, Math.round(this.attackRate * scale));
       }
