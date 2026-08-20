@@ -199,6 +199,10 @@
   // A live tribe capture must clear the same robust four-times-strength floor
   // used by the wider conquest policy before the engine can consume the tribe.
   const TRIBE_CAPTURE_TROOP_MULTIPLIER = 4;
+  // Adaptive tier: tribes neither reinforce nor counterattack and their
+  // conquest pays the full gold hoard, so the floor runs cheaper to let the
+  // opening eat several tribes in parallel and fund the early economy.
+  const LEGENDARY_TRIBE_CAPTURE_TROOP_MULTIPLIER = 2.5;
   const PLAYER_CAPTURE_TROOP_MULTIPLIER = 4;
   const EXPANSION_BREAKOUT_CONFIRM_DECISIONS = 2;
   // Once aggregate hostile incoming troops match our whole current army, a
@@ -9883,7 +9887,7 @@
       );
       const captureMultiplier =
         target?.type?.() === PlayerType.Bot
-          ? TRIBE_CAPTURE_TROOP_MULTIPLIER
+          ? this.tribeCaptureTroopMultiplier()
           : PLAYER_CAPTURE_TROOP_MULTIPLIER;
       // Attack intents are whole troops. Round the required conquest force up,
       // never down: a fractional tribe/Defense-Post result truncated by the
@@ -9897,6 +9901,18 @@
         ratioFloor,
         this.getTribeTerrainCaptureTroopFloor(target, ratioFloor),
       );
+    }
+
+    // Tribes do not reinforce or counterattack the way players do, and their
+    // conquest pays the full gold hoard. At the adaptive tier the 4x floor
+    // serializes eating — one tribe parks four times its army before the
+    // next is fundable — while the early economy needs the tribe gold to
+    // fund the interceptor race, so the floor runs at a reduced multiplier.
+    tribeCaptureTroopMultiplier() {
+      return typeof currentDifficulty === "function" &&
+        currentDifficulty() === "Legendary"
+        ? LEGENDARY_TRIBE_CAPTURE_TROOP_MULTIPLIER
+        : TRIBE_CAPTURE_TROOP_MULTIPLIER;
     }
 
     getPlayerAttackPreferredTroopFloor(target, defensePostProfile = null) {

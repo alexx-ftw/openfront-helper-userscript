@@ -520,6 +520,16 @@
     "initializerPreview": "4"
   },
   {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:LEGENDARY_TRIBE_CAPTURE_TROOP_MULTIPLIER#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "LEGENDARY_TRIBE_CAPTURE_TROOP_MULTIPLIER",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "b8736b999909049671d0ea075a42b308a5fbe2df1854899123fe09eb0ee9de61",
+    "initializerLength": 3,
+    "initializerPreview": "2.5"
+  },
+  {
     "id": "engine/ingame/auto-bot/attackBehavior.js:PLAYER_CAPTURE_TROOP_MULTIPLIER#1",
     "file": "engine/ingame/auto-bot/attackBehavior.js",
     "name": "PLAYER_CAPTURE_TROOP_MULTIPLIER",

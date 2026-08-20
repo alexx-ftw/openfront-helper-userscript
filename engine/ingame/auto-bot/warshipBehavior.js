@@ -2359,12 +2359,9 @@
     // starve attacks and spawns while the ship is already committed to its
     // last escape order.
     warshipDodgeBudgetAvailable() {
-      if (typeof getIntentRateLimitSnapshot !== "function") return true;
-      const snapshot = getIntentRateLimitSnapshot();
-      if (!snapshot || typeof snapshot !== "object") return true;
-      return (
-        snapshot.secondTokens > WARSHIP_DODGE_SECOND_TOKEN_RESERVE &&
-        snapshot.minuteTokens > WARSHIP_DODGE_MINUTE_TOKEN_RESERVE
+      return this.warshipEmitBudgetAvailable(
+        WARSHIP_DODGE_SECOND_TOKEN_RESERVE,
+        WARSHIP_DODGE_MINUTE_TOKEN_RESERVE,
       );
     }
 
@@ -2802,12 +2799,34 @@
     // shared tokens for non-warship producers instead of spending the budget
     // down to the last token. Sandboxes without the limiter allow moves.
     warshipMoveBudgetAvailable() {
+      return this.warshipEmitBudgetAvailable(
+        WARSHIP_MOVE_SECOND_TOKEN_RESERVE,
+        WARSHIP_MOVE_MINUTE_TOKEN_RESERVE,
+      );
+    }
+
+    // Token counts alone do not predict acceptance: the shared limiter also
+    // enforces per-window spend caps (one below the server's per-second cap,
+    // ten below its per-minute cap). A burst that passes a tokens-only check
+    // still gets rejected once the window saturates — measured as 252 dropped
+    // move_warship intents once the raid fleet grew to ten ships.
+    warshipEmitBudgetAvailable(secondReserve, minuteReserve) {
       if (typeof getIntentRateLimitSnapshot !== "function") return true;
       const snapshot = getIntentRateLimitSnapshot();
       if (!snapshot || typeof snapshot !== "object") return true;
+      const secondSpendCap =
+        Number(snapshot.intentsPerSecond) - 1 || 9;
+      const minuteSpendCap =
+        Number(snapshot.intentsPerMinute) - 10 || 140;
+      // Older snapshots (and test stubs) may predate the window-spend axes;
+      // a missing field means "nothing spent yet".
+      const secondWindowSpent = Number(snapshot.secondWindowSpent) || 0;
+      const minuteWindowSpent = Number(snapshot.minuteWindowSpent) || 0;
       return (
-        snapshot.secondTokens > WARSHIP_MOVE_SECOND_TOKEN_RESERVE &&
-        snapshot.minuteTokens > WARSHIP_MOVE_MINUTE_TOKEN_RESERVE
+        snapshot.secondTokens > secondReserve &&
+        snapshot.minuteTokens > minuteReserve &&
+        secondWindowSpent < secondSpendCap - secondReserve &&
+        minuteWindowSpent < minuteSpendCap - minuteReserve
       );
     }
 

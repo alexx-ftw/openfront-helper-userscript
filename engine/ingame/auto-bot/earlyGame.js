@@ -39,11 +39,34 @@
   // tribe cannot outweigh feasibility dimensions.
   const EARLY_GAME_TRIBE_VALUE_SATURATION_TILES = 30;
 
+  // Adaptive tier: the 30-second opening window permanently hides sea tribes
+  // that are farther than 300 boat ticks even after the opening has run — on
+  // crowded water maps those tribes are exactly the gold/tile hoards the
+  // early economy needs. At Legendary the window keeps growing with the
+  // opening's elapsed time, capped by the exploratory-boat policy limit.
+  function earlyGameBoatWindowTicks() {
+    // `state` belongs to the concatenated bundle scope; standalone tests load
+    // this layer without it and keep the historical 300-tick window.
+    const shared = typeof state !== "undefined" ? state : null;
+    const elapsed = Number(shared?.earlyGame?.openingElapsedTicks);
+    if (
+      shared?.settings?.difficulty === "Legendary" &&
+      Number.isFinite(elapsed) &&
+      elapsed > 0
+    ) {
+      return Math.min(
+        BOAT_EXPLORATION_MAX_ROUTE_TICKS,
+        EARLY_GAME_MAX_BOAT_TICKS + Math.floor(elapsed),
+      );
+    }
+    return EARLY_GAME_MAX_BOAT_TICKS;
+  }
+
   function isEarlyGameBoatEta(etaTicks) {
     return (
       Number.isFinite(etaTicks) &&
       etaTicks >= 0 &&
-      etaTicks <= EARLY_GAME_MAX_BOAT_TICKS
+      etaTicks <= earlyGameBoatWindowTicks()
     );
   }
 
@@ -109,7 +132,7 @@
     goal,
     neighbors,
     isWater,
-    maxTicks = EARLY_GAME_MAX_BOAT_TICKS,
+    maxTicks = earlyGameBoatWindowTicks(),
     maxVisited = WATER_ROUTE_MAX_VISITED,
   } = {}) {
     if (!validWaterRouteSearch(start, goal, neighbors, isWater)) return null;
@@ -893,7 +916,7 @@
     if (candidate.landBorder === true) return 1;
     const eta = candidate.boatEtaTicks;
     return isEarlyGameBoatEta(eta)
-      ? finiteEarlyGameSignal(1 - eta / EARLY_GAME_MAX_BOAT_TICKS)
+      ? finiteEarlyGameSignal(1 - eta / earlyGameBoatWindowTicks())
       : 0;
   }
 
