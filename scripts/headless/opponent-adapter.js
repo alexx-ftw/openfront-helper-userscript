@@ -998,6 +998,38 @@ export class BundledOpponentBot {
     }
   }
 
+  // Per-candidate tribe-launch outcomes: the planner scores several tribes
+  // yet launches few, and the rejection reason lives inside sendAttack. This
+  // surfaces the candidate context alongside the launch result so the
+  // binding gate (probe, boat window, troop safety) is readable from the
+  // trace. Events ride the structure-trace channel (OFH_LOG_STRUCTURES=1).
+  enableTribeLaunchTrace() {
+    const attackBehavior = this.nationBot?.attackBehavior;
+    if (!attackBehavior || attackBehavior.__ofhTribeLaunchTraceEnabled) return;
+    attackBehavior.__ofhTribeLaunchTraceEnabled = true;
+    const original = attackBehavior.launchEarlyGameTribeCandidate;
+    if (typeof original !== "function") return;
+    attackBehavior.launchEarlyGameTribeCandidate = async (...args) => {
+      const candidate = args[0] || {};
+      const result = await original.apply(attackBehavior, args);
+      const targetTroops = Math.max(0, Number(candidate.player?.troops?.()) || 0);
+      this.structureTrace.push({
+        kind: "tribe-launch",
+        tick: this.game.ticks(),
+        id: candidate.id,
+        landBorder: candidate.landBorder === true,
+        boatEtaTicks: Number.isFinite(Number(candidate.boatEtaTicks))
+          ? candidate.boatEtaTicks
+          : null,
+        targetTroops: Math.round(targetTroops),
+        ownTroops: Math.round(
+          Math.max(0, Number(attackBehavior.player?.troops?.()) || 0),
+        ),
+        launched: result === true,
+      });
+      return result;
+    };
+  }
   enableLandDefenseTrace() {
     const attackBehavior = this.nationBot?.attackBehavior;
     if (!attackBehavior || attackBehavior.__ofhLandDefenseTraceEnabled === true) return;
@@ -1107,6 +1139,7 @@ export class BundledOpponentBot {
     if (process.env.OFH_LOG_NAVAL === "1") this.enableNavalTrace();
     if (process.env.OFH_LOG_STRUCTURES === "1") this.enableStructureTrace();
     if (process.env.OFH_LOG_SPAWN === "1") this.enableSpawnTrace();
+    if (process.env.OFH_LOG_TRIBE_LAUNCH === "1") this.enableTribeLaunchTrace();
     if (harness.window.__OFH_realOpponentClock) {
       harness.window.__OFH_realOpponentClock.now = this.game.ticks() * 100;
     }

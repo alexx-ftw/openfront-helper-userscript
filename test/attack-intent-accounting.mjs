@@ -879,8 +879,8 @@ assert.equal(
     isPlayer: () => true,
     type: () => sandbox.PlayerType.Bot,
   }),
-  70000,
-  "tribe captures retain enough troops to meet the known bordering Nation force",
+  35000,
+  "tribe captures hold the fractioned border-Nation share, never the full force",
 );
 const expandingGame = {
   ticks: () => tick,

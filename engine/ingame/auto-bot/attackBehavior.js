@@ -1652,10 +1652,22 @@
           strategicBorderReserve,
         );
       }
+      // Tribes are expansion-class snacks, not wars of choice: live sieges
+      // are owned by the counterattack lane, and holding the FULL army of
+      // the strongest bordering Nation here froze every tribe launch from
+      // the moment a nation reached our border (World-n2 trace: three
+      // affordable tribes rejected for 500+ ticks while 90-180k troops sat
+      // home). Keep the live reserve base and the same FRACTIONED border
+      // hold Terra Nullius uses; Nation/Human war targets keep the full
+      // border reserve.
+      if (!this.isStrategicBorderOpponent(target)) {
+        return Math.max(
+          this.getEarlyGameLiveReserveTroops(),
+          this.getTerraNulliusStrategicBorderReserveTroops(),
+        );
+      }
       return Math.max(
-        target?.isPlayer?.()
-          ? this.getEarlyGameLiveReserveTroops()
-          : this.getEarlyGameTerraNulliusReserveTroops(),
+        this.getEarlyGameLiveReserveTroops(),
         strategicBorderReserve,
       );
     }
