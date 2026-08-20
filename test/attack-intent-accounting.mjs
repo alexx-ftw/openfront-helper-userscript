@@ -1163,7 +1163,7 @@ assert.equal(troopEmissions.length, openingEmissionCount + 1);
 assert.equal(
   troopEmissions.at(-1),
   2500,
-  "the 10% opening fraction is a ceiling rather than a fixed payload",
+  "faithful tiers keep the 10% opening payload; only the adaptive tier scales it",
 );
 
 const openingHardCapBehavior = new sandbox.AttackBehavior(

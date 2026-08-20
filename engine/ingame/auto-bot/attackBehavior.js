@@ -255,10 +255,10 @@
   // Nullius survivors return when the border is exhausted, so a larger
   // continuous commit is nearly free growth.
   const LEGENDARY_TN_COMMIT_FRACTION = 0.5;
-  // Inside the early-expansion window the per-intent commit approaches the
-  // engine nations' near-full-army waves: free-land survivors return when the
-  // border is exhausted, so the extra exposure is the cheapest land we buy.
-  const LEGENDARY_EARLY_TN_COMMIT_FRACTION = 0.8;
+  // Opening-window ceiling for the adaptive tier. It only bounds the
+  // per-intent payload (the 10% liveness slice stays the payload); captures
+  // measured frontier/cadence-bound, not troop-bound.
+  const LEGENDARY_EARLY_TN_COMMIT_FRACTION = 0.5;
   // Early-expansion window for the adaptive tier. Engine nations re-send
   // near-full-army waves into free land with no reserves; to lead by land at
   // the two-minute mark the opening caps must loosen before this tick and
@@ -2331,10 +2331,19 @@
           typeof EARLY_EXPAND_MINIMUM_MARGIN === "number"
             ? EARLY_EXPAND_MINIMUM_MARGIN
             : 1.25;
+        // MEASURED DEAD END (2026-08-19, Baikal FFA seed
+        // ofh-baikal-ffa-diagnostic-20260820): scaling this payload to the
+        // configured fraction (Legendary 0.25-0.8) parks the army in
+        // long-resolving waves, strips the home defense (611k -> 94k troops
+        // at tick 2000) and accelerates the collapse (death 4077 -> 3786)
+        // without raising early tiles — captures are frontier/cadence-bound,
+        // not troop-bound. Keep the 10% liveness slice; the fraction stays a
+        // ceiling.
+        const payloadFraction = followUpFraction;
         const adaptiveTroops = Math.ceil(
           Math.max(
             minimum * minimumMargin,
-            ownTroops * followUpFraction * frontierMultiplier,
+            ownTroops * payloadFraction * frontierMultiplier,
           ),
         );
         const perIntentCeiling = Math.max(
@@ -8700,13 +8709,16 @@
           ? this.getEarlyGameTerraNulliusReserveTroops()
           : this.getEarlyGameTargetReserveTroops(target);
       const spendableTroops = this.getEarlyGameSpendableTroops(reserveTroops);
+      const requestedFraction = Number(fraction);
+      const openingFraction =
+        Number.isFinite(requestedFraction) ? requestedFraction : null;
       const calculatedTroops =
         isTerraNullius && state.settings.winFixes
           ? this.getTerraNulliusAttackTroops(
               target,
               null,
               null,
-              EARLY_EXPAND_COMMIT,
+              openingFraction,
             )
           : Math.min(requestedTroops, spendableTroops);
       // `forceSendAttack` is the opening entry point.  Keep its protected

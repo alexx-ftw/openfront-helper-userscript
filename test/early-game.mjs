@@ -3513,15 +3513,19 @@ assert.equal(
   0,
   "TerraNullius attacks wait when the exact first-tile loss is not affordable",
 );
+const previousMinimumTerraNulliusDifficulty = targetSandbox.currentDifficulty;
+targetSandbox.currentDifficulty = () => "Legendary";
+const configuredOpeningPayload = minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(
+  minimumTerraNulliusTarget,
+  null,
+  99000,
+  0.6,
+);
+targetSandbox.currentDifficulty = previousMinimumTerraNulliusDifficulty;
 assert.equal(
-  minimumTerraNulliusBehavior.getTerraNulliusAttackTroops(
-    minimumTerraNulliusTarget,
-    null,
-    99000,
-    0.6,
-  ),
+  configuredOpeningPayload,
   10000,
-  "the opening TerraNullius payload keeps the 10% liveness minimum while 60% remains only its ceiling",
+  "the opening TerraNullius payload keeps the 10% liveness slice even at Legendary while the fraction remains only its ceiling",
 );
 
 // Frontier-adaptive Terra Nullius pacing: the per-intent commit scales with
