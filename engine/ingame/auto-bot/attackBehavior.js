@@ -1123,7 +1123,11 @@
     recordOutboundAttackIntent(
       target,
       troops,
-      { attackType = "land", destination = null } = {},
+      {
+        attackType = "land",
+        destination = null,
+        forcedCounterattack = false,
+      } = {},
     ) {
       const amount = Math.max(0, Number(troops) || 0);
       if (amount <= 0) return;
@@ -1144,12 +1148,39 @@
           ? entry.targetIsPlayer && entry.targetKey === targetKey
           : !entry.targetIsPlayer,
       );
-      this.botAttackPendingIntentCommitments.push({
+      this.botAttackPendingIntentCommitments.push(
+        this.createOutboundAttackCommitment({
+          target,
+          targetIsPlayer,
+          targetKey,
+          attackType,
+          destination,
+          forcedCounterattack,
+          amount,
+          targetAttacks,
+          baselineTransports,
+        }),
+      );
+    }
+
+    createOutboundAttackCommitment({
+      target,
+      targetIsPlayer,
+      targetKey,
+      attackType,
+      destination,
+      forcedCounterattack,
+      amount,
+      targetAttacks,
+      baselineTransports,
+    }) {
+      return {
         targetIsPlayer,
         target: targetIsPlayer ? target : null,
         targetKey,
         attackType,
         destination,
+        forcedCounterattack,
         troops: amount,
         createdTick: this.currentAttackDecisionTick(),
         baselineTroops: Math.max(0, Number(this.player?.troops?.() || 0)),
@@ -1168,7 +1199,7 @@
         baselineTransportIDs: new Set(
           baselineTransports.map((entry) => entry.id).filter((id) => id != null),
         ),
-      });
+      };
     }
 
     outboundTransportCandidateMatches(candidate, entry, context, amount) {
@@ -1263,7 +1294,10 @@
       if (amount <= 0) return false;
       let applied = this.reconcileOutboundTransport(entry, context, amount);
       if (!applied) applied = this.reconcileOutboundVisibleAttack(entry, context, amount);
-      if (!applied && entry.targetIsPlayer === false) {
+      if (
+        !applied &&
+        (entry.targetIsPlayer === false || entry.forcedCounterattack === true)
+      ) {
         applied = this.outboundTroopDropApplies(entry, context, amount);
       }
       return this.outboundEntryRemainsPending(entry, tick, applied);
@@ -9489,6 +9523,7 @@
       }
       this.recordOutboundAttackIntent(context.target, troops, {
         attackType: "land",
+        forcedCounterattack: context.force === true,
       });
       return true;
     }

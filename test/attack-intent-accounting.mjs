@@ -2160,6 +2160,57 @@ assert.equal(
   "visible attack troops are not double-counted with settled local intents",
 );
 
+// Engine cancellation consumes a forced counterattack's troops before deleting
+// the new execution when the incoming wave is larger. No outgoing attack is
+// visible, but the observed own-army debit is authoritative and must release
+// the local reservation immediately instead of waiting six ticks.
+const forcedDebitBehavior = new sandbox.AttackBehavior({}, game, parallelMe, 0.5, 0.3, 0.1, {}, {});
+let forcedOwnTroops = 100000;
+forcedDebitBehavior.player = {
+  ...parallelMe,
+  troops: () => forcedOwnTroops,
+};
+forcedDebitBehavior.currentAttackDecisionTick = () => tick;
+forcedDebitBehavior.getOutboundAttackSnapshot = () => [];
+tick = 50;
+forcedDebitBehavior.recordOutboundAttackIntent(parallelTribeA, 20000, {
+  forcedCounterattack: true,
+});
+forcedOwnTroops = 79000;
+tick = 51;
+assert.equal(
+  forcedDebitBehavior.getPendingOutboundAttackTroops(),
+  0,
+  "a forced counterattack canceled in-flight releases its stale pending reservation after the troop debit",
+);
+
+const forcedNoDebitBehavior = new sandbox.AttackBehavior(
+  {},
+  game,
+  parallelMe,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+forcedNoDebitBehavior.player = {
+  ...parallelMe,
+  troops: () => 100000,
+};
+forcedNoDebitBehavior.currentAttackDecisionTick = () => tick;
+forcedNoDebitBehavior.getOutboundAttackSnapshot = () => [];
+tick = 60;
+forcedNoDebitBehavior.recordOutboundAttackIntent(parallelTribeA, 20000, {
+  forcedCounterattack: true,
+});
+tick = 61;
+assert.equal(
+  forcedNoDebitBehavior.getPendingOutboundAttackTroops(),
+  20000,
+  "a forced intent without an observed debit keeps the grace reservation",
+);
+
 pendingPlayerBehavior.botAttackPendingIntentCommitments = [
   {
     targetIsPlayer: true,
