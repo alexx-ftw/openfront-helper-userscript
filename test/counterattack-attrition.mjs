@@ -166,14 +166,26 @@ function contextFor(behavior, attacker, { wave, spendable }) {
     "the FFA exception reaches the actual counterattack payload",
   );
 
-  behavior.isFFA = () => false;
+  behavior.game = {
+    ticks: () => nowTick,
+    config: () => ({
+      maxTroops: () => 300_000,
+      gameConfig: () => ({ gameMode: "Team" }),
+    }),
+  };
   assert.equal(
     behavior.incomingCounterattackMirrorFrontCap(context),
     100_000,
     "Team retains the two-front latent-border cap",
   );
 
-  behavior.isFFA = () => true;
+  behavior.game = {
+    ticks: () => nowTick,
+    config: () => ({
+      maxTroops: () => 200_000,
+      gameConfig: () => ({ gameMode: "FFA" }),
+    }),
+  };
   behavior.player.numTilesOwned = () => 10_000;
   behavior.player.troops = () => 300_000;
   assert.equal(
@@ -189,6 +201,31 @@ function contextFor(behavior, attacker, { wave, spendable }) {
     100_000,
     "multiple active attackers retain the latent-border cap",
   );
+}
+
+// 4b. Containment against a materially stronger attacker stays protected even
+// in thin Legendary FFA: full mirror trades against an out-producing nation
+// donate the army (measured Baikal regression 5211 -> 4605).
+{
+  const { behavior, attacker } = makeBehavior({
+    ownTroops: 200_000,
+    attackerTroops: 4_000_000,
+  });
+  behavior.player.numTilesOwned = () => 20_000;
+  behavior.incomingCounterattackAttackerCount = () => 1;
+  behavior.canEraseIncomingWave = () => false;
+  behavior.counterattackSurvivalFloorActive = () => false;
+  behavior.recordIncomingCounterattackCommitment(attacker, 200_000);
+  const context = contextFor(behavior, attacker, {
+    wave: 80_000,
+    spendable: 90_000,
+  });
+  assert.equal(
+    behavior.calculateIncomingCounterattackTroops(context),
+    0,
+    "an exhausted ledger keeps the defense hold against a superior attacker even in thin FFA",
+  );
+  assert.equal(context.attackBlocked, true);
 }
 
 // 5. The per-war attrition cap turns further mirrors into a defense hold.

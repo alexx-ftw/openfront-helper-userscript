@@ -8102,7 +8102,13 @@
     incomingCounterattackMirrorFrontCap(context) {
       if (!this.hasBorderOpponentApi()) return context.finalSpendableTroops;
       const ownTroops = Math.max(1, Number(this.player?.troops?.()) || 0);
-      if (this.ffaThinSingleStrategicSiegeNeedsFullSpendable(context, ownTroops)) {
+      if (
+        this.ffaThinSingleStrategicSiegeNeedsFullSpendable(
+          context,
+          ownTroops,
+          COUNTERATTACK_MULTIFRONT_PRESSURE_RATIO,
+        )
+      ) {
         return context.finalSpendableTroops;
       }
       const strongFronts = this.countStrongStrategicBorderOpponents(
@@ -8116,15 +8122,17 @@
       return Math.max(1, Math.floor(context.finalSpendableTroops * share));
     }
 
-    ffaThinSingleStrategicSiegeNeedsFullSpendable(context, ownTroops) {
+    ffaThinSingleStrategicSiegeNeedsFullSpendable(context, ownTroops, waveRatio) {
+      // Read the lobby mode defensively: lightweight harnesses may stub the
+      // game without the full config chain, and the exception must simply
+      // not fire there rather than throw.
+      const gameMode = this.game?.config?.().gameConfig?.().gameMode;
       if (
-        !this.isFFA() ||
+        gameMode !== GameMode.FFA ||
         currentDifficulty() !== Difficulty.Legendary ||
         !this.isStrategicBorderOpponent(context.target) ||
-        this.incomingCounterattackWarIsContainment(context.target) ||
         this.incomingCounterattackAttackerCount() !== 1 ||
-        context.incomingCounterattackTroops <
-          ownTroops * COUNTERATTACK_MULTIFRONT_PRESSURE_RATIO
+        context.incomingCounterattackTroops < ownTroops * waveRatio
       ) {
         return false;
       }
@@ -8155,6 +8163,12 @@
       // attackers who outmuscle us; it misfires when we hold 3x the wave and
       // lets the remaining 40% keep eating tiles (the Baikal FFA trace).
       if (this.canEraseIncomingWave(context)) return mirror;
+      // MEASURED DEAD END (2026-08-20, Baikal FFA ofh-baikal-ffa-diagnostic-
+      // 20260820): bypassing containment/ledger for the thin FFA siege
+      // accelerated death 5211 -> 4605 — full mirror trades against a
+      // materially stronger attacker donate the army to a nation that
+      // out-produces us. The attrition hold is correct even in FFA; the real
+      // constraint is the economy gap.
       if (
         !this.incomingCounterattackWarIsContainment(context.target) ||
         this.counterattackSurvivalFloorActive()
