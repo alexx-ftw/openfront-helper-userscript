@@ -455,8 +455,8 @@ assert.equal(
 );
 assert.equal(
   terraNullius[0].objective.resourceScore,
-  0.6,
-  "free land alone keeps the resource floor at 0.6 when no tribe is reachable",
+  0.45,
+  "free land remains a fallback resource floor below reachable tribe richness",
 );
 
 // Nation avoidance holds a 30% share of the combined entity score. The two

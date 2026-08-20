@@ -867,11 +867,18 @@ function tribeReachForCandidate(
     SPAWN_HEATMAP_TRIBE_REACH_BASE_R +
     clampSpawnScore(freeLandScore) * SPAWN_HEATMAP_TRIBE_REACH_BONUS_R;
   const geometricCount = index ? index.countWithin(x, y, radius) : 0;
-  // Fail closed until connectivity is authoritative. A geometric fallback
-  // would reward a tribe on a nearby island as if it were reachable by land.
-  const count = index && landComponent > 0
-    ? index.countWithin(x, y, radius, landComponent)
-    : 0;
+  // Fail closed while connectivity is authoritative-but-pending. But when no
+  // exact index exists at all (maps over the index's memory budget — Baikal
+  // and every large lobby), the fail-closed count stays zero forever and
+  // every spawn becomes tribe-blind: the ranked spot ignores the tribe gold
+  // that funds the whole early economy. On that fallback path the geometric
+  // count is the only signal, island risk accepted.
+  let count = 0;
+  if (index && landComponent > 0) {
+    count = index.countWithin(x, y, radius, landComponent);
+  } else if (options.connectivityUnsupported === true) {
+    count = geometricCount;
+  }
   return {
     count,
     geometricCount,
@@ -880,9 +887,15 @@ function tribeReachForCandidate(
   };
 }
 
-function tribeClusterScoreForCandidate(index, x, y, tribeCount, landComponent = 0) {
+function tribeClusterScoreForCandidate(index, x, y, tribeCount, options = {}) {
+  const landComponent = options.landComponent ?? 0;
   if (tribeCount <= 0) return 1;
-  if (landComponent <= 0) return 0;
+  if (landComponent <= 0) {
+    // Same fallback rule as tribe reach: geometric proximity is the only
+    // signal on maps where the exact connectivity index cannot exist.
+    if (options.connectivityUnsupported !== true || !index) return 0;
+    return index.countWithin(x, y, SPAWN_HEATMAP_TRIBE_CLUSTER_R) / Math.max(1, tribeCount);
+  }
   const count = index
     ? index.countWithin(x, y, SPAWN_HEATMAP_TRIBE_CLUSTER_R, landComponent)
     : 0;
@@ -1250,6 +1263,10 @@ function evaluateDynamicSpawnCandidate(candidate, context) {
     context.W,
   );
   const freeLandScore = clampSpawnScore(candidate.freeLandScore);
+  // A null candidate index means the exact scorer cannot exist for this map
+  // (memory budget), not that connectivity is still pending — the geometric
+  // proximity signals below then carry the tribe dimensions.
+  const connectivityUnsupported = context.candidateIndex == null;
   const tribeReach = tribeReachForCandidate(
     context.tribeProximity,
     x,
@@ -1258,6 +1275,7 @@ function evaluateDynamicSpawnCandidate(candidate, context) {
       freeLandScore,
       tribeCount: context.entities.tribeLocs.length,
       landComponent,
+      connectivityUnsupported,
     },
   );
   const tribeClusterScore = tribeClusterScoreForCandidate(
@@ -1265,10 +1283,19 @@ function evaluateDynamicSpawnCandidate(candidate, context) {
     x,
     y,
     context.entities.tribeLocs.length,
-    landComponent,
+    { landComponent, connectivityUnsupported },
   );
-  const tribeScore = context.tribeProximity && landComponent > 0
-    ? context.tribeProximity.score(x, y, SPAWN_HEATMAP_TRIBE_R, landComponent) : 0;
+  let tribeScore = 0;
+  if (context.tribeProximity && landComponent > 0) {
+    tribeScore = context.tribeProximity.score(
+      x,
+      y,
+      SPAWN_HEATMAP_TRIBE_R,
+      landComponent,
+    );
+  } else if (context.tribeProximity && connectivityUnsupported) {
+    tribeScore = context.tribeProximity.score(x, y, SPAWN_HEATMAP_TRIBE_R);
+  }
   const nationScore = context.nationProximity ? context.nationProximity.score(x, y) : 0;
   const enemyDistance = nearestSpawnDistance(context.enemySpawns, x, y);
   const playerDistScore = Number.isFinite(enemyDistance)
@@ -1698,7 +1725,7 @@ function rankExactSpawnCandidate(context, args) {
     x,
     y,
     context.points.tribeLocs.length,
-    landComponent,
+    { landComponent },
   );
   const tribeScore = context.tribeProximity && landComponent > 0
     ? context.tribeProximity.score(x, y, SPAWN_HEATMAP_TRIBE_R, landComponent) : 0;

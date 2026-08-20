@@ -377,10 +377,10 @@ test("free land substitutes for tribes so empty expansible regions outrank crowd
   assert.equal(ranked[0].id, "empty-expansible");
   assert.equal(
     ranked[0].objective.resourceScore,
-    0.6,
-    "an empty region keeps a 0.6 resource floor from its free land alone",
+    0.45,
+    "an empty region keeps a lower fallback floor so reachable tribe richness wins when available",
   );
-  assert.equal(ranked[0].objective.robustFloor, 0.6);
+  assert.equal(ranked[0].objective.robustFloor, 0.45);
 });
 
 process.stdout.write("spawn-objective tests passed\n");

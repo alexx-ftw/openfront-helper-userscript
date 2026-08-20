@@ -320,13 +320,17 @@ assert.equal(
   "fallback safety ranking remains deterministic while tribe connectivity is pending",
 );
 assert.equal(fallback.topSpots[0].y, 100);
-assert.equal(fallback.scores[0].tribeReachCount, 0);
+assert.equal(
+  fallback.scores[0].tribeReachCount,
+  3,
+  "without an exact connectivity index the geometric tribe count carries the resource dimension instead of failing closed",
+);
 assert.equal(fallback.scores[0].tribeGeometricReachCount, 3);
 assert.equal(fallback.scores[0].objective.safetyScore, 1);
 const fallbackEmptySide = fallback.scores.find((candidate) => candidate.x === 100);
 assert.equal(
   fallbackEmptySide.objective.resourceScore,
-  0.6,
+  0.45,
   "the fallback objective lets free land substitute for absent tribes in the resource floor",
 );
 

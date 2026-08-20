@@ -103,10 +103,13 @@
     const freeLandScore = clampScore(candidate.freeLandScore, 1);
     // Terra Nullius substitutes for tribes: free land is the expansion
     // resource an empty region offers, so it lifts the resource floor
-    // instead of letting tribe-rich crowded spots win by default.
+    // instead of letting tribe-rich crowded spots win by default. The
+    // substitution stays below the free-land score itself — a remote
+    // TN-only start must not mask tribe-cluster poverty, because tribe
+    // conquests pay their full gold hoard and fund the early economy.
     const resourceScore = Math.max(
       clampScore(candidate.resourceScore, 1),
-      freeLandScore * 0.6,
+      freeLandScore * 0.45,
     );
     const clanScore = clampScore(candidate.clanScore);
     const teamPolyhedronScore = clampScore(candidate.teamPolyhedronScore);
@@ -142,9 +145,15 @@
     const rightObjective = right.objective;
     const insideTeamPolyhedron =
       leftObjective.teamPolyhedronScore === 1 && rightObjective.teamPolyhedronScore === 1;
+    // Safety already votes inside the robust floor, so ranking it again at
+    // the second position double-counted remoteness and pushed every FFA
+    // spawn toward safe but tribe-poor corners (measured: FFA seeds died
+    // ~4000 with the tribe economy never igniting while Team spawns near
+    // tribe clusters dominated). Resource richness — reachable tribes and
+    // the gold they pay on conquest — now leads the tie-breaks.
     const dimensions = insideTeamPolyhedron
       ? "tribeClusterScore teamInteriorScore tribeReachCount tribeReachScore freeLandScore expansionScore resourceScore robustFloor safetyScore tribeScore nationScore startScore teamScore clanScore".split(" ")
-      : "robustFloor safetyScore expansionScore tribeReachScore tribeReachCount freeLandScore resourceScore tribeScore nationScore startScore teamScore clanScore".split(" ");
+      : "robustFloor resourceScore tribeReachCount tribeReachScore safetyScore expansionScore freeLandScore tribeScore nationScore startScore teamScore clanScore".split(" ");
     for (const dimension of dimensions) {
       if (leftObjective[dimension] !== rightObjective[dimension]) {
         return rightObjective[dimension] - leftObjective[dimension];
