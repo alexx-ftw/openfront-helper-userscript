@@ -483,13 +483,68 @@
       const candidates = await this.collectNukeCandidates(
         target, selectedNuke.type, silos, difficulty,
       );
-      const best = await this.selectBuildableNukeCandidate(candidates, selectedNuke.type);
-
+      // Legendary salvo discipline (goal requirement): never send a lone
+      // bomb through a SAM-covered trajectory — it is intercepted gold and
+      // invites retaliation. Split candidates into clear shots (fired in
+      // preference) and covered ones, which only fire when our ready silo
+      // capacity can saturate the covering SAM levels (sum + 1).
+      const { clear, covered } = this.partitionCandidatesBySamCoverage(
+        candidates,
+        selectedNuke.type,
+        difficulty,
+      );
+      const best = await this.selectBuildableNukeCandidate(clear, selectedNuke.type);
       if (best && (best.value > 0 || !isAtLeastHardDifficulty(difficulty))) {
         await this.sendNuke(best.tile, selectedNuke.type, target);
-      } else if (isAtLeastHardDifficulty(difficulty)) {
+        return;
+      }
+      const saturated = await this.selectBuildableNukeCandidate(
+        covered.filter((cand) =>
+          this.siloCapacitySaturatesCover(cand.coveringSamLevels ?? 0, silos)),
+        selectedNuke.type,
+      );
+      if (saturated && saturated.value > 0) {
+        await this.sendNuke(saturated.tile, selectedNuke.type, target);
+        return;
+      }
+      if (isAtLeastHardDifficulty(difficulty)) {
         await this.maybeDestroyEnemySam(target);
       }
+    }
+
+    partitionCandidatesBySamCoverage(candidates, nukeType, difficulty) {
+      const clear = [];
+      const covered = [];
+      for (const cand of candidates) {
+        if (difficulty !== Difficulty.Legendary) {
+          clear.push(cand);
+          continue;
+        }
+        const spawnTile = this.nukeSpawn(nukeType, cand.tile);
+        const coveringLevel =
+          spawnTile === false || !this.isTrajectoryInterceptableBySam(spawnTile, cand.tile)
+            ? 0
+            : this.findEnemySamsCoveringTile(cand.tile).reduce(
+                (sum, sam) => sum + Math.max(0, Number(sam.level?.()) || 0),
+                0,
+              );
+        const entry = { ...cand, coveringSamLevels: coveringLevel };
+        if (coveringLevel > 0) covered.push(entry);
+        else clear.push(entry);
+      }
+      return { clear, covered };
+    }
+
+    siloCapacitySaturatesCover(coveringSamLevels, silos) {
+      if (coveringSamLevels <= 0) return true;
+      let readyShots = 0;
+      for (const silo of silos || []) {
+        if (silo?.isUnderConstruction?.() === true) continue;
+        readyShots += Math.max(0, Number(silo.level?.()) || 1);
+      }
+      // +1: the first bombs exhaust the SAM's interceptor charges; the
+      // remaining capacity lands. Mirrors the samSalvoStillViable math.
+      return readyShots > coveringSamLevels;
     }
 
     /**
