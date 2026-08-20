@@ -33,6 +33,7 @@ const UNIT = {
   TradeShip: "Trade Ship",
   Warship: "Warship",
 };
+let testDifficulty = "Impossible";
 const sandbox = {
   UNIT,
   Difficulty: {
@@ -46,7 +47,7 @@ const sandbox = {
   Relation: { Hostile: "Hostile" },
   PlayerType: { Bot: "Bot" },
   state: { settings: { winFixes: true }, stats: { nukes: 0 }, recentMirvHits: [] },
-  currentDifficulty: () => "Impossible",
+  currentDifficulty: () => testDifficulty,
   isAtLeastHardDifficulty: () => true,
   console,
 };
@@ -103,7 +104,7 @@ legendaryHydroSpecialist.isHydroNation = true;
 legendaryHydroSpecialist.isUnderHeavyAttack = () => false;
 legendaryHydroSpecialist.getPerceivedNukeCost = async (type) =>
   type === UNIT.HydrogenBomb ? 5_000_000n : 750_000n;
-sandbox.currentDifficulty = () => sandbox.Difficulty.Legendary;
+testDifficulty = sandbox.Difficulty.Legendary;
 const legendaryFallbackNuke = await legendaryHydroSpecialist.selectAffordableNuke();
 assert.equal(legendaryFallbackNuke?.type, UNIT.AtomBomb);
 assert.equal(
@@ -111,7 +112,7 @@ assert.equal(
   750_000n,
   "Legendary uses an affordable Atom instead of leaving a ready Silo idle while saving for Hydrogen",
 );
-sandbox.currentDifficulty = () => sandbox.Difficulty.Impossible;
+testDifficulty = sandbox.Difficulty.Impossible;
 assert.equal(
   await legendaryHydroSpecialist.selectAffordableNuke(),
   null,
@@ -153,6 +154,44 @@ assert.equal(
   behavior.shouldDeferNukeForEconomy(target, 5_000_000n),
   true,
   "An ordinary offensive nuke yields to the shared economy/defense reserve",
+);
+
+testDifficulty = sandbox.Difficulty.Legendary;
+const valueGuard = Object.create(sandbox.__NukeBehavior.prototype);
+valueGuard.player = { gold: () => 10_000_000n };
+valueGuard.game = {
+  euclideanDistSquared: () => 0,
+  config: () => ({
+    nukeMagnitudes: () => ({ outer: 100 }),
+  }),
+};
+valueGuard.isUnderHeavyAttack = () => false;
+valueGuard.isRetaliationNukeTarget = () => false;
+const cheapTarget = {
+  units: () => [{ type: () => UNIT.City, level: () => 1, tile: () => 20 }],
+};
+valueGuard.nukeStructureValue = () => 25_000;
+valueGuard.findEnemySamsCoveringTile = () => [];
+assert.equal(
+  await valueGuard.nukeHasPositiveExpectedValue(
+    { tile: 10, coveringSamLevels: 0 },
+    cheapTarget,
+    { type: UNIT.HydrogenBomb, cost: 5_000_000n },
+    [{ isUnderConstruction: () => false, level: () => 1 }],
+  ),
+  false,
+  "Legendary skips an ordinary nuke whose vulnerable value is below its launch cost",
+);
+valueGuard.isUnderHeavyAttack = () => true;
+assert.equal(
+  await valueGuard.nukeHasPositiveExpectedValue(
+    { tile: 10, coveringSamLevels: 0 },
+    cheapTarget,
+    { type: UNIT.HydrogenBomb, cost: 5_000_000n },
+    [],
+  ),
+  true,
+  "heavy defense keeps the emergency nuke path available despite negative value",
 );
 assert.deepEqual(
   policyCalls,

@@ -494,7 +494,16 @@
         difficulty,
       );
       const best = await this.selectBuildableNukeCandidate(clear, selectedNuke.type);
-      if (best && (best.value > 0 || !isAtLeastHardDifficulty(difficulty))) {
+      if (
+        best &&
+        (best.value > 0 || !isAtLeastHardDifficulty(difficulty)) &&
+        await this.nukeHasPositiveExpectedValue(
+          best,
+          target,
+          selectedNuke,
+          silos,
+        )
+      ) {
         await this.sendNuke(best.tile, selectedNuke.type, target);
         return;
       }
@@ -503,12 +512,63 @@
           this.siloCapacitySaturatesCover(cand.coveringSamLevels ?? 0, silos)),
         selectedNuke.type,
       );
-      if (saturated && saturated.value > 0) {
+      if (
+        saturated &&
+        saturated.value > 0 &&
+        await this.nukeHasPositiveExpectedValue(
+          saturated,
+          target,
+          selectedNuke,
+          silos,
+        )
+      ) {
         await this.sendNuke(saturated.tile, selectedNuke.type, target);
         return;
       }
       if (isAtLeastHardDifficulty(difficulty)) {
         await this.maybeDestroyEnemySam(target);
+      }
+    }
+
+    async nukeHasPositiveExpectedValue(candidate, target, selectedNuke, silos) {
+      if (currentDifficulty() !== Difficulty.Legendary) return true;
+      if (this.isUnderHeavyAttack() || this.isRetaliationNukeTarget(target)) return true;
+      const structures = target?.units?.(...NUKE_STRUCTURES_TYPES) || [];
+      const magnitude = this.game.config().nukeMagnitudes(selectedNuke.type);
+      const outerDist = euclDistFN(candidate.tile, magnitude.outer, false);
+      const vulnerableValue = structures
+        .filter((unit) => outerDist(this.game, unit.tile()))
+        .reduce((sum, unit) => sum + this.nukeStructureValue(unit), 0);
+      if (vulnerableValue <= 0) return false;
+      const coveringSamLevels = Number(candidate.coveringSamLevels || 0);
+      const readySiloCapacity = (silos || []).reduce(
+        (sum, silo) =>
+          sum + (silo?.isUnderConstruction?.() === true ? 0 : Math.max(1, Number(silo.level?.()) || 1)),
+        0,
+      );
+      const requiredShots = Math.max(1, coveringSamLevels + 1);
+      const launchCount = coveringSamLevels > 0 ? requiredShots : 1;
+      const totalCost = BigInt(launchCount) * BigInt(selectedNuke.cost || 0n);
+      return BigInt(Math.round(vulnerableValue)) >= totalCost &&
+        (coveringSamLevels <= 0 || readySiloCapacity >= requiredShots);
+    }
+
+    nukeStructureValue(unit) {
+      const level = Math.max(1, Number(unit?.level?.()) || 1);
+      switch (unit?.type?.()) {
+        case UNIT.City:
+          return 25_000 * level;
+        case UNIT.DefensePost:
+          return 5_000 * level;
+        case UNIT.MissileSilo:
+          return 50_000 * level;
+        case UNIT.SAMLauncher:
+          return 40_000 * level;
+        case UNIT.Port:
+        case UNIT.Factory:
+          return 15_000 * level;
+        default:
+          return 0;
       }
     }
 
