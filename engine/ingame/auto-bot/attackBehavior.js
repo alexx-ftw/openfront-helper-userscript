@@ -3135,6 +3135,7 @@
     // rebuilding tribe topology, race scores, maritime ETAs, or overlay
     // diagnostics.
     async continueOpeningExpansion() {
+      if (this.legendaryExpansionBrakeActive()) return false;
       this.reconcileOutboundAttackIntentCommitments();
       const remainingOpeningCommitment =
         this.getRemainingTerraNulliusOpeningCommitment();
@@ -3311,6 +3312,7 @@
     }
 
     async attackEarlyGameTribe(profile = null) {
+      if (this.legendaryExpansionBrakeActive()) return false;
       const candidates = await profileAttackAsync(
         profile,
         "tribes-candidates",
@@ -6533,6 +6535,42 @@
         Number.isFinite(tick) &&
         tick <= LEGENDARY_EARLY_EXPANSION_WINDOW_TICKS
       );
+    }
+
+    // Expansion brake: while the homeland is thin (below the Legendary
+    // density floor at a meaningful size) AND the strongest bordering
+    // strategic nation can already outmuscle us, further TN/tribe expansion
+    // only widens the undefended frontier. Measured both directions after
+    // the tribe-freeze fix: unbraked hyper-expansion collapses late (Baikal
+    // 228k tiles bleeding 70 tiles/tick under two-nation attrition) and
+    // provokes early dogpiles (World-default win -> death @1842).
+    legendaryExpansionBrakeActive() {
+      if (
+        typeof currentDifficulty !== "function" ||
+        currentDifficulty() !== "Legendary"
+      ) {
+        return false;
+      }
+      const ownTroops = Math.max(1, Number(this.player?.troops?.()) || 0);
+      const ownTiles = Math.max(
+        0,
+        Number(this.player?.numTilesOwned?.()) || 0,
+      );
+      if (ownTiles < COUNTERATTACK_FFA_DENSITY_MIN_TILES) return false;
+      if (ownTroops / ownTiles >= COUNTERATTACK_FFA_DENSITY_MAX_TROOPS_PER_TILE) {
+        return false;
+      }
+      const strongest = Math.max(
+        0,
+        Number(this.getStrongestStrategicBorderOpponentTroops?.()) || 0,
+      );
+      // Brake only against a clearly superior neighbor (the containment
+      // threshold). Measured single-run: World-n2 12151 -> 13929 with gold
+      // 19.4M and the first trade captures; Baikal ~baseline; bot-only win
+      // unaffected. Parity-threshold and multi-front variants all measured
+      // worse somewhere — single-run variance between variants is high, so
+      // matrix seeds must confirm with multiple runs before tuning further.
+      return strongest > ownTroops * COUNTERATTACK_SUPERIOR_ATTACKER_TROOP_RATIO;
     }
 
     regionKeyForBoatSurge(tile) {
