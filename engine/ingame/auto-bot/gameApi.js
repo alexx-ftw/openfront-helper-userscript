@@ -642,6 +642,9 @@
       _configProxy = new Proxy(sc, {
         get(t, prop) {
           if (prop === "maxTroops") return (p) => sc.maxTroops(unwrap(p));
+          if (prop === "spawnImmunityDuration") {
+            return () => sc.spawnImmunityDuration?.() ?? 0;
+          }
           // OpenFront renamed the legacy defaultNukeSpeed accessor to the
           // per-warhead nukeSpeed(unitType) API. Keep the port contract stable
           // for the trajectory, SAM, and missile planners while always asking
@@ -1002,6 +1005,11 @@
         typeof src.isSpawnImmunityActive === "function"
           ? src.isSpawnImmunityActive(...a)
           : false,
+      spawnImmunityDuration: () =>
+        typeof src.config === "function" &&
+        typeof src.config()?.spawnImmunityDuration === "function"
+          ? src.config().spawnImmunityDuration()
+          : 0,
       config: () => configProxy(),
       motionPlans: () =>
         typeof src.motionPlans === "function" ? src.motionPlans() : null,

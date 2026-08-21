@@ -1091,6 +1091,7 @@
 
     async handleWinFixStructurePriorities(legendaryDifficulty) {
       if (!state.settings.winFixes) return false;
+      if (await this.maybeSpawnPeaceWindowSam()) return true;
       // The coverage plan upgrades an existing useful SAM whenever increased
       // range can cover the structure set. It asks for another physical site
       // only when geometry proves that leveling cannot close the gap.
@@ -2388,8 +2389,11 @@
         // waiting for a missile to fly means the 300-tick SAM construction
         // starts only after buildings have already been lost (measured on
         // Baikal — four structures nuked before the baseline completed).
+        // The extended-immunity peace window is an equally valid trigger:
+        // the strike becomes possible the moment it expires.
         (this.hasObservedHostileMissileLaunch() ||
-          this.hasBuiltHostileSiloThreat())
+          this.hasBuiltHostileSiloThreat() ||
+          this.legendaryPeaceWindowSamChestDue())
       ) {
         return this.maybeSpawnStructure(UNIT.SAMLauncher, {
           allowPreemptiveSam: true,
@@ -2822,9 +2826,33 @@
         UNIT.SAMLauncher,
       );
       if (ownSam === null || ownSam.count > 0) return false;
+      // Extended spawn immunity (Temporary PVP Immunity profile) is a
+      // guaranteed peace window: attacks are impossible until it expires, so
+      // the 1.5M interceptor must be funded THEN — after it ends, the first
+      // hostile nuke can arrive faster than 300 construction ticks (measured
+      // More-Than-Luck temp row: first nuke 11245, SAM never ready).
+      if (this.legendaryPeaceWindowSamChestDue()) return true;
       if (!this.shouldBuildHostileSiloSam()) return false;
       const gold = legendaryBigInt(this.player?.gold?.() || 0n);
       return gold < this.cost(UNIT.SAMLauncher);
+    }
+
+    // True while extended spawn immunity protects us but expires soon enough
+    // that SAM construction must start inside the window to beat the first
+    // possible strike. Ordinary 50-tick immunity is the no-modifier default
+    // and does not justify hoarding before any hostile silo exists.
+    legendaryPeaceWindowSamChestDue() {
+      if (typeof this.game?.isSpawnImmunityActive !== "function") return false;
+      if (this.game.isSpawnImmunityActive() !== true) return false;
+      const duration = Number(
+        this.game?.config?.()?.spawnImmunityDuration?.() ?? 0,
+      );
+      const ticks = Number(this.game?.ticks?.() ?? 0);
+      if (duration <= 500) return false;
+      // Start hoarding once half the window has elapsed and the first City
+      // exists; before that, growth is still the better use of the
+      // guaranteed peace.
+      return this.ownedLevels(UNIT.City) > 0 && ticks >= Math.floor(duration / 2);
     }
 
     legendarySamChestBlocksType(type) {
@@ -10299,6 +10327,18 @@
      * Highest priority: keep at least one built SAM's range over every own
      * structure so a Hydrogen Bomb aimed at any of them has an interceptor.
      */
+    async maybeSpawnPeaceWindowSam() {
+      if (!this.legendaryPeaceWindowSamChestDue()) return false;
+      if ((this.player?.units?.(UNIT.SAMLauncher) || []).length > 0) return false;
+      if (this.game.config().isUnitDisabled?.(UNIT.SAMLauncher) === true) return false;
+      await this.maybeSpawnStructure(UNIT.SAMLauncher, {
+        allowPreemptiveSam: true,
+        useActualCost: true,
+        prioritizeStructureCoverage: true,
+      });
+      return true;
+    }
+
     async maybeEnsureHydrogenStructureCoverage() {
       // Coverage is recomputed from completed geometry. An in-flight SAM still
       // owns the construction lane; reserve the lane until it completes rather
