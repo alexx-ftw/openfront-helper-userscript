@@ -554,19 +554,26 @@
     }
 
     nukeStructureValue(unit) {
+      // Authoritative replacement values mirroring the engine's build costs
+      // (Config.unitInfo): City/Port/Factory double per level from 125k,
+      // MissileSilo is flat 1M, SAM steps 1.5M/3M, DefensePost steps 50k
+      // capped at 250k. The earlier flat 25k/level City pricing made the
+      // positive-EV guard veto every legitimate shot (measured More Than
+      // Luck: 23 candidates, 4 positive-scored, best 10k vs a real City-3
+      // value of 1M — valueGate false at 720 consecutive decisions).
       const level = Math.max(1, Number(unit?.level?.()) || 1);
       switch (unit?.type?.()) {
         case UNIT.City:
-          return 25_000 * level;
-        case UNIT.DefensePost:
-          return 5_000 * level;
-        case UNIT.MissileSilo:
-          return 50_000 * level;
-        case UNIT.SAMLauncher:
-          return 40_000 * level;
+          return Math.min(1_000_000, Math.pow(2, level - 1) * 125_000);
         case UNIT.Port:
         case UNIT.Factory:
-          return 15_000 * level;
+          return Math.min(1_000_000, Math.pow(2, level - 1) * 125_000);
+        case UNIT.MissileSilo:
+          return 1_000_000;
+        case UNIT.SAMLauncher:
+          return Math.min(3_000_000, level * 1_500_000);
+        case UNIT.DefensePost:
+          return Math.min(250_000, level * 50_000);
         default:
           return 0;
       }

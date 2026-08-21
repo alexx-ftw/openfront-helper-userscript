@@ -337,22 +337,85 @@ export class BundledOpponentBot {
     behavior.__ofhNukeTraceEnabled = true;
     const originalMaybe = behavior.maybeSendNuke;
     if (typeof originalMaybe !== "function") return;
+    let lastTarget = null;
+    let lastCandidates = [];
+    let lastValueGate = null;
+
+    const originalFindTarget = behavior.findBestNukeTarget;
+    if (typeof originalFindTarget === "function") {
+      behavior.findBestNukeTarget = (...args) => {
+        const target = originalFindTarget.apply(behavior, args);
+        lastTarget = target;
+        return target;
+      };
+    }
+    const originalCollect = behavior.collectNukeCandidates;
+    if (typeof originalCollect === "function") {
+      behavior.collectNukeCandidates = async (...args) => {
+        const candidates = await originalCollect.apply(behavior, args);
+        lastCandidates = candidates;
+        return candidates;
+      };
+    }
+    const originalValueGate = behavior.nukeHasPositiveExpectedValue;
+    if (typeof originalValueGate === "function") {
+      behavior.nukeHasPositiveExpectedValue = async (...args) => {
+        const value = await originalValueGate.apply(behavior, args);
+        lastValueGate = value;
+        return value;
+      };
+    }
     behavior.maybeSendNuke = async (...args) => {
       const beforeAtoms = Number(behavior.atomBombsLaunched || 0);
       const beforeHydro = Number(behavior.hydrogenBombsLaunched || 0);
       const result = await originalMaybe.apply(behavior, args);
-      this.structureTrace.push({
-        kind: "nuke-decision",
-        tick: this.game.ticks(),
-        atomBombsBefore: beforeAtoms,
-        hydrogenBombsBefore: beforeHydro,
-        atomBombsAfter: Number(behavior.atomBombsLaunched || 0),
-        hydrogenBombsAfter: Number(behavior.hydrogenBombsLaunched || 0),
-        pending: Number(behavior._pendingNukeLaunches?.length || 0),
-        gold: Number(behavior.player?.gold?.() || 0n),
-        silos: (behavior.player?.units?.("Missile Silo") || []).length,
+      this.recordNukeDecisionTrace({
+        behavior,
+        beforeAtoms,
+        beforeHydro,
+        candidates: lastCandidates,
+        target: lastTarget,
+        valueGate: lastValueGate,
       });
       return result;
+    };
+  }
+
+  recordNukeDecisionTrace({ behavior, beforeAtoms, beforeHydro, candidates, target, valueGate }) {
+    this.structureTrace.push(
+      this.nukeDecisionTraceRecord({
+        behavior,
+        beforeAtoms,
+        beforeHydro,
+        candidates,
+        target,
+        valueGate,
+      }),
+    );
+  }
+
+  nukeDecisionTraceRecord({ behavior, beforeAtoms, beforeHydro, candidates, target, valueGate }) {
+    return {
+      kind: "nuke-decision",
+      tick: this.game.ticks(),
+      ...this.nukeDecisionLaunchState(behavior, beforeAtoms, beforeHydro),
+      gold: Number(behavior.player?.gold?.() || 0n),
+      silos: (behavior.player?.units?.("Missile Silo") || []).length,
+      targetID: target?.smallID?.() ?? null,
+      candidateCount: candidates.length,
+      positiveCandidates: candidates.filter((candidate) => candidate.value > 0).length,
+      bestCandidateValue: candidates[0]?.value ?? null,
+      valueGate,
+    };
+  }
+
+  nukeDecisionLaunchState(behavior, beforeAtoms, beforeHydro) {
+    return {
+      atomBombsBefore: beforeAtoms,
+      hydrogenBombsBefore: beforeHydro,
+      atomBombsAfter: Number(behavior.atomBombsLaunched || 0),
+      hydrogenBombsAfter: Number(behavior.hydrogenBombsLaunched || 0),
+      pending: Number(behavior._pendingNukeLaunches?.length || 0),
     };
   }
 
@@ -1048,9 +1111,7 @@ export class BundledOpponentBot {
           ? candidate.boatEtaTicks
           : null,
         targetTroops: Math.round(targetTroops),
-        ownTroops: Math.round(
-          Math.max(0, Number(attackBehavior.player?.troops?.()) || 0),
-        ),
+        ownTroops: Math.round(Math.max(0, Number(attackBehavior.player?.troops?.()) || 0)),
         launched: result === true,
       });
       return result;
@@ -1212,9 +1273,7 @@ export class BundledOpponentBot {
   }
 
   findEnginePlayer() {
-    return this.game
-      .players?.()
-      ?.find?.((candidate) => candidate.clientID?.() === this.clientID);
+    return this.game.players?.()?.find?.((candidate) => candidate.clientID?.() === this.clientID);
   }
 
   warnDecideSkipWhileAlive(player, enginePlayer) {
