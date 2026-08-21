@@ -746,10 +746,7 @@
       const hostileSiloSamDecision = await profileStructureAsync(
         profile,
         "structures-hostile-silo-sam",
-        () =>
-          legendaryDifficulty && !this.hasBuiltMissileSilo(this.player)
-            ? null
-            : this.handleHostileSiloSamMaximumPriority(),
+        () => this.handleHostileSiloSamMaximumPriority(),
       );
       if (hostileSiloSamDecision !== null) return hostileSiloSamDecision;
 
