@@ -9485,9 +9485,7 @@
     addLegendaryConstructionCandidate(context, type, values = {}) {
       if (context.config.isUnitDisabled(type) || !autoBotBuildAllowed(type)) return;
       if (this.legendarySamChestBlocksType(type)) return;
-      if (type === UNIT.SAMLauncher && !this.hasObservedHostileMissileLaunch()) {
-        return;
-      }
+      if (this.samCandidateLaunchGate(type)) return;
       if (
         type === UNIT.Port &&
         !this.legendaryPortCapable(context.hasOceanPortTiles, context.hasCoastalTiles)
@@ -9520,6 +9518,14 @@
         ...objective,
         ...values,
       });
+    }
+
+    samCandidateLaunchGate(type) {
+      return (
+        type === UNIT.SAMLauncher &&
+        !this.hasObservedHostileMissileLaunch() &&
+        !this.hydrogenCoverageNeedsSam()
+      );
     }
 
     addLegendaryRatioCandidate(context, type, values = {}) {
