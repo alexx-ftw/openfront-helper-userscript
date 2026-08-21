@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
-import { fileURLToPath } from "node:url";
 
 import { NukeExecution } from "../openfront-engine/src/core/execution/NukeExecution";
-import { PlayerInfo, PlayerType, UnitType } from "../openfront-engine/src/core/game/Game";
-import { setup } from "../openfront-engine/tests/util/Setup";
+import { UnitType } from "../openfront-engine/src/core/game/Game";
+import { setupTwoPlayerGame } from "./helpers/two-player-game.mts";
 
 // Live-engine ground truth for the auto-bot's missile blast-co-location rule.
 // The bot spaces new MissileSilo/SAMLauncher tiles apart using the hydrogen
@@ -12,16 +11,7 @@ import { setup } from "../openfront-engine/tests/util/Setup";
 // inner radius only bounds terrain fallout. This fixture detonates a real
 // hydrogen bomb between three real cities and asserts exactly that boundary,
 // so the placement penalty can never silently drift from engine behavior.
-const engineTestsUtil = fileURLToPath(new URL("../openfront-engine/tests/util/", import.meta.url));
-const game = await setup(
-  "big_plains",
-  { infiniteGold: true, instantBuild: true },
-  [
-    new PlayerInfo("defender", PlayerType.Human, null, "defender"),
-    new PlayerInfo("attacker", PlayerType.Human, null, "attacker"),
-  ],
-  engineTestsUtil,
-);
+const game = await setupTwoPlayerGame("big_plains");
 
 const defender = game.player("defender");
 const attacker = game.player("attacker");

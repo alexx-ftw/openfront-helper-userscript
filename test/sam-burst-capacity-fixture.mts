@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
-import { fileURLToPath } from "node:url";
 
 import { NukeExecution } from "../openfront-engine/src/core/execution/NukeExecution";
 import { SAMLauncherExecution } from "../openfront-engine/src/core/execution/SAMLauncherExecution";
-import { PlayerInfo, PlayerType, UnitType } from "../openfront-engine/src/core/game/Game";
-import { setup } from "../openfront-engine/tests/util/Setup";
+import { UnitType } from "../openfront-engine/src/core/game/Game";
+import { setupTwoPlayerGame } from "./helpers/two-player-game.mts";
 
 // Live-engine validation of the auto-bot's SAM-overwhelm arithmetic. The bot's
 // createSamOverwhelmPlan sizes a penetrating salvo as sum(coveringSamLevels)+1
@@ -14,16 +13,7 @@ import { setup } from "../openfront-engine/tests/util/Setup";
 // real trajectories) and asserts the engine enforces exactly that capacity:
 // two bombs are shot down, two land, and one slot frees up only after a full
 // cooldown.
-const engineTestsUtil = fileURLToPath(new URL("../openfront-engine/tests/util/", import.meta.url));
-const game = await setup(
-  "big_plains",
-  { infiniteGold: true, instantBuild: true },
-  [
-    new PlayerInfo("defender", PlayerType.Human, null, "defender"),
-    new PlayerInfo("attacker", PlayerType.Human, null, "attacker"),
-  ],
-  engineTestsUtil,
-);
+const game = await setupTwoPlayerGame("big_plains");
 
 const defender = game.player("defender");
 const attacker = game.player("attacker");

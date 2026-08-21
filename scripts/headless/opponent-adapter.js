@@ -673,6 +673,63 @@ export class BundledOpponentBot {
         return emitted;
       };
     }
+    this.enableCommerceRaidTrace(prototype);
+  }
+
+  enableCommerceRaidTrace(prototype) {
+    const adapter = this;
+    const originalAnchors = prototype.commerceRaidAnchors;
+    const originalStationed = prototype.countRaidStationedShips;
+    const originalIdle = prototype.collectIdleRaidShips;
+    const originalService = prototype.serviceCommerceRaids;
+    if (
+      typeof originalAnchors !== "function" ||
+      typeof originalStationed !== "function" ||
+      typeof originalIdle !== "function" ||
+      typeof originalService !== "function"
+    )
+      return;
+    prototype.commerceRaidAnchors = function (...args) {
+      const anchors = originalAnchors.apply(this, args);
+      this.__ofhCommerceTrace = {
+        anchors: Array.isArray(anchors) ? anchors.slice() : [],
+      };
+      return anchors;
+    };
+    prototype.countRaidStationedShips = function (...args) {
+      const stationed = originalStationed.apply(this, args);
+      if (this.__ofhCommerceTrace) {
+        this.__ofhCommerceTrace.stationed =
+          stationed instanceof Map ? [...stationed.entries()] : [];
+      }
+      return stationed;
+    };
+    prototype.collectIdleRaidShips = function (...args) {
+      const idle = originalIdle.apply(this, args);
+      if (this.__ofhCommerceTrace) {
+        this.__ofhCommerceTrace.idle = Array.isArray(idle) ? idle.map((ship) => ship.id()) : [];
+      }
+      return idle;
+    };
+    prototype.serviceCommerceRaids = function (...args) {
+      const before = adapter.intentBuffer.length;
+      this.__ofhCommerceTrace = null;
+      const result = originalService.apply(this, args);
+      const trace = this.__ofhCommerceTrace ?? {};
+      adapter.navalTrace.push({
+        phase: "commerce-raid",
+        tick: this.game.ticks(),
+        anchors: trace.anchors ?? [],
+        stationed: trace.stationed ?? [],
+        idle: trace.idle ?? [],
+        moves: adapter.intentBuffer
+          .slice(before)
+          .filter((intent) => intent.type === "move_warship")
+          .map((intent) => ({ unitIds: intent.unitIds, tile: intent.tile })),
+        result: result === true,
+      });
+      return result;
+    };
   }
 
   warshipBuildTraceSnapshot(behavior) {

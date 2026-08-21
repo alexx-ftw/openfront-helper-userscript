@@ -275,6 +275,12 @@
     // the latest enemy-SAM overwhelm plan. StructureBehavior services this on
     // the next build tick, after the H-bomb SAM-protection priority.
     nukeWantSlots: null,
+    // Metric-aware win pacing ("commerce stall"): per-tick memo + arming
+    // window + permanent lock-off (see attackBehavior.winPacingThrottle).
+    winPacingAtTick: null,
+    winPacingActive: false,
+    winPacingArmedTick: null,
+    winPacingLockedOff: false,
     lastMirv: null, // { sid, at } — last MIRV target+time (per-target cooldown)
     navalThreatAt: 0, // ts of last enemy ship/transport near our ports (build extra hulls)
     // Game-speed tracking: the game's tick rate changes with the speed setting.

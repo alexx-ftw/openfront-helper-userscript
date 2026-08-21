@@ -216,6 +216,9 @@
         return false;
       }
       const smartState = this.ensureSmartState();
+      if (this.player.units(UNIT.Warship).length > 0) {
+        smartState.warshipFleetEverBuilt = true;
+      }
       if (
         smartState.lastInvasionBuildTick === this.game.ticks() ||
         this.hasPendingWarshipBuild(smartState)
@@ -224,7 +227,9 @@
       }
       const maritimeEmergency =
         this.incomingMaritimeInvasionSignal()?.active === true;
-      if (this.shouldDeferWarshipBuild(maritimeEmergency)) {
+      if (
+        this.shouldDeferWarshipBuildForFloor(maritimeEmergency, smartState)
+      ) {
         return false;
       }
       // A live transport aimed at our territory bypasses the ordinary 50% spawn
@@ -258,6 +263,27 @@
       return this.maybeSpawnRaidingWarship(smartState);
     }
 
+    shouldRestoreDefenseFloor(s) {
+      if (!this.raidingTierActive() || s.warshipFleetEverBuilt !== true) return false;
+      // The first replacement may bypass the ordinary offensive reserve only
+      // after the first SAM has entered the build queue. Before that point the
+      // reserve is the only thing protecting the first-SAM deadline.
+      if (this.player.units(UNIT.SAMLauncher).length === 0) return false;
+      const active = this.activeWarships().length;
+      return active < 2 && this.player.units(UNIT.Port).some(isCompletedWarshipPort);
+    }
+
+    shouldDeferWarshipBuildForFloor(maritimeEmergency, smartState) {
+      const cost = this.cost(UNIT.Warship);
+      if (this.shouldDeferWarshipForFirstSam(cost)) return true;
+      const restoreDefenseFloor = this.shouldRestoreDefenseFloor(smartState);
+      const growthBypass = this.raidingDominanceGrowthActive();
+      return !maritimeEmergency &&
+        this.shouldDeferWarshipForDefense(cost) &&
+        !restoreDefenseFloor &&
+        !growthBypass;
+    }
+
     // Legendary raiding fleet: with hostile trade traffic on the water and a
     // completed Port, keep building warships toward a bounded fleet. Captures
     // fund the nuclear economy and 25 of them promote a ship to veterancy 3.
@@ -283,9 +309,12 @@
       if (fleet >= fleetCap) return false;
       const warshipCost = this.cost(UNIT.Warship);
       const arsenalReserve = this.legendaryArsenalReserve();
+      const restoreDefenseFloor = this.shouldRestoreDefenseFloor(smartState);
       if (
         fleet > 0 &&
-        this.player.gold() < warshipCost + warshipCost / 2n + arsenalReserve
+        this.player.gold() < warshipCost + warshipCost / 2n + arsenalReserve &&
+        !restoreDefenseFloor &&
+        !this.raidingDominanceGrowthActive()
       ) {
         return false;
       }
@@ -302,6 +331,31 @@
         tr("🏴‍☠️ Raid fleet"),
         "raiding",
       );
+    }
+
+    // A commanding mid-game lead (>2x the best rival's tiles) with light
+    // hostile naval pressure and a live economy is the measured signature
+    // of the winning rows whose commerce window was cut short by small
+    // fleet size. Player scan runs only when the cheap gates pass.
+    raidingDominanceGrowthActive() {
+      const tick = this.game?.ticks?.();
+      if (!Number.isFinite(tick) || tick < 5000) return false;
+      if (this.hostileActiveWarshipCount() >= 4) return false;
+      const ownTiles = Number(this.player.numTilesOwned?.() || 0);
+      if (ownTiles < 20000) return false;
+      const bestRival = this.bestRivalTileCount();
+      return bestRival > 0 && ownTiles > bestRival * 2;
+    }
+
+    bestRivalTileCount() {
+      let bestRival = 0;
+      for (const other of this.game.players()) {
+        if (other.smallID() === this.player.smallID()) continue;
+        if (other.isAlive?.() === false) continue;
+        const tiles = Number(other.numTilesOwned?.() || 0);
+        if (tiles > bestRival) bestRival = tiles;
+      }
+      return bestRival;
     }
 
     shouldDeferWarshipForDefense(warshipCost) {
@@ -582,9 +636,24 @@
 
     // maybeMoveWarship — NationWarshipBehavior (private).
     maybeMoveWarship(tile) {
-      // Make sure we are targeting water
+      // Make sure we're targeting water
       if (this.game.isWater(tile)) {
-        const warship = this.selectClosestIdleWarship(tile, null, 0, 0)?.warship;
+        const s = this.ensureSmartState();
+        let warship = this.selectClosestIdleWarship(tile, null, 0, 0)?.warship;
+        // Retaliation/counter-infestation targets are enemy WARSHIPS — a duel
+        // whose final blow ZEROES the victor's veterancy meter. When the
+        // linear selector picked a loaded flagship, defer to the next-closest
+        // green hull so the reset lands where it costs least.
+        if (
+          warship &&
+          this.warshipDuelDefersFlagship(s, warship)
+        ) {
+          const alternate = this.selectClosestIdleWarship(
+            tile, s, this.game.ticks(), 0, true,
+          )?.warship;
+          if (alternate) warship = alternate;
+        }
+
 
         if (warship) {
           // src: warship.updateWarshipState({ patrolTile: tile });
@@ -859,6 +928,12 @@
         pendingWarshipBuild: null,
         raidFlagshipId: null,
         raidAnchorSource: null,
+        defenseSubfleetIds: new Set(),
+        defenseSubfleetSignature: null,
+        defenseSubfleetComputedAtTick: null,
+        commerceCaptureEstimate: null,
+        commerceCaptureEstimateAtTick: null,
+        warshipFleetEverBuilt: false,
       };
       return this.smartState;
     }
@@ -1710,8 +1785,9 @@
       const boatSpeed = this.movementSpeed(null, UNIT.TransportShip);
       const warshipSpeed = this.movementSpeed(null, UNIT.Warship);
       const attackRange = this.warshipAttackRange();
+      const dispatchPool = this.interceptionDispatchPool(availableWarships, invasions, s);
       const plan = planNavalInterceptions({
-        ships: availableWarships.map((warship) => ({ id: warship.id(), tile: warship.tile() })),
+        ships: dispatchPool.map((warship) => ({ id: warship.id(), tile: warship.tile() })),
         invasions,
         targetInvasions,
         route: (from, to) => this.interceptionRoute(from, to),
@@ -1724,7 +1800,7 @@
       s.invasionPlan = { tick: this.game.ticks(), invasions, plan };
       const newlyAssignedInvasionIds = this.assignNavalInterceptors(
         plan,
-        availableWarships,
+        dispatchPool,
         s,
       );
       const actionablePlan = {
@@ -1736,6 +1812,40 @@
       await this.buildUncoveredInterceptor(actionablePlan, invasions, s, {
         now, throttle, boatSpeed, warshipSpeed, attackRange,
       });
+    }
+
+    // Veterancy concentration (kill attribution is engine-side: the shell of
+    // the NEAREST hull lands the transport kill, and 10 kills = one level on
+    // a single meter). Dispatch the flagship alone whenever it can reach every
+    // live invasion in time; widen to the full pool the moment any invasion
+    // would go uncovered, so coverage is never sacrificed for concentration.
+    interceptionDispatchPool(availableWarships, invasions, s) {
+      if (!this.raidingTierActive() || availableWarships.length < 2) {
+        return availableWarships;
+      }
+      const flagshipId = this.selectRaidFlagshipId(s);
+      const flagship = availableWarships.find(
+        (warship) => String(warship.id()) === flagshipId,
+      );
+      if (!flagship) return availableWarships;
+      const boatSpeed = this.movementSpeed(null, UNIT.TransportShip);
+      const warshipSpeed = this.movementSpeed(null, UNIT.Warship);
+      const attackRange = this.warshipAttackRange();
+      const solo = planNavalInterceptions({
+        ships: [{ id: flagship.id(), tile: flagship.tile() }],
+        invasions,
+        targetInvasions: invasions,
+        route: (from, to) => this.interceptionRoute(from, to),
+        distance: (from, to) => this.waterDistance(from, to),
+        targetDistanceSquared: (from, to) => this.game.euclideanDistSquared(from, to),
+        boatSpeed,
+        warshipSpeed,
+        attackRange,
+      });
+      const soloCoversAll = invasions.every(
+        (invasion) => !solo.uncoveredIds.includes(invasion.id),
+      );
+      return soloCoversAll ? [flagship] : availableWarships;
     }
 
     smartWarshipPatrol() {
@@ -1862,6 +1972,7 @@
     liveTradeRaidAnchors() {
       const anchors = [];
       for (const tradeShip of this.game.units(UNIT.TradeShip) || []) {
+        if (this.tradeShipImmuneToPirates(tradeShip)) continue;
         const tile = tradeShip.tile?.();
         if (tile == null) continue;
         const x = this.game.x(tile);
@@ -1875,6 +1986,27 @@
         if (anchors.length >= 3) break;
       }
       return anchors;
+    }
+
+    // A ship inside the 20-tick pirate-immunity window cannot be captured this
+    // pass (engine re-arms it on every shoreline step). Spending one of only
+    // three anchor slots on it parks the fleet on a lane the engine refuses to
+    // let it collect; the ship re-enters eligibility at the next anchor
+    // refresh once it is back offshore.
+    tradeShipImmuneToPirates(tradeShip) {
+      const lastSet = Number(
+        tradeShip?.lastSetSafeFromPirates?.() ?? Number.NaN,
+      );
+      if (!Number.isFinite(lastSet)) return false;
+      const window = this.tradeShipPirateImmunityWindow();
+      return this.game.ticks() - lastSet < window;
+    }
+
+    tradeShipPirateImmunityWindow() {
+      const configured = Number(
+        this.game.config?.()?.safeFromPiratesCooldownMax?.(),
+      );
+      return Number.isFinite(configured) && configured > 0 ? configured : 20;
     }
 
     nearestHostileRaidNeighbor(port, ports, used) {
@@ -1897,8 +2029,24 @@
     }
 
     computeCommerceRaidAnchors() {
-      const liveTraffic = this.liveTradeRaidAnchors();
-      if (liveTraffic.length > 0) return liveTraffic;
+      // Port-pair lanes first: trade ships run fixed port-to-port routes, so a
+      // midpoint anchor per hostile port pair covers one full lane for the
+      // whole 300-tick refresh. Live traffic only fills slots the port
+      // geometry cannot (e.g. all hostile ports share one landmass edge).
+      const laneAnchors = this.hostilePortLaneAnchors();
+      if (laneAnchors.length >= 3) return laneAnchors;
+      const anchors = laneAnchors.slice();
+      for (const anchor of this.liveTradeRaidAnchors()) {
+        if (anchors.length >= 3) break;
+        if (anchors.some((existing) => this.game.manhattanDist(existing, anchor) < 35)) {
+          continue;
+        }
+        anchors.push(anchor);
+      }
+      return anchors;
+    }
+
+    hostilePortLaneAnchors() {
       const ports = this.hostileRaidPorts().sort(
         (left, right) => (right.level?.() ?? 1) - (left.level?.() ?? 1),
       );
@@ -1937,15 +2085,155 @@
       return shipsPerAnchor;
     }
 
+    commerceDefenseSubfleetIds(s) {
+      if (!this.raidingTierActive()) return new Set();
+      // Per-tick memo: the selector runs inside every patrol pass, and the
+      // roster, ports and veterancy cannot change within a single tick —
+      // skip the full-game Port scan and signature rebuild on repeat calls.
+      const tick = this.game.ticks();
+      if (s.defenseSubfleetComputedAtTick === tick) {
+        return s.defenseSubfleetIds;
+      }
+      s.defenseSubfleetComputedAtTick = tick;
+      const active = this.activeWarships();
+      const activeIds = new Set(active.map((ship) => String(ship.id())));
+      if (active.length === 0) {
+        s.defenseSubfleetIds = new Set();
+        s.defenseSubfleetSignature = null;
+        return s.defenseSubfleetIds;
+      }
+      // Adaptive hunter scaling: one hunter remains the small-fleet optimum
+      // (measured), but matrix WINNING rows end with trades short of 33
+      // because a single hull cannot cover enough lanes before the win —
+      // scale hunters with fleet size, live traffic, elapsed time and the
+      // capture deficit, while never dropping the coastal defense below the
+      // threat-adjusted floor.
+      const reserveCount = active.length - this.commerceHunterCount(s, active.length);
+      const ports = this.friendlyCombatPorts(this.player);
+      const references = ports
+        .map((port) => port.tile?.())
+        .filter((tile) => tile !== null && tile !== undefined);
+      if (references.length === 0 && s.defenseSubfleetIds.size > 0) {
+        s.defenseSubfleetIds = new Set(
+          [...s.defenseSubfleetIds].filter((id) => activeIds.has(id)),
+        );
+        return s.defenseSubfleetIds;
+      }
+      const referenceSignature = references
+        .map((tile) => String(tile))
+        .sort()
+        .join(",");
+      const activeSignature = [...activeIds].sort().join(",");
+      const signature = `${activeSignature}|${referenceSignature}|${reserveCount}`;
+      if (s.defenseSubfleetSignature === signature) return s.defenseSubfleetIds;
+      if (references.length === 0) {
+        s.defenseSubfleetIds = new Set();
+        s.defenseSubfleetSignature = signature;
+        return s.defenseSubfleetIds;
+      }
+      const ranked = active.map((ship, order) => ({
+        ship,
+        order,
+        distance: Math.min(
+          ...references.map((tile) => this.game.manhattanDist(ship.tile(), tile)),
+        ),
+      }));
+      ranked.sort((left, right) =>
+        left.distance - right.distance || left.order - right.order);
+      s.defenseSubfleetIds = new Set(
+        ranked.slice(0, reserveCount).map(({ ship }) => String(ship.id())),
+      );
+      s.defenseSubfleetSignature = signature;
+      return s.defenseSubfleetIds;
+    }
+
+    // Adaptive hunter count: single-hunter while the fleet is small or the
+    // game young (the diagnostic-seed optimum), escalating to 2-3 hunters on
+    // large late-game fleets under heavy traffic when the capture pace lags
+    // the 33-target. The coastal defense floor (threat-adjusted 2-4) is
+    // never breached, and exactly one hunter is kept whenever any hull can
+    // be spared.
+    commerceHunterCount(s, activeCount) {
+      if (activeCount <= 0) return 0;
+      let hunters = 1;
+      const tick = this.game.ticks();
+      const traffic = typeof this.game.units === "function"
+        ? this.game.units(UNIT.TradeShip).length
+        : 0;
+      const trafficHeavy = traffic > 150;
+      const lateGame = tick > 6000;
+      if (activeCount >= 6 && trafficHeavy && lateGame) hunters = 2;
+      if (hunters >= 2 && activeCount >= 8 && this.commerceCaptureDeficit(s, tick)) {
+        hunters = 3;
+      }
+      const floor = Math.min(
+        this.commerceDefenseFloor(),
+        Math.max(0, activeCount - 1),
+      );
+      return Math.max(1, Math.min(hunters, activeCount - floor));
+    }
+
+    commerceDefenseFloor() {
+      let floor = 2;
+      const hostileWarships = this.hostileActiveWarshipCount();
+      if (hostileWarships >= 3) floor += 1;
+      if (hostileWarships >= 6) floor += 1;
+      return Math.min(floor, 4);
+    }
+
+    hostileActiveWarshipCount() {
+      let count = 0;
+      for (const warship of this.game.units?.(UNIT.Warship) || []) {
+        if (warship?.isActive?.() === false) continue;
+        const owner = warship?.owner?.();
+        if (!owner?.isPlayer?.()) continue;
+        if (owner === this.player) continue;
+        if (this.player.isFriendly?.(owner) === true) continue;
+        count += 1;
+      }
+      return count;
+    }
+
+    // Capture-deficit proxy: the fleet's total veterancy meter (each capture
+    // = 10 points, each level = 250) versus a 33-capture pace scaled by the
+    // measured winning-row horizon.
+    commerceCaptureDeficit(s, tick) {
+      const captured = this.estimatedCommerceCaptures(s);
+      return captured < (33 * tick) / 9951;
+    }
+
+    estimatedCommerceCaptures(s) {
+      if (s.commerceCaptureEstimateAtTick === this.game.ticks()) {
+        return s.commerceCaptureEstimate;
+      }
+      let points = 0;
+      for (const warship of this.player.units(UNIT.Warship)) {
+        const warshipState = warship.warshipState?.();
+        points += (Number(warshipState?.veterancy ?? 0)) * 250 +
+          (Number(warshipState?.veterancyProgress ?? 0) || 0);
+      }
+      const estimate = points / 10;
+      s.commerceCaptureEstimateAtTick = this.game.ticks();
+      s.commerceCaptureEstimate = estimate;
+      return estimate;
+    }
+
     collectIdleRaidShips(s, tick, shipsPerAnchor) {
       const idleShips = [];
+      const defenseIds = this.commerceDefenseSubfleetIds(s);
       const flagshipId = this.selectRaidFlagshipId(s);
       for (const warship of this.player.units(UNIT.Warship)) {
+        if (defenseIds.has(String(warship.id()))) continue;
         if (s.invasionAssignments?.has(warship.id())) continue;
         // Once a ship reaches veterancy 3 it is the protected flagship. Before
-        // that, keep one selected flagship assigned to the busiest raid lane so
-        // trade captures and warship kills accumulate on one hull.
-        if (flagshipId !== null && String(warship.id()) !== flagshipId) continue;
+        // that promotion, every idle hull may feed the raid anchors: limiting
+        // commerce to one pre-veterancy flagship deadlocked promotion (25 trade
+        // captures are required for level 3, but one hull never reached them).
+        // After promotion, protect the veteran and keep it on its lane.
+        if (
+          flagshipId !== null &&
+          this.hasVeteranRaidFlagship(s, warship, flagshipId)
+        ) continue;
         const last = s.cooldown?.get(warship.id());
         if (last !== undefined && tick - last < 60) continue;
         const patrolTile = warship.warshipState().patrolTile;
@@ -1960,7 +2248,24 @@
         }
         idleShips.push(warship);
       }
+      // Flagship-first concentration: each commerce pass may emit only a
+      // couple of moves, so ordering by veterancy means the most-promoted
+      // hull always claims the first lane slot and captures concentrate on
+      // one progress meter toward the 25-capture veterancy-3 promotion,
+      // instead of being smeared evenly across green hulls.
+      idleShips.sort(
+        (left, right) =>
+          Number(right.veterancy?.() ?? right.veterancy ?? 0) -
+          Number(left.veterancy?.() ?? left.veterancy ?? 0),
+      );
       return idleShips;
+    }
+
+    hasVeteranRaidFlagship(s, warship, flagshipId) {
+      const veterancy = Number(
+        warship.veterancy?.() ?? warship.veterancy ?? 0,
+      );
+      return veterancy >= 3 && String(warship.id()) === flagshipId;
     }
 
     selectRaidFlagshipId(s) {
@@ -2016,7 +2321,12 @@
         if (!this.warshipMoveBudgetAvailable()) break;
         const { target, targetCount } = this.leastMannedRaidAnchor(shipsPerAnchor);
         if (target === null || targetCount >= 3) break;
-        emitIntent(ctors.moveWarship, [warship.id()], target);
+        const emitted = emitIntent(ctors.moveWarship, [warship.id()], target);
+        // Only a genuinely accepted move may set the 60-tick commerce cooldown:
+        // a rate-limited or cross-water-component rejection (the engine drops
+        // orders silently in MoveWarshipExecution) must not mute the hull while
+        // it never received the anchor order.
+        if (!emitted) continue;
         shipsPerAnchor.set(target, targetCount + 1);
         s.cooldown.set(warship.id(), tick);
         movesThisPass += 1;
@@ -2063,35 +2373,73 @@
     // if it's within the interception distance cap (else leave it; the faithful build
     // path covers threats no existing ship can reach). Sets a per-warship cooldown so a
     // tiny pool doesn't oscillate between threats. Returns true if a ship was tasked.
-    selectClosestIdleWarship(tile, s, tick, cooldownTicks) {
+    selectClosestIdleWarship(tile, s, tick, cooldownTicks, hunterDuel = false) {
+      const flagshipId = hunterDuel && this.raidingTierActive()
+        ? this.selectRaidFlagshipId(s)
+        : null;
+      const meterHigh = flagshipId !== null &&
+        this.flagshipMeterPoints(s, flagshipId) > 125;
       let best = null;
       let bestDistance = Infinity;
       for (const warship of this.player.units(UNIT.Warship)) {
-        if (s?.invasionAssignments?.has(warship.id())) continue;
-        const patrolTile = warship.warshipState().patrolTile;
-        if (patrolTile === undefined) continue;
-        if (this.game.manhattanDist(warship.tile(), patrolTile) >= 130) continue;
-        const last = s?.cooldown?.get(warship.id());
-        if (last !== undefined && tick - last < cooldownTicks) continue;
-        const distance = this.game.manhattanDist(warship.tile(), tile);
-        // Strict comparison preserves the stable-sort tie: the first eligible
-        // ship in the player's unit order wins equal-distance ties.
-        if (distance >= bestDistance) continue;
+        const candidate = this.idleWarshipCandidateDistance(
+          warship, tile, s, tick, cooldownTicks,
+        );
+        if (candidate === null) continue;
+        // Meter-aware duel steering: an enemy-warship final blow is a full
+        // veterancy level but ZEROES the victor's shared progress meter.
+        // Keep a loaded flagship out of hunter duels (a green hull takes the
+        // reset instead); when the meter is nearly empty the reset costs
+        // nothing, so the flagship is allowed to duel for the free level.
+        if (meterHigh && String(warship.id()) === flagshipId) continue;
+        if (candidate >= bestDistance) continue;
         best = warship;
-        bestDistance = distance;
+        bestDistance = candidate;
       }
       return best === null ? null : { warship: best, distance: bestDistance };
+    }
+
+    idleWarshipCandidateDistance(warship, tile, s, tick, cooldownTicks) {
+      if (s?.invasionAssignments?.has(warship.id())) return null;
+      const patrolTile = warship.warshipState().patrolTile;
+      if (patrolTile === undefined) return null;
+      if (this.game.manhattanDist(warship.tile(), patrolTile) >= 130) return null;
+      const last = s?.cooldown?.get(warship.id());
+      if (last !== undefined && tick - last < cooldownTicks) return null;
+      return this.game.manhattanDist(warship.tile(), tile);
+    }
+
+    warshipDuelDefersFlagship(s, warship) {
+      if (!this.raidingTierActive()) return false;
+      const flagshipId = this.selectRaidFlagshipId(s);
+      if (String(warship.id()) !== flagshipId) return false;
+      return this.flagshipMeterPoints(s, flagshipId) > 125;
+    }
+
+    flagshipMeterPoints(s, flagshipId) {
+      const flagship = this.player
+        .units(UNIT.Warship)
+        .find((warship) => String(warship.id()) === flagshipId);
+      const progress = Number(
+        flagship?.warshipState?.()?.veterancyProgress ?? Number.NaN,
+      );
+      return Number.isFinite(progress) ? progress : 0;
     }
 
     moveBestWarshipTo(tile, kind, s, tick) {
       if (!this.game.isWater(tile)) return false;
       const maxDist = state.settings.warshipMoveMaxDist || 160;
       const cooldownTicks = state.settings.warshipMoveCooldownTicks || 60;
+      // Loss zones mark hunter-warship lanes: enable duel steering there.
+      // Trade-lane threats are transport raiders — kills there feed the
+      // flagship's meter, so it stays preferred.
+      const hunterDuel = kind === "loss-zone";
       const selected = this.selectClosestIdleWarship(
         tile,
         s,
         tick,
         cooldownTicks,
+        hunterDuel,
       );
       if (selected === null || selected.distance > maxDist) return false;
       const w = selected.warship;

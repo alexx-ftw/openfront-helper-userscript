@@ -11950,7 +11950,9 @@
     structureCandidateTiles(type, options, candidateLimit) {
       let tiles =
         type === UNIT.Port
-          ? this.portCandidateTiles(candidateLimit)
+          ? this.portCandidateTiles(candidateLimit).filter((tile) =>
+              this.portTileHasOpenWaterAccess(tile),
+            )
           : randTerritoryTileArray(
               this.random,
               this.game,
@@ -12760,6 +12762,64 @@
       const oceanTiles = this.randCoastalTileArray(candidateLimit);
       if (oceanTiles.length > 0) return oceanTiles;
       return this.shoreBorderTileArray(candidateLimit);
+    }
+
+    // Goal requirement: never build a Port whose water body has no access to
+    // open sea/ocean. A pond-locked shore tile wastes the slot (warships and
+    // trade cannot operate) — openness is measured by the connected water
+    // body's size (bounded flood fill, cached per water component), so large
+    // enclosed lakes (Baikal) still qualify while tiny ponds never do.
+    portTileHasOpenWaterAccess(tile) {
+      if (this._portWaterOpennessCache === undefined) {
+        this._portWaterOpennessCache = new Map();
+      }
+      // Key on the ADJACENT WATER component, not the land tile itself —
+      // getWaterComponent returns null for land, so a land key would
+      // re-flood for every distinct shore candidate instead of once per
+      // water body.
+      const waterTile = this.firstAdjacentWaterTile(tile);
+      if (waterTile === null) return false;
+      const component = this.game.getWaterComponent?.(waterTile) ?? waterTile;
+      const cacheKey = String(component);
+      const cached = this._portWaterOpennessCache.get(cacheKey);
+      if (cached !== undefined) return cached;
+      const open = this.portAdjacentWaterIsOpen(tile);
+      this._portWaterOpennessCache.set(cacheKey, open);
+      return open;
+    }
+
+    firstAdjacentWaterTile(tile) {
+      let waterTile = null;
+      this.game.forEachNeighbor(tile, (neighbor) => {
+        if (waterTile === null && this.game.isWater(neighbor)) {
+          waterTile = neighbor;
+        }
+      });
+      return waterTile;
+    }
+
+    portAdjacentWaterIsOpen(tile) {
+      let waterTile = null;
+      this.game.forEachNeighbor(tile, (neighbor) => {
+        if (waterTile === null && this.game.isWater(neighbor)) {
+          waterTile = neighbor;
+        }
+      });
+      if (waterTile === null) return false;
+      const visited = new Set([waterTile]);
+      const queue = [waterTile];
+      const maxTiles = 800;
+      const openThreshold = 400;
+      while (queue.length > 0 && visited.size < maxTiles) {
+        const current = queue.shift();
+        this.game.forEachNeighbor(current, (neighbor) => {
+          if (visited.has(neighbor)) return;
+          if (!this.game.isWater(neighbor)) return;
+          visited.add(neighbor);
+          if (visited.size < maxTiles) queue.push(neighbor);
+        });
+      }
+      return visited.size >= openThreshold;
     }
 
     shoreBorderTileArray(limit) {

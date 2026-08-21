@@ -193,6 +193,18 @@ assert.equal(
   true,
   "heavy defense keeps the emergency nuke path available despite negative value",
 );
+valueGuard.isUnderHeavyAttack = () => false;
+valueGuard.isRetaliationNukeTarget = () => true;
+assert.equal(
+  await valueGuard.nukeHasPositiveExpectedValue(
+    { tile: 10, coveringSamLevels: 0 },
+    cheapTarget,
+    { type: UNIT.HydrogenBomb, cost: 5_000_000n },
+    [],
+  ),
+  false,
+  "plain retaliation no longer bypasses the expected-value guard",
+);
 assert.deepEqual(
   policyCalls,
   [5_000_000n],

@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { fileURLToPath } from "node:url";
 
 import { NukeExecution } from "../openfront-engine/src/core/execution/NukeExecution";
-import { PlayerInfo, PlayerType, UnitType } from "../openfront-engine/src/core/game/Game";
+import { UnitType } from "../openfront-engine/src/core/game/Game";
+import { engineTestsUtil, setupTwoPlayerGame } from "./helpers/two-player-game.mts";
+import { PlayerInfo, PlayerType } from "../openfront-engine/src/core/game/Game";
 import { setup } from "../openfront-engine/tests/util/Setup";
 
-const engineTestsUtil = fileURLToPath(new URL("../openfront-engine/tests/util/", import.meta.url));
 const game = await setup(
   "big_plains",
   { infiniteGold: true, instantBuild: true },

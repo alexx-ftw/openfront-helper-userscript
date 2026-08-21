@@ -169,4 +169,60 @@ const me = { isFriendly: () => false };
   assert.equal(sandbox.state.beachhead.surged, false);
 }
 
+// 6. Corridor gate: a hunter's LIVE coverage disk over the crossing line
+// blocks the launch even when the destination itself is clear; docking or
+// displacing the hunter reopens it (keyed to live anchors, not a fixed box).
+{
+  const corridorGame = (warships) => ({
+    units: (type) => (type === "Warship" ? warships : []),
+    manhattanDist: (a, b) => Math.abs(Number(a) - Number(b)),
+    isValidCoord: () => true,
+    ref: (x) => x,
+    x: (tile) => Number(tile),
+    y: () => 0,
+  });
+  const corridorPlayer = {
+    isFriendly: () => false,
+    nameLocation: () => ({ x: 0, y: 0 }),
+  };
+  const hunter = (tile, patrolTile, shipState = "patrolling") => ({
+    isActive: () => true,
+    owner: () => ({ isPlayer: () => true }),
+    tile: () => tile,
+    warshipState: () => ({ state: shipState, patrolTile }),
+  });
+  // Hunter's patrol disk (180) covers the mid-corridor (~tile 500) while its
+  // live tile (1600) is far from the destination (1000).
+  const behavior = makeBehavior({
+    difficulty: Difficulty.Legendary,
+    game: corridorGame([hunter(1600, 450)]),
+    player: corridorPlayer,
+  });
+  assert.equal(
+    behavior.boatLaunchWarshipDanger(1000),
+    true,
+    "a hunter's patrol disk over the crossing blocks the launch",
+  );
+  const dockedBehavior = makeBehavior({
+    difficulty: Difficulty.Legendary,
+    game: corridorGame([hunter(1600, 450, "docked")]),
+    player: corridorPlayer,
+  });
+  assert.equal(
+    dockedBehavior.boatLaunchWarshipDanger(1000),
+    false,
+    "a docked hunter neither moves nor fires and reopens the corridor",
+  );
+  const displacedBehavior = makeBehavior({
+    difficulty: Difficulty.Legendary,
+    game: corridorGame([hunter(1600, 3000)]),
+    player: corridorPlayer,
+  });
+  assert.equal(
+    displacedBehavior.boatLaunchWarshipDanger(1000),
+    false,
+    "a hunter re-anchored off the corridor reopens the launch",
+  );
+}
+
 process.stdout.write("boat warship danger tests passed\n");

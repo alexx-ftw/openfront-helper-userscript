@@ -7444,10 +7444,93 @@
 
     boatLaunchWarshipDanger(dst) {
       if (!this.boatLaunchWarshipDangerGateActive()) return false;
-      return this.hostileWarshipNearDestination(
-        dst,
-        this.boatWarshipDangerRadius(),
-      );
+      if (
+        this.hostileWarshipNearDestination(
+          dst,
+          this.boatWarshipDangerRadius(),
+        )
+      ) {
+        return true;
+      }
+      return this.hostileHunterCoversCorridor(dst);
+    }
+
+    // Predictive corridor gate keyed to LIVE hunters: a hostile warship's
+    // future kill zone is disk(patrolTile, 50 wander + 130 range) plus its
+    // current disk(live, 130). Boats on Labyrinth die mid-crossing, not at
+    // the destination, so sample the departure→dst line against those disks.
+    // Unlike the rejected route-rectangle gate this re-evaluates every launch
+    // against the hunter's CURRENT anchors: killing, docking or re-tasking a
+    // hunter reopens the corridor immediately instead of freezing launches.
+    // Docked hunters neither move nor fire (engine early-return) and are
+    // skipped; retreating hunters abandon their patrol anchor, so only the
+    // live disk applies to them.
+    hostileHunterCoversCorridor(dst) {
+      const departure = this.boatCorridorDepartureTile(dst);
+      if (departure === null) return false;
+      const samples = this.boatCorridorSamples(departure, dst);
+      for (const warship of this.game.units(UNIT.Warship) || []) {
+        if (this.hunterCoversAnySample(warship, samples)) return true;
+      }
+      return false;
+    }
+
+    hunterCoversAnySample(warship, samples) {
+      if (!this.boatCorridorHunterIsHostile(warship)) return false;
+      const warshipState = warship.warshipState?.();
+      if (warshipState?.state === "docked") return false;
+      const liveTile = warship.tile();
+      const retreating = warshipState?.state === "retreating";
+      const patrolTile = retreating ? undefined : warshipState?.patrolTile;
+      for (const sample of samples) {
+        if (this.game.manhattanDist(liveTile, sample) <= 130) return true;
+        if (
+          patrolTile !== undefined &&
+          this.game.manhattanDist(patrolTile, sample) <= 180
+        ) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    boatCorridorHunterIsHostile(warship) {
+      if (warship?.isActive?.() === false) return false;
+      const owner = warship?.owner?.();
+      if (!owner?.isPlayer?.()) return false;
+      if (owner === this.player) return false;
+      return this.player.isFriendly?.(owner) !== true;
+    }
+
+    // Departure proxy: the boat launches from our coast, approximated by the
+    // territory center (nameLocation). Exact spawn tiles are engine-side and
+    // not visible pre-launch; the center is within the same water component
+    // on every practical launch geography.
+    boatCorridorDepartureTile(dst) {
+      const location =
+        typeof this.player?.nameLocation === "function"
+          ? this.player.nameLocation()
+          : null;
+      if (!location || !Number.isFinite(location.x)) return null;
+      if (!this.game.isValidCoord(Math.round(location.x), Math.round(location.y))) {
+        return null;
+      }
+      return this.game.ref(Math.round(location.x), Math.round(location.y));
+    }
+
+    boatCorridorSamples(from, to, count = 8) {
+      const samples = [];
+      const fx = this.game.x(from);
+      const fy = this.game.y(from);
+      const tx = this.game.x(to);
+      const ty = this.game.y(to);
+      for (let index = 1; index <= count; index += 1) {
+        const x = Math.round(fx + ((tx - fx) * index) / (count + 1));
+        const y = Math.round(fy + ((ty - fy) * index) / (count + 1));
+        if (!this.game.isValidCoord(x, y)) continue;
+        samples.push(this.game.ref(x, y));
+      }
+      return samples;
     }
 
     emitBoat(
@@ -8963,6 +9046,192 @@
       );
     }
 
+    // Conquest spare for the 5MM nuclear harvest: conventional conquest is
+    // measured to consume the richest enemies before our silos mature, which
+    // zeroes the nuked-value metric. While a completed Silo exists and the
+    // sustained bombardment is still short of its quota (4 offensive
+    // Atoms ≈ 5MM of destroyed structures at observed per-shot value),
+    // ordinary (non-forced) land attacks against the single highest-value
+    // enemy are held back so the nuclear economy can harvest that wealth
+    // first. The spare also releases when the target dies; retaliation
+    // (force) and Terra Nullius/tribe expansion are never blocked.
+    nukeHarvestSparesTarget(target) {
+      if (
+        typeof currentDifficulty !== "function" ||
+        currentDifficulty() !== "Legendary" ||
+        state.settings.winFixes !== true
+      ) {
+        return false;
+      }
+      if (!target?.isPlayer?.()) return false;
+      if (!this.nukeHarvestSiloReady()) return false;
+      if (Number(this.nukeBehavior?.atomBombsLaunched || 0) >= 4) return false;
+      return this.nukeHarvestSparedTargetMatches(target);
+    }
+
+    nukeHarvestSparedTargetMatches(target) {
+      const spared = this.nukeBehavior?.findHighestValueNukeTarget?.();
+      if (!spared || spared.smallID() !== target.smallID()) return false;
+      if (spared.isAlive?.() === false) return false;
+      const value = this.nukeBehavior.playerStructureValue(spared);
+      return value >= 1_500_000;
+    }
+
+    nukeHarvestSiloReady() {
+      const silos = this.player.units(UNIT.MissileSilo) || [];
+      return silos.some((silo) => silo?.isUnderConstruction?.() !== true);
+    }
+
+    // Authorization tail shared by every sendAttack: tribe cluster policy,
+    // the nuclear-harvest conquest spare, and the win-pacing commerce stall
+    // (both metric hooks defer to forced retaliation).
+    sendAttackTargetIsAuthorized(options, force) {
+      if (!this.tribeAttackIsAuthorized(options)) return false;
+      if (!force && this.nukeHarvestSparesTarget(options.target)) return false;
+      if (!force && this.winPacingSparesConquest(options)) return false;
+      return true;
+    }
+
+    // Metric-aware win pacing ("commerce stall"): on dominant Team rows the
+    // win itself ends the game before the trade-capture metric completes
+    // (measured: surr4-s4 wins at 9951 with 25/33 captures). While victory
+    // is mathematically comfortable, captures are incomplete, and trade
+    // traffic is alive, ordinary (non-forced) land attacks stand down so
+    // the game extends and hunters finish the metric. Failsafes: never arms
+    // on a thin lead or under attack, releases permanently on dominance
+    // decay or window expiry, and retaliation (force) always fires.
+    winPacingSparesConquest(options) {
+      const target = options.target;
+      // Reinforcement carve-out: an in-flight conquest must finish cleanly
+      // instead of freezing a half-won front (same contract as the tribe
+      // authorization hook).
+      if (
+        target?.isPlayer?.() === true &&
+        (this.getLiveOutboundAttackTroopsForTarget(target) > 0 ||
+          this.getPendingOutboundAttackTroopsForTarget(target) > 0)
+      ) {
+        return false;
+      }
+      return this.winPacingThrottleActive();
+    }
+
+    winPacingThrottleActive() {
+      const tick = this.game.ticks();
+      if (state.winPacingAtTick === tick) return state.winPacingActive === true;
+      state.winPacingAtTick = tick;
+      state.winPacingActive = this.computeWinPacingThrottle(tick);
+      return state.winPacingActive;
+    }
+
+    computeWinPacingThrottle(tick) {
+      if (state.winPacingLockedOff === true) return false;
+      if (!this.winPacingModeEligible()) return false;
+      if (this.findIncomingAttackPlayer() !== null) {
+        this.lockOffWinPacing();
+        return false;
+      }
+      const shares = this.teamShareSnapshot();
+      if (shares === null) return false;
+      if (!this.winPacingDominanceHolds(shares)) return false;
+      if (this.estimatedOwnCommerceCaptures() >= 33) return false;
+      const traffic =
+        typeof this.game.units === "function"
+          ? this.game.units(UNIT.TradeShip).length
+          : 0;
+      if (traffic < 20) return false;
+      return this.winPacingWindowHolds(tick);
+    }
+
+    winPacingModeEligible() {
+      if (
+        typeof currentDifficulty !== "function" ||
+        currentDifficulty() !== "Legendary" ||
+        state.settings.winFixes !== true
+      ) {
+        return false;
+      }
+      const gameConfig = this.game.config?.()?.gameConfig?.();
+      return gameConfig?.gameMode === GameMode.Team;
+    }
+
+    // Dominance with hysteresis: arm only ≥0.80 share and ≥0.55 margin;
+    // decay below 0.78/0.45 while armed is a permanent release.
+    winPacingDominanceHolds(shares) {
+      if (state.winPacingArmedTick !== null) {
+        if (shares.ownShare < 0.78 || shares.margin < 0.45) {
+          this.lockOffWinPacing();
+          return false;
+        }
+        return true;
+      }
+      return shares.ownShare >= 0.8 && shares.margin >= 0.55;
+    }
+
+    // Hard time bounds: arm before 9000 (measured wins ~9951), extend at
+    // most 2500 ticks, then stand down for good.
+    winPacingWindowHolds(tick) {
+      if (state.winPacingArmedTick === null) {
+        if (tick >= 9000) return false;
+        state.winPacingArmedTick = tick;
+        return true;
+      }
+      if (tick - state.winPacingArmedTick > 2500) {
+        this.lockOffWinPacing();
+        return false;
+      }
+      return true;
+    }
+
+    lockOffWinPacing() {
+      state.winPacingLockedOff = true;
+      state.winPacingArmedTick = null;
+    }
+
+    teamShareSnapshot() {
+      const myTeam = this.player.team?.();
+      if (myTeam == null) return null;
+      const ownKey = this.winPacingTeamKey(myTeam);
+      const teamTiles = this.winPacingTeamTiles(ownKey);
+      const total = [...teamTiles.values()].reduce((sum, tiles) => sum + tiles, 0);
+      if (total <= 0) return null;
+      const ownShare = (teamTiles.get(ownKey) ?? 0) / total;
+      let bestRival = 0;
+      for (const [key, tiles] of teamTiles) {
+        const share = tiles / total;
+        if (key !== ownKey && share > bestRival) bestRival = share;
+      }
+      return { ownShare, margin: ownShare - bestRival };
+    }
+
+    winPacingTeamKey(team) {
+      return `t:${team.smallID?.() ?? team.id?.() ?? String(team)}`;
+    }
+
+    winPacingTeamTiles(ownKey) {
+      const teamTiles = new Map();
+      for (const other of this.game.players()) {
+        const tiles = Number(other.numTilesOwned?.() || 0);
+        if (tiles <= 0) continue;
+        const team = other.team?.();
+        const key = team == null
+          ? `p:${other.smallID()}`
+          : this.winPacingTeamKey(team);
+        teamTiles.set(key, (teamTiles.get(key) ?? 0) + tiles);
+      }
+      return teamTiles;
+    }
+
+    estimatedOwnCommerceCaptures() {
+      let points = 0;
+      for (const warship of this.player.units(UNIT.Warship)) {
+        const warshipState = warship.warshipState?.();
+        points +=
+          (Number(warshipState?.veterancy ?? 0)) * 250 +
+          (Number(warshipState?.veterancyProgress ?? 0) || 0);
+      }
+      return points / 10;
+    }
+
     tribeAttackIsAuthorized(options) {
       const target = options.target;
       if (
@@ -9058,7 +9327,7 @@
       const { target, force } = options;
       if (!this.canAttackPlayerNow(target)) return false;
       if (!force && !this.shouldAttack(target)) return false;
-      if (!this.tribeAttackIsAuthorized(options)) return false;
+      if (!this.sendAttackTargetIsAuthorized(options, force)) return false;
       options.isParallelTribeAttack =
         options.parallelTribeAttack === true &&
         target?.isPlayer?.() === true &&

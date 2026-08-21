@@ -6340,6 +6340,16 @@
     "initializerPreview": "[\"my-clans\", \"browse\"] as const"
   },
   {
+    "id": "openfront-engine/src/client/ClientGameRunner.ts:MAP_PRELOAD_DEBOUNCE_STREAK#1",
+    "file": "openfront-engine/src/client/ClientGameRunner.ts",
+    "name": "MAP_PRELOAD_DEBOUNCE_STREAK",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce",
+    "initializerLength": 1,
+    "initializerPreview": "3"
+  },
+  {
     "id": "openfront-engine/src/client/Cosmetics.ts:TEMP_FLARE_OFFSET#1",
     "file": "openfront-engine/src/client/Cosmetics.ts",
     "name": "TEMP_FLARE_OFFSET",
@@ -6490,6 +6500,16 @@
     "initializerPreview": "60"
   },
   {
+    "id": "openfront-engine/src/client/LoginResult.ts:KNOWN_RESULTS#1",
+    "file": "openfront-engine/src/client/LoginResult.ts",
+    "name": "KNOWN_RESULTS",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "7f8732b3f41188160a4069707960dc4d6591f1874c16a8ec248a2cdfd8539288",
+    "initializerLength": 16,
+    "initializerPreview": "[\"email_exists\"]"
+  },
+  {
     "id": "openfront-engine/src/client/NewsMarkdown.ts:GITHUB_PR_URL_REGEX#1",
     "file": "openfront-engine/src/client/NewsMarkdown.ts",
     "name": "GITHUB_PR_URL_REGEX",
@@ -6525,8 +6545,8 @@
     "name": "DEFAULT_OPTIONS",
     "declarationKind": "const",
     "initializerKind": "AsExpression",
-    "initializerHash": "bc7993f64a5c955e1bb94ce638b80a75973857a929b40b5a8e964bc58e7214e8",
-    "initializerLength": 787,
+    "initializerHash": "fd45dd9bc575fdc59b750dc591966204c38b8c472f7ddab3cdcbd14f06ece765",
+    "initializerLength": 867,
     "initializerPreview": "{\n    selectedMap: GameMapType.World,\n    selectedDifficulty: Difficulty.Easy,\n    bots: 400,\n    infiniteGold: false,\n    infiniteTroops: false,\n    compactMap: false,\n    maxTimer: false,\n    maxTimerValue: undefined as number | undefi..."
   },
   {
@@ -6625,9 +6645,9 @@
     "name": "DEFAULT_REASON_KEY",
     "declarationKind": "const",
     "initializerKind": "StringLiteral",
-    "initializerHash": "feaf1000995474385132fddc7049378b725016445bbeb924c2a6e408d3e0d2e2",
-    "initializerLength": 32,
-    "initializerPreview": "\"steam_link_modal.reason_failed\""
+    "initializerHash": "6fbb823d6f6b9121d55c4ebc2ca5195a91165e54e4f2a62274e5af8161320c0c",
+    "initializerLength": 22,
+    "initializerPreview": "\"common.error_generic\""
   },
   {
     "id": "openfront-engine/src/client/SteamLinkModal.ts:BUTTON_BASE#1",
@@ -6718,6 +6738,46 @@
     "initializerHash": "95d34f5484a31294436e1804be08446ce18a36efeaae8beb9cdf237381aa4014",
     "initializerLength": 143,
     "initializerPreview": "[\n    { actions: [\"emojiMenuModifier\", \"altKey\"], keyPrefix: \"Alt\" },\n    { actions: [\"boxSelectWarships\", \"shiftKey\"], keyPrefix: \"Shift\" },\n]"
+  },
+  {
+    "id": "openfront-engine/src/client/UsernameInput.ts:CLAN_REMOVED_EVENTS#1",
+    "file": "openfront-engine/src/client/UsernameInput.ts",
+    "name": "CLAN_REMOVED_EVENTS",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "58d83d6e2339c22462c1bcb8d517378c970c26f3167a644e8d5ff8fb886bd9d4",
+    "initializerLength": 31,
+    "initializerPreview": "[\"clan-left\", \"clan-disbanded\"]"
+  },
+  {
+    "id": "openfront-engine/src/client/UsernameInput.ts:CLAN_MEMBERSHIP_EVENTS#1",
+    "file": "openfront-engine/src/client/UsernameInput.ts",
+    "name": "CLAN_MEMBERSHIP_EVENTS",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "40abdc630646bce4bbd46ec2fe4329aa9ebd9d8910a9d743fc3ddffe86c766eb",
+    "initializerLength": 39,
+    "initializerPreview": "[\"clan-joined\", ...CLAN_REMOVED_EVENTS]"
+  },
+  {
+    "id": "openfront-engine/src/client/UsernameInput.ts:NAME_BOX#1",
+    "file": "openfront-engine/src/client/UsernameInput.ts",
+    "name": "NAME_BOX",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "581abdd556455c097655df1edc3f6287ba5ad330b5c3ebb6c32bfaecd40e13e2",
+    "initializerLength": 75,
+    "initializerPreview": "\"min-w-0 flex-1 h-full max-h-[44px] rounded-lg bg-transparent px-2 sm:px-3\""
+  },
+  {
+    "id": "openfront-engine/src/client/UsernameInput.ts:NAME_TEXT#1",
+    "file": "openfront-engine/src/client/UsernameInput.ts",
+    "name": "NAME_TEXT",
+    "declarationKind": "const",
+    "initializerKind": "BinaryExpression",
+    "initializerHash": "0d600d0ee8679127f3af73edaf00d69f36d0f237d21e3d36e6a47157baa34e91",
+    "initializerLength": 115,
+    "initializerPreview": "\"text-xl/[normal] sm:text-2xl/[normal] font-medium tracking-wider \" +\n    \"[text-shadow:0_1px_2px_rgba(0,0,0,0.9)]\""
   },
   {
     "id": "openfront-engine/src/client/Utils.ts:TUTORIAL_VIDEO_URL#1",
@@ -6818,6 +6878,236 @@
     "initializerHash": "81a83544cf93c245178cbc1620030f1123f435af867c79d87135983c52ab39d9",
     "initializerLength": 4,
     "initializerPreview": "2000"
+  },
+  {
+    "id": "openfront-engine/src/client/components/DesktopUpdateBar.ts:WIGGLE_CLASS#1",
+    "file": "openfront-engine/src/client/components/DesktopUpdateBar.ts",
+    "name": "WIGGLE_CLASS",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "fea7aa8873b199a5d1b56a3bbfdbb3bed6b8d2cef0806fb5b2ee49a0abde3c8e",
+    "initializerLength": 16,
+    "initializerPreview": "\"animate-bounce\""
+  },
+  {
+    "id": "openfront-engine/src/client/components/DetailedGameViewFilters.ts:LOBBY_MODES#1",
+    "file": "openfront-engine/src/client/components/DetailedGameViewFilters.ts",
+    "name": "LOBBY_MODES",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "946ab064e879636bbe537f3624ef32b77dbe2a690a8a182ac7608b9f727487f5",
+    "initializerLength": 23,
+    "initializerPreview": "[\"ffa\", \"teams\", \"hvn\"]"
+  },
+  {
+    "id": "openfront-engine/src/client/components/DetailedGameViewFilters.ts:LOBBY_SOURCES#1",
+    "file": "openfront-engine/src/client/components/DetailedGameViewFilters.ts",
+    "name": "LOBBY_SOURCES",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "e2b9589a64d2c05472794f40711c45e164a39b127eff298499330e0f712e5eb5",
+    "initializerLength": 20,
+    "initializerPreview": "[\"public\", \"hosted\"]"
+  },
+  {
+    "id": "openfront-engine/src/client/components/DetailedGameViewFilters.ts:NAMED_TEAM_CONFIGS#1",
+    "file": "openfront-engine/src/client/components/DetailedGameViewFilters.ts",
+    "name": "NAMED_TEAM_CONFIGS",
+    "declarationKind": "const",
+    "initializerKind": "AsExpression",
+    "initializerHash": "4f44c2ace5d660f0dfe6deea104e27609b2079be090da18c53a4d9a9cb36d5eb",
+    "initializerLength": 29,
+    "initializerPreview": "[Duos, Trios, Quads] as const"
+  },
+  {
+    "id": "openfront-engine/src/client/components/DetailedGameViewFilters.ts:NUMERIC_TEAM_CONFIGS#1",
+    "file": "openfront-engine/src/client/components/DetailedGameViewFilters.ts",
+    "name": "NUMERIC_TEAM_CONFIGS",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "70b126d6ac4fc24b30e797c634d3dec0c7f3f07955a6c8299bcc13614fc818f6",
+    "initializerLength": 35,
+    "initializerPreview": "[\"2\", \"3\", \"4\", \"5\", \"6\", \"7\", \"8\"]"
+  },
+  {
+    "id": "openfront-engine/src/client/components/DetailedGameViewFilters.ts:TEAM_CONFIGS#1",
+    "file": "openfront-engine/src/client/components/DetailedGameViewFilters.ts",
+    "name": "TEAM_CONFIGS",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "f2aa5bd69ed111ccf59bd173052d5c74dda4776d0c5494067e83a798bc5b645e",
+    "initializerLength": 59,
+    "initializerPreview": "[\n    ...NAMED_TEAM_CONFIGS,\n    ...NUMERIC_TEAM_CONFIGS,\n]"
+  },
+  {
+    "id": "openfront-engine/src/client/components/DetailedGameViewFilters.ts:DEFAULT_FILTERS#1",
+    "file": "openfront-engine/src/client/components/DetailedGameViewFilters.ts",
+    "name": "DEFAULT_FILTERS",
+    "declarationKind": "const",
+    "initializerKind": "ObjectLiteralExpression",
+    "initializerHash": "b480fcc3071655072806b3430c6db1d1562716af78c1098b2b5c9026bb85abd3",
+    "initializerLength": 212,
+    "initializerPreview": "{\n    modes: [],\n    sources: [],\n    teamConfigs: [],\n    hideEmpty: false,\n    minJoined: null,\n    maxJoined: null,\n    minCapacity: null,\n    maxCapacity: null,\n    minTeamSize: null,\n    maxTeamSize: null,\n}"
+  },
+  {
+    "id": "openfront-engine/src/client/components/DetailedGameViewFilters.ts:NAMED_TEAM_SIZES#1",
+    "file": "openfront-engine/src/client/components/DetailedGameViewFilters.ts",
+    "name": "NAMED_TEAM_SIZES",
+    "declarationKind": "const",
+    "initializerKind": "ObjectLiteralExpression",
+    "initializerHash": "a108112ac8f55674aff82a08455da5dbdaf478668aa291e26ea8c7ef9c5787ce",
+    "initializerLength": 50,
+    "initializerPreview": "{\n    [Duos]: 2,\n    [Trios]: 3,\n    [Quads]: 4,\n}"
+  },
+  {
+    "id": "openfront-engine/src/client/components/DetailedGameViewFilters.ts:FILTER_PROFILES_KEY#1",
+    "file": "openfront-engine/src/client/components/DetailedGameViewFilters.ts",
+    "name": "FILTER_PROFILES_KEY",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "35654ac285bc124612b03301091c630c80337381a90c32c063cc1841dfb34372",
+    "initializerLength": 31,
+    "initializerPreview": "\"detailed-view-filter-profiles\""
+  },
+  {
+    "id": "openfront-engine/src/client/components/DetailedGameViewFilters.ts:MAX_FILTER_PROFILES#1",
+    "file": "openfront-engine/src/client/components/DetailedGameViewFilters.ts",
+    "name": "MAX_FILTER_PROFILES",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "f5ca38f748a1d6eaf726b8a42fb575c3c71f1864a8143301782de13da2d9202b",
+    "initializerLength": 2,
+    "initializerPreview": "20"
+  },
+  {
+    "id": "openfront-engine/src/client/components/DetailedGameViewFilters.ts:MAX_PROFILE_NAME_LENGTH#1",
+    "file": "openfront-engine/src/client/components/DetailedGameViewFilters.ts",
+    "name": "MAX_PROFILE_NAME_LENGTH",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "e29c9c180c6279b0b02abd6a1801c7c04082cf486ec027aa13515e4f3884bb6b",
+    "initializerLength": 2,
+    "initializerPreview": "32"
+  },
+  {
+    "id": "openfront-engine/src/client/components/DetailedGameViewModal.ts:SCHEDULED_PANES#1",
+    "file": "openfront-engine/src/client/components/DetailedGameViewModal.ts",
+    "name": "SCHEDULED_PANES",
+    "declarationKind": "const",
+    "initializerKind": "AsExpression",
+    "initializerHash": "116b81207203708a6114d5e71442fb8c0373fd7eab553ce349f7cc2072221898",
+    "initializerLength": 35,
+    "initializerPreview": "[\"ffa\", \"team\", \"special\"] as const"
+  },
+  {
+    "id": "openfront-engine/src/client/components/DetailedGameViewModal.ts:PANE_SLOTS#1",
+    "file": "openfront-engine/src/client/components/DetailedGameViewModal.ts",
+    "name": "PANE_SLOTS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "e7f6c011776e8db7cd330b54174fd76f7d0216b612387a5ffcfb81e6f0919683",
+    "initializerLength": 1,
+    "initializerPreview": "6"
+  },
+  {
+    "id": "openfront-engine/src/client/components/DetailedGameViewModal.ts:ALL_TAB#1",
+    "file": "openfront-engine/src/client/components/DetailedGameViewModal.ts",
+    "name": "ALL_TAB",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "5cf7504d9781301d83347546cdabc01a03c9638ab5b36c0a9203911078a0d1a4",
+    "initializerLength": 5,
+    "initializerPreview": "\"all\""
+  },
+  {
+    "id": "openfront-engine/src/client/components/DetailedGameViewModal.ts:SLOT_CLASS#1",
+    "file": "openfront-engine/src/client/components/DetailedGameViewModal.ts",
+    "name": "SLOT_CLASS",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "b9690c6a9df6f88b5bb488e4f0f7729c36bf00ab52e4610028dd2bea07be8b99",
+    "initializerLength": 6,
+    "initializerPreview": "\"h-40\""
+  },
+  {
+    "id": "openfront-engine/src/client/components/DetailedGameViewModal.ts:SLIDE_MS#1",
+    "file": "openfront-engine/src/client/components/DetailedGameViewModal.ts",
+    "name": "SLIDE_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "36790ecd55c2030dc553685bef719df653f413a20cdad1bfd1dc934c76686ddd",
+    "initializerLength": 3,
+    "initializerPreview": "220"
+  },
+  {
+    "id": "openfront-engine/src/client/components/DetailedGameViewModal.ts:CHIP_BASE#1",
+    "file": "openfront-engine/src/client/components/DetailedGameViewModal.ts",
+    "name": "CHIP_BASE",
+    "declarationKind": "const",
+    "initializerKind": "BinaryExpression",
+    "initializerHash": "71368793314cf1dfea6ce352148f25ad340bd39962e502dfec67931c947284dd",
+    "initializerLength": 105,
+    "initializerPreview": "\"px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider \" +\n    \"border transition-colors\""
+  },
+  {
+    "id": "openfront-engine/src/client/components/DetailedGameViewModal.ts:CHIP_ON#1",
+    "file": "openfront-engine/src/client/components/DetailedGameViewModal.ts",
+    "name": "CHIP_ON",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "9dbf866e8b0ece81dac163a74b8f7fcd8b0bc848ce72b7b3b84bad251d9da9d2",
+    "initializerLength": 46,
+    "initializerPreview": "\"bg-malibu-blue text-white border-malibu-blue\""
+  },
+  {
+    "id": "openfront-engine/src/client/components/DetailedGameViewModal.ts:CHIP_OFF#1",
+    "file": "openfront-engine/src/client/components/DetailedGameViewModal.ts",
+    "name": "CHIP_OFF",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "4ecf527d28780bcd2a1459f78043c8f40d3f35033232cda2c8112ea58b84302a",
+    "initializerLength": 77,
+    "initializerPreview": "\"bg-white/5 text-white/60 border-white/10 hover:bg-white/10 hover:text-white\""
+  },
+  {
+    "id": "openfront-engine/src/client/components/DetailedGameViewModal.ts:PANE_HEADING#1",
+    "file": "openfront-engine/src/client/components/DetailedGameViewModal.ts",
+    "name": "PANE_HEADING",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "15f69ed4d55f8ae9c485d2ad64493dd37db63ccf8dc99f17bcaea28036e72484",
+    "initializerLength": 62,
+    "initializerPreview": "\"block text-sm font-bold uppercase tracking-widest text-white\""
+  },
+  {
+    "id": "openfront-engine/src/client/components/DetailedGameViewModal.ts:SECTION_LABEL#1",
+    "file": "openfront-engine/src/client/components/DetailedGameViewModal.ts",
+    "name": "SECTION_LABEL",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "1936089676baf2c761a7b507e30f75740a2e0b108f4defacfc63e7c2ee258d20",
+    "initializerLength": 76,
+    "initializerPreview": "\"block text-[10px] font-bold uppercase tracking-widest text-white/40 mb-1.5\""
+  },
+  {
+    "id": "openfront-engine/src/client/components/DetailedGameViewModal.ts:FIELD_CLASS#1",
+    "file": "openfront-engine/src/client/components/DetailedGameViewModal.ts",
+    "name": "FIELD_CLASS",
+    "declarationKind": "const",
+    "initializerKind": "BinaryExpression",
+    "initializerHash": "c89fa4cb5aa1fad775af035f6dcc0a53f76c64cda5799ceb9a945780e04ff2f1",
+    "initializerLength": 131,
+    "initializerPreview": "\"px-2 py-1.5 rounded-lg bg-black/30 border border-white/10 text-white \" +\n    \"text-xs focus:outline-none focus:border-malibu-blue\""
+  },
+  {
+    "id": "openfront-engine/src/client/components/DetailedGameViewModal.ts:BUTTON_CLASS#1",
+    "file": "openfront-engine/src/client/components/DetailedGameViewModal.ts",
+    "name": "BUTTON_CLASS",
+    "declarationKind": "const",
+    "initializerKind": "BinaryExpression",
+    "initializerHash": "7f8d789a6fe9009b3ffbda4361572489270039a4d87baeaa16bb5de679fc4db9",
+    "initializerLength": 190,
+    "initializerPreview": "\"px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider \" +\n    \"border border-white/10 bg-white/5 text-white/80 hover:bg-white/10 \" +\n    \"hover:text-white transition-colors\""
   },
   {
     "id": "openfront-engine/src/client/components/EffectPreview.ts:EMPTY_BG#1",
@@ -7555,9 +7845,9 @@
     "name": "MODE_TABS",
     "declarationKind": "const",
     "initializerKind": "ArrayLiteralExpression",
-    "initializerHash": "d2e2205189e6022c3271afb83a1f6e6059986cc6a0f5bf462cd11c3919d3e05f",
-    "initializerLength": 322,
-    "initializerPreview": "[\n    { key: \"all\", labelKey: \"clan_modal.history_filter_all\" },\n    { key: \"ffa\", labelKey: \"clan_modal.history_type_ffa\" },\n    { key: \"team\", labelKey: \"clan_modal.history_type_team\" },\n    { key: \"hvn\", labelKey: \"clan_modal.history_..."
+    "initializerHash": "967ea1fe3c0ea7eac1a40ce020b38e6c3eacc13829d937918e4c51213d076350",
+    "initializerLength": 304,
+    "initializerPreview": "[\n    { key: \"all\", labelKey: \"clan_modal.history_filter_all\" },\n    { key: \"ffa\", labelKey: \"clan_modal.history_type_ffa\" },\n    { key: \"team\", labelKey: \"clan_modal.history_type_team\" },\n    { key: \"hvn\", labelKey: \"clan_modal.stats_hv..."
   },
   {
     "id": "openfront-engine/src/client/components/baseComponents/stats/PlayerStatsSummary.ts:METRIC_LABELS#1",
@@ -7700,6 +7990,16 @@
     "initializerPreview": "{\n    city: 1,\n    port: 2,\n    fact: 3,\n    defp: 4,\n    silo: 5,\n    saml: 6,\n} as const satisfies Record<Exclude<(typeof otherUnits)[number], \"wshp\">, number>"
   },
   {
+    "id": "openfront-engine/src/client/components/baseComponents/stats/PlayerStatsTable.ts:UNIT_LABEL_KEYS#1",
+    "file": "openfront-engine/src/client/components/baseComponents/stats/PlayerStatsTable.ts",
+    "name": "UNIT_LABEL_KEYS",
+    "declarationKind": "const",
+    "initializerKind": "SatisfiesExpression",
+    "initializerHash": "a95926da47c5efcc1c212b1964d5ca4ffccaf81a70f009fa09229dbd29c521dc",
+    "initializerLength": 582,
+    "initializerPreview": "{\n    city: \"unit_type.city\",\n    defp: \"unit_type.defense_post\",\n    fact: \"unit_type.factory\",\n    port: \"unit_type.port\",\n    saml: \"unit_type.sam_launcher\",\n    silo: \"unit_type.missile_silo\",\n    wshp: \"unit_type.warship\",\n    abomb..."
+  },
+  {
     "id": "openfront-engine/src/client/components/baseComponents/stats/PlayerStatsTable.ts:UNIT_COLUMNS#1",
     "file": "openfront-engine/src/client/components/baseComponents/stats/PlayerStatsTable.ts",
     "name": "UNIT_COLUMNS",
@@ -7735,9 +8035,9 @@
     "name": "FILTER_TABS",
     "declarationKind": "const",
     "initializerKind": "ArrayLiteralExpression",
-    "initializerHash": "d2e2205189e6022c3271afb83a1f6e6059986cc6a0f5bf462cd11c3919d3e05f",
-    "initializerLength": 322,
-    "initializerPreview": "[\n    { key: \"all\", labelKey: \"clan_modal.history_filter_all\" },\n    { key: \"ffa\", labelKey: \"clan_modal.history_type_ffa\" },\n    { key: \"team\", labelKey: \"clan_modal.history_type_team\" },\n    { key: \"hvn\", labelKey: \"clan_modal.history_..."
+    "initializerHash": "967ea1fe3c0ea7eac1a40ce020b38e6c3eacc13829d937918e4c51213d076350",
+    "initializerLength": 304,
+    "initializerPreview": "[\n    { key: \"all\", labelKey: \"clan_modal.history_filter_all\" },\n    { key: \"ffa\", labelKey: \"clan_modal.history_type_ffa\" },\n    { key: \"team\", labelKey: \"clan_modal.history_type_team\" },\n    { key: \"hvn\", labelKey: \"clan_modal.stats_hv..."
   },
   {
     "id": "openfront-engine/src/client/components/clan/ClanStatsBreakdown.ts:LEVEL_LEFT_PAD#1",
@@ -8830,6 +9130,16 @@
     "initializerPreview": "10"
   },
   {
+    "id": "openfront-engine/src/client/hud/layers/HeadsUpMessage.ts:OVERTIME_NOTICE_SECONDS#1",
+    "file": "openfront-engine/src/client/hud/layers/HeadsUpMessage.ts",
+    "name": "OVERTIME_NOTICE_SECONDS",
+    "declarationKind": "static readonly",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d",
+    "initializerLength": 1,
+    "initializerPreview": "5"
+  },
+  {
     "id": "openfront-engine/src/client/hud/layers/InGamePromo.ts:AD_TYPES#1",
     "file": "openfront-engine/src/client/hud/layers/InGamePromo.ts",
     "name": "AD_TYPES",
@@ -9248,6 +9558,26 @@
     "initializerHash": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35",
     "initializerLength": 1,
     "initializerPreview": "2"
+  },
+  {
+    "id": "openfront-engine/src/client/render/frame/derive/TerrainRowSpans.ts:MAX_MERGE_OVERDRAW_RATIO#1",
+    "file": "openfront-engine/src/client/render/frame/derive/TerrainRowSpans.ts",
+    "name": "MAX_MERGE_OVERDRAW_RATIO",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "9f29a130438b81170b92a42650f9a94291ecad60bd47af2a3886e75f7f728725",
+    "initializerLength": 3,
+    "initializerPreview": "1.5"
+  },
+  {
+    "id": "openfront-engine/src/client/render/frame/derive/TerrainRowSpans.ts:MAX_MERGE_EXTRA_TEXELS#1",
+    "file": "openfront-engine/src/client/render/frame/derive/TerrainRowSpans.ts",
+    "name": "MAX_MERGE_EXTRA_TEXELS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "8b926d75599a618e21f1341318e66517be26e18cc7496783d2b59758c1333be8",
+    "initializerLength": 4,
+    "initializerPreview": "4096"
   },
   {
     "id": "openfront-engine/src/client/render/gl/Camera.ts:MIN_ZOOM#1",
@@ -11690,6 +12020,16 @@
     "initializerPreview": "\"FATAL\""
   },
   {
+    "id": "openfront-engine/src/core/Schemas.ts:TEAM_COUNT_PRESETS#1",
+    "file": "openfront-engine/src/core/Schemas.ts",
+    "name": "TEAM_COUNT_PRESETS",
+    "declarationKind": "const",
+    "initializerKind": "AsExpression",
+    "initializerHash": "83ce4b39202258a714ae9b3e580afeff52dd8b2588881a5358facf4b4c1cab9f",
+    "initializerLength": 46,
+    "initializerPreview": "[Duos, Trios, Quads, HumansVsNations] as const"
+  },
+  {
     "id": "openfront-engine/src/core/Schemas.ts:GAME_ID_REGEX#1",
     "file": "openfront-engine/src/core/Schemas.ts",
     "name": "GAME_ID_REGEX",
@@ -11708,6 +12048,16 @@
     "initializerHash": "58e455eddd56b98b42b129234622c3502e843721f971620963e2cab39654bfc7",
     "initializerLength": 31,
     "initializerPreview": "z.string().regex(GAME_ID_REGEX)"
+  },
+  {
+    "id": "openfront-engine/src/core/Schemas.ts:CLIENT_ID_MAPPING#1",
+    "file": "openfront-engine/src/core/Schemas.ts",
+    "name": "CLIENT_ID_MAPPING",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "8a3380665bf828eb3446e493da37939430d9151f50b06c636306d9273dfee60d",
+    "initializerLength": 10,
+    "initializerPreview": "\"clientId\""
   },
   {
     "id": "openfront-engine/src/core/Schemas.ts:ADMIN_BOT_CLIENT_ID#1",
@@ -12068,6 +12418,16 @@
     "initializerHash": "f569a82af17c787a4c8f4062bb8f5cc93704dc19bfc479d6d101edec126c8619",
     "initializerLength": 420,
     "initializerPreview": "{\n    enabled: false,\n    speed: \"normal\" as DoomsdayClockSpeed,\n    warnSeconds: 30,\n    drainStartPercent: 2,\n    drainMaxPercent: 5,\n    drainRampSeconds: 90,\n    drainFloorPercent: 5,\n    floorStartPercent: 40,\n    floorDecaySeconds:..."
+  },
+  {
+    "id": "openfront-engine/src/core/configuration/Config.ts:OVERTIME_DEFAULTS#1",
+    "file": "openfront-engine/src/core/configuration/Config.ts",
+    "name": "OVERTIME_DEFAULTS",
+    "declarationKind": "const",
+    "initializerKind": "ObjectLiteralExpression",
+    "initializerHash": "e67d213ba6b4ed61870b9cd39754edd7a98f4dad19844430a241013de8e91ae8",
+    "initializerLength": 74,
+    "initializerPreview": "{\n    enabled: false,\n    startMinutes: 30,\n    dropPercentPerMinute: 2,\n}"
   },
   {
     "id": "openfront-engine/src/core/execution/AttackExecution.ts:MAX_PASSES#1",
@@ -12598,6 +12958,16 @@
     "initializerHash": "d89cd6e496567d4b6f7297beb7310ee1b1e0959a7e868cd0b66f2286926a3cc6",
     "initializerLength": 39,
     "initializerPreview": "[200, 400, 700, 1100, 1700, 2500, 3500]"
+  },
+  {
+    "id": "openfront-engine/src/core/game/DoomsdayClock.ts:LEVELS_TEAM#1",
+    "file": "openfront-engine/src/core/game/DoomsdayClock.ts",
+    "name": "LEVELS_TEAM",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "77102d4f32fc4fbfc7923bbacd7375de7c66959c4d59d42f4a6bcd811d12901b",
+    "initializerLength": 40,
+    "initializerPreview": "[300, 600, 1000, 1500, 2100, 2800, 3500]"
   },
   {
     "id": "openfront-engine/src/core/game/DoomsdayClock.ts:SCHEDULES#1",
@@ -15280,6 +15650,26 @@
     "initializerPreview": "\"settings.effects\""
   },
   {
+    "id": "openfront-engine/src/core/game/UserSettings.ts:LOADOUTS_KEY#1",
+    "file": "openfront-engine/src/core/game/UserSettings.ts",
+    "name": "LOADOUTS_KEY",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "4d5b3d61b248c9b7fa6fd8bb8db5ddcd34a71ad0aec9badbd12b020df439f348",
+    "initializerLength": 27,
+    "initializerPreview": "\"settings.cosmeticLoadouts\""
+  },
+  {
+    "id": "openfront-engine/src/core/game/UserSettings.ts:ACTIVE_LOADOUT_KEY#1",
+    "file": "openfront-engine/src/core/game/UserSettings.ts",
+    "name": "ACTIVE_LOADOUT_KEY",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "0148b9021d4707e17a1cfe91b4bbc8534c044dde37422a71d8fa49cc482512d0",
+    "initializerLength": 24,
+    "initializerPreview": "\"settings.activeLoadout\""
+  },
+  {
     "id": "openfront-engine/src/core/game/UserSettings.ts:PLAYER_STATS_COLUMNS_KEY#1",
     "file": "openfront-engine/src/core/game/UserSettings.ts",
     "name": "PLAYER_STATS_COLUMNS_KEY",
@@ -15315,9 +15705,19 @@
     "name": "PER_PLAYER_KEYS",
     "declarationKind": "const",
     "initializerKind": "ArrayLiteralExpression",
-    "initializerHash": "0593ceb88bbd181212544499a0e399545fc118811b175eade280f82ef27db0fa",
-    "initializerLength": 66,
-    "initializerPreview": "[\n    PATTERN_KEY,\n    FLAG_KEY,\n    CROWN_KEY,\n    EFFECTS_KEY,\n]"
+    "initializerHash": "e8fc7ca1981bbe972e32bebc8985fc497a65cf80729362328170e1145d7768ca",
+    "initializerLength": 108,
+    "initializerPreview": "[\n    PATTERN_KEY,\n    FLAG_KEY,\n    CROWN_KEY,\n    EFFECTS_KEY,\n    LOADOUTS_KEY,\n    ACTIVE_LOADOUT_KEY,\n]"
+  },
+  {
+    "id": "openfront-engine/src/core/game/UserSettings.ts:MAX_LOADOUTS#1",
+    "file": "openfront-engine/src/core/game/UserSettings.ts",
+    "name": "MAX_LOADOUTS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
+    "initializerLength": 2,
+    "initializerPreview": "10"
   },
   {
     "id": "openfront-engine/src/core/game/WaterManager.ts:WATER_GRAPH_REBUILD_INTERVAL#1",
@@ -15685,9 +16085,9 @@
     "name": "MAX_USERNAME_LENGTH",
     "declarationKind": "const",
     "initializerKind": "FirstLiteralToken",
-    "initializerHash": "670671cd97404156226e507973f2ab8330d3022ca96e0c93bdbdb320c41adcaf",
+    "initializerHash": "f5ca38f748a1d6eaf726b8a42fb575c3c71f1864a8143301782de13da2d9202b",
     "initializerLength": 2,
-    "initializerPreview": "27"
+    "initializerPreview": "20"
   },
   {
     "id": "openfront-engine/src/core/validations/username.ts:MIN_CLAN_TAG_LENGTH#1",
@@ -15728,6 +16128,16 @@
     "initializerHash": "f5ca38f748a1d6eaf726b8a42fb575c3c71f1864a8143301782de13da2d9202b",
     "initializerLength": 2,
     "initializerPreview": "20"
+  },
+  {
+    "id": "openfront-engine/src/core/validations/username.ts:FREE_FORM_USERNAME_PATTERN#1",
+    "file": "openfront-engine/src/core/validations/username.ts",
+    "name": "FREE_FORM_USERNAME_PATTERN",
+    "declarationKind": "const",
+    "initializerKind": "RegularExpressionLiteral",
+    "initializerHash": "a479c6487e74051ea1f688d4ff930e74b207cd9a8deb1641f09b5a4e0d778289",
+    "initializerLength": 22,
+    "initializerPreview": "/^[a-zA-Z0-9_ üÜ.]+$/u"
   },
   {
     "id": "openfront-engine/src/core/worker/Worker.worker.ts:MAX_TICKS_BEFORE_YIELD#1",
@@ -15790,6 +16200,16 @@
     "initializerPreview": "2000"
   },
   {
+    "id": "openfront-engine/src/server/ClientMsgRateLimiter.ts:REJOINS_PER_MINUTE#1",
+    "file": "openfront-engine/src/server/ClientMsgRateLimiter.ts",
+    "name": "REJOINS_PER_MINUTE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d",
+    "initializerLength": 1,
+    "initializerPreview": "5"
+  },
+  {
     "id": "openfront-engine/src/server/ClientMsgRateLimiter.ts:TOTAL_BYTES#1",
     "file": "openfront-engine/src/server/ClientMsgRateLimiter.ts",
     "name": "TOTAL_BYTES",
@@ -15798,6 +16218,36 @@
     "initializerHash": "2650281dc326fdfd8feda8e2849ed49e7fde0f656b254af128f8450fa335c8f2",
     "initializerLength": 15,
     "initializerPreview": "5 * 1024 * 1024"
+  },
+  {
+    "id": "openfront-engine/src/server/DesktopRelease.ts:MIN_SHELL_VERSION#1",
+    "file": "openfront-engine/src/server/DesktopRelease.ts",
+    "name": "MIN_SHELL_VERSION",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "8e633b4f41f99d4c388915bc852f2143cf4e9f5eaad70c76a81d4f4aa629eec1",
+    "initializerLength": 7,
+    "initializerPreview": "\"0.1.0\""
+  },
+  {
+    "id": "openfront-engine/src/server/DesktopRelease.ts:ALLOWED_ROOTS#1",
+    "file": "openfront-engine/src/server/DesktopRelease.ts",
+    "name": "ALLOWED_ROOTS",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "9179a26d446f76a00c174fd1f66be00d4384787db04222609b698b1b046dbed5",
+    "initializerLength": 23,
+    "initializerPreview": "[\"assets/\", \"_assets/\"]"
+  },
+  {
+    "id": "openfront-engine/src/server/DesktopRelease.ts:SHA256#1",
+    "file": "openfront-engine/src/server/DesktopRelease.ts",
+    "name": "SHA256",
+    "declarationKind": "const",
+    "initializerKind": "RegularExpressionLiteral",
+    "initializerHash": "78e1c4d8b10437f6cb4c1e26788e1a3ce65a5c3016e706a4c61d346a26b98190",
+    "initializerLength": 16,
+    "initializerPreview": "/^[0-9a-f]{64}$/"
   },
   {
     "id": "openfront-engine/src/server/GameServer.ts:GamePhase.Lobby#1",
@@ -15888,6 +16338,16 @@
     "initializerHash": "da8f1c91801680a0e762487757381e9a084fe34f8fa5873932e931b7bf42db32",
     "initializerLength": 27,
     "initializerPreview": "\"kick_reason.too_much_data\""
+  },
+  {
+    "id": "openfront-engine/src/server/GameServer.ts:SPECTATOR_BLOCKED_MESSAGES#1",
+    "file": "openfront-engine/src/server/GameServer.ts",
+    "name": "SPECTATOR_BLOCKED_MESSAGES",
+    "declarationKind": "const",
+    "initializerKind": "NewExpression",
+    "initializerHash": "692c2ae3e747bf412bb3981848f792dbb330699aa5f670bd3d0a898703d746de",
+    "initializerLength": 70,
+    "initializerPreview": "new Set([\n    \"intent\",\n    \"winner\",\n    \"live_stats\",\n    \"hash\",\n])"
   },
   {
     "id": "openfront-engine/src/server/GameServer.ts:KICK_REASON_INVALID_MESSAGE#1",
@@ -16038,6 +16498,16 @@
     "initializerHash": "a176eeb31e601c3877c87c2843a2f584968975269e369d5c86788b4c2f92d2a2",
     "initializerLength": 4,
     "initializerPreview": "3000"
+  },
+  {
+    "id": "openfront-engine/src/server/MasterLobbyService.ts:QUEUED_LOBBIES_PER_TYPE#1",
+    "file": "openfront-engine/src/server/MasterLobbyService.ts",
+    "name": "QUEUED_LOBBIES_PER_TYPE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "e7f6c011776e8db7cd330b54174fd76f7d0216b612387a5ffcfb81e6f0919683",
+    "initializerLength": 1,
+    "initializerPreview": "6"
   },
   {
     "id": "openfront-engine/src/server/PublicAssetManifest.ts:HASHED_PUBLIC_ASSET_GLOBS#1",

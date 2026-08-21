@@ -681,4 +681,38 @@ assert.equal(
   "a replacement border snapshot invalidates the cache without rescanning removed tiles",
 );
 
+// ── Open-sea access gate: pond-locked shores never host Ports ──────────────
+{
+  const makeFloodGame = (waterTiles) => {
+    const water = new Set(waterTiles);
+    return {
+      isWater: (tile) => water.has(tile),
+      getWaterComponent: (tile) => (water.has(tile) ? "comp" : tile),
+      forEachNeighbor: (tile, visit) => {
+        visit(tile - 1);
+        visit(tile + 1);
+      },
+    };
+  };
+  const pondBehavior = Object.create(structureSandbox.__StructureBehavior.prototype);
+  pondBehavior.game = makeFloodGame([10, 11, 12]);
+  assert.equal(
+    pondBehavior.portTileHasOpenWaterAccess(10),
+    false,
+    "a three-tile pond has no open-sea access and refuses the Port",
+  );
+  const oceanBehaviorAccess = Object.create(structureSandbox.__StructureBehavior.prototype);
+  oceanBehaviorAccess.game = makeFloodGame(Array.from({ length: 1000 }, (_, index) => index));
+  assert.equal(
+    oceanBehaviorAccess.portTileHasOpenWaterAccess(500),
+    true,
+    "a large connected water body grants open-sea access",
+  );
+  assert.equal(
+    oceanBehaviorAccess._portWaterOpennessCache.size,
+    1,
+    "openness is computed once per water component and cached",
+  );
+}
+
 process.stdout.write("port placement tests passed\n");

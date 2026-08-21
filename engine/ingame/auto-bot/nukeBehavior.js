@@ -480,14 +480,17 @@
       if (!selectedNuke) return;
       if (this.shouldDeferNukeForEconomy(target, selectedNuke.cost)) return;
       const difficulty = currentDifficulty();
-      const candidates = await this.collectNukeCandidates(
-        target, selectedNuke.type, silos, difficulty,
+      const candidates = await this.collectCandidatesWithRetry(
+        target, selectedNuke, silos, difficulty,
       );
-      // Legendary salvo discipline (goal requirement): never send a lone
-      // bomb through a SAM-covered trajectory — it is intercepted gold and
-      // invites retaliation. Split candidates into clear shots (fired in
-      // preference) and covered ones, which only fire when our ready silo
-      // capacity can saturate the covering SAM levels (sum + 1).
+      return this.fireNukeFromCandidates(
+        candidates.list, candidates.retargeted ?? target, selectedNuke, silos, difficulty,
+      );
+    }
+
+    // Clear shots first, then SAM-saturated salvos, then the anti-SAM
+    // fallback — the firing tail of maybeSendNuke.
+    async fireNukeFromCandidates(candidates, target, selectedNuke, silos, difficulty) {
       const { clear, covered } = this.partitionCandidatesBySamCoverage(
         candidates,
         selectedNuke.type,
@@ -530,9 +533,117 @@
       }
     }
 
+    // Candidate collection with the Legendary value-directed retry folded
+    // in: returns { list, retargeted } where retargeted is the replacement
+    // target (or null when the original target stood).
+    async collectCandidatesWithRetry(target, selectedNuke, silos, difficulty) {
+      const list = await this.collectNukeCandidates(
+        target, selectedNuke.type, silos, difficulty,
+      );
+      if (difficulty !== Difficulty.Legendary) return { list, retargeted: null };
+      const retried = await this.retryWithHigherValueTarget(
+        target, selectedNuke, silos, difficulty, list,
+      );
+      if (retried === null) return { list, retargeted: null };
+      return { list: retried.candidates, retargeted: retried.target };
+    }
+
+    // Legendary value-directed retry: the ordinary target ladder picks by
+    // relation/crown, not wealth — measured as targets whose whole candidate
+    // set scores ~0 while structure-rich enemies sit untargeted (3 ready
+    // silos, 26MM gold, zero launches). When the chosen target cannot pay
+    // for the bomb, retry once against the highest absolute structure-value
+    // owner before standing down. Returns {target, candidates} or null.
+    async retryWithHigherValueTarget(target, selectedNuke, silos, difficulty, candidates) {
+      const valueTarget = this.findHighestValueNukeTarget(target);
+      if (valueTarget === null) return null;
+      if (await this.shouldDeferNukeForEconomy(valueTarget, selectedNuke.cost)) {
+        return null;
+      }
+      // Wealth-directed retarget: engage whenever the ladder target holds
+      // less than half the treasure of the value leader — not only when the
+      // ladder found nothing at all. Conquest eats structure wealth fast, so
+      // waiting for a total miss wastes the window in which a 5MM harvest
+      // is still possible.
+      const ladderValue = this.playerStructureValue(target);
+      const valueTargetValue = this.playerStructureValue(valueTarget);
+      if (
+        this.bestCandidateValue(candidates) > 0 &&
+        valueTargetValue < Math.max(1_500_000, ladderValue * 2)
+      ) {
+        return null;
+      }
+      const retryCandidates = await this.collectNukeCandidates(
+        valueTarget, selectedNuke.type, silos, difficulty,
+      );
+      if (this.bestCandidateValue(retryCandidates) <= this.bestCandidateValue(candidates)) {
+        return null;
+      }
+      return { target: valueTarget, candidates: retryCandidates };
+    }
+
+    playerStructureValue(player) {
+      const structures = player?.units?.(...NUKE_STRUCTURES_TYPES) || [];
+      return structures.reduce(
+        (total, structure) => total + this.nukeStructureValue(structure),
+        0,
+      );
+    }
+
+    bestCandidateValue(candidates) {
+      return candidates.length > 0 ? Number(candidates[0]?.value ?? 0) : 0;
+    }
+
+    // Highest ABSOLUTE nuke structure value among alive, attackable,
+    // non-teammate players — the density fallback ranks per-tile, which
+    // favors compact small owners over big treasure troves. Memoized per
+    // (tick, excluded target): the conquest-spare hook calls this for every
+    // sendAttack on an attack-crossing tick and the winner cannot change
+    // within one tick.
+    findHighestValueNukeTarget(exclude) {
+      const tick = this.game.ticks();
+      const excludeKey = exclude ? String(exclude.smallID()) : "-";
+      const cacheKey = `${tick}:${excludeKey}`;
+      if (this._highestValueTargetCacheKey === cacheKey) {
+        return this._highestValueTargetCache;
+      }
+      const resolved = this.computeHighestValueNukeTarget(exclude);
+      this._highestValueTargetCacheKey = cacheKey;
+      this._highestValueTargetCache = resolved;
+      return resolved;
+    }
+
+    computeHighestValueNukeTarget(exclude) {
+      let best = null;
+      let bestValue = 0;
+      for (const other of this.game.players()) {
+        if (other.smallID() === this.player.smallID()) continue;
+        if (exclude && other.smallID() === exclude.smallID()) continue;
+        if (other.isAlive?.() === false) continue;
+        if (playersArePermanentTeammates(this.player, other)) continue;
+        if (this.attackBehavior.shouldAttack(other) === false) continue;
+        const structures = other.units(...NUKE_STRUCTURES_TYPES);
+        const value = structures.reduce(
+          (total, structure) => total + this.nukeStructureValue(structure),
+          0,
+        );
+        if (value > bestValue) {
+          best = other;
+          bestValue = value;
+        }
+      }
+      return best;
+    }
+
     async nukeHasPositiveExpectedValue(candidate, target, selectedNuke, silos) {
       if (currentDifficulty() !== Difficulty.Legendary) return true;
-      if (this.isUnderHeavyAttack() || this.isRetaliationNukeTarget(target)) return true;
+      // Survival bypass only: an existential attack may spend any bomb.
+      // The plain retaliation bypass was measured firing 11 sub-value shots
+      // (best candidate 5-31k vs a 750k Atom) for 0 destroyed value on the
+      // closest matrix row — a direct violation of the expected-value
+      // requirement, since deterrence bombs that hit nothing still cost
+      // full price and invite counter-retaliation.
+      if (this.isUnderHeavyAttack()) return true;
       const structures = target?.units?.(...NUKE_STRUCTURES_TYPES) || [];
       const magnitude = this.game.config().nukeMagnitudes(selectedNuke.type);
       const outerDist = euclDistFN(candidate.tile, magnitude.outer, false);
@@ -1794,7 +1905,7 @@
     }
 
     createSamOverwhelmPlan(targetSam, silos) {
-      const targetTile = targetSam.tile();
+      const targetTile = this.samSalvoAimTile(targetSam);
       const coveringSams = this.findEnemySamsCoveringTile(targetTile);
       const coveringSamIds = new Set(coveringSams.map((sam) => sam.id()));
       const coveringSamLevels = coveringSams.reduce(
@@ -1816,6 +1927,51 @@
         launchSequence, maxSpread, window,
         capacityMissing: unblocked.length < totalBombs || window.length < totalBombs,
       };
+    }
+
+    // Aim-point selection for anti-SAM salvos: the bomb must still destroy
+    // the SAM (kept inside the outer blast radius), but among the tiles that
+    // qualify, prefer the one whose blast also covers the most enemy
+    // structure value — measured bombs routinely landed on structure-poor
+    // tiles and converted a full salvo into zero destroyed gold.
+    samSalvoAimTile(targetSam) {
+      const magnitude = this.game.config().nukeMagnitudes(UNIT.AtomBomb);
+      const radius = Number(magnitude?.outer) || 0;
+      if (radius <= 0) return targetSam.tile();
+      const samTile = targetSam.tile();
+      const enemy = targetSam.owner?.();
+      const structures = enemy?.units?.(...NUKE_STRUCTURES_TYPES) || [];
+      if (structures.length === 0) return samTile;
+      const samX = this.game.x(samTile);
+      const samY = this.game.y(samTile);
+      const outerDist = euclDistFN(samTile, radius, false);
+      let bestTile = samTile;
+      let bestValue = this.blastStructureValue(samTile, structures, outerDist);
+      for (const structure of structures) {
+        const tile = structure.tile?.();
+        if (tile == null) continue;
+        const dx = this.game.x(tile) - samX;
+        const dy = this.game.y(tile) - samY;
+        const candidateX = Math.round(samX + dx * 0.5);
+        const candidateY = Math.round(samY + dy * 0.5);
+        if (!this.game.isValidCoord(candidateX, candidateY)) continue;
+        const candidate = this.game.ref(candidateX, candidateY);
+        // The SAM itself must remain inside the blast or the salvo loses
+        // its anti-SAM purpose.
+        if (Math.abs(candidateX - samX) + Math.abs(candidateY - samY) > radius) continue;
+        const value = this.blastStructureValue(candidate, structures, outerDist);
+        if (value > bestValue) {
+          bestValue = value;
+          bestTile = candidate;
+        }
+      }
+      return bestTile;
+    }
+
+    blastStructureValue(tile, structures, outerDist) {
+      return structures
+        .filter((unit) => outerDist(this.game, unit.tile()))
+        .reduce((sum, unit) => sum + this.nukeStructureValue(unit), 0);
     }
 
     getSiloIdOrNull(entry) {
