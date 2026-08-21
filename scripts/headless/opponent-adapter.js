@@ -328,6 +328,32 @@ export class BundledOpponentBot {
     if (process.env.OFH_LOG_STRUCTURES === "1") this.enableStructureTrace();
     if (process.env.OFH_LOG_SPAWN === "1") this.enableSpawnTrace();
     if (process.env.OFH_LOG_ATTACK_HOTSPOTS === "1") this.enableAttackHotspotTrace();
+    if (process.env.OFH_LOG_NUKES === "1") this.enableNukeTrace();
+  }
+
+  enableNukeTrace() {
+    const behavior = this.nationBot?.nukeBehavior;
+    if (!behavior || behavior.__ofhNukeTraceEnabled === true) return;
+    behavior.__ofhNukeTraceEnabled = true;
+    const originalMaybe = behavior.maybeSendNuke;
+    if (typeof originalMaybe !== "function") return;
+    behavior.maybeSendNuke = async (...args) => {
+      const beforeAtoms = Number(behavior.atomBombsLaunched || 0);
+      const beforeHydro = Number(behavior.hydrogenBombsLaunched || 0);
+      const result = await originalMaybe.apply(behavior, args);
+      this.structureTrace.push({
+        kind: "nuke-decision",
+        tick: this.game.ticks(),
+        atomBombsBefore: beforeAtoms,
+        hydrogenBombsBefore: beforeHydro,
+        atomBombsAfter: Number(behavior.atomBombsLaunched || 0),
+        hydrogenBombsAfter: Number(behavior.hydrogenBombsLaunched || 0),
+        pending: Number(behavior._pendingNukeLaunches?.length || 0),
+        gold: Number(behavior.player?.gold?.() || 0n),
+        silos: (behavior.player?.units?.("Missile Silo") || []).length,
+      });
+      return result;
+    };
   }
 
   enableAttackHotspotTrace() {
@@ -1140,6 +1166,7 @@ export class BundledOpponentBot {
     if (process.env.OFH_LOG_STRUCTURES === "1") this.enableStructureTrace();
     if (process.env.OFH_LOG_SPAWN === "1") this.enableSpawnTrace();
     if (process.env.OFH_LOG_TRIBE_LAUNCH === "1") this.enableTribeLaunchTrace();
+    if (process.env.OFH_LOG_NUKES === "1") this.enableNukeTrace();
     if (harness.window.__OFH_realOpponentClock) {
       harness.window.__OFH_realOpponentClock.now = this.game.ticks() * 100;
     }
