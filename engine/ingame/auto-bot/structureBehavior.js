@@ -3372,7 +3372,12 @@
       if (!state.settings.winFixes || !autoBotBuildAllowed(UNIT.SAMLauncher)) {
         return null;
       }
-      if (!this.hasObservedHostileMissileLaunch()) return null;
+      // A hostile-silo coverage gap is itself an anticipatory SAM pressure:
+      // the 300-tick construction race must reserve the next site before the
+      // first launch, while other missile/SAM parity pressure still waits for
+      // an observed launch.
+      const coverageGap = this.hydrogenCoverageNeedsSam();
+      if (!coverageGap && !this.hasObservedHostileMissileLaunch()) return null;
 
       {
         const config = this.game.config();
@@ -10289,18 +10294,20 @@
      * structure so a Hydrogen Bomb aimed at any of them has an interceptor.
      */
     async maybeEnsureHydrogenStructureCoverage() {
-      // Coverage is recomputed from completed geometry. Wait for an already
-      // committed SAM to finish before proving that another physical launcher
-      // is necessary; otherwise adjacent construction ticks can buy duplicate
-      // level-one launchers for the same post-impact structure cluster.
+      // Coverage is recomputed from completed geometry. An in-flight SAM still
+      // owns the construction lane; reserve the lane until it completes rather
+      // than letting a City/Port consume the retry while the footprint remains
+      // uncovered. If placement is temporarily illegal/unaffordable, return
+      // true as a held safety decision so ordinary economy cannot leapfrog it.
       if (this.hasOwnSamUnderConstruction()) return false;
       const plan = this.hydrogenStructureCoveragePlan();
       if (!plan) return false;
       if (plan.needsNewSam) {
-        return this.maybeSpawnStructure(
+        await this.maybeSpawnStructure(
           UNIT.SAMLauncher,
           this.hostileSiloSamPlacementOptions(),
         );
+        return true;
       }
       return this.maybeUpgradePlannedSam(plan);
     }

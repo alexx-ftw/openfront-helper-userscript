@@ -1066,8 +1066,7 @@ strategicBorderBehavior.spacingConstants = () => ({
   structureSpacing: 60,
 });
 
-const strategicThreat =
-  strategicBorderBehavior.defensePostThreat(Difficulty.Impossible);
+const strategicThreat = strategicBorderBehavior.defensePostThreat(Difficulty.Impossible);
 assert.equal(
   strategicThreat?.strategicBorder,
   true,
@@ -1089,28 +1088,19 @@ assert.deepEqual(
   "preemptive placement targets only the frontier tiles shared with the strong neighbor",
 );
 assert.notEqual(
-  strategicBorderBehavior.defensePostFrontDemand(
-    strategicThreat,
-    strategicThreat.frontTiles,
-  ),
+  strategicBorderBehavior.defensePostFrontDemand(strategicThreat, strategicThreat.frontTiles),
   null,
   "with no Posts built the preemptive budget is live",
 );
 strategicBorderPosts = [{ tile: () => 101 }];
 assert.notEqual(
-  strategicBorderBehavior.defensePostFrontDemand(
-    strategicThreat,
-    strategicThreat.frontTiles,
-  ),
+  strategicBorderBehavior.defensePostFrontDemand(strategicThreat, strategicThreat.frontTiles),
   null,
   "the second preemptive Post stays authorized while one frontier half is uncovered",
 );
 strategicBorderPosts = [{ tile: () => 101 }, { tile: () => 901 }];
 assert.equal(
-  strategicBorderBehavior.defensePostFrontDemand(
-    strategicThreat,
-    strategicThreat.frontTiles,
-  ),
+  strategicBorderBehavior.defensePostFrontDemand(strategicThreat, strategicThreat.frontTiles),
   null,
   "a third Post is never authorized once two already hold the strategic frontier",
 );
@@ -1188,8 +1178,7 @@ strategicBorderMe.incomingAttacks = () => [
   },
 ];
 strategicBorderTick++;
-const liveAttackThreat =
-  strategicBorderBehavior.defensePostThreat(Difficulty.Impossible);
+const liveAttackThreat = strategicBorderBehavior.defensePostThreat(Difficulty.Impossible);
 assert.equal(
   liveAttackThreat?.strategicBorder,
   undefined,
@@ -3214,6 +3203,34 @@ assert.equal(
   0,
   "coverage geometry is reassessed only after the pending SAM materializes",
 );
+
+const failedCoverageSamBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+let failedCoverageSpawnCalls = 0;
+failedCoverageSamBehavior.hasOwnSamUnderConstruction = () => false;
+failedCoverageSamBehavior.hydrogenStructureCoveragePlan = () => ({ needsNewSam: true });
+failedCoverageSamBehavior.hostileSiloSamPlacementOptions = () => ({ useActualCost: true });
+failedCoverageSamBehavior.maybeSpawnStructure = async () => {
+  failedCoverageSpawnCalls++;
+  return false;
+};
+assert.equal(
+  await failedCoverageSamBehavior.maybeEnsureHydrogenStructureCoverage(),
+  true,
+  "a failed uncovered-SAM placement reserves the construction lane for retry",
+);
+assert.equal(failedCoverageSpawnCalls, 1);
+
+const coveragePressureBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+coveragePressureBehavior.hydrogenCoverageNeedsSam = () => true;
+coveragePressureBehavior.hasObservedHostileMissileLaunch = () => false;
+coveragePressureBehavior.game = {
+  config: () => ({ isUnitDisabled: () => false }),
+};
+coveragePressureBehavior.hasDefensiveSamPressure = () => true;
+coveragePressureBehavior.safeConstructionCost = () => 1_500_000n;
+const coveragePressure = coveragePressureBehavior.defensiveConstructionPressure();
+assert.equal(coveragePressure?.type, UNIT.SAMLauncher);
+assert.equal(coveragePressure?.cost, 1_500_000n);
 
 const nukeSamLiquidityBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 nukeSamLiquidityBehavior.player = {
