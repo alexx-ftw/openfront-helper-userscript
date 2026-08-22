@@ -1471,6 +1471,12 @@
           0,
           Number(this.getKnownBorderOpponentTroops()) || 0,
         ) * borderThreatScale;
+        // MEASURED DEAD END (benchmark basket): tracking the EFFECTIVE opening
+        // limit here (0.65 in the Legendary window) lifted the 180s land share
+        // (anchor rank 18→2) but overextended the opening — a team win flipped
+        // to death@3149 and the anchor traded vet-3/economy for it, while
+        // leader180 stayed red anyway (rank 2, a nation still led). The
+        // default-limit floor stays.
         const openingSafetyFloor =
           this.terraNulliusSafetyTroopHighWater * (1 - EARLY_EXPAND_OPENING_LIMIT);
         return Math.min(
@@ -1572,9 +1578,19 @@
       const borderThreat =
         Math.max(0, Number(this.getKnownBorderOpponentTroops()) || 0) *
         TN_STRATEGIC_RESERVE_FRACTION;
+      // The high-water mark never decays, so after any army drawdown (a lost
+      // mirror war, a boat expedition, donations) the 60%-of-peak floor
+      // exceeded current troops and the liveness follow-up lane returned 0
+      // FOREVER — free-land expansion never recovered even with zero border
+      // threat. Clamp the floor input to the live army: history informs, but
+      // cannot freeze, the lane.
+      const effectiveHighWater = Math.min(
+        this.terraNulliusSafetyTroopHighWater,
+        ownTroops * 1.5,
+      );
       return Math.max(
         borderThreat,
-        this.terraNulliusSafetyTroopHighWater * (1 - EARLY_EXPAND_OPENING_LIMIT),
+        effectiveHighWater * (1 - EARLY_EXPAND_OPENING_LIMIT),
       );
     }
 
@@ -9148,11 +9164,11 @@
       const shares = this.teamShareSnapshot();
       if (shares === null) return false;
       if (!this.winPacingDominanceHolds(shares)) return false;
-      // The veterancy-points estimator overshoots the trade-capture metric
-      // (~1.75x measured: 50.5 estimated vs 29 actual) because veterancy
-      // also accrues from transport kills. Gate the release at the scaled
-      // bar so the stall keeps running while real trades are still short.
-      if (this.estimatedOwnCommerceCaptures() >= 66) return false;
+      // Release on TRUE captures (state.commerceCapturesTotal via
+      // estimatedOwnCommerceCaptures): the old meter-estimate bar (66,
+      // scaled for a ~1.75x overshoot) released the stall on transport-kill
+      // points while real trades were still far below the 33 requirement.
+      if (this.estimatedOwnCommerceCaptures() >= 33) return false;
       const traffic =
         typeof this.game.units === "function"
           ? this.game.units(UNIT.TradeShip).length
@@ -9281,6 +9297,14 @@
     }
 
     estimatedOwnCommerceCaptures() {
+      // Prefer the true capture counter (warshipBehavior counts each tracked
+      // hostile trade ship that becomes ours); the veterancy-meter fallback
+      // below conflates transport kills and warship final blows with captures
+      // and overshoots by a game-dependent factor.
+      const trueCaptures = Number(state.commerceCapturesTotal);
+      if (Number.isFinite(trueCaptures) && trueCaptures > 0) {
+        return trueCaptures;
+      }
       let points = 0;
       for (const warship of this.player.units(UNIT.Warship)) {
         const warshipState = warship.warshipState?.();

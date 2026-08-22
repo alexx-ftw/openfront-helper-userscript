@@ -1692,7 +1692,17 @@
         s.tradePos.delete(id);
         return;
       }
-      if (current.owner().id() === myId) return;
+      if (current.owner().id() === myId) {
+        // A tracked hostile trade ship becoming OURS is a true commerce
+        // capture (engine recordTradeCapture). Count it exactly: the
+        // veterancy-meter estimate conflates transport kills (25 pts) and
+        // warship final blows (a full level AND a meter wipe) with captures
+        // (10 pts), so no scaled bar over the estimate is correct across
+        // games — the win-pacing release gate reads this true counter.
+        state.commerceCapturesTotal = (state.commerceCapturesTotal || 0) + 1;
+        s.tradePos.delete(id);
+        return;
+      }
       {
         s.raids.push({ x: this.game.x(current.tile()), y: this.game.y(current.tile()), at: tick });
       }
@@ -1785,7 +1795,7 @@
       const boatSpeed = this.movementSpeed(null, UNIT.TransportShip);
       const warshipSpeed = this.movementSpeed(null, UNIT.Warship);
       const attackRange = this.warshipAttackRange();
-      const dispatchPool = this.interceptionDispatchPool(availableWarships, invasions, s);
+      const dispatchPool = this.interceptionDispatchPool(availableWarships, invasions, s, targetInvasions);
       const plan = planNavalInterceptions({
         ships: dispatchPool.map((warship) => ({ id: warship.id(), tile: warship.tile() })),
         invasions,
@@ -1819,7 +1829,7 @@
     // a single meter). Dispatch the flagship alone whenever it can reach every
     // live invasion in time; widen to the full pool the moment any invasion
     // would go uncovered, so coverage is never sacrificed for concentration.
-    interceptionDispatchPool(availableWarships, invasions, s) {
+    interceptionDispatchPool(availableWarships, invasions, s, targetInvasions) {
       if (!this.raidingTierActive() || availableWarships.length < 2) {
         return availableWarships;
       }
@@ -1834,7 +1844,13 @@
       const solo = planNavalInterceptions({
         ships: [{ id: flagship.id(), tile: flagship.tile() }],
         invasions,
-        targetInvasions: invasions,
+        // The probes MUST use the same engine-target set as the authoritative
+        // plan at the call site: probing with the narrower incoming-only set
+        // understates firing ambiguity (navalInterceptionAtTick rejects
+        // ambiguous positions), so soloCoversAll read true while the real
+        // plan left an invasion uncovered — then gold and 300 construction
+        // ticks went to a redundant emergency destroyer.
+        targetInvasions: targetInvasions ?? invasions,
         route: (from, to) => this.interceptionRoute(from, to),
         distance: (from, to) => this.waterDistance(from, to),
         targetDistanceSquared: (from, to) => this.game.euclideanDistSquared(from, to),
@@ -1863,7 +1879,7 @@
         const hullSolo = planNavalInterceptions({
           ships: [{ id: warship.id(), tile: warship.tile() }],
           invasions,
-          targetInvasions: invasions,
+          targetInvasions: targetInvasions ?? invasions,
           route: (from, to) => this.interceptionRoute(from, to),
           distance: (from, to) => this.waterDistance(from, to),
           targetDistanceSquared: (from, to) => this.game.euclideanDistSquared(from, to),

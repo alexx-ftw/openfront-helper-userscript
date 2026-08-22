@@ -85,6 +85,41 @@ function makeBehavior({ ownTiles, rivalTiles, ownTroops, incoming, tick }) {
   return { behavior, rival };
 }
 
+// 0. The capture estimator prefers the TRUE capture counter: the veterancy
+// meter conflates transport kills (25 pts) and warship final blows (a full
+// level + meter wipe) with captures (10 pts), so a meter-derived release bar
+// fires while real trades are short.
+{
+  const { behavior } = makeBehavior({
+    ownTiles: 6200,
+    rivalTiles: 2000,
+    ownTroops: 1_000_000,
+    incoming: [],
+    tick: 6_000,
+  });
+  behavior.estimatedOwnCommerceCaptures =
+    Object.getPrototypeOf(behavior).estimatedOwnCommerceCaptures;
+  behavior.player = {
+    ...behavior.player,
+    units: (type) =>
+      type === "Warship" ? [{ warshipState: () => ({ veterancy: 2, veterancyProgress: 50 }) }] : [],
+  };
+  sandbox.state.commerceCapturesTotal = 0;
+  assert.equal(
+    behavior.estimatedOwnCommerceCaptures(),
+    55,
+    "with no true captures yet the veterancy-meter fallback estimate is used",
+  );
+  sandbox.state.commerceCapturesTotal = 29;
+  assert.equal(
+    behavior.estimatedOwnCommerceCaptures(),
+    29,
+    "the true commerce-capture counter overrides the conflated meter estimate",
+  );
+  delete sandbox.state.commerceCapturesTotal;
+  behavior.estimatedOwnCommerceCaptures = () => 0;
+}
+
 // 1. Armed stall spares a fresh conquest of a rival player.
 {
   const { behavior, rival } = makeBehavior({

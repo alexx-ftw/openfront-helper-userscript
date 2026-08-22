@@ -991,8 +991,14 @@ expandingBehavior.botAttackPendingIntentCommitments = [];
 ownTroops = 10000;
 assert.equal(
   expandingBehavior.getTerraNulliusAttackTroops(terraNullius),
-  0,
-  "the 10% opening never chains another intent after the army has fallen below its protected reserve",
+  1000,
+  "after an army drawdown the liveness lane keeps its 10% slice instead of freezing forever (the clamped high-water floor caps at 90% of the live army)",
+);
+expandingBehavior.terraNulliusSafetyTroopHighWater = ownTroops * 10;
+assert.equal(
+  expandingBehavior.getTerraNulliusAttackTroops(terraNullius),
+  1000,
+  "even a pathological all-time peak cannot push the reserve floor past the live army's liveness slice",
 );
 ownTroops = 25000;
 expandingBehavior.terraNulliusOpeningCommittedTroops = ownTroops * 0.4;
