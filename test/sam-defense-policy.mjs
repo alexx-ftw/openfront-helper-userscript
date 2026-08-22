@@ -5815,4 +5815,40 @@ assert.match(
   "the first Silo uses the same demonstrated City ratio as follow-on offensive Silos",
 );
 
+// ── Clanmate structure protection ────────────────────────────────────────────
+// The hydrogen-coverage SAM plan seeds same-clan players' structure tiles
+// alongside ours (goal rule: protect clanmates' buildings as our own).
+{
+  const clanApi = {
+    getPlayerClanTag: (player) => player?.clanTag ?? null,
+    sameClanTag: (left, right) => left !== null && left !== undefined && left === right,
+  };
+  sandbox.__OFHSpawnObjective = clanApi;
+  const mate = {
+    clanTag: "ESP",
+    isAlive: () => true,
+    units: (type) => (type === UNIT.City ? [{ tile: () => 500 }] : []),
+  };
+  const stranger = {
+    clanTag: "XYZ",
+    isAlive: () => true,
+    units: (type) => (type === UNIT.City ? [{ tile: () => 900 }] : []),
+  };
+  const clanBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+  clanBehavior.player = { clanTag: "ESP", units: () => [] };
+  clanBehavior.game = { players: () => [clanBehavior.player, mate, stranger] };
+  const mateTiles = clanBehavior.clanmateStructureTiles();
+  assert.equal(mateTiles.length, 1, "a same-clan player's structures join the protection set");
+  assert.equal(mateTiles[0], 500, "the clanmate tile is the one collected");
+  const noTagBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+  noTagBehavior.player = { units: () => [] };
+  noTagBehavior.game = { players: () => [noTagBehavior.player, mate] };
+  assert.equal(
+    noTagBehavior.clanmateStructureTiles().length,
+    0,
+    "a player without a clan tag has no clanmate protection set",
+  );
+  delete sandbox.__OFHSpawnObjective;
+}
+
 process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");

@@ -531,6 +531,11 @@
       if (isAtLeastHardDifficulty(difficulty)) {
         await this.maybeDestroyEnemySam(target);
       }
+      // Hydrogen finisher runs before the ladder's next ordinary decision so
+      // the freshly-cleared cluster is harvested at maximum blast radius.
+      if (currentDifficulty() === Difficulty.Legendary) {
+        await this.maybeFirePostSalvoHydrogen();
+      }
     }
 
     // Candidate collection with the Legendary value-directed retry folded
@@ -2053,12 +2058,66 @@
         );
         if (!sent) return false;
       }
+      // Hydrogen finisher (goal rule): the saturating atoms exist to strip the
+      // covering SAMs; once the last bomb lands the target cluster is bare, so
+      // schedule the 5MM follow-up for the next nuclear decision pass.
+      const lastArrivalTick = this.game.ticks() +
+        Math.max(
+          0,
+          ...salvo.waits.map((wait, index) => {
+            const flight = plan.launchSequence?.[index]?.flightTicks ?? 0;
+            return wait + flight;
+          }),
+        );
+      state.postSalvoHydrogen = {
+        targetTile: plan.targetTile,
+        dueTick: lastArrivalTick + 5,
+        targetSmallID: nukeTarget.smallID?.() ?? null,
+      };
       if (this.hasPendingNukeLaunches()) {
         state.nukeWantSlots.pendingLaunches = true;
       } else {
         state.nukeWantSlots = null;
       }
       return true;
+    }
+
+    // Fire the scheduled Hydrogen finisher once the saturating salvo has
+    // landed and the target's covering SAMs are actually gone (a salvaged
+    // interception aborts the finisher — it would fly into live coverage,
+    // exactly the waste the salvo discipline forbids).
+    async maybeFirePostSalvoHydrogen() {
+      const pending = state.postSalvoHydrogen;
+      if (!pending || this.game.ticks() < pending.dueTick) return false;
+      state.postSalvoHydrogen = null;
+      const config = this.game.config();
+      if (config.isUnitDisabled(UNIT.HydrogenBomb)) return false;
+      const hydroCost = await this.getPerceivedNukeCost(UNIT.HydrogenBomb);
+      if (this.player.gold() < hydroCost) return false;
+      const silos = this.player.units(UNIT.MissileSilo)
+        .filter((silo) => !silo.isUnderConstruction());
+      if (silos.length === 0) return false;
+      if (this.findEnemySamsCoveringTile(pending.targetTile).length > 0) {
+        return false;
+      }
+      const target = this.postSalvoHydrogenTarget(pending);
+      if (target === null) return false;
+      const sent = await this.sendNuke(
+        pending.targetTile,
+        UNIT.HydrogenBomb,
+        target,
+      );
+      if (sent) this.hydrogenBombsLaunched += 1;
+      return sent;
+    }
+
+    postSalvoHydrogenTarget(pending) {
+      if (pending.targetSmallID === null) return null;
+      const target = this.game.players().find(
+        (player) => player.smallID?.() === pending.targetSmallID,
+      );
+      if (!target || target.isAlive?.() === false) return null;
+      return target;
     }
 
     async maybeDestroyEnemySam(nukeTarget) {

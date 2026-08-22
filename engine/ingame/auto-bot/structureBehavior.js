@@ -4374,6 +4374,8 @@
       if (config === null) return null;
       const structures = this.ownedStructureTiles();
       if (structures.length === 0) return null;
+      const clanmateStructures = this.clanmateStructureTiles();
+      const protectedTiles = structures.concat(clanmateStructures);
       const sams = [];
       for (const sam of this.player.units(UNIT.SAMLauncher) || []) {
         if (!this.isBuiltActiveSam(sam)) continue;
@@ -4384,11 +4386,11 @@
       }
       return {
         config,
-        structures,
+        structures: protectedTiles,
         sams,
         key: [
           hostileSiloLevelSum,
-          structures.join(","),
+          protectedTiles.join(","),
           sams
             .map(({ sam, tile, level }, index) =>
               [sam.id?.() ?? index, tile, level].join(":"),
@@ -4431,6 +4433,51 @@
             const tile = structure.tile();
             if (tile !== null && tile !== undefined) tiles.push(tile);
           }
+        }
+      }
+      return tiles;
+    }
+
+    // Goal rule: clanmates' buildings count as our own for protection. The
+    // hydrogen-coverage SAM plan seeds clanmate structure tiles alongside
+    // ours so a launcher sited to cover the cluster defends both. Tag reads
+    // go through the shared spawn-objective API (client-side inference from
+    // clanTag / displayName "[TAG] name"), absent API = no clanmates.
+    clanmateStructureTiles() {
+      const objectiveApi =
+        typeof globalThis === "object" ? globalThis.__OFHSpawnObjective : null;
+      if (
+        !objectiveApi ||
+        typeof objectiveApi.getPlayerClanTag !== "function" ||
+        typeof objectiveApi.sameClanTag !== "function"
+      ) {
+        return [];
+      }
+      const myTag = objectiveApi.getPlayerClanTag(this.player);
+      if (myTag === null) return [];
+      const tiles = [];
+      for (const other of this.game.players()) {
+        if (this.playerSharesMyClanTag(objectiveApi, other, myTag)) {
+          tiles.push(...this.playerStructureTiles(other));
+        }
+      }
+      return tiles;
+    }
+
+    playerSharesMyClanTag(objectiveApi, other, myTag) {
+      if (other === this.player || other.isAlive?.() === false) return false;
+      return objectiveApi.sameClanTag(
+        objectiveApi.getPlayerClanTag(other),
+        myTag,
+      );
+    }
+
+    playerStructureTiles(player) {
+      const tiles = [];
+      for (const type of STRUCTURES_TYPES) {
+        for (const structure of player.units?.(type) || []) {
+          const tile = structure.tile?.();
+          if (tile !== null && tile !== undefined) tiles.push(tile);
         }
       }
       return tiles;

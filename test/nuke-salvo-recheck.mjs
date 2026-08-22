@@ -593,5 +593,65 @@ launchSink = null;
   );
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// 4/4. Hydrogen finisher: scheduled by the saturating salvo, fires only once
+// due AND the covering SAMs are actually gone; live coverage aborts it.
+// ════════════════════════════════════════════════════════════════════════════
+{
+  const { world, nukeTarget, behavior } = makeSalvoWorld();
+  launchSink = launches;
+  behavior.game.players = () => [nukeTarget];
+  behavior.game.config = () => ({
+    isUnitDisabled: () => false,
+    maxSamRange: () => 150,
+    samRange: () => 150,
+  });
+  launches.length = 0;
+  behavior.player.gold = () => 10_000_000n;
+  behavior.getPerceivedNukeCost = async () => 5_000_000n;
+  behavior.player.units = (type) =>
+    type === UNIT.MissileSilo ? [{ isUnderConstruction: () => false }] : [];
+  behavior.sendNuke = async (tile, type) => {
+    launches.push({ type, tile });
+    return true;
+  };
+  sandbox.state.postSalvoHydrogen = {
+    targetTile: 20,
+    dueTick: world.tick + 10,
+    targetSmallID: nukeTarget.smallID(),
+  };
+  world.covering.push({ unit: world.sam("enemy-sam-1", 2), distSquared: 0 });
+  assert.equal(
+    await behavior.maybeFirePostSalvoHydrogen(),
+    false,
+    "live covering SAMs abort the Hydrogen finisher",
+  );
+  assert.deepEqual(launches, [], "nothing launched into coverage");
+  world.covering.length = 0;
+  assert.equal(
+    await behavior.maybeFirePostSalvoHydrogen(),
+    false,
+    "a finisher before its due tick stays queued",
+  );
+  assert.ok(
+    sandbox.state.postSalvoHydrogen !== null,
+    "the pending finisher survives an early check",
+  );
+  world.tick = 10_000;
+  sandbox.state.postSalvoHydrogen.dueTick = 9_999;
+  assert.equal(
+    await behavior.maybeFirePostSalvoHydrogen(),
+    true,
+    "a due finisher over cleared coverage fires the Hydrogen bomb",
+  );
+  assert.deepEqual(
+    launches,
+    [{ type: UNIT.HydrogenBomb, tile: 20 }],
+    "the finisher is a Hydrogen bomb at the salvo's target tile",
+  );
+  assert.equal(behavior.hydrogenBombsLaunched, 1, "the finisher counts as a Hydrogen launch");
+  assert.equal(sandbox.state.postSalvoHydrogen, null, "a fired finisher clears the schedule");
+}
+
 launchSink = null;
 process.stdout.write("nuke salvo recheck tests passed\n");
