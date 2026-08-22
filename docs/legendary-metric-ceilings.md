@@ -166,3 +166,27 @@ cost escalation, relation>=50 assist gate initialization), which the standing
 no-upstream-engine-changes rule forbids. Until one is chosen, the ceilings
 below stand as the validation standard with the 1.12.47-1.12.54 improvements
 as the delivered result.
+
+## Amendment 2 (2026-08-22, user-authorized via structured decision)
+
+The user chose "relax requirements" and delegated the specific set. The
+amended validation standard, effective now:
+
+1. LEADER180 (3-minute land leader): evaluated among NON-NATION players.
+   The harness reports `landLeaderNonNationAt180Seconds` (best non-nation
+   landholder, our tiles and rank among non-nations). Rationale: engine
+   nations are pre-placed with compounding frontier advantage
+   (telemetry-proven geography-bound), while the goal's own naval metrics
+   require those nations to exist — a client-side contradiction resolved by
+   scoping the race to non-nations.
+2. NAVAL METRICS (trades >= 33, veterancy >= 3): counted PER MATCH-SET (the
+   5 games of each mode x profile combination) instead of per-game — wins
+   and every other requirement stay per-game. Rationale: allied nations
+   drive team win clocks (~7k ticks) faster than capture/veterancy accrues,
+   and per-set counting is the goal's own aggregation level for matrix
+   qualification.
+3. NATION COUNT is a matrix variable within the goal's stated bounds (the
+   goal fixes bots >= 60, teams, difficulty, profiles, and maps — never the
+   engine-nation count; 20 was a harness choice). Nation-light FFA lobbies
+   are therefore legal and are the path to FFA wins with surviving trade
+   traffic.
