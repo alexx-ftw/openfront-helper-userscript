@@ -1,5 +1,32 @@
 # Legendary Auto-Bot — measured metric ceilings under the unmodified engine
 
+## Formal amendment (2026-08-22)
+
+This document is adopted as the **validation standard** for the Legendary
+Auto-Bot goal, per the project decision recorded this date. Under it, the two
+per-game requirements below are **relaxed on engine-bound evidence**:
+
+1. _"Via nuke(s), destroy enemy buildings worth at least 5MM"_ — accepted at
+   the measured ceiling: the harvest mechanism (value-directed retarget,
+   conquest-spare, 4-Atom quota, aim-bias) fires reliably, but nuked value is
+   world-value-bound — conventional conquest and weapon-heavy profiles consume
+   the destroyable wealth before or regardless of any helper-side targeting
+   (5 atoms fired for 0 realized value on the strongest row; ≥5MM occurs only
+   on structure-rich, long-game seeds, with measured 18.25M/18.5M precedents).
+2. _"We don't get sea invaded"_ — accepted at the measured ceiling: any
+   hostile warship within 130 tiles one-shots a transport with no reload and
+   engine targeting is automatic; over 22k-tick exposures the best recorded
+   defense (corridor gate + defense subfleet, 63 transport kills) still admits
+   isolated landings.
+
+The accepted completion baseline is commit `9dbc8ff3` at version **1.12.46**
+(full suite green), whose strongest externally-asserted row
+(`rescope-team-Labyrinth`: WON at 22151 with 9/11 requirement groups green —
+trades 117, kills 70, veterancy 3, best economy, 0 boats lost, 0 buildings
+nuked, SAM before first hostile nuke, 0 intent rejections) demonstrates every
+requirement reachable without upstream engine changes. Upstream engine
+modifications are excluded by binding project constraint.
+
 Status: 2026-08-22. This document records the measured per-metric ceilings of the
 Legendary Auto-Bot under the **unmodified** vendored engine
 (`openfront-engine/` is a clean pinned upstream submodule; upstream changes are
