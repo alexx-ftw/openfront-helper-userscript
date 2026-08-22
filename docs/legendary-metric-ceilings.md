@@ -76,6 +76,15 @@ that closed each one.
 
 ## Standing greens (verified on strongest rows)
 
+**Strongest row on record (2026-08-22 re-scoped matrix, seed
+`rescope-team-Labyrinth`, committed build @1.12.46): WON at tick 22151 with
+9 of 11 requirement groups green — trades 117, warship kills 70, veterancy 3,
+best economy (364.9MM vs 226.5MM), 0 own buildings nuked, 0 landing boats
+lost, SAM ready 5488 before the first hostile nuke 6256, 0 intent rejections
+across 2762 accepted. The only two reds are the engine-bound ceilings below:
+nuked value 0 (5 atoms fired, all landed on low-value tiles) and one sea
+invasion in 22k ticks.**
+
 won, warship kills ≥5, best economy, 0 own buildings nuked, SAM before first
 hostile nuke (profile-dependent), 0 intent rejections, no wasted nukes below
 expected value, no uncapturable-target warship pursuit, no ports on
