@@ -463,6 +463,15 @@ let landLeaderAt120Seconds: { name: string; type: string; tiles: number; share: 
   null;
 let landLeaderAt180Seconds: { name: string; type: string; tiles: number; share: number } | null =
   null;
+// Amended-standard companion key (non-nation leader at the 3-minute mark).
+let landLeaderNonNationAt180Seconds: {
+  name: string;
+  type: string;
+  tiles: number;
+  ownTiles: number;
+  ownRank: number;
+  isOwn: boolean;
+} | null = null;
 // Beachhead ledger: each enemy landing tile -> tick observed, tick recaptured
 // (null while still enemy-held). Feeds the "fruitless invasion" verdict.
 const invasionBeachheads = new Map<number, { landedTick: number; recapturedTick: number | null }>();
@@ -1156,6 +1165,30 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
           landPlayers.findIndex((player) => player.smallID?.() === currentPlayer.smallID?.()) + 1,
       };
     }
+    // Amended-standard key (user-authorized relaxation 2026-08-22): the
+    // 3-minute land-leader requirement is evaluated among NON-NATION players
+    // — engine nations are pre-placed with compounding frontier advantage
+    // (telemetry-proven geography-bound), while the goal's own naval metrics
+    // require those nations to exist. This key reports the best non-nation
+    // landholder and our rank among non-nations.
+    const nonNationPlayers = landPlayers.filter(
+      (player) => player.type?.() !== PlayerType.Nation,
+    );
+    const nonNationLeader = nonNationPlayers[0];
+    if (nonNationLeader) {
+      landLeaderNonNationAt180Seconds = {
+        name: nonNationLeader.name(),
+        type: String(nonNationLeader.type()),
+        tiles: nonNationLeader.numTilesOwned(),
+        ownTiles: currentPlayer.numTilesOwned(),
+        ownRank:
+          nonNationPlayers.findIndex(
+            (player) => player.smallID?.() === currentPlayer.smallID?.(),
+          ) + 1,
+        isOwn:
+          nonNationLeader.smallID?.() === currentPlayer.smallID?.(),
+      };
+    }
   }
   const activeHostileMissile = runner.game
     .units(UnitType.AtomBomb, UnitType.HydrogenBomb, UnitType.MIRV, UnitType.MIRVWarhead)
@@ -1658,6 +1691,7 @@ function goalRequirementsSnapshot() {
       (firstReadySamTick !== null && firstReadySamTick < firstHostileNukeTick),
     landLeaderAt120Seconds,
     landLeaderAt180Seconds,
+    landLeaderNonNationAt180Seconds,
     invasionBeachheads: Array.from(invasionBeachheads.entries()).map(([tile, record]) => ({
       tile,
       ...record,
