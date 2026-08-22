@@ -116,3 +116,53 @@ won, warship kills ≥5, best economy, 0 own buildings nuked, SAM before first
 hostile nuke (profile-dependent), 0 intent rejections, no wasted nukes below
 expected value, no uncapturable-target warship pursuit, no ports on
 land-locked water, ≥30 FPS per-tick budget.
+
+## Addendum (2026-08-22, post-amended-round, builds 1.12.47-1.12.54)
+
+The amended goal round (3-minute leader, conquest escape, beachhead-recapture
+clause, Hydrogen finisher, clanmate protection) was executed through nine
+verified commits, each multi-seed validated with 0 intent rejections under the
+no-seed-based-changes constraint:
+
+- 1.12.47 win-pacing v2 + warship veterancy concentration (P1/P3/P4a)
+- 1.12.48 peace-window SAM chest (deadline hoard, warship-lane leak closure)
+- 1.12.49 crash fix (unvalidated nameLocation centers killed the bot mid-game)
+- 1.12.50 audit fixes F1-F3 (interception probe parity, true-capture counter,
+  liveness high-water clamp) — team rows' transport kills 0-3 -> 10-27
+- 1.12.51 protector appeasement — FIRST FFA survival mechanism (+40% total
+  survival ticks, 5/7 rows improved; best row 11383 ticks with trades 60,
+  transport kills 33, veterancy 3 — first FFA row ever green on the naval trio)
+- 1.12.52 donation-renewal plumbing (inert: alliance acceptance ceiling below)
+- 1.12.53 RNG-stream regression fix (team identity restored byte-identically)
+  + plateau gold-to-City conversion (activation defects fixed in 1.12.54;
+  premise stale — no hoard exists in current freeze economies)
+- 1.12.54 plateau lane reachability + affordability fixes
+
+### Exhaustively measured dead ends this round (full evidence in session
+### records; do not retry)
+
+Window 1200->1800 (twice), freeze-war at parity (conquest floor 4x),
+early-City density priority (byte-neutral; City #1 is income-bound, the 5mm
+gain was starting-gold), offensive TargetPlayer (assist gate requires ally
+relation >= 50; relations default 0 with no team initialization and the
+alliance-acceptance ceiling means no FFA ally qualifies; harness adapter also
+lacks the Target event), trade lane-flooding (route choice belongs to the
+sending port), quickChat/emoji (engine-dead beyond Easy), rails/trains
+(cosmetic), wave-merging (one AttackExecution per intent, never merges),
+fallout nuking (shrinks the win denominator — accelerates the crown).
+
+### The two-level decision (presented to the user 2026-08-22)
+
+The requirements contain a client-side contradiction: naval metrics (>=33
+captures, >=5 kills, vet 3) require enemy NATIONS (the only trade/ship
+economy), while leader180 and FFA survival require beating pre-placed nations
+at the frontier-rate land race (telemetry-proven geography-bound, same-seed
+own180 spread <= 4% across code arms). Reaching the 5+5 qualifying matrix
+therefore requires either (a) requirement relaxations — redefine leader180 as
+biggest non-nation / top-K, count naval metrics per match-set rather than
+per-game on fast team wins — or (b) the four documented engine-side changes
+(WarshipExecution capture attribution, SAM 1.5M first-cost deadline, City
+cost escalation, relation>=50 assist gate initialization), which the standing
+no-upstream-engine-changes rule forbids. Until one is chosen, the ceilings
+below stand as the validation standard with the 1.12.47-1.12.54 improvements
+as the delivered result.
