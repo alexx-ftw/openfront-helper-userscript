@@ -8799,6 +8799,18 @@
             return { player: filteredPlayer, distance: Infinity };
           }
 
+          // game.ref() THROWS on out-of-bounds coordinates, and nameLocation()
+          // centers can legitimately be off-map (stale label positions —
+          // measured crash: ref(1501,431) on Bering Strait Normal killed the
+          // bot mid-game at ~tick 1000). An invalid center is the same
+          // information gap as a missing one: sort last, probe by reachability.
+          const centersValid =
+            this.game.isValidCoord(playerCenter.x, playerCenter.y) &&
+            this.game.isValidCoord(filteredPlayerCenter.x, filteredPlayerCenter.y);
+          if (!centersValid) {
+            return { player: filteredPlayer, distance: Infinity };
+          }
+
           const playerCenterTile = this.game.ref(playerCenter.x, playerCenter.y);
           const filteredPlayerCenterTile = this.game.ref(
             filteredPlayerCenter.x,
