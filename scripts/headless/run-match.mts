@@ -65,13 +65,8 @@ UnitImpl.prototype.delete = function (
   destroyer?: import("../../openfront-engine/src/core/game/Game.ts").Player,
 ) {
   if (nukeDetonatingOwner !== null && nukeVulnerableStructureTypes.has(this.type())) {
-    if (
-      destroyer === nukeDetonatingOwner &&
-      destroyer?.clientID?.() === clientID
-    ) {
-      nukedStructureGold += this.mg
-        .unitInfo(this.type())
-        .cost(this.mg, this.owner());
+    if (destroyer === nukeDetonatingOwner && destroyer?.clientID?.() === clientID) {
+      nukedStructureGold += this.mg.unitInfo(this.type()).cost(this.mg, this.owner());
     }
     if (this.owner()?.clientID?.() === clientID) {
       ownStructuresNuked += 1;
@@ -208,7 +203,11 @@ if (requestedGameMode !== "team" && requestedGameMode !== "ffa") {
 if (Number(forceFiveMM) + Number(noModifiers) + Number(temporaryPvpImmunity) > 1) {
   throw new Error("OFH_5MM, OFH_NO_MODIFIERS, and OFH_TEMP_PVP_IMMUNITY are mutually exclusive");
 }
-if (forceFiveMM && requestedStartingGold !== undefined && numericRequestedStartingGold !== 5_000_000) {
+if (
+  forceFiveMM &&
+  requestedStartingGold !== undefined &&
+  numericRequestedStartingGold !== 5_000_000
+) {
   throw new Error("OFH_5MM cannot be combined with a different OFH_STARTING_GOLD value");
 }
 if (injectHostileAtom && !forceNukesEnabled) {
@@ -403,7 +402,13 @@ console.warn(
     startingGold: config.startingGold ?? 0,
     publicGameModifiers: config.publicGameModifiers ?? {},
     spawnImmunityDuration: config.spawnImmunityDuration ?? null,
-    profile: forceFiveMM ? "5MM" : temporaryPvpImmunity ? "temporary-pvp-immunity" : noModifiers ? "none" : "playlist",
+    profile: forceFiveMM
+      ? "5MM"
+      : temporaryPvpImmunity
+        ? "temporary-pvp-immunity"
+        : noModifiers
+          ? "none"
+          : "playlist",
     nations: nations.length,
     tribes: config.bots,
     myTeam: me?.team() ?? null,
@@ -454,7 +459,13 @@ let firstIncomingLandAttackObserved = false;
 let firstTerritoryLossObserved = false;
 let firstHostileNukeTick: number | null = null;
 let firstReadySamTick: number | null = null;
-let landLeaderAt120Seconds: { name: string; type: string; tiles: number; share: number } | null = null;
+let landLeaderAt120Seconds: { name: string; type: string; tiles: number; share: number } | null =
+  null;
+let landLeaderAt180Seconds: { name: string; type: string; tiles: number; share: number } | null =
+  null;
+// Beachhead ledger: each enemy landing tile -> tick observed, tick recaptured
+// (null while still enemy-held). Feeds the "fruitless invasion" verdict.
+const invasionBeachheads = new Map<number, { landedTick: number; recapturedTick: number | null }>();
 let spawnSnapshotLogged = false;
 let spawnMaterializedLogged = false;
 const cumulativeIntentTypes = new Map<string, number>();
@@ -1112,7 +1123,8 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   const executionMs = performance.now() - executionStartedAt;
   const currentPlayer = runner.game.playerByClientID(clientID);
   if (currentPlayer && runner.game.ticks() >= 1200 && landLeaderAt120Seconds === null) {
-    const landPlayers = runner.game.players()
+    const landPlayers = runner.game
+      .players()
       .filter((player) => player.isAlive() && player.numTilesOwned() > 0)
       .sort((left, right) => right.numTilesOwned() - left.numTilesOwned());
     const leader = landPlayers[0];
@@ -1123,6 +1135,25 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
         type: String(leader.type()),
         tiles: leader.numTilesOwned(),
         share: leader.numTilesOwned() / totalLand,
+      };
+    }
+  }
+  if (currentPlayer && runner.game.ticks() >= 1800 && landLeaderAt180Seconds === null) {
+    const landPlayers = runner.game
+      .players()
+      .filter((player) => player.isAlive() && player.numTilesOwned() > 0)
+      .sort((left, right) => right.numTilesOwned() - left.numTilesOwned());
+    const leader = landPlayers[0];
+    if (leader) {
+      const totalLand = Math.max(1, runner.game.numLandTiles() - runner.game.numTilesWithFallout());
+      landLeaderAt180Seconds = {
+        name: leader.name(),
+        type: String(leader.type()),
+        tiles: leader.numTilesOwned(),
+        share: leader.numTilesOwned() / totalLand,
+        ownTiles: currentPlayer.numTilesOwned(),
+        ownRank:
+          landPlayers.findIndex((player) => player.smallID?.() === currentPlayer.smallID?.()) + 1,
       };
     }
   }
@@ -1162,11 +1193,30 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
       .incomingAttacks()
       .some(
         (attack) =>
-          attack.attacker?.()?.team?.() !== currentPlayer.team() &&
-          attack.sourceTile?.() != null,
+          attack.attacker?.()?.team?.() !== currentPlayer.team() && attack.sourceTile?.() != null,
       )
   ) {
     seaInvasionObserved = true;
+    // Beachhead ledger: record the landing tile; mark it recaptured the tick
+    // the invasion source's owner loses it and we (or our team) hold it.
+    for (const attack of currentPlayer.incomingAttacks()) {
+      if (attack.sourceTile?.() == null) continue;
+      if (attack.attacker?.()?.team?.() === currentPlayer.team()) continue;
+      const landingTile = attack.sourceTile();
+      if (!invasionBeachheads.has(landingTile)) {
+        invasionBeachheads.set(landingTile, {
+          landedTick: runner.game.ticks(),
+          recapturedTick: null,
+        });
+      }
+    }
+  }
+  for (const [tile, record] of invasionBeachheads) {
+    if (record.recapturedTick !== null) continue;
+    const holderTeam = runner.game.playerBySmallID(runner.game.ownerID(tile))?.team?.();
+    if (holderTeam === currentPlayer?.team?.()) {
+      record.recapturedTick = runner.game.ticks();
+    }
   }
   updateStrategicTrajectory();
   if (logSpawn && !spawnMaterializedLogged && currentPlayer?.numTilesOwned() > 0) {
@@ -1534,11 +1584,7 @@ function goalRequirementsSnapshot() {
         ...me
           .units(UnitType.Warship)
           .map((unit) =>
-            Number(
-              typeof unit.veterancy === "function"
-                ? unit.veterancy()
-                : unit.veterancy ?? 0,
-            ),
+            Number(typeof unit.veterancy === "function" ? unit.veterancy() : (unit.veterancy ?? 0)),
           ),
       )
     : 0;
@@ -1553,6 +1599,48 @@ function goalRequirementsSnapshot() {
       bestRivalName = player.name();
     }
   }
+  // Peak enemy structure value ever nukable (5MM escape-clause evidence):
+  // the maximum, over game end, of the replacement value of every hostile
+  // structure alive at once, priced with the engine's build costs. If this
+  // stayed under 5MM the world never contained the required harvest even
+  // though silos and quota were ready.
+  const enemyStructureValueAtEnd = me
+    ? runner.game
+        .players()
+        .filter(
+          (player) =>
+            player.clientID?.() !== clientID && player.team?.() !== me.team?.() && player.isAlive(),
+        )
+        .reduce(
+          (total, player) =>
+            total +
+            player
+              .units(
+                UnitType.City,
+                UnitType.Port,
+                UnitType.Factory,
+                UnitType.MissileSilo,
+                UnitType.SAMLauncher,
+                UnitType.DefensePost,
+              )
+              .reduce((playerTotal, unit) => {
+                const level = Math.max(1, Number(unit.level?.()) || 1);
+                switch (unit.type()) {
+                  case UnitType.City:
+                  case UnitType.Port:
+                  case UnitType.Factory:
+                    return playerTotal + BigInt(Math.min(1_000_000, 125_000 * 2 ** (level - 1)));
+                  case UnitType.MissileSilo:
+                    return playerTotal + 1_000_000n;
+                  case UnitType.SAMLauncher:
+                    return playerTotal + BigInt(Math.min(3_000_000, 1_500_000 * level));
+                  default:
+                    return playerTotal + BigInt(Math.min(250_000, 50_000 * level));
+                }
+              }, 0n),
+          0n,
+        )
+    : 0n;
   return {
     tradeCaptured: Number(stats?.boats?.trade?.[2] ?? 0n),
     enemyTransportBoatsDestroyed: Number(stats?.boats?.trans?.[3] ?? 0n),
@@ -1560,6 +1648,7 @@ function goalRequirementsSnapshot() {
     warshipsDestroyed: Number(stats?.units?.wshp?.[1] ?? 0n),
     maxWarshipVeterancy: warshipVeterancy,
     nukedStructureGold: nukedStructureGold.toString(),
+    enemyStructureValueAtEnd: enemyStructureValueAtEnd.toString(),
     ownStructuresNuked,
     seaInvasionObserved,
     firstHostileNukeTick,
@@ -1568,12 +1657,21 @@ function goalRequirementsSnapshot() {
       firstHostileNukeTick === null ||
       (firstReadySamTick !== null && firstReadySamTick < firstHostileNukeTick),
     landLeaderAt120Seconds,
+    landLeaderAt180Seconds,
+    invasionBeachheads: Array.from(invasionBeachheads.entries()).map(([tile, record]) => ({
+      tile,
+      ...record,
+    })),
+    allInvasionsRecaptured: invasionBeachholdsAllRecaptured(),
     goldEarned: myGoldEarned.toString(),
     bestRivalGoldEarned: bestRivalGoldEarned.toString(),
     bestRivalName,
     bestEconomy: myGoldEarned > bestRivalGoldEarned,
   };
 }
+
+const invasionBeachholdsAllRecaptured = () =>
+  Array.from(invasionBeachheads.values()).every((record) => record.recapturedTick !== null);
 
 const finalResult = {
   phase: "result",
