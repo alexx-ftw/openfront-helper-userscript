@@ -320,8 +320,20 @@
     }
 
     // maybeSendAllianceRequests — NationAllianceBehavior.ts:65
+    // Proactive alliance REQUESTS are FFA-only: in Team mode real teammates
+    // already exist, and measured basket rows regressed when the ctor
+    // name-probe made this historically-inert path live (2 of 3 team wins
+    // flipped to losses — ally-gated engine rules then also block our own
+    // attacks vs the allied rival team). All Team baselines were measured
+    // with the send path inert (ctor unbound), so FFA-only restores exactly
+    // the measured-good Team behavior while keeping the FFA protector lane.
+    proactiveAllianceSendsAllowed() {
+      return String(this.game.config().gameConfig().gameMode) !== "Team";
+    }
+
     maybeSendAllianceRequests(borderingEnemies) {
       if (this.game.config().disableAlliances()) return;
+      if (!this.proactiveAllianceSendsAllowed()) return;
 
       // NEVER send alliance requests to regular bots — they spam defensively,
       // blocking attacks against them. Only send to humans and Nation AI.
@@ -447,6 +459,7 @@
       const now = performance.now();
       const throttle = state.settings.farAllyThrottleMs || 4000;
       if (now - (state.lastFarAllyMs || 0) < throttle) return;
+      if (!this.proactiveAllianceSendsAllowed()) return;
       // Self-gate on dominance (computed only AFTER the cheap throttle passes, ~every 4s)
       // so we stop courting far nations the moment we're winning — same gate as the
       // far-accept path, so accept and outreach flip together.
@@ -473,6 +486,100 @@
       );
       state.lastFarAllyMs = now;
       runtimeDebugLog("[Diplo] reach out far →", safeName(target));
+    }
+
+    // ── Protector appeasement (FFA survival, Legendary win-fix) ────────────────
+    // Death-by-snowball in FFA comes from ONE strong bordering nation rolling
+    // us with waves we cannot mirror. An ALLIANCE makes that nation's land AND
+    // boat attacks engine-rejected outright (AttackExecution/TransportShip-
+    // Execution hard-check isFriendly), and renewals keep it for the whole
+    // game. The window is real but narrow: the nation's own decision gate
+    // (NationAllianceBehavior.getAllianceDecision, Impossible branch) rejects
+    // below-Neutral relations — and OUR attacks (−100 relation) followed by
+    // our auto-embargo (permanent −20) poison exactly the strong neighbours
+    // we need. So appeasement = court the strongest bordering nation with
+    // retried requests (engine cooldown 300 ticks, one pending per recipient),
+    // never embargo it, and never send ORDINARY attacks its way (retaliation
+    // and incoming-defense lanes are untouched — defending does not poison
+    // relation, only our attacks do).
+    protectorAppeasementActive() {
+      if (state.settings.winFixes !== true) return false;
+      if (typeof currentDifficulty !== "function" || currentDifficulty() !== "Legendary") {
+        return false;
+      }
+      if (String(this.game.config().gameConfig().gameMode) !== "FFA") return false;
+      const config = this.game.config();
+      if (typeof config.disableAlliances === "function" && config.disableAlliances()) {
+        return false;
+      }
+      return true;
+    }
+
+    appeasementNationStrength(player) {
+      const maxTroops = Number(player.maxTroops?.() ?? Number.NaN);
+      if (Number.isFinite(maxTroops) && maxTroops > 0) return maxTroops;
+      return Number(player.troops?.() || 0);
+    }
+
+    appeasementCandidate(other, mySid, myStrength) {
+      if (!other?.isPlayer?.() || other.smallID() === mySid) return null;
+      if (other.type() !== PlayerType.Nation) return null;
+      if (!other.isAlive?.()) return null;
+      if (this.player.isFriendly(other) === true) return null;
+      // Only appease UP: a protector we already outmuscle is a conquest
+      // target, not a shield.
+      const strength = this.appeasementNationStrength(other);
+      if (strength < myStrength * 1.25) return null;
+      return { other, strength };
+    }
+
+    appeasementProtector() {
+      if (!this.protectorAppeasementActive()) return null;
+      const tick = typeof this.game.ticks === "function" ? this.game.ticks() : 0;
+      if (this._protectorCacheTick === tick && this._protectorCache !== undefined) {
+        return this._protectorCache;
+      }
+      this._protectorCacheTick = tick;
+      this._protectorCache = null;
+      const mySid = this.player.smallID();
+      const myStrength = this.appeasementNationStrength(this.player);
+      let best = null;
+      let bestStrength = 0;
+      for (const neighbour of this.player.nearby()) {
+        const candidate = this.appeasementCandidate(neighbour, mySid, myStrength);
+        if (candidate !== null && candidate.strength > bestStrength) {
+          bestStrength = candidate.strength;
+          best = candidate.other;
+        }
+      }
+      this._protectorCache = best;
+      return best;
+    }
+
+    maybeCourtProtectors() {
+      if (!this.protectorAppeasementActive()) return;
+      const now = performance.now();
+      const throttle = state.settings.protectorCourtThrottleMs || 3500;
+      if (now - (state.lastProtectorCourtMs || 0) < throttle) return;
+      if (this.isDominantForDiplomacy()) return;
+      const protector = this.appeasementProtector();
+      if (protector === null) return;
+      const ctors = discoverCtors(getEventBus());
+      if (!ctors.allianceRequest) return;
+      if (typeof companionAllianceVeto === "function" && companionAllianceVeto(protector)) {
+        return;
+      }
+      emitIntent(
+        ctors.allianceRequest,
+        this.player.__src ?? this.player,
+        protector.__src ?? protector,
+      );
+      setLastAction(
+        tr("🛡️➡️ Court protector {name}", { name: safeName(protector) }),
+        "diplo",
+      );
+      state.lastProtectorCourtMs = now;
+      runtimeDebugLog("[Diplo] court protector →", safeName(protector));
     }
 
     // getAllianceDecision — NationAllianceBehavior.ts:88 (THE decision tree)

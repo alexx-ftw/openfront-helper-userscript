@@ -443,6 +443,7 @@
         if (!this.feat("alliance")) return;
         this.allianceBehavior.handleAllianceRequests();
         this.allianceBehavior.handleAllianceExtensionRequests();
+        this.allianceBehavior.maybeCourtProtectors?.();
       });
     }
 
@@ -1076,9 +1077,23 @@
     }
 
     // handleEmbargoesToHostileNations — NationExecution.ts:308.
+    // Protector appeasement: embargoing the courted protector applies a
+    // permanent −20 relation in that nation toward us, locking the alliance
+    // gate (relation < Neutral → guaranteed rejection) — never embargo it,
+    // and repair any prior embargo.
+    protectorEmbargoExemption(other, embargoed) {
+      const protectorSid = this.allianceBehavior?.appeasementProtector?.()?.smallID?.();
+      if (protectorSid === undefined || other.smallID() !== protectorSid) {
+        return false;
+      }
+      if (embargoed) this.stopEmbargo(other);
+      return true;
+    }
+
     handleEmbargoForPlayer(other, player, difficulty, forceTeamEmbargo) {
       const sameTeam = player.isOnSameTeam(other);
       const embargoed = player.hasEmbargoAgainst(other);
+      if (this.protectorEmbargoExemption(other, embargoed)) return embargoed;
       if (forceTeamEmbargo && other.type() !== PlayerType.Bot && !sameTeam) {
         return !embargoed && this.addEmbargo(other, false);
       }

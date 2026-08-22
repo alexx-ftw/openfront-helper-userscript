@@ -3080,10 +3080,25 @@
         await profileAttackAsync(profile, "attack-ordinary-target", () =>
           this.attackBestTarget(
             context.borderingFriends,
-            context.borderingEnemies,
+            this.appeasementFilteredEnemies(context.borderingEnemies),
             context.nearby,
           ));
       }
+    }
+
+    // Protector appeasement (FFA survival): ordinary attacks against the
+    // courted protector cost −100 relation each and lock the alliance gate
+    // below Neutral — the alliance makes its waves engine-rejected outright.
+    // Only ORDINARY targeting is filtered; retaliation, forced defense and
+    // incoming-defense lanes keep full freedom (defending costs no relation).
+    appeasementFilteredEnemies(borderingEnemies) {
+      const protectorSid =
+        this.allianceBehavior?.appeasementProtector?.()?.smallID?.();
+      if (protectorSid === undefined) return borderingEnemies;
+      const filtered = borderingEnemies.filter(
+        (enemy) => enemy.smallID() !== protectorSid,
+      );
+      return filtered.length > 0 ? filtered : borderingEnemies;
     }
 
     // maybeAttack — AiAttackBehavior.maybeAttack.

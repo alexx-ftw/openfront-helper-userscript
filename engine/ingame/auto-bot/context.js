@@ -234,6 +234,23 @@
   ];
 
   function discoverIntentConstructor(Ctor) {
+    // The alliance-request ctor is field-identical to SendBreakAlliance-
+    // IntentEvent ({requestor, recipient}) so no shape probe can separate
+    // them — but the CLASS NAMES differ. Binding by name works wherever the
+    // class name survives (the engine harness registers AllianceRequestEvent;
+    // the unminified client registers SendAllianceRequestIntentEvent); in a
+    // minified browser the name won't match and the lazy accept-sniff in
+    // allianceBehavior remains the capture path. Without this, proactive
+    // alliance requests are impossible in the harness (nobody ever sends us
+    // one to sniff from).
+    if (
+      _ctors.allianceRequest == null &&
+      typeof Ctor === "function" &&
+      (Ctor.name === "AllianceRequestEvent" ||
+        Ctor.name === "SendAllianceRequestIntentEvent")
+    ) {
+      _ctors.allianceRequest = Ctor;
+    }
     for (const probe of INTENT_CTOR_PROBES) {
       if (_ctors[probe.key]) continue;
       const matches = matchesIntentConstructor(
