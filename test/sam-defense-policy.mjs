@@ -6074,4 +6074,87 @@ assert.match(
   sandbox.isLegendaryDifficulty = originalIsLegendary;
 }
 
+// ── Enemy-economy/silo nuclear threat forecast (economy-vs-SAM planner) ────
+{
+  const originalIsLegendary = sandbox.isLegendaryDifficulty;
+  sandbox.isLegendaryDifficulty = () => true;
+  const forecastBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+  let tick = 2_000;
+  let ownGold = 400_000;
+  let hostileGold = 200_000;
+  let hostileSilos = 0;
+  forecastBehavior.game = {
+    ticks: () => tick,
+    players: () => [
+      { smallID: () => 1 },
+      {
+        smallID: () => 2,
+        isPlayer: () => true,
+        isAlive: () => true,
+        gold: () => hostileGold,
+      },
+    ],
+  };
+  forecastBehavior.player = {
+    smallID: () => 1,
+    gold: () => BigInt(ownGold),
+  };
+  forecastBehavior.player.isFriendly = () => false;
+  forecastBehavior.hostileMissileSiloCapacitySummary = () => ({
+    hostileSiloCount: hostileSilos,
+  });
+  forecastBehavior.safeConstructionCost = () => 1_500_000n;
+  delete sandbox.state.hostileEconSamples;
+  delete sandbox.state.ownEconSamples;
+
+  // Two samples 100 ticks apart: hostile +100k/100t (1k/t), us +50k/100t.
+  hostileGold = 200_000;
+  ownGold = 400_000;
+  forecastBehavior.hostileNuclearThreatSample();
+  forecastBehavior.estimatedOwnGoldPerTick();
+  tick += 100;
+  hostileGold = 300_000;
+  ownGold = 450_000;
+  forecastBehavior.hostileNuclearThreatSample();
+  forecastBehavior.estimatedOwnGoldPerTick();
+  // Hostile needs 1.75M (silo+nuke) from 300k at 1k/t = 1450t + 300 = 1750.
+  // Our SAM: (1.5M - 450k)/500t = 2100 + 300 = 2400. 2400 > 1750-600 → chest.
+  assert.equal(
+    forecastBehavior.nuclearThreatOutrunsOurSamReadiness(),
+    true,
+    "a threat that matures before our SAM readiness keeps the chest bound",
+  );
+
+  // Rich us, poor-and-slow them: we outpace comfortably → economy proceeds.
+  tick += 100;
+  ownGold = 1_600_000;
+  hostileGold = 320_000;
+  forecastBehavior.estimatedOwnGoldPerTick();
+  forecastBehavior.hostileNuclearThreatSample();
+  // Our ETA = 300 (affordable now); hostile ~1730t. 300 > 1730-600 is false.
+  assert.equal(
+    forecastBehavior.nuclearThreatOutrunsOurSamReadiness(),
+    false,
+    "when our SAM readiness provably precedes the threat, the economy lane stays open",
+  );
+
+  // Live hostile silos shorten the horizon (level-weighted existing-silo path).
+  hostileSilos = 2;
+  tick += 100;
+  hostileGold = 700_000;
+  ownGold = 1_650_000;
+  forecastBehavior.hostileNuclearThreatSample();
+  forecastBehavior.estimatedOwnGoldPerTick();
+  // Existing-silo ETA: (750k-700k)/1k = 50t × 1/(1+0.5) ≈ 33t; ours 300t.
+  assert.equal(
+    forecastBehavior.nuclearThreatOutrunsOurSamReadiness(),
+    true,
+    "high hostile silo levels with a near-funded nuke re-bind the chest",
+  );
+  hostileSilos = 0;
+  delete sandbox.state.hostileEconSamples;
+  delete sandbox.state.ownEconSamples;
+  sandbox.isLegendaryDifficulty = originalIsLegendary;
+}
+
 process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");

@@ -2853,6 +2853,13 @@
       // More-Than-Luck temp row: first nuke 11245, SAM never ready).
       if (this.legendaryPeaceWindowSamChestDue()) return true;
       if (!this.shouldBuildHostileSiloSam()) return false;
+      // Forecast release (goal requirement: weigh enemy economy prediction
+      // and Silo levels for economy-vs-SAM): while the sampled threat ETA
+      // provably trails our SAM-readiness ETA by the safety margin, the
+      // chest stays OFF and economy compounds — every later defense gets
+      // cheaper. Null forecast (insufficient samples) keeps the chest's
+      // conservative default.
+      if (!this.nuclearThreatOutrunsOurSamReadiness()) return false;
       const gold = legendaryBigInt(this.player?.gold?.() || 0n);
       return gold < this.cost(UNIT.SAMLauncher);
     }
@@ -3196,6 +3203,114 @@
         if (gold >= HOSTILE_SAM_TRIGGER_GOLD_THRESHOLD) siloThreat = true;
       }
       return { reachedSiloGoldThreshold, siloThreat };
+    }
+
+    // ── Enemy-economy/silo nuclear threat forecast ──────────────────────────
+    // Goal requirement: weigh the enemies' CURRENT AND PREDICTED economy plus
+    // their Silo LEVELS when deciding economy vs SAM construction. The chest
+    // (which freezes economic builds to fund the interceptor) binds ONLY when
+    // the forecast says we cannot outpace the threat: if our SAM-readiness
+    // ETA lands comfortably before the enemies' next-nuclear-capability ETA,
+    // economy growth proceeds — compounding income makes every later defense
+    // cheaper.
+    hostileRichestGold(mySid) {
+      let richest = 0;
+      for (const other of this.game.players()) {
+        if (!other?.isPlayer?.() || other.smallID() === mySid) continue;
+        if (!other.isAlive?.()) continue;
+        if (this.player.isFriendly?.(other) === true) continue;
+        const gold = Number(other.gold?.() || 0);
+        if (gold > richest) richest = gold;
+      }
+      return richest;
+    }
+
+    hostileSiloLevelSum() {
+      const siloSummary = this.hostileMissileSiloCapacitySummary();
+      const count = Number(siloSummary?.hostileSiloCount ?? 0);
+      // Level sum approximated by count until a per-level read is exposed;
+      // count is the launch-capacity proxy the summary already carries.
+      return count;
+    }
+
+    hostileNuclearThreatSample() {
+      const tick = Number(this.game?.ticks?.() ?? 0);
+      if (!state.hostileEconSamples) state.hostileEconSamples = [];
+      const samples = state.hostileEconSamples;
+      const last = samples[samples.length - 1];
+      if (last && tick - last.tick < 100) return;
+      samples.push({
+        tick,
+        gold: this.hostileRichestGold(this.player.smallID()),
+        siloLevels: this.hostileSiloLevelSum(),
+      });
+      if (samples.length > 3) samples.shift();
+    }
+
+    hostileNukePathEta(latest, incomePerTick, nukeCost) {
+      if (incomePerTick <= 0) {
+        return latest.gold >= nukeCost ? 0 : Number.POSITIVE_INFINITY;
+      }
+      return Math.max(0, (nukeCost - latest.gold) / incomePerTick);
+    }
+
+    hostileNuclearThreatEtaTicks() {
+      this.hostileNuclearThreatSample();
+      const samples = state.hostileEconSamples || [];
+      if (samples.length < 2) return null;
+      const latest = samples[samples.length - 1];
+      const prior = samples[samples.length - 2];
+      const dTick = Math.max(1, latest.tick - prior.tick);
+      const incomePerTick = Math.max(0, latest.gold - prior.gold) / dTick;
+      // Nuclear paths: a nuke from an EXISTING silo (~750k), or a new silo
+      // (~1M + 300 construction) then a nuke. Silo LEVELS shorten the
+      // horizon: each level is ready launch capacity already in place.
+      const siloLevels = Math.max(0, Number(latest.siloLevels) || 0);
+      const etaExisting = this.hostileNukePathEta(latest, incomePerTick, 750_000);
+      const etaNewSilo =
+        this.hostileNukePathEta(latest, incomePerTick, 1_750_000) + 300;
+      const levelFactor = 1 / (1 + siloLevels * 0.25);
+      return siloLevels > 0
+        ? etaExisting * levelFactor
+        : Math.min(etaExisting, etaNewSilo);
+    }
+
+    ownSamReadinessEtaTicks() {
+      const cost = this.safeConstructionCost(UNIT.SAMLauncher);
+      if (cost === null) return null;
+      const gold = Number(this.player?.gold?.() || 0n);
+      if (gold >= Number(cost)) return 300;
+      const income = this.estimatedOwnGoldPerTick();
+      if (income <= 0) return Number.POSITIVE_INFINITY;
+      return (Number(cost) - gold) / income + 300;
+    }
+
+    estimatedOwnGoldPerTick() {
+      if (!state.ownEconSamples) state.ownEconSamples = [];
+      const tick = Number(this.game?.ticks?.() ?? 0);
+      const samples = state.ownEconSamples;
+      const last = samples[samples.length - 1];
+      if (!last || tick - last.tick >= 100) {
+        samples.push({ tick, gold: Number(this.player?.gold?.() || 0n) });
+        if (samples.length > 3) samples.shift();
+      }
+      if (samples.length < 2) return 0;
+      const latest = samples[samples.length - 1];
+      const prior = samples[samples.length - 2];
+      const dTick = Math.max(1, latest.tick - prior.tick);
+      return Math.max(0, latest.gold - prior.gold) / dTick;
+    }
+
+    // True when the forecast says we CANNOT comfortably outpace the nuclear
+    // threat — the chest binds and SAM construction/upgrade wins the lane.
+    // Margin 600 ticks: SAM completion lead that leaves room for one income
+    // misestimate.
+    nuclearThreatOutrunsOurSamReadiness() {
+      const enemyEta = this.hostileNuclearThreatEtaTicks();
+      if (enemyEta === null) return false;
+      const ownEta = this.ownSamReadinessEtaTicks();
+      if (ownEta === null) return false;
+      return ownEta > enemyEta - 600;
     }
 
     shouldBuildHostileSiloSam() {
