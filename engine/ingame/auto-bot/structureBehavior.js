@@ -1189,9 +1189,14 @@
     defensePostThreat(difficulty) {
       // Land attacks only (src: sourceTile() === null). isLandAttack() uses the
       // exact source tile when present and reconstructs it through a shared
-      // land border when the extension omits it.
+      // land border when the extension omits it. Tribe (Bot) attackers are
+      // excluded: they never mount the sustained strategic pressure a Post
+      // deters, so a Post on a tribe front is pure gold waste (goal rule).
       const landAttacks = (this.player.incomingAttacks?.() ?? []).filter(
-        (attack) => this.isActiveIncomingAttack(attack) && this.isLandAttack(attack),
+        (attack) =>
+          this.isActiveIncomingAttack(attack) &&
+          this.isLandAttack(attack) &&
+          !this.isTribeLandAttack(attack),
       );
       if (landAttacks.length === 0) {
         // PREEMPTIVE: with no live attack, a bordering army-sized Nation/Human
@@ -1438,6 +1443,10 @@
     isStrategicLandAttack(attack) {
       const type = attack.attacker?.()?.type?.();
       return type === PlayerType.Nation || type === PlayerType.Human;
+    }
+
+    isTribeLandAttack(attack) {
+      return attack.attacker?.()?.type?.() === PlayerType.Bot;
     }
 
     isActiveIncomingAttack(attack) {

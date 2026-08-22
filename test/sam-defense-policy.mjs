@@ -1106,6 +1106,35 @@ assert.equal(
 );
 strategicBorderPosts = [];
 
+// A live tribe (Bot) land attack never authorizes a Defense Post (goal
+// rule): tribes mount no sustained strategic pressure, so a Post on a tribe
+// front is pure gold waste. The strategic-border Nation front above still
+// holds.
+const tribeAttack = {
+  attacker: () => hugeBorderBot,
+  target: () => strategicBorderMe,
+  troops: () => 900_000,
+  retreating: () => false,
+};
+const tribeAttackSave = strategicBorderBehavior.player.incomingAttacks;
+const tribeAttackSaveBorder = strategicBorderBehavior.player.sharesBorderWith;
+strategicBorderBehavior.player.incomingAttacks = () => [tribeAttack];
+strategicBorderBehavior.player.sharesBorderWith = () => true;
+strategicBorderTick++;
+const tribeThreat = strategicBorderBehavior.defensePostThreat(Difficulty.Impossible);
+assert.equal(
+  Array.from(tribeThreat?.landAttacks ?? []).length,
+  0,
+  "a tribe land attack carries no Defense Post threat",
+);
+assert.equal(
+  tribeThreat?.strategicBorder === true,
+  true,
+  "only the Nation/Human strategic frontier can still authorize Posts",
+);
+strategicBorderBehavior.player.incomingAttacks = tribeAttackSave;
+strategicBorderBehavior.player.sharesBorderWith = tribeAttackSaveBorder;
+
 strategicBorderTick++;
 assert.equal(
   strategicBorderBehavior.defensePostThreat(Difficulty.Medium)?.allowed,
