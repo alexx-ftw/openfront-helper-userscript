@@ -472,6 +472,15 @@
         autoBotProfileSyncPhase(profile, "emoji", () =>
           this.emojiBehavior.maybeSendCasualEmoji());
         this.runDiplomacy(profile);
+        // The plateau gold-to-City conversion runs EARLY in the chain: the
+        // full structures phase sits behind slower attack/warship work and
+        // gets aborted by tick-advance checks in the late-game frozen empire
+        // (measured: maybeSpawnPlateauCity calls stopped entirely after
+        // tick ~5800 while the freeze ran to 11383). The lane's own gates
+        // are O(1), and the double call from handleWinFixStructurePriorities
+        // is idempotent (one City at a time).
+        if (!(await this.runOptionalAsyncPhase(this.feat("build"), profile, "plateau-city",
+          () => this.structureBehavior.maybeSpawnPlateauCity?.(), tickGeneration))) return;
         if (!(await this.runOptionalAsyncPhase(this.feat("nuke"), profile, "mirv",
           () => this.mirvBehavior.considerMIRV(), tickGeneration))) return;
         if (!(await this.runOptionalAsyncPhase(this.feat("build"), profile, "structures",

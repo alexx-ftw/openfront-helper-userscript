@@ -10469,8 +10469,14 @@
       if (cityUnits.some((unit) => this.unitUnderConstruction(unit))) return false;
       const cost = this.safeConstructionCost(UNIT.City);
       if (cost === null) return false;
+      // AFFORDABILITY ONLY, no reserve multiplier: City costs escalate
+      // exponentially (min(1M, 2^owned x 125k)), so at 3+ Cities the next one
+      // already costs 1M — a 2x reserve demanded 2M the freeze never holds
+      // (measured on the frozen surr-4 row: gold cycles 0.5-1.1M while the
+      // lane returned false for 8500 straight ticks). The density gate above
+      // and one-City-at-a-time construction still bound the conversion.
       const gold = legendaryBigInt(this.player?.gold?.() || 0n);
-      return gold >= cost * 2n;
+      return gold >= cost;
     }
 
     async maybeSpawnPlateauCity() {
