@@ -674,6 +674,61 @@ const makeGame = (overrides = {}) => ({
     null,
     "no prey means no hunt",
   );
+  // Capture concentration: with a flagship hunt origin, the fleet chases the
+  // prey nearest THE FLAGSHIP even when another trade ship is closer to the
+  // hunting hull itself.
+  const preyNearFlagship = { tile: () => 300 };
+  const preyNearHunter = { tile: () => 104 };
+  assert.equal(
+    behavior.tradeHuntTarget(hunter, [preyNearFlagship, preyNearHunter], [], 290),
+    300,
+    "hunters converge on the prey nearest the flagship, not nearest themselves",
+  );
+}
+
+// ── Veterancy concentration & retention ─────────────────────────────────────
+{
+  const behavior = Object.create(sandbox.__WarshipBehavior.prototype);
+  behavior.game = makeGame();
+
+  // combatFlagshipHuntTile: null off-tier, null once promoted, otherwise the
+  // pre-vet-3 flagship's tile.
+  behavior.raidingTierActive = () => false;
+  assert.equal(
+    behavior.combatFlagshipHuntTile({}, []),
+    null,
+    "no hunt origin outside the raiding tier",
+  );
+  behavior.raidingTierActive = () => true;
+  behavior.selectRaidFlagshipId = () => "flag";
+  assert.equal(
+    behavior.combatFlagshipHuntTile({}, [{ id: () => "flag", veterancy: () => 3, tile: () => 42 }]),
+    null,
+    "a promoted flagship releases the hunt origin",
+  );
+  assert.equal(
+    behavior.combatFlagshipHuntTile({}, [{ id: () => "flag", veterancy: () => 1, tile: () => 42 }]),
+    42,
+    "the pre-vet-3 flagship's tile becomes the fleet hunt origin",
+  );
+
+  // Manual orders never trap a wounded hull below the engine repair-retreat
+  // line (a manual move disables that retreat for 50 ticks).
+  assert.equal(
+    behavior.manualOrderWouldTrapWoundedHull({ health: () => 70, maxHealth: () => 100 }),
+    true,
+    "a hull below 75% HP is not hand-ordered into a fight",
+  );
+  assert.equal(
+    behavior.manualOrderWouldTrapWoundedHull({ health: () => 80, maxHealth: () => 100 }),
+    false,
+    "a healthy hull may still take manual orders",
+  );
+  assert.equal(
+    behavior.manualOrderWouldTrapWoundedHull({ health: () => 10 }),
+    false,
+    "hulls without a maxHealth accessor are not blocked",
+  );
 }
 
 // ── Move-intent pacing (shared budget protection) ───────────────────────────

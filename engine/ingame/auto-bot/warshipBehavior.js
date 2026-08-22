@@ -1845,7 +1845,38 @@
       const soloCoversAll = invasions.every(
         (invasion) => !solo.uncoveredIds.includes(invasion.id),
       );
-      return soloCoversAll ? [flagship] : availableWarships;
+      if (soloCoversAll) return [flagship];
+      // Partial concentration: keep the flagship plus only the hulls that
+      // extend coverage beyond what the flagship alone reaches. Dropping
+      // redundant hulls preserves every coverable invasion while stopping
+      // engine-side proximity targeting from smearing transport kills across
+      // hulls that never needed to be there (10 kills = one veterancy level
+      // on a single hull's meter). Bounded: the per-hull solo probes below
+      // are planner runs, so cap the work on wide fronts.
+      if (invasions.length > 5 || availableWarships.length > 10) {
+        return availableWarships;
+      }
+      const coveredByFlagship = new Set(solo.coveredIds);
+      const pool = [flagship];
+      for (const warship of availableWarships) {
+        if (warship === flagship) continue;
+        const hullSolo = planNavalInterceptions({
+          ships: [{ id: warship.id(), tile: warship.tile() }],
+          invasions,
+          targetInvasions: invasions,
+          route: (from, to) => this.interceptionRoute(from, to),
+          distance: (from, to) => this.waterDistance(from, to),
+          targetDistanceSquared: (from, to) => this.game.euclideanDistSquared(from, to),
+          boatSpeed,
+          warshipSpeed,
+          attackRange,
+        });
+        const extendsCoverage = hullSolo.coveredIds.some(
+          (invasionId) => !coveredByFlagship.has(invasionId),
+        );
+        if (extendsCoverage) pool.push(warship);
+      }
+      return pool;
     }
 
     smartWarshipPatrol() {
@@ -2131,6 +2162,11 @@
         s.defenseSubfleetSignature = signature;
         return s.defenseSubfleetIds;
       }
+      // MEASURED DEAD END (5mm-team-Surrounded): excluding the pre-vet-3
+      // flagship from this pool (to keep it hunting) flipped the row from a
+      // win at 21011 to a loss at 19259 with 11 own buildings nuked — one
+      // fewer defender on the coast is not survivable on multi-front maps.
+      // The flagship participates in coastal defense like any other hull.
       const ranked = active.map((ship, order) => ({
         ship,
         order,
@@ -2386,6 +2422,7 @@
           warship, tile, s, tick, cooldownTicks,
         );
         if (candidate === null) continue;
+        if (this.manualOrderWouldTrapWoundedHull(warship)) continue;
         // Meter-aware duel steering: an enemy-warship final blow is a full
         // veterancy level but ZEROES the victor's shared progress meter.
         // Keep a loaded flagship out of hunter duels (a green hull takes the
@@ -2397,6 +2434,16 @@
         bestDistance = candidate;
       }
       return best === null ? null : { warship: best, distance: bestDistance };
+    }
+
+    // A manual move disables the engine's repair-retreat for 50 ticks
+    // (WarshipExecution.lastManualMoveTickRetreatDisabled), so never
+    // hand-order a wounded hull into a fight it then cannot leave.
+    manualOrderWouldTrapWoundedHull(warship) {
+      const maxHp = typeof warship.maxHealth === "function"
+        ? warship.maxHealth()
+        : null;
+      return maxHp !== null && warship.health() < maxHp * 0.75;
     }
 
     idleWarshipCandidateDistance(warship, tile, s, tick, cooldownTicks) {
@@ -2993,11 +3040,17 @@
     // enemies within 30 of the hunter's CURRENT tile, so an anchored escort
     // near the prey baits the hunter into a fleet it never evaluated. Refuse
     // the chase when a hostile warship already shadows the prey.
-    tradeHuntTarget(warship, enemyTradeShips, enemyWarships) {
+    tradeHuntTarget(warship, enemyTradeShips, enemyWarships, flagshipTile) {
       if (enemyTradeShips.length === 0) return null;
+      // Capture concentration: trade captures bank on the hull that reaches
+      // the prey (25 captures = one veterancy level). When a pre-vet-3
+      // flagship is hunting, every hull chases the prey nearest THE FLAGSHIP
+      // instead of nearest-to-self, so the fleet herds one trade ship into
+      // the flagship's patrol range instead of splitting captures evenly.
+      const origin = flagshipTile ?? warship.tile();
       const prey = enemyTradeShips.reduce((nearest, unit) =>
-        this.game.manhattanDist(warship.tile(), unit.tile()) <
-        this.game.manhattanDist(warship.tile(), nearest.tile()) ? unit : nearest,
+        this.game.manhattanDist(origin, unit.tile()) <
+        this.game.manhattanDist(origin, nearest.tile()) ? unit : nearest,
       );
       const defended = enemyWarships.some((enemy) =>
         this.game.manhattanDist(enemy.tile(), prey.tile()) <= 30);
@@ -3006,7 +3059,7 @@
 
     combatTarget(options) {
       const { warship, nearbyEnemies, enemyTradeShips, enemyWarships, baseTarget,
-        wantsToEvade, retreatThreshold, huntTrade, primaryTargetId } = options;
+        wantsToEvade, retreatThreshold, huntTrade, primaryTargetId, flagshipTile } = options;
       if (warship.health() < retreatThreshold) {
         return wantsToEvade && nearbyEnemies.length > 0
           ? this.findSafeWaypoint(warship.tile(), baseTarget, nearbyEnemies)
@@ -3031,7 +3084,7 @@
         ).tile();
       }
       return huntTrade
-        ? this.tradeHuntTarget(warship, enemyTradeShips, enemyWarships)
+        ? this.tradeHuntTarget(warship, enemyTradeShips, enemyWarships, flagshipTile)
         : null;
     }
 
@@ -3101,6 +3154,23 @@
       const warshipState = warship.warshipState();
       return (warshipState?.state === "retreating" || warshipState?.state === "docked") &&
         friendlyPorts.length > 0;
+    }
+
+    // Pre-vet-3 flagship hunt origin (see tradeHuntTarget): concentrate the
+    // fleet's trade chases on the flagship's nearest prey. Null when the
+    // tier is inactive or the flagship is already promoted.
+    combatFlagshipHuntTile(s, myWarships) {
+      if (!this.raidingTierActive()) return null;
+      const flagshipId = this.selectRaidFlagshipId(s);
+      if (flagshipId === null) return null;
+      const flagship = myWarships.find(
+        (warship) => String(warship.id()) === flagshipId,
+      );
+      if (flagship === undefined) return null;
+      if (Number(flagship.veterancy?.() ?? flagship.veterancy ?? 0) >= 3) {
+        return null;
+      }
+      return flagship.tile();
     }
 
     handleWarshipCombat(warship, context) {
@@ -3235,9 +3305,10 @@
       // primary naturally drops out, and the next-most-reachable enemy takes
       // over. (Retreat anchors are per ship — see combatRetreatTarget.)
       const primaryTargetId = this.chooseFleetFocusTarget(myWarships, enemyWarships);
+      const flagshipTile = this.combatFlagshipHuntTile(s, myWarships);
       const context = {
         smartState: s, friendlyPorts, enemyWarships, myWarships, enemyTradeShips,
-        maxHp, retreatPct, huntTrade, primaryTargetId,
+        maxHp, retreatPct, huntTrade, primaryTargetId, flagshipTile,
       };
 
       for (const warship of myWarships) {

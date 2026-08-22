@@ -9102,13 +9102,16 @@
     // decay or window expiry, and retaliation (force) always fires.
     winPacingSparesConquest(options) {
       const target = options.target;
+      // Terra Nullius expansion is the preferred posture while armed: it
+      // grows the base without conquering the last rivals, so the stall
+      // never applies to it.
+      if (target?.isPlayer?.() !== true) return false;
       // Reinforcement carve-out: an in-flight conquest must finish cleanly
       // instead of freezing a half-won front (same contract as the tribe
       // authorization hook).
       if (
-        target?.isPlayer?.() === true &&
-        (this.getLiveOutboundAttackTroopsForTarget(target) > 0 ||
-          this.getPendingOutboundAttackTroopsForTarget(target) > 0)
+        this.getLiveOutboundAttackTroopsForTarget(target) > 0 ||
+        this.getPendingOutboundAttackTroopsForTarget(target) > 0
       ) {
         return false;
       }
@@ -9126,14 +9129,18 @@
     computeWinPacingThrottle(tick) {
       if (state.winPacingLockedOff === true) return false;
       if (!this.winPacingModeEligible()) return false;
-      if (this.findIncomingAttackPlayer() !== null) {
-        this.lockOffWinPacing();
+      if (this.winPacingIncomingPressureIsMaterial()) {
+        this.lockOffWinPacing("material-incoming");
         return false;
       }
       const shares = this.teamShareSnapshot();
       if (shares === null) return false;
       if (!this.winPacingDominanceHolds(shares)) return false;
-      if (this.estimatedOwnCommerceCaptures() >= 33) return false;
+      // The veterancy-points estimator overshoots the trade-capture metric
+      // (~1.75x measured: 50.5 estimated vs 29 actual) because veterancy
+      // also accrues from transport kills. Gate the release at the scaled
+      // bar so the stall keeps running while real trades are still short.
+      if (this.estimatedOwnCommerceCaptures() >= 66) return false;
       const traffic =
         typeof this.game.units === "function"
           ? this.game.units(UNIT.TradeShip).length
@@ -9154,35 +9161,75 @@
       return gameConfig?.gameMode === GameMode.Team;
     }
 
-    // Dominance with hysteresis: arm only ≥0.80 share and ≥0.55 margin;
-    // decay below 0.78/0.45 while armed is a permanent release.
+    // Material-incoming check for the commerce stall: nation-heavy boards
+    // have constant small skirmishes, and any-attack disarms the stall
+    // permanently (measured no-op). Only pressure that genuinely threatens
+    // the board — the largest single-attacker wave at >= 0.5x our army —
+    // locks the stall off; small raids must not stop metric pacing while
+    // we are overwhelmingly dominant.
+    winPacingIncomingPressureIsMaterial() {
+      const ownTroops = Number(this.player.troops?.() || 0);
+      if (ownTroops <= 0) return false;
+      return (
+        this.largestIncomingAttackTroops() >=
+        0.5 * ownTroops
+      );
+    }
+
+    largestIncomingAttackTroops() {
+      let incomingAttacks = this.incomingHostileAttacks();
+      if (!state.settings.winFixes && this.player.type() !== PlayerType.Bot) {
+        incomingAttacks = incomingAttacks.filter(
+          (attack) => attack.attacker?.()?.type?.() !== PlayerType.Bot,
+        );
+      }
+      const pressureByAttacker = new Map();
+      for (const attack of incomingAttacks) {
+        const attacker = attack.attacker?.();
+        if (!attacker) continue;
+        const key = this.getOutboundAttackTargetKey(attacker) ?? attacker;
+        const current = pressureByAttacker.get(key) ?? { troops: 0 };
+        current.troops += Math.max(0, Number(attack.troops?.()) || 0);
+        pressureByAttacker.set(key, current);
+      }
+      let largest = 0;
+      for (const pressure of pressureByAttacker.values()) {
+        if (pressure.troops > largest) largest = pressure.troops;
+      }
+      return largest;
+    }
+
+    // Dominance with hysteresis: arm once clearly winning (share >= 0.60,
+    // margin >= 0.20 — measured dominant rows sit at ~0.63/0.26 near the
+    // endgame); decay below 0.58/0.18 while armed is a permanent release.
     winPacingDominanceHolds(shares) {
       if (state.winPacingArmedTick !== null) {
-        if (shares.ownShare < 0.78 || shares.margin < 0.45) {
-          this.lockOffWinPacing();
+        if (shares.ownShare < 0.58 || shares.margin < 0.18) {
+          this.lockOffWinPacing("dominance-decay");
           return false;
         }
         return true;
       }
-      return shares.ownShare >= 0.8 && shares.margin >= 0.55;
+      return shares.ownShare >= 0.6 && shares.margin >= 0.2;
     }
 
-    // Hard time bounds: arm before 9000 (measured wins ~9951), extend at
-    // most 2500 ticks, then stand down for good.
+    // Hard time bounds: arm before 9000 (measured wins 7151-10561), extend
+    // at most 6000 ticks so commerce metrics can finish, then stand down
+    // for good.
     winPacingWindowHolds(tick) {
       if (state.winPacingArmedTick === null) {
         if (tick >= 9000) return false;
         state.winPacingArmedTick = tick;
         return true;
       }
-      if (tick - state.winPacingArmedTick > 2500) {
-        this.lockOffWinPacing();
+      if (tick - state.winPacingArmedTick > 6000) {
+        this.lockOffWinPacing("window-expiry");
         return false;
       }
       return true;
     }
 
-    lockOffWinPacing() {
+    lockOffWinPacing(reason) {
       state.winPacingLockedOff = true;
       state.winPacingArmedTick = null;
     }
