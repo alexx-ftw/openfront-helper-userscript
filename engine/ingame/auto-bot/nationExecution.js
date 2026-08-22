@@ -444,6 +444,7 @@
         this.allianceBehavior.handleAllianceRequests();
         this.allianceBehavior.handleAllianceExtensionRequests();
         this.allianceBehavior.maybeCourtProtectors?.();
+        this.allianceBehavior.maybeDonateToProtector?.();
       });
     }
 

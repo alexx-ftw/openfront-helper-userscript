@@ -533,6 +533,26 @@
       return { other, strength };
     }
 
+    // Ranked protector candidates (strongest first). The courtship reads the
+    // LIST, not just the top pick: the nation's own acceptance gate has NO
+    // accepting branch at Neutral relation outside its ~60s earlygame window
+    // (30% per attempt), and every relation-raising tool (donations, emoji)
+    // is ally-gated or Easy-only — so a rejection by the single strongest
+    // neighbor is final. Courting several strong neighbors inside the window
+    // multiplies the acceptance odds.
+    appeasementProtectorCandidates() {
+      if (!this.protectorAppeasementActive()) return [];
+      const mySid = this.player.smallID();
+      const myStrength = this.appeasementNationStrength(this.player);
+      const candidates = [];
+      for (const neighbour of this.player.nearby()) {
+        const candidate = this.appeasementCandidate(neighbour, mySid, myStrength);
+        if (candidate !== null) candidates.push(candidate);
+      }
+      candidates.sort((left, right) => right.strength - left.strength);
+      return candidates.map(({ other }) => other);
+    }
+
     appeasementProtector() {
       if (!this.protectorAppeasementActive()) return null;
       const tick = typeof this.game.ticks === "function" ? this.game.ticks() : 0;
@@ -540,20 +560,28 @@
         return this._protectorCache;
       }
       this._protectorCacheTick = tick;
-      this._protectorCache = null;
-      const mySid = this.player.smallID();
-      const myStrength = this.appeasementNationStrength(this.player);
-      let best = null;
-      let bestStrength = 0;
-      for (const neighbour of this.player.nearby()) {
-        const candidate = this.appeasementCandidate(neighbour, mySid, myStrength);
-        if (candidate !== null && candidate.strength > bestStrength) {
-          bestStrength = candidate.strength;
-          best = candidate.other;
-        }
+      this._protectorCache = this.appeasementProtectorCandidates()[0] ?? null;
+      return this._protectorCache;
+    }
+
+    // The nation-side earlygame acceptance window (~60s post-spawn, 30% per
+    // attempt): beyond it, only Friendly relation (unreachable pre-alliance),
+    // threat, or near-parity can succeed — court widest while it is open.
+    protectorCourtEarlyWindowOpen() {
+      const duration = Number(
+        this.game?.config?.()?.spawnImmunityDuration?.() ?? 0,
+      );
+      const tick = typeof this.game.ticks === "function" ? this.game.ticks() : 0;
+      return tick <= 600 + duration + 300;
+    }
+
+    courtProtectorEligible(protector, now, perRecipientMs) {
+      if (typeof companionAllianceVeto === "function" && companionAllianceVeto(protector)) {
+        return false;
       }
-      this._protectorCache = best;
-      return best;
+      const sid = protector.smallID();
+      const last = state.protectorCourtAtMs.get(sid) ?? 0;
+      return now - last >= perRecipientMs;
     }
 
     maybeCourtProtectors() {
@@ -562,24 +590,94 @@
       const throttle = state.settings.protectorCourtThrottleMs || 3500;
       if (now - (state.lastProtectorCourtMs || 0) < throttle) return;
       if (this.isDominantForDiplomacy()) return;
-      const protector = this.appeasementProtector();
-      if (protector === null) return;
       const ctors = discoverCtors(getEventBus());
       if (!ctors.allianceRequest) return;
-      if (typeof companionAllianceVeto === "function" && companionAllianceVeto(protector)) {
+      // Per-recipient spacing: the engine keeps a pending request alive for
+      // allianceRequestDuration and hard-rejects duplicates (measured: 49
+      // wasted "cannot send alliance request" warnings on one row).
+      if (!state.protectorCourtAtMs) state.protectorCourtAtMs = new Map();
+      const perRecipientMs = 31_000;
+      const candidates = this.appeasementProtectorCandidates();
+      // Court up to 2 fresh recipients per pass inside the earlygame window
+      // (rotating through the ranked list), else 1 (top pick only).
+      const maxPerPass = Math.min(this.protectorCourtEarlyWindowOpen() ? 2 : 1, 3);
+      let sent = 0;
+      for (const protector of candidates) {
+        if (sent >= maxPerPass) break;
+        if (!this.courtProtectorEligible(protector, now, perRecipientMs)) continue;
+        emitIntent(
+          ctors.allianceRequest,
+          this.player.__src ?? this.player,
+          protector.__src ?? protector,
+        );
+        // Pin the courted identity: once the alliance forms the protector is
+        // isFriendly and drops out of candidate filtering — the
+        // donation-renewal loop still needs to find it.
+        const sid = protector.smallID();
+        state.protectorSid = sid;
+        state.protectorCourtAtMs.set(sid, now);
+        state.lastProtectorCourtMs = now;
+        setLastAction(
+          tr("🛡️➡️ Court protector {name}", { name: safeName(protector) }),
+          "diplo",
+        );
+        runtimeDebugLog("[Diplo] court protector →", safeName(protector));
+        sent += 1;
+      }
+    }
+
+    // The allied protector (pinned at courtship), or null.
+    pinnedProtectorAlly() {
+      const protectorSid = state.protectorSid;
+      if (protectorSid === undefined || protectorSid === null) return null;
+      const ally = this.game
+        .players()
+        .find((p) => p?.isPlayer?.() && p.smallID() === protectorSid);
+      if (!ally || !ally.isAlive?.()) return null;
+      if (this.player.isFriendly(ally) !== true) return null;
+      return ally;
+    }
+
+    // A donation amount that guarantees the +50 relation update: the
+    // Impossible-branch threshold band is [recipientMax/7, recipientMax/5],
+    // so the band ceiling qualifies regardless of the engine's RNG. Returns
+    // null when the ally has no headroom for a qualifying gift.
+    protectorDonationAmount(ally) {
+      const recipientMax = Number(ally.maxTroops?.() ?? Number.NaN);
+      if (!Number.isFinite(recipientMax) || recipientMax <= 0) return null;
+      const qualifying = Math.floor(recipientMax / 5) + 1;
+      const headroom = Math.floor(recipientMax - Number(ally.troops?.() || 0));
+      return headroom >= qualifying ? qualifying : null;
+    }
+
+    // Donation-renewal loop: a qualifying donation (>= recipientMax/5.. /7
+    // troops, DonateTroopExecution.getMinTroopsForRelationUpdate) grants +50
+    // relation in the ally toward us, which keeps renewals passing for the
+    // whole game (alliances expire after 3000 ticks). Donations are
+    // ally-gated engine-side, so this only ever runs AFTER an acceptance —
+    // and only from real surplus (never donate below half our army).
+    maybeDonateToProtector() {
+      if (!this.protectorAppeasementActive()) return;
+      const now = performance.now();
+      const throttle = state.settings.protectorDonationThrottleMs || 60_000;
+      if (now - (state.lastProtectorDonationMs || 0) < throttle) return;
+      const ally = this.pinnedProtectorAlly();
+      if (ally === null) return;
+      const ctors = discoverCtors(getEventBus());
+      if (!ctors.donateTroops) return;
+      const amount = this.protectorDonationAmount(ally);
+      if (amount === null) return;
+      const ourTroops = Number(this.player.troops?.() || 0);
+      if (ourTroops - amount < Math.max(ourTroops * 0.5, 1)) return;
+      if (emitIntent(ctors.donateTroops, ally.__src ?? ally, amount) !== true) {
         return;
       }
-      emitIntent(
-        ctors.allianceRequest,
-        this.player.__src ?? this.player,
-        protector.__src ?? protector,
-      );
+      state.lastProtectorDonationMs = now;
       setLastAction(
-        tr("🛡️➡️ Court protector {name}", { name: safeName(protector) }),
+        tr("🤝➡️ Reinforce protector {name}", { name: safeName(ally) }),
         "diplo",
       );
-      state.lastProtectorCourtMs = now;
-      runtimeDebugLog("[Diplo] court protector →", safeName(protector));
+      runtimeDebugLog("[Diplo] donate to protector →", safeName(ally), amount);
     }
 
     // getAllianceDecision — NationAllianceBehavior.ts:88 (THE decision tree)

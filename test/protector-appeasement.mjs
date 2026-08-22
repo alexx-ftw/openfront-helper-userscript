@@ -30,7 +30,14 @@ const Difficulty = {
 };
 let testDifficulty = Difficulty.Legendary;
 const state = { settings: { winFixes: true }, stats: {} };
-const sentRequests = [];
+const sentEmits = [];
+const allianceRequestCtor = (from, to) => ({ requestor: from, recipient: to });
+const donateTroopsCtor = (recipient, troops) => ({ recipient, troops });
+const countEmits = (ctor) => sentEmits.filter((e) => e.ctor === ctor).length;
+const lastEmit = (ctor) => {
+  const hits = sentEmits.filter((e) => e.ctor === ctor);
+  return hits.at(-1) ?? null;
+};
 const sandbox = {
   Difficulty,
   GameMode: { FFA: "FFA", Team: "Team" },
@@ -45,16 +52,14 @@ const sandbox = {
   setLastAction: () => {},
   runtimeDebugLog: () => {},
   safeName: (p) => String(p?.name?.() ?? "player"),
-  performance: { now: () => 10_000 },
+  performance: { now: () => 100_000 },
   getEventBus: () => ({}),
   discoverCtors: () => ({
-    allianceRequest: (from, to) => {
-      sentRequests.push({ from, to });
-      return { from, to };
-    },
+    allianceRequest: allianceRequestCtor,
+    donateTroops: donateTroopsCtor,
   }),
-  emitIntent: (payload) => {
-    sentRequests.push(payload);
+  emitIntent: (ctor, ...args) => {
+    sentEmits.push({ ctor, args });
     return true;
   },
 };
@@ -153,13 +158,17 @@ const makeBehavior = ({ mode = "FFA", nearby = [], dominant = false, friendlySid
 {
   const strong = makePlayer({ sid: 2, maxTroops: 1_000_000 });
   const behavior = makeBehavior({ nearby: [strong] });
-  sentRequests.length = 0;
+  sentEmits.length = 0;
   state.lastProtectorCourtMs = 0;
   behavior.maybeCourtProtectors();
-  assert.equal(sentRequests.length, 1, "the protector is courted with an alliance request");
+  assert.equal(
+    countEmits(allianceRequestCtor),
+    1,
+    "the protector is courted with an alliance request",
+  );
   behavior.maybeCourtProtectors();
   assert.equal(
-    sentRequests.length,
+    countEmits(allianceRequestCtor),
     1,
     "the throttle prevents request spam (engine cooldown is 300 ticks)",
   );
@@ -167,7 +176,7 @@ const makeBehavior = ({ mode = "FFA", nearby = [], dominant = false, friendlySid
   state.lastProtectorCourtMs = 0;
   dominant.maybeCourtProtectors();
   assert.equal(
-    sentRequests.length,
+    countEmits(allianceRequestCtor),
     1,
     "a dominant bot stops courting (the alliance is now in the way)",
   );
@@ -242,6 +251,75 @@ const makeBehavior = ({ mode = "FFA", nearby = [], dominant = false, friendlySid
     false,
     "other nations keep the ordinary embargo semantics",
   );
+}
+
+// 6. Donation-renewal loop: once the pinned protector is an ALLY, donate a
+// qualifying amount (>= recipientMax/5, the Impossible-branch band ceiling)
+// from real surplus, throttled; never below half our army, never to a
+// non-ally, never when the ally lacks headroom.
+{
+  const allyMax = 5_000_000;
+  const ally = makePlayer({ sid: 9, maxTroops: allyMax });
+  const behavior = makeBehavior({ nearby: [ally] });
+  behavior.player.isFriendly = (p) => p.smallID() === 9;
+  behavior.player.troops = () => 3_000_000;
+  behavior.game.players = () => [behavior.player, ally];
+  state.protectorSid = 9;
+  state.lastProtectorDonationMs = 0;
+  sentEmits.length = 0;
+
+  // Qualifying amount math: band ceiling max/5 + 1.
+  assert.equal(
+    behavior.protectorDonationAmount(ally),
+    Math.floor(allyMax / 5) + 1,
+    "the donation amount is the Impossible-band ceiling that guarantees +50 relation",
+  );
+
+  behavior.maybeDonateToProtector();
+  assert.equal(countEmits(donateTroopsCtor), 1, "an allied protector receives a donation");
+  assert.equal(
+    lastEmit(donateTroopsCtor)?.args?.[1],
+    Math.floor(allyMax / 5) + 1,
+    "the donation is the qualifying amount",
+  );
+
+  // Throttle: no second donation inside the window.
+  behavior.maybeDonateToProtector();
+  assert.equal(countEmits(donateTroopsCtor), 1, "donations are throttled");
+
+  // Surplus guard: donating would drop us below half our army.
+  state.lastProtectorDonationMs = 0;
+  behavior.player.troops = () => Math.floor(allyMax / 5) + 1 + 10;
+  behavior.maybeDonateToProtector();
+  assert.equal(
+    countEmits(donateTroopsCtor),
+    1,
+    "a donation that would strip half our army is refused",
+  );
+
+  // Headroom gate: an ally near their maxTroops ceiling cannot qualify.
+  state.lastProtectorDonationMs = 0;
+  behavior.player.troops = () => 2_000_000;
+  const fullAlly = makePlayer({ sid: 10, maxTroops: 100_000 });
+  fullAlly.troops = () => 99_999;
+  assert.equal(
+    behavior.protectorDonationAmount(fullAlly),
+    null,
+    "an ally without headroom for a qualifying gift gets none",
+  );
+
+  // Ally gate: a pinned protector that is not yet friendly gets nothing.
+  state.lastProtectorDonationMs = 0;
+  state.protectorSid = 11;
+  const stranger = makePlayer({ sid: 11, maxTroops: allyMax });
+  behavior.game.players = () => [behavior.player, stranger];
+  behavior.maybeDonateToProtector();
+  assert.equal(
+    countEmits(donateTroopsCtor),
+    1,
+    "donations only flow to the pinned ALLY (engine would reject others anyway)",
+  );
+  delete state.protectorSid;
 }
 
 process.stdout.write("protector appeasement tests passed\n");
