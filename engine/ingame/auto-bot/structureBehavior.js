@@ -2377,6 +2377,19 @@
       // chest the baseline SAM needs (measured ofh-n-b1: silo bought at
       // 4919 delayed the SAM 602 ticks past the first strike).
       if (this.legendarySamBaselineChestActive()) return false;
+      // A 1M speculative silo during a long guaranteed-peace window is pure
+      // consumption: nothing needs striking before immunity expires, and the
+      // same gold is two-thirds of the interceptor that must be ready at
+      // expiry. Short default immunity is unaffected.
+      const peaceDuration = Number(
+        this.game?.config?.()?.spawnImmunityDuration?.() ?? 0,
+      );
+      if (
+        peaceDuration >= 1800 &&
+        this.game?.isSpawnImmunityActive?.() === true
+      ) {
+        return false;
+      }
       const siloCost = this.safeConstructionCost(UNIT.MissileSilo) ?? 0n;
       if (this.spendableConstructionGold() < siloCost) return false;
       return this.maybeSpawnStructure(UNIT.MissileSilo, {
@@ -2855,10 +2868,17 @@
       );
       const ticks = Number(this.game?.ticks?.() ?? 0);
       if (duration <= 500) return false;
-      // Start hoarding once half the window has elapsed and the first City
-      // exists; before that, growth is still the better use of the
-      // guaranteed peace.
-      return this.ownedLevels(UNIT.City) > 0 && ticks >= Math.floor(duration / 2);
+      // Hoard against a DEADLINE, not half-window: freezing economic builds
+      // at duration/2 (tick 1200 of 2400) locks income at the 1-City level
+      // and the 1.5M chest takes thousands of ticks to fill. Long windows
+      // keep compounding until 750 ticks before expiry — the SAM needs 300
+      // construction ticks, leaving ~450 ticks for a much larger economy to
+      // accumulate the interceptor fund. Short windows keep the half-window
+      // start.
+      const hoardStart = duration >= 1800
+        ? duration - 750
+        : Math.floor(duration / 2);
+      return this.ownedLevels(UNIT.City) > 0 && ticks >= hoardStart;
     }
 
     legendarySamChestBlocksType(type) {
@@ -3564,10 +3584,25 @@
       return this.spendableConstructionGold() < cost + reserve;
     }
 
+    // Long guaranteed-peace windows are the one place the whole warship lane
+    // must respect the interceptor chest: every warship path (initial,
+    // raiding fleet, emergency) funnels through shouldDeferWarshipForFirstSam,
+    // but the chest previously only bound planner candidates — ~1.25M
+    // warships drained the 1.5M SAM fund repeatedly. Scoped to long windows
+    // because on ordinary rows the forecast-driven chest fires early and
+    // often, and deferring the whole warship lane there regressed the no-mod
+    // Labyrinth anchor (win → death@14157).
+    longPeaceWindowSamChestActive() {
+      const duration = Number(
+        this.game?.config?.()?.spawnImmunityDuration?.() ?? 0,
+      );
+      return duration >= 1800 &&
+        this.game?.isSpawnImmunityActive?.() === true &&
+        this.legendarySamBaselineChestActive();
+    }
+
     shouldDeferWarshipForFirstSam(warshipCost = 0n) {
-      if (!state.settings.winFixes || !this.hasBuiltHostileSiloThreat()) {
-        return false;
-      }
+      if (state.settings.winFixes !== true) return false;
       const sams = this.ownedSamUnits();
       // Once the first launcher exists, including while it is being built, the
       // maritime emergency may respond normally. Until then, a completed
@@ -3575,10 +3610,13 @@
       // Warship path. A launcher still under construction remains only an
       // anticipatory signal and cannot freeze unrelated emergency spending.
       if (sams.length > 0) return false;
-      const samCost = this.safeConstructionCost(UNIT.SAMLauncher);
-      if (samCost === null) return true;
-      const cost = BigInt(warshipCost || 0n);
-      return this.spendableConstructionGold() < samCost + cost;
+      if (this.longPeaceWindowSamChestActive() || this.hasBuiltHostileSiloThreat()) {
+        const samCost = this.safeConstructionCost(UNIT.SAMLauncher);
+        if (samCost === null) return true;
+        const cost = BigInt(warshipCost || 0n);
+        return this.spendableConstructionGold() < samCost + cost;
+      }
+      return false;
     }
 
     // WIN-FIX: a hostile border with a larger troop ceiling makes economic

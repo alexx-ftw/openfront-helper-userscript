@@ -5851,4 +5851,142 @@ assert.match(
   delete sandbox.__OFHSpawnObjective;
 }
 
+// ── Peace-window SAM chest (Temporary PVP Immunity profile) ─────────────────
+{
+  const makePeaceBehavior = ({ duration, tick, immune = true, cities = 1 }) => {
+    const behavior = Object.create(sandbox.__StructureBehavior.prototype);
+    behavior.game = {
+      ticks: () => tick,
+      isSpawnImmunityActive: () => immune,
+      config: () => ({
+        spawnImmunityDuration: () => duration,
+        isUnitDisabled: () => false,
+      }),
+    };
+    behavior.ownedLevels = (type) => (type === UNIT.City ? cities : 0);
+    return behavior;
+  };
+
+  // Hoard deadline: long windows compound until 750 ticks before expiry,
+  // short default immunity never hoards.
+  assert.equal(
+    makePeaceBehavior({ duration: 50, tick: 25 }).legendaryPeaceWindowSamChestDue(),
+    false,
+    "ordinary 50-tick immunity never opens the peace chest",
+  );
+  assert.equal(
+    makePeaceBehavior({ duration: 2400, tick: 1200 }).legendaryPeaceWindowSamChestDue(),
+    false,
+    "a long window keeps growing at half-elapsed (old duration/2 rule retired)",
+  );
+  assert.equal(
+    makePeaceBehavior({ duration: 2400, tick: 1649 }).legendaryPeaceWindowSamChestDue(),
+    false,
+    "the hoard starts at duration-750, not before",
+  );
+  assert.equal(
+    makePeaceBehavior({ duration: 2400, tick: 1650 }).legendaryPeaceWindowSamChestDue(),
+    true,
+    "750 ticks before expiry the chest opens (SAM needs 300 construction ticks)",
+  );
+  assert.equal(
+    makePeaceBehavior({
+      duration: 2400,
+      tick: 2200,
+      immune: false,
+    }).legendaryPeaceWindowSamChestDue(),
+    false,
+    "expired immunity closes the peace chest",
+  );
+  assert.equal(
+    makePeaceBehavior({ duration: 2400, tick: 2200, cities: 0 }).legendaryPeaceWindowSamChestDue(),
+    false,
+    "no City means no chest (growth has not even started)",
+  );
+
+  // The chest binds the warship lane: with the chest active and no SAM, a
+  // warship that would eat the interceptor fund is deferred.
+  const originalIsLegendary = sandbox.isLegendaryDifficulty;
+  sandbox.isLegendaryDifficulty = () => true;
+  const chestBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+  chestBehavior.game = makePeaceBehavior({ duration: 2400, tick: 2000 }).game;
+  chestBehavior.ownedLevels = (type) => (type === UNIT.City ? 1 : 0);
+  chestBehavior.playerUnitCapacitySummary = (_player, type) =>
+    type === UNIT.SAMLauncher ? { count: 0 } : null;
+  assert.equal(
+    chestBehavior.legendarySamBaselineChestActive(),
+    true,
+    "the peace deadline activates the baseline chest with no hostile silo",
+  );
+  const warshipDeferBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+  warshipDeferBehavior.ownedSamUnits = () => [];
+  warshipDeferBehavior.legendarySamBaselineChestActive = () => true;
+  warshipDeferBehavior.game = makePeaceBehavior({ duration: 2400, tick: 2000 }).game;
+  warshipDeferBehavior.safeConstructionCost = () => 1_500_000n;
+  warshipDeferBehavior.spendableConstructionGold = () => 2_000_000n;
+  assert.equal(
+    warshipDeferBehavior.shouldDeferWarshipForFirstSam(1_250_000n),
+    true,
+    "a warship that would breach the SAM fund is deferred while the chest is active",
+  );
+  warshipDeferBehavior.spendableConstructionGold = () => 4_000_000n;
+  assert.equal(
+    warshipDeferBehavior.shouldDeferWarshipForFirstSam(1_250_000n),
+    false,
+    "ample gold lets the warship proceed even with the chest active",
+  );
+  warshipDeferBehavior.ownedSamUnits = () => [{ id: () => 1 }];
+  assert.equal(
+    warshipDeferBehavior.shouldDeferWarshipForFirstSam(1_250_000n),
+    false,
+    "once a SAM exists the warship lane is released",
+  );
+  // No-mod regression guard: short immunity keeps the chest closed, so the
+  // warship defer falls back to its hostile-silo-only semantics — even when
+  // the forecast chest is somehow active, the peace-scoped gate stays shut.
+  const noModDeferBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+  noModDeferBehavior.ownedSamUnits = () => [];
+  noModDeferBehavior.legendarySamBaselineChestActive = () => false;
+  noModDeferBehavior.game = makePeaceBehavior({ duration: 50, tick: 2000 }).game;
+  noModDeferBehavior.hasBuiltHostileSiloThreat = () => false;
+  assert.equal(
+    noModDeferBehavior.shouldDeferWarshipForFirstSam(1_250_000n),
+    false,
+    "no chest and no hostile silo leaves warships untouched",
+  );
+  noModDeferBehavior.legendarySamBaselineChestActive = () => true;
+  assert.equal(
+    noModDeferBehavior.shouldDeferWarshipForFirstSam(1_250_000n),
+    false,
+    "the peace-scoped warship defer never fires under short default immunity",
+  );
+
+  // The speculative first silo is pure consumption during a long peace
+  // window: nothing needs striking before immunity expires.
+  let siloSpawnAttempts = 0;
+  const siloBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+  siloBehavior.legendarySamBaselineChestActive = () => false;
+  siloBehavior.game = makePeaceBehavior({ duration: 2400, tick: 800 }).game;
+  siloBehavior.safeConstructionCost = () => 1_000_000n;
+  siloBehavior.spendableConstructionGold = () => 5_000_000n;
+  siloBehavior.maybeSpawnStructure = () => {
+    siloSpawnAttempts++;
+    return true;
+  };
+  assert.equal(
+    siloBehavior.maybeOpenLegendaryFirstSilo(),
+    false,
+    "the first offensive silo is deferred during long guaranteed peace",
+  );
+  assert.equal(siloSpawnAttempts, 0, "no silo build is even attempted");
+  siloBehavior.game = makePeaceBehavior({ duration: 50, tick: 800 }).game;
+  assert.equal(
+    siloBehavior.maybeOpenLegendaryFirstSilo(),
+    true,
+    "short default immunity keeps the ordinary first-silo path",
+  );
+  assert.equal(siloSpawnAttempts, 1, "exactly one silo build attempted");
+  sandbox.isLegendaryDifficulty = originalIsLegendary;
+}
+
 process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");
