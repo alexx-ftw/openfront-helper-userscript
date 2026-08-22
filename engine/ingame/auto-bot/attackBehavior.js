@@ -272,6 +272,10 @@
   // near-full-army waves into free land with no reserves; to lead by land at
   // the two-minute mark the opening caps must loosen before this tick and
   // retighten afterwards so long sieges keep their defensive floors.
+  // MEASURED (twice): extending the window to 1800 to cover the 3-minute
+  // checkpoint lifted FFA survival (+21% basket total) but flipped the team
+  // Labyrinth anchor from a win at 19951 to death@8121 — the loosened caps
+  // overlap the first nation wars in team contexts. 1200 stands.
   const LEGENDARY_EARLY_EXPANSION_WINDOW_TICKS = 1200;
   const LEGENDARY_OPENING_COMMIT_LIMIT = 0.65;
   const LEGENDARY_OPENING_REBASE_RATIO = 1.1;

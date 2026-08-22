@@ -1089,6 +1089,7 @@
     async handleWinFixStructurePriorities(legendaryDifficulty) {
       if (!state.settings.winFixes) return false;
       if (await this.maybeSpawnPeaceWindowSam()) return true;
+      if (await this.maybeSpawnPlateauCity()) return true;
       // The coverage plan upgrades an existing useful SAM whenever increased
       // range can cover the structure set. It asks for another physical site
       // only when geometry proves that leveling cannot close the gap.
@@ -10428,6 +10429,64 @@
         prioritizeStructureCoverage: true,
       });
       return true;
+    }
+
+    // Gold-to-City conversion on a tile plateau (the FFA freeze, measured on
+    // the 123-run telemetry corpus): long FFA runs freeze from ~tick 2500 —
+    // tiles pinned, army pinned AT the maxTroops cap, gold hoarded (2.9M on 3
+    // Cities for 8500 ticks) — because every attack lane requires a weaker
+    // neighbor. The freeze then ends to a dogpile wave LARGER than our whole
+    // cap. Cities raise maxTroops, the only variable that survives that end.
+    // Plateau tracking is cheap and resets the moment tiles actually grow.
+    tilesPlateaued() {
+      const tick = this.game.ticks();
+      const tiles = this.player.numTilesOwned();
+      if (tiles <= 0) return false;
+      const s = state;
+      if (
+        s.plateauTiles !== undefined &&
+        tiles > s.plateauTiles * 1.02
+      ) {
+        s.plateauTiles = tiles;
+        s.plateauSinceTick = tick;
+        return false;
+      }
+      if (s.plateauTiles === undefined || tick - (s.plateauSinceTick ?? tick) < 900) {
+        s.plateauTiles = tiles;
+        s.plateauSinceTick ??= tick;
+        return false;
+      }
+      return true;
+    }
+
+    plateauCityConversionDue() {
+      if (!this.tilesPlateaued()) return false;
+      const tiles = this.player.numTilesOwned();
+      const cities = this.ownedLevels(UNIT.City);
+      if (tiles < 8_000 || cities < 1) return false;
+      if (cities >= Math.floor(tiles / 8_000)) return false;
+      const cityUnits = this.player.units(UNIT.City) || [];
+      if (cityUnits.some((unit) => this.unitUnderConstruction(unit))) return false;
+      const cost = this.safeConstructionCost(UNIT.City);
+      if (cost === null) return false;
+      const gold = legendaryBigInt(this.player?.gold?.() || 0n);
+      return gold >= cost * 2n;
+    }
+
+    async maybeSpawnPlateauCity() {
+      if (!isLegendaryDifficulty()) return false;
+      // FFA-only: the freeze pathology is FFA-specific (every attack lane
+      // needs a weaker neighbor, so parity freezes growth forever). In Team
+      // the win clock is allied-driven and an extra plateau City perturbed
+      // the structure cadence enough to flip the Labyrinth anchor from a win
+      // at 19951 to death@8121 (measured) — team keeps its exact baseline.
+      if (String(this.game.config()?.gameConfig?.()?.gameMode) !== "FFA") return false;
+      if (this.game.config().isUnitDisabled?.(UNIT.City) === true) return false;
+      if (!this.plateauCityConversionDue()) return false;
+      const spawned = await this.maybeSpawnStructure(UNIT.City, {
+        useActualCost: true,
+      });
+      return spawned === true;
     }
 
     async maybeEnsureHydrogenStructureCoverage() {

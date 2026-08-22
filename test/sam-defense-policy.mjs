@@ -5989,4 +5989,89 @@ assert.match(
   sandbox.isLegendaryDifficulty = originalIsLegendary;
 }
 
+// ── Plateau gold-to-City conversion (the FFA freeze) ────────────────────────
+{
+  const originalIsLegendary = sandbox.isLegendaryDifficulty;
+  sandbox.isLegendaryDifficulty = () => true;
+  let tick = 5_000;
+  const plateauBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+  plateauBehavior.game = {
+    ticks: () => tick,
+    config: () => ({ isUnitDisabled: () => false, gameConfig: () => ({ gameMode: "FFA" }) }),
+  };
+  const cityUnits = [];
+  plateauBehavior.player = {
+    numTilesOwned: () => 50_000,
+    gold: () => 2_900_000n,
+    units: (type) => (type === UNIT.City ? cityUnits : []),
+  };
+  plateauBehavior.ownedLevels = (type) => (type === UNIT.City ? 3 : 0);
+  plateauBehavior.unitUnderConstruction = () => false;
+  plateauBehavior.safeConstructionCost = () => 125_000n;
+  let citySpawns = 0;
+  plateauBehavior.maybeSpawnStructure = async () => {
+    citySpawns += 1;
+    return true;
+  };
+  delete sandbox.state.plateauTiles;
+  delete sandbox.state.plateauSinceTick;
+
+  // Fresh state: the plateau clock has not elapsed.
+  assert.equal(
+    plateauBehavior.tilesPlateaued(),
+    false,
+    "the plateau clock starts at the first observation",
+  );
+  tick += 500;
+  assert.equal(plateauBehavior.tilesPlateaued(), false, "under 900 flat ticks is not a plateau");
+  tick += 500;
+  assert.equal(plateauBehavior.tilesPlateaued(), true, "900+ flat ticks form a plateau");
+
+  // The freeze conversion fires: 3 Cities on 50k tiles with 2.9M gold.
+  await plateauBehavior.maybeSpawnPlateauCity();
+  assert.equal(citySpawns, 1, "a hoarded-gold plateau builds a City (raises maxTroops)");
+
+  // Growth resets the plateau clock.
+  const grewBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+  grewBehavior.game = plateauBehavior.game;
+  let tiles = 50_000;
+  grewBehavior.player = {
+    numTilesOwned: () => tiles,
+    gold: () => 2_900_000n,
+    units: () => [],
+  };
+  delete sandbox.state.plateauTiles;
+  delete sandbox.state.plateauSinceTick;
+  grewBehavior.tilesPlateaued();
+  tick += 1_000;
+  tiles = 60_000;
+  assert.equal(
+    grewBehavior.tilesPlateaued(),
+    false,
+    "actual growth (>2%) resets the plateau clock",
+  );
+
+  // Dense-enough empires and thin purses do not convert.
+  const denseBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+  denseBehavior.game = plateauBehavior.game;
+  denseBehavior.player = {
+    numTilesOwned: () => 50_000,
+    gold: () => 150_000n,
+    units: () => [],
+  };
+  denseBehavior.ownedLevels = (type) => (type === UNIT.City ? 6 : 0);
+  let denseSpawns = 0;
+  denseBehavior.maybeSpawnStructure = async () => {
+    denseSpawns += 1;
+    return true;
+  };
+  await denseBehavior.maybeSpawnPlateauCity();
+  assert.equal(
+    denseSpawns,
+    0,
+    "an already-dense empire (cities >= tiles/8000) is not force-fed Cities",
+  );
+  sandbox.isLegendaryDifficulty = originalIsLegendary;
+}
+
 process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");

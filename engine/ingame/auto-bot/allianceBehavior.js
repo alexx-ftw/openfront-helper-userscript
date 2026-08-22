@@ -333,7 +333,14 @@
 
     maybeSendAllianceRequests(borderingEnemies) {
       if (this.game.config().disableAlliances()) return;
-      if (!this.proactiveAllianceSendsAllowed()) return;
+      // Suppress the EMISSION only, never the loop: the loop's RNG draws and
+      // emoji side-effects feed the shared PseudoRandom stream — early-
+      // returning here shifted every downstream random decision and flipped
+      // the team Labyrinth anchor from a win at 19921 to death@8121 (measured;
+      // the pre-change loop emitted nothing in practice because the request
+      // ctor was null until the name-probe landed). Keeping the draws keeps
+      // Team byte-identical while FFA keeps its proactive sends.
+      const sendsAllowed = this.proactiveAllianceSendsAllowed();
 
       // NEVER send alliance requests to regular bots — they spam defensively,
       // blocking attacks against them. Only send to humans and Nation AI.
@@ -358,7 +365,7 @@
           // via runAndCaptureAllianceCtor). Until then proactive sends are
           // suppressed. In a populated lobby an accept happens within seconds.
           const ctors = discoverCtors(getEventBus());
-          if (ctors.allianceRequest) {
+          if (ctors.allianceRequest && sendsAllowed) {
             emitIntent(
               ctors.allianceRequest,
               this.player.__src ?? this.player,
