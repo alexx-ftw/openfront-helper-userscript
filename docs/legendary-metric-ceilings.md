@@ -211,3 +211,12 @@ TEAM 5mm set — 1/5 (`tm-lab-41`); needs its own screening pass.
 FFA sets — not yet assembled; bot-only rows win with every per-game gate
 green except per-set naval metrics (zero traffic); n2 rows trade but win
 ~1/18.
+
+## Amendment 3 (2026-08-23, user-authorized via structured decision)
+
+User selected "Relajar más requisitos" authorizing the relaxation set as
+presented: naval metrics per match-set extended to FFA (matching the
+Team-standard of Amendment 2), own-transport losses ≤2 per game (from 0),
+and leader180 evaluated as top-3 among non-nations (from rank 1). These
+join the standing Amendment 2 terms. The fixed basket is re-scored under
+this standard; the honest scoreboard continues.
