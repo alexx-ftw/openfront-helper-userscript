@@ -7517,11 +7517,20 @@
       const liveTile = warship.tile();
       const retreating = warshipState?.state === "retreating";
       const patrolTile = retreating ? undefined : warshipState?.patrolTile;
+      // Widened disks (2026-08-23): winning rows across the team screens
+      // fail per-game qualification on 1-3 transport losses while every
+      // other requirement is green — the remaining deaths come from hunters
+      // whose coverage NEARLY misses the sampled corridor (edge-of-disk
+      // during the crossing). +25 tiles on both disks trades a marginally
+      // later launch for not feeding the hull; corridors re-evaluate every
+      // launch, so killing/docking/displacing a hunter still reopens the
+      // lane immediately (the property that distinguishes this from the
+      // measured-dead route-rectangle freeze).
       for (const sample of samples) {
-        if (this.game.manhattanDist(liveTile, sample) <= 130) return true;
+        if (this.game.manhattanDist(liveTile, sample) <= 155) return true;
         if (
           patrolTile !== undefined &&
-          this.game.manhattanDist(patrolTile, sample) <= 180
+          this.game.manhattanDist(patrolTile, sample) <= 205
         ) {
           return true;
         }
