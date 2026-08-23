@@ -2425,12 +2425,47 @@
     // if it's within the interception distance cap (else leave it; the faithful build
     // path covers threats no existing ship can reach). Sets a per-warship cooldown so a
     // tiny pool doesn't oscillate between threats. Returns true if a ship was tasked.
+    idleWarshipIsFlagship(warship, flagshipId) {
+      return flagshipId !== null && String(warship.id()) === flagshipId;
+    }
+
+    // Per-hull dispatch decision for selectClosestIdleWarship: "skip"
+    // (ineligible), "prefer" (promotion-rank flagship inside reach — take it
+    // now, see flagshipAtPromotionRank), or "candidate" for the distance
+    // ranking.
+    idleWarshipSelectionDecision(warship, candidate, duel) {
+      if (this.manualOrderWouldTrapWoundedHull(warship)) return "skip";
+      const isFlagship = this.idleWarshipIsFlagship(warship, duel.flagshipId);
+      // Meter-aware duel steering: an enemy-warship final blow is a full
+      // veterancy level but ZEROES the victor's shared progress meter.
+      // Keep a loaded flagship out of hunter duels (a green hull takes the
+      // reset instead); when the meter is nearly empty the reset costs
+      // nothing, so the flagship is allowed to duel for the free level.
+      if (duel.meterHigh && isFlagship) return "skip";
+      if (duel.promotionRank && isFlagship && candidate <= duel.moveCap) {
+        return "prefer";
+      }
+      return "candidate";
+    }
+
     selectClosestIdleWarship(tile, s, tick, cooldownTicks, hunterDuel = false) {
       const flagshipId = hunterDuel && this.raidingTierActive()
         ? this.selectRaidFlagshipId(s)
         : null;
-      const meterHigh = flagshipId !== null &&
+      // Promotion-priority duel dispatch: at veterancy 2 (cap 3 minus one)
+      // a single attributed warship kill promotes the flagship instantly and
+      // the meter reset costs nothing — the cap zeroes the meter anyway.
+      // Preferring the flagship for duels it statistically wins (vet-2 HP and
+      // damage edge) is the one path to the level-3 requirement that does not
+      // depend on the fleet-wide capture budget.
+      const promotionRank = flagshipId !== null &&
+        this.flagshipAtPromotionRank(s, flagshipId);
+      const meterHigh = flagshipId !== null && !promotionRank &&
         this.flagshipMeterPoints(s, flagshipId) > 125;
+      // Prefer the flagship only when it can actually reach the duel (the
+      // same cap the caller applies); an out-of-reach flagship falls through
+      // so nearer hulls still take the dispatch.
+      const moveCap = state.settings.warshipMoveMaxDist || 160;
       let best = null;
       let bestDistance = Infinity;
       for (const warship of this.player.units(UNIT.Warship)) {
@@ -2438,13 +2473,15 @@
           warship, tile, s, tick, cooldownTicks,
         );
         if (candidate === null) continue;
-        if (this.manualOrderWouldTrapWoundedHull(warship)) continue;
-        // Meter-aware duel steering: an enemy-warship final blow is a full
-        // veterancy level but ZEROES the victor's shared progress meter.
-        // Keep a loaded flagship out of hunter duels (a green hull takes the
-        // reset instead); when the meter is nearly empty the reset costs
-        // nothing, so the flagship is allowed to duel for the free level.
-        if (meterHigh && String(warship.id()) === flagshipId) continue;
+        const decision = this.idleWarshipSelectionDecision(
+          warship,
+          candidate,
+          { flagshipId, meterHigh, promotionRank, moveCap },
+        );
+        if (decision === "skip") continue;
+        if (decision === "prefer") {
+          return { warship, distance: candidate };
+        }
         if (candidate >= bestDistance) continue;
         best = warship;
         bestDistance = candidate;
@@ -2476,7 +2513,22 @@
       if (!this.raidingTierActive()) return false;
       const flagshipId = this.selectRaidFlagshipId(s);
       if (String(warship.id()) !== flagshipId) return false;
+      // At promotion rank (veterancy 2) a duel final blow IS the promotion —
+      // the meter reset is free at the cap, so never defer it away.
+      if (this.flagshipAtPromotionRank(s, flagshipId)) return false;
       return this.flagshipMeterPoints(s, flagshipId) > 125;
+    }
+
+    flagshipAtPromotionRank(s, flagshipId) {
+      const flagship = this.player
+        .units(UNIT.Warship)
+        .find((warship) => String(warship.id()) === flagshipId);
+      const veterancy = Number(
+        flagship?.veterancy?.() ??
+          flagship?.warshipState?.()?.veterancy ??
+          0,
+      );
+      return veterancy === 2;
     }
 
     flagshipMeterPoints(s, flagshipId) {

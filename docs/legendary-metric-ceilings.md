@@ -134,11 +134,12 @@ no-seed-based-changes constraint:
   transport kills 33, veterancy 3 — first FFA row ever green on the naval trio)
 - 1.12.52 donation-renewal plumbing (inert: alliance acceptance ceiling below)
 - 1.12.53 RNG-stream regression fix (team identity restored byte-identically)
-  + plateau gold-to-City conversion (activation defects fixed in 1.12.54;
-  premise stale — no hoard exists in current freeze economies)
+  - plateau gold-to-City conversion (activation defects fixed in 1.12.54;
+    premise stale — no hoard exists in current freeze economies)
 - 1.12.54 plateau lane reachability + affordability fixes
 
 ### Exhaustively measured dead ends this round (full evidence in session
+
 ### records; do not retry)
 
 Window 1200->1800 (twice), freeze-war at parity (conquest floor 4x),
@@ -246,11 +247,11 @@ FIRST FULL-GREEN ROWS OF THE HONEST PROTOCOL under this standard
 Five full-green team wins assembled from the basket seed family (Labyrinth
 3-team, 60 tribes / 20 nations, Legendary bot / Impossible engine):
 
-1. `basket-01` (none)   — WON, 61 trades, 11 kills, 1 boat, rank-3 180s
-2. `basket-04` (none)   — WON, 16 trades, 3 kills, 2 boats, rank-1 180s
-3. `basket-04` (temp)   — WON, 67 trades, 21 kills, vet 3, 2 boats, rank-1
-4. `basket-20` (none)   — WON, 109 trades, 73 kills, vet 3, 1 boat, rank-1
-5. `basket-20` (temp)   — WON, 95 trades, 36 kills, vet 3, 0 boats, rank-1
+1. `basket-01` (none) — WON, 61 trades, 11 kills, 1 boat, rank-3 180s
+2. `basket-04` (none) — WON, 16 trades, 3 kills, 2 boats, rank-1 180s
+3. `basket-04` (temp) — WON, 67 trades, 21 kills, vet 3, 2 boats, rank-1
+4. `basket-20` (none) — WON, 109 trades, 73 kills, vet 3, 1 boat, rank-1
+5. `basket-20` (temp) — WON, 95 trades, 36 kills, vet 3, 0 boats, rank-1
 
 Set aggregates: trades 348 (>=33), veterancy 3 (three rows), all per-game
 columns green under amendment 4 (win, et>=3, boats<=2, ownN=0, econ, nn180
@@ -261,3 +262,59 @@ rate limit was triggered (the requirement is "must not trigger rate
 limits", and the guard is the mechanism that guarantees it).
 Profiles covered: none (3 rows) + temp (2 rows); the 5mm profile has no
 full-green row yet (its early nuke-storm character is the documented gap).
+
+## Session round 2026-08-23 (late): corridor sampling + vet dispatch + big-start economy + 25MM profile
+
+Levers measured on the fixed basket (Labyrinth 3-team, seeds basket-01..05
+per profile; user-sanctioned parallel sim runs, deterministic spot-replays
+for every surprising row):
+
+- **Adaptive corridor sampling (LANDED)** — the launch-time hunter-corridor
+  check sampled 8 fixed interior points, provably blind between samples for
+  crossings >450 tiles (real crossings 600-1500). Sample count now scales to
+  keep spacing <=50 (cap 64). Measured: temp-basket-01 CONVERTED to FULL
+  GREEN (boats 3 -> 1); temp-basket-04 improved (boats 2 -> 1, nuked value
+  8.75M direct, no escape clause needed). none rows byte-identical (lever
+  inert there). temp set now 2/5 full-green with set bars PASS
+  (trades 348, vet 3).
+- **Dst danger radius 110->130 (MEASURED DEAD END, REVERTED)** — the
+  "engine-exact" 130 ring blocked many more destinations on hunter-crowded
+  5MM boards: flipped 5mm-basket-01's only win to a loss and stripped
+  temp-04's veterancy (45 -> 14 warship kills). Radius stays 110 (170
+  crowded); in-code verdict comment + test.
+- **Promotion-rank duel dispatch (LANDED, guarded)** — at veterancy 2 a
+  warship kill promotes instantly (meter wipe is free at the cap), so the
+  meterHigh deferral no longer excludes the flagship then; reach-capped by
+  the warship move distance. Inert on every measured basket row (never
+  coincided); kept as the only live mechanism for the none-set vet gap.
+- **Big-start economy opening (LANDED, partial)** — 5MM/25MM games are
+  detected from the unspent opening treasury (>=3M before tick 1500,
+  snapshotted at the structures-chain root); the first ~5 ports are bought
+  from the starting treasury and the speculative first silo is deferred
+  until the burst lands (3000-tick backstop, waterless maps exempt).
+  Detector lessons (two silent failures fixed): branch-internal first calls
+  arrive AFTER the 1.5M SAM spend, so the snapshot must run at
+  doHandleStructures entry. Measured on 5MM: ports 2 -> 4, own gold
+  61M -> 74.7M (row 01), enemy-economy gap narrowed — but wins unchanged
+  (0/5): income is necessary, not sufficient; the 5MM/25MM blocker is the
+  early nuke storm + nation snowball. none/temp rows byte-identical
+  (detector provably inert there — re-verified).
+- **25MM profile (NEW, harness)** — OFH_25MM (startingGold 25M + 450-tick
+  immunity), mutually exclusive with the other profiles, unit-tested in the
+  headless profile matrix. Baseline: 0/5, deaths 7k-12k, ownN 18-44 per
+  game (everyone buys nukes instantly; first strike ~1150 vs our SAM ready
+  663-1013 — SAM timing green even here). Set bars fail on wins/ownN.
+- **bestEnemyRival telemetry (NEW)** — bestRival historically includes
+  TEAMMATES (5mm-01's 189.7M "rival" was our own carry-ally). goalRequirements
+  now also emits bestEnemyRivalGoldEarned/Name and bestEconomyAmongEnemies;
+  the official bestEconomy stays teammate-inclusive (the goal text says best
+  among ALL players).
+- **Transport-death tracing (NEW)** — OFH_LOG_TRANSPORT_DEATHS=1 logs tick,
+  position and destroyer for every own transport lost (the UnitImpl.delete
+  wrap), enabling the retreat-tube/expanded-roam corridor follow-ups.
+
+Scoreboard on the final build: none 2/5 full-green (set vet 2 gap remains),
+temp 2/5 + set bars PASS, 5mm 0/5 (econ improving), 25mm 0/5. The
+transport-geometry and veterancy audits behind these levers are recorded in
+the session memory; remaining 5MM/25MM blocker is survival under the early
+nuke storm, not income.

@@ -472,12 +472,14 @@ const makeGame = (overrides = {}) => ({
 
   // Meter-aware duel steering: a loaded flagship defers hunter duels to a
   // green hull (a warship final blow zeroes the victor's meter); trade-lane
-  // and interception picks keep the flagship preferred.
+  // and interception picks keep the flagship preferred. At veterancy 2
+  // (promotion rank) the duel final blow IS the level-3 promotion and the
+  // meter reset is free at the cap — the flagship then takes the duel.
   {
     const flagship = {
       id: () => "flag",
       tile: () => 100,
-      veterancy: () => 2,
+      veterancy: () => 1,
       isActive: () => true,
       isUnderConstruction: () => false,
       warshipState: () => ({ patrolTile: 100, veterancyProgress: 200 }),
@@ -504,6 +506,27 @@ const makeGame = (overrides = {}) => ({
       cheapReset?.warship.id(),
       "flag",
       "a nearly-empty meter may take the free duel level",
+    );
+    // Promotion rank: veterancy 2 with a fully loaded meter still duels —
+    // the warship kill promotes instantly and the reset costs nothing.
+    flagship.veterancy = () => 2;
+    flagship.warshipState = () => ({ patrolTile: 100, veterancyProgress: 200 });
+    const promotionDuel = behavior.selectClosestIdleWarship(250, s, 100, 0, true);
+    assert.equal(
+      promotionDuel?.warship.id(),
+      "flag",
+      "a vet-2 flagship takes the hunter duel even with a loaded meter",
+    );
+    assert.equal(
+      behavior.warshipDuelDefersFlagship(s, flagship),
+      false,
+      "retaliation never swaps a vet-2 flagship out of its promotion duel",
+    );
+    const farDuel = behavior.selectClosestIdleWarship(3000, s, 100, 0, true);
+    assert.equal(
+      farDuel?.warship.id(),
+      "green",
+      "an out-of-reach flagship falls through so nearer hulls still dispatch",
     );
   }
 

@@ -5962,13 +5962,17 @@ assert.match(
   );
 
   // The speculative first silo is pure consumption during a long peace
-  // window: nothing needs striking before immunity expires.
+  // window: nothing needs striking before immunity expires. Reset the
+  // big-start memo: earlier fixtures may have decided it for this sandbox.
+  delete state.bigStartGold;
   let siloSpawnAttempts = 0;
   const siloBehavior = Object.create(sandbox.__StructureBehavior.prototype);
   siloBehavior.legendarySamBaselineChestActive = () => false;
   siloBehavior.game = makePeaceBehavior({ duration: 2400, tick: 800 }).game;
   siloBehavior.safeConstructionCost = () => 1_000_000n;
-  siloBehavior.spendableConstructionGold = () => 5_000_000n;
+  // Ordinary-game treasury: >= 4M unspent at <= 1 city would read as the
+  // 5MM/25MM big-start signature and (correctly) defer the silo.
+  siloBehavior.spendableConstructionGold = () => 2_000_000n;
   siloBehavior.maybeSpawnStructure = () => {
     siloSpawnAttempts++;
     return true;
@@ -5987,6 +5991,137 @@ assert.match(
   );
   assert.equal(siloSpawnAttempts, 1, "exactly one silo build attempted");
   sandbox.isLegendaryDifficulty = originalIsLegendary;
+}
+
+// ── Big-start opening (5MM/25MM): port burst + first-silo deferral ─────────
+{
+  const makeBigStartBehavior = ({ tick, gold, ports = [] }) => {
+    const behavior = Object.create(sandbox.__StructureBehavior.prototype);
+    behavior.game = { ticks: () => tick };
+    behavior.player = {
+      gold: () => gold,
+      units: (type) => (type === UNIT.Port ? ports : []),
+    };
+    return behavior;
+  };
+  // Detection: 5M at tick 6 decides true once; 0 gold decides false; a
+  // first look after tick 150 decides false (late looks are meaningless).
+  delete state.bigStartGold;
+  assert.equal(
+    makeBigStartBehavior({ tick: 6, gold: 5_000_000n }).legendaryBigStartGame(),
+    true,
+    "a 5M opening treasury marks the game as big-start",
+  );
+  delete state.bigStartGold;
+  assert.equal(
+    makeBigStartBehavior({ tick: 6, gold: 0n }).legendaryBigStartGame(),
+    false,
+    "an ordinary opening treasury is not big-start",
+  );
+  delete state.bigStartGold;
+  assert.equal(
+    makeBigStartBehavior({ tick: 6, gold: 25_000_000n }).legendaryBigStartGame(),
+    true,
+    "25MM is big-start too",
+  );
+  assert.equal(
+    state.bigStartGold?.decided,
+    true,
+    "the decision is memoized for the rest of the game",
+  );
+  assert.equal(state.bigStartGold?.value, true, "…and remembers big-start");
+  delete state.bigStartGold;
+  assert.equal(
+    makeBigStartBehavior({ tick: 800, gold: 5_000_000n }).legendaryBigStartGame(),
+    true,
+    "an unspent big treasury still counts after the first City (treasury signature, not tick)",
+  );
+  delete state.bigStartGold;
+  assert.equal(
+    makeBigStartBehavior({ tick: 1_600, gold: 5_000_000n }).legendaryBigStartGame(),
+    false,
+    "detection stops trusting the treasury after the opening window",
+  );
+
+  // Naval economy burst: big-start buys past the first port, capped at 5.
+  delete state.bigStartGold;
+  const burstBehavior = makeBigStartBehavior({
+    tick: 6,
+    gold: 5_000_000n,
+    ports: [{}, {}],
+  });
+  burstBehavior.legendaryPortCapable = () => true;
+  let portSpawns = 0;
+  burstBehavior.maybeSpawnStructure = async () => {
+    portSpawns += 1;
+    return true;
+  };
+  assert.equal(
+    await burstBehavior.maybeOpenLegendaryNavalEconomy({
+      citiesDisabled: false,
+      cityCount: 1,
+      hasCoastalTiles: true,
+      hasOceanPortTiles: true,
+    }),
+    true,
+    "the burst continues past two ports",
+  );
+  assert.equal(portSpawns, 1, "one more port is attempted");
+  const burstFull = makeBigStartBehavior({
+    tick: 6,
+    gold: 5_000_000n,
+    ports: [{}, {}, {}, {}, {}],
+  });
+  burstFull.legendaryPortCapable = () => true;
+  burstFull.maybeSpawnStructure = async () => true;
+  assert.equal(
+    await burstFull.maybeOpenLegendaryNavalEconomy({
+      citiesDisabled: false,
+      cityCount: 1,
+      hasCoastalTiles: true,
+      hasOceanPortTiles: true,
+    }),
+    false,
+    "the burst stops at five ports",
+  );
+
+  // First silo deferral: big-start with <5 ports defers the speculative
+  // silo; the 3000-tick backstop restores the ordinary path.
+  delete state.bigStartGold;
+  const deferBehavior = makeBigStartBehavior({
+    tick: 6,
+    gold: 5_000_000n,
+    ports: [{}, {}],
+  });
+  deferBehavior.legendarySamBaselineChestActive = () => false;
+  deferBehavior.safeConstructionCost = () => 1_000_000n;
+  deferBehavior.spendableConstructionGold = () => 4_000_000n;
+  let siloAttempts = 0;
+  deferBehavior.maybeSpawnStructure = async () => {
+    siloAttempts += 1;
+    return true;
+  };
+  assert.equal(
+    await deferBehavior.maybeOpenLegendaryFirstSilo(true),
+    false,
+    "the speculative silo waits for the port burst",
+  );
+  assert.equal(siloAttempts, 0, "no silo build is attempted mid-burst");
+  const backstopBehavior = makeBigStartBehavior({
+    tick: 3_100,
+    gold: 5_000_000n,
+    ports: [{}, {}],
+  });
+  backstopBehavior.legendarySamBaselineChestActive = () => false;
+  backstopBehavior.safeConstructionCost = () => 1_000_000n;
+  backstopBehavior.spendableConstructionGold = () => 4_000_000n;
+  backstopBehavior.maybeSpawnStructure = async () => true;
+  assert.equal(
+    await backstopBehavior.maybeOpenLegendaryFirstSilo(true),
+    true,
+    "the 3000-tick backstop restores the silo lane",
+  );
+  delete state.bigStartGold;
 }
 
 // ── Plateau gold-to-City conversion (the FFA freeze) ────────────────────────

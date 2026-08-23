@@ -310,6 +310,11 @@
   // chokepoint refuses any destination inside it. Checking each enemy warship's
   // live tile against the destination approximates the whole-route exposure:
   // warships near the spawn coast are also near the early route segments.
+  // 110 (sub-bisect 2026-08-23): the 130 "engine-exact" radius blocked many
+  // more destinations on hunter-crowded boards and flipped 5mm-basket-01's
+  // win into a loss — the freeze failure mode of every over-aggressive gate.
+  // The corridor SAMPLING fix carries the boats win; the dst ring stays at
+  // the historically validated 110 (170 crowded).
   const BOAT_WARSHIP_DANGER_RADIUS = 110;
   // Crowded lakes stack many hunters in a small theatre: a transport crossing
   // Baikal meets successive warship patrol circles, so the destination check
@@ -7562,15 +7567,34 @@
       return this.game.ref(Math.round(location.x), Math.round(location.y));
     }
 
-    boatCorridorSamples(from, to, count = 8) {
+    // Adaptive sample density (2026-08-23): 8 fixed interior samples leave
+    // blind gaps between samples once the crossing exceeds ~450 tiles (a
+    // hunter lethal at engine range 130 from a mid-line point can sit >155
+    // manhattan from EVERY sample while the boat still dies crossing it).
+    // Real crossings run 600-1500 tiles, so scale the count to keep spacing
+    // <=50: then any lethal hunter is within 130+25 of some sample and the
+    // 155/205 disks see it. Same radii, same disks — only the sampling holes
+    // close (the freeze-risk dimension, the radii, is untouched).
+    boatCorridorSampleCount(from, to) {
+      const length = Math.hypot(
+        this.game.x(to) - this.game.x(from),
+        this.game.y(to) - this.game.y(from),
+      );
+      if (!Number.isFinite(length)) return 8;
+      return Math.min(64, Math.max(8, Math.ceil(length / 50) - 1));
+    }
+
+    boatCorridorSamples(from, to, count) {
       const samples = [];
       const fx = this.game.x(from);
       const fy = this.game.y(from);
       const tx = this.game.x(to);
       const ty = this.game.y(to);
-      for (let index = 1; index <= count; index += 1) {
-        const x = Math.round(fx + ((tx - fx) * index) / (count + 1));
-        const y = Math.round(fy + ((ty - fy) * index) / (count + 1));
+      const total =
+        count ?? this.boatCorridorSampleCount(from, to);
+      for (let index = 1; index <= total; index += 1) {
+        const x = Math.round(fx + ((tx - fx) * index) / (total + 1));
+        const y = Math.round(fy + ((ty - fy) * index) / (total + 1));
         if (!this.game.isValidCoord(x, y)) continue;
         samples.push(this.game.ref(x, y));
       }

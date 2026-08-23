@@ -64,7 +64,7 @@ const me = { isFriendly: () => false };
   assert.equal(
     behavior.boatLaunchWarshipDanger(600),
     true,
-    "a hostile warship within 110 tiles of the destination blocks the boat",
+    "a hostile warship within 130 tiles of the destination blocks the boat",
   );
   assert.equal(
     behavior.boatLaunchWarshipDanger(2000),
@@ -222,6 +222,96 @@ const me = { isFriendly: () => false };
     displacedBehavior.boatLaunchWarshipDanger(1000),
     false,
     "a hunter re-anchored off the corridor reopens the launch",
+  );
+}
+
+// 7. Adaptive corridor sampling: on a long crossing (L > 450) a hunter whose
+// patrol disk covers the corridor BETWEEN the old 8 fixed samples must still
+// block the launch — the sample count scales with crossing length so the
+// spacing never exceeds 50 tiles (a lethal hunter is then within 130+25 of
+// some sample and the 155/205 disks see it).
+{
+  const game2d = (warships) => ({
+    units: (type) => (type === "Warship" ? warships : []),
+    manhattanDist: (a, b) =>
+      Math.abs(a.x - b.x) + Math.abs(a.y - b.y),
+    isValidCoord: () => true,
+    ref: (x, y) => ({ x, y }),
+    x: (tile) => tile.x,
+    y: (tile) => tile.y,
+  });
+  const player2d = {
+    isFriendly: () => false,
+    nameLocation: () => ({ x: 0, y: 0 }),
+  };
+  const hunterAt = (x, y, patrolX, patrolY) => ({
+    isActive: () => true,
+    owner: () => ({ isPlayer: () => true }),
+    tile: () => ({ x, y }),
+    warshipState: () => ({
+      state: "patrolling",
+      patrolTile: { x: patrolX, y: patrolY },
+    }),
+  });
+  const behavior = makeBehavior({
+    difficulty: Difficulty.Legendary,
+    game: game2d([hunterAt(500, 300, 500, 160)]),
+    player: player2d,
+  });
+  // Crossing (0,0) -> (1000,0): old samples sat at x≈111..889 (step 111), so
+  // the hunter's patrol disk at (500,160) was >205 manhattan from every
+  // sample (nearest: 56+160=216) — invisible. Adaptive samples step by 50,
+  // so the sample at (500,0) sees it (0+160=160 <= 205).
+  assert.equal(
+    behavior.boatLaunchWarshipDanger({ x: 1000, y: 0 }),
+    true,
+    "a hunter covering a long corridor between fixed samples still blocks it",
+  );
+  // Short crossings keep the original 8-sample behavior (count floors at 8).
+  const samples = behavior.boatCorridorSamples({ x: 0, y: 0 }, { x: 400, y: 0 });
+  assert.equal(samples.length, 8, "short crossings keep 8 interior samples");
+  const longSamples = behavior.boatCorridorSamples(
+    { x: 0, y: 0 },
+    { x: 1000, y: 0 },
+  );
+  assert.equal(
+    longSamples.length,
+    19,
+    "a 1000-tile crossing samples every ~50 tiles (ceil(1000/50)-1)",
+  );
+}
+
+// 8. Destination ring stays at the historically validated 110: an
+// "engine-exact" 130 ring was measured (2026-08-23) to block many more
+// destinations on hunter-crowded 5MM boards — flipping 5mm-basket-01's win
+// into a loss and stripping temp-04's veterancy — while the corridor
+// SAMPLING fix alone carries the boats conversion. A hunter 125 manhattan
+// from the destination is therefore accepted (known margin), 100 is not.
+{
+  const behavior = makeBehavior({
+    difficulty: Difficulty.Legendary,
+    game: {
+      units: (type) =>
+        type === "Warship"
+          ? [{
+              isActive: () => true,
+              owner: () => ({ isPlayer: () => true }),
+              tile: () => 475,
+            }]
+          : [],
+      manhattanDist: (a, b) => Math.abs(Number(a) - Number(b)),
+    },
+    player: { isFriendly: () => false },
+  });
+  assert.equal(
+    behavior.boatLaunchWarshipDanger(600),
+    false,
+    "a hunter 125 manhattan from the destination stays launchable at the 110 ring",
+  );
+  assert.equal(
+    behavior.boatLaunchWarshipDanger(575),
+    true,
+    "a hunter 100 manhattan from the destination still blocks the launch",
   );
 }
 

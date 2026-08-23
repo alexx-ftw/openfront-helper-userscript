@@ -1737,6 +1737,11 @@
 
     // doHandleStructures — NationStructureBehavior.ts:416 (now async).
     async doHandleStructures(profile = null) {
+      // Snapshot the big-start signature from the unspent opening treasury
+      // before ANY structure branch can spend it (the opening-priorities path
+      // buys the City/SAM/silo line before the Legendary chain ever runs —
+      // see legendaryBigStartGame).
+      this.legendaryBigStartGame();
       const context = profileStructureSync(
         profile,
         "structures-ordinary-context",
@@ -2345,8 +2350,72 @@
       const completedPort = ports.some(
         (port) => port.isUnderConstruction?.() !== true,
       );
-      if (completedPort || ports.length > 0) return false;
+      // Big-start opening (5MM/25MM modifiers): the starting treasury is dead
+      // capital until it becomes trade infrastructure — every nation compounds
+      // from the same start, and the measured 5MM failure mode is economy
+      // (3-6 cities / 1-16 ports vs 13/57-70 without the modifier) because the
+      // ratio lane (cityCount x 0.75) stays closed at 2 cities while the gold
+      // idles. Extend the naval opening to the first ~5 ports so the burst
+      // happens before the ratio math ever binds. The SAM path is unaffected:
+      // 5M minus City+5 ports (~3M) still covers the 1.5M interceptor well
+      // before the first measured hostile strike (1774+).
+      const portBurstCap = this.legendaryBigStartGame() ? 5 : 1;
+      if (portBurstCap === 1) {
+        if (completedPort || ports.length > 0) return false;
+      } else if (ports.length >= portBurstCap) {
+        return false;
+      }
       return this.maybeSpawnStructure(UNIT.Port);
+    }
+
+    // Detects the big-starting-gold modifier profile (startingGold >= 3M:
+    // 5MM/25MM) from the opening treasury. The snapshot is taken at the
+    // structures-chain ENTRY (see doHandleStructures) because the
+    // chain runs from the first decision (~tick 6, treasury still unspent —
+    // branch-internal calls can arrive only after the SAM's 1.5M already
+    // dropped a 5M start below a 4M threshold, which silently disabled the
+    // lever). 3M unspent before tick 1500 cannot occur in an ordinary game
+    // (the first SAM chest hoard targets 1.5M and completes long after).
+    // Decided once; no config surface is read (config stubs have crashed the
+    // sim before).
+    legendaryBigStartGame() {
+      {
+        if (state.bigStartGold?.decided) return state.bigStartGold.value;
+        const tick =
+          typeof this.game?.ticks === "function" ? this.game.ticks() : null;
+        if (tick === null || tick === undefined) return false;
+        if (tick > 1500) {
+          state.bigStartGold = { decided: true, value: false };
+          return false;
+        }
+        const gold =
+          typeof this.player?.gold === "function" ? this.player.gold() : null;
+        if (gold === null) return false;
+        if (
+          typeof gold === "bigint"
+            ? gold >= 3_000_000n
+            : Number(gold) >= 3_000_000
+        ) {
+          state.bigStartGold = { decided: true, value: true };
+          return true;
+        }
+        return false; // keep sampling until the window closes
+      }
+    }
+
+    // Big-start opening (5MM/25MM): the speculative 1M silo competes with
+    // the port burst converting the starting treasury into compounding
+    // trade income; measured first hostile strikes (1774-1989) never land
+    // before the burst finishes, and the 3000-tick backstop keeps the silo
+    // lane alive when port placement stalls. Waterless maps skip the burst
+    // entirely (no port candidates) and keep the ordinary silo path.
+    legendaryBigStartSiloDeferred(hasOceanPortTiles) {
+      if (!hasOceanPortTiles || !this.legendaryBigStartGame()) return false;
+      const tick =
+        typeof this.game?.ticks === "function" ? this.game.ticks() : 0;
+      if (tick >= 3000) return false;
+      const ports = this.player?.units?.(UNIT.Port) || [];
+      return ports.length < 5;
     }
 
     async maybeOpenLegendaryArsenal({
@@ -2367,17 +2436,18 @@
       }
       const silos = this.player?.units?.(UNIT.MissileSilo) || [];
       if (silos.length === 0) {
-        return this.maybeOpenLegendaryFirstSilo();
+        return this.maybeOpenLegendaryFirstSilo(hasOceanPortTiles);
       }
       return this.maybeOpenLegendaryBaselineSam(config);
     }
 
-    maybeOpenLegendaryFirstSilo() {
+    maybeOpenLegendaryFirstSilo(hasOceanPortTiles = true) {
       // The first launcher is speculative offense; when a hostile silo has
       // appeared and no interceptor exists, its 1M price is exactly the
       // chest the baseline SAM needs (measured ofh-n-b1: silo bought at
       // 4919 delayed the SAM 602 ticks past the first strike).
       if (this.legendarySamBaselineChestActive()) return false;
+      if (this.legendaryBigStartSiloDeferred(hasOceanPortTiles)) return false;
       // A 1M speculative silo during a long guaranteed-peace window is pure
       // consumption: nothing needs striking before immunity expires, and the
       // same gold is two-thirds of the interceptor that must be ready at

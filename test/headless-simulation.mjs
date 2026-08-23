@@ -245,6 +245,20 @@ const profileScenarios = [
     expected: { profile: "5MM", startingGold: 5_000_000, spawnImmunityDuration: 450 },
   },
   {
+    name: "25MM",
+    environment: {
+      OFH_25MM: "1",
+      OFH_GAME_MAP: "Alps",
+      OFH_GAME_MAP_SIZE: "Normal",
+      OFH_GAME_MODE: "team",
+      OFH_PLAYER_TEAMS: "2",
+      OFH_BOTS: "4",
+      OFH_NATIONS: "disabled",
+      OFH_MAX_TICKS: "10",
+    },
+    expected: { profile: "25MM", startingGold: 25_000_000, spawnImmunityDuration: 450 },
+  },
+  {
     name: "temporary-pvp-immunity",
     environment: {
       OFH_TEMP_PVP_IMMUNITY: "1",
@@ -271,6 +285,8 @@ for (const scenario of profileScenarios) {
     expectedModifiers = {};
   } else if (scenario.expected.profile === "5MM") {
     expectedModifiers = { startingGold: 5_000_000 };
+  } else if (scenario.expected.profile === "25MM") {
+    expectedModifiers = { startingGold: 25_000_000 };
   } else {
     expectedModifiers = { isPeaceTime: true };
   }

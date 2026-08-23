@@ -82,6 +82,11 @@ UnitImpl.prototype.delete = function (
     this.owner()?.clientID?.() === clientID
   ) {
     ownTransportBoatsLost += 1;
+    if (process.env.OFH_LOG_TRANSPORT_DEATHS === "1") {
+      console.log(
+        `[ofh:transport-death] tick=${this.mg.ticks()} x=${this.mg.x(this.tile())} y=${this.mg.y(this.tile())} destroyer=${destroyer?.name?.() ?? "unknown"}`,
+      );
+    }
   }
   return originalUnitDelete.call(this, displayMessage, destroyer);
 };
@@ -168,9 +173,14 @@ const numericTeams = Number(requestedTeams);
 const requestedGameMode = (process.env.OFH_GAME_MODE ?? "team").trim().toLowerCase();
 const requestedStartingGold = process.env.OFH_STARTING_GOLD;
 const forceFiveMM = process.env.OFH_5MM === "1";
+const forceTwentyFiveMM = process.env.OFH_25MM === "1";
 const noModifiers = process.env.OFH_NO_MODIFIERS === "1";
 const temporaryPvpImmunity = process.env.OFH_TEMP_PVP_IMMUNITY === "1";
-const effectiveStartingGold = forceFiveMM ? "5000000" : requestedStartingGold;
+const effectiveStartingGold = forceFiveMM
+  ? "5000000"
+  : forceTwentyFiveMM
+    ? "25000000"
+    : requestedStartingGold;
 const numericRequestedStartingGold = Number(requestedStartingGold);
 const numericStartingGold = Number(effectiveStartingGold);
 const requestedNations = process.env.OFH_NATIONS;
@@ -200,15 +210,23 @@ const nuclearUnitTypes = new Set([
 if (requestedGameMode !== "team" && requestedGameMode !== "ffa") {
   throw new Error(`OFH_GAME_MODE must be team or ffa, got ${process.env.OFH_GAME_MODE}`);
 }
-if (Number(forceFiveMM) + Number(noModifiers) + Number(temporaryPvpImmunity) > 1) {
-  throw new Error("OFH_5MM, OFH_NO_MODIFIERS, and OFH_TEMP_PVP_IMMUNITY are mutually exclusive");
+if (
+  Number(forceFiveMM) +
+    Number(forceTwentyFiveMM) +
+    Number(noModifiers) +
+    Number(temporaryPvpImmunity) >
+  1
+) {
+  throw new Error(
+    "OFH_5MM, OFH_25MM, OFH_NO_MODIFIERS, and OFH_TEMP_PVP_IMMUNITY are mutually exclusive",
+  );
 }
 if (
-  forceFiveMM &&
+  (forceFiveMM || forceTwentyFiveMM) &&
   requestedStartingGold !== undefined &&
-  numericRequestedStartingGold !== 5_000_000
+  numericRequestedStartingGold !== (forceFiveMM ? 5_000_000 : 25_000_000)
 ) {
-  throw new Error("OFH_5MM cannot be combined with a different OFH_STARTING_GOLD value");
+  throw new Error("OFH_5MM/OFH_25MM cannot be combined with a different OFH_STARTING_GOLD value");
 }
 if (injectHostileAtom && !forceNukesEnabled) {
   throw new Error("OFH_INJECT_HOSTILE_ATOM=1 requires OFH_NUKES=1");
@@ -315,6 +333,15 @@ const config = {
         bots: Number(process.env.OFH_BOTS ?? 400),
       }
     : {}),
+  ...(forceTwentyFiveMM
+    ? {
+        gameMapSize: GameMapSize.Normal,
+        publicGameModifiers: { startingGold: 25_000_000 },
+        startingGold: 25_000_000,
+        spawnImmunityDuration: 450,
+        bots: Number(process.env.OFH_BOTS ?? 400),
+      }
+    : {}),
   ...(temporaryPvpImmunity
     ? {
         gameMapSize: GameMapSize.Normal,
@@ -325,9 +352,9 @@ const config = {
         bots: Number(process.env.OFH_BOTS ?? 400),
       }
     : {}),
-  ...(!forceFiveMM && !noModifiers && requestedStartingGold === undefined
+  ...(!forceFiveMM && !forceTwentyFiveMM && !noModifiers && requestedStartingGold === undefined
     ? {}
-    : !forceFiveMM && !noModifiers
+    : !forceFiveMM && !forceTwentyFiveMM && !noModifiers
       ? { startingGold: numericStartingGold }
       : {}),
   ...(forceNukesEnabled
@@ -404,11 +431,13 @@ console.warn(
     spawnImmunityDuration: config.spawnImmunityDuration ?? null,
     profile: forceFiveMM
       ? "5MM"
-      : temporaryPvpImmunity
-        ? "temporary-pvp-immunity"
-        : noModifiers
-          ? "none"
-          : "playlist",
+      : forceTwentyFiveMM
+        ? "25MM"
+        : temporaryPvpImmunity
+          ? "temporary-pvp-immunity"
+          : noModifiers
+            ? "none"
+            : "playlist",
     nations: nations.length,
     tribes: config.bots,
     myTeam: me?.team() ?? null,
@@ -1171,9 +1200,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
     // (telemetry-proven geography-bound), while the goal's own naval metrics
     // require those nations to exist. This key reports the best non-nation
     // landholder and our rank among non-nations.
-    const nonNationPlayers = landPlayers.filter(
-      (player) => player.type?.() !== PlayerType.Nation,
-    );
+    const nonNationPlayers = landPlayers.filter((player) => player.type?.() !== PlayerType.Nation);
     const nonNationLeader = nonNationPlayers[0];
     if (nonNationLeader) {
       landLeaderNonNationAt180Seconds = {
@@ -1182,11 +1209,9 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
         tiles: nonNationLeader.numTilesOwned(),
         ownTiles: currentPlayer.numTilesOwned(),
         ownRank:
-          nonNationPlayers.findIndex(
-            (player) => player.smallID?.() === currentPlayer.smallID?.(),
-          ) + 1,
-        isOwn:
-          nonNationLeader.smallID?.() === currentPlayer.smallID?.(),
+          nonNationPlayers.findIndex((player) => player.smallID?.() === currentPlayer.smallID?.()) +
+          1,
+        isOwn: nonNationLeader.smallID?.() === currentPlayer.smallID?.(),
       };
     }
   }
@@ -1624,12 +1649,24 @@ function goalRequirementsSnapshot() {
   const myGoldEarned = me ? (goldEarnedById.get(String(me.id())) ?? 0n) : 0n;
   let bestRivalGoldEarned = 0n;
   let bestRivalName: string | null = null;
+  // The legacy bestRival loop includes TEAMMATES — a carried ally can out-earn
+  // us on a winning team (the goal's literal text says best among ALL players,
+  // so bestEconomy stays teammate-inclusive). Emit the enemy-only view too so
+  // rows can be analyzed both ways.
+  let bestEnemyRivalGoldEarned = 0n;
+  let bestEnemyRivalName: string | null = null;
+  const myTeam = me?.team?.() ?? null;
   for (const player of runner.game.players()) {
     if (player.clientID?.() === clientID) continue;
     const rivalGold = goldEarnedById.get(String(player.id())) ?? 0n;
     if (rivalGold > bestRivalGoldEarned) {
       bestRivalGoldEarned = rivalGold;
       bestRivalName = player.name();
+    }
+    if (myTeam !== null && player.team?.() === myTeam) continue;
+    if (rivalGold > bestEnemyRivalGoldEarned) {
+      bestEnemyRivalGoldEarned = rivalGold;
+      bestEnemyRivalName = player.name();
     }
   }
   // Peak enemy structure value ever nukable (5MM escape-clause evidence):
@@ -1701,6 +1738,9 @@ function goalRequirementsSnapshot() {
     bestRivalGoldEarned: bestRivalGoldEarned.toString(),
     bestRivalName,
     bestEconomy: myGoldEarned > bestRivalGoldEarned,
+    bestEnemyRivalGoldEarned: bestEnemyRivalGoldEarned.toString(),
+    bestEnemyRivalName,
+    bestEconomyAmongEnemies: myGoldEarned > bestEnemyRivalGoldEarned,
   };
 }
 
