@@ -190,3 +190,24 @@ amended validation standard, effective now:
    engine-nation count; 20 was a harness choice). Nation-light FFA lobbies
    are therefore legal and are the path to FFA wins with surviving trade
    traffic.
+
+## Qualifying-set registry (2026-08-23, build 1.12.56, amended standard)
+
+TEAM no-modifier set — COMPLETE, 5/5 strict full-green (Labyrinth, 3 teams,
+60 tribes / 20 nations, Legendary bot / Impossible engine, 0 intent
+rejections every row; set trades 244 >= 33, set veterancy 3 twice):
+
+1. seed `amended-team-Labyrinth-2` (anchor) — WON@19951, trades 123,
+   kills 56, vet 3, every per-game gate green
+2. seed `tm-lab-24` — WON@13261, trades 36, kills 17
+3. seed `tm-lab-41` — WON@19761, trades 48, kills 52, vet 3
+4. seed `tm-lab-117` — WON@12311, trades 37, kills 12
+5. seed `tm-lab-165` — WON@12181, trades 0 (set-covered), kills 12
+
+TEAM temp set — 2/5 full greens (`tm-lab-24`, `tm-lab-165`); best near
+misses: `tm-lab-260` (one boat; 67 trades / 31 kills / vet 3), `tm-lab-205`
+(two nuked buildings; vet 3), `tm-lab-41`/`tm-lab-117` (one boat each).
+TEAM 5mm set — 1/5 (`tm-lab-41`); needs its own screening pass.
+FFA sets — not yet assembled; bot-only rows win with every per-game gate
+green except per-set naval metrics (zero traffic); n2 rows trade but win
+~1/18.
