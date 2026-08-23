@@ -10614,7 +10614,16 @@
           this.game,
           this.player,
         );
-        return invasion?.active === true;
+        if (invasion?.active !== true) return false;
+        // Goal requirement (2026-08-23): a landing that is still MINUTES
+        // away must not freeze troop usage for its whole transit. The
+        // donation reserve holds only once the nearest hostile transport
+        // is inside the imminence horizon (600 ticks ≈ 1 minute at
+        // default transport speed); unknown ETA keeps the conservative
+        // freeze.
+        const eta = Number(invasion?.etaTicks);
+        if (Number.isFinite(eta)) return eta <= 600;
+        return true;
       }
     }
 

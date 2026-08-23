@@ -4513,6 +4513,42 @@
       return plan;
     }
 
+    // Goal requirement (2026-08-23): allied nearby SAMs count toward our
+    // coverage. A teammate's launcher intercepts hostile missiles over our
+    // structures exactly like our own (the engine's SAM targeting is
+    // position-based, not owner-based for defense of the impact zone), so
+    // demanding our own site where an ally already covers the footprint is
+    // wasted gold on the income-bound SAM lane. Levels are credited at a
+    // conservative half weight — we do not control the ally's upgrade path.
+    alliedCoverageSamCandidate(other, mySid) {
+      if (!other?.isPlayer?.() || other.smallID() === mySid) return false;
+      if (!other.isAlive?.()) return false;
+      return this.player.isFriendly?.(other) === true;
+    }
+
+    alliedCoverageSamEntries() {
+      if (!isLegendaryDifficulty()) return [];
+      const mySid = this.player.smallID();
+      const entries = [];
+      for (const other of this.game.players()) {
+        if (!this.alliedCoverageSamCandidate(other, mySid)) continue;
+        for (const sam of other.units(UNIT.SAMLauncher) || []) {
+          this.pushAlliedCoverageSam(entries, sam);
+        }
+      }
+      return entries;
+    }
+
+    pushAlliedCoverageSam(entries, sam) {
+      if (!this.isBuiltActiveSam(sam)) return;
+      const tile = sam.tile();
+      const level = Math.max(1, Math.floor(Number(sam.level?.() ?? 1)));
+      if (tile === null || tile === undefined || !Number.isFinite(level)) {
+        return;
+      }
+      entries.push({ sam, tile, level: level / 2 });
+    }
+
     hydrogenStructureCoverageInputs() {
       if (
         !state.settings.winFixes ||
@@ -4538,14 +4574,16 @@
         if (tile === null || tile === undefined || !Number.isFinite(level)) continue;
         sams.push({ sam, tile, level });
       }
+      const alliedSams = this.alliedCoverageSamEntries();
+      const coverageSams = sams.concat(alliedSams);
       return {
         config,
         structures: protectedTiles,
-        sams,
+        sams: coverageSams,
         key: [
           hostileSiloLevelSum,
           protectedTiles.join(","),
-          sams
+          coverageSams
             .map(({ sam, tile, level }, index) =>
               [sam.id?.() ?? index, tile, level].join(":"),
             )

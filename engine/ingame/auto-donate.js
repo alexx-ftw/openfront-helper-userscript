@@ -240,7 +240,34 @@
     if (enemy === null) return { unknown: true };
     if (!enemy) return { ignored: true };
     const troops = getAutoDonateTransportTroops(unit);
-    return troops === null ? { incoming: true, unknownTroops: true } : { incoming: true, troops };
+    const etaTicks = getAutoDonateTransportEtaTicks(game, unit, targetTile);
+    return troops === null
+      ? { incoming: true, unknownTroops: true, etaTicks }
+      : { incoming: true, troops, etaTicks };
+  }
+
+  // Remaining transit estimate for an incoming invasion transport: tile
+  // distance to the landing tile over the transport speed. Consumed by the
+  // imminence gate so a landing that is still MINUTES away no longer freezes
+  // troop usage (donations/expansion) for its whole transit.
+  function getAutoDonateTransportEtaTicks(game, unit, targetTile) {
+    {
+      const rawTile =
+        typeof unit.tile === "function" ? unit.tile() : unit.tile;
+      const liveTile = Number(rawTile);
+      if (!Number.isFinite(liveTile)) return null;
+      const config = game && typeof game.config === "function" ? game.config() : null;
+      const rawSpeed =
+        config && typeof config.defaultTransportSpeed === "function"
+          ? config.defaultTransportSpeed()
+          : null;
+      let speed = Number(rawSpeed);
+      if (!Number.isFinite(speed) || speed <= 0) speed = 1;
+      const dx = Math.abs(game.x(liveTile) - game.x(targetTile));
+      const dy = Math.abs(game.y(liveTile) - game.y(targetTile));
+      const distance = dx + dy;
+      return Math.ceil(distance / speed);
+    }
   }
 
   // Find active enemy transports whose landing tile is currently ours. The
@@ -264,17 +291,27 @@
     }
 
     let incomingTroops = 0;
+    let minEtaTicks = null;
     for (const unit of units) {
       if (!unit) continue;
       const inspection = inspectAutoDonateTransport(game, me, myId, unit);
       if (inspection.unknown) return null;
       if (!inspection.incoming) continue;
-      if (inspection.unknownTroops) return { active: true, troops: null };
+      if (
+        minEtaTicks === null ||
+        (inspection.etaTicks !== null && inspection.etaTicks < minEtaTicks)
+      ) {
+        minEtaTicks = inspection.etaTicks;
+      }
+      if (inspection.unknownTroops) {
+        return { active: true, troops: null, etaTicks: minEtaTicks };
+      }
       incomingTroops += Math.max(0, inspection.troops);
     }
     return {
       active: incomingTroops > 0,
       troops: incomingTroops,
+      etaTicks: minEtaTicks,
     };
   }
 
