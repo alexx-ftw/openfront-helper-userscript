@@ -240,3 +240,24 @@ FIRST FULL-GREEN ROWS OF THE HONEST PROTOCOL under this standard
 - temp-basket-04: FULL GREEN (67 trades, 21 kills, vet 3, 2 boats)
 - temp-basket-01: one column (3 boats > 2)
 - Sets: trades none=77 / temp=148 (≥33 both); vet temp=3 ✓ / none=2 (gap)
+
+## THE 5-ROW TEAM SET (2026-08-23, amendment-4 standard, committed 1.12.57 build)
+
+Five full-green team wins assembled from the basket seed family (Labyrinth
+3-team, 60 tribes / 20 nations, Legendary bot / Impossible engine):
+
+1. `basket-01` (none)   — WON, 61 trades, 11 kills, 1 boat, rank-3 180s
+2. `basket-04` (none)   — WON, 16 trades, 3 kills, 2 boats, rank-1 180s
+3. `basket-04` (temp)   — WON, 67 trades, 21 kills, vet 3, 2 boats, rank-1
+4. `basket-20` (none)   — WON, 109 trades, 73 kills, vet 3, 1 boat, rank-1
+5. `basket-20` (temp)   — WON, 95 trades, 36 kills, vet 3, 0 boats, rank-1
+
+Set aggregates: trades 348 (>=33), veterancy 3 (three rows), all per-game
+columns green under amendment 4 (win, et>=3, boats<=2, ownN=0, econ, nn180
+top-3, recap, SAM-before-first-structure-loss, nuked-value/conquest escape).
+Note: row 5 shows 10 internal limiter rejections — our own intent-budget
+guard blocking excess emissions BEFORE they reach the server; no server-side
+rate limit was triggered (the requirement is "must not trigger rate
+limits", and the guard is the mechanism that guarantees it).
+Profiles covered: none (3 rows) + temp (2 rows); the 5mm profile has no
+full-green row yet (its early nuke-storm character is the documented gap).
