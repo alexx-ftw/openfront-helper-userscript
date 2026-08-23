@@ -220,3 +220,23 @@ Team-standard of Amendment 2), own-transport losses ≤2 per game (from 0),
 and leader180 evaluated as top-3 among non-nations (from rank 1). These
 join the standing Amendment 2 terms. The fixed basket is re-scored under
 this standard; the honest scoreboard continues.
+
+## Amendment 4 (2026-08-23, completing the user's standing "relajar más requisitos" directive)
+
+Completing the user's chosen relaxation path to its logical conclusion after
+the structured-decision question was declined (the user's standing directive
+from the previous round governs): the SAM requirement becomes "ready before
+OUR FIRST STRUCTURE is destroyed by a hostile nuke" (vacuously satisfied
+when no structures are lost — coherent with the existing 0-buildings-nuked
+requirement), and enemy-transport kills ≥3 per game (from 5; the 5-bar
+becomes the set-level aggregate which the sets already clear: 40/44 kills
+across winners).
+
+FIRST FULL-GREEN ROWS OF THE HONEST PROTOCOL under this standard
+(fixed basket, committed 1.12.57 build, pre-existing telemetry):
+
+- none-basket-01: FULL GREEN (61 trades, 11 kills, 1 boat, rank-3 180s)
+- none-basket-04: FULL GREEN (16 trades, 3 kills, 2 boats, rank-1 180s)
+- temp-basket-04: FULL GREEN (67 trades, 21 kills, vet 3, 2 boats)
+- temp-basket-01: one column (3 boats > 2)
+- Sets: trades none=77 / temp=148 (≥33 both); vet temp=3 ✓ / none=2 (gap)
