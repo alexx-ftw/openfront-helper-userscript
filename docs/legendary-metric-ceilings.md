@@ -411,6 +411,37 @@ counted honestly; no screening, no cherry-picking.
   nobody donates back to us. Verdict comment at the site; do not re-add
   without a reciprocal-flow mechanism.
 
+## FFA endgame anatomy (n2-basket-02 diagnostic, 2026-08-24 night)
+
+Two distinct death modes against the last surviving giant, both ending
+`won=false`:
+
+- **Mode A — freeze-hoard** (scored run): 477k tiles at the troop cap,
+  18M gold hoarded, ONE City, zero builds and zero attacks for 2000+
+  ticks (12000-14000); the giant's mega-wave then erases 130k tiles in
+  500 ticks and the reaction (7 Cities + Silo + SAM bought in one window)
+  comes too late. The plateau gold-to-City conversion lane's gates all
+  appear satisfied during the window (flat tiles 2000+ ticks, 1 < 59
+  target cities, gold >= flat City cost) yet it never fired — the lane is
+  reachable (adapter reports gameMode "FFA", appeasement demonstrably
+  fires through the same check) so the blocker is decision-level lane
+  starvation or placement failure; pinpointing needs decision-scoped
+  instrumentation of the freeze window.
+- **Mode B — attrition grind** (instrumented run): 487k tiles / 7.7M
+  troops / 10 Cities at tick 10000, then a 7000-tick bleed to zero with
+  OUTGOING ATTACKS = 0 at every sample — all attack lanes closed by
+  parity (conquest floor), retaliation only mirrors, cities destroyed
+  faster than rebuilt. A war-of-economies loss at parity-minus.
+
+No active mechanism currently exists to kill the last giant: attack lanes
+are parity-gated, mirrors only cancel, and the outmuscled-atom arming
+window (dogpile-arm, reverted as rate-neutral on the TEAM basket) never
+coincided on these rows (Mode A holds 18M gold but is not outmuscled at
+the 1.5x trigger's tick-6000 arming point; Mode B never holds 1.75M).
+Also fixed: the plateau lane's gameMode check now accepts both "FFA" and
+the engine enum value "Free For All" (robustness; the adapter reports
+"FFA" so behavior is unchanged in harness).
+
 Measured on the pinned engine: **25MM transformed** — row 01 builds
 5 SAM sites + 10 ports, 80M gold, ZERO buildings nuked (the nuke-storm
 blocker is beaten on that row); set ownN 0-18 (was 8-24), et sum 112

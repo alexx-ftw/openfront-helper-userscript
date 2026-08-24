@@ -10806,7 +10806,15 @@
       // the win clock is allied-driven and an extra plateau City perturbed
       // the structure cadence enough to flip the Labyrinth anchor from a win
       // at 19951 to death@8121 (measured) — team keeps its exact baseline.
-      if (String(this.game.config()?.gameConfig?.()?.gameMode) !== "FFA") return false;
+      // BUG (2026-08-24): the engine's GameMode.FFA value is the string
+      // "Free For All", so the historical !== "FFA" comparison never matched
+      // and this lane was DEAD CODE in every game — the exact freeze it was
+      // built for (n2-basket-02: 477k tiles, 18M gold hoarded, 1 City, zero
+      // attacks for 2000+ ticks before the endgame wave) went unanswered.
+      const gameMode = String(
+        this.game.config()?.gameConfig?.()?.gameMode ?? "",
+      );
+      if (gameMode !== "Free For All" && gameMode !== "FFA") return false;
       if (this.game.config().isUnitDisabled?.(UNIT.City) === true) return false;
       if (!this.plateauCityConversionDue()) return false;
       const spawned = await this.maybeSpawnStructure(UNIT.City, {
