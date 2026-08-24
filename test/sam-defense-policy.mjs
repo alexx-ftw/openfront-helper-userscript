@@ -4857,13 +4857,13 @@ own.sams = [makeUnit(405, 3), makeUnit(406, 2), makeUnit(407, 2)];
 assert.equal(
   behavior.shouldBuildHostileSiloSam(),
   false,
-  "An existing SAM prevents hostile Silo count from multiplying defensive sites",
+  "The scaled hostile-Silo defense stops once the required SAM site count is met",
 );
 own.sams = [makeUnit(405, 1)];
 assert.equal(
   behavior.shouldBuildHostileSiloSam(),
-  false,
-  "Multiple hostile Silos create upgrade pressure instead of one new SAM per Silo",
+  true,
+  "A massed hostile Silo network adds SAM sites until the scaled coverage target is met",
 );
 own.sams = [reactiveSam];
 sentBuilds.length = 0;

@@ -5,32 +5,11 @@
 // single-attacker wave >= 0.5x our army), not for any skirmish.
 
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { executeClassicScript } from "./helpers/classic-script.mjs";
-import { fileURLToPath } from "node:url";
+import { createAttackBehaviorSandbox } from "./helpers/attack-behavior-sandbox.mjs";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const sourcePath = path.join(repoRoot, "engine/ingame/auto-bot/attackBehavior.js");
-const source = fs.readFileSync(sourcePath, "utf8");
-
-const Difficulty = {
-  Easy: "Easy",
-  Medium: "Medium",
-  Hard: "Hard",
-  Impossible: "Impossible",
-  Legendary: "Legendary",
-};
-const sandbox = {
-  UNIT: { TradeShip: "TradeShip", Warship: "Warship" },
-  Difficulty,
-  PlayerType: { Bot: "Bot", Human: "Human", Nation: "Nation" },
-  GameMode: { FFA: "FFA", Team: "Team" },
-  currentDifficulty: () => Difficulty.Legendary,
-  state: { settings: { winFixes: true }, stats: {} },
-};
-executeClassicScript(`${source}\nglobalThis.AttackBehavior = AttackBehavior;`, sandbox, {
-  filename: sourcePath,
+const sandbox = createAttackBehaviorSandbox({
+  unit: { TradeShip: "TradeShip", Warship: "Warship" },
+  gameMode: { FFA: "FFA", Team: "Team" },
 });
 assert.equal(typeof sandbox.AttackBehavior, "function");
 

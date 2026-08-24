@@ -10090,14 +10090,24 @@
     "initializerPreview": "1e-9"
   },
   {
+    "id": "openfront-engine/src/client/render/gl/passes/SamRadiusPass.ts:TICK_INTERVAL_MS#1",
+    "file": "openfront-engine/src/client/render/gl/passes/SamRadiusPass.ts",
+    "name": "TICK_INTERVAL_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "ad57366865126e55649ecb23ae1d48887544976efea46a48eb5d85a6eeb4d306",
+    "initializerLength": 3,
+    "initializerPreview": "100"
+  },
+  {
     "id": "openfront-engine/src/client/render/gl/passes/SamRadiusPass.ts:FLOATS_PER_INSTANCE#1",
     "file": "openfront-engine/src/client/render/gl/passes/SamRadiusPass.ts",
     "name": "FLOATS_PER_INSTANCE",
     "declarationKind": "const",
     "initializerKind": "FirstLiteralToken",
-    "initializerHash": "2c624232cdd221771294dfbb310aca000a0df6ac8b66b696d90ef06fdefb64a3",
-    "initializerLength": 1,
-    "initializerPreview": "8"
+    "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
+    "initializerLength": 2,
+    "initializerPreview": "10"
   },
   {
     "id": "openfront-engine/src/client/render/gl/passes/SamRadiusPass.ts:COLOR_SELF#1",
@@ -10128,6 +10138,16 @@
     "initializerHash": "afaf3ca3f214862f7834cce8d9d62c77bf4dfecd802ca337fe53f4f9b873e1c4",
     "initializerLength": 9,
     "initializerPreview": "[1, 0, 0]"
+  },
+  {
+    "id": "openfront-engine/src/client/render/gl/passes/SamRadiusPass.ts:GEOMETRY_REFRESH_INTERVAL_MS#1",
+    "file": "openfront-engine/src/client/render/gl/passes/SamRadiusPass.ts",
+    "name": "GEOMETRY_REFRESH_INTERVAL_MS",
+    "declarationKind": "static readonly",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "1a6562590ef19d1045d06c4055742d38288e9e6dcd71ccde5cee80f1d5a774eb",
+    "initializerLength": 2,
+    "initializerPreview": "50"
   },
   {
     "id": "openfront-engine/src/client/render/gl/passes/SelectionBoxPass.ts:HALF_SIZE#1",
@@ -16528,6 +16548,16 @@
     "initializerHash": "35c14bf74580dbb7a2fb5cc0f6ca71c54c92aafa0e5ad81686aa4652108aba83",
     "initializerLength": 135,
     "initializerPreview": "new Set([\n    \"LICENSE\",\n    \"ads.txt\",\n    \"privacy-policy.html\",\n    \"robots.txt\",\n    \"terms-of-service.html\",\n    \"version.txt\",\n])"
+  },
+  {
+    "id": "openfront-engine/src/server/PublicAssetManifest.ts:ROOT_PUBLIC_DIRS#1",
+    "file": "openfront-engine/src/server/PublicAssetManifest.ts",
+    "name": "ROOT_PUBLIC_DIRS",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "a6b795075f01a91026df43ca3aed71af8f678d79f4ef87ac5d3be0e4d5f4d8dc",
+    "initializerLength": 10,
+    "initializerPreview": "[\"press/\"]"
   },
   {
     "id": "openfront-engine/src/server/PublicAssetManifest.ts:CACHE_BUST_VERSION#1",

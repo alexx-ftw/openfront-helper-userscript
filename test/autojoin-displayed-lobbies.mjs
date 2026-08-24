@@ -1,16 +1,10 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { executeClassicScript } from "./helpers/classic-script.mjs";
-import { fileURLToPath } from "node:url";
+import {
+  createAutoJoinSandbox,
+  defaultAutoJoinSettings,
+  read,
+} from "./helpers/autojoin-sandbox.mjs";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const read = (relativePath) => fs.readFileSync(path.join(ROOT, relativePath), "utf8");
-
-// The userscript concatenates engine files into one sloppy-mode scope; mirror
-// that here so auto-join.js sees core.js's top-level bindings (lobbyState,
-// lobbyCooldowns, PREFERRED_GROUP_ORDER, ...).
-const ENGINE_SOURCE = [read("engine/lobby/core.js"), read("engine/lobby/auto-join.js")].join("\n");
 const DRIVER_SOURCE = `
 globalThis.__ofhAutoJoinTest = {
   lobbyState,
@@ -24,84 +18,7 @@ globalThis.__ofhAutoJoinTest = {
 };
 `;
 
-const defaultSettings = {
-  enabled: false,
-  keepAutoJoinAfterMatch: false,
-  joinNotification: false,
-  language: "en",
-  mapFilters: {},
-  mapExcludeFilters: {},
-  includeFilters: {},
-  excludeFilters: {},
-  minLobbySize: null,
-  minTeamSize: null,
-  maxTeamSize: null,
-  minTeamCount: null,
-  maxTeamCount: null,
-};
-
-const sandbox = {
-  console,
-  // Declared in floating-autojoin.js, which this two-file concatenation omits.
-  syncFloatingHelpersPanel() {},
-  syncFloatingAutoJoinPanel() {},
-  Audio: class {
-    constructor(src) {
-      this.src = src;
-      this.preload = "";
-    }
-  },
-  window: {
-    addEventListener() {},
-    postMessage() {},
-    setInterval() {
-      return 1;
-    },
-    clearInterval() {},
-  },
-  document: {
-    addEventListener() {},
-    querySelector() {
-      return null;
-    },
-    getElementById() {
-      return null;
-    },
-    body: { classList: { contains: () => false } },
-  },
-  chrome: {
-    runtime: {
-      id: "ofh-test",
-      onMessage: { addListener() {} },
-      sendMessage: async () => {},
-      getURL: (path) => path,
-    },
-    storage: {
-      local: {
-        get: async () => ({}),
-        set: async () => {},
-      },
-      onChanged: { addListener() {} },
-    },
-  },
-  OpenFrontHelperSettings: {
-    STORAGE_KEY: "ofh-test-settings",
-    FILTER_KEYS: [],
-    START_GOLD_FILTER_KEYS: [],
-    MAPS: [
-      { id: "world", name: "World" },
-      { id: "europe", name: "Europe" },
-    ],
-    MAP_IDS: ["world", "europe"],
-    createDefaultMapFilters: () => ({}),
-    normalizeSettings: (value) => ({ ...defaultSettings, ...(value || {}) }),
-  },
-};
-sandbox.globalThis = sandbox;
-executeClassicScript(ENGINE_SOURCE + "\n" + DRIVER_SOURCE, sandbox, {
-  filename: path.join(ROOT, "engine/lobby/auto-join.js"),
-});
-
+const sandbox = createAutoJoinSandbox(DRIVER_SOURCE);
 const hooks = sandbox.__ofhAutoJoinTest;
 assert.equal(
   typeof hooks.findMatchingLobby,
@@ -175,7 +92,7 @@ test("the matching lobby is joined once it rotates up to the displayed slot", ()
 });
 
 test("the forecast tracks displayed-card arrivals, not queue arrivals", () => {
-  hooks.lobbyState.settings = { ...hooks.lobbyState.settings, ...defaultSettings };
+  hooks.lobbyState.settings = { ...hooks.lobbyState.settings, ...defaultAutoJoinSettings };
   hooks.lobbyState.settings.mapFilters = { world: true };
   hooks.syncForecastSignature();
 

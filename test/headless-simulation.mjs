@@ -499,9 +499,7 @@ const legendaryFfaRuntime = runHeadlessScenario({
   OFH_LOG_INTENTS: "1",
   OFH_ASSERT_INTENT_BUDGET: "1",
 });
-const legendaryFfaResult = legendaryFfaRuntime.records.find(
-  (record) => record.phase === "result",
-);
+const legendaryFfaResult = legendaryFfaRuntime.records.find((record) => record.phase === "result");
 assert.ok(legendaryFfaResult, "the Legendary FFA scenario must emit a result");
 assert.equal(
   legendaryFfaResult.intentBudget?.rejected,
@@ -510,9 +508,7 @@ assert.equal(
 );
 assert.ok(
   (legendaryFfaResult.cumulativeBuildUnitTypes.City ?? 0) +
-    (legendaryFfaResult.constructionEvents ?? []).filter(
-      (event) => event.unit === "City",
-    ).length >
+    (legendaryFfaResult.constructionEvents ?? []).filter((event) => event.unit === "City").length >
     0,
   "the foundational City must win the early gold race over preemptive Defense Posts",
 );
@@ -531,9 +527,7 @@ if (firstSiegeDecision) {
         record.tick <= firstSiegeDecision.tick + 200,
     )
     .sort((left, right) => left.tick - right.tick);
-  const preSiege = siegeProgress.find(
-    (record) => record.tick <= firstSiegeDecision.tick,
-  );
+  const preSiege = siegeProgress.find((record) => record.tick <= firstSiegeDecision.tick);
   const postSiege = [...siegeProgress]
     .reverse()
     .find((record) => record.tick >= firstSiegeDecision.tick + 100);

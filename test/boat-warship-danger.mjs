@@ -5,31 +5,10 @@
 // headless goal telemetry contract in test/headless-simulation.mjs.
 
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { executeClassicScript } from "./helpers/classic-script.mjs";
-import { fileURLToPath } from "node:url";
+import { createAttackBehaviorSandbox, Difficulty } from "./helpers/attack-behavior-sandbox.mjs";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const sourcePath = path.join(repoRoot, "engine/ingame/auto-bot/attackBehavior.js");
-const source = fs.readFileSync(sourcePath, "utf8");
-
-const Difficulty = {
-  Easy: "Easy",
-  Medium: "Medium",
-  Hard: "Hard",
-  Impossible: "Impossible",
-  Legendary: "Legendary",
-};
-const sandbox = {
-  UNIT: { Warship: "Warship", TransportShip: "TransportShip" },
-  Difficulty,
-  PlayerType: { Bot: "Bot", Human: "Human", Nation: "Nation" },
-  currentDifficulty: () => Difficulty.Legendary,
-  state: { settings: { winFixes: true }, stats: {} },
-};
-executeClassicScript(`${source}\nglobalThis.AttackBehavior = AttackBehavior;`, sandbox, {
-  filename: sourcePath,
+const sandbox = createAttackBehaviorSandbox({
+  unit: { Warship: "Warship", TransportShip: "TransportShip" },
 });
 assert.equal(typeof sandbox.AttackBehavior, "function");
 
@@ -233,8 +212,7 @@ const me = { isFriendly: () => false };
 {
   const game2d = (warships) => ({
     units: (type) => (type === "Warship" ? warships : []),
-    manhattanDist: (a, b) =>
-      Math.abs(a.x - b.x) + Math.abs(a.y - b.y),
+    manhattanDist: (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y),
     isValidCoord: () => true,
     ref: (x, y) => ({ x, y }),
     x: (tile) => tile.x,
@@ -270,10 +248,7 @@ const me = { isFriendly: () => false };
   // Short crossings keep the original 8-sample behavior (count floors at 8).
   const samples = behavior.boatCorridorSamples({ x: 0, y: 0 }, { x: 400, y: 0 });
   assert.equal(samples.length, 8, "short crossings keep 8 interior samples");
-  const longSamples = behavior.boatCorridorSamples(
-    { x: 0, y: 0 },
-    { x: 1000, y: 0 },
-  );
+  const longSamples = behavior.boatCorridorSamples({ x: 0, y: 0 }, { x: 1000, y: 0 });
   assert.equal(
     longSamples.length,
     19,
@@ -293,11 +268,13 @@ const me = { isFriendly: () => false };
     game: {
       units: (type) =>
         type === "Warship"
-          ? [{
-              isActive: () => true,
-              owner: () => ({ isPlayer: () => true }),
-              tile: () => 475,
-            }]
+          ? [
+              {
+                isActive: () => true,
+                owner: () => ({ isPlayer: () => true }),
+                tile: () => 475,
+              },
+            ]
           : [],
       manhattanDist: (a, b) => Math.abs(Number(a) - Number(b)),
     },
