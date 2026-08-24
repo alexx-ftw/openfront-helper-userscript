@@ -6044,13 +6044,17 @@ assert.match(
   );
 
   // Naval economy burst: big-start buys past the first port, capped at 5.
+  // Reset BOTH memos: earlier chain tests drive the real naval-economy path
+  // and leave pacing/big-start state behind.
   delete state.bigStartGold;
+  delete state.bigStartStructurePacing;
   const burstBehavior = makeBigStartBehavior({
     tick: 6,
     gold: 5_000_000n,
     ports: [{}, {}],
   });
   burstBehavior.legendaryPortCapable = () => true;
+  burstBehavior.legendaryBigStartGame = () => true;
   let portSpawns = 0;
   burstBehavior.maybeSpawnStructure = async () => {
     portSpawns += 1;
@@ -6073,6 +6077,7 @@ assert.match(
     ports: [{}, {}, {}, {}, {}],
   });
   burstFull.legendaryPortCapable = () => true;
+  burstFull.legendaryBigStartGame = () => true;
   burstFull.maybeSpawnStructure = async () => true;
   assert.equal(
     await burstFull.maybeOpenLegendaryNavalEconomy({
@@ -6365,4 +6370,73 @@ process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");
     false,
     "the build path closes once the site target is met",
   );
+}
+
+// ── Rich-board doctrine transfers (D1 ratio, D2 pacing, D3 opening SAM) ────
+{
+  const originalIsLegendary = sandbox.isLegendaryDifficulty;
+  const originalAtLeastHard = sandbox.isAtLeastHardDifficulty;
+  sandbox.isLegendaryDifficulty = (d) => d === Difficulty.Legendary;
+  sandbox.isAtLeastHardDifficulty = (d) =>
+    d === Difficulty.Hard || d === Difficulty.Impossible || d === Difficulty.Legendary;
+  const makeDoctrineBehavior = ({ bigStart, pacing, tick = 200 }) => {
+    const behavior = Object.create(sandbox.__StructureBehavior.prototype);
+    behavior.legendaryBigStartGame = () => bigStart;
+    behavior.placementsCount = 0;
+    behavior.hasHighStartingGold = () => true;
+    behavior.game = { ticks: () => tick };
+    if (pacing !== undefined) state.bigStartStructurePacing = pacing;
+    return behavior;
+  };
+  const openContext = {
+    difficulty: Difficulty.Legendary,
+    config: { isUnitDisabled: () => false },
+    missileSilosEnabled: true,
+    economyGrowthPriority: false,
+  };
+  assert.equal(
+    makeDoctrineBehavior({ bigStart: true }).shouldOpenWithSam(openContext),
+    true,
+    "D3: big-start Legendary opens with the SAM like engine nations",
+  );
+  assert.equal(
+    makeDoctrineBehavior({ bigStart: false }).shouldOpenWithSam(openContext),
+    false,
+    "D3: ordinary Legendary keeps the adaptive opening",
+  );
+  // D2 pacing: the first two placements are free, #3 waits 250 ticks.
+  assert.equal(
+    makeDoctrineBehavior({ bigStart: true, pacing: { count: 0, lastTick: 100 } }).bigStartStructurePacingBlocks(),
+    false,
+    "D2: early burst placements are unpaced",
+  );
+  assert.equal(
+    makeDoctrineBehavior({
+      bigStart: true,
+      pacing: { count: 2, lastTick: 100 },
+    }).bigStartStructurePacingBlocks(),
+    true,
+    "D2: placement #3 within 250 ticks of #2 is blocked",
+  );
+  const paced = makeDoctrineBehavior({
+    bigStart: true,
+    pacing: { count: 2, lastTick: 100 },
+  });
+  paced.game = { ticks: () => 351 };
+  assert.equal(
+    paced.bigStartStructurePacingBlocks(),
+    false,
+    "D2: the 250-tick gap expires",
+  );
+  assert.equal(
+    makeDoctrineBehavior({
+      bigStart: false,
+      pacing: { count: 2, lastTick: 100 },
+    }).bigStartStructurePacingBlocks(),
+    false,
+    "D2: ordinary boards are never paced",
+  );
+  delete state.bigStartStructurePacing;
+  sandbox.isLegendaryDifficulty = originalIsLegendary;
+  sandbox.isAtLeastHardDifficulty = originalAtLeastHard;
 }

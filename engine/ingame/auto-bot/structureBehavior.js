@@ -1904,10 +1904,17 @@
     }
 
     shouldOpenWithSam(context) {
+      // Big-start boards (5MM/25MM): mirror the engine nations — their SAM is
+      // structure #1 unconditionally (NationStructureBehavior.ts:449-460) so
+      // every later structure is born covered (measured first strikes
+      // 1150-1990; the 300-tick SAM built first is ready long before).
+      const bigStartOpening =
+        isLegendaryDifficulty(context.difficulty) && this.legendaryBigStartGame();
       return (
         this.placementsCount === 0 &&
-        isAtLeastHardDifficulty(context.difficulty) &&
-        !isLegendaryDifficulty(context.difficulty) &&
+        (bigStartOpening ||
+          (isAtLeastHardDifficulty(context.difficulty) &&
+            !isLegendaryDifficulty(context.difficulty))) &&
         !context.config.isUnitDisabled(UNIT.AtomBomb) &&
         context.missileSilosEnabled &&
         !context.config.isUnitDisabled(UNIT.SAMLauncher) &&
@@ -2370,8 +2377,41 @@
         if (completedPort || ports.length > 0) return false;
       } else if (ports.length >= portBurstCap) {
         return false;
+      } else if (this.bigStartStructurePacingBlocks()) {
+        // Engine-nation pacing: spaced placements, not a back-to-back cluster
+        // inside one nuke blast (see bigStartStructurePacingBlocks).
+        return false;
       }
-      return this.maybeSpawnStructure(UNIT.Port);
+      const placed = await this.maybeSpawnStructure(UNIT.Port);
+      if (placed) this.recordBigStartStructurePlacement();
+      return placed;
+    }
+
+    // Engine-nation structure pacing (NationStructureBehavior.ts:97-114):
+    // placements #3+ are spaced 250/150/100 ticks so a rich-board burst does
+    // not cluster structures inside one nuke blast radius or balloon
+    // maxTroops ahead of the troop count. Applied to the big-start economic
+    // burst only; defensive emergency paths stay unpaced.
+    bigStartStructurePacingBlocks() {
+      if (!this.legendaryBigStartGame()) return false;
+      const record = state.bigStartStructurePacing;
+      const tick =
+        typeof this.game?.ticks === "function" ? this.game.ticks() : null;
+      if (tick === null || record === undefined) return false;
+      const schedule = [0, 0, 250, 150, 100];
+      const gap = schedule[Math.min(record.count, schedule.length - 1)];
+      return tick - record.lastTick < gap;
+    }
+
+    recordBigStartStructurePlacement() {
+      const tick =
+        typeof this.game?.ticks === "function" ? this.game.ticks() : 0;
+      const record = (state.bigStartStructurePacing ??= {
+        count: 0,
+        lastTick: -1000,
+      });
+      record.count += 1;
+      record.lastTick = tick;
     }
 
     // Detects the big-starting-gold modifier profile (startingGold >= 3M:
@@ -2402,7 +2442,11 @@
             ? gold >= 3_000_000n
             : Number(gold) >= 3_000_000
         ) {
-          state.bigStartGold = { decided: true, value: true };
+          state.bigStartGold = {
+            decided: true,
+            value: true,
+            openingGold: typeof gold === "bigint" ? gold : BigInt(gold),
+          };
           return true;
         }
         return false; // keep sampling until the window closes
@@ -9856,6 +9900,21 @@
       if (context.config.isUnitDisabled(type) || !autoBotBuildAllowed(type)) return;
       if (this.legendarySamChestBlocksType(type)) return;
       if (this.samCandidateLaunchGate(type)) return;
+      // Huge-start burst window (25MM): the planner's parity-driven silo
+      // candidate outranked the port burst at tick ~758 on measured rows (a
+      // third silo path around the arsenal deferral) — drop silo candidates
+      // until the burst lands (see legendaryBigStartSiloDeferred). 5MM keeps
+      // its silo timing: the suppression cost 5MM its nuclear deterrence and
+      // naval economy (trades 73->41) while only 25MM benefited.
+      if (
+        type === UNIT.MissileSilo &&
+        state.bigStartGold?.decided === true &&
+        state.bigStartGold?.value === true &&
+        state.bigStartGold?.openingGold >= 10_000_000n &&
+        this.legendaryBigStartSiloDeferred(true)
+      ) {
+        return;
+      }
       if (
         type === UNIT.Port &&
         !this.legendaryPortCapable(context.hasOceanPortTiles, context.hasCoastalTiles)
@@ -9894,7 +9953,11 @@
       return (
         type === UNIT.SAMLauncher &&
         !this.hasObservedHostileMissileLaunch() &&
-        !this.hydrogenCoverageNeedsSam()
+        !this.hydrogenCoverageNeedsSam() &&
+        // Big-start doctrine: the city-ratio SAM lane is live on rich boards
+        // (engine nations run 0.3/city passively — see the ratio override in
+        // addLegendaryRatioCandidate).
+        !this.legendaryBigStartGame()
       );
     }
 
@@ -9903,11 +9966,18 @@
       const ratioConfig = context.ratios[type];
       if (ratioConfig === undefined) return;
       const owned = this.ownedLevels(type);
+      // Big-start doctrine (engine NationStructureBehavior: Impossible runs
+      // SAM_RATIO 0.3/city): passively reach 4-6 sites by 15-20 cities
+      // instead of the reactive single-site scaler alone.
+      const ratioPerCity =
+        type === UNIT.SAMLauncher && this.legendaryBigStartGame()
+          ? 0.3
+          : ratioConfig.ratioPerCity;
       const ratio = this.legendaryAdjustedStructureRatio(
         context,
         type,
         owned,
-        ratioConfig.ratioPerCity,
+        ratioPerCity,
       );
       if (ratio === null) return;
       const candidateValues = this.legendaryRatioCandidateValues(

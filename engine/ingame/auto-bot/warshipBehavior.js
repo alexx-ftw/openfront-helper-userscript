@@ -306,7 +306,17 @@
       const fleet = this.player.units(UNIT.Warship).length;
       const traffic = this.game.units(UNIT.TradeShip).length;
       const fleetCap = Math.max(2, Math.min(8, 2 + Math.floor(traffic / 40)));
-      if (fleet >= fleetCap) return false;
+      // Huge-start doctrine (25MM): engine nations keep ONE proactive
+      // warship and convert the rich treasury into structures. Measured: the
+      // cap helped 25MM (naval metrics up, ownN down) but starved 5MM's
+      // trade-driven naval economy (trades 73->41) — so only boards with a
+      // >=10M opening treasury take the cap; retaliation and defense-floor
+      // lanes keep their paths everywhere.
+      const hugeStart =
+        state.bigStartGold?.decided === true &&
+        state.bigStartGold?.value === true &&
+        state.bigStartGold?.openingGold >= 10_000_000n;
+      if (fleet >= (hugeStart ? 2 : fleetCap)) return false;
       const warshipCost = this.cost(UNIT.Warship);
       const arsenalReserve = this.legendaryArsenalReserve();
       const restoreDefenseFloor = this.shouldRestoreDefenseFloor(smartState);

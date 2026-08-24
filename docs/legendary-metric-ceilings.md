@@ -351,3 +351,44 @@ nuke storm, not income.
   no swallowed catch per the harness policy.
 - **`.mimosa/` gitignored** (untracked hook-state cache; the tracked
   finding-ledger files from the parallel workstream remain).
+
+## Session round 2026-08-24 (late): engine-doctrine transfers for 25MM
+
+Subagent audit of the engine nations' own rich-board playbook (they win
+these boards) produced four transferable divergences, all implemented
+behind the big-start gate (none/temp byte-identical, re-proven):
+
+- **D1 SAM city-ratio lane** — engine nations run `floor(cities x 0.3)`
+  SAM sites passively (NOT an enemy-silo formula; their 4-6 sites are pure
+  city-count). Legendary now overrides the SAM ratio to 0.3/city on
+  big-start boards and the launch-gate admits the ratio lane there.
+- **D2 structure pacing** — the engine spaces placements #3+ by
+  250/150/100 ticks (anti-cluster: one nuke blast must not erase the
+  burst, and maxTroops must not balloon ahead of troop count). The
+  big-start port burst is now paced the same way.
+- **D4 warship treadmill cap** — engine nations keep ONE proactive
+  warship; our 8-hull treadmill burned 29-38M on rich boards. Proactive
+  raid builds cap at 2 — but only on >=10M ("huge start", 25MM) boards:
+  the cap on 5MM starved its trade-driven naval economy (set trades
+  73 -> 41, reverted by magnitude split).
+- **Planner silo suppression during the burst (huge-start only)** — a
+  THIRD silo path (the planner's parity-driven MissileSilo candidate)
+  outranked the port burst at tick ~758, eating the opening treasury;
+  silo candidates are dropped until the burst lands on >=10M boards only
+  (5MM's suppression cost it nuclear deterrence and its naval economy —
+  measured, reverted by magnitude split).
+- D3 (opening SAM first) did not bind on any measured row (the City path
+  still precedes it) — kept, guarded, inert so far.
+
+Measured on the pinned engine: **25MM transformed** — row 01 builds
+5 SAM sites + 10 ports, 80M gold, ZERO buildings nuked (the nuke-storm
+blocker is beaten on that row); set ownN 0-18 (was 8-24), et sum 112
+(was 68) — the loss mode has shifted from nuke victim to the land war
+against the 20-nation coalition. 5MM restored to its committed baseline
+by the magnitude splits (trades 73, survival profile unchanged). Wins
+still 0/5 on both profiles: the audit's structural verdict stands — the
+400k-tile snowball is 20 coordinated pre-placed nations partitioning the
+map; per-nation parity is reached, coalition advantage is not
+transferable. FFA re-baselined on the new engine: 0/5, with basket-03 a
+single-column near-miss (fails only `won` at 20.5k ticks, 158 trades /
+116 kills / 20.2M nuked / best economy / 0 boats / 0 ownN).
