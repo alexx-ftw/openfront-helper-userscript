@@ -1,0 +1,243 @@
+{
+  "schema_version": "mimosa-task-review/v2",
+  "run_id": "20260822T224804860Z-299562-97208fd854e3",
+  "run_status": "inconclusive",
+  "errors": [
+    {
+      "stage": "scan",
+      "target": "engine/ingame/auto-bot/structureBehavior.js",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "openfront-helper.autobot.js",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "openfront-helper.build-id.js",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "openfront-helper.user.js",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    }
+  ],
+  "coverage": {
+    "schema_version": "mimosa-hook-coverage/v1",
+    "status": "partial",
+    "scope": "hook_observed_diff",
+    "baseline": {
+      "complete": true,
+      "captured_files": 1015,
+      "candidate_limit": 5000,
+      "truncated": false,
+      "enumeration_error_count": 0,
+      "snapshot_error_count": 0,
+      "compensated_target_count": 4
+    },
+    "change_tracking": {
+      "touched_observed": 1,
+      "touched_retained": 1,
+      "truncated": false,
+      "bash_mutation": true,
+      "bash_discovered": 4,
+      "bash_discovery_limit": 80,
+      "bash_discovery_truncated": false
+    },
+    "candidates": {
+      "eligible_files": 4,
+      "selected_files": 4,
+      "limit": 20,
+      "truncated": false
+    },
+    "scanning": {
+      "required_files": 4,
+      "scanned_files": 0,
+      "skipped_files": 0,
+      "failed_files": 4,
+      "project_checks_required": 0,
+      "project_checks_completed": 0
+    },
+    "notification": {
+      "eligible_findings": 0,
+      "detailed_findings": 0,
+      "detail_limit": 3,
+      "truncated": false
+    },
+    "reason_counts": {
+      "scanner_failed": 4,
+      "project_check_failed": 4
+    },
+    "reasons": [
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "engine/ingame/auto-bot/structureBehavior.js",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "openfront-helper.autobot.js",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "openfront-helper.build-id.js",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "openfront-helper.user.js",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "engine/ingame/auto-bot/structureBehavior.js",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "openfront-helper.autobot.js",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "openfront-helper.build-id.js",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "openfront-helper.user.js",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      }
+    ],
+    "reasons_truncated": false
+  },
+  "generated_at": "2026-08-22T22:48:04.860Z",
+  "session_id": "sess_70bae88d-f907-4a92-9e8f-513b3dba773b",
+  "target": ".",
+  "revision": "fa50a1035e1549f123a41ec2935d1a0bfcb37203",
+  "rules_version": "unavailable",
+  "diff_hash": "623c8a9b5a032ab044723105f1415d95e08cadfff2c8dd4a40a7f1cb80a30b7c",
+  "diff": {
+    "algorithm": "sha256",
+    "changed_file_count": 4,
+    "changed_files": [
+      {
+        "file": "engine/ingame/auto-bot/structureBehavior.js",
+        "ranges": [
+          {
+            "start": 2856,
+            "end": 2862
+          },
+          {
+            "start": 3208,
+            "end": 3315
+          }
+        ],
+        "before_hash": "553c2623c0e62f82cdb0479e043627d406fa688b3306a4a1079e99f5b3a18d42",
+        "after_hash": "0e10e115ec367550e03057d4b963242d81b4b910e839bb36c1b97c2ebc0125ad"
+      },
+      {
+        "file": "openfront-helper.autobot.js",
+        "ranges": [
+          {
+            "start": 1,
+            "end": 1
+          }
+        ],
+        "before_hash": "3a7a721605b5b1881b75c2f6159b5c6fea3333536ac7a570755bd622a2b76e13",
+        "after_hash": "0688ccf94f6c5b51c496c3f413d10baf2286b1abed24e2420df4b60b5c118285"
+      },
+      {
+        "file": "openfront-helper.build-id.js",
+        "ranges": [
+          {
+            "start": 2,
+            "end": 2
+          }
+        ],
+        "before_hash": "aa7018d6688e4c8e15c9ceb719c981f61f132841b683e646c2527a72f87ba54f",
+        "after_hash": "70434219c81f7756da7ab32f3f21ebdb948d7cf9ed16327c13565fd74ae7df9b"
+      },
+      {
+        "file": "openfront-helper.user.js",
+        "ranges": [
+          {
+            "start": 4,
+            "end": 3181
+          }
+        ],
+        "before_hash": "4f41698f82e2baeb6928d084e0e87a749734595c02ff0a158016fe85e4e064ca",
+        "after_hash": "9abc59057a87a8aa7199a3af6bf7d0abbc5f82a01da1e2b621966303518a8da9"
+      }
+    ]
+  },
+  "timing": {
+    "started_at": "2026-08-22T22:48:02.418Z",
+    "completed_at": "2026-08-22T22:48:04.860Z",
+    "duration_ms": 2442,
+    "measurement": "hook_wall_clock"
+  },
+  "tokens": {
+    "input": 0,
+    "output": 0,
+    "total": 0,
+    "model_calls": 0,
+    "measurement": "known-zero"
+  },
+  "telemetry": {
+    "schemaVersion": "mimosa-gate-telemetry/v1",
+    "profile": "gate",
+    "operation": "Stop",
+    "outcome": "partial/INCONCLUSIVE",
+    "latencyMs": 2442,
+    "peakMemoryBytes": 140910592,
+    "memoryMeasurement": "max-observed-process-rss",
+    "scannedFiles": 0,
+    "cache": {
+      "hits": 0,
+      "misses": 0,
+      "measurement": "not-applicable"
+    },
+    "denyCount": 0,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "total": 0,
+      "modelCalls": 0,
+      "measurement": "known-zero"
+    }
+  },
+  "finding_count": 0,
+  "rewake_finding_count": 0,
+  "evidence_boundary": {
+    "scan": "candidate",
+    "static_fix_verification": "observed_static_only",
+    "runtime_verification": "not_performed"
+  },
+  "finding_events": [],
+  "findings": [],
+  "artifacts": {
+    "immutable_report": ".mimosa/reports/task-review-sess_70bae88d-f907-4a92-9e8f-513b3dba773b-20260822T224804860Z-299562-97208fd854e3.json",
+    "latest_report": ".mimosa/reports/task-review-sess_70bae88d-f907-4a92-9e8f-513b3dba773b.json",
+    "history_summary": ".mimosa/history/run-20260822T224804860Z-299562-97208fd854e3.json"
+  }
+}

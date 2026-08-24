@@ -246,6 +246,8 @@
   "Matches team lobbies with more than 4 players per team.": "ตรงกับล็อบบี้ทีมที่มีมากกว่า 4 คนต่อทีม",
   "Modifier": "ตัวปรับแต่ง",
   "Random spawn": "เกิดแบบสุ่ม",
+  "Crowded": "แผนที่แน่น",
+  "Compact": "แผนที่กระชับ",
   "Alliances disabled": "ปิดใช้งานพันธมิตร",
   "2x gold": "ทอง 2 เท่า",
   "Start Gold": "ทองเริ่มต้น",

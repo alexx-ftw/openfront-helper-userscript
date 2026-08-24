@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "mimosa-finding-history/v1",
+  "runId": "20260821T231912613Z-3808850-375493fb1e16",
+  "runStatus": "inconclusive",
+  "errors": [
+    "scan:engine/ingame/auto-bot/attackBehavior.js: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:engine/ingame/auto-bot/core.js: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-helper.autobot.js: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-helper.build-id.js: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-helper.user.js: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+  ],
+  "target": ".",
+  "revision": "36bc293c1ddd8c8f3ae52cd7674af80f1e8c2405",
+  "diffHash": "4818fa56ad1630b9165a4f6cc52b67c6f2c234830fe1de71e5a56c7cf955e531",
+  "rulesVersion": "unavailable",
+  "recordedAt": "2026-08-21T23:19:12.613Z",
+  "timing": {
+    "startedAt": "2026-08-21T23:19:09.918Z",
+    "completedAt": "2026-08-21T23:19:12.613Z",
+    "durationMs": 2695
+  },
+  "tokens": {
+    "input": 0,
+    "output": 0,
+    "total": 0,
+    "modelCalls": 0,
+    "measurement": "known-zero"
+  },
+  "findings": {
+    "total": 0,
+    "bySeverity": {},
+    "byStatus": {}
+  },
+  "coverage": {
+    "status": "partial",
+    "reasonCounts": {
+      "scanner_failed": 5,
+      "project_check_failed": 5
+    }
+  },
+  "evidenceBoundary": "static_only",
+  "immutableReport": ".mimosa/reports/task-review-sess_1c204565-6e61-406f-8e11-701b13d6a148-20260821T231912613Z-3808850-375493fb1e16.json"
+}

@@ -1,0 +1,899 @@
+{
+  "schema_version": "mimosa-task-review/v2",
+  "run_id": "20260817T150437487Z-2060835-e47c8020670b",
+  "run_status": "inconclusive",
+  "errors": [
+    {
+      "stage": "bash-discovery",
+      "target": "openfront-engine/src/core/game/UnitImpl.ts",
+      "reason": "bash_discovery_truncated: changed-file discovery exceeded 80 files"
+    },
+    {
+      "stage": "candidate-select",
+      "target": "openfront-engine/tests/server/AdminBotCreateTeams.test.ts",
+      "reason": "candidate_limit_exceeded: 62 changed reviewable file(s) were not scanned because the limit is 20"
+    },
+    {
+      "stage": "baseline-read",
+      "target": "openfront-engine/tests/VersionedReplay.test.ts",
+      "reason": "baseline_snapshot_unreadable: file is missing from task baseline"
+    },
+    {
+      "stage": "scan",
+      "target": "engine/ingame/auto-bot/structureBehavior.js",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "scripts/headless/opponent-adapter.js",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "engine/ingame/auto-bot/attackBehavior.js",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "openfront-helper.autobot.js",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "openfront-helper.build-id.js",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "openfront-helper.user.js",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "openfront-engine/deploy.sh",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "openfront-engine/update.sh",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "openfront-engine/tests/CosmeticSchemas.test.ts",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "openfront-engine/tests/DoomsdayClockExecution.test.ts",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "openfront-engine/tests/ImpassableTerrain.test.ts",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "openfront-engine/tests/InputHandler.test.ts",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "openfront-engine/tests/SpiralTrails.test.ts",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "openfront-engine/tests/TrailManager.test.ts",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "openfront-engine/tests/UserSettings.test.ts",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "openfront-engine/tests/VersionedReplay.test.ts",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    },
+    {
+      "stage": "supply-chain-check",
+      "target": ".",
+      "reason": "stop_budget_exhausted: focused supply-chain check was not run before the gate budget"
+    }
+  ],
+  "coverage": {
+    "schema_version": "mimosa-hook-coverage/v1",
+    "status": "partial",
+    "scope": "hook_observed_diff",
+    "baseline": {
+      "complete": true,
+      "captured_files": 927,
+      "candidate_limit": 5000,
+      "truncated": false,
+      "enumeration_error_count": 0,
+      "snapshot_error_count": 0,
+      "compensated_target_count": 51
+    },
+    "change_tracking": {
+      "touched_observed": 3,
+      "touched_retained": 3,
+      "truncated": false,
+      "bash_mutation": true,
+      "bash_discovered": 80,
+      "bash_discovery_limit": 80,
+      "bash_discovery_truncated": true
+    },
+    "candidates": {
+      "eligible_files": 82,
+      "selected_files": 20,
+      "limit": 20,
+      "truncated": true
+    },
+    "scanning": {
+      "required_files": 16,
+      "scanned_files": 0,
+      "skipped_files": 0,
+      "failed_files": 16,
+      "project_checks_required": 1,
+      "project_checks_completed": 0
+    },
+    "notification": {
+      "eligible_findings": 0,
+      "detailed_findings": 0,
+      "detail_limit": 3,
+      "truncated": false
+    },
+    "reason_counts": {
+      "bash_discovery_truncated": 1,
+      "candidate_limit_exceeded": 1,
+      "baseline_snapshot_unreadable": 1,
+      "scanner_failed": 16,
+      "stop_budget_exhausted": 1,
+      "project_check_failed": 20
+    },
+    "reasons": [
+      {
+        "code": "bash_discovery_truncated",
+        "stage": "bash-discovery",
+        "target": "openfront-engine/src/core/game/UnitImpl.ts",
+        "detail": "changed-file discovery exceeded 80 files",
+        "affects_completion": true
+      },
+      {
+        "code": "candidate_limit_exceeded",
+        "stage": "candidate-select",
+        "target": "openfront-engine/tests/server/AdminBotCreateTeams.test.ts",
+        "detail": "62 changed reviewable file(s) were not scanned because the limit is 20",
+        "affects_completion": true
+      },
+      {
+        "code": "baseline_snapshot_unreadable",
+        "stage": "baseline-read",
+        "target": "openfront-engine/tests/VersionedReplay.test.ts",
+        "detail": "file is missing from task baseline",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "engine/ingame/auto-bot/structureBehavior.js",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "scripts/headless/opponent-adapter.js",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "engine/ingame/auto-bot/attackBehavior.js",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "openfront-helper.autobot.js",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "openfront-helper.build-id.js",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "openfront-helper.user.js",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "openfront-engine/deploy.sh",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "openfront-engine/update.sh",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "openfront-engine/tests/CosmeticSchemas.test.ts",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "openfront-engine/tests/DoomsdayClockExecution.test.ts",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "openfront-engine/tests/ImpassableTerrain.test.ts",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "openfront-engine/tests/InputHandler.test.ts",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "openfront-engine/tests/SpiralTrails.test.ts",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "openfront-engine/tests/TrailManager.test.ts",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "openfront-engine/tests/UserSettings.test.ts",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "openfront-engine/tests/VersionedReplay.test.ts",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "stop_budget_exhausted",
+        "stage": "supply-chain-check",
+        "target": ".",
+        "detail": "focused supply-chain check was not run before the gate budget",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "bash-discovery",
+        "target": "openfront-engine/src/core/game/UnitImpl.ts",
+        "detail": "bash_discovery_truncated: changed-file discovery exceeded 80 files",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "candidate-select",
+        "target": "openfront-engine/tests/server/AdminBotCreateTeams.test.ts",
+        "detail": "candidate_limit_exceeded: 62 changed reviewable file(s) were not scanned because the limit is 20",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "baseline-read",
+        "target": "openfront-engine/tests/VersionedReplay.test.ts",
+        "detail": "baseline_snapshot_unreadable: file is missing from task baseline",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "engine/ingame/auto-bot/structureBehavior.js",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "scripts/headless/opponent-adapter.js",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "engine/ingame/auto-bot/attackBehavior.js",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "openfront-helper.autobot.js",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "openfront-helper.build-id.js",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "openfront-helper.user.js",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "openfront-engine/deploy.sh",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "openfront-engine/update.sh",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "openfront-engine/tests/CosmeticSchemas.test.ts",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "openfront-engine/tests/DoomsdayClockExecution.test.ts",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "openfront-engine/tests/ImpassableTerrain.test.ts",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "openfront-engine/tests/InputHandler.test.ts",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "openfront-engine/tests/SpiralTrails.test.ts",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "openfront-engine/tests/TrailManager.test.ts",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "openfront-engine/tests/UserSettings.test.ts",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "openfront-engine/tests/VersionedReplay.test.ts",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "supply-chain-check",
+        "target": ".",
+        "detail": "stop_budget_exhausted: focused supply-chain check was not run before the gate budget",
+        "affects_completion": true
+      }
+    ],
+    "reasons_truncated": false
+  },
+  "generated_at": "2026-08-17T15:04:37.487Z",
+  "session_id": "sess_1c204565-6e61-406f-8e11-701b13d6a148",
+  "target": ".",
+  "revision": "b7114ad11f25369dbf32c7702d2c24dd994a758a",
+  "rules_version": "unavailable",
+  "diff_hash": "c5e3f24cac5a516ea0dacc26c01224e5edb56b2319927a80ba056bed06583236",
+  "diff": {
+    "algorithm": "sha256",
+    "changed_file_count": 20,
+    "changed_files": [
+      {
+        "file": "engine/ingame/auto-bot/attackBehavior.js",
+        "ranges": [
+          {
+            "start": 2937,
+            "end": 2942
+          },
+          {
+            "start": 2989,
+            "end": 2989
+          },
+          {
+            "start": 7949,
+            "end": 7955
+          },
+          {
+            "start": 9008,
+            "end": 9011
+          },
+          {
+            "start": 9025,
+            "end": 9045
+          },
+          {
+            "start": 9109,
+            "end": 9117
+          }
+        ],
+        "before_hash": "6f8a5895c33103dcc13fc3d2b7b98e56a3a01816d2285024077d4a5eaaf98054",
+        "after_hash": "78100c81cec7484fa0daff3c6d162ba185d74c4068bb789bbc18222dbb3a3ff9"
+      },
+      {
+        "file": "engine/ingame/auto-bot/structureBehavior.js",
+        "ranges": [
+          {
+            "start": 85,
+            "end": 90
+          },
+          {
+            "start": 92,
+            "end": 95
+          },
+          {
+            "start": 336,
+            "end": 341
+          },
+          {
+            "start": 525,
+            "end": 526
+          },
+          {
+            "start": 528,
+            "end": 528
+          },
+          {
+            "start": 553,
+            "end": 557
+          },
+          {
+            "start": 570,
+            "end": 572
+          },
+          {
+            "start": 1204,
+            "end": 1207
+          },
+          {
+            "start": 1243,
+            "end": 1248
+          },
+          {
+            "start": 1268,
+            "end": 1289
+          },
+          {
+            "start": 2030,
+            "end": 2037
+          },
+          {
+            "start": 2050,
+            "end": 2075
+          },
+          {
+            "start": 8905,
+            "end": 8905
+          },
+          {
+            "start": 8917,
+            "end": 8939
+          },
+          {
+            "start": 8968,
+            "end": 8968
+          },
+          {
+            "start": 8986,
+            "end": 8993
+          },
+          {
+            "start": 9029,
+            "end": 9034
+          },
+          {
+            "start": 9054,
+            "end": 9054
+          },
+          {
+            "start": 9064,
+            "end": 9100
+          }
+        ],
+        "before_hash": "4b4db7e2ab86efe456e4e36571f6b6d1eb9e3023d9da322c96f0546f67bd83c6",
+        "after_hash": "fbfcedeadaf76d0d6b5c2e80e5e61a0a728b53b10f20e3e7cc868449c54ca91d"
+      },
+      {
+        "file": "openfront-engine/deploy.sh",
+        "ranges": [
+          {
+            "start": 112,
+            "end": 118
+          },
+          {
+            "start": 173,
+            "end": 174
+          }
+        ],
+        "before_hash": "d932259deea78e79f8a92e5e7c81d31a200a9997b516617e3080004f28d7b626",
+        "after_hash": "a952a1f72dad881ff0e78a9853daa3df2d88c445cd69d0137ab1339851da415d"
+      },
+      {
+        "file": "openfront-engine/package-lock.json",
+        "ranges": [
+          {
+            "start": 21,
+            "end": 21
+          },
+          {
+            "start": 32,
+            "end": 32
+          },
+          {
+            "start": 4930,
+            "end": 4932
+          },
+          {
+            "start": 7144,
+            "end": 7146
+          }
+        ],
+        "before_hash": "52f6ecbd01446f4bd50cb39ddb391f0b7f8382f62d927a20795e2e7805f1ac8c",
+        "after_hash": "4d3ac87b17c948a54011f5c25c40db55510ac61c8fce6ec456cc4a87c53cbd12"
+      },
+      {
+        "file": "openfront-engine/package.json",
+        "ranges": [
+          {
+            "start": 106,
+            "end": 106
+          },
+          {
+            "start": 117,
+            "end": 117
+          }
+        ],
+        "before_hash": "7ce79b81987ffa30201269f1779230e227c6894c9e1c8016d1aeb984bebc1b5b",
+        "after_hash": "63fcfc4eac391ca02f66c2f6e3fae7fd1606432f9acb9f52893cb0e5bea192f0"
+      },
+      {
+        "file": "openfront-engine/tests/CosmeticSchemas.test.ts",
+        "ranges": [
+          {
+            "start": 119,
+            "end": 119
+          },
+          {
+            "start": 140,
+            "end": 140
+          }
+        ],
+        "before_hash": "4fc5eebe567dc96d830b3ba85f3b3c63434191693e9eef1c1627b8d908e0bae1",
+        "after_hash": "aaf55019044f750453ccd1e0ed7d6db09ab5b113861aca7848f1dd8ff3f4d6ca"
+      },
+      {
+        "file": "openfront-engine/tests/DoomsdayClockExecution.test.ts",
+        "ranges": [
+          {
+            "start": 197,
+            "end": 197
+          },
+          {
+            "start": 203,
+            "end": 208
+          },
+          {
+            "start": 374,
+            "end": 385
+          }
+        ],
+        "before_hash": "b7425bc6111c1eef1b70a61c5e44e71eb047a7d94a81da723c80b08a7134c232",
+        "after_hash": "30554a7a8f0e481703d76d9023987967d3137fa9982e366175df5470a07d4646"
+      },
+      {
+        "file": "openfront-engine/tests/ImpassableTerrain.test.ts",
+        "ranges": [
+          {
+            "start": 303,
+            "end": 311
+          }
+        ],
+        "before_hash": "612502d9a68beaf8051c1ba724b86e6a64220b1a1fb7af93a7c9ed446482a580",
+        "after_hash": "137647b8132f31537d29112bdeb52b6b6410e828dc8f5c2fad12007826af499c"
+      },
+      {
+        "file": "openfront-engine/tests/InputHandler.test.ts",
+        "ranges": [
+          {
+            "start": 293,
+            "end": 363
+          },
+          {
+            "start": 1239,
+            "end": 1295
+          }
+        ],
+        "before_hash": "47c652ed7bd9e92a60b0c0a3ad559ae67c2fe006ea8b279db59d0bee4cb4f018",
+        "after_hash": "51661976e588dec1d2c788ff4280e9908d5ea09a05d38ad3dbf20d3c3163c574"
+      },
+      {
+        "file": "openfront-engine/tests/SpiralTrails.test.ts",
+        "ranges": [
+          {
+            "start": 40,
+            "end": 40
+          }
+        ],
+        "before_hash": "afa306de2e5c08dbf14680bba06737d85d567f722cbdd475d73a823e4347dc60",
+        "after_hash": "893b83a45e4d61da2728b12c409dc658466056ce051d3a0deedec8012210ec2f"
+      },
+      {
+        "file": "openfront-engine/tests/TrailManager.test.ts",
+        "ranges": [
+          {
+            "start": 34,
+            "end": 34
+          }
+        ],
+        "before_hash": "0aa73a452551d5d3bd0e15aa3e4a2936951c3959afacfb12a2b785c1f45395d7",
+        "after_hash": "a825dd75744a214e2f19c3ed775659bffae43646fc6fc09b25a9a73800df9394"
+      },
+      {
+        "file": "openfront-engine/tests/UserSettings.test.ts",
+        "ranges": [
+          {
+            "start": 2,
+            "end": 2
+          },
+          {
+            "start": 4,
+            "end": 5
+          },
+          {
+            "start": 8,
+            "end": 8
+          },
+          {
+            "start": 10,
+            "end": 10
+          },
+          {
+            "start": 13,
+            "end": 24
+          },
+          {
+            "start": 26,
+            "end": 26
+          },
+          {
+            "start": 78,
+            "end": 78
+          },
+          {
+            "start": 147,
+            "end": 325
+          }
+        ],
+        "before_hash": "9c8d684d5eb69636b11b7f999abe1cebfcaeebf277f2a0bc1ad70f8a75f4418e",
+        "after_hash": "c1adb49f07f7ce8a942c0ceed9621d550ccdaca2a7a274804edaf16c7c8427b7"
+      },
+      {
+        "file": "openfront-engine/tests/VersionedReplay.test.ts",
+        "ranges": [
+          {
+            "start": 1,
+            "end": 37
+          }
+        ],
+        "before_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "after_hash": "5b18906052fca81e01df1b4ecc907b5692b37382f077d286e0e103c02740690b"
+      },
+      {
+        "file": "openfront-engine/update.sh",
+        "ranges": [
+          {
+            "start": 149,
+            "end": 186
+          }
+        ],
+        "before_hash": "f9378fcb94d2731b9aa5b91ea23f9e31c71940b41d8c973bcb9891aa28953b2b",
+        "after_hash": "6c5127ec1d0454b4d2cd806c67eadf0e99b5afe2d754fc65846082edd6bce9a2"
+      },
+      {
+        "file": "openfront-helper.autobot.js",
+        "ranges": [
+          {
+            "start": 1,
+            "end": 1
+          },
+          {
+            "start": 308,
+            "end": 308
+          },
+          {
+            "start": 435,
+            "end": 435
+          },
+          {
+            "start": 465,
+            "end": 465
+          }
+        ],
+        "before_hash": "cd9bb24a10f2dd05b669b8890a7ae110a27433e344c17be6306e4b24f3af1a7f",
+        "after_hash": "2d3a1686e335dfb7e701300570be7d2b875c0d714d630631931328a46883bf50"
+      },
+      {
+        "file": "openfront-helper.build-id.js",
+        "ranges": [
+          {
+            "start": 2,
+            "end": 2
+          }
+        ],
+        "before_hash": "4b6db29c3ad3fe1b105ae3d890c3a28d31af855d3c0be58f03a071d7777e44f9",
+        "after_hash": "be3ba65cbce88023764ade3e504f364ffb8ee383f3309452bd2539808fec41a6"
+      },
+      {
+        "file": "openfront-helper.user.js",
+        "ranges": [
+          {
+            "start": 4,
+            "end": 3181
+          }
+        ],
+        "before_hash": "17e0c5e43f76907f35292ae06987ea4f171b16870f6f8db885ed8d480902bdaa",
+        "after_hash": "47f8e549ab80066cd2c54ff9efb4a0619de959d944e832b3080c155160267976"
+      },
+      {
+        "file": "package-lock.json",
+        "ranges": [
+          {
+            "start": 3,
+            "end": 3
+          },
+          {
+            "start": 9,
+            "end": 9
+          }
+        ],
+        "before_hash": "7fce699bde184b50cb9c16080da9a8f69e8ecbdeaaf8cd9f7e74812726478149",
+        "after_hash": "123b1716e1ec840f8f17335d35b201d51eecb4a3fe03f29b8d9f63333b71927e"
+      },
+      {
+        "file": "package.json",
+        "ranges": [
+          {
+            "start": 3,
+            "end": 3
+          }
+        ],
+        "before_hash": "bb111b2385e5e7122221cb80b26a20bba012af6db4102bd511d9c0e7b03c32a2",
+        "after_hash": "a868a5707f6e73be020d49d4787d79191975e7eb35dff2e379fdaeb3c1bcedf6"
+      },
+      {
+        "file": "scripts/headless/opponent-adapter.js",
+        "ranges": [
+          {
+            "start": 1083,
+            "end": 1083
+          },
+          {
+            "start": 1098,
+            "end": 1130
+          }
+        ],
+        "before_hash": "31e6603814da7c6995aba03d3ff735829f219319caf1e74dccb95edc9cee080f",
+        "after_hash": "3ee4b7d485c15cf6df8bc2116ea466b21b9d90785a5aa96263e6ef88cb3421c2"
+      }
+    ]
+  },
+  "timing": {
+    "started_at": "2026-08-17T15:04:34.947Z",
+    "completed_at": "2026-08-17T15:04:37.487Z",
+    "duration_ms": 2540,
+    "measurement": "hook_wall_clock"
+  },
+  "tokens": {
+    "input": 0,
+    "output": 0,
+    "total": 0,
+    "model_calls": 0,
+    "measurement": "known-zero"
+  },
+  "telemetry": {
+    "schemaVersion": "mimosa-gate-telemetry/v1",
+    "profile": "gate",
+    "operation": "Stop",
+    "outcome": "partial/INCONCLUSIVE",
+    "latencyMs": 2540,
+    "peakMemoryBytes": 153321472,
+    "memoryMeasurement": "max-observed-process-rss",
+    "scannedFiles": 0,
+    "cache": {
+      "hits": 0,
+      "misses": 0,
+      "measurement": "not-applicable"
+    },
+    "denyCount": 0,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "total": 0,
+      "modelCalls": 0,
+      "measurement": "known-zero"
+    }
+  },
+  "finding_count": 0,
+  "rewake_finding_count": 0,
+  "evidence_boundary": {
+    "scan": "candidate",
+    "static_fix_verification": "observed_static_only",
+    "runtime_verification": "not_performed"
+  },
+  "finding_events": [],
+  "findings": [],
+  "artifacts": {
+    "immutable_report": ".mimosa/reports/task-review-sess_1c204565-6e61-406f-8e11-701b13d6a148-20260817T150437487Z-2060835-e47c8020670b.json",
+    "latest_report": ".mimosa/reports/task-review-sess_1c204565-6e61-406f-8e11-701b13d6a148.json",
+    "history_summary": ".mimosa/history/run-20260817T150437487Z-2060835-e47c8020670b.json"
+  }
+}

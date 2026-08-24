@@ -1,0 +1,185 @@
+// Replay-free spawn objective.
+//
+// The selector cannot learn a statistically optimal weight vector without
+// outcomes. Instead it uses a robust floor: a candidate is only as strong as
+// its weakest normalized dimension (starting territory, expansion potential,
+// free-land availability, safety, reachable tribe expansion, or allied support).
+// A rich isolated start is not robust: enemies can surround it before teammates
+// can connect. Clan proximity remains a late tie-break, while team proximity is
+// part of the survival floor whenever spawned allies are known.
+//
+// Reachable free land substitutes for tribes in the resource dimension: a huge
+// Terra Nullius region is itself an expansion resource, so an empty-but-
+// expansible start must not floor the objective at zero while tribe-rich,
+// surrounded interiors win by default.
+
+(function installSpawnObjective(root) {
+  const CLAN_TAG_PATTERN = /^\[([a-zA-Z0-9]{2,5})\] /;
+
+  function clampScore(value, fallback = 0) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.max(0, Math.min(1, number));
+  }
+
+  function normalizeClanTag(value) {
+    if (typeof value !== "string") return null;
+    const tag = value.trim();
+    if (!/^[a-zA-Z0-9]{2,5}$/.test(tag)) return null;
+    return tag.toUpperCase();
+  }
+
+  function extractClanTag(displayName) {
+    if (typeof displayName !== "string") return null;
+    const match = CLAN_TAG_PATTERN.exec(displayName);
+    return match ? normalizeClanTag(match[1]) : null;
+  }
+
+  function sameClanTag(left, right) {
+    const leftTag = normalizeClanTag(left);
+    const rightTag = normalizeClanTag(right);
+    return leftTag !== null && leftTag === rightTag;
+  }
+
+  function readValue(target, key) {
+    {
+      const value = target?.[key];
+      return typeof value === "function" ? value.call(target) : value;
+    }
+  }
+
+  function getPlayerClanTag(player) {
+    if (!player) return null;
+
+    const directTag = normalizeClanTag(readValue(player, "clanTag"));
+    if (directTag) return directTag;
+
+    const info = readValue(player, "info");
+    const infoTag = normalizeClanTag(info?.clanTag);
+    if (infoTag) return infoTag;
+
+    const source = player.__src;
+    const sourceTag = normalizeClanTag(source?.static?.clanTag);
+    if (sourceTag) return sourceTag;
+
+    const displayNames = [
+      source?.static?.displayName,
+      player?.data?.displayName,
+      readValue(player, "displayName"),
+    ];
+    for (const displayName of displayNames) {
+      const tag = extractClanTag(displayName);
+      if (tag) return tag;
+    }
+    return null;
+  }
+
+  function clanProximityScore(x, y, points, radius = 110) {
+    // Hot path: callers provide normalized finite map coordinates. Keep this
+    // branch-free per point because it runs once for every exact map candidate.
+    if (!points || points.length === 0 || radius <= 0) return 0;
+
+    let nearest = Infinity;
+    for (let index = 0; index < points.length; index += 1) {
+      const point = points[index];
+      const distance = Math.abs(point.x - x) + Math.abs(point.y - y);
+      if (distance < nearest) nearest = distance;
+    }
+    return nearest === Infinity ? 0 : Math.max(0, 1 - nearest / radius);
+  }
+
+  function evaluateModelCandidate(candidate) {
+    const startScore = clampScore(candidate.startScore);
+    const expansionScore = clampScore(candidate.expansionScore);
+    const safetyScore = clampScore(candidate.safetyScore);
+    const teamScore = clampScore(candidate.teamScore, 1);
+    const tribeScore = clampScore(candidate.tribeScore, 1);
+    const nationScore = clampScore(candidate.nationScore, 1);
+    const tribeReachScore = clampScore(candidate.tribeReachScore, 1);
+    const tribeReachCount = Number.isFinite(Number(candidate.tribeReachCount))
+      ? Math.max(0, Number(candidate.tribeReachCount))
+      : 0;
+    const tribeClusterScore = clampScore(candidate.tribeClusterScore, 1);
+    const freeLandScore = clampScore(candidate.freeLandScore, 1);
+    // Terra Nullius substitutes for tribes: free land is the expansion
+    // resource an empty region offers, so it lifts the resource floor
+    // instead of letting tribe-rich crowded spots win by default. The
+    // substitution stays below the free-land score itself — a remote
+    // TN-only start must not mask tribe-cluster poverty, because tribe
+    // conquests pay their full gold hoard and fund the early economy.
+    const resourceScore = Math.max(
+      clampScore(candidate.resourceScore, 1),
+      freeLandScore * 0.45,
+    );
+    const clanScore = clampScore(candidate.clanScore);
+    const teamPolyhedronScore = clampScore(candidate.teamPolyhedronScore);
+    const teamInteriorScore = clampScore(candidate.teamInteriorScore);
+    return {
+      startScore,
+      expansionScore,
+      safetyScore,
+      teamScore,
+      tribeScore,
+      nationScore,
+      tribeReachScore,
+      tribeReachCount,
+      tribeClusterScore,
+      freeLandScore,
+      resourceScore,
+      clanScore,
+      teamPolyhedronScore,
+      teamInteriorScore,
+      robustFloor: Math.min(
+        startScore,
+        expansionScore,
+        freeLandScore,
+        safetyScore,
+        resourceScore,
+        teamScore,
+      ),
+    };
+  }
+
+  function compareModelCandidates(left, right) {
+    const leftObjective = left.objective;
+    const rightObjective = right.objective;
+    const insideTeamPolyhedron =
+      leftObjective.teamPolyhedronScore === 1 && rightObjective.teamPolyhedronScore === 1;
+    // Safety already votes inside the robust floor, so ranking it again at
+    // the second position double-counted remoteness and pushed every FFA
+    // spawn toward safe but tribe-poor corners (measured: FFA seeds died
+    // ~4000 with the tribe economy never igniting while Team spawns near
+    // tribe clusters dominated). Resource richness — reachable tribes and
+    // the gold they pay on conquest — now leads the tie-breaks.
+    const dimensions = insideTeamPolyhedron
+      ? "tribeClusterScore teamInteriorScore tribeReachCount tribeReachScore freeLandScore expansionScore resourceScore robustFloor safetyScore tribeScore nationScore startScore teamScore clanScore".split(" ")
+      : "robustFloor resourceScore tribeReachCount tribeReachScore safetyScore expansionScore freeLandScore tribeScore nationScore startScore teamScore clanScore".split(" ");
+    for (const dimension of dimensions) {
+      if (leftObjective[dimension] !== rightObjective[dimension]) {
+        return rightObjective[dimension] - leftObjective[dimension];
+      }
+    }
+    const leftRef = Number.isFinite(Number(left.ref)) ? Number(left.ref) : Infinity;
+    const rightRef = Number.isFinite(Number(right.ref)) ? Number(right.ref) : Infinity;
+    return leftRef - rightRef;
+  }
+
+  function rankModelCandidates(candidates) {
+    return Array.from(candidates || [])
+      .map((candidate) => ({
+        ...candidate,
+        objective: evaluateModelCandidate(candidate),
+      }))
+      .sort(compareModelCandidates);
+  }
+
+  root.__OFHSpawnObjective = {
+    evaluateModelCandidate,
+    compareModelCandidates,
+    rankModelCandidates,
+    extractClanTag,
+    sameClanTag,
+    getPlayerClanTag,
+    clanProximityScore,
+  };
+})(typeof globalThis === "object" ? globalThis : window);

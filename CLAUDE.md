@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A standalone **userscript** for [OpenFront.io](https://openfront.io/) that bundles three feature sets into one `openfront-helper.user.js` file: **auto-join** (poll the public lobby list and join the first match for your filters), **in-game overlays** (gold-per-minute, team build stats, trade balances, nuke/boat prediction, heatmaps, …), and an **auto-bot** configurable live in-game. It runs under Tampermonkey / Violentmonkey / Userscripts with `@grant none`, so everything executes in one page context — there is no extension background.
+A standalone **userscript** for [OpenFront.io](https://openfront.io/) that bundles three feature sets into one `openfront-helper.user.js` file: **auto-join** (watch the public lobby list and join the first lobby card the main menu is actually displaying that matches your filters — never queued or hosted lobbies the client isn't showing), **in-game overlays** (gold-per-minute, team build stats, trade balances, nuke/boat prediction, heatmaps, …), and an **auto-bot** configurable live in-game. It runs under Tampermonkey / Violentmonkey / Userscripts with `@grant none`, so everything executes in one page context — there is no extension background.
 
 ## Commands
 

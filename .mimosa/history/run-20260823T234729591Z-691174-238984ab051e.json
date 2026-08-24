@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "mimosa-finding-history/v1",
+  "runId": "20260823T234729591Z-691174-238984ab051e",
+  "runStatus": "inconclusive",
+  "errors": [
+    "baseline:.: baseline_partial: baseline capture had enumeration or snapshot errors",
+    "scan:engine/ingame/auto-bot/structureBehavior.js: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:engine/ingame/auto-bot/warshipBehavior.js: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:engine/ingame/auto-bot/attackBehavior.js: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-helper.autobot.js: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-helper.build-id.js: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-helper.user.js: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "supply-chain-check:.: stop_budget_exhausted: focused supply-chain check was not run before the gate budget"
+  ],
+  "target": ".",
+  "revision": "23656b2ef2ede047daec2ac0617b67712ee9eda0",
+  "diffHash": "9c86510d0818b76e5f15f219caa416bc66797c9164ebf03eba7d8bae85d34229",
+  "rulesVersion": "unavailable",
+  "recordedAt": "2026-08-23T23:47:29.591Z",
+  "timing": {
+    "startedAt": "2026-08-23T23:47:27.069Z",
+    "completedAt": "2026-08-23T23:47:29.591Z",
+    "durationMs": 2522
+  },
+  "tokens": {
+    "input": 0,
+    "output": 0,
+    "total": 0,
+    "modelCalls": 0,
+    "measurement": "known-zero"
+  },
+  "findings": {
+    "total": 0,
+    "bySeverity": {},
+    "byStatus": {}
+  },
+  "coverage": {
+    "status": "partial",
+    "reasonCounts": {
+      "baseline_partial": 1,
+      "scanner_failed": 6,
+      "stop_budget_exhausted": 1,
+      "project_check_failed": 8
+    }
+  },
+  "evidenceBoundary": "static_only",
+  "immutableReport": ".mimosa/reports/task-review-sess_a381bb0c-3ddd-47ef-9f6b-171a19678f98-20260823T234729591Z-691174-238984ab051e.json"
+}

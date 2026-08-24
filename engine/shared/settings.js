@@ -8,6 +8,8 @@
   const FILTER_KEYS = [
     "startingGold0M",
     "randomSpawn",
+    "crowded",
+    "compact",
     "alliancesDisabled",
     "portsDisabled",
     "nukesDisabled",

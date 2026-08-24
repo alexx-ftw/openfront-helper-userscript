@@ -1,0 +1,44 @@
+{
+  "schemaVersion": "mimosa-finding-ledger-batch/v1",
+  "batchId": "stop-20260822T212230807Z-106946-c3017f375cb1",
+  "runId": "20260822T212230807Z-106946-c3017f375cb1",
+  "runStatus": "inconclusive",
+  "coverage": {
+    "status": "partial",
+    "reasons": [
+      {
+        "code": "baseline_partial",
+        "stage": "baseline",
+        "target": ".",
+        "detail": "baseline capture had enumeration or snapshot errors",
+        "affectsCompletion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "baseline",
+        "target": ".",
+        "detail": "baseline_partial: baseline capture had enumeration or snapshot errors",
+        "affectsCompletion": true
+      }
+    ]
+  },
+  "source": {
+    "component": "zcode-hook",
+    "operationId": "Stop"
+  },
+  "revision": "fa50a1035e1549f123a41ec2935d1a0bfcb37203",
+  "diffHash": "cd6e1990f6a0925f317e06c3b7d37fee048b3aaff345240d01c04ad4e4684c04",
+  "rulesVersion": "unavailable",
+  "sessionHash": "a32a9fd28fd18a4721aa9a00bb1752323f1970d74c01aa3403b91104ca8cbaa7",
+  "reportRef": ".mimosa/reports/task-review-sess_70bae88d-f907-4a92-9e8f-513b3dba773b-20260822T212230807Z-106946-c3017f375cb1.json",
+  "events": [],
+  "observedFindingIds": [],
+  "verifiedFiles": [
+    {
+      "file": "engine/ingame/auto-bot/attackBehavior.js",
+      "direct": "complete",
+      "projectContext": "partial"
+    }
+  ],
+  "recordedAt": "2026-08-22T21:22:31.164Z"
+}

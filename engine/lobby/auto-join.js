@@ -720,6 +720,9 @@ function readPeaceTimeModifier(publicModifiers, config) {
 function extractTrackedFilters(lobby, groupKey) {
   const config = lobby?.gameConfig || {};
   const publicModifiers = config.publicGameModifiers || {};
+  // The game signals Compact either via publicGameModifiers.isCompact or via
+  // gameMapSize === "Compact" (JoinLobbyModal checks both); honor either form.
+  const gameMapSize = normalizeComparableText(config.gameMapSize ?? lobby?.gameMapSize);
   const startingGoldValue = publicModifiers.startingGold ?? config.startingGold;
   const startingGold = Number(startingGoldValue);
   const normalizedStartingGold = Number.isFinite(startingGold) ? startingGold : 0;
@@ -736,6 +739,21 @@ function extractTrackedFilters(lobby, groupKey) {
       "randomSpawn",
       "isRandomSpawn",
     ),
+    crowded: readBooleanModifier(
+      publicModifiers,
+      config,
+      "isCrowded",
+      "crowded",
+      "isCrowded",
+    ),
+    compact:
+      readBooleanModifier(
+        publicModifiers,
+        config,
+        "isCompact",
+        "compact",
+        "isCompact",
+      ) || gameMapSize === "compact",
     alliancesDisabled: readBooleanModifier(
       publicModifiers,
       config,
@@ -1086,6 +1104,8 @@ function getRandomSpecialModifiers(excluded, countReduction = 0) {
 
   return {
     isRandomSpawn: selected.has("isRandomSpawn"),
+    isCompact: selected.has("isCompact"),
+    isCrowded: selected.has("isCrowded"),
     startingGold,
     goldMultiplier: selected.has("goldMultiplier") ? 2 : 1,
     isAlliancesDisabled: selected.has("isAlliancesDisabled"),
@@ -1097,12 +1117,14 @@ function getRandomSpecialModifiers(excluded, countReduction = 0) {
   };
 }
 
-function createStandardForecastScenario(mapId, teamSize) {
+function createStandardForecastScenario(mapId, teamSize, compact = false) {
   return {
       mapId,
       teamSize,
       startingGold0M: true,
       randomSpawn: false,
+      crowded: false,
+      compact,
       alliancesDisabled: false,
       portsDisabled: false,
       nukesDisabled: false,
@@ -1128,11 +1150,19 @@ function getSpecialForecastExclusions(mapId, isTeamMode, teamConfig) {
 function createForecastScenario(type) {
   const map = pickWeighted(getForecastMapsForType(type));
   if (!map) return null;
-  if (type === "ffa") return createStandardForecastScenario(map.id, 1);
+  // Scheduled FFA/Team lobbies roll Compact every 3rd playlist rotation
+  // (MapPlaylist.gameConfig: playlists[type].length % 3 === 0).
+  if (type === "ffa") {
+    return createStandardForecastScenario(map.id, 1, nextLobbyForecastRandom() < 1 / 3);
+  }
 
   if (type === "team") {
     const teamConfig = randomTeamConfigForMap(map.id);
-    return createStandardForecastScenario(map.id, teamConfigToTeamSize(teamConfig));
+    return createStandardForecastScenario(
+      map.id,
+      teamConfigToTeamSize(teamConfig),
+      nextLobbyForecastRandom() < 1 / 3,
+    );
   }
 
   const isTeamMode = nextLobbyForecastRandom() >= 0.5;
@@ -1158,6 +1188,8 @@ function createForecastScenario(type) {
     teamSize: scenarioTeamSize,
     startingGold0M: startingGold === 0,
     randomSpawn: specialModifiers.isRandomSpawn,
+    crowded: specialModifiers.isCrowded,
+    compact: specialModifiers.isCompact,
     alliancesDisabled: specialModifiers.isAlliancesDisabled,
     portsDisabled: specialModifiers.isPortsDisabled,
     nukesDisabled: specialModifiers.isNukesDisabled,
@@ -1472,7 +1504,7 @@ function updateLobbyForecast(snapshot) {
 
   const currentFilterSignature = createForecastFilterSignature();
   const criteriaSelected = hasSelectedCriteria();
-  const lobbies = flattenLobbies(snapshot);
+  const lobbies = getDisplayedLobbies(snapshot);
   const currentIds = lobbies
     .map(({ lobby }) => String(lobby?.gameID || ""))
     .filter(Boolean);
@@ -1530,39 +1562,34 @@ function updateLobbyForecast(snapshot) {
   persistLobbyForecast();
 }
 
-function flattenLobbies(snapshot) {
+// The lobby cards the game's main menu actually renders: the FIRST lobby of
+// each scheduled group (GameModeSelector renders games[type][0] only — the
+// master keeps [0] active with a countdown while deeper entries sit in the
+// queue, unshown until they rotate up). Auto-join and the forecast must act on
+// exactly these cards: joining a queued games[type][1..] lobby would enter a
+// game the client isn't displaying yet, and "hosted" lobbies never appear as
+// main-menu cards at all (they only live in the join-lobby browser).
+function getDisplayedLobbies(snapshot) {
   const groups = snapshot?.games;
   if (!groups || typeof groups !== "object") {
     return [];
   }
 
-  const orderedKeys = [...PREFERRED_GROUP_ORDER];
-  for (const key of Object.keys(groups)) {
-    if (!orderedKeys.includes(key)) {
-      orderedKeys.push(key);
+  const displayed = [];
+  for (const groupKey of PREFERRED_GROUP_ORDER) {
+    const lobby = groups[groupKey]?.[0];
+    if (lobby) {
+      displayed.push({ groupKey, lobby });
     }
   }
 
-  const lobbies = [];
-  for (const key of orderedKeys) {
-    const value = groups[key];
-    if (Array.isArray(value)) {
-      lobbies.push(
-        ...value.map((lobby) => ({
-          groupKey: key,
-          lobby,
-        })),
-      );
-    }
-  }
-
-  return lobbies;
+  return displayed;
 }
 
 function findMatchingLobby(snapshot) {
   pruneCooldowns();
 
-  const match = flattenLobbies(snapshot).find(({ lobby, groupKey }) => {
+  const match = getDisplayedLobbies(snapshot).find(({ lobby, groupKey }) => {
     if (!lobby?.gameID || lobbyCooldowns.has(lobby.gameID)) {
       return false;
     }
@@ -1794,7 +1821,7 @@ async function handleStorageChange(changes, areaName) {
     lobbyForecastRecentMatchOutcomes = [];
     resetLobbyForecastTracking(
       lobbyState.latestLobbySnapshot
-        ? flattenLobbies(lobbyState.latestLobbySnapshot)
+        ? getDisplayedLobbies(lobbyState.latestLobbySnapshot)
           .map(({ lobby }) => String(lobby?.gameID || ""))
           .filter(Boolean)
         : [],

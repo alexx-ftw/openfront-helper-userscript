@@ -1,0 +1,249 @@
+{
+  "schema_version": "mimosa-task-review/v2",
+  "run_id": "20260820T013305876Z-843854-9fc68f6bf2a7",
+  "run_status": "inconclusive",
+  "errors": [
+    {
+      "stage": "scan",
+      "target": "engine/ingame/spawn-objective.js",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "engine/ingame/spawn-heatmap.js",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "openfront-helper.user.js",
+      "reason": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+    }
+  ],
+  "coverage": {
+    "schema_version": "mimosa-hook-coverage/v1",
+    "status": "partial",
+    "scope": "hook_observed_diff",
+    "baseline": {
+      "complete": true,
+      "captured_files": 970,
+      "candidate_limit": 5000,
+      "truncated": false,
+      "enumeration_error_count": 0,
+      "snapshot_error_count": 0,
+      "compensated_target_count": 3
+    },
+    "change_tracking": {
+      "touched_observed": 2,
+      "touched_retained": 2,
+      "truncated": false,
+      "bash_mutation": true,
+      "bash_discovered": 3,
+      "bash_discovery_limit": 80,
+      "bash_discovery_truncated": false
+    },
+    "candidates": {
+      "eligible_files": 3,
+      "selected_files": 3,
+      "limit": 20,
+      "truncated": false
+    },
+    "scanning": {
+      "required_files": 3,
+      "scanned_files": 0,
+      "skipped_files": 0,
+      "failed_files": 3,
+      "project_checks_required": 0,
+      "project_checks_completed": 0
+    },
+    "notification": {
+      "eligible_findings": 0,
+      "detailed_findings": 0,
+      "detail_limit": 3,
+      "truncated": false
+    },
+    "reason_counts": {
+      "scanner_failed": 3,
+      "project_check_failed": 3
+    },
+    "reasons": [
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "engine/ingame/spawn-objective.js",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "engine/ingame/spawn-heatmap.js",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "openfront-helper.user.js",
+        "detail": "spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "engine/ingame/spawn-objective.js",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "engine/ingame/spawn-heatmap.js",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "openfront-helper.user.js",
+        "detail": "scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+        "affects_completion": true
+      }
+    ],
+    "reasons_truncated": false
+  },
+  "generated_at": "2026-08-20T01:33:05.876Z",
+  "session_id": "sess_1c204565-6e61-406f-8e11-701b13d6a148",
+  "target": ".",
+  "revision": "cdc538c136a97b73a9dab5bcebc07507bea1be51",
+  "rules_version": "unavailable",
+  "diff_hash": "592cff460dd833fd3a5a8da500eb77716926f2366a91de2c4cd6ff4d77bbd575",
+  "diff": {
+    "algorithm": "sha256",
+    "changed_file_count": 3,
+    "changed_files": [
+      {
+        "file": "engine/ingame/spawn-heatmap.js",
+        "ranges": [
+          {
+            "start": 870,
+            "end": 881
+          },
+          {
+            "start": 890,
+            "end": 891
+          },
+          {
+            "start": 893,
+            "end": 898
+          },
+          {
+            "start": 1266,
+            "end": 1269
+          },
+          {
+            "start": 1278,
+            "end": 1278
+          },
+          {
+            "start": 1286,
+            "end": 1286
+          },
+          {
+            "start": 1288,
+            "end": 1298
+          },
+          {
+            "start": 1728,
+            "end": 1728
+          }
+        ],
+        "before_hash": "c6d0b58066e30daa420a53dc7c425a649e2d9b970fec2f1ddb39b14fad1e2432",
+        "after_hash": "517925841abdf4b3bfda2dd2f9c7403cb61cc7d4448830f7307e2ae6741b944b"
+      },
+      {
+        "file": "engine/ingame/spawn-objective.js",
+        "ranges": [
+          {
+            "start": 106,
+            "end": 109
+          },
+          {
+            "start": 112,
+            "end": 112
+          },
+          {
+            "start": 148,
+            "end": 153
+          },
+          {
+            "start": 156,
+            "end": 156
+          }
+        ],
+        "before_hash": "84f6b6282e5fea92463ce221a3b0d5a43bc8b72d4cf214bf73bdc2b60546677d",
+        "after_hash": "9dfabd2533ca2562c5281a97a0c26b357e89d7a818e78a12a164665d5bec5516"
+      },
+      {
+        "file": "openfront-helper.user.js",
+        "ranges": [
+          {
+            "start": 1194,
+            "end": 3905
+          }
+        ],
+        "before_hash": "741f31883de40dddc0f274413a328aac5849992d526b6bb98a673edaea910edc",
+        "after_hash": "5970e54abd0cba9b4c670f4a115790296fb9016385bd4860094c4ce7c04cee76"
+      }
+    ]
+  },
+  "timing": {
+    "started_at": "2026-08-20T01:33:03.311Z",
+    "completed_at": "2026-08-20T01:33:05.876Z",
+    "duration_ms": 2565,
+    "measurement": "hook_wall_clock"
+  },
+  "tokens": {
+    "input": 0,
+    "output": 0,
+    "total": 0,
+    "model_calls": 0,
+    "measurement": "known-zero"
+  },
+  "telemetry": {
+    "schemaVersion": "mimosa-gate-telemetry/v1",
+    "profile": "gate",
+    "operation": "Stop",
+    "outcome": "partial/INCONCLUSIVE",
+    "latencyMs": 2565,
+    "peakMemoryBytes": 147615744,
+    "memoryMeasurement": "max-observed-process-rss",
+    "scannedFiles": 0,
+    "cache": {
+      "hits": 0,
+      "misses": 0,
+      "measurement": "not-applicable"
+    },
+    "denyCount": 0,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "total": 0,
+      "modelCalls": 0,
+      "measurement": "known-zero"
+    }
+  },
+  "finding_count": 0,
+  "rewake_finding_count": 0,
+  "evidence_boundary": {
+    "scan": "candidate",
+    "static_fix_verification": "observed_static_only",
+    "runtime_verification": "not_performed"
+  },
+  "finding_events": [],
+  "findings": [],
+  "artifacts": {
+    "immutable_report": ".mimosa/reports/task-review-sess_1c204565-6e61-406f-8e11-701b13d6a148-20260820T013305876Z-843854-9fc68f6bf2a7.json",
+    "latest_report": ".mimosa/reports/task-review-sess_1c204565-6e61-406f-8e11-701b13d6a148.json",
+    "history_summary": ".mimosa/history/run-20260820T013305876Z-843854-9fc68f6bf2a7.json"
+  }
+}

@@ -34,7 +34,7 @@ const RESUME_GRACE_MS = 6000;
 // Bump on any auto-join logic change. Printed in the `[autojoin-diag]` log so a
 // single reproduction proves the running userscript is the freshly-built one —
 // rules out "fix still fails" actually being a stale Tampermonkey install.
-const AUTOJOIN_DIAG_BUILD = "aj-debounce-v1";
+const AUTOJOIN_DIAG_BUILD = "aj-displayed-v1";
 const PREFERRED_GROUP_ORDER = ["special", "ffa", "team"];
 
 const lobbyCooldowns = new Map();

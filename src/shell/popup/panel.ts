@@ -187,6 +187,8 @@ const START_GOLD = [
 
 const MODIFIERS = [
   ["randomSpawn", "Random spawn"],
+  ["crowded", "Crowded"],
+  ["compact", "Compact"],
   ["alliancesDisabled", "Alliances disabled"],
   ["portsDisabled", "Ports disabled"],
   ["nukesDisabled", "Nukes disabled"],

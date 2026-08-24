@@ -161,6 +161,8 @@
   "Matches team lobbies with more than 4 players per team.": "Matches team lobbies with more than 4 players per team.",
   "Modifier": "Modifier",
   "Random spawn": "Random spawn",
+  "Crowded": "Crowded",
+  "Compact": "Compact",
   "Alliances disabled": "Alliances disabled",
   "Ports disabled": "Ports disabled",
   "Nukes disabled": "Nukes disabled",

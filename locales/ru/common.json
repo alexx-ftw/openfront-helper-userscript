@@ -246,6 +246,8 @@
   "Matches team lobbies with more than 4 players per team.": "Соответствует командным лобби с более чем 4 игроками в команде.",
   "Modifier": "Модификатор",
   "Random spawn": "Случайный спавн",
+  "Crowded": "Перенаселение",
+  "Compact": "Компактная карта",
   "Alliances disabled": "Союзы отключены",
   "2x gold": "2x золото",
   "Start Gold": "Стартовое золото",

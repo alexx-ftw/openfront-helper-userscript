@@ -6125,9 +6125,9 @@
     "name": "AUTOJOIN_DIAG_BUILD",
     "declarationKind": "const",
     "initializerKind": "StringLiteral",
-    "initializerHash": "d44e992b8e16df09cf14b4c15fc4528fcc31768e77306e21fe063c6e31af7e70",
-    "initializerLength": 16,
-    "initializerPreview": "\"aj-debounce-v1\""
+    "initializerHash": "b228f0735ca46a952f3a5fd736cb09c7ad52b1ca48772bdc89f25eb1cab92485",
+    "initializerLength": 17,
+    "initializerPreview": "\"aj-displayed-v1\""
   },
   {
     "id": "engine/lobby/core.js:PREFERRED_GROUP_ORDER#1",
@@ -6165,8 +6165,8 @@
     "name": "DEFAULT_TRANSLATIONS",
     "declarationKind": "const",
     "initializerKind": "ObjectLiteralExpression",
-    "initializerHash": "06d57ddb237b0db7c91aba8ac775529c80b38b3f8f1e8d40bdce7cd7e4f7a17e",
-    "initializerLength": 20497,
+    "initializerHash": "4c6c0b3730ddedb8d7c428fc848320df5837cf63d31a23eb259e54bd14a33065",
+    "initializerLength": 20549,
     "initializerPreview": "{\n    languageCode: \"en\",\n    languageName: \"English\",\n    settings: \"Settings\",\n    openSettings: \"Open settings\",\n    github: \"GitHub\",\n    openGitHubRepository: \"Open GitHub repository\",\n    openFrontReloadTitle: \"Reload OpenFront?\",\n..."
   },
   {
@@ -6205,9 +6205,9 @@
     "name": "FILTER_KEYS",
     "declarationKind": "const",
     "initializerKind": "ArrayLiteralExpression",
-    "initializerHash": "8308fbbf02488f8e04c0a00731abf3d88e7f4abe7a7c795ac9be612381ec7455",
-    "initializerLength": 259,
-    "initializerPreview": "[\n    \"startingGold0M\",\n    \"randomSpawn\",\n    \"alliancesDisabled\",\n    \"portsDisabled\",\n    \"nukesDisabled\",\n    \"samsDisabled\",\n    \"waterNukes\",\n    \"peaceTime4m\",\n    \"startingGold5M\",\n    \"startingGold1M\",\n    \"startingGold25M\",\n   ..."
+    "initializerHash": "d17cfe9068f861571b73f0e2741d1b2f16983cc971d9d6db867360b37b226092",
+    "initializerLength": 289,
+    "initializerPreview": "[\n    \"startingGold0M\",\n    \"randomSpawn\",\n    \"crowded\",\n    \"compact\",\n    \"alliancesDisabled\",\n    \"portsDisabled\",\n    \"nukesDisabled\",\n    \"samsDisabled\",\n    \"waterNukes\",\n    \"peaceTime4m\",\n    \"startingGold5M\",\n    \"startingGold1..."
   },
   {
     "id": "engine/shared/settings.js:TEAM_SIZE_MIN#1",

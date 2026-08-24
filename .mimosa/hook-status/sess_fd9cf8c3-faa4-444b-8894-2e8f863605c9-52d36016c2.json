@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "mimosa-hook-status/v1",
+  "recordedAt": "2026-08-16T22:53:40.681Z",
+  "sessionId": "sess_fd9cf8c3-faa4-444b-8894-2e8f863605c9",
+  "event": "PostToolUse",
+  "toolName": "Edit",
+  "file": "/tmp/check-seeds.mts",
+  "outcome": "clear",
+  "coverage": "complete",
+  "findingCount": 0,
+  "durationMs": 7,
+  "hostState": "hook_complete",
+  "reportHint": ".mimosa/reports/"
+}

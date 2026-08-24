@@ -148,6 +148,12 @@
   /** Any built hostile silo can already launch a missile at our structures. */
   const HOSTILE_SILO_SAM_COVERAGE_LEVEL_SUM_THRESHOLD = 1;
 
+  // Deliberately lowercase (not fixture-tracked): the strongest enemy's
+  // built-silo level sum at which SAM SITE count starts scaling (see
+  // samSiteCountTarget). 3+ is rich-profile (5MM/25MM) mass; ordinary
+  // profiles never field it before their one-site lanes resolve.
+  const hostileSamSiteScaleLevelSum = 3;
+
   /** OpenFront's SAM upgrade ladder currently tops out at level five. */
   const HYDROGEN_SAM_MAX_UPGRADE_LEVEL = 5;
   // Intermediate interceptor readiness for the port-funded adaptive tier:
@@ -3395,13 +3401,29 @@
       );
       if (ownSam === null) return false;
 
-      // Hostile Silo count is not a spatial coverage requirement. Establish
-      // one defensive site, then let capacity upgrades and the structure-
-      // coverage plan prove whether another physical site is actually needed.
+      // Hostile Silo count is not a spatial coverage requirement — but silo
+      // MASS is: a level-L SAM holds L concurrent interceptors inside a
+      // 70-102 tile radius, so one site cannot cover a wide structure
+      // footprint against many-direction fire no matter its level (the
+      // measured 25MM pattern: one site upgraded to 5 while 18-44 structures
+      // burned; engine nations answer the same boards with 4-6 cheap sites).
+      // Scale the SITE count with the strongest enemy's built-silo level sum;
+      // below the threshold the doctrine is unchanged (one site + upgrades).
       return (
-        ownSam.count === 0 &&
+        ownSam.count < this.samSiteCountTarget() &&
         (siloSummary.hostileSiloCount > 0 || threat.siloThreat === true)
       );
+    }
+
+    // SAM site-count target (see shouldBuildHostileSiloSam): binds only when
+    // one hostile player's BUILT silo levels reach 3+ — a mass the
+    // income-poor none/temp profiles do not field before their ordinary
+    // one-site lanes resolve, so those trajectories stay byte-identical.
+    samSiteCountTarget() {
+      if (!state.settings.winFixes) return 1;
+      const levelSum = this.hostileSiloLevelSumTarget();
+      if (levelSum < hostileSamSiteScaleLevelSum) return 1;
+      return Math.min(4, Math.ceil(levelSum / 2));
     }
 
     shouldBuildSiloTriggeredSam() {
@@ -3410,7 +3432,9 @@
         this.player,
         UNIT.SAMLauncher,
       );
-      if (ownSam === null || ownSam.count > 0) return false;
+      if (ownSam === null || ownSam.count >= this.samSiteCountTarget()) {
+        return false;
+      }
       return this.hasPlacedSiloOnMap() || this.shouldBuildHostileSiloSam();
     }
 
