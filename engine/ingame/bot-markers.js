@@ -102,28 +102,71 @@
     }
   }
 
+  function resetBotMarkers(removeContainer = false) {
+    if (removeContainer) document.getElementById(BOT_MARKER_CONTAINER_ID)?.remove();
+    for (const entry of botMarkerEntries.values()) entry.marker.remove();
+    botMarkerEntries.clear();
+    botMarkerScanCache = [];
+    lastBotMarkerScanAt = 0;
+  }
+
+  function scheduleBotMarkerFrame() {
+    runtimeState.botMarkerAnimationFrame = requestAnimationFrame(syncBotMarkers);
+  }
+
+  function botMarkerScreenPosition(context, player) {
+    const nameLocation = player.nameLocation?.();
+    if (!nameLocation) return null;
+    const screenPosition = context.transform.worldToScreenCoordinates(nameLocation);
+    if (!Number.isFinite(screenPosition?.x) || !Number.isFinite(screenPosition?.y)) {
+      return null;
+    }
+    const margin = 30;
+    if (
+      screenPosition.x < -margin ||
+      screenPosition.y < -margin ||
+      screenPosition.x > window.innerWidth + margin ||
+      screenPosition.y > window.innerHeight + margin
+    ) {
+      return null;
+    }
+    return screenPosition;
+  }
+
+  function renderBotMarkerEntry(context, container, scanEntry) {
+    const screenPosition = botMarkerScreenPosition(context, scanEntry.player);
+    if (!screenPosition) {
+      const existing = botMarkerEntries.get(scanEntry.markerId);
+      if (existing) hideBotMarkerEntry(existing);
+      return;
+    }
+    const entry = ensureBotMarkerEntry(container, scanEntry.markerId);
+    if (entry.hidden) {
+      entry.marker.hidden = false;
+      entry.hidden = false;
+    }
+    if (entry.x !== screenPosition.x) {
+      entry.marker.style.setProperty("--bot-x", `${screenPosition.x}px`);
+      entry.x = screenPosition.x;
+    }
+    if (entry.y !== screenPosition.y) {
+      entry.marker.style.setProperty("--bot-y", `${screenPosition.y}px`);
+      entry.y = screenPosition.y;
+    }
+  }
+
   function syncBotMarkers() {
-    if (!botMarkersEnabled) {
-      document.getElementById(BOT_MARKER_CONTAINER_ID)?.remove();
-      botMarkerEntries.clear();
-      botMarkerScanCache = [];
-      lastBotMarkerScanAt = 0;
-      botMarkerAnimationFrame = null;
+    if (!runtimeState.botMarkersEnabled) {
+      resetBotMarkers(true);
+      runtimeState.botMarkerAnimationFrame = null;
       return;
     }
 
     const context = getOpenFrontGameContext();
     const container = ensureBotMarkerContainer();
     if (!context) {
-      if (botMarkerEntries.size > 0) {
-        for (const entry of botMarkerEntries.values()) {
-          entry.marker.remove();
-        }
-        botMarkerEntries.clear();
-      }
-      botMarkerScanCache = [];
-      lastBotMarkerScanAt = 0;
-      botMarkerAnimationFrame = requestAnimationFrame(syncBotMarkers);
+      resetBotMarkers();
+      scheduleBotMarkerFrame();
       return;
     }
 
@@ -134,70 +177,25 @@
       lastBotMarkerScanAt = now;
     }
 
-    const innerWidth = window.innerWidth;
-    const innerHeight = window.innerHeight;
-
-    for (let i = 0; i < botMarkerScanCache.length; i += 1) {
-      const { player, markerId } = botMarkerScanCache[i];
-      const nameLocation = player.nameLocation?.();
-      if (!nameLocation) {
-        const existing = botMarkerEntries.get(markerId);
-        if (existing) {
-          hideBotMarkerEntry(existing);
-        }
-        continue;
-      }
-
-      const screenPos = context.transform.worldToScreenCoordinates(nameLocation);
-      if (
-        !Number.isFinite(screenPos?.x) ||
-        !Number.isFinite(screenPos?.y) ||
-        screenPos.x < -30 ||
-        screenPos.y < -30 ||
-        screenPos.x > innerWidth + 30 ||
-        screenPos.y > innerHeight + 30
-      ) {
-        const existing = botMarkerEntries.get(markerId);
-        if (existing) {
-          hideBotMarkerEntry(existing);
-        }
-        continue;
-      }
-
-      const entry = ensureBotMarkerEntry(container, markerId);
-      if (entry.hidden) {
-        entry.marker.hidden = false;
-        entry.hidden = false;
-      }
-      if (entry.x !== screenPos.x) {
-        entry.marker.style.setProperty("--bot-x", `${screenPos.x}px`);
-        entry.x = screenPos.x;
-      }
-      if (entry.y !== screenPos.y) {
-        entry.marker.style.setProperty("--bot-y", `${screenPos.y}px`);
-        entry.y = screenPos.y;
-      }
+    for (const scanEntry of botMarkerScanCache) {
+      renderBotMarkerEntry(context, container, scanEntry);
     }
 
-    botMarkerAnimationFrame = requestAnimationFrame(syncBotMarkers);
+    scheduleBotMarkerFrame();
   }
 
   function setBotMarkersEnabled(enabled) {
-    botMarkersEnabled = Boolean(enabled);
-    if (!botMarkersEnabled) {
-      if (botMarkerAnimationFrame !== null) {
-        cancelAnimationFrame(botMarkerAnimationFrame);
+    runtimeState.botMarkersEnabled = Boolean(enabled);
+    if (!runtimeState.botMarkersEnabled) {
+      if (runtimeState.botMarkerAnimationFrame !== null) {
+        cancelAnimationFrame(runtimeState.botMarkerAnimationFrame);
       }
-      botMarkerAnimationFrame = null;
-      botMarkerEntries.clear();
-      botMarkerScanCache = [];
-      lastBotMarkerScanAt = 0;
-      document.getElementById(BOT_MARKER_CONTAINER_ID)?.remove();
+      runtimeState.botMarkerAnimationFrame = null;
+      resetBotMarkers(true);
       return;
     }
 
-    if (botMarkerAnimationFrame === null) {
+    if (runtimeState.botMarkerAnimationFrame === null) {
       syncBotMarkers();
     }
   }
-

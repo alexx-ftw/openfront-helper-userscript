@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+
+npm run engine:update && npx lint-staged && npm run quality:global && npm run quality:logic

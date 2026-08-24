@@ -13,7 +13,7 @@
     MissileSilo: "Missile Silo",
     DefensePost: "Defense Post",
     TransportShip: "Transport",
-    TradeShip: "Trade",
+    TradeShip: "Trade Ship",
     Warship: "Warship",
     AtomBomb: "Atom Bomb",
     HydrogenBomb: "Hydrogen Bomb",
@@ -27,13 +27,12 @@
 
   // ---- defaults, mirroring NationExecution Impossible ranges ----
   const DEFAULTS = {
-    enabled: true, // auto-bot ON by default (runs in public lobbies too — the
-    // isPublicLobby gate is disabled; see helpers.js)
+    enabled: true,
     // Which difficulty of the in-game Nation AI to faithfully replicate. The bot
-    // ports ALL FOUR difficulty branches (Easy/Medium/Hard/Impossible); this
-    // selects which one drives strategy order / ratios / probabilities. Default
-    // Impossible = the strongest, smartest src Nation.
-    difficulty: "Impossible", // "Easy" | "Medium" | "Hard" | "Impossible"
+    // ports the four faithful difficulty branches plus the adaptive Legendary
+    // construction planner; this selects which strategy drives the bot. Default
+    // Impossible = the strongest faithful src Nation.
+    difficulty: "Impossible", // "Easy" | "Medium" | "Hard" | "Impossible" | "Legendary"
     features: {
       spawn: true,
       expand: true,
@@ -63,14 +62,21 @@
     //    faithful Nation, which is conservative/turtle by design). Toggle winFixes
     //    OFF to restore the exact 1:1 src port. ──
     winFixes: true,
+    // Preserve the opening force for nearby free land and tribe captures before
+    // releasing surplus troops to teammates. Users can turn this off in Donate
+    // tuning when continuous support is preferred.
+    pauseDonateDuringExpansion: true,
     // DIVERGENCE: smart spawn scoring — scores candidate tiles by land density,
     // plains ratio, distance from enemies, and edge avoidance, then picks the
     // best instead of the first valid random tile. Toggle OFF to restore the
     // faithful random spawn (SpawnExecution.getSpawn).
     smartSpawn: true,
-    combatCadenceScale: 0.6, // <1 shrinks the attack-tick interval → the bot makes
-    // attack/expand decisions MORE often (more aggressive / less "gentle"; the pure
-    // faithful Nation only decides once per attackRate ≈ every 3–5s). 1 = faithful.
+    // Optional bounded profiler. Disabled by default so the normal bot path
+    // does not allocate samples or call performance.now() for diagnostics.
+    performanceProfiling: false,
+    // Keep win-fix combat more active than the faithful Nation cadence without
+    // running the full decision chain on every 200 ms engine poll.
+    combatCadenceScale: 0.6,
     sizeReserveScale: 1.5, // hold back (mapShare × this) troops as we grow (anti-collapse)
     sizeReserveCap: 0.6, // cap on the size-aware reserve
     mirvLeaderShare: 0.4, // once we own ≥ this share, proactively MIRV the strongest rival
@@ -101,7 +107,6 @@
     boatProbeFrac: 0.01, // the INITIAL probe + every TRANSIT boat carries just 1% of troops:
     // a warship can only sink 1% mid-sea, so crossing the water is cheap/safe. The user
     // wants every boat to CROSS at 1%.
-    boatProbeMinTroops: 1000, // tiny floor so a 1% boat is never literally 0 troops
     boatSurgeFrac: 0.25, // …BUT once a probe LANDS and we hold the beachhead (the route is
     // now proven safe), the follow-up "surge" pours in a BIG reinforcement — 25% of troops —
     // to actually CONQUER outward from the beachhead. The user's design: "gửi 1% an toàn khi
@@ -116,13 +121,9 @@
     // instead of piling onto one spot (raise to spread wider, lower to allow doubling up)
     mirvBoatWindowTicks: 150, // ticks after our MIRV we keep boating into its crater
     donateThrottleMs: 1200, // min real-time gap between proactive team-donations (winFix) —
-    // lowered so the bot donates its above-keep-line excess to teammates far more often
+    // lowered so the bot releases safe troop surplus to teammates promptly
     donateNeedThreshold: 0.8, // donate to any teammate below this fraction of their max
     // troops (i.e. one that actually needs help); pick the neediest first
-    donateKeepFrac: 0.45, // keep this fraction of maxTroops when donating to a teammate.
-    // The game's troop growth = (10 + troops^0.73/4)·(1 − troops/maxTroops) PEAKS at
-    // troops ≈ 0.42·maxTroops, so keeping ~45% means we only give away the "excess"
-    // above the fastest-regrowth point — donating barely dents our generation rate.
     // ── SMART DIPLOMACY (winFix) ──────────────────────────────────────────────────
     // The bot allies FAR nations (ones it does NOT border) freely while still expanding.
     // A far nation can't threaten us by land, so the alliance is pure DEFENCE — it keeps
@@ -164,11 +165,8 @@
     warshipNukeDodgeBuffer: 20, // đẩy ship ra ngoài bán kính thêm chừng này khi tìm ô né
     warshipNukeDodgeSamples: 8, // số góc lấy mẫu khi tìm ô né (radial + xoay quanh)
     warshipNukeDodgeRings: 3, // số vòng bán kính lấy mẫu khi tìm ô né (xử lý vùng nuke phủ rộng)
-    donateMinExcessFrac: 0.05, // only donate when the excess above the keep line is ≥
-    // this × maxTroops (avoids spammy micro-donations of a few troops)
-    donateMinDonatePct: 0.2, // minimum % of current troops to donate — only fire when
-    // the donation amount ≥ this × currentTroops (e.g. 0.2 = wait until we can send
-    // a meaningful 20% chunk, dồn lực thay vì rải rác)
+    donateMinExcessFrac: 0.01, // only donate when the excess is at least 1% of
+    // maxTroops; the live-reserve floor still prevents unsafe donations
     boatWeakTroopFrac: 0.6, // the nearest-target sweep also grabs OWNED coastal land if
     // its owner has < (our troops × this) — i.e. any clearly-weaker nation, per the
     // user's "đất có chủ cũng được, miễn nước đó yếu hơn". Raise → grab near-peers too.
@@ -195,20 +193,42 @@
     pos: null, // {left, top}
   };
 
-  // Throttles (ms) so we don't spam the worker / re-issue intents every tick.
-  // Combat decision cadence is now derived per-difficulty in combatCadenceMs()
-  // to match the bot's attackRate. Build runs ~3× per combat cycle (economy
-  // keeps growing between the slower, defensive attack decisions).
+  const MIN_TICK_INTERVAL_MS = 100;
+  const TICK_INTERVAL_STEP_MS = 100;
+  const MAX_TICK_INTERVAL_MS = 2000;
+
+  function normalizeTickIntervalMs(value) {
+    const ms = Number(value);
+    if (!Number.isFinite(ms) || ms <= 0) return DEFAULTS.tickMs;
+    return Math.min(
+      MAX_TICK_INTERVAL_MS,
+      Math.max(
+        MIN_TICK_INTERVAL_MS,
+        Math.round(ms / TICK_INTERVAL_STEP_MS) * TICK_INTERVAL_STEP_MS,
+      ),
+    );
+  }
+
+  // Throttles (ms) for non-combat work so we don't spam the worker / re-issue
+  // intents every poll. Combat cadence is derived from attackRate below.
   const MAX_DEFENSE_RESERVE = 0.8; // never hold back more than this for defense
-  // Min fraction of ACTUAL troops to commit when grabbing SAFE empty land (no
-  // bordering enemies). The maxTroops-based reserve has a ~100k floor while we
-  // start with ~25k troops, so it would send only ~18% of our army — far slower
-  // than a real nation's opening burst (forceSendAttack troops/2). Terra-nullius
-  // doesn't fight back and unspent troops return, so committing ~60% when no
-  // enemy borders us is low-risk and fixes the "expand too slow → small → eaten
-  // fast in the early game" loss. Drops back to the defensive reserve the moment
-  // an enemy borders us.
-  const EARLY_EXPAND_COMMIT = 0.6;
+  // Bound the complete opening exposure to the same 10% payload used by the
+  // free-land liveness lane.  A larger cumulative opening allowance lets
+  // repeated asynchronous Terra Nullius intents drain the whole army before
+  // the client has reflected the first command.
+  const EARLY_EXPAND_COMMIT = 0.1;
+  // Spend the opening reserve in several 10% frontier captures, rather than
+  // allowing one tiny command to stall the entire snowball window.
+  const EARLY_EXPAND_OPENING_LIMIT = 0.4;
+  const EARLY_EXPAND_FOLLOWUP_COMMIT = 0.1;
+  const EARLY_EXPAND_MINIMUM_MARGIN = 1.25;
+  // Re-base the opening ceiling when the field army has grown by at least this
+  // ratio since the snapshot was taken. A snowballing opening (a quick City or
+  // a captured tribe) should be allowed to spend its larger army on free land
+  // rather than being throttled to 40% of the much smaller spawn-time army.
+  // 1.25 means a 25% growth triggers a rebase; smaller and the ceiling churns
+  // on noise, larger and a genuine snowball is starved.
+  const EARLY_EXPAND_OPENING_REBASE_RATIO = 1.25;
   const BUILD_THROTTLE_MS = 1800;
   const NUKE_THROTTLE_MS = 6000;
   // MIRV (late-game super-weapon vs a too-strong enemy): per-target cooldown + the
@@ -230,7 +250,7 @@
     tickTimer: null,
     tickIntervalMs: 0,
     tickInFlight: false,
-    tickStartedAt: 0,
+    tickGeneration: 0,
     lastCombatMs: 0,
     lastPlayerAttackMs: 0,
     lastRetaliateMs: 0,
@@ -251,7 +271,19 @@
     // bot's recentlySentNukes / −1M penalty). Pruned by age in nuke.js.
     hostility: new Map(), // smallID -> accumulated aggression score (relation proxy)
     nukeReserveGold: 0, // gold the build loop keeps in reserve for the next nuke
-    nukeWantSlots: null, // { need, at } — silo slots wanted to saturate an enemy SAM
+    // { need, at, targetTile, unblockedSiloIds } — silo capacity required by
+    // the latest enemy-SAM overwhelm plan. StructureBehavior services this on
+    // the next build tick, after the H-bomb SAM-protection priority.
+    nukeWantSlots: null,
+    // { targetTile, dueTick, targetSmallID } — Hydrogen finisher scheduled
+    // by the anti-SAM saturating salvo (see fireSamSalvo).
+    postSalvoHydrogen: null,
+    // Metric-aware win pacing ("commerce stall"): per-tick memo + arming
+    // window + permanent lock-off (see attackBehavior.winPacingThrottle).
+    winPacingAtTick: null,
+    winPacingActive: false,
+    winPacingArmedTick: null,
+    winPacingLockedOff: false,
     lastMirv: null, // { sid, at } — last MIRV target+time (per-target cooldown)
     navalThreatAt: 0, // ts of last enemy ship/transport near our ports (build extra hulls)
     // Game-speed tracking: the game's tick rate changes with the speed setting.
@@ -269,8 +301,27 @@
     // arrives, so we can't translate here).
     status: "",
     lastAction: "—",
+    donationStatus: "Donate: awaiting decision",
     stats: { spawns: 0, attacks: 0, builds: 0, nukes: 0 },
     live: { troops: 0, gold: 0, tiles: 0, fill: 0 },
+    // Snapshot of the current post-spawn expansion window. The route fields stay
+    // explicit so diagnostics distinguish "no route" from "route >30s".
+    earlyGame: {
+      active: false,
+      postSpawn: false,
+      hasFreeLand: false,
+      hasTribeTarget: false,
+      maritimeProbeSent: false,
+      actionableTribes: [],
+      tribeTarget: null,
+      oceanTarget: null,
+      boatRouteAvailable: false,
+      action: null,
+      boatGate: null,
+      lastBoatEtaTicks: null,
+      boatRejectedUnknown: 0,
+      boatRejectedTooFar: 0,
+    },
     // In-memory action history (newest first) for the "Log" tab. Not persisted —
     // a fresh game starts with an empty log.
     log: [], // [{ t: epochMs, cat, text }]
@@ -297,18 +348,18 @@
   function loadSettings() {
     // PERSISTED_KEYS is declared LOCALLY (not module-level) ON PURPOSE: `state.settings
     // = loadSettings()` runs BEFORE a module-level `const` further down would be
-    // initialised, so referencing it there hit the temporal dead zone → this whole
-    // function threw → the catch below swallowed it → EVERY persisted setting (pos,
-    // enabled, difficulty, …) was silently lost and bare DEFAULTS were used. Declaring
-    // it here initialises it exactly when it is needed.
+    // initialised, so referencing it there hit the temporal dead zone and prevented
+    // EVERY persisted setting (pos, enabled, difficulty, …) from loading. Declaring it
+    // here initialises it exactly when it is needed, while failures remain visible.
     // Only these USER-FACING keys are restored from localStorage; every other DEFAULT
     // (tuning: boat/donate/mirv fractions, throttles…) always comes from the code, so an
-    // old saved value (e.g. boatProbeMinTroops=8000) can't mask a new default (1000).
+    // old saved tuning value cannot mask the current defaults.
     const PERSISTED_KEYS = [
       "enabled",
       "difficulty",
       "winFixes",
       "smartSpawn",
+      "performanceProfiling",
       "minimized",
       "hidden",
       "statusOpen",
@@ -316,10 +367,9 @@
       "pos",
       "tickMs",
       // Donate tuning
-      "donateKeepFrac",
+      "pauseDonateDuringExpansion",
       "donateNeedThreshold",
       "donateThrottleMs",
-      "donateMinDonatePct",
       // Warship tuning
       "warshipRetreatHealthPct",
       "warshipHuntTrade",
@@ -330,7 +380,7 @@
       "warshipPatrolThrottleMs",
     ];
     const s = JSON.parse(JSON.stringify(DEFAULTS));
-    try {
+    {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
@@ -343,16 +393,13 @@
           ...(parsed.buildStructures || {}),
         };
       }
-    } catch (error) {
-      console.warn("[AutoBot] failed to load settings:", error);
     }
+    s.tickMs = normalizeTickIntervalMs(s.tickMs);
     return s;
   }
 
   function saveSettings() {
-    try {
+    {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state.settings));
-    } catch (error) {
-      console.warn("[AutoBot] failed to save settings:", error);
     }
   }

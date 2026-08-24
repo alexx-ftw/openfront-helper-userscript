@@ -1,0 +1,174 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
+import { fileURLToPath } from "node:url";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const sourcePath = path.join(repoRoot, "engine/ingame/auto-bot/earlyGame.js");
+const source = fs.readFileSync(sourcePath, "utf8");
+
+let callsSinceYield = 0;
+let maxCallsBetweenYields = 0;
+let yieldCount = 0;
+let deadlineNow = 0;
+let deadlineAdvance = 1;
+const sandbox = {
+  Date: { now: () => 0 },
+  window: {
+    __OFH_deadlineNow: () => deadlineNow,
+    setTimeout(callback, delay) {
+      assert.equal(delay, 0, "route-search yields must resume on the next task");
+      maxCallsBetweenYields = Math.max(maxCallsBetweenYields, callsSinceYield);
+      callsSinceYield = 0;
+      yieldCount += 1;
+      deadlineNow += deadlineAdvance;
+      callback();
+      return yieldCount;
+    },
+  },
+};
+executeClassicScript(source, sandbox, { filename: sourcePath });
+
+const goal = 4096;
+const result = await sandbox.findWaterRouteTicksAsync({
+  start: 0,
+  goal,
+  neighbors(tile) {
+    callsSinceYield += 1;
+    return tile < goal ? [tile + 1] : [];
+  },
+  isWater: () => true,
+  maxTicks: goal,
+  maxVisited: goal + 1,
+  deadlineMs: 10_000,
+});
+maxCallsBetweenYields = Math.max(maxCallsBetweenYields, callsSinceYield);
+
+assert.equal(result, goal, "yielding must preserve the shortest route");
+assert.ok(yieldCount >= 31, "a wide search must yield repeatedly");
+assert.ok(
+  maxCallsBetweenYields <= 64,
+  `route search performed ${maxCallsBetweenYields} expansions without yielding`,
+);
+
+deadlineAdvance = 100_000;
+const deterministicRouteGoal = 256;
+assert.equal(
+  await sandbox.findWaterRouteTicksAsync({
+    start: 0,
+    goal: deterministicRouteGoal,
+    neighbors: (tile) => (tile < deterministicRouteGoal ? [tile + 1] : []),
+    isWater: () => true,
+    maxTicks: deterministicRouteGoal,
+    maxVisited: deterministicRouteGoal + 1,
+  }),
+  deterministicRouteGoal,
+  "default route reachability must not depend on wall-clock speed",
+);
+
+const maritimeOptions = {
+  width: 128,
+  height: 64,
+  forEachNeighbor(tile, visit) {
+    const x = tile % 128;
+    const y = Math.floor(tile / 128);
+    if (x > 0) visit(tile - 1);
+    if (x < 127) visit(tile + 1);
+    if (y > 0) visit(tile - 128);
+    if (y < 63) visit(tile + 128);
+  },
+  isLand: () => true,
+  isMaritimeShore: (tile) => tile === 127,
+};
+const incrementalMaritimeBuilder = sandbox.createMaritimeDistanceIndexBuilder(maritimeOptions);
+assert.equal(
+  incrementalMaritimeBuilder.distances.BYTES_PER_ELEMENT,
+  1,
+  "the normal 80-tile maritime horizon must use one byte per map tile",
+);
+let maritimeYieldChecks = 0;
+assert.equal(
+  sandbox.advanceMaritimeDistanceIndexBuilder(incrementalMaritimeBuilder, {
+    maxSteps: 512,
+    yieldCheckInterval: 64,
+    shouldYield: () => ++maritimeYieldChecks >= 2,
+  }),
+  null,
+  "a bounded maritime slice must not publish a partial distance field",
+);
+assert.ok(
+  incrementalMaritimeBuilder.seedCursor < incrementalMaritimeBuilder.total,
+  "the first maritime slice leaves the full-map seed scan resumable",
+);
+const incrementalMaritimeIndex = sandbox.advanceMaritimeDistanceIndexBuilder(
+  incrementalMaritimeBuilder,
+);
+const synchronousMaritimeIndex = sandbox.buildMaritimeDistanceIndex(maritimeOptions);
+assert.deepEqual(
+  [...incrementalMaritimeIndex.distances],
+  [...synchronousMaritimeIndex.distances],
+  "incremental maritime preparation preserves the exact distance field",
+);
+
+let pendingClassifications = 2;
+const pendingMaritimeBuilder = sandbox.createMaritimeDistanceIndexBuilder({
+  ...maritimeOptions,
+  width: 4,
+  height: 1,
+  isMaritimeShore: (tile) => {
+    if (tile !== 0) return false;
+    if (pendingClassifications-- > 0) return null;
+    return true;
+  },
+});
+for (let attempt = 0; attempt < 2; attempt++) {
+  assert.equal(
+    sandbox.advanceMaritimeDistanceIndexBuilder(pendingMaritimeBuilder, {
+      shouldYield: () => false,
+    }),
+    null,
+  );
+  assert.equal(pendingMaritimeBuilder.seedCursor, 0);
+}
+const pendingMaritimeIndex = sandbox.advanceMaritimeDistanceIndexBuilder(pendingMaritimeBuilder);
+assert.equal(sandbox.lookupMaritimeDistanceIndex(pendingMaritimeIndex, [0]), 0);
+assert.doesNotMatch(
+  source,
+  /distances\.fill\(-1\)/,
+  "maritime preparation must not synchronously fill a map-sized distance array",
+);
+assert.doesNotMatch(
+  source,
+  /queue:\s*new Int32Array\(total\)/,
+  "maritime preparation must not synchronously allocate a map-sized queue",
+);
+
+const growingMaritimeBuilder = sandbox.createMaritimeDistanceIndexBuilder({
+  width: 2048,
+  height: 1,
+  forEachNeighbor: () => {},
+  isLand: () => true,
+  isMaritimeShore: () => true,
+});
+assert.equal(growingMaritimeBuilder.queue.length, 1024);
+assert.ok(sandbox.advanceMaritimeDistanceIndexBuilder(growingMaritimeBuilder));
+assert.equal(growingMaritimeBuilder.queue.length, 2048);
+assert.deepEqual(
+  [...growingMaritimeBuilder.queue.subarray(0, 2048)],
+  Array.from({ length: 2048 }, (_, tile) => tile),
+  "growing the maritime distance queue must preserve BFS seed order",
+);
+
+const mediumDistanceBuilder = sandbox.createMaritimeDistanceIndexBuilder({
+  ...maritimeOptions,
+  maxDistance: 300,
+});
+assert.equal(mediumDistanceBuilder.distances.BYTES_PER_ELEMENT, 2);
+const largeDistanceBuilder = sandbox.createMaritimeDistanceIndexBuilder({
+  ...maritimeOptions,
+  maxDistance: 70_000,
+});
+assert.equal(largeDistanceBuilder.distances.BYTES_PER_ELEMENT, 4);
+
+console.warn("frame-stall regression tests passed");

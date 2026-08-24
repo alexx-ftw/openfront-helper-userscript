@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "mimosa-finding-history/v1",
+  "runId": "20260817T150437487Z-2060835-e47c8020670b",
+  "runStatus": "inconclusive",
+  "errors": [
+    "bash-discovery:openfront-engine/src/core/game/UnitImpl.ts: bash_discovery_truncated: changed-file discovery exceeded 80 files",
+    "candidate-select:openfront-engine/tests/server/AdminBotCreateTeams.test.ts: candidate_limit_exceeded: 62 changed reviewable file(s) were not scanned because the limit is 20",
+    "baseline-read:openfront-engine/tests/VersionedReplay.test.ts: baseline_snapshot_unreadable: file is missing from task baseline",
+    "scan:engine/ingame/auto-bot/structureBehavior.js: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:scripts/headless/opponent-adapter.js: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:engine/ingame/auto-bot/attackBehavior.js: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-helper.autobot.js: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-helper.build-id.js: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-helper.user.js: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/deploy.sh: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/update.sh: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/tests/CosmeticSchemas.test.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/tests/DoomsdayClockExecution.test.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/tests/ImpassableTerrain.test.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/tests/InputHandler.test.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/tests/SpiralTrails.test.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/tests/TrailManager.test.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/tests/UserSettings.test.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/tests/VersionedReplay.test.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "supply-chain-check:.: stop_budget_exhausted: focused supply-chain check was not run before the gate budget"
+  ],
+  "target": ".",
+  "revision": "b7114ad11f25369dbf32c7702d2c24dd994a758a",
+  "diffHash": "c5e3f24cac5a516ea0dacc26c01224e5edb56b2319927a80ba056bed06583236",
+  "rulesVersion": "unavailable",
+  "recordedAt": "2026-08-17T15:04:37.487Z",
+  "timing": {
+    "startedAt": "2026-08-17T15:04:34.947Z",
+    "completedAt": "2026-08-17T15:04:37.487Z",
+    "durationMs": 2540
+  },
+  "tokens": {
+    "input": 0,
+    "output": 0,
+    "total": 0,
+    "modelCalls": 0,
+    "measurement": "known-zero"
+  },
+  "findings": {
+    "total": 0,
+    "bySeverity": {},
+    "byStatus": {}
+  },
+  "coverage": {
+    "status": "partial",
+    "reasonCounts": {
+      "bash_discovery_truncated": 1,
+      "candidate_limit_exceeded": 1,
+      "baseline_snapshot_unreadable": 1,
+      "scanner_failed": 16,
+      "stop_budget_exhausted": 1,
+      "project_check_failed": 20
+    }
+  },
+  "evidenceBoundary": "static_only",
+  "immutableReport": ".mimosa/reports/task-review-sess_1c204565-6e61-406f-8e11-701b13d6a148-20260817T150437487Z-2060835-e47c8020670b.json"
+}

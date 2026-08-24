@@ -8,3 +8,6 @@ docs/superpowers/
 .playwright-mcp/
 
 # the built userscript (openfront-helper.user.js) IS committed
+eslint-ratchet-temp.json
+jscpd-report/
+.artifacts/

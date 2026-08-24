@@ -9,11 +9,12 @@
 //     sharedWaterComponents, railNetwork).
 //
 // gameApi presents a CORE-SHAPED, SYNCHRONOUS interface to the behaviors. Async
-// data is fetched ONCE per decision tick by beginTick() (me's borderTiles +
-// profile) and lazily-cached per target; the behaviors then read it synchronously
+// data is refreshed in short windows by beginTick() (me's borderTiles + profile)
+// and lazily-cached per target; the behaviors then read it synchronously
 // so the ported code stays a 1:1 diff against src. The two genuinely-missing
 // datasets (sharedWaterComponents, railNetwork) are reconstructed in §SHIMS and
-// are the ONLY approximated data (used for structure-placement scoring only).
+// are the ONLY approximated data (used for structure-placement candidate
+// selection and scoring only).
 //
 // `src` is the client-shape game: the real GameView in the extension, or the
 // training coreAdapter `game` in the headless harness — both expose the same
@@ -48,26 +49,197 @@
     }
   }
 
+  function makePlayerMethodPassThrough(core, name, fallback) {
+    return (...args) =>
+      typeof core[name] === "function"
+        ? core[name](...args.map((value) => (value?.__src ? value.__src : value)))
+        : fallback;
+  }
+
+  // The factory deliberately owns all mutable caches in one per-game closure so
+  // concurrent headless games cannot leak state. Splitting it into module state
+  // would weaken that isolation; its nested helpers are linted individually.
+  // eslint-disable-next-line max-lines-per-function, max-statements
   function createGameApi(src) {
     const playerCache = new Map(); // smallID -> wrapped player
     const borderCache = new Map(); // smallID -> { tick, set:Set<TileRef> }
+    const shoreBorderCache = new WeakMap(); // border Set -> shore TileRef[]
+    const oceanShoreBorderCache = new WeakMap(); // border Set -> ocean-shore TileRef[]
     // Relation overlay: ONLY the AI-subjective deltas WE issue this game
     // (embargo malus ±20, assist −20, warship −7.5/−15). The engine-applied
     // relation changes for our slot are already in profile(); the overlay is an
     // OFFSET added on top of the profile bucket midpoint (§8.1), decayed 0.05/tick.
     const overlay = new Map(); // smallID -> offset
     let profileRelations = new Map(); // smallID -> Relation bucket (from profile())
-    let profileAlliances = []; // smallID[]
+    let profileLoaded = false;
+    let profileFetchedAt = 0;
+    let profileInFlight = null;
+    const PROFILE_REFRESH_MS = 1500;
     let mePlayer = null; // wrapped me
     let lastSnapshotTick = -1;
+    const transportSpawnCache = new Map(); // target TileRef -> spawn TileRef|false
+    const transportRouteCache = new Map(); // target TileRef -> ticks|null
+    // The fallback water graph is static. Preserve successful routes across
+    // snapshots and reuse them only when the authoritative launch probe returns
+    // the exact same spawn tile for the same destination.
+    const localTransportRouteCache = new Map(); // target -> { spawn, ticks }
+    // GameView.units() materializes a fresh snapshot on every call. Several
+    // behaviors inspect the same unit families during one bot tick, so keep
+    // the wrapped arrays shared until the game advances. This removes repeated
+    // worker/view traversal and wrapper allocation without carrying state across
+    // authoritative game ticks.
+    let unitSnapshotTick = null;
+    const unitSnapshotCache = new Map();
+    let playerSnapshotTick = null;
+    let playerSnapshot = null;
+    // Prefer an upstream exact hook when one exists. The current GameView has no
+    // route worker message, so the local full-resolution water graph is the fallback.
+    // DIVERGENCE: this fallback measures shortest full-resolution water distance;
+    // it does not reproduce the engine worker's HPA/smoothing implementation.
+    const hasLocalTransportRouteEstimator =
+      typeof src.neighbors === "function" &&
+      typeof src.isWater === "function" &&
+      typeof src.isLand === "function" &&
+      typeof src.isShore === "function" &&
+      typeof src.ownerID === "function" &&
+      typeof src.manhattanDist === "function";
+    const hasTransportRouteEstimator =
+      typeof src.transportRouteTicks === "function" || hasLocalTransportRouteEstimator;
 
     const unwrap = (p) => (p && p.__src ? p.__src : p);
 
+    function unitTypeKey(types) {
+      return types.map((type) => String(type)).sort().join("\u0001");
+    }
+
+    function cachedUnits(owner, ownerKey, types) {
+      const tick = typeof src.ticks === "function" ? src.ticks() : null;
+      if (tick === null || tick === undefined) {
+        return owner.units(...types).map(wrapUnit);
+      }
+
+      if (unitSnapshotTick !== tick) {
+        unitSnapshotTick = tick;
+        unitSnapshotCache.clear();
+      }
+
+      const key = `${String(ownerKey)}\u0002${unitTypeKey(types)}`;
+      if (unitSnapshotCache.has(key)) {
+        return unitSnapshotCache.get(key);
+      }
+
+      const units = owner.units(...types).map(wrapUnit);
+      unitSnapshotCache.set(key, units);
+      return units;
+    }
+
+    function normalizeTransportRouteResult(result) {
+      if (Number.isFinite(result)) return Math.max(0, Number(result));
+      const path = result && (result.fullPath || result.path) ? result.fullPath || result.path : result;
+      if (path == null || typeof path.length !== "number" || path.length === 0) {
+        return null;
+      }
+      const length = Number(path.length);
+      return Number.isFinite(length) ? Math.max(0, length - 1) : null;
+    }
+
+    function closestTargetShore(targetTile) {
+      const ownerID = src.ownerID(targetTile);
+      const seen = new Set([targetTile]);
+      const queue = [targetTile];
+      const candidates = [];
+      for (let head = 0; head < queue.length; head++) {
+        const current = queue[head];
+        if (src.manhattanDist(targetTile, current) > 50) continue;
+        if (
+          src.isLand(current) &&
+          src.isShore(current) &&
+          src.ownerID(current) === ownerID
+        ) {
+          candidates.push(current);
+        }
+        for (const next of src.neighbors(current) || []) {
+          if (seen.has(next)) continue;
+          if (src.manhattanDist(targetTile, next) > 50) continue;
+          seen.add(next);
+          queue.push(next);
+        }
+      }
+      candidates.sort(
+        (a, b) =>
+          src.manhattanDist(targetTile, a) - src.manhattanDist(targetTile, b),
+      );
+      return candidates[0] ?? null;
+    }
+
+    function rememberTransportShipSpawn(core, targetTile) {
+      const result = core.bestTransportShipSpawn(targetTile);
+      return Promise.resolve(result).then((spawn) => {
+        transportSpawnCache.set(targetTile, spawn);
+        return spawn;
+      });
+    }
+
+    async function estimateTransportRouteTicks(targetTile) {
+      if (transportRouteCache.has(targetTile)) {
+        return transportRouteCache.get(targetTile);
+      }
+      {
+        if (typeof src.transportRouteTicks === "function") {
+          const result = normalizeTransportRouteResult(
+            await src.transportRouteTicks(targetTile),
+          );
+          transportRouteCache.set(targetTile, result);
+          return result;
+        }
+        const routeFinder =
+          typeof findWaterRouteTicksAsync === "function"
+            ? findWaterRouteTicksAsync
+            : findWaterRouteTicks;
+        if (!hasLocalTransportRouteEstimator || typeof routeFinder !== "function") {
+          return null;
+        }
+        const spawn = transportSpawnCache.get(targetTile);
+        if (spawn == null || spawn === false) return null;
+        const cachedRoute = localTransportRouteCache.get(targetTile);
+        // A successful path stays reusable as long as the authoritative spawn
+        // is unchanged. Do not resolve a coast just to validate this hot path.
+        if (cachedRoute?.spawn === spawn && cachedRoute.ticks !== null) {
+          return cachedRoute.ticks;
+        }
+        const goal = closestTargetShore(targetTile);
+        if (cachedRoute?.spawn === spawn && cachedRoute.goal === goal) {
+          return cachedRoute.ticks;
+        }
+        if (goal == null) {
+          // Keep a negative route result too. A distant target that has no
+          // reachable coast would otherwise restart the same bounded BFS every
+          // game tick. The authoritative launch tile and resolved goal are part
+          // of the cache key, so a new port/spawn or changed target coast
+          // invalidates this result before it can affect target selection.
+          localTransportRouteCache.set(targetTile, { spawn, goal, ticks: null });
+          transportRouteCache.set(targetTile, null);
+          return null;
+        }
+        const result = await routeFinder({
+          start: spawn,
+          goal,
+          neighbors: (tile) => src.neighbors(tile),
+          isWater: (tile) => src.isWater(tile),
+          maxTicks: BOAT_EXPLORATION_MAX_ROUTE_TICKS,
+        });
+        // A failed bounded search is as stable as a successful route while the
+        // authoritative spawn and target shore remain unchanged. Cache both to
+        // avoid repeating an expensive negative BFS every auxiliary attack tick.
+        localTransportRouteCache.set(targetTile, { spawn, goal, ticks: result });
+        transportRouteCache.set(targetTile, result);
+        return result;
+      }
+    }
+
     function isPlayerObj(o) {
-      try {
-        return !!(o && typeof o.isPlayer === "function" && o.isPlayer());
-      } catch (_e) {
-        return false;
+      {
+        return Boolean(o && typeof o.isPlayer === "function" && o.isPlayer());
       }
     }
 
@@ -79,6 +251,7 @@
       return {
         __src: u,
         owner: () => wrapPlayer(u.owner()),
+        isFriendly: (other) => wrapPlayer(u.owner())?.isFriendly(other) ?? false,
         type: m("type", null),
         tile: m("tile", null),
         level: m("level", 1),
@@ -89,6 +262,16 @@
         hasTrainStation: m("hasTrainStation", false),
         missileTimerQueue: m("missileTimerQueue", []),
         targetTile: m("targetTile", undefined),
+        targetUnit: () => {
+          if (typeof u.targetUnit === "function") return wrapUnit(u.targetUnit());
+          const targetID =
+            typeof u.targetUnitId === "function" ? u.targetUnitId() : undefined;
+          return wrapUnit(
+            targetID === undefined || typeof src.unit !== "function"
+              ? undefined
+              : src.unit(targetID),
+          );
+        },
         patrolTile: m("patrolTile", undefined),
         warshipState: m("warshipState", undefined),
         transportShipState: m("transportShipState", undefined),
@@ -103,12 +286,16 @@
     // retreating:bool, id:string } (NO attacker()/target() methods, sourceTile
     // is absent on the wire). The coreAdapter wraps core attacks into the same
     // field shape. The ported behaviors call core-style METHOD accessors, so we
-    // expose methods over the fields. `val` tolerates either a value or a fn.
+    // expose methods over the fields. `val` tolerates either a value or a fn
+    // while preserving the source attack as a method receiver.
     function wrapAttack(a) {
-      const val = (x) => (typeof x === "function" ? x() : x);
+      const val = (key) => {
+        const value = a[key];
+        return typeof value === "function" ? value.call(a) : value;
+      };
       return {
         __src: a,
-        troops: () => Number(val(a.troops) ?? 0),
+        troops: () => Number(val("troops") ?? 0),
         attacker: () =>
           wrapPlayer(
             typeof a.attacker === "function"
@@ -121,23 +308,21 @@
               ? a.target()
               : srcPlayerBySmallID(a.targetID),
           ),
-        retreating: () => val(a.retreating) ?? false,
-        id: () => val(a.id),
+        retreating: () => val("retreating") ?? false,
+        id: () => val("id"),
         // client AttackUpdate has no sourceTile on the wire → undefined in the
         // extension; the coreAdapter (harness) DOES set it. `hasSourceTile()`
         // lets consumers use the exact value when present and reconstruct it
         // (land = attacker shares a land border) when absent — see structureBehavior.
         hasSourceTile: () => a.sourceTile !== undefined,
-        sourceTile: () => (a.sourceTile !== undefined ? val(a.sourceTile) : null),
+        sourceTile: () => (a.sourceTile !== undefined ? val("sourceTile") : null),
       };
     }
 
     function srcPlayerBySmallID(sid) {
       if (sid == null) return null;
-      try {
+      {
         return src.playerBySmallID(sid);
-      } catch (_e) {
-        return null;
       }
     }
 
@@ -163,16 +348,26 @@
         w.__src = core; // refresh underlying view (it may be a fresh object)
         return w;
       }
-      w = makePlayer(core);
+      w = makePlayer(core, sid);
       playerCache.set(sid, w);
       return w;
     }
 
-    function makePlayer(core) {
-      const pass = (name, dflt) => (...a) =>
-        typeof core[name] === "function"
-          ? core[name](...a.map((x) => (x && x.__src ? x.__src : x)))
-          : dflt;
+    function cachedPlayers() {
+      const tick = typeof src.ticks === "function" ? src.ticks() : null;
+      if (tick === null || tick === undefined) {
+        return src.players().map(wrapPlayer);
+      }
+      if (playerSnapshotTick !== tick || playerSnapshot === null) {
+        playerSnapshotTick = tick;
+        playerSnapshot = src.players().map(wrapPlayer);
+      }
+      return playerSnapshot;
+    }
+
+    function makePlayer(core, sid) {
+      const pass = (name, fallback) =>
+        makePlayerMethodPassThrough(core, name, fallback);
       const w = {
         __src: core,
         isPlayer: () => true,
@@ -194,17 +389,20 @@
         betrayals: pass("betrayals", 0),
         getTraitorRemainingTicks: pass("getTraitorRemainingTicks", 0),
 
-        units: (...types) => core.units(...types).map(wrapUnit),
-        unitCount: (type) => core.units(type).length,
+        units: (...types) => cachedUnits(core, `player:${sid}`, types),
+        unitCount: (type) => cachedUnits(core, `player:${sid}`, [type]).length,
         // unitsOwned/unitsConstructed — core semantics: built (not under
         // construction) units of a type.
         unitsOwned: (type) =>
-          core.units(type).filter((u) => !(u.isUnderConstruction?.() ?? false)).length,
+          cachedUnits(core, `player:${sid}`, [type]).filter(
+            (u) => !(u.isUnderConstruction?.() ?? false),
+          ).length,
         unitsConstructed: (type) =>
-          core.units(type).some((u) => !(u.isUnderConstruction?.() ?? false)),
+          cachedUnits(core, `player:${sid}`, [type]).some(
+            (u) => !(u.isUnderConstruction?.() ?? false),
+          ),
         totalUnitLevels: (type) =>
-          core
-            .units(type)
+          cachedUnits(core, `player:${sid}`, [type])
             .filter((u) => !(u.isUnderConstruction?.() ?? false))
             .reduce((acc, u) => acc + (u.level?.() ?? 1), 0),
 
@@ -217,6 +415,10 @@
         alliances: () => (core.alliances ? core.alliances() : []),
 
         isFriendly: (o) => core.isFriendly(unwrap(o)),
+        canAttackPlayer: (o, treatAFKFriendly = true) =>
+          core.canAttackPlayer
+            ? core.canAttackPlayer(unwrap(o), treatAFKFriendly)
+            : !core.isFriendly(unwrap(o)),
         isAlliedWith: (o) => core.isAlliedWith(unwrap(o)),
         isOnSameTeam: (o) => core.isOnSameTeam(unwrap(o)),
         isRequestingAllianceWith: (o) =>
@@ -238,6 +440,14 @@
           const c = borderCache.get(core.smallID());
           return c && c.set ? c.set : new Set();
         },
+        // Multiple combat policies consume the same coast during one border
+        // snapshot. Derive it once because isShore can be much more expensive
+        // than walking the already-cached Set.
+        shoreBorderTiles: () => shoreBorderTilesFor(core),
+        // Open-ocean shores are a stricter subset than generic shores: lakes and
+        // closed seas cannot launch the early maritime probe. Cache this exact
+        // predicate separately so consumers never trade correctness for reuse.
+        oceanShoreBorderTiles: () => oceanShoreBorderTilesFor(core),
 
         // ── relation (reconstructed via profile() + overlay) ──────────────────
         relation: (o) => {
@@ -278,7 +488,7 @@
         // ── async probes (worker calls) — used by the rank-then-probe paths ───
         borderTilesAsync: () => core.borderTiles(),
         buildables: (tile, types) => core.buildables(tile, types),
-        bestTransportShipSpawn: (tile) => core.bestTransportShipSpawn(tile),
+        bestTransportShipSpawn: (tile) => rememberTransportShipSpawn(core, tile),
         profile: () => core.profile(),
         actions: (tile, units) =>
           core.actions ? core.actions(tile, units) : Promise.resolve(null),
@@ -293,78 +503,130 @@
       return null;
     }
 
+    function shoreBorderTilesFrom(border) {
+      if (!border?.size) return [];
+      const cached = shoreBorderCache.get(border);
+      if (cached) return cached;
+      const shores = [];
+      for (const tile of border) {
+        if (src.isShore(tile)) shores.push(tile);
+      }
+      shoreBorderCache.set(border, shores);
+      return shores;
+    }
+
+    function shoreBorderTilesFor(player) {
+      return shoreBorderTilesFrom(borderCache.get(player.smallID())?.set);
+    }
+
+    function oceanShoreBorderTilesFrom(border) {
+      if (!border?.size) return [];
+      // `null` means this client cannot answer the exact ocean predicate. It
+      // is distinct from an empty array: structure placement can then use its
+      // compatible isShore/isWater/isOcean reconstruction without mistaking an
+      // unavailable client capability for a coastless territory.
+      if (typeof src.isOceanShore !== "function") return null;
+      const cached = oceanShoreBorderCache.get(border);
+      if (cached) return cached;
+      const shores = [];
+      for (const tile of border) {
+        if (src.isOceanShore(tile)) shores.push(tile);
+      }
+      oceanShoreBorderCache.set(border, shores);
+      return shores;
+    }
+
+    function oceanShoreBorderTilesFor(player) {
+      return oceanShoreBorderTilesFrom(borderCache.get(player.smallID())?.set);
+    }
+
     // nearby — union of (a) owners of LAND neighbors of our border tiles whose
     // owner != us (incl. TerraNullius), and (b) shore-reachable neighbors across
     // narrow rivers. Fully synchronous over the border snapshot.
+    function addNearbyOwner(neighbors, ownerSid, mySid) {
+      if (ownerSid === mySid) return;
+      if (ownerSid == null) {
+        neighbors.set("TN", api.terraNullius());
+        return;
+      }
+      const player = api.playerBySmallID(ownerSid);
+      if (player) neighbors.set(ownerSid, player);
+    }
+
+    function addLandBorderNeighbors(neighbors, border, mySid) {
+      for (const borderTile of border) {
+        for (const neighbor of src.neighbors(borderTile)) {
+          if (!src.isLand(neighbor)) continue;
+          const ownerSid = src.hasOwner(neighbor) ? src.ownerID(neighbor) : null;
+          addNearbyOwner(neighbors, ownerSid, mySid);
+        }
+      }
+    }
+
+    function shoreProbeOwner(borderTile, dx, dy) {
+      const x = src.x(borderTile);
+      const y = src.y(borderTile);
+      const waterX = x + dx;
+      const waterY = y + dy;
+      if (!src.isValidCoord(waterX, waterY) || !src.isWater(src.ref(waterX, waterY))) return undefined;
+      const probeX = x + dx * 5;
+      const probeY = y + dy * 5;
+      if (!src.isValidCoord(probeX, probeY)) return undefined;
+      const tile = src.ref(probeX, probeY);
+      if (!src.isLand(tile) || (!src.hasOwner(tile) && src.hasFallout(tile))) return undefined;
+      return src.hasOwner(tile) ? src.ownerID(tile) : null;
+    }
+
+    function addShoreReachableNeighbors(neighbors, border, mySid) {
+      const shores = shoreBorderTilesFrom(border);
+      const directions = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+      for (let index = 0; index < shores.length; index += 10) {
+        for (const [dx, dy] of directions) {
+          const ownerSid = shoreProbeOwner(shores[index], dx, dy);
+          if (ownerSid !== undefined) addNearbyOwner(neighbors, ownerSid, mySid);
+        }
+      }
+    }
+
     function nearbyOf(me) {
-      const ns = new Map(); // key -> player|TN  (key: smallID, or "TN")
+      const neighbors = new Map();
       const mySid = me.smallID();
-      const addOwner = (ownerSid) => {
-        if (ownerSid === mySid) return;
-        if (ownerSid == null) {
-          const tn = api.terraNullius();
-          ns.set("TN", tn);
-        } else {
-          const p = api.playerBySmallID(ownerSid);
-          if (p) ns.set(ownerSid, p);
-        }
-      };
       const border = me.borderTiles();
-      for (const bt of border) {
-        for (const n of src.neighbors(bt)) {
-          if (!src.isLand(n)) continue;
-          const ownerSid = src.hasOwner(n) ? src.ownerID(n) : null;
-          if (ownerSid !== mySid) addOwner(ownerSid);
-        }
-      }
-      // shoreReachableNeighbors — every 10th shore border tile, 5 steps each
-      // cardinal direction that immediately enters water.
-      const shores = [];
-      for (const bt of border) if (src.isShore(bt)) shores.push(bt);
-      const dirs = [
-        [0, -1],
-        [0, 1],
-        [-1, 0],
-        [1, 0],
-      ];
-      for (let i = 0; i < shores.length; i += 10) {
-        const b = shores[i];
-        const bx = src.x(b);
-        const by = src.y(b);
-        for (const [dx, dy] of dirs) {
-          const x1 = bx + dx;
-          const y1 = by + dy;
-          if (!src.isValidCoord(x1, y1) || !src.isWater(src.ref(x1, y1))) continue;
-          const nx = bx + dx * 5;
-          const ny = by + dy * 5;
-          if (!src.isValidCoord(nx, ny)) continue;
-          const tile = src.ref(nx, ny);
-          if (!src.isLand(tile)) continue;
-          if (!src.hasOwner(tile) && src.hasFallout(tile)) continue;
-          const ownerSid = src.hasOwner(tile) ? src.ownerID(tile) : null;
-          if (ownerSid !== mySid) addOwner(ownerSid);
-        }
-      }
-      return Array.from(ns.values());
+      addLandBorderNeighbors(neighbors, border, mySid);
+      addShoreReachableNeighbors(neighbors, border, mySid);
+      return Array.from(neighbors.values());
     }
 
     // sharesBorderWith — does any LAND neighbor of our border tiles belong to other?
+    function borderNeighborMatches(neighbor, ownerSid) {
+      if (!src.isLand(neighbor)) return false;
+      return ownerSid == null
+        ? !src.hasOwner(neighbor)
+        : src.hasOwner(neighbor) && src.ownerID(neighbor) === ownerSid;
+    }
+
+    let borderRelationCacheTick = null;
+    const borderRelationCache = new Map();
     function sharesBorderWith(me, other) {
-      const osid = unwrapSmallID(other);
-      if (osid == null) {
-        // TerraNullius: share a border if any unowned land neighbor exists.
-        for (const bt of me.borderTiles()) {
-          for (const n of src.neighbors(bt)) {
-            if (src.isLand(n) && !src.hasOwner(n)) return true;
+      const ownerSid = unwrapSmallID(other);
+      const tick = typeof src.ticks === "function" ? src.ticks() : null;
+      if (borderRelationCacheTick !== tick) {
+        borderRelationCacheTick = tick;
+        borderRelationCache.clear();
+      }
+      const cacheKey = `${me.smallID()}:${ownerSid ?? "terra-nullius"}`;
+      if (borderRelationCache.has(cacheKey)) {
+        return borderRelationCache.get(cacheKey);
+      }
+      for (const borderTile of me.borderTiles()) {
+        for (const neighbor of src.neighbors(borderTile)) {
+          if (borderNeighborMatches(neighbor, ownerSid)) {
+            borderRelationCache.set(cacheKey, true);
+            return true;
           }
         }
-        return false;
       }
-      for (const bt of me.borderTiles()) {
-        for (const n of src.neighbors(bt)) {
-          if (src.isLand(n) && src.hasOwner(n) && src.ownerID(n) === osid) return true;
-        }
-      }
+      borderRelationCache.set(cacheKey, false);
       return false;
     }
 
@@ -380,6 +642,20 @@
       _configProxy = new Proxy(sc, {
         get(t, prop) {
           if (prop === "maxTroops") return (p) => sc.maxTroops(unwrap(p));
+          if (prop === "spawnImmunityDuration") {
+            return () => sc.spawnImmunityDuration?.() ?? 0;
+          }
+          // OpenFront renamed the legacy defaultNukeSpeed accessor to the
+          // per-warhead nukeSpeed(unitType) API. Keep the port contract stable
+          // for the trajectory, SAM, and missile planners while always asking
+          // the current engine for the Atom-bomb speed.
+          if (
+            prop === "defaultNukeSpeed" &&
+            typeof t.defaultNukeSpeed !== "function" &&
+            typeof t.nukeSpeed === "function"
+          ) {
+            return () => t.nukeSpeed(UNIT.AtomBomb);
+          }
           const v = t[prop];
           return typeof v === "function" ? v.bind(t) : v;
         },
@@ -405,7 +681,7 @@
     //   different component here. This is strictly better than the old bounded
     //   400-tile BFS, which could not see large lakes or assign stable ids.
     //
-    //   _waterLabels[tile] : component id (>= 0) for every water tile, -2 for
+    //   _waterLabels[tile] : component id + 1 for every labeled water tile, 0 for
     //   land/unlabeled. Component ids are dense (0..N-1). OCEAN_SENTINEL (-1) is
     //   reserved for the "touches ocean" marker in shared sets and NEVER used as
     //   a real component id, so shared.has(comp) is collision-free.
@@ -417,51 +693,147 @@
     let _waterLabels = null;
     let _waterCompIsOcean = null;
     let _waterCompCoast = null;
+    let _waterLabelBuilder = null;
+    // This reconstruction can cover a full world map. Advance it only in
+    // bounded slices from beginTick so an inland lake never turns an Auto-build
+    // decision into a long synchronous frame stall.
+    const WATER_LABEL_SLICE_STEPS = 2048;
 
-    function buildWaterLabels() {
+    function forEachSourceNeighbor(tile, visit) {
+      if (typeof src.forEachNeighbor === "function") {
+        src.forEachNeighbor(tile, visit);
+        return;
+      }
+      for (const neighbor of src.neighbors(tile)) visit(neighbor);
+    }
+
+    function ensureWaterLabelQueueCapacity(builder, requiredLength) {
+      if (requiredLength <= builder.queue.length) return;
+      let nextLength = Math.max(1, builder.queue.length);
+      while (nextLength < requiredLength) {
+        nextLength = Math.min(builder.labels.length, nextLength * 2);
+      }
+      const expanded = new Int32Array(nextLength);
+      expanded.set(builder.queue.subarray(0, builder.queueTail));
+      builder.queue = expanded;
+    }
+
+    function enqueueWaterLabelTile(builder, tile) {
+      ensureWaterLabelQueueCapacity(builder, builder.queueTail + 1);
+      builder.queue[builder.queueTail++] = tile;
+    }
+
+    function visitWaterComponentNeighbor(neighbor, id, builder, coast) {
+      const labels = builder.labels;
+      if (src.isWater(neighbor)) {
+        if (labels[neighbor] !== 0) return;
+        labels[neighbor] = id + 1;
+        enqueueWaterLabelTile(builder, neighbor);
+        return;
+      }
+      if (coast !== null && src.isLand(neighbor)) coast.add(neighbor);
+    }
+
+    function createWaterLabelBuffer(total, maximumEncodedId = 0xff) {
+      if (maximumEncodedId <= 0xff) return new Uint8Array(total);
+      if (maximumEncodedId <= 0xffff) return new Uint16Array(total);
+      return new Uint32Array(total);
+    }
+
+    function ensureWaterLabelCapacity(builder, encodedId) {
+      const maximumStored = (2 ** (builder.labels.BYTES_PER_ELEMENT * 8)) - 1;
+      if (encodedId <= maximumStored) return;
+      const expanded = createWaterLabelBuffer(builder.labels.length, encodedId);
+      expanded.set(builder.labels);
+      builder.labels = expanded;
+    }
+
+    function startWaterLabelBuilder() {
+      if (_waterLabelBuilder !== null || _waterLabels !== null) return;
       const w = src.width();
       const h = src.height();
       const total = w * h;
-      const labels = new Int32Array(total).fill(-2);
-      const compIsOcean = [];
-      const compCoast = [];
-      let nextId = 0;
-      // Iterative flood fill (queue) over every water tile.
-      for (let t = 0; t < total; t++) {
-        if (!src.isWater(t) || labels[t] !== -2) continue;
-        const id = nextId++;
-        let isOcean = false;
-        const coastSet = new Set();
-        const queue = [t];
-        labels[t] = id;
-        let head = 0;
-        while (head < queue.length) {
-          const cur = queue[head++];
-          if (src.isOcean(cur)) isOcean = true;
-          for (const n of src.neighbors(cur)) {
-            if (src.isWater(n)) {
-              if (labels[n] === -2) {
-                labels[n] = id;
-                queue.push(n);
-              }
-            } else if (src.isLand(n)) {
-              // A land neighbor of this water body is part of its coastline.
-              coastSet.add(n);
-            }
-          }
-        }
-        compIsOcean[id] = isOcean;
-        // Only non-ocean components need their coast recorded (ocean is always
-        // treated as shared → its coast is never scanned).
-        compCoast[id] = isOcean ? null : Array.from(coastSet);
-      }
-      _waterLabels = labels;
-      _waterCompIsOcean = compIsOcean;
-      _waterCompCoast = compCoast;
+      _waterLabelBuilder = {
+        // Typed arrays are zero-initialized by the runtime. Encoding component
+        // ids as id+1 removes the synchronous full-map fill that previously
+        // preceded the cooperative slices and could stall Auto-build.
+        labels: createWaterLabelBuffer(total),
+        compIsOcean: [],
+        compCoast: [],
+        nextId: 0,
+        scanTile: 0,
+        queue: new Int32Array(Math.min(total, 1024)),
+        queueHead: 0,
+        queueTail: 0,
+        componentId: null,
+        componentOcean: false,
+        componentCoast: null,
+      };
     }
 
-    function ensureWaterLabels() {
-      if (_waterLabels === null) buildWaterLabels();
+    function finishWaterLabelComponent(builder) {
+      const id = builder.componentId;
+      builder.compIsOcean[id] = builder.componentOcean;
+      // Only non-ocean components need their coast recorded (ocean is always
+      // treated as shared → its coast is never scanned).
+      builder.compCoast[id] = builder.componentOcean
+        ? null
+        : Array.from(builder.componentCoast);
+      builder.queueHead = 0;
+      builder.queueTail = 0;
+      builder.componentId = null;
+      builder.componentCoast = null;
+    }
+
+    function publishWaterLabels(builder) {
+      _waterLabels = builder.labels;
+      _waterCompIsOcean = builder.compIsOcean;
+      _waterCompCoast = builder.compCoast;
+      _waterLabelBuilder = null;
+    }
+
+    function advanceWaterLabelBuilder(maxSteps = WATER_LABEL_SLICE_STEPS) {
+      startWaterLabelBuilder();
+      const builder = _waterLabelBuilder;
+      if (builder === null) return _waterLabels !== null;
+      let steps = 0;
+      while (steps < maxSteps) {
+        if (builder.componentId !== null) {
+          if (builder.queueHead >= builder.queueTail) {
+            finishWaterLabelComponent(builder);
+            continue;
+          }
+          const current = builder.queue[builder.queueHead++];
+          if (!builder.componentOcean && src.isOcean(current)) {
+            builder.componentOcean = true;
+            builder.componentCoast = null;
+          }
+          forEachSourceNeighbor(current, (neighbor) =>
+            visitWaterComponentNeighbor(
+              neighbor,
+              builder.componentId,
+              builder,
+              builder.componentCoast,
+            ),
+          );
+          steps++;
+          continue;
+        }
+        if (builder.scanTile >= builder.labels.length) {
+          publishWaterLabels(builder);
+          return true;
+        }
+        const tile = builder.scanTile++;
+        steps++;
+        if (!src.isWater(tile) || builder.labels[tile] !== 0) continue;
+        builder.componentId = builder.nextId++;
+        ensureWaterLabelCapacity(builder, builder.componentId + 1);
+        builder.componentOcean = false;
+        builder.componentCoast = new Set();
+        builder.labels[tile] = builder.componentId + 1;
+        enqueueWaterLabelTile(builder, tile);
+      }
+      return false;
     }
 
     // getWaterComponent(tile) — mirrors core's signature. Returns the component
@@ -469,10 +841,13 @@
     // called on NON-ocean water — randCoastalTileArray / SharedWaterCache
     // short-circuit on ocean before the lookup.)
     function getWaterComponent(tile) {
-      ensureWaterLabels();
+      if (_waterLabels === null) {
+        startWaterLabelBuilder();
+        return null;
+      }
       if (tile < 0 || tile >= _waterLabels.length) return null;
-      const id = _waterLabels[tile];
-      return id >= 0 ? id : null;
+      const encoded = _waterLabels[tile];
+      return encoded > 0 ? encoded - 1 : null;
     }
 
     // OCEAN sentinel — core SharedWaterCache.OCEAN_SENTINEL.
@@ -485,75 +860,126 @@
     //     synchronously — me's border is pre-fetched each tick): ocean neighbor →
     //     mark hasOcean; non-ocean water neighbor → add its component id to
     //     "mine".
-    //   - A lake component is SHARED iff some OTHER non-bot player on that
-    //     component's coast can trade with the queried player (no mutual embargo,
-    //     different id). We resolve "other player on the component" via the
+    //   - A lake component is SHARED iff some OTHER living, non-bot ally or
+    //     teammate on that component's coast can trade with the queried player
+    //     (no mutual embargo, different id). This is a CUSTOM placement safety
+    //     rule: the core cache treats any non-embargoed player as sufficient,
+    //     but isolated inland lakes must not attract ports in the userscript.
+    //     We resolve "other player on the component" via the
     //     pre-recorded coast tiles + ownerID (both SYNC) — we do NOT iterate other
     //     players' borderTiles() (those return EMPTY synchronously through the
     //     wrapper; only me's is pre-fetched).
     //   - Ocean is always shared (sentinel -1).
     // Returns Set<number>|null (null = touches no ocean and no shared lake),
     // exactly matching core's `!== null` coastal test.
+    function isTrustedWaterPartner(player, other) {
+      {
+        if (!isEligibleWaterPlayer(player) || !isEligibleWaterPlayer(other)) return false;
+        if (player.id() === other.id()) return false;
+        if (player.hasEmbargoAgainst(other) || other.hasEmbargoAgainst(player)) return false;
+        return areAlliedWaterPlayers(player, other) || areTeamWaterPlayers(player, other);
+      }
+    }
+
+    function isEligibleWaterPlayer(player) {
+      if (!player?.isPlayer?.()) return false;
+      if (player.type?.() === PlayerType.Bot) return false;
+      return typeof player.isAlive !== "function" || player.isAlive();
+    }
+
+    function areAlliedWaterPlayers(player, other) {
+      return Boolean(player.isAlliedWith?.(other) || other.isAlliedWith?.(player));
+    }
+
+    function areTeamWaterPlayers(player, other) {
+      return Boolean(player.isOnSameTeam?.(other) || other.isOnSameTeam?.(player));
+    }
+
+    function ownedWaterComponents(player) {
+      let hasOcean = false;
+      const lakes = new Set();
+      for (const tile of player.borderTiles()) {
+        if (!src.isShore(tile)) continue;
+        forEachSourceNeighbor(tile, (neighbor) => {
+          if (!src.isWater(neighbor)) return;
+          if (src.isOcean(neighbor)) {
+            hasOcean = true;
+            return;
+          }
+          const encoded = _waterLabels[neighbor];
+          if (encoded > 0) lakes.add(encoded - 1);
+        });
+      }
+      return { hasOcean, lakes };
+    }
+
+    function ownedWaterAccessSummary(player) {
+      let hasOcean = false;
+      let hasInlandWater = false;
+      for (const tile of player.borderTiles()) {
+        if (!src.isShore(tile)) continue;
+        forEachSourceNeighbor(tile, (neighbor) => {
+          if (!src.isWater(neighbor)) return;
+          if (src.isOcean(neighbor)) hasOcean = true;
+          else hasInlandWater = true;
+        });
+        if (hasOcean) return { hasOcean, hasInlandWater };
+      }
+      return { hasOcean, hasInlandWater };
+    }
+
+    function lakeHasTrustedPartner(component, player, mySid) {
+      const coast = _waterCompCoast[component];
+      if (!coast) return false;
+      const seen = new Set();
+      for (const landTile of coast) {
+        if (!src.hasOwner(landTile)) continue;
+        const ownerSid = src.ownerID(landTile);
+        if (ownerSid == null || ownerSid === mySid || seen.has(ownerSid)) continue;
+        seen.add(ownerSid);
+        const other = wrapPlayer(src.playerBySmallID(ownerSid));
+        if (isTrustedWaterPartner(player, other)) return true;
+      }
+      return false;
+    }
+
     function sharedWaterComponents(player) {
       if (player == null) return null;
-      // Bots are never the nation AI caller in core, but guard anyway: a bot
-      // player has no shared-water relevance.
-      try {
+      {
         if (player.type && player.type() === PlayerType.Bot) return null;
-      } catch (_e) {
-        /* fall through */
       }
-      ensureWaterLabels();
-      const border = player.borderTiles();
+      const access = ownedWaterAccessSummary(player);
+      if (access.hasOcean) return new Set([SHARED_OCEAN_SENTINEL]);
+      if (_waterLabels === null) {
+        startWaterLabelBuilder();
+        return null;
+      }
       const mySid = player.smallID();
-
-      let hasOcean = false;
-      const myLakes = new Set();
-      for (const t of border) {
-        if (!src.isShore(t)) continue;
-        for (const n of src.neighbors(t)) {
-          if (!src.isWater(n)) continue;
-          if (src.isOcean(n)) {
-            hasOcean = true;
-            continue;
-          }
-          const comp = _waterLabels[n];
-          if (comp >= 0) myLakes.add(comp);
-        }
-      }
-
+      const { hasOcean, lakes } = ownedWaterComponents(player);
       const shared = new Set();
       if (hasOcean) shared.add(SHARED_OCEAN_SENTINEL);
-
-      for (const comp of myLakes) {
-        const coast = _waterCompCoast[comp];
-        if (!coast) continue; // ocean component (shouldn't appear) or none
-        // Is there another NON-BOT player on this lake who can trade with us?
-        let isShared = false;
-        const seen = new Set();
-        for (const landTile of coast) {
-          if (!src.hasOwner(landTile)) continue;
-          const ownerSid = src.ownerID(landTile);
-          if (ownerSid == null || ownerSid === mySid) continue;
-          if (seen.has(ownerSid)) continue;
-          seen.add(ownerSid);
-          const other = wrapPlayer(src.playerBySmallID(ownerSid));
-          if (!other || !other.isPlayer || !other.isPlayer()) continue;
-          if (other.type && other.type() === PlayerType.Bot) continue;
-          // canTrade: different id + no mutual embargo (PlayerImpl.canTrade).
-          if (
-            player.id() !== other.id() &&
-            !player.hasEmbargoAgainst(other) &&
-            !other.hasEmbargoAgainst(player)
-          ) {
-            isShared = true;
-            break;
-          }
-        }
-        if (isShared) shared.add(comp);
+      for (const component of lakes) {
+        if (lakeHasTrustedPartner(component, player, mySid)) shared.add(component);
       }
 
       return shared.size > 0 ? shared : null;
+    }
+
+    // Structure policy only needs the SharedWaterCache result as a boolean.
+    // Ocean access is locally provable from the player's cached border, so do
+    // not synchronously flood-fill the whole map unless an inland component
+    // actually needs the trusted-partner test.
+    function hasSharedWater(player) {
+      if (player == null) return false;
+      if (player.type?.() === PlayerType.Bot) return false;
+      const access = ownedWaterAccessSummary(player);
+      if (access.hasOcean) return true;
+      if (!access.hasInlandWater) return false;
+      if (_waterLabels === null) {
+        startWaterLabelBuilder();
+        return false;
+      }
+      return sharedWaterComponents(player) !== null;
     }
 
     // RAIL — railroadState buffer (EXTENSION only). Core RailroadCache keeps a
@@ -562,12 +988,10 @@
     // harness coreAdapter has no frameData → returns null, and structureBehavior
     // falls back to the station-proximity union-find.
     function railroadState() {
-      try {
+      {
         if (typeof src.frameData !== "function") return null;
         const fd = src.frameData();
         return fd && fd.railroadState ? fd.railroadState : null;
-      } catch (_e) {
-        return null;
       }
     }
 
@@ -581,10 +1005,17 @@
         typeof src.isSpawnImmunityActive === "function"
           ? src.isSpawnImmunityActive(...a)
           : false,
+      spawnImmunityDuration: () =>
+        typeof src.config === "function" &&
+        typeof src.config()?.spawnImmunityDuration === "function"
+          ? src.config().spawnImmunityDuration()
+          : 0,
       config: () => configProxy(),
+      motionPlans: () =>
+        typeof src.motionPlans === "function" ? src.motionPlans() : null,
       myPlayer: () => mePlayer,
-      players: () => src.players().map(wrapPlayer),
-      playerViews: () => src.players().map(wrapPlayer),
+      players: () => cachedPlayers(),
+      playerViews: () => cachedPlayers(),
       playerBySmallID: (sid) => wrapPlayer(src.playerBySmallID(sid)),
       nations: () =>
         (src.nations ? src.nations() : src.players().filter((p) => p.type?.() === "Nation")).map(
@@ -602,8 +1033,8 @@
       numTilesWithFallout: () =>
         typeof src.numTilesWithFallout === "function" ? src.numTilesWithFallout() : 0,
       getWinner: () => (typeof src.getWinner === "function" ? src.getWinner() : null),
-      units: (...types) => src.units(...types).map(wrapUnit),
-      unitCount: (type) => src.units(type).length,
+      units: (...types) => cachedUnits(src, "game", types),
+      unitCount: (type) => cachedUnits(src, "game", [type]).length,
       // GameMap surface (sync passthrough)
       ref: mapM("ref"),
       x: mapM("x"),
@@ -618,6 +1049,8 @@
           : src.isValidCoord(cell.x, cell.y),
       isLand: mapM("isLand"),
       isWater: mapM("isWater"),
+      isImpassable: (tile) =>
+        typeof src.isImpassable === "function" ? src.isImpassable(tile) : false,
       isOcean: mapM("isOcean"),
       isShore: mapM("isShore"),
       isOceanShore: mapM("isOceanShore"),
@@ -625,6 +1058,13 @@
       magnitude: mapM("magnitude"),
       hasFallout: mapM("hasFallout"),
       neighbors: mapM("neighbors"),
+      forEachNeighbor: (tile, callback) => {
+        if (typeof src.forEachNeighbor === "function") {
+          src.forEachNeighbor(tile, callback);
+          return;
+        }
+        for (const neighbor of src.neighbors(tile)) callback(neighbor);
+      },
       manhattanDist: mapM("manhattanDist"),
       euclideanDistSquared: mapM("euclideanDistSquared"),
       terrainType: (t) =>
@@ -638,6 +1078,8 @@
       // SYNC `target.borderTiles()` (and portutil.calculateTerritoryCenter /
       // randTerritoryTileArray) work for that target. `await` before use.
       ensureBorderTiles: (p) => ensureBorderTiles(p),
+      hasTransportRouteEstimator,
+      estimateTransportRouteTicks,
 
       // ── §SHIM-DATA accessors (structure placement) ────────────────────────
       // Water-component reconstruction (full-resolution union-find, cached once
@@ -645,6 +1087,7 @@
       // core SharedWaterCache. railroadState exposes the real rail-tile buffer in
       // the extension (null under the harness → proximity fallback).
       getWaterComponent: (tile) => getWaterComponent(tile),
+      hasSharedWater: (p) => hasSharedWater(p),
       sharedWaterComponents: (p) => sharedWaterComponents(p),
       railroadState: () => railroadState(),
 
@@ -654,98 +1097,127 @@
     };
 
     // ── per-tick snapshot ─────────────────────────────────────────────────────
+    function monotonicNow() {
+      return typeof performance !== "undefined" && performance.now
+        ? performance.now() : Date.now();
+    }
+
+    function reusableBorderSet(cached, now) {
+      if (!cached?.set?.size || now - (cached.at || 0) >= 1500) return null;
+      return cached.set;
+    }
+
+    async function fetchBorderSet(core) {
+      {
+        const response = await withTimeout(core.borderTiles(), 4000, null);
+        const tiles = response?.borderTiles ?? response;
+        if (!tiles) return null;
+        const result = new Set(tiles);
+        return result.size > 0 ? result : null;
+      }
+    }
+
     async function ensureBorderTiles(player) {
       const core = unwrap(player);
       const sid = core.smallID();
-      const tick = src.ticks();
       const cached = borderCache.get(sid);
-      const now =
-        typeof performance !== "undefined" && performance.now
-          ? performance.now()
-          : Date.now();
+      const now = monotonicNow();
       // TIME-BASED reuse (not per-tick): serve a border up to ~1.5s old instead of
       // re-hitting the worker every tick. CRITICAL at MAX game speed, where the
       // worker/client is saturated by GameUpdates and a per-tick borderTiles
       // request times out → empty → BLIND bot. (Mirrors the old 2.2s border cache.)
-      const BORDER_REUSE_MS = 1500;
-      if (
-        cached &&
-        cached.set &&
-        cached.set.size > 0 &&
-        now - (cached.at || 0) < BORDER_REUSE_MS
-      ) {
-        return cached.set;
-      }
+      const reusable = reusableBorderSet(cached, now);
+      if (reusable) return reusable;
       // Don't pile up concurrent requests for the same player (worsens saturation)
       // — if a fetch is already in flight, serve the last-good set immediately.
-      if (cached && cached.inFlight) {
-        return cached.set || new Set();
-      }
+      if (cached?.inFlight) return cached.set || new Set();
       const entry = cached || { at: 0, set: new Set(), inFlight: false };
       entry.inFlight = true;
       borderCache.set(sid, entry);
-      let fetched = null;
-      try {
-        // Longer timeout than the default — at max speed the worker may be slow.
-        const res = await withTimeout(core.borderTiles(), 4000, null);
-        const s = res && res.borderTiles ? res.borderTiles : res;
-        if (s) {
-          const ns = new Set(s);
-          if (ns.size > 0) fetched = ns;
-        }
-      } catch (_e) {
-        /* keep last good */
-      }
+      const fetched = await fetchBorderSet(core);
       entry.inFlight = false;
       if (fetched !== null) {
         entry.set = fetched;
-        entry.at =
-          typeof performance !== "undefined" && performance.now
-            ? performance.now()
-            : Date.now();
+        entry.at = monotonicNow();
       }
       // else: keep entry.set (last good) — never blank the bot.
       borderCache.set(sid, entry);
       return entry.set || new Set();
     }
 
+    function decayRelationOverlay(tick) {
+      if (lastSnapshotTick < 0 || tick <= lastSnapshotTick) return;
+      const steps = Math.min(tick - lastSnapshotTick, 50);
+      for (const [key, value] of overlay) {
+        let relation = value;
+        for (let index = 0; index < steps; index++) {
+          relation += -Math.sign(relation) * 0.05;
+          if (Math.abs(relation) >= 0.1) continue;
+          relation = 0;
+          break;
+        }
+        if (relation === 0) overlay.delete(key);
+        else overlay.set(key, relation);
+      }
+    }
+
+    async function refreshProfile(now) {
+      if (profileLoaded && now - profileFetchedAt < PROFILE_REFRESH_MS) return;
+      if (!profileInFlight) profileInFlight = loadProfile();
+      await profileInFlight;
+    }
+
+    async function loadProfile() {
+      try {
+        const profile = await withTimeout(unwrap(mePlayer).profile(), WORKER_TIMEOUT_MS, null);
+        if (profile?.relations) {
+          profileRelations = new Map(
+            Object.entries(profile.relations).map(([key, value]) => [Number(key), Number(value)]),
+          );
+        }
+      } finally {
+        profileLoaded = true;
+        profileFetchedAt = monotonicNow();
+        profileInFlight = null;
+      }
+    }
+
     // Called ONCE at the top of each decision tick, before any behavior runs.
     async function beginTick(meCorePlayer) {
-      mePlayer = wrapPlayer(meCorePlayer);
       const tick = src.ticks();
+      if (tick !== lastSnapshotTick) {
+        // PlayerView instances are snapshots and the client replaces them as the
+        // game advances. Retaining a wrapper by smallID across ticks would retain
+        // the old view too, which can turn a newly-grown tribe into an underfunded
+        // capture even though the troop calculation itself uses a 4x floor.
+        playerCache.clear();
+        playerSnapshot = null;
+        playerSnapshotTick = -1;
+        transportSpawnCache.clear();
+        transportRouteCache.clear();
+      }
+      mePlayer = wrapPlayer(meCorePlayer);
 
       // decay overlay 0.05/tick toward 0 (PlayerImpl.decayRelations) — once per
       // game tick crossed.
-      if (lastSnapshotTick >= 0 && tick > lastSnapshotTick) {
-        const steps = Math.min(tick - lastSnapshotTick, 50);
-        for (const [k, v] of overlay) {
-          let r = v;
-          for (let i = 0; i < steps; i++) {
-            const sign = -1 * Math.sign(r);
-            r += sign * 0.05;
-            if (Math.abs(r) < 0.1) {
-              r = 0;
-              break;
-            }
-          }
-          if (r === 0) overlay.delete(k);
-          else overlay.set(k, r);
-        }
-      }
+      decayRelationOverlay(tick);
       lastSnapshotTick = tick;
 
       // snapshot me.borderTiles + profile (relation buckets).
       await ensureBorderTiles(mePlayer);
-      try {
-        const prof = await withTimeout(unwrap(mePlayer).profile(), WORKER_TIMEOUT_MS, null);
-        if (prof && prof.relations) {
-          profileRelations = new Map(
-            Object.entries(prof.relations).map(([k, v]) => [Number(k), Number(v)]),
-          );
-          profileAlliances = (prof.alliances || []).map(Number);
+      await refreshProfile(monotonicNow());
+      // Open ocean is already answered directly from the cached border. Only
+      // an inland shore needs the component reconstruction, and its bounded
+      // slice belongs here rather than in a structure decision.
+      if (
+        typeof src.isShore === "function" &&
+        typeof src.isWater === "function" &&
+        typeof src.isOcean === "function"
+      ) {
+        const waterAccess = ownedWaterAccessSummary(mePlayer);
+        if (!waterAccess.hasOcean && waterAccess.hasInlandWater) {
+          advanceWaterLabelBuilder();
         }
-      } catch (_e) {
-        /* keep previous profile on failure */
       }
       return mePlayer;
     }

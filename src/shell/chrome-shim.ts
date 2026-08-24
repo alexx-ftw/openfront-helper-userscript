@@ -19,7 +19,7 @@ function getURL(path: string): string {
 
 const runtime = {
   id: "openfront-helper",
-  lastError: undefined as undefined,
+  lastError: undefined,
   getURL,
   getManifest: () => ({
     name: "OpenFront Helper",
@@ -28,28 +28,39 @@ const runtime = {
   }),
   sendMessage: runtimeSendMessage,
   onMessage: runtimeOnMessage,
-  onInstalled: { addListener() {}, removeListener() {} },
+  onInstalled: {
+    addListener() {
+      return undefined;
+    },
+    removeListener() {
+      return undefined;
+    },
+  },
 };
 
 const chromeShim = {
   runtime,
   storage: { local: storageLocal, onChanged: storageOnChanged },
   tabs,
-  action: { setIcon() {} },
-  windows: { create() {} },
+  action: {
+    setIcon() {
+      return undefined;
+    },
+  },
+  windows: {
+    create() {
+      return undefined;
+    },
+  },
 };
 
 export function installChromeShim(): typeof chromeShim {
   const w = window as unknown as Record<string, unknown>;
-  try {
+  {
     w.chrome = chromeShim;
-  } catch (error) {
-    console.warn("[ofh] could not set window.chrome:", error);
   }
-  try {
+  {
     if (typeof w.browser === "undefined") w.browser = chromeShim;
-  } catch {
-    /* ignore */
   }
   installCrossTabSync();
   return chromeShim;

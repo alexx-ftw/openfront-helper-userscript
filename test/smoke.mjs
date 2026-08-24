@@ -5,6 +5,7 @@ import { build as esbuild } from "esbuild";
 import assert from "node:assert";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -40,17 +41,41 @@ const makeEl = () => ({
   set textContent(_v) {},
 });
 
+const mountedElements = new Map();
+let launcherMounts = 0;
+let styleMounts = 0;
+let domContentLoadedListener = null;
+let documentRootObserver = null;
+const mountContainer = () => {
+  const el = makeEl();
+  el.appendChild = (child) => {
+    if (child.id) mountedElements.set(child.id, child);
+    if (child.id === "openfront-helper-launcher") launcherMounts += 1;
+    if (child.id === "openfront-helper-popup-styles") styleMounts += 1;
+    return child;
+  };
+  return el;
+};
+
 globalThis.document = {
-  readyState: "complete",
-  body: makeEl(),
+  readyState: "loading",
+  body: null,
   documentElement: makeEl(),
-  head: makeEl(),
-  getElementById: () => null,
+  head: null,
+  getElementById: (id) => mountedElements.get(id) ?? null,
   querySelector: () => null,
   querySelectorAll: () => [],
   createElement: () => makeEl(),
-  addEventListener() {},
+  addEventListener(type, listener) {
+    if (type === "DOMContentLoaded") domContentLoadedListener = listener;
+  },
   removeEventListener() {},
+};
+globalThis.MutationObserver = class {
+  constructor(callback) {
+    documentRootObserver = callback;
+  }
+  observe() {}
 };
 
 const win = {
@@ -86,7 +111,28 @@ const result = await esbuild({
   target: "es2020",
   write: false,
 });
-new Function(result.outputFiles[0].text)();
+executeClassicScript(result.outputFiles[0].text, globalThis, { filename: "shell-smoke-bundle.js" });
+
+assert.equal(launcherMounts, 0, "launcher waits while document body and head are absent");
+assert.equal(typeof domContentLoadedListener, "function", "launcher registers a DOM-ready mount");
+document.head = mountContainer();
+document.body = mountContainer();
+document.readyState = "interactive";
+domContentLoadedListener();
+assert.equal(launcherMounts, 1, "launcher mounts once when the DOM becomes ready");
+assert.ok(
+  document.getElementById("openfront-helper-launcher"),
+  "launcher is present after DOM ready",
+);
+mountedElements.delete("openfront-helper-launcher");
+document.body = mountContainer();
+documentRootObserver();
+assert.equal(launcherMounts, 2, "launcher remounts after the page replaces its body");
+mountedElements.delete("openfront-helper-popup-styles");
+document.head = mountContainer();
+documentRootObserver();
+assert.equal(styleMounts, 2, "launcher styles remount after the page replaces its head");
+assert.equal(launcherMounts, 2, "style recovery does not duplicate the launcher");
 
 const chrome = win.chrome;
 assert.equal(chrome.runtime.id, "openfront-helper", "runtime.id set on fresh shim");
@@ -145,4 +191,4 @@ assert.equal(viBundle.hi, "hi", "i18n keeps DEFAULT_TRANSLATIONS");
 const enBundle = await win.OpenFrontHelperI18n.loadBundle("en");
 assert.equal(enBundle.a, "1", "i18n returns English for en");
 
-console.log("SMOKE OK — standalone shell wires up cleanly");
+process.stdout.write("SMOKE OK — standalone shell wires up cleanly\n");

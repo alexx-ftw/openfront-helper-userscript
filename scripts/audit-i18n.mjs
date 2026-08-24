@@ -26,14 +26,18 @@ function walk(dir) {
 const FILES = walk(path.join(root, "engine"));
 
 const keys = new Set();
-const reDq = /\b(?:t|tr)\("((?:[^"\\]|\\.)+)"\)/g;
-const reTl = /\b(?:t|tr)\(`([^`]*)`\)/g;
+// Every call-site spelling used across the engine: the lobby layer's t()/tr(),
+// the Quick Panel's local _tr(), and the Companion panel's local companionTr().
+// A leading \b before "t"/"tr" would reject "_tr(" and "companionTr(" outright
+// (no word-boundary between "_"/"n" and the following letter), so this instead
+// requires the character before the call to be a non-identifier character (or
+// string start) via a negative lookbehind.
+const reDq = /(?<![\w$])(?:companionTr|_tr|tr|t)\("((?:[^"\\]|\\.)+)"\)/g;
+const reTl = /(?<![\w$])(?:companionTr|_tr|tr|t)\(`([^`]*)`\)/g;
 for (const f of FILES) {
   let s;
-  try {
+  {
     s = read(f);
-  } catch {
-    continue;
   }
   let m;
   while ((m = reDq.exec(s))) keys.add(JSON.parse(`"${m[1]}"`));
@@ -51,7 +55,7 @@ const bundles = Object.fromEntries(
   codes.map((c) => [c, JSON.parse(read(`locales/${c}/common.json`))]),
 );
 
-console.log(`engine UI keys: ${engineKeys.length} · locales: ${codes.join(", ")}\n`);
+process.stdout.write(`engine UI keys: ${engineKeys.length} · locales: ${codes.join(", ")}\n\n`);
 let missingTotal = 0;
 for (const code of codes) {
   if (code === "en") continue;
@@ -61,13 +65,17 @@ for (const code of codes) {
   // terms are kept in English on purpose (MIRV, FFA, …), so this never fails.
   const sameAsEnglish = engineKeys.filter((k) => k in b && b[k] === k && /\s/.test(k));
   missingTotal += missing.length;
-  console.log(`[${code}] missing: ${missing.length}, kept-as-English: ${sameAsEnglish.length}`);
-  if (missing.length) console.log("  missing:   " + missing.join(" | "));
-  if (sameAsEnglish.length) console.log("  as-English: " + sameAsEnglish.join(" | "));
+  process.stdout.write(
+    `[${code}] missing: ${missing.length}, kept-as-English: ${sameAsEnglish.length}\n`,
+  );
+  if (missing.length) process.stdout.write("  missing:   " + missing.join(" | ") + "\n");
+  if (sameAsEnglish.length) {
+    process.stdout.write("  as-English: " + sameAsEnglish.join(" | ") + "\n");
+  }
 }
-console.log(
+process.stdout.write(
   missingTotal === 0
-    ? "\nOK — every locale covers all engine keys (missing keys fall back to English)."
-    : `\n${missingTotal} missing key(s).`,
+    ? "\nOK — every locale covers all engine keys (missing keys fall back to English).\n"
+    : `\n${missingTotal} missing key(s).\n`,
 );
 process.exit(missingTotal === 0 ? 0 : 1); // only MISSING keys fail; kept-as-English is fine

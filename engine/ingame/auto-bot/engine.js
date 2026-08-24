@@ -23,16 +23,11 @@
 
   // gameID for the PseudoRandom seed (src seeds simpleHash(playerId)+simpleHash(gameID)).
   function resolveGameId(srcGame) {
-    try {
+    {
       if (typeof srcGame.gameID === "function") return String(srcGame.gameID());
-    } catch (_e) {
-      /* fall through */
-    }
-    try {
+    }{
       const gc = srcGame.config().gameConfig();
       if (gc && gc.gameID != null) return String(gc.gameID);
-    } catch (_e) {
-      /* fall through */
     }
     return "openfront";
   }
@@ -40,64 +35,107 @@
   // =========================================================================
   // Engine tick — thin driver
   // =========================================================================
-  async function botTick() {
-    if (!state.settings.enabled || state.tickInFlight) return;
+  function currentAutoBotTickGeneration(tickGeneration) {
+    return state.settings.enabled && state.tickGeneration === tickGeneration;
+  }
 
-    const srcGame = getGame();
-    if (!srcGame) {
-      setStatus(tr("Waiting to enter game…"));
-      return;
-    }
-    if (isPublicLobby(srcGame)) {
-      setStatus(tr("⛔ Blocked in a public lobby"));
-      refreshGateBanner();
-      return;
-    }
-
-    const meCore = srcGame.myPlayer?.();
-    if (!meCore || !meCore.isPlayer?.()) {
-      setStatus(tr("Waiting for player…"));
-      return;
-    }
-
-    state.tickInFlight = true;
-    state.tickStartedAt = performance.now();
-    try {
-      updateSpeedFactor(srcGame);
-      const api = ensureGameApi(srcGame);
-
-      // (Re)build the orchestrator when the player identity changes (new game).
-      const seedKey = meCore.id?.();
-      if ((!_bot || _botSeedKey !== seedKey) && typeof NationBot === "function") {
-        _bot = new NationBot(api.game, {
-          gameId: resolveGameId(srcGame),
-          playerId: String(seedKey),
-        });
-        _botSeedKey = seedKey;
-      }
-
-      // Snapshot async data (me.borderTiles + profile) ONCE up front.
+  async function prepareAutoBotSnapshot(profile, api, meCore) {
+    const snapshot = async () => {
       await api.beginTick(meCore);
       const me = api.game.myPlayer();
       updateLive(api.game, me);
+    };
+    if (profile) {
+      await autoBotProfileAsyncPhase(profile, "snapshot", snapshot);
+      return;
+    }
+    await snapshot();
+  }
 
-      if (_bot) {
-        await _bot.tick(api.game.ticks());
-        setStatus(_bot.status || tr("Thinking…"));
-      } else {
-        setStatus(tr("Loading bot…"));
-      }
-    } catch (error) {
-      console.error("[AutoBot] tick error:", error);
-      setStatus(tr("Error (see console)"));
+  async function runAutoBotNationTick(profile, api, tickGeneration) {
+    if (!_bot) {
+      setStatus(tr("Loading bot…"));
+      return;
+    }
+    if (profile) {
+      await autoBotProfileAsyncPhase(profile, "nation-tick", () =>
+        _bot.tick(api.game.ticks(), profile, tickGeneration),
+      );
+    } else {
+      await _bot.tick(api.game.ticks(), null, tickGeneration);
+    }
+    if (currentAutoBotTickGeneration(tickGeneration)) {
+      setStatus(_bot.status || tr("Thinking…"));
+    }
+  }
+
+  function botTickGameContext() {
+    const srcGame = getGame();
+    if (!srcGame) {
+      setStatus(tr("Waiting to enter game…"));
+      return null;
+    }
+    const meCore = srcGame.myPlayer?.();
+    if (!meCore || (!meCore.isPlayer?.() && srcGame.inSpawnPhase?.() !== true)) {
+      setStatus(tr("Waiting for player…"));
+      return null;
+    }
+    return { srcGame, meCore };
+  }
+
+  function ensureNationBot(srcGame, api, meCore) {
+    const seedKey = meCore.clientID?.() ?? meCore.smallID?.() ?? meCore.id?.();
+    if ((!_bot || _botSeedKey !== seedKey) && typeof NationBot === "function") {
+      _bot = new NationBot(api.game, {
+        gameId: resolveGameId(srcGame),
+        playerId: String(seedKey),
+      });
+      _botSeedKey = seedKey;
+    }
+  }
+
+  async function botTick() {
+    if (!state.settings.enabled || state.tickInFlight) return;
+    const context = botTickGameContext();
+    // The local player has no owned territory until its spawn is accepted, so
+    // `isPlayer()` is false during precisely the phase where NationBot must
+    // emit that first spawn intent. Keep the eliminated-player guard after
+    // spawn, but let the spawn handler run against the pre-spawn player view.
+    if (!context) return;
+    const { srcGame, meCore } = context;
+
+    const tickGeneration = state.tickGeneration;
+    state.tickInFlight = true;
+    const profile = beginAutoBotProfileTick();
+    try {
+      const setupStartedAt = autoBotProfileStartPhase(profile);
+      updateSpeedFactor(srcGame);
+      const api = ensureGameApi(srcGame);
+
+      // Territory-backed IDs can appear or change when the initial spawn is
+      // materialized. `clientID()` identifies the local participant across
+      // both views, so prefer it for the bot lifetime key. Otherwise the
+      // engine rebuilds NationBot immediately after its opening intent and
+      // loses the aggregate Terra Nullius opening reservation.
+      ensureNationBot(srcGame, api, meCore);
+      autoBotProfileEndPhase(profile, "engine-setup", setupStartedAt);
+
+      // Snapshot async data (me.borderTiles + profile) ONCE up front.
+      await prepareAutoBotSnapshot(profile, api, meCore);
+
+      // A stop/restart can invalidate this snapshot while the worker call is
+      // pending. Do not hand stale state to the NationBot chain.
+      if (!currentAutoBotTickGeneration(tickGeneration)) return;
+      await runAutoBotNationTick(profile, api, tickGeneration);
     } finally {
       state.tickInFlight = false;
+      finishAutoBotProfileTick(profile);
       renderStatus();
     }
   }
 
   function updateLive(game, me) {
-    try {
+    {
       const troops = toNum(me.troops?.());
       const maxTroops = safeMaxTroops(game, me);
       state.live = {
@@ -106,16 +144,33 @@
         tiles: toNum(me.numTilesOwned?.()),
         fill: maxTroops > 0 ? troops / maxTroops : 0,
       };
-    } catch (_e) {
-      /* ignore */
     }
   }
 
-  // How often botTick runs in REAL time, scaled by game speed so the bot polls
-  // game ticks fast enough to never miss an attackTick (nationExecution does the
-  // real game-tick gating internally; engine just needs to poll often enough).
+  // The panel is also useful while the decision loop is paused, waiting on a
+  // worker, or explicitly disabled.  Keep its resource snapshot independent
+  // from botTick so gold/troops/tiles cannot freeze at the last bot decision.
+  function refreshLiveUiFromGame(srcGame) {
+    const me = srcGame?.myPlayer?.();
+    if (!me || me.isPlayer?.() !== true) return;
+    const maxTroops = Number(srcGame.config?.()?.maxTroops?.(me));
+    const troops = toNum(me.troops?.());
+    state.live = {
+      troops,
+      gold: toNum(me.gold?.()),
+      tiles: toNum(me.numTilesOwned?.()),
+      fill: Number.isFinite(maxTroops) && maxTroops > 0 ? troops / maxTroops : 0,
+    };
+  }
+
+  // How often botTick runs in REAL time. In win-fix mode this is also the combat
+  // decision cadence; nationExecution must not add another artificial delay.
   function desiredTickInterval() {
-    const base = state.settings.tickMs || 200;
+    const configured = state.settings.tickMs || 200;
+    const base =
+      typeof normalizeTickIntervalMs === "function"
+        ? normalizeTickIntervalMs(configured)
+        : configured;
     return clamp(base / Math.max(0.25, state.speed.factor || 1), 100, base);
   }
 
@@ -131,13 +186,19 @@
       window.clearInterval(state.tickTimer);
       state.tickTimer = null;
     }
-    state.tickInFlight = false;
+    // Do not clear tickInFlight here: the async tick may still be inside a
+    // worker call. Leaving the lock set prevents an immediate stop/start from
+    // launching a second chain before the first one reaches finally.
+    state.tickGeneration = (Number(state.tickGeneration) || 0) + 1;
   }
 
   function retuneEngine() {
     if (state.tickTimer === null) return;
     const want = desiredTickInterval();
-    if (Math.abs(want - (state.tickIntervalMs || 0)) > 60) {
+    // The panel changes tickMs in 50 ms steps. Do not leave the old timer
+    // running for a 50 ms adjustment: every valid setting must affect the
+    // actual polling cadence immediately.
+    if (want !== state.tickIntervalMs) {
       window.clearInterval(state.tickTimer);
       state.tickIntervalMs = want;
       state.tickTimer = window.setInterval(botTick, want);
@@ -158,6 +219,9 @@
   }
 
   function setStatus(text) {
+    if (state.status !== text && typeof roundLogRecord === "function") {
+      roundLogRecord("bot_decision", { kind: "status", previous: state.status, next: text });
+    }
     state.status = text;
   }
 
@@ -170,6 +234,9 @@
   }
 
   function pushLog(text, cat, ts) {
+    if (typeof roundLogRecord === "function") {
+      roundLogRecord("bot_decision", { kind: "action", category: cat, text: String(text) });
+    }
     state.log.unshift({ t: ts || Date.now(), cat, text: String(text) });
     if (state.log.length > LOG_CAP) state.log.length = LOG_CAP;
     if (state.activeTab === "log") renderLog();

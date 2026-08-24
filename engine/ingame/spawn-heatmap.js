@@ -4,602 +4,2316 @@
 //
 // TWO-PHASE scoring (exactly matching Tactical):
 //   Phase 1 — STATIC (computed once per map): land density, plains ratio,
-//             nation proximity, edge avoidance.
+//             edge avoidance.
 //   Phase 2 — DYNAMIC (recomputed every 250ms during spawn): adds player
-//             distance from spawn intents, enemy pressure, team spawn pull.
+//             distance from spawn intents, enemy pressure, team spawn pull,
+//             and proximity to tribe/nation expansion targets.
 //
 // Player positions come from SPAWN INTENTS (turn.intents with type==="spawn"),
 // not from current player positions — this is critical: the Tactical tracks
 // where players ARE SPAWNING, not where they currently are.
 
-  const SPAWN_HEATMAP_GRID_STEP = 16;
-  const SPAWN_HEATMAP_ANALYSIS_R = 30;
-  const SPAWN_HEATMAP_NATION_R = 120;
-  const SPAWN_HEATMAP_PLAYER_R = 150;
-  const SPAWN_HEATMAP_CELL = 14;
-  const SPAWN_HEATMAP_MAX_CELLS = 1200;
-  const SPAWN_HEATMAP_TOP_N = 5;
-  const SPAWN_HEATMAP_ENEMY_PRESSURE_R = 220;
-  const SPAWN_HEATMAP_TEAM_ATTRACT_R = 110;
-  const SPAWN_HEATMAP_TEAM_MIN_GAP = 30;
-  const SPAWN_HEATMAP_TEAM_IDEAL_MAX = 90;
-  const SPAWN_HEATMAP_TEAM_OVERLAP_MAX = 0.4;
-  const SPAWN_HEATMAP_TEAM_CENTROID_R = 260;
+const SPAWN_HEATMAP_GRID_STEP = 16;
+const SPAWN_HEATMAP_ANALYSIS_R = 30;
+const SPAWN_HEATMAP_TRIBE_R = 140;
+const SPAWN_HEATMAP_TRIBE_REACH_BASE_R = 80;
+const SPAWN_HEATMAP_TRIBE_REACH_BONUS_R = 160;
+const SPAWN_HEATMAP_TRIBE_CLUSTER_R = 80;
+const SPAWN_HEATMAP_NATION_R = 120;
+const SPAWN_HEATMAP_PLAYER_R = 150;
+const SPAWN_HEATMAP_CELL = 14;
+const SPAWN_HEATMAP_MAX_CELLS = 1200;
+// Keep the fallback scorer bounded to the same number of cells that can be
+// drawn. Exact bot ranking is still map-resolution, but large maps use this
+// deterministic visual path while the exact result is built incrementally.
+const SPAWN_HEATMAP_MAX_STATIC_CANDIDATES = SPAWN_HEATMAP_MAX_CELLS;
+// The static terrain sample is intentionally more expensive than the live
+// scorer. On continent-scale maps, 1,200 circular samples can monopolize the
+// first spawn decision for hundreds of milliseconds. A coarse, bounded grid
+// is enough to seed the immediate spawn; the exact ranker continues in idle
+// slices and takes over as soon as it is ready.
+const SPAWN_HEATMAP_LARGE_MAP_AREA = 750_000;
+const SPAWN_HEATMAP_LARGE_MAP_MAX_STATIC_CANDIDATES = 64;
+// The first automatic spawn has only a few game ticks to decide.  It must not
+// synchronously build the full visual sample or exact-map index; a small,
+// geometry-aware sample is enough to choose a legal seed while the richer
+// ranker is prepared in idle time for subsequent consumers.
+const SPAWN_HEATMAP_INITIAL_BOT_CANDIDATES = 64;
+const SPAWN_HEATMAP_TOP_N = 5;
+const EXACT_SPAWN_CANDIDATE_POOL_SIZE = SPAWN_HEATMAP_TOP_N * 8;
+const SPAWN_TOP_SPOT_MIN_DISTANCE = 60;
+const SPAWN_HEATMAP_ENEMY_PRESSURE_R = 220;
+// Strength weighting for the exact (bot-only) enemy-pressure axes: a spawned
+// rival's live troop count scales how hard its proximity presses on spawn
+// safety. Freshly spawned players sit at the neutral 1.0 weight and the cap
+// keeps one runaway giant from dominating the whole safety floor. The visual
+// heatmap never attaches weights, so the overlay semantics stay unchanged.
+const SPAWN_ENEMY_PRESSURE_WEIGHT_MIN = 1;
+const SPAWN_ENEMY_PRESSURE_WEIGHT_MAX = 2.5;
+const SPAWN_ENEMY_PRESSURE_WEIGHT_TROOP_SCALE = 20_000;
+const SPAWN_HEATMAP_TEAM_ATTRACT_R = 110;
+const SPAWN_HEATMAP_TEAM_MIN_GAP = 30;
+const SPAWN_HEATMAP_TEAM_IDEAL_MAX = 90;
+const SPAWN_HEATMAP_TEAM_OVERLAP_MAX = 0.4;
+const SPAWN_HEATMAP_TEAM_CENTROID_R = 260;
+const SPAWN_TEAM_INTERIOR_MARGIN = 12;
+// Coastal-access sampling for the exact selector: bounded radius-10 water
+// share with a rewarded 15-45% band peaking at ~30%.
+const SPAWN_COASTAL_SAMPLE_R = 10;
+const SPAWN_COASTAL_WATER_MIN_SHARE = 0.15;
+const SPAWN_COASTAL_WATER_PEAK_SHARE = 0.3;
+const SPAWN_COASTAL_WATER_MAX_SHARE = 0.45;
 
-  // Weights — exact match with Tactical.
-  const SPAWN_W = {
-    land: 0.25,
-    plains: 0.2,
-    nation: 0.25,
-    player: 0.25,
-    edge: 0.05,
-    team: 0.2,
-    teamCentroid: 0.08,
-    enemyPressure: 0.12,
+// The exact selector keeps ten map-sized typed arrays plus transient terrain
+// and occupancy copies. Keep its optional peak allocation below 32 MiB; larger maps
+// use the already bounded visual scorer instead of risking a tab-wide OOM.
+const SPAWN_INDEX_ESTIMATED_BYTES_PER_CELL = 32;
+const SPAWN_INDEX_MEMORY_BUDGET_BYTES = 32 * 1024 * 1024;
+const SPAWN_INDEX_BUILD_SLICE_MAX_MS = 4;
+const SPAWN_INDEX_BUILD_SLICE_MAX_CALLS = 8;
+const SPAWN_LAND_CONNECTIVITY_SLICE_TILES = 32_768;
+
+// Weights for the visual/fallback base score. The exact bot selector uses the
+// replay-free robust objective below; clan cohesion is only a late tie-break.
+const SPAWN_W = {
+  land: 0.25,
+  plains: 0.2,
+  tribe: 0.25,
+  nation: 0.25,
+  player: 0.25,
+  edge: 0.05,
+  team: 0.2,
+  // Retained for the exact selector's diagnostic score; ranking applies clan
+  // cohesion only after free-land availability and tribal expansion.
+  clan: 0.25,
+  teamCentroid: 0.08,
+  enemyPressure: 0.12,
+  // Exact selector's coastal-access term: rewards a modest share of nearby
+  // water (boats/ports) without surrendering the spawn footprint to ocean.
+  coastal: 0.1,
+};
+
+// ── Raw terrain access (THE anti-lag fix) ──────────────────────────────
+// Tactical is smooth because it reads the map's raw Uint8Array terrain buffer
+// (terrain[y*width+x]) instead of calling game.isLand()/magnitude() millions of
+// times through the GameView proxy. We get the SAME buffer straight off the
+// client GameView (gv._map.terrain — TS `private` is not enforced at runtime),
+// so no fetch hook is needed. Byte layout (GameMapImpl): bit 7 = land, low 5
+// bits = magnitude. If the buffer can't be reached (e.g. minified property
+// names), we bulk-read it once via the proxy into a local Uint8Array — a single
+// O(W*H) pass instead of the old ~15M repeated proxy calls.
+const SPAWN_IS_LAND_BIT = 7;
+const SPAWN_MAGNITUDE_MASK = 31;
+function isLandByte(byte) {
+  return (byte & (1 << SPAWN_IS_LAND_BIT)) !== 0;
+}
+function isPassableLandByte(byte) {
+  return isLandByte(byte) && (byte & SPAWN_MAGNITUDE_MASK) !== 31;
+}
+function isPlainsByte(byte) {
+  return isPassableLandByte(byte) && (byte & SPAWN_MAGNITUDE_MASK) < 10;
+}
+
+let _spawnTerrainCache = null; // { terrain, W, H, raw }
+let _spawnTerrainSrcRef = null;
+function spawnTerrainDimensions(game, fallback = {}) {
+  {
+    return {
+      W: game.width ? game.width() : fallback.W ?? 0,
+      H: game.height ? game.height() : fallback.H ?? 0,
+    };
+  }
+}
+
+function cachedSpawnTerrainIsCurrent(game, src) {
+  if (_spawnTerrainSrcRef !== src || !_spawnTerrainCache) return false;
+  const dimensions = spawnTerrainDimensions(game, _spawnTerrainCache);
+  const currentRaw = src?._map?.terrain ?? null;
+  const sameShape = dimensions.W === _spawnTerrainCache.W &&
+    dimensions.H === _spawnTerrainCache.H;
+  const sameTerrain = _spawnTerrainCache.raw
+    ? !currentRaw || currentRaw === _spawnTerrainCache.terrain : !currentRaw;
+  return sameShape && sameTerrain;
+}
+
+function rememberSpawnTerrain(src, terrain, W, H, raw) {
+  _spawnTerrainCache = { terrain, W, H, raw };
+  _spawnTerrainSrcRef = src;
+  return _spawnTerrainCache;
+}
+
+function rawSpawnTerrain(src, W, H) {
+  {
+    const terrain = src?._map?.terrain;
+    return terrain && typeof terrain.length === "number" && terrain.length >= W * H
+      ? terrain : null;
+  }
+}
+
+function reconstructSpawnTerrain(game, W, H) {
+  const terrain = new Uint8Array(W * H);
+  const terrainByte = typeof game.terrainByte === "function"
+    ? (ref) => game.terrainByte(ref) : null;
+  for (let ref = 0; ref < terrain.length; ref += 1) {
+    const byte = terrainByte ? terrainByte(ref) : reconstructedTerrainByte(game, ref);
+    if (isLandByte(byte)) {
+      terrain[ref] = (1 << SPAWN_IS_LAND_BIT) | (byte & SPAWN_MAGNITUDE_MASK);
+    }
+  }
+  return terrain;
+}
+
+function reconstructedTerrainByte(game, ref) {
+  if (!game.isLand(ref)) return 0;
+  const magnitude = game.magnitude ? game.magnitude(ref) & SPAWN_MAGNITUDE_MASK : 0;
+  return (1 << SPAWN_IS_LAND_BIT) | magnitude;
+}
+
+function getSpawnTerrain(game) {
+  const src = (game && game.__src) || game;
+  if (cachedSpawnTerrainIsCurrent(game, src)) return _spawnTerrainCache;
+  const { W, H } = spawnTerrainDimensions(game);
+  if (W <= 0 || H <= 0) return null;
+
+  const raw = rawSpawnTerrain(src, W, H);
+  if (raw) return rememberSpawnTerrain(src, raw, W, H, true);
+
+  {
+    return rememberSpawnTerrain(src, reconstructSpawnTerrain(game, W, H), W, H, false);
+  }
+}
+
+// ── Exact candidate index ──────────────────────────────────────────────
+// The heatmap remains a cheap visual approximation, but the bot gets an
+// exact, map-resolution candidate set from spawn-index.js. Building is
+// incremental so a large/new map never monopolizes the main thread.
+let _spawnCandidateIndex = null;
+let _spawnCandidateIndexSrcRef = null;
+let _spawnCandidateIndexTerrainRef = null;
+let _spawnCandidateBuildScheduled = false;
+let _spawnIntentVersion = 0;
+
+function getSpawnIndexApi() {
+  {
+    return typeof globalThis === "object" ? globalThis.__OFHSpawnIndex : null;
+  }
+}
+
+function getSpawnObjectiveApi() {
+  {
+    return typeof globalThis === "object" ? globalThis.__OFHSpawnObjective : null;
+  }
+}
+
+function rawSpawnMapState(game, size) {
+  {
+    const state = (game?.__src ?? game)?._map?.state;
+    return state && typeof state.length === "number" && state.length >= size
+      ? state : null;
+  }
+}
+
+function spawnPlayerSmallId(player) {
+  const id = Number(player?.smallID?.());
+  return Number.isFinite(id) ? id : null;
+}
+
+function spawnTileOwnedByPlayer(game, tile, player) {
+  const playerId = spawnPlayerSmallId(player);
+  return playerId != null && typeof game.ownerID === "function" && game.ownerID(tile) === playerId;
+}
+
+function getSpawnBlockedSnapshot(game, size) {
+  const blocked = new Uint8Array(size);
+  const state = rawSpawnMapState(game, size);
+  const playerId = spawnPlayerSmallId(game.myPlayer?.());
+  if (state) {
+    for (let ref = 0; ref < size; ref += 1) {
+      const ownerId = state[ref] & 0x0fff;
+      blocked[ref] = ownerId !== 0 && ownerId !== playerId ? 1 : 0;
+    }
+    return blocked;
+  }
+
+  if (typeof game.hasOwner !== "function") return blocked;
+  for (let ref = 0; ref < size; ref += 1) {
+    {
+      blocked[ref] = game.hasOwner(ref) && !spawnTileOwnedByPlayer(game, ref, game.myPlayer?.())
+        ? 1 : 0;
+    }
+  }
+  return blocked;
+}
+
+function scheduleSpawnCandidateBuild(index) {
+  const complete = index?.ready && index.landComponentsReady !== false;
+  if (!index || complete || _spawnCandidateBuildScheduled) return;
+  _spawnCandidateBuildScheduled = true;
+
+  const run = (deadline) => {
+    _spawnCandidateBuildScheduled = false;
+    if (index !== _spawnCandidateIndex) return;
+    const startedAt = performance.now();
+    let calls = 0;
+    if (deadline && typeof deadline.timeRemaining === "function") {
+      while (
+        (!index.ready || index.landComponentsReady === false) &&
+        deadline.timeRemaining() > 0 &&
+        calls < SPAWN_INDEX_BUILD_SLICE_MAX_CALLS &&
+        performance.now() - startedAt < SPAWN_INDEX_BUILD_SLICE_MAX_MS
+      ) {
+        if (
+          index.landComponentsReady === false &&
+          typeof index.buildLandComponentsSlice === "function"
+        ) {
+          index.buildLandComponentsSlice(SPAWN_LAND_CONNECTIVITY_SLICE_TILES);
+        }
+        index.buildSlice();
+        calls += 1;
+      }
+    } else {
+      if (
+        index.landComponentsReady === false &&
+        typeof index.buildLandComponentsSlice === "function"
+      ) {
+        index.buildLandComponentsSlice(SPAWN_LAND_CONNECTIVITY_SLICE_TILES);
+      }
+      index.buildSlice();
+    }
+    if (!index.ready || index.landComponentsReady === false) {
+      scheduleSpawnCandidateBuild(index);
+    }
   };
 
-  // ── Raw terrain access (THE anti-lag fix) ──────────────────────────────
-  // Tactical is smooth because it reads the map's raw Uint8Array terrain buffer
-  // (terrain[y*width+x]) instead of calling game.isLand()/magnitude() millions of
-  // times through the GameView proxy. We get the SAME buffer straight off the
-  // client GameView (gv._map.terrain — TS `private` is not enforced at runtime),
-  // so no fetch hook is needed. Byte layout (GameMapImpl): bit 7 = land, low 5
-  // bits = magnitude. If the buffer can't be reached (e.g. minified property
-  // names), we bulk-read it once via the proxy into a local Uint8Array — a single
-  // O(W*H) pass instead of the old ~15M repeated proxy calls.
-  const SPAWN_IS_LAND_BIT = 7;
-  const SPAWN_MAGNITUDE_MASK = 31;
-  function isLandByte(byte) {
-    return (byte & (1 << SPAWN_IS_LAND_BIT)) !== 0;
+  {
+    if (typeof requestIdleCallback === "function") {
+      requestIdleCallback(run);
+      return;
+    }
   }
-  function isPlainsByte(byte) {
-    return isLandByte(byte) && (byte & SPAWN_MAGNITUDE_MASK) < 10;
+  setTimeout(run, 0);
+}
+
+function cachedAsyncExactSpawnResult(src, indexVersion, signature) {
+  const matches = _asyncExactSpawnResultSrcRef === src &&
+    _asyncExactSpawnResultIndexVersion === indexVersion &&
+    _asyncExactSpawnResultSignature === signature;
+  return matches ? _asyncExactSpawnResult : undefined;
+}
+
+function asyncExactJobMatches(job, src, index, indexVersion) {
+  return Boolean(job && !job.done && job.src === src && job.index === index &&
+    job.indexVersion === indexVersion);
+}
+
+function ensureSpawnCandidateIndex(game) {
+  const api = getSpawnIndexApi();
+  const td = getSpawnTerrain(game);
+  if (!api || !td || typeof api.create !== "function") return null;
+  const mapSize = td.W * td.H;
+  if (
+    !Number.isSafeInteger(mapSize) ||
+    mapSize <= 0 ||
+    mapSize * SPAWN_INDEX_ESTIMATED_BYTES_PER_CELL >
+      SPAWN_INDEX_MEMORY_BUDGET_BYTES
+  ) {
+    return null;
+  }
+  const src = (game && game.__src) || game;
+  if (
+    _spawnCandidateIndexSrcRef !== src ||
+    _spawnCandidateIndexTerrainRef !== td.terrain ||
+    !_spawnCandidateIndex
+  ) {
+    _spawnCandidateIndex = api.create({
+      width: td.W,
+      height: td.H,
+      terrain: td.terrain,
+      blocked: getSpawnBlockedSnapshot(game, td.W * td.H),
+    });
+    _spawnCandidateIndexSrcRef = src;
+    _spawnCandidateIndexTerrainRef = td.terrain;
+  }
+  scheduleSpawnCandidateBuild(_spawnCandidateIndex);
+  return _spawnCandidateIndex;
+}
+
+function existingSpawnCandidateIndex(game) {
+  if (!_spawnCandidateIndex) return null;
+  const td = getSpawnTerrain(game);
+  const src = (game && game.__src) || game;
+  if (
+    _spawnCandidateIndexSrcRef !== src ||
+    _spawnCandidateIndexTerrainRef !== td?.terrain
+  ) {
+    return null;
+  }
+  return _spawnCandidateIndex;
+}
+
+function prepareSpawnCandidateConnectivity(game) {
+  const index = ensureSpawnCandidateIndex(game);
+  if (!index) return null;
+  return index.landComponentsReady === true;
+}
+
+function getSpawnCandidateConnectivitySnapshot() {
+  if (!_spawnCandidateIndex) return { supported: false, scheduled: false };
+  return {
+    supported: true,
+    scheduled: _spawnCandidateBuildScheduled,
+    ..._spawnCandidateIndex.stats(),
+  };
+}
+
+function resetSpawnCandidateIndex() {
+  _spawnCandidateIndex = null;
+  _spawnCandidateIndexSrcRef = null;
+  _spawnCandidateIndexTerrainRef = null;
+  _spawnCandidateBuildScheduled = false;
+  _exactSpawnCacheSrcRef = null;
+  _exactSpawnCacheIndexVersion = -1;
+  _exactSpawnCacheSignature = "";
+  _exactSpawnCacheResult = null;
+  _asyncExactSpawnJob = null;
+  _asyncExactSpawnResultSrcRef = null;
+  _asyncExactSpawnResultIndexVersion = -1;
+  _asyncExactSpawnResultSignature = "";
+  _asyncExactSpawnResult = null;
+}
+
+function invalidateSpawnTerrainRankingCaches() {
+  _spawnHeatmapData = null;
+  _spawnStaticCandidates = null;
+  _spawnStaticGameRef = null;
+  _spawnStaticTerrainRef = null;
+  _spawnStaticWidth = 0;
+  _spawnStaticHeight = 0;
+  _botTopSpotsTick = -1;
+  _botTopSpotsGameRef = null;
+  _botTopSpotsTerrainRef = null;
+  _botTopSpotsResult = null;
+  _initialBotTopSpotsGameRef = null;
+  _initialBotTopSpotsTerrainRef = null;
+  _initialBotTopSpotsSignature = null;
+  _initialBotTopSpotsIndexVersion = -1;
+  _initialBotTopSpotsResult = null;
+  _exactSpawnCacheSrcRef = null;
+  _exactSpawnCacheIndexVersion = -1;
+  _exactSpawnCacheSignature = "";
+  _exactSpawnCacheResult = null;
+  _asyncExactSpawnJob = null;
+  _asyncExactSpawnResultSrcRef = null;
+  _asyncExactSpawnResultIndexVersion = -1;
+  _asyncExactSpawnResultSignature = "";
+  _asyncExactSpawnResult = null;
+}
+
+function refreshSpawnCandidateTerrain(game, refs = null) {
+  const index = ensureSpawnCandidateIndex(game);
+  const td = getSpawnTerrain(game);
+  if (!index || !td || typeof index.syncTerrain !== "function") return 0;
+  if (td.raw) {
+    const changed = index.syncTerrain(td.terrain, refs);
+    if (changed > 0) {
+      invalidateSpawnTerrainRankingCaches();
+      scheduleSpawnCandidateBuild(index);
+    }
+    return changed;
   }
 
-  let _spawnTerrainCache = null; // { terrain, W, H, raw }
-  let _spawnTerrainSrcRef = null;
-  function getSpawnTerrain(game) {
+  const readByte = (ref) => {
+    {
+      if (typeof game.terrainByte === "function") return game.terrainByte(ref);
+      if (!game.isLand(ref)) return 0;
+      let byte = 1 << SPAWN_IS_LAND_BIT;
+      if (typeof game.magnitude === "function") byte |= game.magnitude(ref) & SPAWN_MAGNITUDE_MASK;
+      return byte;
+    }
+  };
+  const changed = index.syncTerrain(readByte, refs);
+  if (changed > 0) {
+    invalidateSpawnTerrainRankingCaches();
+    scheduleSpawnCandidateBuild(index);
+  }
+  return changed;
+}
+
+function getSpawnAreaForGame(game, me) {
+  {
+    const team = me && typeof me.team === "function" ? me.team() : null;
     const src = (game && game.__src) || game;
-    if (_spawnTerrainSrcRef === src && _spawnTerrainCache) return _spawnTerrainCache;
-    const W = game.width ? game.width() : 0;
-    const H = game.height ? game.height() : 0;
-    if (W <= 0 || H <= 0) return null;
-
-    // Fast path: the real Uint8Array off the GameView's GameMap.
-    try {
-      const map = src && src._map;
-      const raw = map && map.terrain;
-      if (raw && typeof raw.length === "number" && raw.length >= W * H) {
-        _spawnTerrainCache = { terrain: raw, W, H, raw: true };
-        _spawnTerrainSrcRef = src;
-        return _spawnTerrainCache;
-      }
-    } catch (_error) { /* fall through to bulk read */ }
-
-    // Fallback: reconstruct the buffer once via the proxy (O(W*H), one-time).
-    // Prefer terrainByte() — a single public proxy call per tile that returns the
-    // exact game byte (IS_LAND_BIT=7 + MAGNITUDE_MASK=0x1f match our constants),
-    // half the calls of isLand()+magnitude() and guaranteed to exist on every
-    // build. Only fall back to the two-call form if terrainByte is unavailable.
-    try {
-      const buf = new Uint8Array(W * H);
-      const n = W * H;
-      const byteFn =
-        typeof game.terrainByte === "function"
-          ? (ref) => game.terrainByte(ref)
-          : null;
-      if (byteFn) {
-        for (let ref = 0; ref < n; ref += 1) {
-          const b = byteFn(ref);
-          // Keep only the bits our scorer reads (land + magnitude); drop the rest.
-          if (b & (1 << SPAWN_IS_LAND_BIT)) {
-            buf[ref] = (1 << SPAWN_IS_LAND_BIT) | (b & SPAWN_MAGNITUDE_MASK);
-          }
-        }
-      } else {
-        for (let ref = 0; ref < n; ref += 1) {
-          if (game.isLand(ref)) {
-            let b = 1 << SPAWN_IS_LAND_BIT;
-            if (game.magnitude) b |= game.magnitude(ref) & SPAWN_MAGNITUDE_MASK;
-            buf[ref] = b;
-          }
-        }
-      }
-      _spawnTerrainCache = { terrain: buf, W, H, raw: false };
-      _spawnTerrainSrcRef = src;
-      return _spawnTerrainCache;
-    } catch (_error) {
-      return null;
+    if (team !== null && src && typeof src.teamSpawnArea === "function") {
+      return src.teamSpawnArea(team) || null;
     }
   }
+  return null;
+}
 
-  // Phase 1 cache: static candidates [{x, y, staticScore}]. Computed once per
-  // map (when game context changes). Sorted descending by staticScore.
-  let _spawnStaticCandidates = null;
-  let _spawnStaticGameRef = null;
+// Phase 1 cache: static candidates [{x, y, staticScore}]. Computed once per
+// map (when game context changes). Sorted descending by staticScore.
+let _spawnStaticCandidates = null;
+let _spawnStaticGameRef = null;
+let _spawnStaticTerrainRef = null;
+let _spawnStaticWidth = 0;
+let _spawnStaticHeight = 0;
 
-  // Phase 2 cache: final scores + top spots. Recomputed every 250ms.
-  let _spawnHeatmapData = null;
-  let _spawnHeatmapWasInSpawnPhase = false;
+// Phase 2 cache: final scores + top spots. Recomputed every 250ms.
+let _spawnHeatmapData = null;
+let _spawnHeatmapWasInSpawnPhase = false;
 
-  // Player spawn positions tracked from WebSocket spawn intents.
-  // Map: clientID -> {x, y}. Populated by observeSpawnIntents().
-  const _spawnPlayerPositions = new Map();
-  // Teammate clientIDs — refreshed each scan from getPlayerRelationToMyPlayer.
-  const _spawnTeammateClientIds = new Set();
+// Player spawn positions tracked from WebSocket spawn intents.
+// Map: clientID -> {x, y}. Populated by observeSpawnIntents().
+const _spawnPlayerPositions = new Map();
+// Teammate clientIDs — refreshed from the authoritative team relation, with
+// the stable team id as a spawn-phase fallback while player relations settle.
+const _spawnTeammateClientIds = new Set();
 
-  // ── Spawn intent tracking (from enemy-intent-intel WebSocket hook) ──────
-  // The enemy-intent-intel module already intercepts WS messages. We hook
-  // into its processWsMessage to also extract spawn intents.
+// ── Spawn intent tracking (from enemy-intent-intel WebSocket hook) ──────
+// The enemy-intent-intel module already intercepts WS messages. We hook
+// into its processWsMessage to also extract spawn intents.
 
-  function observeSpawnIntentsFromTurn(turn) {
-    if (!turn || !Array.isArray(turn.intents)) return;
-    for (let i = 0; i < turn.intents.length; i += 1) {
-      const intent = turn.intents[i];
-      if (!intent || intent.type !== "spawn") continue;
-      if (intent.clientID == null) continue;
-      const tile = Number(intent.tile);
-      if (!Number.isFinite(tile)) continue;
-      // We need world coords — but we don't have game.x(tile) here.
-      // Store the tile; convert to world coords during scan.
-      _spawnPlayerPositions.set(intent.clientID, { tile });
-    }
+function observeSpawnIntentsFromTurn(turn) {
+  if (!turn || !Array.isArray(turn.intents)) return;
+  for (let i = 0; i < turn.intents.length; i += 1) {
+    const intent = turn.intents[i];
+    if (!intent || intent.type !== "spawn") continue;
+    if (intent.clientID == null) continue;
+    const tile = Number(intent.tile);
+    if (!Number.isFinite(tile)) continue;
+    // We need world coords — but we don't have game.x(tile) here.
+    // Store the tile; convert to world coords during scan.
+    const previous = _spawnPlayerPositions.get(intent.clientID);
+    if (!previous || previous.tile !== tile) _spawnIntentVersion += 1;
+    _spawnPlayerPositions.set(intent.clientID, { tile });
   }
+}
 
-  // Hook into the existing WS message processor (enemy-intent-intel.js).
-  // We extend processWsMessage to also extract spawn intents.
-  const _originalProcessWsMessage = typeof processWsMessage === "function"
-    ? processWsMessage
-    : null;
-
-  function spawnHeatmapProcessWsMessage(data) {
-    // Call original if it exists.
-    if (_originalProcessWsMessage) _originalProcessWsMessage(data);
-    // Extract spawn intents.
-    if (!data || typeof data !== "object") return;
-    try {
-      if (data.type === "turn" && data.turn) {
-        observeSpawnIntentsFromTurn(data.turn);
-      } else if (data.type === "start" && Array.isArray(data.turns)) {
-        for (let i = 0; i < data.turns.length; i += 1) {
-          observeSpawnIntentsFromTurn(data.turns[i]);
-        }
-      }
-    } catch (_error) { /* ignore */ }
-  }
-
-  // ── Phase 1: Static scoring (computed once per map) ────────────────────
-
-  // 1:1 port of Tactical precomputeStaticScores — reads the raw terrain buffer
-  // directly (terrain[ny*W+nx]), skips water grid centers before the expensive
-  // neighbourhood scan, and uses a circular mask. This is what makes it fast.
-  function computeStaticCandidates(game) {
-    const td = getSpawnTerrain(game);
-    if (!td) return [];
-    const { terrain, W, H } = td;
-
-    const R = SPAWN_HEATMAP_ANALYSIS_R;
-    const R2 = R * R;
-    const step = SPAWN_HEATMAP_GRID_STEP;
-    const candidates = [];
-
-    // Gather nation-bot locations ONCE (not per candidate) for proximity scoring.
-    const nationLocs = collectNationLocations(game);
-
-    for (let cy = R; cy < H - R; cy += step) {
-      for (let cx = R; cx < W - R; cx += step) {
-        // Skip water grid centers immediately — avoids the neighbourhood scan
-        // for the majority of cells (ocean), the biggest single speedup.
-        if (!isLandByte(terrain[cy * W + cx])) continue;
-
-        let landCount = 0, plainsCount = 0, totalChecked = 0;
-        for (let dy = -R; dy <= R; dy += 2) {
-          const ny = cy + dy;
-          if (ny < 0 || ny >= H) continue;
-          const rowBase = ny * W;
-          const dy2 = dy * dy;
-          for (let dx = -R; dx <= R; dx += 2) {
-            if (dx * dx + dy2 > R2) continue; // circular mask
-            const nx = cx + dx;
-            if (nx < 0 || nx >= W) continue;
-            totalChecked += 1;
-            const byte = terrain[rowBase + nx];
-            if (isLandByte(byte)) {
-              landCount += 1;
-              if ((byte & SPAWN_MAGNITUDE_MASK) < 10) plainsCount += 1;
-            }
-          }
-        }
-
-        const landDensity = totalChecked > 0 ? landCount / totalChecked : 0;
-        const plainsRatio = landCount > 0 ? plainsCount / landCount : 0;
-        const nationScore = computeNationProximity(nationLocs, cx, cy);
-        const edgeX = Math.min(cx, W - cx) / (W / 2);
-        const edgeY = Math.min(cy, H - cy) / (H / 2);
-        const edgeScore = Math.min(edgeX, edgeY);
-
-        const staticScore =
-          landDensity * SPAWN_W.land +
-          plainsRatio * SPAWN_W.plains +
-          nationScore * SPAWN_W.nation +
-          edgeScore * SPAWN_W.edge;
-
-        candidates.push({ x: cx, y: cy, staticScore });
+// enemy-intent-intel.js calls this hook after its own processing. Keep this
+// hook one-way: calling processWsMessage() back here would recurse forever.
+function spawnHeatmapProcessWsMessage(data) {
+  // Extract spawn intents.
+  if (!data || typeof data !== "object") return;
+  {
+    if (data.type === "turn" && data.turn) {
+      observeSpawnIntentsFromTurn(data.turn);
+    } else if (data.type === "start" && Array.isArray(data.turns)) {
+      for (let i = 0; i < data.turns.length; i += 1) {
+        observeSpawnIntentsFromTurn(data.turns[i]);
       }
     }
-
-    candidates.sort((a, b) => b.staticScore - a.staticScore);
-    return candidates;
   }
+}
 
-  // Nation-bot territory centers, collected once per static computation.
-  function collectNationLocations(game) {
-    const locs = [];
-    let players = [];
-    try { players = getCachedPlayerViews(game) || []; } catch (_error) { players = []; }
-    for (let i = 0; i < players.length; i += 1) {
-      const p = players[i];
-      if (!p || !p.isAlive || !p.isAlive()) continue;
-      if (!isNationBotPlayer || !isNationBotPlayer(p)) continue;
-      let loc = null;
-      try { loc = p.nameLocation ? p.nameLocation() : null; } catch (_error) { loc = null; }
-      if (loc && Number.isFinite(loc.x) && Number.isFinite(loc.y)) locs.push(loc);
+// ── Phase 1: Static scoring (computed once per map) ────────────────────
+
+// 1:1 port of Tactical precomputeStaticScores — reads the raw terrain buffer
+// directly (terrain[ny*W+nx]), skips water grid centers before the expensive
+// neighbourhood scan, and uses a circular mask. This is what makes it fast.
+function sampleStaticSpawnRow(options, dy) {
+  const { terrain, W, H, cx, cy, radius } = options;
+  const y = cy + dy;
+  if (y < 0 || y >= H) return { land: 0, plains: 0, checked: 0 };
+  let land = 0;
+  let plains = 0;
+  let checked = 0;
+  for (let dx = -radius; dx <= radius; dx += 2) {
+    if (dx * dx + dy * dy > radius * radius) continue;
+    const x = cx + dx;
+    if (x < 0 || x >= W) continue;
+    checked += 1;
+    const byte = terrain[y * W + x];
+    if (!isPassableLandByte(byte)) continue;
+    land += 1;
+    if ((byte & SPAWN_MAGNITUDE_MASK) < 10) plains += 1;
+  }
+  return { land, plains, checked };
+}
+
+function sampleStaticSpawnTerrain(options) {
+  const { radius } = options;
+  let landCount = 0;
+  let plainsCount = 0;
+  let totalChecked = 0;
+  for (let dy = -radius; dy <= radius; dy += 2) {
+    const row = sampleStaticSpawnRow(options, dy);
+    landCount += row.land;
+    plainsCount += row.plains;
+    totalChecked += row.checked;
+  }
+  return { landCount, plainsCount, totalChecked };
+}
+
+// Bounded per-candidate water share for the exact scorer's coastal term.
+// The every-other-tile radius-10 lattice is precomputed once, so sampling a
+// candidate stays a fixed ~80-byte read instead of a nested rescan.
+const SPAWN_COASTAL_SAMPLE_OFFSETS = [];
+for (let dy = -SPAWN_COASTAL_SAMPLE_R; dy <= SPAWN_COASTAL_SAMPLE_R; dy += 2) {
+  for (let dx = -SPAWN_COASTAL_SAMPLE_R; dx <= SPAWN_COASTAL_SAMPLE_R; dx += 2) {
+    if (dx * dx + dy * dy <= SPAWN_COASTAL_SAMPLE_R * SPAWN_COASTAL_SAMPLE_R) {
+      SPAWN_COASTAL_SAMPLE_OFFSETS.push([dx, dy]);
     }
-    return locs;
   }
+}
 
-  function computeNationProximity(nationLocs, cx, cy) {
-    let minDist = Infinity;
-    for (let i = 0; i < nationLocs.length; i += 1) {
-      const loc = nationLocs[i];
-      const d = Math.abs(loc.x - cx) + Math.abs(loc.y - cy);
-      if (d < minDist) minDist = d;
-    }
-    if (!Number.isFinite(minDist)) return 0;
-    return Math.max(0, 1 - minDist / SPAWN_HEATMAP_NATION_R);
+// Out-of-map lattice points count as non-water, so map-edge candidates keep a
+// conservative share instead of mistaking the void for extra coastline.
+function sampleCoastalWaterShare(terrain, W, H, cx, cy) {
+  if (!terrain) return 0;
+  let water = 0;
+  for (let index = 0; index < SPAWN_COASTAL_SAMPLE_OFFSETS.length; index += 1) {
+    const [dx, dy] = SPAWN_COASTAL_SAMPLE_OFFSETS[index];
+    const x = cx + dx;
+    const y = cy + dy;
+    if (x < 0 || x >= W || y < 0 || y >= H) continue;
+    if (!isLandByte(terrain[y * W + x])) water += 1;
   }
+  return water / SPAWN_COASTAL_SAMPLE_OFFSETS.length;
+}
 
-  // ── Phase 2: Dynamic scoring (recomputed every 250ms) ──────────────────
-
-  function refreshTeammateClientIds(game, me) {
-    _spawnTeammateClientIds.clear();
-    if (!me) return;
-    const players = getCachedPlayerViews(game);
-    for (let i = 0; i < players.length; i += 1) {
-      const p = players[i];
-      if (!p || !p.isAlive || !p.isAlive()) continue;
-      try {
-        if (me.isOnSameTeam && me.isOnSameTeam(p)) {
-          const cid = p.clientID ? p.clientID() : null;
-          if (cid != null) _spawnTeammateClientIds.add(cid);
-        }
-      } catch (_error) { /* ignore */ }
-    }
+// Tent over the rewarded water band: 1 at the ~30% peak, linearly fading to 0
+// at the 15%/45% edges. Purely landlocked and open-ocean disks both score 0.
+function coastalAccessScore(waterShare) {
+  if (waterShare < SPAWN_COASTAL_WATER_MIN_SHARE || waterShare > SPAWN_COASTAL_WATER_MAX_SHARE) {
+    return 0;
   }
+  const deviation = waterShare < SPAWN_COASTAL_WATER_PEAK_SHARE
+    ? SPAWN_COASTAL_WATER_PEAK_SHARE - waterShare
+    : waterShare - SPAWN_COASTAL_WATER_PEAK_SHARE;
+  return 1 - deviation / (SPAWN_COASTAL_WATER_PEAK_SHARE - SPAWN_COASTAL_WATER_MIN_SHARE);
+}
 
-  function teamAttractScore(dist) {
-    // Piecewise function matching Tactical exactly.
-    if (dist >= SPAWN_HEATMAP_TEAM_ATTRACT_R) return 0;
-    if (dist <= SPAWN_HEATMAP_TEAM_MIN_GAP) {
-      return (dist / SPAWN_HEATMAP_TEAM_MIN_GAP) * SPAWN_HEATMAP_TEAM_OVERLAP_MAX;
-    }
-    if (dist <= SPAWN_HEATMAP_TEAM_IDEAL_MAX) return 1.0;
-    // 90 < dist < 110
-    return (SPAWN_HEATMAP_TEAM_ATTRACT_R - dist) / (SPAWN_HEATMAP_TEAM_ATTRACT_R - SPAWN_HEATMAP_TEAM_IDEAL_MAX);
+function createStaticSpawnCandidate(options) {
+  const { W, H, cx: x, cy: y } = options;
+  const sample = sampleStaticSpawnTerrain(options);
+  const landDensity = sample.totalChecked > 0
+    ? sample.landCount / sample.totalChecked : 0;
+  const plainsRatio = sample.landCount > 0
+    ? sample.plainsCount / sample.landCount : 0;
+  const edgeX = Math.min(x, W - x) / (W / 2);
+  const edgeY = Math.min(y, H - y) / (H / 2);
+  const staticScore = landDensity * SPAWN_W.land + plainsRatio * SPAWN_W.plains +
+    Math.min(edgeX, edgeY) * SPAWN_W.edge;
+  return { x, y, staticScore, freeLandScore: landDensity };
+}
+
+function spawnCandidateRegionBounds(region, W, H, radius) {
+  if (!region) return { minX: radius, maxX: W - radius, minY: radius, maxY: H - radius };
+  const points = region.polygon ?? [region.corridor?.start, region.corridor?.end].filter(Boolean);
+  if (points.length === 0) {
+    return { minX: radius, maxX: W - radius, minY: radius, maxY: H - radius };
   }
+  const padding = region.corridor?.halfWidth ?? 0;
+  return {
+    minX: Math.max(radius, Math.floor(Math.min(...points.map((point) => point.x)) - padding)),
+    maxX: Math.min(W - radius, Math.ceil(Math.max(...points.map((point) => point.x)) + padding)),
+    minY: Math.max(radius, Math.floor(Math.min(...points.map((point) => point.y)) - padding)),
+    maxY: Math.min(H - radius, Math.ceil(Math.max(...points.map((point) => point.y)) + padding)),
+  };
+}
 
-  function computeDynamicScores(game, staticCandidates, me) {
-    const W = game.width ? game.width() : 0;
-    const H = game.height ? game.height() : 0;
+function computeStaticCandidatesWithBudget(
+  game,
+  candidateBudget,
+  teamRegion = null,
+  assignedArea = null,
+) {
+  const td = getSpawnTerrain(game);
+  if (!td) return [];
+  const { terrain, W, H } = td;
 
-    // Enemy / team spawn positions from the GAME API (players that have spawned,
-    // via nameLocation). The old WebSocket-intent source is gone; this is the
-    // same signal the auto-bot's pickSpawnCenter uses, so the heatmap and the bot
-    // agree on where players are.
-    //
-    // CRITICAL PERF: only count HUMAN players here — this mirrors Tactical, which
-    // sourced positions from WS spawn intents (only human clients emit those).
-    // A public game has up to ~400 NATION bots that all report hasSpawned()=true
-    // from tick 0; including them made enemySpawns huge and turned the per-cell
-    // scoring into an O(candidates × hundreds) loop that froze the spawn phase.
-    // Nations are already fully accounted for in the STATIC phase (nationScore),
-    // so counting them here also double-counted them. Bots ("BOT") are likewise
-    // excluded — they're not the human opponents the repel term is about.
-    const enemySpawns = [];
-    const teamSpawns = [];
-    const mySid = me && me.smallID ? me.smallID() : null;
-    const players = getCachedPlayerViews(game);
-    for (let i = 0; i < players.length; i += 1) {
-      const p = players[i];
-      if (!p || !p.isAlive || !p.isAlive()) continue;
-      try {
-        // Humans only (skip NATION + BOT). PlayerType.Human = "HUMAN".
-        if (!p.type || p.type() !== "HUMAN") continue;
-        if (mySid != null && p.smallID && p.smallID() === mySid) continue;
-        if (!p.hasSpawned || !p.hasSpawned()) continue;
-      } catch (_error) { continue; }
-      let loc = null;
-      try { loc = p.nameLocation ? p.nameLocation() : null; } catch (_error) { loc = null; }
-      if (!loc || !Number.isFinite(loc.x) || !Number.isFinite(loc.y)) continue;
-      let isTeammate = false;
-      try {
-        isTeammate = Boolean(me && me.isOnSameTeam && me.isOnSameTeam(p));
-      } catch (_error) { isTeammate = false; }
-      if (isTeammate) {
-        teamSpawns.push({ x: loc.x, y: loc.y });
-      } else {
-        enemySpawns.push({ x: loc.x, y: loc.y });
+  const R = SPAWN_HEATMAP_ANALYSIS_R;
+  const regionBounds = spawnCandidateRegionBounds(teamRegion, W, H, R);
+  const bounds = assignedArea
+    ? {
+        minX: Math.max(regionBounds.minX, Math.ceil(assignedArea.x)),
+        maxX: Math.min(
+          regionBounds.maxX,
+          Math.ceil(assignedArea.x + assignedArea.width),
+        ),
+        minY: Math.max(regionBounds.minY, Math.ceil(assignedArea.y)),
+        maxY: Math.min(
+          regionBounds.maxY,
+          Math.ceil(assignedArea.y + assignedArea.height),
+        ),
       }
-    }
-    const teamMode = teamSpawns.length > 0;
+    : regionBounds;
+  const spanWidth = Math.max(1, bounds.maxX - bounds.minX);
+  const spanHeight = Math.max(1, bounds.maxY - bounds.minY);
+  const boundedStep = Math.ceil(
+    Math.sqrt(
+      (spanWidth * spanHeight) / candidateBudget,
+    ),
+  );
+  const step = Math.max(SPAWN_HEATMAP_GRID_STEP, boundedStep);
+  const candidates = [];
 
-    // Compute team centroid (if team mode).
-    let teamCentroidX = 0, teamCentroidY = 0;
-    if (teamSpawns.length > 0) {
-      for (const s of teamSpawns) {
-        teamCentroidX += s.x;
-        teamCentroidY += s.y;
-      }
-      teamCentroidX /= teamSpawns.length;
-      teamCentroidY /= teamSpawns.length;
-    }
-
-    const out = [];
-    let maxScore = 0;
-
-    for (const cand of staticCandidates) {
-      const { x, y, staticScore } = cand;
-      let score = staticScore;
-
-      // Player distance: distance from nearest enemy spawn (farther = better).
-      let minEnemyDist = Infinity;
-      for (const es of enemySpawns) {
-        const d = Math.abs(es.x - x) + Math.abs(es.y - y);
-        if (d < minEnemyDist) minEnemyDist = d;
-      }
-      const playerDistScore = Number.isFinite(minEnemyDist)
-        ? Math.min(1, minEnemyDist / SPAWN_HEATMAP_PLAYER_R)
-        : 1;
-      score += playerDistScore * SPAWN_W.player;
-
-      // Enemy pressure: density of enemies within 220 tiles.
-      let pressure = 0;
-      for (const es of enemySpawns) {
-        const d = Math.abs(es.x - x) + Math.abs(es.y - y);
-        if (d < SPAWN_HEATMAP_ENEMY_PRESSURE_R) {
-          pressure += 1 - d / SPAWN_HEATMAP_ENEMY_PRESSURE_R;
-        }
-      }
-      const enemyPressureScore = pressure > 0 ? 1 - 1 / (1 + pressure) : 1;
-      score += enemyPressureScore * SPAWN_W.enemyPressure;
-
-      // Team terms (team mode only).
-      if (teamMode) {
-        // Team attract: distance from nearest teammate spawn.
-        let minTeamDist = Infinity;
-        for (const ts of teamSpawns) {
-          const d = Math.abs(ts.x - x) + Math.abs(ts.y - y);
-          if (d < minTeamDist) minTeamDist = d;
-        }
-        const teamAttract = Number.isFinite(minTeamDist) ? teamAttractScore(minTeamDist) : 0;
-        score += teamAttract * SPAWN_W.team;
-
-        // Team centroid: distance from team centroid.
-        if (teamSpawns.length > 0) {
-          const centroidDist = Math.abs(teamCentroidX - x) + Math.abs(teamCentroidY - y);
-          const centroidScore = Math.max(0, 1 - centroidDist / SPAWN_HEATMAP_TEAM_CENTROID_R);
-          score += centroidScore * SPAWN_W.teamCentroid * Math.min(1, teamSpawns.length / 2);
-        }
-      }
-
-      if (score > maxScore) maxScore = score;
-      out.push({ x, y, score });
-    }
-
-    // Pick diverse top spots (greedy, >= 60 tiles apart).
-    out.sort((a, b) => b.score - a.score);
-    const topSpots = [];
-    for (const cand of out) {
-      if (topSpots.length >= SPAWN_HEATMAP_TOP_N) break;
-      let diverse = true;
-      for (const spot of topSpots) {
-        if (Math.abs(cand.x - spot.x) + Math.abs(cand.y - spot.y) < 60) {
-          diverse = false;
-          break;
-        }
-      }
-      if (diverse) topSpots.push({ x: cand.x, y: cand.y });
-    }
-
-    return { scores: out, topSpots, maxScore };
-  }
-
-  // ── Main scan (called by scheduler every 250ms) ────────────────────────
-
-  function scanSpawnHeatmap(game) {
-    const inSpawnPhase = Boolean(game.inSpawnPhase && game.inSpawnPhase());
-    if (_spawnHeatmapWasInSpawnPhase && !inSpawnPhase) {
-      _spawnHeatmapData = null;
-      _spawnStaticCandidates = null;
-      _spawnStaticGameRef = null;
-      _spawnPlayerPositions.clear();
-      _spawnHeatmapWasInSpawnPhase = false;
-      return;
-    }
-    _spawnHeatmapWasInSpawnPhase = inSpawnPhase;
-    if (!inSpawnPhase) {
-      _spawnHeatmapData = null;
-      return;
-    }
-
-    // Phase 1: static candidates (shared with the bot, computed once per map).
-    const candidates = ensureSpawnStaticCandidates(game);
-    if (!candidates || candidates.length === 0) {
-      _spawnHeatmapData = null;
-      return;
-    }
-
-    // Phase 2: dynamic scoring using live game-API player positions.
-    const me = game.myPlayer ? game.myPlayer() : null;
-    _spawnHeatmapData = computeDynamicScores(game, candidates, me);
-  }
-
-  // ONE static-candidate cache shared by the overlay and the auto-bot, keyed on
-  // the unwrapped source GameView (the bot passes a wrapper, the overlay the raw
-  // game — both resolve to the same underlying object, so the heavy grid scan
-  // runs a single time per map).
-  function ensureSpawnStaticCandidates(game) {
-    const src = (game && game.__src) || game;
-    if (_spawnStaticGameRef !== src || _spawnStaticCandidates === null) {
-      _spawnStaticCandidates = computeStaticCandidates(game);
-      _spawnStaticGameRef = src;
-    }
-    return _spawnStaticCandidates;
-  }
-
-  // The exact topSpots array currently drawn on the map (or null). The auto-bot
-  // reads this first so it spawns at literally the same #1 the player sees.
-  function getSpawnHeatmapTopSpots() {
-    return _spawnHeatmapData && _spawnHeatmapData.topSpots && _spawnHeatmapData.topSpots.length > 0
-      ? _spawnHeatmapData.topSpots
-      : null;
-  }
-
-  // Shared scorer entry point for the auto-bot. Computes the SAME topSpots the
-  // heatmap draws, so the bot spawns exactly where the #1 circle appears. Reuses
-  // the shared static-candidate cache (works even if the heatmap is disabled).
-  //
-  // Per-tick memo: the bot calls this twice in the same tick (currentSpawnTopKey
-  // then pickSpawnCenter) with identical inputs, and if the overlay is on it also
-  // ran computeDynamicScores this tick. Cache the result per game-tick so the
-  // dynamic scoring pass runs at most once per tick regardless of how many
-  // callers ask for it.
-  let _botTopSpotsTick = -1;
-  let _botTopSpotsGameRef = null;
-  let _botTopSpotsResult = null;
-  function computeSpawnTopSpotsForBot(game, me) {
-    try {
-      const src = (game && game.__src) || game;
-      let tick = -1;
-      try { tick = Number(game.ticks ? game.ticks() : -1); } catch (_e) { tick = -1; }
+  for (let cy = bounds.minY; cy < bounds.maxY; cy += step) {
+    for (let cx = bounds.minX; cx < bounds.maxX; cx += step) {
+      // An explicit map teamSpawnArea is authoritative. Teammate anchors can
+      // arrive from neighboring/previous geometry and form a hull that does
+      // not intersect the assigned rectangle (More Than Luck 5-team trace:
+      // valid 250x250 area, empty candidate intersection, spawn_failed).
       if (
-        _botTopSpotsGameRef === src &&
-        Number.isFinite(tick) &&
-        tick === _botTopSpotsTick
-      ) {
-        return _botTopSpotsResult;
-      }
-      const _botSpawnStaticCandidates = ensureSpawnStaticCandidates(game);
-      if (!_botSpawnStaticCandidates || _botSpawnStaticCandidates.length === 0) {
-        return null;
-      }
-      const data = computeDynamicScores(game, _botSpawnStaticCandidates, me);
-      const result =
-        data && data.topSpots && data.topSpots.length > 0 ? data.topSpots : null;
-      _botTopSpotsGameRef = src;
-      _botTopSpotsTick = Number.isFinite(tick) ? tick : -1;
-      _botTopSpotsResult = result;
-      return result;
-    } catch (_error) {
-      return null;
+        teamRegion &&
+        !assignedArea &&
+        !isPointInsideTeamSpawnRegion(cx, cy, teamRegion)
+      ) continue;
+      // Skip water grid centers immediately — avoids the neighbourhood scan
+      // for the majority of cells (ocean), the biggest single speedup.
+      if (!isPassableLandByte(terrain[cy * W + cx])) continue;
+
+      candidates.push(createStaticSpawnCandidate({ terrain, W, H, cx, cy, radius: R }));
     }
   }
 
-  // ── Draw ────────────────────────────────────────────────────────────────
+  candidates.sort((a, b) => b.staticScore - a.staticScore);
+  return candidates;
+}
 
-  const _spawnCellPt = { x: 0, y: 0 };
-  function drawSpawnHeatmap(ctx, game, transform) {
-    if (!_spawnHeatmapData || _spawnHeatmapData.maxScore <= 0) return;
-    const { scores, topSpots, maxScore } = _spawnHeatmapData;
-    const cell = SPAWN_HEATMAP_CELL;
-    const halfCell = cell / 2;
-    const innerW = window.innerWidth;
-    const innerH = window.innerHeight;
-    const invMax = 1 / maxScore;
-    let drawn = 0;
+function computeStaticCandidates(game) {
+  const td = getSpawnTerrain(game);
+  if (!td) return [];
+  const candidateBudget = td.W * td.H > SPAWN_HEATMAP_LARGE_MAP_AREA
+    ? SPAWN_HEATMAP_LARGE_MAP_MAX_STATIC_CANDIDATES
+    : SPAWN_HEATMAP_MAX_STATIC_CANDIDATES;
+  return computeStaticCandidatesWithBudget(game, candidateBudget);
+}
 
-    // Derive the affine projector ONCE (3 transform calls) then project every
-    // cell with arithmetic — avoids ~1200 worldToScreenCoordinates per frame.
-    const proj = mapMakeProjector(transform);
-    if (!proj) return;
+function getSpawnPlayerType(player) {
+  {
+    const type = player && typeof player.type === "function" ? player.type() : null;
+    if (type) return type;
+  }{
+    return player && player.data ? player.data.playerType : null;
+  }
+}
 
-    ctx.save();
-    // Colored heatmap cells — only when the heatmap layer is on.
-    if (spawnHeatmapEnabled) {
-      for (let i = 0; i < scores.length && drawn < SPAWN_HEATMAP_MAX_CELLS; i += 1) {
-        const item = scores[i];
-        mapProject(proj, item.x, item.y, _spawnCellPt);
-        const px = _spawnCellPt.x;
-        const py = _spawnCellPt.y;
-        if (px < -cell || py < -cell || px > innerW + cell || py > innerH + cell) continue;
-        const value = item.score * invMax;
-        const r = ((1 - value) * 255) | 0;
-        const g = (value * 255) | 0;
-        const alpha = value * 0.45 + 0.12;
-        ctx.fillStyle = `rgba(${r},${g},42,${alpha.toFixed(2)})`;
-        ctx.fillRect(px - halfCell, py - halfCell, cell, cell);
-        drawn++;
+function getSpawnPlayerLocation(player) {
+  let location = player && typeof player.nameLocation === "function"
+    ? player.nameLocation()
+    : null;
+  if (!location) {
+    {
+      location = player && typeof player.center === "function" ? player.center() : null;
+    }
+  }
+  if (!location || !Number.isFinite(Number(location.x)) || !Number.isFinite(Number(location.y))) {
+    return null;
+  }
+  return { x: Number(location.x), y: Number(location.y) };
+}
+
+function isAliveSpawnPlayer(player) {
+  {
+    return Boolean(player && typeof player.isAlive === "function" && player.isAlive());
+  }
+}
+
+// Tribes and nations are persistent map entities during the spawn phase.
+// Keep them separate from human spawn intents so the target signal can be
+// weighted independently and refreshed without inflating enemy-pressure
+// loops with hundreds of nation bots.
+function collectSpawnEntityLocations(game) {
+  const tribeLocs = [];
+  const nationLocs = [];
+  const players = typeof getCachedPlayerViews === "function"
+    ? getCachedPlayerViews(game) || []
+    : [];
+
+  for (let i = 0; i < players.length; i += 1) {
+    const player = players[i];
+    if (!isAliveSpawnPlayer(player)) continue;
+    const type = getSpawnPlayerType(player);
+    let nation = type === "NATION";
+    {
+      nation = nation || Boolean(
+        typeof isNationBotPlayer === "function" && isNationBotPlayer(player),
+      );
+    }
+    if (!nation && type !== "BOT") continue;
+
+    const location = getSpawnPlayerLocation(player);
+    if (!location) continue;
+    (nation ? nationLocs : tribeLocs).push(location);
+  }
+
+  const signature = [
+    tribeLocs.map((point) => `${point.x},${point.y}`).sort().join(";"),
+    nationLocs.map((point) => `${point.x},${point.y}`).sort().join(";"),
+  ].join("|");
+  return { tribeLocs, nationLocs, signature };
+}
+
+// Manhattan-distance proximity/count lookup backed by fixed-size buckets.
+// Exact spawn selection can visit every legal map tile, so scanning every
+// tribe and nation for every tile would recreate the spawn-phase stalls this
+// module is intended to avoid. A point within the maximum radius can only be
+// in one of the surrounding 3x3 buckets.
+function visitNearbySpawnPoints(index, x, y, visitor) {
+  const centerColumn = Math.floor(x / index.cellSize);
+  const centerRow = Math.floor(y / index.cellSize);
+  for (let rowOffset = -1; rowOffset <= 1; rowOffset += 1) {
+    const row = centerRow + rowOffset;
+    if (row < 0 || row >= index.rows) continue;
+    for (let columnOffset = -1; columnOffset <= 1; columnOffset += 1) {
+      const column = centerColumn + columnOffset;
+      if (column < 0 || column >= index.columns) continue;
+      for (const point of index.buckets[row * index.columns + column] ?? []) visitor(point);
+    }
+  }
+}
+
+function buildSpawnProximityIndex(
+  points,
+  width,
+  height,
+  maxRadius,
+  landComponentForPoint = null,
+) {
+  if (!Array.isArray(points) || points.length === 0 || maxRadius <= 0) return null;
+  const cellSize = Math.max(1, Number(maxRadius));
+  const columns = Math.max(1, Math.ceil(Math.max(1, Number(width) || 1) / cellSize));
+  const rows = Math.max(1, Math.ceil(Math.max(1, Number(height) || 1) / cellSize));
+  const buckets = new Array(columns * rows);
+
+  for (const point of points) {
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
+    const column = Math.max(0, Math.min(columns - 1, Math.floor(point.x / cellSize)));
+    const row = Math.max(0, Math.min(rows - 1, Math.floor(point.y / cellSize)));
+    const bucketIndex = row * columns + column;
+    if (!buckets[bucketIndex]) buckets[bucketIndex] = [];
+    buckets[bucketIndex].push({
+      ...point,
+      landComponent:
+        typeof landComponentForPoint === "function"
+          ? Number(landComponentForPoint(point)) || 0
+          : 0,
+    });
+  }
+
+  const index = { cellSize, columns, rows, buckets };
+  return {
+    nearestDistance(x, y, landComponent = 0) {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return Infinity;
+      let nearest = maxRadius;
+      visitNearbySpawnPoints(index, x, y, (point) => {
+        if (landComponent > 0 && point.landComponent !== landComponent) return;
+        nearest = Math.min(nearest, Math.abs(point.x - x) + Math.abs(point.y - y));
+      });
+      return nearest;
+    },
+    score(x, y, radius = maxRadius, landComponent = 0) {
+      const nearest = this.nearestDistance(x, y, landComponent);
+      if (!Number.isFinite(nearest) || nearest >= radius) return 0;
+      return Math.max(0, 1 - nearest / radius);
+    },
+    countWithin(x, y, radius, landComponent = 0) {
+      if (!Number.isFinite(x) || !Number.isFinite(y) || radius <= 0) return 0;
+      let count = 0;
+      visitNearbySpawnPoints(index, x, y, (point) => {
+        if (landComponent > 0 && point.landComponent !== landComponent) return;
+        const distance = Math.abs(point.x - x) + Math.abs(point.y - y);
+        if (distance <= radius) count += 1;
+      });
+      return count;
+    },
+  };
+}
+
+function clampSpawnScore(value, fallback = 0) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(0, Math.min(1, number));
+}
+
+function spawnLandComponentAt(index, x, y, width) {
+  if (index?.landComponentsReady !== true || typeof index.landComponentAt !== "function") {
+    return 0;
+  }
+  const column = Math.floor(Number(x));
+  const row = Math.floor(Number(y));
+  if (!Number.isFinite(column) || !Number.isFinite(row) || column < 0 || row < 0) return 0;
+  return Number(index.landComponentAt(row * width + column)) || 0;
+}
+
+function calculateSpawnFreeLandScore(
+  clusterScore,
+  frontierGain,
+  frontierSlots,
+  frontierValueGain,
+  frontierValueScale,
+) {
+  const safeCluster = clampSpawnScore(clusterScore);
+  const safeSlots = Math.max(0, Number(frontierSlots) || 0);
+  if (safeSlots <= 0) return safeCluster * 0.45;
+  const frontierShare = clampSpawnScore(Number(frontierGain) / safeSlots);
+  const valueShare = clampSpawnScore(
+    Number(frontierValueGain) / (safeSlots * Math.max(1, Number(frontierValueScale) || 1)),
+  );
+  return clampSpawnScore(safeCluster * 0.35 + frontierShare * 0.4 + valueShare * 0.25);
+}
+
+function tribeReachForCandidate(
+  index,
+  x,
+  y,
+  options = {},
+) {
+  const freeLandScore = options.freeLandScore;
+  const tribeCount = options.tribeCount;
+  const landComponent = options.landComponent ?? 0;
+  if (tribeCount <= 0) {
+    return {
+      count: 0,
+      geometricCount: 0,
+      score: 1,
+      radius: SPAWN_HEATMAP_TRIBE_REACH_BASE_R,
+    };
+  }
+  const radius =
+    SPAWN_HEATMAP_TRIBE_REACH_BASE_R +
+    clampSpawnScore(freeLandScore) * SPAWN_HEATMAP_TRIBE_REACH_BONUS_R;
+  const geometricCount = index ? index.countWithin(x, y, radius) : 0;
+  // Fail closed while connectivity is authoritative-but-pending. But when no
+  // exact index exists at all (maps over the index's memory budget — Baikal
+  // and every large lobby), the fail-closed count stays zero forever and
+  // every spawn becomes tribe-blind: the ranked spot ignores the tribe gold
+  // that funds the whole early economy. On that fallback path the geometric
+  // count is the only signal, island risk accepted.
+  let count = 0;
+  if (index && landComponent > 0) {
+    count = index.countWithin(x, y, radius, landComponent);
+  } else if (options.connectivityUnsupported === true) {
+    count = geometricCount;
+  }
+  return {
+    count,
+    geometricCount,
+    score: count / Math.max(1, tribeCount),
+    radius,
+  };
+}
+
+function tribeClusterScoreForCandidate(index, x, y, tribeCount, options = {}) {
+  const landComponent = options.landComponent ?? 0;
+  if (tribeCount <= 0) return 1;
+  if (landComponent <= 0) {
+    // Same fallback rule as tribe reach: geometric proximity is the only
+    // signal on maps where the exact connectivity index cannot exist.
+    if (options.connectivityUnsupported !== true || !index) return 0;
+    return index.countWithin(x, y, SPAWN_HEATMAP_TRIBE_CLUSTER_R) / Math.max(1, tribeCount);
+  }
+  const count = index
+    ? index.countWithin(x, y, SPAWN_HEATMAP_TRIBE_CLUSTER_R, landComponent)
+    : 0;
+  return count / Math.max(1, tribeCount);
+}
+
+function combineSpawnEntityScore(
+  tribeScore,
+  nationScore,
+  tribeReachScore,
+  tribeCount,
+  nationCount,
+) {
+  if (tribeCount > 0) {
+    // Count of reachable tribes is the primary objective. Nearest-tribe
+    // proximity breaks close counts; nation proximity stays secondary but
+    // weighs a full 30% because spawning beside an established nation
+    // capital is how bot openings die, however rich the tribal interior is.
+    const tribeTargetScore = tribeReachScore * 0.85 + tribeScore * 0.15;
+    return nationCount > 0
+      ? tribeTargetScore * 0.7 + nationScore * 0.3
+      : tribeTargetScore;
+  }
+  if (nationCount > 0) return nationScore;
+  return 1;
+}
+
+// ── Phase 2: Dynamic scoring (recomputed every 250ms) ──────────────────
+
+function refreshTeammateClientIds(game, me) {
+  _spawnTeammateClientIds.clear();
+  if (!me) return;
+  const players = getCachedPlayerViews(game);
+  for (let i = 0; i < players.length; i += 1) {
+    const p = players[i];
+    if (!p || !p.isAlive || !p.isAlive()) continue;
+    if (spawnPlayersAreTeammates(me, p)) {
+      const cid = p.clientID ? p.clientID() : null;
+      if (cid != null) _spawnTeammateClientIds.add(cid);
+    }
+  }
+}
+
+function teamAttractScore(dist) {
+  // Piecewise function matching Tactical exactly.
+  if (dist >= SPAWN_HEATMAP_TEAM_ATTRACT_R) return 0;
+  if (dist <= SPAWN_HEATMAP_TEAM_MIN_GAP) {
+    return (dist / SPAWN_HEATMAP_TEAM_MIN_GAP) * SPAWN_HEATMAP_TEAM_OVERLAP_MAX;
+  }
+  if (dist <= SPAWN_HEATMAP_TEAM_IDEAL_MAX) return 1.0;
+  // 90 < dist < 110
+  return (SPAWN_HEATMAP_TEAM_ATTRACT_R - dist) / (SPAWN_HEATMAP_TEAM_ATTRACT_R - SPAWN_HEATMAP_TEAM_IDEAL_MAX);
+}
+
+// The convex hull is the largest convex polygon enclosed by the team's
+// committed spawn positions. Once at least three non-collinear teammates
+// define a real area, keep our exact spawn inside it; with fewer points there
+// is no polygon to constrain against, so the existing team-area rules apply.
+function normalizedTeamPoint(point) {
+  const x = Number(point?.x);
+  const y = Number(point?.y);
+  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+}
+
+function uniqueTeamSpawnPoints(points) {
+  const unique = [];
+  const seen = new Set();
+  for (const point of points || []) {
+    const normalized = normalizedTeamPoint(point);
+    if (!normalized) continue;
+    const key = `${normalized.x},${normalized.y}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(normalized);
+  }
+  return unique;
+}
+
+// Team assignment can contain a player who spawned far away from the actual
+// group. A convex hull/centroid treats that one point as an extreme vertex and
+// sends every remaining teammate out of their local formation. Keep the dense
+// component: an anchor is an outlier only when its nearest teammate is far
+// beyond the median nearest-neighbour distance. Two anchors are inherently
+// ambiguous, so they are always preserved as a corridor.
+function filterTeamSpawnGeometryOutliers(points) {
+  const unique = uniqueTeamSpawnPoints(points);
+  if (unique.length < 3) return unique;
+  const nearestDistances = unique.map((point, index) => {
+    let nearest = Infinity;
+    for (let otherIndex = 0; otherIndex < unique.length; otherIndex += 1) {
+      if (otherIndex === index) continue;
+      const other = unique[otherIndex];
+      nearest = Math.min(nearest, Math.hypot(point.x - other.x, point.y - other.y));
+    }
+    return nearest;
+  });
+  const sorted = [...nearestDistances].sort((left, right) => left - right);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  if (!Number.isFinite(median) || median <= 0) return unique;
+  const threshold = median * 2.5;
+  const filtered = unique.filter((_, index) => nearestDistances[index] <= threshold);
+  return filtered.length >= 2 ? filtered : unique;
+}
+
+function buildLargestTeamPolyhedron(points) {
+  const unique = filterTeamSpawnGeometryOutliers(points);
+  if (unique.length < 3) return null;
+  unique.sort((left, right) => left.x - right.x || left.y - right.y);
+
+  const cross = (origin, left, right) =>
+    (left.x - origin.x) * (right.y - origin.y) -
+    (left.y - origin.y) * (right.x - origin.x);
+  const lower = [];
+  for (const point of unique) {
+    while (lower.length >= 2 && cross(lower.at(-2), lower.at(-1), point) <= 0) lower.pop();
+    lower.push(point);
+  }
+  const upper = [];
+  for (let index = unique.length - 1; index >= 0; index -= 1) {
+    const point = unique[index];
+    while (upper.length >= 2 && cross(upper.at(-2), upper.at(-1), point) <= 0) upper.pop();
+    upper.push(point);
+  }
+  lower.pop();
+  upper.pop();
+  const hull = lower.concat(upper);
+  return hull.length >= 3 ? hull : null;
+}
+
+function isPointInsideTeamPolyhedron(x, y, polygon) {
+  if (!polygon || polygon.length < 3) return true;
+  let sign = 0;
+  for (let index = 0; index < polygon.length; index += 1) {
+    const start = polygon[index];
+    const end = polygon[(index + 1) % polygon.length];
+    const cross = (end.x - start.x) * (y - start.y) - (end.y - start.y) * (x - start.x);
+    if (cross === 0) continue;
+    const edgeSign = cross > 0 ? 1 : -1;
+    if (sign !== 0 && sign !== edgeSign) return false;
+    sign = edgeSign;
+  }
+  return true;
+}
+
+function distanceToTeamPolyhedronEdge(x, y, polygon) {
+  if (!polygon || polygon.length < 3) return 0;
+  let nearest = Infinity;
+  for (let index = 0; index < polygon.length; index += 1) {
+    const start = polygon[index];
+    const end = polygon[(index + 1) % polygon.length];
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const lengthSquared = dx * dx + dy * dy;
+    const projected = lengthSquared === 0
+      ? 0
+      : Math.max(0, Math.min(1, ((x - start.x) * dx + (y - start.y) * dy) / lengthSquared));
+    const edgeX = start.x + projected * dx;
+    const edgeY = start.y + projected * dy;
+    nearest = Math.min(nearest, Math.hypot(x - edgeX, y - edgeY));
+  }
+  return Number.isFinite(nearest) ? nearest : 0;
+}
+
+function teamPolyhedronInteriorScore(x, y, polygon, centroid) {
+  if (!polygon || !centroid) return 0;
+  const centroidDepth = distanceToTeamPolyhedronEdge(centroid.x, centroid.y, polygon);
+  if (centroidDepth <= 0) return 0;
+  return Math.max(0, Math.min(1, distanceToTeamPolyhedronEdge(x, y, polygon) / centroidDepth));
+}
+
+// Two teammates define a line rather than an area.  Treat that line as a
+// bounded corridor: it keeps the spawn between its allies without requiring a
+// directional rule or a map-specific coordinate.  The cap prevents the bot
+// from wandering far away on very large maps while retaining enough width for
+// legal terrain around a coastal or mountainous team line.
+function buildTeamSpawnRegion(points) {
+  const unique = filterTeamSpawnGeometryOutliers(points);
+  const polygon = buildLargestTeamPolyhedron(unique);
+  if (polygon) return { polygon, corridor: null };
+  if (unique.length < 2) return null;
+  let start = unique[0];
+  let end = unique[1];
+  let longest = -Infinity;
+  for (let left = 0; left < unique.length; left += 1) {
+    for (let right = left + 1; right < unique.length; right += 1) {
+      const dx = unique[right].x - unique[left].x;
+      const dy = unique[right].y - unique[left].y;
+      const distanceSquared = dx * dx + dy * dy;
+      if (distanceSquared > longest) {
+        longest = distanceSquared;
+        start = unique[left];
+        end = unique[right];
       }
     }
+  }
+  const length = Math.sqrt(Math.max(0, longest));
+  return {
+    polygon: null,
+    corridor: {
+      start, end,
+      lengthSquared: longest,
+      halfWidth: Math.max(12, Math.min(100, length * 0.2)),
+    },
+  };
+}
 
-    // Numbered top-spot markers — only when the markers layer is on. Can show
-    // WITHOUT the heatmap (clean map, just the best spots).
-    if (!spawnMarkersEnabled) {
-      ctx.restore();
+function isPointInsideTeamSpawnRegion(x, y, region) {
+  if (!region) return true;
+  if (region.polygon) {
+    if (!isPointInsideTeamPolyhedron(x, y, region.polygon)) return false;
+    // Being technically inside the hull is not enough: candidates on or just
+    // inside a teammate's frontier are vulnerable and do not satisfy the
+    // intended team-interior spawn. Require a small inset from every hull edge.
+    for (let index = 0; index < region.polygon.length; index += 1) {
+      const start = region.polygon[index];
+      const end = region.polygon[(index + 1) % region.polygon.length];
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const length = Math.hypot(dx, dy);
+      if (length <= 0) continue;
+      const distance = Math.abs(dx * (y - start.y) - dy * (x - start.x)) / length;
+      if (distance < SPAWN_TEAM_INTERIOR_MARGIN) return false;
+    }
+    return true;
+  }
+  const corridor = region.corridor;
+  if (!corridor || corridor.lengthSquared <= 0) return true;
+  const dx = corridor.end.x - corridor.start.x;
+  const dy = corridor.end.y - corridor.start.y;
+  const projected = ((x - corridor.start.x) * dx + (y - corridor.start.y) * dy) /
+    corridor.lengthSquared;
+  // A two-player team has no polygon edge to inset. Reserve the same margin
+  // at both corridor endpoints so a candidate beside either ally is not
+  // mistaken for the team interior. Short corridors retain a central segment.
+  const corridorLength = Math.sqrt(corridor.lengthSquared);
+  const endpointMargin = Math.min(SPAWN_TEAM_INTERIOR_MARGIN, corridorLength * 0.25);
+  const inset = endpointMargin / corridorLength;
+  if (projected < inset || projected > 1 - inset) return false;
+  const nearestX = corridor.start.x + projected * dx;
+  const nearestY = corridor.start.y + projected * dy;
+  return Math.hypot(x - nearestX, y - nearestY) <= corridor.halfWidth;
+}
+
+function classifySpawnPlayer(player, context) {
+  const teammate = spawnPlayersAreTeammates(context.me, player);
+  let location = eligibleStrategicSpawnLocation(player, context.mySid);
+  // The fast fallback must model the same team geometry as exact ranking.
+  // In Teams games Nation teammates are already placed while human players
+  // are still selecting, so omitting them lets the fallback escape the team
+  // hull before the asynchronous exact pass has completed.
+  if (!location && teammate && player?.isAlive?.() && player.hasSpawned?.()) {
+    location = getSpawnPlayerLocation(player);
+  }
+  if (!location) return;
+  const point = { x: location.x, y: location.y };
+  if (spawnPlayersShareClan(player, context)) context.clanSpawns.push(point);
+  (teammate ? context.teamSpawns : context.enemySpawns).push(point);
+}
+
+function eligibleStrategicSpawnLocation(player, excludedSmallId) {
+  const type = getSpawnPlayerType(player);
+  if (!player?.isAlive?.() || (type !== "HUMAN" && type !== "NATION")) return null;
+  if (excludedSmallId != null && player.smallID?.() === excludedSmallId) return null;
+  if (!player.hasSpawned?.()) return null;
+  const location = player.nameLocation?.();
+  return location && Number.isFinite(location.x) && Number.isFinite(location.y)
+    ? location : null;
+}
+
+function spawnPlayersShareClan(player, context) {
+  return Boolean(context.myClanTag && context.sameClanTag && context.getPlayerClanTag &&
+    context.sameClanTag(context.myClanTag, context.getPlayerClanTag(player)));
+}
+
+function spawnPlayersAreTeammates(me, player) {
+  if (me?.isOnSameTeam?.(player) === true) return true;
+  // During spawn selection the relation view can lag behind the lobby team
+  // assignment. The team id is already authoritative then; without this
+  // fallback a whole Green/Red/Blue hull is classified as enemies and the bot
+  // may select an exterior point between hostile teams.
+  const ownTeam = me?.team?.();
+  const otherTeam = player?.team?.();
+  return ownTeam != null && otherTeam != null && ownTeam === otherTeam;
+}
+
+function collectSpawnPlayerGroups(game, me, objectiveApi) {
+  const getPlayerClanTag = objectiveApi?.getPlayerClanTag;
+  const context = {
+    me, mySid: me?.smallID?.() ?? null,
+    getPlayerClanTag: typeof getPlayerClanTag === "function" ? getPlayerClanTag : null,
+    sameClanTag: typeof objectiveApi?.sameClanTag === "function" ? objectiveApi.sameClanTag : null,
+    enemySpawns: [], teamSpawns: [], clanSpawns: [],
+  };
+  context.myClanTag = context.getPlayerClanTag?.(me) ?? null;
+  for (const player of getCachedPlayerViews(game)) classifySpawnPlayer(player, context);
+  return context;
+}
+
+function spawnCentroid(points) {
+  const geometryPoints = filterTeamSpawnGeometryOutliers(points);
+  if (geometryPoints.length === 0) return { x: 0, y: 0 };
+  const total = geometryPoints.reduce(
+    (sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }), { x: 0, y: 0 },
+  );
+  return { x: total.x / geometryPoints.length, y: total.y / geometryPoints.length };
+}
+
+function nearestSpawnDistance(points, x, y) {
+  return points.reduce(
+    (nearest, point) => Math.min(nearest, Math.abs(point.x - x) + Math.abs(point.y - y)),
+    Infinity,
+  );
+}
+
+function spawnEnemyPressureWeight(player) {
+  const troops = Number(player?.troops?.());
+  if (!Number.isFinite(troops) || troops <= 0) return SPAWN_ENEMY_PRESSURE_WEIGHT_MIN;
+  return Math.min(
+    SPAWN_ENEMY_PRESSURE_WEIGHT_MAX,
+    SPAWN_ENEMY_PRESSURE_WEIGHT_MIN + troops / SPAWN_ENEMY_PRESSURE_WEIGHT_TROOP_SCALE,
+  );
+}
+
+// Exact-ranking variant of nearestSpawnDistance: a stronger enemy counts as
+// proportionally CLOSER (its distance is divided by its weight), so the
+// safety floor demands more distance from it. Points without an attached
+// weight (visual path, pending spawn intents) make this bit-identical to
+// nearestSpawnDistance.
+function weightedNearestSpawnDistance(points, x, y) {
+  return points.reduce((nearest, point) => {
+    const weight = point.weight ?? 1;
+    return Math.min(
+      nearest,
+      (Math.abs(point.x - x) + Math.abs(point.y - y)) / weight,
+    );
+  }, Infinity);
+}
+
+function spawnEnemyPressure(points, x, y) {
+  return points.reduce((pressure, point) => {
+    const distance = Math.abs(point.x - x) + Math.abs(point.y - y);
+    if (distance >= SPAWN_HEATMAP_ENEMY_PRESSURE_R) return pressure;
+    return pressure + (point.weight ?? 1) * (1 - distance / SPAWN_HEATMAP_ENEMY_PRESSURE_R);
+  }, 0);
+}
+
+function dynamicTeamScores(context, x, y) {
+  if (context.teamSpawns.length === 0) return { additive: 0, teamScore: 1 };
+  const nearest = nearestSpawnDistance(context.teamSpawns, x, y);
+  const attract = Number.isFinite(nearest) ? teamAttractScore(nearest) : 0;
+  const centroidDistance = Math.abs(context.teamCentroid.x - x) +
+    Math.abs(context.teamCentroid.y - y);
+  const centroid = Math.max(0, 1 - centroidDistance / SPAWN_HEATMAP_TEAM_CENTROID_R);
+  const additive = attract * SPAWN_W.team + centroid * SPAWN_W.teamCentroid *
+    Math.min(1, context.teamSpawns.length / 2);
+  return { additive, teamScore: Math.min(attract, centroid) };
+}
+
+function evaluateDynamicSpawnCandidate(candidate, context) {
+  const { x, y } = candidate;
+  const landComponent = spawnLandComponentAt(
+    context.candidateIndex,
+    x,
+    y,
+    context.W,
+  );
+  const freeLandScore = clampSpawnScore(candidate.freeLandScore);
+  // A null candidate index means the exact scorer cannot exist for this map
+  // (memory budget), not that connectivity is still pending — the geometric
+  // proximity signals below then carry the tribe dimensions.
+  const connectivityUnsupported = context.candidateIndex == null;
+  const tribeReach = tribeReachForCandidate(
+    context.tribeProximity,
+    x,
+    y,
+    {
+      freeLandScore,
+      tribeCount: context.entities.tribeLocs.length,
+      landComponent,
+      connectivityUnsupported,
+    },
+  );
+  const tribeClusterScore = tribeClusterScoreForCandidate(
+    context.tribeProximity,
+    x,
+    y,
+    context.entities.tribeLocs.length,
+    { landComponent, connectivityUnsupported },
+  );
+  let tribeScore = 0;
+  if (context.tribeProximity && landComponent > 0) {
+    tribeScore = context.tribeProximity.score(
+      x,
+      y,
+      SPAWN_HEATMAP_TRIBE_R,
+      landComponent,
+    );
+  } else if (context.tribeProximity && connectivityUnsupported) {
+    tribeScore = context.tribeProximity.score(x, y, SPAWN_HEATMAP_TRIBE_R);
+  }
+  const nationScore = context.nationProximity ? context.nationProximity.score(x, y) : 0;
+  const enemyDistance = nearestSpawnDistance(context.enemySpawns, x, y);
+  const playerDistScore = Number.isFinite(enemyDistance)
+    ? Math.min(1, enemyDistance / SPAWN_HEATMAP_PLAYER_R) : 1;
+  const enemyPressureScore = 1 / (1 + Math.max(0, spawnEnemyPressure(context.enemySpawns, x, y)));
+  const team = dynamicTeamScores(context, x, y);
+  const teamInteriorScore = teamPolyhedronInteriorScore(
+    x,
+    y,
+    context.teamPolyhedron,
+    context.teamCentroid,
+  );
+  const clanScore = context.clanProximityScore && context.clanSpawns.length > 0
+    ? context.clanProximityScore(x, y, context.clanSpawns, SPAWN_HEATMAP_TEAM_ATTRACT_R) : 0;
+  const resourceScore = combineSpawnEntityScore(
+    tribeScore, nationScore, tribeReach.score,
+    context.entities.tribeLocs.length, context.entities.nationLocs.length,
+  );
+  const score = candidate.staticScore +
+    tribeReach.score * SPAWN_W.tribe + tribeClusterScore * SPAWN_W.tribe * 0.2 +
+    tribeScore * SPAWN_W.tribe * 0.15 +
+    nationScore * SPAWN_W.nation + playerDistScore * SPAWN_W.player +
+    enemyPressureScore * SPAWN_W.enemyPressure + team.additive;
+  const objective = evaluateFallbackSpawnObjective(context, {
+    freeLandScore, playerDistScore, enemyPressureScore, teamScore: team.teamScore,
+    tribeScore, nationScore, tribeReach, tribeClusterScore, resourceScore, clanScore,
+    teamInteriorScore,
+  });
+  return { x, y, score, freeLandScore, tribeScore, tribeReachCount: tribeReach.count,
+    tribeGeometricReachCount: tribeReach.geometricCount,
+    tribeReachScore: tribeReach.score, tribeReachRadius: tribeReach.radius,
+    tribeClusterScore, nationScore, resourceScore, clanScore,
+    landConnectivityReady: context.candidateIndex?.landComponentsReady === true,
+    teamPolyhedronScore: context.teamPolyhedron ? 1 : 0,
+    teamInteriorScore, objective };
+}
+
+function evaluateFallbackSpawnObjective(context, values) {
+  if (typeof context.objectiveApi?.evaluateModelCandidate !== "function") return null;
+  return context.objectiveApi.evaluateModelCandidate({
+    startScore: values.freeLandScore, expansionScore: values.freeLandScore,
+    safetyScore: Math.min(values.playerDistScore, values.enemyPressureScore),
+    teamScore: values.teamScore,
+    tribeScore: context.entities.tribeLocs.length > 0 ? values.tribeScore : 1,
+    nationScore: context.entities.nationLocs.length > 0 ? values.nationScore : 1,
+    tribeReachScore: values.tribeReach.score, tribeReachCount: values.tribeReach.count,
+    tribeClusterScore: values.tribeClusterScore,
+    freeLandScore: values.freeLandScore, resourceScore: values.resourceScore,
+    clanScore: values.clanScore,
+    teamPolyhedronScore: context.teamPolyhedron ? 1 : 0,
+    teamInteriorScore: values.teamInteriorScore,
+  });
+}
+
+function compareDynamicSpawnCandidates(left, right, objectiveApi) {
+  if (left.objective && right.objective && typeof objectiveApi?.compareModelCandidates === "function") {
+    const order = objectiveApi.compareModelCandidates(left, right);
+    if (order !== 0) return order;
+  }
+  if (left.score !== right.score) return right.score - left.score;
+  if (left.freeLandScore !== right.freeLandScore) return right.freeLandScore - left.freeLandScore;
+  return right.clanScore - left.clanScore;
+}
+
+function diverseSpawnTopSpots(candidates) {
+  const topSpots = [];
+  for (const candidate of candidates) {
+    if (topSpots.length >= SPAWN_HEATMAP_TOP_N) break;
+    const tooClose = topSpots.some((spot) =>
+      Math.abs(candidate.x - spot.x) + Math.abs(candidate.y - spot.y) < SPAWN_TOP_SPOT_MIN_DISTANCE,
+    );
+    // Preserve the score breakdown for diagnostics and headless match traces.
+    // Rendering and spawn actuation still consume only x/y, so this adds
+    // observability without changing candidate order or the selected tile.
+    if (!tooClose) topSpots.push({ ...candidate });
+  }
+  return topSpots;
+}
+
+function computeDynamicScores(game, staticCandidates, me) {
+  const W = game.width ? game.width() : 0;
+  const H = game.height ? game.height() : 0;
+  const objectiveApi = getSpawnObjectiveApi();
+  const groups = collectSpawnPlayerGroups(game, me, objectiveApi);
+  const entities = collectSpawnEntityLocations(game);
+  // The visual overlay is deliberately allocation-free with respect to the
+  // map-sized exact index. Reuse land connectivity when the bot has already
+  // built it, but never create that index merely to draw spawn markers.
+  const candidateIndex = existingSpawnCandidateIndex(game);
+  const landComponentForPoint = candidateIndex?.landComponentsReady === true
+    ? (point) => spawnLandComponentAt(candidateIndex, point.x, point.y, W)
+    : null;
+  const tribeProximity = buildSpawnProximityIndex(
+    entities.tribeLocs,
+    W,
+    H,
+    SPAWN_HEATMAP_TRIBE_REACH_BASE_R + SPAWN_HEATMAP_TRIBE_REACH_BONUS_R,
+    landComponentForPoint,
+  );
+  const nationProximity = buildSpawnProximityIndex(
+    entities.nationLocs,
+    W,
+    H,
+    SPAWN_HEATMAP_NATION_R,
+  );
+
+  const context = {
+    ...groups,
+    entities,
+    tribeProximity,
+    nationProximity,
+    objectiveApi,
+    candidateIndex,
+    W,
+    clanProximityScore: typeof objectiveApi?.clanProximityScore === "function"
+      ? objectiveApi.clanProximityScore : null,
+    teamCentroid: spawnCentroid(groups.teamSpawns),
+    teamRegion: buildTeamSpawnRegion(groups.teamSpawns),
+    teamPolyhedron: buildLargestTeamPolyhedron(groups.teamSpawns),
+  };
+
+  // The exact ranker rejects exterior candidates. The bounded fallback runs
+  // before that asynchronous pass is ready, so it must enforce the identical
+  // hard geometry rule rather than merely adding a team-proximity score.
+  const eligibleCandidates = context.teamRegion
+    ? staticCandidates.filter((candidate) =>
+      isPointInsideTeamSpawnRegion(candidate.x, candidate.y, context.teamRegion))
+    : staticCandidates;
+  const out = eligibleCandidates.map((candidate) => evaluateDynamicSpawnCandidate(candidate, context));
+  const maxScore = out.reduce((maximum, candidate) => Math.max(maximum, candidate.score), 0);
+
+  out.sort((left, right) => compareDynamicSpawnCandidates(left, right, objectiveApi));
+  const topSpots = diverseSpawnTopSpots(out);
+
+  return { scores: out, topSpots, maxScore };
+}
+
+function spawnPointKey(player) {
+  {
+    if (player && typeof player.clientID === "function") {
+      const clientID = player.clientID();
+      if (clientID != null) return `client:${clientID}`;
+    }
+  }{
+    if (player && typeof player.smallID === "function") {
+      const smallID = player.smallID();
+      if (smallID != null) return `small:${smallID}`;
+    }
+  }
+  return null;
+}
+
+function collectExactEntityLocation(player, collections) {
+  if (!isAliveSpawnPlayer(player)) return;
+  const type = getSpawnPlayerType(player);
+  let nation = type === "NATION";
+  {
+    nation ||= Boolean(typeof isNationBotPlayer === "function" && isNationBotPlayer(player));
+  }
+  const location = getSpawnPlayerLocation(player);
+  if (!location || (!nation && type !== "BOT")) return;
+  (nation ? collections.nationLocs : collections.tribeLocs).push(location);
+}
+
+function collectExactHumanLocation(player, context) {
+  const teammate = spawnPlayersAreTeammates(context.me, player);
+  const type = getSpawnPlayerType(player);
+  // Nations are strategic actors just like human players: a nearby enemy
+  // Nation can surround or conquer us before a teammate connects.  They must
+  // therefore contribute to enemy distance/pressure, while ordinary Bot
+  // tribes remain expansion resources rather than spawn threats.
+  if (type !== "HUMAN" && type !== "NATION" && !teammate) return;
+  const key = spawnPointKey(player);
+  if (!key || context.ownKeys.has(key) || !player.hasSpawned?.()) return;
+  const location = getSpawnPlayerLocation(player);
+  if (!location || !Number.isFinite(location.x) || !Number.isFinite(location.y)) return;
+  context.liveKeys.add(key);
+  const point = { x: location.x, y: location.y };
+  if (spawnPlayersShareClan(player, context)) context.clanSpawns.push(point);
+  if (teammate) {
+    context.teamSpawns.push(point);
+  } else {
+    // Bot-only strength signal: enemy proximity weighs by the rival's live
+    // army, so exact ranking avoids settling beside someone who can already
+    // overrun the opening. The visual scorer collects its own unweighted
+    // points, and pending spawn intents have no live view, so both stay at
+    // the neutral weight.
+    point.weight = spawnEnemyPressureWeight(player);
+    context.enemySpawns.push(point);
+  }
+}
+
+function pendingSpawnPoint(game, entry) {
+  if (!entry || typeof game.x !== "function" || typeof game.y !== "function") return null;
+  const tile = Number(entry.tile);
+  if (!Number.isFinite(tile)) return null;
+  {
+    const x = game.x(tile);
+    const y = game.y(tile);
+    return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+  }
+}
+
+function collectPendingExactSpawnPoints(game, context) {
+  for (const [clientID, entry] of _spawnPlayerPositions) {
+    const key = `client:${clientID}`;
+    if (context.ownKeys.has(key) || context.liveKeys.has(key)) continue;
+    const point = pendingSpawnPoint(game, entry);
+    if (!point) continue;
+    const player = context.playersByKey.get(key);
+    if (player && spawnPlayersShareClan(player, context)) context.clanSpawns.push(point);
+    const target = spawnPlayersAreTeammates(context.me, player)
+      ? context.teamSpawns : context.enemySpawns;
+    target.push(point);
+  }
+}
+
+function exactSpawnSignature(context) {
+  // Enemy weights derive from live troop counts, so they must participate in
+  // the signature: without them a grown rival would keep serving a ranking
+  // computed while it was still small.
+  const enemySignature = (point) => {
+    const coordinate = `${point.x},${point.y}`;
+    return point.weight != null
+      ? `${coordinate}:${point.weight.toFixed(3)}`
+      : coordinate;
+  };
+  return [
+    String(_spawnIntentVersion), context.myClanTag || "",
+    context.enemySpawns.map(enemySignature).join(";"),
+    context.teamSpawns.map((point) => `${point.x},${point.y}`).join(";"),
+    context.clanSpawns.map((point) => `${point.x},${point.y}`).join(";"),
+    context.tribeLocs.map((point) => `${point.x},${point.y}`).sort().join(";"),
+    context.nationLocs.map((point) => `${point.x},${point.y}`).sort().join(";"),
+  ].join("|");
+}
+
+function collectExactSpawnPoints(game, me) {
+  const objectiveApi = getSpawnObjectiveApi();
+  const players = getCachedPlayerViews(game) || [];
+  const ownKeys = new Set();
+  const ownKey = spawnPointKey(me);
+  if (ownKey) ownKeys.add(ownKey);
+  const getPlayerClanTag = typeof objectiveApi?.getPlayerClanTag === "function"
+    ? objectiveApi.getPlayerClanTag : null;
+  const context = {
+    me, ownKeys, liveKeys: new Set(), playersByKey: new Map(),
+    enemySpawns: [], teamSpawns: [], clanSpawns: [], tribeLocs: [], nationLocs: [],
+    getPlayerClanTag,
+    sameClanTag: typeof objectiveApi?.sameClanTag === "function" ? objectiveApi.sameClanTag : null,
+    myClanTag: getPlayerClanTag?.(me) ?? null,
+  };
+  for (const player of players) {
+    const key = spawnPointKey(player);
+    if (key) context.playersByKey.set(key, player);
+    collectExactEntityLocation(player, context);
+    if (isAliveSpawnPlayer(player)) collectExactHumanLocation(player, context);
+  }
+  collectPendingExactSpawnPoints(game, context);
+  const { enemySpawns, teamSpawns, clanSpawns, tribeLocs, nationLocs } = context;
+  return {
+    enemySpawns, teamSpawns, clanSpawns, tribeLocs, nationLocs,
+    signature: exactSpawnSignature(context),
+  };
+}
+
+// Shared by exact ranking, the bounded fallback and NationBot's final snap.
+// A hull exists only with three non-collinear teammates; with fewer anchors
+// there is no enclosed spawn region to impose as a hard constraint.
+function getTeamSpawnPolyhedron(game, me) {
+  return buildLargestTeamPolyhedron(collectExactSpawnPoints(game, me).teamSpawns);
+}
+
+function getTeamSpawnRegion(game, me) {
+  return buildTeamSpawnRegion(collectExactSpawnPoints(game, me).teamSpawns);
+}
+
+function getTeamSpawnAnchorCount(game, me) {
+  return filterTeamSpawnGeometryOutliers(collectExactSpawnPoints(game, me).teamSpawns).length;
+}
+
+function insertExactSpawnCandidate(best, candidate) {
+  const compare = (left, right) => {
+    const objectiveApi = getSpawnObjectiveApi();
+    if (
+      left.objective &&
+      right.objective &&
+      typeof objectiveApi?.compareModelCandidates === "function"
+    ) {
+      const objectiveOrder = objectiveApi.compareModelCandidates(left, right);
+      if (objectiveOrder !== 0) return objectiveOrder;
+    }
+    if (left.score !== right.score) return right.score - left.score;
+    return (left.ref ?? Infinity) - (right.ref ?? Infinity);
+  };
+  let position = 0;
+  while (position < best.length && compare(best[position], candidate) <= 0) position += 1;
+  if (
+    position >= EXACT_SPAWN_CANDIDATE_POOL_SIZE &&
+    best.length >= EXACT_SPAWN_CANDIDATE_POOL_SIZE
+  ) return;
+  best.splice(position, 0, candidate);
+  if (best.length > EXACT_SPAWN_CANDIDATE_POOL_SIZE) best.pop();
+}
+
+function selectDiverseExactSpawnCandidates(candidates) {
+  if (!Array.isArray(candidates) || candidates.length === 0) return null;
+  const selected = [];
+  for (const candidate of candidates) {
+    let isDistinct = true;
+    for (const spot of selected) {
+      if (
+        Math.abs(candidate.x - spot.x) + Math.abs(candidate.y - spot.y) <
+        SPAWN_TOP_SPOT_MIN_DISTANCE
+      ) {
+        isDistinct = false;
+        break;
+      }
+    }
+    if (!isDistinct) continue;
+    selected.push(candidate);
+    if (selected.length >= SPAWN_HEATMAP_TOP_N) break;
+  }
+  return selected;
+}
+
+let _exactSpawnCacheSrcRef = null;
+let _exactSpawnCacheIndexVersion = -1;
+let _exactSpawnCacheSignature = "";
+let _exactSpawnCacheResult = null;
+
+function exactSpawnMinimumDistance(game) {
+  {
+    const configured = game.config().minDistanceBetweenPlayers();
+    return Number.isFinite(configured) ? configured : 30;
+  }
+}
+
+function createExactSpawnRankingContext(game, index, points, options, incremental) {
+  const W = game.width ? game.width() : index.width;
+  const H = game.height ? game.height() : index.height;
+  const landComponentForPoint = index.landComponentsReady === true
+    ? (point) => spawnLandComponentAt(index, point.x, point.y, W)
+    : null;
+  return {
+    game, index, points, options, incremental, W, H,
+    // Raw terrain for the bounded coastal sample; the cached spawn terrain is
+    // already resolved by ensureSpawnCandidateIndex before this context runs.
+    terrain: getSpawnTerrain(game)?.terrain ?? null,
+    area: getSpawnAreaForGame(game, options?.me),
+    minDist: exactSpawnMinimumDistance(game),
+    tribeProximity: buildSpawnProximityIndex(
+      points.tribeLocs, W, H,
+      SPAWN_HEATMAP_TRIBE_REACH_BASE_R + SPAWN_HEATMAP_TRIBE_REACH_BONUS_R,
+      landComponentForPoint,
+    ),
+    nationProximity: buildSpawnProximityIndex(points.nationLocs, W, H, SPAWN_HEATMAP_NATION_R),
+    best: Array.isArray(options?.best) ? options.best : [],
+    objectiveApi: getSpawnObjectiveApi(),
+    frontierValueScale: Number(getSpawnIndexApi()?.FRONTIER_VALUE_SCALE) || 1000,
+    teamRegion: buildTeamSpawnRegion(points.teamSpawns),
+    teamPolyhedron: buildLargestTeamPolyhedron(points.teamSpawns),
+    teamCentroid: spawnCentroid(points.teamSpawns),
+  };
+}
+
+function exactSpawnCenterAllowed(context, tile, x, y) {
+  const { area, teamRegion, game, points, minDist } = context;
+  if (area && (x < area.x || x >= area.x + area.width || y < area.y || y >= area.y + area.height)) return false;
+  if (teamRegion && !isPointInsideTeamSpawnRegion(x, y, teamRegion)) return false;
+  {
+    const occupiedByOther = game.hasOwner?.(tile) &&
+      !spawnTileOwnedByPlayer(game, tile, context.options?.me);
+    if (occupiedByOther || game.isBorder?.(tile)) return false;
+  }
+  return nearestSpawnDistance(points.enemySpawns, x, y) >= minDist &&
+    nearestSpawnDistance(points.teamSpawns, x, y) >= minDist;
+}
+
+function exactTeamCandidateScores(context, x, y) {
+  if (context.points.teamSpawns.length === 0) return { score: 0, robust: 1 };
+  const nearest = nearestSpawnDistance(context.points.teamSpawns, x, y);
+  const attract = teamAttractScore(nearest);
+  const centroidDistance = Math.abs(context.teamCentroid.x - x) +
+    Math.abs(context.teamCentroid.y - y);
+  const centroid = Math.max(0, 1 - centroidDistance / SPAWN_HEATMAP_TEAM_CENTROID_R);
+  return {
+    robust: Math.min(attract, Math.max(
+      0, 1 - Math.abs(context.teamCentroid.x - x) / SPAWN_HEATMAP_TEAM_CENTROID_R -
+        Math.abs(context.teamCentroid.y - y) / SPAWN_HEATMAP_TEAM_CENTROID_R,
+    )),
+    score: attract * SPAWN_W.team + centroid * SPAWN_W.teamCentroid *
+      Math.min(1, context.points.teamSpawns.length / 2),
+  };
+}
+
+function exactFrontierCoverage(frontierSlots, frontierValueGain, scale, freeLand, cluster) {
+  if (!Number.isFinite(Number(frontierSlots))) return cluster;
+  return frontierSlots > 0 ? frontierValueGain / (frontierSlots * scale) : freeLand;
+}
+
+function rankExactSpawnCandidate(context, args) {
+  const [tile, x, y, spawnGain, invalidCount, plainsGain, frontierGain,
+    , frontierValueGain, frontierSlots] = args;
+  const clusterScore = spawnGain / Math.max(1, spawnGain + invalidCount);
+  const plainsScore = plainsGain / Math.max(1, spawnGain);
+  const edgeScore = Math.max(0, Math.min(
+    Math.min(x, context.W - 1 - x) / Math.max(1, context.W / 2),
+    Math.min(y, context.H - 1 - y) / Math.max(1, context.H / 2),
+  ));
+  const freeLandScore = calculateSpawnFreeLandScore(
+    clusterScore, frontierGain, frontierSlots, frontierValueGain, context.frontierValueScale,
+  );
+  const landComponent = spawnLandComponentAt(context.index, x, y, context.W);
+  const tribeReach = tribeReachForCandidate(
+    context.tribeProximity,
+    x,
+    y,
+    {
+      freeLandScore,
+      tribeCount: context.points.tribeLocs.length,
+      landComponent,
+    },
+  );
+  const tribeClusterScore = tribeClusterScoreForCandidate(
+    context.tribeProximity,
+    x,
+    y,
+    context.points.tribeLocs.length,
+    { landComponent },
+  );
+  const tribeScore = context.tribeProximity && landComponent > 0
+    ? context.tribeProximity.score(x, y, SPAWN_HEATMAP_TRIBE_R, landComponent) : 0;
+  const nationScore = context.nationProximity ? context.nationProximity.score(x, y) : 0;
+  const resourceScore = combineSpawnEntityScore(
+    tribeScore, nationScore, tribeReach.score,
+    context.points.tribeLocs.length, context.points.nationLocs.length,
+  );
+  const playerScore = Math.min(1,
+    weightedNearestSpawnDistance(context.points.enemySpawns, x, y) / SPAWN_HEATMAP_PLAYER_R,
+  );
+  const pressureScore = 1 / (1 + spawnEnemyPressure(context.points.enemySpawns, x, y));
+  const clanDistance = nearestSpawnDistance(context.points.clanSpawns, x, y);
+  const clanScore = clanDistance === Infinity
+    ? 0 : Math.max(0, 1 - clanDistance / SPAWN_HEATMAP_TEAM_ATTRACT_R);
+  const team = exactTeamCandidateScores(context, x, y);
+  const teamInteriorScore = teamPolyhedronInteriorScore(
+    x, y, context.teamPolyhedron, context.teamCentroid,
+  );
+  const coastalScore = coastalAccessScore(
+    sampleCoastalWaterShare(context.terrain, context.W, context.H, x, y),
+  );
+  const score = clusterScore * SPAWN_W.land + plainsScore * SPAWN_W.plains +
+    tribeReach.score * SPAWN_W.tribe + tribeClusterScore * SPAWN_W.tribe * 0.2 +
+    tribeScore * SPAWN_W.tribe * 0.15 +
+    nationScore * SPAWN_W.nation + playerScore * SPAWN_W.player +
+    edgeScore * SPAWN_W.edge + pressureScore * SPAWN_W.enemyPressure +
+    coastalScore * SPAWN_W.coastal +
+    team.score + clanScore * SPAWN_W.clan;
+  const frontierCoverage = exactFrontierCoverage(
+    frontierSlots, frontierValueGain, context.frontierValueScale, freeLandScore, clusterScore,
+  );
+  const objective = evaluateExactSpawnObjective(context, {
+    clusterScore, frontierCoverage, playerScore, pressureScore, edgeScore,
+    teamScore: team.robust, tribeScore, nationScore, tribeReach, tribeClusterScore, freeLandScore,
+    resourceScore, clanScore, teamInteriorScore,
+  });
+  insertExactSpawnCandidate(context.best, {
+    ref: tile, x, y, score, spawnGain, frontierGain, frontierValueGain, freeLandScore,
+    tribeScore, tribeReachCount: tribeReach.count, tribeReachScore: tribeReach.score,
+    tribeGeometricReachCount: tribeReach.geometricCount,
+    tribeClusterScore, coastalScore,
+    tribeReachRadius: tribeReach.radius, nationScore, resourceScore, clanScore,
+    teamPolyhedronScore: context.teamPolyhedron ? 1 : 0, objective,
+    landConnectivityReady: context.index.landComponentsReady === true,
+    teamInteriorScore,
+  });
+}
+
+function evaluateExactSpawnObjective(context, values) {
+  if (typeof context.objectiveApi?.evaluateModelCandidate !== "function") return null;
+  return context.objectiveApi.evaluateModelCandidate({
+    startScore: values.clusterScore,
+    expansionScore: Math.min(values.clusterScore, values.frontierCoverage),
+    safetyScore: Math.min(values.playerScore, values.pressureScore, values.edgeScore),
+    teamScore: values.teamScore,
+    tribeScore: context.points.tribeLocs.length > 0 ? values.tribeScore : 1,
+    nationScore: context.points.nationLocs.length > 0 ? values.nationScore : 1,
+    tribeReachScore: values.tribeReach.score, tribeReachCount: values.tribeReach.count,
+    tribeClusterScore: values.tribeClusterScore,
+    freeLandScore: values.freeLandScore, resourceScore: values.resourceScore,
+    clanScore: values.clanScore, teamPolyhedronScore: context.teamPolyhedron ? 1 : 0,
+    teamInteriorScore: values.teamInteriorScore,
+  });
+}
+
+function iterateExactSpawnCandidates(context, candidateOptions) {
+  if (context.incremental && typeof context.index.forEachCandidateRange === "function") {
+    context.index.forEachCandidateRange(candidateOptions);
+    return;
+  }
+  context.index.forEachCandidate(candidateOptions);
+}
+
+function cacheExactSpawnResult(game, index, points, result) {
+  _exactSpawnCacheSrcRef = (game && game.__src) || game;
+  _exactSpawnCacheIndexVersion = index.version;
+  _exactSpawnCacheSignature = points.signature;
+  _exactSpawnCacheResult = result;
+}
+
+function isIncrementalExactSpawnOptions(options) {
+  return Boolean(options && (options.startRef !== undefined ||
+    options.endRef !== undefined || Array.isArray(options.best)));
+}
+
+function readCachedExactSpawnResult(game, index, points, incremental) {
+  if (incremental) return undefined;
+  const source = (game && game.__src) || game;
+  const matches = _exactSpawnCacheSrcRef === source &&
+    _exactSpawnCacheIndexVersion === index.version &&
+    _exactSpawnCacheSignature === points.signature;
+  return matches ? _exactSpawnCacheResult : undefined;
+}
+
+function exactCandidateIterationOptions(context) {
+  const range = context.incremental
+    ? { startRef: context.options.startRef, endRef: context.options.endRef } : {};
+  return {
+    mode: "explicit", ...range,
+    isCenterAllowed: (tile, x, y) => exactSpawnCenterAllowed(context, tile, x, y),
+    onCandidate: (...args) => rankExactSpawnCandidate(context, args),
+  };
+}
+
+// Exact map-resolution ranking for the bot. This is deliberately separate
+// from the visual heatmap: the visual layer may stay coarse, while the bot
+// uses a replay-free robust objective over legal start and expansion metrics.
+function computeExactSpawnTopSpotsForBot(game, me, options = null) {
+  const incremental = isIncrementalExactSpawnOptions(options);
+  const index = ensureSpawnCandidateIndex(game);
+  if (!index || !index.ready) return null;
+
+  const points = options?.points || collectExactSpawnPoints(game, me);
+  const cached = readCachedExactSpawnResult(game, index, points, incremental);
+  if (cached !== undefined) return cached;
+
+  const contextOptions = options ? { ...options, me } : { me };
+  const context = createExactSpawnRankingContext(
+    game, index, points, contextOptions, incremental,
+  );
+
+  iterateExactSpawnCandidates(context, exactCandidateIterationOptions(context));
+
+  let result = selectDiverseExactSpawnCandidates(context.best);
+  if (incremental) result = context.best.length > 0 ? context.best : null;
+  if (!incremental) cacheExactSpawnResult(game, index, points, result);
+  return result;
+}
+
+// The exact scorer is intentionally kept synchronous for deterministic test
+// callers, but the live bot must never run that full-map pass on its decision
+// stack. Rank a small ref range during idle time and let the bot use its last
+// completed result (or the bounded visual fallback) while the job progresses.
+const EXACT_SPAWN_RANKING_CHUNK_REFS = 128;
+const EXACT_SPAWN_RANKING_SLICE_MS = 4;
+const EXACT_SPAWN_RANKING_IDLE_TIMEOUT_MS = 500;
+let _asyncExactSpawnJob = null;
+let _asyncExactSpawnScheduled = false;
+let _asyncExactSpawnScheduledJob = null;
+let _asyncExactSpawnResultSrcRef = null;
+let _asyncExactSpawnResultIndexVersion = -1;
+let _asyncExactSpawnResultSignature = "";
+let _asyncExactSpawnResult = null;
+
+function scheduleAsyncExactSpawnJob(job) {
+  if (!job || job.done) return;
+  if (_asyncExactSpawnScheduled && _asyncExactSpawnScheduledJob === job) return;
+  _asyncExactSpawnScheduled = true;
+  _asyncExactSpawnScheduledJob = job;
+
+  const run = (deadline) => {
+    if (_asyncExactSpawnScheduledJob === job) {
+      _asyncExactSpawnScheduled = false;
+      _asyncExactSpawnScheduledJob = null;
+    }
+    if (job !== _asyncExactSpawnJob || job.done) return;
+    if (job.index.version !== job.indexVersion) {
+      job.done = true;
       return;
     }
-    const spotColors = ["#ffd54f", "#9ccc65", "#9ccc65", "#d8dde6", "#d8dde6"];
-    for (let i = 0; i < topSpots.length; i += 1) {
-      const spot = topSpots[i];
-      mapProject(proj, spot.x, spot.y, _spawnCellPt);
-      const p = _spawnCellPt;
-      if (!mapPointOnScreen(p.x, p.y, 20)) continue;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 11, 0, Math.PI * 2);
-      ctx.lineWidth = 2.5;
-      ctx.strokeStyle = spotColors[i] || "#d8dde6";
-      ctx.stroke();
-      ctx.fillStyle = "rgba(0, 0, 0, 0.72)";
-      ctx.fill();
-      ctx.fillStyle = spotColors[i] || "#d8dde6";
-      ctx.font = 'bold 10px "Aptos", monospace';
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(String(i + 1), p.x, p.y + 0.5);
+
+    const startedAt = performance.now();
+    let chunks = 0;
+    const processChunk = () => {
+      const startRef = job.cursor;
+      const endRef = Math.min(
+        job.index.size,
+        startRef + EXACT_SPAWN_RANKING_CHUNK_REFS,
+      );
+      if (endRef <= startRef) {
+        job.cursor = job.index.size;
+        return;
+      }
+      computeExactSpawnTopSpotsForBot(job.game, job.me, {
+        points: job.points,
+        best: job.best,
+        startRef,
+        endRef,
+      });
+      job.cursor = endRef;
+      chunks += 1;
+    };
+
+    // A timer fallback deliberately processes one chunk only. Native idle
+    // callbacks may use the remaining budget, capped at four chunks so a
+    // browser that reports an overly generous deadline cannot monopolize a
+    // frame.
+    processChunk();
+    if (job.index.version !== job.indexVersion) {
+      job.done = true;
+      return;
     }
+    const hasIdleBudget = () =>
+      job.cursor < job.index.size &&
+      job.index.version === job.indexVersion &&
+      chunks < 4 &&
+      deadline &&
+      typeof deadline.timeRemaining === "function" &&
+      deadline.timeRemaining() > 0 &&
+      performance.now() - startedAt < EXACT_SPAWN_RANKING_SLICE_MS;
+    while (hasIdleBudget()) {
+      processChunk();
+    }
+
+    if (job.index.version !== job.indexVersion) {
+      job.done = true;
+      return;
+    }
+
+    if (job.cursor < job.index.size) {
+      scheduleAsyncExactSpawnJob(job);
+      return;
+    }
+
+    job.done = true;
+    _asyncExactSpawnResultSrcRef = job.src;
+    _asyncExactSpawnResultIndexVersion = job.indexVersion;
+    _asyncExactSpawnResultSignature = job.points.signature;
+    _asyncExactSpawnResult = selectDiverseExactSpawnCandidates(job.best);
+  };
+
+  {
+    if (typeof requestIdleCallback === "function") {
+      requestIdleCallback(run, { timeout: EXACT_SPAWN_RANKING_IDLE_TIMEOUT_MS });
+      return;
+    }
+  }
+  setTimeout(run, 0);
+}
+
+function computeAsyncExactSpawnTopSpotsForBot(game, me) {
+  const index = ensureSpawnCandidateIndex(game);
+  if (!index || !index.ready || typeof index.forEachCandidateRange !== "function") {
+    return null;
+  }
+
+  const src = (game && game.__src) || game;
+  const indexVersion = index.version;
+  const points = collectExactSpawnPoints(game, me);
+  const cached = cachedAsyncExactSpawnResult(src, indexVersion, points.signature);
+  if (cached !== undefined) return cached;
+
+  const activeJob = _asyncExactSpawnJob;
+  if (asyncExactJobMatches(activeJob, src, index, indexVersion)) return null;
+
+  if (activeJob && !activeJob.done && activeJob.index === index) {
+    activeJob.done = true;
+  }
+
+  const job = {
+    game,
+    me,
+    src,
+    index,
+    indexVersion,
+    points,
+    cursor: 0,
+    best: [],
+    done: false,
+  };
+  _asyncExactSpawnJob = job;
+  scheduleAsyncExactSpawnJob(job);
+  return null;
+}
+
+{
+  if (typeof globalThis === "object") {
+    globalThis.__OFHRefreshSpawnCandidateTerrain = refreshSpawnCandidateTerrain;
+    globalThis.__OFHPrepareSpawnCandidateConnectivity = prepareSpawnCandidateConnectivity;
+    globalThis.__OFHSpawnCandidateConnectivitySnapshot =
+      getSpawnCandidateConnectivitySnapshot;
+  }
+}
+
+// ── Main scan (called by scheduler every 250ms) ────────────────────────
+
+function spawnHeatmapSelectionIsActive(game) {
+  if (!(game.inSpawnPhase && game.inSpawnPhase())) return false;
+  const me = game.myPlayer ? game.myPlayer() : null;
+  return me?.hasSpawned?.() !== true;
+}
+
+function scanSpawnHeatmap(game) {
+  const selectionIsActive = spawnHeatmapSelectionIsActive(game);
+  if (_spawnHeatmapWasInSpawnPhase && !selectionIsActive) {
+    _spawnHeatmapData = null;
+    _spawnStaticCandidates = null;
+    _spawnStaticGameRef = null;
+    _spawnStaticTerrainRef = null;
+    _spawnStaticWidth = 0;
+    _spawnStaticHeight = 0;
+    _spawnPlayerPositions.clear();
+    _spawnIntentVersion += 1;
+    resetSpawnCandidateIndex();
+    _spawnHeatmapWasInSpawnPhase = false;
+    return;
+  }
+  _spawnHeatmapWasInSpawnPhase = selectionIsActive;
+  if (!selectionIsActive) {
+    _spawnHeatmapData = null;
+    return;
+  }
+
+  const me = game.myPlayer ? game.myPlayer() : null;
+
+  // Phase 1: static candidates for the visual overlay. The bot's exact
+  // selector is intentionally kept out of this path: spawn markers are on by
+  // default and must never allocate map-sized index buffers by themselves.
+  const candidates = ensureSpawnStaticCandidates(game);
+  if (!candidates || candidates.length === 0) {
+    _spawnHeatmapData = null;
+    return;
+  }
+
+  // Phase 2: dynamic scoring using live game-API player positions.
+  _spawnHeatmapData = computeDynamicScores(game, candidates, me);
+}
+
+// ONE static-candidate cache shared by the overlay and the auto-bot, keyed on
+// the unwrapped source GameView (the bot passes a wrapper, the overlay the raw
+// game — both resolve to the same underlying object, so the heavy grid scan
+// runs a single time per map).
+function ensureSpawnStaticCandidates(game) {
+  const src = (game && game.__src) || game;
+  const td = getSpawnTerrain(game);
+  if (
+    _spawnStaticGameRef !== src ||
+    _spawnStaticTerrainRef !== (td && td.terrain) ||
+    _spawnStaticWidth !== (td ? td.W : 0) ||
+    _spawnStaticHeight !== (td ? td.H : 0) ||
+    _spawnStaticCandidates === null
+  ) {
+    _spawnStaticCandidates = computeStaticCandidates(game);
+    _spawnStaticGameRef = src;
+    _spawnStaticTerrainRef = td && td.terrain;
+    _spawnStaticWidth = td ? td.W : 0;
+    _spawnStaticHeight = td ? td.H : 0;
+  }
+  return _spawnStaticCandidates;
+}
+
+// The exact topSpots array currently drawn on the map (or null). The auto-bot
+// reads this first so it spawns at literally the same #1 the player sees.
+function getSpawnHeatmapTopSpots() {
+  return _spawnHeatmapData && _spawnHeatmapData.topSpots && _spawnHeatmapData.topSpots.length > 0
+    ? _spawnHeatmapData.topSpots
+    : null;
+}
+
+// Shared fallback scorer entry point for the auto-bot. It computes the same
+// bounded visual topSpots the heatmap draws when the exact map-wide index is
+// unavailable or over budget. Reuses the shared static-candidate cache (works
+// even if the heatmap is disabled).
+//
+// Per-tick memo: the bot calls this twice in the same tick (currentSpawnTopKey
+// then pickSpawnCenter) with identical inputs, and if the overlay is on it also
+// ran computeDynamicScores this tick. Cache the result per game-tick so the
+// dynamic scoring pass runs at most once per tick regardless of how many
+// callers ask for it.
+let _botTopSpotsTick = -1;
+let _botTopSpotsGameRef = null;
+let _botTopSpotsTerrainRef = null;
+let _botTopSpotsResult = null;
+// Spawn retries can run every few ticks while the client is still waiting for
+// a selected tile to materialize.  The bounded initial scorer is synchronous,
+// so retain its exact result while the roster, team geometry, and entity
+// locations are unchanged.
+let _initialBotTopSpotsGameRef = null;
+let _initialBotTopSpotsTerrainRef = null;
+let _initialBotTopSpotsSignature = null;
+let _initialBotTopSpotsIndexVersion = -1;
+let _initialBotTopSpotsResult = null;
+function currentSpawnTick(game) {
+  {
+    const tick = Number(game.ticks ? game.ticks() : -1);
+    return Number.isFinite(tick) ? tick : -1;
+  }
+}
+
+function cachedBotSpawnTopSpots(src, terrain, tick) {
+  const matches = _botTopSpotsGameRef === src && _botTopSpotsTerrainRef === terrain &&
+    tick >= 0 && tick === _botTopSpotsTick;
+  return matches ? _botTopSpotsResult : undefined;
+}
+
+function rememberBotSpawnTopSpots(src, terrain, tick, result) {
+  _botTopSpotsGameRef = src;
+  _botTopSpotsTerrainRef = terrain;
+  _botTopSpotsTick = tick;
+  _botTopSpotsResult = result;
+  return result;
+}
+
+function initialBotSpawnSignature(game, me) {
+  return exactSpawnSignature(collectExactSpawnPoints(game, me));
+}
+
+function cachedInitialBotSpawnTopSpots(src, terrain, signature, indexVersion) {
+  const matches =
+    _initialBotTopSpotsGameRef === src &&
+    _initialBotTopSpotsTerrainRef === terrain &&
+    _initialBotTopSpotsSignature === signature &&
+    _initialBotTopSpotsIndexVersion === indexVersion;
+  return matches ? _initialBotTopSpotsResult : undefined;
+}
+
+function rememberInitialBotSpawnTopSpots(src, terrain, signature, indexVersion, result) {
+  _initialBotTopSpotsGameRef = src;
+  _initialBotTopSpotsTerrainRef = terrain;
+  _initialBotTopSpotsSignature = signature;
+  _initialBotTopSpotsIndexVersion = indexVersion;
+  _initialBotTopSpotsResult = result;
+  return result;
+}
+
+function computeInitialSpawnTopSpotsForBot(game, me) {
+    // The accepted initial spawn does not need a future exact rerank.  Avoid
+    // allocating its map-sized index on the decision stack; the normal visual
+    // cache remains preferred whenever it is already available.
+  const existing = getSpawnHeatmapTopSpots();
+  if (existing?.length > 0) return existing;
+  const src = (game && game.__src) || game;
+  const terrain = getSpawnTerrain(game)?.terrain ?? null;
+  const signature = initialBotSpawnSignature(game, me);
+  const indexVersion = existingSpawnCandidateIndex(game)?.version ?? -1;
+  const cached = cachedInitialBotSpawnTopSpots(src, terrain, signature, indexVersion);
+  if (cached !== undefined) return cached;
+  const objectiveApi = getSpawnObjectiveApi();
+  const groups = collectSpawnPlayerGroups(game, me, objectiveApi);
+  const assignedArea = getSpawnAreaForGame(game, me);
+  // An explicit map teamSpawnArea is authoritative; do not intersect it with
+  // one convex hull built from teammates scattered across disconnected team
+  // boxes (More Than Luck 5-team spawn failure).
+  const teamRegion = assignedArea
+    ? null
+    : buildTeamSpawnRegion(groups.teamSpawns);
+  const candidates = computeStaticCandidatesWithBudget(
+    game,
+    SPAWN_HEATMAP_INITIAL_BOT_CANDIDATES,
+    teamRegion,
+    assignedArea,
+  );
+  if (!candidates.length) return null;
+  const spots = computeDynamicScores(game, candidates, me)?.topSpots;
+  return rememberInitialBotSpawnTopSpots(
+    src,
+    terrain,
+    signature,
+    indexVersion,
+    spots?.length > 0 ? spots : null,
+  );
+}
+
+function computeRegularSpawnTopSpotsForBot(game, me) {
+  const exact = computeAsyncExactSpawnTopSpotsForBot(game, me);
+  if (exact && exact.length > 0) return exact;
+  const src = (game && game.__src) || game;
+  const td = getSpawnTerrain(game);
+  const terrain = td?.terrain ?? null;
+  const tick = currentSpawnTick(game);
+  const cached = cachedBotSpawnTopSpots(src, terrain, tick);
+  if (cached !== undefined) return cached;
+  const candidates = ensureSpawnStaticCandidates(game);
+  if (!candidates?.length) return null;
+  const spots = computeDynamicScores(game, candidates, me)?.topSpots;
+  const result = spots?.length > 0 ? spots : null;
+  return rememberBotSpawnTopSpots(src, terrain, tick, result);
+}
+
+function computeSpawnTopSpotsForBot(game, me, options = null) {
+  if (options?.initial === true) return computeInitialSpawnTopSpotsForBot(game, me);
+  return computeRegularSpawnTopSpotsForBot(game, me);
+}
+
+// ── Draw ────────────────────────────────────────────────────────────────
+
+const _spawnCellPt = { x: 0, y: 0 };
+function drawSpawnScoreCells(ctx, scores, maxScore, projector) {
+  if (!runtimeState.spawnHeatmapEnabled || maxScore <= 0) return;
+  const cell = SPAWN_HEATMAP_CELL;
+  const halfCell = cell / 2;
+  const invMax = 1 / maxScore;
+  let drawn = 0;
+  for (const item of scores) {
+    if (drawn >= SPAWN_HEATMAP_MAX_CELLS) return;
+    mapProject(projector, item.x, item.y, _spawnCellPt);
+    const { x, y } = _spawnCellPt;
+    if (x < -cell || y < -cell || x > window.innerWidth + cell || y > window.innerHeight + cell) continue;
+    const value = item.score * invMax;
+    ctx.fillStyle = `rgba(${((1 - value) * 255) | 0},${(value * 255) | 0},42,${(value * 0.45 + 0.12).toFixed(2)})`;
+    ctx.fillRect(x - halfCell, y - halfCell, cell, cell);
+    drawn++;
+  }
+}
+
+function drawSpawnTopSpotMarkers(ctx, topSpots, projector) {
+  const colors = ["#ffd54f", "#9ccc65", "#9ccc65", "#d8dde6", "#d8dde6"];
+  for (let index = 0; index < topSpots.length; index += 1) {
+    const spot = topSpots[index];
+    mapProject(projector, spot.x, spot.y, _spawnCellPt);
+    if (!mapPointOnScreen(_spawnCellPt.x, _spawnCellPt.y, 20)) continue;
+    const color = colors[index] || "#d8dde6";
+    ctx.beginPath();
+    ctx.arc(_spawnCellPt.x, _spawnCellPt.y, 11, 0, Math.PI * 2);
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = color;
+    ctx.stroke();
+    ctx.fillStyle = "rgba(0, 0, 0, 0.72)";
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.font = 'bold 10px "Aptos", monospace';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(index + 1), _spawnCellPt.x, _spawnCellPt.y + 0.5);
+  }
+}
+
+function drawSpawnHeatmap(ctx, game, transform) {
+  if (!_spawnHeatmapData) return;
+  const { scores, topSpots, maxScore } = _spawnHeatmapData;
+  if (maxScore <= 0 && (!topSpots || topSpots.length === 0)) return;
+  // Derive the affine projector ONCE (3 transform calls) then project every
+  // cell with arithmetic — avoids ~1200 worldToScreenCoordinates per frame.
+  const proj = mapMakeProjector(transform);
+  if (!proj) return;
+
+  ctx.save();
+  drawSpawnScoreCells(ctx, scores, maxScore, proj);
+
+  // Numbered top-spot markers — only when the markers layer is on. Can show
+  // WITHOUT the heatmap (clean map, just the best spots).
+  if (!runtimeState.spawnMarkersEnabled) {
     ctx.restore();
+    return;
   }
+  drawSpawnTopSpotMarkers(ctx, topSpots, proj);
+  ctx.restore();
+}
 
-  function spawnOverlayEnabled() {
-    return spawnHeatmapEnabled || spawnMarkersEnabled;
+function spawnOverlayEnabled() {
+  return runtimeState.spawnHeatmapEnabled || runtimeState.spawnMarkersEnabled;
+}
+
+registerMapOverlayLayer({
+  id: "spawn-heatmap",
+  scanIntervalMs: 1000, // match Tactical: heavy dynamic scoring recomputes every 1000ms
+  isEnabled: spawnOverlayEnabled,
+  scan: function (game) { scanSpawnHeatmap(game); },
+  draw: function (ctx, game, transform) { drawSpawnHeatmap(ctx, game, transform); },
+});
+
+function _resetSpawnHeatmapCaches() {
+  if (!spawnOverlayEnabled()) {
+    _spawnHeatmapData = null;
+    _spawnStaticCandidates = null;
+    _spawnStaticGameRef = null;
+    _spawnStaticTerrainRef = null;
+    _spawnStaticWidth = 0;
+    _spawnStaticHeight = 0;
+    _initialBotTopSpotsGameRef = null;
+    _initialBotTopSpotsTerrainRef = null;
+    _initialBotTopSpotsSignature = null;
+    _initialBotTopSpotsIndexVersion = -1;
+    _initialBotTopSpotsResult = null;
+    _spawnPlayerPositions.clear();
+    _spawnIntentVersion += 1;
+    resetSpawnCandidateIndex();
+    _spawnHeatmapWasInSpawnPhase = false;
   }
+}
 
-  registerMapOverlayLayer({
-    id: "spawn-heatmap",
-    scanIntervalMs: 1000, // match Tactical: heavy dynamic scoring recomputes every 1000ms
-    isEnabled: spawnOverlayEnabled,
-    scan: function (game) { scanSpawnHeatmap(game); },
-    draw: function (ctx, game, transform) { drawSpawnHeatmap(ctx, game, transform); },
-  });
+function setSpawnHeatmapEnabled(enabled) {
+  runtimeState.spawnHeatmapEnabled = Boolean(enabled);
+  _resetSpawnHeatmapCaches();
+  requestMapOverlayLoop();
+}
 
-  function _resetSpawnHeatmapCaches() {
-    if (!spawnOverlayEnabled()) {
-      _spawnHeatmapData = null;
-      _spawnStaticCandidates = null;
-      _spawnStaticGameRef = null;
-      _spawnPlayerPositions.clear();
-      _spawnHeatmapWasInSpawnPhase = false;
-    }
-  }
-
-  function setSpawnHeatmapEnabled(enabled) {
-    spawnHeatmapEnabled = Boolean(enabled);
-    _resetSpawnHeatmapCaches();
-    requestMapOverlayLoop();
-  }
-
-  function setSpawnMarkersEnabled(enabled) {
-    spawnMarkersEnabled = Boolean(enabled);
-    _resetSpawnHeatmapCaches();
-    requestMapOverlayLoop();
-  }
+function setSpawnMarkersEnabled(enabled) {
+  runtimeState.spawnMarkersEnabled = Boolean(enabled);
+  _resetSpawnHeatmapCaches();
+  requestMapOverlayLoop();
+}

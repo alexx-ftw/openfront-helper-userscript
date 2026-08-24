@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A standalone **userscript** for [OpenFront.io](https://openfront.io/) that bundles three feature sets into one `openfront-helper.user.js` file: **auto-join** (poll the public lobby list and join the first match for your filters), **in-game overlays** (gold-per-minute, team build stats, trade balances, nuke/boat prediction, heatmaps, …), and an **auto-bot** (a private/public-lobby training bot configurable live in-game). It runs under Tampermonkey / Violentmonkey / Userscripts with `@grant none`, so everything executes in one page context — there is no extension background.
+A standalone **userscript** for [OpenFront.io](https://openfront.io/) that bundles three feature sets into one `openfront-helper.user.js` file: **auto-join** (watch the public lobby list and join the first lobby card the main menu is actually displaying that matches your filters — never queued or hosted lobbies the client isn't showing), **in-game overlays** (gold-per-minute, team build stats, trade balances, nuke/boat prediction, heatmaps, …), and an **auto-bot** configurable live in-game. It runs under Tampermonkey / Violentmonkey / Userscripts with `@grant none`, so everything executes in one page context — there is no extension background.
 
 ## Commands
 
@@ -13,12 +13,16 @@ npm install
 npm run build        # → openfront-helper.user.js (minified)   — the committed artifact
 npm run build:raw    # unminified build (readable engine + console.log); OFH_DEBUG=1 also triggers raw
 npm run check        # tsc --noEmit  (type-checks src/**/*.ts ONLY — engine JS is not type-checked)
+npm run check:constants # contract-check every uppercase game constant in engine/ and openfront-engine/src/
+npm run check:runtime-parity # compare unit types, maps, and game-rule fallbacks with the pinned engine
 npm run check:i18n   # audit which locale keys are missing vs. engine t()/tr() usage
 npm test             # node test/smoke.mjs — builds the shell IIFE in a mocked DOM and asserts the shims wire up
 npm run format       # prettier --write (engine/ and locales/ are prettier-ignored on purpose)
 ```
 
-There is no test runner/framework and no single-test command — `npm test` is one Node smoke script. The auto-bot has its own in-browser smoke check: run `window.__autoBotDiag()` in the page console; a full object back means the bot wiring is intact.
+There is no test runner/framework and no single-test command — `npm test` is the full Node contract and behavior suite. The auto-bot has its own in-browser smoke check: run `window.__autoBotDiag()` in the page console; a full object back means the bot wiring is intact.
+
+Game-rule values (nuke costs/radii/speeds, construction durations, cooldowns, ranges, unit types, and map ids) must be read from `game.config()` at runtime when the client exposes them. Their reviewed fallbacks are checked by `npm run check:runtime-parity` against the pinned `openfront-engine` submodule. Helper policy/tuning values remain local and are not treated as official engine constants.
 
 **The build output `openfront-helper.user.js` is committed to the repo** (see `.gitignore`). After changing any source, rebuild and commit the regenerated file along with your changes — the published userscript is this file, not the sources.
 
@@ -44,7 +48,7 @@ This is the userscript-manager-facing layer. It re-creates the WebExtension APIs
 Ported from a WebExtension's content scripts + page bridge. **No `import`/`export`** — files are concatenated and run in one shared scope, so a top-level `const`/`function`/`class` in one file is visible to all siblings; cross-file state is shared through object references. The build wraps the engine in two `try/catch` IIFEs that are **NOT `"use strict"`** (the originals were sloppy-mode classic scripts). `prettier` is configured to **skip `engine/` and `locales/`** — do not reformat them. Two layers, emitted in this order (lobby first so auto-join survives an in-game fault):
 
 - **Lobby layer** (`map-data.js`, `shared/settings.js`, `shared/i18n.js`, `lobby/*`): auto-join logic + the floating auto-join panel. Talks to the shell via `window.__OFH.chrome`.
-- **In-game layer** (`ingame/**`): overlays, helper panels, and the auto-bot. `bootstrap.js` (emitted last) is the `window.postMessage` router — it listens for source-tagged messages (`openfront-autojoin-extension` / `…-page`) and toggles each feature (`SHOW_GOLD_PER_MINUTE`, `SET_AUTO_NUKE`, `SET_AUTO_BOT_I18N`, …).
+- **In-game layer** (`ingame/**`): overlays, helper panels, and the auto-bot. `bootstrap.js` (emitted last) is the `window.postMessage` router — it listens for source-tagged messages (`openfront-autojoin-extension` / `…-page`) and toggles each feature (`SHOW_GOLD_PER_MINUTE`, `SET_AUTO_NUKE`, `SET_AUTO_BOT_I18N`, …). `ingame/companion/` (`core.js`, `commands.js`, `actions.js`, `engine.js`, `panel.js`, loaded in that order, last before `quick-panel.js`) is the Companion Bot: a "slave" tab that supports a named "boss" account (auto-donate, auto-alliance, ring-spawn, boss-target follow-attack, emoji-triggered commands), plus optional Active-mode hooks into the auto-bot's spawn/alliance decisions. Whenever Companion mode is on for a tab, it pins an always-on, non-dismissible warning banner (`pointer-events: none`) across the top of the screen so a mistaken click on the wrong tab is never silent.
 
 **The exact file order in `build.mjs` (`LOBBY_FILES` / `INGAME_FILES`) is load order and it matters.** If you add an engine file, insert it in the right position in those arrays — there is no auto-discovery for engine files (only locales are auto-discovered).
 
@@ -84,4 +88,4 @@ The most intricate subsystem and the one most likely to need care. It is a **fai
 
 ## Attribution
 
-In-game overlays/helper panels are adapted from [phil0010-gh/openfront-helper](https://github.com/phil0010-gh/openfront-helper). Several helper and auto-bot features (spawn scoring/heatmap, advisor, threat intel, map overlays) reference [OpenFront Tactical Assistant](https://greasyfork.org/en/scripts/581664-openfront-tactical-assistant). The auto-bot, the multi-language vanilla UI, and several features are original to this project.
+In-game overlays/helper panels are adapted from [phil0010-gh/openfront-helper](https://github.com/phil0010-gh/openfront-helper). Several helper and auto-bot features (spawn scoring/heatmap, advisor, threat intel, map overlays) reference [OpenFront Tactical Assistant](https://greasyfork.org/en/scripts/581664-openfront-tactical-assistant). Companion Bot (`engine/ingame/companion/`) takes its idea and tuning constants from [Openfront Multitab cheat](https://greasyfork.org/scripts/587654) by EcoMaxer (MIT), itself built on Project Blon. The auto-bot, the multi-language vanilla UI, and several features are original to this project.

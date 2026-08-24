@@ -1,0 +1,4 @@
+[submodule "openfront-engine"]
+	path = openfront-engine
+	url = https://github.com/openfrontio/openfrontio
+	branch = main

@@ -86,11 +86,9 @@
   // top/left in localStorage; we clear `bottom` so top/left win over the
   // default bottom-anchored CSS.
   function applyStoredGoldStatPanelPosition(el, storageKey) {
-    let pos = null;
-    try {
+    let pos;
+    {
       pos = JSON.parse(window.localStorage.getItem(storageKey) || "null");
-    } catch (_error) {
-      pos = null;
     }
     if (!pos || !Number.isFinite(pos.left) || !Number.isFinite(pos.top)) {
       return;
@@ -149,7 +147,7 @@
       if (!moved) {
         return;
       }
-      try {
+      {
         window.localStorage.setItem(
           storageKey,
           JSON.stringify({
@@ -157,8 +155,6 @@
             top: parseInt(panel.style.top, 10),
           }),
         );
-      } catch (_error) {
-        // Best-effort — the panel stays where dragged for this session regardless.
       }
     }
 
@@ -554,7 +550,7 @@
         apsExpanded = !apsExpanded;
         saveApsExpanded();
         expandBtn.textContent = apsExpanded ? "−" : "+";
-        topGoldPerMinuteRenderSignature = ""; // force a structural rebuild
+        apsRenderedOrderSig = ""; // force a structural rebuild
         updateTopGoldPerMinuteBadge();
       });
       header.append(title, expandBtn);
@@ -632,11 +628,11 @@
     const currentTick = Number(game?.ticks?.());
     if (
       !Number.isFinite(currentTick) ||
-      currentTick === lastProcessedIncomingGoldTransferTick
+      currentTick === runtimeState.lastProcessedIncomingGoldTransferTick
     ) {
       return;
     }
-    lastProcessedIncomingGoldTransferTick = currentTick;
+    runtimeState.lastProcessedIncomingGoldTransferTick = currentTick;
 
     const updates = game?.updatesSinceLastTick?.();
     if (!updates) {
@@ -702,7 +698,7 @@
 
     processIncomingGoldTransferUpdates(context.game);
     const now = Date.now();
-    lastGoldPerMinuteSampleAt = now;
+    runtimeState.lastGoldPerMinuteSampleAt = now;
     const activeIds = new Set();
     const players = getCachedPlayerViews(context.game);
 
@@ -757,7 +753,7 @@
     if (context?.game) {
       processIncomingGoldTransferUpdates(context.game);
     }
-    if (Date.now() - lastGoldPerMinuteSampleAt >= GOLD_PER_MINUTE_SAMPLE_MS) {
+    if (Date.now() - runtimeState.lastGoldPerMinuteSampleAt >= GOLD_PER_MINUTE_SAMPLE_MS) {
       sampleGoldPerMinute();
     }
   }
@@ -848,28 +844,22 @@
   let apsExpanded = false;
 
   function loadApsExpanded() {
-    try {
+    {
       return window.localStorage.getItem(APS_EXPAND_KEY) === "1";
-    } catch (_error) {
-      return false;
     }
   }
   function saveApsExpanded() {
-    try {
+    {
       window.localStorage.setItem(APS_EXPAND_KEY, apsExpanded ? "1" : "0");
-    } catch (_error) {
-      // ignore
     }
   }
   function applyStoredApsSize(panel) {
-    try {
+    {
       const s = JSON.parse(window.localStorage.getItem(APS_SIZE_KEY) || "null");
       if (s && Number.isFinite(s.w) && Number.isFinite(s.h)) {
         panel.style.width = `${s.w}px`;
         panel.style.height = `${s.h}px`;
       }
-    } catch (_error) {
-      // ignore
     }
   }
   function saveApsSize(panel) {
@@ -878,14 +868,13 @@
     if (!Number.isFinite(w) || !Number.isFinite(h)) {
       return; // not resized yet (still CSS default, no inline size)
     }
-    try {
+    {
       window.localStorage.setItem(APS_SIZE_KEY, JSON.stringify({ w, h }));
-    } catch (_error) {
-      // ignore
     }
   }
   let apsRenderedExpanded = null; // last grid/header structure rendered
   let apsRenderedSortSig = ""; // last sort state baked into the header arrows
+  let apsRenderedOrderSig = ""; // last keyed row order appended to the grid
   let apsHeaderCells = null;
   let apsFooterEntry = null; // pinned bottom row mirroring the hovered nation
   const apsRowCache = new Map(); // smallId -> { row, cells:{key:el} }
@@ -928,13 +917,11 @@
 
   function apsFormatOwned(owned, game) {
     // Match the game's own stats: denominator = land tiles minus fallout tiles.
-    let total = 0;
-    try {
+    let total;
+    {
       total =
         (Number(game?.numLandTiles?.()) || 0) -
         (Number(game?.numTilesWithFallout?.()) || 0);
-    } catch (_error) {
-      total = 0;
     }
     if (total <= 0) return "—";
     const pct = ((Number(owned) || 0) / total) * 100;
@@ -943,53 +930,46 @@
 
   // One pass over all structure units → smallId -> { type: count } (only built
   // when the panel is expanded, since it's the costly part).
+  function getApsStructureUnitData(unit) {
+    {
+      const smallId = Number(unit.owner?.()?.smallID?.());
+      const type = unit.type?.();
+      if (!Number.isFinite(smallId) || !type || unit.isUnderConstruction?.()) return null;
+      const rawLevel = Number(unit.level?.());
+      const level = Number.isFinite(rawLevel) && rawLevel > 0 ? rawLevel : 1;
+      return { smallId, type, level };
+    }
+  }
+
   function getApsStructureCounts(game) {
     const counts = new Map();
-    let units = [];
-    try {
+    let units;
+    {
       units = game.units(...APS_STRUCTURES.map((s) => s.type)) || [];
-    } catch (_error) {
-      units = [];
     }
     for (const unit of units) {
-      let smallId = NaN;
-      try {
-        smallId = Number(unit.owner?.()?.smallID?.());
-      } catch (_error) {
-        continue;
-      }
-      if (!Number.isFinite(smallId)) continue;
-      let type = null;
-      try {
-        type = unit.type?.();
-      } catch (_error) {
-        continue;
-      }
-      // Structures are upgradable; the game reports counts as the sum of levels
-      // excluding under-construction units (PlayerView.totalUnitLevels), so an
-      // upgraded silo/city counts by its level. Mirror that here.
-      let underConstruction = false;
-      try {
-        underConstruction = Boolean(unit.isUnderConstruction?.());
-      } catch (_error) {
-        underConstruction = false;
-      }
-      if (underConstruction) continue;
-      let level = 1;
-      try {
-        const lv = Number(unit.level?.());
-        if (Number.isFinite(lv) && lv > 0) level = lv;
-      } catch (_error) {
-        level = 1;
-      }
-      let entry = counts.get(smallId);
+      const data = getApsStructureUnitData(unit);
+      if (!data) continue;
+      let entry = counts.get(data.smallId);
       if (!entry) {
         entry = {};
-        counts.set(smallId, entry);
+        counts.set(data.smallId, entry);
       }
-      entry[type] = (entry[type] || 0) + level;
+      entry[data.type] = (entry[data.type] || 0) + data.level;
     }
     return counts;
+  }
+
+  function readApsPlayerNumber(player, methodName) {
+    { return Number(player?.[methodName]?.()) || 0; }
+  }
+
+  function getApsMaxTroops(config, player) {
+    { return config?.maxTroops ? (Number(config.maxTroops(player)) || 0) / 10 : 0; }
+  }
+
+  function isApsPlayerDisconnected(player) {
+    { return Boolean(player.isDisconnected?.()); }
   }
 
   function apsRowSortValue(row, key) {
@@ -1012,17 +992,13 @@
   function getAllPlayerStatsRows(game) {
     const players = getCachedPlayerViews(game);
     const structureCounts = apsExpanded ? getApsStructureCounts(game) : null;
-    let config = null;
-    try {
+    let config;
+    {
       config = game.config?.();
-    } catch (_error) {
-      config = null;
     }
-    let myId = NaN;
-    try {
+    let myId;
+    {
       myId = Number(game.myPlayer?.()?.smallID?.());
-    } catch (_error) {
-      myId = NaN;
     }
 
     const rows = [];
@@ -1033,31 +1009,10 @@
         continue;
       }
       const smallId = Number(getPlayerSmallId(player, index));
-      let gold = 0;
-      try {
-        gold = Number(player.gold?.()) || 0; // PlayerView.gold() is bigint
-      } catch (_error) {
-        gold = 0;
-      }
-      let owned = 0;
-      try {
-        owned = Number(player.numTilesOwned?.()) || 0;
-      } catch (_error) {
-        owned = 0;
-      }
-      let maxTroops = 0;
-      try {
-        // The game stores troops at 10x and displays /10 (renderTroops); match it.
-        if (config?.maxTroops) maxTroops = (Number(config.maxTroops(player)) || 0) / 10;
-      } catch (_error) {
-        maxTroops = 0;
-      }
-      let disconnected = false;
-      try {
-        disconnected = Boolean(player.isDisconnected?.());
-      } catch (_error) {
-        disconnected = false;
-      }
+      const gold = readApsPlayerNumber(player, "gold");
+      const owned = readApsPlayerNumber(player, "numTilesOwned");
+      const maxTroops = getApsMaxTroops(config, player);
+      const disconnected = isApsPlayerDisconnected(player);
       rows.push({
         smallId,
         name: getPlayerDisplayName(player),
@@ -1133,15 +1088,13 @@
     if (!Number.isFinite(smallId)) {
       return;
     }
-    try {
+    {
       const target =
         document.querySelector("actionable-events") ||
         document.querySelector("events-display");
       if (target && typeof target.emitGoToPlayerEvent === "function") {
         target.emitGoToPlayerEvent(Number(smallId));
       }
-    } catch (_error) {
-      // ignore
     }
   }
 
@@ -1204,25 +1157,36 @@
     return entry;
   }
 
-  function updateApsRow(entry, row, rank, game, hoveredId) {
+  function setApsCellText(cell, text) {
+    if (cell && cell.textContent !== text) cell.textContent = text;
+  }
+
+  function updateApsCoreCells(entry, row, rank, game) {
     const c = entry.cells;
-    if (c.rank) c.rank.textContent = String(rank + 1);
+    setApsCellText(c.rank, String(rank + 1));
     if (c.name) {
-      c.name.textContent = row.disconnected ? `${row.name} 💤` : row.name;
+      const name = row.disconnected ? `${row.name} 💤` : row.name;
+      setApsCellText(c.name, name);
       const color = row.color || (row.team ? getTeamColor(row.team, game) : "");
       if (color) c.name.style.setProperty("--team-accent-color", color);
       else c.name.style.removeProperty("--team-accent-color");
     }
-    if (c.owned) c.owned.textContent = apsFormatOwned(row.owned, game);
-    if (c.gold) c.gold.textContent = apsFormatNum(row.gold);
-    if (c.gpm) c.gpm.textContent = apsFormatGpm(row.gpm);
-    if (c.maxTroops) c.maxTroops.textContent = apsFormatNum(row.maxTroops);
-    if (row.counts) {
-      for (const s of APS_STRUCTURES) {
-        const cell = c[s.type];
-        if (cell) cell.textContent = String(row.counts[s.type] || 0);
-      }
+    setApsCellText(c.owned, apsFormatOwned(row.owned, game));
+    setApsCellText(c.gold, apsFormatNum(row.gold));
+    setApsCellText(c.gpm, apsFormatGpm(row.gpm));
+    setApsCellText(c.maxTroops, apsFormatNum(row.maxTroops));
+  }
+
+  function updateApsStructureCells(entry, row) {
+    if (!row.counts) return;
+    for (const structure of APS_STRUCTURES) {
+      setApsCellText(entry.cells[structure.type], String(row.counts[structure.type] || 0));
     }
+  }
+
+  function updateApsRow(entry, row, rank, game, hoveredId) {
+    updateApsCoreCells(entry, row, rank, game);
+    updateApsStructureCells(entry, row);
     entry.row.classList.toggle("is-self", Boolean(row.isMe));
     entry.row.classList.toggle(
       "is-hovered",
@@ -1251,12 +1215,12 @@
 
   function updateTeamGoldPerMinuteBadge() {
     const badge = ensureTeamGoldPerMinuteBadge();
-    if (!teamGoldPerMinuteEnabled) {
+    if (!runtimeState.teamGoldPerMinuteEnabled) {
       if (badge.dataset.visible !== "false") {
         badge.dataset.visible = "false";
         syncHelperStatsContainerVisibility();
       }
-      teamGoldPerMinuteRenderSignature = "";
+      runtimeState.teamGoldPerMinuteRenderSignature = "";
       return;
     }
 
@@ -1266,7 +1230,7 @@
         badge.dataset.visible = "false";
         syncHelperStatsContainerVisibility();
       }
-      teamGoldPerMinuteRenderSignature = "";
+      runtimeState.teamGoldPerMinuteRenderSignature = "";
       return;
     }
 
@@ -1277,7 +1241,7 @@
         badge.dataset.visible = "false";
         syncHelperStatsContainerVisibility();
       }
-      teamGoldPerMinuteRenderSignature = "";
+      runtimeState.teamGoldPerMinuteRenderSignature = "";
       return;
     }
 
@@ -1293,7 +1257,7 @@
         .map((entry) => `${entry.team}|${entry.color}|${entry.value}`)
         .join(";");
 
-      if (teamGoldPerMinuteRenderSignature !== nextSignature) {
+      if (runtimeState.teamGoldPerMinuteRenderSignature !== nextSignature) {
         rowsContainer.replaceChildren(
           ...rowData.map((entry) => {
             const row = document.createElement("span");
@@ -1309,7 +1273,7 @@
             return row;
           }),
         );
-        teamGoldPerMinuteRenderSignature = nextSignature;
+        runtimeState.teamGoldPerMinuteRenderSignature = nextSignature;
         markHelperStatsLayoutDirty();
       }
     }
@@ -1330,10 +1294,68 @@
     syncHelperStatsLayoutIfDirty();
   }
 
+  function getApsHoveredPlayerId() {
+    if (!runtimeState.goldPerMinuteEnabled) return null;
+    const overlay = getHoveredPlayerInfoOverlay();
+    return overlay?.player ? Number(getPlayerSmallId(overlay.player, 0)) : null;
+  }
+
+  function resetApsTableStructure(table) {
+    if (apsRenderedExpanded === apsExpanded) return;
+    table.style.gridTemplateColumns = getApsGridTemplate();
+    for (const entry of apsRowCache.values()) entry.row.remove();
+    apsRowCache.clear();
+    if (apsHeaderCells) for (const cell of apsHeaderCells) cell.remove();
+    apsHeaderCells = null;
+    apsFooterEntry?.row.remove();
+    apsFooterEntry = null;
+    apsRenderedSortSig = "";
+    apsRenderedExpanded = apsExpanded;
+  }
+
+  function ensureApsHeader(table, columns) {
+    const sortSig = `${apsSortKey}:${apsSortDir}`;
+    if (apsHeaderCells && apsRenderedSortSig === sortSig) return;
+    buildApsHeader(table, columns);
+    apsRenderedSortSig = sortSig;
+  }
+
+  function reconcileApsRows(table, rows, columns, game, hoveredId) {
+    const rowOrderSig = rows.map((row) => row.smallId).join(",");
+    const rowOrderChanged = apsRenderedOrderSig !== rowOrderSig;
+    apsRenderedOrderSig = rowOrderSig;
+    const seen = new Set();
+    rows.forEach((row, index) => {
+      seen.add(row.smallId);
+      const entry = getApsRowEntry(table, row, columns);
+      updateApsRow(entry, row, index, game, hoveredId);
+      if (rowOrderChanged) table.appendChild(entry.row);
+    });
+    for (const [smallId, entry] of apsRowCache) {
+      if (seen.has(smallId)) continue;
+      entry.row.remove();
+      apsRowCache.delete(smallId);
+    }
+  }
+
+  function updateApsFooter(table, rows, columns, game, hoveredId) {
+    const footer = getApsFooter(table, columns);
+    if (table.lastElementChild !== footer.row) table.appendChild(footer.row);
+    const hoveredRow = hoveredId === null ? null : rows.find((row) => row.smallId === hoveredId);
+    if (!hoveredRow) {
+      footer.smallId = null;
+      footer.row.style.display = "none";
+      return;
+    }
+    footer.smallId = hoveredRow.smallId;
+    updateApsRow(footer, hoveredRow, rows.indexOf(hoveredRow), game, hoveredId);
+    footer.row.style.display = "";
+  }
+
   function updateTopGoldPerMinuteBadge() {
     const badge = ensureTopGoldPerMinuteBadge();
     // The all-players stats panel is gated on the top-gpm toggle.
-    if (!topGoldPerMinuteEnabled) {
+    if (!runtimeState.topGoldPerMinuteEnabled) {
       hideTopGoldPerMinuteBadge(badge);
       return;
     }
@@ -1351,73 +1373,21 @@
     }
 
     // Hovered player → highlight that row (the showGoldPerMinute feature).
-    let hoveredId = null;
-    if (goldPerMinuteEnabled) {
-      const overlay = getHoveredPlayerInfoOverlay();
-      if (overlay?.player) {
-        hoveredId = Number(getPlayerSmallId(overlay.player, 0));
-      }
-    }
+    const hoveredId = getApsHoveredPlayerId();
 
     const columns = getApsColumns();
     const rows = getAllPlayerStatsRows(game);
 
     // Structural rebuild when expand state changes (the column set differs).
-    if (apsRenderedExpanded !== apsExpanded) {
-      table.style.gridTemplateColumns = getApsGridTemplate();
-      for (const [, entry] of apsRowCache) {
-        entry.row.remove();
-      }
-      apsRowCache.clear();
-      if (apsHeaderCells) {
-        for (const cell of apsHeaderCells) cell.remove();
-      }
-      apsHeaderCells = null;
-      if (apsFooterEntry) {
-        apsFooterEntry.row.remove();
-        apsFooterEntry = null;
-      }
-      apsRenderedSortSig = "";
-      apsRenderedExpanded = apsExpanded;
-    }
+    resetApsTableStructure(table);
 
     // (Re)build the sticky header when its structure or sort indicator changes.
-    const sortSig = `${apsSortKey}:${apsSortDir}`;
-    if (!apsHeaderCells || apsRenderedSortSig !== sortSig) {
-      buildApsHeader(table, columns);
-      apsRenderedSortSig = sortSig;
-    }
-
-    // Keyed per-row reconciliation; appended in sorted order (after the header).
-    const seen = new Set();
-    for (let i = 0; i < rows.length; i += 1) {
-      const row = rows[i];
-      seen.add(row.smallId);
-      const entry = getApsRowEntry(table, row, columns);
-      updateApsRow(entry, row, i, game, hoveredId);
-      table.appendChild(entry.row);
-    }
-    for (const [smallId, entry] of apsRowCache) {
-      if (!seen.has(smallId)) {
-        entry.row.remove();
-        apsRowCache.delete(smallId);
-      }
-    }
+    ensureApsHeader(table, columns);
+    reconcileApsRows(table, rows, columns, game, hoveredId);
 
     // Pinned bottom row = the hovered nation's stats, so you can read it without
     // scrolling to find its row. Hidden when nothing is hovered.
-    const footer = getApsFooter(table, columns);
-    table.appendChild(footer.row); // keep it last so sticky-bottom works
-    const hoveredRow =
-      hoveredId !== null ? rows.find((r) => r.smallId === hoveredId) : null;
-    if (hoveredRow) {
-      footer.smallId = hoveredRow.smallId;
-      updateApsRow(footer, hoveredRow, rows.indexOf(hoveredRow), game, hoveredId);
-      footer.row.style.display = "";
-    } else {
-      footer.smallId = null;
-      footer.row.style.display = "none";
-    }
+    updateApsFooter(table, rows, columns, game, hoveredId);
 
     if (badge.dataset.visible !== "true") {
       badge.dataset.visible = "true";
@@ -1428,12 +1398,12 @@
 
   function updateGoldPerMinuteBadge() {
     const badge = ensureGoldPerMinuteBadge();
-    if (!goldPerMinuteEnabled) {
+    if (!runtimeState.goldPerMinuteEnabled) {
       if (badge.dataset.visible !== "false") {
         badge.dataset.visible = "false";
         syncHelperStatsContainerVisibility();
       }
-      goldPerMinuteRenderSignature = "";
+      runtimeState.goldPerMinuteRenderSignature = "";
       return;
     }
 
@@ -1443,7 +1413,7 @@
         badge.dataset.visible = "false";
         syncHelperStatsContainerVisibility();
       }
-      goldPerMinuteRenderSignature = "";
+      runtimeState.goldPerMinuteRenderSignature = "";
       return;
     }
 
@@ -1457,8 +1427,8 @@
     const teamBackground = team ? getTeamColorBackground(team, overlay.game) : "";
     const nextSignature = `${teamColor}|${teamBackground}|${valueText}`;
 
-    if (goldPerMinuteRenderSignature !== nextSignature) {
-      goldPerMinuteRenderSignature = nextSignature;
+    if (runtimeState.goldPerMinuteRenderSignature !== nextSignature) {
+      runtimeState.goldPerMinuteRenderSignature = nextSignature;
       if (team) {
         badge.style.setProperty("--team-accent-color", teamColor);
         badge.style.setProperty("--team-border-color", teamColor);
@@ -1487,30 +1457,30 @@
   // and the hovered player's GPM (goldPerMinuteEnabled), so its tick listener is
   // shared: registered while either feature is on.
   function syncTopGpmTickRegistration() {
-    if (goldPerMinuteEnabled || topGoldPerMinuteEnabled) {
-      registerHelperTickListener(updateTopGoldPerMinuteBadge);
+    if (runtimeState.goldPerMinuteEnabled || runtimeState.topGoldPerMinuteEnabled) {
+      registerHelperTickListener(updateTopGoldPerMinuteBadge, 1000);
     } else {
       unregisterHelperTickListener(updateTopGoldPerMinuteBadge);
     }
   }
 
   function setGoldPerMinuteEnabled(enabled) {
-    goldPerMinuteEnabled = Boolean(enabled);
-    if (!goldPerMinuteEnabled) {
+    runtimeState.goldPerMinuteEnabled = Boolean(enabled);
+    if (!runtimeState.goldPerMinuteEnabled) {
       // Stop the sampler + drop trackers only if NO other consumer needs them:
       // the top-10 list, the economy heatmap, or the merged team-build panel.
       if (
-        !topGoldPerMinuteEnabled &&
-        !economyHeatmapEnabled &&
+        !runtimeState.topGoldPerMinuteEnabled &&
+        !runtimeState.economyHeatmapEnabled &&
         !teamBuildStatsEnabled
       ) {
-        if (goldPerMinuteInterval !== null) {
-          clearInterval(goldPerMinuteInterval);
+        if (runtimeState.goldPerMinuteInterval !== null) {
+          clearInterval(runtimeState.goldPerMinuteInterval);
         }
-        goldPerMinuteInterval = null;
+        runtimeState.goldPerMinuteInterval = null;
         goldTrackers.clear();
         incomingGoldTransfers.clear();
-        lastProcessedIncomingGoldTransferTick = null;
+        runtimeState.lastProcessedIncomingGoldTransferTick = null;
       }
       syncTopGpmTickRegistration();
       // Re-render so the hovered-player row drops out of the top-10 panel.
@@ -1519,8 +1489,8 @@
     }
 
     sampleGoldPerMinute();
-    if (goldPerMinuteInterval === null) {
-      goldPerMinuteInterval = setInterval(
+    if (runtimeState.goldPerMinuteInterval === null) {
+      runtimeState.goldPerMinuteInterval = setInterval(
         sampleGoldPerMinute,
         GOLD_PER_MINUTE_SAMPLE_MS,
       );
@@ -1529,45 +1499,45 @@
   }
 
   function setTeamGoldPerMinuteEnabled(enabled) {
-    teamGoldPerMinuteEnabled = Boolean(enabled);
-    if (!teamGoldPerMinuteEnabled) {
-      teamGoldPerMinuteAnimationFrame = null;
-      lastTeamGoldPerMinuteRenderAt = 0;
-      teamGoldPerMinuteRenderSignature = "";
+    runtimeState.teamGoldPerMinuteEnabled = Boolean(enabled);
+    if (!runtimeState.teamGoldPerMinuteEnabled) {
+      runtimeState.teamGoldPerMinuteAnimationFrame = null;
+      runtimeState.lastTeamGoldPerMinuteRenderAt = 0;
+      runtimeState.teamGoldPerMinuteRenderSignature = "";
       unregisterHelperTickListener(updateTeamGoldPerMinuteBadge);
       const badge = document.getElementById(TEAM_GOLD_PER_MINUTE_BADGE_ID);
       if (badge) {
         badge.dataset.visible = "false";
       }
-      if (!goldPerMinuteEnabled && !topGoldPerMinuteEnabled && !economyHeatmapEnabled) {
+      if (!runtimeState.goldPerMinuteEnabled && !runtimeState.topGoldPerMinuteEnabled && !runtimeState.economyHeatmapEnabled) {
         goldTrackers.clear();
         incomingGoldTransfers.clear();
-        lastProcessedIncomingGoldTransferTick = null;
+        runtimeState.lastProcessedIncomingGoldTransferTick = null;
       }
       syncHelperStatsContainerVisibility();
       return;
     }
 
     sampleGoldPerMinute();
-    registerHelperTickListener(updateTeamGoldPerMinuteBadge);
+    registerHelperTickListener(updateTeamGoldPerMinuteBadge, 1000);
   }
 
   function setTopGoldPerMinuteEnabled(enabled) {
-    topGoldPerMinuteEnabled = Boolean(enabled);
+    runtimeState.topGoldPerMinuteEnabled = Boolean(enabled);
     // The all-players panel replaces the game's own leaderboard while it's on.
-    setGameLeaderboardHidden(topGoldPerMinuteEnabled);
-    if (!topGoldPerMinuteEnabled) {
-      topGoldPerMinuteAnimationFrame = null;
-      lastTopGoldPerMinuteRenderAt = 0;
-      topGoldPerMinuteRenderSignature = "";
+    setGameLeaderboardHidden(runtimeState.topGoldPerMinuteEnabled);
+    if (!runtimeState.topGoldPerMinuteEnabled) {
+      runtimeState.topGoldPerMinuteAnimationFrame = null;
+      runtimeState.lastTopGoldPerMinuteRenderAt = 0;
+      apsRenderedOrderSig = "";
       if (
-        !goldPerMinuteEnabled &&
-        !economyHeatmapEnabled &&
+        !runtimeState.goldPerMinuteEnabled &&
+        !runtimeState.economyHeatmapEnabled &&
         !teamBuildStatsEnabled
       ) {
         goldTrackers.clear();
         incomingGoldTransfers.clear();
-        lastProcessedIncomingGoldTransferTick = null;
+        runtimeState.lastProcessedIncomingGoldTransferTick = null;
       }
       syncTopGpmTickRegistration();
       updateTopGoldPerMinuteBadge();

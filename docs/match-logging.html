@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Per-match logging</title>
+  </head>
+  <body>
+    <h1>Per-match logging</h1>
+    <p>
+      Round Logger and Network Logger are enabled by default for new installations. The helper
+      records WebSocket input and output, helper configuration messages, Auto-Bot status decisions
+      and actions, runtime failures, network request metadata, match metadata, and significant game
+      state changes. Existing installations keep their saved toggle choices.
+    </p>
+    <p>
+      Match data is never written to <code>localStorage</code>. Each completed match is retained
+      only in memory for the current page session and exported as a separate newline-delimited JSON
+      file named <code>openfront-match-&lt;timestamp&gt;-&lt;tick&gt;.jsonl</code>. The first line
+      is file metadata; every following line is one ordered event with a timestamp and sequence
+      number. A manual export remains available through <code>exportRoundLog()</code> in the page
+      console.
+    </p>
+    <p>
+      Browsers can block automatic downloads or ask for permission. If that happens, allow multiple
+      downloads for <code>openfront.io</code> or use the manual export function before leaving the
+      page. Binary WebSocket payloads are represented by type and byte length; text packets are
+      preserved verbatim.
+    </p>
+  </body>
+</html>

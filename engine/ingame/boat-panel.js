@@ -212,11 +212,11 @@
 
       const focusId = transport.domUnitId;
       row.addEventListener("mouseenter", () => {
-        boatPanelFocusedId = focusId;
+        runtimeState.boatPanelFocusedId = focusId;
       });
       row.addEventListener("mouseleave", () => {
-        if (boatPanelFocusedId === focusId) {
-          boatPanelFocusedId = null;
+        if (runtimeState.boatPanelFocusedId === focusId) {
+          runtimeState.boatPanelFocusedId = null;
         }
       });
 
@@ -252,10 +252,10 @@
 
     for (const [domUnitId, entry] of boatPanelRowCache) {
       if (!seen.has(domUnitId)) {
-        if (boatPanelFocusedId === domUnitId) {
+        if (runtimeState.boatPanelFocusedId === domUnitId) {
           // The hovered boat vanished (landed / tab switch): drop the focus so
           // its route doesn't stay stuck on the map.
-          boatPanelFocusedId = null;
+          runtimeState.boatPanelFocusedId = null;
         }
         entry.row.remove();
         boatPanelRowCache.delete(domUnitId);
@@ -282,6 +282,23 @@
     boatPanelRowCache.clear();
   }
 
+  function isActiveBoatPanelTransport(transport) {
+    {
+      return Boolean(transport.unit?.isActive?.());
+    }
+  }
+
+  function partitionBoatPanelTransports(game) {
+    const result = { sent: [], incoming: [] };
+    if (!game) return result;
+    for (const transport of boatPredictionTransports) {
+      if (!isActiveBoatPanelTransport(transport)) continue;
+      if (transport.relation === "self") result.sent.push(transport);
+      else if (transport.targetsMyTerritory) result.incoming.push(transport);
+    }
+    return result;
+  }
+
   function updateBoatPanel() {
     const panel = document.getElementById(BOAT_PANEL_ID);
     if (!panel) {
@@ -291,31 +308,14 @@
     const game = context?.game || null;
 
     // Partition the scanned transports first — visibility depends on the counts.
-    const sent = [];
-    const incoming = [];
-    if (game) {
-      for (const transport of boatPredictionTransports) {
-        try {
-          if (!transport.unit?.isActive?.()) {
-            continue; // unit ref can go stale between 1s scans
-          }
-        } catch (_error) {
-          continue;
-        }
-        if (transport.relation === "self") {
-          sent.push(transport);
-        } else if (transport.targetsMyTerritory) {
-          incoming.push(transport);
-        }
-      }
-    }
+    const { sent, incoming } = partitionBoatPanelTransports(game);
 
     // Show only in a match AND only when there is at least one boat to list.
     const shouldShow =
-      boatPanelOpen && Boolean(game) && (sent.length > 0 || incoming.length > 0);
+      runtimeState.boatPanelOpen && Boolean(game) && (sent.length > 0 || incoming.length > 0);
     panel.dataset.visible = shouldShow ? "true" : "false";
     if (!shouldShow) {
-      boatPanelFocusedId = null;
+      runtimeState.boatPanelFocusedId = null;
       clearBoatPanelRows();
       return;
     }
@@ -334,9 +334,9 @@
   }
 
   function setBoatPanelEnabled(enabled) {
-    boatPanelOpen = Boolean(enabled);
+    runtimeState.boatPanelOpen = Boolean(enabled);
 
-    if (boatPanelOpen) {
+    if (runtimeState.boatPanelOpen) {
       ensureBoatPanel();
       if (boatPanelUpdateTimer === null) {
         boatPanelUpdateTimer = window.setInterval(updateBoatPanel, BOAT_PANEL_UPDATE_MS);
@@ -356,7 +356,7 @@
         boatPanelUpdateTimer = null;
       }
       // Don't leave a focused boat highlighted on the map after closing.
-      boatPanelFocusedId = null;
+      runtimeState.boatPanelFocusedId = null;
       clearBoatPanelRows();
       // Tear the overlay down only if no other consumer still needs it.
       refreshBoatOverlayActivity();
@@ -493,13 +493,11 @@
   // Pan the camera to a boat via the game's own events-display HUD (same hook the
   // game uses for "go to unit"). Best-effort; silently no-ops if unavailable.
   function focusIncomingBoat(unit) {
-    try {
+    {
       const eventsDisplay = document.querySelector("events-display");
       if (unit && eventsDisplay && typeof eventsDisplay.emitGoToUnitEvent === "function") {
         eventsDisplay.emitGoToUnitEvent(unit);
       }
-    } catch (_error) {
-      // ignore
     }
   }
 
@@ -555,7 +553,7 @@
   // primes the "seen" set without alerting, so boats already incoming at that
   // moment don't all fire at once.
   function maybeWarnNewIncomingBoats(transports) {
-    if (!boatWarnIncoming) {
+    if (!runtimeState.boatWarnIncoming) {
       return;
     }
     const current = new Set();
@@ -563,12 +561,10 @@
       if (transport.relation === "self" || !transport.targetsMyTerritory) {
         continue;
       }
-      try {
+      {
         if (!transport.unit?.isActive?.()) {
           continue;
         }
-      } catch (_error) {
-        continue;
       }
       current.add(transport.domUnitId);
       if (boatIncomingWarnInit && !boatIncomingSeen.has(transport.domUnitId)) {
@@ -588,8 +584,8 @@
 
   function setBoatIncomingWarningEnabled(enabled) {
     const next = Boolean(enabled);
-    const changed = next !== boatWarnIncoming;
-    boatWarnIncoming = next;
+    const changed = next !== runtimeState.boatWarnIncoming;
+    runtimeState.boatWarnIncoming = next;
     if (changed) {
       // Re-prime detection on any real toggle: on enable the next scan seeds
       // silently; on disable drop open alerts.

@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Development workflow</title>
+  </head>
+  <body>
+    <h1>Development workflow</h1>
+
+    <p>
+      You always commit completed project work after its relevant verification passes. Stage and
+      commit only the files or separable hunks owned by the current task; preserve unrelated user or
+      agent changes in a dirty checkout. After the commit succeeds with green pre-commit checks,
+      immediately run the project build and verify that it succeeds.
+    </p>
+
+    <p>
+      You have standing approval to create these commits without asking again. When completed task
+      changes overlap pre-existing edits in the same task-owned files and splitting them would make
+      the commit incomplete or incoherent, commit those affected files together instead of blocking;
+      continue to exclude unrelated files that the task does not require.
+    </p>
+
+    <p>
+      You should run <code>npm run lint</code> for repository lint validation. Do not substitute a
+      direct <code>eslint</code> invocation over legacy files, because the project lint script
+      applies the ratcheted baseline that distinguishes new regressions from existing debt.
+    </p>
+
+    <p>
+      You must not use JavaScript or TypeScript <code>catch</code> clauses or Promise
+      <code>.catch()</code> handlers in this project. They can make a broken integration look alive
+      while silently disabling later gameplay, UI, construction, or combat phases. Let failures
+      propagate so diagnostics and static runtime simulations fail at the original cause; use
+      <code>try/finally</code> only when deterministic cleanup is required, and fix expected failure
+      states through explicit capability checks or result values rather than exceptions.
+    </p>
+
+    <p>
+      Game constants use an exhaustive AST-backed contract. Run
+      <code>npm run check:constants</code> after changing a semantic uppercase constant in
+      <code>engine/</code> or <code>openfront-engine/src/</code>; update the reviewed contract with
+      <code>node scripts/game-constants.mjs --write</code> only when the value change is
+      intentional. The contract is checked against the pinned upstream gitlink, alongside the
+      existing compatibility check.
+    </p>
+
+    <p>
+      When you add a target-strength floor, preserve the explicit empty-target path: a target that
+      reports zero or no troop count must keep the normal reserve-limited attack payload rather than
+      being converted into a zero-troop no-op. Cover both a positive-strength floor and the empty
+      target fallback in <code>test/attack-intent-accounting.mjs</code>.
+    </p>
+
+    <p>
+      Lobby bridge helpers must read configuration through the initialized
+      <code>lobbyState.settings</code> object, never through an undeclared free variable. A static
+      regression test must exercise the helper source whenever a lobby setting is forwarded to an
+      in-game helper, because that bridge runs during startup and can otherwise prevent every UI and
+      gameplay subsystem from initializing.
+    </p>
+
+    <p>
+      A troop donation may be reachable through both the ordinary attack-strategy list and the
+      auxiliary policy pass. Record a successful donation at the decision tick in the shared attack
+      behavior and reject a second donation in that same tick, even when its recipient differs. Test
+      this directly because recipient cooldowns alone cannot prevent the duplicate path.
+    </p>
+
+    <p>
+      The donation reserve that includes friendly borders is an amount cap, not a safety verdict.
+      Before donating, separately inspect hostile strategic Nation/Human borders: if any such army
+      matches or exceeds ours, retain all troops. Otherwise a transfer can remove the only force
+      preventing an immediate land invasion before a Defense Post is affordable.
+    </p>
+
+    <h2>OpenFront engine compatibility</h2>
+
+    <p>
+      The official OpenFront repository is tracked as the <code>openfront-engine</code> Git
+      submodule. Every pre-commit run fetches the latest <code>origin/main</code>, checks out that
+      exact revision, stages the updated gitlink, and runs the static engine compatibility test as
+      part of the full test suite. A network failure blocks the commit so a change is never
+      validated against a silently stale engine revision.
+    </p>
+
+    <p>
+      The updater refuses to replace local changes inside the submodule. Commit, discard, or move
+      those changes before committing the helper. The helper's lint, formatting, and duplication
+      tools exclude the upstream source; compatibility is enforced by
+      <code>test/openfront-engine-compat.mjs</code> instead.
+    </p>
+
+    <p>
+      Game-dependent helper rules have a separate parity contract. Run
+      <code>npm run check:runtime-parity</code> after changing nuke costs, blast radii or speeds,
+      construction durations, cooldowns, unit types, or map ids. The check reads the pinned
+      OpenFront configuration and map manifest, verifies runtime reads and reviewed fallbacks, and
+      keeps local helper tuning (for example SAM policy ratios) outside the official game constant
+      contract.
+    </p>
+  </body>
+</html>

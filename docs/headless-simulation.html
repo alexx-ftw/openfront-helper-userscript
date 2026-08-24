@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Headless match simulation</title>
+  </head>
+  <body>
+    <h1>Headless match simulation</h1>
+    <p>
+      <code>npm run simulate:match</code> runs the built helper Auto-Bot against the official
+      OpenFront engine in a random Team playlist match with the map defaults and Impossible Nations.
+      It emits periodic JSON progress records and a final result record.
+    </p>
+    <p>
+      <code>npm run simulate:batch</code> runs independent matches concurrently. The default worker
+      and match count is the number reported by <code>os.availableParallelism()</code>, so every
+      logical processor can execute one match. Set <code>OFH_SIM_WORKERS</code> or
+      <code>OFH_MATCHES</code> to request a smaller measured batch when the workstation is shared
+      with another workload. Each match has its own log under the temporary output directory shown
+      at startup.
+    </p>
+    <p>
+      Match ticks remain authoritative and sequential inside each process. Parallelism is across
+      independent games, which preserves engine ordering and determinism. The harness uses bound
+      engine surfaces rather than a per-property Proxy so simulation-only adaptation does not
+      dominate Auto-Bot decision time.
+    </p>
+    <p>
+      A recorded match can be replayed with <code>OFH_MATCH_SEED</code>, <code>OFH_GAME_MAP</code>,
+      <code>OFH_GAME_MAP_SIZE</code>, <code>OFH_PLAYER_TEAMS</code>, and <code>OFH_BOTS</code>. This
+      keeps performance and behavior comparisons on the same engine configuration instead of relying
+      on another random playlist draw.
+    </p>
+    <p>
+      Missile-defense experiments can set <code>OFH_NUKES=1</code> and
+      <code>OFH_INJECT_HOSTILE_ATOM=1</code>. The latter is a headless-only fixture: once spawn
+      immunity ends and the Auto-Bot has an active City, it creates a hostile Silo and launches an
+      Atom Bomb through the engine's normal trajectory and interception rules. The trace records
+      <code>hostile-missile-injected</code> and a terminal
+      <code>hostile-missile-resolved</code> outcome (<code>impact</code> or
+      <code>intercepted</code>), or fails the fixture explicitly when its prerequisites never occur.
+      Set <code>OFH_INJECT_HOSTILE_ATOM_AT_TICK</code> to defer the launch while preserving the same
+      seed and target. It is not included in the delivered userscript.
+    </p>
+  </body>
+</html>

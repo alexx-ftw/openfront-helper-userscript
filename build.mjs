@@ -11,12 +11,14 @@
 // in-game fault.
 
 import { build as esbuild, transform } from "esbuild";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const read = (rel) => fs.readFileSync(path.resolve(__dirname, rel), "utf8");
+const logBuild = (...parts) => process.stdout.write(`${parts.join(" ")}\n`);
 
 // Raw/debug build: skip all minification so the engine keeps its original
 // formatting, identifiers, and console.log debug output for in-browser
@@ -38,11 +40,16 @@ const LOBBY_FILES = [
 // In-game layer (formerly "page-bridge"): overlays, helper panels, and the
 // auto-bot. Order matters (see the auto-bot README).
 const INGAME_FILES = [
+  "anti-afk.js",
   "runtime.js",
+  "intent-rate-limit.js",
+  "round-logger.js",
   "ws-hook.js",
   "panel-layout.js",
   "shared-utils.js",
   "selective-trade-policy.js",
+  "game-start-notification.js",
+  "spawn-voice.js",
   "alliances.js",
   "alliance-requests-panel.js",
   "bot-markers.js",
@@ -50,6 +57,7 @@ const INGAME_FILES = [
   "team-build-stats.js",
   "trade-balances.js",
   "nuke-prediction.js",
+  "nuke-impact.js",
   "nuke-suggestions.js",
   "boat-prediction.js",
   "warship-routes.js",
@@ -58,6 +66,8 @@ const INGAME_FILES = [
   "auto-leave.js",
   "boat-macro.js",
   "heatmaps.js",
+  "spawn-index.js",
+  "spawn-objective.js",
   "auto-bot/core.js",
   "auto-bot/i18n.js",
   "auto-bot/helpers.js",
@@ -65,13 +75,17 @@ const INGAME_FILES = [
   "auto-bot/sensing.js",
   "auto-bot/portutil.js",
   "auto-bot/gameApi.js",
+  "auto-bot/earlyGame.js",
+  "auto-bot/legendaryPlanner.js",
   "auto-bot/emojiBehavior.js",
   "auto-bot/allianceBehavior.js",
   "auto-bot/mirvBehavior.js",
+  "auto-bot/naval-interception.js",
   "auto-bot/warshipBehavior.js",
   "auto-bot/structureBehavior.js",
   "auto-bot/attackBehavior.js",
   "auto-bot/nukeBehavior.js",
+  "auto-bot/performance.js",
   "auto-bot/nationExecution.js",
   "auto-bot/engine.js",
   "auto-bot/panel.js",
@@ -80,6 +94,7 @@ const INGAME_FILES = [
   "helper-users-panel.js",
   "sos-defense.js",
   "map-overlay-scheduler.js",
+  "tribe-cluster-overlay.js",
   "advisor-intel.js",
   "name-overlay.js",
   "attack-highlight.js",
@@ -90,17 +105,139 @@ const INGAME_FILES = [
   "attack-ratio-hotkey.js",
   "alliance-policy.js",
   "right-click-conquest.js",
-  "round-logger.js",
   "network-logger.js",
+  "runtime-diagnostics.js",
   "build-timer.js",
   "enemy-intent-intel.js",
   "spawn-heatmap.js",
   "game-time-alert.js",
   "silo-sam-tracker.js",
   "auto-donate.js",
+  "companion/core.js",
+  "companion/commands.js",
+  "companion/actions.js",
+  "companion/engine.js",
+  "companion/panel.js",
   "quick-panel.js",
   "bootstrap.js",
 ].map((f) => `engine/ingame/${f}`);
+
+const AUTO_BOT_FILES = INGAME_FILES.filter((file) => file.includes("/auto-bot/"));
+const HOT_RELOAD_BRIDGE = `
+window.__OFH_HOT_RELOAD_AUTOBOT__ = function(source, buildId) {
+  const previous = window.__OFH_autobot;
+  if (typeof previous?.disposeForHotReload !== "function") return false;
+  const previousSettings = typeof previous.get === "function" ? previous.get() : null;
+  const activationOptions =
+    typeof previousSettings?.enabled === "boolean"
+      ? { enabled: previousSettings.enabled }
+      : {};
+  const candidateSource = String(source);
+  const previousBuildId = window.__OFH_LOCAL_BUILD_ID__;
+  const previousAtomDisposer = window.__OFH_disposeAtomMacroForHotReload;
+  const previousActivationPending = window.__openfrontAutoBotActivationPending;
+  let candidate = null;
+  let previousDisposed = false;
+  let committed = false;
+  const finishStaging = () => {
+    window.__OFH_HOT_RELOAD_IN_PROGRESS__ = false;
+    delete window.__OFH_HOT_RELOAD_CANDIDATE_ATOM_MACRO__;
+  };
+  const settle = (operation) =>
+    Promise.resolve()
+      .then(operation)
+      .then(
+        (value) => ({ ok: true, value }),
+        (error) => ({ ok: false, error }),
+      );
+  window.__OFH_HOT_RELOAD_IN_PROGRESS__ = true;
+  return Promise.resolve()
+    .then(async () => {
+      // Compile before staging so a syntax error cannot touch the live runtime.
+      Function(candidateSource);
+      eval(candidateSource);
+      candidate = window.__OFH_autobot;
+      if (
+        typeof candidate?.disposeForHotReload !== "function" ||
+        typeof candidate?.activateForHotReload !== "function"
+      ) {
+        throw new Error("el candidato de Auto-Bot no expuso el contrato de hot reload");
+      }
+      const disposed = await previous.disposeForHotReload();
+      if (disposed === false) {
+        throw new Error("el runtime anterior no pudo cerrarse limpiamente");
+      }
+      previousDisposed = true;
+      window.__OFH_HOT_RELOAD_IN_PROGRESS__ = false;
+      if (!(await candidate.activateForHotReload(activationOptions))) {
+        throw new Error("el candidato de Auto-Bot no pudo activarse");
+      }
+      // Reassert the transferred master toggle through the replacement's public
+      // API before committing. This starts its engine and refreshes its panel even
+      // when lifecycle activation inherited the value but left either one idle.
+      if (typeof activationOptions.enabled === "boolean" && typeof candidate.set === "function") {
+        candidate.set({ enabled: activationOptions.enabled });
+      }
+      window.__OFH_LOCAL_BUILD_ID__ = String(buildId);
+      committed = true;
+      return true;
+    })
+    .then(
+      (result) => {
+        finishStaging();
+        return result;
+      },
+      async (error) => {
+        const rollbackFailures = [];
+        let candidateQuiescent = true;
+        if (!committed && candidate && candidate !== previous) {
+          const candidateOwnsAtom =
+            window.__OFH_disposeAtomMacroForHotReload !== previousAtomDisposer;
+          const cleanup = await settle(() =>
+            candidate.disposeForHotReload?.({ skipAtomMacroCleanup: !candidateOwnsAtom }),
+          );
+          if (!cleanup.ok) {
+            candidateQuiescent = false;
+            rollbackFailures.push(cleanup.error);
+          } else if (cleanup.value === false) {
+            candidateQuiescent = false;
+            rollbackFailures.push(
+              new Error("el candidato de Auto-Bot no pudo cerrarse limpiamente"),
+            );
+          }
+        }
+        if (!committed) {
+          window["__OFH_autobot"] = previous;
+          window.__OFH_LOCAL_BUILD_ID__ = previousBuildId;
+          window.__OFH_disposeAtomMacroForHotReload = previousAtomDisposer;
+          window.__openfrontAutoBotActivationPending = previousActivationPending;
+          finishStaging();
+          if (previousDisposed && candidateQuiescent) {
+            const rollback = await settle(() =>
+              previous.activateForHotReload(activationOptions),
+            );
+            if (!rollback.ok) {
+              rollbackFailures.push(rollback.error);
+            } else if (rollback.value === false) {
+              rollbackFailures.push(
+                new Error("el runtime anterior no pudo reactivarse"),
+              );
+            }
+          }
+        }
+        finishStaging();
+        if (rollbackFailures.length > 0) {
+          throw new AggregateError(
+            [error, ...rollbackFailures],
+            "falló la activación del candidato de Auto-Bot y su rollback",
+            { cause: error },
+          );
+        }
+        throw error;
+      },
+    );
+};
+`;
 
 const I18N_OVERRIDE =
   "\n;(window.__OFH && window.__OFH.installI18nOverride && window.__OFH.installI18nOverride());\n";
@@ -110,9 +247,8 @@ function readLobbyFile(rel) {
   return `\n// ===== ${rel} =====\n${read(rel)}\n`;
 }
 
-function wrapIife(body, label) {
-  const msg = JSON.stringify(`[ofh] ${label} section error:`);
-  return `\n;(function(){\ntry {\n${body}\n} catch (e) { console.error(${msg}, e); }\n})();\n`;
+function wrapIife(body) {
+  return `\n;(function(){\n${body}\n})();\n`;
 }
 
 // Minify an engine layer: strip whitespace/comments and mangle nested-local
@@ -136,20 +272,68 @@ async function minifyLayer(code) {
   return r.code;
 }
 
+export async function publishBuildArtifacts(outputDir, { full, autoBot, buildId }) {
+  const stagingDir = fs.mkdtempSync(path.join(outputDir, ".ofh-build-"));
+  const files = [
+    ["openfront-helper.user.js", full],
+    ["openfront-helper.autobot.js", autoBot],
+    ["openfront-helper.build-id.js", buildId],
+  ];
+  const originals = new Set();
+  const publish = Promise.resolve().then(() => {
+    for (const [name, contents] of files) {
+      const stagingPath = path.join(stagingDir, name);
+      fs.writeFileSync(stagingPath, contents, "utf8");
+      const fd = fs.openSync(stagingPath, "r");
+      try {
+        fs.fsyncSync(fd);
+      } finally {
+        fs.closeSync(fd);
+      }
+      const destination = path.join(outputDir, name);
+      if (fs.existsSync(destination)) {
+        fs.copyFileSync(destination, path.join(stagingDir, `${name}.previous`));
+        originals.add(name);
+      }
+    }
+    // Each replacement is atomic, and the fingerprint is last: the loader can
+    // never observe a new build id before both source artifacts are complete.
+    for (const [name] of files) {
+      fs.renameSync(path.join(stagingDir, name), path.join(outputDir, name));
+    }
+  });
+  return publish
+    .then(undefined, (error) => {
+      // A failed replacement must not leave a new source paired with an old
+      // fingerprint. Restore the exact prior set where one existed.
+      for (const [name] of [...files].reverse()) {
+        const destination = path.join(outputDir, name);
+        const previous = path.join(stagingDir, `${name}.previous`);
+        if (originals.has(name)) {
+          if (fs.existsSync(destination)) fs.unlinkSync(destination);
+          fs.renameSync(previous, destination);
+        } else if (fs.existsSync(destination)) {
+          fs.unlinkSync(destination);
+        }
+      }
+      throw error;
+    })
+    .finally(() => {
+      fs.rmSync(stagingDir, { recursive: true, force: true });
+    });
+}
+
 function metadataHeader(version) {
   const repo = "https://github.com/nguyenvancaokyfpt/openfront-helper-userscript";
-  const raw = `https://raw.githubusercontent.com/nguyenvancaokyfpt/openfront-helper-userscript/main/openfront-helper.user.js`;
   return `// ==UserScript==
-// @name         OpenFront Helper (userscript)
+// @name         OpenFront Helper (userscript) (CUSTOM)
 // @namespace    openfront-helper
 // @version      ${version}
-// @description  Auto-join lobbies + in-game helper overlays and a private-lobby auto-bot for OpenFront.io. Standalone userscript build with a multi-language UI.
+// @description  Auto-join lobbies + in-game helper overlays and an auto-bot for OpenFront.io. Standalone userscript build with a multi-language UI.
 // @author       nguyenvancaokyfpt (https://github.com/nguyenvancaokyfpt)
 // @license      AGPL-3.0-or-later
 // @homepageURL  ${repo}
 // @supportURL   ${repo}/issues
-// @updateURL    ${raw}
-// @downloadURL  ${raw}
 // @contributionURL https://greasyfork.org/en/scripts/581664-openfront-tactical-assistant
 // Credits: in-game overlays adapted from phil0010-gh/openfront-helper; several
 // helper/auto-bot features (spawn scoring/heatmap, advisor, threat intel, map
@@ -168,7 +352,7 @@ async function main() {
   const pkg = JSON.parse(read("package.json"));
   const version = pkg.version || "0.0.0";
 
-  console.log("[build] discovering locales…");
+  logBuild("[build] discovering locales…");
   // Auto-discover every locales/<code>/common.json and inline them all. Adding a
   // new language is just dropping in a folder — no code change. English is the
   // fallback (loadBundle layers DEFAULT_TRANSLATIONS + en + <lang>).
@@ -181,10 +365,10 @@ async function main() {
     }
   }
   if (!locales.en) throw new Error("locales/en/common.json is required (English fallback)");
-  console.log(`[build] locales: ${Object.keys(locales).join(", ")}`);
+  logBuild(`[build] locales: ${Object.keys(locales).join(", ")}`);
   const assetsLiteral = `window.__OFH_ASSETS = ${JSON.stringify({ version, locales })};\n`;
 
-  console.log("[build] bundling shell (esbuild)…");
+  logBuild("[build] bundling shell (esbuild)…");
   const shellResult = await esbuild({
     entryPoints: [path.resolve(__dirname, "src/shell/index.ts")],
     bundle: true,
@@ -197,7 +381,7 @@ async function main() {
   });
   const shell = shellResult.outputFiles[0].text;
 
-  console.log("[build] concatenating lobby layer…");
+  logBuild("[build] concatenating lobby layer…");
   const lobbyPrelude =
     "const chrome = (window.__OFH && window.__OFH.chrome) || window.chrome;\n" +
     "const Audio = (window.__OFH && window.__OFH.Audio) || window.Audio;\n" +
@@ -206,38 +390,56 @@ async function main() {
     "function positionFloatingHelpersPanel(){}\n";
   const lobby = lobbyPrelude + LOBBY_FILES.map(readLobbyFile).join("");
 
-  console.log("[build] concatenating in-game layer…");
-  const ingame = INGAME_FILES.map((rel) => `\n// ===== ${rel} =====\n${read(rel)}\n`).join("");
+  logBuild("[build] concatenating in-game layer…");
+  const autoBot = AUTO_BOT_FILES.map((rel) => `\n// ===== ${rel} =====\n${read(rel)}\n`).join("");
+  const ingame =
+    INGAME_FILES.map((rel) => `\n// ===== ${rel} =====\n${read(rel)}\n`).join("") +
+    HOT_RELOAD_BRIDGE;
 
-  console.log(RAW ? "[build] minify OFF (raw/debug build)…" : "[build] minifying…");
+  logBuild(RAW ? "[build] minify OFF (raw/debug build)…" : "[build] minifying…");
+  // Ship the bridge with the replaceable layer as well as the full userscript.
+  // Otherwise an already-open tab keeps running whichever bridge implementation
+  // it loaded initially, so lifecycle fixes in later local builds never take
+  // effect until the user reloads the game tab.
+  const autoBotOut = await minifyLayer(autoBot + HOT_RELOAD_BRIDGE);
   const out =
     metadataHeader(version) +
     assetsLiteral +
     shell +
-    wrapIife(await minifyLayer(lobby), "lobby") +
-    wrapIife(await minifyLayer(ingame), "ingame");
+    wrapIife(await minifyLayer(lobby)) +
+    wrapIife(await minifyLayer(ingame));
 
   const outPath = path.resolve(__dirname, "openfront-helper.user.js");
-  fs.writeFileSync(outPath, out, "utf8");
+  const autoBotPath = path.resolve(__dirname, "openfront-helper.autobot.js");
+  // The loader can safely replace only the Auto-Bot lifecycle without reloading
+  // the game. Fingerprint that exact layer so an unrelated shell/overlay edit is
+  // never reported as hot-applied while its old code remains live.
+  const buildId = createHash("sha256").update(autoBotOut).digest("hex");
+  const buildIdSource = `// Generated by npm run build.\nglobalThis.__OFH_LOCAL_BUILD_ID__ = "${buildId}";\n`;
+  await publishBuildArtifacts(__dirname, {
+    full: out,
+    autoBot: autoBotOut,
+    buildId: buildIdSource,
+  });
   const kb = (Buffer.byteLength(out, "utf8") / 1024).toFixed(0);
-  console.log(`[build] wrote ${outPath} (${kb} KB)`);
+  logBuild(`[build] wrote ${outPath} (${kb} KB)`);
+  logBuild(`[build] wrote ${autoBotPath} for hot reload`);
 
-  // Copy to clipboard for quick Tampermonkey paste.
-  try {
+  {
     const { execSync } = await import("node:child_process");
     if (process.platform === "win32") {
-      execSync("powershell -Command \"Set-Clipboard -Value ([System.IO.File]::ReadAllText('" + outPath.replace(/\\/g, "\\\\") + "'))\"");
-      console.log("[build] copied to clipboard");
+      execSync(
+        "powershell -Command \"Set-Clipboard -Value ([System.IO.File]::ReadAllText('" +
+          outPath.replace(/\\/g, "\\\\") +
+          "'))\"",
+      );
+      logBuild("[build] copied to clipboard");
     } else if (process.platform === "darwin") {
-      execSync("pbcopy < \"" + outPath + "\"");
-      console.log("[build] copied to clipboard");
+      execSync('pbcopy < "' + outPath + '"');
+      logBuild("[build] copied to clipboard");
     }
-  } catch (e) {
-    console.log("[build] clipboard copy skipped:", e.message);
   }
 }
 
-main().catch((e) => {
-  console.error("[build] FAILED:", e);
-  process.exit(1);
-});
+const invokedPath = process.argv[1] && path.resolve(process.argv[1]);
+if (invokedPath === fileURLToPath(import.meta.url)) main();

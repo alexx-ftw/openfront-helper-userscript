@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "mimosa-finding-history/v1",
+  "runId": "20260822T070216856Z-4189133-b476538a9278",
+  "runStatus": "inconclusive",
+  "errors": [
+    "baseline:.: baseline_partial: baseline capture had enumeration or snapshot errors",
+    "scan:engine/ingame/auto-bot/attackBehavior.js: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:engine/ingame/auto-bot/structureBehavior.js: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT"
+  ],
+  "target": ".",
+  "revision": "b4c74c6b8e0601f5c366fbe9b85f8d255106cfff",
+  "diffHash": "52b55bbb4cc3c57ad5e8d1b8e6f3e1660db9dcc8c6f534f0eb76537f29636f64",
+  "rulesVersion": "unavailable",
+  "recordedAt": "2026-08-22T07:02:16.856Z",
+  "timing": {
+    "startedAt": "2026-08-22T07:02:14.253Z",
+    "completedAt": "2026-08-22T07:02:16.856Z",
+    "durationMs": 2603
+  },
+  "tokens": {
+    "input": 0,
+    "output": 0,
+    "total": 0,
+    "modelCalls": 0,
+    "measurement": "known-zero"
+  },
+  "findings": {
+    "total": 0,
+    "bySeverity": {},
+    "byStatus": {}
+  },
+  "coverage": {
+    "status": "partial",
+    "reasonCounts": {
+      "baseline_partial": 1,
+      "scanner_failed": 2,
+      "project_check_failed": 3
+    }
+  },
+  "evidenceBoundary": "static_only",
+  "immutableReport": ".mimosa/reports/task-review-sess_70bae88d-f907-4a92-9e8f-513b3dba773b-20260822T070216856Z-4189133-b476538a9278.json"
+}

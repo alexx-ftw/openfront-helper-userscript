@@ -2,7 +2,6 @@
 // (position persisted in localStorage). The icon is an inline <svg> (no <img>,
 // so the page's data:-free img-src CSP is irrelevant).
 
-import { openPanel } from "./panel";
 import { POPUP_CSS, POPUP_STYLE_ID } from "./styles";
 
 const ICON_ID = "openfront-helper-launcher";
@@ -22,19 +21,27 @@ const ICON_SVG = `
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
 function readPos(): { left: number; top: number } | null {
-  try {
+  {
     const raw = localStorage.getItem(POS_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      !("left" in parsed) ||
+      !("top" in parsed) ||
+      typeof parsed.left !== "number" ||
+      typeof parsed.top !== "number"
+    ) {
+      return null;
+    }
+    return { left: parsed.left, top: parsed.top };
   }
 }
 
 function writePos(pos: { left: number; top: number }): void {
-  try {
+  {
     localStorage.setItem(POS_KEY, JSON.stringify(pos));
-  } catch {
-    /* ignore */
   }
 }
 
@@ -43,12 +50,12 @@ function ensureStyle(): void {
   const style = document.createElement("style");
   style.id = POPUP_STYLE_ID;
   style.textContent = POPUP_CSS;
-  (document.head || document.documentElement).appendChild(style);
+  document.head.appendChild(style);
 }
 
 function createIcon(): void {
-  if (document.getElementById(ICON_ID)) return;
   ensureStyle();
+  if (document.getElementById(ICON_ID)) return;
 
   const icon = document.createElement("div");
   icon.id = ICON_ID;
@@ -61,8 +68,8 @@ function createIcon(): void {
   const saved = readPos();
   const left = saved ? clamp(saved.left, 0, innerWidth - size) : 16;
   const top = saved ? clamp(saved.top, 0, innerHeight - size) : innerHeight - 60;
-  icon.style.left = `${left}px`;
-  icon.style.top = `${top}px`;
+  icon.style.left = String(left) + "px";
+  icon.style.top = String(top) + "px";
 
   let dragging = false;
   let moved = false;
@@ -89,18 +96,17 @@ function createIcon(): void {
     const dx = e.clientX - startX;
     const dy = e.clientY - startY;
     if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
-    icon.style.left = `${clamp(originLeft + dx, 0, innerWidth - size)}px`;
-    icon.style.top = `${clamp(originTop + dy, 0, innerHeight - size)}px`;
+    icon.style.left = String(clamp(originLeft + dx, 0, innerWidth - size)) + "px";
+    icon.style.top = String(clamp(originTop + dy, 0, innerHeight - size)) + "px";
+    window.dispatchEvent(new CustomEvent("ofh-reposition-quick-panel"));
   });
 
   const end = (e: PointerEvent) => {
     if (!dragging) return;
     dragging = false;
     icon.style.cursor = "grab";
-    try {
+    {
       icon.releasePointerCapture(e.pointerId);
-    } catch {
-      /* ignore */
     }
     if (moved) {
       const r = icon.getBoundingClientRect();
@@ -117,6 +123,19 @@ function createIcon(): void {
 }
 
 export function installLauncher(): void {
-  if (document.body) createIcon();
-  else document.addEventListener("DOMContentLoaded", createIcon, { once: true });
+  const mount = () => {
+    createIcon();
+  };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", mount, { once: true });
+  } else {
+    mount();
+  }
+
+  // OpenFront can replace its initial body while bootstrapping. Observe only
+  // direct document-root children so gameplay DOM updates do not invoke this.
+  new MutationObserver(() => {
+    if (document.readyState !== "loading") mount();
+  }).observe(document.documentElement, { childList: true });
 }

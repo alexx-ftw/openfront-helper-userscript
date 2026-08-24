@@ -15,8 +15,9 @@
   // and the client sim can run slower than real time (network jitter / early game),
   // so a wall-clock 5s can elapse before 50 game ticks do — releasing an emoji the
   // game then silently rejects while we've already dequeued it (lost forever). A
-  // few ticks of margin ("du di") over the game's own values guarantees acceptance.
-  const SIGNAL_COOLDOWN_TICKS = { emoji: 55, target: 160 };
+  // Keep a small local safety margin, but read the authoritative base cooldown
+  // from Config so a game balance change does not silently drop intents.
+  const signalCooldownMarginTicks = { emoji: 5, target: 10 };
 
   const _signalQueue = [];
   const _signalLastSentByKey = new Map(); // `${kind}:${recipientKey}` -> game tick
@@ -26,13 +27,11 @@
 
   function _signalRecipientKey(recipient) {
     if (recipient === AllPlayers) return "ALL";
-    try {
+    {
       const sid = recipient?.smallID?.();
       if (sid !== undefined && sid !== null) return "s" + sid;
       const id = recipient?.id?.();
       if (id !== undefined && id !== null) return "i" + id;
-    } catch (_e) {
-      /* ignore */
     }
     return "unknown";
   }
@@ -52,13 +51,65 @@
   }
 
   function _signalCurrentTick() {
-    try {
+    {
       const game = getOpenFrontGameContext()?.game;
       const t = Number(game?.ticks?.());
       return Number.isFinite(t) ? t : null;
-    } catch (_e) {
-      return null;
     }
+  }
+
+  function _signalCooldownTicks(kind) {
+    const fallback = kind === "emoji" ? 50 : 150;
+    const method = kind === "emoji" ? "emojiMessageCooldown" : "targetCooldown";
+    const game = getOpenFrontGameContext()?.game;
+    const configured =
+      typeof ofhGameConfigNumber === "function"
+        ? ofhGameConfigNumber(game, method, fallback)
+        : fallback;
+    return configured + (signalCooldownMarginTicks[kind] || 0);
+  }
+
+  function _signalItemBlocked(item, constructors, currentTick) {
+    if (!_signalCtorFor(item.kind, constructors)) return true;
+    const key = item.kind + ":" + _signalRecipientKey(item.recipient);
+    const cooldownTicks = _signalCooldownTicks(item.kind);
+    const lastTick = _signalLastSentByKey.get(key);
+    if (lastTick === undefined) return false;
+    const elapsedTicks = currentTick - lastTick;
+    return elapsedTicks >= 0 && elapsedTicks < cooldownTicks;
+  }
+
+  function _findReadySignalIndex(constructors, currentTick) {
+    for (let index = 0; index < _signalQueue.length; index += 1) {
+      const item = _signalQueue[index];
+      if (!_signalItemBlocked(item, constructors, currentTick)) return index;
+      item.attempts += 1;
+    }
+    return -1;
+  }
+
+  function _dropExpiredSignals(readyIndex) {
+    let adjustedIndex = readyIndex;
+    for (let index = _signalQueue.length - 1; index >= 0; index -= 1) {
+      if (_signalQueue[index].attempts <= SIGNAL_MAX_ATTEMPTS) continue;
+      _signalQueue.splice(index, 1);
+      if (index <= adjustedIndex) adjustedIndex -= 1;
+    }
+    return adjustedIndex;
+  }
+
+  function _emitReadySignal(readyIndex, constructors, currentTick, now) {
+    const item = _signalQueue.splice(readyIndex, 1)[0];
+    const constructor = _signalCtorFor(item.kind, constructors);
+    const key = item.kind + ":" + _signalRecipientKey(item.recipient);
+    if (emitIntent(constructor, ...item.args)) {
+      _signalLastEmitAt = now;
+      _signalLastSentByKey.set(key, currentTick);
+      _signalFireTimes.push(now);
+      return;
+    }
+    item.attempts += 1;
+    if (item.attempts <= SIGNAL_MAX_ATTEMPTS) _signalQueue.unshift(item);
   }
 
   function _runSignalScheduler() {
@@ -80,55 +131,14 @@
     // Find the first sendable item (ctor ready + per-recipient game-tick cooldown
     // elapsed). Skipping a cooldown-blocked head keeps a throttled item (TN1's
     // signature broadcast) from starving an urgent one (TN2 SOS).
-    let readyIndex = -1;
-    for (let i = 0; i < _signalQueue.length; i += 1) {
-      const it = _signalQueue[i];
-      const c = _signalCtorFor(it.kind, ctors);
-      let blocked = false;
-      if (!c) {
-        blocked = true;
-      } else {
-        const k = it.kind + ":" + _signalRecipientKey(it.recipient);
-        const cdTicks = SIGNAL_COOLDOWN_TICKS[it.kind] || 0;
-        const lastTick = _signalLastSentByKey.get(k);
-        if (lastTick !== undefined) {
-          const dt = curTick - lastTick;
-          // dt < 0 means the game clock reset (new match) → prior cooldown is moot.
-          if (dt >= 0 && dt < cdTicks) blocked = true;
-        }
-      }
-      if (blocked) {
-        it.attempts += 1;
-        continue;
-      }
-      readyIndex = i;
-      break;
-    }
+    let readyIndex = _findReadySignalIndex(ctors, curTick);
 
     // Drop items blocked past the attempt ceiling (anywhere in the queue).
-    for (let i = _signalQueue.length - 1; i >= 0; i -= 1) {
-      if (_signalQueue[i].attempts > SIGNAL_MAX_ATTEMPTS) {
-        _signalQueue.splice(i, 1);
-        if (i <= readyIndex) readyIndex -= 1;
-      }
-    }
+    readyIndex = _dropExpiredSignals(readyIndex);
 
     if (readyIndex < 0 || readyIndex >= _signalQueue.length) return;
 
-    const item = _signalQueue.splice(readyIndex, 1)[0];
-    const ctor = _signalCtorFor(item.kind, ctors);
-    const key = item.kind + ":" + _signalRecipientKey(item.recipient);
-    const ok = emitIntent(ctor, ...item.args);
-    if (ok) {
-      _signalLastEmitAt = now;
-      _signalLastSentByKey.set(key, curTick);
-      _signalFireTimes.push(now);
-    } else {
-      // Transient emit failure — requeue at the front (bounded) so a once-only
-      // signature signal isn't silently lost.
-      item.attempts += 1;
-      if (item.attempts <= SIGNAL_MAX_ATTEMPTS) _signalQueue.unshift(item);
-    }
+    _emitReadySignal(readyIndex, ctors, curTick, now);
   }
 
   function _ensureSignalSchedulerRunning() {

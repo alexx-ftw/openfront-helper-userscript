@@ -27,11 +27,9 @@
   // ---- Signature broadcast (once per match) --------------------------------
 
   function _helperGameKey(game) {
-    try {
+    {
       const id = game?.gameID?.() ?? game?.id?.() ?? null;
       if (id !== null && id !== undefined) return String(id);
-    } catch (_e) {
-      /* ignore */
     }
     return "default";
   }
@@ -90,13 +88,34 @@
     _helperLastProcessedTick = null;
   }
 
-  function _processHelperEmojiUpdates(game) {
-    let currentTick = Number.NaN;
-    try {
-      currentTick = Number(game?.ticks?.());
-    } catch (_e) {
-      currentTick = Number.NaN;
+  function _helperCurrentTick(game) {
+    {
+      return Number(game?.ticks?.());
     }
+  }
+
+  function _helperEmojiPayload(event) {
+    const payload =
+      event?.emoji && typeof event.emoji === "object" ? event.emoji : event;
+    if (
+      !payload ||
+      typeof payload.senderID !== "number" ||
+      typeof payload.message !== "string"
+    ) {
+      return null;
+    }
+    return payload;
+  }
+
+  function _processHelperEmojiEvent(event, mySmallId, nowMs) {
+    const emoji = _helperEmojiPayload(event);
+    if (!emoji || emoji.senderID === mySmallId) return;
+    if (!HELPER_SIGNATURE_SEQUENCE.includes(emoji.message)) return;
+    _recordHelperEmoji(emoji.senderID, emoji.message, nowMs);
+  }
+
+  function _processHelperEmojiUpdates(game) {
+    const currentTick = _helperCurrentTick(game);
     if (Number.isFinite(currentTick)) {
       if (currentTick === _helperLastProcessedTick) return; // same game tick
       _helperLastProcessedTick = currentTick;
@@ -109,15 +128,8 @@
 
     for (const group of Object.values(updates)) {
       if (!Array.isArray(group)) continue;
-      for (const ev of group) {
-        // EmojiUpdate: nested { emoji: {senderID, message} } OR flat {senderID, message}.
-        const em = ev && ev.emoji && typeof ev.emoji === "object" ? ev.emoji : ev;
-        if (!em || typeof em.senderID !== "number" || typeof em.message !== "string") {
-          continue;
-        }
-        if (em.senderID === mySid) continue; // don't list yourself
-        if (!HELPER_SIGNATURE_SEQUENCE.includes(em.message)) continue;
-        _recordHelperEmoji(em.senderID, em.message, nowMs);
+      for (const event of group) {
+        _processHelperEmojiEvent(event, mySid, nowMs);
       }
     }
   }
@@ -226,15 +238,13 @@
 
   function _focusHelperUser(smallId) {
     if (!Number.isFinite(smallId)) return;
-    try {
+    {
       const target =
         document.querySelector("actionable-events") ||
         document.querySelector("events-display");
       if (target && typeof target.emitGoToPlayerEvent === "function") {
         target.emitGoToPlayerEvent(Number(smallId));
       }
-    } catch (_e) {
-      /* ignore */
     }
   }
 

@@ -147,108 +147,101 @@
     return String(v);
   }
 
+  function appendAdvisorEconomy(parts, eco) {
+    if (!eco) {
+      parts.push(`<div class="ofh-adv-empty">${tr("Waiting for game…")}</div>`);
+      return;
+    }
+    const style = advEcoStateStyle(eco.state);
+    const percentage = Math.round(eco.currentRatio * 100);
+    parts.push(
+      `<div><span class="ofh-adv-eco-state" style="background:${style.bg};color:${style.fg}">${style.label}</span></div>`,
+      `<div class="ofh-adv-line">${tr("Troops")} ${advTroopsShort(eco.currentTroops)}/${advTroopsShort(eco.maxTroops)} (${percentage}%)</div>`,
+      `<div class="ofh-adv-sub">${tr("Growth")} ${Math.round(eco.growthEfficiency * 100)}% · ${tr("Spend")} ${advTroopsShort(eco.safeSpendableTroops)}</div>`,
+    );
+    if (eco.timeToPushSec != null) {
+      parts.push(`<div class="ofh-adv-sub">${tr("Push in")} ${eco.timeToPushSec}s</div>`);
+    }
+    parts.push(
+      `<div class="ofh-adv-sub">${tr("Expansion")}: ${advExpansionLabel(eco.state)}</div>`,
+    );
+  }
+
+  function collectAdvisorThreats(game, me) {
+    const threats = [];
+    const players = getCachedPlayerViews(game);
+    const nukeBuilders = advNukeBuilderIds(game);
+    for (const player of players) {
+      if (!player?.isAlive?.()) continue;
+      const relation = getPlayerRelationToMyPlayer(game, player) || "enemy";
+      if (["self", "ally", "team"].includes(relation)) continue;
+      const threat = advEvaluateThreat(game, me, player, nukeBuilders);
+      if (threat.level === "Weak") continue;
+      const name = getPlayerDisplayName ? getPlayerDisplayName(player) : player.name?.();
+      threats.push({ name, threat });
+    }
+    return threats.sort((a, b) => b.threat.score - a.threat.score).slice(0, 6);
+  }
+
+  function appendAdvisorThreats(parts, game, me) {
+    parts.push(`<div class="ofh-adv-sec-title">${tr("Threats")}</div>`);
+    const threats = collectAdvisorThreats(game, me);
+    if (threats.length === 0) {
+      parts.push(`<div class="ofh-adv-empty">${tr("No notable threats")}</div>`);
+      return;
+    }
+    for (const item of threats) {
+      const style = advThreatLevelStyle(item.threat.level);
+      const nuke = item.threat.nukeCapable || item.threat.buildingNuke ? " ☢" : "";
+      const safeName = String(item.name).replace(/[<>&]/g, "");
+      parts.push(
+        `<div class="ofh-adv-threat"><span class="ofh-adv-lvl" style="background:${style.bg};color:${style.fg}">${tr(item.threat.level)}</span><span class="ofh-adv-name">${safeName}${nuke}</span></div>`,
+      );
+    }
+  }
+
   function renderAdvisorPanel() {
-    if (!advisorPanelEnabled) {
+    if (!runtimeState.advisorPanelEnabled) {
       return;
     }
     const panel = document.getElementById(ADVISOR_PANEL_ID);
     if (!panel) {
       return;
     }
-    let context = null;
-    try {
+    let context;
+    {
       context = getOpenFrontGameContext();
-    } catch (_error) {
-      context = null;
     }
     const body = document.getElementById(`${ADVISOR_PANEL_ID}-body`);
     if (!context || !context.game || !body) {
+      runtimeState.advisorRenderSignature = "";
       panel.dataset.visible = "false";
       return;
     }
     const game = context.game;
     const me = game.myPlayer ? game.myPlayer() : null;
     if (!me) {
+      runtimeState.advisorRenderSignature = "";
       panel.dataset.visible = "false";
       return;
     }
     panel.dataset.visible = "true";
 
-    const eco = advEvaluateSelfEconomy(game, me);
     const parts = [];
-    if (eco) {
-      const st = advEcoStateStyle(eco.state);
-      const pct = Math.round(eco.currentRatio * 100);
-      parts.push(
-        `<div><span class="ofh-adv-eco-state" style="background:${st.bg};color:${st.fg}">${st.label}</span></div>`,
-      );
-      parts.push(
-        `<div class="ofh-adv-line">${tr("Troops")} ${advTroopsShort(eco.currentTroops)}/${advTroopsShort(eco.maxTroops)} (${pct}%)</div>`,
-      );
-      parts.push(
-        `<div class="ofh-adv-sub">${tr("Growth")} ${Math.round(eco.growthEfficiency * 100)}% · ${tr("Spend")} ${advTroopsShort(eco.safeSpendableTroops)}</div>`,
-      );
-      if (eco.timeToPushSec != null) {
-        parts.push(`<div class="ofh-adv-sub">${tr("Push in")} ${eco.timeToPushSec}s</div>`);
-      }
-      parts.push(
-        `<div class="ofh-adv-sub">${tr("Expansion")}: ${advExpansionLabel(eco.state)}</div>`,
-      );
-    } else {
-      parts.push(`<div class="ofh-adv-empty">${tr("Waiting for game…")}</div>`);
-    }
+    appendAdvisorEconomy(parts, advEvaluateSelfEconomy(game, me));
+    appendAdvisorThreats(parts, game, me);
 
-    // Top threats.
-    parts.push(`<div class="ofh-adv-sec-title">${tr("Threats")}</div>`);
-    let threats = [];
-    try {
-      const players = getCachedPlayerViews(game);
-      const nukeBuilders = advNukeBuilderIds(game);
-      for (let i = 0; i < players.length; i += 1) {
-        const p = players[i];
-        if (!p || !p.isAlive || !p.isAlive()) continue;
-        let rel = "enemy";
-        try {
-          rel = getPlayerRelationToMyPlayer(game, p) || "enemy";
-        } catch (_e) {
-          rel = "enemy";
-        }
-        if (rel === "self" || rel === "ally" || rel === "team") continue;
-        const t = advEvaluateThreat(game, me, p, nukeBuilders);
-        if (t.level === "Weak") continue;
-        let name = "?";
-        try {
-          name = getPlayerDisplayName ? getPlayerDisplayName(p) : p.name && p.name();
-        } catch (_e) {
-          name = "?";
-        }
-        threats.push({ name, threat: t });
-      }
-      threats.sort((a, b) => b.threat.score - a.threat.score);
-      threats = threats.slice(0, 6);
-    } catch (_error) {
-      threats = [];
+    const nextBody = parts.join("");
+    if (runtimeState.advisorRenderSignature !== nextBody) {
+      runtimeState.advisorRenderSignature = nextBody;
+      body.innerHTML = nextBody;
     }
-    if (threats.length === 0) {
-      parts.push(`<div class="ofh-adv-empty">${tr("No notable threats")}</div>`);
-    } else {
-      for (let i = 0; i < threats.length; i += 1) {
-        const th = threats[i];
-        const ls = advThreatLevelStyle(th.threat.level);
-        const nuke = th.threat.nukeCapable || th.threat.buildingNuke ? " ☢" : "";
-        const safeName = String(th.name).replace(/[<>&]/g, "");
-        parts.push(
-          `<div class="ofh-adv-threat"><span class="ofh-adv-lvl" style="background:${ls.bg};color:${ls.fg}">${tr(th.threat.level)}</span><span class="ofh-adv-name">${safeName}${nuke}</span></div>`,
-        );
-      }
-    }
-
-    body.innerHTML = parts.join("");
   }
 
   function setAdvisorPanelEnabled(enabled) {
-    advisorPanelEnabled = Boolean(enabled);
-    if (!advisorPanelEnabled) {
+    runtimeState.advisorPanelEnabled = Boolean(enabled);
+    if (!runtimeState.advisorPanelEnabled) {
+      runtimeState.advisorRenderSignature = "";
       if (typeof unregisterHelperTickListener === "function") {
         unregisterHelperTickListener(renderAdvisorPanel);
       }
@@ -257,6 +250,6 @@
     }
     ensureAdvisorPanel();
     if (typeof registerHelperTickListener === "function") {
-      registerHelperTickListener(renderAdvisorPanel);
+      registerHelperTickListener(renderAdvisorPanel, 1000);
     }
   }

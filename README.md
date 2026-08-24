@@ -16,7 +16,9 @@ Works with [Tampermonkey](https://www.tampermonkey.net/), [Violentmonkey](https:
    <https://raw.githubusercontent.com/nguyenvancaokyfpt/openfront-helper-userscript/main/openfront-helper.user.js>
 3. Open <https://openfront.io/>. A draggable **⊕** icon appears in the corner — click it to open the settings popup.
 
-Auto-updates via the manager's built-in `@updateURL` check.
+The published build is intentionally not wired to upstream update URLs, so a custom
+build cannot silently replace your bot behavior. For local development, use the
+launcher/loader described below.
 
 ---
 
@@ -24,12 +26,12 @@ Auto-updates via the manager's built-in `@updateURL` check.
 
 The **⊕ launcher** is your entry point. Click it to open the popup; drag it anywhere on screen. Four tabs:
 
-| Tab | What it controls |
-|---|---|
+| Tab           | What it controls                       |
+| ------------- | -------------------------------------- |
 | **Auto-Join** | Lobby search filters and notifications |
-| **Helpers** | Toggle individual overlays and panels |
-| **Auto Bot** | Enable and tune the training bot |
-| **Settings** | Language picker and global options |
+| **Helpers**   | Toggle individual overlays and panels  |
+| **Auto Bot**  | Enable and tune the training bot       |
+| **Settings**  | Language picker and global options     |
 
 ---
 
@@ -41,14 +43,14 @@ Continuously polls the public lobby list and joins the first match that passes y
 
 **Filters:**
 
-| Category | Options |
-|---|---|
-| Team size | Min / Max players per team |
-| Team count | Min / Max number of teams |
-| Lobby size | Minimum total players |
-| Starting gold | 0 M, 1 M, 5 M, 25 M |
-| Maps | 40+ individual maps (include or exclude) |
-| Modifiers | Alliances, ports, nukes, SAMs, water nukes, random spawn, 4-min peace, 2× gold |
+| Category      | Options                                                                        |
+| ------------- | ------------------------------------------------------------------------------ |
+| Team size     | Min / Max players per team                                                     |
+| Team count    | Min / Max number of teams                                                      |
+| Lobby size    | Minimum total players                                                          |
+| Starting gold | 0 M, 1 M, 5 M, 25 M                                                            |
+| Maps          | 40+ individual maps (include or exclude)                                       |
+| Modifiers     | Alliances, ports, nukes, SAMs, water nukes, random spawn, 4-min peace, 2× gold |
 
 Each modifier category uses **include** mode (must match at least one selected) or **exclude** mode (skip if matched). Defaults are tuned for medium-sized Baikal and Luna matches.
 
@@ -96,7 +98,7 @@ Toggle each overlay independently from the **Helpers** tab. All panels are dragg
 
 ### Helper Panels
 
-**Boat Panel** — two tabs: *Sent* (boats you dispatched) and *Incoming* (boats heading toward you). Each row shows the boat, destination, and real-time ETA. Hover a row to pin-highlight it on the map.
+**Boat Panel** — two tabs: _Sent_ (boats you dispatched) and _Incoming_ (boats heading toward you). Each row shows the boat, destination, and real-time ETA. Hover a row to pin-highlight it on the map.
 
 **Estate Panel** — lists every disconnected parcel of your territory ranked by tile count. Click a row to pan the camera to that parcel. Click the column header to reverse-sort.
 
@@ -109,7 +111,9 @@ Toggle each overlay independently from the **Helpers** tab. All panels are dragg
 **Send 1% Boat** — right-click context menu shortcut that sends a transport ship with exactly 1% of your troops, then restores your previous attack ratio automatically.
 
 **Auto-Nuke** — automatically fires nukes at high-value targets. Options:
+
 - Standard auto-nuke (economy and structure targeting)
+- Impact coordinates are shifted onto the best existing enemy-building cluster when that blast destroys more buildings.
 - SAM-saturation mode: runs a SAM-burn pass to exhaust enemy defenses, then a destruction wave, then optional follow-up waves
 - Ally-safe toggle (skip allied territory)
 - Real-time launch progress panel
@@ -118,38 +122,109 @@ Toggle each overlay independently from the **Helpers** tab. All panels are dragg
 
 **Auto Leave on Win** — automatically leaves the match when a win modal appears, pairs naturally with "keep searching" to chain games continuously.
 
+**Auto Donate Troops** — sends troops to named allies only when you are not under attack. The Auto-Bot likewise donates peaceful surplus above the calculated ~42% troop-production peak, prioritizing allies under attack, then frontline allies, then rear allies; closer recipients receive more weight within each urgency tier. Both paths pause when an enemy transport targets your territory and preserve the higher border-threat reserve.
+
 ---
 
 ### Auto-Bot
 
-A faithful 1:1 port of the game's built-in Nation AI (`NationExecution`). Reads the live `GameView`/`PlayerView` client objects and emits the same intents as a human player. Designed for private-lobby practice, but also works in public lobbies.
+A faithful 1:1 port of the game's built-in Nation AI (`NationExecution`). Reads the live `GameView`/`PlayerView` client objects and emits the same intents as a human player.
 
 Enable and configure it live in-game from the **Auto Bot** popup tab. A status log inside the panel shows every decision the bot makes in real time. Run `window.__autoBotDiag()` in the browser console to verify the bot is wired correctly.
 
+In team matches, automatic spawn chooses an initial legal tile after the brief roster-discovery
+window, then re-ranks every 15 ticks. As teammates commit their positions, later spawn intents
+move into their shared hull (or the bounded corridor for two anchors) while the spawn phase remains open.
+
 **Behavior modules** (each can be toggled individually):
 
-| Module | What it does |
-|---|---|
-| Spawn | Picks the best spawn tile automatically |
+| Module          | What it does                                   |
+| --------------- | ---------------------------------------------- |
+| Spawn           | Picks the best spawn tile automatically        |
 | Expand / Attack | Claims tiles, manages troop ratios, retaliates |
-| Build | Constructs and upgrades structures |
-| Boat | Sends and lands transport ships |
-| Nuke | Selects nuke targets and fires |
-| Warship | Builds and dispatches warships |
-| Alliance | Requests and accepts alliances |
-| MIRV | Manages MIRV warhead targeting |
-| Emoji | Reacts with in-game emojis |
-| Donate | Donates troops to allies |
+| Build           | Constructs and upgrades structures             |
+| Boat            | Sends and lands transport ships                |
+| Nuke            | Selects nuke targets and fires                 |
+| Warship         | Builds and dispatches warships                 |
+| Alliance        | Requests and accepts alliances                 |
+| MIRV            | Manages MIRV warhead targeting                 |
+| Emoji           | Reacts with in-game emojis                     |
+| Donate          | Donates troops to allies                       |
 
 **Configurable settings:**
 
-| Setting | Options |
-|---|---|
-| Difficulty | Easy / Medium / Hard / Impossible |
-| Tick speed | Decision interval in ms |
+| Setting             | Options                                                                  |
+| ------------------- | ------------------------------------------------------------------------ |
+| Difficulty          | Easy / Medium / Hard / Impossible / Legendary                            |
+| Tick speed          | Decision interval in ms                                                  |
 | Per-structure build | Enable/disable City, Port, Factory, Defense Post, SAM, Silo individually |
-| Betray mode | Allow or block turning on allies |
-| Hidden mode | Bot runs without displaying the panel |
+| Betray mode         | Allow or block turning on allies                                         |
+| Hidden mode         | Bot runs without displaying the panel                                    |
+
+`Legendary` uses an adaptive construction planner. Gold production and troop
+generation are its two equally weighted primary objectives; missile defense is a
+safety constraint and tie-breaker. It places City/Factory/Port sites near strong
+friendly economies and SAM coverage, favors the own border nearest the team's
+geometric center, and treats missile defense as a hard safety constraint during
+an emergency. The five-tick (0.5 second) rule is the minimum time from the
+completion of a proposed SAM construction/upgrade to the first incoming impact;
+a new SAM is rejected if it cannot finish in that window or if its individual
+ready/reloading slots cannot stop the complete incoming salvo. An upgrade's
+new range applies immediately, but its added missile slot starts a full
+`SAMCooldown` reload, so it is not treated as instantly available.
+The salvo forecast also advances enemy silo queues through `SiloCooldown`,
+mirrors the engine's one-tick staggering when multiple ready slots from the same
+silo launch together, reserves gold for a possible Hydrogen finisher, and
+schedules all simultaneous threat routes against one shared SAM inventory.
+Assignment conflicts use a bounded exact fallback; an exhausted search is
+treated as unsafe, never as proof that a greedy miss is impossible to defend.
+
+With `winFixes` enabled, construction uses a three-way reserve policy: urgent
+missile defense is handled first, the next affordable City/Port/Factory keeps
+the economy growing, and offensive silo/nuke spending uses only the surplus
+left after those reserves. A built hostile silo immediately creates a SAM
+coverage requirement for our structures; reaching 1.5M hostile gold still
+opens the anticipatory SAM response. The economy gate ignores allies,
+teammates, and dead players. Coverage placement mirrors the engine's bounded
+25-tile sampler and reconstructs its ownership, radius, and structure-spacing
+legality locally. The best legal candidate normally needs one authoritative
+worker request; at most three sequential requests cover snapshot drift.
+
+Productive structures use their real next-build cost rather than the MIRV
+save-up multiplier, so saving for an offensive option cannot silently make
+ordinary growth unaffordable. A silo or nuke is allowed when the remaining
+surplus covers the next productive action and the next defensive SAM; heavy
+assaults and direct retaliation remain emergency exceptions. The MIRV war chest
+is a soft offensive goal: it can defer another silo, but never City/Factory/Port,
+SAM upgrades, or ordinary Atom/Hydrogen fire.
+
+With `winFixes` enabled, the custom build policy also upgrades a friendly SAM
+when one level makes its trajectory schedule intercept an incoming missile, and
+keeps our total missile-silo level sum at least equal to the largest hostile
+player's total SAM level sum. SAMs still respect their reload queues, and the
+parity target is calculated per hostile player rather than by adding unrelated
+enemies together.
+
+The same custom guard works in the other direction: at least one of our built
+SAMs is upgraded until its level reaches the largest hostile missile-silo level
+sum. If we have no eligible SAM yet, the bot prioritizes constructing one.
+
+---
+
+### Companion Bot
+
+A "slave" tab that serves a named "boss" account via emoji commands — for players running two accounts side by side. Enable it from the Quick Panel's **Companion** section; a floating panel lets you set the boss's account name (with a live-status dot and a picker listing current human players), then configure what the tab does for the boss: accept its alliance requests, donate troops/gold once its troops or your surplus cross a threshold, keep a factory built up to a configurable level, spawn near it inside a ring radius, and attack whatever it is currently attacking.
+
+Two modes:
+
+- **Passive** — the tab still plays its own game (manually or via the auto-bot with Companion support off) but performs the boss-support actions above.
+- **Active** — the tab hands spawn placement and alliance decisions to the auto-bot, constrained to the boss's ring and the boss's alliance only.
+
+An **Emoji** tab lets the boss trigger actions on demand (donate everything, break/request alliance, attack the boss's target, build/upgrade the factory, pause/resume) by sending a bound emoji to this tab specifically, or to "All players" to command every companion tab at once.
+
+Because a mistaken click on the wrong tab is the actual failure mode this feature guards against, an **always-on warning banner** is pinned to the top of the screen whenever Companion mode is on for that tab — it cannot be dismissed by closing the panel, and it is `pointer-events: none` so it never blocks clicks on the map underneath it. It reads amber while the boss is found, red if the boss name does not resolve to a live player, and grey while paused or when this tab is itself the named boss.
+
+Run `window.__companionDiag()` in the browser console to verify the wiring.
 
 ---
 
@@ -167,9 +242,48 @@ The Settings tab has a searchable language picker. Every language falls back to 
 npm install
 npm run build       # → openfront-helper.user.js  (minified, the committed artifact)
 npm run build:raw   # unminified + console.log debugging
+npm run dev:userscript # watcher + loopback server for Tampermonkey hot reload
 npm run check       # TypeScript type-check (src/ only)
 npm test            # Node smoke test
 ```
+
+### Local build with Brave + official Tampermonkey
+
+The repository includes `openfront-helper-loader.user.js`, a launcher for the official
+Tampermonkey extension. It polls a loopback-only development server for the generated SHA-256
+fingerprint and hot-restarts only the changed Auto-Bot layer. OpenFront, the match, and its
+network connection remain open.
+
+1. Run `npm run dev:userscript` and leave that process running. It binds only to
+   `127.0.0.1:17373`, builds once, and rebuilds automatically when local sources change.
+2. Install or update `openfront-helper-loader.user.js` in Tampermonkey and disable any other
+   OpenFront Helper copy that would execute at the same time.
+3. Reload OpenFront once to start loader v3. Future Auto-Bot builds apply within about one second
+   without refreshing the page or game. Loader v3.0.1 also reapplies the previous master-toggle
+   state through the replacement runtime. Auto-Bot v1.12.25 additionally verifies the enabled
+   replacement has restarted its engine, even if a stale lifecycle marker survives the handoff.
+
+The loader downloads only the small fingerprint while idle. It fetches the full userscript on
+initial startup and the smaller Auto-Bot artifact after a changed fingerprint. Shell, lobby, or
+non-bot overlay changes still require a normal page reload because only the Auto-Bot lifecycle is
+safe to replace during an active match.
+
+### Live runtime diagnostics
+
+Start Chromium with a DevTools port (for example `--remote-debugging-port=9222`),
+open an OpenFront match, then query the installed helper from this repository:
+
+```bash
+npm run probe:runtime
+npm run probe:runtime -- --watch 1000 --enable-profiling --enable-loggers --compact
+```
+
+The probe attaches only to an OpenFront page and returns current script/version
+status, WebSocket and match state, auto-bot diagnostics and bounded performance
+samples, browser long tasks and heap usage, action/network logs, the current round
+timeline, and up to 20 archived match timelines. Run
+`npm run probe:runtime -- --help` for target-port and output controls. Collection
+adds no polling loop to gameplay; snapshots are assembled only when requested.
 
 After any source change, rebuild and commit both the source and the regenerated `openfront-helper.user.js` — the published userscript is that file.
 
@@ -177,6 +291,6 @@ After any source change, rebuild and commit both the source and the regenerated 
 
 ## Credits
 
-In-game overlays and helper panels are adapted from **[phil0010-gh/openfront-helper](https://github.com/phil0010-gh/openfront-helper)** by [phil0010-gh](https://github.com/phil0010-gh). Several helper and auto-bot features — spawn scoring/heatmap, the advisor, threat intel, and map overlays — reference **[OpenFront Tactical Assistant](https://greasyfork.org/en/scripts/581664-openfront-tactical-assistant)**. The Quick Panel's silo/SAM tracker, skin unlocker, atom batch-fire, warship smart combat (battle simulation + safe waypoint BFS), low-lag mode, kill shot, and embargo controls reference **[Project Blon Openfront](https://greasyfork.org/en/scripts/580641-project-blon-openfront-cheats)** by [goonertd](https://greasyfork.org/en/users/1607113-goonertd). The auto-bot, macro tools, multi-language UI, and several additional features are original to this project.
+In-game overlays and helper panels are adapted from **[phil0010-gh/openfront-helper](https://github.com/phil0010-gh/openfront-helper)** by [phil0010-gh](https://github.com/phil0010-gh). Several helper and auto-bot features — spawn scoring/heatmap, the advisor, threat intel, and map overlays — reference **[OpenFront Tactical Assistant](https://greasyfork.org/en/scripts/581664-openfront-tactical-assistant)**. The Quick Panel's silo/SAM tracker, skin unlocker, atom batch-fire, warship smart combat (battle simulation + safe waypoint BFS), low-lag mode, kill shot, and embargo controls reference **[Project Blon Openfront](https://greasyfork.org/en/scripts/580641-project-blon-openfront-cheats)** by [goonertd](https://greasyfork.org/en/users/1607113-goonertd). Companion Bot takes its idea and tuning constants from **[Openfront Multitab cheat](https://greasyfork.org/scripts/587654)** by EcoMaxer (MIT), itself built on Project Blon. The auto-bot, macro tools, multi-language UI, and several additional features are original to this project.
 
 Not affiliated with or endorsed by OpenFront.io. Use at your own discretion and in line with the game's rules.

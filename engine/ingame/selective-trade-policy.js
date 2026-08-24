@@ -16,14 +16,14 @@
       return null;
     }
 
-    lastOpenFrontGameContext = { game, transform };
-    if (selectiveTradePolicyEnabled) {
+    runtimeState.lastOpenFrontGameContext = { game, transform };
+    if (runtimeState.selectiveTradePolicyEnabled) {
       syncSelectiveTradePolicyPatches(game);
-      if (selectiveTradePolicyNeedsEmbargoSync) {
+      if (runtimeState.selectiveTradePolicyNeedsEmbargoSync) {
         applySelectiveTradePolicy(game);
       }
     }
-    return lastOpenFrontGameContext;
+    return runtimeState.lastOpenFrontGameContext;
   }
 
   function findOpenFrontGameContextInDom() {
@@ -77,110 +77,10 @@
     });
   }
 
-  function getGameConfig(game) {
-    try {
-      const value = game?.config;
-      const config = typeof value === "function" ? value.call(game) : value;
-      return isObject(config) ? config : null;
-    } catch (_error) {
-      return null;
-    }
-  }
-
-  function getAliveHumanPlayers(game) {
-    return Array.from(game?.playerViews?.() || []).filter(
-      (player) => player?.isAlive?.() && isHumanPlayer(player),
-    );
-  }
-
-  function hasTruthyFlag(target, keys) {
-    return keys.some((key) => Boolean(target?.[key]));
-  }
-
-  function hasStringFieldMatching(target, keys, includeTokens, excludeTokens = []) {
-    for (const key of keys) {
-      const rawValue = target?.[key];
-      if (typeof rawValue !== "string") {
-        continue;
-      }
-      const value = rawValue.trim().toLowerCase();
-      if (!value) {
-        continue;
-      }
-      if (excludeTokens.some((token) => value.includes(token))) {
-        continue;
-      }
-      if (includeTokens.some((token) => value.includes(token))) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  function isCustomGame(game) {
-    const config = getGameConfig(game);
-    if (!config) {
-      return false;
-    }
-
-    if (
-      hasTruthyFlag(config, [
-        "isCustom",
-        "customGame",
-        "customLobby",
-        "isPrivate",
-        "privateGame",
-        "privateLobby",
-      ])
-    ) {
-      return true;
-    }
-
-    return hasStringFieldMatching(
-      config,
-      [
-        "gameType",
-        "lobbyType",
-        "matchType",
-        "source",
-        "queueType",
-        "visibility",
-      ],
-      ["custom", "private", "friend"],
-      ["public", "ranked", "matchmaking"],
-    );
-  }
-
-  function isSoloGame(game) {
-    return getAliveHumanPlayers(game).length <= 1;
-  }
-
-  function isCheatsAvailable(game) {
-    if (!game) {
-      return false;
-    }
-
-    return isSoloGame(game) || isCustomGame(game);
-  }
-
-  function reportCheatsAvailability(game = null) {
-    const available = isCheatsAvailable(game);
-    if (available === lastReportedCheatsAvailability) {
-      return;
-    }
-
-    lastReportedCheatsAvailability = available;
-    postToExtension("CHEATS_AVAILABILITY", {
-      available,
-    });
-  }
-
   function isHumanPlayer(player) {
-    try {
+    {
       const playerType = player?.type?.() ?? player?.data?.playerType;
       return playerType === "HUMAN";
-    } catch (_error) {
-      return false;
     }
   }
 
@@ -196,11 +96,11 @@
 
   function reportSelectiveTradePolicyAvailability(game = null) {
     const available = isSelectiveTradePolicyAvailable(game);
-    if (available === lastReportedSelectiveTradePolicyAvailability) {
+    if (available === runtimeState.lastReportedSelectiveTradePolicyAvailability) {
       return;
     }
 
-    lastReportedSelectiveTradePolicyAvailability = available;
+    runtimeState.lastReportedSelectiveTradePolicyAvailability = available;
     postToExtension("SELECTIVE_TRADE_POLICY_AVAILABILITY", {
       available,
     });
@@ -223,26 +123,24 @@
       return true;
     }
 
-    try {
+    {
       if (isTeamGame(game)) {
         return Boolean(myPlayer?.isOnSameTeam?.(otherPlayer));
       }
       return Boolean(myPlayer?.isAlliedWith?.(otherPlayer));
-    } catch (_error) {
-      return false;
     }
   }
 
   function rebuildSelectiveTradePolicyCache(game, myPlayer) {
     selectiveTradePolicyAllowedPartnerIds.clear();
-    selectiveTradePolicyMyPlayerId = null;
+    runtimeState.selectiveTradePolicyMyPlayerId = null;
 
     const myId = getPlayerSmallId(myPlayer);
     if (!Number.isFinite(myId)) {
       return;
     }
 
-    selectiveTradePolicyMyPlayerId = myId;
+    runtimeState.selectiveTradePolicyMyPlayerId = myId;
     selectiveTradePolicyAllowedPartnerIds.add(myId);
 
     for (const player of Array.from(game?.playerViews?.() || [])) {
@@ -262,11 +160,11 @@
   }
 
   function isBlockedBySelectiveTradePolicy(player, otherPlayer, game = null) {
-    if (!selectiveTradePolicyEnabled || !player || !otherPlayer) {
+    if (!runtimeState.selectiveTradePolicyEnabled || !player || !otherPlayer) {
       return false;
     }
     if (
-      !Number.isFinite(selectiveTradePolicyMyPlayerId) ||
+      !Number.isFinite(runtimeState.selectiveTradePolicyMyPlayerId) ||
       selectiveTradePolicyAllowedPartnerIds.size === 0
     ) {
       return false;
@@ -281,11 +179,11 @@
       return false;
     }
 
-    if (playerId === selectiveTradePolicyMyPlayerId) {
+    if (playerId === runtimeState.selectiveTradePolicyMyPlayerId) {
       return !selectiveTradePolicyAllowedPartnerIds.has(otherId);
     }
 
-    if (otherId === selectiveTradePolicyMyPlayerId) {
+    if (otherId === runtimeState.selectiveTradePolicyMyPlayerId) {
       return !selectiveTradePolicyAllowedPartnerIds.has(playerId);
     }
 
@@ -307,10 +205,8 @@
         return true;
       }
 
-      try {
+      {
         return Boolean(originalHasEmbargo(otherPlayer));
-      } catch (_error) {
-        return false;
       }
     };
   }
@@ -327,12 +223,19 @@
       return false;
     }
 
-    try {
+    {
       method.apply(target, args);
       return true;
-    } catch (_error) {
-      return false;
     }
+  }
+
+  function tryEmbargoMethods(target, methodNames, argumentLists) {
+    for (const methodName of methodNames) {
+      for (const args of argumentLists) {
+        if (callEmbargoMethod(target, methodName, args)) return true;
+      }
+    }
+    return false;
   }
 
   function trySetEmbargo(player, otherPlayer, shouldEmbargo, game) {
@@ -365,13 +268,7 @@
           "setTradeEmbargo",
         ];
 
-    for (const methodName of directMethods) {
-      for (const args of directCandidates) {
-        if (callEmbargoMethod(player, methodName, args)) {
-          return true;
-        }
-      }
-    }
+    if (tryEmbargoMethods(player, directMethods, directCandidates)) return true;
 
     const gameMethods = shouldEmbargo
       ? ["setEmbargo", "embargoPlayer", "embargo"]
@@ -388,54 +285,54 @@
           [player, otherPlayer],
         ];
 
-    for (const methodName of gameMethods) {
-      for (const args of gameArgs) {
-        if (callEmbargoMethod(game, methodName, args)) {
-          return true;
-        }
-      }
-    }
+    return tryEmbargoMethods(game, gameMethods, gameArgs);
+  }
 
-    return false;
+  function isEligibleTradePeer(player, myPlayer) {
+    if (!player?.isAlive?.() || !isHumanPlayer(player)) return false;
+    const playerId = getPlayerSmallId(player);
+    const myId = getPlayerSmallId(myPlayer);
+    return (
+      Number.isFinite(playerId) &&
+      Number.isFinite(myId) &&
+      playerId !== myId
+    );
+  }
+
+  function syncTradeEmbargoes(game, myPlayer, shouldAllowTrade) {
+    for (const player of Array.from(game?.playerViews?.() || [])) {
+      if (!isEligibleTradePeer(player, myPlayer)) continue;
+      const allowTrade = shouldAllowTrade(player);
+      trySetEmbargo(myPlayer, player, !allowTrade, game);
+      trySetEmbargo(player, myPlayer, !allowTrade, game);
+    }
   }
 
   function applySelectiveTradePolicy(gameOverride = null) {
     const context = gameOverride ? { game: gameOverride } : getOpenFrontGameContext();
     const game = context?.game ?? gameOverride;
     if (!isSelectiveTradePolicyAvailable(game)) {
-      selectiveTradePolicyEnabled = false;
-      selectiveTradePolicyNeedsEmbargoSync = false;
+      runtimeState.selectiveTradePolicyEnabled = false;
+      runtimeState.selectiveTradePolicyNeedsEmbargoSync = false;
       selectiveTradePolicyAllowedPartnerIds.clear();
-      selectiveTradePolicyMyPlayerId = null;
+      runtimeState.selectiveTradePolicyMyPlayerId = null;
       reportSelectiveTradePolicyAvailability(game);
       return;
     }
 
-    selectiveTradePolicyEnabled = true;
-    selectiveTradePolicyNeedsEmbargoSync = true;
+    runtimeState.selectiveTradePolicyEnabled = true;
+    runtimeState.selectiveTradePolicyNeedsEmbargoSync = true;
     const myPlayer = game?.myPlayer?.();
     reportSelectiveTradePolicyAvailability(game);
 
     rebuildSelectiveTradePolicyCache(game, myPlayer);
     syncSelectiveTradePolicyPatches(game);
 
-    for (const player of Array.from(game?.playerViews?.() || [])) {
-      if (!player?.isAlive?.() || !isHumanPlayer(player)) {
-        continue;
-      }
+    syncTradeEmbargoes(game, myPlayer, (player) =>
+      isAllowedTradePartnerForMyPlayer(myPlayer, player, game),
+    );
 
-      const playerId = getPlayerSmallId(player);
-      const myId = getPlayerSmallId(myPlayer);
-      if (!Number.isFinite(playerId) || !Number.isFinite(myId) || playerId === myId) {
-        continue;
-      }
-
-      const shouldAllowTrade = isAllowedTradePartnerForMyPlayer(myPlayer, player, game);
-      trySetEmbargo(myPlayer, player, !shouldAllowTrade, game);
-      trySetEmbargo(player, myPlayer, !shouldAllowTrade, game);
-    }
-
-    selectiveTradePolicyNeedsEmbargoSync = false;
+    runtimeState.selectiveTradePolicyNeedsEmbargoSync = false;
   }
 
   function clearSelectiveTradePolicy(gameOverride = null) {
@@ -443,30 +340,17 @@
     const game = context?.game ?? gameOverride;
     const myPlayer = game?.myPlayer?.();
 
-    selectiveTradePolicyEnabled = false;
-    selectiveTradePolicyNeedsEmbargoSync = false;
+    runtimeState.selectiveTradePolicyEnabled = false;
+    runtimeState.selectiveTradePolicyNeedsEmbargoSync = false;
     selectiveTradePolicyAllowedPartnerIds.clear();
-    selectiveTradePolicyMyPlayerId = null;
+    runtimeState.selectiveTradePolicyMyPlayerId = null;
     reportSelectiveTradePolicyAvailability(game);
 
     if (!game || !myPlayer?.isPlayer?.() || !isHumanPlayer(myPlayer)) {
       return;
     }
 
-    for (const player of Array.from(game?.playerViews?.() || [])) {
-      if (!player?.isAlive?.() || !isHumanPlayer(player)) {
-        continue;
-      }
-
-      const playerId = getPlayerSmallId(player);
-      const myId = getPlayerSmallId(myPlayer);
-      if (!Number.isFinite(playerId) || !Number.isFinite(myId) || playerId === myId) {
-        continue;
-      }
-
-      trySetEmbargo(myPlayer, player, false, game);
-      trySetEmbargo(player, myPlayer, false, game);
-    }
+    syncTradeEmbargoes(game, myPlayer, () => true);
   }
 
   function setSelectiveTradePolicyEnabled(enabled, gameOverride = null) {
@@ -492,55 +376,7 @@
   let _lastOpenFrontContextDiscoveryAt = 0;
 
   function _discoverOpenFrontGameContext() {
-    const playerInfoOverlay = document.querySelector("player-info-overlay");
-    const playerPanel = document.querySelector("player-panel");
-    const emojiTable = document.querySelector("emoji-table");
-    const buildMenu = document.querySelector("build-menu");
-    const gameLeftSidebar = document.querySelector("game-left-sidebar");
-    const gameRightSidebar = document.querySelector("game-right-sidebar");
-    const leaderBoard = document.querySelector("leader-board");
-    const teamStats = document.querySelector("team-stats");
-    const spawnTimer = document.querySelector("spawn-timer");
-    const unitDisplay = document.querySelector("unit-display");
-    const controlPanel = document.querySelector("control-panel");
-
-    const gameSources = [
-      playerInfoOverlay?.game,
-      playerPanel?.g,
-      emojiTable?.game,
-      leaderBoard?.game,
-      teamStats?.game,
-      gameLeftSidebar?.game,
-      gameRightSidebar?.game,
-      buildMenu?.game,
-      spawnTimer?.game,
-      unitDisplay?.game,
-      controlPanel?.game,
-    ];
-    const transformSources = [
-      playerInfoOverlay?.transform,
-      emojiTable?.transformHandler,
-      buildMenu?.transformHandler,
-      spawnTimer?.transformHandler,
-      unitDisplay?.transformHandler,
-      controlPanel?.transformHandler,
-    ];
-
-    for (const game of gameSources) {
-      for (const transform of transformSources) {
-        const context = rememberOpenFrontGameContext(game, transform);
-        if (context) {
-          return context;
-        }
-      }
-    }
-
-    const discoveredContext = findOpenFrontGameContextInDom();
-    if (discoveredContext) {
-      return discoveredContext;
-    }
-
-    return null;
+    return findOpenFrontGameContextInDom();
   }
 
   function getOpenFrontGameContext() {
@@ -550,11 +386,11 @@
     if (
       now - _lastOpenFrontContextDiscoveryAt < _OPEN_FRONT_CONTEXT_REFRESH_MS &&
       isUsableOpenFrontGameContext(
-        lastOpenFrontGameContext?.game,
-        lastOpenFrontGameContext?.transform,
+        runtimeState.lastOpenFrontGameContext?.game,
+        runtimeState.lastOpenFrontGameContext?.transform,
       )
     ) {
-      return lastOpenFrontGameContext;
+      return runtimeState.lastOpenFrontGameContext;
     }
 
     _lastOpenFrontContextDiscoveryAt = now;
@@ -568,11 +404,11 @@
     // DOM scan from breaking helpers mid-game.
     if (
       isUsableOpenFrontGameContext(
-        lastOpenFrontGameContext?.game,
-        lastOpenFrontGameContext?.transform,
+        runtimeState.lastOpenFrontGameContext?.game,
+        runtimeState.lastOpenFrontGameContext?.transform,
       )
     ) {
-      return lastOpenFrontGameContext;
+      return runtimeState.lastOpenFrontGameContext;
     }
 
     return null;
@@ -582,9 +418,3 @@
     const context = getOpenFrontGameContext();
     reportSelectiveTradePolicyAvailability(context?.game ?? null);
   }
-
-  function refreshCheatsAvailability() {
-    const context = getOpenFrontGameContext();
-    reportCheatsAvailability(context?.game ?? null);
-  }
-

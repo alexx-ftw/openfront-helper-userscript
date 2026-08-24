@@ -1,0 +1,434 @@
+<h1>Product requirements</h1>
+
+<h2>Nuke ownership and defense</h2>
+
+<ul>
+  <li>
+    All nuclear prediction, retaliation, defensive interception, and duplicate-launch logic must
+    classify only the user's own missiles as self-owned and missiles from permanent teammates as
+    allied. A missile owned by any other player remains hostile, even while a breakable diplomatic
+    alliance with that player is active.
+  </li>
+</ul>
+
+<h2>Auto-Bot update persistence</h2>
+
+<ul>
+  <li>
+    Updating or reinjecting the userscript must preserve the user's persisted Auto-Bot master
+    toggle. Runtime lifecycle cleanup may stop the engine but must not save
+    <code>enabled=false</code> as though the user disabled it. Lobby type must not change Auto-Bot
+    eligibility or execution behavior.
+  </li>
+</ul>
+
+<h2>Economic structure expansion</h2>
+
+<ul>
+  <li>
+    City and Factory placement must treat a border segment shared exclusively with friendly
+    teammates or allies as part of the safe team interior. Unowned, hostile, and mixed ally/hostile
+    border segments remain exposed. Safety against the exposed perimeter and real commercial-rail
+    connectivity must determine placement; proximity to the geometric center of a single player's
+    territory must not be used as a goal by itself.
+  </li>
+  <li>
+    When the planner wants a City, Factory, or Port, it must attempt a new structure before an
+    upgrade. A bounded placement miss, timeout, missing build descriptor, or other indeterminate
+    result must not authorize an upgrade. After the normal bounded placement search fails, the
+    planner must incrementally inspect the complete owned territory across later construction
+    decisions, examining no more than the normal 25-candidate placement budget in one decision.
+    Existing economic structures may be upgraded only when that exhaustive geometric search
+    completes against an unchanged territory/structure snapshot and finds no legal site; incomplete
+    scans, changed snapshots, unsafe-only sites, and failed authoritative probes remain
+    indeterminate and do not permit an upgrade. A no-space proof must never keep one Auto-Bot tick
+    alive while it traverses the map.
+  </li>
+  <li>
+    Mature-game construction decisions must not rebuild identical global topology for every
+    placement candidate. Factory trade destinations are shared across one construction decision, and
+    an economic scan fingerprint may inspect only aggregate structure and border counts once per
+    game tick. Authoritative buildability probes remain the final legality check when a
+    count-preserving topology change makes an incremental scan snapshot stale.
+  </li>
+</ul>
+
+<h2>SAM upgrade opportunity cost</h2>
+
+<ul>
+  <li>
+    A routine SAM level must be funded from surplus remaining after the next currently useful City,
+    Factory, or Port action. Economy strength is therefore determined from the live productive
+    opportunity and its real cost, not from a fixed gold, structure-count, or game-time threshold.
+    An upgrade proven necessary to intercept an already incoming missile may bypass this reserve.
+  </li>
+</ul>
+
+<h2>Defense Post portfolio coverage</h2>
+
+<ul>
+  <li>
+    During an active land attack, Defense Post demand must exclude threatened-front tiles already
+    covered by an existing or in-progress Post. The engine applies at most one Post bonus per
+    defended tile, so overlapping coverage has no marginal combat value. Within the existing
+    threat-derived maximum, new placements must maximize newly covered threatened tiles inside the
+    engine's live effect radius before applying secondary SAM-protection placement preferences.
+    Pre-attack strategic deterrence retains its separate bounded policy.
+  </li>
+  <li>
+    During a live land invasion, a new Defense Post must use a placement with real territorial
+    depth. The planner must not relax onto a shallow border tile when no depth-safe candidate is
+    available, and equally useful candidates must prefer the one farthest behind the threatened
+    front so the structure has the greatest chance to finish before the territory is captured.
+  </li>
+  <li>
+    If an incoming Nation or Human land army matches or exceeds our current troops, an affordable
+    failed Defense Post placement must retain its construction budget for a bounded retry. It must
+    not release that gold to a Port or unrelated structure while the overwhelming invasion remains
+    live. The hard reserve remains active continuously, but an unchanged failed placement search
+    must retry at most once per game second to avoid repeated full candidate probes and main-thread
+    stutter. Failed placement under a smaller attack may still release the slot so ordinary economy
+    cannot be starved indefinitely.
+  </li>
+</ul>
+
+<h2>Auto-fire collateral accounting</h2>
+
+<ul>
+  <li>
+    When choosing an atom impact that must cover a hostile SAM or Silo, Auto Fire Building must
+    exclude collateral structures already inside the blast radius of any active own, allied, or
+    otherwise guaranteed in-flight missile. The impact scorer should maximize additional hostile
+    structures destroyed while preserving coverage of the primary target.
+  </li>
+</ul>
+
+<h2>Spawn selection</h2>
+
+<ul>
+  <li>
+    When the user provides a screenshot, grid reference, or named map location to illustrate a
+    spawn-selection problem, you must treat it as an example unless the user explicitly requests
+    location-specific behavior. Improve the general spawn-selection objective across maps; do not
+    hard-code the pictured map, coordinate, grid cell, or nearby territories.
+  </li>
+  <li>
+    In team games, the bounded initial candidate budget must be sampled inside the geometry formed
+    by committed teammate spawns before ranking. Sampling the whole map and discarding exterior
+    points afterward must not collapse a valid team region to a single candidate. The selected
+    position and every reported alternative must remain inside that geometry.
+  </li>
+</ul>
+
+<h2>Tribe capture reinforcement</h2>
+
+<ul>
+  <li>
+    You must keep every live outbound tribe attack in the attack-candidate set, even when the tribe
+    is temporarily absent from <code>nearby()</code>. Compare the live committed troops with the
+    current Defense Post-aware robust conquest floor (four times the live tribe force) on every
+    decision pass. Two times the tribe force is only the engine's legal admission threshold and must
+    not be treated as sufficient for conquest. Reconcile and add target-specific pending intents
+    instead of treating their mere existence as sufficient. When the combined visible and pending
+    force is underfunded, emit only the missing reinforcement; when it already meets the floor, do
+    not emit another attack. Reinforcement of an active underfunded conquest takes priority over
+    starting a new Terra Nullius intent.
+  </li>
+</ul>
+
+<h2>Time-aware tribe clusters</h2>
+
+<ul>
+  <li>
+    Every new tribe conquest must enter through a live candidate carrying finite cluster size and
+    access scores. Generic weak-target, victim, ally-assist, random-neighbour, and ordinary fallback
+    strategies must not bypass this admission rule. A forced response to an incoming tribe attack
+    and a target-specific reinforcement of an already active conquest remain permitted without a
+    fresh cluster score.
+  </li>
+  <li>
+    Tribe-cluster targeting must value only the portion of a connected tribe chain that is likely to
+    remain edible when the bot reaches it. Rival attacks and observed expansion pressure must be
+    compounded with the number of prerequisite tribe captures. A tribe predicted to be captured
+    before arrival must not contribute cluster value, act as a gateway to tribes behind it, occupy
+    the bounded strategic sample, or appear in the preferred-cluster overlay.
+  </li>
+</ul>
+
+<h2>Early-game frame budget</h2>
+
+<ul>
+  <li>
+    An accepted personal spawn must not initialize or reserve Terra Nullius attacks while the match
+    remains in the global spawn phase. The protected opening burst begins on the first playable
+    tick, then may pipeline its bounded intents without waiting for prior free-land commands to
+    settle, up to the aggregate opening limit and never through the retained troop reserve. Once no
+    passable adjacent Terra Nullius remains, the fast lane must yield immediately to tribe and other
+    strategic planning even when a nominal fragment of the opening allowance remains unused. Once
+    every opening free-land intent and visible wave has resolved, expansion must immediately
+    continue under the live acceleration/defense reserve for the remainder of the bounded opening
+    window. It must not wait for a capacity-derived future production peak that exceeds the current
+    army. After that window, the adaptive production/threat reserve becomes authoritative.
+  </li>
+  <li>
+    Consecutive opening-expansion decisions must reuse the complete tribe-border topology for a
+    short, bounded game-tick window, invalidating immediately when the live tribe-id set changes.
+    Cluster opportunity traversal should start only from actionable candidates, and full border
+    scans must yield cooperatively so no synchronous slice monopolizes a render frame. The frequent
+    Terra Nullius liveness lane must not invoke the complete strategic tribe planner; it may only
+    reconcile active conquests and emit one adjacent free-land intent. Pending tribe or Nation
+    attacks must not pause this lane; only an unreconciled Terra Nullius intent may defer its next
+    free-land emission. Publishing an unchanged preferred cluster must not invalidate the shared
+    overlay canvas, and a data-driven cluster layer must not register a periodic no-op scan.
+  </li>
+  <li>
+    A transient empty actionable or nearby-tribe selector must not clear a published preferred
+    cluster while every published member is still a live hostile tribe. The cluster must be cleared
+    only after its published membership is no longer live, and that visual removal must wake the
+    shared overlay scheduler exactly once. Refreshing the synchronous attack snapshot must preserve
+    the independently owned preferred-cluster fields while asynchronous tribe planning is pending.
+  </li>
+  <li>
+    Structure policy must not synchronously construct full-map water-component labels merely to
+    answer whether the player has shared water. Direct ocean access must be decided from the cached
+    live border in bounded work. Exact global labeling remains available and may run lazily only
+    when an inland lake requires the trusted-partner test.
+  </li>
+  <li>
+    The static reverse-maritime distance field used for tribe routing must begin preparing in
+    bounded slices after spawn. A tribe decision may synchronously finish only the remaining work,
+    and no partial field may be published or used for ranking. Incremental and one-shot construction
+    must produce the exact same distance field.
+  </li>
+  <li>
+    Cooperative water-route estimation must make reachability decisions from deterministic route
+    length and visited-node limits, not from machine speed. Wall-clock deadlines may be used only as
+    explicit secondary safety fuses; yielding between bounded batches remains mandatory.
+  </li>
+</ul>
+
+<h2>Diplomacy intent priority</h2>
+
+<ul>
+  <li>
+    Combat decisions must run before routine embargo maintenance. A large hostile roster must be
+    drained through a bounded embargo quota across later decisions, stopping before the shared
+    client intent budget is exhausted and preserving capacity for defense, construction, combat, or
+    donations. Routine diplomacy must not knowingly emit intents that the local rate limiter will
+    reject.
+  </li>
+</ul>
+
+<h2>Incoming-attack priority</h2>
+
+<ul>
+  <li>
+    A non-overwhelming land invasion must be interdicted from the surplus above the live production
+    reserve and pending outbound commitments. The complete army of an unrelated border opponent must
+    not be counted again as a defensive hold for this cancellation action. The emitted payload must
+    be capped to the smaller of that safe surplus and the troops currently incoming from the
+    selected attacker, including when the attacker is a tribe.
+  </li>
+  <li>
+    Any live hostile incoming attack, including one from a tribe, must preempt new offensive troop
+    spending. Retaliation is a defensive action and must not depend on the expansion toggle. A
+    failed defensive emission must hold the decision instead of falling through to Terra Nullius or
+    tribe expansion. The opening-expansion fast lane must detect the threat before waiting on any
+    pending outbound intent, terminate its follow-up chain, and give both defensive construction and
+    retaliation an immediate decision slot.
+  </li>
+</ul>
+
+<h2>Active attack reinforcement</h2>
+
+<ul>
+  <li>
+    A live outbound attack against any hostile player remains eligible for reinforcement even when
+    its target is absent from the current nearby or border-target selector. Adequacy must include
+    live committed troops and pending local intents, and reinforcement must emit only the missing
+    amount up to the target-specific floor.
+  </li>
+</ul>
+
+<h2>Defensive coverage accounting</h2>
+
+<ul>
+  <li>
+    When evaluating whether a candidate SAM adds protection, existing SAM coverage must be measured
+    at each protected structure, not at the candidate SAM tile. Candidate coverage and existing
+    coverage are separate geometric tests.
+  </li>
+</ul>
+
+<h2>SAM-protected structure placement</h2>
+
+<ul>
+  <li>
+    New Cities, Factories, Ports, Missile Silos, and Defense Posts should prefer the closest legal
+    placement to an existing own or allied SAM. A tile covered at the SAM's current level outranks
+    one that becomes covered only after leveling; eventual maximum-level coverage outranks an
+    uncovered tile. Distance to the covering SAM breaks ties inside each coverage tier. Candidate
+    enrichment and probing must remain inside the existing 25-candidate budget.
+  </li>
+</ul>
+
+<h2>Maritime-defense construction liveness</h2>
+
+<ul>
+  <li>
+    An active maritime-invasion signal may reserve construction while an emergency Port is genuinely
+    unaffordable or under construction, and until the first Warship starts. It must not suppress all
+    other structures when Warship automation is disabled, after a Warship exists, or after an
+    affordable Port placement attempt fails for legality or integration reasons.
+  </li>
+</ul>
+
+<h2>Stable naval interception assignments</h2>
+
+<ul>
+  <li>
+    A Warship assigned to an incoming transport must retain that transport ID and commanded
+    interception target while both units remain live. Transport movement must not trigger repeated
+    A* planning or redirect the same Warship on every naval-planner interval.
+  </li>
+  <li>
+    A planning pass may emit at most one immediate movement order per Warship. The assignment is
+    released when the transport invasion ends or the assigned Warship is no longer active, after
+    which uncovered live invasions may be planned normally.
+  </li>
+</ul>
+
+<h2>Warship build-intent reconciliation</h2>
+
+<ul>
+  <li>
+    Initial deployment, retaliation, infestation-counter, and invasion-interceptor construction must
+    share one pending Warship reservation. No path may emit another build while the client is still
+    waiting for the accepted unit to appear. A newly visible Warship, including one under
+    construction, confirms the intent; an intent that does not materialize releases after the normal
+    six-game-tick reconciliation grace so a legitimate retry remains possible.
+  </li>
+</ul>
+
+<h2>Outbound transport destination reservations</h2>
+
+<ul>
+  <li>
+    A successfully emitted transport intent reserves its destination and the surrounding configured
+    boat-spread radius while the intent is pending and while a non-retreating active transport is
+    traveling there. Parallel transports to spatially distinct opportunities remain legal. The
+    reservation is released when the intent fails to materialize after the normal reconciliation
+    grace or when the observed transport completes, disappears, becomes inactive, or retreats.
+  </li>
+</ul>
+
+<h2>Preemptive SAM construction</h2>
+
+<ul>
+  <li>
+    Once any live enemy has completed a Missile Silo, placing the required SAM that best protects
+    our structures becomes the absolute construction priority on every difficulty. Until that SAM is
+    placed or already under construction, a failed, unaffordable, or rate-limited placement attempt
+    must reserve the construction slot; economy, naval reserve, Defense Posts, and offensive Silos
+    must not consume its gold. Enemy gold without a completed Silo may remain an anticipatory
+    signal, but must not create this hard reservation.
+  </li>
+  <li>
+    A confirmed hostile-silo threat may authorize the first affordable SAM before any hostile
+    missile has launched. The final construction gate must preserve that explicit authorization;
+    ordinary ratio-driven SAM construction remains locked until a launch is observed.
+  </li>
+  <li>
+    Hostile Silo count must not create one SAM site per Silo. After the first useful SAM exists,
+    increase its interceptor capacity and range before adding another site; another physical SAM is
+    justified only by a structure-coverage gap that upgrading cannot close. A SAM already under
+    construction must materialize before preemptive coverage geometry can justify another site;
+    incomplete geometry must not produce adjacent duplicate level-one launchers.
+  </li>
+  <li>
+    Radioactive Terra Nullius remains an immediate expansion target, but it is not opening free
+    land. If its attack cannot be emitted, its mere presence must not reactivate the
+    opening-expansion veto on otherwise safe troop donations.
+  </li>
+</ul>
+
+<h2>In-flight missile construction safety</h2>
+
+<ul>
+  <li>
+    No new structure or structure upgrade may be placed inside the configured outer blast radius of
+    an active hostile Atom Bomb, Hydrogen Bomb, MIRV, or MIRV warhead. This final safety gate
+    applies on every difficulty and includes SAM Launchers and Defense Posts.
+  </li>
+  <li>
+    An active hostile nuclear missile aimed at owned territory is a maximum-priority construction
+    threat even when no economic structure lies inside its blast. The bot must first upgrade an
+    existing SAM only when the upgrade improves the real interception schedule; otherwise it must
+    reserve construction spending and seek a legal SAM site along the uncovered trajectory before
+    maritime or economic construction. A second site is not justified when existing coverage is
+    already sufficient.
+  </li>
+</ul>
+
+<h2>Radioactive Terra Nullius expansion</h2>
+
+<ul>
+  <li>
+    Land and coastal attacks into Fallout may continue while leaving at least 42% of the player's
+    current maximum troop capacity uncommitted. The radioactive reserve must remain isolated from
+    ordinary Terra Nullius and player-attack reserves.
+  </li>
+  <li>
+    Fallout that belonged to another player with the same clan tag before impact is protected: the
+    bot must neither expand into it by land nor target it with a boat. Because impact erases tile
+    ownership and a clanmate can gain territory while a missile is in flight, the bot must
+    re-evaluate an unclassified blast every tick. Once any blast overlaps clan territory, its
+    complete outer-radius crater is quarantined until all fallout there clears. Since a generic
+    Terra Nullius land attack can expand beyond its initial frontier, every such attack must be
+    withheld during that quarantine and any already-active Terra Nullius attack must be cancelled
+    before impact. Exact boat destinations inside the quarantined crater are also blocked.
+  </li>
+</ul>
+
+<h2>VM-backed tests</h2>
+
+<ul>
+  <li>
+    Max-speed headless matches must yield one host task between simulated ticks so cooperative
+    timers used by topology, route, and scoring work advance with the same scheduling boundary as
+    live worker ticks. A tight microtask-only loop must not make a healthy planner appear
+    permanently pending or suppress scored tribe attacks.
+  </li>
+  <li>
+    When a test receives objects from a <code>node:vm</code> sandbox, you should assert their scalar
+    fields or normalize them before deep comparison. Objects from separate VM realms can fail strict
+    deep equality even when their visible properties are identical.
+  </li>
+</ul>
+
+<h2>Team donation legality</h2>
+
+<ul>
+  <li>
+    The Auto-Bot must not emit a troop donation when the authoritative player capability reports
+    that the recipient is ineligible. After emitting a donation, it must honor the engine's
+    recipient-specific donation cooldown before considering that teammate again. An invalid or
+    cooldown-blocked donation must not consume a decision slot or intent budget that could otherwise
+    be used for defense, expansion, or construction.
+  </li>
+  <li>
+    A troop donation must preserve at least the complete army of the strongest hostile Nation or
+    Human sharing our border. The bot must not turn a locally superior army into an inferior one by
+    exporting the defensive surplus; non-strategic and allied border armies retain their separate
+    congestion reserve.
+  </li>
+  <li>
+    After spawn, two consecutive completed tribe-planner decisions with no free land, no actionable
+    tribe, and no remaining land-expansion candidate establish an expansion-breakout reserve
+    whenever either a hostile land border or a launch coast remains. While that state persists,
+    troop donations are prohibited. Once a transport creates a hostile land border, a viable Nation
+    or Human conquest may spend surplus down to the live growth/defense reserve instead of remaining
+    permanently blocked by the higher production-peak reserve; the normal complete-capture floor
+    remains mandatory.
+  </li>
+</ul>

@@ -14,9 +14,9 @@ function loadBundle(language: string): Promise<Translations> {
       OpenFrontHelperI18n?: { DEFAULT_TRANSLATIONS?: Translations };
     }
   ).OpenFrontHelperI18n;
-  const def = i18n?.DEFAULT_TRANSLATIONS || {};
-  const en = injected.locales.en || {};
-  const lang = injected.locales[language] || {};
+  const def = i18n?.DEFAULT_TRANSLATIONS ?? {};
+  const en = injected.locales.en;
+  const lang = injected.locales[language];
   return Promise.resolve({ ...def, ...en, ...lang });
 }
 

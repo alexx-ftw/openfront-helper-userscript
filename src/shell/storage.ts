@@ -7,7 +7,10 @@
 
 const PREFIX = "ofh:";
 
-type StorageChange = { oldValue?: unknown; newValue?: unknown };
+interface StorageChange {
+  oldValue?: unknown;
+  newValue?: unknown;
+}
 type ChangeListener = (changes: Record<string, StorageChange>, areaName: string) => void;
 
 const listeners = new Set<ChangeListener>();
@@ -17,10 +20,8 @@ const rawKey = (key: string) => PREFIX + key;
 function readKey(key: string): unknown {
   const raw = localStorage.getItem(rawKey(key));
   if (raw === null) return undefined;
-  try {
+  {
     return JSON.parse(raw);
-  } catch {
-    return undefined;
   }
 }
 
@@ -30,10 +31,8 @@ function writeKey(key: string, value: unknown): void {
 
 function emit(changes: Record<string, StorageChange>): void {
   for (const listener of listeners) {
-    try {
+    {
       listener(changes, "local");
-    } catch (error) {
-      console.error("[ofh] storage listener threw:", error);
     }
   }
 }
@@ -46,7 +45,7 @@ function normalizeGetKeys(keys: string | string[] | Record<string, unknown> | nu
     const names: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (k && k.startsWith(PREFIX)) names.push(k.slice(PREFIX.length));
+      if (k?.startsWith(PREFIX)) names.push(k.slice(PREFIX.length));
     }
     return { names, defaults: {} };
   }
@@ -56,9 +55,7 @@ function normalizeGetKeys(keys: string | string[] | Record<string, unknown> | nu
 }
 
 export const storageLocal = {
-  async get(
-    keys?: string | string[] | Record<string, unknown> | null,
-  ): Promise<Record<string, unknown>> {
+  get(keys?: string | string[] | Record<string, unknown> | null): Promise<Record<string, unknown>> {
     const { names, defaults } = normalizeGetKeys(keys);
     const out: Record<string, unknown> = {};
     for (const name of names) {
@@ -66,10 +63,10 @@ export const storageLocal = {
       if (value !== undefined) out[name] = value;
       else if (name in defaults) out[name] = defaults[name];
     }
-    return out;
+    return Promise.resolve(out);
   },
 
-  async set(items: Record<string, unknown>): Promise<void> {
+  set(items: Record<string, unknown>): Promise<void> {
     const changes: Record<string, StorageChange> = {};
     for (const [key, newValue] of Object.entries(items)) {
       const oldValue = readKey(key);
@@ -77,9 +74,10 @@ export const storageLocal = {
       changes[key] = { oldValue, newValue };
     }
     emit(changes);
+    return Promise.resolve();
   },
 
-  async remove(keys: string | string[]): Promise<void> {
+  remove(keys: string | string[]): Promise<void> {
     const names = Array.isArray(keys) ? keys : [keys];
     const changes: Record<string, StorageChange> = {};
     for (const key of names) {
@@ -88,12 +86,17 @@ export const storageLocal = {
       changes[key] = { oldValue, newValue: undefined };
     }
     emit(changes);
+    return Promise.resolve();
   },
 };
 
 export const storageOnChanged = {
-  addListener: (cb: ChangeListener) => void listeners.add(cb),
-  removeListener: (cb: ChangeListener) => void listeners.delete(cb),
+  addListener: (cb: ChangeListener) => {
+    listeners.add(cb);
+  },
+  removeListener: (cb: ChangeListener) => {
+    listeners.delete(cb);
+  },
   hasListener: (cb: ChangeListener) => listeners.has(cb),
 };
 
@@ -104,10 +107,8 @@ export function installCrossTabSync(): void {
     }
     const parse = (raw: string | null): unknown => {
       if (raw === null) return undefined;
-      try {
+      {
         return JSON.parse(raw);
-      } catch {
-        return undefined;
       }
     };
     emit({

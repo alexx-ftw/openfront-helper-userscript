@@ -6,23 +6,27 @@
 
   let _attackHighlightScan = null; // { myLoc, attackers:[{loc, troops}], total }
 
+  function attackHighlightIsRetreating(attack) {
+    const retreating =
+      typeof attack?.retreating === "function"
+        ? attack.retreating()
+        : attack?.retreating;
+    return retreating === true;
+  }
+
   function scanAttackHighlight(game) {
     const me = game.myPlayer ? game.myPlayer() : null;
     if (!me) {
       _attackHighlightScan = null;
       return;
     }
-    let myLoc = null;
-    try {
+    let myLoc;
+    {
       myLoc = me.nameLocation ? me.nameLocation() : null;
-    } catch (_error) {
-      myLoc = null;
     }
-    let atks = null;
-    try {
+    let atks;
+    {
       atks = me.incomingAttacks ? me.incomingAttacks() : null;
-    } catch (_error) {
-      atks = null;
     }
     if (!atks || atks.length === 0) {
       _attackHighlightScan = { myLoc, attackers: [], total: 0 };
@@ -33,39 +37,32 @@
     let total = 0;
     for (let i = 0; i < atks.length; i += 1) {
       const a = atks[i];
-      if (!a || a.retreating) {
+      if (!a || attackHighlightIsRetreating(a)) {
         continue;
       }
       const troops = Number(a.troops) || 0;
-      total += troops;
       const sid = a.attackerID;
       byAttacker.set(sid, (byAttacker.get(sid) || 0) + troops);
     }
 
     const attackers = [];
     byAttacker.forEach((troops, sid) => {
-      let attacker = null;
-      try {
+      let attacker;
+      {
         attacker = game.playerBySmallID ? game.playerBySmallID(sid) : null;
-      } catch (_error) {
-        attacker = null;
       }
       if (!attacker) {
         return;
       }
-      // Skip friendly fire (teammates/allies shouldn't be flagged as threats).
-      try {
+      {
         if (me.isFriendly && me.isFriendly(attacker)) {
           return;
         }
-      } catch (_error) {
-        /* treat as hostile */
       }
-      let loc = null;
-      try {
+      total += troops;
+      let loc;
+      {
         loc = attacker.nameLocation ? attacker.nameLocation() : null;
-      } catch (_error) {
-        loc = null;
       }
       if (loc) {
         attackers.push({ loc, troops });
@@ -120,7 +117,7 @@
         myScreen.x,
         myScreen.y - 22,
         `⚔ ${troopsDisplay(scan.total)}`,
-        "rgba(254, 202, 202, 0.98)",
+        { color: "rgba(254, 202, 202, 0.98)" },
       );
     }
     ctx.restore();
@@ -129,9 +126,13 @@
   registerMapOverlayLayer({
     id: "attack-highlight",
     scanIntervalMs: 400,
-    animated: true, // pulsing rings animate off `now` — must redraw every frame
+    // Only pulse while there are incoming attacks. Keeping this dynamic avoids
+    // a permanent full-canvas redraw when the feature is enabled but idle.
+    animated: function () {
+      return Boolean(_attackHighlightScan?.attackers?.length);
+    },
     isEnabled: function () {
-      return attackHighlightEnabled;
+      return runtimeState.attackHighlightEnabled;
     },
     scan: function (game) {
       scanAttackHighlight(game);
@@ -142,8 +143,8 @@
   });
 
   function setAttackHighlightEnabled(enabled) {
-    attackHighlightEnabled = Boolean(enabled);
-    if (!attackHighlightEnabled) {
+    runtimeState.attackHighlightEnabled = Boolean(enabled);
+    if (!runtimeState.attackHighlightEnabled) {
       _attackHighlightScan = null;
     }
     requestMapOverlayLoop();

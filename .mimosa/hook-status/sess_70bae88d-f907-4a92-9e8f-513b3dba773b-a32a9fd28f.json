@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "mimosa-hook-status/v1",
+  "recordedAt": "2026-08-23T21:07:12.188Z",
+  "sessionId": "sess_70bae88d-f907-4a92-9e8f-513b3dba773b",
+  "event": "PostToolUse",
+  "toolName": "Write",
+  "file": "/tmp/ofh-matrix/basket/run-basket2.sh",
+  "outcome": "inconclusive",
+  "coverage": "partial",
+  "findingCount": 0,
+  "durationMs": 11,
+  "hostState": "hook_complete",
+  "reportHint": ".mimosa/reports/"
+}

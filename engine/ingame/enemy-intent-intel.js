@@ -15,153 +15,38 @@
   // Map: attackerKey -> { kind, attackerID, attackerName, troops, dstX, dstY, atMs }
   const _enemyIntentWarnings = new Map();
   const _enemyIntentLogCooldowns = new Map();
-  let _enemyIntentOriginalWsAddEventListener = null;
   let _enemyIntentHookInstalled = false;
 
-  function getMyIdentifiers() {
-    let context = null;
-    try { context = getOpenFrontGameContext(); } catch (_error) { context = null; }
-    if (!context?.game) return null;
-    const game = context.game;
-    const me = game.myPlayer ? game.myPlayer() : null;
-    if (!me) return null;
-    return {
-      myId: me.id ? me.id() : null,
-      mySmallId: me.smallID ? me.smallID() : null,
-      game,
-      me,
-    };
-  }
-
-  function isOwnedByMe(game, me, tile) {
-    try {
-      if (!game.hasOwner || !game.hasOwner(tile)) return false;
-      const ownerSid = game.ownerID ? game.ownerID(tile) : null;
-      const mySid = me.smallID ? me.smallID() : -1;
-      return ownerSid === mySid;
-    } catch (_error) {
-      return false;
+  function enemyIntentRead(label, read, fallback) {
+    {
+      return read();
     }
   }
 
-  function isMineOrAdjacent(game, me, dst) {
-    if (isOwnedByMe(game, me, dst)) return true;
-    try {
-      const width = game.width();
-      const height = game.height();
-      const x = dst % width;
-      const y = Math.floor(dst / width);
-      const neighbors = [];
-      if (x > 0) neighbors.push(dst - 1);
-      if (x < width - 1) neighbors.push(dst + 1);
-      if (y > 0) neighbors.push(dst - width);
-      if (y < height - 1) neighbors.push(dst + width);
-      return neighbors.some((n) => isOwnedByMe(game, me, n));
-    } catch (_error) {
-      return false;
+  function enemyIntentPlayerName(player, fallback) {
+    if (!player) return fallback;
+    if (typeof getPlayerDisplayName === "function") {
+      const displayName = getPlayerDisplayName(player);
+      if (displayName) return displayName;
     }
+    const name = typeof player.name === "function" ? player.name() : player.name;
+    return name || fallback;
   }
 
-  function resolveAttackerName(clientId) {
-    let context = null;
-    try { context = getOpenFrontGameContext(); } catch (_error) { context = null; }
-    if (!context?.game) return `p${clientId}`;
+  function resolveAttackerName(attackerID) {
+    const context = enemyIntentRead("context", () => getOpenFrontGameContext(), null);
+    const fallback = `p${attackerID}`;
+    if (!context?.game) return fallback;
+    const direct = context.game.playerBySmallID?.(Number(attackerID));
+    if (direct) return enemyIntentPlayerName(direct, fallback);
     const players = getCachedPlayerViews(context.game);
     for (let i = 0; i < players.length; i += 1) {
       const p = players[i];
-      try {
-        if (p.clientID && p.clientID() === clientId) {
-          return getPlayerDisplayName ? getPlayerDisplayName(p) : p.name && p.name() || `p${clientId}`;
-        }
-      } catch (_error) { /* ignore */ }
-    }
-    return `p${clientId}`;
-  }
-
-  function isHostileClientId(clientId) {
-    const ids = getMyIdentifiers();
-    if (!ids) return true;
-    const players = getCachedPlayerViews(ids.game);
-    for (let i = 0; i < players.length; i += 1) {
-      const p = players[i];
-      try {
-        if (p.clientID && p.clientID() === clientId) {
-          if (ids.me.isFriendly && ids.me.isFriendly(p)) return false;
-          return true;
-        }
-      } catch (_error) { /* treat as hostile */ }
-    }
-    return true;
-  }
-
-  function addEnemyIntentWarning(kind, intent, dst) {
-    const ids = getMyIdentifiers();
-    if (!ids) return;
-    if (intent.clientID == null) return;
-    // Skip my own intents.
-    // We compare clientID to myId (which is the player.id, not clientID directly).
-    // Instead, check if the attacker is friendly.
-    if (!isHostileClientId(intent.clientID)) return;
-
-    const key = `client:${intent.clientID}`;
-    const warning = {
-      kind,
-      attackerID: intent.clientID,
-      attackerName: resolveAttackerName(intent.clientID),
-      troops: Math.max(0, Number(intent.troops) || 0),
-      atMs: performance.now(),
-      dstX: null,
-      dstY: null,
-    };
-    if (dst != null) {
-      try {
-        const width = ids.game.width();
-        warning.dstX = dst % width;
-        warning.dstY = Math.floor(dst / width);
-      } catch (_error) { /* ignore */ }
-    }
-    _enemyIntentWarnings.set(key, warning);
-  }
-
-  function observeTurn(turn) {
-    if (!turn || !Array.isArray(turn.intents)) return;
-    const ids = getMyIdentifiers();
-    if (!ids) return;
-    for (let i = 0; i < turn.intents.length; i += 1) {
-      const intent = turn.intents[i];
-      if (!intent || intent.clientID == null) continue;
-      if (intent.type === "attack") {
-        // Check if the attack targets me.
-        const targetId = intent.targetID;
-        if (targetId == null) continue;
-        const myId = ids.myId;
-        const mySmallId = ids.mySmallId;
-        if (targetId !== myId && targetId !== mySmallId) continue;
-        addEnemyIntentWarning("attack", intent, null);
-      } else if (intent.type === "boat") {
-        const dst = Number(intent.dst);
-        if (!Number.isFinite(dst)) continue;
-        if (!isMineOrAdjacent(ids.game, ids.me, dst)) continue;
-        addEnemyIntentWarning("boat", intent, dst);
+      if (getPlayerSmallId(p, Number.NaN) === Number(attackerID)) {
+        return enemyIntentPlayerName(p, fallback);
       }
     }
-  }
-
-  function processWsMessage(data) {
-    if (!data || typeof data !== "object") return;
-    try {
-      if (data.type === "turn" && data.turn) {
-        observeTurn(data.turn);
-      } else if (data.type === "start" && Array.isArray(data.turns)) {
-        for (let i = 0; i < data.turns.length; i += 1) {
-          observeTurn(data.turns[i]);
-        }
-      }
-    } catch (_error) { /* ignore parse errors */ }
-    // Forward to spawn heatmap for spawn-intent tracking.
-    if (typeof spawnHeatmapProcessWsMessage === "function") {
-      spawnHeatmapProcessWsMessage(data);
-    }
+    return fallback;
   }
 
   function installEnemyIntentHook() {
@@ -189,56 +74,94 @@
   // Poll incomingAttacks() every 250ms (same cadence as the helper tick) and
   // update warnings. This replaces the fragile WebSocket hook with the same
   // data the game already exposes.
-  function enemyIntentPollTick() {
-    if (!enemyIntentEnabled) return;
-    let context = null;
-    try { context = getOpenFrontGameContext(); } catch (_error) { context = null; }
-    if (!context?.game) return;
-    const me = context.game.myPlayer ? context.game.myPlayer() : null;
-    if (!me) return;
-    let atks = null;
-    try { atks = me.incomingAttacks ? me.incomingAttacks() : null; } catch (_error) { atks = null; }
-    if (!atks) return;
-    const now = performance.now();
-    // Clear stale warnings first.
-    for (const [key, warning] of _enemyIntentWarnings) {
-      if (now - warning.atMs > ENEMY_INTENT_TTL_MS) {
-        _enemyIntentWarnings.delete(key);
+  function isFriendlyIncomingAttacker(game, me, attackerID, cache = null) {
+    if (cache?.has(attackerID)) return cache.get(attackerID);
+    const friendly = enemyIntentRead("friendly-attacker", () => {
+      const attacker = game.playerBySmallID ? game.playerBySmallID(attackerID) : null;
+      return Boolean(attacker && me.isFriendly && me.isFriendly(attacker));
+    }, false);
+    cache?.set(attackerID, friendly);
+    return friendly;
+  }
+
+  function updateIncomingAttackWarning(attack, now) {
+    const attackerID = attack.attackerID;
+    const key = `sid:${attackerID}`;
+    const existing = _enemyIntentWarnings.get(key);
+    const troops = Math.max(0, Number(attack.troops) || 0);
+    if (existing) {
+      existing.troops = troops;
+      existing.atMs = now;
+      if (existing.attackerName === `p${attackerID}`) {
+        existing.attackerName = resolveAttackerName(attackerID);
       }
+      return;
     }
-    for (let i = 0; i < atks.length; i += 1) {
-      const a = atks[i];
-      if (!a || a.retreating) continue;
-      const attackerID = a.attackerID;
-      if (attackerID == null) continue;
-      // Skip friendly fire.
-      try {
-        const attacker = context.game.playerBySmallID
-          ? context.game.playerBySmallID(attackerID) : null;
-        if (attacker && me.isFriendly && me.isFriendly(attacker)) continue;
-      } catch (_error) { /* treat as hostile */ }
-      const key = `sid:${attackerID}`;
-      const existing = _enemyIntentWarnings.get(key);
-      if (existing) {
-        // Update troops (may change as more troops join the attack).
-        existing.troops = Math.max(existing.troops, Number(a.troops) || 0);
-        existing.atMs = now;
-      } else {
-        _enemyIntentWarnings.set(key, {
-          kind: "attack",
-          attackerID,
-          attackerName: resolveAttackerName(attackerID),
-          troops: Math.max(0, Number(a.troops) || 0),
-          atMs: now,
-          dstX: null,
-          dstY: null,
-        });
+    _enemyIntentWarnings.set(key, {
+      kind: "attack",
+      attackerID,
+      attackerName: resolveAttackerName(attackerID),
+      troops,
+      atMs: now,
+      dstX: null,
+      dstY: null,
+    });
+  }
+
+  function isRetreatingIncomingAttack(attack) {
+    if (!attack) return false;
+    const retreating =
+      typeof attack.retreating === "function"
+        ? attack.retreating()
+        : attack.retreating;
+    return retreating === true;
+  }
+
+  function removeInactiveEnemyIntentWarnings(activeHostileAttackers) {
+    for (const [key, warning] of _enemyIntentWarnings) {
+      if (!activeHostileAttackers.has(warning.attackerID)) {
+        _enemyIntentWarnings.delete(key);
       }
     }
   }
 
-  function pruneEnemyIntentWarnings() {
+  function enemyIntentPollTick() {
+    if (!runtimeState.enemyIntentEnabled) return;
+    const context = enemyIntentRead("context", () => getOpenFrontGameContext(), null);
+    if (!context?.game) return;
+    const me = context.game.myPlayer ? context.game.myPlayer() : null;
+    if (!me) return;
+    const atks = enemyIntentRead(
+      "incoming-attacks",
+      () => (me.incomingAttacks ? me.incomingAttacks() : null),
+      null,
+    );
+    if (!atks) return;
     const now = performance.now();
+    const activeHostileAttackers = new Map();
+    const friendlyAttackers = new Map();
+    pruneEnemyIntentWarnings(now);
+    for (let i = 0; i < atks.length; i += 1) {
+      const a = atks[i];
+      if (!a || isRetreatingIncomingAttack(a)) continue;
+      const attackerID = a.attackerID;
+      if (attackerID == null) continue;
+      if (isFriendlyIncomingAttacker(context.game, me, attackerID, friendlyAttackers)) continue;
+      const troops = Math.max(0, Number(a.troops) || 0);
+      activeHostileAttackers.set(
+        attackerID,
+        (activeHostileAttackers.get(attackerID) || 0) + troops,
+      );
+    }
+    for (const [attackerID, troops] of activeHostileAttackers) {
+      updateIncomingAttackWarning({ attackerID, troops }, now);
+    }
+    // The current poll is authoritative. Resolved, withdrawn, and newly
+    // friendly attacks must stop warning immediately rather than after 15s.
+    removeInactiveEnemyIntentWarnings(activeHostileAttackers);
+  }
+
+  function pruneEnemyIntentWarnings(now = performance.now()) {
     for (const [key, warning] of _enemyIntentWarnings) {
       if (now - warning.atMs > ENEMY_INTENT_TTL_MS) {
         _enemyIntentWarnings.delete(key);
@@ -266,8 +189,8 @@
   }
 
   function setEnemyIntentEnabled(enabled) {
-    enemyIntentEnabled = Boolean(enabled);
-    if (enemyIntentEnabled) {
+    runtimeState.enemyIntentEnabled = Boolean(enabled);
+    if (runtimeState.enemyIntentEnabled) {
       installEnemyIntentHook();
     } else {
       uninstallEnemyIntentHook();

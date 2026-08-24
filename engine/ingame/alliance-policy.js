@@ -11,19 +11,15 @@
   const ALLIANCE_POLICY_KEY = "openfront-helper-alliance-policy";
 
   function loadAlliancePolicy() {
-    try {
+    {
       const raw = localStorage.getItem(ALLIANCE_POLICY_KEY);
       return raw ? JSON.parse(raw) : {};
-    } catch (_error) {
-      return {};
     }
   }
 
   function saveAlliancePolicy(policy) {
-    try {
+    {
       localStorage.setItem(ALLIANCE_POLICY_KEY, JSON.stringify(policy));
-    } catch (_error) {
-      // Silent — policy is advisory.
     }
   }
 

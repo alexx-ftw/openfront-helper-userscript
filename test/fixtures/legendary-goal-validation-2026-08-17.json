@@ -1,0 +1,335 @@
+{
+  "generatedAt": "2026-08-17",
+  "config": {
+    "bots": 60,
+    "engineDifficulty": "Impossible",
+    "botDifficulty": "Legendary",
+    "nukesEnabled": true,
+    "intentBudgetAsserted": "OFH_ASSERT_INTENT_BUDGET=1",
+    "modes": {
+      "FFA": "OFH_GAME_MODE=ffa",
+      "TEAM": "OFH_GAME_MODE=team, 2-5 teams, 60 bots => >=20 players per team"
+    }
+  },
+  "matches": [
+    {
+      "mode": "FFA",
+      "map": "Bering Strait",
+      "seed": "ofh-s2-ff2",
+      "won": true,
+      "ticks": 8351,
+      "territoryShare": 0.8808,
+      "intentBudget": {
+        "accepted": 95,
+        "rejected": 0
+      },
+      "builds": {
+        "Atom Bomb": 1,
+        "City": 8,
+        "Factory": 2,
+        "Missile Silo": 3,
+        "Port": 4,
+        "SAM Launcher": 4,
+        "Warship": 1
+      },
+      "nuclear": {
+        "isHydroNation": false,
+        "atomBombsLaunched": 1,
+        "hydrogenBombsLaunched": 0,
+        "pendingLaunches": 0
+      }
+    },
+    {
+      "mode": "FFA",
+      "map": "Surrounded",
+      "seed": "ofh-s5-r9",
+      "won": true,
+      "ticks": 12991,
+      "territoryShare": 0.9283,
+      "intentBudget": {
+        "accepted": 445,
+        "rejected": 0
+      },
+      "builds": {
+        "Atom Bomb": 5,
+        "City": 15,
+        "Factory": 12,
+        "Hydrogen Bomb": 3,
+        "Missile Silo": 3,
+        "Port": 31,
+        "SAM Launcher": 8,
+        "Warship": 2
+      },
+      "nuclear": {
+        "isHydroNation": false,
+        "atomBombsLaunched": 5,
+        "hydrogenBombsLaunched": 3,
+        "pendingLaunches": 0
+      }
+    },
+    {
+      "mode": "FFA",
+      "map": "The Box",
+      "seed": "ofh-s5-r10",
+      "won": true,
+      "ticks": 6901,
+      "territoryShare": 0.9524,
+      "intentBudget": {
+        "accepted": 102,
+        "rejected": 0
+      },
+      "builds": {
+        "City": 3,
+        "Factory": 1,
+        "SAM Launcher": 1
+      },
+      "nuclear": {
+        "isHydroNation": true,
+        "atomBombsLaunched": 0,
+        "hydrogenBombsLaunched": 0,
+        "pendingLaunches": 0
+      }
+    },
+    {
+      "mode": "FFA",
+      "map": "World",
+      "seed": "ofh-s6-r11",
+      "won": true,
+      "ticks": 16111,
+      "territoryShare": 0.9454,
+      "intentBudget": {
+        "accepted": 360,
+        "rejected": 0
+      },
+      "builds": {
+        "City": 8,
+        "Factory": 2,
+        "Missile Silo": 3,
+        "Port": 5,
+        "SAM Launcher": 7,
+        "Warship": 8
+      },
+      "nuclear": {
+        "isHydroNation": false,
+        "atomBombsLaunched": 0,
+        "hydrogenBombsLaunched": 0,
+        "pendingLaunches": 0
+      }
+    },
+    {
+      "mode": "FFA",
+      "map": "Bering Sea",
+      "seed": "ofh-s7-r2",
+      "won": true,
+      "ticks": 12891,
+      "territoryShare": 0.9364,
+      "intentBudget": {
+        "accepted": 134,
+        "rejected": 0
+      },
+      "builds": {
+        "City": 4,
+        "Factory": 3,
+        "SAM Launcher": 1
+      },
+      "nuclear": {
+        "isHydroNation": false,
+        "atomBombsLaunched": 0,
+        "hydrogenBombsLaunched": 0,
+        "pendingLaunches": 0
+      }
+    },
+    {
+      "mode": "TEAM",
+      "map": "South America",
+      "seed": "ofh-goal-team-5",
+      "won": true,
+      "ticks": 10541,
+      "territoryShare": 0.9061,
+      "intentBudget": {
+        "accepted": 266,
+        "rejected": 0
+      },
+      "builds": {
+        "City": 4,
+        "Defense Post": 8,
+        "Factory": 1,
+        "Port": 2,
+        "SAM Launcher": 1,
+        "Warship": 4
+      },
+      "nuclear": {
+        "isHydroNation": false,
+        "atomBombsLaunched": 0,
+        "hydrogenBombsLaunched": 0,
+        "pendingLaunches": 0
+      }
+    },
+    {
+      "mode": "TEAM",
+      "map": "Baikal",
+      "seed": "ofh-sweep-team-Baikal",
+      "won": true,
+      "ticks": 7991,
+      "territoryShare": 0.913,
+      "intentBudget": {
+        "accepted": 170,
+        "rejected": 0
+      },
+      "builds": {
+        "City": 5,
+        "Defense Post": 2,
+        "Factory": 3,
+        "Port": 3
+      },
+      "nuclear": {
+        "isHydroNation": true,
+        "atomBombsLaunched": 0,
+        "hydrogenBombsLaunched": 0,
+        "pendingLaunches": 0
+      }
+    },
+    {
+      "mode": "TEAM",
+      "map": "Pangaea",
+      "seed": "ofh-s3-tp2",
+      "won": true,
+      "ticks": 4491,
+      "territoryShare": 0.9268,
+      "intentBudget": {
+        "accepted": 85,
+        "rejected": 0
+      },
+      "builds": {
+        "City": 2,
+        "Factory": 1,
+        "Port": 1
+      },
+      "nuclear": {
+        "isHydroNation": false,
+        "atomBombsLaunched": 0,
+        "hydrogenBombsLaunched": 0,
+        "pendingLaunches": 0
+      }
+    },
+    {
+      "mode": "TEAM",
+      "map": "Caspian Sea",
+      "seed": "ofh-s3-tcs",
+      "won": true,
+      "ticks": 7471,
+      "territoryShare": 0.9146,
+      "intentBudget": {
+        "accepted": 469,
+        "rejected": 0
+      },
+      "builds": {
+        "Atom Bomb": 1,
+        "City": 4,
+        "Defense Post": 2,
+        "Factory": 6,
+        "Missile Silo": 2,
+        "Port": 5,
+        "SAM Launcher": 1,
+        "Warship": 7
+      },
+      "nuclear": {
+        "isHydroNation": false,
+        "atomBombsLaunched": 1,
+        "hydrogenBombsLaunched": 0,
+        "pendingLaunches": 0
+      }
+    },
+    {
+      "mode": "TEAM",
+      "map": "Four Islands",
+      "seed": "ofh-s4-ti1",
+      "won": true,
+      "ticks": 7201,
+      "territoryShare": 0.9541,
+      "intentBudget": {
+        "accepted": 220,
+        "rejected": 0
+      },
+      "builds": {
+        "City": 4,
+        "Factory": 3,
+        "Port": 4,
+        "SAM Launcher": 1,
+        "Warship": 2
+      },
+      "nuclear": {
+        "isHydroNation": true,
+        "atomBombsLaunched": 0,
+        "hydrogenBombsLaunched": 0,
+        "pendingLaunches": 0
+      }
+    },
+    {
+      "mode": "TEAM",
+      "map": "Australia",
+      "seed": "ofh-s4-ta1",
+      "won": true,
+      "ticks": 8841,
+      "territoryShare": 0.8819,
+      "intentBudget": {
+        "accepted": 100,
+        "rejected": 0
+      },
+      "builds": {
+        "City": 3,
+        "Defense Post": 2,
+        "Factory": 2,
+        "SAM Launcher": 1
+      },
+      "nuclear": {
+        "isHydroNation": false,
+        "atomBombsLaunched": 0,
+        "hydrogenBombsLaunched": 0,
+        "pendingLaunches": 0
+      }
+    },
+    {
+      "mode": "TEAM",
+      "map": "Aegean",
+      "seed": "ofh-s4-tg1",
+      "won": true,
+      "ticks": 8791,
+      "territoryShare": 0.9427,
+      "intentBudget": {
+        "accepted": 373,
+        "rejected": 0
+      },
+      "builds": {
+        "Atom Bomb": 1,
+        "City": 4,
+        "Defense Post": 5,
+        "Factory": 10,
+        "Missile Silo": 3,
+        "Port": 36,
+        "Warship": 3
+      },
+      "nuclear": {
+        "isHydroNation": false,
+        "atomBombsLaunched": 1,
+        "hydrogenBombsLaunched": 0,
+        "pendingLaunches": 0
+      }
+    }
+  ],
+  "summary": {
+    "ffaWins": 5,
+    "ffaDistinctMaps": ["Bering Sea", "Bering Strait", "Surrounded", "The Box", "World"],
+    "teamWins": 7,
+    "teamDistinctMaps": [
+      "Aegean",
+      "Australia",
+      "Baikal",
+      "Caspian Sea",
+      "Four Islands",
+      "Pangaea",
+      "South America"
+    ],
+    "allZeroRejections": true
+  }
+}

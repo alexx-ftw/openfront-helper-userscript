@@ -1,0 +1,12 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "build.mjs",
+    "scripts/**/*.mjs",
+    "test/**/*.mjs",
+    "src/shell/index.ts",
+    "engine/**/*.js"
+  ],
+  "project": ["build.mjs", "scripts/**/*.mjs", "test/**/*.mjs", "src/**/*.ts", "engine/**/*.js"],
+  "ignore": ["openfront-helper.user.js"]
+}

@@ -14,7 +14,7 @@
 
   function _getEconomyHeatmapIntensitySettingsCached() {
     return _economyHeatmapIntensityVariants[
-      normalizeEconomyHeatmapIntensity(economyHeatmapIntensity)
+      normalizeEconomyHeatmapIntensity(runtimeState.economyHeatmapIntensity)
     ];
   }
 
@@ -186,10 +186,10 @@
   }
 
   function resetExportPartnerHeatmapSourceCache() {
-    exportPartnerHeatmapSourceCacheGame = null;
-    exportPartnerHeatmapSourceCachePlayerId = null;
-    exportPartnerHeatmapSourceCacheAt = 0;
-    exportPartnerHeatmapSourceCache = [];
+    runtimeState.exportPartnerHeatmapSourceCacheGame = null;
+    runtimeState.exportPartnerHeatmapSourceCachePlayerId = null;
+    runtimeState.exportPartnerHeatmapSourceCacheAt = 0;
+    runtimeState.exportPartnerHeatmapSourceCache = [];
   }
 
   function getExportPartnerHeatmapSources(game, player) {
@@ -197,21 +197,21 @@
     const playerId = getPlayerSmallId(player);
 
     if (
-      exportPartnerHeatmapSourceCacheGame !== game ||
-      exportPartnerHeatmapSourceCachePlayerId !== playerId ||
-      now - exportPartnerHeatmapSourceCacheAt >= EXPORT_PARTNER_HEATMAP_SOURCE_CACHE_MS
+      runtimeState.exportPartnerHeatmapSourceCacheGame !== game ||
+      runtimeState.exportPartnerHeatmapSourceCachePlayerId !== playerId ||
+      now - runtimeState.exportPartnerHeatmapSourceCacheAt >= EXPORT_PARTNER_HEATMAP_SOURCE_CACHE_MS
     ) {
-      exportPartnerHeatmapSourceCache = collectExportPartnerHeatmapSources(game, player);
-      exportPartnerHeatmapSourceCacheGame = game;
-      exportPartnerHeatmapSourceCachePlayerId = playerId;
-      exportPartnerHeatmapSourceCacheAt = now;
+      runtimeState.exportPartnerHeatmapSourceCache = collectExportPartnerHeatmapSources(game, player);
+      runtimeState.exportPartnerHeatmapSourceCacheGame = game;
+      runtimeState.exportPartnerHeatmapSourceCachePlayerId = playerId;
+      runtimeState.exportPartnerHeatmapSourceCacheAt = now;
     }
 
-    return exportPartnerHeatmapSourceCache;
+    return runtimeState.exportPartnerHeatmapSourceCache;
   }
 
   function toFiniteNumber(value, fallback = 0) {
-    const numberValue = typeof value === "bigint" ? Number(value) : Number(value);
+    const numberValue = Number(value);
     return Number.isFinite(numberValue) ? numberValue : fallback;
   }
 
@@ -257,6 +257,31 @@
     return type === "City" || type === "Port" || type === "Factory";
   }
 
+  function getEconomyRevenueIdentity(unit) {
+    const unitId = toFiniteNumber(unit?.id?.(), NaN);
+    const owner = unit?.owner?.();
+    return {
+      unitId: Number.isFinite(unitId) ? unitId : null,
+      ownerId: owner ? getPlayerSmallId(owner) : null,
+    };
+  }
+
+  function getEconomyRevenueTracker(key, unit, tile, type) {
+    const identity = getEconomyRevenueIdentity(unit);
+    const entry = economyRevenueSourceTrackers.get(key) ?? {
+      ...identity,
+      tile,
+      type,
+      total: 0,
+      events: [],
+    };
+    entry.unitId = identity.unitId ?? entry.unitId;
+    entry.ownerId = identity.ownerId ?? entry.ownerId;
+    entry.tile = tile;
+    entry.type = type;
+    return entry;
+  }
+
   function addEconomyRevenueSource(unit, goldAmount) {
     const amount = toFiniteNumber(goldAmount);
     if (!unit || !Number.isFinite(amount) || amount <= 0) {
@@ -278,20 +303,7 @@
       return;
     }
 
-    const unitId = toFiniteNumber(unit?.id?.(), NaN);
-    const owner = unit?.owner?.();
-    const entry = economyRevenueSourceTrackers.get(key) ?? {
-      unitId: Number.isFinite(unitId) ? unitId : null,
-      ownerId: owner ? getPlayerSmallId(owner) : null,
-      tile,
-      type,
-      total: 0,
-      events: [],
-    };
-    entry.unitId = Number.isFinite(unitId) ? unitId : entry.unitId;
-    entry.ownerId = owner ? getPlayerSmallId(owner) : entry.ownerId;
-    entry.tile = tile;
-    entry.type = type;
+    const entry = getEconomyRevenueTracker(key, unit, tile, type);
     entry.events.push({
       amount,
       at: Date.now(),
@@ -303,28 +315,24 @@
   function getActiveRevenueUnit(game, entry) {
     const unitId = Number(entry?.unitId);
     if (Number.isFinite(unitId)) {
-      try {
+      {
         const unit = game?.unit?.(unitId);
-        if (
-          unit?.isActive?.() &&
-          String(unit?.type?.() ?? "") === String(entry.type ?? "")
-        ) {
-          return unit;
-        }
-      } catch (_error) {
-        // Fall back to a tile lookup below.
+        if (activeRevenueUnitTypeMatches(unit, entry)) return unit;
       }
     }
 
-    try {
-      return (
-        Array.from(game?.units?.(entry.type) || []).find(
-          (unit) => unit?.isActive?.() && unit?.tile?.() === entry.tile,
-        ) ?? null
-      );
-    } catch (_error) {
-      return null;
+    {
+      return Array.from(game?.units?.(entry.type) || []).find(
+        (unit) => activeRevenueUnitTypeMatches(unit, entry) && unit?.tile?.() === entry.tile,
+      ) ?? null;
     }
+  }
+
+  function activeRevenueUnitTypeMatches(unit, entry) {
+    return (
+      unit?.isActive?.() &&
+      String(unit?.type?.() ?? "") === String(entry.type ?? "")
+    );
   }
 
   function pruneEconomyRevenueSources(game) {
@@ -372,7 +380,7 @@
         continue;
       }
 
-      try {
+      {
         const worldPoint = {
           x: game.x(source.tile),
           y: game.y(source.tile),
@@ -394,8 +402,6 @@
             zoomScale,
           });
         }
-      } catch (_error) {
-        // Ignore points from stale units or off-map references.
       }
     }
 
@@ -425,16 +431,16 @@
   function getEconomyHeatmapSources(game) {
     const now = performance.now();
     if (
-      economyHeatmapDataGame !== game ||
-      lastEconomyHeatmapDataAt === 0 ||
-      now - lastEconomyHeatmapDataAt >= ECONOMY_HEATMAP_DATA_REFRESH_MS
+      runtimeState.economyHeatmapDataGame !== game ||
+      runtimeState.lastEconomyHeatmapDataAt === 0 ||
+      now - runtimeState.lastEconomyHeatmapDataAt >= ECONOMY_HEATMAP_DATA_REFRESH_MS
     ) {
-      economyHeatmapSources = collectEconomyHeatmapSources(game);
-      economyHeatmapDataGame = game;
-      lastEconomyHeatmapDataAt = now;
+      runtimeState.economyHeatmapSources = collectEconomyHeatmapSources(game);
+      runtimeState.economyHeatmapDataGame = game;
+      runtimeState.lastEconomyHeatmapDataAt = now;
     }
 
-    return economyHeatmapSources;
+    return runtimeState.economyHeatmapSources;
   }
 
   function normalizeEconomyHeatmapIntensity(value) {
@@ -613,6 +619,23 @@
     return renderer;
   }
 
+  function releaseHeatmapWebGlRenderer(canvas) {
+    if (!canvas) return;
+    const renderer = heatmapWebGlRenderers.get(canvas);
+    if (renderer) {
+      renderer.gl.getExtension("WEBGL_lose_context")?.loseContext();
+      heatmapWebGlRenderers.delete(canvas);
+    }
+    heatmapVertexBuffers.delete(canvas);
+  }
+
+  function removeHeatmapContainer(containerId, canvasClass) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    releaseHeatmapWebGlRenderer(container.querySelector(`.${canvasClass}`));
+    container.remove();
+  }
+
   function clearHeatmapCanvas(canvas) {
     const renderer = getHeatmapWebGlRenderer(canvas);
     if (renderer && !renderer.gl.isContextLost?.()) {
@@ -626,7 +649,7 @@
     ctx?.clearRect(0, 0, canvas.width, canvas.height);
   }
 
-  function renderHeatmapPointsWebGl(canvas, points, maxWeight, pixelRatio, palette, getShape) {
+  function getUsableHeatmapRenderer(canvas) {
     const renderer = getHeatmapWebGlRenderer(canvas);
     if (
       !renderer ||
@@ -634,15 +657,18 @@
       renderer.offsetLocation < 0 ||
       renderer.radiusLocation < 0 ||
       renderer.intensityLocation < 0
-    ) {
-      return false;
-    }
+    ) return null;
+    if (!renderer.gl.isContextLost?.()) return renderer;
+    heatmapWebGlRenderers.delete(canvas);
+    return null;
+  }
+
+  function renderHeatmapPointsWebGl(options) {
+    const { canvas, points, maxWeight, pixelRatio, palette, getShape } = options;
+    const renderer = getUsableHeatmapRenderer(canvas);
+    if (!renderer) return false;
 
     const { gl, program, buffer } = renderer;
-    if (gl.isContextLost?.()) {
-      heatmapWebGlRenderers.delete(canvas);
-      return false;
-    }
 
     const quadOffsets = [
       -1, -1,
@@ -713,6 +739,10 @@
   // allocations per second during panning.
   const _economyShapeResult = { intensity: 0, radius: 0 };
 
+  function getHeatmapTypeScale(type, scales, fallback) {
+    return Object.hasOwn(scales, type) ? scales[type] : fallback;
+  }
+
   function getEconomyHeatmapPointShape(point, maxWeight, pixelRatio) {
     const baseIntensity = Math.max(0.28, Math.min(1, point.weight / maxWeight));
     const intensitySettings = _getEconomyHeatmapIntensitySettingsCached();
@@ -724,8 +754,7 @@
       0.22,
       Math.min(1, baseIntensity * intensitySettings.radius),
     );
-    const typeScale =
-      point.type === "Factory" ? 1.25 : point.type === "Port" ? 1.05 : 0.9;
+    const typeScale = getHeatmapTypeScale(point.type, { Factory: 1.25, Port: 1.05 }, 0.9);
     const zoomRadiusScale =
       point.zoomScale < 1
         ? Math.min(1.35, Math.max(0.68, point.zoomScale * 1.8))
@@ -753,91 +782,103 @@
     ctx.fill();
   }
 
+  function scheduleEconomyHeatmapDraw() {
+    runtimeState.economyHeatmapAnimationFrame = requestAnimationFrame(drawEconomyHeatmap);
+  }
+
+  function scheduleExportPartnerHeatmapDraw() {
+    runtimeState.exportPartnerHeatmapAnimationFrame = requestAnimationFrame(drawExportPartnerHeatmap);
+  }
+
+  function maxHeatmapWeight(points) {
+    return points.reduce((maximum, point) => Math.max(maximum, point.weight), 1);
+  }
+
+  function renderHeatmapCanvas(options) {
+    const maxWeight = maxHeatmapWeight(options.points);
+    const webGlRendered = renderHeatmapPointsWebGl({
+      canvas: options.canvas,
+      points: options.points,
+      maxWeight,
+      pixelRatio: options.pixelRatio,
+      palette: options.palette,
+      getShape: options.getShape,
+    });
+    if (webGlRendered) return;
+    const context = options.canvas.getContext("2d");
+    if (!context) return;
+    context.clearRect(0, 0, options.canvas.width, options.canvas.height);
+    context.globalCompositeOperation = "lighter";
+    for (const point of options.points) {
+      options.drawPoint(context, point, maxWeight, options.pixelRatio);
+    }
+    context.globalCompositeOperation = "source-over";
+  }
+
+  function getEconomyHeatmapPoints(context, canvas) {
+    {
+      const sources = getEconomyHeatmapSources(context.game);
+      return projectEconomyHeatmapPoints(sources, context.game, context.transform);
+    }
+  }
+
   function drawEconomyHeatmap() {
-    if (!economyHeatmapEnabled) {
-      economyHeatmapAnimationFrame = null;
+    if (!runtimeState.economyHeatmapEnabled) {
+      runtimeState.economyHeatmapAnimationFrame = null;
       return;
     }
 
     const now = performance.now();
-    if (now - lastEconomyHeatmapDrawAt < ECONOMY_HEATMAP_DRAW_MS) {
-      economyHeatmapAnimationFrame = requestAnimationFrame(drawEconomyHeatmap);
+    if (now - runtimeState.lastEconomyHeatmapDrawAt < ECONOMY_HEATMAP_DRAW_MS) {
+      scheduleEconomyHeatmapDraw();
       return;
     }
-    lastEconomyHeatmapDrawAt = now;
+    runtimeState.lastEconomyHeatmapDrawAt = now;
 
     const context = getOpenFrontGameContext();
     const { canvas, pixelRatio } = ensureEconomyHeatmapCanvas();
     if (!context?.game || !context?.transform) {
       clearHeatmapCanvas(canvas);
       canvas.parentElement?.setAttribute("data-status", "Economic heatmap: waiting for game data");
-      economyHeatmapAnimationFrame = requestAnimationFrame(drawEconomyHeatmap);
+      scheduleEconomyHeatmapDraw();
       return;
     }
 
     sampleGoldPerMinuteIfDue();
     processTradeBalanceUpdates(context.game);
-    let points = [];
-    try {
-      const sources = getEconomyHeatmapSources(context.game);
-      points = projectEconomyHeatmapPoints(
-        sources,
-        context.game,
-        context.transform,
-      );
-    } catch (_error) {
-      clearHeatmapCanvas(canvas);
-      canvas.parentElement?.setAttribute("data-status", "Economic heatmap: data error");
-      economyHeatmapAnimationFrame = requestAnimationFrame(drawEconomyHeatmap);
+    const points = getEconomyHeatmapPoints(context, canvas);
+    if (points === null) {
+      scheduleEconomyHeatmapDraw();
       return;
     }
     if (points.length === 0) {
       clearHeatmapCanvas(canvas);
       canvas.parentElement?.setAttribute("data-status", "Economic heatmap: waiting for observed trade revenue");
-      economyHeatmapAnimationFrame = requestAnimationFrame(drawEconomyHeatmap);
+      scheduleEconomyHeatmapDraw();
       return;
     }
 
     canvas.parentElement?.removeAttribute("data-status");
-    let maxWeight = 1;
-    for (let i = 0; i < points.length; i += 1) {
-      const w = points[i].weight;
-      if (w > maxWeight) {
-        maxWeight = w;
-      }
-    }
-    if (renderHeatmapPointsWebGl(canvas, points, maxWeight, pixelRatio, 0, getEconomyHeatmapPointShape)) {
-      economyHeatmapAnimationFrame = requestAnimationFrame(drawEconomyHeatmap);
-      return;
-    }
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      economyHeatmapAnimationFrame = requestAnimationFrame(drawEconomyHeatmap);
-      return;
-    }
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.globalCompositeOperation = "lighter";
-    for (const point of points) {
-      drawEconomyHeatmapPoint(ctx, point, maxWeight, pixelRatio);
-    }
-    ctx.globalCompositeOperation = "source-over";
-
-    economyHeatmapAnimationFrame = requestAnimationFrame(drawEconomyHeatmap);
+    renderHeatmapCanvas({
+      canvas,
+      points,
+      pixelRatio,
+      palette: 0,
+      getShape: getEconomyHeatmapPointShape,
+      drawPoint: drawEconomyHeatmapPoint,
+    });
+    scheduleEconomyHeatmapDraw();
   }
 
   const _exportPartnerShapeResult = { intensity: 0, radius: 0 };
 
   function getExportPartnerHeatmapPointShape(point, maxWeight, pixelRatio) {
     const intensity = Math.max(0.3, Math.min(1, point.weight / maxWeight));
-    const typeScale =
-      point.type === "City"
-        ? 1.35
-        : point.type === "Factory"
-          ? 1.15
-          : point.type === "Port"
-            ? 1.05
-            : 0.95;
+    const typeScale = getHeatmapTypeScale(
+      point.type,
+      { City: 1.35, Factory: 1.15, Port: 1.05 },
+      0.95,
+    );
     const zoomRadiusScale =
       point.zoomScale < 1
         ? Math.min(1.15, Math.max(0.58, point.zoomScale * 1.55))
@@ -866,24 +907,24 @@
   }
 
   function drawExportPartnerHeatmap() {
-    if (!exportPartnerHeatmapEnabled) {
-      exportPartnerHeatmapAnimationFrame = null;
+    if (!runtimeState.exportPartnerHeatmapEnabled) {
+      runtimeState.exportPartnerHeatmapAnimationFrame = null;
       return;
     }
 
     const now = performance.now();
-    if (now - lastExportPartnerHeatmapDrawAt < EXPORT_PARTNER_HEATMAP_DRAW_MS) {
-      exportPartnerHeatmapAnimationFrame = requestAnimationFrame(drawExportPartnerHeatmap);
+    if (now - runtimeState.lastExportPartnerHeatmapDrawAt < EXPORT_PARTNER_HEATMAP_DRAW_MS) {
+      scheduleExportPartnerHeatmapDraw();
       return;
     }
-    lastExportPartnerHeatmapDrawAt = now;
+    runtimeState.lastExportPartnerHeatmapDrawAt = now;
 
     const { canvas, pixelRatio } = ensureExportPartnerHeatmapCanvas();
     const overlay = getHoveredPlayerInfoOverlay();
     if (!overlay?.game || !overlay?.transform || !overlay?.player) {
       clearHeatmapCanvas(canvas);
       canvas.parentElement?.removeAttribute("data-status");
-      exportPartnerHeatmapAnimationFrame = requestAnimationFrame(drawExportPartnerHeatmap);
+      scheduleExportPartnerHeatmapDraw();
       return;
     }
 
@@ -893,85 +934,72 @@
     if (points.length === 0) {
       clearHeatmapCanvas(canvas);
       canvas.parentElement?.setAttribute("data-status", "Export partner heatmap: no observed exports yet");
-      exportPartnerHeatmapAnimationFrame = requestAnimationFrame(drawExportPartnerHeatmap);
+      scheduleExportPartnerHeatmapDraw();
       return;
     }
 
     canvas.parentElement?.removeAttribute("data-status");
-    let maxWeight = 1;
-    for (let i = 0; i < points.length; i += 1) {
-      const w = points[i].weight;
-      if (w > maxWeight) {
-        maxWeight = w;
-      }
-    }
-    if (renderHeatmapPointsWebGl(canvas, points, maxWeight, pixelRatio, 1, getExportPartnerHeatmapPointShape)) {
-      exportPartnerHeatmapAnimationFrame = requestAnimationFrame(drawExportPartnerHeatmap);
-      return;
-    }
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      exportPartnerHeatmapAnimationFrame = requestAnimationFrame(drawExportPartnerHeatmap);
-      return;
-    }
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.globalCompositeOperation = "lighter";
-    for (const point of points) {
-      drawExportPartnerHeatmapPoint(ctx, point, maxWeight, pixelRatio);
-    }
-    ctx.globalCompositeOperation = "source-over";
-
-    exportPartnerHeatmapAnimationFrame = requestAnimationFrame(drawExportPartnerHeatmap);
+    renderHeatmapCanvas({
+      canvas,
+      points,
+      pixelRatio,
+      palette: 1,
+      getShape: getExportPartnerHeatmapPointShape,
+      drawPoint: drawExportPartnerHeatmapPoint,
+    });
+    scheduleExportPartnerHeatmapDraw();
   }
 
   function setEconomyHeatmapIntensity(value) {
-    economyHeatmapIntensity = normalizeEconomyHeatmapIntensity(value);
+    runtimeState.economyHeatmapIntensity = normalizeEconomyHeatmapIntensity(value);
   }
 
   function setEconomyHeatmapEnabled(enabled) {
-    economyHeatmapEnabled = Boolean(enabled);
-    if (!economyHeatmapEnabled) {
-      if (economyHeatmapAnimationFrame !== null) {
-        cancelAnimationFrame(economyHeatmapAnimationFrame);
+    runtimeState.economyHeatmapEnabled = Boolean(enabled);
+    if (!runtimeState.economyHeatmapEnabled) {
+      if (runtimeState.economyHeatmapAnimationFrame !== null) {
+        cancelAnimationFrame(runtimeState.economyHeatmapAnimationFrame);
       }
-      economyHeatmapAnimationFrame = null;
-      lastEconomyHeatmapDrawAt = 0;
-      lastEconomyHeatmapDataAt = 0;
-      economyHeatmapDataGame = null;
-      economyHeatmapSources = [];
+      runtimeState.economyHeatmapAnimationFrame = null;
+      runtimeState.lastEconomyHeatmapDrawAt = 0;
+      runtimeState.lastEconomyHeatmapDataAt = 0;
+      runtimeState.economyHeatmapDataGame = null;
+      runtimeState.economyHeatmapSources = [];
       economyRevenueSourceTrackers.clear();
-      if (!tradeBalancesEnabled && !exportPartnerHeatmapEnabled) {
+      if (!runtimeState.tradeBalancesEnabled && !runtimeState.exportPartnerHeatmapEnabled) {
         trainTradeTrackers.clear();
         tradeShipSourceTrackers.clear();
-        lastProcessedTradeBalanceTick = null;
+        runtimeState.lastProcessedTradeBalanceTick = null;
       }
-      if (!goldPerMinuteEnabled && !teamGoldPerMinuteEnabled && !topGoldPerMinuteEnabled) {
+      if (!runtimeState.goldPerMinuteEnabled && !runtimeState.teamGoldPerMinuteEnabled && !runtimeState.topGoldPerMinuteEnabled) {
         goldTrackers.clear();
         incomingGoldTransfers.clear();
-        lastProcessedIncomingGoldTransferTick = null;
+        runtimeState.lastProcessedIncomingGoldTransferTick = null;
       }
-      document.getElementById(ECONOMY_HEATMAP_CONTAINER_ID)?.remove();
+      removeHeatmapContainer(ECONOMY_HEATMAP_CONTAINER_ID, ECONOMY_HEATMAP_CANVAS_CLASS);
       return;
     }
 
     setExportPartnerHeatmapEnabled(false);
-    if (economyHeatmapAnimationFrame === null) {
+    if (runtimeState.economyHeatmapAnimationFrame === null) {
       drawEconomyHeatmap();
     }
   }
 
   function setExportPartnerHeatmapEnabled(enabled) {
-    exportPartnerHeatmapEnabled = Boolean(enabled);
-    if (!exportPartnerHeatmapEnabled) {
-      if (exportPartnerHeatmapAnimationFrame !== null) {
-        cancelAnimationFrame(exportPartnerHeatmapAnimationFrame);
+    runtimeState.exportPartnerHeatmapEnabled = Boolean(enabled);
+    if (!runtimeState.exportPartnerHeatmapEnabled) {
+      if (runtimeState.exportPartnerHeatmapAnimationFrame !== null) {
+        cancelAnimationFrame(runtimeState.exportPartnerHeatmapAnimationFrame);
       }
-      exportPartnerHeatmapAnimationFrame = null;
-      lastExportPartnerHeatmapDrawAt = 0;
+      runtimeState.exportPartnerHeatmapAnimationFrame = null;
+      runtimeState.lastExportPartnerHeatmapDrawAt = 0;
       resetExportPartnerHeatmapSourceCache();
-      document.getElementById(EXPORT_PARTNER_HEATMAP_CONTAINER_ID)?.remove();
-      if (!tradeBalancesEnabled && !economyHeatmapEnabled) {
+      removeHeatmapContainer(
+        EXPORT_PARTNER_HEATMAP_CONTAINER_ID,
+        EXPORT_PARTNER_HEATMAP_CANVAS_CLASS,
+      );
+      if (!runtimeState.tradeBalancesEnabled && !runtimeState.economyHeatmapEnabled) {
         tradeBalanceTrackers.clear();
         exportPartnerSourceTrackers.clear();
         factoryPortSpendTrackers.clear();
@@ -983,7 +1011,7 @@
     }
 
     setEconomyHeatmapEnabled(false);
-    if (exportPartnerHeatmapAnimationFrame === null) {
+    if (runtimeState.exportPartnerHeatmapAnimationFrame === null) {
       drawExportPartnerHeatmap();
     }
   }

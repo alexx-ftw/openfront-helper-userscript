@@ -1,4 +1,4 @@
-// "Lobby found" notification — replaces the extension's background popup window.
+// OpenFront Helper notifications — replaces the extension's background popup window.
 //
 // Two layers, because auto-join is meant to run while you do something else:
 //   1) a native OS Notification (if permission was granted) — survives tab switches
@@ -11,31 +11,25 @@ const TITLE = "⊕ OpenFront Helper";
 /** Ask for OS-notification permission. Must be called from a user gesture (toggle /
  *  popup open); a no-op once the user has already granted or denied it. */
 export function requestJoinNotificationPermission(): void {
-  try {
-    if ("Notification" in window && Notification.permission === "default") {
-      void Notification.requestPermission();
-    }
-  } catch {
-    /* some embedders throw on Notification access — ignore */
+  let shouldRequest = false;
+  {
+    shouldRequest = "Notification" in window && Notification.permission === "default";
   }
+  if (shouldRequest) void Notification.requestPermission();
 }
 
-function showOsNotification(text: string): boolean {
-  try {
+function showOsNotification(text: string, tag: string): boolean {
+  {
     if ("Notification" in window && Notification.permission === "granted") {
-      const n = new Notification(TITLE, { body: text, tag: "ofh-lobby-found" });
+      const n = new Notification(TITLE, { body: text, tag });
       n.onclick = () => {
-        try {
+        {
           window.focus();
-        } catch {
-          /* ignore */
         }
         n.close();
       };
       return true;
     }
-  } catch {
-    /* fall through to the in-page toast */
   }
   return false;
 }
@@ -65,17 +59,29 @@ function showToast(text: string): void {
       "transition:opacity .3s",
     ].join(";"),
   );
-  el.onclick = () => el.remove();
+  el.onclick = () => {
+    el.remove();
+  };
   document.body.appendChild(el);
   setTimeout(() => {
     el.style.opacity = "0";
-    setTimeout(() => el.remove(), 350);
+    setTimeout(() => {
+      el.remove();
+    }, 350);
   }, 5000);
 }
 
-export function showJoinNotification(text: string): void {
+function showNotification(text: string, tag: string): void {
   // Always show the in-page toast (cheap, visible on-tab); add the OS notification on top
   // when allowed so the user is alerted even with the tab in the background.
-  showOsNotification(text);
+  showOsNotification(text, tag);
   showToast(text);
+}
+
+export function showJoinNotification(text: string): void {
+  showNotification(text, "ofh-lobby-found");
+}
+
+export function showGameStartNotification(text: string): void {
+  showNotification(text, "ofh-game-started");
 }

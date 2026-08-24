@@ -1,0 +1,74 @@
+{
+  "schemaVersion": "mimosa-finding-history/v1",
+  "runId": "20260821T234326815Z-3833232-1d6ca8bafd08",
+  "runStatus": "inconclusive",
+  "errors": [
+    "bash-discovery:openfront-engine/src/server/Client.ts: bash_discovery_truncated: changed-file discovery exceeded 80 files",
+    "candidate-select:openfront-engine/tests/GameRightSidebar.test.ts: candidate_limit_exceeded: 60 changed reviewable file(s) were not scanned because the limit is 20",
+    "baseline-read:openfront-engine/zbin/bytes.ts: baseline_snapshot_unreadable: file is missing from task baseline",
+    "baseline-read:openfront-engine/zbin/context.ts: baseline_snapshot_unreadable: file is missing from task baseline",
+    "baseline-read:openfront-engine/zbin/index.ts: baseline_snapshot_unreadable: file is missing from task baseline",
+    "baseline-read:openfront-engine/zbin/zb.ts: baseline_snapshot_unreadable: file is missing from task baseline",
+    "baseline-read:openfront-engine/tests/ApiUserMeLogout.test.ts: baseline_snapshot_unreadable: file is missing from task baseline",
+    "baseline-read:openfront-engine/tests/AuthLogoutAnnounce.test.ts: baseline_snapshot_unreadable: file is missing from task baseline",
+    "baseline-read:openfront-engine/tests/BuildAssetHashes.test.ts: baseline_snapshot_unreadable: file is missing from task baseline",
+    "baseline-read:openfront-engine/tests/DesktopRelease.test.ts: baseline_snapshot_unreadable: file is missing from task baseline",
+    "baseline-read:openfront-engine/tests/DesktopShellUpdate.test.ts: baseline_snapshot_unreadable: file is missing from task baseline",
+    "baseline-read:openfront-engine/tests/DetailedGameViewModalGatingWiring.test.ts: baseline_snapshot_unreadable: file is missing from task baseline",
+    "baseline-read:openfront-engine/tests/GameModeSelectorGating.test.ts: baseline_snapshot_unreadable: file is missing from task baseline",
+    "baseline-read:openfront-engine/tests/GameModeSelectorGatingWiring.test.ts: baseline_snapshot_unreadable: file is missing from task baseline",
+    "scan:openfront-helper.user.js: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/zbin/bytes.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/zbin/context.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/zbin/index.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/zbin/zb.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/tests/ApiSchemas.test.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/tests/ApiUserMeLogout.test.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/tests/AuthLogoutAnnounce.test.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/tests/BuildAssetHashes.test.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/tests/CosmeticRelationship.test.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/tests/DesktopRelease.test.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/tests/DesktopShellUpdate.test.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/tests/DetailedGameViewModalGatingWiring.test.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/tests/DoomsdayClockExecution.test.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/tests/GameModeSelectorGating.test.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "scan:openfront-engine/tests/GameModeSelectorGatingWiring.test.ts: scanner_failed: spawnSync /home/linuxbrew/.linuxbrew/Cellar/node/26.7.0/bin/node ETIMEDOUT",
+    "supply-chain-check:.: stop_budget_exhausted: focused supply-chain check was not run before the gate budget",
+    "agent-check:.: stop_budget_exhausted: focused agent configuration check was not run before the gate budget"
+  ],
+  "target": ".",
+  "revision": "0766700da7a2eaa028193483069c1078e2a440e8",
+  "diffHash": "24b72ceb21a2eed69d454f570ecbcb28199b7c6e40133c247a9eccd4728631f9",
+  "rulesVersion": "unavailable",
+  "recordedAt": "2026-08-21T23:43:26.815Z",
+  "timing": {
+    "startedAt": "2026-08-21T23:43:23.975Z",
+    "completedAt": "2026-08-21T23:43:26.815Z",
+    "durationMs": 2840
+  },
+  "tokens": {
+    "input": 0,
+    "output": 0,
+    "total": 0,
+    "modelCalls": 0,
+    "measurement": "known-zero"
+  },
+  "findings": {
+    "total": 0,
+    "bySeverity": {},
+    "byStatus": {}
+  },
+  "coverage": {
+    "status": "partial",
+    "reasonCounts": {
+      "bash_discovery_truncated": 1,
+      "candidate_limit_exceeded": 1,
+      "baseline_snapshot_unreadable": 12,
+      "scanner_failed": 16,
+      "stop_budget_exhausted": 2,
+      "project_check_failed": 32
+    }
+  },
+  "evidenceBoundary": "static_only",
+  "immutableReport": ".mimosa/reports/task-review-sess_1c204565-6e61-406f-8e11-701b13d6a148-20260821T234326815Z-3833232-1d6ca8bafd08.json"
+}

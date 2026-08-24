@@ -1,4 +1,5 @@
-(function initOpenFrontHelperSettings(globalScope) {
+{
+  const globalScope = globalThis;
   const MAPS = Array.isArray(globalScope.OPENFRONT_MAPS)
     ? globalScope.OPENFRONT_MAPS
     : [];
@@ -7,6 +8,8 @@
   const FILTER_KEYS = [
     "startingGold0M",
     "randomSpawn",
+    "crowded",
+    "compact",
     "alliancesDisabled",
     "portsDisabled",
     "nukesDisabled",
@@ -68,10 +71,11 @@
     showAdvisorPanel: false,
     showRetaliationHud: true,
     hideAds: true,
+    antiAfk: true,
     attackRatioHotkey: true,
     rightClickConquest: true,
-    roundLogger: false,
-    networkLogger: false,
+    roundLogger: true,
+    networkLogger: true,
     showBuildTimers: true,
     showEnemyIntent: true,
     showSpawnHeatmap: false,
@@ -79,7 +83,6 @@
     sosDefense: true,
     selectiveTradePolicyEnabled: false,
     autoCancelDeniedTradesAvailable: true,
-    cheatsAvailable: true,
     showNukePrediction: true,
     showNukeTrajectory: true,
     showNukeSuggestions: false,
@@ -141,6 +144,9 @@
     autoDonateGoldEnabled: false,
     autoDonateGoldThreshold: 5000000,
     autoDonateGoldPercentage: 25,
+    // Companion Bot — a slave tab that serves a named "boss" account.
+    showCompanionPanel: false,
+    companionEnabled: false,
     autoDonateGoldTargets: "",
     // Theme & Appearance
     guiAccentColor: "#00ff66",
@@ -345,6 +351,12 @@
       : null;
   }
 
+  function normalizeAverageLobbiesPerMinute(value) {
+    if (value == null) return null;
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) ? Math.max(0, numericValue) : null;
+  }
+
   function normalizeLobbyForecast(value = {}) {
     const source = value || {};
     const averagesSource = source.last100Averages || {};
@@ -365,15 +377,24 @@
         avgLobbyIntervalMs: normalizeForecastMilliseconds(
           averagesSource.avgLobbyIntervalMs,
         ),
-        avgLobbiesPerMinute:
-          averagesSource.avgLobbiesPerMinute == null
-            ? null
-            : Number.isFinite(Number(averagesSource.avgLobbiesPerMinute))
-              ? Math.max(0, Number(averagesSource.avgLobbiesPerMinute))
-              : null,
+        avgLobbiesPerMinute: normalizeAverageLobbiesPerMinute(
+          averagesSource.avgLobbiesPerMinute,
+        ),
         etaSeconds: normalizeForecastSeconds(averagesSource.etaSeconds),
         updatedAt: normalizeActionRequestTimestamp(averagesSource.updatedAt),
       },
+    };
+  }
+
+  function getSettingsSourceGroups(source) {
+    return {
+      includeFilters: source.includeFilters || source.filters || {},
+      excludeFilters: source.excludeFilters || source.excludes || {},
+      mapFilters: source.mapFilters || source.maps || {},
+      mapExcludeFilters: source.mapExcludeFilters || source.mapExcludes || {},
+      floatingHelpersPanelPosition: source.floatingHelpersPanelPosition || {},
+      floatingAutoJoinPanelPosition: source.floatingAutoJoinPanelPosition || {},
+      collapsedHelperCategories: source.collapsedHelperCategories || {},
     };
   }
 
@@ -404,13 +425,7 @@
     // per-field normalization below. A saved settings object always carries
     // these keys, so existing users keep their own values untouched.
     const pick = (key) => (key in source ? source[key] : DEFAULT_SETTINGS[key]);
-    const includeFilters = source.includeFilters || source.filters || {};
-    const excludeFilters = source.excludeFilters || source.excludes || {};
-    const mapFilters = source.mapFilters || source.maps || {};
-    const mapExcludeFilters = source.mapExcludeFilters || source.mapExcludes || {};
-    const floatingHelpersPanelPosition = source.floatingHelpersPanelPosition || {};
-    const floatingAutoJoinPanelPosition = source.floatingAutoJoinPanelPosition || {};
-    const collapsedHelperCategories = source.collapsedHelperCategories || {};
+    const groups = getSettingsSourceGroups(source);
     const { minTeamSize, maxTeamSize } = normalizeTeamSizeRange(
       pick("minTeamSize"),
       pick("maxTeamSize"),
@@ -433,14 +448,14 @@
       minTeamCount,
       maxTeamCount,
       floatingHelpersPanelPosition: normalizeFloatingHelpersPanelPosition(
-        floatingHelpersPanelPosition,
+        groups.floatingHelpersPanelPosition,
       ),
       floatingHelpersPanelHeight: normalizeFloatingHelpersPanelHeight(
         source.floatingHelpersPanelHeight,
       ),
       showFloatingAutoJoinPanel: Boolean(pick("showFloatingAutoJoinPanel")),
       floatingAutoJoinPanelPosition: normalizeFloatingHelpersPanelPosition(
-        floatingAutoJoinPanelPosition,
+        groups.floatingAutoJoinPanelPosition,
       ),
       floatingAutoJoinPanelHeight: normalizeFloatingHelpersPanelHeight(
         source.floatingAutoJoinPanelHeight,
@@ -449,18 +464,18 @@
       lobbyForecast: normalizeLobbyForecast(source.lobbyForecast),
       collapsedHelperCategories: {
         ...DEFAULT_SETTINGS.collapsedHelperCategories,
-        ...collapsedHelperCategories,
+        ...groups.collapsedHelperCategories,
       },
       includeFilters: {
         ...DEFAULT_SETTINGS.includeFilters,
-        ...includeFilters,
+        ...groups.includeFilters,
       },
       excludeFilters: {
         ...DEFAULT_SETTINGS.excludeFilters,
-        ...excludeFilters,
+        ...groups.excludeFilters,
       },
-      mapFilters: normalizeMapFilters(mapFilters, DEFAULT_SETTINGS.mapFilters),
-      mapExcludeFilters: normalizeMapFilters(mapExcludeFilters),
+      mapFilters: normalizeMapFilters(groups.mapFilters, DEFAULT_SETTINGS.mapFilters),
+      mapExcludeFilters: normalizeMapFilters(groups.mapExcludeFilters),
     };
 
     delete normalized.showNukeTargetHeatmap;
@@ -504,4 +519,4 @@
     normalizeActionRequestTimestamp,
     getEconomyHeatmapIntensityLabel,
   };
-})(globalThis);
+}

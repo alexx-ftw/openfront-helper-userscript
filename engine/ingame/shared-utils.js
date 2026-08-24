@@ -17,15 +17,13 @@ function escapeCssIdentifier(value) {
 }
 
 function getPlayerSmallId(player, fallbackIndex = 0) {
-  try {
+  {
     return Number(player?.smallID?.() ?? player?.data?.smallID ?? fallbackIndex);
-  } catch (_error) {
-    return Number(fallbackIndex);
   }
 }
 
 function getPlayerDisplayName(player) {
-  try {
+  {
     return String(
       player?.displayName?.() ??
         player?.name?.() ??
@@ -33,21 +31,30 @@ function getPlayerDisplayName(player) {
         player?.data?.name ??
         "Unknown",
     );
-  } catch (_error) {
-    return "Unknown";
+  }
+}
+
+function getPlayerView(game) {
+  {
+    return game?.myPlayer?.() ?? null;
+  }
+}
+
+function isPlayerView(player) {
+  {
+    return Boolean(player?.isPlayer?.());
+  }
+}
+
+function playersAreFriendly(first, second) {
+  {
+    return Boolean(first.isFriendly?.(second) || second.isFriendly?.(first));
   }
 }
 
 function getPlayerRelationToMyPlayer(game, player) {
-  let myPlayer = null;
-  try {
-    myPlayer = game?.myPlayer?.();
-    if (!player?.isPlayer?.() || !myPlayer?.isPlayer?.()) {
-      return null;
-    }
-  } catch (_error) {
-    return null;
-  }
+  const myPlayer = getPlayerView(game);
+  if (!isPlayerView(player) || !isPlayerView(myPlayer)) return null;
 
   const playerId = getPlayerSmallId(player, NaN);
   const myPlayerId = getPlayerSmallId(myPlayer, NaN);
@@ -55,24 +62,19 @@ function getPlayerRelationToMyPlayer(game, player) {
     return "self";
   }
 
-  try {
-    if (player.isFriendly?.(myPlayer) || myPlayer.isFriendly?.(player)) {
-      return "ally";
-    }
-  } catch (_error) {
-    return "enemy";
-  }
-
-  return "enemy";
+  return playersAreFriendly(player, myPlayer) ? "ally" : "enemy";
 }
 
 function getPlayerTeamName(player) {
-  try {
+  {
     const team = player?.team?.();
     return team == null ? null : String(team);
-  } catch (_error) {
-    return null;
   }
+}
+
+function playersArePermanentTeammates(first, second) {
+  const firstTeam = getPlayerTeamName(first);
+  return firstTeam !== null && firstTeam === getPlayerTeamName(second);
 }
 
 // Color resolution for teams and individual players.
@@ -91,13 +93,11 @@ function getPlayerTeamName(player) {
 // Every path degrades safely if territoryColor() is unavailable on a given build.
 
 function _playerTerritoryHex(player) {
-  try {
+  {
     const hex = player?.territoryColor?.()?.toHex?.();
     if (typeof hex === "string" && /^#[0-9a-fA-F]{3,8}$/.test(hex)) {
       return hex;
     }
-  } catch (_error) {
-    // PlayerView.territoryColor() unavailable on this build → palette fallback.
   }
   return null;
 }
@@ -110,13 +110,33 @@ let _teamRepColorTick = -1;
 const _teamRepColors = new Map();
 const _teamRepSmallIds = new Map();
 
-function _ensureTeamRepColors(game) {
-  let tick = Number.NaN;
-  try {
-    tick = Number(game?.ticks?.());
-  } catch (_error) {
-    tick = Number.NaN;
+function _teamRepTick(game) {
+  {
+    return Number(game?.ticks?.());
   }
+}
+
+function _isAlivePlayer(player) {
+  {
+    return Boolean(player?.isAlive?.());
+  }
+}
+
+function _recordTeamRepresentative(player) {
+  if (!_isAlivePlayer(player)) return;
+  const team = getPlayerTeamName(player);
+  if (!team || team === "Bot") return;
+  const smallId = getPlayerSmallId(player, Number.MAX_SAFE_INTEGER);
+  const previousId = _teamRepSmallIds.get(team);
+  if (previousId !== undefined && previousId <= smallId) return;
+  const hex = _playerTerritoryHex(player);
+  if (!hex) return;
+  _teamRepColors.set(team, hex);
+  _teamRepSmallIds.set(team, smallId);
+}
+
+function _ensureTeamRepColors(game) {
+  const tick = _teamRepTick(game);
   if (
     game === _teamRepColorGame &&
     Number.isFinite(tick) &&
@@ -129,29 +149,7 @@ function _ensureTeamRepColors(game) {
   _teamRepColors.clear();
   _teamRepSmallIds.clear();
   for (const player of getCachedPlayerViews(game)) {
-    let alive = false;
-    try {
-      alive = Boolean(player?.isAlive?.());
-    } catch (_error) {
-      alive = false;
-    }
-    if (!alive) {
-      continue;
-    }
-    const team = getPlayerTeamName(player);
-    if (!team || team === "Bot") {
-      continue;
-    }
-    const smallId = getPlayerSmallId(player, Number.MAX_SAFE_INTEGER);
-    const prevId = _teamRepSmallIds.get(team);
-    if (prevId !== undefined && prevId <= smallId) {
-      continue;
-    }
-    const hex = _playerTerritoryHex(player);
-    if (hex) {
-      _teamRepColors.set(team, hex);
-      _teamRepSmallIds.set(team, smallId);
-    }
+    _recordTeamRepresentative(player);
   }
   return _teamRepColors;
 }
@@ -230,9 +228,15 @@ function _hslToHex(h, s, l) {
 // well separated; any other name falls back to a stable FNV-1a hue.
 function _generateTeamColor(name) {
   const str = String(name ?? "");
-  const numbered = /(\d+)\s*$/.exec(str);
-  if (numbered) {
-    const n = Number(numbered[1]);
+  const trimmed = str.trimEnd();
+  let digitStart = trimmed.length;
+  while (digitStart > 0) {
+    const code = trimmed.charCodeAt(digitStart - 1);
+    if (code < 48 || code > 57) break;
+    digitStart -= 1;
+  }
+  if (digitStart < trimmed.length) {
+    const n = Number(trimmed.slice(digitStart));
     return _hslToHex(Math.floor((n * 137.508) % 360), 68, 60);
   }
   let h = 2166136261;
@@ -290,16 +294,14 @@ function getTeamColorBackground(team, game = null) {
 }
 
 function isNationBotPlayer(player) {
-  try {
+  {
     const playerType = player?.type?.() ?? player?.data?.playerType;
     return playerType === "NATION";
-  } catch (_error) {
-    return false;
   }
 }
 
 function getPlayerMarkerId(player, fallbackIndex) {
-  try {
+  {
     return String(
       player?.id?.() ??
         player?.smallID?.() ??
@@ -307,20 +309,16 @@ function getPlayerMarkerId(player, fallbackIndex) {
         player?.displayName?.() ??
         fallbackIndex,
     );
-  } catch (_error) {
-    return String(fallbackIndex);
   }
 }
 
 function getPlayerGoldNumber(player) {
-  try {
+  {
     const gold = player?.gold?.();
     if (typeof gold === "bigint") {
       return Number(gold);
     }
     return Number(gold);
-  } catch (_error) {
-    return NaN;
   }
 }
 
@@ -387,11 +385,9 @@ function getCachedPlayerViews(game) {
     return [];
   }
 
-  let currentTick = Number.NaN;
-  try {
+  let currentTick;
+  {
     currentTick = Number(game.ticks?.());
-  } catch (_error) {
-    currentTick = Number.NaN;
   }
 
   if (
@@ -405,12 +401,51 @@ function getCachedPlayerViews(game) {
 
   _cachedPlayerViewsGame = game;
   _cachedPlayerViewsTick = Number.isFinite(currentTick) ? currentTick : -1;
-  try {
+  {
     _cachedPlayerViewsArray = Array.from(game.playerViews?.() || []);
-  } catch (_error) {
-    _cachedPlayerViewsArray = [];
   }
   return _cachedPlayerViewsArray;
+}
+
+// Shared per-tick cache for game.units(...types). Several overlays scan the
+// same unit families on their own cadences. GameView.units() creates a fresh
+// worker-backed snapshot, so repeating that call from rAF layers needlessly
+// allocates and traverses the same data.
+let _cachedGameUnitsGame = null;
+let _cachedGameUnitsTick = -1;
+const _cachedGameUnitsByTypes = new Map();
+
+function getCachedGameUnits(game, ...types) {
+  if (!game || typeof game.units !== "function") {
+    return [];
+  }
+
+  let currentTick;
+  {
+    currentTick = Number(game.ticks?.());
+  }
+
+  if (
+    game !== _cachedGameUnitsGame ||
+    !Number.isFinite(currentTick) ||
+    currentTick !== _cachedGameUnitsTick
+  ) {
+    _cachedGameUnitsGame = game;
+    _cachedGameUnitsTick = Number.isFinite(currentTick) ? currentTick : -1;
+    _cachedGameUnitsByTypes.clear();
+  }
+
+  const key = types.map((type) => String(type)).join("\u0001");
+  if (_cachedGameUnitsByTypes.has(key)) {
+    return _cachedGameUnitsByTypes.get(key);
+  }
+
+  let units;
+  {
+    units = Array.from(game.units(...types) || []);
+  }
+  _cachedGameUnitsByTypes.set(key, units);
+  return units;
 }
 
 // FNV-1a-ish 32-bit numeric hash. Used to replace JSON.stringify-based

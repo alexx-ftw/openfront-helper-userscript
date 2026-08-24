@@ -15,11 +15,9 @@
   (function seedDefaultPanelLayout() {
     const SEED_FLAG = "openfront-helper-layout-seeded-v1";
     let ls;
-    try {
+    {
       ls = window.localStorage;
       if (ls.getItem(SEED_FLAG)) return; // already seeded this install
-    } catch (_error) {
-      return; // no storage → nothing to seed
     }
 
     const PAD = 14;
@@ -53,19 +51,14 @@
     };
 
     for (const key in seeds) {
-      try {
+      {
         if (ls.getItem(key) == null) {
           ls.setItem(key, JSON.stringify(seeds[key]));
         }
-      } catch (_error) {
-        /* ignore individual failures */
       }
     }
 
-    // Auto-bot stores its position inside its settings blob under `pos`. Merge a
-    // default (below the team-build panel, left column) without clobbering the
-    // rest of the blob or an existing user position.
-    try {
+    {
       const BOT_KEY = "openfront-helper-autobot-v1";
       const raw = ls.getItem(BOT_KEY);
       const blob = raw ? JSON.parse(raw) : {};
@@ -73,13 +66,7 @@
         blob.pos = { left: leftX, top: 540 };
         ls.setItem(BOT_KEY, JSON.stringify(blob));
       }
-    } catch (_error) {
-      /* ignore */
-    }
-
-    try {
+    }{
       ls.setItem(SEED_FLAG, "1");
-    } catch (_error) {
-      /* ignore */
     }
   })();

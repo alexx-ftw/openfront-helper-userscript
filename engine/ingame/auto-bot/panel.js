@@ -5,11 +5,7 @@
   // =========================================================================
   // Floating control panel
   // =========================================================================
-  function ensureStyles() {
-    if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement("style");
-    style.id = STYLE_ID;
-    style.textContent = `
+  const AUTO_BOT_PANEL_CSS = `
       #${PANEL_ID} {
         --ab-accent: var(--oh-accent, #60a5fa);
         --ab-border: var(--oh-panel-border, rgba(148, 163, 184, 0.34));
@@ -64,7 +60,7 @@
       #${PANEL_ID} .ab-body { padding: 9px 10px 10px; }
       #${PANEL_ID}.ab-collapsed .ab-body { display: none; }
       #${PANEL_ID}.ab-collapsed .ab-tabs { display: none; }
-      #${PANEL_ID} .ab-gate-dot {
+      #${PANEL_ID} .ab-runtime-dot {
         width: 8px; height: 8px; border-radius: 50%; flex: none; cursor: help;
         background: currentColor; box-shadow: 0 0 6px currentColor;
       }
@@ -95,8 +91,10 @@
       }
       #${PANEL_ID} .ab-feat-mini:hover { background: var(--ab-surface-2); opacity: 0.85; }
       #${PANEL_ID} .ab-feat-mini.on { opacity: 1; border-color: var(--oh-accent-muted, rgba(96,165,250,.45)); background: var(--oh-accent-soft, rgba(96,165,250,.14)); }
+      #${PANEL_ID} .ab-feat-mini.paused { opacity: 1; border-color: rgba(251,191,36,.7); background: rgba(251,191,36,.16); }
       #${PANEL_ID} .ab-feat-mini .ab-feat-emoji { font-size: 16px; line-height: 1; transition: filter .14s; }
       #${PANEL_ID} .ab-feat-mini.on .ab-feat-emoji { filter: drop-shadow(0 0 5px var(--oh-accent-muted, rgba(96,165,250,.85))); }
+      #${PANEL_ID} .ab-feat-mini.paused .ab-feat-emoji { filter: drop-shadow(0 0 5px rgba(251,191,36,.9)); }
       .ab-feat-tip {
         position: fixed; z-index: 9000; transform: translate(-50%, -100%);
         padding: 7px 10px; border-radius: 8px; pointer-events: none;
@@ -230,6 +228,12 @@
       #${PANEL_ID} .ab-log-text { color: #e5e7eb; font-size: 11px; word-break: break-word; }
       #${PANEL_ID} .ab-log-empty { color: #6b7280; font-size: 11px; text-align: center; padding: 16px 0; }
     `;
+
+  function ensureStyles() {
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = STYLE_ID;
+    style.textContent = AUTO_BOT_PANEL_CSS;
     document.head.appendChild(style);
   }
 
@@ -264,6 +268,143 @@
       </div>`;
   }
 
+  function panelHeaderMarkup() {
+    return `
+      <div class="ab-head">
+        <div class="ab-runtime-dot" data-role="runtime-dot" style="color:#fbbf24;" title="${tr("Waiting to enter game…")}"></div>
+        <span class="ab-title">Auto-Bot</span>
+        <div class="ab-switch ${state.settings.enabled ? "on" : ""}" data-role="switch" title="${tr("Toggle on/off")}"></div>
+        <div class="ab-head-btns">
+          <button class="ab-mini" data-role="mini" title="${tr("Collapse")}">${state.settings.minimized ? "▢" : "—"}</button>
+          <button class="ab-close" data-role="close" title="${tr("Close")}">✕</button>
+        </div>
+      </div>
+      <div class="ab-tabs">
+        <div class="ab-tab ${state.activeTab === "control" ? "on" : ""}" data-tab="control" title="${tr("🎮 Controls")}">🎮</div>
+        <div class="ab-tab ${state.activeTab === "config" ? "on" : ""}" data-tab="config" title="${tr("⚙️ Config")}">⚙️</div>
+        <div class="ab-tab ${state.activeTab === "log" ? "on" : ""}" data-tab="log" title="${tr("📜 Log")}">📜</div>
+      </div>`;
+  }
+
+  function controlPaneMarkup() {
+    const featsLabel = state.settings.featsOpen ? tr("Auto toggles ▴") : tr("Auto toggles ▾");
+    const statusLabel = state.settings.statusOpen ? tr("Status & stats ▴") : tr("Status & stats ▾");
+    return `
+      <div class="ab-pane" data-pane="control">
+        <div class="ab-adv-toggle" data-role="feats-toggle">${featsLabel}</div>
+        <div class="ab-feats-grid ${state.settings.featsOpen ? "open" : ""}" data-role="feats">
+          ${featRow("spawn", "Auto-spawn", "🏁")}
+          ${featRow("expand", "Auto-expand / attack", "⚔️")}
+          ${featRow("boat", "Auto-landing (1% boat)", "⛵")}
+          ${featRow("warship", "Auto-deploy warships", "🚢")}
+          ${featRow("build", "Auto-build", "🏗️")}
+          ${featRow("nuke", "Auto-launch nukes", "☢️")}
+          ${featRow("alliance", "Auto-accept alliances", "🤝")}
+          ${featRow("embargo", "Auto-embargo enemies", "🚫")}
+          ${featRow("donate", "Auto-donate troops (allies)", "🎁")}
+          ${featRow("betray", "Auto-betray allies", "🗡️")}
+        </div>
+        <div class="ab-adv-toggle" data-role="status-toggle">${statusLabel}</div>
+        <div class="ab-status ${state.settings.statusOpen ? "open" : ""}" data-role="status-wrap">
+          <div class="ab-st-line" data-role="status">—</div>
+          <div class="ab-st-line" data-role="profiling">—</div>
+          <div class="ab-st-line" data-role="donate-status">—</div>
+          <div class="ab-st-act" data-role="lastaction">—</div>
+          <div class="ab-stats">
+            <div class="ab-stat"><b data-role="s-troops">0</b><span>${tr("Troops")}</span></div>
+            <div class="ab-stat"><b data-role="s-gold">0</b><span>${tr("Gold")}</span></div>
+            <div class="ab-stat"><b data-role="s-tiles">0</b><span>${tr("Tiles")}</span></div>
+          </div>
+          <div class="ab-stats" style="grid-template-columns: repeat(4, 1fr);">
+            <div class="ab-stat"><b data-role="c-spawns">0</b><span>${tr("Spawn")}</span></div>
+            <div class="ab-stat"><b data-role="c-attacks">0</b><span>${tr("Attacks")}</span></div>
+            <div class="ab-stat"><b data-role="c-builds">0</b><span>${tr("Builds")}</span></div>
+            <div class="ab-stat"><b data-role="c-nukes">0</b><span>${tr("Nukes")}</span></div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function difficultyChipsMarkup() {
+    return ["Easy", "Medium", "Hard", "Impossible", "Legendary"]
+      .map((difficulty) => `<div class="ab-cfg-chip ${state.settings.difficulty === difficulty ? "on" : ""}" data-diff="${difficulty}">${tr(difficulty)}</div>`)
+      .join("");
+  }
+
+  function structureTilesMarkup() {
+    const structures = [
+      ["City", "🏙️"], ["Port", "⚓"], ["Factory", "🏭"],
+      ["Defense Post", "🛡️"], ["SAM Launcher", "🛰️"], ["Missile Silo", "🚀"],
+    ];
+    return structures.map(([type, emoji]) => {
+      const enabled = (state.settings.buildStructures || {})[type] !== false;
+      return `<div class="ab-cfg-struct ${enabled ? "on" : ""}" data-struct="${type}">
+        ${cfgStructIcon(type, emoji)}
+        <span class="ab-cfg-struct-name">${tr(type)}</span>
+      </div>`;
+    }).join("");
+  }
+
+  function generalConfigMarkup() {
+    return `
+      <div class="ab-cfg-sec">${tr("General")}</div>
+      <div class="ab-cfg-row">
+        <span class="ab-cfg-label">${tr("Auto-bot enabled")}</span>
+        <div class="ab-cfg-sw ${state.settings.enabled ? "on" : ""}" data-cfg="enabled"></div>
+      </div>
+      <div class="ab-cfg-sec">${tr("Difficulty")}</div>
+      <div class="ab-cfg-chips" data-role="cfg-difficulty">${difficultyChipsMarkup()}</div>
+      <div class="ab-cfg-sec">${tr("Auto-build structures")}</div>
+      <div class="ab-cfg-grid" data-role="cfg-structs">${structureTilesMarkup()}</div>
+      <div class="ab-cfg-sec">${tr("Advanced")}</div>
+      <div class="ab-cfg-row"><span class="ab-cfg-label">${tr("Win-condition fixes")}</span><div class="ab-cfg-sw ${state.settings.winFixes ? "on" : ""}" data-cfg="winFixes"></div></div>
+      <div class="ab-cfg-row"><span class="ab-cfg-label">${tr("Smart spawn")}</span><div class="ab-cfg-sw ${state.settings.smartSpawn ? "on" : ""}" data-cfg="smartSpawn"></div></div>
+      <div class="ab-cfg-row"><span class="ab-cfg-label">${tr("Performance profiling")}</span><div class="ab-cfg-sw ${state.settings.performanceProfiling ? "on" : ""}" data-cfg="performanceProfiling"></div></div>
+      <div class="ab-cfg-row"><span class="ab-cfg-label">${tr("Tick interval (ms)")}</span><input class="ab-cfg-num" type="number" min="${MIN_TICK_INTERVAL_MS}" max="${MAX_TICK_INTERVAL_MS}" step="${TICK_INTERVAL_STEP_MS}" value="${state.settings.tickMs || DEFAULTS.tickMs}" data-cfg-num="tickMs"></div>`;
+  }
+
+  function donateConfigMarkup() {
+    const needPercent = Math.round((state.settings.donateNeedThreshold || 0.8) * 100);
+    const throttleMs = state.settings.donateThrottleMs || 1200;
+    return `
+      <div class="ab-cfg-sec">${tr("Donate tuning")}</div>
+      <div class="ab-cfg-row"><span class="ab-cfg-label">${tr("Pause donations during expansion")}</span><div class="ab-cfg-sw ${state.settings.pauseDonateDuringExpansion ? "on" : ""}" data-cfg="pauseDonateDuringExpansion"></div></div>
+      <div class="ab-cfg-row" style="flex-direction:column;align-items:stretch;">
+        <div style="display:flex;justify-content:space-between;align-items:center;"><span class="ab-cfg-label">${tr("Need threshold")}</span><span class="ab-cfg-val" data-cfg-val="donateNeedThreshold">${needPercent}%</span></div>
+        <input type="range" min="0" max="100" step="5" value="${needPercent}" data-cfg-range="donateNeedThreshold" data-cfg-div="100" style="width:100%;accent-color:var(--oh-accent);">
+      </div>
+      <div class="ab-cfg-row" style="flex-direction:column;align-items:stretch;">
+        <div style="display:flex;justify-content:space-between;align-items:center;"><span class="ab-cfg-label">${tr("Throttle (ms)")}</span><span class="ab-cfg-val" data-cfg-val="donateThrottleMs">${throttleMs}ms</span></div>
+        <input type="range" min="500" max="10000" step="100" value="${throttleMs}" data-cfg-range="donateThrottleMs" style="width:100%;accent-color:var(--oh-accent);">
+      </div>`;
+  }
+
+  function warshipConfigMarkup() {
+    const retreat = state.settings.warshipRetreatHealthPct || 50;
+    const combat = state.settings.warshipCombatThrottleMs || 800;
+    const patrol = state.settings.warshipPatrolThrottleMs || 1500;
+    return `
+      <div class="ab-cfg-sec">${tr("Warship tuning")}</div>
+      <div class="ab-cfg-row"><span class="ab-cfg-label">${tr("Auto-build warships")}</span><div class="ab-cfg-sw ${state.settings.warshipAutoSpawn !== false ? "on" : ""}" data-cfg="warshipAutoSpawn"></div></div>
+      <div class="ab-cfg-row"><span class="ab-cfg-label">${tr("Hunt enemy trade")}</span><div class="ab-cfg-sw ${state.settings.warshipHuntTrade !== false ? "on" : ""}" data-cfg="warshipHuntTrade"></div></div>
+      <div class="ab-cfg-row"><span class="ab-cfg-label">${tr("Evade enemies")}</span><div class="ab-cfg-sw ${state.settings.warshipEvade !== false ? "on" : ""}" data-cfg="warshipEvade"></div></div>
+      <div class="ab-cfg-row"><span class="ab-cfg-label">${tr("Dodge nukes")}</span><div class="ab-cfg-sw ${state.settings.warshipNukeDodge !== false ? "on" : ""}" data-cfg="warshipNukeDodge"></div></div>
+      <div class="ab-cfg-row" style="flex-direction:column;align-items:stretch;"><div style="display:flex;justify-content:space-between;align-items:center;"><span class="ab-cfg-label">${tr("Retreat HP %")}</span><span class="ab-cfg-val" data-cfg-val="warshipRetreatHealthPct">${retreat}%</span></div><input type="range" min="10" max="90" step="5" value="${retreat}" data-cfg-range="warshipRetreatHealthPct" style="width:100%;accent-color:var(--oh-accent);"></div>
+      <div class="ab-cfg-row" style="flex-direction:column;align-items:stretch;"><div style="display:flex;justify-content:space-between;align-items:center;"><span class="ab-cfg-label">${tr("Combat throttle (ms)")}</span><span class="ab-cfg-val" data-cfg-val="warshipCombatThrottleMs">${combat}ms</span></div><input type="range" min="200" max="5000" step="100" value="${combat}" data-cfg-range="warshipCombatThrottleMs" style="width:100%;accent-color:var(--oh-accent);"></div>
+      <div class="ab-cfg-row" style="flex-direction:column;align-items:stretch;"><div style="display:flex;justify-content:space-between;align-items:center;"><span class="ab-cfg-label">${tr("Patrol throttle (ms)")}</span><span class="ab-cfg-val" data-cfg-val="warshipPatrolThrottleMs">${patrol}ms</span></div><input type="range" min="500" max="10000" step="100" value="${patrol}" data-cfg-range="warshipPatrolThrottleMs" style="width:100%;accent-color:var(--oh-accent);"></div>`;
+  }
+
+  function configPaneMarkup() {
+    return `<div class="ab-pane" data-pane="config"><div class="ab-cfg-body">${generalConfigMarkup()}${donateConfigMarkup()}${warshipConfigMarkup()}</div></div>`;
+  }
+
+  function logPaneMarkup() {
+    const filters = Object.entries(LOG_CATS).map(([key, category]) =>
+      `<div class="ab-chip ${state.logFilter === key ? "on" : ""}" data-filter="${key}">${category.emoji} ${tr(category.label)}</div>`,
+    ).join("");
+    return `<div class="ab-pane" data-pane="log"><div class="ab-log-filters" data-role="log-filters"><div class="ab-chip ${state.logFilter === "all" ? "on" : ""}" data-filter="all">${tr("All")}</div>${filters}</div><div class="ab-log-list" data-role="log-list"></div></div>`;
+  }
+
   function buildPanel() {
     ensureStyles();
     let panel = document.getElementById(PANEL_ID);
@@ -280,204 +421,16 @@
     if (state.settings.minimized) panel.classList.add("ab-collapsed");
     if (state.activeTab === "log") panel.classList.add("ab-tab-log");
     if (state.activeTab === "config") panel.classList.add("ab-tab-config");
-    panel.innerHTML = `
-      <div class="ab-head">
-        <div class="ab-gate-dot" data-role="gate-dot" style="color:#fbbf24;" title="${tr("Checking lobby…")}"></div>
-        <span class="ab-title">Auto-Bot</span>
-        <div class="ab-switch ${state.settings.enabled ? "on" : ""}" data-role="switch" title="${tr("Toggle on/off")}"></div>
-        <div class="ab-head-btns">
-          <button class="ab-mini" data-role="mini" title="${tr("Collapse")}">${state.settings.minimized ? "▢" : "—"}</button>
-          <button class="ab-close" data-role="close" title="${tr("Close")}">✕</button>
-        </div>
-      </div>
-      <div class="ab-tabs">
-        <div class="ab-tab ${state.activeTab === "control" ? "on" : ""}" data-tab="control" title="${tr("🎮 Controls")}">🎮</div>
-        <div class="ab-tab ${state.activeTab === "config" ? "on" : ""}" data-tab="config" title="${tr("⚙️ Config")}">⚙️</div>
-        <div class="ab-tab ${state.activeTab === "log" ? "on" : ""}" data-tab="log" title="${tr("📜 Log")}">📜</div>
-      </div>
-      <div class="ab-body">
-        <div class="ab-pane" data-pane="control">
-          <div class="ab-adv-toggle" data-role="feats-toggle">${
-            state.settings.featsOpen
-              ? tr("Auto toggles ▴")
-              : tr("Auto toggles ▾")
-          }</div>
-          <div class="ab-feats-grid ${state.settings.featsOpen ? "open" : ""}" data-role="feats">
-            ${featRow("spawn", "Auto-spawn", "🏁")}
-            ${featRow("expand", "Auto-expand / attack", "⚔️")}
-            ${featRow("boat", "Auto-landing (1% boat)", "⛵")}
-            ${featRow("warship", "Auto-deploy warships", "🚢")}
-            ${featRow("build", "Auto-build", "🏗️")}
-            ${featRow("nuke", "Auto-launch nukes", "☢️")}
-            ${featRow("alliance", "Auto-accept alliances", "🤝")}
-            ${featRow("embargo", "Auto-embargo enemies", "🚫")}
-            ${featRow("donate", "Auto-donate troops (allies)", "🎁")}
-            ${featRow("betray", "Auto-betray allies", "🗡️")}
-          </div>
-          <div class="ab-adv-toggle" data-role="status-toggle">${
-            state.settings.statusOpen
-              ? tr("Status & stats ▴")
-              : tr("Status & stats ▾")
-          }</div>
-          <div class="ab-status ${state.settings.statusOpen ? "open" : ""}" data-role="status-wrap">
-            <div class="ab-st-line" data-role="status">—</div>
-            <div class="ab-st-act" data-role="lastaction">—</div>
-            <div class="ab-stats">
-              <div class="ab-stat"><b data-role="s-troops">0</b><span>${tr("Troops")}</span></div>
-              <div class="ab-stat"><b data-role="s-gold">0</b><span>${tr("Gold")}</span></div>
-              <div class="ab-stat"><b data-role="s-tiles">0</b><span>${tr("Tiles")}</span></div>
-            </div>
-            <div class="ab-stats" style="grid-template-columns: repeat(4, 1fr);">
-              <div class="ab-stat"><b data-role="c-spawns">0</b><span>${tr("Spawn")}</span></div>
-              <div class="ab-stat"><b data-role="c-attacks">0</b><span>${tr("Attacks")}</span></div>
-              <div class="ab-stat"><b data-role="c-builds">0</b><span>${tr("Builds")}</span></div>
-              <div class="ab-stat"><b data-role="c-nukes">0</b><span>${tr("Nukes")}</span></div>
-            </div>
-          </div>
-        </div>
-        <div class="ab-pane" data-pane="config">
-          <div class="ab-cfg-body">
-            <div class="ab-cfg-sec">${tr("General")}</div>
-            <div class="ab-cfg-row">
-              <span class="ab-cfg-label">${tr("Auto-bot enabled")}</span>
-              <div class="ab-cfg-sw ${state.settings.enabled ? "on" : ""}" data-cfg="enabled"></div>
-            </div>
-
-            <div class="ab-cfg-sec">${tr("Difficulty")}</div>
-            <div class="ab-cfg-chips" data-role="cfg-difficulty">
-              ${["Easy", "Medium", "Hard", "Impossible"]
-                .map(
-                  (d) =>
-                    `<div class="ab-cfg-chip ${state.settings.difficulty === d ? "on" : ""}" data-diff="${d}">${tr(d)}</div>`,
-                )
-                .join("")}
-            </div>
-
-            <div class="ab-cfg-sec">${tr("Auto-build structures")}</div>
-            <div class="ab-cfg-grid" data-role="cfg-structs">
-              ${[
-                ["City", "🏙️"],
-                ["Port", "⚓"],
-                ["Factory", "🏭"],
-                ["Defense Post", "🛡️"],
-                ["SAM Launcher", "🛰️"],
-                ["Missile Silo", "🚀"],
-              ]
-                .map(
-                  ([type, emoji]) =>
-                    `<div class="ab-cfg-struct ${(state.settings.buildStructures || {})[type] !== false ? "on" : ""}" data-struct="${type}">
-                       ${cfgStructIcon(type, emoji)}
-                       <span class="ab-cfg-struct-name">${tr(type)}</span>
-                     </div>`,
-                )
-                .join("")}
-            </div>
-
-            <div class="ab-cfg-sec">${tr("Advanced")}</div>
-            <div class="ab-cfg-row">
-              <span class="ab-cfg-label">${tr("Win-condition fixes")}</span>
-              <div class="ab-cfg-sw ${state.settings.winFixes ? "on" : ""}" data-cfg="winFixes"></div>
-            </div>
-            <div class="ab-cfg-row">
-              <span class="ab-cfg-label">${tr("Smart spawn")}</span>
-              <div class="ab-cfg-sw ${state.settings.smartSpawn ? "on" : ""}" data-cfg="smartSpawn"></div>
-            </div>
-            <div class="ab-cfg-row">
-              <span class="ab-cfg-label">${tr("Tick interval (ms)")}</span>
-              <input class="ab-cfg-num" type="number" min="50" max="2000" step="50" value="${state.settings.tickMs || 200}" data-cfg-num="tickMs">
-            </div>
-
-            <div class="ab-cfg-sec">${tr("Donate tuning")}</div>
-            <div class="ab-cfg-row" style="flex-direction:column;align-items:stretch;">
-              <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span class="ab-cfg-label">${tr("Keep fraction")}</span>
-                <span class="ab-cfg-val" data-cfg-val="donateKeepFrac">${Math.round((state.settings.donateKeepFrac || 0.45) * 100)}%</span>
-              </div>
-              <input type="range" min="0" max="100" step="5" value="${Math.round((state.settings.donateKeepFrac || 0.45) * 100)}" data-cfg-range="donateKeepFrac" data-cfg-div="100" style="width:100%;accent-color:var(--oh-accent);">
-            </div>
-            <div class="ab-cfg-row" style="flex-direction:column;align-items:stretch;">
-              <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span class="ab-cfg-label">${tr("Need threshold")}</span>
-                <span class="ab-cfg-val" data-cfg-val="donateNeedThreshold">${Math.round((state.settings.donateNeedThreshold || 0.8) * 100)}%</span>
-              </div>
-              <input type="range" min="0" max="100" step="5" value="${Math.round((state.settings.donateNeedThreshold || 0.8) * 100)}" data-cfg-range="donateNeedThreshold" data-cfg-div="100" style="width:100%;accent-color:var(--oh-accent);">
-            </div>
-            <div class="ab-cfg-row" style="flex-direction:column;align-items:stretch;">
-              <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span class="ab-cfg-label">${tr("Min donate %")}</span>
-                <span class="ab-cfg-val" data-cfg-val="donateMinDonatePct">${Math.round((state.settings.donateMinDonatePct || 0.2) * 100)}%</span>
-              </div>
-              <input type="range" min="5" max="80" step="5" value="${Math.round((state.settings.donateMinDonatePct || 0.2) * 100)}" data-cfg-range="donateMinDonatePct" data-cfg-div="100" style="width:100%;accent-color:var(--oh-accent);">
-            </div>
-            <div class="ab-cfg-row" style="flex-direction:column;align-items:stretch;">
-              <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span class="ab-cfg-label">${tr("Throttle (ms)")}</span>
-                <span class="ab-cfg-val" data-cfg-val="donateThrottleMs">${state.settings.donateThrottleMs || 1200}ms</span>
-              </div>
-              <input type="range" min="500" max="10000" step="100" value="${state.settings.donateThrottleMs || 1200}" data-cfg-range="donateThrottleMs" style="width:100%;accent-color:var(--oh-accent);">
-            </div>
-
-            <div class="ab-cfg-sec">${tr("Warship tuning")}</div>
-            <div class="ab-cfg-row">
-              <span class="ab-cfg-label">${tr("Auto-build warships")}</span>
-              <div class="ab-cfg-sw ${state.settings.warshipAutoSpawn !== false ? "on" : ""}" data-cfg="warshipAutoSpawn"></div>
-            </div>
-            <div class="ab-cfg-row">
-              <span class="ab-cfg-label">${tr("Hunt enemy trade")}</span>
-              <div class="ab-cfg-sw ${state.settings.warshipHuntTrade !== false ? "on" : ""}" data-cfg="warshipHuntTrade"></div>
-            </div>
-            <div class="ab-cfg-row">
-              <span class="ab-cfg-label">${tr("Evade enemies")}</span>
-              <div class="ab-cfg-sw ${state.settings.warshipEvade !== false ? "on" : ""}" data-cfg="warshipEvade"></div>
-            </div>
-            <div class="ab-cfg-row">
-              <span class="ab-cfg-label">${tr("Dodge nukes")}</span>
-              <div class="ab-cfg-sw ${state.settings.warshipNukeDodge !== false ? "on" : ""}" data-cfg="warshipNukeDodge"></div>
-            </div>
-            <div class="ab-cfg-row" style="flex-direction:column;align-items:stretch;">
-              <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span class="ab-cfg-label">${tr("Retreat HP %")}</span>
-                <span class="ab-cfg-val" data-cfg-val="warshipRetreatHealthPct">${state.settings.warshipRetreatHealthPct || 50}%</span>
-              </div>
-              <input type="range" min="10" max="90" step="5" value="${state.settings.warshipRetreatHealthPct || 50}" data-cfg-range="warshipRetreatHealthPct" style="width:100%;accent-color:var(--oh-accent);">
-            </div>
-            <div class="ab-cfg-row" style="flex-direction:column;align-items:stretch;">
-              <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span class="ab-cfg-label">${tr("Combat throttle (ms)")}</span>
-                <span class="ab-cfg-val" data-cfg-val="warshipCombatThrottleMs">${state.settings.warshipCombatThrottleMs || 800}ms</span>
-              </div>
-              <input type="range" min="200" max="5000" step="100" value="${state.settings.warshipCombatThrottleMs || 800}" data-cfg-range="warshipCombatThrottleMs" style="width:100%;accent-color:var(--oh-accent);">
-            </div>
-            <div class="ab-cfg-row" style="flex-direction:column;align-items:stretch;">
-              <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span class="ab-cfg-label">${tr("Patrol throttle (ms)")}</span>
-                <span class="ab-cfg-val" data-cfg-val="warshipPatrolThrottleMs">${state.settings.warshipPatrolThrottleMs || 1500}ms</span>
-              </div>
-              <input type="range" min="500" max="10000" step="100" value="${state.settings.warshipPatrolThrottleMs || 1500}" data-cfg-range="warshipPatrolThrottleMs" style="width:100%;accent-color:var(--oh-accent);">
-            </div>
-          </div>
-        </div>
-        <div class="ab-pane" data-pane="log">
-          <div class="ab-log-filters" data-role="log-filters">
-            <div class="ab-chip ${state.logFilter === "all" ? "on" : ""}" data-filter="all">${tr("All")}</div>
-            ${Object.entries(LOG_CATS)
-              .map(
-                ([key, c]) =>
-                  `<div class="ab-chip ${state.logFilter === key ? "on" : ""}" data-filter="${key}">${c.emoji} ${tr(c.label)}</div>`,
-              )
-              .join("")}
-          </div>
-          <div class="ab-log-list" data-role="log-list"></div>
-        </div>
-      </div>`;
+    panel.innerHTML = `${panelHeaderMarkup()}<div class="ab-body">${controlPaneMarkup()}${configPaneMarkup()}${logPaneMarkup()}</div>`;
 
     document.body.appendChild(panel);
     wirePanel(panel);
     applyStoredPosition(panel);
+    renderDonateToggle();
     return panel;
   }
 
-  function wirePanel(panel) {
+  function wirePanelHeader(panel) {
     // master switch
     panel.querySelector('[data-role="switch"]').addEventListener("click", () => {
       setEnabled(!state.settings.enabled);
@@ -498,14 +451,15 @@
       state.settings.hidden = true;
       saveSettings();
       panel.remove();
-      // Notify Quick Panel so the "Auto-Bot panel" toggle reflects the new state.
-      try {
+      {
         window.dispatchEvent(new CustomEvent("ofh-quick-panel-setting", {
           detail: { key: "showAutoBotPanel", value: false }
         }));
-      } catch (e) {}
+      }
     });
+  }
 
+  function wirePanelFeatureControls(panel) {
     // feature toggles
     panel.querySelectorAll(".ab-feat").forEach((el) => {
       el.addEventListener("click", () => {
@@ -515,6 +469,7 @@
         state.settings.features[key] = on;
         el.classList.toggle("on", on); // tile lights up when ON (no checkmark)
         saveSettings();
+        if (key === "donate") renderDonateToggle();
       });
     });
 
@@ -531,36 +486,38 @@
         saveSettings();
       });
     }
+  }
 
+  function wirePanelPopovers(panel) {
     // hover tooltip for the compact feature tiles (label + detailed description)
     // Clean up any stale tooltip left from a previous panel rebuild.
     // Popover helper — reuse .ab-feat-tip for any element that needs a rich tooltip.
     // Clean up old popovers from previous panel builds.
     document.querySelectorAll(".ab-feat-tip").forEach(function(t) { t.remove(); });
-    var gateTip = null;
+    var runtimeTip = null;
     function _showPopover(el, html) {
-      if (!gateTip) {
-        gateTip = document.createElement("div");
-        gateTip.className = "ab-feat-tip";
-        document.body.appendChild(gateTip);
+      if (!runtimeTip) {
+        runtimeTip = document.createElement("div");
+        runtimeTip.className = "ab-feat-tip";
+        document.body.appendChild(runtimeTip);
       }
-      gateTip.innerHTML = html;
+      runtimeTip.innerHTML = html;
       var r = el.getBoundingClientRect();
-      gateTip.style.left = (r.left + r.width / 2) + "px";
-      gateTip.style.top = (r.top - 6) + "px";
-      gateTip.classList.add("show");
+      runtimeTip.style.left = (r.left + r.width / 2) + "px";
+      runtimeTip.style.top = (r.top - 6) + "px";
+      runtimeTip.classList.add("show");
     }
     function _hidePopover() {
-      if (gateTip) gateTip.classList.remove("show");
+      if (runtimeTip) runtimeTip.classList.remove("show");
     }
 
-    // Gate dot — show popover on hover.
-    var gateDot = panel.querySelector('[data-role="gate-dot"]');
-    if (gateDot) {
-      gateDot.addEventListener("mouseenter", function() {
-        _showPopover(gateDot, "<b>" + tr("Lobby status") + "</b><br>" + (gateDot.title || ""));
+    // Runtime dot — show current game readiness on hover.
+    var runtimeDot = panel.querySelector('[data-role="runtime-dot"]');
+    if (runtimeDot) {
+      runtimeDot.addEventListener("mouseenter", function() {
+        _showPopover(runtimeDot, runtimeDot.title || "");
       });
-      gateDot.addEventListener("mouseleave", _hidePopover);
+      runtimeDot.addEventListener("mouseleave", _hidePopover);
     }
 
     // Tab buttons — show popover on hover.
@@ -581,7 +538,11 @@
           featTip.className = "ab-feat-tip";
           document.body.appendChild(featTip);
         }
-        featTip.innerHTML = `<b>${tr(info[0])}</b><br>${tr(info[1])}`;
+        if (tile.dataset.feat === "donate" && tile.classList.contains("paused")) {
+          featTip.innerHTML = `<b>${tr("Temporarily paused")}</b><br>${tile.title || tr(info[1])}`;
+        } else {
+          featTip.innerHTML = `<b>${tr(info[0])}</b><br>${tr(info[1])}`;
+        }
         const r = tile.getBoundingClientRect();
         featTip.style.left = `${r.left + r.width / 2}px`;
         featTip.style.top = `${r.top - 6}px`;
@@ -605,7 +566,9 @@
         saveSettings();
       });
     }
+  }
 
+  function wirePanelConfig(panel) {
     // ── Config tab wiring ───────────────────────────────────────────────────
     // All controls mutate state.settings directly (same shared scope), persist
     // via saveSettings(), and retuneEngine() where the change affects the loop.
@@ -630,7 +593,7 @@
         saveSettings();
       });
     });
-    // advanced boolean switches (winFixes / smartSpawn / enabled)
+    // advanced boolean switches (winFixes / smartSpawn / profiling / enabled)
     panel.querySelectorAll("[data-cfg]").forEach((el) => {
       el.addEventListener("click", () => {
         const key = el.dataset.cfg;
@@ -644,6 +607,8 @@
         } else {
           state.settings[key] = on;
           saveSettings();
+          if (key === "pauseDonateDuringExpansion") renderDonateToggle();
+          if (key === "performanceProfiling") renderStatus();
         }
       });
     });
@@ -653,7 +618,8 @@
       tickInput.addEventListener("change", () => {
         const ms = Number(tickInput.value);
         if (Number.isFinite(ms) && ms > 0) {
-          state.settings.tickMs = ms;
+          state.settings.tickMs = normalizeTickIntervalMs(ms);
+          tickInput.value = String(state.settings.tickMs);
           saveSettings();
           if (typeof retuneEngine === "function") retuneEngine();
         }
@@ -679,17 +645,18 @@
     const cfgBody = panel.querySelector(".ab-cfg-body");
     if (cfgBody) {
       const SCROLL_KEY = "openfront-helper-autobot-config-scroll";
-      // Restore saved scroll
-      try {
+      {
         const saved = Number(localStorage.getItem(SCROLL_KEY));
         if (saved > 0) setTimeout(() => { cfgBody.scrollTop = saved; }, 50);
-      } catch (_e) {}
+      }
       // Save on scroll
       cfgBody.addEventListener("scroll", () => {
-        try { localStorage.setItem(SCROLL_KEY, String(cfgBody.scrollTop)); } catch (_e) {}
+        { localStorage.setItem(SCROLL_KEY, String(cfgBody.scrollTop)); }
       }, { passive: true });
     }
+  }
 
+  function wirePanelNavigation(panel) {
     // tab switching (control / config / log)
     panel.querySelectorAll(".ab-tab").forEach((el) => {
       el.addEventListener("click", () => {
@@ -715,7 +682,14 @@
         renderLog();
       });
     });
+  }
 
+  function wirePanel(panel) {
+    wirePanelHeader(panel);
+    wirePanelFeatureControls(panel);
+    wirePanelPopovers(panel);
+    wirePanelConfig(panel);
+    wirePanelNavigation(panel);
     makeDraggable(panel, panel.querySelector(".ab-head"));
   }
 
@@ -791,14 +765,14 @@
         top: parseInt(panel.style.top, 10),
       };
       saveSettings();
-      console.log("[Panel] saved pos", state.settings.pos);
+      runtimeDebugLog("[Panel] saved pos", state.settings.pos);
     }
     handle.addEventListener("pointerdown", onDown);
   }
 
   function applyStoredPosition(panel) {
     const pos = state.settings.pos;
-    console.log("[Panel] applyStoredPosition", pos);
+    runtimeDebugLog("[Panel] applyStoredPosition", pos);
     if (pos && Number.isFinite(pos.left) && Number.isFinite(pos.top)) {
       panel.style.right = "auto";
       panel.style.bottom = "auto";
@@ -815,10 +789,41 @@
       .classList.toggle("on", state.settings.enabled);
   }
 
-  function refreshGateBanner() {
+  function renderDonateToggle() {
     const panel = document.getElementById(PANEL_ID);
     if (!panel) return;
-    const dot = panel.querySelector('[data-role="gate-dot"]');
+    const tile = panel.querySelector('[data-feat="donate"]');
+    if (!tile) return;
+
+    let status = { active: false, reason: null };
+    {
+      if (typeof getAutoDonateExpansionStatus === "function") {
+        status = getAutoDonateExpansionStatus(state.earlyGame);
+      }
+    }
+
+    const paused =
+      state.settings.features.donate === true &&
+      state.settings.pauseDonateDuringExpansion === true &&
+      status.active === true;
+    tile.classList.toggle("paused", paused);
+    if (paused) {
+      const labels = {
+        "free-land": tr("Free land available"),
+        "land-tribe": tr("Land tribe in range"),
+        "sea-tribe": tr("Sea tribe in range"),
+      };
+      tile.title = tr("Temporarily paused") + ": " +
+        (labels[status.reason] || tr("Expansion opportunity available"));
+    } else {
+      tile.title = tr("Auto-donate troops (allies)");
+    }
+  }
+
+  function refreshRuntimeStatus() {
+    const panel = document.getElementById(PANEL_ID);
+    if (!panel) return;
+    const dot = panel.querySelector('[data-role="runtime-dot"]');
     if (!dot) return;
     const game = getGame();
     if (!game) {
@@ -826,18 +831,8 @@
       dot.title = tr("Waiting to enter game…");
       return;
     }
-    const type = gameType(game);
-    if (type) {
-      dot.style.color = "#4ade80";
-      let label;
-      if (type === "Singleplayer") label = tr("Singleplayer");
-      else if (type === "Public") label = tr("Public lobby");
-      else label = tr("Private lobby");
-      dot.title = label;
-    } else {
-      dot.style.color = "#fbbf24";
-      dot.title = tr("Waiting to enter game…");
-    }
+    dot.style.color = "#4ade80";
+    dot.title = tr("Ready");
   }
 
   function fmt(n) {
@@ -855,6 +850,13 @@
       if (el) el.textContent = text;
     };
     set("status", state.status);
+    set("donate-status", state.donationStatus || "Donate: awaiting decision");
+    set(
+      "profiling",
+      typeof formatAutoBotProfileStatus === "function"
+        ? formatAutoBotProfileStatus()
+        : "—",
+    );
     set("lastaction", state.lastAction);
     set("s-troops", fmt(state.live.troops));
     set("s-gold", fmt(state.live.gold));
@@ -863,4 +865,5 @@
     set("c-attacks", String(state.stats.attacks));
     set("c-builds", String(state.stats.builds));
     set("c-nukes", String(state.stats.nukes));
+    renderDonateToggle();
   }

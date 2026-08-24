@@ -2,17 +2,14 @@
   // Map ids MUST match the game's GameMapType folder ids (resources/maps/<id>),
   // because auto-join matches a public lobby by normalizing map.id / map.name
   // against the lobby's map fields, and private-lobby scenarios are created with
-  // map.id as the mapId. Kept in sync with OpenFront v0.32.3 (the v32 release
-  // added 20 maps). `thumbnail` is legacy/unused — the settings popup resolves
+  // map.id as the mapId. Kept in sync with the pinned OpenFront engine map
+  // manifest. `thumbnail` is legacy/unused — the settings popup resolves
   // thumbnails live via mapThumbnailUrl(map.id) against the game's asset
   // manifest; a missing manifest entry just degrades to a placeholder glyph.
   //
-  // Excluded on purpose: "unitedstates" (present in the game repo but NOT in the
-  // production asset manifest yet, so it has no thumbnail and is not in the live
-  // lobby rotation). Tournament maps (tourney1..4) and special variants
-  // (baikalnukewars, europeclassic, giantworldmap) are included for
-  // completeness, but tourney/special maps rarely or never appear in public
-  // auto-join lobbies.
+  // Tournament maps (tourney1..4) and special variants (baikalnukewars,
+  // europeclassic, giantworldmap) are included for completeness, even though
+  // they rarely or never appear in public auto-join lobbies.
   const maps = [
     { id: "achiran", name: "Achiran", thumbnail: "assets/map-thumbnails/achiran/thumbnail.webp" },
     { id: "aegean", name: "Aegean", thumbnail: "assets/map-thumbnails/aegean/thumbnail.webp" },
@@ -28,17 +25,24 @@
     { id: "baikalnukewars", name: "Baikal Nuke Wars", thumbnail: "assets/map-thumbnails/baikalnukewars/thumbnail.webp" },
     { id: "bajacalifornia", name: "Baja California", thumbnail: "assets/map-thumbnails/bajacalifornia/thumbnail.webp" },
     { id: "balkans", name: "Balkans", thumbnail: "assets/map-thumbnails/balkans/thumbnail.webp" },
+    { id: "balkhash", name: "Balkhash", thumbnail: "assets/map-thumbnails/balkhash/thumbnail.webp" },
+    { id: "baltics", name: "Baltics", thumbnail: "assets/map-thumbnails/baltics/thumbnail.webp" },
     { id: "beringsea", name: "Bering Sea", thumbnail: "assets/map-thumbnails/beringsea/thumbnail.webp" },
     { id: "beringstrait", name: "Bering Strait", thumbnail: "assets/map-thumbnails/beringstrait/thumbnail.webp" },
     { id: "betweentwoseas", name: "Between Two Seas", thumbnail: "assets/map-thumbnails/betweentwoseas/thumbnail.webp" },
     { id: "blacksea", name: "Black Sea", thumbnail: "assets/map-thumbnails/blacksea/thumbnail.webp" },
     { id: "bosphorusstraits", name: "Bosphorus Straits", thumbnail: "assets/map-thumbnails/bosphorusstraits/thumbnail.webp" },
+    { id: "branchingpaths", name: "Branching Paths", thumbnail: "assets/map-thumbnails/branchingpaths/thumbnail.webp" },
     { id: "britannia", name: "Britannia", thumbnail: "assets/map-thumbnails/britannia/thumbnail.webp" },
     { id: "britanniaclassic", name: "Britannia Classic", thumbnail: "assets/map-thumbnails/britanniaclassic/thumbnail.webp" },
     { id: "caribbean", name: "Caribbean", thumbnail: "assets/map-thumbnails/caribbean/thumbnail.webp" },
+    { id: "caspiansea", name: "Caspian Sea", thumbnail: "assets/map-thumbnails/caspiansea/thumbnail.webp" },
     { id: "caucasus", name: "Caucasus", thumbnail: "assets/map-thumbnails/caucasus/thumbnail.webp" },
+    { id: "china", name: "China", thumbnail: "assets/map-thumbnails/china/thumbnail.webp" },
     { id: "choppingblock", name: "Chopping Block", thumbnail: "assets/map-thumbnails/choppingblock/thumbnail.webp" },
+    { id: "clearwaterlakes", name: "Clearwater Lakes", thumbnail: "assets/map-thumbnails/clearwaterlakes/thumbnail.webp" },
     { id: "conakry", name: "Conakry", thumbnail: "assets/map-thumbnails/conakry/thumbnail.webp" },
+    { id: "crimea", name: "Crimea", thumbnail: "assets/map-thumbnails/crimea/thumbnail.webp" },
     { id: "danishstraits", name: "Danish Straits", thumbnail: "assets/map-thumbnails/danishstraits/thumbnail.webp" },
     { id: "deglaciatedantarctica", name: "Deglaciated Antarctica", thumbnail: "assets/map-thumbnails/deglaciatedantarctica/thumbnail.webp" },
     { id: "didier", name: "Didier", thumbnail: "assets/map-thumbnails/didier/thumbnail.webp" },
@@ -49,22 +53,30 @@
     { id: "europeclassic", name: "Europe Classic", thumbnail: "assets/map-thumbnails/europeclassic/thumbnail.webp" },
     { id: "falklandislands", name: "Falkland Islands", thumbnail: "assets/map-thumbnails/falklandislands/thumbnail.webp" },
     { id: "faroeislands", name: "Faroe Islands", thumbnail: "assets/map-thumbnails/faroeislands/thumbnail.webp" },
+    { id: "fingerlakes", name: "Finger Lakes", thumbnail: "assets/map-thumbnails/fingerlakes/thumbnail.webp" },
     { id: "fourislands", name: "Four Islands", thumbnail: "assets/map-thumbnails/fourislands/thumbnail.webp" },
+    { id: "france", name: "France", thumbnail: "assets/map-thumbnails/france/thumbnail.webp" },
     { id: "gatewaytotheatlantic", name: "Gateway to the Atlantic", thumbnail: "assets/map-thumbnails/gatewaytotheatlantic/thumbnail.webp" },
+    { id: "germany", name: "Germany", thumbnail: "assets/map-thumbnails/germany/thumbnail.webp" },
     { id: "giantworldmap", name: "Giant World Map", thumbnail: "assets/map-thumbnails/giantworldmap/thumbnail.webp" },
     { id: "greatlakes", name: "Great Lakes", thumbnail: "assets/map-thumbnails/greatlakes/thumbnail.webp" },
+    { id: "gulfofguinea", name: "Gulf Of Guinea", thumbnail: "assets/map-thumbnails/gulfofguinea/thumbnail.webp" },
     { id: "gulfofstlawrence", name: "Gulf of St. Lawrence", thumbnail: "assets/map-thumbnails/gulfofstlawrence/thumbnail.webp" },
     { id: "halkidiki", name: "Halkidiki", thumbnail: "assets/map-thumbnails/halkidiki/thumbnail.webp" },
     { id: "hawaii", name: "Hawaii", thumbnail: "assets/map-thumbnails/hawaii/thumbnail.webp" },
+    { id: "hecatestrait", name: "Hecate Strait", thumbnail: "assets/map-thumbnails/hecatestrait/thumbnail.webp" },
     { id: "hongkong", name: "Hong Kong", thumbnail: "assets/map-thumbnails/hongkong/thumbnail.webp" },
     { id: "iceland", name: "Iceland", thumbnail: "assets/map-thumbnails/iceland/thumbnail.webp" },
     { id: "indiansubcontinent", name: "Indian Subcontinent", thumbnail: "assets/map-thumbnails/indiansubcontinent/thumbnail.webp" },
+    { id: "irishsea", name: "Irish Sea", thumbnail: "assets/map-thumbnails/irishsea/thumbnail.webp" },
     { id: "italia", name: "Italia", thumbnail: "assets/map-thumbnails/italia/thumbnail.webp" },
     { id: "japan", name: "Japan", thumbnail: "assets/map-thumbnails/japan/thumbnail.webp" },
     { id: "juandefucastrait", name: "Juan de Fuca Strait", thumbnail: "assets/map-thumbnails/juandefucastrait/thumbnail.webp" },
     { id: "korea", name: "Korea", thumbnail: "assets/map-thumbnails/korea/thumbnail.webp" },
     { id: "labyrinth", name: "Labyrinth", thumbnail: "assets/map-thumbnails/labyrinth/thumbnail.webp" },
+    { id: "lasvegasstrip", name: "Las Vegas Strip", thumbnail: "assets/map-thumbnails/lasvegasstrip/thumbnail.webp" },
     { id: "lemnos", name: "Lemnos", thumbnail: "assets/map-thumbnails/lemnos/thumbnail.webp" },
+    { id: "levant", name: "Levant", thumbnail: "assets/map-thumbnails/levant/thumbnail.webp" },
     { id: "lisbon", name: "Lisbon", thumbnail: "assets/map-thumbnails/lisbon/thumbnail.webp" },
     { id: "losangeles", name: "Los Angeles", thumbnail: "assets/map-thumbnails/losangeles/thumbnail.webp" },
     { id: "luna", name: "Luna", thumbnail: "assets/map-thumbnails/luna/thumbnail.webp" },
@@ -76,6 +88,7 @@
     { id: "milkyway", name: "Milky Way", thumbnail: "assets/map-thumbnails/milkyway/thumbnail.webp" },
     { id: "mississippiriver", name: "Mississippi River", thumbnail: "assets/map-thumbnails/mississippiriver/thumbnail.webp" },
     { id: "montreal", name: "Montreal", thumbnail: "assets/map-thumbnails/montreal/thumbnail.webp" },
+    { id: "morethanluck", name: "More Than Luck", thumbnail: "assets/map-thumbnails/morethanluck/thumbnail.webp" },
     { id: "newyorkcity", name: "New York City", thumbnail: "assets/map-thumbnails/newyorkcity/thumbnail.webp" },
     { id: "niledelta", name: "Nile Delta", thumbnail: "assets/map-thumbnails/niledelta/thumbnail.webp" },
     { id: "northamerica", name: "North America", thumbnail: "assets/map-thumbnails/northamerica/thumbnail.webp" },
@@ -85,8 +98,11 @@
     { id: "pangaea", name: "Pangaea", thumbnail: "assets/map-thumbnails/pangaea/thumbnail.webp" },
     { id: "passage", name: "Passage", thumbnail: "assets/map-thumbnails/passage/thumbnail.webp" },
     { id: "pluto", name: "Pluto", thumbnail: "assets/map-thumbnails/pluto/thumbnail.webp" },
+    { id: "russia", name: "Russia", thumbnail: "assets/map-thumbnails/russia/thumbnail.webp" },
     { id: "sanfrancisco", name: "San Francisco", thumbnail: "assets/map-thumbnails/sanfrancisco/thumbnail.webp" },
+    { id: "scandinavia", name: "Scandinavia", thumbnail: "assets/map-thumbnails/scandinavia/thumbnail.webp" },
     { id: "sierpinski", name: "Sierpinski", thumbnail: "assets/map-thumbnails/sierpinski/thumbnail.webp" },
+    { id: "sol", name: "Sol", thumbnail: "assets/map-thumbnails/sol/thumbnail.webp" },
     { id: "southamerica", name: "South America", thumbnail: "assets/map-thumbnails/southamerica/thumbnail.webp" },
     { id: "southeastasia", name: "Southeast Asia", thumbnail: "assets/map-thumbnails/southeastasia/thumbnail.webp" },
     { id: "straitofgibraltar", name: "Strait of Gibraltar", thumbnail: "assets/map-thumbnails/straitofgibraltar/thumbnail.webp" },
@@ -96,6 +112,7 @@
     { id: "svalmel", name: "Svalmel", thumbnail: "assets/map-thumbnails/svalmel/thumbnail.webp" },
     { id: "taiwanstrait", name: "Taiwan Strait", thumbnail: "assets/map-thumbnails/taiwanstrait/thumbnail.webp" },
     { id: "thebox", name: "The Box", thumbnail: "assets/map-thumbnails/thebox/thumbnail.webp" },
+    { id: "tierradelfuego", name: "Tierra Del Fuego", thumbnail: "assets/map-thumbnails/tierradelfuego/thumbnail.webp" },
     { id: "titan", name: "Titan", thumbnail: "assets/map-thumbnails/titan/thumbnail.webp" },
     { id: "tourney1", name: "Tourney (2 Teams)", thumbnail: "assets/map-thumbnails/tourney1/thumbnail.webp" },
     { id: "tourney2", name: "Tourney (3 Teams)", thumbnail: "assets/map-thumbnails/tourney2/thumbnail.webp" },
@@ -103,10 +120,13 @@
     { id: "tourney4", name: "Tourney (8 Teams)", thumbnail: "assets/map-thumbnails/tourney4/thumbnail.webp" },
     { id: "tradersdream", name: "Traders Dream", thumbnail: "assets/map-thumbnails/tradersdream/thumbnail.webp" },
     { id: "twolakes", name: "Two Lakes", thumbnail: "assets/map-thumbnails/twolakes/thumbnail.webp" },
+    { id: "unitedstates", name: "United States", thumbnail: "assets/map-thumbnails/unitedstates/thumbnail.webp" },
     { id: "venice", name: "Venice", thumbnail: "assets/map-thumbnails/venice/thumbnail.webp" },
+    { id: "vietnam", name: "Vietnam", thumbnail: "assets/map-thumbnails/vietnam/thumbnail.webp" },
     { id: "warshipwarship", name: "Warship Warship", thumbnail: "assets/map-thumbnails/warshipwarship/thumbnail.webp" },
     { id: "world", name: "World", thumbnail: "assets/map-thumbnails/world/thumbnail.webp" },
     { id: "worldinverted", name: "World Inverted", thumbnail: "assets/map-thumbnails/worldinverted/thumbnail.webp" },
+    { id: "yangtzeriver", name: "Yangtze River", thumbnail: "assets/map-thumbnails/yangtzeriver/thumbnail.webp" },
     { id: "yellowsea", name: "Yellow Sea", thumbnail: "assets/map-thumbnails/yellowsea/thumbnail.webp" },
     { id: "yenisei", name: "Yenisei", thumbnail: "assets/map-thumbnails/yenisei/thumbnail.webp" },
   ];

@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "scenarios": [
+    {
+      "id": "inland-alps",
+      "role": "landlocked economy and land-front defense",
+      "environment": {
+        "OFH_GAME_MAP": "Alps",
+        "OFH_GAME_MAP_SIZE": "Normal",
+        "OFH_PLAYER_TEAMS": "2",
+        "OFH_NATIONS": "8",
+        "OFH_BOTS": "120",
+        "OFH_STARTING_GOLD": "1000000",
+        "OFH_MAX_TICKS": "1200"
+      }
+    },
+    {
+      "id": "inland-alps-rich-team",
+      "role": "high-gold team economy: City branch versus duplicate Factory",
+      "environment": {
+        "OFH_GAME_MAP": "Alps",
+        "OFH_GAME_MAP_SIZE": "Normal",
+        "OFH_PLAYER_TEAMS": "2",
+        "OFH_NATIONS": "8",
+        "OFH_BOTS": "120",
+        "OFH_STARTING_GOLD": "5000000",
+        "OFH_MAX_TICKS": "1200"
+      }
+    },
+    {
+      "id": "mixed-europe",
+      "role": "mixed inland, coastal, allied-border, and contested-front economy",
+      "environment": {
+        "OFH_GAME_MAP": "Europe",
+        "OFH_GAME_MAP_SIZE": "Small",
+        "OFH_PLAYER_TEAMS": "2",
+        "OFH_NATIONS": "50",
+        "OFH_BOTS": "180",
+        "OFH_STARTING_GOLD": "1000000",
+        "OFH_MAX_TICKS": "1200"
+      }
+    },
+    {
+      "id": "ffa-europe-low-gold",
+      "role": "free-for-all survival and economic sequencing from a constrained treasury",
+      "environment": {
+        "OFH_GAME_MAP": "Europe",
+        "OFH_GAME_MAP_SIZE": "Small",
+        "OFH_GAME_MODE": "ffa",
+        "OFH_NATIONS": "50",
+        "OFH_BOTS": "180",
+        "OFH_STARTING_GOLD": "250000",
+        "OFH_MAX_TICKS": "1200"
+      }
+    },
+    {
+      "id": "team-four-islands",
+      "role": "team-separated island economy and reinforcement logistics",
+      "environment": {
+        "OFH_GAME_MAP": "Four Islands",
+        "OFH_GAME_MAP_SIZE": "Normal",
+        "OFH_PLAYER_TEAMS": "4",
+        "OFH_NATIONS": "4",
+        "OFH_BOTS": "120",
+        "OFH_STARTING_GOLD": "1000000",
+        "OFH_MAX_TICKS": "1200"
+      }
+    },
+    {
+      "id": "naval-archipelago",
+      "role": "port, warship, and island production pressure",
+      "environment": {
+        "OFH_GAME_MAP": "ArchipelagoSea",
+        "OFH_GAME_MAP_SIZE": "Normal",
+        "OFH_PLAYER_TEAMS": "2",
+        "OFH_NATIONS": "20",
+        "OFH_BOTS": "120",
+        "OFH_STARTING_GOLD": "1500000",
+        "OFH_MAX_TICKS": "1200"
+      }
+    },
+    {
+      "id": "nuclear-baikal",
+      "role": "SAM and silo investment under explicit nuclear availability",
+      "environment": {
+        "OFH_GAME_MAP": "Baikal Nuke Wars",
+        "OFH_GAME_MAP_SIZE": "Small",
+        "OFH_PLAYER_TEAMS": "2",
+        "OFH_NATIONS": "disabled",
+        "OFH_BOTS": "160",
+        "OFH_STARTING_GOLD": "5000000",
+        "OFH_NUKES": "1",
+        "OFH_MAX_TICKS": "1200"
+      }
+    },
+    {
+      "id": "nuclear-europe-rich",
+      "role": "SAM, silo, and economic opportunity cost with funded hostile Nations",
+      "environment": {
+        "OFH_GAME_MAP": "Europe",
+        "OFH_GAME_MAP_SIZE": "Small",
+        "OFH_PLAYER_TEAMS": "2",
+        "OFH_NATIONS": "50",
+        "OFH_BOTS": "80",
+        "OFH_STARTING_GOLD": "25000000",
+        "OFH_NUKES": "1",
+        "OFH_MAX_TICKS": "1200"
+      }
+    }
+  ]
+}

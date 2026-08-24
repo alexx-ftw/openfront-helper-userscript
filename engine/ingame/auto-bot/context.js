@@ -6,22 +6,24 @@
   // =========================================================================
   // Game / UI handle discovery
   // =========================================================================
-  function findContext() {
-    // Preferred: robust DOM scan shared from selective-trade-policy.js.
-    try {
+  function findSharedGameContext() {
+    {
       if (typeof getOpenFrontGameContext === "function") {
         const c = getOpenFrontGameContext();
         if (c?.game?.myPlayer) return c;
       }
-    } catch (_e) {
-      /* fall through */
     }
-    try {
-      if (lastOpenFrontGameContext?.game?.myPlayer) {
-        return lastOpenFrontGameContext;
+    return null;
+  }
+
+  function findContext() {
+    // Preferred: robust DOM scan shared from selective-trade-policy.js.
+    const sharedContext = findSharedGameContext();
+    if (sharedContext) return sharedContext;
+    {
+      if (runtimeState.lastOpenFrontGameContext?.game?.myPlayer) {
+        return runtimeState.lastOpenFrontGameContext;
       }
-    } catch (_e) {
-      /* fall through */
     }
     const selectors = [
       "main-radial-menu",
@@ -60,6 +62,73 @@
     );
   }
 
+  // The game client validates each BuildableUnit against one asynchronous
+  // snapshot. Two bot phases can therefore both see the same gold and emit
+  // individually-valid purchases whose combined cost the engine later rejects.
+  // Keep those not-yet-observed purchases reserved for the short client intent
+  // round trip. This is deliberately shared by every auto-bot construction
+  // caller, rather than being a separate per-behavior estimate.
+  const AUTO_BOT_BUILD_RESERVATION_GRACE_TICKS = 6;
+  let autoBotBuildReservations = [];
+
+  function autoBotBuildTick(game) {
+    const tick = game?.ticks?.();
+    return Number.isFinite(tick) ? Number(tick) : 0;
+  }
+
+  function autoBotBuildPlayerId(player) {
+    const id = player?.id?.() ?? player?.smallID?.();
+    return id === null || id === undefined ? "" : String(id);
+  }
+
+  function autoBotBuildCost(buildable) {
+    const cost = buildable?.cost;
+    if (typeof cost === "bigint") return cost;
+    if (typeof cost === "number" && Number.isFinite(cost) && cost >= 0) {
+      return BigInt(Math.floor(cost));
+    }
+    return null;
+  }
+
+  function sendAutoBotBuildOrUpgrade(buildMenu, buildable, tile, game, player) {
+    if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
+      return false;
+    }
+    const cost = autoBotBuildCost(buildable);
+    if (cost === null) return false;
+    const tick = autoBotBuildTick(game);
+    const playerId = autoBotBuildPlayerId(player);
+    autoBotBuildReservations = autoBotBuildReservations.filter(
+      (reservation) => reservation.expiresAt > tick,
+    );
+    const reserved = autoBotBuildReservations.reduce(
+      (total, reservation) =>
+        reservation.playerId === playerId ? total + reservation.cost : total,
+      0n,
+    );
+    const gold = player?.gold?.();
+    if (typeof gold !== "bigint" || gold - reserved < cost) return false;
+    // The build menu emits straight onto the EventBus, bypassing emitIntent's
+    // consuming gate — but the server's ClientMsgRateLimiter still counts
+    // these. Acquire the shared client token here so construction bursts (a
+    // structure pass every few ticks under siege, a staggered
+    // SAM-overwhelm salvo coming due) are paced locally and cleanly retried
+    // by their callers instead of silently dropped server-side.
+    if (
+      typeof tryAcquireIntentRateLimit === "function" &&
+      !tryAcquireIntentRateLimit()
+    ) {
+      return false;
+    }
+    buildMenu.sendBuildOrUpgrade(buildable, tile);
+    autoBotBuildReservations.push({
+      playerId,
+      cost,
+      expiresAt: tick + AUTO_BOT_BUILD_RESERVATION_GRACE_TICKS,
+    });
+    return true;
+  }
+
   function getEventBus() {
     const bm = getBuildMenu();
     if (bm?.eventBus) return bm.eventBus;
@@ -79,6 +148,7 @@
     bus: null,
     spawn: null,
     attack: null,
+    cancelAttack: null,
     boat: null,
     moveWarship: null,
     embargo: null,
@@ -92,13 +162,114 @@
   // re-accept the same one each tick (and to dedupe across the two sources).
   const _alliancesActioned = new WeakSet();
 
+  function matchesIntentConstructor(Ctor, args, predicate, source) {
+    {
+      return predicate(new Ctor(...args));
+    }
+  }
+
+  const INTENT_CTOR_PROBES = [
+    {
+      key: "cancelAttack",
+      args: ["§attack"],
+      matches: (event) =>
+        event?.attackID === "§attack" &&
+        event.targetID === undefined &&
+        event.troops === undefined,
+    },
+    {
+      key: "moveWarship",
+      args: [[7, 8], 99],
+      matches: (event) => Array.isArray(event?.unitIds) && event.unitIds[0] === 7 && event.tile === 99,
+    },
+    {
+      key: "embargo",
+      args: [{ __probe: 1 }, "start"],
+      matches: (event, args) => event?.target === args[0] && event.action === "start",
+    },
+    {
+      key: "donateTroops",
+      args: [{ __probe: 1 }, 123],
+      matches: (event, args) => event?.recipient === args[0] && event.troops === 123,
+    },
+    {
+      key: "emoji",
+      args: [{ __probe: 1 }, 7],
+      matches: (event, args) =>
+        event?.recipient === args[0] &&
+        event.emoji === 7 &&
+        event.troops === undefined &&
+        event.action === undefined,
+    },
+    {
+      key: "target",
+      args: ["§tp", 456],
+      matches: (event) =>
+        event?.targetID === "§tp" &&
+        event.troops === undefined &&
+        event.recipient === undefined &&
+        event.dst === undefined &&
+        event.emoji === undefined,
+    },
+    {
+      key: "attack",
+      args: ["§p", 123],
+      matches: (event) => event?.targetID === "§p" && event.troops === 123 && event.dst === undefined,
+    },
+    {
+      key: "boat",
+      args: [77, 123],
+      matches: (event) => event?.dst === 77 && event.troops === 123,
+    },
+    {
+      key: "spawn",
+      args: [55],
+      matches: (event) =>
+        event?.tile === 55 &&
+        event.targetID === undefined &&
+        event.dst === undefined &&
+        event.unit === undefined &&
+        event.troops === undefined,
+    },
+  ];
+
+  function discoverIntentConstructor(Ctor) {
+    // The alliance-request ctor is field-identical to SendBreakAlliance-
+    // IntentEvent ({requestor, recipient}) so no shape probe can separate
+    // them — but the CLASS NAMES differ. Binding by name works wherever the
+    // class name survives (the engine harness registers AllianceRequestEvent;
+    // the unminified client registers SendAllianceRequestIntentEvent); in a
+    // minified browser the name won't match and the lazy accept-sniff in
+    // allianceBehavior remains the capture path. Without this, proactive
+    // alliance requests are impossible in the harness (nobody ever sends us
+    // one to sniff from).
+    if (
+      _ctors.allianceRequest == null &&
+      typeof Ctor === "function" &&
+      (Ctor.name === "AllianceRequestEvent" ||
+        Ctor.name === "SendAllianceRequestIntentEvent")
+    ) {
+      _ctors.allianceRequest = Ctor;
+    }
+    for (const probe of INTENT_CTOR_PROBES) {
+      if (_ctors[probe.key]) continue;
+      const matches = matchesIntentConstructor(
+        Ctor,
+        probe.args,
+        (event) => probe.matches(event, probe.args),
+        `engine/ingame/auto-bot/context.js:probe-${probe.key}`,
+      );
+      if (!matches) continue;
+      _ctors[probe.key] = Ctor;
+      return;
+    }
+  }
+
   function getListenersMap(eventBus) {
     if (eventBus?.listeners instanceof Map) return eventBus.listeners;
     for (const key of Object.getOwnPropertyNames(eventBus || {})) {
-      try {
+      {
         if (eventBus[key] instanceof Map) return eventBus[key];
-      } catch (_e) {
-        /* ignore */
       }
     }
     return null;
@@ -108,6 +279,7 @@
     if (
       _ctors.bus === eventBus &&
       _ctors.attack &&
+      _ctors.cancelAttack &&
       _ctors.spawn &&
       _ctors.boat &&
       _ctors.moveWarship &&
@@ -119,132 +291,8 @@
     const map = getListenersMap(eventBus);
     if (!map) return _ctors;
     _ctors.bus = eventBus;
-    for (const C of map.keys()) {
-      if (typeof C !== "function") continue;
-      if (!_ctors.moveWarship) {
-        try {
-          const m = new C([7, 8], 99); // MoveWarshipIntentEvent(unitIds[], tile)
-          if (
-            m &&
-            Array.isArray(m.unitIds) &&
-            m.unitIds[0] === 7 &&
-            m.tile === 99
-          ) {
-            _ctors.moveWarship = C;
-            continue;
-          }
-        } catch (_e) {
-          /* skip */
-        }
-      }
-      if (!_ctors.embargo) {
-        try {
-          const s1 = { __probe: 1 };
-          const e = new C(s1, "start"); // SendEmbargoIntentEvent(target, action)
-          if (e && e.target === s1 && e.action === "start") {
-            _ctors.embargo = C;
-            continue;
-          }
-        } catch (_e) {
-          /* skip */
-        }
-      }
-      if (!_ctors.donateTroops) {
-        try {
-          const s1 = { __probe: 1 };
-          // SendDonateTroopsIntentEvent(recipient, troops) — distinguished from
-          // SendDonateGoldIntentEvent by the `troops` property (vs `gold`).
-          const dt = new C(s1, 123);
-          if (dt && dt.recipient === s1 && dt.troops === 123) {
-            _ctors.donateTroops = C;
-            continue;
-          }
-        } catch (_e) {
-          /* skip */
-        }
-      }
-      if (!_ctors.emoji) {
-        try {
-          const s1 = { __probe: 1 };
-          // SendEmojiIntentEvent(recipient, emoji:number) — has `emoji`, unlike
-          // donateTroops (`troops`) / embargo (`action`).
-          const em = new C(s1, 7);
-          if (
-            em &&
-            em.recipient === s1 &&
-            em.emoji === 7 &&
-            em.troops === undefined &&
-            em.action === undefined
-          ) {
-            _ctors.emoji = C;
-            continue;
-          }
-        } catch (_e) {
-          /* skip */
-        }
-      }
-      if (!_ctors.target) {
-        try {
-          // SendTargetPlayerIntentEvent(targetID:PlayerID) — a single string
-          // targetID and NO troops. Distinguished from SendAttackIntentEvent
-          // (which also has targetID but carries troops): pass a 2nd arg and
-          // require it is IGNORED (troops stays undefined).
-          const tp = new C("§tp", 456);
-          if (
-            tp &&
-            tp.targetID === "§tp" &&
-            tp.troops === undefined &&
-            tp.recipient === undefined &&
-            tp.dst === undefined &&
-            tp.emoji === undefined
-          ) {
-            _ctors.target = C;
-            continue;
-          }
-        } catch (_e) {
-          /* skip */
-        }
-      }
-      if (!_ctors.attack) {
-        try {
-          const a = new C("§p", 123); // SendAttackIntentEvent(targetID, troops)
-          if (a && a.targetID === "§p" && a.troops === 123 && a.dst === undefined) {
-            _ctors.attack = C;
-            continue;
-          }
-        } catch (_e) {
-          /* skip */
-        }
-      }
-      if (!_ctors.boat) {
-        try {
-          const b = new C(77, 123); // SendBoatAttackIntentEvent(dst, troops)
-          if (b && b.dst === 77 && b.troops === 123) {
-            _ctors.boat = C;
-            continue;
-          }
-        } catch (_e) {
-          /* skip */
-        }
-      }
-      if (!_ctors.spawn) {
-        try {
-          const s = new C(55); // SendSpawnIntentEvent(tile)
-          if (
-            s &&
-            s.tile === 55 &&
-            s.targetID === undefined &&
-            s.dst === undefined &&
-            s.unit === undefined &&
-            s.troops === undefined
-          ) {
-            _ctors.spawn = C;
-            continue;
-          }
-        } catch (_e) {
-          /* skip */
-        }
-      }
+    for (const Ctor of map.keys()) {
+      if (typeof Ctor === "function") discoverIntentConstructor(Ctor);
     }
     return _ctors;
   }
@@ -252,60 +300,115 @@
   function emitIntent(ctor, ...args) {
     const eventBus = getEventBus();
     if (!eventBus || typeof ctor !== "function") return false;
-    try {
-      eventBus.emit(new ctor(...args));
+    {
+      const event = new ctor(...args);
+      if (
+        typeof tryAcquireIntentRateLimit !== "function" ||
+        !tryAcquireIntentRateLimit()
+      ) {
+        return false;
+      }
+      eventBus.emit(event);
       return true;
-    } catch (error) {
-      console.error("[AutoBot] emit failed:", error);
-      return false;
     }
+  }
+
+  function diagnosticValue(value, fallback) {
+    return value ?? fallback;
+  }
+
+  function callDiagnosticMethod(target, methodName, fallback = null) {
+    {
+      const method = target?.[methodName];
+      return typeof method === "function" ? method.call(target) : fallback;
+    }
+  }
+
+  function getBotDiagnosticStatus() {
+    {
+      return typeof _bot !== "undefined" && _bot ? _bot.status : "no-bot";
+    }
+  }
+
+  function getEarlyGameDiagnostic(earlyGame) {
+    if (!earlyGame) return null;
+    return {
+      active: Boolean(earlyGame.active),
+      action: diagnosticValue(earlyGame.action, null),
+      hasFreeLand: Boolean(earlyGame.hasFreeLand),
+      hasTribeTarget: Boolean(earlyGame.hasTribeTarget),
+      maritimeProbeSent: Boolean(earlyGame.maritimeProbeSent),
+      tribeTarget: diagnosticValue(earlyGame.tribeTarget, null),
+      oceanTarget: diagnosticValue(earlyGame.oceanTarget, null),
+      boatRouteAvailable: Boolean(earlyGame.boatRouteAvailable),
+      boatGate: diagnosticValue(earlyGame.boatGate, null),
+      lastBoatEtaTicks: diagnosticValue(earlyGame.lastBoatEtaTicks, null),
+      boatRejectedUnknown: diagnosticValue(earlyGame.boatRejectedUnknown, 0),
+      boatRejectedTooFar: diagnosticValue(earlyGame.boatRejectedTooFar, 0),
+      troopGenerationRate: diagnosticValue(earlyGame.troopGenerationRate, 0),
+      generationRatio: diagnosticValue(earlyGame.generationRatio, 0),
+      optimalGenerationRatio: diagnosticValue(earlyGame.optimalGenerationRatio, 0.42),
+      nextExpansionTick: diagnosticValue(earlyGame.nextExpansionTick, 0),
+      frontierFreeTiles: diagnosticValue(earlyGame.frontierFreeTiles, 0),
+      frontierTerrainMagnitude: diagnosticValue(earlyGame.frontierTerrainMagnitude, 10),
+      frontierTerrainScore: diagnosticValue(earlyGame.frontierTerrainScore, 0),
+      frontierContestedTileCount: diagnosticValue(earlyGame.frontierContestedTileCount, 0),
+      frontierCompetingOwnerCount: diagnosticValue(earlyGame.frontierCompetingOwnerCount, 0),
+      frontierCompetitionScore: diagnosticValue(earlyGame.frontierCompetitionScore, 0),
+      expansionPlan: diagnosticValue(earlyGame.expansionPlan, null),
+    };
+  }
+
+  function getEventsDisplayDiagnostic() {
+    {
+      return diagnosticValue(document.querySelector("events-display")?.events?.length, null);
+    }
+  }
+
+  function getPlayerDiagnostics(me) {
+    if (!me) return { gold: 0, troops: 0, tiles: 0 };
+    return {
+      gold: Math.round(toNum(callDiagnosticMethod(me, "gold", 0))),
+      troops: Math.round(toNum(callDiagnosticMethod(me, "troops", 0))),
+      tiles: toNum(callDiagnosticMethod(me, "numTilesOwned", 0)),
+    };
   }
 
   // Console diagnostic — call window.__autoBotDiag() in-game to inspect what
   // the bot can see/use.
-  function diagnose() {
+  function diagnose(options = {}) {
     const game = getGame();
     const eventBus = getEventBus();
     const ctors = eventBus ? discoverCtors(eventBus) : _ctors;
     const bm = getBuildMenu();
     const me = game?.myPlayer?.();
     const diag = {
-      game: !!game,
-      gameType: game ? gameType(game) : null,
-      inSpawnPhase: game?.inSpawnPhase?.() ?? null,
-      myPlayer: !!me,
-      hasSpawned: me?.hasSpawned?.() ?? null,
-      buildMenu: !!bm,
+      game: Boolean(game),
+      inSpawnPhase: callDiagnosticMethod(game, "inSpawnPhase"),
+      myPlayer: Boolean(me),
+      hasSpawned: callDiagnosticMethod(me, "hasSpawned"),
+      buildMenu: Boolean(bm),
       sendBuildOrUpgrade: typeof bm?.sendBuildOrUpgrade,
-      eventBus: !!eventBus,
-      ctorSpawn: !!ctors.spawn,
-      ctorAttack: !!ctors.attack,
-      ctorBoat: !!ctors.boat,
-      ctorMoveWarship: !!ctors.moveWarship,
-      ctorEmbargo: !!ctors.embargo,
-      ctorDonateTroops: !!ctors.donateTroops,
-      ctorEmoji: !!ctors.emoji,
-      ctorAllianceRequest: !!ctors.allianceRequest,
+      eventBus: Boolean(eventBus),
+      ctorSpawn: Boolean(ctors.spawn),
+      ctorAttack: Boolean(ctors.attack),
+      ctorBoat: Boolean(ctors.boat),
+      ctorMoveWarship: Boolean(ctors.moveWarship),
+      ctorEmbargo: Boolean(ctors.embargo),
+      ctorDonateTroops: Boolean(ctors.donateTroops),
+      ctorEmoji: Boolean(ctors.emoji),
+      ctorAllianceRequest: Boolean(ctors.allianceRequest),
+      intentRateLimit: typeof getIntentRateLimitSnapshot === "function"
+        ? getIntentRateLimitSnapshot()
+        : null,
       speedFactor: Math.round((state.speed?.factor ?? 1) * 100) / 100,
-      gold: me ? Math.round(toNum(me.gold?.())) : 0,
-      troops: me ? Math.round(toNum(me.troops?.())) : 0,
-      tiles: me ? toNum(me.numTilesOwned?.()) : 0,
-      botStatus: (() => {
-        try {
-          return typeof _bot !== "undefined" && _bot ? _bot.status : "no-bot";
-        } catch (_e) {
-          return "n/a";
-        }
-      })(),
-      eventsDisplayEvents: (() => {
-        try {
-          return document.querySelector("events-display")?.events?.length ?? null;
-        } catch (_e) {
-          return null;
-        }
-      })(),
+      ...getPlayerDiagnostics(me),
+      botStatus: getBotDiagnosticStatus(),
+      donationStatus: diagnosticValue(state.donationStatus, "unknown"),
+      earlyGame: getEarlyGameDiagnostic(state.earlyGame),
+      eventsDisplayEvents: getEventsDisplayDiagnostic(),
     };
-    console.log("[AutoBot] DIAG", diag);
+    if (options.silent !== true) runtimeDebugLog("[AutoBot] DIAG", diag);
     return diag;
   }
   window.__autoBotDiag = diagnose;

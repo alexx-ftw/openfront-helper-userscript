@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "mimosa-hook-status/v1",
+  "recordedAt": "2026-08-22T02:29:56.718Z",
+  "sessionId": "sess_1c204565-6e61-406f-8e11-701b13d6a148",
+  "event": "PostToolUse",
+  "toolName": "Write",
+  "file": "/tmp/ofh-matrix/screen2/run.sh",
+  "outcome": "inconclusive",
+  "coverage": "partial",
+  "findingCount": 0,
+  "durationMs": 19,
+  "hostState": "hook_complete",
+  "reportHint": ".mimosa/reports/"
+}

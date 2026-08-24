@@ -82,7 +82,7 @@
     }
     const orig = eventBus.emit;
     eventBus.emit = function (ev) {
-      try {
+      {
         if (
           ev &&
           ev.requestor !== undefined &&
@@ -91,8 +91,6 @@
         ) {
           _ctors.allianceRequest = ev.constructor;
         }
-      } catch (_e) {
-        /* ignore */
       }
       return orig.call(this, ev);
     };
@@ -116,13 +114,11 @@
       const s2 = { __probe: 2 };
       for (const C of map.keys()) {
         if (typeof C !== "function") continue;
-        try {
+        {
           const inst = new C(s1, s2);
           if (inst && inst.requestor === s1 && inst.recipient === s2) {
             found.push(C);
           }
-        } catch (_e) {
-          /* skip */
         }
       }
     }
@@ -137,22 +133,18 @@
   function collectAllianceEvents() {
     const events = [];
     for (const sel of ["events-display", "actionable-events"]) {
-      try {
+      {
         const el = document.querySelector(sel);
         if (Array.isArray(el?.events)) events.push(...el.events);
-      } catch (_e) {
-        /* element absent */
       }
     }
-    try {
+    {
       if (
         typeof allianceRequestsPanelEvents !== "undefined" &&
         Array.isArray(allianceRequestsPanelEvents)
       ) {
         events.push(...allianceRequestsPanelEvents);
       }
-    } catch (_e) {
-      /* helper panel not loaded */
     }
     return events;
   }
@@ -168,6 +160,21 @@
     );
   }
 
+  function isDominatedAllianceTarget(player, otherPlayer, difficulty) {
+    const protectedEasyHuman =
+      difficulty === Difficulty.Easy && otherPlayer.type() === PlayerType.Human;
+    if (protectedEasyHuman) return false;
+    const ownOutgoingTroops = activeAllianceOutgoingTroops(player);
+    const otherOutgoingTroops = activeAllianceOutgoingTroops(otherPlayer);
+    return isMuchWeakerAllianceTarget({
+      ownTroops: player.troops(),
+      ownOutgoingTroops,
+      otherTroops: otherPlayer.troops(),
+      otherOutgoingTroops,
+      advantageRatio: 4,
+    });
+  }
+
   class AllianceBehavior {
     constructor(random, game, player, emojiBehavior) {
       this.random = random;
@@ -180,10 +187,10 @@
     // Game has PlayerType.Bot = "BOT", PlayerType.Nation = "NATION", PlayerType.Human = "HUMAN".
     isRegularBot(player) {
       if (!player) return false;
-      try {
+      {
         if (typeof player.type === "function" && player.type() === "BOT") return true;
         if (player.data && player.data.playerType === "BOT") return true;
-      } catch (e) {}
+      }
       return false;
     }
 
@@ -196,6 +203,12 @@
         // blocking attacks against them. Only accept from humans and Nation AI.
         const requestor = req.requestor();
         if (requestor && this.isRegularBot(requestor)) {
+          req.reject();
+          continue;
+        }
+        // DIVERGENCE: Companion mode only allies with the boss. Vetoes nothing
+        // unless companion is enabled, in Active mode, AND a boss was resolved.
+        if (typeof companionAllianceVeto === "function" && companionAllianceVeto(requestor)) {
           req.reject();
           continue;
         }
@@ -228,18 +241,49 @@
       // Defense-in-depth: this runs at tick level, while the panel capture filter
       // prevents Vue from ever seeing bot events.
       for (const ev of collectAllianceEvents()) {
-        try {
+        {
           const requestor = this.resolveEventPlayer(ev);
           if (!requestor) continue;
           if (this.isRegularBot(requestor)) {
             // Force-mark as actioned — prevents alliance handler from accepting
             _allianceBehaviorActioned.add(ev);
           }
-        } catch (_e) {}
+        }
       }
     }
 
     // handleAllianceExtensionRequests — NationAllianceBehavior.ts:48
+    renewAllianceEvent(event, human, buttons) {
+      const renew = pickAllianceButton(buttons, "btn", 1);
+      if (!renew) return;
+      {
+        renew.action();
+        _allianceBehaviorActioned.add(event);
+        setLastAction(
+          tr("🔁 Renew alliance {name}", { name: safeName(human) }),
+          "diplo",
+        );
+      }
+    }
+
+    handleAllianceExtensionEvent(event) {
+      const type = Number(event?.type);
+      if (!RENEW_TYPES.has(type)) return;
+      if (_allianceBehaviorActioned.has(event)) return;
+      const buttons = Array.isArray(event.buttons) ? event.buttons : [];
+      if (buttons.length === 0) return;
+      const human = this.resolveEventPlayer(event);
+      if (!human?.isPlayer?.()) return;
+      if (
+        typeof companionAllianceVeto === "function" &&
+        companionAllianceVeto(human)
+      ) {
+        return;
+      }
+      if (!this.getAllianceDecision(human, true)) return;
+      this.renewAllianceEvent(event, human, buttons);
+    }
+
     handleAllianceExtensionRequests() {
       if (this.game.config().disableAlliances()) return;
 
@@ -259,47 +303,56 @@
       // getAllianceDecision(other, true) gate exactly as src does — NOT the old
       // alliance.js renewal heuristic.
       for (const ev of collectAllianceEvents()) {
-        const t = Number(ev?.type);
-        if (!RENEW_TYPES.has(t)) continue;
-        if (_allianceBehaviorActioned.has(ev)) continue;
-        const buttons = Array.isArray(ev.buttons) ? ev.buttons : [];
-        if (buttons.length === 0) continue;
-
         // human = alliance.other(this.player): resolve the renewal event's focusID
         // (the other player's smallID) to a wrapped gameApi player.
-        const human = this.resolveEventPlayer(ev);
-        if (!human || !human.isPlayer || !human.isPlayer()) continue;
-
-        if (!this.getAllianceDecision(human, true)) continue;
-
+        // DIVERGENCE: Companion mode only allies with the boss — also vetoes
+        // renewing an alliance already held with a non-boss player (formed
+        // before companion mode was enabled, or before the boss was resolved).
+        // Placed before getAllianceDecision() below (no this.random.* call
+        // precedes it in this function), so when the veto fires it skips that
+        // call's RNG draws entirely — same placement rationale as the
+        // handleAllianceRequests() guard above.
         // src: this.game.addExecution(new AllianceExtensionExecution(this.player,
         //   human.id())). Client equivalent: click the renew button, whose action()
         //   emits SendAllianceExtensionIntentEvent(other) — the same intent.
-        const renew = pickAllianceButton(buttons, "btn", 1);
-        if (renew) {
-          try {
-            renew.action();
-            _allianceBehaviorActioned.add(ev);
-            setLastAction(
-              tr("🔁 Renew alliance {name}", { name: safeName(human) }),
-              "diplo",
-            );
-          } catch (_e) {
-            /* ignore */
-          }
-        }
+        this.handleAllianceExtensionEvent(ev);
       }
     }
 
     // maybeSendAllianceRequests — NationAllianceBehavior.ts:65
+    // Proactive alliance REQUESTS are FFA-only: in Team mode real teammates
+    // already exist, and measured basket rows regressed when the ctor
+    // name-probe made this historically-inert path live (2 of 3 team wins
+    // flipped to losses — ally-gated engine rules then also block our own
+    // attacks vs the allied rival team). All Team baselines were measured
+    // with the send path inert (ctor unbound), so FFA-only restores exactly
+    // the measured-good Team behavior while keeping the FFA protector lane.
+    proactiveAllianceSendsAllowed() {
+      return String(this.game.config().gameConfig().gameMode) !== "Team";
+    }
+
     maybeSendAllianceRequests(borderingEnemies) {
       if (this.game.config().disableAlliances()) return;
+      // Suppress the EMISSION only, never the loop: the loop's RNG draws and
+      // emoji side-effects feed the shared PseudoRandom stream — early-
+      // returning here shifted every downstream random decision and flipped
+      // the team Labyrinth anchor from a win at 19921 to death@8121 (measured;
+      // the pre-change loop emitted nothing in practice because the request
+      // ctor was null until the name-probe landed). Keeping the draws keeps
+      // Team byte-identical while FFA keeps its proactive sends.
+      const sendsAllowed = this.proactiveAllianceSendsAllowed();
 
       // NEVER send alliance requests to regular bots — they spam defensively,
       // blocking attacks against them. Only send to humans and Nation AI.
       for (const enemy of borderingEnemies) {
         if (
           this.random.chance(30) &&
+          // DIVERGENCE: Companion mode only allies with the boss.
+          // When this veto fires, the RNG draws inside getAllianceDecision()
+          // below are short-circuited and never made. This random stream is
+          // a client-local bot-decision PRNG (not the synced game simulation),
+          // so skipping draws here causes no cross-client desync.
+          !(typeof companionAllianceVeto === "function" && companionAllianceVeto(enemy)) &&
           !this.isRegularBot(enemy) &&
           this.canSendAllianceRequest(enemy) &&
           this.getAllianceDecision(enemy, false)
@@ -312,7 +365,7 @@
           // via runAndCaptureAllianceCtor). Until then proactive sends are
           // suppressed. In a populated lobby an accept happens within seconds.
           const ctors = discoverCtors(getEventBus());
-          if (ctors.allianceRequest) {
+          if (ctors.allianceRequest && sendsAllowed) {
             emitIntent(
               ctors.allianceRequest,
               this.player.__src ?? this.player,
@@ -333,7 +386,7 @@
     // probe). On any error we answer FALSE (treat as near) so the faithful case-by-case
     // logic runs rather than a blanket accept.
     isFarNation(other) {
-      try {
+      {
         const sid = other.smallID();
         for (const n of this.player.nearby()) {
           if (n && n.isPlayer && n.isPlayer() && n.smallID() === sid) {
@@ -341,8 +394,6 @@
           }
         }
         return true; // not adjacent → far
-      } catch (_e) {
-        return false;
       }
     }
 
@@ -353,10 +404,22 @@
     // hasn't run) — otherwise an unset flag reads as "not dominant" and we'd keep
     // far-allying past the point the user asked us to stop. Mirrors
     // structureBehavior.dominanceShare + the factoryRailShare trigger — keep in sync.
+    calculateDiplomacyTeamTiles() {
+      let owned = 0;
+      for (const player of this.game.players()) {
+        {
+          if (player.isPlayer() && this.player.isOnSameTeam(player)) {
+            owned += player.numTilesOwned();
+          }
+        }
+      }
+      return owned;
+    }
+
     isDominantForDiplomacy() {
       if (!state.settings.winFixes) return false;
       if (typeof state.dominant === "boolean") return state.dominant;
-      try {
+      {
         const isTeam =
           String(this.game.config().gameConfig().gameMode) === "Team";
         const fallout =
@@ -365,26 +428,13 @@
             : 0;
         const denom = (this.game.numLandTiles() || 0) - fallout;
         if (denom <= 0) return false;
-        let owned = 0;
-        if (isTeam) {
-          for (const p of this.game.players()) {
-            try {
-              if (p.isPlayer() && this.player.isOnSameTeam(p)) {
-                owned += p.numTilesOwned();
-              }
-            } catch (_e) {
-              /* skip */
-            }
-          }
-        } else {
-          owned = this.player.numTilesOwned();
-        }
+        const owned = isTeam
+          ? this.calculateDiplomacyTeamTiles()
+          : this.player.numTilesOwned();
         const trigger = Number.isFinite(state.settings.factoryRailShare)
           ? state.settings.factoryRailShare
           : 0.75;
         return owned / denom > trigger;
-      } catch (_e) {
-        return false;
       }
     }
 
@@ -392,10 +442,31 @@
     // non-traitor, not-yet-friendly, requestable nation per throttle window (winFix).
     // Suppressed until the alliance-request ctor is learned (lazily, on our first
     // accept), and skipped once we're dominant (self-gated, below).
+    isFarAllianceCandidate(player, mySid) {
+      {
+        return (
+          player.isPlayer?.() &&
+          player.smallID() !== mySid &&
+          player.isAlive?.() &&
+          player.type() !== PlayerType.Bot &&
+          this.player.isFriendly(player) !== true &&
+          !player.isTraitor?.() &&
+          this.isFarNation(player) &&
+          this.canSendAllianceRequest(player)
+        );
+      }
+    }
+
+    getFarAllianceCandidates() {
+      const mySid = this.player.smallID();
+      return this.game.players().filter((player) => this.isFarAllianceCandidate(player, mySid));
+    }
+
     reachOutToFarNations() {
       const now = performance.now();
       const throttle = state.settings.farAllyThrottleMs || 4000;
       if (now - (state.lastFarAllyMs || 0) < throttle) return;
+      if (!this.proactiveAllianceSendsAllowed()) return;
       // Self-gate on dominance (computed only AFTER the cheap throttle passes, ~every 4s)
       // so we stop courting far nations the moment we're winning — same gate as the
       // far-accept path, so accept and outreach flip together.
@@ -404,27 +475,13 @@
       const ctors = discoverCtors(getEventBus());
       if (!ctors.allianceRequest) return; // ctor not learned yet → can't send proactively
 
-      const mySid = this.player.smallID();
-      const candidates = [];
-      for (const p of this.game.players()) {
-        try {
-          if (!p.isPlayer || !p.isPlayer()) continue;
-          if (p.smallID() === mySid) continue;
-          if (!p.isAlive || !p.isAlive()) continue;
-          if (p.type() === PlayerType.Bot) continue; // faithful: don't court bots
-          if (this.player.isFriendly(p) === true) continue; // already allied / teammate
-          if (p.isTraitor && p.isTraitor()) continue; // never court a traitor
-          if (!this.isFarNation(p)) continue; // far nations only
-          if (!this.canSendAllianceRequest(p)) continue; // cooldown / validity
-          candidates.push(p);
-        } catch (_e) {
-          /* skip this player */
-        }
-      }
+      const candidates = this.getFarAllianceCandidates();
       if (candidates.length === 0) return;
 
       // Spread outreach across the far field rather than always picking the same one.
       const target = this.random.randElement(candidates);
+      // DIVERGENCE: Companion mode only allies with the boss.
+      if (typeof companionAllianceVeto === "function" && companionAllianceVeto(target)) return;
       emitIntent(
         ctors.allianceRequest,
         this.player.__src ?? this.player,
@@ -435,10 +492,241 @@
         "diplo",
       );
       state.lastFarAllyMs = now;
-      console.log("[Diplo] reach out far →", safeName(target));
+      runtimeDebugLog("[Diplo] reach out far →", safeName(target));
+    }
+
+    // ── Protector appeasement (FFA survival, Legendary win-fix) ────────────────
+    // Death-by-snowball in FFA comes from ONE strong bordering nation rolling
+    // us with waves we cannot mirror. An ALLIANCE makes that nation's land AND
+    // boat attacks engine-rejected outright (AttackExecution/TransportShip-
+    // Execution hard-check isFriendly), and renewals keep it for the whole
+    // game. The window is real but narrow: the nation's own decision gate
+    // (NationAllianceBehavior.getAllianceDecision, Impossible branch) rejects
+    // below-Neutral relations — and OUR attacks (−100 relation) followed by
+    // our auto-embargo (permanent −20) poison exactly the strong neighbours
+    // we need. So appeasement = court the strongest bordering nation with
+    // retried requests (engine cooldown 300 ticks, one pending per recipient),
+    // never embargo it, and never send ORDINARY attacks its way (retaliation
+    // and incoming-defense lanes are untouched — defending does not poison
+    // relation, only our attacks do).
+    protectorAppeasementActive() {
+      if (state.settings.winFixes !== true) return false;
+      if (typeof currentDifficulty !== "function" || currentDifficulty() !== "Legendary") {
+        return false;
+      }
+      if (String(this.game.config().gameConfig().gameMode) !== "FFA") return false;
+      const config = this.game.config();
+      if (typeof config.disableAlliances === "function" && config.disableAlliances()) {
+        return false;
+      }
+      return true;
+    }
+
+    appeasementNationStrength(player) {
+      const maxTroops = Number(player.maxTroops?.() ?? Number.NaN);
+      if (Number.isFinite(maxTroops) && maxTroops > 0) return maxTroops;
+      return Number(player.troops?.() || 0);
+    }
+
+    appeasementCandidate(other, mySid, myStrength) {
+      if (!other?.isPlayer?.() || other.smallID() === mySid) return null;
+      if (other.type() !== PlayerType.Nation) return null;
+      if (!other.isAlive?.()) return null;
+      if (this.player.isFriendly(other) === true) return null;
+      // Only appease UP: a protector we already outmuscle is a conquest
+      // target, not a shield.
+      const strength = this.appeasementNationStrength(other);
+      if (strength < myStrength * 1.25) return null;
+      return { other, strength };
+    }
+
+    // Ranked protector candidates (strongest first). The courtship reads the
+    // LIST, not just the top pick: the nation's own acceptance gate has NO
+    // accepting branch at Neutral relation outside its ~60s earlygame window
+    // (30% per attempt), and every relation-raising tool (donations, emoji)
+    // is ally-gated or Easy-only — so a rejection by the single strongest
+    // neighbor is final. Courting several strong neighbors inside the window
+    // multiplies the acceptance odds.
+    appeasementProtectorCandidates() {
+      if (!this.protectorAppeasementActive()) return [];
+      const mySid = this.player.smallID();
+      const myStrength = this.appeasementNationStrength(this.player);
+      const candidates = [];
+      for (const neighbour of this.player.nearby()) {
+        const candidate = this.appeasementCandidate(neighbour, mySid, myStrength);
+        if (candidate !== null) candidates.push(candidate);
+      }
+      candidates.sort((left, right) => right.strength - left.strength);
+      return candidates.map(({ other }) => other);
+    }
+
+    appeasementProtector() {
+      if (!this.protectorAppeasementActive()) return null;
+      const tick = typeof this.game.ticks === "function" ? this.game.ticks() : 0;
+      if (this._protectorCacheTick === tick && this._protectorCache !== undefined) {
+        return this._protectorCache;
+      }
+      this._protectorCacheTick = tick;
+      this._protectorCache = this.appeasementProtectorCandidates()[0] ?? null;
+      return this._protectorCache;
+    }
+
+    // The nation-side earlygame acceptance window (~60s post-spawn, 30% per
+    // attempt): beyond it, only Friendly relation (unreachable pre-alliance),
+    // threat, or near-parity can succeed — court widest while it is open.
+    protectorCourtEarlyWindowOpen() {
+      const duration = Number(
+        this.game?.config?.()?.spawnImmunityDuration?.() ?? 0,
+      );
+      const tick = typeof this.game.ticks === "function" ? this.game.ticks() : 0;
+      return tick <= 600 + duration + 300;
+    }
+
+    courtProtectorEligible(protector, now, perRecipientMs) {
+      if (typeof companionAllianceVeto === "function" && companionAllianceVeto(protector)) {
+        return false;
+      }
+      const sid = protector.smallID();
+      const last = state.protectorCourtAtMs.get(sid) ?? 0;
+      return now - last >= perRecipientMs;
+    }
+
+    maybeCourtProtectors() {
+      if (!this.protectorAppeasementActive()) return;
+      const now = performance.now();
+      const throttle = state.settings.protectorCourtThrottleMs || 3500;
+      if (now - (state.lastProtectorCourtMs || 0) < throttle) return;
+      if (this.isDominantForDiplomacy()) return;
+      const ctors = discoverCtors(getEventBus());
+      if (!ctors.allianceRequest) return;
+      // Per-recipient spacing: the engine keeps a pending request alive for
+      // allianceRequestDuration and hard-rejects duplicates (measured: 49
+      // wasted "cannot send alliance request" warnings on one row).
+      if (!state.protectorCourtAtMs) state.protectorCourtAtMs = new Map();
+      const perRecipientMs = 31_000;
+      const candidates = this.appeasementProtectorCandidates();
+      // Court up to 2 fresh recipients per pass inside the earlygame window
+      // (rotating through the ranked list), else 1 (top pick only).
+      const maxPerPass = Math.min(this.protectorCourtEarlyWindowOpen() ? 2 : 1, 3);
+      let sent = 0;
+      for (const protector of candidates) {
+        if (sent >= maxPerPass) break;
+        if (!this.courtProtectorEligible(protector, now, perRecipientMs)) continue;
+        emitIntent(
+          ctors.allianceRequest,
+          this.player.__src ?? this.player,
+          protector.__src ?? protector,
+        );
+        // Pin the courted identity: once the alliance forms the protector is
+        // isFriendly and drops out of candidate filtering — the
+        // donation-renewal loop still needs to find it.
+        const sid = protector.smallID();
+        state.protectorSid = sid;
+        state.protectorCourtAtMs.set(sid, now);
+        state.lastProtectorCourtMs = now;
+        setLastAction(
+          tr("🛡️➡️ Court protector {name}", { name: safeName(protector) }),
+          "diplo",
+        );
+        runtimeDebugLog("[Diplo] court protector →", safeName(protector));
+        sent += 1;
+      }
+    }
+
+    // The allied protector (pinned at courtship), or null.
+    pinnedProtectorAlly() {
+      const protectorSid = state.protectorSid;
+      if (protectorSid === undefined || protectorSid === null) return null;
+      const ally = this.game
+        .players()
+        .find((p) => p?.isPlayer?.() && p.smallID() === protectorSid);
+      if (!ally || !ally.isAlive?.()) return null;
+      if (this.player.isFriendly(ally) !== true) return null;
+      return ally;
+    }
+
+    // A donation amount that guarantees the +50 relation update: the
+    // Impossible-branch threshold band is [recipientMax/7, recipientMax/5],
+    // so the band ceiling qualifies regardless of the engine's RNG. Returns
+    // null when the ally has no headroom for a qualifying gift.
+    protectorDonationAmount(ally) {
+      const recipientMax = Number(ally.maxTroops?.() ?? Number.NaN);
+      if (!Number.isFinite(recipientMax) || recipientMax <= 0) return null;
+      const qualifying = Math.floor(recipientMax / 5) + 1;
+      const headroom = Math.floor(recipientMax - Number(ally.troops?.() || 0));
+      return headroom >= qualifying ? qualifying : null;
+    }
+
+    // Donation-renewal loop: a qualifying donation (>= recipientMax/5.. /7
+    // troops, DonateTroopExecution.getMinTroopsForRelationUpdate) grants +50
+    // relation in the ally toward us, which keeps renewals passing for the
+    // whole game (alliances expire after 3000 ticks). Donations are
+    // ally-gated engine-side, so this only ever runs AFTER an acceptance —
+    // and only from real surplus (never donate below half our army).
+    maybeDonateToProtector() {
+      if (!this.protectorAppeasementActive()) return;
+      const now = performance.now();
+      const throttle = state.settings.protectorDonationThrottleMs || 60_000;
+      if (now - (state.lastProtectorDonationMs || 0) < throttle) return;
+      const ally = this.pinnedProtectorAlly();
+      if (ally === null) return;
+      const ctors = discoverCtors(getEventBus());
+      if (!ctors.donateTroops) return;
+      const amount = this.protectorDonationAmount(ally);
+      if (amount === null) return;
+      const ourTroops = Number(this.player.troops?.() || 0);
+      if (ourTroops - amount < Math.max(ourTroops * 0.5, 1)) return;
+      if (emitIntent(ctors.donateTroops, ally.__src ?? ally, amount) !== true) {
+        return;
+      }
+      state.lastProtectorDonationMs = now;
+      setLastAction(
+        tr("🤝➡️ Reinforce protector {name}", { name: safeName(ally) }),
+        "diplo",
+      );
+      runtimeDebugLog("[Diplo] donate to protector →", safeName(ally), amount);
     }
 
     // getAllianceDecision — NationAllianceBehavior.ts:88 (THE decision tree)
+    shouldRejectTraitorAlliance(otherPlayer, isResponse) {
+      if (!otherPlayer.isTraitor() || this.random.nextInt(0, 100) < 10) return false;
+      if (isResponse && this.random.chance(3)) {
+        this.emojiBehavior.sendEmoji(otherPlayer, EMOJI_CONFUSED);
+      }
+      return true;
+    }
+
+    getFarNationAllianceDecision(otherPlayer, isResponse) {
+      if (!state.settings.winFixes || !this.isFarNation(otherPlayer)) return null;
+      if (this.isDominantForDiplomacy()) return false;
+      if (isResponse) runtimeDebugLog("[Diplo] far accept →", safeName(otherPlayer));
+      return true;
+    }
+
+    acceptThreatAlliance(otherPlayer, isResponse) {
+      if (!isResponse && this.random.chance(6)) {
+        this.emojiBehavior.sendEmoji(otherPlayer, EMOJI_SCARED_OF_THREAT);
+      }
+      if (isResponse && this.random.chance(6)) {
+        this.emojiBehavior.sendEmoji(otherPlayer, EMOJI_LOVE);
+      }
+      return true;
+    }
+
+    rejectBadRelationAlliance(otherPlayer, isResponse) {
+      if (isResponse && this.random.chance(3)) {
+        this.emojiBehavior.sendEmoji(otherPlayer, EMOJI_CONFUSED);
+      }
+      return false;
+    }
+
+    acceptFriendlyAlliance(otherPlayer) {
+      if (this.random.chance(3)) {
+        this.emojiBehavior.sendEmoji(otherPlayer, EMOJI_HANDSHAKE);
+      }
+      return true;
+    }
+
     getAllianceDecision(otherPlayer, isResponse) {
       // HARD GATE: NEVER accept alliances with regular bots (type="BOT").
       // Regular bots spam alliance requests defensively, blocking attacks against them.
@@ -448,12 +736,7 @@
         return this.random.chance(2);
       }
       // Nearly always reject traitors
-      if (otherPlayer.isTraitor() && this.random.nextInt(0, 100) >= 10) {
-        if (isResponse && this.random.chance(3)) {
-          this.emojiBehavior.sendEmoji(otherPlayer, EMOJI_CONFUSED);
-        }
-        return false;
-      }
+      if (this.shouldRejectTraitorAlliance(otherPlayer, isResponse)) return false;
       // SMART DIPLOMACY (winFix): a FAR nation (one we do NOT border — see isFarNation)
       // can't threaten us by land. While we're still expanding we ally it FREELY — pure
       // defence: it keeps a distant nation from turning hostile and raiding our longest,
@@ -462,15 +745,8 @@
       // runs on the renewal path) so those alliances LAPSE and the boat-conquest / betray
       // logic can take their land to finish the win (user's choice: "stop when dominant").
       // NEAR nations always fall through to the faithful tree below (threats / targets).
-      if (state.settings.winFixes && this.isFarNation(otherPlayer)) {
-        if (this.isDominantForDiplomacy()) {
-          return false; // dominant → shed far allies, court no new ones
-        }
-        if (isResponse) {
-          console.log("[Diplo] far accept →", safeName(otherPlayer));
-        }
-        return true;
-      }
+      const farDecision = this.getFarNationAllianceDecision(otherPlayer, isResponse);
+      if (farDecision !== null) return farDecision;
       // Reject if otherPlayer has allied with a lot of players (Hard and Impossible only)
       // To make sure there are enough non-friendly players in the game to stop the crown with nukes
       if (this.hasTooManyAlliances(otherPlayer)) {
@@ -480,13 +756,7 @@
       // Easy (dumb) nations are blinded by hatred, they don't care about threats, they care about the relation
       // Impossible (smart) nations on the other hand are analyzing the facts
       if (this.isAlliancePartnerThreat(otherPlayer)) {
-        if (!isResponse && this.random.chance(6)) {
-          this.emojiBehavior.sendEmoji(otherPlayer, EMOJI_SCARED_OF_THREAT);
-        }
-        if (isResponse && this.random.chance(6)) {
-          this.emojiBehavior.sendEmoji(otherPlayer, EMOJI_LOVE);
-        }
-        return true;
+        return this.acceptThreatAlliance(otherPlayer, isResponse);
       }
       // Maybe reject if we are in a team game (allying makes less sense there)
       if (this.shouldRejectInTeamGame()) {
@@ -494,17 +764,11 @@
       }
       // Reject if relation is bad
       if (this.player.relation(otherPlayer) < Relation.Neutral) {
-        if (isResponse && this.random.chance(3)) {
-          this.emojiBehavior.sendEmoji(otherPlayer, EMOJI_CONFUSED);
-        }
-        return false;
+        return this.rejectBadRelationAlliance(otherPlayer, isResponse);
       }
       // Maybe accept if relation is friendly
       if (this.isAlliancePartnerFriendly(otherPlayer)) {
-        if (this.random.chance(3)) {
-          this.emojiBehavior.sendEmoji(otherPlayer, EMOJI_HANDSHAKE);
-        }
-        return true;
+        return this.acceptFriendlyAlliance(otherPlayer);
       }
       // Reject if we already have some alliances, we don't want to ally with the entire map
       if (this.checkAlreadyEnoughAlliances(otherPlayer)) {
@@ -521,10 +785,7 @@
     // hasTooManyAlliances — NationAllianceBehavior.ts:150
     hasTooManyAlliances(otherPlayer) {
       const difficulty = currentDifficulty();
-      if (
-        difficulty !== Difficulty.Hard &&
-        difficulty !== Difficulty.Impossible
-      ) {
+      if (!isAtLeastHardDifficulty(difficulty)) {
         return false;
       }
 
@@ -551,6 +812,7 @@
         case Difficulty.Hard:
           return this.random.chance(40); // 2.5% chance to be confused on hard
         case Difficulty.Impossible:
+        case Difficulty.Legendary:
           return false; // No confusion on impossible
         default:
           return assertNever(difficulty);
@@ -581,6 +843,7 @@
             this.random.nextInt(0, 100) >= 50
           );
         case Difficulty.Impossible:
+        case Difficulty.Legendary:
           // On impossible, accept 30% in the first minute
           return (
             this.game.ticks() < 600 + spawnTicks &&
@@ -610,7 +873,8 @@
             this.game.config().maxTroops(otherPlayer) >
               this.game.config().maxTroops(this.player) * 2
           );
-        case Difficulty.Impossible: {
+        case Difficulty.Impossible:
+        case Difficulty.Legendary: {
           // On impossible we check for multiple factors and try to not mess with stronger players (we want to steamroll over weaklings)
           const otherHasMoreTroops =
             otherPlayer.troops() > this.player.troops() * 1.5;
@@ -644,6 +908,7 @@
         case Difficulty.Hard:
           return this.random.nextInt(0, 100) < 75; // 75% chance to reject on hard
         case Difficulty.Impossible:
+        case Difficulty.Legendary:
           return true; // 100% chance to reject on impossible
         default:
           return assertNever(difficulty);
@@ -659,7 +924,8 @@
         case Difficulty.Medium:
           return this.player.alliances().length >= this.random.nextInt(4, 6);
         case Difficulty.Hard:
-        case Difficulty.Impossible: {
+        case Difficulty.Impossible:
+        case Difficulty.Legendary: {
           // On hard and impossible we try to not ally with all our neighbors (If we have 2+ neighbors)
           const borderingPlayers = this.player
             .nearby()
@@ -700,6 +966,7 @@
             this.random.nextInt(0, 100) >= 17
           );
         case Difficulty.Impossible:
+        case Difficulty.Legendary:
           return (
             this.player.relation(otherPlayer) === Relation.Friendly &&
             this.random.nextInt(0, 100) >= 33
@@ -718,23 +985,21 @@
         [Difficulty.Medium]: [70, 80],
         [Difficulty.Hard]: [75, 85],
         [Difficulty.Impossible]: [80, 90],
+        [Difficulty.Legendary]: [85, 95],
       };
       const tilePercentRangeByDifficulty = {
         [Difficulty.Easy]: [70, 80],
         [Difficulty.Medium]: [80, 90],
         [Difficulty.Hard]: [85, 95],
         [Difficulty.Impossible]: [90, 100],
+        [Difficulty.Legendary]: [95, 100],
       };
 
       const troopRange = troopPercentRangeByDifficulty[difficulty];
       const tileRange = tilePercentRangeByDifficulty[difficulty];
 
-      const playerOutgoingTroops = this.player
-        .outgoingAttacks()
-        .reduce((sum, attack) => sum + attack.troops(), 0);
-      const otherOutgoingTroops = otherPlayer
-        .outgoingAttacks()
-        .reduce((sum, attack) => sum + attack.troops(), 0);
+      const playerOutgoingTroops = activeAllianceOutgoingTroops(this.player);
+      const otherOutgoingTroops = activeAllianceOutgoingTroops(otherPlayer);
       const playerTotalTroops = this.player.troops() + playerOutgoingTroops;
       const otherTotalTroops = otherPlayer.troops() + otherOutgoingTroops;
 
@@ -753,68 +1018,73 @@
     }
 
     // maybeBetray — NationAllianceBehavior.ts:371
+    shouldBetrayWeakHardPlayer(otherPlayer, difficulty) {
+      if (difficulty === Difficulty.Easy || difficulty === Difficulty.Medium) return false;
+      const maxTroops = this.game.config().maxTroops(otherPlayer);
+      const outgoingTroops = activeAllianceOutgoingTroops(otherPlayer);
+      return (
+        otherPlayer.troops() + outgoingTroops < maxTroops * 0.2 &&
+        otherPlayer.troops() < this.player.troops()
+      );
+    }
+
+    shouldBetrayWeakEasyPlayer(otherPlayer, difficulty) {
+      const easyOrMedium = difficulty === Difficulty.Easy || difficulty === Difficulty.Medium;
+      const protectedHuman =
+        difficulty === Difficulty.Easy && otherPlayer.type() === PlayerType.Human;
+      return easyOrMedium && !protectedHuman && this.player.troops() >= otherPlayer.troops() * 10;
+    }
+
+    shouldBetrayTraitor(otherPlayer, difficulty) {
+      return (
+        difficulty !== Difficulty.Easy &&
+        otherPlayer.isTraitor() &&
+        otherPlayer.troops() < this.player.troops() * 1.2
+      );
+    }
+
+    shouldBetrayOnlyBorder(otherPlayer, borderingPlayerCount, difficulty) {
+      return (
+        difficulty !== Difficulty.Easy &&
+        borderingPlayerCount === 1 &&
+        otherPlayer.troops() * 3 < this.player.troops()
+      );
+    }
+
     maybeBetray(otherPlayer, borderingPlayerCount) {
       // USER TOGGLE ("betray" OFF) → the bot stays LOYAL and never INITIATES a betrayal.
       // This is the single chokepoint: the alliance-break (this.betray) AND the follow-up
       // attack (maybeBetrayAndAttack only attacks a friend when this returns true) both
       // pass through here. Defensive retaliation against someone ALREADY attacking us is a
       // separate path (the `retaliate` strategy) and stays enabled.
-      if (state.settings.features && state.settings.features.betray === false) {
+      if (state.settings.features?.betray === false) {
         return false;
       }
       if (!this.player.isAlliedWith(otherPlayer)) return false;
 
       const difficulty = currentDifficulty();
+      // Relative weakness is the decisive conquest signal. The old policy only
+      // compared the ally with its own maxTroops (or required it to be our sole
+      // neighbour), which protected allies that were tiny compared with us but
+      // still moderately filled relative to their much smaller capacity.
+      if (isDominatedAllianceTarget(this.player, otherPlayer, difficulty)) {
+        return this.betray(otherPlayer);
+      }
 
       // Betray very weak players (For example MIRVed ones)
-      if (difficulty !== Difficulty.Easy && difficulty !== Difficulty.Medium) {
-        const otherPlayerMaxTroops = this.game.config().maxTroops(otherPlayer);
-        const otherPlayerOutgoingTroops = otherPlayer
-          .outgoingAttacks()
-          .reduce((sum, attack) => sum + attack.troops(), 0);
-        if (
-          otherPlayer.troops() + otherPlayerOutgoingTroops <
-            otherPlayerMaxTroops * 0.2 &&
-          otherPlayer.troops() < this.player.troops()
-        ) {
-          this.betray(otherPlayer);
-          return true;
-        }
-      }
+      if (this.shouldBetrayWeakHardPlayer(otherPlayer, difficulty)) return this.betray(otherPlayer);
 
       // Betray very weak players (similar check as above but for the easier difficulties)
       // This doesn't check for maxTroops and isn't really smart. It makes nations vulnerable, but that's intended.
       // On easy, don't betray humans
-      if (
-        (difficulty === Difficulty.Easy || difficulty === Difficulty.Medium) &&
-        !(
-          difficulty === Difficulty.Easy &&
-          otherPlayer.type() === PlayerType.Human
-        ) &&
-        this.player.troops() >= otherPlayer.troops() * 10
-      ) {
-        this.betray(otherPlayer);
-        return true;
-      }
+      if (this.shouldBetrayWeakEasyPlayer(otherPlayer, difficulty)) return this.betray(otherPlayer);
 
       // Betray traitors who aren't significantly stronger than us
-      if (
-        difficulty !== Difficulty.Easy &&
-        otherPlayer.isTraitor() &&
-        otherPlayer.troops() < this.player.troops() * 1.2
-      ) {
-        this.betray(otherPlayer);
-        return true;
-      }
+      if (this.shouldBetrayTraitor(otherPlayer, difficulty)) return this.betray(otherPlayer);
 
       // Betray our only bordering player if we are much stronger than them
-      if (
-        difficulty !== Difficulty.Easy &&
-        borderingPlayerCount === 1 &&
-        otherPlayer.troops() * 3 < this.player.troops()
-      ) {
-        this.betray(otherPlayer);
-        return true;
+      if (this.shouldBetrayOnlyBorder(otherPlayer, borderingPlayerCount, difficulty)) {
+        return this.betray(otherPlayer);
       }
 
       return false;
@@ -835,23 +1105,25 @@
       // can't disambiguate the two shape ctors) or the break ctor isn't found, this
       // is a no-op — by the time we have an ally to betray we've accepted at least
       // once, so the request ctor is learned.
-      if (!this.player.isAlliedWith(target)) return;
+      if (!this.player.isAlliedWith(target)) return false;
 
       const eventBus = getEventBus();
-      if (!eventBus) return;
-      if (!_ctors.allianceRequest) return;
+      if (!eventBus) return false;
+      if (!_ctors.allianceRequest) return false;
       const shape = getAllianceShapeCtors(eventBus);
       const breakCtor = shape.find((c) => c !== _ctors.allianceRequest);
-      if (!breakCtor) return;
-      emitIntent(
+      if (!breakCtor) return false;
+      const emitted = emitIntent(
         breakCtor,
         this.player.__src ?? this.player,
         target.__src ?? target,
       );
+      if (!emitted) return false;
       setLastAction(
         tr("🗡️ Betray {name}", { name: safeName(target) }),
         "diplo",
       );
+      return true;
     }
 
     // -------------------------------------------------------------------------
@@ -880,10 +1152,8 @@
     incomingAllianceRequests() {
       const out = [];
       const inSpawn = (() => {
-        try {
+        {
           return this.game.inSpawnPhase() === true;
-        } catch (_e) {
-          return false;
         }
       })();
       for (const ev of collectAllianceEvents()) {
@@ -911,10 +1181,8 @@
           // reject gate does NOT fire). This matches the common case (a live
           // request prompt the human would see now).
           createdAtTick = (() => {
-            try {
+            {
               return this.game.ticks();
-            } catch (_e) {
-              return this.game.config().numSpawnPhaseTurns() + 2;
             }
           })();
         }
@@ -927,25 +1195,21 @@
           accept: () => {
             const accept = pickAllianceButton(buttons, "btn", 1);
             if (!accept) return;
-            try {
+            {
               runAndCaptureAllianceCtor(() => accept.action());
               _allianceBehaviorActioned.add(ev);
               setLastAction(
                 tr("🤝 Alliance {name}", { name: safeName(requestor) }),
                 "diplo",
               );
-            } catch (error) {
-              console.error("[AutoBot] alliance accept failed:", error);
             }
           },
           reject: () => {
             const reject = pickAllianceButton(buttons, "btn-info", 2);
             if (!reject) return;
-            try {
+            {
               reject.action();
               _allianceBehaviorActioned.add(ev);
-            } catch (_e) {
-              /* ignore */
             }
           },
         });
@@ -963,13 +1227,11 @@
     canSendAllianceRequest(other) {
       const src = this.player.__src;
       if (src && typeof src.canSendAllianceRequest === "function") {
-        try {
+        {
           return src.canSendAllianceRequest(other.__src ?? other);
-        } catch (_e) {
-          /* fall through to local checks */
         }
       }
-      try {
+      {
         if (other.isAlive && other.isAlive() === false) return false;
         if (this.player.isAlliedWith(other)) return false;
         if (this.player.isOnSameTeam && this.player.isOnSameTeam(other)) {
@@ -981,8 +1243,6 @@
         ) {
           return false;
         }
-      } catch (_e) {
-        return false;
       }
       return true;
     }
@@ -994,19 +1254,15 @@
     resolveEventPlayer(ev) {
       const sid = Number(ev?.focusID);
       if (!Number.isFinite(sid)) return null;
-      let p = null;
-      try {
+      let p;
+      {
         p = this.game.playerBySmallID ? this.game.playerBySmallID(sid) : null;
-      } catch (_e) {
-        p = null;
       }
       if (p && p.isPlayer && p.isPlayer()) return p;
-      try {
+      {
         for (const cand of this.game.players()) {
           if (cand.smallID() === sid) return cand;
         }
-      } catch (_e) {
-        /* ignore */
       }
       return null;
     }

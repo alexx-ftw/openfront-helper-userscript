@@ -6,18 +6,17 @@
   const NETWORK_LOG_URL_FILTER = /openfront|game|api|lobby|match/i;
   const NETWORK_LOG_MAX_ENTRIES = 500;
   let _networkLogEntries = [];
-  let _networkLogOriginalFetch = null;
   let _networkLogOriginalXhrOpen = null;
   let _networkLogOriginalXhrSend = null;
 
   function networkLogRecord(entry) {
-    if (!networkLoggerEnabled) return;
+    if (!runtimeState.networkLoggerEnabled) return;
     _networkLogEntries.push(entry);
     if (_networkLogEntries.length > NETWORK_LOG_MAX_ENTRIES) {
       _networkLogEntries = _networkLogEntries.slice(-NETWORK_LOG_MAX_ENTRIES);
     }
     // Forward to round-logger if available.
-    if (typeof roundLogRecord === "function" && roundLoggerEnabled) {
+    if (typeof roundLogRecord === "function" && runtimeState.roundLoggerEnabled) {
       roundLogRecord("network", entry);
     }
   }
@@ -68,8 +67,8 @@
   }
 
   function setNetworkLoggerEnabled(enabled) {
-    networkLoggerEnabled = Boolean(enabled);
-    if (networkLoggerEnabled) {
+    runtimeState.networkLoggerEnabled = Boolean(enabled);
+    if (runtimeState.networkLoggerEnabled) {
       installNetworkHooks();
     } else {
       uninstallNetworkHooks();

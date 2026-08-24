@@ -1,5 +1,11 @@
 // Alliance marker overlay and ally-duration display.
 
+  // Marker membership changes infrequently, but positions are refreshed every
+  // frame. Keep the DOM nodes indexed by ally id so the hot path does not run
+  // two querySelector calls per ally on every animation frame.
+  const allyMarkerElements = new Map();
+  const allyLineElements = new Map();
+
   function ensureAllyMarkerStyles() {
     if (document.getElementById(ALLY_MARKER_STYLE_ID)) {
       return;
@@ -158,20 +164,16 @@
   }
 
   function isAlliedPlayer(player, otherPlayer) {
-    try {
+    {
       return player !== otherPlayer && Boolean(player?.isAlliedWith?.(otherPlayer));
-    } catch (_error) {
-      return false;
     }
   }
 
   function getAllianceView(player, otherPlayer) {
-    try {
+    {
       return Array.from(player?.alliances?.() || []).find(
         (alliance) => alliance?.other === otherPlayer?.id?.(),
       );
-    } catch (_error) {
-      return null;
     }
   }
 
@@ -218,10 +220,112 @@
     };
   }
 
+  function scheduleAllyMarkerSync() {
+    runtimeState.allyMarkerAnimationFrame = requestAnimationFrame(syncAllyMarkers);
+  }
+
+  function clearAllyMarkerContainer(container, lineSvg) {
+    lineSvg?.replaceChildren();
+    container.replaceChildren(...(lineSvg ? [lineSvg] : []));
+    scheduleAllyMarkerSync();
+  }
+
+  function isAllyMarkerPositionVisible(screenPos) {
+    return (
+      Number.isFinite(screenPos?.x) &&
+      Number.isFinite(screenPos?.y) &&
+      screenPos.x >= -30 &&
+      screenPos.y >= -30 &&
+      screenPos.x <= window.innerWidth + 30 &&
+      screenPos.y <= window.innerHeight + 30
+    );
+  }
+
+  function ensureAllyLine(lineSvg, markerId) {
+    const cached = allyLineElements.get(markerId);
+    if (cached?.isConnected) return cached;
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.classList.add("openfront-helper-ally-line");
+    line.dataset.allyId = markerId;
+    lineSvg.appendChild(line);
+    allyLineElements.set(markerId, line);
+    return line;
+  }
+
+  function ensureAllyMarker(container, markerId) {
+    const cached = allyMarkerElements.get(markerId);
+    if (cached?.isConnected) return cached;
+    const marker = document.createElement("div");
+    marker.className = "openfront-helper-ally-dot";
+    marker.dataset.allyId = markerId;
+    marker.innerHTML = `
+      <span class="openfront-helper-ally-time">
+        <span class="openfront-helper-ally-label">Alliance</span>
+        <span class="openfront-helper-ally-remaining"></span>
+      </span>
+    `;
+    container.appendChild(marker);
+    allyMarkerElements.set(markerId, marker);
+    return marker;
+  }
+
+  function updateAllyMarker(marker, line, timing, screenPos, hoveredScreenPos) {
+    line.setAttribute("x1", String(hoveredScreenPos.x));
+    line.setAttribute("y1", String(hoveredScreenPos.y));
+    line.setAttribute("x2", String(screenPos.x));
+    line.setAttribute("y2", String(screenPos.y));
+    for (const element of [marker, line]) {
+      element.classList.remove(
+        "openfront-helper-ally-warning",
+        "openfront-helper-ally-critical",
+      );
+      if (timing.urgencyClass) element.classList.add(timing.urgencyClass);
+    }
+    const remaining = marker.querySelector(".openfront-helper-ally-remaining");
+    if (remaining) remaining.textContent = timing.remaining;
+    marker.style.setProperty("--ally-x", `${screenPos.x}px`);
+    marker.style.setProperty("--ally-y", `${screenPos.y}px`);
+  }
+
+  function removeInactiveAllyMarkers(activeIds) {
+    for (const [markerId, marker] of allyMarkerElements) {
+      if (activeIds.has(markerId)) continue;
+      marker.remove();
+      allyMarkerElements.delete(markerId);
+    }
+    for (const [markerId, line] of allyLineElements) {
+      if (activeIds.has(markerId)) continue;
+      line.remove();
+      allyLineElements.delete(markerId);
+    }
+  }
+
+  function updateVisibleAllyMarkers(container, lineSvg, overlay, transform, hoveredScreenPos) {
+    const activeIds = new Set();
+    const players = Array.from(overlay.game.playerViews?.() || []);
+    for (const [index, player] of players.entries()) {
+      if (!player?.isAlive?.() || !isAlliedPlayer(overlay.player, player)) continue;
+      const nameLocation = player.nameLocation?.();
+      if (!nameLocation) continue;
+      const screenPos = transform.worldToScreenCoordinates(nameLocation);
+      if (!isAllyMarkerPositionVisible(screenPos)) continue;
+      const markerId = getPlayerMarkerId(player, index);
+      activeIds.add(markerId);
+      const line = ensureAllyLine(lineSvg, markerId);
+      const marker = ensureAllyMarker(container, markerId);
+      const alliance = getAllianceView(overlay.player, player);
+      const timing = getAllianceTimingText(overlay.game, alliance);
+      updateAllyMarker(marker, line, timing, screenPos, hoveredScreenPos);
+    }
+    return activeIds;
+  }
+
   function syncAllyMarkers() {
-    if (!allyMarkersEnabled) {
+    if (!runtimeState.allyMarkersEnabled) {
       document.getElementById(ALLY_MARKER_CONTAINER_ID)?.remove();
-      allyMarkerAnimationFrame = null;
+      allyMarkerElements.clear();
+      allyLineElements.clear();
+      runtimeState.allyMarkerAnimationFrame = null;
       return;
     }
 
@@ -230,140 +334,48 @@
     const overlay = getHoveredPlayerInfoOverlay();
     const transform = overlay?.transform;
     if (!overlay?.game || !transform) {
-      container.replaceChildren();
-      allyMarkerAnimationFrame = requestAnimationFrame(syncAllyMarkers);
+      clearAllyMarkerContainer(container);
       return;
     }
 
     const hoveredNameLocation = overlay.player?.nameLocation?.();
     if (!hoveredNameLocation) {
-      lineSvg.replaceChildren();
-      container.replaceChildren(lineSvg);
-      allyMarkerAnimationFrame = requestAnimationFrame(syncAllyMarkers);
+      clearAllyMarkerContainer(container, lineSvg);
       return;
     }
 
     const hoveredScreenPos =
       transform.worldToScreenCoordinates(hoveredNameLocation);
-    if (
-      !Number.isFinite(hoveredScreenPos?.x) ||
-      !Number.isFinite(hoveredScreenPos?.y)
-    ) {
-      lineSvg.replaceChildren();
-      container.replaceChildren(lineSvg);
-      allyMarkerAnimationFrame = requestAnimationFrame(syncAllyMarkers);
+    if (!isAllyMarkerPositionVisible(hoveredScreenPos)) {
+      clearAllyMarkerContainer(container, lineSvg);
       return;
     }
 
-    const activeIds = new Set();
-    const players = Array.from(overlay.game.playerViews?.() || []);
-
-    for (let index = 0; index < players.length; index++) {
-      const player = players[index];
-      if (!player?.isAlive?.() || !isAlliedPlayer(overlay.player, player)) {
-        continue;
-      }
-
-      const nameLocation = player.nameLocation?.();
-      if (!nameLocation) {
-        continue;
-      }
-
-      const screenPos = transform.worldToScreenCoordinates(nameLocation);
-      if (
-        !Number.isFinite(screenPos?.x) ||
-        !Number.isFinite(screenPos?.y) ||
-        screenPos.x < -30 ||
-        screenPos.y < -30 ||
-        screenPos.x > window.innerWidth + 30 ||
-        screenPos.y > window.innerHeight + 30
-      ) {
-        continue;
-      }
-
-      const markerId = getPlayerMarkerId(player, index);
-      activeIds.add(markerId);
-
-      let line = lineSvg.querySelector(
-        `.openfront-helper-ally-line[data-ally-id="${escapeCssIdentifier(markerId)}"]`,
-      );
-      if (!line) {
-        line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-        line.classList.add("openfront-helper-ally-line");
-        line.dataset.allyId = markerId;
-        lineSvg.appendChild(line);
-      }
-      line.setAttribute("x1", String(hoveredScreenPos.x));
-      line.setAttribute("y1", String(hoveredScreenPos.y));
-      line.setAttribute("x2", String(screenPos.x));
-      line.setAttribute("y2", String(screenPos.y));
-
-      let marker = container.querySelector(
-        `.openfront-helper-ally-dot[data-ally-id="${escapeCssIdentifier(markerId)}"]`,
-      );
-      if (!marker) {
-        marker = document.createElement("div");
-        marker.className = "openfront-helper-ally-dot";
-        marker.dataset.allyId = markerId;
-        marker.innerHTML = `
-          <span class="openfront-helper-ally-time">
-            <span class="openfront-helper-ally-label">Alliance</span>
-            <span class="openfront-helper-ally-remaining"></span>
-          </span>
-        `;
-        container.appendChild(marker);
-      }
-
-      const alliance = getAllianceView(overlay.player, player);
-      const timing = getAllianceTimingText(overlay.game, alliance);
-      marker.classList.remove(
-        "openfront-helper-ally-warning",
-        "openfront-helper-ally-critical",
-      );
-      line.classList.remove(
-        "openfront-helper-ally-warning",
-        "openfront-helper-ally-critical",
-      );
-      if (timing.urgencyClass) {
-        marker.classList.add(timing.urgencyClass);
-        line.classList.add(timing.urgencyClass);
-      }
-      const remaining = marker.querySelector(".openfront-helper-ally-remaining");
-      if (remaining) {
-        remaining.textContent = timing.remaining;
-      }
-
-      marker.style.setProperty("--ally-x", `${screenPos.x}px`);
-      marker.style.setProperty("--ally-y", `${screenPos.y}px`);
-    }
-
-    for (const marker of container.querySelectorAll(".openfront-helper-ally-dot")) {
-      if (!activeIds.has(marker.dataset.allyId || "")) {
-        marker.remove();
-      }
-    }
-    for (const line of lineSvg.querySelectorAll(".openfront-helper-ally-line")) {
-      if (!activeIds.has(line.dataset.allyId || "")) {
-        line.remove();
-      }
-    }
-
-    allyMarkerAnimationFrame = requestAnimationFrame(syncAllyMarkers);
+    const activeIds = updateVisibleAllyMarkers(
+      container,
+      lineSvg,
+      overlay,
+      transform,
+      hoveredScreenPos,
+    );
+    removeInactiveAllyMarkers(activeIds);
+    scheduleAllyMarkerSync();
   }
 
   function setAllyMarkersEnabled(enabled) {
-    allyMarkersEnabled = Boolean(enabled);
-    if (!allyMarkersEnabled) {
-      if (allyMarkerAnimationFrame !== null) {
-        cancelAnimationFrame(allyMarkerAnimationFrame);
+    runtimeState.allyMarkersEnabled = Boolean(enabled);
+    if (!runtimeState.allyMarkersEnabled) {
+      if (runtimeState.allyMarkerAnimationFrame !== null) {
+        cancelAnimationFrame(runtimeState.allyMarkerAnimationFrame);
       }
-      allyMarkerAnimationFrame = null;
+      runtimeState.allyMarkerAnimationFrame = null;
       document.getElementById(ALLY_MARKER_CONTAINER_ID)?.remove();
+      allyMarkerElements.clear();
+      allyLineElements.clear();
       return;
     }
 
-    if (allyMarkerAnimationFrame === null) {
+    if (runtimeState.allyMarkerAnimationFrame === null) {
       syncAllyMarkers();
     }
   }
-

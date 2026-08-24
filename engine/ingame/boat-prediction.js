@@ -170,77 +170,53 @@
     return svg;
   }
 
-  function getBoatRouteScreenPoints(game, transform, unit, motionPlanUnitId, boatScreenPos, landingScreenPos) {
+  function appendBoatMotionPlanPoints(points, game, transform, motionPlanUnitId) {
+    if (!Number.isFinite(motionPlanUnitId)) return;
+    const plan = game?.motionPlans?.()?.get(motionPlanUnitId);
+    if (!plan?.path?.length) return;
+    const currentTick = Number(game?.ticks?.());
+    const elapsed = Number.isFinite(currentTick) ? currentTick - plan.startTick : 0;
+    const currentStep = Math.max(0, Math.min(
+      Math.floor(elapsed / Math.max(1, plan.ticksPerStep)), plan.path.length - 1,
+    ));
+    const sampleStep = Math.max(1, Math.floor((plan.path.length - currentStep) / 40));
+    for (let i = currentStep; i < plan.path.length; i += sampleStep) {
+      const point = toScreenPoint(game, transform, plan.path[i]);
+      if (point) points.push({ x: point.x, y: point.y });
+    }
+  }
+
+  function getBoatRouteScreenPoints({
+    game, transform, motionPlanUnitId, boatScreenPos, landingScreenPos,
+  }) {
     const points = [];
-
-    if (boatScreenPos) {
-      points.push({ x: boatScreenPos.x, y: boatScreenPos.y });
+    if (boatScreenPos) points.push({ x: boatScreenPos.x, y: boatScreenPos.y });
+    {
+      appendBoatMotionPlanPoints(points, game, transform, motionPlanUnitId);
     }
-
-    try {
-      if (Number.isFinite(motionPlanUnitId)) {
-        const plan = game?.motionPlans?.()?.get(motionPlanUnitId);
-        if (plan?.path && plan.path.length > 0) {
-          const path = plan.path;
-          const currentTick = Number(game?.ticks?.());
-          const elapsed = Number.isFinite(currentTick) ? currentTick - plan.startTick : 0;
-          const currentStep = Math.max(
-            0,
-            Math.min(
-              Math.floor(elapsed / Math.max(1, plan.ticksPerStep)),
-              path.length - 1,
-            ),
-          );
-          const remainingLength = path.length - currentStep;
-          const maxSamples = 40;
-          const sampleStep = Math.max(1, Math.floor(remainingLength / maxSamples));
-
-          for (let i = currentStep; i < path.length; i += sampleStep) {
-            const pt = toScreenPoint(game, transform, path[i]);
-            if (pt) {
-              points.push({ x: pt.x, y: pt.y });
-            }
-          }
-        }
-      }
-    } catch (_error) {
-      // Fall back to direct line if route unavailable.
-    }
-
-    if (landingScreenPos) {
-      points.push({ x: landingScreenPos.x, y: landingScreenPos.y });
-    }
-
+    if (landingScreenPos) points.push({ x: landingScreenPos.x, y: landingScreenPos.y });
     return points;
   }
 
+  function isBoatPlayer(player) {
+    return typeof player?.isPlayer === "function" && player.isPlayer();
+  }
+
+  function getGranularBoatRelation(myPlayer, owner) {
+    if (Number(owner.smallID?.()) === Number(myPlayer.smallID?.())) return "self";
+    if (myPlayer.isOnSameTeam?.(owner)) return "team";
+    if (myPlayer.isAlliedWith?.(owner)) return "ally";
+    if (owner.isFriendly?.(myPlayer) || myPlayer.isFriendly?.(owner)) return "ally";
+    return "enemy";
+  }
+
   function getBoatPredictionRelation(game, unit) {
-    const owner = unit?.owner?.();
-    try {
+    {
+      const owner = unit?.owner?.();
       const myPlayer = game?.myPlayer?.();
-      if (!owner?.isPlayer?.() || !myPlayer?.isPlayer?.()) {
-        return null;
-      }
-      if (Number(owner.smallID?.()) === Number(myPlayer.smallID?.())) {
-        return "self";
-      }
-      // Distinguish teammates (same team) from manual alliances (possibly
-      // cross-team). The shared getPlayerRelationToMyPlayer collapses both into
-      // "ally"; boat prediction needs them apart so each gets its own colour and
-      // its own always-route toggle.
-      if (myPlayer.isOnSameTeam?.(owner)) {
-        return "team";
-      }
-      if (myPlayer.isAlliedWith?.(owner)) {
-        return "ally";
-      }
-      // Fallback for older builds missing the granular APIs: any friendly → ally.
-      if (owner.isFriendly?.(myPlayer) || myPlayer.isFriendly?.(owner)) {
-        return "ally";
-      }
-      return "enemy";
-    } catch (_error) {
-      return null;
+      return isBoatPlayer(owner) && isBoatPlayer(myPlayer)
+        ? getGranularBoatRelation(myPlayer, owner)
+        : null;
     }
   }
 
@@ -248,18 +224,18 @@
   // relation into a persistent route — but only while the prediction overlay is
   // on. The panel draws focused-boat routes independently of these flags.
   function shouldBoatRouteAlwaysShow(transport) {
-    if (!boatPredictionEnabled) {
+    if (!runtimeState.boatPredictionEnabled) {
       return false;
     }
     switch (transport.relation) {
       case "self":
-        return boatPredictionAlwaysOwnRoutes;
+        return runtimeState.boatPredictionAlwaysOwnRoutes;
       case "team":
-        return boatPredictionAlwaysTeamRoutes;
+        return runtimeState.boatPredictionAlwaysTeamRoutes;
       case "ally":
-        return boatPredictionAlwaysAllyRoutes;
+        return runtimeState.boatPredictionAlwaysAllyRoutes;
       case "enemy":
-        return boatPredictionAlwaysEnemyRoutes;
+        return runtimeState.boatPredictionAlwaysEnemyRoutes;
       default:
         return false;
     }
@@ -297,28 +273,26 @@
     // The shared scan/render loop runs for any consumer that needs it: the
     // prediction overlay, an open boat panel (focused routes), or the incoming
     // warning (which needs the periodic scan to spot new boats).
-    return boatPredictionEnabled || boatPanelOpen || boatWarnIncoming;
+    return runtimeState.boatPredictionEnabled || runtimeState.boatPanelOpen || runtimeState.boatWarnIncoming;
   }
 
   // Remaining travel time for a transport, from the game's own motion plan (the
   // same data it uses to advance the ship). null once the plan is cleared, i.e.
   // the boat has essentially arrived.
+  function getBoatMotionPlan(game, transport) {
+    const id = transport?.motionPlanUnitId;
+    if (!Number.isFinite(id)) return null;
+    return game?.motionPlans?.()?.get(id) ?? null;
+  }
+
   function computeBoatEtaMs(game, transport) {
-    try {
-      const id = transport?.motionPlanUnitId;
-      if (!Number.isFinite(id)) {
-        return null;
-      }
-      const plan = game?.motionPlans?.()?.get(id);
-      if (!plan?.path || !plan.path.length) {
-        return null;
-      }
-      const endTick = plan.startTick + plan.path.length * plan.ticksPerStep;
+    {
+      const plan = getBoatMotionPlan(game, transport);
+      if (!plan?.path?.length) return null;
+      const endTick = plan.startTick + (plan.path.length - 1) * plan.ticksPerStep;
       const remainingTicks = endTick - Number(game?.ticks?.());
       const msPerTick = Number(game?.config?.()?.msPerTick?.()) || 100;
       return Math.max(0, remainingTicks * msPerTick);
-    } catch (_error) {
-      return null;
     }
   }
 
@@ -336,15 +310,13 @@
   }
 
   function isBoatTargetingMyPlayer(game, targetTile) {
-    try {
+    {
       const myPlayer = game?.myPlayer?.();
       if (!myPlayer?.isPlayer?.()) {
         return false;
       }
       const ownerId = game.ownerID?.(targetTile);
       return Number(ownerId) === Number(myPlayer.smallID?.());
-    } catch (_error) {
-      return false;
     }
   }
 
@@ -363,13 +335,11 @@
       return "Unknown";
     }
 
-    let name = "Unknown";
-    try {
+    let name;
+    {
       name = typeof getPlayerDisplayName === "function"
         ? getPlayerDisplayName(owner)
         : String(owner.displayName?.() ?? owner.name?.() ?? "Unknown");
-    } catch (_error) {
-      name = "Unknown";
     }
 
     const compactName = String(name || "Unknown").trim();
@@ -399,12 +369,10 @@
     if (tile == null) {
       return null;
     }
-    try {
+    {
       const worldX = game.x(tile);
       const worldY = game.y(tile);
       return toScreenPointFromWorld(transform, worldX, worldY);
-    } catch (_error) {
-      return null;
     }
   }
 
@@ -414,7 +382,7 @@
     if (!Number.isFinite(worldX) || !Number.isFinite(worldY)) {
       return null;
     }
-    try {
+    {
       _toScreenPointQueryArg.x = worldX;
       _toScreenPointQueryArg.y = worldY;
       const point = transform.worldToScreenCoordinates(_toScreenPointQueryArg);
@@ -430,8 +398,6 @@
       slot.worldX = worldX;
       slot.worldY = worldY;
       return slot;
-    } catch (_error) {
-      return null;
     }
   }
 
@@ -447,72 +413,60 @@
     );
   }
 
+  function isBoatRetreating(unit) {
+    const transportState =
+      typeof unit?.transportShipState === "function"
+        ? unit.transportShipState()
+        : unit?.transportShipState;
+    if (transportState?.isRetreating === true) return true;
+
+    // Older/raw adapters may still expose the AttackUpdate-shaped flag.
+    const retreating =
+      typeof unit?.retreating === "function"
+        ? unit.retreating()
+        : unit?.retreating;
+    return retreating === true;
+  }
+
+  function getBoatLandingLabel(relation, targeting) {
+    const labels = {
+      self: "Your landing",
+      team: "Team landing",
+      ally: "Ally landing",
+      enemy: targeting ? "Landing!" : "Landing",
+    };
+    return tr(labels[relation] ?? labels.enemy);
+  }
+
+  function createBoatPredictionTransport(game, unit) {
+    if (!unit?.isActive?.() || isBoatRetreating(unit)) return null;
+    const relation = getBoatPredictionRelation(game, unit);
+    if (!relation) return null;
+    const targetTile = getBoatTargetTile(unit);
+    if (targetTile === null) return null;
+    const targetsMyTerritory = isBoatTargetingMyPlayer(game, targetTile);
+    const targeting = relation === "enemy" && targetsMyTerritory;
+    const { color, bg } = getBoatPredictionColors(relation, targeting);
+    const ownerName = getBoatOwnerLabel(unit);
+    const rawUnitId = unit.id?.();
+    const motionPlanUnitId = Number(rawUnitId);
+    return {
+      domUnitId: String(rawUnitId ?? `target:${targetTile}`),
+      motionPlanUnitId: Number.isFinite(motionPlanUnitId) ? motionPlanUnitId : null,
+      unit, relation, targetTile, targetsMyTerritory, ownerName,
+      targetWorldX: game.x(targetTile),
+      targetWorldY: game.y(targetTile),
+      color, bg,
+      labelText: `${getBoatLandingLabel(relation, targeting)} · ${ownerName}`,
+    };
+  }
+
   function collectBoatPredictionTransports(game) {
-    const transports = [];
-
-    for (const unit of game.units(...BOAT_UNIT_TYPES)) {
-      if (!unit?.isActive?.()) {
-        continue;
-      }
-
-      const relation = getBoatPredictionRelation(game, unit);
-      if (!relation) {
-        continue;
-      }
-
-      try {
-        if (unit.retreating?.()) {
-          continue;
-        }
-      } catch (_error) {
-        // ignore
-      }
-
-      const targetTile = getBoatTargetTile(unit);
-      if (targetTile === null) {
-        continue;
-      }
-
-      // Whether the boat is heading INTO my current territory. Resolved live
-      // each scan (not cached per-unit): targetTile is fixed for the boat's
-      // life, but its owner changes — e.g. an enemy boat aimed at neutral land
-      // that I then capture should start counting as "incoming to my territory".
-      const targetsMyTerritory = isBoatTargetingMyPlayer(game, targetTile);
-      const targeting = relation === "enemy" && targetsMyTerritory;
-      const { color, bg } = getBoatPredictionColors(relation, targeting);
-      const labelPrefix =
-        relation === "self"
-          ? tr("Your landing")
-          : relation === "team"
-            ? tr("Team landing")
-            : relation === "ally"
-              ? tr("Ally landing")
-              : targeting
-                ? tr("Landing!")
-                : tr("Landing");
-      const ownerName = getBoatOwnerLabel(unit);
-      const labelText = `${labelPrefix} · ${ownerName}`;
-      const unitId = String(unit.id?.() ?? `target:${targetTile}`);
-      const motionPlanUnitId = Number(unit.id?.());
-
-      transports.push({
-        domUnitId: unitId,
-        motionPlanUnitId: Number.isFinite(motionPlanUnitId) ? motionPlanUnitId : null,
-        unit,
-        relation,
-        targetTile,
-        targetsMyTerritory,
-        ownerName,
-        // Target world coords are fixed per transport; cache once per scan.
-        targetWorldX: game.x(targetTile),
-        targetWorldY: game.y(targetTile),
-        color,
-        bg,
-        labelText,
-      });
-    }
-
-    return transports;
+    const units =
+      typeof getCachedGameUnits === "function"
+        ? getCachedGameUnits(game, ...BOAT_UNIT_TYPES)
+        : game.units(...BOAT_UNIT_TYPES);
+    return units.map((unit) => createBoatPredictionTransport(game, unit)).filter(Boolean);
   }
 
   function clearBoatPredictionDomCache() {
@@ -624,6 +578,11 @@
     setBoatHighlightVisible(entry, false);
   }
 
+  function hideCachedBoatEntry(domUnitId) {
+    const entry = boatPredictionDomCache.get(domUnitId);
+    if (entry) hideBoatEntry(entry);
+  }
+
   function updateBoatPredictionEntryPosition(entry, screenPos) {
     // Positions are baked into translate3d via CSS variables, not left/top.
     // Avoids per-frame paint invalidation of the marker (with its box-shadow)
@@ -689,12 +648,142 @@
     return boatPredictionHoverElements;
   }
 
-  function syncBoatPrediction() {
+  function queueBoatPredictionFrame() {
+    runtimeState.boatLandingAnimationFrame = requestAnimationFrame(syncBoatPrediction);
+  }
+
+  function resetBoatPredictionForMissingGame(container) {
+    container.replaceChildren();
+    lastBoatPredictionScanAt = 0;
+    boatPredictionTransports = [];
+    clearBoatPredictionDomCache();
+    resetIncomingBoatWarningBaseline();
+  }
+
+  function refreshBoatPredictionScan(game, now) {
+    if (lastBoatPredictionScanAt && now - lastBoatPredictionScanAt < BOAT_PREDICTION_SCAN_MS) return;
+    boatPredictionTransports = collectBoatPredictionTransports(game);
+    cleanupBoatPredictionDomCache(new Set(
+      boatPredictionTransports.map((transport) => transport.domUnitId),
+    ));
+    maybeWarnNewIncomingBoats(boatPredictionTransports);
+    lastBoatPredictionScanAt = now;
+  }
+
+  function updateBoatMarker(entry, markersOn, position) {
+    if (!markersOn || !position.onScreen) {
+      setBoatMarkerVisible(entry, false);
+      return;
+    }
+    setBoatMarkerVisible(entry, true);
+    updateBoatPredictionEntryPosition(entry, position.screen);
+  }
+
+  function isBoatMapHovered(transport, markersOn, position, renderState) {
+    if (!markersOn || !position.onScreen || renderState.mapHoveredId !== null) return false;
+    const dx = position.x - boatLandingMouseX;
+    const dy = position.y - boatLandingMouseY;
+    if (dx * dx + dy * dy > BOAT_LANDING_HOVER_RADIUS_SQUARED) return false;
+    renderState.mapHoveredId = transport.domUnitId;
+    return true;
+  }
+
+  function setBoatRoutePoints(entry, routePoints) {
+    if (routePoints.length < 2) {
+      setBoatRouteVisible(entry, false);
+      return;
+    }
+    const points = routePoints.map((point) => `${point.x},${point.y}`).join(" ");
+    if (entry.routePoints !== points) {
+      entry.routeLine.setAttribute("points", points);
+      entry.routePoints = points;
+    }
+    setBoatRouteVisible(entry, true);
+  }
+
+  function updateBoatRoute(context, entry, transport, position, accented) {
+    const boatPosition = toScreenPoint(
+      context.game, context.transform, asFiniteTileRef(transport.unit?.tile?.()),
+    );
+    const boatScreenPos = boatPosition
+      ? { x: boatPosition.x, y: boatPosition.y }
+      : null;
+    setBoatRoutePoints(entry, getBoatRouteScreenPoints({
+      game: context.game,
+      transform: context.transform,
+      motionPlanUnitId: transport.motionPlanUnitId,
+      boatScreenPos,
+      landingScreenPos: position.onScreen ? { x: position.x, y: position.y } : null,
+    }));
+    if (!boatScreenPos) {
+      setBoatHighlightVisible(entry, false);
+      return;
+    }
+    updateBoatHighlightPosition(entry, boatScreenPos.x, boatScreenPos.y);
+    setBoatHighlightStrong(entry, accented);
+    setBoatHighlightVisible(entry, true);
+  }
+
+  function renderBoatPredictionTransport(context, container, routeSvg, transport, renderState) {
+    const focused = transport.domUnitId === runtimeState.boatPanelFocusedId;
+    const screen = toScreenPointFromWorld(
+      context.transform, transport.targetWorldX, transport.targetWorldY,
+    );
+    if (!focused && !isNearViewport(screen, 200)) return;
+    const position = {
+      screen,
+      onScreen: screen != null,
+      x: screen?.x ?? 0,
+      y: screen?.y ?? 0,
+    };
+    if (!renderState.markersOn && !focused) {
+      hideCachedBoatEntry(transport.domUnitId);
+      return;
+    }
+    renderState.visibleIds.add(transport.domUnitId);
+    const entry = getBoatPredictionDomEntry(container, routeSvg, transport);
+    updateBoatMarker(entry, renderState.markersOn, position);
+    const mapHovered = isBoatMapHovered(
+      transport, renderState.markersOn, position, renderState,
+    );
+    const accented = mapHovered || focused;
+    if (!shouldBoatRouteAlwaysShow(transport) && !accented) {
+      setBoatRouteVisible(entry, false);
+      setBoatHighlightVisible(entry, false);
+      return;
+    }
+    updateBoatRoute(context, entry, transport, position, accented);
+    if (accented && !renderState.label && position.onScreen) {
+      renderState.label = { transport, x: position.x, y: position.y };
+    }
+  }
+
+  function hideNonVisibleBoatEntries(visibleIds) {
+    for (const [domUnitId, entry] of boatPredictionDomCache) {
+      if (!visibleIds.has(domUnitId)) hideBoatEntry(entry);
+    }
+  }
+
+  function renderBoatPredictionLabel(container, game, label) {
+    if (!label) {
+      clearBoatPredictionHoverElements();
+      return;
+    }
+    const elements = getBoatPredictionHoverElements(container);
+    elements.label.hidden = false;
+    elements.label.style.setProperty("--boat-tx", `${label.x}px`);
+    elements.label.style.setProperty("--boat-label-ty", `${label.y - 16}px`);
+    elements.label.style.setProperty("--boat-color", label.transport.color);
+    const eta = formatBoatEta(computeBoatEtaMs(game, label.transport));
+    elements.label.textContent = `${label.transport.labelText} · ${eta}`;
+  }
+
+  let syncBoatPrediction = function syncBoatPredictionDom() {
     // Frame skip: only render every 3rd rAF frame (~20fps). Scan still runs
     // at its own cadence. Blon pattern — smooth enough for boats, ~67% less CPU.
     _boatFrameCounter = (_boatFrameCounter + 1) % 3;
     if (_boatFrameCounter !== 0) {
-      boatLandingAnimationFrame = requestAnimationFrame(syncBoatPrediction);
+      queueBoatPredictionFrame();
       return;
     }
 
@@ -707,193 +796,30 @@
     ensureBoatMouseListener();
     const context = getOpenFrontGameContext();
     if (!context?.game || !context?.transform) {
-      container.replaceChildren();
-      lastBoatPredictionScanAt = 0;
-      boatPredictionTransports = [];
-      clearBoatPredictionDomCache();
-      // Left the match (menu / between games): drop the warning baseline so the
-      // next match seeds fresh instead of inheriting stale ids.
-      resetIncomingBoatWarningBaseline();
-      boatLandingAnimationFrame = requestAnimationFrame(syncBoatPrediction);
+      resetBoatPredictionForMissingGame(container);
+      queueBoatPredictionFrame();
       return;
     }
-
-    const now = Date.now();
-    if (!lastBoatPredictionScanAt || now - lastBoatPredictionScanAt >= BOAT_PREDICTION_SCAN_MS) {
-      boatPredictionTransports = collectBoatPredictionTransports(context.game);
-      const scanIds = new Set();
-      for (const transport of boatPredictionTransports) {
-        scanIds.add(transport.domUnitId);
-      }
-      cleanupBoatPredictionDomCache(scanIds);
-      // Detection runs on the scan tick (~1s), off the per-frame path. Self-
-      // gates on the warning toggle (defined in boat-panel.js, shared scope).
-      maybeWarnNewIncomingBoats(boatPredictionTransports);
-      lastBoatPredictionScanAt = now;
-    }
-
-    // The route SVG must exist before the loop: per-entry routes attach their
-    // polylines to it, not just the hovered boat.
+    refreshBoatPredictionScan(context.game, Date.now());
     const routeSvg = ensureBoatRouteSvg(container);
-
     resetScreenPointPool();
-
-    // Landing markers + always-on routes only render with the prediction overlay
-    // on. When only the panel is open the loop still runs, but the map stays
-    // clean until a row is focused/hovered.
-    const markersOn = boatPredictionEnabled;
-
-    const visibleTransportIds = new Set();
-    let mapHoveredId = null; // first boat under the mouse (overlay hover)
-    // The accented boat (hovered or panel-focused) that owns the single label.
-    let labelTransport = null;
-    let labelLandingX = 0;
-    let labelLandingY = 0;
-
-    for (let i = 0; i < boatPredictionTransports.length; i += 1) {
-      const transport = boatPredictionTransports[i];
-      const isFocused =
-        boatPanelFocusedId !== null && transport.domUnitId === boatPanelFocusedId;
-
-      // Use pre-resolved world coords from the scan; avoids two proxy calls
-      // (game.x, game.y) per transport per pan frame.
-      const screenPos = toScreenPointFromWorld(
-        context.transform,
-        transport.targetWorldX,
-        transport.targetWorldY,
-      );
-      // Focused boats are processed even off-screen (their boat/route may still
-      // be partly visible); everything else is viewport-culled.
-      if (!isFocused && !isNearViewport(screenPos, 200)) {
-        continue;
-      }
-      const landingOnScreen = screenPos != null;
-      // Capture landing coords now: the route computation below recycles the
-      // screen-point pool, which would otherwise clobber screenPos.
-      const landingX = landingOnScreen ? screenPos.x : 0;
-      const landingY = landingOnScreen ? screenPos.y : 0;
-
-      // Nothing renders for this boat unless the overlay is on (markers / always-
-      // routes / map-hover) or it is the focused row. Skip all DOM work otherwise
-      // — e.g. warning-only mode, or a panel with a different row focused — so no
-      // hidden elements pile up for boats that never show.
-      if (!markersOn && !isFocused) {
-        const existing = boatPredictionDomCache.get(transport.domUnitId);
-        if (existing) {
-          hideBoatEntry(existing);
-        }
-        continue;
-      }
-
-      visibleTransportIds.add(transport.domUnitId);
-      const entry = getBoatPredictionDomEntry(container, routeSvg, transport);
-
-      // Landing marker: overlay-gated.
-      if (markersOn && landingOnScreen) {
-        setBoatMarkerVisible(entry, true);
-        updateBoatPredictionEntryPosition(entry, screenPos);
-      } else {
-        setBoatMarkerVisible(entry, false);
-      }
-
-      // Map hover: only meaningful when overlay markers exist to hover over.
-      let isMapHovered = false;
-      if (markersOn && landingOnScreen && mapHoveredId === null) {
-        const dx = landingX - boatLandingMouseX;
-        const dy = landingY - boatLandingMouseY;
-        if (dx * dx + dy * dy <= BOAT_LANDING_HOVER_RADIUS_SQUARED) {
-          mapHoveredId = transport.domUnitId;
-          isMapHovered = true;
-        }
-      }
-      const isAccented = isMapHovered || isFocused; // stronger highlight + label
-
-      // Draw route + boat highlight when the relation is always-on, or when the
-      // boat is accented (hovered on the map / focused from the panel).
-      if (shouldBoatRouteAlwaysShow(transport) || isAccented) {
-        const boatScreenPosPooled = toScreenPoint(
-          context.game,
-          context.transform,
-          asFiniteTileRef(transport.unit?.tile?.()),
-        );
-        // Copy pool coords out before getBoatRouteScreenPoints recycles slots.
-        const hasBoatScreenPos = boatScreenPosPooled != null;
-        const boatX = hasBoatScreenPos ? boatScreenPosPooled.x : 0;
-        const boatY = hasBoatScreenPos ? boatScreenPosPooled.y : 0;
-        const routePoints = getBoatRouteScreenPoints(
-          context.game,
-          context.transform,
-          transport.unit,
-          transport.motionPlanUnitId,
-          hasBoatScreenPos ? { x: boatX, y: boatY } : null,
-          landingOnScreen ? { x: landingX, y: landingY } : null,
-        );
-
-        if (routePoints.length >= 2) {
-          let pointsAttr = "";
-          for (let j = 0; j < routePoints.length; j += 1) {
-            const p = routePoints[j];
-            pointsAttr += j === 0 ? `${p.x},${p.y}` : ` ${p.x},${p.y}`;
-          }
-          if (entry.routePoints !== pointsAttr) {
-            entry.routeLine.setAttribute("points", pointsAttr);
-            entry.routePoints = pointsAttr;
-          }
-          setBoatRouteVisible(entry, true);
-        } else {
-          setBoatRouteVisible(entry, false);
-        }
-
-        // Highlight ring at the boat's current position (per-entry).
-        if (hasBoatScreenPos) {
-          updateBoatHighlightPosition(entry, boatX, boatY);
-          setBoatHighlightStrong(entry, isAccented);
-          setBoatHighlightVisible(entry, true);
-        } else {
-          setBoatHighlightVisible(entry, false);
-        }
-
-        if (isAccented && !labelTransport && landingOnScreen) {
-          labelTransport = transport;
-          labelLandingX = landingX;
-          labelLandingY = landingY;
-        }
-      } else {
-        setBoatRouteVisible(entry, false);
-        setBoatHighlightVisible(entry, false);
-      }
+    const renderState = {
+      markersOn: runtimeState.boatPredictionEnabled,
+      visibleIds: new Set(), mapHoveredId: null, label: null,
+    };
+    for (const transport of boatPredictionTransports) {
+      renderBoatPredictionTransport(context, container, routeSvg, transport, renderState);
     }
-
-    for (const [domUnitId, entry] of boatPredictionDomCache) {
-      if (!visibleTransportIds.has(domUnitId)) {
-        hideBoatEntry(entry);
-      }
-    }
-
-    // Single label at the accented boat's landing point. The highlight ring and
-    // route were already drawn by that boat's own per-entry elements.
-    if (labelTransport) {
-      const { color, labelText } = labelTransport;
-      const hoverElements = getBoatPredictionHoverElements(container);
-      hoverElements.label.hidden = false;
-      hoverElements.label.style.setProperty("--boat-tx", `${labelLandingX}px`);
-      hoverElements.label.style.setProperty("--boat-label-ty", `${labelLandingY - 16}px`);
-      hoverElements.label.style.setProperty("--boat-color", color);
-      // Append live ETA, e.g. "Your landing · Ky · 1m 32s".
-      const etaText = formatBoatEta(computeBoatEtaMs(context.game, labelTransport));
-      hoverElements.label.textContent = `${labelText} · ${etaText}`;
-    } else {
-      clearBoatPredictionHoverElements();
-    }
-
-    boatLandingAnimationFrame = requestAnimationFrame(syncBoatPrediction);
-  }
+    hideNonVisibleBoatEntries(renderState.visibleIds);
+    renderBoatPredictionLabel(container, context.game, renderState.label);
+    queueBoatPredictionFrame();
+  };
 
   function teardownBoatOverlay() {
-    if (boatLandingAnimationFrame !== null) {
-      cancelAnimationFrame(boatLandingAnimationFrame);
+    if (runtimeState.boatLandingAnimationFrame !== null) {
+      cancelAnimationFrame(runtimeState.boatLandingAnimationFrame);
     }
-    boatLandingAnimationFrame = null;
+    runtimeState.boatLandingAnimationFrame = null;
     lastBoatPredictionScanAt = 0;
     boatPredictionTransports = [];
     // Canvas cleanup
@@ -908,7 +834,7 @@
   // loop and its container survive as long as either consumer is active.
   function refreshBoatOverlayActivity() {
     if (isBoatOverlayActive()) {
-      if (boatLandingAnimationFrame === null) {
+      if (runtimeState.boatLandingAnimationFrame === null) {
         syncBoatPrediction();
       }
     } else {
@@ -925,15 +851,15 @@
     // A changed sub-option forces a re-scan so stale routes clear on the next
     // frame instead of waiting for the scan tick.
     const optionsChanged =
-      nextAlwaysOwn !== boatPredictionAlwaysOwnRoutes ||
-      nextAlwaysTeam !== boatPredictionAlwaysTeamRoutes ||
-      nextAlwaysAlly !== boatPredictionAlwaysAllyRoutes ||
-      nextAlwaysEnemy !== boatPredictionAlwaysEnemyRoutes;
-    boatPredictionAlwaysOwnRoutes = nextAlwaysOwn;
-    boatPredictionAlwaysTeamRoutes = nextAlwaysTeam;
-    boatPredictionAlwaysAllyRoutes = nextAlwaysAlly;
-    boatPredictionAlwaysEnemyRoutes = nextAlwaysEnemy;
-    boatPredictionEnabled = Boolean(enabled);
+      nextAlwaysOwn !== runtimeState.boatPredictionAlwaysOwnRoutes ||
+      nextAlwaysTeam !== runtimeState.boatPredictionAlwaysTeamRoutes ||
+      nextAlwaysAlly !== runtimeState.boatPredictionAlwaysAllyRoutes ||
+      nextAlwaysEnemy !== runtimeState.boatPredictionAlwaysEnemyRoutes;
+    runtimeState.boatPredictionAlwaysOwnRoutes = nextAlwaysOwn;
+    runtimeState.boatPredictionAlwaysTeamRoutes = nextAlwaysTeam;
+    runtimeState.boatPredictionAlwaysAllyRoutes = nextAlwaysAlly;
+    runtimeState.boatPredictionAlwaysEnemyRoutes = nextAlwaysEnemy;
+    runtimeState.boatPredictionEnabled = Boolean(enabled);
 
     if (optionsChanged) {
       lastBoatPredictionScanAt = 0;
@@ -944,121 +870,149 @@
   }
 
   // ── Canvas-based boat render (Blon port — replaces heavy DOM/SVG per-frame) ──
+  function ensureBoatPredictionCanvas() {
+    let canvas = document.getElementById(BOAT_LANDING_CONTAINER_ID);
+    if (canvas?.tagName !== "CANVAS") {
+      canvas?.remove();
+      canvas = document.createElement("canvas");
+      canvas.id = BOAT_LANDING_CONTAINER_ID;
+      canvas.setAttribute("aria-hidden", "true");
+      canvas.style.cssText = "position:fixed;inset:0;z-index:8000;pointer-events:none;";
+      (document.body || document.documentElement).appendChild(canvas);
+    }
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+    }
+    return { canvas, context: canvas.getContext("2d"), width, height };
+  }
+
+  function findCanvasHoveredBoat(transform, markersOn) {
+    if (!markersOn) return -1;
+    let hovered = -1;
+    let closestDistance = BOAT_LANDING_HOVER_RADIUS_SQUARED;
+    for (let index = 0; index < boatPredictionTransports.length; index++) {
+      const transport = boatPredictionTransports[index];
+      const position = toScreenPointFromWorld(
+        transform, transport.targetWorldX, transport.targetWorldY,
+      );
+      if (!position) continue;
+      const dx = position.x - boatLandingMouseX;
+      const dy = position.y - boatLandingMouseY;
+      const distance = dx * dx + dy * dy;
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        hovered = index;
+      }
+    }
+    return hovered;
+  }
+
+  function drawCanvasBoatMarker(context, transport, x, y) {
+    context.beginPath();
+    context.arc(x, y, 8, 0, Math.PI * 2);
+    context.fillStyle = transport.bg;
+    context.fill();
+    context.lineWidth = 2;
+    context.strokeStyle = transport.color;
+    context.stroke();
+    context.beginPath();
+    context.moveTo(x - 5, y);
+    context.lineTo(x + 5, y);
+    context.moveTo(x, y - 5);
+    context.lineTo(x, y + 5);
+    context.lineWidth = 1.5;
+    context.stroke();
+  }
+
+  function drawCanvasBoatRoute(context, { game, transform, transport, x, y }) {
+    const points = getBoatRouteScreenPoints({
+      game, transform,
+      motionPlanUnitId: transport.motionPlanUnitId,
+      boatScreenPos: null,
+      landingScreenPos: { x, y },
+    });
+    if (points.length < 2) return;
+    context.beginPath();
+    context.moveTo(points[0].x, points[0].y);
+    for (let index = 1; index < points.length; index++) {
+      context.lineTo(points[index].x, points[index].y);
+    }
+    context.strokeStyle = transport.color;
+    context.globalAlpha = 0.35;
+    context.lineWidth = 1.5;
+    context.setLineDash([4, 4]);
+    context.stroke();
+    context.setLineDash([]);
+    context.globalAlpha = 1;
+  }
+
+  function drawCanvasBoatLabel(context, game, transport, x, y) {
+    const eta = formatBoatEta(computeBoatEtaMs(game, transport));
+    const label = `${transport.labelText} · ${eta}`;
+    context.font = "bold 10px monospace";
+    context.textAlign = "center";
+    context.textBaseline = "bottom";
+    const width = context.measureText(label).width;
+    const labelY = y - 14;
+    context.fillStyle = "rgba(0,0,0,0.72)";
+    context.fillRect(x - width / 2 - 4, labelY - 12, width + 8, 14);
+    context.fillStyle = transport.color;
+    context.fillText(label, x, labelY);
+  }
+
+  function drawCanvasBoat(context, {
+    game, transform, transport, index, hoverIndex, markersOn,
+  }) {
+    const position = toScreenPointFromWorld(
+      transform, transport.targetWorldX, transport.targetWorldY,
+    );
+    if (!position || !isNearViewport(position, 120)) return;
+    const x = position.x;
+    const y = position.y;
+    const hovered = index === hoverIndex;
+    if (markersOn) drawCanvasBoatMarker(context, transport, x, y);
+    if (shouldBoatRouteAlwaysShow(transport) || hovered) {
+      drawCanvasBoatRoute(context, { game, transform, transport, x, y });
+    }
+    if (hovered) drawCanvasBoatLabel(context, game, transport, x, y);
+  }
+
   if (typeof _boatUseCanvas !== "undefined" && _boatUseCanvas) {
     syncBoatPrediction = function _canvasBoatRender() {
       // Frame skip: render every 3rd rAF (~20fps)
       _boatFrameCounter = (_boatFrameCounter + 1) % 3;
       if (_boatFrameCounter !== 0) {
-        boatLandingAnimationFrame = requestAnimationFrame(syncBoatPrediction);
+        queueBoatPredictionFrame();
         return;
       }
       if (!isBoatOverlayActive()) { teardownBoatOverlay(); return; }
       ensureBoatMouseListener();
-
-      // Canvas setup
-      var cvs = document.getElementById(BOAT_LANDING_CONTAINER_ID);
-      if (!cvs || cvs.tagName !== "CANVAS") {
-        if (cvs) cvs.remove();
-        cvs = document.createElement("canvas");
-        cvs.id = BOAT_LANDING_CONTAINER_ID;
-        cvs.setAttribute("aria-hidden", "true");
-        cvs.style.cssText = "position:fixed;inset:0;z-index:8000;pointer-events:none;";
-        (document.body || document.documentElement).appendChild(cvs);
-      }
-      var w = window.innerWidth, h = window.innerHeight;
-      if (cvs.width !== w || cvs.height !== h) { cvs.width = w; cvs.height = h; }
-      var ctx = cvs.getContext("2d");
-
-      var context = getOpenFrontGameContext();
+      const canvas = ensureBoatPredictionCanvas();
+      const context = getOpenFrontGameContext();
       if (!context?.game || !context?.transform) {
-        ctx.clearRect(0, 0, w, h);
-        lastBoatPredictionScanAt = 0; boatPredictionTransports = [];
+        canvas.context.clearRect(0, 0, canvas.width, canvas.height);
+        lastBoatPredictionScanAt = 0;
+        boatPredictionTransports = [];
         resetIncomingBoatWarningBaseline();
-        boatLandingAnimationFrame = requestAnimationFrame(syncBoatPrediction);
+        queueBoatPredictionFrame();
         return;
       }
-      var game = context.game, transform = context.transform;
-
-      var now = Date.now();
-      if (!lastBoatPredictionScanAt || now - lastBoatPredictionScanAt >= BOAT_PREDICTION_SCAN_MS) {
-        boatPredictionTransports = collectBoatPredictionTransports(game);
-        maybeWarnNewIncomingBoats(boatPredictionTransports);
-        lastBoatPredictionScanAt = now;
-      }
-
-      var markersOn = boatPredictionEnabled;
-      var ownAlways = boatPredictionAlwaysOwnRoutes, teamAlways = boatPredictionAlwaysTeamRoutes;
-      var allyAlways = boatPredictionAlwaysAllyRoutes, enemyAlways = boatPredictionAlwaysEnemyRoutes;
-      ctx.clearRect(0, 0, w, h);
+      refreshBoatPredictionScan(context.game, Date.now());
+      const markersOn = runtimeState.boatPredictionEnabled;
+      canvas.context.clearRect(0, 0, canvas.width, canvas.height);
       resetScreenPointPool();
-
-      // Hover detection
-      var hoverIdx = -1;
-      var hoverDist = BOAT_LANDING_HOVER_RADIUS_PX * BOAT_LANDING_HOVER_RADIUS_PX;
-      if (markersOn) {
-        for (var hi = 0; hi < boatPredictionTransports.length; hi++) {
-          var ht = boatPredictionTransports[hi];
-          var hsp = toScreenPointFromWorld(transform, ht.targetWorldX, ht.targetWorldY);
-          if (!hsp) continue;
-          var hdx = hsp.x - boatLandingMouseX, hdy = hsp.y - boatLandingMouseY;
-          if (hdx * hdx + hdy * hdy < hoverDist) { hoverDist = hdx * hdx + hdy * hdy; hoverIdx = hi; }
-        }
+      const hoverIndex = findCanvasHoveredBoat(context.transform, markersOn);
+      for (let index = 0; index < boatPredictionTransports.length; index++) {
+        drawCanvasBoat(canvas.context, {
+          game: context.game,
+          transform: context.transform,
+          transport: boatPredictionTransports[index],
+          index, hoverIndex, markersOn,
+        });
       }
-
-      for (var i = 0; i < boatPredictionTransports.length; i++) {
-        var t = boatPredictionTransports[i];
-        var sp = toScreenPointFromWorld(transform, t.targetWorldX, t.targetWorldY);
-        if (!sp || !isNearViewport(sp, 120)) continue;
-        // Snapshot now: route sampling below recycles the shared 3-slot screen-
-        // point pool, which would otherwise clobber sp's x/y in place — the
-        // symptom was the marker/label/route endpoint jittering in step with
-        // the boat's own tick-based movement (more/fewer path samples = more/
-        // fewer pool reuses before sp was read again).
-        var spx = sp.x, spy = sp.y;
-
-        var alwaysShow = t.relation === "self" ? ownAlways
-          : t.relation === "team" ? teamAlways
-          : t.relation === "ally" ? allyAlways : enemyAlways;
-        var isHovered = i === hoverIdx;
-        var color = t.color;
-
-        // Marker: circle + crosshair (Blon pattern) — always shown; hover-only
-        // detail (route + ETA label) is added below.
-        if (markersOn) {
-          ctx.beginPath(); ctx.arc(spx, spy, 8, 0, Math.PI * 2);
-          ctx.fillStyle = t.bg; ctx.fill();
-          ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.stroke();
-          ctx.beginPath();
-          ctx.moveTo(spx - 5, spy); ctx.lineTo(spx + 5, spy);
-          ctx.moveTo(spx, spy - 5); ctx.lineTo(spx, spy + 5);
-          ctx.lineWidth = 1.5; ctx.stroke();
-        }
-
-        // Route line: drawn on hover, or persistently when the relation's
-        // "always show routes" toggle is on.
-        if (alwaysShow || isHovered) {
-          var rpts = getBoatRouteScreenPoints(game, transform, t.unit, t.motionPlanUnitId, null, { x: spx, y: spy });
-          if (rpts.length >= 2) {
-            ctx.beginPath(); ctx.moveTo(rpts[0].x, rpts[0].y);
-            for (var rj = 1; rj < rpts.length; rj++) ctx.lineTo(rpts[rj].x, rpts[rj].y);
-            ctx.strokeStyle = color; ctx.globalAlpha = 0.35; ctx.lineWidth = 1.5;
-            ctx.setLineDash([4, 4]); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
-          }
-        }
-
-        // ETA label: hover-only, regardless of the "always show routes" toggle
-        // — that toggle should only keep the route line visible, not the detail.
-        if (isHovered) {
-          var etaMs = computeBoatEtaMs(game, t);
-          var etaText = typeof formatBoatEta === "function" ? formatBoatEta(etaMs) : (etaMs != null ? (etaMs / 1000).toFixed(1) + "s" : "");
-          var fullLabel = t.labelText + " · " + etaText;
-          ctx.font = "bold 10px monospace"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
-          var tw2 = ctx.measureText(fullLabel).width, ly = spy - 14;
-          ctx.fillStyle = "rgba(0,0,0,0.72)";
-          ctx.fillRect(spx - tw2 / 2 - 4, ly - 12, tw2 + 8, 14);
-          ctx.fillStyle = color; ctx.fillText(fullLabel, spx, ly);
-        }
-      }
-      boatLandingAnimationFrame = requestAnimationFrame(syncBoatPrediction);
+      queueBoatPredictionFrame();
     };
   }

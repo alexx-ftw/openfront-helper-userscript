@@ -3,10 +3,14 @@
 // English i18n override), wires the "lobby found" toast, and mounts the launcher.
 
 import { unitIconUrl } from "./assets";
-import { installAudio, WebAudioElement } from "./audio";
+import { installAudio, ringChime, speakSpawnPrompt, WebAudioElement } from "./audio";
 import { installChromeShim } from "./chrome-shim";
 import { installI18nOverride } from "./i18n";
-import { requestJoinNotificationPermission, showJoinNotification } from "./notification";
+import {
+  requestJoinNotificationPermission,
+  showGameStartNotification,
+  showJoinNotification,
+} from "./notification";
 import { installLauncher } from "./popup/launcher";
 import { openPanelTo } from "./popup/panel";
 import { installViewportClamp } from "./viewport";
@@ -20,6 +24,7 @@ export function bootShell(): void {
     Audio: AudioCtor,
     WebAudioElement,
     installI18nOverride,
+    speakSpawnPrompt,
   };
 
   // The bundled team-build-stats engine resolves its unit icons through this
@@ -35,9 +40,12 @@ export function bootShell(): void {
     requestJoinNotificationPermission;
 
   chromeShim.runtime.onMessage.addListener((message: unknown) => {
-    const msg = message as { type?: string; text?: string };
+    const msg = message as { type?: string; text?: string } | null;
     if (msg?.type === "SHOW_JOIN_NOTIFICATION") {
-      showJoinNotification(msg.text || "OpenFront Helper: lobby found — joining!");
+      showJoinNotification(msg.text ?? "OpenFront Helper: lobby found — joining!");
+    } else if (msg?.type === "SHOW_GAME_START_NOTIFICATION") {
+      void ringChime();
+      showGameStartNotification(msg.text ?? "OpenFront Helper: game started!");
     }
   });
 

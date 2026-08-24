@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "mimosa-hook-status/v1",
+  "recordedAt": "2026-08-23T20:20:21.849Z",
+  "sessionId": "sess_b4773f9b-2a16-4b76-9dc8-f40a196fc87d",
+  "event": "PostToolUse",
+  "toolName": "Write",
+  "file": "/home/eros/.zcode/cli/memories/projects/openfront-helper-userscript-ff6683d8903066f1/memory/parallel-agents-share-repo.md",
+  "outcome": "clear",
+  "coverage": "complete",
+  "findingCount": 0,
+  "durationMs": 5,
+  "hostState": "hook_complete",
+  "reportHint": ".mimosa/reports/"
+}
