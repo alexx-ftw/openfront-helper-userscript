@@ -442,6 +442,24 @@ Also fixed: the plateau lane's gameMode check now accepts both "FFA" and
 the engine enum value "Free For All" (robustness; the adapter reports
 "FFA" so behavior is unchanged in harness).
 
+## Mode-A starvation FIXED (2026-08-24 night, 1.12.63)
+
+The freeze-hold root cause: `shouldReserveHostileSiloSamBudget()` was
+UNCONDITIONAL once any economic structure existed — through the
+preemptive-hostile-silo-risk branch, a failed SAM placement with no
+available upgrade returns the reserve EVERY tick, freezing the entire
+construction chain regardless of treasury. Measured mode-A: 18M gold,
+zero builds for 2000+ ticks. Fixed with an affordability escape: the
+reserve releases when gold > 3x the launcher cost (the reserve's purpose
+is saving PARTIAL funds; an abundant treasury has nothing to save for).
+Validated: anchor/none-01/temp-01 byte-identical FULL-GREEN (green rows
+never cross the ceiling inside reserve windows); FFA case rows shifted
+(n2-basket-02 survived ~2k ticks longer, SAM cadence changed) but wins
+unchanged — the unfreeze is necessary, not sufficient; the giant still
+wins the war-of-economies. Next levers on file: FFA arming of the
+atom-vs-army strike keyed to gold+freeze (the outmuscle-at-6000 trigger
+never coincides on these rows), and the none-set vet-3 row.
+
 Measured on the pinned engine: **25MM transformed** — row 01 builds
 5 SAM sites + 10 ports, 80M gold, ZERO buildings nuked (the nuke-storm
 blocker is beaten on that row); set ownN 0-18 (was 8-24), et sum 112

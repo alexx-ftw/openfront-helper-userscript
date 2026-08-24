@@ -3508,6 +3508,18 @@
       // saving from zero can never fund the launcher. With any City, Factory,
       // or Port established, do not spend even a small partial SAM fund on an
       // unrelated structure while an external nuclear threat exists.
+      // AFFORDABILITY ESCAPE (2026-08-24): the reserve exists to save PARTIAL
+      // funds toward the next defense action. Once the treasury already
+      // covers the launcher several times over, holding the slot only
+      // freezes the economy — measured FFA mode-A: 18M gold hoarded, zero
+      // builds for 2000+ ticks while the endgame giant grew (the reserve is
+      // otherwise unconditional, and a failed SAM placement + no available
+      // upgrade returns the hold every single tick).
+      if (this.game && typeof this.game.config === "function") {
+        const gold = legendaryBigInt(this.player?.gold?.() || 0n);
+        const samCost = this.safeConstructionCost(UNIT.SAMLauncher);
+        if (samCost !== null && gold > samCost * 3n) return false;
+      }
       return ECONOMIC_STRUCTURE_TYPES.some((type) => this.ownedLevels(type) > 0);
     }
 
