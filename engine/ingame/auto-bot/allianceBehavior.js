@@ -687,6 +687,12 @@
       runtimeDebugLog("[Diplo] donate to protector →", safeName(ally), amount);
     }
 
+    // Teammate surplus donation was MEASURED AS A REGRESSION on 25MM
+    // (basket-01 ownN 0 -> 13): canDonateTroops accepts teammates, but our
+    // near-cap army is the defense buffer against the coalition dogpile and
+    // nobody donates back to us. Do not re-add without a reciprocal-flow
+    // mechanism.
+
     // getAllianceDecision — NationAllianceBehavior.ts:88 (THE decision tree)
     shouldRejectTraitorAlliance(otherPlayer, isResponse) {
       if (!otherPlayer.isTraitor() || this.random.nextInt(0, 100) < 10) return false;

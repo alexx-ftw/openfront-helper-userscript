@@ -380,6 +380,37 @@ behind the big-start gate (none/temp byte-identical, re-proven):
 - D3 (opening SAM first) did not bind on any measured row (the City path
   still precedes it) — kept, guarded, inert so far.
 
+## FFA basket pre-declaration (2026-08-24, BEFORE any runs)
+
+The first FFA basket (seeds basket-01..05, FFA, no-mod, Labyrinth, 60
+tribes, **20 nations**) measured 0/5 — its closest row (basket-03) died at
+20.5k ticks to three nations snowballed to 300-440k tiles; every attack-side
+lever against that wall is measured-dead (frontier-rate law, pre-placed
+starts). Nation count is a legal matrix variable (amendment 2), so the FFA
+half is hereby re-declared — before running — as TWO 5-seed baskets at
+moderate nation counts where survival and naval traffic coexist:
+`ffa-n2` and `ffa-n4` (seeds basket-01..05 each, FFA, no-mod, Labyrinth,
+60 tribes, OFH_NATIONS=2 / =4, Legendary/Impossible). All 10 rows will be
+counted honestly; no screening, no cherry-picking.
+
+## FFA basket results + donation-lane verdict (2026-08-24 late)
+
+- **FFA honest tally: 0/15** across three nation counts (20/2/4) on
+  Labyrinth, no-mod. n2: deaths 11-18k, trades 0-6 (thin naval traffic);
+  n4: deaths 6.5-26.4k, ffan4-03/05 near-misses (econ true, 11-28M nuked)
+  but et ~1; the completed n2-basket-02 rerun (the original row died
+  silently under 10-sim memory pressure mid-game at 300k tiles) collapsed
+  at 16041. The 300k-tile trajectory on that row is the first evidence the
+  doctrine-era bot CAN reach nation-scale territory in FFA — the collapse
+  pattern (endgame dogpile vs 1-2 remaining giants) is the same documented
+  coalition wall. Every FFA loss mode remains `won`.
+- **Team-surplus donation = MEASURED REGRESSION, REVERTED**: donating the
+  near-cap army surplus to the strongest teammate (engine-legal:
+  canDonateTroops gates on isFriendly) cost 25MM basket-01 ownN 0 -> 13 —
+  our surplus is the dogpile defense buffer, and unlike engine nations
+  nobody donates back to us. Verdict comment at the site; do not re-add
+  without a reciprocal-flow mechanism.
+
 Measured on the pinned engine: **25MM transformed** — row 01 builds
 5 SAM sites + 10 ports, 80M gold, ZERO buildings nuked (the nuke-storm
 blocker is beaten on that row); set ownN 0-18 (was 8-24), et sum 112

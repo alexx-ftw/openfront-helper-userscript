@@ -440,6 +440,10 @@
       autoBotProfileSyncPhase(profile, "diplomacy", () => {
         this.updateRelationsFromEmbargos();
         this.allianceBehavior.handleAllianceRequestsFromBots();
+        // Teammate surplus donation measured as a REGRESSION on 25MM
+        // (ownN 0 -> 13 on basket-01): our near-cap army is the defense
+        // buffer, and unlike engine nations nobody donates back to us.
+        // Do not re-add without a reciprocal-flow mechanism.
         if (!this.feat("alliance")) return;
         this.allianceBehavior.handleAllianceRequests();
         this.allianceBehavior.handleAllianceExtensionRequests();
