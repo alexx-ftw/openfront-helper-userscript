@@ -318,3 +318,36 @@ temp 2/5 + set bars PASS, 5mm 0/5 (econ improving), 25mm 0/5. The
 transport-geometry and veterancy audits behind these levers are recorded in
 the session memory; remaining 5MM/25MM blocker is survival under the early
 nuke storm, not income.
+
+## Session round 2026-08-24: SAM site-count scaling + engine b47aaafb0
+
+- **Engine submodule moved to b47aaafb0** ("feat(sam): Dynamic range scaling
+  on upgrade" + MIRV-alliance-cancel) by the parallel workstream. All five
+  green baselines (anchor, none-01/04, temp-01/04) re-validated
+  byte-identical on the new engine. ⚠️ During the transition the submodule
+  pointer was observed flapping between commits mid-batch — several
+  intermediate validation runs (the "anchor died at 6406" series) were
+  contaminated by an unknown engine checkout and are void; always pin
+  `git -C openfront-engine rev-parse HEAD` before and after validation
+  batches.
+- **SAM site-count scaling (LANDED, big-start-gated)** — audit verdict: a
+  single-site doctrine (every build path hard-gated on `ownSam.count === 0`)
+  converted hostile silo mass exclusively into level upgrades of one site;
+  engine truth is slots-per-site (level L = L concurrent interceptors per
+  90 ticks, radius 70-102 by level, ANY level intercepts Hydrogen, MIRV
+  carriers un-interceptable) while engine nations answer 25MM boards with
+  4-6 cheap sites. `samSiteCountTarget()` now scales sites with the
+  strongest enemy's built-silo level sum (>=3 -> min(4, ceil(sum/2))),
+  GATED on the big-start detector (5MM/25MM only): the ungated version
+  bound on none/temp long games (enemies reach level-3 mass by mid-game
+  there) and flipped the anchor to a 6.4k death. Measured on the pinned
+  engine: 25MM ownN halved on the worst rows (44 -> 18, 18 -> 8; et/wk/
+  trades up strongly), 5MM essentially unchanged; wins still 0/5 on both —
+  income (econ lever) + coverage (site lever) both landed, the remaining
+  blocker is the nation snowball itself.
+- **MIRV telemetry crash fixed** — `targetedBySAM()` dereferences
+  `_nukeState!`, which MIRV carriers lack; the slow-tick snapshot crashed
+  whole runs (temp-01 no-result). Now type-gated (carriers report null),
+  no swallowed catch per the harness policy.
+- **`.mimosa/` gitignored** (untracked hook-state cache; the tracked
+  finding-ledger files from the parallel workstream remain).

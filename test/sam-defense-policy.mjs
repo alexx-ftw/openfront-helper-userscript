@@ -6293,3 +6293,76 @@ assert.match(
 }
 
 process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");
+
+// ── SAM site-count scaling vs hostile silo mass (5MM/25MM lever) ──────────
+{
+  const makeSiteScalingBehavior = ({ levelSum, samCount, bigStart = true }) => {
+    const behavior = Object.create(sandbox.__StructureBehavior.prototype);
+    behavior.hostileSiloLevelSumTarget = () => levelSum;
+    behavior.legendaryBigStartGame = () => bigStart;
+    behavior.playerUnitCapacitySummary = (_player, type) =>
+      type === UNIT.SAMLauncher
+        ? { count: samCount, capacity: samCount, builtCount: samCount }
+        : { count: 0, capacity: 0, builtCount: 0 };
+    behavior.hasPlacedSiloOnMap = () => true;
+    return behavior;
+  };
+  // Target ladder: below the mass threshold the single-site doctrine holds;
+  // above it the site count scales with the strongest enemy's silo levels —
+  // and only on big-start (5MM/25MM) boards; ordinary profiles keep the
+  // doctrine even at silo mass (measured: the ungated lever flipped the
+  // no-mod anchor from a full-green win to a 6.4k death).
+  assert.equal(
+    makeSiteScalingBehavior({ levelSum: 9, samCount: 4, bigStart: false }).samSiteCountTarget(),
+    1,
+    "ordinary-profile boards never scale SAM sites",
+  );
+  assert.equal(
+    makeSiteScalingBehavior({ levelSum: 0, samCount: 1 }).samSiteCountTarget(),
+    1,
+    "no hostile silo mass keeps one site",
+  );
+  assert.equal(
+    makeSiteScalingBehavior({ levelSum: 2, samCount: 1 }).samSiteCountTarget(),
+    1,
+    "two silo levels stay inside the single-site doctrine",
+  );
+  assert.equal(
+    makeSiteScalingBehavior({ levelSum: 3, samCount: 1 }).samSiteCountTarget(),
+    2,
+    "three silo levels demand a second site",
+  );
+  assert.equal(
+    makeSiteScalingBehavior({ levelSum: 4, samCount: 1 }).samSiteCountTarget(),
+    2,
+    "four silo levels still target two sites",
+  );
+  assert.equal(
+    makeSiteScalingBehavior({ levelSum: 6, samCount: 2 }).samSiteCountTarget(),
+    3,
+    "six silo levels target three sites",
+  );
+  assert.equal(
+    makeSiteScalingBehavior({ levelSum: 9, samCount: 4 }).samSiteCountTarget(),
+    4,
+    "heavy silo mass caps at four sites",
+  );
+  // The relaxed build gate: with silo mass present, an existing single SAM
+  // no longer disqualifies the triggered-SAM path when the target says more
+  // sites are needed — and still does below the threshold.
+  assert.equal(
+    makeSiteScalingBehavior({ levelSum: 4, samCount: 1 }).shouldBuildSiloTriggeredSam(),
+    true,
+    "silo mass opens the site-#2 build path past one existing SAM",
+  );
+  assert.equal(
+    makeSiteScalingBehavior({ levelSum: 2, samCount: 1 }).shouldBuildSiloTriggeredSam(),
+    false,
+    "ordinary silo presence keeps the single-site gate",
+  );
+  assert.equal(
+    makeSiteScalingBehavior({ levelSum: 9, samCount: 4 }).shouldBuildSiloTriggeredSam(),
+    false,
+    "the build path closes once the site target is met",
+  );
+}

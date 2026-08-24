@@ -1528,7 +1528,10 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
           targetOwnerTeam,
           trajectoryIndex: unit.trajectoryIndex(),
           trajectoryLength: unit.trajectory().length,
-          targetedBySam: unit.targetedBySAM(),
+          // targetedBySAM() dereferences _nukeState!, which only warheads
+          // carry — MIRV carriers would throw, so they report null.
+          targetedBySam:
+            unit.type() === UnitType.MIRV ? null : unit.targetedBySAM(),
         };
       });
     const attackBehavior = bot.nationBot?.attackBehavior;

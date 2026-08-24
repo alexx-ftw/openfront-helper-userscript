@@ -3415,12 +3415,15 @@
       );
     }
 
-    // SAM site-count target (see shouldBuildHostileSiloSam): binds only when
-    // one hostile player's BUILT silo levels reach 3+ — a mass the
-    // income-poor none/temp profiles do not field before their ordinary
-    // one-site lanes resolve, so those trajectories stay byte-identical.
+    // SAM site-count target (see shouldBuildHostileSiloSam): binds ONLY on
+    // big-start boards (5MM/25MM) AND when one hostile player's BUILT silo
+    // levels reach 3+. The big-start gate is what keeps none/temp
+    // byte-identical: their enemies DO reach level 3+ silo mass in long
+    // games, and the measured first attempt without this gate flipped the
+    // no-mod anchor from a full-green 20.5k win to a 6.4k death.
     samSiteCountTarget() {
       if (!state.settings.winFixes) return 1;
+      if (!this.legendaryBigStartGame()) return 1;
       const levelSum = this.hostileSiloLevelSumTarget();
       if (levelSum < hostileSamSiteScaleLevelSum) return 1;
       return Math.min(4, Math.ceil(levelSum / 2));

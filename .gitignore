@@ -11,3 +11,6 @@ docs/superpowers/
 eslint-ratchet-temp.json
 jscpd-report/
 .artifacts/
+
+# Mimosa security-hook per-session state cache (recreated on every hook run)
+.mimosa/
