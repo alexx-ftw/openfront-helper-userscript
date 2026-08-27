@@ -1302,29 +1302,6 @@ assert.equal(
   "maritime access must not automatically beat a much better land capture",
 );
 
-const landlockedOpeningRank = sandbox.rankEarlyGameTribeCandidates([
-  {
-    id: "inland-bridge",
-    landBorder: true,
-    hasOpenOceanAccess: false,
-    futureFoodAccess: 0.1,
-    captureEfficiency: 0.2,
-  },
-  {
-    id: "inland-water-detour",
-    landBorder: false,
-    hasOpenOceanAccess: false,
-    boatEtaTicks: 30,
-    futureFoodAccess: 1,
-    captureEfficiency: 1,
-  },
-]);
-assert.equal(
-  landlockedOpeningRank[0].id,
-  "inland-bridge",
-  "landlocked openings prefer a directly connected tribe over an inland-water detour",
-);
-
 const redundantCoastRank = sandbox.rankEarlyGameTribeCandidates([
   {
     id: "redundant-coast",

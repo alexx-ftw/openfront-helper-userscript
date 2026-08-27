@@ -87,7 +87,7 @@
     // flat 1k/s base income. The adaptive tier therefore tracks coast
     // opportunity more aggressively than the faithful build.
     const portRatioPerCity =
-      isLegendaryDifficulty(difficulty) ? 1.25 : 0.75;
+      difficulty === Difficulty.Legendary ? 1.25 : 0.75;
     return {
       [UNIT.Port]: {
         ratioPerCity: portRatioPerCity,
@@ -252,15 +252,7 @@
    * leaves their Silo ready 200 ticks first.  Reserve and start our interceptor
    * at half the Silo cost so it can finish while they accumulate the remainder.
    */
-  // Start the interceptor race at one quarter of a Silo's cost. In live FFA
-  // traces a wealthy opponent could go from roughly 500k to a first launch
-  // before the next decision observed the threat, leaving our SAM unfinished.
-  const HOSTILE_SAM_TRIGGER_GOLD_THRESHOLD = HOSTILE_SILO_GOLD_THRESHOLD / 4n;
-  // The interceptor costs 1.5M and needs 300 construction ticks. Waiting for
-  // the first visible hostile Silo was too late in FFA traces (the first nuke
-  // arrived around tick 4.8k while our treasury was still below 1M). Begin
-  // reserving after the first City, once the spawn opening has settled.
-  const LEGENDARY_BASELINE_SAM_TICK = 600;
+  const HOSTILE_SAM_TRIGGER_GOLD_THRESHOLD = HOSTILE_SILO_GOLD_THRESHOLD / 2n;
 
   /** Structures that directly grow the nation's economy. */
   // A City is the first paying destination; once it exists, build the train
@@ -595,8 +587,6 @@
       this._hasOceanPortTiles = null;
       this._economicExposureBorderTick = null;
       this._economicExposureBorderTiles = null;
-      this._borderingLandOwnerIdsTick = null;
-      this._borderingLandOwnerIdsCache = null;
     }
 
     initializeMissileDefenseCaches() {
@@ -766,61 +756,11 @@
       );
       if (hostileSiloSamDecision !== null) return hostileSiloSamDecision;
 
-      const baselineSamDue =
-        this.player != null &&
-        this.ownedLevels(UNIT.City) >= 1 &&
-        this.ownSamCapacity() <= 0 &&
-        (this.shouldBuildHostileSiloSam() === true ||
-          this.legendaryPeaceWindowSamChestDue() === true);
-
       if (
-        !baselineSamDue &&
         await profileStructureAsync(profile, "structures-immediate-defense", () =>
           this.handleImmediateStructureDefense(legendaryDifficulty))
       ) {
         return true;
-      }
-
-      // Pre-wave readiness: once a bordering nation can outscale our troop
-      // ceiling, an elective second City is unsafe until one Defense Post is
-      // complete. The reactive counterattack lane may arrive after a
-      // coordinated wave has already crossed the homeland.
-      const defensiveReadinessDue =
-        this.player != null &&
-        this.ownedLevels(UNIT.DefensePost) <= 0 &&
-        this.hasBorderingHostileMaxTroopAdvantage() === true;
-      if (defensiveReadinessDue && !baselineSamDue) {
-        const defenseReadyDecision = await profileStructureAsync(
-          profile,
-          "structures-prewave-defense-post",
-          () => this.handleDefensePostPriority(true),
-        );
-        if (defenseReadyDecision !== null) return defenseReadyDecision;
-        return false;
-      }
-
-      // Once a nuclear threat or expiring long peace window is observable, do
-      // not let ordinary City/Port/Defense-Post branches consume the treasury
-      // while the interceptor remains unfunded. In ordinary peace, commerce
-      // must open first so the fleet can generate the SAM budget.
-      if (
-        baselineSamDue
-      ) {
-        const samDecision = await profileStructureAsync(
-          profile,
-          "structures-legendary-baseline-sam",
-          // The baseline is intentionally independent of hostile-Silo
-          // forecasting: on Impossible, the opponent can finish and fire a
-          // Silo during our 300-tick construction runway.  The triggered
-          // helper normally waits for a threat snapshot, so use the same
-          // placement contract directly for this first launcher.
-          () => this.maybeSpawnStructure(
-            UNIT.SAMLauncher,
-            this.hostileSiloSamPlacementOptions(),
-          ),
-        );
-        if (samDecision === true) return true;
-        if (this.ownedLevels(UNIT.Port) > 0) return false;
       }
 
       const {
@@ -828,13 +768,11 @@
         defenseEmergency: legendaryDefenseEmergency,
       } = this.legendaryDefenseEmergencies(legendaryDifficulty);
 
-      const defensePostDecision = !baselineSamDue
-        ? await profileStructureAsync(
+      const defensePostDecision = await profileStructureAsync(
         profile,
         "structures-defense-post",
         () => this.handleDefensePostPriority(legendaryMissileEmergency),
-      )
-        : null;
+      );
       if (defensePostDecision !== null) return defensePostDecision;
 
       if (
@@ -1110,11 +1048,6 @@
       // Active land defense comes before routine SAM coverage/parity and
       // offensive silo work. A concrete missile emergency still wins.
       if (legendaryMissileEmergency) return null;
-      // Once an ocean Port and a live commerce convoy exist, preserve the
-      // remaining gold for the first Warship instead of placing another post
-      // that the next Nation wave can immediately overrun. The warship phase
-      // follows this handler and can emit as soon as the cost is reached.
-      if (this.shouldReserveInitialWarshipGold()) return false;
       // Live incoming land attacks remain the primary authorization with their
       // ratio-derived budget; the capped strategic-border rule inside
       // defensePostThreat adds the quiet dogpile pre-condition (a bordering
@@ -1137,39 +1070,6 @@
         !this.canAffordDefensePost() || hardReserve
       ) return false;
       return null;
-    }
-
-    shouldReserveInitialWarshipGold() {
-      if (!isLegendaryDifficulty()) return false;
-      // The Port classifier can lag one async terrain-index tick behind the
-      // completed structure.  Warship spawning performs the authoritative
-      // water-tile probe; reserve against any completed Port here so ordinary
-      // Defense Posts cannot consume the first-ship budget in that window.
-      // UnitView exposes completed construction as either an explicit false
-      // or simply a missing/legacy predicate.  Treat only an explicit true as
-      // under construction; requiring `=== false` silently disabled this
-      // reservation on headless/client wrappers whose predicate is absent.
-      if ((this.player?.units?.(UNIT.Port) || []).every((port) =>
-        port?.isUnderConstruction?.() === true
-      )) return false;
-      if ((this.player?.units?.(UNIT.Warship) || []).length > 0) return false;
-      if (typeof this.game?.units !== "function") return false;
-      // Reserve as soon as commerce starts, not after an arbitrary convoy
-      // count.  The hull costs 250k and a Defense Post can consume the entire
-      // gap before the convoy reaches twenty ships; by then a land siege may
-      // already have destroyed the Port.  The Warship lane still requires its
-      // own live ocean-tile and affordability probes before emitting.
-      if ((this.game.units(UNIT.TradeShip) || []).length < 1) return false;
-      const cost = this.safeConstructionCost(UNIT.Warship);
-      if (cost === null) return false;
-      // Keep a small construction cushion once the hull is technically
-      // affordable.  The warship probe is asynchronous and can fail on a
-      // transient water/buildable snapshot; allowing a Defense Post to spend
-      // the exact-cost treasury in that tick loses the next hull window.  A
-      // 25% cushion is bounded (rather than freezing construction forever)
-      // and leaves the immediate SAM/critical-defense paths above untouched.
-      const hullReserve = cost + cost / 4n;
-      return legendaryBigInt(this.player?.gold?.() || 0n) < hullReserve;
     }
 
     shouldHardReserveFailedDefensePost(threat) {
@@ -1196,7 +1096,6 @@
       if (!state.settings.winFixes) return false;
       if (await this.maybeSpawnPeaceWindowSam()) return true;
       if (await this.maybeSpawnPlateauCity()) return true;
-      if (await this.maybeArmFreezeStrikeSilo()) return true;
       // The coverage plan upgrades an existing useful SAM whenever increased
       // range can cover the structure set. It asks for another physical site
       // only when geometry proves that leveling cannot close the gap.
@@ -1378,7 +1277,7 @@
       // rung (the maxTroops raise the whole defense needs) stayed unfunded;
       // live-attack Posts keep their unconditional authorization.
       if (
-        isLegendaryDifficulty(difficulty) &&
+        difficulty === Difficulty.Legendary &&
         !this.legendaryQuietPostGoldAboveEconomyRung()
       ) {
         return null;
@@ -2456,10 +2355,7 @@
         citiesDisabled ||
         cityCount < 1 ||
         config?.isUnitDisabled?.(UNIT.Port) === true ||
-        !this.legendaryPortCapable(hasOceanPortTiles, hasCoastalTiles) &&
-        !(this.player?.units?.(UNIT.Port) || []).some(
-          (port) => port?.isUnderConstruction?.() !== true,
-        )
+        !this.legendaryPortCapable(hasOceanPortTiles, hasCoastalTiles)
       ) {
         return false;
       }
@@ -2467,17 +2363,6 @@
       const completedPort = ports.some(
         (port) => port.isUnderConstruction?.() !== true,
       );
-      const baselineSamDue =
-        Number(this.game?.ticks?.() ?? 0) >= LEGENDARY_BASELINE_SAM_TICK &&
-        this.ownedLevels(UNIT.City) >= 1 &&
-        this.ownSamCapacity() <= 0;
-      if (
-        baselineSamDue &&
-        this.spendableConstructionGold() <
-          this.safeConstructionCost(UNIT.SAMLauncher) + this.safeConstructionCost(UNIT.Port)
-      ) {
-        return false;
-      }
       // Big-start opening (5MM/25MM modifiers): the starting treasury is dead
       // capital until it becomes trade infrastructure — every nation compounds
       // from the same start, and the measured 5MM failure mode is economy
@@ -2487,15 +2372,7 @@
       // happens before the ratio math ever binds. The SAM path is unaffected:
       // 5M minus City+5 ports (~3M) still covers the 1.5M interceptor well
       // before the first measured hostile strike (1774+).
-      const bigStart = this.legendaryBigStartGame();
-      const liveTradeTraffic = (this.game?.units?.(UNIT.TradeShip) || []).length;
-      // A normal start used to stop permanently at the first Port, even after
-      // a real commerce lane had formed. Open a bounded second/third route
-      // once twenty trade hulls are visible so the naval quota can be pursued
-      // without front-loading ports on every map.
-      const commerceExpansion =
-        !bigStart && completedPort && liveTradeTraffic >= 20 && ports.length < 3;
-      const portBurstCap = bigStart ? 5 : commerceExpansion ? 3 : 1;
+      const portBurstCap = this.legendaryBigStartGame() ? 5 : 1;
       if (portBurstCap === 1) {
         if (completedPort || ports.length > 0) return false;
       } else if (ports.length >= portBurstCap) {
@@ -3095,28 +2972,14 @@
       // hostile nuke can arrive faster than 300 construction ticks (measured
       // More-Than-Luck temp row: first nuke 11245, SAM never ready).
       if (this.legendaryPeaceWindowSamChestDue()) return true;
-      const hostileGoldForecast =
-        (this.hasHostileReachedSiloGoldThreshold?.() === true ||
-          // Begin the interceptor race at the lower hostile-threat forecast
-          // (500k, half the Silo cost), rather than waiting for an enemy to
-          // finish funding a Silo.  In ofh-1286 the first external Silo was
-          // only visible around tick 4,500; waiting for the 1M threshold left
-          // fewer than 300 ticks to fund/start our SAM before the first nuke.
-          this.hasHostileSiloThreat?.() === true) &&
-        this.ownedLevels(UNIT.City) >= 1;
-      // A one-City economy can now reserve the first interceptor when the
-      // sampled enemy treasury has crossed the Silo threshold. The existing
-      // ETA gate below still keeps this forecast-only signal from freezing a
-      // safe opening, while avoiding the measured first-nuke/SAM race.
-      if (!this.shouldBuildHostileSiloSam() && !hostileGoldForecast) return false;
-      const hostileSiloImmediate = this.shouldBuildHostileSiloSam();
+      if (!this.shouldBuildHostileSiloSam()) return false;
       // Forecast release (goal requirement: weigh enemy economy prediction
       // and Silo levels for economy-vs-SAM): while the sampled threat ETA
       // provably trails our SAM-readiness ETA by the safety margin, the
       // chest stays OFF and economy compounds — every later defense gets
       // cheaper. Null forecast (insufficient samples) keeps the chest's
       // conservative default.
-      if (!hostileSiloImmediate && !this.nuclearThreatOutrunsOurSamReadiness()) return false;
+      if (!this.nuclearThreatOutrunsOurSamReadiness()) return false;
       const gold = legendaryBigInt(this.player?.gold?.() || 0n);
       return gold < this.cost(UNIT.SAMLauncher);
     }
@@ -3484,13 +3347,10 @@
 
     hostileSiloLevelSum() {
       const siloSummary = this.hostileMissileSiloCapacitySummary();
-      // `capacity` is the authoritative level-weighted launch capacity. Using
-      // the number of Silo structures here treated a level-5 launcher exactly
-      // like level 1, making the threat ETA materially too optimistic and
-      // delaying the SAM chest on big-start boards. The summary already
-      // accounts for construction/disabled units and exposes the same level
-      // semantics used by the SAM parity policy.
-      return Number(siloSummary?.hostileSiloCapacity ?? 0);
+      const count = Number(siloSummary?.hostileSiloCount ?? 0);
+      // Level sum approximated by count until a per-level read is exposed;
+      // count is the launch-capacity proxy the summary already carries.
+      return count;
     }
 
     hostileNuclearThreatSample() {
@@ -3569,15 +3429,7 @@
       const enemyEta = this.hostileNuclearThreatEtaTicks();
       if (enemyEta === null) return false;
       const ownEta = this.ownSamReadinessEtaTicks();
-      // No readiness ETA means that the first launcher is not yet funded (or
-      // no legal SAM site has been found).  Once an enemy forecast exists,
-      // treating that state as "safe" silently disables the baseline chest:
-      // the Legendary planner keeps buying Cities/Posts until the enemy Silo
-      // is complete, then has no 300-tick construction window left.  The
-      // conservative interpretation is that an unfunded defense cannot beat
-      // a known nuclear horizon.  This is seed/map independent and only
-      // applies while the caller has already established a hostile forecast.
-      if (ownEta === null) return true;
+      if (ownEta === null) return false;
       return ownEta > enemyEta - 600;
     }
 
@@ -3592,26 +3444,6 @@
         UNIT.SAMLauncher,
       );
       if (ownSam === null) return false;
-      const liveHostileSilo = (this.game?.units?.(UNIT.MissileSilo) || []).some((silo) => {
-        const owner = silo?.owner?.();
-        // Older GameView wrappers omit owner on external structures. When no
-        // own Silo exists yet, that opaque live Silo is still a conservative
-        // nuclear threat rather than a reason to postpone the interceptor.
-        return owner === undefined || owner === null ||
-          (owner.smallID?.() !== this.player.smallID?.() &&
-            this.player.isFriendly?.(owner) !== true);
-      });
-      const playerIndexedHostileSilo = (this.game?.players?.() || []).some((other) => {
-        if (!other || other.smallID?.() === this.player.smallID?.() ||
-          this.player.isFriendly?.(other) === true ||
-          (typeof this.player.team === "function" && typeof other.team === "function" &&
-            this.player.team() !== null && this.player.team() === other.team())) return false;
-        return (other.units?.(UNIT.MissileSilo) || []).length > 0;
-      });
-      const elapsedTicks = Number(this.game?.ticks?.() ?? 0);
-      const preemptiveBaseline =
-        isLegendaryDifficulty() && elapsedTicks >= LEGENDARY_BASELINE_SAM_TICK &&
-        this.ownedLevels(UNIT.City) >= 1;
 
       // Hostile Silo count is not a spatial coverage requirement — but silo
       // MASS is: a level-L SAM holds L concurrent interceptors inside a
@@ -3623,8 +3455,7 @@
       // below the threshold the doctrine is unchanged (one site + upgrades).
       return (
         ownSam.count < this.samSiteCountTarget() &&
-        (siloSummary.hostileSiloCount > 0 || threat.siloThreat === true ||
-          liveHostileSilo || playerIndexedHostileSilo || preemptiveBaseline)
+        (siloSummary.hostileSiloCount > 0 || threat.siloThreat === true)
       );
     }
 
@@ -4048,20 +3879,6 @@
       // Warship path. A launcher still under construction remains only an
       // anticipatory signal and cannot freeze unrelated emergency spending.
       if (sams.length > 0) return false;
-      const baselineSamDue =
-        Number(this.game?.ticks?.() ?? 0) >= LEGENDARY_BASELINE_SAM_TICK &&
-        this.player != null && this.ownedLevels(UNIT.City) >= 1;
-      if (baselineSamDue) {
-        const samCost = this.safeConstructionCost(UNIT.SAMLauncher);
-        if (samCost === null) return true;
-        const cost = BigInt(warshipCost || 0n);
-        const tradeTraffic = (this.game?.units?.(UNIT.TradeShip) || []).length;
-        // Once a real convoy exists, the first destroyer is the income
-        // protection that lets the SAM chest fill. Permit that one hull when
-        // it is affordable; subsequent ships remain behind the SAM reserve.
-        if (tradeTraffic >= 20 && this.spendableConstructionGold() >= cost) return false;
-        return this.spendableConstructionGold() < samCost + cost;
-      }
       if (this.longPeaceWindowSamChestActive() || this.hasBuiltHostileSiloThreat()) {
         const samCost = this.safeConstructionCost(UNIT.SAMLauncher);
         if (samCost === null) return true;
@@ -4199,15 +4016,6 @@
       if (typeof this.game?.isLand !== "function") return null;
       if (typeof this.game?.ownerID !== "function") return null;
 
-      const tick = safeStructureGameTick(this.game);
-      if (
-        tick !== null &&
-        this._borderingLandOwnerIdsTick === tick &&
-        this._borderingLandOwnerIdsCache !== null
-      ) {
-        return this._borderingLandOwnerIdsCache;
-      }
-
       const ownSid = this.player.smallID();
       const ownerIds = new Set();
       for (const borderTile of this.player.borderTiles()) {
@@ -4217,10 +4025,6 @@
           if (ownerSid == null || ownerSid === ownSid) continue;
           ownerIds.add(ownerSid);
         }
-      }
-      if (tick !== null) {
-        this._borderingLandOwnerIdsTick = tick;
-        this._borderingLandOwnerIdsCache = ownerIds;
       }
       return ownerIds;
     }
@@ -11031,61 +10835,6 @@
       return spawned === true;
     }
 
-    // Arm-on-freeze stashed for isolation run — reinserted below.
-
-    // Arm-on-freeze (2026-08-25): the freeze-giant survival strike
-    // (nukeBehavior.maybeFreezeGiantStrike) can only fire from an OPERATIONAL
-    // silo — and measured mode-A freezes hold 18M gold with NO silo during
-    // the entire window (the endgame economy buys silos only after the first
-    // waves land). When the freeze-giant signature holds and we own no
-    // launcher, buy the strike silo HERE so the tail lane gets ammunition.
-    // FFA-only like the plateau lane above; the gate is a pure duplicate of
-    // the nuke side's freezeGiantStrikeTarget signature (behaviors are
-    // separate classes in one lexical scope).
-    async maybeArmFreezeStrikeSilo() {
-      if (state.settings.winFixes !== true) return false;
-      if (currentDifficulty() !== Difficulty.Legendary) return false;
-      const gameMode = String(
-        this.game.config()?.gameConfig?.()?.gameMode ?? "",
-      );
-      if (gameMode !== "Free For All" && gameMode !== "FFA") return false;
-      if (this.game.config().isUnitDisabled?.(UNIT.MissileSilo) === true) {
-        return false;
-      }
-      const tiles = Number(this.player.numTilesOwned?.() ?? 0);
-      if (tiles < 50_000) return false;
-      const ourTroops = Number(this.player.troops?.() ?? 0);
-      const ourMax = Number(this.player.maxTroops?.() ?? 0);
-      if (!(ourMax > 0) || ourTroops < ourMax * 0.85) return false;
-      let giantTroops = 0;
-      for (const other of this.game.players()) {
-        if (other === this.player || !other?.isPlayer?.()) continue;
-        if (other.isAlive?.() === false) continue;
-        if (this.player.isFriendly?.(other) === true) continue;
-        const troops = Number(other.troops?.() ?? 0);
-        giantTroops = Math.max(giantTroops, troops);
-      }
-      if (giantTroops < ourTroops * 1.5) return false;
-      const summary = this.playerUnitCapacitySummary(this.player, UNIT.MissileSilo);
-      if (summary !== null && summary.count > 0) return false;
-      const cost = this.safeConstructionCost(UNIT.MissileSilo);
-      if (cost === null) return false;
-      // Keep two launcher-prices of headroom: the strike itself needs the
-      // bomb right after construction completes.
-      if (
-        typeof this.player.gold !== "function" ||
-        this.player.gold() < cost * 2n + 750_000n
-      ) {
-        return false;
-      }
-      return (
-        await this.maybeSpawnStructure(UNIT.MissileSilo, {
-          useActualCost: true,
-          ignoreEconomicReserve: true,
-        })
-      ) === true;
-    }
-
     async maybeEnsureHydrogenStructureCoverage() {
       // Coverage is recomputed from completed geometry. An in-flight SAM still
       // owns the construction lane; reserve the lane until it completes rather
@@ -13523,22 +13272,6 @@
       if (this._portWaterOpennessCache === undefined) {
         this._portWaterOpennessCache = new Map();
       }
-      // The engine's canonical ocean classifier is authoritative.  Do not
-      // reject a valid shore merely because its bounded fallback flood-fill
-      // contains fewer than 400 cells (narrow channels and small open-ocean
-      // maps routinely fall below that arbitrary sample size).
-      if (
-        typeof this.game?.isOcean === "function" &&
-        typeof this.game?.forEachNeighbor === "function"
-      ) {
-        let canonicalOcean = false;
-        this.game.forEachNeighbor(tile, (neighbor) => {
-          if (this.game.isWater(neighbor) && this.game.isOcean(neighbor)) {
-            canonicalOcean = true;
-          }
-        });
-        if (canonicalOcean) return true;
-      }
       // Key on the ADJACENT WATER component, not the land tile itself —
       // getWaterComponent returns null for land, so a land key would
       // re-flood for every distinct shore candidate instead of once per
@@ -13574,14 +13307,10 @@
       if (waterTile === null) return false;
       const visited = new Set([waterTile]);
       const queue = [waterTile];
-      let cursor = 0;
       const maxTiles = 800;
       const openThreshold = 400;
-      // Cursor traversal avoids queue.shift()'s O(n) compaction on every
-      // expansion. This probe runs repeatedly on mature frontiers, so the
-      // bounded flood-fill stays O(min(component, maxTiles)) in late game.
-      while (cursor < queue.length && visited.size < maxTiles) {
-        const current = queue[cursor++];
+      while (queue.length > 0 && visited.size < maxTiles) {
+        const current = queue.shift();
         this.game.forEachNeighbor(current, (neighbor) => {
           if (visited.has(neighbor)) return;
           if (!this.game.isWater(neighbor)) return;

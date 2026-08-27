@@ -105,52 +105,6 @@ structureBehavior.maybeSpawnStructure = async (...args) => {
 structureBehavior.player = {
   units: () => [],
 };
-
-// Legacy/headless UnitView wrappers may omit isUnderConstruction() for a
-// completed Port. The first-Warship reserve must still recognize that Port;
-// requiring an explicit false would allow Defense Posts to consume the hull
-// window before the async Warship probe runs.
-structureSandbox.currentDifficulty = () => Difficulty.Legendary;
-structureSandbox.isLegendaryDifficulty = () => true;
-structureBehavior.safeConstructionCost = () => 250_000n;
-structureBehavior.game.units = (type) => type === UNIT.TradeShip ? [{}] : [];
-structureBehavior.player = {
-  gold: () => 100_000n,
-  units: (type) => type === UNIT.Port ? [{}] : [],
-};
-assert.equal(
-  structureBehavior.shouldReserveInitialWarshipGold(),
-  true,
-  "a completed Port with a legacy wrapper still reserves the first Warship hull",
-);
-
-structureBehavior.player = {
-  gold: () => 100_000n,
-  units: (type) => type === UNIT.Port ? [{ isUnderConstruction: () => true }] : [],
-};
-assert.equal(
-  structureBehavior.shouldReserveInitialWarshipGold(),
-  false,
-  "an unfinished Port does not reserve a Warship hull yet",
-);
-
-structureBehavior.player = {
-  gold: () => 1_000_000n,
-  units: (type) => type === UNIT.Port ? [{}] : [],
-};
-assert.equal(
-  structureBehavior.shouldReserveInitialWarshipGold(),
-  false,
-  "an affordable hull no longer blocks other construction",
-);
-
-structureSandbox.currentDifficulty = () => Difficulty.Impossible;
-structureSandbox.isLegendaryDifficulty = (difficulty = Difficulty.Impossible) =>
-  difficulty === Difficulty.Legendary;
-
-structureBehavior.player = {
-  units: () => [],
-};
 assert.equal(
   await structureBehavior.prioritizeMaritimeInvasionDefense(),
   true,

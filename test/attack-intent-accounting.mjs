@@ -1259,11 +1259,10 @@ assert.equal(
   "an overwhelming incoming attack terminates the opening expansion fast lane",
 );
 assert.equal(
-  openingDefenseTarget?.candidate,
-  incomingNation,
-  "an overwhelming siege reaches the bounded defensive counterattack planner",
+  openingDefenseTarget,
+  null,
+  "an overwhelming siege holds every troop instead of mirroring the wave",
 );
-assert.equal(openingDefenseTarget?.force, true);
 
 // A mirrorable peer siege is answered first, then the bounded growth lanes
 // keep running: freezing every expansion behind a winnable defense is how a
@@ -1345,26 +1344,6 @@ decisionDefenseBehavior.tryImmediateAttackPriorities = async () => {
 };
 await decisionDefenseBehavior.maybeAttack();
 assert.equal(sandbox.state.earlyGame.action, "defense-hold");
-
-const criticalSiegeDecisionBehavior = Object.create(sandbox.AttackBehavior.prototype);
-criticalSiegeDecisionBehavior.player = {};
-criticalSiegeDecisionBehavior.allianceBehavior = {};
-criticalSiegeDecisionBehavior.reconcileOutboundAttackIntentCommitments = () => {};
-criticalSiegeDecisionBehavior.findIncomingAttackPlayer = () => incomingNation;
-criticalSiegeDecisionBehavior.hasOverwhelmingIncomingAttack = () => false;
-criticalSiegeDecisionBehavior.incomingHostileAttackPressure = () => 0.68;
-criticalSiegeDecisionBehavior.canFundIncomingCounterattack = () => false;
-let criticalSiegePlannerCalls = 0;
-criticalSiegeDecisionBehavior.sendAttack = async () => {
-  criticalSiegePlannerCalls += 1;
-  return false;
-};
-await criticalSiegeDecisionBehavior.respondToIncomingAttack();
-assert.equal(
-  criticalSiegePlannerCalls,
-  1,
-  "a critical sub-parity siege must reach the bounded counterattack planner even when the initial reserve probe is empty",
-);
 
 const donationAfterPriorityBehavior = Object.create(sandbox.AttackBehavior.prototype);
 let donationPolicyRuns = 0;

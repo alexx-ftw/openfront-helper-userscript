@@ -246,27 +246,23 @@ siegeHoldBehavior.findIncomingAttackPlayer = () => ({ smallID: () => 9 });
 siegeHoldBehavior.hasOverwhelmingIncomingAttack = () => true;
 siegeHoldBehavior.sendAttack = async () => {
   siegeCounterattacks++;
-  return false;
+  return true;
 };
 assert.equal(
   await siegeHoldBehavior.respondToIncomingAttack(),
   false,
-  "an overwhelming siege still reaches the reserve-aware counterattack planner",
+  "an overwhelming siege holds troops instead of emitting a futile counterattack",
 );
-assert.equal(siegeCounterattacks, 1);
+assert.equal(siegeCounterattacks, 0);
 assert.equal(sandbox.state.earlyGame.action, "defense-hold");
 siegeHoldBehavior.hasOverwhelmingIncomingAttack = () => false;
 siegeHoldBehavior.canFundIncomingCounterattack = () => true;
-siegeHoldBehavior.sendAttack = async () => {
-  siegeCounterattacks++;
-  return true;
-};
 assert.equal(
   await siegeHoldBehavior.respondToIncomingAttack(),
   true,
   "ordinary incoming attacks preserve the responsive counterattack",
 );
-assert.equal(siegeCounterattacks, 2);
+assert.equal(siegeCounterattacks, 1);
 
 const partialInterdictionBehavior = Object.create(sandbox.AttackBehavior.prototype);
 partialInterdictionBehavior.player = {

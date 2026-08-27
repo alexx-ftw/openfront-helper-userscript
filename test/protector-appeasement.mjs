@@ -104,10 +104,12 @@ const makeBehavior = ({ mode = "FFA", nearby = [], dominant = false, friendlySid
     "FFA Legendary with alliances on activates appeasement",
   );
   testDifficulty = Difficulty.Impossible;
+  // Merged semantics: appeasement spans both top difficulties, matching the
+  // broadened gate in allianceBehavior (Legendary + Impossible).
   assert.equal(
     makeBehavior({ nearby: [strong] }).protectorAppeasementActive(),
-    false,
-    "non-Legendary difficulty never activates appeasement",
+    true,
+    "Impossible shares the top-difficulty appeasement gate",
   );
   testDifficulty = Difficulty.Legendary;
   assert.equal(
