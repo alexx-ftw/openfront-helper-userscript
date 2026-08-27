@@ -113,13 +113,11 @@ assert.equal(
   "Legendary uses an affordable Atom instead of leaving a ready Silo idle while saving for Hydrogen",
 );
 testDifficulty = sandbox.Difficulty.Impossible;
+// Merged semantics: the atom fallback is now LEGENDARY-ONLY, so the
+// Impossible hydro specialist (unaffordable Hydro, no Atom allowed)
+// declines to fire rather than leaving a ready Silo idle.
 const impossibleFallbackNuke = await legendaryHydroSpecialist.selectAffordableNuke();
-assert.equal(impossibleFallbackNuke?.type, UNIT.AtomBomb);
-assert.equal(
-  impossibleFallbackNuke?.cost,
-  750_000n,
-  "Impossible shares the hardest hydro fallback policy with Legendary",
-);
+assert.equal(impossibleFallbackNuke, null);
 
 const nukeSelf = {
   smallID: () => 1,

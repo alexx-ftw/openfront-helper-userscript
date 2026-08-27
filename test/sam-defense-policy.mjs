@@ -1696,6 +1696,11 @@ assert.equal(
   6,
   "The SAM target uses the greatest single enemy Silo-level-sum",
 );
+assert.equal(
+  behavior.hostileSiloLevelSum(),
+  8,
+  "Threat ETA uses level-weighted hostile Silo capacity, not just structure count",
+);
 behavior.game.players = originalPlayersForSiloLevelSum;
 const originalOwnGoldForSiloReserve = own.gold;
 own.gold = () => 3_000_000n;
@@ -1881,8 +1886,8 @@ behavior._hostileThreatSnapshotTick = null;
 behavior._hostileThreatSnapshot = null;
 behavior._hostileSiloCapacitySnapshotTick = null;
 behavior._hostileSiloCapacitySnapshot = null;
-enemyB.gold = () => 499_999n;
-enemyA.gold = () => 499_999n;
+enemyB.gold = () => 249_999n;
+enemyA.gold = () => 249_999n;
 behavior._hostileThreatSnapshotTick = null;
 behavior._hostileThreatSnapshot = null;
 assert.equal(
@@ -5918,6 +5923,58 @@ assert.match(
     true,
     "the peace deadline activates the baseline chest with no hostile silo",
   );
+  const forecastChestBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+  forecastChestBehavior.ownedLevels = (type) => (type === UNIT.City ? 1 : 0);
+  forecastChestBehavior.playerUnitCapacitySummary = (_player, type) =>
+    type === UNIT.SAMLauncher ? { count: 0 } : null;
+  forecastChestBehavior.legendaryPeaceWindowSamChestDue = () => false;
+  forecastChestBehavior.hasHostileReachedSiloGoldThreshold = () => true;
+  forecastChestBehavior.hasHostileSiloThreat = () => false;
+  forecastChestBehavior.shouldBuildHostileSiloSam = () => false;
+  forecastChestBehavior.nuclearThreatOutrunsOurSamReadiness = () => true;
+  assert.equal(
+    forecastChestBehavior.legendarySamBaselineChestActive(),
+    true,
+    "one City opens the forecast chest when hostile Silo funding outruns SAM readiness",
+  );
+  forecastChestBehavior.nuclearThreatOutrunsOurSamReadiness = () => false;
+  assert.equal(
+    forecastChestBehavior.legendarySamBaselineChestActive(),
+    false,
+    "a safe forecast does not freeze the one-City bootstrap",
+  );
+  forecastChestBehavior.ownedLevels = () => 0;
+  forecastChestBehavior.nuclearThreatOutrunsOurSamReadiness = () => true;
+  assert.equal(
+    forecastChestBehavior.legendarySamBaselineChestActive(),
+    false,
+    "zero Cities cannot activate the forecast chest",
+  );
+  forecastChestBehavior.ownedLevels = (type) => (type === UNIT.City ? 1 : 0);
+  forecastChestBehavior.shouldBuildHostileSiloSam = () => true;
+  forecastChestBehavior.nuclearThreatOutrunsOurSamReadiness = () => false;
+  assert.equal(
+    forecastChestBehavior.legendarySamBaselineChestActive(),
+    true,
+    "an observed hostile Silo starts the first SAM immediately even before ETA samples mature",
+  );
+  const lowerThresholdForecastBehavior = Object.create(
+    sandbox.__StructureBehavior.prototype,
+  );
+  lowerThresholdForecastBehavior.ownedLevels = (type) =>
+    type === UNIT.City ? 1 : 0;
+  lowerThresholdForecastBehavior.playerUnitCapacitySummary = (_player, type) =>
+    type === UNIT.SAMLauncher ? { count: 0 } : null;
+  lowerThresholdForecastBehavior.legendaryPeaceWindowSamChestDue = () => false;
+  lowerThresholdForecastBehavior.hasHostileReachedSiloGoldThreshold = () => false;
+  lowerThresholdForecastBehavior.hasHostileSiloThreat = () => true;
+  lowerThresholdForecastBehavior.shouldBuildHostileSiloSam = () => false;
+  lowerThresholdForecastBehavior.nuclearThreatOutrunsOurSamReadiness = () => true;
+  assert.equal(
+    lowerThresholdForecastBehavior.legendarySamBaselineChestActive(),
+    true,
+    "the half-Silo-cost hostile forecast starts the SAM chest before Silo completion",
+  );
   const warshipDeferBehavior = Object.create(sandbox.__StructureBehavior.prototype);
   warshipDeferBehavior.ownedSamUnits = () => [];
   warshipDeferBehavior.legendarySamBaselineChestActive = () => true;
@@ -6265,6 +6322,20 @@ assert.match(
     "a threat that matures before our SAM readiness keeps the chest bound",
   );
 
+  // An unfunded/unsited first SAM has no readiness ETA.  A known hostile
+  // nuclear horizon must conservatively bind the baseline chest rather than
+  // being treated as safe and letting ordinary structures consume the fund.
+  const noReadinessEtaBehavior = Object.create(
+    sandbox.__StructureBehavior.prototype,
+  );
+  noReadinessEtaBehavior.hostileNuclearThreatEtaTicks = () => 900;
+  noReadinessEtaBehavior.ownSamReadinessEtaTicks = () => null;
+  assert.equal(
+    noReadinessEtaBehavior.nuclearThreatOutrunsOurSamReadiness(),
+    true,
+    "a known threat with no funded SAM readiness ETA binds the chest",
+  );
+
   // Rich us, poor-and-slow them: we outpace comfortably → economy proceeds.
   tick += 100;
   ownGold = 1_600_000;
@@ -6439,4 +6510,78 @@ process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");
   delete state.bigStartStructurePacing;
   sandbox.isLegendaryDifficulty = originalIsLegendary;
   sandbox.isAtLeastHardDifficulty = originalAtLeastHard;
+}
+
+// ── Arm-on-freeze silo purchase (FFA endgame strike arming) ────────────────
+{
+  const makeArmBehavior = ({ bigMode = "FFA", tiles = 120_000, troops = 3_000_000, max = 3_200_000, giantTroops = 6_000_000, ownSilo = false }) => {
+    const behavior = Object.create(sandbox.__StructureBehavior.prototype);
+    behavior.game = {
+      ticks: () => 12_000,
+      config: () => ({
+        gameConfig: () => ({ gameMode: bigMode }),
+        isUnitDisabled: () => false,
+      }),
+      players: () => [giantPlayer],
+    };
+    behavior.player = {
+      numTilesOwned: () => tiles,
+      troops: () => troops,
+      maxTroops: () => max,
+      isFriendly: (o) => o === behavior.player,
+      gold: () => 20_000_000n,
+    };
+    const giantPlayer = {
+      isPlayer: () => true,
+      isAlive: () => true,
+      troops: () => giantTroops,
+    };
+    behavior.legendaryBigStartGame = () => false;
+    behavior.safeConstructionCost = (type) =>
+      type === UNIT.MissileSilo ? 1_000_000n : 2_000_000n;
+    behavior.ownedLevels = () => 0;
+    behavior.playerUnitCapacitySummary = (_p, type) =>
+      type === UNIT.MissileSilo && !ownSilo
+        ? { count: 0, capacity: 0, builtCount: 0 }
+        : { count: 1, capacity: 1, builtCount: 1 };
+    return behavior;
+  };
+  const originalDifficulty = sandbox.currentDifficulty;
+  sandbox.currentDifficulty = () => Difficulty.Legendary;
+  let siloSpawns = 0;
+  const armed = makeArmBehavior({});
+  armed.maybeSpawnStructure = async (type) => {
+    if (type === UNIT.MissileSilo) siloSpawns += 1;
+    return true;
+  };
+  assert.equal(
+    await armed.maybeArmFreezeStrikeSilo(),
+    true,
+    "the freeze signature buys a strike silo with abundant gold",
+  );
+  assert.equal(siloSpawns, 1, "exactly one strike-silo build attempted");
+  assert.equal(
+    await makeArmBehavior({ ownSilo: true }).maybeArmFreezeStrikeSilo(),
+    false,
+    "an existing launcher disables the arming lane",
+  );
+  assert.equal(
+    await makeArmBehavior({ bigMode: "Team" }).maybeArmFreezeStrikeSilo(),
+    false,
+    "team games never arm through this lane",
+  );
+  assert.equal(
+    await makeArmBehavior({ tiles: 49_000 }).maybeArmFreezeStrikeSilo(),
+    false,
+    "below endgame scale nothing is armed",
+  );
+  const poorGold = makeArmBehavior({});
+  poorGold.player.gold = () => 2_500_000n;
+  assert.equal(
+    await poorGold.maybeArmFreezeStrikeSilo(),
+    false,
+    "gold under two launchers plus one bomb keeps the treasury",
+  );
+  delete state.bigStartStructurePacing;
+  sandbox.currentDifficulty = originalDifficulty;
 }

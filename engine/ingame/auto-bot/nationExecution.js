@@ -378,6 +378,19 @@
       const retryDue = newThreat || ticks - this.lastIncomingDefenseAttemptTick >= 3;
       if (retryDue) {
         this.lastIncomingDefenseAttemptTick = ticks;
+        // A structure probe below is asynchronous and may advance the tick
+        // generation.  The old ordering therefore let the first incoming
+        // wave make the subsequent warship bridge stale before it ran.  Put
+        // the actionable first-hull probe ahead of both retaliation and
+        // structure placement: a completed Port plus an affordable hull is
+        // a time-sensitive coastal-defense obligation, while the other lanes
+        // can retry on the next decision tick without losing state.
+        if (this.feat("warship") && state.settings.warshipAutoSpawn !== false &&
+          this.warshipBehavior.shouldPrioritizeInitialWarshipBuild?.() === true) {
+          await autoBotProfileAsyncPhase(profile, "warship-defense-build", () =>
+            this.warshipBehavior.maybeSpawnWarship());
+          if (!this.tickIsCurrent(tickGeneration)) return true;
+        }
         await autoBotProfileAsyncPhase(profile, "incoming-defense-attack", () =>
           this.attackBehavior.respondToIncomingAttack());
         if (!this.tickIsCurrent(tickGeneration)) return true;
@@ -403,7 +416,9 @@
       let attackRate = this.attackRate;
       let scale = Number(state.settings.combatCadenceScale ?? 0.6);
       if (
-        currentDifficulty() === Difficulty.Legendary &&
+        typeof currentDifficulty === "function" &&
+        (currentDifficulty() === Difficulty.Legendary ||
+          currentDifficulty() === Difficulty.Impossible) &&
         ticks <= LEGENDARY_OPENING_WINDOW_TICKS
       ) {
         scale *= LEGENDARY_OPENING_CADENCE_SCALE;
@@ -487,11 +502,21 @@
           () => this.structureBehavior.maybeSpawnPlateauCity?.(), tickGeneration))) return;
         if (!(await this.runOptionalAsyncPhase(this.feat("nuke"), profile, "mirv",
           () => this.mirvBehavior.considerMIRV(), tickGeneration))) return;
-        if (!(await this.runOptionalAsyncPhase(this.feat("build"), profile, "structures",
-          () => this.structureBehavior.handleStructures(profile), tickGeneration))) return;
         const warship = this.feat("warship") && state.settings.warshipAutoSpawn !== false;
+        // Probe the first affordable hull before ordinary structures.  Both
+        // lanes are asynchronous, and the old structures-first order let a
+        // City/Factory/Defense-Post build consume the exact 250k window in
+        // which the completed Port could have emitted its first Warship.  The
+        // warship policy still yields when SAM/land-defense urgency is active,
+        // so this only changes the tie-break when the naval lane is actionable.
         if (!(await this.runOptionalAsyncPhase(warship, profile, "warship-build",
           () => this.warshipBehavior.maybeSpawnWarship(), tickGeneration))) return;
+        // Structure placement now probes async buildables.  A tick can advance
+        // while that probe is in flight; do not let the stale-generation guard
+        // suppress the independent construction lane.  The warship phase above
+        // re-reads live state and has its own pending-build/rate guards.
+        await this.runOptionalAsyncPhase(this.feat("build"), profile, "structures",
+          () => this.structureBehavior.handleStructures(profile), tickGeneration);
         if (!(await this.runOptionalAsyncPhase(this.feat("expand") || this.feat("boat"),
           profile, "attack", () => this.attackBehavior.maybeAttack(profile), tickGeneration))) return;
         if (this.feat("embargo")) {
@@ -556,6 +581,17 @@
       if (await this.initializeTick(ticks, profile, tickGeneration)) return;
       if (!(await this.processPendingNukeSalvo(profile, tickGeneration))) return;
       if (await this.handleIncomingDefense(ticks, profile, tickGeneration)) {
+        // Incoming land defense intentionally bypasses the ordinary decision
+        // chain.  Do one live naval build probe before containment so a Port
+        // with a paid-for first hull cannot remain defenseless for the entire
+        // siege.  The warship behavior retains all SAM/affordability and
+        // pending-intent guards; this is only a scheduling bridge.
+        if (this.feat("warship") && state.settings.warshipAutoSpawn !== false &&
+          this.warshipBehavior.shouldPrioritizeInitialWarshipBuild?.() === true) {
+          await autoBotProfileAsyncPhase(profile, "warship-defense-build", () =>
+            this.warshipBehavior.maybeSpawnWarship());
+          if (!this.tickIsCurrent(tickGeneration)) return;
+        }
         await this.runContainmentGrowth(ticks, profile, tickGeneration);
         return;
       }
@@ -989,7 +1025,13 @@
           const ny = ty + dy;
           if (!g.isValidCoord(nx, ny)) continue;
           total++;
-          if (!g.isLand(g.ref(nx, ny))) water++;
+          const ref = g.ref(nx, ny);
+          if (
+            !g.isLand(ref) &&
+            (typeof g.isOcean !== "function" || g.isOcean(ref))
+          ) {
+            water++;
+          }
         }
       }
       // A small water fraction rewards a coast; a huge fraction penalizes a
@@ -1048,7 +1090,9 @@
       // warships. Weighted below land density and safety but above the team
       // pull so it breaks ties between otherwise-equivalent inland/coastal
       // starts in favour of the coast.
-      score += this.getSpawnCoastalAccess(tx, ty) * 15;
+      // Strongly prefer a reachable maritime start when one exists; otherwise
+      // the land-density score can strand the Port/trade lane inland.
+      score += this.getSpawnCoastalAccess(tx, ty) * 30;
 
       // Defensibility: higher-magnitude surrounding terrain makes a start
       // harder to overrun. A modest tie-breaker that never overrides the core

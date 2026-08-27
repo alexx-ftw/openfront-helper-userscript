@@ -680,6 +680,46 @@
     "initializerPreview": "0.5"
   },
   {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:COUNTERATTACK_CRITICAL_PRESSURE#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "COUNTERATTACK_CRITICAL_PRESSURE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d2cbad71ff333de67d07ec676e352ab7f38248eb69c942950157220607c55e84",
+    "initializerLength": 3,
+    "initializerPreview": "0.5"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:COUNTERATTACK_CRITICAL_SPENDABLE_FRACTION#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "COUNTERATTACK_CRITICAL_SPENDABLE_FRACTION",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "1e181f0934d441445f03ff51c972ef44275b830c10a80401e53b27bf5baf327a",
+    "initializerLength": 4,
+    "initializerPreview": "0.85"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:COUNTERATTACK_CRITICAL_LEDGER_FRACTION#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "COUNTERATTACK_CRITICAL_LEDGER_FRACTION",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "004a9e0878ff83e6b91f50d50dad439d2065c6cbb0d20f1f328b2fd75e085d6a",
+    "initializerLength": 4,
+    "initializerPreview": "1.25"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:COUNTERATTACK_CRITICAL_EMERGENCY_ARMY_FRACTION#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "COUNTERATTACK_CRITICAL_EMERGENCY_ARMY_FRACTION",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "a30a043314fa89294fa2c1c989a01fbb5329e5c085a5c5a8d27317656de24ae0",
+    "initializerLength": 4,
+    "initializerPreview": "0.25"
+  },
+  {
     "id": "engine/ingame/auto-bot/attackBehavior.js:COUNTERATTACK_INTERDICT_MINIMUM_TROOPS#1",
     "file": "engine/ingame/auto-bot/attackBehavior.js",
     "name": "COUNTERATTACK_INTERDICT_MINIMUM_TROOPS",
@@ -698,6 +738,26 @@
     "initializerHash": "a176eeb31e601c3877c87c2843a2f584968975269e369d5c86788b4c2f92d2a2",
     "initializerLength": 4,
     "initializerPreview": "3000"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:COUNTERATTACK_FRAGILE_HOMELAND_TILE_CEILING#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "COUNTERATTACK_FRAGILE_HOMELAND_TILE_CEILING",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "876c9b16254e157d1eb645390dcfae6f29b9d3cd394e73a91de8ee5d0e67ee43",
+    "initializerLength": 5,
+    "initializerPreview": "20000"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:COUNTERATTACK_FRAGILE_HOMELAND_PRESSURE#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "COUNTERATTACK_FRAGILE_HOMELAND_PRESSURE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "ce5d3aa79ae56155078af52e8fac68eb2d0a78489f82bc26c1e1bbc667ba9fde",
+    "initializerLength": 4,
+    "initializerPreview": "0.75"
   },
   {
     "id": "engine/ingame/auto-bot/attackBehavior.js:TN_STRATEGIC_RESERVE_FRACTION#1",
@@ -2475,9 +2535,19 @@
     "name": "HOSTILE_SAM_TRIGGER_GOLD_THRESHOLD",
     "declarationKind": "const",
     "initializerKind": "BinaryExpression",
-    "initializerHash": "9518667c568dedc7eb5c4948f5f4215bf6609aba2613e12030d18cea8f72e722",
+    "initializerHash": "9b61ed1233c790aedbe1c494f359f85ec15bf7bbac41b33a4641196c41a0dc98",
     "initializerLength": 32,
-    "initializerPreview": "HOSTILE_SILO_GOLD_THRESHOLD / 2n"
+    "initializerPreview": "HOSTILE_SILO_GOLD_THRESHOLD / 4n"
+  },
+  {
+    "id": "engine/ingame/auto-bot/structureBehavior.js:LEGENDARY_BASELINE_SAM_TICK#1",
+    "file": "engine/ingame/auto-bot/structureBehavior.js",
+    "name": "LEGENDARY_BASELINE_SAM_TICK",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "284b7e6d788f363f910f7beb1910473e23ce9d6c871f1ce0f31f22a982d48ad4",
+    "initializerLength": 3,
+    "initializerPreview": "600"
   },
   {
     "id": "engine/ingame/auto-bot/structureBehavior.js:ECONOMIC_STRUCTURE_TYPES#1",
@@ -2828,6 +2898,16 @@
     "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
     "initializerLength": 2,
     "initializerPreview": "10"
+  },
+  {
+    "id": "engine/ingame/auto-bot/warshipBehavior.js:WARSHIP_TRADE_ESCORT_DANGER_RADIUS#1",
+    "file": "engine/ingame/auto-bot/warshipBehavior.js",
+    "name": "WARSHIP_TRADE_ESCORT_DANGER_RADIUS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "69f59c273b6e669ac32a6dd5e1b2cb63333d8b004f9696447aee2d422ce63763",
+    "initializerLength": 2,
+    "initializerPreview": "90"
   },
   {
     "id": "engine/ingame/auto-bot/warshipBehavior.js:MAX_DEPTH#1",

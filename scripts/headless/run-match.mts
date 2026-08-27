@@ -301,6 +301,20 @@ const config = {
       }
     : {}),
   ...fixedConfig,
+  // Keep the explicit mode authoritative even when the random playlist is
+  // used (without OFH_GAME_MAP the playlist would otherwise silently restore
+  // Team mode and invalidate FFA evidence).
+  gameMode: fixedGameMode,
+  ...(fixedGameMode === GameMode.Team
+    ? {
+        playerTeams:
+          requestedTeams === undefined
+            ? playlistConfig.playerTeams
+            : Number.isFinite(numericTeams)
+              ? numericTeams
+              : requestedTeams,
+      }
+    : {}),
   ...(process.env.OFH_FIXED_WARSHIP === "1"
     ? {
         gameMap: "Warship Warship",
@@ -488,9 +502,21 @@ let firstIncomingLandAttackObserved = false;
 let firstTerritoryLossObserved = false;
 let firstHostileNukeTick: number | null = null;
 let firstReadySamTick: number | null = null;
-let landLeaderAt120Seconds: { name: string; type: string; tiles: number; share: number } | null =
+let landLeaderAt120Seconds: {
+  name: string;
+  type: string;
+  tiles: number;
+  share: number;
+  isOwn: boolean;
+} | null =
   null;
-let landLeaderAt180Seconds: { name: string; type: string; tiles: number; share: number } | null =
+let landLeaderAt180Seconds: {
+  name: string;
+  type: string;
+  tiles: number;
+  share: number;
+  isOwn: boolean;
+} | null =
   null;
 // Amended-standard companion key (non-nation leader at the 3-minute mark).
 let landLeaderNonNationAt180Seconds: {
@@ -1173,6 +1199,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
         type: String(leader.type()),
         tiles: leader.numTilesOwned(),
         share: leader.numTilesOwned() / totalLand,
+        isOwn: leader.smallID?.() === currentPlayer.smallID?.(),
       };
     }
   }
@@ -1189,6 +1216,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
         type: String(leader.type()),
         tiles: leader.numTilesOwned(),
         share: leader.numTilesOwned() / totalLand,
+        isOwn: leader.smallID?.() === currentPlayer.smallID?.(),
         ownTiles: currentPlayer.numTilesOwned(),
         ownRank:
           landPlayers.findIndex((player) => player.smallID?.() === currentPlayer.smallID?.()) + 1,

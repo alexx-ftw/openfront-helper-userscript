@@ -485,6 +485,24 @@ lane's honest status is "armed-survival coverage for silo-endowed
 freezes"; the follow-up lever is an arm-on-freeze silo purchase,
 deliberately deferred as its own risk round.
 
+## Arm-on-freeze round (2026-08-25): implemented, validation PARKED on shared-tree churn
+
+`maybeArmFreezeStrikeSilo` (structureBehavior, FFA-only, duplicate of the
+nuke-side signature) buys the strike silo during mode-A freezes when gold
+covers 2 launchers + 1 bomb with no existing launcher; unit tests green.
+CLEAN-TREE VALIDATION IS BLOCKED by concurrent uncommitted foreign WIP
+whose own bisect (identical 9019 anchor death with/without our lane)
+kills anchors independently. Isolation protocol recorded: stash their
+paths, validate HEAD+mine-only, restore. Clean-tree FFA case rows
+recorded on 1.12.63+strike baseline: n2-basket-02 died @19211 (ownN 4),
+n4-basket-03 @13567 with **vet 3** appearing organically there (first
+n4 vet-3) plus et 9 / trades 7 — closer than its earlier runs. The arm
+method text is preserved in /tmp/everything-now.patch and re-applies
+cleanly once the tree settles; the sweep build unit tests pass locally
+but the combined-tree suite inherits foreign-attributed failures
+(warship-micro "non-Legendary reserves nothing", nuke-economy
+selectAffordableNuke Atom assertion).
+
 Measured on the pinned engine: **25MM transformed** — row 01 builds
 5 SAM sites + 10 ports, 80M gold, ZERO buildings nuked (the nuke-storm
 blocker is beaten on that row); set ownN 0-18 (was 8-24), et sum 112

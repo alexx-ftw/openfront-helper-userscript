@@ -266,6 +266,41 @@ assert.equal(
   "A chained salvo is unsafe when any incoming missile has no assigned interceptor",
 );
 
+const engineOrderExact = plannerSandbox.legendaryMissileDefenseSchedule({
+  routes: [
+    {
+      weapon: "AtomBomb",
+      impactTick: 30,
+      samOptions: [
+        { samIndex: 0, interceptTicks: [10], claimScore: 20 },
+        { samIndex: 1, interceptTicks: [10], claimScore: 10 },
+      ],
+    },
+    {
+      weapon: "AtomBomb",
+      impactTick: 31,
+      samOptions: [{ samIndex: 0, interceptTicks: [11], claimScore: 30 }],
+    },
+    {
+      weapon: "AtomBomb",
+      impactTick: 32,
+      samOptions: [{ samIndex: 1, interceptTicks: [12], claimScore: 5 }],
+    },
+  ],
+  samProfiles: [
+    { id: "sam-first", availableTicks: [0] },
+    { id: "sam-second", availableTicks: [0, 0] },
+  ],
+  samCooldownTicks: 90,
+  marginTicks: 5,
+});
+assert.equal(
+  engineOrderExact.fullyDefended,
+  true,
+  "an exact matching is accepted when replaying launcher claim order reproduces it",
+);
+assert.equal(engineOrderExact.scheduleMethod, "engine-order-exact");
+
 const actualWeaponLabels = plannerSandbox.legendaryMissileSalvoRisk({
   routes: [
     { weapon: "Atom Bomb", impactTick: 20, samOptions: [{ samIndex: 0, interceptTicks: [10] }] },
@@ -634,7 +669,8 @@ assert.equal(
 
 assert.match(read("engine/ingame/auto-bot/portutil.js"), /Legendary: "Legendary"/);
 assert.match(read("engine/ingame/auto-bot/core.js"), /difficulty: "Impossible"/);
-assert.match(read("engine/ingame/auto-bot/panel.js"), /"Legendary"/);
+assert.match(read("engine/ingame/auto-bot/panel.js"), /return \["Impossible"\]/);
+assert.doesNotMatch(read("engine/ingame/auto-bot/panel.js"), /\["Easy", "Medium", "Hard"/);
 assert.match(read("src/shell/popup/panel.ts"), /DIFFICULTIES/);
 assert.match(read("locales/en/common.json"), /"Legendary"/);
 assert.match(read("build.mjs"), /auto-bot\/legendaryPlanner\.js/);

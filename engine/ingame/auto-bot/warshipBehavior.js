@@ -84,6 +84,11 @@
   const WARSHIP_DODGE_COOLDOWN_TICKS = 10;
   const WARSHIP_DODGE_SECOND_TOKEN_RESERVE = 1;
   const WARSHIP_DODGE_MINUTE_TOKEN_RESERVE = 10;
+  // Do not chase commerce into an enemy escort's interception bubble.  The
+  // engine's attack range is ~30 tiles, but a hunter can move many tiles
+  // between combat passes; a 90-tile leash catches an escort that can reach
+  // the prey before the next retasking pass and keeps the hull alive.
+  const WARSHIP_TRADE_ESCORT_DANGER_RADIUS = 90;
 
   function canUseDenseWaterRouteBuffers(total) {
     return (
@@ -210,6 +215,44 @@
       return this.random.randElement(ports);
     }
 
+    /**
+     * Once a Legendary nation has a real Port and a full trade convoy in the
+     * water, the first destroyer is infrastructure, not a speculative raid.
+     * Keep the ordinary reserve/SAM gate above this decision, but do not let
+     * the source AI's 50% roll discard the only way to turn commerce into
+     * coastal protection. The 20-ship threshold is deliberately observable
+     * game state (not a seed or map special case). Waiting for 33 ships lets
+     * the structure lane consume the exact 250k hull window while a siege is
+     * already forming.
+     */
+    shouldForceInitialWarshipRoll(port) {
+      if (!this.raidingTierActive() || port === null) return false;
+      if (typeof this.game?.units !== "function") return false;
+      const traffic = this.game.units(UNIT.TradeShip) || [];
+      if (traffic.length < 20) return false;
+      // A Port selected by getInitialWarshipPort is complete and buildable;
+      // require the structure policy's ocean classification when available so
+      // enclosed/invalid shoreline Ports cannot activate this bypass.
+      if (this.structureBehavior?.hasOceanPortTiles) {
+        return this.structureBehavior.hasOceanPortTiles() === true;
+      }
+      return true;
+    }
+
+    // Incoming land-defense handling returns early from the normal decision
+    // chain.  Once commerce has paid for a first destroyer, that early return
+    // must not starve the naval lane indefinitely: a completed ocean Port and
+    // an affordable hull are an actionable coastal-defense obligation.
+    shouldPrioritizeInitialWarshipBuild() {
+      if (!this.raidingTierActive()) return false;
+      if (this.player.units(UNIT.Warship).length > 0) return false;
+      const port = this.getInitialWarshipPort();
+      if (port === null) return false;
+      if (typeof this.game?.units !== "function" ||
+        (this.game.units(UNIT.TradeShip) || []).length < 20) return false;
+      return this.shouldForceInitialWarshipRoll(port);
+    }
+
     async maybeSpawnWarship() {
       if (this.player === null) throw new Error("not initialized");
       if (this.game.config().isUnitDisabled(UNIT.Warship)) {
@@ -227,18 +270,30 @@
       }
       const maritimeEmergency =
         this.incomingMaritimeInvasionSignal()?.active === true;
+      const initialPort = this.getInitialWarshipPort();
+      const forceInitialWarship = this.shouldForceInitialWarshipRoll(initialPort);
+      const warshipCost = this.cost(UNIT.Warship);
+      // A long-peace SAM forecast must not strand the first affordable hull:
+      // until an enemy Silo actually exists, a completed ocean Port plus the
+      // 250k hull is the only available coastal defense.  Once hostile Silo
+      // evidence appears, the SAM reserve remains authoritative.
+      const samForecastHold = this.shouldDeferWarshipForFirstSam(warshipCost);
+      const hostileSiloLive = this.structureBehavior?.hasBuiltHostileSiloThreat?.() === true;
+      const samFloorHold = samForecastHold &&
+        !(forceInitialWarship && !hostileSiloLive &&
+          this.player.gold() >= warshipCost);
       if (
-        this.shouldDeferWarshipBuildForFloor(maritimeEmergency, smartState)
-      ) {
-        return false;
-      }
+        samFloorHold ||
+        (this.shouldDeferWarshipBuildForFloor(maritimeEmergency, smartState) &&
+          !forceInitialWarship)
+      ) return false;
       // A live transport aimed at our territory bypasses the ordinary 50% spawn
       // roll: the Port-first structure policy has already reserved the gold and
       // this phase must get the first available destroyer onto the water.
-      if (!maritimeEmergency && !this.random.chance(2)) {
+      if (!maritimeEmergency && !forceInitialWarship && !this.random.chance(2)) {
         return false;
       }
-      const port = this.getInitialWarshipPort();
+      const port = initialPort;
       if (port) {
         const targetTile = this.warshipSpawnTile(port.tile(), 250);
         if (targetTile === null) {
@@ -258,6 +313,7 @@
           targetTile,
           tr("🚢 Deploy warship"),
           "initial",
+          forceInitialWarship && !hostileSiloLive,
         );
       }
       return this.maybeSpawnRaidingWarship(smartState);
@@ -294,6 +350,15 @@
       const cities = this.player.units(UNIT.City) || [];
       const ports = this.player.units(UNIT.Port) || [];
       if (cities.length < 2 || ports.length === 0) return 0n;
+      // Once a live commerce lane has at least twenty hulls, keep a small
+      // interceptor reserve rather than the full speculative-Silo chest. The
+      // latter can strand the fleet at one ship while trade traffic snowballs;
+      // a hostile Silo is handled by the higher-priority SAM path and can
+      // restore the full reserve when it becomes observable.
+      const tradeTraffic = (this.game.units(UNIT.TradeShip) || []).length;
+      if (tradeTraffic >= 20 && !this.structureBehavior?.hasBuiltHostileSiloThreat?.()) {
+        return this.cost(UNIT.Warship);
+      }
       return 1_000_000n;
     }
 
@@ -390,6 +455,39 @@
 
     // warshipSpawnTile — NationWarshipBehavior.warshipSpawnTile (private).
     warshipSpawnTile(portTile, radius) {
+      // `PlayerImpl.warshipSpawn` accepts any water tile only when its water
+      // component is connected to the selected completed Port.  Sampling a
+      // 500x500 square (the old path) frequently picked a different lake or a
+      // disconnected inlet; the build probe then returned `canBuild=false`
+      // even though the Port was valid.  Start from the Port's actual shore
+      // component and walk a small bounded neighborhood, so the first hull
+      // remains buildable on irregular coastlines and on maps with lakes.
+      if (typeof this.game?.forEachNeighbor === "function") {
+        const queue = [{ tile: portTile, depth: 0 }];
+        const visited = new Set([portTile]);
+        const water = [];
+        let head = 0;
+        let component = null;
+        while (head < queue.length && head < 512) {
+          const current = queue[head++];
+          this.game.forEachNeighbor(current.tile, (neighbor) => {
+            if (visited.has(neighbor)) return;
+            visited.add(neighbor);
+            if (this.game.isWater(neighbor)) {
+              const candidateComponent = this.game.getWaterComponent?.(neighbor);
+              if (component === null || candidateComponent === component) {
+                if (component === null) component = candidateComponent;
+                water.push(neighbor);
+                if (current.depth < 8) queue.push({ tile: neighbor, depth: current.depth + 1 });
+              }
+              return;
+            }
+            // Do not walk through land: a coastal land path can reach a
+            // separate basin and reintroduce the disconnected-water bug.
+          });
+        }
+        if (water.length > 0) return this.random.randElement(water);
+      }
       for (let attempts = 0; attempts < 50; attempts++) {
         const randX = this.random.nextInt(
           this.game.x(portTile) - radius,
@@ -975,12 +1073,12 @@
       return false;
     }
 
-    tryEmitWarshipBuild(bu, tile, action, purpose) {
+    tryEmitWarshipBuild(bu, tile, action, purpose, allowPreSamInitial = false) {
       // Every Warship construction path converges here, including retaliation,
       // infestation counters and emergency interceptors.  Those paths used to
       // bypass maybeSpawnWarship's first-SAM reserve and could repeatedly spend
       // the launcher fund after an external Silo was already visible.
-      if (this.shouldDeferWarshipForFirstSam(this.cost(UNIT.Warship))) {
+      if (!allowPreSamInitial && this.shouldDeferWarshipForFirstSam(this.cost(UNIT.Warship))) {
         return false;
       }
       const smartState = this.ensureSmartState();
@@ -1948,7 +2046,7 @@
       return (
         state.settings.winFixes === true &&
         typeof currentDifficulty === "function" &&
-        currentDifficulty() === "Legendary"
+        (currentDifficulty() === "Legendary" || currentDifficulty() === "Impossible")
       );
     }
 
@@ -2030,6 +2128,13 @@
       const anchors = [];
       for (const tradeShip of this.game.units(UNIT.TradeShip) || []) {
         if (this.tradeShipImmuneToPirates(tradeShip)) continue;
+        // The global trade index also contains our own and allied commerce;
+        // anchoring on it wastes a patrol slot because those ships cannot be
+        // captured. Older wrappers may omit owner, so retain compatibility by
+        // treating an unavailable owner as eligible.
+        const owner = tradeShip.owner?.();
+        if (owner !== undefined && owner !== null &&
+          !this.canWarshipHuntOwner(owner)) continue;
         const tile = tradeShip.tile?.();
         if (tile == null) continue;
         const x = this.game.x(tile);
@@ -2086,14 +2191,13 @@
     }
 
     computeCommerceRaidAnchors() {
-      // Port-pair lanes first: trade ships run fixed port-to-port routes, so a
-      // midpoint anchor per hostile port pair covers one full lane for the
-      // whole 300-tick refresh. Live traffic only fills slots the port
-      // geometry cannot (e.g. all hostile ports share one landmass edge).
-      const laneAnchors = this.hostilePortLaneAnchors();
-      if (laneAnchors.length >= 3) return laneAnchors;
-      const anchors = laneAnchors.slice();
-      for (const anchor of this.liveTradeRaidAnchors()) {
+      // Live hostile traffic is authoritative: port midpoints are only a
+      // geometric estimate and can miss curved/obstructed routes (especially
+      // on irregular coastlines). Fill the three engine patrol slots from
+      // observed eligible ships first, then use port-pair geometry as a
+      // fallback for lanes that are temporarily between departures.
+      const anchors = this.liveTradeRaidAnchors();
+      for (const anchor of this.hostilePortLaneAnchors()) {
         if (anchors.length >= 3) break;
         if (anchors.some((existing) => this.game.manhattanDist(existing, anchor) < 35)) {
           continue;
@@ -3131,7 +3235,7 @@
         this.game.manhattanDist(origin, nearest.tile()) ? unit : nearest,
       );
       const defended = enemyWarships.some((enemy) =>
-        this.game.manhattanDist(enemy.tile(), prey.tile()) <= 30);
+        this.game.manhattanDist(enemy.tile(), prey.tile()) <= WARSHIP_TRADE_ESCORT_DANGER_RADIUS);
       return defended ? null : prey.tile();
     }
 
@@ -3253,7 +3357,7 @@
 
     handleWarshipCombat(warship, context) {
       const { smartState, friendlyPorts, enemyWarships, myWarships, enemyTradeShips,
-        maxHp, retreatPct, huntTrade, primaryTargetId } = context;
+        maxHp, retreatPct, huntTrade, primaryTargetId, flagshipTile } = context;
       const id = warship.id();
       const tick = this.game.ticks();
       const assignment = smartState.invasionAssignments.get(id);
@@ -3264,11 +3368,24 @@
       const wantsToEvade = this.warshipWantsToEvade(
         warship, nearbyEnemies, myWarships, shipMaxHp, retreatPct,
       );
+      // A stationed commerce anchor is authoritative: the engine itself
+      // selects eligible trade ships inside warshipPatrolRange around that
+      // patrol tile. A custom long-range chase would move the hull away from
+      // the anchor and make the trade target ineligible on the next tick.
+      const patrolTile = warshipState?.patrolTile;
+      const anchoredCommerce =
+        patrolTile !== undefined &&
+        !wantsToEvade &&
+        nearbyEnemies.length === 0 &&
+        this.game.manhattanDist(warship.tile(), patrolTile) <= 100;
       const target = this.combatTarget({
         warship, nearbyEnemies, enemyTradeShips, enemyWarships,
         baseTarget: this.combatRetreatTarget(warship, friendlyPorts, nearbyEnemies),
         wantsToEvade,
-        retreatThreshold: shipMaxHp * retreatPct, huntTrade, primaryTargetId,
+        retreatThreshold: shipMaxHp * retreatPct,
+        huntTrade: huntTrade && !anchoredCommerce,
+        primaryTargetId,
+        flagshipTile,
       });
       if (target === null || warshipState?.patrolTile === target) return;
       // Micromanagement pacing (see the WARSHIP_MOVE_* constants): an
@@ -3371,10 +3488,14 @@
       );
       const enemyTradeShips = huntTrade ? this.collectCombatUnits(
         UNIT.TradeShip,
-        (unit) =>
-          unit.owner()?.smallID() !== mySid &&
-          unit.isActive() &&
-          this.canWarshipHuntOwner(unit.owner()),
+        (unit) => {
+          const owner = unit.owner?.();
+          return (
+            (owner === undefined || owner === null || owner.smallID?.() !== mySid) &&
+            unit.isActive() &&
+            (owner === undefined || owner === null || this.canWarshipHuntOwner(owner))
+          );
+        },
         "enemyCombatTradeShips",
       ) : [];
       const friendlyPorts = this.friendlyCombatPorts(me);

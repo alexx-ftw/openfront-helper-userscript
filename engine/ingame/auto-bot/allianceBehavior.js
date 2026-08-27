@@ -511,7 +511,10 @@
     // relation, only our attacks do).
     protectorAppeasementActive() {
       if (state.settings.winFixes !== true) return false;
-      if (typeof currentDifficulty !== "function" || currentDifficulty() !== "Legendary") {
+      if (
+        typeof currentDifficulty !== "function" ||
+        (currentDifficulty() !== "Legendary" && currentDifficulty() !== "Impossible")
+      ) {
         return false;
       }
       if (String(this.game.config().gameConfig().gameMode) !== "FFA") return false;

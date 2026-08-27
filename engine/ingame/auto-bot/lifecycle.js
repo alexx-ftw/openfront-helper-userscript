@@ -1819,7 +1819,7 @@ function ofhApplyAutobotObjectSettings(settings, patch) {
 // =============================================================================
 window.__OFH_autobot = {
   FEATURE_KEYS: ["spawn", "expand", "build", "boat", "nuke", "warship", "alliance", "embargo", "donate", "betray"],
-  DIFFICULTIES: ["Easy", "Medium", "Hard", "Impossible", "Legendary"],
+  DIFFICULTIES: ["Impossible"],
   get() {
     const s = state.settings;
     return {

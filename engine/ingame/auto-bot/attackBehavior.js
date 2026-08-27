@@ -44,6 +44,17 @@
 
 "use strict";
 
+  // Focused attack fixtures load this module without portutil.js. Keep the
+  // hardest-tier predicate available locally; the normal bundle redeclares
+  // the same semantics from portutil and remains Impossible-compatible.
+  function isLegendaryDifficulty(difficulty) {
+    const value = difficulty ??
+      (typeof currentDifficulty === "function"
+        ? currentDifficulty()
+        : "Impossible");
+    return value === "Legendary" || value === "Impossible";
+  }
+
   // ── Structures group — src/core/game/Game.ts:374 (Structures = unitTypeGroup([
   //    City, DefensePost, SAMLauncher, MissileSilo, Port, Factory])). The src uses
   //    `Structures.has(type)` (== Array.includes); we back it with a Set of the
@@ -246,12 +257,38 @@
   const COUNTERATTACK_ATTRITION_WINDOW_TROOP_CAP = 0.5;
   const COUNTERATTACK_INTERDICT_WAVE_FRACTION = 0.85;
   const COUNTERATTACK_INTERDICT_SPENDABLE_FRACTION = 0.5;
+  // Begin the stronger bounded interdiction before a Nation wave reaches
+  // parity: the measured collapse ramped from 0.22 to 0.96 between decision
+  // samples, leaving the old 0.75 trigger too little time to react.
+  const COUNTERATTACK_CRITICAL_PRESSURE = 0.5;
+  const COUNTERATTACK_CRITICAL_SPENDABLE_FRACTION = 0.85;
+  // A critical siege can arrive as several coordinated waves.  Capping the
+  // whole window below the peak army caused the first 0.5-0.8 pressure wave
+  // to exhaust the ledger, after which the next wave took disconnected land
+  // unopposed (observed in the 1.12.75 Aegean trace: 1.29M then 2.38M
+  // incoming troops).  Permit one quarter of the peak army as additional
+  // emergency interdiction, while the per-snapshot spendable fraction and
+  // reserve gates still bound each emitted intent.
+  const COUNTERATTACK_CRITICAL_LEDGER_FRACTION = 1.25;
+  // During a critical invasion, ordinary economy reserves can become a
+  // false safety signal: the incoming wave is already consuming the land
+  // those reserves were meant to protect. Allow a bounded emergency payload
+  // from the current army when the normal spendable lane is temporarily zero.
+  const COUNTERATTACK_CRITICAL_EMERGENCY_ARMY_FRACTION = 0.25;
   const COUNTERATTACK_INTERDICT_MINIMUM_TROOPS = 250;
   // Below this territory size every tile is a double loss: the land itself
   // and the troops that die with it. A small nation cannot trade space for
   // time, so superior-attacker containment returns to full mirroring while
   // the homeland is this small.
   const COUNTERATTACK_SURVIVAL_TILE_FLOOR = 3000;
+  // Between the normal survival floor and the first mature homeland size, a
+  // genuinely overwhelming wave can still sever the frontier into isolated
+  // pockets before the next production cycle.  Only apply the stronger hold
+  // when live pressure is at least 0.75x; ordinary early expansion and peer
+  // counterattacks retain their existing policy.
+  const COUNTERATTACK_FRAGILE_HOMELAND_TILE_CEILING =
+    20_000;
+  const COUNTERATTACK_FRAGILE_HOMELAND_PRESSURE = 0.75;
   // A Terra Nullius wave returns its survivors when the free border is
   // exhausted, and land defense draws from the shared troop pool rather than
   // from a garrisoned share. Reserving the ENTIRE army of the strongest
@@ -3086,6 +3123,14 @@
         }
       }
       if (context.expandOn) {
+        // During the Legendary opening, a live free-land frontier is the
+        // highest-return expansion lane.  Ordinary Nation wars park troops in
+        // long, attritional deployments and were observed (ticks 1500-2500)
+        // consuming the same army that should have made us the 4-minute land
+        // leader.  Retaliation, tribe capture, and disconnected-player
+        // takeovers have already run above; defer only elective ordinary wars
+        // while free land is still directly actionable.
+        if (this.legendaryOpeningProtectsFreeLand(context)) return;
         await profileAttackAsync(profile, "attack-ordinary-target", () =>
           this.attackBestTarget(
             context.borderingFriends,
@@ -3093,6 +3138,14 @@
             context.nearby,
           ));
       }
+    }
+
+    legendaryOpeningProtectsFreeLand(context) {
+      if (!isLegendaryDifficulty() || !state.settings.winFixes) return false;
+      if (context?.hasAccessibleFreeLand !== true) return false;
+      const tick = Number(this.currentAttackDecisionTick?.());
+      if (!Number.isFinite(tick)) return false;
+      return tick < LEGENDARY_EARLY_EXPANSION_WINDOW_TICKS;
     }
 
     // Protector appeasement (FFA survival): ordinary attacks against the
@@ -6555,7 +6608,7 @@
     effectiveTerraNulliusCommitFraction() {
       const difficulty =
         typeof currentDifficulty === "function" ? currentDifficulty() : null;
-      if (difficulty !== "Legendary") return EARLY_EXPAND_COMMIT;
+      if (!isLegendaryDifficulty(difficulty)) return EARLY_EXPAND_COMMIT;
       const fraction = this.legendaryEarlyExpansionActive()
         ? LEGENDARY_EARLY_TN_COMMIT_FRACTION
         : LEGENDARY_TN_COMMIT_FRACTION;
@@ -6569,7 +6622,7 @@
     legendaryEarlyExpansionActive() {
       const difficulty =
         typeof currentDifficulty === "function" ? currentDifficulty() : null;
-      if (difficulty !== "Legendary") return false;
+      if (!isLegendaryDifficulty(difficulty)) return false;
       const tick = this.currentAttackDecisionTick();
       return (
         Number.isFinite(tick) &&
@@ -6587,7 +6640,7 @@
     legendaryExpansionBrakeActive() {
       if (
         typeof currentDifficulty !== "function" ||
-        currentDifficulty() !== "Legendary"
+        !isLegendaryDifficulty()
       ) {
         return false;
       }
@@ -7441,7 +7494,7 @@
       return (
         state.settings.winFixes === true &&
         typeof currentDifficulty === "function" &&
-        currentDifficulty() === "Legendary" &&
+        isLegendaryDifficulty() &&
         typeof this.game?.units === "function" &&
         typeof this.game.manhattanDist === "function"
       );
@@ -8230,7 +8283,13 @@
         0,
         Number(this.player?.numTilesOwned?.()) || 0,
       );
-      return tiles > 0 && tiles < COUNTERATTACK_SURVIVAL_TILE_FLOOR;
+      if (tiles <= 0) return false;
+      if (tiles < COUNTERATTACK_SURVIVAL_TILE_FLOOR) return true;
+      return (
+        tiles < COUNTERATTACK_FRAGILE_HOMELAND_TILE_CEILING &&
+        this.incomingHostileAttackPressure() >=
+          COUNTERATTACK_FRAGILE_HOMELAND_PRESSURE
+      );
     }
 
     incomingCounterattackAggregateTroops() {
@@ -8348,7 +8407,7 @@
       const gameMode = this.game?.config?.().gameConfig?.().gameMode;
       if (
         gameMode !== GameMode.FFA ||
-        currentDifficulty() !== Difficulty.Legendary ||
+        !isLegendaryDifficulty() ||
         !this.isStrategicBorderOpponent(context.target) ||
         this.incomingCounterattackAttackerCount() !== 1 ||
         context.incomingCounterattackTroops < ownTroops * waveRatio
@@ -8388,6 +8447,32 @@
       // materially stronger attacker donate the army to a nation that
       // out-produces us. The attrition hold is correct even in FFA; the real
       // constraint is the economy gap.
+      if (
+        !this.counterattackSurvivalFloorActive() &&
+        this.incomingHostileAttackPressure() >= COUNTERATTACK_CRITICAL_PRESSURE
+      ) {
+        const ledger = this.getIncomingCounterattackWarLedger(context.target);
+        const criticalCap = Math.max(
+          1,
+          ledger.peakTroops * COUNTERATTACK_CRITICAL_LEDGER_FRACTION,
+        );
+        const criticalRemaining = Math.max(0, criticalCap - ledger.committed);
+        const ownTroops = Math.max(0, Number(this.player?.troops?.()) || 0);
+        const emergencySpendable =
+          context.finalSpendableTroops > 0
+            ? context.finalSpendableTroops
+            : Math.floor(
+                ownTroops * COUNTERATTACK_CRITICAL_EMERGENCY_ARMY_FRACTION,
+              );
+        const criticalInterdiction = Math.min(
+          context.incomingCounterattackTroops * COUNTERATTACK_INTERDICT_WAVE_FRACTION,
+          emergencySpendable * COUNTERATTACK_CRITICAL_SPENDABLE_FRACTION,
+          criticalRemaining,
+        );
+        if (criticalInterdiction >= COUNTERATTACK_INTERDICT_MINIMUM_TROOPS) {
+          return Math.floor(criticalInterdiction);
+        }
+      }
       if (
         !this.incomingCounterattackWarIsContainment(context.target) ||
         this.counterattackSurvivalFloorActive()
@@ -8471,8 +8556,22 @@
     async respondToIncomingAttack() {
       const attacker = this.findIncomingAttackPlayer();
       if (attacker === null) return null;
+      // Do not short-circuit an overwhelming wave before sendAttack reaches
+      // calculateIncomingCounterattackTroops().  That planner can still erase
+      // a bounded portion of a multi-front invasion when the live reserve
+      // permits it; if no troops are spendable, the final emission gate keeps
+      // this a zero-spend defense hold.  The old boolean hard-stop converted
+      // both cases into the same no-op and let an otherwise cancellable wave
+      // keep consuming territory.
+      // A critical but sub-parity siege still needs to enter the counterattack
+      // planner.  Its spendable/ledger gates can safely return zero, whereas
+      // stopping here prevents the planner from using newly freed troops on
+      // the next snapshot (the 0.68-pressure collapse trace did exactly that).
+      const criticalSiege =
+        this.incomingHostileAttackPressure() >= COUNTERATTACK_CRITICAL_PRESSURE;
       if (
-        this.hasOverwhelmingIncomingAttack() ||
+        !this.hasOverwhelmingIncomingAttack() &&
+        !criticalSiege &&
         !this.canFundIncomingCounterattack(attacker)
       ) {
         state.earlyGame.action = "defense-hold";
@@ -9138,7 +9237,7 @@
     nukeHarvestSparesTarget(target) {
       if (
         typeof currentDifficulty !== "function" ||
-        currentDifficulty() !== "Legendary" ||
+        !isLegendaryDifficulty() ||
         state.settings.winFixes !== true
       ) {
         return false;
@@ -9232,7 +9331,7 @@
     winPacingModeEligible() {
       if (
         typeof currentDifficulty !== "function" ||
-        currentDifficulty() !== "Legendary" ||
+        !isLegendaryDifficulty() ||
         state.settings.winFixes !== true
       ) {
         return false;
@@ -10477,7 +10576,7 @@
     // fund the interceptor race, so the floor runs at a reduced multiplier.
     tribeCaptureTroopMultiplier() {
       return typeof currentDifficulty === "function" &&
-        currentDifficulty() === "Legendary"
+        isLegendaryDifficulty()
         ? LEGENDARY_TRIBE_CAPTURE_TROOP_MULTIPLIER
         : TRIBE_CAPTURE_TROOP_MULTIPLIER;
     }

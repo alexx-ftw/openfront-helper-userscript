@@ -206,7 +206,67 @@ function contextFor(behavior, attacker, { wave, spendable }) {
   assert.equal(context.attackBlocked, true);
 }
 
-// 5. The per-war attrition cap turns further mirrors into a defense hold.
+// 4c. A fragile 3,000-20,000-tile homeland mirrors a genuinely overwhelming
+// wave so a single breach cannot split the remaining territory into pockets.
+// Mature homelands and merely strong (rather than overwhelming) waves retain
+// bounded attrition behavior.
+{
+  const { behavior, attacker } = makeBehavior({
+    ownTroops: 200_000,
+    attackerTroops: 4_000_000,
+  });
+  behavior.player.numTilesOwned = () => 10_000;
+  behavior.incomingHostileAttackPressure = () => 0.8;
+  assert.equal(
+    behavior.counterattackSurvivalFloorActive(),
+    true,
+    "a fragile homeland activates the full-mirror survival floor under critical pressure",
+  );
+  const context = contextFor(behavior, attacker, {
+    wave: 80_000,
+    spendable: 90_000,
+  });
+  assert.equal(
+    behavior.calculateIncomingCounterattackTroops(context),
+    80_000,
+    "a fragile homeland fully mirrors the breach-sized wave",
+  );
+  behavior.incomingHostileAttackPressure = () => 0.4;
+  assert.equal(
+    behavior.counterattackSurvivalFloorActive(),
+    false,
+    "sub-critical pressure does not freeze normal attrition policy",
+  );
+  behavior.player.numTilesOwned = () => 20_000;
+  behavior.incomingHostileAttackPressure = () => 3;
+  assert.equal(
+    behavior.counterattackSurvivalFloorActive(),
+    false,
+    "the mature-homeland boundary remains exclusive",
+  );
+}
+
+// 4d. A mature homeland escalates a critical wave before it reaches the
+// overwhelming threshold, while retaining the production reserve fraction.
+{
+  const { behavior, attacker } = makeBehavior({
+    ownTroops: 1_000_000,
+    attackerTroops: 2_000_000,
+  });
+  behavior.player.numTilesOwned = () => 85_000;
+  behavior.incomingHostileAttackPressure = () => 0.8;
+  const context = contextFor(behavior, attacker, {
+    wave: 600_000,
+    spendable: 200_000,
+  });
+  assert.equal(
+    behavior.calculateIncomingCounterattackTroops(context),
+    170_000,
+    "critical pressure uses the larger bounded interdiction budget before total collapse",
+  );
+}
+
+// 6. The per-war attrition cap turns further mirrors into a defense hold.
 {
   const { behavior, attacker } = makeBehavior({
     ownTroops: 200_000,
@@ -236,7 +296,28 @@ function contextFor(behavior, attacker, { wave, spendable }) {
   assert.equal(exhausted.attackBlocked, true);
 }
 
-// 5. The ledger window rolls over: last war's cap does not haunt a new one.
+// 5b. A critical wave may arrive while economy reserves temporarily report no
+// ordinary spendable troops.  A bounded emergency quarter-army response must
+// still be available, otherwise the reserve is consumed as territory.
+{
+  const { behavior, attacker } = makeBehavior({
+    ownTroops: 400_000,
+    attackerTroops: 2_000_000,
+  });
+  behavior.player.numTilesOwned = () => 50_000;
+  behavior.incomingHostileAttackPressure = () => 0.8;
+  const context = contextFor(behavior, attacker, {
+    wave: 500_000,
+    spendable: 0,
+  });
+  assert.equal(
+    behavior.calculateIncomingCounterattackTroops(context),
+    85_000,
+    "critical pressure can use a bounded emergency quarter-army payload when ordinary spendable troops are zero",
+  );
+}
+
+// 7. The ledger window rolls over: last war's cap does not haunt a new one.
 {
   const { behavior, attacker } = makeBehavior({
     ownTroops: 200_000,

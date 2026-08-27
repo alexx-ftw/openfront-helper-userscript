@@ -4,6 +4,7 @@ import { availableParallelism, tmpdir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { validate as validateLegendaryGoal } from "./validate-legendary-goal.mjs";
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(directory, "../..");
@@ -90,7 +91,11 @@ process.stdout.write(`Logs: ${outputDirectory}\n`);
 await Promise.all(Array.from({ length: Math.min(workers, matches) }, () => runWorker()));
 
 const completed = results.filter((entry) => entry?.result);
+for (const entry of completed) {
+  entry.goalValidation = validateLegendaryGoal(entry.result);
+}
 const wins = completed.filter((entry) => entry.result.won === true).length;
+const goalPasses = completed.filter((entry) => entry.goalValidation?.passed === true).length;
 const runtimeMs = completed.reduce((total, entry) => total + entry.result.runtimeMs, 0);
 const summary = {
   batchSeed,
@@ -99,6 +104,9 @@ const summary = {
   wins,
   losses: completed.length - wins,
   winRate: completed.length > 0 ? wins / completed.length : null,
+  goalPasses,
+  goalPassRate: completed.length > 0 ? goalPasses / completed.length : null,
+  allGoalsPassed: completed.length === matches && goalPasses === matches,
   aggregateRuntimeMs: runtimeMs,
   averageRuntimeMs: completed.length > 0 ? Math.round(runtimeMs / completed.length) : null,
   workers: Math.min(workers, matches),
@@ -111,4 +119,4 @@ await writeFile(
   { flag: "wx" },
 );
 process.stdout.write(`${JSON.stringify(summary)}\n`);
-process.exitCode = completed.length === matches ? 0 : 1;
+process.exitCode = completed.length === matches && goalPasses === matches ? 0 : 1;

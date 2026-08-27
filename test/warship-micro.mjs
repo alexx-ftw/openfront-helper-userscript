@@ -556,13 +556,14 @@ const makeGame = (overrides = {}) => ({
     );
   }
 
-  // Non-Legendary keeps the subfleet empty.
+  // Non-Legendary subfleet semantics moved with the raid-tier rework:
+  // the tier now spans top difficulties, so only a tier-inactive board
+  // is asserted empty here.
   {
-    sandbox.currentDifficulty = () => "Impossible";
     const behavior = makeDefenseBehavior({ fleet: [raidShip(1, 10), raidShip(2, 20)] });
+    behavior.raidingTierActive = () => false;
     const s = raidState();
-    assert.equal(behavior.commerceDefenseSubfleetIds(s).size, 0, "non-Legendary reserves nothing");
-    sandbox.currentDifficulty = () => "Legendary";
+    assert.equal(behavior.commerceDefenseSubfleetIds(s).size, 0, "a tier-inactive board reserves nothing");
   }
 
   // A temporarily vanished port reference retains the live reserved IDs.

@@ -26,6 +26,21 @@ const structureBehavior = fs.readFileSync(
   path.join(root, "engine/ingame/auto-bot/structureBehavior.js"),
   "utf8",
 );
+const nationExecution = fs.readFileSync(
+  path.join(root, "engine/ingame/auto-bot/nationExecution.js"),
+  "utf8",
+);
+const goalValidator = fs.readFileSync(
+  path.join(root, "scripts/headless/validate-legendary-goal.mjs"),
+  "utf8",
+);
+
+assert.match(goalValidator, /tradeCaptured[\s\S]*>= 33/);
+assert.match(goalValidator, /warshipsDestroyed[\s\S]*>= 5/);
+assert.match(goalValidator, /maxWarshipVeterancy[\s\S]*>= 3/);
+assert.match(goalValidator, /samReadyBeforeFirstHostileNuke/);
+assert.match(goalValidator, /ownTransportBoatsLost/);
+assert.match(goalValidator, /bestEconomy/);
 
 assert.match(
   structureBehavior,
@@ -46,6 +61,12 @@ assert.match(runner, /createMaxDifficultyOpponent/);
 assert.match(adapter, /AUTO_BUILD_ENABLED = process\.env\.OFH_AUTOBUILD !== "0"/);
 assert.match(adapter, /build: AUTO_BUILD_ENABLED/);
 assert.match(adapter, /"SAM Launcher": AUTO_BUILD_ENABLED/);
+const warshipPhase = nationExecution.indexOf('profile, "warship-build"');
+const ordinaryStructurePhase = nationExecution.indexOf('profile, "structures"');
+assert.ok(
+  warshipPhase >= 0 && ordinaryStructurePhase > warshipPhase,
+  "the affordable first Warship probe must precede ordinary structure spending",
+);
 assert.match(
   adapter,
   /player\.isPlayer\?\.\(\) \|\| this\.game\.inSpawnPhase\?\.\(\)/,

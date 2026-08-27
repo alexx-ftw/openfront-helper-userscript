@@ -50,7 +50,8 @@
     const shared = typeof state !== "undefined" ? state : null;
     const elapsed = Number(shared?.earlyGame?.openingElapsedTicks);
     if (
-      shared?.settings?.difficulty === "Legendary" &&
+      (shared?.settings?.difficulty === "Legendary" ||
+        shared?.settings?.difficulty === "Impossible") &&
       Number.isFinite(elapsed) &&
       elapsed > 0
     ) {
@@ -1009,6 +1010,14 @@
     );
     return [
       urgentGatewayOrRace,
+      // On landlocked maps a boat route is not a safe opening bridge: it can
+      // strand the first army on an inland water component while a nearby
+      // land-connected tribe cuts the home frontier. Prefer the executable
+      // land edge in that topology; open-ocean maps retain the normal
+      // maritime-vs-land utility ranking.
+      candidate.hasOpenOceanAccess === false && candidate.landBorder === true
+        ? 1
+        : 0,
       finiteEarlyGameSignal(candidate.tribeClusterAccess),
       calculateEarlyGameContinuationValue(candidate),
       calculateEarlyGameTribeUtility(candidate),

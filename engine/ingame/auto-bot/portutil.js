@@ -59,7 +59,12 @@
   }
 
   function isLegendaryDifficulty(difficulty) {
-    return (difficulty ?? currentDifficulty()) === Difficulty.Legendary;
+    const value = difficulty ?? currentDifficulty();
+    // Headless/openfront engine playlists expose the hardest tier as
+    // `Impossible`, while the userscript UI names the same tier Legendary.
+    // Treat both as the Legendary policy tier; otherwise simulator matches
+    // silently disable the naval/SAM/economy improvements being evaluated.
+    return value === Difficulty.Legendary || value === Difficulty.Impossible;
   }
 
   // ===========================================================================

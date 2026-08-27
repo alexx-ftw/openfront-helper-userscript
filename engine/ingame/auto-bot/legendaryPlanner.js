@@ -771,6 +771,61 @@ function legendaryEngineClaimConflictIndex(context, missiles) {
     legendaryRouteHasEngineClaimConflict(context, missiles, routeIndex));
 }
 
+// Mirror the engine's launcher-order claim semantics for an exact matching.
+// SAMs do not receive an explicit missile assignment: launchers run in stable
+// execution order and each claims its highest-priority still-unclaimed route.
+// An exact matching is safe to emit only when replaying that order reproduces
+// every selected SAM.  Unknown claim scores remain fail-closed.
+function legendaryExactScheduleMatchesEngineOrder(context, assignments) {
+  if (!Array.isArray(assignments)) return false;
+  const claimed = new Set();
+  for (let samIndex = 0; samIndex < context.profiles.length; samIndex++) {
+    const owned = assignments
+      .map((assignment, routeIndex) => ({ assignment, routeIndex }))
+      .filter(({ assignment }) => assignment?.samIndex === samIndex)
+      .sort(
+        (left, right) =>
+          left.assignment.fireTick - right.assignment.fireTick ||
+          left.routeIndex - right.routeIndex,
+      );
+    for (const { assignment, routeIndex } of owned) {
+      const route = context.routes[routeIndex];
+      const selectedOption = route?.samOptions.find((option) => option.samIndex === samIndex);
+      if (!selectedOption || !Number.isFinite(selectedOption.claimScore)) return false;
+      const selected = firstLegendaryInterceptOpportunity(
+        selectedOption,
+        assignment.fireTick,
+        route.impactTick,
+      );
+      if (!selected || selected.fireTick !== assignment.fireTick) return false;
+      for (let candidateIndex = 0; candidateIndex < context.routes.length; candidateIndex++) {
+        if (claimed.has(candidateIndex) || candidateIndex === routeIndex) continue;
+        const candidateRoute = context.routes[candidateIndex];
+        const candidateOption = candidateRoute?.samOptions.find(
+          (option) => option.samIndex === samIndex,
+        );
+        if (!candidateOption || !Number.isFinite(candidateOption.claimScore)) continue;
+        const opportunity = firstLegendaryInterceptOpportunity(
+          candidateOption,
+          assignment.fireTick,
+          candidateRoute.impactTick,
+        );
+        if (
+          opportunity &&
+          (candidateOption.claimScore > selectedOption.claimScore ||
+            (candidateOption.claimScore === selectedOption.claimScore &&
+              (candidateRoute.impactTick < route.impactTick ||
+                (candidateRoute.impactTick === route.impactTick && candidateIndex < routeIndex))))
+        ) {
+          return false;
+        }
+      }
+      claimed.add(routeIndex);
+    }
+  }
+  return claimed.size === assignments.length;
+}
+
 function resolveLegendaryMissileSchedule(context, greedyMissiles) {
   const fullyDefended = greedyMissiles.every((missile) => missile.intercepted);
   if (fullyDefended) {
@@ -795,13 +850,18 @@ function resolveLegendaryMissileSchedule(context, greedyMissiles) {
   }
   const exact = runLegendaryExactSchedule(context);
   if (exact.assignments) {
-    // The engine does not accept an explicit missile-to-SAM assignment. Each
-    // launcher independently picks and immediately claims its preferred target
-    // in execution order. Therefore a defense that succeeds only by moving a
-    // flexible missile onto a different SAM is theoretical: the live launchers
-    // can make the original greedy claim and leave the constrained missile
-    // uncovered. Keep the observable greedy schedule and fail closed until the
-    // engine's autonomous claim order itself proves the alternate matching.
+    if (legendaryExactScheduleMatchesEngineOrder(context, exact.assignments)) {
+      return {
+        missiles: exact.assignments.map((assignment, routeIndex) =>
+          legendaryScheduledMissile(context.routes[routeIndex], assignment),
+        ),
+        fullyDefended: true,
+        method: "engine-order-exact",
+        nodes: exact.nodes,
+      };
+    }
+    // A theoretical reassignment that the autonomous launcher order would not
+    // reproduce is unsafe. Keep the observable greedy schedule and fail closed.
     return {
       missiles: greedyMissiles,
       fullyDefended: false,
