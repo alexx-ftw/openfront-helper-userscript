@@ -113,10 +113,12 @@ assert.equal(
   "Legendary uses an affordable Atom instead of leaving a ready Silo idle while saving for Hydrogen",
 );
 testDifficulty = sandbox.Difficulty.Impossible;
+const impossibleFallbackNuke = await legendaryHydroSpecialist.selectAffordableNuke();
+assert.equal(impossibleFallbackNuke?.type, UNIT.AtomBomb);
 assert.equal(
-  await legendaryHydroSpecialist.selectAffordableNuke(),
-  null,
-  "the faithful non-Legendary hydro specialization remains unchanged",
+  impossibleFallbackNuke?.cost,
+  750_000n,
+  "Impossible shares the hardest hydro fallback policy with Legendary",
 );
 
 const nukeSelf = {
@@ -856,5 +858,44 @@ assert.equal(
   mirvStateReserve,
   "a rejected first-eligible MIRV probe preserves decision state",
 );
+
+// ── Freeze-giant strike gates (FFA endgame survival lane) ──────────────────
+{
+  const giant = {
+    isPlayer: () => true,
+    isAlive: () => true,
+    troops: () => 6_000_000,
+  };
+  const mk = ({ mode = "FFA", tiles = 120_000, troops = 3_000_000, max = 3_200_000, winFixes = true, difficulty = "Legendary" }) => {
+    const behavior = Object.create(sandbox.__NukeBehavior.prototype);
+    behavior.game = { config: () => ({ gameConfig: () => ({ gameMode: mode }) }), players: () => [giant] };
+    behavior.player = {
+      numTilesOwned: () => tiles,
+      troops: () => troops,
+      maxTroops: () => max,
+      isFriendly: (o) => o === behavior.player,
+    };
+    sandbox.state.settings.winFixes = winFixes;
+    testDifficulty = difficulty;
+    return behavior;
+  };
+  const fullSignature = mk({});
+  assert.equal(fullSignature.freezeGiantStrikeTarget(), giant,
+    "the full freeze signature nominates the strongest enemy");
+  assert.equal(mk({ tiles: 49_000 }).freezeGiantStrikeTarget(), null,
+    "below endgame scale the lane stays dormant");
+  assert.equal(mk({ troops: 2_000_000, max: 3_200_000 }).freezeGiantStrikeTarget(), null,
+    "an army with growth room keeps its options");
+  assert.equal(mk({ troops: 4_500_000 }).freezeGiantStrikeTarget(), null,
+    "a non-outmuscling board never strikes first");
+  assert.equal(mk({ mode: "Team" }).freezeGiantStrikeTarget(), null,
+    "team games keep their coordinated win clock");
+  assert.equal(mk({ winFixes: false }).freezeGiantStrikeTarget(), null,
+    "the lane is win-fixes gated");
+  assert.equal(mk({ difficulty: "Impossible" }).freezeGiantStrikeTarget(), null,
+    "the strike is Legendary-only");
+  sandbox.state.settings.winFixes = true;
+  testDifficulty = "Impossible";
+}
 
 process.stdout.write("nuke economy policy tests passed\n");

@@ -483,9 +483,12 @@
       const candidates = await this.collectCandidatesWithRetry(
         target, selectedNuke, silos, difficulty,
       );
-      return this.fireNukeFromCandidates(
+      await this.fireNukeFromCandidates(
         candidates.list, candidates.retargeted ?? target, selectedNuke, silos, difficulty,
       );
+      // FFA endgame survival lane — additive-only: reached only when every
+      // ordinary lane declined to fire. See maybeFreezeGiantStrike.
+      await this.maybeFreezeGiantStrike(silos, difficulty);
     }
 
     // Clear shots first, then SAM-saturated salvos, then the anti-SAM
@@ -535,6 +538,81 @@
       // the freshly-cleared cluster is harvested at maximum blast radius.
       if (currentDifficulty() === Difficulty.Legendary) {
         await this.maybeFirePostSalvoHydrogen();
+      }
+    }
+
+    // FFA endgame survival strike (2026-08-24): against the last surviving
+    // giant both measured death modes are static — mode A freezes at the
+    // troop cap with an abundant treasury and zero attacks, mode B grinds at
+    // parity-minus with zero outgoing attacks — while engine atom math kills
+    // (1-(N/(N+k))^n) of BOTH the victim's pool AND its in-flight waves.
+    // Gate helper: every signature read happens here so non-signature games
+    // (team profiles among them) exit at the FIRST mode comparison.
+    freezeGiantStrikeTarget() {
+      if (state.settings.winFixes !== true) return null;
+      if (currentDifficulty() !== Difficulty.Legendary) return null;
+      const gameMode = String(
+        this.game.config()?.gameConfig?.()?.gameMode ?? "",
+      );
+      if (gameMode !== "Free For All" && gameMode !== "FFA") return null;
+      const tiles = Number(this.player.numTilesOwned?.() ?? 0);
+      if (tiles < 50_000) return null;
+      const ourTroops = Number(this.player.troops?.() ?? 0);
+      const ourMax = Number(this.player.maxTroops?.() ?? 0);
+      if (!(ourMax > 0) || ourTroops < ourMax * 0.85) return null;
+      let giant = null;
+      let giantTroops = 0;
+      for (const other of this.game.players()) {
+        if (other === this.player || !other?.isPlayer?.()) continue;
+        if (other.isAlive?.() === false) continue;
+        if (this.player.isFriendly?.(other) === true) continue;
+        const troops = Number(other.troops?.() ?? 0);
+        if (troops > giantTroops) {
+          giant = other;
+          giantTroops = troops;
+        }
+      }
+      if (giant === null || giantTroops < ourTroops * 1.5) return null;
+      return giant;
+    }
+
+    // Additive-only tail lane (see fireNukeFromCandidates): reached when
+    // EVERY ordinary lane declined to fire. Structure-value economics do not
+    // apply — a pool/wave deletion IS the payoff — but SAM-discipline still
+    // does: clear trajectories first, saturated salvos second.
+    async maybeFreezeGiantStrike(silos, difficulty) {
+      const giant = this.freezeGiantStrikeTarget();
+      if (giant === null) return;
+      if (!this.isValidNukeTarget(giant)) return;
+      if (this.hasPendingNukeLaunches()) return;
+      const selectedNuke = await this.selectAffordableNuke();
+      if (!selectedNuke) return;
+      if (
+        typeof selectedNuke.cost !== "bigint" ||
+        this.player.gold() < selectedNuke.cost * 3n
+      ) {
+        return;
+      }
+      const candidates = await this.collectCandidatesWithRetry(
+        giant, selectedNuke, silos, difficulty,
+      );
+      const { clear, covered } = this.partitionCandidatesBySamCoverage(
+        candidates.list,
+        selectedNuke.type,
+        difficulty,
+      );
+      const best = await this.selectBuildableNukeCandidate(clear, selectedNuke.type);
+      if (best) {
+        await this.sendNuke(best.tile, selectedNuke.type, giant);
+        return;
+      }
+      const saturated = await this.selectBuildableNukeCandidate(
+        covered.filter((cand) =>
+          this.siloCapacitySaturatesCover(cand.coveringSamLevels ?? 0, silos)),
+        selectedNuke.type,
+      );
+      if (saturated) {
+        await this.sendNuke(saturated.tile, selectedNuke.type, giant);
       }
     }
 

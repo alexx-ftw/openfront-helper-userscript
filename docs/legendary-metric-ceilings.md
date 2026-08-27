@@ -460,6 +460,31 @@ wins the war-of-economies. Next levers on file: FFA arming of the
 atom-vs-army strike keyed to gold+freeze (the outmuscle-at-6000 trigger
 never coincides on these rows), and the none-set vet-3 row.
 
+## Freeze-giant survival strike (2026-08-25, additive tail lane)
+
+Landed `maybeFreezeGiantStrike` as an ADDITIVE TAIL of fireNukeFrom-
+Candidates: reached only when every ordinary nuke lane declined. On the
+freeze signature (FFA + Legendary + endgame scale 50k+ tiles + troops >=
+85% of cap + strongest enemy outmuscles us 1.5x + bomb costs <= gold/3)
+it strikes the giant's territory core regardless of structure-value
+economics — engine atom math deletes a fraction of the victim's pool AND
+its in-flight waves, which IS the payoff. SAM discipline preserved
+(clear trajectories first, saturated salvos second); economy defer and
+EV gates untouched elsewhere.
+
+Validation history (measurement discipline notes): the first attempt
+bound the lane pre-ladder (target override) and FLIPPED TEAM anchors
+byte-stable for weeks — bisected deterministically to the pre-ladder
+placement itself even though the gate returns null on team mode
+(mechanism unresolved: suspected wall-clock probe-timing sensitivity to
+bundle shape, matching the documented bistability family). Rewritten as
+post-failure tail; anchor/none-01 byte-identical FULL-GREEN again.
+On the FFA case rows the strike never FIRED yet — no operational silo
+exists during the freeze window (silos arrive post-collapse), so the
+lane's honest status is "armed-survival coverage for silo-endowed
+freezes"; the follow-up lever is an arm-on-freeze silo purchase,
+deliberately deferred as its own risk round.
+
 Measured on the pinned engine: **25MM transformed** — row 01 builds
 5 SAM sites + 10 ports, 80M gold, ZERO buildings nuked (the nuke-storm
 blocker is beaten on that row); set ownN 0-18 (was 8-24), et sum 112
