@@ -389,7 +389,7 @@ function assertConfigContracts(configFile) {
     Warship: { numbers: [1_000_000, 1, 250_000], text: "Math.min" },
     Shell: { numbers: [0] },
     SAMMissile: { numbers: [0] },
-    Port: { numbers: [1_000_000, 2, 125_000], text: "Math.pow" },
+    Port: { numbers: [1_000_000, 125_000], text: "pow2" },
     AtomBomb: { numbers: [750_000], text: "costWrapper" },
     HydrogenBomb: { numbers: [5_000_000], text: "costWrapper" },
     MIRV: { numbers: [25_000_000, 15_000_000], text: "numMirvsLaunched" },
@@ -398,8 +398,8 @@ function assertConfigContracts(configFile) {
     MissileSilo: { numbers: [1_000_000], text: "costWrapper" },
     DefensePost: { numbers: [250_000, 1, 50_000], text: "Math.min" },
     SAMLauncher: { numbers: [3_000_000, 1, 1_500_000], text: "Math.min" },
-    City: { numbers: [1_000_000, 2, 125_000], text: "Math.pow" },
-    Factory: { numbers: [1_000_000, 2, 125_000], text: "Math.pow" },
+    City: { numbers: [1_000_000, 125_000], text: "pow2" },
+    Factory: { numbers: [1_000_000, 125_000], text: "pow2" },
     Train: { numbers: [0] },
   };
   for (const [type, contract] of Object.entries(costContracts)) {

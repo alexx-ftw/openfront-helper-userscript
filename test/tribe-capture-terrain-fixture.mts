@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
 
 import { AttackExecution } from "../openfront-engine/src/core/execution/AttackExecution";
 import {
@@ -17,6 +19,29 @@ const engineTestsUtil = fileURLToPath(new URL("../openfront-engine/tests/util/",
 const TRIBE_TILES = 1_000;
 const TRIBE_TROOPS = 100;
 const RATIO_FLOOR = TRIBE_TROOPS * 4;
+
+function attackLoss(game: Game, attacker: Player, defender: Player, tile: TileRef) {
+  return game.config().attackLogic({
+    terrain: game.terrainType(tile),
+    attackTroops: RATIO_FLOOR,
+    attacker: { type: attacker.type(), numTiles: attacker.numTilesOwned() },
+    defender: {
+      type: defender.type(),
+      numTiles: defender.numTilesOwned(),
+      troops: defender.troops(),
+      isTraitor: defender.isTraitor(),
+      isDisconnectedTeammate: defender.isDisconnected() && attacker.isOnSameTeam(defender),
+    },
+    defenderHasDefensePost: game.hasUnitNearby(
+      tile,
+      game.config().defensePostRange(),
+      UnitType.DefensePost,
+      defender.id(),
+    ),
+    falloutRatio: game.hasFallout(tile) ? game.numTilesWithFallout() / game.numLandTiles() : null,
+    borderSize: 1,
+  }).attackerTroopLoss;
+}
 
 function connectedMountainRegion(game: Game): TileRef[] {
   const visited = new Set<TileRef>();
@@ -166,15 +191,22 @@ assert.ok(
 );
 
 const funded = await createScenario();
-const perTileLoss = funded.game
-  .config()
-  .attackLogic(
-    funded.game,
-    RATIO_FLOOR,
-    funded.attacker,
-    funded.bot,
-    funded.frontier,
-  ).attackerTroopLoss;
+const perTileLoss = attackLoss(funded.game, funded.attacker, funded.bot, funded.frontier);
+const apiSandbox = { PlayerType, UNIT: UnitType };
+const createGameApiForTest = executeClassicScript(
+  readFileSync(new URL("../engine/ingame/auto-bot/gameApi.js", import.meta.url), "utf8") +
+    "\ncreateGameApi;",
+  apiSandbox,
+);
+const adaptedGame = createGameApiForTest(funded.game).game;
+assert.equal(
+  adaptedGame
+    .config()
+    .attackLogic(funded.game, RATIO_FLOOR, funded.attacker, funded.bot, funded.frontier)
+    .attackerTroopLoss,
+  perTileLoss,
+  "the userscript positional adapter matches the real engine's AttackLogicInput result",
+);
 const terrainFloor = Math.ceil(perTileLoss * funded.bot.numTilesOwned());
 assert.ok(terrainFloor > RATIO_FLOOR);
 executeAttack(funded.game, funded.attacker, funded.bot, terrainFloor);
@@ -185,15 +217,12 @@ assert.equal(
 );
 
 const mixedUnderfunded = await createMixedScenario();
-const mixedFrontLoss = mixedUnderfunded.game
-  .config()
-  .attackLogic(
-    mixedUnderfunded.game,
-    RATIO_FLOOR,
-    mixedUnderfunded.attacker,
-    mixedUnderfunded.bot,
-    mixedUnderfunded.frontier,
-  ).attackerTroopLoss;
+const mixedFrontLoss = attackLoss(
+  mixedUnderfunded.game,
+  mixedUnderfunded.attacker,
+  mixedUnderfunded.bot,
+  mixedUnderfunded.frontier,
+);
 const mixedFrontFloor = Math.max(
   RATIO_FLOOR,
   Math.ceil(mixedFrontLoss * mixedUnderfunded.bot.numTilesOwned()),
@@ -211,13 +240,8 @@ assert.ok(
 
 const mixedFunded = await createMixedScenario();
 const mixedWorstLoss = Math.max(
-  ...Array.from(
-    mixedFunded.bot.tiles(),
-    (tile) =>
-      mixedFunded.game
-        .config()
-        .attackLogic(mixedFunded.game, RATIO_FLOOR, mixedFunded.attacker, mixedFunded.bot, tile)
-        .attackerTroopLoss,
+  ...Array.from(mixedFunded.bot.tiles(), (tile) =>
+    attackLoss(mixedFunded.game, mixedFunded.attacker, mixedFunded.bot, tile),
   ),
 );
 const mixedTerritoryFloor = Math.ceil(mixedWorstLoss * mixedFunded.bot.numTilesOwned());

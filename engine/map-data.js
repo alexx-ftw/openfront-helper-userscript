@@ -98,6 +98,7 @@
     { id: "pangaea", name: "Pangaea", thumbnail: "assets/map-thumbnails/pangaea/thumbnail.webp" },
     { id: "passage", name: "Passage", thumbnail: "assets/map-thumbnails/passage/thumbnail.webp" },
     { id: "pluto", name: "Pluto", thumbnail: "assets/map-thumbnails/pluto/thumbnail.webp" },
+    { id: "qingchina", name: "Qing China", thumbnail: "assets/map-thumbnails/qingchina/thumbnail.webp" },
     { id: "russia", name: "Russia", thumbnail: "assets/map-thumbnails/russia/thumbnail.webp" },
     { id: "sanfrancisco", name: "San Francisco", thumbnail: "assets/map-thumbnails/sanfrancisco/thumbnail.webp" },
     { id: "scandinavia", name: "Scandinavia", thumbnail: "assets/map-thumbnails/scandinavia/thumbnail.webp" },

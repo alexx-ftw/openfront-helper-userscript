@@ -57,6 +57,12 @@ request so repeated City attempts keep exploring different legal station sites.
 
 ## gameApi surface (what `game` and `player` expose)
 
+The config proxy translates positional bot `attackLogic(game, troops, attacker,
+target, tile)` calls to the engine's `AttackLogicInput` object.
+Terrain, player state, active completed defender posts, and fallout come from
+the live snapshot. These callers consume troop losses only, so border size is
+1; the new engine's conquest timing result is not used by the adapter's callers.
+
 ### game (sync, core-shaped)
 `ticks()`, `inSpawnPhase()`, `isSpawnImmunityActive()`, `config()` (passthrough to
 the real Config — has maxTroops/isUnitDisabled/unitInfo/nukeMagnitudes/samRange/

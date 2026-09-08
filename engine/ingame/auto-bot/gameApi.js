@@ -635,6 +635,15 @@
     //    underlying player, not our wrapper). Memoized — config() is stable.
     let _srcConfig = null;
     let _configProxy = null;
+    function attackTileHasDefensePost(game, defender, tile) {
+      if (defender === null) return false;
+      return game.nearbyUnits(tile, game.config().defensePostRange(), UNIT.DefensePost)
+        .some((entry) => {
+          const unit = entry.unit ?? entry;
+          return unit.owner().smallID() === defender.smallID() &&
+            unit.isActive() && !unit.isUnderConstruction();
+        });
+    }
     function configProxy() {
       const sc = src.config();
       if (_configProxy && _srcConfig === sc) return _configProxy;
@@ -642,6 +651,29 @@
       _configProxy = new Proxy(sc, {
         get(t, prop) {
           if (prop === "maxTroops") return (p) => sc.maxTroops(unwrap(p));
+          // Preserve the bot's positional API across OpenFront's AttackLogicInput migration.
+          if (prop === "attackLogic" && t.attackLogic?.length === 1) {
+            return (game, attackTroops, attacker, target, tile) => {
+              const defender = target.isPlayer() ? target : null;
+              return t.attackLogic({
+                terrain: game.terrainType(tile),
+                attackTroops,
+                attacker: { type: attacker.type(), numTiles: attacker.numTilesOwned() },
+                defender: defender === null ? null : {
+                  type: defender.type(),
+                  numTiles: defender.numTilesOwned(),
+                  troops: defender.troops(),
+                  isTraitor: defender.isTraitor(),
+                  isDisconnectedTeammate: defender.isDisconnected() && attacker.isOnSameTeam(defender),
+                },
+                defenderHasDefensePost: attackTileHasDefensePost(game, defender, tile),
+                falloutRatio: game.hasFallout(tile)
+                  ? game.numTilesWithFallout() / game.numLandTiles() : null,
+                // These legacy callers estimate troop losses, not conquest timing.
+                borderSize: 1,
+              });
+            };
+          }
           if (prop === "spawnImmunityDuration") {
             return () => sc.spawnImmunityDuration?.() ?? 0;
           }
