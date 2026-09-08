@@ -34,18 +34,18 @@
   // The difficulty the bot REPLICATES (user-selected in the panel) — drives all
   // strategy order / ratios / probabilities. NOTE: this is distinct from the
   // lobby's actual Nation difficulty; enemy-stat reads (config().maxTroops(enemy))
-  // still use the real game difficulty. Default Impossible (the strongest Nation).
+  // still use the real game difficulty. Legacy Impossible settings map to Legendary.
   function currentDifficulty() {
     const d = state && state.settings ? state.settings.difficulty : null;
     switch (d) {
       case "Easy":
       case "Medium":
       case "Hard":
-      case "Impossible":
       case "Legendary":
         return d;
+      case "Impossible":
       default:
-        return Difficulty.Impossible;
+        return Difficulty.Legendary;
     }
   }
 

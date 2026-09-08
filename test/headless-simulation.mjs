@@ -56,6 +56,8 @@ assert.match(
   "a fixed-map Team simulation defaults to two teams so the helper is not assigned to an impossible solo team",
 );
 assert.match(runner, /difficulty:\s*Difficulty\.Impossible/);
+assert.match(runner, /botDifficulty: "Legendary"/);
+assert.match(adapter, /this\.difficulty = "Legendary"/);
 assert.match(runner, /nations:\s*configuredNations/);
 assert.match(runner, /createMaxDifficultyOpponent/);
 assert.match(adapter, /AUTO_BUILD_ENABLED = process\.env\.OFH_AUTOBUILD !== "0"/);
@@ -370,7 +372,10 @@ let previousOpeningRemainder = null;
 for (const gate of naturalOpeningGates) {
   const remaining = gate.before?.remaining;
   const actionableRemainder =
-    Number.isFinite(remaining) && remaining > 0 && Number(gate.before?.pending) === 0;
+    gate.before?.attackable === true &&
+    Number.isFinite(remaining) &&
+    remaining > 0 &&
+    Number(gate.before?.pending) === 0;
   if (actionableRemainder && remaining === previousOpeningRemainder) {
     currentUnchangedActionableOpeningRemainder += 1;
   } else {

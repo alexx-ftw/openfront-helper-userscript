@@ -1789,7 +1789,7 @@
 })();
 
 function ofhApplyAutobotScalarSettings(settings, patch) {
-  if ("difficulty" in patch) settings.difficulty = patch.difficulty;
+  if ("difficulty" in patch) settings.difficulty = "Legendary";
   if ("winFixes" in patch) settings.winFixes = Boolean(patch.winFixes);
   if ("smartSpawn" in patch) settings.smartSpawn = Boolean(patch.smartSpawn);
   if ("pauseDonateDuringExpansion" in patch) {
@@ -1819,7 +1819,7 @@ function ofhApplyAutobotObjectSettings(settings, patch) {
 // =============================================================================
 window.__OFH_autobot = {
   FEATURE_KEYS: ["spawn", "expand", "build", "boat", "nuke", "warship", "alliance", "embargo", "donate", "betray"],
-  DIFFICULTIES: ["Impossible"],
+  DIFFICULTIES: ["Legendary"],
   get() {
     const s = state.settings;
     return {

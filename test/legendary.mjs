@@ -7,6 +7,14 @@ import { fileURLToPath } from "node:url";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 
+for (const difficulty of ["Easy", "Medium", "Hard", "Impossible", "Legendary"]) {
+  const settings = executeClassicScript(
+    read("engine/ingame/auto-bot/core.js") + "\nloadSettings();",
+    { window: { localStorage: { getItem: () => JSON.stringify({ difficulty }) } } },
+  );
+  assert.equal(settings.difficulty, "Legendary", "saved tiers migrate to Legendary");
+}
+
 const plannerSandbox = {};
 executeClassicScript(read("engine/ingame/auto-bot/legendaryPlanner.js"), plannerSandbox, {
   filename: "legendaryPlanner.js",
@@ -668,8 +676,8 @@ assert.equal(
 );
 
 assert.match(read("engine/ingame/auto-bot/portutil.js"), /Legendary: "Legendary"/);
-assert.match(read("engine/ingame/auto-bot/core.js"), /difficulty: "Impossible"/);
-assert.match(read("engine/ingame/auto-bot/panel.js"), /return \["Impossible"\]/);
+assert.match(read("engine/ingame/auto-bot/core.js"), /difficulty: "Legendary"/);
+assert.match(read("engine/ingame/auto-bot/panel.js"), /return \["Legendary"\]/);
 assert.doesNotMatch(read("engine/ingame/auto-bot/panel.js"), /\["Easy", "Medium", "Hard"/);
 assert.match(read("src/shell/popup/panel.ts"), /DIFFICULTIES/);
 assert.match(read("locales/en/common.json"), /"Legendary"/);

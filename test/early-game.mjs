@@ -2395,6 +2395,15 @@ assert.deepEqual(
 );
 
 const expiredOpeningLivenessBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+openingLivenessBehavior.forceSendAttack = async () => false;
+assert.equal(
+  await openingLivenessBehavior.continueOpeningExpansion(),
+  true,
+  "a rejected async expansion must not hide a successful reinforcement",
+);
+openingLivenessBehavior.reinforceIncompleteOutboundPlayerAttack = async () => false;
+assert.equal(await openingLivenessBehavior.continueOpeningExpansion(), false);
+
 expiredOpeningLivenessBehavior.reconcileOutboundAttackIntentCommitments = () => {};
 expiredOpeningLivenessBehavior.respondToIncomingAttack = async () => null;
 expiredOpeningLivenessBehavior.reinforceIncompleteOutboundPlayerAttack = async () => false;

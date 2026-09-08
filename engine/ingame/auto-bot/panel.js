@@ -326,7 +326,7 @@
   }
 
   function difficultyChipsMarkup() {
-    return ["Impossible"]
+    return ["Legendary"]
       .map((difficulty) => `<div class="ab-cfg-chip ${state.settings.difficulty === difficulty ? "on" : ""}" data-diff="${difficulty}">${tr(difficulty)}</div>`)
       .join("");
   }

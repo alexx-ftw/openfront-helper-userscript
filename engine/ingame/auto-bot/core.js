@@ -28,11 +28,8 @@
   // ---- defaults, mirroring NationExecution Impossible ranges ----
   const DEFAULTS = {
     enabled: true,
-    // Which difficulty of the in-game Nation AI to faithfully replicate. The bot
-    // ports the four faithful difficulty branches plus the adaptive Legendary
-    // construction planner; this selects which strategy drives the bot. Default
-    // Impossible = the strongest faithful src Nation.
-    difficulty: "Impossible", // "Easy" | "Medium" | "Hard" | "Impossible" | "Legendary"
+    // Single adaptive policy, including the improvements formerly named Impossible.
+    difficulty: "Legendary",
     features: {
       spawn: true,
       expand: true,
@@ -356,7 +353,6 @@
     // old saved tuning value cannot mask the current defaults.
     const PERSISTED_KEYS = [
       "enabled",
-      "difficulty",
       "winFixes",
       "smartSpawn",
       "performanceProfiling",

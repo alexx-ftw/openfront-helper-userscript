@@ -317,6 +317,11 @@ modules — if it returns a full object, the wiring is intact.
 
 ## Legendary construction mode
 
+Legendary is the only selectable helper difficulty. Saved older tiers migrate to
+Legendary, retaining the adaptive improvements previously exposed as Impossible.
+Headless simulations use Legendary for the helper and native Impossible for the
+game's opponents (the upstream engine has no Legendary difficulty).
+
 The `Legendary` difficulty is an adaptive construction mode, not a copy of the
 vanilla priority list. It treats gold production and troop generation as the two
 equally weighted primary objectives and ranks candidates lexicographically by:

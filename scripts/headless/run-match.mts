@@ -438,7 +438,7 @@ console.warn(
     mode: config.gameMode,
     teams: config.playerTeams,
     difficulty: config.difficulty,
-    botDifficulty: process.env.OFH_BOT_DIFFICULTY ?? "Impossible",
+    botDifficulty: "Legendary",
     autoBuild: bot.features.build === true,
     startingGold: config.startingGold ?? 0,
     publicGameModifiers: config.publicGameModifiers ?? {},
@@ -508,16 +508,14 @@ let landLeaderAt120Seconds: {
   tiles: number;
   share: number;
   isOwn: boolean;
-} | null =
-  null;
+} | null = null;
 let landLeaderAt180Seconds: {
   name: string;
   type: string;
   tiles: number;
   share: number;
   isOwn: boolean;
-} | null =
-  null;
+} | null = null;
 // Amended-standard companion key (non-nation leader at the 3-minute mark).
 let landLeaderNonNationAt180Seconds: {
   name: string;
@@ -1558,8 +1556,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
           trajectoryLength: unit.trajectory().length,
           // targetedBySAM() dereferences _nukeState!, which only warheads
           // carry — MIRV carriers would throw, so they report null.
-          targetedBySam:
-            unit.type() === UnitType.MIRV ? null : unit.targetedBySAM(),
+          targetedBySam: unit.type() === UnitType.MIRV ? null : unit.targetedBySAM(),
         };
       });
     const attackBehavior = bot.nationBot?.attackBehavior;

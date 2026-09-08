@@ -985,9 +985,9 @@
     "name": "DEFAULTS",
     "declarationKind": "const",
     "initializerKind": "ObjectLiteralExpression",
-    "initializerHash": "c894613c96f77ddc230a32218f7c41a8ba0394f8df4760550dd1ff1d5fdce24b",
-    "initializerLength": 2109,
-    "initializerPreview": "{\n    enabled: true,\n    difficulty: \"Impossible\",\n    features: {\n        spawn: true,\n        expand: true,\n        build: true,\n        boat: true,\n        nuke: true,\n        warship: true,\n        alliance: true,\n        embargo: tr..."
+    "initializerHash": "fefa29cacb14ce696ea3d40fc11d656fa82666a53254ca8ec8eed0556488042b",
+    "initializerLength": 2108,
+    "initializerPreview": "{\n    enabled: true,\n    difficulty: \"Legendary\",\n    features: {\n        spawn: true,\n        expand: true,\n        build: true,\n        boat: true,\n        nuke: true,\n        warship: true,\n        alliance: true,\n        embargo: tru..."
   },
   {
     "id": "engine/ingame/auto-bot/core.js:MIN_TICK_INTERVAL_MS#1",
@@ -1205,9 +1205,9 @@
     "name": "PERSISTED_KEYS",
     "declarationKind": "const",
     "initializerKind": "ArrayLiteralExpression",
-    "initializerHash": "2776b71914de484dae9bd6d6c9d838c20b663b32c1d46366c73fedcaa23b6cec",
-    "initializerLength": 459,
-    "initializerPreview": "[\n    \"enabled\",\n    \"difficulty\",\n    \"winFixes\",\n    \"smartSpawn\",\n    \"performanceProfiling\",\n    \"minimized\",\n    \"hidden\",\n    \"statusOpen\",\n    \"featsOpen\",\n    \"pos\",\n    \"tickMs\",\n    \"pauseDonateDuringExpansion\",\n    \"donateNeed..."
+    "initializerHash": "048bfa13b29e24b70f35375f7501aac36bea3216cbc60fb7b8679195d5fba2b2",
+    "initializerLength": 441,
+    "initializerPreview": "[\n    \"enabled\",\n    \"winFixes\",\n    \"smartSpawn\",\n    \"performanceProfiling\",\n    \"minimized\",\n    \"hidden\",\n    \"statusOpen\",\n    \"featsOpen\",\n    \"pos\",\n    \"tickMs\",\n    \"pauseDonateDuringExpansion\",\n    \"donateNeedThreshold\",\n    \"d..."
   },
   {
     "id": "engine/ingame/auto-bot/earlyGame.js:EARLY_GAME_MAX_BOAT_TICKS#1",

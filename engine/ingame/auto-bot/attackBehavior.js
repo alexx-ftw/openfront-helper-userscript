@@ -3185,7 +3185,7 @@
       const reinforced = await this.reinforceIncompleteOutboundPlayerAttack();
       let expanded = false;
       if (this.getActionableRemainingTerraNulliusOpeningCommitment() > 0) {
-        expanded = this.forceSendAttack(
+        expanded = await this.forceSendAttack(
           this.game.terraNullius(),
           this.effectiveTerraNulliusCommitFraction(),
         );

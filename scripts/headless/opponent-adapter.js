@@ -73,7 +73,7 @@ export function createBundledOpponentHarness(options = {}) {
   });
   const disabledHardMode = {
     enabled: false,
-    difficulty: "Impossible",
+    difficulty: "Legendary",
     winFixes: true,
     tickMs: 1,
     features: {
@@ -187,7 +187,7 @@ export function loadBundledOpponentHarness() {
 
 export function createMaxDifficultyOpponent(options = {}) {
   return new BundledOpponentBot({
-    difficulty: "Impossible",
+    difficulty: "Legendary",
     winFixes: true,
     tickMs: 1,
     responsiveness: "maximum",
@@ -294,7 +294,7 @@ export class BundledOpponentBot {
     this.name = options.name ?? "OpponentToBeat";
     this.id = options.id ?? "Opponent";
     this.clientID = options.clientID ?? "opponent-client";
-    this.difficulty = options.difficulty ?? "Impossible";
+    this.difficulty = "Legendary";
     this.winFixes = options.winFixes ?? true;
     this.tickMs = options.tickMs ?? 1;
     this.responsiveness = options.responsiveness ?? "maximum";
@@ -511,6 +511,7 @@ export class BundledOpponentBot {
           landBurst: nationBot.openingLandBurstPending === true,
           followUp: nationBot.openingExpansionFollowUpPending === true,
           remaining: attackBehavior?.getRemainingTerraNulliusOpeningCommitment?.() ?? null,
+          attackable: attackBehavior?.canForceAttackTarget?.(nationBot.mg.terraNullius()) === true,
           pending: attackBehavior?.getPendingTerraNulliusAttackTroops?.() ?? null,
         };
         const handled = await originalHandleOpeningExpansion.apply(nationBot, args);
