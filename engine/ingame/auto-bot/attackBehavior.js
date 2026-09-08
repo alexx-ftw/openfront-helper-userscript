@@ -5088,6 +5088,7 @@
         this.earlyGameTribeRefreshStartCount++;
         const refresh = this.getEarlyGameTribeCandidates(profile);
         this.earlyGameTribeCandidatesRefresh = refresh;
+        // The background task defers rejection to the next awaited decision.
         refresh.then((candidates) => {
           if (this.earlyGameTribeCandidatesRefresh !== refresh) return;
           const completedContext = this.earlyGameTribeCandidateCacheContext();
@@ -5100,11 +5101,22 @@
             ? completedContext.signature
             : null;
           this.earlyGameTribeCandidatesRefresh = null;
+        }, (error) => {
+          if (this.earlyGameTribeCandidatesRefresh !== refresh) return;
+          this.earlyGameTribeCandidatesRefresh = null;
+          // Surface the failure through the awaited decision loop, not an
+          // unhandled background rejection that permanently locks refreshes.
+          this.earlyGameTribeRefreshFailure = { error };
         });
       }
     }
 
     async getReadyEarlyGameTribeCandidates(profile = null) {
+      if (this.earlyGameTribeRefreshFailure) {
+        const { error } = this.earlyGameTribeRefreshFailure;
+        this.earlyGameTribeRefreshFailure = null;
+        throw error;
+      }
       // Lightweight test/compatibility behavior instances can expose the
       // complete candidate provider without the persistent cache fields.
       if (this.earlyGameTribeCandidatesRefresh === undefined) {

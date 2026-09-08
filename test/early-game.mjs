@@ -2528,6 +2528,36 @@ await cachedShoreBehavior.enrichEarlyGameTribeBoatEtas(
 );
 assert.equal(cachedShoreReads, 1, "tribe boat ETA enrichment reuses the API's cached shore subset");
 
+const failedRefreshBehavior = Object.create(targetSandbox.AttackBehavior.prototype);
+const refreshFailure = new Error("tribe worker unavailable");
+Object.assign(failedRefreshBehavior, {
+  earlyGameTribeCandidatesRefresh: null,
+  earlyGameTribeRefreshStartCount: 0,
+  earlyGameTribeCandidateCacheContext: () => ({ signature: "tribes", tick: 100 }),
+  earlyGameTribeSnapshotNeedsRefresh: () => true,
+  getEarlyGameTribeCandidates: async () => {
+    throw refreshFailure;
+  },
+});
+failedRefreshBehavior.refreshReadyEarlyGameTribeCandidates(null, false);
+await Promise.resolve();
+await Promise.resolve();
+assert.equal(
+  failedRefreshBehavior.earlyGameTribeCandidatesRefresh,
+  null,
+  "a rejected tribe refresh releases the pending lock so the next decision can retry",
+);
+await assert.rejects(
+  failedRefreshBehavior.getReadyEarlyGameTribeCandidates(),
+  (error) => error === refreshFailure,
+  "the decision loop must observe the original refresh failure",
+);
+failedRefreshBehavior.getEarlyGameTribeCandidates = async () => [];
+failedRefreshBehavior.refreshReadyEarlyGameTribeCandidates(null, false);
+await Promise.resolve();
+assert.deepEqual(Array.from(failedRefreshBehavior.earlyGameTribeCandidatesCache), []);
+assert.equal(failedRefreshBehavior.earlyGameTribeRefreshStartCount, 2);
+
 const staleGatewayTarget = {
   isPlayer: () => true,
   isAlive: () => true,
