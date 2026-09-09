@@ -3173,6 +3173,33 @@ assert.equal(
   "the exact cached upgrade cost prevents repeated unaffordable SAM probes",
 );
 hydrogenProtectionGold = 5_000_000n;
+// The native worker returns the exact cost even when insufficient gold makes
+// canUpgrade false. Cache that first failed probe, not only successful ones.
+hydrogenProtectionBehavior._plannedSamUpgradeCostCache = new Map();
+hydrogenProtectionGold = 499_999n;
+let rejectedUpgradeCostProbes = 0;
+const priorUpgradeBuildables = hydrogenProtectionBehavior.buildableForUnits;
+hydrogenProtectionBehavior.buildableForUnits = async () => {
+  rejectedUpgradeCostProbes++;
+  return [{ type: UNIT.SAMLauncher, canUpgrade: false, cost: 500_000n }];
+};
+const rejectedCostPlan = { sam: hydrogenSam, currentLevel: 1, targetLevel: 2 };
+assert.equal(await hydrogenProtectionBehavior.maybeUpgradePlannedSam(rejectedCostPlan), false);
+assert.equal(await hydrogenProtectionBehavior.maybeUpgradePlannedSam(rejectedCostPlan), false);
+assert.equal(
+  rejectedUpgradeCostProbes,
+  1,
+  "an unaffordable native descriptor caches its cost despite canUpgrade=false",
+);
+hydrogenProtectionGold = 500_000n;
+assert.equal(await hydrogenProtectionBehavior.maybeUpgradePlannedSam(rejectedCostPlan), false);
+assert.equal(
+  rejectedUpgradeCostProbes,
+  2,
+  "reaching the cached cost rechecks legality rather than assuming upgrade permission",
+);
+hydrogenProtectionGold = 5_000_000n;
+hydrogenProtectionBehavior.buildableForUnits = priorUpgradeBuildables;
 hydrogenProtectionBehavior.cost = () => 1n;
 hydrogenProtectionBehavior.liveNuclearHostilePlayers = () => [enemySingleLevelOneSilo];
 hydrogenThreatPlayers = [enemySingleLevelOneSilo];

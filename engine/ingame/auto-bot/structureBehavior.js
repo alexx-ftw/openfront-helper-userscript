@@ -10720,6 +10720,11 @@
         },
       );
       const buildable = buildables[0];
+      // The worker reports the authoritative price even when affordability
+      // makes canUpgrade false. Retain it before discarding the descriptor.
+      if (buildable?.cost !== undefined && buildable?.cost !== null) {
+        this.plannedSamUpgradeCost(buildable, this.plannedSamUpgradeCostCacheKey(plan));
+      }
       return buildable?.canUpgrade === false ? null : buildable ?? null;
     }
 
