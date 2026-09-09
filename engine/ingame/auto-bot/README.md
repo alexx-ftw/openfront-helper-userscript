@@ -333,6 +333,9 @@ game's opponents (the upstream engine has no Legendary difficulty).
 Simulation hostility and recapture metrics use player identity and the engine's
 team relation, not equality of nullable team labels. FFA rivals and neutral ground
 are never counted as our side; remaining enemy structures stay in the quota report.
+The simulation keeps one build-menu event bus per attached game and supports
+alliance breaks separately from alliance requests, plus attack cancellations.
+Constructor discovery therefore retains the same identity across decisions.
 The headless adapter schedules zero-delay cooperative work at the runner's task
 boundary, not against wall-clock milliseconds. Positive worker timeouts remain
 real-time safety limits. Published engine motion plans reach the headless game API

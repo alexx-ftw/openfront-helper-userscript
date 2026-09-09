@@ -179,6 +179,7 @@ function createBundledHarnessSource() {
   const exportHook = `
 window.__OFH_realOpponentHarness = {
   NationBot,
+  AllianceBehavior,
   WarshipBehavior,
   createGameApi,
   state,
@@ -335,6 +336,7 @@ export class BundledOpponentBot {
   }
 
   attach({ runner, clientID = this.clientID, gameID = "openfront-real-game" }) {
+    this.buildMenu = null;
     this.runner = runner;
     this.game = runner.game;
     this.clientID = clientID;
@@ -1497,8 +1499,9 @@ function configureHardMode(state, bot) {
 }
 
 export function createBuildMenu(bot) {
+  if (bot.buildMenu) return bot.buildMenu;
   const eventBus = createEventBus(bot, bot.harness.window);
-  return {
+  bot.buildMenu = {
     eventBus,
     uiState: { rocketDirectionUp: true },
     sendBuildOrUpgrade(buildable, tile) {
@@ -1522,6 +1525,7 @@ export function createBuildMenu(bot) {
       }
     },
   };
+  return bot.buildMenu;
 }
 
 function createEventBus(bot, window) {
@@ -1541,6 +1545,11 @@ function createEventBus(bot, window) {
     constructor(targetID, troops) {
       this.targetID = targetID;
       this.troops = troops;
+    }
+  }
+  class CancelAttackEvent {
+    constructor(attackID) {
+      this.attackID = attackID;
     }
   }
   class BoatEvent {
@@ -1579,6 +1588,12 @@ function createEventBus(bot, window) {
       this.recipient = recipient;
     }
   }
+  class BreakAllianceEvent {
+    constructor(requestor, recipient) {
+      this.requestor = requestor;
+      this.recipient = recipient;
+    }
+  }
 
   return {
     listeners: new window.Map([
@@ -1588,12 +1603,17 @@ function createEventBus(bot, window) {
       [DonateTroopsEvent, []],
       [EmojiEvent, []],
       [AttackEvent, []],
+      [CancelAttackEvent, []],
       [BoatEvent, []],
       [SpawnEvent, []],
       [AllianceRequestEvent, []],
+      [BreakAllianceEvent, []],
     ]),
     emit(event) {
-      const intent = eventToIntent(event, bot.game, bot.clientID);
+      const intent =
+        event instanceof BreakAllianceEvent
+          ? { type: "breakAlliance", recipient: unwrapID(event.recipient) }
+          : eventToIntent(event, bot.game, bot.clientID);
       if (intent) bot.intentBuffer.push(intent);
     },
   };
@@ -1720,6 +1740,9 @@ function allianceEventToIntent(event) {
 }
 
 function eventToIntent(event, game, clientID) {
+  if (event.attackID !== undefined) {
+    return { type: "cancel_attack", attackID: event.attackID };
+  }
   if (event.unit !== undefined && event.tile !== undefined) {
     return {
       type: "build_unit",

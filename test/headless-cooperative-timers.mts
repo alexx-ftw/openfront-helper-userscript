@@ -36,6 +36,8 @@ assert.equal(playersShareSide(me, enemy), false);
 const harness = createBundledOpponentHarness();
 const bot = { harness, game: {}, clientID: "build-fixture", intentBuffer: [] };
 const menu = createBuildMenu(bot);
+harness.current.buildMenu = menu;
+harness.current.eventBus = menu.eventBus;
 const buildCtor = harness.internals.discoverCtors(menu.eventBus).buildUnit;
 assert.equal(typeof buildCtor, "function", "headless exposes the native build event constructor");
 menu.eventBus.emit(new buildCtor("City", 0, false));
@@ -43,6 +45,26 @@ assert.deepEqual(
   bot.intentBuffer,
   [{ type: "build_unit", unit: "City", tile: 0, rocketDirectionUp: false }],
   "a direct zero-tile build must not be misclassified as a spawn intent",
+);
+bot.intentBuffer.length = 0;
+attacker.conquer(ffa.ref(1, 1));
+defender.conquer(ffa.ref(2, 1));
+const request = attacker.createAllianceRequest(defender);
+assert.ok(request);
+request.accept();
+assert.equal(attacker.isAlliedWith(defender), true);
+const diplomacy = new harness.internals.AllianceBehavior({}, ffa, attacker, {});
+assert.equal(diplomacy.betray(defender), true, "the bundled bot can break a real alliance");
+assert.deepEqual(bot.intentBuffer, [{ type: "breakAlliance", recipient: defender.id() }]);
+bot.intentBuffer.length = 0;
+const cancelCtor = harness.internals.discoverCtors(menu.eventBus).cancelAttack;
+assert.equal(typeof cancelCtor, "function", "the bot can discover attack cancellation");
+menu.eventBus.emit(new cancelCtor("attack-fixture"));
+assert.deepEqual(bot.intentBuffer, [{ type: "cancel_attack", attackID: "attack-fixture" }]);
+assert.equal(
+  createBuildMenu(bot).eventBus,
+  menu.eventBus,
+  "successive decisions must preserve native event-constructor identity",
 );
 for (let tick = 0; tick < 10; tick++) {
   let resumed = false;
