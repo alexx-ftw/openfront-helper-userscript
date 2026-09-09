@@ -135,6 +135,8 @@ responses already committed to that wave are deducted before this exemption.
 Defensive construction counts nearby Posts against the front's budget using
 the same engine effect radius as its uncovered-front calculation. A Post outside
 that radius cannot suppress a replacement for an entirely unprotected front.
+The worker-resolved Defense Post tile must also retain the sampled border-depth
+limits; a snap toward the frontier is rejected before spending construction gold.
 
 ## Combat decision cadence
 

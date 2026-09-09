@@ -64,6 +64,13 @@ const sandbox = {
   console,
 };
 sandbox.globalThis = sandbox;
+const geometrySandbox = {};
+executeClassicScript(
+  `${read("engine/ingame/auto-bot/portutil.js")}\nglobalThis.closestTile = closestTile;`,
+  geometrySandbox,
+  { filename: "sam-defense-geometry.vm.js" },
+);
+sandbox.closestTile = geometrySandbox.closestTile;
 const structureBehaviorSource = read("engine/ingame/auto-bot/structureBehavior.js");
 
 executeClassicScript(
@@ -3065,6 +3072,9 @@ assert.equal(
 missileImpactOwner = missileOwner;
 impactProbeCalls = 0;
 sentBuilds.length = 0;
+missileImpactProbe.player.borderTiles = () => [90];
+missileImpactProbe.game.manhattanDist = (a, b) => Math.abs(a - b);
+missileImpactProbe.spacingConstants = () => ({ borderSpacing: 30 });
 missileImpactProbe.buildableFor = async (_type, tile) => {
   impactProbeCalls++;
   return { canBuild: tile, canUpgrade: false, tile };
@@ -3086,6 +3096,41 @@ assert.equal(
   "The direct Defense Post path rejects an authoritative snap into the blast",
 );
 assert.equal(sentBuilds.length, 0);
+
+// A worker snap must preserve the depth checked before the async probe.
+const postDepthProbe = Object.create(missileImpactProbe);
+postDepthProbe.player = { ...missileImpactProbe.player, borderTiles: () => [100] };
+postDepthProbe.game = {
+  ...missileImpactProbe.game,
+  manhattanDist: (a, b) => Math.abs(a - b),
+};
+postDepthProbe.spacingConstants = () => ({ borderSpacing: 30 });
+for (const [snappedTile, expected] of [
+  [112, false],
+  [123, true],
+  [145, true],
+  [146, false],
+]) {
+  sentBuilds.length = 0;
+  postDepthProbe.buildableFor = async () => ({ canBuild: snappedTile, canUpgrade: false });
+  assert.equal(
+    await postDepthProbe.buildFirstDefensePost([123]),
+    expected,
+    `resolved Defense Post depth must remain within the sampled range: ${snappedTile}`,
+  );
+  assert.equal(sentBuilds.length, expected ? 1 : 0);
+}
+sentBuilds.length = 0;
+postDepthProbe.buildableFor = async (_type, tile) => ({
+  canBuild: tile === 123 ? 112 : tile,
+  canUpgrade: false,
+});
+assert.equal(await postDepthProbe.buildFirstDefensePost([123, 124]), true);
+assert.equal(
+  sentBuilds.at(-1)?.canBuild,
+  124,
+  "an unsafe snap does not discard the next depth-valid candidate",
+);
 
 const originalTilesNearFriendlySams = coverageProbe.tilesNearFriendlySams;
 const originalMissileSiloValue = coverageProbe.missileSiloValue;

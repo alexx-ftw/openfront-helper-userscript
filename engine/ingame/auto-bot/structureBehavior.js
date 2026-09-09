@@ -1423,6 +1423,11 @@
               bu,
               safeBatch[index],
               UNIT.DefensePost,
+            ) ||
+            // The worker may snap toward the border after the raw candidate
+            // passed sampling. Validate the actual site before spending gold.
+            !this.hasDefensePostBorderDepth(
+              bu.canBuild === true ? safeBatch[index] : bu.canBuild,
             )
           ) {
             continue;
@@ -1695,6 +1700,14 @@
     }
 
     hasDefensePostBorderDepth(tile, context) {
+      if (context === undefined) {
+        const { borderSpacing } = this.spacingConstants();
+        context = {
+          borderTiles: this.player.borderTiles(),
+          minBorderDist: Math.ceil(borderSpacing * 0.75),
+          maxBorderDist: Math.ceil(borderSpacing * 1.5),
+        };
+      }
       const [, borderDist] = closestTile(this.game, context.borderTiles, tile);
       return (
         borderDist >= context.minBorderDist &&
