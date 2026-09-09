@@ -546,6 +546,24 @@ const legendaryFfaRuntime = runHeadlessScenario({
 });
 const legendaryFfaResult = legendaryFfaRuntime.records.find((record) => record.phase === "result");
 assert.ok(legendaryFfaResult, "the Legendary FFA scenario must emit a result");
+
+const ffaBorderRuntime = runHeadlessScenario({
+  OFH_MATCH_SEED: "legendary-audit-159-europe",
+  OFH_GAME_MAP: "Europe",
+  OFH_GAME_MODE: "ffa",
+  OFH_NATIONS: "50",
+  OFH_BOTS: "180",
+  OFH_NO_MODIFIERS: "1",
+  OFH_MAX_TICKS: "4000",
+});
+const ffaBorderResult = ffaBorderRuntime.records.find((record) => record.phase === "result");
+assert.ok(ffaBorderResult);
+assert.ok(
+  ffaBorderResult.constructionEvents.some(
+    (event) => event.strategicBorderPressure?.hostilePlayers.length > 0,
+  ),
+  "the landlocked FFA fixture must report its neighboring nations as border pressure",
+);
 assert.ok(
   BigInt(legendaryFfaResult.goalRequirements.enemyStructureValueAtEnd) > 0n,
   "the established FFA rivals' structures cannot disappear from the goal accounting",

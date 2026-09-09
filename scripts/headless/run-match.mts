@@ -612,7 +612,7 @@ const strategicBorderPressureSnapshot = () => {
       const opponentType = playerField(opponent, "type");
       if (
         (opponentType !== PlayerType.Nation && opponentType !== PlayerType.Human) ||
-        playerField(opponent, "team") === playerField(player, "team")
+        playersShareSide(player, opponent)
       )
         continue;
       opponents.set(String(playerField(opponent, "id")), {
