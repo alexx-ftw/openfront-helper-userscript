@@ -224,6 +224,11 @@ and another game's clock cannot expire purchases still pending in this one.
 Legal builds on tile zero use the native build event directly because BuildMenu
 otherwise drops them. They consume the same single intent and purchase budget.
 
+Once a hostile silo is built, an established economy preserves the first SAM's
+cost in the shared construction budget, including the early plateau-City lane.
+The income bootstrap, defensive structures, and surplus above that fund remain
+available; an already ordered SAM releases this first-launcher reserve.
+
 ## Team donation policy
 
 When `winFixes` is enabled, automatic troop donations remain restricted to needy

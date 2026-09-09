@@ -3520,11 +3520,23 @@
       return ECONOMIC_STRUCTURE_TYPES.some((type) => this.ownedLevels(type) > 0);
     }
 
+    firstSamConstructionReserve(type) {
+      if (!ECONOMIC_STRUCTURE_TYPES.includes(type) && type !== UNIT.MissileSilo) return 0n;
+      const reserve = this.singleSamHostileSiloReplacementReserve();
+      if (reserve <= 0n || this.ownedSamUnits().length > 0) return 0n;
+      return this.shouldReserveHostileSiloSamBudget() ? reserve : 0n;
+    }
+
     availableGoldAfterReserve(type) {
       let availableGold;
       {
         availableGold = BigInt(this.player.gold() || 0n);
       }
+
+      // Plateau/opening callers bypass the ordinary defense phase. Keep the
+      // first interceptor funded at their shared budget boundary as well.
+      const firstSamReserve = this.firstSamConstructionReserve(type);
+      availableGold = availableGold > firstSamReserve ? availableGold - firstSamReserve : 0n;
 
       // The first-Atom war chest claims economic gold ahead of ordinary
       // growth once a Silo is live (the nuke lane decides after structures

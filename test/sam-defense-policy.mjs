@@ -2048,6 +2048,52 @@ assert.equal(
 own.gold = originalOwnGold;
 
 const originalReserveForBudget = behavior.legendaryReserveGold;
+{
+  const budget = Object.create(sandbox.__StructureBehavior.prototype);
+  let gold = 1_000_000n;
+  let builtThreat = true;
+  let income = true;
+  let sams = [];
+  budget.game = { config: () => ({}) };
+  budget.player = { gold: () => gold, units: () => sams };
+  budget.ownedLevels = (type) => (type === UNIT.City && income ? 1 : 0);
+  budget.hasBuiltHostileSiloThreat = () => builtThreat;
+  budget.safeConstructionCost = () => 1_500_000n;
+  budget.legendaryAtomWarChest = () => 0n;
+  budget.legendaryReserveGold = () => 0n;
+  for (const type of [UNIT.City, UNIT.Factory, UNIT.Port, UNIT.MissileSilo]) {
+    assert.equal(
+      budget.availableGoldAfterReserve(type),
+      0n,
+      "ordinary and plateau construction cannot drain the first-SAM fund",
+    );
+  }
+  assert.equal(budget.availableGoldAfterReserve(UNIT.SAMLauncher), gold);
+  assert.equal(budget.availableGoldAfterReserve(UNIT.DefensePost), gold);
+  gold = 2_500_000n;
+  assert.equal(
+    budget.availableGoldAfterReserve(UNIT.City),
+    1_000_000n,
+    "surplus above the complete interceptor cost remains spendable",
+  );
+  gold = 1_000_000n;
+  income = false;
+  assert.equal(
+    budget.availableGoldAfterReserve(UNIT.City),
+    gold,
+    "the first income source can still bootstrap the treasury",
+  );
+  income = true;
+  builtThreat = false;
+  assert.equal(budget.availableGoldAfterReserve(UNIT.City), gold);
+  builtThreat = true;
+  sams = [{ isUnderConstruction: () => true }];
+  assert.equal(
+    budget.availableGoldAfterReserve(UNIT.City),
+    gold,
+    "a SAM already ordered releases its first-launcher fund",
+  );
+}
 const reserveBudgetCalls = [];
 behavior.legendaryReserveGold = () => 25_000_000n;
 own.gold = () => 20_000_000n;
@@ -6406,7 +6452,10 @@ process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");
   );
   // D2 pacing: the first two placements are free, #3 waits 250 ticks.
   assert.equal(
-    makeDoctrineBehavior({ bigStart: true, pacing: { count: 0, lastTick: 100 } }).bigStartStructurePacingBlocks(),
+    makeDoctrineBehavior({
+      bigStart: true,
+      pacing: { count: 0, lastTick: 100 },
+    }).bigStartStructurePacingBlocks(),
     false,
     "D2: early burst placements are unpaced",
   );
@@ -6423,11 +6472,7 @@ process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");
     pacing: { count: 2, lastTick: 100 },
   });
   paced.game = { ticks: () => 351 };
-  assert.equal(
-    paced.bigStartStructurePacingBlocks(),
-    false,
-    "D2: the 250-tick gap expires",
-  );
+  assert.equal(paced.bigStartStructurePacingBlocks(), false, "D2: the 250-tick gap expires");
   assert.equal(
     makeDoctrineBehavior({
       bigStart: false,
