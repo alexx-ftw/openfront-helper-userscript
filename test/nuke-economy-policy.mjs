@@ -630,32 +630,6 @@ resolveNukeProbe([{ type: UNIT.AtomBomb, cost: 1n, canBuild: true }]);
 await pendingStaleNuke;
 assert.equal(nukeBuilds, 0, "a target that becomes invalid during the worker probe is not nuked");
 
-const partialSalvoBehavior = Object.create(sandbox.__NukeBehavior.prototype);
-partialSalvoBehavior.player = { gold: () => 10n };
-partialSalvoBehavior.getSamSalvo = () => ({
-  bombsToFire: 2,
-  waits: [0, 7],
-});
-let partialLaunchAttempt = 0;
-partialSalvoBehavior.sendNuke = async () => ++partialLaunchAttempt === 1;
-const retainedReservation = {
-  need: 2,
-  at: 500,
-  targetTile: 12,
-  unblockedSiloIds: ["silo-1"],
-};
-sandbox.state.nukeWantSlots = retainedReservation;
-assert.equal(
-  await partialSalvoBehavior.fireSamSalvo({ targetTile: 12 }, staleNukeTarget, 1n),
-  false,
-  "a partially rejected SAM-overwhelm salvo reports failure",
-);
-assert.strictEqual(
-  sandbox.state.nukeWantSlots,
-  retainedReservation,
-  "a partial salvo keeps its silo-capacity reservation for retry or upgrade",
-);
-
 let scheduledTick = 600;
 const scheduledBuilds = [];
 sandbox.sendAutoBotBuildOrUpgrade = (_menu, buildable, tile) => {

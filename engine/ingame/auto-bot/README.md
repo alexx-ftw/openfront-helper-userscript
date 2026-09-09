@@ -339,6 +339,9 @@ from launch approval; a selected Atom can still fail the expected-value gate.
 Queued nuclear launches revalidate their target every decision, including before
 their scheduled launch tick. Invalid targets are removed immediately; when the
 last queued launch disappears, its silo-slot reservation is released.
+An initial salvo launch rejected by a worker probe or the intent budget enters
+the existing next-tick retry queue without dropping the rest of the salvo.
+Exceptional exits also reconcile the reservation with the surviving queue.
 The Hydrogen finisher waits for its own salvo's queue to drain. Delayed or retried
 launches move its deadline to the actual launch tick plus flight time and the
 existing five-tick landing margin; failed sends do not count as launches.

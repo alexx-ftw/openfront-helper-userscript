@@ -2214,15 +2214,25 @@
         targetTile: plan.targetTile,
         targetSamId: plan.targetSamId ?? null,
       };
-      for (let i = 0; i < salvo.bombsToFire; i++) {
-        const sent = await this.sendNuke(
-          plan.targetTile,
-          UNIT.AtomBomb,
-          nukeTarget,
-          salvo.waits[i],
-          { ...salvoPlan, flightTicks: flightTicks[i] },
-        );
-        if (!sent) return false;
+      try {
+        for (let i = 0; i < salvo.bombsToFire; i++) {
+          const metadata = { ...salvoPlan, flightTicks: flightTicks[i] };
+          const sent = await this.sendNuke(
+            plan.targetTile, UNIT.AtomBomb, nukeTarget, salvo.waits[i], metadata,
+          );
+          // A stale worker probe or exhausted intent budget is retryable.
+          // Retain this bomb and the tail; the queue rechecks target and SAMs.
+          if (!sent && !this.queueDelayedNukeLaunch(
+            plan.targetTile, UNIT.AtomBomb, nukeTarget,
+            Math.max(1, salvo.waits[i]), metadata,
+          )) return false;
+        }
+      } finally {
+        if (this.hasPendingNukeLaunches()) {
+          state.nukeWantSlots.pendingLaunches = true;
+        } else {
+          state.nukeWantSlots = null;
+        }
       }
       // Hydrogen finisher (goal rule): the saturating atoms exist to strip the
       // covering SAMs; once the last bomb lands the target cluster is bare, so
@@ -2241,11 +2251,6 @@
         dueTick: lastArrivalTick + 5,
         targetSmallID: nukeTarget.smallID?.() ?? null,
       };
-      if (this.hasPendingNukeLaunches()) {
-        state.nukeWantSlots.pendingLaunches = true;
-      } else {
-        state.nukeWantSlots = null;
-      }
       return true;
     }
 

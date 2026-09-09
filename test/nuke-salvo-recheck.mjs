@@ -645,6 +645,93 @@ for (const [flightTicks, dueTick, expectedLaunch] of [
   );
 }
 
+// A temporary buildability failure must retain the complete salvo, including
+// bombs after the failed send, and release the reservation when it drains.
+for (const failedProbe of [1, 2]) {
+  const { world, player, nukeTarget, behavior } = makeSalvoWorld();
+  const emitted = [];
+  launchSink = emitted;
+  const buildables = player.buildables;
+  let probes = 0;
+  player.buildables = (...args) => (++probes === failedProbe ? [] : buildables(...args));
+  behavior.getSamSalvo = () => ({ bombsToFire: 3, waits: [0, 0, 5] });
+  sandbox.state.nukeWantSlots = null;
+  sandbox.state.postSalvoHydrogen = null;
+  assert.equal(
+    await behavior.fireSamSalvo(
+      {
+        targetTile: 20,
+        totalBombs: 3,
+        siloEntries: [],
+        launchSequence: Array.from({ length: 3 }, () => ({ flightTicks: 20 })),
+      },
+      nukeTarget,
+      1n,
+    ),
+    true,
+    "a temporary probe failure queues the full salvo",
+  );
+  assert.equal(emitted.length, 1, "only the accepted immediate bomb is emitted");
+  assert.equal(behavior._pendingNukeLaunches.length, 2);
+  assert.equal(sandbox.state.nukeWantSlots.pendingLaunches, true);
+  world.tick = 801;
+  assert.equal(await behavior.processPendingNukeLaunches(), true);
+  assert.equal(emitted.length, 2, "the failed immediate bomb retries once");
+  world.tick = 805;
+  assert.equal(await behavior.processPendingNukeLaunches(), true);
+  assert.equal(emitted.length, 3, "the tail was not discarded or duplicated");
+  assert.equal(behavior.hasPendingNukeLaunches(), false);
+  assert.equal(sandbox.state.nukeWantSlots, null);
+  sandbox.state.postSalvoHydrogen = null;
+}
+
+{
+  const { player, nukeTarget, behavior } = makeSalvoWorld();
+  player.buildables = async () => {
+    nukeTarget.isAlive = () => false;
+    return [];
+  };
+  behavior.getSamSalvo = () => ({ bombsToFire: 1, waits: [0] });
+  sandbox.state.nukeWantSlots = null;
+  assert.equal(await behavior.fireSamSalvo({ targetTile: 20 }, nukeTarget, 1n), false);
+  assert.equal(behavior.hasPendingNukeLaunches(), false, "invalid targets cannot enter retry");
+  assert.equal(sandbox.state.nukeWantSlots, null);
+}
+
+// Unexpected probe exceptions still propagate, but cannot leave a false
+// capacity demand or an unmarked partial queue behind.
+for (const delayedFirst of [false, true]) {
+  const { world, player, nukeTarget, behavior } = makeSalvoWorld();
+  const failure = new Error("worker probe failed");
+  player.buildables = () => {
+    throw failure;
+  };
+  const waits = delayedFirst ? [5, 0] : [0];
+  behavior.getSamSalvo = () => ({ bombsToFire: waits.length, waits });
+  sandbox.state.nukeWantSlots = null;
+  await assert.rejects(
+    behavior.fireSamSalvo(
+      {
+        targetTile: 20,
+        totalBombs: waits.length,
+        siloEntries: [],
+        launchSequence: waits.map(() => ({ flightTicks: 20 })),
+      },
+      nukeTarget,
+      1n,
+    ),
+    (error) => error === failure,
+  );
+  if (delayedFirst) {
+    assert.equal(sandbox.state.nukeWantSlots.pendingLaunches, true);
+    nukeTarget.isAlive = () => false;
+    world.tick = 801;
+    assert.equal(await behavior.processPendingNukeLaunches(), false);
+    assert.equal(behavior.hasPendingNukeLaunches(), false);
+  }
+  assert.equal(sandbox.state.nukeWantSlots, null, "no stale capacity reservation survives");
+}
+
 // The finisher must follow actual launches, not the original schedule when
 // processing stalls or a launch is retried.
 {
