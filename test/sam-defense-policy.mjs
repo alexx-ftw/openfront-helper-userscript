@@ -129,6 +129,24 @@ assert.ok(
   portCommercialValue(1_010) > portCommercialValue(5_000),
   "Ports prefer a legal placement that snaps to a real existing commercial railroad",
 );
+{
+  const firstPortBehavior = Object.create(commercialRailBehavior);
+  firstPortBehavior.game = {
+    ...commercialRailBehavior.game,
+    railroadState: () => commercialRailState,
+  };
+  firstPortBehavior.nearestTileDistanceScorer =
+    sandbox.__StructureBehavior.prototype.nearestTileDistanceScorer;
+  const firstPortValue = firstPortBehavior.portValue();
+  assert.ok(
+    Number.isFinite(firstPortValue(1_010)) && Number.isFinite(firstPortValue(5_000)),
+    "first-Port scores remain finite when no other Port exists",
+  );
+  assert.ok(
+    firstPortValue(1_010) > firstPortValue(5_000),
+    "real empty-Port geometry preserves commercial placement preferences",
+  );
+}
 assert.ok(
   factoryCommercialValue(1_050) > factoryCommercialValue(9_999),
   "Factories always prefer a reachable commercial destination, including on Easy",

@@ -354,6 +354,9 @@ does not bypass economic reserves merely because an incoming transport exists.
 SAM upgrade probes retain the worker's exact price even when `canUpgrade` is
 false. Insufficient funds therefore avoid repeated worker requests; reaching
 that price triggers a fresh legality check, never an assumed build permission.
+First-Port placement treats the absence of another Port as zero spacing value,
+so finite rail, ally, and missile-risk preferences remain effective instead of
+collapsing every candidate to Infinity.
 Version 1.12.161 fixes refresh starvation observed on `legendary-audit-159-europe`:
 21 of 32 refreshes after tick 1750 were discarded despite scored live targets.
 With the fix, that seed reaches tick 5000 with 43829 tiles; holdout A below

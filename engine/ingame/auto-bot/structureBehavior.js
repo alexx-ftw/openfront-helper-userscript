@@ -13996,7 +13996,8 @@
 
         // Prefer to be as far as possible from other ports
         const closestOtherDist = nearestOther(tile);
-        w += closestOtherDist;
+        // No existing Port means no spacing preference, not infinite value.
+        if (Number.isFinite(closestOtherDist)) w += closestOtherDist;
 
         w += this.commercialRailPlacementScore(
           tile,
