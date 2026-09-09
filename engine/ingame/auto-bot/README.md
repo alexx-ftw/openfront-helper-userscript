@@ -447,6 +447,11 @@ the prospective nuclear forecast is urgent. Actual incoming-missile SAM actions
 still run first; a forecast alone cannot bypass the land reserve to buy a silo or
 economic structure during that invasion.
 
+Preventive structure-coverage SAM placement takes construction deadlines from
+missiles already in flight, not hypothetical immediate launches from enemy silos.
+The coverage forecast still requests the launcher; live blast and interception
+safety checks remain in force while it is placed.
+
 City upgrade prices are reused only within the current game tick. Failed or
 temporarily unavailable probes are not cached as prices, and later ticks query
 again because another City build or upgrade can change the authoritative cost.

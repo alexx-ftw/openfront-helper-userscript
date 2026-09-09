@@ -10878,7 +10878,13 @@
       if (plan.needsNewSam) {
         await this.maybeSpawnStructure(
           UNIT.SAMLauncher,
-          this.hostileSiloSamPlacementOptions(),
+          {
+            ...this.hostileSiloSamPlacementOptions(),
+            // Coverage prepares for future launches. Only missiles already
+            // flying impose a construction deadline; hypothetical immediate
+            // launches otherwise forbid ever building the required coverage.
+            missileDefenseContext: this.activeMissileDefenseContext(),
+          },
         );
         return true;
       }

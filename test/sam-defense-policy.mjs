@@ -3321,6 +3321,7 @@ assert.equal(
   "The first hostile Silo creates a defensive SAM reserve before offense",
 );
 const firstSiloCoverageSpawns = [];
+firstSiloCoverageBehavior.activeMissileDefenseContext = () => ({ threats: [] });
 firstSiloCoverageBehavior._hostileMissileLaunchObserved = false;
 firstSiloCoverageBehavior.maybeSpawnStructure = async (...args) => {
   firstSiloCoverageSpawns.push(args);
@@ -3358,6 +3359,7 @@ assert.equal(
 const failedCoverageSamBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 let failedCoverageSpawnCalls = 0;
 failedCoverageSamBehavior.hasOwnSamUnderConstruction = () => false;
+failedCoverageSamBehavior.activeMissileDefenseContext = () => ({ threats: [] });
 failedCoverageSamBehavior.hydrogenStructureCoveragePlan = () => ({ needsNewSam: true });
 failedCoverageSamBehavior.hostileSiloSamPlacementOptions = () => ({ useActualCost: true });
 failedCoverageSamBehavior.maybeSpawnStructure = async () => {
@@ -3370,6 +3372,37 @@ assert.equal(
   "a failed uncovered-SAM placement reserves the construction lane for retry",
 );
 assert.equal(failedCoverageSpawnCalls, 1);
+
+const preventiveCoverageBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+preventiveCoverageBehavior.hasOwnSamUnderConstruction = () => false;
+preventiveCoverageBehavior.hydrogenStructureCoveragePlan = () => ({ needsNewSam: true });
+let liveCoverageThreats = [];
+preventiveCoverageBehavior.activeMissileDefenseContext = () => ({ threats: liveCoverageThreats });
+preventiveCoverageBehavior.getMissileDefenseContext = () => ({ threats: [{}] });
+preventiveCoverageBehavior.getMissileDefenseEvaluation = () => ({
+  hasThreats: true,
+  fullyDefended: false,
+});
+preventiveCoverageBehavior.legendaryDefenseEvaluation = (context) => ({
+  hasThreats: context.threats.length > 0,
+  fullyDefended: false,
+});
+preventiveCoverageBehavior.uncoveredActiveMirvDemands = () => [];
+const coverageDeadlineDecisions = [];
+preventiveCoverageBehavior.maybeSpawnStructure = async (_type, options) => {
+  coverageDeadlineDecisions.push(
+    preventiveCoverageBehavior.structureMissileEmergencyState(options).active,
+  );
+  return true;
+};
+await preventiveCoverageBehavior.maybeEnsureHydrogenStructureCoverage();
+liveCoverageThreats = [{}];
+await preventiveCoverageBehavior.maybeEnsureHydrogenStructureCoverage();
+assert.deepEqual(
+  coverageDeadlineDecisions,
+  [false, true],
+  "preventive coverage ignores hypothetical launch deadlines but retains live missile deadlines",
+);
 
 const coveragePressureBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 coveragePressureBehavior.hydrogenCoverageNeedsSam = () => true;
