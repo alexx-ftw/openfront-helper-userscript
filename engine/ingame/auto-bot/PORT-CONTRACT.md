@@ -166,6 +166,9 @@ considerMIRV/maybeSpawnWarship/counterWarshipInfestation/maybeSendNuke). Wrap ea
   (pass `other.__src ?? other`) | `ctors.donateTroops` → `(recipientView, troops)` |
   `ctors.emoji` → `(recipientView|AllPlayers, emojiNumber)`.
 - Build/upgrade/nuke/MIRV/warship: `getBuildMenu().sendBuildOrUpgrade(bu, tile)` (see Async #1).
+- Bot Atom/Hydrogen dispatch temporarily sets the menu's `rocketDirectionUp` to
+  `true`, matching the bot's trajectory forecast, and restores the manual setting
+  in `finally`. This must not change the direction selected for manual macros.
 - Alliance accept/reject/extension: click `<events-display>` event buttons — see the
   AllianceBehavior notes (read the deleted `alliance.js` at git restore for the
   events-display reading pattern, but DO NOT reintroduce its custom strategy; only reuse

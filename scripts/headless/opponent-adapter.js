@@ -1509,7 +1509,7 @@ function createBuildMenu(bot) {
           type: "build_unit",
           unit: buildable.type,
           tile: buildTile,
-          rocketDirectionUp: true,
+          rocketDirectionUp: this.uiState.rocketDirectionUp,
         });
       }
     },

@@ -345,6 +345,9 @@ with exact live paths. It uses the shared interceptor scheduler across hostile
 SAMs, excludes missiles already pursued by an interceptor, and gives no credit
 to charges that reload before the remaining salvo arrives. Unknown trajectories,
 unfinished launchers, and inconclusive schedules retain the conservative estimate.
+Bot Atom/Hydrogen intents use the upward arc assumed by their trajectory forecast.
+The manual arc toggle is restored immediately after dispatch, including failures;
+manual launches and macros keep the player's selected direction.
 
 The `Legendary` difficulty is an adaptive construction mode, not a copy of the
 vanilla priority list. It treats gold production and troop generation as the two

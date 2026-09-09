@@ -29,6 +29,7 @@ const UNIT = {
 };
 const launches = [];
 let launchSink = null;
+let buildMenu = { sendBuildOrUpgrade() {} };
 const sandbox = {
   UNIT,
   Difficulty: {
@@ -46,8 +47,9 @@ const sandbox = {
   isAtLeastHardDifficulty: () => true,
   WORKER_TIMEOUT_MS: 1000,
   withTimeout: async (promise) => promise,
-  getBuildMenu: () => ({ sendBuildOrUpgrade() {} }),
-  sendAutoBotBuildOrUpgrade: (_menu, buildable, tile) => {
+  getBuildMenu: () => buildMenu,
+  sendAutoBotBuildOrUpgrade: (menu, buildable, tile) => {
+    menu.sendBuildOrUpgrade(buildable, tile);
     if (launchSink) launchSink.push({ type: buildable.type, tile });
     return true;
   },
@@ -109,6 +111,44 @@ function makeSalvoWorld() {
   });
   return { world, game, player, nukeTarget, behavior };
 }
+
+for (const type of [UNIT.AtomBomb, UNIT.HydrogenBomb]) {
+  for (const throws of [false, true]) {
+    const { behavior } = makeSalvoWorld();
+    const emitted = [];
+    const failure = new Error("build dispatch failed");
+    buildMenu = {
+      uiState: { rocketDirectionUp: false },
+      sendBuildOrUpgrade(buildable, tile) {
+        emitted.push({
+          type: buildable.type,
+          tile,
+          rocketDirectionUp: this.uiState.rocketDirectionUp,
+        });
+        if (throws) throw failure;
+      },
+    };
+    if (throws) {
+      assert.throws(
+        () => behavior.emitNukeBuildable({ type }, 20),
+        (error) => error === failure,
+      );
+    } else {
+      assert.equal(behavior.emitNukeBuildable({ type }, 20), true);
+    }
+    assert.deepEqual(
+      emitted,
+      [{ type, tile: 20, rocketDirectionUp: true }],
+      "bot launches must use the same upward arc as their trajectory planner",
+    );
+    assert.equal(
+      buildMenu.uiState.rocketDirectionUp,
+      false,
+      "bot dispatch must preserve the player's manual trajectory selection even on failure",
+    );
+  }
+}
+buildMenu = { sendBuildOrUpgrade() {} };
 
 const reservation = () => ({
   need: 3,

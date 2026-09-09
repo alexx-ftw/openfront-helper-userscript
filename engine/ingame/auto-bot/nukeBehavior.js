@@ -1750,13 +1750,22 @@
     emitNukeBuildable(buildable, tile) {
       const buildMenu = getBuildMenu();
       if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") return false;
-      return sendAutoBotBuildOrUpgrade(
-        buildMenu,
-        buildable,
-        tile,
-        this.game,
-        this.player,
-      );
+      // The bot's trajectory forecasts use directionUp: true. BuildMenu reads
+      // the shared manual toggle synchronously when constructing the intent.
+      const uiState = buildMenu.uiState;
+      const previousDirection = uiState?.rocketDirectionUp;
+      if (uiState) uiState.rocketDirectionUp = true;
+      try {
+        return sendAutoBotBuildOrUpgrade(
+          buildMenu,
+          buildable,
+          tile,
+          this.game,
+          this.player,
+        );
+      } finally {
+        if (uiState) uiState.rocketDirectionUp = previousDirection;
+      }
     }
 
     async rememberSuccessfulNukeLaunch(tile, nukeType, targetPlayer) {
