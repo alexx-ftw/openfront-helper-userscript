@@ -27,6 +27,23 @@ const gameWithWarships = (warships) => ({
 
 const me = { isFriendly: () => false };
 
+// Native TransportShipExecution rejects a destination already owned by us.
+// Do not report a launch or reserve troops for an intent that cannot create a boat.
+{
+  const behavior = makeBehavior({
+    difficulty: Difficulty.Legendary,
+    game: { ownerID: (tile) => ({ 600: 1, 601: 2 })[tile] ?? 0 },
+    player: { smallID: () => 1 },
+  });
+  sandbox.state.settings.features = { boat: true };
+  behavior.captureSameClanNukeTerrain = () => {};
+  behavior.isProtectedSameClanNukedTerrain = () => false;
+  assert.equal(behavior.canEmitBoatToDestination(600), false, "reject own shore");
+  assert.equal(behavior.canEmitBoatToDestination(601), true, "allow another owner");
+  assert.equal(behavior.canEmitBoatToDestination(602), true, "allow unowned shore");
+  assert.equal(behavior.emitBoat(600, 100, "probe"), false);
+}
+
 // 1. A hostile warship inside the danger radius blocks the launch.
 {
   const behavior = makeBehavior({

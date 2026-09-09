@@ -7447,6 +7447,7 @@
       this.captureSameClanNukeTerrain();
       return Boolean(
         state.settings.features?.boat &&
+        this.game.ownerID(dst) !== this.player.smallID() &&
         !this.isProtectedSameClanNukedTerrain(dst),
       );
     }

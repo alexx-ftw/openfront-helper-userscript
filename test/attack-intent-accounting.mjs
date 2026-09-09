@@ -120,6 +120,7 @@ const me = {
 };
 const game = {
   ticks: () => tick,
+  ownerID: () => 0,
   x: (tile) => Number(tile) % 100,
   y: (tile) => Math.floor(Number(tile) / 100),
   numLandTiles: () => 1000,

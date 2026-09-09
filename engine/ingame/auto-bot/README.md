@@ -28,7 +28,8 @@ existing Nation decision chain but enriches its opening target choice:
    That area remains reserved while the intent is awaiting reconciliation and
    while its non-retreating transport remains active; a failed intent releases
    after the normal reconciliation grace, and a completed or destroyed
-   transport releases immediately;
+   transport releases immediately. Already-owned destinations are rejected
+   before emission, since the engine cannot launch a transport to our own tile;
 3. when we already hold a shore on the largest connected water surface, probe
    the nearest unowned maritime tile before falling back to generic Terra Nullius
    expansion, so the first coastal foothold can support a Port. Smaller closed
