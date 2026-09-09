@@ -33,6 +33,7 @@ let bundledHarnessScript = null;
 const opponentProfile = new Map();
 const runnerTickCaches = new WeakMap();
 const runnerPlayerAdapterCaches = new WeakMap();
+const pagePlayerTargets = new WeakMap();
 const boundMethodProxyCache = new WeakMap();
 const boundMethodCache = new WeakMap();
 
@@ -1818,7 +1819,7 @@ function bindPublicSurface(target) {
   return adapter;
 }
 
-function createPageGameAdapter(game, runner, clientID, motionPlans) {
+export function createPageGameAdapter(game, runner, clientID, motionPlans) {
   let playerCache = runnerPlayerAdapterCaches.get(runner);
   if (!playerCache) {
     playerCache = new Map();
@@ -1865,7 +1866,7 @@ function currentRunnerTickCache(game, runner) {
 }
 
 function createPagePlayerAdapter(game, runner, player) {
-  return new Proxy(player, {
+  const adapter = new Proxy(player, {
     get(target, prop) {
       if (prop === "buildables") {
         return (tile = null, units) => {
@@ -1963,9 +1964,19 @@ function createPagePlayerAdapter(game, runner, player) {
         return (...types) => target.units(...types).map(bindMethods);
       }
       const value = target[prop];
-      return typeof value === "function" ? value.bind(target) : value;
+      // Native diplomacy compares Player objects by identity. Never pass a
+      // page proxy into pending-request or alliance checks on the engine.
+      return typeof value === "function"
+        ? (...args) =>
+            value.apply(
+              target,
+              args.map((arg) => pagePlayerTargets.get(arg) ?? arg),
+            )
+        : value;
     },
   });
+  pagePlayerTargets.set(adapter, player);
+  return adapter;
 }
 
 function unitsKey(units) {

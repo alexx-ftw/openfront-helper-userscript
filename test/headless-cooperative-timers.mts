@@ -3,6 +3,7 @@ import {
   BundledOpponentBot,
   createBuildMenu,
   createBundledOpponentHarness,
+  createPageGameAdapter,
   playersShareSide,
 } from "../scripts/headless/opponent-adapter.js";
 import { GameMode, PlayerInfo, PlayerType } from "../openfront-engine/src/core/game/Game";
@@ -52,7 +53,20 @@ attacker.conquer(ffa.ref(1, 1));
 defender.conquer(ffa.ref(2, 1));
 const request = attacker.createAllianceRequest(defender);
 assert.ok(request);
+const page = createPageGameAdapter(ffa, {}, attacker.clientID(), new Map());
+const pageAttacker = page.playerBySmallID(attacker.smallID());
+const pageDefender = page.playerBySmallID(defender.smallID());
+assert.equal(
+  pageAttacker.canSendAllianceRequest(pageDefender),
+  false,
+  "adapted rivals must preserve native pending-request identity",
+);
 request.accept();
+assert.equal(
+  pageAttacker.isAlliedWith(pageDefender),
+  true,
+  "adapted rivals must preserve native alliance identity",
+);
 assert.equal(attacker.isAlliedWith(defender), true);
 const diplomacy = new harness.internals.AllianceBehavior({}, ffa, attacker, {});
 assert.equal(diplomacy.betray(defender), true, "the bundled bot can break a real alliance");
