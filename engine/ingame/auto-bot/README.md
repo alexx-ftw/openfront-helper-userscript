@@ -437,6 +437,11 @@ are valued by rail demand, ports by trade demand and survivability, and silos by
 current offensive target pressure. Defense Posts are excluded unless an incoming
 land assault exceeds the exceptional threat threshold.
 
+An army-sized strategic land invasion retains its Defense Post budget even when
+the prospective nuclear forecast is urgent. Actual incoming-missile SAM actions
+still run first; a forecast alone cannot bypass the land reserve to buy a silo or
+economic structure during that invasion.
+
 City upgrade prices are reused only within the current game tick. Failed or
 temporarily unavailable probes are not cached as prices, and later ticks query
 again because another City build or upgrade can change the authoritative cost.

@@ -1047,7 +1047,6 @@
     async handleDefensePostPriority(legendaryMissileEmergency) {
       // Active land defense comes before routine SAM coverage/parity and
       // offensive silo work. A concrete missile emergency still wins.
-      if (legendaryMissileEmergency) return null;
       // Live incoming land attacks remain the primary authorization with their
       // ratio-derived budget; the capped strategic-border rule inside
       // defensePostThreat adds the quiet dogpile pre-condition (a bordering
@@ -1058,6 +1057,10 @@
       if (activeThreat === null) return null;
       if (this.game.config().isUnitDisabled(UNIT.DefensePost)) return null;
       const hardReserve = this.shouldHardReserveFailedDefensePost(activeThreat);
+      // Active missiles already own the earlier SAM phase. A prospective
+      // nuclear threat must not release an overwhelming land-invasion reserve
+      // to the offensive/economic planner after its SAM work fails.
+      if (legendaryMissileEmergency && !hardReserve) return null;
       if (hardReserve && this.shouldDeferHardDefensePostRetry()) return false;
       if (await this.tryBuildDefensePost(activeThreat)) return true;
 

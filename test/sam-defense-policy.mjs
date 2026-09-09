@@ -1313,6 +1313,26 @@ assert.equal(
   "an unrelated Port or economy build cannot consume the overwhelming-invasion reserve",
 );
 const overwhelmingPlacementAttempts = [];
+assert.equal(
+  await defensePostLivenessBehavior.handleDefensePostPriority(true),
+  false,
+  "a prospective nuclear emergency cannot release an overwhelming land-invasion reserve to offensive construction",
+);
+defensePostLivenessBehavior.legendaryDefenseEmergencies = () => ({
+  missileEmergency: true,
+  defenseEmergency: true,
+});
+assert.equal(await defensePostLivenessBehavior.handleStructures(), false);
+assert.equal(productiveConstructionCalls, 1);
+defensePostLivenessBehavior.handleActiveMissileSamMaximumPriority = async () => true;
+assert.equal(
+  await defensePostLivenessBehavior.handleStructures(),
+  true,
+  "an active-missile SAM still acts before the land-invasion reserve",
+);
+assert.equal(productiveConstructionCalls, 1);
+delete defensePostLivenessBehavior.handleActiveMissileSamMaximumPriority;
+delete defensePostLivenessBehavior.legendaryDefenseEmergencies;
 defensePostLivenessBehavior.tryBuildDefensePost = async () => {
   overwhelmingPlacementAttempts.push(defensePostLivenessTick);
   return false;
