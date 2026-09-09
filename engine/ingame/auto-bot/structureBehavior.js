@@ -6456,7 +6456,8 @@
           0,
           Math.min(plan.path.length - 1, rawIndex),
         );
-        const path = plan.path.slice(index);
+        // GameView stores Uint32Array paths; route consumers require an Array.
+        const path = Array.from(plan.path.slice(index));
         if (path.length === 0) return null;
         const motion = {
           fromTile: plan.path[0] ?? fromTile,

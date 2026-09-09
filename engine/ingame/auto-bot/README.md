@@ -368,7 +368,11 @@ The SAM placement scorer builds the existing-coverage snapshot once for the
 candidate set and reuses it across all candidate tiles, so mature boards do
 not repeat the same structure-versus-SAM geometry scan for every probe.
 
-SAM placement and upgrades are trajectory-aware. The planner reads enemy silo
+SAM placement and upgrades are trajectory-aware. The planner reads missile
+motion paths from the client as typed arrays and normalizes active missile paths
+before route scoring, preserving their remaining trajectory instead of rebuilding
+the original parabola.
+The planner reads enemy silo
 levels and available slots, enemy gold (Atom versus Hydrogen affordability),
 `nukeMagnitudes`, `defaultNukeSpeed`, `UniversalPathFinding.Parabola`, active
 missiles, `missileTimerQueue`, `SAMCooldown`, and `SiloCooldown`. Cheap chained Atom bombs are

@@ -1483,7 +1483,7 @@ activeMotionBehavior.game = {
 const activeNuke = { id: () => "nuke-1" };
 const activeMotion = activeMotionBehavior.legendaryActiveMissileMotion(activeNuke, 0);
 const cachedActiveMotion = activeMotionBehavior.legendaryActiveMissileMotion(activeNuke, 0);
-assert.equal(activeMotion.path, activePathSlice);
+assert.deepEqual(Array.from(activeMotion.path), activePathSlice);
 assert.equal(activeMotion.impactTick, 2);
 assert.equal(cachedActiveMotion, activeMotion);
 assert.equal(
@@ -1495,6 +1495,21 @@ activeMotionTick = 3;
 const nextTickMotion = activeMotionBehavior.legendaryActiveMissileMotion(activeNuke, 0);
 assert.notEqual(nextTickMotion, activeMotion);
 assert.equal(activePathSliceCalls, 2, "active-missile motion refreshes on the next tick");
+
+// GameView publishes packed motion paths, not ordinary JavaScript arrays.
+activePlan.path = new Uint32Array([0, 1, 2, 3]);
+activeMotionTick = 2;
+const packedThreat = {
+  nuke: { id: () => "nuke-1", tile: () => 2 },
+  targetTile: 3,
+  weapon: UNIT.AtomBomb,
+};
+let packedDefensePlan;
+assert.doesNotThrow(() => {
+  packedDefensePlan = activeMotionBehavior.legendaryInFlightDefensePlan(packedThreat, []);
+}, "an exact packed trajectory must not fall back to the parabola pathfinder");
+assert.deepEqual(Array.from(packedDefensePlan.routes[0].path), [2, 3]);
+assert.equal(packedDefensePlan.routes[0].impactTick, 2);
 
 let exposureDistanceReads = 0;
 const exposureStructures = [{ id: 1 }, { id: 2 }, { id: 3 }];
