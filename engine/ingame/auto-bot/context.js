@@ -69,7 +69,7 @@
   // round trip. This is deliberately shared by every auto-bot construction
   // caller, rather than being a separate per-behavior estimate.
   const AUTO_BOT_BUILD_RESERVATION_GRACE_TICKS = 6;
-  let autoBotBuildReservations = [];
+  const autoBotBuildReservations = new WeakMap();
 
   function autoBotBuildTick(game) {
     const tick = game?.ticks?.();
@@ -83,7 +83,7 @@
 
   function autoBotBuildCost(buildable) {
     const cost = buildable?.cost;
-    if (typeof cost === "bigint") return cost;
+    if (typeof cost === "bigint") return cost >= 0n ? cost : null;
     if (typeof cost === "number" && Number.isFinite(cost) && cost >= 0) {
       return BigInt(Math.floor(cost));
     }
@@ -91,6 +91,7 @@
   }
 
   function sendAutoBotBuildOrUpgrade(buildMenu, buildable, tile, game, player) {
+    if (game === null || typeof game !== "object") return false;
     if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
       return false;
     }
@@ -98,10 +99,11 @@
     if (cost === null) return false;
     const tick = autoBotBuildTick(game);
     const playerId = autoBotBuildPlayerId(player);
-    autoBotBuildReservations = autoBotBuildReservations.filter(
+    const reservations = (autoBotBuildReservations.get(game) ?? []).filter(
       (reservation) => reservation.expiresAt > tick,
     );
-    const reserved = autoBotBuildReservations.reduce(
+    autoBotBuildReservations.set(game, reservations);
+    const reserved = reservations.reduce(
       (total, reservation) =>
         reservation.playerId === playerId ? total + reservation.cost : total,
       0n,
@@ -121,7 +123,7 @@
       return false;
     }
     buildMenu.sendBuildOrUpgrade(buildable, tile);
-    autoBotBuildReservations.push({
+    reservations.push({
       playerId,
       cost,
       expiresAt: tick + AUTO_BOT_BUILD_RESERVATION_GRACE_TICKS,

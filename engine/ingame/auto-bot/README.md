@@ -218,6 +218,10 @@ shared client limiter (10 intents per second and 150 per minute) remains the
 authoritative maximum cadence. Border-threat and opening-army reserves still
 block a follow-up that cannot be funded safely.
 
+Unacknowledged construction purchases reserve gold per game instance and player.
+Replaying a seed with the same player ID cannot inherit a prior game's reservation,
+and another game's clock cannot expire purchases still pending in this one.
+
 ## Team donation policy
 
 When `winFixes` is enabled, automatic troop donations remain restricted to needy

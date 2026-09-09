@@ -165,6 +165,30 @@ const constructionMenu = {
 };
 const constructionGame = { ticks: () => constructionTick };
 const constructionPlayer = { id: () => "bot", gold: () => 1_000_000n };
+for (const cost of [-1n, -1]) {
+  assert.equal(
+    construction.api.sendAutoBotBuildOrUpgrade(
+      constructionMenu,
+      { cost },
+      12,
+      constructionGame,
+      constructionPlayer,
+    ),
+    false,
+    "negative costs must not credit the shared purchase budget",
+  );
+}
+assert.equal(
+  construction.api.sendAutoBotBuildOrUpgrade(
+    constructionMenu,
+    { cost: 1n },
+    12,
+    null,
+    constructionPlayer,
+  ),
+  false,
+  "a purchase without a game context cannot acquire a reservation",
+);
 assert.equal(
   construction.api.sendAutoBotBuildOrUpgrade(
     constructionMenu,
@@ -188,6 +212,29 @@ assert.equal(
   "a second build cannot spend gold already committed by another bot phase",
 );
 assert.equal(purchases.length, 1, "only the affordable construction reaches the build menu");
+const replayGame = { ticks: () => 0 };
+assert.equal(
+  construction.api.sendAutoBotBuildOrUpgrade(
+    constructionMenu,
+    { cost: 500_000n },
+    14,
+    replayGame,
+    constructionPlayer,
+  ),
+  true,
+  "a new game with the same player ID must not inherit the previous game's gold reservation",
+);
+assert.equal(
+  construction.api.sendAutoBotBuildOrUpgrade(
+    constructionMenu,
+    { cost: 500_000n },
+    13,
+    constructionGame,
+    constructionPlayer,
+  ),
+  false,
+  "switching games must not release an outstanding purchase in the original game",
+);
 constructionTick += 6;
 assert.equal(
   construction.api.sendAutoBotBuildOrUpgrade(
