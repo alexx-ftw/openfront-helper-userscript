@@ -2742,10 +2742,7 @@
       ) {
         return 0n;
       }
-      if (
-        state.nukeFirstLaunchDone === true &&
-        !this.legendaryNukeStructureTargetExists()
-      ) {
+      if (!this.legendaryNukeStructureTargetExists()) {
         return 0n;
       }
       return this.safeConstructionCost(UNIT.AtomBomb) ?? 0n;

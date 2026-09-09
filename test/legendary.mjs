@@ -842,6 +842,42 @@ assert.equal(
   true,
   "the documented Port exemption remains available",
 );
+capacitySandbox.isLegendaryDifficulty = () => true;
+executeClassicScript(read("engine/ingame/shared-utils.js"), capacitySandbox);
+const reserveBehavior = Object.create(capacitySandbox.StructureBehavior.prototype);
+let reserveTargets = [];
+Object.assign(reserveBehavior, {
+  player: {
+    smallID: () => 1,
+    gold: () => 1_000_000n,
+    units: () => [{ isUnderConstruction: () => false }],
+    isOnSameTeam: () => false,
+  },
+  game: {
+    config: () => ({ isUnitDisabled: () => false }),
+    players: () => reserveTargets,
+  },
+  ownSamCapacity: () => 1,
+  safeConstructionCost: () => 750_000n,
+});
+for (const launched of [false, true]) {
+  capacitySandbox.state.nukeFirstLaunchDone = launched;
+  assert.equal(
+    reserveBehavior.availableGoldAfterReserve("City"),
+    1_000_000n,
+    "no target releases the Atom reserve even before the first launch",
+  );
+}
+reserveTargets = [
+  {
+    isPlayer: () => true,
+    isAlive: () => true,
+    smallID: () => 2,
+    units: (type) => (type === "City" ? [{}] : []),
+  },
+];
+assert.equal(reserveBehavior.availableGoldAfterReserve("City"), 250_000n);
+
 routeBehavior.game = {
   x: (tile) => tile,
   y: () => 0,

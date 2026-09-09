@@ -349,6 +349,8 @@ again because another City build or upgrade can change the authoritative cost.
 Capacity-relief and generic economic upgrades use the same post-reserve gold
 budget as ordinary construction, so City/Factory upgrades cannot consume the
 next Atom's reserved treasury. Ports keep their trade-economy exemption.
+The Atom reserve is released whenever no live opposing player owns a nuclear
+structure target, including before the first launch, and resumes if a target appears.
 
 Productive sites are placed using the engine's rail connectivity score and an
 additional team-position score: nearby powerful allies are ranked by the maximum
