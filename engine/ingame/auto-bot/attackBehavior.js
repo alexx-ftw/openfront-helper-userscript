@@ -979,7 +979,7 @@
     }
 
     getActiveTribeAttackTargetKeys() {
-      this.reconcileOutboundAttackIntentCommitments();
+      const visible = this.getOutboundTargetCommitmentSnapshot();
       const targetKeys = new Set();
 
       for (const entry of this.botAttackPendingIntentCommitments || []) {
@@ -987,7 +987,7 @@
         targetKeys.add(String(entry.targetKey));
       }
 
-      for (const entry of this.getOutboundAttackSnapshot()) {
+      for (const entry of visible) {
         if (!entry.targetIsPlayer || entry.targetKey == null) continue;
         targetKeys.add(String(entry.targetKey));
       }
@@ -998,7 +998,7 @@
     getLiveOutboundAttackTroopsForTarget(target) {
       const targetKey = this.getOutboundAttackTargetKey(target);
       if (targetKey == null) return 0;
-      return this.getOutboundAttackSnapshot()
+      return this.getOutboundTargetCommitmentSnapshot()
         .filter(
           (entry) =>
             entry.targetIsPlayer === true && entry.targetKey === targetKey,
@@ -1059,7 +1059,7 @@
 
     getActiveOutboundPlayerTargets() {
       const playersByKey = new Map();
-      for (const entry of this.getOutboundAttackSnapshot()) {
+      for (const entry of this.getOutboundTargetCommitmentSnapshot()) {
         const target = entry.target;
         if (target?.isPlayer?.() !== true) continue;
         const key = this.getOutboundAttackTargetKey(target);
@@ -1132,6 +1132,39 @@
         }
       })
         .filter(Boolean);
+    }
+
+    getOutboundTargetCommitmentSnapshot() {
+      // Applied boats leave the pending-intent ledger, but their troops still
+      // belong to the conquest until landing, retreat, or destination loss.
+      // Keep this separate from debit reconciliation: a ship is not a new
+      // land attack and must not acknowledge another pending land intent.
+      this.reconcileOutboundAttackIntentCommitments(this.currentAttackDecisionTick(), true);
+      const targets = this.outboundTransportTargets ?? new Map();
+      const visibleIds = new Set(
+        (this.player.units?.(UNIT.TransportShip) || []).map((unit) => String(unit.id?.())),
+      );
+      for (const id of targets.keys()) {
+        if (!visibleIds.has(id)) targets.delete(id);
+      }
+      const entries = this.getOutboundAttackSnapshot();
+      for (const transport of this.getOutboundTransportSnapshot()) {
+        // The native transport retains its launch-time target, even if a
+        // different rival takes the beach in transit. Unknown/manual boats
+        // cannot safely be attributed from the current coastal owner.
+        const target = targets.get(String(transport.id));
+        if (target?.isPlayer?.() !== true) continue;
+        if (this.game.ownerID?.(transport.targetTile) === this.player.smallID()) {
+          continue;
+        }
+        entries.push({
+          target,
+          targetIsPlayer: true,
+          targetKey: this.getOutboundAttackTargetKey(target),
+          troops: transport.troops,
+        });
+      }
+      return entries;
     }
 
     recordOutboundAttackIntent(
@@ -1234,6 +1267,13 @@
         this.outboundTransportCandidateMatches(candidate, entry, context, amount),
       );
       if (!live) return false;
+      if (live.id != null) {
+        // DIVERGENCE: client transports expose no launch-target ID. Preserve
+        // the intent's target; ownership changes before native spawn cannot
+        // be reconstructed from the later unit snapshot.
+        this.outboundTransportTargets ??= new Map();
+        this.outboundTransportTargets.set(String(live.id), entry.target);
+      }
       context.usedTransportObjects.add(live.unit);
       if (live.id != null) context.usedTransportIDs.add(live.id);
       return true;
@@ -10565,13 +10605,9 @@
     }
 
     outboundPlayerAttackCommitments() {
-      this.reconcileOutboundAttackIntentCommitments(
-        this.currentAttackDecisionTick(),
-        true,
-      );
       const targetsByKey = new Map();
       const committedByKey = new Map();
-      for (const entry of this.getOutboundAttackSnapshot()) {
+      for (const entry of this.getOutboundTargetCommitmentSnapshot()) {
         if (!entry.targetIsPlayer || entry.targetKey == null) continue;
         targetsByKey.set(entry.targetKey, entry.target);
         committedByKey.set(

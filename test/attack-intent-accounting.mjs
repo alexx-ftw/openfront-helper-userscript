@@ -1634,6 +1634,8 @@ assert.equal(
 );
 sandbox.state.earlyGame = {};
 ownTroops = 80000;
+const ownerBeforeTransportAccounting = game.owner;
+game.owner = () => humanTarget;
 assert.equal(
   boatBudgetBehavior.emitBoat("boat-destination", 50000, "⛵ test boat", humanTarget),
   true,
@@ -1671,7 +1673,56 @@ assert.equal(
   false,
   "a live transport keeps its exact destination reserved after intent reconciliation",
 );
+assert.equal(
+  boatBudgetBehavior.getCommittedOutboundAttackTroopsForTarget(humanTarget),
+  50000,
+  "a visible transport remains committed to its target after pending reconciliation",
+);
+assert.equal(boatBudgetBehavior.getPendingOutboundAttackTroops(), 0);
+assert.equal(boatBudgetBehavior.getActiveTribeAttackTargetKeys().has("human-target"), true);
+assert.equal(boatBudgetBehavior.getActiveOutboundPlayerTargets().includes(humanTarget), true);
+assert.equal(
+  boatBudgetBehavior.outboundPlayerAttackCommitments().committedByKey.get("human-target"),
+  50000,
+  "reinforcement planning includes troops still at sea",
+);
+transports[0].transportShipState = () => ({ isRetreating: true });
+assert.equal(boatBudgetBehavior.getCommittedOutboundAttackTroopsForTarget(humanTarget), 0);
+transports[0].transportShipState = () => ({ isRetreating: false });
+transports[0].isActive = () => false;
+assert.equal(boatBudgetBehavior.getCommittedOutboundAttackTroopsForTarget(humanTarget), 0);
+transports[0].isActive = () => true;
+game.owner = () => ({ isPlayer: () => false });
+assert.equal(
+  boatBudgetBehavior.getCommittedOutboundAttackTroopsForTarget(humanTarget),
+  50000,
+  "a change of coastal ownership does not change the transport's launch target",
+);
+const newCoastalOwner = { isPlayer: () => true, id: () => "new-coastal-owner" };
+game.owner = () => newCoastalOwner;
+assert.equal(boatBudgetBehavior.getCommittedOutboundAttackTroopsForTarget(humanTarget), 50000);
+assert.equal(boatBudgetBehavior.getCommittedOutboundAttackTroopsForTarget(newCoastalOwner), 0);
+const ownerIdBeforeTransportAccounting = game.ownerID;
+game.ownerID = () => me.smallID();
+assert.equal(
+  boatBudgetBehavior.getCommittedOutboundAttackTroopsForTarget(humanTarget),
+  0,
+  "a transport heading to our own beach returns troops instead of reinforcing the old enemy",
+);
+game.ownerID = ownerIdBeforeTransportAccounting;
+game.owner = () => humanTarget;
+const outgoingBeforeTransportAccounting = outgoing.splice(0);
+outgoing.push({ id: () => "land-wave", target: () => humanTarget, troops: () => 20000 });
+assert.equal(boatBudgetBehavior.getCommittedOutboundAttackTroopsForTarget(humanTarget), 70000);
 transports = [];
+outgoing[0].troops = () => 50000;
+assert.equal(
+  boatBudgetBehavior.getCommittedOutboundAttackTroopsForTarget(humanTarget),
+  50000,
+  "landed troops replace the transport rather than being counted twice",
+);
+outgoing.splice(0, outgoing.length, ...outgoingBeforeTransportAccounting);
+game.owner = ownerBeforeTransportAccounting;
 tick += 1;
 assert.equal(
   boatBudgetBehavior.emitBoat("boat-destination", 1, "⛵ landed boat", humanTarget),
