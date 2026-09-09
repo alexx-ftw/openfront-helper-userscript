@@ -5093,10 +5093,15 @@
           if (this.earlyGameTribeCandidatesRefresh !== refresh) return;
           const completedContext = this.earlyGameTribeCandidateCacheContext();
           const membershipIsCurrent = completedContext.signature === refreshContext.signature;
-          this.earlyGameTribeCandidatesCache = membershipIsCurrent ? candidates : null;
-          this.earlyGameTribeCandidatesCacheTick = membershipIsCurrent
-            ? completedContext.tick
-            : null;
+          // A remote capture must not starve still-live scored targets while
+          // every cooperative refresh races the changing global tribe list.
+          // Keep actionable results, but leave the signature stale to request
+          // fresh topology on the next decision. Launch-time guards still
+          // revalidate the target and recalculate the required troops.
+          this.earlyGameTribeCandidatesCache = membershipIsCurrent
+            ? candidates
+            : this.liveEarlyGameTribeSnapshot(candidates);
+          this.earlyGameTribeCandidatesCacheTick = completedContext.tick;
           this.earlyGameTribeCandidatesCacheSignature = membershipIsCurrent
             ? completedContext.signature
             : null;

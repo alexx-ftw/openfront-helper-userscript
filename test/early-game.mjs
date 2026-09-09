@@ -2558,6 +2558,45 @@ await Promise.resolve();
 assert.deepEqual(Array.from(failedRefreshBehavior.earlyGameTribeCandidatesCache), []);
 assert.equal(failedRefreshBehavior.earlyGameTribeRefreshStartCount, 2);
 
+const changingMembership = Object.create(targetSandbox.AttackBehavior.prototype);
+let finishMembershipRefresh;
+let membership = "before";
+const survivingCandidate = {
+  landBorder: true,
+  tribeClusterSize: 1,
+  tribeClusterAccess: 1,
+  player: { isAlive: () => true, type: () => targetSandbox.PlayerType.Bot },
+};
+const capturedCandidate = {
+  ...survivingCandidate,
+  player: { isAlive: () => false, type: () => targetSandbox.PlayerType.Bot },
+};
+Object.assign(changingMembership, {
+  player: { isFriendly: () => false },
+  earlyGameTribeCandidatesRefresh: null,
+  earlyGameTribeRefreshStartCount: 0,
+  earlyGameTribeCandidateCacheContext: () => ({ signature: membership, tick: 100 }),
+  getEarlyGameTribeCandidates: () =>
+    new Promise((resolve) => {
+      finishMembershipRefresh = resolve;
+    }),
+});
+changingMembership.refreshReadyEarlyGameTribeCandidates(null, true);
+membership = "after";
+finishMembershipRefresh([survivingCandidate, capturedCandidate]);
+await Promise.resolve();
+const survivingReady = await changingMembership.getReadyEarlyGameTribeCandidates();
+assert.deepEqual(
+  Array.from(survivingReady),
+  [survivingCandidate],
+  "remote tribe captures must not starve a still-live scored expansion target",
+);
+assert.equal(
+  changingMembership.earlyGameTribeRefreshStartCount,
+  2,
+  "changed membership still requires a fresh topology calculation",
+);
+
 const staleGatewayTarget = {
   isPlayer: () => true,
   isAlive: () => true,

@@ -345,6 +345,15 @@ Structure trace wrappers preserve nuclear-priority options and precomputed land
 threats when forwarding a build or upgrade to the bot.
 Page-player proxies unwrap peer arguments before native engine calls, preserving
 the object identity used to recognize pending alliance requests and allies.
+Cooperative tribe planning retains still-live scored targets when global tribe
+membership changes mid-refresh, while immediately requesting fresh topology.
+Captured, allied, and stale maritime gateways remain excluded at launch time.
+Version 1.12.161 fixes refresh starvation observed on `legendary-audit-159-europe`:
+21 of 32 refreshes after tick 1750 were discarded despite scored live targets.
+With the fix, that seed reaches tick 5000 with 43829 tiles; holdout A below
+reaches 5000 with 94409 tiles. Holdout B instead dies at 4882 (baseline alive
+at 5000), so the correctness fix is not evidence of universally better strategy;
+the changed expansion trajectory in B remains an open tactical investigation.
 
 Counterattack audit (2026-09-09, helper 1.12.160, headless identity fix
 `e642d35f`): removing only the cumulative attrition cap, while retaining the
