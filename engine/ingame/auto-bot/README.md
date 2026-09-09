@@ -331,6 +331,9 @@ from launch approval; a selected Atom can still fail the expected-value gate.
 Queued nuclear launches revalidate their target every decision, including before
 their scheduled launch tick. Invalid targets are removed immediately; when the
 last queued launch disappears, its silo-slot reservation is released.
+SAM-salvo revalidation counts charges that can reload by the latest remaining
+planned arrival, including delayed-launch retries. Unknown flight or reload data
+keeps the conservative full-capacity estimate.
 
 The `Legendary` difficulty is an adaptive construction mode, not a copy of the
 vanilla priority list. It treats gold production and troop generation as the two

@@ -1886,7 +1886,13 @@
         const entries = this._pendingNukeLaunches.filter(
           (pending) => pending.salvo && pending.salvo.salvoId === salvoId,
         );
-        if (!this.samSalvoStillViable(entries[0], entries.length)) {
+        const arrivals = entries.map((entry) => {
+          const flight = entry.salvo.flightTicks;
+          return Number.isFinite(flight) && flight >= 0
+            ? Math.max(now, entry.dueTick) + flight
+            : NaN;
+        });
+        if (!this.samSalvoStillViable(entries[0], entries.length, Math.max(...arrivals))) {
           abortedSalvoIds.add(salvoId);
         }
       }
@@ -1908,7 +1914,7 @@
      * Reuses findEnemySamsCoveringTile, which is already restricted to hostile
      * (non-own, non-permanent-teammate) SAMs.
      */
-    samSalvoStillViable(pending, remainingInSalvo) {
+    samSalvoStillViable(pending, remainingInSalvo, lastArrivalTick = NaN) {
       // Stubs/older call sites may lack the nearby-unit index; without it the
       // salvo cannot be re-validated, so keep the faithful fire-anyway path.
       if (typeof this.game?.nearbyUnits !== "function") return true;
@@ -1918,7 +1924,10 @@
         (sum, sam) => sum + sam.level(),
         0,
       );
-      if (coveringLevel + 1 > remainingInSalvo) return false;
+      const capacity = coveringSams.reduce(
+        (sum, sam) => sum + this.samSalvoCapacityAtArrival(sam, lastArrivalTick), 0,
+      );
+      if (capacity + 1 > remainingInSalvo) return false;
       const targetSamId = salvo.targetSamId;
       if (
         (targetSamId !== null && targetSamId !== undefined) &&
@@ -1934,6 +1943,19 @@
         if (!targetSamExists) return false;
       }
       return true;
+    }
+
+    samSalvoCapacityAtArrival(sam, lastArrivalTick) {
+      const cooldown = Number(this.game.config?.().SAMCooldown?.());
+      const queue = sam.missileTimerQueue?.();
+      if (!Number.isFinite(lastArrivalTick) || !Number.isFinite(cooldown) || !Array.isArray(queue)) {
+        return sam.level();
+      }
+      // Count a cooling slot as available if it can reload before the latest
+      // remaining arrival. Unknown timing retains the full-capacity fallback.
+      const unavailable = queue.filter((firedAt) =>
+        Number.isFinite(firedAt) && firedAt + cooldown > lastArrivalTick).length;
+      return Math.max(0, sam.level() - unavailable);
     }
 
     /**
@@ -2103,6 +2125,7 @@
 
     async fireSamSalvo(plan, nukeTarget, atomCost) {
       const salvo = this.getSamSalvo(plan);
+      const flightTicks = salvo.waits.map((_, index) => plan.launchSequence?.[index]?.flightTicks);
       if (this.player.gold() < atomCost * BigInt(salvo.bombsToFire)) return false;
       if (state.nukeWantSlots === null || state.nukeWantSlots === undefined) {
         const unblockedSiloIds = (plan.siloEntries || [])
@@ -2134,7 +2157,7 @@
           UNIT.AtomBomb,
           nukeTarget,
           salvo.waits[i],
-          salvoPlan,
+          { ...salvoPlan, flightTicks: flightTicks[i] },
         );
         if (!sent) return false;
       }
@@ -2145,7 +2168,7 @@
         Math.max(
           0,
           ...salvo.waits.map((wait, index) => {
-            const flight = plan.launchSequence?.[index]?.flightTicks ?? 0;
+            const flight = flightTicks[index] ?? 0;
             return wait + flight;
           }),
         );

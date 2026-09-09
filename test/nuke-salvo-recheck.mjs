@@ -144,6 +144,35 @@ for (const invalidation of ["dead", "teammate"]) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// A spent SAM charge cannot intercept a finisher before its reload deadline.
+for (const [flightTicks, dueTick, expectedLaunch] of [
+  [10, 805, true],
+  [295, 805, false],
+  [295, 790, false],
+]) {
+  const { world, game, nukeTarget, behavior } = makeSalvoWorld();
+  world.tick = 805;
+  game.config = () => ({ maxSamRange: () => 150, samRange: () => 150, SAMCooldown: () => 300 });
+  const sam = world.sam("cooling-sam", 1);
+  sam.missileTimerQueue = () => [800];
+  world.covering.push({ unit: sam, distSquared: 0 });
+  world.targetSams.push(sam);
+  behavior._pendingNukeLaunches = [
+    {
+      dueTick,
+      tile: 20,
+      nukeType: UNIT.AtomBomb,
+      targetPlayer: nukeTarget,
+      salvo: { salvoId: 99, targetTile: 20, targetSamId: "cooling-sam", flightTicks },
+    },
+  ];
+  assert.equal(
+    await behavior.processPendingNukeLaunches(),
+    expectedLaunch,
+    "SAM reload timing, not its full level, determines whether the finisher can penetrate",
+  );
+}
+
 // 1/3. A live salvo carries plan metadata, continues while re-validation
 // passes, and aborts when a new covering SAM outruns the remaining atoms
 // ════════════════════════════════════════════════════════════════════════════
@@ -163,6 +192,7 @@ for (const invalidation of ["dead", "teammate"]) {
         coveringSamLevels: 1,
         targetSamId: "enemy-sam-1",
         siloEntries: [],
+        launchSequence: [{ flightTicks: 20 }, { flightTicks: 20 }, { flightTicks: 20 }],
       },
       nukeTarget,
       1n,
@@ -183,6 +213,7 @@ for (const invalidation of ["dead", "teammate"]) {
     assert.equal(pending.salvo.targetTile, 20);
     assert.equal(pending.salvo.targetSamId, "enemy-sam-1");
     assert.equal(pending.salvo.plannedCoveringLevel, 1);
+    assert.equal(pending.salvo.flightTicks, 20, "queued launches retain their planned flight time");
   }
 
   // The level-1 SAM is still beatable by the 2 remaining bombs: the salvo
