@@ -6458,13 +6458,17 @@
         );
         // GameView stores Uint32Array paths; route consumers require an Array.
         const path = Array.from(plan.path.slice(index));
-        if (path.length === 0) return null;
         const launchOffset = Math.max(0, startTick - now);
+        const impactTick = launchOffset + Math.max(1, path.length);
+        // Motion plans omit the detonation step; SAM routes reserve their last
+        // element for it, so retain the final in-flight interception window.
+        const targetTile = nuke.targetTile?.();
+        if (targetTile !== null && targetTile !== undefined) path.push(targetTile);
         const motion = {
           fromTile: plan.path[0] ?? fromTile,
           path,
           launchOffset,
-          impactTick: launchOffset + Math.max(1, path.length),
+          impactTick,
         };
         this.legendaryActiveMissileMotionCache(nuke)?.set(nuke, {
           plan,

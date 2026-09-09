@@ -374,6 +374,8 @@ before route scoring, preserving their remaining trajectory instead of rebuildin
 the original parabola.
 Missiles still waiting in a silo retain the motion plan's launch delay in both
 the impact deadline and SAM interception windows.
+The route appends the detonation tile omitted by the motion plan without moving
+the impact deadline, keeping the final in-flight position interceptable.
 The planner reads enemy silo
 levels and available slots, enemy gold (Atom versus Hydrogen affordability),
 `nukeMagnitudes`, `defaultNukeSpeed`, `UniversalPathFinding.Parabola`, active

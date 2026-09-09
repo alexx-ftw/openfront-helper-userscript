@@ -38,7 +38,12 @@ const defense = executeClassicScript(
   `${readRepositoryFile("engine/ingame/auto-bot/structureBehavior.js")}\nObject.create(StructureBehavior.prototype);`,
   { Difficulty, UNIT: UnitType },
 );
-defense.game = { ticks: () => game.ticks(), motionPlans: () => plans };
+defense.game = {
+  ticks: () => game.ticks(),
+  motionPlans: () => plans,
+  config: () => game.config(),
+  manhattanDist: (a, b) => game.manhattanDist(a, b),
+};
 const predictedImpacts = missiles.map(
   (missile) =>
     game.ticks() + defense.legendaryActiveMissileMotion(missile, missile.tile()).impactTick,
@@ -64,8 +69,29 @@ assert.equal(
 );
 
 const impacts = new Map<number, number>();
+let finalWindows = 0;
 const lastPlanTick = Math.max(...Array.from(plans.values(), (p) => p.startTick + p.path.length));
 while (impacts.size < missiles.length && game.ticks() <= lastPlanTick) {
+  for (const missile of missiles) {
+    const plan = plans.get(missile.id())!;
+    if (game.ticks() !== plan.startTick + plan.path.length - 1) continue;
+    assert.equal(missile.isActive(), true);
+    assert.equal(missile.isTargetable(), true);
+    const motion = defense.legendaryActiveMissileMotion(missile, missile.tile());
+    const opportunities = defense.legendarySamInterceptionOpportunities(
+      { tile: missile.tile() },
+      [0],
+      motion,
+    );
+    assert.deepEqual(
+      Array.from(opportunities.fireTicks),
+      [0],
+      "the final active flight tile remains interceptable before detonation",
+    );
+    assert.deepEqual(Array.from(motion.path), [missile.tile(), target]);
+    assert.equal(motion.impactTick, 1, "adding the terminal tile must not delay impact");
+    finalWindows++;
+  }
   game.executeNextTick();
   for (const missile of missiles) {
     if (!missile.isActive() && !impacts.has(missile.id())) {
@@ -74,6 +100,7 @@ while (impacts.size < missiles.length && game.ticks() <= lastPlanTick) {
   }
 }
 assert.equal(impacts.size, missiles.length, "both missiles actually detonate");
+assert.equal(finalWindows, missiles.length);
 assert.deepEqual(
   predictedImpacts,
   missiles.map((missile) => impacts.get(missile.id())),
