@@ -109,11 +109,22 @@ export function createBundledOpponentHarness(options = {}) {
   window.console = process.env.BLITZBOT_VERBOSE_BUNDLE === "1" ? console : quietConsole;
   window.setInterval = () => 0;
   window.clearInterval = () => undefined;
+  const cooperativeTimers = new Set();
   window.setTimeout = (fn, ms = 0, ...args) => {
-    const timer = globalThis.setTimeout(fn, ms, ...args);
+    if (Number(ms) > 0) return globalThis.setTimeout(fn, ms, ...args);
+    // Match the runner's task boundary instead of waiting for a wall-clock
+    // millisecond, which lets fast runs advance extra ticks between slices.
+    const timer = globalThis.setImmediate(() => {
+      cooperativeTimers.delete(timer);
+      fn(...args);
+    });
+    cooperativeTimers.add(timer);
     return timer;
   };
-  window.clearTimeout = (id) => globalThis.clearTimeout(id);
+  window.clearTimeout = (id) => {
+    if (cooperativeTimers.delete(id)) globalThis.clearImmediate(id);
+    else globalThis.clearTimeout(id);
+  };
 
   const current = { buildMenu: null, eventsDisplay: { events: [] } };
   const realQuerySelector = window.document.querySelector.bind(window.document);
@@ -340,6 +351,18 @@ export class BundledOpponentBot {
     let lastTarget = null;
     let lastCandidates = [];
     let lastValueGate = null;
+    const originalSelect = behavior.selectAffordableNuke;
+    behavior.selectAffordableNuke = async (...args) => {
+      const selected = await originalSelect.apply(behavior, args);
+      this.structureTrace.push({
+        kind: "nuke-selection",
+        tick: this.game.ticks(),
+        type: selected?.type ?? null,
+        gold: Number(behavior.player.gold()),
+        cost: selected ? Number(selected.cost) : null,
+      });
+      return selected;
+    };
 
     const originalFindTarget = behavior.findBestNukeTarget;
     if (typeof originalFindTarget === "function") {
@@ -366,6 +389,9 @@ export class BundledOpponentBot {
       };
     }
     behavior.maybeSendNuke = async (...args) => {
+      lastTarget = null;
+      lastCandidates = [];
+      lastValueGate = null;
       const beforeAtoms = Number(behavior.atomBombsLaunched || 0);
       const beforeHydro = Number(behavior.hydrogenBombsLaunched || 0);
       const result = await originalMaybe.apply(behavior, args);

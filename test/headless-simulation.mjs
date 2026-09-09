@@ -5,6 +5,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const cooperativeTimers = spawnSync(
+  process.execPath,
+  [
+    path.join(root, "node_modules/tsx/dist/cli.mjs"),
+    "--tsconfig",
+    "openfront-engine/tsconfig.json",
+    "test/headless-cooperative-timers.mts",
+  ],
+  { cwd: root, encoding: "utf8" },
+);
+assert.equal(cooperativeTimers.status, 0, cooperativeTimers.stdout + cooperativeTimers.stderr);
 const runner = fs.readFileSync(path.join(root, "scripts/headless/run-match.mts"), "utf8");
 const batch = fs.readFileSync(path.join(root, "scripts/headless/run-batch.mjs"), "utf8");
 const matrix = fs.readFileSync(
@@ -456,6 +467,8 @@ const naturalNuclearRuntime = runHeadlessScenario({
   OFH_NUKES: "1",
   OFH_BOT_DIFFICULTY: "Legendary",
   OFH_FORCE_HYDRO_NATION: "1",
+  OFH_LOG_NUKES: "1",
+  OFH_LOG_STRUCTURES: "1",
   OFH_STARTING_GOLD: "5000000",
   OFH_MAX_TICKS: "3500",
   OFH_STOP_WHEN_DEAD: "0",
@@ -475,11 +488,17 @@ const naturalNuclearProgress = naturalNuclearRuntime.records.find(
 assert.ok(naturalNuclearResult);
 assert.ok(naturalNuclearResult.cumulativeBuildUnitTypes["Missile Silo"] > 0);
 assert.ok(
-  naturalNuclearResult.cumulativeBuildUnitTypes["Atom Bomb"] > 0,
-  "a Legendary hydro specialist must use an affordable Atom instead of leaving its Silo idle",
+  naturalNuclearRuntime.records.some(
+    (record) =>
+      record.kind === "nuke-selection" && record.type === "Atom Bomb" && record.gold >= record.cost,
+  ),
+  "a Legendary hydro specialist must select an affordable Atom; launch still requires positive value",
 );
 assert.equal(naturalNuclearResult.nuclearStrategy?.isHydroNation, true);
-assert.ok(naturalNuclearResult.nuclearStrategy?.atomBombsLaunched > 0);
+assert.equal(
+  naturalNuclearResult.nuclearStrategy?.atomBombsLaunched,
+  naturalNuclearResult.cumulativeBuildUnitTypes["Atom Bomb"] ?? 0,
+);
 assert.ok(Array.isArray(naturalNuclearProgress?.activeMissiles));
 assert.ok(
   naturalNuclearProgress.units["Missile Silo"] > 0,

@@ -324,6 +324,10 @@ Legendary is the only selectable helper difficulty. Saved older tiers migrate to
 Legendary, retaining the adaptive improvements previously exposed as Impossible.
 Headless simulations use Legendary for the helper and native Impossible for the
 game's opponents (the upstream engine has no Legendary difficulty).
+The headless adapter schedules zero-delay cooperative work at the runner's task
+boundary, not against wall-clock milliseconds. Positive worker timeouts remain
+real-time safety limits. Nuclear traces distinguish affordable bomb selection
+from launch approval; a selected Atom can still fail the expected-value gate.
 
 The `Legendary` difficulty is an adaptive construction mode, not a copy of the
 vanilla priority list. It treats gold production and troop generation as the two
