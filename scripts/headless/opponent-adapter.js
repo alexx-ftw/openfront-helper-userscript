@@ -19,6 +19,14 @@ const STORAGE_KEY = "openfront-helper-autobot-v1";
 // this environment variable.
 const AUTO_BUILD_ENABLED = process.env.OFH_AUTOBUILD !== "0";
 
+export function playersShareSide(player, other) {
+  return Boolean(
+    player &&
+    other?.isPlayer() &&
+    (player.smallID() === other.smallID() || player.isOnSameTeam(other)),
+  );
+}
+
 let loadedHarness = null;
 let bundledHarnessSource = null;
 let bundledHarnessScript = null;

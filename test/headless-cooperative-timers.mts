@@ -2,7 +2,36 @@ import assert from "node:assert/strict";
 import {
   createBuildMenu,
   createBundledOpponentHarness,
+  playersShareSide,
 } from "../scripts/headless/opponent-adapter.js";
+import { GameMode, PlayerInfo, PlayerType } from "../openfront-engine/src/core/game/Game";
+import { setup } from "../openfront-engine/tests/util/Setup";
+import { engineTestsUtil, setupTwoPlayerGame } from "./helpers/two-player-game.mts";
+
+const ffa = await setupTwoPlayerGame("big_plains");
+const attacker = ffa.player("attacker");
+const defender = ffa.player("defender");
+assert.equal(playersShareSide(attacker, defender), false, "null teams are not allies");
+assert.equal(playersShareSide(attacker, attacker), true, "our own beachhead is recaptured");
+assert.equal(
+  playersShareSide(attacker, ffa.playerBySmallID(0)),
+  false,
+  "neutral ground is not a friendly recapture",
+);
+assert.equal(playersShareSide(null, defender), false);
+const teamGame = await setup(
+  "big_plains",
+  { gameMode: GameMode.Team, playerTeams: 2 },
+  Array.from({ length: 4 }, (_, i) => new PlayerInfo(`p${i}`, PlayerType.Human, null, `p${i}`)),
+  engineTestsUtil,
+);
+const me = teamGame.player("p0");
+const teammate = teamGame.allPlayers().find((p) => p !== me && p.team() === me.team());
+const enemy = teamGame.allPlayers().find((p) => p.team() !== me.team());
+assert.ok(teammate);
+assert.ok(enemy);
+assert.equal(playersShareSide(me, teammate), true);
+assert.equal(playersShareSide(me, enemy), false);
 
 const harness = createBundledOpponentHarness();
 const bot = { harness, game: {}, clientID: "build-fixture", intentBuffer: [] };

@@ -546,6 +546,10 @@ const legendaryFfaRuntime = runHeadlessScenario({
 });
 const legendaryFfaResult = legendaryFfaRuntime.records.find((record) => record.phase === "result");
 assert.ok(legendaryFfaResult, "the Legendary FFA scenario must emit a result");
+assert.ok(
+  BigInt(legendaryFfaResult.goalRequirements.enemyStructureValueAtEnd) > 0n,
+  "the established FFA rivals' structures cannot disappear from the goal accounting",
+);
 assert.equal(
   legendaryFfaResult.intentBudget?.rejected,
   0,

@@ -330,6 +330,9 @@ Legendary is the only selectable helper difficulty. Saved older tiers migrate to
 Legendary, retaining the adaptive improvements previously exposed as Impossible.
 Headless simulations use Legendary for the helper and native Impossible for the
 game's opponents (the upstream engine has no Legendary difficulty).
+Simulation hostility and recapture metrics use player identity and the engine's
+team relation, not equality of nullable team labels. FFA rivals and neutral ground
+are never counted as our side; remaining enemy structures stay in the quota report.
 The headless adapter schedules zero-delay cooperative work at the runner's task
 boundary, not against wall-clock milliseconds. Positive worker timeouts remain
 real-time safety limits. Published engine motion plans reach the headless game API

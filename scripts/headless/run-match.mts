@@ -19,7 +19,7 @@ import { TransportShipExecution } from "../../openfront-engine/src/core/executio
 import type { StampedIntent, Turn } from "../../openfront-engine/src/core/Schemas.ts";
 import { MapPlaylist } from "../../openfront-engine/src/server/MapPlaylist.ts";
 import { NodeGameMapLoader } from "../../openfront-engine/tests/perf/fullgame/NodeGameMapLoader.ts";
-import { createMaxDifficultyOpponent } from "./opponent-adapter.js";
+import { createMaxDifficultyOpponent, playersShareSide } from "./opponent-adapter.js";
 import { UnitImpl } from "../../openfront-engine/src/core/game/UnitImpl.ts";
 import { PlayerImpl } from "../../openfront-engine/src/core/game/PlayerImpl.ts";
 
@@ -805,7 +805,7 @@ const injectHostileTransportIfReady = () => {
     .allPlayers()
     .find(
       (player) =>
-        player.isAlive() && player.team() !== me.team() && player.type() !== PlayerType.Bot,
+        player.isAlive() && !playersShareSide(me, player) && player.type() !== PlayerType.Bot,
     );
   if (target == null || !hostile) return;
   const coastTile = [...hostile.tiles()].find(
@@ -855,7 +855,7 @@ const injectHostileAtomIfReady = () => {
       (player) =>
         player.isAlive() &&
         player.clientID() !== clientID &&
-        player.team() !== me.team() &&
+        !playersShareSide(me, player) &&
         player.numTilesOwned() > 0,
     );
   if (!hostile) return;
@@ -1248,12 +1248,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
       const owner = missile.owner?.();
       if (!owner || !currentPlayer) return false;
       if (owner.smallID?.() === currentPlayer.smallID?.()) return false;
-      // FFA players all have null teams; identity is the hostility test there.
-      // In Team mode, a non-null matching team is permanently allied and must
-      // not make SAM readiness fail on a teammate's missile.
-      const ownerTeam = owner.team?.();
-      const currentTeam = currentPlayer.team?.();
-      return ownerTeam == null || currentTeam == null || ownerTeam !== currentTeam;
+      return !playersShareSide(currentPlayer, owner);
     });
   if (activeHostileMissile && firstHostileNukeTick === null) {
     firstHostileNukeTick = runner.game.ticks();
@@ -1278,7 +1273,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
       .incomingAttacks()
       .some(
         (attack) =>
-          attack.attacker?.()?.team?.() !== currentPlayer.team() && attack.sourceTile?.() != null,
+          !playersShareSide(currentPlayer, attack.attacker()) && attack.sourceTile?.() != null,
       )
   ) {
     seaInvasionObserved = true;
@@ -1286,7 +1281,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
     // the invasion source's owner loses it and we (or our team) hold it.
     for (const attack of currentPlayer.incomingAttacks()) {
       if (attack.sourceTile?.() == null) continue;
-      if (attack.attacker?.()?.team?.() === currentPlayer.team()) continue;
+      if (playersShareSide(currentPlayer, attack.attacker())) continue;
       const landingTile = attack.sourceTile();
       if (!invasionBeachheads.has(landingTile)) {
         invasionBeachheads.set(landingTile, {
@@ -1298,8 +1293,8 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   }
   for (const [tile, record] of invasionBeachheads) {
     if (record.recapturedTick !== null) continue;
-    const holderTeam = runner.game.playerBySmallID(runner.game.ownerID(tile))?.team?.();
-    if (holderTeam === currentPlayer?.team?.()) {
+    const holder = runner.game.playerBySmallID(runner.game.ownerID(tile));
+    if (playersShareSide(currentPlayer, holder)) {
       record.recapturedTick = runner.game.ticks();
     }
   }
@@ -1684,7 +1679,6 @@ function goalRequirementsSnapshot() {
   // rows can be analyzed both ways.
   let bestEnemyRivalGoldEarned = 0n;
   let bestEnemyRivalName: string | null = null;
-  const myTeam = me?.team?.() ?? null;
   for (const player of runner.game.players()) {
     if (player.clientID?.() === clientID) continue;
     const rivalGold = goldEarnedById.get(String(player.id())) ?? 0n;
@@ -1692,24 +1686,18 @@ function goalRequirementsSnapshot() {
       bestRivalGoldEarned = rivalGold;
       bestRivalName = player.name();
     }
-    if (myTeam !== null && player.team?.() === myTeam) continue;
+    if (playersShareSide(me, player)) continue;
     if (rivalGold > bestEnemyRivalGoldEarned) {
       bestEnemyRivalGoldEarned = rivalGold;
       bestEnemyRivalName = player.name();
     }
   }
-  // Peak enemy structure value ever nukable (5MM escape-clause evidence):
-  // the maximum, over game end, of the replacement value of every hostile
-  // structure alive at once, priced with the engine's build costs. If this
-  // stayed under 5MM the world never contained the required harvest even
-  // though silos and quota were ready.
+  // Remaining hostile structure value at the end, used by the validator's
+  // conquest exception. This is not a historical peak or an opportunity count.
   const enemyStructureValueAtEnd = me
     ? runner.game
         .players()
-        .filter(
-          (player) =>
-            player.clientID?.() !== clientID && player.team?.() !== me.team?.() && player.isAlive(),
-        )
+        .filter((player) => !playersShareSide(me, player) && player.isAlive())
         .reduce(
           (total, player) =>
             total +
