@@ -8745,6 +8745,17 @@
       );
     }
 
+    canFundAllianceBetrayal(target) {
+      // Breaking the alliance marks us as a traitor even if the next attack
+      // is unaffordable. Reuse the first-strike reserve and defense checks
+      // before paying that diplomatic cost; do not emit a same-tick attack.
+      const context = this.createLandAttackContext(target);
+      let troops = this.calculateLandAttackTroops(context);
+      if (!context.attackBlocked) troops = this.adjustLandAttackTroops(context, troops);
+      this.restoreLandAttackReservation(context);
+      return !context.attackBlocked && this.landAttackTroopsAreSafe(context, troops);
+    }
+
     // maybeBetrayAndAttack — AiAttackBehavior (private, now async via sendAttack).
     async maybeBetrayAndAttack(borderingFriends, borderingEnemies) {
       if (this.allianceBehavior === undefined) throw new Error("not initialized");
@@ -8753,6 +8764,7 @@
 
       if (borderingFriends.length > 0) {
         for (const friend of borderingFriends) {
+          if (!this.canFundAllianceBetrayal(friend)) continue;
           if (
             this.allianceBehavior.maybeBetray(
               friend,

@@ -3018,13 +3018,44 @@ const betrayalTimingBehavior = Object.create(targetSandbox.AttackBehavior.protot
 betrayalTimingBehavior.game = {
   config: () => ({ disableAlliances: () => false }),
 };
-betrayalTimingBehavior.allianceBehavior = { maybeBetray: () => true };
+let betrayalCalls = 0;
+betrayalTimingBehavior.allianceBehavior = {
+  maybeBetray: () => {
+    betrayalCalls++;
+    return true;
+  },
+};
+const betrayalTarget = { isPlayer: () => true, troops: () => 428_961 };
+let betrayalSpendable = 138_270;
+betrayalTimingBehavior.player = { troops: () => 4_365_990 };
+betrayalTimingBehavior.createLandAttackContext = (target) => ({
+  target,
+  targetTroops: 4_365_990 - betrayalSpendable,
+  targetSpendableTroops: betrayalSpendable,
+  finalSpendableTroops: betrayalSpendable,
+  defenseProfile: { attackCostMultiplier: 1 },
+  requiredTribeAttackTroops: null,
+  attackBlocked: false,
+});
+betrayalTimingBehavior.getLiveOutboundAttackTroopsForTarget = () => 0;
+betrayalTimingBehavior.proactiveWarArmyCommitmentCap = () => null;
+betrayalTimingBehavior.proactiveWarPrefersBlitz = () => false;
+betrayalTimingBehavior.applyEarlyGameRaceTroops = ({ baseTroops }) => baseTroops;
+betrayalTimingBehavior.attackIsTooWeakForDefensePosts = () => false;
 let sameTickBetrayalAttacks = 0;
 betrayalTimingBehavior.sendAttack = async () => {
   sameTickBetrayalAttacks++;
   return true;
 };
-assert.equal(await betrayalTimingBehavior.maybeBetrayAndAttack([{}], []), true);
+assert.equal(
+  await betrayalTimingBehavior.maybeBetrayAndAttack([betrayalTarget], []),
+  false,
+  "an unfundable first strike must not break the alliance",
+);
+assert.equal(betrayalCalls, 0);
+betrayalSpendable = 1_000_000;
+assert.equal(await betrayalTimingBehavior.maybeBetrayAndAttack([betrayalTarget], []), true);
+assert.equal(betrayalCalls, 1);
 assert.equal(
   sameTickBetrayalAttacks,
   0,

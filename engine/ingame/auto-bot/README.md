@@ -111,6 +111,11 @@ unchanged, but large opening maps spend less time inside topology bookkeeping.
 
 ## Enemy Defense Post-aware attacks
 
+Alliance betrayal first checks that the ordinary land attack can be funded under
+the same reserve, war-commitment and defensive-strength limits. A weak ally alone
+is not sufficient: an unfundable attack must not incur the traitor penalty. The
+actual attack still waits for the alliance break to become authoritative.
+
 With `winFixes` enabled, land attacks inspect only the current frontier and apply
 the real Defense Post effects: an active completed post within 30 tiles means
 5× attacker losses and 3× slower conquest. Overlapping posts do not stack, and
