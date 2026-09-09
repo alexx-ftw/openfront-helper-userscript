@@ -346,6 +346,9 @@ land assault exceeds the exceptional threat threshold.
 City upgrade prices are reused only within the current game tick. Failed or
 temporarily unavailable probes are not cached as prices, and later ticks query
 again because another City build or upgrade can change the authoritative cost.
+Capacity-relief and generic economic upgrades use the same post-reserve gold
+budget as ordinary construction, so City/Factory upgrades cannot consume the
+next Atom's reserved treasury. Ports keep their trade-economy exemption.
 
 Productive sites are placed using the engine's rail connectivity score and an
 additional team-position score: nearby powerful allies are ranked by the maximum

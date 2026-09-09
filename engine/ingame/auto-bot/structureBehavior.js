@@ -9784,7 +9784,7 @@
         buildable,
         legendaryBigInt(candidate.cost),
       );
-      if (cost > this.spendableConstructionGold()) return false;
+      if (cost > this.availableGoldAfterReserve(UNIT.City)) return false;
       const buildMenu = getBuildMenu();
       if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
         return false;
@@ -10545,7 +10545,10 @@
 
     // maybeUpgradeStructure — NationStructureBehavior.ts:696 (now async).
     genericStructureUpgradeAllowed(result, type) {
-      if (type !== UNIT.SAMLauncher) return true;
+      if (type !== UNIT.SAMLauncher) {
+        if (result.bu?.cost == null) return false;
+        return BigInt(result.bu.cost) <= this.availableGoldAfterReserve(type);
+      }
       if (
         this.tileInsideActiveHostileMissileImpact(result.structure.tile?.())
       ) {

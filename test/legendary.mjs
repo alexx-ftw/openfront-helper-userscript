@@ -792,6 +792,56 @@ assert.equal(
   "another city build can change the price without changing this city's level",
 );
 let routeDistanceReads = 0;
+let capacityUpgradeGold = 1_000_000n;
+let capacityUpgradeSends = 0;
+const capacitySandbox = {
+  ...structureSandbox,
+  legendaryBigInt: plannerSandbox.legendaryBigInt,
+  UNIT: { City: "City", Port: "Port", Factory: "Factory", MissileSilo: "MissileSilo" },
+  state: { settings: { winFixes: true }, stats: { builds: 0 } },
+  tr: (key) => key,
+  setLastAction: () => {},
+  sendAutoBotBuildOrUpgrade: () => {
+    capacityUpgradeSends++;
+    return true;
+  },
+};
+capacitySandbox.globalThis = capacitySandbox;
+executeClassicScript(
+  `${structureSource}\nglobalThis.StructureBehavior = StructureBehavior;`,
+  capacitySandbox,
+);
+const capacityUpgrade = Object.create(capacitySandbox.StructureBehavior.prototype);
+const capacityCity = { id: () => 19, level: () => 1 };
+Object.assign(capacityUpgrade, {
+  game: { ticks: () => 100 },
+  player: { units: () => [capacityCity], gold: () => capacityUpgradeGold },
+  troopCapPressure: () => true,
+  legendaryAtomWarChest: () => 750_000n,
+  _legendaryCityUpgradeCostCache: new Map(),
+  buildableForUnits: async () => [{ canUpgrade: 19, cost: 500_000n }],
+});
+const capacityCandidate = { upgradeStructureId: 19, cost: 500_000n };
+assert.equal(
+  await capacityUpgrade.maybeUpgradeLegendaryCityCapacity(capacityCandidate),
+  false,
+  "a city upgrade must not consume the next Atom's reserved gold",
+);
+assert.equal(capacityUpgradeSends, 0);
+capacityUpgradeGold = 1_250_000n;
+assert.equal(await capacityUpgrade.maybeUpgradeLegendaryCityCapacity(capacityCandidate), true);
+assert.equal(capacityUpgradeSends, 1, "exactly the unreserved surplus can fund an upgrade");
+capacityUpgradeGold = 1_000_000n;
+assert.equal(
+  capacityUpgrade.genericStructureUpgradeAllowed({ bu: { cost: 500_000n } }, "City"),
+  false,
+  "the generic city upgrade fallback must preserve the same Atom reserve",
+);
+assert.equal(
+  capacityUpgrade.genericStructureUpgradeAllowed({ bu: { cost: 500_000n } }, "Port"),
+  true,
+  "the documented Port exemption remains available",
+);
 routeBehavior.game = {
   x: (tile) => tile,
   y: () => 0,
