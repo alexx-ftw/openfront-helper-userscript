@@ -326,7 +326,9 @@ Headless simulations use Legendary for the helper and native Impossible for the
 game's opponents (the upstream engine has no Legendary difficulty).
 The headless adapter schedules zero-delay cooperative work at the runner's task
 boundary, not against wall-clock milliseconds. Positive worker timeouts remain
-real-time safety limits. Nuclear traces distinguish affordable bomb selection
+real-time safety limits. Published engine motion plans reach the headless game API
+as they do the live client; inactive units and finished paths release their plans.
+Nuclear traces distinguish affordable bomb selection
 from launch approval; a selected Atom can still fail the expected-value gate.
 Queued nuclear launches revalidate their target every decision, including before
 their scheduled launch tick. Invalid targets are removed immediately; when the

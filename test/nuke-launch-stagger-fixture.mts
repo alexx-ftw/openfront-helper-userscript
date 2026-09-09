@@ -7,6 +7,7 @@ import { PlayerInfo, PlayerType } from "../openfront-engine/src/core/game/Game";
 import { setup } from "../openfront-engine/tests/util/Setup";
 import { unpackMotionPlans } from "../openfront-engine/src/core/game/MotionPlans";
 import { executeClassicScript, readRepositoryFile } from "./helpers/classic-script.mjs";
+import { createMaxDifficultyOpponent } from "../scripts/headless/opponent-adapter.js";
 
 const game = await setup(
   "big_plains",
@@ -29,11 +30,22 @@ game.executeNextTick();
 
 const missiles = attacker.units(UnitType.AtomBomb);
 assert.equal(missiles.length, 2);
+const packedMotionPlans = game.drainPackedMotionPlans()!;
 const plans = new Map(
-  unpackMotionPlans(game.drainPackedMotionPlans()!).flatMap((plan) =>
+  unpackMotionPlans(packedMotionPlans).flatMap((plan) =>
     plan.kind === "grid" ? [[plan.unitId, plan] as const] : [],
   ),
 );
+const bot = createMaxDifficultyOpponent({ clientID: "attacker" });
+bot.attach({ runner: { game }, clientID: "attacker" });
+assert.ok(bot.api.game.motionPlans() instanceof Map, "headless exposes the client motion-plan API");
+bot.applyGameUpdate({ packedMotionPlans });
+for (const missile of missiles) {
+  assert.deepEqual(
+    bot.api.game.motionPlans().get(missile.id()).path,
+    plans.get(missile.id())!.path,
+  );
+}
 const defense = executeClassicScript(
   `${readRepositoryFile("engine/ingame/auto-bot/structureBehavior.js")}\nObject.create(StructureBehavior.prototype);`,
   { Difficulty, UNIT: UnitType },
@@ -92,14 +104,34 @@ while (impacts.size < missiles.length && game.ticks() <= lastPlanTick) {
     assert.equal(motion.impactTick, 1, "adding the terminal tile must not delay impact");
     finalWindows++;
   }
-  game.executeNextTick();
+  const updates = game.executeNextTick();
+  bot.applyGameUpdate({
+    updates,
+    packedMotionPlans: game.drainPackedMotionPlans(),
+  });
   for (const missile of missiles) {
     if (!missile.isActive() && !impacts.has(missile.id())) {
+      assert.equal(
+        bot.api.game.motionPlans().has(missile.id()),
+        false,
+        "an inactive-unit update removes its plan without waiting for expiry",
+      );
       impacts.set(missile.id(), game.ticks());
     }
   }
+  bot.applyGameUpdate({ tick: game.ticks() });
 }
 assert.equal(impacts.size, missiles.length, "both missiles actually detonate");
+assert.equal(bot.api.game.motionPlans().size, 0, "resolved missiles release their motion plans");
+bot.applyGameUpdate({ packedMotionPlans });
+bot.applyGameUpdate({ tick: lastPlanTick + 1 });
+assert.equal(
+  bot.api.game.motionPlans().size,
+  0,
+  "finished paths expire even without unit deletion",
+);
+await new Promise<void>((resolve) => setImmediate(resolve));
+bot.harness.window.close();
 assert.equal(finalWindows, missiles.length);
 assert.deepEqual(
   predictedImpacts,

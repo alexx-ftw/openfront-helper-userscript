@@ -8,6 +8,8 @@ import {
   placeSpawnName,
 } from "../../openfront-engine/src/client/hud/NameBoxCalculator.ts";
 import { getSpawnTiles } from "../../openfront-engine/src/core/execution/Util.ts";
+import { GameUpdateType } from "../../openfront-engine/src/core/game/GameUpdates.ts";
+import { unpackMotionPlans } from "../../openfront-engine/src/core/game/MotionPlans.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BUNDLE_PATH =
@@ -320,6 +322,7 @@ export class BundledOpponentBot {
     this.api = null;
     this.pageGame = null;
     this.nationBot = null;
+    this.motionPlans = new Map();
     this.harness = options.harness ?? createBundledOpponentHarness();
   }
 
@@ -328,7 +331,7 @@ export class BundledOpponentBot {
     this.game = runner.game;
     this.clientID = clientID;
     this.gameID = gameID;
-    this.pageGame = createPageGameAdapter(this.game, runner, this.clientID);
+    this.pageGame = createPageGameAdapter(this.game, runner, this.clientID, this.motionPlans);
     const { internals } = this.harness;
     this.api = internals.createGameApi(this.pageGame);
     this.nationBot = new internals.NationBot(this.api.game, {
@@ -340,6 +343,24 @@ export class BundledOpponentBot {
     if (process.env.OFH_LOG_SPAWN === "1") this.enableSpawnTrace();
     if (process.env.OFH_LOG_ATTACK_HOTSPOTS === "1") this.enableAttackHotspotTrace();
     if (process.env.OFH_LOG_NUKES === "1") this.enableNukeTrace();
+  }
+
+  applyGameUpdate(update) {
+    const records = update.packedMotionPlans ? unpackMotionPlans(update.packedMotionPlans) : [];
+    for (const record of records) {
+      if (record.kind !== "grid" || record.ticksPerStep < 1 || record.path.length < 1) continue;
+      const existing = this.motionPlans.get(record.unitId);
+      if (existing && record.planId <= existing.planId) continue;
+      this.motionPlans.set(record.unitId, record);
+    }
+    for (const unit of update.updates?.[GameUpdateType.Unit] ?? []) {
+      if (!unit.isActive) this.motionPlans.delete(unit.id);
+    }
+    for (const [id, plan] of this.motionPlans) {
+      if (update.tick > plan.startTick + (plan.path.length - 1) * plan.ticksPerStep) {
+        this.motionPlans.delete(id);
+      }
+    }
   }
 
   enableNukeTrace() {
@@ -1749,7 +1770,7 @@ function bindPublicSurface(target) {
   return adapter;
 }
 
-function createPageGameAdapter(game, runner, clientID) {
+function createPageGameAdapter(game, runner, clientID, motionPlans) {
   let playerCache = runnerPlayerAdapterCaches.get(runner);
   if (!playerCache) {
     playerCache = new Map();
@@ -1775,6 +1796,7 @@ function createPageGameAdapter(game, runner, clientID) {
   adapter.playerBySmallID = (smallID) => getPlayer(game.playerBySmallID(Number(smallID)));
   adapter.owner = (tile) => getPlayer(game.owner(tile));
   adapter.units = (...types) => game.units(...types);
+  adapter.motionPlans = () => motionPlans;
   return adapter;
 }
 

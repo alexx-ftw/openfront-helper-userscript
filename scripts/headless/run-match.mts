@@ -387,14 +387,6 @@ const gameStart = {
 };
 
 let fatalError: string | null = null;
-const runner = await createGameRunner(
-  gameStart,
-  undefined,
-  new NodeGameMapLoader(path.join(engineRoot, "resources/maps")),
-  (update) => {
-    if ("errMsg" in update) fatalError = `${update.errMsg}\n${update.stack ?? ""}`;
-  },
-);
 const profileBot = process.env.OFH_PROFILE_BOT === "1";
 const bot = createMaxDifficultyOpponent({
   clientID,
@@ -402,6 +394,15 @@ const bot = createMaxDifficultyOpponent({
   name: "OFH Auto Bot",
   performanceProfiling: profileBot,
 });
+const runner = await createGameRunner(
+  gameStart,
+  undefined,
+  new NodeGameMapLoader(path.join(engineRoot, "resources/maps")),
+  (update) => {
+    if ("errMsg" in update) fatalError = `${update.errMsg}\n${update.stack ?? ""}`;
+    else bot.applyGameUpdate(update);
+  },
+);
 bot.attach({ runner, clientID, gameID: seed });
 
 const initialPlayers = runner.game
