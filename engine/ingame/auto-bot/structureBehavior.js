@@ -6459,10 +6459,12 @@
         // GameView stores Uint32Array paths; route consumers require an Array.
         const path = Array.from(plan.path.slice(index));
         if (path.length === 0) return null;
+        const launchOffset = Math.max(0, startTick - now);
         const motion = {
           fromTile: plan.path[0] ?? fromTile,
           path,
-          impactTick: Math.max(1, path.length),
+          launchOffset,
+          impactTick: launchOffset + Math.max(1, path.length),
         };
         this.legendaryActiveMissileMotionCache(nuke)?.set(nuke, {
           plan,
@@ -6522,7 +6524,7 @@
           fromTile: motion?.fromTile ?? fromTile,
           targetTile,
           impactTick,
-          launchOffset: 0,
+          launchOffset: motion?.launchOffset ?? 0,
           weapon: threat.weapon,
           id: `active:${String(threat.weapon)}:${String(impactTick)}`,
           path: motion?.path ?? null,
@@ -8001,7 +8003,7 @@
           weapon: route.weapon,
           fromTile: route.fromTile,
           targetTile: route.targetTile,
-          launchOffset: 0,
+          launchOffset: Array.isArray(demand.path) ? 0 : motion?.launchOffset ?? 0,
           impactTick: route.impactTick,
           path: route.path,
         },
@@ -8207,7 +8209,7 @@
           fromTile: motion?.fromTile ?? input.fromTile,
           targetTile: input.targetTile,
           impactTick: flightTimeTicks,
-          launchOffset: 0,
+          launchOffset: motion?.launchOffset ?? 0,
           weapon: input.type,
           id: `active:${String(nukeId)}`,
           path: motion?.path ?? null,

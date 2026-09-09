@@ -1511,6 +1511,26 @@ assert.doesNotThrow(() => {
 assert.deepEqual(Array.from(packedDefensePlan.routes[0].path), [2, 3]);
 assert.equal(packedDefensePlan.routes[0].impactTick, 2);
 
+activePlan.startTick = 5;
+activeMotionTick = 1;
+const waitingDefensePlan = activeMotionBehavior.legendaryInFlightDefensePlan(packedThreat, []);
+assert.equal(waitingDefensePlan.routes[0].launchOffset, 4);
+assert.equal(waitingDefensePlan.routes[0].impactTick, 8);
+const waitingMirvRoute = activeMotionBehavior.legendaryMirvDemandRoute(
+  { missile: packedThreat.nuke, targetTile: 3 },
+  [],
+  "waiting-warhead",
+);
+assert.equal(waitingMirvRoute.launchOffset, 4);
+assert.equal(waitingMirvRoute.impactTick, 8);
+const suppliedMirvRoute = activeMotionBehavior.legendaryMirvDemandRoute(
+  { missile: packedThreat.nuke, targetTile: 3, path: [2, 3], deadlineTick: 2 },
+  [],
+  "supplied-warhead",
+);
+assert.equal(suppliedMirvRoute.launchOffset, 0, "an explicit remaining route keeps its own timing");
+assert.equal(suppliedMirvRoute.impactTick, 2);
+
 let exposureDistanceReads = 0;
 const exposureStructures = [{ id: 1 }, { id: 2 }, { id: 3 }];
 const exposureStructureTiles = new Map(

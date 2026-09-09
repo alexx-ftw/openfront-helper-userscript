@@ -372,6 +372,8 @@ SAM placement and upgrades are trajectory-aware. The planner reads missile
 motion paths from the client as typed arrays and normalizes active missile paths
 before route scoring, preserving their remaining trajectory instead of rebuilding
 the original parabola.
+Missiles still waiting in a silo retain the motion plan's launch delay in both
+the impact deadline and SAM interception windows.
 The planner reads enemy silo
 levels and available slots, enemy gold (Atom versus Hydrogen affordability),
 `nukeMagnitudes`, `defaultNukeSpeed`, `UniversalPathFinding.Parabola`, active
