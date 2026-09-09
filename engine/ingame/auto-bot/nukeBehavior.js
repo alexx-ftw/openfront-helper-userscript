@@ -1811,6 +1811,8 @@
       let launched = false;
       let sendsThisTick = 0;
       for (const pending of this._pendingNukeLaunches) {
+        // Target loss/alliance changes cancel future entries immediately too.
+        if (!this.isValidNukeTarget(pending.targetPlayer)) continue;
         if (pending.salvo && abortedSalvoIds.has(pending.salvo.salvoId)) {
           continue;
         }

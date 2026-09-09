@@ -117,6 +117,32 @@ const reservation = () => ({
   pendingLaunches: true,
 });
 
+for (const invalidation of ["dead", "teammate"]) {
+  const { player, nukeTarget, behavior } = makeSalvoWorld();
+  behavior._pendingNukeLaunches = [
+    {
+      dueTick: 900,
+      tile: 20,
+      nukeType: UNIT.AtomBomb,
+      targetPlayer: nukeTarget,
+    },
+  ];
+  sandbox.state.nukeWantSlots = reservation();
+  if (invalidation === "dead") {
+    nukeTarget.isAlive = () => false;
+  } else {
+    player.team = () => "Blue";
+    nukeTarget.team = () => "Blue";
+  }
+  assert.equal(await behavior.processPendingNukeLaunches(), false);
+  assert.equal(
+    behavior.hasPendingNukeLaunches(),
+    false,
+    "a future launch against an invalid target must not block new nuclear decisions",
+  );
+  assert.equal(sandbox.state.nukeWantSlots, null, "cancelled future launches release reservations");
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // 1/3. A live salvo carries plan metadata, continues while re-validation
 // passes, and aborts when a new covering SAM outruns the remaining atoms

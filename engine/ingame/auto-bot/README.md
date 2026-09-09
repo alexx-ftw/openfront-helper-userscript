@@ -328,6 +328,9 @@ The headless adapter schedules zero-delay cooperative work at the runner's task
 boundary, not against wall-clock milliseconds. Positive worker timeouts remain
 real-time safety limits. Nuclear traces distinguish affordable bomb selection
 from launch approval; a selected Atom can still fail the expected-value gate.
+Queued nuclear launches revalidate their target every decision, including before
+their scheduled launch tick. Invalid targets are removed immediately; when the
+last queued launch disappears, its silo-slot reservation is released.
 
 The `Legendary` difficulty is an adaptive construction mode, not a copy of the
 vanilla priority list. It treats gold production and troop generation as the two
