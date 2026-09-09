@@ -336,6 +336,11 @@ last queued launch disappears, its silo-slot reservation is released.
 SAM-salvo revalidation counts charges that can reload by the latest remaining
 planned arrival, including delayed-launch retries. Unknown flight or reload data
 keeps the conservative full-capacity estimate.
+Revalidation also forecasts SAM charges consumed by already-launched own Atoms
+with exact live paths. It uses the shared interceptor scheduler across hostile
+SAMs, excludes missiles already pursued by an interceptor, and gives no credit
+to charges that reload before the remaining salvo arrives. Unknown trajectories,
+unfinished launchers, and inconclusive schedules retain the conservative estimate.
 
 The `Legendary` difficulty is an adaptive construction mode, not a copy of the
 vanilla priority list. It treats gold production and troop generation as the two

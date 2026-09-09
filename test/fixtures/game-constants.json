@@ -945,9 +945,9 @@
     "name": "UNIT",
     "declarationKind": "const",
     "initializerKind": "ObjectLiteralExpression",
-    "initializerHash": "6667353170e481a90ea727547027d512cfb1b3eb31acdfedec1c3b2b2ef6103c",
-    "initializerLength": 360,
-    "initializerPreview": "{\n    City: \"City\",\n    Port: \"Port\",\n    Factory: \"Factory\",\n    SAMLauncher: \"SAM Launcher\",\n    MissileSilo: \"Missile Silo\",\n    DefensePost: \"Defense Post\",\n    TransportShip: \"Transport\",\n    TradeShip: \"Trade Ship\",\n    Warship: \"W..."
+    "initializerHash": "24e0d195347a2203c07dce70099b311c5d35bee18df046283e33c3ab813faf15",
+    "initializerLength": 390,
+    "initializerPreview": "{\n    City: \"City\",\n    Port: \"Port\",\n    Factory: \"Factory\",\n    SAMLauncher: \"SAM Launcher\",\n    SAMMissile: \"SAMMissile\",\n    MissileSilo: \"Missile Silo\",\n    DefensePost: \"Defense Post\",\n    TransportShip: \"Transport\",\n    TradeShip:..."
   },
   {
     "id": "engine/ingame/auto-bot/core.js:PANEL_ID#1",

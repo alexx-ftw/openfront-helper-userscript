@@ -18,6 +18,7 @@ const UNIT = {
   Port: "Port",
   Factory: "Factory",
   SAMLauncher: "SAM Launcher",
+  SAMMissile: "SAMMissile",
   MissileSilo: "Missile Silo",
   DefensePost: "Defense Post",
   AtomBomb: "Atom Bomb",
@@ -62,7 +63,7 @@ executeClassicScript(read("engine/ingame/shared-utils.js"), sandbox, {
   filename: "shared-utils.vm.js",
 });
 executeClassicScript(
-  `${read("engine/ingame/auto-bot/nukeBehavior.js")}\nglobalThis.__NukeBehavior = NukeBehavior;`,
+  `${read("engine/ingame/auto-bot/legendaryPlanner.js")}\n${read("engine/ingame/auto-bot/structureBehavior.js")}\n${read("engine/ingame/auto-bot/nukeBehavior.js")}\nglobalThis.__NukeBehavior = NukeBehavior; globalThis.__StructureBehavior = StructureBehavior;`,
   sandbox,
   {
     filename: "nuke-salvo-recheck.vm.js",
@@ -116,6 +117,85 @@ const reservation = () => ({
   unblockedSiloIds: [],
   pendingLaunches: true,
 });
+
+for (const scenario of [
+  "live",
+  "destroyed",
+  "claimed",
+  "other-target",
+  "unknown-path",
+  "reload",
+  "outside-sam",
+  "construction",
+  "insufficient",
+]) {
+  const { world, game, player, nukeTarget, behavior } = makeSalvoWorld();
+  world.tick = 805;
+  game.config = () => ({
+    maxSamRange: () => 5,
+    samRange: () => 5,
+    SAMCooldown: () => (scenario === "reload" ? 5 : 300),
+    defaultNukeTargetableRange: () => 150,
+    defaultSamMissileSpeed: () => 2,
+  });
+  game.manhattanDist = (a, b) => Math.abs(a - b);
+  game.euclideanDistSquared = (a, b) => (a - b) ** 2;
+  const sam = world.sam("cover", scenario === "insufficient" ? 2 : 1);
+  sam.isActive = () => true;
+  sam.isUnderConstruction = () => scenario === "construction";
+  sam.missileTimerQueue = () => [];
+  world.covering = [{ unit: sam, distSquared: 0 }];
+  world.targetSams = [sam];
+  const missile = {
+    id: () => "launched",
+    type: () => UNIT.AtomBomb,
+    tile: () => 12,
+    targetTile: () => (scenario === "other-target" ? 30 : 20),
+    isActive: () => scenario !== "destroyed",
+    owner: () => player,
+  };
+  player.units = (type) => (type === UNIT.AtomBomb ? [missile] : []);
+  const outsideSam = { ...sam, id: () => "outside", tile: () => 12 };
+  const hostileSams = scenario === "outside-sam" ? [outsideSam, sam] : [sam];
+  const interceptors =
+    scenario === "claimed" ? [{ isActive: () => true, targetUnit: () => missile }] : [];
+  game.units = (type) => {
+    if (type === UNIT.SAMLauncher) return hostileSams;
+    if (type === UNIT.SAMMissile) return interceptors;
+    return [];
+  };
+  game.motionPlans = () =>
+    new Map(
+      scenario === "unknown-path"
+        ? []
+        : [
+            [
+              "launched",
+              {
+                startTick: 805,
+                ticksPerStep: 1,
+                path: new Uint32Array([12, 13, 14, 15, 16, 17, 18, 19]),
+              },
+            ],
+          ],
+    );
+  behavior.structureBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+  behavior.structureBehavior.game = game;
+  behavior._pendingNukeLaunches = [
+    {
+      dueTick: 805,
+      tile: 20,
+      nukeType: UNIT.AtomBomb,
+      targetPlayer: nukeTarget,
+      salvo: { salvoId: 42, targetTile: 20, targetSamId: "cover", flightTicks: 10 },
+    },
+  ];
+  assert.equal(
+    await behavior.processPendingNukeLaunches(),
+    scenario === "live",
+    `${scenario}: only an unclaimed live missile that consumes covering capacity supports the finisher`,
+  );
+}
 
 for (const invalidation of ["dead", "teammate"]) {
   const { player, nukeTarget, behavior } = makeSalvoWorld();

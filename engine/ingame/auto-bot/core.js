@@ -10,6 +10,7 @@
     Port: "Port",
     Factory: "Factory",
     SAMLauncher: "SAM Launcher",
+    SAMMissile: "SAMMissile",
     MissileSilo: "Missile Silo",
     DefensePost: "Defense Post",
     TransportShip: "Transport",

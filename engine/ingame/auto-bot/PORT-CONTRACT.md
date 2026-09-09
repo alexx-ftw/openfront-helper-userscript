@@ -51,7 +51,7 @@ request so repeated City attempts keep exploring different legal station sites.
 
 ## Enums & unit constants (portutil.js / gameApi.js / core.js — already global)
 
-- `UNIT.City|Port|Factory|SAMLauncher|MissileSilo|DefensePost|TransportShip|TradeShip|Warship|AtomBomb|HydrogenBomb|MIRV|MIRVWarhead` (string UnitType values). Replace `UnitType.City` → `UNIT.City`, etc.
+- `UNIT.City|Port|Factory|SAMLauncher|SAMMissile|MissileSilo|DefensePost|TransportShip|TradeShip|Warship|AtomBomb|HydrogenBomb|MIRV|MIRVWarhead` (string UnitType values). Replace `UnitType.City` → `UNIT.City`, etc.
 - `Difficulty`, `GameMode` (`.FFA`/`.Team`), `PlayerType` (`.Bot`/`.Human`/`.Nation`), `TerrainType` (portutil).
 - `Relation` (`.Hostile`=0/`.Distrustful`=1/`.Neutral`=2/`.Friendly`=3) (gameApi).
 

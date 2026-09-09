@@ -495,7 +495,7 @@ export function assertRuntimeParity() {
       `UNIT.${name} no longer matches OpenFront UnitType.${name}`,
     );
   }
-  const intentionallyUnmodeledUnitTypes = ["SAMMissile", "Shell", "Train"];
+  const intentionallyUnmodeledUnitTypes = ["Shell", "Train"];
   const missingUnitTypes = [...upstreamUnitTypes.keys()]
     .filter((name) => !helperUnits.has(name))
     .sort();

@@ -1927,7 +1927,10 @@
       const capacity = coveringSams.reduce(
         (sum, sam) => sum + this.samSalvoCapacityAtArrival(sam, lastArrivalTick), 0,
       );
-      if (capacity + 1 > remainingInSalvo) return false;
+      const liveSpend = capacity + 1 > remainingInSalvo
+        ? this.samSalvoLiveCapacitySpend(salvo.targetTile, coveringSams, lastArrivalTick)
+        : 0;
+      if (capacity - liveSpend + 1 > remainingInSalvo) return false;
       const targetSamId = salvo.targetSamId;
       if (
         (targetSamId !== null && targetSamId !== undefined) &&
@@ -1943,6 +1946,51 @@
         if (!targetSamExists) return false;
       }
       return true;
+    }
+
+    samSalvoLiveCapacitySpend(targetTile, coveringSams, lastArrivalTick) {
+      const planner = this.structureBehavior;
+      const horizon = lastArrivalTick - Number(this.game.ticks());
+      const cooldown = Number(this.game.config?.().SAMCooldown?.());
+      if (!planner || typeof this.game.units !== "function" ||
+          !Number.isFinite(horizon) || horizon < 0 ||
+          !Number.isFinite(cooldown) || cooldown <= 0) return 0;
+      const sams = this.game.units(UNIT.SAMLauncher).filter((sam) =>
+        sam.isActive() &&
+        this.isHostileSamIntercept({ unit: sam, distSquared: 0 }));
+      // The client has no exact completion tick for an unfinished launcher;
+      // it could change which SAM claims a missile before this forecast fires.
+      if (sams.some((sam) => sam.isUnderConstruction())) return 0;
+      const profiles = planner.buildLegendaryFriendlySamProfiles(sams, null, null);
+      const routes = this.samSalvoUnclaimedLiveRoutes(targetTile, horizon, profiles);
+      if (routes.length === 0) return 0;
+      const schedule = legendaryMissileDefenseSchedule({
+        routes, samProfiles: profiles, samCooldownTicks: cooldown, marginTicks: 0,
+      });
+      // Only credit a complete, engine-order-compatible forecast. An unknown
+      // path or ambiguous assignment must not turn a cancelled shot into a bet.
+      if (!schedule.fullyDefended) return 0;
+      const coveringIds = new Set(coveringSams.map((sam) => sam.id()));
+      return schedule.missiles.filter((missile) =>
+        coveringIds.has(profiles[missile.samIndex]?.id) &&
+        missile.samFireTick + cooldown > horizon).length;
+    }
+
+    samSalvoUnclaimedLiveRoutes(targetTile, horizon, profiles) {
+      const claimed = new Set(this.game.units(UNIT.SAMMissile)
+        .filter((missile) => missile.isActive())
+        .map((missile) => missile.targetUnit()?.id()));
+      const routes = [];
+      for (const missile of this.player.units?.(UNIT.AtomBomb) ?? []) {
+        if (!missile.isActive() || missile.targetTile() !== targetTile ||
+            claimed.has(missile.id())) continue;
+        const motion = this.structureBehavior.legendaryActiveMissileMotion(missile, missile.tile());
+        if (!motion || motion.impactTick > horizon) continue;
+        routes.push(this.structureBehavior.legendaryBuildMissileRoute({
+          ...motion, targetTile, weapon: UNIT.AtomBomb, id: `salvo-live:${missile.id()}`,
+        }, profiles));
+      }
+      return routes;
     }
 
     samSalvoCapacityAtArrival(sam, lastArrivalTick) {
