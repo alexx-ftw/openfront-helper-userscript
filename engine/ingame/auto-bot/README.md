@@ -361,6 +361,11 @@ Version 1.12.162 removes the uncatchable emergency hull purchase in B: the
 second City moves from tick 3430 to 1970, and B reaches tick 5000 with 44971
 tiles and 2087887 troops. The diagnostic seed and holdout A retain their 1.12.161
 final state at that horizon. None of these horizon-limited runs proves a win.
+Extending 1.12.162 to 12000 ticks: the diagnostic seed dies at 6776 and B
+at 7287, both with zero recorded own structures nuked. A remains alive at
+12000 with 91646 tiles and 2494301 troops (not a win). Late-game stagnation
+and invasion survival therefore remain open; the 5000-tick results are not
+an end-to-end completion claim.
 
 Counterattack audit (2026-09-09, helper 1.12.160, headless identity fix
 `e642d35f`): removing only the cumulative attrition cap, while retaining the
