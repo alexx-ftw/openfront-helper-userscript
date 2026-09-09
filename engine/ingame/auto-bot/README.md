@@ -119,6 +119,10 @@ thresholds scale with the 5× damage effect, and attacks below the resulting
 minimum are deferred instead of wasting troops. The bounded profile is cached
 per target and game tick; cheap boat probes keep their existing behavior.
 
+Defensive construction counts nearby Posts against the front's budget using
+the same engine effect radius as its uncovered-front calculation. A Post outside
+that radius cannot suppress a replacement for an entirely unprotected front.
+
 ## Combat decision cadence
 
 The Auto Bot panel's `Tick interval (ms)` controls the engine polling cadence.

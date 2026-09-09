@@ -1550,8 +1550,7 @@
       if (frontTiles.length === 0) return 0;
 
       const game = this.game;
-      const { borderSpacing } = this.spacingConstants();
-      const rangeSquared = (borderSpacing * 1.5) ** 2;
+      const rangeSquared = this.defensePostEffectRangeSquared();
 
       let count = 0;
       for (const dp of this.player.units(UNIT.DefensePost)) {

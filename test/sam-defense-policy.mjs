@@ -804,6 +804,17 @@ defenseCoverageBehavior.player = {
   units: (type) => (type === UNIT.DefensePost ? [{ tile: () => 0 }] : []),
 };
 defenseCoverageBehavior.rankStructureTilesBySamProtection = (tiles) => [...tiles];
+defenseCoverageBehavior.spacingConstants = () => ({ borderSpacing: 30 });
+assert.deepEqual(
+  defenseCoverageBehavior.defensePostFrontDemand({ allowed: 1, landAttacks: [] }, [40]),
+  [40],
+  "a Post outside the engine effect radius cannot consume the threatened front's only defensive slot",
+);
+assert.equal(
+  defenseCoverageBehavior.defensePostFrontDemand({ allowed: 1, landAttacks: [] }, [30]),
+  null,
+  "a Post at the engine effect-radius boundary still covers the front and consumes its slot",
+);
 assert.deepEqual(
   defenseCoverageBehavior.uncoveredDefensePostFrontTiles([10, 40]),
   [40],
