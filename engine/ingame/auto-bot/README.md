@@ -348,12 +348,19 @@ the object identity used to recognize pending alliance requests and allies.
 Cooperative tribe planning retains still-live scored targets when global tribe
 membership changes mid-refresh, while immediately requesting fresh topology.
 Captured, allied, and stale maritime gateways remain excluded at launch time.
+Emergency warship construction uses the interception planner and the worker's
+actual spawn tile. A legal hull without a pre-landing interception assignment
+does not bypass economic reserves merely because an incoming transport exists.
 Version 1.12.161 fixes refresh starvation observed on `legendary-audit-159-europe`:
 21 of 32 refreshes after tick 1750 were discarded despite scored live targets.
 With the fix, that seed reaches tick 5000 with 43829 tiles; holdout A below
 reaches 5000 with 94409 tiles. Holdout B instead dies at 4882 (baseline alive
 at 5000), so the correctness fix is not evidence of universally better strategy;
-the changed expansion trajectory in B remains an open tactical investigation.
+the changed expansion trajectory in B required a tactical investigation.
+Version 1.12.162 removes the uncatchable emergency hull purchase in B: the
+second City moves from tick 3430 to 1970, and B reaches tick 5000 with 44971
+tiles and 2087887 troops. The diagnostic seed and holdout A retain their 1.12.161
+final state at that horizon. None of these horizon-limited runs proves a win.
 
 Counterattack audit (2026-09-09, helper 1.12.160, headless identity fix
 `e642d35f`): removing only the cumulative attrition cap, while retaining the

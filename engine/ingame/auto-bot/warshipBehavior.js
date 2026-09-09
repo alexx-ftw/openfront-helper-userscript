@@ -232,10 +232,14 @@
       ) {
         return false;
       }
-      // A live transport aimed at our territory bypasses the ordinary 50% spawn
-      // roll: the Port-first structure policy has already reserved the gold and
-      // this phase must get the first available destroyer onto the water.
-      if (!maritimeEmergency && !this.random.chance(2)) {
+      // Emergency spending requires an actual interception plan, including the
+      // worker's snapped spawn tile. An arbitrary first hull may be too far
+      // away to stop the landing and must not consume the economic reserve.
+      if (maritimeEmergency) {
+        await this.protectAgainstNavalInvasions();
+        return smartState.lastInvasionBuildTick === this.game.ticks();
+      }
+      if (!this.random.chance(2)) {
         return false;
       }
       const port = this.getInitialWarshipPort();
@@ -1518,11 +1522,8 @@
         ...speeds,
       });
       const assignment = plan.assignments[0] ?? null;
-      const spawnRoute = this.interceptionRoute(spawnTile, tile);
-      const spawnDistance = Array.isArray(spawnRoute) ? spawnRoute.length : Infinity;
-      const score = assignment
-        ? [1, assignment.marginTicks, -assignment.interceptTick]
-        : [0, 0, -spawnDistance];
+      if (assignment === null) return null;
+      const score = [1, assignment.marginTicks, -assignment.interceptTick];
       return { bu, tile, score };
     }
 

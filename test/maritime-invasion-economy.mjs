@@ -291,7 +291,29 @@ executeClassicScript(
 );
 
 let randomChanceCalls = 0;
+const lateInterceptor = Object.create(warshipSandbox.__WarshipBehavior.prototype);
+lateInterceptor.buildableWarship = async () => ({ type: UNIT.Warship, canBuild: 100 });
+lateInterceptor.waterDistance = (from, to) => Math.abs(from - to);
+lateInterceptor.interceptionRoute = (from, to) =>
+  Array.from(
+    { length: Math.abs(from - to) + 1 },
+    (_, index) => from + Math.sign(to - from) * index,
+  );
+assert.equal(
+  await lateInterceptor.evaluateInterceptorBuild(
+    100,
+    { id: 1, path: [0, 1, 2] },
+    {
+      boatSpeed: 1,
+      warshipSpeed: 1,
+      attackRange: 1,
+    },
+  ),
+  null,
+  "a legal hull that cannot arrive before landing is not an emergency interceptor",
+);
 let warshipTick = 7;
+warshipSandbox.performance = { now: () => warshipTick * 1000 };
 let visibleWarships = [];
 const warshipBehavior = Object.create(warshipSandbox.__WarshipBehavior.prototype);
 warshipBehavior.random = {
@@ -315,6 +337,20 @@ warshipBehavior.player = {
   gold: () => 250000n,
 };
 warshipBehavior.cost = () => 250000n;
+warshipBehavior.dealtWithTransportShip = new Set();
+warshipBehavior.incomingNavalTransports = () => [{ id: () => "incoming" }];
+warshipBehavior.engineTargetableTransports = () => [];
+warshipBehavior.incomingNavalInvasions = () => [
+  {
+    id: "incoming",
+    path: Array.from({ length: 20 }, (_, i) => 55 - i),
+  },
+];
+warshipBehavior.interceptionBuildCandidates = () => [55];
+warshipBehavior.movementSpeed = () => 1;
+warshipBehavior.warshipAttackRange = () => 1;
+warshipBehavior.interceptionRoute = lateInterceptor.interceptionRoute;
+warshipBehavior.waterDistance = lateInterceptor.waterDistance;
 warshipBehavior.warshipSpawnTile = () => 55;
 warshipBehavior.buildableWarship = async () => ({
   type: UNIT.Warship,
@@ -385,6 +421,16 @@ assert.equal(
   "routine retaliation cannot consume gold reserved for the construction portfolio",
 );
 offensiveReserveActive = false;
+const catchableInvasions = warshipBehavior.incomingNavalInvasions;
+warshipBehavior.incomingNavalInvasions = () => [{ id: "incoming", path: [0, 1, 2] }];
+assert.equal(
+  await warshipBehavior.maybeSpawnWarship(),
+  false,
+  "the initial emergency path must not bypass an impossible interception plan",
+);
+assert.equal(warshipBuilds.length, 0, "a too-late destroyer does not consume the economy budget");
+warshipBehavior.incomingNavalInvasions = catchableInvasions;
+warshipTick += 2;
 assert.equal(
   await warshipBehavior.maybeSpawnWarship(),
   true,
