@@ -7434,7 +7434,10 @@
         : this.getEarlyGameLiveReserveTroops();
       return this.getSafeBoatTroops(
         requestedTroops,
-        targetReserve,
+        // A transport does not cancel the invasion at home. Preserve the
+        // observed incoming wave until the engine confirms its cancellation;
+        // getSafeBoatTroops also subtracts pending outbound commitments.
+        Math.max(targetReserve, this.incomingCounterattackAggregateTroops()),
         requireExactTroops,
       );
     }

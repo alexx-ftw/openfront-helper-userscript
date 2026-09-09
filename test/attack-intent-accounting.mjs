@@ -127,6 +127,23 @@ const game = {
   config: () => ({ maxTroops: () => 100000 }),
 };
 const opportunisticRandomBoatBehavior = Object.create(sandbox.AttackBehavior.prototype);
+const invadedBoatBudget = Object.create(sandbox.AttackBehavior.prototype);
+invadedBoatBudget.player = { troops: () => 2_940_485 };
+invadedBoatBudget.getPendingOutboundTroopCommitments = () => 586_098;
+invadedBoatBudget.getEarlyGameLiveReserveTroops = () => 1_000_000;
+invadedBoatBudget.getEarlyGameTargetReserveTroops = () => 1_000_000;
+let boatIncomingTroops = 2_782_124;
+invadedBoatBudget.incomingHostileAttacks = () => [{ troops: () => boatIncomingTroops }];
+assert.equal(
+  invadedBoatBudget.resolveBoatTroops(735_121, null, false),
+  0,
+  "a transport cannot drain defenders while a counterattack is pending against an army-sized invasion",
+);
+boatIncomingTroops = 2_000_000;
+assert.equal(invadedBoatBudget.resolveBoatTroops(735_121, {}, false), 354_387);
+assert.equal(invadedBoatBudget.resolveBoatTroops(735_121, {}, true), 0);
+boatIncomingTroops = 0;
+assert.equal(invadedBoatBudget.resolveBoatTroops(735_121, null, false), 735_121);
 const opportunisticRandomBoatCalls = [];
 opportunisticRandomBoatBehavior.random = { randElement: () => "shore" };
 opportunisticRandomBoatBehavior.findRandomBoatTarget = async (...args) => {

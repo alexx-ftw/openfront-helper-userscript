@@ -116,6 +116,11 @@ the same reserve, war-commitment and defensive-strength limits. A weak ally alon
 is not sufficient: an unfundable attack must not incur the traitor penalty. The
 actual attack still waits for the alliance break to become authoritative.
 
+All transport launches preserve the currently observed hostile invasion army as
+well as their normal reserve. Pending outbound intents are still deducted; an
+unconfirmed counterattack cannot free the same defenders for a boat. Once the
+engine removes the incoming wave, the ordinary transport budget resumes.
+
 With `winFixes` enabled, land attacks inspect only the current frontier and apply
 the real Defense Post effects: an active completed post within 30 tiles means
 5× attacker losses and 3× slower conquest. Overlapping posts do not stack, and
