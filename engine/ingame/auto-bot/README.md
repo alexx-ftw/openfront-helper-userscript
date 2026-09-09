@@ -341,6 +341,8 @@ are never counted as our side; remaining enemy structures stay in the quota repo
 The simulation keeps one build-menu event bus per attached game and supports
 alliance breaks separately from alliance requests, plus attack cancellations.
 Constructor discovery therefore retains the same identity across decisions.
+Structure trace wrappers preserve nuclear-priority options and precomputed land
+threats when forwarding a build or upgrade to the bot.
 The headless adapter schedules zero-delay cooperative work at the runner's task
 boundary, not against wall-clock milliseconds. Positive worker timeouts remain
 real-time safety limits. Published engine motion plans reach the headless game API

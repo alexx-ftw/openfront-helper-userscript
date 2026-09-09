@@ -180,6 +180,7 @@ function createBundledHarnessSource() {
 window.__OFH_realOpponentHarness = {
   NationBot,
   AllianceBehavior,
+  StructureBehavior,
   WarshipBehavior,
   createGameApi,
   state,
@@ -1124,11 +1125,11 @@ export class BundledOpponentBot {
     }
     const originalMaybeUpgradePlannedSam = behavior.maybeUpgradePlannedSam;
     if (typeof originalMaybeUpgradePlannedSam === "function") {
-      behavior.maybeUpgradePlannedSam = async (plan) => {
+      behavior.maybeUpgradePlannedSam = async (plan, ...args) => {
         const tick = this.game.ticks();
         const rawGold = this.pageGame.myPlayer()?.gold?.();
         const gold = rawGold === null || rawGold === undefined ? null : String(rawGold);
-        const emitted = await originalMaybeUpgradePlannedSam.call(behavior, plan);
+        const emitted = await originalMaybeUpgradePlannedSam.call(behavior, plan, ...args);
         this.structureTrace.push({
           kind: "sam-upgrade-plan",
           tick,
@@ -1180,13 +1181,13 @@ export class BundledOpponentBot {
     }
     const originalTryBuildDefensePost = behavior.tryBuildDefensePost;
     if (typeof originalTryBuildDefensePost === "function") {
-      behavior.tryBuildDefensePost = async () => {
+      behavior.tryBuildDefensePost = async (...args) => {
         const needed = behavior.defensePostNeeded?.() === true;
         const before = (this.pageGame.myPlayer()?.units?.("Defense Post") ?? []).length;
         const tick = this.game.ticks();
         const rawGold = this.pageGame.myPlayer()?.gold?.();
         const gold = rawGold === null || rawGold === undefined ? null : String(rawGold);
-        const emitted = await originalTryBuildDefensePost.call(behavior);
+        const emitted = await originalTryBuildDefensePost.apply(behavior, args);
         if (needed || emitted) {
           this.structureTrace.push({
             kind: "defense-post-attempt",

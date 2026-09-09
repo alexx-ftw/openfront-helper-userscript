@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  BundledOpponentBot,
   createBuildMenu,
   createBundledOpponentHarness,
   playersShareSide,
@@ -66,6 +67,57 @@ assert.equal(
   menu.eventBus,
   "successive decisions must preserve native event-constructor identity",
 );
+const tracing = Object.create(BundledOpponentBot.prototype);
+tracing.game = ffa;
+tracing.pageGame = { myPlayer: () => attacker };
+tracing.structureTrace = [];
+const samPolicy = Object.create(harness.internals.StructureBehavior.prototype);
+const upgrade = { type: "SAM Launcher", cost: 1n, canUpgrade: 17 };
+let emittedUpgrade = null;
+Object.assign(samPolicy, {
+  plannedSamUpgradeEligible: () => true,
+  spendableConstructionGold: () => 1n,
+  plannedSamUpgradeCostCacheKey: () => "sam",
+  plannedSamUpgradeBuildable: async () => upgrade,
+  plannedSamUpgradeCost: () => 1n,
+  samUpgradeEconomyCanAbsorb: () => false,
+  tileInsideActiveHostileMissileImpact: () => false,
+  emitPlannedSamUpgrade: (bu) => {
+    emittedUpgrade = bu;
+    return true;
+  },
+});
+tracing.enableStructureUpgradeTrace(samPolicy);
+assert.equal(
+  await samPolicy.maybeUpgradePlannedSam({}, { maximumNuclearPriority: true }),
+  true,
+  "tracing must preserve the emergency override of the economy gate",
+);
+assert.equal(emittedUpgrade, upgrade);
+const postPolicy = Object.create(harness.internals.StructureBehavior.prototype);
+attacker.addGold(10n);
+let builtFront = null;
+Object.assign(postPolicy, {
+  player: attacker,
+  defensePostThreat: () => null,
+  defensePostFrontDemand: (_threat, front) => front,
+  cost: () => 1n,
+  sampleTilesNearFront: (front) => front,
+  rankDefensePostTiles: (front) => front,
+  buildFirstDefensePost: async (front) => {
+    builtFront = front;
+    return true;
+  },
+});
+tracing.enableDefensePostTrace(postPolicy);
+const front = [ffa.ref(1, 1)];
+assert.equal(
+  await postPolicy.tryBuildDefensePost({ frontTiles: front }),
+  true,
+  "tracing must preserve the caller's precomputed land threat",
+);
+assert.equal(builtFront, front);
+
 for (let tick = 0; tick < 10; tick++) {
   let resumed = false;
   harness.window.setTimeout(() => {
