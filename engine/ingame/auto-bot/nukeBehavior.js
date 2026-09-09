@@ -2120,9 +2120,8 @@
       if (structures.length === 0) return samTile;
       const samX = this.game.x(samTile);
       const samY = this.game.y(samTile);
-      const outerDist = euclDistFN(samTile, radius, false);
       let bestTile = samTile;
-      let bestValue = this.blastStructureValue(samTile, structures, outerDist);
+      let bestValue = this.blastStructureValue(samTile, structures, radius);
       for (const structure of structures) {
         const tile = structure.tile?.();
         if (tile == null) continue;
@@ -2134,8 +2133,8 @@
         const candidate = this.game.ref(candidateX, candidateY);
         // The SAM itself must remain inside the blast or the salvo loses
         // its anti-SAM purpose.
-        if (Math.abs(candidateX - samX) + Math.abs(candidateY - samY) > radius) continue;
-        const value = this.blastStructureValue(candidate, structures, outerDist);
+        if (this.game.euclideanDistSquared(candidate, samTile) >= radius * radius) continue;
+        const value = this.blastStructureValue(candidate, structures, radius);
         if (value > bestValue) {
           bestValue = value;
           bestTile = candidate;
@@ -2144,9 +2143,10 @@
       return bestTile;
     }
 
-    blastStructureValue(tile, structures, outerDist) {
+    blastStructureValue(tile, structures, radius) {
+      // NukeExecution destroys structures strictly inside the circular blast.
       return structures
-        .filter((unit) => outerDist(this.game, unit.tile()))
+        .filter((unit) => this.game.euclideanDistSquared(tile, unit.tile()) < radius * radius)
         .reduce((sum, unit) => sum + this.nukeStructureValue(unit), 0);
     }
 

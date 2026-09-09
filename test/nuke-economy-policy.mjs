@@ -870,4 +870,47 @@ assert.equal(
   testDifficulty = "Impossible";
 }
 
+// Anti-SAM aim scoring must move the blast center with each candidate.
+{
+  const aimBehavior = Object.create(sandbox.__NukeBehavior.prototype);
+  const structures = [];
+  const sam = {
+    tile: () => ({ x: 0, y: 0 }),
+    type: () => UNIT.SAMLauncher,
+    level: () => 1,
+    owner: () => ({ units: () => structures }),
+  };
+  structures.push(sam, {
+    tile: () => ({ x: 8, y: 0 }),
+    type: () => UNIT.MissileSilo,
+    level: () => 1,
+  });
+  aimBehavior.game = {
+    config: () => ({ nukeMagnitudes: () => ({ outer: 5 }) }),
+    x: (tile) => tile.x,
+    y: (tile) => tile.y,
+    ref: (x, y) => ({ x, y }),
+    isValidCoord: () => true,
+    euclideanDistSquared: (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2,
+  };
+  assert.deepEqual(
+    aimBehavior.samSalvoAimTile(sam),
+    { x: 4, y: 0 },
+    "aim between the SAM and silo to destroy both, instead of scoring every blast at the SAM",
+  );
+  aimBehavior.game.config = () => ({ nukeMagnitudes: () => ({ outer: 4 }) });
+  assert.deepEqual(
+    aimBehavior.samSalvoAimTile(sam),
+    { x: 0, y: 0 },
+    "the SAM must be strictly inside the blast, not on its indestructible outer boundary",
+  );
+  structures[1].tile = () => ({ x: 8, y: 8 });
+  aimBehavior.game.config = () => ({ nukeMagnitudes: () => ({ outer: 6 }) });
+  assert.deepEqual(
+    aimBehavior.samSalvoAimTile(sam),
+    { x: 4, y: 4 },
+    "diagonal aim points use the engine's circular blast rather than Manhattan distance",
+  );
+}
+
 process.stdout.write("nuke economy policy tests passed\n");

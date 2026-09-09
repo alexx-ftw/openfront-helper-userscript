@@ -433,6 +433,10 @@ Bot Atom/Hydrogen intents use the upward arc assumed by their trajectory forecas
 Single-shot and destination-saturation candidates reject routes intercepted by
 additional SAMs outside the destination coverage set, matching the salvo planner's
 route eligibility. No destination coverage does not imply a clear flight path.
+Anti-SAM aim points score structure value around each candidate blast center,
+not the original SAM tile, so nearby structures can improve the chosen aim.
+The SAM must remain strictly inside the circular blast, matching the engine's
+structure-destruction rule, including diagonal candidates and outer-boundary tiles.
 The manual arc toggle is restored immediately after dispatch, including failures;
 manual launches and macros keep the player's selected direction.
 
