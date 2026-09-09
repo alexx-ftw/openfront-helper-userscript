@@ -782,13 +782,19 @@
           continue;
         }
         const spawnTile = this.nukeSpawn(nukeType, cand.tile);
-        const coveringLevel =
-          spawnTile === false || !this.isTrajectoryInterceptableBySam(spawnTile, cand.tile)
-            ? 0
-            : this.findEnemySamsCoveringTile(cand.tile).reduce(
-                (sum, sam) => sum + Math.max(0, Number(sam.level?.()) || 0),
-                0,
-              );
+        const interceptable = spawnTile !== false &&
+          this.isTrajectoryInterceptableBySam(spawnTile, cand.tile);
+        const coveringSams = interceptable ? this.findEnemySamsCoveringTile(cand.tile) : [];
+        // Destination saturation does not account for SAMs elsewhere along
+        // the route. Match getRouteEligibleSilos before authorizing a shot.
+        if (interceptable && (coveringSams.length === 0 ||
+          this.isTrajectoryInterceptableBySam(
+            spawnTile, cand.tile, new Set(coveringSams.map((sam) => sam.id())),
+          ))) continue;
+        const coveringLevel = coveringSams.reduce(
+          (sum, sam) => sum + Math.max(0, Number(sam.level?.()) || 0),
+          0,
+        );
         const entry = { ...cand, coveringSamLevels: coveringLevel };
         if (coveringLevel > 0) covered.push(entry);
         else clear.push(entry);

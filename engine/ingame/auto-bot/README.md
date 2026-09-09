@@ -430,6 +430,9 @@ SAMs, excludes missiles already pursued by an interceptor, and gives no credit
 to charges that reload before the remaining salvo arrives. Unknown trajectories,
 unfinished launchers, and inconclusive schedules retain the conservative estimate.
 Bot Atom/Hydrogen intents use the upward arc assumed by their trajectory forecast.
+Single-shot and destination-saturation candidates reject routes intercepted by
+additional SAMs outside the destination coverage set, matching the salvo planner's
+route eligibility. No destination coverage does not imply a clear flight path.
 The manual arc toggle is restored immediately after dispatch, including failures;
 manual launches and macros keep the player's selected direction.
 

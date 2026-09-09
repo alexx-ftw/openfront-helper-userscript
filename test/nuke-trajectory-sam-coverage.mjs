@@ -155,8 +155,10 @@ behavior.player = { smallID: () => 1, units: () => [] };
 {
   behavior.game = makeGame({ targetableRange: 10 });
   behavior.nukeSpawn = () => ({ x: 0, y: 0 });
-  behavior.isTrajectoryInterceptableBySam = (spawn, tile) => tile.x === 99;
-  behavior.findEnemySamsCoveringTile = (tile) => (tile.x === 99 ? [{ level: () => 2 }] : []);
+  behavior.isTrajectoryInterceptableBySam = (spawn, tile, excluded) =>
+    tile.x === 99 && !excluded?.has(12);
+  behavior.findEnemySamsCoveringTile = (tile) =>
+    tile.x === 99 ? [{ id: () => 12, level: () => 2 }] : [];
   const { clear, covered } = behavior.partitionCandidatesBySamCoverage(
     [
       { tile: { x: 40, y: 0 }, value: 5 },
@@ -187,8 +189,8 @@ behavior.player = { smallID: () => 1, units: () => [] };
     "insufficient salvo depth does not saturate the cover",
   );
 
-  // An interceptable path with NO defending SAMs carries zero covering
-  // levels: no salvo depth is owed, so the tile stays clear.
+  // A SAM along the launch/descent route can intercept without covering
+  // the destination. It is not a clear shot or a destination-only salvo.
   behavior.isTrajectoryInterceptableBySam = () => true;
   behavior.findEnemySamsCoveringTile = () => [];
   const part2 = behavior.partitionCandidatesBySamCoverage(
@@ -197,9 +199,21 @@ behavior.player = { smallID: () => 1, units: () => [] };
     Difficulty.Legendary,
   );
   assert.equal(
-    part2.covered.length === 0 && part2.clear.length === 1,
+    part2.covered.length === 0 && part2.clear.length === 0,
     true,
-    "an interceptable path with zero defending SAMs owes no salvo depth",
+    "route-only interception must not authorize an unprotected single shot",
+  );
+
+  behavior.findEnemySamsCoveringTile = () => [{ id: () => 12, level: () => 2 }];
+  const part3 = behavior.partitionCandidatesBySamCoverage(
+    [{ tile: { x: 99, y: 0 }, value: 7 }],
+    UNIT.AtomBomb,
+    Difficulty.Legendary,
+  );
+  assert.equal(
+    part3.covered.length + part3.clear.length,
+    0,
+    "saturating destination SAMs cannot pay for an additional route interceptor",
   );
 }
 
