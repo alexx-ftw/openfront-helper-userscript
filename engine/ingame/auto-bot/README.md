@@ -345,6 +345,21 @@ Structure trace wrappers preserve nuclear-priority options and precomputed land
 threats when forwarding a build or upgrade to the bot.
 Page-player proxies unwrap peer arguments before native engine calls, preserving
 the object identity used to recognize pending alliance requests and allies.
+
+Counterattack audit (2026-09-09, helper 1.12.160, headless identity fix
+`e642d35f`): removing only the cumulative attrition cap, while retaining the
+per-wave and production-reserve gates, is **not promoted**. Europe Normal FFA,
+50 Nations, 180 bots, no modifiers, native Impossible, helper Legendary:
+
+| Seed | Baseline | No cumulative cap |
+| --- | --- | --- |
+| `legendary-audit-159-europe` | Dead at 3817 | Dead at 4846 |
+| `legendary-cap-holdout-a` | Dead at 3735 | Dead at 3761 |
+| `legendary-cap-holdout-b` | At 5000: 35175 tiles, 1879604 troops, 1444388 gold, 2 Ports | At 5000: 33463 tiles, 1473701 troops, 727293 gold, 1 Port |
+
+The last pair is horizon-limited, not a victory comparison. A longer survival
+on the diagnostic seed does not justify weakening the ledger globally.
+
 The headless adapter schedules zero-delay cooperative work at the runner's task
 boundary, not against wall-clock milliseconds. Positive worker timeouts remain
 real-time safety limits. Published engine motion plans reach the headless game API
