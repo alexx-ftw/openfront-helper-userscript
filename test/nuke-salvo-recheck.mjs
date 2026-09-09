@@ -211,6 +211,8 @@ for (const scenario of [
   "reload",
   "outside-sam",
   "construction",
+  "remote-construction",
+  "route-construction",
   "insufficient",
 ]) {
   const { world, game, player, nukeTarget, behavior } = makeSalvoWorld();
@@ -241,6 +243,14 @@ for (const scenario of [
   player.units = (type) => (type === UNIT.AtomBomb ? [missile] : []);
   const outsideSam = { ...sam, id: () => "outside", tile: () => 12 };
   const hostileSams = scenario === "outside-sam" ? [outsideSam, sam] : [sam];
+  if (scenario === "remote-construction" || scenario === "route-construction") {
+    hostileSams.push({
+      ...sam,
+      id: () => "unfinished",
+      tile: () => (scenario === "remote-construction" ? 1000 : 12),
+      isUnderConstruction: () => true,
+    });
+  }
   const interceptors =
     scenario === "claimed" ? [{ isActive: () => true, targetUnit: () => missile }] : [];
   game.units = (type) => {
@@ -276,7 +286,7 @@ for (const scenario of [
   ];
   assert.equal(
     await behavior.processPendingNukeLaunches(),
-    scenario === "live",
+    scenario === "live" || scenario === "remote-construction",
     `${scenario}: only an unclaimed live missile that consumes covering capacity supports the finisher`,
   );
 }

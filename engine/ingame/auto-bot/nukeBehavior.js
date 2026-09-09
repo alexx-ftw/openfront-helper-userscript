@@ -1944,12 +1944,15 @@
       const sams = this.game.units(UNIT.SAMLauncher).filter((sam) =>
         sam.isActive() &&
         this.isHostileSamIntercept({ unit: sam, distSquared: 0 }));
-      // The client has no exact completion tick for an unfinished launcher;
-      // it could change which SAM claims a missile before this forecast fires.
-      if (sams.some((sam) => sam.isUnderConstruction())) return 0;
       const profiles = planner.buildLegendaryFriendlySamProfiles(sams, null, null);
       const routes = this.samSalvoUnclaimedLiveRoutes(targetTile, horizon, profiles);
       if (routes.length === 0) return 0;
+      // Unknown completion matters only if the unfinished SAM can intercept
+      // these missiles. Remote construction cannot change their assignments.
+      const unfinishedIds = new Set(sams.filter((sam) => sam.isUnderConstruction())
+        .map((sam) => sam.id()));
+      if (routes.some((route) => route.samOptions.some((option) =>
+        unfinishedIds.has(profiles[option.samIndex]?.id)))) return 0;
       const schedule = legendaryMissileDefenseSchedule({
         routes, samProfiles: profiles, samCooldownTicks: cooldown, marginTicks: 0,
       });

@@ -428,7 +428,9 @@ Revalidation also forecasts SAM charges consumed by already-launched own Atoms
 with exact live paths. It uses the shared interceptor scheduler across hostile
 SAMs, excludes missiles already pursued by an interceptor, and gives no credit
 to charges that reload before the remaining salvo arrives. Unknown trajectories,
-unfinished launchers, and inconclusive schedules retain the conservative estimate.
+unfinished launchers able to intercept those trajectories, and inconclusive
+schedules retain the conservative estimate. Construction outside those routes
+does not cancel an otherwise viable finisher.
 Bot Atom/Hydrogen intents use the upward arc assumed by their trajectory forecast.
 Single shots require a clear flight path. Both ordinary nuclear decisions and
 the freeze-giant fallback delegate SAM-covered targets to the existing anti-SAM
