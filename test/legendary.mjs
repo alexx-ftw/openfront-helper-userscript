@@ -756,6 +756,41 @@ executeClassicScript(
   { filename: "structureBehavior.js" },
 );
 const routeBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+for (const unavailable of [null, { canUpgrade: false, cost: 125_000n }]) {
+  const upgradeBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+  const city = { id: () => 17, level: () => 1 };
+  let probes = 0;
+  upgradeBehavior.player = { units: () => [city] };
+  upgradeBehavior._legendaryCityUpgradeCostCache = new Map();
+  upgradeBehavior.buildableForUnits = async () => {
+    probes++;
+    return [probes === 1 ? unavailable : { canUpgrade: 17, cost: 125_000n }];
+  };
+  assert.equal(await upgradeBehavior.probeLegendaryCityUpgradeCandidate(), null);
+  const recovered = await upgradeBehavior.probeLegendaryCityUpgradeCandidate();
+  assert.equal(recovered?.structureId, 17, "an unavailable upgrade must be reprobed");
+  assert.equal(recovered?.cost, 125_000n);
+  await upgradeBehavior.probeLegendaryCityUpgradeCandidate();
+  assert.equal(probes, 2, "a confirmed price remains cached at the same city level");
+}
+const changingPriceBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+let priceTick = 100;
+changingPriceBehavior.game = { ticks: () => priceTick };
+changingPriceBehavior.player = { units: () => [{ id: () => 18, level: () => 1 }] };
+changingPriceBehavior._legendaryCityUpgradeCostCache = new Map();
+changingPriceBehavior.buildableForUnits = async () => [
+  {
+    canUpgrade: 18,
+    cost: priceTick === 100 ? 250_000n : 500_000n,
+  },
+];
+assert.equal((await changingPriceBehavior.probeLegendaryCityUpgradeCandidate()).cost, 250_000n);
+priceTick++;
+assert.equal(
+  (await changingPriceBehavior.probeLegendaryCityUpgradeCandidate()).cost,
+  500_000n,
+  "another city build can change the price without changing this city's level",
+);
 let routeDistanceReads = 0;
 routeBehavior.game = {
   x: (tile) => tile,

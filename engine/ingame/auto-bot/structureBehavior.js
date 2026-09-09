@@ -9661,8 +9661,8 @@
 
     // The cheapest currently-known City upgrade under troop-cap pressure. The
     // authoritative upgrade cost comes from the buildable-unit probe (never the
-    // count-scaled new-structure formula); the per-level cost cache keeps the
-    // worker probes bounded to actual level transitions.
+    // count-scaled new-structure formula). Prices are cached only within the
+    // current snapshot: building/upgrading another City also changes the price.
     legendaryCityUpgradeCandidateInfo() {
       return this._legendaryCityUpgradeProbe ?? null;
     }
@@ -9748,10 +9748,15 @@
 
     cityUpgradeCostCacheKey(city) {
       const level = Math.max(1, Math.floor(Number(city?.level?.() ?? 1)));
-      return `${String(city?.id?.())}:${level}`;
+      return `${String(city?.id?.())}:${level}:${safeStructureGameTick(this.game)}`;
     }
 
     rememberLegendaryCityUpgradeCost(cacheKey, cost) {
+      // Unavailable/failed probes are transient, not a price for this level.
+      if (cost <= 0n) {
+        this._legendaryCityUpgradeCostCache.delete(cacheKey);
+        return;
+      }
       if (this._legendaryCityUpgradeCostCache.size >= CITY_UPGRADE_COST_CACHE_LIMIT) {
         this._legendaryCityUpgradeCostCache.clear();
       }

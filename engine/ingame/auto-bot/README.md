@@ -339,6 +339,10 @@ are valued by rail demand, ports by trade demand and survivability, and silos by
 current offensive target pressure. Defense Posts are excluded unless an incoming
 land assault exceeds the exceptional threat threshold.
 
+City upgrade prices are reused only within the current game tick. Failed or
+temporarily unavailable probes are not cached as prices, and later ticks query
+again because another City build or upgrade can change the authoritative cost.
+
 Productive sites are placed using the engine's rail connectivity score and an
 additional team-position score: nearby powerful allies are ranked by the maximum
 relative signal among troops, treasury, and gold production, with extra value for
