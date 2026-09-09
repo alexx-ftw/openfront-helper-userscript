@@ -10053,6 +10053,13 @@
       ) {
         return false;
       }
+      // A pure counterattack cancels the opposing wave before territorial
+      // combat, so the enemy's Defense Posts never act on these troops.
+      if (
+        context.force === true &&
+        troops <= context.incomingCounterattackTroops -
+          this.sameTickIncomingCounterattackCommitment(context.target)
+      ) return troops >= 1;
       if (
         context.target.isPlayer() &&
         this.attackIsTooWeakForDefensePosts(

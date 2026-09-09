@@ -128,6 +128,9 @@ under-construction posts do not count. Covered targets rank as harder, bot attac
 thresholds scale with the 5× damage effect, and attacks below the resulting
 minimum are deferred instead of wasting troops. The bounded profile is cached
 per target and game tick; cheap boat probes keep their existing behavior.
+Forced counterattacks wholly consumed by the incoming wave bypass this conquest
+floor: the engine cancels opposing troops before Defense Posts apply. Same-tick
+responses already committed to that wave are deducted before this exemption.
 
 Defensive construction counts nearby Posts against the front's budget using
 the same engine effect radius as its uncovered-front calculation. A Post outside

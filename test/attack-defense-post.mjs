@@ -386,6 +386,56 @@ assert.deepEqual(
 
 assert.equal(behavior.attackIsTooWeakForDefensePosts(enemy, 999, cachedProfile), true);
 assert.equal(behavior.attackIsTooWeakForDefensePosts(enemy, 1000, cachedProfile), false);
+for (const [force, incoming, troops, expected] of [
+  [true, 100, 50, true],
+  [true, 100, 100, true],
+  [true, 100, 101, false],
+  [false, 100, 50, false],
+  [true, 0, 50, false],
+  [true, 100, 0, false],
+]) {
+  assert.equal(
+    behavior.landAttackTroopsAreSafe(
+      {
+        target: enemy,
+        defenseProfile: cachedProfile,
+        requiredTribeAttackTroops: null,
+        force,
+        incomingCounterattackTroops: incoming,
+      },
+      troops,
+    ),
+    expected,
+    `covered front: force=${force}, incoming=${incoming}, troops=${troops}`,
+  );
+}
+behavior.botAttackPendingIntentCommitments.push({
+  createdTick: tick,
+  targetKey: behavior.getOutboundAttackTargetKey(enemy),
+  attackType: "land",
+  forcedCounterattack: true,
+  troops: 75,
+});
+for (const [troops, expected] of [
+  [25, true],
+  [26, false],
+]) {
+  assert.equal(
+    behavior.landAttackTroopsAreSafe(
+      {
+        target: enemy,
+        defenseProfile: cachedProfile,
+        requiredTribeAttackTroops: null,
+        force: true,
+        incomingCounterattackTroops: 100,
+      },
+      troops,
+    ),
+    expected,
+    "same-tick commitments cannot bypass covered conquest checks",
+  );
+}
+behavior.botAttackPendingIntentCommitments = [];
 assert.equal(
   behavior.calculateBotAttackTroops(enemy, 500, cachedProfile),
   0,
