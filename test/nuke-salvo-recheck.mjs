@@ -645,6 +645,56 @@ for (const [flightTicks, dueTick, expectedLaunch] of [
   );
 }
 
+// The finisher must follow actual launches, not the original schedule when
+// processing stalls or a launch is retried.
+{
+  const { world, nukeTarget, behavior } = makeSalvoWorld();
+  behavior.getSamSalvo = () => ({ bombsToFire: 2, waits: [0, 1] });
+  sandbox.state.nukeWantSlots = null;
+  await behavior.fireSamSalvo(
+    {
+      targetTile: 20,
+      totalBombs: 2,
+      siloEntries: [],
+      launchSequence: [{ flightTicks: 20 }, { flightTicks: 20 }],
+    },
+    nukeTarget,
+    1n,
+  );
+  assert.equal(sandbox.state.postSalvoHydrogen.dueTick, 826);
+  world.tick = 830;
+  const finisher = sandbox.state.postSalvoHydrogen;
+  const config = behavior.game.config();
+  behavior.game.config = () => ({ ...config, isUnitDisabled: () => false });
+  behavior.getPerceivedNukeCost = async () => 5_000_000n;
+  assert.equal(
+    await behavior.maybeFirePostSalvoHydrogen(),
+    false,
+    "an overdue finisher waits while its saturating salvo still has queued bombs",
+  );
+  assert.equal(sandbox.state.postSalvoHydrogen, finisher);
+  const buildables = behavior.player.buildables;
+  behavior.player.buildables = async () => [];
+  assert.equal(await behavior.processPendingNukeLaunches(), false);
+  assert.equal(finisher.dueTick, 826, "a rejected probe is not an actual launch");
+  assert.equal(await behavior.maybeFirePostSalvoHydrogen(), false);
+  assert.equal(sandbox.state.postSalvoHydrogen, finisher);
+  behavior.player.buildables = buildables;
+  world.tick = 831;
+  assert.equal(await behavior.processPendingNukeLaunches(), true);
+  assert.equal(
+    finisher.dueTick,
+    856,
+    "the final arrival is measured from the actual late launch tick",
+  );
+  assert.equal(
+    await behavior.maybeFirePostSalvoHydrogen(),
+    false,
+    "the finisher cannot run while the late atom is still in flight",
+  );
+  sandbox.state.postSalvoHydrogen = null;
+}
+
 launchSink = null;
 
 // ════════════════════════════════════════════════════════════════════════════

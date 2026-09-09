@@ -339,6 +339,9 @@ from launch approval; a selected Atom can still fail the expected-value gate.
 Queued nuclear launches revalidate their target every decision, including before
 their scheduled launch tick. Invalid targets are removed immediately; when the
 last queued launch disappears, its silo-slot reservation is released.
+The Hydrogen finisher waits for its own salvo's queue to drain. Delayed or retried
+launches move its deadline to the actual launch tick plus flight time and the
+existing five-tick landing margin; failed sends do not count as launches.
 SAM-salvo revalidation counts charges that can reload by the latest remaining
 planned arrival, including delayed-launch retries. Unknown flight or reload data
 keeps the conservative full-capacity estimate.

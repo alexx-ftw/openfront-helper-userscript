@@ -1873,6 +1873,12 @@
         pending.nukeType,
         pending.targetPlayer,
       );
+      const finisher = state.postSalvoHydrogen;
+      if (sent && pending.salvo && finisher?.salvoId === pending.salvo.salvoId &&
+          Number.isFinite(pending.salvo.flightTicks)) {
+        finisher.dueTick = Math.max(finisher.dueTick,
+          Number(this.game.ticks()) + pending.salvo.flightTicks + 5);
+      }
       return sent ? "fired" : "retry";
     }
 
@@ -2230,6 +2236,7 @@
           }),
         );
       state.postSalvoHydrogen = {
+        salvoId: salvoPlan.salvoId,
         targetTile: plan.targetTile,
         dueTick: lastArrivalTick + 5,
         targetSmallID: nukeTarget.smallID?.() ?? null,
@@ -2249,6 +2256,10 @@
     async maybeFirePostSalvoHydrogen() {
       const pending = state.postSalvoHydrogen;
       if (!pending || this.game.ticks() < pending.dueTick) return false;
+      // A delayed/retried atom must land before its finisher is evaluated.
+      if (pending.salvoId !== undefined && this._pendingNukeLaunches.some(
+        (launch) => launch.salvo?.salvoId === pending.salvoId,
+      )) return false;
       state.postSalvoHydrogen = null;
       const config = this.game.config();
       if (config.isUnitDisabled(UNIT.HydrogenBomb)) return false;
