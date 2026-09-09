@@ -144,6 +144,11 @@ budget is empty, so Impossible/Legendary does not attempt 100 rejected sends in
 one decision. `window.__autoBotDiag()` exposes the current budget and local
 backpressure counters.
 
+Defensive land responses share the uncommitted remainder of an incoming wave
+within the same game tick. Accepted same-target counterattacks are deducted
+before another defense lane can send; the next tick uses its fresh snapshot
+without deducting earlier cancellations again.
+
 ## Naval invasion interception
 
 With `winFixes` enabled and a completed Port, the bot identifies hostile

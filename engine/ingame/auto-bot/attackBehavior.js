@@ -8389,11 +8389,29 @@
     // the cap is exhausted the lane holds so the defensive density and
     // construction lanes do the work instead. A small homeland always keeps
     // the full mirror: it has no space to trade.
+    sameTickIncomingCounterattackCommitment(target) {
+      const targetKey = this.getOutboundAttackTargetKey(target);
+      const tick = this.currentAttackDecisionTick();
+      return (this.botAttackPendingIntentCommitments || [])
+        .filter((entry) =>
+          entry.createdTick === tick && entry.targetKey === targetKey &&
+          entry.attackType === "land" && entry.forcedCounterattack === true)
+        .reduce((total, entry) => total + entry.troops, 0);
+    }
+
     calculateIncomingCounterattackTroops(context) {
+      // Several defense lanes can observe the same wave before the engine
+      // applies their intents. Only subtract this tick's accepted responses;
+      // later snapshots already reflect earlier cancellations.
       const mirror = Math.min(
         context.finalSpendableTroops,
-        context.incomingCounterattackTroops,
+        Math.max(0, context.incomingCounterattackTroops -
+          this.sameTickIncomingCounterattackCommitment(context.target)),
       );
+      if (mirror < 1) {
+        context.attackBlocked = true;
+        return 0;
+      }
       // If the live wave is fully erasable while the production reserve stays
       // intact, erase it now. The old containment fraction was designed for
       // attackers who outmuscle us; it misfires when we hold 3x the wave and
@@ -8420,6 +8438,7 @@
       );
       const remaining = Math.max(0, cap - ledger.committed);
       const interdiction = Math.min(
+        mirror,
         context.incomingCounterattackTroops *
           COUNTERATTACK_INTERDICT_WAVE_FRACTION,
         context.finalSpendableTroops *

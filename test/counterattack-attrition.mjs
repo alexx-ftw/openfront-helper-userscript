@@ -307,4 +307,35 @@ function contextFor(behavior, attacker, { wave, spendable }) {
   assert.equal(context.attackBlocked, false);
 }
 
+// Accepted defensive intents share the live wave within one snapshot tick.
+{
+  const { behavior, attacker } = makeBehavior({ ownTroops: 500_000, attackerTroops: 400_000 });
+  behavior.botAttackPendingIntentCommitments = [];
+  behavior.getOutboundAttackSnapshot = () => [];
+  behavior.getOutboundTransportSnapshot = () => [];
+  behavior.recordOutboundAttackIntent(attacker, 89, { forcedCounterattack: true });
+  const remaining = contextFor(behavior, attacker, { wave: 90, spendable: 300_000 });
+  assert.equal(
+    behavior.calculateLandAttackTroops(remaining),
+    1,
+    "a second defense sends only the uncommitted remainder of the same wave",
+  );
+  behavior.recordOutboundAttackIntent(attacker, 1, { forcedCounterattack: true });
+  const covered = contextFor(behavior, attacker, { wave: 90, spendable: 300_000 });
+  assert.equal(behavior.calculateLandAttackTroops(covered), 0);
+  assert.equal(
+    covered.attackBlocked,
+    true,
+    "a covered wave cannot fall through to ordinary offense",
+  );
+  nowTick++;
+  assert.equal(
+    behavior.calculateLandAttackTroops(
+      contextFor(behavior, attacker, { wave: 90, spendable: 300_000 }),
+    ),
+    90,
+    "a fresh tick uses its new incoming snapshot without subtracting old cancellations twice",
+  );
+}
+
 process.stdout.write("counterattack attrition tests passed\n");
