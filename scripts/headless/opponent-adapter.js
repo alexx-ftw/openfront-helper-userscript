@@ -1488,7 +1488,7 @@ function configureHardMode(state, bot) {
   };
 }
 
-function createBuildMenu(bot) {
+export function createBuildMenu(bot) {
   const eventBus = createEventBus(bot, bot.harness.window);
   return {
     eventBus,
@@ -1517,6 +1517,13 @@ function createBuildMenu(bot) {
 }
 
 function createEventBus(bot, window) {
+  class BuildUnitEvent {
+    constructor(unit, tile, rocketDirectionUp) {
+      this.unit = unit;
+      this.tile = tile;
+      this.rocketDirectionUp = rocketDirectionUp;
+    }
+  }
   class SpawnEvent {
     constructor(tile) {
       this.tile = tile;
@@ -1567,6 +1574,7 @@ function createEventBus(bot, window) {
 
   return {
     listeners: new window.Map([
+      [BuildUnitEvent, []],
       [MoveWarshipEvent, []],
       [EmbargoEvent, []],
       [DonateTroopsEvent, []],
@@ -1704,6 +1712,14 @@ function allianceEventToIntent(event) {
 }
 
 function eventToIntent(event, game, clientID) {
+  if (event.unit !== undefined && event.tile !== undefined) {
+    return {
+      type: "build_unit",
+      unit: event.unit,
+      tile: Number(event.tile),
+      rocketDirectionUp: event.rocketDirectionUp,
+    };
+  }
   return (
     warshipEventToIntent(event) ??
     spawnEventToIntent(event) ??

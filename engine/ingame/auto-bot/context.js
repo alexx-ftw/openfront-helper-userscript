@@ -90,11 +90,30 @@
     return null;
   }
 
+  function autoBotBuildDispatch(buildMenu, buildable, tile) {
+    if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
+      return null;
+    }
+    if (buildable?.canBuild === false && buildable.canUpgrade === false) return null;
+    if (buildable?.canBuild !== 0 || buildable.canUpgrade !== false) {
+      return buildMenu.sendBuildOrUpgrade.bind(buildMenu, buildable, tile);
+    }
+    // BuildMenu tests canBuild by truthiness, silently dropping legal TileRef 0.
+    // Emit the same native event for this case, without changing the tile.
+    const bus = buildMenu.eventBus;
+    if (typeof bus?.emit !== "function") return null;
+    const Ctor = discoverCtors(bus).buildUnit;
+    if (!Ctor) return null;
+    return () => {
+      bus.emit(new Ctor(buildable.type, tile, buildMenu.uiState?.rocketDirectionUp));
+      buildMenu.hideMenu?.();
+    };
+  }
+
   function sendAutoBotBuildOrUpgrade(buildMenu, buildable, tile, game, player) {
     if (game === null || typeof game !== "object") return false;
-    if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
-      return false;
-    }
+    const dispatch = autoBotBuildDispatch(buildMenu, buildable, tile);
+    if (!dispatch) return false;
     const cost = autoBotBuildCost(buildable);
     if (cost === null) return false;
     const tick = autoBotBuildTick(game);
@@ -122,7 +141,7 @@
     ) {
       return false;
     }
-    buildMenu.sendBuildOrUpgrade(buildable, tile);
+    dispatch();
     reservations.push({
       playerId,
       cost,
@@ -148,6 +167,7 @@
   // own-property shape. Same approach as boat-macro.js.
   const _ctors = {
     bus: null,
+    buildUnit: null,
     spawn: null,
     attack: null,
     cancelAttack: null,
@@ -171,6 +191,12 @@
   }
 
   const INTENT_CTOR_PROBES = [
+    {
+      key: "buildUnit",
+      args: ["§unit", 0, true],
+      matches: (event) =>
+        event?.unit === "§unit" && event.tile === 0 && event.rocketDirectionUp === true,
+    },
     {
       key: "cancelAttack",
       args: ["§attack"],
@@ -278,8 +304,13 @@
   }
 
   function discoverCtors(eventBus) {
+    if (_ctors.bus !== eventBus) {
+      for (const key of Object.keys(_ctors)) _ctors[key] = null;
+      _ctors.bus = eventBus;
+    }
     if (
       _ctors.bus === eventBus &&
+      _ctors.buildUnit &&
       _ctors.attack &&
       _ctors.cancelAttack &&
       _ctors.spawn &&

@@ -1,7 +1,20 @@
 import assert from "node:assert/strict";
-import { createBundledOpponentHarness } from "../scripts/headless/opponent-adapter.js";
+import {
+  createBuildMenu,
+  createBundledOpponentHarness,
+} from "../scripts/headless/opponent-adapter.js";
 
 const harness = createBundledOpponentHarness();
+const bot = { harness, game: {}, clientID: "build-fixture", intentBuffer: [] };
+const menu = createBuildMenu(bot);
+const buildCtor = harness.internals.discoverCtors(menu.eventBus).buildUnit;
+assert.equal(typeof buildCtor, "function", "headless exposes the native build event constructor");
+menu.eventBus.emit(new buildCtor("City", 0, false));
+assert.deepEqual(
+  bot.intentBuffer,
+  [{ type: "build_unit", unit: "City", tile: 0, rocketDirectionUp: false }],
+  "a direct zero-tile build must not be misclassified as a spawn intent",
+);
 for (let tick = 0; tick < 10; tick++) {
   let resumed = false;
   harness.window.setTimeout(() => {

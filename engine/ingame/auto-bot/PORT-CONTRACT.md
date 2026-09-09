@@ -133,6 +133,9 @@ considerMIRV/maybeSpawnWarship/counterWarshipInfestation/maybeSendNuke). Wrap ea
    `getBuildMenu().sendBuildOrUpgrade(buildableUnit, tile)` (structures pass the
    snapped `bu.canBuild` tile; WARSHIPS pass the queried WATER tile; nukes/MIRV pass
    the target tile). To UPGRADE: `sendBuildOrUpgrade(bu)` where `bu.canUpgrade !== false`.
+   The shared dispatcher emits the native build event directly for legal
+   `canBuild: 0`, which BuildMenu's truthiness check drops. It preserves the requested
+   tile and the shared purchase/rate budget; constructors are cached per event bus.
 2. **bestTransportShipSpawn / canBuildTransportShip** — `await player.bestTransportShipSpawn(tile)`
    → spawn TileRef or `false`. src `canBuildTransportShip(g,p,tile)` == this `!== false`.
    It is called inside RNG loops (findRandomBoatTarget 500 iters, island, TN boat). Apply

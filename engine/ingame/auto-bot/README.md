@@ -221,6 +221,8 @@ block a follow-up that cannot be funded safely.
 Unacknowledged construction purchases reserve gold per game instance and player.
 Replaying a seed with the same player ID cannot inherit a prior game's reservation,
 and another game's clock cannot expire purchases still pending in this one.
+Legal builds on tile zero use the native build event directly because BuildMenu
+otherwise drops them. They consume the same single intent and purchase budget.
 
 ## Team donation policy
 

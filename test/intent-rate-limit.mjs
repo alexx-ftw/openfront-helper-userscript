@@ -157,6 +157,60 @@ assert.match(
 
 process.stdout.write("INTENT RATE LIMIT OK — 10/s and 150/min client budget enforced\n");
 
+class TestBuildUnitIntent {
+  constructor(unit, tile, rocketDirectionUp) {
+    this.unit = unit;
+    this.tile = tile;
+    this.rocketDirectionUp = rocketDirectionUp;
+  }
+}
+class ReplacementBuildUnitIntent extends TestBuildUnitIntent {}
+const zeroTile = createSandbox();
+for (const Ctor of [TestBuildUnitIntent, ReplacementBuildUnitIntent]) {
+  const delivered = [];
+  const bus = {
+    listeners: new Map([[Ctor, []]]),
+    emit(event) {
+      if (event.constructor === Ctor) delivered.push(event);
+    },
+  };
+  let hidden = false;
+  const acceptedBefore = zeroTile.api.getIntentRateLimitSnapshot().accepted;
+  const menu = {
+    eventBus: bus,
+    uiState: { rocketDirectionUp: false },
+    hideMenu() {
+      hidden = true;
+    },
+    sendBuildOrUpgrade(buildable, tile) {
+      // Mirrors the upstream BuildMenu's truthiness check.
+      if (buildable.canBuild)
+        bus.emit(new Ctor(buildable.type, tile, this.uiState.rocketDirectionUp));
+      this.hideMenu();
+    },
+  };
+  assert.equal(
+    zeroTile.api.sendAutoBotBuildOrUpgrade(
+      menu,
+      { type: "Atom Bomb", canBuild: 0, canUpgrade: false, cost: 100n },
+      0,
+      { ticks: () => 0 },
+      { id: () => "zero", gold: () => 100n },
+    ),
+    true,
+  );
+  assert.equal(
+    delivered.length,
+    1,
+    `${Ctor.name}: tile zero must emit exactly one build on the current event bus`,
+  );
+  assert.equal(delivered[0].tile, 0);
+  assert.equal(delivered[0].unit, "Atom Bomb");
+  assert.equal(delivered[0].rocketDirectionUp, false);
+  assert.equal(hidden, true);
+  assert.equal(zeroTile.api.getIntentRateLimitSnapshot().accepted, acceptedBefore + 1);
+}
+
 const construction = createSandbox();
 let constructionTick = 100;
 const purchases = [];

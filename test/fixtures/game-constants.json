@@ -935,9 +935,9 @@
     "name": "INTENT_CTOR_PROBES",
     "declarationKind": "const",
     "initializerKind": "ArrayLiteralExpression",
-    "initializerHash": "729da2d0bd422a50a18b102b5cf737b5091a25e3c2037b696df9d7d3e1ddbccd",
-    "initializerLength": 1829,
-    "initializerPreview": "[\n    {\n        key: \"cancelAttack\",\n        args: [\"§attack\"],\n        matches: (event) => event?.attackID === \"§attack\" &&\n            event.targetID === undefined &&\n            event.troops === undefined,\n    },\n    {\n        key: \"m..."
+    "initializerHash": "d4f3d599a4fdec17423fb9aa77b641efadf993cb1829be8ca8d664d973c8b9d8",
+    "initializerLength": 2011,
+    "initializerPreview": "[\n    {\n        key: \"buildUnit\",\n        args: [\"§unit\", 0, true],\n        matches: (event) => event?.unit === \"§unit\" && event.tile === 0 && event.rocketDirectionUp === true,\n    },\n    {\n        key: \"cancelAttack\",\n        args: [\"§a..."
   },
   {
     "id": "engine/ingame/auto-bot/core.js:UNIT#1",
