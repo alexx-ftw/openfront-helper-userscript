@@ -150,6 +150,50 @@ for (const type of [UNIT.AtomBomb, UNIT.HydrogenBomb]) {
 }
 buildMenu = { sendBuildOrUpgrade() {} };
 
+// A covered candidate requires an actual salvo, not merely enough silo levels.
+for (const lane of ["ordinary", "freeze"]) {
+  const { world, game, player, nukeTarget, behavior } = makeSalvoWorld();
+  const sam = world.sam("covered-target", 1);
+  world.targetSams.push(sam);
+  world.covering.push({ unit: sam, distSquared: 0 });
+  const silo = { id: () => 7, level: () => 2, isUnderConstruction: () => false };
+  player.units = (type) => (type === UNIT.MissileSilo ? [silo] : []);
+  game.config = () => ({
+    maxSamRange: () => 150,
+    samRange: () => 150,
+    SAMCooldown: () => 300,
+    isUnitDisabled: () => false,
+  });
+  behavior.nukeSpawn = () => 5;
+  behavior.isTrajectoryInterceptableBySam = (_spawn, _tile, excluded) => !excluded?.has(sam.id());
+  behavior.probeCanBuildNuke = async () => true;
+  behavior.samSalvoAimTile = () => 20;
+  behavior.getAvailableSiloEntries = () => [
+    { silo, slots: 2, flightTicks: 20, interceptable: false },
+  ];
+  const candidates = [{ tile: 20, value: 100 }];
+  const selected = { type: UNIT.AtomBomb, cost: 1n };
+  const emitted = [];
+  launchSink = emitted;
+  sandbox.state.nukeWantSlots = null;
+  if (lane === "ordinary") {
+    await behavior.fireNukeFromCandidates(candidates, nukeTarget, selected, [silo], "Legendary");
+  } else {
+    behavior.freezeGiantStrikeTarget = () => nukeTarget;
+    behavior.selectAffordableNuke = async () => selected;
+    behavior.collectCandidatesWithRetry = async () => ({ list: candidates });
+    await behavior.maybeFreezeGiantStrike([silo], "Legendary");
+  }
+  assert.equal(emitted.length, 1, `${lane}: launch the first atom now`);
+  assert.equal(
+    behavior._pendingNukeLaunches.length,
+    1,
+    `${lane}: queue the second atom required to overcome one SAM charge`,
+  );
+  assert.equal(behavior._pendingNukeLaunches[0].salvo.plannedCoveringLevel, 1);
+  launchSink = null;
+}
+
 const reservation = () => ({
   need: 3,
   at: 800,

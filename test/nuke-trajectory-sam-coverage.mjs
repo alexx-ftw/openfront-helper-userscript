@@ -178,17 +178,6 @@ behavior.player = { smallID: () => 1, units: () => [] };
     2,
     "covering levels sum the defending SAM levels for saturation math",
   );
-  assert.equal(
-    behavior.siloCapacitySaturatesCover(2, [{ level: () => 3 }]),
-    true,
-    "3 ready silo shots saturate 2 covering SAM levels",
-  );
-  assert.equal(
-    behavior.siloCapacitySaturatesCover(2, [{ level: () => 2 }]),
-    false,
-    "insufficient salvo depth does not saturate the cover",
-  );
-
   // A SAM along the launch/descent route can intercept without covering
   // the destination. It is not a clear shot or a destination-only salvo.
   behavior.isTrajectoryInterceptableBySam = () => true;

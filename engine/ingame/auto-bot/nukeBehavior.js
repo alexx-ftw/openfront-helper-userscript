@@ -491,10 +491,10 @@
       await this.maybeFreezeGiantStrike(silos, difficulty);
     }
 
-    // Clear shots first, then SAM-saturated salvos, then the anti-SAM
-    // fallback — the firing tail of maybeSendNuke.
+    // Clear shots first, then the anti-SAM salvo planner — the firing tail
+    // of maybeSendNuke.
     async fireNukeFromCandidates(candidates, target, selectedNuke, silos, difficulty) {
-      const { clear, covered } = this.partitionCandidatesBySamCoverage(
+      const { clear } = this.partitionCandidatesBySamCoverage(
         candidates,
         selectedNuke.type,
         difficulty,
@@ -513,24 +513,8 @@
         await this.sendNuke(best.tile, selectedNuke.type, target);
         return;
       }
-      const saturated = await this.selectBuildableNukeCandidate(
-        covered.filter((cand) =>
-          this.siloCapacitySaturatesCover(cand.coveringSamLevels ?? 0, silos)),
-        selectedNuke.type,
-      );
-      if (
-        saturated &&
-        saturated.value > 0 &&
-        await this.nukeHasPositiveExpectedValue(
-          saturated,
-          target,
-          selectedNuke,
-          silos,
-        )
-      ) {
-        await this.sendNuke(saturated.tile, selectedNuke.type, target);
-        return;
-      }
+      // Silo capacity is not a salvo: covered shots must use the planner
+      // below so every required atom is launched or queued with timing.
       if (isAtLeastHardDifficulty(difficulty)) {
         await this.maybeDestroyEnemySam(target);
       }
@@ -596,7 +580,7 @@
       const candidates = await this.collectCandidatesWithRetry(
         giant, selectedNuke, silos, difficulty,
       );
-      const { clear, covered } = this.partitionCandidatesBySamCoverage(
+      const { clear } = this.partitionCandidatesBySamCoverage(
         candidates.list,
         selectedNuke.type,
         difficulty,
@@ -606,14 +590,7 @@
         await this.sendNuke(best.tile, selectedNuke.type, giant);
         return;
       }
-      const saturated = await this.selectBuildableNukeCandidate(
-        covered.filter((cand) =>
-          this.siloCapacitySaturatesCover(cand.coveringSamLevels ?? 0, silos)),
-        selectedNuke.type,
-      );
-      if (saturated) {
-        await this.sendNuke(saturated.tile, selectedNuke.type, giant);
-      }
+      await this.maybeDestroyEnemySam(giant);
     }
 
     // Candidate collection with the Legendary value-directed retry folded
@@ -800,18 +777,6 @@
         else clear.push(entry);
       }
       return { clear, covered };
-    }
-
-    siloCapacitySaturatesCover(coveringSamLevels, silos) {
-      if (coveringSamLevels <= 0) return true;
-      let readyShots = 0;
-      for (const silo of silos || []) {
-        if (silo?.isUnderConstruction?.() === true) continue;
-        readyShots += Math.max(0, Number(silo.level?.()) || 1);
-      }
-      // +1: the first bombs exhaust the SAM's interceptor charges; the
-      // remaining capacity lands. Mirrors the samSalvoStillViable math.
-      return readyShots > coveringSamLevels;
     }
 
     /**

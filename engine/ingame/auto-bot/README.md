@@ -430,9 +430,11 @@ SAMs, excludes missiles already pursued by an interceptor, and gives no credit
 to charges that reload before the remaining salvo arrives. Unknown trajectories,
 unfinished launchers, and inconclusive schedules retain the conservative estimate.
 Bot Atom/Hydrogen intents use the upward arc assumed by their trajectory forecast.
-Single-shot and destination-saturation candidates reject routes intercepted by
-additional SAMs outside the destination coverage set, matching the salvo planner's
-route eligibility. No destination coverage does not imply a clear flight path.
+Single shots require a clear flight path. Both ordinary nuclear decisions and
+the freeze-giant fallback delegate SAM-covered targets to the existing anti-SAM
+salvo planner, which funds and schedules every required atom. Merely owning enough
+silo levels never authorizes a lone interceptable bomb. No destination coverage
+does not imply a clear flight path.
 Anti-SAM aim points score structure value around each candidate blast center,
 not the original SAM tile, so nearby structures can improve the chosen aim.
 The SAM must remain strictly inside the circular blast, matching the engine's
