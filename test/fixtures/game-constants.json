@@ -1290,6 +1290,16 @@
     "initializerPreview": "30"
   },
   {
+    "id": "engine/ingame/auto-bot/earlyGame.js:SEA_TRIBE_BOAT_WINDOW_LANE_ACTIVE#1",
+    "file": "engine/ingame/auto-bot/earlyGame.js",
+    "name": "SEA_TRIBE_BOAT_WINDOW_LANE_ACTIVE",
+    "declarationKind": "const",
+    "initializerKind": "FalseKeyword",
+    "initializerHash": "fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa",
+    "initializerLength": 5,
+    "initializerPreview": "false"
+  },
+  {
     "id": "engine/ingame/auto-bot/emojiBehavior.js:EMOJI_ASSIST_ACCEPT#1",
     "file": "engine/ingame/auto-bot/emojiBehavior.js",
     "name": "EMOJI_ASSIST_ACCEPT",

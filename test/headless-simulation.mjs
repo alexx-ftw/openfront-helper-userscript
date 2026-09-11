@@ -488,11 +488,11 @@ const naturalNuclearProgress = naturalNuclearRuntime.records.find(
 assert.ok(naturalNuclearResult);
 assert.ok(naturalNuclearResult.cumulativeBuildUnitTypes["Missile Silo"] > 0);
 assert.ok(
-  naturalNuclearRuntime.records.some(
+  !naturalNuclearRuntime.records.some(
     (record) =>
       record.kind === "nuke-selection" && record.type === "Atom Bomb" && record.gold >= record.cost,
   ),
-  "a Legendary hydro specialist must select an affordable Atom; launch still requires positive value",
+  "under the restored parity semantics a hydro specialist defers Atoms while the H-bomb is unaffordable and no heavy attack is underway (the Legendary-only fallback lane is inactive; 2026-09-11)",
 );
 assert.equal(naturalNuclearResult.nuclearStrategy?.isHydroNation, true);
 assert.equal(

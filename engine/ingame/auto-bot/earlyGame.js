@@ -42,14 +42,18 @@
   // Adaptive tier: the 30-second opening window permanently hides sea tribes
   // that are farther than 300 boat ticks even after the opening has run — on
   // crowded water maps those tribes are exactly the gold/tile hoards the
-  // early economy needs. At Legendary the window keeps growing with the
-  // opening's elapsed time, capped by the exploratory-boat policy limit.
+  // early economy needs. The growing window lane stayed dormant across the
+  // entire validated basket history (settings were "Impossible" then); the
+  // single Legendary tier replicates that proven configuration, so the lane
+  // stays inactive until it is re-measured on its own merits (2026-09-11).
+  const SEA_TRIBE_BOAT_WINDOW_LANE_ACTIVE = false;
   function earlyGameBoatWindowTicks() {
     // `state` belongs to the concatenated bundle scope; standalone tests load
     // this layer without it and keep the historical 300-tick window.
     const shared = typeof state !== "undefined" ? state : null;
     const elapsed = Number(shared?.earlyGame?.openingElapsedTicks);
     if (
+      SEA_TRIBE_BOAT_WINDOW_LANE_ACTIVE &&
       shared?.settings?.difficulty === "Legendary" &&
       Number.isFinite(elapsed) &&
       elapsed > 0

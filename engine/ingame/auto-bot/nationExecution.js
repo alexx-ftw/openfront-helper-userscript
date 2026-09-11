@@ -95,9 +95,10 @@
         case Difficulty.Hard:
           return this.random.nextInt(45, 60);
         case Difficulty.Impossible:
-          return this.random.nextInt(30, 50);
         case Difficulty.Legendary:
-          return this.random.nextInt(20, 35);
+          // The adaptive tier keeps the proven Impossible attack cadence;
+          // the faster 20-35 variant collapsed team-basket wins (2026-09-11).
+          return this.random.nextInt(30, 50);
         default:
           return this.random.nextInt(30, 50);
       }

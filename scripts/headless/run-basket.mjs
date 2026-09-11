@@ -115,12 +115,8 @@ async function main() {
   const done = new Set();
   if (fs.existsSync(resultsPath)) {
     for (const line of fs.readFileSync(resultsPath, "utf8").split("\n")) {
-      if (!line.trim()) continue;
-      try {
-        done.add(JSON.parse(line).key);
-      } catch {
-        // ignore truncated resume lines
-      }
+      if (!line.startsWith('{"key"')) continue;
+      done.add(JSON.parse(line).key);
     }
   }
   let index = 0;

@@ -35,17 +35,24 @@
   // strategy order / ratios / probabilities. NOTE: this is distinct from the
   // lobby's actual Nation difficulty; enemy-stat reads (config().maxTroops(enemy))
   // still use the real game difficulty. Legacy Impossible settings map to Legendary.
+  // The single Legendary tier REPLICATES the proven Impossible strategy: the
+  // exact-match Legendary branches (port ratio 1.25, attack rate 20-35, MIRV /
+  // alliance / crown-lead deltas, and the win-fix attack/nuke/warship lanes)
+  // measurably collapsed the fixed validation basket when 12cc77b9 activated
+  // them (team rows flipped win -> loss at byte-stable ticks, 2026-09-11).
+  // Union gates (isLegendaryDifficulty) stay active for both spellings, so the
+  // naval/SAM/economy policy set is unchanged from the validated baseline.
   function currentDifficulty() {
     const d = state && state.settings ? state.settings.difficulty : null;
     switch (d) {
       case "Easy":
       case "Medium":
       case "Hard":
-      case "Legendary":
         return d;
+      case "Legendary":
       case "Impossible":
       default:
-        return Difficulty.Legendary;
+        return Difficulty.Impossible;
     }
   }
 

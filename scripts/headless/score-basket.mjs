@@ -114,11 +114,7 @@ function extractResultRecords(text) {
   for (const line of text.split("\n")) {
     const start = line.indexOf('{"phase":"result"');
     if (start === -1) continue;
-    try {
-      records.push(JSON.parse(line.slice(start)));
-    } catch {
-      // Truncated or interleaved line: skip; result records are one JSON object.
-    }
+    records.push(JSON.parse(line.slice(start)));
   }
   return records;
 }
@@ -136,16 +132,14 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       let usedKeyed = false;
       for (const line of lines) {
         if (!line.includes('{"phase":"result"')) continue;
-        try {
-          const parsed = JSON.parse(line.includes('{"key"') ? line : line.slice(line.indexOf('{"phase":"result"')));
-          if (parsed.key && parsed.result) {
-            entries.push({ key: parsed.key, result: parsed.result });
-            usedKeyed = true;
-          } else if (parsed.phase === "result") {
-            entries.push({ key: `${file}:${entries.length}`, result: parsed });
-          }
-        } catch {
-          // Truncated or interleaved line: skip; result records are one JSON object.
+        const parsed = JSON.parse(
+          line.includes('{"key"') ? line : line.slice(line.indexOf('{"phase":"result"')),
+        );
+        if (parsed.key && parsed.result) {
+          entries.push({ key: parsed.key, result: parsed.result });
+          usedKeyed = true;
+        } else if (parsed.phase === "result") {
+          entries.push({ key: `${file}:${entries.length}`, result: parsed });
         }
       }
       if (!usedKeyed && entries.length === 0) {
