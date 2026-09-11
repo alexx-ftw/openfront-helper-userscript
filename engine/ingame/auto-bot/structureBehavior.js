@@ -3539,6 +3539,12 @@
     }
 
     firstSamConstructionReserve(type) {
+      // Ports are exempt, as with the war chest below: on water maps they ARE
+      // the economy that funds the interceptor, and gating Port construction
+      // behind the 1.5M reserve during the first-SAM window starved the trade
+      // economy exactly while a hostile silo existed (measured team-basket
+      // win -> loss regression, 2026-09-11).
+      if (type === UNIT.Port) return 0n;
       if (!ECONOMIC_STRUCTURE_TYPES.includes(type) && type !== UNIT.MissileSilo) return 0n;
       const reserve = this.singleSamHostileSiloReplacementReserve();
       if (reserve <= 0n || this.ownedSamUnits().length > 0) return 0n;
@@ -10580,7 +10586,10 @@
     // maybeUpgradeStructure — NationStructureBehavior.ts:696 (now async).
     genericStructureUpgradeAllowed(result, type) {
       if (type !== UNIT.SAMLauncher) {
-        if (result.bu?.cost == null) return false;
+        // Fail open when the probe omits a cost: the engine rejects truly
+        // unaffordable upgrades itself, and treating a missing price as a
+        // permanent block froze every generic upgrade on probe failures.
+        if (result.bu?.cost == null) return true;
         return BigInt(result.bu.cost) <= this.availableGoldAfterReserve(type);
       }
       if (

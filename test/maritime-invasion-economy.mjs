@@ -299,19 +299,18 @@ lateInterceptor.interceptionRoute = (from, to) =>
     { length: Math.abs(from - to) + 1 },
     (_, index) => from + Math.sign(to - from) * index,
   );
-assert.equal(
-  await lateInterceptor.evaluateInterceptorBuild(
-    100,
-    { id: 1, path: [0, 1, 2] },
-    {
-      boatSpeed: 1,
-      warshipSpeed: 1,
-      attackRange: 1,
-    },
-  ),
-  null,
-  "a legal hull that cannot arrive before landing is not an emergency interceptor",
+const lateFallback = await lateInterceptor.evaluateInterceptorBuild(
+  100,
+  { id: 1, path: [0, 1, 2] },
+  {
+    boatSpeed: 1,
+    warshipSpeed: 1,
+    attackRange: 1,
+  },
 );
+assert.ok(lateFallback, "the planner-unassigned hull stays emergency-eligible as a fallback");
+assert.equal(lateFallback.score[0], 0, "the unassigned fallback scores below a planner assignment");
+assert.equal(lateFallback.score[2], -1, "the unassigned fallback scores by spawn distance");
 let warshipTick = 7;
 warshipSandbox.performance = { now: () => warshipTick * 1000 };
 let visibleWarships = [];
@@ -422,14 +421,6 @@ assert.equal(
 );
 offensiveReserveActive = false;
 const catchableInvasions = warshipBehavior.incomingNavalInvasions;
-warshipBehavior.incomingNavalInvasions = () => [{ id: "incoming", path: [0, 1, 2] }];
-assert.equal(
-  await warshipBehavior.maybeSpawnWarship(),
-  false,
-  "the initial emergency path must not bypass an impossible interception plan",
-);
-assert.equal(warshipBuilds.length, 0, "a too-late destroyer does not consume the economy budget");
-warshipBehavior.incomingNavalInvasions = catchableInvasions;
 warshipTick += 2;
 assert.equal(
   await warshipBehavior.maybeSpawnWarship(),
@@ -441,6 +432,8 @@ assert.equal(warshipBuilds.length, 1, "the emergency path emits one destroyer bu
 assert.equal(warshipBuilds[0][0].type, UNIT.Warship, "the buildable is a Warship");
 assert.equal(warshipBuilds[0][0].canBuild, 44, "the Warship keeps its port spawn tile");
 assert.equal(warshipBuilds[0][1], 55, "the build menu receives the water target tile");
+
+warshipBehavior.incomingNavalInvasions = catchableInvasions;
 
 warshipTick++;
 await warshipBehavior._retaliateBuildAsync(56, {}, "trade");
@@ -490,5 +483,24 @@ assert.equal(
   "a distinct uncovered invasion may build after the first Warship materializes",
 );
 assert.equal(warshipBuilds.length, 3, "accepted construction releases the shared reservation");
+
+// A fresh invasion the planner cannot assign still spawns the distance-scored
+// fallback destroyer: refusing every unassigned hull left invasions unopposed
+// (measured team-basket regression, 2026-09-11).
+warshipBehavior.incomingNavalInvasions = () => [{ id: "incoming-late", path: [0, 1, 2] }];
+warshipTick += 3;
+warshipBehavior.ensureSmartState().pendingInvasionBuilds.clear();
+warshipBehavior.ensureSmartState().pendingWarshipBuild = null;
+warshipBehavior.ensureSmartState().lastInvasionBuildTick = -1;
+assert.equal(
+  await warshipBehavior.buildInterceptorForInvasion(
+    { id: "incoming-late", path: [0, 1, 2] },
+    1,
+    1,
+    1,
+  ),
+  true,
+  "the fallback interceptor is emitted for a planner-unassigned invasion",
+);
 
 process.stdout.write("maritime invasion economy tests passed\n");

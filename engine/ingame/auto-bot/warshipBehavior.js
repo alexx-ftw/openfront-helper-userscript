@@ -1522,8 +1522,17 @@
         ...speeds,
       });
       const assignment = plan.assignments[0] ?? null;
-      if (assignment === null) return null;
-      const score = [1, assignment.marginTicks, -assignment.interceptTick];
+      // Unassigned candidates stay in the pool, scored by spawn distance: if
+      // the interception planner refuses every candidate (too-late hulls,
+      // worker probe failures), dropping them all means NO emergency
+      // destroyer is ever built and the invasion lands unopposed. The
+      // fallback tier [0, 0, -spawnDistance] keeps them ordered below any
+      // planner-assigned hull.
+      const spawnRoute = this.interceptionRoute(spawnTile, tile);
+      const spawnDistance = Array.isArray(spawnRoute) ? spawnRoute.length : Infinity;
+      const score = assignment
+        ? [1, assignment.marginTicks, -assignment.interceptTick]
+        : [0, 0, -spawnDistance];
       return { bu, tile, score };
     }
 

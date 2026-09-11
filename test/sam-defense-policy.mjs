@@ -2117,13 +2117,18 @@ const originalReserveForBudget = behavior.legendaryReserveGold;
   budget.safeConstructionCost = () => 1_500_000n;
   budget.legendaryAtomWarChest = () => 0n;
   budget.legendaryReserveGold = () => 0n;
-  for (const type of [UNIT.City, UNIT.Factory, UNIT.Port, UNIT.MissileSilo]) {
+  for (const type of [UNIT.City, UNIT.Factory, UNIT.MissileSilo]) {
     assert.equal(
       budget.availableGoldAfterReserve(type),
       0n,
       "ordinary and plateau construction cannot drain the first-SAM fund",
     );
   }
+  assert.equal(
+    budget.availableGoldAfterReserve(UNIT.Port),
+    gold,
+    "Ports keep the full budget during the first-SAM window: on water maps they are the economy that funds the interceptor, and gating them starved the trade economy (measured team-basket regression, 2026-09-11)",
+  );
   assert.equal(budget.availableGoldAfterReserve(UNIT.SAMLauncher), gold);
   assert.equal(budget.availableGoldAfterReserve(UNIT.DefensePost), gold);
   gold = 2_500_000n;
