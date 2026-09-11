@@ -163,6 +163,8 @@ async function runDonation(options = {}) {
     incomingTransports.map((transport) => [transport.targetTile(), 1]),
   );
   const game = {
+    x: (tile) => tile,
+    y: () => 0,
     myPlayer: () => me,
     playerViews: () => players,
     neighbors: (tile) => (tile === 1 ? [...ownerByTile.keys()] : []),
@@ -225,6 +227,7 @@ async function runDonation(options = {}) {
       packets,
       sendAttempts,
       maritime: sandbox.window.__OFH_getIncomingMaritimeInvasion(game, me),
+      getMaritimeInvasion: () => sandbox.window.__OFH_getIncomingMaritimeInvasion(game, me),
       selectors: sandbox.__autoDonateSelectors,
       sharedDonationRecords,
       game,
@@ -557,6 +560,65 @@ assert.equal(
   0,
   "all troop donations stop while an enemy maritime invasion is inbound",
 );
+
+// Unknown force size must not hide the ETA of a later, nearer transport.
+const distantUnknownTransport = {
+  ...makeTransport({ owner: maritimeEnemy, troops: null, targetTile: 900 }),
+  tile: () => 0,
+};
+const imminentTransport = {
+  ...makeTransport({ owner: maritimeEnemy, troops: 700, targetTile: 19 }),
+  tile: () => 0,
+};
+for (const incomingTransports of [
+  [distantUnknownTransport, imminentTransport],
+  [imminentTransport, distantUnknownTransport],
+]) {
+  const fixture = await runDonation({
+    opponents: [maritimeEnemy],
+    incomingTransports,
+    returnDetails: true,
+  });
+  const invasion = fixture.getMaritimeInvasion();
+  assert.equal(invasion.active, true);
+  assert.equal(invasion.troops, null, "unknown troops are not reported as a partial known sum");
+  assert.equal(
+    invasion.etaTicks,
+    19,
+    "nearest arrival is independent of transport iteration order",
+  );
+}
+
+for (const { uncertainTransport, troops } of [
+  {
+    uncertainTransport: makeTransport({ owner: maritimeEnemy, troops: 700, targetTile: 900 }),
+    troops: 1400,
+  },
+  { uncertainTransport: makeTransport({ owner: null, targetTile: 900 }), troops: null },
+]) {
+  for (const incomingTransports of [
+    [uncertainTransport, imminentTransport],
+    [imminentTransport, uncertainTransport],
+  ]) {
+    const fixture = await runDonation({
+      opponents: [maritimeEnemy],
+      incomingTransports,
+      returnDetails: true,
+    });
+    const invasion = fixture.getMaritimeInvasion();
+    assert.equal(
+      invasion?.active,
+      true,
+      "an unreadable transport cannot erase a confirmed invasion",
+    );
+    assert.equal(invasion.troops, troops);
+    assert.equal(
+      invasion.etaTicks,
+      null,
+      "an unmeasurable arrival must preserve the conservative donation reserve",
+    );
+  }
+}
 
 const cancelledMaritimeInvasion = await runDonation({
   opponents: [maritimeEnemy],

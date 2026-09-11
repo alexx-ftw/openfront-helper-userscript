@@ -290,29 +290,47 @@
       units = Array.from(rawUnits || []);
     }
 
-    let incomingTroops = 0;
-    let minEtaTicks = null;
+    const summary = {
+      incomingTroops: 0,
+      unknownTroops: false,
+      unknownTransport: false,
+      unknownEta: false,
+      minEtaTicks: null,
+    };
     for (const unit of units) {
       if (!unit) continue;
-      const inspection = inspectAutoDonateTransport(game, me, myId, unit);
-      if (inspection.unknown) return null;
-      if (!inspection.incoming) continue;
-      if (
-        minEtaTicks === null ||
-        (inspection.etaTicks !== null && inspection.etaTicks < minEtaTicks)
-      ) {
-        minEtaTicks = inspection.etaTicks;
-      }
-      if (inspection.unknownTroops) {
-        return { active: true, troops: null, etaTicks: minEtaTicks };
-      }
-      incomingTroops += Math.max(0, inspection.troops);
+      accumulateAutoDonateTransport(summary, inspectAutoDonateTransport(game, me, myId, unit));
     }
+    const { incomingTroops, unknownTroops, unknownTransport, unknownEta, minEtaTicks } = summary;
+    // Scan every transport: unreadable force sizes must not hide a nearer
+    // landing, and unreadable peers must not erase a confirmed invasion.
+    const active = unknownTroops || incomingTroops > 0;
+    if (unknownTransport) return active ? { active, troops: null, etaTicks: null } : null;
     return {
-      active: incomingTroops > 0,
-      troops: incomingTroops,
-      etaTicks: minEtaTicks,
+      active,
+      troops: unknownTroops ? null : incomingTroops,
+      etaTicks: unknownEta ? null : minEtaTicks,
     };
+  }
+
+  function accumulateAutoDonateTransport(summary, inspection) {
+    if (inspection.unknown) {
+      summary.unknownTransport = true;
+      return;
+    }
+    if (!inspection.incoming) return;
+    if (inspection.etaTicks === null) summary.unknownEta = true;
+    if (
+      summary.minEtaTicks === null ||
+      (inspection.etaTicks !== null && inspection.etaTicks < summary.minEtaTicks)
+    ) {
+      summary.minEtaTicks = inspection.etaTicks;
+    }
+    if (inspection.unknownTroops) {
+      summary.unknownTroops = true;
+    } else {
+      summary.incomingTroops += Math.max(0, inspection.troops);
+    }
   }
 
   function getAutoDonatePlayerViews(game) {

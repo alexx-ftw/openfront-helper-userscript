@@ -290,6 +290,9 @@ The incoming transport troop payloads are summed, and donations remain paused so
 natural troop production can build a defending force at least that large. If the
 unit or ownership APIs cannot be inspected, donation fails closed until the
 maritime threat can be classified.
+Unknown troop counts do not stop the transport scan: the earliest measured
+arrival still includes later boats. Any unmeasurable arrival keeps the ETA
+unknown, and an unreadable peer cannot erase an already confirmed invasion.
 
 `bestTransportShipSpawn()` reports whether a boat route exists and its spawn tile,
 but not its path length. `gameApi.js` now uses that spawn plus a bounded
