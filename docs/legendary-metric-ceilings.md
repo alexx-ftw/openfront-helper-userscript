@@ -515,3 +515,37 @@ map; per-nation parity is reached, coalition advantage is not
 transferable. FFA re-baselined on the new engine: 0/5, with basket-03 a
 single-column near-miss (fails only `won` at 20.5k ticks, 158 trades /
 116 kills / 20.2M nuked / best economy / 0 boats / 0 ownN).
+
+
+## 2026-09-11 round — regression bisect, parity restoration, honest re-baseline
+
+Commits e80a4ba6 (transport-scan robustness, 1.12.179), b87ce1cc (fixed-basket
+tooling: scripts/headless/run-basket.mjs + score-basket.mjs amendment-4 scorer +
+firstOwnStructureLostTick telemetry), c78319de (parity mapping), 8c4e4114 (1.25
+ternary restore).
+
+The September commit 12cc77b9 ('restore Legendary as the sole adaptive bot
+difficulty') collapsed the team basket from ~5 wins/10 to 2/10. Byte-stable
+bisect on team-temp-basket-01 (win@19211 at 98479e06, win@15531 at parent
+e5f93e20, lose@9241 at 12cc77b9). Mechanics: currentDifficulty() returning the
+raw 'Legendary' string made isLegendaryDifficulty() FALSE (the ~20 structure
+union-gated policy lanes went dormant), switched mirv/alliance sites to default
+branches, and activated the earlyGame raw-string boat-window lane. The engine
+enum has no Legendary member, so hardcoded Difficulty.Legendary arguments are
+undefined and self-compare true — the adaptive lane's 1.25 port ratio was active
+throughout the validated history; collapsing it to 0.75 starves the port economy
+(losing rows built 1-2 Ports and 17-39 Warships; winning rows build 68-69).
+currentDifficulty() now maps the single Legendary tier to Difficulty.Impossible;
+the 1.25 ternary is restored with an explanatory note.
+
+Measurement caveat established the hard way: two portutil variants returning
+IDENTICAL values for identical inputs flip temp-basket-01 between WIN@15531 and
+LOSS@10241 byte-stably — only the minified bundle bytes differ (worker-probe
+wall-clock timing). Row outcomes are machine-load dependent; a 13GB RL training
+process ran during all 2026-09-11 measurements, so these numbers are not
+comparable across load eras. Honest scoreboard on 8c4e4114 under current load:
+3/35 wins (team-none-04, team-25mm-01, team-25mm-05), 0 full-green rows, 0 full
+sets. Dominant failure columns: won (nation coalition / stagnation), bestEconomy,
+nukeQuota, invasionsRecaptured, FFA ownStructuresNuked. The residual post-12cc
+commits may carry additional regressions but bisecting them is unreliable under
+load sensitivity; per-row byte-stability within one load era is confirmed.
