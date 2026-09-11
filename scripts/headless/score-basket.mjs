@@ -36,13 +36,13 @@ function rowChecks(result) {
     ownStructuresNuked: ownNuked === 0,
     ownTransportBoatsLost: Number(goal.ownTransportBoatsLost ?? 0) <= 2,
     enemyTransportKills: Number(goal.enemyTransportBoatsDestroyed ?? 0) >= 3,
-    nukeQuota: nuked >= MIN_NUKED_GOLD || (result?.won === true && enemyValueAtEnd < MIN_NUKED_GOLD),
+    nukeQuota:
+      nuked >= MIN_NUKED_GOLD || (result?.won === true && enemyValueAtEnd < MIN_NUKED_GOLD),
     samReadyA4,
     leader180Top3NonNation:
       leader != null && Number.isFinite(Number(leader.ownRank)) && Number(leader.ownRank) <= 3,
     bestEconomy: goal.bestEconomy === true,
-    invasionsRecaptured:
-      goal.seaInvasionObserved !== true || goal.allInvasionsRecaptured === true,
+    invasionsRecaptured: goal.seaInvasionObserved !== true || goal.allInvasionsRecaptured === true,
   };
   const failed = [];
   for (const [name, passed] of Object.entries(checks)) {
@@ -90,7 +90,9 @@ export function scoreRows(rows) {
     fullGreens: scored.filter((row) => row.fullGreen).length,
     setBars,
     setQualified:
-      scored.length === 5 && scored.every((row) => row.fullGreen) && Object.values(setBars).every(Boolean),
+      scored.length === 5 &&
+      scored.every((row) => row.fullGreen) &&
+      Object.values(setBars).every(Boolean),
   };
 }
 

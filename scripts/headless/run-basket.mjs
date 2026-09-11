@@ -93,10 +93,13 @@ function runSim(row, logPath) {
     const log = fs.createWriteStream(logPath);
     child.stdout.pipe(log);
     child.stderr.pipe(log);
-    const timer = setTimeout(() => {
-      log.write("\n[run-basket] timeout after 120 min, killing\n");
-      child.kill("SIGKILL");
-    }, 120 * 60 * 1000);
+    const timer = setTimeout(
+      () => {
+        log.write("\n[run-basket] timeout after 120 min, killing\n");
+        child.kill("SIGKILL");
+      },
+      120 * 60 * 1000,
+    );
     child.on("exit", (code) => {
       clearTimeout(timer);
       log.end();
@@ -145,7 +148,9 @@ async function main() {
           `[run-basket] done ${row.key} exit=${code} won=${result.won} ticks=${result.ticks} (${Math.round((Date.now() - started) / 60000)} min)`,
         );
       } else {
-        console.log(`[run-basket] done ${row.key} exit=${code} NO RESULT RECORD (${Math.round((Date.now() - started) / 60000)} min)`);
+        console.log(
+          `[run-basket] done ${row.key} exit=${code} NO RESULT RECORD (${Math.round((Date.now() - started) / 60000)} min)`,
+        );
       }
     }
   }
