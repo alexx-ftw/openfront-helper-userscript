@@ -48,6 +48,7 @@ let nukeDetonatingOwner: import("../../openfront-engine/src/core/game/Game.ts").
 let nukedStructureGold = 0n;
 let ownStructuresNuked = 0;
 let ownTransportBoatsLost = 0;
+let firstOwnStructureLostTick: number | null = null;
 const goldEarnedById = new Map<string, bigint>();
 const originalNukeDetonate = NukeExecution.prototype.detonate;
 NukeExecution.prototype.detonate = function (
@@ -70,6 +71,9 @@ UnitImpl.prototype.delete = function (
     }
     if (this.owner()?.clientID?.() === clientID) {
       ownStructuresNuked += 1;
+      if (firstOwnStructureLostTick === null) {
+        firstOwnStructureLostTick = this.mg.ticks();
+      }
     }
   }
   // Engine stats attribute transport destruction to the DESTROYER
@@ -1740,6 +1744,7 @@ function goalRequirementsSnapshot() {
     seaInvasionObserved,
     firstHostileNukeTick,
     firstReadySamTick,
+    firstOwnStructureLostTick,
     samReadyBeforeFirstHostileNuke:
       firstHostileNukeTick === null ||
       (firstReadySamTick !== null && firstReadySamTick < firstHostileNukeTick),
