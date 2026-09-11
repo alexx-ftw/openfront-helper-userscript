@@ -84,10 +84,13 @@
   function getStructureRatios(difficulty) {
     // Ports print money: one mid-range trade ship returns most of a Port's
     // price, and the nuclear kit (Silo 1M + Atom 750k) is unreachable on the
-    // flat 1k/s base income. The adaptive tier keeps the proven Impossible
-    // ratio: the 1.25 experiment starved the early port economy on the
-    // fixed basket (measured win->loss flip on team rows, 2026-09-11).
-    const portRatioPerCity = 0.75;
+    // flat 1k/s base income. NOTE: the adaptive construction lane calls this
+    // with the hardcoded Difficulty.Legendary (not an engine enum member, so
+    // undefined), which self-compares true here — the 1.25 ratio IS the
+    // validated baseline for that lane; collapsing it to 0.75 starves the
+    // port economy (measured team-basket win -> loss, 2026-09-11).
+    const portRatioPerCity =
+      difficulty === Difficulty.Legendary ? 1.25 : 0.75;
     return {
       [UNIT.Port]: {
         ratioPerCity: portRatioPerCity,
