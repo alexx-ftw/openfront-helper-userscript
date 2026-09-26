@@ -915,9 +915,19 @@
     "name": "BEACHHEAD_RETAKE_TROOP_FRACTION",
     "declarationKind": "const",
     "initializerKind": "FirstLiteralToken",
-    "initializerHash": "0602d7c813c1f6e7351a5832730f29daf739674976caba8d9dd955be838d46ea",
-    "initializerLength": 4,
-    "initializerPreview": "0.05"
+    "initializerHash": "44896b09365746b5f7167ee4d64988a38f7f4628803cbf86224e74eeb7c69e9d",
+    "initializerLength": 3,
+    "initializerPreview": "0.2"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:BEACHHEAD_RETAKE_FORCE_RATIO#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "BEACHHEAD_RETAKE_FORCE_RATIO",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
   },
   {
     "id": "engine/ingame/auto-bot/attackBehavior.js:TIMEOUT#1",

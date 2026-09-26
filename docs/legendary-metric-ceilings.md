@@ -702,3 +702,27 @@ next real unlock is a survival-proof launch criterion — e.g. hostileWarshipCou
 a ledger-recorded invader-troop proxy for beachhead garrison size (attack.troops() is on the
 wire even though tile garrison is not) — so the lane only fires where the flip is both
 needed and survivable.
+
+## Retake v4: survival-gated surgical lane (DARK, best measured scoreboard)
+
+Both proposed unlocks are in. (1) The ledger records the invasion force size (attack.troops()
+— tile garrison is not on the wire) as the tile's garrison proxy, and the launch requires the
+retake force to beat it (BEACHHEAD_RETAKE_FORCE_RATIO 1). Diagnostic on team-25mm-basket-04:
+the stale tile's recorded invasion force is 85271 troops vs a 2989-strong retake force — the
+gate correctly refuses a suicidal landing, which is why some dark-failing rows stay failing.
+(2) Launches only fire while hostileWarshipCount() === 0 — the one client-provable survival
+guarantee (hunters retask onto transports; corridor checks cannot predict it). Instrumentation
+on basket-04 measured hostile warships 0..88 with 743 warship-free ticks per ~10.5k: real
+firing windows exist.
+
+Full basket (basket-2026-09-27-retake-v4, lane on) — best measured configuration:
+wins 4/35 (including team-5mm-basket-02, the first team-5mm win of any era; the trade is
+team-temp-basket-05, whose lane activity stayed affordable at 5% per boat but whose
+trajectory forked), full-green rows 2 (best; none-01 and 5mm-02), rejected 0 across all rows,
+recaptured true 6/35, and set bars clean on 6/7 sets — only ffa-n2 fails (tradesSum, vetMax,
+and now etSum). Lane firing profile: 90 emits across 16/35 rows, all of them FFA/chaos rows
+with massive invasion counts that do not win anyway — no win was harmed by lane activity.
+
+Open threads, unchanged in kind: ffa-n2 tradesSum/vetMax/etSum (the freeze-window silo
+timing set), the 5mm/25mm/FFA win deficits (5mm now has its first win), and enabling the
+lane by default once a full-basket era shows it is strictly non-negative on wins.

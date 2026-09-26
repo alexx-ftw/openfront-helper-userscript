@@ -930,8 +930,17 @@ function makeFakeGame(overrides = {}) {
   const nextCandidate = attackSandbox.__nextBeachheadRetakeCandidate;
 
   const ledger = new Map();
-  updateLedger(ledger, [{ tile: 111, attackerKey: "k-foe", tick: 5000 }], () => false);
+  updateLedger(
+    ledger,
+    [{ tile: 111, attackerKey: "k-foe", tick: 5000, troops: 750 }],
+    () => false,
+  );
   assert.ok(ledger.has(111), "a hostile sea-invasion landing tile is recorded");
+  assert.equal(
+    ledger.get(111).invaderTroops,
+    750,
+    "the recorded invasion force is kept as the tile's garrison proxy",
+  );
 
   // The invasion attack expires (no fresh observation) while the tile stays
   // hostile-held: the ledger must keep it actionable.

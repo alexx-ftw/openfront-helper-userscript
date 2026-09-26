@@ -830,11 +830,16 @@
   // round trip only re-feeds a sunk transport; wait out the full trip before
   // re-attempting the same tile by boat.
   const BEACHHEAD_RETAKE_BOAT_COOLDOWN_TICKS = 300;
-  // 0.05, not the ordinary attack fraction: a retake boat sails the WHOLE
-  // army's fifth otherwise, and a sunk transport then amputates 20% of the
-  // military in one event (team-temp-basket-05 lost two boats early and the
-  // match with them). Fresh beachheads are lightly garrisoned; 5% flips them.
-  const BEACHHEAD_RETAKE_TROOP_FRACTION = 0.05;
+  // 0.2 is the ordinary forced-attack fraction — SAFE here because the lane
+  // only launches in warship-free windows (survival is provable: nothing
+  // exists to retask onto the transport). The v2 disaster was 0.2 boats
+  // launched INTO patrolling hunters; the warship-free gate is what makes
+  // the fraction affordable again.
+  const BEACHHEAD_RETAKE_TROOP_FRACTION = 0.2;
+  // The recorded invasion force is the best client-side garrison proxy for
+  // the tile (the landing party garrisoned it). A retake boat smaller than
+  // that force cannot flip the tile and only feeds the holder.
+  const BEACHHEAD_RETAKE_FORCE_RATIO = 1;
   function updateBeachheadLedger(ledger, observations, holderRecaptured) {
     for (const obs of observations) {
       if (obs.tile === null || obs.tile === undefined) continue;
@@ -842,7 +847,10 @@
         ledger.set(obs.tile, {
           attackerKey: obs.attackerKey ?? null,
           landedTick: obs.tick ?? 0,
+          invaderTroops: obs.troops ?? null,
         });
+      } else if (obs.troops != null) {
+        ledger.get(obs.tile).invaderTroops = obs.troops;
       }
     }
     for (const [tile, record] of ledger) {
@@ -8212,6 +8220,7 @@
           attackerKey: attacker
             ? (this.getOutboundAttackTargetKey(attacker) ?? null)
             : null,
+          troops: Number(attack.troops?.()) || null,
           tick,
         });
       }
@@ -8222,6 +8231,14 @@
       );
       stats.ledgerSize = this.beachheadLedger.size;
       stats.recorded += Math.max(0, this.beachheadLedger.size - ledgerSizeBefore);
+      // Survival probe: count hostile warships at decision time. Retake boats
+      // only survive in warship-free windows (hunters retask onto transports),
+      // so the measured distribution decides whether a warship-free launch
+      // criterion has any firing windows at all.
+      const hostileWarships = this.hostileWarshipCount();
+      stats.warshipCountMin = Math.min(stats.warshipCountMin ?? Infinity, hostileWarships);
+      stats.warshipCountMax = Math.max(stats.warshipCountMax ?? 0, hostileWarships);
+      if (hostileWarships === 0) stats.warshipFreeTicks = (stats.warshipFreeTicks ?? 0) + 1;
       const candidate = nextBeachheadRetakeCandidate(
         this.beachheadLedger,
         tick,
@@ -8244,11 +8261,33 @@
         false,
       );
       if (troops < 1) return false;
-      // Don't feed a holder that outguns the attack: each sunk retake boat is
-      // a fifth of our whole army (team-temp-basket-05 lost 11 transports and
-      // then the match). Fresh, weakly-garrisoned landings flip in one boat;
-      // fortified behemoths are reconquest for the ordinary war lanes.
-      if (typeof holder.troops === "function" && holder.troops() > troops * 2) {
+      // Garrison proxy: the recorded invasion force is the force that took
+      // the tile. A retake boat smaller than that force cannot flip the tile
+      // and only feeds the holder (each sunk boat amputates the whole retake
+      // fraction of our army; team-temp-basket-05 lost 11 transports and then
+      // the match to exactly that). Tile garrison itself is not on the wire;
+      // the landing force size is the closest observable.
+      const garrison = Number(candidate.record.invaderTroops);
+      if (
+        !Number.isFinite(garrison) ||
+        garrison <= 0 ||
+        troops < garrison * BEACHHEAD_RETAKE_FORCE_RATIO
+      ) {
+        stats.lastSkip = {
+          tick,
+          tile: candidate.tile,
+          reason: "garrison",
+          garrison: candidate.record.invaderTroops ?? null,
+          troops,
+        };
+        return false;
+      }
+      // Survival-proof launch: only fire while NO hostile warship exists.
+      // Hunters retask onto transports and launch-time corridor checks cannot
+      // predict that; zero hostile warships is the only client-provable
+      // survival guarantee. The measured free windows (743 ticks on seed
+      // basket-04) are where this lane does its work.
+      if (hostileWarships !== 0) {
         return false;
       }
       // No slack gate here: every producer now defers cleanly on an empty
