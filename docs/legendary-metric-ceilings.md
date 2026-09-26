@@ -585,8 +585,8 @@ seeds — the lane's arm window needs the freeze to hold while gold covers 2 lau
 which did not coincide on this basket). ffa-n4-basket-02 ran a 102211-tick freeze war (prior n4
 deaths ~13.5k): 30MM nuked structure value, SAM ready 5400 before first structure loss 5879,
 but one unreaptured invasion and the giant's economy ended it. Set bars: trades/et green;
-none-set veterancy was scored short by a harness metric bug (corrected below — actually met).
-The trade-saturation retuning (230->330) makes heavy-port openings
+the veterancy column was scored short by a harness metric bug (corrected below; full re-score
+recorded there). The trade-saturation retuning (230->330) makes heavy-port openings
 strictly stronger; game lengths compressed ~35% (anchor 19531 -> 12601), which pressures the
 timing-bound naval/veterancy columns going forward.
 
@@ -602,6 +602,22 @@ under-reported 2. The metric now tracks the historical max at the only two engin
 points (every promotion flows through increaseVeterancy from recordKill or
 addVeterancyProgress); the end-state scan remains as a lower bound. Verified: the corrected
 run is bit-identical to the scored row (winner Blue @10441, same final state) and
-maxWarshipVeterancy now reports 3. Row correction within this era: team-none-basket-05 vetMax
-2 -> 3; the none-set veterancy bar is MET. OFH_LOG_WARSHIP_KILLS=1 additionally logs per-kill
+maxWarshipVeterancy now reports 3. OFH_LOG_WARSHIP_KILLS=1 additionally logs per-kill
 hull/vet/progress lines and per-capture meter lines for dispatch analysis.
+
+### Full re-score with corrected veterancy (same engine, same tree, commit 9a696e89)
+
+All 35 rows re-run (results /tmp/ofh-matrix/basket-2026-09-26-vetfix): every tick count and
+winner is identical to the first scoreboard — the games are the same deterministic games; only
+the veterancy metric changed. 25/35 rows corrected upward, including eleven rows that had
+actually reached veterancy 3 (team-none-05, team-temp-05, team-5mm-01/02/03, team-25mm-02/03,
+ffa-n4-02/03, and ffa-n20-04): the flagship reliably promotes and then dies in the endgame
+collapse, which the end-state scan could not see. Wins stay 4/35 (same rows) and the single
+full-green row stays team-temp-basket-05. Naval set-bars after correction: trades/vet/et now
+green on team-none, team-temp, team-5mm, team-25mm, ffa-n20, ffa-n4 — every set except ffa-n2
+(tradesSum and vetMax still short; n2 rows die in the freeze window with silos not yet armed).
+The amendment-4 naval gates are therefore no longer the binding constraint anywhere except
+ffa-n2; the binding constraints are wins and the per-game gates (boats, own-nuked, invasion
+recapture) inside the compressed ~12.6k-tick team clock and the n2 freeze window. The earlier
+"promotion duel never coincided / reach-capped" conclusion is withdrawn as a measurement
+artifact: a vet-2 hull receiving a warship final blow is now observed in ordinary play.
