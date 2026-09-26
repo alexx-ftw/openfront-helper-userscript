@@ -905,9 +905,9 @@
     "name": "BEACHHEAD_RETAKE_COOLDOWN_TICKS",
     "declarationKind": "const",
     "initializerKind": "FirstLiteralToken",
-    "initializerHash": "39fa9ec190eee7b6f4dff1100d6343e10918d044c75eac8f9e9a2596173f80c9",
+    "initializerHash": "e629fa6598d732768f7c726b4b621285f9c3b85303900aa912017db7617d8bdb",
     "initializerLength": 2,
-    "initializerPreview": "60"
+    "initializerPreview": "15"
   },
   {
     "id": "engine/ingame/auto-bot/attackBehavior.js:BEACHHEAD_RETAKE_TROOP_FRACTION#1",

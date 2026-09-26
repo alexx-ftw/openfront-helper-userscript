@@ -135,9 +135,12 @@
     // structure pass every few ticks under siege, a staggered
     // SAM-overwhelm salvo coming due) are paced locally and cleanly retried
     // by their callers instead of silently dropped server-side.
+    if (typeof hasIntentRateLimitCapacity === "function" && !hasIntentRateLimitCapacity()) {
+      return false;
+    }
     if (
       typeof tryAcquireIntentRateLimit === "function" &&
-      !tryAcquireIntentRateLimit()
+      !tryAcquireIntentRateLimit(String(buildable.type))
     ) {
       return false;
     }
@@ -336,8 +339,14 @@
     {
       const event = new ctor(...args);
       if (
+        typeof hasIntentRateLimitCapacity === "function" &&
+        !hasIntentRateLimitCapacity()
+      ) {
+        return false;
+      }
+      if (
         typeof tryAcquireIntentRateLimit !== "function" ||
-        !tryAcquireIntentRateLimit()
+        !tryAcquireIntentRateLimit(event?.constructor?.name)
       ) {
         return false;
       }

@@ -826,7 +826,7 @@
   // 25/35 rows failing all-invasions-recaptured this way. The ledger records
   // landing tiles while invasions are visible and keeps them actionable
   // until our side holds the tile again.
-  const BEACHHEAD_RETAKE_COOLDOWN_TICKS = 60;
+  const BEACHHEAD_RETAKE_COOLDOWN_TICKS = 15;
   const BEACHHEAD_RETAKE_TROOP_FRACTION = 0.2;
   function updateBeachheadLedger(ledger, observations, holderRecaptured) {
     for (const obs of observations) {
@@ -8166,8 +8166,10 @@
       // allInvasionsRecaptured to true on the era's worst row) but the war
       // escalation it causes pushed other producers onto the intent-rate-limit
       // token floor (rejected 9-20 per game), violating the strict
-      // zero-rejection gate. Opt-in via env until the pressure fix lands.
-      if (!(typeof process !== "undefined" && process.env?.OFH_BEACHHEAD_LANE === "1")) {
+      // zero-rejection gate. Opt-in via localStorage until the pressure fix
+      // lands (localStorage exists in both the page and the headless JSDOM
+      // harness; a process.env gate never engages in either).
+      if (window.localStorage.getItem("ofh:beachheadLane") !== "1") {
         return false;
       }
       const stats = (state.beachheadClearance ??= {
@@ -8236,23 +8238,20 @@
         false,
       );
       if (troops < 1) return false;
-      // Only spend a beachhead attack when the shared intent budget has real
-      // slack: the strict zero-rejection gate fails the row if ANY producer
-      // attempts on an exhausted bucket, and this lane's war escalation can
-      // push other producers to the token floor.
-      if (
-        typeof getIntentRateLimitSnapshot === "function"
-      ) {
-        const budget = getIntentRateLimitSnapshot();
-        if (
-          (budget.secondTokens ?? 0) < 3 ||
-          (budget.minuteTokens ?? 0) < 10
-        ) {
-          return false;
-        }
-      }
+      // No slack gate here: every producer now defers cleanly on an empty
+      // bucket (build path and emitIntent pre-check capacity), so the lane
+      // spending the budget down does not turn into a rejection elsewhere —
+      // the fat reserve only starved the retake (emits 93 → 52, flip lost).
       const ctors = discoverCtors(getEventBus());
-      const emitted = this.emitForcedAttackIntent(ctors, holder, troops);
+      // Retake the TILE itself: a player-targeted land attack lands wherever
+      // the engine picks a frontier tile and may never reach a forward
+      // beachhead (three tiles held 5000+ ticks, zero flips on seed
+      // basket-04). The UI's boat attack is the only client-faithful intent
+      // that targets a tile exactly; fall back to the land attack when no
+      // boat can go (toggle off, transport spawn refused, warship danger).
+      const emitted =
+        this.emitBoat(candidate.tile, troops, "🛳️ Beachhead retake") ||
+        this.emitForcedAttackIntent(ctors, holder, troops);
       if (emitted) {
         this.beachheadRetakeAttempts.set(candidate.tile, tick);
         stats.emitted += 1;

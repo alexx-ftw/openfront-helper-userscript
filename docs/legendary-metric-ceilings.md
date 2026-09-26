@@ -644,3 +644,31 @@ predicates (isFriendly unwraps one layer; core then calls other.isDisconnected()
 crash; holder resolution goes through ownerID + playerBySmallID instead). Lane stats are
 exported in the result JSON as beachheadClearance; the dark gate keeps scored rows
 byte-deterministic (dark rerun of team-25mm-basket-04 reproduces ticks 11991 exactly).
+
+## Beachhead retake v2: tile-exact boat invasions + clean intent deferral (STILL DARK)
+
+Three defects in v1 are fixed. (1) The env gate could never engage: it read
+process.env inside the userscript page realm (and the headless JSDOM VM), where no process
+exists — the 04m proof ran on an ungated working tree. The gate is now the localStorage key
+ofh:beachheadLane (exists in both page and harness; the harness bridges
+OFH_BEACHHEAD_LANE=1 into it). (2) Downstream drops: intent-rate-limit.js now records
+per-intent-type drops (dropsByType in the snapshot), and the build path plus emitIntent
+pre-check hasIntentRateLimitCapacity so an exhausted bucket DEFERS work instead of consuming
+a rejection; tryAcquireIntentRateLimit still counts direct unhandled attempts. (3) Targeting:
+a player-targeted land attack lands wherever the engine picks a frontier tile and may never
+reach a forward beachhead (three tiles held 5000+ ticks, zero flips). The lane now leads with
+emitBoat(candidate.tile, ...) — the UI's boat attack is the only client-faithful intent that
+targets a tile exactly — falling back to the holder land attack; retake cooldown 60->15 now
+that the slack reserve is gone.
+
+Focused proof (team-25mm-basket-04, OFH_BEACHHEAD_LANE=1): allInvasionsRecaptured TRUE with
+rejected 0 (first time both gates hold on one row), 48 boat emits, ledger empty at end, game
+stretched to 16251 ticks. Full 35-row basket (basket-2026-09-26-beachhead, lane on):
+rejected 2->0 across all rows; recaptured true 5->8/35; ffa-n2 vetMax bar now green (only
+tradesSum still fails there); full-green rows 1->2 (team-none-basket-01 and -04). BUT wins
+regressed 4->3: team-temp-basket-05 collapsed (lost at 8181 ticks vs winning at 15311; 11
+invasions recorded vs 6, 5 uncleared, trades 0 — retake boats bled troops into hostile
+waters and doubled invasion pressure), and team-temp-basket-04 now trips the per-game
+ownTransportBoatsLost bar. Wins are binding, so the lane stays dark. Next lever: condition
+retake aggression (skip boats when the holder holds naval dominance or when a prior retake
+boat was sunk on that corridor) and re-score.

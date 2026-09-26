@@ -37,7 +37,7 @@ function createSandbox() {
   };
   sandbox.globalThis = sandbox;
   executeClassicScript(
-    `${RATE_LIMIT_SOURCE}\n${CONTEXT_SOURCE}\nglobalThis.__intentTest = { emitIntent, discoverCtors, getIntentRateLimitSnapshot, hasIntentRateLimitCapacity, sendAutoBotBuildOrUpgrade };`,
+    `${RATE_LIMIT_SOURCE}\n${CONTEXT_SOURCE}\nglobalThis.__intentTest = { emitIntent, tryAcquireIntentRateLimit, discoverCtors, getIntentRateLimitSnapshot, hasIntentRateLimitCapacity, sendAutoBotBuildOrUpgrade };`,
     sandbox,
     { filename: path.join(ROOT, "engine/ingame/intent-rate-limit.js") },
   );
@@ -142,11 +142,38 @@ assert.equal(
 const snapshot = perMinute.api.getIntentRateLimitSnapshot();
 assert.equal(snapshot.intentsPerSecond, 10);
 assert.equal(snapshot.intentsPerMinute, 150);
-assert.ok(snapshot.rejected >= 1, "local backpressure should be observable");
+assert.equal(
+  snapshot.rejected,
+  0,
+  "a deferring producer never consumes a rejection",
+);
+
+const backpressure = createSandbox();
+let deferred = 0;
+for (let i = 0; i < 300; i += 1) {
+  backpressure.setNow(i * 200);
+  if (!backpressure.api.emitIntent(TestIntent, i)) deferred += 1;
+}
+assert.equal(deferred, 160, "the per-minute window defers everything past the cap");
+assert.equal(
+  backpressure.api.getIntentRateLimitSnapshot().rejected,
+  0,
+  "capacity pre-checks observe backpressure without consuming a rejection",
+);
+assert.equal(
+  backpressure.api.tryAcquireIntentRateLimit(),
+  false,
+  "a direct acquire on the drained bucket is still refused",
+);
+assert.equal(
+  backpressure.api.getIntentRateLimitSnapshot().rejected,
+  1,
+  "an unhandled acquire attempt is counted as local backpressure",
+);
 
 assert.match(
   WS_HOOK_SOURCE,
-  /tryAcquireIntentRateLimit\(\)/,
+  /tryAcquireIntentRateLimit\(/,
   "direct WebSocket intent fallback must use the shared budget",
 );
 assert.match(

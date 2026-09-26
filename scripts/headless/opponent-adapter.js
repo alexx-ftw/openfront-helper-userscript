@@ -156,6 +156,11 @@ export function createBundledOpponentHarness(options = {}) {
   };
 
   const context = dom.getInternalVMContext();
+  // Bridge sim env flags into the page realm: engine gates read localStorage
+  // (available in both browser and JSDOM), never process.env.
+  if (process.env.OFH_BEACHHEAD_LANE === "1") {
+    window.localStorage.setItem("ofh:beachheadLane", "1");
+  }
   // The harness deliberately executes the locally built userscript inside an
   // isolated JSDOM VM. No network or untrusted source is evaluated here.
   // eslint-disable-next-line sonarjs/code-eval
@@ -1420,6 +1425,7 @@ export class BundledOpponentBot {
     return {
       accepted: Number(snapshot.accepted || 0),
       rejected: Number(snapshot.rejected || 0),
+      dropsByType: snapshot.dropsByType ?? {},
     };
   }
 

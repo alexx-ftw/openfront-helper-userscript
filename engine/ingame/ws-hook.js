@@ -149,7 +149,7 @@ function sendGamePacket(obj) {
     // 10/sec and 150/min limiter if the shared gate is unavailable.
     if (
       typeof tryAcquireIntentRateLimit !== "function" ||
-      !tryAcquireIntentRateLimit()
+      !tryAcquireIntentRateLimit(obj?.type)
     ) {
       return false;
     }

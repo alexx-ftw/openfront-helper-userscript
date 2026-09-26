@@ -39,6 +39,7 @@ const _intentRateLimitState = (globalThis.__OFH_intentRateLimitState ??= {
   lastRefillMs: Date.now(),
   accepted: 0,
   rejected: 0,
+  dropsByType: {},
   lastDropLogMs: Number.NEGATIVE_INFINITY,
 });
 
@@ -107,6 +108,9 @@ function tryAcquireIntentRateLimit() {
     _intentRateLimitWindowBlocked()
   ) {
     _intentRateLimitState.rejected += 1;
+    const dropKey = arguments[0] || "unknown";
+    const dropsByType = (_intentRateLimitState.dropsByType ??= {});
+    dropsByType[dropKey] = (dropsByType[dropKey] ?? 0) + 1;
     _logIntentRateLimitDrop(currentMs);
     return false;
   }
@@ -143,5 +147,6 @@ function getIntentRateLimitSnapshot() {
     minuteWindowSpent: _intentRateLimitState.minuteWindowSpent,
     accepted: _intentRateLimitState.accepted,
     rejected: _intentRateLimitState.rejected,
+    dropsByType: { ...(_intentRateLimitState.dropsByType ?? {}) },
   };
 }
