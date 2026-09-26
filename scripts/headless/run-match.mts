@@ -95,6 +95,66 @@ UnitImpl.prototype.delete = function (
   return originalUnitDelete.call(this, displayMessage, destroyer);
 };
 
+// Hull-level veterancy telemetry: the delete site only receives the
+// destroyer PLAYER (UnitImpl.delete(displayMessage?, destroyer?: Player)),
+// so per-hull vet/progress must be observed where the engine awards it:
+// recordKill / recordTradeCapture on the victor hull itself.
+// These two methods are the ONLY entry points to veterancy gain (all
+// promotions flow through increaseVeterancy from recordKill or
+// addVeterancyProgress), so checking veterancy() after the original call
+// observes every promotion, including a flagship that dies before the
+// end-state scan. The end-state scan is kept as a lower bound only.
+let maxWarshipVeterancySeen = 0;
+const originalRecordKill = UnitImpl.prototype.recordKill;
+UnitImpl.prototype.recordKill = function (this: UnitImpl, targetType: UnitType) {
+  const state = (
+    this as unknown as { _warshipState?: { veterancyProgress?: number } }
+  )._warshipState;
+  const isBotHull =
+    state !== undefined && this.owner()?.clientID?.() === clientID;
+  originalRecordKill.call(this, targetType);
+  if (isBotHull) {
+    maxWarshipVeterancySeen = Math.max(
+      maxWarshipVeterancySeen,
+      this.veterancy(),
+    );
+  }
+  if (!isBotHull || process.env.OFH_LOG_WARSHIP_KILLS !== "1") {
+    return;
+  }
+  const vetBefore = this.veterancy();
+  const progressAfter = state.veterancyProgress ?? 0;
+  const targetLabel =
+    targetType === UnitType.Warship
+      ? "warship"
+      : targetType === UnitType.TransportShip
+        ? "transport"
+        : String(targetType);
+  console.log(
+    `[ofh:warship-kill] tick=${this.mg.ticks()} hull=${this.id()} target=${targetLabel} vet=${this.veterancy()} progress=${progressAfter}`,
+  );
+};
+const originalRecordTradeCapture = UnitImpl.prototype.recordTradeCapture;
+UnitImpl.prototype.recordTradeCapture = function (this: UnitImpl) {
+  const state = (
+    this as unknown as { _warshipState?: { veterancyProgress?: number } }
+  )._warshipState;
+  const isBotHull =
+    state !== undefined && this.owner()?.clientID?.() === clientID;
+  originalRecordTradeCapture.call(this);
+  if (isBotHull) {
+    maxWarshipVeterancySeen = Math.max(
+      maxWarshipVeterancySeen,
+      this.veterancy(),
+    );
+    if (process.env.OFH_LOG_WARSHIP_KILLS === "1") {
+      console.log(
+        `[ofh:trade-capture] tick=${this.mg.ticks()} hull=${this.id()} vet=${this.veterancy()} progress=${state.veterancyProgress ?? 0}`,
+      );
+    }
+  }
+};
+
 // Cumulative gold earned per player: every income path (base income, trade
 // arrivals, conquest transfers) flows through PlayerImpl.addGold, so a
 // prototype wrap gives the "best economy" comparison without touching the
@@ -1737,7 +1797,7 @@ function goalRequirementsSnapshot() {
     enemyTransportBoatsDestroyed: Number(stats?.boats?.trans?.[3] ?? 0n),
     ownTransportBoatsLost,
     warshipsDestroyed: Number(stats?.units?.wshp?.[1] ?? 0n),
-    maxWarshipVeterancy: warshipVeterancy,
+    maxWarshipVeterancy: Math.max(warshipVeterancy, maxWarshipVeterancySeen),
     nukedStructureGold: nukedStructureGold.toString(),
     enemyStructureValueAtEnd: enemyStructureValueAtEnd.toString(),
     ownStructuresNuked,
