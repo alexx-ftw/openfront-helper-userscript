@@ -826,8 +826,15 @@
   // 25/35 rows failing all-invasions-recaptured this way. The ledger records
   // landing tiles while invasions are visible and keeps them actionable
   // until our side holds the tile again.
-  const BEACHHEAD_RETAKE_COOLDOWN_TICKS = 15;
-  const BEACHHEAD_RETAKE_TROOP_FRACTION = 0.2;
+  // A boat resolves on engine timescales (sail + siege). Retrying inside one
+  // round trip only re-feeds a sunk transport; wait out the full trip before
+  // re-attempting the same tile by boat.
+  const BEACHHEAD_RETAKE_BOAT_COOLDOWN_TICKS = 300;
+  // 0.05, not the ordinary attack fraction: a retake boat sails the WHOLE
+  // army's fifth otherwise, and a sunk transport then amputates 20% of the
+  // military in one event (team-temp-basket-05 lost two boats early and the
+  // match with them). Fresh beachheads are lightly garrisoned; 5% flips them.
+  const BEACHHEAD_RETAKE_TROOP_FRACTION = 0.05;
   function updateBeachheadLedger(ledger, observations, holderRecaptured) {
     for (const obs of observations) {
       if (obs.tile === null || obs.tile === undefined) continue;
@@ -845,11 +852,11 @@
     }
     return ledger;
   }
-  function nextBeachheadRetakeCandidate(ledger, tick, cooldownTicks, attempts) {
+  function nextBeachheadRetakeCandidate(ledger, tick, attempts) {
     let best = null;
     for (const [tile, record] of ledger) {
-      const last = attempts.get(tile);
-      if (last !== undefined && tick - last < cooldownTicks) continue;
+      const notBefore = attempts.get(tile);
+      if (notBefore !== undefined && tick < notBefore) continue;
       if (best === null || record.landedTick < best.record.landedTick) {
         best = { tile, record };
       }
@@ -8218,7 +8225,6 @@
       const candidate = nextBeachheadRetakeCandidate(
         this.beachheadLedger,
         tick,
-        BEACHHEAD_RETAKE_COOLDOWN_TICKS,
         this.beachheadRetakeAttempts,
       );
       if (candidate === null) return false;
@@ -8238,22 +8244,36 @@
         false,
       );
       if (troops < 1) return false;
+      // Don't feed a holder that outguns the attack: each sunk retake boat is
+      // a fifth of our whole army (team-temp-basket-05 lost 11 transports and
+      // then the match). Fresh, weakly-garrisoned landings flip in one boat;
+      // fortified behemoths are reconquest for the ordinary war lanes.
+      if (typeof holder.troops === "function" && holder.troops() > troops * 2) {
+        return false;
+      }
       // No slack gate here: every producer now defers cleanly on an empty
       // bucket (build path and emitIntent pre-check capacity), so the lane
       // spending the budget down does not turn into a rejection elsewhere —
       // the fat reserve only starved the retake (emits 93 → 52, flip lost).
-      const ctors = discoverCtors(getEventBus());
       // Retake the TILE itself: a player-targeted land attack lands wherever
       // the engine picks a frontier tile and may never reach a forward
       // beachhead (three tiles held 5000+ ticks, zero flips on seed
       // basket-04). The UI's boat attack is the only client-faithful intent
-      // that targets a tile exactly; fall back to the land attack when no
-      // boat can go (toggle off, transport spawn refused, warship danger).
-      const emitted =
-        this.emitBoat(candidate.tile, troops, "🛳️ Beachhead retake") ||
-        this.emitForcedAttackIntent(ctors, holder, troops);
+      // that targets a tile exactly.
+      // Boat-only: the land fallback re-feeds 20%-force attacks into a holder
+      // that outguns us (team-temp-basket-05 lost at 8181 ticks on exactly
+      // that bleed). If no boat can go this tick, the next cooldown window
+      // will try again.
+      const emitted = this.emitBoat(
+        candidate.tile,
+        troops,
+        "🛳️ Beachhead retake",
+      );
       if (emitted) {
-        this.beachheadRetakeAttempts.set(candidate.tile, tick);
+        this.beachheadRetakeAttempts.set(
+          candidate.tile,
+          tick + BEACHHEAD_RETAKE_BOAT_COOLDOWN_TICKS,
+        );
         stats.emitted += 1;
         if (typeof runtimeDebugLog === "function") {
           runtimeDebugLog("[Attack] beachhead retake →", holder.name?.() ?? "?");

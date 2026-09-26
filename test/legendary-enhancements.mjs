@@ -956,14 +956,14 @@ function makeFakeGame(overrides = {}) {
     () => false,
   );
   const attempts = new Map();
-  let pick = nextCandidate(ledger2, 1000, 30, attempts);
+  let pick = nextCandidate(ledger2, 1000, attempts);
   assert.ok(pick !== null && pick.tile === 222, "the longest-standing beachhead is retaken first");
-  attempts.set(222, 990);
-  pick = nextCandidate(ledger2, 1000, 30, attempts);
+  attempts.set(222, 1030);
+  pick = nextCandidate(ledger2, 1000, attempts);
   assert.ok(pick !== null && pick.tile === 333, "a cooling tile defers to the next candidate");
-  attempts.set(333, 980);
+  attempts.set(333, 1030);
   assert.equal(
-    nextCandidate(ledger2, 1000, 30, attempts),
+    nextCandidate(ledger2, 1000, attempts),
     null,
     "an all-cooldown ledger yields no candidate",
   );

@@ -672,3 +672,33 @@ waters and doubled invasion pressure), and team-temp-basket-04 now trips the per
 ownTransportBoatsLost bar. Wins are binding, so the lane stays dark. Next lever: condition
 retake aggression (skip boats when the holder holds naval dominance or when a prior retake
 boat was sunk on that corridor) and re-score.
+
+## Retake v3: affordability-gated boat-only lane (DARK, win-neutral)
+
+Control experiment first: with the v2 build lane-dark, team-temp-basket-05 reproduces its
+dark winner bit-for-bit (won 15311, rejected 0) — so the v1 env gate was the only thing that
+never engaged, and the deferral refactor itself is trajectory-neutral. The loss needed the
+lane: BEACHHEAD_RETAKE_TROOP_FRACTION was 0.2 of the WHOLE army per boat, and two sunk boats
+early amputated 40% of the military. v3 therefore: boat-only (land fallback removed — 15-tick
+20%-force holder attacks were a second bleed), per-tile boat cooldown 300 ticks stored as a
+not-before expiry (nextBeachheadRetakeCandidate signature changed to
+(ledger, tick, attempts)), retake fraction 0.05, and an affordability gate — skip when
+holder.troops() exceeds twice the attack force (per-tile garrison is not on the client wire;
+holder army total is the only strength proxy available).
+
+Focused seeds with v3: team-temp-basket-05 wins again (14561 ticks, recaptured true via
+ordinary conquest, lane idle — the gate skips every candidate) and team-25mm-basket-04
+reverts to its dark shape (recaptured false — the same gate skips the big-team holders, so
+the v2 flip is gone). Full basket (basket-2026-09-26-retake-v3, lane on): wins 4/35
+(identical winner set to dark), rejected 0 across all rows, but full-green 1->0
+(team-temp-basket-05 now trips ownTransportBoatsLost: even two affordable boats sank) and
+set-bar churn on team-none/team-temp (vetMax), ffa-n20 and ffa-n4 from trajectory forks.
+
+Structural conclusion: a retake boat is a trade of ownTransportBoatsLost/
+enemyTransportKills gate risk for allInvasionsRecaptured, because hostile warship AI
+actively retasks onto transports and launch-time corridor checks cannot guarantee survival.
+The lane ships dark with v3's safe gating (never costs a win on the measured seeds); the
+next real unlock is a survival-proof launch criterion — e.g. hostileWarshipCount() === 0, or
+a ledger-recorded invader-troop proxy for beachhead garrison size (attack.troops() is on the
+wire even though tile garrison is not) — so the lane only fires where the flip is both
+needed and survivable.

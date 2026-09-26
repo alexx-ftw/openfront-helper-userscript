@@ -900,14 +900,14 @@
     "initializerPreview": "170"
   },
   {
-    "id": "engine/ingame/auto-bot/attackBehavior.js:BEACHHEAD_RETAKE_COOLDOWN_TICKS#1",
+    "id": "engine/ingame/auto-bot/attackBehavior.js:BEACHHEAD_RETAKE_BOAT_COOLDOWN_TICKS#1",
     "file": "engine/ingame/auto-bot/attackBehavior.js",
-    "name": "BEACHHEAD_RETAKE_COOLDOWN_TICKS",
+    "name": "BEACHHEAD_RETAKE_BOAT_COOLDOWN_TICKS",
     "declarationKind": "const",
     "initializerKind": "FirstLiteralToken",
-    "initializerHash": "e629fa6598d732768f7c726b4b621285f9c3b85303900aa912017db7617d8bdb",
-    "initializerLength": 2,
-    "initializerPreview": "15"
+    "initializerHash": "983bd614bb5afece5ab3b6023f71147cd7b6bc2314f9d27af7422541c6558389",
+    "initializerLength": 3,
+    "initializerPreview": "300"
   },
   {
     "id": "engine/ingame/auto-bot/attackBehavior.js:BEACHHEAD_RETAKE_TROOP_FRACTION#1",
@@ -915,9 +915,9 @@
     "name": "BEACHHEAD_RETAKE_TROOP_FRACTION",
     "declarationKind": "const",
     "initializerKind": "FirstLiteralToken",
-    "initializerHash": "44896b09365746b5f7167ee4d64988a38f7f4628803cbf86224e74eeb7c69e9d",
-    "initializerLength": 3,
-    "initializerPreview": "0.2"
+    "initializerHash": "0602d7c813c1f6e7351a5832730f29daf739674976caba8d9dd955be838d46ea",
+    "initializerLength": 4,
+    "initializerPreview": "0.05"
   },
   {
     "id": "engine/ingame/auto-bot/attackBehavior.js:TIMEOUT#1",
