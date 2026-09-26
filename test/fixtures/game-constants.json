@@ -6320,6 +6320,56 @@
     "initializerPreview": "[\n    \"invalid\",\n    \"not_found\",\n    \"self_referral\",\n] as const"
   },
   {
+    "id": "openfront-engine/src/client/Api.ts:DEBT_REFUSAL_CODE#1",
+    "file": "openfront-engine/src/client/Api.ts",
+    "name": "DEBT_REFUSAL_CODE",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "3daf08b4ac31506b5647ab215fc1ce84f7f526fd613abd8b5bf0dbc5ea7b60a1",
+    "initializerLength": 27,
+    "initializerPreview": "\"insufficient_balance_debt\""
+  },
+  {
+    "id": "openfront-engine/src/client/Api.ts:UNUSABLE_REFUSAL_CODE#1",
+    "file": "openfront-engine/src/client/Api.ts",
+    "name": "UNUSABLE_REFUSAL_CODE",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "698bbbca263388b64f6f47d7cde9ab35dcf3e9c89e6670f37ddfd82ebde3bc4d",
+    "initializerLength": 11,
+    "initializerPreview": "\"\u0000unusable\""
+  },
+  {
+    "id": "openfront-engine/src/client/Api.ts:TRIBE_NAME_REFUSAL_CODES#1",
+    "file": "openfront-engine/src/client/Api.ts",
+    "name": "TRIBE_NAME_REFUSAL_CODES",
+    "declarationKind": "const",
+    "initializerKind": "NewExpression",
+    "initializerHash": "7a7e4b6fd14caa186b717baa0855bb7de868e244b7cc4a74ac6e9d183c4fe39c",
+    "initializerLength": 197,
+    "initializerPreview": "new Map<string, \"invalid_charset\" | \"invalid_no_letter\" | \"not_allowed\">([\n    [\"invalid_charset\", \"invalid_charset\"],\n    [\"no_letter\", \"invalid_no_letter\"],\n    [\"not_allowed\", \"not_allowed\"],\n])"
+  },
+  {
+    "id": "openfront-engine/src/client/Api.ts:LEGACY_TRIBE_NAME_REFUSAL_REASONS#1",
+    "file": "openfront-engine/src/client/Api.ts",
+    "name": "LEGACY_TRIBE_NAME_REFUSAL_REASONS",
+    "declarationKind": "const",
+    "initializerKind": "NewExpression",
+    "initializerHash": "ab4e18094a29872944e314761169523b9f5dd367ed2fea37ace973714e7c54fe",
+    "initializerLength": 298,
+    "initializerPreview": "new Map<string, \"invalid_charset\" | \"invalid_no_letter\" | \"not_allowed\">([\n    [\n        \"Name may only contain letters, numbers, spaces, and ' - . _ ! ?\",\n        \"invalid_charset\",\n    ],\n    [\"Name must contain a letter\", \"invalid_no_..."
+  },
+  {
+    "id": "openfront-engine/src/client/Api.ts:TRIBE_NAME_LENGTH_REASON_RE#1",
+    "file": "openfront-engine/src/client/Api.ts",
+    "name": "TRIBE_NAME_LENGTH_REASON_RE",
+    "declarationKind": "const",
+    "initializerKind": "RegularExpressionLiteral",
+    "initializerHash": "87a35d61c585d0d6b89a40d75f4d8ee25b51b67ca4d32a6b1a521dd88e602d05",
+    "initializerLength": 39,
+    "initializerPreview": "/^Name must be (\\d+)-(\\d+) characters$/"
+  },
+  {
     "id": "openfront-engine/src/client/Api.ts:PACK_UNAVAILABLE_REASONS#1",
     "file": "openfront-engine/src/client/Api.ts",
     "name": "PACK_UNAVAILABLE_REASONS",
@@ -6380,6 +6430,66 @@
     "initializerPreview": "\"player_persistent_id\""
   },
   {
+    "id": "openfront-engine/src/client/BootInterrupts.ts:CLAIM_PROMPT_KEY#1",
+    "file": "openfront-engine/src/client/BootInterrupts.ts",
+    "name": "CLAIM_PROMPT_KEY",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "f0b567a435816702beba79378c39a1bf2fc89f25d8f5dc799dabf543e0bfb074",
+    "initializerLength": 21,
+    "initializerPreview": "\"usernameClaimPrompt\""
+  },
+  {
+    "id": "openfront-engine/src/client/BootInterrupts.ts:CLAIM_PROMPT_MAX_SHOWS#1",
+    "file": "openfront-engine/src/client/BootInterrupts.ts",
+    "name": "CLAIM_PROMPT_MAX_SHOWS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce",
+    "initializerLength": 1,
+    "initializerPreview": "3"
+  },
+  {
+    "id": "openfront-engine/src/client/BootInterrupts.ts:CLAIM_PROMPT_INTERVAL_MS#1",
+    "file": "openfront-engine/src/client/BootInterrupts.ts",
+    "name": "CLAIM_PROMPT_INTERVAL_MS",
+    "declarationKind": "const",
+    "initializerKind": "BinaryExpression",
+    "initializerHash": "a5b1a2fce83f16df0847e5973c9233ae3ff1019e87bbd0c0a62c91b25bc34018",
+    "initializerLength": 19,
+    "initializerPreview": "24 * 60 * 60 * 1000"
+  },
+  {
+    "id": "openfront-engine/src/client/BootInterrupts.ts:CLAIM_PROMPT_MAX_ACCOUNTS#1",
+    "file": "openfront-engine/src/client/BootInterrupts.ts",
+    "name": "CLAIM_PROMPT_MAX_ACCOUNTS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "2c624232cdd221771294dfbb310aca000a0df6ac8b66b696d90ef06fdefb64a3",
+    "initializerLength": 1,
+    "initializerPreview": "8"
+  },
+  {
+    "id": "openfront-engine/src/client/BootInterrupts.ts:BOOT_INTERRUPT_KEYS#1",
+    "file": "openfront-engine/src/client/BootInterrupts.ts",
+    "name": "BOOT_INTERRUPT_KEYS",
+    "declarationKind": "const",
+    "initializerKind": "AsExpression",
+    "initializerHash": "765ea739ac8f41bcb50327b7563c8a5894990cc2a853628615bb56259457c6bc",
+    "initializerLength": 582,
+    "initializerPreview": "{\n    temporaryBody: \"account_modal.username_temporary_prompt\",\n    temporaryHeading: \"account_modal.username_title\",\n    temporaryConfirm: \"account_modal.username_temporary_prompt_confirm\",\n    claimBody: \"account_modal.username_claim_p..."
+  },
+  {
+    "id": "openfront-engine/src/client/BootInterrupts.ts:USERNAME_FORM_HASH#1",
+    "file": "openfront-engine/src/client/BootInterrupts.ts",
+    "name": "USERNAME_FORM_HASH",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "d1c14e991c2554f7b2348f0098f0f7201c497e0384bf498748710b47ed15a5b8",
+    "initializerLength": 23,
+    "initializerPreview": "\"modal=change-username\""
+  },
+  {
     "id": "openfront-engine/src/client/ClanApi.ts:CLAN_EXISTS_FETCH_TIMEOUT_MS#1",
     "file": "openfront-engine/src/client/ClanApi.ts",
     "name": "CLAN_EXISTS_FETCH_TIMEOUT_MS",
@@ -6420,6 +6530,16 @@
     "initializerPreview": "1 * 60 * 1000"
   },
   {
+    "id": "openfront-engine/src/client/Cosmetics.ts:COSMETICS_FETCH_TIMEOUT_MS#1",
+    "file": "openfront-engine/src/client/Cosmetics.ts",
+    "name": "COSMETICS_FETCH_TIMEOUT_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "39e5b4830d4d9c14db7368a95b65d5463ea3d09520373723430c03a5a453b5df",
+    "initializerLength": 5,
+    "initializerPreview": "10000"
+  },
+  {
     "id": "openfront-engine/src/client/CreatorCode.ts:PENDING_CREATOR_CODE_KEY#1",
     "file": "openfront-engine/src/client/CreatorCode.ts",
     "name": "PENDING_CREATOR_CODE_KEY",
@@ -6448,6 +6568,36 @@
     "initializerHash": "ea39ab653a79cb166e3dbc7380bf57dc00d9cb3061e91941af90311e17ae538b",
     "initializerLength": 20,
     "initializerPreview": "/^[A-Z0-9_-]{3,22}$/"
+  },
+  {
+    "id": "openfront-engine/src/client/DesktopDisplay.ts:UI_SCALE_OPTIONS#1",
+    "file": "openfront-engine/src/client/DesktopDisplay.ts",
+    "name": "UI_SCALE_OPTIONS",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "8d20ac7f0a0115c1a2cb68d3e00e07be940ac23ff10470b1996c7b9bb43aaa76",
+    "initializerLength": 37,
+    "initializerPreview": "[\n    0.75, 0.9, 1, 1.1, 1.25, 1.5,\n]"
+  },
+  {
+    "id": "openfront-engine/src/client/DesktopDisplay.ts:DISPLAY_SETTLE_TIMEOUT_MS#1",
+    "file": "openfront-engine/src/client/DesktopDisplay.ts",
+    "name": "DISPLAY_SETTLE_TIMEOUT_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "81a83544cf93c245178cbc1620030f1123f435af867c79d87135983c52ab39d9",
+    "initializerLength": 4,
+    "initializerPreview": "2000"
+  },
+  {
+    "id": "openfront-engine/src/client/DesktopSessionRecovery.ts:AUTO_RETRY_REASONS#1",
+    "file": "openfront-engine/src/client/DesktopSessionRecovery.ts",
+    "name": "AUTO_RETRY_REASONS",
+    "declarationKind": "const",
+    "initializerKind": "NewExpression",
+    "initializerHash": "2c53f0c207fd0db8487ebcbcd2aa59e53475164a9183dff181573be22a37068a",
+    "initializerLength": 88,
+    "initializerPreview": "new Set([\n    \"network\",\n    \"steam-backend\",\n    \"steam-error\",\n    \"needs-account\",\n])"
   },
   {
     "id": "openfront-engine/src/client/DesktopShell.ts:DESKTOP_VERSION_TIMEOUT_MS#1",
@@ -6520,6 +6670,16 @@
     "initializerPreview": "Twitch.Player"
   },
   {
+    "id": "openfront-engine/src/client/GameMetrics.ts:FLUSH_INTERVAL_MS#1",
+    "file": "openfront-engine/src/client/GameMetrics.ts",
+    "name": "FLUSH_INTERVAL_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "891937cb335016e9c7074c3781dcb1364e0c660733a8889bbeae83e6aa759be6",
+    "initializerLength": 5,
+    "initializerPreview": "30000"
+  },
+  {
     "id": "openfront-engine/src/client/GameModeSelector.ts:PRIMARY_ACTION#1",
     "file": "openfront-engine/src/client/GameModeSelector.ts",
     "name": "PRIMARY_ACTION",
@@ -6548,6 +6708,26 @@
     "initializerHash": "aceeedba5ac4fea97b0c566e305166fe8106ee8b93c2734aa39b1c283bff8b7f",
     "initializerLength": 51,
     "initializerPreview": "\"opacity-50 cursor-not-allowed pointer-events-none\""
+  },
+  {
+    "id": "openfront-engine/src/client/GameModeSelector.ts:TUTORIAL_ACTION#1",
+    "file": "openfront-engine/src/client/GameModeSelector.ts",
+    "name": "TUTORIAL_ACTION",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "8c63ded0b4a204daa2870fc802a8284545da5189e9e6b19ed8d0e9f54aa38fb7",
+    "initializerLength": 117,
+    "initializerPreview": "\"bg-cyber-yellow hover:bg-yellow-300 active:bg-cyber-yellow/80 !text-gray-900 hover:scale-y-105 hover:scale-x-[1.01]\""
+  },
+  {
+    "id": "openfront-engine/src/client/GameModeSelector.ts:TUTORIAL_CARD_MAX_GAMES#1",
+    "file": "openfront-engine/src/client/GameModeSelector.ts",
+    "name": "TUTORIAL_CARD_MAX_GAMES",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d",
+    "initializerLength": 1,
+    "initializerPreview": "5"
   },
   {
     "id": "openfront-engine/src/client/GameVersion.ts:VERSION_RE#1",
@@ -6640,6 +6820,16 @@
     "initializerPreview": "{\n    google: \"account_modal.link_google_success\",\n    already_linked: \"account_modal.link_google_already_linked\",\n    steam: \"account_modal.link_steam_success\",\n    account_already_has_steam: \"steam_link_modal.reason_account_already_has..."
   },
   {
+    "id": "openfront-engine/src/client/LobbySocket.ts:GAVE_UP_RETRY_MS#1",
+    "file": "openfront-engine/src/client/LobbySocket.ts",
+    "name": "GAVE_UP_RETRY_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "891937cb335016e9c7074c3781dcb1364e0c660733a8889bbeae83e6aa759be6",
+    "initializerLength": 5,
+    "initializerPreview": "30000"
+  },
+  {
     "id": "openfront-engine/src/client/LocalServer.ts:SPEED_ORDER#1",
     "file": "openfront-engine/src/client/LocalServer.ts",
     "name": "SPEED_ORDER",
@@ -6710,6 +6900,116 @@
     "initializerPreview": "5 * 60 * 1000"
   },
   {
+    "id": "openfront-engine/src/client/PlayerName.ts:FOLD_UNDECOMPOSABLE#1",
+    "file": "openfront-engine/src/client/PlayerName.ts",
+    "name": "FOLD_UNDECOMPOSABLE",
+    "declarationKind": "const",
+    "initializerKind": "ObjectLiteralExpression",
+    "initializerHash": "c084c1de98b5d35cbdd753a96b864dd02b1a40166f46570e2cacc28f33170945",
+    "initializerLength": 286,
+    "initializerPreview": "{\n    Ł: \"L\",\n    ł: \"l\",\n    Ø: \"O\",\n    ø: \"o\",\n    Æ: \"AE\",\n    æ: \"ae\",\n    Œ: \"OE\",\n    œ: \"oe\",\n    Ð: \"D\",\n    ð: \"d\",\n    Þ: \"TH\",\n    þ: \"th\",\n    ß: \"ss\",\n    Đ: \"D\",\n    đ: \"d\",\n    Ħ: \"H\",\n    ħ: \"h\",\n    Ŋ: \"N\",\n    ŋ: \"n\",\n..."
+  },
+  {
+    "id": "openfront-engine/src/client/PlayerName.ts:LAPSE_NOTICE_KEY#1",
+    "file": "openfront-engine/src/client/PlayerName.ts",
+    "name": "LAPSE_NOTICE_KEY",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "b23faa1f0fe0a797e3625122f1b9bf11708ad8699a78fdbdcbe9a1ed010f676d",
+    "initializerLength": 21,
+    "initializerPreview": "\"verifiedLapseNotice\""
+  },
+  {
+    "id": "openfront-engine/src/client/ServerList.ts:FETCH_TIMEOUT_MS#1",
+    "file": "openfront-engine/src/client/ServerList.ts",
+    "name": "FETCH_TIMEOUT_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "b090147020e033534635010c4f7eb6fc270d44e5df67ea9e744a8087df9ca106",
+    "initializerLength": 4,
+    "initializerPreview": "4000"
+  },
+  {
+    "id": "openfront-engine/src/client/ServerList.ts:REFRESH_INTERVAL_MS#1",
+    "file": "openfront-engine/src/client/ServerList.ts",
+    "name": "REFRESH_INTERVAL_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "891937cb335016e9c7074c3781dcb1364e0c660733a8889bbeae83e6aa759be6",
+    "initializerLength": 5,
+    "initializerPreview": "30000"
+  },
+  {
+    "id": "openfront-engine/src/client/ServerList.ts:RETRY_BASE_MS#1",
+    "file": "openfront-engine/src/client/ServerList.ts",
+    "name": "RETRY_BASE_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "39e5b4830d4d9c14db7368a95b65d5463ea3d09520373723430c03a5a453b5df",
+    "initializerLength": 5,
+    "initializerPreview": "10000"
+  },
+  {
+    "id": "openfront-engine/src/client/ServerList.ts:RETRY_MAX_MS#1",
+    "file": "openfront-engine/src/client/ServerList.ts",
+    "name": "RETRY_MAX_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d55d01d0341ed0ba2cd99b322e8c5b609254f47d10c7cd12b99b4922effeba44",
+    "initializerLength": 5,
+    "initializerPreview": "60000"
+  },
+  {
+    "id": "openfront-engine/src/client/ServerList.ts:CONFIRM_OUTAGE_AFTER_FAILURES#1",
+    "file": "openfront-engine/src/client/ServerList.ts",
+    "name": "CONFIRM_OUTAGE_AFTER_FAILURES",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35",
+    "initializerLength": 1,
+    "initializerPreview": "2"
+  },
+  {
+    "id": "openfront-engine/src/client/ServerList.ts:MANUAL_RETRY_MIN_INTERVAL_MS#1",
+    "file": "openfront-engine/src/client/ServerList.ts",
+    "name": "MANUAL_RETRY_MIN_INTERVAL_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "40510175845988f13f6162ed8526f0b09f73384467fa855e1e79b44a56562a58",
+    "initializerLength": 4,
+    "initializerPreview": "1000"
+  },
+  {
+    "id": "openfront-engine/src/client/ServerList.ts:MANUAL_RETRY_COOLDOWN_MS#1",
+    "file": "openfront-engine/src/client/ServerList.ts",
+    "name": "MANUAL_RETRY_COOLDOWN_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "0f8eb4b72b6e0c9e88b388eb967b49e067ef1004bf07bffc22c3acb13b43580a",
+    "initializerLength": 4,
+    "initializerPreview": "5000"
+  },
+  {
+    "id": "openfront-engine/src/client/SinglePlayerModal.ts:START_PREPARE_DEADLINE_MS#1",
+    "file": "openfront-engine/src/client/SinglePlayerModal.ts",
+    "name": "START_PREPARE_DEADLINE_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d4c999ae43633bd2036188d2bca68e1be8202b2cc1f3a1c42a728eaff7d2483d",
+    "initializerLength": 5,
+    "initializerPreview": "15000"
+  },
+  {
+    "id": "openfront-engine/src/client/SinglePlayerModal.ts:MIDGAME_AD_DEADLINE_MS#1",
+    "file": "openfront-engine/src/client/SinglePlayerModal.ts",
+    "name": "MIDGAME_AD_DEADLINE_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d55d01d0341ed0ba2cd99b322e8c5b609254f47d10c7cd12b99b4922effeba44",
+    "initializerLength": 5,
+    "initializerPreview": "60000"
+  },
+  {
     "id": "openfront-engine/src/client/SinglePlayerModal.ts:DEFAULT_OPTIONS#1",
     "file": "openfront-engine/src/client/SinglePlayerModal.ts",
     "name": "DEFAULT_OPTIONS",
@@ -6718,6 +7018,16 @@
     "initializerHash": "fd45dd9bc575fdc59b750dc591966204c38b8c472f7ddab3cdcbd14f06ece765",
     "initializerLength": 867,
     "initializerPreview": "{\n    selectedMap: GameMapType.World,\n    selectedDifficulty: Difficulty.Easy,\n    bots: 400,\n    infiniteGold: false,\n    infiniteTroops: false,\n    compactMap: false,\n    maxTimer: false,\n    maxTimerValue: undefined as number | undefi..."
+  },
+  {
+    "id": "openfront-engine/src/client/SingleplayerHeartbeat.ts:SINGLEPLAYER_HEARTBEAT_INTERVAL_MS#1",
+    "file": "openfront-engine/src/client/SingleplayerHeartbeat.ts",
+    "name": "SINGLEPLAYER_HEARTBEAT_INTERVAL_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d55d01d0341ed0ba2cd99b322e8c5b609254f47d10c7cd12b99b4922effeba44",
+    "initializerLength": 5,
+    "initializerPreview": "60000"
   },
   {
     "id": "openfront-engine/src/client/StatsConstants.ts:COLUMN_IDS#1",
@@ -6738,6 +7048,66 @@
     "initializerHash": "d0cbddcaad5185efb5657253ef2f0ad279f5d9ecf16852ffbc37016b371a3619",
     "initializerLength": 160,
     "initializerPreview": "{\n    player: [\"clan\", \"tiles\", \"gold\", \"maxtroops\"],\n    team: [\"tiles\", \"gold\", \"maxtroops\"],\n} as const satisfies Record<StatsTableKind, readonly ColumnId[]>"
+  },
+  {
+    "id": "openfront-engine/src/client/SteamGrantNotices.ts:STEAM_GRANT_NOTICE_KEY#1",
+    "file": "openfront-engine/src/client/SteamGrantNotices.ts",
+    "name": "STEAM_GRANT_NOTICE_KEY",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "c6c5e07853f1079db44a5780e1bf00923b535ce6827836e244611b17959479ec",
+    "initializerLength": 18,
+    "initializerPreview": "\"steamGrantNotice\""
+  },
+  {
+    "id": "openfront-engine/src/client/SteamGrantNotices.ts:STEAM_GRANT_NOTICE_MAX_ACCOUNTS#1",
+    "file": "openfront-engine/src/client/SteamGrantNotices.ts",
+    "name": "STEAM_GRANT_NOTICE_MAX_ACCOUNTS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "2c624232cdd221771294dfbb310aca000a0df6ac8b66b696d90ef06fdefb64a3",
+    "initializerLength": 1,
+    "initializerPreview": "8"
+  },
+  {
+    "id": "openfront-engine/src/client/SteamHandoff.ts:STEAM_APP_ID#1",
+    "file": "openfront-engine/src/client/SteamHandoff.ts",
+    "name": "STEAM_APP_ID",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "9f8df49f7df09808f3179800571d372f5d412c1741fb02813dc7048f7a5026b7",
+    "initializerLength": 7,
+    "initializerPreview": "3560670"
+  },
+  {
+    "id": "openfront-engine/src/client/SteamHandoffModal.ts:BUTTON_BASE#1",
+    "file": "openfront-engine/src/client/SteamHandoffModal.ts",
+    "name": "BUTTON_BASE",
+    "declarationKind": "const",
+    "initializerKind": "BinaryExpression",
+    "initializerHash": "5b6bf310f182e17914dd23e7e133e4c0d773fc68b5405f5074ebfe08bb49aa08",
+    "initializerLength": 107,
+    "initializerPreview": "\"flex-1 px-4 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl \" +\n    \"transition-all border-0\""
+  },
+  {
+    "id": "openfront-engine/src/client/SteamHandoffModal.ts:BUTTON_SECONDARY#1",
+    "file": "openfront-engine/src/client/SteamHandoffModal.ts",
+    "name": "BUTTON_SECONDARY",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "7c4b71509f69e5d40f3770a20973b24c091449a62b542242b6df0f5047f51d8b",
+    "initializerLength": 87,
+    "initializerPreview": "\"bg-white/5 text-white/60 border border-white/10 hover:bg-white/10 hover:text-white/80\""
+  },
+  {
+    "id": "openfront-engine/src/client/SteamHandoffModal.ts:BUTTON_PRIMARY#1",
+    "file": "openfront-engine/src/client/SteamHandoffModal.ts",
+    "name": "BUTTON_PRIMARY",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "4fbfd3af173fb8c4e49fc1b5c7ae79b89d0aea61a96195dc53963faa1088a2db",
+    "initializerLength": 45,
+    "initializerPreview": "\"bg-malibu-blue text-white hover:bg-aquarius\""
   },
   {
     "id": "openfront-engine/src/client/SteamLink.ts:LINK_HASH_PREFIX#1",
@@ -6805,8 +7175,8 @@
     "name": "REASON_KEYS",
     "declarationKind": "const",
     "initializerKind": "ObjectLiteralExpression",
-    "initializerHash": "e633a45d45fdd76f6aa790c89f6068babf5cc6965a7c843ee50351c8e5e3bc61",
-    "initializerLength": 341,
+    "initializerHash": "6bef876287d91640087e4b3412a969166da170a4646b3c8439c3596f372c75d4",
+    "initializerLength": 814,
     "initializerPreview": "{\n    account_already_has_steam: \"steam_link_modal.reason_account_already_has_steam\",\n    steam_linked_elsewhere: \"steam_link_modal.reason_steam_linked_elsewhere\",\n    steam_has_progress: \"steam_link_modal.reason_steam_has_progress\",\n   ..."
   },
   {
@@ -6818,6 +7188,16 @@
     "initializerHash": "6fbb823d6f6b9121d55c4ebc2ca5195a91165e54e4f2a62274e5af8161320c0c",
     "initializerLength": 22,
     "initializerPreview": "\"common.error_generic\""
+  },
+  {
+    "id": "openfront-engine/src/client/SteamLinkModal.ts:RETRYABLE_DISCARD_REASONS#1",
+    "file": "openfront-engine/src/client/SteamLinkModal.ts",
+    "name": "RETRYABLE_DISCARD_REASONS",
+    "declarationKind": "const",
+    "initializerKind": "NewExpression",
+    "initializerHash": "ae3f5a2382cbd9ea39d01d627c15e71684c4016cb0ae93e265398661d3357216",
+    "initializerLength": 70,
+    "initializerPreview": "new Set([\n    \"discard_deferred\",\n    \"rate_limited\",\n    \"failed\",\n])"
   },
   {
     "id": "openfront-engine/src/client/SteamLinkModal.ts:BUTTON_BASE#1",
@@ -6890,6 +7270,46 @@
     "initializerPreview": "false"
   },
   {
+    "id": "openfront-engine/src/client/Telemetry.ts:BUNDLE_DIR#1",
+    "file": "openfront-engine/src/client/Telemetry.ts",
+    "name": "BUNDLE_DIR",
+    "declarationKind": "const",
+    "initializerKind": "PropertyAccessExpression",
+    "initializerHash": "8e905a03d269b7586efac98c92228358e5bbf1786f8dce48fdfc5481cfda82fa",
+    "initializerLength": 34,
+    "initializerPreview": "new URL(\".\", import.meta.url).href"
+  },
+  {
+    "id": "openfront-engine/src/client/Telemetry.ts:DROPPED_EVENTS#1",
+    "file": "openfront-engine/src/client/Telemetry.ts",
+    "name": "DROPPED_EVENTS",
+    "declarationKind": "const",
+    "initializerKind": "NewExpression",
+    "initializerHash": "e84c24082d1393b49efc727c124fa602e8acb53bcf4a62db1dd84320c1e9d6a4",
+    "initializerLength": 36,
+    "initializerPreview": "new Set([\"securitypolicyviolation\"])"
+  },
+  {
+    "id": "openfront-engine/src/client/Telemetry.ts:MAX_REPEATS#1",
+    "file": "openfront-engine/src/client/Telemetry.ts",
+    "name": "MAX_REPEATS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d",
+    "initializerLength": 1,
+    "initializerPreview": "5"
+  },
+  {
+    "id": "openfront-engine/src/client/Telemetry.ts:MAX_ERRORS_AND_LOGS#1",
+    "file": "openfront-engine/src/client/Telemetry.ts",
+    "name": "MAX_ERRORS_AND_LOGS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "27badc983df1780b60c2b3fa9d3a19a00e46aac798451f0febdca52920faaddf",
+    "initializerLength": 3,
+    "initializerPreview": "200"
+  },
+  {
     "id": "openfront-engine/src/client/TransformHandler.ts:GOTO_INTERVAL_MS#1",
     "file": "openfront-engine/src/client/TransformHandler.ts",
     "name": "GOTO_INTERVAL_MS",
@@ -6920,6 +7340,16 @@
     "initializerPreview": "0.03"
   },
   {
+    "id": "openfront-engine/src/client/Transport.ts:POOL_REDIRECT_FROM#1",
+    "file": "openfront-engine/src/client/Transport.ts",
+    "name": "POOL_REDIRECT_FROM",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "ec398709736f4435992c2b1eede15da777abc79bb0acb93c670628002568c0fb",
+    "initializerLength": 20,
+    "initializerPreview": "\"pool-redirect-from\""
+  },
+  {
     "id": "openfront-engine/src/client/Transport.ts:RECONNECT_MAX_ATTEMPTS#1",
     "file": "openfront-engine/src/client/Transport.ts",
     "name": "RECONNECT_MAX_ATTEMPTS",
@@ -6948,6 +7378,76 @@
     "initializerHash": "d4c999ae43633bd2036188d2bca68e1be8202b2cc1f3a1c42a728eaff7d2483d",
     "initializerLength": 5,
     "initializerPreview": "15000"
+  },
+  {
+    "id": "openfront-engine/src/client/TurnstileToken.ts:TURNSTILE_TOKEN_TTL_MS#1",
+    "file": "openfront-engine/src/client/TurnstileToken.ts",
+    "name": "TURNSTILE_TOKEN_TTL_MS",
+    "declarationKind": "const",
+    "initializerKind": "BinaryExpression",
+    "initializerHash": "6fe77e44b1bd55c711d9c38e1bf906d9af144857b8c84b93090252fb8a761f52",
+    "initializerLength": 13,
+    "initializerPreview": "3 * 60 * 1000"
+  },
+  {
+    "id": "openfront-engine/src/client/TurnstileToken.ts:TURNSTILE_TOKEN_TIMEOUT_MS#1",
+    "file": "openfront-engine/src/client/TurnstileToken.ts",
+    "name": "TURNSTILE_TOKEN_TIMEOUT_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d4c999ae43633bd2036188d2bca68e1be8202b2cc1f3a1c42a728eaff7d2483d",
+    "initializerLength": 5,
+    "initializerPreview": "15000"
+  },
+  {
+    "id": "openfront-engine/src/client/TurnstileToken.ts:TURNSTILE_TIMEOUT_CODE#1",
+    "file": "openfront-engine/src/client/TurnstileToken.ts",
+    "name": "TURNSTILE_TIMEOUT_CODE",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "492bd0204b74443b7d8d36be9d38f139bd23776b1b1762051c15b89705768595",
+    "initializerLength": 9,
+    "initializerPreview": "\"timeout\""
+  },
+  {
+    "id": "openfront-engine/src/client/TurnstileToken.ts:TURNSTILE_LOAD_FAILED_CODE#1",
+    "file": "openfront-engine/src/client/TurnstileToken.ts",
+    "name": "TURNSTILE_LOAD_FAILED_CODE",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "4987402b4ae54f2fb3e2c30ab9c7d8d487b3cb22c6999abe5cb0e72f29f981f5",
+    "initializerLength": 13,
+    "initializerPreview": "\"load-failed\""
+  },
+  {
+    "id": "openfront-engine/src/client/UserSettingModal.ts:AUDIO_TAB_ORDER#1",
+    "file": "openfront-engine/src/client/UserSettingModal.ts",
+    "name": "AUDIO_TAB_ORDER",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "30585caabbb8305f1bad9d9ebd8bb4c4329cd3740414f38fcf090f85ba90085b",
+    "initializerLength": 92,
+    "initializerPreview": "[\n    \"master\",\n    \"music\",\n    \"effects\",\n    \"alerts\",\n    \"ambience\",\n    \"interface\",\n]"
+  },
+  {
+    "id": "openfront-engine/src/client/UserSettingModal.ts:PREVIEWABLE#1",
+    "file": "openfront-engine/src/client/UserSettingModal.ts",
+    "name": "PREVIEWABLE",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "02e22d3dc36ec7b96b5cca00dfbf0363705ec0f39da9d5f8c9a27d537d4b3b82",
+    "initializerLength": 34,
+    "initializerPreview": "[\"effects\", \"alerts\", \"interface\"]"
+  },
+  {
+    "id": "openfront-engine/src/client/UserSettingModal.ts:PREVIEW_CEILING_MS#1",
+    "file": "openfront-engine/src/client/UserSettingModal.ts",
+    "name": "PREVIEW_CEILING_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "39e5b4830d4d9c14db7368a95b65d5463ea3d09520373723430c03a5a453b5df",
+    "initializerLength": 5,
+    "initializerPreview": "10000"
   },
   {
     "id": "openfront-engine/src/client/UserSettingModal.ts:ALLOWED_SHARED_MODIFIERS#1",
@@ -7020,6 +7520,16 @@
     "initializerPreview": "\"https://www.youtube.com/embed/7J5zwb_s_Cg\""
   },
   {
+    "id": "openfront-engine/src/client/Utils.ts:DESKTOP_TUTORIAL_VIDEO_URL#1",
+    "file": "openfront-engine/src/client/Utils.ts",
+    "name": "DESKTOP_TUTORIAL_VIDEO_URL",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "ec95760e5cbbfd4a3e46fd6f13fddbc2b0122ca5871e0d696fc9228a2b73aeda",
+    "initializerLength": 27,
+    "initializerPreview": "\"/__tutorial/tutorial.webm\""
+  },
+  {
     "id": "openfront-engine/src/client/Utils.ts:EMPTY_TRANSLATION_PARAMS#1",
     "file": "openfront-engine/src/client/Utils.ts",
     "name": "EMPTY_TRANSLATION_PARAMS",
@@ -7028,6 +7538,26 @@
     "initializerHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
     "initializerLength": 2,
     "initializerPreview": "{}"
+  },
+  {
+    "id": "openfront-engine/src/client/Utils.ts:RTL_LANGUAGES#1",
+    "file": "openfront-engine/src/client/Utils.ts",
+    "name": "RTL_LANGUAGES",
+    "declarationKind": "const",
+    "initializerKind": "NewExpression",
+    "initializerHash": "9143a1ed596ff8a41d26f0cdec46a8c9d1ec397614b6ca97ea2a5fcdb753e956",
+    "initializerLength": 27,
+    "initializerPreview": "new Set([\"ar\", \"fa\", \"he\"])"
+  },
+  {
+    "id": "openfront-engine/src/client/Utils.ts:RELOAD_TOAST_KEY#1",
+    "file": "openfront-engine/src/client/Utils.ts",
+    "name": "RELOAD_TOAST_KEY",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "4990635ee39b1a7a8f6709d1711a9b7c601c1c9109d2b171ac4e8fc82dd9e3e0",
+    "initializerLength": 13,
+    "initializerPreview": "\"reloadToast\""
   },
   {
     "id": "openfront-engine/src/client/WebGLFrameBuilder.ts:PALETTE_SIZE#1",
@@ -7105,9 +7635,9 @@
     "name": "TEAM_COLORS",
     "declarationKind": "const",
     "initializerKind": "ArrayLiteralExpression",
-    "initializerHash": "4b7851c004ef2af54bfb8965980b675d7d46b6bf2b5fee1dae477b242c8a59ce",
+    "initializerHash": "ef62838722e3155212b433c5878098b09e477b737a352e98667dc5c6352c50d4",
     "initializerLength": 275,
-    "initializerPreview": "[\n    { name: \"Red\", hex: \"#eb3333\" },\n    { name: \"Blue\", hex: \"#2962ff\" },\n    { name: \"Teal\", hex: \"#2bd4bd\" },\n    { name: \"Purple\", hex: \"#9234ea\" },\n    { name: \"Yellow\", hex: \"#e7b008\" },\n    { name: \"Orange\", hex: \"#f97415\" },\n  ..."
+    "initializerPreview": "[\n    { name: \"Red\", hex: \"#eb3333\" },\n    { name: \"Blue\", hex: \"#2962ff\" },\n    { name: \"Teal\", hex: \"#06b6d4\" },\n    { name: \"Purple\", hex: \"#9234ea\" },\n    { name: \"Yellow\", hex: \"#e7b008\" },\n    { name: \"Orange\", hex: \"#ff7f0e\" },\n  ..."
   },
   {
     "id": "openfront-engine/src/client/components/CosmeticPreviewModal.ts:DEFAULT#1",
@@ -7368,6 +7898,26 @@
     "initializerHash": "7f8d789a6fe9009b3ffbda4361572489270039a4d87baeaa16bb5de679fc4db9",
     "initializerLength": 190,
     "initializerPreview": "\"px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider \" +\n    \"border border-white/10 bg-white/5 text-white/80 hover:bg-white/10 \" +\n    \"hover:text-white transition-colors\""
+  },
+  {
+    "id": "openfront-engine/src/client/components/DifficultyInfo.ts:DIFFICULTY_TROOP_PERCENT#1",
+    "file": "openfront-engine/src/client/components/DifficultyInfo.ts",
+    "name": "DIFFICULTY_TROOP_PERCENT",
+    "declarationKind": "const",
+    "initializerKind": "ObjectLiteralExpression",
+    "initializerHash": "b99214bc98574a9e3c98c523e3ef2b103fdea53996e65650ec3eb3a11a147a51",
+    "initializerLength": 121,
+    "initializerPreview": "{\n    [Difficulty.Easy]: 50,\n    [Difficulty.Medium]: 75,\n    [Difficulty.Hard]: 100,\n    [Difficulty.Impossible]: 125,\n}"
+  },
+  {
+    "id": "openfront-engine/src/client/components/DifficultyInfo.ts:DIFFICULTIES_WITH_NOTE#1",
+    "file": "openfront-engine/src/client/components/DifficultyInfo.ts",
+    "name": "DIFFICULTIES_WITH_NOTE",
+    "declarationKind": "const",
+    "initializerKind": "NewExpression",
+    "initializerHash": "5b810280c39b1256c999fa5db2618f1a72258feb29393ec7226f1c98103efa47",
+    "initializerLength": 56,
+    "initializerPreview": "new Set([\n    Difficulty.Medium,\n    Difficulty.Hard,\n])"
   },
   {
     "id": "openfront-engine/src/client/components/EffectPreview.ts:PLAYER#1",
@@ -7680,6 +8230,36 @@
     "initializerPreview": "\"#9919ff\""
   },
   {
+    "id": "openfront-engine/src/client/components/FloatingTooltip.ts:GAP#1",
+    "file": "openfront-engine/src/client/components/FloatingTooltip.ts",
+    "name": "GAP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "e7f6c011776e8db7cd330b54174fd76f7d0216b612387a5ffcfb81e6f0919683",
+    "initializerLength": 1,
+    "initializerPreview": "6"
+  },
+  {
+    "id": "openfront-engine/src/client/components/FloatingTooltip.ts:MARGIN#1",
+    "file": "openfront-engine/src/client/components/FloatingTooltip.ts",
+    "name": "MARGIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "2c624232cdd221771294dfbb310aca000a0df6ac8b66b696d90ef06fdefb64a3",
+    "initializerLength": 1,
+    "initializerPreview": "8"
+  },
+  {
+    "id": "openfront-engine/src/client/components/FreePlayPerks.ts:PERK_KEYS#1",
+    "file": "openfront-engine/src/client/components/FreePlayPerks.ts",
+    "name": "PERK_KEYS",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "f284c676a9758bc2e552856e262a57a4de22dc99278d889503d02c80dfc38df6",
+    "initializerLength": 111,
+    "initializerPreview": "[\n    \"free_play.full_game\",\n    \"free_play.ranked\",\n    \"free_play.custom_lobbies\",\n    \"free_play.account\",\n]"
+  },
+  {
     "id": "openfront-engine/src/client/components/FriendsList.ts:PAGE_LIMIT#1",
     "file": "openfront-engine/src/client/components/FriendsList.ts",
     "name": "PAGE_LIMIT",
@@ -7810,6 +8390,676 @@
     "initializerPreview": "svg `<path\n  fill-rule=\"evenodd\"\n  d=\"M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zm0 8.625a1.125 1.125 0 100 2.25 1.125 1.125 0 000-2.25zM15.375 12a1.125 1.125 0 112.25 0 1.125 1.1..."
   },
   {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:FLAG_OPACITY_MIN#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "FLAG_OPACITY_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+    "initializerLength": 1,
+    "initializerPreview": "0"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:FLAG_OPACITY_MAX#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "FLAG_OPACITY_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:FLAG_OPACITY_STEP#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "FLAG_OPACITY_STEP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "0602d7c813c1f6e7351a5832730f29daf739674976caba8d9dd955be838d46ea",
+    "initializerLength": 4,
+    "initializerPreview": "0.05"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:COSMETICS_SHOW_FROM_LABELS#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "COSMETICS_SHOW_FROM_LABELS",
+    "declarationKind": "const",
+    "initializerKind": "ObjectLiteralExpression",
+    "initializerHash": "5133bc8dd781fe88b9845c6f9f8b4aee5360b5eceffa2e085b47326d4c25e252",
+    "initializerLength": 186,
+    "initializerPreview": "{\n    everyone: \"graphics_setting.cosmetics_show_from_everyone\",\n    teammates: \"graphics_setting.cosmetics_show_from_teammates\",\n    self: \"graphics_setting.cosmetics_show_from_self\",\n}"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:COSMETIC_CATEGORIES#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "COSMETIC_CATEGORIES",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "42b8c01a5c760c6a1903f926ff2bc2ba9546eee40d0f2dccd56d1ed59b2b8a7a",
+    "initializerLength": 1690,
+    "initializerPreview": "[\n    {\n        key: \"territorySkins\",\n        labelKey: \"graphics_setting.cosmetics_territory_skins_label\",\n        descKey: \"graphics_setting.cosmetics_territory_skins_desc\",\n    },\n    {\n        key: \"flags\",\n        labelKey: \"graphi..."
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:NAME_SCALE_MIN#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "NAME_SCALE_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "44896b09365746b5f7167ee4d64988a38f7f4628803cbf86224e74eeb7c69e9d",
+    "initializerLength": 3,
+    "initializerPreview": "0.2"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:NAME_SCALE_MAX#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "NAME_SCALE_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "9f29a130438b81170b92a42650f9a94291ecad60bd47af2a3886e75f7f728725",
+    "initializerLength": 3,
+    "initializerPreview": "1.5"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:NAME_SCALE_STEP#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "NAME_SCALE_STEP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "0602d7c813c1f6e7351a5832730f29daf739674976caba8d9dd955be838d46ea",
+    "initializerLength": 4,
+    "initializerPreview": "0.05"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:NAME_CULL_MIN#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "NAME_CULL_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+    "initializerLength": 1,
+    "initializerPreview": "0"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:NAME_CULL_MAX#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "NAME_CULL_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "0602d7c813c1f6e7351a5832730f29daf739674976caba8d9dd955be838d46ea",
+    "initializerLength": 4,
+    "initializerPreview": "0.05"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:NAME_CULL_STEP#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "NAME_CULL_STEP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "9fca51987c96ba92d35f303353b7065f31114501c9f2afa37463ff1fdffe8f1f",
+    "initializerLength": 5,
+    "initializerPreview": "0.001"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:HOVER_FADE_MIN#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "HOVER_FADE_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+    "initializerLength": 1,
+    "initializerPreview": "0"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:HOVER_FADE_MAX#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "HOVER_FADE_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:HOVER_FADE_STEP#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "HOVER_FADE_STEP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "0602d7c813c1f6e7351a5832730f29daf739674976caba8d9dd955be838d46ea",
+    "initializerLength": 4,
+    "initializerPreview": "0.05"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:HOVER_GLOW_WIDTH_MIN#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "HOVER_GLOW_WIDTH_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+    "initializerLength": 1,
+    "initializerPreview": "0"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:HOVER_GLOW_WIDTH_MAX#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "HOVER_GLOW_WIDTH_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "2c624232cdd221771294dfbb310aca000a0df6ac8b66b696d90ef06fdefb64a3",
+    "initializerLength": 1,
+    "initializerPreview": "8"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:HOVER_GLOW_WIDTH_STEP#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "HOVER_GLOW_WIDTH_STEP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d2cbad71ff333de67d07ec676e352ab7f38248eb69c942950157220607c55e84",
+    "initializerLength": 3,
+    "initializerPreview": "0.5"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:HOVER_GLOW_ALPHA_MIN#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "HOVER_GLOW_ALPHA_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+    "initializerLength": 1,
+    "initializerPreview": "0"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:HOVER_GLOW_ALPHA_MAX#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "HOVER_GLOW_ALPHA_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:HOVER_GLOW_ALPHA_STEP#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "HOVER_GLOW_ALPHA_STEP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "0602d7c813c1f6e7351a5832730f29daf739674976caba8d9dd955be838d46ea",
+    "initializerLength": 4,
+    "initializerPreview": "0.05"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:ICON_SIZE_MIN#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "ICON_SIZE_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d59eced1ded07f84c145592f65bdf854358e009c5cd705f5215bf18697fed103",
+    "initializerLength": 2,
+    "initializerPreview": "40"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:ICON_SIZE_MAX#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "ICON_SIZE_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "ff5a1ae012afa5d4c889c50ad427aaf545d31a4fac04ffc1c4d03d403ba4250a",
+    "initializerLength": 2,
+    "initializerPreview": "70"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:ICON_SIZE_STEP#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "ICON_SIZE_STEP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d",
+    "initializerLength": 1,
+    "initializerPreview": "5"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:HIGHLIGHT_FILL_MIN#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "HIGHLIGHT_FILL_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+    "initializerLength": 1,
+    "initializerPreview": "0"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:HIGHLIGHT_FILL_MAX#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "HIGHLIGHT_FILL_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:HIGHLIGHT_FILL_STEP#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "HIGHLIGHT_FILL_STEP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "312b95ee5a344d2f7a16ad817ff70788980da6e30b9bb04b651d53847abd476f",
+    "initializerLength": 4,
+    "initializerPreview": "0.01"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:HIGHLIGHT_BRIGHTEN_MIN#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "HIGHLIGHT_BRIGHTEN_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+    "initializerLength": 1,
+    "initializerPreview": "0"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:HIGHLIGHT_BRIGHTEN_MAX#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "HIGHLIGHT_BRIGHTEN_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:HIGHLIGHT_BRIGHTEN_STEP#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "HIGHLIGHT_BRIGHTEN_STEP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "312b95ee5a344d2f7a16ad817ff70788980da6e30b9bb04b651d53847abd476f",
+    "initializerLength": 4,
+    "initializerPreview": "0.01"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:HIGHLIGHT_THICKEN_MIN#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "HIGHLIGHT_THICKEN_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+    "initializerLength": 1,
+    "initializerPreview": "0"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:HIGHLIGHT_THICKEN_MAX#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "HIGHLIGHT_THICKEN_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d",
+    "initializerLength": 1,
+    "initializerPreview": "5"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:HIGHLIGHT_THICKEN_STEP#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "HIGHLIGHT_THICKEN_STEP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:TERRITORY_SAT_MIN#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "TERRITORY_SAT_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+    "initializerLength": 1,
+    "initializerPreview": "0"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:TERRITORY_SAT_MAX#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "TERRITORY_SAT_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:TERRITORY_SAT_STEP#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "TERRITORY_SAT_STEP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "312b95ee5a344d2f7a16ad817ff70788980da6e30b9bb04b651d53847abd476f",
+    "initializerLength": 4,
+    "initializerPreview": "0.01"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:TERRITORY_ALPHA_MIN#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "TERRITORY_ALPHA_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+    "initializerLength": 1,
+    "initializerPreview": "0"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:TERRITORY_ALPHA_MAX#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "TERRITORY_ALPHA_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:TERRITORY_ALPHA_STEP#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "TERRITORY_ALPHA_STEP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "312b95ee5a344d2f7a16ad817ff70788980da6e30b9bb04b651d53847abd476f",
+    "initializerLength": 4,
+    "initializerPreview": "0.01"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:ALT_VIEW_FILL_ALPHA_MIN#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "ALT_VIEW_FILL_ALPHA_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+    "initializerLength": 1,
+    "initializerPreview": "0"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:ALT_VIEW_FILL_ALPHA_MAX#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "ALT_VIEW_FILL_ALPHA_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:ALT_VIEW_FILL_ALPHA_STEP#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "ALT_VIEW_FILL_ALPHA_STEP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "312b95ee5a344d2f7a16ad817ff70788980da6e30b9bb04b651d53847abd476f",
+    "initializerLength": 4,
+    "initializerPreview": "0.01"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:COORDINATE_GRID_OPACITY_MIN#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "COORDINATE_GRID_OPACITY_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+    "initializerLength": 1,
+    "initializerPreview": "0"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:COORDINATE_GRID_OPACITY_MAX#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "COORDINATE_GRID_OPACITY_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:COORDINATE_GRID_OPACITY_STEP#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "COORDINATE_GRID_OPACITY_STEP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "312b95ee5a344d2f7a16ad817ff70788980da6e30b9bb04b651d53847abd476f",
+    "initializerLength": 4,
+    "initializerPreview": "0.01"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:RAIL_ZOOM_MIN#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "RAIL_ZOOM_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+    "initializerLength": 1,
+    "initializerPreview": "0"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:RAIL_ZOOM_MAX#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "RAIL_ZOOM_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
+    "initializerLength": 2,
+    "initializerPreview": "10"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:RAIL_ZOOM_STEP#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "RAIL_ZOOM_STEP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "14be4b45f18e0d8c67b4f719b5144eee88497e413709d11d85b096d8e2346310",
+    "initializerLength": 3,
+    "initializerPreview": "0.1"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:RAIL_THICKNESS_MIN#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "RAIL_THICKNESS_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d2cbad71ff333de67d07ec676e352ab7f38248eb69c942950157220607c55e84",
+    "initializerLength": 3,
+    "initializerPreview": "0.5"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:RAIL_THICKNESS_MAX#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "RAIL_THICKNESS_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce",
+    "initializerLength": 1,
+    "initializerPreview": "3"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:RAIL_THICKNESS_STEP#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "RAIL_THICKNESS_STEP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "14be4b45f18e0d8c67b4f719b5144eee88497e413709d11d85b096d8e2346310",
+    "initializerLength": 3,
+    "initializerPreview": "0.1"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:LAYER_ALPHA_MIN#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "LAYER_ALPHA_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+    "initializerLength": 1,
+    "initializerPreview": "0"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:LAYER_ALPHA_MAX#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "LAYER_ALPHA_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:LAYER_ALPHA_STEP#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "LAYER_ALPHA_STEP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "312b95ee5a344d2f7a16ad817ff70788980da6e30b9bb04b651d53847abd476f",
+    "initializerLength": 4,
+    "initializerPreview": "0.01"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:GLOW_STRENGTH_MIN#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "GLOW_STRENGTH_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+    "initializerLength": 1,
+    "initializerPreview": "0"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:GLOW_STRENGTH_MAX#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "GLOW_STRENGTH_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "ad57366865126e55649ecb23ae1d48887544976efea46a48eb5d85a6eeb4d306",
+    "initializerLength": 3,
+    "initializerPreview": "100"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:GLOW_STRENGTH_STEP#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "GLOW_STRENGTH_STEP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d",
+    "initializerLength": 1,
+    "initializerPreview": "5"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:AMBIENT_LEVEL_MIN#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "AMBIENT_LEVEL_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+    "initializerLength": 1,
+    "initializerPreview": "0"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:AMBIENT_LEVEL_MAX#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "AMBIENT_LEVEL_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
+    "initializerLength": 2,
+    "initializerPreview": "10"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:AMBIENT_LEVEL_STEP#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "AMBIENT_LEVEL_STEP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:AMBIENT_MIN#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "AMBIENT_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "44896b09365746b5f7167ee4d64988a38f7f4628803cbf86224e74eeb7c69e9d",
+    "initializerLength": 3,
+    "initializerPreview": "0.2"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:UNIT_GLOW_MIN#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "UNIT_GLOW_MIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+    "initializerLength": 1,
+    "initializerPreview": "0"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:UNIT_GLOW_MAX#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "UNIT_GLOW_MAX",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
+    "initializerLength": 2,
+    "initializerPreview": "10"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:UNIT_GLOW_STEP#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "UNIT_GLOW_STEP",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:FALLOFF_AT_MIN_GLOW#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "FALLOFF_AT_MIN_GLOW",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce",
+    "initializerLength": 1,
+    "initializerPreview": "3"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:FALLOFF_AT_MAX_GLOW#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "FALLOFF_AT_MAX_GLOW",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:HEX_COLOR_RE#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "HEX_COLOR_RE",
+    "declarationKind": "const",
+    "initializerKind": "RegularExpressionLiteral",
+    "initializerHash": "ac4fe5c13a56e4a4c77d5fddf501d77029577c50beefb53d191462ac79cefb28",
+    "initializerLength": 22,
+    "initializerPreview": "/^#?([0-9a-fA-F]{6})$/"
+  },
+  {
+    "id": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts:NUKE_COLOR_DEFAULT#1",
+    "file": "openfront-engine/src/client/components/GraphicsAdvancedSettings.ts",
+    "name": "NUKE_COLOR_DEFAULT",
+    "declarationKind": "const",
+    "initializerKind": "CallExpression",
+    "initializerHash": "385dc79ad05f8f9441e60ba8a97a64ce77de3a9f90c9d7608fdbe96bff31fe64",
+    "initializerLength": 128,
+    "initializerPreview": "rgbFloatsToHex(renderDefaults.mapOverlay.staleNukeR, renderDefaults.mapOverlay.staleNukeG, renderDefaults.mapOverlay.staleNukeB)"
+  },
+  {
     "id": "openfront-engine/src/client/components/GraphicsPresetSelector.ts:CUSTOM_VALUE#1",
     "file": "openfront-engine/src/client/components/GraphicsPresetSelector.ts",
     "name": "CUSTOM_VALUE",
@@ -7838,6 +9088,16 @@
     "initializerHash": "909f33b6315e61ce037602bd450f0ffb280713daa686a6e1b390731c9b16be08",
     "initializerLength": 23,
     "initializerPreview": "\"ios_a2hs_banner_later\""
+  },
+  {
+    "id": "openfront-engine/src/client/components/InlineCheckout.ts:BALANCE_RECHECK_MS#1",
+    "file": "openfront-engine/src/client/components/InlineCheckout.ts",
+    "name": "BALANCE_RECHECK_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "5a0b83e19c5750eed6d8d46cb858d15c956a657093c08afa53133c0fbe5f04fb",
+    "initializerLength": 4,
+    "initializerPreview": "2500"
   },
   {
     "id": "openfront-engine/src/client/components/InputCardStyles.ts:ACTIVE_CARD#1",
@@ -7880,6 +9140,36 @@
     "initializerPreview": "\"text-xs uppercase font-bold tracking-wider leading-tight break-words hyphens-auto\""
   },
   {
+    "id": "openfront-engine/src/client/components/LazyVisibility.ts:NEAR_MARGIN#1",
+    "file": "openfront-engine/src/client/components/LazyVisibility.ts",
+    "name": "NEAR_MARGIN",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "4b5d1cf09110214c6c29f3c87fd37975eceeba18bf07fdac47107b322389f32f",
+    "initializerLength": 7,
+    "initializerPreview": "\"400px\""
+  },
+  {
+    "id": "openfront-engine/src/client/components/ListLobbyDialog.ts:MIN_START_MINUTES#1",
+    "file": "openfront-engine/src/client/components/ListLobbyDialog.ts",
+    "name": "MIN_START_MINUTES",
+    "declarationKind": "const",
+    "initializerKind": "BinaryExpression",
+    "initializerHash": "e3d4c7f9b47870c0ced0fe2dd9dfee0141bc204007d5fa9b12bcb870b23797b7",
+    "initializerLength": 38,
+    "initializerPreview": "MIN_HOSTED_LOBBY_AUTO_START_MS / 60000"
+  },
+  {
+    "id": "openfront-engine/src/client/components/ListLobbyDialog.ts:MAX_START_MINUTES#1",
+    "file": "openfront-engine/src/client/components/ListLobbyDialog.ts",
+    "name": "MAX_START_MINUTES",
+    "declarationKind": "const",
+    "initializerKind": "BinaryExpression",
+    "initializerHash": "af73b0f0c7d8136de51375174d9bbf984c8c2fb88d1afaa4d6f64c2851652a4f",
+    "initializerLength": 34,
+    "initializerPreview": "HOSTED_LOBBY_AUTO_START_MS / 60000"
+  },
+  {
     "id": "openfront-engine/src/client/components/LobbyCard.ts:PILL#1",
     "file": "openfront-engine/src/client/components/LobbyCard.ts",
     "name": "PILL",
@@ -7898,6 +9188,16 @@
     "initializerHash": "7178a0557fc12017cd5525a9e07a2f217bc9ea8cbf009dc7213006f4143167ab",
     "initializerLength": 21,
     "initializerPreview": "\"rounded bg-black/70\""
+  },
+  {
+    "id": "openfront-engine/src/client/components/LobbyCard.ts:CUSTOM_PILL#1",
+    "file": "openfront-engine/src/client/components/LobbyCard.ts",
+    "name": "CUSTOM_PILL",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "86d075c9fe777ea9e5afc7929fcefb16b40de923b4c3912c30a57375259a5173",
+    "initializerLength": 78,
+    "initializerPreview": "\"rounded bg-orange-500 px-2 py-1 text-xs font-bold tracking-widest text-white\""
   },
   {
     "id": "openfront-engine/src/client/components/MobileNavBar.ts:MOBILE_ITEM#1",
@@ -7988,6 +9288,16 @@
     "initializerHash": "df402089c4ce465639800abe762d001e7ac9233bd5eaf71932fc1c3226d0fb17",
     "initializerLength": 23,
     "initializerPreview": "\"plutonium-icon-styles\""
+  },
+  {
+    "id": "openfront-engine/src/client/components/ProgressiveList.ts:PAGE_SIZE#1",
+    "file": "openfront-engine/src/client/components/ProgressiveList.ts",
+    "name": "PAGE_SIZE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "c2356069e9d1e79ca924378153cfbbfb4d4416b1f99d41a2940bfdb66c5319db",
+    "initializerLength": 2,
+    "initializerPreview": "24"
   },
   {
     "id": "openfront-engine/src/client/components/PurchaseButton.ts:PURCHASE_STYLE_ID#1",
@@ -8218,6 +9528,16 @@
     "initializerHash": "c323c83108306cb0fabaec32f76803f6dde25bdb7cf45c859713c807962e8f44",
     "initializerLength": 264,
     "initializerPreview": "[\n    \"Mac: WebGL is on by default. If it has been restricted, open Safari > Settings (or Preferences) > Websites > WebGL and set WebGL to Allow or On for this site or globally.\",\n    \"iPhone/iPad: WebGL is natively supported and always ..."
+  },
+  {
+    "id": "openfront-engine/src/client/components/WebGLGate.ts:DESKTOP_STEP_KEYS#1",
+    "file": "openfront-engine/src/client/components/WebGLGate.ts",
+    "name": "DESKTOP_STEP_KEYS",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "26078f12dcaadee48c481bc9083b0ec812afa9d045de67ccdccbfce81a6fc323",
+    "initializerLength": 171,
+    "initializerPreview": "[\n    \"desktop_webgl_gate.step_quit\",\n    \"desktop_webgl_gate.step_restart_steam\",\n    \"desktop_webgl_gate.step_restart_computer\",\n    \"desktop_webgl_gate.step_drivers\",\n]"
   },
   {
     "id": "openfront-engine/src/client/components/baseComponents/ranking/GameInfoRanking.ts:RankType.ConquestHumans#1",
@@ -8540,6 +9860,26 @@
     "initializerPreview": "[\n    \"player_stats_table.built\",\n    \"player_stats_table.destroyed\",\n    \"player_stats_table.captured\",\n    \"player_stats_table.lost\",\n] as const"
   },
   {
+    "id": "openfront-engine/src/client/components/baseComponents/stats/PlayerStatsTree.ts:EMPTY_INDEX_SET#1",
+    "file": "openfront-engine/src/client/components/baseComponents/stats/PlayerStatsTree.ts",
+    "name": "EMPTY_INDEX_SET",
+    "declarationKind": "const",
+    "initializerKind": "NewExpression",
+    "initializerHash": "1ae36cea42d6979215916577304628896986341cd2f410494c0958b20cd6843c",
+    "initializerLength": 9,
+    "initializerPreview": "new Set()"
+  },
+  {
+    "id": "openfront-engine/src/client/components/baseComponents/stats/PlayerStatsTree.ts:MAX_ATTACK_INDICES#1",
+    "file": "openfront-engine/src/client/components/baseComponents/stats/PlayerStatsTree.ts",
+    "name": "MAX_ATTACK_INDICES",
+    "declarationKind": "const",
+    "initializerKind": "NewExpression",
+    "initializerHash": "2235dfc1c8d9db73e73d1c7b02df7d231f4a068a997de9fc6d55537392429e1e",
+    "initializerLength": 39,
+    "initializerPreview": "new Set([\n    ATTACK_INDEX_MAX_RECV,\n])"
+  },
+  {
     "id": "openfront-engine/src/client/components/baseComponents/stats/PlayerStatsTree.ts:ALL_SELECTION#1",
     "file": "openfront-engine/src/client/components/baseComponents/stats/PlayerStatsTree.ts",
     "name": "ALL_SELECTION",
@@ -8740,6 +10080,76 @@
     "initializerPreview": "/^(.+)\\.(\\d{4})$/"
   },
   {
+    "id": "openfront-engine/src/client/controllers/AmbienceController.ts:AMBIENCE_ZOOM_SCALE#1",
+    "file": "openfront-engine/src/client/controllers/AmbienceController.ts",
+    "name": "AMBIENCE_ZOOM_SCALE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "2c624232cdd221771294dfbb310aca000a0df6ac8b66b696d90ef06fdefb64a3",
+    "initializerLength": 1,
+    "initializerPreview": "8"
+  },
+  {
+    "id": "openfront-engine/src/client/controllers/AmbienceController.ts:MAX_VIEW_SCALE#1",
+    "file": "openfront-engine/src/client/controllers/AmbienceController.ts",
+    "name": "MAX_VIEW_SCALE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "f5ca38f748a1d6eaf726b8a42fb575c3c71f1864a8143301782de13da2d9202b",
+    "initializerLength": 2,
+    "initializerPreview": "20"
+  },
+  {
+    "id": "openfront-engine/src/client/controllers/AmbienceController.ts:AMBIENCE_PEAK_GAIN#1",
+    "file": "openfront-engine/src/client/controllers/AmbienceController.ts",
+    "name": "AMBIENCE_PEAK_GAIN",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "221764976efe04132774d96b0253cc31434c5261737469324f222621baf34b20",
+    "initializerLength": 3,
+    "initializerPreview": "0.3"
+  },
+  {
+    "id": "openfront-engine/src/client/controllers/AmbienceController.ts:GAIN_EPSILON#1",
+    "file": "openfront-engine/src/client/controllers/AmbienceController.ts",
+    "name": "GAIN_EPSILON",
+    "declarationKind": "const",
+    "initializerKind": "BinaryExpression",
+    "initializerHash": "d4c442f29628b31ef20fd82d26b7f2a8f3dd82a87843805bfa9959528d1d7063",
+    "initializerLength": 25,
+    "initializerPreview": "AMBIENCE_PEAK_GAIN * 0.03"
+  },
+  {
+    "id": "openfront-engine/src/client/controllers/AmbienceController.ts:AMBIENCE_RANGE_TILES#1",
+    "file": "openfront-engine/src/client/controllers/AmbienceController.ts",
+    "name": "AMBIENCE_RANGE_TILES",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "f5ca38f748a1d6eaf726b8a42fb575c3c71f1864a8143301782de13da2d9202b",
+    "initializerLength": 2,
+    "initializerPreview": "20"
+  },
+  {
+    "id": "openfront-engine/src/client/controllers/AmbienceController.ts:AMBIENCE_BY_TYPE#1",
+    "file": "openfront-engine/src/client/controllers/AmbienceController.ts",
+    "name": "AMBIENCE_BY_TYPE",
+    "declarationKind": "const",
+    "initializerKind": "NewExpression",
+    "initializerHash": "e03a93b3d0389282867cd79bc535482f32172c8ff169011860d631c882d34522",
+    "initializerLength": 185,
+    "initializerPreview": "new Map<UnitType, AmbienceTrack>([\n    [UnitType.City, \"city\"],\n    [UnitType.Factory, \"factory\"],\n    [UnitType.MissileSilo, \"missile-silo\"],\n    [UnitType.SAMLauncher, \"sam-silo\"],\n])"
+  },
+  {
+    "id": "openfront-engine/src/client/controllers/AmbienceController.ts:AMBIENT_STRUCTURE_TYPES#1",
+    "file": "openfront-engine/src/client/controllers/AmbienceController.ts",
+    "name": "AMBIENT_STRUCTURE_TYPES",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "c6de8b6a14622db598d9918b66dd885230a0bb121c6edfdcb338d96665c0a3a7",
+    "initializerLength": 35,
+    "initializerPreview": "[\n    ...AMBIENCE_BY_TYPE.keys(),\n]"
+  },
+  {
     "id": "openfront-engine/src/client/controllers/AttackingTroopsController.ts:OUTGOING_R#1",
     "file": "openfront-engine/src/client/controllers/AttackingTroopsController.ts",
     "name": "OUTGOING_R",
@@ -8848,6 +10258,56 @@
     "initializerHash": "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d",
     "initializerLength": 1,
     "initializerPreview": "5"
+  },
+  {
+    "id": "openfront-engine/src/client/controllers/SoundEffectController.ts:NUKE_WARNING_SOUND_INTERVAL_TICKS#1",
+    "file": "openfront-engine/src/client/controllers/SoundEffectController.ts",
+    "name": "NUKE_WARNING_SOUND_INTERVAL_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
+    "initializerLength": 2,
+    "initializerPreview": "10"
+  },
+  {
+    "id": "openfront-engine/src/client/controllers/SoundEffectController.ts:TRAIN_STATION_SOUND_INTERVAL_TICKS#1",
+    "file": "openfront-engine/src/client/controllers/SoundEffectController.ts",
+    "name": "TRAIN_STATION_SOUND_INTERVAL_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
+    "initializerLength": 2,
+    "initializerPreview": "10"
+  },
+  {
+    "id": "openfront-engine/src/client/controllers/SoundEffectController.ts:TRAIN_STATION_SWEEP_INTERVAL_TICKS#1",
+    "file": "openfront-engine/src/client/controllers/SoundEffectController.ts",
+    "name": "TRAIN_STATION_SWEEP_INTERVAL_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "ad57366865126e55649ecb23ae1d48887544976efea46a48eb5d85a6eeb4d306",
+    "initializerLength": 3,
+    "initializerPreview": "100"
+  },
+  {
+    "id": "openfront-engine/src/client/controllers/SoundEffectController.ts:STATION_CAPABLE_TYPES#1",
+    "file": "openfront-engine/src/client/controllers/SoundEffectController.ts",
+    "name": "STATION_CAPABLE_TYPES",
+    "declarationKind": "const",
+    "initializerKind": "NewExpression",
+    "initializerHash": "ffb1b8afe52aeabfa9f66f95c37b02b114f5020567fff661ac5b4ff4f3beb3a6",
+    "initializerLength": 82,
+    "initializerPreview": "new Set<UnitType>([\n    UnitType.City,\n    UnitType.Factory,\n    UnitType.Port,\n])"
+  },
+  {
+    "id": "openfront-engine/src/client/controllers/SoundEffectController.ts:NUKE_INBOUND_MESSAGES#1",
+    "file": "openfront-engine/src/client/controllers/SoundEffectController.ts",
+    "name": "NUKE_INBOUND_MESSAGES",
+    "declarationKind": "const",
+    "initializerKind": "NewExpression",
+    "initializerHash": "3fe0b74c03a4a4e88b6e19ceda6570fac857699e4cc97da7fc1dae94b185312d",
+    "initializerLength": 124,
+    "initializerPreview": "new Set<MessageType>([\n    MessageType.NUKE_INBOUND,\n    MessageType.HYDROGEN_BOMB_INBOUND,\n    MessageType.MIRV_INBOUND,\n])"
   },
   {
     "id": "openfront-engine/src/client/controllers/WarshipSelectionController.ts:WARSHIP_SELECTION_RADIUS#1",
@@ -8980,6 +10440,26 @@
     "initializerPreview": "{\n    [UnitType.TransportShip]: transportShipSprite,\n    [UnitType.Warship]: warshipSprite,\n    [UnitType.SAMMissile]: samMissileSprite,\n    [UnitType.AtomBomb]: atomBombSprite,\n    [UnitType.HydrogenBomb]: hydrogenBombSprite,\n    [UnitT..."
   },
   {
+    "id": "openfront-engine/src/client/hud/Tutorial.ts:TUTORIAL_STEPS#1",
+    "file": "openfront-engine/src/client/hud/Tutorial.ts",
+    "name": "TUTORIAL_STEPS",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "700d61946b9c29b103fa14ef9c0f3b6637326c6f407886a1daade383ed2f8626",
+    "initializerLength": 3494,
+    "initializerPreview": "[\n    { id: \"spawn\", isDone: (c) => c.hasSpawned && !c.inSpawnPhase },\n    {\n        id: \"attack_wilderness\",\n        highlight: \"territory\",\n        isDone: (c) => c.attacking,\n    },\n    { id: \"troops\", highlight: \"troops\", manual: tru..."
+  },
+  {
+    "id": "openfront-engine/src/client/hud/Tutorial.ts:STEP_DONE_LINGER_TICKS#1",
+    "file": "openfront-engine/src/client/hud/Tutorial.ts",
+    "name": "STEP_DONE_LINGER_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "e629fa6598d732768f7c726b4b621285f9c3b85303900aa912017db7617d8bdb",
+    "initializerLength": 2,
+    "initializerPreview": "15"
+  },
+  {
     "id": "openfront-engine/src/client/hud/layers/AlertFrame.ts:ALERT_SPEED#1",
     "file": "openfront-engine/src/client/hud/layers/AlertFrame.ts",
     "name": "ALERT_SPEED",
@@ -9088,566 +10568,6 @@
     "initializerHash": "b090147020e033534635010c4f7eb6fc270d44e5df67ea9e744a8087df9ca106",
     "initializerLength": 4,
     "initializerPreview": "4000"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:NAME_SCALE_MIN#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "NAME_SCALE_MIN",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "44896b09365746b5f7167ee4d64988a38f7f4628803cbf86224e74eeb7c69e9d",
-    "initializerLength": 3,
-    "initializerPreview": "0.2"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:NAME_SCALE_MAX#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "NAME_SCALE_MAX",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "9f29a130438b81170b92a42650f9a94291ecad60bd47af2a3886e75f7f728725",
-    "initializerLength": 3,
-    "initializerPreview": "1.5"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:NAME_SCALE_STEP#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "NAME_SCALE_STEP",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "0602d7c813c1f6e7351a5832730f29daf739674976caba8d9dd955be838d46ea",
-    "initializerLength": 4,
-    "initializerPreview": "0.05"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:NAME_CULL_MIN#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "NAME_CULL_MIN",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
-    "initializerLength": 1,
-    "initializerPreview": "0"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:NAME_CULL_MAX#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "NAME_CULL_MAX",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "0602d7c813c1f6e7351a5832730f29daf739674976caba8d9dd955be838d46ea",
-    "initializerLength": 4,
-    "initializerPreview": "0.05"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:NAME_CULL_STEP#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "NAME_CULL_STEP",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "9fca51987c96ba92d35f303353b7065f31114501c9f2afa37463ff1fdffe8f1f",
-    "initializerLength": 5,
-    "initializerPreview": "0.001"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:HOVER_FADE_MIN#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "HOVER_FADE_MIN",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
-    "initializerLength": 1,
-    "initializerPreview": "0"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:HOVER_FADE_MAX#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "HOVER_FADE_MAX",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-    "initializerLength": 1,
-    "initializerPreview": "1"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:HOVER_FADE_STEP#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "HOVER_FADE_STEP",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "0602d7c813c1f6e7351a5832730f29daf739674976caba8d9dd955be838d46ea",
-    "initializerLength": 4,
-    "initializerPreview": "0.05"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:HOVER_GLOW_WIDTH_MIN#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "HOVER_GLOW_WIDTH_MIN",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
-    "initializerLength": 1,
-    "initializerPreview": "0"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:HOVER_GLOW_WIDTH_MAX#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "HOVER_GLOW_WIDTH_MAX",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "2c624232cdd221771294dfbb310aca000a0df6ac8b66b696d90ef06fdefb64a3",
-    "initializerLength": 1,
-    "initializerPreview": "8"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:HOVER_GLOW_WIDTH_STEP#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "HOVER_GLOW_WIDTH_STEP",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "d2cbad71ff333de67d07ec676e352ab7f38248eb69c942950157220607c55e84",
-    "initializerLength": 3,
-    "initializerPreview": "0.5"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:HOVER_GLOW_ALPHA_MIN#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "HOVER_GLOW_ALPHA_MIN",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
-    "initializerLength": 1,
-    "initializerPreview": "0"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:HOVER_GLOW_ALPHA_MAX#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "HOVER_GLOW_ALPHA_MAX",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-    "initializerLength": 1,
-    "initializerPreview": "1"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:HOVER_GLOW_ALPHA_STEP#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "HOVER_GLOW_ALPHA_STEP",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "0602d7c813c1f6e7351a5832730f29daf739674976caba8d9dd955be838d46ea",
-    "initializerLength": 4,
-    "initializerPreview": "0.05"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:ICON_SIZE_MIN#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "ICON_SIZE_MIN",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "d59eced1ded07f84c145592f65bdf854358e009c5cd705f5215bf18697fed103",
-    "initializerLength": 2,
-    "initializerPreview": "40"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:ICON_SIZE_MAX#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "ICON_SIZE_MAX",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "ff5a1ae012afa5d4c889c50ad427aaf545d31a4fac04ffc1c4d03d403ba4250a",
-    "initializerLength": 2,
-    "initializerPreview": "70"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:ICON_SIZE_STEP#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "ICON_SIZE_STEP",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d",
-    "initializerLength": 1,
-    "initializerPreview": "5"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:HIGHLIGHT_FILL_MIN#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "HIGHLIGHT_FILL_MIN",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
-    "initializerLength": 1,
-    "initializerPreview": "0"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:HIGHLIGHT_FILL_MAX#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "HIGHLIGHT_FILL_MAX",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-    "initializerLength": 1,
-    "initializerPreview": "1"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:HIGHLIGHT_FILL_STEP#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "HIGHLIGHT_FILL_STEP",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "312b95ee5a344d2f7a16ad817ff70788980da6e30b9bb04b651d53847abd476f",
-    "initializerLength": 4,
-    "initializerPreview": "0.01"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:HIGHLIGHT_BRIGHTEN_MIN#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "HIGHLIGHT_BRIGHTEN_MIN",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
-    "initializerLength": 1,
-    "initializerPreview": "0"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:HIGHLIGHT_BRIGHTEN_MAX#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "HIGHLIGHT_BRIGHTEN_MAX",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-    "initializerLength": 1,
-    "initializerPreview": "1"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:HIGHLIGHT_BRIGHTEN_STEP#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "HIGHLIGHT_BRIGHTEN_STEP",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "312b95ee5a344d2f7a16ad817ff70788980da6e30b9bb04b651d53847abd476f",
-    "initializerLength": 4,
-    "initializerPreview": "0.01"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:HIGHLIGHT_THICKEN_MIN#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "HIGHLIGHT_THICKEN_MIN",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
-    "initializerLength": 1,
-    "initializerPreview": "0"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:HIGHLIGHT_THICKEN_MAX#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "HIGHLIGHT_THICKEN_MAX",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d",
-    "initializerLength": 1,
-    "initializerPreview": "5"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:HIGHLIGHT_THICKEN_STEP#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "HIGHLIGHT_THICKEN_STEP",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-    "initializerLength": 1,
-    "initializerPreview": "1"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:TERRITORY_SAT_MIN#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "TERRITORY_SAT_MIN",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
-    "initializerLength": 1,
-    "initializerPreview": "0"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:TERRITORY_SAT_MAX#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "TERRITORY_SAT_MAX",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-    "initializerLength": 1,
-    "initializerPreview": "1"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:TERRITORY_SAT_STEP#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "TERRITORY_SAT_STEP",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "312b95ee5a344d2f7a16ad817ff70788980da6e30b9bb04b651d53847abd476f",
-    "initializerLength": 4,
-    "initializerPreview": "0.01"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:TERRITORY_ALPHA_MIN#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "TERRITORY_ALPHA_MIN",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
-    "initializerLength": 1,
-    "initializerPreview": "0"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:TERRITORY_ALPHA_MAX#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "TERRITORY_ALPHA_MAX",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-    "initializerLength": 1,
-    "initializerPreview": "1"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:TERRITORY_ALPHA_STEP#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "TERRITORY_ALPHA_STEP",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "312b95ee5a344d2f7a16ad817ff70788980da6e30b9bb04b651d53847abd476f",
-    "initializerLength": 4,
-    "initializerPreview": "0.01"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:COORDINATE_GRID_OPACITY_MIN#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "COORDINATE_GRID_OPACITY_MIN",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
-    "initializerLength": 1,
-    "initializerPreview": "0"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:COORDINATE_GRID_OPACITY_MAX#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "COORDINATE_GRID_OPACITY_MAX",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-    "initializerLength": 1,
-    "initializerPreview": "1"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:COORDINATE_GRID_OPACITY_STEP#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "COORDINATE_GRID_OPACITY_STEP",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "312b95ee5a344d2f7a16ad817ff70788980da6e30b9bb04b651d53847abd476f",
-    "initializerLength": 4,
-    "initializerPreview": "0.01"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:RAIL_ZOOM_MIN#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "RAIL_ZOOM_MIN",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
-    "initializerLength": 1,
-    "initializerPreview": "0"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:RAIL_ZOOM_MAX#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "RAIL_ZOOM_MAX",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
-    "initializerLength": 2,
-    "initializerPreview": "10"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:RAIL_ZOOM_STEP#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "RAIL_ZOOM_STEP",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "14be4b45f18e0d8c67b4f719b5144eee88497e413709d11d85b096d8e2346310",
-    "initializerLength": 3,
-    "initializerPreview": "0.1"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:RAIL_THICKNESS_MIN#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "RAIL_THICKNESS_MIN",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "d2cbad71ff333de67d07ec676e352ab7f38248eb69c942950157220607c55e84",
-    "initializerLength": 3,
-    "initializerPreview": "0.5"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:RAIL_THICKNESS_MAX#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "RAIL_THICKNESS_MAX",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce",
-    "initializerLength": 1,
-    "initializerPreview": "3"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:RAIL_THICKNESS_STEP#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "RAIL_THICKNESS_STEP",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "14be4b45f18e0d8c67b4f719b5144eee88497e413709d11d85b096d8e2346310",
-    "initializerLength": 3,
-    "initializerPreview": "0.1"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:GLOW_STRENGTH_MIN#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "GLOW_STRENGTH_MIN",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
-    "initializerLength": 1,
-    "initializerPreview": "0"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:GLOW_STRENGTH_MAX#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "GLOW_STRENGTH_MAX",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "ad57366865126e55649ecb23ae1d48887544976efea46a48eb5d85a6eeb4d306",
-    "initializerLength": 3,
-    "initializerPreview": "100"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:GLOW_STRENGTH_STEP#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "GLOW_STRENGTH_STEP",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d",
-    "initializerLength": 1,
-    "initializerPreview": "5"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:AMBIENT_LEVEL_MIN#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "AMBIENT_LEVEL_MIN",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
-    "initializerLength": 1,
-    "initializerPreview": "0"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:AMBIENT_LEVEL_MAX#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "AMBIENT_LEVEL_MAX",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
-    "initializerLength": 2,
-    "initializerPreview": "10"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:AMBIENT_LEVEL_STEP#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "AMBIENT_LEVEL_STEP",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-    "initializerLength": 1,
-    "initializerPreview": "1"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:AMBIENT_MIN#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "AMBIENT_MIN",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "44896b09365746b5f7167ee4d64988a38f7f4628803cbf86224e74eeb7c69e9d",
-    "initializerLength": 3,
-    "initializerPreview": "0.2"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:UNIT_GLOW_MIN#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "UNIT_GLOW_MIN",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
-    "initializerLength": 1,
-    "initializerPreview": "0"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:UNIT_GLOW_MAX#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "UNIT_GLOW_MAX",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
-    "initializerLength": 2,
-    "initializerPreview": "10"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:UNIT_GLOW_STEP#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "UNIT_GLOW_STEP",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-    "initializerLength": 1,
-    "initializerPreview": "1"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:FALLOFF_AT_MIN_GLOW#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "FALLOFF_AT_MIN_GLOW",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce",
-    "initializerLength": 1,
-    "initializerPreview": "3"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:FALLOFF_AT_MAX_GLOW#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "FALLOFF_AT_MAX_GLOW",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-    "initializerLength": 1,
-    "initializerPreview": "1"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:HEX_COLOR_RE#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "HEX_COLOR_RE",
-    "declarationKind": "const",
-    "initializerKind": "RegularExpressionLiteral",
-    "initializerHash": "ac4fe5c13a56e4a4c77d5fddf501d77029577c50beefb53d191462ac79cefb28",
-    "initializerLength": 22,
-    "initializerPreview": "/^#?([0-9a-fA-F]{6})$/"
-  },
-  {
-    "id": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts:NUKE_COLOR_DEFAULT#1",
-    "file": "openfront-engine/src/client/hud/layers/GraphicsSettingsModal.ts",
-    "name": "NUKE_COLOR_DEFAULT",
-    "declarationKind": "const",
-    "initializerKind": "CallExpression",
-    "initializerHash": "385dc79ad05f8f9441e60ba8a97a64ce77de3a9f90c9d7608fdbe96bff31fe64",
-    "initializerLength": 128,
-    "initializerPreview": "rgbFloatsToHex(renderDefaults.mapOverlay.staleNukeR, renderDefaults.mapOverlay.staleNukeG, renderDefaults.mapOverlay.staleNukeB)"
   },
   {
     "id": "openfront-engine/src/client/hud/layers/HeadsUpMessage.ts:COLLUSION_WARNING_CLOSED_KEY#1",
@@ -9828,6 +10748,96 @@
     "initializerHash": "40e4ea82375e144f646415a5bd50cd0122b57de72625049611ba88f46a3d8868",
     "initializerLength": 409,
     "initializerPreview": "{\n    [Relation.Hostile]: {\n        color: \"#ef4444\",\n        eyeCy: 7.5,\n        mouth: \"M5 12 Q8 9 11 12\",\n        brows: [\"M4 5.5 L6.5 7\", \"M12 5.5 L9.5 7\"],\n    },\n    [Relation.Distrustful]: {\n        color: \"#f97316\",\n        eyeCy..."
+  },
+  {
+    "id": "openfront-engine/src/client/hud/layers/TutorialPanel.ts:COST_POLL_TICKS#1",
+    "file": "openfront-engine/src/client/hud/layers/TutorialPanel.ts",
+    "name": "COST_POLL_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
+    "initializerLength": 2,
+    "initializerPreview": "10"
+  },
+  {
+    "id": "openfront-engine/src/client/hud/layers/TutorialPanel.ts:COST_POLL_TYPES#1",
+    "file": "openfront-engine/src/client/hud/layers/TutorialPanel.ts",
+    "name": "COST_POLL_TYPES",
+    "declarationKind": "const",
+    "initializerKind": "AsExpression",
+    "initializerHash": "35538275113f52f02a80f5146221489434297d9d2351050c1752f448735fe202",
+    "initializerLength": 169,
+    "initializerPreview": "[\n    UnitType.City,\n    UnitType.Factory,\n    UnitType.Port,\n    UnitType.DefensePost,\n    UnitType.Warship,\n    UnitType.MissileSilo,\n    UnitType.AtomBomb,\n] as const"
+  },
+  {
+    "id": "openfront-engine/src/client/hud/layers/TutorialPanel.ts:UNIT_NAME_KEYS#1",
+    "file": "openfront-engine/src/client/hud/layers/TutorialPanel.ts",
+    "name": "UNIT_NAME_KEYS",
+    "declarationKind": "const",
+    "initializerKind": "ObjectLiteralExpression",
+    "initializerHash": "eae4ac6da264e8e01f3afdcb65f05580b7b3750962a8707d93e8caf8d68c281f",
+    "initializerLength": 257,
+    "initializerPreview": "{\n    [UnitType.City]: \"city\",\n    [UnitType.Factory]: \"factory\",\n    [UnitType.Port]: \"port\",\n    [UnitType.DefensePost]: \"defense_post\",\n    [UnitType.Warship]: \"warship\",\n    [UnitType.MissileSilo]: \"missile_silo\",\n    [UnitType.AtomB..."
+  },
+  {
+    "id": "openfront-engine/src/client/hud/layers/TutorialPanel.ts:COMPLETE_LINGER_TICKS#1",
+    "file": "openfront-engine/src/client/hud/layers/TutorialPanel.ts",
+    "name": "COMPLETE_LINGER_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "1a6562590ef19d1045d06c4055742d38288e9e6dcd71ccde5cee80f1d5a774eb",
+    "initializerLength": 2,
+    "initializerPreview": "50"
+  },
+  {
+    "id": "openfront-engine/src/client/hud/layers/TutorialPanel.ts:NEARBY_TRIBE_MARK_COUNT#1",
+    "file": "openfront-engine/src/client/hud/layers/TutorialPanel.ts",
+    "name": "NEARBY_TRIBE_MARK_COUNT",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce",
+    "initializerLength": 1,
+    "initializerPreview": "3"
+  },
+  {
+    "id": "openfront-engine/src/client/hud/layers/TutorialPanel.ts:BORDER_REFRESH_TICKS#1",
+    "file": "openfront-engine/src/client/hud/layers/TutorialPanel.ts",
+    "name": "BORDER_REFRESH_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
+    "initializerLength": 2,
+    "initializerPreview": "10"
+  },
+  {
+    "id": "openfront-engine/src/client/hud/layers/TutorialPanel.ts:COAST_STEPS#1",
+    "file": "openfront-engine/src/client/hud/layers/TutorialPanel.ts",
+    "name": "COAST_STEPS",
+    "declarationKind": "const",
+    "initializerKind": "NewExpression",
+    "initializerHash": "ad7ed35cb08818e549e39b236f30eaf06af977933311d31a2679507e5b6d9f64",
+    "initializerLength": 34,
+    "initializerPreview": "new Set([\"send_boat\", \"buy_port\"])"
+  },
+  {
+    "id": "openfront-engine/src/client/hud/layers/TutorialPanel.ts:TOUCH_TEXT_STEPS#1",
+    "file": "openfront-engine/src/client/hud/layers/TutorialPanel.ts",
+    "name": "TOUCH_TEXT_STEPS",
+    "declarationKind": "const",
+    "initializerKind": "NewExpression",
+    "initializerHash": "defe5a79b80f4ffb62259108e44544f4b6232821b6b58ced079ffd570c908768",
+    "initializerLength": 220,
+    "initializerPreview": "new Set([\n    \"spawn\",\n    \"attack_wilderness\",\n    \"buy_city\",\n    \"propose_alliance\",\n    \"buy_factory\",\n    \"send_boat\",\n    \"buy_port\",\n    \"buy_defense_post\",\n    \"buy_warship\",\n    \"buy_silo\",\n    \"launch_atom\",\n])"
+  },
+  {
+    "id": "openfront-engine/src/client/hud/layers/TutorialPanel.ts:HOTKEY_FALLBACKS#1",
+    "file": "openfront-engine/src/client/hud/layers/TutorialPanel.ts",
+    "name": "HOTKEY_FALLBACKS",
+    "declarationKind": "const",
+    "initializerKind": "AsExpression",
+    "initializerHash": "dafee5837de1e9174565772c1ba45f51cd8d201ff1bf7d00277f7e0146375993",
+    "initializerLength": 176,
+    "initializerPreview": "{\n    buildCity: \"1\",\n    buildFactory: \"2\",\n    buildPort: \"3\",\n    buildDefensePost: \"4\",\n    buildWarship: \"7\",\n    buildMissileSilo: \"5\",\n    buildAtomBomb: \"8\",\n} as const"
   },
   {
     "id": "openfront-engine/src/client/hud/layers/lib/GoldRateTracker.ts:TICKS_PER_MINUTE#1",
@@ -10200,6 +11210,16 @@
     "initializerPreview": "[\"default\", \"colorblind\"] as const"
   },
   {
+    "id": "openfront-engine/src/client/render/gl/GraphicsOverrides.ts:COSMETICS_SHOW_FROM#1",
+    "file": "openfront-engine/src/client/render/gl/GraphicsOverrides.ts",
+    "name": "COSMETICS_SHOW_FROM",
+    "declarationKind": "const",
+    "initializerKind": "AsExpression",
+    "initializerHash": "7cdd786f1e91f20dd579265f104b47897e633b98856b2a6560f101d56c15922c",
+    "initializerLength": 42,
+    "initializerPreview": "[\"everyone\", \"teammates\", \"self\"] as const"
+  },
+  {
     "id": "openfront-engine/src/client/render/gl/RenderSettings.ts:THEMES#1",
     "file": "openfront-engine/src/client/render/gl/RenderSettings.ts",
     "name": "THEMES",
@@ -10565,9 +11585,9 @@
     "name": "LIGHT_CONFIGS",
     "declarationKind": "const",
     "initializerKind": "ObjectLiteralExpression",
-    "initializerHash": "96af5770f24552cf55d64c0f148e8cec83a9a8eca231cc08ae3e85e7c0f61536",
+    "initializerHash": "fa88627194277487452de37e5eb8dcd99576baf4a52e9920867ac27b5ba69b01",
     "initializerLength": 1065,
-    "initializerPreview": "{\n    [UT_CITY]: { r: 1.0, g: 0.85, b: 0.5, radius: 18, intensity: 1.2 },\n    [UT_PORT]: { r: 1.0, g: 0.75, b: 0.4, radius: 12, intensity: 1.0 },\n    [UT_FACTORY]: { r: 1.0, g: 0.6, b: 0.3, radius: 12, intensity: 1.0 },\n    [UT_DEFENSE_P..."
+    "initializerPreview": "{\n    [UT_CITY]: { r: 1.0, g: 0.85, b: 0.5, radius: 18, intensity: 1.2 },\n    [UT_PORT]: { r: 1.0, g: 0.75, b: 0.4, radius: 18, intensity: 1.2 },\n    [UT_FACTORY]: { r: 1.0, g: 0.6, b: 0.3, radius: 18, intensity: 1.2 },\n    [UT_DEFENSE_P..."
   },
   {
     "id": "openfront-engine/src/client/render/gl/passes/PointLightPass.ts:FLOATS_PER_LIGHT#1",
@@ -12670,14 +13690,164 @@
     "initializerPreview": "[\n    UT_TRANSPORT,\n    UT_TRADE_SHIP,\n    UT_WARSHIP,\n    UT_ATOM_BOMB,\n    UT_HYDROGEN_BOMB,\n    UT_MIRV,\n    UT_SAM_MISSILE,\n    UT_SHELL,\n    UT_MIRV_WARHEAD,\n    UT_CITY,\n    UT_PORT,\n    UT_FACTORY,\n    UT_DEFENSE_POST,\n    UT_SAM_..."
   },
   {
-    "id": "openfront-engine/src/client/sound/SoundManager.ts:MAX_CONCURRENT_SOUNDS#1",
-    "file": "openfront-engine/src/client/sound/SoundManager.ts",
-    "name": "MAX_CONCURRENT_SOUNDS",
+    "id": "openfront-engine/src/client/sound/AudioMixer.ts:PLAYABLE#1",
+    "file": "openfront-engine/src/client/sound/AudioMixer.ts",
+    "name": "PLAYABLE",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "9ab1bc7527cce6b03bc789cb57504d62f0db16a5213520287d98827f4019dbbf",
+    "initializerLength": 78,
+    "initializerPreview": "[\n    \"music\",\n    \"effects\",\n    \"alerts\",\n    \"ambience\",\n    \"interface\",\n]"
+  },
+  {
+    "id": "openfront-engine/src/client/sound/AudioMixer.ts:CATEGORY_TRIM#1",
+    "file": "openfront-engine/src/client/sound/AudioMixer.ts",
+    "name": "CATEGORY_TRIM",
+    "declarationKind": "const",
+    "initializerKind": "ObjectLiteralExpression",
+    "initializerHash": "a7a76f214df7372d7158e69b80d856e19a961483ce56f95efc0df4fcb45095db",
+    "initializerLength": 86,
+    "initializerPreview": "{\n    music: 0.89,\n    effects: 1,\n    alerts: 1,\n    ambience: 1,\n    interface: 1,\n}"
+  },
+  {
+    "id": "openfront-engine/src/client/sound/AudioMixer.ts:LIMITER_THRESHOLD_DB#1",
+    "file": "openfront-engine/src/client/sound/AudioMixer.ts",
+    "name": "LIMITER_THRESHOLD_DB",
+    "declarationKind": "const",
+    "initializerKind": "PrefixUnaryExpression",
+    "initializerHash": "615bdd17c2556f82f384392ea8557f8cc88b03501c759e23093ab0b2a9b5cd48",
+    "initializerLength": 2,
+    "initializerPreview": "-3"
+  },
+  {
+    "id": "openfront-engine/src/client/sound/AudioMixer.ts:LIMITER_RATIO#1",
+    "file": "openfront-engine/src/client/sound/AudioMixer.ts",
+    "name": "LIMITER_RATIO",
     "declarationKind": "const",
     "initializerKind": "FirstLiteralToken",
-    "initializerHash": "2c624232cdd221771294dfbb310aca000a0df6ac8b66b696d90ef06fdefb64a3",
-    "initializerLength": 1,
-    "initializerPreview": "8"
+    "initializerHash": "f5ca38f748a1d6eaf726b8a42fb575c3c71f1864a8143301782de13da2d9202b",
+    "initializerLength": 2,
+    "initializerPreview": "20"
+  },
+  {
+    "id": "openfront-engine/src/client/sound/AudioMixer.ts:LIMITER_ATTACK_S#1",
+    "file": "openfront-engine/src/client/sound/AudioMixer.ts",
+    "name": "LIMITER_ATTACK_S",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "414369a18b9a0bb5b48e3ee8793144aa88e25115cbcc2128dd8293b5b9225df0",
+    "initializerLength": 5,
+    "initializerPreview": "0.003"
+  },
+  {
+    "id": "openfront-engine/src/client/sound/AudioMixer.ts:LIMITER_RELEASE_S#1",
+    "file": "openfront-engine/src/client/sound/AudioMixer.ts",
+    "name": "LIMITER_RELEASE_S",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "a30a043314fa89294fa2c1c989a01fbb5329e5c085a5c5a8d27317656de24ae0",
+    "initializerLength": 4,
+    "initializerPreview": "0.25"
+  },
+  {
+    "id": "openfront-engine/src/client/sound/AudioMixer.ts:BUDGET#1",
+    "file": "openfront-engine/src/client/sound/AudioMixer.ts",
+    "name": "BUDGET",
+    "declarationKind": "const",
+    "initializerKind": "ObjectLiteralExpression",
+    "initializerHash": "691c84f0545676be3b112e916bf22d6010e26c343676e001139ac526f30fdb08",
+    "initializerLength": 69,
+    "initializerPreview": "{\n    effects: 6,\n    alerts: 3,\n    interface: 4,\n    ambience: 2,\n}"
+  },
+  {
+    "id": "openfront-engine/src/client/sound/AudioMixer.ts:DROP_NEWEST#1",
+    "file": "openfront-engine/src/client/sound/AudioMixer.ts",
+    "name": "DROP_NEWEST",
+    "declarationKind": "const",
+    "initializerKind": "NewExpression",
+    "initializerHash": "a3557867360baf24f923a04bd0965785b0602874e7c602e671bf1a4d5a443f6b",
+    "initializerLength": 42,
+    "initializerPreview": "new Set<CueCategory>([\n    \"interface\",\n])"
+  },
+  {
+    "id": "openfront-engine/src/client/sound/AudioMixer.ts:PREVIEW_CUE#1",
+    "file": "openfront-engine/src/client/sound/AudioMixer.ts",
+    "name": "PREVIEW_CUE",
+    "declarationKind": "const",
+    "initializerKind": "ObjectLiteralExpression",
+    "initializerHash": "a7b2018f18a387c5e436708c2d4b3cd360e38b7200deecf36a7e1d7b7245d13f",
+    "initializerLength": 82,
+    "initializerPreview": "{\n    effects: \"build-city\",\n    alerts: \"nuke-warning\",\n    interface: \"click\",\n}"
+  },
+  {
+    "id": "openfront-engine/src/client/sound/AudioMixer.ts:EVICT_FADE_MS#1",
+    "file": "openfront-engine/src/client/sound/AudioMixer.ts",
+    "name": "EVICT_FADE_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "39fa9ec190eee7b6f4dff1100d6343e10918d044c75eac8f9e9a2596173f80c9",
+    "initializerLength": 2,
+    "initializerPreview": "60"
+  },
+  {
+    "id": "openfront-engine/src/client/sound/MenuMusic.ts:MENU_FADE_MS#1",
+    "file": "openfront-engine/src/client/sound/MenuMusic.ts",
+    "name": "MENU_FADE_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "99ee50221221864d50c60baea6f14d8ac2e235cc6e78be6088cd40cc97fca394",
+    "initializerLength": 3,
+    "initializerPreview": "700"
+  },
+  {
+    "id": "openfront-engine/src/client/sound/MenuMusic.ts:MENU_FADE_IN_MS#1",
+    "file": "openfront-engine/src/client/sound/MenuMusic.ts",
+    "name": "MENU_FADE_IN_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "81a83544cf93c245178cbc1620030f1123f435af867c79d87135983c52ab39d9",
+    "initializerLength": 4,
+    "initializerPreview": "2000"
+  },
+  {
+    "id": "openfront-engine/src/client/sound/MenuMusic.ts:MENU_FADE_IN_FLOOR_DB#1",
+    "file": "openfront-engine/src/client/sound/MenuMusic.ts",
+    "name": "MENU_FADE_IN_FLOOR_DB",
+    "declarationKind": "const",
+    "initializerKind": "PrefixUnaryExpression",
+    "initializerHash": "c6407e624d1ce85628e6cbfd8f0d862eadd501bb81791f9fe8be467b3b0d0194",
+    "initializerLength": 3,
+    "initializerPreview": "-48"
+  },
+  {
+    "id": "openfront-engine/src/client/sound/MenuMusic.ts:MENU_FADE_IN_STEP_MS#1",
+    "file": "openfront-engine/src/client/sound/MenuMusic.ts",
+    "name": "MENU_FADE_IN_STEP_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "b7a56873cd771f2c446d369b649430b65a756ba278ff97ec81bb6f55b2e73569",
+    "initializerLength": 2,
+    "initializerPreview": "25"
+  },
+  {
+    "id": "openfront-engine/src/client/sound/SoundManager.ts:AMBIENCE_FADE_MS#1",
+    "file": "openfront-engine/src/client/sound/SoundManager.ts",
+    "name": "AMBIENCE_FADE_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "0604cd3138feed202ef293e062da2f4720f77a05d25ee036a7a01c9cfcdd1f0a",
+    "initializerLength": 3,
+    "initializerPreview": "500"
+  },
+  {
+    "id": "openfront-engine/src/client/sound/Sounds.ts:CUE_CATEGORY#1",
+    "file": "openfront-engine/src/client/sound/Sounds.ts",
+    "name": "CUE_CATEGORY",
+    "declarationKind": "const",
+    "initializerKind": "ObjectLiteralExpression",
+    "initializerHash": "b6bca6bdf5fdc0213d7bc10660ae05d217c90e76aa64b2643dec5cf2c80e43a3",
+    "initializerLength": 918,
+    "initializerPreview": "{\n    click: \"interface\",\n    \"click-1\": \"interface\",\n    \"click-2\": \"interface\",\n    \"click-3\": \"interface\",\n    slider: \"interface\",\n    \"nuke-warning\": \"alerts\",\n    \"alliance-suggested\": \"alerts\",\n    \"alliance-accepted\": \"alerts\",\n ..."
   },
   {
     "id": "openfront-engine/src/client/utilities/DisableSafariPinchZoom.ts:DOUBLE_TAP_WINDOW_MS#1",
@@ -13020,6 +14190,46 @@
     "initializerPreview": "5 * 60 * 1000"
   },
   {
+    "id": "openfront-engine/src/core/Schemas.ts:MIN_HOSTED_LOBBY_AUTO_START_MS#1",
+    "file": "openfront-engine/src/core/Schemas.ts",
+    "name": "MIN_HOSTED_LOBBY_AUTO_START_MS",
+    "declarationKind": "const",
+    "initializerKind": "BinaryExpression",
+    "initializerHash": "59dfe43827eb7a67ff8329667b1c18a36ef1e741e8033733ea965f5dbacd917a",
+    "initializerLength": 9,
+    "initializerPreview": "60 * 1000"
+  },
+  {
+    "id": "openfront-engine/src/core/Schemas.ts:MIN_HOSTED_LOBBY_PLAYERS#1",
+    "file": "openfront-engine/src/core/Schemas.ts",
+    "name": "MIN_HOSTED_LOBBY_PLAYERS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
+    "initializerLength": 2,
+    "initializerPreview": "10"
+  },
+  {
+    "id": "openfront-engine/src/core/Schemas.ts:MAX_HOSTED_LOBBY_PLAYERS#1",
+    "file": "openfront-engine/src/core/Schemas.ts",
+    "name": "MAX_HOSTED_LOBBY_PLAYERS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "ad57366865126e55649ecb23ae1d48887544976efea46a48eb5d85a6eeb4d306",
+    "initializerLength": 3,
+    "initializerPreview": "100"
+  },
+  {
+    "id": "openfront-engine/src/core/Schemas.ts:LOBBY_QUEUE_CUTOFF_MS#1",
+    "file": "openfront-engine/src/core/Schemas.ts",
+    "name": "LOBBY_QUEUE_CUTOFF_MS",
+    "declarationKind": "const",
+    "initializerKind": "BinaryExpression",
+    "initializerHash": "eb0f85c410ebc37e3e9267a672cea1d63b24a124917920fce925559a8436cce4",
+    "initializerLength": 9,
+    "initializerPreview": "30 * 1000"
+  },
+  {
     "id": "openfront-engine/src/core/Schemas.ts:FEATURED_LOBBY_AUTO_START_MS#1",
     "file": "openfront-engine/src/core/Schemas.ts",
     "name": "FEATURED_LOBBY_AUTO_START_MS",
@@ -13135,9 +14345,9 @@
     "name": "GAME_ID_REGEX",
     "declarationKind": "const",
     "initializerKind": "RegularExpressionLiteral",
-    "initializerHash": "79de2c6416f640cabd8b6d8cf4ef8f2f2f7df6be43a43c222c5b060ea8a50f95",
-    "initializerLength": 18,
-    "initializerPreview": "/^[A-Za-z0-9]{8}$/"
+    "initializerHash": "781632f468b6ca4700bfa79c3d80a35e8efa2a414a0832ae657ff4d6a8a886ee",
+    "initializerLength": 21,
+    "initializerPreview": "/^[A-Za-z0-9]{8,10}$/"
   },
   {
     "id": "openfront-engine/src/core/Schemas.ts:ID#1",
@@ -13170,6 +14380,66 @@
     "initializerPreview": "\"ADMINBOT\""
   },
   {
+    "id": "openfront-engine/src/core/ServerList.ts:COMMIT_RE#1",
+    "file": "openfront-engine/src/core/ServerList.ts",
+    "name": "COMMIT_RE",
+    "declarationKind": "const",
+    "initializerKind": "RegularExpressionLiteral",
+    "initializerHash": "c60de6eecf9100d950d9fa754ef90f72107c7ca2b2a5a59785bae018581c0af8",
+    "initializerLength": 19,
+    "initializerPreview": "/^[0-9a-f]{7,40}$/i"
+  },
+  {
+    "id": "openfront-engine/src/core/ServerList.ts:SITE_RE#1",
+    "file": "openfront-engine/src/core/ServerList.ts",
+    "name": "SITE_RE",
+    "declarationKind": "const",
+    "initializerKind": "RegularExpressionLiteral",
+    "initializerHash": "d122916c15743e3a538e56da200dcc3a99f45395ae6faac3f827ac17a54e5002",
+    "initializerLength": 36,
+    "initializerPreview": "/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/"
+  },
+  {
+    "id": "openfront-engine/src/core/ServerList.ts:VERSION_PREFIX_RE#1",
+    "file": "openfront-engine/src/core/ServerList.ts",
+    "name": "VERSION_PREFIX_RE",
+    "declarationKind": "const",
+    "initializerKind": "RegularExpressionLiteral",
+    "initializerHash": "f357583db803850c51a29aacc2fe6a33c6df6adae30c9b0719be8e0e79032c2b",
+    "initializerLength": 21,
+    "initializerPreview": "/^\\/v\\/([^/]+)(\\/|$)/"
+  },
+  {
+    "id": "openfront-engine/src/core/ServerList.ts:WORKER_PREFIX_RE#1",
+    "file": "openfront-engine/src/core/ServerList.ts",
+    "name": "WORKER_PREFIX_RE",
+    "declarationKind": "const",
+    "initializerKind": "RegularExpressionLiteral",
+    "initializerHash": "c28f27853bd9f65897939a488be17377b4c8506572f487470c31cb48d269b273",
+    "initializerLength": 11,
+    "initializerPreview": "/^\\/w\\d+\\//"
+  },
+  {
+    "id": "openfront-engine/src/core/ServerList.ts:SHORT_COMMIT_LENGTH#1",
+    "file": "openfront-engine/src/core/ServerList.ts",
+    "name": "SHORT_COMMIT_LENGTH",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "7902699be42c8a8e46fbbb4501726517e86b22c56a189f7625a6da49081b2451",
+    "initializerLength": 1,
+    "initializerPreview": "7"
+  },
+  {
+    "id": "openfront-engine/src/core/ServerList.ts:GAME_PATH_RE#1",
+    "file": "openfront-engine/src/core/ServerList.ts",
+    "name": "GAME_PATH_RE",
+    "declarationKind": "const",
+    "initializerKind": "RegularExpressionLiteral",
+    "initializerHash": "871a93c5cfe20c5b7613a4ae71806c81b8b34271ab795f8a13e5f79d0975b93f",
+    "initializerLength": 31,
+    "initializerPreview": "/^(?:\\/w\\d+)?\\/game\\/([^/?#]+)/"
+  },
+  {
     "id": "openfront-engine/src/core/StatsSchemas.ts:ATTACK_INDEX_SENT#1",
     "file": "openfront-engine/src/core/StatsSchemas.ts",
     "name": "ATTACK_INDEX_SENT",
@@ -13198,6 +14468,106 @@
     "initializerHash": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35",
     "initializerLength": 1,
     "initializerPreview": "2"
+  },
+  {
+    "id": "openfront-engine/src/core/StatsSchemas.ts:ATTACK_INDEX_MAX_RECV#1",
+    "file": "openfront-engine/src/core/StatsSchemas.ts",
+    "name": "ATTACK_INDEX_MAX_RECV",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce",
+    "initializerLength": 1,
+    "initializerPreview": "3"
+  },
+  {
+    "id": "openfront-engine/src/core/StatsSchemas.ts:TILE_INDEX_PEAK#1",
+    "file": "openfront-engine/src/core/StatsSchemas.ts",
+    "name": "TILE_INDEX_PEAK",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+    "initializerLength": 1,
+    "initializerPreview": "0"
+  },
+  {
+    "id": "openfront-engine/src/core/StatsSchemas.ts:TILE_INDEX_DRAWDOWN_PEAK#1",
+    "file": "openfront-engine/src/core/StatsSchemas.ts",
+    "name": "TILE_INDEX_DRAWDOWN_PEAK",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "openfront-engine/src/core/StatsSchemas.ts:TILE_INDEX_DRAWDOWN_TROUGH#1",
+    "file": "openfront-engine/src/core/StatsSchemas.ts",
+    "name": "TILE_INDEX_DRAWDOWN_TROUGH",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35",
+    "initializerLength": 1,
+    "initializerPreview": "2"
+  },
+  {
+    "id": "openfront-engine/src/core/StatsSchemas.ts:ALLIANCE_INDEX_FORMED#1",
+    "file": "openfront-engine/src/core/StatsSchemas.ts",
+    "name": "ALLIANCE_INDEX_FORMED",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+    "initializerLength": 1,
+    "initializerPreview": "0"
+  },
+  {
+    "id": "openfront-engine/src/core/StatsSchemas.ts:ALLIANCE_INDEX_BROKEN_BY_OTHER#1",
+    "file": "openfront-engine/src/core/StatsSchemas.ts",
+    "name": "ALLIANCE_INDEX_BROKEN_BY_OTHER",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "openfront-engine/src/core/StatsSchemas.ts:ALLIANCE_INDEX_EXPIRED#1",
+    "file": "openfront-engine/src/core/StatsSchemas.ts",
+    "name": "ALLIANCE_INDEX_EXPIRED",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35",
+    "initializerLength": 1,
+    "initializerPreview": "2"
+  },
+  {
+    "id": "openfront-engine/src/core/StatsSchemas.ts:ALLIANCE_INDEX_HELD_TO_END#1",
+    "file": "openfront-engine/src/core/StatsSchemas.ts",
+    "name": "ALLIANCE_INDEX_HELD_TO_END",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce",
+    "initializerLength": 1,
+    "initializerPreview": "3"
+  },
+  {
+    "id": "openfront-engine/src/core/StatsSchemas.ts:ALLIANCE_INDEX_PEAK_CONCURRENT#1",
+    "file": "openfront-engine/src/core/StatsSchemas.ts",
+    "name": "ALLIANCE_INDEX_PEAK_CONCURRENT",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
+    "initializerLength": 1,
+    "initializerPreview": "4"
+  },
+  {
+    "id": "openfront-engine/src/core/StatsSchemas.ts:ALLIANCE_INDEX_LONGEST_HELD#1",
+    "file": "openfront-engine/src/core/StatsSchemas.ts",
+    "name": "ALLIANCE_INDEX_LONGEST_HELD",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d",
+    "initializerLength": 1,
+    "initializerPreview": "5"
   },
   {
     "id": "openfront-engine/src/core/StatsSchemas.ts:PLAYER_INDEX_HUMAN#1",
@@ -13268,6 +14638,16 @@
     "initializerHash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce",
     "initializerLength": 1,
     "initializerPreview": "3"
+  },
+  {
+    "id": "openfront-engine/src/core/StatsSchemas.ts:BOAT_INDEX_LOST#1",
+    "file": "openfront-engine/src/core/StatsSchemas.ts",
+    "name": "BOAT_INDEX_LOST",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
+    "initializerLength": 1,
+    "initializerPreview": "4"
   },
   {
     "id": "openfront-engine/src/core/StatsSchemas.ts:BOMB_INDEX_LAUNCH#1",
@@ -13358,6 +14738,46 @@
     "initializerHash": "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d",
     "initializerLength": 1,
     "initializerPreview": "5"
+  },
+  {
+    "id": "openfront-engine/src/core/StatsSchemas.ts:GOLD_INDEX_DONATE_RECV#1",
+    "file": "openfront-engine/src/core/StatsSchemas.ts",
+    "name": "GOLD_INDEX_DONATE_RECV",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "e7f6c011776e8db7cd330b54174fd76f7d0216b612387a5ffcfb81e6f0919683",
+    "initializerLength": 1,
+    "initializerPreview": "6"
+  },
+  {
+    "id": "openfront-engine/src/core/StatsSchemas.ts:DONATION_INDEX_GOLD_RECV#1",
+    "file": "openfront-engine/src/core/StatsSchemas.ts",
+    "name": "DONATION_INDEX_GOLD_RECV",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+    "initializerLength": 1,
+    "initializerPreview": "0"
+  },
+  {
+    "id": "openfront-engine/src/core/StatsSchemas.ts:DONATION_INDEX_GOLD_RECV_BROKE#1",
+    "file": "openfront-engine/src/core/StatsSchemas.ts",
+    "name": "DONATION_INDEX_GOLD_RECV_BROKE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "openfront-engine/src/core/StatsSchemas.ts:DONATION_BROKE_GOLD_THRESHOLD#1",
+    "file": "openfront-engine/src/core/StatsSchemas.ts",
+    "name": "DONATION_BROKE_GOLD_THRESHOLD",
+    "declarationKind": "const",
+    "initializerKind": "BigIntLiteral",
+    "initializerHash": "16b7e3ae7abec84b26adec1d1cc5db8bbf79f83c25a6a789da40c3f07735bf86",
+    "initializerLength": 6,
+    "initializerPreview": "50000n"
   },
   {
     "id": "openfront-engine/src/core/StatsSchemas.ts:OTHER_INDEX_BUILT#1",
@@ -13575,9 +14995,19 @@
     "name": "SPEED_COST_DIVISOR",
     "declarationKind": "const",
     "initializerKind": "FirstLiteralToken",
-    "initializerHash": "dedaff6acf35eb3adf1860ed24d66077e8e7093c15866a67cf1caad95b1a1061",
+    "initializerHash": "f4c4e20f871c840bb48c5a78ede556a73b32cbb64c1cf27e59fdda6bd6128f62",
     "initializerLength": 4,
-    "initializerPreview": "7.77"
+    "initializerPreview": "8.55"
+  },
+  {
+    "id": "openfront-engine/src/core/configuration/Config.ts:LARGE_ATTACKER_SPEED_DEPTH#1",
+    "file": "openfront-engine/src/core/configuration/Config.ts",
+    "name": "LARGE_ATTACKER_SPEED_DEPTH",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "99d03fc3771fe6848d675339fc49eeb1cb8d99a12e6358173336b99a2ec530ea",
+    "initializerLength": 4,
+    "initializerPreview": "0.73"
   },
   {
     "id": "openfront-engine/src/core/configuration/Config.ts:DEFAULT_SPAWN_IMMUNITY_TICKS#1",
@@ -13668,6 +15098,26 @@
     "initializerHash": "b17ef6d19c7a5b1ee83b907c595526dcb1eb06db8227d650d5dda0a9f4ce8cd9",
     "initializerLength": 2,
     "initializerPreview": "16"
+  },
+  {
+    "id": "openfront-engine/src/core/execution/PlayerExecution.ts:TICKS_PER_CLUSTER_CALC#1",
+    "file": "openfront-engine/src/core/execution/PlayerExecution.ts",
+    "name": "TICKS_PER_CLUSTER_CALC",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "f5ca38f748a1d6eaf726b8a42fb575c3c71f1864a8143301782de13da2d9202b",
+    "initializerLength": 2,
+    "initializerPreview": "20"
+  },
+  {
+    "id": "openfront-engine/src/core/execution/SAMMissileExecution.ts:INTERCEPTED_UNIT_TRANSLATION_KEYS#1",
+    "file": "openfront-engine/src/core/execution/SAMMissileExecution.ts",
+    "name": "INTERCEPTED_UNIT_TRANSLATION_KEYS",
+    "declarationKind": "const",
+    "initializerKind": "ObjectLiteralExpression",
+    "initializerHash": "d88521fbee9d8cf77eb7d80387db32c8d2877ea1e5173b3eb61828dacb312e53",
+    "initializerLength": 153,
+    "initializerPreview": "{\n    [UnitType.AtomBomb]: \"unit_type.atom_bomb\",\n    [UnitType.HydrogenBomb]: \"unit_type.hydrogen_bomb\",\n    [UnitType.MIRVWarhead]: \"unit_type.mirv\",\n}"
   },
   {
     "id": "openfront-engine/src/core/execution/SpawnExecution.ts:MAX_SPAWN_TRIES#1",
@@ -15420,6 +16870,16 @@
     "initializerPreview": "\"Australia\""
   },
   {
+    "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.BabelMandebStrait#1",
+    "file": "openfront-engine/src/core/game/Maps.gen.ts",
+    "name": "GameMapType.BabelMandebStrait",
+    "declarationKind": "enum member",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "6af496794aafbd7193b8ad0ae249cdd9c18735eb798a4f28506d8bc25bbd046c",
+    "initializerLength": 22,
+    "initializerPreview": "\"Bab el-Mandeb Strait\""
+  },
+  {
     "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.Baikal#1",
     "file": "openfront-engine/src/core/game/Maps.gen.ts",
     "name": "GameMapType.Baikal",
@@ -15560,6 +17020,26 @@
     "initializerPreview": "\"Britannia Classic\""
   },
   {
+    "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.CanaryIslands#1",
+    "file": "openfront-engine/src/core/game/Maps.gen.ts",
+    "name": "GameMapType.CanaryIslands",
+    "declarationKind": "enum member",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "ef4d2821655109c112cef9a26fe927011595f1efa556cefc319e6499a4076946",
+    "initializerLength": 16,
+    "initializerPreview": "\"Canary Islands\""
+  },
+  {
+    "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.CapeCod#1",
+    "file": "openfront-engine/src/core/game/Maps.gen.ts",
+    "name": "GameMapType.CapeCod",
+    "declarationKind": "enum member",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "d9b1ce9c7421a8835c191f433c1e4ea902598d0039d53455c138147da579137e",
+    "initializerLength": 10,
+    "initializerPreview": "\"Cape Cod\""
+  },
+  {
     "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.Caribbean#1",
     "file": "openfront-engine/src/core/game/Maps.gen.ts",
     "name": "GameMapType.Caribbean",
@@ -15588,6 +17068,26 @@
     "initializerHash": "bffdc18b4d763016fc20d43bf455e1abf98988771a39b92ddbbe6152f880033b",
     "initializerLength": 10,
     "initializerPreview": "\"Caucasus\""
+  },
+  {
+    "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.CentralAmerica#1",
+    "file": "openfront-engine/src/core/game/Maps.gen.ts",
+    "name": "GameMapType.CentralAmerica",
+    "declarationKind": "enum member",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "92b7885cd41af5298c4641f7d8c5fbc59110fe9919386e26f1f0bb8a9e8df17e",
+    "initializerLength": 17,
+    "initializerPreview": "\"Central America\""
+  },
+  {
+    "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.ChannelIslands#1",
+    "file": "openfront-engine/src/core/game/Maps.gen.ts",
+    "name": "GameMapType.ChannelIslands",
+    "declarationKind": "enum member",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "b1b3ef1f8cb014a50c0bf36e53f82a6f24045df20b85b1a6e7c29fea3f1e923c",
+    "initializerLength": 17,
+    "initializerPreview": "\"Channel Islands\""
   },
   {
     "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.China#1",
@@ -15820,6 +17320,16 @@
     "initializerPreview": "\"Gulf Of Guinea\""
   },
   {
+    "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.GulfOfMexico#1",
+    "file": "openfront-engine/src/core/game/Maps.gen.ts",
+    "name": "GameMapType.GulfOfMexico",
+    "declarationKind": "enum member",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "a02a6bd15a3d024e7e8f035b2e448172be5c6a8dbd1a4df7832bd824765e97b6",
+    "initializerLength": 16,
+    "initializerPreview": "\"Gulf Of Mexico\""
+  },
+  {
     "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.GulfOfStLawrence#1",
     "file": "openfront-engine/src/core/game/Maps.gen.ts",
     "name": "GameMapType.GulfOfStLawrence",
@@ -15868,6 +17378,16 @@
     "initializerHash": "d65c415a257447f4948b3c31cc3c26ea883f1ceb61b115b2981ca8dc15a59c0b",
     "initializerLength": 11,
     "initializerPreview": "\"Hong Kong\""
+  },
+  {
+    "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.HornOfAfrica#1",
+    "file": "openfront-engine/src/core/game/Maps.gen.ts",
+    "name": "GameMapType.HornOfAfrica",
+    "declarationKind": "enum member",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "25cfcc62bf4e3f8c1a09a7200694ee585fa87d318f487682be9cf0dd7d19dc0f",
+    "initializerLength": 16,
+    "initializerPreview": "\"Horn Of Africa\""
   },
   {
     "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.Iceland#1",
@@ -16110,6 +17630,16 @@
     "initializerPreview": "\"New York City\""
   },
   {
+    "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.NewZealand#1",
+    "file": "openfront-engine/src/core/game/Maps.gen.ts",
+    "name": "GameMapType.NewZealand",
+    "declarationKind": "enum member",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "3aff223a6849dc08ac1c96c8490d8f6938c2e9737948034c8099ae3a288e8499",
+    "initializerLength": 13,
+    "initializerPreview": "\"New Zealand\""
+  },
+  {
     "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.NileDelta#1",
     "file": "openfront-engine/src/core/game/Maps.gen.ts",
     "name": "GameMapType.NileDelta",
@@ -16190,6 +17720,16 @@
     "initializerPreview": "\"Pluto\""
   },
   {
+    "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.PulicatLake#1",
+    "file": "openfront-engine/src/core/game/Maps.gen.ts",
+    "name": "GameMapType.PulicatLake",
+    "declarationKind": "enum member",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "65b2cc8638d77d38e880b8df7e07491938ee9e59502c4710506980b8b24479f9",
+    "initializerLength": 14,
+    "initializerPreview": "\"Pulicat Lake\""
+  },
+  {
     "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.QingChina#1",
     "file": "openfront-engine/src/core/game/Maps.gen.ts",
     "name": "GameMapType.QingChina",
@@ -16198,6 +17738,16 @@
     "initializerHash": "e1ea7e2f14025b3682b8261d246e26797316f40947b7a205ea1f6b4fa2418b9e",
     "initializerLength": 12,
     "initializerPreview": "\"Qing China\""
+  },
+  {
+    "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.RioDeJaneiro#1",
+    "file": "openfront-engine/src/core/game/Maps.gen.ts",
+    "name": "GameMapType.RioDeJaneiro",
+    "declarationKind": "enum member",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "5db63a93c901ae29f5572f153dab67813e5801f682b7cb736e9cdbf6a8b6147c",
+    "initializerLength": 16,
+    "initializerPreview": "\"Rio de Janeiro\""
   },
   {
     "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.Russia#1",
@@ -16780,6 +18330,86 @@
     "initializerPreview": "\"event:user-settings-changed\""
   },
   {
+    "id": "openfront-engine/src/core/game/UserSettings.ts:AUDIO_DEFAULTS#1",
+    "file": "openfront-engine/src/core/game/UserSettings.ts",
+    "name": "AUDIO_DEFAULTS",
+    "declarationKind": "const",
+    "initializerKind": "ObjectLiteralExpression",
+    "initializerHash": "8c3660de38b53bc5525ecc8ebd3b988d47e1e802c2ac429fa7636bccf5a8a961",
+    "initializerLength": 110,
+    "initializerPreview": "{\n    master: 0.9,\n    music: 0.5,\n    effects: 0.7,\n    alerts: 0.8,\n    ambience: 0.4,\n    interface: 0.5,\n}"
+  },
+  {
+    "id": "openfront-engine/src/core/game/UserSettings.ts:SPLIT_FROM_SOUND_EFFECTS#1",
+    "file": "openfront-engine/src/core/game/UserSettings.ts",
+    "name": "SPLIT_FROM_SOUND_EFFECTS",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "f51b16ad6d132adc7cd88a43ccc0c4dc243ae7e153766da0550e94e69572a354",
+    "initializerLength": 65,
+    "initializerPreview": "[\n    \"effects\",\n    \"alerts\",\n    \"ambience\",\n    \"interface\",\n]"
+  },
+  {
+    "id": "openfront-engine/src/core/game/UserSettings.ts:AUDIO_CHANNELS#1",
+    "file": "openfront-engine/src/core/game/UserSettings.ts",
+    "name": "AUDIO_CHANNELS",
+    "declarationKind": "const",
+    "initializerKind": "AsExpression",
+    "initializerHash": "8fa1ba061bb7024ca2c33ce679d15fd63cd802570fc830921eaa1b5f7cc1b94c",
+    "initializerLength": 101,
+    "initializerPreview": "[\n    \"master\",\n    \"music\",\n    \"effects\",\n    \"alerts\",\n    \"ambience\",\n    \"interface\",\n] as const"
+  },
+  {
+    "id": "openfront-engine/src/core/game/UserSettings.ts:AUDIO_RESET_KEYS#1",
+    "file": "openfront-engine/src/core/game/UserSettings.ts",
+    "name": "AUDIO_RESET_KEYS",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "0ae654efe1b9c5cd223ad8c71993bbf8480b6ccd79afbebaf0b922d2d7b6aef1",
+    "initializerLength": 222,
+    "initializerPreview": "[\n    ...AUDIO_CHANNELS.map((category) => `settings.audio.${category}`),\n    \"settings.audio.muteOnBlur\",\n    \"settings.audio.alertsWhenUnfocused\",\n    \"settings.backgroundMusicVolume\",\n    \"settings.soundEffectsVolume\",\n]"
+  },
+  {
+    "id": "openfront-engine/src/core/game/UserSettings.ts:AUDIO_RESET_VERSION#1",
+    "file": "openfront-engine/src/core/game/UserSettings.ts",
+    "name": "AUDIO_RESET_VERSION",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "openfront-engine/src/core/game/UserSettings.ts:AUDIO_RESET_VERSION_KEY#1",
+    "file": "openfront-engine/src/core/game/UserSettings.ts",
+    "name": "AUDIO_RESET_VERSION_KEY",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "39305d9a2211af4afd4bae7d4af3379c4ad157e5ba216f50e0adcf35011c44df",
+    "initializerLength": 29,
+    "initializerPreview": "\"settings.audio.resetVersion\""
+  },
+  {
+    "id": "openfront-engine/src/core/game/UserSettings.ts:AUDIO_VOLUME_KEYS#1",
+    "file": "openfront-engine/src/core/game/UserSettings.ts",
+    "name": "AUDIO_VOLUME_KEYS",
+    "declarationKind": "const",
+    "initializerKind": "ArrayLiteralExpression",
+    "initializerHash": "0a0aa64622e5328ffd8e563a4e3b0f6919af919d224f94dedaefc30c9dccd224",
+    "initializerLength": 147,
+    "initializerPreview": "[\n    \"settings.backgroundMusicVolume\",\n    \"settings.soundEffectsVolume\",\n    ...AUDIO_CHANNELS.map((category) => `settings.audio.${category}`),\n]"
+  },
+  {
+    "id": "openfront-engine/src/core/game/UserSettings.ts:AUDIO_LEGACY_KEY#1",
+    "file": "openfront-engine/src/core/game/UserSettings.ts",
+    "name": "AUDIO_LEGACY_KEY",
+    "declarationKind": "const",
+    "initializerKind": "ObjectLiteralExpression",
+    "initializerHash": "b8ff2ef9beb201bbb857f712daf72b734aab258313b28b9df72ad52f580ce6d6",
+    "initializerLength": 226,
+    "initializerPreview": "{\n    music: \"settings.backgroundMusicVolume\",\n    effects: \"settings.soundEffectsVolume\",\n    alerts: \"settings.soundEffectsVolume\",\n    ambience: \"settings.soundEffectsVolume\",\n    interface: \"settings.soundEffectsVolume\",\n}"
+  },
+  {
     "id": "openfront-engine/src/core/game/UserSettings.ts:PATTERN_KEY#1",
     "file": "openfront-engine/src/core/game/UserSettings.ts",
     "name": "PATTERN_KEY",
@@ -17300,6 +18930,206 @@
     "initializerPreview": "3"
   },
   {
+    "id": "openfront-engine/src/core/snapshot/ExecutionRegistry.ts:EXECUTION_SNAPSHOT_TYPES#1",
+    "file": "openfront-engine/src/core/snapshot/ExecutionRegistry.ts",
+    "name": "EXECUTION_SNAPSHOT_TYPES",
+    "declarationKind": "const",
+    "initializerKind": "AsExpression",
+    "initializerHash": "3a859a386575670694d6012bb868cd6518739beadf115bcafb34033443d8646d",
+    "initializerLength": 1483,
+    "initializerPreview": "[\n    AllianceExtensionExecutionSnapshot,\n    AllianceRejectExecutionSnapshot,\n    AllianceRequestExecutionSnapshot,\n    AttackExecutionSnapshot,\n    BoatRetreatExecutionSnapshot,\n    BreakAllianceExecutionSnapshot,\n    CityExecutionSnap..."
+  },
+  {
+    "id": "openfront-engine/src/core/snapshot/GameSnapshot.ts:SNAPSHOT_MAGIC#1",
+    "file": "openfront-engine/src/core/snapshot/GameSnapshot.ts",
+    "name": "SNAPSHOT_MAGIC",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "71f351d5de455adc6f642eb33a2505262e4b032b7859f966e4233a76da866003",
+    "initializerLength": 23,
+    "initializerPreview": "\"OpenFrontGameSnapshot\""
+  },
+  {
+    "id": "openfront-engine/src/core/snapshot/GameSnapshot.ts:SNAPSHOT_FORMAT_VERSION#1",
+    "file": "openfront-engine/src/core/snapshot/GameSnapshot.ts",
+    "name": "SNAPSHOT_FORMAT_VERSION",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "openfront-engine/src/core/snapshot/GameSnapshot.ts:EXEC_TYPES#1",
+    "file": "openfront-engine/src/core/snapshot/GameSnapshot.ts",
+    "name": "EXEC_TYPES",
+    "declarationKind": "const",
+    "initializerKind": "Identifier",
+    "initializerHash": "dc97a8c5879ad180467cd97410f646545e77b67108994c038829c884b07d1a9e",
+    "initializerLength": 24,
+    "initializerPreview": "EXECUTION_SNAPSHOT_TYPES"
+  },
+  {
+    "id": "openfront-engine/src/core/snapshot/SnapshotCodec.ts:Tag.Undefined#1",
+    "file": "openfront-engine/src/core/snapshot/SnapshotCodec.ts",
+    "name": "Tag.Undefined",
+    "declarationKind": "enum member",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+    "initializerLength": 1,
+    "initializerPreview": "0"
+  },
+  {
+    "id": "openfront-engine/src/core/snapshot/SnapshotCodec.ts:Tag.Null#1",
+    "file": "openfront-engine/src/core/snapshot/SnapshotCodec.ts",
+    "name": "Tag.Null",
+    "declarationKind": "enum member",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "initializerLength": 1,
+    "initializerPreview": "1"
+  },
+  {
+    "id": "openfront-engine/src/core/snapshot/SnapshotCodec.ts:Tag.False#1",
+    "file": "openfront-engine/src/core/snapshot/SnapshotCodec.ts",
+    "name": "Tag.False",
+    "declarationKind": "enum member",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35",
+    "initializerLength": 1,
+    "initializerPreview": "2"
+  },
+  {
+    "id": "openfront-engine/src/core/snapshot/SnapshotCodec.ts:Tag.True#1",
+    "file": "openfront-engine/src/core/snapshot/SnapshotCodec.ts",
+    "name": "Tag.True",
+    "declarationKind": "enum member",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce",
+    "initializerLength": 1,
+    "initializerPreview": "3"
+  },
+  {
+    "id": "openfront-engine/src/core/snapshot/SnapshotCodec.ts:Tag.Uint#1",
+    "file": "openfront-engine/src/core/snapshot/SnapshotCodec.ts",
+    "name": "Tag.Uint",
+    "declarationKind": "enum member",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
+    "initializerLength": 1,
+    "initializerPreview": "4"
+  },
+  {
+    "id": "openfront-engine/src/core/snapshot/SnapshotCodec.ts:Tag.NegInt#1",
+    "file": "openfront-engine/src/core/snapshot/SnapshotCodec.ts",
+    "name": "Tag.NegInt",
+    "declarationKind": "enum member",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d",
+    "initializerLength": 1,
+    "initializerPreview": "5"
+  },
+  {
+    "id": "openfront-engine/src/core/snapshot/SnapshotCodec.ts:Tag.Float#1",
+    "file": "openfront-engine/src/core/snapshot/SnapshotCodec.ts",
+    "name": "Tag.Float",
+    "declarationKind": "enum member",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "e7f6c011776e8db7cd330b54174fd76f7d0216b612387a5ffcfb81e6f0919683",
+    "initializerLength": 1,
+    "initializerPreview": "6"
+  },
+  {
+    "id": "openfront-engine/src/core/snapshot/SnapshotCodec.ts:Tag.BigInt#1",
+    "file": "openfront-engine/src/core/snapshot/SnapshotCodec.ts",
+    "name": "Tag.BigInt",
+    "declarationKind": "enum member",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "7902699be42c8a8e46fbbb4501726517e86b22c56a189f7625a6da49081b2451",
+    "initializerLength": 1,
+    "initializerPreview": "7"
+  },
+  {
+    "id": "openfront-engine/src/core/snapshot/SnapshotCodec.ts:Tag.NewString#1",
+    "file": "openfront-engine/src/core/snapshot/SnapshotCodec.ts",
+    "name": "Tag.NewString",
+    "declarationKind": "enum member",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "2c624232cdd221771294dfbb310aca000a0df6ac8b66b696d90ef06fdefb64a3",
+    "initializerLength": 1,
+    "initializerPreview": "8"
+  },
+  {
+    "id": "openfront-engine/src/core/snapshot/SnapshotCodec.ts:Tag.StringRef#1",
+    "file": "openfront-engine/src/core/snapshot/SnapshotCodec.ts",
+    "name": "Tag.StringRef",
+    "declarationKind": "enum member",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "19581e27de7ced00ff1ce50b2047e7a567c76b1cbaebabe5ef03f7c3017bb5b7",
+    "initializerLength": 1,
+    "initializerPreview": "9"
+  },
+  {
+    "id": "openfront-engine/src/core/snapshot/SnapshotCodec.ts:Tag.Array#1",
+    "file": "openfront-engine/src/core/snapshot/SnapshotCodec.ts",
+    "name": "Tag.Array",
+    "declarationKind": "enum member",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
+    "initializerLength": 2,
+    "initializerPreview": "10"
+  },
+  {
+    "id": "openfront-engine/src/core/snapshot/SnapshotCodec.ts:Tag.Object#1",
+    "file": "openfront-engine/src/core/snapshot/SnapshotCodec.ts",
+    "name": "Tag.Object",
+    "declarationKind": "enum member",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4fc82b26aecb47d2868c4efbe3581732a3e7cbcc6c2efb32062c08170a05eeb8",
+    "initializerLength": 2,
+    "initializerPreview": "11"
+  },
+  {
+    "id": "openfront-engine/src/core/snapshot/SnapshotCodec.ts:Tag.TypedArray#1",
+    "file": "openfront-engine/src/core/snapshot/SnapshotCodec.ts",
+    "name": "Tag.TypedArray",
+    "declarationKind": "enum member",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "6b51d431df5d7f141cbececcf79edf3dd861c3b4069f0b11661a3eefacbba918",
+    "initializerLength": 2,
+    "initializerPreview": "12"
+  },
+  {
+    "id": "openfront-engine/src/core/snapshot/SnapshotCodec.ts:Tag.DeltaU32#1",
+    "file": "openfront-engine/src/core/snapshot/SnapshotCodec.ts",
+    "name": "Tag.DeltaU32",
+    "declarationKind": "enum member",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "3fdba35f04dc8c462986c992bcf875546257113072a909c162f7e470e581e278",
+    "initializerLength": 2,
+    "initializerPreview": "13"
+  },
+  {
+    "id": "openfront-engine/src/core/snapshot/SnapshotCodec.ts:TYPED_ARRAYS#1",
+    "file": "openfront-engine/src/core/snapshot/SnapshotCodec.ts",
+    "name": "TYPED_ARRAYS",
+    "declarationKind": "const",
+    "initializerKind": "AsExpression",
+    "initializerHash": "c5a4364adebc8d255a4e32abcd35af530d8ad6fde2d9b5380b2d60d797f7c99f",
+    "initializerLength": 145,
+    "initializerPreview": "[\n    Int8Array,\n    Uint8Array,\n    Int16Array,\n    Uint16Array,\n    Int32Array,\n    Uint32Array,\n    Float32Array,\n    Float64Array,\n] as const"
+  },
+  {
+    "id": "openfront-engine/src/core/snapshot/SnapshotCodec.ts:C#1",
+    "file": "openfront-engine/src/core/snapshot/SnapshotCodec.ts",
+    "name": "C",
+    "declarationKind": "const",
+    "initializerKind": "CallExpression",
+    "initializerHash": "3a9998c2c9dca480adf2464ca554d23d0e0ba606239be39bfb9489b345f56710",
+    "initializerLength": 22,
+    "initializerPreview": "typedArrayKind(r.u8())"
+  },
+  {
     "id": "openfront-engine/src/core/utilities/Line.ts:SUB_SCALE#1",
     "file": "openfront-engine/src/core/utilities/Line.ts",
     "name": "SUB_SCALE",
@@ -17380,6 +19210,26 @@
     "initializerPreview": "new RegExp(`^[${RENDERABLE_NAME_CHARS}]+$`, \"u\")"
   },
   {
+    "id": "openfront-engine/src/core/validations/username.ts:ACCOUNT_NAME_CHARS#1",
+    "file": "openfront-engine/src/core/validations/username.ts",
+    "name": "ACCOUNT_NAME_CHARS",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "d2188f34202fbb8c387cd411cd426fc8ea2398ed488c68ac9128c056561fc332",
+    "initializerLength": 13,
+    "initializerPreview": "\"a-zA-Z0-9_-\""
+  },
+  {
+    "id": "openfront-engine/src/core/validations/username.ts:ACCOUNT_NAME_CHAR_RE#1",
+    "file": "openfront-engine/src/core/validations/username.ts",
+    "name": "ACCOUNT_NAME_CHAR_RE",
+    "declarationKind": "const",
+    "initializerKind": "NewExpression",
+    "initializerHash": "66f0478df4a456f2e69f60144fb8c57da1adec66dbf85011fbafeaddcc05207b",
+    "initializerLength": 39,
+    "initializerPreview": "new RegExp(`^[${ACCOUNT_NAME_CHARS}]$`)"
+  },
+  {
     "id": "openfront-engine/src/core/worker/Worker.worker.ts:MAX_TICKS_BEFORE_YIELD#1",
     "file": "openfront-engine/src/core/worker/Worker.worker.ts",
     "name": "MAX_TICKS_BEFORE_YIELD",
@@ -17408,6 +19258,16 @@
     "initializerHash": "1a6562590ef19d1045d06c4055742d38288e9e6dcd71ccde5cee80f1d5a774eb",
     "initializerLength": 2,
     "initializerPreview": "50"
+  },
+  {
+    "id": "openfront-engine/src/server/AdminBotRoutes.ts:MAX_POOL_MEMBERS#1",
+    "file": "openfront-engine/src/server/AdminBotRoutes.ts",
+    "name": "MAX_POOL_MEMBERS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "2c624232cdd221771294dfbb310aca000a0df6ac8b66b696d90ef06fdefb64a3",
+    "initializerLength": 1,
+    "initializerPreview": "8"
   },
   {
     "id": "openfront-engine/src/server/ClientMsgRateLimiter.ts:INTENTS_PER_SECOND#1",
@@ -17458,6 +19318,26 @@
     "initializerHash": "2650281dc326fdfd8feda8e2849ed49e7fde0f656b254af128f8450fa335c8f2",
     "initializerLength": 15,
     "initializerPreview": "5 * 1024 * 1024"
+  },
+  {
+    "id": "openfront-engine/src/server/ClusterCheckin.ts:CHECKIN_INTERVAL_MS#1",
+    "file": "openfront-engine/src/server/ClusterCheckin.ts",
+    "name": "CHECKIN_INTERVAL_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "39e5b4830d4d9c14db7368a95b65d5463ea3d09520373723430c03a5a453b5df",
+    "initializerLength": 5,
+    "initializerPreview": "10000"
+  },
+  {
+    "id": "openfront-engine/src/server/ClusterCheckin.ts:CHECKIN_TIMEOUT_MS#1",
+    "file": "openfront-engine/src/server/ClusterCheckin.ts",
+    "name": "CHECKIN_TIMEOUT_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "ad5f9478d603fe97eae2bbff07f76fe7f18610343b5f3bc8e00945ee51b30d2c",
+    "initializerLength": 4,
+    "initializerPreview": "8000"
   },
   {
     "id": "openfront-engine/src/server/ConfigPatch.ts:COPIED_KEYS#1",
@@ -17550,14 +19430,14 @@
     "initializerPreview": "\"app://openfront\""
   },
   {
-    "id": "openfront-engine/src/server/GameApiCors.ts:ALLOWED_ORIGINS#1",
-    "file": "openfront-engine/src/server/GameApiCors.ts",
-    "name": "ALLOWED_ORIGINS",
+    "id": "openfront-engine/src/server/GameServer.ts:LATE_JOIN_GRACE_MS#1",
+    "file": "openfront-engine/src/server/GameServer.ts",
+    "name": "LATE_JOIN_GRACE_MS",
     "declarationKind": "const",
-    "initializerKind": "NewExpression",
-    "initializerHash": "a59d3addd6c0d5c3efc9d0804fd9097e709e16654d7e4320089f2a09516259eb",
-    "initializerLength": 29,
-    "initializerPreview": "new Set([DESKTOP_APP_ORIGIN])"
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "0f8eb4b72b6e0c9e88b388eb967b49e067ef1004bf07bffc22c3acb13b43580a",
+    "initializerLength": 4,
+    "initializerPreview": "5000"
   },
   {
     "id": "openfront-engine/src/server/GameServer.ts:GamePhase.Lobby#1",
@@ -17640,9 +19520,89 @@
     "initializerPreview": "\"kick_reason.match_cancelled\""
   },
   {
-    "id": "openfront-engine/src/server/MapPlaylist.ts:MAX_PLAYER_COUNT#1",
+    "id": "openfront-engine/src/server/LobbyCoordinatorClient.ts:COORDINATOR_STALE_MS#1",
+    "file": "openfront-engine/src/server/LobbyCoordinatorClient.ts",
+    "name": "COORDINATOR_STALE_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "0f8eb4b72b6e0c9e88b388eb967b49e067ef1004bf07bffc22c3acb13b43580a",
+    "initializerLength": 4,
+    "initializerPreview": "5000"
+  },
+  {
+    "id": "openfront-engine/src/server/LobbyCoordinatorClient.ts:SOCKET_SILENCE_MS#1",
+    "file": "openfront-engine/src/server/LobbyCoordinatorClient.ts",
+    "name": "SOCKET_SILENCE_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d4c999ae43633bd2036188d2bca68e1be8202b2cc1f3a1c42a728eaff7d2483d",
+    "initializerLength": 5,
+    "initializerPreview": "15000"
+  },
+  {
+    "id": "openfront-engine/src/server/LobbyCoordinatorClient.ts:REPORT_MIN_INTERVAL_MS#1",
+    "file": "openfront-engine/src/server/LobbyCoordinatorClient.ts",
+    "name": "REPORT_MIN_INTERVAL_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "40510175845988f13f6162ed8526f0b09f73384467fa855e1e79b44a56562a58",
+    "initializerLength": 4,
+    "initializerPreview": "1000"
+  },
+  {
+    "id": "openfront-engine/src/server/LobbyCoordinatorClient.ts:REPORT_HEARTBEAT_MS#1",
+    "file": "openfront-engine/src/server/LobbyCoordinatorClient.ts",
+    "name": "REPORT_HEARTBEAT_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "0f8eb4b72b6e0c9e88b388eb967b49e067ef1004bf07bffc22c3acb13b43580a",
+    "initializerLength": 4,
+    "initializerPreview": "5000"
+  },
+  {
+    "id": "openfront-engine/src/server/LobbyCoordinatorClient.ts:RECONNECT_MIN_MS#1",
+    "file": "openfront-engine/src/server/LobbyCoordinatorClient.ts",
+    "name": "RECONNECT_MIN_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "40510175845988f13f6162ed8526f0b09f73384467fa855e1e79b44a56562a58",
+    "initializerLength": 4,
+    "initializerPreview": "1000"
+  },
+  {
+    "id": "openfront-engine/src/server/LobbyCoordinatorClient.ts:RECONNECT_MAX_MS#1",
+    "file": "openfront-engine/src/server/LobbyCoordinatorClient.ts",
+    "name": "RECONNECT_MAX_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "891937cb335016e9c7074c3781dcb1364e0c660733a8889bbeae83e6aa759be6",
+    "initializerLength": 5,
+    "initializerPreview": "30000"
+  },
+  {
+    "id": "openfront-engine/src/server/LobbyCoordinatorClient.ts:RECONNECT_SLOW_MS#1",
+    "file": "openfront-engine/src/server/LobbyCoordinatorClient.ts",
+    "name": "RECONNECT_SLOW_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d55d01d0341ed0ba2cd99b322e8c5b609254f47d10c7cd12b99b4922effeba44",
+    "initializerLength": 5,
+    "initializerPreview": "60000"
+  },
+  {
+    "id": "openfront-engine/src/server/MapPlaylist.ts:CROWDED_COMPACT_PLAYER_COUNT#1",
     "file": "openfront-engine/src/server/MapPlaylist.ts",
-    "name": "MAX_PLAYER_COUNT",
+    "name": "CROWDED_COMPACT_PLAYER_COUNT",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "39fa9ec190eee7b6f4dff1100d6343e10918d044c75eac8f9e9a2596173f80c9",
+    "initializerLength": 2,
+    "initializerPreview": "60"
+  },
+  {
+    "id": "openfront-engine/src/server/MapPlaylist.ts:CROWDED_PLAYER_COUNT#1",
+    "file": "openfront-engine/src/server/MapPlaylist.ts",
+    "name": "CROWDED_PLAYER_COUNT",
     "declarationKind": "const",
     "initializerKind": "FirstLiteralToken",
     "initializerHash": "0f8ef3377b30fc47f96b48247f463a726a802f62f3faa03d56403751d2f66c67",
@@ -17655,9 +19615,19 @@
     "name": "TRUSTED_PUBLIC_EVERY",
     "declarationKind": "const",
     "initializerKind": "FirstLiteralToken",
-    "initializerHash": "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
+    "initializerHash": "7902699be42c8a8e46fbbb4501726517e86b22c56a189f7625a6da49081b2451",
     "initializerLength": 1,
-    "initializerPreview": "4"
+    "initializerPreview": "7"
+  },
+  {
+    "id": "openfront-engine/src/server/MapPlaylist.ts:TRUSTED_MAX_PLAYER_COUNT#1",
+    "file": "openfront-engine/src/server/MapPlaylist.ts",
+    "name": "TRUSTED_MAX_PLAYER_COUNT",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "b7a56873cd771f2c446d369b649430b65a756ba278ff97ec81bb6f55b2e73569",
+    "initializerLength": 2,
+    "initializerPreview": "25"
   },
   {
     "id": "openfront-engine/src/server/MapPlaylist.ts:TEAM_WEIGHTS#1",
@@ -17760,26 +19730,6 @@
     "initializerPreview": "[\n    \"changelog.md\",\n    \"manifest.json\",\n    \"atlases/**/*\",\n    \"cosmetics/**/*\",\n    \"flags/**/*\",\n    \"fonts/**/*\",\n    \"icons/**/*\",\n    \"images/**/*\",\n    \"lang/**/*\",\n    \"maps/**/*\",\n    \"sounds/**/*\",\n    \"sprites/**/*\",\n] as c..."
   },
   {
-    "id": "openfront-engine/src/server/PublicAssetManifest.ts:ROOT_PUBLIC_FILES#1",
-    "file": "openfront-engine/src/server/PublicAssetManifest.ts",
-    "name": "ROOT_PUBLIC_FILES",
-    "declarationKind": "const",
-    "initializerKind": "NewExpression",
-    "initializerHash": "35c14bf74580dbb7a2fb5cc0f6ca71c54c92aafa0e5ad81686aa4652108aba83",
-    "initializerLength": 135,
-    "initializerPreview": "new Set([\n    \"LICENSE\",\n    \"ads.txt\",\n    \"privacy-policy.html\",\n    \"robots.txt\",\n    \"terms-of-service.html\",\n    \"version.txt\",\n])"
-  },
-  {
-    "id": "openfront-engine/src/server/PublicAssetManifest.ts:ROOT_PUBLIC_DIRS#1",
-    "file": "openfront-engine/src/server/PublicAssetManifest.ts",
-    "name": "ROOT_PUBLIC_DIRS",
-    "declarationKind": "const",
-    "initializerKind": "ArrayLiteralExpression",
-    "initializerHash": "a6b795075f01a91026df43ca3aed71af8f678d79f4ef87ac5d3be0e4d5f4d8dc",
-    "initializerLength": 10,
-    "initializerPreview": "[\"press/\"]"
-  },
-  {
     "id": "openfront-engine/src/server/PublicAssetManifest.ts:CACHE_BUST_VERSION#1",
     "file": "openfront-engine/src/server/PublicAssetManifest.ts",
     "name": "CACHE_BUST_VERSION",
@@ -17800,6 +19750,96 @@
     "initializerPreview": "[\n    {\n        matches: (relativePath) => relativePath === \"manifest.json\",\n        render: renderWebManifestAsset,\n    },\n    {\n        matches: (relativePath) => relativePath.startsWith(\"fonts/\") && relativePath.endsWith(\".xml\"),\n    ..."
   },
   {
+    "id": "openfront-engine/src/server/PublicAssetManifest.ts:ROOT_FILES_INDEX#1",
+    "file": "openfront-engine/src/server/PublicAssetManifest.ts",
+    "name": "ROOT_FILES_INDEX",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "5ce8d464b14950879653105ead9a954f1eb7a23364b1cd51d5f94918637ffaf0",
+    "initializerLength": 17,
+    "initializerPreview": "\"root-files.json\""
+  },
+  {
+    "id": "openfront-engine/src/server/PublicAssetManifest.ts:ROOT_FILE_TYPES#1",
+    "file": "openfront-engine/src/server/PublicAssetManifest.ts",
+    "name": "ROOT_FILE_TYPES",
+    "declarationKind": "const",
+    "initializerKind": "ObjectLiteralExpression",
+    "initializerHash": "6401fbf04a3ec80092572a0a7030b43c0448e6d481928acc90925d3522d81bf3",
+    "initializerLength": 318,
+    "initializerPreview": "{\n    \"\": \"text/plain; charset=utf-8\",\n    \".html\": \"text/html; charset=utf-8\",\n    \".txt\": \"text/plain; charset=utf-8\",\n    \".png\": \"image/png\",\n    \".jpg\": \"image/jpeg\",\n    \".jpeg\": \"image/jpeg\",\n    \".webp\": \"image/webp\",\n    \".svg\":..."
+  },
+  {
+    "id": "openfront-engine/src/server/RankedCheckin.ts:CHECKIN_ABORT_MS#1",
+    "file": "openfront-engine/src/server/RankedCheckin.ts",
+    "name": "CHECKIN_ABORT_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "876c9b16254e157d1eb645390dcfae6f29b9d3cd394e73a91de8ee5d0e67ee43",
+    "initializerLength": 5,
+    "initializerPreview": "20000"
+  },
+  {
+    "id": "openfront-engine/src/server/RankedCheckin.ts:CHECKIN_INTERVAL_MS#1",
+    "file": "openfront-engine/src/server/RankedCheckin.ts",
+    "name": "CHECKIN_INTERVAL_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "0f8eb4b72b6e0c9e88b388eb967b49e067ef1004bf07bffc22c3acb13b43580a",
+    "initializerLength": 4,
+    "initializerPreview": "5000"
+  },
+  {
+    "id": "openfront-engine/src/server/RankedCheckin.ts:CHECKIN_JITTER_MS#1",
+    "file": "openfront-engine/src/server/RankedCheckin.ts",
+    "name": "CHECKIN_JITTER_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "40510175845988f13f6162ed8526f0b09f73384467fa855e1e79b44a56562a58",
+    "initializerLength": 4,
+    "initializerPreview": "1000"
+  },
+  {
+    "id": "openfront-engine/src/server/RankedCheckin.ts:MATCH_START_DEADLINE_MS#1",
+    "file": "openfront-engine/src/server/RankedCheckin.ts",
+    "name": "MATCH_START_DEADLINE_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d4c999ae43633bd2036188d2bca68e1be8202b2cc1f3a1c42a728eaff7d2483d",
+    "initializerLength": 5,
+    "initializerPreview": "15000"
+  },
+  {
+    "id": "openfront-engine/src/server/RankedCheckin.ts:RANKED_PAUSED_LOG#1",
+    "file": "openfront-engine/src/server/RankedCheckin.ts",
+    "name": "RANKED_PAUSED_LOG",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "4da4c9e4c81d1bf4631dbbad0a95943b25b0175440e4342c81186f693fc357a0",
+    "initializerLength": 48,
+    "initializerPreview": "\"ranked matchmaking paused: deployment draining\""
+  },
+  {
+    "id": "openfront-engine/src/server/RankedCheckin.ts:RANKED_RESUMED_LOG#1",
+    "file": "openfront-engine/src/server/RankedCheckin.ts",
+    "name": "RANKED_RESUMED_LOG",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "9e2fd7727e18293f767282d54bb5d0ce9d04ac7eab490d3ea054f7af8b19963b",
+    "initializerLength": 47,
+    "initializerPreview": "\"ranked matchmaking resumed: deployment active\""
+  },
+  {
+    "id": "openfront-engine/src/server/RenderDesktopDescriptor.ts:VERSION_POINTER#1",
+    "file": "openfront-engine/src/server/RenderDesktopDescriptor.ts",
+    "name": "VERSION_POINTER",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "b5a8a930de29ea2b53ef11f40deaea2e791b18e5e89c01b8ffdbfcfbc4d12ede",
+    "initializerLength": 19,
+    "initializerPreview": "\"--version-pointer\""
+  },
+  {
     "id": "openfront-engine/src/server/RenderHtml.ts:APP_SHELL_CACHE_CONTROL#1",
     "file": "openfront-engine/src/server/RenderHtml.ts",
     "name": "APP_SHELL_CACHE_CONTROL",
@@ -17808,6 +19848,46 @@
     "initializerHash": "8ad0e41356a4f0cf9b47c34949e42587a0b8d1d059f45caf9475d0505cdeb612",
     "initializerLength": 85,
     "initializerPreview": "\"public, max-age=0, s-maxage=300, stale-while-revalidate=86400, stale-if-error=86400\""
+  },
+  {
+    "id": "openfront-engine/src/server/RenderStaticIndex.ts:ENVIRONMENT_ONLY#1",
+    "file": "openfront-engine/src/server/RenderStaticIndex.ts",
+    "name": "ENVIRONMENT_ONLY",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "df063288b4628b47a1356348b2944e4ca2c91c6a144a3ee21f420841c17e43cd",
+    "initializerLength": 20,
+    "initializerPreview": "\"--environment-only\""
+  },
+  {
+    "id": "openfront-engine/src/server/SingleplayerPresence.ts:SINGLEPLAYER_HEARTBEAT_INTERVAL_MS#1",
+    "file": "openfront-engine/src/server/SingleplayerPresence.ts",
+    "name": "SINGLEPLAYER_HEARTBEAT_INTERVAL_MS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d55d01d0341ed0ba2cd99b322e8c5b609254f47d10c7cd12b99b4922effeba44",
+    "initializerLength": 5,
+    "initializerPreview": "60000"
+  },
+  {
+    "id": "openfront-engine/src/server/SingleplayerPresence.ts:SINGLEPLAYER_PRESENCE_TTL_MS#1",
+    "file": "openfront-engine/src/server/SingleplayerPresence.ts",
+    "name": "SINGLEPLAYER_PRESENCE_TTL_MS",
+    "declarationKind": "const",
+    "initializerKind": "BinaryExpression",
+    "initializerHash": "3a4851e509a73e90656ebca38e252d5050ebeb6add2749a43a834cb4c98b4df7",
+    "initializerLength": 38,
+    "initializerPreview": "3 * SINGLEPLAYER_HEARTBEAT_INTERVAL_MS"
+  },
+  {
+    "id": "openfront-engine/src/server/SingleplayerPresence.ts:SINGLEPLAYER_PRESENCE_MAX_GAMES#1",
+    "file": "openfront-engine/src/server/SingleplayerPresence.ts",
+    "name": "SINGLEPLAYER_PRESENCE_MAX_GAMES",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "60734f174b2035e5b2ba85fef8c648cc0cb18c5995b419d3cd1c025c5b09d0c7",
+    "initializerLength": 5,
+    "initializerPreview": "50000"
   },
   {
     "id": "openfront-engine/src/server/SocketIngress.ts:KICK_REASON_TOO_MUCH_DATA#1",

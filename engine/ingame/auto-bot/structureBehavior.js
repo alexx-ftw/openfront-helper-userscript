@@ -2613,6 +2613,12 @@
         ) return true;
       }
 
+      // Arm-on-freeze strike silo: FFA-only survival lane (see method doc).
+      // Defense keeps priority above; the ordinary candidates ladder below
+      // defers offensive silos behind the economy gates that mode-A freezes
+      // stall on, so the survival strike otherwise never gets a launcher.
+      if (await this.maybeArmFreezeStrikeSilo()) return true;
+
       // Cap relief needs the authoritative City upgrade price before the
       // candidate set is built. The probe is tick-cached and its per-level
       // cost cache keeps repeated decisions off the worker.
@@ -2643,6 +2649,63 @@
         if (result === "wait") return false;
       }
       return false;
+    }
+
+    // Arm-on-freeze strike silo (FFA-only survival lane; re-lands the parked
+    // 2026-08-25 round): the nuke-side survival strike is reach-capped by
+    // silo availability — measured freezes hoarded abundant gold with no
+    // operational launcher because the ordinary ladder defers offensive
+    // silos behind economy/defense gates. During the exact freeze signature
+    // the strike lane keys on, buy the FIRST silo outright once gold covers
+    // 2 launchers + 1 bomb (the abundance proof). Team games exit at the
+    // gameMode read before any ownership or cost probing.
+    async maybeArmFreezeStrikeSilo() {
+      if (!this.freezeStrikeArmWindow()) return false;
+      if (!this.freezeStrikeOutmuscleWindow()) return false;
+      if (!this.freezeStrikeArmAffordable()) return false;
+      return this.maybeSpawnStructure(UNIT.MissileSilo, {
+        ignoreEconomicReserve: true,
+      });
+    }
+
+    // Cheap gates first: winFixes, mode, difficulty, unit availability, and
+    // launcher absence. Team games exit at the gameMode read before any
+    // ownership or cost probing.
+    freezeStrikeArmWindow() {
+      if (state.settings.winFixes !== true) return false;
+      if (!this.game || typeof this.game.config !== "function") return false;
+      const config = this.game.config();
+      const gameMode = String(config?.gameConfig?.()?.gameMode ?? "");
+      if (gameMode !== "Free For All" && gameMode !== "FFA") return false;
+      if (!isLegendaryDifficulty()) return false;
+      if (config.isUnitDisabled(UNIT.MissileSilo)) return false;
+      return this.ownedLevels(UNIT.MissileSilo) === 0;
+    }
+
+    // Nuke-side survival signature (NukeBehavior.freezeGiantStrikeTarget):
+    // endgame scale, troops pinned at the cap, and a hostile giant at 1.5x.
+    freezeStrikeOutmuscleWindow() {
+      const tiles = this.player.numTilesOwned();
+      if (tiles < 50_000) return false;
+      const ourTroops = this.player.troops();
+      const ourMax = this.player.maxTroops();
+      if (ourMax <= 0 || ourTroops < ourMax * 0.85) return false;
+      let giantTroops = 0;
+      for (const other of this.game.players()) {
+        if (!other.isPlayer() || other.isAlive() === false) continue;
+        if (this.player.isFriendly(other) === true) continue;
+        giantTroops = Math.max(giantTroops, other.troops());
+      }
+      return giantTroops >= ourTroops * 1.5;
+    }
+
+    // The abundance proof: 2 launchers + 1 bomb. Below it the lane must not
+    // divert the treasury the ordinary ladder is spending.
+    freezeStrikeArmAffordable() {
+      const siloCost = this.safeConstructionCost(UNIT.MissileSilo);
+      const bombCost = this.safeConstructionCost(UNIT.AtomBomb);
+      if (siloCost === null || bombCost === null) return false;
+      return this.spendableConstructionGold() >= siloCost * 2n + bombCost;
     }
 
     async legendaryConstructionActionGroupResult(

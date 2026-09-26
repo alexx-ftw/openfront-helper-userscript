@@ -549,3 +549,25 @@ sets. Dominant failure columns: won (nation coalition / stagnation), bestEconomy
 nukeQuota, invasionsRecaptured, FFA ownStructuresNuked. The residual post-12cc
 commits may carry additional regressions but bisecting them is unreliable under
 load sensitivity; per-row byte-stability within one load era is confirmed.
+
+## 2026-09-26 round — engine re-baseline to upstream main (4d8608d7e) + arm-on-freeze silo
+
+The repo's designed flow (pre-commit engine:update + openfront-engine-compat gate) requires the
+embedded engine at upstream main; the 0ab7dec69 pin had drifted 253 commits behind (v0.34.x era).
+Re-baseline contents: game-constant contract 1789 -> 1997 entries (scripts/game-constants.mjs
+--write), map manifest 119 -> 129 (10 new maps added to engine/map-data.js), upstream rename
+numMirvsLaunched -> mirvsLaunched (parity contract updated; the bot's client-side MIRV pricing
+approximation is unaffected), bundles rebuilt.
+
+Anchor under the new engine: team-none-basket-01 WON@12601 (old-engine record 19531) — the win
+persists and ends ~7000 ticks sooner, so every pre-update per-row number is non-comparable. The
+following full-basket scoreboard is the first honest scoreboard of the 4d8608d7e era.
+
+Arm-on-freeze strike silo lane (maybeArmFreezeStrikeSilo, structureBehavior): FFA-only survival
+lane re-landed from the parked 2026-08-25 round; buys the first MissileSilo during the nuke-side
+freeze signature once gold covers 2 launchers + 1 bomb, bypassing the economic reserve. Unit
+block in test/legendary-enhancements.mjs (RED verified before implementation); team anchor
+byte-stable across HEAD/HEAD+lane on the old engine (WON@19531 both) and WON@12601 on the new
+engine. Harness hazard discovered while validating: running the headless match with
+openfront-engine reached through a SYMLINK dual-instantiates the engine module and tick-0 crashes
+NationNukeBehavior (unitInfo undefined) — always run from a real engine directory.

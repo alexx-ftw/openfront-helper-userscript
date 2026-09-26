@@ -46,6 +46,7 @@ const structureSandbox = {
     Legendary: "Legendary",
   },
   currentDifficulty: () => "Legendary",
+  isLegendaryDifficulty: () => true,
   state: { settings: { winFixes: true } },
   BigInt,
   Math,
@@ -773,6 +774,96 @@ function makeFakeGame(overrides = {}) {
     behavior.cost(UNIT.MIRV),
     25_000_000n + 3n * 15_000_000n,
     "observed launches are never forgotten while the flight history is retained",
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// N. Arm-on-freeze strike silo (FFA mode-A survival lane)
+// ════════════════════════════════════════════════════════════════════════════
+{
+  // Freeze-signature stub: FFA, endgame scale (50k+ tiles), troops pinned at
+  // the cap, and a giant 1.5x our pool — the nuke-side survival signature.
+  const freezeGame = (gameMode) =>
+    makeFakeGame({
+      config: () => ({
+        gameConfig: () => ({ gameMode }),
+        isUnitDisabled: () => false,
+      }),
+      players: () => [{ isPlayer: () => true, isAlive: () => true, troops: () => 200_000 }],
+    });
+  const freezePlayer = {
+    numTilesOwned: () => 60_000,
+    troops: () => 90_000,
+    maxTroops: () => 100_000,
+    gold: () => 20_000_000n,
+    isFriendly: () => false,
+  };
+  const armBehavior = (gameMode, overrides = {}) => {
+    const behavior = Object.create(structureSandbox.StructureBehavior.prototype);
+    behavior.game = freezeGame(gameMode);
+    behavior.player = freezePlayer;
+    behavior.ownedLevels = () => 0;
+    behavior.safeConstructionCost = (type) =>
+      type === structureSandbox.UNIT.MissileSilo ? 1_500_000n : 750_000n;
+    behavior.spendableConstructionGold = () => 20_000_000n;
+    behavior.spawned = [];
+    behavior.maybeSpawnStructure = async (type, options) => {
+      behavior.spawned.push({ type, options });
+      return true;
+    };
+    for (const [key, value] of Object.entries(overrides)) {
+      behavior[key] = value;
+    }
+    return behavior;
+  };
+
+  // Full signature + abundant treasury: the lane must buy the strike silo
+  // through the economic reserve (the reserve is what froze mode-A builds).
+  const armed = armBehavior("Free For All");
+  assert.equal(
+    await armed.maybeArmFreezeStrikeSilo(),
+    true,
+    "freeze signature + treasury buys the strike silo",
+  );
+  assert.equal(armed.spawned.length, 1, "exactly one arm buy is attempted");
+  assert.equal(
+    armed.spawned[0].type,
+    structureSandbox.UNIT.MissileSilo,
+    "the arm buy targets a MissileSilo",
+  );
+  assert.equal(
+    armed.spawned[0].options?.ignoreEconomicReserve,
+    true,
+    "the arm buy bypasses the economic reserve",
+  );
+
+  // Team mode must exit at the gameMode gate without probing anything else.
+  const teamProbe = armBehavior("team", {
+    ownedLevels: () => {
+      throw new Error("team mode must not probe silo ownership");
+    },
+  });
+  assert.equal(
+    await teamProbe.maybeArmFreezeStrikeSilo(),
+    false,
+    "team mode never arms the freeze lane",
+  );
+
+  // An existing launcher means the strike already has its tool: no second silo.
+  assert.equal(
+    await armBehavior("FFA", { ownedLevels: () => 1 }).maybeArmFreezeStrikeSilo(),
+    false,
+    "no second silo while a launcher exists",
+  );
+
+  // The 2-launchers + 1-bomb threshold is the abundance proof: below it the
+  // lane must not divert the treasury the ordinary ladder is spending.
+  assert.equal(
+    await armBehavior("FFA", {
+      spendableConstructionGold: () => 3_700_000n,
+    }).maybeArmFreezeStrikeSilo(),
+    false,
+    "below 2 launchers + 1 bomb the lane stands down",
   );
 }
 

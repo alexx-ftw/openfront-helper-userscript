@@ -392,7 +392,7 @@ function assertConfigContracts(configFile) {
     Port: { numbers: [1_000_000, 125_000], text: "pow2" },
     AtomBomb: { numbers: [750_000], text: "costWrapper" },
     HydrogenBomb: { numbers: [5_000_000], text: "costWrapper" },
-    MIRV: { numbers: [25_000_000, 15_000_000], text: "numMirvsLaunched" },
+    MIRV: { numbers: [25_000_000, 15_000_000], text: "mirvsLaunched" },
     MIRVWarhead: { numbers: [0] },
     TradeShip: { numbers: [0] },
     MissileSilo: { numbers: [1_000_000], text: "costWrapper" },
