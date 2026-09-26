@@ -818,6 +818,44 @@
     };
   }
 
+  // ── Beachhead clearance (win-fix; original client-side addition) ──────────
+  // A hostile sea invasion anchors an AttackExecution at its landing tile.
+  // The incoming-defense lane counterattacks the attacker (cancelling
+  // in-flight waves), but the landed tile stays hostile-held and once the
+  // invasion attack expires nothing targets it again. Era re-score measured
+  // 25/35 rows failing all-invasions-recaptured this way. The ledger records
+  // landing tiles while invasions are visible and keeps them actionable
+  // until our side holds the tile again.
+  const BEACHHEAD_RETAKE_COOLDOWN_TICKS = 60;
+  const BEACHHEAD_RETAKE_TROOP_FRACTION = 0.2;
+  function updateBeachheadLedger(ledger, observations, holderRecaptured) {
+    for (const obs of observations) {
+      if (obs.tile === null || obs.tile === undefined) continue;
+      if (!ledger.has(obs.tile)) {
+        ledger.set(obs.tile, {
+          attackerKey: obs.attackerKey ?? null,
+          landedTick: obs.tick ?? 0,
+        });
+      }
+    }
+    for (const [tile, record] of ledger) {
+      if (holderRecaptured(tile) || record.attackerKey === null) {
+        ledger.delete(tile);
+      }
+    }
+    return ledger;
+  }
+  function nextBeachheadRetakeCandidate(ledger, tick, cooldownTicks, attempts) {
+    let best = null;
+    for (const [tile, record] of ledger) {
+      const last = attempts.get(tile);
+      if (last !== undefined && tick - last < cooldownTicks) continue;
+      if (best === null || record.landedTick < best.record.landedTick) {
+        best = { tile, record };
+      }
+    }
+    return best;
+  }
   class AttackBehavior {
     constructor(...args) {
       const {
@@ -8116,6 +8154,141 @@
       const maxTroops = this.game.config().maxTroops(this.player);
       const ratio = this.player.troops() / maxTroops;
       return ratio >= this.triggerRatio;
+    }
+
+    // maybeRetakeBeachheads — win-fix lane (not in src). Records the landing
+    // tiles of hostile sea invasions (sourceTile of a hostile incoming attack)
+    // and, on a per-tile cooldown, attacks the holder of the oldest tile our
+    // side does not hold, until the tile flips back. See the ledger helpers
+    // above the class for the measurement that motivated this lane.
+    maybeRetakeBeachheads() {
+      // Ships DARK: the mechanism is proven (seed basket-04 run 04m flipped
+      // allInvasionsRecaptured to true on the era's worst row) but the war
+      // escalation it causes pushed other producers onto the intent-rate-limit
+      // token floor (rejected 9-20 per game), violating the strict
+      // zero-rejection gate. Opt-in via env until the pressure fix lands.
+      if (!(typeof process !== "undefined" && process.env?.OFH_BEACHHEAD_LANE === "1")) {
+        return false;
+      }
+      const stats = (state.beachheadClearance ??= {
+        enterCount: 0,
+        recorded: 0,
+        emitted: 0,
+        ledgerSize: 0,
+      });
+      stats.enterCount += 1;
+      if (state.settings.winFixes !== true) return false;
+      if (
+        this.player === null ||
+        this.player === undefined ||
+        typeof this.game?.ticks !== "function" ||
+        typeof this.game?.ownerID !== "function" ||
+        typeof this.game?.playerBySmallID !== "function"
+      ) {
+        return false;
+      }
+      if (this.beachheadLedger === undefined) this.beachheadLedger = new Map();
+      if (this.beachheadRetakeAttempts === undefined) {
+        this.beachheadRetakeAttempts = new Map();
+      }
+      const tick = Number(this.game.ticks());
+      const observations = [];
+      const ledgerSizeBefore = this.beachheadLedger.size;
+      for (const attack of this.incomingHostileAttacks()) {
+        const tile = attack.sourceTile?.();
+        if (tile === null || tile === undefined) continue;
+        const attacker = attack.attacker?.();
+        observations.push({
+          tile,
+          attackerKey: attacker
+            ? (this.getOutboundAttackTargetKey(attacker) ?? null)
+            : null,
+          tick,
+        });
+      }
+      updateBeachheadLedger(
+        this.beachheadLedger,
+        observations,
+        (tile) => !this.beachheadTileIsHostileHeld(tile),
+      );
+      stats.ledgerSize = this.beachheadLedger.size;
+      stats.recorded += Math.max(0, this.beachheadLedger.size - ledgerSizeBefore);
+      const candidate = nextBeachheadRetakeCandidate(
+        this.beachheadLedger,
+        tick,
+        BEACHHEAD_RETAKE_COOLDOWN_TICKS,
+        this.beachheadRetakeAttempts,
+      );
+      if (candidate === null) return false;
+      const holder = this.beachheadHolderPlayer(candidate.tile);
+      if (
+        !holder ||
+        holder === this.player ||
+        holder.isPlayer?.() !== true ||
+        holder.isAlive?.() === false ||
+        this.player.isFriendly?.(holder) === true
+      ) {
+        return false;
+      }
+      const troops = this.getForceAttackTroops(
+        holder,
+        BEACHHEAD_RETAKE_TROOP_FRACTION,
+        false,
+      );
+      if (troops < 1) return false;
+      // Only spend a beachhead attack when the shared intent budget has real
+      // slack: the strict zero-rejection gate fails the row if ANY producer
+      // attempts on an exhausted bucket, and this lane's war escalation can
+      // push other producers to the token floor.
+      if (
+        typeof getIntentRateLimitSnapshot === "function"
+      ) {
+        const budget = getIntentRateLimitSnapshot();
+        if (
+          (budget.secondTokens ?? 0) < 3 ||
+          (budget.minuteTokens ?? 0) < 10
+        ) {
+          return false;
+        }
+      }
+      const ctors = discoverCtors(getEventBus());
+      const emitted = this.emitForcedAttackIntent(ctors, holder, troops);
+      if (emitted) {
+        this.beachheadRetakeAttempts.set(candidate.tile, tick);
+        stats.emitted += 1;
+        if (typeof runtimeDebugLog === "function") {
+          runtimeDebugLog("[Attack] beachhead retake →", holder.name?.() ?? "?");
+        }
+      }
+      return emitted;
+    }
+
+    // Resolve the current holder of a ledger tile by smallID through
+    // playerBySmallID (single wrap, same family as every other target the
+    // behavior passes around). NEVER pass game.owner()'s wrapper into core
+    // predicates: isFriendly unwraps exactly one layer and the core then calls
+    // other.isDisconnected() on whatever survives (measured crash, seed
+    // basket-04).
+    beachheadTileIsHostileHeld(tile) {
+      const meSid = this.player?.smallID?.();
+      const holderSid = this.game.hasOwner
+        ? (this.game.hasOwner(tile) ? this.game.ownerID(tile) : null)
+        : this.game.ownerID(tile);
+      if (holderSid === null || holderSid === undefined) return false;
+      if (holderSid === meSid) return false;
+      const holder = this.beachheadHolderPlayer(tile);
+      if (!holder) return false;
+      if (holder.isAlive?.() === false) return false;
+      if (this.player.isFriendly?.(holder) === true) return false;
+      return true;
+    }
+
+    beachheadHolderPlayer(tile) {
+      const holderSid = this.game.hasOwner
+        ? (this.game.hasOwner(tile) ? this.game.ownerID(tile) : null)
+        : this.game.ownerID(tile);
+      if (holderSid === null || holderSid === undefined) return null;
+      return this.game.playerBySmallID(holderSid) ?? null;
     }
 
     // findIncomingAttackPlayer — AiAttackBehavior.

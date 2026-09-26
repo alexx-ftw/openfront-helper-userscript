@@ -581,6 +581,11 @@
       if (this.handleEliminatedPlayer(me)) return;
       if (await this.initializeTick(ticks, profile, tickGeneration)) return;
       if (!(await this.processPendingNukeSalvo(profile, tickGeneration))) return;
+      // Beachhead clearance sweep: must run on EVERY tick, including the
+      // handleIncomingDefense take-over window — hostile sea-invasion attacks
+      // (the only source of landing-tile observations) are live exactly then.
+      autoBotProfileSyncPhase(profile, "beachhead-retake", () =>
+        this.attackBehavior.maybeRetakeBeachheads?.());
       if (await this.handleIncomingDefense(ticks, profile, tickGeneration)) {
         // Incoming land defense intentionally bypasses the ordinary decision
         // chain.  Do one live naval build probe before containment so a Port

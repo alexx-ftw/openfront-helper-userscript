@@ -867,4 +867,106 @@ function makeFakeGame(overrides = {}) {
   );
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// 9. Beachhead clearance ledger — landed sea invasions stay attackable after
+// the invasion AttackExecution expires (the counterattack lane only cancels
+// in-flight waves; the landing tile then sat hostile forever and 25/35 era
+// rows failed the all-invasions-recaptured gate because of it).
+{
+  const attackSource = read("engine/ingame/auto-bot/attackBehavior.js");
+  const attackSandbox = {
+    UNIT: {
+      Warship: "Warship",
+      TransportShip: "TransportShip",
+      MissileSilo: "MissileSilo",
+      SAMLauncher: "SAMLauncher",
+      City: "City",
+      Factory: "Factory",
+      Port: "Port",
+    },
+    Difficulty: {
+      Easy: "Easy",
+      Medium: "Medium",
+      Hard: "Hard",
+      Impossible: "Impossible",
+      Legendary: "Legendary",
+    },
+    PlayerType: { Bot: "Bot", Nation: "Nation", Human: "Human" },
+    Relation: { Hostile: -1, Neutral: 0, Friendly: 1 },
+    GameMode: { FFA: "FFA", Team: "Team" },
+    currentDifficulty: () => "Legendary",
+    state: { settings: { winFixes: true } },
+    BigInt,
+    Math,
+    Number,
+    isFinite,
+    isNaN,
+    Array,
+    Object,
+    Map,
+    Set,
+    Date,
+    JSON,
+    Error,
+    Reflect,
+    Symbol,
+    Promise,
+    performance: { now: () => 0 },
+    console,
+    Infinity,
+    NaN,
+    undefined,
+  };
+  attackSandbox.globalThis = attackSandbox;
+  attackSandbox.window = attackSandbox;
+  executeClassicScript(
+    attackSource +
+      "\nglobalThis.__updateBeachheadLedger = updateBeachheadLedger;" +
+      "\nglobalThis.__nextBeachheadRetakeCandidate = nextBeachheadRetakeCandidate;",
+    attackSandbox,
+    { filename: "attackBehavior.js" },
+  );
+  const updateLedger = attackSandbox.__updateBeachheadLedger;
+  const nextCandidate = attackSandbox.__nextBeachheadRetakeCandidate;
+
+  const ledger = new Map();
+  updateLedger(ledger, [{ tile: 111, attackerKey: "k-foe", tick: 5000 }], () => false);
+  assert.ok(ledger.has(111), "a hostile sea-invasion landing tile is recorded");
+
+  // The invasion attack expires (no fresh observation) while the tile stays
+  // hostile-held: the ledger must keep it actionable.
+  updateLedger(ledger, [], () => false);
+  assert.ok(
+    ledger.has(111),
+    "an expired invasion's beachhead stays actionable while hostile-held",
+  );
+
+  // Our side holds the tile again: recaptured, pruned.
+  updateLedger(ledger, [], (tile) => tile === 111);
+  assert.ok(!ledger.has(111), "a recaptured beachhead leaves the ledger");
+
+  // Candidate selection: longest-standing beachhead first, per-tile cooldown.
+  const ledger2 = new Map();
+  updateLedger(
+    ledger2,
+    [
+      { tile: 222, attackerKey: "a", tick: 100 },
+      { tile: 333, attackerKey: "b", tick: 200 },
+    ],
+    () => false,
+  );
+  const attempts = new Map();
+  let pick = nextCandidate(ledger2, 1000, 30, attempts);
+  assert.ok(pick !== null && pick.tile === 222, "the longest-standing beachhead is retaken first");
+  attempts.set(222, 990);
+  pick = nextCandidate(ledger2, 1000, 30, attempts);
+  assert.ok(pick !== null && pick.tile === 333, "a cooling tile defers to the next candidate");
+  attempts.set(333, 980);
+  assert.equal(
+    nextCandidate(ledger2, 1000, 30, attempts),
+    null,
+    "an all-cooldown ledger yields no candidate",
+  );
+}
+
 process.stdout.write("Legendary enhancements tests passed\n");

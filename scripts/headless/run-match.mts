@@ -1846,6 +1846,12 @@ const finalResult = {
   intentBudgetViolated:
     process.env.OFH_ASSERT_INTENT_BUDGET === "1" &&
     (bot.getIntentBudgetSnapshot()?.rejected ?? 0) > 0,
+  beachheadClearance:
+    (
+      bot.harness?.internals?.state as
+        | { beachheadClearance?: unknown }
+        | undefined
+    )?.beachheadClearance ?? undefined,
   performanceProfile: profileBot ? bot.getPerformanceProfile() : undefined,
   emittedIntents,
   hostileMissileFixture: injectHostileAtom

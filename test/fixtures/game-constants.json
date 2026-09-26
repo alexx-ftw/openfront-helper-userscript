@@ -900,6 +900,26 @@
     "initializerPreview": "170"
   },
   {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:BEACHHEAD_RETAKE_COOLDOWN_TICKS#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "BEACHHEAD_RETAKE_COOLDOWN_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "39fa9ec190eee7b6f4dff1100d6343e10918d044c75eac8f9e9a2596173f80c9",
+    "initializerLength": 2,
+    "initializerPreview": "60"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:BEACHHEAD_RETAKE_TROOP_FRACTION#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "BEACHHEAD_RETAKE_TROOP_FRACTION",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "44896b09365746b5f7167ee4d64988a38f7f4628803cbf86224e74eeb7c69e9d",
+    "initializerLength": 3,
+    "initializerPreview": "0.2"
+  },
+  {
     "id": "engine/ingame/auto-bot/attackBehavior.js:TIMEOUT#1",
     "file": "engine/ingame/auto-bot/attackBehavior.js",
     "name": "TIMEOUT",

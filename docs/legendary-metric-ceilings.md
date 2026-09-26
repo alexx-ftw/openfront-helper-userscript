@@ -621,3 +621,26 @@ ffa-n2; the binding constraints are wins and the per-game gates (boats, own-nuke
 recapture) inside the compressed ~12.6k-tick team clock and the n2 freeze window. The earlier
 "promotion duel never coincided / reach-capped" conclusion is withdrawn as a measurement
 artifact: a vet-2 hull receiving a warship final blow is now observed in ordinary play.
+
+### Invasion-recapture failure distribution + beachhead clearance lane (SHIPPED DARK)
+
+Failure mining of the corrected re-score puts the most common non-win failure at
+allInvasionsRecaptured (30/35 rows): hostile sea-invasion landing tiles persist uncleared for
+thousands of ticks (team-25mm-basket-04: 7/7 never cleared). Root cause: the counterattack lane
+cancels in-flight waves but nothing ever targets the landed tile, and once the invasion attack
+expires the landing site is invisible to the bot (client AttackUpdate carries no sourceTile on
+the wire; the harness coreAdapter does). A beachhead clearance lane (attackBehavior
+maybeRetakeBeachheads + updateBeachheadLedger/nextBeachheadRetakeCandidate, hooked in
+nationExecution.tick BEFORE the incoming-defense take-over so invasions are visible while live)
+records landing tiles, keeps them actionable after the attack expires, and attacks the holder on
+a per-tile cooldown. Unit block 9 in test/legendary-enhancements.mjs (RED verified).
+Mechanism PROVEN opt-in (OFH_BEACHHEAD_LANE=1, seed basket-04 run 04m): allInvasionsRecaptured
+flipped to TRUE on the era's worst row, with trades 23->92, warship kills 11->105, vet 3 — the
+escalation also stretched the game 10441->12611 ticks. Two follow-ups keep it dark until fixed:
+(1) the escalation pushed other intent producers onto the rate-limit token floor (rejected 9-20
+per game vs the strict zero-rejection gate; slack-gating the lane's own emits was insufficient
+because the drops come from downstream producers); (2) game.owner() wrappers must not reach core
+predicates (isFriendly unwraps one layer; core then calls other.isDisconnected() — measured
+crash; holder resolution goes through ownerID + playerBySmallID instead). Lane stats are
+exported in the result JSON as beachheadClearance; the dark gate keeps scored rows
+byte-deterministic (dark rerun of team-25mm-basket-04 reproduces ticks 11991 exactly).
