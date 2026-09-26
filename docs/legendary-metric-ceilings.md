@@ -574,7 +574,7 @@ NationNukeBehavior (unitInfo undefined) — always run from a real engine direct
 
 ### First scoreboard of the 4d8608d7e era (fixed basket, light load, commit 30220455 + lane)
 
-34/35 rows scored (ffa-n4-basket-02 still in flight at recording time — a deep-freeze endgame).
+All 35 rows scored.
 Wins 4: team-none-basket-01 (trades 32, et 14, 2 boats, WON@12601 — byte-stable across three
 independent runs), team-none-basket-04 (9/1, 26 boats, WON@14891), team-temp-basket-04 (9/0,
 1 boat, WON@11561), team-temp-basket-05 (10/5, 0 boats, WON@15311 — FIRST FULL-GREEN ROW OF THE
@@ -582,7 +582,10 @@ ERA: every amendment-4 column green including the conquest-escape nuke quota and
 5mm/25mm remain 0/5 (structural coalition verdict unchanged); FFA 0/9 scored with n2 rows dying
 in the 14.7k-15.3k freeze window the new lane targets (silos did not arrive in time on these
 seeds — the lane's arm window needs the freeze to hold while gold covers 2 launchers + 1 bomb,
-which did not coincide on this basket). Set bars: trades/veterancy/et mostly green; none-set
+which did not coincide on this basket). ffa-n4-basket-02 ran a 102211-tick freeze war (prior n4
+deaths ~13.5k): 30MM nuked structure value, SAM ready 5400 before first structure loss 5879,
+but one unreaptured invasion and the giant's economy ended it. Set bars: trades/veterancy/et
+mostly green; none-set
 veterancy still short. The trade-saturation retuning (230->330) makes heavy-port openings
 strictly stronger; game lengths compressed ~35% (anchor 19531 -> 12601), which pressures the
 timing-bound naval/veterancy columns going forward.
