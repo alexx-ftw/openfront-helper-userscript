@@ -899,3 +899,17 @@ mechanism; runtimeDebugLog's ring buffer is not dumped by the harness). The
 one-seed n2 win may still be variance — the lane earns its keep as
 death-to-closeout conversion, and a follow-up era should add the strike
 counter to the results schema before tuning any threshold.
+
+### Post-verdict mechanism confirmation (2026-09-27, direct telemetry)
+
+The follow-up telemetry landed immediately after the verdict: results rows
+now carry a capStrike block (armedHighWater / attempts / launches /
+lastLaunchTick) read from the behavior, and the deterministic n2-basket-04
+replay (same seed, same env as run-basket) reproduced the win byte-for-byte
+(t=29751, 79.19% share) WITH direct evidence: armedHighWater=10,
+attempts=55, launches=51, lastLaunchTick=29695 (56 ticks before the win
+closed). The first-ever n2 win is mechanism-linked, not variance — the lane
+repeatedly converted the refrozen surplus into attacks through the late
+game. The n20 collapse remains the open problem; strike counts there were
+not captured (the landed basket predates the counter) and the next n20 era
+should read the new block before touching any threshold.

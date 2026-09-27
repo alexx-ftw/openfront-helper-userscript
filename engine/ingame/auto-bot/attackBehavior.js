@@ -6546,6 +6546,10 @@
       this.capStrikeLastTiles = tiles;
       this.capStrikeFrozenDecisions =
         atCap && frozen ? (Number(this.capStrikeFrozenDecisions) || 0) + 1 : 0;
+      this.capStrikeArmedHighWater = Math.max(
+        Number(this.capStrikeArmedHighWater) || 0,
+        this.capStrikeFrozenDecisions,
+      );
       return this.capStrikeFrozenDecisions;
     }
 
@@ -6579,8 +6583,13 @@
       if (!context.expandOn || !this.capPressureStrikeIsArmed()) return false;
       const weakest = this.capStrikeTarget(context.borderingEnemies);
       if (weakest === null || !this.canAttackPlayerNow(weakest)) return false;
+      this.capStrikeAttempts = (Number(this.capStrikeAttempts) || 0) + 1;
       const launched = await this.forceSendAttack(weakest, 1);
-      if (launched) this.logCapStrikeLaunch(weakest);
+      if (launched) {
+        this.capStrikeLaunches = (Number(this.capStrikeLaunches) || 0) + 1;
+        this.capStrikeLastLaunchTick = this.currentAttackDecisionTick();
+        this.logCapStrikeLaunch(weakest);
+      }
       return launched;
     }
 

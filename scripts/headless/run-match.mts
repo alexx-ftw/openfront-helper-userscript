@@ -1852,6 +1852,16 @@ const finalResult = {
         | { beachheadClearance?: unknown }
         | undefined
     )?.beachheadClearance ?? undefined,
+  capStrike: {
+    armedHighWater: Number(
+      bot.nationBot?.attackBehavior?.capStrikeArmedHighWater ?? 0,
+    ),
+    attempts: Number(bot.nationBot?.attackBehavior?.capStrikeAttempts ?? 0),
+    launches: Number(bot.nationBot?.attackBehavior?.capStrikeLaunches ?? 0),
+    lastLaunchTick: Number(
+      bot.nationBot?.attackBehavior?.capStrikeLastLaunchTick ?? 0,
+    ),
+  },
   performanceProfile: profileBot ? bot.getPerformanceProfile() : undefined,
   emittedIntents,
   hostileMissileFixture: injectHostileAtom

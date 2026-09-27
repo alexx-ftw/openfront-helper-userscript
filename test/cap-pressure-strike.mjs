@@ -48,6 +48,7 @@ function makeBehavior({
     return true;
   };
   behavior.canAttackPlayerNow = () => true;
+  behavior.currentAttackDecisionTick = () => 4242;
   return { behavior, strikes };
 }
 
@@ -86,6 +87,11 @@ function confirmFreeze(behavior, decisions = 6) {
     true,
   );
   assert.deepEqual(strikes, [{ target: weak, fraction: 1 }]);
+  // Telemetry contract consumed by scripts/headless/run-match.mts.
+  assert.equal(behavior.capStrikeArmedHighWater, 6);
+  assert.equal(behavior.capStrikeAttempts, 1);
+  assert.equal(behavior.capStrikeLaunches, 1);
+  assert.equal(behavior.capStrikeLastLaunchTick, 4242);
 }
 
 // 3. Growth resets the freeze; a shrinking territory is not frozen either.
@@ -142,4 +148,6 @@ function confirmFreeze(behavior, decisions = 6) {
     false,
   );
   assert.equal(strikes.length, 0);
+  // The dead-target bail happens before any attempt is recorded.
+  assert.equal(Number(behavior.capStrikeAttempts ?? 0), 0);
 }
