@@ -8177,14 +8177,14 @@
     // side does not hold, until the tile flips back. See the ledger helpers
     // above the class for the measurement that motivated this lane.
     maybeRetakeBeachheads() {
-      // Ships DARK: the mechanism is proven (seed basket-04 run 04m flipped
-      // allInvasionsRecaptured to true on the era's worst row) but the war
-      // escalation it causes pushed other producers onto the intent-rate-limit
-      // token floor (rejected 9-20 per game), violating the strict
-      // zero-rejection gate. Opt-in via localStorage until the pressure fix
-      // lands (localStorage exists in both the page and the headless JSDOM
-      // harness; a process.env gate never engages in either).
-      if (window.localStorage.getItem("ofh:beachheadLane") !== "1") {
+      // Default ON after two strictly non-negative full-basket eras (retake-v4
+      // and sam-early-v2: 4/35 wins each, rejected 0 across all rows). The v2
+      // disaster (war escalation onto the rate-limit token floor) is gated by
+      // the v4 survival proof: warship-free windows plus a recorded-garrison
+      // force check. Opt OUT via localStorage (a process.env gate never
+      // engages in the page; localStorage exists in both the page and the
+      // headless JSDOM harness).
+      if (window.localStorage.getItem("ofh:beachheadLane") === "0") {
         return false;
       }
       const stats = (state.beachheadClearance ??= {

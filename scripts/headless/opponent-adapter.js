@@ -158,8 +158,13 @@ export function createBundledOpponentHarness(options = {}) {
   const context = dom.getInternalVMContext();
   // Bridge sim env flags into the page realm: engine gates read localStorage
   // (available in both browser and JSDOM), never process.env.
+  // The lane default is ON in the bot; the env flag remains an explicit
+  // harness override so dark A/B baselines stay reproducible.
   if (process.env.OFH_BEACHHEAD_LANE === "1") {
     window.localStorage.setItem("ofh:beachheadLane", "1");
+  }
+  if (process.env.OFH_BEACHHEAD_LANE === "0") {
+    window.localStorage.setItem("ofh:beachheadLane", "0");
   }
   // The harness deliberately executes the locally built userscript inside an
   // isolated JSDOM VM. No network or untrusted source is evaluated here.

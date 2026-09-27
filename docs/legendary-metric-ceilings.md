@@ -752,3 +752,16 @@ rows; FFA samReady rows 2 → 4 (first interceptions gained on ffa-n20-04, SAM 3
 4305, and ffa-n4-01, SAM 3628 vs nuke 3687); no win or set-bar regression (failed-set
 deltas on already-losing FFA rows are wall-clock trajectory noise). PASS by the recorded
 criteria; validated with type-check, the full suite, and the new policy fixtures.
+
+## Retake lane default-on (two strictly non-negative eras)
+
+The v4-era condition — enable by default once a full-basket era shows the lane
+strictly non-negative on wins — is now met twice: retake-v4 (4/35 wins, the best
+scoreboard of any era) and sam-early-v2 (the same 4/35 with zero regression).
+Both eras ran with the lane on and rejected 0 across all rows, so the shipped
+gate now defaults the lane ON; localStorage "ofh:beachheadLane"="0" disables it,
+and the headless harness accepts OFH_BEACHHEAD_LANE=0 to pin the dark behavior
+for A/B baselines. Remaining open threads are unchanged: the ffa-n2
+freeze-window silo timing set (tradesSum/vetMax/etSum), the 25mm/FFA win
+deficits, and the ffa-n20 dogpile collapse (conventional annihilation, not a
+nuclear-timing problem).
