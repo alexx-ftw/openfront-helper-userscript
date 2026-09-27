@@ -1006,3 +1006,34 @@ result slot per input unit (null for unprobed entries), keeping the 25-probe
 limit. The regression uses 30 units, verifies aligned null slots, and asserts
 that only 25 probes execute. The row then passed the previous crash tick and
 completed under the declared parallelism-2 protocol.
+
+## Lever pre-declaration: score all tradeable rail partners (2026-09-27, BEFORE any runs)
+
+Candidate: use the game's complete live player list and exact `canTrade`
+semantics when scoring City/Port destinations and existing rail stations.
+This includes remote unembargoed rivals and Bot tribes; it excludes self from
+the foreign list and excludes either-direction embargoes. The rail engine
+selects destinations from the connected cluster, not just territorial
+neighbors. Keep the existing station connectivity, relation weights, and
+construction scorer unchanged.
+
+Baseline: commit `b2c94b3e`, fixed basket
+`basket-2026-09-27-capstrike-half-other-p2` (35 rows). The focused regression
+must show own, allied, remote rival, and Bot City/Port destinations included,
+embargoed players excluded, and only stationed units included in current
+rail-connectivity scoring. If it fails, revert without running the basket.
+
+Run all 35 fixed rows across the existing seven sets at parallelism 2. LAND
+only if no set regresses wins or fullGreens, the median
+`goalRequirements.goldEarned` across the five `ffa-n20` seeds increases over
+baseline, and `ffa-n2-basket-04` remains a win. Otherwise REVERT and record
+the measured result. Gold earned is a whole-match economic proxy, not a
+rail-only causal measure; treat simulator agreement and per-seed rows as
+supporting evidence, not a claim that every added remote route pays out.
+
+Measured result: the focused regression passed and all 35 paired rows completed
+at parallelism 2. `ffa-n20` regressed from 1 win to 0; its median
+`goalRequirements.goldEarned` was unchanged at 1,562,450. The other six sets
+had no wins or fullGreens regressions, and `ffa-n2-basket-04` remained a win
+at 13,171 ticks. The predeclared LAND criteria failed, so the code and bundle
+changes were reverted; this section records the rejected candidate only.
