@@ -913,3 +913,96 @@ repeatedly converted the refrozen surplus into attacks through the late
 game. The n20 collapse remains the open problem; strike counts there were
 not captured (the landed basket predates the counter) and the next n20 era
 should read the new block before touching any threshold.
+
+## Lever pre-declaration: cap-strike payload release for frozen n20 armies (2026-09-27, BEFORE any runs)
+
+Direct telemetry on the freeze-diagnostic row (n20-basket-02 replay, current
+HEAD): armedHighWater=39, attempts=61, launches=0, bot_dead at t=4710. The
+lane ARMS in the n20 freeze but never fires: getForceAttackTroops clamps the
+payload to the surplus over getEarlyGameTargetReserveTroops, which for a
+Nation/Human target holds the FULL army of the strongest OTHER border
+opponent — in a 20-nation freeze that hold covers the whole capped army, so
+every strike is rejected and the bot dies holding the surplus anyway.
+
+Lever (payload release, gate unchanged): inside the cap-strike lane only,
+size the strike against the LIVE acceleration reserve instead of the
+hold-the-border reserve (forceSendAttack gains an options flag consumed by a
+reserve-selection helper; every other caller is unchanged), and require the
+weakest target to be smaller than our army (plausibly winning). Home defense
+is not abandoned: the live reserve and pending-intent accounting still hold,
+incoming defense still owns the decision before the lane, and the strike
+re-arms only after a fresh freeze confirmation.
+
+Variant under test: HEAD (853b505b) + the payload release (attackBehavior.js,
+test delta). Baseline: basket-2026-09-27-cap-strike. Rows: full fixed basket,
+all 7 sets x seeds basket-01..05, unmodified run-basket.mjs protocol,
+parallelism 2. Cheap pre-run signal (diagnostic, not the tanda): the
+n20-basket-02 replay must show launches > 0.
+
+Pre-declared verdict rule (before any variant run): LAND only if (a) no set
+regresses wins or fullGreens vs basket-2026-09-27-cap-strike AND (b) ffa-n20
+improves a primary bar — a win, a fullGreen, or materially longer median
+survival on its losing rows — AND (c) ffa-n2 keeps its basket-04 win.
+Otherwise REVERT and record as a measured dead end. Known ceiling: a released
+payload opens a second front on purpose; if the dogpile punishes it, the loss
+shows up as (a) or (c) and the lane reverts to the reserve-clamped behavior.
+
+### Verdict: REVERTED (2026-09-27, fixed basket, pre-declared rule failed)
+
+Full 35-row run at parallelism 2 (basket-2026-09-27-capstrike-release), scored
+against basket-2026-09-27-cap-strike. The rule failed (b) and (c): ffa-n20 had
+0 wins / 0 fullGreens and losing-row median survival fell 4728→4498 ticks;
+ffa-n2 lost its basket-04 win (1→0, t=29751 win became bot_dead at t=20417).
+All four Team sets stayed byte-identical. The target-strength gate suppressed
+viable n2 strikes: the failed basket row recorded only 1 attempt/launch versus
+the prior winning replay's 55 attempts/51 launches. The single very long n20
+survivor (basket-04: 28751→54601) and n4 median gain (19311→21061) do not
+override the pre-declared failures. The telemetry confirms payload release
+fires (n20-basket-02: 2/2 launches; survival 4710→6411), but that isolated
+gain does not clear the full-set bars.
+
+## Lever pre-declaration: half-retain the other-border reserve for cap strikes (2026-09-27, BEFORE any runs)
+
+Candidate change: keep the target-selection and freeze gates from the landed
+cap-strike lane, remove the unsupported "target troops < own troops" filter
+(the force-attack reserve remains the safety check), and set strike reserve to
+max(live acceleration reserve, 50% of the strongest OTHER border opponent).
+The 0.5 fraction is the existing measured
+`TN_STRATEGIC_RESERVE_FRACTION`; excluding the target avoids double-counting
+the war already being attacked. In a two-nation game there is no other border
+opponent, so the payload matches the old lane that won n2-basket-04; in n20 it
+releases half of the otherwise fully-held threat budget.
+
+Preflight before a full basket: same-seed n20-basket-02 must launch at least
+one strike and survive beyond t=4710; same-seed n2-basket-04 must retain its
+t=29751 win. If either fails, revert without a full basket. If both pass, run
+all 35 rows at parallelism 2.
+
+Pre-declared full-basket verdict rule: LAND only if no set regresses wins or
+fullGreens vs basket-2026-09-27-cap-strike, ffa-n20 improves a primary bar
+(win, fullGreen, or materially longer median survival on losing rows), and
+ffa-n2 retains the basket-04 win. Otherwise REVERT and record a measured dead
+end. Known ceiling: this changes only the reserve against a third-party border
+threat; a strike can still lose to the target's own counter-wave or a multiway
+dogpile.
+
+### Verdict: LAND (2026-09-27, fixed basket, pre-declared rule passed)
+
+The candidate's complete 35-row basket was verified against
+`basket-2026-09-27-cap-strike`: the initial parallelism-2 run recorded 34 rows;
+after fixing the SAM probe alignment bug below, the missing
+`ffa-n20-basket-04` row was rerun at parallelism 2 in the verification basket.
+No set regressed wins or fullGreens. `ffa-n20` improved from 0 to 1 win and its
+median losing-row survival increased from 4728 to 9169 ticks. `ffa-n2` retained
+the `basket-04` win (baseline t=29751; candidate t=13171). The new
+`ffa-n20-basket-04` win finished at t=64881 with cap-strike telemetry:
+armedHighWater=15, attempts=65, launches=35, lastLaunchTick=64873. All 35
+records were present and the pre-declared LAND rule passed.
+
+The initial basket's missing row exposed a shared SAM-upgrade indexing bug:
+`buildableForUnits` capped probes at 25 and also returned only 25 result slots,
+while a consumer indexed against the complete SAM list. It now preserves one
+result slot per input unit (null for unprobed entries), keeping the 25-probe
+limit. The regression uses 30 units, verifies aligned null slots, and asserts
+that only 25 probes execute. The row then passed the previous crash tick and
+completed under the declared parallelism-2 protocol.

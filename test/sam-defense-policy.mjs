@@ -3135,6 +3135,33 @@ assert.equal(
 );
 assert.equal(impactUpgradeResults[1]?.canUpgrade, true);
 assert.equal(impactProbeCalls, 1, "Only the missile-safe upgrade candidate is probed");
+const boundedProbe = Object.create(sandbox.__StructureBehavior.prototype);
+const boundedProbeUnits = Array.from({ length: 30 }, (_, index) => makeUnit(1_000 + index, 1));
+let boundedProbeCalls = 0;
+boundedProbe.tileInsideActiveHostileMissileImpact = () => false;
+boundedProbe.buildableFor = async (_type, tile) => {
+  boundedProbeCalls++;
+  return { canUpgrade: true, tile };
+};
+const boundedProbeResults = await boundedProbe.buildableForUnits(
+  boundedProbeUnits,
+  UNIT.SAMLauncher,
+);
+assert.equal(
+  boundedProbeResults.length,
+  boundedProbeUnits.length,
+  "bounded probes retain one result slot for every input unit",
+);
+assert.equal(
+  boundedProbeResults.slice(25).every((result) => result === null),
+  true,
+  "units beyond the probe budget remain aligned as null results",
+);
+assert.equal(
+  boundedProbeCalls,
+  25,
+  "the aligned result does not expand the bounded worker probe budget",
+);
 placementMissileActive = false;
 impactTick++;
 assert.equal(

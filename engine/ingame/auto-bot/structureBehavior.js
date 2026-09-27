@@ -13283,8 +13283,8 @@
     // Probe a stable unit list with bounded concurrency. Defensive upgrade
     // paths can have many SAMs once hostile silos appear; awaiting every worker
     // request serially turns a slow buildables worker into a visible game hang.
-    // Results retain the input order so the caller's selection/ranking logic is
-    // unchanged.
+    // Results retain full input alignment; unprobed candidates stay null so
+    // callers can index safely against the original unit list.
     async buildableForUnits(units, type, options = {}) {
       const rawCandidates = Array.isArray(units) ? units : [];
       const requestedMaxProbes = Number(options.maxProbes);
@@ -13300,7 +13300,7 @@
       const concurrency = Number.isInteger(requestedConcurrency)
         ? Math.max(1, Math.min(candidates.length, requestedConcurrency))
         : 1;
-      const results = new Array(candidates.length).fill(null);
+      const results = new Array(rawCandidates.length).fill(null);
       let nextIndex = 0;
       const probe = async () => {
         while (true) {

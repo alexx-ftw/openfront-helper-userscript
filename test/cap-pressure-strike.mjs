@@ -43,8 +43,8 @@ function makeBehavior({
   };
   sandbox.state.settings.winFixes = winFixes;
   const strikes = [];
-  behavior.forceSendAttack = async (target, fraction) => {
-    strikes.push({ target, fraction });
+  behavior.forceSendAttack = async (target, fraction, options) => {
+    strikes.push({ target, fraction, options });
     return true;
   };
   behavior.canAttackPlayerNow = () => true;
@@ -86,12 +86,47 @@ function confirmFreeze(behavior, decisions = 6) {
     }),
     true,
   );
-  assert.deepEqual(strikes, [{ target: weak, fraction: 1 }]);
+  // The options literal is created inside the engine's VM realm; compare
+  // fields instead of crossing-realm deep equality.
+  assert.equal(strikes.length, 1);
+  assert.equal(strikes[0].target, weak);
+  assert.equal(strikes[0].fraction, 1);
+  assert.deepEqual({ ...strikes[0].options }, { capStrike: true });
+  const strongerA = makeEnemy(4, 1_700_000);
+  const strongerB = makeEnemy(5, 1_500_000);
+  assert.equal(
+    behavior.capStrikeTarget([strongerA, strongerB]),
+    strongerB,
+    "the live reserve, not an unsupported strength filter, controls safety",
+  );
   // Telemetry contract consumed by scripts/headless/run-match.mts.
   assert.equal(behavior.capStrikeArmedHighWater, 6);
   assert.equal(behavior.capStrikeAttempts, 1);
   assert.equal(behavior.capStrikeLaunches, 1);
   assert.equal(behavior.capStrikeLastLaunchTick, 4242);
+}
+
+// 2b. The strike retains half the strongest OTHER border threat plus the
+// live acceleration reserve, while other forced callers keep the full hold.
+{
+  const behavior = Object.create(sandbox.AttackBehavior.prototype);
+  const holds = [];
+  behavior.getStrongestStrategicBorderOpponentTroopsExcluding = (target) => {
+    holds.push(target);
+    return 1_000;
+  };
+  behavior.getEarlyGameLiveReserveTroops = () => 111;
+  behavior.getEarlyGameTargetReserveTroops = (target) => {
+    holds.push(target);
+    return 999_999;
+  };
+  assert.equal(
+    behavior.capStrikeReserveTroops({ capStrike: true }, "target"),
+    500,
+    "cap-strike retains half the other threat as defense",
+  );
+  assert.equal(behavior.capStrikeReserveTroops(null, "target"), 999_999);
+  assert.deepEqual(holds, ["target", "target"]);
 }
 
 // 3. Growth resets the freeze; a shrinking territory is not frozen either.

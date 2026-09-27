@@ -6584,7 +6584,9 @@
       const weakest = this.capStrikeTarget(context.borderingEnemies);
       if (weakest === null || !this.canAttackPlayerNow(weakest)) return false;
       this.capStrikeAttempts = (Number(this.capStrikeAttempts) || 0) + 1;
-      const launched = await this.forceSendAttack(weakest, 1);
+      const launched = await this.forceSendAttack(weakest, 1, {
+        capStrike: true,
+      });
       if (launched) {
         this.capStrikeLaunches = (Number(this.capStrikeLaunches) || 0) + 1;
         this.capStrikeLastLaunchTick = this.currentAttackDecisionTick();
@@ -9422,12 +9424,30 @@
       return traitors.length > 0 ? this.random.randElement(traitors) : null;
     }
 
-    getForceAttackTroops(target, fraction, isTerraNullius) {
+    // WIN-FIX (cap-strike payload release): holding the FULL strongest OTHER
+    // border army in a frozen 20-nation endgame starved every strike
+    // (measured: armed 39, 61 attempts, 0 launches, bot_dead holding surplus).
+    // Retain the existing half-threat floor used by Terra Nullius expansion,
+    // plus the live acceleration reserve; other forced attacks keep their
+    // full target reserve. Excluding the target avoids charging its army
+    // twice: once as the strike target and again as a separate border threat.
+    capStrikeReserveTroops(options, target) {
+      if (options?.capStrike === true) {
+        return Math.max(
+          this.getEarlyGameLiveReserveTroops(),
+          this.getStrongestStrategicBorderOpponentTroopsExcluding(target) *
+            TN_STRATEGIC_RESERVE_FRACTION,
+        );
+      }
+      return this.getEarlyGameTargetReserveTroops(target);
+    }
+
+    getForceAttackTroops(target, fraction, isTerraNullius, options = null) {
       const requestedTroops = this.player.troops() * Number(fraction);
       const reserveTroops =
         isTerraNullius && state.settings.winFixes
           ? this.getEarlyGameTerraNulliusReserveTroops()
-          : this.getEarlyGameTargetReserveTroops(target);
+          : this.capStrikeReserveTroops(options, target);
       const spendableTroops = this.getEarlyGameSpendableTroops(reserveTroops);
       const requestedFraction = Number(fraction);
       const openingFraction =
@@ -9469,7 +9489,7 @@
 
     // forceSendAttack — AiAttackBehavior (now async only by signature; nationExecution
     // awaits it. No worker calls — a land/TN attack at half troops).
-    async forceSendAttack(target, fraction = 0.5) {
+    async forceSendAttack(target, fraction = 0.5, options = null) {
       // src: game.addExecution(new AttackExecution(troops/2, player,
       //   target.isPlayer() ? target.id() : terraNullius().id())).
       // Client: emitIntent(ctors.attack, target.id()|null, troops). In win-fix
@@ -9480,7 +9500,12 @@
       const ctors = discoverCtors(getEventBus());
       const isTerraNullius = target?.isPlayer?.() !== true;
       if (!this.canForceAttackTarget(target)) return false;
-      const troops = this.getForceAttackTroops(target, fraction, isTerraNullius);
+      const troops = this.getForceAttackTroops(
+        target,
+        fraction,
+        isTerraNullius,
+        options,
+      );
       if (troops < 1) return false;
       return this.emitForcedAttackIntent(ctors, target, troops);
     }
