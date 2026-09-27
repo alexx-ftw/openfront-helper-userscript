@@ -1037,3 +1037,63 @@ at parallelism 2. `ffa-n20` regressed from 1 win to 0; its median
 had no wins or fullGreens regressions, and `ffa-n2-basket-04` remained a win
 at 13,171 ticks. The predeclared LAND criteria failed, so the code and bundle
 changes were reverted; this section records the rejected candidate only.
+
+## Lever pre-declaration: emergency interceptor bypass for the first-SAM reserve (2026-09-27, BEFORE any runs)
+
+The half-retain cap-strike era left `ffa-n20` at 1 win; its four losing rows
+die at t=2684/4594/13744/14304 to multi-front naval-land dogpiles (6-16
+recorded beachheads each, 0-2 recaptured). Row anatomy from the fixed basket:
+`ffa-n20-basket-01` built its Port at t=2641 and then built ZERO Warships
+despite nine hostile landings from t~3395 — the completed-hostile-silo
+first-SAM hard reserve (`shouldDeferWarshipForFirstSam`) held the
+construction slot from the first hostile nuke (t=3718) while the frozen
+economy could never reach the launcher price. The reserve's own affordability
+escape only covers the rich side (gold > 3x SAM cost); the poor side has no
+exit, and the warship the coast needed costs less than the SAM that never
+arrives. `basket-05` died at t=2684 before any Port could exist and
+`basket-03` never built a Port at all — the reserve is not their binding
+constraint, so any gain must come from the rows where a Port does exist.
+
+Lever: allow the LIVE uncovered-invasion interceptor build only
+(`tryEmitWarshipBuild` purpose `interception`) to bypass the first-SAM defer
+while the SAM cannot be placed this tick (`spendableConstructionGold()` <
+`safeConstructionCost(SAM)`). The predicate is
+`structureBehavior.emergencyInterceptorMayBypassFirstSamReserve`; every other
+purpose (initial, raiding, retaliation, counter) keeps the old contract, and
+the reserve wins again the moment the treasury can place the launcher.
+Focused regression added to warship-micro (bypass fires only for
+interception-with-unplaceable-SAM; non-interception purposes still defer).
+Full suite, type-check, and build green before any run.
+
+Preflight (diagnostic, NOT the tanda): same-seed replay `ffa-n20-basket-01`
+must record at least one Warship construction event before its baseline death
+tick (4594). If no interceptor is even attempted (port completion, planner
+geometry, or affordability never engage), the mechanism hypothesis is wrong —
+REVERT without running the basket.
+
+Rows: full fixed basket, all 7 sets x seeds basket-01..05, unmodified
+run-basket.mjs protocol, parallelism 2. Baseline:
+`basket-2026-09-27-capstrike-half-other-p2`.
+
+Pre-declared full-basket verdict rule: LAND only if (a) no set regresses wins
+or fullGreens vs the baseline; (b) `ffa-n20` improves a primary bar — a win,
+a fullGreen, or the median of its losing-row ticks rises >=15% (baseline
+losing rows 2684/4594/13744/14304, median 9169, so >=10545); and (c)
+`ffa-n2` keeps its basket-04 win. Otherwise REVERT and record a measured
+dead end. Known ceiling: one 250k-class interceptor per live uncovered
+invasion cannot stop a 40%-army land wave by itself; the lever only claims
+to stop free naval landings during the SAM saving window.
+
+### Verdict: REVERTED AT PREFLIGHT (2026-09-27, mechanism never engaged)
+
+The same-seed ffa-n20-basket-01 replay with the bypass reproduced the
+baseline byte-for-byte: death at t=4594, identical construction ticks
+(City 909/4207/4260, Defense Post 1390, Port 2641), ZERO Warship
+construction events, cap-strike armed 6 / attempts 3 / launches 3 /
+last launch 2767. The interceptor-build lane did not attempt a single
+build even before the hostile silo existed, so the first-SAM reserve was
+never this row's binding gate — the emergency build planner rejects the
+invasion geometry upstream (ETA/feasibility) and the bypass had no caller.
+Per the pre-declared rule: engine and test changes reverted, no basket run.
+The reserve keeps its standing contract; the ffa-n20 collapse needs the
+upstream interceptor-build feasibility problem addressed first.
