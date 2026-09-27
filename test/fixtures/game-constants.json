@@ -19998,5 +19998,25 @@
     "initializerHash": "fca1e830ff83e0278daac33d4b17739eba9851a990d39eb754f31ec24f34249a",
     "initializerLength": 701,
     "initializerPreview": "{\n    batchSize: { env: \"TELEMETRY_BATCH_SIZE\", fallback: 200 },\n    flushIntervalMs: { env: \"TELEMETRY_FLUSH_INTERVAL_MS\", fallback: 1000 },\n    requestTimeoutMs: { env: \"TELEMETRY_REQUEST_TIMEOUT_MS\", fallback: 5000 },\n    maxQueueSize..."
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:CAP_STRIKE_TROOP_RATIO#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "CAP_STRIKE_TROOP_RATIO",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "8139b33952401b3ee0e2ca84651cb9a1d7f66d442bf908f9cf1f53ea746e5801",
+    "initializerLength": 3,
+    "initializerPreview": "0.9"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:CAP_STRIKE_CONFIRM_DECISIONS#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "CAP_STRIKE_CONFIRM_DECISIONS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "e7f6c011776e8db7cd330b54174fd76f7d0216b612387a5ffcfb81e6f0919683",
+    "initializerLength": 1,
+    "initializerPreview": "6"
   }
 ]

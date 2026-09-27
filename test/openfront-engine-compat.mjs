@@ -23,13 +23,14 @@ assert.match(modules, /branch = main/u);
 
 const gitlink = git(["ls-files", "--stage", "--", "openfront-engine"]);
 assert.match(gitlink, /^160000 [0-9a-f]{40} 0\s+openfront-engine$/u);
+const pinnedGitlink = gitlink.split(/\s+/u)[1];
 assert.equal(
   git(["-C", engineDirectory, "remote", "get-url", "origin"]),
   "https://github.com/openfrontio/openfrontio",
 );
 assert.equal(
   git(["-C", engineDirectory, "rev-parse", "HEAD"]),
-  git(["-C", engineDirectory, "rev-parse", "refs/remotes/origin/main"]),
+  pinnedGitlink,
 );
 assert.equal(git(["-C", engineDirectory, "status", "--porcelain"]), "");
 

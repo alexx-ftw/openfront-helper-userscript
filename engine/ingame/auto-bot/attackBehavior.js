@@ -205,6 +205,13 @@
   const LEGENDARY_TRIBE_CAPTURE_TROOP_MULTIPLIER = 2.5;
   const PLAYER_CAPTURE_TROOP_MULTIPLIER = 4;
   const EXPANSION_BREAKOUT_CONFIRM_DECISIONS = 2;
+  // Cap-pressure strike: when the army is pinned at the population cap and
+  // the territory has stopped growing for several Legendary-cadence decisions
+  // (~30-50 ticks each), every ordinary lane is idle and the surplus is dead
+  // weight. Confirm the freeze before striking so a temporary cap during a
+  // normal war does not open a second front.
+  const CAP_STRIKE_TROOP_RATIO = 0.9;
+  const CAP_STRIKE_CONFIRM_DECISIONS = 6;
   // Once aggregate hostile incoming troops match our whole current army, a
   // counterattack removes the exact troops needed at home while still failing
   // to cover the simultaneous invasion. Keep that projected defense budget
@@ -3214,6 +3221,7 @@
       const context = profileAttackSync(profile, "attack-context", () =>
         this.createAttackDecisionContext());
       this.updateExpansionBreakoutState(context);
+      this.updateCapPressureStrikeState();
       let acted = false;
       if (state.settings.winFixes) {
         const defense = await profileAttackAsync(
@@ -3260,6 +3268,10 @@
       }
       await profileAttackAsync(profile, "attack-ordinary", () =>
         this.runOrdinaryAttackPolicies(context, profile));
+      // Last resort: every lane above declined to act. Reaching this point
+      // with a frozen at-cap army is the attackTargets=∅ telemetry signature.
+      await profileAttackAsync(profile, "attack-cap-strike", () =>
+        this.maybeCapPressureStrike(context));
     }
 
     // Opening Terra Nullius liveness runs more frequently than the strategic
@@ -6517,6 +6529,69 @@
         this.expansionBreakoutEmptyDecisions >=
           EXPANSION_BREAKOUT_CONFIRM_DECISIONS;
       return this.expansionBreakoutActive;
+    }
+
+    capStrikeMaxTroops() {
+      // Minimal harnesses (early-game probes) provide no config(); a missing
+      // cap must CLOSE the lane, never arm it.
+      return Number(this.game?.config?.().maxTroops?.(this.player)) || 0;
+    }
+
+    updateCapPressureStrikeState() {
+      const tiles = Number(this.player?.numTilesOwned?.()) || 0;
+      const ownTroops = Number(this.player?.troops?.()) || 0;
+      const maximum = this.capStrikeMaxTroops();
+      const atCap = maximum > 0 && ownTroops / maximum >= CAP_STRIKE_TROOP_RATIO;
+      const frozen = tiles > 0 && tiles === this.capStrikeLastTiles;
+      this.capStrikeLastTiles = tiles;
+      this.capStrikeFrozenDecisions =
+        atCap && frozen ? (Number(this.capStrikeFrozenDecisions) || 0) + 1 : 0;
+      return this.capStrikeFrozenDecisions;
+    }
+
+    capPressureStrikeIsArmed() {
+      return (
+        state.settings.winFixes === true &&
+        this.isFFA() &&
+        (Number(this.capStrikeFrozenDecisions) || 0) >= CAP_STRIKE_CONFIRM_DECISIONS
+      );
+    }
+
+    capStrikeTarget(borderingEnemies) {
+      let weakest = null;
+      for (const enemy of borderingEnemies ?? []) {
+        if (enemy?.isPlayer?.() !== true) continue;
+        if (enemy.isAlive?.() === false) continue;
+        if (weakest === null || enemy.troops() < weakest.troops()) weakest = enemy;
+      }
+      return weakest;
+    }
+
+    // WIN-FIX (cap-strike) — NOT in src. A frozen at-cap army with no
+    // actionable ordinary target dies holding its surplus (measured:
+    // ffa-n20 basket-02 pinned 1.37M troops for ~2100 ticks, then lost to
+    // massed waves). Strike the weakest bordering enemy with the surplus over
+    // its defensive reserve. forceSendAttack clamps to that surplus, so the
+    // lane fails safe when the reserve covers the whole army. FFA only: Team
+    // rows keep the win-pacing commerce stall authoritative. Talented
+    // teammates are never targets (borderingEnemies excludes friendly).
+    async maybeCapPressureStrike(context) {
+      if (!context.expandOn || !this.capPressureStrikeIsArmed()) return false;
+      const weakest = this.capStrikeTarget(context.borderingEnemies);
+      if (weakest === null || !this.canAttackPlayerNow(weakest)) return false;
+      const launched = await this.forceSendAttack(weakest, 1);
+      if (launched) this.logCapStrikeLaunch(weakest);
+      return launched;
+    }
+
+    logCapStrikeLaunch(weakest) {
+      if (typeof runtimeDebugLog !== "function") return;
+      runtimeDebugLog("[CapStrike] frozen at-cap army strikes weakest border", {
+        target: weakest.name?.() ?? weakest.smallID?.(),
+        targetTroops: Math.max(0, Number(weakest.troops?.()) || 0),
+        ownTroops: Math.max(0, Number(this.player?.troops?.()) || 0),
+        frozenDecisions: Number(this.capStrikeFrozenDecisions) || 0,
+      });
     }
 
     randomBoatTroops(isTerraNullius) {

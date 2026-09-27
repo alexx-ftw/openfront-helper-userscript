@@ -849,3 +849,53 @@ wins or fullGreens; both team-economy trades bars improved:
 Landed as the new placement baseline. Next lever remains the cap-pressure
 strike lane above; this lever does not touch the FFA collapse (it only made
 the n20 lane trade richer while dying to the same dogpile).
+
+## Lever pre-declaration: cap-pressure strike lane (2026-09-27, BEFORE any runs)
+
+The candidate lever named above (freeze diagnosis, basket-02 t1589-3700) is
+now implemented as its own gated era. Lane: FFA-only, winFixes-gated, and it
+runs ONLY after every ordinary attack strategy declined (the measured
+attackTargets=∅ signature). Activation needs the owned-tile count flat AND
+troops ≥ 90% of maxTroops across six consecutive Legendary-cadence attack
+decisions (~180-300 ticks, inside the measured ~2100-tick freeze). Target: the
+weakest bordering non-friendly player regardless of the ordinary weakness
+ratios (never friendly/teammates — excluded by the bordering filter). Payload:
+forceSendAttack(target, 1), clamped by getForceAttackTroops to the surplus over
+the target's defensive reserve, so the lane fails safe when the reserve covers
+the whole army. Defensive posture is untouched: a critical incoming attack
+still owns the decision before this lane (existing respondToIncomingAttack
+early return).
+
+Variant under test: HEAD (e5355a03) + the lane above (attackBehavior.js,
+PORT-CONTRACT seam note, focused test/cap-pressure-strike.mjs). Baseline:
+basket-2026-09-27-foreign-port-distance (the LANDED lever above; HEAD is that
+variant plus docs). Rows: the full fixed basket, all 7 sets x seeds
+basket-01..05, unmodified run-basket.mjs protocol, parallelism 2.
+
+Pre-declared verdict rule (before any variant run): LAND only if (a) no set
+regresses wins or fullGreens vs the foreign-port-distance baseline AND (b) at
+least one FFA set (n20/n2/n4) improves a primary bar — a win, a fullGreen, or
+materially longer median survival on its losing rows. Otherwise REVERT and
+record as a measured dead end. Known ceiling: the lane converts wasted
+troop-seconds into a second front but cannot fix the count-scaled construction
+ladder or the equilibrium that made every neighbor stronger; a dogpile loss
+can still follow a clean strike, which is what bar (b) survival/wins measures.
+
+### Verdict: LANDED (2026-09-27, fixed basket, pre-declared rule met)
+
+Full 35-row run at parallelism 2 (basket-2026-09-27-cap-strike), scored
+against basket-2026-09-27-foreign-port-distance. (a) No set regressed wins or
+fullGreens; all four team sets byte-identical trajectories and scores.
+(b) ffa-n2 improved the primary bar: first-ever n2 WIN — basket-04 flipped
+from a t=42771 loss (Whiskey wins; bot collapses 188k→74k tiles, leader rank 1
+at death) to a t=29751 win (bot eats Whiskey, 297k tiles, 79% max territory
+share, closeout t=13700) — and n2 lost zero rows to bot_death (baseline: one
+bot_dead at t=10061). n20/n4: identical 0 wins / 0 fullGreens; n20 lost-row
+survival mixed (basket-04 19823→28751, basket-05 58131→30729 still a win),
+n20 tradesSum 63→58 (outside this rule's bars; recorded). Caveat: the basket
+schema does not yet export a cap-strike counter, so the strike itself is
+confirmed only indirectly (the seed's role reversal matches the lane's
+mechanism; runtimeDebugLog's ring buffer is not dumped by the harness). The
+one-seed n2 win may still be variance — the lane earns its keep as
+death-to-closeout conversion, and a follow-up era should add the strike
+counter to the results schema before tuning any threshold.

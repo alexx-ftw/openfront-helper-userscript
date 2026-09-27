@@ -231,6 +231,18 @@ retaliation before a pending outbound intent can consume the tick. If the
 defensive intent cannot emit, offensive troop spending remains blocked for that
 decision.
 
+When `state.settings.winFixes` is enabled in FFA, a frozen at-cap army may
+force one land attack as the LAST policy in `maybeAttack()`, after every
+ordinary strategy declined (the attackTargets=∅ signature). Frozen means the
+owned-tile count stayed flat while troops sat at ≥ 90% of maxTroops across six
+consecutive Legendary-cadence attack decisions (~30-50 ticks each). The target
+is the weakest bordering non-friendly player regardless of the ordinary
+weakness ratios; the payload is `forceSendAttack(target, 1)`, which clamps to
+the surplus over that target's defensive reserve, so the lane fails safe when
+the reserve covers the whole army. Team mode never arms the lane: the
+commerce-stall win pacing stays authoritative there, and friendly/teammate
+players are excluded by the bordering-enemy filter by construction.
+
 When `state.settings.winFixes` is enabled, `AttackBehavior.maybeAttack()` has a
 documented policy seam before the existing bot/Terra Nullius fallback. It may
 enrich only nearby non-friendly `PlayerType.Bot` tribes with bounded border
