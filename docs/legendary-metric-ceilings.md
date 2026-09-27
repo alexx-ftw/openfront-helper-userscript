@@ -765,3 +765,41 @@ for A/B baselines. Remaining open threads are unchanged: the ffa-n2
 freeze-window silo timing set (tradesSum/vetMax/etSum), the 25mm/FFA win
 deficits, and the ffa-n20 dogpile collapse (conventional annihilation, not a
 nuclear-timing problem).
+
+## ffa-n20 collapse anatomy (measured; diagnosis era)
+
+OFH_LOG_STRUCTURES on ffa-n20-basket-05 (11190-tick fork of the 2684-tick v2
+death) gives the first full arc of the dogpile collapse:
+
+1. Expansion ends at t≈1600 with ~33k tiles; territory is then FLAT for 2000+
+   ticks while 105-124 attack intents fire — the no-weaker-neighbor freeze, now
+   measured from the midgame rather than only in endgame freeze-wars.
+2. The army sits pinned at maxTroops the whole time (1.366M/1.371M at t=2957,
+   1.6349M/1.6352M at t=3573): every further troop-second is wasted production.
+3. Count-scaled prices turn the midgame into a one-building-per-~1000-tick
+   queue: City 250k (t=1543), Port 250k (t=2403), City 500k (t=3573) with
+   ~290-430 gold/tick income and only 2 Cities + 1 Port on 33k tiles. The
+   planner's answer during these windows is a repeated Wait targeting the next
+   500k-1M asset (legendary-action-groups: [[Wait],[Wait]] for 1200+ ticks).
+4. t=3702: Xinjiang (the nation that had kept conquering) attacks with a 733k
+   wave — 40%+ of our pinned army — then re-attacks in 200-500k waves every
+   ~50 ticks. The first wave is held (land-defense result True, own 1.73M →
+   975k), but the attrition race is lost: own 208k by t=4274 while waves keep
+   coming, then the dogpile finish (Gansu 686k + Xinjiang 540k at t=4380).
+
+Why this is not yet a fix: the losing asymmetry is equilibrium-breaking, not a
+single gate. Conquest captures Cities without paying the count-scaled ladder,
+so the nations that keep conquering out-income the freeze; our doctrine
+(every attack lane requires a weaker neighbor) is exactly what enforces the
+freeze. Candidate next-era lever: a cap-pressure strike lane — while troops are
+pinned at cap and the planner is in a Wait state, attack the weakest BORDERING
+nation with the surplus (or its boats), converting wasted troop-seconds into
+territory/City capture before the strongest neighbor breaks the equilibrium on
+its own terms. This needs its own attack-lane authorization data
+(OFH_LOG_INTENTS on the n20 rows) and carries real team-game regression risk,
+so it must enter as its own gated, basket-measured era — the same protocol the
+retake lane followed.
+
+Trace infrastructure added this era: the legendary-action-groups trace now
+records each Wait's shortfall so the next diagnosis does not need to infer the
+savings target from construction timestamps.

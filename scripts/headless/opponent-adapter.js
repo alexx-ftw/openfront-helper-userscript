@@ -953,7 +953,12 @@ export class BundledOpponentBot {
           kind: "legendary-action-groups",
           tick: this.game.ticks(),
           groups: (groups || []).map((group) =>
-            (group || []).map((candidate) => candidate?.type ?? null),
+            (group || []).map((candidate) => ({
+              type: candidate?.type ?? null,
+              shortfall: candidate?.shortfall !== undefined
+                ? String(candidate.shortfall)
+                : undefined,
+            })),
           ),
         });
         return groups;
