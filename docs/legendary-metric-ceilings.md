@@ -516,7 +516,6 @@ transferable. FFA re-baselined on the new engine: 0/5, with basket-03 a
 single-column near-miss (fails only `won` at 20.5k ticks, 158 trades /
 116 kills / 20.2M nuked / best economy / 0 boats / 0 ownN).
 
-
 ## 2026-09-11 round — regression bisect, parity restoration, honest re-baseline
 
 Commits e80a4ba6 (transport-scan robustness, 1.12.179), b87ce1cc (fixed-basket
@@ -803,3 +802,50 @@ retake lane followed.
 Trace infrastructure added this era: the legendary-action-groups trace now
 records each Wait's shortfall so the next diagnosis does not need to infer the
 savings target from construction timestamps.
+
+## Lever pre-declaration: foreign-port route distance in portValue (2026-09-27, BEFORE any runs)
+
+Candidate 1 from the train/trade mechanics audit (ChatGPT conversation
+"Destinos de trenes en OpenFront", claims verified line-by-line against
+openfront-engine): trade-ship gold is a steeply increasing function of route
+distance (sigmoid midpoint at the 300-tile tradeShipShortRangeDebuff, plus
+50 gold/tile, paid identically to source and destination owners), yet
+portValue() scored only own-port spacing and rail reach — it was blind to the
+foreign end of the route, which is exactly where the "superport" income in
+online lobbies comes from. The lever adds a bounded bonus for distance to the
+nearest tradeable foreign open-ocean port (foreignOceanPortTiles /
+foreignOceanDistanceBonus in structureBehavior.js, capped at the 300-tile
+debuff; embargoed, lake, and under-construction ports excluded; Bot tribes
+included, matching PortExecution.tradingPorts).
+
+Variant under test: HEAD (c801c0b5) + the lever above (docs delta only
+otherwise). Build validated: focused sam-defense-policy assertions, full
+npm test chain (exit 0), build regenerated. Baseline:
+basket-2026-09-27-sam-early-v2 (same bot code; its commit is docs-only).
+Rows: the full fixed basket, all 7 sets x seeds basket-01..05, unmodified
+run-basket.mjs protocol, parallelism 2.
+
+Pre-declared verdict rule (before any variant run): LAND only if no set
+regresses wins or fullGreens vs baseline AND team trade income improves
+(tradesSum rises in team-none or team-temp, or a team set gains a fullGreen
+or win); otherwise REVERT and record as a measured dead end. Known ceiling:
+placement can only shift WHERE ports go, not spawn cadence, and cannot touch
+the 25MM/FFA collapses documented above — this lever targets team-economy
+income, not those failure modes.
+
+### Verdict: LANDED (2026-09-27, fixed basket, pre-declared rule met)
+
+Full 35-row run at parallelism 2 (basket-2026-09-27-foreign-port-distance),
+scored against the v2 baseline under the Amendment-4 scorer. No set regressed
+wins or fullGreens; both team-economy trades bars improved:
+
+- team-none tradesSum 77 -> 96 (+25%), wins 2/5, fullGreens 1/5 (unchanged)
+- team-temp tradesSum 40 -> 46 (+15%), wins 1/5, fullGreens 1/5 (unchanged)
+- team-5mm / team-25mm: byte-stable trajectories, identical scores
+- ffa-n20 (outside the rule, recorded): tradesSum 24 -> 63 (+162%), vetMax
+  false -> true; n20-basket-01 survived 37331 -> 58131 ticks, still a loss
+- ffa-n2 / ffa-n4: identical scores
+
+Landed as the new placement baseline. Next lever remains the cap-pressure
+strike lane above; this lever does not touch the FFA collapse (it only made
+the n20 lane trade richer while dying to the same dogpile).

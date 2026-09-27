@@ -14106,6 +14106,19 @@
       const railState = this.readRailroadState(this.game);
       const minRangeSquared = config.trainStationMinRange() ** 2;
       const stationRangeSquared = config.trainStationMaxRange() ** 2;
+      // Trade-ship gold is a steeply increasing function of route distance
+      // (Config.tradeShipGold: sigmoid midpoint at the 300-tile short-range
+      // debuff, plus 50 gold/tile), and a completed ship pays its source and
+      // destination owners identically. Prefer coastal sites far from
+      // tradeable foreign open-ocean ports. PortExecution.tradingPorts allows
+      // ANY canTrade player (bots included), so the filter is plain
+      // shimCanTrade — not the rail-only isTradeableStationNeighbor, which
+      // also excludes Bot tribes. game.isOceanShore marks the canonical
+      // open-ocean coastline; lake ports are unreachable from an ocean port
+      // and are excluded when the predicate exists.
+      const foreignDistanceBonus = this.foreignOceanDistanceBonus(
+        this.foreignOceanPortTiles(),
+      );
 
       return (tile) => {
         let w = 0;
@@ -14114,6 +14127,9 @@
         const closestOtherDist = nearestOther(tile);
         // No existing Port means no spacing preference, not infinite value.
         if (Number.isFinite(closestOtherDist)) w += closestOtherDist;
+        if (foreignDistanceBonus !== null) {
+          w += foreignDistanceBonus(tile);
+        }
 
         w += this.commercialRailPlacementScore(
           tile,
@@ -14124,6 +14140,67 @@
         );
 
         return w;
+      };
+    }
+
+    // Tradeable foreign ports whose water reaches an ocean port: the far end
+    // of every ship route we can send or receive. PortExecution.tradingPorts
+    // allows ANY canTrade player (bots included), so the filter is plain
+    // shimCanTrade — not the rail-only isTradeableStationNeighbor, which also
+    // excludes Bot tribes. game.isOceanShore marks the canonical open-ocean
+    // coastline; lake ports are unreachable from an ocean port and are
+    // excluded when the predicate exists.
+    foreignOceanPortTiles() {
+      const tiles = [];
+      for (const owner of this.tradeableForeignPortOwners()) {
+        for (const port of owner.units?.(UNIT.Port) ?? []) {
+          const portTile = this.oceanPortTile(port);
+          if (portTile !== null) tiles.push(portTile);
+        }
+      }
+      return tiles;
+    }
+
+    tradeableForeignPortOwners() {
+      const owners = [];
+      const mySid = this.player?.smallID?.();
+      for (const other of this.game.players?.() ?? []) {
+        if (!other || (mySid !== undefined && other?.smallID?.() === mySid)) continue;
+        if (!shimCanTrade(this.player, other)) continue;
+        owners.push(other);
+      }
+      return owners;
+    }
+
+    oceanPortTile(port) {
+      if (port?.isUnderConstruction?.()) return null;
+      const portTile = port?.tile?.();
+      if (portTile === null || portTile === undefined) return null;
+      if (
+        typeof this.game.isOceanShore === "function" &&
+        !this.game.isOceanShore(portTile)
+      ) {
+        return null;
+      }
+      return portTile;
+    }
+
+    // Trade-ship gold is a steeply increasing function of route distance
+    // (Config.tradeShipGold: sigmoid midpoint at the short-range debuff, plus
+    // 50 gold/tile), and a completed ship pays its source and destination
+    // owners identically. One debuff-length route already banks the whole
+    // sigmoid; beyond it only the linear term grows, so the bonus is capped
+    // at the debuff distance to keep it from outweighing rail placement.
+    // Null keeps the legacy score untouched (no foreign ports, or an older
+    // client without the config hook).
+    foreignOceanDistanceBonus(foreignPortTiles) {
+      if (foreignPortTiles.length === 0) return null;
+      const cap = Number(this.game.config()?.tradeShipShortRangeDebuff?.() ?? NaN);
+      if (!Number.isFinite(cap) || cap <= 0) return null;
+      const nearest = this.nearestTileDistanceScorer(foreignPortTiles, true);
+      return (tile) => {
+        const dist = nearest(tile);
+        return Number.isFinite(dist) ? Math.min(dist, cap) : 0;
       };
     }
 

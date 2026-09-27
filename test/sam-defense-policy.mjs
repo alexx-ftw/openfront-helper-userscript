@@ -154,6 +154,75 @@ assert.ok(
     "real empty-Port geometry preserves commercial placement preferences",
   );
 }
+{
+  // Foreign open-ocean route distance: candidates on the same column differ
+  // only by their distance to the foreign port, so the score gap isolates the
+  // new term. tradeShipShortRangeDebuff caps it at 300.
+  const makePlayer = (id, ports, embargoed) => ({
+    id: () => id,
+    smallID: () => id,
+    isPlayer: () => true,
+    hasEmbargoAgainst: () => Boolean(embargoed),
+    units: (type) => (type === UNIT.Port ? ports : []),
+  });
+  const oceanPort = (tile) => ({
+    tile: () => tile,
+    isUnderConstruction: () => false,
+  });
+  const buildingPort = (tile) => ({
+    tile: () => tile,
+    isUnderConstruction: () => true,
+  });
+  const foreignGame = {
+    ...commercialRailBehavior.game,
+    players: () => [],
+    isOceanShore: (tile) => tile === 3_000,
+    railroadState: () => commercialRailState,
+    config: () => ({
+      ...commercialRailBehavior.game.config(),
+      tradeShipShortRangeDebuff: () => 300,
+    }),
+  };
+  const makeForeignBehavior = (owners) => {
+    const behavior = Object.create(sandbox.__StructureBehavior.prototype);
+    behavior.game = {
+      ...foreignGame,
+      players: () => owners,
+    };
+    behavior.player = {
+      units: () => [],
+      smallID: () => 1,
+      id: () => 1,
+      hasEmbargoAgainst: () => false,
+    };
+    behavior.getOrBuildReachableStations = () => [];
+    behavior.getOrBuildFactoryTradeDestinations = () => [];
+    return behavior;
+  };
+  const nearCandidate = 3_500; // manhattan distance 5 from the ocean port at (0,30)
+  const farCandidate = 9_900; // manhattan distance 69 from the ocean port
+  const tradingValue = makeForeignBehavior([
+    makePlayer(2, [
+      oceanPort(3_000),
+      buildingPort(5_005),
+      oceanPort(6_060), // excluded below by the lake predicate
+    ]),
+  ]).portValue();
+  assert.ok(
+    tradingValue(farCandidate) > tradingValue(nearCandidate),
+    "Ports prefer coastal sites far from tradeable foreign open-ocean ports",
+  );
+  const unreachableOnly = makeForeignBehavior([
+    makePlayer(2, [buildingPort(3_000), oceanPort(6_060)]),
+    makePlayer(3, [oceanPort(3_000)], true),
+  ]).portValue();
+  const noForeign = makeForeignBehavior([]).portValue();
+  assert.equal(
+    unreachableOnly(farCandidate),
+    noForeign(farCandidate),
+    "under-construction, lake, and embargoed foreign ports do not shift Port placement",
+  );
+}
 assert.ok(
   factoryCommercialValue(1_050) > factoryCommercialValue(9_999),
   "Factories always prefer a reachable commercial destination, including on Easy",
