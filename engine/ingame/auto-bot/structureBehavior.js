@@ -980,12 +980,24 @@
       if (!placedSilo && !preemptiveHostileSiloRisk) return null;
 
       if (this.shouldBuildSiloTriggeredSam() || preemptiveHostileSiloRisk) {
-        return this.handleTriggeredHostileSiloSam(builtHostileSilo);
+        const mode = String(
+          this.game.config()?.gameConfig?.()?.gameMode ?? "",
+        );
+        // Unknown/legacy configs keep the team contract: only an explicit
+        // free-for-all mode hoards during the forecast window.
+        const ffaMode = mode !== "" && mode !== "Team";
+        return this.handleTriggeredHostileSiloSam(
+          builtHostileSilo,
+          ffaMode && preemptiveHostileSiloRisk,
+        );
       }
       return this.handleBuiltHostileSiloSamUpgrade();
     }
 
-    async handleTriggeredHostileSiloSam(builtHostileSilo) {
+    async handleTriggeredHostileSiloSam(
+      builtHostileSilo,
+      ffaPreemptiveHostileSiloRisk = false,
+    ) {
       // Try to preempt a soon-affordable hostile launcher, but only a completed
       // hostile Silo may reserve every construction slot. A forecast or
       // launcher still under construction cannot freeze a poor one-City
@@ -1002,7 +1014,12 @@
         // Preserve the one-income-site bootstrap, then reserve every partial
         // fund for the first SAM. Spending repeatedly on cheaper structures
         // after a Silo appears resets the launcher runway indefinitely.
-      return this.shouldReserveTriggeredHostileSiloSamBudget(builtHostileSilo)
+      // In FFA, reserve the first interceptor during the existing half-silo
+      // gold warning window. Teams retain the completed-silo reserve because
+      // third-party launches already provide an earlier defense signal.
+      return this.shouldReserveTriggeredHostileSiloSamBudget(
+        builtHostileSilo || ffaPreemptiveHostileSiloRisk,
+      )
         ? false
         : null;
     }
@@ -3560,7 +3577,10 @@
       if (ownSam === null || ownSam.count >= this.samSiteCountTarget()) {
         return false;
       }
-      return this.hasPlacedSiloOnMap() || this.shouldBuildHostileSiloSam();
+      return (
+        this.hasPlacedSiloOnMap() ||
+        this.shouldBuildHostileSiloSam()
+      );
     }
 
     /**

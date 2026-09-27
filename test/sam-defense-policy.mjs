@@ -1538,6 +1538,25 @@ assert.equal(
   "an unaffordable preemptive SAM forecast does not starve an opening economy before a Silo exists",
 );
 
+const ffaPreemptiveReserveBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+ffaPreemptiveReserveBehavior.game = {
+  config: () => ({
+    isUnitDisabled: () => false,
+    gameConfig: () => ({ gameMode: "Free For All" }),
+  }),
+};
+ffaPreemptiveReserveBehavior.hasPlacedSiloOnMap = () => false;
+ffaPreemptiveReserveBehavior.hasBuiltHostileSiloThreat = () => false;
+ffaPreemptiveReserveBehavior.shouldBuildHostileSiloSam = () => true;
+ffaPreemptiveReserveBehavior.shouldBuildSiloTriggeredSam = () => false;
+ffaPreemptiveReserveBehavior.maybeSpawnHostileSiloSam = async () => false;
+ffaPreemptiveReserveBehavior.shouldReserveHostileSiloSamBudget = () => true;
+assert.equal(
+  await ffaPreemptiveReserveBehavior.handleHostileSiloSamMaximumPriority(),
+  false,
+  "an explicit FFA forecast reserves the first-SAM fund during the hostile silo saving window",
+);
+
 const pendingSiloPriorityBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 pendingSiloPriorityBehavior.game = {
   config: () => ({ isUnitDisabled: () => false }),

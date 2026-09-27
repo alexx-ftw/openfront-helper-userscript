@@ -726,3 +726,29 @@ with massive invasion counts that do not win anyway — no win was harmed by lan
 Open threads, unchanged in kind: ffa-n2 tradesSum/vetMax/etSum (the freeze-window silo
 timing set), the 5mm/25mm/FFA win deficits (5mm now has its first win), and enabling the
 lane by default once a full-basket era shows it is strictly non-negative on wins.
+
+## SAM FFA funding-window reserve (measured non-negative)
+
+Measured root cause (v4 basket plus an instrumented ffa-n2-01): in FFA the existing
+half-silo-cost forecast (shouldBuildHostileSiloSam, siloThreat at 500k) opened SAM build
+attempts, but the first-SAM fund reserve (shouldReserveHostileSiloSamBudget) engaged only
+after a hostile silo was BUILT. Through the whole saving window the treasury kept funding
+ordinary expansion, every unaffordable SAM attempt fell through with nothing reserved, and
+the first launcher only started once natural wealth crossed its ~1.5M price — measured SAM
+build at tick 3451-3622 with ~1.5M idle gold while the first nuke impacted 260-1228 ticks
+earlier. A full-silo-cost "saving" trigger is a no-op: engine nations place the launcher the
+same tick they can afford it, and the first (aborted) basket ran bit-identical to v4 on
+every comparable row before being stopped.
+
+Change: handleTriggeredHostileSiloSam now reserves the first-SAM fund during the existing
+forecast window, but only in explicitly free-for-all modes. Team games and unknown/legacy
+configs keep the exact previous contract — the reserve still requires a built hostile silo,
+and an unaffordable forecast still returns null so an opening economy is never starved
+(both pinned by new sam-defense-policy fixtures).
+
+Full basket (basket-2026-09-27-sam-early-v2, lane on): team aggregate identical to v4 —
+same 4 wins (none-01/none-04/temp-04/5mm-02), same 2 full-green, rejected 0 across all 35
+rows; FFA samReady rows 2 → 4 (first interceptions gained on ffa-n20-04, SAM 3715 vs nuke
+4305, and ffa-n4-01, SAM 3628 vs nuke 3687); no win or set-bar regression (failed-set
+deltas on already-losing FFA rows are wall-clock trajectory noise). PASS by the recorded
+criteria; validated with type-check, the full suite, and the new policy fixtures.
