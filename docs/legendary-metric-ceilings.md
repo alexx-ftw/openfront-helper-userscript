@@ -1097,3 +1097,33 @@ invasion geometry upstream (ETA/feasibility) and the bypass had no caller.
 Per the pre-declared rule: engine and test changes reverted, no basket run.
 The reserve keeps its standing contract; the ffa-n20 collapse needs the
 upstream interceptor-build feasibility problem addressed first.
+
+## Diagnostic: naval emergency gate telemetry (2026-09-27, inert counters)
+
+Follow-up to the interceptor preflight above. A telemetry-only bundle exposes
+one `navalEmergency` counter family (`plannerRuns`, `transportsMax`,
+`unassignedTransportsMax`, `uncoveredMax`, `buildTargets`, `goldShort`,
+`candidateNull`, `deferBlocked`, `emitted`, `goldShortSample`) through the
+headless final result. No decision path changed.
+
+Same-seed replay `ffa-n20-basket-01` reproduced the baseline terminal state
+exactly (death t=4594; construction ticks City 909/4207/4260, Defense Post
+1390, Port 2641; cap strike armed 6 / attempts 3 / launches 3, last launch
+2767; identical beachheads). Measured counters: plannerRuns 293,
+transportsMax 3, unassignedTransportsMax 3, uncoveredMax 3, buildTargets 21,
+goldShort 21, candidateNull 0, deferBlocked 0, emitted 0, goldShortSample
+t=4553 gold 33,963 vs Warship cost 250,000.
+
+This corrects the prior preflight reading: the interceptor-build lane DOES
+attempt builds (21 targets), and the first-SAM reserve never blocks it
+(`deferBlocked=0`). The binding gate is affordability: every single attempt
+was gold-blocked, with roughly 34k on hand against a 250k Warship during the
+invasion window. Between transport waves the construction slot is released
+and the bot spends the recovery gold on Cities (t=4207/4260), so the fund
+never reaches one Warship price before the land collapse.
+
+Next lever (predeclare before any basket): make the invasion response win the
+treasury race, e.g. a warship fund that persists structure-spending holds
+across short inter-wave gaps until the 250k interceptor is affordable. Any
+variant must keep a hard release valve so a no-coast or hopeless row cannot
+freeze construction permanently.

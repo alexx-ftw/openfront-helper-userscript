@@ -1851,7 +1851,13 @@ const finalResult = {
       bot.harness?.internals?.state as
         | { beachheadClearance?: unknown }
         | undefined
-    )?.beachheadClearance ?? undefined,
+  )?.beachheadClearance ?? undefined,
+  navalEmergency:
+    (
+      bot.harness?.internals?.state as
+        | { stats?: { navalEmergency?: unknown } }
+        | undefined
+    )?.stats?.navalEmergency ?? undefined,
   capStrike: {
     armedHighWater: Number(
       bot.nationBot?.attackBehavior?.capStrikeArmedHighWater ?? 0,

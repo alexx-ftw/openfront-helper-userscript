@@ -985,6 +985,7 @@
       // bypass maybeSpawnWarship's first-SAM reserve and could repeatedly spend
       // the launcher fund after an external Silo was already visible.
       if (this.shouldDeferWarshipForFirstSam(this.cost(UNIT.Warship))) {
+        if (purpose === "interception") if (state.stats.navalEmergency) state.stats.navalEmergency.deferBlocked += 1;
         return false;
       }
       const smartState = this.ensureSmartState();
@@ -1003,6 +1004,7 @@
         purpose,
       };
       state.stats.builds++;
+      if (purpose === "interception") if (state.stats.navalEmergency) state.stats.navalEmergency.emitted += 1;
       setLastAction(action, "naval");
       return true;
     }
@@ -1538,7 +1540,17 @@
 
     async buildInterceptorForInvasion(invasion, boatSpeed, warshipSpeed, attackRange) {
       if (this.hasPendingWarshipBuild()) return false;
-      if (this.player.gold() < this.cost(UNIT.Warship)) return false;
+      if (this.player.gold() < this.cost(UNIT.Warship)) {
+        if (state.stats.navalEmergency) state.stats.navalEmergency.goldShort += 1;
+        if (state.stats.navalEmergency) {
+          state.stats.navalEmergency.goldShortSample = {
+            tick: this.game.ticks(),
+            gold: String(this.player.gold()),
+            warshipCost: String(this.cost(UNIT.Warship)),
+          };
+        }
+        return false;
+      }
       const candidates = this.interceptionBuildCandidates(invasion);
       let best = null;
       for (const tile of candidates) {
@@ -1547,7 +1559,10 @@
         );
         if (candidate && this.isBetterInterceptorBuild(candidate, best)) best = candidate;
       }
-      if (best === null) return false;
+      if (best === null) {
+        if (state.stats.navalEmergency) state.stats.navalEmergency.candidateNull += 1;
+        return false;
+      }
       return this.tryEmitWarshipBuild(
         best.bu,
         best.tile,
@@ -1653,6 +1668,7 @@
         timing,
       );
       if (target === null) return;
+      if (state.stats.navalEmergency) state.stats.navalEmergency.buildTargets += 1;
       smartState.invasionBuildAttemptAt.set(target.id, timing.now);
       smartState.pendingInvasionBuilds.add(target.id);
       try {
@@ -1766,8 +1782,26 @@
       const throttle = state.settings.warshipPatrolThrottleMs || 1500;
       if (now - s.lastInvasionPlanMs < throttle) return;
       s.lastInvasionPlanMs = now;
+      // Naval emergency telemetry (inert counters only, same family as
+      // beachheadClearance): the ffa-n20 collapse dies to repeated free
+      // naval landings with zero Warship builds. These counters expose
+      // the binding gate (detection / planning / feasibility / reserve
+      // defer) from a single headless replay without changing decisions.
+      const naval = (state.stats.navalEmergency ??= {
+        plannerRuns: 0,
+        transportsMax: 0,
+        unassignedTransportsMax: 0,
+        uncoveredMax: 0,
+        buildTargets: 0,
+        goldShort: 0,
+        candidateNull: 0,
+        deferBlocked: 0,
+        emitted: 0,
+      });
+      if (state.stats.navalEmergency) state.stats.navalEmergency.plannerRuns += 1;
 
       const transports = this.incomingNavalTransports();
+      naval.transportsMax = Math.max(naval.transportsMax, transports.length);
       const targetableTransports =
         typeof this.game.units === "function"
           ? this.engineTargetableTransports()
@@ -1795,6 +1829,10 @@
         (transport) => !assignedInvasionIds.has(transport.id()),
       );
       if (unassignedTransports.length === 0) return;
+      naval.unassignedTransportsMax = Math.max(
+        naval.unassignedTransportsMax,
+        unassignedTransports.length,
+      );
       const availableWarships = warships.filter(
         (warship) => !s.invasionAssignments.has(warship.id()),
       );
@@ -1839,6 +1877,10 @@
           .filter((invasion) => !newlyAssignedInvasionIds.has(invasion.id))
           .map((invasion) => invasion.id),
       };
+      naval.uncoveredMax = Math.max(
+        naval.uncoveredMax,
+        actionablePlan.uncoveredIds.length,
+      );
       await this.buildUncoveredInterceptor(actionablePlan, invasions, s, {
         now, throttle, boatSpeed, warshipSpeed, attackRange,
       });
