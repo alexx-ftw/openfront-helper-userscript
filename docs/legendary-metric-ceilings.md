@@ -1184,3 +1184,58 @@ hold persistence but the whole-match income gap (goldEarned 588k vs best
 rival 8.79M): any affordable-naval lever must first grow, not reserve,
 the economy. Engine, test, fixture, and bundle changes reverted; the
 telemetry commit (5bba818d) stays as the standing diagnostic.
+
+## Lever pre-declaration: normal-game trade port cap 2 (2026-09-29, BEFORE any runs)
+
+Candidate from the same train/trade audit: in normal games the naval-economy
+lane caps at exactly one Port (`portBurstCap ? 5 : 1`), so the bot banks
+588k goldEarned while the best rival compounds 8.79M through trade. Allow a
+second Port in normal games ONLY when a tradeable foreign open-ocean route
+exists (`foreignOceanPortTiles().length > 0`, the landed distance lever's
+own filter). New helper `portBurstCapForGame()`: big-start keeps 5, normal
+games get 2 with a foreign route, 1 without. Placement stays on the landed
+`portValue` (foreign-distance bonus picks the site); big-start pacing and
+every emergency defense lane keep their current priority. Defense always
+runs ahead of this lane, so the extra 250k-class level is bought only when
+no emergency claims the slot.
+
+Focused regression in sam-defense-policy: a live foreign route authorizes
+the second normal-game port; the cap stops at two; no foreign route keeps
+the single-port policy; big-start burst stays capped at five.
+
+Rows: full fixed basket, all 7 sets x seeds basket-01..05, unmodified
+run-basket.mjs protocol, parallelism 2. Baseline:
+`basket-2026-09-27-capstrike-half-other-p2`.
+
+Pre-declared full-basket verdict rule: LAND only if (a) no set regresses
+wins or fullGreens vs the baseline; (b) `ffa-n2` keeps its basket-04 win;
+and (c) trade economy improves — tradesSum rises in team-none or team-temp,
+or a team set gains a win or fullGreen. `ffa-n20` is outside the rule and
+recorded (the collapse rows are gold-poor; the cap can only help where a
+route is affordable). Otherwise REVERT and record a measured dead end.
+Known ceiling: a second port cannot fix spawn-cadence or the land dogpile;
+it targets the income gap through one more compounding trade station.
+
+### Verdict: REVERTED (2026-09-29, full fixed basket, pre-declared rule failed)
+
+Focused regression, full suite, type-check, build parity, and lint (no new
+ratchet entries; the lane's complexity only improved 17 -> 16) were green.
+Because no stored per-set aggregates existed for the baseline, the baseline
+itself was rerun same-day on stashed HEAD
+(`/tmp/ofh-matrix/basket-baseline-rerun-2026-09-29`); its
+`ffa-n20-basket-04` win reproduced t=64881 exactly, matching the recorded
+LAND note.
+
+Candidate result vs the rerun baseline — rule (a) FAILED on three sets:
+
+- team-none wins 2 -> 1 (`basket-04` W -> L@19201)
+- team-temp fullGreens 1 -> 0 (`basket-04` W/fullGreen -> W without green)
+- ffa-n20 wins 1 -> 0 (`basket-04` W@64881 -> L@35373)
+
+ffa-n2 kept the basket-04 win (t=19861 vs 13171, later), and ffa-n4 was
+unchanged, but rule (c) also failed: no tradesSum bar rose (team-temp's
+bar fell true -> false). Every regression lands on the basket-04 seed, so
+the extra port's 250k-class level destabilizes exactly the mid-game
+economy timing that seed depends on. Code, test, and bundle changes
+reverted; both results files are kept under /tmp for any future
+predeclaration that wants the recorded per-row evidence.
