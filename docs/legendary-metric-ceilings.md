@@ -1127,3 +1127,60 @@ treasury race, e.g. a warship fund that persists structure-spending holds
 across short inter-wave gaps until the 250k interceptor is affordable. Any
 variant must keep a hard release valve so a no-coast or hopeless row cannot
 freeze construction permanently.
+
+## Lever pre-declaration: interceptor fund hold across inter-wave gaps (2026-09-27, BEFORE any runs)
+
+Candidate: extend the existing maritime-invasion construction hold so the
+treasury can reach one Warship price between transport waves. While the
+maritime defense gates already pass (winFixes, warship feature + auto-spawn
+enabled, Port buildable, zero Warships including under construction, ocean
+exists, Port complete or under construction, or Port unaffordable), the hold
+now persists for up to 300 ticks after the last live transport signal, not
+only while the signal is active. Hard release valves: any Warship exists,
+the 300-tick window expires, or the map has no ocean (existing policy
+applies). The SAM decision lane stays ahead of this hold, unchanged. The
+predicate is `structureBehavior.navalInvasionFundHoldActive` with constant
+`NAVAL_INVASION_FUND_HOLD_TICKS = 300`.
+
+Focused regression in maritime-invasion-economy: hold persists 299 ticks
+after the signal drops with zero Warships; releases at tick 300; releases
+immediately when a Warship exists; never holds on a landlocked map.
+
+Preflight (diagnostic, NOT the tanda): same-seed replay `ffa-n20-basket-01`
+must record at least one Warship construction event before its baseline
+death tick (4594) with `navalEmergency.emitted >= 1`. If the fund still
+never buys an interceptor, the affordability hypothesis is wrong — REVERT
+without running the basket.
+
+Rows: full fixed basket, all 7 sets x seeds basket-01..05, unmodified
+run-basket.mjs protocol, parallelism 2. Baseline:
+`basket-2026-09-27-capstrike-half-other-p2`.
+
+Pre-declared full-basket verdict rule: LAND only if (a) no set regresses
+wins or fullGreens vs the baseline; (b) `ffa-n20` improves a primary bar —
+a win, a fullGreen, or the median of its losing-row ticks rises >=15%
+(baseline losing rows 2684/4594/13744/14304, median 9169, so >=10545); and
+(c) `ffa-n2` keeps its basket-04 win. Otherwise REVERT and record a
+measured dead end. Known ceiling: one interceptor per saved fund cannot
+stop a land dogpile by itself; the lever only claims to remove the free
+naval landings during the saving window.
+
+### Verdict: REVERTED AT PREFLIGHT (2026-09-27, basket never run)
+
+Focused regression passed (hold persists 299 ticks, expires at 300,
+Warship and landlocked valves release) and full suite, type-check, and
+build parity were green. The same-seed `ffa-n20-basket-01` preflight
+FAILED: `emitted=0` with 25 build attempts all gold-blocked
+(goldShortSample t=2948, gold 122,550 vs 250,000), and the row died
+EARLIER than baseline — conquered by Mike at t=3111 (baseline 4594) with
+13,854 troops vs 53,062.
+
+The extended hold also destabilized the trajectory: a Port built at t=1228
+(baseline 2641), ten beachheads from t=1747, and a rebuilt Port at t=2974.
+The mechanism cannot win the treasury race in this row — inter-wave income
+never reaches one Warship price before the land collapse, while the hold
+starves the City growth the defense needs. The upstream problem is not
+hold persistence but the whole-match income gap (goldEarned 588k vs best
+rival 8.79M): any affordable-naval lever must first grow, not reserve,
+the economy. Engine, test, fixture, and bundle changes reverted; the
+telemetry commit (5bba818d) stays as the standing diagnostic.
