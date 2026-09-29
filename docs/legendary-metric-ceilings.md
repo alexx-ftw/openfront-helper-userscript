@@ -2160,3 +2160,37 @@ The candidate, regression, and generated bundles were restored to
 `f28381ff`. This basket showed that adding remote tradeable owners to the
 Legendary inventory did not change any tested decision. Larger online lobbies
 with already-connected remote stations remain outside this basket's evidence.
+
+## Lever pre-declaration: port-level-weighted foreign route distance (2026-09-29, BEFORE candidate run)
+
+The pinned engine repeats each tradeable foreign Port in a source port's
+destination list according to that destination Port's level. A source Port also
+makes one spawn attempt per level, and a completed voyage pays the same gold to
+both endpoint owners. Current Legendary `portValue()` reduces the foreign route
+map to the distance from a candidate site to its single nearest tradeable
+open-ocean Port, so it ignores the distribution of Port levels across routes.
+
+Candidate: replace that nearest-only bonus with the level-weighted mean of each
+eligible foreign Port's distance, capped at `tradeShipShortRangeDebuff`. Keep
+the current embargo, ocean-shore, and construction filters and all other
+placement terms unchanged. This is a bounded proxy for how far the candidate's
+outbound ships may travel and how much foreign source capacity is represented;
+it does not model destination-list proximity/friendly bonuses, fleet
+saturation, or exact route distance.
+
+Focused regression in `test/sam-defense-policy.mjs`: (1) a high-level far Port
+must affect the score more than an otherwise identical level-1 far Port when
+the nearest Port is unchanged; (2) the existing single-Port distance ordering
+and the under-construction, lake, and embargo exclusions remain intact.
+
+Baseline: `/tmp/ofh-matrix/basket-2026-09-29-trade-gold-baseline/results.jsonl`
+(35 rows, current behavior baseline). Early stop after the ten `team-none` and
+`team-temp` rows at parallelism 2. Proceed to the remaining 25 only if (a)
+neither team set regresses wins or fullGreens, (b) no team row changes
+`ownStructuresNuked` from zero to positive, (c) neither team's aggregate
+`goldEarned`, `tradeGoldEarned`, or `trainGoldEarned` decreases, and (d) at
+least one team's aggregate `tradeGoldEarned` increases. LAND after all 35 only
+if no set regresses wins/fullGreens, `ffa-n2-basket-04` remains a win, the
+team economy and safety clauses above still hold, and a team trade-gold gain
+remains. Otherwise restore the behavior, regression, and generated bundle and
+record the measured result.
