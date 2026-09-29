@@ -2075,3 +2075,26 @@ measured verdict.
 Known ceiling: less counterattack export can let incoming waves reach home
 with more troops, so territory may fall faster even as the bot preserves its
 army; the n20-basket-05 survival bar measures that trade directly.
+
+### Verdict: REVERTED EARLY (2026-09-29, nuke-safety and temp-economy gates failed)
+
+The ten-row early stop completed at parallelism 2 in
+`/tmp/ofh-matrix/basket-2026-09-29-shared-counterattack-cap/`. Wins and
+fullGreens did not regress. Team-none aggregate gold/trade/train rose
+62,650,520 / 58,459,160 / 3,740,000; team-temp gold and trade fell 299,695
+and 307,695 (train was flat). More critically, four rows changed from zero to
+positive `ownStructuresNuked`: none-03 → 4, none-05 → 2, temp-03 → 3, and
+temp-05 → 2. The longer-lived rows none-03 (+880 ticks) and temp-03 (+250)
+both suffered late structure losses (`firstOwnStructureLostTick` 9535 and
+7810 respectively); none-05 and temp-05 died 170 ticks earlier and also lost
+structures to nukes. The strict predeclared early gate failed on the first
+nuke regression, so the FFA rows — including the n20-basket-05 5000-tick
+survival bar — were not run.
+
+Interpretation: a shared counterattack ceiling trades fewer troops exported
+for larger hostile forces reaching home; it can extend a territorial
+stalemate, but leaves valuable structures exposed to later nukes, while some
+rows die sooner. Do not tune this cap against the same basket without a
+defense-side design that prevents the structure losses. Code, regression,
+and generated bundles were restored to `44564615`; candidate data remains in
+the run directory.
