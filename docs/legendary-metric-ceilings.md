@@ -2098,3 +2098,49 @@ rows die sooner. Do not tune this cap against the same basket without a
 defense-side design that prevents the structure losses. Code, regression,
 and generated bundles were restored to `44564615`; candidate data remains in
 the run directory.
+
+## Lever pre-declaration: complete Legendary rail-trade roster (2026-09-29, BEFORE candidate run)
+
+The pinned engine selects train destinations from every trade station in a
+connected rail cluster, then filters with `canTrade`: a different player is
+eligible unless either side has an embargo. Cities and Ports are commercial
+stops; Factories supply trains and connect the rail graph. The placement
+scorer's `collectReachableStations` and `collectFactoryTradeDestinations`
+currently inspect only `player.nearby()` for foreign owners, which is a
+territorial-neighbor list. That omits remote tradeable City/Port stations in
+the same rail network and Bot-owned stations that the engine still allows to
+trade. Legendary's adaptive rail scores can therefore undervalue a connected
+long-distance network even when the live rail snapshot identifies it exactly.
+
+Candidate: when `currentDifficulty() === Legendary`, enumerate all foreign
+owners exposed by `game.players()` and include only those accepted by the
+existing mutual-embargo `shimCanTrade` check in both rail-station collectors.
+Keep the existing relation-based train-gold weights and include Factory
+stations only as rail nodes, not as paid endpoints. All other difficulties
+retain the current nearby-player collector unchanged. Live rail-component
+clustering remains authoritative when available; the existing proximity
+fallback remains the headless harness approximation.
+
+Focused regression in `test/factory-placement-policy.mjs`: (1) Legendary
+includes a remote, unembargoed human City/Port in the paid destination set;
+(2) it includes a tradeable Bot station; (3) it excludes a player embargoed
+in either direction; (4) remote Factory stations can join the rail graph but
+never enter the paid-destination set; and (5) Impossible keeps the current
+nearby-only behavior.
+
+Baseline: `/tmp/ofh-matrix/basket-2026-09-29-trade-gold-baseline/results.jsonl`
+(35/35 rows). Pre-declared early LAND gate after the ten `team-none` and
+`team-temp` rows: (a) neither set regresses wins or fullGreens; (b) at least
+one set's `trainGoldEarned` increases and neither set decreases; (c) neither
+set's total `goldEarned` decreases; and (d) no team row changes
+`ownStructuresNuked` from zero to positive. If the gate passes, finish the
+35-row basket and require no set to regress wins/fullGreens, preserve the
+`ffa-n2-basket-04` win, preserve both team sets' total gold and train gold,
+and add no zero-to-positive team structure-nuke regression. Revert the code,
+regression, and generated bundles on any failed condition.
+
+Known ceiling: a larger potential destination set does not guarantee a train
+will spawn or complete a profitable trip, and the headless harness's
+proximity clustering is less exact than the live railroad snapshot. The
+measured decision therefore depends on realized basket earnings, not the
+presence of remote stations alone.
