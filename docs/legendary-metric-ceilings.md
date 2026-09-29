@@ -1710,3 +1710,65 @@ the roughly 1-2M ladder tax the shared pricing imposes on Port-heavy naval
 scenes. A blanket first-Factory lane fails because most basket scenes are
 Port-heavy naval economies where the extra ladder step compounds against the
 bot faster than early rail income repays it.
+
+## Lever pre-declaration: team-mode cap-strike arming (2026-09-29, BEFORE any candidate run)
+
+Two diagnostics from existing telemetry close the rail-Factory family and open
+the next lever. First, the conditional first-Factory lane is a measured
+catch-22: the only row where the lane repaid the ladder tax
+(`team-none-basket-04`, +26.9M goldEarned) is exactly the row where the
+candidate changed `ownStructuresNuked` from zero to positive (clause (e)
+failed), and the observable that selects it (about 39.5k tiles at fire time in
+none-mode) reproduces that same nuke-tainted trajectory. Any gate tight enough
+to fire only on the payoff row fails (e); any gate loose enough to fire
+elsewhere re-imports the ladder-tax losses. No conditional design inside this
+family can pass the pre-declared gates, so it is closed without a further run.
+
+Second, the stall signature in the losing team rows is the cap-strike freeze,
+not an economy problem. In `basket-2026-09-29-trade-gold-baseline`, all 20
+team rows recorded `capStrike.attempts = 0` while arming 5-126 consecutive
+frozen decisions: `team-none-basket-03` holds 33.4k tiles flat from tick 2000
+to 9000 with troops pinned at 1.64M/1.64M and near-zero outgoing attacks;
+`team-temp-basket-01` armed 107 times and finished at 2,608 tiles;
+`team-temp-basket-03` shrinks 33.8k to 16k tiles under pressure while still
+holding surplus. The valve works where it is allowed: both FFA winners are
+mechanism-linked to it (ffa-n2-basket-04: 9 launches, won; ffa-n20-basket-04:
+35 launches, won). The team-only boundary was a design choice recorded at
+landing ("Team rows keep the win-pacing commerce stall authoritative") and was
+never measured; the current basket contradicts its rationale because these
+rows are not pacing a commerce win, they are pinned, shrinking, and losing.
+
+Candidate: extend cap-strike arming to team modes at twice the FFA freeze
+confirmation (`CAP_STRIKE_TEAM_CONFIRM_DECISIONS = 12`, about 360-600 frozen
+ticks). The FFA path stays byte-identical (`isFFA()` keeps the original
+6-decision gate). Everything downstream is shared with the landed lane:
+weakest bordering non-friendly target, `canAttackPlayerNow`, the
+half-retain reserve clamp, `forceSendAttack` fail-safe payload, and the
+incoming-defense priority that owns the decision before this lane. In the
+baseline snapshot the threshold separates cleanly: all four team winners armed
+5-11 decisions (untouched at 12), while the seven losing team rows armed
+19-126.
+
+Focused regressions in `test/cap-pressure-strike.mjs`: (1) team mode arms at
+12 frozen decisions and strikes the weakest bordering enemy; (2) team mode
+stays closed at 11; (3) FFA still arms at 6 and stays closed at 5 (unchanged);
+(4) `winFixes` off never arms in team mode; (5) the team strike carries the
+same `capStrike` options marker as the FFA strike.
+
+Baseline: `/tmp/ofh-matrix/basket-2026-09-29-trade-gold-baseline/results.jsonl`.
+Rows: early stop after the ten `team-none`/`team-temp` rows at parallelism
+2; stop and revert if the early gate fails, otherwise finish all 35 rows for
+safety.
+
+Pre-declared LAND rule: (a) no set regresses wins or fullGreens vs the
+baseline; (b) `ffa-n2-basket-04` keeps its win and every FFA row stays
+byte-identical (the lane is untouched in FFA); (c) early gate: total
+`goldEarned` in `team-none` or `team-temp` increases with neither team set
+decreasing; (d) no team row changes `ownStructuresNuked` from zero to
+positive; and (e) `trainGoldEarned` and `tradeGoldEarned` in neither team
+set decrease. Any failed condition reverts code, regression, and generated
+bundles and records the measured result.
+
+Known ceiling: a released team strike opens a second front on purpose; if
+team dogpiles or lost tempo punish it, the loss surfaces as (a), (c), or (d)
+and the lane reverts to FFA-only.
