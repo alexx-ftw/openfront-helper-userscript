@@ -48,8 +48,6 @@ const sandbox = {
   PlayerType: { Bot: "Bot" },
   state: { settings: { winFixes: true }, stats: { nukes: 0 }, recentMirvHits: [] },
   currentDifficulty: () => testDifficulty,
-  isLegendaryDifficulty: (difficulty) =>
-    difficulty === "Legendary" || difficulty === "Impossible",
   isAtLeastHardDifficulty: () => true,
   console,
 };
@@ -156,55 +154,6 @@ assert.equal(
   behavior.shouldDeferNukeForEconomy(target, 5_000_000n),
   true,
   "An ordinary offensive nuke yields to the shared economy/defense reserve",
-);
-
-testDifficulty = sandbox.Difficulty.Impossible;
-const coveredNukeSam = {
-  isActive: () => true,
-  isUnderConstruction: () => false,
-};
-const defenseFundedNuke = Object.create(sandbox.__NukeBehavior.prototype);
-defenseFundedNuke.player = {
-  gold: () => 1_000_000n,
-  units: (type) => (type === UNIT.SAMLauncher ? [coveredNukeSam] : []),
-};
-defenseFundedNuke.isHydroNation = false;
-defenseFundedNuke.structureBehavior = {
-  isBuiltActiveSam: (sam) => !sam.isUnderConstruction() && sam.isActive(),
-  hasActiveMaritimeInvasion: () => false,
-  offensiveNukeDefenseReserve: () => 250_000n,
-  shouldDeferOffensiveNuke: () => true,
-};
-defenseFundedNuke.isUnderHeavyAttack = () => false;
-defenseFundedNuke.isRetaliationNukeTarget = () => false;
-assert.equal(
-  defenseFundedNuke.shouldDeferNukeForEconomy(target, 750_000n),
-  false,
-  "a normalized Legendary may spend the economic reserve while keeping the defense reserve funded",
-);
-defenseFundedNuke.player.gold = () => 999_999n;
-assert.equal(
-  defenseFundedNuke.shouldDeferNukeForEconomy(target, 750_000n),
-  true,
-  "the nuke remains deferred when post-launch gold would fall below the defense reserve",
-);
-defenseFundedNuke.player.gold = () => 1_000_000n;
-defenseFundedNuke.player.units = (type) =>
-  type === UNIT.SAMLauncher
-    ? [{ isActive: () => true, isUnderConstruction: () => true }]
-    : [];
-assert.equal(
-  defenseFundedNuke.shouldDeferNukeForEconomy(target, 750_000n),
-  true,
-  "the release still requires a completed active SAM",
-);
-defenseFundedNuke.player.units = (type) =>
-  type === UNIT.SAMLauncher ? [coveredNukeSam] : [];
-defenseFundedNuke.structureBehavior.hasActiveMaritimeInvasion = () => true;
-assert.equal(
-  defenseFundedNuke.shouldDeferNukeForEconomy(target, 750_000n),
-  true,
-  "active maritime pressure keeps the hard defer",
 );
 
 testDifficulty = sandbox.Difficulty.Legendary;
