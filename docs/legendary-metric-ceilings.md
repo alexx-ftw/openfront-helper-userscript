@@ -776,10 +776,10 @@ death) gives the first full arc of the dogpile collapse:
 2. The army sits pinned at maxTroops the whole time (1.366M/1.371M at t=2957,
    1.6349M/1.6352M at t=3573): every further troop-second is wasted production.
 3. Count-scaled prices turn the midgame into a one-building-per-~1000-tick
-   queue: City 250k (t=1543), Port 250k (t=2403), City 500k (t=3573) with
-   ~290-430 gold/tick income and only 2 Cities + 1 Port on 33k tiles. The
-   planner's answer during these windows is a repeated Wait targeting the next
-   500k-1M asset (legendary-action-groups: [[Wait],[Wait]] for 1200+ ticks).
+      queue: City 250k (t=1543), Port 250k (t=2403), City 500k (t=3573) with
+      ~290-430 gold/tick income and only 2 Cities + 1 Port on 33k tiles. The
+      planner's answer during these windows is a repeated Wait targeting the next
+      500k-1M asset (legendary-action-groups: [[Wait],[Wait]] for 1200+ ticks).
 4. t=3702: Xinjiang (the nation that had kept conquering) attacks with a 733k
    wave — 40%+ of our pinned army — then re-attacks in 200-500k waves every
    ~50 ticks. The first wave is held (land-defense result True, own 1.73M →
@@ -1597,3 +1597,31 @@ to positive. Record `tradeGoldEarned` and `tradeCaptured` separately. After
 the first ten rows (the complete `team-none` and `team-temp` target sets), stop
 and revert if clause (c) cannot pass; otherwise finish all 35 rows to check
 safety. If any LAND condition fails, revert and record the measured result.
+
+Implementation note: the six focused regressions above were covered by
+`test/factory-placement-policy.mjs` before the candidate rows started (first
+Factory ratio with and without a paying destination, later-Factory coastal
+retention, the 15-110 route restriction, unreachable-destination deference,
+and the no-destination fallback), plus a pin that an unembargoed rival's
+City/Port is a tradeable rail destination while an embargoed player is
+excluded, matching the pinned engine's `PlayerImpl.canTrade` and
+`TrainStation.tradeAvailable`.
+
+### Verdict: REVERTED EARLY (2026-09-29, revenue gate failed at the stop point)
+
+The run completed all ten pre-declared target rows (`team-none` and
+`team-temp`, five seeds each) in
+`/tmp/ofh-matrix/basket-2026-09-29-route-backed-first-factory/` at
+parallelism 2 before stopping, plus three `team-5mm` rows that finished while
+the stop was executed. Every completed row was byte-identical to the baseline
+apart from `runtimeMs`: same wins (team-none 2/5, team-temp 1/5), same final
+Factory counts (only baskets 01/04 build 9-10 Factories; 02/03/05 build zero),
+same `trainGoldEarned` (15,545,000 and 1,700,000 set totals), and same total
+`goldEarned`. Clause (c) therefore failed: no target set increased
+`trainGoldEarned`. A `NODE_OPTIONS --require` probe attached to the harness
+bundle logged zero first-Factory Legendary candidates (`owned === 0`) in every
+completed row, consistent with the identical results: in these basket scenes
+the route-backed first-Factory branch never engaged, so the no-destination
+fallback preserved the prior policy. Code, regression, and generated bundles
+were restored to `c9a566d0`; the candidate data remains under the run
+directory.
