@@ -1998,3 +1998,27 @@ expansion — a fully blacklisted border leaves the army at cap with donations
 as the only overflow valve, and whether freed troops defend better (temp-03
 was collapsing under pressure while committing to wars) is what clause (c)
 measures.
+
+### Verdict: REVERTED EARLY (2026-09-29, team-set economy gates failed)
+
+The ten-row early stop completed at parallelism 2 in
+`/tmp/ofh-matrix/basket-2026-09-29-war-abandon/`. Wins/fullGreens did not
+regress, and no team row changed `ownStructuresNuked` from zero to positive.
+However, both economy gates failed. Clause (c): team-none goldEarned rose
+15,087,509, but team-temp fell 8,201,375. Clause (e): trainGoldEarned fell
+3,570,000 in team-none and 300,000 in team-temp; tradeGoldEarned also fell
+7,268,239 in team-temp (and team-none basket-03 fell 265,298). The mixed
+outcome shows the valve changes target commitment and match pacing, but its
+global own-tile progress signal does not protect every team economy from a
+badly timed pause: team-temp-basket-04, the winner, lost 8.19M goldEarned
+(76.49M → 68.30M) while team-none-basket-01/04 gained gold. Per the
+pre-declared rule, stop at ten and revert; code, regression, and generated
+bundles were restored to `2e660ea2`. Candidate rows remain in the run
+directory.
+
+Do not tune the 900/3000 windows against this basket without a new design.
+The next version needs a target-local progress signal (tiles captured from
+that target, including delayed landings) or a committed-payload payback test;
+the current global tile delta can be credited for expansion from an unrelated
+front and can pause a productive war, while still not proving an absorbed war
+is unwinnable.
