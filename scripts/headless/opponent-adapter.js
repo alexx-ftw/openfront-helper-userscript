@@ -361,6 +361,7 @@ export class BundledOpponentBot {
       playerId: this.clientID,
     });
     if (process.env.OFH_LOG_NAVAL === "1") this.enableNavalTrace();
+    if (process.env.OFH_CONSTRUCTION_DUMP === "1") this.enableConstructionDump();
     if (process.env.OFH_LOG_STRUCTURES === "1") this.enableStructureTrace();
     if (process.env.OFH_LOG_SPAWN === "1") this.enableSpawnTrace();
     if (process.env.OFH_LOG_ATTACK_HOTSPOTS === "1") this.enableAttackHotspotTrace();
@@ -653,6 +654,16 @@ export class BundledOpponentBot {
 
   drainSpawnTrace() {
     return this.spawnTrace.splice(0);
+  }
+
+  // Pre-creates the bot-side ring buffer once per attach. The bot appends
+  // records only while this array exists, so the dump is fully inert in
+  // normal runs and in the browser bundle.
+  enableConstructionDump() {
+    const harnessState = this.harness.internals.state;
+    if (harnessState?.stats && !harnessState.stats.constructionDump) {
+      harnessState.stats.constructionDump = [];
+    }
   }
 
   enableNavalTrace() {

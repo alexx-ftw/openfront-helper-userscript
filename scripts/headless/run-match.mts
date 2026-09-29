@@ -527,6 +527,10 @@ const startedAt = performance.now();
 const maxTicks = Number(process.env.OFH_MAX_TICKS ?? 103_000);
 const progressEveryTicks = Math.max(1, Number(process.env.OFH_PROGRESS_TICKS ?? 500));
 const progressFromTick = Math.max(0, Number(process.env.OFH_PROGRESS_FROM_TICK ?? 0));
+// Diagnostic-only rival port timeline (OFH_RIVAL_PORT_TIMELINE=1): when the
+// winning economies actually buy their ports, sampled every progress tick.
+const rivalPortTimelineEnabled = process.env.OFH_RIVAL_PORT_TIMELINE === "1";
+const rivalPortTimeline: Array<Record<string, unknown>> = [];
 const slowTickThresholdMs = Math.max(1, Number(process.env.OFH_SLOW_TICK_MS ?? 250));
 const stopWhenBotDies = process.env.OFH_STOP_WHEN_DEAD !== "0";
 const spawnFailureGraceTicks = Math.max(
@@ -1502,6 +1506,22 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
     break;
   }
   if (runner.game.ticks() >= progressFromTick && runner.game.ticks() % progressEveryTicks === 0) {
+    if (rivalPortTimelineEnabled) {
+      rivalPortTimeline.push({
+        tick: runner.game.ticks(),
+        rivals: runner.game
+          .allPlayers()
+          .filter((rival) => rival.id() !== me?.id())
+          .map((rival) => ({
+            name: rival.name(),
+            gold: Number(rival.gold() ?? 0n),
+            portLevels: rival.units(UnitType.Port).map((unit) => unit.level()),
+            cityCount: rival.units(UnitType.City).length,
+          }))
+          .sort((left, right) => right.gold - left.gold)
+          .slice(0, 6),
+      });
+    }
     const player = runner.game.playerByClientID(clientID);
     if (logSpawn && !spawnSnapshotLogged && player?.numTilesOwned() > 0) {
       spawnSnapshotLogged = true;
@@ -1858,6 +1878,14 @@ const finalResult = {
         | { stats?: { navalEmergency?: unknown } }
         | undefined
     )?.stats?.navalEmergency ?? undefined,
+  constructionDump:
+    process.env.OFH_CONSTRUCTION_DUMP === "1"
+      ? (
+          bot.harness?.internals?.state as
+            | { stats?: { constructionDump?: unknown } }
+            | undefined
+        )?.stats?.constructionDump ?? undefined
+      : undefined,
   capStrike: {
     armedHighWater: Number(
       bot.nationBot?.attackBehavior?.capStrikeArmedHighWater ?? 0,
@@ -1899,6 +1927,7 @@ const finalResult = {
   },
   runtimeMs: Math.round(performance.now() - startedAt),
   topPlayers: players.slice(0, 10),
+  rivalPortTimeline: rivalPortTimelineEnabled ? rivalPortTimeline : undefined,
 };
 
 // Diagnostic-only rival economy snapshot (OFH_RIVAL_DUMP=1). Inert unless

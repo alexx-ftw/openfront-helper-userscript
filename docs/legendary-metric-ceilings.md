@@ -1326,3 +1326,52 @@ as the fund hold. Next lever shape to predeclare: additional ports up to a
 city-scaled cap (min(4, floor(cities*0.75)+1)) bought through ordinary
 construction ranking with defense-reserve-aware affordability, not through
 lane priority.
+
+## Diagnostic: construction planner dump + rival port timeline (2026-09-29, inert env tools)
+
+Two inert env-gated diagnostics landed (no decision path reads them):
+
+- `OFH_CONSTRUCTION_DUMP=1` (bot-side; the harness pre-creates the ring
+  buffer): one bounded record per Legendary structure decision — tick, gold,
+  city count, owned port levels, the top ranked candidates per action group
+  with affordability, and the group outcome (capped at 800 records).
+- `OFH_RIVAL_PORT_TIMELINE=1` (harness-side): every progress tick, the top 6
+  non-bot players by gold with their port levels and city counts.
+
+Same-seed evidence, `team-temp-basket-03` (baseline L, trades 2, bot
+goldEarned 6.53M vs best rival 30.35M):
+
+- The ordinary construction ladder is NOT the port bottleneck. It bought
+  Port #2 organically at t=4393 — the first decision where the purchase won
+  the Wait band (affordable at 250k while City #3 costs 500k). Port #1 came
+  from the naval opening lane at t=2608. On `ffa-n20-basket-01` the ladder
+  is even cleaner: 50 of 53 decisions Wait at gold < 125k, and every
+  structure it bought was destroyed by the land dogpile (hostile ratio
+  19-28x). That row is survival-bound, not construction-bound.
+- Port growth froze at 2 because the ratio lane is city-bound: the target is
+  floor(cities x 1.25), and the bot's City ladder froze at 2 (City #3 costs
+  500k; the bot banked 75k at terminal). Winners pair 4-9 cities with 4-6
+  ports on the same timeline: 3 ports by t=5000-6500, 4-6 ports by
+  t=7500-9000.
+- The whole-match economy gap on this row is TEMPO. Rivals compound from
+  ~t=3000 with 2-3 ports; the bot's second and third compounding assets (City
+  #2 t=4341, Port #2 t=4393) landed 1300+ ticks later and nothing followed.
+  The bot earned 6.5M and ended with 75k banked — the defense and warship
+  lanes consumed the surplus (SAM x2 ready t=4549 before the first hostile
+  nuke t=5416, per the standing doctrine).
+
+Consequence for the predeclared lever family: "additional ports up to a
+city-scaled cap bought through ordinary construction ranking" describes
+behavior the ladder ALREADY has — the ordinary ranking buys every port the
+affordability band allows, and the ratio target (1.25/city) is already ABOVE
+the winners' realized 0.6-0.8 ports/city. Forcing ports past the city bound
+is the naval-lane pre-spend family measured REVERTED twice. The measured
+parent constraint is the CITY ladder freeze on losing rows (2 cities at
+t=4341 while winners sit at 4-6 by t=5000) and the terminal gold leak that
+keeps City #3 unaffordable. Do not basket a port-count lever. The next lever
+must either accelerate city count or cut the late-game gold leak without
+touching the SAM-before-first-nuke doctrine. Also measured against the
+ChatGPT-conversation embargo hypothesis: baseline trades correlate POSITIVELY
+with attack volume (r=+0.65 over 35 rows), so attack-driven embargoes are not
+the observable trade killer. No verdict rule is predeclared yet — evidence
+first.

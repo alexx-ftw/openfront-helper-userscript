@@ -2652,20 +2652,62 @@
         missileSilosEnabled,
         nukesEnabled,
       });
+      return this.runLegendaryConstructionGroups(cityCount, candidates, economyGrowthPriority);
+    }
+
+    // Ranked-group execution: the economic group first when economy growth
+    // has priority, and the first built/wait result ends the decision. With
+    // the construction dump enabled (OFH_CONSTRUCTION_DUMP), the decision
+    // appends one inert sample — see recordConstructionPlannerSample.
+    async runLegendaryConstructionGroups(cityCount, candidates, economyGrowthPriority) {
       const actionGroups = this.legendaryConstructionActionGroups(
         candidates,
         economyGrowthPriority,
       );
+      const dumpSample = Array.isArray(state.stats?.constructionDump)
+        ? { cityCount, actionGroups }
+        : null;
+      let plannerOutcome = "none";
       for (let groupIndex = 0; groupIndex < actionGroups.length; groupIndex++) {
         const result = await this.legendaryConstructionActionGroupResult(
           actionGroups[groupIndex],
           actionGroups,
           groupIndex,
         );
-        if (result === "built") return true;
-        if (result === "wait") return false;
+        if (result !== "skip") plannerOutcome = result;
+        if (result === "built" || result === "wait") break;
       }
-      return false;
+      if (dumpSample !== null) {
+        this.recordConstructionPlannerSample(dumpSample, plannerOutcome);
+      }
+      return plannerOutcome === "built";
+    }
+
+    // Inert construction-planner dump (OFH_CONSTRUCTION_DUMP=1). When the
+    // headless harness pre-creates state.stats.constructionDump, every
+    // Legendary structure decision appends one bounded record — gold, owned
+    // port levels, the top ranked candidates per action group, and the group
+    // outcome — so income levers can be designed from what the ladder actually
+    // saw instead of from theory. No decision path reads this data, and the
+    // array is a ring buffer capped at 800 records.
+    recordConstructionPlannerSample({ cityCount, actionGroups }, outcome) {
+      const dump = state.stats.constructionDump;
+      if (!Array.isArray(dump)) return;
+      dump.push({
+        tick: this.game.ticks(),
+        gold: String(this.player.gold() ?? 0n),
+        cityCount,
+        ownedPorts: this.ownedLevels(UNIT.Port),
+        groups: actionGroups.map((group) =>
+          group.slice(0, 4).map((candidate) => ({
+            type: candidate.type ?? candidate.action ?? "unknown",
+            cost: String(candidate.cost ?? 0n),
+            affordable: candidate.affordable !== false && candidate.action !== "wait",
+          })),
+        ),
+        outcome,
+      });
+      if (dump.length > 800) dump.shift();
     }
 
     // Arm-on-freeze strike silo (FFA-only survival lane; re-lands the parked
