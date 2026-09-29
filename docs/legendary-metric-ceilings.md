@@ -2302,3 +2302,22 @@ reach; on worlds where the first hostile Silo appears before any own
 launcher exists the gate is inert by design, and a delayed H-bomb upgrade
 can in principle trade ownNuked risk for compounding income — that trade
 is exactly what clauses (c)/(d) measure.
+
+Mechanism correction (2026-09-29, same day, BEFORE any rerun): the first
+candidate basket ran all ten team rows byte-identically to baseline
+(/tmp/ofh-matrix/basket-2026-09-29-silo-reserve-yield/results.jsonl, so
+clause (e) failed) — the candidate never engaged. A candidate-build dump
+replay of team-temp-basket-03
+(/tmp/ofh-matrix/diag-temp03-dump-candidate-8dcf0092.out; identical 190
+samples, identical gap) shows why: with samSiteCountTarget() at 1, the bot
+owning SAM #1 makes shouldBuildSiloTriggeredSam() false, so the hold runs
+through handleBuiltHostileSiloSamUpgrade — the H-bomb plan (level 1 -> ready
+floor 2, 3,000,000 ladder price) returning false on the same slot — not
+through the triggered tail the gate covered. Correction: the same
+shouldYieldHostileSiloReserveToEconomy() gate now also replaces the false
+reserve return of the built-silo upgrade branch; the triggered tail, the FFA
+first-SAM hoard, and the live-missile lane are unchanged. Focused regression
+adds: built-silo upgrade reserve + baseline coverage + affordable City ->
+null; no coverage context -> false. Basket rules, baseline, and clauses are
+unchanged; the rerun writes to
+/tmp/ofh-matrix/basket-2026-09-29-silo-reserve-yield-v2/.

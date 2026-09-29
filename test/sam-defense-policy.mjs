@@ -1723,6 +1723,39 @@ assert.equal(
   "the yield lets the ordinary chain reach lower-priority construction",
 );
 assert.equal(siloYieldDefenseCalls, 1);
+
+const builtSiloYieldBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+builtSiloYieldBehavior.game = {
+  config: () => ({ isUnitDisabled: () => false }),
+  ticks: () => 5000,
+};
+builtSiloYieldBehavior.player = { smallID: () => 0 };
+builtSiloYieldBehavior.hasPlacedSiloOnMap = () => true;
+builtSiloYieldBehavior.hasBuiltHostileSiloThreat = () => true;
+builtSiloYieldBehavior.shouldBuildSiloTriggeredSam = () => false;
+builtSiloYieldBehavior.shouldBuildHostileSiloSam = () => false;
+builtSiloYieldBehavior.hydrogenSamProtectionPlan = () => ({
+  currentLevel: 1,
+  targetLevel: 2,
+});
+builtSiloYieldBehavior.maybeUpgradePlannedSam = async () => false;
+builtSiloYieldBehavior.ownedSamUnits = () => [siloYieldSam(true)];
+builtSiloYieldBehavior.isBuiltActiveSam = (sam) =>
+  sam.isActive() !== false && !sam.isUnderConstruction();
+builtSiloYieldBehavior.ownedLevels = (type) => (type === UNIT.City ? 2 : 0);
+builtSiloYieldBehavior.economicConstructionPressure = () => ({ cost: 500000n });
+builtSiloYieldBehavior.spendableConstructionGold = () => 2000000n;
+assert.equal(
+  await builtSiloYieldBehavior.handleHostileSiloSamMaximumPriority(),
+  null,
+  "the built-silo upgrade reserve yields to an affordable City once baseline coverage exists",
+);
+builtSiloYieldBehavior.player = null;
+assert.equal(
+  await builtSiloYieldBehavior.handleHostileSiloSamMaximumPriority(),
+  false,
+  "without coverage context the built-silo upgrade reserve holds as before",
+);
 hostileSiloMaximumPriorityBehavior.shouldBuildSiloTriggeredSam = () => false;
 hostileSiloMaximumPriorityBehavior.hydrogenSamProtectionPlan = () => ({
   currentLevel: 1,

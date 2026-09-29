@@ -991,7 +991,13 @@
           ffaMode && preemptiveHostileSiloRisk,
         );
       }
-      return this.handleBuiltHostileSiloSamUpgrade();
+      const upgradeDecision = await this.handleBuiltHostileSiloSamUpgrade();
+      if (upgradeDecision !== false) return upgradeDecision;
+      // An unaffordable H-bomb upgrade holds this same slot (with
+      // samSiteCountTarget() = 1 this branch, not the triggered one, owns
+      // the measured t=4549-6872 reserve). The baseline-coverage yield
+      // applies identically here.
+      return this.shouldYieldHostileSiloReserveToEconomy() ? null : false;
     }
 
     async handleTriggeredHostileSiloSam(
