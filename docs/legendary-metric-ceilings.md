@@ -2677,3 +2677,10 @@ treasury (ten Warships at t=3307-6196, gold 208k-595k, below the 1M silo
 price permanently) while the defense ladder was satisfied — a warship-save
 valve after arsenal loss plus SAM replacement is the remaining unexplored
 sequencing lever.
+
+Addendum (2026-09-29, same day): the inert ae5f2043 parts (arsenal-loss
+observation latch, legendaryBigStartSiloDeferred exemption, and their
+focused regressions) are also reverted, restoring byte-identical behavior to
+d468cd21 per the inert-candidate discipline; the code remains recoverable at
+ae5f2043 and da3a7ec7 if an engine-side salvo-race change ever reopens the
+family.
