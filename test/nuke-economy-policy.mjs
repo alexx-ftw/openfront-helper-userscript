@@ -48,6 +48,8 @@ const sandbox = {
   PlayerType: { Bot: "Bot" },
   state: { settings: { winFixes: true }, stats: { nukes: 0 }, recentMirvHits: [] },
   currentDifficulty: () => testDifficulty,
+  isLegendaryDifficulty: (difficulty) =>
+    difficulty === "Legendary" || difficulty === "Impossible",
   isAtLeastHardDifficulty: () => true,
   console,
 };
@@ -154,6 +156,47 @@ assert.equal(
   behavior.shouldDeferNukeForEconomy(target, 5_000_000n),
   true,
   "An ordinary offensive nuke yields to the shared economy/defense reserve",
+);
+
+testDifficulty = sandbox.Difficulty.Impossible;
+const coveredNukeSam = {
+  isActive: () => true,
+  isUnderConstruction: () => false,
+};
+const normalizedLegendaryNuke = Object.create(sandbox.__NukeBehavior.prototype);
+normalizedLegendaryNuke.player = {
+  gold: () => 1_000_000n,
+  units: (type) => (type === UNIT.SAMLauncher ? [coveredNukeSam] : []),
+};
+normalizedLegendaryNuke.isHydroNation = false;
+normalizedLegendaryNuke.structureBehavior = {
+  isBuiltActiveSam: (sam) => !sam.isUnderConstruction() && sam.isActive(),
+  hasActiveMaritimeInvasion: () => false,
+  shouldDeferOffensiveNuke: () => true,
+};
+normalizedLegendaryNuke.isUnderHeavyAttack = () => false;
+normalizedLegendaryNuke.isRetaliationNukeTarget = () => false;
+assert.equal(
+  normalizedLegendaryNuke.shouldDeferNukeForEconomy(target, 750_000n),
+  false,
+  "a normalized Legendary with a completed active SAM may spend an affordable Atom",
+);
+normalizedLegendaryNuke.player.units = (type) =>
+  type === UNIT.SAMLauncher
+    ? [{ isActive: () => true, isUnderConstruction: () => true }]
+    : [];
+assert.equal(
+  normalizedLegendaryNuke.shouldDeferNukeForEconomy(target, 750_000n),
+  true,
+  "a normalized Legendary still defers while its SAM is under construction",
+);
+normalizedLegendaryNuke.player.units = (type) =>
+  type === UNIT.SAMLauncher ? [coveredNukeSam] : [];
+normalizedLegendaryNuke.structureBehavior.hasActiveMaritimeInvasion = () => true;
+assert.equal(
+  normalizedLegendaryNuke.shouldDeferNukeForEconomy(target, 750_000n),
+  true,
+  "active maritime pressure still defers after baseline SAM coverage",
 );
 
 testDifficulty = sandbox.Difficulty.Legendary;
