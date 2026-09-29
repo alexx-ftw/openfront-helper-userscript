@@ -2441,3 +2441,37 @@ upgrade (independent per-structure spawn cooldown), while Ports carry no
 spawn-rate penalty for owning more. Possible future lever, not pre-declared
 here: factor embargo windows into trade-route valuations or attack-target
 ranking.
+
+### Verdict: REVERTED EARLY (2026-09-29, ten-row gate failed clauses (a) and (b))
+
+Candidate basket: /tmp/ofh-matrix/basket-2026-09-29-overwhelm-yield/results.jsonl
+(10 rows, candidate 260729cd). Clause (c) and (d) passed: team-25mm aggregate
+nukedStructureGold 25,750,000 -> 57,200,000 and wins 0 -> 1. Clause (b)
+failed: aggregate ownStructuresNuked 94 -> 95, driven entirely by
+basket-05 (21 -> 40) while basket-01/02/03/04 improved (15->14, 24->22,
+20->13, 14->6) and basket-04 became the first team-25mm win on record
+(+31,450,000 nukedStructureGold, won, samReady held). Clause (a) failed on
+exactly one row: team-none-basket-02..05 are identical modulo runtimeMs, but
+basket-01 diverged (still won, final gold 25,243,398 -> 46,708,446, firstLost
+null -> 9779, ownNuked 0 -> 5).
+
+Mechanism finding (dump /tmp/ofh-matrix/diag-none01-dump-candidate-260729cd.out):
+the identity predicate was misdeclared, not the code. Baseline
+team-none-basket-01 was NOT a never-lost world: after the shared beachhead
+(landed 3515, recaptured 4085 in both worlds) the bot built three Defense
+Posts (3515/3640/3649) and lost all three to combat around t=5000-5500
+(Defense Post 3 -> 0 in the progress dump). The goal metrics count nuke
+losses only (ownStructuresNuked, firstOwnStructureLostTick), so baseline
+looked protected while a tracked loss existed. The latch armed exactly there
+in the candidate and only then diverged — the observation mechanism is
+verified correct end to end. Correct identity claim for any successor:
+"worlds that lose no tracked structure of ANY kind stay byte-identical",
+which the basket metrics cannot verify by themselves.
+
+The unbounded yield is a measured high-variance lever: worlds that survive
+their first losses convert the freed construction slot into wins and damage
+(25mm-04, none-01), while collapse worlds keep feeding economy into salvos
+(25mm-05). Per the pre-declared rule the behavior, regression, and generated
+bundles are reverted to d468cd21. A bounded variant (yield disarms once
+cumulative tracked losses exceed the winner's measured loss count) is the
+obvious successor and is pre-declared separately below.
