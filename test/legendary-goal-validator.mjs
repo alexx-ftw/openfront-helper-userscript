@@ -3,18 +3,23 @@ import { validate } from "../scripts/headless/validate-legendary-goal.mjs";
 
 const passing = {
   won: true,
+  intentBudgetViolated: false,
   goalRequirements: {
-    tradeCaptured: 33,
-    warshipsDestroyed: 5,
-    maxWarshipVeterancy: 3,
+    // Trade captures and veterancy are enforced at the match-set level.
+    tradeCaptured: 0,
+    maxWarshipVeterancy: 0,
     nukedStructureGold: "5000000",
     enemyStructureValueAtEnd: "9000000",
     ownStructuresNuked: 0,
-    ownTransportBoatsLost: 0,
+    ownTransportBoatsLost: 2,
+    enemyTransportBoatsDestroyed: 3,
     seaInvasionObserved: false,
     allInvasionsRecaptured: true,
-    samReadyBeforeFirstHostileNuke: true,
-    landLeaderAt120Seconds: { isOwn: true },
+    firstReadySamTick: null,
+    firstOwnStructureLostTick: null,
+    // The amended per-game land check is top-3 among non-Nations at 180 s.
+    landLeaderAt120Seconds: { isOwn: false },
+    landLeaderNonNationAt180Seconds: { ownRank: 3 },
     bestEconomy: true,
   },
 };
@@ -27,12 +32,19 @@ const passing = {
 
 {
   const failed = structuredClone(passing);
-  failed.goalRequirements.tradeCaptured = 32;
+  failed.goalRequirements.landLeaderNonNationAt180Seconds.ownRank = 4;
+  failed.goalRequirements.ownTransportBoatsLost = 3;
+  failed.goalRequirements.enemyTransportBoatsDestroyed = 2;
   failed.goalRequirements.ownStructuresNuked = 1;
+  failed.goalRequirements.firstReadySamTick = 20;
+  failed.goalRequirements.firstOwnStructureLostTick = 10;
   const report = validate(failed);
   assert.equal(report.passed, false);
-  assert.ok(report.failed.includes("tradeCaptured"));
+  assert.ok(report.failed.includes("leader180Top3NonNation"));
+  assert.ok(report.failed.includes("ownTransportBoatsLost"));
+  assert.ok(report.failed.includes("enemyTransportKills"));
   assert.ok(report.failed.includes("ownStructuresNuked"));
+  assert.ok(report.failed.includes("samReadyA4"));
 }
 
 {
@@ -45,14 +57,13 @@ const passing = {
 
 {
   const failed = structuredClone(passing);
-  failed.goalRequirements.landLeaderAt120Seconds = { isOwn: false };
+  failed.goalRequirements.seaInvasionObserved = true;
+  failed.goalRequirements.allInvasionsRecaptured = false;
   failed.goalRequirements.bestEconomy = false;
-  failed.goalRequirements.samReadyBeforeFirstHostileNuke = false;
   const report = validate(failed);
   assert.equal(report.passed, false);
-  assert.ok(report.failed.includes("landLeaderAt120Seconds"));
+  assert.ok(report.failed.includes("invasionsRecaptured"));
   assert.ok(report.failed.includes("bestEconomy"));
-  assert.ok(report.failed.includes("samReadyBeforeFirstHostileNuke"));
 }
 
 console.log("legendary goal validator tests passed");

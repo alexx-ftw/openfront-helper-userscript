@@ -19,7 +19,7 @@ import fs from "node:fs";
 
 const MIN_NUKED_GOLD = 5_000_000n;
 
-function rowChecks(result) {
+export function rowChecks(result) {
   const goal = result?.goalRequirements ?? {};
   const nuked = BigInt(goal.nukedStructureGold ?? 0);
   const enemyValueAtEnd = BigInt(goal.enemyStructureValueAtEnd ?? 0);

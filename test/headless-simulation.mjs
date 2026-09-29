@@ -41,18 +41,6 @@ const nationExecution = fs.readFileSync(
   path.join(root, "engine/ingame/auto-bot/nationExecution.js"),
   "utf8",
 );
-const goalValidator = fs.readFileSync(
-  path.join(root, "scripts/headless/validate-legendary-goal.mjs"),
-  "utf8",
-);
-
-assert.match(goalValidator, /tradeCaptured[\s\S]*>= 33/);
-assert.match(goalValidator, /warshipsDestroyed[\s\S]*>= 5/);
-assert.match(goalValidator, /maxWarshipVeterancy[\s\S]*>= 3/);
-assert.match(goalValidator, /samReadyBeforeFirstHostileNuke/);
-assert.match(goalValidator, /ownTransportBoatsLost/);
-assert.match(goalValidator, /bestEconomy/);
-
 assert.match(
   structureBehavior,
   /const activeThreat = this\.defensePostThreat\(difficulty\);[\s\S]*if \(activeThreat === null\) return null;/,
