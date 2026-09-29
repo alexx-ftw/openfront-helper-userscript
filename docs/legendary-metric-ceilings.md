@@ -1929,3 +1929,27 @@ code, regression, and generated bundles and records the measured result.
 Known ceiling: skipping stronger bots can also skip real structure-steal
 income, and pure defensive collapses (basket-05 mode) are untouched — a
 survival gain may appear in only some rows.
+
+### Verdict: REVERTED (2026-09-29, complete no-op — all 15 FFA rows byte-identical)
+
+The full 15-row FFA run completed at parallelism 2 in
+`/tmp/ofh-matrix/basket-2026-09-29-ffa-botsgate/`: every row identical to
+the baseline in win and tick count, n20 losing-row median survival unchanged
+at 9169 (bar was ≥ 11,000), clause (b) failed. Combined with the team-mode
+no-op in the same session, current-troops winnability filtering of the bots
+lane is measured dead in every mode. The lanes' targets are already weaker
+than our army at commit time — the "rich slow bot" premise makes them
+attractive exactly when the current-strength bar passes — and the FFA deaths
+are decided by post-commit dynamics (defender out-production, incoming waves,
+defense density), not by the commit-time strength relation. The harness for
+`test/attack-intent-accounting.mjs` gained a gameConfig stub during this
+cycle and was reverted with the candidate. Code, regression, and generated
+bundles were restored to `973a7e81`.
+
+Standing conclusion for the whole winnability family: any future war-selection
+lever must compare production trajectories or committed-payload payback (for
+example target maxTroops vs ours, or a per-war no-tile-gain abandon valve),
+not current troops. The defensive-collapse death mode (ffa-n20-basket-05:
+191k/480k incoming waves erase 15k tiles with outgoing near zero) remains the
+largest unaddressed FFA loss pool and belongs to defense policy, not war
+selection.
