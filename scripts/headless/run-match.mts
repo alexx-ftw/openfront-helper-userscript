@@ -1813,7 +1813,10 @@ function goalRequirementsSnapshot() {
         )
     : 0n;
   return {
+    // This is a captured-ship count (BOAT_INDEX_CAPTURE), not trade income.
     tradeCaptured: Number(stats?.boats?.trade?.[2] ?? 0n),
+    tradeGoldEarned: (me?.tradeGold() ?? 0n).toString(),
+    trainGoldEarned: (me?.trainGold() ?? 0n).toString(),
     enemyTransportBoatsDestroyed: Number(stats?.boats?.trans?.[3] ?? 0n),
     ownTransportBoatsLost,
     warshipsDestroyed: Number(stats?.units?.wshp?.[1] ?? 0n),

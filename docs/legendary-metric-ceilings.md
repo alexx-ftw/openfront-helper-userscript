@@ -1475,3 +1475,31 @@ trace records `sam-upgrade-probe` / `sam-upgrade-plan` at t=6872, followed by
 gold falling from 3,104,709 to 105,509. The basket's byte-identical behavior
 confirms the candidate never engaged. Source, focused regression, and bundle
 are restored to baseline; the candidate data is retained under `/tmp`.
+
+## Metric correction: trade captures are not trade income (2026-09-29)
+
+`goalRequirements.tradeCaptured` reads `stats.boats.trade[2]`, which is
+`BOAT_INDEX_CAPTURE`; `StatsImpl.boatCapturedTrade` increments it when a
+trade ship is captured. The scorer's `metrics.trades` and `setBars.tradesSum`
+therefore count captured trade ships, not completed routes or revenue.
+Earlier pre-declarations and verdicts that described a higher `tradesSum` as
+better trade income used the wrong metric.
+
+`run-match.mts` now also emits `tradeGoldEarned` and `trainGoldEarned` from
+the engine's dedicated player counters. A normal completed trade ship credits
+`tradeGold` to both port owners; train station stops credit `trainGold`.
+Use these values from each row's `goalRequirements` to measure maritime and
+rail income separately. Existing basket files under `/tmp` predate these
+fields and cannot establish those revenue comparisons retroactively.
+
+This corrects the interpretation of the earlier results without changing
+their outcome measurements. The foreign-port-distance lever remains in the
+current baseline, and its no-regression, capture-count, survival, and
+veterancy observations still stand; its effect on actual trade income is
+unverified. The normal-game port-cap and port-upgrade candidates remain
+reverted because they independently failed the pre-declared win/fullGreen
+and/or `ffa-n2` safety clauses; their trade-income effects were not measured.
+The team-temp basket-03 replay with the corrected telemetry earned
+5,323,205 trade gold and 0 train gold (no Factory was built), out of
+6,525,503 total earned; that single-row reading is diagnostic, not a
+candidate-versus-baseline comparison.

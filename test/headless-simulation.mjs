@@ -517,6 +517,8 @@ for (const field of [
   "ownStructuresNuked",
   "seaInvasionObserved",
   "goldEarned",
+  "tradeGoldEarned",
+  "trainGoldEarned",
   "bestRivalGoldEarned",
   "bestEconomy",
   "firstHostileNukeTick",
@@ -526,6 +528,8 @@ for (const field of [
 ]) {
   assert.ok(field in goalShape, `goal telemetry must expose ${field}`);
 }
+assert.match(goalShape.tradeGoldEarned, /^\d+$/);
+assert.match(goalShape.trainGoldEarned, /^\d+$/);
 
 // Legendary FFA survival policy: the economy must win the early gold race
 // (foundational City before preemptive Defense Posts), sieges must not freeze
