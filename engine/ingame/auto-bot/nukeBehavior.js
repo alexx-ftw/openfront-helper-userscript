@@ -786,18 +786,15 @@
      */
     shouldDeferNukeForEconomy(nukeTarget, nukeCost) {
       if (this.hasActiveMaritimeInvasion()) return true;
-      // A Legendary nation with a live SAM has already paid for the baseline
-      // defensive prerequisite. Release the surplus reserve for an affordable
-      // nuke; the target and trajectory gates still decide whether to fire.
-      const samUnits = this.player?.units?.(UNIT.SAMLauncher) || [];
-      const hasBuiltActiveSam = samUnits.some((sam) => {
-        const sharedPredicate = this.structureBehavior?.isBuiltActiveSam?.(sam);
-        return sharedPredicate ??
-          (sam?.isUnderConstruction?.() !== true && sam?.isActive?.() !== false);
-      });
+      // A Hydro Legendary nation with a live SAM has already paid for the
+      // defensive prerequisite. Once an Atom is affordable, withholding it
+      // behind the next 1.5M SAM reserve leaves the Silo permanently idle and
+      // makes the nuclear economy unreachable; the friendly-fire scorer still
+      // protects our own structures below.
       if (
-        isLegendaryDifficulty(currentDifficulty()) &&
-        hasBuiltActiveSam &&
+        this.isHydroNation === true &&
+        currentDifficulty() === Difficulty.Legendary &&
+        this.player.units(UNIT.SAMLauncher).length > 0 &&
         this.player.gold() >= BigInt(nukeCost || 0n)
       ) {
         return false;
