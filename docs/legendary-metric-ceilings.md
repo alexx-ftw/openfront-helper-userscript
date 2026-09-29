@@ -2368,3 +2368,76 @@ encodes; no cheaper client-side signal separates the four rows at decision
 time. The completed-hostile-Silo reserve therefore keeps its hard-hold
 semantics, and the economic-yield family on this slot is closed as a
 measured dead end (do not retry without a new engine-side coverage change).
+
+## Lever pre-declaration: overwhelm-armed hostile-silo reserve yield (2026-09-29, BEFORE any candidate run)
+
+The economic-yield family was closed as a measured dead end because the v2
+yield regressed exactly the worlds whose H-bomb coverage plan never idles
+(team-none ownNuked 0 -> 5), and the salvo-timeline addendum showed the
+coverage plan already encodes the world difference. This variant keeps the
+yield but arms it only on observed own damage, so protected worlds cannot
+change behavior by construction.
+
+Candidate: observe the bot's own tracked-structure total every tick — City,
+Port, Factory, Defense Post, SAM Launcher, Missile Silo (counted via
+player.units(type) per type, under-construction included; per-tick cached,
+compared with the previous observed tick, latched permanently on any drop as
+_ownStructuresLostObserved). The observation hooks into
+observeHostileMissileLaunch(), which nationExecution already calls every tick.
+When AND ONLY WHEN the latch is armed, the two hostile-silo reserve tails
+yield one ordinary ladder decision (return null) instead of holding: the
+shouldReserveTriggeredHostileSiloSamBudget tail in
+handleTriggeredHostileSiloSam and the false return of
+handleBuiltHostileSiloSamUpgrade (wiring identical to reverted v2). The
+yield additionally requires (1) at least one COMPLETED SAM launcher
+(isBuiltActiveSam; the first-SAM window keeps the reserve) and (2) an
+economicConstructionPressure() candidate affordable from
+spendableConstructionGold(). The v2 City-level cap is dropped: the latch
+replaces it as the safety. The live-missile lane, the FFA first-SAM hoard,
+and the zero-launcher doctrine are untouched.
+
+Byte-identity claim: every world that never loses a tracked structure
+(baseline ownStructuresNuked=0 AND firstOwnStructureLostTick=null: all
+team-none, all team-temp, 5mm-01/02/03, n20-01/03/05, and every other row
+matching that predicate) must reproduce baseline behavior bytes because the
+latch never arms there. Known ceiling: a loss and a structure completion
+inside one observation interval can net out and leave the latch unarmed;
+under-construction structures count, so losing a foundation also arms the
+latch.
+
+Focused regression in test/sam-defense-policy.mjs: (1) a tracked-structure
+drop arms the latch and it stays armed; (2) armed + completed SAM +
+affordable City + built hostile Silo reserve ->
+handleHostileSiloSamMaximumPriority returns null; (3) never-lost world ->
+false (reserve holds); (4) armed + zero COMPLETED SAMs -> false; (5) armed +
+no affordable economic candidate -> false.
+
+Rows: full fixed basket, all 7 sets x seeds basket-01..05, unmodified
+run-basket.mjs protocol, parallelism 2. Baseline:
+/tmp/ofh-matrix/basket-2026-09-29-port-level-weighted-6e20da38/results.jsonl.
+Early gate after the ten team-25mm + team-none rows: (a) team-none rows
+byte-identical to baseline; (b) team-25mm aggregate ownStructuresNuked <= 94;
+(c) team-25mm aggregate nukedGold >= 21,750,000; (d) team-25mm wins >= 0.
+Full-35 LAND rules: no set regresses wins or fullGreens; per-set
+ownStructuresNuked non-increase; per-set nukedGold non-decrease;
+ffa-n2-basket-04 and ffa-n20-basket-04 wins preserved; progress = 25mm
+nukedGold increase or any win/fullGreen gain. Otherwise REVERT the behavior,
+regression, and generated bundles and record the measured result.
+
+## Intel: upstream trade mechanics for future economy levers (2026-09-29, source walkthrough, not measured in this repo)
+
+From a reviewed upstream-source walkthrough (OpenFrontIO PlayerImpl.canTrade,
+AttackExecution, TradeShipExecution.complete, PortExecution, Config.ts) —
+context to weigh in economy work, not basket evidence: (1) attacking a player
+gives them a temporary embargo against the attacker, stopping trade both ways
+for its duration; (2) a completed trade ship pays the same gold to the origin
+port owner and the destination port owner, so outgoing ships are income; (3)
+destination selection weights a port by its level (level N appears roughly N
+times in the candidate list), which the landed port-level-weighted route
+lever already mirrors; (4) Port and Factory share one cost curve — the next
+price counts Port+Factory levels together, so the construction ladder prices
+them jointly; (5) a new level-1 Factory spawns trains at least as well as an
+upgrade (independent per-structure spawn cooldown), while Ports carry no
+spawn-rate penalty for owning more. Possible future lever, not pre-declared
+here: factor embargo windows into trade-route valuations or attack-target
+ranking.
