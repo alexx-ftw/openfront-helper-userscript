@@ -271,16 +271,6 @@
     UNIT.Port,
   ];
 
-  /** Tracked own-structure types for the overwhelm latch (observeOwnStructureLoss). */
-  const OWN_STRUCTURE_LOSS_TRACKED_TYPES = [
-    UNIT.City,
-    UNIT.Port,
-    UNIT.Factory,
-    UNIT.DefensePost,
-    UNIT.SAMLauncher,
-    UNIT.MissileSilo,
-  ];
-
   /** Length in ticks of each on/off phase after the team-mode save-up target is first reached */
   const TEAM_POST_SAVE_UP_PHASE_TICKS = 150; // 15s
 
@@ -1001,13 +991,7 @@
           ffaMode && preemptiveHostileSiloRisk,
         );
       }
-      const upgradeDecision = await this.handleBuiltHostileSiloSamUpgrade();
-      if (upgradeDecision !== false) return upgradeDecision;
-      // An unaffordable H-bomb upgrade holds this same slot (with
-      // samSiteCountTarget() = 1 this branch, not the triggered one, owns
-      // the measured reserve). The overwhelm-armed yield applies identically
-      // here.
-      return this.shouldYieldHostileSiloReserveToEconomy() ? null : false;
+      return this.handleBuiltHostileSiloSamUpgrade();
     }
 
     async handleTriggeredHostileSiloSam(
@@ -1033,36 +1017,11 @@
       // In FFA, reserve the first interceptor during the existing half-silo
       // gold warning window. Teams retain the completed-silo reserve because
       // third-party launches already provide an earlier defense signal.
-      if (
-        !this.shouldReserveTriggeredHostileSiloSamBudget(
-          builtHostileSilo || ffaPreemptiveHostileSiloRisk,
-        )
-      ) {
-        return null;
-      }
-      return this.shouldYieldHostileSiloReserveToEconomy() ? null : false;
-    }
-
-    // A completed hostile Silo hard-reserves the construction slot while the
-    // next interceptor purchase (second placement or H-bomb upgrade ladder
-    // step) is unaffordable. Once a tracked own structure has been lost this
-    // match (the overwhelm latch), the coverage plan's protective premise no
-    // longer holds on this world, so one affordable economic candidate may
-    // take the ladder decision instead of idling the slot. Worlds that never
-    // lose a structure never arm the latch and stay byte-identical. The
-    // first-SAM window and the live-missile lane are untouched: the yield
-    // requires a COMPLETED launcher, and the active-missile lane still owns
-    // the slot first whenever a missile is airborne.
-    shouldYieldHostileSiloReserveToEconomy() {
-      if (this._ownStructuresLostObserved !== true) return false;
-      if (!this.player) return false;
-      const builtSams = (this.ownedSamUnits() || []).filter((sam) =>
-        this.isBuiltActiveSam(sam),
-      );
-      if (builtSams.length === 0) return false;
-      const economic = this.economicConstructionPressure();
-      if (!economic) return false;
-      return this.spendableConstructionGold() >= economic.cost;
+      return this.shouldReserveTriggeredHostileSiloSamBudget(
+        builtHostileSilo || ffaPreemptiveHostileSiloRisk,
+      )
+        ? false
+        : null;
     }
 
     async handleBuiltHostileSiloSamUpgrade() {
@@ -3449,34 +3408,7 @@
     }
 
     observeHostileMissileLaunch() {
-      this.observeOwnStructureLoss();
       return this.hasObservedHostileMissileLaunch();
-    }
-
-    // Overwhelm latch for the hostile-silo reserve yield: any observed drop
-    // in the tracked own-structure total arms _ownStructuresLostObserved for
-    // the rest of the match. A loss and a completion inside one observation
-    // interval can net out; that masking is a documented ceiling (see the
-    // overwhelm-armed yield pre-declaration in
-    // docs/legendary-metric-ceilings.md).
-    observeOwnStructureLoss() {
-      if (!this.player || typeof this.player.units !== "function") return false;
-      const tick = safeStructureGameTick(this.game);
-      if (!Number.isFinite(tick)) return false;
-      if (this._structureLossTick === tick) {
-        return this._ownStructuresLostObserved === true;
-      }
-      let total = 0;
-      for (const type of OWN_STRUCTURE_LOSS_TRACKED_TYPES) {
-        total += (this.player.units(type) || []).length;
-      }
-      this._structureLossTick = tick;
-      const previous = this._structureLossPreviousTotal;
-      if (previous !== undefined && total < previous) {
-        this._ownStructuresLostObserved = true;
-      }
-      this._structureLossPreviousTotal = total;
-      return this._ownStructuresLostObserved === true;
     }
 
     hasHostileReachedSiloGoldThreshold() {

@@ -20018,15 +20018,5 @@
     "initializerHash": "e7f6c011776e8db7cd330b54174fd76f7d0216b612387a5ffcfb81e6f0919683",
     "initializerLength": 1,
     "initializerPreview": "6"
-  },
-  {
-    "id": "engine/ingame/auto-bot/structureBehavior.js:OWN_STRUCTURE_LOSS_TRACKED_TYPES#1",
-    "file": "engine/ingame/auto-bot/structureBehavior.js",
-    "name": "OWN_STRUCTURE_LOSS_TRACKED_TYPES",
-    "declarationKind": "const",
-    "initializerKind": "ArrayLiteralExpression",
-    "initializerHash": "79b7ff360f34b69ce458c209f4e165d5dfa7ec1c255a166e56fb2691acd76e7b",
-    "initializerLength": 117,
-    "initializerPreview": "[\n    UNIT.City,\n    UNIT.Port,\n    UNIT.Factory,\n    UNIT.DefensePost,\n    UNIT.SAMLauncher,\n    UNIT.MissileSilo,\n]"
   }
 ]
