@@ -157,6 +157,60 @@ assert.equal(
 );
 
 testDifficulty = sandbox.Difficulty.Legendary;
+const legendaryCoveredNuke = Object.create(sandbox.__NukeBehavior.prototype);
+const completedNukeSam = {
+  isActive: () => true,
+  isUnderConstruction: () => false,
+};
+legendaryCoveredNuke.game = {
+  config: () => ({ isUnitDisabled: () => false }),
+};
+legendaryCoveredNuke.player = {
+  gold: () => 1_000_000n,
+  units: (type) => (type === UNIT.SAMLauncher ? [completedNukeSam] : []),
+};
+legendaryCoveredNuke.isHydroNation = false;
+legendaryCoveredNuke.structureBehavior = {
+  isBuiltActiveSam: (sam) => !sam.isUnderConstruction() && sam.isActive() !== false,
+  hasActiveMaritimeInvasion: () => false,
+  shouldDeferOffensiveNuke: () => true,
+};
+legendaryCoveredNuke.isUnderHeavyAttack = () => false;
+legendaryCoveredNuke.isRetaliationNukeTarget = () => false;
+assert.equal(
+  legendaryCoveredNuke.shouldDeferNukeForEconomy(target, 750_000n),
+  false,
+  "a non-Hydro Legendary with completed SAM coverage may spend an affordable Atom despite the surplus reserve",
+);
+legendaryCoveredNuke.player.units = (type) =>
+  type === UNIT.SAMLauncher ? [{ isActive: () => true, isUnderConstruction: () => true }] : [];
+assert.equal(
+  legendaryCoveredNuke.shouldDeferNukeForEconomy(target, 750_000n),
+  true,
+  "a SAM still under construction does not release the Legendary nuke reserve",
+);
+legendaryCoveredNuke.player.units = (type) =>
+  type === UNIT.SAMLauncher ? [{ isActive: () => false, isUnderConstruction: () => false }] : [];
+assert.equal(
+  legendaryCoveredNuke.shouldDeferNukeForEconomy(target, 750_000n),
+  true,
+  "an inactive SAM does not release the Legendary nuke reserve",
+);
+legendaryCoveredNuke.player.units = () => [];
+assert.equal(
+  legendaryCoveredNuke.shouldDeferNukeForEconomy(target, 750_000n),
+  true,
+  "without a SAM the Legendary nuke reserve remains in place",
+);
+legendaryCoveredNuke.player.units = (type) => (type === UNIT.SAMLauncher ? [completedNukeSam] : []);
+legendaryCoveredNuke.structureBehavior.hasActiveMaritimeInvasion = () => true;
+assert.equal(
+  legendaryCoveredNuke.shouldDeferNukeForEconomy(target, 750_000n),
+  true,
+  "active maritime pressure retains the nuke reserve even after SAM completion",
+);
+legendaryCoveredNuke.structureBehavior.hasActiveMaritimeInvasion = () => false;
+
 const valueGuard = Object.create(sandbox.__NukeBehavior.prototype);
 valueGuard.player = { gold: () => 10_000_000n };
 valueGuard.game = {
