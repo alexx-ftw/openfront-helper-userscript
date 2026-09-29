@@ -2729,3 +2729,19 @@ regresses wins or fullGreens; per-set ownStructuresNuked non-increase;
 per-set nukedStructureGold non-decrease; preserve ffa-n2-basket-04 and
 ffa-n20-basket-04 wins; progress is any per-set nukedStructureGold increase
 or any win/fullGreen gain. Otherwise revert and record the verdict.
+
+### Verdict: REVERTED EARLY (2026-09-29, rich-pacifist damage gate failed)
+
+The 15-row early basket completed at parallelism 2:
+`/tmp/ofh-matrix/basket-2026-09-29-legendary-nuke-release/results.jsonl`.
+No set regressed wins/fullGreens, ownStructuresNuked did not increase, and
+nukedStructureGold did not decrease. But ffa-n4 stayed at 0 nukedStructureGold
+(baseline 0); all 15 paired rows were semantically identical in wins, ticks,
+emitted intents, nuke strategy, intent/build counts, goal metrics, and final
+bot state. The pre-declared ffa-n4 damage gate failed, so the remaining 20 rows
+were not run. Candidate-level nuke tracing was not enabled in this basket, so
+the identical outcomes do not identify whether the reserve bypass stayed
+closed or a later target/value/trajectory gate rejected every shot.
+
+The candidate commit `84ead1d5` and its test/generated bundle changes were
+reverted by `7313f020`, restoring the pre-candidate behavior; no push was made.
