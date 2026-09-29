@@ -1540,3 +1540,18 @@ team set's sum decreasing; and (d) no team row changes
 Known ceiling: if a built Port has no viable sea trade, or realized route
 income arrives only after its upgrade opportunity has ceased to matter, this
 gate is inert and preserves the prior construction policy.
+
+### Verdict: REVERTED EARLY (2026-09-29, revenue gate failed)
+
+The fixed-basket candidate run was stopped at 10/35 after completing all five
+rows each for `team-none` and `team-temp`, the only sets that can satisfy
+pre-declared clause (c). Both sets were byte-identical to baseline apart from
+`runtimeMs`: `team-none` tradeGold 285,630,041 / trainGold 15,545,000 /
+tradeCaptured 96; `team-temp` tradeGold 104,248,689 / trainGold 1,700,000 /
+tradeCaptured 46. Wins remained 2/5 and 1/5, respectively, and both sets had
+zero own structures nuked. Thus neither required tradeGold sum increased;
+the remaining 25 rows cannot change that completed-set result, so the
+candidate cannot meet its LAND rule. The other sets' win/fullGreen safety and
+`ffa-n2-basket-04` were not re-run for this candidate. The code, regression,
+and generated bundle were restored; the 10-row candidate data remains under
+`/tmp/ofh-matrix/basket-2026-09-29-revenue-funded-port-upgrade/`.
