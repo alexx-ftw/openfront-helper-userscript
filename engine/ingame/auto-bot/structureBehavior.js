@@ -2495,6 +2495,12 @@
     // lane alive when port placement stalls. Waterless maps skip the burst
     // entirely (no port candidates) and keep the ordinary silo path.
     legendaryBigStartSiloDeferred(hasOceanPortTiles) {
+      // A world that already fielded and lost its Missile Silo arsenal is
+      // not an opening: the port-burst defer exists to protect the founding
+      // bank, not to suppress rebuilding the nuke capability after a hostile
+      // salvo deleted it (measured 25mm-01: 1.26M-2.47M gold at t=2000-3000
+      // with the rebuild blocked, then warship drain below the silo price).
+      if (this._arsenalLostObserved === true) return false;
       if (!hasOceanPortTiles || !this.legendaryBigStartGame()) return false;
       const tick =
         typeof this.game?.ticks === "function" ? this.game.ticks() : 0;
@@ -3408,7 +3414,33 @@
     }
 
     observeHostileMissileLaunch() {
+      this.observeArsenalLoss();
       return this.hasObservedHostileMissileLaunch();
+    }
+
+    // Arsenal-loss latch for the silo rebuild valve: when the bot's Missile
+    // Silo count drops from >0 to 0, _arsenalLostObserved arms permanently.
+    // Worlds that never field a silo, or never lose the fielded count to
+    // zero, never arm and stay byte-identical. See the arsenal-loss rebuild
+    // valve pre-declaration in docs/legendary-metric-ceilings.md.
+    observeArsenalLoss() {
+      if (!this.player || typeof this.player.units !== "function") return false;
+      const tick = safeStructureGameTick(this.game);
+      if (!Number.isFinite(tick)) return false;
+      if (this._arsenalObservationTick === tick) {
+        return this._arsenalLostObserved === true;
+      }
+      this._arsenalObservationTick = tick;
+      const count = (this.player.units(UNIT.MissileSilo) || []).length;
+      if (
+        this._arsenalPreviousCount !== undefined &&
+        this._arsenalPreviousCount > 0 &&
+        count === 0
+      ) {
+        this._arsenalLostObserved = true;
+      }
+      this._arsenalPreviousCount = count;
+      return this._arsenalLostObserved === true;
     }
 
     hasHostileReachedSiloGoldThreshold() {

@@ -1651,6 +1651,69 @@ assert.equal(
   null,
   "an enemy Silo under construction permits anticipatory SAM attempts without hard-reserving the whole economy",
 );
+const arsenalLatchBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+let arsenalLatchTick = 1000;
+let arsenalLatchSilos = [{}, {}, {}];
+arsenalLatchBehavior.game = { ticks: () => arsenalLatchTick };
+arsenalLatchBehavior.player = {
+  units: (type) => (type === UNIT.MissileSilo ? arsenalLatchSilos : []),
+};
+assert.equal(
+  arsenalLatchBehavior.observeArsenalLoss(),
+  false,
+  "a live arsenal keeps the arsenal-loss latch unarmed",
+);
+arsenalLatchTick = 1100;
+arsenalLatchSilos = [];
+assert.equal(
+  arsenalLatchBehavior.observeArsenalLoss(),
+  true,
+  "losing the entire Missile Silo arsenal arms the arsenal-loss latch",
+);
+arsenalLatchTick = 1200;
+arsenalLatchSilos = [{}, {}];
+assert.equal(
+  arsenalLatchBehavior.observeArsenalLoss(),
+  true,
+  "the arsenal-loss latch stays armed while a new arsenal builds",
+);
+arsenalLatchTick = 1300;
+arsenalLatchSilos = [];
+assert.equal(
+  arsenalLatchBehavior.observeArsenalLoss(),
+  true,
+  "a rebuilt arsenal that is lost again keeps the latch armed",
+);
+const deferBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+deferBehavior.legendaryBigStartGame = () => true;
+deferBehavior.game = { ticks: () => 2500 };
+deferBehavior.player = {
+  units: (type) => (type === UNIT.Port ? [{}, {}, {}] : []),
+};
+assert.equal(
+  deferBehavior.legendaryBigStartSiloDeferred(true),
+  true,
+  "an opening world still defers the first silo behind the port burst",
+);
+deferBehavior._arsenalLostObserved = true;
+assert.equal(
+  deferBehavior.legendaryBigStartSiloDeferred(true),
+  false,
+  "a world that lost its arsenal does not defer the silo rebuild behind the port burst",
+);
+deferBehavior._arsenalLostObserved = false;
+deferBehavior.game = { ticks: () => 3500 };
+assert.equal(
+  deferBehavior.legendaryBigStartSiloDeferred(true),
+  false,
+  "the port-burst defer still expires on its own 3000-tick backstop",
+);
+const inertArsenalBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+assert.equal(
+  inertArsenalBehavior.observeArsenalLoss(),
+  false,
+  "without a player the arsenal observation is inert",
+);
 hostileSiloMaximumPriorityBehavior.shouldBuildSiloTriggeredSam = () => false;
 hostileSiloMaximumPriorityBehavior.hydrogenSamProtectionPlan = () => ({
   currentLevel: 1,
