@@ -2828,3 +2828,16 @@ parallelism 2, writing to
 pre-declared early and full gates apply. Stop and revert if any early clause
 fails; if the early gate passes, complete all 35 rows before deciding whether
 to land.
+
+### Verdict: REVERTED EARLY (2026-09-29, rich-nuke progress gate failed)
+
+The 15-row v3 basket completed at parallelism 2:
+`/tmp/ofh-matrix/basket-2026-09-29-legendary-nuke-release-v3/results.jsonl`.
+All measured outcomes matched baseline by set: `ffa-n4` remained at 0 wins,
+0 fullGreens, 26 own structures nuked, and 0 enemy nuked-structure gold;
+`team-none` remained at 2 wins, 1 fullGreen, 0 own losses, and 11,300,000
+enemy damage; `team-25mm` remained at 0 wins, 0 fullGreens, 94 own losses,
+and 25,750,000 enemy damage. The pre-declared ffa-n4 damage-increase gate
+failed, so the remaining 20 rows were not run. Preserving the full defensive
+reserve kept the safety metrics but also kept the original nuke deadlock.
+Candidate `ead7cda6` was reverted by `8cee19ec`; no push was made.
