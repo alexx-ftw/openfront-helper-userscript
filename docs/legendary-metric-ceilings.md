@@ -2798,3 +2798,33 @@ sufficient safety condition for releasing the offensive reserve in every
 world. The candidate commit `1970c057` was reverted by `7de82b1f`; the full
 basket was not run and no push was made. Any follow-up needs a threat-aware
 defense-budget condition declared before a new run.
+
+## Follow-up pre-declaration: release only economic reserve above the defense floor (2026-09-29, BEFORE candidate)
+
+The normalized release reached its target: `ffa-n4-basket-01` launched five
+Atoms and dealt 4,200,000 enemy structure damage, but own structure losses
+rose from 9 to 25. `shouldDeferOffensiveNuke()` reserves both the next
+economic build and `offensiveNukeDefenseReserve()`; the prior candidate
+bypassed both components.
+
+Candidate: keep the active-maritime hard defer, heavy-attack and retaliation
+exceptions, and ordinary reserve check. Only when that ordinary policy would
+defer, the bot is Legendary under `isLegendaryDifficulty(currentDifficulty())`,
+and it has a completed active SAM, allow an affordable nuke if the remaining
+treasury covers the selected nuke cost plus the full
+`offensiveNukeDefenseReserve()`. This releases only the economic portion of
+the hold; defensive construction and single-SAM replacement reserves remain
+funded. Keep all target, expected-value, trajectory, and salvo gates intact.
+
+Focused regression in `test/nuke-economy-policy.mjs`: (1) normalized
+Impossible/Legendary difficulty + active SAM + 1,000,000 gold + 750,000 nuke
++ 250,000 defense reserve releases the nuke despite the economic hold; (2)
+gold below nuke plus defense reserve still defers; (3) a SAM under
+construction and active maritime pressure still defer.
+
+Run the same 15-row early gate against the original 35-row baseline at
+parallelism 2, writing to
+`/tmp/ofh-matrix/basket-2026-09-29-legendary-nuke-release-v3/`. The same
+pre-declared early and full gates apply. Stop and revert if any early clause
+fails; if the early gate passes, complete all 35 rows before deciding whether
+to land.
