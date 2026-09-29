@@ -1651,6 +1651,163 @@ assert.equal(
   null,
   "an enemy Silo under construction permits anticipatory SAM attempts without hard-reserving the whole economy",
 );
+const siloYieldSam = (completed) => ({
+  isUnderConstruction: () => !completed,
+  isActive: () => true,
+});
+// Overwhelm-latch observation: arms on any tracked-structure drop, stays armed.
+const lossLatchBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+let lossLatchTick = 100;
+let lossLatchCities = [{}, {}];
+lossLatchBehavior.game = { ticks: () => lossLatchTick };
+lossLatchBehavior.player = {
+  units: (type) => (type === UNIT.City ? lossLatchCities : []),
+};
+assert.equal(
+  lossLatchBehavior.observeOwnStructureLoss(),
+  false,
+  "a stable structure total keeps the overwhelm latch unarmed",
+);
+lossLatchTick = 101;
+lossLatchCities = [{}];
+assert.equal(
+  lossLatchBehavior.observeOwnStructureLoss(),
+  true,
+  "losing a tracked structure arms the overwhelm latch",
+);
+assert.equal(
+  lossLatchBehavior._ownStructuresLostCount,
+  1,
+  "the overwhelm latch counts each lost tracked structure",
+);
+lossLatchTick = 102;
+lossLatchCities = [{}, {}, {}, {}];
+assert.equal(
+  lossLatchBehavior.observeOwnStructureLoss(),
+  true,
+  "the overwhelm latch stays armed after the structure total recovers",
+);
+const armedTriggeredYieldBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+armedTriggeredYieldBehavior.game = {
+  config: () => ({ isUnitDisabled: () => false }),
+  ticks: () => 5000,
+};
+armedTriggeredYieldBehavior.player = { smallID: () => 0 };
+armedTriggeredYieldBehavior.ownedLevels = (type) => (type === UNIT.City ? 2 : 0);
+armedTriggeredYieldBehavior._ownStructuresLostObserved = true;
+armedTriggeredYieldBehavior.hasPlacedSiloOnMap = () => true;
+armedTriggeredYieldBehavior.hasBuiltHostileSiloThreat = () => true;
+armedTriggeredYieldBehavior.shouldBuildSiloTriggeredSam = () => true;
+armedTriggeredYieldBehavior.shouldReserveHostileSiloSamBudget = () => true;
+armedTriggeredYieldBehavior.maybeSpawnHostileSiloSam = async () => false;
+armedTriggeredYieldBehavior.maybeUpgradeHostileSiloSam = async () => false;
+armedTriggeredYieldBehavior.ownedSamUnits = () => [siloYieldSam(true)];
+armedTriggeredYieldBehavior.isBuiltActiveSam = (sam) => !sam.isUnderConstruction();
+armedTriggeredYieldBehavior.economicConstructionPressure = () => ({
+  cost: 500000n,
+});
+armedTriggeredYieldBehavior.spendableConstructionGold = () => 2000000n;
+assert.equal(
+  await armedTriggeredYieldBehavior.handleHostileSiloSamMaximumPriority(),
+  null,
+  "an overwhelmed world yields the triggered hostile-Silo reserve to an affordable City",
+);
+armedTriggeredYieldBehavior.ownedSamUnits = () => [siloYieldSam(false)];
+assert.equal(
+  await armedTriggeredYieldBehavior.handleHostileSiloSamMaximumPriority(),
+  false,
+  "a launcher still under construction keeps the reserve even in an overwhelmed world",
+);
+armedTriggeredYieldBehavior.ownedSamUnits = () => [siloYieldSam(true)];
+armedTriggeredYieldBehavior.spendableConstructionGold = () => 400000n;
+assert.equal(
+  await armedTriggeredYieldBehavior.handleHostileSiloSamMaximumPriority(),
+  false,
+  "without an affordable economic candidate the overwhelmed reserve still holds",
+);
+armedTriggeredYieldBehavior.spendableConstructionGold = () => 2000000n;
+armedTriggeredYieldBehavior._ownStructuresLostCount = 6;
+assert.equal(
+  await armedTriggeredYieldBehavior.handleHostileSiloSamMaximumPriority(),
+  null,
+  "at exactly six tracked losses the yield stays armed",
+);
+armedTriggeredYieldBehavior._ownStructuresLostCount = 7;
+assert.equal(
+  await armedTriggeredYieldBehavior.handleHostileSiloSamMaximumPriority(),
+  false,
+  "past six tracked losses the hostile-Silo reserve resumes",
+);
+const armedBuiltYieldBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+armedBuiltYieldBehavior.game = armedTriggeredYieldBehavior.game;
+armedBuiltYieldBehavior.player = { smallID: () => 0 };
+armedBuiltYieldBehavior.ownedLevels = (type) => (type === UNIT.City ? 2 : 0);
+armedBuiltYieldBehavior._ownStructuresLostObserved = true;
+armedBuiltYieldBehavior.hasPlacedSiloOnMap = () => true;
+armedBuiltYieldBehavior.hasBuiltHostileSiloThreat = () => true;
+armedBuiltYieldBehavior.shouldBuildSiloTriggeredSam = () => false;
+armedBuiltYieldBehavior.shouldBuildHostileSiloSam = () => false;
+armedBuiltYieldBehavior.hydrogenSamProtectionPlan = () => ({
+  currentLevel: 1,
+  targetLevel: 2,
+});
+armedBuiltYieldBehavior.maybeUpgradePlannedSam = async () => false;
+armedBuiltYieldBehavior.ownedSamUnits = () => [siloYieldSam(true)];
+armedBuiltYieldBehavior.isBuiltActiveSam = (sam) => !sam.isUnderConstruction();
+armedBuiltYieldBehavior.economicConstructionPressure = () => ({
+  cost: 500000n,
+});
+armedBuiltYieldBehavior.spendableConstructionGold = () => 2000000n;
+assert.equal(
+  await armedBuiltYieldBehavior.handleHostileSiloSamMaximumPriority(),
+  null,
+  "an overwhelmed world yields the built-silo H-bomb reserve to an affordable City",
+);
+const protectedTriggeredYieldBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+protectedTriggeredYieldBehavior.game = armedTriggeredYieldBehavior.game;
+protectedTriggeredYieldBehavior.player = { smallID: () => 0 };
+protectedTriggeredYieldBehavior.ownedLevels = (type) => (type === UNIT.City ? 2 : 0);
+protectedTriggeredYieldBehavior.hasPlacedSiloOnMap = () => true;
+protectedTriggeredYieldBehavior.hasBuiltHostileSiloThreat = () => true;
+protectedTriggeredYieldBehavior.shouldBuildSiloTriggeredSam = () => true;
+protectedTriggeredYieldBehavior.shouldReserveHostileSiloSamBudget = () => true;
+protectedTriggeredYieldBehavior.maybeSpawnHostileSiloSam = async () => false;
+protectedTriggeredYieldBehavior.maybeUpgradeHostileSiloSam = async () => false;
+protectedTriggeredYieldBehavior.ownedSamUnits = () => [siloYieldSam(true)];
+protectedTriggeredYieldBehavior.isBuiltActiveSam = (sam) => !sam.isUnderConstruction();
+protectedTriggeredYieldBehavior.economicConstructionPressure = () => ({
+  cost: 500000n,
+});
+protectedTriggeredYieldBehavior.spendableConstructionGold = () => 2000000n;
+assert.equal(
+  await protectedTriggeredYieldBehavior.handleHostileSiloSamMaximumPriority(),
+  false,
+  "a world with no observed structure loss keeps the triggered reserve",
+);
+const protectedBuiltYieldBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+protectedBuiltYieldBehavior.game = armedTriggeredYieldBehavior.game;
+protectedBuiltYieldBehavior.player = { smallID: () => 0 };
+protectedBuiltYieldBehavior.ownedLevels = (type) => (type === UNIT.City ? 2 : 0);
+protectedBuiltYieldBehavior.hasPlacedSiloOnMap = () => true;
+protectedBuiltYieldBehavior.hasBuiltHostileSiloThreat = () => true;
+protectedBuiltYieldBehavior.shouldBuildSiloTriggeredSam = () => false;
+protectedBuiltYieldBehavior.shouldBuildHostileSiloSam = () => false;
+protectedBuiltYieldBehavior.hydrogenSamProtectionPlan = () => ({
+  currentLevel: 1,
+  targetLevel: 2,
+});
+protectedBuiltYieldBehavior.maybeUpgradePlannedSam = async () => false;
+protectedBuiltYieldBehavior.ownedSamUnits = () => [siloYieldSam(true)];
+protectedBuiltYieldBehavior.isBuiltActiveSam = (sam) => !sam.isUnderConstruction();
+protectedBuiltYieldBehavior.economicConstructionPressure = () => ({
+  cost: 500000n,
+});
+protectedBuiltYieldBehavior.spendableConstructionGold = () => 2000000n;
+assert.equal(
+  await protectedBuiltYieldBehavior.handleHostileSiloSamMaximumPriority(),
+  false,
+  "a world with no observed structure loss keeps the built-silo reserve",
+);
 hostileSiloMaximumPriorityBehavior.shouldBuildSiloTriggeredSam = () => false;
 hostileSiloMaximumPriorityBehavior.hydrogenSamProtectionPlan = () => ({
   currentLevel: 1,
