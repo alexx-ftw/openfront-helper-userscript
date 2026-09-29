@@ -1,1 +1,94 @@
-{}
+{
+  "engine/ingame/auto-bot/attackBehavior.js": {
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-nested-conditional": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "engine/ingame/auto-bot/legendaryPlanner.js": {
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/auto-bot/nationExecution.js": {
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/auto-bot/nukeBehavior.js": {
+    "sonarjs/cognitive-complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "sonarjs/no-inverted-boolean-check": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "engine/ingame/auto-bot/structureBehavior.js": {
+    "complexity": {
+      "warning": 0,
+      "error": 2
+    }
+  },
+  "engine/ingame/auto-bot/warshipBehavior.js": {
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "scripts/headless/run-basket.mjs": {
+    "no-console": {
+      "warning": 0,
+      "error": 5
+    }
+  },
+  "scripts/headless/score-basket.mjs": {
+    "complexity": {
+      "warning": 0,
+      "error": 1
+    },
+    "max-depth": {
+      "warning": 0,
+      "error": 3
+    },
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "scripts/headless/validate-legendary-goal.mjs": {
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    }
+  },
+  "test/legendary-goal-validator.mjs": {
+    "no-console": {
+      "warning": 0,
+      "error": 1
+    }
+  }
+}

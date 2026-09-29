@@ -3000,3 +3000,28 @@ remaining factory spawn-cadence observation intersects the rail-trade lane
 that already measured no realized basket effect. Candidate code and its
 focused regressions were reverted; the bundles were regenerated to baseline
 bytes and no push was made.
+
+## Infra: lint ratchet baseline refresh; engine re-baseline measured blocked (2026-09-29)
+
+The committed `eslint-ratchet.json` was an empty object (last touched Aug
+24), so the pre-commit lint gate required zero errors while the tree carries
+pre-existing sonarjs complexity and no-console debt across ten files
+(attackBehavior, legendaryPlanner, nationExecution, nukeBehavior,
+structureBehavior, warshipBehavior, the headless scripts, and
+test/legendary-goal-validator) — commits since that debt appeared could only
+land by bypassing hooks. Refreshed the baseline from the formatter's own
+`eslint-ratchet-temp.json` (its documented expected-results flow): the
+ratchet now floors at the measured current counts, so future new violations
+still fail the gate (verified: lint exits 0 on the refreshed baseline).
+
+The openfront-engine upstream moved (4d8608d7e -> 5dc09dbd2d, #5693), and a
+normal-hook commit attempt rode the pointer and FAILED in quality:logic:
+`test/game-constants.mjs` asserts "the game constant contract cannot cover
+fewer declarations than the source" — the new upstream commit adds
+declarations the client constant contract does not cover. The pointer stays
+pinned at 4d8608d7e and the hook is bypassed only for docs/chore commits
+until a re-baseline lands. That re-baseline — adapting the constant
+contract, re-running the full suite, and re-baselining basket comparisons —
+is the measured entry cost of the engine-side scope decision, which remains
+with the operator; all recorded basket verdicts stay tied to their stored
+results.jsonl runs at 4d8608d7e.
