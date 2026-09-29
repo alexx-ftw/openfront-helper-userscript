@@ -786,19 +786,6 @@
      */
     shouldDeferNukeForEconomy(nukeTarget, nukeCost) {
       if (this.hasActiveMaritimeInvasion()) return true;
-      // A Hydro Legendary nation with a live SAM has already paid for the
-      // defensive prerequisite. Once an Atom is affordable, withholding it
-      // behind the next 1.5M SAM reserve leaves the Silo permanently idle and
-      // makes the nuclear economy unreachable; the friendly-fire scorer still
-      // protects our own structures below.
-      if (
-        this.isHydroNation === true &&
-        currentDifficulty() === Difficulty.Legendary &&
-        this.player.units(UNIT.SAMLauncher).length > 0 &&
-        this.player.gold() >= BigInt(nukeCost || 0n)
-      ) {
-        return false;
-      }
       const policy = this.structureBehavior?.shouldDeferOffensiveNuke;
       if (typeof policy !== "function") return false;
       {
@@ -806,8 +793,27 @@
       }
       if (this.isRetaliationNukeTarget(nukeTarget)) return false;
       {
-        return policy.call(this.structureBehavior, nukeCost) === true;
+        if (policy.call(this.structureBehavior, nukeCost) !== true) return false;
       }
+      // A Legendary nation with completed SAM coverage may spend the economic
+      // reserve only after keeping the full defensive reserve available.
+      const samUnits = this.player?.units?.(UNIT.SAMLauncher) || [];
+      const hasBuiltActiveSam = samUnits.some((sam) => {
+        const sharedPredicate = this.structureBehavior?.isBuiltActiveSam?.(sam);
+        return sharedPredicate ??
+          (sam?.isUnderConstruction?.() !== true && sam?.isActive?.() !== false);
+      });
+      const defensiveReserve = this.structureBehavior?.offensiveNukeDefenseReserve?.();
+      if (
+        isLegendaryDifficulty(currentDifficulty()) &&
+        hasBuiltActiveSam &&
+        defensiveReserve !== undefined &&
+        this.player.gold() >=
+          BigInt(nukeCost || 0n) + BigInt(defensiveReserve ?? 0n)
+      ) {
+        return false;
+      }
+      return true;
     }
 
     getCrownLeadThreshold(difficulty) {
