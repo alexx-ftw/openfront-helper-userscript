@@ -1798,3 +1798,64 @@ multi-enemy border (for example, gating on no active teammate war or a
 dogpile-aware payload), and record any such design against this verdict.
 Code, regression, and generated bundles were restored to `f60fdcdc`; the
 candidate data remains under the run directory.
+
+## Lever pre-declaration: winnability gates for war selection (2026-09-29, BEFORE any candidate run)
+
+Diagnostic evidence (`OFH_LOG_INTENTS=1` rerun of `team-none-basket-03`,
+the pure freeze row): the freeze is not "no targets" — it is an absorption
+loop. At tick 4812 the bot finds Quebec (a `PlayerType.Bot` nation, 1.28M
+troops) and commits its full proactive cap (`PROACTIVE_WAR_ARMY_FRACTION`
+0.35, the committed ratchet 213k to 489k over 27 ticks) into attacks that
+change zero tiles while Quebec out-produces the payload (1.28M grew to 1.41M
+during the exchange). The match records 68 war decisions against Quebec (18),
+Golf (8), Serbian Archduchy (4), Tango (3), and others — every land war is
+absorbed, territory holds at 33.7k tiles from tick 2000 to the end, and the
+row finishes poor (3.18M tradeGold vs 100M+ for the winning rows) because
+frozen territory caps the trade network.
+
+The machinery has two measured pieces. (1) The bots lane
+(`getAttackableBots` → `getBotsNeedingAttackReinforcement`) applies only a
+friendliness + `PlayerType.Bot` filter — no strength filter in any mode — and
+`rankBotsForAttack` prefers structure-rich nations, so the richest,
+strongest neighbor is the preferred war. (2) The five winnability guards in
+the strategy chain (`afk` 3x, `hated` 3x, `weakest` below-own-troops,
+`victim` 1.2x, `veryWeak` 1.2x) are all gated on `isFFA()`: in team modes
+the bot attacks peers and superiors on the ported Nation-AI rationale that
+"teammates" will help. This session already measured the opposite
+(teammate-donation regression note; team cap-strike dogpile verdict): this
+bot's teammates do not reinforce it, and committed wars against stronger
+nations are pure attrition.
+
+Candidate, two cohesive edits in `attackBehavior.js`: (a) add a winnability
+filter to the bots lane in all modes — skip a bot whose `troops()` is at or
+above our own (mirroring the FFA `weakest` bar); (b) make the five existing
+strength guards unconditional by removing their `isFFA()` conditions, so
+team modes use the same winnability bar FFA already uses. FFA strategy-chain
+behavior is byte-identical (the guards already applied there); the FFA bots
+lane gains the same gate, which targets the n20 early-death absorption that
+left those rows at 0 tiles. Both edits are marked `// DIVERGENCE:` against
+src per the port contract. `retaliate`, `traitor`, `betray`, and defensive
+lanes are untouched.
+
+Focused regressions in `test/sam-defense-policy.mjs`: (1) the bots lane
+skips a stronger bot and still attacks a weaker one; (2) equal-troops bots are
+skipped (strict bar); (3) the `weakest` strategy now skips a stronger enemy
+in team mode; (4) `victim`/`hated`/`afk` strength guards apply in team
+mode; (5) FFA behavior of every touched predicate is unchanged.
+
+Baseline: `/tmp/ofh-matrix/basket-2026-09-29-trade-gold-baseline/results.jsonl`.
+Rows: early stop after the ten `team-none`/`team-temp` rows at parallelism
+2; stop and revert if the early gate fails, otherwise finish all 35 rows.
+
+Pre-declared LAND rule: (a) no set regresses wins or fullGreens vs the
+baseline; (b) `ffa-n2-basket-04` keeps its win; (c) early gate: total
+`goldEarned` in `team-none` or `team-temp` increases with neither team set
+decreasing; (d) no team row changes `ownStructuresNuked` from zero to
+positive; and (e) `trainGoldEarned` and `tradeGoldEarned` in neither team
+set decrease. Any failed condition reverts code, regression, and generated
+bundles and records the measured result.
+
+Known ceiling: winnability-gated selection can only pick wars the current
+army can finish; when every neighbor is stronger the bot holds a capped army
+and waits (the freeze without the bleed), and whether the trade economy grows
+from unspent surplus is exactly what clause (c) measures.
