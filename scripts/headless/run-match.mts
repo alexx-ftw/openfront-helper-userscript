@@ -1901,6 +1901,35 @@ const finalResult = {
   topPlayers: players.slice(0, 10),
 };
 
+// Diagnostic-only rival economy snapshot (OFH_RIVAL_DUMP=1). Inert unless
+// explicitly requested: income levers should be designed from what rich
+// rivals actually build instead of from theory.
+if (process.env.OFH_RIVAL_DUMP === "1") {
+  const rivalDump = runner.game
+    .allPlayers()
+    .filter((player) => player.id() !== me?.id())
+    .map((player) => ({
+      name: player.name(),
+      type: String(player.type()),
+      alive: player.isAlive(),
+      gold: String(player.gold() ?? 0n),
+      tiles: player.numTilesOwned(),
+      portLevels: player.units(UnitType.Port).map((unit) => unit.level()),
+      cityCount: player.units(UnitType.City).length,
+      factoryCount: player.units(UnitType.Factory).length,
+    }))
+    .sort((left, right) => Number(right.gold) - Number(left.gold))
+    .slice(0, 8);
+  process.stderr.write(
+    `${JSON.stringify({
+      phase: "rivalDump",
+      tick: runner.game.ticks(),
+      stopReason,
+      rivals: rivalDump,
+    })}\n`,
+  );
+}
+
 // The engine may retain timers or sockets after a terminal game result.  The
 // batch contract is a completed result line followed by child termination, so
 // flush that line before exiting rather than relying on the event loop to

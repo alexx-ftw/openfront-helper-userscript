@@ -1300,3 +1300,29 @@ port (destination-weight effects the engine already gives for free) or
 upgrade timing gated on post-first-trade income rather than lane priority.
 Code, test, and bundle changes reverted; all three results files stay in
 /tmp for future predeclarations.
+
+## Diagnostic: rival economy dump (2026-09-29, inert OFH_RIVAL_DUMP=1)
+
+Added an env-gated `rivalDump` line to the headless result (gold, tiles,
+port levels, city/factory counts for the top 8 non-bot players). No behavior
+change. Same-seed evidence, top rivals at terminal state:
+
+- ffa-n20-basket-01 @4594: Golf 8.79M earned / 2.79M banked = **4 ports, all
+  level 1**, 5 cities, 1 factory. Tango 1.06M = 3 ports lvl 1. Delta 635k =
+  3 ports lvl 1. The bot: 1 port, 588k earned.
+- team basket-01 @7671: Echo 4.58M banked = **5 ports lvl 1 + 8 cities + 1
+  factory**; Bravo 2.23M = 4 ports + 7 cities.
+
+Conclusion: the winning income pattern in these worlds is MANY EARLY
+LEVEL-1 PORTS alongside city expansion (ports ~ 0.6-0.8 per city), zero
+upgrades, at most one factory. Station count wins because each port is an
+independent spawn pool with its own pity timer and every station multiplies
+both outbound attempts and destination weight (verified upstream:
+`shouldSpawnTradeShip` loops `port.level()`; `tradingPorts()` expands each
+destination by its level). The two failed levers bought port count/level
+through the naval-economy lane's EARLY priority, which pre-empted the
+construction slot every tick until affordability — the same starvation shape
+as the fund hold. Next lever shape to predeclare: additional ports up to a
+city-scaled cap (min(4, floor(cities*0.75)+1)) bought through ordinary
+construction ranking with defense-reserve-aware affordability, not through
+lane priority.
