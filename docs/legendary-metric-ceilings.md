@@ -1503,3 +1503,40 @@ The team-temp basket-03 replay with the corrected telemetry earned
 5,323,205 trade gold and 0 train gold (no Factory was built), out of
 6,525,503 total earned; that single-row reading is diagnostic, not a
 candidate-versus-baseline comparison.
+
+## Lever pre-declaration: fund one Port upgrade from realized trade income (2026-09-29, BEFORE any candidate run)
+
+Candidate: in normal Legendary games only, permit at most one built Port
+upgrade from level 1 to level 2, and only when (a) a tradeable foreign
+open-ocean route exists, (b) the player's realized `tradeGold()` is at least
+the exact upgrade cost, and (c) current gold can also pay that cost. Until
+those conditions hold, the naval-economy lane falls through without spending
+or reserving the build slot. Big-start port pacing and higher port levels are
+unchanged. The trade-income gate requires one cost-sized proof of completed
+sea trade before buying the higher outbound cadence and inbound destination
+weight; it avoids the early pre-payment that regressed the prior ungated
+upgrade candidate.
+
+Focused regression in `sam-defense-policy`: no realized trade income -> no
+upgrade; income below exact cost -> no upgrade; cost-sized realized income
+plus affordable cost and an eligible level-1 Port -> one upgrade; absent
+foreign route, under-construction Port, or existing level-2 Port -> no
+upgrade. An unaffordable upgrade must fall through to the ordinary structure
+planner.
+
+Baseline: current HEAD behavior, full fixed basket at parallelism 2,
+`/tmp/ofh-matrix/basket-2026-09-29-trade-gold-baseline/results.jsonl` (35/35
+rows; `ffa-n2-basket-04` win at t=13171). Relevant team totals:
+`team-none` tradeGold 285,630,041 / trainGold 15,545,000;
+`team-temp` tradeGold 104,248,689 / trainGold 1,700,000. The old `tradesSum`
+bar is not used as a revenue measure.
+
+Pre-declared LAND rule: (a) no set regresses wins or fullGreens; (b)
+`ffa-n2-basket-04` keeps its win; (c) `tradeGoldEarned` summed over all five
+rows increases in at least one of `team-none` or `team-temp`, with neither
+team set's sum decreasing; and (d) no team row changes
+`ownStructuresNuked` from 0 to positive. Record `trainGoldEarned` and
+`tradeCaptured` separately. Otherwise REVERT and record the measured result.
+Known ceiling: if a built Port has no viable sea trade, or realized route
+income arrives only after its upgrade opportunity has ceased to matter, this
+gate is inert and preserves the prior construction policy.
