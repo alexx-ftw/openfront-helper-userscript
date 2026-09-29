@@ -1375,3 +1375,36 @@ ChatGPT-conversation embargo hypothesis: baseline trades correlate POSITIVELY
 with attack volume (r=+0.65 over 35 rows), so attack-driven embargoes are not
 the observable trade killer. No verdict rule is predeclared yet — evidence
 first.
+
+### Addendum: the starvation circuit, measured exactly (same night, same tools)
+
+On `team-temp-basket-03` the dump plus construction events expose the exact
+mechanism that keeps the city ladder frozen:
+
+- The ladder NEVER saw a >=400k decision after t=4523. Only two decisions in
+  the whole match saw gold >=400k (t=3986: 427k, empty group; t=4523: 469k,
+  correct Wait — City #3 costs 500k and was 31k short).
+- The mid-game wealth pooled to 2.28M at t=5438 and 3.10M at t=6872 — every
+  pool was drained OUTSIDE the ladder: the warship lane (2 Warships at
+  t=5438/5468, 750k) and the in-flight-missile urgent-SAM lane (SAM #2 at
+  t=6872 for 3M — the engine ladder is (n+1) x 1.5M, capped 3M).
+- Whole-match ledger: earned 6.53M; spent ~6M on 2 SAMs (4.5M) + 3 Warships
+  (1.5M). Compounding assets stayed at 2 cities + 2 ports from t=4393 to the
+  loss at t=9451. Boats are engine-free (Transport cost 0n) and are NOT part
+  of the leak.
+- SAM arithmetic over the baseline: 26/35 rows build SAM #2+; losing rows
+  spend 4.5-22.5M on SAM fleets. Winners also buy SAMs (temp-04: 4), and
+  ffa-n20-basket-04 bought ~194 launchers and still won on trades — so raw
+  SAM count is not the discriminator; the discriminator is WHEN the pools are
+  intercepted by defense lanes versus compounding purchases.
+
+The candidate frontier is therefore the in-flight-missile urgent-SAM lane
+(`legendaryMissileDefenseUrgent` -> `maybeSpawnStructure(SAMLauncher)`) and
+the pre-emptive warship lane: both run BEFORE the candidate ladder and each
+early-return, so once a threat signal is live the 500k City never gets a
+decision. Any gate must preserve the measured doctrine (first SAM ready
+before the first hostile nuke; ownStructuresNuked = 0 on team rows — SAM #2
+is plausibly WHY temp-03 kept ownNuked = 0 while losing). Before
+predeclaring, read the coverage model (`getMissileDefenseEvaluation`,
+intercept capacity/reload) so the gate keys on actual per-missile coverage,
+not on raw launcher count.
