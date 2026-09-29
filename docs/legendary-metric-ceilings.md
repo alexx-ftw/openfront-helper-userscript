@@ -2475,3 +2475,47 @@ their first losses convert the freed construction slot into wins and damage
 bundles are reverted to d468cd21. A bounded variant (yield disarms once
 cumulative tracked losses exceed the winner's measured loss count) is the
 obvious successor and is pre-declared separately below.
+
+## Lever pre-declaration: bounded overwhelm-armed hostile-silo reserve yield (2026-09-29, BEFORE any candidate run)
+
+Same latch and wiring as the reverted overwhelm-armed variant (260729cd),
+with one added bound: observeOwnStructureLoss now also accumulates
+_ownStructuresLostCount (sum of per-observation net tracked-structure drops,
+any cause), and the reserve yield engages only while
+_ownStructuresLostCount <= 6. The cap is the measured winner band:
+team-25mm-basket-04 won with six lost structures while basket-05 collapsed
+at forty; past six losses the world is in collapse, the economy yield stops
+protecting the outcome, and the hostile-silo reserve resumes hard-hold
+semantics. Cap is an inline literal, not a game constant, so cap tuning
+stays out of the constant contract.
+
+Identity claim (corrected per the v3 mechanism finding): a world that loses
+no tracked structure of ANY kind never arms the latch and stays
+byte-identical. The basket metrics (ownStructuresNuked,
+firstOwnStructureLostTick) record nuke losses only, so this predicate is NOT
+verifiable from results.jsonl alone; team-none-basket-01 is declared an
+exempt known-loss world up front (three Defense Posts destroyed by combat
+around t=5000-5500, dump-evidenced at
+/tmp/ofh-matrix/diag-none01-dump-candidate-260729cd.out) and may diverge,
+but must remain a win. The four team-none rows that report no nuke loss in
+both baseline and candidate (basket-02..05) must remain identical modulo
+runtimeMs.
+
+Focused regression in test/sam-defense-policy.mjs: the v3 cases (latch arms
+and stays armed; armed + completed SAM + affordable City yields both reserve
+tails; never-lost world holds; zero COMPLETED SAMs holds; unaffordable holds)
+plus (6) count at exactly 6 still yields and (7) count at 7 holds the
+reserve.
+
+Rows: full fixed basket, all 7 sets x seeds basket-01..05, unmodified
+run-basket.mjs protocol, parallelism 2. Baseline:
+/tmp/ofh-matrix/basket-2026-09-29-port-level-weighted-6e20da38/results.jsonl.
+Early gate after the ten team-25mm + team-none rows: (a) team-none
+basket-02..05 identical modulo runtimeMs and basket-01 remains a win;
+(b) team-25mm aggregate ownStructuresNuked <= 94; (c) team-25mm aggregate
+nukedStructureGold >= 21,750,000; (d) team-25mm wins >= 0. Full-35 LAND
+rules: no set regresses wins or fullGreens; per-set ownStructuresNuked
+non-increase; per-set nukedStructureGold non-decrease; ffa-n2-basket-04 and
+ffa-n20-basket-04 wins preserved; progress = 25mm nukedStructureGold
+increase or any win/fullGreen gain. Otherwise REVERT the behavior,
+regression, and generated bundles and record the measured result.
