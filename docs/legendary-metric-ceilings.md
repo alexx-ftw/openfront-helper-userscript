@@ -1408,3 +1408,70 @@ is plausibly WHY temp-03 kept ownNuked = 0 while losing). Before
 predeclaring, read the coverage model (`getMissileDefenseEvaluation`,
 intercept capacity/reload) so the gate keys on actual per-missile coverage,
 not on raw launcher count.
+
+## Lever pre-declaration: inconclusive-forecast urgent-SAM gate (2026-09-29, BEFORE any runs)
+
+Candidate from the starvation-circuit addendum. The coverage model is
+fail-closed by design: when any threat group's long-range forecast is
+incomplete, `legendaryDefenseEvaluation` FORCES `fullyDefended = false`
+(`schedule.inconclusive = true`) even when the greedy schedule leaves zero
+missiles unintercepted. `legendaryMissileDefenseUrgent` keys on that flag,
+so an inconclusive forecast alone keeps the urgent lane alive, and the lane
+spawns a NEW launcher at the engine's (n+1) x 1.5M ladder — measured SAM #2
+for 3M at t=6872 on team-temp-basket-03 while City #3 (500k) never got a
+ladder decision.
+
+Gate: in `legendaryMissileDefenseUrgent`, when the bot ALREADY owns at least
+one built launcher (`ownSamCapacity() >= 1`) AND the schedule is marked
+`inconclusive` AND `uninterceptedCount === 0` (no live or forecasted
+missile is actually uncovered), the inconclusive flag alone does not make the
+lane urgent. The FIRST launcher is never gated (doctrine: SAM ready before
+the first hostile nuke); a conclusive schedule with an uncovered missile or
+an uncovered live trajectory still trips the lane exactly as today; the
+`critical` branch keeps its original semantics whenever the gate does not
+fire. Upgrades of existing launchers (`maybeUpgradeMissileDefenseSam`) are
+untouched. Rationale: the fail-closed forecast must stay fail-closed for
+threat assessment, but an unproven threat must not author a 3M purchase by
+itself once baseline coverage exists; when the salvo actually launches, the
+live-missile lanes own the response.
+
+Focused regression in sam-defense-policy: (a) one built launcher +
+inconclusive + zero unintercepted -> not urgent; (b) zero launchers +
+inconclusive -> urgent (first-launcher doctrine); (c) one launcher +
+conclusive + unintercepted > 0 -> urgent; (d) one launcher + fullyDefended
+-> not urgent (unchanged).
+
+Rows: full fixed basket, all 7 sets x seeds basket-01..05, unmodified
+run-basket.mjs protocol, parallelism 2. Baseline: stored rerun
+`/tmp/ofh-matrix/basket-baseline-rerun-2026-09-29/results.jsonl` (same HEAD
+sources; ffa-n20-basket-04 win reproduced t=64881 exactly).
+
+Pre-declared full-basket verdict rule: LAND only if (a) no set regresses
+wins or fullGreens vs that baseline; (b) `ffa-n2` keeps its basket-04 win;
+and (c) trade economy improves — tradesSum rises in team-none or team-temp,
+or a team set gains a win or fullGreen. `ffa-n20` is recorded outside the
+rule. Additionally recorded: per-row ownStructuresNuked must not go 0 -> >0
+on any team row without a compensating clause-(c) gain. Otherwise REVERT and
+record a measured dead end. Known ceiling: on worlds where the salvo forecast
+is complete and hostile mass genuinely outruns one launcher, this gate is
+inert by design; it targets the inconclusive-forecast 3M purchases measured
+on the losing mid-length rows.
+
+### Verdict: REVERTED (2026-09-29, full fixed basket; candidate was inert)
+
+Focused checks passed and the full candidate basket completed at
+`/tmp/ofh-matrix/basket-2026-09-29-inconclusive-sam-gate/results.jsonl`.
+Against the stored baseline, all seven sets kept exactly the same wins,
+fullGreens, and tradesSum; `ffa-n2-basket-04` kept its win at t=13171. A
+row-level comparison found all 35 result objects identical except for
+`runtimeMs`, so predeclared clause (c) failed and no improvement was measured.
+
+The diagnosis in the pre-declaration was wrong: the t=6872, 3M action on
+`team-temp-basket-03` upgraded the existing SAM from level 1 to level 2 via
+`handleActiveMissileSamMaximumPriority`, which runs before the Legendary
+construction planner. It was not a new launcher purchase, and the targeted
+`legendaryMissileDefenseUrgent` gate did not govern that path. The structure
+trace records `sam-upgrade-probe` / `sam-upgrade-plan` at t=6872, followed by
+gold falling from 3,104,709 to 105,509. The basket's byte-identical behavior
+confirms the candidate never engaged. Source, focused regression, and bundle
+are restored to baseline; the candidate data is retained under `/tmp`.
