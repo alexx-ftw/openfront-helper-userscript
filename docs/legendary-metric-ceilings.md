@@ -2639,3 +2639,41 @@ rebuild spawn; unaffordable -> hold; silos present -> hold; never-armed ->
 hold; zero completed SAMs -> hold; failed spawn probe -> hold. Baseline,
 rows, and gate clauses are unchanged; the rerun writes to
 /tmp/ofh-matrix/basket-2026-09-29-arsenal-rebuild/ (resume semantics).
+
+### Verdict: REVERTED EARLY (2026-09-29, ten-row gate failed clause (b))
+
+Candidate basket: /tmp/ofh-matrix/basket-2026-09-29-arsenal-rebuild-v2/
+results.jsonl (candidate da3a7ec7; the first basket dir,
+.../basket-2026-09-29-arsenal-rebuild/, holds the inert ae5f2043 rows).
+Clause (a) passed cleaner than pre-declared: all five team-none rows are
+identical modulo runtimeMs — team-none-basket-01 never lost its SILO count
+(its Defense Post losses armed the v3 all-structure latch, not this silo-only
+latch), so the exempted-world allowance was not needed. Clause (d) passed
+(25mm wins 0 -> 0) and clause (c) passed on the letter (25,750,000 >=
+21,750,000), but the valve ENGAGED and clause (b) failed: team-25mm aggregate
+ownStructuresNuked 94 -> 102. Per-row nukedStructureGold is IDENTICAL to
+baseline on every row (10,000,000 / 4,000,000 / 4,000,000 / 0 / 7,750,000)
+and every candidate row still ends with zero silos: the rebuild placements
+were eaten before completing — the +8 ownNuked is largely the placed silos
+themselves — so the valve converted 1M of reserve savings and 60-510 ticks of
+survival shift into eight additional structure losses and zero additional
+enemy-structure damage. The hostile salvo tempo on these worlds outpaces the
+about-300-tick silo construction window; a rebuild that cannot finish before
+the next strike is a donation.
+
+Mechanism conclusion: the post-arsenal-loss lane competition has a harder
+guardian than the opening defer or the reserve hold — the salvo cadence
+itself. Rebuilding a 1M launcher into an active salvo without first restoring
+interceptor depth trades reserve savings for targets. Across the now five
+measured variants of the completed-hostile-Silo slot (v2 yield, v3
+overwhelm yield, v4 bounded yield, defer exemption, reserve-spent rebuild),
+every client-side reallocation either diverges fragile worlds or feeds
+targets into salvos. The family is closed at greater depth: reopening
+requires an engine-side change that alters the salvo-vs-construction race
+itself (placement speed, coverage, or salvo interception), not a different
+way to spend the held gold. Next candidate target from the same 25mm-01
+dump, not pre-declared here: the warship lane drained the post-collapse
+treasury (ten Warships at t=3307-6196, gold 208k-595k, below the 1M silo
+price permanently) while the defense ladder was satisfied — a warship-save
+valve after arsenal loss plus SAM replacement is the remaining unexplored
+sequencing lever.
