@@ -2745,3 +2745,36 @@ closed or a later target/value/trajectory gate rejected every shot.
 
 The candidate commit `84ead1d5` and its test/generated bundle changes were
 reverted by `7313f020`, restoring the pre-candidate behavior; no push was made.
+
+## Follow-up pre-declaration: normalize the Legendary nuke reserve gate (2026-09-29, BEFORE rerun)
+
+Root cause: `portutil.js` maps the selected bot difficulty `Legendary` to
+`Difficulty.Impossible` in `currentDifficulty()`, and the shared
+`isLegendaryDifficulty()` helper deliberately recognizes both values. The
+reverted nuke candidate compared `currentDifficulty() === Difficulty.Legendary`,
+so its release condition was unreachable in the real headless runtime. Its
+focused test stubbed `currentDifficulty()` to return the literal `Legendary`
+and missed this normalization. A traced replay using the exact candidate
+bundle confirmed the failed implementation remained inert: 302 selections,
+520 decisions, zero candidate scans, and zero launches, matching baseline.
+Thus the prior early-gate verdict rejects that implementation and does not
+measure the intended reserve release.
+
+Candidate: change only the Legendary predicate in
+`NukeBehavior.shouldDeferNukeForEconomy` to
+`isLegendaryDifficulty(currentDifficulty())`. Keep the completed-active-SAM,
+affordable-nuke, and active-maritime hard-defer conditions unchanged; all
+target, expected-value, trajectory, and salvo gates remain in force.
+
+Focused regression: emulate the runtime-normalized value
+`currentDifficulty() === Difficulty.Impossible` while
+`isLegendaryDifficulty()` accepts both hard-tier spellings. A non-Hydro bot
+with a completed active SAM and 1,000,000 gold must release the 750,000 Atom
+reserve; an under-construction SAM and active maritime pressure must still
+defer. Preserve existing expected-value and salvo coverage.
+
+Rerun the same early gate against the same 35-row baseline, writing to
+`/tmp/ofh-matrix/basket-2026-09-29-legendary-nuke-release-v2/`. Apply the
+identical 15-row pass criteria declared above. If it passes, complete all 35
+rows under the original full gate; otherwise revert the correction and record
+the result.
