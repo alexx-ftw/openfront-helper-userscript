@@ -1555,3 +1555,45 @@ candidate cannot meet its LAND rule. The other sets' win/fullGreen safety and
 `ffa-n2-basket-04` were not re-run for this candidate. The code, regression,
 and generated bundle were restored; the 10-row candidate data remains under
 `/tmp/ofh-matrix/basket-2026-09-29-revenue-funded-port-upgrade/`.
+
+## Lever pre-declaration: route-backed first rail Factory (2026-09-29, BEFORE candidate run)
+
+The pinned engine confirms that Factories spawn trains and only Cities/Ports
+are trade stops (`TrainStationExecution`, `TrainStation`). The instrumented
+35-row baseline has `team-none` at 15,545,000 trainGold / 319,525,178 total
+gold and `team-temp` at 1,700,000 trainGold / 116,309,692 total gold. Each
+team set has three rows with zero trainGold and no Factory; two of those rows
+finish with 3 Cities and at least 3 Ports.
+
+Candidate: in a non-dominant coastal Legendary game, use the engine's
+`0.75 × City` Factory ratio for the first Factory only when at least one
+tradeable City/Port destination exists. Keep the existing two-open-Port and
+missile-defense gates, and keep the `0.33` coastal multiplier for every later
+Factory. When tradeable destinations exist, restrict safe first-Factory tiles
+to those 15–110 tiles from a paying destination; if none can reach one, defer
+to the ordinary structure planner. If no paying destination exists anywhere,
+retain the current first-Factory fallback.
+
+This is narrower than the already measured global coastal multiplier change:
+`docs/general-construction-policy.html` records that raising `0.33` to `0.50`
+across all Factories had no primary-outcome gain and regressed one win, one
+survival, and one closeout in 28 paired games. This candidate changes only the
+first source and only when a paying rail destination is available.
+
+Focused regressions: (1) first Factory ratio stays coastal-suppressed without a
+tradeable destination; (2) a route-backed first Factory uses `0.75`; (3) a
+second Factory remains at the `0.33` coastal ratio; (4) safe first-Factory
+tiles are restricted to paying destinations when reachable; (5) with a
+tradeable destination but no reachable safe tile, Factory falls through; and
+(6) the no-destination fallback remains unchanged.
+
+Baseline: `/tmp/ofh-matrix/basket-2026-09-29-trade-gold-baseline/results.jsonl`
+(35/35 rows with `tradeGoldEarned` and `trainGoldEarned`). Pre-declared LAND
+rule: (a) no set regresses wins or fullGreens; (b) `ffa-n2-basket-04` keeps its
+win; (c) `trainGoldEarned` increases in at least one of `team-none` or
+`team-temp`, with neither set decreasing; (d) total `goldEarned` in neither
+team set decreases; and (e) no team row changes `ownStructuresNuked` from zero
+to positive. Record `tradeGoldEarned` and `tradeCaptured` separately. After
+the first ten rows (the complete `team-none` and `team-temp` target sets), stop
+and revert if clause (c) cannot pass; otherwise finish all 35 rows to check
+safety. If any LAND condition fails, revert and record the measured result.
