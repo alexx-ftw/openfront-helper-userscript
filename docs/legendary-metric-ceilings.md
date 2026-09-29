@@ -1772,3 +1772,29 @@ bundles and records the measured result.
 Known ceiling: a released team strike opens a second front on purpose; if
 team dogpiles or lost tempo punish it, the loss surfaces as (a), (c), or (d)
 and the lane reverts to FFA-only.
+
+### Verdict: REVERTED EARLY (2026-09-29, gold-total and nuke-safety gates failed)
+
+The run completed all ten pre-declared rows at parallelism 2 in
+`/tmp/ofh-matrix/basket-2026-09-29-team-cap-strike/`. The mechanism engaged
+exactly as designed: seven rows launched strikes (none-02: 1, none-03: 2,
+none-05: 1, temp-01: 2, temp-02: 6, temp-03: 1, temp-05: 1), and all four team
+winners stayed byte-identical to the baseline because their arming high-water
+(5-11 decisions) never reached the 12-decision team threshold. But the
+pre-declared gates failed. Clause (c): total `goldEarned` fell in both team
+sets (team-none −29,839,182; team-temp −3,994,061) — the opposite of the early
+gate. Clause (d): `team-none-basket-02` changed `ownStructuresNuked` from
+zero to one; its single strike at tick 4629 drew a nuke the baseline never
+attracted and it died 1,050 ticks earlier (9371 → 8321). The remaining rows
+show the same pattern: temp-02 fired 6 launches for −3.1M goldEarned, and
+temp-01/temp-03 collapsed about 2,000 ticks faster (9411 → 7502, 9451 → 7503).
+
+Interpretation: the FFA lane wins because a single rival cannot punish a
+thinned border; team modes have several active enemies per border, so the
+released surplus becomes a second front that accelerates the dogpile instead
+of breaking the freeze. The FFA-only boundary is now a measured verdict, not
+an assumption. Do not re-propose team arming without a design that handles the
+multi-enemy border (for example, gating on no active teammate war or a
+dogpile-aware payload), and record any such design against this verdict.
+Code, regression, and generated bundles were restored to `f60fdcdc`; the
+candidate data remains under the run directory.
