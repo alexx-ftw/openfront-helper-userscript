@@ -1651,6 +1651,78 @@ assert.equal(
   null,
   "an enemy Silo under construction permits anticipatory SAM attempts without hard-reserving the whole economy",
 );
+const siloYieldSam = (completed) => ({
+  isUnderConstruction: () => !completed,
+  isActive: () => true,
+});
+const siloYieldBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+siloYieldBehavior.game = {
+  config: () => ({ isUnitDisabled: () => false }),
+  ticks: () => 5000,
+};
+siloYieldBehavior.player = { smallID: () => 0 };
+siloYieldBehavior.hasPlacedSiloOnMap = () => true;
+siloYieldBehavior.hasBuiltHostileSiloThreat = () => true;
+siloYieldBehavior.shouldBuildSiloTriggeredSam = () => true;
+siloYieldBehavior.shouldReserveHostileSiloSamBudget = () => true;
+siloYieldBehavior.maybeSpawnHostileSiloSam = async () => false;
+siloYieldBehavior.maybeUpgradeHostileSiloSam = async () => false;
+siloYieldBehavior.ownedSamUnits = () => [siloYieldSam(true)];
+siloYieldBehavior.isBuiltActiveSam = (sam) =>
+  sam.isActive() !== false && !sam.isUnderConstruction();
+siloYieldBehavior.ownedLevels = (type) => (type === UNIT.City ? 2 : 0);
+siloYieldBehavior.economicConstructionPressure = () => ({ cost: 500000n });
+siloYieldBehavior.spendableConstructionGold = () => 2000000n;
+assert.equal(
+  await siloYieldBehavior.handleHostileSiloSamMaximumPriority(),
+  null,
+  "with baseline coverage and an affordable City, the hostile-Silo reserve yields one ordinary ladder decision",
+);
+siloYieldBehavior.ownedSamUnits = () => [siloYieldSam(false)];
+assert.equal(
+  await siloYieldBehavior.handleHostileSiloSamMaximumPriority(),
+  false,
+  "a launcher still under construction keeps the hostile-Silo reserve",
+);
+siloYieldBehavior.ownedSamUnits = () => [siloYieldSam(true)];
+siloYieldBehavior.ownedLevels = (type) => (type === UNIT.City ? 4 : 0);
+assert.equal(
+  await siloYieldBehavior.handleHostileSiloSamMaximumPriority(),
+  false,
+  "past the four-City band the hostile-Silo reserve resumes",
+);
+siloYieldBehavior.ownedLevels = (type) => (type === UNIT.City ? 2 : 0);
+siloYieldBehavior.spendableConstructionGold = () => 400000n;
+assert.equal(
+  await siloYieldBehavior.handleHostileSiloSamMaximumPriority(),
+  false,
+  "without an affordable economic candidate the reserve holds as before",
+);
+const siloYieldIntegration = Object.create(sandbox.__StructureBehavior.prototype);
+siloYieldIntegration.game = siloYieldBehavior.game;
+siloYieldIntegration.player = siloYieldBehavior.player;
+siloYieldIntegration.hasPlacedSiloOnMap = () => true;
+siloYieldIntegration.hasBuiltHostileSiloThreat = () => true;
+siloYieldIntegration.shouldBuildSiloTriggeredSam = () => true;
+siloYieldIntegration.shouldReserveHostileSiloSamBudget = () => true;
+siloYieldIntegration.maybeSpawnHostileSiloSam = async () => false;
+siloYieldIntegration.maybeUpgradeHostileSiloSam = async () => false;
+siloYieldIntegration.ownedSamUnits = () => [siloYieldSam(true)];
+siloYieldIntegration.isBuiltActiveSam = (sam) => sam.isActive() !== false;
+siloYieldIntegration.ownedLevels = (type) => (type === UNIT.City ? 2 : 0);
+siloYieldIntegration.economicConstructionPressure = () => ({ cost: 500000n });
+siloYieldIntegration.spendableConstructionGold = () => 2000000n;
+let siloYieldDefenseCalls = 0;
+siloYieldIntegration.handleImmediateStructureDefense = async () => {
+  siloYieldDefenseCalls++;
+  return true;
+};
+assert.equal(
+  await siloYieldIntegration.handleStructures(),
+  true,
+  "the yield lets the ordinary chain reach lower-priority construction",
+);
+assert.equal(siloYieldDefenseCalls, 1);
 hostileSiloMaximumPriorityBehavior.shouldBuildSiloTriggeredSam = () => false;
 hostileSiloMaximumPriorityBehavior.hydrogenSamProtectionPlan = () => ({
   currentLevel: 1,
