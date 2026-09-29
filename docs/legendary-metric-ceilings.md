@@ -2818,9 +2818,10 @@ funded. Keep all target, expected-value, trajectory, and salvo gates intact.
 
 Focused regression in `test/nuke-economy-policy.mjs`: (1) normalized
 Impossible/Legendary difficulty + active SAM + 1,000,000 gold + 750,000 nuke
-+ 250,000 defense reserve releases the nuke despite the economic hold; (2)
-gold below nuke plus defense reserve still defers; (3) a SAM under
-construction and active maritime pressure still defer.
+
+- 250,000 defense reserve releases the nuke despite the economic hold; (2)
+  gold below nuke plus defense reserve still defers; (3) a SAM under
+  construction and active maritime pressure still defer.
 
 Run the same 15-row early gate against the original 35-row baseline at
 parallelism 2, writing to
@@ -2841,3 +2842,81 @@ and 25,750,000 enemy damage. The pre-declared ffa-n4 damage-increase gate
 failed, so the remaining 20 rows were not run. Preserving the full defensive
 reserve kept the safety metrics but also kept the original nuke deadlock.
 Candidate `ead7cda6` was reverted by `8cee19ec`; no push was made.
+
+## Lever pre-declaration: warship-save valve after arsenal loss (2026-09-29, BEFORE candidate run)
+
+Candidate from the arsenal-rebuild verdict's named follow-up: the warship
+lane drained the post-collapse 25mm-01 treasury (ten Warships at
+t=3307-6196, gold 208k-595k, below the 1M silo price permanently) while the
+defense ladder was satisfied. The closed reserve-yield family reallocated
+the HELD gold; this valve instead stops a different lane from intercepting
+the pool.
+
+Candidate: re-add the arsenal-loss observation latch verbatim from
+`ae5f2043` (`observeArsenalLoss` called from
+`observeHostileMissileLaunch`, per-tick cached, silo-only >0 -> 0 trigger)
+and add a warship-save floor `shouldDeferWarshipForArsenalRebuild`: when the
+latch is armed AND at least one completed SAMLauncher exists AND the purchase
+is NOT a maritime-emergency interception, defer a Warship purchase whenever
+`spendableConstructionGold()` minus the Warship cost is below
+`getConstructionCost(UNIT.MissileSilo)`. The floor hooks into
+`shouldDeferWarshipBuildForFloor`'s non-emergency branch only, so invasion
+interception (the n20 free-landing lesson) and the first-launcher doctrine
+are untouched. No silo rebuild, no `legendaryBigStartSiloDeferred`
+exemption, no reserve change: the only behavioral delta is initial/raiding
+warship purchases that would drop the treasury below the silo rebuild price
+in worlds that lost a fielded arsenal.
+
+Identity claim: worlds that never field a Missile Silo, or never lose the
+fielded count to zero, never arm the latch and stay byte-identical. Armed
+worlds may diverge only in non-emergency warship purchases.
+
+Focused regression in `test/sam-defense-policy.mjs`: (1) silo count 3 -> 0
+arms the latch and it stays armed through 0 -> 2 -> 0; (2) armed + completed
+SAM + spendable below silo cost after the warship price -> defer; (3) armed +
+completed SAM + spendable covering both -> allow; (4) armed + zero completed
+SAMs -> allow (naval defense is not stripped); (5) never-armed -> allow.
+
+Rows: 15-row early gate (ffa-n4, team-none, team-25mm, seeds basket-01..05)
+at parallelism 2 against the 35-row baseline
+`/tmp/ofh-matrix/basket-2026-09-29-port-level-weighted-6e20da38/results.jsonl`,
+writing to `/tmp/ofh-matrix/basket-2026-09-29-warship-save-valve/`.
+
+Pre-declared early gates: (a) no set regresses wins or fullGreens vs
+baseline; (b) per-set ownStructuresNuked non-increase; (c) per-set
+nukedStructureGold non-decrease; (d) progress: team-25mm aggregate
+nukedStructureGold increases or team-none/team-25mm gains a win or
+fullGreen. If any early clause fails: revert code, regression, and generated
+bundles, record the verdict, stop (remaining 20 rows not run). If all early
+clauses pass, run the full 35 rows with the same clauses plus
+ffa-n2-basket-04 and ffa-n20-basket-04 wins preserved. Known ceiling: with
+the construction slot still held by the hostile-silo defense reserve, the
+saved pool mostly accelerates the 3M H-bomb upgrade; the valve's measurable
+value must arrive through that doctrine-protected path or through longer
+survival, not through a rebuild.
+
+### Verdict: REVERTED EARLY (2026-09-29, warship-save early gate failed clauses (b) and (d))
+
+The 15-row early basket completed at parallelism 2:
+`/tmp/ofh-matrix/basket-2026-09-29-warship-save-valve/results.jsonl`.
+Fourteen of fifteen rows are identical to baseline modulo `runtimeMs`;
+`team-none` (2 wins, 0 own nuked, 11,300,000 nuked gold) and `team-25mm`
+(0 wins, 94 own nuked, 25,750,000 nuked gold) matched baseline exactly. The
+only divergent row, `ffa-n4-basket-01`, survived 990 ticks longer
+(17,361 -> 18,351) while still losing, and `ffa-n4` aggregate
+ownStructuresNuked rose 26 -> 33: clause (b) failed. No set improved any
+tracked metric: clause (d) failed, so the remaining 20 rows were not run.
+
+Mechanism reading: the valve engaged exactly where pre-declared (an armed
+arsenal-loss world with a completed SAM) and the preserved pool did buy
+survival time, but the extra window converted into seven additional own
+structures nuked and no additional enemy-structure damage, win, or
+fullGreen. Both intercepting lanes of the post-arsenal-loss pool are now
+measured: spending it on warships starves the rebuild price (25mm-01
+anatomy) and saving it feeds the salvo race without producing progress. The
+family conclusion stands at greater depth: under the held hostile-silo
+construction slot, no client-side reallocation of the post-arsenal-loss
+treasury produces measurable Legendary progress; reopening requires an
+engine-side change to the salvo-vs-construction race itself. Candidate code
+and its focused regressions were reverted; the bundles were regenerated to
+baseline bytes and no push was made.
