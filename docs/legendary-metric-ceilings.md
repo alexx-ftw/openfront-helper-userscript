@@ -1682,3 +1682,31 @@ Factory economy drew a nuke that the baseline never attracted). Wins,
 fullGreens, and row 01 were unchanged. Code, regression, and generated
 bundles were restored to `37ee8faf`; the candidate data remains under the run
 directory.
+
+### Trajectory anatomy: the shared-ladder tax behind the 14.7M loss (2026-09-29)
+
+Replaying the saved telemetry for `team-temp-basket-04` in the two run
+directories (`basket-2026-09-29-trade-gold-baseline` vs
+`basket-2026-09-29-first-factory-lane`) pins the loss on the shared
+Port/Factory price ladder, not on the one-time 500k Factory price. The lane
+preempted exactly as designed and bought its first Factory at tick 5729 (the
+5500-6000 window). From that moment every later Port buys at one ladder step
+more, because Port and Factory prices share the `125k * 2^(n-1)` ladder: the
+same Port count consumes meaningfully more construction gold. By tick 9000 the
+lane is 3 Ports behind (25 vs 28) and 846k behind on gold (459k vs 1.31M)
+before counting the compounding trade income those missing Ports would have
+generated. The lane's rail conversion was real but slower than the Port
+deficit: its first Factory had spawned 4 more by tick 9550 (+2.02M trainGold
+set-wide) while the naval gold engine was still paying the ladder tax.
+
+Payoff was scene-dependent. Only 1 of the 4 rows where the lane changed
+behavior (`team-none-basket-04`, the richest rail network) repaid the tax
+(+26.9M goldEarned); the other three rows carried it to a net loss.
+
+Implication for future levers: any rail-Factory intervention must either (a)
+condition the first Factory on measured rail richness or trade reachability so
+only scenes like basket-04 prepay the ladder step, or (b) otherwise overcome
+the roughly 1-2M ladder tax the shared pricing imposes on Port-heavy naval
+scenes. A blanket first-Factory lane fails because most basket scenes are
+Port-heavy naval economies where the extra ladder step compounds against the
+bot faster than early rail income repays it.
