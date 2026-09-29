@@ -2549,3 +2549,60 @@ gains for FFA losses. The economic-yield family on the completed-hostile-Silo
 reserve slot is closed as a measured dead end: do not retry without a
 mechanism that provably does not diverge protected or fragile worlds (e.g.,
 an engine-side coverage change, not a client-side yield gate).
+
+## Lever pre-declaration: arsenal-loss silo rebuild valve (2026-09-29, BEFORE any candidate run)
+
+Measured anatomy (baseline 25mm-01 dump
+/tmp/ofh-matrix/diag-25mm01-dump-base.out): the bot opens doctrine-compliant
+(3 silos + Hydrogens by t=877), the first hostile salvo deletes the arsenal by
+t=2000, and the recovery window then fails structurally: between t=2000 and
+t=3000 the treasury holds 1,258,865 -> 2,472,543 gold — enough for a rebuild
+silo (about 1M) — but legendaryBigStartSiloDeferred blocks the
+maybeOpenLegendaryFirstSilo lane because it is still inside the 3000-tick
+window with fewer than 5 Ports (an OPENING heuristic: do not spend the
+founding bank before the port burst). By t=3000 the defer expires, but the
+warship lane has drained the treasury to 208k-595k, below the 1M silo price
+permanently; the row dies at t=6781 with zero silos and zero enemy structure
+damage. 21/35 baseline rows end with zero silos; 25/35 fail the 5M nuke
+quota. This is a different slot from the reverted reserve-yield family: no
+defense reserve is diverted, and the hostile-silo defense lane keeps its
+maximum priority.
+
+Candidate: a per-tick Missile Silo count observation (hooked into the
+existing observeHostileMissileLaunch every-tick call, per-tick cached like
+the proven v3/v4 observation machinery) that latches _arsenalLostObserved
+permanently when the count drops from >0 to 0. While latched,
+legendaryBigStartSiloDeferred returns false: a world that already fielded and
+lost an arsenal is not an opening, so the port-burst defer must not suppress
+the first-silo rebuild. Everything else is untouched: the SAM baseline chest,
+the naval-opening defer (already self-disables once a hostile launch is
+observed), the peace-window guard, affordability, and the defense lane order.
+
+Identity claim: a world that never fields a Missile Silo, or fields one
+without ever losing the count to zero, never arms the latch and stays
+byte-identical. The latch arms only on a real loss-to-zero event, which the
+baseline metrics bound from below (ownStructuresNuked > 0 or a non-nuke
+structure loss), so team-none basket-01 (documented arsenal loss at
+t=1500-2000) is declared an exempt known-loss world up front and may
+diverge, but must remain a win.
+
+Focused regression in test/sam-defense-policy.mjs: (1) silo count 3 -> 0
+arms the latch and it stays armed through 0 -> 2 -> 0; (2) an armed world
+makes legendaryBigStartSiloDeferred false even with ports < 5 and tick < 3000
+in a big-start game; (3) an unarmed world keeps the defer's current answer;
+(4) a stub without player.units is inert.
+
+Rows: full fixed basket, all 7 sets x seeds basket-01..05, unmodified
+run-basket.mjs protocol, parallelism 2. Baseline:
+/tmp/ofh-matrix/basket-2026-09-29-port-level-weighted-6e20da38/results.jsonl.
+Early gate after the ten team-25mm + team-none rows: (a) team-none rows whose
+baseline and candidate runs both report ownStructuresNuked=0 AND
+firstOwnStructureLostTick=null are identical modulo runtimeMs, and
+team-none-basket-01 remains a win; (b) team-25mm aggregate
+ownStructuresNuked <= 94; (c) team-25mm aggregate nukedStructureGold >=
+21,750,000; (d) team-25mm wins >= 0. Full-35 LAND rules: no set regresses
+wins or fullGreens; per-set ownStructuresNuked non-increase; per-set
+nukedStructureGold non-decrease; ffa-n2-basket-04 and ffa-n20-basket-04 wins
+preserved; progress = 25mm nukedStructureGold increase or any win/fullGreen
+gain. Otherwise REVERT the behavior, regression, and generated bundles and
+record the measured result.
