@@ -1953,3 +1953,48 @@ not current troops. The defensive-collapse death mode (ffa-n20-basket-05:
 191k/480k incoming waves erase 15k tiles with outgoing near zero) remains the
 largest unaddressed FFA loss pool and belongs to defense policy, not war
 selection.
+
+## Lever pre-declaration: offensive-war abandon valve (2026-09-29, BEFORE any candidate run)
+
+This is the per-war no-tile-gain abandon valve the winnability verdicts
+pointed at. Diagnostic recap (`team-none-basket-03` intent trace): 68 war
+decisions with zero tile gain across the match; the Quebec war re-committed
+213k-489k troops every few decision ticks for thousands of ticks while the
+defender out-produced the payload and the row stayed poor (3.18M tradeGold vs
+100M+ for winners). Nothing in the attack engine ever stops re-committing to a
+war that captures nothing.
+
+Candidate: a per-target ledger at the `sendAttack` player gate. For offensive
+sends (`force` false — retaliate, cap-strike `forceSendAttack`, and forced
+counterattacks bypass; Terra Nullius is untouched because it is not a player),
+track per target key `{firstTick, ownTiles}`: a send that grows our tile
+count rolls the window forward; 900 consecutive ticks (`WAR_ABANDON_WINDOW_TICKS`,
+matching the existing attrition-window constant) with no tile gain blacklists
+the target for 3000 ticks (`WAR_ABANDON_COOLDOWN_TICKS`), after which it is
+attackable again. The ledger is consulted after the duplicate-send check, so
+only real attempts create entries. State lives on the behavior
+(`offensiveWarLedger` / `offensiveWarBlacklist` Maps), lazily initialized.
+
+Focused regressions in `test/cap-pressure-strike.mjs`: (1) a fresh offensive
+target sends; (2) a target with no tile gain past the window is refused and
+blacklisted; (3) tile growth rolls the window (no blacklist); (4) after the
+cooldown the target is attackable again; (5) forced/retaliate sends bypass the
+blacklist; (6) Terra Nullius sends are unaffected.
+
+Baseline: `/tmp/ofh-matrix/basket-2026-09-29-trade-gold-baseline/results.jsonl`.
+Rows: early stop after the ten `team-none`/`team-temp` rows at parallelism
+2; stop and revert if the early gate fails, otherwise finish all 35 rows.
+
+Pre-declared LAND rule: (a) no set regresses wins or fullGreens vs the
+baseline; (b) `ffa-n2-basket-04` keeps its win; (c) early gate: total
+`goldEarned` in `team-none` or `team-temp` increases with neither team set
+decreasing; (d) no team row changes `ownStructuresNuked` from zero to
+positive; and (e) `trainGoldEarned` and `tradeGoldEarned` in neither team
+set decrease. Any failed condition reverts code, regression, and generated
+bundles and records the measured result.
+
+Known ceiling: the valve stops the bleed but does not by itself create
+expansion — a fully blacklisted border leaves the army at cap with donations
+as the only overflow valve, and whether freed troops defend better (temp-03
+was collapsing under pressure while committing to wars) is what clause (c)
+measures.
