@@ -2778,3 +2778,23 @@ Rerun the same early gate against the same 35-row baseline, writing to
 identical 15-row pass criteria declared above. If it passes, complete all 35
 rows under the original full gate; otherwise revert the correction and record
 the result.
+
+### Verdict: REVERTED EARLY (2026-09-29, own-structure safety gate failed)
+
+The corrected 15-row basket completed at parallelism 2:
+`/tmp/ofh-matrix/basket-2026-09-29-legendary-nuke-release-v2/results.jsonl`.
+Wins/fullGreens did not regress, and per-set enemy nuked-structure gold did
+not decrease. The rich `ffa-n4` set rose from 0 to 4,200,000 enemy structure
+damage, but own structures nuked rose from 26 to 42. The decisive row,
+`ffa-n4-basket-01`, launched five Atoms (baseline zero) and gained 4,200,000
+enemy damage while own structure losses rose from 9 to 25. This violates the
+pre-declared own-structure gate, so the remaining 20 rows were not run.
+
+`team-none` kept own structure losses at zero and gained 4,200,000 aggregate
+enemy damage (11,300,000 -> 15,500,000). `team-25mm` improved aggregate own
+losses (94 -> 87) and enemy damage (25,750,000 -> 52,900,000), but two rows
+still had higher own losses. A completed active SAM alone is therefore not a
+sufficient safety condition for releasing the offensive reserve in every
+world. The candidate commit `1970c057` was reverted by `7de82b1f`; the full
+basket was not run and no push was made. Any follow-up needs a threat-aware
+defense-budget condition declared before a new run.
