@@ -1859,3 +1859,33 @@ Known ceiling: winnability-gated selection can only pick wars the current
 army can finish; when every neighbor is stronger the bot holds a capped army
 and waits (the freeze without the bleed), and whether the trade economy grows
 from unspent surplus is exactly what clause (c) measures.
+
+### Verdict: REVERTED EARLY (2026-09-29, no-op — early gate failed as a tie)
+
+The run completed all ten pre-declared rows at parallelism 2 in
+`/tmp/ofh-matrix/basket-2026-09-29-winnability/`. Nine of ten rows were
+byte-identical to the baseline; `team-temp-basket-03` differed by −2,000
+goldEarned over 20 fewer ticks (6,525,503 → 6,523,503, 9451 → 9431), which
+proves the gates engage in the sim but almost never bite. Clause (c) failed
+strictly: no team set increased and team-temp decreased microscopically. Per
+the pre-declared rule the candidate stopped before the FFA sets, and code,
+regression, and generated bundles were restored to `f10eff08`.
+
+Mechanism learning: the absorption wars are gated on a CURRENT-troops
+comparison, and that bar is orthogonal to absorption. Quebec (1.28-1.41M
+troops) versus our fluctuating 0.7-1.6M army means the winnability gate lets
+the war launch whenever our army momentarily exceeds the target's — the bot
+commits its capped payload, the defender's production out-grows it, and the
+war absorbs exactly as before. Current-strength winnability cannot see
+production trajectories; a future lever would need a growth- or
+maxTroops-aware bar (target maxTroops vs our maxTroops, or committed-payload
+payback), which is a new design and a new predeclaration.
+
+Unmeasured residual: the bots-lane gate was the one part likely to affect the
+FFA sets (the n20 rows die at 0 tiles in early bot wars), and the early stop
+never reached them. An FFA-only predeclaration could test that gate alone;
+team-mode winnability is measured dead as a no-op and should not be
+re-proposed in this form. The focused regressions were landed in
+`test/cap-pressure-strike.mjs` (the attack-sandbox harness) rather than
+`test/sam-defense-policy.mjs` as predeclared, and were reverted with the
+code.
