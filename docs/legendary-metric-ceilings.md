@@ -776,15 +776,19 @@ death) gives the first full arc of the dogpile collapse:
 2. The army sits pinned at maxTroops the whole time (1.366M/1.371M at t=2957,
    1.6349M/1.6352M at t=3573): every further troop-second is wasted production.
 3. Count-scaled prices turn the midgame into a one-building-per-~1000-tick
-      queue: City 250k (t=1543), Port 250k (t=2403), City 500k (t=3573) with
-      ~290-430 gold/tick income and only 2 Cities + 1 Port on 33k tiles. The
-      planner's answer during these windows is a repeated Wait targeting the next
-      500k-1M asset (legendary-action-groups: [[Wait],[Wait]] for 1200+ ticks).
+   queue.
 4. t=3702: Xinjiang (the nation that had kept conquering) attacks with a 733k
    wave — 40%+ of our pinned army — then re-attacks in 200-500k waves every
    ~50 ticks. The first wave is held (land-defense result True, own 1.73M →
    975k), but the attrition race is lost: own 208k by t=4274 while waves keep
    coming, then the dogpile finish (Gansu 686k + Xinjiang 540k at t=4380).
+
+The one-building cadence in that window: City 250k (t=1543), Port 250k
+(t=2403), City 500k (t=3573) with ~290-430 gold/tick income and only 2 Cities
+
+plus 1 Port on 33k tiles. The planner's answer during these windows is a
+repeated Wait targeting the next 500k-1M asset (legendary-action-groups:
+[[Wait],[Wait]] for 1200+ ticks).
 
 Why this is not yet a fix: the losing asymmetry is equilibrium-breaking, not a
 single gate. Conquest captures Cities without paying the count-scaled ladder,
@@ -1624,4 +1628,57 @@ completed row, consistent with the identical results: in these basket scenes
 the route-backed first-Factory branch never engaged, so the no-destination
 fallback preserved the prior policy. Code, regression, and generated bundles
 were restored to `c9a566d0`; the candidate data remains under the run
+directory.
+
+## Lever pre-declaration: first rail Factory construction lane (2026-09-29, BEFORE any candidate run)
+
+Diagnostic evidence (team-none-basket-02 rerun with `OFH_LOG_STRUCTURES=1`):
+Factory candidates exist from tick 4002 at the same 500k shared ladder cost
+as Ports, but the Port candidate's deficit (1) outranks the Factory's deficit
+(0), so every affordable construction slot goes to another Port (17 built)
+and no Factory spawn probe ever runs; trainGold stays 0 for the whole match.
+Rows that do buy Factories (baskets 01/04) converted theirs into 12.0M and
+3.4M trainGold.
+
+Candidate: inside `doHandleLegendaryStructures`, after the candidate list is
+generated and before ordinary group ranking, if no Factory exists, the naval
+front-load gate is already cleared (port-capable game, two completed Ports,
+missile defense satisfied), and a legal affordable Factory candidate exists,
+spawn that Factory immediately. Landlocked games are unchanged (the gate
+requires port capability), games owning any Factory are unchanged, and an
+unaffordable Factory candidate falls through to the ordinary ladder.
+
+Focused regressions: (1) the lane preempts group ranking and builds the
+Factory under the cleared gate; (2) with the front-load gate not cleared (one
+Port) no preemption happens; (3) with any Factory owned no preemption happens;
+(4) with no affordable Factory candidate no preemption happens; and (5) a
+port-incapable game never preempts.
+
+Baseline: `/tmp/ofh-matrix/basket-2026-09-29-trade-gold-baseline/results.jsonl`.
+Pre-declared LAND rule: (a) no set regresses wins or fullGreens;
+(b) `ffa-n2-basket-04` keeps its win; (c) `trainGoldEarned` increases in at
+least one of `team-none` or `team-temp`, with neither set decreasing;
+(d) total `goldEarned` in neither team set decreases; and (e) no team row
+changes `ownStructuresNuked` from zero to positive. Record `tradeGoldEarned`
+and `tradeCaptured` separately. After the first ten rows (`team-none` and
+`team-temp` complete), stop and revert if clause (c) cannot pass; otherwise
+finish all 35 rows for safety. Any failed LAND condition reverts and records
+the measured result.
+
+### Verdict: REVERTED EARLY (2026-09-29, gold-total and nuke-safety gates failed)
+
+The run completed all ten pre-declared target rows (`team-none` and
+`team-temp`, five seeds each) in
+`/tmp/ofh-matrix/basket-2026-09-29-first-factory-lane/` at parallelism 2
+before stopping. Clause (c) passed: `trainGoldEarned` rose in both sets
+(`team-none` +4,350,000; `team-temp` +2,020,000) with neither decreasing —
+the lane demonstrably bought first Factories that the ordinary ladder never
+did (row 02: 655,000 trainGold from 0; temp row 02: 425,000 from 0). But the
+other gates failed. Clause (d): `team-temp` total `goldEarned` fell 16,748,796
+(its basket-04 winner traded ~14.7M of Port-led compounding for +1.6M train
+income and finished with 5 Factories instead of 10). Clause (e):
+`team-none-basket-04` changed `ownStructuresNuked` from 0 to 1 (the richer
+Factory economy drew a nuke that the baseline never attracted). Wins,
+fullGreens, and row 01 were unchanged. Code, regression, and generated
+bundles were restored to `37ee8faf`; the candidate data remains under the run
 directory.
