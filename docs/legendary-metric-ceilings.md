@@ -2920,3 +2920,83 @@ treasury produces measurable Legendary progress; reopening requires an
 engine-side change to the salvo-vs-construction race itself. Candidate code
 and its focused regressions were reverted; the bundles were regenerated to
 baseline bytes and no push was made.
+
+## Lever pre-declaration: cost ladders count structure instances, not levels (2026-09-29, BEFORE candidate run)
+
+Measured anatomy (`diag-25mm01-dump-base.out`): the bot's own roster contains
+a level-2 City (the standing troop-cap relief upgrade), and the client cost
+model prices the next City by LEVEL sum (`ownedLevels` = 3 ->
+pow2(3)x125k = 1,000,000) while the engine's effective ladder count is
+`min(unitsOwned, unitsConstructed)` (PlayerImpl.ts + Config.ts
+`costWrapper`), which the min() reduces to the structure INSTANCE count —
+2 -> 500,000. The bot therefore doubles the City #3 savings target exactly
+in the measured ladder-freeze family. The 1M/3M caps absorb the SAM-level
+and high-count divergences; Defense Posts are not upgradable; leveled Ports
+were not observed in the dumps (captures could create them; the fix covers
+them uniformly through the same formula).
+
+Candidate: reproduce the engine's effective count client-side — add
+`structureInstanceCount(type)` = `player.units(type).length` (each owned
+instance counts 1, under-construction included, matching
+`min(unitsOwned, unitsConstructed)` in every non-deleting world) and use it
+for the ladder `numUnits` inside `cost()` for Port, Factory, City,
+SAMLauncher, DefensePost, and Warship. The strategy layer keeps level
+semantics untouched: cityCount, first-structure checks,
+shouldBuildStructure's owned, getPerceivedCost's owned multiplier, and all
+target-count logic stay on `ownedLevels` exactly as the existing DIVERGENCE
+note documents. MIRV/Atom/Hydrogen flat prices are unchanged.
+
+Identity claim: worlds with no upgraded structure and no leveled capture
+have instances == levels and stay byte-identical. Rows with city upgrades or
+leveled structures may diverge in economic savings targets only.
+
+Focused regression in `test/sam-defense-policy.mjs`: (1) two Cities at
+levels 1 and 2 -> cost(UNIT.City) = 500,000 (instance count 2), not
+1,000,000; (2) the Port/Factory joint count across types (1 Port + 1
+Factory -> next Port 500,000); (3) an under-construction City counts as one
+instance and the engine's min() caps the level sum at the constructed count
+(one level-2 City + one UC -> 500,000, where the old level-sum said
+1,000,000); (4) two veteran Warships (levels 3 and 2) price the next
+Warship at 750,000 (instances 2), not the capped 1,000,000.
+
+Rows: 15-row early gate (ffa-n4, team-none, team-25mm, seeds basket-01..05)
+at parallelism 2 against the 35-row baseline
+`/tmp/ofh-matrix/basket-2026-09-29-port-level-weighted-6e20da38/results.jsonl`,
+writing to `/tmp/ofh-matrix/basket-2026-09-29-instance-cost-ladder/`.
+
+Pre-declared early gates: (a) no set regresses wins or fullGreens vs
+baseline; (b) per-set ownStructuresNuked non-increase; (c) per-set
+nukedStructureGold non-decrease; (d) progress: a team set gains a win or
+fullGreen, OR a team set's aggregate final City count rises, OR ffa-n4
+tradesSum rises. If any early clause fails: revert code, regression, and
+generated bundles, record the verdict, stop (remaining 20 rows not run). If
+all early clauses pass, run the full 35 rows with the same clauses plus
+ffa-n2-basket-04 and ffa-n20-basket-04 wins preserved. Known ceiling: rows
+without upgrades are inert by design; the lever only pays where cap-relief
+City upgrades or leveled captures exist (25mm family evidence).
+
+### Verdict: REVERTED EARLY (2026-09-29, instance-cost ladder inert on the early gate)
+
+The 15-row early basket completed at parallelism 2:
+`/tmp/ofh-matrix/basket-2026-09-29-instance-cost-ladder/results.jsonl`.
+All fifteen rows are identical to baseline modulo `runtimeMs`, so
+pre-declared clause (d) found no progress: no team win or fullGreen, no
+final City count change, no ffa-n4 tradesSum change. The pricing correction
+itself is verified by the focused regressions (a level-2 City halves the
+next-City target from 1,000,000 to 500,000), so the fix is real but never
+gets consulted on these worlds: the one early-gate row with an upgraded
+structure (team-25mm-basket-01, level-2 City) dies through the measured
+post-arsenal-loss circuit — port-burst defer window, then the hostile-silo
+slot hold, then the salvo race — and the city ladder never sees an
+affordable decision under either pricing.
+
+The instance-vs-level correction is therefore recorded as
+verified-correct and measured-inert: it can only pay on worlds where the
+economic ladder actually runs between an upgrade and the endgame, which the
+fixed basket does not contain. With this, both remaining Intel items are
+measured: the joint Port/Factory cost curve was already mirrored by the
+client model (its instance-vs-level refinement is inert here), and the
+remaining factory spawn-cadence observation intersects the rail-trade lane
+that already measured no realized basket effect. Candidate code and its
+focused regressions were reverted; the bundles were regenerated to baseline
+bytes and no push was made.
