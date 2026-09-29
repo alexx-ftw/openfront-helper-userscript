@@ -1239,3 +1239,64 @@ the extra port's 250k-class level destabilizes exactly the mid-game
 economy timing that seed depends on. Code, test, and bundle changes
 reverted; both results files are kept under /tmp for any future
 predeclaration that wants the recorded per-row evidence.
+
+## Lever pre-declaration: trade port upgrade level 2 (2026-09-29, BEFORE any runs)
+
+Candidate: deepen the single Port instead of adding a second station. In the
+naval-economy lane, when the normal-game cap is reached (one completed
+Port), attempt ONE upgrade of that Port (level 1 -> 2) while a tradeable
+foreign open-ocean route exists (`foreignOceanPortTiles().length > 0`).
+Mechanics verified in the pinned-engine audit: a level-N Port makes N spawn
+attempts per check and appears N times in the foreign destination list, so
+level 2 doubles both outbound cadence and inbound attraction on the
+already-foreign-distance-optimized site. Emission reuses the City-upgrade
+pattern: authoritative `buildableForUnits` probe, `canUpgrade` guard,
+`availableGoldAfterReserve` affordability (defense reserves keep priority),
+`sendAutoBotBuildOrUpgrade`. One level only; no slot freeze when
+unaffordable (the lane falls through like the cap branch does today);
+big-start burst untouched; every emergency defense lane stays ahead.
+
+Focused regression in sam-defense-policy: upgrade fires with a foreign route
+and an affordable level-1 port; no foreign route keeps the old policy;
+level-2 ports are not re-upgraded; unaffordable upgrades fall through.
+
+Rows: full fixed basket, all 7 sets x seeds basket-01..05, unmodified
+run-basket.mjs protocol, parallelism 2. Baseline: today's stored rerun
+`/tmp/ofh-matrix/basket-baseline-rerun-2026-09-29/results.jsonl` (same HEAD
+sources; its ffa-n20-basket-04 win reproduced t=64881 exactly).
+
+Pre-declared full-basket verdict rule: LAND only if (a) no set regresses
+wins or fullGreens vs that baseline; (b) `ffa-n2` keeps its basket-04 win;
+and (c) trade economy improves — tradesSum rises in team-none or team-temp,
+or a team set gains a win or fullGreen. `ffa-n20` is recorded outside the
+rule. Otherwise REVERT and record a measured dead end. Known ceiling: one
+upgraded station cannot fix spawn-cadence economics or the land dogpile;
+it targets the income gap by doubling one site's trade throughput.
+
+### Verdict: REVERTED (2026-09-29, full fixed basket, pre-declared rule failed)
+
+Focused regression, full suite, type-check, build parity, and lint (no new
+ratchet entries) were green. The candidate basket
+(`/tmp/ofh-matrix/basket-2026-09-29-trade-port-upgrade`) failed every
+predeclared clause against the stored baseline:
+
+- rule (a): team-temp fullGreens 1 -> 0; ffa-n20 wins 1 -> 0
+- rule (b): ffa-n2 LOST its basket-04 win (baseline W@13171 -> L@19301)
+- rule (c): no tradesSum bar rose
+
+The mechanism itself engaged: exactly one `Port` upgrade event fired in
+both `ffa-n2-basket-04` and `team-temp-basket-04` — the two rows that
+flipped — so this is not a dead gate but a genuine measured regression.
+Spending the ~250k upgrade through the naval-economy lane's early priority
+buys trade throughput the mid-game never converts into survival before the
+flipped seeds' decisive windows.
+
+Measured state of the income-gap frontier after three levers: holding gold
+(fund hold) starves growth; a second station (cap 2) destabilizes basket-04
+seeds; deepening the single station (this lever) does the same at exactly
+one level. The remaining lever family is income that does not pre-spend
+construction tempo — e.g. routing more foreign arrivals to the existing
+port (destination-weight effects the engine already gives for free) or
+upgrade timing gated on post-first-trade income rather than lane priority.
+Code, test, and bundle changes reverted; all three results files stay in
+/tmp for future predeclarations.
