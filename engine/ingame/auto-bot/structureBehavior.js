@@ -991,12 +991,7 @@
           ffaMode && preemptiveHostileSiloRisk,
         );
       }
-      const upgradeDecision = await this.handleBuiltHostileSiloSamUpgrade();
-      if (upgradeDecision !== false) return upgradeDecision;
-      if (this.shouldYieldHostileSiloReserveToArsenalRebuild()) {
-        return (await this.maybeSpawnArsenalRebuildSilo()) ? true : false;
-      }
-      return false;
+      return this.handleBuiltHostileSiloSamUpgrade();
     }
 
     async handleTriggeredHostileSiloSam(
@@ -1022,50 +1017,11 @@
       // In FFA, reserve the first interceptor during the existing half-silo
       // gold warning window. Teams retain the completed-silo reserve because
       // third-party launches already provide an earlier defense signal.
-      if (
-        !this.shouldReserveTriggeredHostileSiloSamBudget(
-          builtHostileSilo || ffaPreemptiveHostileSiloRisk,
-        )
-      ) {
-        return null;
-      }
-      if (this.shouldYieldHostileSiloReserveToArsenalRebuild()) {
-        return (await this.maybeSpawnArsenalRebuildSilo()) ? true : false;
-      }
-      return false;
-    }
-
-    // The hostile-silo reserve exists to fund the interceptor ladder, but a
-    // world whose entire Missile Silo arsenal was deleted has lost the thing
-    // the ladder protects. While the arsenal-loss latch is armed, the silo
-    // count is still zero, a COMPLETED interceptor exists (the first-SAM
-    // window keeps the reserve), and a rebuild silo is immediately
-    // affordable, the maximum-priority lane spends its hold on the rebuild
-    // itself instead of idling toward the 3M upgrade (measured 25mm-01:
-    // 1.26M-2.47M gold at t=2000-3000, hold never satisfied, death at 6781
-    // with zero silos and zero enemy structure damage). A failed placement
-    // probe resumes the hold, so the only behavioral delta versus baseline is
-    // a successful rebuild placement. See the arsenal-rebuild correction in
-    // docs/legendary-metric-ceilings.md.
-    shouldYieldHostileSiloReserveToArsenalRebuild() {
-      if (this._arsenalLostObserved !== true) return false;
-      if (!this.player) return false;
-      if ((this.player.units(UNIT.MissileSilo) || []).length > 0) return false;
-      const builtSams = (this.ownedSamUnits() || []).filter((sam) =>
-        this.isBuiltActiveSam(sam),
-      );
-      if (builtSams.length === 0) return false;
-      const siloCost = this.safeConstructionCost(UNIT.MissileSilo);
-      if (siloCost === null || siloCost <= 0n) return false;
-      return this.spendableConstructionGold() >= siloCost;
-    }
-
-    async maybeSpawnArsenalRebuildSilo() {
-      return this.maybeSpawnStructure(UNIT.MissileSilo, {
-        useActualCost: true,
-        ignoreEconomicReserve: true,
-        prioritizeStructureCoverage: true,
-      });
+      return this.shouldReserveTriggeredHostileSiloSamBudget(
+        builtHostileSilo || ffaPreemptiveHostileSiloRisk,
+      )
+        ? false
+        : null;
     }
 
     async handleBuiltHostileSiloSamUpgrade() {
