@@ -2519,3 +2519,33 @@ non-increase; per-set nukedStructureGold non-decrease; ffa-n2-basket-04 and
 ffa-n20-basket-04 wins preserved; progress = 25mm nukedStructureGold
 increase or any win/fullGreen gain. Otherwise REVERT the behavior,
 regression, and generated bundles and record the measured result.
+
+### Verdict: REVERTED (2026-09-29, full-35 gate failed on FFA sets)
+
+Candidate basket: /tmp/ofh-matrix/basket-2026-09-29-overwhelm-yield-bounded/
+results.jsonl (35 rows, candidate 37781b80). The early gate passed exactly as
+pre-declared: team-none-basket-02..05 identical modulo runtimeMs, exempted
+basket-01 still a win, team-25mm ownStructuresNuked 94 -> 90 with
+nukedStructureGold 25,750,000 -> 57,200,000 and the first 25mm win
+(basket-04 preserved ownNuked 6, +31,450,000). The cap demonstrably works:
+25mm basket-02/03/05 returned to baseline tracks once losses passed six, and
+v3's basket-05 collapse (21 -> 40) is gone (21 -> 21).
+
+The full-35 rules failed on the FFA sets: ffa-n4 ownStructuresNuked 26 -> 46,
+ffa-n20 ownStructuresNuked 114 -> 167 with nukedStructureGold 113,750,000 ->
+22,000,000 and its only win lost (ffa-n20-basket-04 survived 71,371 -> 86,581
+ticks but did not win), ffa-n2 nukedStructureGold 1,000,000 -> 0, and the
+exempted team-none-basket-01 turned a fullGreen win into a 5-nuke win
+(fullGreen 2 -> 1, nukedGold 11,300,000 -> 4,850,000). Per the pre-declared
+rule the behavior, regression, and generated bundles are reverted to d468cd21.
+
+Mechanism conclusion: the cap bounds the yield's lifetime but not its
+trajectory effect. A handful of early yields (while losses are still <= 6)
+shifts early construction in fragile worlds, and the shifted world then loses
+more structures even with the reserve fully resumed. Across the family —
+unbounded (v2), overwhelm-armed unbounded (v3), bounded (v4) — every variant
+that lets the hostile-silo reserve fund economy in ANY world trades team-set
+gains for FFA losses. The economic-yield family on the completed-hostile-Silo
+reserve slot is closed as a measured dead end: do not retry without a
+mechanism that provably does not diverge protected or fragile worlds (e.g.,
+an engine-side coverage change, not a client-side yield gate).
