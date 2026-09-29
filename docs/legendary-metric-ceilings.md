@@ -2221,3 +2221,84 @@ complexity violations in `maybeOpenLegendaryNavalEconomy` and
 `addLegendaryConstructionCandidate`; both methods are outside this patch. The
 same targeted ESLint check passes with only the repository's complexity rule
 disabled, and the patch adds no complexity finding.
+
+## Diagnostic: construction-slot starvation under the hostile-silo reserve (2026-09-29, same-seed dump at d468cd21)
+
+`team-temp-basket-03` replayed byte-consistently on the current HEAD with
+`OFH_CONSTRUCTION_DUMP=1`
+(`/tmp/ofh-matrix/diag-temp03-dump-d468cd21.out`; ticks 9451, goldEarned
+6,525,503, tradeGoldEarned 5,323,205 — identical to the basket row). The
+construction dump records 190 ladder decisions and none at all between
+t=4523 and t=6880:
+
+- The last pre-gap decision saw 469,383 gold and Waited for City #3
+  (500,000). SAM #1 was bought at t=4246 and became ready at t=4549
+  (firstReadySamTick; the first hostile nuke came at t=5416, so the
+  first-launcher doctrine held).
+- From t=4549 a completed hostile Silo plus the H-bomb plan (level 1 ->
+  ready line) made `handleTriggeredHostileSiloSam` hard-reserve the whole
+  construction slot: `maybeSpawnHostileSiloSam` and
+  `maybeUpgradeHostileSiloSam` both failed (placement probe useless, the
+  upgrade sits on the (n+1)x1.5M ladder at 3,000,000), and
+  `shouldReserveTriggeredHostileSiloSamBudget` returned `false` — no ladder
+  decision — on every call. Gold pooled 469k -> 1.58M (t=5000) -> 2.38M
+  (t=6000) -> 2.94M (t=6500) while City #3 was affordable from ~t=4800.
+- The maritime-emergency warship bridge additionally spent 750,000 on two
+  Warships at t=5438/5468. The hostile missiles visible in that window
+  (t=5416-6872) targeted third-party nations (Bravo, India, Victor), not
+  the bot.
+- At t=6872 gold crossed 3,000,000 and the SAM upgrade fired immediately:
+  3,104,709 -> 105,509. The ladder next decision (t=6880) saw 105,509 and
+  Waited. City #3 was never built; the match was lost at t=9451 with two
+  cities and one port.
+
+The parent constraint named after the port-cap diagnostics is therefore now
+measured exactly: the ladder did not lose affordability races — it was not
+consulted at all for 2,357 ticks while a completed-hostile-Silo reserve held
+the slot for an unaffordable 3M upgrade, and one defense spend then consumed
+the entire pool.
+
+## Lever pre-declaration: hostile-silo reserve economic yield (2026-09-29, BEFORE any candidate run)
+
+Candidate: in `handleTriggeredHostileSiloSam`, when the reserve would hold
+the slot (`shouldReserveTriggeredHostileSiloSamBudget` true), yield one
+ordinary ladder decision instead — return `null` — only when ALL of the
+following hold: (1) the bot owns at least one COMPLETED SAM launcher
+(`isBuiltActiveSam`; the first-SAM window and launchers still under
+construction keep the reserve), (2) the bot owns fewer than 4 City levels
+(the measured winner band pairs 4-6 cities with its SAM ladder; past the
+cap the reserve resumes), and (3) `economicConstructionPressure()` returns
+an economic candidate affordable from `spendableConstructionGold()`. The
+live-missile lane (`handleActiveMissileSamMaximumPriority`) runs BEFORE
+this lane and is untouched, so an airborne missile still owns the slot; the
+zero-launcher doctrine is untouched; and `handleBuiltHostileSiloSamUpgrade`
+(the count-at-target upgrade path) keeps its reserve unchanged.
+
+Focused regression in `test/sam-defense-policy.mjs`: (1) one completed
+launcher + built hostile Silo + unaffordable next SAM + affordable City
+candidate -> `handleHostileSiloSamMaximumPriority` returns `null` so the
+ordinary chain runs, and `handleStructures` reaches lower-priority
+construction; (2) zero completed launchers (SAM #1 still under
+construction) -> `false` (reserve holds); (3) four City levels -> `false`;
+(4) no affordable economic candidate -> `false`. The pre-existing reserve
+stubs carry no `player`, so every existing reserve assertion keeps its
+current outcome.
+
+Rows: full fixed basket, all 7 sets x seeds basket-01..05, unmodified
+run-basket.mjs protocol, parallelism 2. Baseline:
+`/tmp/ofh-matrix/basket-2026-09-29-port-level-weighted-6e20da38/results.jsonl`
+(35 rows, current HEAD d468cd21 behavior). Early gate after the ten
+`team-none` and `team-temp` rows: (a) neither set regresses wins or
+fullGreens; (b) neither set aggregate `goldEarned` decreases; (c) no team
+row changes `ownStructuresNuked` from zero to positive; (d)
+`samReadyBeforeFirstHostileNuke` stays true on every row; (e) at least one
+team set aggregate `goldEarned` increases. If the gate passes, finish all
+35 and LAND only if no set regresses wins/fullGreens, `ffa-n2-basket-04`
+remains a win, clauses (c)/(d) still hold everywhere, and a team economy
+gain remains. Otherwise REVERT the behavior, regression, and generated
+bundles and record the measured result. Known ceiling: the yield
+accelerates city growth only while the next defensive purchase is out of
+reach; on worlds where the first hostile Silo appears before any own
+launcher exists the gate is inert by design, and a delayed H-bomb upgrade
+can in principle trade ownNuked risk for compounding income — that trade
+is exactly what clauses (c)/(d) measure.
