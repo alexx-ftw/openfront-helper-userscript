@@ -550,6 +550,26 @@
     "initializerPreview": "2"
   },
   {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:CAP_STRIKE_TROOP_RATIO#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "CAP_STRIKE_TROOP_RATIO",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "8139b33952401b3ee0e2ca84651cb9a1d7f66d442bf908f9cf1f53ea746e5801",
+    "initializerLength": 3,
+    "initializerPreview": "0.9"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:CAP_STRIKE_CONFIRM_DECISIONS#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "CAP_STRIKE_CONFIRM_DECISIONS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "e7f6c011776e8db7cd330b54174fd76f7d0216b612387a5ffcfb81e6f0919683",
+    "initializerLength": 1,
+    "initializerPreview": "6"
+  },
+  {
     "id": "engine/ingame/auto-bot/attackBehavior.js:OVERWHELMING_INCOMING_ATTACK_RATIO#1",
     "file": "engine/ingame/auto-bot/attackBehavior.js",
     "name": "OVERWHELMING_INCOMING_ATTACK_RATIO",
@@ -15450,6 +15470,16 @@
     "initializerPreview": "5"
   },
   {
+    "id": "openfront-engine/src/core/execution/nation/NationNukeBehavior.ts:CROWN_NEAR_WIN_SHARE#1",
+    "file": "openfront-engine/src/core/execution/nation/NationNukeBehavior.ts",
+    "name": "CROWN_NEAR_WIN_SHARE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "d2cbad71ff333de67d07ec676e352ab7f38248eb69c942950157220607c55e84",
+    "initializerLength": 3,
+    "initializerPreview": "0.5"
+  },
+  {
     "id": "openfront-engine/src/core/execution/nation/NationStructureBehavior.ts:SAM_RATIO_BY_DIFFICULTY#1",
     "file": "openfront-engine/src/core/execution/nation/NationStructureBehavior.ts",
     "name": "SAM_RATIO_BY_DIFFICULTY",
@@ -17070,6 +17100,16 @@
     "initializerPreview": "\"Cape Cod\""
   },
   {
+    "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.CapeOfGoodHope#1",
+    "file": "openfront-engine/src/core/game/Maps.gen.ts",
+    "name": "GameMapType.CapeOfGoodHope",
+    "declarationKind": "enum member",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "15eea3c579a1a018a5935ac0e2b3150abebe551803113070e27092020bc6e3d8",
+    "initializerLength": 19,
+    "initializerPreview": "\"Cape Of Good Hope\""
+  },
+  {
     "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.Caribbean#1",
     "file": "openfront-engine/src/core/game/Maps.gen.ts",
     "name": "GameMapType.Caribbean",
@@ -17560,6 +17600,16 @@
     "initializerPreview": "\"Luna\""
   },
   {
+    "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.Madagascar#1",
+    "file": "openfront-engine/src/core/game/Maps.gen.ts",
+    "name": "GameMapType.Madagascar",
+    "declarationKind": "enum member",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "d690f4cc4ff5b41ed4ad7680d272cd681c18334715512e2aceb128b560c8994d",
+    "initializerLength": 12,
+    "initializerPreview": "\"Madagascar\""
+  },
+  {
     "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.Manicouagan#1",
     "file": "openfront-engine/src/core/game/Maps.gen.ts",
     "name": "GameMapType.Manicouagan",
@@ -18008,6 +18058,16 @@
     "initializerHash": "4a69f705fc64dc9ce39dea3f1c7c53700a8224a945e1813e693208c0dcaa4b97",
     "initializerLength": 15,
     "initializerPreview": "\"United States\""
+  },
+  {
+    "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.VancouverIsland#1",
+    "file": "openfront-engine/src/core/game/Maps.gen.ts",
+    "name": "GameMapType.VancouverIsland",
+    "declarationKind": "enum member",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "f0a8d2503be5a9bf94ec97735d5151b70fc74cdd32f20568a7520e773ba65626",
+    "initializerLength": 18,
+    "initializerPreview": "\"Vancouver Island\""
   },
   {
     "id": "openfront-engine/src/core/game/Maps.gen.ts:GameMapType.Venice#1",
@@ -19998,25 +20058,5 @@
     "initializerHash": "fca1e830ff83e0278daac33d4b17739eba9851a990d39eb754f31ec24f34249a",
     "initializerLength": 701,
     "initializerPreview": "{\n    batchSize: { env: \"TELEMETRY_BATCH_SIZE\", fallback: 200 },\n    flushIntervalMs: { env: \"TELEMETRY_FLUSH_INTERVAL_MS\", fallback: 1000 },\n    requestTimeoutMs: { env: \"TELEMETRY_REQUEST_TIMEOUT_MS\", fallback: 5000 },\n    maxQueueSize..."
-  },
-  {
-    "id": "engine/ingame/auto-bot/attackBehavior.js:CAP_STRIKE_TROOP_RATIO#1",
-    "file": "engine/ingame/auto-bot/attackBehavior.js",
-    "name": "CAP_STRIKE_TROOP_RATIO",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "8139b33952401b3ee0e2ca84651cb9a1d7f66d442bf908f9cf1f53ea746e5801",
-    "initializerLength": 3,
-    "initializerPreview": "0.9"
-  },
-  {
-    "id": "engine/ingame/auto-bot/attackBehavior.js:CAP_STRIKE_CONFIRM_DECISIONS#1",
-    "file": "engine/ingame/auto-bot/attackBehavior.js",
-    "name": "CAP_STRIKE_CONFIRM_DECISIONS",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "e7f6c011776e8db7cd330b54174fd76f7d0216b612387a5ffcfb81e6f0919683",
-    "initializerLength": 1,
-    "initializerPreview": "6"
   }
 ]
