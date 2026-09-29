@@ -2347,3 +2347,24 @@ condition — evidence first, no rule declared here — before re-opening this
 lane; without one, the completed-hostile-Silo reserve keeps its hard-hold
 semantics because delaying the interceptor upgrade is exactly what clauses
 (c)/(d) exist to prevent.
+
+### Addendum: salvo-timeline evidence closes threat-scoped arming (2026-09-29, same day)
+
+Per-row timelines from the two baskets' raw outputs settle the idea left open
+by the verdict. team-none-basket-01: the candidate delayed only the second
+SAM build (8410 -> 8599) yet ate 5 structures when the salvo launched at
+t=9767 — a 189-tick interceptor delay was already fatal. team-none-basket-02:
+the candidate skipped SAM #2/#3 entirely (baseline 3793/5009/8815, candidate
+3793 only) and the t=6423 salvo landed uneaten (ownStructuresNuked 0 -> 3,
+first own structure lost 6423, match collapsed 930 ticks early).
+team-temp-basket-02: the candidate skipped three interceptors (baseline
+3805/5161/5978/7567, candidate 3805/8562) and that was pure profit —
++63,347,564 gold, 1,770 ticks longer survival, ownStructuresNuked stayed 0
+because no hostile salvo reached us on that world.
+
+The world difference — whether the hostile salvo can reach and overwhelm us
+— is exactly what the H-bomb protection plan's coverage model already
+encodes; no cheaper client-side signal separates the four rows at decision
+time. The completed-hostile-Silo reserve therefore keeps its hard-hold
+semantics, and the economic-yield family on this slot is closed as a
+measured dead end (do not retry without a new engine-side coverage change).
