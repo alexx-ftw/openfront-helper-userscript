@@ -2684,3 +2684,48 @@ focused regressions) are also reverted, restoring byte-identical behavior to
 d468cd21 per the inert-candidate discipline; the code remains recoverable at
 ae5f2043 and da3a7ec7 if an engine-side salvo-race change ever reopens the
 family.
+
+## Lever pre-declaration: fire Legendary nukes after baseline SAM coverage (2026-09-29, BEFORE candidate)
+
+Baseline evidence: ffa-n4-basket-01 earned 76,351,813 gold (72,533,282 from
+trade), ended with one Missile Silo, took 9 own structure nuke losses, and
+dealt 0 enemy structure damage; its final nuclearStrategy reports zero Atom
+and Hydrogen launches. Same-seed nuke trace
+(/tmp/ofh-matrix/diag-ffan401-nuke-reserves.out) recorded 520 decisions,
+302 affordability selections, and 146 affordable Atom selections, all 146
+deferred before candidate collection. 143 were deferred by the ordinary
+policy reserve with no active maritime invasion, heavy assault, or retaliation;
+three had active maritime pressure. No candidate scan ran. At t=6709 an
+Atom cost 750,000 with 816,891 gold, while the policy withheld 9,600,000
+(4,800,000 defensive reserve + 4,800,000 SAM-replacement reserve); later
+the combined hold reached 15,000,000. The target/value/trajectory pipeline
+therefore never got a chance to approve or reject a shot.
+
+Candidate: generalize the existing Hydro-only Legendary fallback in
+NukeBehavior.shouldDeferNukeForEconomy to every Legendary nation, when at
+least one owned SAM is completed and active and current gold covers the
+selected nuke's actual cost. Keep the active-maritime-invasion hard defer
+before this exception. This bypass only releases the ordinary surplus gate:
+target validity, candidate tile scoring, buildability, SAM-salvo feasibility,
+and nukeHasPositiveExpectedValue remain unchanged and still must approve a
+launch. A SAM still under construction or inactive does not qualify. This
+targets reserve deadlock after baseline coverage, not first-interceptor
+funding.
+
+Focused regression in test/nuke-economy-policy.mjs: a non-Hydro Legendary
+with one completed active SAM, 1,000,000 gold, and a policy that would
+otherwise defer a 750,000 Atom must return false; a SAM under construction
+continues to defer; active maritime pressure still defers even with an active
+SAM; the existing positive expected-value and salvo tests remain green.
+
+Early gate: run ffa-n4, team-none, and team-25mm (15 rows) against
+/tmp/ofh-matrix/basket-2026-09-29-port-level-weighted-6e20da38/results.jsonl.
+Pass only if no set regresses wins or fullGreens, per-set ownStructuresNuked
+does not increase, per-set nukedStructureGold does not decrease, and
+ffa-n4 aggregate nukedStructureGold increases (the measured rich-pacifist
+target must convert a nuke decision into enemy structure damage). Otherwise
+revert and record. If passed, complete all 35 rows. Full gate: no set
+regresses wins or fullGreens; per-set ownStructuresNuked non-increase;
+per-set nukedStructureGold non-decrease; preserve ffa-n2-basket-04 and
+ffa-n20-basket-04 wins; progress is any per-set nukedStructureGold increase
+or any win/fullGreen gain. Otherwise revert and record the verdict.
