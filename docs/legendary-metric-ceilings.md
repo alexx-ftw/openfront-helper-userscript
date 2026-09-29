@@ -2606,3 +2606,36 @@ nukedStructureGold non-decrease; ffa-n2-basket-04 and ffa-n20-basket-04 wins
 preserved; progress = 25mm nukedStructureGold increase or any win/fullGreen
 gain. Otherwise REVERT the behavior, regression, and generated bundles and
 record the measured result.
+
+Mechanism correction (2026-09-29, same day, BEFORE any rerun): the
+arsenal-rebuild basket ran all ten team rows byte-identically to baseline
+(/tmp/ofh-matrix/basket-2026-09-29-arsenal-rebuild/results.jsonl, candidate
+ae5f2043), and the candidate 25mm-01 construction dump
+(/tmp/ofh-matrix/diag-25mm01-dump-candidate-arsenal.out) is identical to
+baseline — the defer exemption alone is inert. Reason: post-collapse the
+construction slot is held every tick by the hostile-silo defense reserve
+(samSiteCountTarget()=1 with a completed SAM routes the hold through the
+3,000,000 H-bomb upgrade ladder in handleBuiltHostileSiloSamUpgrade), so the
+arsenal lane in doHandleLegendaryStructures is never reached regardless of
+the defer. The reserve-yield family (v3/v4) proved this slot can be yielded,
+but yielding it to the ordinary chain diverts the gold to the naval port
+burst and produced measured FFA regressions.
+
+Correction: while the arsenal-loss latch is armed, the Missile Silo count is
+still zero, at least one COMPLETED SAM exists (the first-SAM window keeps the
+reserve), and a rebuild silo is immediately affordable from
+spendableConstructionGold(), the two hostile-silo reserve tails now spend the
+hold on the rebuild itself — maybeSpawnStructure(UNIT.MissileSilo,
+useActualCost, ignoreEconomicReserve, prioritizeStructureCoverage) inside the
+maximum-priority lane — instead of yielding to the chain. A failed placement
+probe returns false and the reserve hold resumes, so the only behavioral
+delta versus baseline is a successful rebuild-silo placement in a world that
+already lost its entire arsenal. Once the silo places (count 1) the valve
+disengages and the reserve resumes its H-bomb ladder. The defer exemption
+from ae5f2043 stays: it is required for worlds where the hostile-silo threat
+has died and no hold exists. Focused regression extends to: armed + zero
+silos + completed SAM + affordable -> maximum-priority lane attempts the
+rebuild spawn; unaffordable -> hold; silos present -> hold; never-armed ->
+hold; zero completed SAMs -> hold; failed spawn probe -> hold. Baseline,
+rows, and gate clauses are unchanged; the rerun writes to
+/tmp/ofh-matrix/basket-2026-09-29-arsenal-rebuild/ (resume semantics).
