@@ -2144,3 +2144,19 @@ will spawn or complete a profitable trip, and the headless harness's
 proximity clustering is less exact than the live railroad snapshot. The
 measured decision therefore depends on realized basket earnings, not the
 presence of remote stations alone.
+
+### Verdict: REVERTED EARLY (2026-09-29, no realized basket effect)
+
+The ten pre-declared `team-none` and `team-temp` rows completed at parallelism
+2 in `/tmp/ofh-matrix/basket-2026-09-29-legendary-full-roster/`. All result
+fields were identical to baseline except `runtimeMs`. `team-none` remained
+2 wins / 1 fullGreen with 319,525,178 total gold and 15,545,000 train gold;
+`team-temp` remained 1 win / 1 fullGreen with 116,309,692 total gold and
+1,700,000 train gold. Trade gold and structure-nuke counts were also unchanged
+in both sets. The pre-declared revenue clause failed because neither set
+increased train gold, so the run stopped at ten; the FFA rows were not run.
+
+The candidate, regression, and generated bundles were restored to
+`f28381ff`. This basket showed that adding remote tradeable owners to the
+Legendary inventory did not change any tested decision. Larger online lobbies
+with already-connected remote stations remain outside this basket's evidence.
