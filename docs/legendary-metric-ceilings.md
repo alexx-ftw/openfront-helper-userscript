@@ -1889,3 +1889,43 @@ re-proposed in this form. The focused regressions were landed in
 `test/cap-pressure-strike.mjs` (the attack-sandbox harness) rather than
 `test/sam-defense-policy.mjs` as predeclared, and were reverted with the
 code.
+
+## Lever pre-declaration: FFA-only bots-lane winnability gate (2026-09-29, BEFORE any candidate run)
+
+Baseline death anatomy (2026-09-29 trade-gold baseline): all seven FFA losses
+are total deaths (`bot_dead`, 0 tiles). The two n20 death modes differ. In
+`ffa-n20-basket-01` the bot commits a 435-448k outgoing wave at ticks
+1500-2000 (half its army, tiles only 13-14k) and then collapses under a
+168k incoming wave at tick 3500 — bleed first, die second, consistent with an
+early bots-lane war against a rich bot. `ffa-n20-basket-05` is a pure
+defensive collapse (outgoing stays near zero; 191k then 480k incoming waves
+erase 15k tiles by tick 2500) that this lever does not address. The bots lane
+(`getAttackableBots` → `getBotsNeedingAttackReinforcement`) has no strength
+filter in any mode and prefers structure-rich (strong) bots, so in dense FFA
+it starts wars the capped army cannot finish.
+
+Candidate: in `getBotsNeedingAttackReinforcement`, skip bots whose
+`troops()` is at or above our current army when `isFFA()` is true. Team modes
+stay byte-identical (measured no-op there; separate verdict), so the run
+covers the FFA sets directly instead of the team early-stop.
+
+Focused regressions in `test/cap-pressure-strike.mjs`: (1) FFA bots lane
+skips a stronger/equal bot and keeps a weaker one; (2) team mode keeps the
+unfiltered lane (stronger bot still returned); (3) FFA behavior of other
+predicates unchanged.
+
+Baseline: `/tmp/ofh-matrix/basket-2026-09-29-trade-gold-baseline/results.jsonl`
+(FFA sets). Rows: all 15 FFA rows (`ffa-n20`, `ffa-n2`, `ffa-n4`, seeds
+01-05) at parallelism 2 in one run.
+
+Pre-declared LAND rule: (a) `ffa-n2-basket-04` keeps its win and no FFA set
+regresses wins or fullGreens; (b) `ffa-n20` improves a primary bar — a win
+or fullGreen, or materially longer median losing-row survival (baseline n20
+losing rows 4594/13744/14304/2684, median 9169; bar: median ≥ 11,000);
+(c) n2 and n4 losing-row median survival does not fall more than 10 percent
+(n2 baseline losing median 12661; n4 13203). Any failed condition reverts
+code, regression, and generated bundles and records the measured result.
+
+Known ceiling: skipping stronger bots can also skip real structure-steal
+income, and pure defensive collapses (basket-05 mode) are untouched — a
+survival gain may appear in only some rows.
