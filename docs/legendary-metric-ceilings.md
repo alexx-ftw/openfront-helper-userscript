@@ -2321,3 +2321,29 @@ adds: built-silo upgrade reserve + baseline coverage + affordable City ->
 null; no coverage context -> false. Basket rules, baseline, and clauses are
 unchanged; the rerun writes to
 /tmp/ofh-matrix/basket-2026-09-29-silo-reserve-yield-v2/.
+
+### Verdict: REVERTED EARLY (2026-09-29, ten-row gate failed on team-none)
+
+The corrected candidate engaged. team-temp improved strongly: +72,501,809
+goldEarned and +70,145,311 tradeGoldEarned with cities 9 -> 11;
+team-temp-basket-03 built its first City (0 -> 1) and lasted 260 ticks
+longer, and basket-02 survived 1,770 ticks longer with +63,347,564 gold.
+But the pre-declared gate failed on team-none: fullGreen 2 -> 1 (basket-01
+kept its win while ownStructuresNuked went 0 -> 5), aggregate goldEarned
+332,207,147 -> 326,930,639 with cities 22 -> 16, and basket-02 went
+0 -> 3 ownStructuresNuked while losing 10,757,500 gold. Clauses (a), (b),
+and (c) all failed; on team-none rows the delayed 3M interceptor upgrade
+bought economy at the price of eating hostile nukes, while clause (e)'s
+gain lived only on the other team set. Behavior, regression, and generated
+bundles are restored to d468cd21. Candidate commits 8dcf0092 and 1aee4547
+remain in history as evidence; both baskets are retained (v1 inert:
+/tmp/ofh-matrix/basket-2026-09-29-silo-reserve-yield/results.jsonl; v2
+corrected candidate: /tmp/ofh-matrix/basket-2026-09-29-silo-reserve-yield-v2/results.jsonl).
+
+Known ceiling / next-lever shape: the yield's income is real where the bot
+is not itself under nuclear fire (team-temp) and harmful where it is
+(team-none). A future pre-declaration would need a threat-scoped arming
+condition — evidence first, no rule declared here — before re-opening this
+lane; without one, the completed-hostile-Silo reserve keeps its hard-hold
+semantics because delaying the interceptor upgrade is exactly what clauses
+(c)/(d) exist to prevent.

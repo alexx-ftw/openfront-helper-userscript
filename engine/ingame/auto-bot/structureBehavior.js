@@ -991,13 +991,7 @@
           ffaMode && preemptiveHostileSiloRisk,
         );
       }
-      const upgradeDecision = await this.handleBuiltHostileSiloSamUpgrade();
-      if (upgradeDecision !== false) return upgradeDecision;
-      // An unaffordable H-bomb upgrade holds this same slot (with
-      // samSiteCountTarget() = 1 this branch, not the triggered one, owns
-      // the measured t=4549-6872 reserve). The baseline-coverage yield
-      // applies identically here.
-      return this.shouldYieldHostileSiloReserveToEconomy() ? null : false;
+      return this.handleBuiltHostileSiloSamUpgrade();
     }
 
     async handleTriggeredHostileSiloSam(
@@ -1023,36 +1017,11 @@
       // In FFA, reserve the first interceptor during the existing half-silo
       // gold warning window. Teams retain the completed-silo reserve because
       // third-party launches already provide an earlier defense signal.
-      if (
-        !this.shouldReserveTriggeredHostileSiloSamBudget(
-          builtHostileSilo || ffaPreemptiveHostileSiloRisk,
-        )
-      ) {
-        return null;
-      }
-      return this.shouldYieldHostileSiloReserveToEconomy() ? null : false;
-    }
-
-    // A completed hostile Silo hard-reserves the construction slot while the
-    // next interceptor purchase (second placement or H-bomb upgrade ladder
-    // step) is unaffordable. With baseline coverage already built, one
-    // affordable economic candidate may take the ladder decision instead of
-    // idling the slot for the whole saving window (measured t=4549-6872 on
-    // team-temp-basket-03: 2,357 ticks without a ladder decision while City
-    // #3 at 500k starved and the pool grew to 3.1M). The first-SAM window
-    // and the live-missile lane are untouched: the yield requires a
-    // COMPLETED launcher, and the active-missile lane still owns the slot
-    // first whenever a missile is airborne.
-    shouldYieldHostileSiloReserveToEconomy() {
-      if (!this.player) return false;
-      const builtSams = (this.ownedSamUnits() || []).filter((sam) =>
-        this.isBuiltActiveSam(sam),
-      );
-      if (builtSams.length === 0) return false;
-      if (this.ownedLevels(UNIT.City) >= 4) return false;
-      const economic = this.economicConstructionPressure();
-      if (!economic) return false;
-      return this.spendableConstructionGold() >= economic.cost;
+      return this.shouldReserveTriggeredHostileSiloSamBudget(
+        builtHostileSilo || ffaPreemptiveHostileSiloRisk,
+      )
+        ? false
+        : null;
     }
 
     async handleBuiltHostileSiloSamUpgrade() {
