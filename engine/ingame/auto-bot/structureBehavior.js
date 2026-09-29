@@ -14159,7 +14159,7 @@
       // open-ocean coastline; lake ports are unreachable from an ocean port
       // and are excluded when the predicate exists.
       const foreignDistanceBonus = this.foreignOceanDistanceBonus(
-        this.foreignOceanPortTiles(),
+        this.foreignOceanPorts(),
       );
 
       return (tile) => {
@@ -14192,15 +14192,20 @@
     // excludes Bot tribes. game.isOceanShore marks the canonical open-ocean
     // coastline; lake ports are unreachable from an ocean port and are
     // excluded when the predicate exists.
-    foreignOceanPortTiles() {
-      const tiles = [];
+    foreignOceanPorts() {
+      const ports = [];
       for (const owner of this.tradeableForeignPortOwners()) {
         for (const port of owner.units?.(UNIT.Port) ?? []) {
           const portTile = this.oceanPortTile(port);
-          if (portTile !== null) tiles.push(portTile);
+          if (portTile !== null) {
+            ports.push({
+              tile: portTile,
+              weight: Math.max(1, Number(port.level?.()) || 1),
+            });
+          }
         }
       }
-      return tiles;
+      return ports;
     }
 
     tradeableForeignPortOwners() {
@@ -14234,15 +14239,26 @@
     // sigmoid; beyond it only the linear term grows, so the bonus is capped
     // at the debuff distance to keep it from outweighing rail placement.
     // Null keeps the legacy score untouched (no foreign ports, or an older
-    // client without the config hook).
-    foreignOceanDistanceBonus(foreignPortTiles) {
-      if (foreignPortTiles.length === 0) return null;
+    // client without the config hook). Weight by destination Port level, as
+    // PortExecution repeats each eligible destination once per level.
+    foreignOceanDistanceBonus(foreignPorts) {
+      if (foreignPorts.length === 0) return null;
       const cap = Number(this.game.config()?.tradeShipShortRangeDebuff?.() ?? NaN);
       if (!Number.isFinite(cap) || cap <= 0) return null;
-      const nearest = this.nearestTileDistanceScorer(foreignPortTiles, true);
+      const weightedDistances = foreignPorts.map(({ tile, weight }) => ({
+        weight,
+        distance: this.nearestTileDistanceScorer(new Set([tile])),
+      }));
       return (tile) => {
-        const dist = nearest(tile);
-        return Number.isFinite(dist) ? Math.min(dist, cap) : 0;
+        let weightedDistance = 0;
+        let totalWeight = 0;
+        for (const entry of weightedDistances) {
+          const distance = entry.distance(tile);
+          if (!Number.isFinite(distance)) continue;
+          weightedDistance += Math.min(distance, cap) * entry.weight;
+          totalWeight += entry.weight;
+        }
+        return totalWeight > 0 ? weightedDistance / totalWeight : 0;
       };
     }
 

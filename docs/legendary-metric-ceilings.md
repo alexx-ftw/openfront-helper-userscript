@@ -2194,3 +2194,30 @@ if no set regresses wins/fullGreens, `ffa-n2-basket-04` remains a win, the
 team economy and safety clauses above still hold, and a team trade-gold gain
 remains. Otherwise restore the behavior, regression, and generated bundle and
 record the measured result.
+
+### Verdict: LANDED (2026-09-29, full fixed basket; pre-declared rule met)
+
+The focused regression was red before the scorer change and green after it.
+`npm run build`, `npm test`, `npm run check`, and the targeted Prettier check
+passed. The full 35-row basket completed at parallelism 2. All seven sets kept
+their baseline win, fullGreen, and trade/veterancy/transport-kill bar counts;
+`ffa-n2-basket-04` remained a win at 13,171 ticks. No team row changed from
+zero to positive own structures nuked.
+
+`team-none` trade gold rose by 14,831,071, total gold by 12,681,969, and train
+gold by 195,000. `team-temp` was unchanged. `ffa-n20` trade gold rose by
+788,500,237, total gold by 792,908,038, and train gold by 4,015,000. The
+measured change was concentrated in three scored rows: `team-none-basket-01`
+kept its win and gained 14,831,071 trade gold; `ffa-n20-basket-01` remained a
+loss, ended 15 ticks earlier, and gained 1,280,051 trade gold; and
+`ffa-n20-basket-04` remained a win, lasted 71,371 ticks (baseline 64,881),
+and gained 787,220,186 trade gold. `ffa-n4-basket-03` had a construction-event
+trace difference without a scored goal-metric change.
+
+The FFA revenue gain is dominated by one long match, so this basket establishes
+a measured placement improvement but not a general online-lobby uplift. Direct
+ESLint on the two modified JavaScript files also reports the existing
+complexity violations in `maybeOpenLegendaryNavalEconomy` and
+`addLegendaryConstructionCandidate`; both methods are outside this patch. The
+same targeted ESLint check passes with only the repository's complexity rule
+disabled, and the patch adds no complexity finding.

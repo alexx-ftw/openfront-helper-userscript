@@ -165,8 +165,9 @@ assert.ok(
     hasEmbargoAgainst: () => Boolean(embargoed),
     units: (type) => (type === UNIT.Port ? ports : []),
   });
-  const oceanPort = (tile) => ({
+  const oceanPort = (tile, level = 1) => ({
     tile: () => tile,
+    level: () => level,
     isUnderConstruction: () => false,
   });
   const buildingPort = (tile) => ({
@@ -176,7 +177,7 @@ assert.ok(
   const foreignGame = {
     ...commercialRailBehavior.game,
     players: () => [],
-    isOceanShore: (tile) => tile === 3_000,
+    isOceanShore: (tile) => tile === 3_000 || tile === 9_900,
     railroadState: () => commercialRailState,
     config: () => ({
       ...commercialRailBehavior.game.config(),
@@ -211,6 +212,14 @@ assert.ok(
   assert.ok(
     tradingValue(farCandidate) > tradingValue(nearCandidate),
     "Ports prefer coastal sites far from tradeable foreign open-ocean ports",
+  );
+  const levelWeightedScore = (farPortLevel) =>
+    makeForeignBehavior([
+      makePlayer(2, [oceanPort(3_000), oceanPort(9_900, farPortLevel)]),
+    ]).portValue()(5_005);
+  assert.ok(
+    levelWeightedScore(10) > levelWeightedScore(1),
+    "a high-level far Port contributes more route value when the nearest Port is unchanged",
   );
   const unreachableOnly = makeForeignBehavior([
     makePlayer(2, [buildingPort(3_000), oceanPort(6_060)]),
