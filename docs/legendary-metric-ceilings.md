@@ -2022,3 +2022,56 @@ that target, including delayed landings) or a committed-payload payback test;
 the current global tile delta can be credited for expansion from an unrelated
 front and can pause a productive war, while still not proving an absorbed war
 is unwinnable.
+
+## Lever pre-declaration: share the containment counterattack budget across fronts (2026-09-29, BEFORE any candidate run)
+
+The defensive-collapse diagnosis found a second concrete gap in the existing
+attrition policy. An exact `ffa-n20-basket-05` intent replay reproduces the
+baseline death at tick 2684. When Charlie and Victor overlap as incoming
+fronts, the bot emits 438,194 troops of counterattacks across both targets in
+ticks 1300-1399 (403,702 at Charlie + 34,492 at Victor); at tick 1814 it has
+already lost territory from 15.9k to 11.4k and faces 640,645 incoming troops
+against 460,090 at home. The incoming-defense logic recognizes coordinated
+pressure, but its attrition allowance is stored in one 50%-of-peak-army ledger
+PER attacker. Each new attacker gets another independent half-army budget.
+`incomingCounterattackAllocatedAggregate()` already sums those ledgers but
+is not used by the payload calculator.
+
+Candidate: only when `incomingCounterattackWarIsContainment(target)` is true,
+cap all counterattack payloads across the active 900-tick war ledgers to one
+shared budget of 50% of the largest `peakTroops` in those ledgers. Compute
+remaining shared budget as that cap minus
+`incomingCounterattackAllocatedAggregate()`, then clamp the existing
+per-attacker interdiction by it. The existing per-war 50% cap remains
+authoritative too. Single-front peer mirrors, `canEraseIncomingWave`,
+overwhelming-invasion defense holds, survival-floor behavior, and outgoing
+offensive attacks are unchanged. This directly prevents a second/third front
+from opening a fresh half-army export allowance during one coordinated siege.
+
+Focused regression in `test/counterattack-attrition.mjs`: (1) under
+containment, the first attacker's commitment consumes the shared allowance;
+(2) a second attacker can spend only the remainder even though its own
+per-war ledger is empty; (3) a third attacker is held after the shared cap is
+used; (4) one attacker still follows the current per-war cap; (5) peer
+mirroring outside containment remains byte-identical.
+
+Baseline: `/tmp/ofh-matrix/basket-2026-09-29-trade-gold-baseline/results.jsonl`.
+Rows: early stop after the ten `team-none`/`team-temp` rows at parallelism
+2; if those pass the early gate, finish all 35 basket rows.
+
+Pre-declared early gate: neither team set regresses wins or fullGreens; no
+team row changes `ownStructuresNuked` from zero to positive; and neither
+team set's total `goldEarned`, `tradeGoldEarned`, or `trainGoldEarned`
+decreases. Any failure stops at ten and reverts.
+
+Pre-declared full-basket LAND rule: (a) no set regresses wins or fullGreens;
+(b) `ffa-n2-basket-04` keeps its win; (c) `ffa-n20-basket-05` survives at
+least 5000 ticks (baseline 2684), or `ffa-n20` gains a win/fullGreen; (d)
+neither `team-none` nor `team-temp` regresses total gold, trade gold, or
+train gold; and (e) no row changes `ownStructuresNuked` from zero to
+positive. Otherwise revert code, tests, and generated bundles and record the
+measured verdict.
+
+Known ceiling: less counterattack export can let incoming waves reach home
+with more troops, so territory may fall faster even as the bot preserves its
+army; the n20-basket-05 survival bar measures that trade directly.
