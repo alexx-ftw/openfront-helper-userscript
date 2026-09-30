@@ -3025,3 +3025,26 @@ contract, re-running the full suite, and re-baselining basket comparisons —
 is the measured entry cost of the engine-side scope decision, which remains
 with the operator; all recorded basket verdicts stay tied to their stored
 results.jsonl runs at 4d8608d7e.
+
+## Engine re-baseline to upstream main f372cdf94 (2026-09-30)
+
+The re-baseline blocked on 2026-09-29 is landed. Upstream advanced
+4d8608d7e -> 5dc09dbd2d (#5693) -> f372cdf94 (fix: npm security alerts +
+dependabot cooldown #5700, with 241186834 and 5e8d034e0 between 5dc09dbd2d
+and f372cdf94). The first commit attempt rode the pre-commit engine:update
+pointer mid-flight and failed `test/game-constants.mjs` ("cannot cover fewer
+declarations than the source"); the pointer settled at f372cdf94 and the
+contract was regenerated against that exact tree.
+
+Re-baseline contents: game-constant contract 2003 -> 2006 entries (+1
+`CROWN_NEAR_WIN_SHARE` in NationNukeBehavior.ts, +2 `GameMapType` members
+`CapeOfGoodHope` / `VancouverIsland`), map manifest 130 -> 132 (matching
+entries in engine/map-data.js, alphabetical), bundles rebuilt, full `npm
+test` green (compat: 2006 constants, 14 unit types, 132 maps, 42 config
+rules at f372cdf94). Landed as commit bbc5b01a through normal hooks — no
+upstream movement between fixture regen and commit, so no repeat cycle was
+needed.
+
+All prior basket verdicts remain tied to their stored results.jsonl runs at
+4d8608d7e. Every future candidate comparison uses the new 35-row baseline
+recorded at f372cdf94 (run-basket, OFH_SIM_PARALLELISM=2, commit bbc5b01a).
