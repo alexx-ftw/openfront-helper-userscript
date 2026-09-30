@@ -3048,3 +3048,28 @@ needed.
 All prior basket verdicts remain tied to their stored results.jsonl runs at
 4d8608d7e. Every future candidate comparison uses the new 35-row baseline
 recorded at f372cdf94 (run-basket, OFH_SIM_PARALLELISM=2, commit bbc5b01a).
+
+### First scoreboard of the f372cdf94 era (fixed basket, parallelism 2)
+
+Baseline run `/tmp/ofh-matrix/basket-2026-09-30-engine-f372cdf94-baseline/`
+(all 35 rows, unmodified run-basket protocol, scored with
+scripts/headless/score-basket.mjs). Set scoreboard:
+
+- team-none: 1 win (basket-05 @13281), 0 fullGreens, ownNuked 7, nukedGold
+  13.7M, ticks 8551-15711
+- team-temp: 2 wins (basket-04 @11851, basket-05 @10721), 0 fullGreens,
+  ownNuked 5, nukedGold 0.5M, ticks 8021-14141
+- team-5mm: 0 wins, ownNuked 9, nukedGold 0, ticks 7841-16971
+- team-25mm: 0 wins, ownNuked 69, nukedGold 25.75M, ticks 5561-10101
+- ffa-n2: 0 wins (basket-04 pin LOST), ownNuked 40, nukedGold 0, ticks
+  11029-35401
+- ffa-n4: 0 wins, ownNuked 199, nukedGold 109.25M, ticks 12471-83011
+- ffa-n20: 0 wins (basket-04 pin LOST), ownNuked 66, nukedGold 31.25M, ticks
+  3965-60911
+
+Total: 3/35 wins, 0 fullGreens, ownStructuresNuked 395, nukedStructureGold
+180.45M. The substrate shift is material, not cosmetic: the 4d8608d7e era
+scored 4 wins + 1 fullGreen with team anchors at 12601-19531 and ffa rows
+dying 2684-60911; here team rows compress to 5561-16971, both FFA win pins
+are gone, and no row reaches fullGreen. Every prior per-row comparison is
+dead; the salvo-vs-construction lever must be re-derived from these rows.
