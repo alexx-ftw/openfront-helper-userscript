@@ -3407,3 +3407,54 @@ existing value>0 shots and risks clauses (a)/(c) — or release unguarded
 score-zero shots and let the fixed basket decide. The union predicates
 (isLegendaryDifficulty) that already exist for both spellings are the
 correct tier test, never currentDifficulty() === Difficulty.Legendary.
+
+## Lever pre-declaration: top tier releases ladder-score-zero shots (2026-10-01, BEFORE any candidate run)
+
+Measured basis (funnel diagnostic + corrected mapping fact above): in
+team-25mm-basket-01 the ladder score (best.value > 0) was the SOLE veto on
+14 consecutive firing decisions (t=781-1005) with score exactly 0 while
+spendable gold sat in the treasury and the window's single allowed shot
+had just converted into 10M nuked-structure gold. The EV check cannot
+protect these shots because at the top tier it is a trivial-true pass
+(currentDifficulty maps Legendary to Impossible), so this lever accepts
+the sub-value risk openly: only candidates scoring in (-1, 0] release —
+the selection break at value <= -1 still discards everything deeply
+negative — and sendNuke's own real gates (probeNukeBuildable,
+isValidNukeTarget, emitNukeBuildable) still apply to every released shot.
+
+Candidate: in fireNukeFromCandidates, the Hard+ disjunct becomes
+`best.value > 0 || isLegendaryDifficulty(difficulty) ||
+!isAtLeastHardDifficulty(difficulty)` — the union predicate from
+portutil.js, true for both the "Legendary" and "Impossible" spellings.
+Hard is byte-identical (isLegendaryDifficulty("Hard") is false, score
+gate stands); Easy/Medium keep the existing !isAtLeastHardDifficulty arm.
+A DIVERGENCE comment documents the measured basis and the trivial-EV
+fact. Identity claim: behavior changes only for top-tier best candidates
+with score in (-1, 0]; every previously firing path is unchanged. The
+score-0 rejects measured friendlyFirePenalty 0, but score arithmetic
+cannot prove own-structure safety in general — clause (b) below is the
+safety net that fails the lever if own structures nuked rise.
+
+Focused regression (test/nuke-economy-policy.mjs) — using the REAL
+portutil functions extracted into the sandbox, so a mapping regression
+cannot hide again: (1) at the top tier (difficulty "Impossible"), a best
+candidate with score 0 fires; (2) at Hard the same candidate still
+requires score > 0; (3) the real currentDifficulty() maps the
+"Legendary" setting to "Impossible" (documents the single-tier design);
+(4) the real isLegendaryDifficulty accepts both spellings and rejects
+"Hard".
+
+Rows: 15-row early gate (ffa-n4, team-none, team-25mm, seeds
+basket-01..05) at parallelism 2 against the f372cdf94 baseline
+/tmp/ofh-matrix/basket-2026-09-30-engine-f372cdf94-baseline/results.jsonl,
+writing to /tmp/ofh-matrix/basket-2026-10-01-score-zero-release/.
+
+Pre-declared early gates: (a) no set regresses wins or fullGreens vs
+baseline; (b) per-set ownStructuresNuked non-increase; (c) per-set
+nukedStructureGold non-decrease; (d) progress: a team set gains a win or
+fullGreen, OR team-none+team-25mm aggregate nukedStructureGold rises, OR
+their median survival tick rises. Any failed clause: revert code,
+regression, and generated bundles, record the verdict, stop (remaining 20
+rows not run). Full 35 on pass adds the same clauses; clause (a) is the
+only FFA constraint (the old FFA win pins are recorded losses on this
+baseline).
