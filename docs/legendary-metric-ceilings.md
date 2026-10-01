@@ -3138,3 +3138,27 @@ constraint. Known ceiling: funding the interceptor does not create a
 winner by itself — it buys shoreline integrity while the salvo lane does
 its work; rows lost to land-front collapse (25mm-04) are out of this
 lever's reach.
+
+### Verdict: REVERTED EARLY (2026-10-01, interception gold priority inert on the early gate)
+
+The 15-row early gate completed at parallelism 2:
+`/tmp/ofh-matrix/basket-2026-10-01-interception-gold-priority/results.jsonl`.
+Clauses (a)-(c) passed cleanly: team-none is byte-identical to baseline
+except navalEmergency emitted 3 -> 4; team-25mm shifted two mid-game death
+ticks (5561 -> 5601, 6761 -> 6631) with every gate metric identical; ffa-n4
+kept wins/fullGreens/ownNuked/nukedGold identical (basket-02 survived 1140
+ticks longer, basket-05 died 4219 earlier — mixed, no regression). But
+pre-declared clause (d) found no progress: no team win or fullGreen,
+un-recaptured beachheads exactly unchanged at 33 (none 5 + 25mm 28),
+emitted rose 14 -> 18 while the median team survival tick stayed 10101.
+The mechanism engages (a handful of extra interceptors emit) but the
+conversion is noise-level: the binding constraint in team games is not
+interceptor funding or the first-SAM defer — both reserves already yield
+often enough that 3-4 extra hulls change nothing. Per the pre-declared rule
+the candidate code, focused regressions, constant-contract entry, and
+generated bundles were reverted to baseline bytes (full suite re-verified
+green at 31cc5239); the remaining 20 rows were not run. The next
+salvo-vs-construction lever must target a different chokepoint: the
+measured 25mm failure mode (8-22 own structures nuked with SAMs ready
+BEFORE the first hostile nuke) points at SAM coverage geometry, not gold
+priority.
