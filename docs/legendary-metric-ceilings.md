@@ -3511,3 +3511,19 @@ blockage itself was the correct behavior. Remaining routes to the goal:
 the operator's clause-(c) amendment decision above, or a different
 chokepoint entirely (the 17.5M vs 51.1M economy race being the largest
 unexplored one).
+The economy race is a territory-collapse consequence, not an independent
+gold lever (2026-10-01, diagnostic mined from existing baseline logs):
+mining the per-row progress telemetry of the f372cdf94 baseline
+team-25mm rows shows the bot already earns trade (13.6M in basket-01) and
+train gold (3.1M), and rival treasuries converge to the same low millions
+after the 25MM starting gold is spent — both sides hold 0.1-5M mid-game.
+The 17.5M vs 51.1M cumulative gap is INCOME, and income is territory:
+the bot peaks at ~46k tiles around t=3000 then collapses to double digits
+under coordinated coalition pressure (hostileRatio 3.5-8.9 in the losing
+rows) while the winning nation sits on 200k+ stable tiles. There is no
+independent treasury or trade-rate mechanism left to tune; the defense
+side of the mid-game collapse is exactly the space where seven prior
+levers (SAM coverage, interception, warship-save, silo valves, cost
+ladders, cap-strike, survival bypass) already failed their gates. The
+only candidate that measurably flips losses into wins on this substrate
+remains the clause-(c) reverted score-zero release above.
