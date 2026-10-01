@@ -3243,3 +3243,26 @@ only FFA constraint (the old FFA win pins are recorded losses on this
 baseline). Known ceiling: more launches convert idle gold into enemy
 damage, but the team must still win the map — the lever claims to stop
 the arsenal idling, not to guarantee the coalition race.
+
+### Verdict: REVERTED EARLY (2026-10-01, survival bypass reorder inert on the early gate)
+
+The 15-row early gate completed at parallelism 2:
+`/tmp/ofh-matrix/basket-2026-10-01-survival-bypass-reorder/results.jsonl`.
+Matched by row key, every gate field is identical to the f372cdf94
+baseline on all 15 rows: same wins (team-none 1, team-25mm 0, ffa-n4 0),
+same survival ticks (team-25mm: 5561/6761/9121/10101/6851), same per-set
+ownStructuresNuked (7/69/199) and nukedStructureGold
+(13.7M/25.75M/109.25M), same un-recaptured beachheads (33 team
+aggregate), and same naval-emergency emits and atom/hydrogen launch
+counts (14 team aggregate). The reordered check produced zero behavioral
+divergence: either heavy attack plus an active maritime invasion never
+coexisted at a launch decision in these rows, or the co-occurrence never
+produced a launch — the identity claim holds, the mechanism just never
+engages in the gate substrate. Clauses (a)-(c) passed trivially; clause
+(d) failed with no progress of any kind. Per the pre-declared rule the
+candidate code, focused regression, and generated bundles were reverted
+to baseline bytes (full suite re-verified green at da23a77b); the
+remaining 20 rows were not run. The binding launch gate is elsewhere:
+measuring which branch of the nuke pipeline (isUnderHeavyAttack truth,
+target selection, expected value, or maybeSendNuke cadence) actually
+declines in the 25mm profile is the next diagnostic step.
