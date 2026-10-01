@@ -3073,3 +3073,68 @@ scored 4 wins + 1 fullGreen with team anchors at 12601-19531 and ffa rows
 dying 2684-60911; here team rows compress to 5561-16971, both FFA win pins
 are gone, and no row reaches fullGreen. Every prior per-row comparison is
 dead; the salvo-vs-construction lever must be re-derived from these rows.
+
+## Lever pre-declaration: interception gold priority over the construction ladder (2026-10-01, BEFORE any candidate run)
+
+Race anatomy measured on the f372cdf94 baseline (telemetry already stored in
+its results.jsonl, no new runs): in the win-bearing team sets the naval
+emergency planner runs 358-1118 times per row and finds 27-87 interceptor
+build targets, but the interceptor never fires — goldShort dominates
+(5mm-03: 87 targets / 80 gold-short; 25mm-01: 39/33) and temp-01/02 add
+21/35 first-SAM defer blocks. beachheadClearance records 1-20 landings per
+row and emits a response in only 3 of 20 team rows; every team row ends
+with zero live Warships; un-recaptured beachheads total 33 across
+team-none (5) and team-25mm (28). The cap-strike lane is FFA-only by
+design, so its team-row silence is expected, not a regression. SAM placement
+speed is NOT the binding constraint in the nuke-pressure profiles (SAMs
+ready t=312-817 vs first hostile nuke t=1050-1800) — the ladder and the
+first-SAM reserve simply outrank the live invasion response until the game
+is already lost.
+
+Candidate: one mechanism, two gates — a live, uncovered, feasible naval
+invasion suspends the peacetime constraints that starve its interceptor.
+(1) Re-land the reverted 2026-09-27 bypass
+(structureBehavior.emergencyInterceptorMayBypassFirstSamReserve): an
+interception-purpose Warship build may bypass shouldDeferWarshipForFirstSam
+ONLY when zero SAMs exist, the hostile-silo doctrine is engaged, and the SAM
+cannot be placed this tick (spendableConstructionGold() < SAM cost) — the
+reserve wins back control the moment the launcher becomes affordable. The
+2026-09-27 preflight reverted it because the planner had no targets then;
+the new substrate proves callers exist (deferBlocked 21/35 in temp-01/02).
+(2) New funding hold: when the last uncovered-invasion interceptor attempt
+was gold-short within the last 90 ticks and gold is still below the Warship
+price, handleStructures returns false at the ordinary/discretionary branch
+(defense priorities — SAM/silo/defense-post — are untouched); gold
+accumulates until the interceptor can emit. Telemetry field
+navalEmergency.fundHoldTicks counts held ticks.
+
+Identity claim: rows with no live uncovered invasion, or where the SAM is
+affordable/exists, stay byte-identical.
+
+Focused regressions (test/warship-micro.mjs): (1) bypass fires only for
+interception purpose with zero SAMs + hostile-silo threat + SAM
+unaffordable this tick; non-interception purposes still defer; SAM
+affordable or present -> defer stands. (2) funding hold: goldShort within
+90 ticks + gold below Warship price -> handleStructures ordinary branch
+skipped while defense priority paths still run; stale goldShort or funded
+gold -> no hold.
+
+Rows: 15-row early gate (ffa-n4, team-none, team-25mm, seeds basket-01..05)
+at parallelism 2 against the f372cdf94 baseline
+/tmp/ofh-matrix/basket-2026-09-30-engine-f372cdf94-baseline/results.jsonl,
+writing to /tmp/ofh-matrix/basket-2026-10-01-interception-gold-priority/.
+
+Pre-declared early gates: (a) no set regresses wins or fullGreens vs
+baseline; (b) per-set ownStructuresNuked non-increase; (c) per-set
+nukedStructureGold non-decrease; (d) progress: a team set gains a win or
+fullGreen, OR aggregate un-recaptured beachheads across team-none+team-25mm
+drops below the baseline 33, OR (navalEmergency emitted sum across
+team-none+team-25mm rises AND their median survival tick rises). If any
+early clause fails: revert code, regression, and generated bundles, record
+the verdict, stop (remaining 20 rows not run). If all early clauses pass,
+run the full 35 rows with the same clauses; the old ffa win pins are void
+on this baseline (both are recorded losses), so clause (a) is the only FFA
+constraint. Known ceiling: funding the interceptor does not create a
+winner by itself — it buys shoreline integrity while the salvo lane does
+its work; rows lost to land-front collapse (25mm-04) are out of this
+lever's reach.
