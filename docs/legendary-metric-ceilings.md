@@ -3442,6 +3442,48 @@ full-35 validation of this exact candidate; keeping the ceiling as-is
 records the lever as a measured dead end. No amendment was applied
 unilaterally.
 
+### Operator decision (2026-10-01)
+
+The user chose to prioritize wins and survival. For a fresh score-zero-release
+validation, `nukedStructureGold` is descriptive telemetry, not a pass/fail
+ceiling: shorter winning games can legitimately destroy less cumulative gold.
+The revised gate is (a) no per-set regression in wins or full-green rows,
+(b) no per-set increase in `ownStructuresNuked`, and (c) an increase in wins,
+full-green rows, team beachheads recaptured, or overall median survival ticks,
+with overall median survival ticks non-decreasing. Apply this first to the
+15-row early gate; only a pass authorizes the same 35-row full gate. Report
+`nukedStructureGold` so the tradeoff remains visible. Rerun the exact
+`ffa-n4,team-none,team-25mm` seeds basket-01..05 at parallelism 2 against
+`/tmp/ofh-matrix/basket-2026-09-30-engine-f372cdf94-baseline/results.jsonl`,
+writing first to `/tmp/ofh-matrix/basket-2026-10-01-score-zero-release-user-approved-r2/`.
+The earlier 15-row results are not substituted for this fresh gate.
+
+Early-gate verdict: **PASS** (2026-10-01, user-approved clauses). No set lost
+wins or full greens; `ownStructuresNuked` fell in ffa-n4 (199 -> 158) and
+team-25mm (69 -> 37) and held in team-none (7). Progress: team-25mm took its
+first era win (basket-02, 14051 ticks) and ffa-n4 took its first era win
+(basket-04, 102211 ticks); overall median survival rose 12471 -> 13201. Team
+recaptured beachheads fell 13 -> 5 (reported, not a veto). Descriptive
+`nukedStructureGold`: 13.7M -> 7.6M (none), 25.75M -> 5.5M (25mm),
+109.25M -> 42.25M (ffa). Per the amended rule the early pass authorizes the
+full 35-row gate with the same clauses, writing to
+`/tmp/ofh-matrix/basket-2026-10-01-score-zero-release-full-user-approved/`.
+
+Full-gate verdict: **FAIL** (2026-10-01, user-approved clauses).
+`/tmp/ofh-matrix/basket-2026-10-01-score-zero-release-full-user-approved/`.
+Four sets were byte-reproducible or improved: ffa-n20 and ffa-n2 identical,
+team-5mm identical except two death ticks, team-25mm gained its first era win
+(14051), ffa-n4 gained its first era win (102211), team-none held 1 win.
+Clause (c) progress passed (winGreen 3 -> 4, median 12471 -> 12821). But
+team-temp failed clauses (a) and (b): wins 2 -> 1 (basket-05 flipped from a
+10721-tick win to a 14761-tick loss) and `ownStructuresNuked` 5 -> 14. Net
+effect: +2 wins, -1 win, median survival up, own-structures down everywhere
+except team-temp. Per the pre-declared rule the candidate code, focused
+regression, and generated bundles were reverted to baseline bytes; adoption of
+the net-positive tradeoff would require an explicit operator amendment (e.g.
+accepting a known single-set win trade, or a team-temp-specific guard), which
+was not applied unilaterally.
+
 ## Lever pre-declaration: top tier releases ladder-score-zero shots (2026-10-01, BEFORE any candidate run)
 
 Measured basis (funnel diagnostic + corrected mapping fact above): in
@@ -3577,3 +3619,4 @@ no win/fullGreen regression or clause (d) failure. However, `ffa-n4`
 matched baseline on those ceilings. Per the predeclared gate, the candidate
 source, test, and generated bundles were reverted; the remaining 20 rows were
 not run.
+`nukedStructureGold` so the tradeoff remains visible. Rerun the exact
