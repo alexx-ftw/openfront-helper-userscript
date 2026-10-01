@@ -3634,3 +3634,26 @@ matched baseline on those ceilings. Per the predeclared gate, the candidate
 source, test, and generated bundles were reverted; the remaining 20 rows were
 not run.
 `nukedStructureGold` so the tradeoff remains visible. Rerun the exact
+blocked exactly the losing shot while leaving every winning release in place,
+and is the measured successor variant to the invasion-gated guard proposed
+earlier (invasions were NOT the differentiator; gold timing was).
+
+## Lever pre-declaration: gold-reserve score-zero release (2026-10-01, BEFORE full gate)
+
+Candidate: the score-zero release gains one conjunct —
+`hasScoreZeroReleaseReserve(selectedNuke.cost)`: `player.gold() >= cost +
+500k` (helper, Legendary tier only, value>0 shots untouched). Focused
+validation (test/nuke-economy-policy.mjs): bufferless score-zero stays
+sheathed; buffered fires; Hard unchanged; EV-veto unchanged. Focused rows
+(team-temp all 5, `/tmp/ofh-matrix/basket-2026-10-01-score-zero-gold-reserve-temp/`):
+all five byte-identical to the f372cdf94 baseline including basket-05 winning
+at 10721 — the fork shot is gone with zero collateral drift.
+
+Rows: full 35-row gate at parallelism 2 against the f372cdf94 baseline,
+writing to `/tmp/ofh-matrix/basket-2026-10-01-score-zero-gold-reserve-full/`.
+Clauses (user-approved 2026-10-01): (a) no per-set win/fullGreen regression;
+(b) no per-set `ownStructuresNuked` increase; (c) winGreen aggregate rise or
+team recaptured-beachhead rise or overall median survival rise, with overall
+median survival non-decreasing; `nukedStructureGold` reported descriptively.
+Any failed clause: revert code, regression, bundles, record verdict, stop.
+PASS records the successor as the new recommended build for operator review.
