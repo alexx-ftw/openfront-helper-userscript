@@ -3492,3 +3492,22 @@ regression, and generated bundles, record the verdict, stop (remaining 20
 rows not run). Full 35 on pass adds the same clauses; clause (a) is the
 only FFA constraint (the old FFA win pins are recorded losses on this
 baseline).
+full-greens and survival/own-structures instead of nuked-structure gold, or
+keeping nukedGold as a non-regression floor at a reduced constant) would
+unlock a full-35 validation of this exact candidate; keeping the ceiling
+as-is records the lever as a measured dead end. No amendment was applied
+unilaterally.
+
+v2c pre-check (2026-10-01, single diagnostic row, no basket): the guarded
+variant — release score-zero candidates only when the REAL expected-value
+computation (computeNukeExpectedValue, extracted verbatim from the wrapper
+so the trivial-true early return cannot mask it) passes — was instrumented
+and measured on team-25mm-basket-01. Result: REAL-EV pass 0, REAL-EV fail
+14 — the guarded release set is EMPTY on the canonical row. The score-zero
+family is therefore fully measured: unguarded fires and flips two losses
+into wins but trades away the clause-(c) gold proxy; guarded fires nothing.+The ladder score and the real expected value AGREE on these shots — the
+arsenal idles because there is genuinely nothing worth shooting, and the
+blockage itself was the correct behavior. Remaining routes to the goal:
+the operator's clause-(c) amendment decision above, or a different
+chokepoint entirely (the 17.5M vs 51.1M economy race being the largest
+unexplored one).
