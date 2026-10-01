@@ -3408,6 +3408,40 @@ score-zero shots and let the fixed basket decide. The union predicates
 (isLegendaryDifficulty) that already exist for both spellings are the
 correct tier test, never currentDifficulty() === Difficulty.Legendary.
 
+### Verdict: REVERTED EARLY per clause (c) — lever converts nuked-gold into wins (2026-10-01)
+
+The 15-row early gate completed at parallelism 2:
+`/tmp/ofh-matrix/basket-2026-10-01-score-zero-release/results.jsonl`.
+This lever ENGAGED everywhere and flipped real outcomes:
+
+- Wins rose 3 -> 5 vs the f372cdf94 baseline. team-25mm-basket-02 turned a
+  6761-tick death into a WIN at 14051 (first team-25mm win of the era);
+  ffa-n4-basket-04 turned a 48191-tick death into a WIN at 102211 (first
+  FFA win of the era, 2.1x baseline survival); team-none kept its win
+  (basket-05, 80 ticks faster).
+- ownStructuresNuked fell 395 -> 202 (team-none 7 -> 7, team-25mm 69 -> 37,
+  ffa-n4 199 -> 158): surviving the early war replaced dying with silos.
+- Team aggregate un-recaptured beachheads 33 -> 31 and team survival
+  median 10101 -> 10631; clause (d) passed on win-gain, unrec-gain, and
+  median-gain simultaneously.+- Clause (c) failed in ALL THREE sets: nukedStructureGold 13.7M -> 7.6M
+  (team-none), 25.75M -> 5.5M (team-25mm), 109.25M -> 42.25M (ffa-n4).
+  Earlier, cheaper shots on young enemy builds plus earlier game ends
+  (wins) necessarily reduce accumulated nuked-structure gold; the baseline
+  totals were inflated by long losing games full of rich enemy builds.
+
+Per the pre-declared rule the candidate code, focused regression, and
+generated bundles were reverted (tree byte-identical to 8e1b0e8e, focused
+suite green); the remaining 20 rows were not run. OPEN OPERATOR DECISION:
+clause (c) was written as a gold-conversion proxy for offense value, and
+this lever demonstrates the proxy diverging from the actual objective —
+the bot now WINS the maps it used to lose while nuking cheaper, younger
+targets. Amending clause (c) (e.g. ranking progress by wins/full-greens
+and survival/own-structures instead of nuked-structure gold, or keeping
+nukedGold as a non-regression floor at a reduced constant) would unlock a
+full-35 validation of this exact candidate; keeping the ceiling as-is
+records the lever as a measured dead end. No amendment was applied
+unilaterally.
+
 ## Lever pre-declaration: top tier releases ladder-score-zero shots (2026-10-01, BEFORE any candidate run)
 
 Measured basis (funnel diagnostic + corrected mapping fact above): in
