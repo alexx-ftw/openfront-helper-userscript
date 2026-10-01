@@ -3569,3 +3569,11 @@ An accidental `--help` probe started the runner's default basket and left two
 partial, unscored logs; those are preserved separately at
 `/tmp/ofh-matrix/basket-2026-10-01-help-probe-partial/` and excluded from the
 predeclared comparison.
+
+Early-gate verdict: **FAIL**. The candidate gained one FFA win (1 vs 0), with
+no win/fullGreen regression or clause (d) failure. However, `ffa-n4`
+`ownStructuresNuked` rose from 199 to 266 and `nukedStructureGold` fell from
+109.25M to 72.75M, failing clauses (b) and (c). `team-none` and `team-25mm`
+matched baseline on those ceilings. Per the predeclared gate, the candidate
+source, test, and generated bundles were reverted; the remaining 20 rows were
+not run.
