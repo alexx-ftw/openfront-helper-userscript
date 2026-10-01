@@ -3484,6 +3484,20 @@ the net-positive tradeoff would require an explicit operator amendment (e.g.
 accepting a known single-set win trade, or a team-temp-specific guard), which
 was not applied unilaterally.
 
+Divergence anatomy (read-only, same-day, both full-gate artifacts): the
+team-temp-basket-05 loss fired the SAME two atoms as the baseline winner — the
+fork was the score-zero release firing the first atom at tick 4095 with
+portfolio gold 764,862, fifteen thousand above the 750k Atom price, versus the
+baseline's value-shot at tick 4124. The cascade cost 27 structures (74 vs 101
+builds) and 9 own structures nuked. In the two flip wins every released shot
+except one fired with gold >= 1.8M (team-25mm-02 Hydro at 9.7M; ffa-n4-04
+extra shots at 2.6M-53M); the single low-gold release in ffa-n4-04 (862,528 at
+t=32921) came when the row was already dominant. A gold-reserve guard —
+release a score-zero candidate only when gold >= shot cost + 500k — would have
+blocked exactly the losing shot while leaving every winning release in place,
+and is the measured successor variant to the invasion-gated guard proposed
+earlier (invasions were NOT the differentiator; gold timing was).
+
 ## Lever pre-declaration: top tier releases ladder-score-zero shots (2026-10-01, BEFORE any candidate run)
 
 Measured basis (funnel diagnostic + corrected mapping fact above): in
