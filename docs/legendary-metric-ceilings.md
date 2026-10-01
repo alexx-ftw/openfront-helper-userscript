@@ -3192,3 +3192,54 @@ Legendary improvement on this substrate needs either an offense-side lever
 (the bot's own salvo contribution — the only telemetry that correlates with
 the 3 baseline wins) or an explicit operator decision to amend the
 ceilings for the f372cdf94 era.
+
+## Lever pre-declaration: survival bypass outranks invasion deferral (2026-10-01, BEFORE any candidate run)
+
+Offense-side anatomy, measured on the f372cdf94 baseline telemetry: the 3
+winning team rows are exactly the rows where the bot fired its arsenal
+(none-05: 5 atoms + 5 hydros, WON; temp-05: 2 atoms, WON; temp-04: 0, team
+carried). In the nuke-pressure profiles the bot builds 3 Missile Silos
+before t=800 with 10-23M gold idle in the treasury, then launches 0-2
+bombs while 42 hostile nukes fly, loses every silo by t~2364, and dies
+with 8-figure gold and zero launch platforms. The binding gate is now
+measured in the code: shouldDeferNukeForEconomy's FIRST line defers the
+entire arsenal whenever hasActiveMaritimeInvasion() is true, and that
+check precedes the doctrine's own survival bypass
+(`if (this.isUnderHeavyAttack()) return true` in the expected-value
+function — "an existential attack may spend any bomb"). In the compressed
+substrate, invasions are the ambient state (6-20 beachheads per losing
+team row), so heavy-attack-plus-invasion is the normal losing condition
+and the survival bypass is unreachable exactly when it matters.
+
+Candidate: one reordered check in shouldDeferNukeForEconomy —
+`if (this.isUnderHeavyAttack()) return false;` moves ABOVE the
+maritime-invasion deferral. Under heavy attack the arsenal fires (the
+doctrine's survival bypass takes effect); during quiet invasions the
+economy deferral stands unchanged. structureBehavior.shouldDeferOffensiveNuke
+is unreachable under heavy attack (the nuke-side check returns false
+first), so it needs no edit.
+
+Identity claim: behavior changes ONLY when isUnderHeavyAttack() and
+hasActiveMaritimeInvasion() are simultaneously true. No invasion, or
+invasion without heavy attack, follows the existing byte-identical paths.
+
+Focused regression (test/nuke-economy-policy.mjs): (1) heavy attack +
+active maritime invasion -> no deferral (fire); (2) quiet invasion ->
+deferral stands; (3) no invasion -> existing policy path unchanged.
+
+Rows: 15-row early gate (ffa-n4, team-none, team-25mm, seeds basket-01..05)
+at parallelism 2 against the f372cdf94 baseline
+/tmp/ofh-matrix/basket-2026-09-30-engine-f372cdf94-baseline/results.jsonl,
+writing to /tmp/ofh-matrix/basket-2026-10-01-survival-bypass-reorder/.
+
+Pre-declared early gates: (a) no set regresses wins or fullGreens vs
+baseline; (b) per-set ownStructuresNuked non-increase; (c) per-set
+nukedStructureGold non-decrease; (d) progress: a team set gains a win or
+fullGreen, OR team-none+team-25mm aggregate nukedStructureGold rises, OR
+their median survival tick rises. Any failed clause: revert code,
+regression, and generated bundles, record the verdict, stop (remaining 20
+rows not run). Full 35 on pass adds the same clauses; clause (a) is the
+only FFA constraint (the old FFA win pins are recorded losses on this
+baseline). Known ceiling: more launches convert idle gold into enemy
+damage, but the team must still win the map — the lever claims to stop
+the arsenal idling, not to guarantee the coalition race.
