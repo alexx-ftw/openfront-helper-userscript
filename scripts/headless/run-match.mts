@@ -56,6 +56,11 @@ NukeExecution.prototype.detonate = function (
 ) {
   const previous = nukeDetonatingOwner;
   nukeDetonatingOwner = this.player;
+  if (logNukes) {
+    console.log(
+      `[ofh:nuke-detonate] tick=${this.mg.ticks()} owner=${this.player?.name?.() ?? "unknown"} tile=${this.tile?.() ?? "?"}`,
+    );
+  }
   originalNukeDetonate.call(this);
   nukeDetonatingOwner = previous;
 };
@@ -71,6 +76,11 @@ UnitImpl.prototype.delete = function (
     }
     if (this.owner()?.clientID?.() === clientID) {
       ownStructuresNuked += 1;
+      if (logNukes) {
+        console.log(
+          `[ofh:own-structure-nuked] tick=${this.mg.ticks()} type=${String(this.type())} tile=${this.tile()} x=${this.mg.x(this.tile())} y=${this.mg.y(this.tile())}`,
+        );
+      }
       if (firstOwnStructureLostTick === null) {
         firstOwnStructureLostTick = this.mg.ticks();
       }
@@ -540,6 +550,7 @@ const spawnFailureGraceTicks = Math.max(
 const logIntents = process.env.OFH_LOG_INTENTS === "1";
 const logNaval = process.env.OFH_LOG_NAVAL === "1";
 const logStructures = process.env.OFH_LOG_STRUCTURES === "1";
+const logNukes = process.env.OFH_LOG_NUKES === "1";
 const logSpawn = process.env.OFH_LOG_SPAWN === "1";
 const logAttackHotspots = process.env.OFH_LOG_ATTACK_HOTSPOTS === "1";
 // Persisted traces must always retain the lightweight SAM lifecycle. Full
@@ -571,6 +582,7 @@ let firstIncomingLandAttackObserved = false;
 let firstTerritoryLossObserved = false;
 let firstHostileNukeTick: number | null = null;
 let firstReadySamTick: number | null = null;
+const loggedHostileMissileIDs = new Set<string>();
 let landLeaderAt120Seconds: {
   name: string;
   type: string;
@@ -1321,6 +1333,36 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   if (activeHostileMissile && firstHostileNukeTick === null) {
     firstHostileNukeTick = runner.game.ticks();
   }
+  if (logNukes && activeHostileMissile) {
+    const missileID = String(activeHostileMissile.id());
+    if (!loggedHostileMissileIDs.has(missileID)) {
+      loggedHostileMissileIDs.add(missileID);
+      let inSamCoverage = false;
+      for (const sam of currentPlayer?.units(UnitType.SAMLauncher) ?? []) {
+        if (!sam.isActive() || sam.isUnderConstruction()) continue;
+        const range = runner.game.config().dynamicSamRange(sam, runner.game.ticks());
+        if (
+          runner.game.euclideanDistSquared(sam.tile(), activeHostileMissile.targetTile()) <=
+          range * range
+        ) {
+          inSamCoverage = true;
+          break;
+        }
+      }
+      console.log(
+        JSON.stringify({
+          phase: "hostile-nuke-inflight",
+          tick: runner.game.ticks(),
+          id: missileID,
+          type: String(activeHostileMissile.type()),
+          owner: activeHostileMissile.owner()?.name?.() ?? "unknown",
+          targetTile: activeHostileMissile.targetTile(),
+          targetedBySAM: activeHostileMissile.targetedBySAM() === true,
+          inSamCoverage,
+        }),
+      );
+    }
+  }
   if (
     currentPlayer &&
     firstReadySamTick === null &&
@@ -1443,6 +1485,12 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
         Number(sam.level()),
       ]),
     );
+    const currentSamTiles = new Map(
+      (currentPlayer?.units(UnitType.SAMLauncher) ?? []).map((sam) => [
+        String(sam.id()),
+        sam.tile(),
+      ]),
+    );
     for (const [samID, level] of currentSamLevels) {
       const priorLevel = observedSamLevels.get(samID);
       if (priorLevel === undefined || priorLevel !== level) {
@@ -1452,6 +1500,9 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
             event: priorLevel === undefined ? "observed" : "level-changed",
             tick: runner.game.ticks(),
             samID,
+            tile: currentSamTiles.get(samID) ?? null,
+            x: currentSamTiles.has(samID) ? runner.game.x(currentSamTiles.get(samID)!) : null,
+            y: currentSamTiles.has(samID) ? runner.game.y(currentSamTiles.get(samID)!) : null,
             previousLevel: priorLevel ?? null,
             level,
           }),

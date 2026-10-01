@@ -3162,3 +3162,33 @@ salvo-vs-construction lever must target a different chokepoint: the
 measured 25mm failure mode (8-22 own structures nuked with SAMs ready
 BEFORE the first hostile nuke) points at SAM coverage geometry, not gold
 priority.
+
+## Diagnostic: SAM coverage saturation on the f372cdf94 substrate (2026-10-01, no candidate)
+
+Same-seed replay of team-25mm-basket-01 with new opt-in harness telemetry
+(OFH_LOG_NUKES + SAM tile/x/y in run-match.mts, committed with this round):
+the game carried **42 hostile nukes** (Atom/Hydrogen from at least a dozen
+nations); the bot fielded ONE SAM (built t=386 at x=1261,y=848, L2 t=1652,
+L3 t=2273, destroyed t=2364) and produced exactly ONE targetedBySAM
+engagement in the whole game — on a Tango warhead aimed far from the bot's
+cluster. The t=1343-1406 kill wave destroyed 7 own structures (2 Cities, 2
+Factories, the first Missile Silo, a Port, plus more) and the t=2363 wave
+destroyed 6 more including the SAM itself; every structure in both waves
+sat INSIDE the L1 range of 70 tiles from the SAM (measured distances
+36-66). Coverage geometry was never the failure: engine SAM throughput is
+one missile per 90-tick cooldown per launcher (SAMCooldown=90, reload
+queue), so a single launcher physically cannot answer a multi-nation salvo
+arriving within one cooldown window. The earlier bot rebuilds (2nd SAM
+t=2625, 3rd t=4594) each died within ~1700-2200 ticks of completion.
+
+This closes the third variant of the salvo-vs-construction trio as a
+measured dead end on this substrate: placement speed is not binding (SAMs
+ready t=312-817 vs first hostile nuke t=1050-1800), interception funding
+was measured inert (2026-10-01 verdict), and coverage/throughput is
+saturated at the engine's 90-tick-per-missile math — no client-side SAM
+posture defends 42 warheads. The binding team-game loss mechanism remains
+the enemy coalition's map victory at 5561-16971 ticks. Any further
+Legendary improvement on this substrate needs either an offense-side lever
+(the bot's own salvo contribution — the only telemetry that correlates with
+the 3 baseline wins) or an explicit operator decision to amend the
+ceilings for the f372cdf94 era.
