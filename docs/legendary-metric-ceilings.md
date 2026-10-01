@@ -3266,3 +3266,57 @@ remaining 20 rows were not run. The binding launch gate is elsewhere:
 measuring which branch of the nuke pipeline (isUnderHeavyAttack truth,
 target selection, expected value, or maybeSendNuke cadence) actually
 declines in the 25mm profile is the next diagnostic step.
+
+## Diagnostic: 25mm launch-gate funnel on the f372cdf94 substrate (2026-10-01, no candidate)
+
+Follow-up to the survival bypass verdict above: instrumented the nuke
+pipeline with a temporary decision-level trace (every `maybeSendNuke`
+exit, the firing tail, both EV rejects, `isUnderHeavyAttack`,
+`hasActiveMaritimeInvasion`, and the common `sendNuke` actuation point;
+launched from the common `sendNuke` point so engine-side aborts cannot be
+miscounted) and re-ran the exact failing row team-25mm-basket-01 (5561
+ticks, lost, 13 own structures nuked, 10M nuked-structure gold — matching
+the gate). The raw build was used so log lines stay intact; the
+instrumentation was reverted afterward and the tree is byte-identical to
+1a701ebb.
+
+Decision funnel over 190 nuke decisions: 42 no-silos, 48 unaffordable,
+77 deferred by shouldDeferNukeForEconomy (71 by the shared economy
+reserve policy, only 6 by the maritime-invasion gate), 22 reached the
+firing tail: 7 found no clear candidate, 14 were rejected by the
+candidate value gate (best.value <= 0 at Legendary), and exactly 1
+launched (t=877 Hydrogen Bomb — the only positive-value candidate of the
+match). `isUnderHeavyAttack()` was sampled 460 times and was NEVER true:
+the survival bypass is unreachable on this substrate, which retroactively
+proves the reorder lever inert (its identity condition cannot occur).
+
+Temporally: the rich window is only the first ~1000 ticks (21.5M gold at
+t=500 is consumed by the buildout plus the single launch down to 835k by
+t=1000). Inside that window 19 decisions reached the firing tail and 18
+died on candidate scoring (12 value-gate, 6 no-clear-candidate) — with a
+full treasury the choke is the tile-value ladder, not gold. After t=1000
+the treasury never rises above ~2.4M again (48 unaffordable + 71
+economy-reserve defers; the "8-figure idle gold" framing does not hold
+for this row), invasions defer 6 shots around t=3000-5000, and all 42
+no-silo decisions are post-loss (silos 3 -> 2 by t=1500, -> 0 by t=5000;
+first hostile nuke t=1070, first ready SAM t=689 — coverage did not save
+the silos, consistent with the SAM saturation diagnostic).
+
+Conclusion: no single gate idles the arsenal — three stacked chokes do.
+(1) The candidate tile-value ladder scores nearly every shot <= 0 in the
+only window where gold exists (250k Legendary recent-strike penalty,
+friendly-fire and distance penalties); deliberately — the EV note records
+11 measured sub-value shots for zero destroyed value. (2) The shared
+economy reserve plus plain affordability once the 25MM starting gold is
+spent (income lost the race 17.5M vs 51.1M best rival). (3) Arsenal loss
+ends the game phase entirely. Any future candidate must create
+positive-value shots early (targeting or scoring), not release reserves
+that do not exist after t=1000.
+
+EV-probe follow-up (same row, same trace, read-only): the EV function was
+invoked directly on every value-gate reject. All 14 rejects (t=781-1005,
+ladder score exactly 0) WOULD HAVE PASSED the expected-value check — the
+`best.value > 0` short-circuit never let EV speak. The window was
+gold-limited (a handful of atoms), but the bot's one allowed shot had just
+converted into 10M nuked-structure gold, so score-zero EV-positive shots
+are the measured, actionable chokepoint.
