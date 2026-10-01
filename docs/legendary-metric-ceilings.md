@@ -3527,3 +3527,45 @@ levers (SAM coverage, interception, warship-save, silo valves, cost
 ladders, cap-strike, survival bypass) already failed their gates. The
 only candidate that measurably flips losses into wins on this substrate
 remains the clause-(c) reverted score-zero release above.
+
+## Lever pre-declaration: bounded response to overwhelming invasions (2026-10-01, BEFORE candidate run)
+
+Measured basis: in `team-25mm-basket-01`, the first major land attack arrives
+at t=3538 while the bot owns 45,978 tiles and 732,889 troops. Mike's incoming
+wave is 2,428,853 troops; the strategic border snapshot has 5,596,139 hostile
+troops across Mike and Romeo (7.64x the bot), and 916,237 gold. The current
+`respondToIncomingAttack()` holds whenever the incoming wave exceeds the bot's
+entire army, before reaching the existing same-target counterattack calculator.
+Mike's measured total army is 1.44M (1.96x ours), so this is a containment
+case. Above the 3,000-tile survival floor, the existing calculator caps an
+interdict at 85% of the incoming wave, 50% of spendable troops, and the
+per-attacker attrition-window remainder; the ordinary growth lanes remain
+blocked while the invasion is overwhelming.
+
+Candidate: with `winFixes` enabled on the actual top tier
+(`isLegendaryDifficulty(currentDifficulty())`), allow
+`respondToIncomingAttack()` through that hold only when the selected attacker
+is a containment target, the bot is above the 3,000-tile floor, and
+`canFundIncomingCounterattack()` is true. Keep the current hold for other
+difficulties, disabled `winFixes`, non-containment attackers, small surviving
+territories, and unfundable responses. No counterattack formula, reserve, or
+growth-lane policy changes. This is a deliberate Legendary `DIVERGENCE`: it
+applies the existing bounded interdict to a measured overwhelming invasion
+the current guard skips.
+
+Validation: add a focused regression proving this exact top-tier containment
+case emits a forced same-target response while all excluded cases still hold.
+Then run the predeclared 15-row early gate (team-none, team-25mm, ffa-n4;
+seeds basket-01..05) at parallelism 2 against the f372cdf94 baseline in
+`/tmp/ofh-matrix/basket-2026-09-30-engine-f372cdf94-baseline/results.jsonl`.
+Require no per-set win/fullGreen regression, no increase in per-set
+`ownStructuresNuked`, no decrease in per-set `nukedStructureGold`, and progress
+under the existing clause (d). On any failure, revert source, test, and bundle,
+record the measured verdict, and stop without running the remaining 20 rows.
+Only an early pass authorizes the full 35-row gate with the same clauses.
+
+Scored candidate output: `/tmp/ofh-matrix/basket-2026-10-01-overwhelming-interdict/`.
+An accidental `--help` probe started the runner's default basket and left two
+partial, unscored logs; those are preserved separately at
+`/tmp/ofh-matrix/basket-2026-10-01-help-probe-partial/` and excluded from the
+predeclared comparison.
