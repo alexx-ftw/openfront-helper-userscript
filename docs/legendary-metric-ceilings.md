@@ -3320,3 +3320,52 @@ ladder score exactly 0) WOULD HAVE PASSED the expected-value check — the
 gold-limited (a handful of atoms), but the bot's one allowed shot had just
 converted into 10M nuked-structure gold, so score-zero EV-positive shots
 are the measured, actionable chokepoint.
+
+## Lever pre-declaration: EV is the Legendary shot authority (2026-10-01, BEFORE any candidate run)
+
+Measured basis (diagnostic above): in team-25mm-basket-01 the candidate
+value gate (`best.value > 0` at Hard+) blocked 14 consecutive firing
+decisions (t=781-1005) whose ladder score was exactly 0 and whose
+expected-value check — never reached because of the `&&` short-circuit —
+WOULD HAVE PASSED (probe measured directly). The bot held spendable gold
+through that window and its single allowed shot had just converted into
+10M nuked-structure gold. The ladder score ranks candidates; the EV
+function is the measured protection against sub-value shots (11
+retaliation shots at 5-31k candidate value for zero destroyed value
+motivated it). Making EV the sole Legendary shot authority keeps that
+protection while releasing the measured-positive shots the score cannot
+rank.
+
+Candidate: in fireNukeFromCandidates, the Hard+ disjunct becomes
+`best.value > 0 || currentDifficulty() === Difficulty.Legendary`, so at
+Legendary the score no longer vetoes — nukeHasPositiveExpectedValue
+decides (vulnerableValue >= totalCost, survival bypass intact). Hard and
+below are byte-identical (score gate stands; EV returns true there as
+before). The ladder's `value <= -1` selection break is unchanged, so
+deeply negative candidates still never select. A DIVERGENCE comment
+documents the measured basis. Identity claim: behavior changes only for
+Legendary best candidates with value <= 0 that pass EV; every previously
+firing path is unchanged. Friendly-fire safety: the score's
+friendlyFirePenalty contributed 0 at all 14 measured rejects (no own or
+teammate structures in blast), and clause (b) below independently fails
+the lever if own structures nuked rise.
+
+Focused regression (test/nuke-economy-policy.mjs): (1) a Legendary best
+candidate with value <= 0 and positive expected value fires; (2) the same
+candidate at Hard still requires value > 0; (3) a Legendary value <= 0
+candidate failing EV still stands down.
+
+Rows: 15-row early gate (ffa-n4, team-none, team-25mm, seeds
+basket-01..05) at parallelism 2 against the f372cdf94 baseline
+/tmp/ofh-matrix/basket-2026-09-30-engine-f372cdf94-baseline/results.jsonl,
+writing to /tmp/ofh-matrix/basket-2026-10-01-ev-shot-authority/.
+
+Pre-declared early gates: (a) no set regresses wins or fullGreens vs
+baseline; (b) per-set ownStructuresNuked non-increase; (c) per-set
+nukedStructureGold non-decrease; (d) progress: a team set gains a win or
+fullGreen, OR team-none+team-25mm aggregate nukedStructureGold rises, OR
+their median survival tick rises. Any failed clause: revert code,
+regression, and generated bundles, record the verdict, stop (remaining 20
+rows not run). Full 35 on pass adds the same clauses; clause (a) is the
+only FFA constraint (the old FFA win pins are recorded losses on this
+baseline).
