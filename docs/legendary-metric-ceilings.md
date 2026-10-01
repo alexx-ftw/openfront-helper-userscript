@@ -3369,3 +3369,41 @@ regression, and generated bundles, record the verdict, stop (remaining 20
 rows not run). Full 35 on pass adds the same clauses; clause (a) is the
 only FFA constraint (the old FFA win pins are recorded losses on this
 baseline).
+
+### Verdict: REVERTED EARLY (2026-10-01, EV shot authority unreachable — currentDifficulty never returns Legendary)
+
+The 15-row early gate completed at parallelism 2:
+`/tmp/ofh-matrix/basket-2026-10-01-ev-shot-authority/results.jsonl`.
+All 15 rows are byte-identical to the f372cdf94 baseline (same ticks,
+wins, ownStructuresNuked, nukedStructureGold, beachhead,
+naval-emergency and launch counts), so clauses (a)-(c) pass trivially and
+clause (d) finds no progress. Root cause, measured after the gate: the
+release condition `currentDifficulty() === Difficulty.Legendary` is
+unreachable BY DESIGN — portutil.js maps both the "Legendary" and
+"Impossible" settings to Difficulty.Impossible (single-tier design from
+12cc77b9, which had measured the exact Legendary branches collapsing the
+basket: team rows flipped win -> loss at byte-stable ticks, 2026-09-11),
+so currentDifficulty() never returns Legendary in any run. The focused
+regression missed this because the test sandbox stubs currentDifficulty
+with the raw setting instead of the portutil mapping.
+
+The same mapping invalidates the motivating probe: nukeHasPositiveExpectedValue
+returns true on its FIRST line whenever currentDifficulty() !==
+Difficulty.Legendary — i.e. always — so the 14 probe "EV-pass" events
+were trivial passes, not computed positive expected values, and the EV
+function has never actually gated anything in basket runs. The ladder
+score (best.value > 0) is the only real shot gate at the top tier, and
+the SAM-partition/ Legendary branches that do engage read the `difficulty`
+PARAMETER, not currentDifficulty(). Per the pre-declared rule the
+candidate code, focused regression, and generated bundles were reverted
+(tree byte-identical to 8db7ace0; that exact code state already passed
+the full suite this session); the remaining 20 rows were not run.
+
+Design consequence for any successor: releasing score-zero shots at the
+top tier cannot use nukeHasPositiveExpectedValue for protection as
+written (it is a trivial-true pass there). A successor must either make
+EV actually compute at the top tier — which would also newly gate the
+existing value>0 shots and risks clauses (a)/(c) — or release unguarded
+score-zero shots and let the fixed basket decide. The union predicates
+(isLegendaryDifficulty) that already exist for both spellings are the
+correct tier test, never currentDifficulty() === Difficulty.Legendary.
