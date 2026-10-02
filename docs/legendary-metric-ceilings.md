@@ -3657,3 +3657,17 @@ team recaptured-beachhead rise or overall median survival rise, with overall
 median survival non-decreasing; `nukedStructureGold` reported descriptively.
 Any failed clause: revert code, regression, bundles, record verdict, stop.
 PASS records the successor as the new recommended build for operator review.
+
+Full-gate verdict: **PASS** (2026-10-01).
+`/tmp/ofh-matrix/basket-2026-10-01-score-zero-gold-reserve-full/`. Adopted as
+the new build. Per set: team-none/team-temp/team-5mm/ffa-n20/ffa-n2
+win-identical (team-temp byte-identical to baseline — the fork shot is gone);
+team-25mm keeps its first era win (14051) with ownStructuresNuked 69 -> 44;
+ffa-n4 stays win-less like baseline (the guard's blocked 862k shot re-forked
+the unguarded basket-04 win away; survival mixed, medians hold) with own 199
+-> 188. Clauses: (a) no set regression, (b) no own-structures increase,
+(c) winGreen 3 -> 4 and median 12471 -> 12601. Descriptive nukedStructureGold:
+7.6M/0.5M/5.5M/31.25M/0M/43.75M vs baseline 13.7M/0.5M/25.75M/31.25M/0M/
+109.25M — shorter winning games destroy less cumulative gold. Full suite
+green; generated bundles rebuilt. Net vs the previous build: +1 win, higher
+median survival, zero per-set regressions.

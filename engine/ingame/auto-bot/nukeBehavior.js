@@ -502,7 +502,10 @@
       const best = await this.selectBuildableNukeCandidate(clear, selectedNuke.type);
       if (
         best &&
-        (best.value > 0 || !isAtLeastHardDifficulty(difficulty)) &&
+        (best.value > 0 ||
+          (isLegendaryDifficulty(difficulty) &&
+            this.hasScoreZeroReleaseReserve(selectedNuke.cost)) ||
+          !isAtLeastHardDifficulty(difficulty)) &&
         await this.nukeHasPositiveExpectedValue(
           best,
           target,
@@ -523,6 +526,16 @@
       if (currentDifficulty() === Difficulty.Legendary) {
         await this.maybeFirePostSalvoHydrogen();
       }
+    }
+
+    // Score-zero releases (Legendary divergence, measured 2026-10-01) must
+    // hold a 500k gold buffer above the shot cost: the one full-gate loss
+    // (team-temp-basket-05) fired its fork shot at 765k gold — 15k above the
+    // Atom price — while every winning release fired at >= 1.8M. Value>0
+    // shots are untouched.
+    hasScoreZeroReleaseReserve(nukeCost) {
+      const gold = Number(this.player?.gold?.() ?? 0n);
+      return gold >= Number(nukeCost ?? 0n) + 500_000;
     }
 
     // FFA endgame survival strike (2026-08-24): against the last surviving

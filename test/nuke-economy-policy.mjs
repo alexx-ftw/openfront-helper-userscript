@@ -211,6 +211,52 @@ assert.deepEqual(
   "The nuke policy receives the selected nuke's actual perceived cost",
 );
 
+// Score-zero release must be confined to the real top tier, keep the
+// existing expected-value veto, and hold a 500k gold buffer above cost.
+sandbox.isLegendaryDifficulty = (difficulty) =>
+  difficulty === "Legendary" || difficulty === "Impossible";
+let firingGold = 0n;
+async function fireCandidateAtDifficulty(difficulty, value, expectedValue) {
+  testDifficulty = difficulty;
+  const candidate = { tile: 10, value };
+  const firing = Object.create(sandbox.__NukeBehavior.prototype);
+  const sent = [];
+  firing.player = { gold: () => firingGold };
+  firing.partitionCandidatesBySamCoverage = () => ({ clear: [candidate] });
+  firing.selectBuildableNukeCandidate = async () => candidate;
+  firing.nukeHasPositiveExpectedValue = async () => expectedValue;
+  firing.sendNuke = async (...args) => sent.push(args);
+  firing.maybeDestroyEnemySam = async () => {};
+  firing.maybeFirePostSalvoHydrogen = async () => {};
+  await firing.fireNukeFromCandidates(
+    [candidate], target, { type: UNIT.AtomBomb, cost: 750_000n }, [], difficulty,
+  );
+  return sent;
+}
+assert.deepEqual(
+  await fireCandidateAtDifficulty("Impossible", 0, true),
+  [],
+  "a score-zero candidate without a 500k gold buffer above cost stays sheathed",
+);
+firingGold = 1_400_000n;
+assert.deepEqual(
+  await fireCandidateAtDifficulty("Impossible", 0, true),
+  [[10, UNIT.AtomBomb, target]],
+  "a score-zero candidate with a 500k gold buffer above cost fires",
+);
+assert.deepEqual(
+  await fireCandidateAtDifficulty("Hard", 0, true),
+  [],
+  "a score-zero candidate remains blocked at Hard",
+);
+assert.deepEqual(
+  await fireCandidateAtDifficulty("Impossible", 0, false),
+  [],
+  "a score-zero Legendary candidate remains blocked when expected value fails",
+);
+firingGold = 0n;
+testDifficulty = sandbox.Difficulty.Legendary;
+
 behavior.isUnderHeavyAttack = () => true;
 assert.equal(
   behavior.shouldDeferNukeForEconomy(target, 5_000_000n),
