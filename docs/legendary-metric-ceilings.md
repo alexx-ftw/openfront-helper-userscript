@@ -3671,3 +3671,61 @@ the unguarded basket-04 win away; survival mixed, medians hold) with own 199
 109.25M — shorter winning games destroy less cumulative gold. Full suite
 green; generated bundles rebuilt. Net vs the previous build: +1 win, higher
 median survival, zero per-set regressions.
+
+## Lever pre-declaration: score-zero reserve retune 500k -> 100k (2026-10-04, BEFORE any candidate run)
+
+Measured basis (comparison of the adopted gold-reserve gate and the unguarded
+release gate, sections above): in the unguarded full gate, ffa-n4-basket-04 —
+a flip WIN — released its single low-gold score-zero shot at 862,528 gold
+(t=32921, Atom cost 750k => 112,528 gold buffer) while the row was already
+dominant; every other released shot across the two flip wins held >= 1.8M.
+The adopted 500k reserve blocks that 112,528-buffer shot and ffa-n4-04
+re-forked to a loss, leaving ffa-n4 win-less. The only measured losing
+release, team-temp-basket-05's fork shot, fired at 765k gold => 15k buffer.
+No observed release sits between the 15k and 112,528 buffers.
+
+Candidate: retune hasScoreZeroReleaseReserve from cost + 500k to
+cost + 100_000 (Legendary tier only; value>0 shots and the expected-value
+veto untouched). Expected mechanics: any row with no released-shot buffer in
+[100k, 500k) replays byte-identical to the adopted build; ffa-n4-04 should
+replay its unguarded trajectory from the fired shot and recapture that win.
+
+Validation: extend test/nuke-economy-policy.mjs to pin the new boundary
+(buffer 90k stays sheathed, buffer 110k fires, Hard blocked, EV veto
+blocked). Then the predeclared 15-row early gate (team-none, team-25mm,
+ffa-n4; seeds basket-01..05) at parallelism 2 against the fresh adopted
+baseline
+/home/eros/ofh-matrix/basket-2026-10-04-adopted-aa5be58d-full/results.jsonl.
+Clauses (user criterion 2026-10-01, wins and survival first): (a) no per-set
+win/fullGreen regression vs adopted; (b) no per-set ownStructuresNuked
+increase vs adopted; (c) ffa-n4 recaptures basket-04 or aggregate winGreen
+rises, with overall median survival non-decreasing; nukedStructureGold is
+descriptive, no veto. On any failed clause: revert code, test, and bundles,
+record the measured verdict, and stop without running the remaining rows.
+An early pass authorizes the full 35-row gate with the same clauses; in the
+full gate team-temp must stay win-identical (its 15k fork shot must remain
+sheathed). Full PASS records the successor as the new recommended build.
+
+Scored candidate output:
+/home/eros/ofh-matrix/basket-2026-10-04-reserve-100k-full/.
+
+Early-gate verdict: **PASS** (2026-10-04, 15 rows: team-none, team-25mm,
+ffa-n4). team-none and team-25mm byte-consistent; ffa-n4 recaptured
+basket-04 (0 -> 1) with ownStructuresNuked 188 -> 167.
+
+Full-gate verdict: **PASS** (2026-10-04). 35 rows at parallelism 2 against
+the fresh adopted baseline
+/home/eros/ofh-matrix/basket-2026-10-04-adopted-aa5be58d-full/ (regenerated
+after the /tmp wipe; reproduced the recorded adopted stats: 4 wins,
+ffa-n4 win-less). Per set: team-none, team-temp, team-5mm, team-25mm,
+ffa-n20, and ffa-n2 byte-consistent (team-temp keeps both wins — the 15k
+fork shot stayed sheathed); ffa-n4 recaptures basket-04 (0 -> 1 wins,
+102211 ticks, deterministic across both runs) with ownStructuresNuked
+188 -> 167 and set median survival 29121 -> 38881. Clauses: (a) no per-set
+win/fullGreen regression; (b) no per-set own-structures increase;
+(c) ffa-n4 recapture with overall median survival 12601 -> 12601.
+Descriptive nukedStructureGold: unchanged in six sets; ffa-n4 43.75M ->
+69.75M (the recaptured win destroys more enemy structure gold; descriptive
+per the operator's standing wins-and-survival criterion). Net vs the
+adopted build: +1 win (5/35), higher ffa-n4 survival, zero per-set
+regressions. Adopted as the new recommended build.

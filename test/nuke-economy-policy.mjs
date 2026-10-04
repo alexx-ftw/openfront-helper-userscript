@@ -212,7 +212,7 @@ assert.deepEqual(
 );
 
 // Score-zero release must be confined to the real top tier, keep the
-// existing expected-value veto, and hold a 500k gold buffer above cost.
+// existing expected-value veto, and hold a 100k gold buffer above cost.
 sandbox.isLegendaryDifficulty = (difficulty) =>
   difficulty === "Legendary" || difficulty === "Impossible";
 let firingGold = 0n;
@@ -236,13 +236,19 @@ async function fireCandidateAtDifficulty(difficulty, value, expectedValue) {
 assert.deepEqual(
   await fireCandidateAtDifficulty("Impossible", 0, true),
   [],
-  "a score-zero candidate without a 500k gold buffer above cost stays sheathed",
+  "a bufferless score-zero candidate stays sheathed",
 );
-firingGold = 1_400_000n;
+firingGold = 840_000n;
+assert.deepEqual(
+  await fireCandidateAtDifficulty("Impossible", 0, true),
+  [],
+  "a score-zero candidate below the 100k gold buffer stays sheathed",
+);
+firingGold = 860_000n;
 assert.deepEqual(
   await fireCandidateAtDifficulty("Impossible", 0, true),
   [[10, UNIT.AtomBomb, target]],
-  "a score-zero candidate with a 500k gold buffer above cost fires",
+  "a score-zero candidate above the 100k gold buffer fires",
 );
 assert.deepEqual(
   await fireCandidateAtDifficulty("Hard", 0, true),

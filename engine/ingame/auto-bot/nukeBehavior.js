@@ -528,14 +528,14 @@
       }
     }
 
-    // Score-zero releases (Legendary divergence, measured 2026-10-01) must
-    // hold a 500k gold buffer above the shot cost: the one full-gate loss
-    // (team-temp-basket-05) fired its fork shot at 765k gold — 15k above the
-    // Atom price — while every winning release fired at >= 1.8M. Value>0
-    // shots are untouched.
+    // Score-zero releases (Legendary divergence) hold a gold buffer above
+    // the shot cost, retuned 2026-10-04 from 500k to 100k on measured
+    // buffers: the unguarded ffa-n4-04 win fired at a 112,528 buffer while
+    // dominant, and the team-temp-05 fork loss fired at 15k. Value>0 shots
+    // are untouched. (Docs: legendary-metric-ceilings.md, reserve retune.)
     hasScoreZeroReleaseReserve(nukeCost) {
       const gold = Number(this.player?.gold?.() ?? 0n);
-      return gold >= Number(nukeCost ?? 0n) + 500_000;
+      return gold >= Number(nukeCost ?? 0n) + 100_000;
     }
 
     // FFA endgame survival strike (2026-08-24): against the last surviving
