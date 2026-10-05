@@ -3993,6 +3993,43 @@ Bisect order on failure: (1) bounded shrink — frozen only while tiles >=
 0.98 * lastTiles, excluding collapse-speed death spirals — re-run the gate;
 (2) full revert and record both verdicts.
 
+### Verdict: FAIL — cap-strike bleed-freeze arming reverted to exact-match freeze (2026-10-05)
+
+Full 35-row gate (basket-2026-10-05-capbleed vs
+basket-2026-10-04-defect-fixes-combined, both at 58c2d15f engine): the
+mechanistic gate PASSED (ffa-n2-basket-04 attempts 0 -> 1, highWater 1 -> 10;
+ffa-n20-basket-03 armed at 12 decisions and struck 4 times before t=8822) but
+both outcome clauses failed.
+
+Clause (c): zero new wins; ffa-n20 median ticks flat at 7676 and ffa-n2 flat —
+arming did not convert into survival where the bot dies. Worse, the one row
+whose arming changed materially (ffa-n20-basket-03: baseline armed after 134
+static decisions, candidate after 12) died 2.6x sooner (27188 -> 10416): the
+early strikes fed the dogpile instead of outrunning it.
+
+Clause (b): ownStructuresNuked rose in all three FFA sets — 66 -> 70 (n20),
+40 -> 41 (n2), and 167 -> 256 (ffa-n4) — while ffa-n4 launches rose 99 -> 124.
+The winner row kept its win byte-identically (102211) and n4 medTicks rose
+38881 -> 52491, but the +89 own structures nuked is exactly the retaliation
+cost the reserve fail-safe does not price: every extra early strike buys
+hostile nuclear attention. Team sets byte-identical as predicted (isFFA gate).
+
+Bisect (1) (bounded shrink 0.98) is skipped as mechanism-contradicted: the
+damage concentrates in slow-bleed/long-survival rows (ffa-n4), which a
+collapse-speed bound does not gate; the measured harm is arming-rate ->
+strike-timing -> hostile-nuke retaliation, which the variant does not alter.
+(2) applied: engine byte-identical to 58c2d15f, test re-pins the exact-match
+freeze, bundles rebuilt.
+
+Standing knowledge for future levers: the cap-strike lane's exact-match freeze
+is load-bearing — arming earlier in bleeding states is net-negative because
+conventional strikes draw nuclear retaliation in FFA. Any future cap-strike
+or attack-lane lever must price retaliation (ownNuked trajectory), not just
+survival ticks and wins. The non-nuclear open front shifts to the n2 silo
+starvation (bot never builds its first MissileSilo under the parity/freeze
+lanes) and n20 early dogpile geography; both remain closed-adjacent and need
+a fresh measured basis before any candidate.
+
 ## Lever pre-declaration: Legendary tier-gate normalization, nuke layer (2026-10-05, BEFORE any candidate run)
 
 Defect (source-confirmed): nukeBehavior.js gates four Legendary divergences
