@@ -4247,6 +4247,35 @@ Bisect: none. This is the last scoped form; any failure closes the family
 permanently and the catalog stands exhausted for construction-budget
 mechanisms.
 
+### Verdict: FAIL — thin-lobby scope leaked through the LIVE hostile count; family permanently closed (2026-10-05)
+
+Full 35-row gate (basket-2026-10-05-quietpost-thin vs
+basket-2026-10-04-defect-fixes-combined, bisect-3 form: Nation/Human count
+<= 3): ffa-n2 reproduced everything (WIN at 102211, median 15951, ownNuked
+winner-row-only increase), ffa-n20 and team sets byte-identical — but
+**ffa-n4 wins 1 -> 0** (clause (a) violated). Root cause: the density gate
+counted LIVE hostile Nation/Human players; when an n4 nation dies the count
+falls to 3 and the guard activates mid-game — ffa-n4-basket-04's winner
+trajectory broke again (102211 win -> 13981 loss), ffa-n4 median 38881 ->
+18691. AGG wins 5 -> 5 (n2 win traded for the n4 win), rejected by the wins-
+first criterion.
+
+The leak is implementation-level (initial roster count vs live count), but
+the predeclaration fixed this as the last scoped form with no bisect: the
+family is PERMANENTLY closed. A future fresh predeclaration could try an
+initial-roster-count scope (count fixed at spawn, immune to mid-game deaths)
+— recorded here as the single remaining idea in this family, NOT pursued in
+this cycle.
+
+Final state: engine byte-identical to 58c2d15f, focal test removed, bundles
+rebuilt. Evidence: basket-2026-10-05-quietpost-thin (35 rows) plus canaries
+canary-2026-10-05-quietpost-guard(-top1) and canary-2026-10-05-quietpost-thin(2).
+
+Construction-budget catalog state after three gated cycles: raw-equality
+deadness (this lever), pooled-frontier placement, and first-Post-delaying
+discipline are all measured; the only surviving lead is the initial-roster
+thin-lobby scope above.
+
 ## Lever pre-declaration: Legendary tier-gate normalization, nuke layer (2026-10-05, BEFORE any candidate run)
 
 Defect (source-confirmed): nukeBehavior.js gates four Legendary divergences
