@@ -45,6 +45,7 @@ const sandbox = {
   state: { settings: { winFixes: true }, stats: { nukes: 0, builds: 0 } },
   currentDifficulty: () => "Impossible",
   isAtLeastHardDifficulty: () => true,
+  isLegendaryDifficulty: (d) => d === "Legendary",
   WORKER_TIMEOUT_MS: 1000,
   withTimeout: async (promise) => promise,
   getBuildMenu: () => buildMenu,

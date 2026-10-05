@@ -36,6 +36,7 @@ const sandbox = {
   currentDifficulty: () => Difficulty.Legendary,
   isAtLeastHardDifficulty: (d) =>
     d === Difficulty.Hard || d === Difficulty.Impossible || d === Difficulty.Legendary,
+  isLegendaryDifficulty: (d) => d === Difficulty.Legendary,
   withTimeout: async (p) => p,
   WORKER_TIMEOUT_MS: 100,
   randTerritoryTileArray: () => [],

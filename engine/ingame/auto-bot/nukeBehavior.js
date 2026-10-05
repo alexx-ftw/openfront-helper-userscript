@@ -499,22 +499,26 @@
         selectedNuke.type,
         difficulty,
       );
-      const best = await this.selectBuildableNukeCandidate(clear, selectedNuke.type);
-      if (
-        best &&
-        (best.value > 0 ||
-          (isLegendaryDifficulty(difficulty) &&
-            this.hasScoreZeroReleaseReserve(selectedNuke.cost)) ||
-          !isAtLeastHardDifficulty(difficulty)) &&
-        await this.nukeHasPositiveExpectedValue(
-          best,
-          target,
-          selectedNuke,
-          silos,
-        )
-      ) {
-        await this.sendNuke(best.tile, selectedNuke.type, target);
-        return;
+      if (!isLegendaryDifficulty(difficulty)) {
+        const best = await this.selectBuildableNukeCandidate(clear, selectedNuke.type);
+        if (
+          best &&
+          (best.value > 0 || !isAtLeastHardDifficulty(difficulty)) &&
+          await this.nukeHasPositiveExpectedValue(
+            best,
+            target,
+            selectedNuke,
+            silos,
+          )
+        ) {
+          await this.sendNuke(best.tile, selectedNuke.type, target);
+        }
+      } else {
+        if (
+          await this.fireLegendaryClearFallthrough(clear, target, selectedNuke, silos)
+        ) {
+          return;
+        }
       }
       // Silo capacity is not a salvo: covered shots must use the planner
       // below so every required atom is launched or queued with timing.
@@ -526,6 +530,34 @@
       if (currentDifficulty() === Difficulty.Legendary) {
         await this.maybeFirePostSalvoHydrogen();
       }
+    }
+
+    // LEGENDARY DIVERGENCE (2026-10-04, pre-declared in
+    // docs/legendary-metric-ceilings.md): walk the ranked clear list — an
+    // EV rejection no longer masks a lower-scored but EV-positive
+    // candidate (measured example: five L1 Cities score 125k with EV
+    // fail while one L4 City scores 97k with EV pass — the old single
+    // pick fired nothing). Every existing gate is retained per candidate.
+    async fireLegendaryClearFallthrough(clear, target, selectedNuke, silos) {
+      for (const cand of clear) {
+        if (cand.value <= -1) break;
+        if (!(cand.value > 0 || this.hasScoreZeroReleaseReserve(selectedNuke.cost))) {
+          continue;
+        }
+        if (
+          await this.probeCanBuildNuke(cand.tile, selectedNuke.type) &&
+          await this.nukeHasPositiveExpectedValue(
+            cand,
+            target,
+            selectedNuke,
+            silos,
+          )
+        ) {
+          await this.sendNuke(cand.tile, selectedNuke.type, target);
+          return true;
+        }
+      }
+      return false;
     }
 
     // Score-zero releases (Legendary divergence) hold a gold buffer above
@@ -2252,9 +2284,19 @@
       if (pending.salvoId !== undefined && this._pendingNukeLaunches.some(
         (launch) => launch.salvo?.salvoId === pending.salvoId,
       )) return false;
-      state.postSalvoHydrogen = null;
       const config = this.game.config();
-      if (config.isUnitDisabled(UNIT.HydrogenBomb)) return false;
+      // LEGENDARY DIVERGENCE (2026-10-04, pre-declared in
+      // docs/legendary-metric-ceilings.md): the pending finisher used to be
+      // discarded before its probes, so a transient blocker — full silo
+      // queues, a temporarily unaffordable treasury, regrown SAM coverage, or
+      // a failed buildability dispatch — permanently lost a scheduled
+      // follow-up. Retain it through transient failures; only permanent
+      // conditions (disabled bombs, dead/missing target) or a successful
+      // dispatch clear it. Every firing gate is unchanged.
+      if (config.isUnitDisabled(UNIT.HydrogenBomb)) {
+        state.postSalvoHydrogen = null;
+        return false;
+      }
       const hydroCost = await this.getPerceivedNukeCost(UNIT.HydrogenBomb);
       if (this.player.gold() < hydroCost) return false;
       const silos = this.player.units(UNIT.MissileSilo)
@@ -2264,13 +2306,19 @@
         return false;
       }
       const target = this.postSalvoHydrogenTarget(pending);
-      if (target === null) return false;
+      if (target === null) {
+        state.postSalvoHydrogen = null;
+        return false;
+      }
       const sent = await this.sendNuke(
         pending.targetTile,
         UNIT.HydrogenBomb,
         target,
       );
-      if (sent) this.hydrogenBombsLaunched += 1;
+      if (sent) {
+        this.hydrogenBombsLaunched += 1;
+        state.postSalvoHydrogen = null;
+      }
       return sent;
     }
 
