@@ -4338,6 +4338,36 @@ For the record, not a scope: a count basis of total roster INCLUDING self
 predeclared clause forbids further scopes in this family; reopening requires
 a fresh, separately authorized predeclaration.
 
+## Lever pre-declaration: quiet-Post surplus guard, total-roster thin-lobby scope (2026-10-05, corrected count basis, BEFORE any candidate run)
+
+Correction cycle, not a new mechanism: the initial-roster gate above never
+tested its own declared hypothesis — the committed text predicted
+"ffa-n4 (roster 4 > 3): guard never activates" on TOTAL roster arithmetic,
+while the implementation counted only non-friendly players (n4 = 3, guard ON
+at spawn, byte-identical to the thin-lobby FAIL). This cycle re-runs the SAME
+predicate with the count basis the text declared: TOTAL INITIAL ROSTER of
+Nation/Human players, SELF INCLUDED, alive or dead. Guard ON iff total
+roster <= 3 and the tier bridge fires and the mode is FFA.
+
+Predicted, declared in advance (deterministic):
+- ffa-n2 (total 2 <= 3): guard ON — byte-identical to both prior candidate
+  runs (win at 102211 reproduced twice, median 12821 -> 15951).
+- ffa-n4 (total 4 > 3): guard OFF — every n4 row byte-identical to baseline,
+  basket-04 winner preserved.
+- ffa-n20 (total 20 > 3) and all team sets: byte-identical to baseline.
+
+Mechanistic gate (paired ffa-n2 canary): the basket-02 WIN must reproduce
+(102211-class long game, zero own atom launches) and rows 01/03/04/05 must
+match the prior candidate runs byte-identically.
+
+Outcome clauses (full 35-row gate vs basket-2026-10-04-defect-fixes-combined,
+unchanged): (a) ffa-n4, ffa-n20, and team sets BYTE-IDENTICAL to baseline
+(any divergence = FAIL); the n4 win preserved; (b) no ownNuked increase in
+any row that does not flip to won=true; (c) the n2 win reproduces AND the n2
+median stays strictly above baseline 12821. If the n2 win does not reproduce,
+or any untouched set diverges, this corrected form closes permanently with no
+further corrections.
+
 ## Lever pre-declaration: priority-SAM placement value ordering (2026-10-05, BEFORE any candidate run)
 
 Measured basis (read-only research subagent on a2537214, comparator
