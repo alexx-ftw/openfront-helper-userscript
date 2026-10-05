@@ -4184,6 +4184,40 @@ nuclear exposure — a win is the benefit the cap-strike lesson found missing.
 The full 35-row gate evaluates the amended clauses; team sets must stay
 byte-identical and ffa-n4's win preserved regardless.
 
+### Verdict: FAIL — quiet-Post budget family closed; n4 winner depends on unguarded Post rebuilds (2026-10-05)
+
+Full 35-row gate (basket-2026-10-05-quietpost-guard vs
+basket-2026-10-04-defect-fixes-combined, both at 58c2d15f engine, bisect-1
+form: first quiet Post free, surplus floor on additional Posts):
+
+- Team sets byte-identical, as designed (FFA-scoped predicate).
+- ffa-n2: **first measured n2 WIN** (basket-02, 35401-loss -> 102211-win),
+  median 12821 -> 15951, ownNuked 40 -> 81 (all of the increase inside the
+  winner row; every non-winning row dropped).
+- ffa-n20: median exactly 7676 (preserved), ownNuked 66 -> 5.
+- **ffa-n4: wins 1 -> 0 — clause (a) violated.** The basket-04 winner
+  (baseline win at 102211 with 33 Post builds) lost at 13981 once its
+  additional quiet-Post rebuilds required the surplus floor; set median
+  38881 -> 18691. AGG wins 5 -> 5 — the lever traded the n4 win for the n2
+  win, and the user criterion (wins first) does not accept a win swap.
+
+Bisect exhausted per the predeclaration: (1) first-Post retention applied and
+measured; (2) full revert executed — engine byte-identical to 58c2d15f, focal
+test removed, bundles rebuilt. The quiet-Post budget family is CLOSED: any
+restriction on the n4 winner's Post-rebuild cadence breaks its win, while the
+n2 win requires exactly that restriction. The two sets' Post economies are
+coupled through the shared predicate and cannot be separated by tier, mode,
+or count without per-set overfitting to basket seeds.
+
+Standing knowledge: (a) the n4 winner's late-game Post-rebuild cadence is
+load-bearing — any future construction-budget lever must preserve it;
+(b) an n2 win is reachable through construction discipline (measured), so the
+n2 front should be attacked from a mechanism that does not touch the n4
+winner's economy; (c) ownNuked dropped in 9/10 non-winning FFA rows across
+both variants — defensive discipline reliably reduces nuclear exposure, the
+open question is converting it into wins without disturbing winning
+trajectories.
+
 ## Lever pre-declaration: Legendary tier-gate normalization, nuke layer (2026-10-05, BEFORE any candidate run)
 
 Defect (source-confirmed): nukeBehavior.js gates four Legendary divergences

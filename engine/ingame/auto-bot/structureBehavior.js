@@ -1300,8 +1300,7 @@
       // rung (the maxTroops raise the whole defense needs) stayed unfunded;
       // live-attack Posts keep their unconditional authorization.
       if (
-        this.quietPostSurplusGuardActive(difficulty) &&
-        this.hasQuietDefensePostAlready() &&
+        difficulty === Difficulty.Legendary &&
         !this.legendaryQuietPostGoldAboveEconomyRung()
       ) {
         return null;
@@ -1324,29 +1323,6 @@
         ratio: strongest.troops / ourTroops,
         strategicBorder: true,
       };
-    }
-
-    // The quiet-post pure-surplus requirement was written for the Legendary
-    // policy tier but gated on raw equality, which headless playlists never
-    // produce (currentDifficulty collapses Legendary to Impossible): the
-    // guard sat silently OFF in every basket run while 22/23 FFA Post events
-    // through t=3000 fell below its surplus floor. Activate it through the
-    // documented tier bridge, FFA-only pending a team-anchor re-audit.
-    quietPostSurplusGuardActive(difficulty) {
-      if (!isLegendaryDifficulty(difficulty)) return false;
-      const mode = String(
-        this.game?.config?.()?.gameConfig?.()?.gameMode ?? "",
-      );
-      return mode === "Free For All" || mode === "FFA";
-    }
-
-    // Bisect variant (1): the FIRST quiet Post buys the strongest-neighbor
-    // kill-axis coverage and stays unguarded; the pure-surplus floor applies
-    // only to additional quiet Posts (guarding the first one dropped the n20
-    // survival median 7676 -> 5246 in the paired canary).
-    hasQuietDefensePostAlready() {
-      const posts = this.player?.units?.(UNIT.DefensePost);
-      return Array.isArray(posts) && posts.length > 0;
     }
 
     hasBuiltCityForPreemptiveDefense() {
