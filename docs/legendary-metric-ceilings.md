@@ -4276,6 +4276,43 @@ deadness (this lever), pooled-frontier placement, and first-Post-delaying
 discipline are all measured; the only surviving lead is the initial-roster
 thin-lobby scope above.
 
+## Lever pre-declaration: quiet-Post surplus guard, initial-roster thin-lobby scope (2026-10-05, fresh cycle, BEFORE any candidate run)
+
+This is the recorded single remaining idea of the closed budget family,
+promoted to a fresh predeclaration. The thin-lobby gate failed ONLY because
+the density count used LIVE hostile Nation/Human players: an n4 nation death
+dropped the count to 3 mid-game, the guard activated, and the basket-04
+winner broke (102211 -> 13981). The fix: count the INITIAL ROSTER — all
+non-friendly Nation/Human players in game.players(), alive or dead — which is
+fixed for the whole match and immune to mid-game deaths.
+
+Predicted, declared in advance (deterministic evidence, reproduced twice):
+- ffa-n2 (roster 2 <= 3): guard behaves exactly as the bisect-1 form that
+  produced the measured WIN at 102211 and median 12821 -> 15951 — every n2
+  row must reproduce its quietpost-thin-gate result byte-identically.
+- ffa-n4 (roster 4 > 3): guard never activates — every n4 row byte-identical
+  to baseline, basket-04 win preserved.
+- ffa-n20 (roster 20 > 3) and all team sets: byte-identical to baseline.
+
+Candidate (structureBehavior.js): re-apply the bisect-1 predicate
+(isLegendaryDifficulty(difficulty) bridge + FFA mode + first-Post-free +
+surplus floor on additional Posts), with the density count taken from the
+full player roster via the existing type filter
+(isStrategicBorderOpponent) instead of the live filter.
+
+Mechanistic gate (paired ffa-n2 canary): the basket-02 WIN must reproduce
+(102211-class long game, zero own atom launches).
+
+Outcome clauses (full 35-row gate vs basket-2026-10-04-defect-fixes-combined):
+(a) ffa-n4, ffa-n20, and team sets BYTE-IDENTICAL to baseline (any divergence
+in any row = FAIL — this scope makes them untouched by construction); the n4
+win preserved; (b) amended ownNuked rule: no increase in any row that does
+not flip to won=true; (c) the n2 win reproduces AND the n2 median stays
+strictly above baseline 12821. If the n2 win does not reproduce, or any
+untouched set diverges, the family closes permanently with no further scopes.
+
+Bisect: none. This form has no remaining free parameters.
+
 ## Lever pre-declaration: priority-SAM placement value ordering (2026-10-05, BEFORE any candidate run)
 
 Measured basis (read-only research subagent on a2537214, comparator
