@@ -3867,3 +3867,151 @@ basket-01..05 on the refactored bundle reproduced the gate rows exactly
 (only runtimeMs wall-clock differs). Committed with --no-verify per the
 aa5be58d/01e2e339 precedent (hook forces engine submodule update; eslint
 cannot parse the 2MB bundle).
+
+## Lever pre-declaration: Legendary blast-footprint validity (2026-10-05, BEFORE any candidate run)
+
+Measured/source basis (read-only research subagent on commit 58c2d15f, plus
+deterministic candidate re-runs): the three winless sets never produce a nuke
+candidate at all. isScorableNukeTile requires EVERY tile of the blast bounding
+box (outer 30 + range/2 boxes, (2*30+1)^2 = 3,721 tiles) to pass
+isValidNukeTile, and in non-Team games that rejects any tile owned by a third
+player — so in crowded lobbies essentially no aim point survives. Decision
+traces (OFH_LOG_NUKES): ffa-n2-basket-05 350 decisions, 174 with a valid
+target, 120 with affordable gold, candidateCount=0 in 174/174 with valueGate
+never evaluated; team-5mm-basket-05 469/469 cc=0; ffa-n20-basket-03 152/152
+cc=0. Downstream lanes walk empty lists (fireLegendaryClearFallthrough) or
+require a beating candidate (retryWithHigherValueTarget). Ruled out as the
+binder: selectAffordableNuke dead bands (120 affordable decisions in one
+game), silo pacing (silo at t=500 in team-5mm), EV gates (never reached).
+Secondary consequence: hostile nuclear attrition goes unanswered (ffa-n2-05:
+Alpha's two salvos deleted 28 structures incl. the bot's silo and SAM; the
+bot fired zero retaliatory detonations all game).
+
+Candidate (one function + one helper, Legendary only): in isScorableNukeTile,
+replace the whole-box validity veto with a harm-aware rule — the center tile
+keeps full isValidNukeTile target legality, and the veto fires only when an
+own or permanent-teammate structure lies inside the candidate tile's outer
+Euclidean damage disk (friendlyNukeStructures snapshot, same call shape as
+blastStructureValue; strict < range^2). Nukes damage a Euclidean disk, not
+the box; third-party territory inside the box costs nothing. Non-Legendary
+keeps the byte-faithful whole-box rule untouched. New helper
+friendlyStructureInsideNukeDisk performs the snapshot distance sweep; the
+scoring friendly-fire penalty, EV gate, SAM partition, spawn-tile and
+duplicate-team-nuke checks are all untouched and stay downstream. Catalog
+check: this sits strictly upstream of every closed family (EV shot authority,
+SAM coverage/partition, interception, rebuild valve, parity lane,
+warship-save, cost persistence) — it only makes candidates exist; no closed
+family is re-armed.
+
+Validation: focused regression test/legendary-blast-validity.mjs (Legendary
+accepts a third-party box with a clean disk and never calls boundingBoxTiles;
+veto inside the outer disk; edge at exactly range is safe; center-tile
+legality and spawn/duplicate vetoes preserved; Hard keeps the whole-box rule
+and ignores the disk). Then the mechanistic gate: OFH_LOG_NUKES candidateCount
+flips 0 -> >0 on traced ffa-n2/team-5mm rows. Then the predeclared early gate
+(team-none, team-25mm, ffa-n4 × basket-01..05 at parallelism 2 — the
+precedent green-row control) against
+/home/eros/ofh-matrix/basket-2026-10-04-defect-fixes-combined/results.jsonl
+(35 rows at 58c2d15f, byte-identical to the reserve-100k baseline).
+
+Clauses (user criterion, wins and survival first): (a) no per-set win/
+fullGreen regression; (b) no per-set ownStructuresNuked increase; (c)
+aggregate winGreen rise OR overall median survival non-decreasing with
+nukedStructureGold strictly rising in at least two of {team-5mm, ffa-n2,
+ffa-n20}; nukedStructureGold descriptive elsewhere. Aspirational movement:
+first wins in the three winless sets; an early pass without them still
+authorizes the full 35-row gate where clause (c) decides.
+
+Bisect order if a gate fails: (1) shrink the veto disk to range/2 (inner
+destruction ring only, letting the scoring penalty keep governing the outer
+ring) and re-run the early gate; (2) revert the lever fully and record both
+verdicts. An early gate failure on ffa-n4 wins specifically implicates the
+outer-disk veto near the bot's own border clusters.
+
+## CORRECTION (2026-10-05, post-gate): the two verdicts above were vacuous
+
+Post-run trace audit: the 35/35 byte-identical blast-validity gate and the
+35/35 byte-identical defect-fixes gate did not measure their candidates.
+portutil.js currentDifficulty() collapses the settings tier Legendary to
+Difficulty.Impossible (the headless engine playlists expose no Legendary
+tier), and every nuke-layer branch comparing raw equality
+(difficulty === Difficulty.Legendary or currentDifficulty() ===
+Difficulty.Legendary) is therefore dead in every basket run. Dead in
+particular: the blast-footprint validity branch, the trajectory bypass
+(isScorableNukeTile Legendary early-return), the value-directed retry
+(collectCandidatesWithRetry), and the hydrogen finisher dispatch gate
+(maybeFirePostSalvoHydrogen call site). Trace evidence post-fix attempt:
+ffa-n2 candidateCount=0 in 901/901 silo+target decisions, 0 bot detonations.
+isLegendaryDifficulty() is the codebase's documented tier bridge
+(Impossible = Legendary policy tier, portutil.js:68-75) and is what live
+levers already use. The defect-fixes commit 58c2d15f remains landed (its
+EV fall-through site is isLegendaryDifficulty-gated and live; hydrogen
+retention becomes live only with this correction).
+
+## Lever pre-declaration: Legendary tier-gate normalization, nuke layer (2026-10-05, BEFORE any candidate run)
+
+Defect (source-confirmed): nukeBehavior.js gates four Legendary divergences
+with raw equality against the playlist tier instead of the isLegendaryDifficulty
+bridge: (1) isScorableNukeTile trajectory bypass early-return, (2) the
+blast-footprint validity branch (pre-declared 2026-10-05 above), (3)
+collectCandidatesWithRetry value-directed retry entry, (4) the
+maybeFirePostSalvoHydrogen dispatch gate. Net effect: at Impossible playlists
+the entire Legendary nuclear layer silently no-ops, which is why the two
+previous gates were byte-identical.
+
+Candidate (mechanical, one file): replace those four raw comparisons with
+isLegendaryDifficulty(difficulty) / isLegendaryDifficulty(). No policy body
+changes; every branch body stays exactly as landed. Catalog check: this arms
+only already-reviewed levers inside nukeBehavior.js; no closed family is
+touched (the branch bodies retain their own gates: value<=-1 stop, score-zero
+reserve, buildability probe, EV guard, SAM partition, salvo re-checks).
+
+Mechanistic gate (pre-declared): with OFH_LOG_STRUCTURES/OFH_LOG_NUKES on a
+ffa-n2 row, bot-owned nuke detonations go 0 -> >0 or a hydrogen finisher /
+retry event becomes observable; candidateCount>0 appears in at least one
+silo+target decision. (The ffa-n4 rows crash the pre-existing OFH_LOG_NUKES
+trace at run-match.mts:1360 — UnitImpl.targetedBySAM on structures without
+nuke state — so ffa-n4 mechanistic evidence comes from outcome telemetry only.)
+
+Outcome clauses (35-row gate vs basket-2026-10-05-blast-validity at the same
+runner): (a) no per-set win/fullGreen regression; (b) no per-set
+ownStructuresNuked increase; (c) aggregate winGreen rise OR nukedStructureGold
+strictly rising in at least two of {team-5mm, ffa-n2, ffa-n20} with overall
+median survival non-decreasing. Bisect order on any failure: revert site (2)
+blast-validity first, then (4) hydrogen dispatch, then (3) retry, then (1)
+trajectory bypass — each revert re-runs the full gate.
+
+### Verdict: FAIL — tier normalization reverted, all four sites back to raw equality (2026-10-05)
+
+Three full 35-row gates against basket-2026-10-05-blast-validity (58c2d15f
+baseline, byte-identical to the reserve-100k baseline):
+
+1. tier-gate2 (all four sites normalized; blast veto at inner disk after the
+   outer disk blocked every duel-border candidate): WINS 5 -> 3. team-temp
+   2 -> 1 and team-25mm 1 -> 0 with ownNuked rising (5 -> 7, 44 -> 77);
+   ffa-n4 lost its recaptured win (ffa-n4-01 fired 10 atoms + 9 HYDROGENS,
+   ~45M gold, nukedStructureGold 69.75M -> 3M). One genuine gain: the first
+   team-5mm win ever recorded (basket-05, and basket-04 survived 12871 ->
+   20511 with 4 atoms where the whole prior catalog had 1).
+2. tier-gate3 (declared deviation: sites 3 retry and 4 hydrogen dispatch
+   reverted to raw equality, keeping sites 1 trajectory bypass + 2
+   blast validity): WINS 5 -> 3 again — team-temp-05 lost its win with 4
+   atoms fired, team-none ownNuked 7 -> 11, ffa-n4 still 1 -> 0
+   (nukedGold 69.75M -> 5.75M). The trajectory bypass + harm-aware
+   candidates alone are also net-negative at this meta.
+3. Mechanistic evidence (positive): with normalization live, ffa-n2 and
+   team-5mm candidateCount flipped 0 -> 34-48 in traced decisions with
+   valueGate=true, and team-5mm atom launches went 1 -> 6 across the set —
+   the unblock works mechanically; the POLICY of what gets fired afterwards
+   converts gold into losses at this meta (hydrogen 5M/shot spend, retry
+   retargeting, and interceptable bypass shots all measured negative).
+
+Final state: engine byte-identical to 58c2d15f (all four sites raw
+equality), test/legendary-blast-validity.mjs removed with the branch,
+bundles rebuilt. Standing knowledge for future levers: (a) any
+Legendary-tier gate must use isLegendaryDifficulty, never raw equality —
+otherwise it is dead in every basket run; (b) the nuclear layer's candidate
+geometry veto is real but firing more atoms at this meta converts wins into
+losses — future nuclear levers must gate on measured per-shot economics,
+and the non-nuclear loss mechanisms (ffa-n20 early deaths, ffa-n2 silo
+starvation) remain the open front.
