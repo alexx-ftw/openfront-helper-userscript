@@ -4108,6 +4108,50 @@ silo starvation (nuclear-adjacent, closed-adjacent) and n20 early dogpile —
 with attack-lane and defensive-geography families now both measured closed
 for this meta.
 
+## Lever pre-declaration: quiet-Post pure-surplus guard, FFA activation (2026-10-05, BEFORE any candidate run)
+
+Measured basis (two read-only research subagents on a2537214): the quiet-post
+guard at structureBehavior.js:1303 gates the pure-surplus treasury requirement
+on raw `difficulty === Difficulty.Legendary`, but currentDifficulty()
+collapses the basket tier to Impossible (portutil.js:45), so the guard has been
+silently OFF in every basket run while live in real Legendary play. Replaying
+recorded portfolios through the untouched class: 22 of 23 FFA Post events
+through t=3000 sit BELOW the guard's surplus floor — n2-04 built two Posts
+(treasuries 86,700 and 149,150 vs floors 175,000 and 360,001) with one City,
+zero incoming attacks across t=2000-3500, and died at 11029; n20-03 funded
+Posts at 62,300 and 100,700 vs floors 175,000/360,001. Cycle-2 canaries
+independently measured that early Post spending correlates with earlier
+deaths (full-pool n20 median 5171, top-2 4845 vs baseline 7676). Activating
+the guard is the conservative direction: it can only DELAY or FORBID quiet
+Posts, never add aggression.
+
+Candidate (one predicate + one helper, structureBehavior.js): replace the raw
+equality with isLegendaryDifficulty(difficulty) — the documented Impossible=
+Legendary bridge — scoped to FFA game modes ("Free For All"/"FFA"). Team rows
+stay byte-identical by construction (broader normalization was previously
+reverted during a team-anchor repair, so team re-audit stays out of scope).
+legendaryQuietPostGoldAboveEconomyRung, the foundational-City gate, the
+strongest-neighbor placement rule, live-attack Post authorization, and
+allowed-post counts are untouched.
+
+Mechanistic gate (paired canary, --sets ffa-n20,ffa-n2 vs baseline): at least
+one row must show an affected sub-surplus Post DISAPPEAR or move LATER in
+constructionEvents AND an earlier productive City/Port/Factory build on that
+row. A changed predicate without productive construction progress rejects the
+candidate before the full basket.
+
+Outcome clauses (full 35-row gate vs basket-2026-10-04-defect-fixes-combined):
+(a) every existing win preserved (team sets byte-identical, ffa-n4's win
+included) with no FFA median-survival decrease; (b) no per-set
+ownStructuresNuked increase (baselines n2: 40, n20: 66, n4: 167); (c) at least
+one FFA set with an additional win OR strictly higher median ticks. Treasury
+growth alone does not pass.
+
+Bisect order on failure: (1) retain the FIRST quiet Post per game and guard
+only additional ones (the first Post buys the kill-axis coverage the pooling
+family proved valuable); (2) full revert and close this budget family. Never
+salvage via City precedence, expansion, attack, or nuclear retunes.
+
 ## Lever pre-declaration: Legendary tier-gate normalization, nuke layer (2026-10-05, BEFORE any candidate run)
 
 Defect (source-confirmed): nukeBehavior.js gates four Legendary divergences
