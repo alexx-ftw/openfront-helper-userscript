@@ -4276,6 +4276,44 @@ deadness (this lever), pooled-frontier placement, and first-Post-delaying
 discipline are all measured; the only surviving lead is the initial-roster
 thin-lobby scope above.
 
+## Lever pre-declaration: priority-SAM placement value ordering (2026-10-05, BEFORE any candidate run)
+
+Measured basis (read-only research subagent on a2537214, comparator
+reproduction confirmed): the priority-SAM path scores candidates with
+threatSamLauncherValue() — a contract that centers placement on the most
+expensive own cluster (pinned by test/sam-defense-policy.mjs) — but the shared
+sort compareStructurePlacementScores evaluates samIncrementalCoverage
+(structureBehavior.js:12295 region) BEFORE that value, so a value-100 /
+coverage-1 candidate loses to value-1 / coverage-2. The n2 loss geometry is
+consistent with the inversion: n2-05's Hydrogen impacts landed 98.13 and
+107.81 tiles from level-4/5 SAMs (ranges 96.67/102), n2-03's Hydrogen target
+80.08 tiles from a level-1 SAM (range 70), n2-02's damaging missile 617 tiles
+from the sole SAM. 40 own structures nuked in n2 with zero own atom launches.
+
+Candidate (one comparator branch + one score tag): when BOTH compared entries
+carry prioritySam (set in rankStructureSpawnTiles only for
+SAMLauncher + prioritizeStructureCoverage), the threat value decides BEFORE
+the coverage axes; blast separation stays first; protection/shared axes and
+the non-priority paths (including rankStructureTilesBySamProtection's v=0
+calls) are byte-unchanged. This moves SAMs toward the expensive clusters; it
+bids no extra gold and launches no atoms.
+
+Mechanistic gate (paired ffa-n2 canary): at least one row must place a
+priority SAM at a DIFFERENT tile than baseline (constructionEvents), with the
+threat-value ordering pinned by a focal comparator test.
+
+Outcome clauses (full 35-row gate vs basket-2026-10-04-defect-fixes-combined):
+(a) every existing win preserved, no fullGreen regression, no FFA median
+survival decrease; (b) strict ownNuked discipline: n2 strictly below 40 and
+no other set's ownNuked above baseline; (c) no own atom launch anywhere
+(nuclear policy untouched). This lever's PASS bar is damage reduction with
+zero aggression; territory/wins conversion is aspirational, not required.
+
+Bisect order on failure: (1) place value ordering AFTER blast + protection
+axes (value only outranks raw coverage expansion); (2) full revert and close
+the placement-ordering family. No budget, expansion, attack, or nuclear
+salvage.
+
 ## Lever pre-declaration: Legendary tier-gate normalization, nuke layer (2026-10-05, BEFORE any candidate run)
 
 Defect (source-confirmed): nukeBehavior.js gates four Legendary divergences
