@@ -4076,6 +4076,38 @@ Bisect order on failure: (1) narrow the pool to the top-2 threatening
 frontiers by uncovered-tile count and re-run; (2) full revert. Never salvage
 via Post budgets, City precedence, expansion, or attack/nuclear retunes.
 
+### Verdict: FAIL — preemptive Post frontier pooling reverted, both variants (2026-10-05)
+
+The mechanistic gate passed on the canary set (ffa-n20 x5 per variant): both
+variants completed legal Posts at DIFFERENT tiles than baseline (n20-03 second
+Post baseline t=2590 tile 801323 -> full-pool t=2192 tile 837855; top-2
+t=2192 tile 837850), proving the candidate geography changed in the real
+harness. Clause (c) then failed decisively at canary level, so the full
+35-row basket was not run:
+
+- full pool: n20 medTicks 7676 -> 5171; n20-03 died 27188 -> 5171 with SIX
+  Post builds (vs 2) — pooled-front Posts are destroyed and rebuilt, burning
+  gold; n20-05 died 7676 -> 3508.
+- bisect (1) top-2: WORSE — n20 medTicks 4845; n20-03 died at 4845 with four
+  Post builds; n20-01 3965 -> 3868; n20-05 7676 -> 3671. n20-04 (survivor)
+  and n20-02 were byte-identical to baseline in both variants.
+
+Mechanism, standing knowledge: the strongest quiet neighbor's frontier is not
+an arbitrary sample — it IS the invasion axis. Pooling candidate geography
+toward "more uncovered tiles" moves Posts off that axis; in a 16-35x dogpile
+those Posts die without slowing the killer wave, and the gold converts
+directly into earlier deaths. Defensive placement levers must price the kill
+axis, not raw frontier coverage. The measured placement gap (171 of 198
+uncovered tiles omitted) is real but is not a loss mechanism.
+
+Final state: engine byte-identical to 58c2d15f, focal test removed with the
+branch, bundles rebuilt. Canary evidence: canary-2026-10-05-postpool and
+canary-2026-10-05-postpool-top2 (n20 x5 each) vs
+basket-2026-10-04-defect-fixes-combined. The non-nuclear front remains: n2
+silo starvation (nuclear-adjacent, closed-adjacent) and n20 early dogpile —
+with attack-lane and defensive-geography families now both measured closed
+for this meta.
+
 ## Lever pre-declaration: Legendary tier-gate normalization, nuke layer (2026-10-05, BEFORE any candidate run)
 
 Defect (source-confirmed): nukeBehavior.js gates four Legendary divergences
