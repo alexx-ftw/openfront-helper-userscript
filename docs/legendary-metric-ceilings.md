@@ -3948,6 +3948,51 @@ levers already use. The defect-fixes commit 58c2d15f remains landed (its
 EV fall-through site is isLegendaryDifficulty-gated and live; hydrogen
 retention becomes live only with this correction).
 
+## Lever pre-declaration: cap-strike bleed-freeze arming (2026-10-05, BEFORE any candidate run)
+
+Measured basis (baseline basket-2026-10-04-defect-fixes-combined, 35 rows at
+58c2d15f, capStrike telemetry): the FFA cap-strike lane arms only after 6
+consecutive decisions with troops >= 90% of maxTroops AND tiles exactly
+unchanged (attackBehavior.js:6545, tiles === capStrikeLastTiles), so any
+territory change — growth or loss — resets the counter. In the rows that die
+conventionally, the bot is at cap while bleeding tiles, and the counter never
+stacks: ffa-n20-basket-01 armedHighWater 5, attempts 0, launches 0, bot dead
+at t=3965; ffa-n2-basket-04 highWater 1, attempts 0, dead at t=11029. The
+same lane, once armed, is proven useful: the ffa-n4-basket-04 WINNER launched
+30 strikes (highWater 22); ffa-n2-basket-01 launched 16 and survived 22881
+ticks. The binder is the freeze semantics, not the strike policy (reserve
+fail-safe, weakest-border target, confirm window, FFA gate all untouched).
+Test 3 of test/cap-pressure-strike.mjs pins the old semantics ("a shrinking
+territory is not frozen either"); that pin predates this telemetry and is the
+thing being changed.
+
+Candidate (one comparison, one file): frozen := tiles > 0 &&
+tiles <= capStrikeLastTiles — "not growing" counts as frozen, so an at-cap
+army holding or losing ground accumulates toward the 6-decision confirm while
+a growing army still resets. Every other gate is unchanged: CAP_STRIKE_TROOP_
+RATIO 0.9, CAP_STRIKE_CONFIRM_DECISIONS 6, winFixes + isFFA (team rows stay
+byte-identical), expandOn, canAttackPlayerNow, and the reserve-clamped
+forceSendAttack. Catalog check: the cap-strike lane is shipped and open
+(63587131); closed families — expansion window 1200->1800 (twice), freeze-war
+at parity, expansion brake directions, the whole nuclear layer — are not
+touched. No difficulty comparison involved, so the Legendary tier trap does
+not apply.
+
+Mechanistic gate (results.jsonl capStrike telemetry, no extra tracing): at
+least one of {ffa-n20-basket-01, ffa-n2-basket-04} must show attempts > 0
+under the candidate (baseline: both 0).
+
+Outcome clauses (full 35-row gate vs basket-2026-10-04-defect-fixes-combined):
+(a) no per-set win/fullGreen regression (ffa-n4's retained win included);
+(b) no per-set ownStructuresNuked increase; (c) in at least two of
+{ffa-n2, ffa-n20}: wins rise OR median survival ticks (medTicks) rise.
+Descriptive: team sets are expected byte-identical — any team-row divergence
+blocks PASS pending investigation.
+
+Bisect order on failure: (1) bounded shrink — frozen only while tiles >=
+0.98 * lastTiles, excluding collapse-speed death spirals — re-run the gate;
+(2) full revert and record both verdicts.
+
 ## Lever pre-declaration: Legendary tier-gate normalization, nuke layer (2026-10-05, BEFORE any candidate run)
 
 Defect (source-confirmed): nukeBehavior.js gates four Legendary divergences
