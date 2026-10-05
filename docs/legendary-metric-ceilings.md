@@ -4393,6 +4393,46 @@ Family closed permanently. A spawn-time snapshot of players() would be a NEW
 stateful mechanism (cache at first tick), not a scope of this predicate, and
 is out of bounds of this closure.
 
+## Research: team-row nuclear funnel instrumentation (2026-10-05, no candidate)
+
+Read-only diagnostic after the quiet-Post closure, hunting a fresh lever in
+the objective domain (silos, nuking, target scoring). Temporary
+decision-level probes on every maybeSendNuke exit and inside
+fireLegendaryClearFallthrough, built bundle, BLITZBOT_VERBOSE_BUNDLE=1,
+single-sim team-none basket-01 env (probe instances are load-sensitive and
+flipped the row outcome — probes measure MECHANISMS, never row verdicts;
+the runner header already documents this).
+
+Measured funnel (one instance, 13691-tick WIN): no-silos 78 (all pre-first-
+silo, 0-2000), unaffordable 329, economy-defer 69, candidate phases 8, and
+the firing tail is ALIVE: fireLegendaryClearFallthrough ran 4 times, launched
+4 atoms — every one at ladder value 0 (score-zero release on empty-value
+tiles; the sorted list's TOP candidate was 0, so no enemy structure was
+scorable anywhere in reach). No exceptions, no hangs: withTimeout timers fire
+in the headless sandbox and runOptionalAsyncPhase discards stale-tick phases
+cleanly.
+
+Two non-obvious mechanics confirmed on the way, both already consistent with
+the recorded verdicts: (1) at Impossible playlists every ordinary shot routes
+through the Legendary fallthrough (isLegendaryDifficulty bridges Impossible),
+so the live shot authority IS the score-zero release; (2) "unaffordable" at
+1.5-3.75M idle gold is the silo-occupied/buildability gate inside
+selectAffordableNuke, not a treasury gate — capacity 1 silos serialize the
+arsenal, matching the closed parity-lane finding.
+
+Conclusion, on the record: the team-row zero-atom losses are the SAME
+phenomenon the tier-gate normalization family measured and closed — the
+candidate source scores no enemy structures (candidateCount flips 0 -> 34-48
+when normalized) and arming it converted gold into losses in three full
+gates (5 -> 3 wins, retry retargeting named negative in the verdict). No
+predeclarable lever survives in the nuclear/targeting domain at this meta:
+every reshuffle of the structure economy (pooling, parity, interception
+priority, survival bypass, instance-cost ladder, SAM ordering, quiet-Post
+budget) plus the whole tier-normalization space is now measured-closed. The
+next wins lever, if any, lives in a subsystem with no closed family yet
+(trade/train economy, maritime play, or a new engine substrate), and starts
+from a fresh diagnostic at the same evidence standard.
+
 ## Lever pre-declaration: priority-SAM placement value ordering (2026-10-05, BEFORE any candidate run)
 
 Measured basis (read-only research subagent on a2537214, comparator
