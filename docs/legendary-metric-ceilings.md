@@ -4314,6 +4314,35 @@ axes (value only outranks raw coverage expansion); (2) full revert and close
 the placement-ordering family. No budget, expansion, attack, or nuclear
 salvage.
 
+### Verdict: FAIL — priority-SAM value ordering reverted; placement-ordering family closed (2026-10-05)
+
+Paired canary (ffa-n2 + ffa-n4, canary-2026-10-05-samorder): the mechanistic
+gate PASSED — priority SAM placements moved (new tiles/timings in n2-01/03/05
+and n4 rows) — but the hypothesized damage reduction did not materialize and
+the n4 winner broke again:
+
+- ffa-n2 ownNuked 41 vs baseline 40 (clause (b) required strictly < 40);
+  n2-01 DIED at 11472 vs surviving to 22881 (-11409); the other four rows
+  moved by at most +1.
+- ffa-n4: basket-04 lost its win again (102211 -> 62561-loss, clause (a));
+  basket-01 -9580 ticks; basket-03 lived 5x longer (12471 -> 62431) while
+  absorbing ownNuked 1 -> 78.
+
+Bisect (1) (value only outranks the coverage-expansion axis) is skipped as
+mechanism-contradicted: the observed damage is trajectory perturbation, not
+axis-order-specific — n2's ownNuked did not drop under ANY placement the
+ordering produced, so moving protection axes ahead of value cannot recover
+the strict < 40 bar. (2) applied: engine byte-identical to 58c2d15f, focal
+test removed, bundles rebuilt. The placement-ordering family is closed.
+
+Standing knowledge: the coverage-vs-value inversion is real as a code
+inconsistency, but resolving it does not reduce losses in this meta — placed
+SAMs that look geometrically better do not intercept more (interception is
+gated by live capacity, rotation, and in-flight timing that placement order
+does not control). SAM levers are closed absent telemetry that logs per-salvo
+interception outcomes (hostile-nuke-inflight logs each missile once and
+targetedBySAM is not a final outcome).
+
 ## Lever pre-declaration: Legendary tier-gate normalization, nuke layer (2026-10-05, BEFORE any candidate run)
 
 Defect (source-confirmed): nukeBehavior.js gates four Legendary divergences
