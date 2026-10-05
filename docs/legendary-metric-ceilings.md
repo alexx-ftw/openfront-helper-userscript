@@ -4030,6 +4030,52 @@ starvation (bot never builds its first MissileSilo under the parity/freeze
 lanes) and n20 early dogpile geography; both remain closed-adjacent and need
 a fresh measured basis before any candidate.
 
+## Lever pre-declaration: preemptive Defense Post frontier pooling (2026-10-05, BEFORE any candidate run)
+
+Measured basis (read-only research subagent on 0bd6e1c7, replay-verified
+against stored checkpoints through t=3000): in ffa-n20-basket-03 the second
+preemptive Post funds at t=2590 (100,700 gold, 100,000 cost, 6.76M hostile vs
+1.32M own troops) while computeStrategicBorderDefensePostThreat
+(structureBehavior.js:1313) samples ONLY the strongest neighbor's frontier —
+X-ray's 27 uncovered tiles — omitting Kilo (156), Romeo (13), Zulu (2): 171 of
+198 uncovered tiles from neighbors that EACH outmuscle us. Re-ranking the
+existing candidates against the pooled frontier picks the same tile, so the
+defect is candidate geography, not scoring weights. Closed families are
+untouched: expansion timing/brakes, attack commitments, cap-strike arming,
+City priorities, nuclear policy; no measured verdict exists on this placement
+mechanism. The n2 silo-starvation front stays closed-adjacent (nuclear) and is
+not touched.
+
+Candidate (one helper + one call site, structureBehavior.js): when
+winFixes && FFA && isLegendaryDifficulty(), replace the single-opponent
+frontTiles input with a deduplicated union of getOpponentFrontTiles over ALL
+live hostile Nation/Human neighbors passing the SAME 1x own-troops threshold
+and the same border predicate as strongestStrategicBorderOpponent. Sampler,
+coverage ranker, worker legality, foundational-City gate, gold rung, and
+allowed: 2 stay byte-identical. Non-pooled modes keep the exact
+strongest-neighbor input.
+
+Mechanistic gate (paired single-row canary): focal test proves the pooled
+union (multi-neighbor, threshold-filtered, deduplicated); then a paired
+ffa-n20-basket-03 run must complete a legal second Post at a DIFFERENT tile
+than baseline (constructionEvents + intervalBuildEvents), proving the
+candidate geography changed in the real harness. A changed candidate list
+without a completed, differently-placed Post rejects the candidate before the
+basket.
+
+Outcome clauses (full 35-row gate vs basket-2026-10-04-defect-fixes-combined):
+(a) no per-set win/fullGreen regression (n20-04's survival and ffa-n4's win
+included) and no earlier death vs paired baseline rows in n20's other seeds;
+(b) no per-set ownStructuresNuked increase (baseline totals n20: 66, n2: 40,
+n4: 167) — extra survival that buys nuclear retaliation fails; (c) in
+ffa-n20: a new win OR a rescued death (a dead row reaching alive-at-terminal)
+OR median ticks rising. Team sets expected byte-identical (FFA-gated); any
+team-row divergence blocks PASS.
+
+Bisect order on failure: (1) narrow the pool to the top-2 threatening
+frontiers by uncovered-tile count and re-run; (2) full revert. Never salvage
+via Post budgets, City precedence, expansion, or attack/nuclear retunes.
+
 ## Lever pre-declaration: Legendary tier-gate normalization, nuke layer (2026-10-05, BEFORE any candidate run)
 
 Defect (source-confirmed): nukeBehavior.js gates four Legendary divergences
