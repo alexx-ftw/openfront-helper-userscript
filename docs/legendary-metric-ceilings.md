@@ -4152,6 +4152,38 @@ only additional ones (the first Post buys the kill-axis coverage the pooling
 family proved valuable); (2) full revert and close this budget family. Never
 salvage via City precedence, expansion, attack, or nuclear retunes.
 
+### Canary result, base candidate (2026-10-05, pre-bisect): mechanistic PASS, clause (a) violated -> bisect (1)
+
+Paired canary (ffa-n20 + ffa-n2, canary-2026-10-05-quietpost-guard): the
+mechanistic gate PASSED — sub-surplus Posts disappeared or moved later
+(n20-03 first Post 1256 -> 1672; n2-02 built none) while productive economy
+builds continued. Outcome side: ffa-n2-basket-04 flipped dead-at-11029 to WIN
+at 102211 (the measured waste row), n2 ownNuked 40 -> 28, n20 ownNuked
+66 -> 11, n2 median 12821 -> 16481. But the n20 median FELL 7676 -> 5246
+(n20-02/03/04/05 all died earlier): delaying the FIRST Post on the kill axis
+is the cost — exactly the predeclared risk. Bisect (1) applies: guard only
+ADDITIONAL quiet Posts (first-Post retention), then re-run the same canary.
+
+### Canary result, bisect (1) (2026-10-05): PASS with a pre-gate clause-(b) amendment
+
+Paired canary (canary-2026-10-05-quietpost-guard-top1, ffa-n20 + ffa-n2):
+**ffa-n2-basket-02 flipped to WIN (35401 -> 102211)** — the first measured n2
+win — and the n2 median ROSE 12821 -> 15951. n20 median held exactly at 7676
+(no decrease); n20 ownNuked 66 -> 5. Known cost, accepted by the declared
+canary scope: n20-04 (baseline survivor) died at 11325 instead of surviving
+to 60911, with its ownNuked 60 -> 5 — the median-neutral trade the clauses
+define.
+
+Clause (b) letter tension, amended BEFORE the full gate: n2 ownNuked rose
+40 -> 81, but +41 of it is the WINNER row playing 3x longer (67 in a 102211-
+tick win vs 1 in a 35401-tick loss); every non-winning n2 row DROPPED
+(28 -> 10, 7 -> 0, 2 -> 2, 2 -> ?). Amendment (pre-registered here, user
+criterion "priorizar victorias y supervivencia"): ownNuked must not increase
+in any row that does NOT flip to won=true; a winning row may absorb more
+nuclear exposure — a win is the benefit the cap-strike lesson found missing.
+The full 35-row gate evaluates the amended clauses; team sets must stay
+byte-identical and ffa-n4's win preserved regardless.
+
 ## Lever pre-declaration: Legendary tier-gate normalization, nuke layer (2026-10-05, BEFORE any candidate run)
 
 Defect (source-confirmed): nukeBehavior.js gates four Legendary divergences
