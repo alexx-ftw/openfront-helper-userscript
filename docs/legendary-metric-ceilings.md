@@ -4368,6 +4368,31 @@ median stays strictly above baseline 12821. If the n2 win does not reproduce,
 or any untouched set diverges, this corrected form closes permanently with no
 further corrections.
 
+Measured verdict (basket-2026-10-05-quietpost-totalroster, CUT SHORT after
+the verdict was determined; eval-equivalent comparison on finished rows):
+CLOSED. All five ffa-n4 rows diverged from baseline (winner n4-04 lost again:
+won=true 102211 -> won=false 14761) while n2 reproduced the win a third time
+(canary basket-02: won=true 102211) — clause (a) is unconditional, so the
+cycle failed before the remaining sets could matter.
+
+Definitive root cause, MEASURED with a temporary in-predicate probe
+(BLITZBOT_VERBOSE_BUNDLE, n4 basket-04, 246 predicate calls): the client-side
+game.players() view is NOT a fixed initial roster — it SHEDS eliminated
+nations. The same match reported others=4 on 205 calls and others=2 on 41
+calls, so the guard flipped ON mid-game (total <= 3 requires others <= 2)
+and the additional-Post floor resumed exactly when deaths accumulated. This
+also explains the earlier byte-identical thin/roster results: BOTH bases
+crossed their thresholds at the same death ticks, so live-count vs
+players()-count never produced a different decision. The predeclared premise
+"the roster is fixed for the whole match" is false at the API the bot can
+see; EVERY players()-derived density gate activates mid-game in n4 and
+deterministically loses the basket-04 winner, which requires unguarded Post
+rebuilds.
+
+Family closed permanently. A spawn-time snapshot of players() would be a NEW
+stateful mechanism (cache at first tick), not a scope of this predicate, and
+is out of bounds of this closure.
+
 ## Lever pre-declaration: priority-SAM placement value ordering (2026-10-05, BEFORE any candidate run)
 
 Measured basis (read-only research subagent on a2537214, comparator
