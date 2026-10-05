@@ -4218,6 +4218,35 @@ both variants — defensive discipline reliably reduces nuclear exposure, the
 open question is converting it into wins without disturbing winning
 trajectories.
 
+## Lever pre-declaration: quiet-Post surplus guard, thin-lobby scope (2026-10-05, BEFORE any candidate run)
+
+Reopening justification (measured, not seed-fitted): the closed family's own
+gate data splits by LOBBY DENSITY, a game-state variable fixed for the whole
+match. ffa-n2 (2 hostile players): construction discipline WINS (both
+bisect-1 rows reproduced deterministically across canary and full gate —
+n2-02 102211-tick win twice). ffa-n4 (4 hostile players): rebuild cadence IS
+the defense (winner lost when cadence was restricted). ffa-n20 (20): median
+held either way. Candidate (bisect 3): identical to bisect-1 (bridge + FFA +
+first-Post-free + surplus floor on additional Posts) AND gated to lobbies with
+<= 3 live hostile players. Predicted, declared in advance: n2 reproduces the
+win and median rise; n4 and n20 rows byte-identical to baseline (win
+preserved, median 7676 held); team unchanged. Lobbies of exactly 3 hostile
+players are untested territory — acknowledged as the scope's open edge.
+
+Mechanistic gate: paired ffa-n2 canary must reproduce the basket-02 win
+(102211-class long game) with zero atom launches.
+
+Outcome clauses (full 35-row gate vs basket-2026-10-04-defect-fixes-combined):
+(a) every existing win preserved; n4 and n20 sets byte-identical (any
+divergence = FAIL, this is a thin-lobby-only lever); (b) amended ownNuked
+rule: no increase in any row that does not flip to won=true; (c) the n2 win
+reproduces (this candidate has no other path to PASS — if the n2 win does not
+reproduce, the family closes permanently).
+
+Bisect: none. This is the last scoped form; any failure closes the family
+permanently and the catalog stands exhausted for construction-budget
+mechanisms.
+
 ## Lever pre-declaration: Legendary tier-gate normalization, nuke layer (2026-10-05, BEFORE any candidate run)
 
 Defect (source-confirmed): nukeBehavior.js gates four Legendary divergences
