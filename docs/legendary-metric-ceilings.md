@@ -4313,6 +4313,31 @@ untouched set diverges, the family closes permanently with no further scopes.
 
 Bisect: none. This form has no remaining free parameters.
 
+Measured verdict (basket-2026-10-05-quietpost-roster, 35/35 rows, eval
+VERDICT: FAIL): CLOSED. Clause (a) broke exactly as written: ffa-n4 wins
+1 -> 0 (the basket-04 winner is gone), medTicks 38881 -> 18691, nukedGold
+69.75M -> 2M, ownNuked 167 -> 136. The n2 win DID reproduce (0 -> 1,
+medTicks 12821 -> 15951, winner 102211 with ownStructuresNuked 67) and all
+four other sets were byte-identical to baseline — but clause (a) is
+unconditional for ffa-n4. All 35 candidate rows are byte-identical
+(normalized) to the thin-lobby FAIL run, so the roster/live distinction
+never flipped a single guard decision in any row.
+
+Root cause: the predeclaration misread the lobby composition. An ffa-n4
+lobby has 4 players TOTAL including our bot, so its non-friendly
+Nation/Human roster is 3, not 4; 3 <= 3 activates the guard deterministically
+at spawn (the thin-lobby narrative "a mid-game death dropped the live count
+to 3" was wrong for this basket — there is no death-dependent activation to
+fix). The corrected anatomy: n2 = 1 non-friendly (ON), n4 = 3 (ON), n20 = 19
+(OFF), teams OFF — matching every observed row. Any opponents-count
+threshold <= 3 therefore activates in n4 and deterministically loses the
+n4-04 winner; the winner requires the unguarded Post lane.
+
+For the record, not a scope: a count basis of total roster INCLUDING self
+(> 3 -> OFF) would match the predeclared predictions exactly. The
+predeclared clause forbids further scopes in this family; reopening requires
+a fresh, separately authorized predeclaration.
+
 ## Lever pre-declaration: priority-SAM placement value ordering (2026-10-05, BEFORE any candidate run)
 
 Measured basis (read-only research subagent on a2537214, comparator
