@@ -4801,3 +4801,72 @@ economy surfaces before it — offers no falsifiable survival lever under
 the non-aggressive/gold-neutral guardrails. All four candidate surfaces
 for the n20/n2 losses (nuclear, structure placement, economy, diplomacy)
 are now surveyed closed.
+
+## Lever pre-declaration: revive the dead 250k Legendary recent-strike penalty (2026-10-06, BEFORE any runs)
+
+Defect found in the HEAD engine (1835f8cd), same class as the EV
+fall-through fixed in 58c2d15f: nukeBehavior.js targeting computes
+`recentPenalty = currentDifficulty() === Difficulty.Legendary ? 250_000 :
+1_000_000`, but `currentDifficulty()` NEVER returns `Legendary` — portutil
+maps Legendary to Impossible (12cc77b9), so the ternary always takes the
+1M branch. The adaptive tier's sustained-bombardment design (lighter
+250k penalty so re-strikes on damaged-but-valuable clusters stay
+scorable) has never executed; the bot pays the faithful 1M per recent
+strike until the 600-tick memory expires. The 25mm funnel named the
+recent-strike penalty as a contributor to value-gate rejects in the
+gold-funded window.
+
+Candidate (defect fix, NOT a re-arm of the tier-gate FAIL sites): the
+single site at nukeBehavior.js:1681 changes raw equality to
+`isLegendaryDifficulty(currentDifficulty())` — the documented bridge
+(portutil.js: Impossible == Legendary policy tier). Effect: the 250k
+penalty becomes live in the Legendary policy tier; Hard and below are
+byte-identical (still 1M). No other raw-equality site is touched
+(warshipBehavior:608, nukeBehavior 416/442/530/582/648/744/802/841/978/
+1215, attackBehavior:8729, structureBehavior:93/1303,
+nationExecution:421 stay as measured in the tier-normalization FAIL).
+
+Protocol: focused test first (250k with the Legendary setting, 1M in
+Hard, bridge exercised via isLegendaryDifficulty), then `npm test`, then
+an EARLY gate of 15 rows (sets team-none, team-25mm, ffa-n2; seeds
+basket-01..05; parallelism 2) against the
+basket-2026-10-04-reserve-100k-full baseline (engine bytes of 58c2d15f).
+
+Pre-declared verdict rule (before any variant run, criterion: wins and
+survival first): LAND the early gate only if (a) no set regresses wins
+or fullGreens vs baseline AND (b) ownStructuresNuked does not increase
+in any set AND (c) progress: aggregate medTicks rises OR nukedGold rises
+in >=1 FFA set OR a new win appears (nukedGold recorded as descriptive).
+Any failed clause -> REVERT, record the verdict here, stop. If the early
+gate lands -> full 35-row gate with the same clauses plus team-temp and
+team-5mm win-identical to baseline.
+
+### Verdict: REVERTED inert (2026-10-06, 15-row early gate, pre-declared rule clause c failed)
+
+Focused test first confirmed the mechanics (250k applied when
+currentDifficulty() returns the Impossible raw value under a
+Legendary-or-Impossible bridge, 1M on Hard, penalty stacks per recent
+strike); full npm test chain green. The 15-row early gate
+(/tmp/ofh-matrix/legendary-recent-penalty-early, sets team-none /
+team-25mm / ffa-n2, parallelism 2, basket sim runs at
+Difficulty.Impossible = Legendary policy tier, so the revived 250k branch
+was genuinely live) scored IDENTICAL to the reserve-100k baseline on
+every pre-declared clause: wins 1/1/0, fullGreens 0/0/0, medTicks
+13201/7571/12821, ownStructuresNuked 7/44/40, nukedGold
+7.6M/5.5M/0 per set. Per-row field diff: the ONLY changed field in all
+15 rows is runtimeMs (wall-clock noise) — the lighter penalty never
+flipped a single candidate ranking or launch decision.
+
+Clause (c) (progress) therefore failed and the one-liner was reverted;
+the committed artifact is byte-identical to 1835f8cd again. The
+raw-equality defect itself is now MEASURED, not just suspected: arming
+the 250k recent-strike penalty in the Legendary policy tier is
+decision-inert in the current basket meta. The site stays recorded here
+as a known dead branch (the code comment above it overpromises); any
+future landing must come with new external evidence per the
+nuclear-layer survey closure, e.g. a meta where re-strike pricing
+actually binds (more own launches per 600-tick window than the current
+economy funds). Harness note: the headless-simulation structural
+assertion was updated for the alliance telemetry block (1835f8cd
+inserted allies between outgoing and units in the progress snapshot and
+broke the chain on HEAD; this commit repairs it).

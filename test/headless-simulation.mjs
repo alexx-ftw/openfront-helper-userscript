@@ -789,7 +789,10 @@ assert.match(runner, /countIntents\(intents, runner\.game\.ticks\(\)\)/);
 assert.match(runner, /intervalTerraNulliusAttacks/);
 assert.match(runner, /cumulativeTerraNulliusAttacks/);
 assert.match(runner, /intent\.type === "attack" && intent\.targetID === null/);
-assert.match(runner, /incoming,\s*outgoing,\s*units,/);
+// Alliance telemetry (1835f8cd) inserted the allies block between outgoing
+// and units in the progress snapshot; keep pinning the field order.
+assert.match(runner, /incoming,\s*outgoing,\s*allies:/);
+assert.match(runner, /\n\s*units,/);
 assert.match(runner, /unitDetails,/);
 assert.match(runner, /externalSiloNetworks,/);
 assert.match(runner, /siloCapacity/);
