@@ -89,6 +89,29 @@ const SCENARIOS = [
     expect: "hostile silo injected and at least one nuke detonation recorded",
   },
   {
+    name: "silo-counter-battery-regime",
+    description:
+      "artificial silo-saturated regime: hostile silo network (3 L1) clustered at its city plus a retaliatory first-strike — pins that the bot nukes into the silo-dense victim (regime bed for the counter-battery floor probe)",
+    env: {
+      OFH_MATCH_SEED: "scenario-silo-counter-battery",
+      OFH_MAX_TICKS: "20000",
+      OFH_INJECT_HOSTILE_ATOM: "1",
+      OFH_INJECT_HOSTILE_ATOM_AT_TICK: "1200",
+      OFH_INJECT_HOSTILE_ATOM_GOLD: "2000000",
+      OFH_INJECT_HOSTILE_SILO_NETWORK: "1",
+      OFH_INJECT_HOSTILE_SILO_COUNT: "3",
+      OFH_LOG_NUKES: "1",
+      OFH_25MM: "1",
+    },
+    assert: (r, log) =>
+      log.includes("hostile-silo-network-injected") &&
+      r.stopReason !== "engine_stop" &&
+      r.stopReason !== "spawn_failed" &&
+      Number(r.goalRequirements?.nukedStructureGold ?? 0) >= 500_000,
+    expect:
+      "hostile silo network injected and the bot lands nuclear structure damage on the silo-saturated hostile",
+  },
+  {
     name: "sam-salvo-overwhelm",
     description:
       "SAM-covered hostile cluster vs pre-leveled own silo network — exercises the anti-SAM salvo response",

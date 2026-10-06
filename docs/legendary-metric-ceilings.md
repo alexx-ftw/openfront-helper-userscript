@@ -5196,3 +5196,11 @@ gate before landing. Byte-identical baseline-vs-arm -> INERT x2: REVERT
 and record (even silo-saturation next to a retaliated city cannot make
 the term bind — strong negative knowledge, the lever family closes for
 good). Any failed clause -> REVERT, record, stop.
+
+Bed hardening addendum (BEFORE the baseline-vs-arm pair): the first
+baseline bed passed the mechanism assert but was invalid as a regime —
+the 250M fixture gold armed the hostile into a 14-detonation spree and
+the bot died conventionally at t=2767 (won=false, ownNuked 0, nukedGold
+10M). A won=false bed cannot satisfy the wins-first landing rule, so the
+fixture gold drops to 10M (3M silo cost + headroom) and the baseline bed
+is re-run before any arm run. Arm protocol unchanged.

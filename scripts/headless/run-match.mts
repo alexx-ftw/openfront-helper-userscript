@@ -279,6 +279,8 @@ const ownSiloLevel = Number(process.env.OFH_INJECT_OWN_SILO_LEVEL ?? 3);
 // nuke candidates there are trajectory-covered and the salvo path owns the
 // response. Pairs with OFH_INJECT_HOSTILE_ATOM.
 const injectHostileSamCover = process.env.OFH_INJECT_HOSTILE_SAM_COVER === "1";
+const injectHostileSiloNetwork = process.env.OFH_INJECT_HOSTILE_SILO_NETWORK === "1";
+const hostileSiloNetworkCount = Number(process.env.OFH_INJECT_HOSTILE_SILO_COUNT ?? 3);
 const nuclearUnitTypes = new Set([
   UnitType.MissileSilo,
   UnitType.AtomBomb,
@@ -1009,6 +1011,62 @@ const injectHostileSamCoverIfReady = () => {
   );
 };
 
+let hostileSiloNetworkInjected = false;
+// Silo-saturated-regime fixture: a ring of hostile L1 silos clustered around
+// the hostile's largest city so nuke candidate stacks include silo terms that
+// can compete with city stacks. Fixture setup only — launches stay subject to
+// the engine's ordinary build/trajectory/SAM rules.
+const injectHostileSiloNetworkIfReady = () => {
+  if (hostileSiloNetworkInjected || !injectHostileSiloNetwork || !me?.isAlive()) return;
+  if (runner.game.isSpawnImmunityActive()) return;
+  const hostile = runner.game
+    .players()
+    .find(
+      (player) =>
+        player.isAlive() &&
+        player.clientID() !== clientID &&
+        !playersShareSide(me, player) &&
+        player.numTilesOwned() > 0,
+    );
+  if (!hostile) return;
+  const city = hostile
+    .units(UnitType.City)
+    .find((unit) => unit.isActive() && !unit.isUnderConstruction());
+  if (!city) return;
+  const cityTile = city.tile();
+  const owned = [...hostile.tiles()]
+    .filter((tile) => tile !== cityTile && runner.game.isLand(tile))
+    .sort(
+      (a, b) =>
+        runner.game.euclideanDistSquared(a, cityTile) -
+        runner.game.euclideanDistSquared(b, cityTile),
+    );
+  const placed: number[] = [];
+  for (const tile of owned) {
+    if (placed.length >= hostileSiloNetworkCount) break;
+    if (placed.some((p) => runner.game.euclideanDistSquared(p, tile) < 64)) continue;
+    placed.push(tile);
+  }
+  if (placed.length < hostileSiloNetworkCount) return;
+  // 3M of silo cost plus headroom — NOT more: oversized fixture gold armed the
+  // hostile into a nuke spree that killed the bed's retaliatory-war shape.
+  hostile.addGold(10_000_000n);
+  for (const tile of placed) {
+    const silo = hostile.buildUnit(UnitType.MissileSilo, tile, {});
+    runner.game.addExecution(new MissileSiloExecution(silo));
+  }
+  hostileSiloNetworkInjected = true;
+  console.warn(
+    JSON.stringify({
+      phase: "hostile-silo-network-injected",
+      tick: runner.game.ticks(),
+      city: cityTile,
+      silos: placed,
+      owner: hostile.name(),
+    }),
+  );
+};
+
 let hostileMissileInjected = false;
 let hostileMissileInjectionTick: number | null = null;
 let hostileMissileTargetCityID: number | null = null;
@@ -1168,6 +1226,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   injectHostileAtomIfReady();
   injectOwnArsenalIfReady();
   injectHostileSamCoverIfReady();
+  injectHostileSiloNetworkIfReady();
   injectRailEconomyIfReady();
   observeRailEconomyFixture();
   const decisionStartedAt = performance.now();
