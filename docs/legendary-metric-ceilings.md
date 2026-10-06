@@ -5229,3 +5229,28 @@ deterministic seed scenario-baikal-nuke-wars so the only deltas vs the
 landed baseline are the silo network itself. If the bot still dies on
 the winning seed with the fixture, that is a REAL regime finding (the
 fixture destabilizes a winning game) and lands nowhere.
+
+## Verdict: counter-battery regime FAILED to host the arm — lever family closed (2026-10-06)
+
+Seed-aligned baseline on baikal-silo-regime: the silo network fixture
+(3 L1 silos + 10M fixture gold on Kyoto) FLIPS the landed winning game
+into a bot loss — bot_dead/conquered shape at t=3861, ownNuked 2,
+nukedGold 0, and the winner is "Ballistic Cyclops Missile", which in
+the landed baseline was the bot's ALLY at the t=6661 win. Per the
+pre-declared rule this is the REAL regime finding: the fixture
+destabilizes a winning game, no won=true silo-rich bed exists (the 25mm
+meta kills the bot at ~3-4k ticks on both bed variants), and the
+counter-battery floor therefore cannot land under the wins-first rule.
+The arm was never applied on this bed, so there is nothing to revert —
+the engine stays at the landed 250k baseline throughout. The fixture
+and the two regime scenarios stay as test infrastructure: the 25mm
+silo-counter-battery-regime pins the retaliation window (nukes land on
+the saturated victim even though the meta is lethal), and
+baikal-silo-regime is repurposed as the destabilization probe (assert
+relaxed to fixture mechanism; the loss is the recorded finding). The
+nuclear targeting layer closes again, now with the balance-of-power
+fragility measured: the baikal win survives only the exact perturbation
+space it landed in — silo-focused ordering cannot be evaluated, let
+alone landed, inside it. Revisit requires either a meta where the bot
+wins WITH hostile silo density present from the start, or new external
+evidence.
