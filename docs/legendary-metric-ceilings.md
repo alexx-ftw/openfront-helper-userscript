@@ -4792,6 +4792,18 @@ artificial scenario suite even though it stayed at zero across all 480
 basket rows. Future gates can now detect MIRV arming without grepping raw
 intent streams.
 
+Scenario-suite receipt (2026-10-06): first full-suite end-to-end run after
+the baikal-nuke-wars addition — 8/8 PASS in one sitting (control-ffa,
+hostile-atom-defense, hostile-transport-invasion, rail-economy,
+max-ticks-cap, hostile-silo-readiness, sam-salvo-overwhelm,
+baikal-nuke-wars). Baikal Nuke Wars (user-nominated nuclear testbed) is the
+only scenario where the hydrogen tier fires at scale (48 launches vs 0
+everywhere else in the suite and 0 hydrogen in all 480 basket rows), making
+it the natural regression bed for any future nuclear pacing/targeting
+lever. Public-history refresh for fresh-meta evidence remains
+rate-limited (api.openfront.io 403 on every attempt this day; corpus stays
+at 15 records).
+
 ### Diplomacy lane surveyed: alliances form readily and are survival-orthogonal (2026-10-06)
 
 The harness now records allies per progress snapshot and at match end
