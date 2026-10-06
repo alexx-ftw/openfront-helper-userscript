@@ -4762,3 +4762,22 @@ the closed income family, no lever within current constraints changes
 this outcome; only a map-scale economy or diplomacy shift could, and both
 are outside the falsifiable-lever space this doc tracks. The lane tag
 stays in the harness for any future siege diagnosis.
+
+### Nuclear-layer coverage survey closed (2026-10-06)
+
+Full layer status after the MIRV check (480 recorded result rows across
+22 basket artifacts scanned; zero MIRV launches anywhere, and MIRV was
+not even in the outcome telemetry): (1) Atom bombs — live, gated by the
+candidate ladder score plus the adopted score-zero release reserve; the
+only measured win. (2) Hydrogen bombs — dispatch gate intentionally left
+raw-equality dead by the tier-normalization FAIL (hydrogen spend measured
+net-negative at this meta). (3) MIRVs — faithful port with defensive/
+runaway-denial triggers that never fired in any recorded row; global
+escalating price on top of the same economy deficit measured above;
+dormant by trigger, not by defect. (4) SAM-overwhelm salvos — live and
+scenario-covered (sam-salvo-overwhelm). The objective's nuke layer is now
+fully mapped: one live win adopted, every other arm either measured-
+negative, trigger-dormant, or economy-starved, with the shared root cause
+(income deficit vs snowballing rivals) belonging to the closed economy
+family. New work in this layer requires new external evidence, not
+re-rolling measured levers.
