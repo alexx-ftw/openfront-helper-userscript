@@ -5257,6 +5257,17 @@ measured against direct seed data, and the economy family closure
 carries quantitative income evidence on the robustness cohort, not
 just the organic cohort.
 
+Corpus class closure (2026-10-06): the two long records were the last
+candidates for Nation-AI nuclear ground truth — verified ZERO bot silo
+builds and ZERO bot nuke launchers in both (Halkidiki 19/0 human/bot
+silos, 10 human nukers 0 bot; Achiran 16/0, 5/0). Public records carry
+only human nuclear actions, permanently: no port-validation against the
+real engine's AI targeting can come from this corpus. Combined with the
+absence of bot structures and tile-less attack intents, the record
+schema's measurement ceiling is now proven on every axis the objective
+could exploit; new evidence must come from new games (fetch path
+operational) or a schema change upstream.
+
 Bed hardening addendum (BEFORE the baseline-vs-arm pair): the first
 baseline bed passed the mechanism assert but was invalid as a regime —
 the 250M fixture gold armed the hostile into a 14-detonation spree and
