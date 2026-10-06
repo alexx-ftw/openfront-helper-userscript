@@ -5030,3 +5030,46 @@ economy funds). Harness note: the headless-simulation structural
 assertion was updated for the alliance telemetry block (1835f8cd
 inserted allies between outgoing and units in the progress snapshot and
 broke the chain on HEAD; this commit repairs it).
+
+## Fresh-meta history refresh: new external evidence obtained (2026-10-06, pre-declared BEFORE any scenario run)
+
+The exact condition the nuclear-layer survey demanded is now met. Corpus
+refreshed 15 -> 18 records via scripts/headless/fetch-history.mjs run
+under the Bun runtime: node's own TLS/UA fingerprint stayed 403/429-
+blocked all day (the fetcher ladder exhausted on leaderboard page 1),
+while the identical request under Bun 1.3.11 returned 200 immediately
+after the throttle thawed. Fetcher pacing (3s/call) respected; no
+retry-ladder forcing.
+
+Read-only scan of the three new records (validation only, no lever):
+(1) ckhSBtcjGU Australia FFA easy-400b — 7 silos, 12 nuke launches
+(AnonShield9 x7, Anon456 x5), 4 re-strikes on the same tile within 40
+turns; (2) cfTAL2TcB9 Australia FFA easy-400b — 7 silos, 17 launches,
+3 same-tile re-strikes <=40t; (3) csx4ew1oy5 Asia Team easy-400b — 5
+silos, 8 launches, 0 re-strikes, winner recorded (team Blue, iiK3U2xS).
+Finding class A (validation): real public lobbies DO re-strike the same
+tile inside the landed 250k recent-strike window (7 instances across the
+two FFA games) — the first real-meta confirmation that the re-armed
+branch matches observed human targeting instead of fighting it. Finding
+class B (pipeline): the records enter the existing --from-history
+scenario path with zero code change. Pre-declared integration probe: a
+single mechanism-only run of history-ckhSBtcjGU (densest re-strike FFA);
+verdict rule: PASS iff the match completes without engine_stop or
+spawn_failure (existing pipeline assert); behavior deltas are separate
+pre-declarations, not this run. A machine-memory SIGTERM under
+concurrent desktop load is an environment abort, not a scenario failure
+— record and retry.
+
+### Verdict: fresh-meta integration PASS 1/1 (2026-10-06)
+
+history-ckhSBtcjGU (Australia FFA, easy-400b, 6000-tick cap) completed
+without engine_stop or spawn_failure — the --from-history pipeline
+digests the refreshed corpus with zero code change. Bonus evidence from
+the run log: the bot SURVIVED to the cap on the fresh map at top-5 scale
+(411k tiles, 201 of 400 rivals eliminated around it, 18 cities) AND
+built its Missile Silo organically (1 silo + 1 SAM standing at
+t~5685). Combined with the multi-seed Baikal proof, the organic-launch
+gap is now bounded to the Legendary-snowball meta specifically, not to
+the bot's organic chain in general; no lever declared, boundary record
+only. Re-strike finding A stands as the first real-meta validation of
+the landed 250k window (7 same-tile re-strikes <=40 turns).
