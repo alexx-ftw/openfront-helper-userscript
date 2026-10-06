@@ -221,7 +221,12 @@ async function fireCandidateAtDifficulty(difficulty, value, expectedValue) {
   const candidate = { tile: 10, value };
   const firing = Object.create(sandbox.__NukeBehavior.prototype);
   const sent = [];
-  firing.player = { gold: () => firingGold };
+  // probeCanBuildNuke (DIVERGENCE B1, landed 2026-10-04) probes the async
+  // buildables gate before affordability; the mock must answer it.
+  firing.player = {
+    gold: () => firingGold,
+    buildables: async () => [{ type: UNIT.AtomBomb, canBuild: true }],
+  };
   firing.partitionCandidatesBySamCoverage = () => ({ clear: [candidate] });
   firing.selectBuildableNukeCandidate = async () => candidate;
   firing.nukeHasPositiveExpectedValue = async () => expectedValue;
