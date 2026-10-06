@@ -5254,3 +5254,21 @@ space it landed in — silo-focused ordering cannot be evaluated, let
 alone landed, inside it. Revisit requires either a meta where the bot
 wins WITH hostile silo density present from the start, or new external
 evidence.
+
+## Standing receipts refresh (2026-10-06, corpus 22 records + full-chain green)
+
+Third Bun fetch of the day (no forcing, paced): corpus 20 -> 22 with two
+long nuclear-rich games — cB4MbUcG55 (Halkidiki FFA, 3003 turns: 19
+silos, 27 nukes, 18 atoms + 8 hydrogen + 1 MIRV) and dCmmdfbveN
+(Achiran FFA, 2509 turns: 16 silos, 25 nukes, 6 atoms + 19 hydrogen).
+Re-strike validation total rises to 9 same-tile instances inside the
+landed 250k window across the corpus; counter-battery share stays
+meta-dependent (Halkidiki 0/27 silo-nearest vs Australia peer games
+22/37), consistent with peer-threat doctrine rather than a universal
+rule. Organic silo UPGRADES verified in practice on the landed win: the
+baikal progress snapshots show the bot's silos at 3x L3 by t=500, so
+the maybeUpgradeHelpfulSilo lane is exercised end-to-end in the winning
+regime (levels visible in progress unitDetails). Full npm test chain
+green at HEAD in one sitting this era (exit 0, all fixtures + 11
+headless scenarios + build parity), closing the last verification gap
+left by the earlier memory-pressure SIGTERMs.
