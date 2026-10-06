@@ -68,6 +68,16 @@ console.log(`[history] ${players.length} leaderboard players scanned`);
 let downloaded = 0;
 const seen = new Set();
 const summary = [];
+// The index must stay a superset of the disk: previous runs records are
+// merged back in, otherwise every run would orphan all earlier downloads.
+const existingIndex = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(opts.out, "index.json"), "utf8"));
+  } catch {
+    return { records: [] };
+  }
+})();
+const byId = new Map(existingIndex.records.map((r) => [r.gameId, r]));
 for (const p of players) {
   if (downloaded >= opts.limit) break;
   const games = await j(`${API}/public/player/${p.public_id}/games`);
@@ -82,6 +92,7 @@ for (const p of players) {
     const file = path.join(opts.out, `${gid}.json`);
     if (fs.existsSync(file)) {
       console.log(`[history] skip ${gid} (already on disk)`);
+      if (byId.has(gid)) summary.push(byId.get(gid));
       continue;
     }
     const record = await j(`${API}/game/${gid}`);
@@ -98,7 +109,14 @@ for (const p of players) {
       players: record.info?.players?.length ?? record.info?.config?.nations ?? "?",
       file,
     });
-    console.log(`[history] saved ${gid} (${summary.at(-1).map}, ${summary.at(-1).mode}, ${record.turns.length} turns)`);
+    console.log(
+      `[history] saved ${gid} (${summary.at(-1).map}, ${summary.at(-1).mode}, ${record.turns.length} turns)`,
+    );
+  }
+}
+for (const prior of existingIndex.records) {
+  if (!summary.some((s) => s.gameId === prior.gameId) && fs.existsSync(prior.file)) {
+    summary.push(prior);
   }
 }
 

@@ -118,6 +118,7 @@ function loadHistoryScenarios(dir) {
   const index = JSON.parse(fs.readFileSync(path.join(dir, "index.json"), "utf8"));
   return index.records.map((rec) => {
     const cfg = JSON.parse(fs.readFileSync(rec.file, "utf8")).info.config;
+    const gameMode = String(cfg.gameMode).toLowerCase().includes("team") ? "team" : "ffa";
     return {
       name: `history-${rec.gameId}`,
       description: `record ${rec.gameId}: ${cfg.gameMap} ${cfg.gameMode} (${rec.players}p, ${rec.turns} turns, bots ${cfg.bots}, teams ${cfg.playerTeams})`,
@@ -125,8 +126,8 @@ function loadHistoryScenarios(dir) {
         OFH_MATCH_SEED: `history-${rec.gameId}`,
         OFH_GAME_MAP: cfg.gameMap,
         OFH_GAME_MAP_SIZE: cfg.gameMapSize,
-        OFH_GAME_MODE: cfg.gameMode.toLowerCase(),
-        ...(cfg.gameMode === "Team" ? { OFH_PLAYER_TEAMS: String(cfg.playerTeams ?? 2) } : {}),
+        OFH_GAME_MODE: gameMode,
+        ...(gameMode === "team" ? { OFH_PLAYER_TEAMS: String(cfg.playerTeams ?? 2) } : {}),
         OFH_NATIONS: cfg.nations === "disabled" ? "disabled" : "default",
         OFH_BOTS: String(cfg.bots ?? 400),
         OFH_MAX_TICKS: "6000",
