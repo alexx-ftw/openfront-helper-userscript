@@ -4735,3 +4735,30 @@ pooling (canary FAIL). Standing knowledge: the n20 collapse is conventional
 multi-front war against snowballs, not a nuclear or structure-policy
 failure; a future survival lever must be non-aggressive and gold-neutral,
 or it repeats the retaliation pattern.
+
+### Collapse anatomy, traced end to end (ffa-n20-basket-01 rerun, lane-split telemetry)
+
+The harness forced-retaliation trace now tags the calling lane
+(defense-interdict vs strategy-retaliate — both funnel through
+sendAttack(target, true), which had made the collapse trace ambiguous).
+The rerun reproduces the match (death 3954) and settles the spender:
+the winFixes bounded defense interdict (respondToIncomingAttack) emitted
+31 attacks / 1.92M troops before the dogpile and 137 attacks / 1.50M
+troops during it; the faithful strategy-ladder retaliate spent 2.2k +
+14k respectively — a rounding error. There is no suppressed-lane
+contradiction to exploit: the bot defended actively with the bounded
+interdict, ground the first three attackers down (Yankee 133k -> 101k,
+Tango 325k -> 272k, Delta 201k -> 167k in-flight within ~300 ticks
+while own troops ROSE 434k -> 477k), and then died at 3953 to the second
+wave (Yankee 672k + Charlie 409k fresh in flight) with 27.5k troops left.
+The interdict lane held while unfundable (3500-3951 bucket: 168 holds vs
+13 funded) — the reserve gate worked as designed.
+
+Verdict for the open front: the n20 collapse is a strength/economy
+deficit, not a defense-policy defect — the active defense did everything
+its measured policy allows and lost to a 2x fresh reinforcement wave in a
+20-nation lobby. With the guardrails (non-aggressive, gold-neutral) and
+the closed income family, no lever within current constraints changes
+this outcome; only a map-scale economy or diplomacy shift could, and both
+are outside the falsifiable-lever space this doc tracks. The lane tag
+stays in the harness for any future siege diagnosis.

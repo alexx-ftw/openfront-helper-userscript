@@ -1294,18 +1294,25 @@ export class BundledOpponentBot {
     const attackBehavior = this.nationBot?.attackBehavior;
     if (!attackBehavior || attackBehavior.__ofhLandDefenseTraceEnabled === true) return;
     attackBehavior.__ofhLandDefenseTraceEnabled = true;
-    let forcedAttackTrace = null;
-    const originalSendAttack = attackBehavior.sendAttack;
-    if (typeof originalSendAttack === "function") {
-      attackBehavior.sendAttack = async (...args) => {
-        const [target, force] = args;
-        if (force !== true || target?.isPlayer?.() !== true) {
-          return originalSendAttack.apply(attackBehavior, args);
-        }
-        forcedAttackTrace = {
-          attacker: target.name?.() ?? null,
-          landBorder: attackBehavior.player?.sharesBorderWith?.(target) === true,
-        };
+   let forcedAttackTrace = null;
+   const originalSendAttack = attackBehavior.sendAttack;
+   if (typeof originalSendAttack === "function") {
+     attackBehavior.sendAttack = async (...args) => {
+       const [target, force] = args;
+       if (force !== true || target?.isPlayer?.() !== true) {
+         return originalSendAttack.apply(attackBehavior, args);
+       }
+       // Distinguish the winFixes bounded defense interdict from the
+       // faithful strategy-ladder retaliate: both call sendAttack(target,
+       // true), and the collapse diagnosis needs to know which lane spent
+       // the troops.
+       const callerIsDefense =
+         attackBehavior.__ofhInRespondToIncomingAttack === true;
+       forcedAttackTrace = {
+         attacker: target.name?.() ?? null,
+         landBorder: attackBehavior.player?.sharesBorderWith?.(target) === true,
+         lane: callerIsDefense ? "defense-interdict" : "strategy-retaliate",
+       };
         const result = await originalSendAttack.apply(attackBehavior, args);
         this.structureTrace.push({
           kind: "forced-retaliation-gate",
@@ -1371,7 +1378,13 @@ export class BundledOpponentBot {
           troops: attack?.troops?.() ?? null,
           target: attack?.target?.()?.smallID?.() ?? null,
         }));
-        const result = await originalRespondToIncomingAttack.call(attackBehavior);
+        attackBehavior.__ofhInRespondToIncomingAttack = true;
+        let result;
+        try {
+          result = await originalRespondToIncomingAttack.call(attackBehavior);
+        } finally {
+          attackBehavior.__ofhInRespondToIncomingAttack = false;
+        }
         if (before.length > 0 || result !== null) {
           this.structureTrace.push({
             kind: "land-defense",
