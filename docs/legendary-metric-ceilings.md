@@ -5212,6 +5212,25 @@ seeds records an honest fragility caveat on the landed improvement's
 meta-coverage; a solid majority records robustness. Either outcome is
 ledger evidence for the next reopen decision, not a revert trigger.
 
+### Verdict: 1/6 — the landed win is seed-specific (2026-10-06, sweep complete)
+
+All five fresh seeds LOSE: rob-1 t=4011 (ownNuked 9), rob-2 t=2808
+(ownNuked 1), rob-3 t=3821 (ownNuked 3), rob-4 t=4981 (ownNuked 14),
+rob-5 t=3399 (ownNuked 1) — and nukedStructureGold = 0 on every one:
+the bot never lands a single point of nuclear structure damage outside
+the gated seed. Combined with the 4/4 organic multi-seed proof, the
+meta-coverage of this era's landed improvement is now precisely bounded:
+the dense-launch regime where the 250k fix pays (+11% nukedGold, -65%
+own losses, -19% win ticks) exists on exactly one measured seed, and
+across seeds the bot dies pre-nuke-contribution by t=2808-4981. The
+landed gate remains valid as measured (its own pre-declared rule, its
+own seed); the honest caveat is coverage, not correctness. The
+generalization lever — reach the dense-launch regime on more seeds —
+routes through the same closed economy/survival family (early pacing
+deficit vs snowballers), so this caveat chains to the standing closure:
+revisit both together only when the economy family reopens or new
+external evidence arrives.
+
 Bed hardening addendum (BEFORE the baseline-vs-arm pair): the first
 baseline bed passed the mechanism assert but was invalid as a regime —
 the 250M fixture gold armed the hostile into a 14-detonation spree and
