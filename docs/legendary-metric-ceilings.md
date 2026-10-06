@@ -5197,6 +5197,21 @@ and record (even silo-saturation next to a retaliated city cannot make
 the term bind — strong negative knowledge, the lever family closes for
 good). Any failed clause -> REVERT, record, stop.
 
+## Robustness sweep pre-declaration: baikal win-rate across seeds (2026-10-06, BEFORE any run; read-only, no lever)
+
+The landed 250k win is gated on ONE deterministic seed. This sweep
+measures whether it generalizes: five NEW seeds (baikal-rob-1..5) on the
+exact baikal-nuke-wars env (map Small, hostile atom @1200, LOG_NUKES,
+25000-tick cap, Legendary/ffa/nations-2), run via the harness's own
+run-match path with BASE_ENV replicated. Read-only: engine untouched,
+no lever, aggregate collection only (won, ticks, stopReason,
+ownStructuresNuked, nukedStructureGold, goldEarned). Verdict rule: the
+known seed's win STANDS as gated regardless of outcome; the sweep only
+qualifies generality in the ledger — a sub-.500 win-rate across new
+seeds records an honest fragility caveat on the landed improvement's
+meta-coverage; a solid majority records robustness. Either outcome is
+ledger evidence for the next reopen decision, not a revert trigger.
+
 Bed hardening addendum (BEFORE the baseline-vs-arm pair): the first
 baseline bed passed the mechanism assert but was invalid as a regime —
 the 250M fixture gold armed the hostile into a 14-detonation spree and
