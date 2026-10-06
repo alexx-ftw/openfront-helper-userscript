@@ -4864,6 +4864,41 @@ the branch is now armed in the regime that funds it and measured
 net-positive there (faster win, 65% fewer own losses, +11% destruction
 per launch), with the basket meta untouched.
 
+## Lever pre-declaration: recent-strike penalty magnitude sweep in the dense-launch regime (2026-10-06, BEFORE any arm run)
+
+The landed 250k magnitude was the port's design value, never tuned. This
+sweep asks whether a different penalty orders the dense-regime targeting
+better. Arms: 100k (more re-strike freedom) and 400k (more fresh-ground
+aversion), each measured against the LANDED 250k baseline on the same
+deterministic baikal-nuke-wars run (won=true, t=6661, ownStructuresNuked
+11, 69 launches, nukedGold 73.35M, gold/launch 1063043). The basket is
+NOT run per arm (sparse-launch regime, branch provably inert there);
+only an arm that beats 250k earns the 15-row basket no-harm gate before
+landing.
+
+Pre-declared verdict rule (wins and survival first): an arm BEATS 250k
+only if won=true AND ownStructuresNuked <= 11 AND (win ticks < 6661 OR
+gold/launch > 1063043). If both arms beat, prefer the lower
+ownStructuresNuked, then lower ticks, then higher gold/launch; an exact
+tie keeps 250k (minimal delta from the measured baseline). No arm beats ->
+record 250k as the local optimum, stop. A beating arm lands only after
+the basket gate shows no win/fullGreen/ownStructuresNuked regression, with
+the focused test constants updated to the landing magnitude.
+
+### Verdict: 250k CONFIRMED as local optimum (2026-10-06, both arms byte-identical to landed baseline)
+
+100k and 400k each produced the EXACT landed-250k outcome on the
+deterministic baikal run — won t=6661, 20 atoms + 49 hydrogen, 69
+launches, 73.35M nukedGold, ownStructuresNuked 11, 1 MIRV flown. Neither
+arm beats (identical, not better): per the pre-declared rule 250k stays.
+The penalty magnitude is a local plateau across 100k-400k in this regime —
+the tile-rank perturbations it causes never flip a chosen target there.
+Engine restored to the landed 250k, artifact byte-identical to ad2a7575.
+The landed value is now measured robust from both sides: it beats the
+dead branch (8191 -> 6661, -65% own losses) and is insensitive to
+magnitude within the plausible tuning range, so no further sweep is
+warranted without a new regime.
+
 Scenario-suite receipt (2026-10-06): first full-suite end-to-end run after
 the baikal-nuke-wars addition — 8/8 PASS in one sitting (control-ffa,
 hostile-atom-defense, hostile-transport-invasion, rail-economy,
