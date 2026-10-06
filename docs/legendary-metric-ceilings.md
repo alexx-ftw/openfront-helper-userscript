@@ -4926,6 +4926,22 @@ weakness proof (3+ seeds losing the same way) before pre-declaration. The
 scenario pins the silo-build half and stays in the suite as the organic
 regression bed.
 
+Multi-seed weakness proof COMPLETE (2026-10-06): 4/4 seeds lose before any
+nuclear launch on baikal-nuke-organic (seed1 LOST t=4291 silo-built 0
+launches ownNuked 12; s2 ELIMINATED t=3341 no-silo 0 tiles ownNuked 1; s3
+LOST t=4651 no-silo 1.2M troops 84k tiles ownNuked 3; s4 ELIMINATED
+t=3870 no-silo 0 tiles ownNuked 3). Anatomy: the deficit is EARLY PACING,
+not nuclear defense — ownNuked is low in the no-silo seeds (1-3), the
+killers are conventional snowballers (one literally named AFK Dragon), and
+organic gold income is 0.5-13M earned by death vs the 516M injected
+regime that wins. Verdict: the organic-launch gap's root cause is the
+same CLOSED economy family (early income/pacing deficit vs snowballing
+rivals) already surveyed in the basket meta — a nuclear-targeting lever
+cannot reach it, and economy levers are outside the falsifiable space by
+the user's gold-neutral guardrail. No lever pre-declared; the organic gap
+stands as a measured boundary of the current guardrails, revisit only if
+the economy family reopens.
+
 ### Diplomacy lane surveyed: alliances form readily and are survival-orthogonal (2026-10-06)
 
 The harness now records allies per progress snapshot and at match end
