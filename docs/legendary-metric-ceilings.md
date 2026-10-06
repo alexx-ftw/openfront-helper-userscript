@@ -5373,3 +5373,11 @@ is Q2, and silo-dependent launch timing (income-gated) explains the
 shape. Any future early-nuke expectation for the bot lacks real-meta
 precedent; the bot's dense-launch regime should be benchmarked against
 the Q2+ window, not Q1.
+
+Bot-side pacing check (2026-10-06, gated-seed log, 367 bot
+detonations): the bot's own launch phases are 0/3/97/0 — first launch
+t=2287 (34% of the 6661-tick win), bulk in Q3, none in Q1, none in Q4
+(the war ended at the Q3/Q4 boundary). The port therefore satisfies the
+real-meta pacing law exactly where it wins: Q2 initiation, Q3 bulk,
+zero first-quarter launches. The launch-pacing comparison between port
+and meta is now closed with matching shapes on both sides.
