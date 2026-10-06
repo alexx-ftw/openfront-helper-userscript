@@ -4626,3 +4626,23 @@ fire in headless (nukeTileScore silo pricing, ladder silo flat 1M),
 accepting the documented risk that firing-pattern changes are the family
 that converts wins into losses at this meta.
 
+
+## Scenario-level falsification: readiness-aware hostile-silo pricing (2026-10-06)
+
+The hostile-silo-readiness mechanism scenario (commit 8e6bc22c: injected
+first-strike silo left cooling, 25MM standoff, OFH_LOG_NUKES telemetry,
+deterministic — two same-config runs tile-identical) was used as the cheap
+falsification probe the ten-row basket cannot be. The candidate term
+(enemy MissileSilo candidate price halved while ticksLeftInCooldown() > 0,
+DIVERGENCE vs upstream hull-only pricing) left the bot detonated target
+tiles byte-identical to baseline (1228527, 1662797 in the canonical seed;
+the cooling fixture silo at source was not the baseline choice either).
+Not basket-gated: an invisible term cannot move rows. Standing knowledge:
+(a) in a 1v1 retaliation window the silo is not the winning candidate
+pre- or post-readiness, so readiness pricing has no client-side lever value
+at scenario frequency; (b) the LIVE per-structure scoring sites in headless
+are nukeTileScore and the anti-SAM salvo aim (blastStructureValue) only —
+the player-value retarget ladder is dead twice over (Legendary gates);
+(c) scenario-level falsification before any basket is now the standard
+route for scoring levers (probe ~4 min vs gate ~20 min).
+
