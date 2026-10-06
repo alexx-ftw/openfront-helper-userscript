@@ -20,11 +20,10 @@ const j = async (u) => {
   for (let attempt = 0; attempt < 4; attempt += 1) {
     if (attempt > 0) await sleep(30_000 * 2 ** (attempt - 1));
     const res = await fetch(u, {
-      headers: {
-        Accept: "application/json",
-        "User-Agent":
-          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
-      },
+      // Deliberately no User-Agent override: the CDN fingerprints the client,
+      // and Bun's own UA passes where a spoofed browser UA on Bun's TLS 403s
+      // (measured 2026-10-06).
+      headers: { Accept: "application/json" },
     });
     if (res.ok) {
       await sleep(PACING_MS);
