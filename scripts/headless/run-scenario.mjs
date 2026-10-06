@@ -108,6 +108,33 @@ const SCENARIOS = [
     assert: (r) => Number(r.nuclearStrategy?.atomBombsLaunched ?? 0) >= 3,
     expect: "bot launches a salvo-scale response (>= 3 atoms)",
   },
+  {
+    name: "baikal-nuke-wars",
+    description:
+      "Baikal Nuke Wars map (user-nominated best nuke-logic testbed) — silo network + hostile SAM cover exercise nuke targeting on the dedicated nuclear map",
+    env: {
+      OFH_MATCH_SEED: "scenario-baikal-nuke-wars",
+      OFH_GAME_MAP: "Baikal Nuke Wars",
+      OFH_GAME_MAP_SIZE: "Small",
+      OFH_MAX_TICKS: "25000",
+      OFH_25MM: "1",
+      OFH_INJECT_HOSTILE_ATOM: "1",
+      OFH_INJECT_HOSTILE_ATOM_AT_TICK: "1200",
+      OFH_INJECT_HOSTILE_ATOM_GOLD: "2000000",
+      OFH_INJECT_HOSTILE_SAM_COVER: "1",
+      OFH_INJECT_OWN_SILO_NETWORK: "1",
+      OFH_INJECT_OWN_SILO_LEVEL: "3",
+      OFH_LOG_NUKES: "1",
+    },
+    assert: (r, log) =>
+      r.stopReason !== "engine_stop" &&
+      r.stopReason !== "spawn_failed" &&
+      Number(r.nuclearStrategy?.atomBombsLaunched ?? 0) >= 3 &&
+      Number(r.nuclearStrategy?.hydrogenBombsLaunched ?? 0) >= 1 &&
+      /\[ofh:nuke-detonate\]/.test(log),
+    expect:
+      "nuclear layer fully live on this map: salvo-scale atoms (>=3), hydrogen fires (>=1), detonations recorded (first run: 18 atoms + 48 hydrogen, won at t=8191, hostile warhead intercepted by SAM)",
+  },
 ];
 
 function parseArgs(argv) {
