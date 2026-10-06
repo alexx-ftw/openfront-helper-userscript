@@ -117,17 +117,12 @@ UnitImpl.prototype.delete = function (
 let maxWarshipVeterancySeen = 0;
 const originalRecordKill = UnitImpl.prototype.recordKill;
 UnitImpl.prototype.recordKill = function (this: UnitImpl, targetType: UnitType) {
-  const state = (
-    this as unknown as { _warshipState?: { veterancyProgress?: number } }
-  )._warshipState;
-  const isBotHull =
-    state !== undefined && this.owner()?.clientID?.() === clientID;
+  const state = (this as unknown as { _warshipState?: { veterancyProgress?: number } })
+    ._warshipState;
+  const isBotHull = state !== undefined && this.owner()?.clientID?.() === clientID;
   originalRecordKill.call(this, targetType);
   if (isBotHull) {
-    maxWarshipVeterancySeen = Math.max(
-      maxWarshipVeterancySeen,
-      this.veterancy(),
-    );
+    maxWarshipVeterancySeen = Math.max(maxWarshipVeterancySeen, this.veterancy());
   }
   if (!isBotHull || process.env.OFH_LOG_WARSHIP_KILLS !== "1") {
     return;
@@ -146,17 +141,12 @@ UnitImpl.prototype.recordKill = function (this: UnitImpl, targetType: UnitType) 
 };
 const originalRecordTradeCapture = UnitImpl.prototype.recordTradeCapture;
 UnitImpl.prototype.recordTradeCapture = function (this: UnitImpl) {
-  const state = (
-    this as unknown as { _warshipState?: { veterancyProgress?: number } }
-  )._warshipState;
-  const isBotHull =
-    state !== undefined && this.owner()?.clientID?.() === clientID;
+  const state = (this as unknown as { _warshipState?: { veterancyProgress?: number } })
+    ._warshipState;
+  const isBotHull = state !== undefined && this.owner()?.clientID?.() === clientID;
   originalRecordTradeCapture.call(this);
   if (isBotHull) {
-    maxWarshipVeterancySeen = Math.max(
-      maxWarshipVeterancySeen,
-      this.veterancy(),
-    );
+    maxWarshipVeterancySeen = Math.max(maxWarshipVeterancySeen, this.veterancy());
     if (process.env.OFH_LOG_WARSHIP_KILLS === "1") {
       console.log(
         `[ofh:trade-capture] tick=${this.mg.ticks()} hull=${this.id()} vet=${this.veterancy()} progress=${state.veterancyProgress ?? 0}`,
@@ -270,6 +260,11 @@ const hostileTransportNotBeforeTick = Number(process.env.OFH_INJECT_HOSTILE_TRAN
 // missile-defense policy face an incoming hostile warhead deterministically.
 const injectHostileAtom = process.env.OFH_INJECT_HOSTILE_ATOM === "1";
 const hostileAtomNotBeforeTick = Number(process.env.OFH_INJECT_HOSTILE_ATOM_AT_TICK ?? 0);
+// Fixture war chest for the injected first strike. Low values (e.g. 2M) make
+// the hostile fire its one scripted shot without funding an AI arms race.
+const hostileAtomFixtureGold = BigInt(
+  Number(process.env.OFH_INJECT_HOSTILE_ATOM_GOLD ?? 100_000_000),
+);
 // Test-only economy fixture. It creates a completed Factory → City → City
 // line through the engine and emits the observed train stops; it never reaches
 // the userscript's build policy.
@@ -309,6 +304,9 @@ if (!Number.isSafeInteger(hostileAtomNotBeforeTick) || hostileAtomNotBeforeTick 
   throw new Error(
     `OFH_INJECT_HOSTILE_ATOM_AT_TICK must be a non-negative safe integer, got ${process.env.OFH_INJECT_HOSTILE_ATOM_AT_TICK}`,
   );
+}
+if (hostileAtomFixtureGold < 0n) {
+  throw new Error("OFH_INJECT_HOSTILE_ATOM_GOLD must be non-negative");
 }
 if (!Number.isSafeInteger(hostileTransportNotBeforeTick) || hostileTransportNotBeforeTick < 0) {
   throw new Error("OFH_INJECT_HOSTILE_TRANSPORT_AT_TICK must be a non-negative safe integer");
@@ -556,6 +554,13 @@ const logAttackHotspots = process.env.OFH_LOG_ATTACK_HOTSPOTS === "1";
 // Persisted traces must always retain the lightweight SAM lifecycle. Full
 // structure diagnostics remain opt-in because they are much noisier.
 const logSamLifecycle = logStructures || traceFile !== undefined;
+
+// targetedBySAM() dereferences _nukeState!, which exists only on in-flight
+// warheads; stockpiled or already-detonated atoms would crash the read.
+// trajectory() is the safe probe (optional-chained upstream).
+const inFlightTargetedBySam = (missile: UnitImpl): boolean =>
+  missile.trajectory().length > 0 ? missile.targetedBySAM() === true : false;
+
 let turnNumber = 0;
 let emittedIntents = 0;
 let hasEverBeenAlive = me?.isAlive() === true;
@@ -946,7 +951,7 @@ const injectHostileAtomIfReady = () => {
   // Nations do not receive the Human infinite-gold rule. Fund the fixture
   // attacker explicitly or NukeExecution correctly aborts at canBuild() and
   // leaves no threat for the bot's missile-defense policy to observe.
-  hostile.addGold(100_000_000n);
+  hostile.addGold(hostileAtomFixtureGold);
   hostile.buildUnit(UnitType.MissileSilo, source, {});
   runner.game.addExecution(new NukeExecution(UnitType.AtomBomb, hostile, target, source));
   hostileMissileInjected = true;
@@ -979,7 +984,7 @@ const observeHostileMissileFixture = () => {
   if (active) {
     hostileMissileSeen = true;
     hostileMissileID = active.id();
-    hostileMissileTargetedBySam ||= active.targetedBySAM();
+    hostileMissileTargetedBySam ||= inFlightTargetedBySam(active);
     return;
   }
   if (!hostileMissileSeen) return;
@@ -1357,7 +1362,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
           type: String(activeHostileMissile.type()),
           owner: activeHostileMissile.owner()?.name?.() ?? "unknown",
           targetTile: activeHostileMissile.targetTile(),
-          targetedBySAM: activeHostileMissile.targetedBySAM() === true,
+          targetedBySAM: inFlightTargetedBySam(activeHostileMissile),
           inSamCoverage,
         }),
       );
@@ -1921,34 +1926,21 @@ const finalResult = {
     process.env.OFH_ASSERT_INTENT_BUDGET === "1" &&
     (bot.getIntentBudgetSnapshot()?.rejected ?? 0) > 0,
   beachheadClearance:
-    (
-      bot.harness?.internals?.state as
-        | { beachheadClearance?: unknown }
-        | undefined
-  )?.beachheadClearance ?? undefined,
+    (bot.harness?.internals?.state as { beachheadClearance?: unknown } | undefined)
+      ?.beachheadClearance ?? undefined,
   navalEmergency:
-    (
-      bot.harness?.internals?.state as
-        | { stats?: { navalEmergency?: unknown } }
-        | undefined
-    )?.stats?.navalEmergency ?? undefined,
+    (bot.harness?.internals?.state as { stats?: { navalEmergency?: unknown } } | undefined)?.stats
+      ?.navalEmergency ?? undefined,
   constructionDump:
     process.env.OFH_CONSTRUCTION_DUMP === "1"
-      ? (
-          bot.harness?.internals?.state as
-            | { stats?: { constructionDump?: unknown } }
-            | undefined
-        )?.stats?.constructionDump ?? undefined
+      ? ((bot.harness?.internals?.state as { stats?: { constructionDump?: unknown } } | undefined)
+          ?.stats?.constructionDump ?? undefined)
       : undefined,
   capStrike: {
-    armedHighWater: Number(
-      bot.nationBot?.attackBehavior?.capStrikeArmedHighWater ?? 0,
-    ),
+    armedHighWater: Number(bot.nationBot?.attackBehavior?.capStrikeArmedHighWater ?? 0),
     attempts: Number(bot.nationBot?.attackBehavior?.capStrikeAttempts ?? 0),
     launches: Number(bot.nationBot?.attackBehavior?.capStrikeLaunches ?? 0),
-    lastLaunchTick: Number(
-      bot.nationBot?.attackBehavior?.capStrikeLastLaunchTick ?? 0,
-    ),
+    lastLaunchTick: Number(bot.nationBot?.attackBehavior?.capStrikeLastLaunchTick ?? 0),
   },
   performanceProfile: profileBot ? bot.getPerformanceProfile() : undefined,
   emittedIntents,

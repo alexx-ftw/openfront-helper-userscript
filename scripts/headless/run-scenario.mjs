@@ -71,6 +71,23 @@ const SCENARIOS = [
     assert: (r, log) => r.stopReason === "max_ticks" && r.ticks <= 2500 && log.length > 0,
     expect: "stopReason=max_ticks with ticks <= 2500",
   },
+  {
+    name: "hostile-silo-readiness",
+    description:
+      "injected hostile first-strike silo left cooling — records which tiles the bot nukes back",
+    env: {
+      OFH_MATCH_SEED: "scenario-silo-readiness",
+      OFH_MAX_TICKS: "25000",
+      OFH_INJECT_HOSTILE_ATOM: "1",
+      OFH_INJECT_HOSTILE_ATOM_AT_TICK: "1200",
+      OFH_INJECT_HOSTILE_ATOM_GOLD: "2000000",
+      OFH_LOG_NUKES: "1",
+      OFH_25MM: "1",
+    },
+    assert: (r, log) =>
+      log.includes("hostile-missile-injected") && /\[ofh:nuke-detonate\]/.test(log),
+    expect: "hostile silo injected and at least one nuke detonation recorded",
+  },
 ];
 
 function parseArgs(argv) {
