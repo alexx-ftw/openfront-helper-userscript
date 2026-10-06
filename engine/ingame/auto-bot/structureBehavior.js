@@ -157,14 +157,8 @@
   // profiles never field it before their one-site lanes resolve.
   const hostileSamSiteScaleLevelSum = 3;
 
+  /** OpenFront's SAM upgrade ladder currently tops out at level five. */
   const HYDROGEN_SAM_MAX_UPGRADE_LEVEL = 5;
-
-  /**
-   * Demand-channel TTL (docs/legendary-metric-ceilings.md, 2026-10-06): an
-   * upgrade request older than this no longer reflects current targeting.
-   * 4x the ~300-tick silo build; shorter than measured inter-salvo spacing.
-   */
-  const NUKE_DEMAND_TTL_TICKS = 1200;
   // Intermediate interceptor readiness for the port-funded adaptive tier:
   // level two SAM range already covers most atom trajectories at a fraction
   // of the level-five climb, so the first earmarked upgrade lands inside the
@@ -11106,11 +11100,6 @@
       }
       const request = state.nukeWantSlots;
       if (request?.pendingLaunches === true) return null;
-      const requestAge = this.game.ticks() - Number(request?.at ?? 0);
-      if (!Number.isFinite(requestAge) || requestAge > NUKE_DEMAND_TTL_TICKS) {
-        state.nukeWantSlots = null;
-        return null;
-      }
       const requiredCapacity = Number(request?.need);
       if (!Number.isFinite(requiredCapacity) || requiredCapacity <= 0) return null;
       {
