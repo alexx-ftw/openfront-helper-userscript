@@ -2330,6 +2330,16 @@
     "initializerPreview": "5"
   },
   {
+    "id": "engine/ingame/auto-bot/structureBehavior.js:NUKE_DEMAND_TTL_TICKS#1",
+    "file": "engine/ingame/auto-bot/structureBehavior.js",
+    "name": "NUKE_DEMAND_TTL_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "15197cf7214b58e67cae565e573ffd9aa44bcb81f8ee5d7185dfe8da0a16ef43",
+    "initializerLength": 4,
+    "initializerPreview": "1200"
+  },
+  {
     "id": "engine/ingame/auto-bot/structureBehavior.js:LEGENDARY_PORT_FUNDED_SAM_READY_LEVEL#1",
     "file": "engine/ingame/auto-bot/structureBehavior.js",
     "name": "LEGENDARY_PORT_FUNDED_SAM_READY_LEVEL",

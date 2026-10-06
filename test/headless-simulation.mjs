@@ -946,6 +946,11 @@ assert.doesNotMatch(
   /\bcatch\b|\.catch\(/,
   "headless simulation code must let failures propagate",
 );
+assert.match(
+  fs.readFileSync(path.join(root, "engine/ingame/auto-bot/structureBehavior.js"), "utf8"),
+  /NUKE_DEMAND_TTL_TICKS/,
+  "nuke silo demand requests must expire (nukeWantSlots TTL)",
+);
 assert.doesNotMatch(
   fs.readFileSync(path.join(root, "engine/ingame/companion/actions.js"), "utf8"),
   /\bcatch\b|\.catch\s*\(/,
