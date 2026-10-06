@@ -4781,3 +4781,23 @@ negative, trigger-dormant, or economy-starved, with the shared root cause
 (income deficit vs snowballing rivals) belonging to the closed economy
 family. New work in this layer requires new external evidence, not
 re-rolling measured levers.
+
+### Diplomacy lane surveyed: alliances form readily and are survival-orthogonal (2026-10-06)
+
+The harness now records allies per progress snapshot and at match end
+(run-match.mts: progress.allies / finalAllies — the game Player surface
+exposes allies()). Paired n20 traces with the same adopted engine: the
+death row (basket-01, 3965) held SIX alliances by t=1000 (India, Romeo,
+Golf, Victor, Foxtrot, Papa) and still died at 3965 with five intact —
+the dogpile attackers (Yankee/Tango/Delta/Charlie) were all non-allied,
+and no ally intervened or deterred. The survivor row (basket-04, 60911,
+18 atoms, lost on November's 301k-tile win) churned alliances constantly
+(2-6 partners, rotating every few thousand ticks, one Whiskey left at
+the end). Measured conclusion: alliance formation is not a bottleneck
+(requests convert at scale), alliances neither deter non-allied
+aggression nor rescue the defender, and alliance count is orthogonal to
+survival. The diplomacy surface — like the nuclear, placement, and
+economy surfaces before it — offers no falsifiable survival lever under
+the non-aggressive/gold-neutral guardrails. All four candidate surfaces
+for the n20/n2 losses (nuclear, structure placement, economy, diplomacy)
+are now surveyed closed.

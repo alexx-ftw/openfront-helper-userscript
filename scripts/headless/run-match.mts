@@ -1824,6 +1824,9 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
         outgoingAttackTroops,
         incoming,
         outgoing,
+        allies: (player?.allies?.() ?? []).map((ally) =>
+          typeof ally.name === "function" ? ally.name() : String(ally),
+        ),
         units,
         unitDetails,
         externalSiloNetworks,
@@ -2013,6 +2016,9 @@ const finalResult = {
   winner: typeof winner === "string" ? winner : (winner?.name() ?? null),
   myTeam: finalMe?.team() ?? null,
   alive: finalMe?.isAlive() ?? false,
+  finalAllies: (finalMe?.allies?.() ?? []).map((ally) =>
+    typeof ally.name === "function" ? ally.name() : String(ally),
+  ),
   finalBotState,
   ticks: runner.game.ticks(),
   stopReason,
