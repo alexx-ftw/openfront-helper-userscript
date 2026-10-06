@@ -4567,3 +4567,38 @@ geometry veto is real but firing more atoms at this meta converts wins into
 losses — future nuclear levers must gate on measured per-shot economics,
 and the non-nuclear loss mechanisms (ffa-n20 early deaths, ffa-n2 silo
 starvation) remain the open front.
+
+## Predeclare: nukeWantSlots demand-channel TTL (2026-10-06)
+
+Lever (silo-building ↔ nuke-targeting cohesion, authorized scope):
+`state.nukeWantSlots` never expires. `validNukeSiloUpgradeRequest`
+(structureBehavior) re-validates only `pendingLaunches` and unit enablement,
+so an upgrade request posted for an abandoned salvo can fund a MissileSilo
+upgrade ticks or thousands of ticks later, after targeting has moved on.
+Change: TTL of 1200 ticks (4x the ~300-tick silo build measured in the
+arsenal-rebuild verdict; shorter than the 6.4k-9.8k inter-salvo spacing in
+the salvo-timeline evidence) in `validNukeSiloUpgradeRequest` — expired
+requests clear to null; every new salvo plan re-posts fresh demand
+(`rememberFailedSamTarget` overwrites unconditionally; `fireSamSalvo` writes
+when null). No firing-decision site is touched — this only gates when saved
+gold may convert into a demand-sourced silo upgrade.
+
+Not in any closed family: the closed silo-slot levers (economic-yield v2/v3/v4,
+arsenal-loss rebuild valve, parity-lane arm) all moved GOLD RESERVES or built
+new silos; this lever only expires an existing upgrade-demand signal. It
+reduces spend; the measured meta punishes extra nuclear-layer spending.
+
+Early gate (predeclared): 10 rows = team-none + team-temp, basket-01..05,
+OFH_SIM_PARALLELISM=2, candidate vs parent-commit baseline, same machine.
+LAND rule — all must hold:
+(a) no set loses wins or fullGreens;
+(b) aggregate ownStructuresNuked non-increasing;
+(c) aggregate nukedStructureGold non-decreasing.
+INERT rule: if all 10 rows are metric-identical to baseline (modulo
+runtimeMs), revert as no-op — same disposition as the 2026-09-29/10-01
+inert reverts.
+Mechanism confirmation (only if metrics diverge): replay one divergent row
+on both trees with OFH_LOG_STRUCTURES=1 and count MissileSilo upgrade events
+attributable to demand (baseline performs them, candidate defers/cancels).
+No engine telemetry fields are added — the gate tree stays metric-comparable.
+
