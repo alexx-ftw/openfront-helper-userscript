@@ -5231,6 +5231,20 @@ deficit vs snowballers), so this caveat chains to the standing closure:
 revisit both together only when the economy family reopens or new
 external evidence arrives.
 
+Death-anatomy confirmation (2026-10-06, sweep logs, direct evidence for
+the chaining claim): all five fresh-seed losses show Missile Silo = 0
+AND SAM Launcher = 0 at death — the bot never built its first silo or
+its first SAM on any fresh seed (gated seed: 5 silos + 10 SAMs standing
+at its win), while peak expansion was healthy (16k-246k tiles before
+the grind-down). The injected hostile first strike (t=1200) therefore
+lands unintercepted in all five, and death is conventional afterward
+by nation snowballers (World Famous Train, The Lemur Dimension, Premium
+Sink Subscription, two no-single-winner full eliminations). This is the
+documented silo-starvation gold-priority race measured directly on the
+robustness seeds: the inferred route through the closed economy family
+is now data, not inference, and no nuclear-adjacent reopen signal
+exists in the deaths — the bot had no nuclear capability to lose with.
+
 Bed hardening addendum (BEFORE the baseline-vs-arm pair): the first
 baseline bed passed the mechanism assert but was invalid as a regime —
 the 250M fixture gold armed the hostile into a 14-detonation spree and
