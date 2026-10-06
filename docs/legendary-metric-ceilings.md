@@ -5245,6 +5245,18 @@ robustness seeds: the inferred route through the closed economy family
 is now data, not inference, and no nuclear-adjacent reopen signal
 exists in the deaths — the bot had no nuclear capability to lose with.
 
+Income contrast closes the last ordering seam (2026-10-06, sweep logs):
+fresh-seed total goldEarned is 1.1M/3.0M/1.3M/6.6M/21.7M against the
+gated seed's 536M — a 25x-to-500x income deficit — and peak held gold
+never clears 1.63M (rob-1) with most seeds peaking under the 1M silo
+price. A build-ladder reorder (e.g. silo-before-City) has nothing to
+reorder: the constraint is the income trickle itself, not which
+structure eats it, and post-spawn City builds were zero across all five
+deaths. With that, every ordering seam inside the nuclear scope is
+measured against direct seed data, and the economy family closure
+carries quantitative income evidence on the robustness cohort, not
+just the organic cohort.
+
 Bed hardening addendum (BEFORE the baseline-vs-arm pair): the first
 baseline bed passed the mechanism assert but was invalid as a regime —
 the 250M fixture gold armed the hostile into a 14-detonation spree and
