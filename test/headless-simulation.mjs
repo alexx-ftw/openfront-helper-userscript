@@ -612,6 +612,11 @@ assert.match(runner, /nuclearStrategy: nuclearStrategyTelemetry/);
 assert.match(runner, /const nuclearStrategySnapshot = bot\.getNuclearStrategySnapshot\(\)/);
 assert.match(adapter, /getNuclearStrategySnapshot\(\)/);
 assert.match(
+  adapter,
+  /observedGlobalMirvLaunches/,
+  "nuclear telemetry distinguishes MIRV launches (seen in flight) from build intents",
+);
+assert.match(
   runner,
   /disabledUnits:[\s\S]*nuclearUnitTypes\.has/,
   "a targeted headless match can enable the complete Silo/SAM/nuke path without changing ordinary defaults",

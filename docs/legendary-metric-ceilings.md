@@ -4792,6 +4792,14 @@ artificial scenario suite even though it stayed at zero across all 480
 basket rows. Future gates can now detect MIRV arming without grepping raw
 intent streams.
 
+Launch-vs-build closed (2026-10-06): the adapter snapshot now also surfaces
+`observedGlobalMirvLaunches` (structureBehavior's in-flight MIRV-id set, the
+engine numMirvsLaunched proxy). First live read on baikal-nuke-wars:
+`mirvBuildIntents: 1` AND `observedGlobalMirvLaunches: 1` — the built MIRV
+actually launched. Baikal Nuke Wars is therefore the first and only
+environment in this repo's telemetry with a recorded MIRV launch; the
+basket meta (0 intents, 0 launches in 480 rows) never arms it.
+
 Scenario-suite receipt (2026-10-06): first full-suite end-to-end run after
 the baikal-nuke-wars addition — 8/8 PASS in one sitting (control-ffa,
 hostile-atom-defense, hostile-transport-invasion, rail-economy,

@@ -1496,11 +1496,19 @@ export class BundledOpponentBot {
   getNuclearStrategySnapshot() {
     const behavior = this.nationBot?.nukeBehavior;
     if (!behavior) return null;
+    const structureBehavior = this.nationBot?.structureBehavior;
+    const observedGlobalMirvLaunches =
+      typeof structureBehavior?.observedGlobalMirvLaunchCount === "function"
+        ? Number(structureBehavior.observedGlobalMirvLaunchCount())
+        : null;
     return {
       isHydroNation: behavior.isHydroNation === true,
       atomBombsLaunched: Number(behavior.atomBombsLaunched || 0),
       hydrogenBombsLaunched: Number(behavior.hydrogenBombsLaunched || 0),
       pendingLaunches: Number(behavior._pendingNukeLaunches?.length || 0),
+      // Market-wide MIRV launches observed in flight (engine numMirvsLaunched
+      // proxy) — closes the build-intent-vs-actual-launch telemetry gap.
+      observedGlobalMirvLaunches,
     };
   }
 
