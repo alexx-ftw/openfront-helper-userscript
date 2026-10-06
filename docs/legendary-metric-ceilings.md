@@ -5362,3 +5362,14 @@ wild MIRV) and cQapPaLtNM (1011 turns, 2 silos, 5 hydrogen). The
 human-only nuclear-actions pattern holds; heavy fetch backoffs
 re-engaged after the day's repeated pulls, so future harvests should
 space out by hours, not minutes.
+
+Launch pacing law (2026-10-06, six dense records, 182 launches):
+ZERO launches in the first quarter of the game — phase distribution by
+record (Q1/Q2/Q3/Q4): France 0/12/43/45, Halkidiki 0/7/41/52, Achiran
+0/0/44/56, World 0/0/21/79, Australia short-peer pair 0/33/33/33 and
+0/59/24/18. Nukes are a mid/late-game weapon in the real meta even
+where the game is nuclear-rich; the earliest observed nuclear activity
+is Q2, and silo-dependent launch timing (income-gated) explains the
+shape. Any future early-nuke expectation for the bot lacks real-meta
+precedent; the bot's dense-launch regime should be benchmarked against
+the Q2+ window, not Q1.
