@@ -5268,6 +5268,18 @@ schema's measurement ceiling is now proven on every axis the objective
 could exploit; new evidence must come from new games (fetch path
 operational) or a schema change upstream.
 
+France meta nuance (2026-10-06, corpus 22 -> 25 with the fetch): the
+densest record yet — cczWy12CuX, France FFA, 4456 turns, 32 human
+silos, 91 launches (63 atoms + 27 hydrogen + 1 MIRV), zero bot nuclear
+actions again — REFINES the counter-battery doctrine: silo-nearest
+collapses to 4/91 in the long meta while Defense Post (16), Factory
+(10) and Port (3) dominate the in-outer attribution (33/91 overall vs
+the short peer games' 65-76%). Silo-first targeting is an artifact of
+short peer-threat games; marathons shift real targeting to economy and
+defense-line structures. This independently strengthens the silo-floor
+INERT verdict (long-meta reality does not silo-first either) and adds 3
+re-strike instances (corpus total 12) inside the landed window.
+
 Bed hardening addendum (BEFORE the baseline-vs-arm pair): the first
 baseline bed passed the mechanism assert but was invalid as a regime —
 the 250M fixture gold armed the hostile into a 14-detonation spree and
