@@ -4698,3 +4698,40 @@ an invisible term cannot move rows. Standing knowledge: the salvo
 scenario is now the standard mechanism probe for any future aim-scoring
 lever, and progress-snapshot activeMissiles is useless for missile
 timing analysis (use sam-plan/sam-salvo traces instead).
+
+## Diagnostic: the open front decomposed — n2 silo starvation is a gold-priority race, n20 collapse is conventional (2026-10-06, no candidate)
+
+The tier-gate verdict's "open front" (ffa-n20 early deaths, ffa-n2 silo
+starvation) decomposed cleanly on existing artifacts, with no candidate run.
+
+n2 silo starvation (tier-trace ffa-n2-basket-01, tier-gate2 build; adopted
+build shows the same outcome signature — no silo, 0 atoms): the planner
+offers the first Missile Silo in 118/118 traced decisions from t=349 to
+t=13360, always action=build at strategic rank 1, behind only City/Port/
+occasional Factory/SAM. The choke is not the ocean-port gate (the silo
+reaches the ordinary ladder every decision) and not a single veto — it is a
+gold-priority race. Raw gold crawls 0.1M (t=1000) to 0.7M (t=12500), crosses
+1.3M at t=13000, and by t=13500 a baseline-SAM plus City have consumed it
+(the SAM lane is live on hostile-silo threat; the rival's first strike flies
+t=3377). Same shape in basket-05 (the one row that eventually built, t=3215
+in the adopted run). Design consequence: at current n2 income the first
+silo is structurally unreachable before the hostile-silo trigger, and both
+ways around it are measured-closed (delaying the SAM contradicts the
+ofh-n-b1 chest measurement; faster income is the trade/Factory family).
+Silo starvation is an economy symptom, not a nuclear-layer lever — future
+nuclear levers should stop routing through it.
+
+n20 early deaths (adopted reserve-100k full-gate results, read-only): all
+four dead rows show fast expansion (peak 13687/45049/15624 tiles) followed
+by annihilation to ~1% of peak within 1-1.5k ticks against hyper-snowballing
+leaders (ffa-n20-02's leader holds 172953 tiles at t=6511; the dead bot's
+peaks are 3-12x smaller than the top four at death). Openers are normal
+(City, Defense Posts, Port, SAM, Warships); alliance intents are abundant
+(54-547 per row, accept lane live per allianceBehavior). Every measured
+lever in this space is negative: survival bypass (unreachable identity),
+overwhelming-invasion interdict (ownNuked 199 -> 266, FAIL), cap-strike
+arming (early strikes fed the dogpile, 27188 -> 10416, FAIL), Post frontier
+pooling (canary FAIL). Standing knowledge: the n20 collapse is conventional
+multi-front war against snowballs, not a nuclear or structure-policy
+failure; a future survival lever must be non-aggressive and gold-neutral,
+or it repeats the retaliation pattern.
