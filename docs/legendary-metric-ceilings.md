@@ -5204,3 +5204,18 @@ the bot died conventionally at t=2767 (won=false, ownNuked 0, nukedGold
 10M). A won=false bed cannot satisfy the wins-first landing rule, so the
 fixture gold drops to 10M (3M silo cost + headroom) and the baseline bed
 is re-run before any arm run. Arm protocol unchanged.
+
+Bed addendum 2 (BEFORE the arm pair; measured, not guessed): the 25mm
+meta kills the bot regardless of fixture gold — hardened bed still ends
+bot_dead at t=3900 (ownNuked 0, nukedGold 2M), and the EXISTING suite
+scenario hostile-silo-readiness is also a death bed on this exact shape
+(fresh check: won=false, t=3921, ownNuked 0, nukedGold 0 — its assert
+pins the readiness mechanism, not survival). A won=false meta cannot
+host a wins-first landing, so the regime bed moves to the map the bot
+provably wins: baikal-nuke-wars env + the silo network fixture, new
+scenario baikal-silo-regime (deterministic seed, mechanism assert
+injection + no engine/spawn failure + nukedStructureGold >= 500k).
+Baseline is re-measured on this bed before the arm run; the 25mm
+silo-counter-battery-regime scenario STAYS in the suite as the
+retaliation-window mechanism bed (it does prove nukes land on the
+saturated victim: 10M and 2M structure gold into a silo-rich hostile).

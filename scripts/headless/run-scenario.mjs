@@ -112,6 +112,29 @@ const SCENARIOS = [
       "hostile silo network injected and the bot lands nuclear structure damage on the silo-saturated hostile",
   },
   {
+    name: "baikal-silo-regime",
+    description:
+      "won-true regime bed: baikal-nuke-wars env plus a hostile silo network (3 L1 clustered at the hostile's city) — measures whether the counter-battery silo term can bind where the bot already wins",
+    env: {
+      OFH_MATCH_SEED: "scenario-baikal-silo-regime",
+      OFH_GAME_MAP: "Baikal Nuke Wars",
+      OFH_GAME_MAP_SIZE: "Small",
+      OFH_MAX_TICKS: "25000",
+      OFH_INJECT_HOSTILE_ATOM: "1",
+      OFH_INJECT_HOSTILE_ATOM_AT_TICK: "1200",
+      OFH_LOG_NUKES: "1",
+      OFH_INJECT_HOSTILE_SILO_NETWORK: "1",
+      OFH_INJECT_HOSTILE_SILO_COUNT: "3",
+    },
+    assert: (r, log) =>
+      log.includes("hostile-silo-network-injected") &&
+      r.stopReason !== "engine_stop" &&
+      r.stopReason !== "spawn_failed" &&
+      Number(r.goalRequirements?.nukedStructureGold ?? 0) >= 500_000,
+    expect:
+      "silo network injected on the winning baikal meta and the bot still lands heavy nuclear structure damage",
+  },
+  {
     name: "sam-salvo-overwhelm",
     description:
       "SAM-covered hostile cluster vs pre-leveled own silo network — exercises the anti-SAM salvo response",
