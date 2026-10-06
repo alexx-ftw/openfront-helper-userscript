@@ -5137,3 +5137,23 @@ valid evidence, but an ordering lever needs a regime where the silo
 term binds (e.g. silo-saturated lobbies where candidate stacks are
 comparable) before it can earn landing; revisit only with such a regime
 or new meta evidence.
+
+## Nuke/ground-war coordination: unmeasurable from the public corpus (2026-10-06, read-only)
+
+The objective's cohesion/cooperation dimension measured against the
+fresh records: attack intents carry targetID (player id), not a tile,
+and bot structures are absent from the record entirely (build_unit
+intents exist only for the human clients: 2/3 players own all 20 known
+structures). Consequences: (1) a nuke-vs-own-ground-push spatial
+coupling cannot be reconstructed for anyone; (2) human-vs-human ground
+wars are ABSENT — attack targetIDs reference only bot ids (0 of 291-293
+non-null targets are human clientIDs, all three records) while the
+nukes land on PEER human silos. So the observed human doctrine is:
+ground war against bots, nuclear war against the peer who can nuke you
+back — counter-battery is peer-threat-driven, reinforcing the silo-first
+finding without opening a lever (the bot already retaliates against
+incoming attacks as ladder priority 1 and multiplies MIRV-capable silo
+owners x3; the any-silo floor variant just measured INERT). The
+coordination question stays closed against this corpus; it could only
+reopen with a record schema that includes bot structures or attack
+target tiles.
