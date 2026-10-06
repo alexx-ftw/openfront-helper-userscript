@@ -5073,3 +5073,7 @@ gap is now bounded to the Legendary-snowball meta specifically, not to
 the bot's organic chain in general; no lever declared, boundary record
 only. Re-strike finding A stands as the first real-meta validation of
 the landed 250k window (7 same-tile re-strikes <=40 turns).
+
+Follow-up probe (same declared class, mechanism-only): history-csx4ew1oy5
+(Asia Team, the structurally distinct fresh record) also PASSes —
+fresh-meta integration now covers both mode classes, 2/2.
