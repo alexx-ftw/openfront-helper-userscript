@@ -5120,3 +5120,20 @@ ownStructuresNuked regression. Byte-identical baikal outcome -> INERT:
 REVERT and record (a silo floor that cannot reorder the dense-silo
 testbed does not earn its complexity). Any failed clause -> REVERT,
 record, stop.
+
+### Verdict: INERT — REVERTED per pre-declared rule (2026-10-06)
+
+PRIMARY gate (deterministic baikal-nuke-wars, focused tests green
+first): EXACTLY the landed-250k baseline outcome — won=true t=6661,
+ownStructuresNuked 11, nukedStructureGold 73.35M. The x2 silo floor did
+not reorder a single shot on the dense-silo testbed (the basket no-harm
+gate is moot per protocol). Consistent with the magnitude-sweep
+plateau: the candidate tiles baikal actually funds already contain
+city stacks or outrangeable-SAM hydrogen bonuses that dominate the
++50k L1-silo term, so the argmax never moves. Engine term reverted,
+both pins restored, floor test removed, artifact rebuilt byte-identical.
+Standing knowledge: the real-meta silo-counter-battery finding remains
+valid evidence, but an ordering lever needs a regime where the silo
+term binds (e.g. silo-saturated lobbies where candidate stacks are
+comparable) before it can earn landing; revisit only with such a regime
+or new meta evidence.
