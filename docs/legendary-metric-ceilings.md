@@ -4911,6 +4911,21 @@ lever. Public-history refresh for fresh-meta evidence remains
 rate-limited (api.openfront.io 403 on every attempt this day; corpus stays
 at 15 records).
 
+Organic-chain coverage (2026-10-06): new scenario baikal-nuke-organic —
+same nuclear map with NO injected silos and NO gold boosts, organic gold
+pacing. Measured first run: the bot DOES organically build a Missile Silo
+on the nuclear map (organic silo-building verified, now pinned by the
+suite), but the full organic chain stops there at parity gold — it died at
+t=4291 (hostile win) with 0 launches, 12 own structures nuked, 6 SAMs
+built, and a Hydrogen-nation roll (isHydroNation=true; atoms were still
+allowed through the legendaryAtomFallback). This is a MEASURED open gap,
+not a gate bug: organic nuclear output on the nuclear map requires either
+survival to the first launch (the injected-silo regime proves the chain
+works once armed) or a future lever, which would need a multi-seed
+weakness proof (3+ seeds losing the same way) before pre-declaration. The
+scenario pins the silo-build half and stays in the suite as the organic
+regression bed.
+
 ### Diplomacy lane surveyed: alliances form readily and are survival-orthogonal (2026-10-06)
 
 The harness now records allies per progress snapshot and at match end

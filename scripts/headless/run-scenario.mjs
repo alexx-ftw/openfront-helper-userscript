@@ -135,6 +135,27 @@ const SCENARIOS = [
     expect:
       "nuclear layer fully live on this map: salvo-scale atoms (>=3), hydrogen fires (>=1), detonations recorded (first run: 18 atoms + 48 hydrogen, won at t=8191, hostile warhead intercepted by SAM)",
   },
+  {
+    name: "baikal-nuke-organic",
+    description:
+      "Baikal Nuke Wars WITHOUT injected silos or gold boosts — pins the organic silo build on the nuclear map (measured open gap: at parity gold the bot built its silo but died t=4291 before any launch, 12 own structures nuked — docs/legendary-metric-ceilings.md)",
+    env: {
+      OFH_MATCH_SEED: "scenario-baikal-organic",
+      OFH_GAME_MAP: "Baikal Nuke Wars",
+      OFH_GAME_MAP_SIZE: "Small",
+      OFH_MAX_TICKS: "25000",
+      OFH_INJECT_HOSTILE_ATOM: "1",
+      OFH_INJECT_HOSTILE_ATOM_AT_TICK: "1200",
+      OFH_LOG_NUKES: "1",
+    },
+    assert: (r, log) =>
+      r.stopReason !== "engine_stop" &&
+      r.stopReason !== "spawn_failed" &&
+      (/"unit":"Missile Silo","action":"build"/.test(log) ||
+        Number(r.nuclearStrategy?.atomBombsLaunched ?? 0) >= 1),
+    expect:
+      "the bot invests in the organic nuclear chain on the nuclear map (silo built, or better: a launch)",
+  },
 ];
 
 function parseArgs(argv) {
