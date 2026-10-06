@@ -2009,6 +2009,19 @@ function goalRequirementsSnapshot() {
 const invasionBeachholdsAllRecaptured = () =>
   Array.from(invasionBeachheads.values()).every((record) => record.recapturedTick !== null);
 
+// MIRV launches are build intents emitted by structureBehavior; the adapter's
+// nuclear snapshot only counts atom/hydrogen (nukeBehavior counters), so the
+// harness surfaces the MIRV intent count here — the survey closure recorded
+// MIRV as invisible to outcome telemetry (docs/legendary-metric-ceilings.md).
+const nuclearStrategySnapshot = bot.getNuclearStrategySnapshot();
+const nuclearStrategyTelemetry =
+  nuclearStrategySnapshot === null
+    ? null
+    : {
+        ...nuclearStrategySnapshot,
+        mirvBuildIntents: cumulativeBuildUnitTypes.get("MIRV") ?? 0,
+      };
+
 const finalResult = {
   phase: "result",
   seed,
@@ -2024,7 +2037,7 @@ const finalResult = {
   stopReason,
   goalRequirements: goalRequirementsSnapshot(),
   spawnLifecycle: bot.getSpawnLifecycleSnapshot(),
-  nuclearStrategy: bot.getNuclearStrategySnapshot(),
+  nuclearStrategy: nuclearStrategyTelemetry,
   intentBudget: bot.getIntentBudgetSnapshot() ?? undefined,
   intentBudgetViolated:
     process.env.OFH_ASSERT_INTENT_BUDGET === "1" &&

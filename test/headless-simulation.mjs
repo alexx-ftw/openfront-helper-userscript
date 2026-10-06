@@ -606,7 +606,10 @@ assert.match(
 );
 assert.match(runner, /OFH_NUKES === "1"/);
 assert.match(adapter, /OFH_FORCE_HYDRO_NATION === "1"/);
-assert.match(runner, /nuclearStrategy: bot\.getNuclearStrategySnapshot\(\)/);
+// MIRV telemetry: the runner composes the adapter snapshot with the
+// harness-side mirvBuildIntents count before emitting it.
+assert.match(runner, /nuclearStrategy: nuclearStrategyTelemetry/);
+assert.match(runner, /const nuclearStrategySnapshot = bot\.getNuclearStrategySnapshot\(\)/);
 assert.match(adapter, /getNuclearStrategySnapshot\(\)/);
 assert.match(
   runner,
@@ -798,6 +801,7 @@ assert.match(runner, /externalSiloNetworks,/);
 assert.match(runner, /siloCapacity/);
 assert.match(runner, /siloLevels/);
 assert.match(runner, /PREEMPTIVE_SAM_SILO_GOLD/);
+assert.match(runner, /mirvBuildIntents/);
 assert.match(runner, /incomingAttackPressure/);
 assert.match(runner, /outgoingAttackTroops/);
 assert.match(runner, /activeMissiles,/);

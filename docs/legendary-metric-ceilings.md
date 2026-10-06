@@ -4782,6 +4782,16 @@ negative, trigger-dormant, or economy-starved, with the shared root cause
 family. New work in this layer requires new external evidence, not
 re-rolling measured levers.
 
+Telemetry follow-up (2026-10-06): the harness now surfaces
+`nuclearStrategy.mirvBuildIntents` (build intents for UNIT.MIRV, which are
+emitted by structureBehavior and were invisible to the adapter's
+atom/hydrogen counters). First live read closed the "not even in outcome
+telemetry" gap with a surprise: sam-salvo-overwhelm emitted 1 MIRV build
+intent (won=true, 4 atoms), so the MIRV arming path is reachable in the
+artificial scenario suite even though it stayed at zero across all 480
+basket rows. Future gates can now detect MIRV arming without grepping raw
+intent streams.
+
 ### Diplomacy lane surveyed: alliances form readily and are survival-orthogonal (2026-10-06)
 
 The harness now records allies per progress snapshot and at match end
