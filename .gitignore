@@ -6,6 +6,7 @@ node_modules/
 .superpowers/
 docs/superpowers/
 .playwright-mcp/
+.playwright-cli/
 
 # the built userscript (openfront-helper.user.js) IS committed
 eslint-ratchet-temp.json
