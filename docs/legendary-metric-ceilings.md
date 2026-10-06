@@ -4602,3 +4602,27 @@ on both trees with OFH_LOG_STRUCTURES=1 and count MissileSilo upgrade events
 attributable to demand (baseline performs them, candidate defers/cancels).
 No engine telemetry fields are added — the gate tree stays metric-comparable.
 
+
+### Verdict: REVERTED (2026-10-06, ten-row early gate; inert — 10/10 rows metric-identical)
+
+The demand-channel TTL gate (predeclared above, commit cdc0cb16; feature
+f0564e32) ran team-none + team-temp basket-01..05 at parallelism 2 against
+the parent-commit baseline. Every row matched on all metrics: team-none
+wins 1->1, ownNuked 7->7, nukedGold 7.6M->7.6M; team-temp wins 2->2,
+ownNuked 5->5, nukedGold 0.5M->0.5M; all ten rows identical per row
+(won/fullGreen/ownNuked/nukedGold/ticks). Reverted as a78fd7c8 per the
+predeclared inert rule.
+
+Standing knowledge: the stale-demand failure mode does not occur at gate
+frequency in this meta — nukeWantSlots self-clears through the existing
+paths (pendingLaunches flip on salvo fire, the no-SAM clear in
+maybeDestroyEnemySam, and the satisfied-capacity clear in
+maybeUpgradeSiloForNukeDemand) before stale demand can fund an upgrade.
+The two-level evidence chain behind the lever (explorer maps of
+structureBehavior 11059-11160 and nukeBehavior 741-800/2181-2225) stands,
+but there is no measurable gold leak to recover on this slot. Future
+targeting-cohesion levers must therefore aim at the scoring sites that DO
+fire in headless (nukeTileScore silo pricing, ladder silo flat 1M),
+accepting the documented risk that firing-pattern changes are the family
+that converts wins into losses at this meta.
+
