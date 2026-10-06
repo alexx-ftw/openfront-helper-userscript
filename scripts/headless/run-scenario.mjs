@@ -116,7 +116,7 @@ const SCENARIOS = [
     description:
       "won-true regime bed: baikal-nuke-wars env plus a hostile silo network (3 L1 clustered at the hostile's city) — measures whether the counter-battery silo term can bind where the bot already wins",
     env: {
-      OFH_MATCH_SEED: "scenario-baikal-silo-regime",
+      OFH_MATCH_SEED: "scenario-baikal-nuke-wars",
       OFH_GAME_MAP: "Baikal Nuke Wars",
       OFH_GAME_MAP_SIZE: "Small",
       OFH_MAX_TICKS: "25000",

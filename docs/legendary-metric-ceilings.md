@@ -5219,3 +5219,13 @@ Baseline is re-measured on this bed before the arm run; the 25mm
 silo-counter-battery-regime scenario STAYS in the suite as the
 retaliation-window mechanism bed (it does prove nukes land on the
 saturated victim: 10M and 2M structure gold into a silo-rich hostile).
+
+Bed addendum 3 (seed alignment, before the arm pair): the first
+baikal-silo-regime run rolled a FRESH seed (scenario-baikal-silo-regime)
+and the winning baseline is seed-specific — that roll lost the bot at
+t=3406 (conquered with 99 tiles, nukedGold 0), a map/nation roll
+unrelated to the silo fixture. The bed now reuses the known-winning
+deterministic seed scenario-baikal-nuke-wars so the only deltas vs the
+landed baseline are the silo network itself. If the bot still dies on
+the winning seed with the fixture, that is a REAL regime finding (the
+fixture destabilizes a winning game) and lands nowhere.
