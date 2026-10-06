@@ -4646,3 +4646,24 @@ the player-value retarget ladder is dead twice over (Legendary gates);
 (c) scenario-level falsification before any basket is now the standard
 route for scoring levers (probe ~4 min vs gate ~20 min).
 
+
+## History canary widened + salvo-path feasibility verdict (2026-10-06)
+
+The public-records canary grew from 3 to 15 GameRecords (6 Team + 9 Free
+For All across 12 maps; fetcher index now merges prior downloads instead of
+orphaning them; the scenario loader maps the FFA records "Free For All"
+mode string to ffa). Full suite 15/15 PASS at d1c4fdfd — the FFA rows are
+the first canary coverage of the live FFA-crown targeting lane.
+
+Salvo-path (second live scoring site, blastStructureValue via
+samSalvoAimTile) feasibility, measured from probe6/7 + baseline rows:
+hostiles field SAMs by t≈738 in the 25MM scenario and the harness captures
+salvos (7 hostile bombs, one targetTile), but the bot never salvos in any
+natural log because it always finds a positive-value target first. A
+deterministic salvo scenario needs the full stack: hard/Impossible tier,
+SAM-covered hostile cluster with a zero-value ordinary candidate list,
+bot finished-silo slots >= 1.2x(coveringLevels+1) with SAM-unblocked
+trajectories, and salvo gold — i.e. a pre-leveled bot silo injection that
+does not exist yet. The silo level-pricing aim lever stays open but un
+proven; do not basket it before the salvo scenario exists.
+
