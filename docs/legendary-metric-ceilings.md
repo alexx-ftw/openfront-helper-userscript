@@ -5355,3 +5355,10 @@ regime (levels visible in progress unitDetails). Full npm test chain
 green at HEAD in one sitting this era (exit 0, all fixtures + 11
 headless scenarios + build parity), closing the last verification gap
 left by the earlier memory-pressure SIGTERMs.
+
+Harvest continuation (2026-10-06, corpus 25 -> 27): two World-map FFA
+records — chbo1fcF96 (1332 turns, 6 silos, 13 launches incl. a third
+wild MIRV) and cQapPaLtNM (1011 turns, 2 silos, 5 hydrogen). The
+human-only nuclear-actions pattern holds; heavy fetch backoffs
+re-engaged after the day's repeated pulls, so future harvests should
+space out by hours, not minutes.
