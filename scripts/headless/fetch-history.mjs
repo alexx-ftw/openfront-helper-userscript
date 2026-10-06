@@ -70,13 +70,10 @@ const seen = new Set();
 const summary = [];
 // The index must stay a superset of the disk: previous runs records are
 // merged back in, otherwise every run would orphan all earlier downloads.
-const existingIndex = (() => {
-  try {
-    return JSON.parse(fs.readFileSync(path.join(opts.out, "index.json"), "utf8"));
-  } catch {
-    return { records: [] };
-  }
-})();
+const indexFile = path.join(opts.out, "index.json");
+const existingIndex = fs.existsSync(indexFile)
+  ? JSON.parse(fs.readFileSync(indexFile, "utf8"))
+  : { records: [] };
 const byId = new Map(existingIndex.records.map((r) => [r.gameId, r]));
 for (const p of players) {
   if (downloaded >= opts.limit) break;

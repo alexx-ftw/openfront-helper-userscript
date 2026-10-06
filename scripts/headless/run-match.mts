@@ -14,6 +14,7 @@ import {
 import { createGameRunner } from "../../openfront-engine/src/core/GameRunner.ts";
 import { FactoryExecution } from "../../openfront-engine/src/core/execution/FactoryExecution.ts";
 import { NukeExecution } from "../../openfront-engine/src/core/execution/NukeExecution.ts";
+import { MissileSiloExecution } from "../../openfront-engine/src/core/execution/MissileSiloExecution.ts";
 import { TrainExecution } from "../../openfront-engine/src/core/execution/TrainExecution.ts";
 import { TransportShipExecution } from "../../openfront-engine/src/core/execution/TransportShipExecution.ts";
 import type { StampedIntent, Turn } from "../../openfront-engine/src/core/Schemas.ts";
@@ -269,6 +270,15 @@ const hostileAtomFixtureGold = BigInt(
 // line through the engine and emits the observed train stops; it never reaches
 // the userscript's build policy.
 const injectRailEconomy = process.env.OFH_INJECT_RAIL_ECONOMY === "1";
+// Test-only arsenal fixture. Gives the bot finished, leveled Missile Silos
+// (with reload executions) so the anti-SAM salvo path has real capacity to
+// plan with; never reaches the userscript.
+const injectOwnSiloNetwork = process.env.OFH_INJECT_OWN_SILO_NETWORK === "1";
+const ownSiloLevel = Number(process.env.OFH_INJECT_OWN_SILO_LEVEL ?? 3);
+// Gives the hostile nation a SAM right next to its largest city so ordinary
+// nuke candidates there are trajectory-covered and the salvo path owns the
+// response. Pairs with OFH_INJECT_HOSTILE_ATOM.
+const injectHostileSamCover = process.env.OFH_INJECT_HOSTILE_SAM_COVER === "1";
 const nuclearUnitTypes = new Set([
   UnitType.MissileSilo,
   UnitType.AtomBomb,
@@ -303,6 +313,11 @@ if (injectHostileAtom && !forceNukesEnabled) {
 if (!Number.isSafeInteger(hostileAtomNotBeforeTick) || hostileAtomNotBeforeTick < 0) {
   throw new Error(
     `OFH_INJECT_HOSTILE_ATOM_AT_TICK must be a non-negative safe integer, got ${process.env.OFH_INJECT_HOSTILE_ATOM_AT_TICK}`,
+  );
+}
+if (!Number.isSafeInteger(ownSiloLevel) || ownSiloLevel < 2 || ownSiloLevel > 5) {
+  throw new Error(
+    `OFH_INJECT_OWN_SILO_LEVEL must be an integer from 2 to 5, got ${process.env.OFH_INJECT_OWN_SILO_LEVEL}`,
   );
 }
 if (hostileAtomFixtureGold < 0n) {
@@ -913,6 +928,87 @@ const injectHostileTransportIfReady = () => {
     }),
   );
 };
+type Unit = import("../../openfront-engine/src/core/game/Game.ts").Unit;
+
+let ownArsenalPhase: "idle" | "upgrading" | "done" = "idle";
+const ownArsenalSilos: Unit[] = [];
+const injectOwnArsenalIfReady = () => {
+  if (ownArsenalPhase === "done" || !injectOwnSiloNetwork || !me?.isAlive()) return;
+  if (ownArsenalPhase === "idle") {
+    if (runner.game.inSpawnPhase()) return;
+    const tiles = [...me.tiles()].filter((tile) => runner.game.isLand(tile)).slice(0, 3);
+    if (tiles.length < 3) return;
+    me.addGold(500_000_000n);
+    for (const tile of tiles) {
+      const silo = me.buildUnit(UnitType.MissileSilo, tile, {});
+      if (!silo) continue;
+      ownArsenalSilos.push(silo);
+      runner.game.addExecution(new MissileSiloExecution(silo));
+    }
+    ownArsenalPhase = ownArsenalSilos.length > 0 ? "upgrading" : "done";
+    return;
+  }
+  let blocked = 0;
+  for (const silo of ownArsenalSilos) {
+    const currentLevel = Number(silo.level?.() ?? 1);
+    if (silo.isUnderConstruction() || currentLevel >= ownSiloLevel) continue;
+    if (me.gold() < 100_000_000n) me.addGold(500_000_000n);
+    if (!me.upgradeUnit(silo)) {
+      blocked += 1;
+    }
+  }
+  if (blocked === 0) {
+    ownArsenalPhase = "done";
+    console.warn(
+      JSON.stringify({
+        phase: "own-arsenal-injected",
+        tick: runner.game.ticks(),
+        levels: ownArsenalSilos.map((silo) => Number(silo.level?.() ?? 0)),
+      }),
+    );
+  }
+};
+
+let hostileSamCoverInjected = false;
+const injectHostileSamCoverIfReady = () => {
+  if (hostileSamCoverInjected || !injectHostileSamCover || !me?.isAlive()) return;
+  if (runner.game.isSpawnImmunityActive()) return;
+  const hostile = runner.game
+    .players()
+    .find(
+      (player) =>
+        player.isAlive() &&
+        player.clientID() !== clientID &&
+        !playersShareSide(me, player) &&
+        player.numTilesOwned() > 0,
+    );
+  if (!hostile) return;
+  const city = hostile
+    .units(UnitType.City)
+    .find((unit) => unit.isActive() && !unit.isUnderConstruction());
+  if (!city) return;
+  const cityTile = city.tile();
+  const adjacent = [...hostile.tiles()].find(
+    (tile) =>
+      tile !== cityTile &&
+      runner.game.isLand(tile) &&
+      runner.game.neighbors(tile).some((next) => next === cityTile),
+  );
+  if (adjacent === undefined) return;
+  hostile.addGold(50_000_000n);
+  hostile.buildUnit(UnitType.SAMLauncher, adjacent, {});
+  hostileSamCoverInjected = true;
+  console.warn(
+    JSON.stringify({
+      phase: "hostile-sam-cover-injected",
+      tick: runner.game.ticks(),
+      city: cityTile,
+      sam: adjacent,
+      owner: hostile.name(),
+    }),
+  );
+};
+
 let hostileMissileInjected = false;
 let hostileMissileInjectionTick: number | null = null;
 let hostileMissileTargetCityID: number | null = null;
@@ -1070,6 +1166,8 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   injectOwnPortIfReady();
   injectHostileTransportIfReady();
   injectHostileAtomIfReady();
+  injectOwnArsenalIfReady();
+  injectHostileSamCoverIfReady();
   injectRailEconomyIfReady();
   observeRailEconomyFixture();
   const decisionStartedAt = performance.now();

@@ -4667,3 +4667,34 @@ trajectories, and salvo gold — i.e. a pre-leveled bot silo injection that
 does not exist yet. The silo level-pricing aim lever stays open but un
 proven; do not basket it before the salvo scenario exists.
 
+## Salvo scenario exists; silo level-pricing aim lever falsified (2026-10-06)
+
+The missing pre-leveled silo injection shipped as headless fixtures
+(OFH_INJECT_OWN_SILO_NETWORK: three own Missile Silos pre-leveled via
+player.upgradeUnit + reloadMissile with OFH_INJECT_OWN_SILO_LEVEL,
+OFH_INJECT_HOSTILE_SAM_COVER: hostile SAM adjacent to its largest City,
+OFH_INJECT_HOSTILE_ATOM_GOLD default 100M, zombie-atom guard retained).
+The sam-salvo-overwhelm scenario (25MM, hostile-atom 2M, SAM cover, own
+3xL3 silo network, LOG_NUKES+LOG_STRUCTURES, assert >=3 atom launches)
+PASSes deterministically and the bot wins. Progress snapshots never catch
+atom bombs in flight (flight << 500-tick snapshot gap; activeMissiles was
+empty in all 46 snapshots), so the harness gained sam-plan/sam-salvo
+traces wrapping createSamOverwhelmPlan/fireSamSalvo in the adapter: one
+run shows 13 plans, 5 fired salvos (including a genuine 2-bomb salvo at
+t=594 against a covered SAM), 4 atom launches (3 on the SAM-covered
+hostile), and the failed-overwhelm arm (cover 3, need 4, capacityMissing
+via empty arrival window) exercised 4 times.
+
+The silo level-pricing aim lever (nukeStructureValue MissileSilo flat 1M
+to min(3M, level x 1M), feeding blastStructureValue via samSalvoAimTile)
+was then falsified at scenario level: all 22 plan/salvo/launch rows
+byte-identical to baseline (same aim tiles 3197363/3168552/3338170/
+3517307/3395633, same ticks), won=true and 37 detonations in both runs.
+Reason: the pricing delta only exists for enemy silos of level >= 2
+(L1 stays 1M), and no L2+ enemy silo sits inside any candidate blast
+radius around the targeted SAMs (Chechnya fields only L1 silos; Mari
+El's L3 silo is not near the SAM axes). Closed family, not basket-gated:
+an invisible term cannot move rows. Standing knowledge: the salvo
+scenario is now the standard mechanism probe for any future aim-scoring
+lever, and progress-snapshot activeMissiles is useless for missile
+timing analysis (use sam-plan/sam-salvo traces instead).

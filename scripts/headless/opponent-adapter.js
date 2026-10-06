@@ -449,6 +449,36 @@ export class BundledOpponentBot {
       });
       return result;
     };
+    const originalSamPlan = behavior.createSamOverwhelmPlan;
+    if (typeof originalSamPlan === "function") {
+      behavior.createSamOverwhelmPlan = (...args) => {
+        const plan = originalSamPlan.apply(behavior, args);
+        this.structureTrace.push({
+          kind: "sam-plan",
+          tick: this.game.ticks(),
+          targetSamId: plan.targetSamId,
+          aimTile: plan.targetTile,
+          coveringSamLevels: plan.coveringSamLevels,
+          totalBombs: plan.totalBombs,
+          capacityMissing: plan.capacityMissing,
+          windowBombs: plan.window?.length ?? 0,
+        });
+        return plan;
+      };
+    }
+    const originalSamSalvo = behavior.fireSamSalvo;
+    if (typeof originalSamSalvo === "function") {
+      behavior.fireSamSalvo = async (...args) => {
+        const fired = await originalSamSalvo.apply(behavior, args);
+        this.structureTrace.push({
+          kind: "sam-salvo",
+          tick: this.game.ticks(),
+          fired,
+          pending: Number(behavior._pendingNukeLaunches?.length || 0),
+        });
+        return fired;
+      };
+    }
   }
 
   recordNukeDecisionTrace({ behavior, beforeAtoms, beforeHydro, candidates, target, valueGate }) {
