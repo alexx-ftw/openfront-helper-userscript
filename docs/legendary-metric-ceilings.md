@@ -5077,3 +5077,46 @@ the landed 250k window (7 same-tile re-strikes <=40 turns).
 Follow-up probe (same declared class, mechanism-only): history-csx4ew1oy5
 (Asia Team, the structurally distinct fresh record) also PASSes —
 fresh-meta integration now covers both mode classes, 2/2.
+
+## Lever pre-declaration: enemy-silo counter-battery floor in nukeTileScore (2026-10-06, BEFORE any candidate run)
+
+Reopening justification — new external evidence, exactly the condition
+the nuclear-layer survey demanded: the refreshed public corpus shows
+real players practice silo counter-battery. Across the three new
+records, 22/37 nuke launches have an enemy MissileSilo as the nearest
+known structure inside the detonation's outer radius (10/12 and 10/17
+Australia FFA, 2/8 Asia Team; median distance to nearest known
+structure 12/30/168 tiles). The rest: DefensePost-nearest x5,
+Factory-nearest x1. Cities are invisible to this attribution (spawns
+are not build intents), so silo dominance is a lower bound. Silos are
+the only nuked structure class that shoots back.
+
+Divergence: the bot's offensive tile scorer prices an ordinary enemy
+silo at 50_000 x level — below a City L3 (75k) — and grants the
+counterforce multiplier only to MIRV-capable owners (gold >= threshold,
+x3). Real-meta target choice contradicts that de-prioritization.
+
+Candidate (one term): in nukeTileScore's UNIT.MissileSilo case, floor
+the multiplier at 2 for all enemy silos
+(Math.max(2, this.mirvCapableSiloPriority(unit))). Effect: an ordinary
+L1 silo scores 100k (City-L4 parity) instead of 50k; MIRV-capable silos
+keep x3. Gold-neutral: only candidate-tile ORDERING changes — own
+launch costs, the positive-EV guard (nukeStructureValue), and the
+SAM-salvo planner are untouched. Non-aggressive: same launch count,
+better-targeted; defensive doctrine (a dead silo does not shoot at us).
+
+Protocol: focused unit test (ordinary silo floors to x2; MIRV-capable
+stays x3) added to the npm test chain, artifact rebuild, then two
+gates: (1) PRIMARY — deterministic baikal-nuke-wars vs the landed
+baseline (won=true, t=6661, ownStructuresNuked 11, 69 launches, 73.35M
+nukedGold, 1 MIRV); (2) no-harm — 15-row early basket
+(team-none/team-25mm/ffa-n2) vs reserve-100k baseline.
+
+Pre-declared verdict rule (criterion: wins and survival first): LAND
+only if (a) baikal won stays true AND ownStructuresNuked <= 11 AND (b)
+targeting efficiency or tempo improves: nukedGold rises OR win ticks
+drop OR gold/launch rises; AND (c) the basket shows no win/fullGreen/
+ownStructuresNuked regression. Byte-identical baikal outcome -> INERT:
+REVERT and record (a silo floor that cannot reorder the dense-silo
+testbed does not earn its complexity). Any failed clause -> REVERT,
+record, stop.
