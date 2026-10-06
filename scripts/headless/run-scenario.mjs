@@ -152,11 +152,7 @@ function parseResult(logPath) {
   for (const line of text.split("\n")) {
     if (!line.includes('"phase":"result"')) continue;
     const start = line.indexOf("{");
-    try {
-      result = JSON.parse(line.slice(start));
-    } catch {
-      // keep last good parse
-    }
+    result = JSON.parse(line.slice(start));
   }
   return { result, text };
 }
@@ -182,12 +178,7 @@ for (const scenario of selected) {
     console.log("FAIL (no result line)");
     continue;
   }
-  let ok = false;
-  try {
-    ok = scenario.assert(result.result ?? result, logText);
-  } catch (e) {
-    console.error(`assert threw: ${e.message}`);
-  }
+  const ok = scenario.assert(result.result ?? result, logText);
   if (!ok) failures += 1;
   console.log(ok ? "PASS" : `FAIL (expected: ${scenario.expect})`);
 }
