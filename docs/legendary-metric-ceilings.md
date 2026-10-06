@@ -5165,3 +5165,34 @@ bot silos by conquest and launch from them, a path the faithful port
 already has (conquest is core engine behavior, no bot-side gap). No
 lever; the corpus keeps confirming that public records under-determine
 structure ownership, capping what attribution analyses can prove.
+
+## Regime pre-declaration: artificial silo-saturated testbed for the counter-battery floor (2026-10-06, BEFORE any run)
+
+The inert verdict's sanctioned reopen path: build the regime where the
+silo term can bind, since the objective explicitly allows fully
+artificial scenarios. New harness fixture OFH_INJECT_HOSTILE_SILO_
+NETWORK (count 3 by default): one-shot injection of L1 hostile Missile
+Silos on owned land tiles nearest the hostile's largest city, funded as
+fixture setup (mirrors hostile-sam-cover placement rules). New scenario
+silo-counter-battery-regime: 25mm team meta, hostile atom first-strike
+at t=1200 (2M fixture gold) so ladder priority 1 (retaliate) aims the
+bot at the silo-saturated hostile, OFH_LOG_NUKES on, 20000-tick cap.
+MECHANISM assert (baseline engine must pass — this is a regime bed, not
+an arm gate): no engine_stop/spawn_failure, nukedStructureGold >= 500k,
+and a hostile-silo-network-injected event in the log.
+
+Arm under test: the exact x2 silo floor reverted as INERT on baikal.
+Because the regime changes what the scorer sees, the arm is re-probed
+with a fresh deterministic baseline-vs-arm pair on this scenario ONLY
+(no engine constants change between the pair beyond the one-term floor;
+focused tests stay green throughout).
+
+Pre-declared verdict rule (wins and survival first): LAND only if
+baseline and arm both PASS the mechanism bed AND won stays true AND
+ownStructuresNuked does not increase AND targeting efficiency or tempo
+improves on this scenario (nukedGold rises OR win ticks drop OR
+gold/launch rises); a beating arm then clears the 15-row basket no-harm
+gate before landing. Byte-identical baseline-vs-arm -> INERT x2: REVERT
+and record (even silo-saturation next to a retaliated city cannot make
+the term bind — strong negative knowledge, the lever family closes for
+good). Any failed clause -> REVERT, record, stop.
