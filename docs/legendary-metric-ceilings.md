@@ -5157,3 +5157,11 @@ owners x3; the any-silo floor variant just measured INERT). The
 coordination question stays closed against this corpus; it could only
 reopen with a record schema that includes bot structures or attack
 target tiles.
+
+Corpus follow-up 18 -> 20 records (2026-10-06, second Bun fetch same
+day): cPMji8Wsuz (Australia Team) and ds6pqhoFRd (Iceland FFA) both show
+human nukers with ZERO recorded silo builds — late-game players capture
+bot silos by conquest and launch from them, a path the faithful port
+already has (conquest is core engine behavior, no bot-side gap). No
+lever; the corpus keeps confirming that public records under-determine
+structure ownership, capping what attribution analyses can prove.
