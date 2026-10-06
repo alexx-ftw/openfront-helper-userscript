@@ -4800,6 +4800,70 @@ actually launched. Baikal Nuke Wars is therefore the first and only
 environment in this repo's telemetry with a recorded MIRV launch; the
 basket meta (0 intents, 0 launches in 480 rows) never arms it.
 
+## Lever pre-declaration: re-arm the 250k recent-strike fix in the dense-launch regime (2026-10-06, BEFORE any candidate run)
+
+Reopening justification — the exact new-evidence condition the nuclear
+survey demanded, now measured instead of hypothesized: the survey's own
+closure note said the dead 250k recent-strike fix could only land "in a
+meta where re-strike pricing actually binds (more own launches per 600-tick
+window than the current economy funds)". The baikal-nuke-wars scenario IS
+that meta: 66 launches in 8191 ticks (18 atoms + 48 hydrogen, one launch
+per ~106 ticks vs sparse basket launches), nuked 65.9M structure gold, and
+still won. The basket measured the fix decision-inert because launches
+there are rare; Baikal exercises the branch the fix targets.
+
+Candidate: the same one-line defect fix (nukeBehavior.js recent-strike
+raw equality -> isLegendaryDifficulty bridge), nothing else. Effect: 250k
+per recent strike inside the inner radius in the Legendary policy tier
+(basket sims included — but basket launches are sparse, so the basket
+should stay decision-identical, which is itself a no-harm check), 1M on
+Hard and below.
+
+Protocol: focused unit test re-added (250k via Impossible-raw + bridge,
+1M on Hard, per-strike stacking), rebuild artifact, npm test chain, then
+two gates: (1) PRIMARY regime gate — deterministic baikal-nuke-wars run vs
+the measured baseline (won=true, t=8191, 18 atoms, 48 hydrogen, 65.9M
+nuked, ownStructuresNuked 31, 1 MIRV intent + 1 MIRV launch); (2)
+no-harm gate — 15-row early basket (team-none, team-25mm, ffa-n2) vs
+reserve-100k baseline.
+
+Pre-declared verdict rule (criterion: wins and survival first): LAND only
+if (a) baikal won stays true AND ownStructuresNuked does not increase AND
+(b) targeting efficiency or tempo improves: nukedGold per launch rises OR
+total nukedGold rises with launches not increasing OR win ticks drop; AND
+(c) the 15-row basket shows no win/fullGreen/ownStructuresNuked regression
+(identical aggregates expected — if the basket diverges at all, that is
+itself a finding to record). Any failed clause -> REVERT, record verdict,
+stop. Baikal-specific tuning (map-gated divergence) is OUT of scope for
+this lever: if the fix is baikal-positive but basket-visible, that is a
+separate pre-declaration, not this one.
+
+### Verdict: LANDED (2026-10-06, baikal primary gate + 15-row basket no-harm gate, pre-declared rule met on every clause)
+
+PRIMARY (baikal-nuke-wars, deterministic seed, vs the measured baseline):
+won=true in BOTH runs and ownStructuresNuked 31 -> 11 (-65% — the war
+ended 1530 ticks sooner, 8191 -> 6661, so the bot spent 19% less time
+under hostile nuclear fire); efficiency AND tempo both improved:
+nukedGold 65.9M -> 73.35M (+11%), gold-per-launch 998k -> 1.063M,
+launches 66 -> 69 (+3). The re-strike pricing now does exactly what the
+adaptive-tier comment always claimed: keeps pressure on
+damaged-but-valuable clusters instead of poisoning them for 600 ticks.
+
+NO-HARM (15-row early basket, team-none / team-25mm / ffa-n2 vs
+reserve-100k baseline): IDENTICAL on every pre-declared aggregate — wins
+1/1/0, fullGreens 0/0/0, medTicks 13201/7571/12821, ownStructuresNuked
+7/44/40, nukedGold 7.6M/5.5M/0. The sparse-launch basket meta never
+re-strikes within the window, so the branch stays inert there: zero
+basket cost for the dense-regime win.
+
+Landed as the new nuclear baseline: raw-equality defect fix
+(isLegendaryDifficulty bridge at nukeBehavior.js recent-strike penalty),
+focused unit test re-added to the chain, artifact rebuilt. This resolves
+the dead-branch defect recorded by the reverted 2026-10-06 first attempt —
+the branch is now armed in the regime that funds it and measured
+net-positive there (faster win, 65% fewer own losses, +11% destruction
+per launch), with the basket meta untouched.
+
 Scenario-suite receipt (2026-10-06): first full-suite end-to-end run after
 the baikal-nuke-wars addition — 8/8 PASS in one sitting (control-ffa,
 hostile-atom-defense, hostile-transport-invasion, rail-economy,

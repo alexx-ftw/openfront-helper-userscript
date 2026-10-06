@@ -1678,7 +1678,7 @@
       // memory expired, capping throughput at roughly one launch per window;
       // a lighter penalty keeps re-strikes on damaged-but-valuable clusters
       // scorable while still preferring fresh ground.
-      const recentPenalty = currentDifficulty() === Difficulty.Legendary
+      const recentPenalty = isLegendaryDifficulty(currentDifficulty())
         ? 250_000
         : 1_000_000;
       tileValue -= this.recentlySentNukes
