@@ -5540,3 +5540,18 @@ Harvest continuation (2026-10-08 ~00:0xZ overnight batch, corpus 49 ->
 gap 126), cV3EPDwGTd (Australia, 6 silos, 9 nukes, gap 543),
 c1MecmvRuA (Australia Easy, 2 nukes, gap 538). Silo-maturation law
 34/36 <= 1027. Disk totals: ~2316 nukes, 54 MIRV across 52 records.
+Overnight batch reconciliation (2026-10-08 morning, corpus 52 -> 72
+records on disk): 20 records appeared outside my fetch cycle (my pulls
+dedup-skip them as on-disk; exact disk totals are authoritative:
+2807 nukes = 1918A + 820H + 69 MIRV across 72 records). New maps:
+Pluto, Baltics, Strait of Gibraltar, Balkhash, More Than Luck, World
+Inverted, Bering Sea, Lemnos, United States, Great Lakes, Between Two
+Seas, Indian Subcontinent, San Francisco. Heavyweights: dkQWNRGZDi
+(Africa FFA, N=15211: 73 nukes, 3 MIRV), dTiw1pKNZ7 (Indian
+Subcontinent, N=15211: 46 nukes, 6 MIRV), diRDDGqoHW (San Francisco,
+N=12212: 78 nukes, 4 MIRV), cASc8fJsHP (Balkhash Team, N=10123: 63
+nukes). Silo-maturation law after this batch: 51/55 <= 1027 ticks
+(range 110-1027); outliers now four (1232, 1493, 2278, 2520) — the
+wait-after-first-silo can stretch well past an hour of game time when
+income or war timing delays the nuclear decision, so the law's honest
+form is MEDIAN ~460 ticks with a heavy right tail, not a hard gate.
