@@ -5475,3 +5475,10 @@ CONSTRUCTION (no silo, no nuke). The silo-maturation law thus validates
 the port's natural pacing a fortiori; the law is a benchmarking
 statement for ledger analysis (and for the 250k-window re-strike
 counts), not a mechanism to implement.
+Harvest continuation (2026-10-07 ~05:06Z, corpus 36 -> 38): cpVDtgC1GX,
+Baja California FFA (new map), N=11661 — 54 silos, 88 nukes (58 atoms +
+27 hydrogen + 3 MIRV, 13 nukers), silo->nuke gap 506. GGJy5YUR,
+Australia FFA micro (N=3111, ~5 min wall): 2 silos, 3 hydrogen only —
+second all-hydrogen record, gap 135. Silo-maturation law now 20/22 <=
+1027 ticks (outliers unchanged: the two N>19000 megamarathons). Disk
+totals: 1818 nukes, 50 MIRV across 38 records.
