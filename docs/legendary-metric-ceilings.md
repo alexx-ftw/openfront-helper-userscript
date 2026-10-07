@@ -5493,3 +5493,7 @@ Harvest continuation (2026-10-07 ~07:51Z, corpus 41 -> 42): cVoPAh4Hk3,
 Australia Easy peer-duel (7 silos, 13 nukes, silo->nuke gap 832). Law
 now 24/26 <= 1027 ticks. Disk totals: 1862 nukes, 50 MIRV across 42
 records.
+Harvest continuation (2026-10-07 ~09:11Z, corpus 42 -> 43): c5i2FhLhLZ,
+Australia Easy (1 silo, 2 hydrogen only — third all-hydrogen record,
+gap 313). Law 25/27 <= 1027. Disk totals: 1864 nukes, 50 MIRV across
+43 records.
