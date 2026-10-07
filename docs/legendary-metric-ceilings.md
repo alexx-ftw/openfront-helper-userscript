@@ -5521,3 +5521,10 @@ conclusion is unaffected either way (no gold-neutral MIRV lever binds),
 but the "first real-meta ground truth for MIRV-vs-Port priority" line
 should not be cited as evidence until the attribution method is
 re-derived from a source that actually resolves targets.
+Harvest continuation (2026-10-07 ~13:13Z, corpus 44 -> 46): cy2X9tdwad,
+Four Islands Team (new map), N=12821 — 39 silos, 166 nukes (146 atoms
++ 20 hydrogen, 11 nukers, top player 51 atoms), gap 452, Q1-relative
+initiation with Q1 first-silo (the income-gate mechanism again).
+cR4BnsUGq4, Didier FFA (new map), micro: 4 nukes, gap 213.
+Silo-maturation law 28/30 <= 1027. Disk totals: 2041 nukes, 50 MIRV
+across 46 records.
