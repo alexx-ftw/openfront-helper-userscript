@@ -5381,3 +5381,19 @@ t=2287 (34% of the 6661-tick win), bulk in Q3, none in Q1, none in Q4
 real-meta pacing law exactly where it wins: Q2 initiation, Q3 bulk,
 zero first-quarter launches. The launch-pacing comparison between port
 and meta is now closed with matching shapes on both sides.
+
+Mega-marathon refinement + validation explosion (2026-10-07, after the
+paced harvest; corpus 27 -> 30): czRrjTeKDp, Africa FFA, 11373 turns —
+the corpus's giant: 139 human silos, 406 launches (325 atoms + 73
+hydrogen + 8 MIRV), 213 launches (52%) with a known structure inside
+the outer radius (DefensePost 86, Port 48, Factory 40, MissileSilo 21,
+SAM 18), and 88 same-tile re-strikes inside the landed 250k window.
+cqLpxHYvoX, The Box FFA (new map), 7739 turns: 51 silos, 100 launches,
+73% in-outer (DefensePost 39 + Factory 25 dominant), 11 re-strikes.
+Total same-tile re-strike validation rises from 12 to ~111 instances —
+the 250k window's real-meta match is now overwhelming. Pacing law
+REFINED by the Africa counterexample (17 launches in Q1): the gate is
+ABSOLUTE TIME (income/silo maturity), not relative phase — in a
+11373-turn game Q1 alone spans more turns than most records' entire
+length. MIRV confirms as a real mega-marathon weapon (8 more wild
+launches; 12 in the corpus).
