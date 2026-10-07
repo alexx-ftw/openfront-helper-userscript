@@ -5469,3 +5469,9 @@ mechanism is unchanged: THE NUCLEAR ERA BEGINS WHEN THE FIRST SILO
 MATURES, not at a fixed fraction or absolute time. The bot's dense-
 launch benchmark window and the 250k pacing gate should key on
 first-silo maturation, not on any phase fraction.
+Addendum (no-code clarification): the bot has NO pacing gate in code —
+launch timing is economy-driven and therefore silo-gated BY
+CONSTRUCTION (no silo, no nuke). The silo-maturation law thus validates
+the port's natural pacing a fortiori; the law is a benchmarking
+statement for ledger analysis (and for the 250k-window re-strike
+counts), not a mechanism to implement.
