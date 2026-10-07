@@ -5427,3 +5427,17 @@ nothing to reorder. Verdict: evidence recorded, MIRV lane stays
 trigger-dormant; reopening requires the user lifting gold-neutrality,
 or a regime where the defensive trigger fires repeatedly enough for
 target ordering to matter. No lever run.
+Harvest continuation (2026-10-07 ~02:04Z, corpus 30 -> 33): cvPfoFLrBi,
+Two Lakes FFA (new map to the corpus), N=8412, Medium, 400 bots — 42
+silos, 52 nukes (22 atoms + 29 hydrogen + 1 MIRV = the 13th corpus
+MIRV, 15 distinct nukers), and the corpus's first HYDROGEN-DOMINANT
+record (29H > 22A); firstSilo t=3092, firstNuke t=3311. cxVpvbRVbs,
+Australia FFA, N=12561 (marathon-scale): 5 silos, 7 nukes, firstSilo
+t=1815, firstNuke t=2554. cSjonAxHqK, Australia FFA, N=4739: 1 silo +
+2 ports, 3 nukes, firstSilo t=2519, firstNuke t=3012. Absolute-time
+pacing law CONFIRMED 3/3: every new first-nuke (2554, 3012, 3311)
+lands inside the established 2033-4397 absolute window — 11/11 records
+now. cxVpvbRVbs shows the law's mechanism in its purest form: relative
+Q1 initiation with the first silo ALSO in relative Q1 (t=1815), the
+nuclear era starting ~740 ticks after the first silo — income-gated,
+phase-agnostic. No lever.
