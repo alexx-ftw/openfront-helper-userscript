@@ -5497,3 +5497,9 @@ Harvest continuation (2026-10-07 ~09:11Z, corpus 42 -> 43): c5i2FhLhLZ,
 Australia Easy (1 silo, 2 hydrogen only — third all-hydrogen record,
 gap 313). Law 25/27 <= 1027. Disk totals: 1864 nukes, 50 MIRV across
 43 records.
+Harvest continuation (2026-10-07 ~10:32Z, corpus 43 -> 44): csg3xnLxvv,
+Scandinavia Team (new map), Easy — 5 silos, 7 hydrogen only (FOURTH
+all-hydrogen record, second in Team mode), gap 350. Pattern note: all
+four all-hydrogen records are low-volume regimes (Easy micros or
+Easy-Team); every high-volume record is atom-majority. Silo-maturation
+law 26/28 <= 1027. Disk totals: 1871 nukes, 50 MIRV across 44 records.
