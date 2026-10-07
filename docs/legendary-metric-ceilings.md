@@ -5397,3 +5397,14 @@ ABSOLUTE TIME (income/silo maturity), not relative phase — in a
 11373-turn game Q1 alone spans more turns than most records' entire
 length. MIRV confirms as a real mega-marathon weapon (8 more wild
 launches; 12 in the corpus).
+
+MIRV target anatomy (2026-10-07, czRrjTeKDp, the 8 wild MIRVs): real
+MIRV strikes hit economic/defense infrastructure, not silo-first —
+DefensePost L35 (t8246), Port L20 (t14831), FOUR consecutive MIRVs into
+the SAME Port L48 within six turns (t16453/455/457/459 — densest MIRV
+concentration in the corpus), Port L26 (t16983), SAM L4 (t24958). First
+ground truth for MIRV-vs-Port: 6/8 strikes hit ports, and the
+repeat-same-port pattern is the strongest real-meta evidence that
+MIRV-capable silos prioritize high-value ports. Measured only — no
+lever; the port's MIRV lane stays trigger-dormant pending a wins-first
+gate.
