@@ -5441,3 +5441,31 @@ now. cxVpvbRVbs shows the law's mechanism in its purest form: relative
 Q1 initiation with the first silo ALSO in relative Q1 (t=1815), the
 nuclear era starting ~740 ticks after the first silo — income-gated,
 phase-agnostic. No lever.
+Corpus reconciliation + silo-maturation law (2026-10-07 ~04:00Z, full
+disk audit): the ledger's cumulative "corpus N" counters were
+unreliable (21 of 36 on-disk records had never been named here; scan
+coverage was partial). Ground truth from disk: 36 records, 1727
+nuclear builds (1197 atoms + 483 hydrogen + 47 MIRV). Previously
+unscanned heavyweights, now in: dSwja63Gum (Mars FFA, N=9192: 233
+nukes, 201 atoms + 20 hydrogen + 12 MIRV, 71 silos, 194 SAMs, one
+player with 116 atoms) — the corpus's largest nuclear game; dzSgSBMoi3
+(Balkans FFA, N=20232: 71 nukes, 7 MIRV); dJiyqA9Z36 (Dyslexdria FFA,
+N=19262: 91 nukes, hydrogen-majority 55H/33A); dJeTofkRSh (Hormuz
+Team, N=17602: 113 nukes); cAaGSXpLRn (Antarctica FFA: 77 nukes);
+czNMMFci4v (Iceland FFA: 70 nukes with Q1-relative initiation at
+t=1505). Also: dTkFZLga8V (Crimea Team) is the first ALL-HYDROGEN
+record (8H/0A, team mode); cohpQeSJFX (Alps) is the first Impossible
+record (40 nukes).
+
+PACING LAW SUPERSEDED: the 2033-4397 absolute window was an artifact
+of the 8-record sample — across 20 nuclear-bearing records first-nuke
+turns span 1505-5459. The real law is SILO-RELATIVE: first nuke =
+first silo + median ~458 ticks; 18/20 records launch within 1027 ticks
+of the first silo (full range 113-1027), phase-agnostic (Q1-relative
+initiation confirmed in 5 records whose first silo was also Q1). Two
+outliers (1493, 2278 ticks — both N>19000 megamarathons) show the gate
+can stretch when income/war timing delays strike choice, but the
+mechanism is unchanged: THE NUCLEAR ERA BEGINS WHEN THE FIRST SILO
+MATURES, not at a fixed fraction or absolute time. The bot's dense-
+launch benchmark window and the 250k pacing gate should key on
+first-silo maturation, not on any phase fraction.
