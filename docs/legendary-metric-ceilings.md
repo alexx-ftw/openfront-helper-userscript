@@ -5503,3 +5503,21 @@ all-hydrogen record, second in Team mode), gap 350. Pattern note: all
 four all-hydrogen records are low-volume regimes (Easy micros or
 Easy-Team); every high-volume record is atom-majority. Silo-maturation
 law 26/28 <= 1027. Disk totals: 1871 nukes, 50 MIRV across 44 records.
+Correction — MIRV target attribution NOT reproducible (2026-10-07,
+evidence-integrity pass): attempted independent verification of the
+MIRV target-anatomy paragraph above against the on-disk record FAILED.
+The public capture contains no launch-target data: attack intents carry
+only targetID (player id), the MIRV builders emit zero attack intents
+within 60 ticks of their builds (7 of 8 builders; the eighth attacks a
+player with no recorded structures), and no other intent resolves a
+nuke destination. REPRODUCIBLE facts: the 8 MIRV build turns and
+builders, and the 4-builds-same-silo pattern (tile 2697458, one player,
+6 turns). The DefensePost@35 / Port@20/48/26 / SAM@4 / 6-of-8-ports
+reading came from an unrecorded method and is DEMOTED to unverified
+inference; the same caveat applies to any ledger claim that attributes
+nuke targets to specific structure types/levels from this corpus
+(including the mega-marathon in-outer breakdown). The reopen audit's
+conclusion is unaffected either way (no gold-neutral MIRV lever binds),
+but the "first real-meta ground truth for MIRV-vs-Port priority" line
+should not be cited as evidence until the attribution method is
+re-derived from a source that actually resolves targets.
