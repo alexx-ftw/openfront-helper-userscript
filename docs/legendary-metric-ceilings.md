@@ -5482,3 +5482,10 @@ Australia FFA micro (N=3111, ~5 min wall): 2 silos, 3 hydrogen only —
 second all-hydrogen record, gap 135. Silo-maturation law now 20/22 <=
 1027 ticks (outliers unchanged: the two N>19000 megamarathons). Disk
 totals: 1818 nukes, 50 MIRV across 38 records.
+Harvest continuation (2026-10-07 ~06:31Z, corpus 38 -> 40 + late
+reconciliation dPvMonrSL6): three Australia Easy peer-duels —
+dRRd3sToeS (14 silos, 14 nukes, gap 126, Q1-relative initiation with
+Q1 first-silo), dpa7T7kPMn (12 silos, 13 nukes, gap 166), dPvMonrSL6
+(4 nukes, gap 173). The Australia peer family from the
+counter-battery finding grows; silo-maturation law now 23/25 <= 1027
+ticks. Disk totals: 1849 nukes, 50 MIRV across 41 records.
