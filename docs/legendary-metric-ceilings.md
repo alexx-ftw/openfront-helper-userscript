@@ -5489,3 +5489,7 @@ Q1 first-silo), dpa7T7kPMn (12 silos, 13 nukes, gap 166), dPvMonrSL6
 (4 nukes, gap 173). The Australia peer family from the
 counter-battery finding grows; silo-maturation law now 23/25 <= 1027
 ticks. Disk totals: 1849 nukes, 50 MIRV across 41 records.
+Harvest continuation (2026-10-07 ~07:51Z, corpus 41 -> 42): cVoPAh4Hk3,
+Australia Easy peer-duel (7 silos, 13 nukes, silo->nuke gap 832). Law
+now 24/26 <= 1027 ticks. Disk totals: 1862 nukes, 50 MIRV across 42
+records.
