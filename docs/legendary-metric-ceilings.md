@@ -5528,3 +5528,10 @@ initiation with Q1 first-silo (the income-gate mechanism again).
 cR4BnsUGq4, Didier FFA (new map), micro: 4 nukes, gap 213.
 Silo-maturation law 28/30 <= 1027. Disk totals: 2041 nukes, 50 MIRV
 across 46 records.
+Harvest continuation (2026-10-07 ~14:36Z, corpus 46 -> 49): three new
+maps in one pull — cvvAjCJ66s (Los Angeles, N=14252: 51 silos, 96
+nukes, balanced 47A/46H, 3 MIRV, gap 885), coRwuCa7Tb (Mare Nostrum,
+N=12882: 34 silos, 106 nukes 86A/19H, 1 MIRV, gap 256, Q1-relative
+with Q1 first-silo), crT4ejtZtM (Iceland, N=8611: 23 silos, 36 nukes,
+1 MIRV, gap 686). Silo-maturation law 31/33 <= 1027. Disk totals:
+2279 nukes, 54 MIRV across 49 records.
