@@ -5535,3 +5535,8 @@ N=12882: 34 silos, 106 nukes 86A/19H, 1 MIRV, gap 256, Q1-relative
 with Q1 first-silo), crT4ejtZtM (Iceland, N=8611: 23 silos, 36 nukes,
 1 MIRV, gap 686). Silo-maturation law 31/33 <= 1027. Disk totals:
 2279 nukes, 54 MIRV across 49 records.
+Harvest continuation (2026-10-08 ~00:0xZ overnight batch, corpus 49 ->
+52): three peer-duels — ciHXtLgRCz (Europe Classic, 12 silos, 23 nukes,
+gap 126), cV3EPDwGTd (Australia, 6 silos, 9 nukes, gap 543),
+c1MecmvRuA (Australia Easy, 2 nukes, gap 538). Silo-maturation law
+34/36 <= 1027. Disk totals: ~2316 nukes, 54 MIRV across 52 records.
