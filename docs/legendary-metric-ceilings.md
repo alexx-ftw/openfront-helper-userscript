@@ -5408,3 +5408,22 @@ repeat-same-port pattern is the strongest real-meta evidence that
 MIRV-capable silos prioritize high-value ports. Measured only — no
 lever; the port's MIRV lane stays trigger-dormant pending a wins-first
 gate.
+MIRV layer reopen audit (2026-10-07, triggered by the target-anatomy
+finding): the 6/8 port-targeted wild MIRVs DO satisfy this doc's
+standing "new external evidence" condition for reopening the MIRV
+layer. But the audit of what could legally bind comes up empty under
+current guardrails: (1) the evidence shows OFFENSIVE MIRV use against
+high-value economic targets (incl. the 4x-same-port-in-6-turns
+repeat-strike pattern) — a lane the faithful port does not have (its
+triggers are defensive: counter-inbound, runaway-denial, steamroll-stop,
+all trigger-dormant across 480 basket rows); opening it spends MIRV
+gold and initiates nuclear strikes, i.e. gold-spending + aggressive,
+outside the user's standing gold-neutral/non-aggressive lever space
+(the hydrogen dispatch gate closed the sibling spend as net-negative at
+this meta). (2) The ordering family (prefer ports when a MIRV arms)
+cannot bind: the bot armed a MIRV in exactly one artificial scenario
+(sam-salvo-overwhelm, 1 shot) and never in any basket row, so there is
+nothing to reorder. Verdict: evidence recorded, MIRV lane stays
+trigger-dormant; reopening requires the user lifting gold-neutrality,
+or a regime where the defensive trigger fires repeatedly enough for
+target ordering to matter. No lever run.
