@@ -6527,3 +6527,26 @@ Read-only review confirms legendarySalvoRoute consumes a supplied launch sequenc
 its current enemy-threat callers synthesize one, so they cannot substitute for
 the actual source and emission/departure times of our pending batch. The active
 goal retains that upstream scheduling work.
+
+### 2026-10-08 — pending-batch interception forecast matches native outcomes
+
+Add `test/nuke-salvo-pending-forecast-fixture.mts` to the serial headless suite.
+Three queued Atoms are forecast as hypothetical routes from the projected silo
+tile using the measured pipeline (+2) and same-silo serialization (+0/+1/+2)
+offsets, then classified with the existing one-charge rule (reachable fire tick
+versus actual slot availability). The native engine then resolves the real
+batch. Regime one launches so all arrivals precede the tick-90 reload: forecast
+0 intercepted, native 0 intercepted, all three detonate and destroy the SAM.
+Regime two launches so all arrivals follow the reload: forecast exactly 1
+intercepted, native exactly 1 intercepted, two penetrate and destroy the SAM.
+Both cases match, including which side of the reload the window falls on.
+
+Test-side limitation: legendaryMissileDefenseSchedule is module-local, so the
+fixture replicates its one-SAM/one-charge greedy rule. Production code already
+calls that schedule directly (samSalvoLiveCapacitySpend), so a production
+pending-batch forecast can use the real implementation without a new binding.
+Focused fixture and full npm test pass; all heavy execution stays serial under
+4 GiB RAM / 1 GiB swap. This is forecast evidence for a committed same-tick
+batch from one silo against one level-one SAM; production viability/sizing
+adoption, multi-SAM assignment, network delivery variance and aggregate victory
+gains remain unverified and owned by the active goal.
