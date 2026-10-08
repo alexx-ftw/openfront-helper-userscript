@@ -130,6 +130,25 @@ assert.equal(
   "an unowned core tile snaps to the border tile nearest the core",
 );
 
+// 5. Shared-tube cohesion: pending nuke intents are not in the live silo
+// queues yet, so the MIRV lane must defer to the nuke lane's projection.
+behavior.player = {};
+sandbox.autoBotBuildNukeSlots = (_game, player) => player.__projection ?? null;
+behavior.player.__projection = new Map([["1", 0]]);
+assert.equal(
+  behavior.hasReadyMIRVSlot(),
+  false,
+  "pending nukes exhausting every projected tube block the MIRV lane",
+);
+behavior.player.__projection = new Map([["1", 2]]);
+assert.equal(
+  behavior.hasReadyMIRVSlot(),
+  true,
+  "a free projected tube admits the MIRV lane",
+);
+behavior.player.__projection = null;
+delete sandbox.autoBotBuildNukeSlots;
+
 // 5. A stub without units() keeps the original path.
 const stubTarget = {
   smallID: () => 42,

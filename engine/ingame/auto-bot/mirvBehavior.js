@@ -385,6 +385,17 @@
     // ── MIRV Helper Methods ──────────────────────────────────────────────────
     hasReadyMIRVSlot() {
       if (this.player === null) throw new Error("not initialized");
+      // DIVERGENCE: unacknowledged nuke intents are not in the live silo
+      // queues yet; respect the same projected capacity the nuke lane uses
+      // so a salvo and a MIRV cannot claim the same tube on the same tick.
+      const projected = typeof autoBotBuildNukeSlots === "function"
+        ? autoBotBuildNukeSlots(this.game, this.player) : null;
+      if (projected) {
+        for (const slots of projected.values()) {
+          if (slots > 0) return true;
+        }
+        return false;
+      }
       const silos = this.player.units(UNIT.MissileSilo);
       return (Array.isArray(silos) ? silos : []).some((silo) => {
         if (!silo || silo.isActive?.() === false || silo.isUnderConstruction?.()) {
