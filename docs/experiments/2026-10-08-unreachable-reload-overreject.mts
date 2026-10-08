@@ -1,3 +1,11 @@
+// REFUTED 2026-10-08: native simulation of this exact scenario shows the
+// engine INTERCEPTS the shot (SAMMissile sighting at tick 93, queue [92],
+// reachedTarget() === false). The conclusions below were a misdiagnosis:
+// the interceptor was already consumed when SAMMissile.length was checked,
+// and the SAM survived because no detonation happened, not because of any
+// blast-radius anomaly. Kept as audit trail; see
+// test/nuke-salvo-off-approach-intercept-fixture.mts and the 2026-10-08
+// section in docs/legendary-metric-ceilings.md.
 import assert from "node:assert/strict";
 import { GameRunner } from "../../openfront-engine/src/core/GameRunner";
 import { Executor } from "../../openfront-engine/src/core/execution/ExecutionManager";

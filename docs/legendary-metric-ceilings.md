@@ -6604,3 +6604,25 @@ with 60 seconds between attempts; execution stopped after two retries.
 maps**, matching the pre-fetch inventory. Fetch and scanner execution were
 serial under `systemd-run --user --wait --pipe --collect` with
 `MemoryMax=4G`, `MemorySwapMax=1G` and `OOMPolicy=kill`.
+
+## 2026-10-08 refutation: the unreachable-reload over-rejection never existed
+
+docs/experiments/2026-10-08-unreachable-reload-overreject.mts claimed that
+travel-only salvo viability (samSalvoCapacityAtArrival) rejected a shot the
+engine lands cleanly, inferring the off-approach SAM at (86,3) could never
+reach. A direct native simulation of the same scenario (silo (1,80), target
+(80,1), SAM (86,3), launch tick 65, flight 31, impact around 94-96) refutes
+it: the SAM fires one interceptor at tick about 93 (SAMMissile sighting at
+93, missileTimerQueue becomes [92]), the Atom is intercepted with
+reachedTarget() === false, and the SAM survives simply because no
+detonation ever occurs near it. The experiment observations of zero
+SAMMissile units and a surviving SAM were post-hoc reads taken after the
+interceptor was consumed. There was no detonation and no blast anomaly.
+
+Verdict: the travel-only reload rule stands (already proven at the reload
+boundary by test/nuke-salvo-reload-boundary-fixture.mts). A planner-based
+reachable-fire capacity variant was drafted and reverted as unfounded added
+risk. test/nuke-salvo-off-approach-intercept-fixture.mts now pins the true
+behavior: the salvo stays blocked and the counterfactual shot is intercepted.
+No aggregate victory or damage metric is claimed to change.
+
