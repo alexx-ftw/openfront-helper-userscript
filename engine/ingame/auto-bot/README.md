@@ -497,6 +497,11 @@ budget as ordinary construction, so City/Factory upgrades cannot consume the
 next Atom's reserved treasury. Ports keep their trade-economy exemption.
 The Atom reserve is released whenever no live opposing player owns a nuclear
 structure target, including before the first launch, and resumes if a target appears.
+When Atoms remain queued, the same construction reserve covers all unsent Atoms
+and shrinks as the queue drains or is cancelled. Defense and Port exemptions retain
+their existing priority.
+Construction budgets share the dispatcher's reservation ledger for purchases
+already emitted against a balance that has not yet caught up.
 Silo and SAM upgrades recheck live missile impact zones after worker pricing.
 A threatened silo defers its purchase while retaining valid nuclear capacity demand,
 so that request can resume when the hazard disappears.

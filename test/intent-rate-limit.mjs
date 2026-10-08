@@ -37,7 +37,7 @@ function createSandbox() {
   };
   sandbox.globalThis = sandbox;
   executeClassicScript(
-    `${RATE_LIMIT_SOURCE}\n${CONTEXT_SOURCE}\nglobalThis.__intentTest = { emitIntent, tryAcquireIntentRateLimit, discoverCtors, getIntentRateLimitSnapshot, hasIntentRateLimitCapacity, sendAutoBotBuildOrUpgrade };`,
+    `${RATE_LIMIT_SOURCE}\n${CONTEXT_SOURCE}\nglobalThis.__intentTest = { emitIntent, tryAcquireIntentRateLimit, discoverCtors, getIntentRateLimitSnapshot, hasIntentRateLimitCapacity, sendAutoBotBuildOrUpgrade, autoBotBuildReservedGold };`,
     sandbox,
     { filename: path.join(ROOT, "engine/ingame/intent-rate-limit.js") },
   );
@@ -293,6 +293,9 @@ assert.equal(
   "a second build cannot spend gold already committed by another bot phase",
 );
 assert.equal(purchases.length, 1, "only the affordable construction reaches the build menu");
+assert.equal(construction.api.autoBotBuildReservedGold(constructionGame, constructionPlayer), 750_000n);
+assert.equal(construction.api.autoBotBuildReservedGold(constructionGame, { id: () => "other" }), 0n);
+assert.equal(construction.api.autoBotBuildReservedGold({ ticks: () => 100 }, constructionPlayer), 0n);
 const replayGame = { ticks: () => 0 };
 assert.equal(
   construction.api.sendAutoBotBuildOrUpgrade(
@@ -317,6 +320,7 @@ assert.equal(
   "switching games must not release an outstanding purchase in the original game",
 );
 constructionTick += 6;
+assert.equal(construction.api.autoBotBuildReservedGold(constructionGame, constructionPlayer), 0n);
 assert.equal(
   construction.api.sendAutoBotBuildOrUpgrade(
     constructionMenu,

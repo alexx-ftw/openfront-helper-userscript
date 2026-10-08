@@ -2885,7 +2885,11 @@
       if (!this.legendaryNukeStructureTargetExists()) {
         return 0n;
       }
-      return this.safeConstructionCost(UNIT.AtomBomb) ?? 0n;
+      const atomCost = this.safeConstructionCost(UNIT.AtomBomb) ?? 0n;
+      // DIVERGENCE: ordinary growth must not consume a scheduled salvo's tail.
+      const pendingAtoms = (this.nukeBehavior?._pendingNukeLaunches ?? [])
+        .filter((launch) => launch.nukeType === UNIT.AtomBomb).length;
+      return atomCost * BigInt(Math.max(1, pendingAtoms));
     }
 
     // A live hostile (never a permanent teammate) owning any structure the
@@ -3636,6 +3640,9 @@
       {
         availableGold = BigInt(this.player.gold() || 0n);
       }
+      const committed = typeof autoBotBuildReservedGold === "function"
+        ? autoBotBuildReservedGold(this.game, this.player) : 0n;
+      availableGold = availableGold > committed ? availableGold - committed : 0n;
 
       // This is the budget available to ordinary construction and defensive
       // planning. A MIRV reserve is applied only by the offensive silo paths.
@@ -3677,10 +3684,7 @@
     }
 
     availableGoldAfterReserve(type) {
-      let availableGold;
-      {
-        availableGold = BigInt(this.player.gold() || 0n);
-      }
+      let availableGold = this.spendableConstructionGold();
 
       // Plateau/opening callers bypass the ordinary defense phase. Keep the
       // first interceptor funded at their shared budget boundary as well.

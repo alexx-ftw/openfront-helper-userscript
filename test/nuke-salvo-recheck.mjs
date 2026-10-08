@@ -115,6 +115,53 @@ function makeSalvoWorld() {
   return { world, game, player, nukeTarget, behavior };
 }
 
+// The ordinary construction budget must preserve every pending saturation Atom.
+{
+  const { behavior, player, game, world, nukeTarget } = makeSalvoWorld();
+  game.config = () => ({ isUnitDisabled: () => false });
+  player.gold = () => 2_000_000n;
+  player.units = () => [{ isUnderConstruction: () => false }];
+  const budget = new sandbox.__StructureBehavior({}, game, player);
+  budget.nukeBehavior = behavior;
+  budget.ownSamCapacity = () => 1;
+  budget.legendaryNukeStructureTargetExists = () => true;
+  budget.safeConstructionCost = () => 750_000n;
+  budget.firstSamConstructionReserve = () => 0n;
+  const originalDifficultyCheck = sandbox.isLegendaryDifficulty;
+  sandbox.isLegendaryDifficulty = () => true;
+  try {
+    for (const delay of [5, 10]) {
+      assert.equal(behavior.queueDelayedNukeLaunch(20, UNIT.AtomBomb, nukeTarget, delay,
+        { salvoId: 1, targetTile: 20, targetSamId: null }), true);
+    }
+    assert.equal(budget.availableGoldAfterReserve(UNIT.City), 500_000n,
+      "a 600k City cannot consume the 1.5M still needed for two queued Atoms");
+    assert.equal(budget.availableGoldAfterReserve(UNIT.Port), 2_000_000n,
+      "the existing trade-economy exemption remains available");
+    assert.equal(budget.availableGoldAfterReserve(UNIT.SAMLauncher), 2_000_000n,
+      "actual missile defense retains priority over offensive funding");
+    sandbox.autoBotBuildReservedGold = () => 750_000n;
+    assert.equal(budget.availableGoldAfterReserve(UNIT.City), 0n,
+      "an already-emitted purchase plus the unsent tail cannot be spent again on a stale gold snapshot");
+    delete sandbox.autoBotBuildReservedGold;
+    behavior.getAbortedSalvoIds = () => new Set();
+    behavior.firePendingNukeLaunch = async () => "fired";
+    world.tick += 5;
+    assert.equal(await behavior.processPendingNukeLaunches(), true);
+    assert.equal(budget.availableGoldAfterReserve(UNIT.City), 1_250_000n,
+      "draining one entry shrinks the queue's construction reserve");
+    behavior.queueDelayedNukeLaunch(20, UNIT.AtomBomb, nukeTarget, 10);
+    nukeTarget.isAlive = () => false;
+    await behavior.processPendingNukeLaunches();
+    assert.equal(behavior.hasPendingNukeLaunches(), false);
+    assert.equal(budget.availableGoldAfterReserve(UNIT.City), 1_250_000n,
+      "cancelling the salvo releases its additional bank and retains the ordinary one-Atom reserve");
+  } finally {
+    delete sandbox.autoBotBuildReservedGold;
+    sandbox.isLegendaryDifficulty = originalDifficultyCheck;
+  }
+}
+
 // A worker price probe can outlive the silo snapshot captured before it.
 for (const invalidation of ["unchanged", "destroyed", "upgrading"]) {
   const { behavior, player, game, world, nukeTarget } = makeSalvoWorld();

@@ -81,6 +81,16 @@
     return id === null || id === undefined ? "" : String(id);
   }
 
+  function autoBotBuildReservedGold(game, player) {
+    const tick = autoBotBuildTick(game);
+    const playerId = autoBotBuildPlayerId(player);
+    return (autoBotBuildReservations.get(game) ?? []).reduce(
+      (total, reservation) => reservation.expiresAt > tick && reservation.playerId === playerId
+        ? total + reservation.cost : total,
+      0n,
+    );
+  }
+
   function autoBotBuildCost(buildable) {
     const cost = buildable?.cost;
     if (typeof cost === "bigint") return cost >= 0n ? cost : null;
@@ -122,11 +132,7 @@
       (reservation) => reservation.expiresAt > tick,
     );
     autoBotBuildReservations.set(game, reservations);
-    const reserved = reservations.reduce(
-      (total, reservation) =>
-        reservation.playerId === playerId ? total + reservation.cost : total,
-      0n,
-    );
+    const reserved = autoBotBuildReservedGold(game, player);
     const gold = player?.gold?.();
     if (typeof gold !== "bigint" || gold - reserved < cost) return false;
     // The build menu emits straight onto the EventBus, bypassing emitIntent's

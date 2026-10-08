@@ -6063,3 +6063,35 @@ zero pending launches and 73,350,000 enemy structure gold destroyed.
 Receipt: `/home/eros/ofh-matrix/silo-impact-dispatch/baikal-nuke-wars.log`.
 The native snapshot race is fixed; broader victory improvement and live browser
 adoption remain unverified.
+
+## Pending salvo construction funding (2026-10-08)
+
+Independent native review found no slot-count mismatch: level minus queue length
+matches the native partial-cooldown rule. The cooperative treasury boundary did
+have a gap: two queued Atoms reserve only one price before ordinary growth. A
+2M bank therefore exposes 1.25M to City construction despite a 1.5M unsent tail.
+Reuse the existing Atom war chest, multiplying the live Atom price by the unsent
+Atom count, with the existing one-Atom minimum. Preserve defense/Port exemptions,
+first-SAM priority and all target/silo enablement gates. Acceptance: queue-two
+budget is 500k, cancellation releases the extra reserve, priority exemptions
+stay unchanged; full suite passes; Baikal stays won with at most 11 own structures
+nuked. This changes cooperative funding, not target scores or silo capacities.
+
+Construction budgets must also subtract purchases already emitted against a
+stale balance. Reuse the dispatcher's existing reservation ledger, keyed by
+game/player and expiring at the same six-tick boundary, rather than inventing
+another timeout or estimating expenditure from launches. Tests require matching
+reserved money, isolation between players/games, exact expiry, and no City budget
+when the stale balance cannot cover both emitted purchases and the unsent tail.
+
+Result: funding regression, queue drain/cancellation, existing defense/Port
+exemptions, reservation identity/expiry and stale-balance checks pass. Full
+`npm test`, types and artifact parity pass. Independent review found no concrete
+money leak or wrong-player/game issue; an async send can temporarily reserve
+conservatively on both sides of the handoff, and the existing six-tick delivery
+assumption remains unchanged. Baikal remains won/alive at tick 6661: 11 own
+structures nuked, 20 Atoms, 49 Hydrogens, pending zero, 73,350,000 enemy structure
+gold destroyed. All 13 comparable gold/land/troop/alive progress snapshots match
+the previous receipt. Receipt: `/home/eros/ofh-matrix/pending-salvo-funding/baikal-nuke-wars.log`.
+The artificial funding race is fixed; no aggregate victory improvement or live
+browser adoption is claimed.
