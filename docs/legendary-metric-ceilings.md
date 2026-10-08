@@ -6741,6 +6741,25 @@ tuning.
 Receipt: /home/eros/ofh-matrix/silo-slot-receipt2/baikal-nuke-wars.log
 Run under MemoryMax=4G, MemorySwapMax=1G, OOMPolicy=kill, serial.
 
+## Public-history targeting evidence (2026-10-08, 79 records)
+
+Aggregate over the local public OF history corpus (48 matches with >=10
+nuclear launches, 20 heavy launchers with >=10 each), via the committed
+scripts/headless/nuclear-concentration.cjs:
+
+- Winners: 22.5 nukes avg across 19.9 distinct tiles, top-3 target-tile
+  share 0.263.
+- Losers: 13.7 nukes avg across 11.8 tiles, top-3 share 0.412.
+
+Reading: winning nuclear players sustain 64% more launches with equal or
+wider per-nuke spread, while losing players concentrate smaller arsenals
+on few tiles. This validates the current doctrine (saturating salvos on
+live value clusters, sustained production, finisher on the flattened
+cluster) rather than motivating a concentration increase. The bot's
+Baikal regime (74 launches) is already deep in the winner distribution.
+No runtime change; the script is committed so the aggregate stays
+reproducible as the corpus grows.
+
 ## Integrated receipt 3 (2026-10-08, after the MIRV-weighting run)
 
 Counters identical to iterations 1 and 2: won=true, alive=true, 26
