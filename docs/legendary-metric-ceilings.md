@@ -5926,3 +5926,23 @@ spawn-immunity default had to be made explicit in serialized gameConfig
 so native Config restoration uses the same zero-immunity fixture rule.
 No production behavior was changed, and browser-loader/menu proof is still
 pending.
+
+Native BuildMenu gate: register the unchanged engine custom element in an
+isolated JSDOM and render its actual Lit template using finite-gold native
+player buildables. Click the enabled Atom and silo buttons; require exactly
+one native BuildUnitIntentEvent with the aim tile/direction, one native
+SendUpgradeStructureIntentEvent with silo ID/type, and closure of the menu
+after each click. Only the PlayerView's async buildables and total-unit-level
+counter are adapted from native PlayerImpl data. This covers native DOM
+button-to-event behavior, not the full Transport/server path or Vite worker
+loader in a live browser. Use the same memory-isolated sequential suite.
+
+Native BuildMenu result: the standalone JSDOM fixture passes with the actual
+Lit buttons and native EventBus event classes. The Atom event carries the
+aim point, not its `canBuild` launch-silo tile, plus the current upward
+direction. The upgrade event carries `unitId` and `unitType` (the native
+field name), and both clicks hide the menu. This verifies the native
+button-to-event boundary without synthetic BuildMenu implementations.
+It does not prove bot-to-menu actuation, Transport/server delivery or the
+Vite worker loader in a live browser.
+The integrated headless contract suite, formatting and diff checks pass.

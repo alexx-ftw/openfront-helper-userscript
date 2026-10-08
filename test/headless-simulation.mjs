@@ -42,6 +42,21 @@ const nuclearWorkerIpc = spawnSync(
   { cwd: root, encoding: "utf8" },
 );
 assert.equal(nuclearWorkerIpc.status, 0, nuclearWorkerIpc.stdout + nuclearWorkerIpc.stderr);
+const nativeNuclearBuildMenu = spawnSync(
+  process.execPath,
+  [
+    path.join(root, "node_modules/tsx/dist/cli.mjs"),
+    "--tsconfig",
+    "openfront-engine/tsconfig.json",
+    "test/native-nuclear-build-menu-fixture.mts",
+  ],
+  { cwd: root, encoding: "utf8" },
+);
+assert.equal(
+  nativeNuclearBuildMenu.status,
+  0,
+  nativeNuclearBuildMenu.stdout + nativeNuclearBuildMenu.stderr,
+);
 const runner = fs.readFileSync(path.join(root, "scripts/headless/run-match.mts"), "utf8");
 const batch = fs.readFileSync(path.join(root, "scripts/headless/run-batch.mjs"), "utf8");
 const matrix = fs.readFileSync(
