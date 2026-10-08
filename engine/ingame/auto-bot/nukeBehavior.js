@@ -2050,6 +2050,8 @@
     getAvailableSiloEntries(silos, targetTile, coveringSamIds) {
       const speed = this.game.config().defaultNukeSpeed();
       const entries = silos.map((silo) => {
+        // DIVERGENCE: retained client views can change during the async price probe.
+        if (silo.isActive?.() === false || silo.isUnderConstruction?.() === true) return null;
         const slots = silo.level() - silo.missileTimerQueue().length;
         if (slots <= 0) return null;
         const pathFinder = UniversalPathFinding.Parabola(this.game, {

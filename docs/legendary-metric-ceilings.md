@@ -5589,3 +5589,23 @@ it must not guide a bot timing gate. Earlier cumulative totals and
 denominators are historical estimates superseded by this recomputation.
 The newest Australia Impossible Team records cbaJ5y6GpS/caDSxYKRwF
 contain 2/4 requests with global gaps 1142/1156, respectively.
+
+### Async silo availability correction pre-declaration (2026-10-08)
+
+maybeDestroyEnemySam snapshots silos, then awaits cost before planning.
+Unit views are mutable: deletion removes a silo from new inventories but
+does not remove retained references; construction state can change too.
+getAvailableSiloEntries must revalidate active/completed state when it
+counts slots, matching nukeSpawn eligibility. Regression: invalidate the
+retained silo during the cost await and assert no salvo is dispatched.
+This corrects stale capacity, not target weights or economy policy.
+Validate the regression before/after, existing salvo tests, rebuild,
+and source/bundle parity. No win-rate improvement is claimed from this fix.
+
+Result: the pre-fix regression dispatched a salvo using a destroyed silo
+(expected 0, observed 1). Revalidating active/completed state at the shared
+slot calculation makes destruction and upgrade cases reject that capacity;
+the unchanged-silo control still dispatches. Related nuclear tests, full
+`npm test` (exit 0), rebuild and build parity all pass. This demonstrates
+correct capacity after the asynchronous probe; it does not quantify
+match win-rate or saved gold in live games.

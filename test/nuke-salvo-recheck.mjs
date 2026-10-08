@@ -58,6 +58,7 @@ const sandbox = {
   tr: (value) => value,
   EMOJI_NUKE: [],
   closestTwoTiles: (gm, x, y) => ({ x: x[0], y: y[0] }),
+  within: (value, min, max) => Math.max(min, Math.min(max, value)),
   console,
 };
 sandbox.globalThis = sandbox;
@@ -111,6 +112,46 @@ function makeSalvoWorld() {
     owner: () => nukeTarget,
   });
   return { world, game, player, nukeTarget, behavior };
+}
+
+// A worker price probe can outlive the silo snapshot captured before it.
+for (const invalidation of ["unchanged", "destroyed", "upgrading"]) {
+  const { behavior, player, game, world, nukeTarget } = makeSalvoWorld();
+  let active = true;
+  let constructing = false;
+  const silo = {
+    isActive: () => active,
+    isUnderConstruction: () => constructing,
+    level: () => 3,
+    missileTimerQueue: () => [],
+    tile: () => 5,
+  };
+  player.units = (type) => type === UNIT.MissileSilo && active ? [silo] : [];
+  world.targetSams = [world.sam(1, 1)];
+  game.config = () => ({ defaultNukeSpeed: () => 1, isUnitDisabled: () => false });
+  Object.assign(game, {
+    x: (tile) => tile,
+    y: () => 50,
+    height: () => 100,
+    ref: (x) => x,
+    manhattanDist: (a, b) => Math.abs(a - b),
+  });
+  behavior.isTrajectoryInterceptableBySam = () => true;
+  behavior.cost = async () => {
+    if (invalidation === "destroyed") active = false;
+    else if (invalidation === "upgrading") constructing = true;
+    return 1n;
+  };
+  behavior.createSamOverwhelmPlan = (_sam, silos) => ({
+    capacityMissing: behavior.getAvailableSiloEntries(silos, 20, []).length === 0,
+  });
+  behavior.rememberFailedSamTarget = (plan) => plan;
+  behavior.maybeUpgradeHelpfulSilo = async () => {};
+  let salvos = 0;
+  behavior.fireSamSalvo = async () => { salvos++; return true; };
+  await behavior.maybeDestroyEnemySam(nukeTarget);
+  assert.equal(salvos, invalidation === "unchanged" ? 1 : 0,
+    `${invalidation} silo eligibility after price await`);
 }
 
 for (const type of [UNIT.AtomBomb, UNIT.HydrogenBomb]) {
