@@ -447,7 +447,10 @@ unfinished launchers able to intercept those trajectories, and inconclusive
 schedules retain the conservative estimate. Construction outside those routes
 does not cancel an otherwise viable finisher.
 Bot Atom/Hydrogen intents use the upward arc assumed by their trajectory forecast.
-Single shots require a clear flight path. Both ordinary nuclear decisions and
+Single shots require a clear flight path. The shared dispatcher rechecks
+the live silo and route after worker pricing;
+deferred saturation atoms keep their salvo metadata and interception exception.
+Both ordinary nuclear decisions and
 the freeze-giant fallback delegate SAM-covered targets to the existing anti-SAM
 salvo planner, which funds and schedules every required atom. Merely owning enough
 silo levels never authorizes a lone interceptable bomb. No destination coverage

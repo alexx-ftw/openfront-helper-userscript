@@ -1727,6 +1727,12 @@
       // to change. Re-run the complete attack policy immediately before
       // actuation so a stale candidate cannot launch after becoming invalid.
       if (!this.isValidNukeTarget(targetPlayer) || !this.isValidNukeDestination(tile)) return false;
+      // DIVERGENCE: a worker await can invalidate the previously clear route.
+      // Planned saturation atoms retain their intentional interception budget.
+      if (isLegendaryDifficulty(currentDifficulty()) && !salvo) {
+        const spawnTile = this.nukeSpawn(nukeType, tile);
+        if (spawnTile === false || this.isTrajectoryInterceptableBySam(spawnTile, tile)) return false;
+      }
       if (!this.emitNukeBuildable(buildable, tile)) return false;
       await this.rememberSuccessfulNukeLaunch(tile, nukeType, targetPlayer);
       return true;
@@ -1894,6 +1900,8 @@
         pending.tile,
         pending.nukeType,
         pending.targetPlayer,
+        0,
+        pending.salvo,
       );
       const finisher = state.postSalvoHydrogen;
       if (sent && pending.salvo && finisher?.salvoId === pending.salvo.salvoId &&

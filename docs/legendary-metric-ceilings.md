@@ -5988,3 +5988,27 @@ Independent static review confirms direct-send setup and native decoder
 context, and highlighted why frame silence alone cannot prove cleanup;
 the fixture checks actual listener counts. No handshake, buffering,
 real socket delivery or server acceptance is claimed.
+
+## Nuclear dispatch route race (2026-10-08)
+
+The native fixture reproduced a legal Atom response followed by a newly built
+hostile SAM before dispatch: the ordinary launch still emitted an intent. The
+shared dispatcher now rechecks the current launch silo and full upward route
+after the worker await, using the Legendary/Impossible policy alias. Planned
+saturation atoms retain their exception; delayed entries must pass their salvo
+metadata through the same dispatcher. No scoring constants change.
+
+Acceptance: native clear control launches; a SAM added during pricing blocks the
+ordinary shot without advancing counters; the same route remains allowed for a
+planned saturation atom; existing capture and silo-upgrade scenarios pass. Run
+the full suite and Baikal Nuke Wars sequentially with 4 GiB RAM/1 GiB swap caps.
+The Baikal guard requires victory and no increase over 11 own structures nuked;
+this correctness fix does not require an aggregate victory improvement claim.
+
+Result: full `npm test`, type check and build parity pass. The native fixture
+passes all eight scenarios, including a delayed Atom's real dispatch with salvo
+metadata. Baikal remains won/alive at tick 6661, with 20 Atoms, 49 Hydrogens,
+zero pending launches, 11 own structures nuked and 73,350,000 enemy structure
+gold destroyed. Receipt: `/home/eros/ofh-matrix/route-dispatch-race/baikal-nuke-wars.log`.
+The deterministic match is unchanged; the reproduced dispatch race is fixed.
+Live browser adoption and aggregate victory improvement remain unverified.

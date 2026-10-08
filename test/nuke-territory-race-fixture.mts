@@ -11,7 +11,14 @@ import {
 import { engineTestsUtil } from "./helpers/two-player-game.mts";
 
 for (const action of ["launch", "silo-upgrade"]) {
-  for (const capture of ["none", "before-probe", "during-probe"]) {
+  for (const capture of [
+    "none",
+    "before-probe",
+    "during-probe",
+    ...(action === "launch" ? ["sam-during-probe", "salvo-sam-during-probe"] : []),
+  ]) {
+    const samRace = capture.endsWith("sam-during-probe");
+    const shouldSend = capture === "none" || capture === "salvo-sam-during-probe";
     const game = await setup(
       "big_plains",
       { instantBuild: true },
@@ -78,6 +85,9 @@ for (const action of ["launch", "silo-upgrade"]) {
     const nuke = bot.nationBot.nukeBehavior;
     const targetPlayer = bot.api.game.playerBySmallID(defender.smallID());
     assert.equal(nuke.isValidNukeTarget(targetPlayer), true);
+    if (samRace) {
+      assert.equal(nuke.isTrajectoryInterceptableBySam(source, target), false);
+    }
     if (action === "silo-upgrade") {
       bot.harness.internals.state.nukeWantSlots = {
         need: 2,
@@ -109,26 +119,48 @@ for (const action of ["launch", "silo-upgrade"]) {
             "the worker authorizes the actual silo upgrade",
           );
         if (capture === "during-probe") attacker.conquer(target);
+        if (samRace) {
+          defender.buildUnit(UnitType.SAMLauncher, game.ref(80, 2), {});
+          assert.equal(
+            nuke.isTrajectoryInterceptableBySam(source, target),
+            true,
+            "the native SAM changes the route while the legality probe yields",
+          );
+        }
       }
       return result;
     };
     const goldBefore = attacker.gold();
     const sent =
       action === "launch"
-        ? await nuke.sendNuke(target, UnitType.AtomBomb, targetPlayer)
+        ? capture === "salvo-sam-during-probe"
+          ? (await nuke.firePendingNukeLaunch(
+              {
+                tile: target,
+                nukeType: UnitType.AtomBomb,
+                targetPlayer,
+                salvo: { salvoId: 1 },
+              },
+              0,
+            )) === "fired"
+          : await nuke.sendNuke(target, UnitType.AtomBomb, targetPlayer)
         : await bot.nationBot.structureBehavior.maybeUpgradeSiloForNukeDemand();
     assert.equal(nuke.isValidNukeTarget(targetPlayer), true, "the rival remains a valid target");
-    assert.equal(nuke.isValidNukeDestination(target), capture === "none");
-    if (capture !== "none") {
-      assert.equal(bot.intentBuffer.length, 0, "a captured destination produces no intents");
+    assert.equal(nuke.isValidNukeDestination(target), capture === "none" || samRace);
+    if (!shouldSend) {
+      assert.equal(
+        bot.intentBuffer.length,
+        0,
+        "an invalid destination or newly blocked ordinary route produces no intents",
+      );
       runTurn();
     }
     assert.equal(probes, action === "silo-upgrade" && capture === "before-probe" ? 0 : 1);
-    assert.equal(sent, capture === "none");
+    assert.equal(sent, shouldSend);
     const launches = bot.intentBuffer.filter(
       (intent) => intent.type === "build_unit" && intent.unit === UnitType.AtomBomb,
     );
-    assert.equal(launches.length, action === "launch" && capture === "none" ? 1 : 0);
+    assert.equal(launches.length, action === "launch" && shouldSend ? 1 : 0);
     assert.equal(nuke.atomBombsLaunched, launches.length);
     const upgrades = bot.intentBuffer.filter(
       (intent) => intent.type === "upgrade_structure" && intent.unit === UnitType.MissileSilo,
@@ -149,7 +181,7 @@ for (const action of ["launch", "silo-upgrade"]) {
         );
       }
       assert.equal(launches.length, 0, "the capacity request cannot launch a bomb");
-    } else if (capture === "none") {
+    } else if (shouldSend) {
       runTurn(launches);
       runTurn();
       runTurn();
@@ -160,10 +192,10 @@ for (const action of ["launch", "silo-upgrade"]) {
         "the emitted intent launches a native missile",
       );
     } else {
-      assert.equal(game.owner(target).smallID(), attacker.smallID());
+      assert.equal(game.owner(target).smallID(), samRace ? defender.smallID() : attacker.smallID());
       assert.equal(attacker.units(UnitType.AtomBomb).length, 0);
     }
     bot.harness.window.close();
   }
 }
-console.log("live-engine nuclear territory race fixture passed (6 scenarios)");
+console.log("live-engine nuclear territory and route race fixture passed (8 scenarios)");
