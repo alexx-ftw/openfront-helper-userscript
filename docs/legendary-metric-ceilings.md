@@ -5561,3 +5561,31 @@ ckQZFi5f2u (United States FFA, 27 silos, 35 nukes hydrogen-tilted
 14A/21H, gap 483), c7BgrAMU9E (Australia Easy micro, gap 381).
 Silo-maturation law 54/58 <= 1027. Exact disk totals: 2857 nukes, 71
 MIRV across 75 records.
+
+## Measurement correction (2026-10-08, engine-source verification)
+
+ConstructionExecution passes a nuclear build intent's `tile` as the
+destination to NukeExecution or MirvExecution. MirvExecution separately
+resolves a launch silo using `canBuild(MIRV, dst)` and can reject the
+request. Therefore the claim above that nuclear destination data is
+absent is false: destination tiles ARE recorded; launch success, impact,
+victim ownership and structure levels require additional state/replay.
+The four Africa MIRV requests at tile 2697458 target the same destination,
+not necessarily the same launch silo. Port/DefensePost/SAM attribution
+remains unverified without a reproducible structure-state reconstruction.
+
+The scanner now labels nuclear counts as requests, respects Atom/Hydrogen
+`amount` batches, and reports requested destination tiles. A runnable
+regression (`node test/scan-history.mjs`) covers batch counts, destination
+versus silo tiles, and phases with sparse recorded turns.
+
+Full disk recomputation: 78 records, 3008 requested bombs (2063 atoms,
+874 hydrogen, 71 MIRV). Across 76 records with both silo and nuclear
+requests, the GLOBAL first-silo-to-first-nuclear-intent gap has median
+426, range 109-2959; 65/76 are <=1027. These are different players'
+requests in some matches, not accepted builds from the same launcher.
+Calling this a silo-maturation law or income mechanism was unsupported;
+it must not guide a bot timing gate. Earlier cumulative totals and
+denominators are historical estimates superseded by this recomputation.
+The newest Australia Impossible Team records cbaJ5y6GpS/caDSxYKRwF
+contain 2/4 requests with global gaps 1142/1156, respectively.
