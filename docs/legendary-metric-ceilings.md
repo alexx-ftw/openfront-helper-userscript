@@ -6578,3 +6578,29 @@ Focused fixture and full npm test pass; all heavy execution stays serial under
 batch from one silo against one level-one SAM; production viability/sizing
 adoption, multi-SAM assignment, network delivery variance and aggregate victory
 gains remain unverified and owned by the active goal.
+
+## 2026-10-08 harvest (subagente)
+
+Read-only disk scan completed at 2026-10-08T18:53:31Z using
+`scripts/headless/scan-history.cjs` over every record JSON in
+`/home/eros/ofh-matrix/history` (excluding `index.json`); scanner exit 0.
+Exact totals: **78 records, 3008 requested nuclear bombs: 2063 Atom Bomb,
+874 Hydrogen Bomb, 71 MIRV**. Atom/Hydrogen counts include requested `amount`
+batches; these are recorded requests, not confirmed launches or impacts.
+
+For the statistic historically called the silo-maturation law,
+**65/76 records have a global first-silo-to-first-nuclear-request gap <= 1027
+ticks**. Median 426 ticks, range 109-2959; two records lack a paired gap.
+The 11 gaps above 1027 are 1043, 1142, 1156, 1232, 1395, 1491, 1493, 1555,
+2278, 2520 and 2959. The first requests may belong to different players;
+this statistic does not establish accepted silo construction, same-launcher
+maturation or a bot timing gate.
+
+`node scripts/headless/fetch-history.mjs` was attempted with an in-memory
+fetch preload enforcing the requested retry budget without editing the script.
+The ranked-leaderboard endpoint returned HTTP 403 on all three attempts,
+with 60 seconds between attempts; execution stopped after two retries.
+**0 new records and 0 new maps**; the disk corpus still covers **41 distinct
+maps**, matching the pre-fetch inventory. Fetch and scanner execution were
+serial under `systemd-run --user --wait --pipe --collect` with
+`MemoryMax=4G`, `MemorySwapMax=1G` and `OOMPolicy=kill`.
