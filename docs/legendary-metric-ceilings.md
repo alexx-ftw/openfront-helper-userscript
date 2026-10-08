@@ -5859,3 +5859,23 @@ through ConstructionExecution and NukeExecution; both captured destinations
 produce zero Atom intents and zero launch-counter increments. This verifies
 the committed destination guard against real engine ownership changes;
 it is not evidence of higher win rate or a repaired desktop OOM policy.
+
+Native silo-demand territory-race gate: extend the same real-engine fixture
+with a hostile SAM and target-specific request for two slots from a
+level-one silo. A valid hostile destination must emit an upgrade that the
+native Executor applies to level two. Capture before pricing must skip the
+probe; capture during pricing must discard the returned legal upgrade.
+Both captures must leave level one, emit no upgrade, and clear obsolete
+nuclear demand. Keep the nuclear launch controls and memory-isolated,
+sequential checks; no production strategy change is proposed by this gate.
+
+Native silo-demand result: all six launch/upgrade cases pass with finite
+gold and real engine prices. The upgrade control creates a native level-two
+silo and reduces actual player gold. Both captured destinations emit no
+upgrade, retain level one and the original gold balance, and clear the
+request. The SAM owner remains a valid enemy, isolating destination
+ownership as the reason to cancel spending. This closes the native
+construction-side race proof for the already-implemented shared policy;
+it does not establish increased match victories or desktop OOM recovery.
+Integrated headless contract suite, formatting and diff checks also pass;
+the supervised test service peaked at 746,471,424 bytes of memory.
