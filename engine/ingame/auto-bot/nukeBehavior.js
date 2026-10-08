@@ -2332,9 +2332,6 @@
         UNIT.HydrogenBomb,
         target,
       );
-      if (sent) {
-        this.hydrogenBombsLaunched += 1;
-      }
       if (sent || this.postSalvoHydrogenTarget(pending) === null) {
         state.postSalvoHydrogen = null;
       }

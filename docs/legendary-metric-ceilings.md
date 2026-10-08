@@ -5715,3 +5715,26 @@ player identity and attack-policy surface required by target validation.
 Baikal `/home/eros/ofh-matrix/launch-fallthrough` retains won/alive at tick
 6661, 20 atoms, 49 hydrogens, 11 own structures nuked and 73,350,000 enemy
 structure gold nuked. No aggregate win-rate improvement claimed.
+
+Hydrogen launch accounting pre-declaration (2026-10-08): sendNuke records a
+successful Hydrogen dispatch in updateNukePerceivedCost, while its scheduled
+follow-up caller increments hydrogenBombsLaunched again. Exercise the full
+follow-up-to-dispatch path instead of replacing sendNuke with a mock: one
+emitted intent must mean one Hydrogen launch and one total nuke, with no
+extra increment on a repeated check. Remove only duplicate caller accounting;
+leave perceived-cost updates and firing policy intact. Verify focused tests,
+full suite, build parity and Baikal; do not mistake corrected counts for a
+change in emitted bombs or tactical outcomes.
+
+Hydrogen launch accounting result (2026-10-08): the full-path regression
+confirmed one emitted finisher incremented hydrogenBombsLaunched to two.
+Removing the duplicate caller increment yields one Hydrogen and one total
+nuke; a repeated check adds neither. Focused nuclear/retention/EV tests,
+complete npm suite and generated build parity pass. Independent static
+review found no further issues in fallthrough or shared accounting.
+Baikal `/home/eros/ofh-matrix/hydrogen-accounting` retains won/alive at tick
+6661, 20 atoms, 49 hydrogens, 11 own structures nuked and 73,350,000 enemy
+structure gold nuked; this row does not exercise a successful finisher.
+The active openfront-helper-dev.service serves byte-identical build-id,
+full userscript and Auto-Bot artifacts on 127.0.0.1:17373. This verifies
+delivery from the local server, not adoption by an already-open browser.

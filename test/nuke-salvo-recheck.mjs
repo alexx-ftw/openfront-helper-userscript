@@ -1151,10 +1151,10 @@ launchSink = null;
   behavior.getPerceivedNukeCost = async () => 5_000_000n;
   behavior.player.units = (type) =>
     type === UNIT.MissileSilo ? [{ isUnderConstruction: () => false }] : [];
-  behavior.sendNuke = async (tile, type) => {
-    launches.push({ type, tile });
-    return true;
-  };
+  behavior.player.buildables = async () => [
+    { type: UNIT.HydrogenBomb, cost: 5_000_000n, canBuild: true },
+  ];
+  const totalNukesBefore = sandbox.state.stats.nukes;
   sandbox.state.postSalvoHydrogen = {
     targetTile: 20,
     dueTick: world.tick + 10,
@@ -1190,7 +1190,10 @@ launchSink = null;
     "the finisher is a Hydrogen bomb at the salvo's target tile",
   );
   assert.equal(behavior.hydrogenBombsLaunched, 1, "the finisher counts as a Hydrogen launch");
+  assert.equal(sandbox.state.stats.nukes, totalNukesBefore + 1, "one dispatched finisher is one total nuke");
   assert.equal(sandbox.state.postSalvoHydrogen, null, "a fired finisher clears the schedule");
+  assert.equal(await behavior.maybeFirePostSalvoHydrogen(), false);
+  assert.equal(behavior.hydrogenBombsLaunched, 1, "a repeated check cannot count the finisher again");
 }
 
 launchSink = null;

@@ -55,7 +55,6 @@ function makeFinisher({ gold, target: resolvedTarget = target }) {
   behavior.player.units = () => [{ isUnderConstruction: () => false }];
   behavior.findEnemySamsCoveringTile = () => [];
   behavior._pendingNukeLaunches = [];
-  behavior.hydrogenBombsLaunched = 0;
   const sent = [];
   behavior.sendNuke = async (...args) => {
     sent.push(args);
@@ -83,7 +82,6 @@ function makeFinisher({ gold, target: resolvedTarget = target }) {
   assert.equal(await behavior.maybeFirePostSalvoHydrogen(), true);
   assert.deepEqual(sent, [[555, UNIT.HydrogenBomb, target]]);
   assert.equal(pending(), null, "a successful dispatch clears the schedule");
-  assert.equal(behavior.hydrogenBombsLaunched, 1);
 }
 
 // 2. A dead/missing target clears the schedule (permanent condition).
