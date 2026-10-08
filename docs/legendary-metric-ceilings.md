@@ -5555,3 +5555,9 @@ nukes). Silo-maturation law after this batch: 51/55 <= 1027 ticks
 wait-after-first-silo can stretch well past an hour of game time when
 income or war timing delays the nuclear decision, so the law's honest
 form is MEDIAN ~460 ticks with a heavy right tail, not a hard gate.
+Harvest continuation (2026-10-08, corpus 72 -> 75): cjheca3EkK (Two
+Lakes again, 39 silos, 41 nukes, 2 MIRV, gap 305, 18 nukers),
+ckQZFi5f2u (United States FFA, 27 silos, 35 nukes hydrogen-tilted
+14A/21H, gap 483), c7BgrAMU9E (Australia Easy micro, gap 381).
+Silo-maturation law 54/58 <= 1027. Exact disk totals: 2857 nukes, 71
+MIRV across 75 records.
