@@ -2183,6 +2183,7 @@
       };
       state.nukeWantSlots = {
         need: plan.totalBombs,
+        targetSamId: plan.targetSamId,
         at: this.game.ticks(),
         targetTile: plan.targetTile,
         unblockedSiloIds,
@@ -2218,6 +2219,7 @@
           .filter((id) => id !== null);
         state.nukeWantSlots = {
           need: Number(plan.totalBombs ?? salvo.bombsToFire),
+          targetSamId: plan.targetSamId,
           at: this.game.ticks(),
           targetTile: plan.targetTile,
           unblockedSiloIds,

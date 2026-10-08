@@ -154,6 +154,46 @@ for (const invalidation of ["unchanged", "destroyed", "upgrading"]) {
     `${invalidation} silo eligibility after price await`);
 }
 
+// Construction consumes demand before the nuclear decision chain gets to clear it.
+for (const change of ["unchanged", "destroyed", "friendly", "during-probe", "replaced-request", "pending-launches"]) {
+  const { behavior, game, player, world, nukeTarget } = makeSalvoWorld();
+  const sam = world.sam(77, 3);
+  let friendly = false;
+  world.covering = [sam];
+  world.targetSams = [sam];
+  game.config = () => ({ isUnitDisabled: () => false });
+  game.units = () => world.covering;
+  player.isFriendly = () => friendly;
+  player.units = (type) => type === UNIT.AtomBomb ? [{}] : [];
+  behavior.rememberFailedSamTarget({
+    targetSamId: 77, targetTile: 20, totalBombs: 4, siloEntries: [],
+    coveringSamIds: new Set([77]),
+  });
+  if (change === "destroyed") world.covering = world.targetSams = [];
+  if (change === "friendly") friendly = true;
+  await behavior.maybeDestroyEnemySam(nukeTarget);
+  const structures = new sandbox.__StructureBehavior({}, game, player);
+  structures.nukeDemandScopedSilos = () => [{ level: () => 1 }];
+  structures.availableGoldAfterReserve = () => 100n;
+  structures.safeStructureCost = () => 1n;
+  structures.nukeSiloUpgradeBudgetAvailable = () => true;
+  structures.buildableForUnits = async () => {
+    if (change === "during-probe") world.covering = world.targetSams = [];
+    if (change === "replaced-request") sandbox.state.nukeWantSlots = { ...sandbox.state.nukeWantSlots, targetSamId: 88 };
+    if (change === "pending-launches") sandbox.state.nukeWantSlots.pendingLaunches = true;
+    return [];
+  };
+  structures.rankNukeDemandSiloUpgrades = () => [{}];
+  let upgrades = 0;
+  structures.executeStructureUpgradeCandidate = async () => { upgrades++; return true; };
+  await structures.maybeUpgradeSiloForNukeDemand();
+  assert.equal(upgrades, change === "unchanged" ? 1 : 0,
+    `${change} SAM cannot retain obsolete capacity demand`);
+  if (change === "pending-launches") assert.equal(sandbox.state.nukeWantSlots.pendingLaunches, true);
+  if (change === "replaced-request") assert.equal(sandbox.state.nukeWantSlots.targetSamId, 88);
+  sandbox.state.nukeWantSlots = null;
+}
+
 for (const type of [UNIT.AtomBomb, UNIT.HydrogenBomb]) {
   for (const throws of [false, true]) {
     const { behavior } = makeSalvoWorld();

@@ -11057,6 +11057,7 @@
      * construction.
      */
     async maybeUpgradeSiloForNukeDemand() {
+      const pendingRequest = state.nukeWantSlots;
       const request = this.validNukeSiloUpgradeRequest();
       if (request === null) return false;
       const scopedSilos = this.nukeDemandScopedSilos(request);
@@ -11091,6 +11092,7 @@
         availableGold,
         minimumCost,
       });
+      if (state.nukeWantSlots !== pendingRequest || this.validNukeSiloUpgradeRequest() === null) return false;
       return this.executeStructureUpgradeCandidate(ranked[0], UNIT.MissileSilo);
     }
 
@@ -11102,6 +11104,15 @@
       if (request?.pendingLaunches === true) return null;
       const requiredCapacity = Number(request?.need);
       if (!Number.isFinite(requiredCapacity) || requiredCapacity <= 0) return null;
+      const targetSam = this.game.units(UNIT.SAMLauncher)
+        .find((sam) => sam.id() === request.targetSamId);
+      const owner = targetSam?.owner?.();
+      if (!targetSam || targetSam.isActive?.() === false || !owner ||
+          owner.smallID() === this.player.smallID() ||
+          this.player.isFriendly?.(owner) === true || this.player.isOnSameTeam?.(owner) === true) {
+        state.nukeWantSlots = null;
+        return null;
+      }
       {
         if (this.game.config().isUnitDisabled(UNIT.MissileSilo)) return null;
       }

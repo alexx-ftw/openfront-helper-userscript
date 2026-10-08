@@ -5627,3 +5627,29 @@ The victory/ticks/value/own-loss indicators match the earlier documented
 seed receipt; this is integrated non-regression evidence on one enriched
 scenario, not a new multi-seed win-rate gain. The stale-silo regression
 remains the direct evidence for the behavioral correction.
+
+SAM demand freshness pre-declaration (2026-10-08): retain target SAM
+identity in capacity requests. At the structure-side consumer, reject
+requests whose SAM disappeared or became friendly, and revalidate after
+the asynchronous upgrade probe before spending gold. Regressions cover
+target disappearance with an atom in flight, disappearance during the
+probe, friendly capture, and an unchanged hostile control. Pending
+salvo reservations remain owned by the launch queue. This replaces no
+scoring/economy policy and adds no arbitrary age timeout. Validate via
+focused regressions, full suite, rebuild and bundle parity.
+Also rerun the same Baikal scenario for integrated non-regression on
+this demand-freshness change; compare to the immediately preceding
+0ac596b8 receipt, with wins/survival taking priority.
+
+Result: the baseline regression serviced a destroyed SAM's request
+(1 unwanted upgrade). With target identity and consumer revalidation,
+destroyed/friendly targets and targets lost during the probe issue zero
+upgrades; the unchanged hostile control upgrades once. Replaced requests
+and pending-launch reservations are preserved without servicing the old
+request. Focused tests, full npm test (exit 0), rebuilt bundle and parity
+pass. Baikal also passes: won/alive=true, winner at 6661, 20 atoms + 49
+hydrogen, 1 observed global MIRV, 73,350,000 enemy structure value and
+11 own structures nuked, matching the preceding seed receipt. Artifact:
+/home/eros/ofh-matrix/sam-demand-freshness/baikal-nuke-wars.log.
+This establishes stale-demand spending prevention and single-scenario
+non-regression, not increased win rate across seeds.
