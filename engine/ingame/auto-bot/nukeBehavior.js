@@ -1715,15 +1715,6 @@
       // to change. Re-run the complete attack policy immediately before
       // actuation so a stale candidate cannot launch after becoming invalid.
       if (!this.isValidNukeTarget(targetPlayer) || !this.isValidNukeDestination(tile)) return false;
-      // DIVERGENCE: preserve useful salvo routes after a source changes during the probe.
-      if (typeof salvo?.interceptable === "boolean") {
-        const spawnTile = this.nukeSpawn(nukeType, tile);
-        const sources = this.player.units(UNIT.MissileSilo).filter((silo) => silo.tile() === spawnTile);
-        const entry = this.getAvailableSiloEntries(sources, tile,
-          new Set(salvo.coveringSamIds ?? []))[0];
-        if (!entry || (!salvo.interceptable && entry.interceptable)) return false;
-        salvo.flightTicks = entry.flightTicks;
-      }
       // DIVERGENCE: a worker await can invalidate the previously clear route.
       // Planned saturation atoms retain their intentional interception budget.
       if (isLegendaryDifficulty(currentDifficulty()) && !salvo) {
@@ -1935,30 +1926,13 @@
         const entries = this._pendingNukeLaunches.filter(
           (pending) => pending.salvo && pending.salvo.salvoId === salvoId,
         );
-        if (entries.every((entry) => typeof entry.salvo.interceptable === "boolean")) {
-          const sequence = this.createSamLaunchSequence(this.getAvailableSiloEntries(
-            this.player.units(UNIT.MissileSilo), entries[0].tile,
-            new Set(entries[0].salvo.coveringSamIds ?? []),
-          ));
-          if (sequence.length < entries.length || entries.some((entry, index) =>
-            !entry.salvo.interceptable && sequence[index].interceptable)) {
-            abortedSalvoIds.add(salvoId);
-            continue;
-          }
-          entries.forEach((entry, index) => { entry.salvo.flightTicks = sequence[index].flightTicks; });
-        }
-        const usefulEntries = entries.filter((entry) => entry.salvo.interceptable !== true);
-        if (usefulEntries.length === 0) {
-          abortedSalvoIds.add(salvoId);
-          continue;
-        }
-        const arrivals = usefulEntries.map((entry) => {
+        const arrivals = entries.map((entry) => {
           const flight = entry.salvo.flightTicks;
           return Number.isFinite(flight) && flight >= 0
             ? Math.max(now, entry.dueTick) + flight
             : NaN;
         });
-        if (!this.samSalvoStillViable(entries[0], usefulEntries.length, Math.max(...arrivals))) {
+        if (!this.samSalvoStillViable(entries[0], entries.length, Math.max(...arrivals))) {
           abortedSalvoIds.add(salvoId);
         }
       }
@@ -2281,10 +2255,7 @@
       try {
         let queued = false;
         for (let i = 0; i < salvo.bombsToFire; i++) {
-          const metadata = { ...salvoPlan, flightTicks: flightTicks[i],
-            interceptable: plan.launchSequence?.[i]?.interceptable,
-            coveringSamIds: [...(plan.coveringSamIds ?? [])],
-          };
+          const metadata = { ...salvoPlan, flightTicks: flightTicks[i] };
           const wait = Math.max(salvo.waits[i], queued ? 1 : 0);
           const sent = await this.sendNuke(
             plan.targetTile, UNIT.AtomBomb, nukeTarget, wait, metadata,
@@ -2295,7 +2266,6 @@
             plan.targetTile, UNIT.AtomBomb, nukeTarget,
             Math.max(1, wait), metadata,
           )) return false;
-          flightTicks[i] = metadata.flightTicks;
           queued = queued || wait > 0 || !sent;
         }
       } finally {

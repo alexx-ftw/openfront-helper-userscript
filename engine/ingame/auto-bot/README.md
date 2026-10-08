@@ -443,12 +443,6 @@ Local salvo delays never decrease in closest-silo slot order. A delayed or faile
 head queues its tail, and a queued retry prevents later bombs of that same salvo
 from overtaking it. Otherwise the engine can assign a different silo than the
 one used to price its trajectory and flight time.
-Each planned Atom retains whether its route is useful or intentional filler and
-which destination SAMs its budget covers. Queued salvos forecast the current silo
-slots and cancel if capacity disappears or a useful route gains other SAM cover.
-Filler consumes a source slot but does not count toward destination penetration.
-Dispatch rechecks the actual source after the worker probe and refreshes flight
-time, so a captured silo cannot redirect a useful Atom into unbudgeted cover.
 SAM-salvo revalidation counts charges that can reload by the latest remaining
 planned arrival, including delayed-launch retries. Unknown flight or reload data
 keeps the conservative full-capacity estimate.

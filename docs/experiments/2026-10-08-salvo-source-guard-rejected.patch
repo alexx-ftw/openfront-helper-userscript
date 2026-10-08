@@ -1,0 +1,298 @@
+diff --git a/engine/ingame/auto-bot/README.md b/engine/ingame/auto-bot/README.md
+index 103a16aa..eb292133 100644
+--- a/engine/ingame/auto-bot/README.md
++++ b/engine/ingame/auto-bot/README.md
+@@ -443,6 +443,14 @@ Local salvo delays never decrease in closest-silo slot order. A delayed or faile
+ head queues its tail, and a queued retry prevents later bombs of that same salvo
+ from overtaking it. Otherwise the engine can assign a different silo than the
+ one used to price its trajectory and flight time.
++Each planned Atom retains whether its route is useful or intentional filler.
++Queued salvos retain the existing destination SAM capacity checks. Dispatch
++rechecks the actual source and current destination coverage after the worker
++probe and refreshes flight
++time, so a captured silo cannot redirect a useful Atom into unbudgeted cover.
++When that route has transit SAM coverage, the shared interceptor scheduler checks
++live slot reload times and native launch delay. Only a conclusive impossible
++interception clears the shot; missing or inconclusive forecasts remain blocked.
+ SAM-salvo revalidation counts charges that can reload by the latest remaining
+ planned arrival, including delayed-launch retries. Unknown flight or reload data
+ keeps the conservative full-capacity estimate.
+diff --git a/engine/ingame/auto-bot/nukeBehavior.js b/engine/ingame/auto-bot/nukeBehavior.js
+index dc00c44f..9328cbbc 100644
+--- a/engine/ingame/auto-bot/nukeBehavior.js
++++ b/engine/ingame/auto-bot/nukeBehavior.js
+@@ -1715,6 +1715,38 @@
+       // to change. Re-run the complete attack policy immediately before
+       // actuation so a stale candidate cannot launch after becoming invalid.
+       if (!this.isValidNukeTarget(targetPlayer) || !this.isValidNukeDestination(tile)) return false;
++      // DIVERGENCE: preserve useful salvo routes after a source changes during the probe.
++      if (typeof salvo?.interceptable === "boolean") {
++        const spawnTile = this.nukeSpawn(nukeType, tile);
++        const sources = this.player.units(UNIT.MissileSilo).filter((silo) => silo.tile() === spawnTile);
++        const coveringIds = new Set(this.findEnemySamsCoveringTile(tile).map((sam) => sam.id()));
++        const entry = this.getAvailableSiloEntries(sources, tile, coveringIds)[0];
++        if (!entry) return false;
++        if (!salvo.interceptable && entry.interceptable) {
++          const planner = this.structureBehavior;
++          if (!planner || typeof this.game.units !== "function") return false;
++          const sams = this.game.units(UNIT.SAMLauncher).filter((sam) =>
++            sam.isActive() && !coveringIds.has(sam.id()) &&
++            this.isHostileSamIntercept({ unit: sam, distSquared: 0 }));
++          const profiles = planner.buildLegendaryFriendlySamProfiles(sams, null, null);
++          let lastDeparture = 0;
++          for (const launchTick of entry.silo.missileTimerQueue()) {
++            lastDeparture = Math.max(launchTick + 1, lastDeparture + 1);
++          }
++          // Native intent initialization/creation takes two ticks before flight.
++          const launchOffset = Math.max(2, lastDeparture - Number(this.game.ticks()) + 1);
++          const route = planner.legendaryBuildMissileRoute({
++            fromTile: spawnTile, targetTile: tile, launchOffset,
++            impactTick: launchOffset + entry.flightTicks, weapon: nukeType,
++          }, profiles);
++          const schedule = legendaryMissileDefenseSchedule({
++            routes: [route], samProfiles: profiles,
++            samCooldownTicks: this.game.config().SAMCooldown(), marginTicks: 0,
++          });
++          if (schedule.fullyDefended || schedule.scheduleMethod !== "exact-impossible") return false;
++        }
++        salvo.flightTicks = entry.flightTicks;
++      }
+       // DIVERGENCE: a worker await can invalidate the previously clear route.
+       // Planned saturation atoms retain their intentional interception budget.
+       if (isLegendaryDifficulty(currentDifficulty()) && !salvo) {
+@@ -2220,7 +2252,7 @@
+         }
+         return lastWait;
+       });
+-      return { bombsToFire, waits };
++      return { bombsToFire, waits, selectedIndexes };
+     }
+ 
+     async fireSamSalvo(plan, nukeTarget, atomCost) {
+@@ -2255,7 +2287,11 @@
+       try {
+         let queued = false;
+         for (let i = 0; i < salvo.bombsToFire; i++) {
+-          const metadata = { ...salvoPlan, flightTicks: flightTicks[i] };
++          const metadata = { ...salvoPlan, flightTicks: flightTicks[i],
++            interceptable: salvo.selectedIndexes
++              ? !salvo.selectedIndexes.has(i)
++              : plan.launchSequence?.[i]?.interceptable,
++          };
+           const wait = Math.max(salvo.waits[i], queued ? 1 : 0);
+           const sent = await this.sendNuke(
+             plan.targetTile, UNIT.AtomBomb, nukeTarget, wait, metadata,
+@@ -2266,6 +2302,7 @@
+             plan.targetTile, UNIT.AtomBomb, nukeTarget,
+             Math.max(1, wait), metadata,
+           )) return false;
++          flightTicks[i] = metadata.flightTicks;
+           queued = queued || wait > 0 || !sent;
+         }
+       } finally {
+diff --git a/test/nuke-salvo-recheck.mjs b/test/nuke-salvo-recheck.mjs
+index fae07c93..481d255e 100644
+--- a/test/nuke-salvo-recheck.mjs
++++ b/test/nuke-salvo-recheck.mjs
+@@ -521,12 +521,30 @@ for (const type of [UNIT.AtomBomb, UNIT.HydrogenBomb]) {
+ buildMenu = { sendBuildOrUpgrade() {} };
+ 
+ // A covered candidate requires an actual salvo, not merely enough silo levels.
++{
++  const { nukeTarget, behavior } = makeSalvoWorld();
++  const sequence = [10, 100, 10].map((flightTicks) => ({ flightTicks, interceptable: false }));
++  const purposes = [];
++  behavior.sendNuke = async (_tile, _type, _target, _wait, metadata) => {
++    purposes.push(metadata.interceptable);
++    return true;
++  };
++  sandbox.state.nukeWantSlots = null;
++  assert.equal(await behavior.fireSamSalvo({
++    targetTile: 20, totalBombs: 2, maxSpread: 45, launchSequence: sequence,
++    window: [0, 2].map((index) => ({ ...sequence[index], index })),
++  }, nukeTarget, 1n), true);
++  assert.deepEqual(purposes, [false, true, false],
++    "a clear-route bomb outside the selected arrival window is still intentional slot filler");
++  sandbox.state.postSalvoHydrogen = null;
++}
++
+ for (const lane of ["ordinary", "freeze"]) {
+   const { world, game, player, nukeTarget, behavior } = makeSalvoWorld();
+   const sam = world.sam("covered-target", 1);
+   world.targetSams.push(sam);
+   world.covering.push({ unit: sam, distSquared: 0 });
+-  const silo = { id: () => 7, level: () => 2, isUnderConstruction: () => false };
++  const silo = { id: () => 7, tile: () => 5, level: () => 2, isUnderConstruction: () => false };
+   player.units = (type) => (type === UNIT.MissileSilo ? [silo] : []);
+   game.config = () => ({
+     maxSamRange: () => 150,
+diff --git a/test/nuke-territory-race-fixture.mts b/test/nuke-territory-race-fixture.mts
+index 2689d214..b5eb4db8 100644
+--- a/test/nuke-territory-race-fixture.mts
++++ b/test/nuke-territory-race-fixture.mts
+@@ -15,11 +15,27 @@ for (const action of ["launch", "silo-upgrade"]) {
+     "none",
+     "before-probe",
+     "during-probe",
+-    ...(action === "launch" ? ["sam-during-probe", "salvo-sam-during-probe"] : []),
++    ...(action === "launch"
++      ? [
++          "sam-during-probe",
++          "salvo-sam-during-probe",
++          "salvo-source-during-probe",
++          "salvo-prefix-source-during-probe",
++          "salvo-replaced-sam-during-probe",
++          "salvo-cooling-source-during-probe",
++        ]
++      : []),
+     ...(action === "silo-upgrade" ? ["missile-during-probe"] : []),
+   ]) {
+-    const samRace = capture.endsWith("sam-during-probe");
+-    const shouldSend = capture === "none" || capture === "salvo-sam-during-probe";
++    const replacementRace = capture === "salvo-replaced-sam-during-probe";
++    const samRace = capture.endsWith("sam-during-probe") && !replacementRace;
++    const sourceRace = capture.endsWith("source-during-probe");
++    const shouldSend =
++      capture === "none" ||
++      capture === "salvo-sam-during-probe" ||
++      capture === "salvo-prefix-source-during-probe" ||
++      capture === "salvo-cooling-source-during-probe" ||
++      replacementRace;
+     const game = await setup(
+       "big_plains",
+       { instantBuild: true },
+@@ -38,6 +54,17 @@ for (const action of ["launch", "silo-upgrade"]) {
+     defender.conquer(target);
+     defender.conquer(game.ref(80, 2));
+     const silo = attacker.buildUnit(UnitType.MissileSilo, source, {});
++    const replacedSam = replacementRace
++      ? defender.buildUnit(UnitType.SAMLauncher, target, {})
++      : null;
++    const alternateSource = game.ref(1, 80);
++    if (sourceRace) {
++      attacker.conquer(alternateSource);
++      attacker.buildUnit(UnitType.MissileSilo, alternateSource, {});
++      defender.conquer(game.ref(1, 81));
++      const transitSam = defender.buildUnit(UnitType.SAMLauncher, game.ref(1, 81), {});
++      if (capture === "salvo-cooling-source-during-probe") transitSam.launch();
++    }
+     const sam =
+       action === "silo-upgrade"
+         ? defender.buildUnit(UnitType.SAMLauncher, game.ref(80, 2), {})
+@@ -89,6 +116,10 @@ for (const action of ["launch", "silo-upgrade"]) {
+     if (samRace) {
+       assert.equal(nuke.isTrajectoryInterceptableBySam(source, target), false);
+     }
++    if (sourceRace) {
++      assert.equal(nuke.isTrajectoryInterceptableBySam(source, target), false);
++      assert.equal(nuke.isTrajectoryInterceptableBySam(alternateSource, target), true);
++    }
+     if (action === "silo-upgrade") {
+       bot.harness.internals.state.nukeWantSlots = {
+         need: 2,
+@@ -120,6 +151,25 @@ for (const action of ["launch", "silo-upgrade"]) {
+             "the worker authorizes the actual silo upgrade",
+           );
+         if (capture === "during-probe") attacker.conquer(target);
++        if (replacementRace) {
++          replacedSam!.delete(false);
++          const replacement = defender.buildUnit(UnitType.SAMLauncher, target, {});
++          runTurn();
++          assert.equal(
++            replacement.level(),
++            replacedSam!.level(),
++            "replacement preserves destination capacity",
++          );
++        }
++        if (sourceRace) {
++          defender.captureUnit(silo);
++          runTurn();
++          assert.equal(
++            nuke.nukeSpawn(UnitType.AtomBomb, target),
++            alternateSource,
++            "the lost silo changes the native closest launch source during the probe",
++          );
++        }
+         if (capture === "missile-during-probe") {
+           const missile = defender.buildUnit(UnitType.AtomBomb, game.ref(79, 1), {});
+           missile.setTargetTile(source);
+@@ -143,15 +193,29 @@ for (const action of ["launch", "silo-upgrade"]) {
+     };
+     const goldBefore = attacker.gold();
+     const buildsBefore = bot.harness.internals.state.stats.builds;
++    const salvoMetadata = {
++      salvoId: 1,
++      ...(sourceRace || replacementRace
++        ? {
++            interceptable: capture === "salvo-prefix-source-during-probe",
++            coveringSamIds: replacedSam ? [replacedSam.id()] : [],
++            flightTicks: nuke.getAvailableSiloEntries(
++              nuke.player.units(UnitType.MissileSilo).filter((unit) => unit.id() === silo.id()),
++              target,
++              new Set(),
++            )[0].flightTicks,
++          }
++        : {}),
++    };
+     const sent =
+       action === "launch"
+-        ? capture === "salvo-sam-during-probe"
++        ? capture === "salvo-sam-during-probe" || sourceRace || replacementRace
+           ? (await nuke.firePendingNukeLaunch(
+               {
+                 tile: target,
+                 nukeType: UnitType.AtomBomb,
+                 targetPlayer,
+-                salvo: { salvoId: 1 },
++                salvo: salvoMetadata,
+               },
+               0,
+             )) === "fired"
+@@ -160,7 +224,11 @@ for (const action of ["launch", "silo-upgrade"]) {
+     assert.equal(nuke.isValidNukeTarget(targetPlayer), true, "the rival remains a valid target");
+     assert.equal(
+       nuke.isValidNukeDestination(target),
+-      capture === "none" || samRace || capture === "missile-during-probe",
++      capture === "none" ||
++        samRace ||
++        sourceRace ||
++        replacementRace ||
++        capture === "missile-during-probe",
+     );
+     if (!shouldSend) {
+       assert.equal(
+@@ -173,6 +241,18 @@ for (const action of ["launch", "silo-upgrade"]) {
+     }
+     assert.equal(probes, action === "silo-upgrade" && capture === "before-probe" ? 0 : 1);
+     assert.equal(sent, shouldSend);
++    if (sourceRace && shouldSend) {
++      const actualEntry = nuke.getAvailableSiloEntries(
++        nuke.player.units(UnitType.MissileSilo),
++        target,
++        new Set(),
++      )[0];
++      assert.equal(
++        salvoMetadata.flightTicks,
++        actualEntry.flightTicks,
++        "accepted source changes refresh the flight time used by the finisher",
++      );
++    }
+     const launches = bot.intentBuffer.filter(
+       (intent) => intent.type === "build_unit" && intent.unit === UnitType.AtomBomb,
+     );
+@@ -227,10 +307,13 @@ for (const action of ["launch", "silo-upgrade"]) {
+         "the emitted intent launches a native missile",
+       );
+     } else {
+-      assert.equal(game.owner(target).smallID(), samRace ? defender.smallID() : attacker.smallID());
++      assert.equal(
++        game.owner(target).smallID(),
++        samRace || sourceRace ? defender.smallID() : attacker.smallID(),
++      );
+       assert.equal(attacker.units(UnitType.AtomBomb).length, 0);
+     }
+     bot.harness.window.close();
+   }
+ }
+-console.log("live-engine nuclear territory, route and upgrade race fixture passed (9 scenarios)");
++console.log("live-engine nuclear territory, route and upgrade race fixture passed (13 scenarios)");

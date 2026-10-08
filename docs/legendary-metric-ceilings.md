@@ -6184,3 +6184,68 @@ gold destroyed. This candidate is rejected pending isolation/revert. Receipt:
 Heavy runs were sequential supervised services capped at 4 GiB RAM/1 GiB swap.
 Independent review covered source revalidation and found the horizon correction;
 no live browser/server adoption or aggregate victory improvement is claimed.
+
+Isolation: the pre-horizon and useful-only-horizon receipts are identical at
+7351/21/19, so the horizon correction is not the observed outcome cause. Revert
+the new whole-queue slot forecast and useful-only count/horizon together, and
+retain the after-probe source guard, its metadata and native race fixture as a
+separate candidate. Acceptance is still full suite plus Baikal won/alive and at
+most 11 own structures nuked; no failing feature is promoted as an improvement.
+
+Guard-only isolation is also identical at 7351/21/19, so rejecting the whole-queue
+change does not alone restore the baseline. A new native same-capacity SAM
+replacement control fails under the guard: archived destination SAM IDs make a
+rebuilt destination SAM look like unbudgeted transit coverage. Use current
+destination coverage IDs for the route exclusion, matching the original planner
+and the existing live capacity revalidation, and carry only the useful/filler
+classification. This retains the captured-silo transit-SAM guard while allowing
+same-capacity replacement. The rejected whole-queue forecast/count/horizon
+change stays reverted. Acceptance remains the original gate and all 12 native
+controls, including confirmed-turn source capture and destination replacement.
+
+Live destination IDs alone still produce 7351/21/19. A second red synthetic
+case isolates misclassified clear-route filler: a slot-consumption shot outside
+the selected arrival window was labelled useful solely because its route was
+clear. Carry the existing selected index set from `getSamSalvo` and derive the
+dispatch's interception permission from actual selection, not original route
+clearance. Every unselected prefix remains filler, including clear-route entries.
+Selected arrival-window shots alone receive the useful-source guard. This is a
+mechanical purpose correction; the acceptance gate is unchanged.
+
+Selected-purpose isolation also stays at 7351/21/19. The next native red case
+exposes the actual guard overreach: a transit SAM geometrically covers the new
+source but all slots remain cooling beyond the interception window. Reuse the
+existing hostile SAM slot profiles, prospective missile route and shared
+interceptor scheduler. Include the native two-tick intent initialization/creation
+boundary and same-silo departure fold. Only `exact-impossible` plus an undefended
+forecast clears a geometrically covered useful route; missing/inconclusive
+forecasts stay blocked. All 13 native races pass, including ready-transit rejection,
+cooling-transit approval, intentional filler and same-capacity SAM replacement.
+Acceptance remains full suite/types/parity and Baikal won/alive with at most 11
+own structures nuked; earlier rejected whole-queue changes stay reverted.
+
+Final rejection: the readiness-aware guard still produces 7351/21/19 and fails
+the declared gate. No version in this experiment is accepted. Restore production,
+README and active fixtures exactly to `92402c57`, and rebuild the artifacts. Save
+the complete final source/fixture candidate in
+`docs/experiments/2026-10-08-salvo-source-guard-rejected.patch` so the 13 native
+controls and clear-route-filler reproduction remain reproducible without running
+a rejected policy in the shipped bundle. The failed candidate was briefly
+committed as `c9cca07f`; the false result paragraph was corrected in `35e132b4`.
+
+The next investigation belongs to this active goal: source attribution for
+unacknowledged same-frame intents. Several sends can observe the same native
+silo queue before those intents consume its slots; assigning every emission the
+first currently available source may corrupt the later flight metadata. This is
+a source-supported hypothesis, not yet a proven cause of the Baikal regression.
+Keep the original gate and evidence requirements for its correction.
+
+Restoration result: production, active fixtures, README and all three generated
+artifacts match `92402c57` byte for byte. Full `npm test`, types and artifact
+parity pass. Fresh Baikal restoration receipt recovers the baseline exactly:
+won/alive at tick 6661, 11 own structures nuked, 20 Atoms, 49 Hydrogens, pending
+zero and 73,350,000 enemy structure gold destroyed. Receipt:
+`/home/eros/ofh-matrix/salvo-source-rollback/baikal-nuke-wars.log`.
+The source/frame attribution hypothesis is independently supported in code;
+its scenario-level causal proof and correction remain owned by this active goal.
+No new strategy improvement from this rejected experiment is claimed.

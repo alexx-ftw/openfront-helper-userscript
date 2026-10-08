@@ -520,61 +520,13 @@ for (const type of [UNIT.AtomBomb, UNIT.HydrogenBomb]) {
 }
 buildMenu = { sendBuildOrUpgrade() {} };
 
-// Queued route forecasts follow current silo slots; filler shots consume slots
-// but cannot count as missiles reaching the planned destination SAM network.
-for (const change of ["none", "route", "capacity", "only-fillers"]) {
-  const { world, player, nukeTarget, behavior } = makeSalvoWorld();
-  const sam = world.sam("planned-sam", 1);
-  world.targetSams.push(sam);
-  world.covering.push({ unit: sam, distSquared: 0 });
-  player.units = () => [];
-  behavior.getAvailableSiloEntries = () => change === "capacity" ? [] : [
-    { slots: 1, flightTicks: 10, interceptable: true },
-    { slots: 2, flightTicks: 20, interceptable: change === "route" },
-  ];
-  behavior._pendingNukeLaunches = [true, false, false].map((interceptable) => ({
-    dueTick: world.tick, tile: 20, nukeType: UNIT.AtomBomb, targetPlayer: nukeTarget,
-    salvo: { salvoId: 1, targetTile: 20, targetSamId: sam.id(), flightTicks: 1,
-      interceptable: change === "only-fillers" || interceptable, coveringSamIds: [sam.id()] },
-  }));
-  sandbox.state.nukeWantSlots = { pendingLaunches: true };
-  const aborted = behavior.getAbortedSalvoIds(world.tick);
-  assert.equal(aborted.has(1), change !== "none", `${change}: only a viable useful tail survives`);
-  if (change === "none") {
-    assert.deepEqual(behavior._pendingNukeLaunches.map((entry) => entry.salvo.flightTicks), [10, 20, 20]);
-  } else {
-    assert.equal(await behavior.processPendingNukeLaunches(), false);
-    assert.equal(behavior.hasPendingNukeLaunches(), false);
-    assert.equal(sandbox.state.nukeWantSlots, null, "lost routes/capacity release the reservation");
-  }
-}
-
 // A covered candidate requires an actual salvo, not merely enough silo levels.
-{
-  const { world, game, player, nukeTarget, behavior } = makeSalvoWorld();
-  const sam = world.sam("cooling-sam", 1);
-  sam.missileTimerQueue = () => [world.tick - 50];
-  world.covering.push({ unit: sam, distSquared: 0 });
-  game.config = () => ({ SAMCooldown: () => 90, maxSamRange: () => 150, samRange: () => 150 });
-  player.units = () => [];
-  behavior.getAvailableSiloEntries = () => [
-    { slots: 1, flightTicks: 100, interceptable: true },
-    { slots: 1, flightTicks: 20, interceptable: false },
-  ];
-  behavior._pendingNukeLaunches = [true, false].map((interceptable) => ({
-    dueTick: world.tick, tile: 20, nukeType: UNIT.AtomBomb, targetPlayer: nukeTarget,
-    salvo: { salvoId: 2, targetTile: 20, interceptable, coveringSamIds: [sam.id()] },
-  }));
-  assert.equal(behavior.getAbortedSalvoIds(world.tick).has(2), false,
-    "a later intercepted filler cannot give a covering SAM time to reload against the useful arrival");
-}
-
 for (const lane of ["ordinary", "freeze"]) {
   const { world, game, player, nukeTarget, behavior } = makeSalvoWorld();
   const sam = world.sam("covered-target", 1);
   world.targetSams.push(sam);
   world.covering.push({ unit: sam, distSquared: 0 });
-  const silo = { id: () => 7, tile: () => 5, level: () => 2, isUnderConstruction: () => false };
+  const silo = { id: () => 7, level: () => 2, isUnderConstruction: () => false };
   player.units = (type) => (type === UNIT.MissileSilo ? [silo] : []);
   game.config = () => ({
     maxSamRange: () => 150,
