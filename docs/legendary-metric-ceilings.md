@@ -5946,3 +5946,25 @@ button-to-event boundary without synthetic BuildMenu implementations.
 It does not prove bot-to-menu actuation, Transport/server delivery or the
 Vite worker loader in a live browser.
 The integrated headless contract suite, formatting and diff checks pass.
+
+Bundled bot/native-menu gate: attach the committed userscript bot to real
+GameRunner pricing and give it the unchanged native BuildMenu/EventBus.
+A valid Atom must emit the correct destination with forecast direction up,
+then restore the manual down toggle. Capturing another destination while
+its legal pricing result returns must emit no event or counter increment.
+Shared silo-demand construction must emit the native upgrade ID/type;
+capturing its aim must clear demand without another menu event. Native
+menu/manual-click controls stay in the fixture. This tests bot-to-menu
+actuation in JSDOM; Transport/server delivery and a live browser remain
+outside this gate.
+
+Bundled bot/native-menu result: the native-menu fixture and integrated
+headless contract suite pass. The committed bot's Atom reaches the native
+event bus with the correct type, destination and upward direction while
+the manual direction returns to down. A legal pricing response followed
+by capture produces no second event or counter increment. Shared capacity
+spending reaches the native silo upgrade event; captured aim clears demand
+and emits neither upgrade nor bomb. Independent static review identified
+two missing type/count assertions, which were added and checked with the
+focused fixture. This closes bot-to-native-menu actuation under JSDOM;
+server delivery and a live browser remain unverified.
