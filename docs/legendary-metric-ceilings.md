@@ -6470,3 +6470,40 @@ Full `npm test` passes with the paired reload control integrated; `git diff
 The first suite attempt caught a test-only timestamp error (sampling before the
 queued pass instead of at emission); the corrected assertion uses the actual
 emission tick. No new Baikal simulation is claimed for this test-only change.
+
+### 2026-10-08 — consistent replacement values for anti-SAM aim points
+
+The anti-SAM aim scorer rewarded enemy structures with monetary replacement
+costs, but deducted friendly loss using ordinary-shot heuristic points. A native
+cost-equivalent own level-one silo therefore contributed only 50,000 points
+times the existing multiplier, while an extra enemy silo contributed 1,000,000.
+The regression first fails at the old midpoint aim: it destroys our silo to
+include an equally priced enemy silo even though aiming at the SAM alone
+preserves our launch capability and still fulfills the anti-SAM purpose.
+
+Cache replacement values alongside the existing weighted snapshot and opt the
+two anti-SAM candidate comparisons into monetary friendly-loss penalties.
+Both sides now use the existing nukeStructureValue; retain the existing 3x
+friendly-loss multiplier and strict outer destruction circle. Ordinary shot
+scoring retains its original default weighted values. The existing exclusion
+of expendable DefensePosts also remains; review identified that boundary and
+the README now states it explicitly. This is a collateral-value correction,
+not a blanket ban on every possible friendly blast loss.
+
+The new equal-priced-silo regression passes, as do full npm test, src TypeScript,
+artifact parity and diff checks. All three generated artifacts are rebuilt.
+Baikal preserves the exact baseline: won/alive, tick 6661, 11 own structures
+nuked, 20 Atoms, 49 Hydrogens, pending zero and 73,350,000 enemy structure gold
+destroyed. Receipt:
+`/home/eros/ofh-matrix/sam-aim-currency/baikal-nuke-wars.log`.
+Heavy runs remained serial and limited to 4 GiB RAM / 1 GiB swap. Independent
+diff review checked callers and scoring units; its DefensePost observation is
+documented as retained policy, rather than silently changing an additional
+strategy. No aggregate victory gain or live browser/server adoption is claimed.
+
+The timing review found an existing reusable future-route API:
+StructureBehavior.legendaryBuildMissileRoute (and legendarySalvoRoute) returns
+per-SAM relative fire/interception opportunities. These still require slot
+availability and cooldown scheduling; a maximum fire tick alone is not proof
+of a ready interception. This active goal owns combining those opportunities
+with native departure/source evidence before changing future salvo timing.

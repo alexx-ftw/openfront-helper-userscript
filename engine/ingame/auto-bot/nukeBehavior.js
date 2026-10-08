@@ -1525,8 +1525,8 @@
      * penalty. nukeTileScore runs once per candidate tile; without this memo a
      * sweep would re-enumerate own + teammate units for every tile. Memoized by
      * game tick (a candidate sweep never spans ticks — collectNukeCandidates
-     * completes within one decision) and stored as pre-resolved {tile, value}
-     * pairs so the per-tile penalty stays a pure distance check.
+     * completes within one decision) with both scoring and replacement values
+     * pre-resolved so the per-tile penalty stays a pure distance check.
      */
     friendlyNukeStructures() {
       const tick = Number(this.game.ticks());
@@ -1538,6 +1538,7 @@
           .map((unit) => ({
             tile: unit.tile(),
             value: this.friendlyFireStructureValue(unit),
+            replacementValue: this.nukeStructureValue(unit),
           }))
           .filter((entry) => entry.value > 0);
         this._friendlyNukeStructureTick = tick;
@@ -1550,14 +1551,14 @@
      * structures: every structure strictly inside the outer circle is destroyed.
      * Uses the existing replacement multiplier for the complete destruction area.
      */
-    friendlyFirePenalty(tile, magnitude) {
+    friendlyFirePenalty(tile, magnitude, replacementValues = false) {
       const friendlyStructures = this.friendlyNukeStructures();
       if (friendlyStructures.length === 0) return 0;
       const outerSquared = magnitude.outer * magnitude.outer;
       let destroyedValue = 0;
       for (const entry of friendlyStructures) {
         if (this.game.euclideanDistSquared(tile, entry.tile) < outerSquared) {
-          destroyedValue += entry.value;
+          destroyedValue += replacementValues ? entry.replacementValue : entry.value;
         }
       }
       return destroyedValue * FRIENDLY_FIRE_PENALTY;
@@ -2170,8 +2171,9 @@
       const samX = this.game.x(samTile);
       const samY = this.game.y(samTile);
       let bestTile = samTile;
+      // DIVERGENCE: monetary enemy value needs a monetary friendly-loss penalty.
       let bestValue = this.blastStructureValue(samTile, structures, radius) -
-        this.friendlyFirePenalty(samTile, magnitude);
+        this.friendlyFirePenalty(samTile, magnitude, true);
       for (const structure of structures) {
         const tile = structure.tile?.();
         if (tile == null) continue;
@@ -2185,7 +2187,7 @@
         // its anti-SAM purpose.
         if (this.game.euclideanDistSquared(candidate, samTile) >= radius * radius) continue;
         const value = this.blastStructureValue(candidate, structures, radius) -
-          this.friendlyFirePenalty(candidate, magnitude);
+          this.friendlyFirePenalty(candidate, magnitude, true);
         if (value > bestValue) {
           bestValue = value;
           bestTile = candidate;

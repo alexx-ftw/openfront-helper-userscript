@@ -960,17 +960,26 @@ assert.equal(
     "aim between the SAM and silo to destroy both, instead of scoring every blast at the SAM",
   );
   friendlyStructures = [
+    { type: () => UNIT.MissileSilo, level: () => 1, tile: () => ({ x: 8, y: 1 }) },
+  ];
+  aimBehavior.game.ticks = () => 2;
+  assert.deepEqual(
+    aimBehavior.samSalvoAimTile(sam),
+    { x: 0, y: 0 },
+    "replacement-value aim scoring must not trade our silo for an equally priced enemy silo",
+  );
+  friendlyStructures = [
     { type: () => UNIT.MissileSilo, level: () => 5, tile: () => ({ x: 8, y: 1 }) },
     { type: () => UNIT.SAMLauncher, level: () => 5, tile: () => ({ x: 8, y: 2 }) },
   ];
-  aimBehavior.game.ticks = () => 2;
+  aimBehavior.game.ticks = () => 3;
   assert.deepEqual(
     aimBehavior.samSalvoAimTile(sam),
     { x: 0, y: 0 },
     "a salvo prefers destroying the SAM alone over the extra enemy silo plus a more valuable friendly defense cluster",
   );
   friendlyStructures = [];
-  aimBehavior.game.ticks = () => 3;
+  aimBehavior.game.ticks = () => 4;
   aimBehavior.game.config = () => ({ nukeMagnitudes: () => ({ outer: 4 }) });
   assert.deepEqual(
     aimBehavior.samSalvoAimTile(sam),

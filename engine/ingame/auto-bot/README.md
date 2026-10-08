@@ -471,8 +471,10 @@ salvo planner, which funds and schedules every required atom. Merely owning enou
 silo levels never authorizes a lone interceptable bomb. No destination coverage
 does not imply a clear flight path.
 Anti-SAM aim points score structure value around each candidate blast center,
-so nearby structures can improve the chosen aim. They subtract the same friendly
-structure replacement penalty as ordinary shots.
+so nearby structures can improve the chosen aim. Both enemy value and friendly
+loss use replacement costs here, with the existing friendly-loss multiplier.
+Ordinary shots retain their weighted scoring values and corresponding penalty.
+Both penalties retain the existing exclusion of expendable DefensePosts.
 The penalty follows the engine's strict outer destruction circle; the inner
 fallout boundary does not reduce a structure's loss.
 The SAM must remain strictly inside the circular blast, matching the engine's
