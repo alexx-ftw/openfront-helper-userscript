@@ -5879,3 +5879,8 @@ construction-side race proof for the already-implemented shared policy;
 it does not establish increased match victories or desktop OOM recovery.
 Integrated headless contract suite, formatting and diff checks also pass;
 the supervised test service peaked at 746,471,424 bytes of memory.
+Independent static review: the native GameRunner query is called directly
+through the headless adapter; this does not test worker IPC/serialization.
+The headless build menu supplies intents to native Executor executions
+directly, bypassing the browser BuildMenu and GameRunner turn queue.
+Those integration paths remain unverified by this fixture.
