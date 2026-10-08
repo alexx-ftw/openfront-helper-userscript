@@ -16,6 +16,7 @@ for (const action of ["launch", "silo-upgrade"]) {
     "before-probe",
     "during-probe",
     ...(action === "launch" ? ["sam-during-probe", "salvo-sam-during-probe"] : []),
+    ...(action === "silo-upgrade" ? ["missile-during-probe"] : []),
   ]) {
     const samRace = capture.endsWith("sam-during-probe");
     const shouldSend = capture === "none" || capture === "salvo-sam-during-probe";
@@ -119,6 +120,16 @@ for (const action of ["launch", "silo-upgrade"]) {
             "the worker authorizes the actual silo upgrade",
           );
         if (capture === "during-probe") attacker.conquer(target);
+        if (capture === "missile-during-probe") {
+          const missile = defender.buildUnit(UnitType.AtomBomb, game.ref(79, 1), {});
+          missile.setTargetTile(source);
+          runTurn();
+          assert.equal(
+            bot.nationBot.structureBehavior.tileInsideActiveHostileMissileImpact(source),
+            true,
+            "a native active missile threatens the silo after the legality probe",
+          );
+        }
         if (samRace) {
           defender.buildUnit(UnitType.SAMLauncher, game.ref(80, 2), {});
           assert.equal(
@@ -131,6 +142,7 @@ for (const action of ["launch", "silo-upgrade"]) {
       return result;
     };
     const goldBefore = attacker.gold();
+    const buildsBefore = bot.harness.internals.state.stats.builds;
     const sent =
       action === "launch"
         ? capture === "salvo-sam-during-probe"
@@ -146,13 +158,17 @@ for (const action of ["launch", "silo-upgrade"]) {
           : await nuke.sendNuke(target, UnitType.AtomBomb, targetPlayer)
         : await bot.nationBot.structureBehavior.maybeUpgradeSiloForNukeDemand();
     assert.equal(nuke.isValidNukeTarget(targetPlayer), true, "the rival remains a valid target");
-    assert.equal(nuke.isValidNukeDestination(target), capture === "none" || samRace);
+    assert.equal(
+      nuke.isValidNukeDestination(target),
+      capture === "none" || samRace || capture === "missile-during-probe",
+    );
     if (!shouldSend) {
       assert.equal(
         bot.intentBuffer.length,
         0,
         "an invalid destination or newly blocked ordinary route produces no intents",
       );
+      assert.equal(bot.harness.internals.state.stats.builds, buildsBefore);
       runTurn();
     }
     assert.equal(probes, action === "silo-upgrade" && capture === "before-probe" ? 0 : 1);
@@ -174,11 +190,30 @@ for (const action of ["launch", "silo-upgrade"]) {
       } else {
         assert.equal(silo.level(), 1);
         assert.equal(attacker.gold(), goldBefore, "obsolete demand spends no gold");
-        assert.equal(
-          bot.harness.internals.state.nukeWantSlots,
-          null,
-          "capture clears obsolete nuclear demand",
-        );
+        if (capture === "missile-during-probe") {
+          assert.equal(
+            bot.harness.internals.state.nukeWantSlots.need,
+            2,
+            "a transient impact hazard preserves the still-valid capacity request",
+          );
+          defender.units(UnitType.AtomBomb)[0].delete(false);
+          runner.playerBuildables = nativeBuildables;
+          runTurn();
+          assert.equal(
+            await bot.nationBot.structureBehavior.maybeUpgradeSiloForNukeDemand(),
+            true,
+            "the same capacity request resumes once the impact hazard disappears",
+          );
+          runTurn(bot.intentBuffer);
+          assert.equal(silo.level(), 2);
+          assert.ok(attacker.gold() < goldBefore);
+        } else {
+          assert.equal(
+            bot.harness.internals.state.nukeWantSlots,
+            null,
+            "capture clears obsolete nuclear demand",
+          );
+        }
       }
       assert.equal(launches.length, 0, "the capacity request cannot launch a bomb");
     } else if (shouldSend) {
@@ -198,4 +233,4 @@ for (const action of ["launch", "silo-upgrade"]) {
     bot.harness.window.close();
   }
 }
-console.log("live-engine nuclear territory and route race fixture passed (8 scenarios)");
+console.log("live-engine nuclear territory, route and upgrade race fixture passed (9 scenarios)");

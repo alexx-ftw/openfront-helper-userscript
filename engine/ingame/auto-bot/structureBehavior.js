@@ -11302,9 +11302,8 @@
     executeStructureUpgradeCandidate(selected, type) {
       if (!selected) return false;
       if (
-        type === UNIT.SAMLauncher &&
         this.tileInsideActiveHostileMissileImpact(
-          selected.sam?.tile?.() ?? selected.structure?.tile?.(),
+          selected.silo?.tile?.() ?? selected.sam?.tile?.() ?? selected.structure?.tile?.(),
         )
       ) {
         return false;

@@ -6040,3 +6040,26 @@ Baikal remains won/alive at tick 6661: 11 own structures nuked, 20 Atoms,
 Receipt: `/home/eros/ofh-matrix/friendly-blast-geometry/baikal-nuke-wars.log`.
 These are correctness and bounded regression results; live adoption and aggregate
 victory improvements remain unverified. Temporary-alliance policy is unchanged.
+
+## Silo upgrade impact race (2026-10-08)
+
+The shared unit-pricing probe excludes missile impact zones before awaiting the
+worker, but its final dispatcher rechecked only SAM upgrades. A native active
+Atom with the silo as destination, appearing while the upgrade response returns,
+reproduced an emitted upgrade even though the current impact-zone check was true.
+Apply the same final impact guard to the silo field as to SAM/structure fields.
+Preserve the capacity request during this transient hazard; do not cancel it or
+retune priorities. The native fixture requires no upgrade/counter/spend under the
+hazard, then successful native level 1-to-2 spending once the missile disappears.
+Acceptance: nine native race scenarios, full suite, types/build parity; Baikal
+must remain won with at most 11 own structures nuked. The injected active missile
+is a native snapshot fixture; no real server delivery or interception is claimed.
+
+Result: all nine native race scenarios pass, including no build-count increase
+under the impact hazard and native upgrade/spending on recovery. Full `npm test`,
+types, generated-artifact parity and fixture formatting pass. Baikal remains
+won/alive at tick 6661, with 11 own structures nuked, 20 Atoms, 49 Hydrogens,
+zero pending launches and 73,350,000 enemy structure gold destroyed.
+Receipt: `/home/eros/ofh-matrix/silo-impact-dispatch/baikal-nuke-wars.log`.
+The native snapshot race is fixed; broader victory improvement and live browser
+adoption remain unverified.
