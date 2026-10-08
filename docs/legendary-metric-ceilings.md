@@ -5818,3 +5818,24 @@ Baikal `/home/eros/ofh-matrix/live-silo-route-reviewed`: won/alive at tick
 structure gold nuked, unchanged from the preceding receipt. Active local
 service serves byte-identical artifacts. The single-row result does not
 prove a higher win rate or a successful live-browser hot-reload.
+
+Demand attack-policy pre-declaration (2026-10-08): construction validates
+SAM ownership/friendship but not the nuclear attack policy or current aim
+owner. An aim tile can become protected while the SAM remains hostile.
+Reuse the wired nuclear target/destination guards before consuming demand
+and after its worker probe, clearing invalid demand. Test policy-protected
+SAM owners, captured aim points before/during the probe, and hostile/unowned
+controls with both real behavior methods. Then review/full/parity/Baikal.
+
+Demand attack-policy result (2026-10-08): baseline allowed a silo upgrade
+for a policy-protected SAM owner. Construction now reuses nuclear target
+and destination eligibility at both demand checks, clearing obsolete demand.
+Six real-method cases pass: protected SAM, owned aim point, capture during
+the probe, target-policy change during the probe, hostile and unowned
+controls. Full npm suite, focused nuclear/SAM/retention/EV tests and build
+parity pass. Independent static review approved these hunks. Baikal receipt
+`/home/eros/ofh-matrix/demand-attack-policy`: won/alive at tick 6661, 20
+atoms, 49 hydrogens, 11 own structures nuked and 73,350,000 enemy structure
+gold nuked, unchanged. Active local service serves byte-identical artifacts.
+This is cooperative spending correctness and single-row non-regression;
+it does not establish increased aggregate wins or live-browser adoption.

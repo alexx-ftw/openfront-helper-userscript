@@ -11122,7 +11122,9 @@
       const owner = targetSam?.owner?.();
       if (!targetSam || targetSam.isActive?.() === false || !owner ||
           owner.smallID() === this.player.smallID() ||
-          this.player.isFriendly?.(owner) === true || this.player.isOnSameTeam?.(owner) === true) {
+          this.player.isFriendly?.(owner) === true || this.player.isOnSameTeam?.(owner) === true ||
+          (this.nukeBehavior && (!this.nukeBehavior.isValidNukeTarget(owner) ||
+            !this.nukeBehavior.isValidNukeDestination(request.targetTile)))) {
         state.nukeWantSlots = null;
         return null;
       }

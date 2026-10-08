@@ -312,6 +312,40 @@ for (const route of ["no-route", "blocked-during-probe", "insufficient-capacity"
   sandbox.state.nukeWantSlots = null;
 }
 
+for (const change of ["protected-target", "own-aim", "aim-during-probe", "target-during-probe", "hostile", "unowned"]) {
+  const { behavior, game, player, world, nukeTarget } = makeSalvoWorld();
+  player.isPlayer = nukeTarget.isPlayer = () => true;
+  let owner = change === "own-aim" ? player : change === "unowned" ? { isPlayer: () => false } : nukeTarget;
+  let protectedTarget = change === "protected-target";
+  game.owner = () => owner;
+  game.units = () => [world.sam(77, 3)];
+  game.config = () => ({ isUnitDisabled: () => false });
+  behavior.attackBehavior.shouldAttack = () => !protectedTarget;
+  const silo = { id: () => 1, level: () => 1 };
+  behavior.getRouteEligibleSilos = () => [silo];
+  const structures = new sandbox.__StructureBehavior({}, game, player);
+  structures.nukeBehavior = behavior;
+  structures.nukeDemandScopedSilos = () => [silo];
+  structures.availableGoldAfterReserve = () => 200n;
+  structures.safeStructureCost = () => 20n;
+  structures.nukeSiloUpgradeBudgetAvailable = () => true;
+  structures.buildableForUnits = async () => {
+    if (change === "aim-during-probe") owner = player;
+    if (change === "target-during-probe") protectedTarget = true;
+    return [];
+  };
+  structures.rankNukeDemandSiloUpgrades = () => [{ silo }];
+  let upgrades = 0;
+  structures.executeStructureUpgradeCandidate = async () => { upgrades++; return true; };
+  sandbox.state.nukeWantSlots = { targetSamId: 77, targetTile: 20, need: 4, unblockedSiloIds: [] };
+  const allowed = change === "hostile" || change === "unowned";
+  assert.equal(await structures.maybeUpgradeSiloForNukeDemand(), allowed,
+    `${change} capacity demand obeys nuclear policy`);
+  assert.equal(upgrades, allowed ? 1 : 0);
+  if (!allowed) assert.equal(sandbox.state.nukeWantSlots, null);
+  sandbox.state.nukeWantSlots = null;
+}
+
 for (const capture of ["hostile", "own-before-due", "own-during-probe", "teammate", "protected", "unowned"]) {
   const { behavior, game, player, world, nukeTarget } = makeSalvoWorld();
   player.isPlayer = nukeTarget.isPlayer = () => true;
