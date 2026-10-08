@@ -6760,6 +6760,25 @@ Baikal regime (74 launches) is already deep in the winner distribution.
 No runtime change; the script is committed so the aggregate stays
 reproducible as the corpus grows.
 
+## Troop pricing in the finisher gate: closed with data (2026-10-08)
+
+The last listed refinement option (valuing troops/population in the
+blast) is resolved as second-order by corpus calibration: this engine
+models troops as a player aggregate (player.troops(), no per-tile troop
+units), and the public records carry peakTroops plus tile counts.
+Representative densities from the corpus (2.93M peak troops over 1.019M
+tiles ~ 2.9 troops/tile; endgame peaks ~14 troops/tile) put a 100-tile
+hydrogen blast's enemy troop value at roughly 3k-14k gold-equivalent at
+the 10-gold recruit basis - one to two orders of magnitude below the
+structure values the gate already prices (125k per city, 1M per silo).
+
+Conclusion: structure-only pricing is sound; a density-based troop term
+could not flip any gate decision the corpus supports, and adding an
+invented weighting would be silent tuning. The calibrated formula
+(median corpus troops-per-tile x tiles-inside-blast x recruit cost) is
+recorded here for future use if troop densities shift. No runtime
+change; refinement queue for the finisher gate is now empty.
+
 ## Integrated receipt 3 (2026-10-08, after the MIRV-weighting run)
 
 Counters identical to iterations 1 and 2: won=true, alive=true, 26
