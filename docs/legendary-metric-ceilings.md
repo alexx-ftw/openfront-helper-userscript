@@ -5902,3 +5902,27 @@ the corresponding successful callback, while an exhausted queue returns
 false. Captured targets produce no intents, and an empty consumed turn
 leaves their silo level and gold intact. This closes the turn-queue bypass
 identified by review; browser menu and worker IPC remain unverified.
+
+Native worker IPC gate: bundle the unchanged engine Worker.worker.ts into
+an isolated Node worker transport, restore a finite-gold fixture snapshot,
+and use native WorkerClient query/correlation/turn/snapshot methods. Two
+concurrent buildable queries must preserve BigInt prices and the correct
+silo identity. Worker turns must apply a silo upgrade and Atom launch;
+restoring the worker's final snapshot must show level two, an active Atom,
+the expected tick and reduced gold. Asset fetches are restricted to the
+local fixture's three map files, and the worker terminates in finally.
+This tests native handlers and structured-clone IPC with Node transport;
+Vite's browser worker loader, real DOM BuildMenu and live browser remain
+outside this gate.
+
+Native worker IPC result: standalone fixture and integrated headless
+contract suite pass. Concurrent native WorkerClient buildable requests
+preserve prices as BigInt and return the correct source/upgrade silo.
+Five acknowledged worker turns perform the upgrade and Atom launch; the
+returned snapshot restores at the acknowledged tick with level two, one
+active Atom and reduced finite gold. Pending correlation handlers are
+empty and the worker is terminated. The local map loader's TestConfig
+spawn-immunity default had to be made explicit in serialized gameConfig
+so native Config restoration uses the same zero-immunity fixture rule.
+No production behavior was changed, and browser-loader/menu proof is still
+pending.

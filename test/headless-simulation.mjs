@@ -31,6 +31,17 @@ assert.equal(
   0,
   nuclearTerritoryRace.stdout + nuclearTerritoryRace.stderr,
 );
+const nuclearWorkerIpc = spawnSync(
+  process.execPath,
+  [
+    path.join(root, "node_modules/tsx/dist/cli.mjs"),
+    "--tsconfig",
+    "openfront-engine/tsconfig.json",
+    "test/nuclear-worker-ipc-fixture.mts",
+  ],
+  { cwd: root, encoding: "utf8" },
+);
+assert.equal(nuclearWorkerIpc.status, 0, nuclearWorkerIpc.stdout + nuclearWorkerIpc.stderr);
 const runner = fs.readFileSync(path.join(root, "scripts/headless/run-match.mts"), "utf8");
 const batch = fs.readFileSync(path.join(root, "scripts/headless/run-batch.mjs"), "utf8");
 const matrix = fs.readFileSync(
