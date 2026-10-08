@@ -88,6 +88,7 @@ function makeSalvoWorld() {
   };
   const game = {
     ticks: () => world.tick,
+    players: () => [nukeTarget],
     config: () => ({ maxSamRange: () => 150, samRange: () => 150 }),
     nearbyUnits: (_tile, _radius, type) => (type === UNIT.SAMLauncher ? world.covering : []),
   };
@@ -222,6 +223,38 @@ for (const capture of ["hostile", "own-before-due", "own-during-probe", "teammat
   assert.equal(emitted.length, allowed ? 1 : 0, `${capture} destination checked at emission`);
   assert.equal(behavior.hasPendingNukeLaunches(), false, `${capture} launch resolved without stale retries`);
   if (!allowed) assert.equal(behavior.queueDelayedNukeLaunch(20, UNIT.AtomBomb, nukeTarget, 5), false);
+  launchSink = null;
+}
+
+for (const capture of ["before-due", "poor", "price", "price-poor", "buildable"]) {
+  const { behavior, game, player, world, nukeTarget } = makeSalvoWorld();
+  player.isPlayer = nukeTarget.isPlayer = () => true;
+  let owner = capture === "before-due" || capture === "poor" ? player : nukeTarget;
+  game.owner = () => owner;
+  game.players = () => [nukeTarget];
+  game.config = () => ({ isUnitDisabled: () => false });
+  player.gold = () => capture === "poor" || capture === "price-poor" ? 0n : 10_000_000n;
+  player.units = () => [{ isUnderConstruction: () => false }];
+  behavior.findEnemySamsCoveringTile = () => [];
+  behavior.getPerceivedNukeCost = async () => {
+    if (capture === "price" || capture === "price-poor") owner = player;
+    return 5_000_000n;
+  };
+  const originalProbe = player.buildables;
+  player.buildables = async (...args) => {
+    if (capture === "buildable") owner = player;
+    return originalProbe(...args);
+  };
+  sandbox.state.postSalvoHydrogen = {
+    targetTile: 20,
+    dueTick: world.tick + (capture === "before-due" ? 10 : 0),
+    targetSmallID: nukeTarget.smallID(),
+  };
+  const emitted = [];
+  launchSink = emitted;
+  assert.equal(await behavior.maybeFirePostSalvoHydrogen(), false);
+  assert.equal(emitted.length, 0, `${capture} captured finisher cannot launch`);
+  assert.equal(sandbox.state.postSalvoHydrogen, null, `${capture} captured finisher cancelled`);
   launchSink = null;
 }
 

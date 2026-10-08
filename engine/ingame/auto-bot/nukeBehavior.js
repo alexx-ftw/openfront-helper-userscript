@@ -2292,7 +2292,13 @@
     // exactly the waste the salvo discipline forbids).
     async maybeFirePostSalvoHydrogen() {
       const pending = state.postSalvoHydrogen;
-      if (!pending || this.game.ticks() < pending.dueTick) return false;
+      if (!pending) return false;
+      const target = this.postSalvoHydrogenTarget(pending);
+      if (target === null) {
+        state.postSalvoHydrogen = null;
+        return false;
+      }
+      if (this.game.ticks() < pending.dueTick) return false;
       // A delayed/retried atom must land before its finisher is evaluated.
       if (pending.salvoId !== undefined && this._pendingNukeLaunches.some(
         (launch) => launch.salvo?.salvoId === pending.salvoId,
@@ -2304,23 +2310,22 @@
       // queues, a temporarily unaffordable treasury, regrown SAM coverage, or
       // a failed buildability dispatch — permanently lost a scheduled
       // follow-up. Retain it through transient failures; only permanent
-      // conditions (disabled bombs, dead/missing target) or a successful
+      // conditions (disabled bombs, invalid target/destination) or a successful
       // dispatch clear it. Every firing gate is unchanged.
       if (config.isUnitDisabled(UNIT.HydrogenBomb)) {
         state.postSalvoHydrogen = null;
         return false;
       }
       const hydroCost = await this.getPerceivedNukeCost(UNIT.HydrogenBomb);
+      if (this.postSalvoHydrogenTarget(pending) === null) {
+        state.postSalvoHydrogen = null;
+        return false;
+      }
       if (this.player.gold() < hydroCost) return false;
       const silos = this.player.units(UNIT.MissileSilo)
         .filter((silo) => !silo.isUnderConstruction());
       if (silos.length === 0) return false;
       if (this.findEnemySamsCoveringTile(pending.targetTile).length > 0) {
-        return false;
-      }
-      const target = this.postSalvoHydrogenTarget(pending);
-      if (target === null) {
-        state.postSalvoHydrogen = null;
         return false;
       }
       const sent = await this.sendNuke(
@@ -2330,6 +2335,8 @@
       );
       if (sent) {
         this.hydrogenBombsLaunched += 1;
+      }
+      if (sent || this.postSalvoHydrogenTarget(pending) === null) {
         state.postSalvoHydrogen = null;
       }
       return sent;
@@ -2340,7 +2347,8 @@
       const target = this.game.players().find(
         (player) => player.smallID?.() === pending.targetSmallID,
       );
-      if (!target || target.isAlive?.() === false) return null;
+      if (!target || !this.isValidNukeTarget(target) ||
+          !this.isValidNukeDestination(pending.targetTile)) return null;
       return target;
     }
 

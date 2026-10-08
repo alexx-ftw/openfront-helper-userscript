@@ -5675,3 +5675,23 @@ Baikal receipt: `/home/eros/ofh-matrix/destination-capture`, won/alive at tick
 6661, 20 atoms, 49 hydrogens, one MIRV intent, 11 own structures nuked and
 73,350,000 enemy structure gold nuked. Identical to the preceding receipt;
 this establishes a safety correction without a claimed aggregate win gain.
+
+Hydrogen follow-up cancellation pre-declaration (2026-10-08): a permanently
+invalid follow-up destination is blocked by the shared emission guard but
+retained in postSalvoHydrogen, including when the gold gate returns early.
+Resolve the target and destination before transient readiness gates, and
+clear a follow-up invalidated during its async dispatch. Keep legitimate
+transient retry behavior. Test captured destinations before due, while poor,
+during the price probe and during buildability, plus the existing successful
+and transient-blocker controls; then full suite, parity and Baikal.
+
+Hydrogen follow-up cancellation result (2026-10-08): baseline retained the
+captured destination before its due tick; the corrected target resolver
+now clears it. Five regressions pass: before due, insufficient gold, capture
+during price (with and without sufficient gold), and capture during the
+buildability probe. Existing coverage/readiness retry and successful
+follow-up tests stay green. Complete npm suite and regenerated build parity
+pass. Baikal receipt `/home/eros/ofh-matrix/finisher-capture` matches the
+previous won/alive result at tick 6661, 20 atoms, 49 hydrogens, 11 own
+structures nuked and 73,350,000 enemy structure gold nuked. This is stale
+state cancellation evidence, not an improvement in aggregate win rate.
