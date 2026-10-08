@@ -61,15 +61,12 @@
   const MIN_LEVEL_SUM_FOR_HIGH_DENSITY_NUKE = 5;
 
   /**
-   * Friendly-fire penalty multipliers for nukeTileScore: a candidate tile whose
-   * INNER blast radius covers an own/permanent-teammate structure destroys it
-   * outright (heavy penalty — the replacement costs the same gold as whatever
-   * enemy value the tile offers), while an OUTER-radius clip only damages the
-   * surrounding land (milder penalty). Per-structure base values live in
+   * Friendly structure replacement penalty: the engine destroys structures
+   * strictly inside the OUTER blast circle, regardless of the fallout radius.
+   * Per-structure base values live in
    * friendlyFireStructureValue (MissileSilo heaviest).
    */
-  const FRIENDLY_FIRE_INNER_PENALTY = 3;
-  const FRIENDLY_FIRE_OUTER_PENALTY = 1;
+  const FRIENDLY_FIRE_PENALTY = 3;
   // Counterforce (see mirvCapableSiloPriority): a silo whose owner can afford
   // a MIRV scores as several ordinary silos. The threshold is the engine's
   // base MIRV price (the live quote escalates globally per launch and needs
@@ -1550,29 +1547,20 @@
 
     /**
      * Penalty for a candidate tile whose blast radii would also hit friendly
-     * structures: the inner radius destroys them outright (heavy multiplier),
-     * an outer-radius-only clip is damaged but survivable (mild multiplier).
-     * Sized so a friendly MissileSilo or City cluster inside the inner radius
-     * flips the tile negative against any realistic enemy value.
+     * structures: every structure strictly inside the outer circle is destroyed.
+     * Uses the existing replacement multiplier for the complete destruction area.
      */
     friendlyFirePenalty(tile, magnitude) {
       const friendlyStructures = this.friendlyNukeStructures();
       if (friendlyStructures.length === 0) return 0;
-      const innerDist = euclDistFN(tile, magnitude.inner, false);
-      const outerDist = euclDistFN(tile, magnitude.outer, false);
-      let innerValue = 0;
-      let outerValue = 0;
+      const outerSquared = magnitude.outer * magnitude.outer;
+      let destroyedValue = 0;
       for (const entry of friendlyStructures) {
-        if (innerDist(this.game, entry.tile)) {
-          innerValue += entry.value;
-        } else if (outerDist(this.game, entry.tile)) {
-          outerValue += entry.value;
+        if (this.game.euclideanDistSquared(tile, entry.tile) < outerSquared) {
+          destroyedValue += entry.value;
         }
       }
-      return (
-        innerValue * FRIENDLY_FIRE_INNER_PENALTY +
-        outerValue * FRIENDLY_FIRE_OUTER_PENALTY
-      );
+      return destroyedValue * FRIENDLY_FIRE_PENALTY;
     }
 
     /**
@@ -2152,7 +2140,8 @@
       const samX = this.game.x(samTile);
       const samY = this.game.y(samTile);
       let bestTile = samTile;
-      let bestValue = this.blastStructureValue(samTile, structures, radius);
+      let bestValue = this.blastStructureValue(samTile, structures, radius) -
+        this.friendlyFirePenalty(samTile, magnitude);
       for (const structure of structures) {
         const tile = structure.tile?.();
         if (tile == null) continue;
@@ -2165,7 +2154,8 @@
         // The SAM itself must remain inside the blast or the salvo loses
         // its anti-SAM purpose.
         if (this.game.euclideanDistSquared(candidate, samTile) >= radius * radius) continue;
-        const value = this.blastStructureValue(candidate, structures, radius);
+        const value = this.blastStructureValue(candidate, structures, radius) -
+          this.friendlyFirePenalty(candidate, magnitude);
         if (value > bestValue) {
           bestValue = value;
           bestTile = candidate;

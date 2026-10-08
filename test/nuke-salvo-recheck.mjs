@@ -896,7 +896,7 @@ for (const [flightTicks, dueTick, expectedLaunch] of [
 
 // ════════════════════════════════════════════════════════════════════════════
 // 5/6. nukeTileScore penalizes friendly fire: a friendly MissileSilo inside
-// the inner radius flips the tile negative; an outer-radius clip is milder
+// the inner or outer radius flips the tile negative; the exact boundary survives
 // ════════════════════════════════════════════════════════════════════════════
 {
   const tileOf = (x, y) => y * 1000 + x;
@@ -986,20 +986,27 @@ for (const [flightTicks, dueTick, expectedLaunch] of [
   );
 
   // Same silo at 29 tiles — outside the inner radius, inside the 30-tile
-  // outer radius: still penalized, but mildly.
+  // outer radius: the engine destroys it just as completely as an inner hit.
   ownStructures = [
     { type: () => UNIT.MissileSilo, level: () => 1, tile: () => tileOf(529, 500), owner: () => me },
   ];
   scoreTick++;
   const outerScore = scorer.nukeTileScore(candidate, silos, enemyStructures, UNIT.AtomBomb);
-  assert.equal(outerScore, 0, "the outer-radius clip applies the mild penalty multiplier");
-  assert.ok(
-    outerScore > innerScore,
-    "an outer-radius clip is penalized more mildly than an inner-radius hit",
+  assert.equal(
+    outerScore,
+    innerScore,
+    "both positions destroy the same silo and incur the same replacement penalty",
   );
   assert.ok(
     outerScore < enemyOnlyScore,
     "an outer-radius clip is still penalized against a clean enemy tile",
+  );
+  ownStructures[0].tile = () => tileOf(530, 500);
+  scoreTick++;
+  assert.equal(
+    scorer.nukeTileScore(candidate, silos, enemyStructures, UNIT.AtomBomb),
+    enemyOnlyScore,
+    "a structure exactly on the engine's indestructible outer boundary carries no loss penalty",
   );
 
   // A permanent teammate's City cluster inside the inner radius counts as

@@ -943,6 +943,8 @@ assert.equal(
     level: () => 1,
   });
   aimBehavior.game = {
+    ticks: () => 1,
+    players: () => [],
     config: () => ({ nukeMagnitudes: () => ({ outer: 5 }) }),
     x: (tile) => tile.x,
     y: (tile) => tile.y,
@@ -950,11 +952,25 @@ assert.equal(
     isValidCoord: () => true,
     euclideanDistSquared: (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2,
   };
+  let friendlyStructures = [];
+  aimBehavior.player = { smallID: () => 1, units: () => friendlyStructures };
   assert.deepEqual(
     aimBehavior.samSalvoAimTile(sam),
     { x: 4, y: 0 },
     "aim between the SAM and silo to destroy both, instead of scoring every blast at the SAM",
   );
+  friendlyStructures = [
+    { type: () => UNIT.MissileSilo, level: () => 5, tile: () => ({ x: 8, y: 1 }) },
+    { type: () => UNIT.SAMLauncher, level: () => 5, tile: () => ({ x: 8, y: 2 }) },
+  ];
+  aimBehavior.game.ticks = () => 2;
+  assert.deepEqual(
+    aimBehavior.samSalvoAimTile(sam),
+    { x: 0, y: 0 },
+    "a salvo prefers destroying the SAM alone over the extra enemy silo plus a more valuable friendly defense cluster",
+  );
+  friendlyStructures = [];
+  aimBehavior.game.ticks = () => 3;
   aimBehavior.game.config = () => ({ nukeMagnitudes: () => ({ outer: 4 }) });
   assert.deepEqual(
     aimBehavior.samSalvoAimTile(sam),

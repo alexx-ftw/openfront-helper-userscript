@@ -6012,3 +6012,31 @@ zero pending launches, 11 own structures nuked and 73,350,000 enemy structure
 gold destroyed. Receipt: `/home/eros/ofh-matrix/route-dispatch-race/baikal-nuke-wars.log`.
 The deterministic match is unchanged; the reproduced dispatch race is fixed.
 Live browser adoption and aggregate victory improvement remain unverified.
+
+## Friendly structure blast-loss geometry (2026-10-08)
+
+Native `NukeExecution.detonate` deletes every non-missile unit strictly inside
+the outer blast circle, including friendly structures. The bot instead charged
+a mild loss between inner/outer radii and penalized the surviving outer boundary.
+Keep the existing heavy replacement multiplier, apply it throughout the strict
+outer circle, and remove the inaccurate mild-loss distinction. Acceptance:
+native own City outside inner/inside outer is destroyed; the exact boundary
+survives; scoring matches both facts; full suite passes; Baikal stays won with
+at most 11 own structures nuked. No new weights or team/diplomacy policy.
+
+The anti-SAM aim selector also omitted the shared friendly penalty entirely.
+Reuse the corrected penalty for both its initial SAM tile and alternative
+blast centers. A synthetic L5 friendly silo/SAM cluster beside an enemy silo
+must make the planner prefer the enemy SAM alone; clean and diagonal aim-point
+controls retain their original results. This aligns both nuclear scoring paths
+without introducing another collateral weighting policy.
+
+Result: native own-city destruction/boundary checks and both reproduced scoring
+regressions pass. Independent source review confirms that friendly status affects
+kill attribution, not destruction. Full `npm test`, type check and build parity
+pass after updating only the renamed/deleted penalty constants in the contract.
+Baikal remains won/alive at tick 6661: 11 own structures nuked, 20 Atoms,
+49 Hydrogens, zero pending launches and 73,350,000 enemy structure gold destroyed.
+Receipt: `/home/eros/ofh-matrix/friendly-blast-geometry/baikal-nuke-wars.log`.
+These are correctness and bounded regression results; live adoption and aggregate
+victory improvements remain unverified. Temporary-alliance policy is unchanged.

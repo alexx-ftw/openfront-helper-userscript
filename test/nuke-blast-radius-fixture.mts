@@ -9,7 +9,7 @@ import { setupTwoPlayerGame } from "./helpers/two-player-game.mts";
 // OUTER radius (nukeMagnitudes().outer), on the engine contract that a
 // detonation deletes every structure strictly within that radius while the
 // inner radius only bounds terrain fallout. This fixture detonates a real
-// hydrogen bomb between three real cities and asserts exactly that boundary,
+// hydrogen bomb among hostile and own cities and asserts exactly that boundary,
 // so the placement penalty can never silently drift from engine behavior.
 const game = await setupTwoPlayerGame("big_plains");
 
@@ -41,6 +41,8 @@ const groundZero = game.ref(100, 100);
 const cityAtGroundZero = defender.buildUnit(UnitType.City, groundZero, {});
 const cityInsideBlast = defender.buildUnit(UnitType.City, game.ref(164, 163), {});
 const cityBeyondBlast = defender.buildUnit(UnitType.City, game.ref(179, 179), {});
+const ownCityInsideBlast = attacker.buildUnit(UnitType.City, game.ref(185, 100), {});
+const ownCityOnBoundary = attacker.buildUnit(UnitType.City, game.ref(0, 100), {});
 assert.ok(
   game.euclideanDistSquared(groundZero, game.ref(164, 163)) < outerRadius * outerRadius,
   "the near city sits strictly inside the outer radius",
@@ -72,6 +74,16 @@ assert.equal(
   cityBeyondBlast.isActive(),
   true,
   "a city beyond the outer radius survives the detonation",
+);
+assert.equal(
+  ownCityInsideBlast.isActive(),
+  false,
+  "our own city outside the inner radius is still destroyed inside the outer radius",
+);
+assert.equal(
+  ownCityOnBoundary.isActive(),
+  true,
+  "a friendly city exactly on the outer boundary survives",
 );
 
 console.log("nuke blast radius fixture passed");

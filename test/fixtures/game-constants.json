@@ -2090,24 +2090,14 @@
     "initializerPreview": "5"
   },
   {
-    "id": "engine/ingame/auto-bot/nukeBehavior.js:FRIENDLY_FIRE_INNER_PENALTY#1",
+    "id": "engine/ingame/auto-bot/nukeBehavior.js:FRIENDLY_FIRE_PENALTY#1",
     "file": "engine/ingame/auto-bot/nukeBehavior.js",
-    "name": "FRIENDLY_FIRE_INNER_PENALTY",
+    "name": "FRIENDLY_FIRE_PENALTY",
     "declarationKind": "const",
     "initializerKind": "FirstLiteralToken",
     "initializerHash": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce",
     "initializerLength": 1,
     "initializerPreview": "3"
-  },
-  {
-    "id": "engine/ingame/auto-bot/nukeBehavior.js:FRIENDLY_FIRE_OUTER_PENALTY#1",
-    "file": "engine/ingame/auto-bot/nukeBehavior.js",
-    "name": "FRIENDLY_FIRE_OUTER_PENALTY",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-    "initializerLength": 1,
-    "initializerPreview": "1"
   },
   {
     "id": "engine/ingame/auto-bot/nukeBehavior.js:MIRV_CAPABLE_GOLD_THRESHOLD#1",
