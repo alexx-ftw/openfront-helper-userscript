@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { GameRunner } from "../openfront-engine/src/core/GameRunner";
 import { Executor } from "../openfront-engine/src/core/execution/ExecutionManager";
 import { SAMLauncherExecution } from "../openfront-engine/src/core/execution/SAMLauncherExecution";
+import { MissileSiloExecution } from "../openfront-engine/src/core/execution/MissileSiloExecution";
 import { TurnSchema } from "../openfront-engine/src/core/Schemas";
 import { PlayerInfo, PlayerType, UnitType } from "../openfront-engine/src/core/game/Game";
 import { setup } from "../openfront-engine/tests/util/Setup";
@@ -24,11 +25,12 @@ for (const [prefixCount, physicalDefense] of [[0, false], [2, false], [0, true]]
   );
   const attacker = game.player("attacker");
   const defender = game.player("defender");
-  const source = game.ref(1, 1);
+  const source = game.ref(1, physicalDefense ? 80 : 1);
   const target = game.ref(80, 1);
   attacker.addGold(100_000_000n);
   attacker.conquer(source);
   defender.conquer(target);
+  if (physicalDefense) defender.conquer(game.ref(180, 180));
   const silo = attacker.buildUnit(UnitType.MissileSilo, source, {});
   for (let slot = 1; slot < 3; slot++) {
     silo.increaseLevel();
@@ -37,7 +39,10 @@ for (const [prefixCount, physicalDefense] of [[0, false], [2, false], [0, true]]
   const sam = defender.buildUnit(UnitType.SAMLauncher, target, {});
   sam.increaseLevel();
   sam.reloadMissile();
-  if (physicalDefense) game.addExecution(new SAMLauncherExecution(defender, null, sam));
+  if (physicalDefense) {
+    game.addExecution(new SAMLauncherExecution(defender, null, sam));
+    game.addExecution(new MissileSiloExecution(silo));
+  }
   const runner = new GameRunner(
     game,
     new Executor(game, "salvo-receipt-gap", "attacker"),
@@ -125,21 +130,52 @@ for (const [prefixCount, physicalDefense] of [[0, false], [2, false], [0, true]]
       );
     }
     step(bot.intentBuffer);
+    bot.intentBuffer.length = 0;
     step();
     step();
     assert.equal(attacker.units(UnitType.AtomBomb).length, 3);
     assert.equal(nuke.hasPendingNukeLaunches(), false);
     if (physicalDefense) {
       const missiles = attacker.units(UnitType.AtomBomb);
+      const finisher = {
+        salvoId: salvo.salvoId, targetTile: target, dueTick: game.ticks(),
+        targetSmallID: defender.smallID(),
+      };
+      bot.harness.internals.state.postSalvoHydrogen = finisher;
       const lastImpact = Math.max(...missiles.map((missile) => {
         const plan = bot.api.game.motionPlans().get(missile.id());
         assert.ok(plan);
         return plan.startTick + plan.path.length;
       }));
-      while (game.ticks() <= lastImpact && sam.isActive()) step();
+      while (game.ticks() <= lastImpact && missiles.some((missile) => missile.isActive())) {
+        await bot.api.beginTick(bot.pageGame.myPlayer());
+        assert.equal(await nuke.maybeFirePostSalvoHydrogen(), false,
+          "a stale finisher deadline cannot bypass live native Atoms");
+        step();
+      }
       assert.equal(sam.missileTimerQueue().length, 2, "the real SAM spends both charges");
       assert.equal(sam.isActive(), false, "the saturation batch destroys the real SAM");
       assert.equal(silo.isActive(), true, "the source remains outside the Atomic blast");
+      // Native silo execution reloads at most one expired queue entry per tick.
+      const launchDeadline = Math.max(finisher.dueTick,
+        ...silo.missileTimerQueue().map((tick) => tick + game.config().SiloCooldown()))
+        + silo.missileTimerQueue().length + 1;
+      let fired = false;
+      while (!fired && game.ticks() <= launchDeadline) {
+        await bot.api.beginTick(bot.pageGame.myPlayer());
+        fired = await nuke.maybeFirePostSalvoHydrogen();
+        if (!fired) step();
+      }
+      assert.equal(fired, true, "the finisher resumes after native impacts and silo reload");
+      assert.ok(game.ticks() >= finisher.dueTick, "the native impact landing margin is respected");
+      assert.equal(bot.harness.internals.state.postSalvoHydrogen, null);
+      assert.equal(bot.intentBuffer.filter((intent) =>
+        intent.type === "build_unit" && intent.unit === UnitType.HydrogenBomb).length, 1);
+      step(bot.intentBuffer);
+      step();
+      step();
+      assert.equal(attacker.units(UnitType.HydrogenBomb).length, 1,
+        "the resumed finisher creates a real native Hydrogen");
       console.log("native saturation batch penetrates an active level-two SAM");
     }
     console.log("native salvo receipt-gap regression passed");

@@ -6420,3 +6420,22 @@ destroyed; the source silo stays active outside the Atomic blast radius. The
 focused capped native fixture passes all three modes. This adds physical-defense
 evidence for this controlled batch only; it does not change production behavior
 or establish penetration across other routes, reload states or opponents.
+
+### 2026-10-08 — native saturation-to-Hydrogen continuation
+
+Extend the physical-defense receipt fixture with a real MissileSiloExecution and
+the bundled Hydrogen finisher. Keep the opponent alive on a distant tile and
+place the attacking silo beyond the Hydrogen outer blast radius. Deliberately
+expire the finisher's initial deadline while all three native Atoms still exist:
+every native turn holds the finisher until they resolve, observes both real SAM
+charges spent and SAM destruction, then waits through the impact margin and silo
+reload. Exactly one Hydrogen build intent creates exactly one native Hydrogen.
+
+The test refreshes the adapter at each decision tick, consumes each intent buffer
+once, and bounds reload waiting by native cooldown plus queue length (one expired
+entry reloads per tick). Initial failures exposed incomplete fixture lifecycle,
+not a demonstrated production defect. The focused capped fixture passes all
+three modes; production code and generated artifacts are unchanged, so the prior
+full-suite/Baikal acceptance remains the applicable production evidence. This
+proves the controlled launch continuation, not Hydrogen impact benefit, aggregate
+victory gains, or future-shot arrival correctness on other routes.
