@@ -5609,3 +5609,21 @@ the unchanged-silo control still dispatches. Related nuclear tests, full
 `npm test` (exit 0), rebuild and build parity all pass. This demonstrates
 correct capacity after the asynchronous probe; it does not quantify
 match win-rate or saved gold in live games.
+
+Baikal follow-up pre-declaration (2026-10-08): run the existing
+baikal-nuke-wars deterministic scenario at 0ac596b8. This validates the
+integrated runtime after stale-silo capacity revalidation. Report wins,
+stop reason, ticks, own nuked structures and nuclear activity; do not
+infer improvement merely from scenario mechanism assertions. Earlier
+6661-tick receipts are contextual only unless the engine/config match.
+
+Integrated receipt at 0ac596b8: baikal-nuke-wars PASS, won=true,
+alive=true, stopReason=winner, ticks=6661. Bot counters: 20 atom + 49
+hydrogen, 1 MIRV build intent and 1 observed global MIRV launch, no
+pending launches at finish. Enemy nuked structure value 73,350,000;
+own structures nuked 11; no intent budget violation. Runtime 69,143 ms.
+Artifact: /home/eros/ofh-matrix/silo-revalidation-0ac596b8/baikal-nuke-wars.log.
+The victory/ticks/value/own-loss indicators match the earlier documented
+seed receipt; this is integrated non-regression evidence on one enriched
+scenario, not a new multi-seed win-rate gain. The stale-silo regression
+remains the direct evidence for the behavioral correction.
