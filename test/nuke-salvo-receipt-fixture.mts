@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { GameRunner } from "../openfront-engine/src/core/GameRunner";
 import { Executor } from "../openfront-engine/src/core/execution/ExecutionManager";
+import { SAMLauncherExecution } from "../openfront-engine/src/core/execution/SAMLauncherExecution";
 import { TurnSchema } from "../openfront-engine/src/core/Schemas";
 import { PlayerInfo, PlayerType, UnitType } from "../openfront-engine/src/core/game/Game";
 import { setup } from "../openfront-engine/tests/util/Setup";
@@ -11,7 +12,7 @@ import {
 } from "../scripts/headless/opponent-adapter.js";
 
 // Prior-pass prefixes need receipts; a freshly validated due batch can emit together.
-for (const prefixCount of [0, 2]) {
+for (const [prefixCount, physicalDefense] of [[0, false], [2, false], [0, true]] as const) {
   const game = await setup(
     "big_plains",
     { instantBuild: true },
@@ -36,6 +37,7 @@ for (const prefixCount of [0, 2]) {
   const sam = defender.buildUnit(UnitType.SAMLauncher, target, {});
   sam.increaseLevel();
   sam.reloadMissile();
+  if (physicalDefense) game.addExecution(new SAMLauncherExecution(defender, null, sam));
   const runner = new GameRunner(
     game,
     new Executor(game, "salvo-receipt-gap", "attacker"),
@@ -127,6 +129,19 @@ for (const prefixCount of [0, 2]) {
     step();
     assert.equal(attacker.units(UnitType.AtomBomb).length, 3);
     assert.equal(nuke.hasPendingNukeLaunches(), false);
+    if (physicalDefense) {
+      const missiles = attacker.units(UnitType.AtomBomb);
+      const lastImpact = Math.max(...missiles.map((missile) => {
+        const plan = bot.api.game.motionPlans().get(missile.id());
+        assert.ok(plan);
+        return plan.startTick + plan.path.length;
+      }));
+      while (game.ticks() <= lastImpact && sam.isActive()) step();
+      assert.equal(sam.missileTimerQueue().length, 2, "the real SAM spends both charges");
+      assert.equal(sam.isActive(), false, "the saturation batch destroys the real SAM");
+      assert.equal(silo.isActive(), true, "the source remains outside the Atomic blast");
+      console.log("native saturation batch penetrates an active level-two SAM");
+    }
     console.log("native salvo receipt-gap regression passed");
   } finally {
     bot.harness.window.close();

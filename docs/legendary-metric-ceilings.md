@@ -6412,3 +6412,11 @@ exact validated baseline: won/alive, tick 6661, 11 own structures nuked, 20 Atom
 All heavy checks ran sequentially under 4 GiB RAM / 1 GiB swap limits.
 This fixes batch self-blocking; absolute native departure timing, future-source
 viability, live browser adoption and aggregate victory gains remain unverified.
+
+The receipt fixture additionally runs the three-shot batch against an actual
+`SAMLauncherExecution`. Advancing real engine turns through the missiles' motion
+plan impact horizon shows the level-two SAM spending both charges and being
+destroyed; the source silo stays active outside the Atomic blast radius. The
+focused capped native fixture passes all three modes. This adds physical-defense
+evidence for this controlled batch only; it does not change production behavior
+or establish penetration across other routes, reload states or opponents.
