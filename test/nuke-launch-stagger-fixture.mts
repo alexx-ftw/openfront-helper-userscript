@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import { NukeExecution } from "../openfront-engine/src/core/execution/NukeExecution";
+import { UniversalPathFinding } from "../openfront-engine/src/core/pathfinding/PathFinder";
 import { Difficulty, UnitType } from "../openfront-engine/src/core/game/Game";
 import { engineTestsUtil, setupTwoPlayerGame } from "./helpers/two-player-game.mts";
 import { PlayerInfo, PlayerType } from "../openfront-engine/src/core/game/Game";
@@ -182,6 +183,68 @@ assert.equal(
   await nuke.maybeFirePostSalvoHydrogen(),
   true,
   "the finisher is released after actual impacts and the landing margin",
+);
+
+// Local wait scheduling must not exchange the native closest-silo slots.
+const orderGame = await setupTwoPlayerGame("big_plains");
+const orderPlayer = orderGame.player("attacker");
+const orderTarget = orderGame.ref(198, 100);
+const nearTile = orderGame.ref(197, 100);
+const speed = orderGame.config().nukeSpeed(UnitType.AtomBomb);
+const pathLength = (tile: number) =>
+  UniversalPathFinding.Parabola(orderGame, {
+    increment: speed,
+    directionUp: true,
+  }).findPath(tile, orderTarget)!.length;
+const nearFlight = pathLength(nearTile);
+const maxSpread = Math.floor(orderGame.config().SAMCooldown() / 2);
+const farTile = Array.from({ length: 197 }, (_, x) => orderGame.ref(x, 100)).find((tile) => {
+  const difference = pathLength(tile) - nearFlight;
+  return difference > 2 * Math.floor(maxSpread / 3) && difference <= maxSpread;
+});
+assert.notEqual(farTile, undefined, "native paths provide the decreasing-delay counterexample");
+orderPlayer.conquer(nearTile);
+orderPlayer.conquer(farTile!);
+const nearSilo = orderPlayer.buildUnit(UnitType.MissileSilo, nearTile, {});
+nearSilo.increaseLevel();
+nearSilo.reloadMissile();
+const farSilo = orderPlayer.buildUnit(UnitType.MissileSilo, farTile!, {});
+const orderBehavior = executeClassicScript(
+  `${readRepositoryFile("engine/ingame/auto-bot/nukeBehavior.js")}\nObject.create(NukeBehavior.prototype);`,
+  { UNIT: UnitType, Difficulty, within: (value, min, max) => Math.max(min, Math.min(max, value)) },
+);
+orderBehavior.game = Object.assign(Object.create(orderGame), {
+  config: () => Object.assign(Object.create(orderGame.config()), { defaultNukeSpeed: () => speed }),
+});
+orderBehavior.isTrajectoryInterceptableBySam = () => false;
+const entries = orderBehavior.getAvailableSiloEntries([nearSilo, farSilo], orderTarget, new Set());
+const sequence = orderBehavior.createSamLaunchSequence(entries);
+const orderSalvo = orderBehavior.getSamSalvo({
+  window: sequence.map((bomb, index) => ({ ...bomb, index })),
+  launchSequence: sequence,
+  totalBombs: 3,
+  maxSpread,
+});
+const executions = new Map<number, NukeExecution>();
+const actualSources = new Map<number, number>();
+const startTick = orderGame.ticks();
+while (orderGame.ticks() <= startTick + Math.max(...orderSalvo.waits) + 2) {
+  orderSalvo.waits.forEach((wait, index) => {
+    if (startTick + wait !== orderGame.ticks()) return;
+    const execution = new NukeExecution(UnitType.AtomBomb, orderPlayer, orderTarget);
+    executions.set(index, execution);
+    orderGame.addExecution(execution);
+  });
+  orderGame.executeNextTick();
+  for (const [index, execution] of executions) {
+    const missile = (execution as any).nuke;
+    if (missile && !actualSources.has(index)) actualSources.set(index, missile.tile());
+  }
+}
+assert.deepEqual(
+  [0, 1, 2].map((index) => actualSources.get(index)),
+  [nearTile, nearTile, farTile],
+  "each planned flight must retain its native closest-silo slot after local delays",
 );
 
 console.log("nuke same-silo launch-stagger fixture passed");

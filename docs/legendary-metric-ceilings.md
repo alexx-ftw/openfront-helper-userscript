@@ -6119,3 +6119,31 @@ zero pending launches and 73,350,000 enemy structure gold destroyed. Receipt:
 `/home/eros/ofh-matrix/live-finisher-deadline/baikal-nuke-wars.log`.
 Both heavy runs were sequential supervised services capped at 4 GiB RAM and
 1 GiB swap; this bounds these tests, not overall workstation OOM risk.
+
+## Preserve native salvo source order (2026-10-08)
+
+The native two-silo fixture reproduces a source exchange: a nearer level-two
+silo followed by a farther silo yields decreasing local delays. The far-slot
+intent emitted immediately consumes the still-free near slot; the delayed near
+bomb later launches from the far silo. Both trajectory and flight metadata are
+then wrong. Retain nondecreasing local waits in native closest-silo slot order,
+queue the tail after a delayed/rejected head, and block same-salvo overtaking
+while a queued head retries. Other salvos and ordinary launches remain separate.
+Acceptance: the native fixture retains near/near/far sources; failed initial and
+queued probes cannot let the tail pass; cancellation, exceptional exits, send
+budget and funding checks still pass; full suite passes; Baikal stays won/alive
+with at most 11 own structures nuked. No scoring weights or capacity changed.
+
+The native source regression and focused synthetic tests pass. Native flight
+paths and source selection run in the test engine; intent emission scheduling
+is simulated, so live browser/server adoption remains unproven. Native waiting
+inside a silo and changed capacity during a salvo still require live rechecks.
+
+Result: full `npm test`, types, fixture formatting and generated-artifact parity
+pass. Baikal remains won/alive at tick 6661: 11 own structures nuked, 20 Atoms,
+49 Hydrogens, pending zero and 73,350,000 enemy structure gold destroyed.
+Receipt: `/home/eros/ofh-matrix/salvo-source-order/baikal-nuke-wars.log`.
+Both heavy runs used sequential 4 GiB RAM/1 GiB swap service limits. The read-only
+subagent did not return a review before closure; independent review is unverified.
+This fixes the reproduced source exchange and retry overtaking, not aggregate
+victory performance or arbitrary concurrent manual launches.

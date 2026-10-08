@@ -1102,8 +1102,8 @@ for (const failedProbe of [1, 2]) {
     true,
     "a temporary probe failure queues the full salvo",
   );
-  assert.equal(emitted.length, 1, "only the accepted immediate bomb is emitted");
-  assert.equal(behavior._pendingNukeLaunches.length, 2);
+  assert.equal(emitted.length, failedProbe - 1, "no later bomb overtakes a failed immediate probe");
+  assert.equal(behavior._pendingNukeLaunches.length, 4 - failedProbe);
   assert.equal(sandbox.state.nukeWantSlots.pendingLaunches, true);
   world.tick = 801;
   assert.equal(await behavior.processPendingNukeLaunches(), true);
@@ -1114,6 +1114,29 @@ for (const failedProbe of [1, 2]) {
   assert.equal(behavior.hasPendingNukeLaunches(), false);
   assert.equal(sandbox.state.nukeWantSlots, null);
   sandbox.state.postSalvoHydrogen = null;
+}
+
+// A retrying queue head must retain its native silo slot before its tail fires.
+{
+  const { world, player, nukeTarget, behavior } = makeSalvoWorld();
+  const emitted = [];
+  launchSink = emitted;
+  const buildables = player.buildables;
+  let probes = 0;
+  player.buildables = (...args) => (++probes === 1 ? [] : buildables(...args));
+  behavior._pendingNukeLaunches = [20, 21].map((flightTicks) => ({
+    dueTick: world.tick, tile: 20, nukeType: UNIT.AtomBomb, targetPlayer: nukeTarget,
+    salvo: { salvoId: 123, flightTicks },
+  }));
+  behavior.getAbortedSalvoIds = () => new Set();
+  assert.equal(await behavior.processPendingNukeLaunches(), false,
+    "the tail cannot claim the retrying head's silo slot");
+  assert.equal(probes, 1);
+  assert.equal(emitted.length, 0);
+  world.tick++;
+  assert.equal(await behavior.processPendingNukeLaunches(), true);
+  assert.equal(emitted.length, 2);
+  assert.equal(behavior.hasPendingNukeLaunches(), false);
 }
 
 {
@@ -1140,8 +1163,7 @@ for (const delayedFirst of [false, true]) {
   const waits = delayedFirst ? [5, 0] : [0];
   behavior.getSamSalvo = () => ({ bombsToFire: waits.length, waits });
   sandbox.state.nukeWantSlots = null;
-  await assert.rejects(
-    behavior.fireSamSalvo(
+  const startSalvo = () => behavior.fireSamSalvo(
       {
         targetTile: 20,
         totalBombs: waits.length,
@@ -1150,15 +1172,18 @@ for (const delayedFirst of [false, true]) {
       },
       nukeTarget,
       1n,
-    ),
-    (error) => error === failure,
-  );
+    );
   if (delayedFirst) {
+    assert.equal(await startSalvo(), true, "a delayed head also queues the immediate tail");
+    world.tick = 805;
+    await assert.rejects(behavior.processPendingNukeLaunches(), (error) => error === failure);
     assert.equal(sandbox.state.nukeWantSlots.pendingLaunches, true);
     nukeTarget.isAlive = () => false;
     world.tick = 801;
     assert.equal(await behavior.processPendingNukeLaunches(), false);
     assert.equal(behavior.hasPendingNukeLaunches(), false);
+  } else {
+    await assert.rejects(startSalvo(), (error) => error === failure);
   }
   assert.equal(sandbox.state.nukeWantSlots, null, "no stale capacity reservation survives");
 }

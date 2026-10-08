@@ -1831,6 +1831,8 @@
       // wasting gold one intercepted atom at a time.
       const abortedSalvoIds = this.getAbortedSalvoIds(now);
       const remaining = [];
+      // DIVERGENCE: a queued head still owns the next closest-silo slot.
+      const blockedSalvoIds = new Set();
       let launched = false;
       let sendsThisTick = 0;
       for (const pending of this._pendingNukeLaunches) {
@@ -1840,8 +1842,10 @@
         if (pending.salvo && abortedSalvoIds.has(pending.salvo.salvoId)) {
           continue;
         }
-        if (pending.dueTick > now) {
+        if (pending.dueTick > now || (pending.salvo && blockedSalvoIds.has(pending.salvo.salvoId))) {
+          if (pending.dueTick <= now) pending.dueTick = now + 1;
           remaining.push(pending);
+          if (pending.salvo) blockedSalvoIds.add(pending.salvo.salvoId);
           continue;
         }
         const outcome = await this.firePendingNukeLaunch(pending, sendsThisTick);
@@ -1851,6 +1855,7 @@
         } else if (outcome === "retry") {
           pending.dueTick = now + 1;
           remaining.push(pending);
+          if (pending.salvo) blockedSalvoIds.add(pending.salvo.salvoId);
         }
       }
       const kept =
@@ -2206,10 +2211,14 @@
       const firstArrival = Math.min(...selected.map((bomb) => bomb.flightTicks));
       const stagger = Math.max(1, Math.floor(plan.maxSpread / plan.totalBombs));
       let selectedIndex = 0;
+      let lastWait = 0;
       const waits = Array.from({ length: bombsToFire }, (_, index) => {
-        if (!selectedIndexes.has(index)) return 0;
-        const arrival = firstArrival + selectedIndex++ * stagger;
-        return Math.max(0, arrival - plan.launchSequence[index].flightTicks);
+        // DIVERGENCE: local emission delays must preserve closest-silo slot order.
+        if (selectedIndexes.has(index)) {
+          const arrival = firstArrival + selectedIndex++ * stagger;
+          lastWait = Math.max(lastWait, arrival - plan.launchSequence[index].flightTicks);
+        }
+        return lastWait;
       });
       return { bombsToFire, waits };
     }
@@ -2244,17 +2253,20 @@
         targetSamId: plan.targetSamId ?? null,
       };
       try {
+        let queued = false;
         for (let i = 0; i < salvo.bombsToFire; i++) {
           const metadata = { ...salvoPlan, flightTicks: flightTicks[i] };
+          const wait = Math.max(salvo.waits[i], queued ? 1 : 0);
           const sent = await this.sendNuke(
-            plan.targetTile, UNIT.AtomBomb, nukeTarget, salvo.waits[i], metadata,
+            plan.targetTile, UNIT.AtomBomb, nukeTarget, wait, metadata,
           );
           // A stale worker probe or exhausted intent budget is retryable.
           // Retain this bomb and the tail; the queue rechecks target and SAMs.
           if (!sent && !this.queueDelayedNukeLaunch(
             plan.targetTile, UNIT.AtomBomb, nukeTarget,
-            Math.max(1, salvo.waits[i]), metadata,
+            Math.max(1, wait), metadata,
           )) return false;
+          queued = queued || wait > 0 || !sent;
         }
       } finally {
         if (this.hasPendingNukeLaunches()) {
