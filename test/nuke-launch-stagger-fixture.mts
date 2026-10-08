@@ -19,7 +19,10 @@ const attacker = game.player("attacker");
 const source = game.ref(1, 1);
 const target = game.ref(80, 1);
 attacker.conquer(source);
+attacker.addGold(100_000_000n);
 const silo = attacker.buildUnit(UnitType.MissileSilo, source, {});
+silo.increaseLevel();
+silo.reloadMissile();
 silo.increaseLevel();
 silo.reloadMissile();
 
@@ -63,7 +66,38 @@ const predictedImpacts = missiles.map(
 assert.deepEqual(
   silo.missileTimerQueue(),
   [game.ticks() - 1, game.ticks() - 1],
-  "both level-two silo slots are claimed on the same engine tick",
+  "two of the three silo slots are claimed on the same engine tick",
+);
+assert.equal(
+  attacker.canBuild(UnitType.HydrogenBomb, target),
+  source,
+  "the third slot can launch a finisher while both Atoms are still flying",
+);
+const finisherState = { postSalvoHydrogen: { targetTile: target, dueTick: game.ticks() } };
+const view = Object.assign(Object.create(game), { motionPlans: () => plans });
+const nuke = executeClassicScript(
+  `${readRepositoryFile("engine/ingame/auto-bot/nukeBehavior.js")}\nObject.create(NukeBehavior.prototype);`,
+  { UNIT: UnitType, Difficulty, state: finisherState },
+);
+Object.assign(nuke, {
+  game: view,
+  player: attacker,
+  structureBehavior: defense,
+  _pendingNukeLaunches: [],
+  postSalvoHydrogenTarget: () => ({}),
+  getPerceivedNukeCost: async () => 1n,
+  findEnemySamsCoveringTile: () => [],
+  sendNuke: async () => true,
+});
+assert.equal(
+  await nuke.maybeFirePostSalvoHydrogen(),
+  false,
+  "an expired estimate cannot release the finisher while native Atoms remain in flight",
+);
+assert.equal(
+  finisherState.postSalvoHydrogen.dueTick,
+  Math.max(...predictedImpacts) + 5,
+  "the real same-silo wait extends the finisher deadline from native motion plans",
 );
 
 const progress: Array<[number, number]> = [];
@@ -137,6 +171,17 @@ assert.deepEqual(
   predictedImpacts,
   missiles.map((missile) => impacts.get(missile.id())),
   "active missile deadlines include the real same-silo launch wait",
+);
+assert.equal(
+  await nuke.maybeFirePostSalvoHydrogen(),
+  false,
+  "resolved Atoms do not skip the five-tick landing margin",
+);
+while (game.ticks() < finisherState.postSalvoHydrogen.dueTick) game.executeNextTick();
+assert.equal(
+  await nuke.maybeFirePostSalvoHydrogen(),
+  true,
+  "the finisher is released after actual impacts and the landing margin",
 );
 
 console.log("nuke same-silo launch-stagger fixture passed");

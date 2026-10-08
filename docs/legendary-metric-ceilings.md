@@ -6095,3 +6095,27 @@ gold destroyed. All 13 comparable gold/land/troop/alive progress snapshots match
 the previous receipt. Receipt: `/home/eros/ofh-matrix/pending-salvo-funding/baikal-nuke-wars.log`.
 The artificial funding race is fixed; no aggregate victory improvement or live
 browser adoption is claimed.
+
+## Live finisher deadline (2026-10-08)
+
+Native same-silo launch staggering can outlive a planned arrival deadline even
+when a third silo slot can legally launch Hydrogen. Reconcile the existing
+finisher deadline with live own Atom motion at the same destination and retain
+the existing five-tick landing margin. Unknown motion waits for active Atoms to
+resolve. Acceptance: the native level-three/two-Atom fixture holds an overdue
+finisher, extends its deadline to the last native impact plus five, and releases
+it after that margin; full suite passes; Baikal remains won/alive with at most
+11 own structures nuked. Other launch gates remain unchanged.
+
+The native fixture passes. Its Hydrogen send is stubbed: this establishes the
+release gate and native third-slot permission, not Hydrogen server delivery.
+Initial salvo arrival-window planning and live browser adoption remain outside
+this correction. Same-destination manual Atoms also conservatively hold it.
+
+Result: full `npm test`, types, fixture formatting and generated-artifact parity
+pass. Independent source review found no concrete regression. Baikal remains
+won/alive at tick 6661, with 11 own structures nuked, 20 Atoms, 49 Hydrogens,
+zero pending launches and 73,350,000 enemy structure gold destroyed. Receipt:
+`/home/eros/ofh-matrix/live-finisher-deadline/baikal-nuke-wars.log`.
+Both heavy runs were sequential supervised services capped at 4 GiB RAM and
+1 GiB swap; this bounds these tests, not overall workstation OOM risk.

@@ -436,6 +436,9 @@ Exceptional exits also reconcile the reservation with the surviving queue.
 The Hydrogen finisher waits for its own salvo's queue to drain. Delayed or retried
 launches move its deadline to the actual launch tick plus flight time and the
 existing five-tick landing margin; failed sends do not count as launches.
+Active own Atoms aimed at the same tile also hold the finisher. Their live motion
+plans extend its deadline to actual impact plus five ticks, including native
+same-silo departure delays. Unknown motion holds it until those Atoms resolve.
 SAM-salvo revalidation counts charges that can reload by the latest remaining
 planned arrival, including delayed-launch retries. Unknown flight or reload data
 keeps the conservative full-capacity estimate.

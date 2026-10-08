@@ -2295,6 +2295,18 @@
         state.postSalvoHydrogen = null;
         return false;
       }
+      // DIVERGENCE: silo staggering or retries can outlive the planned deadline.
+      let atomsInFlight = false;
+      for (const atom of this.player.units?.(UNIT.AtomBomb) ?? []) {
+        if (atom.isActive?.() === false || atom.targetTile?.() !== pending.targetTile) continue;
+        atomsInFlight = true;
+        const motion = this.structureBehavior?.legendaryActiveMissileMotion?.(atom, atom.tile?.());
+        if (Number.isFinite(motion?.impactTick) && motion.impactTick >= 0) {
+          pending.dueTick = Math.max(pending.dueTick,
+            Number(this.game.ticks()) + motion.impactTick + 5);
+        }
+      }
+      if (atomsInFlight) return false;
       if (this.game.ticks() < pending.dueTick) return false;
       // A delayed/retried atom must land before its finisher is evaluated.
       if (pending.salvoId !== undefined && this._pendingNukeLaunches.some(
