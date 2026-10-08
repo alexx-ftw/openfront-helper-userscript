@@ -405,6 +405,11 @@
       return this.attackBehavior.shouldAttack(target) !== false;
     }
 
+    isValidNukeDestination(tile) {
+      const owner = this.game.owner?.(tile);
+      return owner?.isPlayer?.() !== true || this.isValidNukeTarget(owner);
+    }
+
     async selectAffordableNuke() {
       const hydroCost = await this.getPerceivedNukeCost(UNIT.HydrogenBomb);
       const atomCost = await this.getPerceivedNukeCost(UNIT.AtomBomb);
@@ -1722,14 +1727,14 @@
       // The worker probe yields long enough for diplomacy or the target's state
       // to change. Re-run the complete attack policy immediately before
       // actuation so a stale candidate cannot launch after becoming invalid.
-      if (!this.isValidNukeTarget(targetPlayer)) return false;
+      if (!this.isValidNukeTarget(targetPlayer) || !this.isValidNukeDestination(tile)) return false;
       if (!this.emitNukeBuildable(buildable, tile)) return false;
       await this.rememberSuccessfulNukeLaunch(tile, nukeType, targetPlayer);
       return true;
     }
 
     queueDelayedNukeLaunch(tile, nukeType, targetPlayer, delay, salvo = null) {
-      if (!this.isValidNukeTarget(targetPlayer)) return false;
+      if (!this.isValidNukeTarget(targetPlayer) || !this.isValidNukeDestination(tile)) return false;
       this._pendingNukeLaunches.push({
         dueTick: Number(this.game.ticks()) + delay,
         tile,
@@ -1837,7 +1842,8 @@
       let sendsThisTick = 0;
       for (const pending of this._pendingNukeLaunches) {
         // Target loss/alliance changes cancel future entries immediately too.
-        if (!this.isValidNukeTarget(pending.targetPlayer)) continue;
+        if (!this.isValidNukeTarget(pending.targetPlayer) ||
+            !this.isValidNukeDestination(pending.tile)) continue;
         if (pending.salvo && abortedSalvoIds.has(pending.salvo.salvoId)) {
           continue;
         }
@@ -1882,7 +1888,8 @@
      * next-tick retry, and the salvo's built-in margin absorbs the shift.
      */
     async firePendingNukeLaunch(pending, sendsThisTick) {
-      if (!this.isValidNukeTarget(pending.targetPlayer)) return "drop";
+      if (!this.isValidNukeTarget(pending.targetPlayer) ||
+          !this.isValidNukeDestination(pending.tile)) return "drop";
       if (sendsThisTick >= PENDING_NUKE_LAUNCHES_PER_TICK) return "retry";
       const sent = await this.sendNuke(
         pending.tile,
@@ -1895,7 +1902,9 @@
         finisher.dueTick = Math.max(finisher.dueTick,
           Number(this.game.ticks()) + pending.salvo.flightTicks + 5);
       }
-      return sent ? "fired" : "retry";
+      if (sent) return "fired";
+      return this.isValidNukeTarget(pending.targetPlayer) &&
+        this.isValidNukeDestination(pending.tile) ? "retry" : "drop";
     }
 
     /**

@@ -5653,3 +5653,25 @@ hydrogen, 1 observed global MIRV, 73,350,000 enemy structure value and
 /home/eros/ofh-matrix/sam-demand-freshness/baikal-nuke-wars.log.
 This establishes stale-demand spending prevention and single-scenario
 non-regression, not increased win rate across seeds.
+
+Destination capture safety pre-declaration (2026-10-08): PlayerImpl
+nukeSpawn permits targeting own territory (isOnSameTeam(self) is false).
+sendNuke checks the originally selected player after the worker probe,
+but not the destination's current owner. Revalidate current ownership
+using the same attack policy at queueing, queue processing and emission;
+unowned/water aim points remain legal. Regression: capture a queued
+destination before its due tick or during the buildability probe;
+own/permanent-team/policy-protected destinations must not emit intents,
+while hostile and unowned controls must still fire. Validate focused/full
+tests, build parity and Baikal integrated non-regression.
+
+Destination capture safety result (2026-10-08): baseline regression emitted
+one bomb at a now-owned destination; the shared launch guard now emits zero
+and drops obsolete delayed entries instead of retrying them. Six ownership
+cases pass, including capture during the worker probe, permanent teammates,
+policy-protected players, hostile controls and unowned aim points. Focused
+nuclear tests, the complete npm suite and regenerated build parity pass.
+Baikal receipt: `/home/eros/ofh-matrix/destination-capture`, won/alive at tick
+6661, 20 atoms, 49 hydrogens, one MIRV intent, 11 own structures nuked and
+73,350,000 enemy structure gold nuked. Identical to the preceding receipt;
+this establishes a safety correction without a claimed aggregate win gain.

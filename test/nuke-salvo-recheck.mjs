@@ -194,6 +194,37 @@ for (const change of ["unchanged", "destroyed", "friendly", "during-probe", "rep
   sandbox.state.nukeWantSlots = null;
 }
 
+for (const capture of ["hostile", "own-before-due", "own-during-probe", "teammate", "protected", "unowned"]) {
+  const { behavior, game, player, world, nukeTarget } = makeSalvoWorld();
+  player.isPlayer = nukeTarget.isPlayer = () => true;
+  player.team = () => "blue";
+  const teammate = { isPlayer: () => true, smallID: () => 3, team: () => "blue", isAlive: () => true };
+  const protectedPlayer = { isPlayer: () => true, smallID: () => 4, team: () => null, isAlive: () => true };
+  const unowned = { isPlayer: () => false };
+  let owner = nukeTarget;
+  game.owner = () => owner;
+  behavior.attackBehavior.shouldAttack = (target) => target.smallID() !== 4;
+  assert.equal(behavior.queueDelayedNukeLaunch(20, UNIT.AtomBomb, nukeTarget, 5), true);
+  if (capture === "own-before-due") owner = player;
+  const originalProbe = player.buildables;
+  player.buildables = async (...args) => {
+    if (capture === "own-during-probe") owner = player;
+    if (capture === "teammate") owner = teammate;
+    if (capture === "protected") owner = protectedPlayer;
+    if (capture === "unowned") owner = unowned;
+    return originalProbe(...args);
+  };
+  const emitted = [];
+  launchSink = emitted;
+  world.tick += 5;
+  await behavior.processPendingNukeLaunches();
+  const allowed = capture === "hostile" || capture === "unowned";
+  assert.equal(emitted.length, allowed ? 1 : 0, `${capture} destination checked at emission`);
+  assert.equal(behavior.hasPendingNukeLaunches(), false, `${capture} launch resolved without stale retries`);
+  if (!allowed) assert.equal(behavior.queueDelayedNukeLaunch(20, UNIT.AtomBomb, nukeTarget, 5), false);
+  launchSink = null;
+}
+
 for (const type of [UNIT.AtomBomb, UNIT.HydrogenBomb]) {
   for (const throws of [false, true]) {
     const { behavior } = makeSalvoWorld();
