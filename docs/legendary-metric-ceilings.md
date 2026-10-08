@@ -6719,6 +6719,28 @@ justified on its own terms.
 
 Receipt will be appended after the run.
 
+Amendment (same run): the first Baikal attempt fired the branch zero
+times - the queued-launch signal alone never coincided with zero ready
+shots on this seed. The trigger now also accepts state.nukeWantSlots
+(a planned salvo's slot request), the other synchronized "we want
+capacity" signal from the nuke lane. Fixture extended with both cases.
+All other expectations stand.
+
+## Integrated receipt 4 (2026-10-08, after the slot-pressure run)
+
+Counters identical for the fifth consecutive deterministic run: won=true,
+alive=true, 26 Atoms, 48 Hydrogens, ownStructuresNuked=12, 50,500,000,
+tick 7971. The slot-pressure branch never fired on this seed: neither
+the queued-launch signal nor nukeWantSlots ever coincided with zero
+ready silo shots at a structures decision point. The mechanism stays as
+fixture-pinned cooperation logic (it binds the structures planner to the
+nuke lane's capacity requests; denser exchanges than this regime will
+exercise it), and the seed outcome is unchanged by design-intent, not by
+tuning.
+
+Receipt: /home/eros/ofh-matrix/silo-slot-receipt2/baikal-nuke-wars.log
+Run under MemoryMax=4G, MemorySwapMax=1G, OOMPolicy=kill, serial.
+
 ## Integrated receipt 3 (2026-10-08, after the MIRV-weighting run)
 
 Counters identical to iterations 1 and 2: won=true, alive=true, 26
@@ -6733,3 +6755,24 @@ keeps nuke logic cohesive with the tile scorer's pricing.
 
 Receipt: /home/eros/ofh-matrix/finisher-mirv-receipt/baikal-nuke-wars.log
 Run under MemoryMax=4G, MemorySwapMax=1G, OOMPolicy=kill, serial.
+
+## Pre-declaration 3: nuclear slot pressure -> silo upgrade (2026-10-08)
+
+Silos and nuking were not synchronized on reload cadence: a queued
+nuclear launch with zero ready silo shots waited on cooldowns while the
+structures planner spent the same surplus on economy. The Legendary
+construction chain now upgrades a silo in exactly that state (queued
+launch, no ready shot, winFixes on, upgrade affordable through the
+existing reserve gates); every silo level is a reload slot that drains
+the queue. Fixture: test/silo-nuclear-slot-pressure-fixture.mjs pins the
+five boundary cases (fires / no queue / ready shot / winFixes off /
+silos disabled).
+
+Pre-declared expectations for baikal-nuke-wars: won=true and alive=true
+required. Nuclear launch counts (A/H) are expected to rise or hold as
+slots drain the queue faster; ownStructuresNuked, damage, and victory
+tick are observed and reported honestly without gating beyond won/alive.
+The new branch can only fire during genuine slot starvation, so economy
+and defense priorities above it are unchanged.
+
+Receipt will be appended after the run.

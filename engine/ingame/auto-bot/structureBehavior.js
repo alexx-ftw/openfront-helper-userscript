@@ -2636,6 +2636,14 @@
       // stall on, so the survival strike otherwise never gets a launcher.
       if (await this.maybeArmFreezeStrikeSilo()) return true;
 
+      // Nuclear slot pressure: a queued nuclear launch with zero ready silo
+      // shots is the one case where an offensive silo upgrade outranks the
+      // ordinary ladder — every level is a reload slot that drains the queue,
+      // so silo upgrades and the nuke lane stay synchronized instead of the
+      // structures planner spending the same surplus on economy while the
+      // nuclear lane waits on cooldowns.
+      if (await this.maybeUpgradeSiloForNuclearSlotPressure()) return true;
+
       // Cap relief needs the authoritative City upgrade price before the
       // candidate set is built. The probe is tick-cached and its per-level
       // cost cache keeps repeated decisions off the worker.
@@ -10797,6 +10805,49 @@
       }
 
       return this.emitPlannedSamUpgrade(bu, plan.sam);
+    }
+
+    async maybeUpgradeSiloForNuclearSlotPressure() {
+      if (!state.settings.winFixes) return false;
+      const config = this.game.config();
+      if (
+        config.isUnitDisabled(UNIT.MissileSilo) ||
+        (config.isUnitDisabled(UNIT.AtomBomb) &&
+          config.isUnitDisabled(UNIT.HydrogenBomb) &&
+          config.isUnitDisabled(UNIT.MIRV))
+      ) {
+        return false;
+      }
+      // Two synchronized signals count as nuclear slot pressure: a queued
+      // launch (the nuke lane is already waiting) and a planned salvo's slot
+      // request (nukeWantSlots — the lane wants capacity it does not have).
+      const pending = this.nukeBehavior?._pendingNukeLaunches;
+      const queued = Array.isArray(pending) && pending.length > 0;
+      const wantedSlots = state.nukeWantSlots?.need > 0;
+      if (!queued && !wantedSlots) return false;
+      const silos = (this.player?.units?.(UNIT.MissileSilo) || []).filter(
+        (silo) => silo.isUnderConstruction?.() !== true,
+      );
+      if (silos.length === 0) return false;
+      if (this.legendaryReadyShotTotal(silos) > 0) return false;
+      const result = await this.findBestStructureToUpgrade(silos);
+      if (result === null) return false;
+      if (!this.genericStructureUpgradeAllowed(result, UNIT.MissileSilo)) {
+        return false;
+      }
+      const buildMenu = getBuildMenu();
+      if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
+        return false;
+      }
+      if (!sendAutoBotBuildOrUpgrade(buildMenu, result.bu, undefined, this.game, this.player)) {
+        return false;
+      }
+      state.stats.builds++;
+      setLastAction(
+        tr("⬆️ Upgrade {type}", { type: result.structure.type() }),
+        "build",
+      );
+      return true;
     }
 
     /**
