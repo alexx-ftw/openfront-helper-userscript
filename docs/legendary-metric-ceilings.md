@@ -6388,3 +6388,27 @@ spent charges. Delays beyond the existing grace return to live revalidation. No
 live browser/server adoption or aggregate victory improvement is claimed. All heavy
 tests/simulations remain sequential and capped at 4 GiB RAM / 1 GiB swap. The active
 goal still owns relative departure/arrival scheduling and future-source viability.
+
+### 2026-10-08 — receipt barrier snapshot preserves the validated batch
+
+The previous barrier also observed shots emitted earlier in the same pending
+pass, causing a fully validated batch to block itself after its first shot.
+Capture unacknowledged salvo IDs once at pass start and share that snapshot with
+both viability checks and pending sends. Fresh sends still use live projected
+silo slots; they gate the next pass rather than the remainder of this one.
+The three-shot cap, invalid-target cancellation and prior-prefix barrier remain.
+
+The native receipt fixture now covers both three due shots with no older prefix
+and two previously admitted shots followed by a queued tail. Both cases create
+three real native Atoms through the full bundled build menu. A synthetic
+four-shot control emits exactly three, retains the fourth, and holds it next pass
+while prior receipts are absent. Native creation is not proof of SAM interception
+or penetration; no physical-defense result is claimed by these controls.
+
+Full npm test, TypeScript, build parity and diff checks pass. Baikal preserves the
+exact validated baseline: won/alive, tick 6661, 11 own structures nuked, 20 Atoms,
+49 Hydrogens, pending zero and 73,350,000 enemy structure gold destroyed. Receipt:
+`/home/eros/ofh-matrix/salvo-receipt-batch-snapshot/baikal-nuke-wars.log`.
+All heavy checks ran sequentially under 4 GiB RAM / 1 GiB swap limits.
+This fixes batch self-blocking; absolute native departure timing, future-source
+viability, live browser adoption and aggregate victory gains remain unverified.

@@ -172,6 +172,33 @@ for (const release of ["expiry", "alliance"]) {
   }
 }
 
+// A validated batch can fill the send cap before its own new receipts block the next pass.
+{
+  const { world, nukeTarget, behavior } = makeSalvoWorld();
+  const sam = world.sam("batch-target", 3);
+  world.covering.push({ unit: sam, distSquared: 0 });
+  world.targetSams.push(sam);
+  const emitted = [];
+  launchSink = emitted;
+  sandbox.autoBotBuildPendingNukes = () => emitted.length ? [{ salvoId: 70 }] : [];
+  try {
+    behavior._pendingNukeLaunches = Array.from({ length: 4 }, () => ({
+      dueTick: world.tick, tile: 20, nukeType: UNIT.AtomBomb, targetPlayer: nukeTarget,
+      salvo: { salvoId: 70, targetTile: 20, targetSamId: sam.id(), flightTicks: 20 },
+    }));
+    assert.equal(await behavior.processPendingNukeLaunches(), true);
+    assert.equal(emitted.length, 3, "a validated batch uses but never exceeds the three-shot cap");
+    assert.equal(behavior._pendingNukeLaunches.length, 1);
+    world.tick++;
+    assert.equal(await behavior.processPendingNukeLaunches(), false,
+      "the next pass still waits for the earlier emitted prefix");
+    assert.equal(emitted.length, 3);
+    assert.equal(behavior._pendingNukeLaunches.length, 1);
+  } finally {
+    delete sandbox.autoBotBuildPendingNukes;
+  }
+}
+
 // The ordinary construction budget must preserve every pending saturation Atom.
 {
   const { behavior, player, game, world, nukeTarget } = makeSalvoWorld();

@@ -1835,12 +1835,16 @@
     async processPendingNukeLaunches() {
       if (!this.hasPendingNukeLaunches()) return false;
       const now = Number(this.game.ticks());
+      // DIVERGENCE: only a prior-pass prefix blocks today's validated batch.
+      const awaitingSalvoIds = new Set(typeof autoBotBuildPendingNukes === "function"
+        ? autoBotBuildPendingNukes(this.game, this.player).map((record) => record.salvoId).filter((id) => id != null)
+        : []);
       // Before firing a due SAM-overwhelm bomb, re-validate the whole salvo
       // against the live enemy SAM layout (see samSalvoStillViable): a salvo
       // that can no longer penetrate — or whose target SAM is already rubble —
       // drops its entire remaining chain (due + future entries) instead of
       // wasting gold one intercepted atom at a time.
-      const abortedSalvoIds = this.getAbortedSalvoIds(now);
+      const abortedSalvoIds = this.getAbortedSalvoIds(now, awaitingSalvoIds);
       const remaining = [];
       // DIVERGENCE: a queued head still owns the next closest-silo slot.
       const blockedSalvoIds = new Set();
@@ -1859,7 +1863,9 @@
           if (pending.salvo) blockedSalvoIds.add(pending.salvo.salvoId);
           continue;
         }
-        const outcome = await this.firePendingNukeLaunch(pending, sendsThisTick);
+        const outcome = await this.firePendingNukeLaunch(
+          pending, sendsThisTick, awaitingSalvoIds.has(pending.salvo?.salvoId),
+        );
         if (outcome === "fired") {
           launched = true;
           sendsThisTick += 1;
@@ -1896,12 +1902,13 @@
      * the sends across ticks preserves relative arrival order via the
      * next-tick retry, and the salvo's built-in margin absorbs the shift.
      */
-    async firePendingNukeLaunch(pending, sendsThisTick) {
+    async firePendingNukeLaunch(pending, sendsThisTick,
+      awaitingReceipts = this.salvoAwaitingNativeReceipts(pending.salvo)) {
       if (!this.isValidNukeTarget(pending.targetPlayer) ||
           !this.isValidNukeDestination(pending.tile)) return "drop";
       if (sendsThisTick >= PENDING_NUKE_LAUNCHES_PER_TICK) return "retry";
       // DIVERGENCE: unacknowledged prefix shots are not yet visible to SAM accounting.
-      if (this.salvoAwaitingNativeReceipts(pending.salvo)) return "retry";
+      if (awaitingReceipts) return "retry";
       const sent = await this.sendNuke(
         pending.tile,
         pending.nukeType,
@@ -1926,7 +1933,7 @@
      * checked once against its full remaining chain (due + future entries —
      * exactly the bombs the plan can still bring to bear within the window).
      */
-    getAbortedSalvoIds(now) {
+    getAbortedSalvoIds(now, awaitingSalvoIds = null) {
       const dueSalvoIds = new Set();
       for (const pending of this._pendingNukeLaunches) {
         if (pending.salvo && pending.dueTick <= now) {
@@ -1939,7 +1946,7 @@
         const entries = this._pendingNukeLaunches.filter(
           (pending) => pending.salvo && pending.salvo.salvoId === salvoId,
         );
-        if (this.salvoAwaitingNativeReceipts(entries[0].salvo)) continue;
+        if (awaitingSalvoIds ? awaitingSalvoIds.has(salvoId) : this.salvoAwaitingNativeReceipts(entries[0].salvo)) continue;
         const arrivals = entries.map((entry) => {
           const flight = entry.salvo.flightTicks;
           return Number.isFinite(flight) && flight >= 0
