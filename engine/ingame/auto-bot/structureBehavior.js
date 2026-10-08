@@ -11060,7 +11060,8 @@
       const pendingRequest = state.nukeWantSlots;
       const request = this.validNukeSiloUpgradeRequest();
       if (request === null) return false;
-      const scopedSilos = this.nukeDemandScopedSilos(request, routeEligibleSilos);
+      const scopedSilos = this.nukeDemandScopedSilos(request,
+        routeEligibleSilos ?? this.nukeBehavior?.getRouteEligibleSilos(request) ?? null);
       const currentCapacity = scopedSilos.reduce(
         (sum, silo) => sum + Math.max(1, Number(silo.level?.() ?? 1)),
         0,
@@ -11069,6 +11070,9 @@
         state.nukeWantSlots = null;
         return false;
       }
+      if (this.nukeBehavior && !this.nukeBehavior.hasUsefulSiloUpgradeCapacity(
+        scopedSilos, { totalBombs: request.requiredCapacity },
+      )) return false;
       const candidates = scopedSilos.filter((silo) =>
         this.structureBelowUpgradeLimit(silo),
       );
@@ -11089,12 +11093,19 @@
       if (state.nukeWantSlots !== pendingRequest || this.validNukeSiloUpgradeRequest() === null) return false;
       const currentGold = this.availableGoldAfterReserve(UNIT.MissileSilo);
       if (!this.nukeSiloUpgradeBudgetAvailable(currentGold, minimumCost)) return false;
+      const currentRoutes = this.nukeBehavior?.getRouteEligibleSilos(request);
+      if (currentRoutes !== undefined && !this.nukeBehavior.hasUsefulSiloUpgradeCapacity(
+        this.nukeDemandScopedSilos(request, currentRoutes),
+        { totalBombs: request.requiredCapacity },
+      )) return false;
       const ranked = this.rankNukeDemandSiloUpgrades({
         candidates,
         buildables,
         availableGold: currentGold,
         minimumCost,
-      });
+        preferredSiloIds: request.unblockedSiloIds,
+      }).filter((candidate) => currentRoutes === undefined ||
+        currentRoutes.some((silo) => silo.id() === candidate.silo.id()));
       return this.executeStructureUpgradeCandidate(ranked[0], UNIT.MissileSilo);
     }
 
@@ -11131,6 +11142,7 @@
           ? request.unblockedSiloIds.map(String)
           : [],
       );
+      if (routeEligibleSilos !== null) return builtSilos;
       if (preferredIds.size === 0) return builtSilos;
       const preferred = builtSilos.filter((silo) =>
         preferredIds.has(String(silo.id())),
@@ -11180,7 +11192,11 @@
           protection: this.siloSamProtectionScore(silo, ownSams),
         });
       }
-      ranked.sort((left, right) => this.compareNukeDemandSiloUpgrades(left, right));
+      const preferredIds = new Set((input.preferredSiloIds ?? []).map(String));
+      ranked.sort((left, right) =>
+        Number(preferredIds.has(String(right.silo.id()))) -
+        Number(preferredIds.has(String(left.silo.id()))) ||
+        this.compareNukeDemandSiloUpgrades(left, right));
       return ranked;
     }
 

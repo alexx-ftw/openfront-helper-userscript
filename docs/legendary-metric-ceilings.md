@@ -5779,3 +5779,42 @@ structure gold nuked, matching the preceding receipt. The active local
 service serves byte-identical generated artifacts. This proves coordinated
 reserve/scope correctness and a single-row non-regression, not a measured
 increase in aggregate victories or adoption in an already-open browser.
+
+Live construction route pre-declaration (2026-10-08): the ordinary no-argument
+construction caller still resolves stale/empty preferred IDs against all
+built silos, without live route eligibility. Empty IDs can also mean useful
+silos are cooling, so do not categorically reject them. Wire the existing
+nuclear route evaluator into construction; compute live covering-SAM
+exclusions when demand lacks a planned set, and validate routes before
+scope resolution and after the worker probe. Regressions: no viable route,
+new route blocker during the probe, and a viable cooling silo. Reuse the
+nuclear maximum-capacity guard for construction demand; a one-silo request
+for six slots cannot be satisfied under the existing level-five cap and
+must not trigger an unproductive upgrade. Preserve the
+standalone planner behavior, then review/focused/full/parity and Baikal.
+Recheck useful maximum capacity after the probe too: losing one of two
+routes can leave a six-slot request impossible on the remaining level-five
+silo even while that silo itself remains a valid candidate.
+Independent review identified the opposite scope problem: a nonempty saved
+launchable-ID set can omit route-clear cooling silos and falsely make a
+six-slot request impossible. With live routes available, retain all such
+silos for capacity/candidates and use saved IDs only as a ranking preference.
+Regression: two clear level-one silos, one saved preferred ID, demand six;
+the preferred silo remains eligible and the combined maximum is ten.
+
+Live construction route result (2026-10-08): the ordinary construction
+pass now shares NukeBehavior's live route and useful-capacity checks through
+the Nation wiring. Demand without planned covering IDs uses current covering
+SAM exclusions. Routes and maximum capacity are checked again after the
+worker probe. Saved IDs rank candidates without excluding cooling silos.
+Six real-method cases pass: no route, new blocker, impossible maximum,
+capacity lost during the probe, mixed cooling/launchable silos, and a useful
+cooling silo. Baselines respectively exposed unwanted upgrades and a missed
+upgrade; the corrected outcomes respect the same nuclear capacity policy.
+Independent static review approved the final scope/rank changes. Final full
+npm suite, nuclear economy/SAM/retention/EV tests and build parity pass.
+Baikal `/home/eros/ofh-matrix/live-silo-route-reviewed`: won/alive at tick
+6661, 20 atoms, 49 hydrogens, 11 own structures nuked and 73,350,000 enemy
+structure gold nuked, unchanged from the preceding receipt. Active local
+service serves byte-identical artifacts. The single-row result does not
+prove a higher win rate or a successful live-browser hot-reload.

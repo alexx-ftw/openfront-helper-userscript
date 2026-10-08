@@ -268,6 +268,50 @@ for (const preferredIds of [[], [99], [2]]) {
   sandbox.state.nukeWantSlots = null;
 }
 
+for (const route of ["no-route", "blocked-during-probe", "insufficient-capacity", "capacity-loss", "partly-cooling", "cooling"]) {
+  const { behavior, game, player, world } = makeSalvoWorld();
+  const targetSam = world.sam(77, 3);
+  game.units = () => [targetSam];
+  game.config = () => ({ isUnitDisabled: () => false });
+  const silo = {
+    id: () => 1, tile: () => 10, level: () => 1,
+    isUnderConstruction: () => false, missileTimerQueue: () => [world.tick - 1],
+  };
+  const secondSilo = { ...silo, id: () => 2, tile: () => 11 };
+  player.units = (type) => type === UNIT.MissileSilo
+    ? route === "capacity-loss" || route === "partly-cooling" ? [silo, secondSilo] : [silo] : [];
+  let blocked = route === "no-route";
+  behavior.findEnemySamsCoveringTile = () => [targetSam];
+  behavior.isTrajectoryInterceptableBySam = (spawn, _target, exclusions) =>
+    (blocked && (route !== "capacity-loss" || spawn === secondSilo.tile())) ||
+    !exclusions?.has(targetSam.id());
+  const structures = new sandbox.__StructureBehavior({}, game, player);
+  structures.nukeBehavior = behavior;
+  structures.availableGoldAfterReserve = () => 200n;
+  structures.safeStructureCost = () => 20n;
+  structures.economicConstructionPressure = () => ({ cost: 100n });
+  structures.defensiveConstructionReserve = () => 0n;
+  structures.buildableForUnits = async (silos) => {
+    if (route === "blocked-during-probe" || route === "capacity-loss") blocked = true;
+    return silos.map(() => ({ cost: 20n, canUpgrade: true }));
+  };
+  const upgraded = [];
+  structures.executeStructureUpgradeCandidate = async (candidate) => {
+    if (!candidate) return false;
+    upgraded.push(candidate.silo.id());
+    return true;
+  };
+  sandbox.state.nukeWantSlots = {
+    targetSamId: 77, targetTile: 20,
+    need: route === "insufficient-capacity" || route === "capacity-loss" || route === "partly-cooling" ? 6 : 4,
+    unblockedSiloIds: route === "partly-cooling" ? [secondSilo.id()] : [],
+  };
+  const sent = await structures.maybeUpgradeSiloForNukeDemand();
+  assert.equal(sent, route === "cooling" || route === "partly-cooling", `${route} construction demand needs a live useful route`);
+  assert.deepEqual(upgraded, route === "partly-cooling" ? [secondSilo.id()] : route === "cooling" ? [silo.id()] : []);
+  sandbox.state.nukeWantSlots = null;
+}
+
 for (const capture of ["hostile", "own-before-due", "own-during-probe", "teammate", "protected", "unowned"]) {
   const { behavior, game, player, world, nukeTarget } = makeSalvoWorld();
   player.isPlayer = nukeTarget.isPlayer = () => true;

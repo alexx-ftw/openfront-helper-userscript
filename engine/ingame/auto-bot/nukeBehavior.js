@@ -2407,10 +2407,13 @@
      * those, picks the one best protected by our own SAMs.
      */
     getRouteEligibleSilos(failedTarget) {
+      const coveringSamIds = failedTarget.coveringSamIds ?? new Set(
+        this.findEnemySamsCoveringTile(failedTarget.targetTile).map((sam) => sam.id()),
+      );
       return this.player.units(UNIT.MissileSilo)
         .filter((silo) => !silo.isUnderConstruction())
         .filter((silo) => !this.isTrajectoryInterceptableBySam(
-          silo.tile(), failedTarget.targetTile, failedTarget.coveringSamIds,
+          silo.tile(), failedTarget.targetTile, coveringSamIds,
         ));
     }
 

@@ -662,6 +662,7 @@
       );
       this.structureBehavior = new StructureBehavior(r, g, p);
       this.nukeBehavior.structureBehavior = this.structureBehavior;
+      this.structureBehavior.nukeBehavior = this.nukeBehavior;
       this.warshipBehavior.structureBehavior = this.structureBehavior;
       this.attackBehavior.nukeBehavior = this.nukeBehavior;
       this.behaviorsInitialized = true;
