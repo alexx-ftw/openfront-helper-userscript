@@ -16,6 +16,21 @@ const cooperativeTimers = spawnSync(
   { cwd: root, encoding: "utf8" },
 );
 assert.equal(cooperativeTimers.status, 0, cooperativeTimers.stdout + cooperativeTimers.stderr);
+const nuclearTerritoryRace = spawnSync(
+  process.execPath,
+  [
+    path.join(root, "node_modules/tsx/dist/cli.mjs"),
+    "--tsconfig",
+    "openfront-engine/tsconfig.json",
+    "test/nuke-territory-race-fixture.mts",
+  ],
+  { cwd: root, encoding: "utf8" },
+);
+assert.equal(
+  nuclearTerritoryRace.status,
+  0,
+  nuclearTerritoryRace.stdout + nuclearTerritoryRace.stderr,
+);
 const runner = fs.readFileSync(path.join(root, "scripts/headless/run-match.mts"), "utf8");
 const batch = fs.readFileSync(path.join(root, "scripts/headless/run-batch.mjs"), "utf8");
 const matrix = fs.readFileSync(

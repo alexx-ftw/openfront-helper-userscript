@@ -5839,3 +5839,23 @@ atoms, 49 hydrogens, 11 own structures nuked and 73,350,000 enemy structure
 gold nuked, unchanged. Active local service serves byte-identical artifacts.
 This is cooperative spending correctness and single-row non-regression;
 it does not establish increased aggregate wins or live-browser adoption.
+
+Native territory-race fixture gate (2026-10-08): exercise the committed
+userscript through real GameRunner buildables and Executor intents, with
+distinct client IDs. A hostile control must emit an Atom intent and create
+an actual engine missile. Ownership captured before or during the worker
+probe must reject emission and preserve the launch counter. This adds
+mechanism evidence to the existing destination guard, with no strategy
+change or aggregate victory claim. After the workstation global OOM,
+execute checks sequentially inside a disposable service capped at 4 GiB
+RAM and 1 GiB swap, within the observed 15 GiB available RAM. No full
+match or global memory-policy change is needed for this fixture gate.
+
+Native territory-race result: all three scenarios and the integrated
+headless simulation contract suite pass under the memory cap. The native
+Atom buildable returns the launch silo as `canBuild`, while the emitted
+intent carries the aim tile. The hostile control creates an engine missile
+through ConstructionExecution and NukeExecution; both captured destinations
+produce zero Atom intents and zero launch-counter increments. This verifies
+the committed destination guard against real engine ownership changes;
+it is not evidence of higher win rate or a repaired desktop OOM policy.
