@@ -233,4 +233,125 @@ for (const action of ["launch", "silo-upgrade"]) {
     bot.harness.window.close();
   }
 }
-console.log("live-engine nuclear territory, route and upgrade race fixture passed (9 scenarios)");
+for (const addCloser of [false, true]) {
+  const game = await setup(
+    "big_plains",
+    { instantBuild: true },
+    [
+      new PlayerInfo("attacker", PlayerType.Human, "attacker", "attacker"),
+      new PlayerInfo("defender", PlayerType.Human, "defender", "defender"),
+    ],
+    engineTestsUtil,
+  );
+  const attacker = game.player("attacker");
+  const target = game.ref(80, 1);
+  const near = game.ref(1, 1);
+  const far = game.ref(1, 80);
+  attacker.addGold(100_000_000n);
+  attacker.conquer(near);
+  attacker.conquer(far);
+  game.player("defender").conquer(target);
+  const nearSilo = attacker.buildUnit(UnitType.MissileSilo, near, {});
+  nearSilo.increaseLevel();
+  nearSilo.reloadMissile();
+  attacker.buildUnit(UnitType.MissileSilo, far, {});
+  const runner = new GameRunner(
+    game,
+    new Executor(game, "nuke-slot-reservation", "attacker"),
+    () => {},
+  );
+  const step = (intents = []) => {
+    runner.addTurn(
+      TurnSchema.parse({
+        turnNumber: game.ticks(),
+        intents: intents.map((intent) => ({ ...intent, clientID: "attacker" })),
+      }),
+    );
+    assert.equal(runner.executeNextTick(), true);
+  };
+  const bot = createMaxDifficultyOpponent({ clientID: "attacker" });
+  bot.attach({ runner, clientID: "attacker" });
+  await bot.api.beginTick(bot.pageGame.myPlayer());
+  bot.nationBot.player = bot.api.game.myPlayer();
+  bot.nationBot.initializeBehaviors();
+  const menu = createBuildMenu(bot);
+  bot.harness.current.buildMenu = menu;
+  bot.harness.current.eventBus = menu.eventBus;
+  const nuke = bot.nationBot.nukeBehavior;
+  const rival = bot.api.game.playerBySmallID(game.player("defender").smallID());
+  const predicted = [];
+  try {
+    for (let index = 0; index < 3; index++) {
+      predicted.push(nuke.nukeSpawn(UnitType.AtomBomb, target));
+      assert.equal(await nuke.sendNuke(target, UnitType.AtomBomb, rival, 0, { salvoId: 1 }), true);
+    }
+    const firstThree = [...bot.intentBuffer];
+    let extraSent;
+    let closer;
+    if (addCloser) {
+      closer = game.ref(70, 1);
+      attacker.conquer(closer);
+      attacker.buildUnit(UnitType.MissileSilo, closer, {});
+      step(); // Deliver the capacity change before any buffered nuclear intent.
+      predicted.push(nuke.nukeSpawn(UnitType.AtomBomb, target));
+      extraSent = await nuke.sendNuke(target, UnitType.AtomBomb, rival, 0, { salvoId: 1 });
+      assert.equal(extraSent, true);
+    } else {
+      assert.equal(
+        nuke.getAvailableSiloEntries(
+          bot.nationBot.player.units(UnitType.MissileSilo),
+          target,
+          new Set(),
+        ).length,
+        0,
+        "salvo planning sees the same exhausted projected slots as source prediction",
+      );
+      extraSent = await nuke.sendNuke(target, UnitType.AtomBomb, rival, 0, { salvoId: 1 });
+    }
+    step(addCloser ? bot.intentBuffer : firstThree);
+    step();
+    step();
+    const actualSources = attacker.units(UnitType.AtomBomb).map((unit) => unit.tile());
+    assert.deepEqual(
+      actualSources,
+      addCloser ? [closer, near, near, far] : [near, near, far],
+      "native execution consumes the closest available slots in intent order",
+    );
+    if (addCloser) {
+      assert.equal(
+        predicted[3],
+        actualSources[3],
+        "new capacity reprojects the entire unacknowledged prefix",
+      );
+    } else {
+      assert.deepEqual(
+        predicted,
+        actualSources,
+        "same-frame source predictions match native overflow",
+      );
+      assert.equal(extraSent, false, "a stale worker reply cannot oversubscribe the final slot");
+    }
+    nearSilo.increaseLevel();
+    while (nearSilo.missileTimerQueue().length > 0) nearSilo.reloadMissile();
+    step();
+    assert.equal(
+      nuke.nukeSpawn(UnitType.AtomBomb, target),
+      near,
+      "native missile receipts release virtual occupancy before its grace expires",
+    );
+    assert.equal(
+      nuke.getAvailableSiloEntries(
+        bot.nationBot.player.units(UnitType.MissileSilo),
+        target,
+        new Set(),
+      )[0].slots,
+      3,
+      "confirmed reload capacity is not double-reserved after missile receipts",
+    );
+  } finally {
+    bot.harness.window.close();
+  }
+}
+console.log(
+  "live-engine nuclear territory, route, upgrade and slot reservation fixture passed (11 scenarios)",
+);

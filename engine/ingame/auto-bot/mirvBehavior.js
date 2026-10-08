@@ -506,7 +506,7 @@
       if (!this.isValidMirvTargetPlayer(enemy)) return false;
       const buildMenu = getBuildMenu();
       if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") return false;
-      if (!sendAutoBotBuildOrUpgrade(buildMenu, bu, centerTile, this.game, this.player)) {
+      if (!sendAutoBotBuildOrUpgrade(buildMenu, bu, centerTile, this.game, this.player, true)) {
         return false;
       }
       return true;

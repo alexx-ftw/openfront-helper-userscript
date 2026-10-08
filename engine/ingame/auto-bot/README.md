@@ -509,6 +509,17 @@ and shrinks as the queue drains or is cancelled. Defense and Port exemptions ret
 their existing priority.
 Construction budgets share the dispatcher's reservation ledger for purchases
 already emitted against a balance that has not yet caught up.
+Atom, Hydrogen and MIRV dispatches also reserve native silo capacity until their
+new missile appears, or the same six-tick dispatch grace expires. Source prediction
+and salvo planning replay those unacknowledged intents in emission order against
+all current silos, including newly built closer ones; acknowledged missiles are
+counted only through the native silo queue. Outside this dispatch round trip,
+source prediction retains the validated readiness policy.
+The receipt matcher uses new own missile IDs, type and destination. Manual shots
+to the same destination during that round trip, and receipts first seen after
+their dispatch grace expired, cannot be distinguished from later bot receipts.
+A missile missed entirely between snapshots keeps a conservative slot reservation
+until grace expiry.
 Silo and SAM upgrades recheck live missile impact zones after worker pricing.
 A threatened silo defers its purchase while retaining valid nuclear capacity demand,
 so that request can resume when the hazard disappears.

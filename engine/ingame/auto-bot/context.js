@@ -100,6 +100,59 @@
     return null;
   }
 
+  function autoBotBuildPendingNukes(game, player) {
+    const tick = autoBotBuildTick(game);
+    const playerId = autoBotBuildPlayerId(player);
+    const records = (autoBotBuildReservations.get(game) ?? []).filter(
+      (record) => record.expiresAt > tick && record.playerId === playerId && record.nuke,
+    );
+    const claimed = new Set(records.filter((record) => record.receipt !== undefined)
+      .map((record) => record.receipt));
+    for (const record of records) {
+      if (record.receipt !== undefined) continue;
+      const receipt = player.units(record.nuke).find((unit) =>
+        unit.targetTile?.() === record.targetTile &&
+        unit.id?.() !== undefined && !record.knownIds.has(String(unit.id())) &&
+        !claimed.has(String(unit.id())));
+      if (receipt) {
+        record.receipt = String(receipt.id());
+        claimed.add(record.receipt);
+        // Keep the claim after this record expires before a later pending one.
+        for (const other of records) {
+          if (other !== record && other.nuke === record.nuke) other.knownIds.add(record.receipt);
+        }
+      }
+    }
+    return records.filter((record) => record.receipt === undefined);
+  }
+
+  function autoBotBuildNukeSlots(game, player) {
+    const pending = autoBotBuildPendingNukes(game, player);
+    if (pending.length === 0) return null;
+    const silos = player.units("Missile Silo");
+    if (silos.some((silo) => typeof silo.id !== "function" ||
+      typeof silo.level !== "function" || typeof silo.missileTimerQueue !== "function")) return null;
+    const slots = new Map(silos.map((silo) => [String(silo.id()),
+      silo.isActive?.() === false || silo.isUnderConstruction?.() === true
+        ? 0 : Math.max(0, silo.level() - silo.missileTimerQueue().length)]));
+    // DIVERGENCE: replay unacknowledged intents against today's sources; a new
+    // closer silo can change the native source of the entire buffered prefix.
+    for (const record of pending) {
+      let source = null;
+      let distance = Infinity;
+      for (const silo of silos) {
+        if (slots.get(String(silo.id())) <= 0) continue;
+        const candidate = game.manhattanDist(silo.tile(), record.targetTile);
+        if (candidate < distance) {
+          source = silo;
+          distance = candidate;
+        }
+      }
+      if (source) slots.set(String(source.id()), slots.get(String(source.id())) - 1);
+    }
+    return slots;
+  }
+
   function autoBotBuildDispatch(buildMenu, buildable, tile) {
     if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
       return null;
@@ -120,7 +173,7 @@
     };
   }
 
-  function sendAutoBotBuildOrUpgrade(buildMenu, buildable, tile, game, player) {
+  function sendAutoBotBuildOrUpgrade(buildMenu, buildable, tile, game, player, trackNuke = false) {
     if (game === null || typeof game !== "object") return false;
     const dispatch = autoBotBuildDispatch(buildMenu, buildable, tile);
     if (!dispatch) return false;
@@ -135,6 +188,11 @@
     const reserved = autoBotBuildReservedGold(game, player);
     const gold = player?.gold?.();
     if (typeof gold !== "bigint" || gold - reserved < cost) return false;
+    const nuclear = trackNuke && typeof player?.units === "function";
+    if (nuclear) {
+      const slots = autoBotBuildNukeSlots(game, player);
+      if (slots && ![...slots.values()].some((count) => count > 0)) return false;
+    }
     // The build menu emits straight onto the EventBus, bypassing emitIntent's
     // consuming gate — but the server's ClientMsgRateLimiter still counts
     // these. Acquire the shared client token here so construction bursts (a
@@ -150,11 +208,14 @@
     ) {
       return false;
     }
+    const knownIds = nuclear
+      ? new Set(player.units(buildable.type).map((unit) => String(unit.id()))) : null;
     dispatch();
     reservations.push({
       playerId,
       cost,
       expiresAt: tick + AUTO_BOT_BUILD_RESERVATION_GRACE_TICKS,
+      ...(nuclear ? { nuke: buildable.type, targetTile: tile, knownIds } : {}),
     });
     return true;
   }

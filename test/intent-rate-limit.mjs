@@ -37,7 +37,7 @@ function createSandbox() {
   };
   sandbox.globalThis = sandbox;
   executeClassicScript(
-    `${RATE_LIMIT_SOURCE}\n${CONTEXT_SOURCE}\nglobalThis.__intentTest = { emitIntent, tryAcquireIntentRateLimit, discoverCtors, getIntentRateLimitSnapshot, hasIntentRateLimitCapacity, sendAutoBotBuildOrUpgrade, autoBotBuildReservedGold };`,
+    `${RATE_LIMIT_SOURCE}\n${CONTEXT_SOURCE}\nglobalThis.__intentTest = { emitIntent, tryAcquireIntentRateLimit, discoverCtors, getIntentRateLimitSnapshot, hasIntentRateLimitCapacity, sendAutoBotBuildOrUpgrade, autoBotBuildReservedGold, autoBotBuildPendingNukes };`,
     sandbox,
     { filename: path.join(ROOT, "engine/ingame/intent-rate-limit.js") },
   );
@@ -142,11 +142,7 @@ assert.equal(
 const snapshot = perMinute.api.getIntentRateLimitSnapshot();
 assert.equal(snapshot.intentsPerSecond, 10);
 assert.equal(snapshot.intentsPerMinute, 150);
-assert.equal(
-  snapshot.rejected,
-  0,
-  "a deferring producer never consumes a rejection",
-);
+assert.equal(snapshot.rejected, 0, "a deferring producer never consumes a rejection");
 
 const backpressure = createSandbox();
 let deferred = 0;
@@ -239,6 +235,103 @@ for (const Ctor of [TestBuildUnitIntent, ReplacementBuildUnitIntent]) {
 }
 
 const construction = createSandbox();
+{
+  const nuclear = createSandbox();
+  let tick = 0;
+  const game = { ticks: () => tick };
+  const missiles = [];
+  const missile = (id, target = 12) => ({ id: () => id, targetTile: () => target });
+  missiles.push(missile(1));
+  const player = {
+    id: () => "nuclear",
+    gold: () => 1_000n,
+    units: (type) => (type === "Atom Bomb" ? missiles : []),
+  };
+  const buildable = { type: "Atom Bomb", cost: 1n };
+  const menu = { sendBuildOrUpgrade() {} };
+  const pending = () => nuclear.api.autoBotBuildPendingNukes(game, player);
+  assert.equal(
+    nuclear.api.sendAutoBotBuildOrUpgrade(menu, buildable, 12, game, player, true),
+    true,
+  );
+  assert.equal(
+    pending().length,
+    1,
+    "an old missile at the same target cannot acknowledge a new intent",
+  );
+  // Give the second accepted dispatch native capacity without exercising source projection here.
+  player.units = (type) =>
+    type === "Atom Bomb"
+      ? missiles
+      : [{ id: () => 9, level: () => 3, missileTimerQueue: () => [], tile: () => 0 }];
+  game.manhattanDist = (a, b) => Math.abs(a - b);
+  assert.equal(
+    nuclear.api.sendAutoBotBuildOrUpgrade(menu, buildable, 12, game, player, true),
+    true,
+  );
+  missiles.push(missile(2, 99));
+  assert.equal(pending().length, 2, "another destination cannot acknowledge the prefix");
+  missiles.push(missile(3));
+  assert.equal(pending().length, 1, "one receipt acknowledges only one of two identical intents");
+  assert.equal(pending().length, 1, "repeated reconciliation cannot reuse a claimed receipt");
+  assert.equal(nuclear.api.autoBotBuildPendingNukes({}, player).length, 0);
+  assert.equal(nuclear.api.autoBotBuildPendingNukes(game, { id: () => "other" }).length, 0);
+  missiles.push(missile(4));
+  assert.equal(pending().length, 0);
+  assert.equal(
+    nuclear.api.autoBotBuildReservedGold(game, player),
+    2n,
+    "missile acknowledgement does not release the independent gold grace",
+  );
+  const syncMenu = {
+    sendBuildOrUpgrade() {
+      missiles.push(missile(5));
+    },
+  };
+  assert.equal(
+    nuclear.api.sendAutoBotBuildOrUpgrade(syncMenu, buildable, 12, game, player, true),
+    true,
+  );
+  assert.equal(pending().length, 0, "IDs are sampled before even a synchronous dispatch");
+  assert.equal(
+    nuclear.api.sendAutoBotBuildOrUpgrade(
+      menu,
+      { ...buildable, cost: 2_000n },
+      12,
+      game,
+      player,
+      true,
+    ),
+    false,
+  );
+  assert.equal(pending().length, 0, "rejected purchases create no nuclear reservation");
+  assert.equal(
+    nuclear.api.sendAutoBotBuildOrUpgrade(menu, buildable, 12, game, player, true),
+    true,
+  );
+  tick = 5;
+  assert.equal(pending().length, 1);
+  tick = 6;
+  assert.equal(pending().length, 0, "nuclear occupancy expires at the existing grace boundary");
+  tick = 10;
+  assert.equal(
+    nuclear.api.sendAutoBotBuildOrUpgrade(menu, buildable, 12, game, player, true),
+    true,
+  );
+  tick = 11;
+  assert.equal(
+    nuclear.api.sendAutoBotBuildOrUpgrade(menu, buildable, 12, game, player, true),
+    true,
+  );
+  missiles.push(missile(6));
+  assert.equal(pending().length, 1);
+  tick = 16;
+  assert.equal(
+    pending().length,
+    1,
+    "an expired earlier claim cannot acknowledge a later intent again",
+  );
+}
 let constructionTick = 100;
 const purchases = [];
 const constructionMenu = {
@@ -293,9 +386,18 @@ assert.equal(
   "a second build cannot spend gold already committed by another bot phase",
 );
 assert.equal(purchases.length, 1, "only the affordable construction reaches the build menu");
-assert.equal(construction.api.autoBotBuildReservedGold(constructionGame, constructionPlayer), 750_000n);
-assert.equal(construction.api.autoBotBuildReservedGold(constructionGame, { id: () => "other" }), 0n);
-assert.equal(construction.api.autoBotBuildReservedGold({ ticks: () => 100 }, constructionPlayer), 0n);
+assert.equal(
+  construction.api.autoBotBuildReservedGold(constructionGame, constructionPlayer),
+  750_000n,
+);
+assert.equal(
+  construction.api.autoBotBuildReservedGold(constructionGame, { id: () => "other" }),
+  0n,
+);
+assert.equal(
+  construction.api.autoBotBuildReservedGold({ ticks: () => 100 }, constructionPlayer),
+  0n,
+);
 const replayGame = { ticks: () => 0 };
 assert.equal(
   construction.api.sendAutoBotBuildOrUpgrade(

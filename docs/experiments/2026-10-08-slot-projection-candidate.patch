@@ -1,0 +1,476 @@
+diff --git a/engine/ingame/auto-bot/README.md b/engine/ingame/auto-bot/README.md
+index 103a16aa..a1950b35 100644
+--- a/engine/ingame/auto-bot/README.md
++++ b/engine/ingame/auto-bot/README.md
+@@ -509,6 +509,15 @@ and shrinks as the queue drains or is cancelled. Defense and Port exemptions ret
+ their existing priority.
+ Construction budgets share the dispatcher's reservation ledger for purchases
+ already emitted against a balance that has not yet caught up.
++Atom, Hydrogen and MIRV dispatches also reserve native silo capacity until their
++new missile appears, or the same six-tick dispatch grace expires. Source prediction
++and salvo planning replay those unacknowledged intents in emission order against
++all current silos, including newly built closer ones; acknowledged missiles are
++counted only through the native silo queue. Partial queues remain available.
++The receipt matcher uses new own missile IDs, type and destination. Manual shots
++to the same destination during that round trip cannot be distinguished from bot
++receipts; a missile missed entirely between snapshots keeps a conservative slot
++reservation until grace expiry.
+ Silo and SAM upgrades recheck live missile impact zones after worker pricing.
+ A threatened silo defers its purchase while retaining valid nuclear capacity demand,
+ so that request can resume when the hazard disappears.
+diff --git a/engine/ingame/auto-bot/context.js b/engine/ingame/auto-bot/context.js
+index d63e17ed..7934c6a2 100644
+--- a/engine/ingame/auto-bot/context.js
++++ b/engine/ingame/auto-bot/context.js
+@@ -100,6 +100,59 @@
+     return null;
+   }
+ 
++  function autoBotBuildPendingNukes(game, player) {
++    const tick = autoBotBuildTick(game);
++    const playerId = autoBotBuildPlayerId(player);
++    const records = (autoBotBuildReservations.get(game) ?? []).filter(
++      (record) => record.expiresAt > tick && record.playerId === playerId && record.nuke,
++    );
++    const claimed = new Set(records.filter((record) => record.receipt !== undefined)
++      .map((record) => record.receipt));
++    for (const record of records) {
++      if (record.receipt !== undefined) continue;
++      const receipt = player.units(record.nuke).find((unit) =>
++        unit.targetTile?.() === record.targetTile &&
++        unit.id?.() !== undefined && !record.knownIds.has(String(unit.id())) &&
++        !claimed.has(String(unit.id())));
++      if (receipt) {
++        record.receipt = String(receipt.id());
++        claimed.add(record.receipt);
++        // Keep the claim after this record expires before a later pending one.
++        for (const other of records) {
++          if (other !== record && other.nuke === record.nuke) other.knownIds.add(record.receipt);
++        }
++      }
++    }
++    return records.filter((record) => record.receipt === undefined);
++  }
++
++  function autoBotBuildNukeSlots(game, player) {
++    const pending = autoBotBuildPendingNukes(game, player);
++    if (pending.length === 0) return null;
++    const silos = player.units("Missile Silo");
++    if (silos.some((silo) => typeof silo.id !== "function" ||
++      typeof silo.level !== "function" || typeof silo.missileTimerQueue !== "function")) return null;
++    const slots = new Map(silos.map((silo) => [String(silo.id()),
++      silo.isActive?.() === false || silo.isUnderConstruction?.() === true
++        ? 0 : Math.max(0, silo.level() - silo.missileTimerQueue().length)]));
++    // DIVERGENCE: replay unacknowledged intents against today's sources; a new
++    // closer silo can change the native source of the entire buffered prefix.
++    for (const record of pending) {
++      let source = null;
++      let distance = Infinity;
++      for (const silo of silos) {
++        if (slots.get(String(silo.id())) <= 0) continue;
++        const candidate = game.manhattanDist(silo.tile(), record.targetTile);
++        if (candidate < distance) {
++          source = silo;
++          distance = candidate;
++        }
++      }
++      if (source) slots.set(String(source.id()), slots.get(String(source.id())) - 1);
++    }
++    return slots;
++  }
++
+   function autoBotBuildDispatch(buildMenu, buildable, tile) {
+     if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
+       return null;
+@@ -120,7 +173,7 @@
+     };
+   }
+ 
+-  function sendAutoBotBuildOrUpgrade(buildMenu, buildable, tile, game, player) {
++  function sendAutoBotBuildOrUpgrade(buildMenu, buildable, tile, game, player, trackNuke = false) {
+     if (game === null || typeof game !== "object") return false;
+     const dispatch = autoBotBuildDispatch(buildMenu, buildable, tile);
+     if (!dispatch) return false;
+@@ -135,6 +188,11 @@
+     const reserved = autoBotBuildReservedGold(game, player);
+     const gold = player?.gold?.();
+     if (typeof gold !== "bigint" || gold - reserved < cost) return false;
++    const nuclear = trackNuke && typeof player?.units === "function";
++    if (nuclear) {
++      const slots = autoBotBuildNukeSlots(game, player);
++      if (slots && ![...slots.values()].some((count) => count > 0)) return false;
++    }
+     // The build menu emits straight onto the EventBus, bypassing emitIntent's
+     // consuming gate — but the server's ClientMsgRateLimiter still counts
+     // these. Acquire the shared client token here so construction bursts (a
+@@ -150,11 +208,14 @@
+     ) {
+       return false;
+     }
++    const knownIds = nuclear
++      ? new Set(player.units(buildable.type).map((unit) => String(unit.id()))) : null;
+     dispatch();
+     reservations.push({
+       playerId,
+       cost,
+       expiresAt: tick + AUTO_BOT_BUILD_RESERVATION_GRACE_TICKS,
++      ...(nuclear ? { nuke: buildable.type, targetTile: tile, knownIds } : {}),
+     });
+     return true;
+   }
+diff --git a/engine/ingame/auto-bot/mirvBehavior.js b/engine/ingame/auto-bot/mirvBehavior.js
+index 4a5e06df..a04bb6e3 100644
+--- a/engine/ingame/auto-bot/mirvBehavior.js
++++ b/engine/ingame/auto-bot/mirvBehavior.js
+@@ -506,7 +506,7 @@
+       if (!this.isValidMirvTargetPlayer(enemy)) return false;
+       const buildMenu = getBuildMenu();
+       if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") return false;
+-      if (!sendAutoBotBuildOrUpgrade(buildMenu, bu, centerTile, this.game, this.player)) {
++      if (!sendAutoBotBuildOrUpgrade(buildMenu, bu, centerTile, this.game, this.player, true)) {
+         return false;
+       }
+       return true;
+diff --git a/engine/ingame/auto-bot/nukeBehavior.js b/engine/ingame/auto-bot/nukeBehavior.js
+index dc00c44f..c909a718 100644
+--- a/engine/ingame/auto-bot/nukeBehavior.js
++++ b/engine/ingame/auto-bot/nukeBehavior.js
+@@ -1776,6 +1776,7 @@
+           tile,
+           this.game,
+           this.player,
++          true,
+         );
+       } finally {
+         if (uiState) uiState.rocketDirectionUp = previousDirection;
+@@ -2058,10 +2059,13 @@
+     // ── maybeDestroyEnemySam — NationNukeBehavior.ts:780 (now async) ──────────
+     getAvailableSiloEntries(silos, targetTile, coveringSamIds) {
+       const speed = this.game.config().defaultNukeSpeed();
++      const projected = typeof autoBotBuildNukeSlots === "function"
++        ? autoBotBuildNukeSlots(this.game, this.player) : null;
+       const entries = silos.map((silo) => {
+         // DIVERGENCE: retained client views can change during the async price probe.
+         if (silo.isActive?.() === false || silo.isUnderConstruction?.() === true) return null;
+-        const slots = silo.level() - silo.missileTimerQueue().length;
++        const slots = projected
++          ? projected.get(String(silo.id())) ?? 0 : silo.level() - silo.missileTimerQueue().length;
+         if (slots <= 0) return null;
+         const pathFinder = UniversalPathFinding.Parabola(this.game, {
+           increment: speed, distanceBasedHeight: true, directionUp: true,
+@@ -2569,22 +2573,22 @@
+     // src's nukeSpawn also applies) is enforced separately in probeCanBuildNuke for
+     // the FINAL chosen tile. This keeps the trajectory check faithful (same launch
+     // silo canBuild would have snapped to) without an await in the inner scoring loop.
+-    // The unit wrapper exposes `ticksLeftInCooldown()` (proxy for `!isInCooldown()`:
+-    // not in cooldown ⇔ ticksLeftInCooldown() === 0) but not `isInCooldown()` itself.
++    // Native cooldown means a full queue; its oldest launch tick alone does
++    // not tell us whether a multi-slot silo still has available capacity.
+     nukeSpawn(nukeType, targetTile) {
+       const silos = this.player.units(UNIT.MissileSilo);
++      const projected = typeof autoBotBuildNukeSlots === "function"
++        ? autoBotBuildNukeSlots(this.game, this.player) : null;
+       let best = false;
+       let bestDist = Infinity;
+       for (const silo of silos) {
+         if (silo.isActive && silo.isActive() === false) continue;
+         if (silo.isUnderConstruction()) continue;
+-        // !isInCooldown() — proxy via ticksLeftInCooldown() === 0 when available.
+-        if (
+-          typeof silo.ticksLeftInCooldown === "function" &&
+-          silo.ticksLeftInCooldown() > 0
+-        ) {
+-          continue;
+-        }
++        if (projected) {
++          if ((projected.get(String(silo.id())) ?? 0) <= 0) continue;
++        } else if (typeof silo.level === "function" && typeof silo.missileTimerQueue === "function") {
++          if (silo.missileTimerQueue().length >= silo.level()) continue;
++        } else if (silo.ticksLeftInCooldown?.() > 0) continue;
+         const d = this.game.manhattanDist(silo.tile(), targetTile);
+         if (d < bestDist) {
+           bestDist = d;
+diff --git a/test/intent-rate-limit.mjs b/test/intent-rate-limit.mjs
+index b0809487..d552e9e4 100644
+--- a/test/intent-rate-limit.mjs
++++ b/test/intent-rate-limit.mjs
+@@ -37,7 +37,7 @@ function createSandbox() {
+   };
+   sandbox.globalThis = sandbox;
+   executeClassicScript(
+-    `${RATE_LIMIT_SOURCE}\n${CONTEXT_SOURCE}\nglobalThis.__intentTest = { emitIntent, tryAcquireIntentRateLimit, discoverCtors, getIntentRateLimitSnapshot, hasIntentRateLimitCapacity, sendAutoBotBuildOrUpgrade, autoBotBuildReservedGold };`,
++    `${RATE_LIMIT_SOURCE}\n${CONTEXT_SOURCE}\nglobalThis.__intentTest = { emitIntent, tryAcquireIntentRateLimit, discoverCtors, getIntentRateLimitSnapshot, hasIntentRateLimitCapacity, sendAutoBotBuildOrUpgrade, autoBotBuildReservedGold, autoBotBuildPendingNukes };`,
+     sandbox,
+     { filename: path.join(ROOT, "engine/ingame/intent-rate-limit.js") },
+   );
+@@ -142,11 +142,7 @@ assert.equal(
+ const snapshot = perMinute.api.getIntentRateLimitSnapshot();
+ assert.equal(snapshot.intentsPerSecond, 10);
+ assert.equal(snapshot.intentsPerMinute, 150);
+-assert.equal(
+-  snapshot.rejected,
+-  0,
+-  "a deferring producer never consumes a rejection",
+-);
++assert.equal(snapshot.rejected, 0, "a deferring producer never consumes a rejection");
+ 
+ const backpressure = createSandbox();
+ let deferred = 0;
+@@ -239,6 +235,103 @@ for (const Ctor of [TestBuildUnitIntent, ReplacementBuildUnitIntent]) {
+ }
+ 
+ const construction = createSandbox();
++{
++  const nuclear = createSandbox();
++  let tick = 0;
++  const game = { ticks: () => tick };
++  const missiles = [];
++  const missile = (id, target = 12) => ({ id: () => id, targetTile: () => target });
++  missiles.push(missile(1));
++  const player = {
++    id: () => "nuclear",
++    gold: () => 1_000n,
++    units: (type) => (type === "Atom Bomb" ? missiles : []),
++  };
++  const buildable = { type: "Atom Bomb", cost: 1n };
++  const menu = { sendBuildOrUpgrade() {} };
++  const pending = () => nuclear.api.autoBotBuildPendingNukes(game, player);
++  assert.equal(
++    nuclear.api.sendAutoBotBuildOrUpgrade(menu, buildable, 12, game, player, true),
++    true,
++  );
++  assert.equal(
++    pending().length,
++    1,
++    "an old missile at the same target cannot acknowledge a new intent",
++  );
++  // Give the second accepted dispatch native capacity without exercising source projection here.
++  player.units = (type) =>
++    type === "Atom Bomb"
++      ? missiles
++      : [{ id: () => 9, level: () => 3, missileTimerQueue: () => [], tile: () => 0 }];
++  game.manhattanDist = (a, b) => Math.abs(a - b);
++  assert.equal(
++    nuclear.api.sendAutoBotBuildOrUpgrade(menu, buildable, 12, game, player, true),
++    true,
++  );
++  missiles.push(missile(2, 99));
++  assert.equal(pending().length, 2, "another destination cannot acknowledge the prefix");
++  missiles.push(missile(3));
++  assert.equal(pending().length, 1, "one receipt acknowledges only one of two identical intents");
++  assert.equal(pending().length, 1, "repeated reconciliation cannot reuse a claimed receipt");
++  assert.equal(nuclear.api.autoBotBuildPendingNukes({}, player).length, 0);
++  assert.equal(nuclear.api.autoBotBuildPendingNukes(game, { id: () => "other" }).length, 0);
++  missiles.push(missile(4));
++  assert.equal(pending().length, 0);
++  assert.equal(
++    nuclear.api.autoBotBuildReservedGold(game, player),
++    2n,
++    "missile acknowledgement does not release the independent gold grace",
++  );
++  const syncMenu = {
++    sendBuildOrUpgrade() {
++      missiles.push(missile(5));
++    },
++  };
++  assert.equal(
++    nuclear.api.sendAutoBotBuildOrUpgrade(syncMenu, buildable, 12, game, player, true),
++    true,
++  );
++  assert.equal(pending().length, 0, "IDs are sampled before even a synchronous dispatch");
++  assert.equal(
++    nuclear.api.sendAutoBotBuildOrUpgrade(
++      menu,
++      { ...buildable, cost: 2_000n },
++      12,
++      game,
++      player,
++      true,
++    ),
++    false,
++  );
++  assert.equal(pending().length, 0, "rejected purchases create no nuclear reservation");
++  assert.equal(
++    nuclear.api.sendAutoBotBuildOrUpgrade(menu, buildable, 12, game, player, true),
++    true,
++  );
++  tick = 5;
++  assert.equal(pending().length, 1);
++  tick = 6;
++  assert.equal(pending().length, 0, "nuclear occupancy expires at the existing grace boundary");
++  tick = 10;
++  assert.equal(
++    nuclear.api.sendAutoBotBuildOrUpgrade(menu, buildable, 12, game, player, true),
++    true,
++  );
++  tick = 11;
++  assert.equal(
++    nuclear.api.sendAutoBotBuildOrUpgrade(menu, buildable, 12, game, player, true),
++    true,
++  );
++  missiles.push(missile(6));
++  assert.equal(pending().length, 1);
++  tick = 16;
++  assert.equal(
++    pending().length,
++    1,
++    "an expired earlier claim cannot acknowledge a later intent again",
++  );
++}
+ let constructionTick = 100;
+ const purchases = [];
+ const constructionMenu = {
+@@ -293,9 +386,18 @@ assert.equal(
+   "a second build cannot spend gold already committed by another bot phase",
+ );
+ assert.equal(purchases.length, 1, "only the affordable construction reaches the build menu");
+-assert.equal(construction.api.autoBotBuildReservedGold(constructionGame, constructionPlayer), 750_000n);
+-assert.equal(construction.api.autoBotBuildReservedGold(constructionGame, { id: () => "other" }), 0n);
+-assert.equal(construction.api.autoBotBuildReservedGold({ ticks: () => 100 }, constructionPlayer), 0n);
++assert.equal(
++  construction.api.autoBotBuildReservedGold(constructionGame, constructionPlayer),
++  750_000n,
++);
++assert.equal(
++  construction.api.autoBotBuildReservedGold(constructionGame, { id: () => "other" }),
++  0n,
++);
++assert.equal(
++  construction.api.autoBotBuildReservedGold({ ticks: () => 100 }, constructionPlayer),
++  0n,
++);
+ const replayGame = { ticks: () => 0 };
+ assert.equal(
+   construction.api.sendAutoBotBuildOrUpgrade(
+diff --git a/test/nuke-territory-race-fixture.mts b/test/nuke-territory-race-fixture.mts
+index 2689d214..eb2834f5 100644
+--- a/test/nuke-territory-race-fixture.mts
++++ b/test/nuke-territory-race-fixture.mts
+@@ -233,4 +233,125 @@ for (const action of ["launch", "silo-upgrade"]) {
+     bot.harness.window.close();
+   }
+ }
+-console.log("live-engine nuclear territory, route and upgrade race fixture passed (9 scenarios)");
++for (const addCloser of [false, true]) {
++  const game = await setup(
++    "big_plains",
++    { instantBuild: true },
++    [
++      new PlayerInfo("attacker", PlayerType.Human, "attacker", "attacker"),
++      new PlayerInfo("defender", PlayerType.Human, "defender", "defender"),
++    ],
++    engineTestsUtil,
++  );
++  const attacker = game.player("attacker");
++  const target = game.ref(80, 1);
++  const near = game.ref(1, 1);
++  const far = game.ref(1, 80);
++  attacker.addGold(100_000_000n);
++  attacker.conquer(near);
++  attacker.conquer(far);
++  game.player("defender").conquer(target);
++  const nearSilo = attacker.buildUnit(UnitType.MissileSilo, near, {});
++  nearSilo.increaseLevel();
++  nearSilo.reloadMissile();
++  attacker.buildUnit(UnitType.MissileSilo, far, {});
++  const runner = new GameRunner(
++    game,
++    new Executor(game, "nuke-slot-reservation", "attacker"),
++    () => {},
++  );
++  const step = (intents = []) => {
++    runner.addTurn(
++      TurnSchema.parse({
++        turnNumber: game.ticks(),
++        intents: intents.map((intent) => ({ ...intent, clientID: "attacker" })),
++      }),
++    );
++    assert.equal(runner.executeNextTick(), true);
++  };
++  const bot = createMaxDifficultyOpponent({ clientID: "attacker" });
++  bot.attach({ runner, clientID: "attacker" });
++  await bot.api.beginTick(bot.pageGame.myPlayer());
++  bot.nationBot.player = bot.api.game.myPlayer();
++  bot.nationBot.initializeBehaviors();
++  const menu = createBuildMenu(bot);
++  bot.harness.current.buildMenu = menu;
++  bot.harness.current.eventBus = menu.eventBus;
++  const nuke = bot.nationBot.nukeBehavior;
++  const rival = bot.api.game.playerBySmallID(game.player("defender").smallID());
++  const predicted = [];
++  try {
++    for (let index = 0; index < 3; index++) {
++      predicted.push(nuke.nukeSpawn(UnitType.AtomBomb, target));
++      assert.equal(await nuke.sendNuke(target, UnitType.AtomBomb, rival, 0, { salvoId: 1 }), true);
++    }
++    const firstThree = [...bot.intentBuffer];
++    let extraSent;
++    let closer;
++    if (addCloser) {
++      closer = game.ref(70, 1);
++      attacker.conquer(closer);
++      attacker.buildUnit(UnitType.MissileSilo, closer, {});
++      step(); // Deliver the capacity change before any buffered nuclear intent.
++      predicted.push(nuke.nukeSpawn(UnitType.AtomBomb, target));
++      extraSent = await nuke.sendNuke(target, UnitType.AtomBomb, rival, 0, { salvoId: 1 });
++      assert.equal(extraSent, true);
++    } else {
++      assert.equal(
++        nuke.getAvailableSiloEntries(
++          bot.nationBot.player.units(UnitType.MissileSilo),
++          target,
++          new Set(),
++        ).length,
++        0,
++        "salvo planning sees the same exhausted projected slots as source prediction",
++      );
++      extraSent = await nuke.sendNuke(target, UnitType.AtomBomb, rival, 0, { salvoId: 1 });
++    }
++    step(addCloser ? bot.intentBuffer : firstThree);
++    step();
++    step();
++    const actualSources = attacker.units(UnitType.AtomBomb).map((unit) => unit.tile());
++    assert.deepEqual(
++      actualSources,
++      addCloser ? [closer, near, near, far] : [near, near, far],
++      "native execution consumes the closest available slots in intent order",
++    );
++    if (addCloser) {
++      assert.equal(
++        predicted[3],
++        actualSources[3],
++        "new capacity reprojects the entire unacknowledged prefix",
++      );
++    } else {
++      assert.deepEqual(
++        predicted,
++        actualSources,
++        "same-frame source predictions match native overflow",
++      );
++      assert.equal(extraSent, false, "a stale worker reply cannot oversubscribe the final slot");
++    }
++    nearSilo.increaseLevel();
++    nearSilo.reloadMissile();
++    step();
++    assert.equal(
++      nuke.nukeSpawn(UnitType.AtomBomb, target),
++      near,
++      "native missile receipts release virtual occupancy before its grace expires",
++    );
++    assert.equal(
++      nuke.getAvailableSiloEntries(
++        bot.nationBot.player.units(UnitType.MissileSilo),
++        target,
++        new Set(),
++      )[0].slots,
++      1,
++      "acknowledged missiles consume native slots once in the salvo planner",
++    );
++  } finally {
++    bot.harness.window.close();
++  }
++}
++console.log(
++  "live-engine nuclear territory, route, upgrade and slot reservation fixture passed (11 scenarios)",
++);
+

@@ -1776,6 +1776,7 @@
           tile,
           this.game,
           this.player,
+          true,
         );
       } finally {
         if (uiState) uiState.rocketDirectionUp = previousDirection;
@@ -2058,10 +2059,13 @@
     // ── maybeDestroyEnemySam — NationNukeBehavior.ts:780 (now async) ──────────
     getAvailableSiloEntries(silos, targetTile, coveringSamIds) {
       const speed = this.game.config().defaultNukeSpeed();
+      const projected = typeof autoBotBuildNukeSlots === "function"
+        ? autoBotBuildNukeSlots(this.game, this.player) : null;
       const entries = silos.map((silo) => {
         // DIVERGENCE: retained client views can change during the async price probe.
         if (silo.isActive?.() === false || silo.isUnderConstruction?.() === true) return null;
-        const slots = silo.level() - silo.missileTimerQueue().length;
+        const slots = projected
+          ? projected.get(String(silo.id())) ?? 0 : silo.level() - silo.missileTimerQueue().length;
         if (slots <= 0) return null;
         const pathFinder = UniversalPathFinding.Parabola(this.game, {
           increment: speed, distanceBasedHeight: true, directionUp: true,
@@ -2569,20 +2573,20 @@
     // src's nukeSpawn also applies) is enforced separately in probeCanBuildNuke for
     // the FINAL chosen tile. This keeps the trajectory check faithful (same launch
     // silo canBuild would have snapped to) without an await in the inner scoring loop.
-    // The unit wrapper exposes `ticksLeftInCooldown()` (proxy for `!isInCooldown()`:
-    // not in cooldown ⇔ ticksLeftInCooldown() === 0) but not `isInCooldown()` itself.
+    // DIVERGENCE: pending intents use projected native capacity.
+    // ponytail: retain readiness outside dispatch until partial-slot policy passes Baikal.
     nukeSpawn(nukeType, targetTile) {
       const silos = this.player.units(UNIT.MissileSilo);
+      const projected = typeof autoBotBuildNukeSlots === "function"
+        ? autoBotBuildNukeSlots(this.game, this.player) : null;
       let best = false;
       let bestDist = Infinity;
       for (const silo of silos) {
         if (silo.isActive && silo.isActive() === false) continue;
         if (silo.isUnderConstruction()) continue;
-        // !isInCooldown() — proxy via ticksLeftInCooldown() === 0 when available.
-        if (
-          typeof silo.ticksLeftInCooldown === "function" &&
-          silo.ticksLeftInCooldown() > 0
-        ) {
+        if (projected) {
+          if ((projected.get(String(silo.id())) ?? 0) <= 0) continue;
+        } else if (typeof silo.ticksLeftInCooldown === "function" && silo.ticksLeftInCooldown() > 0) {
           continue;
         }
         const d = this.game.manhattanDist(silo.tile(), targetTile);

@@ -6249,3 +6249,58 @@ zero and 73,350,000 enemy structure gold destroyed. Receipt:
 The source/frame attribution hypothesis is independently supported in code;
 its scenario-level causal proof and correction remain owned by this active goal.
 No new strategy improvement from this rejected experiment is claimed.
+
+### 2026-10-08 — pending nuclear source projection, readiness isolated
+
+The native source-attribution red case is now reproduced: three same-frame Atom
+intents see an untouched level-two near silo and level-one far silo; the original
+predictor names near/near/near, while real executions launch near/near/far.
+Reserve emitted nuclear requests in the existing game/player dispatch ledger,
+with its unchanged six-tick grace and gold accounting. Atom, Hydrogen and MIRV
+share that tracking. Reconcile new own missile IDs by type and destination, claim
+each receipt once, and propagate claims across overlapping records so an earlier
+record's expiry cannot reuse an already observed receipt.
+
+Replay the remaining unacknowledged prefix against all current owned silo queues
+in emission order with the native closest-Manhattan source rule. Both source
+prediction and salvo capacity planning use the result; the shared dispatcher
+rejects a stale worker quote when projected capacity is exhausted. A newly closer
+silo reassigns the whole prefix, rather than merely appending its slot to an old
+fixed-source reservation. After receipts, real queues alone account for those
+shots. The native fixture has eleven scenarios, including near/near/far overflow,
+new-capacity replay to closer/near/near/far, exhausted-slot rejection, shared
+planning capacity and receipt reconciliation before grace expiry. Finite gold,
+native TurnSchema/GameRunner/Executor and the bundled build-menu path remain in use.
+
+Do not combine this correction with expanding the no-pending readiness policy
+to all partial native queues. That separate expansion, both with and without the
+projection ledger, produces exactly the same failed Baikal receipt: won/alive at
+tick 10441, 24 own structures nuked, 20 Atoms, 51 Hydrogens, no pending launches,
+and 62,100,000 enemy structure gold destroyed. This isolates a sufficient trigger
+for this seeded regression; it does not explain the full tactical chain or prove
+an aggregate policy effect. Preserve the combined rejected source/test diff in
+`docs/experiments/2026-10-08-slot-projection-candidate.patch`. Failed receipts:
+`/home/eros/ofh-matrix/silo-slot-projection/baikal-nuke-wars.log` and
+`/home/eros/ofh-matrix/silo-partial-slot-isolation/baikal-nuke-wars.log`.
+
+Projection alone preserves the validated readiness policy outside the dispatch
+round trip and recovers the exact baseline: won/alive at tick 6661, 11 own
+structures nuked, 20 Atoms, 49 Hydrogens, no pending launches, and 73,350,000 enemy
+structure gold destroyed. Receipt:
+`/home/eros/ofh-matrix/silo-projection-only/baikal-nuke-wars.log`.
+The final rebuilt artifact repeats that exact receipt at
+`/home/eros/ofh-matrix/silo-projection-final/baikal-nuke-wars.log`.
+Final full `npm test`, TypeScript and artifact parity pass. This proves bounded
+source/capacity correctness and no regression in this Baikal seed, not an increase
+in aggregate victories. All simulations run sequentially under supervised user
+cgroups with MemoryMax=4G, MemorySwapMax=1G and OOMPolicy=kill.
+
+Limits: no browser/server adoption proof. Same-player manual shots at the same
+destination and receipts first observed after their original grace expired cannot
+be correlated exactly without a native intent receipt identifier. A projectile
+missed entirely between snapshots retains conservative virtual occupancy until
+grace expiry. The native engine's cooldown is queue-length equality with level,
+so an empty queue has no independent remaining cooldown; the review's speculative
+empty-queue cooldown concern does not justify adding that proxy to projection.
+Planned-salvo flight metadata/source-change guards from the earlier rejected
+experiment remain unaccepted and owned by this active goal for further investigation.
