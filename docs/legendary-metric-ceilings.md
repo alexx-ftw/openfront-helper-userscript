@@ -6147,3 +6147,38 @@ Both heavy runs used sequential 4 GiB RAM/1 GiB swap service limits. The read-on
 subagent did not return a review before closure; independent review is unverified.
 This fixes the reproduced source exchange and retry overtaking, not aggregate
 victory performance or arbitrary concurrent manual launches.
+
+## Revalidate changed salvo sources (2026-10-08)
+
+A native legality-probe race captures the closest silo after its worker reply.
+The replacement source is intercepted by a transit SAM, yet a useful planned
+Atom previously emitted because all salvo routes bypassed final revalidation.
+Carry the existing useful/filler classification and planned destination SAM IDs
+through each queued entry. Forecast the live closest-silo slot sequence before
+due launches, cancel on lost capacity or newly intercepted useful routes, and
+refresh flight time. Recheck the actual source after the worker probe too.
+Intentional filler remains allowed through transit coverage, consumes a source
+slot, and cannot count as a useful destination arrival.
+
+Acceptance: native captured-source useful shot emits nothing; filler control
+still emits a native missile and refreshes flight time. Synthetic unchanged
+routes survive, changed routes/missing slots/filler-only tails cancel and release
+the reservation. Full suite/types/parity pass; Baikal stays won/alive with no
+more than 11 own structures nuked. No source override is invented: client intents
+still let the native engine choose the closest legal silo.
+Independent source review identified the useful-only arrival horizon as well.
+A red synthetic cooling-SAM case confirms the old mixed horizon cancels a valid
+useful arrival: the charge reloads before a later intercepted filler, but after
+the useful Atom. Use useful entries for both remaining count and latest arrival;
+a filler-only tail cancels immediately. The correction's focused test passes.
+
+Result: all 11 native race scenarios, focused source/capacity/filler/horizon
+checks, full `npm test`, types, fixture formatting and generated-artifact parity
+pass. The source-capture fixture delivers one acknowledged native turn during
+the probe so cached client views see the ownership update. Baikal remains
+won/alive at tick 6661: 11 own structures nuked, 20 Atoms, 49 Hydrogens,
+zero pending launches and 73,350,000 enemy structure gold destroyed. Receipt:
+`/home/eros/ofh-matrix/salvo-source-recheck-final/baikal-nuke-wars.log`.
+Heavy runs were sequential supervised services capped at 4 GiB RAM/1 GiB swap.
+Independent review covered source revalidation and found the horizon correction;
+no live browser/server adoption or aggregate victory improvement is claimed.
