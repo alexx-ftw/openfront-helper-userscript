@@ -49,7 +49,8 @@ function makeFinisher({ gold, target: resolvedTarget = target }) {
     config: () => ({ isUnitDisabled: () => false }),
     players: () => [resolvedTarget ?? target].filter(Boolean),
   };
-  behavior.player = { gold: () => BigInt(gold) };
+  behavior.player = { smallID: () => 1, gold: () => BigInt(gold) };
+  behavior.attackBehavior = { shouldAttack: () => true };
   behavior.getPerceivedNukeCost = async () => 5_000_000n;
   behavior.player.units = () => [{ isUnderConstruction: () => false }];
   behavior.findEnemySamsCoveringTile = () => [];

@@ -226,6 +226,32 @@ for (const capture of ["hostile", "own-before-due", "own-during-probe", "teammat
   launchSink = null;
 }
 
+for (const rejection of ["captured-first", "captured-all", "none"]) {
+  const { behavior, game, player, nukeTarget } = makeSalvoWorld();
+  player.isPlayer = nukeTarget.isPlayer = () => true;
+  const captured = new Set();
+  game.owner = (tile) => captured.has(tile) ? player : nukeTarget;
+  const probes = new Map();
+  player.buildables = async (tile) => {
+    probes.set(tile, (probes.get(tile) ?? 0) + 1);
+    if (probes.get(tile) === 2 && (rejection === "captured-all" ||
+        (rejection === "captured-first" && tile === 20))) captured.add(tile);
+    return [{ type: UNIT.AtomBomb, cost: 1n, canBuild: true }];
+  };
+  behavior.nukeHasPositiveExpectedValue = async () => true;
+  const emitted = [];
+  launchSink = emitted;
+  const fired = await behavior.fireLegendaryClearFallthrough(
+    [{ tile: 20, value: 100 }, { tile: 30, value: 50 }],
+    nukeTarget, { type: UNIT.AtomBomb, cost: 1n }, [],
+  );
+  assert.equal(fired, rejection !== "captured-all", `${rejection} reports actual dispatch`);
+  assert.deepEqual(emitted.map((shot) => shot.tile),
+    rejection === "captured-all" ? [] : [rejection === "captured-first" ? 30 : 20],
+    `${rejection} preserves the first valid ranked destination`);
+  launchSink = null;
+}
+
 for (const capture of ["before-due", "poor", "price", "price-poor", "buildable"]) {
   const { behavior, game, player, world, nukeTarget } = makeSalvoWorld();
   player.isPlayer = nukeTarget.isPlayer = () => true;

@@ -5695,3 +5695,23 @@ pass. Baikal receipt `/home/eros/ofh-matrix/finisher-capture` matches the
 previous won/alive result at tick 6661, 20 atoms, 49 hydrogens, 11 own
 structures nuked and 73,350,000 enemy structure gold nuked. This is stale
 state cancellation evidence, not an improvement in aggregate win rate.
+
+Rejected launch fallthrough pre-declaration (2026-10-08): the Legendary
+clear-target ladder reports success after awaiting sendNuke even when it
+returns false. A destination captured during the final worker probe masks
+lower-ranked valid candidates. Stop only on a successful dispatch; retain
+every score, reserve, buildability and expected-value gate. Regression uses
+the real launch path with a first destination captured during its second
+probe and a hostile second destination; only the second must emit. Include
+all-rejected and first-success controls, then full suite/parity and Baikal.
+
+Rejected launch fallthrough result (2026-10-08): baseline captured-first
+regression emitted nothing while reporting success; the corrected ladder
+emits the next hostile destination, reports false when every dispatch is
+rejected and stops after the first actual success. All three real-launch
+regressions pass. Full npm suite, build parity, dedicated EV-fallthrough and
+Hydrogen-retention tests pass. The latter fixture now provides the real
+player identity and attack-policy surface required by target validation.
+Baikal `/home/eros/ofh-matrix/launch-fallthrough` retains won/alive at tick
+6661, 20 atoms, 49 hydrogens, 11 own structures nuked and 73,350,000 enemy
+structure gold nuked. No aggregate win-rate improvement claimed.

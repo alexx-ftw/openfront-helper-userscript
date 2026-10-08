@@ -558,8 +558,7 @@
             silos,
           )
         ) {
-          await this.sendNuke(cand.tile, selectedNuke.type, target);
-          return true;
+          if (await this.sendNuke(cand.tile, selectedNuke.type, target)) return true;
         }
       }
       return false;
