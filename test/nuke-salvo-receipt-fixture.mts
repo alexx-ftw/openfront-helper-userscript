@@ -101,6 +101,7 @@ for (const [prefixCount, physicalDefense] of [[0, false], [2, false], [0, true]]
       0,
       "the admitted prefix has not reached native missile creation yet",
     );
+    const emittedTick = game.ticks();
     if (prefixCount === 0) {
       assert.equal(await nuke.processPendingNukeLaunches(), true);
       assert.equal(
@@ -135,6 +136,15 @@ for (const [prefixCount, physicalDefense] of [[0, false], [2, false], [0, true]]
     step();
     assert.equal(attacker.units(UnitType.AtomBomb).length, 3);
     assert.equal(nuke.hasPendingNukeLaunches(), false);
+    if (prefixCount === 0) {
+      const arrivals = attacker.units(UnitType.AtomBomb).map((missile) => {
+        const plan = bot.api.game.motionPlans().get(missile.id());
+        assert.ok(plan);
+        return plan.startTick + plan.path.length;
+      });
+      assert.deepEqual(arrivals, [2, 3, 4].map((offset) => emittedTick + flight + offset),
+        "the native build-menu pipeline and silo serialization exceed travel-only estimates");
+    }
     if (physicalDefense) {
       const missiles = attacker.units(UnitType.AtomBomb);
       const finisher = {

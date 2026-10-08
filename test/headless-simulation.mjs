@@ -19,6 +19,7 @@ assert.equal(cooperativeTimers.status, 0, cooperativeTimers.stdout + cooperative
 for (const fixture of [
   "test/nuke-territory-race-fixture.mts",
   "test/nuke-salvo-receipt-fixture.mts",
+  "test/nuke-salvo-reload-boundary-fixture.mts",
 ]) {
   const native = spawnSync(
     process.execPath,

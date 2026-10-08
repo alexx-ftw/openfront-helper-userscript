@@ -6439,3 +6439,34 @@ three modes; production code and generated artifacts are unchanged, so the prior
 full-suite/Baikal acceptance remains the applicable production evidence. This
 proves the controlled launch continuation, not Hydrogen impact benefit, aggregate
 victory gains, or future-shot arrival correctness on other routes.
+
+### 2026-10-08 — native build-menu timing and SAM reload boundary controls
+
+The bundled receipt fixture now pins actual motion-plan arrivals for three Atoms
+emitted together: the travel-only estimate is tick 22 while native arrivals are
+24/25/26. On the diagonal physical-defense route the corresponding times are
+32 versus 34/35/36. Thus the build-menu pipeline adds two ticks in these controlled
+cases, and same-silo serialization adds another zero/one/two ticks. This measures
+the local native pipeline, not a guaranteed network delivery bound.
+
+Add `test/nuke-salvo-reload-boundary-fixture.mts` to the serial headless suite.
+A level-one real SAM has an old charge scheduled to reload at tick 90. With one
+Atom estimated to arrive at 89 but actually arriving at 91, the current viability
+check accepts it; the native SAM reloads too late to intercept and is destroyed.
+With the same route shifted three ticks later (estimate 92, actual 94), viability
+rejects the shot. The test explicitly bypasses only that rejection to observe its
+counterfactual: the SAM reloads/fires at 90, intercepts the Atom and stays active.
+Both controls use finite gold, the full bundled build menu, real GameRunner
+updates/motion plans and actual SAMLauncherExecution.
+
+An arrival-horizon discrepancy is therefore confirmed, but neither sampled
+decision is wrong. Treating every reload before impact as a usable interception
+would incorrectly reject the first successful shot. The next production change
+must account for reachable interception opportunities as well as departure time;
+blindly adding a fixed timing offset or full-SAM fallback lacks this evidence.
+No production policy or generated artifact changed in this investigation.
+Full `npm test` passes with the paired reload control integrated; `git diff
+--check` passes. Execution remained sequential under 4 GiB RAM / 1 GiB swap.
+The first suite attempt caught a test-only timestamp error (sampling before the
+queued pass instead of at emission); the corrected assertion uses the actual
+emission tick. No new Baikal simulation is claimed for this test-only change.
