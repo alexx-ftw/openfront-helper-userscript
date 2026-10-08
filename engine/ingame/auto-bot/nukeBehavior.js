@@ -80,7 +80,7 @@
 
   // Structures group — src/core/game/Game.ts:374 (Structures.types). Defined
   // module-local under a unique name (no `Structures` global exists in the bundle)
-  // so `nukeTarget.units(...NUKE_STRUCTURES_TYPES)` mirrors `units(...Structures.types)`.
+  // so `nukeTarget` structure sweeps mirror `units(...Structures.types)`.
   const NUKE_STRUCTURES_TYPES = [
     UNIT.City,
     UNIT.DefensePost,
@@ -89,6 +89,16 @@
     UNIT.Port,
     UNIT.Factory,
   ];
+
+  // Per-type enumeration instead of `units(...NUKE_STRUCTURES_TYPES)`: the
+  // vendored fixture engine caps `units()` at three positional types and
+  // silently drops the rest, so a 6-arg spread only ever saw the first three.
+  function unitsOfTypes(player) {
+    if (typeof player?.units !== "function") return [];
+    const out = [];
+    for (const type of NUKE_STRUCTURES_TYPES) out.push(...player.units(type));
+    return out;
+  }
 
   // ===========================================================================
   // euclDistFN — src/core/game/GameMap.ts:454. Returns a predicate (gm, tile) =>
@@ -450,7 +460,7 @@
       await withTimeout(
         this.game.ensureBorderTiles(target), WORKER_TIMEOUT_MS, null,
       );
-      const structures = target.units(...NUKE_STRUCTURES_TYPES);
+      const structures = unitsOfTypes(target);
       const randomCount = isAtLeastHardDifficulty(difficulty) ? 30 : 10;
       const randomTiles = randTerritoryTileArray(this.random, this.game, target, randomCount);
       const tiles = randomTiles.concat(structures.map((unit) => unit.tile()));
@@ -689,7 +699,7 @@
     }
 
     playerStructureValue(player) {
-      const structures = player?.units?.(...NUKE_STRUCTURES_TYPES) || [];
+      const structures = unitsOfTypes(player);
       return structures.reduce(
         (total, structure) => total + this.nukeStructureValue(structure),
         0,
@@ -728,7 +738,7 @@
         if (other.isAlive?.() === false) continue;
         if (playersArePermanentTeammates(this.player, other)) continue;
         if (this.attackBehavior.shouldAttack(other) === false) continue;
-        const structures = other.units(...NUKE_STRUCTURES_TYPES);
+        const structures = unitsOfTypes(other);
         const value = structures.reduce(
           (total, structure) => total + this.nukeStructureValue(structure),
           0,
@@ -750,7 +760,7 @@
       // requirement, since deterrence bombs that hit nothing still cost
       // full price and invite counter-retaliation.
       if (this.isUnderHeavyAttack()) return true;
-      const structures = target?.units?.(...NUKE_STRUCTURES_TYPES) || [];
+      const structures = unitsOfTypes(target);
       const magnitude = this.game.config().nukeMagnitudes(selectedNuke.type);
       const outerDist = euclDistFN(candidate.tile, magnitude.outer, false);
       const vulnerableValue = structures
@@ -990,7 +1000,7 @@
         if (other.isAlive?.() === false) continue;
         if (playersArePermanentTeammates(this.player, other)) continue;
         if (this.attackBehavior.shouldAttack(other) === false) continue;
-        const structures = other.units(...NUKE_STRUCTURES_TYPES);
+        const structures = unitsOfTypes(other);
         const levelSum = structures.reduce(
           (total, structure) => total + Number(structure.level?.() || 1),
           0,
@@ -1025,7 +1035,7 @@
         if (playersArePermanentTeammates(this.player, other)) continue;
         const tilesOwned = other.numTilesOwned();
         if (tilesOwned === 0) continue;
-        const structures = other.units(...NUKE_STRUCTURES_TYPES);
+        const structures = unitsOfTypes(other);
         let levelSum = 0;
         for (const s of structures) levelSum += s.level();
         // Skip players with too few structures regardless of density
@@ -1507,14 +1517,13 @@
     collectFriendlyNukeStructureUnits() {
       const units = [];
       if (typeof this.player?.units === "function") {
-        units.push(...this.player.units(...NUKE_STRUCTURES_TYPES));
+        units.push(...unitsOfTypes(this.player));
       }
       if (typeof this.game?.players === "function") {
         for (const other of this.game.players()) {
           if (!other || other.smallID?.() === this.player?.smallID?.()) continue;
           if (!playersArePermanentTeammates(this.player, other)) continue;
-          if (typeof other?.units !== "function") continue;
-          units.push(...other.units(...NUKE_STRUCTURES_TYPES));
+          units.push(...unitsOfTypes(other));
         }
       }
       return units;
@@ -2166,7 +2175,7 @@
       if (radius <= 0) return targetSam.tile();
       const samTile = targetSam.tile();
       const enemy = targetSam.owner?.();
-      const structures = enemy?.units?.(...NUKE_STRUCTURES_TYPES) || [];
+      const structures = unitsOfTypes(enemy);
       if (structures.length === 0) return samTile;
       const samX = this.game.x(samTile);
       const samY = this.game.y(samTile);
@@ -2375,6 +2384,38 @@
         .filter((silo) => !silo.isUnderConstruction());
       if (silos.length === 0) return false;
       if (this.findEnemySamsCoveringTile(pending.targetTile).length > 0) {
+        return false;
+      }
+      // LEGENDARY DIVERGENCE (2026-10-08, pre-declared in
+      // docs/legendary-metric-ceilings.md): the finisher was the one nuclear
+      // dispatch path that never priced friendly-fire. Its blast circle is
+      // the largest (Hydrogen outer), and offensive-reach silo placement
+      // deliberately moves our silos toward hostile centers, so a blind
+      // dispatch could erase our own forward structures. Apply the same
+      // monetary geometry as the anti-SAM aim selector: fire only when the
+      // remaining enemy structure value inside the blast covers the friendly
+      // replacement loss (blastStructureValue vs friendlyFirePenalty).
+      // A friendly structure inside the circle is a permanent condition, so
+      // the pending finisher is cleared instead of retained.
+      // Degenerate magnitudes (config shims without nukeMagnitudes) price
+      // every blast as empty, so the finisher safely holds instead of firing
+      // unpriced.
+      const magnitude = config.nukeMagnitudes?.(UNIT.HydrogenBomb) ?? {
+        inner: 0,
+        outer: 0,
+      };
+      const enemyValue = this.blastStructureValue(
+        pending.targetTile,
+        unitsOfTypes(target),
+        magnitude.outer,
+      );
+      const friendlyPenalty = this.friendlyFirePenalty(
+        pending.targetTile,
+        magnitude,
+        true,
+      );
+      if (enemyValue - friendlyPenalty <= 0) {
+        state.postSalvoHydrogen = null;
         return false;
       }
       const sent = await this.sendNuke(

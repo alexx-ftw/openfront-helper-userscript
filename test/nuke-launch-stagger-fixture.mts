@@ -89,6 +89,10 @@ Object.assign(nuke, {
   structureBehavior: defense,
   _pendingNukeLaunches: [],
   postSalvoHydrogenTarget: () => ({}),
+  // The stagger scenario nukes unclaimed land, so the finisher's enemy-value
+  // gate would hold it; this fixture tests stagger mechanics, not gate
+  // economics (covered by nuke-finisher-friendly-gate-fixture).
+  blastStructureValue: () => 10_000_000,
   getPerceivedNukeCost: async () => 1n,
   findEnemySamsCoveringTile: () => [],
   sendNuke: async () => true,

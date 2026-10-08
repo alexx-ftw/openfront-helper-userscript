@@ -111,6 +111,7 @@ function makeSalvoWorld() {
     level: () => level,
     tile: () => 20,
     owner: () => nukeTarget,
+    type: () => UNIT.SAMLauncher,
   });
   return { world, game, player, nukeTarget, behavior };
 }
@@ -541,8 +542,14 @@ for (const capture of ["before-due", "poor", "price", "price-poor", "buildable"]
   game.owner = () => owner;
   game.players = () => [nukeTarget];
   game.config = () => ({ isUnitDisabled: () => false });
+  game.euclideanDistSquared = () => 0;
   player.gold = () => capture === "poor" || capture === "price-poor" ? 0n : 10_000_000n;
-  player.units = () => [{ isUnderConstruction: () => false }];
+  player.units = () => [{
+    isUnderConstruction: () => false,
+    tile: () => 5,
+    level: () => 1,
+    type: () => UNIT.MissileSilo,
+  }];
   behavior.findEnemySamsCoveringTile = () => [];
   behavior.getPerceivedNukeCost = async () => {
     if (capture === "price" || capture === "price-poor") owner = player;
@@ -1038,16 +1045,17 @@ for (const [flightTicks, dueTick, expectedLaunch] of [
   const me = {
     smallID: () => 1,
     team: () => "blue",
-    units: () => {
+    units: (type) => {
       ownUnitsCalls++;
-      return ownStructures;
+      // Real players filter by type; the snapshot sweep asks per type.
+      return type === UNIT.MissileSilo ? ownStructures : [];
     },
   };
   const teammate = {
     smallID: () => 2,
     team: () => "blue",
     isAlive: () => true,
-    units: () => teammateStructures,
+    units: (type) => (type === UNIT.City ? teammateStructures : []),
   };
   const scoreGame = {
     ticks: () => scoreTick,
@@ -1095,8 +1103,8 @@ for (const [flightTicks, dueTick, expectedLaunch] of [
   scoreTick++;
   scorer.nukeTileScore(candidate, silos, enemyStructures, UNIT.AtomBomb);
   assert.equal(
-    ownUnitsCalls,
-    callsAfterFirstSweep + 1,
+    ownUnitsCalls > callsAfterFirstSweep,
+    true,
     "the friendly-structure snapshot refreshes on the next decision tick",
   );
 
@@ -1485,12 +1493,23 @@ launchSink = null;
     isUnitDisabled: () => false,
     maxSamRange: () => 150,
     samRange: () => 150,
+    nukeMagnitudes: () => ({ inner: 80, outer: 100 }),
   });
+  behavior.game.euclideanDistSquared = (a, b) => (a - b) * (a - b);
+  // The finisher's enemy-value gate needs a priced structure at the target.
+  world.targetSams.push(world.sam("finisher-target-sam", 1));
   launches.length = 0;
   behavior.player.gold = () => 10_000_000n;
   behavior.getPerceivedNukeCost = async () => 5_000_000n;
   behavior.player.units = (type) =>
-    type === UNIT.MissileSilo ? [{ isUnderConstruction: () => false }] : [];
+    type === UNIT.MissileSilo
+      ? [{
+        isUnderConstruction: () => false,
+        tile: () => 500,
+        level: () => 1,
+        type: () => UNIT.MissileSilo,
+      }]
+      : [];
   behavior.player.buildables = async () => [
     { type: UNIT.HydrogenBomb, cost: 5_000_000n, canBuild: true },
   ];

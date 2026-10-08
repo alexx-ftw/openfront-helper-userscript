@@ -72,6 +72,10 @@ for (const [prefixCount, physicalDefense] of [[0, false], [2, false], [0, true]]
     bot.harness.internals.state.settings.enabled = true;
     bot.harness.internals.state.settings.winFixes = true;
     const nuke = bot.nationBot.nukeBehavior;
+    // The salvo flattens the target's only structure, so the finisher's
+    // enemy-value gate would hold it; this fixture tests receipt/reload
+    // resume mechanics, not gate economics (nuke-finisher-friendly-gate-fixture).
+    nuke.blastStructureValue = () => 10_000_000;
     const rival = bot.api.game.playerBySmallID(defender.smallID());
     const flight = nuke.getAvailableSiloEntries(
       [bot.nationBot.player.units(UnitType.MissileSilo)[0]],

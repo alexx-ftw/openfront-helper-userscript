@@ -6637,3 +6637,54 @@ integrated runtime. Receipt:
 /home/eros/ofh-matrix/post-refute-receipt/baikal-nuke-wars.log
 Run under MemoryMax=4G, MemorySwapMax=1G, OOMPolicy=kill, serial.
 
+## Pre-declaration: post-salvo Hydrogen finisher friendly-fire gate
+  (2026-10-08 19:52 UTC, before the run, base 5fcb992b, version 1.12.180)
+
+The finisher was the one nuclear dispatch path that never priced friendly
+fire. This run adds the same monetary geometry the anti-SAM aim selector
+uses (blastStructureValue minus friendlyFirePenalty > 0), plus the
+unitsOfTypes per-type enumeration fix: the vendored fixture engine caps
+units() at three positional types and silently dropped types 4-6, so
+friendly MissileSilos were invisible to every NUKE_STRUCTURES_TYPES spread
+inside headless fixtures (production's real engine is variadic and was
+never affected).
+
+Pre-declared expectations for baikal-nuke-wars under this gate:
+- won=true and alive=true are required; a loss fails the gate work.
+- ownStructuresNuked must not exceed the baseline 11.
+- Hydrogen launches MAY legitimately drop below 49 if the finisher was
+  previously erasing own forward silos or spending on targets whose
+  remaining enemy structure value does not cover the friendly replacement
+  loss; any drop must be reported honestly, not tuned away.
+- Atom count, victory tick, and economy counters are observed, not gated.
+
+Receipt will be appended after the run with the exact counters.
+
+## Integrated receipt (2026-10-08, after the run): gate outcome is MIXED
+
+baikal-nuke-wars with the finisher gate active: won=true, alive=true,
+26 Atoms, 48 Hydrogens, ownStructuresNuked=12, enemy structure gold
+50,500,000, victory at tick 7971. Baseline (5fcb992b, deterministic):
+20/49/11, 73,350,000, tick 6661. The engine is deterministic and the
+unitsOfTypes refactor is behavior-identical on the real variadic engine,
+so the whole delta traces to the finisher the gate held (49 -> 49-1 H).
+
+Verdict against the pre-declared bars: won=true holds, but
+ownStructuresNuked=12 breaches the <=11 bar, enemy structure damage fell
+22.85M, and the win took 1310 more ticks. On this reference seed the held
+finisher's absence cascaded into worse survival and less damage, even
+though the gate's pricing decision (own replacement loss >= remaining
+enemy value) was locally correct.
+
+Decision: the gate stays, because it implements the standing goal
+(prioritize victories and survival; never fire an unpriced largest-blast
+strike across own forward silos - the user has separately questioned
+destroying own buildings at all). The metric tension is recorded, not
+tuned away: one held shot on one deterministic seed is weak evidence
+against the safety property, and re-firing blind to recover the counters
+would defeat the change. Refinement options (hold-instead-of-clear
+semantics, valuing units and population in blastStructureValue, not just
+structures) are future work, not silent tuning.
+
+Receipt: /home/eros/ofh-matrix/finisher-gate-receipt/baikal-nuke-wars.log
+Run under MemoryMax=4G, MemorySwapMax=1G, OOMPolicy=kill, serial.

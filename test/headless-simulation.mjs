@@ -22,6 +22,7 @@ for (const fixture of [
   "test/nuke-salvo-reload-boundary-fixture.mts",
   "test/nuke-salvo-pending-forecast-fixture.mts",
   "test/nuke-salvo-off-approach-intercept-fixture.mts",
+  "test/nuke-finisher-friendly-gate-fixture.mts",
 ]) {
   const native = spawnSync(
     process.execPath,
