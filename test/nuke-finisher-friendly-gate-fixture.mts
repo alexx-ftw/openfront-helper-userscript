@@ -19,6 +19,12 @@ import {
 // finisher; without one, the finisher still launches.
 for (const c of [
   { forwardSilo: true, expectFired: false, label: "own silo inside the circle" },
+  {
+    forwardSilo: true,
+    mirvTarget: true,
+    expectFired: true,
+    label: "mirv-capable enemy silo outweighs own silo loss",
+  },
   { forwardSilo: false, expectFired: true, label: "no friendly structure inside" },
 ]) {
   const game = await setup(
@@ -62,6 +68,10 @@ for (const c of [
   }
   defender.buildUnit(UnitType.City, target, {});
   defender.buildUnit(UnitType.City, farCity, {});
+  if (c.mirvTarget) {
+    defender.addGold(50_000_000n);
+    defender.buildUnit(UnitType.MissileSilo, target, {});
+  }
   const bot = createMaxDifficultyOpponent({ clientID: "attacker" });
   const runner = new GameRunner(
     game,
@@ -107,13 +117,13 @@ for (const c of [
       "the friendly-fire gate holds the finisher beside own structures and releases it otherwise",
     );
     if (!c.expectFired) {
-      assert.equal(
+      assert.notEqual(
         bot.harness.internals.state.postSalvoHydrogen,
         null,
-        "a permanent friendly-structure condition clears the pending finisher",
+        "a friendly-structure rejection holds the finisher for retry",
       );
       assert.equal(bot.intentBuffer.length, 0, "no intent is emitted");
-      console.log(JSON.stringify({ label: c.label, verdict: "held and cleared" }));
+      console.log(JSON.stringify({ label: c.label, verdict: "held for retry" }));
       continue;
     }
     step(bot.intentBuffer);

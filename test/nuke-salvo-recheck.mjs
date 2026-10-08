@@ -181,18 +181,24 @@ for (const release of ["expiry", "alliance"]) {
   world.targetSams.push(sam);
   const emitted = [];
   launchSink = emitted;
-  sandbox.autoBotBuildPendingNukes = () => emitted.length ? [{ salvoId: 70 }] : [];
+  sandbox.autoBotBuildPendingNukes = () => (emitted.length ? [{ salvoId: 70 }] : []);
   try {
     behavior._pendingNukeLaunches = Array.from({ length: 4 }, () => ({
-      dueTick: world.tick, tile: 20, nukeType: UNIT.AtomBomb, targetPlayer: nukeTarget,
+      dueTick: world.tick,
+      tile: 20,
+      nukeType: UNIT.AtomBomb,
+      targetPlayer: nukeTarget,
       salvo: { salvoId: 70, targetTile: 20, targetSamId: sam.id(), flightTicks: 20 },
     }));
     assert.equal(await behavior.processPendingNukeLaunches(), true);
     assert.equal(emitted.length, 3, "a validated batch uses but never exceeds the three-shot cap");
     assert.equal(behavior._pendingNukeLaunches.length, 1);
     world.tick++;
-    assert.equal(await behavior.processPendingNukeLaunches(), false,
-      "the next pass still waits for the earlier emitted prefix");
+    assert.equal(
+      await behavior.processPendingNukeLaunches(),
+      false,
+      "the next pass still waits for the earlier emitted prefix",
+    );
     assert.equal(emitted.length, 3);
     assert.equal(behavior._pendingNukeLaunches.length, 1);
   } finally {
@@ -216,31 +222,55 @@ for (const release of ["expiry", "alliance"]) {
   sandbox.isLegendaryDifficulty = () => true;
   try {
     for (const delay of [5, 10]) {
-      assert.equal(behavior.queueDelayedNukeLaunch(20, UNIT.AtomBomb, nukeTarget, delay,
-        { salvoId: 1, targetTile: 20, targetSamId: null }), true);
+      assert.equal(
+        behavior.queueDelayedNukeLaunch(20, UNIT.AtomBomb, nukeTarget, delay, {
+          salvoId: 1,
+          targetTile: 20,
+          targetSamId: null,
+        }),
+        true,
+      );
     }
-    assert.equal(budget.availableGoldAfterReserve(UNIT.City), 500_000n,
-      "a 600k City cannot consume the 1.5M still needed for two queued Atoms");
-    assert.equal(budget.availableGoldAfterReserve(UNIT.Port), 2_000_000n,
-      "the existing trade-economy exemption remains available");
-    assert.equal(budget.availableGoldAfterReserve(UNIT.SAMLauncher), 2_000_000n,
-      "actual missile defense retains priority over offensive funding");
+    assert.equal(
+      budget.availableGoldAfterReserve(UNIT.City),
+      500_000n,
+      "a 600k City cannot consume the 1.5M still needed for two queued Atoms",
+    );
+    assert.equal(
+      budget.availableGoldAfterReserve(UNIT.Port),
+      2_000_000n,
+      "the existing trade-economy exemption remains available",
+    );
+    assert.equal(
+      budget.availableGoldAfterReserve(UNIT.SAMLauncher),
+      2_000_000n,
+      "actual missile defense retains priority over offensive funding",
+    );
     sandbox.autoBotBuildReservedGold = () => 750_000n;
-    assert.equal(budget.availableGoldAfterReserve(UNIT.City), 0n,
-      "an already-emitted purchase plus the unsent tail cannot be spent again on a stale gold snapshot");
+    assert.equal(
+      budget.availableGoldAfterReserve(UNIT.City),
+      0n,
+      "an already-emitted purchase plus the unsent tail cannot be spent again on a stale gold snapshot",
+    );
     delete sandbox.autoBotBuildReservedGold;
     behavior.getAbortedSalvoIds = () => new Set();
     behavior.firePendingNukeLaunch = async () => "fired";
     world.tick += 5;
     assert.equal(await behavior.processPendingNukeLaunches(), true);
-    assert.equal(budget.availableGoldAfterReserve(UNIT.City), 1_250_000n,
-      "draining one entry shrinks the queue's construction reserve");
+    assert.equal(
+      budget.availableGoldAfterReserve(UNIT.City),
+      1_250_000n,
+      "draining one entry shrinks the queue's construction reserve",
+    );
     behavior.queueDelayedNukeLaunch(20, UNIT.AtomBomb, nukeTarget, 10);
     nukeTarget.isAlive = () => false;
     await behavior.processPendingNukeLaunches();
     assert.equal(behavior.hasPendingNukeLaunches(), false);
-    assert.equal(budget.availableGoldAfterReserve(UNIT.City), 1_250_000n,
-      "cancelling the salvo releases its additional bank and retains the ordinary one-Atom reserve");
+    assert.equal(
+      budget.availableGoldAfterReserve(UNIT.City),
+      1_250_000n,
+      "cancelling the salvo releases its additional bank and retains the ordinary one-Atom reserve",
+    );
   } finally {
     delete sandbox.autoBotBuildReservedGold;
     sandbox.isLegendaryDifficulty = originalDifficultyCheck;
@@ -259,7 +289,7 @@ for (const invalidation of ["unchanged", "destroyed", "upgrading"]) {
     missileTimerQueue: () => [],
     tile: () => 5,
   };
-  player.units = (type) => type === UNIT.MissileSilo && active ? [silo] : [];
+  player.units = (type) => (type === UNIT.MissileSilo && active ? [silo] : []);
   world.targetSams = [world.sam(1, 1)];
   game.config = () => ({ defaultNukeSpeed: () => 1, isUnitDisabled: () => false });
   Object.assign(game, {
@@ -281,14 +311,27 @@ for (const invalidation of ["unchanged", "destroyed", "upgrading"]) {
   behavior.rememberFailedSamTarget = (plan) => plan;
   behavior.maybeUpgradeHelpfulSilo = async () => {};
   let salvos = 0;
-  behavior.fireSamSalvo = async () => { salvos++; return true; };
+  behavior.fireSamSalvo = async () => {
+    salvos++;
+    return true;
+  };
   await behavior.maybeDestroyEnemySam(nukeTarget);
-  assert.equal(salvos, invalidation === "unchanged" ? 1 : 0,
-    `${invalidation} silo eligibility after price await`);
+  assert.equal(
+    salvos,
+    invalidation === "unchanged" ? 1 : 0,
+    `${invalidation} silo eligibility after price await`,
+  );
 }
 
 // Construction consumes demand before the nuclear decision chain gets to clear it.
-for (const change of ["unchanged", "destroyed", "friendly", "during-probe", "replaced-request", "pending-launches"]) {
+for (const change of [
+  "unchanged",
+  "destroyed",
+  "friendly",
+  "during-probe",
+  "replaced-request",
+  "pending-launches",
+]) {
   const { behavior, game, player, world, nukeTarget } = makeSalvoWorld();
   const sam = world.sam(77, 3);
   let friendly = false;
@@ -297,9 +340,12 @@ for (const change of ["unchanged", "destroyed", "friendly", "during-probe", "rep
   game.config = () => ({ isUnitDisabled: () => false });
   game.units = () => world.covering;
   player.isFriendly = () => friendly;
-  player.units = (type) => type === UNIT.AtomBomb ? [{}] : [];
+  player.units = (type) => (type === UNIT.AtomBomb ? [{}] : []);
   behavior.rememberFailedSamTarget({
-    targetSamId: 77, targetTile: 20, totalBombs: 4, siloEntries: [],
+    targetSamId: 77,
+    targetTile: 20,
+    totalBombs: 4,
+    siloEntries: [],
     coveringSamIds: new Set([77]),
   });
   if (change === "destroyed") world.covering = world.targetSams = [];
@@ -312,22 +358,39 @@ for (const change of ["unchanged", "destroyed", "friendly", "during-probe", "rep
   structures.nukeSiloUpgradeBudgetAvailable = () => true;
   structures.buildableForUnits = async () => {
     if (change === "during-probe") world.covering = world.targetSams = [];
-    if (change === "replaced-request") sandbox.state.nukeWantSlots = { ...sandbox.state.nukeWantSlots, targetSamId: 88 };
+    if (change === "replaced-request")
+      sandbox.state.nukeWantSlots = { ...sandbox.state.nukeWantSlots, targetSamId: 88 };
     if (change === "pending-launches") sandbox.state.nukeWantSlots.pendingLaunches = true;
     return [];
   };
   structures.rankNukeDemandSiloUpgrades = () => [{}];
   let upgrades = 0;
-  structures.executeStructureUpgradeCandidate = async () => { upgrades++; return true; };
+  structures.executeStructureUpgradeCandidate = async () => {
+    upgrades++;
+    return true;
+  };
   await structures.maybeUpgradeSiloForNukeDemand();
-  assert.equal(upgrades, change === "unchanged" ? 1 : 0,
-    `${change} SAM cannot retain obsolete capacity demand`);
-  if (change === "pending-launches") assert.equal(sandbox.state.nukeWantSlots.pendingLaunches, true);
+  assert.equal(
+    upgrades,
+    change === "unchanged" ? 1 : 0,
+    `${change} SAM cannot retain obsolete capacity demand`,
+  );
+  if (change === "pending-launches")
+    assert.equal(sandbox.state.nukeWantSlots.pendingLaunches, true);
   if (change === "replaced-request") assert.equal(sandbox.state.nukeWantSlots.targetSamId, 88);
   sandbox.state.nukeWantSlots = null;
 }
 
-for (const restriction of ["budget", "budget-during-probe", "upgrade-cost", "destroyed", "during-probe", "blocked-route", "impossible-capacity", "permitted"]) {
+for (const restriction of [
+  "budget",
+  "budget-during-probe",
+  "upgrade-cost",
+  "destroyed",
+  "during-probe",
+  "blocked-route",
+  "impossible-capacity",
+  "permitted",
+]) {
   const { behavior, game, player, world } = makeSalvoWorld();
   const sam = world.sam(77, 3);
   let targetSams = restriction === "destroyed" ? [] : [sam];
@@ -335,16 +398,22 @@ for (const restriction of ["budget", "budget-during-probe", "upgrade-cost", "des
   game.config = () => ({ isUnitDisabled: () => false });
   player.units = () => [];
   const failedTarget = behavior.rememberFailedSamTarget({
-    targetSamId: 77, targetTile: 20, totalBombs: 4, siloEntries: [],
+    targetSamId: 77,
+    targetTile: 20,
+    totalBombs: 4,
+    siloEntries: [],
     coveringSamIds: new Set([77]),
   });
   const silo = { id: () => 1, level: () => 1 };
-  behavior.getRouteEligibleSilos = () => restriction === "blocked-route" ? [] : [silo];
+  behavior.getRouteEligibleSilos = () => (restriction === "blocked-route" ? [] : [silo]);
   behavior.hasUsefulSiloUpgradeCapacity = () => restriction !== "impossible-capacity";
   behavior.getPreferredHelpfulSilos = (silos) => silos;
   behavior.findBestProtectedSilo = () => silo;
   let upgrades = 0;
-  behavior.actuateSiloUpgrade = async () => { upgrades++; return true; };
+  behavior.actuateSiloUpgrade = async () => {
+    upgrades++;
+    return true;
+  };
   const structures = new sandbox.__StructureBehavior({}, game, player);
   behavior.structureBehavior = structures;
   structures.nukeDemandScopedSilos = () => [silo];
@@ -357,17 +426,22 @@ for (const restriction of ["budget", "budget-during-probe", "upgrade-cost", "des
     if (restriction === "during-probe") targetSams = [];
     if (restriction === "budget-during-probe") availableGold = 50n;
     return restriction === "upgrade-cost" || restriction === "permitted"
-      ? [{ cost: restriction === "upgrade-cost" ? 150n : 20n, canUpgrade: true }] : [];
+      ? [{ cost: restriction === "upgrade-cost" ? 150n : 20n, canUpgrade: true }]
+      : [];
   };
-  if (restriction !== "upgrade-cost" && restriction !== "permitted") structures.rankNukeDemandSiloUpgrades = () => [{}];
+  if (restriction !== "upgrade-cost" && restriction !== "permitted")
+    structures.rankNukeDemandSiloUpgrades = () => [{}];
   structures.executeStructureUpgradeCandidate = async (candidate) => {
     if (!candidate) return false;
     upgrades++;
     return true;
   };
   const upgraded = await behavior.maybeUpgradeHelpfulSilo(failedTarget);
-  assert.equal(upgrades, restriction === "permitted" ? 1 : 0,
-    `${restriction} immediate nuke demand respects shared construction gates`);
+  assert.equal(
+    upgrades,
+    restriction === "permitted" ? 1 : 0,
+    `${restriction} immediate nuke demand respects shared construction gates`,
+  );
   assert.equal(upgraded, restriction === "permitted");
   sandbox.state.nukeWantSlots = null;
 }
@@ -378,7 +452,7 @@ for (const preferredIds of [[], [99], [2]]) {
   game.config = () => ({ isUnitDisabled: () => false });
   const good = { id: () => 1, level: () => 1, isUnderConstruction: () => false };
   const blocked = { id: () => 2, level: () => 1, isUnderConstruction: () => false };
-  player.units = (type) => type === UNIT.MissileSilo ? [good, blocked] : [];
+  player.units = (type) => (type === UNIT.MissileSilo ? [good, blocked] : []);
   sandbox.state.nukeWantSlots = { targetSamId: 77, need: 4, unblockedSiloIds: preferredIds };
   behavior.getRouteEligibleSilos = () => [good];
   behavior.hasUsefulSiloUpgradeCapacity = () => true;
@@ -387,8 +461,9 @@ for (const preferredIds of [[], [99], [2]]) {
   structures.availableGoldAfterReserve = () => 200n;
   structures.safeStructureCost = () => 20n;
   structures.nukeSiloUpgradeBudgetAvailable = () => true;
-  structures.buildableForUnits = async (silos) => silos.map(() => ({ cost: 20n, canUpgrade: true }));
-  structures.siloSamProtectionScore = (silo) => silo.id() === blocked.id() ? 100 : 0;
+  structures.buildableForUnits = async (silos) =>
+    silos.map(() => ({ cost: 20n, canUpgrade: true }));
+  structures.siloSamProtectionScore = (silo) => (silo.id() === blocked.id() ? 100 : 0);
   const upgradedIds = [];
   structures.executeStructureUpgradeCandidate = async (candidate) => {
     if (!candidate) return false;
@@ -400,18 +475,32 @@ for (const preferredIds of [[], [99], [2]]) {
   sandbox.state.nukeWantSlots = null;
 }
 
-for (const route of ["no-route", "blocked-during-probe", "insufficient-capacity", "capacity-loss", "partly-cooling", "cooling"]) {
+for (const route of [
+  "no-route",
+  "blocked-during-probe",
+  "insufficient-capacity",
+  "capacity-loss",
+  "partly-cooling",
+  "cooling",
+]) {
   const { behavior, game, player, world } = makeSalvoWorld();
   const targetSam = world.sam(77, 3);
   game.units = () => [targetSam];
   game.config = () => ({ isUnitDisabled: () => false });
   const silo = {
-    id: () => 1, tile: () => 10, level: () => 1,
-    isUnderConstruction: () => false, missileTimerQueue: () => [world.tick - 1],
+    id: () => 1,
+    tile: () => 10,
+    level: () => 1,
+    isUnderConstruction: () => false,
+    missileTimerQueue: () => [world.tick - 1],
   };
   const secondSilo = { ...silo, id: () => 2, tile: () => 11 };
-  player.units = (type) => type === UNIT.MissileSilo
-    ? route === "capacity-loss" || route === "partly-cooling" ? [silo, secondSilo] : [silo] : [];
+  player.units = (type) =>
+    type === UNIT.MissileSilo
+      ? route === "capacity-loss" || route === "partly-cooling"
+        ? [silo, secondSilo]
+        : [silo]
+      : [];
   let blocked = route === "no-route";
   behavior.findEnemySamsCoveringTile = () => [targetSam];
   behavior.isTrajectoryInterceptableBySam = (spawn, _target, exclusions) =>
@@ -434,20 +523,39 @@ for (const route of ["no-route", "blocked-during-probe", "insufficient-capacity"
     return true;
   };
   sandbox.state.nukeWantSlots = {
-    targetSamId: 77, targetTile: 20,
-    need: route === "insufficient-capacity" || route === "capacity-loss" || route === "partly-cooling" ? 6 : 4,
+    targetSamId: 77,
+    targetTile: 20,
+    need:
+      route === "insufficient-capacity" || route === "capacity-loss" || route === "partly-cooling"
+        ? 6
+        : 4,
     unblockedSiloIds: route === "partly-cooling" ? [secondSilo.id()] : [],
   };
   const sent = await structures.maybeUpgradeSiloForNukeDemand();
-  assert.equal(sent, route === "cooling" || route === "partly-cooling", `${route} construction demand needs a live useful route`);
-  assert.deepEqual(upgraded, route === "partly-cooling" ? [secondSilo.id()] : route === "cooling" ? [silo.id()] : []);
+  assert.equal(
+    sent,
+    route === "cooling" || route === "partly-cooling",
+    `${route} construction demand needs a live useful route`,
+  );
+  assert.deepEqual(
+    upgraded,
+    route === "partly-cooling" ? [secondSilo.id()] : route === "cooling" ? [silo.id()] : [],
+  );
   sandbox.state.nukeWantSlots = null;
 }
 
-for (const change of ["protected-target", "own-aim", "aim-during-probe", "target-during-probe", "hostile", "unowned"]) {
+for (const change of [
+  "protected-target",
+  "own-aim",
+  "aim-during-probe",
+  "target-during-probe",
+  "hostile",
+  "unowned",
+]) {
   const { behavior, game, player, world, nukeTarget } = makeSalvoWorld();
   player.isPlayer = nukeTarget.isPlayer = () => true;
-  let owner = change === "own-aim" ? player : change === "unowned" ? { isPlayer: () => false } : nukeTarget;
+  let owner =
+    change === "own-aim" ? player : change === "unowned" ? { isPlayer: () => false } : nukeTarget;
   let protectedTarget = change === "protected-target";
   game.owner = () => owner;
   game.units = () => [world.sam(77, 3)];
@@ -468,22 +576,45 @@ for (const change of ["protected-target", "own-aim", "aim-during-probe", "target
   };
   structures.rankNukeDemandSiloUpgrades = () => [{ silo }];
   let upgrades = 0;
-  structures.executeStructureUpgradeCandidate = async () => { upgrades++; return true; };
+  structures.executeStructureUpgradeCandidate = async () => {
+    upgrades++;
+    return true;
+  };
   sandbox.state.nukeWantSlots = { targetSamId: 77, targetTile: 20, need: 4, unblockedSiloIds: [] };
   const allowed = change === "hostile" || change === "unowned";
-  assert.equal(await structures.maybeUpgradeSiloForNukeDemand(), allowed,
-    `${change} capacity demand obeys nuclear policy`);
+  assert.equal(
+    await structures.maybeUpgradeSiloForNukeDemand(),
+    allowed,
+    `${change} capacity demand obeys nuclear policy`,
+  );
   assert.equal(upgrades, allowed ? 1 : 0);
   if (!allowed) assert.equal(sandbox.state.nukeWantSlots, null);
   sandbox.state.nukeWantSlots = null;
 }
 
-for (const capture of ["hostile", "own-before-due", "own-during-probe", "teammate", "protected", "unowned"]) {
+for (const capture of [
+  "hostile",
+  "own-before-due",
+  "own-during-probe",
+  "teammate",
+  "protected",
+  "unowned",
+]) {
   const { behavior, game, player, world, nukeTarget } = makeSalvoWorld();
   player.isPlayer = nukeTarget.isPlayer = () => true;
   player.team = () => "blue";
-  const teammate = { isPlayer: () => true, smallID: () => 3, team: () => "blue", isAlive: () => true };
-  const protectedPlayer = { isPlayer: () => true, smallID: () => 4, team: () => null, isAlive: () => true };
+  const teammate = {
+    isPlayer: () => true,
+    smallID: () => 3,
+    team: () => "blue",
+    isAlive: () => true,
+  };
+  const protectedPlayer = {
+    isPlayer: () => true,
+    smallID: () => 4,
+    team: () => null,
+    isAlive: () => true,
+  };
   const unowned = { isPlayer: () => false };
   let owner = nukeTarget;
   game.owner = () => owner;
@@ -504,8 +635,13 @@ for (const capture of ["hostile", "own-before-due", "own-during-probe", "teammat
   await behavior.processPendingNukeLaunches();
   const allowed = capture === "hostile" || capture === "unowned";
   assert.equal(emitted.length, allowed ? 1 : 0, `${capture} destination checked at emission`);
-  assert.equal(behavior.hasPendingNukeLaunches(), false, `${capture} launch resolved without stale retries`);
-  if (!allowed) assert.equal(behavior.queueDelayedNukeLaunch(20, UNIT.AtomBomb, nukeTarget, 5), false);
+  assert.equal(
+    behavior.hasPendingNukeLaunches(),
+    false,
+    `${capture} launch resolved without stale retries`,
+  );
+  if (!allowed)
+    assert.equal(behavior.queueDelayedNukeLaunch(20, UNIT.AtomBomb, nukeTarget, 5), false);
   launchSink = null;
 }
 
@@ -513,25 +649,35 @@ for (const rejection of ["captured-first", "captured-all", "none"]) {
   const { behavior, game, player, nukeTarget } = makeSalvoWorld();
   player.isPlayer = nukeTarget.isPlayer = () => true;
   const captured = new Set();
-  game.owner = (tile) => captured.has(tile) ? player : nukeTarget;
+  game.owner = (tile) => (captured.has(tile) ? player : nukeTarget);
   const probes = new Map();
   player.buildables = async (tile) => {
     probes.set(tile, (probes.get(tile) ?? 0) + 1);
-    if (probes.get(tile) === 2 && (rejection === "captured-all" ||
-        (rejection === "captured-first" && tile === 20))) captured.add(tile);
+    if (
+      probes.get(tile) === 2 &&
+      (rejection === "captured-all" || (rejection === "captured-first" && tile === 20))
+    )
+      captured.add(tile);
     return [{ type: UNIT.AtomBomb, cost: 1n, canBuild: true }];
   };
   behavior.nukeHasPositiveExpectedValue = async () => true;
   const emitted = [];
   launchSink = emitted;
   const fired = await behavior.fireLegendaryClearFallthrough(
-    [{ tile: 20, value: 100 }, { tile: 30, value: 50 }],
-    nukeTarget, { type: UNIT.AtomBomb, cost: 1n }, [],
+    [
+      { tile: 20, value: 100 },
+      { tile: 30, value: 50 },
+    ],
+    nukeTarget,
+    { type: UNIT.AtomBomb, cost: 1n },
+    [],
   );
   assert.equal(fired, rejection !== "captured-all", `${rejection} reports actual dispatch`);
-  assert.deepEqual(emitted.map((shot) => shot.tile),
+  assert.deepEqual(
+    emitted.map((shot) => shot.tile),
     rejection === "captured-all" ? [] : [rejection === "captured-first" ? 30 : 20],
-    `${rejection} preserves the first valid ranked destination`);
+    `${rejection} preserves the first valid ranked destination`,
+  );
   launchSink = null;
 }
 
@@ -541,15 +687,24 @@ for (const capture of ["before-due", "poor", "price", "price-poor", "buildable"]
   let owner = capture === "before-due" || capture === "poor" ? player : nukeTarget;
   game.owner = () => owner;
   game.players = () => [nukeTarget];
-  game.config = () => ({ isUnitDisabled: () => false });
-  game.euclideanDistSquared = () => 0;
-  player.gold = () => capture === "poor" || capture === "price-poor" ? 0n : 10_000_000n;
-  player.units = () => [{
-    isUnderConstruction: () => false,
-    tile: () => 5,
-    level: () => 1,
-    type: () => UNIT.MissileSilo,
-  }];
+  game.config = () => ({
+    isUnitDisabled: () => false,
+    nukeMagnitudes: () => ({ inner: 80, outer: 100 }),
+  });
+  game.euclideanDistSquared = (a, b) => (a - b) * (a - b);
+  // The finisher's enemy-value gate needs a priced structure at the target
+  // and no friendly structure inside its blast, so the capture rejections
+  // under test are reached instead of the gate holding first.
+  world.targetSams.push(world.sam("capture-target-sam", 1));
+  player.gold = () => (capture === "poor" || capture === "price-poor" ? 0n : 10_000_000n);
+  player.units = () => [
+    {
+      isUnderConstruction: () => false,
+      tile: () => 500,
+      level: () => 1,
+      type: () => UNIT.MissileSilo,
+    },
+  ];
   behavior.findEnemySamsCoveringTile = () => [];
   behavior.getPerceivedNukeCost = async () => {
     if (capture === "price" || capture === "price-poor") owner = player;
@@ -1217,12 +1372,18 @@ for (const failedProbe of [1, 2]) {
   let probes = 0;
   player.buildables = (...args) => (++probes === 1 ? [] : buildables(...args));
   behavior._pendingNukeLaunches = [20, 21].map((flightTicks) => ({
-    dueTick: world.tick, tile: 20, nukeType: UNIT.AtomBomb, targetPlayer: nukeTarget,
+    dueTick: world.tick,
+    tile: 20,
+    nukeType: UNIT.AtomBomb,
+    targetPlayer: nukeTarget,
     salvo: { salvoId: 123, flightTicks },
   }));
   behavior.getAbortedSalvoIds = () => new Set();
-  assert.equal(await behavior.processPendingNukeLaunches(), false,
-    "the tail cannot claim the retrying head's silo slot");
+  assert.equal(
+    await behavior.processPendingNukeLaunches(),
+    false,
+    "the tail cannot claim the retrying head's silo slot",
+  );
   assert.equal(probes, 1);
   assert.equal(emitted.length, 0);
   world.tick++;
@@ -1255,7 +1416,8 @@ for (const delayedFirst of [false, true]) {
   const waits = delayedFirst ? [5, 0] : [0];
   behavior.getSamSalvo = () => ({ bombsToFire: waits.length, waits });
   sandbox.state.nukeWantSlots = null;
-  const startSalvo = () => behavior.fireSamSalvo(
+  const startSalvo = () =>
+    behavior.fireSamSalvo(
       {
         targetTile: 20,
         totalBombs: waits.length,
@@ -1289,24 +1451,40 @@ for (const delayedFirst of [false, true]) {
   behavior.getAvailableSiloEntries = () => [{ flightTicks: liveFlight }];
   behavior.getSamSalvo = () => ({ bombsToFire: 2, waits: [0, 1] });
   sandbox.state.nukeWantSlots = null;
-  await behavior.fireSamSalvo({ targetTile: 20, totalBombs: 2, siloEntries: [],
-    launchSequence: [{ flightTicks: 20 }, { flightTicks: 20 }],
-  }, nukeTarget, 1n);
-  assert.equal(sandbox.state.postSalvoHydrogen.dueTick, 850,
-    "an immediate shot updates the finisher from its emission-time source flight");
+  await behavior.fireSamSalvo(
+    {
+      targetTile: 20,
+      totalBombs: 2,
+      siloEntries: [],
+      launchSequence: [{ flightTicks: 20 }, { flightTicks: 20 }],
+    },
+    nukeTarget,
+    1n,
+  );
+  assert.equal(
+    sandbox.state.postSalvoHydrogen.dueTick,
+    850,
+    "an immediate shot updates the finisher from its emission-time source flight",
+  );
   world.tick++;
   liveFlight = 65;
   const buildables = player.buildables;
   player.buildables = async () => [];
   assert.equal(await behavior.processPendingNukeLaunches(), false);
-  assert.equal(behavior._pendingNukeLaunches[0].salvo.flightTicks, 20,
-    "a rejected quote retains the queued forecast until an actual dispatch");
+  assert.equal(
+    behavior._pendingNukeLaunches[0].salvo.flightTicks,
+    20,
+    "a rejected quote retains the queued forecast until an actual dispatch",
+  );
   assert.equal(sandbox.state.postSalvoHydrogen.dueTick, 850);
   player.buildables = buildables;
   world.tick++;
   assert.equal(await behavior.processPendingNukeLaunches(), true);
-  assert.equal(sandbox.state.postSalvoHydrogen.dueTick, 872,
-    "a delayed shot propagates its refreshed flight through the pending finisher");
+  assert.equal(
+    sandbox.state.postSalvoHydrogen.dueTick,
+    872,
+    "a delayed shot propagates its refreshed flight through the pending finisher",
+  );
 }
 {
   const { world, nukeTarget, behavior } = makeSalvoWorld();
@@ -1503,12 +1681,14 @@ launchSink = null;
   behavior.getPerceivedNukeCost = async () => 5_000_000n;
   behavior.player.units = (type) =>
     type === UNIT.MissileSilo
-      ? [{
-        isUnderConstruction: () => false,
-        tile: () => 500,
-        level: () => 1,
-        type: () => UNIT.MissileSilo,
-      }]
+      ? [
+          {
+            isUnderConstruction: () => false,
+            tile: () => 500,
+            level: () => 1,
+            type: () => UNIT.MissileSilo,
+          },
+        ]
       : [];
   behavior.player.buildables = async () => [
     { type: UNIT.HydrogenBomb, cost: 5_000_000n, canBuild: true },
@@ -1549,10 +1729,18 @@ launchSink = null;
     "the finisher is a Hydrogen bomb at the salvo's target tile",
   );
   assert.equal(behavior.hydrogenBombsLaunched, 1, "the finisher counts as a Hydrogen launch");
-  assert.equal(sandbox.state.stats.nukes, totalNukesBefore + 1, "one dispatched finisher is one total nuke");
+  assert.equal(
+    sandbox.state.stats.nukes,
+    totalNukesBefore + 1,
+    "one dispatched finisher is one total nuke",
+  );
   assert.equal(sandbox.state.postSalvoHydrogen, null, "a fired finisher clears the schedule");
   assert.equal(await behavior.maybeFirePostSalvoHydrogen(), false);
-  assert.equal(behavior.hydrogenBombsLaunched, 1, "a repeated check cannot count the finisher again");
+  assert.equal(
+    behavior.hydrogenBombsLaunched,
+    1,
+    "a repeated check cannot count the finisher again",
+  );
 }
 
 launchSink = null;

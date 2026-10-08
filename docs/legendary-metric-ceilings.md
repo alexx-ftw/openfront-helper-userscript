@@ -6688,3 +6688,48 @@ structures) are future work, not silent tuning.
 
 Receipt: /home/eros/ofh-matrix/finisher-gate-receipt/baikal-nuke-wars.log
 Run under MemoryMax=4G, MemorySwapMax=1G, OOMPolicy=kill, serial.
+
+## Hold-semantics receipt (2026-10-08, iteration 2): outcome-neutral
+
+Hold-instead-of-clear reproduced the clear run exactly: won=true, 26
+Atoms, 48 Hydrogens, ownStructuresNuked=12, 50,500,000, tick 7971. The
+held finisher's geometry never improved during the rest of the game, so
+retention semantics changed nothing on this seed and the divergence from
+baseline is priced value, not memory of the finisher.
+
+Receipt: /home/eros/ofh-matrix/finisher-hold-receipt/baikal-nuke-wars.log
+Run under MemoryMax=4G, MemorySwapMax=1G, OOMPolicy=kill, serial.
+
+## Pre-declaration 2: finisher gate MIRV weighting (2026-10-08, iteration 3)
+
+The gate's blastStructureValue ignored mirvCapableSiloPriority, the x3
+counterforce weighting the tile scorer already applies to enemy silos
+whose owner can pay for a MIRV. The gate now weights enemy structures
+through mirvCapableSiloPriority; a new fixture case pins that a
+mirv-capable enemy silo inside the blast outweighs own replacement loss
+and releases the finisher.
+
+Pre-declared expectations for baikal-nuke-wars: won=true and alive=true
+required. If the held finisher's target cluster contained a MIRV-capable
+enemy silo, the finisher now fires and counters move back toward baseline
+(<=11 own nuked, more damage, earlier tick). If not, counters stay at
+26A/48H/12/50.5M and the gate's residual cost on this seed is recorded
+as accepted under the standing goal, with counterforce silo pricing still
+justified on its own terms.
+
+Receipt will be appended after the run.
+
+## Integrated receipt 3 (2026-10-08, after the MIRV-weighting run)
+
+Counters identical to iterations 1 and 2: won=true, alive=true, 26
+Atoms, 48 Hydrogens, ownStructuresNuked=12, 50,500,000, tick 7971. The
+held finisher's target cluster contains no mirv-capable enemy silo, so
+the weighting does not release it on this seed. Per the pre-declared
+terms: won/alive hold, the residual seed cost (12 vs 11 own nuked,
+-22.85M damage, +1310 ticks) is recorded as accepted under the standing
+goal, and the counterforce silo weighting stands on its own terms - it
+releases the finisher against MIRV-capable clusters (fixture-pinned) and
+keeps nuke logic cohesive with the tile scorer's pricing.
+
+Receipt: /home/eros/ofh-matrix/finisher-mirv-receipt/baikal-nuke-wars.log
+Run under MemoryMax=4G, MemorySwapMax=1G, OOMPolicy=kill, serial.

@@ -88,11 +88,15 @@ Object.assign(nuke, {
   player: attacker,
   structureBehavior: defense,
   _pendingNukeLaunches: [],
-  postSalvoHydrogenTarget: () => ({}),
-  // The stagger scenario nukes unclaimed land, so the finisher's enemy-value
-  // gate would hold it; this fixture tests stagger mechanics, not gate
-  // economics (covered by nuke-finisher-friendly-gate-fixture).
-  blastStructureValue: () => 10_000_000,
+  // A priced enemy structure at the target lets the finisher's enemy-value
+  // gate pass; this fixture tests stagger mechanics, not gate economics
+  // (covered by nuke-finisher-friendly-gate-fixture).
+  postSalvoHydrogenTarget: () => ({
+    units: (type) =>
+      type === UnitType.City
+        ? [{ tile: () => target, level: () => 1, type: () => UnitType.City }]
+        : [],
+  }),
   getPerceivedNukeCost: async () => 1n,
   findEnemySamsCoveringTile: () => [],
   sendNuke: async () => true,

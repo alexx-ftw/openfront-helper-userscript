@@ -2395,8 +2395,10 @@
       // monetary geometry as the anti-SAM aim selector: fire only when the
       // remaining enemy structure value inside the blast covers the friendly
       // replacement loss (blastStructureValue vs friendlyFirePenalty).
-      // A friendly structure inside the circle is a permanent condition, so
-      // the pending finisher is cleared instead of retained.
+      // Rejection holds the finisher instead of clearing it: the geometry
+      // can change (own structures inside the circle are destroyed by the
+      // enemy, enemy structures grow), and the integrated Baikal receipt
+      // showed a permanently cleared finisher cascading into worse survival.
       // Degenerate magnitudes (config shims without nukeMagnitudes) price
       // every blast as empty, so the finisher safely holds instead of firing
       // unpriced.
@@ -2404,18 +2406,21 @@
         inner: 0,
         outer: 0,
       };
-      const enemyValue = this.blastStructureValue(
-        pending.targetTile,
-        unitsOfTypes(target),
-        magnitude.outer,
-      );
+      // Enemy MissileSilos count through mirvCapableSiloPriority: finishing a
+      // silo cluster that can already pay for a MIRV is worth trading own
+      // replacement loss for, matching the tile scorer's counterforce logic.
+      const enemyValue = unitsOfTypes(target)
+        .filter((unit) =>
+          this.game.euclideanDistSquared(pending.targetTile, unit.tile()) <
+            magnitude.outer * magnitude.outer)
+        .reduce((sum, unit) =>
+          sum + this.nukeStructureValue(unit) * this.mirvCapableSiloPriority(unit), 0);
       const friendlyPenalty = this.friendlyFirePenalty(
         pending.targetTile,
         magnitude,
         true,
       );
       if (enemyValue - friendlyPenalty <= 0) {
-        state.postSalvoHydrogen = null;
         return false;
       }
       const sent = await this.sendNuke(

@@ -13,7 +13,11 @@ import {
 } from "../scripts/headless/opponent-adapter.js";
 
 // Prior-pass prefixes need receipts; a freshly validated due batch can emit together.
-for (const [prefixCount, physicalDefense] of [[0, false], [2, false], [0, true]] as const) {
+for (const [prefixCount, physicalDefense] of [
+  [0, false],
+  [2, false],
+  [0, true],
+] as const) {
   const game = await setup(
     "big_plains",
     { instantBuild: true },
@@ -27,9 +31,14 @@ for (const [prefixCount, physicalDefense] of [[0, false], [2, false], [0, true]]
   const defender = game.player("defender");
   const source = game.ref(1, physicalDefense ? 80 : 1);
   const target = game.ref(80, 1);
+  // A priced defender structure on its own tile: the finisher's pending
+  // target points here, so its enemy-value gate passes even after the
+  // atomic salvo flattens the SAM on the other tile.
+  const finisherTarget = game.ref(84, 4);
   attacker.addGold(100_000_000n);
   attacker.conquer(source);
   defender.conquer(target);
+  defender.conquer(finisherTarget);
   if (physicalDefense) defender.conquer(game.ref(180, 180));
   const silo = attacker.buildUnit(UnitType.MissileSilo, source, {});
   for (let slot = 1; slot < 3; slot++) {
@@ -39,6 +48,7 @@ for (const [prefixCount, physicalDefense] of [[0, false], [2, false], [0, true]]
   const sam = defender.buildUnit(UnitType.SAMLauncher, target, {});
   sam.increaseLevel();
   sam.reloadMissile();
+  defender.buildUnit(UnitType.City, finisherTarget, {});
   if (physicalDefense) {
     game.addExecution(new SAMLauncherExecution(defender, null, sam));
     game.addExecution(new MissileSiloExecution(silo));
@@ -75,7 +85,6 @@ for (const [prefixCount, physicalDefense] of [[0, false], [2, false], [0, true]]
     // The salvo flattens the target's only structure, so the finisher's
     // enemy-value gate would hold it; this fixture tests receipt/reload
     // resume mechanics, not gate economics (nuke-finisher-friendly-gate-fixture).
-    nuke.blastStructureValue = () => 10_000_000;
     const rival = bot.api.game.playerBySmallID(defender.smallID());
     const flight = nuke.getAvailableSiloEntries(
       [bot.nationBot.player.units(UnitType.MissileSilo)[0]],
@@ -146,34 +155,48 @@ for (const [prefixCount, physicalDefense] of [[0, false], [2, false], [0, true]]
         assert.ok(plan);
         return plan.startTick + plan.path.length;
       });
-      assert.deepEqual(arrivals, [2, 3, 4].map((offset) => emittedTick + flight + offset),
-        "the native build-menu pipeline and silo serialization exceed travel-only estimates");
+      assert.deepEqual(
+        arrivals,
+        [2, 3, 4].map((offset) => emittedTick + flight + offset),
+        "the native build-menu pipeline and silo serialization exceed travel-only estimates",
+      );
     }
     if (physicalDefense) {
       const missiles = attacker.units(UnitType.AtomBomb);
       const finisher = {
-        salvoId: salvo.salvoId, targetTile: target, dueTick: game.ticks(),
+        salvoId: salvo.salvoId,
+        targetTile: finisherTarget,
+        dueTick: game.ticks(),
         targetSmallID: defender.smallID(),
       };
       bot.harness.internals.state.postSalvoHydrogen = finisher;
-      const lastImpact = Math.max(...missiles.map((missile) => {
-        const plan = bot.api.game.motionPlans().get(missile.id());
-        assert.ok(plan);
-        return plan.startTick + plan.path.length;
-      }));
+      const lastImpact = Math.max(
+        ...missiles.map((missile) => {
+          const plan = bot.api.game.motionPlans().get(missile.id());
+          assert.ok(plan);
+          return plan.startTick + plan.path.length;
+        }),
+      );
       while (game.ticks() <= lastImpact && missiles.some((missile) => missile.isActive())) {
         await bot.api.beginTick(bot.pageGame.myPlayer());
-        assert.equal(await nuke.maybeFirePostSalvoHydrogen(), false,
-          "a stale finisher deadline cannot bypass live native Atoms");
+        assert.equal(
+          await nuke.maybeFirePostSalvoHydrogen(),
+          false,
+          "a stale finisher deadline cannot bypass live native Atoms",
+        );
         step();
       }
       assert.equal(sam.missileTimerQueue().length, 2, "the real SAM spends both charges");
       assert.equal(sam.isActive(), false, "the saturation batch destroys the real SAM");
       assert.equal(silo.isActive(), true, "the source remains outside the Atomic blast");
       // Native silo execution reloads at most one expired queue entry per tick.
-      const launchDeadline = Math.max(finisher.dueTick,
-        ...silo.missileTimerQueue().map((tick) => tick + game.config().SiloCooldown()))
-        + silo.missileTimerQueue().length + 1;
+      const launchDeadline =
+        Math.max(
+          finisher.dueTick,
+          ...silo.missileTimerQueue().map((tick) => tick + game.config().SiloCooldown()),
+        ) +
+        silo.missileTimerQueue().length +
+        1;
       let fired = false;
       while (!fired && game.ticks() <= launchDeadline) {
         await bot.api.beginTick(bot.pageGame.myPlayer());
@@ -183,13 +206,20 @@ for (const [prefixCount, physicalDefense] of [[0, false], [2, false], [0, true]]
       assert.equal(fired, true, "the finisher resumes after native impacts and silo reload");
       assert.ok(game.ticks() >= finisher.dueTick, "the native impact landing margin is respected");
       assert.equal(bot.harness.internals.state.postSalvoHydrogen, null);
-      assert.equal(bot.intentBuffer.filter((intent) =>
-        intent.type === "build_unit" && intent.unit === UnitType.HydrogenBomb).length, 1);
+      assert.equal(
+        bot.intentBuffer.filter(
+          (intent) => intent.type === "build_unit" && intent.unit === UnitType.HydrogenBomb,
+        ).length,
+        1,
+      );
       step(bot.intentBuffer);
       step();
       step();
-      assert.equal(attacker.units(UnitType.HydrogenBomb).length, 1,
-        "the resumed finisher creates a real native Hydrogen");
+      assert.equal(
+        attacker.units(UnitType.HydrogenBomb).length,
+        1,
+        "the resumed finisher creates a real native Hydrogen",
+      );
       console.log("native saturation batch penetrates an active level-two SAM");
     }
     console.log("native salvo receipt-gap regression passed");
