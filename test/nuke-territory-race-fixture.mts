@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { GameRunner } from "../openfront-engine/src/core/GameRunner";
 import { Executor } from "../openfront-engine/src/core/execution/ExecutionManager";
+import { TurnSchema } from "../openfront-engine/src/core/Schemas";
 import { PlayerInfo, PlayerType, UnitType } from "../openfront-engine/src/core/game/Game";
 import { setup } from "../openfront-engine/tests/util/Setup";
 import {
@@ -34,7 +35,35 @@ for (const action of ["launch", "silo-upgrade"]) {
         ? defender.buildUnit(UnitType.SAMLauncher, game.ref(80, 2), {})
         : null;
     const executor = new Executor(game, "nuke-territory-race", "attacker");
-    const runner = new GameRunner(game, executor, () => {});
+    let deliveredTick = -1;
+    const runner = new GameRunner(game, executor, (update) => {
+      assert.ok(!("errMsg" in update), "the runner must not hide an execution failure");
+      deliveredTick = update.tick;
+    });
+    const runTurn = (intents = []) => {
+      const tick = game.ticks();
+      const before = {
+        level: silo.level(),
+        gold: attacker.gold(),
+        atoms: attacker.units(UnitType.AtomBomb).length,
+      };
+      runner.addTurn(
+        TurnSchema.parse({
+          turnNumber: tick,
+          intents: intents.map((intent) => ({ ...intent, clientID: "attacker" })),
+        }),
+      );
+      assert.equal(runner.pendingTurns(), 1);
+      assert.equal(game.ticks(), tick, "enqueueing cannot execute the turn");
+      assert.equal(silo.level(), before.level);
+      assert.equal(attacker.gold(), before.gold);
+      assert.equal(attacker.units(UnitType.AtomBomb).length, before.atoms);
+      assert.equal(runner.executeNextTick(), true);
+      assert.equal(game.ticks(), tick + 1);
+      assert.equal(deliveredTick, game.ticks(), "the runner delivers its engine update");
+      assert.equal(runner.pendingTurns(), 0);
+      assert.equal(runner.executeNextTick(), false, "an empty queue cannot advance the engine");
+    };
     const bot = createMaxDifficultyOpponent({ clientID: "attacker" });
     bot.attach({ runner, clientID: "attacker" });
     await bot.api.beginTick(bot.pageGame.myPlayer());
@@ -90,6 +119,10 @@ for (const action of ["launch", "silo-upgrade"]) {
         : await bot.nationBot.structureBehavior.maybeUpgradeSiloForNukeDemand();
     assert.equal(nuke.isValidNukeTarget(targetPlayer), true, "the rival remains a valid target");
     assert.equal(nuke.isValidNukeDestination(target), capture === "none");
+    if (capture !== "none") {
+      assert.equal(bot.intentBuffer.length, 0, "a captured destination produces no intents");
+      runTurn();
+    }
     assert.equal(probes, action === "silo-upgrade" && capture === "before-probe" ? 0 : 1);
     assert.equal(sent, capture === "none");
     const launches = bot.intentBuffer.filter(
@@ -103,8 +136,7 @@ for (const action of ["launch", "silo-upgrade"]) {
     assert.equal(upgrades.length, action === "silo-upgrade" && capture === "none" ? 1 : 0);
     if (action === "silo-upgrade") {
       if (capture === "none") {
-        game.addExecution(executor.createExec({ ...upgrades[0], clientID: "attacker" }));
-        game.executeNextTick();
+        runTurn(upgrades);
         assert.equal(silo.level(), 2, "the emitted intent upgrades the native silo");
         assert.ok(attacker.gold() < goldBefore, "the native upgrade actually spends gold");
       } else {
@@ -118,11 +150,10 @@ for (const action of ["launch", "silo-upgrade"]) {
       }
       assert.equal(launches.length, 0, "the capacity request cannot launch a bomb");
     } else if (capture === "none") {
-      game.addExecution(executor.createExec({ ...launches[0], clientID: "attacker" }));
-      game.executeNextTick();
-      game.executeNextTick();
-      game.executeNextTick();
-      game.executeNextTick();
+      runTurn(launches);
+      runTurn();
+      runTurn();
+      runTurn();
       assert.equal(
         attacker.units(UnitType.AtomBomb).length,
         1,

@@ -5884,3 +5884,21 @@ through the headless adapter; this does not test worker IPC/serialization.
 The headless build menu supplies intents to native Executor executions
 directly, bypassing the browser BuildMenu and GameRunner turn queue.
 Those integration paths remain unverified by this fixture.
+
+Native turn-queue gate: replace direct fixture execution with schema-checked
+stamped intents submitted through GameRunner.addTurn/executeNextTick. Verify
+that enqueueing has no engine effect, one queued turn advances exactly one
+tick and delivers a successful callback, draining consumes the turn, and an
+empty queue cannot advance. The existing native missile/level/gold checks
+must pass through this path. Captured destinations submit an empty turn and
+must still produce no launch or upgrade. Browser BuildMenu and worker IPC
+remain outside this headless gate.
+
+Native turn-queue result: all six scenarios and the integrated headless
+contract suite pass. Schema-checked launch and upgrade intents now reach
+native execution exclusively through the queued runner path. Enqueueing
+preserves tick, silo level, gold and Atom count; each consumed turn delivers
+the corresponding successful callback, while an exhausted queue returns
+false. Captured targets produce no intents, and an empty consumed turn
+leaves their silo level and gold intact. This closes the turn-queue bypass
+identified by review; browser menu and worker IPC remain unverified.
