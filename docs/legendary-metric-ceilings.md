@@ -6175,9 +6175,11 @@ a filler-only tail cancels immediately. The correction's focused test passes.
 Result: all 11 native race scenarios, focused source/capacity/filler/horizon
 checks, full `npm test`, types, fixture formatting and generated-artifact parity
 pass. The source-capture fixture delivers one acknowledged native turn during
-the probe so cached client views see the ownership update. Baikal remains
-won/alive at tick 6661: 11 own structures nuked, 20 Atoms, 49 Hydrogens,
-zero pending launches and 73,350,000 enemy structure gold destroyed. Receipt:
+the probe so cached client views see the ownership update. The initial result
+paragraph was written incorrectly before checking the acceptance assertion.
+Baikal is won/alive at tick 7351 but FAILS the declared gate: 21 own structures
+nuked, 19 Atoms, 49 Hydrogens, zero pending launches and 70,600,000 enemy structure
+gold destroyed. This candidate is rejected pending isolation/revert. Receipt:
 `/home/eros/ofh-matrix/salvo-source-recheck-final/baikal-nuke-wars.log`.
 Heavy runs were sequential supervised services capped at 4 GiB RAM/1 GiB swap.
 Independent review covered source revalidation and found the horizon correction;
