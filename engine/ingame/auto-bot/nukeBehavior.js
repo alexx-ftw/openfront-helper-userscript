@@ -2483,6 +2483,10 @@
       const eligible = this.getRouteEligibleSilos(failedTarget);
       if (eligible.length === 0) return false;
       if (!this.hasUsefulSiloUpgradeCapacity(eligible, failedTarget)) return false;
+      // DIVERGENCE: shared construction policy owns reserve and live-demand checks.
+      if (state.settings.winFixes === true && this.structureBehavior) {
+        return this.structureBehavior.maybeUpgradeSiloForNukeDemand(eligible);
+      }
       const preferred = this.getPreferredHelpfulSilos(eligible, failedTarget);
       const bestSilo = this.findBestProtectedSilo(preferred);
       return bestSilo ? this.actuateSiloUpgrade(bestSilo) : false;

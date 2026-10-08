@@ -5738,3 +5738,44 @@ structure gold nuked; this row does not exercise a successful finisher.
 The active openfront-helper-dev.service serves byte-identical build-id,
 full userscript and Auto-Bot artifacts on 127.0.0.1:17373. This verifies
 delivery from the local server, not adoption by an already-open browser.
+
+Cooperative silo demand pre-declaration (2026-10-08): with winFixes enabled,
+StructureBehavior validates SAM demand and reserves gold for economy/defense,
+but NukeBehavior's immediate helpful-silo route separately dispatches an
+upgrade without those gates. Use the already-wired structure planner for
+this demand route, respecting a refusal instead of falling back to direct
+spending. Preserve the standalone/vanilla route when winFixes is disabled
+or the shared planner is absent. Regressions use both real behavior methods:
+an economic reserve veto, destroyed target, target lost during the worker
+probe and unchanged permitted demand. Preserve the original empty-route and
+insufficient maximum-capacity vetoes. Recheck available gold and reserves
+after the worker probe, with a dedicated budget-loss regression. Apply the
+same reserve gate to each candidate's actual upgrade price, not only the
+minimum silo cost; test an upgrade that is individually affordable but
+would consume the reserved budget. Verify full suite, build parity and
+Baikal; a tactical outcome change must be compared rather than presumed good.
+Independent review identified a scope fallback that could select a blocked
+silo despite the original route veto. Keep the nuclear caller's eligible
+silo set constrained through shared capacity checks, probing and ranking;
+test empty and obsolete preferred IDs with a more protected blocked silo.
+Resolve preferences only after filtering to eligible silos, so a preferred
+ID that still exists but is now blocked can fall through to a useful silo.
+
+Cooperative silo demand result (2026-10-08): baseline immediate upgrade
+bypassed the economic reserve (one unwanted upgrade); the nuclear caller
+now uses shared construction policy after the original route/capacity gates.
+The planner rechecks gold after its worker probe and applies the reserve
+to each actual upgrade price. Eight coupled-policy cases pass, including
+budget loss during the probe and a 150-cost upgrade with 200 available and
+100 reserved, while the 20-cost control upgrades. Three real scope/ranker
+cases select the route-eligible silo despite empty, missing or blocked
+preferred IDs; eligibility filtering precedes preference fallback.
+Independent review approved this scope correction and the budget path.
+Final unchanged engine validation: full npm suite, focused nuclear/SAM,
+Hydrogen-retention/EV tests and build parity pass. Baikal receipt
+`/home/eros/ofh-matrix/cooperative-silo-reviewed`: won/alive at tick 6661,
+20 atoms, 49 hydrogens, 11 own structures nuked and 73,350,000 enemy
+structure gold nuked, matching the preceding receipt. The active local
+service serves byte-identical generated artifacts. This proves coordinated
+reserve/scope correctness and a single-row non-regression, not a measured
+increase in aggregate victories or adoption in an already-open browser.

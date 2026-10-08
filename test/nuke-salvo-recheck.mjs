@@ -195,6 +195,79 @@ for (const change of ["unchanged", "destroyed", "friendly", "during-probe", "rep
   sandbox.state.nukeWantSlots = null;
 }
 
+for (const restriction of ["budget", "budget-during-probe", "upgrade-cost", "destroyed", "during-probe", "blocked-route", "impossible-capacity", "permitted"]) {
+  const { behavior, game, player, world } = makeSalvoWorld();
+  const sam = world.sam(77, 3);
+  let targetSams = restriction === "destroyed" ? [] : [sam];
+  game.units = () => targetSams;
+  game.config = () => ({ isUnitDisabled: () => false });
+  player.units = () => [];
+  const failedTarget = behavior.rememberFailedSamTarget({
+    targetSamId: 77, targetTile: 20, totalBombs: 4, siloEntries: [],
+    coveringSamIds: new Set([77]),
+  });
+  const silo = { id: () => 1, level: () => 1 };
+  behavior.getRouteEligibleSilos = () => restriction === "blocked-route" ? [] : [silo];
+  behavior.hasUsefulSiloUpgradeCapacity = () => restriction !== "impossible-capacity";
+  behavior.getPreferredHelpfulSilos = (silos) => silos;
+  behavior.findBestProtectedSilo = () => silo;
+  let upgrades = 0;
+  behavior.actuateSiloUpgrade = async () => { upgrades++; return true; };
+  const structures = new sandbox.__StructureBehavior({}, game, player);
+  behavior.structureBehavior = structures;
+  structures.nukeDemandScopedSilos = () => [silo];
+  let availableGold = restriction === "budget" ? 50n : 200n;
+  structures.availableGoldAfterReserve = () => availableGold;
+  structures.safeStructureCost = () => 20n;
+  structures.economicConstructionPressure = () => ({ cost: 100n });
+  structures.defensiveConstructionReserve = () => 0n;
+  structures.buildableForUnits = async () => {
+    if (restriction === "during-probe") targetSams = [];
+    if (restriction === "budget-during-probe") availableGold = 50n;
+    return restriction === "upgrade-cost" || restriction === "permitted"
+      ? [{ cost: restriction === "upgrade-cost" ? 150n : 20n, canUpgrade: true }] : [];
+  };
+  if (restriction !== "upgrade-cost" && restriction !== "permitted") structures.rankNukeDemandSiloUpgrades = () => [{}];
+  structures.executeStructureUpgradeCandidate = async (candidate) => {
+    if (!candidate) return false;
+    upgrades++;
+    return true;
+  };
+  const upgraded = await behavior.maybeUpgradeHelpfulSilo(failedTarget);
+  assert.equal(upgrades, restriction === "permitted" ? 1 : 0,
+    `${restriction} immediate nuke demand respects shared construction gates`);
+  assert.equal(upgraded, restriction === "permitted");
+  sandbox.state.nukeWantSlots = null;
+}
+
+for (const preferredIds of [[], [99], [2]]) {
+  const { behavior, game, player, world } = makeSalvoWorld();
+  game.units = () => [world.sam(77, 3)];
+  game.config = () => ({ isUnitDisabled: () => false });
+  const good = { id: () => 1, level: () => 1, isUnderConstruction: () => false };
+  const blocked = { id: () => 2, level: () => 1, isUnderConstruction: () => false };
+  player.units = (type) => type === UNIT.MissileSilo ? [good, blocked] : [];
+  sandbox.state.nukeWantSlots = { targetSamId: 77, need: 4, unblockedSiloIds: preferredIds };
+  behavior.getRouteEligibleSilos = () => [good];
+  behavior.hasUsefulSiloUpgradeCapacity = () => true;
+  const structures = new sandbox.__StructureBehavior({}, game, player);
+  behavior.structureBehavior = structures;
+  structures.availableGoldAfterReserve = () => 200n;
+  structures.safeStructureCost = () => 20n;
+  structures.nukeSiloUpgradeBudgetAvailable = () => true;
+  structures.buildableForUnits = async (silos) => silos.map(() => ({ cost: 20n, canUpgrade: true }));
+  structures.siloSamProtectionScore = (silo) => silo.id() === blocked.id() ? 100 : 0;
+  const upgradedIds = [];
+  structures.executeStructureUpgradeCandidate = async (candidate) => {
+    if (!candidate) return false;
+    upgradedIds.push(candidate.silo.id());
+    return true;
+  };
+  assert.equal(await behavior.maybeUpgradeHelpfulSilo({}), true);
+  assert.deepEqual(upgradedIds, [good.id()], "scope fallback cannot upgrade a route-blocked silo");
+  sandbox.state.nukeWantSlots = null;
+}
+
 for (const capture of ["hostile", "own-before-due", "own-during-probe", "teammate", "protected", "unowned"]) {
   const { behavior, game, player, world, nukeTarget } = makeSalvoWorld();
   player.isPlayer = nukeTarget.isPlayer = () => true;

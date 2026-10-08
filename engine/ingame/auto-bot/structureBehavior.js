@@ -11056,11 +11056,11 @@
      * parity, so a required launch capacity is completed before ordinary
      * construction.
      */
-    async maybeUpgradeSiloForNukeDemand() {
+    async maybeUpgradeSiloForNukeDemand(routeEligibleSilos = null) {
       const pendingRequest = state.nukeWantSlots;
       const request = this.validNukeSiloUpgradeRequest();
       if (request === null) return false;
-      const scopedSilos = this.nukeDemandScopedSilos(request);
+      const scopedSilos = this.nukeDemandScopedSilos(request, routeEligibleSilos);
       const currentCapacity = scopedSilos.reduce(
         (sum, silo) => sum + Math.max(1, Number(silo.level?.() ?? 1)),
         0,
@@ -11086,13 +11086,15 @@
           timeoutMs: HOSTILE_SILO_SAM_PROBE_TIMEOUT_MS,
         },
       );
+      if (state.nukeWantSlots !== pendingRequest || this.validNukeSiloUpgradeRequest() === null) return false;
+      const currentGold = this.availableGoldAfterReserve(UNIT.MissileSilo);
+      if (!this.nukeSiloUpgradeBudgetAvailable(currentGold, minimumCost)) return false;
       const ranked = this.rankNukeDemandSiloUpgrades({
         candidates,
         buildables,
-        availableGold,
+        availableGold: currentGold,
         minimumCost,
       });
-      if (state.nukeWantSlots !== pendingRequest || this.validNukeSiloUpgradeRequest() === null) return false;
       return this.executeStructureUpgradeCandidate(ranked[0], UNIT.MissileSilo);
     }
 
@@ -11119,9 +11121,10 @@
       return { ...request, requiredCapacity };
     }
 
-    nukeDemandScopedSilos(request) {
+    nukeDemandScopedSilos(request, routeEligibleSilos = null) {
       const builtSilos = (this.player.units(UNIT.MissileSilo) || []).filter(
-        (silo) => this.isBuiltStructure(silo),
+        (silo) => this.isBuiltStructure(silo) && (routeEligibleSilos === null ||
+          routeEligibleSilos.some((eligible) => eligible.id() === silo.id())),
       );
       const preferredIds = new Set(
         Array.isArray(request.unblockedSiloIds)
@@ -11168,7 +11171,7 @@
         const bu = input.buildables[index];
         if (!bu || bu.canUpgrade === false) continue;
         const cost = this.buildableCostOrFallback(bu, input.minimumCost);
-        if (cost > input.availableGold) continue;
+        if (!this.nukeSiloUpgradeBudgetAvailable(input.availableGold, cost)) continue;
         ranked.push({
           silo,
           bu,
