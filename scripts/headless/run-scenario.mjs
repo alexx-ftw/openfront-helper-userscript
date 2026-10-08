@@ -262,13 +262,12 @@ function runSim(scenario, logPath) {
     const log = fs.createWriteStream(logPath);
     child.stdout.pipe(log);
     child.stderr.pipe(log);
-    const timer = setTimeout(
-      () => {
-        log.write("\n[run-scenario] timeout after 15 min, killing\n");
-        child.kill("SIGKILL");
-      },
-      15 * 60 * 1000,
-    );
+    const timeoutMs =
+      Number.parseInt(process.env.OFH_RUNNER_TIMEOUT_MS ?? "", 10) || 15 * 60 * 1000;
+    const timer = setTimeout(() => {
+      log.write(`\n[run-scenario] timeout after ${Math.round(timeoutMs / 60000)} min, killing\n`);
+      child.kill("SIGKILL");
+    }, timeoutMs);
     child.on("exit", (code) => {
       clearTimeout(timer);
       log.end();

@@ -3762,19 +3762,20 @@ release and the covered-salvo planner gain launch capacity exactly where the
 target ladder needs it.
 
 Validation: focused regression test/legendary-silo-parity.mjs — (1) Legendary
-+ winFixes + gap > 0 + gold >= cost + 500k attempts the spawn; (2) below the
-reserve it stands down; (3) Impossible keeps the faithful reserve-free
-behavior; (4) economy-growth priority or gap <= 0 stands down on both tiers.
-Then the predeclared 15-row early gate (team-none, team-25mm, ffa-n4; seeds
-basket-01..05) at parallelism 2 against the fresh adopted baseline
-/home/eros/ofh-matrix/basket-2026-10-04-reserve-100k-full/results.jsonl.
-Clauses (user criterion 2026-10-01, wins and survival first): (a) no per-set
-win/fullGreen regression; (b) no per-set ownStructuresNuked increase;
-(c) aggregate winGreen rise or overall median survival rise, with overall
-median survival non-decreasing; nukedStructureGold descriptive, no veto.
-On any failed clause: revert code, test, and bundles, record the verdict,
-and stop without running the remaining rows. An early pass authorizes the
-full 35-row gate with the same clauses.
+
+- winFixes + gap > 0 + gold >= cost + 500k attempts the spawn; (2) below the
+  reserve it stands down; (3) Impossible keeps the faithful reserve-free
+  behavior; (4) economy-growth priority or gap <= 0 stands down on both tiers.
+  Then the predeclared 15-row early gate (team-none, team-25mm, ffa-n4; seeds
+  basket-01..05) at parallelism 2 against the fresh adopted baseline
+  /home/eros/ofh-matrix/basket-2026-10-04-reserve-100k-full/results.jsonl.
+  Clauses (user criterion 2026-10-01, wins and survival first): (a) no per-set
+  win/fullGreen regression; (b) no per-set ownStructuresNuked increase;
+  (c) aggregate winGreen rise or overall median survival rise, with overall
+  median survival non-decreasing; nukedStructureGold descriptive, no veto.
+  On any failed clause: revert code, test, and bundles, record the verdict,
+  and stop without running the remaining rows. An early pass authorizes the
+  full 35-row gate with the same clauses.
 
 Early-gate verdict: **FAIL** (2026-10-04, 15 rows). team-25mm
 ownStructuresNuked rose 44 -> 48 (clause b) while medTicks rose 7571 ->
@@ -4256,8 +4257,7 @@ winner-row-only increase), ffa-n20 and team sets byte-identical — but
 **ffa-n4 wins 1 -> 0** (clause (a) violated). Root cause: the density gate
 counted LIVE hostile Nation/Human players; when an n4 nation dies the count
 falls to 3 and the guard activates mid-game — ffa-n4-basket-04's winner
-trajectory broke again (102211 win -> 13981 loss), ffa-n4 median 38881 ->
-18691. AGG wins 5 -> 5 (n2 win traded for the n4 win), rejected by the wins-
+trajectory broke again (102211 win -> 13981 loss), ffa-n4 median 38881 -> 18691. AGG wins 5 -> 5 (n2 win traded for the n4 win), rejected by the wins-
 first criterion.
 
 The leak is implementation-level (initial roster count vs live count), but
@@ -4287,6 +4287,7 @@ non-friendly Nation/Human players in game.players(), alive or dead — which is
 fixed for the whole match and immune to mid-game deaths.
 
 Predicted, declared in advance (deterministic evidence, reproduced twice):
+
 - ffa-n2 (roster 2 <= 3): guard behaves exactly as the bisect-1 form that
   produced the measured WIN at 102211 and median 12821 -> 15951 — every n2
   row must reproduce its quietpost-thin-gate result byte-identically.
@@ -4350,6 +4351,7 @@ Nation/Human players, SELF INCLUDED, alive or dead. Guard ON iff total
 roster <= 3 and the tier bridge fires and the mode is FFA.
 
 Predicted, declared in advance (deterministic):
+
 - ffa-n2 (total 2 <= 3): guard ON — byte-identical to both prior candidate
   runs (win at 102211 reproduced twice, median 12821 -> 15951).
 - ffa-n4 (total 4 > 3): guard OFF — every n4 row byte-identical to baseline,
@@ -4602,7 +4604,6 @@ on both trees with OFH_LOG_STRUCTURES=1 and count MissileSilo upgrade events
 attributable to demand (baseline performs them, candidate defers/cancels).
 No engine telemetry fields are added — the gate tree stays metric-comparable.
 
-
 ### Verdict: REVERTED (2026-10-06, ten-row early gate; inert — 10/10 rows metric-identical)
 
 The demand-channel TTL gate (predeclared above, commit cdc0cb16; feature
@@ -4626,7 +4627,6 @@ fire in headless (nukeTileScore silo pricing, ladder silo flat 1M),
 accepting the documented risk that firing-pattern changes are the family
 that converts wins into losses at this meta.
 
-
 ## Scenario-level falsification: readiness-aware hostile-silo pricing (2026-10-06)
 
 The hostile-silo-readiness mechanism scenario (commit 8e6bc22c: injected
@@ -4645,7 +4645,6 @@ are nukeTileScore and the anti-SAM salvo aim (blastStructureValue) only —
 the player-value retarget ladder is dead twice over (Legendary gates);
 (c) scenario-level falsification before any basket is now the standard
 route for scoring levers (probe ~4 min vs gate ~20 min).
-
 
 ## History canary widened + salvo-path feasibility verdict (2026-10-06)
 
@@ -5523,44 +5522,45 @@ should not be cited as evidence until the attribution method is
 re-derived from a source that actually resolves targets.
 Harvest continuation (2026-10-07 ~13:13Z, corpus 44 -> 46): cy2X9tdwad,
 Four Islands Team (new map), N=12821 — 39 silos, 166 nukes (146 atoms
-+ 20 hydrogen, 11 nukers, top player 51 atoms), gap 452, Q1-relative
-initiation with Q1 first-silo (the income-gate mechanism again).
-cR4BnsUGq4, Didier FFA (new map), micro: 4 nukes, gap 213.
-Silo-maturation law 28/30 <= 1027. Disk totals: 2041 nukes, 50 MIRV
-across 46 records.
-Harvest continuation (2026-10-07 ~14:36Z, corpus 46 -> 49): three new
-maps in one pull — cvvAjCJ66s (Los Angeles, N=14252: 51 silos, 96
-nukes, balanced 47A/46H, 3 MIRV, gap 885), coRwuCa7Tb (Mare Nostrum,
-N=12882: 34 silos, 106 nukes 86A/19H, 1 MIRV, gap 256, Q1-relative
-with Q1 first-silo), crT4ejtZtM (Iceland, N=8611: 23 silos, 36 nukes,
-1 MIRV, gap 686). Silo-maturation law 31/33 <= 1027. Disk totals:
-2279 nukes, 54 MIRV across 49 records.
-Harvest continuation (2026-10-08 ~00:0xZ overnight batch, corpus 49 ->
-52): three peer-duels — ciHXtLgRCz (Europe Classic, 12 silos, 23 nukes,
-gap 126), cV3EPDwGTd (Australia, 6 silos, 9 nukes, gap 543),
-c1MecmvRuA (Australia Easy, 2 nukes, gap 538). Silo-maturation law
-34/36 <= 1027. Disk totals: ~2316 nukes, 54 MIRV across 52 records.
-Overnight batch reconciliation (2026-10-08 morning, corpus 52 -> 72
-records on disk): 20 records appeared outside my fetch cycle (my pulls
-dedup-skip them as on-disk; exact disk totals are authoritative:
-2807 nukes = 1918A + 820H + 69 MIRV across 72 records). New maps:
-Pluto, Baltics, Strait of Gibraltar, Balkhash, More Than Luck, World
-Inverted, Bering Sea, Lemnos, United States, Great Lakes, Between Two
-Seas, Indian Subcontinent, San Francisco. Heavyweights: dkQWNRGZDi
-(Africa FFA, N=15211: 73 nukes, 3 MIRV), dTiw1pKNZ7 (Indian
-Subcontinent, N=15211: 46 nukes, 6 MIRV), diRDDGqoHW (San Francisco,
-N=12212: 78 nukes, 4 MIRV), cASc8fJsHP (Balkhash Team, N=10123: 63
-nukes). Silo-maturation law after this batch: 51/55 <= 1027 ticks
-(range 110-1027); outliers now four (1232, 1493, 2278, 2520) — the
-wait-after-first-silo can stretch well past an hour of game time when
-income or war timing delays the nuclear decision, so the law's honest
-form is MEDIAN ~460 ticks with a heavy right tail, not a hard gate.
-Harvest continuation (2026-10-08, corpus 72 -> 75): cjheca3EkK (Two
-Lakes again, 39 silos, 41 nukes, 2 MIRV, gap 305, 18 nukers),
-ckQZFi5f2u (United States FFA, 27 silos, 35 nukes hydrogen-tilted
-14A/21H, gap 483), c7BgrAMU9E (Australia Easy micro, gap 381).
-Silo-maturation law 54/58 <= 1027. Exact disk totals: 2857 nukes, 71
-MIRV across 75 records.
+
+- 20 hydrogen, 11 nukers, top player 51 atoms), gap 452, Q1-relative
+  initiation with Q1 first-silo (the income-gate mechanism again).
+  cR4BnsUGq4, Didier FFA (new map), micro: 4 nukes, gap 213.
+  Silo-maturation law 28/30 <= 1027. Disk totals: 2041 nukes, 50 MIRV
+  across 46 records.
+  Harvest continuation (2026-10-07 ~14:36Z, corpus 46 -> 49): three new
+  maps in one pull — cvvAjCJ66s (Los Angeles, N=14252: 51 silos, 96
+  nukes, balanced 47A/46H, 3 MIRV, gap 885), coRwuCa7Tb (Mare Nostrum,
+  N=12882: 34 silos, 106 nukes 86A/19H, 1 MIRV, gap 256, Q1-relative
+  with Q1 first-silo), crT4ejtZtM (Iceland, N=8611: 23 silos, 36 nukes,
+  1 MIRV, gap 686). Silo-maturation law 31/33 <= 1027. Disk totals:
+  2279 nukes, 54 MIRV across 49 records.
+  Harvest continuation (2026-10-08 ~00:0xZ overnight batch, corpus 49 ->
+  52): three peer-duels — ciHXtLgRCz (Europe Classic, 12 silos, 23 nukes,
+  gap 126), cV3EPDwGTd (Australia, 6 silos, 9 nukes, gap 543),
+  c1MecmvRuA (Australia Easy, 2 nukes, gap 538). Silo-maturation law
+  34/36 <= 1027. Disk totals: ~2316 nukes, 54 MIRV across 52 records.
+  Overnight batch reconciliation (2026-10-08 morning, corpus 52 -> 72
+  records on disk): 20 records appeared outside my fetch cycle (my pulls
+  dedup-skip them as on-disk; exact disk totals are authoritative:
+  2807 nukes = 1918A + 820H + 69 MIRV across 72 records). New maps:
+  Pluto, Baltics, Strait of Gibraltar, Balkhash, More Than Luck, World
+  Inverted, Bering Sea, Lemnos, United States, Great Lakes, Between Two
+  Seas, Indian Subcontinent, San Francisco. Heavyweights: dkQWNRGZDi
+  (Africa FFA, N=15211: 73 nukes, 3 MIRV), dTiw1pKNZ7 (Indian
+  Subcontinent, N=15211: 46 nukes, 6 MIRV), diRDDGqoHW (San Francisco,
+  N=12212: 78 nukes, 4 MIRV), cASc8fJsHP (Balkhash Team, N=10123: 63
+  nukes). Silo-maturation law after this batch: 51/55 <= 1027 ticks
+  (range 110-1027); outliers now four (1232, 1493, 2278, 2520) — the
+  wait-after-first-silo can stretch well past an hour of game time when
+  income or war timing delays the nuclear decision, so the law's honest
+  form is MEDIAN ~460 ticks with a heavy right tail, not a hard gate.
+  Harvest continuation (2026-10-08, corpus 72 -> 75): cjheca3EkK (Two
+  Lakes again, 39 silos, 41 nukes, 2 MIRV, gap 305, 18 nukers),
+  ckQZFi5f2u (United States FFA, 27 silos, 35 nukes hydrogen-tilted
+  14A/21H, gap 483), c7BgrAMU9E (Australia Easy micro, gap 381).
+  Silo-maturation law 54/58 <= 1027. Exact disk totals: 2857 nukes, 71
+  MIRV across 75 records.
 
 ## Measurement correction (2026-10-08, engine-source verification)
 
@@ -6626,7 +6626,6 @@ risk. test/nuke-salvo-off-approach-intercept-fixture.mts now pins the true
 behavior: the salvo stays blocked and the counterfactual shot is intercepted.
 No aggregate victory or damage metric is claimed to change.
 
-
 ## Integrated receipt at HEAD 00667982 (2026-10-08, post-refutation)
 
 baikal-nuke-wars rerun after the unreachable-reload refutation and the
@@ -6638,7 +6637,8 @@ integrated runtime. Receipt:
 Run under MemoryMax=4G, MemorySwapMax=1G, OOMPolicy=kill, serial.
 
 ## Pre-declaration: post-salvo Hydrogen finisher friendly-fire gate
-  (2026-10-08 19:52 UTC, before the run, base 5fcb992b, version 1.12.180)
+
+(2026-10-08 19:52 UTC, before the run, base 5fcb992b, version 1.12.180)
 
 The finisher was the one nuclear dispatch path that never priced friendly
 fire. This run adds the same monetary geometry the anti-SAM aim selector
@@ -6650,6 +6650,7 @@ inside headless fixtures (production's real engine is variadic and was
 never affected).
 
 Pre-declared expectations for baikal-nuke-wars under this gate:
+
 - won=true and alive=true are required; a loss fails the gate work.
 - ownStructuresNuked must not exceed the baseline 11.
 - Hydrogen launches MAY legitimately drop below 49 if the finisher was
@@ -6830,3 +6831,63 @@ The new branch can only fire during genuine slot starvation, so economy
 and defense priorities above it are unchanged.
 
 Receipt will be appended after the run.
+
+## Regime receipt: sam-salvo-overwhelm partial (2026-10-09)
+
+The first regime-matrix run of sam-salvo-overwhelm was killed by the
+runner's hard-coded 15-minute wall timeout at tick 12292 of 25000 — no
+final receipt exists. The partial log is still informative and is
+recorded here as a partial receipt, not a completed one:
+
+- The bot launched early (tick ~4357 decision window: 41 candidates,
+  26 positive, best value 188640, valueGate=true, pending=2) and then
+  stockpiled to 5 atom bombs with candidateCount=0 on every decision
+  from ~4400 to the kill tick. The SAM-covered hostile cluster
+  deterred the entire remaining arsenal: the value gate found no
+  positive candidate under coverage for ~8000 consecutive ticks.
+- The nuclear slot-pressure branch fired for real in this regime:
+  23 upgrade_structure intents emitted (draining the pending queue
+  through silo levels), plus 101 SAM upgrade plans and 6 sam-salvo
+  interceptions on the defense lane.
+- No own-structure nuke losses appear in the window; the match simply
+  had not concluded.
+
+Consequence: the runner timeout is now configurable via
+OFH_RUNNER_TIMEOUT_MS (default unchanged at 15 min); the scenario is
+relaunched under ofh-regime2b with a 40-minute budget to obtain the
+final won/ticks/launch-count receipt. This partial record documents
+the finding in advance so the final receipt can be compared against
+it: if the final run shows launches resuming after tick 12292, the
+deterrence reading was premature; if candidateCount stays at 0, the
+SAM-cover value gate is confirmed as the binding constraint on the
+arsenal in this regime.
+
+## Regime receipt: sam-salvo-overwhelm partial (2026-10-09)
+
+The first regime-matrix run of sam-salvo-overwhelm was killed by the
+runner's hard-coded 15-minute wall timeout at tick 12292 of 25000 — no
+final receipt exists. The partial log is still informative and is
+recorded here as a partial receipt, not a completed one:
+
+- The bot launched early (tick ~4357 decision window: 41 candidates,
+  26 positive, best value 188640, valueGate=true, pending=2) and then
+  stockpiled to 5 atom bombs with candidateCount=0 on every decision
+  from ~4400 to the kill tick. The SAM-covered hostile cluster
+  deterred the entire remaining arsenal: the value gate found no
+  positive candidate under coverage for ~8000 consecutive ticks.
+- The nuclear slot-pressure branch fired for real in this regime:
+  23 upgrade_structure intents emitted (draining the pending queue
+  through silo levels), plus 101 SAM upgrade plans and 6 sam-salvo
+  interceptions on the defense lane.
+- No own-structure nuke losses appear in the window; the match simply
+  had not concluded.
+
+Consequence: the runner timeout is now configurable via
+OFH_RUNNER_TIMEOUT_MS (default unchanged at 15 min); the scenario is
+relaunched under ofh-regime2b with a 40-minute budget to obtain the
+final won/ticks/launch-count receipt. This partial record documents
+the finding in advance so the final receipt can be compared against
+it: if the final run shows launches resuming after tick 12292, the
+deterrence reading was premature; if candidateCount stays at 0, the
+SAM-cover value gate is confirmed as the binding constraint on the
+arsenal in this regime.
