@@ -6550,3 +6550,31 @@ Focused fixture and full npm test pass; all heavy execution stays serial under
 batch from one silo against one level-one SAM; production viability/sizing
 adoption, multi-SAM assignment, network delivery variance and aggregate victory
 gains remain unverified and owned by the active goal.
+
+### 2026-10-08 — over-rejection control and blast-model discovery
+
+New experiment `docs/experiments/2026-10-08-unreachable-reload-overreject.mts`
+(not wired into the suite). A level-one SAM sits at (86,3), 6.3 tiles off the
+diagonal approach to (80,1), with its only charge reloading at tick 90. The
+production viability check predicts arrival tick 93 (travel-only), credits the
+slot as available (reload 90 <= 93) and rejects the salvo. The native engine
+then resolves the same shot bypassing only that decision: the SAM never fires
+(zero SAM missiles), the Atom detonates on target at tick 94, and the shot was
+a clean penetration. This is the first sampled case where the existing capacity
+rule cancels a shot the engine would have landed, and it matches the forecast
+model's prediction (reachable fire ticks beat slot availability).
+
+Secondary discovery: the detonation 6.3 tiles away leaves the SAM active,
+although the anti-SAM aim planner treats Atom outer radius 30 as lethal to
+structures. Either the true structure-destruction radius is far smaller than
+the modeled outer radius or ownership/edge rules differ; the existing
+nuke-blast-radius fixture must be rechecked before trusting aim scoring.
+Until then, no production change is adopted from either finding. Machine note:
+two external OOMKill incidents occurred on this workstation; every goal run
+stayed inside the serial 4 GiB RAM / 1 GiB swap caps and none of the goal's
+units survived the reboot, so the incidents are not attributable to goal runs.
+Focused fixture and full npm test pass; all heavy execution stays serial under
+4 GiB RAM / 1 GiB swap. This is forecast evidence for a committed same-tick
+batch from one silo against one level-one SAM; production viability/sizing
+adoption, multi-SAM assignment, network delivery variance and aggregate victory
+gains remain unverified and owned by the active goal.
