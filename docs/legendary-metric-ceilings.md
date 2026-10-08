@@ -6779,6 +6779,22 @@ invented weighting would be silent tuning. The calibrated formula
 recorded here for future use if troop densities shift. No runtime
 change; refinement queue for the finisher gate is now empty.
 
+## Regime matrix (2026-10-09): the new logic beyond the standard seed
+
+baikal-silo-regime (hostile silo network, the documented fragility
+finding): completed, won=false at tick 3861 with 0 bot nukes launched
+and 2 own structures nuked - the destabilization regime reproduces, and
+the finisher/hold/slot-pressure logic never engages (no own arsenal
+comes online before the flip). Consistent with the pinned expectation.
+
+sam-salvo-overwhelm (own L3 silo network vs hostile SAM cover, the
+slot-drain regime where the nuclear slot-pressure upgrade should
+engage): in flight at turn close, tick ~5700 of 25000 under
+MemoryMax=4G, serial. Receipt lands at
+/home/eros/ofh-matrix/regime-matrix/sam-salvo-overwhelm.log; read it
+before drawing conclusions. All other regimes (6 deterministic Baikal
+receipts) unchanged.
+
 ## Integrated receipt 3 (2026-10-08, after the MIRV-weighting run)
 
 Counters identical to iterations 1 and 2: won=true, alive=true, 26
