@@ -3,6 +3,7 @@ import { JSDOM } from "jsdom";
 import { EventBus } from "../openfront-engine/src/core/EventBus";
 import { GameRunner } from "../openfront-engine/src/core/GameRunner";
 import { Executor } from "../openfront-engine/src/core/execution/ExecutionManager";
+import { decodeClientMessage } from "../openfront-engine/src/core/ZbinWire";
 import { createMaxDifficultyOpponent } from "../scripts/headless/opponent-adapter.js";
 import { PlayerInfo, PlayerType, UnitType } from "../openfront-engine/src/core/game/Game";
 import { setup } from "../openfront-engine/tests/util/Setup";
@@ -22,11 +23,12 @@ for (const key of [
   "CSSStyleSheet",
   "MutationObserver",
   "localStorage",
+  "WebSocket",
 ]) {
   Object.defineProperty(globalThis, key, { configurable: true, value: dom.window[key] });
 }
 try {
-  const { BuildUnitIntentEvent, SendUpgradeStructureIntentEvent } =
+  const { BuildUnitIntentEvent, SendUpgradeStructureIntentEvent, Transport } =
     await import("../openfront-engine/src/client/Transport");
   await import("../openfront-engine/src/client/hud/layers/BuildMenu");
   const game = await setup(
@@ -55,6 +57,17 @@ try {
     player.units(type).reduce((sum, unit) => sum + unit.level(), 0);
   const menu = dom.window.document.createElement("build-menu") as any;
   const bus = new EventBus();
+  const wireMessages = [];
+  let socketClosed = false;
+  const transport = new Transport({} as any, bus) as any;
+  transport.socket = {
+    readyState: dom.window.WebSocket.OPEN,
+    send: (data) => wireMessages.push(decodeClientMessage(data, undefined)),
+    close() {
+      socketClosed = true;
+    },
+  };
+  transport.isSessionReady = true;
   const launches = [];
   const upgrades = [];
   bus.on(BuildUnitIntentEvent, (event) => launches.push(event));
@@ -89,6 +102,24 @@ try {
   assert.equal(upgrades.length, 1);
   assert.equal(upgrades[0].unitId, silo.id());
   assert.equal(upgrades[0].unitType, UnitType.MissileSilo);
+  assert.deepEqual(wireMessages[0], {
+    type: "intent",
+    intent: {
+      type: "build_unit",
+      unit: UnitType.AtomBomb,
+      tile: target,
+      rocketDirectionUp: true,
+    },
+  });
+  assert.deepEqual(wireMessages[1], {
+    type: "intent",
+    intent: {
+      type: "upgrade_structure",
+      unit: UnitType.MissileSilo,
+      unitId: silo.id(),
+      amount: 1,
+    },
+  });
   const runner = new GameRunner(game, new Executor(game, "menuRace", "attacker"), () => {});
   const bot = createMaxDifficultyOpponent({ clientID: "attacker" });
   try {
@@ -114,6 +145,12 @@ try {
     );
     assert.equal(menu.uiState.rocketDirectionUp, false, "the manual direction is restored");
     assert.equal(nuke.atomBombsLaunched, 1);
+    assert.equal(wireMessages.length, 3);
+    assert.deepEqual(
+      wireMessages[2],
+      wireMessages[0],
+      "the bot reaches the same native binary intent",
+    );
     const nativeBuildables = runner.playerBuildables.bind(runner);
     let raceProbes = 0;
     runner.playerBuildables = (...args) => {
@@ -132,6 +169,7 @@ try {
     assert.equal(launches.length, 2, "capture prevents the native menu event");
     assert.equal(nuke.atomBombsLaunched, 1, "capture preserves the successful launch count");
     assert.equal(menu.uiState.rocketDirectionUp, false);
+    assert.equal(wireMessages.length, 3, "capture cannot send a binary launch frame");
     const sam = defender.buildUnit(UnitType.SAMLauncher, game.ref(80, 3), {});
     const state = bot.harness.internals.state;
     state.nukeWantSlots = {
@@ -145,15 +183,22 @@ try {
     assert.equal(upgrades.length, 2, "shared construction emits through the native menu");
     assert.equal(upgrades[1].unitId, silo.id());
     assert.equal(upgrades[1].unitType, UnitType.MissileSilo);
+    assert.equal(wireMessages.length, 4);
+    assert.deepEqual(wireMessages[3], wireMessages[1]);
     assert.equal(launches.length, 2, "servicing capacity cannot emit another bomb");
     player.conquer(target);
     assert.equal(await bot.nationBot.structureBehavior.maybeUpgradeSiloForNukeDemand(), false);
     assert.equal(state.nukeWantSlots, null);
     assert.equal(upgrades.length, 2, "obsolete construction demand cannot reach the menu");
     assert.equal(launches.length, 2, "obsolete demand cannot emit a bomb either");
+    assert.equal(wireMessages.length, 4, "obsolete demand sends no additional binary frame");
   } finally {
     bot.harness.window.close();
   }
+  transport.leaveGame();
+  assert.equal(socketClosed, true);
+  assert.equal((bus as any).listeners.get(BuildUnitIntentEvent).length, 1);
+  assert.equal((bus as any).listeners.get(SendUpgradeStructureIntentEvent).length, 1);
 } finally {
   dom.window.close();
 }

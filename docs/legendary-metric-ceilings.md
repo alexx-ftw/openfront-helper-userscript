@@ -5968,3 +5968,23 @@ and emits neither upgrade nor bomb. Independent static review identified
 two missing type/count assertions, which were added and checked with the
 focused fixture. This closes bot-to-native-menu actuation under JSDOM;
 server delivery and a live browser remain unverified.
+
+Native Transport/wire gate: construct unchanged Transport subscriptions on
+the real menu's EventBus, with an isolated already-admitted OPEN endpoint
+that captures its actual binary send payloads. Decode with the native
+validated client codec and require exact Atom and silo-upgrade intents
+for manual and bot actuation. Captured targets/demand must add no frames.
+leaveGame must close the endpoint and remove both Transport subscriptions.
+This covers native event-to-intent conversion and encoding; admission,
+actual WebSocket delivery, server acceptance and browser loading remain
+outside the test.
+
+Native Transport/wire result: focused fixture and integrated headless
+contract suite pass. Native binary bytes decode to exact validated Atom
+and silo-upgrade intents for both manual and bot events; captured aims
+produce no extra frame. Native leaveGame closes the endpoint and removes
+both native transport listeners, retaining only fixture observers.
+Independent static review confirms direct-send setup and native decoder
+context, and highlighted why frame silence alone cannot prove cleanup;
+the fixture checks actual listener counts. No handshake, buffering,
+real socket delivery or server acceptance is claimed.
