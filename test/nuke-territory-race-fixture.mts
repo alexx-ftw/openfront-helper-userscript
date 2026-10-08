@@ -280,10 +280,18 @@ for (const addCloser of [false, true]) {
   const nuke = bot.nationBot.nukeBehavior;
   const rival = bot.api.game.playerBySmallID(game.player("defender").smallID());
   const predicted = [];
+  const forecasts = [];
+  const cachedFlight = nuke.getAvailableSiloEntries(
+    bot.nationBot.player.units(UnitType.MissileSilo),
+    target,
+    new Set(),
+  )[0].flightTicks;
   try {
     for (let index = 0; index < 3; index++) {
       predicted.push(nuke.nukeSpawn(UnitType.AtomBomb, target));
-      assert.equal(await nuke.sendNuke(target, UnitType.AtomBomb, rival, 0, { salvoId: 1 }), true);
+      const metadata = { salvoId: 1, flightTicks: cachedFlight };
+      forecasts.push(metadata);
+      assert.equal(await nuke.sendNuke(target, UnitType.AtomBomb, rival, 0, metadata), true);
     }
     const firstThree = [...bot.intentBuffer];
     let extraSent;
@@ -294,7 +302,9 @@ for (const addCloser of [false, true]) {
       attacker.buildUnit(UnitType.MissileSilo, closer, {});
       step(); // Deliver the capacity change before any buffered nuclear intent.
       predicted.push(nuke.nukeSpawn(UnitType.AtomBomb, target));
-      extraSent = await nuke.sendNuke(target, UnitType.AtomBomb, rival, 0, { salvoId: 1 });
+      const metadata = { salvoId: 1, flightTicks: cachedFlight };
+      forecasts.push(metadata);
+      extraSent = await nuke.sendNuke(target, UnitType.AtomBomb, rival, 0, metadata);
       assert.equal(extraSent, true);
     } else {
       assert.equal(
@@ -323,6 +333,11 @@ for (const addCloser of [false, true]) {
         actualSources[3],
         "new capacity reprojects the entire unacknowledged prefix",
       );
+      assert.equal(
+        forecasts[3].flightTicks,
+        attacker.units(UnitType.AtomBomb)[3].trajectory().length,
+        "the next emitted shot refreshes flight time after native source reassignment",
+      );
     } else {
       assert.deepEqual(
         predicted,
@@ -330,6 +345,11 @@ for (const addCloser of [false, true]) {
         "same-frame source predictions match native overflow",
       );
       assert.equal(extraSent, false, "a stale worker reply cannot oversubscribe the final slot");
+      assert.deepEqual(
+        forecasts.map((entry) => entry.flightTicks),
+        attacker.units(UnitType.AtomBomb).map((unit) => unit.trajectory().length),
+        "emission-time flight estimates match native near/near/far trajectories",
+      );
     }
     nearSilo.increaseLevel();
     while (nearSilo.missileTimerQueue().length > 0) nearSilo.reloadMissile();

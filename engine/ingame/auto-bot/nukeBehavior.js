@@ -1721,7 +1721,12 @@
         const spawnTile = this.nukeSpawn(nukeType, tile);
         if (spawnTile === false || this.isTrajectoryInterceptableBySam(spawnTile, tile)) return false;
       }
+      // DIVERGENCE: the source can change while the worker prices this shot.
+      const liveFlight = salvo && typeof this.player.units === "function"
+        ? this.getAvailableSiloEntries(this.player.units(UNIT.MissileSilo), tile, new Set())[0]?.flightTicks
+        : undefined;
       if (!this.emitNukeBuildable(buildable, tile)) return false;
+      if (Number.isFinite(liveFlight)) salvo.flightTicks = liveFlight;
       await this.rememberSuccessfulNukeLaunch(tile, nukeType, targetPlayer);
       return true;
     }
@@ -2058,6 +2063,7 @@
      */
     // ── maybeDestroyEnemySam — NationNukeBehavior.ts:780 (now async) ──────────
     getAvailableSiloEntries(silos, targetTile, coveringSamIds) {
+      if (silos.length === 0) return [];
       const speed = this.game.config().defaultNukeSpeed();
       const projected = typeof autoBotBuildNukeSlots === "function"
         ? autoBotBuildNukeSlots(this.game, this.player) : null;
@@ -2264,6 +2270,7 @@
           const sent = await this.sendNuke(
             plan.targetTile, UNIT.AtomBomb, nukeTarget, wait, metadata,
           );
+          flightTicks[i] = metadata.flightTicks;
           // A stale worker probe or exhausted intent budget is retryable.
           // Retain this bomb and the tail; the queue rechecks target and SAMs.
           if (!sent && !this.queueDelayedNukeLaunch(

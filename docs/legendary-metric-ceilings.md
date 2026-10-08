@@ -6304,3 +6304,36 @@ so an empty queue has no independent remaining cooldown; the review's speculativ
 empty-queue cooldown concern does not justify adding that proxy to projection.
 Planned-salvo flight metadata/source-change guards from the earlier rejected
 experiment remain unaccepted and owned by this active goal for further investigation.
+
+### 2026-10-08 — refresh emitted salvo travel duration
+
+Carry the corrected source projection into salvo timing without changing route
+admission. After the asynchronous price quote and live target checks, reuse the
+existing available-silo entries to read the closest currently projected source's
+travel duration. Commit it into salvo metadata only after dispatch succeeds.
+Immediate sends also copy that refreshed value back into the salvo's local
+flight-time array, which schedules the initial Hydrogen deadline. Delayed sends
+already propagate their metadata into the pending finisher on actual dispatch.
+An empty silo roster returns no entries before consulting geometry configuration.
+
+Native controls compare metadata with the real missiles' trajectory lengths:
+near/near/far is 21/21/31 ticks, rather than retaining one cached near-source
+duration throughout the burst. With newly closer capacity replaying the buffered
+prefix, the fourth emitted missile's refreshed duration matches its native far
+source. Synthetic checks cover the immediate Hydrogen deadline, rejected quotes
+preserving queued forecasts, and successful retried dispatches extending the
+deadline with the new duration. All eleven native race/source controls, the full
+`npm test`, TypeScript and artifact parity pass. Baikal remains exactly at the
+validated baseline: won/alive, tick 6661, 11 own structures nuked, 20 Atoms,
+49 Hydrogens, pending zero and 73,350,000 enemy structure gold destroyed. Receipt:
+`/home/eros/ofh-matrix/salvo-live-flight/baikal-nuke-wars.log`.
+
+This is travel duration, not a prediction of the server's absolute departure
+tick. Native initialization and same-silo departure stacking still reconcile
+through the existing active-missile motion guard. A source can change again
+after dispatch but before native execution; already emitted metadata cannot
+prove its eventual source. Future queued shots still have planning-time durations
+until emitted, so their pre-dispatch viability horizon remains a separate task.
+The earlier failed transit/source guards and partial-slot readiness expansion
+remain excluded. No aggregate victory improvement or live browser adoption is
+claimed. This active goal continues to own the remaining scheduling investigation.

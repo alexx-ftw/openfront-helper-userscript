@@ -1191,6 +1191,32 @@ for (const delayedFirst of [false, true]) {
 // The finisher must follow actual launches, not the original schedule when
 // processing stalls or a launch is retried.
 {
+  const { world, player, nukeTarget, behavior } = makeSalvoWorld();
+  let liveFlight = 45;
+  player.units = () => [{}];
+  behavior.getAvailableSiloEntries = () => [{ flightTicks: liveFlight }];
+  behavior.getSamSalvo = () => ({ bombsToFire: 2, waits: [0, 1] });
+  sandbox.state.nukeWantSlots = null;
+  await behavior.fireSamSalvo({ targetTile: 20, totalBombs: 2, siloEntries: [],
+    launchSequence: [{ flightTicks: 20 }, { flightTicks: 20 }],
+  }, nukeTarget, 1n);
+  assert.equal(sandbox.state.postSalvoHydrogen.dueTick, 850,
+    "an immediate shot updates the finisher from its emission-time source flight");
+  world.tick++;
+  liveFlight = 65;
+  const buildables = player.buildables;
+  player.buildables = async () => [];
+  assert.equal(await behavior.processPendingNukeLaunches(), false);
+  assert.equal(behavior._pendingNukeLaunches[0].salvo.flightTicks, 20,
+    "a rejected quote retains the queued forecast until an actual dispatch");
+  assert.equal(sandbox.state.postSalvoHydrogen.dueTick, 850);
+  player.buildables = buildables;
+  world.tick++;
+  assert.equal(await behavior.processPendingNukeLaunches(), true);
+  assert.equal(sandbox.state.postSalvoHydrogen.dueTick, 872,
+    "a delayed shot propagates its refreshed flight through the pending finisher");
+}
+{
   const { world, nukeTarget, behavior } = makeSalvoWorld();
   behavior.getSamSalvo = () => ({ bombsToFire: 2, waits: [0, 1] });
   sandbox.state.nukeWantSlots = null;

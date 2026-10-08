@@ -520,6 +520,11 @@ to the same destination during that round trip, and receipts first seen after
 their dispatch grace expired, cannot be distinguished from later bot receipts.
 A missile missed entirely between snapshots keeps a conservative slot reservation
 until grace expiry.
+Salvo travel time is refreshed from the currently projected closest source after
+the worker quote and committed only when dispatch succeeds. Immediate launches
+propagate it into the initial Hydrogen deadline; delayed launches propagate it
+when they actually emit. Native departure waits still reconcile from live missile
+motion, and previously emitted shots can change source before server execution.
 Silo and SAM upgrades recheck live missile impact zones after worker pricing.
 A threatened silo defers its purchase while retaining valid nuclear capacity demand,
 so that request can resume when the hazard disappears.
