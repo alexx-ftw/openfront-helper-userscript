@@ -12,7 +12,7 @@ import {
 } from "../scripts/headless/opponent-adapter.js";
 
 // Reload before impact alone does not prove that a real SAM can intercept in time.
-for (const reloadOffset of [-1, 2]) {
+for (const reloadOffset of [-3, -2, -1, 0, 1, 2, 3]) {
   const game = await setup(
     "big_plains",
     { instantBuild: true },
@@ -94,6 +94,27 @@ for (const reloadOffset of [-1, 2]) {
     const plan = bot.api.game.motionPlans().get(missile.id());
     assert.ok(plan);
     const actualImpact = plan.startTick + plan.path.length;
+    const planner = bot.nationBot.structureBehavior;
+    const profiles = planner.buildLegendaryFriendlySamProfiles([sam], null, null);
+    const motion = planner.legendaryActiveMissileMotion(missile, missile.tile());
+    assert.ok(motion);
+    const route = planner.legendaryBuildMissileRoute(
+      {
+        ...motion,
+        targetTile: target,
+        weapon: UnitType.AtomBomb,
+        id: "native-reload-control",
+      },
+      profiles,
+    );
+    const canIntercept = route.samOptions.some((option) =>
+      option.interceptTicks.some((tick) => tick >= profiles[option.samIndex].availableTicks[0]),
+    );
+    assert.equal(
+      canIntercept,
+      reloadOffset >= 0,
+      "native motion plus reachable fire opportunities classifies the reload boundary",
+    );
     while (missile.isActive() && game.ticks() <= actualImpact + 1) step();
     console.log(
       JSON.stringify({
@@ -112,7 +133,10 @@ for (const reloadOffset of [-1, 2]) {
       reloadOffset >= 0,
       "only the earlier reload intercepts the real native shot",
     );
-    assert.equal(sam.missileTimerQueue().length, reloadOffset < 0 ? 0 : 1);
+    assert.equal(
+      sam.missileTimerQueue().length,
+      reloadOffset >= 0 || actualImpact <= reloadTick ? 1 : 0,
+    );
     assert.equal(missile.isActive(), false);
   } finally {
     bot.harness.window.close();

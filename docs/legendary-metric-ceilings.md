@@ -6507,3 +6507,23 @@ per-SAM relative fire/interception opportunities. These still require slot
 availability and cooldown scheduling; a maximum fire tick alone is not proof
 of a ready interception. This active goal owns combining those opportunities
 with native departure/source evidence before changing future salvo timing.
+
+### 2026-10-08 — reachable-fire forecasts at seven native reload boundaries
+
+Expand the native reload fixture to offsets -3 through +3 around its former
+travel-only reload horizon. For each actual missile receipt, build the route
+from legendaryActiveMissileMotion and profiles from the real SAM. Compare its
+reachable fire ticks with actual slot availability. This combination predicts
+all seven native outcomes: actual impacts 89/90/91 destroy the SAM whose reload
+is tick 90; impacts 92/93/94/95 are intercepted after a real SAM shot at tick 90.
+An old charge remains queued when the SAM dies before its reload; the fixture
+now distinguishes that state from the later destroyed-SAM case.
+
+The focused fixture passes all seven cases under the serial memory cap. Production
+and generated artifacts are unchanged; no new aggregate win gain or Baikal run
+is claimed. This validates a single missile/route with a level-one SAM and real
+motion receipts, not hypothetical pending launches or multi-SAM assignments.
+Read-only review confirms legendarySalvoRoute consumes a supplied launch sequence;
+its current enemy-threat callers synthesize one, so they cannot substitute for
+the actual source and emission/departure times of our pending batch. The active
+goal retains that upstream scheduling work.
