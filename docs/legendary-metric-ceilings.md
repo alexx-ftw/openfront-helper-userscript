@@ -6626,3 +6626,14 @@ risk. test/nuke-salvo-off-approach-intercept-fixture.mts now pins the true
 behavior: the salvo stays blocked and the counterfactual shot is intercepted.
 No aggregate victory or damage metric is claimed to change.
 
+
+## Integrated receipt at HEAD 00667982 (2026-10-08, post-refutation)
+
+baikal-nuke-wars rerun after the unreachable-reload refutation and the
+reachable-fire revert: won=true, alive=true, 20 Atoms, 49 Hydrogens,
+ownStructuresNuked=11, enemy structure gold 73,350,000 - identical
+counters to the prior receipts, confirming the revert restored the exact
+integrated runtime. Receipt:
+/home/eros/ofh-matrix/post-refute-receipt/baikal-nuke-wars.log
+Run under MemoryMax=4G, MemorySwapMax=1G, OOMPolicy=kill, serial.
+
