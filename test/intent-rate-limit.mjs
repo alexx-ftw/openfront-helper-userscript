@@ -251,8 +251,13 @@ const construction = createSandbox();
   const menu = { sendBuildOrUpgrade() {} };
   const pending = () => nuclear.api.autoBotBuildPendingNukes(game, player);
   assert.equal(
-    nuclear.api.sendAutoBotBuildOrUpgrade(menu, buildable, 12, game, player, true),
+    nuclear.api.sendAutoBotBuildOrUpgrade(menu, buildable, 12, game, player, { salvoId: 7 }),
     true,
+  );
+  assert.equal(
+    pending()[0].salvoId,
+    7,
+    "the shared dispatch ledger retains nuclear salvo identity",
   );
   assert.equal(
     pending().length,
@@ -271,6 +276,11 @@ const construction = createSandbox();
   );
   missiles.push(missile(2, 99));
   assert.equal(pending().length, 2, "another destination cannot acknowledge the prefix");
+  assert.equal(
+    pending()[1].salvoId,
+    null,
+    "ordinary nuclear intents cannot inherit a salvo identity",
+  );
   missiles.push(missile(3));
   assert.equal(pending().length, 1, "one receipt acknowledges only one of two identical intents");
   assert.equal(pending().length, 1, "repeated reconciliation cannot reuse a claimed receipt");

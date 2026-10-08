@@ -1725,7 +1725,7 @@
       const liveFlight = salvo && typeof this.player.units === "function"
         ? this.getAvailableSiloEntries(this.player.units(UNIT.MissileSilo), tile, new Set())[0]?.flightTicks
         : undefined;
-      if (!this.emitNukeBuildable(buildable, tile)) return false;
+      if (!this.emitNukeBuildable(buildable, tile, salvo)) return false;
       if (Number.isFinite(liveFlight)) salvo.flightTicks = liveFlight;
       await this.rememberSuccessfulNukeLaunch(tile, nukeType, targetPlayer);
       return true;
@@ -1766,7 +1766,7 @@
       );
     }
 
-    emitNukeBuildable(buildable, tile) {
+    emitNukeBuildable(buildable, tile, salvo = null) {
       const buildMenu = getBuildMenu();
       if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") return false;
       // The bot's trajectory forecasts use directionUp: true. BuildMenu reads
@@ -1781,7 +1781,7 @@
           tile,
           this.game,
           this.player,
-          true,
+          salvo ?? true,
         );
       } finally {
         if (uiState) uiState.rocketDirectionUp = previousDirection;
@@ -1825,6 +1825,11 @@
 
     hasPendingNukeLaunches() {
       return this._pendingNukeLaunches.length > 0;
+    }
+
+    salvoAwaitingNativeReceipts(salvo) {
+      return salvo?.salvoId != null && typeof autoBotBuildPendingNukes === "function" &&
+        autoBotBuildPendingNukes(this.game, this.player).some((record) => record.salvoId === salvo.salvoId);
     }
 
     async processPendingNukeLaunches() {
@@ -1895,6 +1900,8 @@
       if (!this.isValidNukeTarget(pending.targetPlayer) ||
           !this.isValidNukeDestination(pending.tile)) return "drop";
       if (sendsThisTick >= PENDING_NUKE_LAUNCHES_PER_TICK) return "retry";
+      // DIVERGENCE: unacknowledged prefix shots are not yet visible to SAM accounting.
+      if (this.salvoAwaitingNativeReceipts(pending.salvo)) return "retry";
       const sent = await this.sendNuke(
         pending.tile,
         pending.nukeType,
@@ -1932,6 +1939,7 @@
         const entries = this._pendingNukeLaunches.filter(
           (pending) => pending.salvo && pending.salvo.salvoId === salvoId,
         );
+        if (this.salvoAwaitingNativeReceipts(entries[0].salvo)) continue;
         const arrivals = entries.map((entry) => {
           const flight = entry.salvo.flightTicks;
           return Number.isFinite(flight) && flight >= 0

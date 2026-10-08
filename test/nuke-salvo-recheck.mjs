@@ -115,6 +115,63 @@ function makeSalvoWorld() {
   return { world, game, player, nukeTarget, behavior };
 }
 
+// Receipt barriers preserve a valid prefix without inventing SAM capacity.
+for (const release of ["expiry", "alliance"]) {
+  const { world, player, nukeTarget, behavior } = makeSalvoWorld();
+  const sam = world.sam("receipt-target", 1);
+  world.covering.push({ unit: sam, distSquared: 0 });
+  world.targetSams.push(sam);
+  const emitted = [];
+  launchSink = emitted;
+  let awaiting = true;
+  sandbox.autoBotBuildPendingNukes = () => (awaiting ? [{ salvoId: 7 }] : []);
+  try {
+    behavior._pendingNukeLaunches = [
+      {
+        dueTick: world.tick,
+        tile: 20,
+        nukeType: UNIT.AtomBomb,
+        targetPlayer: nukeTarget,
+        salvo: { salvoId: 7, targetTile: 20, targetSamId: sam.id(), flightTicks: 20 },
+      },
+      {
+        dueTick: world.tick,
+        tile: 20,
+        nukeType: UNIT.AtomBomb,
+        targetPlayer: nukeTarget,
+        salvo: null,
+      },
+    ];
+    assert.equal(
+      behavior.salvoAwaitingNativeReceipts({ salvoId: 8 }),
+      false,
+      "an unrelated salvo cannot inherit the prefix's receipt barrier",
+    );
+    assert.equal(
+      await behavior.processPendingNukeLaunches(),
+      true,
+      "an ordinary launch still progresses while a saturation tail waits",
+    );
+    assert.equal(emitted.length, 1);
+    assert.equal(behavior._pendingNukeLaunches.length, 1);
+    assert.equal(behavior._pendingNukeLaunches[0].salvo.salvoId, 7);
+    world.tick++;
+    if (release === "alliance") {
+      player.team = () => "Blue";
+      nukeTarget.team = () => "Blue";
+    } else awaiting = false;
+    assert.equal(await behavior.processPendingNukeLaunches(), false);
+    assert.equal(
+      behavior.hasPendingNukeLaunches(),
+      false,
+      `${release}: invalid diplomacy or an unsupported expired prefix cannot preserve the tail`,
+    );
+    assert.equal(emitted.length, 1, "the receipt barrier never grants fictitious SAM capacity");
+  } finally {
+    delete sandbox.autoBotBuildPendingNukes;
+  }
+}
+
 // The ordinary construction budget must preserve every pending saturation Atom.
 {
   const { behavior, player, game, world, nukeTarget } = makeSalvoWorld();

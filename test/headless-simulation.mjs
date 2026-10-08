@@ -16,21 +16,22 @@ const cooperativeTimers = spawnSync(
   { cwd: root, encoding: "utf8" },
 );
 assert.equal(cooperativeTimers.status, 0, cooperativeTimers.stdout + cooperativeTimers.stderr);
-const nuclearTerritoryRace = spawnSync(
-  process.execPath,
-  [
-    path.join(root, "node_modules/tsx/dist/cli.mjs"),
-    "--tsconfig",
-    "openfront-engine/tsconfig.json",
-    "test/nuke-territory-race-fixture.mts",
-  ],
-  { cwd: root, encoding: "utf8" },
-);
-assert.equal(
-  nuclearTerritoryRace.status,
-  0,
-  nuclearTerritoryRace.stdout + nuclearTerritoryRace.stderr,
-);
+for (const fixture of [
+  "test/nuke-territory-race-fixture.mts",
+  "test/nuke-salvo-receipt-fixture.mts",
+]) {
+  const native = spawnSync(
+    process.execPath,
+    [
+      path.join(root, "node_modules/tsx/dist/cli.mjs"),
+      "--tsconfig",
+      "openfront-engine/tsconfig.json",
+      fixture,
+    ],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(native.status, 0, native.stdout + native.stderr);
+}
 const nuclearWorkerIpc = spawnSync(
   process.execPath,
   [

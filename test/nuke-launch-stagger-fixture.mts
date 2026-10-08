@@ -6,7 +6,10 @@ import { Difficulty, UnitType } from "../openfront-engine/src/core/game/Game";
 import { engineTestsUtil, setupTwoPlayerGame } from "./helpers/two-player-game.mts";
 import { PlayerInfo, PlayerType } from "../openfront-engine/src/core/game/Game";
 import { setup } from "../openfront-engine/tests/util/Setup";
-import { unpackMotionPlans } from "../openfront-engine/src/core/game/MotionPlans";
+import {
+  unpackMotionPlans,
+  type GridPathPlan,
+} from "../openfront-engine/src/core/game/MotionPlans";
 import { executeClassicScript, readRepositoryFile } from "./helpers/classic-script.mjs";
 import { createMaxDifficultyOpponent } from "../scripts/headless/opponent-adapter.js";
 
@@ -247,4 +250,82 @@ assert.deepEqual(
   "each planned flight must retain its native closest-silo slot after local delays",
 );
 
-console.log("nuke same-silo launch-stagger fixture passed");
+// Slot position alone cannot predict departure: gaps drain serialization,
+// while a recent pre-existing queue can delay even the first new missile.
+for (const [emissions, preloaded, expectedWaits] of [
+  [[0, 0, 0], 0, [0, 1, 2]],
+  [[0, 1, 2], 0, [0, 0, 0]],
+  [[0, 0, 4], 0, [0, 1, 0]],
+  [[0, 2, 2], 0, [0, 0, 1]],
+  [[0, 0, 0], 2, [1, 2, 3]],
+] as const) {
+  const departureGame = await setup(
+    "big_plains",
+    { instantBuild: true },
+    [new PlayerInfo("attacker", PlayerType.Human, null, "attacker")],
+    engineTestsUtil,
+  );
+  const owner = departureGame.player("attacker");
+  owner.addGold(100_000_000n);
+  const origin = departureGame.ref(1, 1);
+  const destination = departureGame.ref(80, 1);
+  owner.conquer(origin);
+  const launcher = owner.buildUnit(UnitType.MissileSilo, origin, {});
+  for (let slot = 1; slot < emissions.length + preloaded; slot++) {
+    launcher.increaseLevel();
+    launcher.reloadMissile();
+  }
+  for (let slot = 0; slot < preloaded; slot++) launcher.launch();
+  const shots = emissions.map(() => new NukeExecution(UnitType.AtomBomb, owner, destination));
+  const waits = new Map<number, number>();
+  const spawnTicks = new Map<number, number>();
+  const motion = new Map<number, GridPathPlan>();
+  while (departureGame.ticks() <= Math.max(...emissions) + 1) {
+    shots.forEach((shot, index) => {
+      if (emissions[index] === departureGame.ticks()) departureGame.addExecution(shot);
+    });
+    departureGame.executeNextTick();
+    const packed = departureGame.drainPackedMotionPlans();
+    if (packed) {
+      for (const plan of unpackMotionPlans(packed)) {
+        if (plan.kind === "grid") motion.set(plan.unitId, plan);
+      }
+    }
+    shots.forEach((shot, index) => {
+      const missile = shot.getNuke();
+      if (!missile || waits.has(index)) return;
+      waits.set(index, missile.nukeState().waitTicks);
+      spawnTicks.set(index, departureGame.ticks() - 1);
+    });
+  }
+  assert.deepEqual(
+    shots.map((_, index) => waits.get(index)),
+    [...expectedWaits],
+    `native departure waits for emissions ${emissions} with ${preloaded} old queue entries`,
+  );
+  assert.equal(motion.size, shots.length, "every native missile supplies its own motion plan");
+  const impacts = new Map<number, number>();
+  const lastImpact = Math.max(
+    ...Array.from(motion.values(), (plan) => plan.startTick + plan.path.length),
+  );
+  while (departureGame.ticks() <= lastImpact && impacts.size < shots.length) {
+    departureGame.executeNextTick();
+    shots.forEach((shot, index) => {
+      if (!shot.getNuke()!.isActive() && !impacts.has(index))
+        impacts.set(index, departureGame.ticks());
+    });
+  }
+  assert.equal(impacts.size, shots.length);
+  shots.forEach((shot, index) => {
+    const plan = motion.get(shot.getNuke()!.id());
+    assert.ok(plan);
+    assert.equal(plan.startTick, spawnTicks.get(index)! + expectedWaits[index] + 1);
+    assert.equal(
+      impacts.get(index),
+      plan.startTick + plan.path.length,
+      "observed detonation includes both native departure wait and terminal flight step",
+    );
+  });
+}
+
+console.log("nuke same-silo launch-stagger fixture passed (5 departure timing controls)");

@@ -433,6 +433,11 @@ last queued launch disappears, its silo-slot reservation is released.
 An initial salvo launch rejected by a worker probe or the intent budget enters
 the existing next-tick retry queue without dropping the rest of the salvo.
 Exceptional exits also reconcile the reservation with the surviving queue.
+Queued saturation shots retry while their own emitted prefix still awaits native
+missile receipts. This prevents revalidation from forgetting valid but not-yet-visible
+Atoms. The barrier uses the shared dispatch ledger's existing six-tick grace,
+grants no assumed SAM capacity, and does not block ordinary shots or other salvos.
+Invalid targets still cancel immediately; after expiry, real SAM accounting decides.
 The Hydrogen finisher waits for its own salvo's queue to drain. Delayed or retried
 launches move its deadline to the actual launch tick plus flight time and the
 existing five-tick landing margin; failed sends do not count as launches.

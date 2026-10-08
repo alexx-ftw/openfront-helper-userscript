@@ -6337,3 +6337,54 @@ until emitted, so their pre-dispatch viability horizon remains a separate task.
 The earlier failed transit/source guards and partial-slot readiness expansion
 remain excluded. No aggregate victory improvement or live browser adoption is
 claimed. This active goal continues to own the remaining scheduling investigation.
+
+### 2026-10-08 — departure controls and unacknowledged salvo prefix barrier
+
+Five additional native departure controls run three real missiles each with finite
+100,000,000 gold. Emission times 0/0/0 yield native waits 0/1/2; 0/1/2 yields
+0/0/0; 0/0/4 yields 0/1/0; 0/2/2 yields 0/0/1. With two recent old queue entries,
+0/0/0 yields 1/2/3. Every missile supplies its own motion plan, and observed
+detonation matches startTick + path.length, with startTick = spawn + wait + 1.
+Thus a fixed per-slot offset is wrong, and spacing alone does not prove absolute
+impact time or eliminate older-prefix/network effects. These are characterization
+controls in `test/nuke-launch-stagger-fixture.mts`, not a new scheduling policy.
+
+The native investigation exposes a separate receipt gap before spacing should be
+changed. At `69b89b99`, admit two Atom intents against a level-two SAM and queue the
+third for tick one. At that tick neither prefix missile exists yet, and revalidation
+counts the one remaining Atom against the full SAM capacity: it discards the tail.
+Both previously admitted intents create valid native missiles at tick three.
+Archive the baseline-specific reproduction in
+`docs/experiments/2026-10-08-salvo-receipt-gap.mts`; its buggy-behavior assertion
+is intentionally not wired into the current test suite and fails after the fix.
+
+Associate emitted nuclear dispatch records with their salvo ID in the existing
+game/player ledger. During that salvo's unacknowledged prefix, skip its SAM abort
+decision and retry its due tail using the existing next-tick queue. Neither path
+grants hypothetical SAM spending; after receipts or the unchanged six-tick grace,
+normal live SAM accounting decides. Target death/alliance checks remain before
+the barrier. Ordinary shots and unrelated salvo IDs retain their own progress.
+The optional dispatcher tracking argument still supports its existing boolean
+callers; ordinary nuclear records have null salvo IDs.
+
+`test/nuke-salvo-receipt-fixture.mts` delivers actual GameRunner updates, including
+packed motion plans, through the full bundled adapter. It retains the tail at tick
+one, resumes after both native receipts, emits it through the build menu, and
+observes all three native Atoms. The standard headless test now runs this fixture
+serially with the nuclear territory/source race. Synthetic controls cover unrelated
+ordinary progress, ID isolation, immediate alliance cancellation and expired
+unsupported-prefix abortion with no fictitious SAM credit. Ledger tests pin the
+salvo tag and ordinary null tag. Full `npm test`, TypeScript and artifact parity
+pass. Baikal again matches the exact baseline: won/alive, tick 6661, 11 own structures
+nuked, 20 Atoms, 49 Hydrogens, pending zero and 73,350,000 enemy structure gold
+destroyed. Receipt:
+`/home/eros/ofh-matrix/salvo-native-receipt-wait/baikal-nuke-wars.log`.
+
+Review limits remain bounded: the native units have no originating intent/salvo ID,
+so same-target manual or late receipts cannot be correlated exactly, as documented
+for the existing ledger. Early barrier release does not itself grant interception
+credit: the live-capacity validator still has to find actual supporting missiles or
+spent charges. Delays beyond the existing grace return to live revalidation. No
+live browser/server adoption or aggregate victory improvement is claimed. All heavy
+tests/simulations remain sequential and capped at 4 GiB RAM / 1 GiB swap. The active
+goal still owns relative departure/arrival scheduling and future-source viability.

@@ -215,7 +215,8 @@
       playerId,
       cost,
       expiresAt: tick + AUTO_BOT_BUILD_RESERVATION_GRACE_TICKS,
-      ...(nuclear ? { nuke: buildable.type, targetTile: tile, knownIds } : {}),
+      ...(nuclear ? { nuke: buildable.type, targetTile: tile, knownIds,
+        salvoId: trackNuke?.salvoId ?? null } : {}),
     });
     return true;
   }
