@@ -154,6 +154,26 @@ const SCENARIOS = [
     expect: "bot launches a salvo-scale response (>= 3 atoms)",
   },
   {
+    name: "sam-salvo-overwhelm-b",
+    description:
+      "Robustness twin of sam-salvo-overwhelm on a fresh seed — the slot-pressure new-silo branch must break the SAM-cover deadlock off seed A too",
+    env: {
+      OFH_MATCH_SEED: "scenario-sam-salvo-b",
+      OFH_MAX_TICKS: "25000",
+      OFH_25MM: "1",
+      OFH_INJECT_HOSTILE_ATOM: "1",
+      OFH_INJECT_HOSTILE_ATOM_AT_TICK: "1200",
+      OFH_INJECT_HOSTILE_ATOM_GOLD: "2000000",
+      OFH_INJECT_HOSTILE_SAM_COVER: "1",
+      OFH_INJECT_OWN_SILO_NETWORK: "1",
+      OFH_INJECT_OWN_SILO_LEVEL: "3",
+      OFH_LOG_NUKES: "1",
+      OFH_LOG_STRUCTURES: "1",
+    },
+    assert: (r) => Number(r.nuclearStrategy?.atomBombsLaunched ?? 0) >= 3,
+    expect: "salvo-scale response (>= 3 atoms); won observed honestly (seed-A twin won@7571 via 1 new silo)",
+  },
+  {
     name: "baikal-nuke-wars",
     description:
       "Baikal Nuke Wars map (user-nominated best nuke-logic testbed) — silo network + hostile SAM cover exercise nuke targeting on the dedicated nuclear map",
