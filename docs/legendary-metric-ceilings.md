@@ -8680,3 +8680,91 @@ removed from nukeBehavior (collectCandidatesWithRetry returns
 only), the focused tests were re-pinned to stand-down semantics (retarget
 EV/buildability/destination rejections stand down without re-probing the
 original), and no version bump was applied per the pre-declared rule.
+
+## Pre-declaration 26: chest-funded Legendary silo upgrades (2026-10-09,
+BEFORE implementation)
+
+User-observed defect: the bot builds Missile Silos but never upgrades them,
+not once. Mechanism (code audit, this repository): after the first silo,
+maybeOpenLegendaryArsenal only ever arms the baseline SAM; silo upgrades
+exist in two lanes that cannot fire — maybeUpgradeSiloForNuclearSlotPressure
+requires a queued launch or wanted salvo slots (the organic chain launches
+0/20 histories, so the pressure never materializes), and the generic
+structureUpgradeBeforeSpawn / maybeUpgradeStructure path is closed by the
+1/1500 structure-density gate (never reached on real maps). Native parity
+cannot rescue it either: on Legendary structureUpgradeRandomChance returns 0,
+so the src-style random upgrade path is dead by design.
+
+Candidate (win-fix lane, Legendary only): in maybeOpenLegendaryArsenal, after
+the existing baseline-SAM attempt returns false, probe the live (not under
+construction) Missile Silos directly — buildableFor on each silo's own tile,
+skipping tiles inside an active hostile missile impact — pick the
+lowest-level upgradable silo deterministically, and buy the authoritative
+upgrade only when the abundance proof holds: spendableConstructionGold >=
+upgrade cost + safeConstructionCost(AtomBomb), legendarySamBaselineChestActive
+is false, MissileSilo is enabled and build-allowed, and no silo is already
+under construction (one upgrade at a time). DIVERGENCE (deliberate,
+pre-declared): bypasses src findBestStructureToUpgrade — on Legendary its
+structureUpgradeRandomChance roll is 0 and the call still draws RNG
+(nextInt) to always answer false, so routing through it would re-roll the
+game for a lane that usually does nothing. The direct probe draws no RNG;
+actuation reuses sendAutoBotBuildOrUpgrade with the probed BuildableUnit.
+The baseline-SAM attempt keeps its exact position and result, so when the
+SAM lane fires, behavior is unchanged; when neither lane fires, the tick is
+byte-identical to control (early gates and probes draw no RNG).
+
+Focused artificial cases (test/silo-chest-upgrade.mjs): happy path upgrades
+the lowest-level silo with the authoritative probed cost; SAM chest active
+declines without probing; gold below upgrade + Atom price declines; silo
+under construction declines; a maxed (canUpgrade false) silo declines; a
+silhouette inside an active hostile missile impact is skipped; the baseline
+SAM firing keeps the upgrade lane unreached; and the RNG cursor does not
+move on any decline path.
+
+Effect gate: receipt-17 n=20 public-history basket in index order,
+6,000-tick cap, serial, 2 GiB MemoryMax / MemorySwapMax=0, against the
+standing 1.12.195 control (/tmp/ofh-matrix/v1.12.195-pd24-candidate — the
+same source tree as HEAD; only the embedded @version label differs, which is
+not behavioral). Require: at least one history raises its sum of silo levels
+through this lane; rows with no silo-level increase stay byte-identical to
+control except runtimeMs; no win-to-loss (dpa7T7kPMn's win must survive); no
+alive-to-dead regression; own structures nuked never increase per row; and
+no row loses its first silo. Reject any other result drift, any safety
+bypass, or a latency regression against standing checks. Artificial savings
+alone cannot retain. On a pass: rebuild, verify bundle parity, bump to the
+next unused patch (1.12.196), and commit the exact validated build;
+otherwise revert without a bump.
+
+## Receipt 26: chest-funded silo upgrades rejected — cost the only win
+(2026-10-09)
+
+The pre-declaration 26 candidate was implemented
+(maybeUpgradeLegendarySiloChest: lowest-level authoritative probe, abundance
+proof upgrade + Atom, SAM chest senior, no placement RNG on decline paths)
+and passed its focused fixture, then REVERTED under its own pre-declared
+rule.
+
+Effect gate (receipt-17 n=20 basket, same order/seeds/cap/scope, control =
+the standing 1.12.195 run; evidence in
+/tmp/ofh-matrix/v1.12.196-pd26-candidate): the REQUIRED clause failed with
+zero histories raising silo levels through the lane, and 8 rows drifted
+without any upgrade (cVoPAh4Hk3, cQFUwWwnKd, dpa7T7kPMn, dRRd3sToeS,
+dPvMonrSL6, GGJy5YUR, dTkFZLga8V, dS5VJperQo) — including a WIN-TO-LOSS on
+dpa7T7kPMn, the basket's only win. Own-structures-nuked never increased and
+no row died, but the pre-declared drift and win clauses are absolute. The
+upgrade probes (buildableFor on existing silo tiles) are not RNG-free in
+this adapter: rerunning them per tick re-rolls the deterministic stream —
+the same no-free-lane lesson as pre-declarations 15/16, now measured for the
+upgrade seam.
+
+Strategic update: the silo-upgrade gap the user observed is real (no
+Legendary lane upgrades a silo: slot pressure needs a queued launch that
+never comes, density never reaches 1/1500, and the native random chance is
+0), but closing it from the construction layer requires the large
+multi-seed gate (20+ games averaging out deterministic perturbation)
+pre-reserved by the strategic conclusion after pre-declaration 16 — the
+n=20 receipt-17 gate is demonstrably too sensitive: it flips on any
+construction perturbation. Reverted without a bump; the focused fixture was
+removed with the lane. Foundation for the next attempt: an n=60 history
+baseline at 1.12.195 so future construction candidates are judged on
+aggregate win/survival deltas instead of per-seed identity.
