@@ -7333,3 +7333,34 @@ gate failed. No semver bump or generated userscript from this experiment is
 retained. The next investigation should address SAM purchase/readiness
 timing without treating an unknown one-sample forecast as a permanent
 reserve condition.
+
+## Pre-declaration 10: growth-preserving SAM chest (2026-10-09)
+
+Receipt 10 established that binding the SAM chest harder kills
+baikal-silo-regime sooner, and the ledger asked for a SAM-timing fix that
+does not treat an unknown one-sample forecast as a permanent reserve. The
+untested middle path: keep the two-sample chest trigger exactly as shipped
+in v1.12.190, but when the chest binds, release City candidates so income
+keeps compounding toward the 1,500,000 SAM price. Factory, Port, own
+MissileSilo, and Warship stay blocked as direct interceptor-fund
+competitors. The conservative null-forecast default and the peace-window
+chest path are untouched, and no rejected lever (one-sample shortcut,
+permanent reserve, score-zero release, priority ordering, starvation
+release) is revived.
+
+Pre-declared gates:
+
+- The focused fixture pins the matrix: with the chest active, City is not
+  blocked while Factory, Port, MissileSilo, and Warship remain blocked;
+  with the chest inactive nothing is blocked.
+- baikal-silo-regime must not lose before the known tick 3861 (receipt 10
+  died at 3771). Record SAM build tick, own structures lost, nukes
+  launched, final outcome, and tiles; keep the lever only on a measurable
+  survival or structure-preservation improvement.
+- baikal-nuke-wars and both sam-salvo-overwhelm seeds remain wins with
+  bit-identical final trajectories and nuke counts versus their v1.12.190
+  receipts. The silo counter-battery scenario keeps its 500,000
+  hostile-structure damage assertion.
+- Full `npm test`, TypeScript check, and build parity pass. If the lever
+  is retained, bump semver to 1.12.191 and rebuild the committed
+  userscript; otherwise revert the tree and record the honest rejection.
