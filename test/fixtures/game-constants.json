@@ -2600,6 +2600,36 @@
     "initializerPreview": "2"
   },
   {
+    "id": "engine/ingame/auto-bot/structureBehavior.js:PREEMPTIVE_DEFENSE_POST_FRONT_FLOOR#1",
+    "file": "engine/ingame/auto-bot/structureBehavior.js",
+    "name": "PREEMPTIVE_DEFENSE_POST_FRONT_FLOOR",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "26d228663f13a88592a12d16cf9587caab0388b262d6d9f126ed62f9333aca94",
+    "initializerLength": 3,
+    "initializerPreview": "400"
+  },
+  {
+    "id": "engine/ingame/auto-bot/structureBehavior.js:PREEMPTIVE_DEFENSE_POST_FRONT_TILES_PER_POST#1",
+    "file": "engine/ingame/auto-bot/structureBehavior.js",
+    "name": "PREEMPTIVE_DEFENSE_POST_FRONT_TILES_PER_POST",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "99ee50221221864d50c60baea6f14d8ac2e235cc6e78be6088cd40cc97fca394",
+    "initializerLength": 3,
+    "initializerPreview": "700"
+  },
+  {
+    "id": "engine/ingame/auto-bot/structureBehavior.js:PREEMPTIVE_DEFENSE_POST_MAX_POSTS_CEILING#1",
+    "file": "engine/ingame/auto-bot/structureBehavior.js",
+    "name": "PREEMPTIVE_DEFENSE_POST_MAX_POSTS_CEILING",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "e7f6c011776e8db7cd330b54174fd76f7d0216b612387a5ffcfb81e6f0919683",
+    "initializerLength": 1,
+    "initializerPreview": "6"
+  },
+  {
     "id": "engine/ingame/auto-bot/structureBehavior.js:ORDINARY_STRUCTURE_DECISION_INTERVAL_TICKS#1",
     "file": "engine/ingame/auto-bot/structureBehavior.js",
     "name": "ORDINARY_STRUCTURE_DECISION_INTERVAL_TICKS",

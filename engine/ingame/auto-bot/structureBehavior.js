@@ -302,6 +302,15 @@
    * and is never clamped by this cap.
    */
   const PREEMPTIVE_DEFENSE_POST_MAX_POSTS = 2;
+
+  // Front-scaled budget on top of that base: a single snowballed neighbor can
+  // share a 1300-2000 tile front where two posts are decorative (sam-B
+  // receipt: 2 posts all match, 47k -> 22 tile collapse in ~140 ticks). Every
+  // extra post still re-clears the Legendary surplus gold gate on each
+  // decision tick, so the historical zero-threat Baikal drain stays blocked.
+  const PREEMPTIVE_DEFENSE_POST_FRONT_FLOOR = 400;
+  const PREEMPTIVE_DEFENSE_POST_FRONT_TILES_PER_POST = 700;
+  const PREEMPTIVE_DEFENSE_POST_MAX_POSTS_CEILING = 6;
   // The Nation execution loop asks for defensive structure work between the
   // main attack decisions as well as on the main decision itself.  Those
   // interstitial calls must keep missile/SAM/land-defense reactions live, but
@@ -1320,11 +1329,21 @@
       }
       const frontTiles = this.getOpponentFrontTiles(strongest.opponentSid);
       if (frontTiles.length === 0) return null;
+      const allowed =
+        difficulty === Difficulty.Medium
+          ? 1
+          : Math.min(
+              PREEMPTIVE_DEFENSE_POST_MAX_POSTS_CEILING,
+              PREEMPTIVE_DEFENSE_POST_MAX_POSTS +
+                Math.floor(
+                  Math.max(
+                    0,
+                    frontTiles.length - PREEMPTIVE_DEFENSE_POST_FRONT_FLOOR,
+                  ) / PREEMPTIVE_DEFENSE_POST_FRONT_TILES_PER_POST,
+                ),
+            );
       return {
-        allowed:
-          difficulty === Difficulty.Medium
-            ? 1
-            : PREEMPTIVE_DEFENSE_POST_MAX_POSTS,
+        allowed,
         frontTiles,
         incomingTroops: 0,
         landAttacks: [],
