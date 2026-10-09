@@ -7172,8 +7172,7 @@ has already verified.
 Motivated by a deeper read of sam-salvo-overwhelm-b.log (the robustness
 receipt's real death mechanics): the bot peaked at 52,132 tiles (41.4%
 territory share) with ~458M gold and troop parity (hostile ratio 1.17-1.38
-vs Isle of Margins), then collapsed 47k -> 22 tiles in ~140 ticks (2083 ->
-2311) and was conquered at 2693 by a 2.5M-troop land stack. Across the
+vs Isle of Margins), then collapsed 47k -> 22 tiles in ~140 ticks (2083 -> 2311) and was conquered at 2693 by a 2.5M-troop land stack. Across the
 whole match it built exactly 2 Defense Posts: the binding constraint is
 the flat strategic quiet-border budget PREEMPTIVE_DEFENSE_POST_MAX_POSTS
 = 2, not gold (the Legendary surplus gate passed trivially at 450M), on a
@@ -7189,6 +7188,7 @@ re-evaluated on every decision tick, which is the standing protection
 against the historical six-zero-threat-post gold drain on Baikal.
 
 Pre-declared expectations.
+
 - sam-salvo-overwhelm-b (effect gate): honest goal is survival past the
   standing drawdown trough (tick 2311) or a win; a still-loss with a
   later trough and more posts counts as mechanism-confirmed, lever-weak.
@@ -7248,6 +7248,7 @@ friendly-fire, salvo, and gold-reserve checks remain in force. Other
 difficulties and direct-retaliation ordering remain unchanged.
 
 Pre-declared gates:
+
 - sam-salvo-overwhelm-b effect: with the observed 1.17x quiet-border lead,
   the pre-invasion nuke (before the tick-2183 assault) should target Isle
   of Margins; win or survive beyond the v1.12.189 baseline death at 2829.
@@ -7302,6 +7303,7 @@ immediate threat ETA of zero. Keep the two-sample forecast for every case
 that is not already launch-ready, and do not invent a hostile income rate.
 
 Pre-declared gates:
+
 - The focused fixture proves the one-sample, existing-silo, 750,000-gold
   boundary; below-cost and no-silo samples remain unknown, and the SAM
   chest binds only while no own SAM exists and its price is unfunded.
@@ -7314,3 +7316,20 @@ Pre-declared gates:
   damage assertion.
 - Full `npm test`, TypeScript check, and build parity pass. If the lever is
   retained, bump semver to 1.12.191 and rebuild the committed userscript.
+
+## Receipt 10: rejected one-sample hostile-silo forecast (2026-10-09)
+
+The v1.12.191 experiment failed its baikal-silo-regime survival gate and
+was reverted; v1.12.190 remains the shipped build. Treating the first
+hostile economy sample as an immediate launch-ready threat kept the SAM
+reserve bound, but the match ended at tick 3771, 90 ticks before the
+v1.12.190 loss at tick 3861. It preserved one additional structure and
+finished with 34,811 tiles (+5,527), but the bot never completed a ready
+SAM and launched no nukes. The first hostile nuke still arrived at tick 1202. Earlier defeat outweighs the isolated structure and tile gains, so
+the forecast shortcut is rejected.
+
+The no-harm controls and counter-battery gate were not run after the target
+gate failed. No semver bump or generated userscript from this experiment is
+retained. The next investigation should address SAM purchase/readiness
+timing without treating an unknown one-sample forecast as a permanent
+reserve condition.
