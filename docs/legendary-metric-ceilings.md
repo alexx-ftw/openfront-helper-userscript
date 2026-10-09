@@ -8566,3 +8566,117 @@ collected; dPvMonrSL6 36 / 0), every collected candidate scored <= 0 — the
 border offset footprints eat the friendly-fire structure penalty — so the
 EV-checked lane never had a launchable aim. Rejection stands on both the
 missed dispatch requirement and measured churn without benefit.
+
+## Pre-declaration 24: avoid speculative first-batch silo probes
+
+(2026-10-09, adopted from the subagent audit; implementation started after
+this declaration)
+
+Candidate: in Legendary+winFixes silo BUILD placement, probe the first
+admissible tile of the existing first batch alone. If its descriptor passes
+the unchanged construction checks, return it immediately. Otherwise probe
+the remainder of that original batch concurrently, then continue the
+original subsequent batches unchanged.
+
+Preserve the complete sampled/ranked pool, RNG draws, candidate limits,
+timeouts, first-valid selection, snapped-tile safety, reserve checks,
+planner offers/Wait order, first-silo gates, upgrades, slot-pressure
+policy, nuclear targeting, and owner-matched readiness. No caching.
+
+Focused artificial cases: first tile valid — same descriptor, one quote
+instead of four; first tile rejected — same winner and total quotes as
+baseline; every tile rejected — unchanged limits, null result, RNG cursor;
+hybrid descriptors, tile 0, timeout, and stale-snapshot handling retain
+existing validation; non-silo and upgrade paths stay identical.
+
+Effect gate: rebuild first; compare unchanged 1.12.194 and candidate on the
+receipt-17 n=20 basket, seeds/order, 6,000-tick cap, serial, 2 GiB
+MemoryMax / MemorySwapMax=0, with identical quote-only
+`OFH_LOG_SILO_QUOTES=1` tracing on control and candidate. Require fewer
+total silo quotes, a reduction in at least one public
+row, no per-tick quote increase, identical existing trace-count vectors,
+and identical full result objects except runtimeMs across all 20 rows.
+Reject inactivity, any result/intent drift, safety bypass, or latency
+regression against standing checks. Artificial savings alone cannot retain.
+If everything passes and bundle parity holds, bump to the next unused patch
+and commit the exact validated build; otherwise revert without a bump.
+
+## Receipt 24: first-batch silo probe fast path adopted — 1.12.195 (2026-10-09)
+
+The pre-declaration 24 candidate was implemented (test/silo-probe-budget.mjs
+pins: first admissible tile quoted alone returns its descriptor with one
+quote; rejected leads fall through to the unchanged full batch; rejection
+limits, RNG cursor, hybrid/upgrade, non-silo, stale-snapshot, tile 0,
+blocked leads, and non-Legendary behavior stay identical) and passed its
+public gate.
+
+Effect gate (receipt-17 n=20 history basket, same order/seeds, 6,000-tick
+cap, serial, 2 GiB MemoryMax / MemorySwapMax=0, quote-only
+OFH_LOG_SILO_QUOTES=1 on both sides; control = exact unchanged 1.12.194
+build, byte-verified; evidence in /tmp/ofh-matrix/v1.12.194-pd24-control and
+/tmp/ofh-matrix/v1.12.195-pd24-candidate): full result objects identical on
+all 20 rows except runtimeMs; silo quotes 44 -> 17 total with 9 rows
+reduced and 0 rows increased (no per-tick increase); standing performance
+checks green via the full suite. The total runtimeMs delta (+176s
+candidate) is noise-class: the same-outcome 35-row basket measured a 256s
+swing in the opposite direction across identical outcomes, and the gate
+excludes runtimeMs by construction. Retained: rebuild, bundle parity green,
+package and generated userscript bumped to the next unused patch
+(1.12.195), and the exact validated build committed.
+
+## Pre-declaration 25: retain the original nuke target after a rejected retarget
+
+(2026-10-09, BEFORE implementation)
+
+When Legendary chooses the highest-value alternate target by raw candidate
+score, retain the original target's already-collected candidate list as the
+last fallback. Test the alternate first with the existing SAM-coverage,
+buildability, expected-value, and final sendNuke checks; if every candidate
+fails, run the same checks against the original target and its own tiles.
+Keep the existing target order, score thresholds, target filters, economy
+deferrals, RNG, and one-launch limit. Run the SAM/Hydrogen tail once only
+after both target lists fail. The freeze-giant lane must keep each candidate
+list paired with its own target too. No new target scan or relaxed safety.
+
+Focused artificial cases: alternate EV rejection falls through to an
+EV-positive original; viable alternate still wins priority; alternate
+buildability or final send rejection falls through; both lists rejected run
+the tail exactly once; non-Legendary and existing target filters stay
+unchanged.
+
+Effect gate: run the exact fixed 35-row Labyrinth basket and the receipt-17
+first-20 public-match configuration basket in index order, with the same
+seeds and 6,000-tick cap on control and candidate, serial under 2 GiB
+MemoryMax / MemorySwapMax=0. Public-history rows reuse recorded configs for
+fresh seeded matches; they do not replay recorded turns. Capture full result
+objects plus OFH_LOG_INTENTS, OFH_LOG_NUKES, and quote-only silo tracing so
+each launch is tied to its selected target without full structure tracing.
+Require no win-to-loss, no alive-to-dead, no per-row increase
+in our structures nuked, and no drop in the standing fullGreen count; at
+least one public row must gain a valid EV-positive launch through the
+original-target fallback. If the targeted scenario passes but public matches
+show no such benefit or any survival regression, revert without a version
+bump. On a pass, rebuild, verify bundle parity, bump to the next unused patch,
+and commit the exact validated build.
+
+## Receipt 25: original-target fallback rejected — zero public benefit (2026-10-09)
+
+The pre-declaration 25 candidate was implemented and tested, then REVERTED
+under its own pre-declared rule. Focused artificial cases
+(test/nuke-ev-fallthrough.mjs) passed while the lane existed (alternate EV
+rejection, buildability rejection, and destination rejection each fell
+through to the original target; both-lists rejection ran the tail once).
+
+Effect gate (fixed 35-row Labyrinth basket, 6,000-tick cap, serial, 2 GiB
+MemoryMax / MemorySwapMax=0; evidence in /tmp/ofh-nuke-bench.T93YCH,
+bundles/baseline.user.js vs bundles/fallback-only.user.js): the REQUIRED
+clause failed — zero rows gained a valid EV-positive launch through the
+original-target fallback. All 35 rows produced identical outcomes across
+both variants: 0 wins, identical tick totals (207,965 total), identical
+emitted intents (15,742), identical result objects; only runtimeMs differed
+(control 1,457s vs fallback 1,201s, noise-class). Rejected, the lane is
+removed from nukeBehavior (collectCandidatesWithRetry returns
+{list, retargeted}; the freeze-giant lane probes its single retargeted list
+only), the focused tests were re-pinned to stand-down semantics (retarget
+EV/buildability/destination rejections stand down without re-probing the
+original), and no version bump was applied per the pre-declared rule.

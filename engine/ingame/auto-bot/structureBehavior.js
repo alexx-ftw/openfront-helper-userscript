@@ -13234,6 +13234,17 @@
       return { handled: false, buildable: null, attemptedTiles };
     }
 
+    async probeLegendarySiloLead(tiles, probe, emergency) {
+      const lead = await this.buildableFor(UNIT.MissileSilo, tiles[0], probe.probeTimeoutMs);
+      if (!this.structureEmergencySnapshotCurrent(emergency)) return { stale: true };
+      if (this.isUsableStructureBuildable(lead, tiles[0], UNIT.MissileSilo)) {
+        return { buildable: lead };
+      }
+      return { remainingTiles: tiles.slice(1) };
+    }
+
+    // Keep the ranked fast path's safety checks and fallback order together.
+    // eslint-disable-next-line sonarjs/cognitive-complexity
     async probeRankedStructureTiles(scored, type, probe, emergency) {
       const ranked = scored.slice(0, probe.probeLimit);
       for (
@@ -13242,11 +13253,23 @@
         offset += probe.parallelProbeCount
       ) {
         if (!this.structureEmergencySnapshotCurrent(emergency)) return null;
-        const tiles = ranked
+        let tiles = ranked
           .slice(offset, offset + probe.parallelProbeCount)
           .map(({ t }) => t)
           .filter((tile) => this.structureEmergencyTileAllowed(tile, type, emergency));
         if (tiles.length === 0) continue;
+        if (
+          type === UNIT.MissileSilo &&
+          isLegendaryDifficulty(currentDifficulty()) &&
+          state.settings.winFixes
+        ) {
+          // The ranked lead wins; avoid quoting the rest of the batch needlessly.
+          const result = await this.probeLegendarySiloLead(tiles, probe, emergency);
+          if (result.stale) return null;
+          if (result.buildable) return result.buildable;
+          tiles = result.remainingTiles;
+          if (tiles.length === 0) continue;
+        }
         const buildables = await Promise.all(
           tiles.map((tile) => this.buildableFor(type, tile, probe.probeTimeoutMs)),
         );
