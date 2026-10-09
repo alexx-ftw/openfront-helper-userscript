@@ -3522,23 +3522,41 @@
     }
 
     hostileSiloLevelSum() {
-      const siloSummary = this.hostileMissileSiloCapacitySummary();
-      const count = Number(siloSummary?.hostileSiloCount ?? 0);
-      // Level sum approximated by count until a per-level read is exposed;
-      // count is the launch-capacity proxy the summary already carries.
-      return count;
+      return Number(this.hostileMissileSiloCapacitySummary()?.hostileSiloCount ?? 0);
     }
 
     hostileNuclearThreatSample() {
       const tick = Number(this.game?.ticks?.() ?? 0);
-      if (!state.hostileEconSamples) state.hostileEconSamples = [];
+      if (!Array.isArray(state.hostileEconSamples)) state.hostileEconSamples = [];
       const samples = state.hostileEconSamples;
-      const last = samples[samples.length - 1];
+      let last = samples[samples.length - 1];
+      if (last && tick < last.tick) {
+        samples.length = 0;
+        if (Array.isArray(state.ownEconSamples)) state.ownEconSamples.length = 0;
+        last = null;
+      }
       if (last && tick - last.tick < 100) return;
+
+      // DIVERGENCE (winFixes): match each hostile's treasury to its own
+      // launcher count so unrelated FFA players cannot form a fictitious
+      // imminent nuclear threat.
+      const mySid = this.player.smallID();
+      const players = [];
+      for (const other of this.game.players()) {
+        if (!other?.isPlayer?.() || other.smallID() === mySid) continue;
+        if (!other.isAlive?.()) continue;
+        if (this.player.isFriendly?.(other) === true) continue;
+        const id = this.readPlayerSmallId(other);
+        if (id === null || id === undefined) continue;
+        players.push({
+          id,
+          gold: Number(other.gold?.() || 0),
+          siloCount: this.playerUnitCapacitySummary(other, UNIT.MissileSilo)?.count ?? 0,
+        });
+      }
       samples.push({
         tick,
-        gold: this.hostileRichestGold(this.player.smallID()),
-        siloLevels: this.hostileSiloLevelSum(),
+        players,
       });
       if (samples.length > 3) samples.shift();
     }
@@ -3556,19 +3574,30 @@
       if (samples.length < 2) return null;
       const latest = samples[samples.length - 1];
       const prior = samples[samples.length - 2];
+      if (!Array.isArray(latest.players) || !Array.isArray(prior.players)) return null;
       const dTick = Math.max(1, latest.tick - prior.tick);
-      const incomePerTick = Math.max(0, latest.gold - prior.gold) / dTick;
       // Nuclear paths: a nuke from an EXISTING silo (~750k), or a new silo
-      // (~1M + 300 construction) then a nuke. Silo LEVELS shorten the
-      // horizon: each level is ready launch capacity already in place.
-      const siloLevels = Math.max(0, Number(latest.siloLevels) || 0);
-      const etaExisting = this.hostileNukePathEta(latest, incomePerTick, 750_000);
-      const etaNewSilo =
-        this.hostileNukePathEta(latest, incomePerTick, 1_750_000) + 300;
-      const levelFactor = 1 / (1 + siloLevels * 0.25);
-      return siloLevels > 0
-        ? etaExisting * levelFactor
-        : Math.min(etaExisting, etaNewSilo);
+      // (~1M + 300 construction) then a nuke. Preserve the existing count
+      // proxy and level factor, but apply them only to that same owner's gold.
+      const previousById = new Map(prior.players.map((player) => [player.id, player]));
+      let earliestEta = Number.POSITIVE_INFINITY;
+      let hasComparablePlayer = false;
+      for (const player of latest.players) {
+        const previous = previousById.get(player.id);
+        if (!previous) continue;
+        hasComparablePlayer = true;
+        const incomePerTick = Math.max(0, player.gold - previous.gold) / dTick;
+        const siloCount = Math.max(0, Number(player.siloCount) || 0);
+        const etaExisting = this.hostileNukePathEta(player, incomePerTick, 750_000);
+        const etaNewSilo =
+          this.hostileNukePathEta(player, incomePerTick, 1_750_000) + 300;
+        const levelFactor = 1 / (1 + siloCount * 0.25);
+        const eta = siloCount > 0
+          ? etaExisting * levelFactor
+          : etaNewSilo;
+        earliestEta = Math.min(earliestEta, eta);
+      }
+      return hasComparablePlayer ? earliestEta : null;
     }
 
     ownSamReadinessEtaTicks() {

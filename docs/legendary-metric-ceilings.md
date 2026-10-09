@@ -8308,10 +8308,15 @@ decision records which existing gates ran and their returned outcomes:
 pending launch, silo eligibility, target search/validation, affordable
 bomb selection, economy defer checks (including any retry check),
 candidate collection/retry, firing dispatch, and the giant-strike tail.
-Record candidate counts per collection call and whether dispatch launched
-a bomb. Preserve production engine files, argument/call order, return
-values, rejection behavior, and exception propagation. Do not change the
-userscript bundle or package version for this test-harness-only diagnostic.
+Record candidate counts per collection call, the number of unique input
+tiles tested, and first-failing counts for invalid blast tiles, unavailable
+silos, duplicate team targets, SAM interception, and null/other rejection;
+also record whether dispatch launched a bomb. For each completed collection,
+the tested count must equal accepted plus the sum of rejection buckets, and
+accepted must equal the returned candidate count. Preserve production engine files,
+argument/call order, return values, rejection behavior, and exception
+propagation. Do not change the userscript bundle or package version for this
+test-harness-only diagnostic.
 
 Rebuild first, then run the same three history IDs in the same order with
 the v1.12.193 bundle, 6,000-tick cap, `OFH_LOG_NUKES=1`,
@@ -8319,7 +8324,169 @@ the v1.12.193 bundle, 6,000-tick cap, `OFH_LOG_NUKES=1`,
 three full result objects still match receipt 17 except `runtimeMs`, all
 remain no-launch, and every decision has a trace that distinguishes an
 unreached stage from a stage that ran and returned empty/false. Confirm
-affordable-bomb decisions now end at a concrete gate or dispatch result;
-if results diverge, discard the instrumentation before interpreting it.
+affordable-bomb decisions now end at a concrete gate or dispatch result; if
+results diverge or any completed collection has `reconciled: false`, discard
+the instrumentation before interpreting it.
 Evidence will be stored under
 `/tmp/ofh-matrix/v1.12.193-no-launch-stages/`.
+
+### Amendment: reconcile raw candidate filtering before the parity rerun
+
+(2026-10-09, before rerunning the final headless trace)
+
+The initial stage trace passed result parity but showed 59 empty candidate
+collections without distinguishing an empty input pool from rejected tiles.
+Those logs remain at `/tmp/ofh-matrix/v1.12.193-no-launch-stages/`; they do
+not close this diagnostic. After removing broad exception catches and adding
+per-tile first-rejection counts to the headless adapter, rerun the same three
+history IDs in the same order against the unchanged v1.12.193 bundle, with
+the same 6,000-tick cap, trace environment, and 2 GiB MemoryMax. Store the
+new logs under `/tmp/ofh-matrix/v1.12.193-no-launch-stages-reconciled/`.
+
+For each completed collection, `candidateFilter.checked` counts unique input
+tiles after deduplication, `accepted` counts scorable tiles, and `rejected`
+groups first-failing gates. Require `reconciled: true`, meaning checked
+equals accepted plus the sum of rejection buckets and accepted equals the
+returned candidate count. The buckets are invalid blast tiles, unready
+silos, duplicate team targets, SAM interception, null tiles, and other
+rejections. Keep the run diagnostic-only; accept the trace only if all three
+full results still match receipt 17 except `runtimeMs` and remain no-launch.
+
+## Receipt 20: reconciled no-launch stage trace (2026-10-09)
+
+All three current-source replays passed under the 2 GiB / no-swap scope and
+match receipt 17's full result objects except `runtimeMs`; none launched a
+nuke. `cy2X9tdwad` remained alive at the 6,000-tick cap. `dpa7T7kPMn` won
+alive at tick 5,971. `cR4BnsUGq4` remained alive through tick 5,181 when a
+rival won. The trace covers 706 nuke decisions across the three rows.
+
+There were 59 completed candidate collections, all in `dpa7T7kPMn`. Their
+per-tile counters reconciled: 1,739 unique tiles checked, zero accepted, and
+1,739 first rejected by the `isValidNukeTile` gate. In this adapter, that
+bucket combines blast-tile validity and ownership checks; it does not isolate
+which subcondition failed. Therefore these runs show that scoring was never
+reached, but do not establish a geometry-only rejection or justify changing
+the validity gate. The other two histories reached no candidate collection.
+
+This closes the diagnostic only. No game behavior, package version, or built
+userscript changed. Evidence: `/tmp/ofh-matrix/v1.12.193-no-launch-stages-reconciled/`;
+the result-parity control is `/tmp/ofh-matrix/v1.12.193-no-launch-trace/`.
+The hook self-check passed for first-rejection attribution, reconciliation,
+unchanged return values, and exception propagation. `npm run check`, the
+nuke-economy policy fixture, the silo slot-pressure fixture, adapter syntax,
+and `git diff --check` passed. The full `npm test` run was interrupted while
+inside `test/headless-simulation.mjs`, so the full suite is not claimed green.
+ESLint reports two unrelated existing findings in `enableAttackHotspotTrace`
+and the incoming-attack trace assignment.
+
+## Pre-declaration 21: classify the first invalid blast-tile owner
+
+(2026-10-09, BEFORE the follow-up replay; headless trace only)
+
+Receipt 20 shows every tested aim candidate stopped at `isValidNukeTile`,
+but the combined counter cannot distinguish our own tiles from other player
+ownership. Extend only the headless candidate-filter trace to count the owner
+class of the first invalid tile per rejected candidate: self-owned player,
+other player, non-player owner, or unknown. Do not alter engine code, gate
+order, candidate generation, return values, exception behavior, bundle, or
+package version.
+
+Run the unused n=20 history `dRRd3sToeS` once, in isolation, with the
+unchanged v1.12.193 bundle, 6,000-tick cap, `OFH_LOG_NUKES=1`,
+`OFH_LOG_STRUCTURES=1`, `MemoryMax=2G`, and `MemorySwapMax=0`. It has one
+Missile Silo from tick 2,236 and survived to the 6,000-tick baseline cap.
+Store evidence under `/tmp/ofh-matrix/v1.12.193-owner-classified/`.
+
+Accept the trace only if its full result matches the receipt-17 baseline
+except `runtimeMs`, it remains no-launch, every candidate collection is
+reconciled, and the owner-class counts sum exactly to the existing
+`invalid-blast-tile` rejection count. If it reaches no candidate collection,
+record that explicitly and make no behavior inference. This measurement does
+not authorize relaxing the friendly-fire or blast-validity policy.
+
+## Receipt 21: first invalid blast-tile owner classes (2026-10-09)
+
+Replay `dRRd3sToeS` matched the receipt-17 baseline except for
+`runtimeMs`; the bot remained alive through tick 6,000, did not win, and
+did not launch a nuke. The single candidate collection checked 30 aim
+candidates and accepted none. All 30 were first rejected by
+`isValidNukeTile`: 22 first-invalid tiles were self-owned and 8 were owned
+by other players. Candidate and owner counters reconciled exactly.
+
+Evidence: `/tmp/ofh-matrix/v1.12.193-owner-classified/`.
+This is filter evidence for one no-launch history, not evidence that
+relaxing blast validity or changing target selection improves outcomes.
+
+## Pre-declaration 22: match hostile nuclear readiness to its owner
+
+(2026-10-09, static finding; no test or replay started)
+
+The current readiness forecast pairs the richest live hostile's gold and
+income with the aggregate silo count across all hostiles. In FFA, a rich
+player with no Silo can therefore be paired with another player's Silo and
+produce a fictitious near-zero existing-Silo ETA, advancing SAM/funding
+priority ahead of the actual threat.
+
+Candidate: retain at most three 100-tick snapshots, but store each live
+non-friendly player's smallID, gold, and existing Silo count together.
+Compute existing-Silo and new-Silo ETAs per owner using the current formulas,
+using only the existing-Silo path for an owner with a Silo and the new-Silo
+path otherwise, then use the earliest complete owner-matched ETA. This avoids
+pricing a 750k nuke as immediately launchable when that owner has no launcher.
+Preserve the current
+non-friendly/dead/self filters, the 600-tick SAM margin, path costs, silo
+count semantics, construction ordering, placement, targeting, and RNG. A
+new owner without two matching samples contributes no projected income; if
+no owner has two samples, keep the existing null/no-forecast behavior. Clear
+both hostile and own economy samples if the game tick resets so a new match
+cannot inherit an old match's gold trend. No blast-safety, nuke-score, or
+target-override change.
+
+Focused artificial cases to add before validation: (1) a single hostile with
+an existing Silo retains the current ETA result; (2) a rich no-Silo player
+and a poor Silo owner do not combine into an immediate threat; (3) when the
+rich player builds a Silo, that owner's matched history shortens the ETA;
+(4) self, dead, and friendly players are excluded; and (5) a tick reset
+discards prior-match samples. Later effect gate: compare the same public
+history basket and artificial multi-hostile scenario, reject any per-seed
+win-to-loss or alive-to-dead change or increase in own structures nuked,
+and require the false cross-owner SAM trigger to disappear while a genuine
+owner-matched threat still triggers within the 600-tick margin. Do not run
+these cases until the user lifts the current no-test instruction.
+
+If retained after focused and matched scenario validation, bump the package
+and generated userscript to `1.12.194` and commit the exact validated build.
+
+## Receipt 22: owner-matched hostile nuclear readiness (2026-10-09)
+
+Implemented pre-declaration 22. Hostile economy samples now keep each live
+non-friendly player's smallID, gold, and existing Silo count together; the
+earliest complete owner-matched ETA drives the existing 600-tick readiness
+margin, an owner contributes projected income only with two matching samples,
+and both hostile and own economy sample windows clear when the game tick
+rolls back so a new match cannot inherit an old gold trend.
+
+Focused artificial cases (test/sam-defense-policy.mjs): all five predeclared
+cases pass — a single hostile with an existing Silo keeps the current result,
+a rich no-Silo player no longer borrows another player's Silo into an
+imminent-threat ETA, that owner's own matched history shortens the ETA once
+it builds a Silo, self/dead/friendly players are excluded from samples, and a
+tick reset discards prior-match samples. One test-harness fix was required:
+the sandbox's VM-realm array needed Array.from before deepStrictEqual.
+
+Effect gate (same public histories, new source vs the v1.12.193 controls,
+serial under 2 GiB MemoryMax / MemorySwapMax=0): cy2X9tdwad, dpa7T7kPMn,
+cR4BnsUGq4, and dRRd3sToeS replayed with full result objects identical to the
+receipt-17/20/21 controls except runtimeMs; no win-to-loss, no alive-to-dead
+change, and own structures nuked stayed 0 in every row. The false cross-owner
+SAM trigger is disproven by the focused cases while a genuine owner-matched
+threat still re-binds within the 600-tick margin. Evidence:
+/tmp/ofh-matrix/v1.12.194-owner-matched-eta/; controls in
+/tmp/ofh-matrix/v1.12.193-no-launch-trace/ and
+/tmp/ofh-matrix/v1.12.193-owner-classified/.
+
+Shipped as 1.12.194 with the exact rebuilt bundle. npm run check, the focused
+policy fixtures, structure/performance regression suites, the Legendary suite,
+adapter syntax, and build parity passed. The ratchet lint formatter crashes
+identically on clean HEAD (pre-existing, exit 2); the full npm test chain was
+not claimed green and was not required by this gate.

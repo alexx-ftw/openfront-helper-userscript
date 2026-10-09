@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import vm from "vm";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { fileURLToPath } from "url";
 import { JSDOM } from "jsdom";
 import {
@@ -323,6 +324,355 @@ function createSpawnGeometryCertificate(internals, pageGame, selectedKey) {
   };
 }
 
+function installNukeStageHook({
+  behavior,
+  trace,
+  name,
+  stage,
+  isAsync,
+  summarize,
+  onStart,
+  onResult,
+  start,
+}) {
+  const original = behavior[name];
+  if (typeof original !== "function") return;
+  behavior[name] = function (...args) {
+    const context = trace.context();
+    const event = trace.record(stage, { completed: false, ...(start?.(args) ?? {}) });
+    onStart?.(args, context, event);
+    const finish = (result) => {
+      if (event) Object.assign(event, summarize(result, args), { completed: true });
+      onResult?.(result, args, context);
+      return result;
+    };
+    const result = original.apply(this, args);
+    return isAsync ? result.then(finish) : finish(result);
+  };
+}
+
+function classifyNukeTileOwner(behavior, tile) {
+  try {
+    const owner = behavior.game.owner?.(tile);
+    if (!owner) return "unknown";
+    if (owner.isPlayer?.() !== true) return "non-player";
+    return owner.smallID?.() === behavior.player?.smallID?.() ? "self-player" : "other-player";
+  } catch {
+    return "unknown";
+  }
+}
+
+function installNukeCandidateFilterTraceHooks(behavior, trace) {
+  const gates = [
+    ["isValidNukeTile", (result) => result === false, "invalid-blast-tile"],
+    ["nukeSpawn", (result) => result === false, "silo-unready"],
+    ["isTeammateAlreadyNukingThisSpot", (result) => result === true, "team-duplicate"],
+    ["isTrajectoryInterceptableBySam", (result) => result === true, "sam-interceptable"],
+  ];
+  for (const [name, isRejected, reason] of gates) {
+    const original = behavior[name];
+    if (typeof original !== "function") continue;
+    behavior[name] = function (...args) {
+      const result = original.apply(this, args);
+      const candidate = trace.context()?.candidateFilter?.current;
+      if (candidate && isRejected(result)) {
+        candidate.reason ??= reason;
+        if (reason === "invalid-blast-tile") {
+          candidate.validityOwner = classifyNukeTileOwner(this, args[0]);
+        }
+      }
+      return result;
+    };
+  }
+
+  const originalScorable = behavior.isScorableNukeTile;
+  if (typeof originalScorable !== "function") return;
+  behavior.isScorableNukeTile = function (...args) {
+    const filter = trace.context()?.candidateFilter;
+    if (!filter) return originalScorable.apply(this, args);
+    const candidate = { reason: args[0] === null ? "null-tile" : null };
+    const previous = filter.current;
+    filter.checked += 1;
+    filter.current = candidate;
+    let scorable;
+    try {
+      scorable = originalScorable.apply(this, args);
+    } finally {
+      filter.current = previous;
+    }
+    if (scorable === true) filter.accepted += 1;
+    else {
+      const reason = candidate.reason ?? "other";
+      filter.rejected[reason] = (filter.rejected[reason] ?? 0) + 1;
+      if (reason === "invalid-blast-tile") {
+        const owner = candidate.validityOwner ?? "unknown";
+        filter.invalidBlastTileOwner[owner] = (filter.invalidBlastTileOwner[owner] ?? 0) + 1;
+      }
+    }
+    return scorable;
+  };
+}
+
+function installNukeLaunchStageHooks(behavior, trace, targetID) {
+  const hooks = [
+    {
+      name: "fireLegendaryClearFallthrough",
+      stage: "legendary-clear-fallthrough",
+      isAsync: true,
+      summarize: (fired, args) => ({ clearCount: args[0]?.length ?? null, fired: fired === true }),
+    },
+    {
+      name: "fireNukeFromCandidates",
+      stage: "firing-dispatch-result",
+      isAsync: true,
+      summarize: (_result, args) => ({ candidateCount: args[0]?.length ?? null }),
+    },
+    {
+      name: "maybeFreezeGiantStrike",
+      stage: "giant-strike-tail",
+      isAsync: true,
+      start: () => ({ scope: "giant" }),
+      summarize: () => ({}),
+    },
+    {
+      name: "sendNuke",
+      stage: "send-nuke",
+      isAsync: true,
+      start: (args) => ({ tile: args[0] ?? null }),
+      summarize: (fired, args) => ({
+        type: args[1] ?? null,
+        targetID: targetID(args[2]),
+        fired: fired === true,
+      }),
+    },
+  ];
+  for (const hook of hooks) installNukeStageHook({ behavior, trace, ...hook });
+}
+
+function installNukeDecisionStageHooks(behavior, trace) {
+  const targetID = (target) => target?.smallID?.() ?? null;
+  installNukeCandidateFilterTraceHooks(behavior, trace);
+  const hooks = [
+    {
+      name: "hasPendingNukeLaunches",
+      stage: "pending-launch-check",
+      summarize: (pending) => ({ pending: pending === true }),
+    },
+    {
+      name: "canConsiderNukes",
+      stage: "silo-eligibility",
+      summarize: (eligible, args) => ({
+        eligible: eligible === true,
+        siloCount: args[0]?.length ?? null,
+      }),
+    },
+    {
+      name: "isValidNukeTarget",
+      stage: "target-validation",
+      summarize: (valid, args) => ({
+        targetID: targetID(args[0]),
+        valid: valid === true,
+      }),
+    },
+    {
+      name: "shouldDeferNukeForEconomy",
+      stage: "economy-defer-check",
+      summarize: (deferred, args) => ({
+        targetID: targetID(args[0]),
+        cost: Number(args[1] ?? 0),
+        deferred: deferred === true,
+      }),
+    },
+    {
+      name: "collectNukeCandidates",
+      stage: "candidate-collection",
+      isAsync: true,
+      start: (args) => ({ targetID: targetID(args[0]), type: args[1] ?? null }),
+      onStart: (_args, context, event) => {
+        if (!context || !event) return;
+        const candidateFilter = {
+          checked: 0,
+          accepted: 0,
+          rejected: {},
+          invalidBlastTileOwner: {},
+        };
+        context.candidateFilter = candidateFilter;
+        event.candidateFilter = candidateFilter;
+      },
+      summarize: (candidates) => ({
+        candidateCount: candidates.length,
+        positiveCandidates: candidates.filter((candidate) => candidate.value > 0).length,
+        bestCandidateValue: candidates[0]?.value ?? null,
+      }),
+      onResult: (candidates, _args, context) => {
+        if (context) {
+          const filter = context.candidateFilter;
+          if (filter) {
+            const rejected = Object.values(filter.rejected).reduce((sum, count) => sum + count, 0);
+            const invalidOwners = Object.values(filter.invalidBlastTileOwner).reduce(
+              (sum, count) => sum + count,
+              0,
+            );
+            filter.reconciled =
+              filter.checked === filter.accepted + rejected &&
+              filter.accepted === candidates.length;
+            filter.invalidOwnerReconciled =
+              invalidOwners === (filter.rejected["invalid-blast-tile"] ?? 0);
+          }
+          context.lastCandidates = candidates;
+          context.candidateFilter = null;
+        }
+      },
+    },
+    {
+      name: "collectCandidatesWithRetry",
+      stage: "candidate-retry-result",
+      isAsync: true,
+      summarize: (result) => ({
+        candidateCount: result?.list?.length ?? null,
+        retargeted: result?.retargeted != null,
+        retargetedTargetID: targetID(result?.retargeted),
+      }),
+    },
+    {
+      name: "retryWithHigherValueTarget",
+      stage: "value-retry",
+      isAsync: true,
+      start: (args) => ({ scope: "value-retry", targetID: targetID(args[0]) }),
+      summarize: (result) => ({
+        retargeted: result != null,
+        targetID: targetID(result?.target),
+        candidateCount: result?.candidates?.length ?? null,
+      }),
+    },
+    {
+      name: "partitionCandidatesBySamCoverage",
+      stage: "sam-coverage-partition",
+      summarize: (partition, args) => ({
+        candidateCount: args[0]?.length ?? null,
+        clearCount: partition?.clear?.length ?? null,
+        coveredCount: partition?.covered?.length ?? null,
+      }),
+    },
+    {
+      name: "selectBuildableNukeCandidate",
+      stage: "buildable-candidate-selection",
+      isAsync: true,
+      summarize: (candidate, args) => ({
+        candidateCount: args[0]?.length ?? null,
+        selected: candidate != null,
+        value: candidate?.value ?? null,
+      }),
+    },
+    {
+      name: "nukeHasPositiveExpectedValue",
+      stage: "positive-expected-value",
+      isAsync: true,
+      summarize: (accepted, args) => ({
+        targetID: targetID(args[1]),
+        candidateValue: args[0]?.value ?? null,
+        accepted: accepted === true,
+      }),
+      onResult: (accepted, _args, context) => {
+        if (context) context.lastValueGate = accepted;
+      },
+    },
+  ];
+  for (const hook of hooks) installNukeStageHook({ behavior, trace, ...hook });
+  installNukeLaunchStageHooks(behavior, trace, targetID);
+}
+
+function installNukeTargetSelectionTraceHooks(adapter, behavior, trace) {
+  const targetID = (target) => target?.smallID?.() ?? null;
+  installNukeStageHook({
+    behavior,
+    trace,
+    name: "selectAffordableNuke",
+    stage: "bomb-selection",
+    isAsync: true,
+    summarize: (selected) => ({
+      type: selected?.type ?? null,
+      cost: selected ? Number(selected.cost) : null,
+    }),
+    onResult: (selected) => {
+      adapter.structureTrace.push({
+        kind: "nuke-selection",
+        tick: adapter.game.ticks(),
+        type: selected?.type ?? null,
+        gold: Number(behavior.player.gold()),
+        cost: selected ? Number(selected.cost) : null,
+      });
+    },
+  });
+  installNukeStageHook({
+    behavior,
+    trace,
+    name: "findBestNukeTarget",
+    stage: "target-search",
+    summarize: (target) => ({ targetID: targetID(target) }),
+    onResult: (target, _args, context) => {
+      if (context) context.lastTarget = target;
+    },
+  });
+}
+
+function installNukeDecisionTraceHooks(adapter, behavior) {
+  const originalMaybe = behavior.maybeSendNuke;
+  if (typeof originalMaybe !== "function") return null;
+  const contexts = new AsyncLocalStorage();
+  const trace = {
+    context: () => contexts.getStore(),
+    record(stage, details = {}) {
+      const context = contexts.getStore();
+      if (!context) return null;
+      const giant = context.stages.some((event) => event.stage === "giant-strike-tail");
+      const retry = context.stages.some(
+        (event) => event.stage === "value-retry" && !event.completed,
+      );
+      let scope = "primary";
+      if (retry) scope = "value-retry";
+      if (giant) scope = "giant";
+      const event = { stage, scope, ...details };
+      context.stages.push(event);
+      return event;
+    },
+  };
+  installNukeDecisionStageHooks(behavior, trace);
+  installNukeTargetSelectionTraceHooks(adapter, behavior, trace);
+  behavior.maybeSendNuke = async (...args) => {
+    const context = {
+      stages: [],
+      lastTarget: null,
+      lastCandidates: [],
+      lastValueGate: null,
+      beforeAtoms: Number(behavior.atomBombsLaunched || 0),
+      beforeHydro: Number(behavior.hydrogenBombsLaunched || 0),
+      decisionStatus: "threw",
+    };
+    return contexts.run(context, async () => {
+      try {
+        const result = await originalMaybe.apply(behavior, args);
+        context.decisionStatus = "completed";
+        return result;
+      } finally {
+        adapter.recordNukeDecisionTrace({
+          behavior,
+          ...context,
+          candidates: context.lastCandidates,
+          target: context.lastTarget,
+          valueGate: context.lastValueGate,
+        });
+      }
+    });
+  };
+  return {
+    record: trace.record,
+    get lastCandidates() {
+      return contexts.getStore()?.lastCandidates ?? [];
+    },
+  };
+}
+
 export class BundledOpponentBot {
   constructor(options = {}) {
     this.name = options.name ?? "OpponentToBeat";
@@ -390,8 +740,8 @@ export class BundledOpponentBot {
     const behavior = this.nationBot?.nukeBehavior;
     if (!behavior || behavior.__ofhNukeTraceEnabled === true) return;
     behavior.__ofhNukeTraceEnabled = true;
-    const originalMaybe = behavior.maybeSendNuke;
-    if (typeof originalMaybe !== "function") return;
+    const decisionTrace = installNukeDecisionTraceHooks(this, behavior);
+    if (!decisionTrace) return;
     const traceStructureTypes = [
       "City",
       "Factory",
@@ -400,22 +750,12 @@ export class BundledOpponentBot {
       "SAM Launcher",
       "Missile Silo",
     ];
-    let lastTarget = null;
-    let lastCandidates = [];
-    let lastValueGate = null;
     const originalSendNuke = behavior.sendNuke;
     if (typeof originalSendNuke === "function") {
       behavior.sendNuke = async (tile, type, target, waitTicks = 0, salvo = null) => {
         const owner = behavior.game.owner?.(tile);
         const incoming = behavior.attackBehavior?.findIncomingAttackPlayer?.();
-        const fired = await originalSendNuke.call(
-          behavior,
-          tile,
-          type,
-          target,
-          waitTicks,
-          salvo,
-        );
+        const fired = await originalSendNuke.call(behavior, tile, type, target, waitTicks, salvo);
         const outer = Number(behavior.game.config().nukeMagnitudes(type).outer);
         const outerSquared = outer * outer;
         const targetStructuresInBlast = traceStructureTypes.flatMap((structureType) =>
@@ -457,68 +797,13 @@ export class BundledOpponentBot {
             0,
           ),
           targetStructuresInBlast,
-          candidates: lastCandidates.slice(0, 3).map(({ tile: candidateTile, value }) => ({
-            tile: candidateTile,
-            value,
-          })),
+          candidates: decisionTrace.lastCandidates
+            .slice(0, 3)
+            .map(({ tile: candidateTile, value }) => ({ tile: candidateTile, value })),
         });
         return fired;
       };
     }
-    const originalSelect = behavior.selectAffordableNuke;
-    behavior.selectAffordableNuke = async (...args) => {
-      const selected = await originalSelect.apply(behavior, args);
-      this.structureTrace.push({
-        kind: "nuke-selection",
-        tick: this.game.ticks(),
-        type: selected?.type ?? null,
-        gold: Number(behavior.player.gold()),
-        cost: selected ? Number(selected.cost) : null,
-      });
-      return selected;
-    };
-
-    const originalFindTarget = behavior.findBestNukeTarget;
-    if (typeof originalFindTarget === "function") {
-      behavior.findBestNukeTarget = (...args) => {
-        const target = originalFindTarget.apply(behavior, args);
-        lastTarget = target;
-        return target;
-      };
-    }
-    const originalCollect = behavior.collectNukeCandidates;
-    if (typeof originalCollect === "function") {
-      behavior.collectNukeCandidates = async (...args) => {
-        const candidates = await originalCollect.apply(behavior, args);
-        lastCandidates = candidates;
-        return candidates;
-      };
-    }
-    const originalValueGate = behavior.nukeHasPositiveExpectedValue;
-    if (typeof originalValueGate === "function") {
-      behavior.nukeHasPositiveExpectedValue = async (...args) => {
-        const value = await originalValueGate.apply(behavior, args);
-        lastValueGate = value;
-        return value;
-      };
-    }
-    behavior.maybeSendNuke = async (...args) => {
-      lastTarget = null;
-      lastCandidates = [];
-      lastValueGate = null;
-      const beforeAtoms = Number(behavior.atomBombsLaunched || 0);
-      const beforeHydro = Number(behavior.hydrogenBombsLaunched || 0);
-      const result = await originalMaybe.apply(behavior, args);
-      this.recordNukeDecisionTrace({
-        behavior,
-        beforeAtoms,
-        beforeHydro,
-        candidates: lastCandidates,
-        target: lastTarget,
-        valueGate: lastValueGate,
-      });
-      return result;
-    };
     const originalSamPlan = behavior.createSamOverwhelmPlan;
     if (typeof originalSamPlan === "function") {
       behavior.createSamOverwhelmPlan = (...args) => {
@@ -551,7 +836,16 @@ export class BundledOpponentBot {
     }
   }
 
-  recordNukeDecisionTrace({ behavior, beforeAtoms, beforeHydro, candidates, target, valueGate }) {
+  recordNukeDecisionTrace({
+    behavior,
+    beforeAtoms,
+    beforeHydro,
+    candidates,
+    target,
+    valueGate,
+    stages,
+    decisionStatus,
+  }) {
     this.structureTrace.push(
       this.nukeDecisionTraceRecord({
         behavior,
@@ -560,11 +854,22 @@ export class BundledOpponentBot {
         candidates,
         target,
         valueGate,
+        stages,
+        decisionStatus,
       }),
     );
   }
 
-  nukeDecisionTraceRecord({ behavior, beforeAtoms, beforeHydro, candidates, target, valueGate }) {
+  nukeDecisionTraceRecord({
+    behavior,
+    beforeAtoms,
+    beforeHydro,
+    candidates,
+    target,
+    valueGate,
+    stages,
+    decisionStatus,
+  }) {
     return {
       kind: "nuke-decision",
       tick: this.game.ticks(),
@@ -576,6 +881,9 @@ export class BundledOpponentBot {
       positiveCandidates: candidates.filter((candidate) => candidate.value > 0).length,
       bestCandidateValue: candidates[0]?.value ?? null,
       valueGate,
+      decisionStatus,
+      stopStage: stages[stages.length - 1]?.stage ?? null,
+      stages,
     };
   }
 
@@ -1047,9 +1355,7 @@ export class BundledOpponentBot {
           outruns,
           hostileEta: String(behavior.hostileNuclearThreatEtaTicks()),
           ownEta: String(behavior.ownSamReadinessEtaTicks()),
-          hostileGold: String(
-            behavior.hostileRichestGold?.(behavior.player?.smallID?.()) ?? 0n,
-          ),
+          hostileGold: String(behavior.hostileRichestGold?.(behavior.player?.smallID?.()) ?? 0n),
           hostileSiloLevels: behavior.hostileSiloLevelSum?.() ?? 0,
           gold: String(behavior.player?.gold?.() ?? 0n),
           samCost: String(behavior.safeConstructionCost("SAM Launcher") ?? 0n),
@@ -1094,9 +1400,8 @@ export class BundledOpponentBot {
           groups: (groups || []).map((group) =>
             (group || []).map((candidate) => ({
               type: candidate?.type ?? null,
-              shortfall: candidate?.shortfall !== undefined
-                ? String(candidate.shortfall)
-                : undefined,
+              shortfall:
+                candidate?.shortfall !== undefined ? String(candidate.shortfall) : undefined,
             })),
           ),
         });
@@ -1392,25 +1697,24 @@ export class BundledOpponentBot {
     const attackBehavior = this.nationBot?.attackBehavior;
     if (!attackBehavior || attackBehavior.__ofhLandDefenseTraceEnabled === true) return;
     attackBehavior.__ofhLandDefenseTraceEnabled = true;
-   let forcedAttackTrace = null;
-   const originalSendAttack = attackBehavior.sendAttack;
-   if (typeof originalSendAttack === "function") {
-     attackBehavior.sendAttack = async (...args) => {
-       const [target, force] = args;
-       if (force !== true || target?.isPlayer?.() !== true) {
-         return originalSendAttack.apply(attackBehavior, args);
-       }
-       // Distinguish the winFixes bounded defense interdict from the
-       // faithful strategy-ladder retaliate: both call sendAttack(target,
-       // true), and the collapse diagnosis needs to know which lane spent
-       // the troops.
-       const callerIsDefense =
-         attackBehavior.__ofhInRespondToIncomingAttack === true;
-       forcedAttackTrace = {
-         attacker: target.name?.() ?? null,
-         landBorder: attackBehavior.player?.sharesBorderWith?.(target) === true,
-         lane: callerIsDefense ? "defense-interdict" : "strategy-retaliate",
-       };
+    let forcedAttackTrace = null;
+    const originalSendAttack = attackBehavior.sendAttack;
+    if (typeof originalSendAttack === "function") {
+      attackBehavior.sendAttack = async (...args) => {
+        const [target, force] = args;
+        if (force !== true || target?.isPlayer?.() !== true) {
+          return originalSendAttack.apply(attackBehavior, args);
+        }
+        // Distinguish the winFixes bounded defense interdict from the
+        // faithful strategy-ladder retaliate: both call sendAttack(target,
+        // true), and the collapse diagnosis needs to know which lane spent
+        // the troops.
+        const callerIsDefense = attackBehavior.__ofhInRespondToIncomingAttack === true;
+        forcedAttackTrace = {
+          attacker: target.name?.() ?? null,
+          landBorder: attackBehavior.player?.sharesBorderWith?.(target) === true,
+          lane: callerIsDefense ? "defense-interdict" : "strategy-retaliate",
+        };
         const result = await originalSendAttack.apply(attackBehavior, args);
         this.structureTrace.push({
           kind: "forced-retaliation-gate",

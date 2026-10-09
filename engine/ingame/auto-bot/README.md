@@ -260,6 +260,13 @@ cost in the shared construction budget, including the early plateau-City lane.
 The income bootstrap, defensive structures, and surplus above that fund remain
 available; an already ordered SAM releases this first-launcher reserve.
 
+The long-horizon SAM readiness forecast keeps each live hostile's gold trend
+paired with that same player's Silo count. A player without a Silo is forecast
+on the new-Silo-plus-nuke path; an existing-Silo ETA cannot be borrowed across
+players. The earliest owner-matched ETA drives the existing 600-tick readiness
+margin, and both economy sample windows reset when a new match's tick clock
+rolls back.
+
 ## Team donation policy
 
 When `winFixes` is enabled, automatic troop donations remain restricted to needy
