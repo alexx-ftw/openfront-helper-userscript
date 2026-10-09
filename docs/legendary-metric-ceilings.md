@@ -7841,3 +7841,123 @@ build passed. The original strict win-time ceiling remains recorded as
 missed; retention follows the user's established win-and-survival
 priority. Evidence is still one effect seed plus deterministic controls,
 not a multi-seed generalization.
+
+## Pre-declaration 14: Legendary offensive silo expansion via sustained
+throughput starvation (2026-10-09, BEFORE any candidate run)
+
+The validated v1.12.193 seed-B trace exposes a production-limited nuclear
+pipeline, not a gold- or targeting-limited one. From tick 4,743 through
+9,443 every decision cycle reported 10-25 positive-EV candidates
+(bestCandidateValue 20k-82k), zero pending launches, and 130M-260M gold,
+yet exactly one Atom launched every 280 ticks (shots at 4,743 / 4,995 /
+5,275 / 5,583 ...). One shot per 280 ticks equals the measured bomb
+production rate of the three owned silos (one bomb per silo per ~840
+ticks); the economy was never the constraint (Atom 750k vs 130M+ gold),
+and the positive-EV backlog never emptied. Launch cadence therefore
+follows silo count, and the bot cannot grow it: `MAX_MISSILE_SILOS = 3`
+hard-caps the Legendary construction viability (structureBehavior), the
+SAM-parity silo lane is explicitly `!isLegendaryDifficulty`, and with
+parity gap 0 the Legendary planner never emits a MissileSilo candidate
+beyond the inherited three. The consequence in this seed: 40 manufactured
+Atoms stood unusable at tick 9,447 (dead economy, gold <750k forever) and
+the conventional mopup ran another 2,064 ticks.
+
+Planned minimal change (two files): `nukeBehavior.maybeSendNuke` already
+computes per-cycle candidates; when `winFixes` + Legendary and the cycle
+shows >=3 positive-EV candidates while gold >= 4x the selected bomb cost,
+increment `state.nukeThroughputStarvationCycles`, otherwise reset it to
+zero. `structureBehavior` gains `legendarySiloExpansionTarget()`:
+returning `LEGENDARY_SILO_EXPANSION_MAX = 5` only when that counter has
+held >=8 consecutive decision cycles (~224 ticks of sustained backlog),
+else 0. Both MissileSilo gates consume it: the hard-cap early return
+becomes `owned >= max(MAX_MISSILE_SILOS, expansionTarget) && owned >=
+siloParityTarget`, and the viability target becomes
+`max(ratioTarget, siloParityTarget, expansionTarget)`. With fewer than
+MAX silos, winFixes off, non-Legendary, or a cold counter, every gate is
+byte-identical to today. No targeting order, salvo planner, SAM lane,
+counterforce reserve, or finisher change; silos enter through the
+existing price ladder (flat 1M each) and offensive-reach placement.
+
+Pre-declared gates:
+
+- Focused fixture pins the boundary matrix: counter cold / below 8
+  cycles keeps cap 3; at 8 cycles Legendary+winFixes the viability emits
+  owned 3 -> target 5 (deficit 2) and stops at 5; winFixes off,
+  non-Legendary, owned < 3, and a mid-run counter reset each keep today's
+  false/3-cap behavior; a zero-silo player can never raise the counter
+  (canConsiderNukes exits first), so first-silo policy is untouched.
+- Effect seed sam-salvo-overwhelm-b under the 2 GiB cap, bundle rebuilt
+  first (protocol): retain only on an alive win strictly earlier than
+  11,511, ownStructuresNuked <= 11, hostile nuke detonations <= 2, and
+  >=134M enemy structure value destroyed. Record own silo build ticks,
+  launch cadence before/after, Market Peaks silo destruction ticks, and
+  final hostile launch tick either way.
+- Controls retain their v1.12.193 outcomes: baikal-nuke-wars win,
+  sam-salvo-overwhelm win, silo-counter-battery-regime >=500k structure
+  damage. baikal-silo-regime must remain a bit-comparable loss at 3,861
+  with no own nukes: the bot owns zero silos there, the counter can
+  never leave 0, and any trajectory divergence before tick 3,861 fails
+  the gate outright.
+- Full `npm test`, `npm run check`, and build parity pass. If retained,
+  bump semver to 1.12.194, rebuild the committed userscript, and commit
+  the exact validated artifact; otherwise revert the two-file change and
+  record the measured reason, including whether the counter bound or the
+  placement cost starved the war economy.
+
+### Amendment (2026-10-09, before the first valid candidate run): the
+expansion ceiling is level-sum-relative, not absolute-5
+
+The first rebuilt candidate run returned a bit-identical v1.12.193
+trajectory: the scenario injects three LEVEL-3 silos, so
+`ownedLevels(MissileSilo)` starts at 9 and the pre-declared absolute
+ceiling of 5 could never open either MissileSilo gate. The pre-declaration
+wrongly assumed a 3x level-1 network. The amended rule keeps the declared
+".+2 silos over a saturated network" semantics in both shapes: the
+expansion target becomes `ownedLevels + LEGENDARY_SILO_EXPANSION_SLOTS (2)`,
+hard-capped at `LEGENDARY_SILO_EXPANSION_ABSOLUTE_MAX = 11` (native 3xL1
+may reach 5; the injected 3xL3 network may reach 11). Saturation, counter,
+winFixes, and difficulty guards are unchanged. This amendment is recorded
+before the first candidate run that can actually bind; the bit-identical
+run is retained as evidence that the original ceiling was inert, and all
+original gates (effect-seed win < 11,511, ownStructuresNuked <= 11,
+hostile detonations <= 2, >=134M damage, unchanged control outcomes,
+baikal-silo-regime bit-comparable loss) stand.
+
+## Outcome: reject Legendary silo expansion — expansion decapitated the
+forward network (2026-10-09)
+
+The amended candidate bound on the effect seed and failed every retention
+gate. The starvation counter qualified, the planner emitted MissileSilo
+candidates from tick 3,856, and two expansion silos were built by tick
+4,500 (network at 5 units). Conquest then ran far ahead of the v1.12.193
+trajectory — 152,914 tiles at tick 6,000 and 392,769 at 7,500 versus
+107,381 flat — and the overextended front collapsed catastrophically:
+between ticks 7,500 and 8,500 the bot fell from 5 silos to 1 and from
+392,769 to 315,444 tiles, the original injected 3xL3 network ended the
+game owned by Isle of Margins (external silo levels [1,3,3,3,1],
+capacity 11), and the match ended at tick 9,390 with stopReason bot_dead,
+zero own nukes in the tail, and a Market Peaks alliance on the final
+roster. v1.12.193 won this seed alive at 11,511.
+
+Mechanism reading: the two 1M builds were affordable and did not
+themselves starve the treasury; the loss came from what extra launch
+throughput bought. Offensive-reach silo placement put the new launchers
+at the frontier, the higher cadence pushed conquest a full map-phase
+early, and the forward silo network — now including the injected L3
+originals — presented a single decapitation target that the counterattack
+removed whole. This is the third measured confirmation of the standing
+construction-side pattern (baikal starvation-release v1 and v2, now this):
+adding nuclear construction capacity on Legendary converts into
+overextension losses, not into faster wins. The seam this lever targeted —
+forty manufactured Atoms idle behind a collapsed economy during the
+11,511-tick win's conventional tail — remains real but requires a lever
+that spends idle arsenal without creating new forward structure value;
+future candidates must explain why their placement does not repeat this
+decapitation pattern before any run.
+
+Per the pre-declared rejection clause the two-file change and its focused
+fixture were reverted; the shipped build remains 1.12.193. The rebuilt
+bundle is byte-identical to the committed v1.12.193 artifact (build-id
+included), the full `npm test`, `npm run check`, and build all pass at
+the reverted tree, and the game-constants fixture returned to its 2009
+contract count. Evidence: /tmp/ofh-matrix/v1.12.194-silo-expansion-v2/.
