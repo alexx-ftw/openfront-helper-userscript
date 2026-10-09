@@ -7364,3 +7364,30 @@ Pre-declared gates:
 - Full `npm test`, TypeScript check, and build parity pass. If the lever
   is retained, bump semver to 1.12.191 and rebuild the committed
   userscript; otherwise revert the tree and record the honest rejection.
+
+## Receipt 11: growth-preserving SAM chest is inert on the effect seed
+
+The lever was implemented exactly as pre-declared (City released from the
+two-sample chest block; Factory, Port, MissileSilo, and Warship still
+blocked) and passed the focused fixture matrix, the full `npm test`, and
+the TypeScript check. The baikal-silo-regime effect gate then returned a
+bit-identical trajectory to the v1.12.190 baseline: death at tick 3861,
+29,284 final tiles, final units City 1 / Port 1, no ready SAM, two own
+structures nuked, and no own nukes.
+
+The mechanism finding is more useful than the neutral verdict: with the
+shipped two-sample forecast the chest never binds before this regime's
+death, and the bot still held 240,900 gold at the end without building a
+second City, so releasing City cannot fund the interceptor here. Receipt
+10's earlier death came from the one-sample forecast binding the chest
+harder, not from the freeze itself. The full-freeze starvation hypothesis
+is not the binding constraint on this seed.
+
+Per the pre-declared keep condition (retain only on a measurable survival
+or structure-preservation improvement) the lever is rejected and the tree
+was reverted; v1.12.190 remains the shipped build. The no-harm controls
+and counter-battery gate were not run, following the receipt 10
+precedent, because the effect gate already decided against retention.
+The next investigation must explain why the two-sample chest never binds
+on this regime before 3861 and what actually triggered the tick-3281 SAM
+purchase, instead of widening the chest trigger again.
