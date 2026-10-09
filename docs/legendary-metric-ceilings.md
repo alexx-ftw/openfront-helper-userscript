@@ -7088,3 +7088,21 @@ collateral delta after the enum sweep (21 vs 12) starts from identical
 early ticks (hostile nuke 1202, first own loss 1635) and accumulates in
 the mid-game after the attack lane's earlier commitment — recorded as
 the accepted cost of the 1610-ticks-faster victory, not tuned.
+
+## Regime matrix refresh at v1.12.187 (2026-10-09): fragility bed confirmed current
+
+baikal-silo-regime re-run with the full current bot (enum sweep +
+slot-pressure new-silo branch + one-pending-launcher guard): receipt
+bit-identical to the original fragility finding — won=false at 3861
+(stopReason=winner: the hostile silo network takes it), 0 own nukes
+launched, 2 own structures nuked, zero new-silo builds. The recent
+logic is mechanically inert here, exactly as the mechanism predicts:
+the bot's arsenal never starts before the collapse, so there is no
+queue to pressure and no slot starvation to relieve. The fragility
+finding stands as current at v1.12.187.
+
+Regime matrix status after this refresh — baikal-nuke-wars: won@6361;
+sam-salvo-overwhelm: won@7571 (1 new silo); baikal-silo-regime:
+fragility won=false @3861. All three receipts current with the shipped
+artifact. Corpus side note: +2 unique records under Bun (104 -> 106;
+the walked leaderboard pages yielded mostly already-saved games).
