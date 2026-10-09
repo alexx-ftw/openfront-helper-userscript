@@ -82,6 +82,7 @@ assert.equal(
 );
 
 const priorityBehavior = Object.create(sandbox.StructureBehavior.prototype);
+priorityBehavior.game = { config: () => ({ isUnitDisabled: () => false }) };
 const prioritySpawnedStructures = [];
 priorityBehavior.player = { gold: () => 800n };
 priorityBehavior.maybeUpgradeLegendarySam = async () => false;
