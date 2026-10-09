@@ -6771,7 +6771,10 @@ process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");
 
 {
   const dumpBehavior = Object.create(sandbox.__StructureBehavior.prototype);
-  dumpBehavior.game = { ticks: () => 1234 };
+  dumpBehavior.game = {
+    ticks: () => 1234,
+    config: () => ({ isUnitDisabled: () => false }),
+  };
   dumpBehavior.player = { gold: () => 249363n };
   dumpBehavior.ownedLevels = (type) => (type === UNIT.Port ? 1 : 0);
   const portCandidate = { type: UNIT.Port, cost: 250000n };
@@ -6838,7 +6841,10 @@ process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");
   assert.equal(dumpCity.affordable, true, "city candidate affordability");
 
   for (let overflowTick = 2000; overflowTick < 2805; overflowTick++) {
-    dumpBehavior.game = { ticks: () => overflowTick };
+    dumpBehavior.game = {
+      ticks: () => overflowTick,
+      config: () => ({ isUnitDisabled: () => false }),
+    };
     await dumpBehavior.doHandleLegendaryStructures(dumpContext);
   }
   assert.equal(
