@@ -8209,6 +8209,28 @@ change unrelated trajectories; defer that lever until a coverage
 forecast can show a bounded benefit. No code change or semver bump.
 Evidence: /tmp/ofh-matrix/v1.12.193-nuke-loss-trace/.
 
+## Pre-declaration 19: trace no-launch decisions on three silo histories
+
+(2026-10-09, BEFORE diagnostic run, no behavior arm)
+
+Receipt 17 records 10/20 games with an own silo but 0/20 nuclear
+launches. Trace the nuke decision chain on three records chosen by fixed
+outcome classes: cy2X9tdwad (first silo at 1,991, survived to cap),
+dpa7T7kPMn (the sole bot win in n=20, silo at 2,745), and cR4BnsUGq4
+(silo at 4,269, ended when an opponent won at 5,181). Run the unchanged
+v1.12.193 bundle, history order, 6,000-tick cap, and 2 GiB MemoryMax;
+enable existing `OFH_LOG_NUKES=1` and `OFH_LOG_STRUCTURES=1`
+diagnostics only.
+
+Record per-tick `nuke-selection` / `nuke-decision` summaries
+(selected bomb and cost, spendable gold, target, candidate count,
+positive candidates, best score, EV result, pending count, and launch
+counters) plus any attempted aim and rejection. Require the full result
+objects to match the n=20 baseline except runtimeMs, and all three to
+remain no-launch. This is observational only: no behavior, bundle, or
+semver change. Commit the diagnosis before selecting any launch-layer
+candidate. Evidence: /tmp/ofh-matrix/v1.12.193-no-launch-trace/.
+
 ## Pre-declaration 15: Legendary first-silo ladder fix (ceil the first
 
 launcher at one city, 2026-10-09, BEFORE any candidate run)
