@@ -323,6 +323,50 @@ for (const invalidation of ["unchanged", "destroyed", "upgrading"]) {
   );
 }
 
+// Pre-registered anti-SAM starvation release: held atoms keep the native
+// guard unless the caller signals zero clear candidates this tick.
+{
+  const { behavior, player, game, world, nukeTarget } = makeSalvoWorld();
+  const silo = {
+    isActive: () => true,
+    isUnderConstruction: () => false,
+    level: () => 3,
+    missileTimerQueue: () => [],
+    tile: () => 5,
+  };
+  player.units = (type) =>
+    type === UNIT.MissileSilo ? [silo] : type === UNIT.AtomBomb ? [{}, {}] : [];
+  world.targetSams = [world.sam(1, 1)];
+  game.config = () => ({ defaultNukeSpeed: () => 1, isUnitDisabled: () => false });
+  Object.assign(game, {
+    x: (tile) => tile,
+    y: () => 50,
+    height: () => 100,
+    ref: (x) => x,
+    manhattanDist: (a, b) => Math.abs(a - b),
+  });
+  behavior.isTrajectoryInterceptableBySam = () => true;
+  behavior.cost = async () => 1n;
+  behavior.createSamOverwhelmPlan = (_sam, silos) => ({
+    capacityMissing: behavior.getAvailableSiloEntries(silos, 20, []).length === 0,
+  });
+  behavior.rememberFailedSamTarget = (plan) => plan;
+  behavior.maybeUpgradeHelpfulSilo = async () => {};
+  let salvos = 0;
+  behavior.fireSamSalvo = async () => {
+    salvos += 1;
+    return true;
+  };
+  await behavior.maybeDestroyEnemySam(nukeTarget);
+  assert.equal(
+    salvos,
+    0,
+    "held atoms keep the native guard without the starvation flag",
+  );
+  await behavior.maybeDestroyEnemySam(nukeTarget, true);
+  assert.equal(salvos, 1, "the starvation release lets held atoms fund the salvo");
+}
+
 // Construction consumes demand before the nuclear decision chain gets to clear it.
 for (const change of [
   "unchanged",

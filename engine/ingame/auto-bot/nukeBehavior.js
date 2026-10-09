@@ -535,7 +535,11 @@
       // Silo capacity is not a salvo: covered shots must use the planner
       // below so every required atom is launched or queued with timing.
       if (isAtLeastHardDifficulty(difficulty)) {
-        await this.maybeDestroyEnemySam(target);
+        // DIVERGENCE: when every candidate is SAM-covered (nothing clear to
+        // fire) the native atoms>0 guard would park the arsenal forever under
+        // coverage (sam-salvo-overwhelm receipt: 666 starved decisions to the
+        // cap); let the salvo lane spend held atoms in exactly that state.
+        await this.maybeDestroyEnemySam(target, clear.length === 0);
       }
       // Hydrogen finisher runs before the ladder's next ordinary decision so
       // the freshly-cleared cluster is harvested at maximum blast radius.
@@ -2444,9 +2448,9 @@
       return target;
     }
 
-    async maybeDestroyEnemySam(nukeTarget) {
+    async maybeDestroyEnemySam(nukeTarget, allowHeldAtoms = false) {
       if (this.game.config().isUnitDisabled(UNIT.AtomBomb)) return;
-      if (this.player.units(UNIT.AtomBomb).length > 0) return;
+      if (this.player.units(UNIT.AtomBomb).length > 0 && !allowHeldAtoms) return;
       const enemySams = nukeTarget.units(UNIT.SAMLauncher);
       if (enemySams.length === 0) {
         state.nukeWantSlots = null;
