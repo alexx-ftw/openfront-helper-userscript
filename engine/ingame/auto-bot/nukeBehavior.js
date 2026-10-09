@@ -535,11 +535,16 @@
       // Silo capacity is not a salvo: covered shots must use the planner
       // below so every required atom is launched or queued with timing.
       if (isAtLeastHardDifficulty(difficulty)) {
-        // DIVERGENCE: when every candidate is SAM-covered (nothing clear to
-        // fire) the native atoms>0 guard would park the arsenal forever under
-        // coverage (sam-salvo-overwhelm receipt: 666 starved decisions to the
-        // cap); let the salvo lane spend held atoms in exactly that state.
-        await this.maybeDestroyEnemySam(target, clear.length === 0);
+        // Lever CLOSED (2026-10-09): the starvation release (spend held atoms
+        // on SAM-overwhelm when clear=[] deterministically lost the baikal
+        // no-harm gate in BOTH variants — v1 with failed-plan upgrades and v2
+        // without — via the salvo pipeline state, not the salvos themselves:
+        // zero sam-salvo events, 87 atoms, bot_dead at 11820; native call
+        // restores the standing won@7971 receipt bit-for-bit). The sam regime
+        // deadlock stays documented as a native-guard limitation. The
+        // allowHeldAtoms parameter and its fixture cases remain for any
+        // future lever that pairs the release with its own state scoping.
+        await this.maybeDestroyEnemySam(target);
       }
       // Hydrogen finisher runs before the ladder's next ordinary decision so
       // the freshly-cleared cluster is harvested at maximum blast radius.
@@ -2464,7 +2469,11 @@
       for (const targetSam of enemySams.slice().sort((a, b) => a.level() - b.level())) {
         const plan = this.createSamOverwhelmPlan(targetSam, silos);
         if (plan.capacityMissing) {
-          failedTarget ??= this.rememberFailedSamTarget(plan);
+          // DIVERGENCE (lever v2): the starvation release only spends held
+          // atoms on an immediately fireable salvo; when capacity is missing
+          // it must not reshape construction (baikal receipt: failed-plan
+          // silo upgrades tripled the atom arsenal and lost a winning game).
+          if (!allowHeldAtoms) failedTarget ??= this.rememberFailedSamTarget(plan);
           continue;
         }
         if (await this.fireSamSalvo(plan, nukeTarget, atomCost)) return;
