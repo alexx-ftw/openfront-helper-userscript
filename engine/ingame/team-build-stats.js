@@ -748,7 +748,12 @@
   // include under-construction silos so the alert can fire as early as possible.
   function getTeamBuildUnits(game) {
     {
-      return game.units(...TEAM_BUILD_STRUCTURES.map((structure) => structure.type)) || [];
+      // Vendored units() caps at three positional types; enumerate per type.
+      const out = [];
+      for (const structure of TEAM_BUILD_STRUCTURES) {
+        out.push(...(game.units(structure.type) || []));
+      }
+      return out;
     }
   }
 

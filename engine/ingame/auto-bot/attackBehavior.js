@@ -65,6 +65,14 @@
     UNIT.Factory,
   ];
 
+  // The vendored engine caps units() at three positional types and silently
+  // drops the rest; enumerate per type so all six attack structures are seen.
+  function attackStructuresOf(owner) {
+    const out = [];
+    for (const type of AttackStructureTypes) out.push(...owner.units(type));
+    return out;
+  }
+
   // HumansVsNations — src/core/game/Game.ts:81 (`"Humans Vs Nations"`).
   const HumansVsNations = "Humans Vs Nations";
 
@@ -8220,7 +8228,7 @@
             n.isPlayer() &&
             n.type() === PlayerType.Bot &&
             !this.player.isFriendly(n) &&
-            n.units(...AttackStructureTypes).some((u) => AttackStructures.has(u.type())),
+            attackStructuresOf(n).some((u) => AttackStructures.has(u.type())),
         );
     }
 
@@ -8950,7 +8958,7 @@
     rankBotsForAttack(bots) {
       const density = (p) => p.troops() / p.numTilesOwned();
       const ownsStructures = (p) =>
-        p.units(...AttackStructureTypes).some((u) => AttackStructures.has(u.type()));
+        attackStructuresOf(p).some((u) => AttackStructures.has(u.type()));
       const attackDifficultyDensity = (p) => {
         const profile = this.getEnemyDefensePostAttackProfile(p);
         return (
@@ -10133,7 +10141,7 @@
         target.isPlayer() && target.type() === PlayerType.Bot;
       const botWithStructures =
         isTribeTarget &&
-        target.units(...AttackStructureTypes).some((unit) =>
+        attackStructuresOf(target).some((unit) =>
           AttackStructures.has(unit.type()),
         );
       const useReserve = target.isPlayer() && !botWithStructures;

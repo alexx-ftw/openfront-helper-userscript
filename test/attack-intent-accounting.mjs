@@ -3857,8 +3857,8 @@ assert.deepEqual(
 );
 assert.equal(
   [...tribeStructureReads.values()].reduce((sum, count) => sum + count, 0),
-  rankedTribes.length,
-  "tribe ranking reads each candidate structure roster once instead of from sort comparisons",
+  rankedTribes.length * 6,
+  "tribe ranking reads one roster per candidate per attack-structure type (vendored units() caps at three positional types) still only from the map phase, never from sort comparisons",
 );
 assert.equal(
   [...tribeProfileReads.values()].reduce((sum, count) => sum + count, 0),

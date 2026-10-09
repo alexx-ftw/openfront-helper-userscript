@@ -4393,8 +4393,16 @@
 
     participantStructurePoints(participant) {
       {
-        return participant
-          .units(UNIT.City, UNIT.Factory, UNIT.Port, UNIT.SAMLauncher)
+        const out = [];
+        for (const type of [
+          UNIT.City,
+          UNIT.Factory,
+          UNIT.Port,
+          UNIT.SAMLauncher,
+        ]) {
+          out.push(...participant.units(type));
+        }
+        return out
           .map((unit) => unit.tile())
           .filter((tile) => tile !== null && tile !== undefined)
           .map((tile) => ({ x: this.game.x(tile), y: this.game.y(tile) }));

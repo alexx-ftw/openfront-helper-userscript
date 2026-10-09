@@ -112,10 +112,17 @@
       return types.map((type) => String(type)).sort().join("\u0001");
     }
 
+    // Vendored units() caps at three positional types; enumerate per type.
+    function rawUnitsByType(owner, types) {
+      const out = [];
+      for (const type of types) out.push(...owner.units(type));
+      return out;
+    }
+
     function cachedUnits(owner, ownerKey, types) {
       const tick = typeof src.ticks === "function" ? src.ticks() : null;
       if (tick === null || tick === undefined) {
-        return owner.units(...types).map(wrapUnit);
+        return rawUnitsByType(owner, types).map(wrapUnit);
       }
 
       if (unitSnapshotTick !== tick) {
@@ -128,7 +135,7 @@
         return unitSnapshotCache.get(key);
       }
 
-      const units = owner.units(...types).map(wrapUnit);
+      const units = rawUnitsByType(owner, types).map(wrapUnit);
       unitSnapshotCache.set(key, units);
       return units;
     }

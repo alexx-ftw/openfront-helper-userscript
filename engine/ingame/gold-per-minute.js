@@ -945,7 +945,11 @@
     const counts = new Map();
     let units;
     {
-      units = game.units(...APS_STRUCTURES.map((s) => s.type)) || [];
+      // Vendored units() caps at three positional types; enumerate per type.
+      units = [];
+      for (const structure of APS_STRUCTURES) {
+        units.push(...(game.units(structure.type) || []));
+      }
     }
     for (const unit of units) {
       const data = getApsStructureUnitData(unit);
