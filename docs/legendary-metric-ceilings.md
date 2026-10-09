@@ -7221,3 +7221,41 @@ scaled lane stayed strictly dormant on both seeds. Suite full green
 game-constants contract (+3 module constants). baikal-silo-regime keeps
 its v1.12.187 fragility receipt untouched (not a gate for this lever;
 matrix not refreshed there).
+
+## Pre-declaration 8: Legendary nuclear counterforce target priority (2026-10-09)
+
+Follow-up trace on the v1.12.189 sam-B receipt identifies a target-order
+failure, not an ammo shortage. At tick 2083, the Auto Bot had 1,980,562
+troops and launched its sixth Atom at Market Peaks (1,358,877 troops,
+one SAM); there was no active incoming attack, and the shot detonated at
+tick 2182. Same-tick strategic-border telemetry identifies Isle of Margins
+as the hostile frontier force at 2,317,540 troops (1.17x our army); it
+opened the 2,081,409-troop invasion at tick 2183. The target ladder kept
+selecting the relation/SAM target while the stronger bordering army
+remained untouched. Engine NukeExecution applies troop and outgoing-wave
+casualties to every impacted owner, so a strike against that rival has a
+direct counterforce payoff even when its structure value alone cannot
+repay the full bomb cost.
+
+Intentional Legendary-only divergence from the upstream 1:1 target order:
+after the existing two-player and active-retaliation priorities, select
+the strongest hostile bordering Nation/Human when its standing troops
+are at least our current troops, before the density/relation/crown ladder.
+For that exact selected frontier rival, the Legendary expected-value
+gate recognizes the engine's troop/outgoing-attack reduction as a survival
+payoff. Existing candidate ranking, buildability, SAM route/interception,
+friendly-fire, salvo, and gold-reserve checks remain in force. Other
+difficulties and direct-retaliation ordering remain unchanged.
+
+Pre-declared gates:
+- sam-salvo-overwhelm-b effect: with the observed 1.17x quiet-border lead,
+  the pre-invasion nuke (before the tick-2183 assault) should target Isle
+  of Margins; win or survive beyond the v1.12.189 baseline death at 2829.
+  A changed target with no later survival/win is recorded as mechanism
+  confirmed but weak; do not tune the same seed.
+- baikal-nuke-wars and sam-salvo-overwhelm: both remain won=true, report
+  nuke counts and territory trajectory. baikal-silo-regime remains no
+  earlier than its known death tick 3861; preserve its honest outcome.
+- Focused fixture pins active retaliation precedence, the 1.0 troop-ratio
+  boundary, hostile-border target resolution/validity, and the counterforce
+  expected-value bypass only for the selected rival.
