@@ -7144,3 +7144,25 @@ seeds — exactly what a cohesion sweep should produce when the prior
 truncation happened not to bind. Suite full green (exit 0) with the
 updated per-type read contracts (placement 6/tick, enemy pressure 6
 per hostile, both cached per tick).
+
+## Robustness receipt: the sam seed-A win does NOT generalize (2026-10-09)
+
+Added sam-salvo-overwhelm-b (e1a3b6ea) — an exact twin of the sam regime
+on a fresh seed — to test whether receipt 4's deadlock-break win is
+robust. It is not: on seed B the bot DIED — won=false, bot_dead at
+2733, 6 atoms, 0 H, 1 own structure nuked, zero new-silo builds. The
+slot-pressure branch never engaged: the bot never built a pending queue
+before dying. Two nations out-expanded it from the start (Isle of
+Margins 136k tiles at the 180-second mark vs the bot's 37k, own rank 2)
+and ground it down before the nuclear game could matter — a different
+failure mode than baikal-silo-regime's silo-network collapse.
+
+Scope correction to receipt 4: the deadlock-break win is seed-A-
+specific. The >= 3-atoms assert stays green (6 atoms), but an honest
+read is that the sam map family contains at least one seed where the
+bot loses to plain expansion before its nuclear stack engages. The
+twin stays in the matrix as the robustness bed; its ledger record is
+the honest loss, not a tuned pass. Candidate future lever (unclaimed):
+earlier expansion/defense response on seeds where the bot falls behind
+at the 180-second mark — out of scope for the nuclear stack this goal
+has already verified.
