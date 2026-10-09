@@ -6891,3 +6891,34 @@ it: if the final run shows launches resuming after tick 12292, the
 deterrence reading was premature; if candidateCount stays at 0, the
 SAM-cover value gate is confirmed as the binding constraint on the
 arsenal in this regime.
+
+## Regime receipt: sam-salvo-overwhelm final (2026-10-09)
+
+The ofh-regime2b relaunch (OFH_RUNNER_TIMEOUT_MS=2400000) completed the
+full 25000 ticks. Final receipt: won=false at max_ticks (the bot
+survived to the cap but never won), atomBombsLaunched=5 total,
+hydrogenBombsLaunched=0, ownStructuresNuked=6, nukedStructureGold=30M.
+
+The partial record's premise is confirmed: after tick 12292 the log
+holds 666 consecutive nuke decisions with candidateCount=0 and zero
+positive candidates — the SAM-cover value gate starved the arsenal for
+the entire remainder of the match and launches never resumed. The
+anti-SAM salvo lane (maybeDestroyEnemySam) fired only 6 times, all
+while the arsenal was still empty, because its guard
+(units(AtomBomb).length > 0 return, native NationNukeBehavior.ts:780)
+returns immediately whenever any atom is held. In this regime that
+guard and the starving value gate compose into a permanent deadlock:
+atoms parked forever, SAM cover never stripped, no won.
+
+Next lever, pre-registered here before implementation: allow the
+anti-SAM salvo lane to spend held atoms when the ordinary value gate
+found no positive candidate this tick (starvation signal threaded from
+the caller). This is a deliberate, documented divergence from the
+native guard, same class as the finisher friendly-fire gate. Expected
+effect on sam-salvo-overwhelm: sam-salvo events resume under coverage,
+arsenal drains, and the match outcome (won vs max_ticks draw) is the
+honest gate. Baikal standard must be re-run as the no-harm gate: its
+receipt must hold won=true with launch counts rising or holding.
+Corpus-growth side note: the public fetcher was rate-limited (403
+after full backoff) at the first leaderboard call; corpus stays at 79
+records this session.
