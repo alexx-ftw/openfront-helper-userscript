@@ -7054,3 +7054,24 @@ guard is behavior-neutral on healthy regimes and closes the pathological
 stacking path (completed maxed network + pending launcher would have
 re-fired the fallback every tick). Corpus side note: the fourth fetch
 attempt was rate-limited again; the corpus stays at 79 records.
+
+## Corpus growth unblocked: Bun runtime fingerprint (2026-10-09, 79 -> 104)
+
+Four fetch-history attempts failed with CDN 403 under node before the
+root cause surfaced: the fetcher was measured working under Bun's
+TLS/UA fingerprint (2026-10-06 note in the script) and the OF CDN
+403-blocks node's. Under bun 1.3.11 the fetch worked immediately:
+corpus grew 79 -> 104 records (Australia/Iceland FFA games among them).
+Usage notes updated in both scripts.
+
+Updated nuclear-concentration aggregates over 104 records (previous 79:
+winners 22.5 nukes / 19.9 tiles / 0.263 top-3 share):
+
+- WINNERS: launchers=13 nukes_avg=21.3 tiles_avg=18.8 top3share_avg=0.290
+- LOSERS : launchers=10 nukes_avg=13.7 tiles_avg=11.8 top3share_avg=0.412
+
+The targeting doctrine direction is unchanged and reinforced on the
+wider corpus: sustained production (21.3 vs 13.7) with adaptive
+re-targeting (18.8 vs 11.8 distinct target tiles) beats concentrating a
+small arsenal (top-3 share 0.290 vs 0.412). No bot change — evidence
+refresh only.

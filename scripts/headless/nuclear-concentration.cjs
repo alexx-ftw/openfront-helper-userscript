@@ -3,7 +3,10 @@
 // per-launcher nuclear concentration (top-3 target-tile share) split by match
 // winners vs losers. Evidence for the targeting doctrine: sustained production
 // with adaptive re-targeting beats concentrating a small arsenal.
-// Usage: node scripts/headless/nuclear-concentration.cjs <dir-or-file.json...>
+// Usage: bun scripts/headless/nuclear-concentration.cjs <dir-or-file.json...>
+// (fetch-history.mjs likewise only works under Bun: the OF CDN 403-blocks
+// node's TLS/UA fingerprint — four attempts failed 2026-10-09 before the
+// runtime switch; see ledger receipt, corpus 79 -> 104 records).
 const fs = require("fs");
 const path = require("path");
 const NUC = new Set(["Atom Bomb", "Hydrogen Bomb", "MIRV"]);
@@ -20,7 +23,11 @@ const W = [];
 const L = [];
 for (const f of files) {
   let j;
-  try { j = JSON.parse(fs.readFileSync(f, "utf8")); } catch { continue; }
+  try {
+    j = JSON.parse(fs.readFileSync(f, "utf8"));
+  } catch {
+    continue;
+  }
   const w = j.info && j.info.winner;
   if (!Array.isArray(w) || w.length < 3) continue;
   const winners = new Set(w.slice(2));
@@ -43,10 +50,16 @@ for (const f of files) {
     (winners.has(cid) ? W : L).push([n, tiles.length, top3 / n]);
   }
 }
-const agg = (rs) => rs.length === 0 ? "none"
-  : "launchers=" + rs.length +
-    " nukes_avg=" + (rs.reduce((s, x) => s + x[0], 0) / rs.length).toFixed(1) +
-    " tiles_avg=" + (rs.reduce((s, x) => s + x[1], 0) / rs.length).toFixed(1) +
-    " top3share_avg=" + (rs.reduce((s, x) => s + x[2], 0) / rs.length).toFixed(3);
+const agg = (rs) =>
+  rs.length === 0
+    ? "none"
+    : "launchers=" +
+      rs.length +
+      " nukes_avg=" +
+      (rs.reduce((s, x) => s + x[0], 0) / rs.length).toFixed(1) +
+      " tiles_avg=" +
+      (rs.reduce((s, x) => s + x[1], 0) / rs.length).toFixed(1) +
+      " top3share_avg=" +
+      (rs.reduce((s, x) => s + x[2], 0) / rs.length).toFixed(3);
 console.log("WINNERS:", agg(W));
 console.log("LOSERS :", agg(L));
