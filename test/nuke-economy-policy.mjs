@@ -48,6 +48,7 @@ const sandbox = {
   PlayerType: { Bot: "Bot" },
   state: { settings: { winFixes: true }, stats: { nukes: 0 }, recentMirvHits: [] },
   currentDifficulty: () => testDifficulty,
+  isLegendaryDifficulty: (difficulty) => difficulty === "Legendary",
   isAtLeastHardDifficulty: () => true,
   console,
 };
@@ -150,6 +151,83 @@ assert.equal(
   "a hostile Bot-type opponent is eligible when the normal attack policy allows it",
 );
 
+testDifficulty = sandbox.Difficulty.Legendary;
+const makeArmyPlayer = (id, troops) => ({
+  smallID: () => id,
+  team: () => null,
+  isAlive: () => true,
+  troops: () => troops,
+});
+const makeThreatSelector = ({ threatTroops = 1_000_000, targetable = true } = {}) => {
+  const self = makeArmyPlayer(1, 1_000_000);
+  const relationTarget = makeArmyPlayer(2, 1_250_000);
+  const borderLeader = makeArmyPlayer(3, threatTroops);
+  const selector = Object.create(sandbox.__NukeBehavior.prototype);
+  selector.player = self;
+  selector.game = {
+    ticks: () => 2083,
+    players: () => [self, relationTarget, borderLeader],
+  };
+  selector.attackBehavior = {
+    findIncomingAttackPlayer: () => null,
+    shouldAttack: () => targetable,
+  };
+  selector.structureBehavior = {
+    strongestQuietStrategicBorderOpponent: () => ({
+      opponentSid: 3,
+      troops: threatTroops,
+    }),
+  };
+  selector.isRichestNation = () => true;
+  selector.random = { chance: () => true };
+  selector.findHighDensityTarget = () => relationTarget;
+  selector.findDominantCrownNukeTarget = () => null;
+  selector.findAllyNukeTarget = () => null;
+  selector.findHostileNukeTarget = () => null;
+  selector.findFFACrownTarget = () => null;
+  selector.findStrongestTeamTarget = () => null;
+  selector.findLegendaryStructureTarget = () => null;
+  return { selector, relationTarget, borderLeader };
+};
+{
+  const { selector, borderLeader } = makeThreatSelector();
+  assert.equal(
+    selector.findBestNukeTarget(),
+    borderLeader,
+    "Legendary prioritizes a hostile border army at parity over the generic density target",
+  );
+}
+{
+  const { selector, relationTarget, borderLeader } = makeThreatSelector();
+  selector.attackBehavior.findIncomingAttackPlayer = () => relationTarget;
+  assert.equal(
+    selector.findBestNukeTarget(),
+    relationTarget,
+    "an active retaliation target remains ahead of the preemptive border-force target",
+  );
+  selector.attackBehavior.findIncomingAttackPlayer = () => null;
+  selector.structureBehavior.strongestQuietStrategicBorderOpponent = () => ({
+    opponentSid: 3,
+    troops: 999_999,
+  });
+  assert.equal(
+    selector.findBestNukeTarget(),
+    relationTarget,
+    "a border force below our troop count does not preempt the ordinary target ladder",
+  );
+  selector.structureBehavior.strongestQuietStrategicBorderOpponent = () => ({
+    opponentSid: 3,
+    troops: 1_000_000,
+  });
+  selector.attackBehavior.shouldAttack = () => false;
+  assert.equal(
+    selector.findBestNukeTarget(),
+    relationTarget,
+    "the counterforce target must still pass the normal attackability policy",
+  );
+}
+testDifficulty = sandbox.Difficulty.Impossible;
+
 assert.equal(
   behavior.shouldDeferNukeForEconomy(target, 5_000_000n),
   true,
@@ -168,6 +246,9 @@ valueGuard.game = {
 valueGuard.isUnderHeavyAttack = () => false;
 valueGuard.isRetaliationNukeTarget = () => false;
 const cheapTarget = {
+  smallID: () => 2,
+  team: () => null,
+  isAlive: () => true,
   units: () => [{ type: () => UNIT.City, level: () => 1, tile: () => 20 }],
 };
 valueGuard.nukeStructureValue = () => 25_000;
@@ -181,6 +262,49 @@ assert.equal(
   ),
   false,
   "Legendary skips an ordinary nuke whose vulnerable value is below its launch cost",
+);
+const counterforceValueGuard = Object.create(sandbox.__NukeBehavior.prototype);
+const counterforcePlayer = makeArmyPlayer(1, 1_000_000);
+counterforceValueGuard.player = {
+  ...counterforcePlayer,
+  gold: () => 10_000_000n,
+};
+counterforceValueGuard.game = {
+  ticks: () => 2083,
+  players: () => [counterforceValueGuard.player, cheapTarget],
+  euclideanDistSquared: () => 0,
+  config: () => ({ nukeMagnitudes: () => ({ outer: 100 }) }),
+};
+counterforceValueGuard.attackBehavior = { shouldAttack: () => true };
+counterforceValueGuard.structureBehavior = {
+  strongestQuietStrategicBorderOpponent: () => ({
+    opponentSid: 2,
+    troops: 1_000_000,
+  }),
+};
+counterforceValueGuard.isUnderHeavyAttack = () => false;
+counterforceValueGuard.isRetaliationNukeTarget = () => false;
+counterforceValueGuard.nukeStructureValue = () => 25_000;
+assert.equal(
+  await counterforceValueGuard.nukeHasPositiveExpectedValue(
+    { tile: 10, coveringSamLevels: 0 },
+    cheapTarget,
+    { type: UNIT.HydrogenBomb, cost: 5_000_000n },
+    [],
+  ),
+  true,
+  "the selected parity-level strategic border force is a Legendary counterforce payoff even below structure replacement value",
+);
+const unrelatedTarget = { ...cheapTarget, smallID: () => 4 };
+assert.equal(
+  await counterforceValueGuard.nukeHasPositiveExpectedValue(
+    { tile: 10, coveringSamLevels: 0 },
+    unrelatedTarget,
+    { type: UNIT.HydrogenBomb, cost: 5_000_000n },
+    [],
+  ),
+  false,
+  "the counterforce expected-value bypass does not leak to an unrelated target",
 );
 valueGuard.isUnderHeavyAttack = () => true;
 assert.equal(

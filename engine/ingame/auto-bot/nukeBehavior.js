@@ -392,6 +392,8 @@
       // per candidate tile; the snapshot is rebuilt once per game tick.
       this._friendlyNukeStructureTick = -1;
       this._friendlyNukeStructures = [];
+      this._strategicBorderArmyTargetTick = -1;
+      this._strategicBorderArmyTarget = null;
       // The client intent has no NukeExecution.waitTicks field. Preserve the
       // engine salvo timing by emitting delayed build intents on their exact
       // future game ticks instead of collapsing every bomb onto this tick.
@@ -769,6 +771,10 @@
       // requirement, since deterrence bombs that hit nothing still cost
       // full price and invite counter-retaliation.
       if (this.isUnderHeavyAttack()) return true;
+      if (
+        this.findStrategicBorderArmyTarget()?.smallID?.() ===
+        target?.smallID?.()
+      ) return true;
       const structures = unitsOfTypes(target);
       const magnitude = this.game.config().nukeMagnitudes(selectedNuke.type);
       const outerDist = euclDistFN(candidate.tile, magnitude.outer, false);
@@ -965,6 +971,16 @@
         return incomingAttackPlayer;
       }
 
+      // DIVERGENCE (Legendary, pre-declared in legendary-metric-ceilings.md):
+      // a hostile Nation/Human on our shared border with at least our army can
+      // commit a decisive invasion before it appears in incomingAttacks().
+      // Reuse StructureBehavior's cached strategic-border scan so nukes and
+      // preemptive Defense Posts react to the same threat snapshot.
+      if (isLegendaryDifficulty(difficulty)) {
+        const counterforceTarget = this.findStrategicBorderArmyTarget();
+        if (counterforceTarget !== null) return counterforceTarget;
+      }
+
       // On Impossible/Legendary, the richest nation hunts very high structure density targets
       // Restricting to the richest nation prevents every impossible nation
       // from piling onto the same compact player.
@@ -999,6 +1015,40 @@
         return this.findLegendaryStructureTarget();
       }
       return null;
+    }
+
+    findStrategicBorderArmyTarget() {
+      const tick = Number(this.game?.ticks?.());
+      if (
+        Number.isFinite(tick) &&
+        this._strategicBorderArmyTargetTick === tick
+      ) {
+        return this._strategicBorderArmyTarget;
+      }
+
+      let target = null;
+      const strongest =
+        this.structureBehavior?.strongestQuietStrategicBorderOpponent?.();
+      const ownTroops = Number(this.player?.troops?.() ?? 0);
+      const hostileTroops = Number(strongest?.troops);
+      if (
+        strongest !== null &&
+        Number.isFinite(ownTroops) &&
+        ownTroops > 0 &&
+        Number.isFinite(hostileTroops) &&
+        hostileTroops >= ownTroops
+      ) {
+        target = this.game.players().find(
+          (other) => other.smallID?.() === strongest.opponentSid,
+        ) ?? null;
+        if (!this.isValidNukeTarget(target)) target = null;
+      }
+
+      if (Number.isFinite(tick)) {
+        this._strategicBorderArmyTargetTick = tick;
+        this._strategicBorderArmyTarget = target;
+      }
+      return target;
     }
 
     findLegendaryStructureTarget() {

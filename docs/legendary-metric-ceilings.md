@@ -7259,3 +7259,28 @@ Pre-declared gates:
 - Focused fixture pins active retaliation precedence, the 1.0 troop-ratio
   boundary, hostile-border target resolution/validity, and the counterforce
   expected-value bypass only for the selected rival.
+
+## Receipt 9: Legendary nuclear counterforce target priority — seed-B recovery, controls unchanged (2026-10-09, v1.12.190)
+
+The pre-declared sam-B target-order gate passed. Before the tick-2183
+invasion, the Auto Bot aimed an Atom at Isle of Margins at tick 1327
+(1,263,449 own troops vs 2,664,066 hostile troops, with two hostile SAM
+levels). The match ended in an Auto Bot win at tick 23351 with 17 Atom
+Bombs, 43 Hydrogen Bombs, and 779,430 final tiles. The v1.12.189 baseline
+lost at tick 2733 with 6 Atoms, no Hydrogen Bombs, and no surviving tiles.
+This confirms a major recovery on this deterministic seed; it is not a
+general win-rate or bomb-efficiency claim.
+
+No-harm controls stayed bit-identical to their v1.12.189 receipts:
+baikal-nuke-wars won at tick 6361 (26A/41H, 1,341,878 tiles), and
+sam-salvo-overwhelm won at tick 7571 (11A/24H, 1,989,861 tiles).
+baikal-silo-regime also matched its known fragility result exactly: the
+Ballistic Cyclops Missile won at tick 3861; the bot remained alive with
+29,284 tiles and had launched no nukes.
+
+The focused Legendary policy fixtures and full `npm test` passed (exit 0),
+as did `npm run check` and build parity. The advisory `npm run check:i18n`
+still exits 1 for two untranslated keys (`🏴‍☠️ Commerce raid` and
+`🏴‍☠️ Raid fleet`) across five locales; no locale files changed. Each
+headless scenario ran sequentially under a 2 GiB memory cap; no OOM kill
+occurred.

@@ -170,8 +170,18 @@ const SCENARIOS = [
       OFH_LOG_NUKES: "1",
       OFH_LOG_STRUCTURES: "1",
     },
-    assert: (r) => Number(r.nuclearStrategy?.atomBombsLaunched ?? 0) >= 3,
-    expect: "salvo-scale response (>= 3 atoms); won observed honestly (seed-A twin won@7571 via 1 new silo)",
+    assert: (r, logText) =>
+      Number(r.nuclearStrategy?.atomBombsLaunched ?? 0) >= 3 &&
+      logText.split("\n")
+        .filter((line) => line.includes('"kind":"nuke-aim"'))
+        .map((line) => JSON.parse(line))
+        .some((aim) =>
+          aim.sourceName === "OFH Auto Bot" &&
+          aim.targetName === "Isle of Margins" &&
+          aim.tick < 2183 &&
+          aim.fired === true,
+        ),
+    expect: ">= 3 atoms and a successful pre-invasion counterforce aim at Isle of Margins; won observed honestly",
   },
   {
     name: "baikal-nuke-wars",

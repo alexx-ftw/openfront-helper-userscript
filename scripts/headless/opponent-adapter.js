@@ -395,6 +395,52 @@ export class BundledOpponentBot {
     let lastTarget = null;
     let lastCandidates = [];
     let lastValueGate = null;
+    const originalSendNuke = behavior.sendNuke;
+    if (typeof originalSendNuke === "function") {
+      behavior.sendNuke = async (tile, type, target, waitTicks = 0, salvo = null) => {
+        const owner = behavior.game.owner?.(tile);
+        const incoming = behavior.attackBehavior?.findIncomingAttackPlayer?.();
+        const fired = await originalSendNuke.call(
+          behavior,
+          tile,
+          type,
+          target,
+          waitTicks,
+          salvo,
+        );
+        this.structureTrace.push({
+          kind: "nuke-aim",
+          tick: this.game.ticks(),
+          sourceID: behavior.player?.smallID?.() ?? null,
+          sourceName: behavior.player?.name?.() ?? null,
+          sourceTroops: Number(behavior.player?.troops?.() ?? 0),
+          sourceTiles: Number(behavior.player?.numTilesOwned?.() ?? 0),
+          incomingID: incoming?.smallID?.() ?? null,
+          incomingName: incoming?.name?.() ?? null,
+          tile,
+          type,
+          waitTicks,
+          salvoID: salvo?.salvoId ?? null,
+          fired,
+          targetID: target?.smallID?.() ?? null,
+          targetName: target?.name?.() ?? null,
+          targetTroops: Number(target?.troops?.() ?? 0),
+          targetTiles: Number(target?.numTilesOwned?.() ?? 0),
+          tileOwnerID: owner?.smallID?.() ?? null,
+          tileOwnerName: owner?.name?.() ?? null,
+          tileOwnerTiles: Number(owner?.numTilesOwned?.() ?? 0),
+          targetSamLevels: (target?.units?.("SAM Launcher") ?? []).reduce(
+            (sum, sam) => sum + Number(sam?.level?.() ?? 0),
+            0,
+          ),
+          candidates: lastCandidates.slice(0, 3).map(({ tile: candidateTile, value }) => ({
+            tile: candidateTile,
+            value,
+          })),
+        });
+        return fired;
+      };
+    }
     const originalSelect = behavior.selectAffordableNuke;
     behavior.selectAffordableNuke = async (...args) => {
       const selected = await originalSelect.apply(behavior, args);
