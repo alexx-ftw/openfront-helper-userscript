@@ -7043,3 +7043,14 @@ exactly one new-silo build — no stacking occurred to suppress) with
 won=true required. Identical receipts are expected, not assumed: any
 drift is reported honestly. Fixtures pin both guard sides (pending build
 blocks; completed-only network still builds).
+
+## Receipt 6: one-pending-launcher guard (2026-10-09, ef971d7c)
+
+Both gates ran post-guard (v1.12.187) and returned receipts bit-identical
+to the pre-declared expectations: baikal won=true at 6361 (21 own nuked,
+26A/41H) and sam-salvo-overwhelm won=true at 7571 (11A/24H, 11 own
+nuked, exactly 1 new-silo build — no stacking existed to suppress). The
+guard is behavior-neutral on healthy regimes and closes the pathological
+stacking path (completed maxed network + pending launcher would have
+re-fired the fallback every tick). Corpus side note: the fourth fetch
+attempt was rate-limited again; the corpus stays at 79 records.
