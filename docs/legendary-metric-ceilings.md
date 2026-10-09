@@ -7998,3 +7998,78 @@ never exercise this seam. Pre-declaration for the next behavior arm must
 cover both the history-window gate (first-silo tick, launches > 0 by
 6,000) and the standing scenario controls. Evidence:
 /tmp/ofh-matrix/v1.12.193-history-10/.
+
+## Outcome: reject the first-silo ladder ceil — viability never reached
+selection and it flipped the only natural win (2026-10-09)
+
+The pre-declared 15 candidate passed the focused boundary fixture and the
+full local suite, then failed every history gate on the same 10 records:
+first silo still 2/10 (the two builds at 1,991 and 4,269 are tick-identical
+to the baseline — the opened viability never produced a new build),
+nuclear launches 0/10, deaths 5/10 (at cap), and the single natural-win
+game REGRESSED: cR4BnsUGq4 still ended at tick 5,181 with stopReason
+winner, but the winner is no longer the bot. Classification per the
+pre-declared clause: "candidates offered but never affordable/selected" —
+making the ladder OFFER a 1M silo at one city changed the Legendary
+planner's candidate set and Wait/spend ordering (the 25MM deferral does
+not apply at startGold 0), which alone diverged and lost the only winning
+trajectory, while never once funding the intended build.
+
+Combined with pre-declaration 14 this establishes the session's fourth
+construction-side lesson: on Legendary, ANY change to the silo offer —
+expansion ceiling or first-silo viability — reroutes the spend order
+before it ever buys a silo, and the rerouted order loses. The organic
+nuclear gap on real profiles is therefore a SELECTION-ECONOMICS problem
+(the planner never prefers the 1M launcher over the war economy while
+income is small), not a viability problem, and future candidates must
+operate on the selection/funding layer with an explicit spend-tradeoff
+pre-declaration, or accept the dormant nuclear chain on real maps.
+The tree is reverted and the rebuilt bundle is again byte-identical to
+v1.12.193; full `npm test`, `npm run check`, and build pass at the
+reverted state. Evidence: /tmp/ofh-matrix/v1.12.194-first-silo/.
+
+## Pre-declaration 15: Legendary first-silo ladder fix (ceil the first
+launcher at one city, 2026-10-09, BEFORE any candidate run)
+
+The history baseline above exposes the root gate. The Legendary ladder's
+first-silo promise — `FIRST_MISSILE_SILO_RATIO = 0.2` "so nations start
+nuking earlier" — is defeated by `Math.floor(cities x 0.2)`: with the
+1-4 cities a real profile holds before midgame, the silo target computes
+to 0 and the first launcher requires either 5 cities, hostile SAM/silo
+parity, or never. Measured: 8/10 history games built no silo at all
+inside 6,000 ticks; the two that did needed 1,991 and 4,269 ticks; the
+single game that produced a winner built its silo at 4,269 and won.
+
+Planned minimal change (one viability gate, structureBehavior): inside the
+existing winFixes Legendary context, when `ownedLevels(MissileSilo) === 0`
+and the nation owns at least one City and nuclear units are enabled, the
+silo viability target is at least 1 (first launcher at one city instead of
+five). Non-Legendary, winFixes-off, zero-city, owned>=1, and parity-driven
+targets are byte-identical to today. The 1M flat price, the spendable
+reserve, the naval-opening guard, the 25MM big-start silo deferral, the
+SAM chest, and every targeting/salvo/reserve path are untouched: the lever
+only makes the ladder OFFER the first launcher one city earlier; the
+existing affordability machinery still decides when it is actually bought.
+
+Pre-declared gates:
+
+- Focused fixture: cities 1 / owned 0 / Legendary+winFixes → viable
+  (target 1); cities 0 → false; owned >= 1 → unchanged floor rule;
+  winFixes off or non-Legendary → unchanged; hostile-parity target still
+  dominates when higher.
+- History gate (same 10 records, same caps, rebuilt bundle first): the
+  bot builds its first silo in >= 7/10 games (baseline 2/10) and launches
+  at least one nuclear bomb in >= 3/10 games (baseline 0/10), while
+  deaths do not worsen (<= 5) and the one natural-win game is still won.
+  Record per-game first-silo tick, first-launch tick, and outcome either
+  way.
+- Standing controls keep their v1.12.193 outcomes: baikal-nuke-wars win,
+  sam-salvo-overwhelm win, silo-counter-battery-regime >= 500k damage,
+  and baikal-silo-regime remains a loss at 3,861 — it dies with 240k
+  gold against a 1M price, so any trajectory divergence before 3,861
+  fails the gate outright.
+- Full `npm test`, `npm run check`, and build parity pass. If retained:
+  semver 1.12.194, rebuild, commit the validated artifact, and notify.
+  Otherwise revert and record the measured reason, distinguishing
+  "candidates offered but never affordable" from "bought but the earlier
+  launcher changed the outcome".
