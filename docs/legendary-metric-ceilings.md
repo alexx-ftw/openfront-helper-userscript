@@ -6922,3 +6922,33 @@ receipt must hold won=true with launch counts rising or holding.
 Corpus-growth side note: the public fetcher was rate-limited (403
 after full backoff) at the first leaderboard call; corpus stays at 79
 records this session.
+
+## Lever closed: anti-SAM starvation release FAILED the no-harm gate (2026-10-09)
+
+The pre-registered lever was implemented (9a392b21) and run against both
+gates. Effect gate: sam-salvo-overwhelm flipped from an eternal draw to
+won=true at 10201 (10 atoms, 12 sam-salvo events, own nuked 8/27M) —
+the release worked exactly as designed there. No-harm gate: baikal
+standard DIED — won=false, bot_dead at 11820, 87 atoms (vs 26), 16 own
+structures nuked (114.75M) from a position of dominance (49.55% peak
+territory share, best economy 547M vs 169M rival).
+
+Bisect isolated the lever cleanly: with the call-site flag removed the
+standing baikal receipt returns bit-for-bit (won=true, 7971, 26A/48H,
+12, 50.5M), so the MIRV tube-cohesion fix (721ea0f7) is exonerated.
+Lever v2 (failed-plan silo upgrades disabled under the release) produced
+a byte-identical death: 0 sam-salvo events, same 87/37/16/114.75M/11820
+receipts — the destabilisation travels through the salvo pipeline state
+(nukeWantSlots / pending machinery), not through fired salvos or
+construction side effects. A mechanism that deep cannot be patched by a
+flag refinement; the family is closed.
+
+End state (7929a9bb): the call site keeps the native atoms>0 guard; the
+allowHeldAtoms parameter and its two fixture cases remain pinned as the
+decision record. Accepted cost, documented honestly: the sam-salvo-
+overwhelm regime remains a max-ticks draw under the native guard — the
+666-starved-decision deadlock is real but this lever is not the fix.
+Runtime artifact ends at the native-guard behaviour validated by the
+bisect receipt; no further Baikal run needed (behaviourally identical
+to the bisect artifact by construction: the v2 skip is inert at
+allowHeldAtoms=false).
