@@ -8277,3 +8277,49 @@ Pre-declared gates:
   Otherwise revert and record the measured reason, distinguishing
   "candidates offered but never affordable" from "bought but the earlier
   launcher changed the outcome".
+
+## Receipt 19: no-launch decision trace exposed a stage-coverage gap
+
+(2026-10-09, v1.12.193, no behavior arm)
+
+The three predeclared replays completed under the 2 GiB scope. Their full
+result objects matched the n=20 baseline except `runtimeMs`, and all three
+remained no-launch. Across cR4BnsUGq4, cy2X9tdwad, and dpa7T7kPMn there
+were 706 `nuke-decision` records and 339 bomb-selection records. The
+first history had 12 selections and no affordable bomb (maximum observed
+gold 421,412). The other two had 327 selections: 162 affordable bombs
+(158 Atoms and four Hydrogen bombs) and 165 with no affordable bomb. None
+produced a `nuke-aim` or launch.
+
+The existing trace wrote zero candidates and a null EV result even when
+the target and an affordable bomb existed. It did not establish whether
+candidate collection ran, whether economy deferred the attempt, or which
+dispatch gate declined it. Therefore this is a trace-coverage finding,
+not evidence that candidate scoring itself returned an empty set. No
+behavior or semver change. Evidence:
+`/tmp/ofh-matrix/v1.12.193-no-launch-trace/`.
+
+## Pre-declaration 20: instrument the no-launch stage gates
+
+(2026-10-09, BEFORE the follow-up diagnostic; headless trace only)
+
+Extend only the headless `OFH_LOG_NUKES=1` trace so each `maybeSendNuke`
+decision records which existing gates ran and their returned outcomes:
+pending launch, silo eligibility, target search/validation, affordable
+bomb selection, economy defer checks (including any retry check),
+candidate collection/retry, firing dispatch, and the giant-strike tail.
+Record candidate counts per collection call and whether dispatch launched
+a bomb. Preserve production engine files, argument/call order, return
+values, rejection behavior, and exception propagation. Do not change the
+userscript bundle or package version for this test-harness-only diagnostic.
+
+Rebuild first, then run the same three history IDs in the same order with
+the v1.12.193 bundle, 6,000-tick cap, `OFH_LOG_NUKES=1`,
+`OFH_LOG_STRUCTURES=1`, and 2 GiB MemoryMax. The gate passes only if all
+three full result objects still match receipt 17 except `runtimeMs`, all
+remain no-launch, and every decision has a trace that distinguishes an
+unreached stage from a stage that ran and returned empty/false. Confirm
+affordable-bomb decisions now end at a concrete gate or dispatch result;
+if results diverge, discard the instrumentation before interpreting it.
+Evidence will be stored under
+`/tmp/ofh-matrix/v1.12.193-no-launch-stages/`.
