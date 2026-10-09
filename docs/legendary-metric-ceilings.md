@@ -7001,3 +7001,26 @@ counts. The branch is cohesive by construction — same trigger, same
 gates, same placement machinery — and receipt-backed on both regimes.
 Corpus side note: the public fetcher was rate-limited again (403); the
 corpus stays at 79 records.
+
+## Receipt 5: vendored units() arity-cap sweep (2026-10-09, 2491bfa2)
+
+Full sweep of the remaining multi-type units() call sites against the
+vendored engine's three-positional-type cap. Fixed broken sites (silently
+truncating before): attackBehavior's AttackStructureTypes roster (6 types
+across three targeting sites — silos, ports, and factories were invisible
+to attack targeting), structureBehavior participantStructurePoints (4
+types), gameApi cachedUnits (dynamic), and the team-build-stats and
+gold-per-minute overlays (6 types each). Verified cap-safe as-is (<=3
+types): all nuke-family reads, warshipBehavior, retaliation-hud,
+boat-prediction, build-timer, and the shared-utils per-tick cache (whose
+one-scan-per-tick contract the sam-defense-policy fixture pins).
+
+Gates (2491bfa2, v1.12.186): baikal won=true at 6361 — 1610 ticks faster
+than the 7971 standing receipt (the attack lane now sees every structure
+evidence type and commits reserve attacks earlier) with an honest cost:
+21 own structures nuked (was 12), 26A/41H. sam-salvo-overwhelm held
+won=true at 7571 (590 ticks slower than receipt 4's 6981, still a win
+versus the pre-receipt eternal draw), 11A/24H, 11 own nuked, 1 new-silo
+construction. Both pre-declared requirements hold (won=true on both,
+sam assert >= 3 atoms green); the collateral and tick shifts are
+recorded, not tuned.
