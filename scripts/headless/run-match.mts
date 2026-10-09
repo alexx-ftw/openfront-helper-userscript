@@ -9,6 +9,7 @@ import {
   GameMode,
   HumansVsNations,
   PlayerType,
+  Unit,
   UnitType,
 } from "../../openfront-engine/src/core/game/Game.ts";
 import { createGameRunner } from "../../openfront-engine/src/core/GameRunner.ts";
@@ -46,25 +47,81 @@ const nukeVulnerableStructureTypes = new Set<UnitType>([
 ]);
 let nukeDetonatingOwner: import("../../openfront-engine/src/core/game/Game.ts").Player | null =
   null;
+let nukeDetonatingDestination: number | null = null;
+let nukeDetonatingType: string | null = null;
+let nukeDetonatingId: number | null = null;
+let nukeDetonatingMissileId: number | null = null;
+let nukeDetonationSequence = 0;
 let nukedStructureGold = 0n;
 let ownStructuresNuked = 0;
 let ownTransportBoatsLost = 0;
 let firstOwnStructureLostTick: number | null = null;
 const goldEarnedById = new Map<string, bigint>();
-const originalNukeDetonate = NukeExecution.prototype.detonate;
-NukeExecution.prototype.detonate = function (
-  this: NukeExecution & { player: import("../../openfront-engine/src/core/game/Game.ts").Player },
+const originalNukeTick = NukeExecution.prototype.tick;
+NukeExecution.prototype.tick = function (
+  this: NukeExecution & {
+    player: import("../../openfront-engine/src/core/game/Game.ts").Player;
+    dst: number;
+    src: number | null | undefined;
+    nuke: Unit | null;
+  },
+  ticks: number,
 ) {
-  const previous = nukeDetonatingOwner;
-  nukeDetonatingOwner = this.player;
-  if (logNukes) {
-    const nukeType = (this as unknown as { nuke: Unit | null }).nuke?.type() ?? "unknown";
+  const unlaunched = this.nuke === null;
+  originalNukeTick.call(this, ticks);
+  if (logNukes && unlaunched && this.nuke !== null) {
     console.log(
-      `[ofh:nuke-detonate] tick=${this.mg.ticks()} owner=${this.player?.name?.() ?? "unknown"} tile=${this.tile?.() ?? "?"} type=${nukeType}`,
+      `[ofh:nuke-launch] tick=${this.mg.ticks()} missileId=${this.nuke.id()} owner=${this.player.name?.() ?? "unknown"} ownerId=${this.player.smallID?.() ?? "?"} source=${this.src ?? "?"} target=${this.dst} type=${this.nuke.type()}`,
     );
   }
-  originalNukeDetonate.call(this);
-  nukeDetonatingOwner = previous;
+};
+const originalPlayerBuildUnit = PlayerImpl.prototype.buildUnit;
+PlayerImpl.prototype.buildUnit = function (type, spawnTile, params) {
+  const unit = originalPlayerBuildUnit.call(this, type, spawnTile, params);
+  if (logNukes && type === UnitType.MissileSilo) {
+    const game = (this as unknown as { mg: { ticks(): number } }).mg;
+    console.log(
+      `[ofh:silo-build] tick=${game.ticks()} owner=${this.name()} ownerId=${this.smallID()} siloId=${unit.id()} tile=${spawnTile} level=${unit.level()} underConstruction=${unit.isUnderConstruction()}`,
+    );
+  }
+  return unit;
+};
+const originalNukeDetonate = NukeExecution.prototype.detonate;
+NukeExecution.prototype.detonate = function (
+  this: NukeExecution & {
+    player: import("../../openfront-engine/src/core/game/Game.ts").Player;
+    dst: number;
+    nuke: Unit | null;
+  },
+) {
+  const previous = nukeDetonatingOwner;
+  const previousDestination = nukeDetonatingDestination;
+  const previousType = nukeDetonatingType;
+  const previousId = nukeDetonatingId;
+  const previousMissileId = nukeDetonatingMissileId;
+  const destination = this.dst;
+  const detonationId = logNukes ? ++nukeDetonationSequence : null;
+  const nukeType = this.nuke?.type() ?? "unknown";
+  const missileId = this.nuke?.id() ?? null;
+  nukeDetonatingOwner = this.player;
+  nukeDetonatingDestination = destination;
+  nukeDetonatingType = String(nukeType);
+  nukeDetonatingId = detonationId;
+  nukeDetonatingMissileId = missileId;
+  try {
+    if (logNukes) {
+      console.log(
+        `[ofh:nuke-detonate] tick=${this.mg.ticks()} id=${detonationId} missileId=${missileId ?? "?"} owner=${this.player?.name?.() ?? "unknown"} ownerId=${this.player?.smallID?.() ?? "?"} source=${this.src ?? "?"} tile=${destination} type=${nukeType}`,
+      );
+    }
+    originalNukeDetonate.call(this);
+  } finally {
+    nukeDetonatingOwner = previous;
+    nukeDetonatingDestination = previousDestination;
+    nukeDetonatingType = previousType;
+    nukeDetonatingId = previousId;
+    nukeDetonatingMissileId = previousMissileId;
+  }
 };
 const originalUnitDelete = UnitImpl.prototype.delete;
 UnitImpl.prototype.delete = function (
@@ -72,7 +129,14 @@ UnitImpl.prototype.delete = function (
   displayMessage?: boolean,
   destroyer?: import("../../openfront-engine/src/core/game/Game.ts").Player,
 ) {
+  let nukedStructureTrace: string | null = null;
   if (nukeDetonatingOwner !== null && nukeVulnerableStructureTypes.has(this.type())) {
+    const structureType = this.type();
+    const structureTile = this.tile();
+    const structureOwner = this.owner();
+    if (logNukes) {
+      nukedStructureTrace = `[ofh:nuke-structure-destroyed] tick=${this.mg.ticks()} id=${nukeDetonatingId ?? "?"} missileId=${nukeDetonatingMissileId ?? "?"} owner=${nukeDetonatingOwner.name?.() ?? "unknown"} ownerId=${nukeDetonatingOwner.smallID?.() ?? "?"} target=${nukeDetonatingDestination ?? "?"} nukeType=${nukeDetonatingType ?? "unknown"} type=${String(structureType)} tile=${structureTile} structureId=${this.id()} structureOwner=${structureOwner?.name?.() ?? "unknown"} structureOwnerId=${structureOwner?.smallID?.() ?? "?"}`;
+    }
     if (destroyer === nukeDetonatingOwner && destroyer?.clientID?.() === clientID) {
       nukedStructureGold += this.mg.unitInfo(this.type()).cost(this.mg, this.owner());
     }
@@ -104,7 +168,9 @@ UnitImpl.prototype.delete = function (
       );
     }
   }
-  return originalUnitDelete.call(this, displayMessage, destroyer);
+  const deleted = originalUnitDelete.call(this, displayMessage, destroyer);
+  if (nukedStructureTrace !== null) console.log(nukedStructureTrace);
+  return deleted;
 };
 
 // Hull-level veterancy telemetry: the delete site only receives the
@@ -1809,9 +1875,8 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
       .players()
       .filter((other) => other.clientID() !== clientID && other.isAlive())
       .map((other) => {
-        const silos = other
-          .units(UnitType.MissileSilo)
-          .filter((silo) => silo.isActive() && !silo.isUnderConstruction());
+        const allSilos = other.units(UnitType.MissileSilo).filter((silo) => silo.isActive());
+        const silos = allSilos.filter((silo) => !silo.isUnderConstruction());
         const sams = other
           .units(UnitType.SAMLauncher)
           .filter((sam) => sam.isActive() && !sam.isUnderConstruction());
@@ -1819,6 +1884,12 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
           name: other.name(),
           team: other.team(),
           gold: Number(other.gold()),
+          siloDetails: allSilos.map((silo) => ({
+            id: silo.id(),
+            tile: silo.tile(),
+            level: silo.level(),
+            underConstruction: silo.isUnderConstruction(),
+          })),
           siloLevels: silos.map((silo) => silo.level()),
           siloCapacity: silos.reduce((total, silo) => total + Math.max(1, silo.level()), 0),
           samLevels: sams.map((sam) => sam.level()),
@@ -1827,6 +1898,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
       .filter(
         (network) =>
           network.gold >= Number(PREEMPTIVE_SAM_SILO_GOLD) ||
+          network.siloDetails.length > 0 ||
           network.siloLevels.length > 0 ||
           network.samLevels.length > 0,
       );

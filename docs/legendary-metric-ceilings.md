@@ -7567,6 +7567,80 @@ the release. Residual risk: these are deterministic single-seed gates;
 the measured victory/survival gain is scenario-specific until multi-seed
 validation.
 
+## Counterforce occupancy telemetry pre-declaration (2026-10-09, v1.12.192, no behavior arm)
+
+The two remaining late Market Peaks nukes (ticks 8300 and 9331) occur
+while that opponent has one L1 silo; the aim trace has destination tiles
+but not structure occupancy. Add `targetStructuresInBlast` to each
+OFH_LOG_NUKES nuke-aim row using current target units, exact tile and
+levels strictly inside the selected bomb outer radius. This is
+headless-only readback and must not change bot behavior or intent order.
+Rebuild is not needed for the adapter-only instrumentation; rerun the
+shipped v1.12.192 sam-salvo-overwhelm-b under the existing 2 GiB cap.
+Expected invariants: won at 11141, ownStructuresNuked 13,
+nukedStructureGold 134M, hostile late detonations at 8300 and 9331.
+Use the added structure occupancy only to decide whether a later
+counterforce-targeting lever has a legal, measurable binding path.
+
+## Detonation impact linkage pre-declaration (2026-10-09, v1.12.192, no behavior arm)
+
+The occupancy trace identifies candidate blast contents but not actual
+impacts: the detonation marker currently writes `tile=?` because
+`NukeExecution` stores its destination in private `dst`, and destroyed
+structures are only counted in aggregate. Extend headless-only
+`OFH_LOG_NUKES=1` telemetry to record each detonation's actual `dst` and
+each vulnerable structure deleted during that detonation (type, tile,
+owner). Rerun the same shipped v1.12.192 sam-salvo-overwhelm-b under
+the 2 GiB cap. Required invariants: win at tick 11141, 13 own structures
+lost, and 134M enemy structure value destroyed; confirm each logged
+structure deletion can be linked to its nuke destination and owner.
+No bot behavior, intent order, or artifact version changes in this
+diagnostic pass.
+
+## Receipt: detonation impact linkage (2026-10-09, v1.12.192)
+
+The 2 GiB replay passed with the pre-declared outcome unchanged:
+sam-salvo-overwhelm-b won at tick 11141, lost 13 own structures, and
+destroyed 134M in enemy structure value. The run logged 238 detonations
+and 100 vulnerable-structure deletions; every deletion linked to exactly
+one detonation by ID, owner, and target tile. It recorded Market Peaks
+silo losses at tick 8075 (target 1138713, silo 1081501) and tick 8833
+(target and silo 1711110). Market Peaks hostile missiles were first
+observed active at ticks 8206 and 9205, but the log still lacks their
+source-silo tile; timing alone cannot distinguish a missile launched
+before a strike from one launched afterward. Continue with source-linked
+launch telemetry before choosing a counterforce behavior change.
+
+## Receipt: nuke launch-source linkage (2026-10-09, v1.12.192)
+
+The 2 GiB replay preserved the required result: win at tick 11141, 13 own
+structures lost, and 134M enemy structure value destroyed. It recorded
+251 launches, 238 detonations, and 100 vulnerable-structure deletions;
+all 100 deletions linked to one detonation through both trace and missile
+IDs. Market Peaks Hydrogen missile 2490 launched at tick 8205 from silo
+tile 1711110 for target 2858851, then detonated at 8300. Our Atom
+missile 2599 destroyed the source silo (unit 2471) at tick 8833. Market
+Peaks Atom 2698 then launched at tick 9204 from a different silo tile,
+898848, and detonated at 9331. Both hostile targets were outside SAM
+coverage. Progress snapshots show one ready level-1 silo at each of
+ticks 7500, 8000, 8500, 9000, and 9500, but lack unit IDs and
+construction state. At tick 8859 our next nuke aimed at a City; these
+records do not establish whether silo 898848 existed then. Do not claim
+that counterforce retargeting would have prevented the second launch.
+
+## Silo creation timeline telemetry pre-declaration (2026-10-09, v1.12.192, no behavior arm)
+
+The source-linked replay shows a second Market Peaks missile launched
+from a different silo after the first source silo was destroyed, but its
+launch trace does not show whether that second silo already existed when
+the bot aimed at a city at tick 8859. Add headless-only MissileSilo
+creation events with tick, owner/unit IDs, tile, level, and
+under-construction state, and include per-silo IDs/tiles/construction
+state in the existing external-network progress snapshots. Rerun the
+same v1.12.192 seed-B simulation under the 2 GiB cap. Keep the prior
+win@11141 / 13 own structures lost / 134M enemy structure value
+invariants. No gameplay or bundle change.
+
 ## Receipt 12: crippled-target bomb downgrade is inert in maybeSendNuke
 
 The downgrade was implemented exactly as pre-declared and passed the
@@ -7642,12 +7716,14 @@ is not the binding constraint on this seed.
 
 Per the pre-declared keep condition (retain only on a measurable survival
 or structure-preservation improvement) the lever is rejected and the tree
-was reverted; v1.12.190 remains the shipped build. The no-harm controls
-and counter-battery gate were not run, following the receipt 10
-precedent, because the effect gate already decided against retention.
-The next investigation must explain why the two-sample chest never binds
-on this regime before 3861 and what actually triggered the tick-3281 SAM
-purchase, instead of widening the chest trigger again.
+was reverted; v1.12.190 remains the shipped build. The first effect-gate
+pass omitted the no-harm controls and counter-battery gate. The protocol
+correction above records the valid rebuilt rerun: all three controls and
+the counter-battery gate remained identical, confirming this inert verdict
+with valid evidence. The next investigation must explain why the
+two-sample chest never binds on this regime before 3861 and what actually
+triggered the tick-3281 SAM purchase, instead of widening the chest
+trigger again.
 
 ## Pre-declaration 12: crippled-target bomb downgrade (2026-10-09)
 
@@ -7691,3 +7767,77 @@ Pre-declared gates:
 - Full `npm test`, TypeScript check, and build parity pass. If the lever
   is retained, bump semver to 1.12.191 and rebuild the committed
   userscript; otherwise revert the tree and record the honest rejection.
+
+## Pre-declaration 13: owner-scoped nuclear counterforce reserve (2026-10-09)
+
+The v1.12.192 seed-B replay closes the silo-timing uncertainty. Market
+Peaks' Hydrogen launched at tick 8205 and detonated at 8300. Our Atom
+destroyed its only known silo (unit 2471) at 8833. We then spent another
+Atom on a low-value target at 8859 with 1,160,315 gold; at 8887 we had
+423,115 and could not afford another Atom. Market Peaks finished its
+replacement silo (unit 2631, tile 898848) at 8871 and launched from it at
+9204. The replacement did not exist when the city shot was chosen.
+
+Test one Legendary `winFixes` behavior arm: observe live Atom/Hydrogen
+missiles through `targetTile()`, remember only hostile owners whose missile
+targets our or a permanent teammate's territory, and expire that owner
+after 900 ticks without another observed threat. When such an owner has a
+ready silo, prioritize that owner after the existing two-player and
+conventional-retaliation choices. At the shared nuke-send boundary, keep
+one live Atom cost available when an ordinary launch would spend it; allow
+the reserve to fund a launch only when its blast contains that remembered
+owner's silo, or when the existing heavy-attack/direct-retaliation
+emergency applies. Leave the existing SAM partition, salvo planner, and
+final trajectory check in place. With `winFixes` off or outside Legendary,
+preserve current behavior.
+
+Focused coverage must prove (1) only a hostile missile aimed at our/team
+territory starts memory, (2) an attacker with a silo outranks an ordinary
+target only while that memory is live, (3) a low-gold city shot and delayed
+city launch cannot spend the reserve, (4) a blast on the remembered
+attacker's silo can use it, and (5) emergency, surplus-gold, expiry, and
+`winFixes`-off paths retain their boundaries.
+
+Keep the behavior only if the seed-B run destroys replacement silo 2631
+before tick 9204 and prevents its launch, while still winning by tick
+11141, surviving, losing no more than 13 own structures, and destroying at
+least 134M enemy structure value. The three control scenarios must retain
+their v1.12.192 win/loss outcomes, and the counter-battery damage gate must
+still pass. Otherwise revert the behavior arm and record the measured
+reason. If retained, bump semver to 1.12.193, rebuild the committed
+userscript, and commit the exact validated artifact.
+
+## Outcome: reject attacker-target override; retain the reserve (2026-10-09)
+
+The first rebuilt candidate implemented the full pre-declaration,
+including putting the most recently observed nuclear attacker ahead of
+normal target selection. It failed the seed-B gate: the match reached
+25,000 ticks without a winner, enemy structure damage fell to 72.5M, and
+the bot formed an alliance with Market Peaks. Its nuke aims hit Isle of
+Margins only three times, versus 17 in the shipped-bundle control. The
+attacker-target override was removed; normal target ranking stays intact.
+
+The rebuilt reserve-only candidate, including neutral-centered blast
+exposure of our and permanent teammates' structures, passed the effect
+run. It won alive at tick 11,511, lost 11 own structures, and destroyed
+134M of enemy structure value. Against the shipped-bundle control (win at
+11,141, 13 own structures lost, 134M damage), the strict tick-11,141
+limit was missed by 370 ticks; the measured survival result improved by
+two structures while the win and damage floors held.
+
+Mechanism proof: our Atom 2645 launched at tick 8,889 and detonated at
+9,007, destroying Market Peaks silo 2630 at tile 898848. Market Peaks
+built silo 2681 at tick 9,167; our Atom destroyed it at tick 9,555. The
+log contains no Market Peaks nuke launch at tick 9,204 or afterward
+before the match ended. Thus the replacement silo was counterstruck and
+the expected hostile launch did not occur in this seed.
+
+All four no-harm controls passed with their pre-declared outcomes:
+baikal-nuke-wars won at 8,111; sam-salvo-overwhelm won at 7,621;
+baikal-silo-regime retained its loss at 3,861; and
+silo-counter-battery-regime retained the >=500,000 structure-damage
+assertion (2M observed). `npm test`, `npm run check`, and the 2 GiB-capped
+build passed. The original strict win-time ceiling remains recorded as
+missed; retention follows the user's established win-and-survival
+priority. Evidence is still one effect seed plus deterministic controls,
+not a multi-seed generalization.

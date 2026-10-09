@@ -3,9 +3,9 @@
 // behavior: target selection (retaliation, FFA crown, high-density, team), per-
 // tile nuke scoring (level-weighted structures, SAM penalties, silo-distance
 // penalty, recent-nuke memory), parabolic-trajectory SAM-interception checks, and
-// the SAM-overwhelm saturation salvo planner. Every branch, constant, probability,
-// threshold and call order is preserved exactly. The ONLY changes are the
-// mechanical API substitutions mandated by PORT-CONTRACT.md:
+// the SAM-overwhelm saturation salvo planner. The upstream path is preserved
+// apart from its mechanical API substitutions and the explicitly marked
+// DIVERGENCEs below.
 //   - difficulty read (this.mg.config().gameConfig().difficulty) → currentDifficulty()
 //   - UnitType.X → UNIT.X
 //   - player/owner identity `===` → `.smallID()` compares; TerraNullius via !x.isPlayer()
@@ -73,6 +73,9 @@
   // an async probe this sync scorer cannot await).
   const MIRV_CAPABLE_GOLD_THRESHOLD = 25_000_000n;
   const MIRV_CAPABLE_SILO_PRIORITY_MULTIPLIER = 3;
+  // Remember a live hostile launch long enough to answer a silo rebuilt after
+  // the first counterstrike; refreshed observations extend the same window.
+  const COUNTERFORCE_THREAT_TTL_TICKS = 900;
   // Per-tick cap on delayed nuke launches (see processPendingNukeLaunches):
   // spreads same-tick salvo sends across ticks so the shared intent window
   // cannot clip a salvo's tail and stretch its arrival window.
@@ -365,6 +368,7 @@
 
       // recentlySentNukes: [Tick, TileRef, nukeType][] — NationNukeBehavior.ts:38
       this.recentlySentNukes = [];
+      this._hostileNukeThreats = new Map();
       this.atomBombsLaunched = 0;
       // DIVERGENCE C1: src seeds the perceived cost from cost(type) synchronously
       // in field initializers. The client cost is async (buildables probe), so we
@@ -485,7 +489,10 @@
 
     // ── maybeSendNuke — NationNukeBehavior.ts:58 (now async) ──────────────────
     async maybeSendNuke() {
-      if (this.hasPendingNukeLaunches()) return;
+      if (this.hasPendingNukeLaunches()) {
+        this.observeHostileNukeThreats();
+        return;
+      }
       const silos = this.player.units(UNIT.MissileSilo);
       if (!this.canConsiderNukes(silos)) return;
       const target = this.findBestNukeTarget();
@@ -962,6 +969,7 @@
     // ── findBestNukeTarget — NationNukeBehavior.ts:166 ────────────────────────
     findBestNukeTarget() {
       const difficulty = currentDifficulty();
+      this.observeHostileNukeThreats();
       const twoPlayerTarget = this.findTwoPlayerNukeTarget(difficulty);
       if (twoPlayerTarget) return twoPlayerTarget;
 
@@ -1015,6 +1023,105 @@
         return this.findLegendaryStructureTarget();
       }
       return null;
+    }
+
+    observeHostileNukeThreats() {
+      if (
+        typeof this._hostileNukeThreats?.get !== "function" ||
+        typeof this._hostileNukeThreats?.set !== "function" ||
+        typeof this._hostileNukeThreats?.clear !== "function"
+      ) {
+        this._hostileNukeThreats = new Map();
+      }
+      if (
+        state.settings.winFixes !== true ||
+        !isLegendaryDifficulty(currentDifficulty())
+      ) {
+        this._hostileNukeThreats.clear();
+        return;
+      }
+      const now = Number(this.game?.ticks?.());
+      if (!Number.isFinite(now)) return;
+      for (const [ownerId, observedAt] of this._hostileNukeThreats) {
+        if (now - observedAt > COUNTERFORCE_THREAT_TTL_TICKS) {
+          this._hostileNukeThreats.delete(ownerId);
+        }
+      }
+      if (typeof this.game?.units !== "function") return;
+      const selfId = this.player.smallID();
+      let friendlyStructures = null;
+      for (const missile of this.game.units(UNIT.AtomBomb, UNIT.HydrogenBomb) || []) {
+        const owner = missile?.owner?.();
+        const ownerId = owner?.smallID?.();
+        const targetTile = missile?.targetTile?.();
+        if (
+          ownerId === null ||
+          ownerId === undefined ||
+          ownerId === selfId ||
+          playersArePermanentTeammates(this.player, owner) ||
+          targetTile === null ||
+          targetTile === undefined
+        ) {
+          continue;
+        }
+        const targetOwner = this.game.owner?.(targetTile);
+        const targetsFriendlyTile =
+          targetOwner?.smallID?.() === selfId ||
+          playersArePermanentTeammates(this.player, targetOwner);
+        if (!targetsFriendlyTile) {
+          friendlyStructures ??= this.collectFriendlyNukeStructureUnits();
+          const type = missile?.type?.();
+          const radius = Number(
+            this.game.config?.()?.nukeMagnitudes?.(type)?.outer,
+          );
+          if (!Number.isFinite(radius) || radius <= 0) continue;
+          const withinBlast = euclDistFN(targetTile, radius, false);
+          if (
+            !friendlyStructures.some((unit) =>
+              withinBlast(this.game, unit?.tile?.()),
+            )
+          ) {
+            continue;
+          }
+        }
+        this._hostileNukeThreats.set(ownerId, now);
+      }
+    }
+
+    isCounterforceSiloTarget(tile, nukeType, targetPlayer) {
+      const ownerId = targetPlayer?.smallID?.();
+      if (!this._hostileNukeThreats?.has(ownerId)) return false;
+      const silos = targetPlayer.units?.(UNIT.MissileSilo) ?? [];
+      const radius = Number(this.game.config().nukeMagnitudes(nukeType).outer);
+      if (!Number.isFinite(radius) || typeof this.game.euclideanDistSquared !== "function") {
+        return false;
+      }
+      const withinBlast = euclDistFN(tile, radius, false);
+      return silos.some(
+        (silo) =>
+          silo?.isActive?.() !== false &&
+          withinBlast(this.game, silo.tile()),
+      );
+    }
+
+    // DIVERGENCE (winFixes, Legendary): preserve one live Atom cost after an
+    // observed hostile nuke until its owner's silo can be counterstruck.
+    async shouldHoldCounterforceNuke(tile, nukeType, targetPlayer, launchCost) {
+      if (
+        state.settings.winFixes !== true ||
+        !isLegendaryDifficulty(currentDifficulty()) ||
+        typeof this._hostileNukeThreats?.has !== "function" ||
+        this._hostileNukeThreats.size === 0 ||
+        this.isUnderHeavyAttack() ||
+        this.isRetaliationNukeTarget(targetPlayer)
+      ) {
+        return false;
+      }
+      if (this.isCounterforceSiloTarget(tile, nukeType, targetPlayer)) return false;
+      const atomCost = await this.getPerceivedNukeCost(UNIT.AtomBomb);
+      if (typeof atomCost !== "bigint" || atomCost <= 0n) return false;
+      const cost = typeof launchCost === "bigint" ? launchCost : BigInt(launchCost);
+      return this.player.gold() < cost + atomCost;
     }
 
     findStrategicBorderArmyTarget() {
@@ -1769,7 +1876,21 @@
     // on real-time timers, which would drift when game speed changes.
     async sendNuke(tile, nukeType, targetPlayer, waitTicks = 0, salvo = null) {
       const delay = Math.max(0, Math.ceil(Number(waitTicks) || 0));
+      this.observeHostileNukeThreats();
       if (delay > 0) {
+        if (this._hostileNukeThreats?.size > 0) {
+          const perceivedCost = await this.getPerceivedNukeCost(nukeType);
+          if (
+            await this.shouldHoldCounterforceNuke(
+              tile,
+              nukeType,
+              targetPlayer,
+              perceivedCost,
+            )
+          ) {
+            return false;
+          }
+        }
         return this.queueDelayedNukeLaunch(
           tile,
           nukeType,
@@ -1789,6 +1910,17 @@
       if (isLegendaryDifficulty(currentDifficulty()) && !salvo) {
         const spawnTile = this.nukeSpawn(nukeType, tile);
         if (spawnTile === false || this.isTrajectoryInterceptableBySam(spawnTile, tile)) return false;
+      }
+      this.observeHostileNukeThreats();
+      if (
+        await this.shouldHoldCounterforceNuke(
+          tile,
+          nukeType,
+          targetPlayer,
+          buildable.cost,
+        )
+      ) {
+        return false;
       }
       // DIVERGENCE: the source can change while the worker prices this shot.
       const liveFlight = salvo && typeof this.player.units === "function"
@@ -1992,6 +2124,18 @@
           Number(this.game.ticks()) + pending.salvo.flightTicks + 5);
       }
       if (sent) return "fired";
+      if (this._hostileNukeThreats?.size > 0) {
+        if (
+          await this.shouldHoldCounterforceNuke(
+            pending.tile,
+            pending.nukeType,
+            pending.targetPlayer,
+            await this.getPerceivedNukeCost(pending.nukeType),
+          )
+        ) {
+          return "drop";
+        }
+      }
       return this.isValidNukeTarget(pending.targetPlayer) &&
         this.isValidNukeDestination(pending.tile) ? "retry" : "drop";
     }

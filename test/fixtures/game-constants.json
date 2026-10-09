@@ -2120,6 +2120,16 @@
     "initializerPreview": "3"
   },
   {
+    "id": "engine/ingame/auto-bot/nukeBehavior.js:COUNTERFORCE_THREAT_TTL_TICKS#1",
+    "file": "engine/ingame/auto-bot/nukeBehavior.js",
+    "name": "COUNTERFORCE_THREAT_TTL_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "bdc5d8a48c23897906b09a9a3680bd2e9c8b3121edbda36f949800f0959c8d55",
+    "initializerLength": 3,
+    "initializerPreview": "900"
+  },
+  {
     "id": "engine/ingame/auto-bot/nukeBehavior.js:PENDING_NUKE_LAUNCHES_PER_TICK#1",
     "file": "engine/ingame/auto-bot/nukeBehavior.js",
     "name": "PENDING_NUKE_LAUNCHES_PER_TICK",

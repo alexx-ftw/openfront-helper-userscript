@@ -392,6 +392,14 @@ export class BundledOpponentBot {
     behavior.__ofhNukeTraceEnabled = true;
     const originalMaybe = behavior.maybeSendNuke;
     if (typeof originalMaybe !== "function") return;
+    const traceStructureTypes = [
+      "City",
+      "Factory",
+      "Port",
+      "Defense Post",
+      "SAM Launcher",
+      "Missile Silo",
+    ];
     let lastTarget = null;
     let lastCandidates = [];
     let lastValueGate = null;
@@ -407,6 +415,21 @@ export class BundledOpponentBot {
           target,
           waitTicks,
           salvo,
+        );
+        const outer = Number(behavior.game.config().nukeMagnitudes(type).outer);
+        const outerSquared = outer * outer;
+        const targetStructuresInBlast = traceStructureTypes.flatMap((structureType) =>
+          (target?.units?.(structureType) ?? [])
+            .map((unit) => ({
+              type: structureType,
+              tile: Number(unit?.tile?.()),
+              level: Number(unit?.level?.() ?? 0),
+            }))
+            .filter(
+              (unit) =>
+                Number.isFinite(unit.tile) &&
+                this.game.euclideanDistSquared(tile, unit.tile) < outerSquared,
+            ),
         );
         this.structureTrace.push({
           kind: "nuke-aim",
@@ -433,6 +456,7 @@ export class BundledOpponentBot {
             (sum, sam) => sum + Number(sam?.level?.() ?? 0),
             0,
           ),
+          targetStructuresInBlast,
           candidates: lastCandidates.slice(0, 3).map(({ tile: candidateTile, value }) => ({
             tile: candidateTile,
             value,
