@@ -8553,3 +8553,16 @@ formerly no-launch histories dispatched through the ordinary EV-checked lane
 dSwja63Gum) — probe/retry-lane churn without launch benefit. Artificial
 success alone cannot retain a candidate; rejected, code and focused test
 reverted, no version bump.
+
+Churn quantification for receipt 23 (log comparison, baseline n=20 logs carry
+no structure traces so attempt counts compare one-sided; intent totals come
+from the result objects): the seven drifted rows alone changed emitted
+intents and final build/upgrade counts (cQapPaLtNM 498->464 intents with
+build 10/1->12/0; cohpQeSJFX 231->258 with 5/0->8/0; cpVDtgC1GX 369->359;
+crT4ejtZtM 338->343 with 8/0->9/0), while all fourteen identical rows matched
+exactly (e.g. 551->551). Decisive detail: in the two rows where the offset
+supplement produced candidates at all (cVoPAh4Hk3 26 collections / 15
+collected; dPvMonrSL6 36 / 0), every collected candidate scored <= 0 — the
+border offset footprints eat the friendly-fire structure penalty — so the
+EV-checked lane never had a launchable aim. Rejection stands on both the
+missed dispatch requirement and measured churn without benefit.
