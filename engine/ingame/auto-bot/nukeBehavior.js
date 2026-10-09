@@ -505,7 +505,11 @@
         target, selectedNuke, silos, difficulty,
       );
       await this.fireNukeFromCandidates(
-        candidates.list, candidates.retargeted ?? target, selectedNuke, silos, difficulty,
+        candidates.list,
+        candidates.retargeted ?? target,
+        selectedNuke,
+        silos,
+        difficulty,
       );
       // FFA endgame survival lane — additive-only: reached only when every
       // ordinary lane declined to fire. See maybeFreezeGiantStrike.
@@ -514,7 +518,13 @@
 
     // Clear shots first, then the anti-SAM salvo planner — the firing tail
     // of maybeSendNuke.
-    async fireNukeFromCandidates(candidates, target, selectedNuke, silos, difficulty) {
+    async fireNukeFromCandidates(
+      candidates,
+      target,
+      selectedNuke,
+      silos,
+      difficulty,
+    ) {
       const { clear } = this.partitionCandidatesBySamCoverage(
         candidates,
         selectedNuke.type,
@@ -661,25 +671,28 @@
       );
       const best = await this.selectBuildableNukeCandidate(clear, selectedNuke.type);
       if (best) {
-        await this.sendNuke(best.tile, selectedNuke.type, giant);
-        return;
+        await this.sendNuke(best.tile, selectedNuke.type, candidates.retargeted ?? giant);
       }
       await this.maybeDestroyEnemySam(giant);
     }
 
     // Candidate collection with the Legendary value-directed retry folded
-    // in: returns { list, retargeted } where retargeted is the replacement
-    // target (or null when the original target stood).
+    // in: returns { list, retargeted }.
     async collectCandidatesWithRetry(target, selectedNuke, silos, difficulty) {
       const list = await this.collectNukeCandidates(
         target, selectedNuke.type, silos, difficulty,
       );
-      if (difficulty !== Difficulty.Legendary) return { list, retargeted: null };
+      if (difficulty !== Difficulty.Legendary) {
+        return { list, retargeted: null };
+      }
       const retried = await this.retryWithHigherValueTarget(
         target, selectedNuke, silos, difficulty, list,
       );
       if (retried === null) return { list, retargeted: null };
-      return { list: retried.candidates, retargeted: retried.target };
+      return {
+        list: retried.candidates,
+        retargeted: retried.target,
+      };
     }
 
     // Legendary value-directed retry: the ordinary target ladder picks by

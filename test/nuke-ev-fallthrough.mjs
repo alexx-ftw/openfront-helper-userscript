@@ -35,19 +35,16 @@ const sandbox = {
 };
 sandbox.globalThis = sandbox;
 executeClassicScript(sharedUtilsSource, sandbox, { filename: "shared-utils.vm.js" });
-executeClassicScript(
-  `${source}\nglobalThis.__NukeBehavior = NukeBehavior;`,
-  sandbox,
-  { filename: "nuke-ev-fallthrough.vm.js" },
-);
+executeClassicScript(`${source}\nglobalThis.__NukeBehavior = NukeBehavior;`, sandbox, {
+  filename: "nuke-ev-fallthrough.vm.js",
+});
 
 function makeBehavior({ clear, expectedValueMin }) {
   const behavior = Object.create(sandbox.__NukeBehavior.prototype);
   behavior.player = { gold: () => 10_000_000n };
   behavior.partitionCandidatesBySamCoverage = () => ({ clear });
   behavior.probeCanBuildNuke = async () => true;
-  behavior.nukeHasPositiveExpectedValue = async (cand) =>
-    cand.value >= expectedValueMin;
+  behavior.nukeHasPositiveExpectedValue = async (cand) => cand.value >= expectedValueMin;
   const sent = [];
   behavior.sendNuke = async (...args) => sent.push(args);
   const tail = { sam: 0, hydrogen: 0 };
@@ -58,6 +55,133 @@ function makeBehavior({ clear, expectedValueMin }) {
     tail.hydrogen += 1;
   };
   return { behavior, sent, tail };
+}
+
+function makeCrossTargetBehavior(
+  expectedValuePasses,
+  { rejectedDestinations = new Set(), unbuildableTiles = new Set() } = {},
+) {
+  const targetA = { label: "A", smallID: () => 7 };
+  const targetB = { label: "B", smallID: () => 8 };
+  const candidateA = { name: "A", tile: 20, value: 97_000 };
+  const candidateB = { name: "B", tile: 10, value: 125_000 };
+  const candidatesByTarget = new Map([
+    [targetA, [candidateA]],
+    [targetB, [candidateB]],
+  ]);
+  const selectedNuke = { type: UNIT.AtomBomb, cost: 750_000n };
+  const silos = [{}];
+  const candidateGuards = [];
+  const expectedValueChecks = [];
+  const finalSendGuards = [];
+  const sendTargets = [];
+  let originalCandidates;
+  const { behavior, sent, tail } = makeBehavior({
+    clear: [],
+    expectedValueMin: Infinity,
+  });
+  const prototype = sandbox.__NukeBehavior.prototype;
+  let inFinalSend = false;
+
+  behavior.player.units = (type) => (type === UNIT.MissileSilo ? silos : []);
+  behavior.hasPendingNukeLaunches = () => false;
+  behavior.canConsiderNukes = () => true;
+  behavior.findBestNukeTarget = () => targetA;
+  behavior.selectAffordableNuke = async () => selectedNuke;
+  behavior.shouldDeferNukeForEconomy = () => false;
+  behavior.findHighestValueNukeTarget = () => targetB;
+  behavior.playerStructureValue = (target) => (target === targetA ? 1_000_000 : 3_000_000);
+  behavior.collectNukeCandidates = async (target) => {
+    const candidates = candidatesByTarget.get(target);
+    if (target === targetA) originalCandidates = candidates;
+    return candidates;
+  };
+  behavior.partitionCandidatesBySamCoverage = (candidates) => ({
+    clear: candidates,
+    covered: [],
+  });
+  behavior.probeCanBuildNuke = async (tile) => {
+    candidateGuards.push(tile);
+    return !unbuildableTiles.has(tile);
+  };
+  behavior.nukeHasPositiveExpectedValue = async (candidate, target) => {
+    expectedValueChecks.push(`${candidate.name}:${target.label}`);
+    return expectedValuePasses.has(candidate.name);
+  };
+  behavior.maybeFreezeGiantStrike = async () => false;
+
+  let collection;
+  const collectCandidatesWithRetry = behavior.collectCandidatesWithRetry;
+  behavior.collectCandidatesWithRetry = async function (...args) {
+    collection = await collectCandidatesWithRetry.apply(this, args);
+    return collection;
+  };
+  let fireArguments;
+  const fireNukeFromCandidates = behavior.fireNukeFromCandidates;
+  behavior.fireNukeFromCandidates = async function (...args) {
+    fireArguments = args;
+    return fireNukeFromCandidates.apply(this, args);
+  };
+
+  behavior.observeHostileNukeThreats = () => {};
+  behavior.probeNukeBuildable = async (tile, type) => {
+    finalSendGuards.push(`buildable:${tile}`);
+    return { type, cost: selectedNuke.cost, canBuild: true };
+  };
+  const nukeBuildableCanLaunch = prototype.nukeBuildableCanLaunch;
+  behavior.nukeBuildableCanLaunch = function (buildable) {
+    finalSendGuards.push("affordability");
+    return nukeBuildableCanLaunch.call(this, buildable);
+  };
+  behavior.isValidNukeTarget = (target) => {
+    if (inFinalSend) finalSendGuards.push(`target:${target.label}`);
+    return true;
+  };
+  behavior.isValidNukeDestination = (tile) => {
+    finalSendGuards.push(`destination:${tile}`);
+    return !rejectedDestinations.has(tile);
+  };
+  behavior.nukeSpawn = () => 99;
+  behavior.isTrajectoryInterceptableBySam = (spawn, tile) => {
+    finalSendGuards.push(`trajectory:${spawn}:${tile}`);
+    return false;
+  };
+  behavior.shouldHoldCounterforceNuke = async (tile) => {
+    finalSendGuards.push(`counterforce:${tile}`);
+    return false;
+  };
+  behavior.emitNukeBuildable = (buildable, tile) => {
+    sent.push([tile, buildable.type]);
+    return true;
+  };
+  behavior.rememberSuccessfulNukeLaunch = async () => {};
+  const sendNuke = prototype.sendNuke;
+  behavior.sendNuke = async function (tile, type, target, ...rest) {
+    sendTargets.push(target);
+    inFinalSend = true;
+    try {
+      return await sendNuke.call(this, tile, type, target, ...rest);
+    } finally {
+      inFinalSend = false;
+    }
+  };
+
+  return {
+    behavior,
+    targetA,
+    targetB,
+    candidateA,
+    candidateB,
+    originalCandidates: () => originalCandidates,
+    collection: () => collection,
+    fireArguments: () => fireArguments,
+    candidateGuards,
+    expectedValueChecks,
+    finalSendGuards,
+    sendTargets,
+    sent,
+    tail,
+  };
 }
 
 const target = { smallID: () => 7 };
@@ -132,11 +256,63 @@ const poorerButEvPassing = { tile: 20, value: 1_000_000 };
     [],
     "Impossible",
   );
-  assert.deepEqual(
-    sent,
-    [],
-    "non-Legendary still fires nothing when its single pick fails EV",
-  );
+  assert.deepEqual(sent, [], "non-Legendary still fires nothing when its single pick fails EV");
 }
 
-console.log("nuke-ev-fallthrough tests passed");
+// 5. A higher-value Legendary retry that fails EV stands down (no
+// original-target fallback lane).
+const crossTarget = makeCrossTargetBehavior(new Set(["A"]));
+await crossTarget.behavior.maybeSendNuke();
+assert.equal(crossTarget.collection().retargeted, crossTarget.targetB);
+assert.equal(crossTarget.collection().fallback, undefined);
+assert.deepEqual(crossTarget.expectedValueChecks, ["B:B"]);
+assert.deepEqual(crossTarget.candidateGuards, [crossTarget.candidateB.tile]);
+assert.deepEqual(crossTarget.sent, []);
+assert.deepEqual(crossTarget.sendTargets, []);
+assert.deepEqual(crossTarget.finalSendGuards, []);
+assert.deepEqual(crossTarget.tail, { sam: 1, hydrogen: 1 });
+
+// 6. A valid retarget keeps priority and stops after its successful launch.
+const crossTargetAlternateWins = makeCrossTargetBehavior(new Set(["A", "B"]));
+await crossTargetAlternateWins.behavior.maybeSendNuke();
+assert.deepEqual(crossTargetAlternateWins.expectedValueChecks, ["B:B"]);
+assert.deepEqual(crossTargetAlternateWins.sendTargets, [crossTargetAlternateWins.targetB]);
+assert.deepEqual(crossTargetAlternateWins.sent, [
+  [crossTargetAlternateWins.candidateB.tile, UNIT.AtomBomb],
+]);
+assert.deepEqual(crossTargetAlternateWins.tail, { sam: 0, hydrogen: 0 });
+
+// 7. If both the retargeted and original lists fail EV, the SAM/Hydrogen tail
+// still runs once for the decision; the original list is never re-probed.
+const crossTargetRejected = makeCrossTargetBehavior(new Set());
+await crossTargetRejected.behavior.maybeSendNuke();
+assert.deepEqual(crossTargetRejected.expectedValueChecks, ["B:B"]);
+assert.deepEqual(crossTargetRejected.sent, []);
+assert.deepEqual(crossTargetRejected.tail, { sam: 1, hydrogen: 1 });
+
+// 8. A buildability rejection on the retarget stands down without probing
+// the original target.
+const crossTargetUnbuildable = makeCrossTargetBehavior(new Set(["A", "B"]), {
+  unbuildableTiles: new Set([10]),
+});
+await crossTargetUnbuildable.behavior.maybeSendNuke();
+assert.deepEqual(crossTargetUnbuildable.candidateGuards, [10]);
+assert.deepEqual(crossTargetUnbuildable.expectedValueChecks, []);
+assert.deepEqual(crossTargetUnbuildable.sendTargets, []);
+assert.deepEqual(crossTargetUnbuildable.sent, []);
+
+// 9. A retarget that passes EV but fails the final destination guard also
+// stands down after its rejected launch attempt.
+const crossTargetGuardRejected = makeCrossTargetBehavior(new Set(["A", "B"]), {
+  rejectedDestinations: new Set([10]),
+});
+await crossTargetGuardRejected.behavior.maybeSendNuke();
+assert.deepEqual(crossTargetGuardRejected.expectedValueChecks, ["B:B"]);
+assert.deepEqual(crossTargetGuardRejected.sendTargets, [crossTargetGuardRejected.targetB]);
+assert.deepEqual(crossTargetGuardRejected.sent, []);
+assert.deepEqual(
+  crossTargetGuardRejected.finalSendGuards.filter((guard) => guard.startsWith("destination:")),
+  ["destination:10"],
+);
+
+process.stdout.write("nuke-ev-fallthrough tests passed\n");
