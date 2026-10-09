@@ -6952,3 +6952,27 @@ Runtime artifact ends at the native-guard behaviour validated by the
 bisect receipt; no further Baikal run needed (behaviourally identical
 to the bisect artifact by construction: the v2 skip is inert at
 allowHeldAtoms=false).
+
+## Pre-declaration 4: nuclear slot pressure -> NEW silo when every silo is maxed (2026-10-09)
+
+The slot-pressure branch (upgrade a silo when a nuclear launch waits with
+zero ready shots) is dead exactly when the arsenal needs it most: once
+every silo sits at max level, probeUpgradableStructures excludes them all
+(canUpgrade=false), findBestStructureToUpgrade returns null, and the
+branch gives up — the queue waits on cooldowns while surplus gold feeds
+the ordinary economy ladder. Cohesion completion: when the same trigger
+finds no upgradeable silo, construct a NEW Missile Silo through the same
+maybeSpawnStructure placement machinery the first-silo path uses, gated
+by spendable construction gold (reserves respected — no
+ignoreEconomicReserve) and the branch's existing winFixes/config gates.
+
+Pre-declared expectations. baikal-nuke-wars (no-harm gate): won=true and
+alive=true required; launch counts (A/H) expected to rise or hold (more
+tubes); ownStructuresNuked, damage, and victory tick observed and
+reported honestly without gating beyond won/alive. The branch can only
+fire under genuine slot starvation with zero upgradeable silos, so the
+early-game economy and defense priorities above it are unchanged.
+sam-salvo-overwhelm (effect gate, currently the documented max-ticks
+draw with 5 atoms under the native anti-SAM guard): assert >= 3 atoms
+must stay green; atom totals and silo construction are observed
+honestly. Receipts appended after the runs.

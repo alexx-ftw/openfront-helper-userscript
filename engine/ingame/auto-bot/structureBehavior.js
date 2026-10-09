@@ -10831,7 +10831,13 @@
       if (silos.length === 0) return false;
       if (this.legendaryReadyShotTotal(silos) > 0) return false;
       const result = await this.findBestStructureToUpgrade(silos);
-      if (result === null) return false;
+      if (result === null) {
+        // Every silo is maxed (or unprobeable): a new launcher is the only
+        // remaining slot source for the waiting queue. Same trigger and
+        // gates as the upgrade branch; placement reuses the first-silo
+        // machinery, reserves respected.
+        return this.maybeSpawnNuclearSlotPressureSilo();
+      }
       if (!this.genericStructureUpgradeAllowed(result, UNIT.MissileSilo)) {
         return false;
       }
@@ -10848,6 +10854,17 @@
         "build",
       );
       return true;
+    }
+
+    maybeSpawnNuclearSlotPressureSilo() {
+      const siloCost = this.safeConstructionCost(UNIT.MissileSilo) ?? 0n;
+      if (siloCost <= 0n || this.spendableConstructionGold() < siloCost) {
+        return false;
+      }
+      return this.maybeSpawnStructure(UNIT.MissileSilo, {
+        useActualCost: true,
+        prioritizeStructureCoverage: true,
+      });
     }
 
     /**

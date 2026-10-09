@@ -165,6 +165,82 @@ function makeWorld({ pending, queue, level, winFixes = true, siloDisabled = fals
   assert.equal(emitted.length, 0, "no upgrade without winFixes");
 }
 
+// Every silo maxed: the upgrade probe returns null and a NEW silo is the
+// only remaining slot source for the waiting queue.
+{
+  const { behavior, emitted, state } = makeWorld({
+    pending: [{ nukeType: UNIT.AtomBomb }],
+    queue: [5, 5, 5],
+    level: 3,
+  });
+  behavior.findBestStructureToUpgrade = async () => null;
+  behavior.safeConstructionCost = () => 1000000n;
+  behavior.spendableConstructionGold = () => 2000000n;
+  const spawns = [];
+  behavior.maybeSpawnStructure = async (type, options) => {
+    spawns.push({ type, options });
+    return true;
+  };
+  assert.equal(
+    await behavior.maybeUpgradeSiloForNuclearSlotPressure(),
+    true,
+    "a queued launch with every silo maxed builds a new launcher",
+  );
+  assert.equal(spawns.length, 1, "the new-silo fallback reaches placement");
+  assert.equal(spawns[0].type, UNIT.MissileSilo, "the fallback builds a silo");
+  assert.equal(
+    spawns[0].options.useActualCost,
+    true,
+    "the fallback pays the actual silo cost",
+  );
+  assert.equal(emitted.length, 0, "no upgrade intent is emitted");
+  assert.equal(state.stats.builds, 0, "the upgrade counter stays untouched");
+}
+
+// Maxed silos without the gold for a new launcher keep the ladder.
+{
+  const { behavior, emitted } = makeWorld({
+    pending: [{ nukeType: UNIT.AtomBomb }],
+    queue: [5, 5, 5],
+    level: 3,
+  });
+  behavior.findBestStructureToUpgrade = async () => null;
+  behavior.safeConstructionCost = () => 1000000n;
+  behavior.spendableConstructionGold = () => 500000n;
+  behavior.maybeSpawnStructure = async () => {
+    throw new Error("placement must not run without the gold");
+  };
+  assert.equal(
+    await behavior.maybeUpgradeSiloForNuclearSlotPressure(),
+    false,
+    "a maxed network without surplus gold waits",
+  );
+  assert.equal(emitted.length, 0, "no construction without the gold");
+}
+
+// An upgradeable silo keeps the upgrade path ahead of new construction.
+{
+  const { behavior, emitted } = makeWorld({
+    pending: [{ nukeType: UNIT.AtomBomb }],
+    queue: [5],
+    level: 1,
+  });
+  const spawns = [];
+  behavior.safeConstructionCost = () => 1000000n;
+  behavior.spendableConstructionGold = () => 2000000n;
+  behavior.maybeSpawnStructure = async (type) => {
+    spawns.push(type);
+    return true;
+  };
+  assert.equal(
+    await behavior.maybeUpgradeSiloForNuclearSlotPressure(),
+    true,
+    "an upgradeable silo upgrades instead of spawning a new one",
+  );
+  assert.equal(spawns.length, 0, "no new silo while an upgrade exists");
+  assert.equal(emitted.length, 1, "the upgrade reaches the build menu");
+}
+
 // Silos disabled never emit the upgrade.
 {
   const { behavior, emitted } = makeWorld({
