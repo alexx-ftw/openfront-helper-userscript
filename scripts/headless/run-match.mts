@@ -58,8 +58,9 @@ NukeExecution.prototype.detonate = function (
   const previous = nukeDetonatingOwner;
   nukeDetonatingOwner = this.player;
   if (logNukes) {
+    const nukeType = (this as unknown as { nuke: Unit | null }).nuke?.type() ?? "unknown";
     console.log(
-      `[ofh:nuke-detonate] tick=${this.mg.ticks()} owner=${this.player?.name?.() ?? "unknown"} tile=${this.tile?.() ?? "?"}`,
+      `[ofh:nuke-detonate] tick=${this.mg.ticks()} owner=${this.player?.name?.() ?? "unknown"} tile=${this.tile?.() ?? "?"} type=${nukeType}`,
     );
   }
   originalNukeDetonate.call(this);

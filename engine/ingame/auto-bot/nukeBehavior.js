@@ -763,7 +763,7 @@
     }
 
     async nukeHasPositiveExpectedValue(candidate, target, selectedNuke, silos) {
-      if (currentDifficulty() !== Difficulty.Legendary) return true;
+      if (!isLegendaryDifficulty(currentDifficulty())) return true;
       // Survival bypass only: an existential attack may spend any bomb.
       // The plain retaliation bypass was measured firing 11 sub-value shots
       // (best candidate 5-31k vs a 750k Atom) for 0 destroyed value on the

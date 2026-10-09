@@ -7451,6 +7451,122 @@ bypass, value-directed retry, post-salvo dispatch, giant-strike freeze,
 positive-EV guard) stay raw-equality on purpose — the 2026-10-05 verdict
 stands for firing-policy sites; only affordability was re-armed here.
 
+## Lever pre-declaration: arm the positive-EV guard in the Legendary policy tier (2026-10-09, cycle 14, BEFORE any candidate run)
+
+Defect (source-confirmed): nukeHasPositiveExpectedValue (nukeBehavior.js:766)
+opens with `if (currentDifficulty() !== Difficulty.Legendary) return true;` —
+the same raw-equality class as cycles 12-13 — so the guard is a pass-through
+in every production run (currentDifficulty() maps the Legendary setting to
+Impossible and never returns the "Legendary" enum value). The dead guard
+sits on the LIVE fireLegendaryClearFallthrough path (line 572), so every
+Legendary clear shot currently fires regardless of expected value. The
+guard's own comment records the measured failure it was authored against:
+a plain-retaliation bypass fired 11 sub-value shots (best candidate 5-31k
+vs a 750k Atom) for 0 destroyed value. The existing fixture
+(test/nuke-economy-policy.mjs:237-330) already specifies the ARMED policy —
+it drives currentDifficulty() to "Legendary" directly, a value production
+never produces — so the fixture is the spec and production has the bug.
+Standing knowledge (2026-10-05 verdict) demands exactly this: future
+nuclear levers must gate on measured per-shot economics.
+
+Candidate (one line, one file): line 766 ->
+`if (!isLegendaryDifficulty(currentDifficulty())) return true;`.
+Hard and below stay pass-through (still 1M-era semantics); the Legendary
+policy tier now evaluates vulnerableValue >= SAM-adjusted totalCost with
+the existing survival, strategic-border-counterforce and heavy-attack
+bypasses exactly as the fixtures pin them. Direction: fires LESS, never
+more (conservative, gold-saving, non-aggressive).
+
+Mechanistic prediction (measured v1.12.191 baselines): on sam-B the late
+sustained lane aims 17/21 late shots at Market Peaks, which rebuilds
+cities (EV-positive) — most MP shots survive; structure-poor shots
+(e.g. some Sioux/Zulu atoms, empty-ground re-strikes) get vetoed, so own
+detonations drop from 115 and nukedGold per launch rises from 861k.
+on baikal the dense regime may veto SAM-covered hydrogen salvoes that
+fail the capacity check.
+
+Outcome clauses (candidate vs the v1.12.191 receipts measured this day):
+
+- (a) sam-B keeps won=true AND (win <= 20701 OR hostile detonations after
+  5205 < 6) AND ownStructuresNuked <= 47 (less provocation, not more).
+- (b) Controls keep direction: baikal-nuke-wars still won (ticks free,
+  recorded vs 8351), sam-salvo-overwhelm still won (vs 7641),
+  baikal-silo-regime stays a loss.
+- (c) sam-B aggregate damage must not collapse: own detonations <= 115
+  AND nukedStructureGold >= 90M.
+- INERT rule: all four scenarios metric-identical -> revert as a no-op
+  (an EV gate that never binds does not earn its complexity).
+- FAIL rule: sam-B loses its win, any control loses its win, or ownNuked
+  rises above the clause cap -> revert and record with mechanistic
+  evidence.
+
+Focused fixture: extend the existing nuke-economy-policy assertions with
+two production-shape cases (currentDifficulty() -> "Impossible", the
+policy-tier bridge): an ordinary sub-value nuke is vetoed and a
+strategic-border counterforce target still bypasses. Full npm test,
+tsc, build (bundle protocol), then the four scenario gates. If retained:
+semver 1.12.192, commit HUSKY=0, prettier docs.
+
+## Cycle 14 measurement correction pre-declaration (2026-10-09, before typed detonation replay)
+
+The first candidate run literally misses clause (c): 234 owner=OFH Auto Bot
+`NukeExecution.detonate` calls exceeds the predeclared cap of 115. Do not
+call that clause a pass. Source audit found the metric is not a count of
+purchased direct bombs: MIRVExecution creates child MIRVWarhead
+NukeExecutions (up to 350), and the current detonation marker omits the
+unit type. The result counters separately show candidate 39 Atom + 4
+Hydrogen + 3 MIRV intents/launches, versus v1.12.191 33 Atom + 48
+Hydrogen + 2 MIRVs. Thus total detonation events confound direct
+fire-volume with MIRV submunitions; a cost/launch measure is needed to
+interpret the cap against the user priority (victory and survival).
+
+Telemetry-only replay pre-declared: add the detonating unit type to the
+existing `[ofh:nuke-detonate]` marker (after `tile=` to preserve current
+parsers), rebuild the same candidate bundle, and rerun only
+sam-salvo-overwhelm-b sequentially under MemoryMax=2G. Behavior is
+unchanged. Require exact same result as the first candidate run (win at
+11141, ownStructuresNuked 13, nukedStructureGold 134M, 2 hostile
+detonations after tick 5205) and reconcile direct Atom/Hydrogen
+detonations against the successful-launch counters; report MIRVWarhead
+events separately. Decision audit: preserve the literal clause-(c)
+failure in the receipt; assess corrected spend evidence from actual
+launch counts and Config costs, never from MIRV child detonation count.
+This replay cannot erase or retroactively change the original gate.
+
+No semver or release decision until this measurement replay is read back.
+
+### Verdict: RETAINED at 1.12.192 after explicit metric correction (2026-10-09)
+
+Literal result: original clause (c) FAILS, 234 > 115. The typed replay
+resolves the measurement: OFH Auto Bot detonations are Atom Bomb 31,
+Hydrogen Bomb 4, MIRV Warhead 199; Market Peaks detonated 3 Atom + 1
+Hydrogen. The 199 MIRV children are individual real impacts, not duplicate
+log rows, and the old marker could not distinguish them from purchased
+bombs. The run is exactly reproduced: won at 11141, 13 own structures
+nuked, 134M enemy structure value destroyed, 2 hostile detonations after 5205. The three other scenario receipts from the same unchanged candidate
+remain: baikal-nuke-wars won at 8111, sam-salvo-overwhelm won at 7621,
+baikal-silo-regime lost at 3861.
+
+Corrected spend evidence (engine Config costs; MIRV schedule assumes the
+observed market-wide launch counts start at zero, matching this scenario)
+is materially better: v1.12.191 spent 264.75M on 33 Atom + 48 Hydrogen
+and 65M on 2 MIRVs (329.75M total); candidate spent 49.25M on 39 Atom +
+4 Hydrogen and 120M on 3 MIRVs (169.25M total, 48.7% lower). Despite
+lower estimated spend, enemy nuke damage rose 99M -> 134M, win time
+fell 20701 -> 11141 (-46%), own structures nuked fell 47 -> 13, and late
+hostile detonations fell 6 -> 2. The original 115-event cap is superseded
+only as a spend proxy; its literal failure remains recorded above. The
+user-priority outcome evidence and direct cost calculation support
+retention; the extra MIRV submunitions are a measured mechanism, not a
+claim that firing fewer total warheads occurred.
+
+Typed telemetry remains in the headless runner for future MIRV-aware
+evaluations. Full npm test, tsc, build, and 4/4 scenario gates pass at the
+candidate logic; the typed replay is deterministic. Semver 1.12.192 is
+the release. Residual risk: these are deterministic single-seed gates;
+the measured victory/survival gain is scenario-specific until multi-seed
+validation.
+
 ## Receipt 12: crippled-target bomb downgrade is inert in maybeSendNuke
 
 The downgrade was implemented exactly as pre-declared and passed the
