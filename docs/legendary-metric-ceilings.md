@@ -7166,3 +7166,36 @@ the honest loss, not a tuned pass. Candidate future lever (unclaimed):
 earlier expansion/defense response on seeds where the bot falls behind
 at the 180-second mark — out of scope for the nuclear stack this goal
 has already verified.
+
+## Pre-declaration 7: pressure-scaled strategic Defense-Post budget (2026-10-09)
+
+Motivated by a deeper read of sam-salvo-overwhelm-b.log (the robustness
+receipt's real death mechanics): the bot peaked at 52,132 tiles (41.4%
+territory share) with ~458M gold and troop parity (hostile ratio 1.17-1.38
+vs Isle of Margins), then collapsed 47k -> 22 tiles in ~140 ticks (2083 ->
+2311) and was conquered at 2693 by a 2.5M-troop land stack. Across the
+whole match it built exactly 2 Defense Posts: the binding constraint is
+the flat strategic quiet-border budget PREEMPTIVE_DEFENSE_POST_MAX_POSTS
+= 2, not gold (the Legendary surplus gate passed trivially at 450M), on a
+1339-1992 tile shared front against one snowballed neighbor. The nuclear
+stack DID fire (6 atoms + 1 MIRV, 25 detonations), so "nuke more" is not
+the missing lever; front fortification is.
+
+Change (strategic quiet-border lane only): the authorized post budget
+scales with the shared front — base 2, +1 per 700 front tiles above a
+400-tile floor, ceiling 6. Medium stays 1; live-attack ratio budgets are
+untouched; the Legendary surplus gate (post + cheapest economy rung) is
+re-evaluated on every decision tick, which is the standing protection
+against the historical six-zero-threat-post gold drain on Baikal.
+
+Pre-declared expectations.
+- sam-salvo-overwhelm-b (effect gate): honest goal is survival past the
+  standing drawdown trough (tick 2311) or a win; a still-loss with a
+  later trough and more posts counts as mechanism-confirmed, lever-weak.
+- sam-salvo-overwhelm and baikal-nuke-wars (no-harm gates): won=true
+  required; any tick/count drift is registered without tuning. If
+  baikal flips to won=false, the lever closes like the anti-SAM one
+  (state leak through the construction pipeline), mechanism documented.
+- Fixture pins the budget table: Medium=1; Legendary front 300 -> 2,
+  1100 -> 3, 1800 -> 4, 10000 -> 6 (ceiling); surplus-gate false ->
+  null; troop-ratio guard unchanged.
