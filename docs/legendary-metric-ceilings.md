@@ -7394,6 +7394,32 @@ bomb-choice lever tried so far; the next candidate must change the
 economics of the silent 18k-tick tail (sustained nuclear production
 funding) or honestly retire the seam.
 
+## Protocol correction: scenario gates load the committed bundle (2026-10-09)
+
+The original gate runs behind receipts 11 and 12 were invalid: the
+headless harness loads OFH_BUNDLE_PATH (default: the committed
+openfront-helper.user.js), and no `npm run build` ran between the working
+tree changes and those runs, so both cycles measured the shipped v1.12.190
+artifact twice. Focused fixtures and `npm test` were unaffected (they
+read the engine sources directly).
+
+Both gates were re-run correctly, each with the lever re-applied and the
+bundle rebuilt first, sequentially under the 2 GiB memory cap:
+
+- Growth-preserving SAM chest (.tmp-growth-sam-chest-v2): baikal-silo-regime
+  again died at 3861 with 29,284 tiles, City 1 / Port 1, no ready SAM; all
+  three controls and the counter-battery gate stayed identical. The
+  receipt 11 verdict (inert; City release never binds before death) is
+  confirmed with valid evidence.
+- Crippled-target bomb downgrade (.tmp-crippled-downgrade-v2): sam-B still
+  won at 23351 with 17A/43H and the same four hostile detonations after
+  tick 5205; all controls identical. The receipt 12 verdict is confirmed:
+  the late Hydrogen stream does not dispatch through maybeSendNuke.
+
+Standing protocol rule for every future scenario gate in this ledger:
+`npm run build` must run after the last source change and before
+run-scenario, and the bundle diff must be part of the recorded evidence.
+
 ## Receipt 11: growth-preserving SAM chest is inert on the effect seed
 
 The lever was implemented exactly as pre-declared (City released from the
