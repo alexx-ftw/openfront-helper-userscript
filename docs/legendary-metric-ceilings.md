@@ -8490,3 +8490,66 @@ policy fixtures, structure/performance regression suites, the Legendary suite,
 adapter syntax, and build parity passed. The ratchet lint formatter crashes
 identically on clean HEAD (pre-existing, exit 2); the full npm test chain was
 not claimed green and was not required by this gate.
+
+## Pre-declaration 23: recover safe off-center structure aims
+
+(2026-10-09, adopted from the subagent audit; implementation started after
+this declaration)
+
+Candidate: in Legendary+winFixes, only when the ordinary candidate pool is
+empty, supplement aim generation around observable target structures. For
+each structure, consider the eight coordinate offsets formed by
+`{-floor(R/2), 0, +floor(R/2)}`, excluding `(0,0)`, where `R` is the selected
+bomb's outer radius. Offsets require valid coordinates, are deduplicated
+against the ordinary pool, and every aim passes the unchanged
+gate chain (`isValidNukeTile` footprint, spawn, team-duplicate, SAM
+trajectory); no additional RNG draws are taken.
+
+Preserve `isValidNukeTile`, friendly-fire penalties, EV guard, counterforce
+reserve, hydro-affordability tiers, SAM/salvo discipline, buildability,
+target selection, silo construction/upgrades, the owner-matched readiness
+forecast, and MIRV.
+
+Focused artificial cases (test/nuke-offset-aims.mjs): (1) a border-adjacent
+structure whose centered aims all touch our strip yields exactly the safe
++x offset aims with no centered candidate and no extra territory samples;
+(2) a structure surrounded on every side yields no candidate; (3) surviving
+offset candidates cannot launch when the buildability probe rejects them;
+(4) a nonempty ordinary pool stays byte-identical (centered aim only, no
+supplement); (5) map-edge structures drop out-of-bounds offsets safely.
+
+Effect gate: the same public n=20 history basket (receipt-17 selection,
+seeds/order, 6,000-tick cap, 2 GiB MemoryMax / MemorySwapMax=0, serial)
+against the v1.12.193-history-20 controls. Require at least one formerly
+no-launch history to dispatch through the ordinary EV-checked lane using a
+newly valid offset. Reject any per-seed win-to-loss or alive-to-dead change,
+an increase in own structures nuked, any safety bypass, or any divergence in
+rows whose ordinary pool never emptied. Artificial success alone cannot
+retain this candidate. If retained after focused tests, matched histories,
+standing controls, checks and build parity, bump package/generated userscript
+to the next unused patch version and commit the exact validated build.
+
+## Receipt 23: off-center structure aims rejected — no history dispatch (2026-10-09)
+
+The pre-declaration 23 candidate was implemented and tested, then REVERTED
+under its own pre-declared rule.
+
+Focused artificial cases (test/nuke-offset-aims.mjs, since removed with the
+revert): all five passed — safe +x offsets recovered a border-adjacent
+structure with exactly one extra territory-sample call unchanged, a fully
+surrounded structure produced nothing, buildability still vetoed surviving
+candidates, nonempty pools stayed byte-identical, and map-edge offsets were
+dropped safely.
+
+Effect gate (public n=20 basket, same order/seeds/cap, 2 GiB MemoryMax /
+MemorySwapMax=0, serial, controls in /tmp/ofh-matrix/v1.12.193-history-20,
+evidence in /tmp/ofh-matrix/v1.12.195-offset-aims): no safety violation —
+no win-to-loss, no alive-to-dead regression, own structures nuked stayed
+8->8 with no per-seed increase, and the only win row stayed won (dSwja63Gum
+flipped bot_dead to alive-at-cap). But the REQUIRED clause failed: zero
+formerly no-launch histories dispatched through the ordinary EV-checked lane
+(0/20 rows gained a launch), while 7 rows drifted in full result objects
+(cQapPaLtNM, cVtkheafyC, cohpQeSJFX, cpVDtgC1GX, crT4ejtZtM, dS5VJperQo,
+dSwja63Gum) — probe/retry-lane churn without launch benefit. Artificial
+success alone cannot retain a candidate; rejected, code and focused test
+reverted, no version bump.
