@@ -269,8 +269,8 @@ for (let call = 0; call < 64; call++) {
 const fingerprintDurationMs = performance.now() - fingerprintStartedAt;
 assert.equal(
   globalStructureReads,
-  1,
-  "same-tick economic scan validation sorts the global structure snapshot once",
+  6,
+  "same-tick economic scan validation reads one roster per structure type (vendored units() caps at three positional types) and caches them for the whole tick",
 );
 assert.equal(
   structureRecordReads,
@@ -290,7 +290,7 @@ tick++;
 fingerprintBehavior.economicPlacementFingerprint(UNIT.Factory);
 assert.equal(
   globalStructureReads,
-  2,
+  12,
   "a new game tick refreshes the economic placement fingerprint",
 );
 

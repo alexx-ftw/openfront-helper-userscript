@@ -5988,6 +5988,7 @@ assert.equal(
 
 const enemyPressureBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 let enemyUnitSnapshotCalls = 0;
+const enemyUnitSnapshotTypes = [];
 const pressureUnits = [
   UNIT.MissileSilo,
   UNIT.Warship,
@@ -5998,14 +5999,10 @@ const pressureUnits = [
 ].map((type) => ({ type: () => type }));
 const pressureEnemy = {
   gold: () => 1_000,
-  units: (...types) => {
+  units: (type) => {
     enemyUnitSnapshotCalls++;
-    assert.deepEqual(
-      types,
-      [UNIT.MissileSilo, UNIT.Warship, UNIT.SAMLauncher, UNIT.City, UNIT.Factory, UNIT.Port],
-      "enemy pressure requests one combined strategic-unit snapshot",
-    );
-    return pressureUnits;
+    enemyUnitSnapshotTypes.push(type);
+    return pressureUnits.filter((unit) => unit.type() === type);
   },
 };
 enemyPressureBehavior.player = { gold: () => 1_000 };
@@ -6020,8 +6017,13 @@ assert.equal(
 );
 assert.equal(
   enemyUnitSnapshotCalls,
-  1,
-  "enemy target pressure scans each hostile unit roster once instead of six times",
+  6,
+  "enemy target pressure scans one roster per strategic-unit type (vendored units() caps at three positional types)",
+);
+assert.deepEqual(
+  enemyUnitSnapshotTypes,
+  [UNIT.MissileSilo, UNIT.Warship, UNIT.SAMLauncher, UNIT.City, UNIT.Factory, UNIT.Port],
+  "the per-type roster scan covers all six strategic-unit types in declaration order",
 );
 
 const friendlySamSnapshot = Object.create(sandbox.__StructureBehavior.prototype);
