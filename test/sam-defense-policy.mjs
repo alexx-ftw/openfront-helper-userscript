@@ -6556,8 +6556,12 @@ assert.match(
   let hostileSilos = 0;
   const singleHostile = {
     id: 2,
-    get gold() { return hostileGold; },
-    get siloCount() { return hostileSilos; },
+    get gold() {
+      return hostileGold;
+    },
+    get siloCount() {
+      return hostileSilos;
+    },
   };
   let hostilePlayers = [singleHostile];
   const hostileView = (data) => ({
