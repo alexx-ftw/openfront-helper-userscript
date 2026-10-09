@@ -8154,6 +8154,28 @@ gold observed in logged construction-event portfolios was 8,654,900
 (dpa7T7kPMn); treat this as an event-sampled lower bound, not an exact
 peak. Evidence: /tmp/ofh-matrix/v1.12.193-history-20/.
 
+## Pre-declaration 18: trace nuclear losses in five n=20 records
+
+(2026-10-09, BEFORE diagnostic run, no behavior arm)
+
+The n=20 baseline has five records with own structures destroyed by
+hostile nuclear detonations: cMxs8Lru3U (2), cVtkheafyC (1),
+crT4ejtZtM (3), dSwja63Gum (1), and cpVDtgC1GX (1). Their baseline
+outcomes are already fixed in receipt 17. Re-run exactly these five
+history IDs in index order with the same v1.12.193 bundle, 6,000-tick
+cap, and 2 GiB scope, enabling the runner's existing
+`OFH_LOG_NUKES=1` trace for launch source/target/type, detonation, and
+destroyed structure. No source or behavior change is allowed.
+
+Record per-game result equality against receipt 17, then correlate each
+hostile launch and detonation with structure loss, SAM readiness, SAM
+build timing, source silo, and target tile. The diagnostic succeeds only
+if all five matches reproduce the baseline result fields and trace counts
+agree with the aggregate counters; otherwise record the divergence and
+do not infer a behavior cause. No retention or semver bump; commit only
+the measurement receipt. Evidence will be stored under
+`/tmp/ofh-matrix/v1.12.193-nuke-loss-trace/`.
+
 ## Pre-declaration 15: Legendary first-silo ladder fix (ceil the first
 
 launcher at one city, 2026-10-09, BEFORE any candidate run)
