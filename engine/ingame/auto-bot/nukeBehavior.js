@@ -427,7 +427,7 @@
         return { type: UNIT.HydrogenBomb, cost: hydroCost };
       }
       const legendaryAtomFallback = state.settings.winFixes === true &&
-        currentDifficulty() === Difficulty.Legendary;
+        isLegendaryDifficulty(currentDifficulty());
       const atomAllowed = !config.isUnitDisabled(UNIT.AtomBomb) &&
         (!this.isHydroNation || this.isUnderHeavyAttack() || legendaryAtomFallback);
       if (atomAllowed && this.player.gold() >= atomCost) {
@@ -864,7 +864,7 @@
       // protects our own structures below.
       if (
         this.isHydroNation === true &&
-        currentDifficulty() === Difficulty.Legendary &&
+        isLegendaryDifficulty(currentDifficulty()) &&
         this.player.units(UNIT.SAMLauncher).length > 0 &&
         this.player.gold() >= BigInt(nukeCost || 0n)
       ) {
@@ -1282,7 +1282,7 @@
       // faithful tiers.
       if (
         state.settings.winFixes === true &&
-        difficulty === Difficulty.Legendary
+        isLegendaryDifficulty(difficulty)
       ) {
         return await this.cost(type);
       }

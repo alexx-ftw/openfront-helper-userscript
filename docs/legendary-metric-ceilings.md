@@ -7365,6 +7365,92 @@ Pre-declared gates:
   is retained, bump semver to 1.12.191 and rebuild the committed
   userscript; otherwise revert the tree and record the honest rejection.
 
+## Lever pre-declaration: winFixes hydro-affordability tier gates (2026-10-09, BEFORE any candidate run)
+
+Defect (source-confirmed): three winFixes-authored affordability gates in
+nukeBehavior.js gate on raw equality against `Difficulty.Legendary`
+(`currentDifficulty() === Difficulty.Legendary`), but `currentDifficulty()`
+(portutil.js:45) maps the user setting "Legendary" to `Difficulty.Impossible`
+and never returns the "Legendary" enum value, so all three sites are dead
+code in every run — harness and real game:
+
+1. `selectAffordableNuke` legendaryAtomFallback (~line 430): a Hydrogen
+   nation may only buy Atoms while under heavy attack; the Legendary+winFixes
+   fallback never engages.
+2. `shouldDeferNukeForEconomy` hydro lane (~line 866): a Hydro nation with a
+   live SAM never skips the offensive-nuke deferral policy.
+3. `getPerceivedNukeCost` winFixes perceived-cost bypass (~line 1285): the
+   flat-cost return never engages, so the upstream MIRV save-up escalation
+   (Hydrogen x1.25 and Atom x1.5 per launch) prices sustained bombardment out
+   of the war chest once the `gold > cost(MIRV) + cost(HydrogenBomb)` flat
+   gate stops firing (`cost(MIRV) = 25M + 15M x global mirvsLaunched`).
+
+Scope contrast with the FAILED 2026-10-05 tier-gate normalization: that
+package enabled firing-policy sites (trajectory bypass, blast validity,
+value-directed retry, post-salvo hydrogen dispatch) and converted gold into
+losses. This lever touches ONLY affordability gates; every firing-policy
+gate (value scoring, EV checks, SAM partition, salvo re-checks) keeps its
+current live-or-dead state.
+
+Evidence (v1.12.190, sam-salvo-overwhelm-b, OFH_LOG_NUKES trace): 603
+`nuke-selection` rows return null across ticks 5779-23335; 318 of them hold
+gold >= the 750k flat Atom price and the first five hold >= 55M (max 59.38M).
+The bot is a Hydro nation (17A/43H mix), fires nothing after ~5779, wins
+conventionally at 23351 with 7 idle silos, and eats four hostile detonations
+(16683/17632/18613/21710) while Market Peaks recovers from 1,276 troops to
+191k tiles.
+
+Candidate (mechanical, one file): replace the three raw comparisons with
+`isLegendaryDifficulty(...)` — already the spelling used at four other
+nukeBehavior sites (516, 979, 1742, 1789). No body changes.
+
+Mechanistic gate (sam-B rerun with OFH_LOG_NUKES=1, rebuilt bundle): null
+rows with gold >= 750k collapse well below the 318 baseline and/or own nuke
+detonations appear after tick 5779.
+
+Outcome clauses (candidate vs v1.12.190 baseline receipts):
+
+- (a) sam-salvo-overwhelm-b keeps won=true AND (win strictly earlier than
+  23351 OR fewer than the four hostile detonations after tick 5205).
+- (b) Controls: baikal-nuke-wars still won, sam-salvo-overwhelm still won
+  (ticks free to move, recorded), baikal-silo-regime stays a loss (no win
+  flip on the fragility receipt).
+- INERT rule: if sam-B and all controls are metric-identical, revert as a
+  no-op with an honest receipt.
+- FAIL rule: if (a) misses on both arms or any control loses its win,
+  revert and record the rejection with the mechanistic evidence either way.
+
+If retained: semver 1.12.191, rebuild the committed userscript, commit with
+HUSKY=0, prettier on this doc.
+
+### Verdict: RETAINED at 1.12.191 — winFixes hydro-affordability gates live (2026-10-09)
+
+Mechanistic gate (sam-B rerun, rebuilt bundle, OFH_LOG_NUKES=1): null rows
+with affordable gold (>= 750k flat Atom price) collapsed 318 -> 0 — every
+remaining null row is genuinely broke — and own detonations after tick 5779
+went 0 -> 18 (23 Atom selections total, the fallback lane demonstrably
+firing). The post-5205 arsenal starvation is structurally gone.
+
+Outcome clauses:
+
+- (a) PASS — sam-salvo-overwhelm-b won=true at 20701 vs 23351 baseline
+  (2,650 ticks / 11.3% earlier), bot alive with 777,165 tiles and 643,509
+  gold. Honest cost: hostile detonations after 5205 rose 4 -> 6
+  (16744/16810/17672/18812/19984/20119); the faster win still landed.
+- (b) PASS — baikal-nuke-wars still won (8351 vs 6361 baseline, +1990
+  recorded), sam-salvo-overwhelm still won (7641 vs 7571, +70), and
+  baikal-silo-regime kept its loss at the exact baseline tick 3861
+  (bit-identical — a zero-launch game never reaches the perceived-cost
+  escalation this lever bypasses).
+
+Retained: package 1.12.191, bundles rebuilt, npm test + tsc + build green,
+the hydro-fallback fixture re-pinned to the live lane (the atom-selection
+assertion now requires the affordable Atom fallback to fire). Standing
+knowledge: the remaining dead Legendary nuke gates (saturation trajectory
+bypass, value-directed retry, post-salvo dispatch, giant-strike freeze,
+positive-EV guard) stay raw-equality on purpose — the 2026-10-05 verdict
+stands for firing-policy sites; only affordability was re-armed here.
+
 ## Receipt 12: crippled-target bomb downgrade is inert in maybeSendNuke
 
 The downgrade was implemented exactly as pre-declared and passed the
