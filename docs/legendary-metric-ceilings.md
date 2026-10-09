@@ -8105,6 +8105,55 @@ the game-constants fixture returned to its 2009 contract count, and
 build parity passes at the reverted state. Evidence:
 /tmp/ofh-matrix/v1.12.194-organic-first-silo/.
 
+## Pre-declaration 17: shipped-build control baseline at n=20
+
+(2026-10-09, BEFORE any run)
+
+Receipt 16 closes the construction layer at n=10 and states the two
+remaining seams; both require gates with >= 20 games before any new
+behavior arm can be judged honestly. This is a pure measurement arm on
+the SHIPPED v1.12.193 bundle (byte-identical to HEAD 5f15da37, no
+source, fixture, or config change): run the first 20 records of
+`/home/eros/ofh-matrix/history/index.json` in index order — records
+1-10 are exactly the games of the n=10 baseline, records 11-20 are
+dS5VJperQo, dTkFZLga8V, cohpQeSJFX, cpVDtgC1GX, GGJy5YUR, dPvMonrSL6,
+dRRd3sToeS, dpa7T7kPMn, cQFUwWwnKd, cVoPAh4Hk3 — under the standing
+2 GiB MemoryMax scope and 6,000-tick cap. Deterministic selection rule:
+index order, no cherry-picking; records 1-10 must reproduce the n=10
+baseline per-game outcomes (same seeds) or the divergence is itself a
+finding to record.
+
+Pre-declared recording gates (descriptive distribution, no pass/fail on
+outcomes since nothing changes): robustness (engine_stop/spawn_failed
+count), wins, deaths with ticks, first-silo ticks, nuclear launches,
+peak gold, and per-game cR4BnsUGq4 outcome. No retention: the shipped
+artifact stays v1.12.193, no semver bump, docs-only commit. Purpose:
+the control distribution future >= 20-game gates will diff against.
+
+## Receipt: shipped-build history control at n=20 (2026-10-09,
+
+v1.12.193, no behavior arm)
+
+All 20 selected public-history records completed without engine_stop or
+spawn_failed (20/20 robust). The original ten reproduced the n=10
+baseline exactly on per-game outcome, alive state, ticks, stop reason,
+first-silo tick, launches, final gold, and final tiles. Across all 20:
+1/20 bot wins (dpa7T7kPMn at tick 5,971); 6/20 deaths at ticks 1,486
+(chbo1fcF96), 3,143 (cohpQeSJFX), 3,401 (coRwuCa7Tb), 4,208
+(crT4ejtZtM), 4,391 (cvvAjCJ66s), and 4,776 (dSwja63Gum); 12/20
+survived to the 6,000-tick cap. First silos landed in 10/20 games:
+cR4BnsUGq4 at 4,269, cy2X9tdwad at 1,991, dS5VJperQo at 2,775,
+dTkFZLga8V at 4,774, GGJy5YUR at 2,519, dPvMonrSL6 at 2,598,
+dRRd3sToeS at 2,236, dpa7T7kPMn at 2,745, cQFUwWwnKd at 2,919, and
+cVoPAh4Hk3 at 2,595. Nuclear launches remained 0/20. The historical
+natural-win seed cR4BnsUGq4 still ended at tick 5,181 with a winner,
+but the bot did not win; the new bot victory was dpa7T7kPMn.
+
+The runner result does not expose continuous peak gold. The maximum
+gold observed in logged construction-event portfolios was 8,654,900
+(dpa7T7kPMn); treat this as an event-sampled lower bound, not an exact
+peak. Evidence: /tmp/ofh-matrix/v1.12.193-history-20/.
+
 ## Pre-declaration 15: Legendary first-silo ladder fix (ceil the first
 
 launcher at one city, 2026-10-09, BEFORE any candidate run)
