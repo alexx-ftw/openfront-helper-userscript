@@ -8176,6 +8176,39 @@ do not infer a behavior cause. No retention or semver bump; commit only
 the measurement receipt. Evidence will be stored under
 `/tmp/ofh-matrix/v1.12.193-nuke-loss-trace/`.
 
+## Receipt: n=20 hostile nuke-loss trace (2026-10-09,
+
+v1.12.193, no behavior arm)
+
+All five replays were robust and their full result objects matched the
+n=20 baseline after excluding only runtimeMs. Across the five logs,
+53 hostile launches and 51 detonations were recorded; the eight own
+structure deletions (2 + 1 + 3 + 1 + 1) each linked to exactly one
+detonation by missile ID, owner, and destination, matching
+`ownStructuresNuked` in every result.
+
+The runner observed 51 hostile missiles in flight. At their first
+observation, none was yet reported as targetedBySAM; only two had a
+destination tile inside a ready SAM's dynamic radius, both in
+crT4ejtZtM. Those two Atoms were launched together at tick 3,602 toward
+tile 1,759,325; one detonated at 3,675 and destroyed three structures,
+while the other has no detonation record. This suggests a possible
+single-SAM salvo-capacity gap, but does not prove an interceptor failure:
+targetedBySAM was sampled only once per missile, and no per-tick
+interception trace exists.
+
+The other four loss events all detonated outside any ready SAM's
+destination radius. In cMxs8Lru3U, the loss-causing Atom launched at
+4,568 and detonated at 4,583. The SAM on its target tile began
+construction at 4,289; it was still under construction at impact, and
+its 300-tick build would have completed at 4,589, six ticks later. These
+traces do not
+support a targeting-only fix. A broad proactive SAM network would require
+reopening construction policy, which the recent history gates show can
+change unrelated trajectories; defer that lever until a coverage
+forecast can show a bounded benefit. No code change or semver bump.
+Evidence: /tmp/ofh-matrix/v1.12.193-nuke-loss-trace/.
+
 ## Pre-declaration 15: Legendary first-silo ladder fix (ceil the first
 
 launcher at one city, 2026-10-09, BEFORE any candidate run)
