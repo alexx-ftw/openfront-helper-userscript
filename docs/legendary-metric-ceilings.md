@@ -7365,6 +7365,35 @@ Pre-declared gates:
   is retained, bump semver to 1.12.191 and rebuild the committed
   userscript; otherwise revert the tree and record the honest rejection.
 
+## Receipt 12: crippled-target bomb downgrade is inert in maybeSendNuke
+
+The downgrade was implemented exactly as pre-declared and passed the
+focused boundary fixture, the full `npm test`, and the TypeScript check.
+All four scenario gates then returned bit-identical receipts to the
+v1.12.190 baselines: baikal-silo-regime died at 3861 with 29,284 tiles
+and no own nukes, baikal-nuke-wars won at 6361 (26A/41H, 1,341,878
+tiles), sam-salvo-overwhelm won at 7571 (11A/24H, 1,989,861 tiles), and
+the sam-salvo-overwhelm-b effect seed still won at 23351 (17A/43H,
+779,430 tiles) with the same four hostile counter-nukes after tick 5205.
+The counter-battery 500k assertion held.
+
+The inertness is diagnostic, not mysterious: the late Hydrogen stream that
+motivated the lever does not dispatch through maybeSendNuke. The anti-SAM
+salvo lane fires Atoms by design, and the post-salvo finisher lane is a
+Hydrogen finisher by its own pre-declared 2026-10-08 doctrine (hold
+semantics, friendly-fire pricing, MIRV weighting); where maybeSendNuke did
+select, the war chest sat below the Atom price in the observed window, so
+the affordability fallback kept Hydrogen. Downgrading the finisher would
+re-litigate a closed lever family rather than fix a scoring defect.
+
+Per the pre-declared keep condition the lever is rejected and the tree was
+reverted; v1.12.190 remains the shipped build. The measured sam-B shape —
+an all-in early bombardment that cripples the strongest hostile, followed
+by a conventional closeout against its recovery — survives every
+bomb-choice lever tried so far; the next candidate must change the
+economics of the silent 18k-tick tail (sustained nuclear production
+funding) or honestly retire the seam.
+
 ## Receipt 11: growth-preserving SAM chest is inert on the effect seed
 
 The lever was implemented exactly as pre-declared (City released from the
