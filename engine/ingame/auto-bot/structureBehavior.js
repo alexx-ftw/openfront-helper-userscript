@@ -10844,6 +10844,14 @@
         // remaining slot source for the waiting queue. Same trigger and
         // gates as the upgrade branch; placement reuses the first-silo
         // machinery, reserves respected.
+        // Synchronization: one pending launcher at a time. The filtered
+        // list above cannot see a silo already under construction, and
+        // stacking duplicate builds would drain the treasury without
+        // adding ready slots any sooner.
+        const allSilos = this.player?.units?.(UNIT.MissileSilo) || [];
+        if (allSilos.some((silo) => silo.isUnderConstruction?.() === true)) {
+          return false;
+        }
         return this.maybeSpawnNuclearSlotPressureSilo();
       }
       if (!this.genericStructureUpgradeAllowed(result, UNIT.MissileSilo)) {

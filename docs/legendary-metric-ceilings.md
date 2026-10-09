@@ -7024,3 +7024,22 @@ versus the pre-receipt eternal draw), 11A/24H, 11 own nuked, 1 new-silo
 construction. Both pre-declared requirements hold (won=true on both,
 sam assert >= 3 atoms green); the collateral and tick shifts are
 recorded, not tuned.
+
+## Pre-declaration 5: one pending launcher at a time (2026-10-09)
+
+Robustness guard on the slot-pressure NEW-silo branch: its silo list
+filters out under-construction silos, so with completed maxed silos plus
+one already-being-built launcher the branch cannot see the pending build
+and would stack duplicate constructions tick after tick until the
+treasury broke (each unit is worker-costly gold that adds no ready slot
+any sooner — construction completes in order). The guard skips the
+fallback while any Missile Silo is under construction; the completed
+network still upgrades through the existing path.
+
+Pre-declared expectations: baikal (branch inert there) receipt expected
+identical to the 6361 standing receipt with won=true required; sam
+receipt expected identical to the 7571 standing receipt (it recorded
+exactly one new-silo build — no stacking occurred to suppress) with
+won=true required. Identical receipts are expected, not assumed: any
+drift is reported honestly. Fixtures pin both guard sides (pending build
+blocks; completed-only network still builds).

@@ -241,6 +241,61 @@ function makeWorld({ pending, queue, level, winFixes = true, siloDisabled = fals
   assert.equal(emitted.length, 1, "the upgrade reaches the build menu");
 }
 
+// Synchronization: a launcher already under construction blocks stacking
+// another one, even though the filtered probe list cannot see it.
+{
+  const { behavior, emitted } = makeWorld({
+    pending: [{ nukeType: UNIT.AtomBomb }],
+    queue: [5, 5, 5],
+    level: 3,
+  });
+  behavior.findBestStructureToUpgrade = async () => null;
+  behavior.safeConstructionCost = () => 1000000n;
+  behavior.spendableConstructionGold = () => 2000000n;
+  behavior.player.units = (type) =>
+    type === UNIT.MissileSilo
+      ? [
+          { isUnderConstruction: () => false, level: () => 3, missileTimerQueue: () => [5, 5, 5] },
+          { isUnderConstruction: () => true },
+        ]
+      : [];
+  const spawns = [];
+  behavior.maybeSpawnStructure = async (type) => {
+    spawns.push(type);
+    return true;
+  };
+  assert.equal(
+    await behavior.maybeUpgradeSiloForNuclearSlotPressure(),
+    false,
+    "a pending launcher blocks stacking another construction",
+  );
+  assert.equal(spawns.length, 0, "no duplicate silo while one is pending");
+}
+
+// A network whose ONLY silo is still under construction is not upgradeable
+// and not complete: no decision fires either way.
+{
+  const { behavior, emitted } = makeWorld({
+    pending: [{ nukeType: UNIT.AtomBomb }],
+    queue: [5, 5, 5],
+    level: 3,
+  });
+  behavior.player.units = (type) =>
+    type === UNIT.MissileSilo ? [{ isUnderConstruction: () => true }] : [];
+  behavior.findBestStructureToUpgrade = async () => null;
+  behavior.safeConstructionCost = () => 1000000n;
+  behavior.spendableConstructionGold = () => 2000000n;
+  behavior.maybeSpawnStructure = async (type) => {
+    throw new Error("placement must not run for an incomplete network");
+  };
+  assert.equal(
+    await behavior.maybeUpgradeSiloForNuclearSlotPressure(),
+    false,
+    "an incomplete-only network waits for its launcher",
+  );
+  assert.equal(emitted.length, 0, "no construction for an incomplete network");
+}
+
 // Silos disabled never emit the upgrade.
 {
   const { behavior, emitted } = makeWorld({
