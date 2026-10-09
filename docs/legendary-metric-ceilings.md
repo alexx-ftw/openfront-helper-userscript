@@ -7775,8 +7775,7 @@ Peaks' Hydrogen launched at tick 8205 and detonated at 8300. Our Atom
 destroyed its only known silo (unit 2471) at 8833. We then spent another
 Atom on a low-value target at 8859 with 1,160,315 gold; at 8887 we had
 423,115 and could not afford another Atom. Market Peaks finished its
-replacement silo (unit 2631, tile 898848) at 8871 and launched from it at
-9204. The replacement did not exist when the city shot was chosen.
+replacement silo (unit 2631, tile 898848) at 8871 and launched from it at 9204. The replacement did not exist when the city shot was chosen.
 
 Test one Legendary `winFixes` behavior arm: observe live Atom/Hydrogen
 missiles through `targetTile()`, remember only hostile owners whose missile
@@ -7843,6 +7842,7 @@ priority. Evidence is still one effect seed plus deterministic controls,
 not a multi-seed generalization.
 
 ## Pre-declaration 14: Legendary offensive silo expansion via sustained
+
 throughput starvation (2026-10-09, BEFORE any candidate run)
 
 The validated v1.12.193 seed-B trace exposes a production-limited nuclear
@@ -7889,9 +7889,9 @@ Pre-declared gates:
 - Effect seed sam-salvo-overwhelm-b under the 2 GiB cap, bundle rebuilt
   first (protocol): retain only on an alive win strictly earlier than
   11,511, ownStructuresNuked <= 11, hostile nuke detonations <= 2, and
-  >=134M enemy structure value destroyed. Record own silo build ticks,
-  launch cadence before/after, Market Peaks silo destruction ticks, and
-  final hostile launch tick either way.
+  > =134M enemy structure value destroyed. Record own silo build ticks,
+  > launch cadence before/after, Market Peaks silo destruction ticks, and
+  > final hostile launch tick either way.
 - Controls retain their v1.12.193 outcomes: baikal-nuke-wars win,
   sam-salvo-overwhelm win, silo-counter-battery-regime >=500k structure
   damage. baikal-silo-regime must remain a bit-comparable loss at 3,861
@@ -7905,6 +7905,7 @@ Pre-declared gates:
   placement cost starved the war economy.
 
 ### Amendment (2026-10-09, before the first valid candidate run): the
+
 expansion ceiling is level-sum-relative, not absolute-5
 
 The first rebuilt candidate run returned a bit-identical v1.12.193
@@ -7924,6 +7925,7 @@ hostile detonations <= 2, >=134M damage, unchanged control outcomes,
 baikal-silo-regime bit-comparable loss) stand.
 
 ## Outcome: reject Legendary silo expansion — expansion decapitated the
+
 forward network (2026-10-09)
 
 The amended candidate bound on the effect seed and failed every retention
@@ -7963,6 +7965,7 @@ the reverted tree, and the game-constants fixture returned to its 2009
 contract count. Evidence: /tmp/ofh-matrix/v1.12.194-silo-expansion-v2/.
 
 ## Receipt: first history baseline — the organic nuclear chain is dead at
+
 the root on real playlist profiles (2026-10-09, v1.12.193, no behavior arm)
 
 First multi-seed run against the public OF history corpus (`--from-history`,
@@ -8000,6 +8003,7 @@ cover both the history-window gate (first-silo tick, launches > 0 by
 /tmp/ofh-matrix/v1.12.193-history-10/.
 
 ## Outcome: reject the first-silo ladder ceil — viability never reached
+
 selection and it flipped the only natural win (2026-10-09)
 
 The pre-declared 15 candidate passed the focused boundary fixture and the
@@ -8028,7 +8032,81 @@ The tree is reverted and the rebuilt bundle is again byte-identical to
 v1.12.193; full `npm test`, `npm run check`, and build pass at the
 reverted state. Evidence: /tmp/ofh-matrix/v1.12.194-first-silo/.
 
+## Pre-declaration 16: Legendary organic first-silo funding lane
+
+(2026-10-09, BEFORE any candidate run)
+
+Pre-declaration 15 proved the ladder must not be reordered, and the
+history baseline proved the organic chain never starts on real profiles
+(first silo 2/10 games, launches 0/10). The selection-economics reading
+points at a dedicated funding lane instead: a new pre-ladder structure
+lane, `maybeFundOrganicFirstSilo`, placed beside
+`maybeArmFreezeStrikeSilo` in the Legendary flow, mirrors the proven
+non-Legendary `handleInitialMissileSilo` semantics — fire only when
+winFixes + Legendary, MissileSilo enabled, zero owned silos, at least one
+City, any nuclear unit legal, the SAM baseline chest is inactive, the
+naval-opening deferral does not apply, and spendable construction gold
+covers the full 1M price. It uses the ordinary
+`maybeSpawnStructure(UNIT.MissileSilo)` (whose eligibility path never
+consults the ladder's floor target), so the planner's candidate set is
+not touched at all — the spend happens only when the war economy already
+covers the whole price after its reserves.
+
+Pre-declared gates:
+
+- Focused fixture: every guard boundary returns false (winFixes off,
+  non-Legendary, silo disabled, owned > 0, zero cities, all nuclear units
+  disabled, SAM chest active, naval-opening deferral, gold below price)
+  and the all-clear case calls spawn with MissileSilo exactly once.
+- History gate (same 10 records, rebuilt bundle first): first silo built
+  in >= 5/10 games (baseline 2/10), at least one nuclear launch in
+  > = 2/10 games (baseline 0/10), deaths <= 5/10, and cR4BnsUGq4 — the
+  > only natural-win game — is still won by the bot. Record per-game
+  > first-silo tick, first-launch tick, and outcome either way.
+- Standing controls keep their v1.12.193 outcomes: baikal-nuke-wars win,
+  sam-salvo-overwhelm win, silo-counter-battery-regime >= 500k damage,
+  and baikal-silo-regime remains a bit-comparable loss at 3,861 (it dies
+  holding 240k gold against the 1M price, so the lane can never fund).
+- Full `npm test`, `npm run check`, and build parity pass. If retained:
+  semver 1.12.194, rebuild, commit the validated artifact, and notify.
+  Otherwise revert and record the measured reason, distinguishing lane
+  never funded from funded-but-outcome-changed.
+
+## Outcome: reject the organic first-silo funding lane — no free lane
+
+exists in the deterministic RNG stream (2026-10-09)
+
+The pre-declared 16 candidate passed the focused boundary fixture and
+the full local suite, then failed every history gate on the same 10
+records: first silo still 2/10 at ticks 1,991 and 4,269 — tick-identical
+to the baseline, so the lane never funded a single new build — nuclear
+launches 0/10, deaths 5/10 (at cap), and the single natural-win game
+REGRESSED again: cR4BnsUGq4 still ended at tick 5,181 with stopReason
+winner, but the winner is no longer the bot.
+
+This is a different mechanism from pre-declaration 15, and it is now
+measured: the lane touched no candidate set and gated on spendable gold
+covering the full price, yet the trajectory still diverged. The
+`maybeSpawnStructure` placement probes consume RNG from the
+deterministic stream even when the placement fails, so ANY pre-ladder
+construction lane — funded or never funded — perturbs every downstream
+decision. Fifth construction-side lesson: there is no free lane in the
+deterministic sim; a lane that exists at all is a lane that re-rolls the
+game.
+
+Strategic conclusion for the ledger: activating the nuclear chain on
+real profiles cannot be done from the construction layer. The remaining
+viable seams are (a) large multi-seed gates (20+ games) that average out
+deterministic perturbation before judging any construction change, or
+(b) the launch layer over already-built silos in injected-arsenal
+scenarios, which never touches placement RNG. The tree is reverted and
+the rebuilt bundle is byte-identical to v1.12.193 (build-id included),
+the game-constants fixture returned to its 2009 contract count, and
+build parity passes at the reverted state. Evidence:
+/tmp/ofh-matrix/v1.12.194-organic-first-silo/.
+
 ## Pre-declaration 15: Legendary first-silo ladder fix (ceil the first
+
 launcher at one city, 2026-10-09, BEFORE any candidate run)
 
 The history baseline above exposes the root gate. The Legendary ladder's
