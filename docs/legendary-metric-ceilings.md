@@ -7391,3 +7391,46 @@ precedent, because the effect gate already decided against retention.
 The next investigation must explain why the two-sample chest never binds
 on this regime before 3861 and what actually triggered the tick-3281 SAM
 purchase, instead of widening the chest trigger again.
+
+## Pre-declaration 12: crippled-target bomb downgrade (2026-10-09)
+
+The surviving v1.12.190 sam-salvo-overwhelm-b log answers the receipt 11
+diagnostics and exposes a targeting-scope inefficiency. The bot fired its
+entire arsenal inside the first ~5205 ticks (17 Atom, 43 Hydrogen, 97
+detonations), reduced Market Peaks to 1,276 troops, and was still firing
+Hydrogen — the most expensive bomb — at that crippled target at tick 5079.
+Every silo then stood silent for the remaining 18,146 ticks while Market
+Peaks recovered to 191,239 tiles and landed four counter-nukes (ticks
+16683, 17632, 18613, 21710); the win arrived conventionally at 23351.
+The bomb-choice gate at selectAffordableNuke() always prefers Hydrogen
+when affordable, regardless of target size, and winFixes already pins
+perceived cost to the real cost on Legendary, so the waste is structural,
+not the MIRV save-up lane.
+
+Planned minimal change: in maybeSendNuke only, after the ordinary
+selection, downgrade Hydrogen to Atom when the selected target's standing
+troops are at or below one percent of our standing troops (measured ratio,
+not an absolute constant), Atom is enabled, and the Atom is affordable;
+otherwise the ordinary selection stands. The giant-strike and anti-SAM
+lanes are untouched (a giant is at least 1.5x our troops and can never
+meet the ratio). No upstream target-order, salvo, SAM, or reserve logic
+changes.
+
+Pre-declared gates:
+
+- The focused fixture pins the boundary matrix: at exactly the one
+  percent ratio the downgrade fires; one troop above it keeps Hydrogen;
+  winFixes off, non-Legendary, disabled Atom, and an unaffordable Atom
+  each keep Hydrogen.
+- Effect seed sam-salvo-overwhelm-b: keep the lever only on a win
+  strictly earlier than 23351, or on a win at or before 23351 with fewer
+  than the four hostile detonations after tick 5205. Record aims, bomb
+  mix, hostile late detonations, and Market Peaks final tiles either way.
+- Controls stay bit-identical: baikal-nuke-wars won at 6361 (26A/41H,
+  1,341,878 tiles), sam-salvo-overwhelm won at 7571 (11A/24H, 1,989,861
+  tiles), and baikal-silo-regime keeps its tick-3861 fragility receipt
+  (29,284 tiles, no own nukes). The silo counter-battery scenario keeps
+  its 500,000 hostile-structure damage assertion.
+- Full `npm test`, TypeScript check, and build parity pass. If the lever
+  is retained, bump semver to 1.12.191 and rebuild the committed
+  userscript; otherwise revert the tree and record the honest rejection.
