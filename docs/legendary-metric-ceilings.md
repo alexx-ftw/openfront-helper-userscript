@@ -7199,3 +7199,25 @@ Pre-declared expectations.
 - Fixture pins the budget table: Medium=1; Legendary front 300 -> 2,
   1100 -> 3, 1800 -> 4, 10000 -> 6 (ceiling); surplus-gate false ->
   null; troop-ratio guard unchanged.
+
+## Receipt 8: pressure-scaled Defense-Post budget — mechanism confirmed, lever weak on seed B (2026-10-09, 5766e820)
+
+The front-scaled quiet-border budget bound exactly where the robustness
+receipt died: sam-salvo-overwhelm-b built 5 Defense Posts (was 2 across
+the whole match) on the 1339-1992 tile front at hostile ratios 1.08-5.57,
+and survival extended from conquered@2732 to conquered@2829 (+97 ticks).
+The outcome is unchanged and honest: bot_dead, won=false, Isle of
+Margins absorbs the map (277,686 tiles); 6 atoms + 1 MIRV fired again.
+Pre-declared classification holds: mechanism-confirmed, lever-weak — a
+2.5M-troop land stack behind a 275k-tile snowball is beyond quiet-border
+fortification; the seed-B loss needs a different mechanism (army
+preservation / counter-stacking / earlier response), not more posts.
+
+No-harm gates, both with bit-identical summaries under v1.12.189:
+baikal-nuke-wars won (26A/41H, same final tiles/trajectory as receipt 7)
+and sam-salvo-overwhelm won (11A/24H, closeout@4900 identical). The
+scaled lane stayed strictly dormant on both seeds. Suite full green
+(exit 0) with the pinned budget-table fixture and the regenerated
+game-constants contract (+3 module constants). baikal-silo-regime keeps
+its v1.12.187 fragility receipt untouched (not a gate for this lever;
+matrix not refreshed there).
