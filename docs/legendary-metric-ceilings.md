@@ -7106,3 +7106,26 @@ sam-salvo-overwhelm: won@7571 (1 new silo); baikal-silo-regime:
 fragility won=false @3861. All three receipts current with the shipped
 artifact. Corpus side note: +2 unique records under Bun (104 -> 106;
 the walked leaderboard pages yielded mostly already-saved games).
+
+## Pre-declaration 6: STRUCTURES_TYPES arity fix — density and placement see all six (2026-09)
+
+Second-wave arity sweep: STRUCTURES_TYPES (six structure types) fed three
+sites through a single spread call — getTotalStructureDensity (the
+Legendary construction pacing signal) and the two economic-placement
+fingerprint/topology reads. Under the vendored three-type cap only
+City/DefensePost/SAMLauncher were ever counted: MissileSilo, Port, and
+Factory were invisible to the structure-density signal that gates
+construction (including silo construction) and to placement fingerprint
+topology. Fix: structuresOfAllTypes() enumerates per type (same pattern
+as the attack roster), wired into all three sites. Also fixed
+legendaryEnemyTargetUnitCounts (six-type enemy threat evaluation was
+silently dropping City/Factory/Port from target scoring).
+
+Pre-declared expectations. baikal-nuke-wars (no-harm gate): won=true
+required; the density signal now reads fully, so construction pacing may
+shift — launch counts, own nuked, damage, and victory tick observed and
+reported honestly. sam-salvo-overwhelm (effect gate): assert >= 3 atoms
+and a win-or-honest-draw observed; new-silo builds counted. Fixtures
+pin the enumeration; the placement fingerprint content changes (roster
+completes), which is a legitimate one-time cache invalidation, not a
+regression signal.

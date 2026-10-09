@@ -384,6 +384,14 @@
     UNIT.Factory,
   ];
 
+  // Vendored units() caps at three positional types and silently drops the
+  // rest; enumerate per type so the full six-structure roster is seen.
+  function structuresOfAllTypes(game) {
+    const out = [];
+    for (const type of STRUCTURES_TYPES) out.push(...game.units(type));
+    return out;
+  }
+
   // USER GATE (not in src): the popup lets the user disallow auto-building
   // specific structure types. A type is allowed unless explicitly set false.
   function autoBotBuildAllowed(type) {
@@ -5277,7 +5285,12 @@
         UNIT.Port,
       ];
       const counts = Object.fromEntries(types.map((type) => [type, 0]));
-      for (const unit of enemy.units(...types) || []) {
+      // Vendored units() caps at three positional types and silently drops
+      // the rest; enumerate per type so City/Factory/Port threat value is
+      // not invisible to the Legendary target scorer.
+      const roster = [];
+      for (const type of types) roster.push(...(enemy.units(type) || []));
+      for (const unit of roster) {
         const type = unit.type?.();
         if (Object.hasOwn(counts, type)) counts[type]++;
       }
@@ -11565,7 +11578,7 @@
     getTotalStructureDensity() {
       const tilesOwned = this.player.numTilesOwned();
       return tilesOwned > 0
-        ? this.player.units(...STRUCTURES_TYPES).length / tilesOwned
+        ? structuresOfAllTypes(this.player).length / tilesOwned
         : 0; // ignoring levels for structures
     }
 
@@ -12149,7 +12162,7 @@
       const config = game.config?.();
       const structureMinDist = Number(config?.structureMinDist?.());
       const borderTiles = Array.from(this.player.borderTiles());
-      const structures = game.units(...STRUCTURES_TYPES);
+      const structures = structuresOfAllTypes(game);
       const bounds = this.economicPlacementBounds(game, borderTiles, width, height);
       const fingerprint = this.economicPlacementFingerprint(type);
       if (!this.economicPlacementContextIsValid({
@@ -12298,7 +12311,7 @@
       const borderTileCount = Number(
         borderTiles?.size ?? borderTiles?.length ?? 0,
       );
-      const structures = game.units(...STRUCTURES_TYPES);
+      const structures = structuresOfAllTypes(game);
       if (!Array.isArray(structures)) return null;
       const topology = this.economicPlacementTopology(type, borderTiles);
       const fingerprint = JSON.stringify({
