@@ -7129,3 +7129,18 @@ and a win-or-honest-draw observed; new-silo builds counted. Fixtures
 pin the enumeration; the placement fingerprint content changes (roster
 completes), which is a legitimate one-time cache invalidation, not a
 regression signal.
+
+## Receipt 7: second-wave arity fix — behavior-neutral on both gates (2026-10-09, 1df9b5cf)
+
+Post-fix gates (v1.12.188): baikal won=true at 6361 (21 own nuked, 26A/
+41H) and sam won=true at 7571 (11A/24H, 11 own nuked, 1 new silo) —
+both bit-identical to the standing receipts. The completed-roster
+signals (structure density, placement fingerprint topology, enemy
+target pressure) read full data now, but no binding decision flipped in
+either seed. Recorded as the honest neutral result: the fix's value is
+correctness of the scoring inputs (silos/ports/factories/factories-
+as-targets are no longer invisible), not an outcome shift on these
+seeds — exactly what a cohesion sweep should produce when the prior
+truncation happened not to bind. Suite full green (exit 0) with the
+updated per-type read contracts (placement 6/tick, enemy pressure 6
+per hostile, both cached per tick).
