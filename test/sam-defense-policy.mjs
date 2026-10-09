@@ -6625,7 +6625,13 @@ assert.match(
   ownGold = 1_650_000;
   forecastBehavior.hostileNuclearThreatSample();
   forecastBehavior.estimatedOwnGoldPerTick();
-  // Existing-silo ETA: (750k-700k)/1k = 50t × 1/(1+0.5) ≈ 33t; ours 300t.
+  // Existing-silo ETA: (750k-700k)/3.8k ≈ 13.16t × level factor 2/3 ≈ 8.77t;
+  // ours 300t. Pin the exact owner-matched existing-silo ETA value.
+  assert.equal(
+    forecastBehavior.hostileNuclearThreatEtaTicks(),
+    8.771929824561402,
+    "a single existing-Silo hostile keeps the exact existing-silo ETA",
+  );
   assert.equal(
     forecastBehavior.nuclearThreatOutrunsOurSamReadiness(),
     true,
@@ -6638,9 +6644,11 @@ assert.match(
   delete sandbox.state.ownEconSamples;
   tick = 3_000;
   ownGold = 1_400_000;
+  // Fully player-shaped self entry: only the smallID self-check may exclude it.
+  const selfShapedOwner = { id: 1, gold: 9_000_000, siloCount: 3 };
   const poorSiloOwner = { id: 2, gold: 100_000, siloCount: 1 };
   const richNoSiloOwner = { id: 3, gold: 1_100_000, siloCount: 0 };
-  hostilePlayers = [poorSiloOwner, richNoSiloOwner];
+  hostilePlayers = [selfShapedOwner, poorSiloOwner, richNoSiloOwner];
   forecastBehavior.hostileNuclearThreatSample();
   forecastBehavior.estimatedOwnGoldPerTick();
   tick += 100;
