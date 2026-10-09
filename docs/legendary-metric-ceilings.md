@@ -6976,3 +6976,28 @@ sam-salvo-overwhelm (effect gate, currently the documented max-ticks
 draw with 5 atoms under the native anti-SAM guard): assert >= 3 atoms
 must stay green; atom totals and silo construction are observed
 honestly. Receipts appended after the runs.
+
+## Receipt 4: slot-pressure NEW-silo construction (2026-10-09, 76c59b80)
+
+Both gates ran post-implementation (76c59b80, v1.12.185):
+
+- baikal-nuke-wars (no-harm gate): PASSED bit-for-bit — won=true at
+  7971, 26A/48H, 12 own structures nuked, 50.5M. Zero new-silo builds:
+  the winning line never reaches sustained slot starvation with zero
+  upgradeable silos, so the branch stays out of a winning game.
+- sam-salvo-overwhelm (effect gate): WON — won=true at 6981 ticks
+  (stopReason=winner) versus the documented 25000-tick max-ticks draw.
+  11 atoms and 14 hydrogens launched (assert >= 3 atoms green), 7 own
+  structures nuked, and exactly 1 new Missile Silo built by the fallback
+  branch. The eternal SAM-cover deadlock is broken WITHOUT reopening the
+  closed anti-SAM lever: the extra launcher's tubes changed the
+  production shape (hydrogens appear for the first time in this regime)
+  and the match concluded in a win 990 ticks before baikal's own
+  victory tick.
+
+Both pre-declared requirements hold: won/alive on baikal (alive implied
+by winner stopReason and topPlayers), sam assert green with honest
+counts. The branch is cohesive by construction — same trigger, same
+gates, same placement machinery — and receipt-backed on both regimes.
+Corpus side note: the public fetcher was rate-limited again (403); the
+corpus stays at 79 records.
