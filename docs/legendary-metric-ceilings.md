@@ -7961,3 +7961,40 @@ bundle is byte-identical to the committed v1.12.193 artifact (build-id
 included), the full `npm test`, `npm run check`, and build all pass at
 the reverted tree, and the game-constants fixture returned to its 2009
 contract count. Evidence: /tmp/ofh-matrix/v1.12.194-silo-expansion-v2/.
+
+## Receipt: first history baseline — the organic nuclear chain is dead at
+the root on real playlist profiles (2026-10-09, v1.12.193, no behavior arm)
+
+First multi-seed run against the public OF history corpus (`--from-history`,
+10 records, all Free-For-All except one Team game, all `startingGold` 0,
+2-72 nations, 6,000-tick cap, 2 GiB cap, shipped v1.12.193 bundle):
+robustness 10/10 without engine or spawn failures; 0/10 wins under the cap
+(only one game reached any natural winner, not ours); 5/10 alive at the
+cap; 5 deaths at ticks 1,486 / 3,401 / 4,208 / 4,391 / 4,776; own
+structures nuked 0.7 per game; **zero nuclear launches by the bot in all
+ten games** (nuclearStrategy atom/hydrogen 0 across the board, hostile
+damage taken 0-3 structures).
+
+Root-cause trace, quantified for the first time: first structure lands at
+ticks 707-947 in 9/10 games (City in 8, Port in 1); the tenth (72-nation
+World) peaked at 76,500 gold — below the 125k City price — built nothing,
+and was conquered at 1,486. Across the other nine the bot holds
+1.5M-3.2M peak gold, yet builds its FIRST MissileSilo in only 2/10 games
+(tick 1,991 in the Team game; 4,269 in the single game that reached a
+winner, Iceland 3 nations, which the bot won). The 1M flat silo price plus
+the existing first-silo gates (Legendary `handleInitialMissileSilo` is
+explicitly non-Legendary; the ladder ratio needs cities that real profiles
+reach only after ~900 ticks) leave the nuclear chain dormant through the
+entire 6,000-tick window on real maps, while the two sampled deaths show
+the pre-nuclear survival gap: first territory loss at ticks 768-967, then
+a long decline against Nation-AI waves (best rival gold 1.2M-11.2M versus
+the bot's far lower earnings).
+
+This baseline is the missing multi-seed evidence the ledger kept flagging,
+and it focuses the next lever precisely: any silo/nuclear improvement on
+real profiles must move FIRST-SILO latency and pre-nuclear survival, not
+endgame throughput — the injected-arsenal scenarios that drove cycles 1-14
+never exercise this seam. Pre-declaration for the next behavior arm must
+cover both the history-window gate (first-silo tick, launches > 0 by
+6,000) and the standing scenario controls. Evidence:
+/tmp/ofh-matrix/v1.12.193-history-10/.
