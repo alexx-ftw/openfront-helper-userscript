@@ -7075,3 +7075,16 @@ wider corpus: sustained production (21.3 vs 13.7) with adaptive
 re-targeting (18.8 vs 11.8 distinct target tiles) beats concentrating a
 small arsenal (top-3 share 0.290 vs 0.412). No bot change — evidence
 refresh only.
+
+## Corpus silo-maturation distribution (2026-10-09, 104 records, read-only)
+
+scan-history over the full grown corpus: 96 records with a measurable
+silo -> first-nuke gap — min 109, p25 232, median 388, p75 733, max
+2959, avg 571 ticks. Nobody nukes in Q1; light nukers (one silo) mature
+in 110-650 ticks while heavy networks (8-40 silos, 15-80 nukes) take
+1000-1232. Read-only evidence for the silo/nuclear cadence discussion —
+no bot change this pass. Separately re-confirmed: baikal's own-structure
+collateral delta after the enum sweep (21 vs 12) starts from identical
+early ticks (hostile nuke 1202, first own loss 1635) and accumulates in
+the mid-game after the attack lane's earlier commitment — recorded as
+the accepted cost of the 1610-ticks-faster victory, not tuned.
