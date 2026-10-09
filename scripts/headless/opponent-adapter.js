@@ -1005,6 +1005,34 @@ export class BundledOpponentBot {
     this.enableDefensePostTrace(behavior);
     this.enableLandDefenseTrace();
     this.enableLegendaryCandidateTrace(behavior);
+    this.enableSamReadinessTrace(behavior);
+  }
+
+  enableSamReadinessTrace(behavior) {
+    const original = behavior.nuclearThreatOutrunsOurSamReadiness;
+    if (typeof original !== "function") return;
+    let lastTick = null;
+    behavior.nuclearThreatOutrunsOurSamReadiness = (...args) => {
+      const outruns = original.apply(behavior, args);
+      const tick = this.game.ticks();
+      if (tick !== lastTick) {
+        lastTick = tick;
+        this.structureTrace.push({
+          kind: "sam-readiness-forecast",
+          tick,
+          outruns,
+          hostileEta: String(behavior.hostileNuclearThreatEtaTicks()),
+          ownEta: String(behavior.ownSamReadinessEtaTicks()),
+          hostileGold: String(
+            behavior.hostileRichestGold?.(behavior.player?.smallID?.()) ?? 0n,
+          ),
+          hostileSiloLevels: behavior.hostileSiloLevelSum?.() ?? 0,
+          gold: String(behavior.player?.gold?.() ?? 0n),
+          samCost: String(behavior.safeConstructionCost("SAM Launcher") ?? 0n),
+        });
+      }
+      return outruns;
+    };
   }
 
   // Candidate-level view of the Legendary planner: logs the generated

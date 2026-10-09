@@ -7284,3 +7284,33 @@ still exits 1 for two untranslated keys (`🏴‍☠️ Commerce raid` and
 `🏴‍☠️ Raid fleet`) across five locales; no locale files changed. Each
 headless scenario ran sequentially under a 2 GiB memory cap; no OOM kill
 occurred.
+
+## Pre-declaration 9: immediate hostile-silo forecast from one sample (2026-10-09)
+
+Diagnostic trace on v1.12.190 baikal-silo-regime: at tick 1903, the
+strongest hostile had 62,437,050 gold and four built silo levels while
+the bot had 317,850 gold and no SAM. The SAM cost was 1,500,000, but the
+forecast returned `hostileEta=null` (only one hostile economy sample), so
+the SAM reserve stayed off. The bot bought a SAM at tick 3281 and lost to
+Ballistic Cyclops Missile at tick 3861. The existing silo could already
+afford an Atom; no income estimate is needed to classify that threat as
+immediate.
+
+Planned minimal change: when there is exactly one hostile economy sample,
+an existing hostile silo plus at least 750,000 hostile gold yields an
+immediate threat ETA of zero. Keep the two-sample forecast for every case
+that is not already launch-ready, and do not invent a hostile income rate.
+
+Pre-declared gates:
+- The focused fixture proves the one-sample, existing-silo, 750,000-gold
+  boundary; below-cost and no-silo samples remain unknown, and the SAM
+  chest binds only while no own SAM exists and its price is unfunded.
+- baikal-silo-regime must not lose before tick 3861. Record SAM build tick,
+  own structures lost, nukes launched, and final outcome; keep the change
+  only if it measurably improves survival or structure preservation.
+- baikal-nuke-wars and both sam-salvo-overwhelm seeds remain wins with
+  bit-identical final trajectories and nuke counts. The silo
+  counter-battery scenario must still pass its 500,000 hostile-structure
+  damage assertion.
+- Full `npm test`, TypeScript check, and build parity pass. If the lever is
+  retained, bump semver to 1.12.191 and rebuild the committed userscript.
