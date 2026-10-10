@@ -10,11 +10,10 @@ import {
   createMaxDifficultyOpponent,
 } from "../scripts/headless/opponent-adapter.js";
 
-// End-to-end simulated scenario for the silos<->nukes synchronization: with
-// both silo slots busy reloading launched Atoms and the nuke lane requesting
-// more capacity (state.nukeWantSlots), the structures planner must emit a
-// silo upgrade through the real build menu instead of leaving the surplus to
-// the ordinary economy ladder. Without the slot request it must not.
+// End-to-end SAM-demand scenario: a real hostile SAM target requests one more
+// level of reachable silo capacity, and the structures planner must upgrade
+// through the real build menu. Busy reloads alone do not trigger the generic
+// slot-pressure lane.
 const game = await setup(
   "big_plains",
   { instantBuild: true },
@@ -35,7 +34,7 @@ const silo = attacker.buildUnit(UnitType.MissileSilo, source, {});
 silo.increaseLevel();
 silo.reloadMissile();
 silo.reloadMissile();
-defender.buildUnit(UnitType.SAMLauncher, target, {});
+const targetSam = defender.buildUnit(UnitType.SAMLauncher, target, {});
 defender.buildUnit(UnitType.City, target, {});
 const runner = new GameRunner(
   game,
@@ -98,12 +97,19 @@ try {
     "no upgrade without a nuclear capacity request",
   );
 
-  // The nuke lane requests capacity it does not have: the planner upgrades.
-  bot.harness.internals.state.nukeWantSlots = { need: 2 };
+  // A live SAM target needs one additional reachable launch slot.
+  const state = bot.harness.internals.state;
+  state.nukeWantSlots = {
+    need: 3,
+    targetSamId: targetSam.id(),
+    targetTile: target,
+    unblockedSiloIds: [silo.id()],
+    at: game.ticks(),
+  };
   assert.equal(
-    await structures.maybeUpgradeSiloForNuclearSlotPressure(),
+    await structures.maybeUpgradeSiloForNukeDemand(),
     true,
-    "the slot request releases a silo upgrade through the real menu",
+    "a valid SAM target upgrades a route-eligible silo through the real menu",
   );
   const siloUpgrades = bot.intentBuffer.filter(
     (intent) => intent.type === "upgrade_structure" && intent.unit === UnitType.MissileSilo,
@@ -111,7 +117,7 @@ try {
   assert.equal(siloUpgrades.length, 1, "exactly one silo upgrade intent is emitted");
   step(bot.intentBuffer);
   bot.intentBuffer.length = 0;
-  assert.equal(silo.level(), 3, "the accepted upgrade adds the reload slot level");
+  assert.equal(silo.level(), 3, "the accepted upgrade adds the required capacity level");
 } finally {
   bot.harness.window.close();
 }

@@ -2513,6 +2513,7 @@ behavior.legendaryMissileDefenseUrgent = () => false;
 behavior.legendaryConstructionCandidates = () => [
   { type: UNIT.City, cost: 1n, legal: true, gold: 1, troops: 1 },
 ];
+behavior.maybeUpgradeSiloFromSurplus = async () => false;
 behavior.maybeSpawnStructure = async (type) => {
   demandDrivenActions.push(type);
   return type === UNIT.City;

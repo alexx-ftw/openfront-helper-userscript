@@ -545,6 +545,11 @@ motion, and previously emitted shots can change source before server execution.
 Silo and SAM upgrades recheck live missile impact zones after worker pricing.
 A threatened silo defers its purchase while retaining valid nuclear capacity demand,
 so that request can resume when the hazard disappears.
+On Legendary with winFixes, SAM-overwhelm demand for a good target keeps first
+claim on a route-eligible silo upgrade. The planner also levels a built silo
+from true post-reserve surplus when no target-capacity request remains. This
+surplus lane requires at least one enabled nuke and never spends the reserved
+economic or defensive budget.
 
 Productive sites are placed using the engine's rail connectivity score and an
 additional team-position score: nearby powerful allies are ranked by the maximum

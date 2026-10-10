@@ -13,12 +13,11 @@ const UNIT = {
 };
 const Difficulty = { LEGENDARY: "LEGENDARY" };
 
-// Nuclear slot pressure must synchronize the structures planner with the
-// nuke lane: a queued nuclear launch or a planned salvo slot request
-// (nukeWantSlots) with zero ready silo shots upgrades a silo (a level is
-// a reload slot) instead of leaving the surplus to the ordinary economy
-// ladder. Any ready shot, absent pressure, disabled units, or winFixes
-// off leaves the decision to the ordinary ladder.
+// Generic silo slot pressure handles queued launches only. An open
+// nukeWantSlots request stays with its target-specific route and reserve
+// checks, so this lane cannot upgrade a route-irrelevant silo after that
+// request declines. Any ready shot, absent pressure, disabled units, or
+// winFixes off leaves the decision to the ordinary ladder.
 
 const script = readRepositoryFile("engine/ingame/auto-bot/structureBehavior.js");
 
@@ -79,7 +78,7 @@ function makeWorld({ pending, queue, level, winFixes = true, siloDisabled = fals
   return { behavior, emitted, state };
 }
 
-// A planned salvo's slot request is slot pressure too.
+// An open SAM-overwhelm request is owned by the target-specific demand lane.
 {
   const { behavior, emitted } = makeWorld({
     queue: [5],
@@ -87,10 +86,11 @@ function makeWorld({ pending, queue, level, winFixes = true, siloDisabled = fals
   });
   assert.equal(
     await behavior.maybeUpgradeSiloForNuclearSlotPressure(),
-    true,
-    "a planned salvo slot request upgrades the silo",
+    false,
+    "a generic upgrade cannot bypass target-specific route and reserve checks",
   );
-  assert.equal(emitted.length, 1, "the slot-request upgrade reaches the menu");
+  assert.equal(emitted.length, 0, "the request remains with the target-specific lane");
+  assert.equal(behavior.upgradeProbeCalls ?? 0, 0, "the generic lane performs no silo probe");
 }
 
 // The same request with a ready shot stays with the ordinary ladder.
@@ -188,11 +188,7 @@ function makeWorld({ pending, queue, level, winFixes = true, siloDisabled = fals
   );
   assert.equal(spawns.length, 1, "the new-silo fallback reaches placement");
   assert.equal(spawns[0].type, UNIT.MissileSilo, "the fallback builds a silo");
-  assert.equal(
-    spawns[0].options.useActualCost,
-    true,
-    "the fallback pays the actual silo cost",
-  );
+  assert.equal(spawns[0].options.useActualCost, true, "the fallback pays the actual silo cost");
   assert.equal(emitted.length, 0, "no upgrade intent is emitted");
   assert.equal(state.stats.builds, 0, "the upgrade counter stays untouched");
 }
@@ -244,7 +240,7 @@ function makeWorld({ pending, queue, level, winFixes = true, siloDisabled = fals
 // Synchronization: a launcher already under construction blocks stacking
 // another one, even though the filtered probe list cannot see it.
 {
-  const { behavior, emitted } = makeWorld({
+  const { behavior } = makeWorld({
     pending: [{ nukeType: UNIT.AtomBomb }],
     queue: [5, 5, 5],
     level: 3,
@@ -285,7 +281,7 @@ function makeWorld({ pending, queue, level, winFixes = true, siloDisabled = fals
   behavior.findBestStructureToUpgrade = async () => null;
   behavior.safeConstructionCost = () => 1000000n;
   behavior.spendableConstructionGold = () => 2000000n;
-  behavior.maybeSpawnStructure = async (type) => {
+  behavior.maybeSpawnStructure = async (_type) => {
     throw new Error("placement must not run for an incomplete network");
   };
   assert.equal(
@@ -312,4 +308,4 @@ function makeWorld({ pending, queue, level, winFixes = true, siloDisabled = fals
   assert.equal(emitted.length, 0, "no upgrade for disabled silos");
 }
 
-console.log("silo nuclear slot pressure tests passed");
+process.stdout.write("silo nuclear slot pressure tests passed\n");

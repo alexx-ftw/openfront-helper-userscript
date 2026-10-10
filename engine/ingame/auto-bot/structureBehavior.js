@@ -2670,6 +2670,7 @@
       // structures planner spending the same surplus on economy while the
       // nuclear lane waits on cooldowns.
       if (await this.maybeUpgradeSiloForNuclearSlotPressure()) return true;
+      if (await this.maybeUpgradeSiloFromSurplus()) return true;
 
       // Cap relief needs the authoritative City upgrade price before the
       // candidate set is built. The probe is tick-cached and its per-level
@@ -10887,13 +10888,14 @@
       ) {
         return false;
       }
-      // Two synchronized signals count as nuclear slot pressure: a queued
-      // launch (the nuke lane is already waiting) and a planned salvo's slot
-      // request (nukeWantSlots — the lane wants capacity it does not have).
+      // This generic lane handles queued launches only. An outstanding
+      // nukeWantSlots request belongs to maybeUpgradeSiloForNukeDemand, which
+      // rechecks the target, usable route and economic/defensive reserves;
+      // falling through here would bypass those target-specific gates.
       const pending = this.nukeBehavior?._pendingNukeLaunches;
       const queued = Array.isArray(pending) && pending.length > 0;
       const wantedSlots = state.nukeWantSlots?.need > 0;
-      if (!queued && !wantedSlots) return false;
+      if (!queued || wantedSlots) return false;
       const silos = (this.player?.units?.(UNIT.MissileSilo) || []).filter(
         (silo) => silo.isUnderConstruction?.() !== true,
       );
@@ -10942,6 +10944,88 @@
         useActualCost: true,
         prioritizeStructureCoverage: true,
       });
+    }
+
+    // Surplus silo leveling (DIVERGENCE): the reactive lanes above only open
+    // while a launch is queued or a salvo slot request is pending, so a built
+    // silo otherwise sits at level 1 for whole matches (n=60 1.12.195
+    // baseline: 6 silo builds, 0 silo upgrades across 16 finished rows).
+    // Spend true post-reserve surplus — the same budget the nuke-demand
+    // upgrade lane uses — on the next level. Candidate order is the live
+    // unit order and findBestStructureToUpgrade's random roll/jitter is
+    // deliberately bypassed: this lane draws no RNG. See PD28 in
+    // docs/legendary-metric-ceilings.md.
+    async maybeUpgradeSiloFromSurplus() {
+      if (!state.settings.winFixes) return false;
+      // Let the target-specific SAM demand lane own every open capacity
+      // request; a route-irrelevant surplus upgrade must not mask its failure.
+      if (state.nukeWantSlots?.need > 0) return false;
+      const config = this.game.config();
+      if (!this.siloSurplusLaneUnitsEnabled(config)) {
+        return false;
+      }
+      const silos = (this.player?.units?.(UNIT.MissileSilo) || [])
+        .filter((silo) => silo.isUnderConstruction?.() !== true)
+        .filter((silo) => this.structureBelowUpgradeLimit(silo));
+      if (silos.length === 0) return false;
+      const minimumCost = this.safeStructureCost(UNIT.MissileSilo);
+      const availableGold = this.availableGoldAfterReserve(UNIT.MissileSilo);
+      if (!this.nukeSiloUpgradeBudgetAvailable(availableGold, minimumCost)) {
+        return false;
+      }
+      const { upgradable, buByUnitId } =
+        await this.probeUpgradableStructures(silos);
+      if (upgradable.length === 0) return false;
+      const currentGold = this.availableGoldAfterReserve(UNIT.MissileSilo);
+      const result = this.firstAffordableSiloUpgrade(
+        upgradable,
+        buByUnitId,
+        minimumCost,
+        currentGold,
+      );
+      if (!result) return false;
+      const buildMenu = getBuildMenu();
+      if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
+        return false;
+      }
+      if (!sendAutoBotBuildOrUpgrade(buildMenu, result.bu, undefined, this.game, this.player)) {
+        return false;
+      }
+      state.stats.builds++;
+      setLastAction(
+        tr("⬆️ Upgrade {type}", { type: result.structure.type() }),
+        "build",
+      );
+      return true;
+    }
+
+    siloSurplusLaneUnitsEnabled(config) {
+      if (config.isUnitDisabled(UNIT.MissileSilo)) return false;
+      return !(
+        config.isUnitDisabled(UNIT.AtomBomb) &&
+        config.isUnitDisabled(UNIT.HydrogenBomb) &&
+        config.isUnitDisabled(UNIT.MIRV)
+      );
+    }
+
+    firstAffordableSiloUpgrade(
+      upgradable,
+      buByUnitId,
+      minimumCost,
+      currentGold,
+    ) {
+      return upgradable
+        .map((structure) => ({
+          structure,
+          bu: buByUnitId.get(structure.id()),
+        }))
+        .find(
+          (candidate) =>
+            this.nukeSiloUpgradeBudgetAvailable(
+              currentGold,
+              this.buildableCostOrFallback(candidate.bu, minimumCost),
+            ) && this.genericStructureUpgradeAllowed(candidate, UNIT.MissileSilo),
+        );
     }
 
     /**

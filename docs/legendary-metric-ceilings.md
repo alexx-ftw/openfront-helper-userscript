@@ -8682,6 +8682,7 @@ EV/buildability/destination rejections stand down without re-probing the
 original), and no version bump was applied per the pre-declared rule.
 
 ## Pre-declaration 26: chest-funded Legendary silo upgrades (2026-10-09,
+
 BEFORE implementation)
 
 User-observed defect: the bot builds Missile Silos but never upgrades them,
@@ -8736,6 +8737,7 @@ next unused patch (1.12.196), and commit the exact validated build;
 otherwise revert without a bump.
 
 ## Receipt 26: chest-funded silo upgrades rejected — cost the only win
+
 (2026-10-09)
 
 The pre-declaration 26 candidate was implemented
@@ -8768,3 +8770,138 @@ construction perturbation. Reverted without a bump; the focused fixture was
 removed with the lane. Foundation for the next attempt: an n=60 history
 baseline at 1.12.195 so future construction candidates are judged on
 aggregate win/survival deltas instead of per-seed identity.
+
+## Pre-declaration 27: border-strip blast tolerance with priced self-damage
+
+(2026-10-09, BEFORE implementation; launch-layer seam, no placement RNG)
+
+Measured blocker (receipt 21): in FFA the native blast-validity gate rejects
+any candidate whose outer/inner footprint touches a tile owned by anyone
+other than the target — 30/30 aims rejected in the traced history, 22
+first-invalid tiles self-owned — so border-adjacent enemy structures can
+never be struck and the organic chain stays dead even with a built silo.
+
+Candidate (DIVERGENCE, Legendary + winFixes, FFA only): inside
+isScorableNukeTile's footprint walk, a bound tile that fails the native
+gate is tolerated when it is SELF-owned and carries none of our (or a
+permanent teammate's) structures; everything else keeps the native verdict
+(third-party tiles, teammates' tiles, and self-owned structures still veto,
+team games unchanged, non-Legendary unchanged). The EV scorer prices the
+tolerance: each tolerated self-owned empty tile costs
+OWN_EMPTY_BLAST_TILE_COST = 2,000 (a single L1 City at 25k outweighs up to
+twelve clipped tiles; the friendlyFire structure penalty is unchanged and
+still vetoes at actuation ordering). sendNuke re-validates target,
+destination, affordability, counterforce hold, and Legendary SAM trajectory
+but never re-runs the blast walk, so the tolerance lives only in the
+collection filter plus its price. No new RNG draws: the footprint walk and
+per-tile tests are deterministic reads, sampling counts unchanged; rows that
+launch nothing stay byte-identical except runtimeMs.
+
+Focused artificial cases (test/nuke-border-strip.mjs): (1) a border enemy
+structure aim whose footprint clips two self-owned empty tiles scores
+positive with the 2x2,000 price on Legendary+winFixes FFA; (2) the same aim
+is rejected on non-Legendary; (3) rejected with winFixes off; (4) rejected
+in team games; (5) rejected when a clipped tile carries one of our
+structures; (6) rejected when a clipped tile is a third party's; (7)
+enemy/TerraNullius clipped tiles stay natively valid; (8) collection draws
+no RNG on decline paths.
+
+Effect gate: the fresh n=60 public-history baseline at 1.12.195
+(/tmp/ofh-matrix/v1.12.195-history-60-b, index order, same 6,000-tick cap,
+serial, 2 GiB MemoryMax / MemorySwapMax=0) versus the same 60 rows on the
+candidate build. Aggregate clauses: wins and alive-at-cap never decrease in
+aggregate, aggregate own structures nuked never increases, and at least one
+of the 60 rows dispatches a first EV-positive launch absent in control
+(dispatch clause). Per-row clauses: rows without a new launch stay
+byte-identical to control except runtimeMs. Reject aggregate win loss,
+alive regression, own-nuked increase, zero dispatch, any safety bypass, or
+a latency regression against standing checks. On a pass: rebuild, verify
+bundle parity, bump to the next unused patch (1.12.196), and commit the
+exact validated build; otherwise revert without a bump.
+
+## Receipt 27: border-strip tolerance rejected for blast-safety gaps (2026-10-09)
+
+PD27 was rejected before adoption after independent review found that its
+“structure-free” test only used the friendly-nuke value snapshot, which
+omits Defense Posts because their friendly-fire value is zero. The check
+and price also walked sampled square perimeters rather than every tile in
+the actual circular blast, so an interior own, teammate, or third-party
+structure could escape the hard veto. A scoring penalty is not a safety
+gate: Legendary EV selection can still dispatch the shot, and actuation
+does not repeat the footprint check. The artificial fixture's 1-D
+boundingBoxTiles stub also counted one clipped tile twice and missed the
+production geometry. Reverted the tolerance, penalty, and fixture; no
+version bump or adoption. The in-flight public-history run is retained as
+diagnostic evidence only and cannot satisfy the rejected candidate's gate.
+
+## PD28 — Legendary silo surplus leveling (pre-declaration 2026-10-09)
+
+Observation (user report + baseline evidence): the bot builds Missile
+Silos but never levels one. Across the first 16 finished rows of the
+fresh n=60 1.12.195 baseline (/tmp/ofh-matrix/v1.12.195-history-60-b),
+constructionEvents record 6 silo builds and 0 silo upgrades, while Cities
+saw 68 upgrades and SAMs 2 — the two reactive lanes (nuclear slot
+pressure with a queued launch and zero ready shots; the SAM-overwhelm
+nukeWantSlots request) almost never open, so a built silo sits at level 1
+for whole matches.
+
+Candidate (DIVERGENCE, Legendary + winFixes): a new surplus lane in
+doHandleLegendaryStructures, immediately after the slot-pressure lane.
+maybeUpgradeSiloFromSurplus gates on winFixes, MissileSilo plus any nuke
+enabled, at least one BUILT silo below HYDROGEN_SAM_MAX_UPGRADE_LEVEL,
+and the nuke-demand budget (nukeSiloUpgradeBudgetAvailable: post-reserve
+gold >= upgrade price + economic pressure + defensive reserve — the same
+budget the existing nuke-demand upgrade lane uses). Candidates are probed
+with probeUpgradableStructures (which already excludes tiles inside an
+active hostile missile impact) and the FIRST upgradable candidate in unit
+order that fits the freshly rechecked, quoted upgrade budget is emitted
+through sendBuildOrUpgrade — deliberately bypassing
+findBestStructureToUpgrade so the lane draws NO RNG. The reactive lanes,
+the ordinary ladder and non-Legendary paths are untouched. The new lane
+also applies in Legendary team games, but the effect gate below uses FFA
+history rows only, so team-mode impact remains unverified. For the user's
+target-specific request, the existing higher-priority
+nukeWantSlots/nukeSiloUpgradeBudgetAvailable path upgrades a route-eligible
+silo when a good enemy-SAM target's overwhelm plan is short of required
+capacity; test/nuke-salvo-recheck.mjs covers target validity, live route,
+capacity and budget rechecks. Generic slot pressure declines while a
+target-specific request is open, and the surplus lane also waits until no
+capacity request remains, so neither can bypass those target, route, or
+reserve checks. Funding an upgrade from the bomb war chest without surplus
+remains rejected per PD26 (it cost the only natural win).
+
+Focused artificial cases (test/silo-surplus-upgrade.mjs): (1) surplus +
+level-1 silo upgrades through the menu and counts a build; (2) a treasury
+under the budget gate declines; (3) a max-level silo declines;
+(4) winFixes off declines; (5) all nukes disabled declines; (6) zero RNG
+draws on both the accept and decline paths; (7) an open nukeWantSlots
+demand request blocks generic surplus leveling; (8) a gold
+drop during worker pricing is rechecked; (9) an unaffordable first quote
+does not hide a later affordable silo. The existing
+test/nuke-salvo-recheck.mjs covers the target-specific SAM demand path.
+
+Effect gate: the same n=60 public-history baseline versus the same 60
+rows on the PD28-only candidate bundle (1.12.196; PD27 was rejected),
+serial, same 6,000-tick cap and memory scope. Clauses: aggregate
+wins and alive-at-cap never decrease; aggregate
+goalRequirements.ownStructuresNuked never increases; and at least one of
+the 60 rows records a constructionEvents upgrade of unit "Missile Silo"
+(the user-visible effect). Reject on any aggregate win or alive
+regression, any own-nuked increase, zero silo upgrades, or a latency
+regression against standing checks. On a pass: rebuild, verify bundle
+parity, bump to the next unused patch, commit the exact validated build,
+and send the Telegram receipt; otherwise revert without a bump.
+
+Measured verdict (2026-10-10; isolated bundles, paired public-history FFA
+rows): PD28 PASSED, 60/60. Control → candidate: wins 4 → 4,
+alive-at-cap 48 → 48, ownStructuresNuked 10 → 10, silo builds 43 → 43,
+silo upgrades 0 → 95. Neither bundle launched Atom or Hydrogen bombs in
+this 6,000-tick basket, so this verifies the requested Silo-leveling
+behavior without a primary-outcome regression; it does not demonstrate a
+win-rate gain or a nuclear-launch benefit. The control bundle matches HEAD
+byte-for-byte; the isolated candidate was built from HEAD plus only the
+PD28 structureBehavior change. Paired simulation runtimeMs mean/median/p95
+were 60,421/64,327/95,778 ms on control versus
+54,563/60,635/83,988 ms on candidate (0.903 mean ratio; 17/60 individual
+rows were slower). The performance regression suite passed in the full
+npm test run.
