@@ -8877,8 +8877,9 @@ under the budget gate declines; (3) a max-level silo declines;
 draws on both the accept and decline paths; (7) an open nukeWantSlots
 demand request blocks generic surplus leveling; (8) a gold
 drop during worker pricing is rechecked; (9) an unaffordable first quote
-does not hide a later affordable silo. The existing
-test/nuke-salvo-recheck.mjs covers the target-specific SAM demand path.
+does not hide a later affordable silo. The integration scenario
+test/silo-slot-pressure-scenario.mts exercises target-specific SAM demand
+from a live enemy SAM through the accepted Silo upgrade.
 
 Effect gate: the same n=60 public-history baseline versus the same 60
 rows on the PD28-only candidate bundle (1.12.196; PD27 was rejected),
@@ -8891,6 +8892,96 @@ regression, any own-nuked increase, zero silo upgrades, or a latency
 regression against standing checks. On a pass: rebuild, verify bundle
 parity, bump to the next unused patch, commit the exact validated build,
 and send the Telegram receipt; otherwise revert without a bump.
+
+## Pre-declaration 29: SAM-era border blast tolerance, safety-complete
+
+(2026-10-10, BEFORE implementation; later rejected and reverted; launch-layer seam, no placement RNG)
+
+Measured blocker (receipts 21 and 27, now binding after PD28): with silo
+levels finally real, the constraint on Legendary FFA nuking is the native
+ring gate — isScorableNukeTile's two bounding-box perimeter rings reject
+any aim whose ring touches a tile owned by anyone but the target (30/30
+traced aims rejected, 22 first-invalid tiles self-owned), so built and
+leveled silos still idle. PD27 attempted the tolerance and was rejected
+(receipt 27) for four gaps; PD29 proposed closing each by construction.
+(1) The structure-free test never reads the friendly-fire VALUE snapshot
+(which zeroes DefensePost): occupancy is enumerated live across ALL
+players via NUKE_STRUCTURES_TYPES, so a clipped tile carrying any own,
+teammate, or third-party structure vetoes. (2) The tolerated set is
+EXACTLY the two native perimeter rings — the same tile set the native
+gate vetoes — so no separate circular-blast walk exists to diverge from
+it; the interior friendly-fire pricing is untouched existing behavior.
+(3) Safety is not a price: sendNuke re-runs the identical ring walk fresh
+at actuation, after its existing target/destination re-check, and aborts
+on any violation, so a stale candidate cannot launch. (4) The focused
+fixture drives the production filter and dispatch through the
+classic-script bundle with real TileRef geometry, not a 1-D stub.
+
+Candidate (DIVERGENCE, Legendary + winFixes + FFA only): when the native
+ring check fails, legendaryBlastTolerance re-walks the same rings and
+tolerates a failing tile iff it is owned by THIS player (smallID equal),
+carries no structure of any player, and the match is Legendary, winFixes,
+and FFA. Teammate tiles, third-party tiles, and self-owned tiles with any
+structure still veto. Each tolerated tile is priced in nukeTileScore via
+legendaryBlastTolerancePenalty at ownEmptyBlastTileCost() = 2,000 EV (a
+City-1 at 25k outweighs twelve clipped tiles). The walk draws no RNG and
+native-valid aims skip it entirely, so rows where no ring ever fails stay
+decision-identical. sendNuke gains legendaryBlastSafetyRecheck (same
+gates, fresh walk) before the build-intent emit; delayed launches re-enter
+sendNuke at fire time and are covered. Team games, non-Legendary,
+winFixes-off, Easy/Medium native rules, interior friendly-fire pricing,
+and the SAM trajectory rules are unchanged.
+
+Focused artificial cases (test/nuke-border-strip.mjs, classic-script
+bundle, real boundingBoxTiles geometry): (1) a border aim with one
+self-owned empty ring tile scores positive with exactly one 2,000
+deduction on Legendary+winFixes FFA; (2) rejected on Hard; (3) rejected
+with winFixes off; (4) rejected in Team; (5) rejected when the clipped
+tile carries an own DefensePost (the receipt-27 killer); (6) rejected when
+the clipped tile is a third party's; (7) rejected when it is a permanent
+teammate's; (8) an aim that passed collection aborts in sendNuke when a
+DefensePost appears on the tolerated tile before dispatch; (9) zero RNG
+draws on accept and reject paths.
+
+Effect gate: fresh control = committed 1.12.196 (HEAD 6c65635a) replayed
+on the same 60 public-history rows as PD28 (38 FFA and 22 Team), using
+row IDs from /tmp/ofh-matrix/v1.12.195-history-60-b, runner's own OFH_MAX_TICKS=6000,
+serial, 2 GiB MemoryMax / MemorySwapMax=0) versus the same 60 rows on an
+isolated HEAD+PD29 bundle. Aggregate clauses: wins and alive-at-cap never
+decrease; aggregate ownStructuresNuked never increases; and at least one
+of the 60 rows records a first nuclear launch absent in control (dispatch
+clause). Per-row clauses: rows without a new launch stay identical to
+control except runtimeMs. Reject on aggregate win or alive regression,
+own-nuked increase, zero new launches, any safety bypass, or a latency
+regression against standing checks. On a pass: rebuild, verify bundle
+parity, bump to the next unused patch (1.12.197), commit the exact
+validated build, and send the Telegram receipt; otherwise revert without
+a bump.
+
+Measured verdict (2026-10-10; PD29 rejected, no version bump): all 60 rows
+completed on both bundles with 60 unique seeds, no duplicate or malformed
+results, no engine/spawn errors, and no intent-budget violations. Control →
+candidate: wins 4 → 4, alive 48 → 48, ownStructuresNuked 10 → 10, and
+Atom/Hydrogen/MIRV build-launch events 0 → 0. No row had a new nuclear
+launch, so the predeclared dispatch clause failed. All rows remained
+identical outside runtimeMs. Runtime mean/median/p95 were
+52,502/54,016/78,136 ms on control and 41,880/45,815/63,275 ms on candidate;
+the speedup did not satisfy the required launch outcome. PD29 source and its
+launch-gate fixtures were reverted; 1.12.197 and generated bundle changes
+were not made. Control and candidate full-bundle SHA-256 values were
+13d45d3232ad419b9783f4e0377f91a54f8d9a064f49acf40f7208f2ba94b388 and
+7b3ada16a1335feedf4eeda82c79fbb8f1b88fdc44c58507678489eca20f2a8d,
+respectively. Both used engine HEAD f372cdf9451cd8c3dc113aaaf8641e2609e2d3cb
+and the same external NationNukeBehavior fixture patch.
+
+Target-SAM upgrade verification (2026-10-10):
+test/silo-slot-pressure-scenario.mts now lets maybeDestroyEnemySam create the
+demand instead of injecting nukeWantSlots. With a valuable SAM+City target,
+the level-2 SAM required three Atom slots while the level-2 Silo exposed two;
+the bot emitted one Silo upgrade intent and the engine applied level 3. This
+scenario passed against both the committed 1.12.196 control and the PD29
+candidate, confirming the target-specific upgrade path already present in
+1.12.196.
 
 Measured verdict (2026-10-10; isolated bundles, paired public-history FFA
 rows): PD28 PASSED, 60/60. Control → candidate: wins 4 → 4,

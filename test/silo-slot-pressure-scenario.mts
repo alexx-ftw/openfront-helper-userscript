@@ -10,10 +10,9 @@ import {
   createMaxDifficultyOpponent,
 } from "../scripts/headless/opponent-adapter.js";
 
-// End-to-end SAM-demand scenario: a real hostile SAM target requests one more
-// level of reachable silo capacity, and the structures planner must upgrade
-// through the real build menu. Busy reloads alone do not trigger the generic
-// slot-pressure lane.
+// End-to-end SAM-demand scenario: a real hostile level-2 SAM and City target
+// need three launch slots, but the level-2 Silo exposes two. The planner must
+// discover the missing capacity and upgrade through the real build menu.
 const game = await setup(
   "big_plains",
   { instantBuild: true },
@@ -35,6 +34,7 @@ silo.increaseLevel();
 silo.reloadMissile();
 silo.reloadMissile();
 const targetSam = defender.buildUnit(UnitType.SAMLauncher, target, {});
+targetSam.increaseLevel();
 defender.buildUnit(UnitType.City, target, {});
 const runner = new GameRunner(
   game,
@@ -67,49 +67,23 @@ try {
   const nuke = bot.nationBot.nukeBehavior;
   const structures = bot.nationBot.structureBehavior;
   const rival = bot.api.game.playerBySmallID(defender.smallID());
-  const flight = nuke.getAvailableSiloEntries(
-    [bot.nationBot.player.units(UnitType.MissileSilo)[0]],
-    target,
-    new Set(),
-  )[0].flightTicks;
-  const salvo = {
-    salvoId: 7,
-    targetTile: target,
-    targetSamId: null,
-    plannedCoveringLevel: 0,
-    flightTicks: flight,
-  };
-  // Launch both slots: every silo shot is now busy reloading.
-  for (let index = 0; index < 2; index++) {
-    assert.equal(await nuke.sendNuke(target, UnitType.AtomBomb, rival, 0, { ...salvo }), true);
-  }
-  step(bot.intentBuffer);
-  bot.intentBuffer.length = 0;
-  step();
-  step();
-  assert.equal(attacker.units(UnitType.AtomBomb).length, 2, "both slots launched");
-  assert.equal(silo.missileTimerQueue().length, 2, "both slots are busy reloading");
-
-  // Negative control: busy slots alone are not slot pressure.
+  // Negative control: no SAM capacity request means no upgrade.
   assert.equal(
     await structures.maybeUpgradeSiloForNuclearSlotPressure(),
     false,
     "no upgrade without a nuclear capacity request",
   );
 
-  // A live SAM target needs one additional reachable launch slot.
+  // Let the real target-specific planner discover the missing level: this
+  // valuable SAM+City target needs three Atom slots, but the level-2 Silo has two.
   const state = bot.harness.internals.state;
-  state.nukeWantSlots = {
-    need: 3,
-    targetSamId: targetSam.id(),
-    targetTile: target,
-    unblockedSiloIds: [silo.id()],
-    at: game.ticks(),
-  };
+  await nuke.maybeDestroyEnemySam(rival);
+  assert.equal(state.nukeWantSlots?.targetSamId, targetSam.id());
+  assert.equal(state.nukeWantSlots?.need, 3, "the covering SAM requires three Atom slots");
   assert.equal(
-    await structures.maybeUpgradeSiloForNukeDemand(),
-    true,
-    "a valid SAM target upgrades a route-eligible silo through the real menu",
+    silo.level(),
+    2,
+    "the planner leaves the Silo unchanged until the emitted upgrade intent resolves",
   );
   const siloUpgrades = bot.intentBuffer.filter(
     (intent) => intent.type === "upgrade_structure" && intent.unit === UnitType.MissileSilo,
@@ -121,4 +95,4 @@ try {
 } finally {
   bot.harness.window.close();
 }
-console.log("silo slot pressure end-to-end scenario passed");
+console.log("SAM-demand Silo-upgrade end-to-end scenario passed");
