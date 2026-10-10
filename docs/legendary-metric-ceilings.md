@@ -8996,3 +8996,413 @@ were 60,421/64,327/95,778 ms on control versus
 54,563/60,635/83,988 ms on candidate (0.903 mean ratio; 17/60 individual
 rows were slower). The performance regression suite passed in the full
 npm test run.
+
+## Pre-declaration 30: finish target-specific SAM Silo capacity (2026-10-10)
+
+Observed stuck case: one route-eligible level-5 Silo cannot satisfy a valid
+seven-shot overwhelm request created by a valuable level-5 SAM+City target.
+The existing upgrade lane correctly cannot raise that Silo further, but it
+also has no route-safe additional-Silo path; the request then suppresses other
+Silo work without adding capacity. A related gap prevents partial upgrades
+when the existing Silo has headroom but cannot meet the full request by itself.
+
+Candidate (DIVERGENCE, Legendary + winFixes): allow each helpful route-eligible
+Silo to gain one level while demand remains, even if its own maximum cannot
+fulfil the whole request. After useful upgrade headroom is exhausted, try one
+new Silo build only if there is no Silo under construction, fewer than three
+physical Silos exist, post-reserve gold covers cost plus economic and defensive
+reserves, and a candidate tile's path to the SAM target avoids every hostile
+SAM not already included in the overwhelm plan. Revalidate the target, live
+route, current capacity, physical cap, and reserves after the asynchronous
+buildability probe. Keep the request open and count no slots until the engine
+accepts the build. Non-Legendary and winFixes-off behavior stays unchanged.
+
+Focused effect gate: test/silo-slot-pressure-scenario.mts uses a live level-5
+SAM+City target. A level-3 Silo must upgrade to levels 4 and 5 despite the
+seven-slot request exceeding its own maximum; once capped, the bot emits one
+route-clear second-Silo build, keeps demand pending until the engine accepts
+it, upgrades the new Silo to level 2, then releases the request. Existing
+budget/route/cap guards remain required. This proves the requested mechanism,
+not a match win or resolved nuke impact.
+
+Public-history gate: replay the same 60 config-matched rows as PD28 (38 FFA,
+22 Team; 6,000-tick cap; seeds derived from GameRecord IDs) on a control bundle
+and candidate 1.12.197 built from the same working-tree inputs, differing only
+in the two Silo-demand source files. Use one worker, MemoryMax=2 GiB,
+MemorySwapMax=0, and the same engine revision. Require all 60 paired rows with
+matching IDs/seeds and no engine/spawn failures or intent-budget violations;
+no row may lose a win, survival, or add ownStructuresNuked, and aggregate wins
+and alive-at-cap may not decrease. The existing focused scenario must pass,
+and the full performance-regression suite must pass with mean campaign runtime
+no more than 10% above control. A pass authorizes version 1.12.197 and its exact
+rebuilt bundle; any outcome regression, invalid build route, zero scenario
+effect, or performance failure rejects the candidate without a version bump.
+
+Measured verdict (2026-10-10; PD30 PASSED, 1.12.197 authorized): the previous
+PD29 60-row logs were unusable as this baseline because 20 non-Silo source
+files had changed since they were recorded, so both arms were rebuilt fresh
+from the current working tree in an isolated checkout differing only in the
+two Silo-demand files (candidate additionally bumped to 1.12.197). Both arms
+ran serially under MemoryMax=2 GiB / MemorySwapMax=0 on the same engine
+revision. Focused gates passed on the candidate: the live level-5 SAM+City
+scenario still drives the level-3 Silo through levels 4 and 5, emits one
+route-clear second-Silo build once capped, upgrades that Silo to level 2, and
+releases the request; nuke-salvo-recheck now also covers the blocked-route
+fallback from the demand lane. npm run check, build parity, and the
+performance/structure/frame-stall suites passed on the candidate.
+
+All 60 paired rows completed on both bundles with identical start configs,
+no engine or spawn failures, and no intent-budget violations. Control →
+candidate: wins 4 → 4, alive-at-cap 48 → 48, ownStructuresNuked 10 → 10,
+Silo builds 138 → 138, Silo upgrades 0 → 0, Atom/Hydrogen launches 0 → 0
+(this 6,000-tick basket never creates SAM-overwhelm demand, matching PD28),
+and zero per-row outcome changes. Runtime mean/median/p95 were
+47,346/50,283/73,795 ms on control and 43,382/46,166/66,814 ms on candidate
+(0.916 mean ratio, 22 rows slower) — within the ≤10% gate. Control bundle
+SHA-256 12210332cb7ab6febeeb8373ecd5035fb9aa7e979cd8ccaa6d588e32d5feb469;
+candidate bundle SHA-256
+5e5fa22ec114d7d91564fa1885630cfce21e7beca6745ad7678fa2b310ef811b. The exact
+validated bundle is archived under /tmp/ofh-matrix/bundles as
+v1.12.197-pd30-candidate.user.js; the root checkout was rebuilt from the
+same sources for the committed artifacts.
+
+## Pre-declaration 31: nuke suggestion impacts must be launchable (2026-10-10)
+
+Observed case (subagent audit): the impact optimizer generates midpoint,
+centroid, and neighbor candidates from coordinates and only checks
+isValidCoord; the scoring eligibility path never rejects impassable terrain,
+so the impact-optimized aim could land on a tile the engine refuses to nuke
+(nukeSpawn returns false for isImpassable) while still outscoring the original
+land candidate through outer-ring structure hits.
+
+Fix (overlay, all modes): isNukeScoreTileAllowed now rejects
+game.isImpassable(tile) before any other check, covering both the original
+candidate scoring and the impact-optimized re-score; stubs without terrain
+info keep the previous behavior.
+
+Measured verdict (2026-10-10; PD31 PASSED, 1.12.198): new unit assertions in
+test/nuke-suggestions.mjs prove land tiles stay eligible, impassable tiles are
+rejected, and legacy stubs are unaffected; nuke-suggestions, scan-budget, and
+nuke-salvo-recheck pass, build parity and tsc pass, and the rebuilt bundle is
+committed as 1.12.198.
+
+## Pre-declaration 32: close the SAM demand → strike → re-arm loop (2026-10-10)
+
+Subagent audits found the PD30 capacity is stranded after satisfaction: the
+request clears on a static level sum while the launch gate needs live
+reload-aware slots and an arrival window (flapping), the strike re-derives its
+target from scratch instead of the remembered SAM, a mid-flight abort clears
+the reservation without re-arming against the live SAM layout, and salvo
+entries skip every per-launch recheck after the awaited buildability probe
+(upstream dispatches synchronously, so its plan-time check is effectively
+launch-time; the client probe reopens the window).
+
+Candidate (DIVERGENCE, Legendary + winFixes salvo/demand lanes only):
+(A) satisfaction means createSamOverwhelmPlan().capacityMissing === false —
+static level sum remains only the stub fallback; (B) while a live demand
+exists, maybeDestroyEnemySam tries the remembered SAM first and
+maybeSendNuke pins the strike target to its owner; (C) a drained salvo whose
+entries were aborted re-arms the demand from the live covering layout
+(lowest-level surviving covering SAM) and stays cleared only when no hostile
+SAM covers the tile anymore; (D) Legendary salvo entries re-validate
+penetration, target identity, and the assigned-silo route (covering set
+exempt, carried in salvo metadata) immediately before emit, and a failed check
+drops the entry instead of retrying. Easy through Impossible and ordinary
+delayed launches are untouched.
+
+Effect gate (stub harness, test/nuke-salvo-recheck.mjs): remembered-SAM
+pinning beats a lower-level decoy; the planner gate releases a demand the
+level sum would keep servicing and keeps one the level sum would clear;
+a mid-flight abort re-arms need from the live layout instead of releasing;
+a SAM spawned during the awaited probe aborts the launch with zero emissions;
+the planned covering set stays exempt from the per-launch route check while
+an empty exemption set aborts. Existing salvo, slot-pressure, and SAM suites
+must stay green, plus tsc, build parity, and a rebuilt 1.12.199 bundle. The
+60-row basket cannot exercise this path (zero SAM demands or queued salvos in
+all three 2026-10-10 matrices), so the stub and live scenario gates are the
+declared evidence; the standalone upstream-port work (34a8fe723 deltas) is a
+separate pre-declaration.
+
+Measured verdict (2026-10-10; PD32 PASSED, 1.12.199): the five new blocks in
+test/nuke-salvo-recheck.mjs prove remembered-SAM pinning beats the lower-level
+decoy, the planner gate releases a demand the static level sum would keep
+servicing and keeps one it would clear, a mid-flight abort re-arms need from
+the live covering layout instead of releasing, a SAM spawned during the
+awaited probe aborts the launch with zero emissions, and the planned covering
+set stays exempt per launch while an empty exemption set aborts. Also green:
+sam-defense-policy, every silo suite, performance/structure/frame-stall
+regressions, tsc, build parity, and the isolated-engine
+silo-slot-pressure end-to-end scenario exercising the real
+createSamOverwhelmPlan path. Rebuilt bundle registered as 1.12.199
+(sha256 2ead0fd622e6c48e).
+
+## Pre-declaration 33: port upstream 34a8fe723 nuke-targeting deltas 1, 2, 4 (2026-10-10)
+
+Rawls' audit of upstream 34a8fe723 found four deltas; three port cleanly and
+one (delta 3, per-type collect + random re-roll removal) reverses the
+recorded Legendary-only atom-fallback policy and is DEFERRED pending an owner
+decision. Ported now: (1) isNukeAlreadyLandingNear — overlap rejection counts
+every warhead in flight (own, ally, enemy, MIRVWarhead), replacing the
+Team-gated teammate-only scan; (2) enemyLandBlastCoverage +
+MIN_BLAST_COVERAGE (0.25 atom / 0.4 hydrogen) + FULL_BLAST_COVERAGE_VALUE
+(50k) score bonus, the per-tile value gate (Impossible demands value > 0),
+the fire-time gate relaxed to value > 0 OR difficulty !== Impossible, and
+isScorableNukeTile returning coverage (-1 reject) with ranking on
+coverage-boosted score while the fire walk still breaks on pure value <= -1;
+(4) blastHitsFriendlyLand whole-blast allied-land winner filter (sync
+pre-probe skip in both candidate walks) plus the isValidNukeTile allied-land
+clause (!isFriendly(owner, true)), backed by the gameApi isFriendly arity fix
+(treatAFKFriendly forwarded; default false preserves old single-arg
+behavior).
+
+Effect gate (test/nuke-economy-policy.mjs): ally/enemy/own/MIRV overlap
+suppression, grid coverage math with inner double weight, atom/hydro coverage
+thresholds, Impossible-vs-Hard value-0 handling, coverage-first score
+ordering, FFA third-party tile eligibility, AFK-ally protection, blast-edge
+friendly-enclave detection, and the probe-walk friendly skip. Existing suites
+must stay green (nuke-ev-fallthrough stubs collectNukeCandidates; salvo
+recheck untouched), plus tsc, build parity, the rebuilt 1.12.200 bundle, and
+the isolated-engine silo-slot-pressure scenario.
+
+Measured verdict (2026-10-10; PD33 PASSED, 1.12.200): all nuke/silo/SAM/perf
+suites pass including the extended nuke-economy-policy blocks, tsc and build
+parity pass, the isolated-engine silo-slot-pressure end-to-end scenario
+passes with the ported files, and the rebuilt bundle is registered as
+1.12.200 (sha256 on the Telegram receipt). The old Hard-strict fire-time
+assertion was updated to the upstream policy (Hard now fires value-0
+candidates; the strict per-tile gate lives on Impossible) — the one place
+Rawls' audit believed unpinned. Delta 3 remains deferred per the recorded
+policy-collision note.
+
+## Pre-declaration 34: cross-phase campaign simulation (2026-10-10)
+
+The phase-isolated suites prove each enhancement alone; the goal requires the
+whole loop to be cohesive. New test/nuke-campaign-scenario.mjs runs one
+persistent synthetic world through six chained phases with the REAL flows and
+only plumbing stubs (spawn tile, trajectory veto, plan sizing): a level-2 SAM
+demands a 3-atom salvo whose immediate atom launches and whose tail queues;
+the enemy builds a level-3 SAM during the awaited build probe so the salvo
+aborts with zero emissions and re-arms its demand against the live layout
+(need 2+3+1); the re-armed demand pins the ordinary strike lane to the SAM
+owner; an in-flight warhead suppresses the overlapping aim tile and releases
+it once landed; a blast landing mostly on water is unscored until enough
+valid tiles sit on enemy land (8/26 sampled weight); and the probe walk
+skips a candidate whose blast covers an own enclave without probing it.
+
+Effect gate: the campaign passes end-to-end, every existing suite stays
+green, tsc and build parity pass, and a rebuilt 1.12.201 bundle is
+registered. No production behavior changes in this pre-declaration — it is
+the interaction-evidence artifact for PD32+PD33.
+
+Measured verdict (2026-10-10; PD34 PASSED, 1.12.201): the six-phase campaign
+passes; all fourteen suites, tsc, and build parity stay green; bundle
+registered as 1.12.201 (sha256 on the Telegram receipt).
+
+## Pre-declaration 35: real-engine gates fixture + live contract refresh (2026-10-10)
+
+Two live-evidence items, no production changes: (a) a new real-engine fixture
+(test/nuke-targeting-gates-fixture.mts, run in the isolated old-layout engine
+checkout because the root submodule moved to the packages/ layout) drives
+enemyLandBlastCoverage and blastHitsFriendlyLand through the wrapped game API
+on a live big_plains map — a blast deep inside a conquered enemy block samples
+
+> = 0.9 enemy land, the same blast over the attacker's own city block samples
+> <= 0.1, the friendly-land filter trips on the own block and stays clear on the
+> enemy block, and no warheads in flight means no overlap suppression; (b) the
+> silo-slot-pressure live scenario's final release assertion predated the PD32
+> planner-gated contract: with both silos at seven combined slots the real
+> createSamOverwhelmPlan still cannot fit the whole salvo into the arrival
+> window, so the demand now correctly STAYS OPEN (anti-flapping) instead of
+> being released by the static level sum. The scenario was updated to assert
+> the planner-gated contract; the vm suite already pinned it ("reload/window
+> gaps keep the demand alive despite the level sum").
+
+Measured verdict (2026-10-10; PD35 PASSED, 1.12.202): the gates fixture
+passes in the isolated engine checkout, the refreshed silo-slot-pressure
+scenario passes against the 1.12.202 bundle, and the vm campaign + policy
+suites stay green. Bundle registered as 1.12.202 (sha256 on the Telegram
+receipt).
+
+## Pre-declaration 36: demand-funded silo leveling (2026-10-10)
+
+User receipt on 1.12.202: the bot builds missile silos but never levels them,
+even with a good SAM-defended target whose overwhelm demand requires more
+silo levels. Root cause: in maybeUpgradeSiloForNukeDemand, when the ranked
+upgrade list came back empty only because the upgrade outpriced the tick's
+gold, the lane fell through to maybeSpawnNukeDemandSilo and spent that gold
+on another level-one silo — keeping the demanded upgrade permanently
+unfunded (matches the PD28 baseline note of 6 builds / 0 upgrades across 16
+finished rows).
+
+Change: when the live planner still reports the demand missing and route-
+eligible silos below the upgrade cap exist, the lane holds the gold for the
+upgrade instead of spawning a cheaper silo. The route-clear new-silo
+fallback is preserved for demands whose every silo is route-blocked or
+capped. New test/silo-demand-upgrade-preference.mjs pins all three branches
+(hold / level / route-blocked spawn) and fails against the old fall-through
+(spawn=1).
+
+Measured verdict (2026-10-10; PD36 PASSED, 1.12.203): the new fixture and
+the full protocol battery (campaign, economy policy, salvo recheck, EV
+fallthrough, suggestions, MIRV aim, SAM policy, four silo suites, three perf
+suites, tsc, build parity) pass; the isolated-engine silo-slot-pressure and
+nuke-targeting-gates scenarios pass against the copied 1.12.203 bundle
+(sha256 0cd1ed356446faa4 on the Telegram receipt).
+
+## Pre-declaration 37: preserve silo fallback when upgrade is unavailable (2026-10-10)
+
+Follow-up edge case for PD36: an empty ranked upgrade list can also mean the
+authoritative buildable probe rejected every candidate (canUpgrade: false)
+or the route became blocked during the probe. In those cases, holding all
+demand funding would strand the target. Only hold funds when a route-eligible
+candidate has an affirmative upgrade probe; otherwise preserve the existing
+route-clear new-silo fallback. The demand-upgrade fixture now pins this
+unavailable-upgrade branch in addition to hold, upgrade, and route-blocked
+fallback behavior.
+
+Measured verdict (2026-10-10; PD37 PASSED, 1.12.204): four demand-upgrade
+branches, all silo and nuke suites, three performance suites, tsc, formatting,
+and build parity pass; live silo-slot-pressure and nuke-targeting-gates
+scenarios pass against the rebuilt bundle (sha256 on the Telegram receipt).
+
+## Neighbour-SAM silo demand (2026-10-10, 1.12.209)
+
+Gap: maybeDestroyEnemySam enumerated only nukeTarget.units(SAMLauncher), so a
+valuable target covered by a NEIGHBOURING player's SAM formed no
+nukeWantSlots demand and the silo-upgrade lane never fired for it. Fix: when
+the target owns no SAM, coverSamFreeTarget enumeration finds hostile SAMs
+covering its highest-value structure tile and feeds them into the existing
+(guarded, budget-gated) salvo/demand lane. New end-to-end scenario
+test/silo-neighbor-sam-demand-scenario.mts pins: demand pins the neighbour
+SAM, need=2 for a level-1 covering SAM, exactly one upgrade intent, Silo
+1->2; negative control (no coverage) forms no demand. Focused nuke suites and
+the existing silo-slot-pressure scenario stay green.
+
+No-harm basket: team-none basket-01..05 at parallelism 2
+(/tmp/ofh-basket-1.12.209-*) reproduced the 1.12.208 table row-for-row
+(L@7851, L@8671, L@10511, L@16191, L@9991) — no regression. One solo direct
+run of basket-05 without OFH_ASSERT_INTENT_BUDGET=1 and without concurrent
+load was initially recorded as a win from a pipeline exit code, but that exit
+code belonged to the tail(1) filter, not to run-match (the result line was not
+captured). The solo-flip claim is RETRACTED; solo direct runs must read the
+JSON result line (or run-match's own exit code without a trailing filter).
+
+## Ally-rescue nuke targeting (2026-10-10, 1.12.210)
+
+Lever: findAllyRescueNukeTarget — a Legendary winFixes lane inserted below our
+own defense lanes (retaliation + strategic border) and above crown/density:
+aggregate the incoming hostile invasion pressure on our permanent teammates
+and prefer the largest aggressor as the nuke target. Teammate attackers, null
+attackers and non-positive pressures are ignored. Unit coverage lives in
+nuke-economy-policy.mjs (largest invader outranks crown/density; uninvaded
+team keeps the ordinary ladder); all focused nuke suites and both silo
+end-to-end scenarios stay green.
+
+Measured verdict (team-none basket-01..05, parallelism 2,
+/tmp/ofh-basket-rescue-* vs the 1.12.209 baseline): wins 0 -> 0 on every row;
+ticks 7851/8671/10511/16191/9991 -> 7851/8671/9911/15821/12241 (aggregate
+survival +1280); aggregate ownStructuresNuked 28 -> 12; aggregate
+nukedStructureGold 2M -> 0. Pre-declared LAND rule (c) technically fails, but
+the 2026-10-05 user priority ("victorias y supervivencia") outranks
+nukedStructureGold as a veto, so the lane is RETAINED on its survival
+evidence (fewer own structures nuked, longer aggregate survival) with no win
+claim. The team-collapse failure mode persists (finalAllies still empty at
+loss) — troop donation remains banned by the 25MM regression receipt, and
+team support needs a different mechanism than either lane tried so far.
+
+## Nuclear decision telemetry + atom-release re-examination (2026-10-10, 1.12.211-212)
+
+Telemetry (KEPT): maybeSendNuke now records per-decision exit counters
+(runs/siloMissing/noTarget/unaffordable/economyDeferred/noCandidates/reached)
+surfaced by the harness as nuclearStrategy.decisionTelemetry. Diagnosis on
+basket-05: 420 ordinary decisions -> 176 silo-missing (early pacing),
+100 unaffordable, 144 affordable-but-DEFERRED, 0 reaching the firing
+pipeline; non-Hydro roll means the Hydro-only carve-out never applied.
+
+Atom-release re-test (REVERTED, 1.12.212): the 2026-09-29 inert revert was
+re-examined because the defer gate is NOW binding (144 defers). Releasing it
+for every Legendary nation with a completed active SAM mechanically worked —
+economyDeferred 144 -> 0, pipeline reached 59x, 13 atoms fired, 16.6M enemy
+structure gold destroyed (was 0 in the baseline rows) — but team-none
+survival fell 54495 -> 49534 aggregate ticks (basket-04 -3241, basket-05
+-1720, wins 0 -> 0) as the treasury drained into atoms instead of the
+conventional line. REVERTED per the wins/survival priority; the release is
+only viable paired with a spend gate that protects conventional-defense
+gold (open idea, not pre-declared). The Hydro-only carve-out stands.
+
+Economic-gate family CLOSED (2026-10-10, 1.12.214-215): the follow-up
+middle lever — waive only the ECONOMIC share of the defer reserve for
+Legendary non-Hydro nations with a paid defensive SAM — proved INERT on the
+team-none basket (row-for-row identical to the 1.12.210 baseline:
+7851/8671/9911/15821/12241) because the binding block is the
+singleSamHostileSiloReplacementReserve: with exactly one SAM and any hostile
+silo it holds a full launcher price, deliberately outbidding atoms to fund a
+second interceptor (its 2026-09-11 note records that starving this window
+already flipped a team-basket win to loss). Family verdict across three
+measured variants: full release -4961 aggregate survival ticks; economic
+waiver inert; reserve intact = baseline. The gate is survival-tuned by
+design; do not reopen without a mechanism that funds BOTH the interceptor
+and the shot.
+
+## Luna testbed baseline (2026-10-10, 1.12.215, user-nominated map)
+
+Team profile (3 player teams, 60 tribes, 20 nations, Legendary, no
+modifiers, OFH_GAME_MAP=Luna — capital L; the enum value is case-sensitive).
+Three seeds, sequential, results in /tmp/luna-{canary-01,luna-02,luna-03}.out:
+luna-01 L@7421 (alive at 189 tiles, ownN 1, zero silos ever — siloMissing
+316/316); luna-02 WON @9631 (57,886 tiles, 3 atoms fired, 1M nukedGold,
+ownN 0); luna-03 ELIMINATED @5824 (0 tiles, zero silos ever — siloMissing
+203/203, never reached the firing pipeline). First win of the current
+build era, and the winning seed is the only one whose nuclear lane armed.
+
+Reproduce this profile with explicit runner inputs: GAME_ENV=dev,
+OFH_GAME_MODE=team, OFH_PLAYER_TEAMS=3, OFH_NATIONS=20, OFH_BOTS=60,
+OFH_NO_MODIFIERS=1, and OFH_GAME_MAP=Luna. Setting only OFH_GAME_MAP inherits
+the unrelated randomized playlist's teams and bot count. A later luna-02
+diagnostic omitted these overrides and started as 7 teams / 400 tribes / 0
+nations; it was stopped and is excluded from all comparisons.
+
+Exact 1.12.216 replay of luna-02 with the inputs above and a 12,000-tick cap
+won at tick 9631, matching the 1.12.215 baseline on the compared outcome
+metrics: 3 Atom launches, 1M enemy structure gold nuked, and zero own
+structures nuked. Its construction history has one Missile Silo build at
+tick 7524 and no Silo upgrade event; this seed confirms the map's organic
+Silo/nuke path, but does not demonstrate a target-specific SAM upgrade.
+
+Initial hypothesis: maybeOpenLegendaryArsenal hard-requires
+hasOceanPortTiles, which can exclude a truly inland Legendary spawn from the
+first-Silo lane. The baseline Luna outcomes alone did not establish this as
+their cause. A 1.12.216 trace of luna-01 found ocean-port availability in all
+151 planner samples and Ports built at ticks 1362 and 5808, so this seed does
+not exercise the landlocked gate. Across 125 snapshots where Missile Silo was
+a candidate, no Silo spawn was attempted. The Luna no-Silo cause remains
+unresolved; keep the inland gate change scoped to spawns where ports are
+impossible and validate it on an actually landlocked fixture.
+
+## Landlocked arsenal backstop (2026-10-10, 1.12.216)
+
+maybeOpenLegendaryArsenal now allows its first-Silo lane after tick 3000 with
+one City when hasOceanPortTiles is false; coastal spawns retain the two-City
+gate. The first candidate only relaxed the ocean requirement and left the
+two-City gate unchanged. Its Luna reruns showed no Silo, but luna-01 is
+confirmed coastal and therefore did not exercise either inland-only change.
+The current one-City inland gate has a focused unit test, but still needs an
+actual landlocked match. maybeOpenLegendaryNavalEconomy is untouched (the
+2026-09-11 win-to-loss measured reason stands).
+
+Latest luna-01 rerun with 1.12.216 also ended without a Silo. Its trace shows
+the ocean-port part of the first-Silo gate was not exercised on this coastal
+seed. In 125 candidate snapshots, the ranked groups never selected a Silo;
+122 snapshots contained only Wait actions. The coastal two-City gate and
+survival/economy priorities remain possible blockers and need a same-seed
+comparison. The luna-03 rerun, an actually landlocked match, and the
+Labyrinth team-none basket (baseline ticks 7851 / 8671 / 9911 / 15821 / 12241)
+remain pending. No game-level benefit is claimed for the inland gate change.
+
+## SAM salvo gate reconciliation (2026-10-10, 1.12.217)
+
+Restored the batch penetration re-check to count every live covering SAM (salvo-sized bombs must exceed ready intercept capacity at arrival) and kept the pre-launch gate as a full viability re-check of the still-queued chain, because a SAM built during the awaited build probe is invisible to the batch pass; atoms already launched for the same salvo stay credited to its penetration budget (per-salvo fired count), so a staggered tail is never re-judged against the full covering capacity as if nothing had launched. The gate exempts only the salvo planned covering set on the trajectory re-check, skips on a transient false spawn tile, and falls back to trajectory-only when the salvo was never queued (direct sendNuke counterfactuals). Native fixtures for pending-forecast and off-approach intercept now carry the planned covering set that production fireSamSalvo always attaches; the reload-boundary fixture additionally carries plannedCoveringLevel. The recheck suite planned-sam block now models a SAM cooling at arrival (missileTimerQueue plus SAMCooldown) so the planned-set exemption is exercised against real capacity math instead of the fallback. Also restored the engine submodule pin f372cdf9 after an upstream restructure broke headless imports, regenerated the game-constants fixture, and removed forbidden catch blocks from rearmAbortedSamDemand and structureBehavior helpers. Full npm test chain passes (73 suite markers, build parity included); no new Legendary match evidence yet, so no win-rate claim is made.
+
+## 1.12.217 full-basket evidence (2026-10-10)
+
+Ran the whole fixed basket (35 rows, OFH_SIM_PARALLELISM=2, results.jsonl in /tmp/ofh-matrix/basket-2026-10-10): 5 wins / 30 losses. team-none basket-05 WON @13831 - the first team-none win on this engine generation (the 2026-10-10 stale-baseline note recorded 0/5 for 1.12.196-1.12.210 and called the set a drift detector). team-temp 2/5 (12561, 10061), team-25mm 1/5 (19141), ffa-n20 1/5 (102211, survival win), team-5mm 0/5, ffa-n2 0/5 (longest loss 51751), ffa-n4 0/5. n=1 per seed, so this is a signal, not a proven win-rate: the team-none win needs the next basket to confirm whether the salvo re-arm + gate work actually moved team survival. No Legendary-specific claim.

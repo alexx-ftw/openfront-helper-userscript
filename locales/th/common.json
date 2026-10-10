@@ -323,6 +323,7 @@
   "Ports disabled": "ปิดใช้งานท่าเรือ",
   "Nukes disabled": "ปิดใช้งานขีปนาวุธ",
   "SAMs disabled": "ปิดใช้งาน SAM",
+  "MIRV disabled": "ปิดใช้งาน MIRV",
   "Water nukes": "ขีปนาวุธในน้ำ",
   "4min peace time": "เวลาสงบ 4 นาที",
   "You can turn on all four at the same time. Only one of them has to match.": "คุณสามารถเปิดทั้งสี่พร้อมกันได้ แค่หนึ่งในนั้นต้องตรงกัน",
@@ -889,5 +890,6 @@
   "disconnected": "disconnected",
   "no boss": "no boss",
   "paused": "paused",
-  "this tab is the boss": "this tab is the boss"
+  "this tab is the boss": "this tab is the boss",
+  "Sort by highest level": "เรียงตามระดับสูงสุด"
 }

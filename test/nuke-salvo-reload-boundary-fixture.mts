@@ -73,7 +73,14 @@ for (const reloadOffset of [-3, -2, -1, 0, 1, 2, 3]) {
     while (game.ticks() < reloadTick - flight + reloadOffset) step();
     await bot.api.beginTick(bot.pageGame.myPlayer());
     const predictedImpact = game.ticks() + flight;
-    const salvo = { salvoId: 991, targetTile: target, targetSamId: sam.id(), flightTicks: flight };
+    const salvo = {
+      salvoId: 991,
+      targetTile: target,
+      targetSamId: sam.id(),
+      plannedCoveringLevel: sam.level(),
+      coveringSamIds: [sam.id()],
+      flightTicks: flight,
+    };
     assert.equal(nuke.queueDelayedNukeLaunch(target, UnitType.AtomBomb, rival, 0, salvo), true);
     assert.equal(
       await nuke.processPendingNukeLaunches(),

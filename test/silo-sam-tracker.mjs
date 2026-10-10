@@ -28,12 +28,69 @@ executeClassicScript(NUKE_IMPACT_SOURCE, sandbox, {
   filename: "nuke-impact.js",
 });
 executeClassicScript(
-  `${TRACKER_SOURCE}\nglobalThis._autoFireBuiltSamInterceptionCapacity = _autoFireBuiltSamInterceptionCapacity;\nglobalThis._autoFireUncoveredEnemyBuildings = _autoFireUncoveredEnemyBuildings;\nglobalThis._autoFireCollectEnemyBuildings = _autoFireCollectEnemyBuildings;\nglobalThis._scanNukesToTile = _scanNukesToTile;\nglobalThis._isNewHostileBuildingSilo = _isNewHostileBuildingSilo;`,
+  `${TRACKER_SOURCE}\nglobalThis._autoFireBuiltSamInterceptionCapacity = _autoFireBuiltSamInterceptionCapacity;\nglobalThis._autoFireUncoveredEnemyBuildings = _autoFireUncoveredEnemyBuildings;\nglobalThis._autoFireCollectEnemyBuildings = _autoFireCollectEnemyBuildings;\nglobalThis._scanNukesToTile = _scanNukesToTile;\nglobalThis._isNewHostileBuildingSilo = _isNewHostileBuildingSilo;\nglobalThis._sortTrackerItems = _sortTrackerItems;\nglobalThis._makeTrackerLevelSortBtn = _makeTrackerLevelSortBtn;\nglobalThis._trackerHighestLevelFirst = _trackerHighestLevelFirst;\nglobalThis.updateSiloPanel = () => {};\nglobalThis.updateSAMTrackerPanel = () => {};`,
   sandbox,
   {
     filename: "silo-sam-tracker.js",
   },
 );
+
+const levelSortItems = [
+  { id: "low", level: 1 },
+  { id: "level-three-b", level: 3 },
+  { id: "middle", level: 2 },
+  { id: "level-three-a", level: 3 },
+];
+assert.deepEqual(
+  sandbox
+    ._sortTrackerItems([...levelSortItems], true, (a, b) => a.id.localeCompare(b.id))
+    .map((item) => item.id),
+  ["level-three-a", "level-three-b", "middle", "low"],
+  "highest-level sorting puts each tracker row first while retaining its default order for ties",
+);
+assert.deepEqual(
+  sandbox
+    ._sortTrackerItems([...levelSortItems], false, (a, b) => a.id.localeCompare(b.id))
+    .map((item) => item.id),
+  ["level-three-a", "level-three-b", "low", "middle"],
+  "the default tracker order remains in control when highest-level sorting is off",
+);
+
+sandbox._tr = (value) => value;
+sandbox.document.createElement = () => {
+  const attributes = {};
+  const listeners = {};
+  const classes = new Set();
+  const button = {
+    attributes,
+    listeners,
+    classes,
+    classList: {
+      toggle(name, active) {
+        if (active) classes.add(name);
+        else classes.delete(name);
+      },
+    },
+    setAttribute(name, value) {
+      attributes[name] = value;
+    },
+    addEventListener(name, listener) {
+      listeners[name] = listener;
+    },
+  };
+  return button;
+};
+const siloSortButton = sandbox._makeTrackerLevelSortBtn("openfront-helper-silo-panel");
+const samSortButton = sandbox._makeTrackerLevelSortBtn("openfront-helper-sam-panel");
+assert.equal(siloSortButton.attributes["aria-pressed"], "false");
+siloSortButton.listeners.click({ stopPropagation() {} });
+assert.equal(siloSortButton.attributes["aria-pressed"], "true");
+assert.equal(siloSortButton.classes.has("on"), true);
+assert.equal(samSortButton.attributes["aria-pressed"], "false");
+samSortButton.listeners.click({ stopPropagation() {} });
+assert.equal(samSortButton.attributes["aria-pressed"], "true");
+assert.equal(sandbox._trackerHighestLevelFirst["openfront-helper-silo-panel"], true);
+assert.equal(sandbox._trackerHighestLevelFirst["openfront-helper-sam-panel"], true);
 
 let trackerTick = 50;
 let trackerNukeScans = 0;

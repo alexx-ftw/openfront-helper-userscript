@@ -115,6 +115,7 @@ for (const beforeReload of [true, false]) {
       salvoId: beforeReload ? 101 : 102,
       targetTile: target,
       targetSamId: sam.id(),
+      coveringSamIds: [sam.id()],
       flightTicks: flight,
     };
     for (let index = 0; index < 3; index++) {

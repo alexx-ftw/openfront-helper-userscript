@@ -338,6 +338,7 @@
   "Ports disabled": "Ports disabled",
   "Nukes disabled": "Nukes disabled",
   "SAMs disabled": "SAMs disabled",
+  "MIRV disabled": "MIRV disabled",
   "Water nukes": "Water nukes",
   "4min peace time": "4min peace time",
   "You can turn on all four at the same time. Only one of them has to match.": "You can turn on all four at the same time. Only one of them has to match.",
@@ -918,5 +919,6 @@
   "🚢 Intercept invasion": "🚢 Chặn cuộc xâm lược",
   "🤝 Allies": "🤝 Đồng minh",
   "Coordinating team spawn…": "Coordinating team spawn…",
-  "Waiting for match start…": "Waiting for match start…"
+  "Waiting for match start…": "Waiting for match start…",
+  "Sort by highest level": "Sắp xếp theo cấp cao nhất"
 }

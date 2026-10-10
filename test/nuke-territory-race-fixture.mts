@@ -18,6 +18,7 @@ for (const action of ["launch", "silo-upgrade"]) {
     ...(action === "launch" ? ["sam-during-probe", "salvo-sam-during-probe"] : []),
     ...(action === "silo-upgrade" ? ["missile-during-probe"] : []),
   ]) {
+    console.error("CASE", action, capture);
     const samRace = capture.endsWith("sam-during-probe");
     const shouldSend = capture === "none" || capture === "salvo-sam-during-probe";
     const game = await setup(
@@ -42,6 +43,7 @@ for (const action of ["launch", "silo-upgrade"]) {
       action === "silo-upgrade"
         ? defender.buildUnit(UnitType.SAMLauncher, game.ref(80, 2), {})
         : null;
+    let raceSam: ReturnType<typeof defender.buildUnit> | null = null;
     const executor = new Executor(game, "nuke-territory-race", "attacker");
     let deliveredTick = -1;
     const runner = new GameRunner(game, executor, (update) => {
@@ -131,7 +133,10 @@ for (const action of ["launch", "silo-upgrade"]) {
           );
         }
         if (samRace) {
-          defender.buildUnit(UnitType.SAMLauncher, game.ref(80, 2), {});
+          raceSam = defender.buildUnit(UnitType.SAMLauncher, game.ref(80, 2), {});
+          plannedSalvo.targetSamId = raceSam.id();
+          plannedSalvo.coveringSamIds = [raceSam.id()];
+          plannedSalvo.plannedCoveringLevel = raceSam.level();
           assert.equal(
             nuke.isTrajectoryInterceptableBySam(source, target),
             true,
@@ -143,6 +148,14 @@ for (const action of ["launch", "silo-upgrade"]) {
     };
     const goldBefore = attacker.gold();
     const buildsBefore = bot.harness.internals.state.stats.builds;
+    const plannedSalvo = {
+      salvoId: 1,
+      flightTicks: 0,
+      targetTile: target,
+      targetSamId: null,
+      coveringSamIds: [],
+      plannedCoveringLevel: 0,
+    };
     const sent =
       action === "launch"
         ? capture === "salvo-sam-during-probe"
@@ -151,7 +164,12 @@ for (const action of ["launch", "silo-upgrade"]) {
                 tile: target,
                 nukeType: UnitType.AtomBomb,
                 targetPlayer,
-                salvo: { salvoId: 1 },
+                  // Planned-budget salvo shape: the launch gate re-validates
+                  // against the live layout and exempts exactly the covering
+                  // SAM the salvo was sized to overwhelm. The budget fields
+                  // are filled in by the probe wrapper the moment the native
+                  // SAM exists, because this object literal evaluates first.
+                  salvo: plannedSalvo,
               },
               0,
             )) === "fired"

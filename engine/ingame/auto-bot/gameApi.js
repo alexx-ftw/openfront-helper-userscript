@@ -421,7 +421,8 @@
           core.transitiveTargets ? core.transitiveTargets().map(wrapPlayer) : [],
         alliances: () => (core.alliances ? core.alliances() : []),
 
-        isFriendly: (o) => core.isFriendly(unwrap(o)),
+        isFriendly: (o, treatAFKFriendly = false) =>
+          core.isFriendly(unwrap(o), treatAFKFriendly),
         canAttackPlayer: (o, treatAFKFriendly = true) =>
           core.canAttackPlayer
             ? core.canAttackPlayer(unwrap(o), treatAFKFriendly)

@@ -569,6 +569,18 @@ const me = runner.game.playerByClientID(clientID);
 let seaInvasionObserved = false;
 const originalConquerPlayer = runner.game.conquerPlayer.bind(runner.game);
 runner.game.conquerPlayer = (conqueror, conquered) => {
+  if (conquered.clientID() !== clientID && conquered.team() !== null && conquered.team() === me?.team()) {
+    console.warn(
+      JSON.stringify({
+        phase: "ally-conquered",
+        tick: runner.game.ticks(),
+        conqueror: conqueror.name(),
+        conquerorTeam: conqueror.team(),
+        conquered: conquered.name(),
+        conqueredTiles: conquered.numTilesOwned(),
+      }),
+    );
+  }
   if (conquered.clientID() === clientID) {
     console.warn(
       JSON.stringify({
@@ -632,6 +644,7 @@ const spawnFailureGraceTicks = Math.max(
 const logIntents = process.env.OFH_LOG_INTENTS === "1";
 const logNaval = process.env.OFH_LOG_NAVAL === "1";
 const logStructures = process.env.OFH_LOG_STRUCTURES === "1";
+const logSiloQuotes = process.env.OFH_LOG_SILO_QUOTES === "1";
 const logNukes = process.env.OFH_LOG_NUKES === "1";
 const logSpawn = process.env.OFH_LOG_SPAWN === "1";
 const logAttackHotspots = process.env.OFH_LOG_ATTACK_HOTSPOTS === "1";
@@ -1313,7 +1326,7 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
       console.warn(JSON.stringify({ ...entry, phase: "attack-hotspot-trace" }));
     }
   }
-  if (logStructures) {
+  if (logStructures || logSiloQuotes) {
     for (const entry of bot.drainStructureTrace()) {
       console.warn(JSON.stringify({ ...entry, phase: "structure-trace" }));
     }

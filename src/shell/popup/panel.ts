@@ -193,6 +193,7 @@ const MODIFIERS = [
   ["portsDisabled", "Ports disabled"],
   ["nukesDisabled", "Nukes disabled"],
   ["samsDisabled", "SAMs disabled"],
+  ["mirvDisabled", "MIRV disabled"],
   ["waterNukes", "Water nukes"],
   ["peaceTime4m", "4min peace time"],
   ["goldMultiplier2x", "2x gold"],

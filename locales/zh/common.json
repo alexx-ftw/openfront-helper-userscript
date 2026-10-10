@@ -323,6 +323,7 @@
   "Ports disabled": "港口已禁用",
   "Nukes disabled": "核弹已禁用",
   "SAMs disabled": "防空已禁用",
+  "MIRV disabled": "多弹头已禁用",
   "Water nukes": "水面核弹",
   "4min peace time": "4分钟和平时间",
   "You can turn on all four at the same time. Only one of them has to match.": "你可以同时开启全部四个。只需其中一个匹配即可。",
@@ -889,5 +890,6 @@
   "disconnected": "disconnected",
   "no boss": "no boss",
   "paused": "paused",
-  "this tab is the boss": "this tab is the boss"
+  "this tab is the boss": "this tab is the boss",
+  "Sort by highest level": "按最高等级排序"
 }

@@ -464,6 +464,15 @@ The first missile silo is exempt from the nuclear weapon gold reserve because
 that reserve cannot be used until a launcher exists. Once one silo is built, the
 reserve again applies to additional silo construction and upgrades.
 
+Legendary `winFixes` adds a target-specific SAM-overwhelm lane. It upgrades a
+route-eligible Silo one level at a time even when that Silo cannot provide the
+entire required salvo alone. If no useful upgrade headroom remains, the lane
+may build another Silo only when its trajectory avoids non-covering hostile
+SAMs, the physical three-Silo limit allows it, and economic/defensive reserves
+remain. The target, route, capacity, limit, and budget are rechecked after the
+asynchronous buildability probe; construction never counts as ready capacity
+before the engine accepts it.
+
 Offensive Atom/Hydrogen route scoring mirrors `SAMTargetingSystem` timing, not
 only geometric coverage. The detonation tick is never interceptable; for every
 earlier targetable trajectory tile, SAM travel time is the ceiling of Manhattan
@@ -525,3 +534,38 @@ The decision cadence is an explicit userscript boundary: with `winFixes` enabled
 `engine.js`'s configured `tickMs` poll is the combat cadence and does not add the
 source Nation's difficulty-based `attackRate` wait. With `winFixes` disabled, the
 faithful `attackRate` / structure-third cadence is retained.
+
+## Per-launch salvo revalidation (client-only)
+
+The engine's `NukeExecution` enqueues its whole salvo atomically, so a SAM built
+between planning and launch is priced into the engine's interception resolution.
+The client build intent cannot do that: each atom goes through an async
+`buildables` probe before emission, and the enemy SAM layout can change during
+that await. The userscript therefore re-validates each salvo entry immediately
+before emission (Legendary only, where SAM-overwhelm salvos exist):
+
+- `sendNuke` splits the Legendary trajectory gate: a salvo entry runs
+  `samSalvoLaunchStillViable`; an ordinary launch keeps the original
+  `nukeSpawn` + full-trajectory check.
+- `samSalvoLaunchStillViable` re-runs `samSalvoStillViable` with the live
+  pending count and arrival tick, then `nukeSpawn(UNIT.AtomBomb, tile)`, then
+  `isTrajectoryInterceptableBySam` with the salvo's planned `coveringSamIds`
+  exempted — the SAMs the salvo was sized to overwhelm must not abort their own
+  salvo; only new interception sources invalidate the launch.
+- A rejected launch records the salvo id in `_salvoLaunchAbort`;
+  `firePendingNukeLaunch` returns `"drop"` for it and
+  `processPendingNukeLaunches` removes every remaining entry of that salvo.
+  If the queue drains entirely, `rearmAbortedSamDemand` re-arms the
+  `nukeWantSlots` capacity demand against the live SAM layout (via
+  `rememberFailedSamTarget` + `createSamOverwhelmPlan`), or releases it when
+  no hostile SAM covers the tile anymore.
+- `samSalvoStillViable` now filters the planned `coveringSamIds` out of the
+  penetration/overkill re-check for every salvo entry, and `fireSamSalvo`
+  attaches those ids (deep-copied in `queueDelayedNukeLaunch`) to each delayed
+  entry's plan metadata.
+- Structure lane (Hook A): `samOverwhelmPlanStillMissing` closes a
+  `nukeWantSlots` demand only when a fresh `createSamOverwhelmPlan` reports no
+  missing capacity; the static level-sum gate remains only as the fallback when
+  the planner is unavailable. A live demand also pins both strike lanes
+  (`samDemandStrikeTarget`, `maybeDestroyEnemySam` ordering) to the demanded
+  SAM's owner.

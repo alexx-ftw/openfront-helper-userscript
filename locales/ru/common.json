@@ -323,6 +323,7 @@
   "Ports disabled": "Порты отключены",
   "Nukes disabled": "Ядерные удары отключены",
   "SAMs disabled": "ПВО отключены",
+  "MIRV disabled": "РСЗО отключены",
   "Water nukes": "Водные ядерные удары",
   "4min peace time": "4 мин мира",
   "You can turn on all four at the same time. Only one of them has to match.": "Можно включить все четыре одновременно. Должен совпасть только один.",
@@ -889,5 +890,6 @@
   "disconnected": "disconnected",
   "no boss": "no boss",
   "paused": "paused",
-  "this tab is the boss": "this tab is the boss"
+  "this tab is the boss": "this tab is the boss",
+  "Sort by highest level": "Сортировать по наивысшему уровню"
 }

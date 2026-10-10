@@ -75,7 +75,13 @@ try {
   const launchTick = game.config().SAMCooldown() - flight + 6;
   while (game.ticks() < launchTick) step();
   await bot.api.beginTick(bot.pageGame.myPlayer());
-  const salvo = { salvoId: 777, targetTile: target, targetSamId: sam.id(), flightTicks: flight };
+  const salvo = {
+    salvoId: 777,
+    targetTile: target,
+    targetSamId: sam.id(),
+    coveringSamIds: [sam.id()],
+    flightTicks: flight,
+  };
   assert.equal(nuke.queueDelayedNukeLaunch(target, UnitType.AtomBomb, rival, 0, salvo), true);
   assert.equal(
     await nuke.processPendingNukeLaunches(),

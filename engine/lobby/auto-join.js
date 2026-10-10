@@ -207,6 +207,7 @@ const FORECAST_SPECIAL_MODIFIER_POOL = Object.freeze([
   ...Array(1).fill("isPortsDisabled"),
   ...Array(1).fill("isNukesDisabled"),
   ...Array(1).fill("isSAMsDisabled"),
+  ...Array(1).fill("isMirvDisabled"),
   ...Array(1).fill("isPeaceTime"),
   ...Array(3).fill("isWaterNukes"),
 ]);
@@ -729,6 +730,23 @@ function extractTrackedFilters(lobby, groupKey) {
   const goldMultiplier = Number(
     publicModifiers.goldMultiplier ?? config.goldMultiplier ?? 0,
   );
+  const nukesDisabled = readBooleanModifier(
+    publicModifiers,
+    config,
+    "isNukesDisabled",
+    "disableNukes",
+    "nukesDisabled",
+    "isNukesDisabled",
+  );
+  // Scheduled lobbies disable MIRV via the nukes modifier (MapPlaylist adds
+  // UnitType.MIRV to disabledUnits); private lobbies list it explicitly.
+  const hasDisabledMirv = [
+    publicModifiers?.disabledUnits,
+    config?.disabledUnits,
+  ].some(
+    (units) =>
+      Array.isArray(units) && units.some((unit) => normalizeComparableText(unit) === "mirv"),
+  );
 
   return {
     startingGold0M: normalizedStartingGold === 0,
@@ -770,14 +788,7 @@ function extractTrackedFilters(lobby, groupKey) {
       "portsDisabled",
       "isPortsDisabled",
     ),
-    nukesDisabled: readBooleanModifier(
-      publicModifiers,
-      config,
-      "isNukesDisabled",
-      "disableNukes",
-      "nukesDisabled",
-      "isNukesDisabled",
-    ),
+    nukesDisabled,
     samsDisabled: readBooleanModifier(
       publicModifiers,
       config,
@@ -788,6 +799,7 @@ function extractTrackedFilters(lobby, groupKey) {
       "isSAMsDisabled",
       "isSamsDisabled",
     ),
+    mirvDisabled: hasDisabledMirv || nukesDisabled,
     waterNukes: readBooleanModifier(
       publicModifiers,
       config,
@@ -1112,6 +1124,7 @@ function getRandomSpecialModifiers(excluded, countReduction = 0) {
     isPortsDisabled: selected.has("isPortsDisabled"),
     isNukesDisabled: selected.has("isNukesDisabled"),
     isSAMsDisabled: selected.has("isSAMsDisabled"),
+    isMirvDisabled: selected.has("isMirvDisabled"),
     isWaterNukes: selected.has("isWaterNukes"),
     isPeaceTime: selected.has("isPeaceTime"),
   };
@@ -1129,6 +1142,7 @@ function createStandardForecastScenario(mapId, teamSize, compact = false) {
       portsDisabled: false,
       nukesDisabled: false,
       samsDisabled: false,
+      mirvDisabled: false,
       waterNukes: false,
       peaceTime4m: false,
       startingGold1M: false,
@@ -1194,6 +1208,7 @@ function createForecastScenario(type) {
     portsDisabled: specialModifiers.isPortsDisabled,
     nukesDisabled: specialModifiers.isNukesDisabled,
     samsDisabled: specialModifiers.isSAMsDisabled,
+    mirvDisabled: specialModifiers.isMirvDisabled || specialModifiers.isNukesDisabled,
     waterNukes: forcedWaterNukes || specialModifiers.isWaterNukes,
     peaceTime4m: specialModifiers.isPeaceTime,
     startingGold1M: startingGold === 1_000_000,

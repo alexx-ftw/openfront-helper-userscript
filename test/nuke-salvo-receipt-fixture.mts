@@ -97,6 +97,9 @@ for (const [prefixCount, physicalDefense] of [
       targetSamId: sam.id(),
       plannedCoveringLevel: 2,
       flightTicks: flight,
+      // The per-launch revalidation exempts exactly the covering SAM this
+      // salvo was sized to overwhelm (same metadata fireSamSalvo attaches).
+      coveringSamIds: [sam.id()],
     };
     for (let index = 0; index < prefixCount; index++)
       assert.equal(await nuke.sendNuke(target, UnitType.AtomBomb, rival, 0, { ...salvo }), true);

@@ -551,6 +551,14 @@ from true post-reserve surplus when no target-capacity request remains. This
 surplus lane requires at least one enabled nuke and never spends the reserved
 economic or defensive budget.
 
+Target demand upgrades route-eligible silos one level at a time even when one
+silo cannot reach the salvo's full slot count by itself. If no useful upgrade
+headroom remains, it can build another silo only on a trajectory that avoids
+non-covering hostile SAMs, below the game's three-silo cap and with the same
+economic and defensive reserves. The target, route, capacity, cap, and budget
+are rechecked after the buildability probe; capacity is counted only after the
+engine accepts the structure.
+
 Productive sites are placed using the engine's rail connectivity score and an
 additional team-position score: nearby powerful allies are ranked by the maximum
 relative signal among troops, treasury, and gold production, with extra value for

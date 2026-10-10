@@ -109,4 +109,65 @@ assert.equal(
   false,
   "an active hostile missile keeps the nuclear-response path unblocked",
 );
+
+// Landlocked arsenal backstop: a spawn with no ocean port tiles must open
+// the first-silo lane once the 3000-tick backstop expires (the same
+// backstop the big-start deferral already uses). Luna interior seeds went
+// the whole match without a silo because this lane never opened.
+behavior.hasOceanPortTiles = () => false;
+behavior.game = {
+  config: () => ({ isUnitDisabled: () => false, spawnImmunityDuration: () => 0 }),
+  ticks: () => 2999,
+};
+behavior.legendarySamBaselineChestActive = () => false;
+behavior.safeConstructionCost = () => 1n;
+behavior.spendableConstructionGold = () => 2n;
+const arsenalSpawns = [];
+behavior.maybeSpawnStructure = async (type) => {
+  arsenalSpawns.push(type);
+  return true;
+};
+const landlockedArsenal = {
+  config: { isUnitDisabled: () => false },
+  cityCount: 1,
+  hasOceanPortTiles: false,
+  missileSilosEnabled: true,
+  nukesEnabled: true,
+};
+assert.equal(
+  await behavior.maybeOpenLegendaryArsenal(landlockedArsenal),
+  false,
+  "before the backstop a landlocked spawn keeps waiting for a coast",
+);
+behavior.game.ticks = () => 3000;
+assert.equal(
+  await behavior.maybeOpenLegendaryArsenal(landlockedArsenal),
+  true,
+  "after the backstop a one-City landlocked spawn opens the arsenal lane",
+);
+assert.deepEqual(
+  arsenalSpawns,
+  [sandbox.UNIT.MissileSilo],
+  "the opened lane attempts the speculative first silo",
+);
+arsenalSpawns.length = 0;
+assert.equal(
+  await behavior.maybeOpenLegendaryArsenal({
+    ...landlockedArsenal,
+    cityCount: 1,
+    hasOceanPortTiles: true,
+  }),
+  false,
+  "the backstop keeps the two-City requirement on coastal spawns",
+);
+assert.deepEqual(arsenalSpawns, [], "a coastal one-City spawn does not attempt an early silo");
+assert.equal(
+  await behavior.maybeOpenLegendaryArsenal({
+    ...landlockedArsenal,
+    cityCount: 0,
+  }),
+  false,
+  "the landlocked backstop still requires a City",
+);
+assert.deepEqual(arsenalSpawns, [], "a landlocked spawn without a City does not attempt a silo");
 console.warn("initial silo naval gate tests passed");

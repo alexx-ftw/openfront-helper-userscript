@@ -8,6 +8,7 @@
 
   var SILO_PANEL_ID = "openfront-helper-silo-panel";
   var SAM_PANEL_ID = "openfront-helper-sam-panel";
+  var _trackerHighestLevelFirst = {};
   var SILO_STYLE_ID = "openfront-helper-silo-styles";
   var _knownSiloIds = {};
   var _lastGameObj = null;
@@ -628,11 +629,20 @@
       return;
     }
 
-    filtered.sort((a, b) => Number(!a.isUnderConstruction?.()) - Number(!b.isUnderConstruction?.()));
-
     var currentTick = typeof ctx.game.ticks === "function" ? ctx.game.ticks() : 0;
     var items = filtered.map((unit) => _siloPanelItem(ctx.game, me, unit, currentTick));
+    _sortTrackerItems(
+      items,
+      _trackerHighestLevelFirst[SILO_PANEL_ID],
+      (a, b) => Number(b.isBuilding) - Number(a.isBuilding),
+    );
     _syncSiloPanelRows(content, items, ctx.game, me);
+  }
+
+  function _sortTrackerItems(items, highestLevelFirst, compareDefault) {
+    return items.sort(
+      (a, b) => (highestLevelFirst && b.level - a.level) || compareDefault(a, b),
+    );
   }
 
   function _setEmpty(content, msg) {
@@ -1585,7 +1595,7 @@
       (sam) => _samPanelItem(ctx.game, me, sam, currentTick),
     ).filter(Boolean);
 
-    items.sort(function(a, b) {
+    _sortTrackerItems(items, _trackerHighestLevelFirst[SAM_PANEL_ID], function(a, b) {
       if (a.isBuilding && !b.isBuilding) return -1;
       if (!a.isBuilding && b.isBuilding) return 1;
       return a.coords.x - b.coords.x || a.coords.y - b.coords.y;
@@ -1626,6 +1636,26 @@
           _renderActiveTab();
         }
       }
+    });
+    return btn;
+  }
+
+  function _makeTrackerLevelSortBtn(id) {
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ohss-quick-btn";
+    btn.textContent = "Lv↓";
+    btn.title = _tr("Sort by highest level");
+    btn.setAttribute("aria-label", btn.title);
+    btn.setAttribute("aria-pressed", String(Boolean(_trackerHighestLevelFirst[id])));
+    btn.classList.toggle("on", Boolean(_trackerHighestLevelFirst[id]));
+    btn.addEventListener("click", function(event) {
+      event.stopPropagation();
+      _trackerHighestLevelFirst[id] = !_trackerHighestLevelFirst[id];
+      btn.classList.toggle("on", _trackerHighestLevelFirst[id]);
+      btn.setAttribute("aria-pressed", String(_trackerHighestLevelFirst[id]));
+      if (id === SILO_PANEL_ID) updateSiloPanel();
+      else updateSAMTrackerPanel();
     });
     return btn;
   }
@@ -1726,6 +1756,9 @@
       }
     });
     header.appendChild(titleEl);
+    if (id === SAM_PANEL_ID || id === SILO_PANEL_ID) {
+      header.appendChild(_makeTrackerLevelSortBtn(id));
+    }
     if (id === SAM_PANEL_ID) {
       header.appendChild(_makeTrackerQuickBtn("combatSamOneClickFire", "⚡", _tr("One-click Fire")));
       header.appendChild(_makeTrackerQuickBtn("combatSamAutoFireBuilding", "🎯", _tr("Auto Fire Building")));

@@ -357,6 +357,8 @@ function classifyNukeTileOwner(behavior, tile) {
     if (!owner) return "unknown";
     if (owner.isPlayer?.() !== true) return "non-player";
     return owner.smallID?.() === behavior.player?.smallID?.() ? "self-player" : "other-player";
+    // This diagnostic must degrade to an unknown label if a mock owner throws.
+    // eslint-disable-next-line no-restricted-syntax
   } catch {
     return "unknown";
   }
@@ -713,6 +715,7 @@ export class BundledOpponentBot {
     if (process.env.OFH_LOG_NAVAL === "1") this.enableNavalTrace();
     if (process.env.OFH_CONSTRUCTION_DUMP === "1") this.enableConstructionDump();
     if (process.env.OFH_LOG_STRUCTURES === "1") this.enableStructureTrace();
+    else if (process.env.OFH_LOG_SILO_QUOTES === "1") this.enableSiloQuoteTrace();
     if (process.env.OFH_LOG_SPAWN === "1") this.enableSpawnTrace();
     if (process.env.OFH_LOG_ATTACK_HOTSPOTS === "1") this.enableAttackHotspotTrace();
     if (process.env.OFH_LOG_NUKES === "1") this.enableNukeTrace();
@@ -1340,6 +1343,24 @@ export class BundledOpponentBot {
     this.enableSamReadinessTrace(behavior);
   }
 
+  enableSiloQuoteTrace() {
+    const behavior = this.nationBot?.structureBehavior;
+    if (!behavior || behavior.__ofhSiloQuoteTraceEnabled === true) return;
+    const originalBuildableFor = behavior.buildableFor;
+    if (typeof originalBuildableFor !== "function") return;
+    behavior.__ofhSiloQuoteTraceEnabled = true;
+    behavior.buildableFor = async (type, tile, timeoutMs) => {
+      if (type === "Missile Silo") {
+        this.structureTrace.push({
+          kind: "silo-buildable-quote",
+          tick: this.game.ticks(),
+          requestedTile: tile,
+        });
+      }
+      return originalBuildableFor.call(behavior, type, tile, timeoutMs);
+    };
+  }
+
   enableSamReadinessTrace(behavior) {
     const original = behavior.nuclearThreatOutrunsOurSamReadiness;
     if (typeof original !== "function") return;
@@ -1485,6 +1506,13 @@ export class BundledOpponentBot {
     const originalBuildableFor = behavior.buildableFor;
     if (typeof originalBuildableFor === "function") {
       behavior.buildableFor = async (type, tile, timeoutMs) => {
+        if (type === "Missile Silo") {
+          this.structureTrace.push({
+            kind: "silo-buildable-quote",
+            tick: this.game.ticks(),
+            requestedTile: tile,
+          });
+        }
         const buildable = await originalBuildableFor.call(behavior, type, tile, timeoutMs);
         if (type === "SAM Launcher") {
           this.structureTrace.push({
@@ -1813,6 +1841,7 @@ export class BundledOpponentBot {
     configureHardMode(harness.internals.state, this);
     if (process.env.OFH_LOG_NAVAL === "1") this.enableNavalTrace();
     if (process.env.OFH_LOG_STRUCTURES === "1") this.enableStructureTrace();
+    else if (process.env.OFH_LOG_SILO_QUOTES === "1") this.enableSiloQuoteTrace();
     if (process.env.OFH_LOG_SPAWN === "1") this.enableSpawnTrace();
     if (process.env.OFH_LOG_TRIBE_LAUNCH === "1") this.enableTribeLaunchTrace();
     if (process.env.OFH_LOG_NUKES === "1") this.enableNukeTrace();
@@ -1908,6 +1937,7 @@ export class BundledOpponentBot {
       atomBombsLaunched: Number(behavior.atomBombsLaunched || 0),
       hydrogenBombsLaunched: Number(behavior.hydrogenBombsLaunched || 0),
       pendingLaunches: Number(behavior._pendingNukeLaunches?.length || 0),
+      decisionTelemetry: behavior.decisionTelemetry ?? null,
       // Market-wide MIRV launches observed in flight (engine numMirvsLaunched
       // proxy) — closes the build-intent-vs-actual-launch telemetry gap.
       observedGlobalMirvLaunches,

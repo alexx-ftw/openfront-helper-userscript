@@ -14,6 +14,7 @@
     "portsDisabled",
     "nukesDisabled",
     "samsDisabled",
+    "mirvDisabled",
     "waterNukes",
     "peaceTime4m",
     "startingGold5M",

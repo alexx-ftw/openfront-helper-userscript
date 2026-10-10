@@ -2140,6 +2140,26 @@
     "initializerPreview": "3"
   },
   {
+    "id": "engine/ingame/auto-bot/nukeBehavior.js:MIN_BLAST_COVERAGE#1",
+    "file": "engine/ingame/auto-bot/nukeBehavior.js",
+    "name": "MIN_BLAST_COVERAGE",
+    "declarationKind": "const",
+    "initializerKind": "ObjectLiteralExpression",
+    "initializerHash": "b3af1ac4633bca8ea86cd55002ee32ba8a5e1e91e8c4b77b195c8d8fa063d001",
+    "initializerLength": 60,
+    "initializerPreview": "{\n    [UNIT.AtomBomb]: 0.25,\n    [UNIT.HydrogenBomb]: 0.4,\n}"
+  },
+  {
+    "id": "engine/ingame/auto-bot/nukeBehavior.js:FULL_BLAST_COVERAGE_VALUE#1",
+    "file": "engine/ingame/auto-bot/nukeBehavior.js",
+    "name": "FULL_BLAST_COVERAGE_VALUE",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "60734f174b2035e5b2ba85fef8c648cc0cb18c5995b419d3cd1c025c5b09d0c7",
+    "initializerLength": 5,
+    "initializerPreview": "50000"
+  },
+  {
     "id": "engine/ingame/auto-bot/nukeBehavior.js:NUKE_STRUCTURES_TYPES#1",
     "file": "engine/ingame/auto-bot/nukeBehavior.js",
     "name": "NUKE_STRUCTURES_TYPES",
@@ -6115,8 +6135,8 @@
     "name": "FORECAST_SPECIAL_MODIFIER_POOL",
     "declarationKind": "const",
     "initializerKind": "CallExpression",
-    "initializerHash": "574c91a2b34ed5cc97ae4168cf49c0b9e56aac14e6f5690e48498acc0d5fbc10",
-    "initializerLength": 569,
+    "initializerHash": "bbb281297e3e036bbb05e49533187e30ed138996153a0ff1e8b8fd704ecab5c5",
+    "initializerLength": 609,
     "initializerPreview": "Object.freeze([\n    ...Array(2).fill(\"isRandomSpawn\"),\n    ...Array(4).fill(\"isCompact\"),\n    ...Array(2).fill(\"isCrowded\"),\n    ...Array(1).fill(\"isHardNations\"),\n    ...Array(3).fill(\"startingGold1M\"),\n    ...Array(5).fill(\"startingGol..."
   },
   {
@@ -6255,8 +6275,8 @@
     "name": "DEFAULT_TRANSLATIONS",
     "declarationKind": "const",
     "initializerKind": "ObjectLiteralExpression",
-    "initializerHash": "4c6c0b3730ddedb8d7c428fc848320df5837cf63d31a23eb259e54bd14a33065",
-    "initializerLength": 20549,
+    "initializerHash": "24275f61f69148296a8b7f70ac6976893479634b1b05c08e235daa0ba895d0b2",
+    "initializerLength": 20587,
     "initializerPreview": "{\n    languageCode: \"en\",\n    languageName: \"English\",\n    settings: \"Settings\",\n    openSettings: \"Open settings\",\n    github: \"GitHub\",\n    openGitHubRepository: \"Open GitHub repository\",\n    openFrontReloadTitle: \"Reload OpenFront?\",\n..."
   },
   {
@@ -6295,9 +6315,9 @@
     "name": "FILTER_KEYS",
     "declarationKind": "const",
     "initializerKind": "ArrayLiteralExpression",
-    "initializerHash": "d17cfe9068f861571b73f0e2741d1b2f16983cc971d9d6db867360b37b226092",
-    "initializerLength": 289,
-    "initializerPreview": "[\n    \"startingGold0M\",\n    \"randomSpawn\",\n    \"crowded\",\n    \"compact\",\n    \"alliancesDisabled\",\n    \"portsDisabled\",\n    \"nukesDisabled\",\n    \"samsDisabled\",\n    \"waterNukes\",\n    \"peaceTime4m\",\n    \"startingGold5M\",\n    \"startingGold1..."
+    "initializerHash": "6fa245e43da8260f814fe35dab37dbe2cefbaf25bfc598a4762f522ae41665a9",
+    "initializerLength": 309,
+    "initializerPreview": "[\n    \"startingGold0M\",\n    \"randomSpawn\",\n    \"crowded\",\n    \"compact\",\n    \"alliancesDisabled\",\n    \"portsDisabled\",\n    \"nukesDisabled\",\n    \"samsDisabled\",\n    \"mirvDisabled\",\n    \"waterNukes\",\n    \"peaceTime4m\",\n    \"startingGold5M\"..."
   },
   {
     "id": "engine/shared/settings.js:TEAM_SIZE_MIN#1",

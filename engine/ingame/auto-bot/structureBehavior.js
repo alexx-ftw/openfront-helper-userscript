@@ -2537,9 +2537,15 @@
       missileSilosEnabled,
       nukesEnabled,
     }) {
+      // Landlocked spawns (Luna interior) never gain ocean port tiles; the
+      // 3000-tick backstop opens the first-silo lane with one City instead
+      // of waiting for a coast and a second City that never came.
+      const tick =
+        typeof this.game?.ticks === "function" ? this.game.ticks() : 0;
+      const landlockedBackstop = !hasOceanPortTiles && tick >= 3000;
       if (
-        cityCount < 2 ||
-        !hasOceanPortTiles ||
+        cityCount < (landlockedBackstop ? 1 : 2) ||
+        (!hasOceanPortTiles && !landlockedBackstop) ||
         !missileSilosEnabled ||
         !nukesEnabled ||
         config?.isUnitDisabled?.(UNIT.MissileSilo) === true
@@ -10558,6 +10564,12 @@
     // maybeSpawnStructure — NationStructureBehavior.ts:585 (now async).
     async maybeSpawnStructure(type, options = {}) {
       if (!this.structureSpawnEligible(type, options)) return false;
+      if (
+        options.nukeDemandRequest &&
+        !this.nukeDemandSiloSpawnAllowed(options.nukeDemandRequest)
+      ) {
+        return false;
+      }
 
       const structures = this.player.units(type);
       const economicType = ECONOMIC_STRUCTURE_TYPES.includes(type);
@@ -10599,6 +10611,15 @@
       );
       if (buildable === null) return false;
       if (typeof buildable === "boolean") return buildable;
+      if (
+        options.nukeDemandRequest &&
+        !this.nukeDemandSiloSpawnAllowed(
+          options.nukeDemandRequest,
+          buildable.canBuild,
+        )
+      ) {
+        return false;
+      }
       return this.emitStructureBuildable(type, buildable);
     }
 
@@ -11284,32 +11305,79 @@
     }
 
     /**
+     * Hook A: demand satisfaction follows the salvo planner, not the static
+     * level sum. false = the plan closes with the live layout (demand
+     * serviced); true = capacity/window still missing (keep building);
+     * null = planner unavailable or probe failed (fall back to level sum).
+     */
+    samOverwhelmPlanStillMissing(request) {
+      const nuke = this.nukeBehavior;
+      if (
+        !nuke ||
+        typeof nuke.createSamOverwhelmPlan !== "function" ||
+        request?.targetSamId === null ||
+        request?.targetSamId === undefined
+      ) {
+        return null;
+      }
+      const targetSam = (this.game.units?.(UNIT.SAMLauncher) ?? []).find(
+        (sam) => String(sam.id?.()) === String(request.targetSamId),
+      );
+      if (!targetSam) return null;
+      const silos = typeof this.player.units === "function"
+        ? (this.player.units(UNIT.MissileSilo) || [])
+            .filter((silo) => !silo.isUnderConstruction?.())
+        : [];
+      return Boolean(
+        nuke.createSamOverwhelmPlan(targetSam, silos)?.capacityMissing,
+      );
+    }
+
+    routeEligibleSilosForDemand(request) {
+      return this.nukeBehavior?.getRouteEligibleSilos(request) ?? null;
+    }
+
+    /**
      * Service the nuke planner's target-specific silo-capacity request. This
      * sits below both H-bomb SAM priorities and above generic hostile-SAM
-     * parity, so a required launch capacity is completed before ordinary
-     * construction.
+     * parity. It upgrades useful silos one level at a time, then may build a
+     * route-clear silo when the remaining demand outlives their level caps.
      */
     async maybeUpgradeSiloForNukeDemand(routeEligibleSilos = null) {
       const pendingRequest = state.nukeWantSlots;
       const request = this.validNukeSiloUpgradeRequest();
       if (request === null) return false;
+      const planStillMissing = this.samOverwhelmPlanStillMissing(request);
+      if (planStillMissing === false) {
+        // The planner closes the demand with the live layout even when the
+        // static level sum lags (partial levels + route-capable silos).
+        // DIVERGENCE: reload/window flapping across reloads keeps the demand
+        // alive here; only a closing plan releases it.
+        state.nukeWantSlots = null;
+        return false;
+      }
       const scopedSilos = this.nukeDemandScopedSilos(request,
-        routeEligibleSilos ?? this.nukeBehavior?.getRouteEligibleSilos(request) ?? null);
+        routeEligibleSilos ?? this.routeEligibleSilosForDemand(request));
       const currentCapacity = scopedSilos.reduce(
         (sum, silo) => sum + Math.max(1, Number(silo.level?.() ?? 1)),
         0,
       );
-      if (currentCapacity >= request.requiredCapacity) {
+      if (
+        planStillMissing === null &&
+        currentCapacity >= request.requiredCapacity
+      ) {
         state.nukeWantSlots = null;
         return false;
       }
-      if (this.nukeBehavior && !this.nukeBehavior.hasUsefulSiloUpgradeCapacity(
-        scopedSilos, { totalBombs: request.requiredCapacity },
-      )) return false;
+      const canUpgradeForDemand = this.nukeBehavior?.hasUsefulSiloUpgradeCapacity(
+        scopedSilos, { totalBombs: request.requiredCapacity }, planStillMissing === true,
+      );
       const candidates = scopedSilos.filter((silo) =>
         this.structureBelowUpgradeLimit(silo),
       );
-      if (candidates.length === 0) return false;
+      if (candidates.length === 0 || canUpgradeForDemand === false) {
+        return this.maybeSpawnNukeDemandSilo(pendingRequest);
+      }
       const availableGold = this.availableGoldAfterReserve(UNIT.MissileSilo);
       const minimumCost = this.safeStructureCost(UNIT.MissileSilo);
       if (!this.nukeSiloUpgradeBudgetAvailable(availableGold, minimumCost)) {
@@ -11324,22 +11392,118 @@
         },
       );
       if (state.nukeWantSlots !== pendingRequest || this.validNukeSiloUpgradeRequest() === null) return false;
+      const currentPlanStillMissing = this.samOverwhelmPlanStillMissing(request);
+      if (currentPlanStillMissing === false) {
+        state.nukeWantSlots = null;
+        return false;
+      }
       const currentGold = this.availableGoldAfterReserve(UNIT.MissileSilo);
       if (!this.nukeSiloUpgradeBudgetAvailable(currentGold, minimumCost)) return false;
-      const currentRoutes = this.nukeBehavior?.getRouteEligibleSilos(request);
-      if (currentRoutes !== undefined && !this.nukeBehavior.hasUsefulSiloUpgradeCapacity(
-        this.nukeDemandScopedSilos(request, currentRoutes),
-        { totalBombs: request.requiredCapacity },
-      )) return false;
+      const currentRoutes = this.routeEligibleSilosForDemand(request);
+      if (
+        currentRoutes !== undefined && currentRoutes !== null &&
+        !this.nukeBehavior.hasUsefulSiloUpgradeCapacity(
+          this.nukeDemandScopedSilos(request, currentRoutes),
+          { totalBombs: request.requiredCapacity },
+          currentPlanStillMissing === true,
+        )
+      ) return this.maybeSpawnNukeDemandSilo(pendingRequest);
       const ranked = this.rankNukeDemandSiloUpgrades({
         candidates,
         buildables,
         availableGold: currentGold,
         minimumCost,
         preferredSiloIds: request.unblockedSiloIds,
-      }).filter((candidate) => currentRoutes === undefined ||
+      }).filter((candidate) => currentRoutes === undefined || currentRoutes === null ||
         currentRoutes.some((silo) => silo.id() === candidate.silo.id()));
+      if (ranked.length === 0) {
+        // Demand-driven leveling must outrank another level-one silo when a
+        // route-eligible upgrade exists but outprices this tick's gold.
+        const upgradeStillPossible = candidates.some((silo, index) =>
+          buildables[index] &&
+          buildables[index].canUpgrade !== false &&
+          (currentRoutes === undefined || currentRoutes === null ||
+            currentRoutes.some((route) => route.id() === silo.id())));
+        if (upgradeStillPossible) return false;
+        return this.maybeSpawnNukeDemandSilo(pendingRequest);
+      }
       return this.executeStructureUpgradeCandidate(ranked[0], UNIT.MissileSilo);
+    }
+
+    maybeSpawnNukeDemandSilo(pendingRequest) {
+      return this.maybeSpawnStructure(UNIT.MissileSilo, {
+        forceNewStructure: true,
+        useActualCost: true,
+        nukeDemandRequest: pendingRequest,
+      });
+    }
+
+    nukeDemandSiloSpawnAllowed(pendingRequest, tile = null) {
+      const request = this.validNukeSiloUpgradeRequest();
+      if (state.nukeWantSlots !== pendingRequest || request === null) return false;
+      const planStillMissing = this.samOverwhelmPlanStillMissing(request);
+      if (planStillMissing === false) {
+        state.nukeWantSlots = null;
+        return false;
+      }
+      const silos = this.player.units(UNIT.MissileSilo) || [];
+      if (
+        silos.length >= MAX_MISSILE_SILOS ||
+        this.hasStructureUnderConstruction(silos)
+      ) {
+        return false;
+      }
+      const routeEligible = this.routeEligibleSilosForDemand(request);
+      const currentCapacity = this.nukeDemandScopedSilos(request, routeEligible ?? null)
+        .reduce((sum, silo) => sum + Math.max(1, Number(silo.level?.() ?? 1)), 0);
+      if (
+        planStillMissing === null &&
+        currentCapacity >= request.requiredCapacity
+      ) {
+        state.nukeWantSlots = null;
+        return false;
+      }
+      const minimumCost = this.safeStructureCost(UNIT.MissileSilo);
+      if (
+        minimumCost === null ||
+        minimumCost <= 0n ||
+        !this.nukeSiloUpgradeBudgetAvailable(
+          this.availableGoldAfterReserve(UNIT.MissileSilo),
+          minimumCost,
+        )
+      ) {
+        return false;
+      }
+      return tile === null || this.nukeDemandSiloRouteClear(tile, request);
+    }
+
+    nukeDemandSiloRouteClear(tile, request, coveringSamIds = null) {
+      const nuke = this.nukeBehavior;
+      if (
+        !nuke ||
+        typeof nuke.isTrajectoryInterceptableBySam !== "function" ||
+        request?.targetTile === null ||
+        request?.targetTile === undefined
+      ) {
+        return false;
+      }
+      if (coveringSamIds === null) {
+        const coveringSams = nuke.findEnemySamsCoveringTile?.(request.targetTile);
+        if (!Array.isArray(coveringSams)) return false;
+        coveringSamIds = new Set(coveringSams.map((sam) => sam.id()));
+      }
+      if (
+        !Array.from(coveringSamIds).some(
+          (id) => String(id) === String(request.targetSamId),
+        )
+      ) {
+        return false;
+      }
+      return !nuke.isTrajectoryInterceptableBySam(
+        tile,
+        request.targetTile,
+        coveringSamIds,
+      );
     }
 
     validNukeSiloUpgradeRequest() {
@@ -11857,9 +12021,28 @@
           )
         : probe.candidateLimit;
       if (candidateLimit < 1) return null;
-      const tiles = this.structureCandidateTiles(type, options, candidateLimit);
+      let tiles = this.structureCandidateTiles(type, options, candidateLimit);
       if (economicType) this.consumeEconomicPlacementBudget(tiles.length);
       if (tiles.length === 0) return null;
+      if (type === UNIT.MissileSilo && options.nukeDemandRequest) {
+        const request = options.nukeDemandRequest;
+        const coveringSams = this.nukeBehavior?.findEnemySamsCoveringTile?.(
+          request.targetTile,
+        );
+        if (
+          !Array.isArray(coveringSams) ||
+          !coveringSams.some(
+            (sam) => String(sam.id()) === String(request.targetSamId),
+          )
+        ) {
+          return null;
+        }
+        const coveringSamIds = new Set(coveringSams.map((sam) => sam.id()));
+        tiles = tiles.filter((tile) =>
+          this.nukeDemandSiloRouteClear(tile, request, coveringSamIds),
+        );
+        if (tiles.length === 0) return null;
+      }
       const valueFunction = this.structureTileValueFunction(type, options);
       if (valueFunction === null) return null;
       const compactness = this.structurePlacementCompactnessRanker(type);

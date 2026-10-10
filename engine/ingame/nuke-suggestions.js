@@ -1586,6 +1586,11 @@
   }
 
   function isNukeScoreTileAllowed(game, context, tile) {
+    // Mirrors engine nukeSpawn: impassable terrain cannot be nuked, so an
+    // impact tile there would be unlaunchable even with a positive score.
+    if (typeof game?.isImpassable === "function" && game.isImpassable(tile)) {
+      return false;
+    }
     return (
       tile != null &&
       isNukeSuggestionTileAllowed(

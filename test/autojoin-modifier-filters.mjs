@@ -28,6 +28,7 @@ const filterKeys = [
   "portsDisabled",
   "nukesDisabled",
   "samsDisabled",
+  "mirvDisabled",
   "waterNukes",
   "peaceTime4m",
   "startingGold5M",
@@ -73,6 +74,14 @@ const COMPACT_MODIFIERS = ffaLobby("compact-modifiers", {
 const COMPACT_MAP_SIZE = ffaLobby("compact-map-size", { gameMapSize: "Compact" });
 const CROWDED_AND_COMPACT = ffaLobby("crowded-and-compact", {
   publicGameModifiers: { isCrowded: true, isCompact: true },
+});
+// Scheduled lobbies disable MIRV as part of the nukes modifier; MapPlaylist
+// lists UnitType.MIRV inside gameConfig.disabledUnits. Private lobbies can
+// disable MIRV on its own.
+const MIRV_DISABLED = ffaLobby("mirv-disabled", { disabledUnits: ["MIRV"] });
+const NUKES_DISABLED_MIRV = ffaLobby("nukes-disabled-mirv", {
+  publicGameModifiers: { isNukesDisabled: true },
+  disabledUnits: ["MissileSilo", "AtomBomb", "HydrogenBomb", "MIRV", "SAMLauncher"],
 });
 const PLAIN = ffaLobby("plain");
 
@@ -146,6 +155,28 @@ test("crowded and compact can be required together and excluded independently", 
     null,
     "an excluded modifier always rejects, even alongside an include",
   );
+});
+
+test("include MIRV disabled matches explicit and nukes-derived forms", () => {
+  resetFilters();
+  hooks.lobbyState.settings.includeFilters.mirvDisabled = true;
+
+  assert.equal(hooks.findMatchingLobby(snapshotWith(MIRV_DISABLED))?.gameID, "mirv-disabled");
+  assert.equal(
+    hooks.findMatchingLobby(snapshotWith(NUKES_DISABLED_MIRV))?.gameID,
+    "nukes-disabled-mirv",
+    "the playlist disables MIRV whenever nukes are disabled",
+  );
+  assert.equal(hooks.findMatchingLobby(snapshotWith(PLAIN)), null);
+});
+
+test("exclude MIRV disabled keeps plain lobbies joinable", () => {
+  resetFilters();
+  hooks.lobbyState.settings.excludeFilters.mirvDisabled = true;
+
+  assert.equal(hooks.findMatchingLobby(snapshotWith(PLAIN))?.gameID, "plain");
+  assert.equal(hooks.findMatchingLobby(snapshotWith(MIRV_DISABLED)), null);
+  assert.equal(hooks.findMatchingLobby(snapshotWith(NUKES_DISABLED_MIRV)), null);
 });
 
 test("forecast model rates reflect where each modifier actually appears", () => {

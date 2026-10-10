@@ -50,6 +50,7 @@ executeClassicScript(
   "globalThis.__isEnemyNukeSuggestionTarget = isEnemyNukeSuggestionTarget;" +
     "globalThis.__isNukeSuggestionSamOwnerHostileToLauncher = isNukeSuggestionSamOwnerHostileToLauncher;" +
     "globalThis.__collectAllHostileSams = collectAllHostileSams;" +
+    "globalThis.__isNukeScoreTileAllowed = isNukeScoreTileAllowed;" +
     "globalThis.__collectAlliedPlayerSmallIds = collectAlliedPlayerSmallIds;",
   sandbox,
   { filename: "nuke-suggestions-test-exports.js" },
@@ -498,6 +499,41 @@ try {
   sandbox.document = originalNukeSuggestionDocument;
   sandbox.window = originalNukeSuggestionWindow;
   sandbox.getPlayerSmallId = originalGetPlayerSmallId;
+}
+
+// Impact tiles are launch targets: the engine rejects nukes on impassable
+// terrain (nukeSpawn), so scoring must reject those tiles for both the
+// original candidates and the impact-optimized re-score.
+{
+  const terrainGame = {
+    isSpawnImmunityActive: () => false,
+    owner: () => null,
+    isImpassable: (tile) => tile === 9,
+  };
+  const scoreContext = {
+    myPlayer: suggestionMe,
+    magnitude: { inner: 1, outer: 2 },
+    teamStructures: [],
+  };
+  assert.equal(
+    sandbox.__isNukeScoreTileAllowed(terrainGame, scoreContext, 5),
+    true,
+    "normal land tiles stay nuke-suggestion eligible",
+  );
+  assert.equal(
+    sandbox.__isNukeScoreTileAllowed(terrainGame, scoreContext, 9),
+    false,
+    "impassable terrain cannot be a nuke suggestion impact",
+  );
+  assert.equal(
+    sandbox.__isNukeScoreTileAllowed(
+      { isSpawnImmunityActive: () => false, owner: () => null },
+      scoreContext,
+      5,
+    ),
+    true,
+    "stubs without terrain info keep the previous eligibility",
+  );
 }
 
 process.stdout.write("nuke suggestion construction tests passed\n");

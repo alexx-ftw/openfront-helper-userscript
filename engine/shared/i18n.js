@@ -212,6 +212,7 @@
     "Ports disabled": "Ports disabled",
     "Nukes disabled": "Nukes disabled",
     "SAMs disabled": "SAMs disabled",
+    "MIRV disabled": "MIRV disabled",
     "Water nukes": "Water nukes",
     "4min peace time": "4min peace time",
     "2x gold": "2x gold",

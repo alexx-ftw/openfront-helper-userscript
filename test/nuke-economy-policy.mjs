@@ -86,6 +86,209 @@ executeClassicScript(`${mirvSource}\nglobalThis.__MirvBehavior = MirvBehavior;`,
 
 const behavior = Object.create(sandbox.__NukeBehavior.prototype);
 const target = { smallID: () => 42 };
+
+// Production-shape value retarget: the UI's Legendary tier normalizes to the
+// Impossible raw value, so the higher-value retry must run through the policy
+// tier bridge — and compare candidate sets by their ranked blast score.
+{
+  const previousDifficulty = testDifficulty;
+  const previousUnion = sandbox.isLegendaryDifficulty;
+  sandbox.isLegendaryDifficulty = (difficulty) =>
+    difficulty === "Legendary" || difficulty === "Impossible";
+  testDifficulty = sandbox.Difficulty.Impossible;
+  const ladderTarget = { smallID: () => 43 };
+  const richerTarget = { smallID: () => 44 };
+  // Raw-value comparison would keep the 400-value ladder shot; the ranked
+  // blast score (value + coverage) favors the richer rival's 380-value tile.
+  const ladderCandidates = [{ tile: 10, value: 400, score: 12_900 }];
+  const richerCandidates = [{ tile: 30, value: 380, score: 45_380 }];
+  const retryBehavior = Object.create(sandbox.__NukeBehavior.prototype);
+  retryBehavior.samDemandStrikeTarget = () => null;
+  retryBehavior.collectNukeCandidates = async (candidateTarget) =>
+    candidateTarget === richerTarget ? richerCandidates : ladderCandidates;
+  retryBehavior.findHighestValueNukeTarget = () => richerTarget;
+  retryBehavior.shouldDeferNukeForEconomy = async () => false;
+  retryBehavior.playerStructureValue = (candidateTarget) =>
+    candidateTarget === richerTarget ? 3_000_000 : 100_000;
+  const normalUiRetry = await retryBehavior.collectCandidatesWithRetry(
+    ladderTarget,
+    { type: UNIT.AtomBomb, cost: 750_000n },
+    [],
+    sandbox.currentDifficulty(),
+  );
+  assert.equal(
+    normalUiRetry.retargeted,
+    richerTarget,
+    "the normal Legendary UI tier retargets to the richer rival when the ladder is blocked",
+  );
+  assert.equal(normalUiRetry.list, richerCandidates);
+  assert.equal(
+    retryBehavior.bestCandidateValue([{ tile: 1, value: 10, score: 60 }]),
+    60,
+    "candidate comparison reads the ranked blast score, not the raw value",
+  );
+  sandbox.isLegendaryDifficulty = previousUnion;
+  testDifficulty = previousDifficulty;
+}
+
+// Production-shape targeting cohesion: the normalized Impossible tier must
+// partition SAM-covered candidates into the salvo lane, price blast-covered
+// SAMs, and keep the structure-density fallback alive.
+{
+  const previousDifficulty = testDifficulty;
+  const previousUnion = sandbox.isLegendaryDifficulty;
+  const previousClosest = sandbox.closestTwoTiles;
+  sandbox.isLegendaryDifficulty = (difficulty) =>
+    difficulty === "Legendary" || difficulty === "Impossible";
+  testDifficulty = sandbox.Difficulty.Impossible;
+  const partitionBehavior = Object.create(sandbox.__NukeBehavior.prototype);
+  partitionBehavior.nukeSpawn = () => 5;
+  partitionBehavior.isTrajectoryInterceptableBySam = (_spawn, tile, excluded) =>
+    tile === 20 && !excluded?.has("sam1");
+  partitionBehavior.findEnemySamsCoveringTile = () => [{ id: () => "sam1", level: () => 1 }];
+  const partitioned = partitionBehavior.partitionCandidatesBySamCoverage(
+    [
+      { tile: 20, value: 1 },
+      { tile: 30, value: 2 },
+    ],
+    UNIT.AtomBomb,
+    sandbox.Difficulty.Impossible,
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(partitioned.covered)),
+    [{ tile: 20, value: 1, coveringSamLevels: 1 }],
+    "the normalized tier routes SAM-covered candidates to the salvo lane",
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(partitioned.clear)),
+    [{ tile: 30, value: 2, coveringSamLevels: 0 }],
+    "clear trajectories stay directly fireable under the normalized tier",
+  );
+
+  const scoreBehavior = Object.create(sandbox.__NukeBehavior.prototype);
+  scoreBehavior.game = {
+    config: () => ({ nukeMagnitudes: () => ({ inner: 2, outer: 3 }) }),
+    euclideanDistSquared: (tile, unitTile) => (unitTile === tile ? 0 : 10_000),
+    nearbyUnits: () => [],
+  };
+  scoreBehavior.recentlySentNukes = [];
+  scoreBehavior.friendlyFirePenalty = () => 0;
+  sandbox.closestTwoTiles = (_game, siloTiles, targetTiles) => ({
+    x: siloTiles[0],
+    y: targetTiles[0],
+  });
+  const samBlastScore = scoreBehavior.nukeTileScore(
+    100,
+    [{ tile: () => 100 }],
+    [{ type: () => UNIT.SAMLauncher, level: () => 1, tile: () => 100 }],
+    UNIT.AtomBomb,
+  );
+  assert.equal(
+    samBlastScore,
+    100_000,
+    "a blast covering a SAM prices the counterforce value instead of scoring zero",
+  );
+
+  const ladderBehavior = Object.create(sandbox.__NukeBehavior.prototype);
+  ladderBehavior.random = { chance: () => false };
+  ladderBehavior.attackBehavior = {
+    findIncomingAttackPlayer: () => null,
+    shouldAttack: () => true,
+  };
+  ladderBehavior.findTwoPlayerNukeTarget = () => null;
+  ladderBehavior.findStrategicBorderArmyTarget = () => null;
+  ladderBehavior.findDominantCrownNukeTarget = () => null;
+  ladderBehavior.findAllyNukeTarget = () => null;
+  ladderBehavior.findHostileNukeTarget = () => null;
+  ladderBehavior.findFFACrownTarget = () => null;
+  ladderBehavior.findStrongestTeamTarget = () => null;
+  ladderBehavior.player = {
+    smallID: () => 1,
+    gold: () => 100_000_000n,
+  };
+  const denseOwner = {
+    smallID: () => 2,
+    type: () => "Human",
+    isAlive: () => true,
+    numTilesOwned: () => 10,
+    units: () => [
+      { type: () => UNIT.City, level: () => 3 },
+      { type: () => UNIT.City, level: () => 2 },
+    ],
+  };
+  const sparseOwner = {
+    smallID: () => 3,
+    type: () => "Human",
+    isAlive: () => true,
+    numTilesOwned: () => 20,
+    units: () => [{ type: () => UNIT.City, level: () => 1 }],
+  };
+  ladderBehavior.game = { players: () => [denseOwner, sparseOwner] };
+  assert.equal(
+    ladderBehavior.findBestNukeTarget(),
+    denseOwner,
+    "the structure-density fallback stays alive under the normalized tier",
+  );
+  sandbox.isLegendaryDifficulty = previousUnion;
+  sandbox.closestTwoTiles = previousClosest;
+  testDifficulty = previousDifficulty;
+}
+
+// Team-support rescue lane: a permanent teammate under invasion outranks the
+// crown/density lanes; teammate attackers, null attackers and non-positive
+// pressures are ignored, and the largest aggregate invader wins.
+{
+  const previousDifficulty = testDifficulty;
+  const previousTeammates = sandbox.playersArePermanentTeammates;
+  testDifficulty = sandbox.Difficulty.Legendary;
+  const rescueBehavior = Object.create(sandbox.__NukeBehavior.prototype);
+  rescueBehavior.random = { chance: () => false };
+  rescueBehavior.attackBehavior = {
+    findIncomingAttackPlayer: () => null,
+    shouldAttack: () => true,
+  };
+  rescueBehavior.findTwoPlayerNukeTarget = () => null;
+  rescueBehavior.findStrategicBorderArmyTarget = () => null;
+  rescueBehavior.findDominantCrownNukeTarget = () => null;
+  rescueBehavior.findAllyNukeTarget = () => null;
+  rescueBehavior.findHostileNukeTarget = () => null;
+  rescueBehavior.findFFACrownTarget = () => null;
+  rescueBehavior.findStrongestTeamTarget = () => null;
+  rescueBehavior.findLegendaryStructureTarget = () => null;
+  rescueBehavior.player = { smallID: () => 1 };
+  const aggressor = { smallID: () => 7, isAlive: () => true };
+  const teammateAttacker = { smallID: () => 8, isAlive: () => true };
+  const underSiegeAlly = {
+    smallID: () => 9,
+    isAlive: () => true,
+    incomingAttacks: () => [
+      { attacker: () => aggressor, troops: () => 12_000 },
+      { attacker: () => teammateAttacker, troops: () => 99_999 },
+      { attacker: () => null, troops: () => 50_000 },
+      { attacker: () => aggressor, troops: () => -5 },
+    ],
+  };
+  const quietPlayer = { smallID: () => 10, isAlive: () => true };
+  rescueBehavior.game = { players: () => [underSiegeAlly, quietPlayer] };
+  sandbox.playersArePermanentTeammates = (a, b) => {
+    const ids = [a.smallID(), b.smallID()];
+    return ids.includes(1) && (ids.includes(8) || ids.includes(9));
+  };
+  assert.equal(
+    rescueBehavior.findBestNukeTarget(),
+    aggressor,
+    "the largest teammate invader outranks the crown/density lanes",
+  );
+  underSiegeAlly.incomingAttacks = () => [];
+  assert.equal(
+    rescueBehavior.findAllyRescueNukeTarget(),
+    null,
+    "an uninvaded team keeps the ordinary ladder",
+  );
+  sandbox.playersArePermanentTeammates = previousTeammates;
+  testDifficulty = previousDifficulty;
+}
+
 const policyCalls = [];
 behavior.structureBehavior = {
   shouldDeferOffensiveNuke: (cost) => {
@@ -198,7 +401,7 @@ const makeThreatSelector = ({ threatTroops = 1_000_000, targetable = true } = {}
   );
 }
 {
-  const { selector, relationTarget, borderLeader } = makeThreatSelector();
+  const { selector, relationTarget } = makeThreatSelector();
   selector.attackBehavior.findIncomingAttackPlayer = () => relationTarget;
   assert.equal(
     selector.findBestNukeTarget(),
@@ -237,10 +440,10 @@ const friendlyAlly = makeArmyPlayer(6, 600_000);
 observedSelf.team = () => "Alpha";
 friendlyAlly.team = () => "Alpha";
 const friendlyAllyCity = { tile: () => 46 };
-friendlyAlly.units = (type) => type === UNIT.City ? [friendlyAllyCity] : [];
+friendlyAlly.units = (type) => (type === UNIT.City ? [friendlyAllyCity] : []);
 let activeHostileMissiles = [];
 let observedTick = 8205;
-nuclearAttacker.units = (type) => type === UNIT.MissileSilo ? [] : [];
+nuclearAttacker.units = () => [];
 unrelatedMissileOwner.units = () => [];
 neutralBlastAttacker.units = () => [];
 const threatObserver = Object.create(sandbox.__NukeBehavior.prototype);
@@ -256,7 +459,11 @@ threatObserver.game = {
     friendlyAlly,
   ],
   units: () => activeHostileMissiles,
-  owner: (tile) => tile === 20 ? observedSelf : tile === 30 ? ordinaryNukeTarget : null,
+  owner: (tile) => {
+    if (tile === 20) return observedSelf;
+    if (tile === 30) return ordinaryNukeTarget;
+    return null;
+  },
   config: () => ({ nukeMagnitudes: () => ({ outer: 15 }) }),
   euclideanDistSquared: (from, to) => (from - to) ** 2,
 };
@@ -306,7 +513,7 @@ const replacementSilo = {
   isActive: () => true,
   isUnderConstruction: () => false,
 };
-nuclearAttacker.units = (type) => type === UNIT.MissileSilo ? [replacementSilo] : [];
+nuclearAttacker.units = (type) => (type === UNIT.MissileSilo ? [replacementSilo] : []);
 activeHostileMissiles = [];
 observedTick = 8871;
 assert.equal(
@@ -327,7 +534,7 @@ let siloTargets = [];
 let emittedNukes = 0;
 const counterforceTarget = {
   ...makeArmyPlayer(3, 900_000),
-  units: (type) => type === UNIT.MissileSilo ? siloTargets : [],
+  units: (type) => (type === UNIT.MissileSilo ? siloTargets : []),
 };
 const counterforceSender = Object.create(sandbox.__NukeBehavior.prototype);
 counterforceSender.player = {
@@ -392,7 +599,7 @@ assert.equal(emittedNukes, 1);
 siloTargets = [];
 const unrelatedCounterforceTarget = {
   ...makeArmyPlayer(4, 900_000),
-  units: (type) => type === UNIT.MissileSilo ? [{ tile: () => 1010 }] : [],
+  units: (type) => (type === UNIT.MissileSilo ? [{ tile: () => 1010 }] : []),
 };
 assert.equal(
   await counterforceSender.sendNuke(1005, UNIT.AtomBomb, unrelatedCounterforceTarget),
@@ -400,12 +607,16 @@ assert.equal(
   "a different owner's silo cannot consume the remembered attacker's reserve",
 );
 assert.equal(
-  await counterforceSender.firePendingNukeLaunch({
-    tile: 1000,
-    nukeType: UNIT.AtomBomb,
-    targetPlayer: counterforceTarget,
-    salvo: null,
-  }, 0, false),
+  await counterforceSender.firePendingNukeLaunch(
+    {
+      tile: 1000,
+      nukeType: UNIT.AtomBomb,
+      targetPlayer: counterforceTarget,
+      salvo: null,
+    },
+    0,
+    false,
+  ),
   "drop",
   "a queued city shot is dropped if a new threat makes it consume the reserved Atom",
 );
@@ -627,7 +838,11 @@ async function fireCandidateAtDifficulty(difficulty, value, expectedValue) {
   firing.maybeDestroyEnemySam = async () => {};
   firing.maybeFirePostSalvoHydrogen = async () => {};
   await firing.fireNukeFromCandidates(
-    [candidate], target, { type: UNIT.AtomBomb, cost: 750_000n }, [], difficulty,
+    [candidate],
+    target,
+    { type: UNIT.AtomBomb, cost: 750_000n },
+    [],
+    difficulty,
   );
   return sent;
 }
@@ -650,8 +865,8 @@ assert.deepEqual(
 );
 assert.deepEqual(
   await fireCandidateAtDifficulty("Hard", 0, true),
-  [],
-  "a score-zero candidate remains blocked at Hard",
+  [[10, UNIT.AtomBomb, target]],
+  "a score-zero candidate fires at Hard (upstream 34a8fe723 moved the strict per-tile gate to Impossible)",
 );
 assert.deepEqual(
   await fireCandidateAtDifficulty("Impossible", 0, false),
@@ -794,9 +1009,9 @@ behavior.game = {
   euclideanDistSquared: (left, right) => (left - right) ** 2,
 };
 assert.equal(
-  behavior.isTeammateAlreadyNukingThisSpot(0, UNIT.AtomBomb),
-  false,
-  "a diplomatic ally's nuke does not suppress our overlapping launch",
+  behavior.isNukeAlreadyLandingNear(0, UNIT.AtomBomb),
+  true,
+  "a diplomatic ally's nuke suppresses our overlapping launch (upstream 34a8fe723)",
 );
 behavior.player.team = () => "blue";
 behavior.game.units = () => [
@@ -807,10 +1022,249 @@ behavior.game.units = () => [
   },
 ];
 assert.equal(
-  behavior.isTeammateAlreadyNukingThisSpot(0, UNIT.AtomBomb),
+  behavior.isNukeAlreadyLandingNear(0, UNIT.AtomBomb),
   true,
   "a permanent teammate's nuke prevents a duplicate overlapping launch",
 );
+behavior.game.units = () => [
+  {
+    owner: () => ({ smallID: () => 1 }),
+    targetTile: () => 0,
+    type: () => UNIT.AtomBomb,
+  },
+];
+assert.equal(
+  behavior.isNukeAlreadyLandingNear(0, UNIT.AtomBomb),
+  true,
+  "our own in-flight nuke suppresses a duplicate overlapping launch",
+);
+behavior.game.units = () => [
+  {
+    owner: () => ({ smallID: () => 9 }),
+    targetTile: () => 0,
+    type: () => UNIT.AtomBomb,
+  },
+];
+assert.equal(
+  behavior.isNukeAlreadyLandingNear(0, UNIT.AtomBomb),
+  true,
+  "an enemy nuke in FFA suppresses a duplicate overlapping launch",
+);
+behavior.game.units = () => [
+  {
+    owner: () => ({ smallID: () => 9 }),
+    targetTile: () => 0,
+    type: () => UNIT.MIRVWarhead,
+  },
+];
+assert.equal(
+  behavior.isNukeAlreadyLandingNear(0, UNIT.AtomBomb),
+  true,
+  "an in-flight MIRV warhead suppresses a duplicate overlapping launch",
+);
+behavior.game.units = () => [
+  {
+    owner: () => ({ smallID: () => 9 }),
+    targetTile: () => null,
+    type: () => UNIT.AtomBomb,
+  },
+];
+assert.equal(
+  behavior.isNukeAlreadyLandingNear(0, UNIT.AtomBomb),
+  false,
+  "a warhead without a target tile does not suppress",
+);
+
+// ── Upstream 34a8fe723 delta 2: enemyLandBlastCoverage grid math ────────────
+{
+  const tileOf = (x, y) => y * 100 + x;
+  const own = { smallID: () => 1, isPlayer: () => true };
+  const enemy = { smallID: () => 7, isPlayer: () => true };
+  const terrain = {};
+  const covBehavior = Object.create(sandbox.__NukeBehavior.prototype);
+  covBehavior.game = {
+    x: (tile) => tile % 100,
+    y: (tile) => Math.floor(tile / 100),
+    isValidCoord: (x, y) => x >= 0 && x < 100 && y >= 0 && y < 100,
+    ref: (x, y) => tileOf(x, y),
+    owner: (tile) => (tile in terrain ? terrain[tile] : enemy),
+    config: () => ({ nukeMagnitudes: () => ({ inner: 1, outer: 2 }) }),
+  };
+  covBehavior.player = { smallID: () => 1, isFriendly: (o) => o === own };
+  const center = tileOf(50, 50);
+  // Disk totals (inner 1, outer 2): 18 sampled weight; inner tiles count double.
+  terrain[center] = own;
+  assert.equal(
+    covBehavior.enemyLandBlastCoverage(center, UNIT.AtomBomb),
+    16 / 18,
+    "own land at the blast center is wasted weight",
+  );
+  terrain[tileOf(50, 49)] = null;
+  terrain[tileOf(50, 51)] = null;
+  const innerWaste = covBehavior.enemyLandBlastCoverage(center, UNIT.AtomBomb);
+  delete terrain[tileOf(50, 49)];
+  delete terrain[tileOf(50, 51)];
+  terrain[tileOf(52, 50)] = null;
+  terrain[tileOf(48, 50)] = null;
+  const outerWaste = covBehavior.enemyLandBlastCoverage(center, UNIT.AtomBomb);
+  assert.equal(innerWaste, 12 / 18, "two wasted inner tiles lose double weight");
+  assert.equal(outerWaste, 14 / 18, "two wasted outer tiles lose single weight");
+  assert.ok(innerWaste < outerWaste, "inner-radius coverage counts double versus the outer ring");
+}
+
+// ── Upstream 34a8fe723 delta 2: coverage thresholds gate isScorableNukeTile ─
+{
+  sandbox.boundingBoxTiles = (gm, center) => [center];
+  sandbox.randTerritoryTileArray = () => [1, 2];
+  const gate = Object.create(sandbox.__NukeBehavior.prototype);
+  gate.game = {
+    owner: () => null,
+    config: () => ({ gameConfig: () => ({ gameMode: "Free For All" }) }),
+  };
+  gate.player = { smallID: () => 1, isFriendly: () => false };
+  gate.nukeSpawn = () => 7;
+  gate.isNukeAlreadyLandingNear = () => false;
+  gate.isTrajectoryInterceptableBySam = () => false;
+  const ctx = (type) => ({
+    range: 2,
+    target: { smallID: () => 42 },
+    type,
+    difficulty: sandbox.Difficulty.Hard,
+  });
+  gate.enemyLandBlastCoverage = () => 0.2;
+  assert.equal(
+    gate.isScorableNukeTile(5, ctx(UNIT.AtomBomb)),
+    -1,
+    "an atom below 0.25 enemy-land coverage is not scorable",
+  );
+  gate.enemyLandBlastCoverage = () => 0.3;
+  assert.equal(
+    gate.isScorableNukeTile(5, ctx(UNIT.AtomBomb)),
+    0.3,
+    "an atom at 0.3 enemy-land coverage is scorable",
+  );
+  gate.enemyLandBlastCoverage = () => 0.3;
+  assert.equal(
+    gate.isScorableNukeTile(5, ctx(UNIT.HydrogenBomb)),
+    -1,
+    "a hydrogen below 0.4 enemy-land coverage is not scorable",
+  );
+  gate.enemyLandBlastCoverage = () => 0.5;
+  assert.equal(
+    gate.isScorableNukeTile(5, ctx(UNIT.HydrogenBomb)),
+    0.5,
+    "a hydrogen at 0.5 enemy-land coverage is scorable",
+  );
+}
+
+// ── Upstream 34a8fe723 delta 2: per-tile value gate + coverage ranking ──────
+{
+  const col = Object.create(sandbox.__NukeBehavior.prototype);
+  col.game = {
+    ensureBorderTiles: async () => {},
+    ticks: () => 100,
+    config: () => ({ nukeMagnitudes: () => ({ outer: 2 }) }),
+  };
+  col.recentlySentNukes = [];
+  col.isScorableNukeTile = (tile) => (tile === 1 ? 0.9 : 0.2);
+  col.nukeTileScore = () => 0;
+  const colTarget = { smallID: () => 42, units: () => [] };
+  const previousDifficulty = testDifficulty;
+  testDifficulty = sandbox.Difficulty.Hard;
+  const hardList = await col.collectNukeCandidates(
+    colTarget,
+    UNIT.AtomBomb,
+    [],
+    sandbox.Difficulty.Hard,
+  );
+  assert.deepEqual(
+    Array.from(hardList, (cand) => cand.tile),
+    [1, 2],
+    "Hard keeps value-0 tiles and ranks coverage-boosted score first",
+  );
+  assert.equal(hardList[0].value, 0, "the kept Hard candidate keeps its pure value");
+  testDifficulty = sandbox.Difficulty.Impossible;
+  const impossibleList = await col.collectNukeCandidates(
+    colTarget,
+    UNIT.AtomBomb,
+    [],
+    sandbox.Difficulty.Impossible,
+  );
+  assert.equal(
+    impossibleList.length,
+    0,
+    "Impossible rejects every value-0 tile regardless of coverage",
+  );
+  testDifficulty = previousDifficulty;
+}
+
+// ── Upstream 34a8fe723 delta 4: allied-land eligibility + winner filter ─────
+{
+  testDifficulty = sandbox.Difficulty.Hard;
+  const d4 = Object.create(sandbox.__NukeBehavior.prototype);
+  const thirdParty = { smallID: () => 9, isPlayer: () => true };
+  const afkAlly = { smallID: () => 8, isPlayer: () => true };
+  const d4Target = { smallID: () => 42 };
+  d4.player = {
+    smallID: () => 1,
+    // Honors treatAFKFriendly like the engine's PlayerImpl.isFriendly(other, n).
+    isFriendly: (o, n) => o === afkAlly && n === true,
+  };
+  d4.game = {
+    owner: (t) => {
+      if (t === 3) return thirdParty;
+      if (t === 4) return afkAlly;
+      return null;
+    },
+  };
+  assert.equal(
+    d4.isValidNukeTile(3, d4Target),
+    true,
+    "a Hard FFA tile owned by a non-allied third player is eligible",
+  );
+  assert.equal(d4.isValidNukeTile(4, d4Target), false, "an AFK ally's tile is protected on Hard");
+  const tileOf = (x, y) => y * 100 + x;
+  const own = { smallID: () => 1 };
+  const grid = {};
+  const d4b = Object.create(sandbox.__NukeBehavior.prototype);
+  d4b.player = { smallID: () => 1, isFriendly: () => true };
+  d4b.game = {
+    players: () => [own],
+    x: (tile) => tile % 100,
+    y: (tile) => Math.floor(tile / 100),
+    isValidCoord: (x, y) => x >= 0 && x < 100 && y >= 0 && y < 100,
+    ref: (x, y) => tileOf(x, y),
+    ownerID: (tile) => grid[tile] ?? 999,
+    config: () => ({ nukeMagnitudes: () => ({ outer: 2 }) }),
+  };
+  assert.equal(
+    d4b.blastHitsFriendlyLand(tileOf(50, 50), UNIT.AtomBomb),
+    false,
+    "a blast over pure enemy land hits nothing friendly",
+  );
+  grid[tileOf(52, 50)] = 1;
+  assert.equal(
+    d4b.blastHitsFriendlyLand(tileOf(50, 50), UNIT.AtomBomb),
+    true,
+    "an own enclave at the blast edge trips the friendly-land filter",
+  );
+  const walk = Object.create(sandbox.__NukeBehavior.prototype);
+  walk.blastHitsFriendlyLand = (tile) => tile === 1;
+  const probed = [];
+  walk.probeCanBuildNuke = async (tile) => {
+    probed.push(tile);
+    return true;
+  };
+  const picked = await walk.selectBuildableNukeCandidate(
+    [
+      { tile: 1, value: 10 },
+      { tile: 2, value: 5 },
+    ],
+    UNIT.AtomBomb,
+  );
+  assert.equal(picked.tile, 2, "the async probe walk skips a friendly-blast candidate");
+  assert.deepEqual(probed, [2], "the friendly-blast candidate is never probed");
+}
 
 const breakableSamOwner = {
   smallID: () => 4,
@@ -1288,9 +1742,19 @@ assert.equal(
     isAlive: () => true,
     troops: () => 6_000_000,
   };
-  const mk = ({ mode = "FFA", tiles = 120_000, troops = 3_000_000, max = 3_200_000, winFixes = true, difficulty = "Legendary" }) => {
+  const mk = ({
+    mode = "FFA",
+    tiles = 120_000,
+    troops = 3_000_000,
+    max = 3_200_000,
+    winFixes = true,
+    difficulty = "Legendary",
+  }) => {
     const behavior = Object.create(sandbox.__NukeBehavior.prototype);
-    behavior.game = { config: () => ({ gameConfig: () => ({ gameMode: mode }) }), players: () => [giant] };
+    behavior.game = {
+      config: () => ({ gameConfig: () => ({ gameMode: mode }) }),
+      players: () => [giant],
+    };
     behavior.player = {
       numTilesOwned: () => tiles,
       troops: () => troops,
@@ -1302,20 +1766,41 @@ assert.equal(
     return behavior;
   };
   const fullSignature = mk({});
-  assert.equal(fullSignature.freezeGiantStrikeTarget(), giant,
-    "the full freeze signature nominates the strongest enemy");
-  assert.equal(mk({ tiles: 49_000 }).freezeGiantStrikeTarget(), null,
-    "below endgame scale the lane stays dormant");
-  assert.equal(mk({ troops: 2_000_000, max: 3_200_000 }).freezeGiantStrikeTarget(), null,
-    "an army with growth room keeps its options");
-  assert.equal(mk({ troops: 4_500_000 }).freezeGiantStrikeTarget(), null,
-    "a non-outmuscling board never strikes first");
-  assert.equal(mk({ mode: "Team" }).freezeGiantStrikeTarget(), null,
-    "team games keep their coordinated win clock");
-  assert.equal(mk({ winFixes: false }).freezeGiantStrikeTarget(), null,
-    "the lane is win-fixes gated");
-  assert.equal(mk({ difficulty: "Impossible" }).freezeGiantStrikeTarget(), null,
-    "the strike is Legendary-only");
+  assert.equal(
+    fullSignature.freezeGiantStrikeTarget(),
+    giant,
+    "the full freeze signature nominates the strongest enemy",
+  );
+  assert.equal(
+    mk({ tiles: 49_000 }).freezeGiantStrikeTarget(),
+    null,
+    "below endgame scale the lane stays dormant",
+  );
+  assert.equal(
+    mk({ troops: 2_000_000, max: 3_200_000 }).freezeGiantStrikeTarget(),
+    null,
+    "an army with growth room keeps its options",
+  );
+  assert.equal(
+    mk({ troops: 4_500_000 }).freezeGiantStrikeTarget(),
+    null,
+    "a non-outmuscling board never strikes first",
+  );
+  assert.equal(
+    mk({ mode: "Team" }).freezeGiantStrikeTarget(),
+    null,
+    "team games keep their coordinated win clock",
+  );
+  assert.equal(
+    mk({ winFixes: false }).freezeGiantStrikeTarget(),
+    null,
+    "the lane is win-fixes gated",
+  );
+  assert.equal(
+    mk({ difficulty: "Impossible" }).freezeGiantStrikeTarget(),
+    null,
+    "the strike is Legendary-only",
+  );
   sandbox.state.settings.winFixes = true;
   testDifficulty = "Impossible";
 }
