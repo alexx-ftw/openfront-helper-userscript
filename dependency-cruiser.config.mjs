@@ -43,6 +43,9 @@ export default {
     doNotFollow: { path: "(?:^|/)node_modules|^openfront-engine/" },
     exclude: "(?:^|/)node_modules/|openfront-helper\\.user\\.js$",
     tsConfig: { fileName: "tsconfig.json" },
-    enhancedResolveOptions: { exportsFields: ["exports"] },
+    enhancedResolveOptions: {
+      exportsFields: ["exports"],
+      conditionNames: ["import", "require", "node", "default"],
+    },
   },
 };

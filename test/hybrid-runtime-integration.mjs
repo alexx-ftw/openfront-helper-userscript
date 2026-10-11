@@ -702,4 +702,241 @@ function economicRealm() {
   assert.equal(emissions, 2);
 }
 
+{
+  const funding = Object.create(sandbox.AttackBehavior.prototype);
+  let available = 39;
+  let multiplier = 1;
+  let appetite = false;
+  let emissions = 0;
+  let defenderTroops = 20;
+  const defender = { isPlayer: () => true, troops: () => defenderTroops };
+  Object.assign(funding, {
+    player: { troops: () => 100 },
+    botAttackTroopsSent: 7,
+    hybridSafetyAttempt: null,
+    createLandAttackContext: () => ({
+      target: defender,
+      targetTroops: 100 - available,
+      targetSpendableTroops: available,
+      finalSpendableTroops: available,
+      defenseProfile: { attackCostMultiplier: multiplier },
+      isTribeTarget: false,
+      force: false,
+      attackBlocked: false,
+      requiredTribeAttackTroops: null,
+      reinforcementPlan: null,
+    }),
+    getLiveOutboundAttackTroopsForTarget: () => 0,
+    proactiveWarExceedsAppetite: () => appetite,
+    proactiveWarPrefersBlitz: () => false,
+    attackIsTooWeakForDefensePosts: () => false,
+    captureSameClanNukeTerrain: () => {},
+    reconcileOutboundAttackIntentCommitments: () => {},
+    emitLandAttackIntent: () => {
+      emissions++;
+      return true;
+    },
+  });
+  assert.equal(funding.canFundLandAttack(defender), false, "below native capture floor");
+  available = 40;
+  assert.equal(funding.canFundLandAttack(defender), true, "exact floor remains eligible");
+  multiplier = 2;
+  assert.equal(funding.canFundLandAttack(defender), false, "Defense Post floor retained");
+  available = 80;
+  assert.equal(funding.canFundLandAttack(defender), true);
+  appetite = true;
+  assert.equal(funding.canFundLandAttack(defender), false, "war appetite retained");
+  appetite = false;
+  multiplier = 1;
+  defenderTroops = 0;
+  assert.equal(funding.canFundLandAttack(defender), true, "undefended target retained");
+  assert.equal(funding.botAttackTroopsSent, 7, "preflight never reserves ordinary attack troops");
+  assert.equal(funding.hybridSafetyAttempt, null, "preflight creates no safety attempt");
+  assert.equal(emissions, 0, "preflight emits nothing");
+  defenderTroops = 20;
+  available = 39;
+  assert.equal(funding.sendLandAttack(defender), false, "sender rechecks changed budget");
+  assert.equal(emissions, 0);
+}
+
+{
+  const ledger = Object.create(sandbox.AttackBehavior.prototype);
+  const recipient = { isPlayer: () => true, smallID: () => 2 };
+  let receipts = [
+    { id: "receipt-1", attack: {}, targetIsPlayer: true, targetKey: "2", troops: 40 },
+  ];
+  Object.assign(ledger, {
+    player: { troops: () => 100 },
+    currentAttackDecisionTick: () => 10,
+    getOutboundAttackSnapshot: () => receipts,
+    getOutboundTransportSnapshot: () => [],
+    botAttackPendingIntentCommitments: [0, 1].map(() => ({
+      target: recipient,
+      targetIsPlayer: true,
+      targetKey: "2",
+      attackType: "land",
+      troops: 40,
+      createdTick: 10,
+      baselineTroops: 100,
+      baselineTargetTroops: 0,
+      baselineAttackIDs: new Set(),
+      baselineTransportIDs: new Set(),
+    })),
+  });
+  ledger.reconcileOutboundAttackIntentCommitments(10, true);
+  assert.equal(ledger.botAttackPendingIntentCommitments.length, 1);
+  ledger.reconcileOutboundAttackIntentCommitments(10, true);
+  assert.equal(
+    ledger.botAttackPendingIntentCommitments.length,
+    1,
+    "one receipt cannot release two pending debits",
+  );
+  receipts = [...receipts, { ...receipts[0], id: "receipt-2", attack: {} }];
+  ledger.reconcileOutboundAttackIntentCommitments(10, true);
+  assert.equal(
+    ledger.botAttackPendingIntentCommitments.length,
+    0,
+    "distinct receipt still releases the second debit",
+  );
+  for (const { forced, freeLand, withReceipt, ownTroops } of [
+    { forced: true, freeLand: false, withReceipt: true, ownTroops: 60 },
+    { forced: false, freeLand: true, withReceipt: false, ownTroops: 60 },
+    { forced: true, freeLand: false, withReceipt: false, ownTroops: 80 },
+  ]) {
+    ledger.botAcknowledgedOutboundIntents = [];
+    ledger.player.troops = () => ownTroops;
+    receipts = withReceipt
+      ? [{ id: "only-receipt", attack: {}, targetIsPlayer: true, targetKey: "2", troops: 40 }]
+      : [];
+    ledger.botAttackPendingIntentCommitments = [0, 1].map(() => ({
+      target: recipient,
+      targetIsPlayer: !freeLand,
+      targetKey: "2",
+      attackType: "land",
+      forcedCounterattack: forced,
+      troops: 40,
+      createdTick: 10,
+      baselineTroops: 100,
+      baselineTargetTroops: 0,
+      baselineAttackIDs: new Set(),
+      baselineTransportIDs: new Set(),
+    }));
+    ledger.reconcileOutboundAttackIntentCommitments(10, true);
+    assert.equal(
+      ledger.botAttackPendingIntentCommitments.length,
+      1,
+      "receipt and debit are the same evidence",
+    );
+    ledger.reconcileOutboundAttackIntentCommitments(10, true);
+    assert.equal(
+      ledger.botAttackPendingIntentCommitments.length,
+      1,
+      "snapshot debit cannot be reused across reads",
+    );
+  }
+  let transports = [{ id: "ship-1", unit: {}, targetTile: 8, troops: 40 }];
+  ledger.botAcknowledgedOutboundIntents = [];
+  receipts = [];
+  ledger.getOutboundTransportSnapshot = () => transports;
+  ledger.botAttackPendingIntentCommitments = [0, 1].map(() => ({
+    target: recipient,
+    targetIsPlayer: true,
+    targetKey: "2",
+    attackType: "boat",
+    destination: 8,
+    troops: 40,
+    createdTick: 10,
+    baselineTroops: 100,
+    baselineTargetTroops: 0,
+    baselineDestinationTroops: 0,
+    baselineAttackIDs: new Set(),
+    baselineTransportIDs: new Set(),
+  }));
+  ledger.reconcileOutboundAttackIntentCommitments(10, true);
+  ledger.reconcileOutboundAttackIntentCommitments(10, true);
+  assert.equal(ledger.botAttackPendingIntentCommitments.length, 1, "one ship is one receipt");
+  transports = [...transports, { ...transports[0], id: "ship-2", unit: {} }];
+  ledger.reconcileOutboundAttackIntentCommitments(10, true);
+  assert.equal(ledger.botAttackPendingIntentCommitments.length, 0);
+  for (const receiptFirst of [true, false]) {
+    let home = receiptFirst ? 100 : 60;
+    ledger.player.troops = () => home;
+    ledger.getOutboundTransportSnapshot = () => [];
+    ledger.botAcknowledgedOutboundIntents = [];
+    receipts = receiptFirst
+      ? [{ id: "delayed-receipt", attack: {}, targetIsPlayer: true, targetKey: "2", troops: 40 }]
+      : [];
+    ledger.botAttackPendingIntentCommitments = [0, 1].map(() => ({
+      target: recipient,
+      targetIsPlayer: true,
+      targetKey: "2",
+      attackType: "land",
+      forcedCounterattack: true,
+      troops: 40,
+      createdTick: 10,
+      baselineTroops: 100,
+      baselineTargetTroops: 0,
+      baselineAttackIDs: new Set(),
+      baselineTransportIDs: new Set(),
+    }));
+    ledger.reconcileOutboundAttackIntentCommitments(10, true);
+    assert.equal(ledger.botAttackPendingIntentCommitments.length, 1);
+    home = 60;
+    receipts = [
+      { id: "delayed-receipt", attack: {}, targetIsPlayer: true, targetKey: "2", troops: 40 },
+    ];
+    ledger.reconcileOutboundAttackIntentCommitments(10, true);
+    ledger.reconcileOutboundAttackIntentCommitments(10, true);
+    assert.equal(
+      ledger.botAttackPendingIntentCommitments.length,
+      1,
+      "staggered receipt/debit acknowledge the same intent",
+    );
+    receipts = [...receipts, { ...receipts[0], id: "genuine-second-receipt", attack: {} }];
+    ledger.reconcileOutboundAttackIntentCommitments(10, true);
+    assert.equal(ledger.botAttackPendingIntentCommitments.length, 0);
+  }
+  let partialHome = 90;
+  ledger.player.troops = () => partialHome;
+  ledger.botAcknowledgedOutboundIntents = [];
+  receipts = [
+    { id: "partial-first", attack: {}, targetIsPlayer: true, targetKey: "2", troops: 40 },
+  ];
+  ledger.botAttackPendingIntentCommitments = [40, 20].map((troops) => ({
+    target: recipient,
+    targetIsPlayer: true,
+    targetKey: "2",
+    attackType: "land",
+    forcedCounterattack: true,
+    troops,
+    createdTick: 10,
+    baselineTroops: 100,
+    baselineTargetTroops: 0,
+    baselineAttackIDs: new Set(),
+    baselineTransportIDs: new Set(),
+  }));
+  ledger.reconcileOutboundAttackIntentCommitments(10, true);
+  assert.equal(
+    ledger.botAttackPendingIntentCommitments.length,
+    1,
+    "partial first debit cannot confirm the second intent",
+  );
+  partialHome = 60;
+  ledger.reconcileOutboundAttackIntentCommitments(10, true);
+  assert.equal(ledger.botAttackPendingIntentCommitments.length, 1);
+  partialHome = 40;
+  ledger.reconcileOutboundAttackIntentCommitments(10, true);
+  assert.equal(
+    ledger.botAttackPendingIntentCommitments.length,
+    0,
+    "later genuine second debit remains usable",
+  );
+  ledger.reconcileOutboundAttackIntentCommitments(16, true);
+  assert.equal(
+    ledger.botAcknowledgedOutboundIntents.length,
+    0,
+    "empty pending ledger still expires acknowledged metadata",
+  );
+}
+
 process.stdout.write("hybrid runtime caller tests passed\n");

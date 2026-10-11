@@ -32,6 +32,14 @@ prior regularizes bounded features. The sample floor is the feature dimension
 `ready` means enough observations to
 try inference, not a performance certification. Cold models fall back to Legendary.
 
+Candidate ranking first reuses Legendary's live land-attack funding calculation,
+including capture floors, Defense Posts, war appetite and target-specific reserves.
+Unfundable targets do not compete in ranking or start new WAIT training examples;
+the funnel reports native-eligible and funded targets separately. This preflight
+does not emit or cache a payload, and the final sender repeats its guards.
+Receipt reconciliation also retains attributed receipt/debit baselines across
+repeated reads: one visible attack or home-troop decrease cannot release two
+pending reservations. New receipts and subsequent troop decreases remain usable.
 Experimental control retains the existing legality, affordability, reserve,
 friendship, reinforcement, timeout and dispatch checks. Strategic commitments,
 including accepted pending intents, prevent opening another ordinary war; forced

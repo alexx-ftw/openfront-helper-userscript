@@ -50,6 +50,7 @@ const behavior = {
   getOutboundTransportSnapshot: () => [],
   getOutboundAttackTargetKey: (enemy) => String(enemy.smallID()),
   canAttackPlayerNow: (enemy) => enemy.smallID() !== 3,
+  canFundLandAttack: () => true,
   sendAttack: async () => {
     sends++;
     return false;
@@ -89,6 +90,18 @@ assert.equal(p.diagnostics().funnel.featureValidTargets, 1);
 p.resetEpisode();
 assert.equal(p.diagnostics().funnel.suppliedTargets, 0);
 assert.equal(p.diagnostics().observations.calls, 0);
+const unfunded = new Policy({ storage: null });
+ready(unfunded);
+const unfundedModel = JSON.stringify(unfunded.exportModel());
+const sendsBeforeUnfunded = sends;
+assert.equal(await unfunded.decide({ ...behavior, canFundLandAttack: () => false }, [a]), false);
+assert.equal(unfunded.exportLedger().entries.at(-1).reason, "no-funded-native-target");
+assert.equal(unfunded.diagnostics().funnel.nativeEligibleTargets, 1);
+assert.equal(unfunded.diagnostics().funnel.fundedTargets, 0);
+assert.equal(unfunded.diagnostics().funnel.scoredTargets, 0);
+assert.equal(unfunded.pending, null, "unfundable choices do not start WAIT observations");
+assert.equal(JSON.stringify(unfunded.exportModel()), unfundedModel);
+assert.equal(sends, sendsBeforeUnfunded);
 
 const compact = new Policy({ storage: null });
 compact.importModel(compact.createCompactModel());

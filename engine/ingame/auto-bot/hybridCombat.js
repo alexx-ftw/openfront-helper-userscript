@@ -6,7 +6,7 @@
 const HYBRID_COMBAT_SCHEMA = "ofh-combat-ridge-v1";
 const HYBRID_COMBAT_STORAGE = "openfront-helper-hybrid-combat-v1";
 const HYBRID_COMBAT_REASONS = Object.freeze([
-  "gate-features-unavailable", "no-native-eligible-target", "target-features-unavailable",
+  "gate-features-unavailable", "no-native-eligible-target", "no-funded-native-target", "target-features-unavailable",
   "geometry-unavailable", "geometry-stale", "frontier-invalid", "numerical-failure", "model-not-ready", "shadow-only",
   "commitment-veto", "send-rejected-unknown", "native-legality-rejected", "should-attack-rejected",
   "target-authorization-rejected", "pending-duplicate", "cancelled-generation", "stale-geometry-tick",
@@ -310,7 +310,7 @@ class HybridCombatPolicy {
   }
 
   emptyFunnel() {
-    return { suppliedTargets: 0, nativeEligibleTargets: 0, featureValidTargets: 0, scoredTargets: 0,
+    return { suppliedTargets: 0, nativeEligibleTargets: 0, fundedTargets: 0, featureValidTargets: 0, scoredTargets: 0,
       dispatchAttempts: 0, acceptedDispatches: 0, confirmedDispatches: 0, callerCancellations: 0, featureFailures: {} };
   }
 
@@ -668,7 +668,7 @@ class HybridCombatPolicy {
     this.proposal = { ...(identity ?? this.decisionIdentity(behavior)), step: this.step++,
       targetSmallID: null, reserveRatio: null,
       candidateCount: 0, controlledAction: null, eligible: null, fallback: true };
-    this.proposal.funnel = { suppliedTargets: enemies.length, nativeEligibleTargets: 0, featureValidTargets: 0,
+    this.proposal.funnel = { suppliedTargets: enemies.length, nativeEligibleTargets: 0, fundedTargets: 0, featureValidTargets: 0,
       scoredTargets: 0, dispatchAttempts: 0, featureFailures: {} };
     this.funnel.suppliedTargets += enemies.length;
     this.observe(behavior);
@@ -682,8 +682,11 @@ class HybridCombatPolicy {
     this.proposal.reserveRatio = this.reserveRatio(own, reserve);
     this.proposal.candidateCount = candidates.length;
     // Forced waiting with no legal strategic choice is not a patience example.
-    if (candidates.length === 0) { this.proposal.eligible = false; return this.fallback(
-      this.proposal.funnel.nativeEligibleTargets ? "target-features-unavailable" : "no-native-eligible-target"); }
+    if (candidates.length === 0) {
+      this.proposal.eligible = false;
+      if (!this.proposal.funnel.nativeEligibleTargets) return this.fallback("no-native-eligible-target");
+      return this.fallback(this.proposal.funnel.fundedTargets ? "target-features-unavailable" : "no-funded-native-target");
+    }
     this.decisions++;
     const { wait, act } = this.scoreMacro(gate);
     const ranked = this.scoreMicro(candidates);
@@ -707,7 +710,10 @@ class HybridCombatPolicy {
       !behavior.player.isFriendly(target) && behavior.player.sharesBorderWith(target) && behavior.canAttackPlayerNow(target));
     this.funnel.nativeEligibleTargets += eligible.length;
     if (this.proposal) this.proposal.funnel.nativeEligibleTargets = eligible.length;
-    const candidates = eligible.map((target) => {
+    const funded = eligible.filter((target) => behavior.canFundLandAttack?.(target) === true);
+    this.funnel.fundedTargets += funded.length;
+    if (this.proposal) this.proposal.funnel.fundedTargets = funded.length;
+    const candidates = funded.map((target) => {
       const evidence = { geometry: null };
       const features = this.targetFeatures(behavior, target, gate, undefined, { evidence, onUnavailable: (reason) => {
         this.funnel.featureFailures[reason] = (this.funnel.featureFailures[reason] || 0) + 1;

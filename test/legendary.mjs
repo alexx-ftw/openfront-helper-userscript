@@ -3942,15 +3942,8 @@ const makeSeedRankOwner = (id, units) => ({
   type: () => "Nation",
   gold: () => 100_000_000n,
 });
-const seedRankStation = (id, tile, level = 1, underConstruction = false) => ({
-  id: () => id,
-  tile: () => tile,
-  level: () => level,
-  isUnderConstruction: () => underConstruction,
-  isMarkedForDeletion: () => false,
-  isActive: () => true,
-  hasTrainStation: () => true,
-});
+const seedRankStation = (id, tile, level = 1, underConstruction = false) =>
+  networkStation(id, tile, level, underConstruction);
 const seedRankConfig = {
   isUnitDisabled: () => false,
   gameConfig: () => ({}),
@@ -3967,9 +3960,7 @@ const seedRankConfig = {
 const makeSeedRankBehavior = (partnerPorts) => {
   const actor = makeSeedRankOwner(1, {});
   const partner = makeSeedRankOwner(2, { Port: partnerPorts });
-  const behavior = Object.create(
-    seedRankSandbox.__SeedRankStructureBehavior.prototype,
-  );
+  const behavior = Object.create(seedRankSandbox.__SeedRankStructureBehavior.prototype);
   Object.assign(behavior, {
     player: actor,
     game: {
@@ -4009,19 +4000,23 @@ const makeSeedRankBehavior = (partnerPorts) => {
     legendaryPortSeedWindowOpen: () => true,
     legendaryPortCandidateTilesForEconomy: () => [10],
     legendaryPortRouteProfile: (_tile, _owner, destinations) =>
-      destinations.length === 0 ? null : {
-        routes: [{
-          weight: 1,
-          postAllianceWeight: 1,
-          distance: 5,
-          teamGoldPerArrival: 100_000,
-          postAllianceGoldPerArrival: 100_000,
-          allianceTicksRemaining: Infinity,
-        }],
-        teamGoldPerArrival: 100_000,
-        postAllianceGoldPerArrival: 100_000,
-        routeDelayTicks: 5,
-      },
+      destinations.length === 0
+        ? null
+        : {
+            routes: [
+              {
+                weight: 1,
+                postAllianceWeight: 1,
+                distance: 5,
+                teamGoldPerArrival: 100_000,
+                postAllianceGoldPerArrival: 100_000,
+                allianceTicksRemaining: Infinity,
+              },
+            ],
+            teamGoldPerArrival: 100_000,
+            postAllianceGoldPerArrival: 100_000,
+            routeDelayTicks: 5,
+          },
   });
   return behavior;
 };
@@ -4061,8 +4056,7 @@ assert.ok(
   "without a committed partner Port the full path prices only our own trade stream",
 );
 const reserveSeedRank = makeSeedRankBehavior([seedRankStation(90, 20, 1, true)]);
-reserveSeedRank.availableGoldAfterReserve = (type) =>
-  type === "Port" ? 0n : 100_000_000n;
+reserveSeedRank.availableGoldAfterReserve = (type) => (type === "Port" ? 0n : 100_000_000n);
 const reserveCandidates = await reserveSeedRank.legendaryConstructionCandidates({
   config: seedRankConfig,
   citiesDisabled: false,
@@ -4072,10 +4066,7 @@ const reserveCandidates = await reserveSeedRank.legendaryConstructionCandidates(
   missileSilosEnabled: false,
   nukesEnabled: false,
 });
-const reserveGroups = reserveSeedRank.legendaryConstructionActionGroups(
-  reserveCandidates,
-  true,
-);
+const reserveGroups = reserveSeedRank.legendaryConstructionActionGroups(reserveCandidates, true);
 assert.ok(
   !reserveGroups[0]?.some((candidate) => candidate.type === "Port"),
   "a reserve-bound builder cannot spend on the seed Port even when it prices highest",

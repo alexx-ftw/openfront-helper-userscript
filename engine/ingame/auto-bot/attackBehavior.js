@@ -921,6 +921,7 @@
     initializeAttackIntentState() {
       this.botAttackTroopsSent = 0;
       this.botAttackPendingIntentCommitments = [];
+      this.botAcknowledgedOutboundIntents = [];
       this.outboundIntentReconciledTick = null;
       this.botPendingDonationIntentCommitments = [];
       this.outboundDonationIntentReconciledTick = null;
@@ -1501,7 +1502,7 @@
     outboundTransportCandidateMatches(candidate, entry, context, amount) {
       if (candidate.targetTile !== entry.destination) return false;
       if (context.usedTransportObjects.has(candidate.unit)) return false;
-      if (candidate.id != null && context.usedTransportIDs.has(candidate.id)) return false;
+      if (candidate.id != null && (context.usedTransportIDs.has(candidate.id) || context.usedTransportIDs.has(String(candidate.id)))) return false;
       const isNew =
         candidate.id != null &&
         !entry.baselineTransportIDs?.has(candidate.id) &&
@@ -1524,7 +1525,8 @@
         this.outboundTransportTargets.set(String(live.id), entry.target);
       }
       context.usedTransportObjects.add(live.unit);
-      if (live.id != null) context.usedTransportIDs.add(live.id);
+      if (live.id != null) { context.usedTransportIDs.add(live.id); context.usedTransportIDs.add(String(live.id)); }
+      context.lastOutboundReceipt = { type: "boat", id: live.id, object: live.unit };
       return true;
     }
 
@@ -1537,7 +1539,7 @@
 
     outboundAttackCandidateMatches(candidate, entry, context, currentTroops, amount) {
       if (context.usedAttackObjects.has(candidate.attack)) return false;
-      if (candidate.id != null && context.usedAttackIDs.has(candidate.id)) return false;
+      if (candidate.id != null && (context.usedAttackIDs.has(candidate.id) || context.usedAttackIDs.has(String(candidate.id)))) return false;
       const isNew =
         candidate.id != null &&
         !entry.baselineAttackIDs?.has(candidate.id) &&
@@ -1563,7 +1565,8 @@
       );
       if (!visible) return false;
       context.usedAttackObjects.add(visible.attack);
-      if (visible.id != null) context.usedAttackIDs.add(visible.id);
+      if (visible.id != null) { context.usedAttackIDs.add(visible.id); context.usedAttackIDs.add(String(visible.id)); }
+      context.lastOutboundReceipt = { type: "land", id: visible.id, object: visible.attack };
       return true;
     }
 
@@ -1574,8 +1577,15 @@
         baseline - context.ownTroops - context.consumedObservedTroopDrop,
       );
       if (drop < Math.max(1, amount * 0.5)) return false;
-      context.consumedObservedTroopDrop += amount;
+      context.consumedObservedTroopDrop += Math.min(amount, drop);
       return true;
+    }
+
+    allocateAcknowledgedOutboundDebit(entry, context, amount, already = 0) {
+      const available = Math.max(0, (Number(entry.baselineTroops) || 0) - context.ownTroops - already - context.consumedObservedTroopDrop);
+      const allocated = Math.min(Math.max(0, amount - already), available);
+      context.consumedObservedTroopDrop += allocated;
+      return allocated;
     }
 
     outboundEntryRemainsPending(entry, tick, applied) {
@@ -1595,15 +1605,43 @@
     reconcileOutboundAttackEntry(entry, context, tick) {
       const amount = Math.max(0, Number(entry.troops) || 0);
       if (amount <= 0) return false;
-      let applied = this.reconcileOutboundTransport(entry, context, amount);
-      if (!applied) applied = this.reconcileOutboundVisibleAttack(entry, context, amount);
-      if (
-        !applied &&
-        (entry.targetIsPlayer === false || entry.forcedCounterattack === true)
-      ) {
-        applied = this.outboundTroopDropApplies(entry, context, amount);
+      context.lastOutboundReceipt = null;
+      const consumedBefore = context.consumedObservedTroopDrop;
+      const receipt = this.reconcileOutboundTransport(entry, context, amount) ||
+        this.reconcileOutboundVisibleAttack(entry, context, amount);
+      const debit = receipt ? this.allocateAcknowledgedOutboundDebit(entry, context, amount) > 0 :
+        (entry.targetIsPlayer === false || entry.forcedCounterattack === true) && this.outboundTroopDropApplies(entry, context, amount);
+      const applied = receipt || debit;
+      const debitAmount = context.consumedObservedTroopDrop - consumedBefore;
+      if (applied && !(receipt && debitAmount >= amount)) {
+        this.botAcknowledgedOutboundIntents.push({ entry, receipt: context.lastOutboundReceipt, debitAmount });
       }
       return this.outboundEntryRemainsPending(entry, tick, applied);
+    }
+
+    reconcileOutboundAcknowledgement(record, context, tick) {
+      if (tick - record.entry.createdTick >= BOT_OUTBOUND_INTENT_GRACE_TICKS) return false;
+      const amount = Math.max(0, Number(record.entry.troops) || 0);
+      if (record.receipt) {
+        this.markAcknowledgedOutboundReceipt(record, context);
+      } else {
+        context.lastOutboundReceipt = null;
+        if (this.reconcileOutboundTransport(record.entry, context, amount) ||
+            this.reconcileOutboundVisibleAttack(record.entry, context, amount)) record.receipt = context.lastOutboundReceipt;
+      }
+      record.debitAmount += this.allocateAcknowledgedOutboundDebit(record.entry, context, amount, record.debitAmount);
+      return !(record.receipt && record.debitAmount >= amount);
+    }
+
+    markAcknowledgedOutboundReceipt(record, context) {
+      const objects = record.receipt.type === "boat" ? context.usedTransportObjects : context.usedAttackObjects;
+      const ids = record.receipt.type === "boat" ? context.usedTransportIDs : context.usedAttackIDs;
+      objects.add(record.receipt.object);
+      if (record.receipt.id != null) { ids.add(record.receipt.id); ids.add(String(record.receipt.id)); return; }
+      const matches = record.receipt.type === "boat"
+        ? context.transports.filter((candidate) => candidate.targetTile === record.entry.destination)
+        : this.outboundAttacksForEntry(record.entry, context.attacks);
+      for (const candidate of matches) if (candidate.id == null) objects.add(candidate.unit ?? candidate.attack);
     }
 
     reconcileOutboundAttackIntentCommitments(
@@ -1612,6 +1650,10 @@
     ) {
       if (!force && this.outboundIntentReconciledTick === tick) return;
       this.outboundIntentReconciledTick = tick;
+      this.botAcknowledgedOutboundIntents = (this.botAcknowledgedOutboundIntents ?? []).filter((record) => {
+        const age = tick - Number(record.entry.createdTick);
+        return Number.isFinite(age) && age >= 0 && age < BOT_OUTBOUND_INTENT_GRACE_TICKS;
+      });
       const pending = this.botAttackPendingIntentCommitments;
       if (!Array.isArray(pending) || pending.length === 0) return;
 
@@ -1625,9 +1667,36 @@
         ownTroops: Math.max(0, Number(this.player?.troops?.() || 0)),
         consumedObservedTroopDrop: 0,
       };
+      this.botAcknowledgedOutboundIntents = this.botAcknowledgedOutboundIntents.filter((record) =>
+        this.reconcileOutboundAcknowledgement(record, context, tick));
       this.botAttackPendingIntentCommitments = pending.filter((entry) =>
         this.reconcileOutboundAttackEntry(entry, context, tick),
       );
+      for (const entry of this.botAttackPendingIntentCommitments) {
+        this.advanceOutboundReceiptBaseline(entry, context);
+      }
+    }
+
+    advanceOutboundReceiptBaseline(entry, context) {
+      if (context.consumedObservedTroopDrop > 0 || context.usedAttackObjects.size || context.usedTransportObjects.size) {
+        // Already attributed snapshot debits cannot acknowledge another intent on the next read.
+        entry.baselineTroops = Math.min(Number(entry.baselineTroops) || 0, context.ownTroops);
+      }
+      // A receipt consumed on this pass cannot acknowledge another pending intent on a later read.
+      const attacks = this.outboundAttacksForEntry(entry, context.attacks);
+      if (attacks.some((candidate) => context.usedAttackObjects.has(candidate.attack) ||
+          (candidate.id != null && (context.usedAttackIDs.has(candidate.id) || context.usedAttackIDs.has(String(candidate.id)))))) {
+        entry.baselineAttackIDs = new Set([...entry.baselineAttackIDs ?? [], ...attacks.map((candidate) => candidate.id).filter((id) => id != null)]);
+        entry.baselineTargetTroops = Math.max(Number(entry.baselineTargetTroops) || 0,
+          attacks.reduce((total, candidate) => total + candidate.troops, 0));
+      }
+      const transports = context.transports.filter((candidate) => candidate.targetTile === entry.destination);
+      if (transports.some((candidate) => context.usedTransportObjects.has(candidate.unit) ||
+          (candidate.id != null && (context.usedTransportIDs.has(candidate.id) || context.usedTransportIDs.has(String(candidate.id)))))) {
+        entry.baselineTransportIDs = new Set([...entry.baselineTransportIDs ?? [], ...transports.map((candidate) => candidate.id).filter((id) => id != null)]);
+        entry.baselineDestinationTroops = Math.max(Number(entry.baselineDestinationTroops) || 0,
+          transports.reduce((total, candidate) => total + candidate.troops, 0));
+      }
     }
 
     getPendingOutboundAttackTroops() {
@@ -9396,7 +9465,7 @@
       );
     }
 
-    canFundAllianceBetrayal(target) {
+    canFundLandAttack(target) {
       // Breaking the alliance marks us as a traitor even if the next attack
       // is unaffordable. Reuse the first-strike reserve and defense checks
       // before paying that diplomatic cost; do not emit a same-tick attack.
@@ -9415,7 +9484,7 @@
 
       if (borderingFriends.length > 0) {
         for (const friend of borderingFriends) {
-          if (!this.canFundAllianceBetrayal(friend)) continue;
+          if (!this.canFundLandAttack(friend)) continue;
           if (
             this.allianceBehavior.maybeBetray(
               friend,

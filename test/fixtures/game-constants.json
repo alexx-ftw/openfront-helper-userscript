@@ -1655,9 +1655,9 @@
     "name": "HYBRID_COMBAT_REASONS",
     "declarationKind": "const",
     "initializerKind": "CallExpression",
-    "initializerHash": "26ea2699c68f848c1b7542c3265c67412c80648087e898f9f55c7fc1169c3cb2",
-    "initializerLength": 685,
-    "initializerPreview": "Object.freeze([\n    \"gate-features-unavailable\", \"no-native-eligible-target\", \"target-features-unavailable\",\n    \"geometry-unavailable\", \"geometry-stale\", \"frontier-invalid\", \"numerical-failure\", \"model-not-ready\", \"shadow-only\",\n    \"co..."
+    "initializerHash": "27657f7e9b4f2849522da7e5d36691ae448b706e7557b635a3f50ce1b434e44e",
+    "initializerLength": 712,
+    "initializerPreview": "Object.freeze([\n    \"gate-features-unavailable\", \"no-native-eligible-target\", \"no-funded-native-target\", \"target-features-unavailable\",\n    \"geometry-unavailable\", \"geometry-stale\", \"frontier-invalid\", \"numerical-failure\", \"model-not-rea..."
   },
   {
     "id": "engine/ingame/auto-bot/hybridCombat.js:HYBRID_COMBAT_FEATURES#1",
@@ -1748,36 +1748,6 @@
     "initializerHash": "f853ca6795aa68fe957fa84ed236645c3c9334bced77d67d1c62f3750fc521ea",
     "initializerLength": 256,
     "initializerPreview": "{\n    City: { gold: 3, troops: 5, defense: 1 },\n    Factory: { gold: 3, troops: 1, defense: 1 },\n    Port: { gold: 4, troops: 2, defense: 4 },\n    \"Missile Silo\": { gold: 1, troops: 1, defense: 1 },\n    \"SAM Launcher\": { gold: 1, troops:..."
-  },
-  {
-    "id": "engine/ingame/auto-bot/legendaryPlanner.js:LEGENDARY_TICKS_PER_SECOND#1",
-    "file": "engine/ingame/auto-bot/legendaryPlanner.js",
-    "name": "LEGENDARY_TICKS_PER_SECOND",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
-    "initializerLength": 2,
-    "initializerPreview": "10"
-  },
-  {
-    "id": "engine/ingame/auto-bot/legendaryPlanner.js:LEGENDARY_STRUCTURE_ROI_TICKS#1",
-    "file": "engine/ingame/auto-bot/legendaryPlanner.js",
-    "name": "LEGENDARY_STRUCTURE_ROI_TICKS",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "8d284220975da66c6cba4a32aaedfa0b897187d86ed9f7a2419c9bd10a103505",
-    "initializerLength": 4,
-    "initializerPreview": "6000"
-  },
-  {
-    "id": "engine/ingame/auto-bot/legendaryPlanner.js:LEGENDARY_STRUCTURE_MIN_NET_GOLD#1",
-    "file": "engine/ingame/auto-bot/legendaryPlanner.js",
-    "name": "LEGENDARY_STRUCTURE_MIN_NET_GOLD",
-    "declarationKind": "const",
-    "initializerKind": "FirstLiteralToken",
-    "initializerHash": "0604cd3138feed202ef293e062da2f4720f77a05d25ee036a7a01c9cfcdd1f0a",
-    "initializerLength": 3,
-    "initializerPreview": "500"
   },
   {
     "id": "engine/ingame/auto-bot/lifecycle.js:ATOM_MACRO_DIALOG_ID#1",

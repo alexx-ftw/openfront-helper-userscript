@@ -981,6 +981,7 @@ const nativeWorkflowRunner = async ({ seed, mode, learning, modelPath }) => {
     botPendingDonationIntentCommitments: [],
     getOutboundAttackTargetKey: () => "2",
     canAttackPlayerNow: () => true,
+    canFundLandAttack: () => true,
     hybridCombatGeometry: () => ({
       targetSmallID: 2,
       tick,

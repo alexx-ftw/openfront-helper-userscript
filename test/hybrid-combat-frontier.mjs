@@ -81,6 +81,7 @@ Object.assign(fixture, {
   getOutboundAttackSnapshot: () => [],
   getOutboundTransportSnapshot: () => [],
   canAttackPlayerNow: () => true,
+  canFundLandAttack: () => true,
 });
 policy.importModel(policy.createCompactModel({ featureProfile: "frontier-v1" }));
 policy.configure({ mode: "shadow", learning: false });

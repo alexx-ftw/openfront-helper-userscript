@@ -160,11 +160,27 @@ const behavior = {
   getEarlyGameLiveReserveTroops: () => 50,
   getOutboundAttackTargetKey: (target) => String(target.smallID()),
   canAttackPlayerNow: () => true,
+  canFundLandAttack: () => true,
   sendAttack: async () => {
     emitted++;
     return true;
   },
 };
+const fundedPolicy = new Policy({ storage: null });
+const fundedBehavior = { ...behavior, canFundLandAttack: (target) => target.smallID() === 3 };
+assert.deepEqual(
+  Array.from(fundedPolicy.legalCandidates(fundedBehavior, [a, b], [1, 0.5, 0.1, 0]), ({ target }) =>
+    target.smallID(),
+  ),
+  [3],
+  "unfunded targets never compete with affordable attacks or teach forced waiting",
+);
+assert.equal(
+  fundedPolicy.legalCandidates({ ...behavior, canFundLandAttack: undefined }, [a], [1, 0.5, 0.1, 0])
+    .length,
+  0,
+  "unknown funding cannot authorize a learned candidate",
+);
 const unstable = new Policy({ storage: null });
 const unstableModel = unstable.exportModel();
 for (const entry of Object.values(unstableModel.models)) entry.samples = entry.weights.length;
