@@ -3894,4 +3894,190 @@ assert.ok(
   ) < 1e-6,
   "a completed foreign source Port earns inbound trades while our Port is still building",
 );
+
+// ---- Full-path ranking: the seed-window Port must reach the final winner
+// group through real candidate pricing; only water geometry is stubbed. ----
+const seedRankSandbox = {
+  Difficulty: { Impossible: "Impossible", Legendary: "Legendary" },
+  GameMode: { Team: "Team" },
+  UNIT: {
+    City: "City",
+    Port: "Port",
+    Factory: "Factory",
+    Train: "Train",
+    "Trade Ship": "Trade Ship",
+    SAMLauncher: "SAM Launcher",
+    MissileSilo: "Missile Silo",
+    Warship: "Warship",
+  },
+  state: { settings: { winFixes: true } },
+  globalThis: null,
+  currentDifficulty: () => "Legendary",
+  getBuildMenu: () => ({ sendBuildOrUpgrade() {} }),
+  isAtLeastHardDifficulty: () => true,
+  isLegendaryDifficulty: () => true,
+  withTimeout: async (promise) => promise,
+  WORKER_TIMEOUT_MS: 1,
+  UniversalPathFinding: null,
+};
+Object.assign(seedRankSandbox, plannerSandbox);
+seedRankSandbox.globalThis = seedRankSandbox;
+executeClassicScript(
+  `${structureSource}\nglobalThis.__SeedRankStructureBehavior = StructureBehavior;`,
+  seedRankSandbox,
+  { filename: "structureBehavior-seed-rank.js" },
+);
+const makeSeedRankOwner = (id, units) => ({
+  id: () => id,
+  smallID: () => id,
+  isPlayer: () => true,
+  isAlive: () => true,
+  isLobbyCreator: () => false,
+  hasEmbargoAgainst: () => false,
+  isOnSameTeam: (other) => other?.smallID?.() === id,
+  isAlliedWith: () => false,
+  units: (...types) => types.flatMap((type) => units[type] ?? []),
+  oceanShoreBorderTiles: () => [11],
+  borderTiles: () => [11],
+  type: () => "Nation",
+  gold: () => 100_000_000n,
+});
+const seedRankStation = (id, tile, level = 1, underConstruction = false) => ({
+  id: () => id,
+  tile: () => tile,
+  level: () => level,
+  isUnderConstruction: () => underConstruction,
+  isMarkedForDeletion: () => false,
+  isActive: () => true,
+  hasTrainStation: () => true,
+});
+const seedRankConfig = {
+  isUnitDisabled: () => false,
+  gameConfig: () => ({}),
+  msPerTick: () => 100,
+  trainStationMaxRange: () => 10,
+  unitInfo: () => ({ constructionDuration: 50 }),
+  trainSpawnRate: () => 100,
+  tradeShipSpawnRate: () => 100,
+  tradeShipGold: (distance) => BigInt(distance * 100),
+  tradeShipShortRangeDebuff: () => 0,
+  proximityBonusPortsNb: () => 0,
+  allianceDuration: () => 0,
+};
+const makeSeedRankBehavior = (partnerPorts) => {
+  const actor = makeSeedRankOwner(1, {});
+  const partner = makeSeedRankOwner(2, { Port: partnerPorts });
+  const behavior = Object.create(
+    seedRankSandbox.__SeedRankStructureBehavior.prototype,
+  );
+  Object.assign(behavior, {
+    player: actor,
+    game: {
+      players: () => [actor, partner],
+      units: () => [],
+      ticks: () => 0,
+      sharedWaterComponents: () => new Set([7]),
+      euclideanDistSquared: (left, right) => (left - right) ** 2,
+      config: () => seedRankConfig,
+    },
+    buildReachableStations: () => [],
+    legendaryRailMetrics: () => ({
+      connectedCities: 0,
+      cityRailConnection: 0,
+      railNeed: 0,
+      tradeNeed: 0,
+    }),
+    enemyMissileSiloPressure: () => [],
+    getMissileDefenseContext: () => ({ critical: false, score: 0 }),
+    legendaryHostilePlayers: () => [],
+    liveNuclearHostilePlayers: () => [],
+    hasTradeablePortOnSharedWater: () => false,
+    legendaryEnemyTargetPressure: () => 0,
+    legendaryConstructionDefenseGap: () => 0.25,
+    legendaryPortSurvivability: () => 1,
+    ownSamCapacity: () => 0,
+    missileSiloParityTarget: () => 0,
+    samLevelParityTarget: () => 0,
+    samLevelParityGap: () => 0,
+    portWaterComponents: () => new Set([7]),
+    portTileHasOpenWaterAccess: () => true,
+    isShoreBorderTile: () => true,
+    legendarySamChestBlocksType: () => false,
+    probeLegendaryThroughputUpgradeCandidates: async () => [],
+    computeTroopCapPressure: () => false,
+    availableGoldAfterReserve: () => 100_000_000n,
+    legendaryPortSeedWindowOpen: () => true,
+    legendaryPortCandidateTilesForEconomy: () => [10],
+    legendaryPortRouteProfile: (_tile, _owner, destinations) =>
+      destinations.length === 0 ? null : {
+        routes: [{
+          weight: 1,
+          postAllianceWeight: 1,
+          distance: 5,
+          teamGoldPerArrival: 100_000,
+          postAllianceGoldPerArrival: 100_000,
+          allianceTicksRemaining: Infinity,
+        }],
+        teamGoldPerArrival: 100_000,
+        postAllianceGoldPerArrival: 100_000,
+        routeDelayTicks: 5,
+      },
+  });
+  return behavior;
+};
+const runSeedRankAt = async (partnerPorts) => {
+  const behavior = makeSeedRankBehavior(partnerPorts);
+  const candidates = await behavior.legendaryConstructionCandidates({
+    config: seedRankConfig,
+    citiesDisabled: false,
+    cityCount: 3,
+    hasCoastalTiles: false,
+    hasOceanPortTiles: true,
+    missileSilosEnabled: false,
+    nukesEnabled: false,
+  });
+  return {
+    candidates,
+    winner: behavior.legendaryConstructionActionGroups(candidates, true)[0]?.[0],
+  };
+};
+const committedSeedRank = await runSeedRankAt([seedRankStation(90, 20, 1, true)]);
+assert.equal(
+  committedSeedRank.winner?.type,
+  "Port",
+  "the seed-window Port wins the full Legendary candidate path when the partner is committed",
+);
+const committedSeedPort = committedSeedRank.candidates.find(
+  (candidate) => candidate.type === "Port",
+);
+const uncommittedSeedRank = await runSeedRankAt([]);
+const uncommittedSeedPort = uncommittedSeedRank.candidates.find(
+  (candidate) => candidate.type === "Port",
+);
+assert.ok(
+  committedSeedPort?.netTeamGold > 0n &&
+    uncommittedSeedPort?.netTeamGold > 0n &&
+    uncommittedSeedPort.netTeamGold < committedSeedPort.netTeamGold,
+  "without a committed partner Port the full path prices only our own trade stream",
+);
+const reserveSeedRank = makeSeedRankBehavior([seedRankStation(90, 20, 1, true)]);
+reserveSeedRank.availableGoldAfterReserve = (type) =>
+  type === "Port" ? 0n : 100_000_000n;
+const reserveCandidates = await reserveSeedRank.legendaryConstructionCandidates({
+  config: seedRankConfig,
+  citiesDisabled: false,
+  cityCount: 3,
+  hasCoastalTiles: false,
+  hasOceanPortTiles: true,
+  missileSilosEnabled: false,
+  nukesEnabled: false,
+});
+const reserveGroups = reserveSeedRank.legendaryConstructionActionGroups(
+  reserveCandidates,
+  true,
+);
+assert.ok(
+  !reserveGroups[0]?.some((candidate) => candidate.type === "Port"),
+  "a reserve-bound builder cannot spend on the seed Port even when it prices highest",
+);
 process.stdout.write("LEGENDARY TESTS OK\n");
